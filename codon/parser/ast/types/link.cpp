@@ -73,7 +73,7 @@ int LinkType::unify(Type *typ, Unification *undo) {
     if (undo) {
       LOG_TYPECHECK("[unify] {} := {}", id, typ->debugString(2));
       // Link current type to typ and ensure that this modification is recorded in undo.
-      undo->linked.push_back(std::static_pointer_cast<LinkType>(shared_from_this()));
+      undo->linked.push_back(shared_from_this());
       kind = Link;
       seqassert(!typ->getLink() || typ->getLink()->kind != Unbound ||
                     typ->getLink()->id <= id,
@@ -81,7 +81,7 @@ int LinkType::unify(Type *typ, Unification *undo) {
       type = typ->follow();
       if (auto t = type->getLink())
         if (trait && t->kind == Unbound && !t->trait) {
-          undo->traits.push_back(t);
+          undo->traits.push_back(t->shared_from_this());
           t->trait = trait;
         }
     }
@@ -137,9 +137,9 @@ TypePtr LinkType::follow() {
     return shared_from_this();
 }
 
-std::vector<TypePtr> LinkType::getUnbounds() const {
+std::vector<Type *> LinkType::getUnbounds() const {
   if (kind == Unbound)
-    return {std::const_pointer_cast<Type>(shared_from_this())};
+    return {(Type*)this};
   else if (kind == Link)
     return type->getUnbounds();
   return {};
@@ -191,45 +191,35 @@ std::string LinkType::realizedName() const {
   return type->realizedName();
 }
 
-std::shared_ptr<LinkType> LinkType::getLink() {
-  return std::static_pointer_cast<LinkType>(shared_from_this());
-}
+LinkType *LinkType::getLink() { return this; }
 
-std::shared_ptr<FuncType> LinkType::getFunc() {
-  return kind == Link ? type->getFunc() : nullptr;
-}
+FuncType *LinkType::getFunc() { return kind == Link ? type->getFunc() : nullptr; }
 
-std::shared_ptr<ClassType> LinkType::getPartial() {
+ClassType *LinkType::getPartial() {
   return kind == Link ? type->getPartial() : nullptr;
 }
 
-std::shared_ptr<ClassType> LinkType::getClass() {
-  return kind == Link ? type->getClass() : nullptr;
-}
+ClassType *LinkType::getClass() { return kind == Link ? type->getClass() : nullptr; }
 
-std::shared_ptr<StaticType> LinkType::getStatic() {
-  return kind == Link ? type->getStatic() : nullptr;
-}
+StaticType *LinkType::getStatic() { return kind == Link ? type->getStatic() : nullptr; }
 
-std::shared_ptr<IntStaticType> LinkType::getIntStatic() {
+IntStaticType *LinkType::getIntStatic() {
   return kind == Link ? type->getIntStatic() : nullptr;
 }
 
-std::shared_ptr<StrStaticType> LinkType::getStrStatic() {
+StrStaticType *LinkType::getStrStatic() {
   return kind == Link ? type->getStrStatic() : nullptr;
 }
 
-std::shared_ptr<BoolStaticType> LinkType::getBoolStatic() {
+BoolStaticType *LinkType::getBoolStatic() {
   return kind == Link ? type->getBoolStatic() : nullptr;
 }
 
-std::shared_ptr<UnionType> LinkType::getUnion() {
-  return kind == Link ? type->getUnion() : nullptr;
-}
+UnionType *LinkType::getUnion() { return kind == Link ? type->getUnion() : nullptr; }
 
-std::shared_ptr<LinkType> LinkType::getUnbound() {
+LinkType *LinkType::getUnbound() {
   if (kind == Unbound)
-    return std::static_pointer_cast<LinkType>(shared_from_this());
+    return this;
   if (kind == Link)
     return type->getUnbound();
   return nullptr;
@@ -243,7 +233,7 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
       if (tl->trait && occurs(tl->trait.get(), undo))
         return true;
       if (undo && tl->level > level) {
-        undo->leveled.emplace_back(tl, tl->level);
+        undo->leveled.emplace_back(tl->shared_from_this(), tl->level);
         tl->level = level;
       }
       return false;

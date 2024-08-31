@@ -20,9 +20,9 @@ using namespace types;
 /// @example
 ///   `(expr := var)` -> `var = expr; var`
 void TypecheckVisitor::visit(AssignExpr *expr) {
-  auto a = N<AssignStmt>(clone(expr->var), expr->expr);
+  auto a = N<AssignStmt>(clone(expr->getVar()), expr->getExpr());
   a->cloneAttributesFrom(expr);
-  resultExpr = transform(N<StmtExpr>(a, expr->var));
+  resultExpr = transform(N<StmtExpr>(a, expr->getVar()));
 }
 
 /// Transform assignments. Handle dominated assignments, forward declarations, static
@@ -33,21 +33,23 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   bool mustUpdate = stmt->isUpdate() || stmt->isAtomicUpdate();
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominated);
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominatedUsed);
-  if (stmt->rhs && cast<BinaryExpr>(stmt->rhs) &&
-      cast<BinaryExpr>(stmt->rhs)->isInPlace()) {
+  if (cast<BinaryExpr>(stmt->getRhs()) &&
+      cast<BinaryExpr>(stmt->getRhs())->isInPlace()) {
     // Update case: a += b
-    seqassert(!stmt->type, "invalid AssignStmt {}", stmt->toString(0));
+    seqassert(!stmt->getTypeExpr(), "invalid AssignStmt {}", stmt->toString(0));
     mustUpdate = true;
   }
+
   resultStmt = transformAssignment(stmt, mustUpdate);
   if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
+    // If this is dominated, set __used__ if needed
     stmt->eraseAttribute(Attr::ExprDominatedUsed);
-    auto lei = cast<IdExpr>(stmt->lhs);
-    seqassert(lei, "dominated bad assignment");
+    auto e = cast<IdExpr>(stmt->getLhs());
+    seqassert(e, "dominated bad assignment");
     resultStmt = transform(N<SuiteStmt>(
         resultStmt,
         N<AssignStmt>(
-            N<IdExpr>(format("{}.__used__", ctx->cache->rev(lei->getValue()))),
+            N<IdExpr>(format("{}{}", getUnmangledName(e->getValue()), VAR_USED_SUFFIX)),
             N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
   }
 }
@@ -57,14 +59,15 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
 ///   `del a`    -> `a = type(a)()` and remove `a` from the context
 ///   `del a[x]` -> `a.__delitem__(x)`
 void TypecheckVisitor::visit(DelStmt *stmt) {
-  if (auto idx = cast<IndexExpr>(stmt->expr)) {
-    resultStmt = N<ExprStmt>(
-        transform(N<CallExpr>(N<DotExpr>(idx->expr, "__delitem__"), idx->index)));
-  } else if (auto ei = cast<IdExpr>(stmt->expr)) {
+  if (auto idx = cast<IndexExpr>(stmt->getExpr())) {
+    resultStmt = N<ExprStmt>(transform(
+        N<CallExpr>(N<DotExpr>(idx->getExpr(), "__delitem__"), idx->getIndex())));
+  } else if (auto ei = cast<IdExpr>(stmt->getExpr())) {
     // Assign `a` to `type(a)()` to mark it for deletion
-    auto tA = N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->expr)));
-    resultStmt = N<AssignStmt>(transform(stmt->expr), transform(tA));
-    cast<AssignStmt>(resultStmt)->setUpdate();
+    resultStmt = transform(N<AssignStmt>(
+        stmt->getExpr(),
+        N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->getExpr()))), nullptr,
+        AssignStmt::Update));
 
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->getValue());
@@ -73,7 +76,7 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     if (ctx->getScope() != val->scope)
       E(Error::DEL_NOT_ALLOWED, ei, ei->getValue());
     ctx->remove(ei->getValue());
-    ctx->remove(ctx->cache->rev(ei->getValue()));
+    ctx->remove(getUnmangledName(ei->getValue()));
   } else {
     E(Error::DEL_INVALID, stmt);
   }
@@ -86,110 +89,106 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
 ///   `a: type` = b -> @c AssignStmt
 ///   `a = b`       -> @c AssignStmt or @c UpdateStmt (see below)
 Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
-  if (auto idx = cast<IndexExpr>(stmt->lhs)) {
+  if (auto idx = cast<IndexExpr>(stmt->getLhs())) {
     // Case: a[x] = b
     seqassert(!stmt->type, "unexpected type annotation");
-    if (auto b = cast<BinaryExpr>(stmt->rhs)) {
+    if (auto b = cast<BinaryExpr>(stmt->getRhs())) {
+      // Case: a[x] += b (inplace operator)
       if (mustExist && b->isInPlace() && !cast<IdExpr>(b->getRhs())) {
-        auto var = ctx->cache->getTemporaryVar("assign");
+        auto var = getTemporaryVar("assign");
         return transform(N<SuiteStmt>(
-            N<AssignStmt>(N<IdExpr>(var), idx->index),
+            N<AssignStmt>(N<IdExpr>(var), idx->getIndex()),
             N<ExprStmt>(N<CallExpr>(
-                N<DotExpr>(idx->expr, "__setitem__"), N<IdExpr>(var),
-                N<BinaryExpr>(N<IndexExpr>(clone(idx->expr), N<IdExpr>(var)),
+                N<DotExpr>(idx->getExpr(), "__setitem__"), N<IdExpr>(var),
+                N<BinaryExpr>(N<IndexExpr>(clone(idx->getExpr()), N<IdExpr>(var)),
                               b->getOp(), b->getRhs(), true)))));
       }
     }
-    return transform(N<ExprStmt>(
-        N<CallExpr>(N<DotExpr>(idx->expr, "__setitem__"), idx->index, stmt->rhs)));
+    return transform(N<ExprStmt>(N<CallExpr>(N<DotExpr>(idx->getExpr(), "__setitem__"),
+                                             idx->getIndex(), stmt->getRhs())));
   }
 
-  if (auto dot = cast<DotExpr>(stmt->lhs)) {
+  if (auto dot = cast<DotExpr>(stmt->getLhs())) {
     // Case: a.x = b
     seqassert(!stmt->type, "unexpected type annotation");
-    dot->expr = transform(dot->expr, true);
-    // If we are deducing class members, check if we can deduce a member from this
-    // assignment
-    // todo)) deduction!
-    // auto deduced = ctx->getClassBase() ? ctx->getClassBase()->deducedMembers :
-    // nullptr; if (deduced && dot->expr->isId(ctx->getBase()->selfName) &&
-    //     !in(*deduced, dot->member))
-    //   deduced->push_back(dot->member);
-    return transform(N<AssignMemberStmt>(dot->expr, dot->member, transform(stmt->rhs)));
+    dot->expr = transform(dot->getExpr(), true);
+    return transform(
+        N<AssignMemberStmt>(dot->getExpr(), dot->member, transform(stmt->getRhs())));
   }
 
   // Case: a (: t) = b
-  auto e = cast<IdExpr>(stmt->lhs);
+  auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
-    E(Error::ASSIGN_INVALID, stmt->lhs);
+    E(Error::ASSIGN_INVALID, stmt->getLhs());
 
   auto val = ctx->find(e->getValue());
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
-    if (val) {
-      // commented out: should be handled by namevisitor
-      auto s = N<AssignStmt>(stmt->lhs, stmt->rhs);
-      if (!ctx->getBase()->isType() && ctx->getBase()->func->hasAttribute(Attr::Atomic))
-        s->setAtomicUpdate();
-      else
-        s->setUpdate();
-      if (auto u = transformUpdate(s))
-        return u;
-      return s;
-    } else {
+    if (!val)
       E(Error::ASSIGN_LOCAL_REFERENCE, e, e->getValue(), e->getSrcInfo());
-    }
+
+    auto s = N<AssignStmt>(stmt->getLhs(), stmt->getRhs());
+    if (!ctx->getBase()->isType() && ctx->getBase()->func->hasAttribute(Attr::Atomic))
+      s->setAtomicUpdate();
+    else
+      s->setUpdate();
+    if (auto u = transformUpdate(s))
+      return u;
+    else
+      return s; // delay
   }
 
-  stmt->rhs = transform(stmt->rhs, true);
-  stmt->type = transformType(stmt->type, false);
+  stmt->rhs = transform(stmt->getRhs(), true);
+  stmt->type = transformType(stmt->getTypeExpr(), false);
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->getValue());
-  auto assign = N<AssignStmt>(N<IdExpr>(canonical), stmt->rhs, stmt->type);
-  assign->lhs->cloneAttributesFrom(stmt->lhs);
-
-  if (!stmt->lhs->getType())
-    assign->lhs->setType(ctx->getUnbound(assign->lhs->getSrcInfo()));
-  else
-    assign->lhs->setType(stmt->lhs->getType());
-  if (!stmt->rhs && !stmt->type && ctx->find("NoneType")) {
+  auto assign =
+      N<AssignStmt>(N<IdExpr>(canonical), stmt->getRhs(), stmt->getTypeExpr());
+  assign->getLhs()->cloneAttributesFrom(stmt->getLhs());
+  assign->getLhs()->setType(stmt->getLhs()->getType()
+                                ? stmt->getLhs()->getType()->shared_from_this()
+                                : ctx->getUnbound(assign->getLhs()->getSrcInfo()));
+  if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find("NoneType")) {
     // All declarations that are not handled are to be marked with NoneType later on
-    assign->lhs->getType()->getLink()->defaultType = ctx->getType("NoneType");
-    ctx->getBase()->pendingDefaults.insert(assign->lhs->getType());
+    // (useful for dangling declarations that are not initialized afterwards due to
+    //  static check)
+    assign->getLhs()->getType()->getLink()->defaultType =
+        getStdLibType("NoneType")->shared_from_this();
+    ctx->getBase()->pendingDefaults.insert(
+        assign->getLhs()->getType()->shared_from_this());
   }
-  if (stmt->type) {
-    unify(assign->lhs->getType(),
-          ctx->instantiate(stmt->type->getSrcInfo(), getType(stmt->type)));
+  if (stmt->getTypeExpr()) {
+    unify(assign->getLhs()->getType(),
+          ctx->instantiate(stmt->getTypeExpr()->getSrcInfo(),
+                           extractType(stmt->getTypeExpr())));
   }
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
-                                        assign->lhs->getType(), ctx->getScope());
+                                        assign->getLhs()->getType()->shared_from_this(),
+                                        ctx->getScope());
   val->setSrcInfo(getSrcInfo());
   ctx->add(e->getValue(), val);
   ctx->addAlwaysVisible(val);
 
-  if (assign->rhs) { // not a declaration!
+  if (assign->getRhs()) { // not a declaration!
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-    if (wrapExpr(&assign->rhs, assign->lhs->getType()))
-      unify(assign->lhs->getType(), assign->rhs->getType());
-    // auto type = assign->lhs->getType();
+    if (wrapExpr(&assign->rhs, assign->getLhs()->getType()))
+      unify(assign->getLhs()->getType(), assign->getRhs()->getType());
 
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
     if (!val->isVar()) {
       val->type = val->type->generalize(ctx->typecheckLevel - 1);
-      assign->lhs->setType(val->type);
-      assign->rhs->setType(val->type);
-      // LOG("->gene: {} / {} / {}", val->type, assign->toString(),
-      // val->type->canRealize()); realize(assign->lhs->type);
+      assign->getLhs()->setType(val->type);
+      assign->getRhs()->setType(val->type);
     }
   }
 
-  if ((!assign->rhs || assign->rhs->isDone()) && realize(assign->lhs->getType())) {
-    assign->setDone();
-  } else if (assign->rhs && !val->isVar() && !val->type->hasUnbounds()) {
-    // TODO: this is?!
+  // Mark declarations or generalizedtype/functions as done
+  if (((!assign->getRhs() || assign->getRhs()->isDone()) &&
+       realize(assign->getLhs()->getType())) ||
+      (assign->getRhs() && !val->isVar() && !val->type->hasUnbounds())) {
     assign->setDone();
   }
 
@@ -197,7 +196,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
                   (canonical == VAR_ARGV);
   if (isGlobal && val->isVar())
-    ctx->cache->addGlobal(canonical);
+    registerGlobal(canonical);
 
   return assign;
 }
@@ -206,7 +205,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 /// statements (e.g., `a += b`).
 /// See @c transformInplaceUpdate and @c wrapExpr for details.
 Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
-  stmt->lhs = transform(stmt->lhs);
+  stmt->lhs = transform(stmt->getLhs());
 
   // Check inplace updates
   auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
@@ -220,11 +219,12 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
     return nullptr;
   }
 
-  stmt->rhs = transform(stmt->rhs);
+  stmt->rhs = transform(stmt->getRhs());
+
   // Case: wrap expressions if needed (e.g. floats or optionals)
-  if (wrapExpr(&stmt->rhs, stmt->lhs->getType()))
-    unify(stmt->rhs->getType(), stmt->lhs->getType());
-  if (stmt->rhs->isDone() && realize(stmt->lhs->getType()))
+  if (wrapExpr(&stmt->rhs, stmt->getLhs()->getType()))
+    unify(stmt->getRhs()->getType(), stmt->getLhs()->getType());
+  if (stmt->getRhs()->isDone() && realize(stmt->getLhs()->getType()))
     stmt->setDone();
   return nullptr;
 }
@@ -235,22 +235,24 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
 ///   `opt.foo = bar` -> `unwrap(opt).foo = wrap(bar)`
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
-  stmt->lhs = transform(stmt->lhs);
+  stmt->lhs = transform(stmt->getLhs());
 
-  if (auto lhsClass = getType(stmt->lhs)->getClass()) {
-    auto member = ctx->findMember(lhsClass, stmt->member);
+  if (auto lhsClass = extractClassType(stmt->getLhs())) {
+    auto member = ctx->findMember(lhsClass, stmt->getMember());
     if (!member) {
-      // Case: setters
-      auto setters = ctx->findMethod(lhsClass.get(), format(".set_{}", stmt->member));
+      // Case: property setters
+      auto setters = ctx->findMethod(
+          lhsClass, format("{}{}", FN_SETTER_SUFFIX, stmt->getMember()));
       if (!setters.empty()) {
-        resultStmt = transform(N<ExprStmt>(N<CallExpr>(
-            N<IdExpr>(setters.front()->ast->getName()), stmt->lhs, stmt->rhs)));
+        resultStmt =
+            transform(N<ExprStmt>(N<CallExpr>(N<IdExpr>(setters.front()->getFuncName()),
+                                              stmt->getLhs(), stmt->getRhs())));
         return;
       }
       // Case: class variables
-      if (auto cls = ctx->cache->getClass(lhsClass))
-        if (auto var = in(cls->classVars, stmt->member)) {
-          auto a = N<AssignStmt>(N<IdExpr>(*var), transform(stmt->rhs));
+      if (auto cls = getClass(lhsClass))
+        if (auto var = in(cls->classVars, stmt->getMember())) {
+          auto a = N<AssignStmt>(N<IdExpr>(*var), transform(stmt->getRhs()));
           a->setUpdate();
           resultStmt = transform(a);
           return;
@@ -258,29 +260,30 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     }
     if (!member && lhsClass->is(TYPE_OPTIONAL)) {
       // Unwrap optional and look up there
-      resultStmt = transform(N<AssignMemberStmt>(
-          N<CallExpr>(N<IdExpr>(FN_UNWRAP), stmt->lhs), stmt->member, stmt->rhs));
+      resultStmt = transform(
+          N<AssignMemberStmt>(N<CallExpr>(N<IdExpr>(FN_UNWRAP), stmt->getLhs()),
+                              stmt->getMember(), stmt->getRhs()));
       return;
     }
 
     if (!member)
-      E(Error::DOT_NO_ATTR, stmt->lhs, lhsClass->prettyString(), stmt->member);
-    if (lhsClass->isRecord())
-      E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->lhs);
+      E(Error::DOT_NO_ATTR, stmt->getLhs(), lhsClass->prettyString(),
+        stmt->getMember());
+    if (lhsClass->isRecord()) // prevent tuple member assignment
+      E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->getLhs());
 
-    stmt->rhs = transform(stmt->rhs);
-    auto ftyp = ctx->instantiate(stmt->lhs->getSrcInfo(), member->type, lhsClass);
+    stmt->rhs = transform(stmt->getRhs());
+    auto ftyp =
+        ctx->instantiate(stmt->getLhs()->getSrcInfo(), member->getType(), lhsClass);
     if (!ftyp->canRealize() && member->typeExpr) {
-      ctx->addBlock();
-      addClassGenerics(lhsClass);
-      auto t = ctx->getType(transform(clean_clone(member->typeExpr))->getType());
-      ctx->popBlock();
-      unify(ftyp, t);
+      unify(ftyp.get(), extractType(withClassGenerics(lhsClass, [&]() {
+              return transform(clean_clone(member->typeExpr));
+            })));
     }
-    if (!wrapExpr(&stmt->rhs, ftyp))
+    if (!wrapExpr(&stmt->rhs, ftyp.get()))
       return;
-    unify(stmt->rhs->getType(), ftyp);
-    if (stmt->rhs->isDone())
+    unify(stmt->getRhs()->getType(), ftyp.get());
+    if (stmt->getRhs()->isDone())
       stmt->setDone();
   }
 }
@@ -298,49 +301,50 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
   // Case: in-place updates (e.g., `a += b`).
   // They are stored as `Update(a, Binary(a + b, inPlace=true))`
 
-  auto bin = cast<BinaryExpr>(stmt->rhs);
+  auto bin = cast<BinaryExpr>(stmt->getRhs());
   if (bin && bin->isInPlace()) {
     bin->lexpr = transform(bin->getLhs());
     bin->rexpr = transform(bin->getRhs());
 
-    if (!stmt->rhs->getType())
-      stmt->rhs->setType(ctx->getUnbound());
+    if (!stmt->getRhs()->getType())
+      stmt->getRhs()->setType(ctx->getUnbound());
     if (bin->getLhs()->getClassType() && bin->getRhs()->getClassType()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
-        unify(stmt->rhs->getType(), transformed->getType());
+        unify(stmt->getRhs()->getType(), transformed->getType());
         return {true, transformed};
       } else if (!stmt->isAtomicUpdate()) {
         // If atomic, call normal magic and then use __atomic_xchg__ below
         return {false, nullptr};
       }
-    } else { // Not yet completed
-      unify(stmt->lhs->getType(), unify(stmt->rhs->getType(), ctx->getUnbound()));
+    } else { // Delay
+      unify(stmt->lhs->getType(), unify(stmt->getRhs()->getType(), ctx->getUnbound()));
       return {true, nullptr};
     }
   }
 
   // Case: atomic min/max operations.
   // Note: check only `a = min(a, b)`; does NOT check `a = min(b, a)`
-  auto lhsClass = stmt->lhs->getClassType();
-  auto call = cast<CallExpr>(stmt->rhs);
-  auto lei = cast<IdExpr>(stmt->lhs);
-  auto cei = call ? cast<IdExpr>(call->expr) : nullptr;
+  auto lhsClass = extractClassType(stmt->getLhs());
+  auto call = cast<CallExpr>(stmt->getRhs());
+  auto lei = cast<IdExpr>(stmt->getLhs());
+  auto cei = call ? cast<IdExpr>(call->getExpr()) : nullptr;
   if (stmt->isAtomicUpdate() && call && lei && cei &&
       (cei->getValue() == "min" || cei->getValue() == "max") && call->size() == 2) {
-    (*call)[0].value = transform((*call)[0].value);
-    if (cast<IdExpr>((*call)[0].value) &&
-        cast<IdExpr>((*call)[0].value)->getValue() == lei->getValue()) {
+    call->front().value = transform(call->front());
+    if (cast<IdExpr>(call->front()) &&
+        cast<IdExpr>(call->front())->getValue() == lei->getValue()) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
-      auto ptrTyp = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
-                                            ctx->getType("Ptr"), {lhsClass});
-      (*call)[1].value = transform((*call)[1].value);
-      auto rhsTyp = (*call)[1].value->getType()->getClass();
-      if (auto method = findBestMethod(
-              lhsClass, format("__atomic_{}__", cei->getValue()), {ptrTyp, rhsTyp})) {
+      auto ptrTyp = ctx->instantiateGeneric(stmt->getLhs()->getSrcInfo(),
+                                            getStdLibType("Ptr"), {lhsClass});
+      (*call)[1].value = transform((*call)[1]);
+      auto rhsTyp = extractClassType((*call)[1].value);
+      if (auto method =
+              findBestMethod(lhsClass, format("__atomic_{}__", cei->getValue()),
+                             {ptrTyp.get(), rhsTyp})) {
         return {true,
-                transform(N<CallExpr>(N<IdExpr>(method->ast->name),
-                                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs),
-                                      (*call)[1].value))};
+                transform(N<CallExpr>(N<IdExpr>(method->getFuncName()),
+                                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->getLhs()),
+                                      (*call)[1]))};
       }
     }
   }
@@ -348,14 +352,15 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
   // Case: atomic assignments
   if (stmt->isAtomicUpdate() && lhsClass) {
     // `type(a).__atomic_xchg__(__ptr__(a), b)`
-    stmt->rhs = transform(stmt->rhs);
-    if (auto rhsClass = stmt->rhs->getType()->getClass()) {
-      auto ptrType = ctx->instantiateGeneric(stmt->lhs->getSrcInfo(),
-                                             ctx->getType("Ptr"), {lhsClass});
-      if (auto m = findBestMethod(lhsClass, "__atomic_xchg__", {ptrType, rhsClass})) {
-        return {true,
-                N<CallExpr>(N<IdExpr>(m->ast->name),
-                            N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs), stmt->rhs)};
+    stmt->rhs = transform(stmt->getRhs());
+    if (auto rhsClass = stmt->getRhs()->getClassType()) {
+      auto ptrType = ctx->instantiateGeneric(stmt->getLhs()->getSrcInfo(),
+                                             getStdLibType("Ptr"), {lhsClass});
+      if (auto m =
+              findBestMethod(lhsClass, "__atomic_xchg__", {ptrType.get(), rhsClass})) {
+        return {true, N<CallExpr>(N<IdExpr>(m->getFuncName()),
+                                  N<CallExpr>(N<IdExpr>("__ptr__"), stmt->getLhs()),
+                                  stmt->getRhs())};
       }
     }
   }

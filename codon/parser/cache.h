@@ -115,7 +115,12 @@ struct Cache {
       types::TypePtr type;
       /// Base class name (if available)
       std::string baseClass;
-      Expr *typeExpr = nullptr;
+      Expr *typeExpr;
+
+      ClassField(const std::string &name, const types::TypePtr &type,
+                 const std::string &baseClass, Expr *typeExpr = nullptr)
+          : name(name), type(type), baseClass(baseClass), typeExpr(typeExpr) {}
+      types::Type *getType() const { return type.get(); }
     };
     /// A list of class' ClassField instances. List is needed (instead of map) because
     /// the order of the fields matters.
@@ -127,7 +132,7 @@ struct Cache {
     /// A class realization.
     struct ClassRealization {
       /// Realized class type.
-      types::ClassTypePtr type;
+      std::shared_ptr<types::ClassType> type;
       /// A list of field names and realization's realized field types.
       std::vector<std::pair<std::string, types::TypePtr>> fields;
       /// IR type pointer.
@@ -137,7 +142,7 @@ struct Cache {
       struct VTable {
         // Maps {base, thunk signature} to {thunk realization, thunk ID}
         std::map<std::pair<std::string, std::string>,
-                 std::pair<types::FuncTypePtr, size_t>>
+                 std::pair<std::shared_ptr<types::FuncType>, size_t>>
             table;
         codon::ir::Var *ir = nullptr;
       };
@@ -145,6 +150,8 @@ struct Cache {
       std::unordered_map<std::string, VTable> vtables;
       /// Realization ID
       size_t id = 0;
+
+      types::ClassType *getType() const { return type.get(); }
     };
     /// Realization lookup table that maps a realized class name to the corresponding
     /// ClassRealization instance.
@@ -155,7 +162,7 @@ struct Cache {
     /// List of virtual method names
     std::unordered_set<std::string> virtuals;
     /// MRO
-    std::vector<types::ClassTypePtr> mro;
+    std::vector<std::shared_ptr<types::ClassType>> mro;
 
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
@@ -167,22 +174,25 @@ struct Cache {
   std::unordered_map<std::string, Class> classes;
   size_t classRealizationCnt = 0;
 
-  Class *getClass(const types::ClassTypePtr &t) { return getClass(t.get()); }
   Class *getClass(types::ClassType *);
 
   struct Function {
     /// Module information
     std::string module;
+    std::string rootName;
     /// Generic (unrealized) function template AST.
-    FunctionStmt *ast = nullptr;
+    FunctionStmt *ast;
+    /// Unrealized function type.
+    std::shared_ptr<types::FuncType> type;
+
     /// Non-simplified AST.
     FunctionStmt *origAst = nullptr;
-    std::set<std::string> captures;
+    bool isToplevel = false;
 
     /// A function realization.
     struct FunctionRealization {
       /// Realized function type.
-      types::FuncTypePtr type;
+      std::shared_ptr<types::FuncType> type;
       /// Realized function AST (stored here for later realization in code generations
       /// stage).
       FunctionStmt *ast;
@@ -190,18 +200,16 @@ struct Cache {
       ir::Func *ir;
       /// Resolved captures
       std::vector<std::string> captures;
+
+      types::FuncType *getType() const { return type.get(); }
     };
     /// Realization lookup table that maps a realized function name to the corresponding
     /// FunctionRealization instance.
-    std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations;
+    std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations = {};
+    std::set<std::string> captures = {};
+    std::vector<std::unordered_map<std::string, std::string>> captureMappings = {};
 
-    /// Unrealized function type.
-    types::FuncTypePtr type = nullptr;
-
-    std::string rootName;
-    bool isToplevel = false;
-
-    std::vector<std::unordered_map<std::string, std::string>> captureMappings;
+    types::FuncType *getType() const { return type.get(); }
   };
   /// Function lookup table that maps a canonical function identifier to the
   /// corresponding Function instance.
@@ -263,31 +271,31 @@ public:
   /// Find a class with a given canonical name and return a matching types::Type pointer
   /// or a nullptr if a class is not found.
   /// Returns an _uninstantiated_ type.
-  types::ClassTypePtr findClass(const std::string &name) const;
+  types::ClassType *findClass(const std::string &name) const;
   /// Find a function with a given canonical name and return a matching types::Type
   /// pointer or a nullptr if a function is not found.
   /// Returns an _uninstantiated_ type.
-  types::FuncTypePtr findFunction(const std::string &name) const;
+  types::FuncType *findFunction(const std::string &name) const;
   /// Find the canonical name of a class method.
-  std::string getMethod(const types::ClassTypePtr &typ, const std::string &member);
+  std::string getMethod(types::ClassType *typ, const std::string &member);
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
-  types::FuncTypePtr findMethod(types::ClassType *typ, const std::string &member,
-                                const std::vector<types::TypePtr> &args);
+  types::FuncType *findMethod(types::ClassType *typ, const std::string &member,
+                              const std::vector<types::Type *> &args);
 
   /// Given a class type and the matching generic vector, instantiate the type and
   /// realize it.
-  ir::types::Type *realizeType(types::ClassTypePtr type,
+  ir::types::Type *realizeType(types::ClassType *type,
                                const std::vector<types::TypePtr> &generics = {});
   /// Given a function type and function arguments, instantiate the type and
   /// realize it. The first argument is the function return type.
   /// You can also pass function generics if a function has one (e.g. T in def
   /// foo[T](...)). If a generic is used as an argument, it will be auto-deduced. Pass
   /// only if a generic cannot be deduced from the provided args.
-  ir::Func *realizeFunction(types::FuncTypePtr type,
+  ir::Func *realizeFunction(types::FuncType *type,
                             const std::vector<types::TypePtr> &args,
                             const std::vector<types::TypePtr> &generics = {},
-                            const types::ClassTypePtr &parentClass = nullptr);
+                            types::ClassType *parentClass = nullptr);
 
   ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
   ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
@@ -295,8 +303,8 @@ public:
 
   void parseCode(const std::string &code);
 
-  static std::vector<types::ClassTypePtr>
-  mergeC3(std::vector<std::vector<types::ClassTypePtr>> &);
+  static std::vector<std::shared_ptr<types::ClassType>>
+  mergeC3(std::vector<std::vector<types::TypePtr>> &);
 
   std::shared_ptr<ir::PyModule> pyModule = nullptr;
   void populatePythonModule();
@@ -333,6 +341,15 @@ public:
       t.logged = true;
     }
   };
+
+  template <typename T>
+  std::vector<T *> castVectorPtr(std::vector<std::shared_ptr<T>> v) {
+    std::vector<T *> r;
+    r.reserve(v.size());
+    for (const auto &i : v)
+      r.emplace_back(i.get());
+    return r;
+  }
 };
 
 } // namespace codon::ast

@@ -230,9 +230,8 @@ std::shared_ptr<types::LinkType> TypeContext::getUnbound() const {
   return getUnbound(getSrcInfo(), typecheckLevel);
 }
 
-types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
-                                        const types::TypePtr &type,
-                                        const types::ClassTypePtr &generics) {
+types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo, types::Type *type,
+                                        types::ClassType *generics) {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
@@ -244,7 +243,7 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
     // special case: __SELF__
     if (type->getFunc() && !type->getFunc()->funcGenerics.empty() &&
         type->getFunc()->funcGenerics[0].niceName == "__SELF__") {
-      genericCache[type->getFunc()->funcGenerics[0].id] = generics;
+      genericCache[type->getFunc()->funcGenerics[0].id] = generics->shared_from_this();
     }
   }
   auto t = type->instantiate(typecheckLevel, &(cache->unboundCount), &genericCache);
@@ -285,8 +284,8 @@ types::TypePtr TypeContext::instantiate(const SrcInfo &srcInfo,
 }
 
 types::TypePtr
-TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &root,
-                                const std::vector<types::TypePtr> &generics) {
+TypeContext::instantiateGeneric(const SrcInfo &srcInfo, types::Type *root,
+                                const std::vector<types::Type *> &generics) {
   auto c = root->getClass();
   seqassert(c, "root class is null");
   // dummy generic type
@@ -300,15 +299,16 @@ TypeContext::instantiateGeneric(const SrcInfo &srcInfo, const types::TypePtr &ro
     seqassert(c->generics[i].type, "generic is null");
     if (!c->generics[i].isStatic && t->getStatic())
       t = t->getStatic()->getNonStaticType();
-    g->generics.emplace_back("", "", t, c->generics[i].id, c->generics[i].isStatic);
+    g->generics.emplace_back("", "", t->shared_from_this(), c->generics[i].id,
+                             c->generics[i].isStatic);
   }
-  return instantiate(srcInfo, root, g);
+  return instantiate(srcInfo, root, g.get());
 }
 
-std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
-                                                        const std::string &method,
-                                                        bool hideShadowed) {
-  std::vector<types::FuncTypePtr> vv;
+std::vector<types::FuncType *> TypeContext::findMethod(types::ClassType *type,
+                                                       const std::string &method,
+                                                       bool hideShadowed) {
+  std::vector<types::FuncType *> vv;
   std::unordered_set<std::string> signatureLoci;
 
   auto populate = [&](const auto &cls) {
@@ -325,16 +325,16 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
         auto sig = cache->functions[method].ast->signature();
         if (!in(signatureLoci, sig)) {
           signatureLoci.insert(sig);
-          vv.emplace_back(cache->functions[method].type);
+          vv.emplace_back(cache->functions[method].type.get());
         }
       } else {
-        vv.emplace_back(cache->functions[method].type);
+        vv.emplace_back(cache->functions[method].type.get());
       }
     }
   };
   if (auto cls = cache->getClass(type)) {
     for (const auto &pc : cls->mro) {
-      auto mc = cache->getClass(pc);
+      auto mc = cache->getClass(pc.get());
       seqassert(mc, "class '{}' not found", pc->name);
       populate(*mc);
     }
@@ -342,11 +342,11 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
   return vv;
 }
 
-Cache::Class::ClassField *TypeContext::findMember(const types::ClassTypePtr &type,
+Cache::Class::ClassField *TypeContext::findMember(types::ClassType *type,
                                                   const std::string &member) const {
   if (auto cls = cache->getClass(type)) {
     for (const auto &pc : cls->mro) {
-      auto mc = cache->getClass(pc);
+      auto mc = cache->getClass(pc.get());
       seqassert(mc, "class '{}' not found", pc->name);
       for (auto &mm : mc->fields) {
         if (pc->is(TYPE_TUPLE) && (&mm - &(mc->fields[0])) >= type->generics.size())
@@ -454,10 +454,10 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 5. Fill in the default arguments
   for (auto i = 0; i < func->ast->size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if ((*func->ast)[i].status == Param::Normal &&
-          ((*func->ast)[i].defaultValue || (!known.empty() && known[i])))
+      if ((*func->ast)[i].isValue() &&
+          ((*func->ast)[i].getDefault() || (!known.empty() && known[i])))
         score -= 2;
-      else if (!partial && (*func->ast)[i].status == Param::Normal)
+      else if (!partial && (*func->ast)[i].isValue())
         return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
                        Emsg(Error::CALL_ARGS_MISSING, cache->rev(func->ast->getName()),
                             cache->reverseIdentifierLookup[(*func->ast)[i].name]));
@@ -490,21 +490,7 @@ std::string TypeContext::debugInfo() {
                      getSrcInfo());
 }
 
-std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
-TypeContext::getFunctionArgs(const types::TypePtr &t) {
-  if (!t->getFunc())
-    return nullptr;
-  auto fn = t->getFunc();
-  auto ret = std::make_shared<
-      std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>();
-  for (auto &t : fn->funcGenerics)
-    ret->first.push_back(t.type);
-  for (auto &t : fn->generics[0].type->getClass()->generics)
-    ret->second.push_back(t.type);
-  return ret;
-}
-
-types::FuncTypePtr TypeContext::extractFunction(const types::TypePtr &t) {
+types::FuncType *TypeContext::extractFunction(types::Type *t) {
   if (auto f = t->getFunc())
     return f;
   if (auto p = t->getPartial())
@@ -512,15 +498,18 @@ types::FuncTypePtr TypeContext::extractFunction(const types::TypePtr &t) {
   return nullptr;
 }
 
-types::TypePtr TypeContext::getType(const std::string &s) {
-  auto val = forceFind(s);
-  return s == "type" ? val->type : getType(val->type);
+types::Type *TypeContext::extractType(types::Type *t) {
+  while (t && t->is("type"))
+    t = t->getClass()->generics[0].type.get();
+  return t;
 }
 
-types::TypePtr TypeContext::getType(types::TypePtr t) {
-  while (t && t->is("type"))
-    t = t->getClass()->generics[0].type;
-  return t;
+
+types::Type *TypeContext::getType(const std::string &s) {
+  auto t = forceFind(s)->type.get();
+  if (s == "type")
+    return t;
+  return extractType(t);
 }
 
 } // namespace codon::ast

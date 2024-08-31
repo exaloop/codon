@@ -218,7 +218,7 @@ public:
       transform(e);
   }
   void visit(StmtExpr *expr) override {
-    for (auto &s : expr->stmts)
+    for (auto &s : expr->items)
       transform(s);
     transform(expr->expr);
   }
@@ -410,7 +410,7 @@ public:
       e = transform(e);
   }
   void visit(StmtExpr *expr) override {
-    for (auto &s : expr->stmts)
+    for (auto &s : expr->items)
       s = transform(s);
     expr->expr = transform(expr->expr);
   }

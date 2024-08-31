@@ -13,8 +13,8 @@ ClassType::ClassType(Cache *cache, std::string name, std::string niceName,
                      std::vector<Generic> generics, std::vector<Generic> hiddenGenerics)
     : Type(cache), name(std::move(name)), niceName(std::move(niceName)),
       generics(std::move(generics)), hiddenGenerics(std::move(hiddenGenerics)) {}
-ClassType::ClassType(const ClassTypePtr &base)
-    : Type(base), name(base->name), niceName(base->niceName), generics(base->generics),
+ClassType::ClassType(ClassType *base)
+    : Type(*base), name(base->name), niceName(base->niceName), generics(base->generics),
       hiddenGenerics(base->hiddenGenerics), isTuple(base->isTuple) {}
 
 int ClassType::unify(Type *typ, Unification *us) {
@@ -90,8 +90,8 @@ bool ClassType::hasUnbounds(bool includeGenerics) const {
   return false;
 }
 
-std::vector<TypePtr> ClassType::getUnbounds() const {
-  std::vector<TypePtr> u;
+std::vector<Type *> ClassType::getUnbounds() const {
+  std::vector<Type *> u;
   for (auto &t : generics)
     if (t.type) {
       auto tu = t.type->getUnbounds();
@@ -127,7 +127,7 @@ bool ClassType::isInstantiated() const {
                      [](auto &t) { return !t.type || t.type->isInstantiated(); });
 }
 
-std::shared_ptr<ClassType> ClassType::getHeterogenousTuple() {
+ClassType *ClassType::getHeterogenousTuple() {
   seqassert(canRealize(), "{} not realizable", toString());
   seqassert(name == TYPE_TUPLE, "{} not a tuple", toString());
   if (generics.size() > 1) {
@@ -145,7 +145,7 @@ std::string ClassType::debugString(char mode) const {
     auto known = getPartialMask();
     auto func = getPartialFunc();
     for (int i = 0, gi = 0; i < known.size(); i++) {
-      if ((*func->ast)[i].status == Param::Normal)
+      if ((*func->ast)[i].isValue())
         as.emplace_back(
             known[i]
                 ? generics[1].type->getClass()->generics[gi++].type->debugString(mode)
@@ -207,7 +207,7 @@ std::string ClassType::realizedName() const {
   return s;
 }
 
-std::shared_ptr<FuncType> ClassType::getPartialFunc() const {
+FuncType *ClassType::getPartialFunc() const {
   seqassert(name == "Partial", "not a partial");
   auto n = generics[3].type->getClass()->generics[0].type;
   seqassert(n->getFunc(), "not a partial func");

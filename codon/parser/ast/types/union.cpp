@@ -36,7 +36,7 @@ int UnionType::unify(Type *typ, Unification *us) {
     } else if (!tr->isSealed()) {
       if (tr->pendingTypes[0]->getLink() &&
           tr->pendingTypes[0]->getLink()->kind == LinkType::Unbound)
-        return ClassType::unify(tr.get(), us);
+        return ClassType::unify(tr, us);
       return -1;
     }
     // Do not hard-unify if we have unbounds
@@ -49,7 +49,7 @@ int UnionType::unify(Type *typ, Unification *us) {
       return -1;
     int s1 = 2, s = 0;
     for (size_t i = 0; i < u1.size(); i++) {
-      if ((s = u1[i]->unify(u2[i].get(), us)) == -1)
+      if ((s = u1[i]->unify(u2[i], us)) == -1)
         return -1;
       s1 += s;
     }
@@ -101,20 +101,20 @@ std::string UnionType::realizedName() const {
   return ClassType::realizedName();
 }
 
-void UnionType::addType(const TypePtr &typ) {
+void UnionType::addType(Type *typ) {
   seqassert(!isSealed(), "union already sealed");
-  if (this == typ.get())
+  if (this == typ)
     return;
   if (auto tu = typ->getUnion()) {
     if (tu->isSealed()) {
       for (auto &t : tu->generics[0].type->getClass()->generics)
-        addType(t.type);
+        addType(t.type.get());
     } else {
       for (auto &t : tu->pendingTypes) {
         if (t->getLink() && t->getLink()->kind == LinkType::Unbound)
           break;
         else
-          addType(t);
+          addType(t.get());
       }
     }
   } else {
@@ -123,7 +123,7 @@ void UnionType::addType(const TypePtr &typ) {
     for (auto &t : pendingTypes)
       if (auto l = t->getLink()) {
         if (l->kind == LinkType::Unbound) {
-          t->unify(typ.get(), &us);
+          t->unify(typ, &us);
           return;
         }
       }
@@ -142,19 +142,21 @@ void UnionType::seal() {
     if (pendingTypes[i]->getLink() &&
         pendingTypes[i]->getLink()->kind == LinkType::Unbound)
       break;
-  std::vector<TypePtr> typeSet(pendingTypes.begin(), pendingTypes.begin() + i);
+  std::vector<Type *> typeSet;
+  for (size_t j = 0; j < i; j++)
+    typeSet.push_back(pendingTypes[j].get());
   auto t =
       cache->typeCtx->instantiateGeneric(tv.generateTuple(typeSet.size()), typeSet);
   Unification us;
   generics[0].type->unify(t.get(), &us);
 }
 
-std::vector<types::TypePtr> UnionType::getRealizationTypes() {
+std::vector<Type *> UnionType::getRealizationTypes() {
   seqassert(canRealize(), "cannot realize {}", debugString(1));
-  std::map<std::string, types::TypePtr> unionTypes;
+  std::map<std::string, Type *> unionTypes;
   for (auto &u : generics[0].type->getClass()->generics)
-    unionTypes[u.type->realizedName()] = u.type;
-  std::vector<types::TypePtr> r;
+    unionTypes[u.type->realizedName()] = u.type.get();
+  std::vector<Type *> r;
   r.reserve(unionTypes.size());
   for (auto &[_, t] : unionTypes)
     r.emplace_back(t);

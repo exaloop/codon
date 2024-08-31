@@ -29,7 +29,9 @@ bool StaticType::isInstantiated() const { return true; }
 
 std::string StaticType::realizedName() const { return debugString(0); }
 
-TypePtr StaticType::getNonStaticType() const { return cache->typeCtx->getType(name); }
+Type *StaticType::getNonStaticType() const {
+  return cache->typeCtx->getType(name);
+}
 
 /*****************************************************************/
 
@@ -40,7 +42,7 @@ int IntStaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getIntStatic()) {
     return value == t->value ? 1 : -1;
   } else if (auto c = typ->getClass()) {
-    return ClassType::unify(c.get(), us);
+    return ClassType::unify(c, us);
   } else if (auto tl = typ->getLink()) {
     return tl->unify(this, us);
   } else {
@@ -63,7 +65,7 @@ int StrStaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getStrStatic()) {
     return value == t->value ? 1 : -1;
   } else if (auto c = typ->getClass()) {
-    return ClassType::unify(c.get(), us);
+    return ClassType::unify(c, us);
   } else if (auto tl = typ->getLink()) {
     return tl->unify(this, us);
   } else {
@@ -72,7 +74,8 @@ int StrStaticType::unify(Type *typ, Unification *us) {
 }
 
 std::string StrStaticType::debugString(char mode) const {
-  return mode == 0 ? fmt::format("'{}'", escape(value)) : fmt::format("Static['{}']", escape(value));
+  return mode == 0 ? fmt::format("'{}'", escape(value))
+                   : fmt::format("Static['{}']", escape(value));
 }
 
 Expr *StrStaticType::getStaticExpr() const { return cache->N<StringExpr>(value); }
@@ -86,7 +89,7 @@ int BoolStaticType::unify(Type *typ, Unification *us) {
   if (auto t = typ->getBoolStatic()) {
     return value == t->value ? 1 : -1;
   } else if (auto c = typ->getClass()) {
-    return ClassType::unify(c.get(), us);
+    return ClassType::unify(c, us);
   } else if (auto tl = typ->getLink()) {
     return tl->unify(this, us);
   } else {

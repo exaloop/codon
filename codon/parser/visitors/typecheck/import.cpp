@@ -30,12 +30,12 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
     return;
 
   // Fetch the import
-  auto components = getImportPath(stmt->from, stmt->dots);
+  auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
-  auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
-                            ctx->cache->module0, ctx->cache->pluginImportPaths);
+  auto file = getImportFile(getArgv(), path, ctx->getFilename(), false,
+                            getRootModulePath(), getPluginImportPaths());
   if (!file) {
-    std::string s(stmt->dots, '.');
+    std::string s(stmt->getDots(), '.');
     for (auto &c : components) {
       if (c == "..") {
         continue;
@@ -45,15 +45,15 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         s += c;
       }
     }
-    E(Error::IMPORT_NO_MODULE, stmt->from, s);
+    E(Error::IMPORT_NO_MODULE, stmt->getFrom(), s);
   }
 
   // If the file has not been seen before, load it into cache
-  if (ctx->cache->imports.find(file->path) == ctx->cache->imports.end())
+  if (!in(ctx->cache->imports, file->path))
     resultStmt = transformNewImport(*file);
 
-  const auto &import = ctx->cache->imports[file->path];
-  std::string importVar = import.importVar;
+  const auto &import = getImport(file->path);
+  std::string importVar = import->importVar;
   std::string importDoneVar = importVar + "_done";
 
   // Construct `if _import_done.__invert__(): (_import(); _import_done = True)`.
@@ -69,9 +69,9 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   }
 
   // Import requested identifiers from the import's scope to the current scope
-  if (!stmt->what) {
+  if (!stmt->getWhat()) {
     // Case: import foo
-    auto name = stmt->as.empty() ? path : stmt->as;
+    auto name = stmt->as.empty() ? path : stmt->getAs();
     // Construct `import_var = Import([path], [module])` (for printing imports etc.)
     resultStmt = N<SuiteStmt>(
         resultStmt,
@@ -79,35 +79,34 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
             N<IdExpr>(name),
             N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
                         N<StringExpr>(file->module), N<StringExpr>(file->path)))));
-  } else if (cast<IdExpr>(stmt->what) && cast<IdExpr>(stmt->what)->getValue() == "*") {
+  } else if (cast<IdExpr>(stmt->getWhat()) &&
+             cast<IdExpr>(stmt->getWhat())->getValue() == "*") {
     // Case: from foo import *
-    seqassert(stmt->as.empty(), "renamed star-import");
+    seqassert(stmt->getAs().empty(), "renamed star-import");
     // Just copy all symbols from import's context here.
-    for (auto &i : *(import.ctx)) {
-      if ((!startswith(i.first, "_") ||
-           (ctx->isStdlibLoading && startswith(i.first, "__")))) {
+    for (auto &[i, ival] : *(import->ctx)) {
+      if ((!startswith(i, "_") || (ctx->isStdlibLoading && startswith(i, "__")))) {
         // Ignore all identifiers that start with `_` but not those that start with
         // `__` while the standard library is being loaded
-        auto c = i.second.front();
-        if (c->isConditional() && i.first.find('.') == std::string::npos) {
-          c = import.ctx->find(i.first);
-        }
+        auto c = ival.front();
+        if (c->isConditional() && i.find('.') == std::string::npos)
+          c = import->ctx->find(i);
         // Imports should ignore noShadow property
-        ctx->add(i.first, c);
+        ctx->add(i, c);
       }
     }
   } else {
     // Case 3: from foo import bar
-    auto i = cast<IdExpr>(stmt->what);
+    auto i = cast<IdExpr>(stmt->getWhat());
     seqassert(i, "not a valid import what expression");
-    auto c = import.ctx->find(i->getValue());
+    auto c = import->ctx->find(i->getValue());
     // Make sure that we are importing an existing global symbol
     if (!c)
       E(Error::IMPORT_NO_NAME, i, i->getValue(), file->module);
     if (c->isConditional())
-      c = import.ctx->find(i->getValue());
+      c = import->ctx->find(i->getValue());
     // Imports should ignore noShadow property
-    ctx->add(stmt->as.empty() ? i->getValue() : stmt->as, c);
+    ctx->add(stmt->getAs().empty() ? i->getValue() : stmt->getAs(), c);
   }
   resultStmt = transform(!resultStmt ? N<SuiteStmt>() : resultStmt); // erase it
 }
@@ -115,23 +114,27 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 /// Transform special `from C` and `from python` imports.
 /// See @c transformCImport, @c transformCDLLImport and @c transformPythonImport
 Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
-  if (auto fi = cast<IdExpr>(stmt->from)) {
+  if (auto fi = cast<IdExpr>(stmt->getFrom())) {
     if (fi->getValue() == "C") {
-      auto wi = cast<IdExpr>(stmt->what);
-      if (wi && stmt->isFunction) {
+      auto wi = cast<IdExpr>(stmt->getWhat());
+      if (wi && !stmt->isCVar()) {
         // C function imports
-        return transformCImport(wi->getValue(), stmt->args, stmt->ret, stmt->as);
+        return transformCImport(wi->getValue(), stmt->getArgs(), stmt->getReturnType(),
+                                stmt->getAs());
       } else if (wi) {
         // C variable imports
-        return transformCVarImport(wi->getValue(), stmt->ret, stmt->as);
-      } else if (auto de = cast<DotExpr>(stmt->what)) {
+        return transformCVarImport(wi->getValue(), stmt->getReturnType(),
+                                   stmt->getAs());
+      } else if (auto de = cast<DotExpr>(stmt->getWhat())) {
         // dylib C imports
-        return transformCDLLImport(de->expr, de->member, stmt->args, stmt->ret,
-                                   stmt->as, stmt->isFunction);
+        return transformCDLLImport(de->getExpr(), de->getMember(), stmt->getArgs(),
+                                   stmt->getReturnType(), stmt->getAs(),
+                                   !stmt->isCVar());
       }
-    } else if (fi->getValue() == "python" && stmt->what) {
+    } else if (fi->getValue() == "python" && stmt->getWhat()) {
       // Python imports
-      return transformPythonImport(stmt->what, stmt->args, stmt->ret, stmt->as);
+      return transformPythonImport(stmt->getWhat(), stmt->getArgs(),
+                                   stmt->getReturnType(), stmt->getAs());
     }
   }
   return nullptr;
@@ -142,10 +145,10 @@ Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
 std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from, size_t dots) {
   std::vector<std::string> components; // Path components
   if (from) {
-    for (; cast<DotExpr>(from); from = cast<DotExpr>(from)->expr)
-      components.push_back(cast<DotExpr>(from)->member);
+    for (; cast<DotExpr>(from); from = cast<DotExpr>(from)->getExpr())
+      components.push_back(cast<DotExpr>(from)->getMember());
     seqassert(cast<IdExpr>(from), "invalid import statement");
-    components.push_back(cast<IdExpr>(from)->value);
+    components.push_back(cast<IdExpr>(from)->getValue());
   }
 
   // Handle dots (i.e., `..` in `from ..m import x`)
@@ -169,16 +172,17 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
   std::vector<Param> fnArgs;
   bool hasVarArgs = false;
   for (size_t ai = 0; ai < args.size(); ai++) {
-    seqassert(args[ai].name.empty(), "unexpected argument name");
-    seqassert(!args[ai].defaultValue, "unexpected default argument");
-    seqassert(args[ai].type, "missing type");
-    if (cast<EllipsisExpr>(args[ai].type) && ai + 1 == args.size()) {
+    seqassert(args[ai].getName().empty(), "unexpected argument name");
+    seqassert(!args[ai].getDefault(), "unexpected default argument");
+    seqassert(args[ai].getType(), "missing type");
+    if (cast<EllipsisExpr>(args[ai].getType()) && ai + 1 == args.size()) {
       // C VAR_ARGS support
       hasVarArgs = true;
       fnArgs.emplace_back("*args", nullptr, nullptr);
     } else {
-      fnArgs.emplace_back(args[ai].name.empty() ? format("a{}", ai) : args[ai].name,
-                          clone(args[ai].type), nullptr);
+      fnArgs.emplace_back(args[ai].getName().empty() ? format("a{}", ai)
+                                                     : args[ai].getName(),
+                          clone(args[ai].getType()), nullptr);
     }
   }
   ctx->generateCanonicalName(name); // avoid canonicalName == name
@@ -205,8 +209,9 @@ Stmt *TypecheckVisitor::transformCVarImport(const std::string &name, Expr *type,
                                             const std::string &altName) {
   auto canonical = ctx->generateCanonicalName(name);
   auto typ = transformType(clone(type));
-  auto val = ctx->addVar(altName.empty() ? name : altName, canonical,
-                         std::make_shared<types::LinkType>(getType(typ)->getClass()));
+  auto val = ctx->addVar(
+      altName.empty() ? name : altName, canonical,
+      std::make_shared<types::LinkType>(extractClassType(typ)->shared_from_this()));
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttribute(Attr::ExprExternVar);
   s->lhs->setType(val->type);
@@ -228,12 +233,11 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
   if (isFunction) {
     std::vector<Expr *> fnArgs{N<ListExpr>(), ret ? clone(ret) : N<IdExpr>("NoneType")};
     for (const auto &a : args) {
-      seqassert(a.name.empty(), "unexpected argument name");
-      seqassert(!a.defaultValue, "unexpected default argument");
-      seqassert(a.type, "missing type");
-      cast<ListExpr>(fnArgs[0])->items.emplace_back(clone(a.type));
+      seqassert(a.getName().empty(), "unexpected argument name");
+      seqassert(!a.getDefault(), "unexpected default argument");
+      seqassert(a.getType(), "missing type");
+      cast<ListExpr>(fnArgs[0])->items.emplace_back(clone(a.getType()));
     }
-
     type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
   } else {
     type = clone(ret);
@@ -243,9 +247,8 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
-                  std::vector<CallArg>{CallArg(c),
-                                             CallArg(N<StringExpr>(name)),
-                                             {"Fn", type}})));
+                  std::vector<CallArg>{
+                      CallArg(c), CallArg(N<StringExpr>(name)), {"Fn", type}})));
 }
 
 /// Transform a Python module and function imports.
@@ -289,7 +292,7 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
   std::vector<Param> params;
   std::vector<Expr *> callArgs;
   for (int i = 0; i < args.size(); i++) {
-    params.emplace_back(format("a{}", i), clone(args[i].type), nullptr);
+    params.emplace_back(format("a{}", i), clone(args[i].getType()), nullptr);
     callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
@@ -347,17 +350,18 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     auto moduleID = file.module;
     std::replace(moduleID.begin(), moduleID.end(), '.', '_');
     std::string importVar = import->second.importVar =
-        ctx->cache->getTemporaryVar(format("import_{}", moduleID));
+        getTemporaryVar(format("import_{}", moduleID));
     std::string importDoneVar;
 
     // `import_[I]_done = False` (set to True upon successful import)
     auto a = N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
                            N<BoolExpr>(false));
-    a->lhs->setType(ctx->getType("bool"));
-    a->rhs->setType(ctx->getType("bool"));
+    a->getLhs()->setType(getStdLibType("bool")->shared_from_this());
+    a->getRhs()->setType(getStdLibType("bool")->shared_from_this());
     a->setDone();
     preamble->push_back(a);
-    auto i = ctx->addVar(importDoneVar, importDoneVar, a->lhs->getType());
+    auto i = ctx->addVar(importDoneVar, importDoneVar,
+                         a->getLhs()->getType()->shared_from_this());
     i->baseName = "";
     i->scope = {0};
     ctx->addAlwaysVisible(i);
@@ -370,7 +374,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     Stmt *fn =
         N<FunctionStmt>(importVar, N<IdExpr>("NoneType"), std::vector<Param>{}, suite);
     fn = tv.transform(fn);
-    tv.realize(ictx->forceFind(importVar)->type);
+    tv.realize(ictx->forceFind(importVar)->getType());
     preamble->push_back(fn);
     // LOG_USER("[import] done importing {}", file.module);
   }

@@ -66,7 +66,7 @@ public:
   void visit(CommentStmt *) override {}
 
 private:
-  ir::types::Type *getType(const types::TypePtr &t);
+  ir::types::Type *getType(types::Type *t);
 
   void transformFunctionRealizations(const std::string &name, bool isLLVM);
   void transformFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);

@@ -141,6 +141,7 @@ set(CODON_HPPFILES
   codon/dsl/dsl.h
   codon/dsl/plugins.h
   codon/parser/ast.h
+  codon/parser/match.h
   codon/parser/ast/node.h
   codon/parser/ast/expr.h
   codon/parser/ast/stmt.h
@@ -245,6 +246,7 @@ set(CODON_CPPFILES
   codon/parser/ast/types/static.cpp
   codon/parser/ast/types/traits.cpp
   codon/parser/cache.cpp
+  codon/parser/match.cpp
   codon/parser/common.cpp
   codon/parser/peg/peg.cpp
   codon/parser/visitors/doc/doc.cpp

@@ -464,7 +464,7 @@ void FunctionStmt::validate() const {
     if (in(seenArgs, n))
       E(Error::FN_ARG_TWICE, a, n);
     seenArgs.insert(n);
-    if (!a.defaultValue && defaultsStarted && !stars && a.status == Param::Normal)
+    if (!a.defaultValue && defaultsStarted && !stars && a.isValue())
       E(Error::FN_DEFAULT, a, n);
     defaultsStarted |= bool(a.defaultValue);
     if (hasAttribute(Attr::C)) {

@@ -7,6 +7,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
+#include "codon/parser/match.h"
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -17,11 +18,12 @@ using namespace codon::error;
 namespace codon::ast {
 
 using namespace types;
+using namespace matcher;
 
 /// Parse a class (type) declaration and add a (generic) type to the context.
 void TypecheckVisitor::visit(ClassStmt *stmt) {
   // Get root name
-  std::string name = stmt->name;
+  std::string name = stmt->getName();
 
   // Generate/find class' canonical name (unique ID) and AST
   std::string canonicalName;
@@ -31,33 +33,30 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   auto classItem = std::make_shared<TypecheckItem>("", "", ctx->getModule(), nullptr,
                                                    ctx->getScope());
   classItem->setSrcInfo(stmt->getSrcInfo());
-  types::ClassTypePtr typ = nullptr;
+  types::ClassType *typ = nullptr;
   if (!stmt->hasAttribute(Attr::Extend)) {
     classItem->canonicalName = canonicalName =
         ctx->generateCanonicalName(name, !stmt->hasAttribute(Attr::Internal),
                                    /* noSuffix*/ stmt->hasAttribute(Attr::Internal));
 
     if (canonicalName == "Union")
-      typ = std::make_shared<types::UnionType>(ctx->cache);
+      classItem->type = std::make_shared<types::UnionType>(ctx->cache);
     else
-      typ = std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
+      classItem->type =
+          std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
     if (stmt->isRecord())
-      typ->isTuple = true;
-    // if (stmt->isRecord() && stmt->hasAttribute("__notuple__"))
-    //   typ->noTupleUnify = true;
-    typ->setSrcInfo(stmt->getSrcInfo());
+      classItem->type->getClass()->isTuple = true;
+    classItem->type->setSrcInfo(stmt->getSrcInfo());
 
-    classItem->type = typ;
+    typ = classItem->getType()->getClass();
     if (canonicalName != "type")
-      classItem->type = ctx->instantiateGeneric(ctx->getType("type"), {typ});
+      classItem->type =
+          ctx->instantiateGeneric(getStdLibType("type"), {classItem->getType()});
 
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
     // recursive record types (note: these are allowed for reference types)
     if (!stmt->hasAttribute(Attr::Tuple)) {
-      // auto v = ctx->find(name);
-      // if (v && !v->canShadow)
-      //   E(Error::ID_INVALID_BIND, getSrcInfo(), name);
       ctx->add(name, classItem);
       ctx->addAlwaysVisible(classItem);
     }
@@ -68,15 +67,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     auto val = ctx->find(name);
     if (!val || !val->isType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
-    canonicalName = val->canonicalName;
-    typ = ctx->getType(canonicalName)->getClass();
-    const auto &astIter = ctx->cache->classes.find(canonicalName);
-    if (astIter == ctx->cache->classes.end()) {
-      E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
-    } else {
-      argsToParse = astIter->second.ast->items;
-    }
+    typ = ctx->getType(val->getName())->getClass();
+    canonicalName = typ->name;
+    argsToParse = getClass(typ)->ast->items;
   }
+  auto &cls = ctx->cache->classes[canonicalName];
 
   std::vector<Stmt *> clsStmts; // Will be filled later!
   std::vector<Stmt *> varStmts; // Will be filled later!
@@ -85,90 +80,88 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   try {
     // Add the class base
     TypeContext::BaseGuard br(ctx.get(), canonicalName);
-    ctx->getBase()->type = typ;
+    ctx->getBase()->type = typ->shared_from_this();
 
     // Parse and add class generics
     std::vector<Param> args;
-    std::pair<Stmt *, FunctionStmt *> autoDeducedInit{nullptr, nullptr};
     if (stmt->hasAttribute("deduce") && args.empty()) {
-      // todo)) do this
-      // Auto-detect generics and fields
-      // autoDeducedInit = autoDeduceMembers(stmt, args);
+      E(Error::CUSTOM, stmt, "not yet implemented");
     } else if (stmt->hasAttribute(Attr::Extend)) {
       for (auto &a : argsToParse) {
-        if (a.status != Param::Generic)
+        if (!a.isGeneric())
           continue;
         auto val = ctx->forceFind(a.name);
         val->type->getLink()->kind = LinkType::Unbound;
-        ctx->add(ctx->cache->rev(val->canonicalName), val);
+        ctx->add(getUnmangledName(val->canonicalName), val);
         args.emplace_back(val->canonicalName, nullptr, nullptr, a.status);
       }
     } else {
       // Add all generics before parent classes, fields and methods
       for (auto &a : argsToParse) {
-        if (a.status != Param::Generic)
+        if (!a.isGeneric())
           continue;
 
-        auto varName = ctx->generateCanonicalName(a.name), genName = a.name;
+        auto varName = ctx->generateCanonicalName(a.getName()), genName = a.getName();
         auto generic = ctx->getUnbound();
         auto typId = generic->id;
         generic->getLink()->genericName = genName;
-        if (a.defaultValue) {
-          auto defType = transformType(clone(a.defaultValue));
-          generic->defaultType = getType(defType);
-        }
-        if (auto st = getStaticGeneric(a.type)) {
+        auto defType = transformType(clone(a.getDefault()));
+        if (defType)
+          generic->defaultType = extractType(defType)->shared_from_this();
+        if (auto st = getStaticGeneric(a.getType())) {
           if (st > 3)
-            a.type = transform(a.type); // error check
+            a.type = transform(a.getType()); // error check
           generic->isStatic = st;
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
         } else {
-          if (cast<IndexExpr>(a.type)) { // Parse TraitVar
-            a.type = transform(a.type);
-            auto ti = cast<InstantiateExpr>(a.type);
+          if (cast<IndexExpr>(a.getType())) { // Parse TraitVar
+            a.type = transform(a.getType());
+            auto ti = cast<InstantiateExpr>(a.getType());
             seqassert(ti && isId(ti->getExpr(), TYPE_TYPEVAR),
-                      "not a TypeVar instantiation: {}", *(a.type));
-            auto l = getType((*ti)[0]);
+                      "not a TypeVar instantiation: {}", *(a.getType()));
+            auto l = extractType(ti->front());
             if (l->getLink() && l->getLink()->trait)
               generic->getLink()->trait = l->getLink()->trait;
             else
-              generic->getLink()->trait = std::make_shared<types::TypeTrait>(l);
+              generic->getLink()->trait =
+                  std::make_shared<types::TypeTrait>(l->shared_from_this());
           }
           ctx->addType(genName, varName, generic)->generic = true;
         }
         ClassType::Generic g(varName, genName, generic->generalize(ctx->typecheckLevel),
                              typId, generic->isStatic);
-
-        if (a.status == Param::Generic) {
+        if (a.isGeneric()) {
           typ->generics.push_back(g);
         } else {
           typ->hiddenGenerics.push_back(g);
         }
-        args.emplace_back(varName, a.type, transformType(clone(a.defaultValue), false),
-                          a.status);
+        args.emplace_back(varName, a.getType(), defType, a.status);
       }
     }
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-    Expr *typeAst = N<IdExpr>(name);
-    Expr *transformedTypeAst = N<IdExpr>(canonicalName);
-    for (auto &a : args) {
-      if (a.status == Param::Generic) {
-        if (!cast<IndexExpr>(typeAst)) {
-          typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
-          transformedTypeAst =
-              N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<Expr *>{});
+    Expr *typeAst = nullptr, *transformedTypeAst = nullptr;
+    if (!stmt->hasAttribute(Attr::Extend)) {
+      typeAst = N<IdExpr>(name);
+      transformedTypeAst = N<IdExpr>(canonicalName);
+      for (auto &a : args) {
+        if (a.isGeneric()) {
+          if (!cast<IndexExpr>(typeAst)) {
+            typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
+            transformedTypeAst =
+                N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<Expr *>{});
+          }
+          cast<TupleExpr>(cast<IndexExpr>(typeAst)->getIndex())
+              ->items.push_back(N<IdExpr>(a.getName()));
+          cast<InstantiateExpr>(transformedTypeAst)
+              ->items.push_back(transform(N<IdExpr>(a.getName()), true));
         }
-        cast<TupleExpr>(cast<IndexExpr>(typeAst)->index)
-            ->items.push_back(N<IdExpr>(a.name));
-        cast<InstantiateExpr>(transformedTypeAst)
-            ->items.push_back(transform(N<IdExpr>(a.name), true));
       }
     }
 
     // Collect classes (and their fields) that are to be statically inherited
-    std::vector<types::ClassTypePtr> staticBaseASTs;
+    std::vector<TypePtr> staticBaseASTs;
     if (!stmt->hasAttribute(Attr::Extend)) {
       staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt,
                                         canonicalName, nullptr, typ);
@@ -185,33 +178,27 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Collect class fields
     for (auto &a : argsToParse) {
-      if (a.status == Param::Normal) {
+      if (a.isValue()) {
         if (ClassStmt::isClassVar(a)) {
           // Handle class variables. Transform them later to allow self-references
-          auto name = format("{}.{}", canonicalName, a.name);
-
+          auto name = format("{}.{}", canonicalName, a.getName());
           auto h = transform(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
           preamble->push_back(h);
           auto val = ctx->forceFind(name);
           val->baseName = "";
           val->scope = {0};
-          ctx->cache->addGlobal(val->canonicalName);
-          auto assign =
-              N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
-                            a.type ? cast<IndexExpr>(a.type)->getIndex() : nullptr);
+          registerGlobal(val->canonicalName);
+          auto assign = N<AssignStmt>(
+              N<IdExpr>(name), a.getDefault(),
+              a.getType() ? cast<IndexExpr>(a.getType())->getIndex() : nullptr);
           assign->setUpdate();
           varStmts.push_back(assign);
-          ctx->cache->classes[canonicalName].classVars[a.name] = name;
+          cls.classVars[a.getName()] = name;
         } else if (!stmt->hasAttribute(Attr::Extend)) {
-          std::string varName = a.name;
-          // stmt->hasAttribute(Attr::Extend)
-          //                           ? a.name
-          //                           : ctx->generateCanonicalName(a.name);
-          args.emplace_back(varName, transformType(clean_clone(a.type)),
-                            transform(clone(a.defaultValue), true));
-          ctx->cache->classes[canonicalName].fields.emplace_back(
-              Cache::Class::ClassField{varName, types::TypePtr(nullptr),
-                                       canonicalName});
+          std::string varName = a.getName();
+          args.emplace_back(varName, transformType(clean_clone(a.getType())),
+                            transform(clone(a.getDefault()), true));
+          cls.fields.emplace_back(varName, nullptr, canonicalName);
         }
       }
     }
@@ -219,15 +206,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // ASTs for member arguments to be used for populating magic methods
     std::vector<Param> memberArgs;
     for (auto &a : args) {
-      if (a.status == Param::Normal) {
-        memberArgs.push_back(clone(a));
-      }
+      if (a.isValue())
+        memberArgs.emplace_back(clone(a));
     }
 
     // Handle class members
     if (!stmt->hasAttribute(Attr::Extend)) {
       ctx->typecheckLevel++; // to avoid unifying generics early
-      auto &fields = ctx->cache->classes[canonicalName].fields;
       if (canonicalName == TYPE_TUPLE) {
         // Special tuple handling!
         const int MAX_TUPLE = 2048;
@@ -237,17 +222,16 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           auto generic = ctx->getUnbound();
           generic->getLink()->genericName = genName;
           Expr *te = N<IdExpr>(genCanName);
-          fields.emplace_back(Cache::Class::ClassField{
-              fmt::format("item{}", aj + 1), generic->generalize(ctx->typecheckLevel),
-              "", te});
+          cls.fields.emplace_back(fmt::format("item{}", aj + 1),
+                                  generic->generalize(ctx->typecheckLevel), "", te);
         }
       } else {
         for (auto ai = 0, aj = 0; ai < args.size(); ai++) {
-          if (args[ai].status == Param::Normal && !ClassStmt::isClassVar(args[ai])) {
-            fields[aj].typeExpr = clean_clone(args[ai].type);
-            fields[aj].type =
-                getType(args[ai].type)->generalize(ctx->typecheckLevel - 1);
-            fields[aj].type->setSrcInfo(args[ai].type->getSrcInfo());
+          if (args[ai].isValue() && !ClassStmt::isClassVar(args[ai])) {
+            cls.fields[aj].typeExpr = clean_clone(args[ai].getType());
+            cls.fields[aj].type =
+                extractType(args[ai].getType())->generalize(ctx->typecheckLevel - 1);
+            cls.fields[aj].type->setSrcInfo(args[ai].getType()->getSrcInfo());
             aj++;
           }
         }
@@ -259,11 +243,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (!stmt->hasAttribute(Attr::Extend)) {
       // Now that we are done with arguments, add record type to the context
       if (stmt->hasAttribute(Attr::Tuple)) {
-        // Ensure that class binding does not shadow anything.
-        // Class bindings cannot be dominated either
-        // auto v = ctx->find(name);
-        // if (v && !v->canShadow)
-        //   E(Error::CLASS_INVALID_BIND, stmt, name);
         ctx->add(name, classItem);
         ctx->addAlwaysVisible(classItem);
       }
@@ -271,14 +250,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       stmt->setAttribute(Attr::Module, ctx->moduleName.status == ImportFile::STDLIB
                                            ? STDLIB_IMPORT
                                            : ctx->moduleName.path);
-      ctx->cache->classes[canonicalName].ast =
-          N<ClassStmt>(canonicalName, args, N<SuiteStmt>());
-      ctx->cache->classes[canonicalName].ast->cloneAttributesFrom(stmt);
-      ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
+      cls.ast = N<ClassStmt>(canonicalName, args, N<SuiteStmt>());
+      cls.ast->cloneAttributesFrom(stmt);
+      cls.ast->baseClasses = stmt->baseClasses;
       for (auto &b : staticBaseASTs)
-        ctx->cache->classes[canonicalName].staticParentClasses.emplace_back(b->name);
-      ctx->cache->classes[canonicalName].ast->validate();
-      ctx->cache->classes[canonicalName].module = ctx->moduleName.path;
+        cls.staticParentClasses.emplace_back(b->getClass()->name);
+      cls.ast->validate();
+      cls.module = ctx->moduleName.path;
 
       // Codegen default magic methods
       // __new__ must be the first
@@ -289,90 +267,83 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         }
       // Add inherited methods
       for (auto &base : staticBaseASTs) {
-        for (auto &mm : ctx->cache->classes[base->name].methods)
-          for (auto &mf : ctx->cache->overloads[mm.second]) {
-            const auto &fp = ctx->cache->functions[mf];
-            auto f = fp.origAst;
+        for (auto &mm : getClass(base->getClass())->methods)
+          for (auto &mf : getOverloads(mm.second)) {
+            const auto &fp = getFunction(mf);
+            auto f = fp->origAst;
             if (f && !f->hasAttribute("autogenerated")) {
-              ctx->addBlock();
-              addClassGenerics(base);
-              // since functions can come from other modules
-              // make sure to transform them in their respective module
-              // however makle sure to add/pop generics :/
-              auto cf = clean_clone(f);
-              if (!ctx->isStdlibLoading && fp.module != ctx->moduleName.path) {
-                auto ictx = ctx->cache->imports[fp.module].ctx;
-                TypeContext::BaseGuard br(ictx.get(), canonicalName);
-                ictx->getBase()->type = typ;
-                ictx->addBlock();
-                auto tv = TypecheckVisitor(ictx);
-                tv.addClassGenerics(typ, true);
-                cf = cast<FunctionStmt>(tv.transform(cf));
-                ictx->popBlock();
-              } else {
-                cf = cast<FunctionStmt>(transform(cf));
-              }
-              fnStmts.push_back(cf);
-              ctx->popBlock();
+              fnStmts.push_back(
+                  cast<FunctionStmt>(withClassGenerics(base->getClass(), [&]() {
+                    auto cf = clean_clone(f);
+                    // since functions can come from other modules
+                    // make sure to transform them in their respective module
+                    // however makle sure to add/pop generics :/
+                    if (!ctx->isStdlibLoading && fp->module != ctx->moduleName.path) {
+                      auto ictx = getImport(fp->module)->ctx;
+                      TypeContext::BaseGuard br(ictx.get(), canonicalName);
+                      ictx->getBase()->type = typ->shared_from_this();
+                      auto tv = TypecheckVisitor(ictx);
+                      auto e = tv.withClassGenerics(
+                          typ, [&]() { return tv.transform(clean_clone(f)); }, false,
+                          false,
+                          /*instantiate*/ true);
+                      return e;
+                    } else {
+                      return transform(clean_clone(f));
+                    }
+                  })));
             }
           }
       }
-      // Add auto-deduced __init__ (if available)
-      if (autoDeducedInit.first)
-        fnStmts.push_back(autoDeducedInit.first);
     }
 
     // Add class methods
-    for (const auto &sp : getClassMethods(stmt->suite))
+    for (const auto &sp : getClassMethods(stmt->getSuite()))
       if (auto fp = cast<FunctionStmt>(sp)) {
-        if (sp != autoDeducedInit.second) {
-          auto &ds = fp->decorators;
-          for (auto &dc : ds) {
-            if (auto d = cast<DotExpr>(dc)) {
-              if (d->member == "setter" and isId(d->expr, fp->name) &&
-                  fp->size() == 2) {
-                fp->name = format(".set_{}", fp->name);
-                dc = nullptr;
-                break;
-              }
-            }
+        for (auto *&dc : fp->decorators) {
+          // Handle @setter setters
+          if (match(dc, M<DotExpr>(M<IdExpr>(fp->getName()), "setter")) &&
+              fp->size() == 2) {
+            fp->name = format("{}{}", FN_SETTER_SUFFIX, fp->getName());
+            dc = nullptr;
+            break;
           }
-          fnStmts.push_back(transform(sp));
         }
+        fnStmts.emplace_back(transform(sp));
       }
 
     // After popping context block, record types and nested classes will disappear.
     // Store their references and re-add them to the context after popping
     addLater.reserve(clsStmts.size() + 1);
     for (auto &c : clsStmts)
-      addLater.push_back(ctx->find(cast<ClassStmt>(c)->getName()));
+      addLater.emplace_back(ctx->find(cast<ClassStmt>(c)->getName()));
     if (stmt->hasAttribute(Attr::Tuple))
-      addLater.push_back(ctx->forceFind(name));
+      addLater.emplace_back(ctx->forceFind(name));
 
     // Mark functions as virtual:
     auto banned =
         std::set<std::string>{"__init__", "__new__", "__raw__", "__tuplesize__"};
-    for (auto &m : ctx->cache->classes[canonicalName].methods) {
+    for (auto &m : cls.methods) {
       auto method = m.first;
-      for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+      for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
-        auto b = ctx->cache->classes[canonicalName].mro[mi]->name;
-        if (in(ctx->cache->classes[b].methods, method) && !in(banned, method)) {
-          ctx->cache->classes[canonicalName].virtuals.insert(method);
+        auto b = cls.mro[mi]->name;
+        if (in(getClass(b)->methods, method) && !in(banned, method)) {
+          cls.virtuals.insert(method);
         }
       }
-      for (auto &v : ctx->cache->classes[canonicalName].virtuals) {
-        for (size_t mi = 1; mi < ctx->cache->classes[canonicalName].mro.size(); mi++) {
+      for (auto &v : cls.virtuals) {
+        for (size_t mi = 1; mi < cls.mro.size(); mi++) {
           // ... and in parent classes
-          auto b = ctx->cache->classes[canonicalName].mro[mi]->name;
-          ctx->cache->classes[b].virtuals.insert(v);
+          auto b = cls.mro[mi]->name;
+          getClass(b)->virtuals.insert(v);
         }
       }
     }
 
     // Generalize generics and remove them from the context
     for (const auto &g : args)
-      if (g.status != Param::Normal) {
+      if (!g.isValue()) {
         auto generic = ctx->forceFind(g.name)->type;
         if (g.status == Param::Generic) {
           // Generalize generics. Hidden generics are linked to the class generics so
@@ -384,17 +355,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         }
         ctx->remove(g.name);
       }
+
     // Debug information
-    // LOG("[class] {} -> {:c} / {}", canonicalName, typ,
-    // ctx->cache->classes[canonicalName].fields.size());
-    // for (auto &m : ctx->cache->classes[canonicalName].fields)
-    //   LOG("       - member: {}: {:c}", m.name, m.type);
-    // for (auto &m : ctx->cache->classes[canonicalName].methods)
-    //   LOG("       - method: {}: {}", m.first, m.second);
-    // for (auto &m : ctx->cache->classes[canonicalName].mro)
-    //   LOG("       - mro: {:c}", m);
-    // LOG("");
-    // ctx->dump();
+    LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
+    for (auto &m : cls.fields)
+      LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
+    for (auto &m : cls.methods)
+      LOG_REALIZE("       - method: {}: {}", m.first, m.second);
+    for (auto &m : cls.mro)
+      LOG_REALIZE("       - mro: {:c}", *m);
   } catch (const exc::ParserException &) {
     if (!stmt->hasAttribute(Attr::Tuple))
       ctx->remove(name);
@@ -402,11 +371,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     throw;
   }
   for (auto &i : addLater)
-    ctx->add(ctx->cache->rev(i->canonicalName), i);
+    ctx->add(getUnmangledName(i->canonicalName), i);
 
   // Extensions are not needed as the cache is already populated
   if (!stmt->hasAttribute(Attr::Extend)) {
-    auto c = ctx->cache->classes[canonicalName].ast;
+    auto c = cls.ast;
     seqassert(c, "not a class AST for {}", canonicalName);
     c->setDone();
     clsStmts.push_back(c);
@@ -415,12 +384,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
   for (auto &a : varStmts) {
     // Transform class variables here to allow self-references
-    a = transform(a);
-    // if (auto assign = a->getAssign()) {
-    //   transform(assign->rhs);
-    //   transformType(assign->type);
-    // }
-    clsStmts.push_back(a);
+    clsStmts.push_back(transform(a));
   }
   resultStmt = N<SuiteStmt>(clsStmts);
 }
@@ -430,13 +394,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 /// @param args Class fields that are to be updated with base classes' fields.
 /// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
 ///                Only set when dealing with dynamic polymorphism.
-std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
+std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     std::vector<Expr *> &baseClasses, std::vector<Param> &args, Stmt *attr,
-    const std::string &canonicalName, Expr *typeAst, types::ClassTypePtr &typ) {
-  std::vector<types::ClassTypePtr> asts;
+    const std::string &canonicalName, Expr *typeAst, types::ClassType *typ) {
+  std::vector<TypePtr> asts;
 
   // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
-  std::vector<std::vector<types::ClassTypePtr>> mro{{typ}};
+  std::vector<std::vector<TypePtr>> mro{{typ->shared_from_this()}};
   for (auto &cls : baseClasses) {
     std::vector<Expr *> subs;
 
@@ -446,12 +410,12 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
     if (!cls->getClassType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
-    auto clsTyp = getType(cls)->getClass();
-    asts.push_back(clsTyp);
-    Cache::Class *cachedCls = ctx->cache->getClass(clsTyp);
-    auto rootMro = cachedCls->mro;
-    for (auto &t : rootMro)
-      t = ctx->instantiate(t, clsTyp)->getClass();
+    auto clsTyp = extractClassType(cls);
+    asts.push_back(clsTyp->shared_from_this());
+    auto cachedCls = getClass(clsTyp);
+    std::vector<TypePtr> rootMro;
+    for (auto &t : cachedCls->mro)
+      rootMro.push_back(ctx->instantiate(t.get(), clsTyp));
     mro.push_back(rootMro);
 
     // Sanity checks
@@ -476,42 +440,42 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
   }
   // Add normal fields
   for (auto &clsTyp : asts) {
-    int ai = 0;
-    auto ast = ctx->cache->getClass(clsTyp)->ast;
-    ctx->addBlock();
-    addClassGenerics(clsTyp);
-    for (auto &a : *ast) {
-      if (a.status == Param::Normal && !ClassStmt::isClassVar(a)) {
-        auto name = a.name;
-        int i = 0;
-        for (auto &aa : args)
-          i += aa.name == a.name || startswith(aa.name, a.name + "#");
-        if (i)
-          name = format("{}#{}", name, i);
-        seqassert(ctx->cache->classes[ast->name].fields[ai].name == a.name,
-                  "bad class fields: {} vs {}",
-                  ctx->cache->classes[ast->name].fields[ai].name, a.name);
-        args.emplace_back(name, transformType(clean_clone(a.type)),
-                          transform(clean_clone(a.defaultValue)));
-        ctx->cache->classes[canonicalName].fields.emplace_back(Cache::Class::ClassField{
-            name, getType(args.back().type),
-            ctx->cache->classes[ast->name].fields[ai].baseClass});
-        ai++;
+    withClassGenerics(clsTyp->getClass(), [&]() {
+      int ai = 0;
+      auto ast = getClass(clsTyp->getClass())->ast;
+      for (auto &a : *ast) {
+        auto acls = getClass(ast->name);
+        if (a.isValue() && !ClassStmt::isClassVar(a)) {
+          auto name = a.getName();
+          int i = 0;
+          for (auto &aa : args)
+            i += aa.getName() == a.getName() ||
+                 startswith(aa.getName(), a.getName() + "#");
+          if (i)
+            name = format("{}#{}", name, i);
+          seqassert(acls->fields[ai].name == a.getName(), "bad class fields: {} vs {}",
+                    acls->fields[ai].name, a.getName());
+          args.emplace_back(name, transformType(clean_clone(a.getType())),
+                            transform(clean_clone(a.getDefault())));
+          ctx->cache->classes[canonicalName].fields.emplace_back(
+              Cache::Class::ClassField{
+                  name, extractType(args.back().getType())->shared_from_this(),
+                  acls->fields[ai].baseClass});
+          ai++;
+        }
       }
-    }
-    ctx->popBlock();
+      return true;
+    });
   }
   if (typeAst) {
+    auto cls = getClass(canonicalName);
     if (!asts.empty()) {
       mro.push_back(asts);
-      ctx->cache->classes[canonicalName].rtti = true;
+      cls->rtti = true;
     }
-    ctx->cache->classes[canonicalName].mro = Cache::mergeC3(mro);
-    if (ctx->cache->classes[canonicalName].mro.empty()) {
+    cls->mro = Cache::mergeC3(mro);
+    if (cls->mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());
-    } else if (ctx->cache->classes[canonicalName].mro.size() > 1) {
-      // for (auto &t: ctx->cache->classes[canonicalName].mro)
-      //   LOG("[mro] {} -> {:c}", canonicalName, t);
     }
   }
   return asts;
@@ -531,33 +495,33 @@ std::vector<types::ClassTypePtr> TypecheckVisitor::parseBaseClasses(
 /// @return the transformed init and the pointer to the original function.
 std::pair<Stmt *, FunctionStmt *>
 TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
-  std::pair<Stmt *, FunctionStmt *> init{nullptr, nullptr};
-  for (const auto &sp : getClassMethods(stmt->suite))
-    if (auto f = cast<FunctionStmt>(sp)) {
-      // todo)) do this
-      // if (f->name == "__init__" && !f->args.empty() && f->args[0].name == "self") {
-      //   // Set up deducedMembers that will be populated during AssignStmt evaluation
-      //   ctx->getBase()->deducedMembers =
-      //   std::make_shared<std::vector<std::string>>(); auto transformed =
-      //   transform(sp);
-      //   transformed->getFunction()->attributes.set(Attr::RealizeWithoutSelf);
-      //   ctx->cache->functions[transformed->getFunction()->name].ast->attributes.set(
-      //       Attr::RealizeWithoutSelf);
-      //   int i = 0;
-      //   // Once done, add arguments
-      //   for (auto &m : *(ctx->getBase()->deducedMembers)) {
-      //     auto varName = ctx->generateCanonicalName(format("T{}", ++i));
-      //     auto memberName = ctx->cache->rev(varName);
-      //     ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
-      //     args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
-      //     args.emplace_back(m, N<IdExpr>(varName));
-      //     ctx->cache->classes[canonicalName].fields.push_back(
-      //         Cache::Class::ClassField{m, nullptr, canonicalName});
-      //   }
-      //   ctx->getBase()->deducedMembers = nullptr;
-      //   return {transformed, f};
-      // }
-    }
+  // std::pair<Stmt *, FunctionStmt *> init{nullptr, nullptr};
+  // for (const auto &sp : getClassMethods(stmt->suite))
+  //   if (auto f = cast<FunctionStmt>(sp)) {
+  //     // todo)) do this
+  //     if (f->name == "__init__" && !f->args.empty() && f->args[0].name == "self") {
+  //       // Set up deducedMembers that will be populated during AssignStmt evaluation
+  //       ctx->getBase()->deducedMembers =
+  //       std::make_shared<std::vector<std::string>>(); auto transformed =
+  //       transform(sp);
+  //       transformed->getFunction()->attributes.set(Attr::RealizeWithoutSelf);
+  //       ctx->cache->functions[transformed->getFunction()->name].ast->attributes.set(
+  //           Attr::RealizeWithoutSelf);
+  //       int i = 0;
+  //       // Once done, add arguments
+  //       for (auto &m : *(ctx->getBase()->deducedMembers)) {
+  //         auto varName = ctx->generateCanonicalName(format("T{}", ++i));
+  //         auto memberName = ctx->cache->rev(varName);
+  //         ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
+  //         args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
+  //         args.emplace_back(m, N<IdExpr>(varName));
+  //         ctx->cache->classes[canonicalName].fields.push_back(
+  //             Cache::Class::ClassField{m, nullptr, canonicalName});
+  //       }
+  //       ctx->getBase()->deducedMembers = nullptr;
+  //       return {transformed, f};
+  //     }
+  //   }
   return {nullptr, nullptr};
 }
 
@@ -572,12 +536,10 @@ std::vector<Stmt *> TypecheckVisitor::getClassMethods(Stmt *s) {
     for (auto *ss : *sp)
       for (auto *u : getClassMethods(ss))
         v.push_back(u);
-  } else if (cast<ExprStmt>(s) && cast<StringExpr>(cast<ExprStmt>(s)->expr)) {
-    /// Those are doc-strings, ignore them.
-  } else if (!cast<FunctionStmt>(s) && !cast<ClassStmt>(s)) {
-    E(Error::CLASS_BAD_ATTR, s);
-  } else {
+  } else if (cast<FunctionStmt>(s) || cast<ClassStmt>(s)) {
     v.push_back(s);
+  } else if (!match(s, M<ExprStmt>(M<StringExpr>()))) {
+    E(Error::CLASS_BAD_ATTR, s);
   }
   return v;
 }
@@ -589,10 +551,10 @@ void TypecheckVisitor::transformNestedClasses(ClassStmt *stmt,
                                               std::vector<Stmt *> &fnStmts) {
   for (const auto &sp : getClassMethods(stmt->suite))
     if (auto cp = cast<ClassStmt>(sp)) {
-      auto origName = cp->name;
+      auto origName = cp->getName();
       // If class B is nested within A, it's name is always A.B, never B itself.
       // Ensure that parent class name is appended
-      auto parentName = stmt->name;
+      auto parentName = stmt->getName();
       cp->name = fmt::format("{}.{}", parentName, origName);
       auto tsp = transform(cp);
       std::string name;
@@ -600,7 +562,7 @@ void TypecheckVisitor::transformNestedClasses(ClassStmt *stmt,
         for (auto &s : *tss)
           if (auto c = cast<ClassStmt>(s)) {
             clsStmts.push_back(s);
-            name = c->name;
+            name = c->getName();
           } else if (auto a = cast<AssignStmt>(s)) {
             varStmts.push_back(s);
           } else {
@@ -642,7 +604,7 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     if (isRecord) {
       // Tuples: def __new__() -> T (internal)
       for (auto &a : args)
-        fargs.emplace_back(a.name, clone(a.type), clone(a.defaultValue));
+        fargs.emplace_back(a.getName(), clone(a.getType()), clone(a.getDefault()));
       attrs.push_back(Attr::Internal);
     } else {
       // Classes: def __new__() -> T
@@ -654,21 +616,9 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     ret = I("NoneType");
     fargs.emplace_back("self", clone(typExpr));
     for (auto &a : args) {
-      // Expr * defExpr = nullptr;
-      // if (a.defaultValue) {
-      //   defExpr = a.defaultValue;
-      // } else {
-      //   // defExpr = N<CallExpr>(N<DotExpr>(clean_clone(a.type), "__new__"));
-      //   // auto assign = N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name));
-      //   // stmts.push_back(N<IfStmt>(
-      //   //     N<CallExpr>(I("isinstance"), clean_clone(a.type), I("ByRef")),
-      //   //     N<SuiteStmt>(N<ExprStmt>(N<CallExpr>(N<DotExpr>(I(a.name),
-      //   "__init__"))),
-      //   //                  assign),
-      //   //     clone(assign)));
-      // }
-      fargs.emplace_back(a.name, clean_clone(a.type), clone(a.defaultValue));
-      stmts.push_back(N<AssignStmt>(N<DotExpr>(I("self"), a.name), I(a.name)));
+      fargs.emplace_back(a.getName(), clean_clone(a.getType()), clone(a.getDefault()));
+      stmts.push_back(
+          N<AssignStmt>(N<DotExpr>(I("self"), a.getName()), I(a.getName())));
     }
   } else if (op == "raw" || op == "dict") {
     // Classes: def __raw__(self: T)
@@ -780,41 +730,25 @@ int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) {
   }
 }
 
-void TypecheckVisitor::addClassGenerics(const types::ClassTypePtr &clsTyp,
-                                        bool instantiate) {
-  auto addGen = [&](auto g) {
-    auto t = g.type;
-    if (instantiate)
-      if (auto l = g.type->getLink())
-        if (l->kind == LinkType::Generic) {
-          auto lx = std::make_shared<LinkType>(*l);
-          lx->kind = LinkType::Unbound;
-          t = lx;
-        }
-    if (t->getClass() && !t->getStatic() && !t->is("type"))
-      t = ctx->instantiateGeneric(ctx->getType("type"), {t});
-    ctx->addVar(ctx->cache->rev(g.name), g.name, t)->generic = true;
-    // LOG("=[g]=> {}: {} {:c} {}", clsTyp, g.name, t,
-    //     t->getLink() && t->getLink()->trait ? "OK" : "-");
-  };
-  for (auto &g : clsTyp->hiddenGenerics)
-    addGen(g);
-  for (auto &g : clsTyp->generics)
-    addGen(g);
-}
-
-types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
+types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
   static std::unordered_set<size_t> funcArgTypes;
 
-  auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE, TYPE_TUPLE);
-  t->isTuple = true;
-  auto cls = ctx->cache->getClass(t);
-  seqassert(n <= cls->fields.size(), "tuple too large");
-  for (size_t i = 0; i < n; i++) {
-    auto gt = cls->fields[i].type->getLink();
-    t->generics.emplace_back(cast<IdExpr>(cls->fields[i].typeExpr)->getValue(),
-                             gt->genericName, cls->fields[i].type, gt->id, 0);
+  auto key = fmt::format("{}.{}", TYPE_TUPLE, n);
+  auto val = getImport(STDLIB_IMPORT)->ctx->find(key);
+  if (!val) {
+    auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE, TYPE_TUPLE);
+    t->isTuple = true;
+    auto cls = getClass(t.get());
+    seqassert(n <= cls->fields.size(), "tuple too large");
+    for (size_t i = 0; i < n; i++) {
+      const auto &f = cls->fields[i];
+      auto gt = f.getType()->getLink();
+      t->generics.emplace_back(cast<IdExpr>(f.typeExpr)->getValue(), gt->genericName,
+                               f.type, gt->id, 0);
+    }
+    val = getImport(STDLIB_IMPORT)->ctx->addType(key, key, t);
   }
+  auto t = val->getType()->getClass();
   if (generateNew && !in(funcArgTypes, n)) {
     funcArgTypes.insert(n);
     std::vector<Param> newFnArgs;
@@ -833,9 +767,8 @@ types::ClassTypePtr TypecheckVisitor::generateTuple(size_t n, bool generateNew) 
     Stmt *ext = N<ClassStmt>(TYPE_TUPLE, std::vector<Param>{}, fn);
     ext->setAttribute(Attr::Extend);
     ext = N<SuiteStmt>(ext);
-    // TODO: do clean toplevel transform
-    ScopingVisitor::apply(ctx->cache, ext);
 
+    ScopingVisitor::apply(ctx->cache, ext);
     auto rctx = ctx->cache->imports[STDLIB_IMPORT].ctx;
     auto oldBases = rctx->bases;
     rctx->bases.clear();

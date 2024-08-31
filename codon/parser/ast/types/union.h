@@ -32,13 +32,11 @@ public:
   std::string realizedName() const override;
   bool isSealed() const;
 
-  std::shared_ptr<UnionType> getUnion() override {
-    return std::static_pointer_cast<UnionType>(shared_from_this());
-  }
+  UnionType *getUnion() override { return this; }
 
-  void addType(const TypePtr&);
+  void addType(Type *);
   void seal();
-  std::vector<types::TypePtr> getRealizationTypes();
+  std::vector<Type *> getRealizationTypes();
 };
 
 } // namespace codon::ast::types

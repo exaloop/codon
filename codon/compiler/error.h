@@ -395,8 +395,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::LOOP_DECORATOR:
     return fmt::format("invalid loop decorator");
   case Error::BAD_STATIC_TYPE:
-    return fmt::format(
-        "expected 'int' or 'str' (only integers and strings can be static)");
+    return fmt::format("expected 'int', 'bool' or 'str'");
   case Error::EXPECTED_TYPE:
     return fmt::format("expected {} expression", args...);
   case Error::UNEXPECTED_TYPE:

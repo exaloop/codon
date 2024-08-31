@@ -26,6 +26,7 @@ namespace codon::ast {
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
   friend struct ReplacingCallbackASTVisitor;                                           \
+  inline decltype(auto) match_members() const { return std::tie(__VA_ARGS__); }        \
   SERIALIZE(CLASS, BASE(Expr), ##__VA_ARGS__)
 
 // Forward declarations
@@ -44,9 +45,9 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
 
   /// Get a node type.
   /// @return Type pointer or a nullptr if a type is not set.
-  types::TypePtr getType() const { return type; }
+  types::Type *getType() const { return type.get(); }
   void setType(const types::TypePtr &t) { type = t; }
-  types::ClassTypePtr getClassType() const;
+  types::ClassType *getClassType() const;
   bool isDone() const { return done; }
   void setDone() { done = true; }
   Expr *getOrigExpr() const { return origExpr; }
@@ -57,7 +58,7 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   static const char NodeId;
   SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
 
-  Expr *operator<<(const types::TypePtr &t);
+  Expr *operator<<(types::Type *t);
 
 protected:
   /// Add a type to S-expression string.
@@ -79,7 +80,7 @@ struct Param : public codon::SrcObject {
   Expr *type;
   Expr *defaultValue;
   enum {
-    Normal,
+    Value,
     Generic,
     HiddenGeneric
   } status; // 1 for normal generic, 2 for hidden generic
@@ -92,6 +93,7 @@ struct Param : public codon::SrcObject {
   std::string getName() const { return name; }
   Expr *getType() const { return type; }
   Expr *getDefault() const { return defaultValue; }
+  bool isValue() const { return status == Value; }
   bool isGeneric() const { return status == Generic; }
   bool isHiddenGeneric() const { return status == HiddenGeneric; }
 
@@ -200,6 +202,10 @@ private:
   std::vector<String> strings;
 
   void unpack();
+  /// Split a Python-like f-string into a list:
+  ///   `f"foo {x+1} bar"` -> `["foo ", str(x+1), " bar"]
+  /// Supports "{x=}" specifier (that prints the raw expression as well):
+  ///   `f"{x+1=}"` -> `["x+1=", str(x+1)]`
   std::vector<String> unpackFString(const std::string &) const;
   auto begin() { return strings.begin(); }
   auto end() { return strings.end(); }
@@ -524,6 +530,9 @@ struct EllipsisExpr : public AcceptorExtend<EllipsisExpr, Expr> {
   EllipsisExpr(const EllipsisExpr &, bool);
 
   EllipsisType getMode() const { return mode; }
+  bool isStandalone() const { return mode == STANDALONE; }
+  bool isPipe() const { return mode == PIPE; }
+  bool isPartial() const { return mode == PARTIAL; }
 
   ACCEPT(EllipsisExpr, ASTVisitor, mode);
 
@@ -535,19 +544,15 @@ private:
 
 /// Lambda expression (lambda (vars)...: expr).
 /// @li lambda a, b: a + b
-struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr> {
+struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr>, Items<std::string> {
   LambdaExpr(std::vector<std::string> vars = {}, Expr *expr = nullptr);
   LambdaExpr(const LambdaExpr &, bool);
 
   Expr *getExpr() const { return expr; }
-  auto begin() { return vars.begin(); }
-  auto end() { return vars.end(); }
-  auto size() const { return vars.size(); }
 
-  ACCEPT(LambdaExpr, ASTVisitor, vars, expr);
+  ACCEPT(LambdaExpr, ASTVisitor, expr, items);
 
 private:
-  std::vector<std::string> vars;
   Expr *expr;
 };
 
@@ -597,21 +602,17 @@ private:
 /// Statements are evaluated only if the expression is evaluated
 /// (to support short-circuiting).
 /// @li (a = 1; b = 2; a + b)
-struct StmtExpr : public AcceptorExtend<StmtExpr, Expr> {
+struct StmtExpr : public AcceptorExtend<StmtExpr, Expr>, Items<Stmt *> {
   StmtExpr(Stmt *stmt = nullptr, Expr *expr = nullptr);
   StmtExpr(std::vector<Stmt *> stmts, Expr *expr);
   StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr);
   StmtExpr(const StmtExpr &, bool);
 
   Expr *getExpr() const { return expr; }
-  auto begin() { return stmts.begin(); }
-  auto end() { return stmts.end(); }
-  auto size() const { return stmts.size(); }
 
-  ACCEPT(StmtExpr, ASTVisitor, expr);
+  ACCEPT(StmtExpr, ASTVisitor, expr, items);
 
 private:
-  std::vector<Stmt *> stmts;
   Expr *expr;
 };
 

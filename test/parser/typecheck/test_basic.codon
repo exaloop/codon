@@ -33,9 +33,9 @@ class int:
         return 'TEST: ' + str(s)
 print(123_456test) #: TEST: 123456
 
-#%% int_error,barebones
-print(1844674407_3709551999)
-#! integer '18446744073709551999' cannot fit into 64-bit integer
+#%% int_large,barebones
+print(1844674407_3709551999)  #: 383
+print(1844674407_3709551999i256)  #: 18446744073709551999
 
 #%% float,barebones
 f = 1.11

@@ -46,22 +46,22 @@ public:
 public:
   TypePtr follow() override;
   bool hasUnbounds(bool = false) const override;
-  std::vector<TypePtr> getUnbounds() const override;
+  std::vector<Type*> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
-  std::shared_ptr<LinkType> getLink() override;
-  std::shared_ptr<FuncType> getFunc() override;
-  std::shared_ptr<ClassType> getPartial() override;
-  std::shared_ptr<ClassType> getClass() override;
-  std::shared_ptr<StaticType> getStatic() override;
-  std::shared_ptr<IntStaticType> getIntStatic() override;
-  std::shared_ptr<StrStaticType> getStrStatic() override;
-  std::shared_ptr<BoolStaticType> getBoolStatic() override;
-  std::shared_ptr<UnionType> getUnion() override;
-  std::shared_ptr<LinkType> getUnbound() override;
+  LinkType * getLink() override;
+  FuncType * getFunc() override;
+  ClassType * getPartial() override;
+  ClassType * getClass() override;
+  StaticType * getStatic() override;
+  IntStaticType * getIntStatic() override;
+  StrStaticType * getStrStatic() override;
+  BoolStaticType * getBoolStatic() override;
+  UnionType * getUnion() override;
+  LinkType * getUnbound() override;
 
 private:
   /// Checks if a current (unbound) type occurs within a given type.

@@ -137,6 +137,9 @@ class str:
 @tuple
 @__internal__
 class Tuple:
+    @llvm
+    def __new__() -> Tuple:
+        ret {} {}
     def __add__(self: __SELF__, obj, __SELF__: type):
         return __magic__.add(self, obj)
     def __mul__(self: __SELF__, n: Static[int], __SELF__: type):

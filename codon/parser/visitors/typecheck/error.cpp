@@ -20,13 +20,13 @@ using namespace types;
 /// testing (i.e., when the enclosing function is marked with `@test`).
 void TypecheckVisitor::visit(AssertStmt *stmt) {
   Expr *msg = N<StringExpr>("");
-  if (stmt->message)
-    msg = N<CallExpr>(N<IdExpr>("str"), stmt->message);
+  if (stmt->getMessage())
+    msg = N<CallExpr>(N<IdExpr>("str"), stmt->getMessage());
   auto test = ctx->inFunction() && ctx->getBase()->func->hasAttribute(Attr::Test);
   auto ex = N<CallExpr>(
       N<DotExpr>(N<IdExpr>("__internal__"), test ? "seq_assert_test" : "seq_assert"),
       N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line), msg);
-  auto cond = N<UnaryExpr>("!", stmt->expr);
+  auto cond = N<UnaryExpr>("!", stmt->getExpr());
   if (test) {
     resultStmt = transform(N<IfStmt>(cond, N<ExprStmt>(ex)));
   } else {
@@ -51,86 +51,89 @@ void TypecheckVisitor::visit(AssertStmt *stmt) {
 ///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel++;
-  stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
+  stmt->suite = SuiteStmt::wrap(transform(stmt->getSuite()));
   ctx->blockLevel--;
 
   std::vector<ExceptStmt *> catches;
-  auto pyVar = ctx->cache->getTemporaryVar("pyexc");
+  auto pyVar = getTemporaryVar("pyexc");
   auto pyCatchStmt = N<WhileStmt>(N<BoolExpr>(true), N<SuiteStmt>());
 
-  auto done = stmt->suite->isDone();
+  auto done = stmt->getSuite()->isDone();
   for (auto &c : *stmt) {
     TypeContext::Item val = nullptr;
-    if (!c->var.empty()) {
+    if (!c->getVar().empty()) {
       if (!c->hasAttribute(Attr::ExprDominated) &&
           !c->hasAttribute(Attr::ExprDominatedUsed)) {
-        val =
-            ctx->addVar(c->var, ctx->generateCanonicalName(c->var), ctx->getUnbound());
+        val = ctx->addVar(c->getVar(), ctx->generateCanonicalName(c->getVar()),
+                          ctx->getUnbound());
       } else if (c->hasAttribute(Attr::ExprDominatedUsed)) {
-        val = ctx->forceFind(c->var);
+        val = ctx->forceFind(c->getVar());
         c->eraseAttribute(Attr::ExprDominatedUsed);
         c->setAttribute(Attr::ExprDominated);
         c->suite = N<SuiteStmt>(
-            N<AssignStmt>(N<IdExpr>(format("{}.__used__", ctx->cache->rev(c->var))),
-                          N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
-            c->suite);
+            N<AssignStmt>(
+                N<IdExpr>(format("{}{}", getUnmangledName(c->getVar()), VAR_USED_SUFFIX)),
+                N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
+            c->getSuite());
       } else {
-        val = ctx->forceFind(c->var);
+        val = ctx->forceFind(c->getVar());
       }
       c->var = val->canonicalName;
     }
-    c->exc = transform(c->exc);
-    if (c->exc && getType(c->exc)->is("pyobj")) {
+    c->exc = transform(c->getException());
+    if (c->getException() && extractClassType(c->getException())->is("pyobj")) {
       // Transform python.Error exceptions
       if (!c->var.empty()) {
         c->suite = N<SuiteStmt>(
             N<AssignStmt>(N<IdExpr>(c->var), N<DotExpr>(N<IdExpr>(pyVar), "pytype")),
-            c->suite);
+            c->getSuite());
       }
-      c->suite = SuiteStmt::wrap(
-          N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
-                                N<DotExpr>(N<IdExpr>(pyVar), "pytype"), c->exc),
-                    N<SuiteStmt>(c->suite, N<BreakStmt>()), nullptr));
-      cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->suite);
-    } else if (c->exc && getType(c->exc)->is("std.internal.python.PyError.0")) {
+      c->suite = SuiteStmt::wrap(N<IfStmt>(
+          N<CallExpr>(N<IdExpr>("isinstance"), N<DotExpr>(N<IdExpr>(pyVar), "pytype"),
+                      c->getException()),
+          N<SuiteStmt>(c->getSuite(), N<BreakStmt>()), nullptr));
+      cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->getSuite());
+    } else if (c->getException() && extractClassType(c->getException())
+                                        ->is("std.internal.python.PyError.0")) {
       // Transform PyExc exceptions
       if (!c->var.empty()) {
-        c->suite =
-            N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(c->var), N<IdExpr>(pyVar)), c->suite);
+        c->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(c->var), N<IdExpr>(pyVar)),
+                                c->getSuite());
       }
-      c->suite = N<SuiteStmt>(c->suite, N<BreakStmt>());
-      cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->suite);
+      c->suite = N<SuiteStmt>(c->getSuite(), N<BreakStmt>());
+      cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->getSuite());
     } else {
       // Handle all other exceptions
-      c->exc = transformType(c->exc);
+      c->exc = transformType(c->getException());
       if (val)
-        unify(val->type, getType(c->exc));
+        unify(val->getType(), extractType(c->getException()));
       ctx->blockLevel++;
-      c->suite = SuiteStmt::wrap(transform(c->suite));
+      c->suite = SuiteStmt::wrap(transform(c->getSuite()));
       ctx->blockLevel--;
-      done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
+      done &= (!c->getException() || c->getException()->isDone()) &&
+              c->getSuite()->isDone();
       catches.push_back(c);
     }
   }
   if (!cast<SuiteStmt>(pyCatchStmt->getSuite())->empty()) {
     // Process PyError catches
     auto exc = N<IdExpr>("std.internal.python.PyError.0");
-    cast<SuiteStmt>(pyCatchStmt->getSuite())->items.push_back(N<ThrowStmt>(nullptr));
+    cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(N<ThrowStmt>(nullptr));
     auto c = N<ExceptStmt>(pyVar, transformType(exc), pyCatchStmt);
 
-    auto val = ctx->addVar(pyVar, pyVar, getType(c->exc));
+    auto val = ctx->addVar(pyVar, pyVar, extractType(c->getException())->shared_from_this());
     ctx->blockLevel++;
-    c->suite = SuiteStmt::wrap(transform(c->suite));
+    c->suite = SuiteStmt::wrap(transform(c->getSuite()));
     ctx->blockLevel--;
-    done &= (!c->exc || c->exc->isDone()) && c->suite->isDone();
+    done &= (!c->exc || c->exc->isDone()) && c->getSuite()->isDone();
     catches.push_back(c);
   }
   stmt->items = catches;
-  if (stmt->finally) {
+  if (stmt->getFinally()) {
     ctx->blockLevel++;
-    stmt->finally = SuiteStmt::wrap(transform(stmt->finally));
+    stmt->finally = SuiteStmt::wrap(transform(stmt->getFinally()));
     ctx->blockLevel--;
-    done &= stmt->finally->isDone();
+    done &= stmt->getFinally()->isDone();
   }
 
   if (done)
@@ -175,18 +178,18 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 ///      finally:
 ///        tmp.__exit__()```
 void TypecheckVisitor::visit(WithStmt *stmt) {
-  seqassert(!stmt->items.empty(), "stmt->items is empty");
+  seqassert(!stmt->empty(), "stmt->items is empty");
   std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
     std::string var =
-        stmt->vars[i].empty() ? ctx->cache->getTemporaryVar("with") : stmt->vars[i];
-    auto as = N<AssignStmt>(N<IdExpr>(var), stmt->items[i], nullptr,
-                            stmt->items[i]->hasAttribute(Attr::ExprDominated)
+        stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
+    auto as = N<AssignStmt>(N<IdExpr>(var), (*stmt)[i], nullptr,
+                            (*stmt)[i]->hasAttribute(Attr::ExprDominated)
                                 ? AssignStmt::UpdateMode::Update
                                 : AssignStmt::UpdateMode::Assign);
     content = std::vector<Stmt *>{
         as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__enter__"))),
-        N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->suite),
+        N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite()),
                    std::vector<ExceptStmt *>{},
                    N<SuiteStmt>(N<ExprStmt>(
                        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__exit__")))))};

@@ -80,7 +80,7 @@ ir::Value *TranslateVisitor::transform(Expr *expr) {
     hasAttr = true;
   }
   if (expr->hasAttribute(Attr::ExprPartial)) {
-    p = expr->getType()->getPartial().get();
+    p = expr->getType()->getPartial();
   }
 
   expr->accept(v);
@@ -125,12 +125,12 @@ ir::Value *TranslateVisitor::transform(Expr *expr) {
     auto known = p->getPartialMask();
     auto func = p->getPartialFunc();
     for (int i = 0; i < known.size(); i++) {
-      if (known[i] && (*func->ast)[i].status == Param::Normal) {
+      if (known[i] && (*func->ast)[i].isValue()) {
         seqassert(j < ctx->seqItems.back().size() &&
                       ctx->seqItems.back()[j].first == Attr::ExprSequenceItem,
                   "invalid partial element: {}");
         v.push_back(ctx->seqItems.back()[j++].second);
-      } else if ((*func->ast)[i].status == Param::Normal) {
+      } else if ((*func->ast)[i].isValue()) {
         v.push_back({nullptr});
       }
     }
@@ -272,10 +272,10 @@ void TranslateVisitor::visit(CallExpr *expr) {
   } else if (ei && ei->getValue() == "__array__.__new__:0") {
     auto fnt = expr->getExpr()->getType()->getFunc();
     auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
-    auto typ = fnt->funcParent->getClass()->generics[0].type;
+    auto typ = fnt->funcParent->getClass()->generics[0].getType();
 
     auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
-    arrayType->setAstType(expr->getType());
+    arrayType->setAstType(expr->getType()->shared_from_this());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
   } else if (ei && startswith(ei->getValue(), "__internal__.yield_in_no_suspend")) {
@@ -284,7 +284,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
   }
 
   auto ft = expr->getExpr()->getType()->getFunc();
-  seqassert(ft, "not calling function: {}", ft);
+  seqassert(ft, "not calling function");
   auto callee = transform(expr->getExpr());
   bool isVariadic = ft->ast->hasAttribute(Attr::CVarArg);
   std::vector<ir::Value *> items;
@@ -309,7 +309,7 @@ void TranslateVisitor::visit(DotExpr *expr) {
       expr->getMember() == "__contents_atomic__") {
     auto ei = cast<IdExpr>(expr->getExpr());
     seqassert(ei, "expected IdExpr, got {}", *(expr->getExpr()));
-    auto t = ctx->cache->typeCtx->getType(ei->getType());
+    auto t = ctx->cache->typeCtx->extractType(ei->getType());
     auto type = ctx->find(t->realizedName())->getType();
     seqassert(type, "{} is not a type", ei->getValue());
     result = make<ir::TypePropertyInstr>(
@@ -579,7 +579,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     auto *catchBody = make<ir::SeriesFlow>(stmt, "catch");
     auto *excType =
         c->getException()
-            ? getType(ctx->cache->typeCtx->getType(c->getException()->getType()))
+            ? getType(ctx->cache->typeCtx->extractType(c->getException()->getType()))
             : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c->getVar().empty()) {
@@ -616,11 +616,11 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 /************************************************************************************/
 
-codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
-  seqassert(t && t->getClass(), "{} is not a class", t);
+codon::ir::types::Type *TranslateVisitor::getType(types::Type *t) {
+  seqassert(t && t->getClass(), "not a class");
   std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
-  seqassert(i, "type {} not realized: {}", t, name);
+  seqassert(i, "type {} not realized: {}", t->debugString(2), name);
   return i->getType();
 }
 
@@ -647,8 +647,8 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   std::vector<std::string> names;
   std::vector<int> indices;
   for (int i = 0, j = 0; i < ast->size(); i++)
-    if ((*ast)[i].status == Param::Normal) {
-      if (!type->getArgTypes()[j]->getFunc()) {
+    if ((*ast)[i].isValue()) {
+      if (!type->getArgs()[j].getType()->getFunc()) {
         names.push_back(ctx->cache->rev((*ast)[i].name));
         indices.push_back(i);
       }
@@ -687,7 +687,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   std::vector<std::string> names;
   std::vector<int> indices;
   for (int i = 0, j = 1; i < ast->size(); i++)
-    if ((*ast)[i].status == Param::Normal) {
+    if ((*ast)[i].isValue()) {
       names.push_back(ctx->cache->reverseIdentifierLookup[(*ast)[i].name]);
       indices.push_back(i);
       j++;
@@ -721,7 +721,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     } else {
       seqassert(cast<ExprStmt>((*ss)[i])->getExpr()->getType(),
                 "invalid LLVM type argument: {}", (*ss)[i]->toString(0));
-      literals.emplace_back(getType(ctx->cache->typeCtx->getType(
+      literals.emplace_back(getType(ctx->cache->typeCtx->extractType(
           cast<ExprStmt>((*ss)[i])->getExpr()->getType())));
     }
   }

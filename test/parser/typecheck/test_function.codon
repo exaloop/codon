@@ -229,7 +229,7 @@ foo()
 #%% function_err_2,barebones
 def f[T: Static[float]]():
     pass
-#! expected 'int' or 'str' (only integers and strings can be static)
+#! expected 'int', 'bool' or 'str'
 
 #%% function_err_3,barebones
 def f(a, b=a):
@@ -295,13 +295,15 @@ def foo():
     return bar
 foo()()  #: Array[Int[15]]
 
+#%% nested_generic_error,barebones
 def f[T]():
     def g():
         return T()
     return g()
-print f(int) #: 0
-
-
+print f(int)
+#! name 'T' cannot be captured
+#! during
+#! during
 
 #%% block_unroll,barebones
 # Ensure that block unrolling is done in RAII manner on error

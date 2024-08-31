@@ -66,8 +66,7 @@ Cache::Class *Cache::getClass(types::ClassType *type) {
   return in(classes, name);
 }
 
-std::string Cache::getMethod(const types::ClassTypePtr &typ,
-                             const std::string &member) {
+std::string Cache::getMethod(types::ClassType *typ, const std::string &member) {
   if (auto cls = getClass(typ)) {
     if (auto t = in(cls->methods, member))
       return *t;
@@ -76,14 +75,14 @@ std::string Cache::getMethod(const types::ClassTypePtr &typ,
   return "";
 }
 
-types::ClassTypePtr Cache::findClass(const std::string &name) const {
+types::ClassType *Cache::findClass(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->isType())
-    return typeCtx->getType(f->type)->getClass();
+    return typeCtx->getType(name)->getClass();
   return nullptr;
 }
 
-types::FuncTypePtr Cache::findFunction(const std::string &name) const {
+types::FuncType *Cache::findFunction(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->type && f->isFunc())
     return f->type->getFunc();
@@ -93,23 +92,17 @@ types::FuncTypePtr Cache::findFunction(const std::string &name) const {
   return nullptr;
 }
 
-types::FuncTypePtr Cache::findMethod(types::ClassType *typ, const std::string &member,
-                                     const std::vector<types::TypePtr> &args) {
-  auto e = N<IdExpr>(typ->name);
-  e->setType(typ->getClass());
-  seqassertn(e->getType(), "not a class");
-
-  auto f = TypecheckVisitor(typeCtx).findBestMethod(e->getClassType(), member, args);
+types::FuncType *Cache::findMethod(types::ClassType *typ, const std::string &member,
+                                   const std::vector<types::Type *> &args) {
+  auto f = TypecheckVisitor(typeCtx).findBestMethod(typ, member, args);
   return f;
 }
 
-ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
+ir::types::Type *Cache::realizeType(types::ClassType *type,
                                     const std::vector<types::TypePtr> &generics) {
-  auto e = N<IdExpr>(type->name);
-  e->setType(type);
-  type = typeCtx->instantiateGeneric(type, generics)->getClass();
   auto tv = TypecheckVisitor(typeCtx);
-  if (auto rtv = tv.realize(type)) {
+  if (auto rtv =
+          tv.realize(typeCtx->instantiateGeneric(type, castVectorPtr(generics)))) {
     return classes[rtv->getClass()->name]
         .realizations[rtv->getClass()->realizedName()]
         ->ir;
@@ -117,33 +110,32 @@ ir::types::Type *Cache::realizeType(types::ClassTypePtr type,
   return nullptr;
 }
 
-ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
+ir::Func *Cache::realizeFunction(types::FuncType *type,
                                  const std::vector<types::TypePtr> &args,
                                  const std::vector<types::TypePtr> &generics,
-                                 const types::ClassTypePtr &parentClass) {
-  auto e = N<IdExpr>(type->ast->getName());
-  e->setType(type);
-  type = typeCtx->instantiate(type, parentClass)->getFunc();
-  if (args.size() != type->getArgTypes().size() + 1)
+                                 types::ClassType *parentClass) {
+  auto t = std::static_pointer_cast<types::FuncType>(
+      typeCtx->instantiate(type, parentClass));
+  if (args.size() != t->getArgs().size() + 1)
     return nullptr;
   types::Type::Unification undo;
-  if (type->getRetType()->unify(args[0].get(), &undo) < 0) {
+  if (t->getRetType()->unify(args[0].get(), &undo) < 0) {
     undo.undo();
     return nullptr;
   }
   for (int gi = 1; gi < args.size(); gi++) {
     undo = types::Type::Unification();
-    if (type->getArgTypes()[gi - 1]->unify(args[gi].get(), &undo) < 0) {
+    if (t->getArgs()[gi - 1].getType()->unify(args[gi].get(), &undo) < 0) {
       undo.undo();
       return nullptr;
     }
   }
   if (!generics.empty()) {
-    if (generics.size() != type->funcGenerics.size())
+    if (generics.size() != t->funcGenerics.size())
       return nullptr;
     for (int gi = 0; gi < generics.size(); gi++) {
       undo = types::Type::Unification();
-      if (type->funcGenerics[gi].type->unify(generics[gi].get(), &undo) < 0) {
+      if (t->funcGenerics[gi].type->unify(generics[gi].get(), &undo) < 0) {
         undo.undo();
         return nullptr;
       }
@@ -151,7 +143,7 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
   }
   auto tv = TypecheckVisitor(typeCtx);
   ir::Func *f = nullptr;
-  if (auto rtv = tv.realize(type)) {
+  if (auto rtv = tv.realize(t.get())) {
     auto pr = pendingRealizations; // copy it as it might be modified
     for (auto &fn : pr)
       TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
@@ -162,7 +154,8 @@ ir::Func *Cache::realizeFunction(types::FuncTypePtr type,
 
 ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-  auto t = typeCtx->instantiateGeneric(tv.generateTuple(types.size()), types);
+  auto t =
+      typeCtx->instantiateGeneric(tv.generateTuple(types.size()), castVectorPtr(types));
   return realizeType(t->getClass(), types);
 }
 
@@ -170,23 +163,20 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
 
+  std::vector<types::Type *> tt;
+  for (size_t i = 1; i < types.size(); i++)
+    tt.emplace_back(types[i].get());
   const auto &ret = types[0];
-  auto argType = typeCtx->instantiateGeneric(
-      tv.generateTuple(types.size() - 1),
-      std::vector<types::TypePtr>(types.begin() + 1, types.end()));
-  auto t = typeCtx->find("Function");
-  seqassertn(t && t->type, "cannot find 'Function'");
-  auto ft = realizeType(typeCtx->getType(t->type)->getClass(), {argType, ret});
+  auto argType = typeCtx->instantiateGeneric(tv.generateTuple(types.size() - 1), tt);
+  auto ft = realizeType(typeCtx->getType("Function")->getClass(), {argType, ret});
   return ft;
 }
 
 ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
-
-  auto argType = typeCtx->instantiateGeneric(tv.generateTuple(types.size()), types);
-  auto t = typeCtx->find("Union");
-  seqassertn(t && t->type, "cannot find 'Union'");
-  return realizeType(t->type->getClass(), {argType});
+  auto argType =
+      typeCtx->instantiateGeneric(tv.generateTuple(types.size()), castVectorPtr(types));
+  return realizeType(typeCtx->forceFind("Union")->type->getClass(), {argType});
 }
 
 void Cache::parseCode(const std::string &code) {
@@ -196,13 +186,13 @@ void Cache::parseCode(const std::string &code) {
   ast::TranslateVisitor(codegenCtx).translateStmts(node);
 }
 
-std::vector<types::ClassTypePtr>
-Cache::mergeC3(std::vector<std::vector<types::ClassTypePtr>> &seqs) {
+std::vector<std::shared_ptr<types::ClassType>>
+Cache::mergeC3(std::vector<std::vector<types::TypePtr>> &seqs) {
   // Reference: https://www.python.org/download/releases/2.3/mro/
-  std::vector<types::ClassTypePtr> result;
+  std::vector<std::shared_ptr<types::ClassType>> result;
   for (size_t i = 0;; i++) {
     bool found = false;
-    types::ClassTypePtr cand = nullptr;
+    std::shared_ptr<types::ClassType> cand = nullptr;
     for (auto &seq : seqs) {
       if (seq.empty())
         continue;
@@ -212,7 +202,7 @@ Cache::mergeC3(std::vector<std::vector<types::ClassTypePtr>> &seqs) {
         if (!s.empty()) {
           bool in = false;
           for (size_t j = 1; j < s.size(); j++) {
-            if ((in |= (seq[0]->is(s[j]->name))))
+            if ((in |= (seq[0]->is(s[j]->getClass()->name))))
               break;
           }
           if (in) {
@@ -221,7 +211,7 @@ Cache::mergeC3(std::vector<std::vector<types::ClassTypePtr>> &seqs) {
           }
         }
       if (!nothead) {
-        cand = seq[0];
+        cand = std::dynamic_pointer_cast<types::ClassType>(seq[0]);
         break;
       }
     }
@@ -231,7 +221,7 @@ Cache::mergeC3(std::vector<std::vector<types::ClassTypePtr>> &seqs) {
       return {};
     result.push_back(cand);
     for (auto &s : seqs)
-      if (!s.empty() && cand->is(s[0]->name)) {
+      if (!s.empty() && cand->is(s[0]->getClass()->name)) {
         s.erase(s.begin());
       }
   }
@@ -253,14 +243,13 @@ void Cache::populatePythonModule() {
     pyModule = std::make_shared<ir::PyModule>();
   using namespace ast;
 
-  auto realizeIR = [&](const types::FuncTypePtr &fn,
+  auto realizeIR = [&](types::FuncType *fn,
                        const std::vector<types::TypePtr> &generics = {}) -> ir::Func * {
     auto fnType = typeCtx->instantiate(fn);
     types::Type::Unification u;
     for (size_t i = 0; i < generics.size(); i++)
       fnType->getFunc()->funcGenerics[i].type->unify(generics[i].get(), &u);
-    fnType = TypecheckVisitor(typeCtx).realize(fnType);
-    if (!fnType)
+    if (!TypecheckVisitor(typeCtx).realize(fnType.get()))
       return nullptr;
 
     auto pr = pendingRealizations; // copy it as it might be modified
@@ -279,7 +268,7 @@ void Cache::populatePythonModule() {
       LOG_USER("[py] Cythonizing {}", cn);
       ir::PyType py{rev(cn), c.ast->getDocstr()};
 
-      auto tc = typeCtx->forceFind(cn)->type;
+      auto tc = typeCtx->forceFind(cn)->getType();
       if (!tc->canRealize())
         compilationError(fmt::format("cannot realize '{}' for Python export", rev(cn)));
       tc = TypecheckVisitor(typeCtx).realize(tc);
@@ -317,7 +306,7 @@ void Cache::populatePythonModule() {
         }
       }
       for (auto &[rn, r] : functions[pyWrap + ".py_type:0"].realizations) {
-        if (r->type->funcGenerics[0].type->unify(tc.get(), nullptr) >= 0) {
+        if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
           py.typePtrHook = r->ir;
           break;
         }
@@ -350,7 +339,7 @@ void Cache::populatePythonModule() {
 
         auto fnName = call + ":0";
         seqassertn(in(functions, fnName), "bad name");
-        auto generics = std::vector<types::TypePtr>{tc};
+        auto generics = std::vector<types::TypePtr>{tc->shared_from_this()};
         if (isProperty) {
           generics.push_back(
               std::make_shared<types::StrStaticType>(this, rev(canonicalName)));
@@ -359,7 +348,7 @@ void Cache::populatePythonModule() {
           generics.push_back(
               std::make_shared<types::IntStaticType>(this, (int)isMethod));
         }
-        auto f = realizeIR(functions[fnName].type, generics);
+        auto f = realizeIR(functions[fnName].type.get(), generics);
         if (!f)
           continue;
 
@@ -474,8 +463,9 @@ void Cache::populatePythonModule() {
         if (in(std::set<std::string>{"__lt__", "__le__", "__eq__", "__ne__", "__gt__",
                                      "__ge__"},
                m.name)) {
-          py.cmp = realizeIR(
-              typeCtx->forceFind(pyWrap + ".wrap_cmp:0")->type->getFunc(), {tc});
+          py.cmp =
+              realizeIR(typeCtx->forceFind(pyWrap + ".wrap_cmp:0")->type->getFunc(),
+                        {tc->shared_from_this()});
           break;
         }
       }
@@ -483,17 +473,17 @@ void Cache::populatePythonModule() {
       if (c.realizations.size() != 1)
         compilationError(fmt::format("cannot pythonize generic class '{}'", cn));
       auto &r = c.realizations.begin()->second;
-      py.type = realizeType(r->type);
+      py.type = realizeType(r->getType());
       seqassertn(!r->type->is(TYPE_TUPLE), "tuples not yet done");
       for (auto &[mn, mt] : r->fields) {
         /// TODO: handle PyMember for tuples
         // Generate getters & setters
         auto generics = std::vector<types::TypePtr>{
-            tc, std::make_shared<types::StrStaticType>(this, mn)};
-        auto gf = realizeIR(functions[pyWrap + ".wrap_get:0"].type, generics);
+            tc->shared_from_this(), std::make_shared<types::StrStaticType>(this, mn)};
+        auto gf = realizeIR(functions[pyWrap + ".wrap_get:0"].getType(), generics);
         ir::Func *sf = nullptr;
         if (!c.ast->hasAttribute(Attr::Tuple))
-          sf = realizeIR(functions[pyWrap + ".wrap_set:0"].type, generics);
+          sf = realizeIR(functions[pyWrap + ".wrap_set:0"].getType(), generics);
         py.getset.push_back({mn, "", gf, sf});
         LOG_USER("[py] {}: {} . {}", "member", cn, mn);
       }
@@ -518,8 +508,8 @@ void Cache::populatePythonModule() {
     for (auto &n : std::vector<std::string>{"_iter", "_iternext"}) {
       auto fnn = overloads[methods[n]].front();
       auto &fna = functions[fnn];
-      auto ft = typeCtx->instantiate(fna.type, tc->getClass());
-      auto rtv = TypecheckVisitor(typeCtx).realize(ft);
+      auto rtv = TypecheckVisitor(typeCtx).realize(
+          typeCtx->instantiate(fna.getType(), tc->getClass()));
       auto f = functions[rtv->getFunc()->ast->getName()]
                    .realizations[rtv->realizedName()]
                    ->ir;
@@ -543,7 +533,7 @@ void Cache::populatePythonModule() {
           typeCtx->forceFind(".toplevel")->type,
           std::make_shared<types::StrStaticType>(this, rev(f.ast->getName())),
           std::make_shared<types::IntStaticType>(this, 0)};
-      if (auto ir = realizeIR(functions[fnName].type, generics)) {
+      if (auto ir = realizeIR(functions[fnName].getType(), generics)) {
         LOG_USER("[py] {}: {}", "toplevel", fn);
         pyModule->functions.push_back(ir::PyFunction{rev(fn), f.ast->getDocstr(), ir,
                                                      ir::PyFunction::Type::TOPLEVEL,

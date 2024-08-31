@@ -22,10 +22,8 @@ public:
   bool isInstantiated() const override;
   std::string realizedName() const override;
   virtual Expr *getStaticExpr() const = 0;
-  virtual TypePtr getNonStaticType() const;
-  std::shared_ptr<StaticType> getStatic() override {
-    return std::static_pointer_cast<StaticType>(shared_from_this());
-  }
+  virtual Type *getNonStaticType() const;
+  StaticType *getStatic() override { return this; }
 };
 
 struct IntStaticType : public StaticType {
@@ -41,9 +39,7 @@ public:
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
 
-  std::shared_ptr<IntStaticType> getIntStatic() override {
-    return std::static_pointer_cast<IntStaticType>(shared_from_this());
-  }
+  IntStaticType *getIntStatic() override { return this; }
 };
 
 struct StrStaticType : public StaticType {
@@ -59,9 +55,7 @@ public:
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
 
-  std::shared_ptr<StrStaticType> getStrStatic() override {
-    return std::static_pointer_cast<StrStaticType>(shared_from_this());
-  }
+  StrStaticType *getStrStatic() override { return this; }
 };
 
 struct BoolStaticType : public StaticType {
@@ -77,9 +71,7 @@ public:
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
 
-  std::shared_ptr<BoolStaticType> getBoolStatic() override {
-    return std::static_pointer_cast<BoolStaticType>(shared_from_this());
-  }
+  BoolStaticType *getBoolStatic() override { return this; }
 };
 
 using StaticTypePtr = std::shared_ptr<StaticType>;

@@ -13,16 +13,16 @@ namespace codon::ast::types {
 /// Undo a destructive unification.
 void Type::Unification::undo() {
   for (size_t i = linked.size(); i-- > 0;) {
-    linked[i]->kind = LinkType::Unbound;
-    linked[i]->type = nullptr;
+    linked[i]->getLink()->kind = LinkType::Unbound;
+    linked[i]->getLink()->type = nullptr;
   }
   for (size_t i = leveled.size(); i-- > 0;) {
-    seqassertn(leveled[i].first->kind == LinkType::Unbound, "not unbound [{}]",
-               leveled[i].first->getSrcInfo());
-    leveled[i].first->level = leveled[i].second;
+    seqassertn(leveled[i].first->getLink()->kind == LinkType::Unbound,
+               "not unbound [{}]", leveled[i].first->getSrcInfo());
+    leveled[i].first->getLink()->level = leveled[i].second;
   }
   for (auto &t : traits)
-    t->trait = nullptr;
+    t->getLink()->trait = nullptr;
 }
 
 Type::Type(const std::shared_ptr<Type> &typ) : cache(typ->cache) {
@@ -35,7 +35,7 @@ TypePtr Type::follow() { return shared_from_this(); }
 
 bool Type::hasUnbounds(bool) const { return false; }
 
-std::vector<std::shared_ptr<Type>> Type::getUnbounds() const { return {}; }
+std::vector<Type *> Type::getUnbounds() const { return {}; }
 
 std::string Type::toString() const { return debugString(1); }
 
@@ -56,16 +56,15 @@ char Type::isStaticType() {
   return 0;
 }
 
-Type *Type::operator<<(const TypePtr &t) {
+Type *Type::operator<<(Type *t) {
   seqassert(t, "rhs is nullptr");
   types::Type::Unification undo;
-  if (unify(t.get(), &undo) >= 0) {
+  if (unify(t, &undo) >= 0) {
     return this;
   } else {
     undo.undo();
     return nullptr;
   }
 }
-
 
 } // namespace codon::ast::types

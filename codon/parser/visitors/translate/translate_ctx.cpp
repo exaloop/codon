@@ -21,9 +21,9 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   std::shared_ptr<TranslateItem> ret = nullptr;
   auto tt = cache->typeCtx->find(name);
   if (tt && tt->isType() && tt->type->canRealize()) {
-    auto t = tt->type;
+    auto t = tt->getType();
     if (name != t->realizedName()) // type prefix
-      t = cache->typeCtx->getType(t);
+      t = cache->typeCtx->extractType(t);
     auto n = t->getClass()->name;
     if (!in(cache->classes, n) || !in(cache->classes[n].realizations, name))
       return nullptr;

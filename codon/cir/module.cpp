@@ -32,12 +32,12 @@ translateGenerics(codon::ast::Cache *cache, std::vector<types::Generic> &generic
   return ret;
 }
 
-std::vector<codon::ast::types::TypePtr>
+std::vector<codon::ast::types::Type*>
 generateDummyNames(std::vector<types::Type *> &types) {
-  std::vector<codon::ast::types::TypePtr> ret;
+  std::vector<codon::ast::types::Type*> ret;
   for (auto *t : types) {
     seqassertn(t->getAstType(), "{} must have an ast type", *t);
-    ret.emplace_back(t->getAstType());
+    ret.emplace_back(t->getAstType().get());
   }
   return ret;
 }
@@ -164,7 +164,7 @@ Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodN
 
   auto cls =
       std::const_pointer_cast<ast::types::Type>(parent->getAstType())->getClass();
-  auto method = cache->findMethod(cls.get(), methodName, generateDummyNames(args));
+  auto method = cache->findMethod(cls, methodName, generateDummyNames(args));
   if (!method)
     return nullptr;
   try {

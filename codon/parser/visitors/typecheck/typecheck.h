@@ -14,6 +14,11 @@
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
+const std::string FN_DISPATCH_SUFFIX = ":dispatch";
+const std::string VAR_USED_SUFFIX = ":used";
+const std::string FN_SETTER_SUFFIX = ":set_";
+const std::string VAR_CLASS_TOPLEVEL = ":toplevel";
+
 namespace codon::ast {
 
 /**
@@ -83,9 +88,7 @@ private: // Node typechecking rules
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
   Expr *getClassMember(DotExpr *);
-  types::TypePtr findSpecialMember(const std::string &);
-  types::FuncTypePtr getBestOverload(Expr *);
-  types::FuncTypePtr getDispatch(const std::string &);
+  types::FuncType *getDispatch(const std::string &);
 
   /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
@@ -116,8 +119,7 @@ private: // Node typechecking rules
   void visit(ChainBinaryExpr *) override;
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
-  std::pair<bool, Expr *> transformStaticTupleIndex(const types::ClassTypePtr &, Expr *,
-                                                    Expr *);
+  std::pair<bool, Expr *> transformStaticTupleIndex(types::ClassType *, Expr *, Expr *);
   int64_t translateIndex(int64_t, int64_t, bool = false);
   int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t);
   void visit(InstantiateExpr *) override;
@@ -137,9 +139,10 @@ private: // Node typechecking rules
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
   bool transformCallArgs(CallExpr *);
-  std::pair<types::FuncTypePtr, Expr *> getCalleeFn(CallExpr *, PartialCallData &);
-  Expr *callReorderArguments(types::FuncTypePtr, CallExpr *, PartialCallData &);
-  bool typecheckCallArgs(const types::FuncTypePtr &, std::vector<CallArg> &);
+  std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
+                                                                  PartialCallData &);
+  Expr *callReorderArguments(types::FuncType *, CallExpr *, PartialCallData &);
+  bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
   Expr *transformNamedTuple(CallExpr *);
   Expr *transformFunctoolsPartial(CallExpr *);
@@ -159,15 +162,13 @@ private: // Node typechecking rules
   Expr *transformStaticPrintFn(CallExpr *);
   Expr *transformHasRttiFn(CallExpr *);
   std::pair<bool, Expr *> transformInternalStaticFn(CallExpr *);
-  std::vector<types::ClassTypePtr> getSuperTypes(const types::ClassTypePtr &);
-  void addFunctionGenerics(const types::FuncType *t, bool = false);
+  std::vector<types::TypePtr> getSuperTypes(types::ClassType *);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
   Stmt *transformUpdate(AssignStmt *);
   Stmt *transformAssignment(AssignStmt *, bool = false);
-  void unpackAssignments(Expr *, Expr *, std::vector<Stmt *> &);
   void visit(DelStmt *) override;
   void visit(AssignMemberStmt *) override;
   std::pair<bool, Expr *> transformInplaceUpdate(AssignStmt *);
@@ -191,7 +192,6 @@ private: // Node typechecking rules
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   Expr *transformForDecorator(Expr *);
-  Stmt *transformHeterogenousTupleFor(ForStmt *);
   std::pair<bool, Stmt *> transformStaticForLoop(ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
@@ -212,25 +212,24 @@ private: // Node typechecking rules
                                   Expr *, Stmt *);
   Stmt *transformLLVMDefinition(Stmt *);
   std::pair<bool, std::string> getDecorator(Expr *);
-  Expr *partializeFunction(const types::FuncTypePtr &);
+  Expr *partializeFunction(types::FuncType *);
   std::shared_ptr<types::ClassType> getFuncTypeBase(size_t);
 
 private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<types::ClassTypePtr> parseBaseClasses(std::vector<Expr *> &,
-                                                    std::vector<Param> &, Stmt *,
-                                                    const std::string &, Expr *,
-                                                    types::ClassTypePtr &);
+  std::vector<types::TypePtr> parseBaseClasses(std::vector<Expr *> &,
+                                               std::vector<Param> &, Stmt *,
+                                               const std::string &, Expr *,
+                                               types::ClassType *);
   std::pair<Stmt *, FunctionStmt *> autoDeduceMembers(ClassStmt *,
                                                       std::vector<Param> &);
   std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(ClassStmt *, std::vector<Stmt *> &, std::vector<Stmt *> &,
                               std::vector<Stmt *> &);
   Stmt *codegenMagic(const std::string &, Expr *, const std::vector<Param> &, bool);
-  types::ClassTypePtr generateTuple(size_t n, bool = true);
+  types::ClassType *generateTuple(size_t n, bool = true);
   int generateKwId(const std::vector<std::string> & = {});
-  void addClassGenerics(const types::ClassTypePtr &, bool instantiate = false);
 
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;
@@ -241,13 +240,18 @@ private:
 
 public:
   /* Type inference (infer.cpp) */
-  types::TypePtr unify(const types::TypePtr &a, const types::TypePtr &b);
-  types::TypePtr realize(types::TypePtr);
+  types::Type *unify(types::Type *a, types::Type *b);
+  types::Type *unify(types::Type *a, types::TypePtr &&b) { return unify(a, b.get()); }
+  types::Type *realize(types::Type *);
+  types::TypePtr &&realize(types::TypePtr &&t) {
+    realize(t.get());
+    return std::move(t);
+  }
 
 private:
   Stmt *inferTypes(Stmt *, bool isToplevel = false);
-  types::TypePtr realizeFunc(types::FuncType *, bool = false);
-  types::TypePtr realizeType(types::ClassType *);
+  types::Type *realizeFunc(types::FuncType *, bool = false);
+  types::Type *realizeType(types::ClassType *);
   FunctionStmt *generateSpecialAst(types::FuncType *);
   size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
@@ -255,35 +259,31 @@ private:
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
 
 private:
-  types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
-                                    const std::string &member,
-                                    const std::vector<types::TypePtr> &args);
-  types::FuncTypePtr findBestMethod(const types::ClassTypePtr &typ,
-                                    const std::string &member,
-                                    const std::vector<Expr *> &args);
-  types::FuncTypePtr
-  findBestMethod(const types::ClassTypePtr &typ, const std::string &member,
-                 const std::vector<std::pair<std::string, types::TypePtr>> &args);
-  int canCall(const types::FuncTypePtr &, const std::vector<CallArg> &,
-              const types::ClassTypePtr & = nullptr);
-  std::vector<types::FuncTypePtr> findMatchingMethods(
-      const types::ClassTypePtr &typ, const std::vector<types::FuncTypePtr> &methods,
-      const std::vector<CallArg> &args, const types::ClassTypePtr &part = nullptr);
-  Expr *castToSuperClass(Expr *expr, types::ClassTypePtr superTyp, bool = false);
+  types::FuncType *findBestMethod(types::ClassType *typ, const std::string &member,
+                                  const std::vector<types::Type *> &args);
+  types::FuncType *findBestMethod(types::ClassType *typ, const std::string &member,
+                                  const std::vector<Expr *> &args);
+  types::FuncType *
+  findBestMethod(types::ClassType *typ, const std::string &member,
+                 const std::vector<std::pair<std::string, types::Type *>> &args);
+  int canCall(types::FuncType *, const std::vector<CallArg> &,
+              types::ClassType * = nullptr);
+  std::vector<types::FuncType *> findMatchingMethods(
+      types::ClassType *typ, const std::vector<types::FuncType *> &methods,
+      const std::vector<CallArg> &args, types::ClassType *part = nullptr);
+  Expr *castToSuperClass(Expr *expr, types::ClassType *superTyp, bool = false);
   Stmt *prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
-  std::vector<types::TypePtr> getClassFieldTypes(const types::ClassTypePtr &);
+  std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
   std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
 
 public:
-  bool wrapExpr(Expr **expr, const types::TypePtr &expectedType,
-                const types::FuncTypePtr &callee = nullptr, bool allowUnwrap = true);
+  bool wrapExpr(Expr **expr, types::Type *expectedType,
+                types::FuncType *callee = nullptr, bool allowUnwrap = true);
   std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *);
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   Expr *generatePartialCall(const std::vector<char> &, types::FuncType *,
                             Expr * = nullptr, Expr * = nullptr);
-
-  types::TypePtr getType(Expr *);
 
   friend class Cache;
   friend class TypeContext;
@@ -291,7 +291,7 @@ public:
   friend class types::UnionType;
 
 private: // Helpers
-  std::shared_ptr<std::vector<std::pair<std::string, types::TypePtr>>>
+  std::shared_ptr<std::vector<std::pair<std::string, types::Type *>>>
   unpackTupleTypes(Expr *);
   std::tuple<bool, bool, Stmt *, std::vector<ASTNode *>>
   transformStaticLoopCall(Expr *, SuiteStmt **, Expr *,
@@ -314,6 +314,58 @@ private:
                ctx->getSrcInfo(), ctx->getBaseName(), ctx->getBase()->iteration,
                std::forward<Ts>(args)...);
   }
+
+  auto getStrLiteral(types::Type *t, size_t pos = 0) {
+    seqassert(t && t->getClass(), "not a class");
+    auto ct = t->getClass();
+    seqassert(pos < ct->generics.size() && ct->generics[pos].type->getStrStatic(),
+              "not a string literal");
+    return ct->generics[pos].type->getStrStatic()->value;
+  }
+
+public:
+  types::Type *extractType(types::Type *t);
+  types::Type *extractType(Expr *e);
+  types::ClassType *extractClassType(Expr *e);
+  types::ClassType *extractClassType(types::Type *t);
+  bool isUnbound(types::Type *t) const;
+  bool isUnbound(Expr *e) const;
+  bool hasOverloads(const std::string &root);
+  std::vector<std::string> getOverloads(const std::string &root);
+  std::string getUnmangledName(const std::string &s);
+  Cache::Class *getClass(const std::string &t);
+  Cache::Class *getClass(types::Type *t);
+  Cache::Function *getFunction(const std::string &n);
+  Cache::Function *getFunction(types::Type *&t);
+  Cache::Class::ClassRealization *getClassRealization(types::Type *t);
+  std::string getRootName(types::FuncType *t);
+  bool isTypeExpr(Expr *e);
+  Cache::Module *getImport(const std::string &s);
+  std::string getArgv() const;
+  std::string getRootModulePath() const;
+  std::vector<std::string> getPluginImportPaths() const;
+  bool isDispatch(const std::string &s);
+  bool isDispatch(FunctionStmt *ast);
+  bool isDispatch(types::Type *f);
+  void addClassGenerics(types::ClassType *typ, bool func = false,
+                        bool onlyMangled = false, bool instantiate = false);
+  template <typename F>
+  auto withClassGenerics(types::ClassType *typ, F fn, bool func = false,
+                         bool onlyMangled = false, bool instantiate = false) {
+    ctx->addBlock();
+    addClassGenerics(typ, func, onlyMangled, instantiate);
+    auto t = fn();
+    ctx->popBlock();
+    return t;
+  }
+  types::TypePtr instantiateType(types::Type *t);
+  void registerGlobal(const std::string &s);
+  types::ClassType *getStdLibType(const std::string &type);
+  types::Type *extractClassGeneric(types::Type *t, int idx = 0);
+  types::Type *extractFuncGeneric(types::Type *t, int idx = 0);
+  types::Type *extractFuncArgType(types::Type *t, int idx = 0);
+  std::string getClassMethod(types::Type *typ, const std::string &member);
+  std::string getTemporaryVar(const std::string &s);
 };
 
 } // namespace codon::ast

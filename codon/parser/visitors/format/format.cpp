@@ -371,10 +371,10 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
           std::vector<std::string> args;
           for (size_t i = 0, j = 0; i < fa->size(); i++) {
             auto &a = (*fa)[i];
-            if (a.status == Param::Normal) {
+            if (a.isValue()) {
               args.push_back(fmt::format(
                   "{}: {}{}", a.getName(),
-                  anchor(ft->getArgTypes()[j++]->realizedName()),
+                  anchor(ft->getArgs()[j++].getType()->realizedName()),
                   a.getDefault() ? fmt::format("={}", transform(a.getDefault())) : ""));
             }
           }

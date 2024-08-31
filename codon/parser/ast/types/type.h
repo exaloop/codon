@@ -41,11 +41,11 @@ struct Type : public codon::SrcObject, public std::enable_shared_from_this<Type>
   /// Needed because the unify() is destructive.
   struct Unification {
     /// List of unbound types that have been changed.
-    std::vector<std::shared_ptr<LinkType>> linked;
+    std::vector<std::shared_ptr<Type>> linked;
     /// List of unbound types whose level has been changed.
-    std::vector<std::pair<std::shared_ptr<LinkType>, int>> leveled;
+    std::vector<std::pair<std::shared_ptr<Type>, int>> leveled;
     /// List of assigned traits.
-    std::vector<std::shared_ptr<LinkType>> traits;
+    std::vector<std::shared_ptr<Type>> traits;
 
   public:
     /// Undo the unification step.
@@ -86,7 +86,7 @@ public:
   /// Check if type has unbound/generic types.
   virtual bool hasUnbounds(bool = false) const;
   /// Obtain the list of internal unbound types.
-  virtual std::vector<std::shared_ptr<Type>> getUnbounds() const;
+  virtual std::vector<Type *> getUnbounds() const;
   /// True if a type is realizable.
   virtual bool canRealize() const = 0;
   /// True if a type is completely instantiated (has no unbounds or generics).
@@ -103,22 +103,22 @@ public:
   virtual std::string realizedName() const = 0;
 
   /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
-  virtual std::shared_ptr<FuncType> getFunc() { return nullptr; }
-  virtual std::shared_ptr<ClassType> getPartial() { return nullptr; }
-  virtual std::shared_ptr<ClassType> getClass() { return nullptr; }
-  virtual std::shared_ptr<LinkType> getLink() { return nullptr; }
-  virtual std::shared_ptr<LinkType> getUnbound() { return nullptr; }
-  virtual std::shared_ptr<StaticType> getStatic() { return nullptr; }
-  virtual std::shared_ptr<IntStaticType> getIntStatic() { return nullptr; }
-  virtual std::shared_ptr<StrStaticType> getStrStatic() { return nullptr; }
-  virtual std::shared_ptr<BoolStaticType> getBoolStatic() { return nullptr; }
-  virtual std::shared_ptr<UnionType> getUnion() { return nullptr; }
-  virtual std::shared_ptr<ClassType> getHeterogenousTuple() { return nullptr; }
+  virtual FuncType *getFunc() { return nullptr; }
+  virtual ClassType *getPartial() { return nullptr; }
+  virtual ClassType *getClass() { return nullptr; }
+  virtual LinkType *getLink() { return nullptr; }
+  virtual LinkType *getUnbound() { return nullptr; }
+  virtual StaticType *getStatic() { return nullptr; }
+  virtual IntStaticType *getIntStatic() { return nullptr; }
+  virtual StrStaticType *getStrStatic() { return nullptr; }
+  virtual BoolStaticType *getBoolStatic() { return nullptr; }
+  virtual UnionType *getUnion() { return nullptr; }
+  virtual ClassType *getHeterogenousTuple() { return nullptr; }
 
   virtual bool is(const std::string &s);
   char isStaticType();
 
-  Type *operator<<(const std::shared_ptr<Type> &t);
+  Type *operator<<(Type *t);
 
 protected:
   Cache *cache;
@@ -132,13 +132,6 @@ using TypePtr = std::shared_ptr<Type>;
 template <typename T>
 struct fmt::formatter<
     T, std::enable_if_t<std::is_base_of<codon::ast::types::Type, T>::value, char>>
-    : fmt::ostream_formatter {};
-
-template <typename T>
-struct fmt::formatter<
-    T,
-    std::enable_if_t<
-        std::is_convertible<T, std::shared_ptr<codon::ast::types::Type>>::value, char>>
     : fmt::formatter<std::string_view> {
   char presentation = 'b';
 
@@ -152,10 +145,10 @@ struct fmt::formatter<
   template <typename FormatContext>
   auto format(const T &p, FormatContext &ctx) const -> decltype(ctx.out()) {
     if (presentation == 'a')
-      return fmt::format_to(ctx.out(), "{}", p ? p->debugString(0) : "<nullptr>");
+      return fmt::format_to(ctx.out(), "{}", p.debugString(0));
     else if (presentation == 'b')
-      return fmt::format_to(ctx.out(), "{}", p ? p->debugString(1) : "<nullptr>");
+      return fmt::format_to(ctx.out(), "{}", p.debugString(1));
     else
-      return fmt::format_to(ctx.out(), "{}", p ? p->debugString(2) : "<nullptr>");
+      return fmt::format_to(ctx.out(), "{}", p.debugString(2));
   }
 };

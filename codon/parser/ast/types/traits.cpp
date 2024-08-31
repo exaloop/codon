@@ -35,21 +35,22 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       return 1;
 
     std::vector<char> known;
+    TypePtr func = nullptr;  // trFun can point to it
     auto trFun = tr;
     if (auto pt = tr->getPartial()) {
       int ic = 0;
       std::unordered_map<int, TypePtr> c;
-      auto func = pt->getPartialFunc()->instantiate(0, &ic, &c)->getFunc();
+      func = pt->getPartialFunc()->instantiate(0, &ic, &c);
       trFun = func->getClass();
       known = pt->getPartialMask();
 
       auto knownArgTypes = pt->generics[1].type->getClass();
       for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
-        if ((*func->ast)[i].status == Param::Generic) {
+        if ((*func->getFunc()->ast)[i].isGeneric()) {
           j++;
         } else if (known[i]) {
-          if (func->getArgTypes()[i - j]->unify(knownArgTypes->generics[k].type.get(),
-                                                us) == -1)
+          const auto &args = func->getFunc()->getArgs();
+          if (args[i - j].type->unify(knownArgTypes->generics[k].type.get(), us) == -1)
             return -1;
           k++;
         }
@@ -66,16 +67,16 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       star = trAst->getStarArgs();
       kwStar = trAst->getKwStarArgs();
       for (size_t fi = 0; fi < trAst->size(); fi++) {
-        if (fi < star && (*trAst)[fi].status != Param::Normal)
+        if (fi < star && !(*trAst)[fi].isValue())
           star--;
-        if (fi < kwStar && (*trAst)[fi].status != Param::Normal)
+        if (fi < kwStar && !(*trAst)[fi].isValue())
           kwStar--;
       }
       if (kwStar < trAst->size() && star >= trInArgs->generics.size())
         star -= 1;
       size_t preStar = 0;
       for (size_t fi = 0; fi < trAst->size(); fi++) {
-        if (fi != kwStar && !known[fi] && (*trAst)[fi].status == Param::Normal) {
+        if (fi != kwStar && !known[fi] && (*trAst)[fi].isValue()) {
           total++;
           if (fi < star)
             preStar++;
@@ -94,7 +95,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     }
     size_t i = 0;
     for (size_t fi = 0; i < inArgs->generics.size() && fi < star; fi++) {
-      if (!known[fi] && (*trAst)[fi].status == Param::Normal) {
+      if (!known[fi] && (*trAst)[fi].isValue()) {
         if (inArgs->generics[i++].type->unify(trInArgs->generics[fi].type.get(), us) ==
             -1)
           return -1;
@@ -105,7 +106,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       // Make sure to set types of *args/**kwargs so that the function that
       // is being unified with Callable[] can be realized
       if (star < trInArgs->generics.size() - (kwStar < trInArgs->generics.size())) {
-        std::vector<TypePtr> starArgTypes;
+        std::vector<Type *> starArgTypes;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[1].type->getClass();
           seqassert(ts && !ts->generics.empty() &&
@@ -113,31 +114,29 @@ int CallableTrait::unify(Type *typ, Unification *us) {
                     "bad partial *args/**kwargs");
           for (auto &tt :
                ts->generics[ts->generics.size() - 1].type->getClass()->generics)
-            starArgTypes.push_back(tt.type);
+            starArgTypes.push_back(tt.getType());
         }
         for (; i < inArgs->generics.size(); i++)
-          starArgTypes.push_back(inArgs->generics[i].type);
+          starArgTypes.push_back(inArgs->generics[i].getType());
 
         auto tv = TypecheckVisitor(cache->typeCtx);
-        auto t = tv.generateTuple(starArgTypes.size());
-        t = cache->typeCtx->instantiateGeneric(t, starArgTypes)->getClass();
-        if (t->unify(trInArgs->generics[star].type.get(), us) == -1)
+        auto tn = cache->typeCtx->instantiateGeneric(
+            tv.generateTuple(starArgTypes.size()), starArgTypes);
+        if (tn->unify(trInArgs->generics[star].type.get(), us) == -1)
           return -1;
       }
       if (kwStar < trInArgs->generics.size()) {
-        TypePtr tt = TypecheckVisitor(cache->typeCtx).generateTuple(0);
+        auto tt = TypecheckVisitor(cache->typeCtx).generateTuple(0);
         size_t id = 0;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[2].type->getClass();
           seqassert(ts && ts->is("NamedTuple"), "bad partial *args/**kwargs");
           id = ts->generics[0].type->getIntStatic()->value;
-          tt = ts->generics[1].type;
+          tt = ts->generics[1].getType()->getClass();
         }
-        auto kt =
-            cache->typeCtx
-                ->instantiateGeneric(cache->typeCtx->getType("NamedTuple"),
-                                     {std::make_shared<IntStaticType>(cache, id), tt})
-                ->getClass();
+        auto tid = std::make_shared<IntStaticType>(cache, id);
+        auto kt = cache->typeCtx->instantiateGeneric(
+            cache->typeCtx->getType("NamedTuple"), {tid.get(), tt});
         if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }
@@ -145,9 +144,9 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       if (us && pf->canRealize()) {
         // Realize if possible to allow deduction of return type
         auto rf = TypecheckVisitor(cache->typeCtx).realize(pf);
-        pf->unify(rf.get(), us);
+        pf->unify(rf, us);
       }
-      if (args[1]->unify(pf->getRetType().get(), us) == -1)
+      if (args[1]->unify(pf->getRetType(), us) == -1)
         return -1;
     }
     // LOG("- {} vs {}: ok", debugString(2), typ->debugString(2));

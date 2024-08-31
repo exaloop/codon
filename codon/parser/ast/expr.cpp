@@ -34,7 +34,7 @@ Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   }
 }
 void Expr::validate() const {}
-types::ClassTypePtr Expr::getClassType() const {
+types::ClassType *Expr::getClassType() const {
   return type ? type->getClass() : nullptr;
 }
 std::string Expr::wrapType(const std::string &sexpr) const {
@@ -45,7 +45,7 @@ std::string Expr::wrapType(const std::string &sexpr) const {
                   type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "");
   return s;
 }
-Expr *Expr::operator<<(const types::TypePtr &t) {
+Expr *Expr::operator<<(types::Type *t) {
   seqassert(type, "lhs is nullptr");
   if ((*type) << t) {
     E(Error::TYPE_UNIFY, getSrcInfo(), type->prettyString(), t->prettyString());
@@ -62,7 +62,7 @@ Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
        getStaticGeneric(getType())))
     this->status = Generic;
   else
-    this->status = (status == 0 ? Normal : (status == 1 ? Generic : HiddenGeneric));
+    this->status = (status == 0 ? Value : (status == 1 ? Generic : HiddenGeneric));
 }
 Param::Param(const SrcInfo &info, std::string name, Expr *type, Expr *defaultValue,
              int status)
@@ -72,7 +72,7 @@ Param::Param(const SrcInfo &info, std::string name, Expr *type, Expr *defaultVal
 std::string Param::toString(int indent) const {
   return format("({}{}{}{})", name, type ? " #:type " + type->toString(indent) : "",
                 defaultValue ? " #:default " + defaultValue->toString(indent) : "",
-                status != Param::Normal ? " #:generic" : "");
+                !isValue() ? " #:generic" : "");
 }
 Param Param::clone(bool clean) const {
   return Param(name, ast::clone(type, clean), ast::clone(defaultValue, clean), status);
@@ -540,12 +540,12 @@ std::string EllipsisExpr::toString(int) const {
 }
 
 LambdaExpr::LambdaExpr(std::vector<std::string> vars, Expr *expr)
-    : AcceptorExtend(), vars(std::move(vars)), expr(expr) {}
+    : AcceptorExtend(), Items(std::move(vars)), expr(expr) {}
 LambdaExpr::LambdaExpr(const LambdaExpr &expr, bool clean)
-    : AcceptorExtend(expr, clean), vars(expr.vars), expr(ast::clone(expr.expr, clean)) {
+    : AcceptorExtend(expr, clean), Items(expr.items), expr(ast::clone(expr.expr, clean)) {
 }
 std::string LambdaExpr::toString(int indent) const {
-  return wrapType(format("lambda ({}) {}", join(vars, " "), expr->toString(indent)));
+  return wrapType(format("lambda ({}) {}", join(items, " "), expr->toString(indent)));
 }
 
 YieldExpr::YieldExpr() : AcceptorExtend() {}
@@ -573,22 +573,22 @@ std::string RangeExpr::toString(int indent) const {
 }
 
 StmtExpr::StmtExpr(std::vector<Stmt *> stmts, Expr *expr)
-    : AcceptorExtend(), stmts(std::move(stmts)), expr(expr) {}
-StmtExpr::StmtExpr(Stmt *stmt, Expr *expr) : AcceptorExtend(), expr(expr) {
-  stmts.push_back(stmt);
+    : AcceptorExtend(), Items(std::move(stmts)), expr(expr) {}
+StmtExpr::StmtExpr(Stmt *stmt, Expr *expr) : AcceptorExtend(), Items({}), expr(expr) {
+  items.push_back(stmt);
 }
-StmtExpr::StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr) : AcceptorExtend(), expr(expr) {
-  stmts.push_back(stmt);
-  stmts.push_back(stmt2);
+StmtExpr::StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr) : AcceptorExtend(), Items({}), expr(expr) {
+  items.push_back(stmt);
+  items.push_back(stmt2);
 }
 StmtExpr::StmtExpr(const StmtExpr &expr, bool clean)
-    : AcceptorExtend(expr, clean), stmts(ast::clone(expr.stmts, clean)),
+    : AcceptorExtend(expr, clean), Items(ast::clone(expr.items, clean)),
       expr(ast::clone(expr.expr, clean)) {}
 std::string StmtExpr::toString(int indent) const {
   auto pad = indent >= 0 ? ("\n" + std::string(indent + 2 * INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> s;
-  s.reserve(stmts.size());
-  for (auto &i : stmts)
+  s.reserve(items.size());
+  for (auto &i : items)
     s.emplace_back(pad + i->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1));
   return wrapType(
       format("stmt-expr {} ({})", expr->toString(indent), fmt::join(s, "")));

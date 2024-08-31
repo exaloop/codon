@@ -54,6 +54,9 @@ struct TypecheckItem : public SrcObject {
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
   char isStatic() const { return type->isStaticType(); }
+
+  types::Type *getType() const { return type.get(); }
+  std::string getName() const { return canonicalName; }
 };
 
 /** Context class that tracks identifiers during the typechecking. **/
@@ -252,30 +255,28 @@ public:
   ///          T=int.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
   /// @param setActive If True, add unbounds to activeUnbounds.
-  types::TypePtr instantiate(const SrcInfo &info, const types::TypePtr &type,
-                             const types::ClassTypePtr &generics = nullptr);
-  types::TypePtr instantiate(types::TypePtr type,
-                             const types::ClassTypePtr &generics = nullptr) {
+  types::TypePtr instantiate(const SrcInfo &info, types::Type *type,
+                             types::ClassType *generics = nullptr);
+  types::TypePtr instantiate(types::Type *type, types::ClassType *generics = nullptr) {
     return instantiate(getSrcInfo(), std::move(type), generics);
   }
 
   /// Instantiate the generic type root with the provided generics.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  types::TypePtr instantiateGeneric(const SrcInfo &info, const types::TypePtr &root,
-                                    const std::vector<types::TypePtr> &generics);
-  types::TypePtr instantiateGeneric(types::TypePtr root,
-                                    const std::vector<types::TypePtr> &generics) {
+  types::TypePtr instantiateGeneric(const SrcInfo &info, types::Type *root,
+                                    const std::vector<types::Type *> &generics);
+  types::TypePtr instantiateGeneric(types::Type *root,
+                                    const std::vector<types::Type *> &generics) {
     return instantiateGeneric(getSrcInfo(), std::move(root), generics);
   }
 
   /// Returns the list of generic methods that correspond to typeName.method.
-  std::vector<types::FuncTypePtr> findMethod(types::ClassType *type,
-                                             const std::string &method,
-                                             bool hideShadowed = true);
+  std::vector<types::FuncType *> findMethod(types::ClassType *type,
+                                            const std::string &method,
+                                            bool hideShadowed = true);
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
-  Cache::Class::ClassField *findMember(const types::ClassTypePtr &,
-                                       const std::string &) const;
+  Cache::Class::ClassField *findMember(types::ClassType *, const std::string &) const;
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
@@ -300,12 +301,9 @@ private:
   std::string debugInfo();
 
 public:
-  std::shared_ptr<std::pair<std::vector<types::TypePtr>, std::vector<types::TypePtr>>>
-  getFunctionArgs(const types::TypePtr &);
-  types::FuncTypePtr extractFunction(const types::TypePtr &);
-
-  types::TypePtr getType(const std::string &);
-  types::TypePtr getType(types::TypePtr);
+  types::FuncType *extractFunction(types::Type *);
+  types::Type *getType(const std::string &);
+  types::Type *extractType(types::Type *);
 
 protected:
   void removeFromMap(const std::string &name) override;

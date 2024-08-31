@@ -24,6 +24,7 @@ namespace codon::ast {
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
   friend struct ReplacingCallbackASTVisitor;                                           \
+  inline decltype(auto) match_members() const { return std::tie(__VA_ARGS__); }        \
   SERIALIZE(CLASS, BASE(Stmt), ##__VA_ARGS__)
 
 // Forward declarations

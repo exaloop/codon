@@ -15,13 +15,13 @@ def foo(i, j):
     return i + j
 print 3 |> foo(1)  #: 4
 
-#%% typeof_definition_error_2,barebones
+#%% typeof_definitions,barebones
 a = 10
-def foo(a)->type(a): pass #! cannot use type() in type signatures
+def foo(a)->type(a): return a
+print(foo(5).__class__.__name__)  #: int
 
-#%% typeof_definition_error_3,barebones
-a=1
-b: type(a) = 1 #! cannot use type() in type signatures
+b: type(a) = 1
+print(b.__class__.__name__) #: int
 
 #%% multi_error,barebones
 # TODO in new parser!

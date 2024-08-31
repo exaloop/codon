@@ -5,12 +5,15 @@ class Foo:
     pass
 #! cannot combine '@extend' with other attributes or decorators
 
-#%% class_err_1b,barebones
+#%% class_extend_typedef,barebones
 size_t = i32
 @extend
 class size_t:
-    pass
-#! class name 'size_t' is not defined
+    def foo(self):
+        return f'Int{N}.foo.{self}'
+
+print size_t(1).foo()  #: Int32.foo.1
+print Int[64](2).foo()  #: Int64.foo.2
 
 #%% class_err_2,barebones
 def foo():
@@ -90,7 +93,7 @@ class Foo:
 #%% class_err_9,barebones
 class F[T: Static[float]]:
     pass
-#! expected 'int' or 'str' (only integers and strings can be static)
+#! expected 'int', 'bool' or 'str'
 
 #%% class_err_11,barebones
 def foo(x):

@@ -34,7 +34,7 @@ struct FuncType : public ClassType {
 
 public:
   FuncType(
-      const std::shared_ptr<ClassType> &baseType, FunctionStmt *ast, size_t index = 0,
+      ClassType *baseType, FunctionStmt *ast, size_t index = 0,
       std::vector<ClassType::Generic> funcGenerics = std::vector<ClassType::Generic>(),
       TypePtr funcParent = nullptr);
 
@@ -46,19 +46,20 @@ public:
 
 public:
   bool hasUnbounds(bool = false) const override;
-  std::vector<TypePtr> getUnbounds() const override;
+  std::vector<Type *> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
 
-  std::shared_ptr<FuncType> getFunc() override {
-    return std::static_pointer_cast<FuncType>(shared_from_this());
-  }
+  FuncType *getFunc() override { return this; }
 
-  std::vector<TypePtr> getArgTypes() const;
-  TypePtr getRetType() const;
+  Type *getRetType() const;
+  Type *getParentType() const { return funcParent.get(); }
+  const std::vector<ClassType::Generic> &getArgs() const {
+    return generics[0].type->getClass()->generics;
+  }
+  std::string getFuncName() const;
 };
-using FuncTypePtr = std::shared_ptr<FuncType>;
 
 } // namespace codon::ast::types
