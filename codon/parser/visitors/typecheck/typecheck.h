@@ -199,8 +199,7 @@ private:
                                                std::vector<Param> &, Stmt *,
                                                const std::string &, Expr *,
                                                types::ClassType *);
-  std::pair<Stmt *, FunctionStmt *> autoDeduceMembers(ClassStmt *,
-                                                      std::vector<Param> &);
+  void autoDeduceMembers(ClassStmt *, std::vector<Param> &);
   std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(ClassStmt *, std::vector<Stmt *> &, std::vector<Stmt *> &,
                               std::vector<Stmt *> &);

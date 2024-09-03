@@ -84,9 +84,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Parse and add class generics
     std::vector<Param> args;
-    if (stmt->hasAttribute("deduce") && args.empty()) {
-      E(Error::CUSTOM, stmt, "not yet implemented");
-    } else if (stmt->hasAttribute(Attr::Extend)) {
+    if (stmt->hasAttribute(Attr::Extend)) {
       for (auto &a : argsToParse) {
         if (!a.isGeneric())
           continue;
@@ -96,6 +94,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         args.emplace_back(val->canonicalName, nullptr, nullptr, a.status);
       }
     } else {
+      if (stmt->hasAttribute(Attr::ClassDeduce) && args.empty()) {
+        autoDeduceMembers(stmt, argsToParse);
+        stmt->eraseAttribute(Attr::ClassDeduce);
+      }
+
       // Add all generics before parent classes, fields and methods
       for (auto &a : argsToParse) {
         if (!a.isGeneric())
@@ -492,36 +495,23 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 ///        x: T1
 ///        y: T2```
 /// @return the transformed init and the pointer to the original function.
-std::pair<Stmt *, FunctionStmt *>
-TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
-  // std::pair<Stmt *, FunctionStmt *> init{nullptr, nullptr};
-  // for (const auto &sp : getClassMethods(stmt->suite))
-  //   if (auto f = cast<FunctionStmt>(sp)) {
-  //     // todo)) do this
-  //     if (f->name == "__init__" && !f->args.empty() && f->args[0].name == "self") {
-  //       // Set up deducedMembers that will be populated during AssignStmt evaluation
-  //       ctx->getBase()->deducedMembers =
-  //       std::make_shared<std::vector<std::string>>(); auto transformed =
-  //       transform(sp);
-  //       transformed->getFunction()->attributes.set(Attr::RealizeWithoutSelf);
-  //       ctx->cache->functions[transformed->getFunction()->name].ast->attributes.set(
-  //           Attr::RealizeWithoutSelf);
-  //       int i = 0;
-  //       // Once done, add arguments
-  //       for (auto &m : *(ctx->getBase()->deducedMembers)) {
-  //         auto varName = ctx->generateCanonicalName(format("T{}", ++i));
-  //         auto memberName = ctx->cache->rev(varName);
-  //         ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
-  //         args.emplace_back(varName, N<IdExpr>(TYPE_TYPE), nullptr, Param::Generic);
-  //         args.emplace_back(m, N<IdExpr>(varName));
-  //         ctx->cache->classes[canonicalName].fields.push_back(
-  //             Cache::Class::ClassField{m, nullptr, canonicalName});
-  //       }
-  //       ctx->getBase()->deducedMembers = nullptr;
-  //       return {transformed, f};
-  //     }
-  //   }
-  return {nullptr, nullptr};
+void TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
+  std::set<std::string> members;
+  for (const auto &sp : getClassMethods(stmt->suite))
+    if (auto f = cast<FunctionStmt>(sp)) {
+      if (f->name == "__init__")
+        if (auto b = f->getAttribute<ir::StringListAttribute>(Attr::ClassDeduce)) {
+          f->setAttribute(Attr::RealizeWithoutSelf);
+          for (auto m : b->values)
+            members.insert(m);
+        }
+    }
+  for (auto m : members) {
+    auto genericName = fmt::format("T_{}", m);
+    args.emplace_back(genericName, N<IdExpr>(TYPE_TYPE), N<IdExpr>("NoneType"),
+                      Param::Generic);
+    args.emplace_back(m, N<IdExpr>(genericName));
+  }
 }
 
 /// Return a list of all statements within a given class suite.

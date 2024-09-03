@@ -378,11 +378,17 @@ print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,
 
 @deduce
 class Bar:
-    def __init__(self, y):
+    def __init__(self, y: float):
         self.y = Foo(y)
+    def __init__(self, y: str):
+        self.x = Foo(y)
 
 b = Bar(3.1)
-print(b.y.x, b.__class__.__name__) #: [3.1] Bar[Foo[List[float],Tuple[int,float]]]
+print(b.x.__class__.__name__, b.y.__class__.__name__, b.y.x, b.__class__.__name__)
+#: NoneType Foo[List[float],Tuple[int,float]] [3.1] Bar[NoneType,Foo[List[float],Tuple[int,float]]]
+b = Bar('3.1')
+print(b.x.__class__.__name__, b.y.__class__.__name__, b.x.x, b.__class__.__name__)
+#: Foo[List[str],Tuple[int,str]] NoneType ['3.1'] Bar[Foo[List[str],Tuple[int,str]],NoneType]
 
 #%% class_var,barebones
 class Foo:

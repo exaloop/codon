@@ -410,6 +410,15 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   // Realize the return type
   auto ret = realize(type->getRetType());
+  if (ast->hasAttribute(Attr::RealizeWithoutSelf) &&
+      !extractFuncArgType(type)->canRealize()) { // For RealizeWithoutSelf
+    realizations.erase(key);
+    ctx->bases.pop_back();
+    ctx->popBlock();
+    ctx->typecheckLevel--;
+    getLogger().level--;
+    return nullptr;
+  }
   seqassert(ret, "cannot realize return type '{}'", *(type->getRetType()));
 
   // LOG("[realize] F {} -> {} => {}", type->getFuncName(), type->debugString(2),
