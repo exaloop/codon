@@ -9,6 +9,7 @@
 #include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
+#include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/visitor.h"
 
@@ -19,6 +20,7 @@
 
 using fmt::format;
 using namespace codon::error;
+using namespace codon::matcher;
 
 namespace codon::ast {
 
@@ -55,14 +57,14 @@ Expr *Expr::operator<<(types::Type *t) {
 
 Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
     : name(std::move(name)), type(type), defaultValue(defaultValue) {
-  if (status == 0 && getType() &&
-      (isId(getType(), "type") || isId(getType(), TYPE_TYPEVAR) ||
-       (cast<IndexExpr>(getType()) &&
-        isId(cast<IndexExpr>(getType())->getExpr(), TYPE_TYPEVAR)) ||
-       getStaticGeneric(getType())))
+  if (status == 0 &&
+      (match(getType(), MOr(M<IdExpr>(TYPE_TYPE), M<IdExpr>(TYPE_TYPEVAR),
+                            M<IndexExpr>(M<IdExpr>(TYPE_TYPEVAR), M_))) ||
+       getStaticGeneric(getType()))) {
     this->status = Generic;
-  else
+  } else {
     this->status = (status == 0 ? Value : (status == 1 ? Generic : HiddenGeneric));
+  }
 }
 Param::Param(const SrcInfo &info, std::string name, Expr *type, Expr *defaultValue,
              int status)
@@ -542,8 +544,8 @@ std::string EllipsisExpr::toString(int) const {
 LambdaExpr::LambdaExpr(std::vector<std::string> vars, Expr *expr)
     : AcceptorExtend(), Items(std::move(vars)), expr(expr) {}
 LambdaExpr::LambdaExpr(const LambdaExpr &expr, bool clean)
-    : AcceptorExtend(expr, clean), Items(expr.items), expr(ast::clone(expr.expr, clean)) {
-}
+    : AcceptorExtend(expr, clean), Items(expr.items),
+      expr(ast::clone(expr.expr, clean)) {}
 std::string LambdaExpr::toString(int indent) const {
   return wrapType(format("lambda ({}) {}", join(items, " "), expr->toString(indent)));
 }
@@ -577,7 +579,8 @@ StmtExpr::StmtExpr(std::vector<Stmt *> stmts, Expr *expr)
 StmtExpr::StmtExpr(Stmt *stmt, Expr *expr) : AcceptorExtend(), Items({}), expr(expr) {
   items.push_back(stmt);
 }
-StmtExpr::StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr) : AcceptorExtend(), Items({}), expr(expr) {
+StmtExpr::StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr)
+    : AcceptorExtend(), Items({}), expr(expr) {
   items.push_back(stmt);
   items.push_back(stmt2);
 }

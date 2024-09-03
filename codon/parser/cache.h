@@ -26,6 +26,11 @@
 #define TYPE_OPTIONAL "Optional"
 #define TYPE_SLICE "std.internal.types.slice.Slice"
 #define FN_UNWRAP "std.internal.types.optional.unwrap.0:0"
+#define TYPE_TYPE "type"
+#define FN_DISPATCH_SUFFIX ":dispatch"
+#define VAR_USED_SUFFIX ":used"
+#define FN_SETTER_SUFFIX ":set_"
+#define VAR_CLASS_TOPLEVEL ":toplevel"
 #define VAR_ARGV "__argv__"
 
 #define MAX_INT_WIDTH 10000
@@ -263,8 +268,6 @@ public:
   SrcInfo generateSrcInfo();
   /// Get file contents at the given location.
   std::string getContent(const SrcInfo &info);
-  /// Register a global identifier.
-  void addGlobal(const std::string &name, ir::Var *var = nullptr);
 
   /// Realization API.
 

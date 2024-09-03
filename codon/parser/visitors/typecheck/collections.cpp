@@ -270,7 +270,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   } else if (!isDict) {
     ta = ctx->instantiateGeneric(getStdLibType(type), {collectionTyp.get()});
   }
-  t->setType(ctx->instantiateGeneric(getStdLibType("type"), {ta.get()}));
+  t->setType(instantiateType(ta.get()));
   stmts.push_back(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs)));
   for (const auto &it : items) {
     if (!isDict && cast<StarExpr>(it)) {

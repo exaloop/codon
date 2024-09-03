@@ -368,7 +368,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     auto typ = ctx->getUnbound();
     // Set up the Callable trait
     typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
-    unify(expr->getType(), ctx->instantiateGeneric(getStdLibType("type"), {typ.get()}));
+    unify(expr->getType(), instantiateType(typ.get()));
   } else if (isId(expr->getExpr(), TYPE_TYPEVAR)) {
     // Case: TypeVar[...] trait instantiation
     (*expr)[0] = transformType((*expr)[0]);
@@ -380,8 +380,8 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     for (size_t i = hasRepeats; i < expr->size(); i++) {
       (*expr)[i] = transformType((*expr)[i]);
       auto t = ctx->instantiate((*expr)[i]->getSrcInfo(), extractType((*expr)[i]));
-      if (isUnion ||
-          (*expr)[i]->getType()->isStaticType() != generics[i].type->isStaticType()) {
+      if (isUnion || (*expr)[i]->getType()->isStaticType() !=
+                         generics[i].getType()->isStaticType()) {
         if (cast<NoneExpr>((*expr)[i])) // `None` -> `NoneType`
           (*expr)[i] = transformType((*expr)[i]);
         if (!isTypeExpr((*expr)[i]))
@@ -396,7 +396,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       typ->getUnion()->seal();
     }
 
-    unify(expr->getType(), ctx->instantiateGeneric(getStdLibType("type"), {typ.get()}));
+    unify(expr->getType(), instantiateType(typ.get()));
     // If the type is realizable, use the realized name instead of instantiation
     // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
     if (realize(expr->getType())) {
@@ -427,7 +427,7 @@ Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   if (expr->getExpr()->getType()->isStaticType() == 2) {
     if (expr->getOp() == "!") {
       if (expr->getExpr()->getType()->canRealize()) {
-        bool value = expr->getExpr()->getType()->getStrStatic()->value.empty();
+        bool value = getStrLiteral(expr->getExpr()->getType()).empty();
         LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
         return transform(N<IntExpr>(value));
       } else {
@@ -442,7 +442,7 @@ Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   if (expr->getExpr()->getType()->isStaticType() == 3) {
     if (expr->getOp() == "!") {
       if (expr->getExpr()->getType()->canRealize()) {
-        bool value = expr->getExpr()->getType()->getBoolStatic()->value;
+        bool value = getBoolLiteral(expr->getExpr()->getType());
         LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
         return transform(N<BoolExpr>(!value));
       } else {
@@ -456,7 +456,7 @@ Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   // Case: static integers
   if (expr->getOp() == "-" || expr->getOp() == "+" || expr->getOp() == "!") {
     if (expr->getExpr()->getType()->canRealize()) {
-      int64_t value = expr->getExpr()->getType()->getIntStatic()->value;
+      int64_t value = getIntLiteral(expr->getExpr()->getType());
       if (expr->getOp() == "+")
         ;
       else if (expr->getOp() == "-")
@@ -511,8 +511,8 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       // `"a" + "b"` -> `"ab"`
       if (expr->getLhs()->getType()->getStrStatic() &&
           expr->getRhs()->getType()->getStrStatic()) {
-        auto value = expr->getLhs()->getType()->getStrStatic()->value +
-                     expr->getRhs()->getType()->getStrStatic()->value;
+        auto value = getStrLiteral(expr->getLhs()->getType()) +
+                     getStrLiteral(expr->getRhs()->getType());
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
         return transform(N<StringExpr>(value));
       } else {
@@ -523,8 +523,8 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
       // `"a" == "b"` -> `False` (also handles `!=`)
       if (expr->getLhs()->getType()->getStrStatic() &&
           expr->getRhs()->getType()->getStrStatic()) {
-        bool eq = expr->getLhs()->getType()->getStrStatic()->value ==
-                  expr->getRhs()->getType()->getStrStatic()->value;
+        bool eq = getStrLiteral(expr->getLhs()->getType()) ==
+                  getStrLiteral(expr->getRhs()->getType());
         bool value = expr->getOp() == "==" ? eq : !eq;
         LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), value);
         return transform(N<BoolExpr>(value));
@@ -540,11 +540,11 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
   if (expr->getLhs()->getType()->getStatic() &&
       expr->getRhs()->getType()->getStatic()) {
     int64_t lvalue = expr->getLhs()->getType()->getIntStatic()
-                         ? expr->getLhs()->getType()->getIntStatic()->value
-                         : expr->getLhs()->getType()->getBoolStatic()->value;
+                         ? getIntLiteral(expr->getLhs()->getType())
+                         : getBoolLiteral(expr->getLhs()->getType());
     int64_t rvalue = expr->getRhs()->getType()->getIntStatic()
-                         ? expr->getRhs()->getType()->getIntStatic()->value
-                         : expr->getRhs()->getType()->getBoolStatic()->value;
+                         ? getIntLiteral(expr->getRhs()->getType())
+                         : getBoolLiteral(expr->getRhs()->getType());
     if (expr->getOp() == "<")
       lvalue = lvalue < rvalue;
     else if (expr->getOp() == "<=")
@@ -676,10 +676,10 @@ Expr *TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
   auto rc = realize(expr->getRhs()->getType());
   if (!lc || !rc) {
     // Types not known: return early
-    unify(expr->getType(), ctx->getType("bool"));
+    unify(expr->getType(), getStdLibType("bool"));
     return nullptr;
   }
-  if (expr->getLhs()->getType()->is("type") && expr->getRhs()->getType()->is("type"))
+  if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs()))
     return transform(N<BoolExpr>(lc->realizedName() == rc->realizedName()));
   if (!lc->getClass()->isRecord() && !rc->getClass()->isRecord()) {
     // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
@@ -844,7 +844,7 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
     return false;
   };
 
-  std::string str = isStaticString ? expr->getType()->getStrStatic()->value : "";
+  std::string str = isStaticString ? getStrLiteral(expr->getType()) : "";
   auto sz = int64_t(isStaticString ? str.size() : getClassFields(tuple).size());
   int64_t start = 0, stop = sz, step = 1, multiple = 0;
   if (getInt(&start, index)) {

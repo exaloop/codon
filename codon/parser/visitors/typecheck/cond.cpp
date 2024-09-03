@@ -18,12 +18,12 @@ auto evaluateStaticCondition(Expr *cond, TT ready, TF notReady) {
   seqassertn(cond->getType()->isStaticType(), "not a static condition");
   if (cond->getType()->canRealize()) {
     bool isTrue = false;
-    if (cond->getType()->getStrStatic())
-      isTrue = !cond->getType()->getStrStatic()->value.empty();
-    else if (cond->getType()->getIntStatic())
-      isTrue = cond->getType()->getIntStatic()->value;
-    else if (cond->getType()->getBoolStatic())
-      isTrue = cond->getType()->getBoolStatic()->value;
+    if (auto as = cond->getType()->getStrStatic())
+      isTrue = !as->value.empty();
+    else if (auto ai = cond->getType()->getIntStatic())
+      isTrue = ai->value;
+    else if (auto ab = cond->getType()->getBoolStatic())
+      isTrue = ab->value;
     return ready(isTrue);
   } else {
     return notReady();

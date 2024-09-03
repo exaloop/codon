@@ -129,7 +129,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // Special case: obj.__class__
   if (expr->getMember() == "__class__") {
     /// TODO: prevent cls.__class__ and type(cls)
-    resultExpr = transform(N<CallExpr>(N<IdExpr>("type"), expr->getExpr()));
+    resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TYPE), expr->getExpr()));
     return;
   }
   expr->expr = transform(expr->getExpr());

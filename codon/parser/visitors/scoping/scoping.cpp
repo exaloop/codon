@@ -6,12 +6,14 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include <fmt/format.h>
 
 using fmt::format;
 using namespace codon::error;
+using namespace codon::matcher;
 
 namespace codon::ast {
 
@@ -59,8 +61,13 @@ void ScopingVisitor::transformScope(Stmt *s) {
 
 void ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
   seqassert(e, "bad call to transformAdding");
-  if (cast<IndexExpr>(e) || cast<DotExpr>(e)) {
+  if (cast<IndexExpr>(e)) {
     transform(e);
+  } else if (auto de = cast<DotExpr>(e)) {
+    transform(e);
+    if (!ctx->classDeduce.first.empty() &&
+        match(de->getExpr(), M<IdExpr>(ctx->classDeduce.first)))
+      ctx->classDeduce.second.insert(de->getMember());
   } else if (cast<ListExpr>(e) || cast<TupleExpr>(e) || cast<IdExpr>(e)) {
     SetInScope s1(&(ctx->adding), true);
     SetInScope s2(&(ctx->root), root);
@@ -311,6 +318,8 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = ctx->cache;
   c->functionScope = stmt;
+  if (ctx->inClass && !stmt->empty())
+    c->classDeduce = {stmt->front().getName(), {}};
   c->renames = ctx->renames;
   ScopingVisitor v;
   c->scope.emplace_back(0);
@@ -335,6 +344,13 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   for (auto &[u, v] : c->map)
     b->bindings[u] = v.size();
   stmt->setAttribute(Attr::Bindings, std::move(b));
+
+  if (!c->classDeduce.second.empty()) {
+    auto s = std::make_unique<ir::StringListAttribute>();
+    for (const auto &n : c->classDeduce.second)
+      s->values.push_back(n);
+    stmt->setAttribute(Attr::ClassDeduce, std::move(s));
+  }
 }
 
 void ScopingVisitor::visit(WithStmt *stmt) {

@@ -125,6 +125,10 @@ template <typename TM, typename... TA> bool match(TM &t, match_or_t<TA...> m) {
   return match_or_help<0, TM, TA...>(t, m);
 }
 
+template <typename TM, typename... TA> bool match(TM *t, match_or_t<TA...> m) {
+  return match_or_help<0, TM*, TA...>(t, m);
+}
+
 template <typename T, typename TM, typename... TA>
 bool match(T &t, match_t<TM, TA...> m) {
   if constexpr (std::is_pointer_v<T>) {

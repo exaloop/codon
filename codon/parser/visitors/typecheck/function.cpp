@@ -175,8 +175,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto canonicalName = rootName;
   if (!in(ctx->cache->overloads, rootName))
     ctx->cache->overloads.insert({rootName, {}});
-  canonicalName +=
-      format(":{}", getOverloads(rootName).size());
+  canonicalName += format(":{}", getOverloads(rootName).size());
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->getName();
 
   if (isClassMember) {
@@ -220,7 +219,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     std::array<const char *, 4> op{"", "int", "str", "bool"};
     for (auto &[c, v] : captures) {
       if (v->isType())
-        stmt->items.emplace_back(c, N<IdExpr>("type"));
+        stmt->items.emplace_back(c, N<IdExpr>(TYPE_TYPE));
       else if (auto si = v->isStatic())
         stmt->items.emplace_back(c,
                                  N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(op[si])));
@@ -260,7 +259,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         if (match(a.getType(), M<IndexExpr>(M<IdExpr>(TYPE_CALLABLE), M_)))
           defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
         // Special case: `arg: type = None` -> `arg: type = NoneType`
-        if (match(a.getType(), M<IdExpr>(MOr("type", TYPE_TYPEVAR))))
+        if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TYPE_TYPEVAR))))
           defaultValue = N<IdExpr>("NoneType");
       }
       /// TODO: Python-style defaults
@@ -306,13 +305,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     if (isClassMember && stmt->hasAttribute(Attr::Method)) {
       // Get class generics (e.g., T for `class Cls[T]: def foo:`)
       auto aa = stmt->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
-      parentClass = ctx->getType(aa->value)->getClass();
+      parentClass = extractClassType(aa->value);
     }
     // Add function generics
     std::vector<TypePtr> generics;
     generics.reserve(explicits.size());
     for (const auto &i : explicits)
-      generics.emplace_back(ctx->getType(i.name)->shared_from_this());
+      generics.emplace_back(extractType(i.name)->shared_from_this());
 
     // Handle function arguments
     // Base type: `Function[[args,...], ret]`
@@ -337,19 +336,17 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!(*stmt)[ai].getType()) {
         if (parentClass && ai == 0 && (*stmt)[ai].getName() == "self") {
           // Special case: self in methods
-          unify(argType->generics[aj].getType(), parentClass);
+          unify(extractClassGeneric(argType, aj), parentClass);
         } else {
-          unify(argType->generics[aj].getType(), ctx->getUnbound());
-          generics.push_back(argType->generics[aj].type);
+          generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
         }
       } else if (startswith((*stmt)[ai].getName(), "*")) {
         // Special case: `*args: type` and `**kwargs: type`. Do not add this type to the
         // signature (as the real type is `Tuple[type, ...]`); it will be used during
         // call typechecking
-        unify(argType->generics[aj].getType(), ctx->getUnbound());
-        generics.push_back(argType->generics[aj].type);
+        generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
       } else {
-        unify(argType->generics[aj].getType(),
+        unify(extractClassGeneric(argType, aj),
               extractType(transformType((*stmt)[ai].getType())));
       }
       aj++;
@@ -401,7 +398,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
                       ctx->getModule().empty() && ctx->isGlobal()};
   f->setDone();
   auto aa = stmt->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
-  auto parentClass = aa ? ctx->getType(aa->value) : nullptr;
+  auto parentClass = aa ? extractClassType(aa->value) : nullptr;
 
   // Construct the type
   auto funcTyp =
@@ -599,7 +596,7 @@ Expr *TypecheckVisitor::partializeFunction(types::FuncType *fn) {
   std::vector<char> mask(fn->ast->size(), 0);
   for (int i = 0, j = 0; i < fn->ast->size(); i++)
     if ((*fn->ast)[i].isGeneric()) {
-      if (!fn->funcGenerics[j].type->getUnbound())
+      if (!extractFuncGeneric(fn, j)->getUnbound())
         mask[i] = 1;
       j++;
     }

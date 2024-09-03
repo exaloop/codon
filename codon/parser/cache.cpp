@@ -35,13 +35,6 @@ std::string Cache::rev(const std::string &s) {
   return "";
 }
 
-void Cache::addGlobal(const std::string &name, ir::Var *var) {
-  if (!in(globals, name)) {
-    // LOG("[global] {}", name);
-    globals[name] = var;
-  }
-}
-
 SrcInfo Cache::generateSrcInfo() {
   return {FILE_GENERATED, generatedSrcInfoCount, generatedSrcInfoCount++, 0};
 }

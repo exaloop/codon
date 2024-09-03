@@ -49,9 +49,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     classItem->type->setSrcInfo(stmt->getSrcInfo());
 
     typ = classItem->getType()->getClass();
-    if (canonicalName != "type")
-      classItem->type =
-          ctx->instantiateGeneric(getStdLibType("type"), {classItem->getType()});
+    if (canonicalName != TYPE_TYPE)
+      classItem->type = instantiateType(classItem->getType());
 
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
@@ -67,7 +66,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     auto val = ctx->find(name);
     if (!val || !val->isType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
-    typ = ctx->getType(val->getName())->getClass();
+    typ = val->getName() == TYPE_TYPE ? val->getType()->getClass()
+                                      : extractClassType(val->getType());
     canonicalName = typ->name;
     argsToParse = getClass(typ)->ast->items;
   }
@@ -439,6 +439,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       typ->hiddenGenerics.push_back(g);
   }
   // Add normal fields
+  auto cls = getClass(canonicalName);
   for (auto &clsTyp : asts) {
     withClassGenerics(clsTyp->getClass(), [&]() {
       int ai = 0;
@@ -457,10 +458,9 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
                     acls->fields[ai].name, a.getName());
           args.emplace_back(name, transformType(clean_clone(a.getType())),
                             transform(clean_clone(a.getDefault())));
-          ctx->cache->classes[canonicalName].fields.emplace_back(
-              Cache::Class::ClassField{
-                  name, extractType(args.back().getType())->shared_from_this(),
-                  acls->fields[ai].baseClass});
+          cls->fields.emplace_back(
+              name, extractType(args.back().getType())->shared_from_this(),
+              acls->fields[ai].baseClass);
           ai++;
         }
       }
@@ -468,7 +468,6 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     });
   }
   if (typeAst) {
-    auto cls = getClass(canonicalName);
     if (!asts.empty()) {
       mro.push_back(asts);
       cls->rtti = true;
@@ -513,7 +512,7 @@ TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
   //         auto varName = ctx->generateCanonicalName(format("T{}", ++i));
   //         auto memberName = ctx->cache->rev(varName);
   //         ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
-  //         args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
+  //         args.emplace_back(varName, N<IdExpr>(TYPE_TYPE), nullptr, Param::Generic);
   //         args.emplace_back(m, N<IdExpr>(varName));
   //         ctx->cache->classes[canonicalName].fields.push_back(
   //             Cache::Class::ClassField{m, nullptr, canonicalName});
@@ -758,7 +757,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
       typeArgs.emplace_back(N<IdExpr>(format("T{}", i + 1)));
     }
     for (size_t i = 0; i < n; i++) {
-      newFnArgs.emplace_back(format("T{}", i + 1), N<IdExpr>("type"));
+      newFnArgs.emplace_back(format("T{}", i + 1), N<IdExpr>(TYPE_TYPE));
     }
     Stmt *fn = N<FunctionStmt>(
         "__new__", N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(typeArgs)),
@@ -769,7 +768,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
     ext = N<SuiteStmt>(ext);
 
     ScopingVisitor::apply(ctx->cache, ext);
-    auto rctx = ctx->cache->imports[STDLIB_IMPORT].ctx;
+    auto rctx = getImport(STDLIB_IMPORT)->ctx;
     auto oldBases = rctx->bases;
     rctx->bases.clear();
     rctx->bases.push_back(oldBases[0]);

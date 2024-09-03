@@ -14,11 +14,6 @@
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
-const std::string FN_DISPATCH_SUFFIX = ":dispatch";
-const std::string VAR_USED_SUFFIX = ":used";
-const std::string FN_SETTER_SUFFIX = ":set_";
-const std::string VAR_CLASS_TOPLEVEL = ":toplevel";
-
 namespace codon::ast {
 
 /**
@@ -144,24 +139,6 @@ private: // Node typechecking rules
   Expr *callReorderArguments(types::FuncType *, CallExpr *, PartialCallData &);
   bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
-  Expr *transformNamedTuple(CallExpr *);
-  Expr *transformFunctoolsPartial(CallExpr *);
-  Expr *transformSuperF(CallExpr *);
-  Expr *transformSuper();
-  Expr *transformPtr(CallExpr *);
-  Expr *transformArray(CallExpr *);
-  Expr *transformIsInstance(CallExpr *);
-  Expr *transformStaticLen(CallExpr *);
-  Expr *transformHasAttr(CallExpr *);
-  Expr *transformGetAttr(CallExpr *);
-  Expr *transformSetAttr(CallExpr *);
-  Expr *transformCompileError(CallExpr *);
-  Expr *transformTupleFn(CallExpr *);
-  Expr *transformTypeFn(CallExpr *);
-  Expr *transformRealizedFn(CallExpr *);
-  Expr *transformStaticPrintFn(CallExpr *);
-  Expr *transformHasRttiFn(CallExpr *);
-  std::pair<bool, Expr *> transformInternalStaticFn(CallExpr *);
   std::vector<types::TypePtr> getSuperTypes(types::ClassType *);
 
   /* Assignments (assign.cpp) */
@@ -272,7 +249,7 @@ private:
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);
   Expr *castToSuperClass(Expr *expr, types::ClassType *superTyp, bool = false);
-  Stmt *prepareVTables();
+  void prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
   std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
   std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
@@ -315,19 +292,13 @@ private:
                std::forward<Ts>(args)...);
   }
 
-  auto getStrLiteral(types::Type *t, size_t pos = 0) {
-    seqassert(t && t->getClass(), "not a class");
-    auto ct = t->getClass();
-    seqassert(pos < ct->generics.size() && ct->generics[pos].type->getStrStatic(),
-              "not a string literal");
-    return ct->generics[pos].type->getStrStatic()->value;
-  }
-
 public:
   types::Type *extractType(types::Type *t);
   types::Type *extractType(Expr *e);
+  types::Type *extractType(const std::string &);
   types::ClassType *extractClassType(Expr *e);
   types::ClassType *extractClassType(types::Type *t);
+  types::ClassType *extractClassType(const std::string &s);
   bool isUnbound(types::Type *t) const;
   bool isUnbound(Expr *e) const;
   bool hasOverloads(const std::string &root);
@@ -336,7 +307,7 @@ public:
   Cache::Class *getClass(const std::string &t);
   Cache::Class *getClass(types::Type *t);
   Cache::Function *getFunction(const std::string &n);
-  Cache::Function *getFunction(types::Type *&t);
+  Cache::Function *getFunction(types::Type *t);
   Cache::Class::ClassRealization *getClassRealization(types::Type *t);
   std::string getRootName(types::FuncType *t);
   bool isTypeExpr(Expr *e);
@@ -366,6 +337,58 @@ public:
   types::Type *extractFuncArgType(types::Type *t, int idx = 0);
   std::string getClassMethod(types::Type *typ, const std::string &member);
   std::string getTemporaryVar(const std::string &s);
+
+  int64_t getIntLiteral(types::Type *t, size_t pos = 0);
+  bool getBoolLiteral(types::Type *t, size_t pos = 0);
+  std::string getStrLiteral(types::Type *t, size_t pos = 0);
+
+  Expr *transformNamedTuple(CallExpr *);
+  Expr *transformFunctoolsPartial(CallExpr *);
+  Expr *transformSuperF(CallExpr *);
+  Expr *transformSuper();
+  Expr *transformPtr(CallExpr *);
+  Expr *transformArray(CallExpr *);
+  Expr *transformIsInstance(CallExpr *);
+  Expr *transformStaticLen(CallExpr *);
+  Expr *transformHasAttr(CallExpr *);
+  Expr *transformGetAttr(CallExpr *);
+  Expr *transformSetAttr(CallExpr *);
+  Expr *transformCompileError(CallExpr *);
+  Expr *transformTupleFn(CallExpr *);
+  Expr *transformTypeFn(CallExpr *);
+  Expr *transformRealizedFn(CallExpr *);
+  Expr *transformStaticPrintFn(CallExpr *);
+  Expr *transformHasRttiFn(CallExpr *);
+  Expr *transformStaticFnCanCall(CallExpr *);
+  Expr *transformStaticFnArgHasType(CallExpr *);
+  Expr *transformStaticFnArgGetType(CallExpr *);
+  Expr *transformStaticFnArgs(CallExpr *);
+  Expr *transformStaticFnHasDefault(CallExpr *);
+  Expr *transformStaticFnGetDefault(CallExpr *);
+  Expr *transformStaticFnWrapCallArgs(CallExpr *);
+  Expr *transformStaticVars(CallExpr *);
+  Expr *transformStaticTupleType(CallExpr *);
+  SuiteStmt *generateClassPopulateVTablesAST();
+  SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
+  FunctionStmt *generateThunkAST(types::FuncType *fp, types::ClassType *base,
+                                 types::ClassType *derived);
+  SuiteStmt *generateFunctionCallInternalAST(types::FuncType *);
+  SuiteStmt *generateUnionNewAST(types::FuncType *);
+  SuiteStmt *generateUnionTagAST(types::FuncType *);
+  SuiteStmt *generateNamedKeysAST(types::FuncType *);
+  std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
+  std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
+                                                    const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticRangeLoop(Expr *, const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticFnOverloadsLoop(Expr *,
+                                                    const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticEnumerateLoop(Expr *,
+                                                  const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticVarsLoop(Expr *, const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticVarTypesLoop(Expr *,
+                                                 const std::vector<std::string> &);
+  std::vector<Stmt *>
+  populateStaticHeterogenousTupleLoop(Expr *, const std::vector<std::string> &);
 };
 
 } // namespace codon::ast

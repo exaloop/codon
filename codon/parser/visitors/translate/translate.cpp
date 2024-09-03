@@ -449,7 +449,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   ir::Var *v = nullptr;
 
   if (!stmt->getLhs()->getType()->isInstantiated() ||
-      (stmt->getLhs()->getType()->is("type"))) {
+      (stmt->getLhs()->getType()->is(TYPE_TYPE))) {
     // LOG("{} {}", getSrcInfo(), stmt->toString(0));
     return; // type aliases/fn aliases etc
   }

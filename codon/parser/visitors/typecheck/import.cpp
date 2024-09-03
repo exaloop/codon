@@ -365,7 +365,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     i->baseName = "";
     i->scope = {0};
     ctx->addAlwaysVisible(i);
-    ctx->cache->addGlobal(importDoneVar);
+    registerGlobal(importDoneVar);
 
     // Wrap all imported top-level statements into a function.
     // TODO: Make sure to register the global variables and set their assignments as

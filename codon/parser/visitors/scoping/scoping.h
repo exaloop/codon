@@ -84,6 +84,7 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
     std::unordered_map<std::string, BindingsAttribute::CaptureType>
         childCaptures; // for functions!
     std::map<std::string, SrcInfo> firstSeen;
+    std::pair<std::string, std::unordered_set<std::string>> classDeduce;
 
     bool adding = false;
     ASTNode *root = nullptr;

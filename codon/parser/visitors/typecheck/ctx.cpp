@@ -499,7 +499,7 @@ types::FuncType *TypeContext::extractFunction(types::Type *t) {
 }
 
 types::Type *TypeContext::extractType(types::Type *t) {
-  while (t && t->is("type"))
+  while (t && t->is(TYPE_TYPE))
     t = t->getClass()->generics[0].type.get();
   return t;
 }
@@ -507,7 +507,7 @@ types::Type *TypeContext::extractType(types::Type *t) {
 
 types::Type *TypeContext::getType(const std::string &s) {
   auto t = forceFind(s)->type.get();
-  if (s == "type")
+  if (s == TYPE_TYPE)
     return t;
   return extractType(t);
 }

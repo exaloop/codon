@@ -66,7 +66,7 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     // Assign `a` to `type(a)()` to mark it for deletion
     resultStmt = transform(N<AssignStmt>(
         stmt->getExpr(),
-        N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), clone(stmt->getExpr()))), nullptr,
+        N<CallExpr>(N<CallExpr>(N<IdExpr>(TYPE_TYPE), clone(stmt->getExpr()))), nullptr,
         AssignStmt::Update));
 
     // Allow deletion *only* if the binding is dominated

@@ -269,6 +269,7 @@ set(CODON_CPPFILES
   codon/parser/visitors/typecheck/loops.cpp
   codon/parser/visitors/typecheck/op.cpp
   codon/parser/visitors/typecheck/error.cpp
+  codon/parser/visitors/typecheck/special.cpp
   codon/parser/visitors/visitor.cpp
   codon/cir/attribute.cpp
   codon/cir/analyze/analysis.cpp

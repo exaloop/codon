@@ -202,7 +202,7 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
       if (!expr->getType())
         expr->setType(ctx->getUnbound());
     }
-    if (!allowTypes && expr && expr->getType()->is("type"))
+    if (!allowTypes && expr && isTypeExpr(expr))
       E(Error::UNEXPECTED_TYPE, expr, "type");
     if (expr->isDone())
       ctx->changedNodes++;
@@ -234,7 +234,7 @@ Expr *TypecheckVisitor::transformType(Expr *expr, bool allowTypeOf) {
   if (expr) {
     if (expr->getType()->isStaticType()) {
       ;
-    } else if (expr->getType()->is("type")) {
+    } else if (isTypeExpr(expr)) {
       expr->setType(ctx->instantiate(expr->getType()));
     } else if (expr->getType()->getUnbound() &&
                !expr->getType()->getUnbound()->genericName.empty()) {
@@ -706,15 +706,15 @@ TypecheckVisitor::unpackTupleTypes(Expr *expr) {
     if (!val || !val->is("NamedTuple") || !extractClassGeneric(val, 1)->getClass() ||
         !extractClassGeneric(val)->canRealize())
       return nullptr;
-    auto id = extractClassGeneric(val)->getIntStatic()->value;
+    auto id = getIntLiteral(val);
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     auto names = ctx->cache->generatedTupleNames[id];
     auto types = extractClassGeneric(val, 1)->getClass();
     seqassert(startswith(types->name, "Tuple"), "bad NamedTuple argument");
     for (size_t i = 0; i < types->generics.size(); i++) {
-      if (!types->generics[i].type)
+      if (!extractClassGeneric(types, i))
         return nullptr;
-      ret->emplace_back(names[i], types->generics[i].getType());
+      ret->emplace_back(names[i], extractClassGeneric(types, i));
     }
   } else {
     return nullptr;
@@ -729,7 +729,7 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
   seqassert(expr->getType()->is("NamedTuple") &&
                 extractClassGeneric(expr->getClassType())->canRealize(),
             "bad named tuple: {}", *expr);
-  auto id = extractClassGeneric(expr->getClassType())->getIntStatic()->value;
+  auto id = getIntLiteral(expr->getClassType());
   seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
   auto names = ctx->cache->generatedTupleNames[id];
   for (size_t i = 0; i < names.size(); i++) {
@@ -764,46 +764,65 @@ TypecheckVisitor::getClassFieldTypes(types::ClassType *cls) {
 }
 
 types::Type *TypecheckVisitor::extractType(types::Type *t) {
-  while (t && t->is("type"))
+  while (t && t->is(TYPE_TYPE))
     t = extractClassGeneric(t);
   return t;
 }
+
 types::Type *TypecheckVisitor::extractType(Expr *e) {
-  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == "type")
+  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == TYPE_TYPE)
     return e->getType();
   if (auto i = cast<InstantiateExpr>(e))
-    if (cast<IdExpr>(i->getExpr()) && cast<IdExpr>(i->getExpr())->getValue() == "type")
+    if (cast<IdExpr>(i->getExpr()) &&
+        cast<IdExpr>(i->getExpr())->getValue() == TYPE_TYPE)
       return e->getType();
   return extractType(e->getType());
 }
+
+types::Type *TypecheckVisitor::extractType(const std::string &s) {
+  auto c = ctx->forceFind(s);
+  return s == TYPE_TYPE ? c->getType() : extractType(c->getType());
+}
+
 types::ClassType *TypecheckVisitor::extractClassType(Expr *e) {
   auto t = extractType(e);
   return t->getClass();
 }
+
 types::ClassType *TypecheckVisitor::extractClassType(types::Type *t) {
   return extractType(t)->getClass();
+}
+
+types::ClassType *TypecheckVisitor::extractClassType(const std::string &s) {
+  return extractType(s)->getClass();
 }
 
 bool TypecheckVisitor::isUnbound(types::Type *t) const {
   return t->getUnbound() != nullptr;
 }
+
 bool TypecheckVisitor::isUnbound(Expr *e) const { return isUnbound(e->getType()); }
+
 bool TypecheckVisitor::hasOverloads(const std::string &root) {
   auto i = in(ctx->cache->overloads, root);
   return i && i->size() > 1;
 }
+
 std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root) {
   auto i = in(ctx->cache->overloads, root);
   seqassert(i, "bad root");
   return *i;
 }
+
 std::string TypecheckVisitor::getUnmangledName(const std::string &s) {
   return ctx->cache->rev(s);
 }
+
 Cache::Class *TypecheckVisitor::getClass(const std::string &t) {
   auto i = in(ctx->cache->classes, t);
   return i;
 }
+
 Cache::Class *TypecheckVisitor::getClass(types::Type *t) {
   if (t) {
     if (auto c = t->getClass())
@@ -812,47 +831,60 @@ Cache::Class *TypecheckVisitor::getClass(types::Type *t) {
   seqassert(false, "bad class");
   return nullptr;
 }
+
 Cache::Function *TypecheckVisitor::getFunction(const std::string &n) {
   auto i = in(ctx->cache->functions, n);
   return i;
 }
-Cache::Function *TypecheckVisitor::getFunction(types::Type *&t) {
+
+Cache::Function *TypecheckVisitor::getFunction(types::Type *t) {
   seqassert(t->getFunc(), "bad function");
   return getFunction(t->getFunc()->getFuncName());
 }
+
 Cache::Class::ClassRealization *TypecheckVisitor::getClassRealization(types::Type *t) {
   seqassert(t->canRealize(), "bad class");
   auto i = in(getClass(t)->realizations, t->getClass()->realizedName());
   seqassert(i, "bad class realization");
   return i->get();
 }
+
 std::string TypecheckVisitor::getRootName(types::FuncType *t) {
   auto i = in(ctx->cache->functions, t->getFuncName());
   seqassert(i && !i->rootName.empty(), "bad function");
   return i->rootName;
 }
+
 bool TypecheckVisitor::isTypeExpr(Expr *e) {
-  return e && e->getType() && e->getType()->is("type");
+  return e && e->getType() && e->getType()->is(TYPE_TYPE);
 }
+
 Cache::Module *TypecheckVisitor::getImport(const std::string &s) {
   auto i = in(ctx->cache->imports, s);
   seqassert(i, "bad import");
   return i;
 }
+
 std::string TypecheckVisitor::getArgv() const { return ctx->cache->argv0; }
+
 std::string TypecheckVisitor::getRootModulePath() const { return ctx->cache->module0; }
+
 std::vector<std::string> TypecheckVisitor::getPluginImportPaths() const {
   return ctx->cache->pluginImportPaths;
 }
+
 bool TypecheckVisitor::isDispatch(const std::string &s) {
   return endswith(s, FN_DISPATCH_SUFFIX);
 }
+
 bool TypecheckVisitor::isDispatch(FunctionStmt *ast) {
   return ast && isDispatch(ast->name);
 }
+
 bool TypecheckVisitor::isDispatch(types::Type *f) {
   return f->getFunc() && isDispatch(f->getFunc()->ast);
 }
+
 void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
                                         bool onlyMangled, bool instantiate) {
   auto addGen = [&](const types::ClassType::Generic &g) {
@@ -867,11 +899,12 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
     }
     seqassert(!g.isStatic || t->isStaticType(), "{} not a static: {}", g.name,
               *(g.type));
-    if (!g.isStatic && !t->is("type"))
-      t = ctx->instantiateGeneric(getStdLibType("type"), {t.get()});
+    if (!g.isStatic && !t->is(TYPE_TYPE))
+      t = instantiateType(t.get());
     auto v = ctx->addType(onlyMangled ? g.name : getUnmangledName(g.name), g.name, t);
     v->generic = true;
-    // LOG("+ {} {} {} {}", getUnmangledName(g.name), g.name, t->debugString(2), v->getBaseName());
+    // LOG("+ {} {} {} {}", getUnmangledName(g.name), g.name, t->debugString(2),
+    // v->getBaseName());
   };
 
   if (func && typ->getFunc()) {
@@ -902,27 +935,39 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
       addGen(g);
   }
 }
+
 types::TypePtr TypecheckVisitor::instantiateType(types::Type *t) {
-  return ctx->instantiateGeneric(ctx->getType("type"), {t});
+  return ctx->instantiateGeneric(ctx->forceFind(TYPE_TYPE)->getType(), {t});
 }
-void TypecheckVisitor::registerGlobal(const std::string &s) {
-  ctx->cache->addGlobal(s);
+
+void TypecheckVisitor::registerGlobal(const std::string &name) {
+  if (!in(ctx->cache->globals, name)) {
+    ctx->cache->globals[name] = nullptr;
+  }
 }
+
 types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) {
-  return ctx->cache->imports[STDLIB_IMPORT].ctx->getType(type)->getClass();
+  auto t = getImport(STDLIB_IMPORT)->ctx->forceFind(type)->getType();
+  if (type == TYPE_TYPE)
+    return t->getClass();
+  return extractClassType(t);
 }
+
 types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, int idx) {
   seqassert(t->getClass() && idx < t->getClass()->generics.size(), "bad class");
   return t->getClass()->generics[idx].type.get();
 }
+
 types::Type *TypecheckVisitor::extractFuncGeneric(types::Type *t, int idx) {
   seqassert(t->getFunc() && idx < t->getFunc()->funcGenerics.size(), "bad function");
   return t->getFunc()->funcGenerics[idx].type.get();
 }
+
 types::Type *TypecheckVisitor::extractFuncArgType(types::Type *t, int idx) {
   seqassert(t->getFunc(), "bad function");
   return extractClassGeneric(extractClassGeneric(t), idx);
 }
+
 std::string TypecheckVisitor::getClassMethod(types::Type *typ,
                                              const std::string &member) {
   if (auto cls = getClass(typ)) {
@@ -932,8 +977,36 @@ std::string TypecheckVisitor::getClassMethod(types::Type *typ,
   seqassertn(false, "cannot find '{}' in '{}'", member, *typ);
   return "";
 }
+
 std::string TypecheckVisitor::getTemporaryVar(const std::string &s) {
   return ctx->cache->getTemporaryVar(s);
+}
+
+std::string TypecheckVisitor::getStrLiteral(types::Type *t, size_t pos) {
+  seqassert(t && t->getClass(), "not a class");
+  if (t->getStrStatic())
+    return t->getStrStatic()->value;
+  auto ct = extractClassGeneric(t, pos);
+  seqassert(ct->canRealize() && ct->getStrStatic(), "not a string literal");
+  return ct->getStrStatic()->value;
+}
+
+int64_t TypecheckVisitor::getIntLiteral(types::Type *t, size_t pos) {
+  seqassert(t && t->getClass(), "not a class");
+  if (t->getIntStatic())
+    return t->getIntStatic()->value;
+  auto ct = extractClassGeneric(t, pos);
+  seqassert(ct->canRealize() && ct->getIntStatic(), "not a string literal");
+  return ct->getIntStatic()->value;
+}
+
+bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
+  seqassert(t && t->getClass(), "not a class");
+  if (t->getBoolStatic())
+    return t->getBoolStatic()->value;
+  auto ct = extractClassGeneric(t, pos);
+  seqassert(ct->canRealize() && ct->getBoolStatic(), "not a string literal");
+  return ct->getBoolStatic()->value;
 }
 
 } // namespace codon::ast
