@@ -95,7 +95,10 @@ void ScopingVisitor::visit(IdExpr *expr) {
 void ScopingVisitor::visit(StringExpr *expr) {
   for (auto &s : *expr)
     if (s.prefix == "#f") {
-      auto [expr, format] = parseExpr(ctx->cache, s.value, s.getSrcInfo());
+      auto e = expr->getSrcInfo();
+      e.line += s.getSrcInfo().col;
+      e.col += s.getSrcInfo().col;
+      auto [expr, format] = parseExpr(ctx->cache, s.value, e);
       if (!format.empty()) {
         s.expr = ctx->cache->NS<CallExpr>(
             expr, ctx->cache->NS<DotExpr>(expr, expr, "__format__"),

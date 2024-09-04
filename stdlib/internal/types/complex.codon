@@ -49,40 +49,73 @@ class complex:
     def __hash__(self) -> int:
         return self.real.__hash__() + self.imag.__hash__() * 1000003
 
-    def __add__(self, other) -> complex:
+    def __add__(self, other: float) -> complex:
         return self + complex(other)
 
-    def __sub__(self, other) -> complex:
+    def __sub__(self, other: float) -> complex:
         return self - complex(other)
 
-    def __mul__(self, other) -> complex:
+    def __mul__(self, other: float) -> complex:
         return self * complex(other)
 
-    def __truediv__(self, other) -> complex:
+    def __truediv__(self, other: float) -> complex:
         return self / complex(other)
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other: float) -> bool:
         return self == complex(other)
 
-    def __ne__(self, other) -> bool:
+    def __ne__(self, other: float) -> bool:
         return self != complex(other)
 
-    def __pow__(self, other) -> complex:
+    def __pow__(self, other: float) -> complex:
         return self ** complex(other)
 
-    def __radd__(self, other) -> complex:
+    def __add__(self, other: int) -> complex:
+        return self + complex(other)
+
+    def __sub__(self, other: int) -> complex:
+        return self - complex(other)
+
+    def __mul__(self, other: int) -> complex:
+        return self * complex(other)
+
+    def __truediv__(self, other: int) -> complex:
+        return self / complex(other)
+
+    def __eq__(self, other: int) -> bool:
+        return self == complex(other)
+
+    def __ne__(self, other: int) -> bool:
+        return self != complex(other)
+
+    def __radd__(self, other: float) -> complex:
         return complex(other) + self
 
-    def __rsub__(self, other) -> complex:
+    def __rsub__(self, other: float) -> complex:
         return complex(other) - self
 
-    def __rmul__(self, other) -> complex:
+    def __rmul__(self, other: float) -> complex:
         return complex(other) * self
 
-    def __rtruediv__(self, other) -> complex:
+    def __rtruediv__(self, other: float) -> complex:
         return complex(other) / self
 
-    def __rpow__(self, other) -> complex:
+    def __rpow__(self, other: float) -> complex:
+        return complex(other) ** self
+
+    def __radd__(self, other: int) -> complex:
+        return complex(other) + self
+
+    def __rsub__(self, other: int) -> complex:
+        return complex(other) - self
+
+    def __rmul__(self, other: int) -> complex:
+        return complex(other) * self
+
+    def __rtruediv__(self, other: int) -> complex:
+        return complex(other) / self
+
+    def __rpow__(self, other: int) -> complex:
         return complex(other) ** self
 
     def __add__(self, other: complex) -> complex:
@@ -194,7 +227,23 @@ class complex:
             %y = call double @llvm.cos.f64(double %x)
             ret double %y
 
-        if other.real == 0.0 and other.imag == 0.0:
+        @pure
+        @llvm
+        def floor(x: float) -> float:
+            declare double @llvm.floor.f64(double)
+            %y = call double @llvm.floor.f64(double %x)
+            ret double %y
+
+        @pure
+        @llvm
+        def fabs(x: float) -> float:
+            declare double @llvm.fabs.f64(double)
+            %y = call double @llvm.fabs.f64(double %x)
+            ret double %y
+
+        if other.imag == 0.0 and other.real == floor(other.real) and fabs(other.real) <= 100.0:
+            return self ** int(other.real)
+        elif other.real == 0.0 and other.imag == 0.0:
             return complex(1.0, 0.0)
         elif self.real == 0.0 and self.imag == 0.0:
             # if other.imag != 0. or other.real < 0.: errno = EDOM
@@ -345,41 +394,149 @@ class complex64:
     def __hash__(self) -> int:
         return self.real.__hash__() + self.imag.__hash__() * 1000003
 
-    def __add__(self, other) -> complex64:
+    def __add__(self, other: complex) -> complex:
+        return complex(self) + other
+
+    def __sub__(self, other: complex) -> complex:
+        return complex(self) - other
+
+    def __mul__(self, other: complex) -> complex:
+        return complex(self) * other
+
+    def __truediv__(self, other: complex) -> complex:
+        return complex(self) / other
+
+    def __pow__(self, other: complex) -> complex:
+        return complex(self) ** other
+
+    def __eq__(self, other: complex) -> bool:
+        return complex(self) == other
+
+    def __ne__(self, other: complex) -> bool:
+        return complex(self) != other
+
+    def __radd__(self, other: complex) -> complex:
+        return other + complex(self)
+
+    def __rsub__(self, other: complex) -> complex:
+        return other - complex(self)
+
+    def __rmul__(self, other: complex) -> complex:
+        return other * complex(self)
+
+    def __rtruediv__(self, other: complex) -> complex:
+        return other / complex(self)
+
+    def __rpow__(self, other: complex) -> complex:
+        return other ** complex(self)
+
+    def __add__(self, other: float32) -> complex64:
         return self + complex64(other)
 
-    def __sub__(self, other) -> complex64:
+    def __sub__(self, other: float32) -> complex64:
         return self - complex64(other)
 
-    def __mul__(self, other) -> complex64:
+    def __mul__(self, other: float32) -> complex64:
         return self * complex64(other)
 
-    def __truediv__(self, other) -> complex64:
+    def __truediv__(self, other: float32) -> complex64:
         return self / complex64(other)
 
-    def __eq__(self, other) -> bool:
-        return self == complex64(other)
-
-    def __ne__(self, other) -> bool:
-        return self != complex64(other)
-
-    def __pow__(self, other) -> complex64:
+    def __pow__(self, other: float32) -> complex64:
         return self ** complex64(other)
 
-    def __radd__(self, other) -> complex64:
+    def __eq__(self, other: float32) -> bool:
+        return self == complex64(other)
+
+    def __ne__(self, other: float32) -> bool:
+        return self != complex64(other)
+
+    def __radd__(self, other: float32) -> complex64:
         return complex64(other) + self
 
-    def __rsub__(self, other) -> complex64:
+    def __rsub__(self, other: float32) -> complex64:
         return complex64(other) - self
 
-    def __rmul__(self, other) -> complex64:
+    def __rmul__(self, other: float32) -> complex64:
         return complex64(other) * self
 
-    def __rtruediv__(self, other) -> complex64:
+    def __rtruediv__(self, other: float32) -> complex64:
         return complex64(other) / self
 
-    def __rpow__(self, other) -> complex64:
+    def __rpow__(self, other: float32) -> complex64:
         return complex64(other) ** self
+
+    def __add__(self, other: float) -> complex:
+        return complex(self) + other
+
+    def __sub__(self, other: float) -> complex:
+        return complex(self) - other
+
+    def __mul__(self, other: float) -> complex:
+        return complex(self) * other
+
+    def __truediv__(self, other: float) -> complex:
+        return complex(self) / other
+
+    def __pow__(self, other: float) -> complex:
+        return complex(self) ** other
+
+    def __eq__(self, other: float) -> bool:
+        return complex(self) == other
+
+    def __ne__(self, other: float) -> bool:
+        return complex(self) != other
+
+    def __radd__(self, other: float) -> complex:
+        return other + complex(self)
+
+    def __rsub__(self, other: float) -> complex:
+        return other - complex(self)
+
+    def __rmul__(self, other: float) -> complex:
+        return other * complex(self)
+
+    def __rtruediv__(self, other: float) -> complex:
+        return other / complex(self)
+
+    def __rpow__(self, other: float) -> complex:
+        return other ** complex(self)
+
+    def __add__(self, other: int) -> complex:
+        return complex(self) + other
+
+    def __sub__(self, other: int) -> complex:
+        return complex(self) - other
+
+    def __mul__(self, other: int) -> complex:
+        return complex(self) * other
+
+    def __truediv__(self, other: int) -> complex:
+        return complex(self) / other
+
+    # def __pow__(self, other: int) -> complex:
+    #     return complex(self) ** other
+
+    def __eq__(self, other: int) -> bool:
+        return complex(self) == other
+
+    def __ne__(self, other: int) -> bool:
+        return complex(self) != other
+
+    def __radd__(self, other: int) -> complex:
+        return other + complex(self)
+
+    def __rsub__(self, other: int) -> complex:
+        return other - complex(self)
+
+    def __rmul__(self, other: int) -> complex:
+        return other * complex(self)
+
+    def __rtruediv__(self, other: int) -> complex:
+        return other / complex(self)
+
+    def __rpow__(self, other: int) -> complex:
+        return other ** complex(self)
 
     def __add__(self, other: complex64) -> complex64:
         return complex64(self.real + other.real, self.imag + other.imag)
@@ -490,7 +647,23 @@ class complex64:
             %y = call float @llvm.cos.f32(float %x)
             ret float %y
 
-        if other.real == f32(0.0) and other.imag == f32(0.0):
+        @pure
+        @llvm
+        def floor(x: f32) -> f32:
+            declare float @llvm.floor.f32(float)
+            %y = call float @llvm.floor.f32(float %x)
+            ret float %y
+
+        @pure
+        @llvm
+        def fabs(x: f32) -> f32:
+            declare float @llvm.fabs.f64(float)
+            %y = call float @llvm.fabs.f64(float %x)
+            ret float %y
+
+        if other.imag == f32(0.0) and other.real == floor(other.real) and fabs(other.real) <= f32(100.0):
+            return self ** int(other.real)
+        elif other.real == f32(0.0) and other.imag == f32(0.0):
             return complex64(1.0, 0.0)
         elif self.real == f32(0.0) and self.imag == f32(0.0):
             # if other.imag != 0. or other.real < 0.: errno = EDOM

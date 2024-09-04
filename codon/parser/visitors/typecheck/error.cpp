@@ -2,6 +2,7 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/parser/match.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -9,6 +10,7 @@ using fmt::format;
 namespace codon::ast {
 
 using namespace types;
+using namespace matcher;
 
 /// Transform asserts.
 /// @example
@@ -71,9 +73,9 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         c->eraseAttribute(Attr::ExprDominatedUsed);
         c->setAttribute(Attr::ExprDominated);
         c->suite = N<SuiteStmt>(
-            N<AssignStmt>(
-                N<IdExpr>(format("{}{}", getUnmangledName(c->getVar()), VAR_USED_SUFFIX)),
-                N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
+            N<AssignStmt>(N<IdExpr>(format("{}{}", getUnmangledName(c->getVar()),
+                                           VAR_USED_SUFFIX)),
+                          N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
             c->getSuite());
       } else {
         val = ctx->forceFind(c->getVar());
@@ -121,7 +123,8 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(N<ThrowStmt>(nullptr));
     auto c = N<ExceptStmt>(pyVar, transformType(exc), pyCatchStmt);
 
-    auto val = ctx->addVar(pyVar, pyVar, extractType(c->getException())->shared_from_this());
+    auto val =
+        ctx->addVar(pyVar, pyVar, extractType(c->getException())->shared_from_this());
     ctx->blockLevel++;
     c->suite = SuiteStmt::wrap(transform(c->getSuite()));
     ctx->blockLevel--;
@@ -149,17 +152,15 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
     return;
   }
 
-  stmt->expr = transform(stmt->expr);
-
-  auto se = cast<CallExpr>(stmt->expr);
-  if (!(se && cast<IdExpr>(se->expr) &&
-        cast<IdExpr>(se->expr)->getValue() == "__internal__.set_header")) {
+  stmt->expr = transform(stmt->getExpr());
+  if (!match(stmt->getExpr(),
+             M<CallExpr>(M<IdExpr>("__internal__.set_header:0"), M_))) {
     stmt->expr = transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("__internal__"), "set_header"), stmt->expr,
+        N<IdExpr>("__internal__.set_header:0"), stmt->getExpr(),
         N<StringExpr>(ctx->getBase()->name), N<StringExpr>(stmt->getSrcInfo().file),
         N<IntExpr>(stmt->getSrcInfo().line), N<IntExpr>(stmt->getSrcInfo().col)));
   }
-  if (stmt->expr->isDone())
+  if (stmt->getExpr()->isDone())
     stmt->setDone();
 }
 
@@ -181,8 +182,7 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
   seqassert(!stmt->empty(), "stmt->items is empty");
   std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
-    std::string var =
-        stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
+    std::string var = stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
     auto as = N<AssignStmt>(N<IdExpr>(var), (*stmt)[i], nullptr,
                             (*stmt)[i]->hasAttribute(Attr::ExprDominated)
                                 ? AssignStmt::UpdateMode::Update

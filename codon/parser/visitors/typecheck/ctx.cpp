@@ -37,13 +37,6 @@ TypeContext::TypeContext(Cache *cache, std::string filename)
 
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
   seqassert(!var->scope.empty(), "bad scope for '{}'", name);
-  // if (var->type->is("byte"))
-  // LOG("--");
-  // LOG("[ctx] {} @ {}: + {}: {} ({:D})", getModule(), getSrcInfo(), name,
-  // var->canonicalName, var->type);
-  // if (name=="V.0"&&var->type->is("int"))
-  //   LOG("-");
-  // LOG("{}: {:c}", name, var->type);
   Context<TypecheckItem>::add(name, var);
 }
 
@@ -435,8 +428,10 @@ int TypeContext::reorderNamedArgs(types::FuncType *func,
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
-                   Emsg(Error::CALL_ARGS_MANY, cache->rev(func->ast->getName()),
-                        func->ast->size(), args.size() - partial));
+                   Emsg(Error::CALL_ARGS_MANY,
+                        // func->ast->getName(),
+                        cache->rev(func->ast->getName()), func->ast->size(),
+                        args.size() - partial));
 
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;
@@ -503,7 +498,6 @@ types::Type *TypeContext::extractType(types::Type *t) {
     t = t->getClass()->generics[0].type.get();
   return t;
 }
-
 
 types::Type *TypeContext::getType(const std::string &s) {
   auto t = forceFind(s)->type.get();

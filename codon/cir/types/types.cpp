@@ -39,9 +39,16 @@ std::vector<Generic> Type::doGetGenerics() const {
       ret.emplace_back(
           getModule()->getCache()->realizeType(cls, extractTypes(cls->generics)));
     else {
-      seqassertn(g.type->getIntStatic(), "IR only supports int statics [{}]",
-                 g.type->getSrcInfo());
-      ret.emplace_back(g.type->getIntStatic()->value);
+      if (auto ai = g.type->getIntStatic()) {
+        ret.emplace_back(ai->value);
+      } else if (auto ai = g.type->getBoolStatic()) {
+        ret.emplace_back(int(ai->value));
+      } else if (auto as = g.type->getStrStatic()) {
+        ret.emplace_back(as->value);
+      } else {
+        seqassertn(false, "IR only supports int or str statics [{}]",
+                   g.type->getSrcInfo());
+      }
     }
   }
 

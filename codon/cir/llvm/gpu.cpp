@@ -393,8 +393,9 @@ void remapFunctions(llvm::Module *M) {
        }},
 
       {"seq_throw",
-       [](llvm::IRBuilder<> &B,
-          const std::vector<llvm::Value *> &args) { B.CreateUnreachable(); }},
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         B.CreateUnreachable();
+       }},
   };
 
   for (auto &pair : remapping) {

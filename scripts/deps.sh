@@ -21,6 +21,7 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
       -DLLVM_INCLUDE_TESTS=OFF \
       -DLLVM_ENABLE_RTTI=ON \
       -DLLVM_ENABLE_ZLIB=OFF \
+      -DLLVM_ENABLE_ZSTD=OFF \
       -DLLVM_ENABLE_TERMINFO=OFF \
       -DLLVM_TARGETS_TO_BUILD=all \
       -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
@@ -40,4 +41,6 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
   fi
 
   "${INSTALLDIR}/bin/llvm-config" --cmakedir
+  cd ${INSTALLDIR}
+  rm -rf ${SRCDIR}
 fi

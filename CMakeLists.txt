@@ -77,13 +77,11 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
-add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2)
-# if(APPLE AND APPLE_ARM)
-#   add_dependencies(codonrt unwind_shared)
-# endif()
+add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2 fast_float)
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
-                                           "${gc_SOURCE_DIR}/include" runtime)
+                                           "${gc_SOURCE_DIR}/include"
+                                           "${fast_float_SOURCE_DIR}/include" runtime)
 target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP}
                                       LLVMSupport)
 if(APPLE)
@@ -119,14 +117,6 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
           ${CMAKE_BINARY_DIR})
-# if(APPLE AND APPLE_ARM)
-#   add_custom_command(
-#     TARGET codonrt
-#     POST_BUILD
-#     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:unwind_shared>
-#             ${CMAKE_BINARY_DIR})
-# endif()
-
 
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -320,8 +310,10 @@ set(CODON_CPPFILES
   codon/cir/var.cpp
   codon/util/common.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
-target_include_directories(codonc PRIVATE
-  ${peglib_SOURCE_DIR} ${toml_SOURCE_DIR}/include ${semver_SOURCE_DIR}/include)
+target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR}
+                                          ${toml_SOURCE_DIR}/include
+                                          ${semver_SOURCE_DIR}/include
+                                          ${fast_float_SOURCE_DIR}/include)
 target_sources(codonc PRIVATE ${CODON_CPPFILES} codon_rules.cpp omp_rules.cpp)
 if(ASAN)
   target_compile_options(
@@ -403,20 +395,6 @@ add_custom_target(
     "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
     "${CMAKE_BINARY_DIR}/lib/codon")
 add_dependencies(libs codonrt codonc)
-
-if(APPLE AND APPLE_ARM)
-  # add_custom_target(
-  #   libs_apple_arm ALL
-  #   COMMENT "Collecting Apple-specific libraries"
-  #   BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
-  #   VERBATIM
-  #   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
-  #   COMMAND
-  #     ${CMAKE_COMMAND} -E copy
-  #     "${CMAKE_BINARY_DIR}/libunwind${CMAKE_SHARED_LIBRARY_SUFFIX}"
-  #     "${CMAKE_BINARY_DIR}/lib/codon")
-  # add_dependencies(libs_apple_arm codonrt)
-endif()
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)

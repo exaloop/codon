@@ -29,6 +29,16 @@ def seq_str_str(a: str, fmt: str, error: Ptr[bool]) -> str:
 def seq_str_ptr(a: cobj, fmt: str, error: Ptr[bool]) -> str:
     pass
 
+@nocapture
+@C
+def seq_int_from_str(a: str, b: Ptr[cobj], c: i32) -> int:
+    pass
+
+@nocapture
+@C
+def seq_float_from_str(a: str, b: Ptr[cobj]) -> float:
+    pass
+
 @pure
 @C
 def seq_strdup(a: cobj) -> str:
@@ -645,16 +655,6 @@ def free(a: cobj) -> None:
 @pure
 @C
 def atoi(a: cobj) -> int:
-    pass
-
-@nocapture
-@C
-def strtoll(a: cobj, b: Ptr[cobj], c: i32) -> int:
-    pass
-
-@nocapture
-@C
-def strtod(a: cobj, b: Ptr[cobj]) -> float:
     pass
 
 # <zlib.h>

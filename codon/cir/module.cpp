@@ -86,6 +86,7 @@ const std::string Module::GE_MAGIC_NAME = "__ge__";
 const std::string Module::POS_MAGIC_NAME = "__pos__";
 const std::string Module::NEG_MAGIC_NAME = "__neg__";
 const std::string Module::INVERT_MAGIC_NAME = "__invert__";
+const std::string Module::ABS_MAGIC_NAME = "__abs__";
 
 const std::string Module::ADD_MAGIC_NAME = "__add__";
 const std::string Module::SUB_MAGIC_NAME = "__sub__";
@@ -134,6 +135,7 @@ const std::string Module::FLOAT_MAGIC_NAME = "__float__";
 const std::string Module::BOOL_MAGIC_NAME = "__bool__";
 const std::string Module::STR_MAGIC_NAME = "__str__";
 const std::string Module::REPR_MAGIC_NAME = "__repr__";
+const std::string Module::CALL_MAGIC_NAME = "__call__";
 
 const std::string Module::GETITEM_MAGIC_NAME = "__getitem__";
 const std::string Module::SETITEM_MAGIC_NAME = "__setitem__";

@@ -273,17 +273,22 @@ class __array__:
 @tuple
 @__internal__
 class Import:
-    __ipath__: str
-    __iname__: str
-    P: Static[str]
+    loaded: bool
+    file: Static[str]
+    name: Static[str]
 
     @pure
     @derives
     @llvm
-    def __new__(path: str, name: str, P: Static[str]) -> Import[P]:
-        %0 = insertvalue { {=str}, {=str} } undef, {=str} %path, 0
-        %1 = insertvalue { {=str}, {=str} } %0,    {=str} %name, 1
-        ret { {=str}, {=str} } %1
+    def __new__(loaded: bool, file: Static[str], name: Static[str]) -> Import[file, name]:
+        %0 = insertvalue { {=bool} } undef, {=bool} %loaded, 0
+        ret { {=bool} } %0
+
+    def _set_loaded(i: Ptr[Import]):
+        Ptr[bool](i.as_byte())[0] = True
+
+    def __repr__(self) -> str:
+        return f"<module '{self.name}' from '{self.file}'>"
 
 def __ptr__(var):
     pass

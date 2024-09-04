@@ -56,7 +56,7 @@ public:
       : ParserException(-1, msg, {}) {}
   ParserException(const ParserException &e) noexcept
       : std::runtime_error(e), locations(e.locations), messages(e.messages),
-        errorCode(e.errorCode){};
+        errorCode(e.errorCode) {}
 
   /// Add an error message to the current stack trace
   void trackRealize(const std::string &msg, const SrcInfo &info) {

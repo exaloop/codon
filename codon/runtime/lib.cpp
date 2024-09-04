@@ -26,6 +26,10 @@
 #include <dlfcn.h>
 #include <gc.h>
 
+#define FASTFLOAT_ALLOWS_LEADING_PLUS
+#define FASTFLOAT_SKIP_WHITE_SPACE
+#include "fast_float/fast_float.h"
+
 /*
  * General
  */
@@ -75,7 +79,7 @@ extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
                                         gc_roots_callback add_roots,
                                         gc_roots_callback del_roots);
 
-void seq_exc_init();
+void seq_exc_init(int flags);
 
 #ifdef CODON_GPU
 void seq_nvptx_init();
@@ -89,7 +93,7 @@ SEQ_FUNC void seq_init(int flags) {
   GC_allow_register_threads();
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
-  seq_exc_init();
+  seq_exc_init(flags);
 #ifdef CODON_GPU
   seq_nvptx_init();
 #endif
@@ -330,6 +334,20 @@ SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
 SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
   std::string t(s.str, s.len);
   return fmt_conv(t, format, error);
+}
+
+SEQ_FUNC seq_int_t seq_int_from_str(seq_str_t s, const char **e, int base) {
+  seq_int_t result;
+  auto r = fast_float::from_chars(s.str, s.str + s.len, result, base);
+  *e = (r.ec == std::errc()) ? r.ptr : s.str;
+  return result;
+}
+
+SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
+  double result;
+  auto r = fast_float::from_chars(s.str, s.str + s.len, result);
+  *e = (r.ec == std::errc() || r.ec == std::errc::result_out_of_range) ? r.ptr : s.str;
+  return result;
 }
 
 /*

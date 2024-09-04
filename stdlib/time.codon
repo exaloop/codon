@@ -1,7 +1,5 @@
 # Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-from sys import stderr
-
 def time() -> float:
     return _C.seq_time() / 1e9
 
@@ -41,6 +39,7 @@ class TimeInterval:
         self.start = _C.seq_time()
 
     def __exit__(self):
+        from sys import stderr
         print(self.report(self.msg), file=stderr)
 
     def report(self, msg="", memory=False) -> str:

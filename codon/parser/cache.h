@@ -80,6 +80,8 @@ struct Cache {
     std::string importVar;
     /// File content (line:col indexable)
     std::vector<std::string> content;
+    /// Set if loaded at toplevel
+    bool loadedAtToplevel = true;
   };
 
   /// Absolute path of seqc executable (if available).
@@ -96,7 +98,7 @@ struct Cache {
 
   /// Set of unique (canonical) global identifiers for marking such variables as global
   /// in code-generation step and in JIT.
-  std::map<std::string, ir::Var *> globals;
+  std::map<std::string, std::pair<bool, ir::Var *>> globals;
 
   /// Stores class data for each class (type) in the source code.
   struct Class {

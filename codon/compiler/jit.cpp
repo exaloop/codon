@@ -23,14 +23,9 @@ const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
 JIT::JIT(const std::string &argv0, const std::string &mode)
-    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)), engine(),
-      pydata(std::make_unique<PythonData>()), mode(mode) {
-  if (auto e = Engine::create()) {
-    engine = std::move(e.get());
-  } else {
-    engine = {};
-    seqassertn(false, "JIT engine creation error");
-  }
+    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)),
+      engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
+      mode(mode) {
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
@@ -57,7 +52,7 @@ llvm::Error JIT::init() {
   if (auto err = func.takeError())
     return err;
 
-  auto *main = func->getAddress().toPtr<MainFunc>();
+  auto *main = func->toPtr<MainFunc>();
   (*main)(0, nullptr);
   return llvm::Error::success();
 }
@@ -172,7 +167,7 @@ llvm::Expected<void *> JIT::address(const ir::Func *input) {
   if (auto err = func.takeError())
     return std::move(err);
 
-  return (void *)func->getAddress().getValue();
+  return (void *)func->getValue();
 }
 
 llvm::Expected<std::string> JIT::run(const ir::Func *input) {
@@ -290,7 +285,7 @@ JITResult JIT::executePython(const std::string &name,
     auto *wrapper = it->second;
     const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
     auto func = llvm::cantFail(engine->lookup(name));
-    wrap = func.getAddress().toPtr<PyWrapperFunc>();
+    wrap = func.toPtr<PyWrapperFunc>();
   } else {
     static int idx = 0;
     auto wrapname = "__codon_wrapped__" + name + "_" + std::to_string(idx++);

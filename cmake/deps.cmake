@@ -163,14 +163,8 @@ CPMAddPackage(
             "BUILD_SHARED_LIBS OFF"
             "RE2_BUILD_TESTING OFF")
 
-# if(APPLE AND APPLE_ARM)
-#     enable_language(ASM)
-#     CPMAddPackage(
-#         NAME unwind
-#         GITHUB_REPOSITORY "exaloop/libunwind"
-#         GIT_TAG 3fdb2154914a2848b89b50ffe2fd05e184d857b7
-#         OPTIONS "CMAKE_BUILD_TYPE Release"
-#                 "LIBUNWIND_ENABLE_STATIC OFF"
-#                 "LIBUNWIND_ENABLE_SHARED ON"
-#                 "LIBUNWIND_INCLUDE_DOCS OFF")
-# endif()
+CPMAddPackage(
+    NAME fast_float
+    GITHUB_REPOSITORY "fastfloat/fast_float"
+    GIT_TAG v6.1.1
+    EXCLUDE_FROM_ALL YES)

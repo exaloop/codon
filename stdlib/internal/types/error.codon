@@ -145,6 +145,12 @@ class AssertionError(Static[Exception]):
         super().__init__("AssertionError", message)
         self.python_type = self.__class__._pytype
 
+class EOFError(Static[Exception]):
+    _pytype: ClassVar[cobj] = cobj()
+    def __init__(self, message: str = ""):
+        super().__init__("EOFError", message)
+        self.python_type = self.__class__._pytype
+
 class SystemExit(Static[BaseException]):
     _pytype: ClassVar[cobj] = cobj()
     _status: int

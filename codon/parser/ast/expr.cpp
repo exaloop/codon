@@ -13,6 +13,10 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/visitor.h"
 
+#define FASTFLOAT_ALLOWS_LEADING_PLUS
+#define FASTFLOAT_SKIP_WHITE_SPACE
+#include "fast_float/fast_float.h"
+
 #define ACCEPT_IMPL(T, X)                                                              \
   ASTNode *T::clone(bool c) const { return cache->N<T>(*this, c); }                    \
   void T::accept(X &visitor) { visitor.visit(this); }                                  \
@@ -128,10 +132,10 @@ FloatExpr::FloatExpr(double floatValue)
 }
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
     : AcceptorExtend(), value(value), suffix(std::move(suffix)) {
-  try {
-    floatValue = std::stod(value);
-  } catch (std::out_of_range &) {
-  }
+  double result;
+  auto r = fast_float::from_chars(value.data(), value.data() + value.size(), result);
+  if (r.ec == std::errc() || r.ec == std::errc::result_out_of_range)
+    floatValue = result;
 }
 FloatExpr::FloatExpr(const FloatExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), value(expr.value), suffix(expr.suffix),

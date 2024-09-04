@@ -695,12 +695,6 @@ class __magic__:
     def str(slf) -> str:
         return slf.__repr__()
 
-
-@extend
-class Import:
-    def __repr__(self) -> str:
-        return f"<module '{self.__iname__}' from '{self.__ipath__}'>"
-
 @extend
 class Function:
     @pure

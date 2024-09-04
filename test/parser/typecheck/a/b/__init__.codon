@@ -1,0 +1,13 @@
+c = 'a.b.c'
+def har():
+    print 'a.b.har', __name__[-12:], c
+
+from .. import foo as fx
+
+class A:
+    class B:
+        def b_foo():
+            print 'a.b.A.B.b_foo()'
+            return 1
+
+stt: Static[int] = 5

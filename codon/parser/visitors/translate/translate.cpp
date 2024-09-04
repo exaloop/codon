@@ -54,12 +54,12 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
 }
 
 void TranslateVisitor::translateStmts(Stmt *stmts) {
-  for (auto &g : ctx->cache->globals)
-    if (!g.second) {
-      g.second = g.first == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
-                                     : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                           SrcInfo(), nullptr, true, false, g.first);
-      ctx->cache->codegenCtx->add(TranslateItem::Var, g.first, g.second);
+  for (auto &[name, g] : ctx->cache->globals)
+    if (/*g.first &&*/ !g.second) {
+      g.second = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
+                                  : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
+                                        SrcInfo(), nullptr, true, false, name);
+      ctx->cache->codegenCtx->add(TranslateItem::Var, name, g.second);
     }
   TranslateVisitor(ctx->cache->codegenCtx).transform(stmts);
   for (auto &[_, f] : ctx->cache->functions)
@@ -73,11 +73,9 @@ ir::Value *TranslateVisitor::transform(Expr *expr) {
   v.setSrcInfo(expr->getSrcInfo());
 
   types::ClassType *p = nullptr;
-  bool hasAttr = false;
   if (expr->hasAttribute(Attr::ExprList) || expr->hasAttribute(Attr::ExprSet) ||
       expr->hasAttribute(Attr::ExprDict) || expr->hasAttribute(Attr::ExprPartial)) {
     ctx->seqItems.emplace_back();
-    hasAttr = true;
   }
   if (expr->hasAttribute(Attr::ExprPartial)) {
     p = expr->getType()->getPartial();

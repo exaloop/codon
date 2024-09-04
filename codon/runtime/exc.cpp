@@ -14,6 +14,52 @@
 #include <string>
 #include <vector>
 
+#ifdef __APPLE__
+#include <TargetConditionals.h>
+#if TARGET_OS_MAC && __arm64__
+#define APPLE_SILICON
+#endif
+#endif
+
+#ifdef APPLE_SILICON
+#include "llvm/BinaryFormat/MachO.h"
+#include <dlfcn.h>
+
+// https://github.com/llvm/llvm-project/issues/49036
+// Define a minimal mach header for JIT'd code.
+static llvm::MachO::mach_header_64 fake_mach_header = {
+    .magic = llvm::MachO::MH_MAGIC_64,
+    .cputype = llvm::MachO::CPU_TYPE_ARM64,
+    .cpusubtype = llvm::MachO::CPU_SUBTYPE_ARM64_ALL,
+    .filetype = llvm::MachO::MH_DYLIB,
+    .ncmds = 0,
+    .sizeofcmds = 0,
+    .flags = 0,
+    .reserved = 0};
+
+// Declare libunwind SPI types and functions.
+struct unw_dynamic_unwind_sections {
+  uintptr_t dso_base;
+  uintptr_t dwarf_section;
+  size_t dwarf_section_length;
+  uintptr_t compact_unwind_section;
+  size_t compact_unwind_section_length;
+};
+
+int find_dynamic_unwind_sections(uintptr_t addr, unw_dynamic_unwind_sections *info) {
+  info->dso_base = (uintptr_t)&fake_mach_header;
+  info->dwarf_section = 0;
+  info->dwarf_section_length = 0;
+  info->compact_unwind_section = 0;
+  info->compact_unwind_section_length = 0;
+  return 1;
+}
+
+// Typedef for callback above.
+typedef int (*unw_find_dynamic_unwind_sections)(
+    uintptr_t addr, struct unw_dynamic_unwind_sections *info);
+#endif
+
 struct BacktraceFrame {
   char *function;
   char *filename;
@@ -90,24 +136,6 @@ template <typename Type_> static uintptr_t ReadType(const uint8_t *&p) {
 }
 } // namespace
 
-static int64_t ourBaseFromUnwindOffset;
-
-static const unsigned char ourBaseExcpClassChars[] = {'o', 'b', 'j', '\0',
-                                                      's', 'e', 'q', '\0'};
-
-static uint64_t genClass(const unsigned char classChars[], size_t classCharsSize) {
-  uint64_t ret = classChars[0];
-
-  for (unsigned i = 1; i < classCharsSize; i++) {
-    ret <<= 8;
-    ret += classChars[i];
-  }
-
-  return ret;
-}
-
-static uint64_t ourBaseExceptionClass = 0;
-
 struct OurExceptionType_t {
   int type;
 };
@@ -131,15 +159,22 @@ struct SeqExcHeader_t {
   void *python_type;
 };
 
-void seq_exc_init() {
-  ourBaseFromUnwindOffset = seq_exc_offset();
-  ourBaseExceptionClass = seq_exc_class();
+void seq_exc_init(int flags) {
+#ifdef APPLE_SILICON
+  if (!(flags & SEQ_FLAG_STANDALONE)) {
+    if (auto *unw_add_find_dynamic_unwind_sections =
+            (int (*)(unw_find_dynamic_unwind_sections find_dynamic_unwind_sections))
+                dlsym(RTLD_DEFAULT, "__unw_add_find_dynamic_unwind_sections")) {
+      unw_add_find_dynamic_unwind_sections(find_dynamic_unwind_sections);
+    }
+  }
+#endif
 }
 
 static void seq_delete_exc(_Unwind_Exception *expToDelete) {
-  if (!expToDelete || expToDelete->exception_class != ourBaseExceptionClass)
+  if (!expToDelete || expToDelete->exception_class != SEQ_EXCEPTION_CLASS)
     return;
-  auto *exc = (OurException *)((char *)expToDelete + ourBaseFromUnwindOffset);
+  auto *exc = (OurException *)((char *)expToDelete + seq_exc_offset());
   if (seq_flags & SEQ_FLAG_DEBUG) {
     exc->bt.free();
   }
@@ -160,7 +195,7 @@ SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
   assert(e);
   e->type.type = type;
   e->obj = obj;
-  e->unwindException.exception_class = ourBaseExceptionClass;
+  e->unwindException.exception_class = SEQ_EXCEPTION_CLASS;
   e->unwindException.exception_cleanup = seq_delete_unwind_exc;
   if (seq_flags & SEQ_FLAG_DEBUG) {
     e->bt.frames = nullptr;
@@ -420,11 +455,11 @@ static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
                               _Unwind_Exception *exceptionObject) {
   bool ret = false;
 
-  if (!resultAction || !exceptionObject || (exceptionClass != ourBaseExceptionClass))
+  if (!resultAction || !exceptionObject || (exceptionClass != SEQ_EXCEPTION_CLASS))
     return ret;
 
-  auto *excp = (struct OurBaseException_t *)(((char *)exceptionObject) +
-                                             ourBaseFromUnwindOffset);
+  auto *excp =
+      (struct OurBaseException_t *)(((char *)exceptionObject) + seq_exc_offset());
   OurExceptionType_t *excpType = &(excp->type);
   seq_int_t type = excpType->type;
 
@@ -523,7 +558,7 @@ static _Unwind_Reason_Code handleLsda(int version, const uint8_t *lsda,
     // Note: Action value
     uintptr_t actionEntry = readULEB128(&callSitePtr);
 
-    if (exceptionClass != ourBaseExceptionClass) {
+    if (exceptionClass != SEQ_EXCEPTION_CLASS) {
       // We have been notified of a foreign exception being thrown,
       // and we therefore need to execute cleanup landing pads
       actionEntry = 0;
@@ -594,10 +629,6 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
 SEQ_FUNC int64_t seq_exc_offset() {
   static OurBaseException_t dummy = {};
   return (int64_t)((uintptr_t)&dummy - (uintptr_t) & (dummy.unwindException));
-}
-
-SEQ_FUNC uint64_t seq_exc_class() {
-  return genClass(ourBaseExcpClassChars, sizeof(ourBaseExcpClassChars));
 }
 
 std::string codon::runtime::makeBacktraceFrameString(uintptr_t pc,

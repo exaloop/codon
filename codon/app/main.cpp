@@ -14,6 +14,7 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
+#include "codon/parser/common.h"
 #include "codon/util/common.h"
 #include "codon/util/jupyter.h"
 #include "llvm/Support/CommandLine.h"
@@ -92,11 +93,35 @@ enum Numerics { C, Python };
 } // namespace
 
 int docMode(const std::vector<const char *> &args, const std::string &argv0) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional,
+                                   llvm::cl::desc("<input directory or file>"),
+                                   llvm::cl::init("-"));
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   std::vector<std::string> files;
-  for (std::string line; std::getline(std::cin, line);)
-    files.push_back(line);
+  auto collectPaths = [&files](const std::string &path) {
+    llvm::sys::fs::file_status status;
+    llvm::sys::fs::status(path, status);
+    if (!llvm::sys::fs::exists(status)) {
+      codon::compilationError(fmt::format("'{}' does not exist", path), "", 0, 0, 0, -1,
+                              false);
+    }
+    if (llvm::sys::fs::is_regular_file(status)) {
+      files.emplace_back(path);
+    } else if (llvm::sys::fs::is_directory(status)) {
+      std::error_code ec;
+      for (llvm::sys::fs::recursive_directory_iterator it(path, ec), e; it != e;
+           it.increment(ec)) {
+        auto status = it->status();
+        if (!status)
+          continue;
+        if (status->type() == llvm::sys::fs::file_type::regular_file)
+          if (!codon::ast::endswith(it->path(), "__init_test__.codon"))
+            files.emplace_back(it->path());
+      }
+    }
+  };
 
+  collectPaths(args[1]);
   auto compiler = std::make_unique<codon::Compiler>(args[0]);
   bool failed = false;
   auto result = compiler->docgen(files);

@@ -105,7 +105,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
       seqassert(ctx->getBase()->pyCaptures, "unexpected py capture");
       ctx->getBase()->pyCaptures->insert(chain[0]);
       final = N<IndexExpr>(N<IdExpr>("__pyenv__"), N<StringExpr>(chain[0]));
-    } else if (val->getModule() == "std.python") {
+    } else if (val->getModule() == "std.python" &&
+               ctx->getModule() != val->getModule()) {
       // Import from python (e.g., pyobj.foo)
       final = transform(N<CallExpr>(
           N<DotExpr>(N<DotExpr>(N<IdExpr>("internal"), "python"), "_get_identifier"),
@@ -138,6 +139,11 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // Should go before cls.__name__ to allow printing generic functions
   if (extractType(expr->getExpr())->getFunc() && expr->getMember() == "__name__") {
     resultExpr = transform(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
+    return;
+  }
+  if (expr->getExpr()->getType()->getPartial() && expr->getMember() == "__name__") {
+    resultExpr = transform(
+        N<StringExpr>(expr->getExpr()->getType()->getPartial()->prettyString()));
     return;
   }
   // Special case: fn.__llvm_name__ or obj.__llvm_name__
@@ -264,7 +270,7 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
 
   // Case: a global variable that has not been marked with `global` statement
   if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
-    registerGlobal(val->getName());
+    registerGlobal(val->getName(), true);
     return false;
   }
 
@@ -290,7 +296,7 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
   for (auto i = chain.size(); i-- > 0;) {
     auto name = join(chain, "/", 0, i + 1);
     val = ctx->find(name);
-    if (val && val->type->is("Import") && name != "Import") {
+    if (val && val->type->is("Import") && startswith(val->getName(), "%_import_")) {
       importName = getStrLiteral(val->type.get());
       importEnd = i + 1;
       importVal = val;
@@ -318,7 +324,7 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
       auto key = join(chain, ".", importEnd, i + 1);
       val = ictx->find(key);
       if (val && i + 1 != chain.size() && val->getType()->is("Import") &&
-          key != "Import") {
+          startswith(val->getName(), "%_import_")) {
         importName = getStrLiteral(val->getType());
         importEnd = i + 1;
         importVal = val;
@@ -422,7 +428,7 @@ types::FuncType *TypecheckVisitor::getDispatch(const std::string &fn) {
   overloads.insert(overloads.begin(), name);
   ctx->cache->functions[name] = Cache::Function{"", fn, ast, typ};
   ast->setDone();
-  return typ.get();  // stored in Cache::Function, hence not destroyed
+  return typ.get(); // stored in Cache::Function, hence not destroyed
 }
 
 /// Find a class member.

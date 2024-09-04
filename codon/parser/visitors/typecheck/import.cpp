@@ -49,36 +49,33 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   }
 
   // If the file has not been seen before, load it into cache
-  if (!in(ctx->cache->imports, file->path))
+  bool handled = true;
+  if (!in(ctx->cache->imports, file->path)) {
     resultStmt = transformNewImport(*file);
+    if (!resultStmt)
+      handled = false; // we need an import
+  }
 
   const auto &import = getImport(file->path);
   std::string importVar = import->importVar;
-  std::string importDoneVar = importVar + "_done";
+  if (!import->loadedAtToplevel)
+    handled = false;
 
   // Construct `if _import_done.__invert__(): (_import(); _import_done = True)`.
   // Do not do this during the standard library loading (we assume that standard library
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
-  if (!ctx->isStdlibLoading && !importVar.empty()) {
-    auto u = N<AssignStmt>(N<IdExpr>(importDoneVar), N<BoolExpr>(true));
-    u->setUpdate();
-    resultStmt = N<IfStmt>(
-        N<CallExpr>(N<DotExpr>(N<IdExpr>(importDoneVar), "__invert__")),
-        N<SuiteStmt>(u, N<ExprStmt>(N<CallExpr>(N<IdExpr>(importVar + ".0")))));
+  if (!handled) {
+    resultStmt = N<ExprStmt>(N<CallExpr>(N<IdExpr>(fmt::format("{}_call.0", importVar))));
+    LOG_TYPECHECK("[import] loading {}", importVar);
   }
 
   // Import requested identifiers from the import's scope to the current scope
   if (!stmt->getWhat()) {
     // Case: import foo
     auto name = stmt->as.empty() ? path : stmt->getAs();
-    // Construct `import_var = Import([path], [module])` (for printing imports etc.)
-    resultStmt = N<SuiteStmt>(
-        resultStmt,
-        transform(N<AssignStmt>(
-            N<IdExpr>(name),
-            N<CallExpr>(N<IdExpr>("Import"), N<StringExpr>(file->path),
-                        N<StringExpr>(file->module), N<StringExpr>(file->path)))));
+    auto e = ctx->forceFind(importVar);
+    ctx->add(name, e);
   } else if (cast<IdExpr>(stmt->getWhat()) &&
              cast<IdExpr>(stmt->getWhat())->getValue() == "*") {
     // Case: from foo import *
@@ -315,19 +312,39 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
 ///        [imported top-level statements]```
 Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   // Use a clean context to parse a new file
-  // if (ctx->cache->age)
-  // ctx->cache->age++;
+  auto moduleID = file.module;
+  std::replace(moduleID.begin(), moduleID.end(), '.', '_');
   auto ictx = std::make_shared<TypeContext>(ctx->cache, file.path);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
   auto import =
       ctx->cache->imports.insert({file.path, {file.module, file.path, ictx}}).first;
+  import->second.loadedAtToplevel =
+      getImport(ctx->moduleName.path)->loadedAtToplevel &&
+      (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.size() == 1));
+  auto importVar = import->second.importVar =
+      getTemporaryVar(format("import_{}", moduleID));
+  LOG_TYPECHECK("[import] initializing {} ({})", importVar,
+                import->second.loadedAtToplevel);
 
   // __name__ = [import name]
-  Stmt *n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(file.module));
-  if (file.module == "internal.core") {
+  Stmt *n = nullptr;
+  if (file.module != "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
-    n = nullptr;
+    n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
+    ctx->addBlock();
+    preamble->push_back(transform(
+        N<AssignStmt>(N<IdExpr>(importVar),
+                      N<CallExpr>(N<IdExpr>("Import.__new__"), N<BoolExpr>(false),
+                                  N<StringExpr>(file.path), N<StringExpr>(file.module)),
+                      N<IdExpr>("Import"))));
+    auto val = ctx->forceFind(importVar);
+    ctx->popBlock();
+    val->scope = {0};
+    val->baseName = "";
+    val->moduleName = MODULE_MAIN;
+    getImport(STDLIB_IMPORT)->ctx->addToplevel(importVar, val);
+    registerGlobal(val->getName());
   }
   n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
   auto tv = TypecheckVisitor(ictx, preamble);
@@ -347,34 +364,21 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     return tv.transform(suite);
   } else {
     // Generate import identifier
-    auto moduleID = file.module;
-    std::replace(moduleID.begin(), moduleID.end(), '.', '_');
-    std::string importVar = import->second.importVar =
-        getTemporaryVar(format("import_{}", moduleID));
-    std::string importDoneVar;
-
-    // `import_[I]_done = False` (set to True upon successful import)
-    auto a = N<AssignStmt>(N<IdExpr>(importDoneVar = importVar + "_done"),
-                           N<BoolExpr>(false));
-    a->getLhs()->setType(getStdLibType("bool")->shared_from_this());
-    a->getRhs()->setType(getStdLibType("bool")->shared_from_this());
-    a->setDone();
-    preamble->push_back(a);
-    auto i = ctx->addVar(importDoneVar, importDoneVar,
-                         a->getLhs()->getType()->shared_from_this());
-    i->baseName = "";
-    i->scope = {0};
-    ctx->addAlwaysVisible(i);
-    registerGlobal(importDoneVar);
+    auto stmts = N<SuiteStmt>();
+    auto ret = N<ReturnStmt>();
+    ret->setAttribute(Attr::Internal); // do not trigger toplevel ReturnStmt error
+    stmts->addStmt(
+        N<IfStmt>(N<DotExpr>(N<IdExpr>(importVar), "loaded"), ret));
+    stmts->addStmt(N<ExprStmt>(
+        N<CallExpr>(N<IdExpr>("Import._set_loaded"),
+                    N<CallExpr>(N<IdExpr>("__ptr__"), N<IdExpr>(importVar)))));
+    stmts->addStmt(suite);
 
     // Wrap all imported top-level statements into a function.
-    // TODO: Make sure to register the global variables and set their assignments as
-    // updates. Note: signatures/classes/functions are not wrapped Create import
-    // function manually with ForceRealize
-    Stmt *fn =
-        N<FunctionStmt>(importVar, N<IdExpr>("NoneType"), std::vector<Param>{}, suite);
+    auto fnName = fmt::format("{}_call", importVar);
+    Stmt *fn = N<FunctionStmt>(fnName, N<IdExpr>("NoneType"), std::vector<Param>{}, stmts);
     fn = tv.transform(fn);
-    tv.realize(ictx->forceFind(importVar)->getType());
+    tv.realize(ictx->forceFind(fnName)->getType());
     preamble->push_back(fn);
     // LOG_USER("[import] done importing {}", file.module);
   }

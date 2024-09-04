@@ -14,12 +14,8 @@
 *.so
 *.dylib
 *.pyc
-build/
-build_*/
-build-*/
-install/
-install_*/
-install-*/
+build*/
+install*/
 extra/python/src/jit.cpp
 extra/jupyter/build/
 
@@ -70,4 +66,3 @@ jit/codon/version.py
 temp/
 playground/
 scratch*.*
-_*

@@ -53,6 +53,12 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
 /// Also partialize functions if they are being returned.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
+  if (stmt->hasAttribute(Attr::Internal)) {
+    stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType.__new__:0")));
+    stmt->setDone();
+    return;
+  }
+
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
 

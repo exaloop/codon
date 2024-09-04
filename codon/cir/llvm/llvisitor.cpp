@@ -29,6 +29,10 @@ const std::string GPU_KERNEL_ATTR = "std.gpu.kernel.0:0";
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
+
+llvm::cl::opt<bool> DisableExceptions("disable-exceptions",
+                                      llvm::cl::desc("Disable exception handling"),
+                                      llvm::cl::init(false));
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -59,10 +63,12 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
   if (auto *f = cast<Func>(x))
     return getNameForFunction(f);
 
+  auto name = x->getName();
   if (x->isExternal()) {
-    return x->getName();
+    return name;
   } else {
-    return "." + x->getName();
+    // ".Lxxx" is a linker-local name, so add an underscore if needed
+    return ((!name.empty() && name[0] == 'L') ? "._" : ".") + name;
   }
 }
 
@@ -1409,7 +1415,7 @@ int LLVMVisitor::getTypeIdx(types::Type *catchType) {
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
-  if (trycatch.empty()) {
+  if (trycatch.empty() || DisableExceptions) {
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
@@ -1694,6 +1700,7 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
   coro = {};
   seqassertn(func, "{} not inserted", *x);
   func->setDoesNotThrow();
+  func->setWillReturn();
 }
 
 namespace {
@@ -1937,7 +1944,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   }
-  func->setPersonalityFn(llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
+  if (!DisableExceptions)
+    func->setPersonalityFn(
+        llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
   auto *funcType = cast<types::FuncType>(x->getType());
   seqassertn(funcType, "{} is not a function type", *x->getType());
@@ -2868,7 +2877,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // rethrow if uncaught
   B->SetInsertPoint(unwindResumeBlock);
-  B->CreateResume(B->CreateLoad(padType, tc.catchStore));
+  if (DisableExceptions) {
+    B->CreateUnreachable();
+  } else {
+    B->CreateResume(B->CreateLoad(padType, tc.catchStore));
+  }
 
   // make sure we delegate to parent try-catch if necessary
   std::vector<types::Type *> catchTypesFull(tc.catchTypes);
@@ -2906,8 +2919,11 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // exception handling
   B->SetInsertPoint(tc.exceptionBlock);
-  llvm::LandingPadInst *caughtResult = B->CreateLandingPad(padType, catches.size());
-  caughtResult->setCleanup(true);
+  llvm::LandingPadInst *caughtResult = nullptr;
+  if (!DisableExceptions) {
+    caughtResult = B->CreateLandingPad(padType, catches.size());
+    caughtResult->setCleanup(true);
+  }
   std::vector<llvm::Value *> typeIndices;
 
   for (auto *catchType : catchTypesFull) {
@@ -2916,11 +2932,15 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
         "codon.typeidx." + (catchType ? catchType->getName() : "<all>");
     llvm::GlobalVariable *tidx = getTypeIdxVar(catchType);
     typeIndices.push_back(tidx);
-    caughtResult->addClause(tidx);
+    if (caughtResult)
+      caughtResult->addClause(tidx);
   }
 
-  llvm::Value *unwindException = B->CreateExtractValue(caughtResult, 0);
-  B->CreateStore(caughtResult, tc.catchStore);
+  llvm::Value *caughtResultOrUndef = caughtResult
+                                         ? llvm::cast<llvm::Value>(caughtResult)
+                                         : llvm::UndefValue::get(padType);
+  auto *unwindException = B->CreateExtractValue(caughtResultOrUndef, 0);
+  B->CreateStore(caughtResultOrUndef, tc.catchStore);
   B->CreateStore(excStateThrown, tc.excFlag);
   llvm::Value *depthMax = B->getInt64(trycatch.size());
   B->CreateStore(depthMax, tc.delegateDepth);
@@ -2932,8 +2952,9 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
           0));
 
   // check for foreign exceptions
-  B->CreateCondBr(B->CreateICmpEQ(unwindExceptionClass, B->getInt64(seq_exc_class())),
-                  tc.exceptionRouteBlock, externalExcBlock);
+  B->CreateCondBr(
+      B->CreateICmpEQ(unwindExceptionClass, B->getInt64(SEQ_EXCEPTION_CLASS)),
+      tc.exceptionRouteBlock, externalExcBlock);
 
   // external exception (currently assumed to be unreachable)
   B->SetInsertPoint(externalExcBlock);
@@ -3360,6 +3381,13 @@ void LLVMVisitor::visit(const YieldInstr *x) {
 }
 
 void LLVMVisitor::visit(const ThrowInstr *x) {
+  if (DisableExceptions) {
+    B->SetInsertPoint(block);
+    B->CreateUnreachable();
+    block = llvm::BasicBlock::Create(*context, "throw_unreachable.new", func);
+    return;
+  }
+
   // note: exception header should be set in the frontend
   auto excAllocFunc = makeExcAllocFunc();
   auto throwFunc = makeThrowFunc();

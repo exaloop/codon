@@ -940,9 +940,9 @@ types::TypePtr TypecheckVisitor::instantiateType(types::Type *t) {
   return ctx->instantiateGeneric(ctx->forceFind(TYPE_TYPE)->getType(), {t});
 }
 
-void TypecheckVisitor::registerGlobal(const std::string &name) {
+void TypecheckVisitor::registerGlobal(const std::string &name, bool initialized) {
   if (!in(ctx->cache->globals, name)) {
-    ctx->cache->globals[name] = nullptr;
+    ctx->cache->globals[name] = {initialized, nullptr};
   }
 }
 
@@ -1007,6 +1007,10 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
   auto ct = extractClassGeneric(t, pos);
   seqassert(ct->canRealize() && ct->getBoolStatic(), "not a string literal");
   return ct->getBoolStatic()->value;
+}
+
+bool TypecheckVisitor::isImportFn(const std::string &s) {
+  return startswith(s, "%_import_");
 }
 
 } // namespace codon::ast

@@ -179,7 +179,7 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
         std::string name_args;
         if (startswith(name, "%_import_")) {
           for (auto &[_, i] : ctx->cache->imports)
-            if (i.importVar + ".0:0" == name) {
+            if (i.importVar + "_call.0:0" == name) {
               name = i.name;
               break;
             }
@@ -301,7 +301,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     E(Error::MAX_REALIZATION, getSrcInfo(), getUnmangledName(type->getFuncName()));
   }
 
-  bool isImport = startswith(type->getFuncName(), "%_import_");
+  bool isImport = isImportFn(type->getFuncName());
   if (!isImport) {
     getLogger().level++;
     ctx->addBlock();
@@ -317,8 +317,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   // Clone the generic AST that is to be realized
   auto ast = generateSpecialAst(type);
   addClassGenerics(type, true);
-  if (!isImport)
-    ctx->getBase()->func = ast;
+  ctx->getBase()->func = ast;
 
   // Internal functions have no AST that can be realized
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
@@ -385,7 +384,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
             LOG("[error=> {}] {}", ctx->bases[w].type->debugString(2),
                 ctx->bases[w].suite->toString(2));
       }
-      if (!startswith(type->ast->name, "%_import_")) {
+      if (!isImport) {
         ctx->bases.pop_back();
         ctx->popBlock();
         ctx->typecheckLevel--;
@@ -451,7 +450,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   val = std::make_shared<TypecheckItem>(newKey, "", ctx->getModule(),
                                         type->shared_from_this());
   ctx->addAlwaysVisible(val, true);
-  if (!startswith(type->ast->name, "%_import_")) {
+  if (!isImport) {
     ctx->bases.pop_back();
     ctx->popBlock();
     ctx->typecheckLevel--;
