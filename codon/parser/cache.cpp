@@ -109,7 +109,7 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
                                  types::ClassType *parentClass) {
   auto t = std::static_pointer_cast<types::FuncType>(
       typeCtx->instantiate(type, parentClass));
-  if (args.size() != t->getArgs().size() + 1)
+  if (args.size() != t->size() + 1)
     return nullptr;
   types::Type::Unification undo;
   if (t->getRetType()->unify(args[0].get(), &undo) < 0) {
@@ -118,7 +118,7 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   }
   for (int gi = 1; gi < args.size(); gi++) {
     undo = types::Type::Unification();
-    if (t->getArgs()[gi - 1].getType()->unify(args[gi].get(), &undo) < 0) {
+    if ((*t)[gi - 1]->unify(args[gi].get(), &undo) < 0) {
       undo.undo();
       return nullptr;
     }

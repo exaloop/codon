@@ -26,8 +26,7 @@ void TypecheckVisitor::visit(NoneExpr *expr) {
 
 /// Set type to `bool`
 void TypecheckVisitor::visit(BoolExpr *expr) {
-  unify(expr->getType(),
-        std::make_shared<types::BoolStaticType>(ctx->cache, expr->getValue()));
+  unify(expr->getType(), ctx->instantiateStatic(expr->getValue()));
   expr->setDone();
 }
 
@@ -41,8 +40,7 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 ///   (e.g., `str` wrap).
 void TypecheckVisitor::visit(StringExpr *expr) {
   if (expr->isSimple()) {
-    unify(expr->getType(),
-          std::make_shared<types::StrStaticType>(ctx->cache, expr->getValue()));
+    unify(expr->getType(), ctx->instantiateStatic(expr->getValue()));
     expr->setDone();
   } else {
     std::vector<Expr *> items;
@@ -94,8 +92,7 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
 
   if (suffix.empty()) {
     // A normal integer (int64_t)
-    unify(expr->getType(),
-          std::make_shared<types::IntStaticType>(ctx->cache, expr->getValue()));
+    unify(expr->getType(), ctx->instantiateStatic(expr->getValue()));
     expr->setDone();
     return nullptr;
   } else if (suffix == "u") {

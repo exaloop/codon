@@ -257,17 +257,29 @@ public:
   /// @param setActive If True, add unbounds to activeUnbounds.
   types::TypePtr instantiate(const SrcInfo &info, types::Type *type,
                              types::ClassType *generics = nullptr);
-  types::TypePtr instantiate(types::Type *type, types::ClassType *generics = nullptr) {
-    return instantiate(getSrcInfo(), std::move(type), generics);
+  template <typename T>
+  std::shared_ptr<T> instantiate(T *type, types::ClassType *generics = nullptr) {
+    return std::static_pointer_cast<T>(
+        instantiate(getSrcInfo(), std::move(type), generics));
   }
 
   /// Instantiate the generic type root with the provided generics.
   /// @param expr Expression that needs the type. Used to set type's srcInfo.
   types::TypePtr instantiateGeneric(const SrcInfo &info, types::Type *root,
                                     const std::vector<types::Type *> &generics);
-  types::TypePtr instantiateGeneric(types::Type *root,
+  template <typename T>
+  std::shared_ptr<T> instantiateGeneric(T *root,
                                     const std::vector<types::Type *> &generics) {
-    return instantiateGeneric(getSrcInfo(), std::move(root), generics);
+    return std::static_pointer_cast<T>(instantiateGeneric(getSrcInfo(), std::move(root), generics));
+  }
+  std::shared_ptr<types::IntStaticType> instantiateStatic(int64_t i) {
+    return std::make_shared<types::IntStaticType>(cache, i);
+  }
+  std::shared_ptr<types::StrStaticType> instantiateStatic(const std::string &s) {
+    return std::make_shared<types::StrStaticType>(cache, s);
+  }
+  std::shared_ptr<types::BoolStaticType> instantiateStatic(bool i) {
+    return std::make_shared<types::BoolStaticType>(cache, i);
   }
 
   /// Returns the list of generic methods that correspond to typeName.method.

@@ -35,7 +35,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       return 1;
 
     std::vector<char> known;
-    TypePtr func = nullptr;  // trFun can point to it
+    TypePtr func = nullptr; // trFun can point to it
     auto trFun = tr;
     if (auto pt = tr->getPartial()) {
       int ic = 0;
@@ -49,8 +49,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         if ((*func->getFunc()->ast)[i].isGeneric()) {
           j++;
         } else if (known[i]) {
-          const auto &args = func->getFunc()->getArgs();
-          if (args[i - j].type->unify(knownArgTypes->generics[k].type.get(), us) == -1)
+          if ((*func->getFunc())[i - j]->unify(knownArgTypes->generics[k].type.get(),
+                                               us) == -1)
             return -1;
           k++;
         }

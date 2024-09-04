@@ -73,8 +73,8 @@ bool FuncType::hasUnbounds(bool includeGenerics) const {
   if (funcParent && funcParent->hasUnbounds(includeGenerics))
     return true;
   // Important: return type unbounds are not important, so skip them
-  for (const auto &a : getArgs())
-    if (a.type->hasUnbounds(includeGenerics))
+  for (const auto &a : *this)
+    if (a.getType()->hasUnbounds(includeGenerics))
       return true;
   return getRetType()->hasUnbounds(includeGenerics);
 }
@@ -91,8 +91,8 @@ std::vector<Type *> FuncType::getUnbounds() const {
     u.insert(u.begin(), tu.begin(), tu.end());
   }
   // Important: return type unbounds are not important, so skip them.
-  for (const auto &a : getArgs()) {
-    auto tu = a.type->getUnbounds();
+  for (const auto &a : *this) {
+    auto tu = a.getType()->getUnbounds();
     u.insert(u.begin(), tu.begin(), tu.end());
   }
   return u;
@@ -102,9 +102,8 @@ bool FuncType::canRealize() const {
   // Important: return type does not have to be realized.
   bool skipSelf = ast->hasAttribute(Attr::RealizeWithoutSelf);
 
-  const auto &args = getArgs();
-  for (int ai = skipSelf; ai < args.size(); ai++)
-    if (!args[ai].type->getFunc() && !args[ai].type->canRealize())
+  for (int ai = skipSelf; ai < size(); ai++)
+    if (!(*this)[ai]->getFunc() && !(*this)[ai]->canRealize())
       return false;
   bool generics = std::all_of(funcGenerics.begin(), funcGenerics.end(),
                               [](auto &a) { return !a.type || a.type->canRealize(); });
@@ -139,8 +138,8 @@ std::string FuncType::debugString(char mode) const {
   // Important: return type does not have to be realized.
   if (mode == 2)
     as.push_back(getRetType()->debugString(mode));
-  for (const auto &a : getArgs())
-    as.push_back(a.type->debugString(mode));
+  for (const auto &a : *this)
+    as.push_back(a.getType()->debugString(mode));
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{s, a}, ";");
 
@@ -163,9 +162,9 @@ std::string FuncType::realizedName() const {
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
-  for (const auto &a : getArgs())
-    as.push_back(a.type->getFunc() ? a.type->getFunc()->realizedName()
-                                   : a.type->realizedName());
+  for (const auto &a : *this)
+    as.push_back(a.getType()->getFunc() ? a.getType()->getFunc()->realizedName()
+                                        : a.getType()->realizedName());
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
@@ -176,5 +175,22 @@ std::string FuncType::realizedName() const {
 Type *FuncType::getRetType() const { return generics[1].type.get(); }
 
 std::string FuncType::getFuncName() const { return ast->getName(); }
+
+Type *FuncType::operator[](int i) const {
+  return generics[0].type->getClass()->generics[i].getType();
+}
+
+std::vector<ClassType::Generic>::iterator FuncType::begin() const {
+  return generics[0].type->getClass()->generics.begin();
+}
+
+std::vector<ClassType::Generic>::iterator FuncType::end() const {
+  return generics[0].type->getClass()->generics.begin() +
+         generics[0].type->getClass()->generics.size();
+}
+
+size_t FuncType::size() const { return generics[0].type->getClass()->generics.size(); }
+
+bool FuncType::empty() const { return generics[0].type->getClass()->generics.empty(); }
 
 } // namespace codon::ast::types

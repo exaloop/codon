@@ -625,8 +625,8 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   // Mark this realization as pending (i.e., realized but not translated)
   ctx->cache->pendingRealizations.insert({r->type->ast->name, r->type->realizedName()});
 
-  seqassert(!r->type || r->ast->size() ==
-                            r->type->getArgs().size() + r->type->funcGenerics.size(),
+  seqassert(!r->type ||
+                r->ast->size() == r->type->size() + r->type->funcGenerics.size(),
             "type/AST argument mismatch");
 
   // Populate the IR node

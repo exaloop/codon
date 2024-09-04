@@ -646,7 +646,7 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
   std::vector<int> indices;
   for (int i = 0, j = 0; i < ast->size(); i++)
     if ((*ast)[i].isValue()) {
-      if (!type->getArgs()[j].getType()->getFunc()) {
+      if (!(*type)[j]->getFunc()) {
         names.push_back(ctx->cache->rev((*ast)[i].name));
         indices.push_back(i);
       }

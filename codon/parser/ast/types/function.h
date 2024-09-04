@@ -56,10 +56,13 @@ public:
 
   Type *getRetType() const;
   Type *getParentType() const { return funcParent.get(); }
-  const std::vector<ClassType::Generic> &getArgs() const {
-    return generics[0].type->getClass()->generics;
-  }
   std::string getFuncName() const;
+
+  Type *operator[](int i) const;
+  std::vector<ClassType::Generic>::iterator begin() const;
+  std::vector<ClassType::Generic>::iterator end() const;
+  size_t size() const;
+  bool empty() const;
 };
 
 } // namespace codon::ast::types

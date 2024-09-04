@@ -216,7 +216,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 
     // Function[Tuple[TArg1, TArg2, ...], TRet]
     std::vector<Expr *> ids;
-    for (auto &t : calleeFn->getArgs())
+    for (auto &t : *calleeFn)
       ids.push_back(N<IdExpr>(t.getType()->realizedName()));
     auto fnType = N<InstantiateExpr>(
         N<IdExpr>("Function"),

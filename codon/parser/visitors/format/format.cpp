@@ -373,8 +373,7 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
             auto &a = (*fa)[i];
             if (a.isValue()) {
               args.push_back(fmt::format(
-                  "{}: {}{}", a.getName(),
-                  anchor(ft->getArgs()[j++].getType()->realizedName()),
+                  "{}: {}{}", a.getName(), anchor((*ft)[j++]->realizedName()),
                   a.getDefault() ? fmt::format("={}", transform(a.getDefault())) : ""));
             }
           }

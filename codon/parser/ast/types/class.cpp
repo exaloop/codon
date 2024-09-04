@@ -47,6 +47,13 @@ int ClassType::unify(Type *typ, Unification *us) {
       }
       s1 += s;
     }
+    for (int i = 0; i < hiddenGenerics.size(); i++) {
+      if ((s = hiddenGenerics[i].type->unify(tc->hiddenGenerics[i].type.get(), us)) ==
+          -1) {
+        return -1;
+      }
+      s1 += s;
+    }
     return s1;
   } else if (auto tl = typ->getLink()) {
     return tl->unify(this, us);
@@ -229,6 +236,12 @@ bool ClassType::isPartialEmpty() const {
   auto ka = generics[2].type->getClass();
   return a->generics.size() == 1 && a->generics[0].type->getClass()->generics.empty() &&
          ka->generics[1].type->getClass()->generics.empty();
+}
+
+int ClassType::getRepeats() const {
+  if (name == TYPE_TUPLE)
+    return hiddenGenerics.front().getType()->getIntStatic()->value;
+  return 1;
 }
 
 } // namespace codon::ast::types

@@ -28,10 +28,10 @@ using namespace types;
 void TypecheckVisitor::prepareVTables() {
   auto fn = getFunction("__internal__.class_populate_vtables:0");
   fn->ast->suite = generateClassPopulateVTablesAST();
-  auto typ = fn->realizations.begin()->second->type;
-  LOG_REALIZE("[poly] {} : {}", *typ, fn->ast->suite->toString(2));
+  auto typ = fn->realizations.begin()->second->getType();
+  LOG_REALIZE("[poly] {} : {}", typ->debugString(2), fn->ast->suite->toString(2));
   typ->ast = fn->ast;
-  realizeFunc(typ.get(), true);
+  realizeFunc(typ, true);
 
   // def class_base_derived_dist(B, D):
   //   return Tuple[<types before B is reached in D>].__elemsize__
@@ -39,7 +39,7 @@ void TypecheckVisitor::prepareVTables() {
   auto oldAst = fn->ast;
   for (const auto &[_, real] : fn->realizations) {
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
-    LOG_REALIZE("[poly] {} : {}", *(real->type), *fn->ast->suite);
+    LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), *fn->ast->suite);
     real->type->ast = fn->ast;
     realizeFunc(real->type.get(), true);
   }
@@ -68,10 +68,11 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
           for (const auto &[k, v] : vtable.table) {
             auto &[fn, id] = v;
             std::vector<Expr *> ids;
-            for (const auto &t : fn->getArgs())
+            for (auto t : *fn)
               ids.push_back(N<IdExpr>(t.getType()->realizedName()));
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
-            LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id, *fn);
+            LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id,
+                        fn->debugString(2));
             Expr *fnCall = N<CallExpr>(
                 N<InstantiateExpr>(
                     N<IdExpr>("Function"),
@@ -117,7 +118,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
                                                  ClassType *derived) {
   auto ct = ctx->instantiate(extractClassType(derived->name), base->getClass());
   std::vector<types::Type *> args;
-  for (auto &a : fp->getArgs())
+  for (const auto &a : *fp)
     args.push_back(a.getType());
   args[0] = ct.get();
   auto m = findBestMethod(ct->getClass(), getUnmangledName(fp->getFuncName()), args);
@@ -174,7 +175,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   // Function signature for storing thunks
   auto sig = [](types::FuncType *fp) {
     std::vector<std::string> gs;
-    for (auto &a : fp->getArgs())
+    for (auto a : *fp)
       gs.emplace_back(a.getType()->realizedName());
     gs.emplace_back("|");
     for (auto &a : fp->funcGenerics)
@@ -213,7 +214,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
           auto ti =
               std::static_pointer_cast<FuncType>(ctx->instantiate(thunkFn->getType()));
           auto tm = realizeFunc(ti.get(), true);
-          seqassert(tm, "bad thunk {}", *(thunkFn->type));
+          seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
           real->vtables[baseCls].table[key] = {
               std::static_pointer_cast<FuncType>(tm->shared_from_this()), vid};
         }
@@ -415,7 +416,7 @@ Expr *TypecheckVisitor::transformSuper() {
   auto funcTyp = ctx->getBase()->type->getFunc();
   if (!funcTyp || !funcTyp->ast->hasAttribute(Attr::Method))
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
-  if (funcTyp->getArgs().empty())
+  if (funcTyp->empty())
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
 
   ClassType *typ = extractFuncArgType(funcTyp)->getClass();
@@ -789,9 +790,8 @@ Expr *TypecheckVisitor::transformStaticFnArgHasType(CallExpr *expr) {
           expr->begin()->getExpr()->getType()->prettyString());
   auto idx = extractFuncGeneric(expr->getExpr()->getType())->getIntStatic();
   seqassert(idx, "expected a static integer");
-  const auto &args = fn->getArgs();
-  return transform(N<BoolExpr>(idx->value >= 0 && idx->value < args.size() &&
-                               args[idx->value].getType()->canRealize()));
+  return transform(N<BoolExpr>(idx->value >= 0 && idx->value < fn->size() &&
+                               (*fn)[idx->value]->canRealize()));
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgGetType(CallExpr *expr) {
@@ -801,11 +801,9 @@ Expr *TypecheckVisitor::transformStaticFnArgGetType(CallExpr *expr) {
           expr->begin()->getExpr()->getType()->prettyString());
   auto idx = extractFuncGeneric(expr->getExpr()->getType())->getIntStatic();
   seqassert(idx, "expected a static integer");
-  const auto &args = fn->getArgs();
-  if (idx->value < 0 || idx->value >= args.size() ||
-      !args[idx->value].getType()->canRealize())
+  if (idx->value < 0 || idx->value >= fn->size() || !(*fn)[idx->value]->canRealize())
     error("argument does not have type");
-  return transform(N<IdExpr>(args[idx->value].getType()->realizedName()));
+  return transform(N<IdExpr>((*fn)[idx->value]->realizedName()));
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {

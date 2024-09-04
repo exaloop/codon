@@ -59,6 +59,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       ctx->add(name, classItem);
       ctx->addAlwaysVisible(classItem);
     }
+    if (canonicalName == TYPE_TUPLE)
+      argsToParse.emplace_back("NR",
+                               N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int")),
+                               nullptr, Param::HiddenGeneric);
   } else {
     // Find the canonical name and AST of the class that is to be extended
     if (!ctx->isGlobal() || ctx->isConditional())
@@ -132,13 +136,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           }
           ctx->addType(genName, varName, generic)->generic = true;
         }
-        ClassType::Generic g(varName, genName, generic->generalize(ctx->typecheckLevel),
-                             typId, generic->isStatic);
-        if (a.isGeneric()) {
-          typ->generics.push_back(g);
-        } else {
-          typ->hiddenGenerics.push_back(g);
-        }
+        typ->generics.emplace_back(varName, genName,
+                                   generic->generalize(ctx->typecheckLevel), typId,
+                                   generic->isStatic);
         args.emplace_back(varName, a.getType(), defType, a.status);
       }
     }
@@ -173,6 +173,17 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           "inheritance is not yet supported in JIT mode");
       parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, transformedTypeAst,
                        typ);
+      if (canonicalName == TYPE_TUPLE) { // Repeat
+        const auto &a = argsToParse.back();
+        auto varName = ctx->generateCanonicalName(a.getName()), genName = a.getName();
+        auto generic = ctx->getUnbound();
+        auto typId = generic->id;
+        generic->getLink()->genericName = genName;
+        generic->isStatic = getStaticGeneric(a.getType());
+        unify(generic.get(), ctx->instantiateStatic(int64_t(1)));
+        typ->hiddenGenerics.emplace_back(varName, genName, generic, typId,
+                                         generic->isStatic);
+      }
     }
 
     // A ClassStmt will be separated into class variable assignments, method-free
@@ -725,6 +736,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
   auto key = fmt::format("{}.{}", TYPE_TUPLE, n);
   auto val = getImport(STDLIB_IMPORT)->ctx->find(key);
   if (!val) {
+    auto rt = getStdLibType(TYPE_TUPLE);
     auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE, TYPE_TUPLE);
     t->isTuple = true;
     auto cls = getClass(t.get());
@@ -735,6 +747,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
       t->generics.emplace_back(cast<IdExpr>(f.typeExpr)->getValue(), gt->genericName,
                                f.type, gt->id, 0);
     }
+    t->hiddenGenerics.emplace_back(rt->hiddenGenerics.back()); // Number generic
     val = getImport(STDLIB_IMPORT)->ctx->addType(key, key, t);
   }
   auto t = val->getType()->getClass();

@@ -342,7 +342,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   bool hasRepeats = false;
   size_t typeParamsSize = expr->size() - hasRepeats;
   if (extractType(expr->expr)->is(TYPE_TUPLE)) {
-    typ = ctx->instantiate(generateTuple(typeParamsSize - hasRepeats));
+    auto t = generateTuple(typeParamsSize - hasRepeats);
+    typ = ctx->instantiate(t);
+    // unify(typ->getClass()->generics.back().getType(), ctx->instantiateStatic(int64_t(1)));
   } else {
     typ = ctx->instantiate(expr->getExpr()->getSrcInfo(), extractType(expr->getExpr()));
   }
