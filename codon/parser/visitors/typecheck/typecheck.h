@@ -228,7 +228,7 @@ private:
   Stmt *inferTypes(Stmt *, bool isToplevel = false);
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
-  FunctionStmt *generateSpecialAst(types::FuncType *);
+  SuiteStmt *generateSpecialAst(types::FuncType *);
   size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
@@ -376,6 +376,8 @@ public:
   SuiteStmt *generateUnionNewAST(types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
+  SuiteStmt *generateNTupleNewAST(types::FuncType *);
+  SuiteStmt *generateNTupleToTupleAST(types::FuncType *);
   std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
   std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
                                                     const std::vector<std::string> &);

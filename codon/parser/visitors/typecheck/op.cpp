@@ -339,12 +339,21 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   expr->expr = transformType(expr->getExpr());
 
   TypePtr typ = nullptr;
-  bool hasRepeats = false;
-  size_t typeParamsSize = expr->size() - hasRepeats;
+  size_t typeParamsSize = expr->size();
   if (extractType(expr->expr)->is(TYPE_TUPLE)) {
-    auto t = generateTuple(typeParamsSize - hasRepeats);
+    if (!expr->empty()) {
+      expr->items.front() = transform(expr->front());
+      if (expr->front()->getType()->isStaticType() == 1) {
+        auto et = N<InstantiateExpr>(
+            N<IdExpr>("Tuple"),
+            std::vector<Expr *>(expr->items.begin() + 1, expr->items.end()));
+        resultExpr = transform(N<InstantiateExpr>(N<IdExpr>("__NTuple__"),
+                                                  std::vector<Expr *>{(*expr)[0], et}));
+        return;
+      }
+    }
+    auto t = generateTuple(typeParamsSize);
     typ = ctx->instantiate(t);
-    // unify(typ->getClass()->generics.back().getType(), ctx->instantiateStatic(int64_t(1)));
   } else {
     typ = ctx->instantiate(expr->getExpr()->getSrcInfo(), extractType(expr->getExpr()));
   }
@@ -379,7 +388,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         std::make_shared<TypeTrait>(extractType(expr->front())->shared_from_this());
     unify(expr->getType(), typ);
   } else {
-    for (size_t i = hasRepeats; i < expr->size(); i++) {
+    for (size_t i = 0; i < expr->size(); i++) {
       (*expr)[i] = transformType((*expr)[i]);
       auto t = ctx->instantiate((*expr)[i]->getSrcInfo(), extractType((*expr)[i]));
       if (isUnion || (*expr)[i]->getType()->isStaticType() !=
@@ -392,7 +401,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       if (isUnion)
         typ->getUnion()->addType(t.get());
       else
-        unify(t.get(), generics[i - hasRepeats].getType());
+        unify(t.get(), generics[i].getType());
     }
     if (isUnion) {
       typ->getUnion()->seal();

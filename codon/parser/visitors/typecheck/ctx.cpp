@@ -327,7 +327,7 @@ std::vector<types::FuncType *> TypeContext::findMethod(types::ClassType *type,
   };
   if (auto cls = cache->getClass(type)) {
     for (const auto &pc : cls->mro) {
-      auto mc = cache->getClass(pc.get());
+      auto mc = in(cache->classes, pc->name == "__NTuple__" ? TYPE_TUPLE : pc->name);
       seqassert(mc, "class '{}' not found", pc->name);
       populate(*mc);
     }

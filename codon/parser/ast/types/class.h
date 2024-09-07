@@ -73,11 +73,7 @@ public:
   ClassType *getClass() override { return this; }
   ClassType *getPartial() override { return name == "Partial" ? getClass() : nullptr; }
   bool isRecord() const { return isTuple; }
-
-  Type *operator[](int i) const {
-    return generics[i].getType();
-  }
-  int getRepeats() const;
+  Type *operator[](int i) const { return generics[i].getType(); }
 
 public:
   ClassType *getHeterogenousTuple() override;

@@ -807,19 +807,37 @@ def f(a, b, T: type):
 f(1, 2)  #! generic 'T' not provided
 
 #%% variardic_tuples,barebones
-class Foo[N: Static[int]]:
-    x: Tuple[N, str]
+na: Tuple[5, str] = ('a', 'b', 'c', 'd', 'e')
+print(na, na.__class__.__name__)
+#: ('a', 'b', 'c', 'd', 'e') Tuple[str,str,str,str,str]
 
-    def __init__(self):
-        self.x = ("hi", ) * N
+nb = Tuple[5, str]('a', 'b', 'c', 'd', 'e')
+print(nb, nb.__class__.__name__)
+#: ('a', 'b', 'c', 'd', 'e') Tuple[str,str,str,str,str]
 
-f = Foo[5]()
+class Foo[N: Static[int], T: type]:
+    x: Tuple[N, T]
+    def __init__(self, t: T):
+        self.x = (t, ) * N
+
+f = Foo[5, str]('hi')
 print(f.__class__.__name__)
-#: Foo[5]
+#: Foo[5,str]
 print(f.x.__class__.__name__)
 #: Tuple[str,str,str,str,str]
 print(f.x)
 #: ('hi', 'hi', 'hi', 'hi', 'hi')
+
+f = Foo[2,int](1)
+print(f.__class__.__name__)
+#: Foo[2,int]
+print(f.x.__class__.__name__)
+#: Tuple[int,int]
+print(f.x)
+#: (1, 1)
+f.x = (3, 4)
+print(f.x)
+#: (3, 4)
 
 print(Tuple[int, int].__class__.__name__)
 #: Tuple[int,int]
@@ -831,6 +849,7 @@ print(Tuple[-5, int].__class__.__name__)
 #: Tuple
 print(Tuple[5, int, str].__class__.__name__)
 #: Tuple[int,str,int,str,int,str,int,str,int,str]
+
 
 #%% union_hasattr,barebones
 class A:

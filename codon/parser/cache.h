@@ -33,6 +33,7 @@
 #define VAR_CLASS_TOPLEVEL ":toplevel"
 #define VAR_ARGV "__argv__"
 
+#define MAX_TUPLE 2048
 #define MAX_INT_WIDTH 10000
 #define MAX_REALIZATION_DEPTH 200
 #define MAX_STATIC_ITER 1024

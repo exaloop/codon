@@ -186,6 +186,11 @@ class Tuple:
         return __magic__.tuplesize(self)
 tuple = Tuple
 
+@tuple
+@__internal__
+class __NTuple__[N: Static[int], T]:
+    pass
+
 @__attribute__
 def pure():
     pass

@@ -210,6 +210,23 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   if (type->is("unrealized_type"))
     type->generics[0].type = extractClassGeneric(type)->generalize(0);
 
+  if (type->is("__NTuple__")) {
+    auto n = std::max(int64_t(0), getIntLiteral(type));
+    auto tt = extractClassGeneric(type, 1)->getClass();
+    std::vector<ClassType::Generic> generics;
+    auto t = ctx->instantiate(generateTuple(n * tt->generics.size()));
+    for (size_t i = 0, j = 0; i < n; i++)
+      for (const auto &ttg : tt->generics) {
+        unify(t->generics[j].getType(), ttg.getType());
+        generics.push_back(t->generics[j]);
+        j++;
+      }
+    type->name = TYPE_TUPLE;
+    type->niceName = t->niceName;
+    type->generics = generics;
+    type->_rn = "";
+  }
+
   // Check if the type was already realized
   auto rn = type->ClassType::realizedName();
   auto cls = getClass(type);
@@ -315,7 +332,9 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
 
   // Clone the generic AST that is to be realized
-  auto ast = generateSpecialAst(type);
+  auto ast = clean_clone(type->ast);
+  if (auto s = generateSpecialAst(type))
+    ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;
 
@@ -366,7 +385,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
                                              type->shared_from_this());
   ctx->addAlwaysVisible(val, true);
 
-  ctx->getBase()->suite = clean_clone(ast->getSuite());
+  ctx->getBase()->suite = ast->getSuite();
   if (hasAst) {
     auto oldBlockLevel = ctx->blockLevel;
     ctx->blockLevel = 0;
@@ -420,8 +439,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   seqassert(ret, "cannot realize return type '{}'", *(type->getRetType()));
 
-  // LOG("[realize] F {} -> {} => {}", type->getFuncName(), type->debugString(2),
-  // ctx->getBase()->suite ? ctx->getBase()->suite->toString(2) : "-");
+  // LOG("[realize] F {} -> {}", type->getFuncName(), type->debugString(2));
 
   std::vector<Param> args;
   for (auto &i : *ast) {
@@ -562,11 +580,11 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
       std::vector<std::string> names;            // needed for IR
       std::map<std::string, SrcInfo> memberInfo; // needed for IR
 
+      seqassert(!t->is("__NTuple__"), "ntuple not inlined");
       auto ft = getClassFieldTypes(t->getClass());
       const auto &fields = cls->fields;
       for (size_t i = 0; i < ft.size(); i++) {
         if (!realize(ft[i].get())) {
-          // realize(ft[i]);
           E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), fields[i].name,
             t->prettyString());
         }

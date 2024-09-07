@@ -64,7 +64,7 @@ Stmt *TypecheckVisitor::apply(
   ScopingVisitor::apply(cache, suite);
   auto n = tv.inferTypes(suite, true);
   if (!n) {
-    // LOG("[error=>] {}", suite->toString(2));
+    LOG("[error=>] {}", suite->toString(2));
     tv.error("cannot typecheck the program");
   }
 

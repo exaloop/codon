@@ -31,7 +31,7 @@ print(b.__class__.__name__) #: int
 # print quit  # name 'quit' is not defined
 
 #%% static_unify,barebones
-def foo(x: Callable[[1,2], 3]): pass  #! expected type expression
+def foo(x: Callable[[1,2], 3]): pass  #! Callable cannot take static types
 
 #%% static_unify_2,barebones
 def foo(x: List[1]): pass  #! expected type expression
