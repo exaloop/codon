@@ -410,8 +410,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto funcTyp =
       std::make_shared<types::FuncType>(baseType.get(), fn.ast, 0, explicits);
   funcTyp->setSrcInfo(getSrcInfo());
-  if (isClassMember && stmt->hasAttribute(Attr::Method))
+  if (isClassMember && stmt->hasAttribute(Attr::Method)) {
     funcTyp->funcParent = parentClass->shared_from_this();
+  }
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
   fn.type = funcTyp;

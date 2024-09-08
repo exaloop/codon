@@ -99,8 +99,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
                    cast<EllipsisExpr>(expr->back().getExpr())->isPartial();
   // Early dispatch modifier
   if (isDispatch(calleeFn.get())) {
-    if (startswith(calleeFn->getFuncName(), "Tuple.__new__"))
+    if (startswith(calleeFn->getFuncName(), "Tuple.__new__")) {
       generateTuple(expr->size());
+    }
     std::unique_ptr<std::vector<FuncType *>> m = nullptr;
     if (auto id = cast<IdExpr>(expr->getExpr())) {
       // Case: function overloads (IdExpr)
@@ -108,9 +109,10 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       auto key = id->getValue();
       if (isDispatch(key))
         key = key.substr(0, key.size() - std::string(FN_DISPATCH_SUFFIX).size());
-      for (auto &m : getOverloads(key))
+      for (auto &m : getOverloads(key)) {
         if (!isDispatch(m))
           methods.push_back(getFunction(m)->getType());
+      }
       std::reverse(methods.begin(), methods.end());
       m = std::make_unique<std::vector<FuncType *>>(findMatchingMethods(
           calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr, methods,
@@ -128,9 +130,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         return;
     }
     if (!doDispatch) {
-      calleeFn = std::static_pointer_cast<types::FuncType>(ctx->instantiate(
-          m->front(),
-          calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr));
+      calleeFn = ctx->instantiate(m->front(), calleeFn->funcParent
+                                                  ? calleeFn->funcParent->getClass()
+                                                  : nullptr);
       auto e = N<IdExpr>(calleeFn->getFuncName());
       e->setType(calleeFn);
       if (cast<IdExpr>(expr->getExpr())) {
@@ -345,13 +347,14 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     auto clsName = typ->name;
     if (typ->isRecord()) {
       if (expr->hasAttribute("TupleFn")) {
-        if (extractType(expr->getExpr())->is("Tuple"))
+        if (extractType(expr->getExpr())->is(TYPE_TUPLE))
           return {nullptr, nullptr};
         expr->eraseAttribute("TupleFn");
       }
       // Case: tuple constructor. Transform to: `T.__new__(args)`
-      return {nullptr, transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__"),
-                                             expr->items))};
+      auto e =
+          transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__new__"), expr->items));
+      return {nullptr, e};
     }
 
     // Case: reference type constructor. Transform to
