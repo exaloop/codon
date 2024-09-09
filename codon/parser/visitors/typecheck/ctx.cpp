@@ -325,6 +325,16 @@ std::vector<types::FuncType *> TypeContext::findMethod(types::ClassType *type,
       }
     }
   };
+  if (type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
+    TypecheckVisitor(cache->typeCtx).generateTuple(type->generics.size());
+    auto mc = in(cache->classes, TYPE_TUPLE);
+    seqassert(mc, "class '{}' not found", TYPE_TUPLE);
+    populate(*mc);
+    for (auto f: vv)
+      if (f->size() == type->generics.size())
+        return {f};
+    return {};
+  }
   if (auto cls = cache->getClass(type)) {
     for (const auto &pc : cls->mro) {
       auto mc = in(cache->classes, pc->name == "__NTuple__" ? TYPE_TUPLE : pc->name);

@@ -204,9 +204,12 @@ private:
   void transformNestedClasses(ClassStmt *, std::vector<Stmt *> &, std::vector<Stmt *> &,
                               std::vector<Stmt *> &);
   Stmt *codegenMagic(const std::string &, Expr *, const std::vector<Param> &, bool);
-  types::ClassType *generateTuple(size_t n, bool = true);
   int generateKwId(const std::vector<std::string> & = {});
 
+public:
+  types::ClassType *generateTuple(size_t n, bool = true);
+
+private:
   /* The rest (typecheck.cpp) */
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
