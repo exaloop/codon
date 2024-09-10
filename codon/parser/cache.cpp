@@ -71,7 +71,7 @@ std::string Cache::getMethod(types::ClassType *typ, const std::string &member) {
 types::ClassType *Cache::findClass(const std::string &name) const {
   auto f = typeCtx->find(name);
   if (f && f->isType())
-    return typeCtx->getType(name)->getClass();
+    return f->getType()->getClass()->generics[0].getType()->getClass();
   return nullptr;
 }
 
@@ -158,7 +158,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
     tt.emplace_back(types[i].get());
   const auto &ret = types[0];
   auto argType = tv.instantiateType(tv.generateTuple(types.size() - 1), tt);
-  auto ft = realizeType(typeCtx->getType("Function")->getClass(), {argType, ret});
+  auto ft = realizeType(tv.getStdLibType("Function")->getClass(), {argType, ret});
   return ft;
 }
 
@@ -166,7 +166,7 @@ ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto argType =
       tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));
-  return realizeType(typeCtx->forceFind("Union")->type->getClass(), {argType});
+  return realizeType(tv.getStdLibType("Union")->getClass(), {argType});
 }
 
 void Cache::parseCode(const std::string &code) {

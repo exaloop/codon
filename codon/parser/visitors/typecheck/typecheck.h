@@ -462,15 +462,16 @@ public:
                        const std::vector<char> &known = std::vector<char>());
 
   bool isCanonicalName(const std::string &name) const;
+  types::FuncType *extractFunction(types::Type *t) const;
+
+
+
   ir::PyType cythonizeClass(const std::string &name);
   ir::PyType cythonizeIterator(const std::string &name);
   ir::PyFunction cythonizeFunction(const std::string &name);
   ir::Func *realizeIRFunc(types::FuncType *fn,
                           const std::vector<types::TypePtr> &generics = {});
-
-  // types::FuncType *extractFunction(types::Type *);
   // types::Type *getType(const std::string &);
-  // types::Type *extractType(types::Type *);
 };
 
 } // namespace codon::ast

@@ -307,7 +307,7 @@ void TranslateVisitor::visit(DotExpr *expr) {
       expr->getMember() == "__contents_atomic__") {
     auto ei = cast<IdExpr>(expr->getExpr());
     seqassert(ei, "expected IdExpr, got {}", *(expr->getExpr()));
-    auto t = ctx->cache->typeCtx->extractType(ei->getType());
+    auto t = TypecheckVisitor(ctx->cache->typeCtx).extractType(ei->getType());
     auto type = ctx->find(t->realizedName())->getType();
     seqassert(type, "{} is not a type", ei->getValue());
     result = make<ir::TypePropertyInstr>(
@@ -575,10 +575,10 @@ void TranslateVisitor::visit(TryStmt *stmt) {
   auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries);
   for (auto *c : *stmt) {
     auto *catchBody = make<ir::SeriesFlow>(stmt, "catch");
-    auto *excType =
-        c->getException()
-            ? getType(ctx->cache->typeCtx->extractType(c->getException()->getType()))
-            : nullptr;
+    auto *excType = c->getException()
+                        ? getType(TypecheckVisitor(ctx->cache->typeCtx)
+                                      .extractType(c->getException()->getType()))
+                        : nullptr;
     ir::Var *catchVar = nullptr;
     if (!c->getVar().empty()) {
       if (!ctx->find(c->getVar()) || !c->hasAttribute(Attr::ExprDominated)) {
@@ -719,8 +719,9 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
     } else {
       seqassert(cast<ExprStmt>((*ss)[i])->getExpr()->getType(),
                 "invalid LLVM type argument: {}", (*ss)[i]->toString(0));
-      literals.emplace_back(getType(ctx->cache->typeCtx->extractType(
-          cast<ExprStmt>((*ss)[i])->getExpr()->getType())));
+      literals.emplace_back(
+          getType(TypecheckVisitor(ctx->cache->typeCtx)
+                      .extractType(cast<ExprStmt>((*ss)[i])->getExpr()->getType())));
     }
   }
   bool isDeclare = true;

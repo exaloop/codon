@@ -1291,6 +1291,14 @@ bool TypecheckVisitor::isCanonicalName(const std::string &name) const {
   return name.rfind('.') != std::string::npos;
 }
 
+types::FuncType *TypecheckVisitor::extractFunction(types::Type *t) const {
+  if (auto f = t->getFunc())
+    return f;
+  if (auto p = t->getPartial())
+    return p->getPartialFunc();
+  return nullptr;
+}
+
 ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   auto c = getClass(name);
   if (!c->module.empty())

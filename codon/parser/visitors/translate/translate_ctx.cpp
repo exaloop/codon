@@ -9,6 +9,7 @@
 #include "codon/parser/ctx.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon::ast {
 
@@ -23,7 +24,7 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   if (tt && tt->isType() && tt->type->canRealize()) {
     auto t = tt->getType();
     if (name != t->realizedName()) // type prefix
-      t = cache->typeCtx->extractType(t);
+      t = TypecheckVisitor(cache->typeCtx).extractType(t);
     auto n = t->getClass()->name;
     if (!in(cache->classes, n) || !in(cache->classes[n].realizations, name))
       return nullptr;

@@ -798,7 +798,7 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgHasType(CallExpr *expr) {
-  auto fn = ctx->extractFunction(expr->begin()->getExpr()->getType());
+  auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     error("expected a function, got '{}'",
           expr->begin()->getExpr()->getType()->prettyString());
@@ -809,7 +809,7 @@ Expr *TypecheckVisitor::transformStaticFnArgHasType(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgGetType(CallExpr *expr) {
-  auto fn = ctx->extractFunction(expr->begin()->getExpr()->getType());
+  auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     error("expected a function, got '{}'",
           expr->begin()->getExpr()->getType()->prettyString());
@@ -821,7 +821,7 @@ Expr *TypecheckVisitor::transformStaticFnArgGetType(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
-  auto fn = ctx->extractFunction(expr->begin()->value->getType());
+  auto fn = extractFunction(expr->begin()->value->getType());
   if (!fn)
     error("expected a function, got '{}'",
           expr->begin()->getExpr()->getType()->prettyString());
@@ -837,7 +837,7 @@ Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
-  auto fn = ctx->extractFunction(expr->begin()->getExpr()->getType());
+  auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     error("expected a function, got '{}'",
           expr->begin()->getExpr()->getType()->prettyString());
@@ -849,7 +849,7 @@ Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnGetDefault(CallExpr *expr) {
-  auto fn = ctx->extractFunction(expr->begin()->getExpr()->getType());
+  auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     error("expected a function, got '{}'",
           expr->begin()->getExpr()->getType()->prettyString());
@@ -865,7 +865,7 @@ Expr *TypecheckVisitor::transformStaticFnWrapCallArgs(CallExpr *expr) {
   if (!typ)
     return nullptr;
 
-  auto fn = ctx->extractFunction(expr->begin()->getExpr()->getType());
+  auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     error("expected a function, got '{}'",
           expr->begin()->getExpr()->getType()->prettyString());

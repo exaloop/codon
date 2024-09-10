@@ -249,11 +249,6 @@ private:
   /// Pretty-print the current realization context.
   std::string debugInfo();
 
-public:
-  types::FuncType *extractFunction(types::Type *);
-  types::Type *getType(const std::string &);
-  types::Type *extractType(types::Type *);
-
 protected:
   void removeFromMap(const std::string &name) override;
 };

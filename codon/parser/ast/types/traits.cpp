@@ -136,7 +136,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         }
         auto tid = std::make_shared<IntStaticType>(cache, id);
         auto kt =
-            tv.instantiateType(cache->typeCtx->getType("NamedTuple"), {tid.get(), tt});
+            tv.instantiateType(tv.getStdLibType("NamedTuple"), {tid.get(), tt});
         if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }

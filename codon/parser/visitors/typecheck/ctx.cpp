@@ -227,25 +227,4 @@ std::string TypeContext::debugInfo() {
                      getSrcInfo());
 }
 
-types::FuncType *TypeContext::extractFunction(types::Type *t) {
-  if (auto f = t->getFunc())
-    return f;
-  if (auto p = t->getPartial())
-    return p->getPartialFunc();
-  return nullptr;
-}
-
-types::Type *TypeContext::extractType(types::Type *t) {
-  while (t && t->is(TYPE_TYPE))
-    t = t->getClass()->generics[0].type.get();
-  return t;
-}
-
-types::Type *TypeContext::getType(const std::string &s) {
-  auto t = forceFind(s)->type.get();
-  if (s == TYPE_TYPE)
-    return t;
-  return extractType(t);
-}
-
 } // namespace codon::ast
