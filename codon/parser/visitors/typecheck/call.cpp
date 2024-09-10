@@ -130,9 +130,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         return;
     }
     if (!doDispatch) {
-      calleeFn = ctx->instantiate(m->front(), calleeFn->funcParent
-                                                  ? calleeFn->funcParent->getClass()
-                                                  : nullptr);
+      calleeFn = instantiateType(m->front(), calleeFn->funcParent
+                                                 ? calleeFn->funcParent->getClass()
+                                                 : nullptr);
       auto e = N<IdExpr>(calleeFn->getFuncName());
       e->setType(calleeFn);
       if (cast<IdExpr>(expr->getExpr())) {
@@ -373,7 +373,7 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     auto mask = partType->getPartialMask();
     auto genFn = partType->getPartialFunc()->generalize(0);
     auto calleeFn =
-        std::static_pointer_cast<types::FuncType>(ctx->instantiate(genFn.get()));
+        std::static_pointer_cast<types::FuncType>(instantiateType(genFn.get()));
 
     if (!partType->isPartialEmpty() ||
         std::any_of(mask.begin(), mask.end(), [](char c) { return c; })) {
@@ -544,7 +544,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
   if (expr->hasAttribute(Attr::ExprOrderedCall)) {
     args = expr->items;
   } else {
-    ctx->reorderNamedArgs(
+    reorderNamedArgs(
         calleeFn, expr->items, reorderFn,
         [&](error::Error e, const SrcInfo &o, const std::string &errorMsg) {
           error::raise_error(e, o, errorMsg);
@@ -647,7 +647,7 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn,
             if ((*calleeFn->ast)[i].getType() &&
                 !extractFuncArgType(calleeFn, si)->canRealize()) {
               auto gt = extractType((*calleeFn->ast)[i].getType())->generalize(0);
-              unify(extractFuncArgType(calleeFn, si), ctx->instantiate(gt.get()));
+              unify(extractFuncArgType(calleeFn, si), instantiateType(gt.get()));
             }
             if (wrapExpr(&args[si].value, extractFuncArgType(calleeFn, si), calleeFn)) {
               unify(args[si].getExpr()->getType(), extractFuncArgType(calleeFn, si));
@@ -784,14 +784,13 @@ std::vector<TypePtr> TypecheckVisitor::getSuperTypes(ClassType *cls) {
   auto c = getClass(cls);
   auto fields = getClassFields(cls);
   for (auto &name : c->staticParentClasses) {
-    auto parentTyp = ctx->instantiate(extractClassType(name));
+    auto parentTyp = instantiateType(extractClassType(name));
     auto parentFields = getClassFields(parentTyp->getClass());
     for (auto &field : fields) {
       for (auto &parentField : parentFields)
         if (field.name == parentField.name) {
-          auto t = ctx->instantiate(field.getType(), cls);
-          unify(t.get(),
-                ctx->instantiate(parentField.getType(), parentTyp->getClass()));
+          auto t = instantiateType(field.getType(), cls);
+          unify(t.get(), instantiateType(parentField.getType(), parentTyp->getClass()));
           break;
         }
     }
@@ -821,8 +820,8 @@ Expr *TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
     kwargs = N<CallExpr>(N<IdExpr>("NamedTuple"));
 
   auto efn = N<IdExpr>(fn->getFuncName());
-  efn->setType(
-      ctx->instantiateGeneric(getStdLibType("unrealized_type"), {fn->getFunc()}));
+  efn->setType(instantiateType(getStdLibType("unrealized_type"),
+                               std::vector<types::Type *>{fn->getFunc()}));
   efn->setDone();
   Expr *call = N<CallExpr>(N<IdExpr>("Partial"),
                            std::vector<CallArg>{{"args", args},

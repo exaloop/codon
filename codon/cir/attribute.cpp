@@ -206,7 +206,6 @@ std::ostream &PartialFunctionAttribute::doFormat(std::ostream &os) const {
 
 } // namespace ir
 
-
 std::map<std::string, std::unique_ptr<ir::Attribute>>
 clone(const std::map<std::string, std::unique_ptr<ir::Attribute>> &t) {
   std::map<std::string, std::unique_ptr<ir::Attribute>> r;

@@ -225,7 +225,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     // Don't unify unbound inType yet (it might become a generator that needs to be
     // extracted)
     if (!el->getType())
-      el->setType(ctx->getUnbound());
+      el->setType(instantiateUnbound());
     if (inType && !inType->getUnbound())
       unify(el->getType(), inType);
 
@@ -277,7 +277,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   if (match(expr,
             M<IndexExpr>(M<IdExpr>("Static"), M<IdExpr>(MOr("int", "str", "bool"))))) {
     // Special case: static types.
-    auto typ = ctx->getUnbound();
+    auto typ = instantiateUnbound();
     typ->isStatic = getStaticGeneric(expr);
     unify(expr->getType(), typ);
     expr->setDone();
@@ -353,9 +353,9 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       }
     }
     auto t = generateTuple(typeParamsSize);
-    typ = ctx->instantiate(t);
+    typ = instantiateType(t);
   } else {
-    typ = ctx->instantiate(expr->getExpr()->getSrcInfo(), extractType(expr->getExpr()));
+    typ = instantiateType(expr->getExpr()->getSrcInfo(), extractType(expr->getExpr()));
   }
   seqassert(typ->getClass(), "unknown type: {}", *(expr->getExpr()));
 
@@ -376,21 +376,21 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         E(Error::INST_CALLABLE_STATIC, typeParam);
       types.push_back(extractType(typeParam)->shared_from_this());
     }
-    auto typ = ctx->getUnbound();
+    auto typ = instantiateUnbound();
     // Set up the Callable trait
     typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
-    unify(expr->getType(), instantiateType(typ.get()));
+    unify(expr->getType(), instantiateTypeVar(typ.get()));
   } else if (isId(expr->getExpr(), TYPE_TYPEVAR)) {
     // Case: TypeVar[...] trait instantiation
     (*expr)[0] = transformType((*expr)[0]);
-    auto typ = ctx->getUnbound();
+    auto typ = instantiateUnbound();
     typ->getLink()->trait =
         std::make_shared<TypeTrait>(extractType(expr->front())->shared_from_this());
     unify(expr->getType(), typ);
   } else {
     for (size_t i = 0; i < expr->size(); i++) {
       (*expr)[i] = transformType((*expr)[i]);
-      auto t = ctx->instantiate((*expr)[i]->getSrcInfo(), extractType((*expr)[i]));
+      auto t = instantiateType((*expr)[i]->getSrcInfo(), extractType((*expr)[i]));
       if (isUnion || (*expr)[i]->getType()->isStaticType() !=
                          generics[i].getType()->isStaticType()) {
         if (cast<NoneExpr>((*expr)[i])) // `None` -> `NoneType`
@@ -407,7 +407,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       typ->getUnion()->seal();
     }
 
-    unify(expr->getType(), instantiateType(typ.get()));
+    unify(expr->getType(), instantiateTypeVar(typ.get()));
     // If the type is realizable, use the realized name instead of instantiation
     // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
     if (realize(expr->getType())) {
@@ -666,7 +666,7 @@ Expr *TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
            g = extractClassGeneric(g)->getClass())
         ;
       if (!extractClassGeneric(g)->getClass()) {
-        auto typ = ctx->getUnbound();
+        auto typ = instantiateUnbound();
         typ->isStatic = 3;
         unify(expr->getType(), typ);
         return nullptr;
@@ -750,7 +750,7 @@ Expr *TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAto
 
   // Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
   if (isAtomic) {
-    auto ptr = ctx->instantiateGeneric(getStdLibType("Ptr"), {lt});
+    auto ptr = instantiateType(getStdLibType("Ptr"), std::vector<types::Type *>{lt});
     if ((method = findBestMethod(lt, format("__atomic_{}__", magic),
                                  {ptr.get(), expr->getRhs()->getType()}))) {
       expr->lexpr = N<CallExpr>(N<IdExpr>("__ptr__"), expr->getLhs());

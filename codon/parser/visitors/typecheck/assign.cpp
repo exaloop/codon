@@ -149,7 +149,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   assign->getLhs()->cloneAttributesFrom(stmt->getLhs());
   assign->getLhs()->setType(stmt->getLhs()->getType()
                                 ? stmt->getLhs()->getType()->shared_from_this()
-                                : ctx->getUnbound(assign->getLhs()->getSrcInfo()));
+                                : instantiateUnbound(assign->getLhs()->getSrcInfo()));
   if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find("NoneType")) {
     // All declarations that are not handled are to be marked with NoneType later on
     // (useful for dangling declarations that are not initialized afterwards due to
@@ -161,8 +161,8 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
   if (stmt->getTypeExpr()) {
     unify(assign->getLhs()->getType(),
-          ctx->instantiate(stmt->getTypeExpr()->getSrcInfo(),
-                           extractType(stmt->getTypeExpr())));
+          instantiateType(stmt->getTypeExpr()->getSrcInfo(),
+                          extractType(stmt->getTypeExpr())));
   }
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
                                         assign->getLhs()->getType()->shared_from_this(),
@@ -238,11 +238,11 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
   stmt->lhs = transform(stmt->getLhs());
 
   if (auto lhsClass = extractClassType(stmt->getLhs())) {
-    auto member = ctx->findMember(lhsClass, stmt->getMember());
+    auto member = findMember(lhsClass, stmt->getMember());
     if (!member) {
       // Case: property setters
-      auto setters = ctx->findMethod(
-          lhsClass, format("{}{}", FN_SETTER_SUFFIX, stmt->getMember()));
+      auto setters =
+          findMethod(lhsClass, format("{}{}", FN_SETTER_SUFFIX, stmt->getMember()));
       if (!setters.empty()) {
         resultStmt =
             transform(N<ExprStmt>(N<CallExpr>(N<IdExpr>(setters.front()->getFuncName()),
@@ -274,7 +274,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 
     stmt->rhs = transform(stmt->getRhs());
     auto ftyp =
-        ctx->instantiate(stmt->getLhs()->getSrcInfo(), member->getType(), lhsClass);
+        instantiateType(stmt->getLhs()->getSrcInfo(), member->getType(), lhsClass);
     if (!ftyp->canRealize() && member->typeExpr) {
       unify(ftyp.get(), extractType(withClassGenerics(lhsClass, [&]() {
               return transform(clean_clone(member->typeExpr));
@@ -307,7 +307,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     bin->rexpr = transform(bin->getRhs());
 
     if (!stmt->getRhs()->getType())
-      stmt->getRhs()->setType(ctx->getUnbound());
+      stmt->getRhs()->setType(instantiateUnbound());
     if (bin->getLhs()->getClassType() && bin->getRhs()->getClassType()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
         unify(stmt->getRhs()->getType(), transformed->getType());
@@ -317,7 +317,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
         return {false, nullptr};
       }
     } else { // Delay
-      unify(stmt->lhs->getType(), unify(stmt->getRhs()->getType(), ctx->getUnbound()));
+      unify(stmt->lhs->getType(),
+            unify(stmt->getRhs()->getType(), instantiateUnbound()));
       return {true, nullptr};
     }
   }
@@ -334,8 +335,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     if (cast<IdExpr>(call->front()) &&
         cast<IdExpr>(call->front())->getValue() == lei->getValue()) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
-      auto ptrTyp = ctx->instantiateGeneric(stmt->getLhs()->getSrcInfo(),
-                                            getStdLibType("Ptr"), {lhsClass});
+      auto ptrTyp = instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType("Ptr"),
+                                    std::vector<types::Type *>{lhsClass});
       (*call)[1].value = transform((*call)[1]);
       auto rhsTyp = extractClassType((*call)[1].value);
       if (auto method =
@@ -354,8 +355,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     // `type(a).__atomic_xchg__(__ptr__(a), b)`
     stmt->rhs = transform(stmt->getRhs());
     if (auto rhsClass = stmt->getRhs()->getClassType()) {
-      auto ptrType = ctx->instantiateGeneric(stmt->getLhs()->getSrcInfo(),
-                                             getStdLibType("Ptr"), {lhsClass});
+      auto ptrType = instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType("Ptr"),
+                                     std::vector<types::Type *>{lhsClass});
       if (auto m =
               findBestMethod(lhsClass, "__atomic_xchg__", {ptrType.get(), rhsClass})) {
         return {true, N<CallExpr>(N<IdExpr>(m->getFuncName()),

@@ -32,9 +32,9 @@ translateGenerics(codon::ast::Cache *cache, std::vector<types::Generic> &generic
   return ret;
 }
 
-std::vector<codon::ast::types::Type*>
+std::vector<codon::ast::types::Type *>
 generateDummyNames(std::vector<types::Type *> &types) {
-  std::vector<codon::ast::types::Type*> ret;
+  std::vector<codon::ast::types::Type *> ret;
   for (auto *t : types) {
     seqassertn(t->getAstType(), "{} must have an ast type", *t);
     ret.emplace_back(t->getAstType().get());

@@ -145,8 +145,7 @@ void UnionType::seal() {
   std::vector<Type *> typeSet;
   for (size_t j = 0; j < i; j++)
     typeSet.push_back(pendingTypes[j].get());
-  auto t =
-      cache->typeCtx->instantiateGeneric(tv.generateTuple(typeSet.size()), typeSet);
+  auto t = tv.instantiateType(tv.generateTuple(typeSet.size()), typeSet);
   Unification us;
   generics[0].type->unify(t.get(), &us);
 }

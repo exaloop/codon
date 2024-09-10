@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "codon/cir/pyextension.h"
+#include "codon/cir/util/irtools.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
@@ -183,7 +185,7 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
   // Cache::CTimer t(ctx->cache, k);
 
   if (!expr->getType())
-    expr->setType(ctx->getUnbound());
+    expr->setType(instantiateUnbound());
 
   if (!expr->isDone()) {
     TypecheckVisitor v(ctx, preamble, prependStmts);
@@ -200,7 +202,7 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
       v.resultExpr->setOrigExpr(expr);
       expr = v.resultExpr;
       if (!expr->getType())
-        expr->setType(ctx->getUnbound());
+        expr->setType(instantiateUnbound());
     }
     if (!allowTypes && expr && isTypeExpr(expr))
       E(Error::UNEXPECTED_TYPE, expr, "type");
@@ -235,14 +237,14 @@ Expr *TypecheckVisitor::transformType(Expr *expr, bool allowTypeOf) {
     if (expr->getType()->isStaticType()) {
       ;
     } else if (isTypeExpr(expr)) {
-      expr->setType(ctx->instantiate(expr->getType()));
+      expr->setType(instantiateType(expr->getType()));
     } else if (expr->getType()->getUnbound() &&
                !expr->getType()->getUnbound()->genericName.empty()) {
       // generic!
-      expr->setType(ctx->instantiate(expr->getType()));
+      expr->setType(instantiateType(expr->getType()));
     } else if (expr->getType()->getUnbound() && expr->getType()->getUnbound()->trait) {
       // generic (is type)!
-      expr->setType(ctx->instantiate(expr->getType()));
+      expr->setType(instantiateType(expr->getType()));
     } else {
       E(Error::EXPECTED_TYPE, expr, "type");
     }
@@ -378,7 +380,7 @@ TypecheckVisitor::findBestMethod(ClassType *typ, const std::string &member,
     callArgs.emplace_back("", N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a->shared_from_this());
   }
-  auto methods = ctx->findMethod(typ, member, false);
+  auto methods = findMethod(typ, member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -391,7 +393,7 @@ types::FuncType *TypecheckVisitor::findBestMethod(ClassType *typ,
   std::vector<CallArg> callArgs;
   for (auto &a : args)
     callArgs.emplace_back("", a);
-  auto methods = ctx->findMethod(typ, member, false);
+  auto methods = findMethod(typ, member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -406,7 +408,7 @@ types::FuncType *TypecheckVisitor::findBestMethod(
     callArgs.emplace_back(n, N<NoneExpr>()); // dummy expression
     callArgs.back().value->setType(a->shared_from_this());
   }
-  auto methods = ctx->findMethod(typ, member, false);
+  auto methods = findMethod(typ, member, false);
   auto m = findMatchingMethods(typ, methods, callArgs);
   return m.empty() ? nullptr : m[0];
 }
@@ -428,7 +430,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
 
   std::vector<std::pair<types::Type *, size_t>> reordered;
   auto niGenerics = fn->ast->getNonInferrableGenerics();
-  auto score = ctx->reorderNamedArgs(
+  auto score = reorderNamedArgs(
       fn, args,
       [&](int s, int k, const std::vector<std::vector<int>> &slots, bool _) {
         for (int si = 0, gi = 0, pi = 0; si < slots.size(); si++) {
@@ -524,7 +526,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
   for (const auto &mi : methods) {
     if (!mi)
       continue; // avoid overloads that have not been seen yet
-    auto method = ctx->instantiate(mi, typ);
+    auto method = instantiateType(mi, typ);
     int score = canCall(method->getFunc(), args, part);
     if (score != -1) {
       results.push_back(mi);
@@ -658,7 +660,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
     // Cast derived classes to base classes
     const auto &mros = ctx->cache->getClass(exprClass)->mro;
     for (size_t i = 1; i < mros.size(); i++) {
-      auto t = ctx->instantiate(mros[i].get(), exprClass);
+      auto t = instantiateType(mros[i].get(), exprClass);
       if (t->unify(expectedClass, nullptr) >= 0) {
         if (!isId(*expr, "")) {
           *expr = castToSuperClass((*expr), expectedClass, true);
@@ -679,8 +681,8 @@ Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassType *superTyp,
   for (auto &field : getClassFields(typ)) {
     for (auto &parentField : getClassFields(superTyp))
       if (field.name == parentField.name) {
-        auto t = ctx->instantiate(field.getType(), typ);
-        unify(t.get(), ctx->instantiate(parentField.getType(), superTyp));
+        auto t = instantiateType(field.getType(), typ);
+        unify(t.get(), instantiateType(parentField.getType(), superTyp));
       }
   }
   realize(superTyp);
@@ -739,7 +741,7 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
 }
 
 std::vector<Cache::Class::ClassField>
-TypecheckVisitor::getClassFields(types::ClassType *t) {
+TypecheckVisitor::getClassFields(types::ClassType *t) const {
   auto f = getClass(t->name)->fields;
   if (t->is(TYPE_TUPLE))
     f = std::vector<Cache::Class::ClassField>(f.begin(),
@@ -752,7 +754,7 @@ TypecheckVisitor::getClassFieldTypes(types::ClassType *cls) {
   return withClassGenerics(cls, [&]() {
     std::vector<types::TypePtr> result;
     for (auto &field : getClassFields(cls)) {
-      auto ftyp = ctx->instantiate(field.getType(), cls);
+      auto ftyp = instantiateType(field.getType(), cls);
       if (!ftyp->canRealize() && field.typeExpr) {
         auto t = extractType(transform(clean_clone(field.typeExpr)));
         unify(ftyp.get(), t);
@@ -814,16 +816,16 @@ std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root)
   return *i;
 }
 
-std::string TypecheckVisitor::getUnmangledName(const std::string &s) {
+std::string TypecheckVisitor::getUnmangledName(const std::string &s) const {
   return ctx->cache->rev(s);
 }
 
-Cache::Class *TypecheckVisitor::getClass(const std::string &t) {
+Cache::Class *TypecheckVisitor::getClass(const std::string &t) const {
   auto i = in(ctx->cache->classes, t);
   return i;
 }
 
-Cache::Class *TypecheckVisitor::getClass(types::Type *t) {
+Cache::Class *TypecheckVisitor::getClass(types::Type *t) const {
   if (t) {
     if (auto c = t->getClass())
       return getClass(c->name);
@@ -832,17 +834,18 @@ Cache::Class *TypecheckVisitor::getClass(types::Type *t) {
   return nullptr;
 }
 
-Cache::Function *TypecheckVisitor::getFunction(const std::string &n) {
+Cache::Function *TypecheckVisitor::getFunction(const std::string &n) const {
   auto i = in(ctx->cache->functions, n);
   return i;
 }
 
-Cache::Function *TypecheckVisitor::getFunction(types::Type *t) {
+Cache::Function *TypecheckVisitor::getFunction(types::Type *t) const {
   seqassert(t->getFunc(), "bad function");
   return getFunction(t->getFunc()->getFuncName());
 }
 
-Cache::Class::ClassRealization *TypecheckVisitor::getClassRealization(types::Type *t) {
+Cache::Class::ClassRealization *
+TypecheckVisitor::getClassRealization(types::Type *t) const {
   seqassert(t->canRealize(), "bad class");
   auto i = in(getClass(t)->realizations, t->getClass()->realizedName());
   seqassert(i, "bad class realization");
@@ -900,7 +903,7 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
     seqassert(!g.isStatic || t->isStaticType(), "{} not a static: {}", g.name,
               *(g.type));
     if (!g.isStatic && !t->is(TYPE_TYPE))
-      t = instantiateType(t.get());
+      t = instantiateTypeVar(t.get());
     auto v = ctx->addType(onlyMangled ? g.name : getUnmangledName(g.name), g.name, t);
     v->generic = true;
     // LOG("+ {} {} {} {}", getUnmangledName(g.name), g.name, t->debugString(2),
@@ -936,8 +939,8 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
   }
 }
 
-types::TypePtr TypecheckVisitor::instantiateType(types::Type *t) {
-  return ctx->instantiateGeneric(ctx->forceFind(TYPE_TYPE)->getType(), {t});
+types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
+  return instantiateType(ctx->forceFind(TYPE_TYPE)->getType(), {t});
 }
 
 void TypecheckVisitor::registerGlobal(const std::string &name, bool initialized) {
@@ -1011,6 +1014,564 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
 
 bool TypecheckVisitor::isImportFn(const std::string &s) {
   return startswith(s, "%_import_");
+}
+
+std::shared_ptr<types::LinkType>
+TypecheckVisitor::instantiateUnbound(const SrcInfo &srcInfo, int level) const {
+  auto typ = std::make_shared<types::LinkType>(
+      ctx->cache, types::LinkType::Unbound, ctx->cache->unboundCount++, level, nullptr);
+  typ->setSrcInfo(srcInfo);
+  return typ;
+}
+
+std::shared_ptr<types::LinkType>
+TypecheckVisitor::instantiateUnbound(const SrcInfo &srcInfo) const {
+  return instantiateUnbound(srcInfo, ctx->typecheckLevel);
+}
+
+std::shared_ptr<types::LinkType> TypecheckVisitor::instantiateUnbound() const {
+  return instantiateUnbound(getSrcInfo(), ctx->typecheckLevel);
+}
+
+types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
+                                                 types::Type *type,
+                                                 types::ClassType *generics) {
+  seqassert(type, "type is null");
+  std::unordered_map<int, types::TypePtr> genericCache;
+  if (generics) {
+    for (auto &g : generics->generics)
+      if (g.type &&
+          !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
+        genericCache[g.id] = g.type;
+      }
+    // special case: __SELF__
+    if (type->getFunc() && !type->getFunc()->funcGenerics.empty() &&
+        type->getFunc()->funcGenerics[0].niceName == "__SELF__") {
+      genericCache[type->getFunc()->funcGenerics[0].id] = generics->shared_from_this();
+    }
+  }
+  auto t = type->instantiate(ctx->typecheckLevel, &(ctx->cache->unboundCount),
+                             &genericCache);
+  for (auto &i : genericCache) {
+    if (auto l = i.second->getLink()) {
+      i.second->setSrcInfo(srcInfo);
+      if (l->defaultType) {
+        ctx->getBase()->pendingDefaults.insert(i.second);
+      }
+    }
+  }
+  if (auto ft = t->getFunc()) {
+    if (auto b = ft->ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
+      auto module =
+          ft->ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
+      auto imp = getImport(module);
+      std::unordered_map<std::string, std::string> key;
+      for (const auto &[c, _] : b->captures) {
+        auto h = imp->ctx->find(c);
+        // seqassert(h, "bad function {}: cannot locate {}", ft->name, c);
+        key[c] = h ? h->canonicalName : "";
+      }
+      auto &cm = getFunction(ft->getFuncName())->captureMappings;
+      size_t idx = 0;
+      for (; idx < cm.size(); idx++)
+        if (cm[idx] == key)
+          break;
+      if (idx == cm.size())
+        cm.push_back(key);
+      ft->index = idx;
+    }
+  }
+  if (t->getUnion() && !t->getUnion()->isSealed()) {
+    t->setSrcInfo(srcInfo);
+    ctx->getBase()->pendingDefaults.insert(t);
+  }
+  return t;
+}
+
+types::TypePtr
+TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
+                                  const std::vector<types::Type *> &generics) {
+  auto c = root->getClass();
+  seqassert(c, "root class is null");
+  // dummy generic type
+  auto g = std::make_shared<types::ClassType>(ctx->cache, "", "");
+  if (generics.size() != c->generics.size()) {
+    E(Error::GENERICS_MISMATCH, srcInfo, getUnmangledName(c->name), c->generics.size(),
+      generics.size());
+  }
+  for (int i = 0; i < c->generics.size(); i++) {
+    auto t = generics[i];
+    seqassert(c->generics[i].type, "generic is null");
+    if (!c->generics[i].isStatic && t->getStatic())
+      t = t->getStatic()->getNonStaticType();
+    g->generics.emplace_back("", "", t->shared_from_this(), c->generics[i].id,
+                             c->generics[i].isStatic);
+  }
+  return instantiateType(srcInfo, root, g.get());
+}
+
+std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *type,
+                                                            const std::string &method,
+                                                            bool hideShadowed) {
+  std::vector<types::FuncType *> vv;
+  std::unordered_set<std::string> signatureLoci;
+
+  auto populate = [&](const auto &cls) {
+    auto t = in(cls.methods, method);
+    if (!t)
+      return;
+
+    auto mt = getOverloads(*t);
+    for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
+      auto method = mt[mti];
+      auto f = getFunction(method);
+      if (isDispatch(method) || !f->getType())
+        continue;
+      if (hideShadowed) {
+        auto sig = f->ast->signature();
+        if (!in(signatureLoci, sig)) {
+          signatureLoci.insert(sig);
+          vv.emplace_back(f->getType());
+        }
+      } else {
+        vv.emplace_back(f->getType());
+      }
+    }
+  };
+  if (type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
+    generateTuple(type->generics.size());
+    auto mc = getClass(TYPE_TUPLE);
+    populate(*mc);
+    for (auto f : vv)
+      if (f->size() == type->generics.size())
+        return {f};
+    return {};
+  }
+  if (auto cls = getClass(type)) {
+    for (const auto &pc : cls->mro) {
+      auto mc = getClass(pc->name == "__NTuple__" ? TYPE_TUPLE : pc->name);
+      populate(*mc);
+    }
+  }
+  return vv;
+}
+
+Cache::Class::ClassField *
+TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) const {
+  if (auto cls = getClass(type)) {
+    for (const auto &pc : cls->mro) {
+      auto mc = getClass(pc.get());
+      for (auto &mm : mc->fields) {
+        if (pc->is(TYPE_TUPLE) && (&mm - &(mc->fields[0])) >= type->generics.size())
+          break;
+        if (mm.name == member)
+          return &mm;
+      }
+    }
+  }
+  return nullptr;
+}
+
+int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
+                                       const std::vector<CallArg> &args,
+                                       const ReorderDoneFn &onDone,
+                                       const ReorderErrorFn &onError,
+                                       const std::vector<char> &known) {
+  // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
+  // Final score:
+  //  - +1 for each matched argument
+  //  -  0 for *args/**kwargs/default arguments
+  //  - -1 for failed match
+  int score = 0;
+
+  // 0. Find *args and **kwargs
+  // True if there is a trailing ellipsis (full partial: fn(all_args, ...))
+  bool partial =
+      !args.empty() && cast<EllipsisExpr>(args.back().value) &&
+      cast<EllipsisExpr>(args.back().value)->getMode() != EllipsisExpr::PIPE &&
+      args.back().name.empty();
+
+  int starArgIndex = -1, kwstarArgIndex = -1;
+  for (int i = 0; i < func->ast->size(); i++) {
+    if (startswith((*func->ast)[i].name, "**"))
+      kwstarArgIndex = i, score -= 2;
+    else if (startswith((*func->ast)[i].name, "*"))
+      starArgIndex = i, score -= 2;
+  }
+
+  // 1. Assign positional arguments to slots
+  // Each slot contains a list of arg's indices
+  std::vector<std::vector<int>> slots(func->ast->size());
+  seqassert(known.empty() || func->ast->size() == known.size(), "bad 'known' string");
+  std::vector<int> extra;
+  std::map<std::string, int> namedArgs,
+      extraNamedArgs; // keep the map--- we need it sorted!
+  for (int ai = 0, si = 0; ai < args.size() - partial; ai++) {
+    if (args[ai].name.empty()) {
+      while (!known.empty() && si < slots.size() && known[si])
+        si++;
+      if (si < slots.size() && (starArgIndex == -1 || si < starArgIndex))
+        slots[si++] = {ai};
+      else
+        extra.emplace_back(ai);
+    } else {
+      namedArgs[args[ai].name] = ai;
+    }
+  }
+  score += 2 * int(slots.size() - func->funcGenerics.size());
+
+  for (auto ai : std::vector<int>{std::max(starArgIndex, kwstarArgIndex),
+                                  std::min(starArgIndex, kwstarArgIndex)})
+    if (ai != -1 && !slots[ai].empty()) {
+      extra.insert(extra.begin(), ai);
+      slots[ai].clear();
+    }
+
+  // 2. Assign named arguments to slots
+  if (!namedArgs.empty()) {
+    std::map<std::string, int> slotNames;
+    for (int i = 0; i < func->ast->size(); i++)
+      if (known.empty() || !known[i]) {
+        auto n = (*func->ast)[i].name;
+        trimStars(n);
+        slotNames[getUnmangledName(n)] = i;
+      }
+    for (auto &n : namedArgs) {
+      if (!in(slotNames, n.first))
+        extraNamedArgs[n.first] = n.second;
+      else if (slots[slotNames[n.first]].empty())
+        slots[slotNames[n.first]].push_back(n.second);
+      else
+        return onError(Error::CALL_REPEATED_NAME, args[n.second].value->getSrcInfo(),
+                       Emsg(Error::CALL_REPEATED_NAME, n.first));
+    }
+  }
+
+  // 3. Fill in *args, if present
+  if (!extra.empty() && starArgIndex == -1)
+    return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_MANY,
+                        // func->ast->getName(),
+                        getUnmangledName(func->ast->getName()), func->ast->size(),
+                        args.size() - partial));
+
+  if (starArgIndex != -1)
+    slots[starArgIndex] = extra;
+
+  // 4. Fill in **kwargs, if present
+  if (!extraNamedArgs.empty() && kwstarArgIndex == -1)
+    return onError(Error::CALL_ARGS_INVALID,
+                   args[extraNamedArgs.begin()->second].value->getSrcInfo(),
+                   Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
+                        getUnmangledName(func->ast->getName())));
+  if (kwstarArgIndex != -1)
+    for (auto &e : extraNamedArgs)
+      slots[kwstarArgIndex].push_back(e.second);
+
+  // 5. Fill in the default arguments
+  for (auto i = 0; i < func->ast->size(); i++)
+    if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
+      if ((*func->ast)[i].isValue() &&
+          ((*func->ast)[i].getDefault() || (!known.empty() && known[i]))) {
+        score -= 2;
+      } else if (!partial && (*func->ast)[i].isValue()) {
+        auto n = (*func->ast)[i].name;
+        trimStars(n);
+        return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
+                       Emsg(Error::CALL_ARGS_MISSING,
+                            getUnmangledName(func->ast->getName()),
+                            getUnmangledName(n)));
+      }
+    }
+  auto s = onDone(starArgIndex, kwstarArgIndex, slots, partial);
+  return s != -1 ? score + s : -1;
+}
+
+bool TypecheckVisitor::isCanonicalName(const std::string &name) const {
+  return name.rfind('.') != std::string::npos;
+}
+
+ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
+  auto c = getClass(name);
+  if (!c->module.empty())
+    return {"", ""};
+  if (!in(c->methods, "__to_py__") || !in(c->methods, "__from_py__"))
+    return {"", ""};
+
+  LOG_USER("[py] Cythonizing {}", name);
+  ir::PyType py{getUnmangledName(name), c->ast->getDocstr()};
+
+  auto tc = ctx->forceFind(name)->getType();
+  if (!tc->canRealize())
+    E(Error::CUSTOM, c->ast, "cannot realize '{}' for Python export",
+      getUnmangledName(name));
+  tc = realize(tc);
+  seqassertn(tc, "cannot realize '{}'", name);
+
+  // 1. Replace to_py / from_py with _PyWrap.wrap_to_py/from_py
+  if (auto ofnn = in(c->methods, "__to_py__")) {
+    auto fnn = getOverloads(*ofnn).front(); // default first overload!
+    auto fna = getFunction(fnn)->ast;
+    fna->suite = SuiteStmt::wrap(
+        N<ReturnStmt>(N<CallExpr>(N<IdExpr>(format("{}.wrap_to_py:0", CYTHON_PYWRAP)),
+                                  N<IdExpr>(fna->begin()->name))));
+  }
+  if (auto ofnn = in(c->methods, "__from_py__")) {
+    auto fnn = getOverloads(*ofnn).front(); // default first overload!
+    auto fna = getFunction(fnn)->ast;
+    fna->suite = SuiteStmt::wrap(
+        N<ReturnStmt>(N<CallExpr>(N<IdExpr>(format("{}.wrap_from_py:0", CYTHON_PYWRAP)),
+                                  N<IdExpr>(fna->begin()->name), N<IdExpr>(name))));
+  }
+  for (auto &n : std::vector<std::string>{"__from_py__", "__to_py__"}) {
+    auto fnn = getOverloads(*in(c->methods, n)).front();
+    auto fn = getFunction(fnn);
+    ir::Func *oldIR = nullptr;
+    if (!fn->realizations.empty())
+      oldIR = fn->realizations.begin()->second->ir;
+    fn->realizations.clear();
+    auto tf = realize(fn->type);
+    seqassertn(tf, "cannot re-realize '{}'", fnn);
+    if (oldIR) {
+      std::vector<ir::Value *> args;
+      for (auto it = oldIR->arg_begin(); it != oldIR->arg_end(); ++it) {
+        args.push_back(ctx->cache->module->Nr<ir::VarValue>(*it));
+      }
+      cast<ir::BodiedFunc>(oldIR)->setBody(
+          ir::util::series(ir::util::call(fn->realizations.begin()->second->ir, args)));
+    }
+  }
+  for (auto &[rn, r] :
+       getFunction(format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
+    if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
+      py.typePtrHook = r->ir;
+      break;
+    }
+  }
+
+  // 2. Handle methods
+  auto methods = c->methods;
+  for (const auto &[n, ofnn] : methods) {
+    auto canonicalName = getOverloads(ofnn).back();
+    auto fn = getFunction(canonicalName);
+    if (getOverloads(ofnn).size() == 1 && fn->ast->hasAttribute("autogenerated"))
+      continue;
+    auto fna = fn->ast;
+    bool isMethod = fna->hasAttribute(Attr::Method);
+    bool isProperty = fna->hasAttribute(Attr::Property);
+
+    std::string call = format("{}.wrap_multiple", CYTHON_PYWRAP);
+    bool isMagic = false;
+    if (startswith(n, "__") && endswith(n, "__")) {
+      auto m = n.substr(2, n.size() - 4);
+      if (m == "new" && c->ast->hasAttribute(Attr::Tuple))
+        m = "init";
+      auto cls = getClass(CYTHON_PYWRAP);
+      if (auto i = in(c->methods, "wrap_magic_" + m)) {
+        call = *i;
+        isMagic = true;
+      }
+    }
+    if (isProperty)
+      call = format("{}.wrap_get", CYTHON_PYWRAP);
+
+    auto fnName = call + ":0";
+    auto generics = std::vector<types::TypePtr>{tc->shared_from_this()};
+    if (isProperty) {
+      generics.push_back(instantiateStatic(getUnmangledName(canonicalName)));
+    } else if (!isMagic) {
+      generics.push_back(instantiateStatic(n));
+      generics.push_back(instantiateStatic(int64_t(isMethod)));
+    }
+    auto f = realizeIRFunc(getFunction(fnName)->getType(), generics);
+    if (!f)
+      continue;
+
+    LOG_USER("[py] {} -> {} ({}; {})", n, call, isMethod, isProperty);
+    if (isProperty) {
+      py.getset.push_back({getUnmangledName(canonicalName), "", f, nullptr});
+    } else if (n == "__repr__") {
+      py.repr = f;
+    } else if (n == "__add__") {
+      py.add = f;
+    } else if (n == "__iadd__") {
+      py.iadd = f;
+    } else if (n == "__sub__") {
+      py.sub = f;
+    } else if (n == "__isub__") {
+      py.isub = f;
+    } else if (n == "__mul__") {
+      py.mul = f;
+    } else if (n == "__imul__") {
+      py.imul = f;
+    } else if (n == "__mod__") {
+      py.mod = f;
+    } else if (n == "__imod__") {
+      py.imod = f;
+    } else if (n == "__divmod__") {
+      py.divmod = f;
+    } else if (n == "__pow__") {
+      py.pow = f;
+    } else if (n == "__ipow__") {
+      py.ipow = f;
+    } else if (n == "__neg__") {
+      py.neg = f;
+    } else if (n == "__pos__") {
+      py.pos = f;
+    } else if (n == "__abs__") {
+      py.abs = f;
+    } else if (n == "__bool__") {
+      py.bool_ = f;
+    } else if (n == "__invert__") {
+      py.invert = f;
+    } else if (n == "__lshift__") {
+      py.lshift = f;
+    } else if (n == "__ilshift__") {
+      py.ilshift = f;
+    } else if (n == "__rshift__") {
+      py.rshift = f;
+    } else if (n == "__irshift__") {
+      py.irshift = f;
+    } else if (n == "__and__") {
+      py.and_ = f;
+    } else if (n == "__iand__") {
+      py.iand = f;
+    } else if (n == "__xor__") {
+      py.xor_ = f;
+    } else if (n == "__ixor__") {
+      py.ixor = f;
+    } else if (n == "__or__") {
+      py.or_ = f;
+    } else if (n == "__ior__") {
+      py.ior = f;
+    } else if (n == "__int__") {
+      py.int_ = f;
+    } else if (n == "__float__") {
+      py.float_ = f;
+    } else if (n == "__floordiv__") {
+      py.floordiv = f;
+    } else if (n == "__ifloordiv__") {
+      py.ifloordiv = f;
+    } else if (n == "__truediv__") {
+      py.truediv = f;
+    } else if (n == "__itruediv__") {
+      py.itruediv = f;
+    } else if (n == "__index__") {
+      py.index = f;
+    } else if (n == "__matmul__") {
+      py.matmul = f;
+    } else if (n == "__imatmul__") {
+      py.imatmul = f;
+    } else if (n == "__len__") {
+      py.len = f;
+    } else if (n == "__getitem__") {
+      py.getitem = f;
+    } else if (n == "__setitem__") {
+      py.setitem = f;
+    } else if (n == "__contains__") {
+      py.contains = f;
+    } else if (n == "__hash__") {
+      py.hash = f;
+    } else if (n == "__call__") {
+      py.call = f;
+    } else if (n == "__str__") {
+      py.str = f;
+    } else if (n == "__iter__") {
+      py.iter = f;
+    } else if (n == "__del__") {
+      py.del = f;
+    } else if (n == "__init__" ||
+               (c->ast->hasAttribute(Attr::Tuple) && n == "__new__")) {
+      py.init = f;
+    } else {
+      py.methods.push_back(ir::PyFunction{
+          n, fna->getDocstr(), f,
+          fna->hasAttribute(Attr::Method) ? ir::PyFunction::Type::METHOD
+                                          : ir::PyFunction::Type::CLASS,
+          // always use FASTCALL for now; works even for 0- or 1- arg methods
+          2});
+      py.methods.back().keywords = true;
+    }
+  }
+
+  for (auto &m : py.methods) {
+    if (in(std::set<std::string>{"__lt__", "__le__", "__eq__", "__ne__", "__gt__",
+                                 "__ge__"},
+           m.name)) {
+      py.cmp = realizeIRFunc(
+          ctx->forceFind(format("{}.wrap_cmp:0", CYTHON_PYWRAP))->type->getFunc(),
+          {tc->shared_from_this()});
+      break;
+    }
+  }
+
+  if (c->realizations.size() != 1)
+    E(Error::CUSTOM, c->ast, "cannot pythonize generic class '{}'", name);
+  auto r = c->realizations.begin()->second;
+  py.type = r->ir;
+  seqassertn(!r->type->is(TYPE_TUPLE), "tuples not yet done");
+  for (auto &[mn, mt] : r->fields) {
+    /// TODO: handle PyMember for tuples
+    // Generate getters & setters
+    auto generics =
+        std::vector<types::TypePtr>{tc->shared_from_this(), instantiateStatic(mn)};
+    auto gf = realizeIRFunc(
+        getFunction(format("{}.wrap_get:0", CYTHON_PYWRAP))->getType(), generics);
+    ir::Func *sf = nullptr;
+    if (!c->ast->hasAttribute(Attr::Tuple))
+      sf = realizeIRFunc(getFunction(format("{}.wrap_set:0", CYTHON_PYWRAP))->getType(),
+                         generics);
+    py.getset.push_back({mn, "", gf, sf});
+    LOG_USER("[py] {}: {} . {}", "member", name, mn);
+  }
+  return py;
+}
+
+ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
+  LOG_USER("[py] iterfn: {}", name);
+  ir::PyType py{name, ""};
+  auto cr = ctx->cache->classes[CYTHON_ITER].realizations[name];
+  auto tc = cr->getType();
+  for (auto &[rn, r] :
+       getFunction(format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
+    if (extractFuncGeneric(r->getType())->unify(tc, nullptr) >= 0) {
+      py.typePtrHook = r->ir;
+      break;
+    }
+  }
+
+  const auto &methods = getClass(CYTHON_ITER)->methods;
+  for (auto &n : std::vector<std::string>{"_iter", "_iternext"}) {
+    auto fnn = getOverloads(getClass(CYTHON_ITER)->methods[n]).front();
+    auto rtv = realize(instantiateType(getFunction(fnn)->getType(), tc->getClass()));
+    auto f =
+        getFunction(rtv->getFunc()->getFuncName())->realizations[rtv->realizedName()];
+    if (n == "_iter")
+      py.iter = f->ir;
+    else
+      py.iternext = f->ir;
+  }
+  py.type = cr->ir;
+  return py;
+}
+
+ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
+  auto f = getFunction(name);
+  if (f->isToplevel) {
+    auto fnName = format("{}.wrap_multiple:0", CYTHON_PYWRAP);
+    auto generics = std::vector<types::TypePtr>{
+        ctx->forceFind(".toplevel")->type,
+        instantiateStatic(getUnmangledName(f->ast->getName())),
+        instantiateStatic(int64_t(0))};
+    if (auto ir = realizeIRFunc(getFunction(fnName)->getType(), generics)) {
+      LOG_USER("[py] {}: {}", "toplevel", name);
+      ir::PyFunction fn{getUnmangledName(name), f->ast->getDocstr(), ir,
+                        ir::PyFunction::Type::TOPLEVEL, int(f->ast->size())};
+      fn.keywords = true;
+      return fn;
+    }
+  }
+  return {"", ""};
 }
 
 } // namespace codon::ast

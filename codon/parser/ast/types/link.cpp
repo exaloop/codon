@@ -139,7 +139,7 @@ TypePtr LinkType::follow() {
 
 std::vector<Type *> LinkType::getUnbounds() const {
   if (kind == Unbound)
-    return {(Type*)this};
+    return {(Type *)this};
   else if (kind == Link)
     return type->getUnbounds();
   return {};

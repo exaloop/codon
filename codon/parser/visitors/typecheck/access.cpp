@@ -43,7 +43,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   expr->value = val->getName();
 
   // Set up type
-  unify(expr->getType(), ctx->instantiate(val->getType()));
+  unify(expr->getType(), instantiateType(val->getType()));
 
   // Realize a type or a function if possible and replace the identifier with
   // a qualified identifier or a static expression (e.g., `foo` -> `foo[int]`)
@@ -180,7 +180,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
 
   // Check if this is a method or member access
   while (true) {
-    auto methods = ctx->findMethod(typ, expr->getMember());
+    auto methods = findMethod(typ, expr->getMember());
     if (methods.empty())
       resultExpr = getClassMember(expr);
 
@@ -199,7 +199,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
       auto bestMethod = methods.size() > 1 ? getDispatch(getRootName(methods.front()))
                                            : methods.front();
       Expr *e = N<IdExpr>(bestMethod->getFuncName());
-      e->setType(ctx->instantiate(bestMethod, typ));
+      e->setType(instantiateType(bestMethod, typ));
       if (isTypeExpr(expr->getExpr())) {
         // Static access: `cls.method`
         unify(expr->getType(), e->getType());
@@ -317,8 +317,8 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
     if (ictx->getModule() == "std.python" && importEnd < chain.size()) {
       // Special case: importing from Python.
       // Fake TypecheckItem that indicates std.python access
-      val = std::make_shared<TypecheckItem>("", "", ictx->getModule(),
-                                            ictx->getUnbound());
+      val = std::make_shared<TypecheckItem>(
+          "", "", ictx->getModule(), TypecheckVisitor(ictx).instantiateUnbound());
       return {importEnd, val};
     } else {
       auto key = join(chain, ".", importEnd, i + 1);
@@ -346,9 +346,9 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
       // Resolve the identifier from the import
       if (auto i = ctx->find("Import")) {
         auto t = extractClassType(i->getType());
-        if (ctx->findMember(t, key))
+        if (findMember(t, key))
           return {importEnd, importVal};
-        if (!ctx->findMethod(t, key).empty())
+        if (!findMethod(t, key).empty())
           return {importEnd, importVal};
       }
     }
@@ -442,8 +442,8 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
 
   // Case: object member access (`obj.member`)
   if (!isTypeExpr(expr->getExpr())) {
-    if (auto member = ctx->findMember(typ, expr->getMember())) {
-      unify(expr->getType(), ctx->instantiate(member->getType(), typ));
+    if (auto member = findMember(typ, expr->getMember())) {
+      unify(expr->getType(), instantiateType(member->getType(), typ));
       if (!expr->getType()->canRealize() && member->typeExpr) {
         unify(expr->getType(), extractType(withClassGenerics(typ, [&]() {
                 return transform(clean_clone(member->typeExpr));
@@ -487,7 +487,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
       if (realize(expr->getType()))
         return transform(generic->type->getStatic()->getStaticExpr());
     } else {
-      unify(expr->getType(), instantiateType(generic->getType()));
+      unify(expr->getType(), instantiateTypeVar(generic->getType()));
       if (realize(expr->getType()))
         return transform(N<IdExpr>(generic->getType()->realizedName()));
     }
@@ -517,7 +517,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   }
 
   // For debugging purposes:
-  // ctx->findMethod(typ.get(), expr->getMember());
+  // findMethod(typ.get(), expr->getMember());
   E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->getMember());
   return nullptr;
 }

@@ -26,8 +26,7 @@ template <class Archive, class Base> struct PolymorphicSerializer {
   static inline std::unordered_map<std::string, Serializer> _factory;
   template <class... Derived> static void register_types() {
     (_serializers.emplace((void *)(Derived::nodeId()), Derived::_typeName), ...);
-    (_factory.emplace(std::string(Derived::_typeName), serializerFor<Derived>()),
-     ...);
+    (_factory.emplace(std::string(Derived::_typeName), serializerFor<Derived>()), ...);
   }
   static void save(const std::string &s, Base *b, Archive &a) {
     auto i = _factory.find(s);

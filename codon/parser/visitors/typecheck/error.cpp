@@ -67,7 +67,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (!c->hasAttribute(Attr::ExprDominated) &&
           !c->hasAttribute(Attr::ExprDominatedUsed)) {
         val = ctx->addVar(c->getVar(), ctx->generateCanonicalName(c->getVar()),
-                          ctx->getUnbound());
+                          instantiateUnbound());
       } else if (c->hasAttribute(Attr::ExprDominatedUsed)) {
         val = ctx->forceFind(c->getVar());
         c->eraseAttribute(Attr::ExprDominatedUsed);

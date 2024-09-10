@@ -67,12 +67,11 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
       ASTNode *binding = nullptr;
       bool ignore = false;
 
-
       /// List of scopes where the identifier is accessible
       /// without __used__ check
       std::vector<std::vector<int>> accessChecked;
-      Item(const codon::SrcInfo &src, std::vector<int> scope, ASTNode *binding = nullptr,
-           std::vector<std::vector<int>> accessChecked = {})
+      Item(const codon::SrcInfo &src, std::vector<int> scope,
+           ASTNode *binding = nullptr, std::vector<std::vector<int>> accessChecked = {})
           : scope(std::move(scope)), binding(std::move(binding)), ignore(false),
             accessChecked(std::move(accessChecked)) {
         setSrcInfo(src);

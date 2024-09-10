@@ -243,69 +243,6 @@ public:
   /// Get the name of the current realization stack (e.g., `fn1:fn2:...`).
   std::string getRealizationStackName() const;
 
-public:
-  /// Create an unbound type with the provided typechecking level.
-  std::shared_ptr<types::LinkType> getUnbound(const SrcInfo &info, int level) const;
-  std::shared_ptr<types::LinkType> getUnbound(const SrcInfo &info) const;
-  std::shared_ptr<types::LinkType> getUnbound() const;
-
-  /// Call `type->instantiate`.
-  /// Prepare the generic instantiation table with the given generics parameter.
-  /// Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
-  ///          T=int.
-  /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  /// @param setActive If True, add unbounds to activeUnbounds.
-  types::TypePtr instantiate(const SrcInfo &info, types::Type *type,
-                             types::ClassType *generics = nullptr);
-  template <typename T>
-  std::shared_ptr<T> instantiate(T *type, types::ClassType *generics = nullptr) {
-    return std::static_pointer_cast<T>(
-        instantiate(getSrcInfo(), std::move(type), generics));
-  }
-
-  /// Instantiate the generic type root with the provided generics.
-  /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  types::TypePtr instantiateGeneric(const SrcInfo &info, types::Type *root,
-                                    const std::vector<types::Type *> &generics);
-  template <typename T>
-  std::shared_ptr<T> instantiateGeneric(T *root,
-                                    const std::vector<types::Type *> &generics) {
-    return std::static_pointer_cast<T>(instantiateGeneric(getSrcInfo(), std::move(root), generics));
-  }
-  std::shared_ptr<types::IntStaticType> instantiateStatic(int64_t i) {
-    return std::make_shared<types::IntStaticType>(cache, i);
-  }
-  std::shared_ptr<types::StrStaticType> instantiateStatic(const std::string &s) {
-    return std::make_shared<types::StrStaticType>(cache, s);
-  }
-  std::shared_ptr<types::BoolStaticType> instantiateStatic(bool i) {
-    return std::make_shared<types::BoolStaticType>(cache, i);
-  }
-
-  /// Returns the list of generic methods that correspond to typeName.method.
-  std::vector<types::FuncType *> findMethod(types::ClassType *type,
-                                            const std::string &method,
-                                            bool hideShadowed = true);
-  /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
-  /// Special cases: __elemsize__ and __atomic__.
-  Cache::Class::ClassField *findMember(types::ClassType *, const std::string &) const;
-
-  using ReorderDoneFn =
-      std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
-  using ReorderErrorFn = std::function<int(error::Error, const SrcInfo &, std::string)>;
-  /// Reorders a given vector or named arguments (consisting of names and the
-  /// corresponding types) according to the signature of a given function.
-  /// Returns the reordered vector and an associated reordering score (missing
-  /// default arguments' score is half of the present arguments).
-  /// Score is -1 if the given arguments cannot be reordered.
-  /// @param known Bitmask that indicated if an argument is already provided
-  ///              (partial function) or not.
-  int reorderNamedArgs(types::FuncType *func, const std::vector<CallArg> &args,
-                       const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
-                       const std::vector<char> &known = std::vector<char>());
-
-  bool isCanonicalName(const std::string &name) const;
-
 private:
   /// Pretty-print the current context state.
   void dump(int pad);

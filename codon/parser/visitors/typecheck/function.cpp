@@ -44,7 +44,7 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
     E(Error::FN_OUTSIDE_ERROR, expr, "yield");
 
   unify(ctx->getBase()->returnType.get(),
-        ctx->instantiateGeneric(getStdLibType("Generator"), {expr->getType()}));
+        instantiateType(getStdLibType("Generator"), {expr->getType()}));
   if (realize(expr->getType()))
     expr->setDone();
 }
@@ -109,8 +109,7 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
   stmt->expr =
       transform(stmt->getExpr() ? stmt->getExpr() : N<CallExpr>(N<IdExpr>("NoneType")));
   unify(ctx->getBase()->returnType.get(),
-        ctx->instantiateGeneric(getStdLibType("Generator"),
-                                {stmt->getExpr()->getType()}));
+        instantiateType(getStdLibType("Generator"), {stmt->getExpr()->getType()}));
 
   if (stmt->getExpr()->isDone())
     stmt->setDone();
@@ -275,7 +274,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Add generics to the context
       if (!a.isValue()) {
         // Generic and static types
-        auto generic = ctx->getUnbound();
+        auto generic = instantiateUnbound();
         auto typId = generic->getLink()->id;
         generic->genericName = varName;
         auto defType = transform(clone(a.getDefault()));
@@ -366,7 +365,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (isId(ret, "Union"))
         extractClassGeneric(retType)->getUnbound()->kind = LinkType::Generic;
     } else {
-      generics.push_back(unify(retType, ctx->getUnbound())->shared_from_this());
+      generics.push_back(unify(retType, instantiateUnbound())->shared_from_this());
     }
     ctx->typecheckLevel--;
 
@@ -615,9 +614,9 @@ Expr *TypecheckVisitor::partializeFunction(types::FuncType *fn) {
 
 /// Generate and return `Function[Tuple[args...], ret]` type
 std::shared_ptr<ClassType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
-  auto baseType = ctx->instantiate(getStdLibType("Function"));
+  auto baseType = instantiateType(getStdLibType("Function"));
   unify(extractClassGeneric(baseType->getClass()),
-        ctx->instantiate(generateTuple(nargs, false)));
+        instantiateType(generateTuple(nargs, false)));
   return std::static_pointer_cast<types::ClassType>(baseType);
 }
 

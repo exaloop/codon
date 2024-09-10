@@ -12,6 +12,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/scoping/scoping.h"
+#include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -78,7 +79,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
             (ast->hasAttribute(Attr::ForceRealize) || ast->hasAttribute(Attr::Export) ||
              (ast->hasAttribute(Attr::C) && !ast->hasAttribute(Attr::CVarArg)))) {
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
-          realize(ctx->instantiate(f.second.getType()));
+          realize(instantiateType(f.second.getType()));
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
         }
       }
@@ -214,7 +215,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
     auto n = std::max(int64_t(0), getIntLiteral(type));
     auto tt = extractClassGeneric(type, 1)->getClass();
     std::vector<ClassType::Generic> generics;
-    auto t = ctx->instantiate(generateTuple(n * tt->generics.size()));
+    auto t = instantiateType(generateTuple(n * tt->generics.size()));
     for (size_t i = 0, j = 0; i < n; i++)
       for (const auto &ttg : tt->generics) {
         unify(t->generics[j].getType(), ttg.getType());
@@ -262,7 +263,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(),
                                              realized->shared_from_this());
   if (!val->type->is(TYPE_TYPE))
-    val->type = instantiateType(realized);
+    val->type = instantiateTypeVar(realized);
   ctx->addAlwaysVisible(val, true);
   auto realization = getClass(realized)->realizations[rn] =
       std::make_shared<Cache::Class::ClassRealization>();
@@ -669,6 +670,23 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);
   return fn;
+}
+
+ir::Func *TypecheckVisitor::realizeIRFunc(types::FuncType *fn,
+                                          const std::vector<types::TypePtr> &generics) {
+  // TODO: used by cytonization. Probably needs refactoring.
+  auto fnType = instantiateType(fn);
+  types::Type::Unification u;
+  for (size_t i = 0; i < generics.size(); i++)
+    fnType->getFunc()->funcGenerics[i].type->unify(generics[i].get(), &u);
+  if (!realize(fnType.get()))
+    return nullptr;
+
+  auto pr = ctx->cache->pendingRealizations; // copy it as it might be modified
+  for (auto &fn : pr)
+    TranslateVisitor(ctx->cache->codegenCtx)
+        .translateStmts(clone(getFunction(fn.first)->ast));
+  return getFunction(fn->ast->getName())->realizations[fnType->realizedName()]->ir;
 }
 
 } // namespace codon::ast

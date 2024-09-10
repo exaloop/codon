@@ -52,4 +52,4 @@ const std::string Attr::ExprExternVar = "exprExternVar";
 const std::string Attr::ExprDominatedUndefCheck = "exprDominatedUndefCheck";
 const std::string Attr::ExprDominatedUsed = "exprDominatedUsed";
 
-}
+} // namespace codon::ast

@@ -46,4 +46,4 @@ template <> bool match(const char *s, match_contains_t m) {
   return match(std::string(s), m);
 }
 
-}
+} // namespace codon::matcher

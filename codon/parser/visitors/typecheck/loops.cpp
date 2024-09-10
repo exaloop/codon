@@ -138,7 +138,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (!stmt->hasAttribute(Attr::ExprDominated) &&
       !stmt->hasAttribute(Attr::ExprDominatedUsed)) {
     ctx->addVar(var->getValue(), ctx->generateCanonicalName(var->getValue()),
-                ctx->getUnbound());
+                instantiateUnbound());
   } else if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
     stmt->eraseAttribute(Attr::ExprDominatedUsed);
     stmt->setAttribute(Attr::ExprDominated);

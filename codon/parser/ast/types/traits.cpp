@@ -102,6 +102,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       }
     }
     // NOTE: *args / **kwargs types will be typecheck when the function is called
+    auto tv = TypecheckVisitor(cache->typeCtx);
     if (auto pf = trFun->getFunc()) {
       // Make sure to set types of *args/**kwargs so that the function that
       // is being unified with Callable[] can be realized
@@ -119,14 +120,13 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         for (; i < inArgs->generics.size(); i++)
           starArgTypes.push_back(inArgs->generics[i].getType());
 
-        auto tv = TypecheckVisitor(cache->typeCtx);
-        auto tn = cache->typeCtx->instantiateGeneric(
-            tv.generateTuple(starArgTypes.size()), starArgTypes);
+        auto tn =
+            tv.instantiateType(tv.generateTuple(starArgTypes.size()), starArgTypes);
         if (tn->unify(trInArgs->generics[star].type.get(), us) == -1)
           return -1;
       }
       if (kwStar < trInArgs->generics.size()) {
-        auto tt = TypecheckVisitor(cache->typeCtx).generateTuple(0);
+        auto tt = tv.generateTuple(0);
         size_t id = 0;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[2].type->getClass();
@@ -135,15 +135,15 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           tt = ts->generics[1].getType()->getClass();
         }
         auto tid = std::make_shared<IntStaticType>(cache, id);
-        auto kt = cache->typeCtx->instantiateGeneric(
-            cache->typeCtx->getType("NamedTuple"), {tid.get(), tt});
+        auto kt =
+            tv.instantiateType(cache->typeCtx->getType("NamedTuple"), {tid.get(), tt});
         if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }
 
       if (us && pf->canRealize()) {
         // Realize if possible to allow deduction of return type
-        auto rf = TypecheckVisitor(cache->typeCtx).realize(pf);
+        auto rf = tv.realize(pf);
         pf->unify(rf, us);
       }
       if (args[1]->unify(pf->getRetType(), us) == -1)

@@ -259,7 +259,7 @@ private:
 public:
   bool wrapExpr(Expr **expr, types::Type *expectedType,
                 types::FuncType *callee = nullptr, bool allowUnwrap = true);
-  std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *);
+  std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *) const;
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   Expr *generatePartialCall(const std::vector<char> &, types::FuncType *,
                             Expr * = nullptr, Expr * = nullptr);
@@ -305,12 +305,12 @@ public:
   bool isUnbound(Expr *e) const;
   bool hasOverloads(const std::string &root);
   std::vector<std::string> getOverloads(const std::string &root);
-  std::string getUnmangledName(const std::string &s);
-  Cache::Class *getClass(const std::string &t);
-  Cache::Class *getClass(types::Type *t);
-  Cache::Function *getFunction(const std::string &n);
-  Cache::Function *getFunction(types::Type *t);
-  Cache::Class::ClassRealization *getClassRealization(types::Type *t);
+  std::string getUnmangledName(const std::string &s) const;
+  Cache::Class *getClass(const std::string &t) const;
+  Cache::Class *getClass(types::Type *t) const;
+  Cache::Function *getFunction(const std::string &n) const;
+  Cache::Function *getFunction(types::Type *t) const;
+  Cache::Class::ClassRealization *getClassRealization(types::Type *t) const;
   std::string getRootName(types::FuncType *t);
   bool isTypeExpr(Expr *e);
   Cache::Module *getImport(const std::string &s);
@@ -331,7 +331,7 @@ public:
     ctx->popBlock();
     return t;
   }
-  types::TypePtr instantiateType(types::Type *t);
+  types::TypePtr instantiateTypeVar(types::Type *t);
   void registerGlobal(const std::string &s, bool = false);
   types::ClassType *getStdLibType(const std::string &type);
   types::Type *extractClassGeneric(types::Type *t, int idx = 0);
@@ -379,8 +379,7 @@ public:
   SuiteStmt *generateUnionNewAST(types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
-  SuiteStmt *generateNTupleNewAST(types::FuncType *);
-  SuiteStmt *generateNTupleToTupleAST(types::FuncType *);
+  SuiteStmt *generateTupleMulAST(types::FuncType *);
   std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
   std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
                                                     const std::vector<std::string> &);
@@ -394,6 +393,84 @@ public:
                                                  const std::vector<std::string> &);
   std::vector<Stmt *>
   populateStaticHeterogenousTupleLoop(Expr *, const std::vector<std::string> &);
+
+public:
+public:
+  /// Get the current realization depth (i.e., the number of nested realizations).
+  size_t getRealizationDepth() const;
+  /// Get the name of the current realization stack (e.g., `fn1:fn2:...`).
+  std::string getRealizationStackName() const;
+
+public:
+  /// Create an unbound type with the provided typechecking level.
+  std::shared_ptr<types::LinkType> instantiateUnbound(const SrcInfo &info,
+                                                      int level) const;
+  std::shared_ptr<types::LinkType> instantiateUnbound(const SrcInfo &info) const;
+  std::shared_ptr<types::LinkType> instantiateUnbound() const;
+
+  /// Call `type->instantiate`.
+  /// Prepare the generic instantiation table with the given generics parameter.
+  /// Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
+  ///          T=int.
+  /// @param expr Expression that needs the type. Used to set type's srcInfo.
+  /// @param setActive If True, add unbounds to activeUnbounds.
+  types::TypePtr instantiateType(const SrcInfo &info, types::Type *type,
+                                 types::ClassType *generics = nullptr);
+  types::TypePtr instantiateType(const SrcInfo &info, types::Type *root,
+                                 const std::vector<types::Type *> &generics);
+  template <typename T>
+  std::shared_ptr<T> instantiateType(T *type, types::ClassType *generics = nullptr) {
+    return std::static_pointer_cast<T>(
+        instantiateType(getSrcInfo(), std::move(type), generics));
+  }
+  template <typename T>
+  std::shared_ptr<T> instantiateType(T *root,
+                                     const std::vector<types::Type *> &generics) {
+    return std::static_pointer_cast<T>(
+        instantiateType(getSrcInfo(), std::move(root), generics));
+  }
+  std::shared_ptr<types::IntStaticType> instantiateStatic(int64_t i) {
+    return std::make_shared<types::IntStaticType>(ctx->cache, i);
+  }
+  std::shared_ptr<types::StrStaticType> instantiateStatic(const std::string &s) {
+    return std::make_shared<types::StrStaticType>(ctx->cache, s);
+  }
+  std::shared_ptr<types::BoolStaticType> instantiateStatic(bool i) {
+    return std::make_shared<types::BoolStaticType>(ctx->cache, i);
+  }
+
+  /// Returns the list of generic methods that correspond to typeName.method.
+  std::vector<types::FuncType *> findMethod(types::ClassType *type,
+                                            const std::string &method,
+                                            bool hideShadowed = true);
+  /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
+  /// Special cases: __elemsize__ and __atomic__.
+  Cache::Class::ClassField *findMember(types::ClassType *, const std::string &) const;
+
+  using ReorderDoneFn =
+      std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;
+  using ReorderErrorFn = std::function<int(error::Error, const SrcInfo &, std::string)>;
+  /// Reorders a given vector or named arguments (consisting of names and the
+  /// corresponding types) according to the signature of a given function.
+  /// Returns the reordered vector and an associated reordering score (missing
+  /// default arguments' score is half of the present arguments).
+  /// Score is -1 if the given arguments cannot be reordered.
+  /// @param known Bitmask that indicated if an argument is already provided
+  ///              (partial function) or not.
+  int reorderNamedArgs(types::FuncType *func, const std::vector<CallArg> &args,
+                       const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
+                       const std::vector<char> &known = std::vector<char>());
+
+  bool isCanonicalName(const std::string &name) const;
+  ir::PyType cythonizeClass(const std::string &name);
+  ir::PyType cythonizeIterator(const std::string &name);
+  ir::PyFunction cythonizeFunction(const std::string &name);
+  ir::Func *realizeIRFunc(types::FuncType *fn,
+                          const std::vector<types::TypePtr> &generics = {});
+
+  // types::FuncType *extractFunction(types::Type *);
+  // types::Type *getType(const std::string &);
+  // types::Type *extractType(types::Type *);
 };
 
 } // namespace codon::ast

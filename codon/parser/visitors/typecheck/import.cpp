@@ -66,7 +66,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
   if (!handled) {
-    resultStmt = N<ExprStmt>(N<CallExpr>(N<IdExpr>(fmt::format("{}_call.0", importVar))));
+    resultStmt =
+        N<ExprStmt>(N<CallExpr>(N<IdExpr>(fmt::format("{}_call.0", importVar))));
     LOG_TYPECHECK("[import] loading {}", importVar);
   }
 
@@ -367,8 +368,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     auto stmts = N<SuiteStmt>();
     auto ret = N<ReturnStmt>();
     ret->setAttribute(Attr::Internal); // do not trigger toplevel ReturnStmt error
-    stmts->addStmt(
-        N<IfStmt>(N<DotExpr>(N<IdExpr>(importVar), "loaded"), ret));
+    stmts->addStmt(N<IfStmt>(N<DotExpr>(N<IdExpr>(importVar), "loaded"), ret));
     stmts->addStmt(N<ExprStmt>(
         N<CallExpr>(N<IdExpr>("Import._set_loaded"),
                     N<CallExpr>(N<IdExpr>("__ptr__"), N<IdExpr>(importVar)))));
@@ -376,7 +376,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
 
     // Wrap all imported top-level statements into a function.
     auto fnName = fmt::format("{}_call", importVar);
-    Stmt *fn = N<FunctionStmt>(fnName, N<IdExpr>("NoneType"), std::vector<Param>{}, stmts);
+    Stmt *fn =
+        N<FunctionStmt>(fnName, N<IdExpr>("NoneType"), std::vector<Param>{}, stmts);
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(fnName)->getType());
     preamble->push_back(fn);

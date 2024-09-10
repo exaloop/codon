@@ -38,6 +38,9 @@
 #define MAX_REALIZATION_DEPTH 200
 #define MAX_STATIC_ITER 1024
 
+#define CYTHON_PYWRAP "std.internal.python._PyWrap"
+#define CYTHON_ITER "_PyWrap.IterWrap"
+
 namespace codon::ast {
 
 /// Forward declarations
@@ -213,7 +216,8 @@ struct Cache {
     };
     /// Realization lookup table that maps a realized function name to the corresponding
     /// FunctionRealization instance.
-    std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations = {};
+    std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations =
+        {};
     std::set<std::string> captures = {};
     std::vector<std::unordered_map<std::string, std::string>> captureMappings = {};
 

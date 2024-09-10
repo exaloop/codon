@@ -57,4 +57,4 @@ struct Attr {
   const static std::string ExprDominatedUndefCheck;
   const static std::string ExprDominatedUsed;
 };
-}
+} // namespace codon::ast

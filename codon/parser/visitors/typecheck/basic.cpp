@@ -15,18 +15,18 @@ using namespace types;
 
 /// Set type to `Optional[?]`
 void TypecheckVisitor::visit(NoneExpr *expr) {
-  unify(expr->getType(), ctx->instantiate(getStdLibType(TYPE_OPTIONAL)));
+  unify(expr->getType(), instantiateType(getStdLibType(TYPE_OPTIONAL)));
   if (realize(expr->getType())) {
     // Realize the appropriate `Optional.__new__` for the translation stage
     auto f = ctx->forceFind(TYPE_OPTIONAL ".__new__:0")->getType();
-    auto t = realize(ctx->instantiate(f, extractClassType(expr)));
+    auto t = realize(instantiateType(f, extractClassType(expr)));
     expr->setDone();
   }
 }
 
 /// Set type to `bool`
 void TypecheckVisitor::visit(BoolExpr *expr) {
-  unify(expr->getType(), ctx->instantiateStatic(expr->getValue()));
+  unify(expr->getType(), instantiateStatic(expr->getValue()));
   expr->setDone();
 }
 
@@ -40,7 +40,7 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 ///   (e.g., `str` wrap).
 void TypecheckVisitor::visit(StringExpr *expr) {
   if (expr->isSimple()) {
-    unify(expr->getType(), ctx->instantiateStatic(expr->getValue()));
+    unify(expr->getType(), instantiateStatic(expr->getValue()));
     expr->setDone();
   } else {
     std::vector<Expr *> items;
@@ -92,7 +92,7 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
 
   if (suffix.empty()) {
     // A normal integer (int64_t)
-    unify(expr->getType(), ctx->instantiateStatic(expr->getValue()));
+    unify(expr->getType(), instantiateStatic(expr->getValue()));
     expr->setDone();
     return nullptr;
   } else if (suffix == "u") {

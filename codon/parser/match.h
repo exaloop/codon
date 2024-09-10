@@ -126,7 +126,7 @@ template <typename TM, typename... TA> bool match(TM &t, match_or_t<TA...> m) {
 }
 
 template <typename TM, typename... TA> bool match(TM *t, match_or_t<TA...> m) {
-  return match_or_help<0, TM*, TA...>(t, m);
+  return match_or_help<0, TM *, TA...>(t, m);
 }
 
 template <typename T, typename TM, typename... TA>
@@ -163,7 +163,7 @@ bool match(T &t, match_t<TM, TA...> m) {
 
 template <typename T, typename TM, typename... TA>
 bool match(T *t, match_t<TM, TA...> m) {
-  return match<T*, TM, TA...>(t, m);
+  return match<T *, TM, TA...>(t, m);
 }
 
 } // namespace codon::matcher

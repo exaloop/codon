@@ -144,7 +144,7 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
 }
 
 std::vector<CallArg> parseOpenMP(Cache *cache, const std::string &code,
-                                       const codon::SrcInfo &loc) {
+                                 const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();
 

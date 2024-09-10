@@ -50,7 +50,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     typ = classItem->getType()->getClass();
     if (canonicalName != TYPE_TYPE)
-      classItem->type = instantiateType(classItem->getType());
+      classItem->type = instantiateTypeVar(classItem->getType());
 
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
@@ -105,7 +105,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           continue;
 
         auto varName = ctx->generateCanonicalName(a.getName()), genName = a.getName();
-        auto generic = ctx->getUnbound();
+        auto generic = instantiateUnbound();
         auto typId = generic->id;
         generic->getLink()->genericName = genName;
         auto defType = transformType(clone(a.getDefault()));
@@ -217,7 +217,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         for (auto aj = 0; aj < MAX_TUPLE; aj++) {
           auto genName = fmt::format("T{}", aj + 1);
           auto genCanName = ctx->generateCanonicalName(genName);
-          auto generic = ctx->getUnbound();
+          auto generic = instantiateUnbound();
           generic->getLink()->genericName = genName;
           Expr *te = N<IdExpr>(genCanName);
           cls.fields.emplace_back(fmt::format("item{}", aj + 1),
@@ -413,7 +413,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     auto cachedCls = getClass(clsTyp);
     std::vector<TypePtr> rootMro;
     for (auto &t : cachedCls->mro)
-      rootMro.push_back(ctx->instantiate(t.get(), clsTyp));
+      rootMro.push_back(instantiateType(t.get(), clsTyp));
     mro.push_back(rootMro);
 
     // Sanity checks

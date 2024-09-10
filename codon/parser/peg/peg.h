@@ -25,6 +25,6 @@ Stmt *parseFile(Cache *cache, const std::string &file);
 
 /// Parse a OpenMP clause.
 std::vector<CallArg> parseOpenMP(Cache *cache, const std::string &code,
-                                       const codon::SrcInfo &loc);
+                                 const codon::SrcInfo &loc);
 
 } // namespace codon::ast

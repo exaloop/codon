@@ -103,7 +103,7 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
       found = true;
       break;
     } else {
-      auto ft = realize(ctx->instantiate(f.getType(), derivedTyp));
+      auto ft = realize(instantiateType(f.getType(), derivedTyp));
       types.push_back(N<IdExpr>(ft->realizedName()));
     }
   }
@@ -116,7 +116,7 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
 
 FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
                                                  ClassType *derived) {
-  auto ct = ctx->instantiate(extractClassType(derived->name), base->getClass());
+  auto ct = instantiateType(extractClassType(derived->name), base->getClass());
   std::vector<types::Type *> args;
   for (const auto &a : *fp)
     args.push_back(a.getType());
@@ -212,7 +212,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
           auto thunkFn = getFunction(thunkAst->name);
           auto ti =
-              std::static_pointer_cast<FuncType>(ctx->instantiate(thunkFn->getType()));
+              std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
           auto tm = realizeFunc(ti.get(), true);
           seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
           real->vtables[baseCls].table[key] = {
@@ -287,49 +287,19 @@ SuiteStmt *TypecheckVisitor::generateNamedKeysAST(FuncType *type) {
   return suite;
 }
 
-// SuiteStmt *TypecheckVisitor::generateNTupleNewAST(FuncType *type) {
-//   log("!! {}", type->debugString(2));
-//   auto nt = type->getRetType()->getClass();
-//   seqassert(nt && nt->canRealize(), "not a tuple call");
-//   auto n = std::max(int64_t(0), getIntLiteral(nt));
-//   auto tt = extractClassGeneric(nt, 1)->getClass();
-//   seqassert(tt->is(TYPE_TUPLE), "bad ntuple");
-//   auto tup = ctx->instantiate(generateTuple(n * tt->generics.size()));
-//   for (size_t i = 0, j = 0; i < n; i++)
-//     for (const auto &ttg: tt->generics)
-//       unify(tup->generics[j++].getType(), ttg.getType());
-//   unify(tup.get(), extractFuncArgType(type));
-
-//   auto id = N<IdExpr>(type->ast->front().getName());
-//   id->setType(nt->shared_from_this());
-//   unify(type->getRetType(), id->getType());
-//   id->setDone();
-//   auto suite = N<SuiteStmt>(N<ReturnStmt>(id));
-//   suite->front()->setDone();
-//   suite->setDone();
-//   return suite;
-// }
-
-// SuiteStmt *TypecheckVisitor::generateNTupleToTupleAST(FuncType *type) {
-//   auto nt = extractFuncArgType(type)->getClass();
-//   seqassert(nt && nt->canRealize(), "not a tuple call");
-//   auto n = std::max(int64_t(0), getIntLiteral(nt));
-//   auto tt = extractClassGeneric(nt, 1)->getClass();
-//   seqassert(tt->is(TYPE_TUPLE), "bad ntuple");
-//   auto tup = ctx->instantiate(generateTuple(n * tt->generics.size()));
-//   for (size_t i = 0, j = 0; i < n; i++)
-//     for (const auto &ttg: tt->generics)
-//       unify(tup->generics[j++].getType(), ttg.getType());
-
-//   auto id = N<IdExpr>(type->ast->front().getName());
-//   id->setType(tup);
-//   unify(type->getRetType(), id->getType());
-//   id->setDone();
-//   auto suite = N<SuiteStmt>(N<ReturnStmt>(id));
-//   suite->front()->setDone();
-//   suite->setDone();
-//   return suite;
-// }
+SuiteStmt *TypecheckVisitor::generateTupleMulAST(FuncType *type) {
+  auto n = std::max(int64_t(0), getIntLiteral(extractFuncGeneric(type)));
+  auto t = extractFuncArgType(type)->getClass();
+  if (!t || !t->is(TYPE_TUPLE))
+    return nullptr;
+  std::vector<Expr *> exprs;
+  for (size_t i = 0; i < n; i++)
+    for (size_t j = 0; j < t->generics.size(); j++)
+      exprs.push_back(
+          N<IndexExpr>(N<IdExpr>(type->ast->front().getName()), N<IntExpr>(j)));
+  auto suite = N<SuiteStmt>(N<ReturnStmt>(N<TupleExpr>(exprs)));
+  return suite;
+}
 
 /// Generate ASTs for dynamically generated functions.
 SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
@@ -352,6 +322,8 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionTagAST(type);
   } else if (startswith(ast->name, "__internal__.namedkeys")) {
     return generateNamedKeysAST(type);
+  } else if (startswith(ast->name, "__magic__.mul:0")) {
+    return generateTupleMulAST(type);
   }
   return nullptr;
 }
@@ -472,19 +444,19 @@ Expr *TypecheckVisitor::transformSuper() {
     if (vCands.size() < 2)
       E(Error::CALL_SUPER_PARENT, getSrcInfo());
 
-    auto superTyp = ctx->instantiate(vCands[1].get(), typ);
+    auto superTyp = instantiateType(vCands[1].get(), typ);
     auto self = N<IdExpr>(funcTyp->ast->begin()->name);
     self->setType(typ->shared_from_this());
 
     auto typExpr = N<IdExpr>(superTyp->getClass()->name);
-    typExpr->setType(instantiateType(superTyp->getClass()));
+    typExpr->setType(instantiateTypeVar(superTyp->getClass()));
     // LOG("-> {:c} : {:c} {:c}", typ, vCands[1], typExpr->type);
     return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
                                  self, typExpr, N<IntExpr>(1)));
   }
 
   auto name = cands.front(); // the first inherited type
-  auto superTyp = ctx->instantiate(extractClassType(name), typ);
+  auto superTyp = instantiateType(extractClassType(name), typ);
   if (typ->isRecord()) {
     // Case: tuple types. Return `tuple(obj.args...)`
     std::vector<Expr *> members;
@@ -515,8 +487,7 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
 
   expr->begin()->value = transform(expr->begin()->getExpr());
   unify(expr->getType(),
-        ctx->instantiateGeneric(getStdLibType("Ptr"),
-                                {expr->begin()->getExpr()->getType()}));
+        instantiateType(getStdLibType("Ptr"), {expr->begin()->getExpr()->getType()}));
   if (expr->begin()->getExpr()->isDone())
     expr->setDone();
   return nullptr;
@@ -526,8 +497,8 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
 Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
   auto arrTyp = expr->expr->getType()->getFunc();
   unify(expr->getType(),
-        ctx->instantiateGeneric(getStdLibType("Array"),
-                                {extractClassGeneric(arrTyp->getParentType())}));
+        instantiateType(getStdLibType("Array"),
+                        {extractClassGeneric(arrTyp->getParentType())}));
   if (realize(expr->getType()))
     expr->setDone();
   return nullptr;
@@ -671,8 +642,8 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     return transform(cond);
   }
 
-  bool exists = !ctx->findMethod(typ->getClass(), member).empty() ||
-                ctx->findMember(typ->getClass(), member);
+  bool exists = !findMethod(typ->getClass(), member).empty() ||
+                findMember(typ->getClass(), member);
   if (exists && args.size() > 1)
     exists &= findBestMethod(typ, member, args) != nullptr;
   return transform(N<BoolExpr>(exists));
@@ -751,7 +722,7 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
 /// Transform type function to a type IdExpr identifier.
 Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   expr->begin()->value = transform(expr->begin()->getExpr());
-  unify(expr->getType(), instantiateType(expr->begin()->getExpr()->getType()));
+  unify(expr->getType(), instantiateTypeVar(expr->begin()->getExpr()->getType()));
   if (!realize(expr->getType()))
     return nullptr;
 
@@ -956,7 +927,7 @@ Expr *TypecheckVisitor::transformStaticTupleType(CallExpr *expr) {
   auto f = getClassFields(t);
   if (n < 0 || n >= f.size())
     error("invalid index");
-  auto rt = realize(ctx->instantiate(f[n].getType(), t));
+  auto rt = realize(instantiateType(f[n].getType(), t));
   return transform(N<IdExpr>(rt->realizedName()));
 }
 
@@ -1147,7 +1118,7 @@ TypecheckVisitor::populateStaticVarTypesLoop(Expr *iter,
   } else {
     size_t idx = 0;
     for (auto &f : getClassFields(typ->getClass())) {
-      auto ta = realize(ctx->instantiate(f.type.get(), typ->getClass()));
+      auto ta = realize(instantiateType(f.type.get(), typ->getClass()));
       seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
       std::vector<Stmt *> stmts;
       if (withIdx) {

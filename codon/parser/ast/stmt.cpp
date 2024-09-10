@@ -415,8 +415,9 @@ FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
   parseDecorators();
 }
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
-    : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)), name(stmt.name),
-      ret(ast::clone(stmt.ret, clean)), suite(ast::clone(stmt.suite, clean)),
+    : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
+      name(stmt.name), ret(ast::clone(stmt.ret, clean)),
+      suite(ast::clone(stmt.suite, clean)),
       decorators(ast::clone(stmt.decorators, clean)) {}
 std::string FunctionStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
@@ -618,8 +619,8 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
   parseDecorators();
 }
 ClassStmt::ClassStmt(const ClassStmt &stmt, bool clean)
-    : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),name(stmt.name),
-      suite(ast::clone(stmt.suite, clean)),
+    : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
+      name(stmt.name), suite(ast::clone(stmt.suite, clean)),
       decorators(ast::clone(stmt.decorators, clean)),
       baseClasses(ast::clone(stmt.baseClasses, clean)),
       staticBaseClasses(ast::clone(stmt.staticBaseClasses, clean)) {}

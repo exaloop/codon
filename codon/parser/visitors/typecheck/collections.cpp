@@ -23,7 +23,7 @@ void TypecheckVisitor::visit(TupleExpr *expr) {
 /// Transform a list `[a1, ..., aN]` to the corresponding statement expression.
 /// See @c transformComprehension
 void TypecheckVisitor::visit(ListExpr *expr) {
-  expr->setType(ctx->getUnbound());
+  expr->setType(instantiateUnbound());
   auto name = getStdLibType("List")->name;
   if ((resultExpr = transformComprehension(name, "append", expr->items))) {
     resultExpr->setAttribute(Attr::ExprList);
@@ -33,7 +33,7 @@ void TypecheckVisitor::visit(ListExpr *expr) {
 /// Transform a set `{a1, ..., aN}` to the corresponding statement expression.
 /// See @c transformComprehension
 void TypecheckVisitor::visit(SetExpr *expr) {
-  expr->setType(ctx->getUnbound());
+  expr->setType(instantiateUnbound());
   auto name = getStdLibType("Set")->name;
   if ((resultExpr = transformComprehension(name, "add", expr->items))) {
     resultExpr->setAttribute(Attr::ExprSet);
@@ -43,7 +43,7 @@ void TypecheckVisitor::visit(SetExpr *expr) {
 /// Transform a dictionary `{k1: v1, ..., kN: vN}` to a corresponding statement
 /// expression. See @c transformComprehension
 void TypecheckVisitor::visit(DictExpr *expr) {
-  expr->setType(ctx->getUnbound());
+  expr->setType(instantiateUnbound());
   auto name = getStdLibType("Dict")->name;
   if ((resultExpr = transformComprehension(name, "__setitem__", expr->items))) {
     resultExpr->setAttribute(Attr::ExprDict);
@@ -129,8 +129,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     seqassert(cast<IdExpr>(forStmt->getVar()), "tuple() not simplified");
     auto finalExpr = expr->getFinalExpr();
     auto [ok, delay, preamble, staticItems] = transformStaticLoopCall(
-        cast<ForStmt>(expr->getFinalSuite())->getVar(), &forStmt->suite,
-        gen,
+        cast<ForStmt>(expr->getFinalSuite())->getVar(), &forStmt->suite, gen,
         [&](Stmt *wrap) { return N<StmtExpr>(clone(wrap), clone(finalExpr)); }, true);
     if (!ok)
       E(Error::CALL_BAD_ITER, gen, gen->getType()->prettyString());
@@ -146,8 +145,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   } else {
     expr->loops =
         transform(expr->getFinalSuite()); // assume: internal data will be changed
-    unify(expr->getType(), ctx->instantiateGeneric(getStdLibType("Generator"),
-                                                   {expr->getFinalExpr()->getType()}));
+    unify(expr->getType(), instantiateType(getStdLibType("Generator"),
+                                           {expr->getFinalExpr()->getType()}));
     if (realize(expr->getType()))
       expr->setDone();
   }
@@ -183,9 +182,10 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       return ti->shared_from_this();
     } else if (collectionCls->name != TYPE_OPTIONAL && ti->name == TYPE_OPTIONAL) {
       // Rule: T derives from Optional[T]
-      return ctx->instantiateGeneric(getStdLibType("Optional"), {collectionCls});
+      return instantiateType(getStdLibType("Optional"),
+                             std::vector<types::Type *>{collectionCls});
     } else if (collectionCls->name == TYPE_OPTIONAL && ti->name != TYPE_OPTIONAL) {
-      return ctx->instantiateGeneric(getStdLibType("Optional"), {ti});
+      return instantiateType(getStdLibType("Optional"), std::vector<types::Type *>{ti});
     } else if (!collectionCls->is("pyobj") && ti->is("pyobj")) {
       // Rule: anything derives from pyobj
       return ti->shared_from_this();
@@ -193,7 +193,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       // Rule: subclass derives from superclass
       const auto &mros = getClass(collectionCls)->mro;
       for (size_t i = 1; i < mros.size(); i++) {
-        auto t = ctx->instantiate(mros[i].get(), collectionCls);
+        auto t = instantiateType(mros[i].get(), collectionCls);
         if (t->unify(ti, nullptr) >= 0) {
           return ti->shared_from_this();
           break;
@@ -203,7 +203,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     return nullptr;
   };
 
-  TypePtr collectionTyp = ctx->getUnbound();
+  TypePtr collectionTyp = instantiateUnbound();
   bool done = true;
   bool isDict = type == getStdLibType("Dict")->name;
   for (auto &i : items) {
@@ -232,7 +232,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       if (auto t = superTyp(collectionTyp->getClass(), typ))
         collectionTyp = t;
     } else {
-      auto tt = unify(typ, ctx->instantiate(generateTuple(2)))->getClass();
+      auto tt = unify(typ, instantiateType(generateTuple(2)))->getClass();
       seqassert(collectionTyp->getClass() &&
                     collectionTyp->getClass()->generics.size() == 2 &&
                     tt->generics.size() == 2,
@@ -246,7 +246,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
                                     extractClassGeneric(tt, di)->getClass()))
           nt[di] = dt;
       }
-      collectionTyp = ctx->instantiateGeneric(generateTuple(nt.size()), ctx->cache->castVectorPtr(nt));
+      collectionTyp =
+          instantiateType(generateTuple(nt.size()), ctx->cache->castVectorPtr(nt));
     }
   }
   if (!done)
@@ -260,17 +261,17 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     constructorArgs.push_back(N<IntExpr>(items.size()));
   }
   auto t = N<IdExpr>(type);
-  auto ta = ctx->instantiate(getStdLibType(type));
+  auto ta = instantiateType(getStdLibType(type));
   if (isDict && collectionTyp->getClass()) {
     seqassert(collectionTyp->getClass()->isRecord(), "bad dict");
     std::vector<types::Type *> nt;
     for (auto &g : collectionTyp->getClass()->generics)
       nt.push_back(g.getType());
-    ta = ctx->instantiateGeneric(getStdLibType(type), nt);
+    ta = instantiateType(getStdLibType(type), nt);
   } else if (!isDict) {
-    ta = ctx->instantiateGeneric(getStdLibType(type), {collectionTyp.get()});
+    ta = instantiateType(getStdLibType(type), {collectionTyp.get()});
   }
-  t->setType(instantiateType(ta.get()));
+  t->setType(instantiateTypeVar(ta.get()));
   stmts.push_back(N<AssignStmt>(clone(var), N<CallExpr>(t, constructorArgs)));
   for (const auto &it : items) {
     if (!isDict && cast<StarExpr>(it)) {

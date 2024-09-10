@@ -161,13 +161,8 @@ public:
   AttributeType *getAttribute(const std::string &key) {
     return static_cast<AttributeType *>(getAttribute(key));
   }
-  void eraseAttribute(const std::string &key) {
-    attributes.erase(key);
-  }
-  void cloneAttributesFrom(Node *n) {
-    attributes = codon::clone(n->attributes);
-  }
-
+  void eraseAttribute(const std::string &key) { attributes.erase(key); }
+  void cloneAttributesFrom(Node *n) { attributes = codon::clone(n->attributes); }
 
   /// @return iterator to the first attribute
   auto attributes_begin() {
