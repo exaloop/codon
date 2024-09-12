@@ -49,28 +49,6 @@ static llvm::MachO::mach_header_64 fake_mach_header = {
     .flags = 0,
     .reserved = 0};
 
-// Declare libunwind SPI types and functions.
-struct unw_dynamic_unwind_sections {
-  uintptr_t dso_base;
-  uintptr_t dwarf_section;
-  size_t dwarf_section_length;
-  uintptr_t compact_unwind_section;
-  size_t compact_unwind_section_length;
-};
-
-int find_dynamic_unwind_sections(uintptr_t addr, unw_dynamic_unwind_sections *info) {
-  info->dso_base = (uintptr_t)&fake_mach_header;
-  info->dwarf_section = 0;
-  info->dwarf_section_length = 0;
-  info->compact_unwind_section = 0;
-  info->compact_unwind_section_length = 0;
-  return 1;
-}
-
-// Typedef for callback above.
-typedef int (*unw_find_dynamic_unwind_sections)(
-    uintptr_t addr, struct unw_dynamic_unwind_sections *info);
-
 // OpenMP patch with GC callbacks
 typedef int (*gc_setup_callback)(GC_stack_base *);
 typedef void (*gc_roots_callback)(void *, void *);
@@ -98,18 +76,6 @@ SEQ_FUNC void seq_init(int flags) {
   seq_nvptx_init();
 #endif
   seq_flags = flags;
-
-  // At program / library load time:
-  if (auto *unw_add_find_dynamic_unwind_sections =
-          (int (*)(unw_find_dynamic_unwind_sections find_dynamic_unwind_sections))dlsym(
-              RTLD_DEFAULT, "__unw_add_find_dynamic_unwind_sections"))
-    unw_add_find_dynamic_unwind_sections(find_dynamic_unwind_sections);
-
-  // At program / library unload time:
-  if (auto *unw_remove_find_dynamic_unwind_sections =
-          (int (*)(unw_find_dynamic_unwind_sections find_dynamic_unwind_sections))dlsym(
-              RTLD_DEFAULT, "__unw_remove_find_dynamic_unwind_sections"))
-    unw_remove_find_dynamic_unwind_sections(find_dynamic_unwind_sections);
 }
 
 SEQ_FUNC bool seq_is_macos() {

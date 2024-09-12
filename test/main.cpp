@@ -236,6 +236,7 @@ static pair<vector<string>, bool> findExpects(const string &filename, bool isCod
 }
 
 string argv0;
+void seq_exc_init(int);
 
 class SeqTest : public testing::TestWithParam<
                     tuple<string /*filename*/, bool /*debug*/, string /* case name */,
@@ -301,6 +302,7 @@ public:
                        {capKey});
 
       llvm::cantFail(compiler->compile());
+      seq_exc_init(0);
       compiler->getLLVMVisitor()->run({file});
       fflush(stdout);
       exit(EXIT_SUCCESS);
