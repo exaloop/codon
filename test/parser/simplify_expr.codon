@@ -39,6 +39,8 @@ print 1844674407_3709551999 #! integer '18446744073709551999' cannot fit into 64
 print 5.15 #: 5.15
 print 2e2 #: 200
 print 2.e-2 #: 0.02
+print 1_000.0 #: 1000
+print 1_000e9 #: 1e+12
 
 #%% float_suffix,barebones
 @extend
