@@ -2,6 +2,8 @@
 
 #include "expr.h"
 
+#include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -149,10 +151,11 @@ FloatExpr::FloatExpr(double floatValue)
   this->floatValue = std::make_unique<double>(floatValue);
 }
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
-    : Expr(), suffix(std::move(suffix)) {
-  for (auto c : value)
-    if (c != '_')
-      this->value += c;
+    : Expr(), value(), suffix(std::move(suffix)) {
+  this->value.reserve(value.size());
+  std::copy_if(value.begin(), value.end(), std::back_inserter(this->value),
+               [](char c) { return c != '_'; });
+
   double result;
   auto r = fast_float::from_chars(this->value.data(),
                                   this->value.data() + this->value.size(), result);
