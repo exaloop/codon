@@ -149,9 +149,13 @@ FloatExpr::FloatExpr(double floatValue)
   this->floatValue = std::make_unique<double>(floatValue);
 }
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
-    : Expr(), value(value), suffix(std::move(suffix)) {
+    : Expr(), suffix(std::move(suffix)) {
+  for (auto c : value)
+    if (c != '_')
+      this->value += c;
   double result;
-  auto r = fast_float::from_chars(value.data(), value.data() + value.size(), result);
+  auto r = fast_float::from_chars(this->value.data(),
+                                  this->value.data() + this->value.size(), result);
   if (r.ec == std::errc() || r.ec == std::errc::result_out_of_range)
     floatValue = std::make_unique<double>(result);
   else
