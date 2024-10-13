@@ -475,6 +475,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/sort_test.codon",
         "stdlib/heapq_test.codon",
         "stdlib/operator_test.codon",
+        "stdlib/os_test.codon",
         "python/pybridge.codon"
       ),
       testing::Values(true, false),
