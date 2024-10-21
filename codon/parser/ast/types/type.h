@@ -46,6 +46,8 @@ struct Type : public codon::SrcObject, public std::enable_shared_from_this<Type>
     std::vector<std::pair<std::shared_ptr<Type>, int>> leveled;
     /// List of assigned traits.
     std::vector<std::shared_ptr<Type>> traits;
+    /// List of unbound types whose static status has been changed.
+    std::vector<std::shared_ptr<Type>> statics;
 
   public:
     /// Undo the unification step.

@@ -79,7 +79,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (stmt->getExpr()->getType()->getFunc() &&
         !(ctx->getBase()->returnType->getClass() &&
           ctx->getBase()->returnType->is("Function"))) {
-      stmt->expr = partializeFunction(stmt->getExpr()->getType()->getFunc());
+      stmt->expr = transform(partializeFunction(stmt->getExpr()->getType()->getFunc()));
     }
 
     if (!ctx->getBase()->returnType->isStaticType() &&
@@ -608,8 +608,7 @@ Expr *TypecheckVisitor::partializeFunction(types::FuncType *fn) {
     }
 
   // Generate partial class
-  auto call = generatePartialCall(mask, fn);
-  return call;
+  return generatePartialCall(mask, fn);
 }
 
 /// Generate and return `Function[Tuple[args...], ret]` type

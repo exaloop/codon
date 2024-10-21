@@ -190,6 +190,8 @@ f = Foo()
 f.bar(1) #: normal 1
 f.bar(1.1) #: optional 1.1
 f.bar(Optional('s')) #: generic s Optional[str]
+# Check static caching
+f.bar(Optional('t')) #: generic t Optional[str]
 f.bar('hehe') #: generic hehe str
 
 

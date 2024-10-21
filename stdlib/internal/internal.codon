@@ -751,3 +751,37 @@ class ellipsis:
         return 269626442  # same as CPython
 
 __internal__.class_init_vtables()
+
+
+class __cast__:
+    def cast(obj: T, T: type) -> Generator[T]:
+        return obj.__iter__()
+
+    def cast(obj: int) -> float:
+        return float(obj)
+
+    def cast(obj: T, T: type) -> Optional[T]:
+        return Optional[T](obj)
+
+    def cast(obj: Optional[T], T: type) -> T:
+        return obj.unwrap()
+
+    def cast(obj: T, T: type) -> pyobj:
+        return obj.__to_py__()
+
+    def cast(obj: pyobj, T: type) -> T:
+        return T.__from_py__(obj)
+
+    # Function[[T...], R]
+        # ExternFunction[[T...], R]
+        # CodonFunction[[T...], R]
+        # Partial[foo, [T...], R]
+
+    # function into partial (if not Function) / fn(foo) -> fn(foo(...))
+    # empty partial (!!) into Function[]
+    # union extract
+    # any into Union[]
+    # derived to base
+
+    def conv_float(obj: float) -> int:
+        return int(obj)

@@ -260,14 +260,14 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Realizations should always be visible, so add them to the toplevel
   rn = type->ClassType::realizedName();
-  auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(),
-                                             realized->shared_from_this());
+  auto rt = std::static_pointer_cast<ClassType>(realized->generalize(0));
+  auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
   if (!val->type->is(TYPE_TYPE))
     val->type = instantiateTypeVar(realized);
   ctx->addAlwaysVisible(val, true);
   auto realization = getClass(realized)->realizations[rn] =
       std::make_shared<Cache::Class::ClassRealization>();
-  realization->type = std::static_pointer_cast<ClassType>(realized->shared_from_this());
+  realization->type = rt;
   realization->id = ctx->cache->classRealizationCnt++;
 
   // Create LLVM stub
@@ -300,7 +300,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
     }
   }
 
-  return realized;
+  return rt.get();
 }
 
 types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
@@ -361,9 +361,12 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     if ((*ast)[i].isValue()) {
       std::string varName = (*ast)[i].getName();
       trimStars(varName);
+      TypePtr at = extractFuncArgType(type, j++)->shared_from_this();
+      bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
+      if (!isStatic && at && at->getStatic())
+        at = at->getStatic()->getNonStaticType()->shared_from_this();
       auto v = ctx->addVar(getUnmangledName(varName), varName,
-                           std::make_shared<LinkType>(
-                               extractFuncArgType(type, j++)->shared_from_this()));
+                           std::make_shared<LinkType>(at));
     }
   }
 
@@ -466,8 +469,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   if (force)
     realizations[newKey]->ast = r->ast;
-  val = std::make_shared<TypecheckItem>(newKey, "", ctx->getModule(),
-                                        type->shared_from_this());
+  r->type = std::static_pointer_cast<types::FuncType>(type->generalize(0));
+  val = std::make_shared<TypecheckItem>(newKey, "", ctx->getModule(), r->type);
   ctx->addAlwaysVisible(val, true);
   if (!isImport) {
     ctx->bases.pop_back();
@@ -477,7 +480,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   this->ctx = oldCtx;
 
-  return type->getFunc();
+  return r->getType();
 }
 
 /// Make IR node for a realized type.

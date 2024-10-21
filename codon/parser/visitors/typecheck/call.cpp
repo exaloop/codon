@@ -644,11 +644,6 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn,
             replacements.push_back(args[si].getExpr()->getType());
             // else this is empty and is a partial call; leave it for later
           } else {
-            if ((*calleeFn->ast)[i].getType() &&
-                !extractFuncArgType(calleeFn, si)->canRealize()) {
-              auto gt = extractType((*calleeFn->ast)[i].getType())->generalize(0);
-              unify(extractFuncArgType(calleeFn, si), instantiateType(gt.get()));
-            }
             if (wrapExpr(&args[si].value, extractFuncArgType(calleeFn, si), calleeFn)) {
               unify(args[si].getExpr()->getType(), extractFuncArgType(calleeFn, si));
             } else {
@@ -828,9 +823,6 @@ Expr *TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
                                                 {"kwargs", kwargs},
                                                 {"M", N<StringExpr>(strMask)},
                                                 {"F", efn}});
-  call = transform(call);
-  seqassert(call->getType()->is("Partial"), "expected partial type: {:c}",
-            *(call->getType()));
   return call;
 }
 

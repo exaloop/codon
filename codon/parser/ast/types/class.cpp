@@ -9,6 +9,39 @@
 
 namespace codon::ast::types {
 
+std::string ClassType::Generic::debugString(char mode) const {
+  if (!isStatic && type->getStatic() && mode != 2)
+    return type->getStatic()->getNonStaticType()->debugString(mode);
+  return type->debugString(mode);
+}
+
+std::string ClassType::Generic::realizedName() const {
+  if (!isStatic && type->getStatic())
+    return type->getStatic()->getNonStaticType()->realizedName();
+  return type->realizedName();
+}
+
+ClassType::Generic ClassType::Generic::generalize(int atLevel) {
+  TypePtr t = nullptr;
+  if (!isStatic && type && type->getStatic())
+    t = type->getStatic()->getNonStaticType()->generalize(atLevel);
+  else if (type)
+    t = type->generalize(atLevel);
+  return ClassType::Generic(name, niceName, t, id, isStatic);
+}
+
+ClassType::Generic
+ClassType::Generic::instantiate(int atLevel, int *unboundCount,
+                                std::unordered_map<int, TypePtr> *cache) {
+  TypePtr t = nullptr;
+  if (!isStatic && type && type->getStatic())
+    t = type->getStatic()->getNonStaticType()->instantiate(atLevel, unboundCount,
+                                                           cache);
+  else if (type)
+    t = type->instantiate(atLevel, unboundCount, cache);
+  return ClassType::Generic(name, niceName, t, id, isStatic);
+}
+
 ClassType::ClassType(Cache *cache, std::string name, std::string niceName,
                      std::vector<Generic> generics, std::vector<Generic> hiddenGenerics)
     : Type(cache), name(std::move(name)), niceName(std::move(niceName)),
@@ -106,11 +139,11 @@ int ClassType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr ClassType::generalize(int atLevel) {
-  auto g = generics, hg = hiddenGenerics;
-  for (auto &t : g)
-    t.type = t.type ? t.type->generalize(atLevel) : nullptr;
-  for (auto &t : hg)
-    t.type = t.type ? t.type->generalize(atLevel) : nullptr;
+  std::vector<Generic> g, hg;
+  for (auto &t : generics)
+    g.push_back(t.generalize(atLevel));
+  for (auto &t : hiddenGenerics)
+    hg.push_back(t.generalize(atLevel));
   auto c = std::make_shared<ClassType>(cache, name, niceName, g, hg);
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
@@ -119,11 +152,11 @@ TypePtr ClassType::generalize(int atLevel) {
 
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
                                std::unordered_map<int, TypePtr> *cache) {
-  auto g = generics, hg = hiddenGenerics;
-  for (auto &t : g)
-    t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
-  for (auto &t : hg)
-    t.type = t.type ? t.type->instantiate(atLevel, unboundCount, cache) : nullptr;
+  std::vector<Generic> g, hg;
+  for (auto &t : generics)
+    g.push_back(t.instantiate(atLevel, unboundCount, cache));
+  for (auto &t : hiddenGenerics)
+    hg.push_back(t.instantiate(atLevel, unboundCount, cache));
   auto c = std::make_shared<ClassType>(this->cache, name, niceName, g, hg);
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
@@ -197,9 +230,8 @@ std::string ClassType::debugString(char mode) const {
     for (int i = 0, gi = 0; i < known.size(); i++) {
       if ((*func->ast)[i].isValue())
         as.emplace_back(
-            known[i]
-                ? generics[1].type->getClass()->generics[gi++].type->debugString(mode)
-                : "...");
+            known[i] ? generics[1].type->getClass()->generics[gi++].debugString(mode)
+                     : "...");
     }
     auto fnname = func->ast->getName();
     if (mode == 0) {
@@ -208,19 +240,18 @@ std::string ClassType::debugString(char mode) const {
       fnname = func->debugString(mode);
     }
     return fmt::format("{}[{}{}]", fnname, join(as, ","),
-                       mode == 2
-                           ? fmt::format(";{};{}", generics[1].type->debugString(mode),
-                                         generics[2].type->debugString(mode))
-                           : "");
+                       mode == 2 ? fmt::format(";{};{}", generics[1].debugString(mode),
+                                               generics[2].debugString(mode))
+                                 : "");
   }
   std::vector<std::string> gs;
   for (auto &a : generics)
     if (!a.name.empty())
-      gs.push_back(a.type->debugString(mode));
+      gs.push_back(a.debugString(mode));
   if ((mode == 2) && !hiddenGenerics.empty()) {
     for (auto &a : hiddenGenerics)
       if (!a.name.empty())
-        gs.push_back("-" + a.type->debugString(mode));
+        gs.push_back("-" + a.debugString(mode));
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? niceName : name;
@@ -234,23 +265,18 @@ std::string ClassType::realizedName() const {
   std::string s;
   std::vector<std::string> gs;
   if (name == "Partial") {
-    gs.push_back(generics[3].type->realizedName());
+    gs.push_back(generics[3].realizedName());
     for (size_t i = 0; i < generics.size() - 1; i++)
-      gs.push_back(generics[i].type->realizedName());
+      gs.push_back(generics[i].realizedName());
   } else if (name == "Union" && generics[0].type->getClass()) {
     std::set<std::string> gss;
     for (auto &a : generics[0].type->getClass()->generics)
-      gss.insert(a.type->realizedName());
+      gss.insert(a.realizedName());
     gs = {join(gss, " | ")};
   } else {
     for (auto &a : generics)
-      if (!a.name.empty()) {
-        if (!a.isStatic && a.type->getStatic()) {
-          gs.push_back(a.type->getStatic()->name);
-        } else {
-          gs.push_back(a.type->realizedName());
-        }
-      }
+      if (!a.name.empty())
+        gs.push_back(a.realizedName());
   }
   s = join(gs, ",");
   s = fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));

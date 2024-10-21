@@ -36,7 +36,10 @@ int LinkType::unify(Type *typ, Unification *undo) {
     if (isStaticType() != typ->isStaticType()) {
       if (!isStaticType()) {
         // other one is; move this to non-static equivalent
-        isStatic = typ->isStaticType();
+        if (undo) {
+          undo->statics.push_back(shared_from_this());
+          isStatic = typ->isStaticType();
+        }
       } else {
         return -1;
       }

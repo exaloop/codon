@@ -490,26 +490,44 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
         continue;
       }
     }
-    ctx->addBlock();
-    Expr *dummy = N<IdExpr>("#");
-    dummy->setType(argType->shared_from_this());
-    dummy->setDone();
-    ctx->addVar(
-        "#", "#",
-        std::make_shared<types::LinkType>(dummy->getType()->shared_from_this()));
-    try {
-      wrapExpr(&dummy, expectTyp, fn);
-      types::Type::Unification undo;
-      if (dummy->getType()->unify(expectTyp, &undo) >= 0) {
-        undo.undo();
-      } else {
-        score = -1;
-      }
-    } catch (const exc::ParserException &) {
-      // Ignore failed wraps
+
+    bool failed = false;
+    // ctx->addBlock();
+    // Expr *dummy = N<IdExpr>("#");
+    // dummy->setType(argType->shared_from_this());
+    // dummy->setDone();
+    // ctx->addVar(
+    //     "#", "#",
+    //     std::make_shared<types::LinkType>(dummy->getType()->shared_from_this()));
+    // try {
+    //   wrapExpr(&dummy, expectTyp, fn);
+    //   types::Type::Unification undo;
+    //   if (dummy->getType()->unify(expectTyp, &undo) >= 0) {
+    //     undo.undo();
+    //   } else {
+    //     failed = true;
+    //     score = -1;
+    //   }
+    // } catch (const exc::ParserException &) {
+    //   // Ignore failed wraps
+    //   failed = true;
+    //   score = -1;
+    // }
+    // ctx->popBlock();
+
+    bool failed2 = false;
+    auto [_, newArgTyp, __] = wrapExpr2(argType, expectTyp, fn);
+    if (!newArgTyp)
+      newArgTyp = argType->shared_from_this();
+    if (newArgTyp->unify(expectTyp, nullptr) < 0) {
       score = -1;
+      failed2 = true;
     }
-    ctx->popBlock();
+
+    // if (failed != failed2) {
+    //   log("[{}] {} vs {}: {}", fn->debugString(2), expectTyp->debugString(2),
+    //       argType->debugString(2), newArgTyp ? newArgTyp->debugString(2) : "-");
+    // }
   }
   if (score >= 0)
     score += (real_gi == fn->funcGenerics.size());
@@ -617,7 +635,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
     if (auto se = cast<StmtExpr>(*expr)) {
       *expr = transform(N<StmtExpr>(se->items, p));
     } else {
-      *expr = p;
+      *expr = transform(p);
     }
   } else if (expectedClass && expectedClass->is("Function") && exprClass &&
              exprClass->getPartial() && exprClass->getPartial()->isPartialEmpty()) {
@@ -672,6 +690,186 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
     }
   }
   return true;
+}
+
+std::tuple<bool, TypePtr, std::function<Expr *(Expr *)>>
+TypecheckVisitor::wrapExpr2(Type *exprType, Type *expectedType, FuncType *callee,
+                            bool allowUnwrap, bool isEllipsis) {
+  auto expectedClass = expectedType->getClass();
+  auto exprClass = exprType->getClass();
+  auto doArgWrap = !callee || !callee->ast->hasAttribute(
+                                  "std.internal.attributes.no_argument_wrap.0:0");
+  if (!doArgWrap)
+    return {true, expectedType ? expectedType->shared_from_this() : nullptr, nullptr};
+
+  TypePtr type = nullptr;
+  std::function<Expr *(Expr *)> fn = nullptr;
+
+  if (callee && exprType->is(TYPE_TYPE)) {
+    auto c = extractClassType(exprType);
+    if (!c)
+      return {false, nullptr, nullptr};
+    if (!callee->ast->hasAttribute("std.internal.attributes.no_type_wrap.0:0")) {
+      if (c->isRecord())
+        fn = [&](Expr *expr) -> Expr * {
+          return N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+        };
+      else
+        fn = [&](Expr *expr) -> Expr * {
+          return N<CallExpr>(
+              N<DotExpr>(N<IdExpr>("__internal__"), "class_ctr"),
+              std::vector<CallArg>{{"T", expr},
+                                   {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}});
+        };
+      return {true, expectedType ? expectedType->shared_from_this() : nullptr, fn};
+    }
+  }
+
+  std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
+                                           "pyobj"};
+  if (exprType->getStatic() && (!expectedType || !expectedType->isStaticType())) {
+    exprType = exprType->getStatic()->getNonStaticType();
+    exprClass = exprType->getClass();
+  }
+  if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
+    return {false, nullptr, nullptr}; // argument type not yet known.
+  }
+
+  else if (expectedClass && expectedClass->is("Generator") &&
+           !exprClass->is(expectedClass->name) && !isEllipsis) {
+    if (findMethod(exprClass, "__iter__").empty())
+      return {false, nullptr, nullptr};
+    // Note: do not do this in pipelines (TODO: why?)
+    type = instantiateType(expectedClass);
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<DotExpr>(expr, "__iter__"));
+    };
+  }
+
+  else if (expectedClass && expectedClass->is("float") && exprClass->is("int")) {
+    type = instantiateType(expectedClass);
+    fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
+  }
+
+  else if (expectedClass && expectedClass->is(TYPE_OPTIONAL) &&
+           !exprClass->is(expectedClass->name)) {
+    type =
+        instantiateType(getStdLibType(TYPE_OPTIONAL), std::vector<Type *>{exprClass});
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL), expr);
+    };
+  } else if (allowUnwrap && expectedClass && exprClass &&
+             exprClass->is(TYPE_OPTIONAL) &&
+             !exprClass->is(expectedClass->name)) { // unwrap optional
+    type = instantiateType(extractClassGeneric(exprClass));
+    fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr); };
+  }
+
+  else if (expectedClass && expectedClass->is("pyobj") &&
+           !exprClass->is(expectedClass->name)) { // wrap to pyobj
+    if (findMethod(exprClass, "__to_py__").empty())
+      return {false, nullptr, nullptr};
+    type = instantiateType(expectedClass);
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>("pyobj"),
+                         N<CallExpr>(N<DotExpr>(expr, "__to_py__")));
+    };
+  } else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
+             !exprClass->is(expectedClass->name)) { // unwrap pyobj
+    if (findMethod(expectedClass, "__from_py__").empty())
+      return {false, nullptr, nullptr};
+    type = instantiateType(expectedClass);
+    auto texpr = N<IdExpr>(expectedClass->name);
+    texpr->setType(expectedType->shared_from_this());
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p"));
+    };
+  }
+
+  else if (callee && exprClass && exprType->getFunc() &&
+           !(expectedClass && expectedClass->is("Function"))) {
+    // Wrap raw Seq functions into Partial(...) call for easy realization.
+    // Special case: Seq functions are embedded (via lambda!)
+    // seqassert(cast<IdExpr>(expr) || (cast<StmtExpr>(expr) &&
+    //                                  cast<IdExpr>(cast<StmtExpr>(expr)->getExpr())),
+    //           "bad partial function: {}", *expr);
+    auto p = partializeFunction(exprType->getFunc());
+    if (expectedClass)
+      type = instantiateType(expectedClass);
+    fn = [&](Expr *expr) -> Expr * {
+      if (auto se = cast<StmtExpr>(expr))
+        return N<StmtExpr>(se->items, p);
+      return p;
+    };
+  } else if (expectedClass && expectedClass->is("Function") && exprClass &&
+             exprClass->getPartial() && exprClass->getPartial()->isPartialEmpty()) {
+    type = instantiateType(expectedClass);
+    auto fnName = exprClass->getPartial()->getPartialFunc()->ast->name;
+    auto t = instantiateType(ctx->forceFind(fnName)->getType());
+    if (type->unify(t.get(), nullptr) >= 0)
+      fn = [&](Expr *expr) -> Expr * { return N<IdExpr>(fnName); };
+    else
+      type = nullptr;
+  }
+
+  else if (allowUnwrap && exprClass && exprType->getUnion() && expectedClass &&
+           !expectedClass->getUnion()) {
+    // Extract union types via __internal__.get_union
+    if (auto t = realize(expectedClass)) {
+      auto e = realize(exprType);
+      if (!e)
+        return {false, nullptr, nullptr};
+      bool ok = false;
+      for (auto &ut : e->getUnion()->getRealizationTypes()) {
+        if (ut->unify(t, nullptr) >= 0) {
+          ok = true;
+          break;
+        }
+      }
+      if (ok) {
+        type = t->shared_from_this();
+        fn = [&](Expr *expr) -> Expr * {
+          return N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
+                             N<IdExpr>(t->realizedName()));
+        };
+      }
+    } else {
+      return {false, nullptr, nullptr};
+    }
+  } else if (exprClass && expectedClass && expectedClass->getUnion()) {
+    // Make union types via __internal__.new_union
+    if (!expectedClass->getUnion()->isSealed()) {
+      expectedClass->getUnion()->addType(exprClass);
+    }
+    if (auto t = realize(expectedClass)) {
+      if (expectedClass->unify(exprClass, nullptr) == -1) {
+        type = t->shared_from_this();
+        fn = [&](Expr *expr) -> Expr * {
+          return N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "new_union"), expr,
+                             N<IdExpr>(t->realizedName()));
+        };
+      }
+    } else {
+      return {false, nullptr, nullptr};
+    }
+  }
+
+  else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {
+    // Cast derived classes to base classes
+    const auto &mros = ctx->cache->getClass(exprClass)->mro;
+    for (size_t i = 1; i < mros.size(); i++) {
+      auto t = instantiateType(mros[i].get(), exprClass);
+      if (t->unify(expectedClass, nullptr) >= 0) {
+        type = expectedClass->shared_from_this();
+        fn = [&](Expr *expr) -> Expr * {
+          return castToSuperClass(expr, expectedClass, true);
+        };
+        break;
+      }
+    }
+  }
+
+  return {true, type, fn};
 }
 
 /// Cast derived class to a base class.

@@ -42,27 +42,59 @@ int FuncType::unify(Type *typ, Unification *us) {
 }
 
 TypePtr FuncType::generalize(int atLevel) {
-  auto g = funcGenerics;
-  for (auto &t : g)
-    t.type = t.type ? t.type->generalize(atLevel) : nullptr;
+  std::vector<Generic> fg;
+  for (auto &t : funcGenerics)
+    fg.push_back(t.generalize(atLevel));
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
-  auto r = this->ClassType::generalize(atLevel);
-  auto t = std::make_shared<FuncType>(r->getClass(), ast, index, g, p);
+
+  auto r = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
+
+  // // Fix statics
+  // auto &at = r->generics[0].getType()->getClass()->generics;
+  // for (size_t i = 0; i < at.size(); i++) {
+  //   bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
+  //   if (!isStatic && at[i].getType() && at[i].getType()->getStatic())
+  //     at[i].type =
+  //         at[i].getType()->getStatic()->getNonStaticType()->generalize(atLevel);
+  // }
+  // auto rt = r->generics[0].getType();
+  // bool isStatic = ast && getStaticGeneric(ast->getReturn());
+  // if (!isStatic && rt && rt->getStatic())
+  //   r->generics[0].type = rt->getStatic()->getNonStaticType()->generalize(atLevel);
+
+  auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
   return t;
 }
 
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
                               std::unordered_map<int, TypePtr> *cache) {
-  auto g = funcGenerics;
-  for (auto &t : g)
-    if (t.type) {
-      t.type = t.type->instantiate(atLevel, unboundCount, cache);
+  std::vector<Generic> fg;
+  for (auto &t : funcGenerics) {
+    fg.push_back(t.instantiate(atLevel, unboundCount, cache));
+    if (fg.back().type) {
       if (cache && cache->find(t.id) == cache->end())
-        (*cache)[t.id] = t.type;
+        (*cache)[t.id] = fg.back().type;
     }
+  }
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
-  auto r = this->ClassType::instantiate(atLevel, unboundCount, cache);
-  auto t = std::make_shared<FuncType>(r->getClass(), ast, index, g, p);
+  auto r = std::static_pointer_cast<ClassType>(
+      this->ClassType::instantiate(atLevel, unboundCount, cache));
+
+  // // Fix statics
+  // auto &at = r->generics[0].getType()->getClass()->generics;
+  // for (size_t i = 0; i < at.size(); i++) {
+  //   bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
+  //   if (!isStatic && at[i].getType() && at[i].getType()->getStatic())
+  //     at[i].type = at[i].getType()->getStatic()->getNonStaticType()->instantiate(
+  //         atLevel, unboundCount, cache);
+  // }
+  // auto rt = r->generics[0].getType();
+  // bool isStatic = ast && getStaticGeneric(ast->getReturn());
+  // if (!isStatic && rt && rt->getStatic())
+  //   r->generics[0].type =
+  //       rt->getStatic()->getNonStaticType()->instantiate(atLevel, unboundCount, cache);
+
+  auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
   return t;
 }
 
@@ -139,7 +171,7 @@ std::string FuncType::debugString(char mode) const {
   if (mode == 2)
     as.push_back(getRetType()->debugString(mode));
   for (const auto &a : *this)
-    as.push_back(a.getType()->debugString(mode));
+    as.push_back(a.debugString(mode));
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{s, a}, ";");
 
@@ -158,13 +190,13 @@ std::string FuncType::realizedName() const {
   std::vector<std::string> gs;
   for (auto &a : funcGenerics)
     if (!a.name.empty())
-      gs.push_back(a.type->realizedName());
+      gs.push_back(a.realizedName());
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
   for (const auto &a : *this)
     as.push_back(a.getType()->getFunc() ? a.getType()->getFunc()->realizedName()
-                                        : a.getType()->realizedName());
+                                        : a.realizedName());
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return fmt::format("{}{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",

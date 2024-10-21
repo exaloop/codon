@@ -259,6 +259,10 @@ private:
 public:
   bool wrapExpr(Expr **expr, types::Type *expectedType,
                 types::FuncType *callee = nullptr, bool allowUnwrap = true);
+  std::tuple<bool, types::TypePtr, std::function<Expr *(Expr *)>>
+  wrapExpr2(types::Type *exprType, types::Type *expectedType,
+            types::FuncType *callee = nullptr, bool allowUnwrap = true,
+            bool isEllipsis = false);
   std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *) const;
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   Expr *generatePartialCall(const std::vector<char> &, types::FuncType *,
@@ -463,8 +467,6 @@ public:
 
   bool isCanonicalName(const std::string &name) const;
   types::FuncType *extractFunction(types::Type *t) const;
-
-
 
   ir::PyType cythonizeClass(const std::string &name);
   ir::PyType cythonizeIterator(const std::string &name);

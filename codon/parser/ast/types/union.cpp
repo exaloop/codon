@@ -89,7 +89,7 @@ std::string UnionType::debugString(char mode) const {
 
   std::set<std::string> gss;
   for (auto &a : generics[0].type->getClass()->generics)
-    gss.insert(a.type->debugString(mode));
+    gss.insert(a.debugString(mode));
   std::string s = join(gss, " | ");
   return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
 }

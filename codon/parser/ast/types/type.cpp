@@ -23,6 +23,8 @@ void Type::Unification::undo() {
   }
   for (auto &t : traits)
     t->getLink()->trait = nullptr;
+  for (auto &t : statics)
+    t->getLink()->isStatic = 0;
 }
 
 Type::Type(const std::shared_ptr<Type> &typ) : cache(typ->cache) {
