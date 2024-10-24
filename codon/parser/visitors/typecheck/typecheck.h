@@ -260,7 +260,7 @@ public:
   bool wrapExpr(Expr **expr, types::Type *expectedType,
                 types::FuncType *callee = nullptr, bool allowUnwrap = true);
   std::tuple<bool, types::TypePtr, std::function<Expr *(Expr *)>>
-  wrapExpr2(types::Type *exprType, types::Type *expectedType,
+  canWrapExpr(types::Type *exprType, types::Type *expectedType,
             types::FuncType *callee = nullptr, bool allowUnwrap = true,
             bool isEllipsis = false);
   std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *) const;
