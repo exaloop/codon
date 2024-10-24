@@ -634,7 +634,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     type = instantiateType(expectedClass);
     auto texpr = N<IdExpr>(expectedClass->name);
     texpr->setType(expectedType->shared_from_this());
-    fn = [=](Expr *expr) -> Expr * {
+    fn = [this, texpr](Expr *expr) -> Expr * {
       return N<CallExpr>(N<DotExpr>(texpr, "__from_py__"), N<DotExpr>(expr, "p"));
     };
   }
@@ -681,7 +681,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       }
       if (ok) {
         type = t->shared_from_this();
-        fn = [=](Expr *expr) -> Expr * {
+        fn = [this, type](Expr *expr) -> Expr * {
           return N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
                              N<IdExpr>(type->realizedName()));
         };
@@ -697,7 +697,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     if (auto t = realize(expectedClass)) {
       if (expectedClass->unify(exprClass, nullptr) == -1) {
         type = t->shared_from_this();
-        fn = [=](Expr *expr) -> Expr * {
+        fn = [this, type](Expr *expr) -> Expr * {
           return N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "new_union"), expr,
                              N<IdExpr>(type->realizedName()));
         };
@@ -714,7 +714,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       auto t = instantiateType(mros[i].get(), exprClass);
       if (t->unify(expectedClass, nullptr) >= 0) {
         type = expectedClass->shared_from_this();
-        fn = [=](Expr *expr) -> Expr * {
+        fn = [this, type](Expr *expr) -> Expr * {
           return castToSuperClass(expr, type->getClass(), true);
         };
         break;
