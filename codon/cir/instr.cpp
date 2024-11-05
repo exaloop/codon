@@ -27,6 +27,12 @@ types::Type *Instr::doGetType() const { return getModule()->getNoneType(); }
 
 const char AssignInstr::NodeId = 0;
 
+AssignInstr::AssignInstr(Var *lhs, Value *rhs, std::string name)
+    : AcceptorExtend(std::move(name)), lhs(lhs), rhs(rhs) {
+  if (!lhs->getType())
+    LOG("->");
+}
+
 int AssignInstr::doReplaceUsedValue(id_t id, Value *newValue) {
   if (rhs->getId() == id) {
     rhs = newValue;

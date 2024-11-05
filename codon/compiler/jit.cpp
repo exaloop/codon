@@ -93,8 +93,10 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     ast::Stmt *node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
                                      /*startLine=*/line);
     ast::Stmt **e = &node;
-    while (auto se = ast::cast<ast::SuiteStmt>(*e))
+    while (auto se = ast::cast<ast::SuiteStmt>(*e)) {
+      if (se->empty()) break;
       e = &se->back();
+    }
     if (e)
       if (auto ex = ast::cast<ast::ExprStmt>(*e)) {
         *e = cache->N<ast::ExprStmt>(cache->N<ast::CallExpr>(

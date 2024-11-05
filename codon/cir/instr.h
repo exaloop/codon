@@ -42,8 +42,7 @@ public:
   /// @param rhs the right-hand side
   /// @param field the field being set, may be empty
   /// @param name the instruction's name
-  AssignInstr(Var *lhs, Value *rhs, std::string name = "")
-      : AcceptorExtend(std::move(name)), lhs(lhs), rhs(rhs) {}
+  AssignInstr(Var *lhs, Value *rhs, std::string name = "");
 
   /// @return the left-hand side
   Var *getLhs() { return lhs; }

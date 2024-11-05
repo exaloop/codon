@@ -56,9 +56,12 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
 void TranslateVisitor::translateStmts(Stmt *stmts) {
   for (auto &[name, g] : ctx->cache->globals)
     if (/*g.first &&*/ !g.second) {
+      ir::types::Type *vt = nullptr;
+      if (auto t = ctx->cache->typeCtx->forceFind(name)->getType())
+        vt = getType(t);
       g.second = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
                                   : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                        SrcInfo(), nullptr, true, false, name);
+                                        SrcInfo(), vt, true, false, name);
       ctx->cache->codegenCtx->add(TranslateItem::Var, name, g.second);
     }
   TranslateVisitor(ctx->cache->codegenCtx).transform(stmts);
@@ -432,19 +435,24 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
 
   auto lei = cast<IdExpr>(stmt->getLhs());
-  if (stmt->isUpdate()) {
-    seqassert(lei, "expected IdExpr, got {}", *(stmt->getLhs()));
-    auto val = ctx->find(lei->getValue());
-    seqassert(val && val->getVar(), "{} is not a variable", lei->getValue());
-    result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->getRhs()));
-    return;
-  }
-
   seqassert(lei, "expected IdExpr, got {}", *(stmt->getLhs()));
   auto var = lei->getValue();
 
   auto isGlobal = in(ctx->cache->globals, var);
   ir::Var *v = nullptr;
+
+  if (stmt->isUpdate()) {
+    auto val = ctx->find(lei->getValue());
+    seqassert(val && val->getVar(), "{} is not a variable", lei->getValue());
+    v = val->getVar();
+
+    if (!v->getType()) {
+      v->setSrcInfo(stmt->getSrcInfo());
+      v->setType(getType(stmt->getRhs()->getType()));
+    }
+    result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+    return;
+  }
 
   if (!stmt->getLhs()->getType()->isInstantiated() ||
       (stmt->getLhs()->getType()->is(TYPE_TYPE))) {
@@ -473,8 +481,9 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
   }
 
-  if (stmt->getRhs())
+  if (stmt->getRhs()) {
     result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+  }
 }
 
 void TranslateVisitor::visit(AssignMemberStmt *stmt) {
