@@ -7,12 +7,14 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
 using namespace codon::error;
+using namespace codon::matcher;
 
 namespace codon::ast {
 
@@ -45,7 +47,15 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
         s += c;
       }
     }
-    E(Error::IMPORT_NO_MODULE, stmt->getFrom(), s);
+    bool allDot = true;
+    for (auto cp : s)
+      if (cp != '.') {
+        allDot = false;
+        break;
+      }
+    if (allDot && match(stmt->getWhat(), M<IdExpr>()))
+      s = cast<IdExpr>(stmt->getWhat())->getValue();
+    E(Error::IMPORT_NO_MODULE, stmt, s);
   }
 
   // If the file has not been seen before, load it into cache
