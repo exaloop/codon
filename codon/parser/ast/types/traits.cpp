@@ -25,6 +25,14 @@ CallableTrait::CallableTrait(Cache *cache, std::vector<TypePtr> args)
 
 int CallableTrait::unify(Type *typ, Unification *us) {
   if (auto tr = typ->getClass()) {
+    TypePtr ft = nullptr;
+    if (typ->is("TypeWrap")) {
+      TypecheckVisitor tv(cache->typeCtx);
+      ft = tv.instantiateType(
+          tv.findMethod(typ->getClass(), "__call_no_self__").front(), typ->getClass());
+      tr = ft->getClass();
+    }
+
     if (tr->name == "NoneType")
       return 1;
     if (tr->name != "Function" && !tr->getPartial())
@@ -135,8 +143,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           tt = ts->generics[1].getType()->getClass();
         }
         auto tid = std::make_shared<IntStaticType>(cache, id);
-        auto kt =
-            tv.instantiateType(tv.getStdLibType("NamedTuple"), {tid.get(), tt});
+        auto kt = tv.instantiateType(tv.getStdLibType("NamedTuple"), {tid.get(), tt});
         if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }
@@ -149,7 +156,6 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       if (args[1]->unify(pf->getRetType(), us) == -1)
         return -1;
     }
-    // LOG("- {} vs {}: ok", debugString(2), typ->debugString(2));
     return 1;
   } else if (auto tl = typ->getLink()) {
     if (tl->kind == LinkType::Link)
@@ -197,8 +203,10 @@ std::string CallableTrait::debugString(char mode) const {
 TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}
 
 int TypeTrait::unify(Type *typ, Unification *us) {
-  if (typ->getClass()) // does not make sense otherwise and results in infinite cycles
+  if (auto tc = typ->getClass()) {
+    // does not make sense otherwise and results in infinite cycles
     return typ->unify(type.get(), us);
+  }
   if (typ->getUnbound())
     return 0;
   return -1;

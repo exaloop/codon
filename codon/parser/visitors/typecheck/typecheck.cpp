@@ -538,8 +538,10 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   auto [canWrap, newArgTyp, fn] = canWrapExpr((*expr)->getType(), expectedType, callee,
                                               allowUnwrap, cast<EllipsisExpr>(*expr));
   // TODO: get rid of this line one day!
-  if ((*expr)->getType()->getStatic() && (!expectedType || !expectedType->isStaticType()))
-    (*expr)->setType((*expr)->getType()->getStatic()->getNonStaticType()->shared_from_this());
+  if ((*expr)->getType()->getStatic() &&
+      (!expectedType || !expectedType->isStaticType()))
+    (*expr)->setType(
+        (*expr)->getType()->getStatic()->getNonStaticType()->shared_from_this());
   if (canWrap && fn)
     *expr = transform(fn(*expr));
   return canWrap;
@@ -562,20 +564,13 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     auto c = extractClassType(exprType);
     if (!c)
       return {false, nullptr, nullptr};
-    if (!callee->ast->hasAttribute("std.internal.attributes.no_type_wrap.0:0")) {
-      if (c->isRecord())
-        fn = [&](Expr *expr) -> Expr * {
-          return N<CallExpr>(expr, N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-        };
-      else
-        fn = [&](Expr *expr) -> Expr * {
-          return N<CallExpr>(
-              N<DotExpr>(N<IdExpr>("__internal__"), "class_ctr"),
-              std::vector<CallArg>{{"T", expr},
-                                   {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}});
-        };
-      return {true, expectedType ? expectedType->shared_from_this() : nullptr, fn};
+    if (!(expectedType && (expectedType->is(TYPE_TYPE)))) {
+      type = instantiateType(getStdLibType("TypeWrap"), std::vector<types::Type *>{c});
+      fn = [&](Expr *expr) -> Expr * {
+        return N<CallExpr>(N<IdExpr>("TypeWrap"), expr);
+      };
     }
+    return {true, type, fn};
   }
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,

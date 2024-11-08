@@ -16,6 +16,11 @@ class type[T]:
 class unrealized_type[T]:
     pass
 
+@tuple
+@__internal__
+class TypeWrap[T]:
+    pass
+
 @__internal__
 class __internal__:
     pass

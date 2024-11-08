@@ -904,3 +904,24 @@ x = 's'
 print const(5)() #: (5, 's')
 print const('s')() #: ('s', 's')
 
+
+#%% type_variables_pass,barebones
+def foo(a):
+    print(a.__class__.__name__, a)
+    print(a().__class__.__name__, a())
+
+foo(float)
+#: TypeWrap[float] <class 'float'>
+#: float 0
+print(float)
+#: <class 'float'>
+foo(list[int])
+#: TypeWrap[List[int]] <class 'List[int]'>
+#: List[int] []
+print(list[int])
+#: <class 'List[int]'>
+foo(type(list[int]))
+#: TypeWrap[List[int]] <class 'List[int]'>
+#: List[int] []
+
+# TODO: print(list)

@@ -785,3 +785,21 @@ class __cast__:
 
     def conv_float(obj: float) -> int:
         return int(obj)
+
+@extend
+class TypeWrap:
+    def __new__(T: type) -> TypeWrap[T]:
+        return __internal__.tuple_cast_unsafe((), TypeWrap[T])
+
+    def __call_no_self__(*args, **kwargs) -> T:
+        return T(*args, **kwargs)
+
+    def __call__(self, *args, **kwargs) -> T:
+        return T(*args, **kwargs)
+
+    def __repr__(self):
+        return f"<class '{T.__name__}'>"
+
+    @property
+    def __name__(self):
+        return T.__name__
