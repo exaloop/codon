@@ -121,7 +121,8 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
     }
   };
 
-  collectPaths(args[1]);
+  if (args.size() > 1)
+    collectPaths(args[1]);
   auto compiler = std::make_unique<codon::Compiler>(args[0]);
   bool failed = false;
   auto result = compiler->docgen(files);
