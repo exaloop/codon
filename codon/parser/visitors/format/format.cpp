@@ -347,7 +347,10 @@ void FormatVisitor::visit(GlobalStmt *stmt) {
 }
 
 void FormatVisitor::visit(ThrowStmt *stmt) {
-  result = fmt::format("{} {}", keyword("raise"), transform(stmt->getExpr()));
+  result = fmt::format("{} {}{}", keyword("raise"), transform(stmt->getExpr()),
+                       stmt->getFrom() ? fmt::format(" {} {}", keyword("from"),
+                                                     transform(stmt->getFrom()))
+                                       : "");
 }
 
 void FormatVisitor::visit(FunctionStmt *fstmt) {

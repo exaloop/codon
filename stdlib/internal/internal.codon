@@ -486,7 +486,7 @@ class __internal__:
             raise NameError(f"name '{s}' is not defined")
 
     @__hidden__
-    def set_header(e, func, file, line, col):
+    def set_header(e, func, file, line, col, cause):
         if not isinstance(e, BaseException):
             compile_error("exceptions must derive from BaseException")
 
@@ -494,6 +494,8 @@ class __internal__:
         e.file = file
         e.line = line
         e.col = col
+        if cause is not None:
+            e.cause = cause
         return e
 
     def kwargs_get(kw, key: Static[str], default):

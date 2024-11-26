@@ -391,13 +391,14 @@ std::string TryStmt::toString(int indent) const {
               : "");
 }
 
-ThrowStmt::ThrowStmt(Expr *expr, bool transformed)
-    : AcceptorExtend(), expr(expr), transformed(transformed) {}
+ThrowStmt::ThrowStmt(Expr *expr, Expr *from, bool transformed)
+    : AcceptorExtend(), expr(expr), from(from), transformed(transformed) {}
 ThrowStmt::ThrowStmt(const ThrowStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)),
-      transformed(stmt.transformed) {}
+      from(ast::clone(stmt.from, clean)), transformed(stmt.transformed) {}
 std::string ThrowStmt::toString(int indent) const {
-  return format("(throw{})", expr ? " " + expr->toString(indent) : "");
+  return format("(throw{}{})", expr ? " " + expr->toString(indent) : "",
+                from ? format(" :from {}", from->toString(indent)) : "");
 }
 
 GlobalStmt::GlobalStmt(std::string var, bool nonLocal)

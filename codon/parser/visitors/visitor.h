@@ -296,7 +296,10 @@ public:
     transform(stmt->suite);
   }
   void visit(GlobalStmt *stmt) override {}
-  void visit(ThrowStmt *stmt) override { transform(stmt->expr); }
+  void visit(ThrowStmt *stmt) override {
+    transform(stmt->expr);
+    transform(stmt->from);
+  }
   void visit(FunctionStmt *stmt) override {
     transform(stmt->ret);
     for (auto &a : stmt->items) {
@@ -486,7 +489,10 @@ public:
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
   }
   void visit(GlobalStmt *stmt) override {}
-  void visit(ThrowStmt *stmt) override { stmt->expr = transform(stmt->expr); }
+  void visit(ThrowStmt *stmt) override {
+    stmt->expr = transform(stmt->expr);
+    stmt->from = transform(stmt->from);
+  }
   void visit(FunctionStmt *stmt) override {
     stmt->ret = transform(stmt->ret);
     for (auto &a : stmt->items) {

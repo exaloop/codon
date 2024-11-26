@@ -93,4 +93,4 @@ optional = Optional
 def unwrap(opt: Optional[T], T: type) -> T:
     if opt.__has__():
         return opt.__val__()
-    raise ValueError("optional is None")
+    raise ValueError(f"optional unpack failed: expected {T.__class__.__name__}, got None")

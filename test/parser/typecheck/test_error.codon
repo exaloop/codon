@@ -44,3 +44,31 @@ except MyError as e:
 raise 'hello'
 #! exceptions must derive from BaseException
 
+#%% raise_from,barebones
+def foo(bar):
+    try:
+        bar()
+    except ValueError as e:
+        raise RuntimeError("oops") from e
+    raise RuntimeError("oops")
+
+def bar1():
+    raise ValueError("bar1")
+try:
+    foo(bar1)
+except RuntimeError as e:
+    print(e.message, e.__cause__)  #: oops bar1
+
+def bar2():
+    raise ValueError("bar2")
+try:
+    foo(bar2)
+except RuntimeError as e:
+    print(e.message, e.__cause__)  #: oops bar2
+
+def bar3():
+    pass
+try:
+    foo(bar3)
+except RuntimeError as e:
+    print(e.message, e.__cause__)  #: oops None

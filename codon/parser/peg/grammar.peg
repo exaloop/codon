@@ -138,10 +138,11 @@ del_stmt <- 'del' SPACE tlist(',', expression) {
 return_stmt <- 'return' (SPACE expressions)? {
   return asts(Return, LOC, !VS.empty() ? ac_expr(V0) : nullptr);
 }
-# TODO: raise expression 'from' expression
-raise_stmt <- 'raise' (SPACE expression)? {
-  return asts(Throw, LOC, !VS.empty() ? ac_expr(V0) : nullptr);
-}
+raise_stmt <-
+  / 'raise' SPACE expression (SPACE 'from' SPACE expression)? {
+    return asts(Throw, LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
+  }
+  / 'raise' { return asts(Throw, LOC, nullptr); }
 print_stmt <-
   / 'print' SPACE star_expression (_ ',' _ star_expression)* (_ <','>)? {
     return asts(Print, LOC, VS.transform<Expr*>(), !VS.tokens.empty());
@@ -448,7 +449,7 @@ custom_small_stmt__PREDICATE {
 expressions <- tlist(',', expression) { return wrap_tuple(CTX, VS, LOC); }
 expression <-
   / lambdef { return ac_expr(V0); }
-  / disjunction SPACE 'if' SPACE disjunction SPACE 'else' SPACE expression {
+  / disjunction SPACE? 'if' SPACE? disjunction SPACE? 'else' SPACE? expression {
     return aste(If, LOC, ac_expr(V1), ac_expr(V0), ac_expr(V2));
   }
   / pipe { return ac_expr(V0); }
@@ -471,7 +472,7 @@ pipe <-
   }
   / disjunction { return ac_expr(V0); }
 disjunction <-
-  / conjunction (SPACE 'or' SPACE conjunction)+ {
+  / conjunction (SPACE? 'or' SPACE? conjunction)+ {
     auto b = aste(Binary, LOC, ac_expr(V0), "||", ac_expr(V1));
     for (int i = 2; i < VS.size(); i++)
       b = aste(Binary, LOC, b, "||", ac_expr(VS[i]));
@@ -479,7 +480,7 @@ disjunction <-
   }
   / conjunction { return ac_expr(V0); }
 conjunction <-
-  / inversion (SPACE 'and' SPACE inversion)+ {
+  / inversion (SPACE? 'and' SPACE? inversion)+ {
     auto b = aste(Binary, LOC, ac_expr(V0), "&&", ac_expr(V1));
     for (int i = 2; i < VS.size(); i++)
       b = aste(Binary, LOC, b, "&&", ac_expr(VS[i]));
@@ -636,7 +637,7 @@ for_if_clauses <- for_if_clause (SPACE for_if_clause)* {
   return v;
 }
 for_if_clause <- 'for' SPACE star_targets SPACE 'in' SPACE disjunction
-                 (SPACE 'if' SPACE disjunction)* {
+                 (SPACE? 'if' SPACE? disjunction)* {
   std::vector<Stmt*> v{asts(For, LOC, ac_expr(V0), ac_expr(V1), nullptr)};
   auto tail = VS.transform<Expr*>(2);
   for (auto &t: tail)

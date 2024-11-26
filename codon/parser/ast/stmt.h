@@ -439,16 +439,19 @@ private:
 /// Throw statement (raise expr).
 /// @li: raise a
 struct ThrowStmt : public AcceptorExtend<ThrowStmt, Stmt> {
-  explicit ThrowStmt(Expr *expr = nullptr, bool transformed = false);
+  explicit ThrowStmt(Expr *expr = nullptr, Expr *from = nullptr,
+                     bool transformed = false);
   ThrowStmt(const ThrowStmt &, bool);
 
   Expr *getExpr() const { return expr; }
+  Expr *getFrom() const { return from; }
   bool isTransformed() const { return transformed; }
 
-  ACCEPT(ThrowStmt, ASTVisitor, expr, transformed);
+  ACCEPT(ThrowStmt, ASTVisitor, expr, from, transformed);
 
 private:
   Expr *expr;
+  Expr *from;
   // True if a statement was transformed during type-checking stage
   // (to avoid setting up ExcHeader multiple times).
   bool transformed;

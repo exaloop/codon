@@ -230,7 +230,7 @@ Optional(5) |> foo2 #: 5
 try:
     Optional[int]() |> foo2
 except ValueError as e:
-    print e.message #: optional is None
+    print e.message #: optional unpack failed: expected int, got None
 
 #%% pipe_prepend_error,barebones
 def foo2(a: int):

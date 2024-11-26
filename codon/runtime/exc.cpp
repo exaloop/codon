@@ -157,6 +157,7 @@ struct SeqExcHeader_t {
   seq_int_t line;
   seq_int_t col;
   void *python_type;
+  void *cause;
 };
 
 void seq_exc_init(int flags) {
