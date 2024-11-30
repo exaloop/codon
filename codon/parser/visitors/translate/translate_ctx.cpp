@@ -1,14 +1,14 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "translate_ctx.h"
+#include "translate_ctx.hpp"
 
 #include <memory>
 #include <vector>
 
-#include "codon/parser/common.h"
-#include "codon/parser/ctx.h"
+#include "codon/parser/common.hpp"
+#include "codon/parser/ctx.hpp"
 #include "codon/parser/visitors/translate/translate.h"
-#include "codon/parser/visitors/typecheck/ctx.h"
+#include "codon/parser/visitors/typecheck/ctx.hpp"
 
 namespace codon::ast {
 

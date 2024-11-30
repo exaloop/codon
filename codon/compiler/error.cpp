@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "error.h"
+#include "error.hpp"
 
 namespace codon {
 namespace error {

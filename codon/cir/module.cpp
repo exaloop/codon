@@ -6,7 +6,7 @@
 #include <memory>
 
 #include "codon/cir/func.h"
-#include "codon/parser/cache.h"
+#include "codon/parser/cache.hpp"
 
 namespace codon {
 namespace ir {

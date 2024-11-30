@@ -14,11 +14,11 @@
 #include <xeus/xkernel_configuration.hpp>
 
 #include "codon/compiler/compiler.h"
-#include "codon/compiler/error.h"
+#include "codon/compiler/error.hpp"
 #include "codon/compiler/jit.h"
 #include "codon/config/config.h"
-#include "codon/parser/common.h"
-#include "codon/util/common.h"
+#include "codon/parser/common.hpp"
+#include "codon/util/common.hpp"
 
 using std::move;
 using std::string;

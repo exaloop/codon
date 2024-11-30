@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "cache.h"
+#include "cache.hpp"
 
 #include <chrono>
 #include <string>
@@ -8,11 +8,11 @@
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
-#include "codon/parser/common.h"
+#include "codon/parser/common.hpp"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
-#include "codon/parser/visitors/typecheck/ctx.h"
+#include "codon/parser/visitors/typecheck/ctx.hpp"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon::ast {

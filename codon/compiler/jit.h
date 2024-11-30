@@ -12,9 +12,9 @@
 #include "codon/cir/var.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/engine.h"
-#include "codon/compiler/error.h"
-#include "codon/parser/cache.h"
-#include "codon/runtime/lib.h"
+#include "codon/compiler/error.hpp"
+#include "codon/parser/cache.hpp"
+#include "codon/runtime/lib.hpp"
 
 #include "codon/compiler/jit_extern.h"
 

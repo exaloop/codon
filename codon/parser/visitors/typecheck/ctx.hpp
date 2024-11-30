@@ -10,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "codon/parser/cache.h"
-#include "codon/parser/common.h"
-#include "codon/parser/ctx.h"
+#include "codon/parser/cache.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/parser/ctx.hpp"
 
 namespace codon::ast {
 

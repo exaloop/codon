@@ -11,7 +11,7 @@
 #include "codon/cir/util/iterators.h"
 #include "codon/cir/value.h"
 #include "codon/cir/var.h"
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 

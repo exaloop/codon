@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "codon/parser/cache.h"
+#include "codon/parser/cache.hpp"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \

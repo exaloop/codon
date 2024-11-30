@@ -4,8 +4,8 @@
 #include <tuple>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/common.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/common.hpp"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 

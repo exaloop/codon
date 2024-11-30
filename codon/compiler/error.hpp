@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast/error.h"
+#include "codon/parser/ast/error.hpp"
 #include "llvm/Support/Error.h"
 #include <fmt/format.h>
 

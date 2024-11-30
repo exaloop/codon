@@ -11,7 +11,7 @@
 #include "codon/cir/util/iterators.h"
 #include "codon/cir/util/visitor.h"
 #include "codon/cir/value.h"
-#include "codon/parser/cache.h"
+#include "codon/parser/cache.hpp"
 #include <fmt/format.h>
 
 namespace codon {

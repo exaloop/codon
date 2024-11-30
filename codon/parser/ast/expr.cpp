@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/cache.hpp"
 #include "codon/parser/visitors/visitor.h"
 
 #define FASTFLOAT_ALLOWS_LEADING_PLUS

@@ -6,7 +6,7 @@
 #include "codon/cir/llvm/llvm.h"
 #include "codon/cir/pyextension.h"
 #include "codon/dsl/plugins.h"
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 
 #include <string>
 #include <unordered_map>

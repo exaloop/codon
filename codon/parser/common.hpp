@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 
 #define CAST(s, T) dynamic_cast<T *>(s.get())
 

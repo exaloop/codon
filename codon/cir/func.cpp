@@ -9,7 +9,7 @@
 #include "codon/cir/util/operator.h"
 #include "codon/cir/util/visitor.h"
 #include "codon/cir/var.h"
-#include "codon/parser/common.h"
+#include "codon/parser/common.hpp"
 
 namespace codon {
 namespace ir {

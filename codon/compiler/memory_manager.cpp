@@ -2,7 +2,7 @@
 
 #include "memory_manager.h"
 
-#include "codon/runtime/lib.h"
+#include "codon/runtime/lib.hpp"
 
 namespace codon {
 

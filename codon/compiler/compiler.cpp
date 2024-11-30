@@ -2,8 +2,8 @@
 
 #include "compiler.h"
 
-#include "codon/compiler/error.h"
-#include "codon/parser/cache.h"
+#include "codon/compiler/error.hpp"
+#include "codon/parser/cache.hpp"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"

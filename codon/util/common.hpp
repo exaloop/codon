@@ -10,9 +10,9 @@
 #include <iostream>
 #include <ostream>
 
-#include "codon/compiler/error.h"
+#include "codon/compiler/error.hpp"
 #include "codon/config/config.h"
-#include "codon/parser/ast/error.h"
+#include "codon/parser/ast/error.hpp"
 
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"

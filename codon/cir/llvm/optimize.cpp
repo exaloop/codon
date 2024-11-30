@@ -6,7 +6,7 @@
 #include <deque>
 
 #include "codon/cir/llvm/gpu.h"
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 
 static llvm::codegen::RegisterCodeGenFlags CFG;
 

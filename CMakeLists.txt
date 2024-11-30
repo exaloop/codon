@@ -73,7 +73,7 @@ set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
-set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
+set(CODONRT_FILES codon/runtime/lib.hpp codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
                   codon/runtime/gpu.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
@@ -125,12 +125,12 @@ set(CODON_HPPFILES
     codon/compiler/compiler.h
     codon/compiler/debug_listener.h
     codon/compiler/engine.h
-    codon/compiler/error.h
+    codon/compiler/error.hpp
     codon/compiler/jit.h
     codon/compiler/memory_manager.h
     codon/dsl/dsl.h
     codon/dsl/plugins.h
-    codon/parser/ast.h
+    codon/parser/ast.hpp
     codon/parser/ast/expr.h
     codon/parser/ast/stmt.h
     codon/parser/ast/types.h
@@ -141,19 +141,19 @@ set(CODON_HPPFILES
     codon/parser/ast/types/union.h
     codon/parser/ast/types/static.h
     codon/parser/ast/types/traits.h
-    codon/parser/cache.h
-    codon/parser/common.h
-    codon/parser/ctx.h
+    codon/parser/cache.hpp
+    codon/parser/common.hpp
+    codon/parser/ctx.hpp
     codon/parser/peg/peg.h
     codon/parser/peg/rules.h
     codon/parser/visitors/doc/doc.h
     codon/parser/visitors/format/format.h
     codon/parser/visitors/simplify/simplify.h
-    codon/parser/visitors/simplify/ctx.h
+    codon/parser/visitors/simplify/ctx.hpp
     codon/parser/visitors/translate/translate.h
-    codon/parser/visitors/translate/translate_ctx.h
+    codon/parser/visitors/translate/translate_ctx.hpp
     codon/parser/visitors/typecheck/typecheck.h
-    codon/parser/visitors/typecheck/ctx.h
+    codon/parser/visitors/typecheck/ctx.hpp
     codon/parser/visitors/visitor.h
     codon/cir/analyze/analysis.h
     codon/cir/analyze/dataflow/capture.h
@@ -212,8 +212,9 @@ set(CODON_HPPFILES
     codon/cir/util/visitor.h
     codon/cir/value.h
     codon/cir/var.h
-    codon/util/common.h
-    codon/compiler/jit_extern.h)
+    codon/util/common.hpp
+    codon/compiler/jit_extern.h
+    )
 set(CODON_CPPFILES
     codon/compiler/compiler.cpp
     codon/compiler/debug_listener.cpp

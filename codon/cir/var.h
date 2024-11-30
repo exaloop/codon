@@ -9,7 +9,7 @@
 
 #include "codon/cir/types/types.h"
 #include "codon/cir/value.h"
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 #include <fmt/format.h>
 #include <fmt/ostream.h>
 

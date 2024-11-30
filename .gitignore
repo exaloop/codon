@@ -57,6 +57,7 @@ Thumbs.db
 .vscode
 .cache
 .ipynb_checkpoints
+/Folder.DotSettings.user
 
 # CMake generated files #
 #########################
@@ -68,3 +69,4 @@ jit/codon/version.py
 temp/
 playground/
 scratch*.*
+

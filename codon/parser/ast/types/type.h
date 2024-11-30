@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "codon/parser/common.h"
+#include "codon/parser/common.hpp"
 
 namespace codon::ast {
 struct Cache;

@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 
 namespace codon {
 namespace ir {

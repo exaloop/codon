@@ -4,7 +4,7 @@
 
 #include <sstream>
 
-#include "codon/parser/common.h"
+#include "codon/parser/common.hpp"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"

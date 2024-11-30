@@ -6,7 +6,7 @@
 #include <functional>
 #include <sstream>
 
-#include "codon/runtime/lib.h"
+#include "codon/runtime/lib.hpp"
 
 namespace codon {
 namespace {

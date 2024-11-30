@@ -2,7 +2,7 @@
 
 #include "visitor.h"
 
-#include "codon/parser/ast.h"
+#include "codon/parser/ast.hpp"
 
 namespace codon::ast {
 

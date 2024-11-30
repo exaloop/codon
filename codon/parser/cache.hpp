@@ -10,9 +10,9 @@
 
 #include "codon/cir/cir.h"
 #include "codon/cir/pyextension.h"
-#include "codon/parser/ast.h"
-#include "codon/parser/common.h"
-#include "codon/parser/ctx.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/parser/ctx.hpp"
 
 #define FILE_GENERATED "<generated>"
 #define MODULE_MAIN "__main__"

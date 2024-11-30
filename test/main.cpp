@@ -22,9 +22,9 @@
 #include "codon/cir/util/operator.h"
 #include "codon/cir/util/outlining.h"
 #include "codon/compiler/compiler.h"
-#include "codon/compiler/error.h"
-#include "codon/parser/common.h"
-#include "codon/util/common.h"
+#include "codon/compiler/error.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/util/common.hpp"
 
 #include "gtest/gtest.h"
 

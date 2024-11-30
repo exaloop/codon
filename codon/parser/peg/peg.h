@@ -6,9 +6,9 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
-#include "codon/util/common.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/cache.hpp"
+#include "codon/util/common.hpp"
 
 namespace codon::ast {
 

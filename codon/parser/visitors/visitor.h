@@ -5,9 +5,9 @@
 #include <memory>
 #include <vector>
 
-#include "codon/compiler/error.h"
-#include "codon/parser/ast.h"
-#include "codon/parser/common.h"
+#include "codon/compiler/error.hpp"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/common.hpp"
 
 namespace codon::ast {
 

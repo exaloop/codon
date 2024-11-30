@@ -15,9 +15,9 @@
 #include "codon/cir/util/irtools.h"
 #include "codon/compiler/debug_listener.h"
 #include "codon/compiler/memory_manager.h"
-#include "codon/parser/common.h"
-#include "codon/runtime/lib.h"
-#include "codon/util/common.h"
+#include "codon/parser/common.hpp"
+#include "codon/runtime/lib.hpp"
+#include "codon/util/common.hpp"
 
 namespace codon {
 namespace ir {

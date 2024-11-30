@@ -5,9 +5,9 @@
 #include <tuple>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
-#include "codon/parser/common.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/cache.hpp"
+#include "codon/parser/common.hpp"
 #include "codon/parser/visitors/simplify/simplify.h"
 
 using fmt::format;

@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 
 namespace codon {
 namespace ir {

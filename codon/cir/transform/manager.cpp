@@ -22,7 +22,7 @@
 #include "codon/cir/transform/pythonic/io.h"
 #include "codon/cir/transform/pythonic/list.h"
 #include "codon/cir/transform/pythonic/str.h"
-#include "codon/util/common.h"
+#include "codon/util/common.hpp"
 
 namespace codon {
 namespace ir {

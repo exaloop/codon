@@ -12,10 +12,10 @@
 #include <vector>
 
 #include "codon/compiler/compiler.h"
-#include "codon/compiler/error.h"
+#include "codon/compiler/error.hpp"
 #include "codon/compiler/jit.h"
-#include "codon/parser/common.h"
-#include "codon/util/common.h"
+#include "codon/parser/common.hpp"
+#include "codon/util/common.hpp"
 #include "codon/util/jupyter.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"

@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "codon/cir/cir.h"
-#include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
-#include "codon/parser/common.h"
-#include "codon/parser/visitors/translate/translate_ctx.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/cache.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/parser/visitors/translate/translate_ctx.hpp"
 #include "codon/parser/visitors/visitor.h"
 
 namespace codon::ast {

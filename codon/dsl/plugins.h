@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "codon/cir/util/iterators.h"
-#include "codon/compiler/error.h"
+#include "codon/compiler/error.hpp"
 #include "codon/dsl/dsl.h"
 #include "llvm/Support/DynamicLibrary.h"
 
