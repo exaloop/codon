@@ -1,11 +1,11 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "module.h"
+#include "module.hpp"
 
 #include <algorithm>
 #include <memory>
 
-#include "codon/cir/func.h"
+#include "codon/cir/func.hpp"
 #include "codon/parser/cache.hpp"
 
 namespace codon {

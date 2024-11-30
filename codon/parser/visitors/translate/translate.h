@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "codon/cir/cir.h"
+#include "codon/cir/cir.hpp"
 #include "codon/parser/ast.hpp"
 #include "codon/parser/cache.hpp"
 #include "codon/parser/common.hpp"

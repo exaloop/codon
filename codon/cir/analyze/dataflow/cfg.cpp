@@ -1,11 +1,11 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "cfg.h"
+#include "cfg.hpp"
 
 #include <vector>
 
-#include "codon/cir/dsl/codegen.h"
-#include "codon/cir/dsl/nodes.h"
+#include "codon/cir/dsl/codegen.hpp"
+#include "codon/cir/dsl/nodes.hpp"
 
 namespace codon {
 namespace ir {

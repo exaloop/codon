@@ -8,7 +8,7 @@
 #include <unordered_map>
 
 #include "codon/parser/common.hpp"
-#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/visitors/simplify/simplify.hpp"
 
 using fmt::format;
 using namespace codon::error;

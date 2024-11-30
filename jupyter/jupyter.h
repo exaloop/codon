@@ -1,7 +1,7 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
-#include <codon/compiler/jit.h>
+#include <codon/compiler/jit.hpp>
 #include <nlohmann/json.hpp>
 #include <xeus/xinterpreter.hpp>
 

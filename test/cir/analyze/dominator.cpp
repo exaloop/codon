@@ -1,7 +1,7 @@
 #include "test.h"
 
-#include "codon/cir/analyze/dataflow/cfg.h"
-#include "codon/cir/analyze/dataflow/dominator.h"
+#include "codon/cir/analyze/dataflow/cfg.hpp"
+#include "codon/cir/analyze/dataflow/dominator.hpp"
 
 using namespace codon::ir;
 

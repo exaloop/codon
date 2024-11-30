@@ -1,16 +1,16 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "openmp.h"
+#include "openmp.hpp"
 
 #include <algorithm>
 #include <iterator>
 #include <limits>
 #include <unordered_set>
 
-#include "codon/cir/transform/parallel/schedule.h"
-#include "codon/cir/util/cloning.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/cir/util/outlining.h"
+#include "codon/cir/transform/parallel/schedule.hpp"
+#include "codon/cir/util/cloning.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/cir/util/outlining.hpp"
 
 namespace codon {
 namespace ir {

@@ -1,9 +1,9 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "flow.h"
+#include "flow.hpp"
 
-#include "codon/cir/module.h"
-#include "codon/cir/util/iterators.h"
+#include "codon/cir/module.hpp"
+#include "codon/cir/util/iterators.hpp"
 #include <fmt/ostream.h>
 
 namespace codon {

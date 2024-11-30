@@ -1,9 +1,9 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "folding.h"
+#include "folding.hpp"
 
-#include "codon/cir/transform/folding/const_fold.h"
-#include "codon/cir/transform/folding/const_prop.h"
+#include "codon/cir/transform/folding/const_fold.hpp"
+#include "codon/cir/transform/folding/const_prop.hpp"
 
 namespace codon {
 namespace ir {

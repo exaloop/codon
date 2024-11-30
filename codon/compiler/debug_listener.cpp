@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "debug_listener.h"
+#include "debug_listener.hpp"
 
 #include <algorithm>
 #include <functional>

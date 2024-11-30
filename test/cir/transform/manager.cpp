@@ -1,7 +1,7 @@
 #include "test.h"
 
 #include "codon/cir/transform/manager.h"
-#include "codon/cir/transform/pass.h"
+#include "codon/cir/transform/pass.hpp"
 
 using namespace codon::ir;
 

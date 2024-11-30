@@ -5,10 +5,10 @@
 #include <vector>
 
 #include "codon/parser/ast.hpp"
-#include "codon/parser/ast/types/static.h"
+#include "codon/parser/ast/types/static.hpp"
 #include "codon/parser/cache.hpp"
 #include "codon/parser/common.hpp"
-#include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/format/format.hpp"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon::ast::types {

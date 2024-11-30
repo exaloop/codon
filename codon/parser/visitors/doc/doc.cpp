@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "doc.h"
+#include "doc.hpp"
 
 #include <memory>
 #include <string>
@@ -9,8 +9,8 @@
 
 #include "codon/parser/ast.hpp"
 #include "codon/parser/common.hpp"
-#include "codon/parser/peg/peg.h"
-#include "codon/parser/visitors/format/format.h"
+#include "codon/parser/peg/peg.hpp"
+#include "codon/parser/visitors/format/format.hpp"
 
 using fmt::format;
 

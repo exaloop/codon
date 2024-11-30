@@ -1,14 +1,14 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "func.h"
+#include "func.hpp"
 
 #include <algorithm>
 
-#include "codon/cir/module.h"
-#include "codon/cir/util/iterators.h"
-#include "codon/cir/util/operator.h"
-#include "codon/cir/util/visitor.h"
-#include "codon/cir/var.h"
+#include "codon/cir/module.hpp"
+#include "codon/cir/util/iterators.hpp"
+#include "codon/cir/util/operator.hpp"
+#include "codon/cir/util/visitor.hpp"
+#include "codon/cir/var.hpp"
 #include "codon/parser/common.hpp"
 
 namespace codon {

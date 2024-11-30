@@ -7,10 +7,10 @@
 #include <tuple>
 #include <vector>
 
-#include "codon/cir/types/types.h"
+#include "codon/cir/types/types.hpp"
 #include "codon/parser/ast.hpp"
 #include "codon/parser/common.hpp"
-#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/visitors/simplify/simplify.hpp"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;

@@ -6,8 +6,8 @@
 #include <sstream>
 #include <unordered_set>
 
-#include "codon/cir/util/format.h"
-#include "codon/cir/util/visitor.h"
+#include "codon/cir/util/format.hpp"
+#include "codon/cir/util/visitor.hpp"
 
 namespace codon {
 namespace ir {

@@ -13,9 +13,9 @@
 #include <xeus/xkernel.hpp>
 #include <xeus/xkernel_configuration.hpp>
 
-#include "codon/compiler/compiler.h"
+#include "codon/compiler/compiler.hpp"
 #include "codon/compiler/error.hpp"
-#include "codon/compiler/jit.h"
+#include "codon/compiler/jit.hpp"
 #include "codon/config/config.h"
 #include "codon/parser/common.hpp"
 #include "codon/util/common.hpp"

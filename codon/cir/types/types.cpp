@@ -1,16 +1,16 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "types.h"
+#include "types.hpp"
 
 #include <algorithm>
 #include <memory>
 #include <utility>
 
-#include "codon/cir/module.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/cir/util/iterators.h"
-#include "codon/cir/util/visitor.h"
-#include "codon/cir/value.h"
+#include "codon/cir/module.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/cir/util/iterators.hpp"
+#include "codon/cir/util/visitor.hpp"
+#include "codon/cir/value.hpp"
 #include "codon/parser/cache.hpp"
 #include <fmt/format.h>
 

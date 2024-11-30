@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "llvisitor.h"
+#include "llvisitor.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -10,11 +10,11 @@
 #include <unistd.h>
 #include <utility>
 
-#include "codon/cir/dsl/codegen.h"
-#include "codon/cir/llvm/optimize.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/compiler/debug_listener.h"
-#include "codon/compiler/memory_manager.h"
+#include "codon/cir/dsl/codegen.hpp"
+#include "codon/cir/llvm/optimize.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/compiler/debug_listener.hpp"
+#include "codon/compiler/memory_manager.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/runtime/lib.hpp"
 #include "codon/util/common.hpp"

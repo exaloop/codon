@@ -1,14 +1,14 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "capture.h"
+#include "capture.hpp"
 
 #include <algorithm>
 #include <iterator>
 #include <utility>
 
-#include "codon/cir/analyze/dataflow/reaching.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/cir/util/side_effect.h"
+#include "codon/cir/analyze/dataflow/reaching.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/cir/util/side_effect.hpp"
 
 namespace codon {
 namespace ir {

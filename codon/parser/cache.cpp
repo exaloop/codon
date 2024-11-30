@@ -6,11 +6,11 @@
 #include <string>
 #include <vector>
 
-#include "codon/cir/pyextension.h"
-#include "codon/cir/util/irtools.h"
+#include "codon/cir/pyextension.hpp"
+#include "codon/cir/util/irtools.hpp"
 #include "codon/parser/common.hpp"
-#include "codon/parser/peg/peg.h"
-#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/peg/peg.hpp"
+#include "codon/parser/visitors/simplify/simplify.hpp"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.hpp"
 #include "codon/parser/visitors/typecheck/typecheck.h"

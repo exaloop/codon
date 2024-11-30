@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "simplify.h"
+#include "simplify.hpp"
 
 #include <memory>
 #include <string>
@@ -9,7 +9,7 @@
 
 #include "codon/parser/ast.hpp"
 #include "codon/parser/common.hpp"
-#include "codon/parser/peg/peg.h"
+#include "codon/parser/peg/peg.hpp"
 #include "codon/parser/visitors/simplify/ctx.hpp"
 
 using fmt::format;

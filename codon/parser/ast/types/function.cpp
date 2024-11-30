@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast/types/class.h"
-#include "codon/parser/visitors/format/format.h"
+#include "codon/parser/ast/types/class.hpp"
+#include "codon/parser/visitors/format/format.hpp"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon::ast::types {

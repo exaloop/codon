@@ -1,8 +1,8 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "cloning.h"
+#include "cloning.hpp"
 
-#include "codon/cir/util/operator.h"
+#include "codon/cir/util/operator.hpp"
 
 namespace codon {
 namespace ir {

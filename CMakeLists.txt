@@ -122,96 +122,95 @@ add_custom_command(
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 set(CODON_HPPFILES
-    codon/compiler/compiler.h
-    codon/compiler/debug_listener.h
-    codon/compiler/engine.h
+    codon/compiler/compiler.hpp
+    codon/compiler/debug_listener.hpp
+    codon/compiler/engine.hpp
     codon/compiler/error.hpp
-    codon/compiler/jit.h
-    codon/compiler/memory_manager.h
-    codon/dsl/dsl.h
-    codon/dsl/plugins.h
+    codon/compiler/jit.hpp
+    codon/compiler/memory_manager.hpp
+    codon/dsl/dsl.hpp
+    codon/dsl/plugins.hpp
     codon/parser/ast.hpp
-    codon/parser/ast/expr.h
-    codon/parser/ast/stmt.h
+    codon/parser/ast/expr.hpp
+    codon/parser/ast/stmt.hpp
     codon/parser/ast/types.h
-    codon/parser/ast/types/type.h
-    codon/parser/ast/types/link.h
-    codon/parser/ast/types/class.h
-    codon/parser/ast/types/function.h
-    codon/parser/ast/types/union.h
-    codon/parser/ast/types/static.h
-    codon/parser/ast/types/traits.h
+    codon/parser/ast/types/type.hpp
+    codon/parser/ast/types/link.hpp
+    codon/parser/ast/types/class.hpp
+    codon/parser/ast/types/function.hpp
+    codon/parser/ast/types/union.hpp
+    codon/parser/ast/types/static.hpp
+    codon/parser/ast/types/traits.hpp
     codon/parser/cache.hpp
     codon/parser/common.hpp
     codon/parser/ctx.hpp
-    codon/parser/peg/peg.h
-    codon/parser/peg/rules.h
-    codon/parser/visitors/doc/doc.h
-    codon/parser/visitors/format/format.h
-    codon/parser/visitors/simplify/simplify.h
+    codon/parser/peg/peg.hpp
+    codon/parser/peg/rules.hpp
+    codon/parser/visitors/doc/doc.hpp
+    codon/parser/visitors/format/format.hpp
+    codon/parser/visitors/simplify/simplify.hpp
     codon/parser/visitors/simplify/ctx.hpp
     codon/parser/visitors/translate/translate.h
     codon/parser/visitors/translate/translate_ctx.hpp
     codon/parser/visitors/typecheck/typecheck.h
     codon/parser/visitors/typecheck/ctx.hpp
     codon/parser/visitors/visitor.h
-    codon/cir/analyze/analysis.h
-    codon/cir/analyze/dataflow/capture.h
-    codon/cir/analyze/dataflow/cfg.h
-    codon/cir/analyze/dataflow/dominator.h
-    codon/cir/analyze/dataflow/reaching.h
-    codon/cir/analyze/module/global_vars.h
-    codon/cir/analyze/module/side_effect.h
-    codon/cir/attribute.h
-    codon/cir/base.h
-    codon/cir/const.h
-    codon/cir/dsl/codegen.h
-    codon/cir/dsl/nodes.h
-    codon/cir/flow.h
-    codon/cir/func.h
-    codon/cir/instr.h
-    codon/cir/llvm/gpu.h
-    codon/cir/llvm/llvisitor.h
-    codon/cir/llvm/llvm.h
-    codon/cir/llvm/optimize.h
-    codon/cir/module.h
-    codon/cir/pyextension.h
-    codon/cir/cir.h
-    codon/cir/transform/cleanup/canonical.h
-    codon/cir/transform/cleanup/dead_code.h
-    codon/cir/transform/cleanup/global_demote.h
-    codon/cir/transform/cleanup/replacer.h
-    codon/cir/transform/folding/const_fold.h
-    codon/cir/transform/folding/const_prop.h
-    codon/cir/transform/folding/folding.h
-    codon/cir/transform/folding/rule.h
-    codon/cir/transform/lowering/imperative.h
-    codon/cir/transform/lowering/pipeline.h
+    codon/cir/analyze/analysis.hpp
+    codon/cir/analyze/dataflow/capture.hpp
+    codon/cir/analyze/dataflow/cfg.hpp
+    codon/cir/analyze/dataflow/dominator.hpp
+    codon/cir/analyze/dataflow/reaching.hpp
+    codon/cir/analyze/module/global_vars.hpp
+    codon/cir/analyze/module/side_effect.hpp
+    codon/cir/attribute.hpp
+    codon/cir/base.hpp
+    codon/cir/const.hpp
+    codon/cir/dsl/codegen.hpp
+    codon/cir/dsl/nodes.hpp
+    codon/cir/flow.hpp
+    codon/cir/func.hpp
+    codon/cir/instr.hpp
+    codon/cir/llvm/gpu.hpp
+    codon/cir/llvm/llvisitor.hpp
+    codon/cir/llvm/llvm.hpp
+    codon/cir/llvm/optimize.hpp
+    codon/cir/module.hpp
+    codon/cir/pyextension.hpp
+    codon/cir/cir.hpp
+    codon/cir/transform/cleanup/canonical.hpp
+    codon/cir/transform/cleanup/dead_code.hpp
+    codon/cir/transform/cleanup/global_demote.hpp
+    codon/cir/transform/cleanup/replacer.hpp
+    codon/cir/transform/folding/const_fold.hpp
+    codon/cir/transform/folding/const_prop.hpp
+    codon/cir/transform/folding/folding.hpp
+    codon/cir/transform/folding/rule.hpp
+    codon/cir/transform/lowering/imperative.hpp
+    codon/cir/transform/lowering/pipeline.hpp
     codon/cir/transform/manager.h
-    codon/cir/transform/parallel/openmp.h
-    codon/cir/transform/parallel/schedule.h
-    codon/cir/transform/pass.h
-    codon/cir/transform/pythonic/dict.h
-    codon/cir/transform/pythonic/generator.h
-    codon/cir/transform/pythonic/io.h
-    codon/cir/transform/pythonic/list.h
-    codon/cir/transform/pythonic/str.h
-    codon/cir/transform/rewrite.h
-    codon/cir/types/types.h
-    codon/cir/util/cloning.h
-    codon/cir/util/context.h
-    codon/cir/util/format.h
-    codon/cir/util/inlining.h
-    codon/cir/util/irtools.h
-    codon/cir/util/iterators.h
-    codon/cir/util/matching.h
-    codon/cir/util/operator.h
-    codon/cir/util/outlining.h
-    codon/cir/util/packs.h
-    codon/cir/util/side_effect.h
-    codon/cir/util/visitor.h
-    codon/cir/value.h
-    codon/cir/var.h
+    codon/cir/transform/parallel/openmp.hpp
+    codon/cir/transform/parallel/schedule.hpp
+    codon/cir/transform/pass.hpp
+    codon/cir/transform/pythonic/dict.hpp
+    codon/cir/transform/pythonic/generator.hpp
+    codon/cir/transform/pythonic/io.hpp
+    codon/cir/transform/pythonic/list.hpp
+    codon/cir/transform/pythonic/str.hpp
+    codon/cir/transform/rewrite.hpp
+    codon/cir/types/types.hpp
+    codon/cir/util/cloning.hpp
+    codon/cir/util/format.hpp
+    codon/cir/util/inlining.hpp
+    codon/cir/util/irtools.hpp
+    codon/cir/util/iterators.hpp
+    codon/cir/util/matching.hpp
+    codon/cir/util/operator.hpp
+    codon/cir/util/outlining.hpp
+    codon/cir/util/packs.hpp
+    codon/cir/util/side_effect.hpp
+    codon/cir/util/visitor.hpp
+    codon/cir/value.hpp
+    codon/cir/var.hpp
     codon/util/common.hpp
     codon/compiler/jit_extern.h
     )

@@ -6,7 +6,7 @@
 #include "codon/parser/ast.hpp"
 #include "codon/parser/cache.hpp"
 #include "codon/parser/common.hpp"
-#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/visitors/simplify/simplify.hpp"
 
 using fmt::format;
 using namespace codon::error;

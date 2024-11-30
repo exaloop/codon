@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "memory_manager.h"
+#include "memory_manager.hpp"
 
 #include "codon/runtime/lib.hpp"
 

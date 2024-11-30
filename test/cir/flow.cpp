@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <vector>
 
-#include "codon/cir/util/matching.h"
+#include "codon/cir/util/matching.hpp"
 
 using namespace codon::ir;
 

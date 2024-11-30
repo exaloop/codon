@@ -1,8 +1,8 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "var.h"
+#include "var.hpp"
 
-#include "codon/cir/module.h"
+#include "codon/cir/module.hpp"
 
 namespace codon {
 namespace ir {

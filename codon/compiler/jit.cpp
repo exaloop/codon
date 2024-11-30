@@ -1,14 +1,14 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "jit.h"
+#include "jit.hpp"
 
 #include <sstream>
 
 #include "codon/parser/common.hpp"
-#include "codon/parser/peg/peg.h"
-#include "codon/parser/visitors/doc/doc.h"
-#include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/peg/peg.hpp"
+#include "codon/parser/visitors/doc/doc.hpp"
+#include "codon/parser/visitors/format/format.hpp"
+#include "codon/parser/visitors/simplify/simplify.hpp"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 

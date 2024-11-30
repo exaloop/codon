@@ -7,8 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "codon/cir/transform/parallel/schedule.h"
-#include "codon/cir/util/cloning.h"
+#include "codon/cir/transform/parallel/schedule.hpp"
+#include "codon/cir/util/cloning.hpp"
 #include "codon/parser/ast.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/parser/visitors/translate/translate_ctx.hpp"

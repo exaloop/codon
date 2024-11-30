@@ -1,9 +1,9 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "dead_code.h"
+#include "dead_code.hpp"
 
-#include "codon/cir/analyze/module/side_effect.h"
-#include "codon/cir/util/cloning.h"
+#include "codon/cir/analyze/module/side_effect.hpp"
+#include "codon/cir/util/cloning.hpp"
 
 namespace codon {
 namespace ir {

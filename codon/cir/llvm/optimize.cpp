@@ -1,11 +1,11 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "optimize.h"
+#include "optimize.hpp"
 
 #include <algorithm>
 #include <deque>
 
-#include "codon/cir/llvm/gpu.h"
+#include "codon/cir/llvm/gpu.hpp"
 #include "codon/util/common.hpp"
 
 static llvm::codegen::RegisterCodeGenFlags CFG;

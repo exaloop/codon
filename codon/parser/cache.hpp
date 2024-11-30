@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "codon/cir/cir.h"
-#include "codon/cir/pyextension.h"
+#include "codon/cir/cir.hpp"
+#include "codon/cir/pyextension.hpp"
 #include "codon/parser/ast.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/parser/ctx.hpp"

@@ -15,13 +15,13 @@
 #include <unistd.h>
 #include <vector>
 
-#include "codon/cir/analyze/dataflow/capture.h"
-#include "codon/cir/analyze/dataflow/reaching.h"
-#include "codon/cir/util/inlining.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/cir/util/operator.h"
-#include "codon/cir/util/outlining.h"
-#include "codon/compiler/compiler.h"
+#include "codon/cir/analyze/dataflow/capture.hpp"
+#include "codon/cir/analyze/dataflow/reaching.hpp"
+#include "codon/cir/util/inlining.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/cir/util/operator.hpp"
+#include "codon/cir/util/outlining.hpp"
+#include "codon/compiler/compiler.hpp"
 #include "codon/compiler/error.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/util/common.hpp"

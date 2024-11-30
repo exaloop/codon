@@ -1,9 +1,9 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "value.h"
+#include "value.hpp"
 
-#include "codon/cir/instr.h"
-#include "codon/cir/module.h"
+#include "codon/cir/instr.hpp"
+#include "codon/cir/module.hpp"
 
 namespace codon {
 namespace ir {
