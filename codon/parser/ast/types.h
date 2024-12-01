@@ -2,10 +2,10 @@
 
 #pragma once
 
-#include "codon/parser/ast/types/class.h"
-#include "codon/parser/ast/types/function.h"
-#include "codon/parser/ast/types/link.h"
-#include "codon/parser/ast/types/static.h"
-#include "codon/parser/ast/types/traits.h"
-#include "codon/parser/ast/types/type.h"
-#include "codon/parser/ast/types/union.h"
+#include "codon/parser/ast/types/class.hpp"
+#include "codon/parser/ast/types/function.hpp"
+#include "codon/parser/ast/types/link.hpp"
+#include "codon/parser/ast/types/static.hpp"
+#include "codon/parser/ast/types/traits.hpp"
+#include "codon/parser/ast/types/type.hpp"
+#include "codon/parser/ast/types/union.hpp"

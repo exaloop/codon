@@ -1,8 +1,8 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "visitor.h"
+#include "visitor.hpp"
 
-#include "codon/cir/cir.h"
+#include "codon/cir/cir.hpp"
 
 namespace codon {
 namespace ir {

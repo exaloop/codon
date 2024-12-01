@@ -5,7 +5,7 @@
 # TODO: nice docstrs
 
 PREAMBLE {
-  #include "codon/parser/peg/rules.h"
+  #include "codon/parser/peg/rules.hpp"
   #include <any>
   using namespace std;
   using namespace codon::ast;

@@ -1,12 +1,12 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "imperative.h"
+#include "imperative.hpp"
 
 #include <algorithm>
 
-#include "codon/cir/util/cloning.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/cir/util/matching.h"
+#include "codon/cir/util/cloning.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/cir/util/matching.hpp"
 
 namespace codon {
 namespace ir {

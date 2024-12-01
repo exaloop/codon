@@ -1,12 +1,12 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "const_fold.h"
+#include "const_fold.hpp"
 
 #include <cmath>
 #include <utility>
 
-#include "codon/cir/util/cloning.h"
-#include "codon/cir/util/irtools.h"
+#include "codon/cir/util/cloning.hpp"
+#include "codon/cir/util/irtools.hpp"
 
 #define BINOP(o) [](auto x, auto y) -> auto { return x o y; }
 #define UNOP(o) [](auto x) -> auto { return o x; }

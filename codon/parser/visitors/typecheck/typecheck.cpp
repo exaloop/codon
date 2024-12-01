@@ -1,15 +1,15 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "typecheck.h"
+#include "typecheck.hpp"
 
 #include <memory>
 #include <utility>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/common.h"
-#include "codon/parser/visitors/simplify/ctx.h"
-#include "codon/parser/visitors/typecheck/ctx.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/parser/visitors/simplify/ctx.hpp"
+#include "codon/parser/visitors/typecheck/ctx.hpp"
 #include <fmt/format.h>
 
 using fmt::format;

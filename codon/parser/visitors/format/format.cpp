@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/format/format.hpp"
 
 using fmt::format;
 

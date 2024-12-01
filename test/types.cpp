@@ -14,8 +14,8 @@
 #include <unistd.h>
 #include <vector>
 
-#include "codon/parser/common.h"
-#include "codon/util/common.h"
+#include "codon/parser/common.hpp"
+#include "codon/util/common.hpp"
 #include "gtest/gtest.h"
 
 TEST(TypeCoreTest, TestName) { ; }

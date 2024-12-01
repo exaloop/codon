@@ -9,9 +9,9 @@
 #include <utility>
 #include <vector>
 
-#include "codon/cir/analyze/analysis.h"
-#include "codon/cir/module.h"
-#include "codon/cir/transform/pass.h"
+#include "codon/cir/analyze/analysis.hpp"
+#include "codon/cir/module.hpp"
+#include "codon/cir/transform/pass.hpp"
 
 namespace codon {
 namespace ir {

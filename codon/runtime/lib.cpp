@@ -22,7 +22,7 @@
 #include <vector>
 
 #define GC_THREADS
-#include "codon/runtime/lib.h"
+#include "codon/runtime/lib.hpp"
 #include <gc.h>
 
 #define FASTFLOAT_ALLOWS_LEADING_PLUS

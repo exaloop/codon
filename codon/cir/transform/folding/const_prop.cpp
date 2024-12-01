@@ -1,10 +1,10 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "const_prop.h"
+#include "const_prop.hpp"
 
-#include "codon/cir/analyze/dataflow/reaching.h"
-#include "codon/cir/analyze/module/global_vars.h"
-#include "codon/cir/util/cloning.h"
+#include "codon/cir/analyze/dataflow/reaching.hpp"
+#include "codon/cir/analyze/module/global_vars.hpp"
+#include "codon/cir/util/cloning.hpp"
 
 namespace codon {
 namespace ir {

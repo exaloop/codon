@@ -5,7 +5,7 @@
 #include <cstring>
 #include <vector>
 
-#include "lib.h"
+#include "lib.hpp"
 
 #ifdef CODON_GPU
 

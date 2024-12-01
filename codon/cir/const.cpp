@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "const.h"
+#include "const.hpp"
 
 namespace codon {
 namespace ir {

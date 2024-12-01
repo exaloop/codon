@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "peg.h"
+#include "peg.hpp"
 
 #include <any>
 #include <iostream>
@@ -9,10 +9,10 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/common.h"
-#include "codon/parser/peg/rules.h"
-#include "codon/parser/visitors/format/format.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/parser/peg/rules.hpp"
+#include "codon/parser/visitors/format/format.hpp"
 
 double totalPeg = 0.0;
 

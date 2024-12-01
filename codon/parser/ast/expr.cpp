@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "expr.h"
+#include "expr.hpp"
 
 #include <algorithm>
 #include <iterator>
@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
-#include "codon/parser/visitors/visitor.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/cache.hpp"
+#include "codon/parser/visitors/visitor.hpp"
 
 #define FASTFLOAT_ALLOWS_LEADING_PLUS
 #define FASTFLOAT_SKIP_WHITE_SPACE

@@ -1,11 +1,11 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "matching.h"
+#include "matching.hpp"
 
 #include <algorithm>
 
-#include "codon/cir/cir.h"
-#include "codon/cir/util/visitor.h"
+#include "codon/cir/cir.hpp"
+#include "codon/cir/util/visitor.hpp"
 
 #define VISIT(x)                                                                       \
   void visit(const x *v) override {                                                    \

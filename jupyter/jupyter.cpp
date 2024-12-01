@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "jupyter.h"
+#include "jupyter.hpp"
 
 #include <dirent.h>
 #include <fcntl.h>
@@ -13,12 +13,12 @@
 #include <xeus/xkernel.hpp>
 #include <xeus/xkernel_configuration.hpp>
 
-#include "codon/compiler/compiler.h"
-#include "codon/compiler/error.h"
-#include "codon/compiler/jit.h"
+#include "codon/compiler/compiler.hpp"
+#include "codon/compiler/error.hpp"
+#include "codon/compiler/jit.hpp"
 #include "codon/config/config.h"
-#include "codon/parser/common.h"
-#include "codon/util/common.h"
+#include "codon/parser/common.hpp"
+#include "codon/util/common.hpp"
 
 using std::move;
 using std::string;

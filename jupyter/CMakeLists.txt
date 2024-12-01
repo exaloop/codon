@@ -104,7 +104,7 @@ CPMAddPackage(
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 
 # Codon Jupyter library
-set(CODON_JUPYTER_FILES jupyter.h jupyter.cpp)
+set(CODON_JUPYTER_FILES jupyter.hpp jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 target_include_directories(codon_jupyter PRIVATE "${CODON_PATH}/include" ${LLVM_INCLUDE_DIRS})
 add_dependencies(codon_jupyter xeus-static xeus-zmq-static nlohmann_json)

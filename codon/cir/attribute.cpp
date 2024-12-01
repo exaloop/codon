@@ -1,10 +1,10 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "attribute.h"
+#include "attribute.hpp"
 
-#include "codon/cir/func.h"
-#include "codon/cir/util/cloning.h"
-#include "codon/cir/value.h"
+#include "codon/cir/func.hpp"
+#include "codon/cir/util/cloning.hpp"
+#include "codon/cir/value.hpp"
 #include <fmt/ostream.h>
 
 namespace codon {

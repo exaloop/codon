@@ -1,17 +1,17 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "ctx.h"
+#include "ctx.hpp"
 
 #include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
-#include "codon/parser/ast.h"
-#include "codon/parser/common.h"
-#include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/simplify/ctx.h"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/ast.hpp"
+#include "codon/parser/common.hpp"
+#include "codon/parser/visitors/format/format.hpp"
+#include "codon/parser/visitors/simplify/ctx.hpp"
+#include "codon/parser/visitors/typecheck/typecheck.hpp"
 
 using fmt::format;
 using namespace codon::error;

@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "dominator.h"
+#include "dominator.hpp"
 
 namespace codon {
 namespace ir {

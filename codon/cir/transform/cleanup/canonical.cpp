@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "canonical.h"
+#include "canonical.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -8,10 +8,10 @@
 #include <unordered_set>
 #include <utility>
 
-#include "codon/cir/analyze/module/side_effect.h"
-#include "codon/cir/transform/rewrite.h"
-#include "codon/cir/util/irtools.h"
-#include "codon/cir/util/matching.h"
+#include "codon/cir/analyze/module/side_effect.hpp"
+#include "codon/cir/transform/rewrite.hpp"
+#include "codon/cir/util/irtools.hpp"
+#include "codon/cir/util/matching.hpp"
 
 namespace codon {
 namespace ir {

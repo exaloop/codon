@@ -1,14 +1,14 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "stmt.h"
+#include "stmt.hpp"
 
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "codon/parser/cache.h"
-#include "codon/parser/visitors/visitor.h"
+#include "codon/parser/cache.hpp"
+#include "codon/parser/visitors/visitor.hpp"
 
 #define ACCEPT_IMPL(T, X)                                                              \
   StmtPtr T::clone() const { return std::make_shared<T>(*this); }                      \

@@ -1,11 +1,11 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "base.h"
+#include "base.hpp"
 
-#include "codon/cir/types/types.h"
-#include "codon/cir/util/format.h"
-#include "codon/cir/value.h"
-#include "codon/cir/var.h"
+#include "codon/cir/types/types.hpp"
+#include "codon/cir/util/format.hpp"
+#include "codon/cir/value.hpp"
+#include "codon/cir/var.hpp"
 
 namespace codon {
 namespace ir {

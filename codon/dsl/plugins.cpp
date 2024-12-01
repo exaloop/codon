@@ -1,13 +1,13 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "plugins.h"
+#include "plugins.hpp"
 
 #include <cstdlib>
 #include <semver.hpp>
 #include <toml++/toml.h>
 
-#include "codon/parser/common.h"
-#include "codon/util/common.h"
+#include "codon/parser/common.hpp"
+#include "codon/util/common.hpp"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"

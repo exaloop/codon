@@ -1,7 +1,7 @@
 #include <algorithm>
 
-#include "codon/cir/cir.h"
-#include "codon/cir/util/cloning.h"
+#include "codon/cir/cir.hpp"
+#include "codon/cir/util/cloning.hpp"
 #include "gtest/gtest.h"
 
 class CIRCoreTest : public testing::Test {

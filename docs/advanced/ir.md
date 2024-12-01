@@ -100,7 +100,7 @@ In other words, a simple form of constant folding that only looks at addition on
 The resulting pass would like this:
 
 ``` cpp
-#include "codon/cir/transform/pass.h"
+#include "codon/cir/transform/pass.hpp"
 
 using namespace codon::ir;
 
@@ -206,7 +206,7 @@ Assume we want our pass to insert a call to `validate()` after each assignment t
 and the argument passed to `foo()`. We would do something like the following:
 
 ``` cpp
-#include "codon/cir/transform/pass.h"
+#include "codon/cir/transform/pass.hpp"
 
 using namespace codon::ir;
 
@@ -267,8 +267,8 @@ would subclass `CustomType`. Let's look at an example where we extend CIR to add
 ``` cpp
 using namespace codon::ir;
 
-#include "codon/cir/dsl/nodes.h"
-#include "codon/cir/llvm/llvisitor.h"
+#include "codon/cir/dsl/nodes.hpp"
+#include "codon/cir/llvm/llvisitor.hpp"
 
 class Builder : public dsl::codegen::TypeBuilder {
 public:
@@ -310,7 +310,7 @@ When subclassing nodes other than types (e.g. instructions, flows, etc.), be sur
 # Utilities
 
 The `codon/cir/util/` directory has a number of utility and generally helpful functions, for things like
-cloning IR, inlining/outlining, matching and more. `codon/cir/util/irtools.h` in particular has many helpful
+cloning IR, inlining/outlining, matching and more. `codon/cir/util/irtools.hpp` in particular has many helpful
 functions for performing various common tasks. If you're working with CIR, be sure to take a look at these
 functions to make your life easier!
 
