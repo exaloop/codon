@@ -11,9 +11,9 @@
 #include "codon/parser/common.hpp"
 #include "codon/parser/peg/peg.hpp"
 #include "codon/parser/visitors/simplify/simplify.hpp"
-#include "codon/parser/visitors/translate/translate.h"
+#include "codon/parser/visitors/translate/translate.hpp"
 #include "codon/parser/visitors/typecheck/ctx.hpp"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/typecheck/typecheck.hpp"
 
 namespace codon::ast {
 

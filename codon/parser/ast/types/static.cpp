@@ -9,7 +9,7 @@
 #include "codon/parser/cache.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/parser/visitors/format/format.hpp"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/typecheck/typecheck.hpp"
 
 namespace codon::ast::types {
 

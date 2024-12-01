@@ -7,7 +7,7 @@
 
 #include "codon/parser/common.hpp"
 #include "codon/parser/ctx.hpp"
-#include "codon/parser/visitors/translate/translate.h"
+#include "codon/parser/visitors/translate/translate.hpp"
 #include "codon/parser/visitors/typecheck/ctx.hpp"
 
 namespace codon::ast {

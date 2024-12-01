@@ -6,7 +6,7 @@
 
 #include "codon/parser/ast.hpp"
 #include "codon/parser/cache.hpp"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/typecheck/typecheck.hpp"
 
 namespace codon::ast::types {
 

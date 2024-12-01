@@ -69,7 +69,7 @@ add_custom_command(
   DEPENDS peg2cpp codon/parser/peg/openmp.peg)
 
 # Codon Jupyter library
-set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
+set(CODON_JUPYTER_FILES codon/util/jupyter.hpp codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
@@ -150,11 +150,11 @@ set(CODON_HPPFILES
     codon/parser/visitors/format/format.hpp
     codon/parser/visitors/simplify/simplify.hpp
     codon/parser/visitors/simplify/ctx.hpp
-    codon/parser/visitors/translate/translate.h
+    codon/parser/visitors/translate/translate.hpp
     codon/parser/visitors/translate/translate_ctx.hpp
-    codon/parser/visitors/typecheck/typecheck.h
+    codon/parser/visitors/typecheck/typecheck.hpp
     codon/parser/visitors/typecheck/ctx.hpp
-    codon/parser/visitors/visitor.h
+    codon/parser/visitors/visitor.hpp
     codon/cir/analyze/analysis.hpp
     codon/cir/analyze/dataflow/capture.hpp
     codon/cir/analyze/dataflow/cfg.hpp

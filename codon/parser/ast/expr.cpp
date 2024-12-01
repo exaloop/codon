@@ -10,7 +10,7 @@
 
 #include "codon/parser/ast.hpp"
 #include "codon/parser/cache.hpp"
-#include "codon/parser/visitors/visitor.h"
+#include "codon/parser/visitors/visitor.hpp"
 
 #define FASTFLOAT_ALLOWS_LEADING_PLUS
 #define FASTFLOAT_SKIP_WHITE_SPACE

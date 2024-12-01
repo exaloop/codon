@@ -11,7 +11,7 @@
 #include "codon/parser/common.hpp"
 #include "codon/parser/visitors/format/format.hpp"
 #include "codon/parser/visitors/simplify/ctx.hpp"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/typecheck/typecheck.hpp"
 
 using fmt::format;
 using namespace codon::error;

@@ -13,7 +13,7 @@
 #include "codon/parser/cache.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/parser/ctx.hpp"
-#include "codon/parser/visitors/visitor.h"
+#include "codon/parser/visitors/visitor.hpp"
 
 namespace codon::ast {
 

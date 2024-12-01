@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
-#include "visitor.h"
+#include "visitor.hpp"
 
 #include "codon/parser/ast.hpp"
 

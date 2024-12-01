@@ -16,7 +16,7 @@
 #include "codon/compiler/jit.hpp"
 #include "codon/parser/common.hpp"
 #include "codon/util/common.hpp"
-#include "codon/util/jupyter.h"
+#include "codon/util/jupyter.hpp"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
 

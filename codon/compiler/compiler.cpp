@@ -8,8 +8,8 @@
 #include "codon/parser/visitors/doc/doc.hpp"
 #include "codon/parser/visitors/format/format.hpp"
 #include "codon/parser/visitors/simplify/simplify.hpp"
-#include "codon/parser/visitors/translate/translate.h"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/visitors/translate/translate.hpp"
+#include "codon/parser/visitors/typecheck/typecheck.hpp"
 
 extern double totalPeg;
 
