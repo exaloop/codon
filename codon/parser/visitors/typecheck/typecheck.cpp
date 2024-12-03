@@ -1112,19 +1112,44 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
           ft->ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
       auto imp = getImport(module);
       std::unordered_map<std::string, std::string> key;
-      for (const auto &[c, _] : b->captures) {
-        auto h = imp->ctx->find(c);
-        // seqassert(h, "bad function {}: cannot locate {}", ft->name, c);
-        key[c] = h ? h->canonicalName : "";
-      }
-      auto &cm = getFunction(ft->getFuncName())->captureMappings;
-      size_t idx = 0;
-      for (; idx < cm.size(); idx++)
-        if (cm[idx] == key)
+
+      // look for generics [todo: speed-up!]
+      std::unordered_set<std::string> generics;
+      for (auto &g : ft->funcGenerics)
+          generics.insert(getUnmangledName(g.name));
+      for (auto parent = ft->funcParent; parent;) {
+        if (auto f = parent->getFunc()) {
+          for (auto &g : f->funcGenerics)
+            generics.insert(getUnmangledName(g.name));
+          parent = f->funcParent;
+        } else {
+          for (auto &g : parent->getClass()->generics)
+            generics.insert(getUnmangledName(g.name));
+          for (auto &g : parent->getClass()->hiddenGenerics)
+            generics.insert(getUnmangledName(g.name));
           break;
-      if (idx == cm.size())
-        cm.push_back(key);
-      ft->index = idx;
+        }
+      }
+      for (const auto &[c, _] : b->captures) {
+        if (!in(generics, c)) { // ignore inherited captures!
+          if (auto h = imp->ctx->find(c)) {
+            key[c] = h->canonicalName;
+          } else {
+            key.clear();
+            break;
+          }
+        }
+      }
+      if (!key.empty()) {
+        auto &cm = getFunction(ft->getFuncName())->captureMappings;
+        size_t idx = 0;
+        for (; idx < cm.size(); idx++)
+          if (cm[idx] == key)
+            break;
+        if (idx == cm.size())
+          cm.push_back(key);
+        ft->index = idx;
+      }
     }
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {
@@ -1278,8 +1303,7 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
     std::map<std::string, int> slotNames;
     for (int i = 0; i < func->ast->size(); i++)
       if (known.empty() || !known[i]) {
-        auto n = (*func->ast)[i].name;
-        trimStars(n);
+        auto [_, n] = (*func->ast)[i].getNameWithStars();
         slotNames[getUnmangledName(n)] = i;
       }
     for (auto &n : namedArgs) {
@@ -1321,8 +1345,7 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
           ((*func->ast)[i].getDefault() || (!known.empty() && known[i]))) {
         score -= 2;
       } else if (!partial && (*func->ast)[i].isValue()) {
-        auto n = (*func->ast)[i].name;
-        trimStars(n);
+        auto [_, n] = (*func->ast)[i].getNameWithStars();
         return onError(Error::CALL_ARGS_MISSING, getSrcInfo(),
                        Emsg(Error::CALL_ARGS_MISSING,
                             getUnmangledName(func->ast->getName()),

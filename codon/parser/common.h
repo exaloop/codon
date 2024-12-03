@@ -42,8 +42,6 @@ size_t endswith(const std::string &str, const std::string &suffix);
 void ltrim(std::string &str);
 /// Trims whitespace at the end of the string.
 void rtrim(std::string &str);
-/// Removes leading stars in front of the string and returns the number of such stars.
-int trimStars(std::string &str);
 /// True if a string only contains digits.
 bool isdigit(const std::string &str);
 /// Combine items separated by a delimiter into a string.

@@ -99,14 +99,8 @@ void ScopingVisitor::visit(StringExpr *expr) {
       e.line += s.getSrcInfo().col;
       e.col += s.getSrcInfo().col;
       auto [expr, format] = parseExpr(ctx->cache, s.value, e);
-      if (!format.empty()) {
-        s.expr = ctx->cache->NS<CallExpr>(
-            expr, ctx->cache->NS<DotExpr>(expr, expr, "__format__"),
-            ctx->cache->NS<StringExpr>(expr, format));
-      } else {
-        s.expr =
-            ctx->cache->NS<CallExpr>(expr, ctx->cache->NS<IdExpr>(expr, "str"), expr);
-      }
+      s.expr = expr;
+      s.format = format;
       transform(s.expr);
     }
 }
@@ -329,7 +323,8 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   v.ctx = c;
   v.visitName(stmt->getName(), true, stmt, stmt->getSrcInfo());
   for (const auto &a : *stmt) {
-    v.visitName(a.name, true, stmt, a.getSrcInfo());
+    auto [_, n] = a.getNameWithStars();
+    v.visitName(n, true, stmt, a.getSrcInfo());
     if (a.defaultValue)
       transform(a.defaultValue);
   }

@@ -405,7 +405,7 @@ class Partial:
 
     @property
     def __fn_name__(self):
-        return F.T.__name__
+        return F.__name__[16:-1]  # chop off unrealized_type
 
     def __raw__(self):
         # TODO: better error message

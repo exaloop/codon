@@ -249,8 +249,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
     // Parse arguments and add them to the context
     for (auto &a : *stmt) {
-      std::string varName = a.getName();
-      int stars = trimStars(varName);
+      auto [stars, varName] = a.getNameWithStars();
       auto name = ctx->generateCanonicalName(varName);
 
       // Mark as method if the first argument is self
@@ -336,8 +335,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     for (int ai = 0, aj = 0; ai < stmt->size(); ai++) {
       if (!(*stmt)[ai].isValue())
         continue;
-      std::string canName = (*stmt)[ai].getName();
-      trimStars(canName);
+      auto [_, canName] = (*stmt)[ai].getNameWithStars();
       if (!(*stmt)[ai].getType()) {
         if (parentClass && ai == 0 && (*stmt)[ai].getName() == "self") {
           // Special case: self in methods

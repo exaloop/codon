@@ -48,9 +48,30 @@ program <- (statements (_ EOL)* / (_ EOL)*) !. {
     return asts(Suite, LOC);
   return ac_stmt(V0);
 }
-fstring <- star_expressions _ (':' format_spec)? _ !. {
-  return make_pair(ac_expr(V0), VS.size() == 1 ? "" : ac<string>(V1));
+
+fstring <- fstring_prefix _ fstring_tail? _ !. {
+  StringExpr::FormatSpec fs {"", "", ""};
+  auto [e, t] = ac<std::pair<Expr *, string>>(V0);
+  fs.text = t;
+  if (VS.size() > 1) {
+    auto [c, s] = ac<std::pair<string, string>>(V1);
+    fs.conversion = c;
+    fs.spec = s;
+  }
+  return make_pair(e, fs);
 }
+fstring_prefix <- star_expressions _ '='? {
+  auto text = VS.sv();
+  return make_pair(ac_expr(V0),
+                   string(!VS.sv().empty() && VS.sv().back() == '=' ? VS.sv() : ""));
+}
+fstring_tail <-
+  / fstring_conversion fstring_spec? {
+    return make_pair(ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
+  }
+  / fstring_spec { return make_pair(std::string(), ac<string>(V0)); }
+fstring_conversion <- "!" ("s" / "r" / "a") { return string(VS.sv().substr(1)); }
+fstring_spec <- ':' format_spec { return ac<string>(V0); }
 
 # Macros
 list(c, e)  <- e (_ c _ e)*
@@ -791,6 +812,6 @@ EXTERNDENT__PREDICATE {
 >
 
 # https://docs.python.org/3/library/string.html#formatspec
-format_spec <- ([<>=^] / [^{}] [<>=^])? [+-]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
+format_spec <- ([<>=^] / [^{}] [<>=^])? [+- ]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
   return string(VS.sv());
 }

@@ -234,8 +234,7 @@ SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {
   seqassert(extractFuncArgType(type, 1)->is(TYPE_TUPLE), "bad function base: {}",
             extractFuncArgType(type, 1)->debugString(2));
   auto as = extractFuncArgType(type, 1)->getClass()->generics.size();
-  auto ag = (*type->ast)[1].name;
-  trimStars(ag);
+  auto [_, ag] = (*type->ast)[1].getNameWithStars();
   for (int i = 0; i < as; i++) {
     ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
     items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
@@ -828,8 +827,7 @@ Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
   std::vector<Expr *> v;
   v.reserve(fn->ast->size());
   for (const auto &a : *fn->ast) {
-    auto n = a.name;
-    trimStars(n);
+    auto [_, n] = a.getNameWithStars();
     n = getUnmangledName(n);
     v.push_back(N<StringExpr>(n));
   }

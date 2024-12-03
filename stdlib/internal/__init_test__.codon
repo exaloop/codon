@@ -163,6 +163,9 @@ class str:
     def __repr__(self) -> str:
         return f"'{self}'"
 
+    def _isdigit(a: byte) -> bool:
+        return _C.isdigit(i32(int(a))) != i32(0)
+
 set = Set
 dict = Dict
 

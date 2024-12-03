@@ -140,13 +140,6 @@ void rtrim(std::string &str) {
                 .base(),
             str.end());
 }
-int trimStars(std::string &str) {
-  int stars = 0;
-  for (; stars < str.size() && str[stars] == '*'; stars++)
-    ;
-  str = str.substr(stars);
-  return stars;
-}
 bool isdigit(const std::string &str) {
   return std::all_of(str.begin(), str.end(), ::isdigit);
 }

@@ -83,6 +83,14 @@ std::string Param::toString(int indent) const {
 Param Param::clone(bool clean) const {
   return Param(name, ast::clone(type, clean), ast::clone(defaultValue, clean), status);
 }
+std::pair<int, std::string> Param::getNameWithStars() const {
+  int stars = 0;
+  for (; stars < name.size() && name[stars] == '*'; stars++)
+    ;
+  auto n = name.substr(stars);
+  return {stars, n};
+}
+
 
 NoneExpr::NoneExpr() : AcceptorExtend() {}
 NoneExpr::NoneExpr(const NoneExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
@@ -218,11 +226,6 @@ StringExpr::unpackFString(const std::string &value) const {
         std::string code = value.substr(braceStart, i - braceStart);
         auto offset = getSrcInfo();
         offset.col += i;
-        if (!code.empty() && code.back() == '=') {
-          // Special case: f"{x=}"
-          code = code.substr(0, code.size() - 1);
-          items.emplace_back(fmt::format("{}=", code));
-        }
         items.emplace_back(code, "#f");
         items.back().setSrcInfo(offset);
       }

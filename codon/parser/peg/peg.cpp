@@ -95,12 +95,12 @@ Stmt *parseCode(Cache *cache, const std::string &file, const std::string &code,
   return parseCode<Stmt *>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-std::pair<Expr *, std::string> parseExpr(Cache *cache, const std::string &code,
-                                         const codon::SrcInfo &offset) {
+std::pair<Expr *, StringExpr::FormatSpec>
+parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
   auto newCode = code;
   ltrim(newCode);
   rtrim(newCode);
-  auto e = parseCode<std::pair<Expr *, std::string>>(
+  auto e = parseCode<std::pair<Expr *, StringExpr::FormatSpec>>(
       cache, offset.file, newCode, offset.line, offset.col, "fstring");
   return e;
 }

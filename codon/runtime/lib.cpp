@@ -271,9 +271,10 @@ template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
     if (format.len == 0) {
       return string_conv(default_format(n));
     } else {
+      auto locale = std::locale("en_US.UTF-8");
       std::string fstr(format.str, format.len);
       return string_conv(
-          fmt::format(fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
+          fmt::format(locale, fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
     }
   } catch (const std::runtime_error &f) {
     *error = true;

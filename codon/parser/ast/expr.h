@@ -96,6 +96,7 @@ struct Param : public codon::SrcObject {
   bool isValue() const { return status == Value; }
   bool isGeneric() const { return status == Generic; }
   bool isHiddenGeneric() const { return status == HiddenGeneric; }
+  std::pair<int, std::string> getNameWithStars() const;
 
   SERIALIZE(Param, name, type, defaultValue);
   Param clone(bool) const;
@@ -177,16 +178,25 @@ private:
 /// @li s'ACGT'
 /// @li "fff"
 struct StringExpr : public AcceptorExtend<StringExpr, Expr> {
+  struct FormatSpec {
+    std::string text;
+    std::string conversion;
+    std::string spec;
+
+    SERIALIZE(FormatSpec, text, conversion, spec);
+  };
+
   // Vector of {value, prefix} strings.
   struct String : public SrcObject {
     std::string value;
     std::string prefix;
     Expr *expr;
+    FormatSpec format;
 
     String(std::string v, std::string p = "", Expr *e = nullptr)
-        : value(std::move(v)), prefix(std::move(p)), expr(e) {}
+        : value(std::move(v)), prefix(std::move(p)), expr(e), format() {}
 
-    SERIALIZE(String, value, prefix, expr);
+    SERIALIZE(String, value, prefix, expr, format);
   };
 
   explicit StringExpr(std::string value = "", std::string prefix = "");
@@ -642,8 +652,8 @@ char getStaticGeneric(Expr *e);
 template <>
 struct fmt::formatter<codon::ast::CallArg> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::CallArg &p,
-              FormatContext &ctx) const -> decltype(ctx.out()) {
+  auto format(const codon::ast::CallArg &p, FormatContext &ctx) const
+      -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "({}{})",
                           p.name.empty() ? "" : fmt::format("{} = ", p.name),
                           p.value ? p.value->toString(0) : "-");
@@ -653,8 +663,8 @@ struct fmt::formatter<codon::ast::CallArg> : fmt::formatter<std::string_view> {
 template <>
 struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
   template <typename FormatContext>
-  auto format(const codon::ast::Param &p,
-              FormatContext &ctx) const -> decltype(ctx.out()) {
+  auto format(const codon::ast::Param &p, FormatContext &ctx) const
+      -> decltype(ctx.out()) {
     return fmt::format_to(ctx.out(), "{}", p.toString(0));
   }
 };

@@ -445,8 +445,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
         [&]() {
           for (size_t si = 0, pi = 0; si < slots.size(); si++) {
             // Get the argument name to be used later
-            auto rn = (*calleeFn->ast)[si].getName();
-            trimStars(rn);
+            auto [_, rn] = (*calleeFn->ast)[si].getNameWithStars();
             auto realName = getUnmangledName(rn);
 
             if ((*calleeFn->ast)[si].isGeneric()) {

@@ -169,10 +169,9 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
       } else {
         std::vector<std::string> args;
         for (size_t i = 0, ai = 0, gi = 0; i < f->ast->size(); i++) {
-          auto an = (*f->ast)[i].name;
-          auto ns = trimStars(an);
+          auto [ns, n] = (*f->ast)[i].getNameWithStars();
           args.push_back(fmt::format(
-              "{}{}: {}", std::string(ns, '*'), getUnmangledName(an),
+              "{}{}: {}", std::string(ns, '*'), getUnmangledName(n),
               (*f->ast)[i].isGeneric() ? extractFuncGeneric(f, gi++)->prettyString()
                                        : extractFuncArgType(f, ai++)->prettyString()));
         }
@@ -359,8 +358,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
                  ctx->forceFind(ast->getName())->type);
   for (size_t i = 0, j = 0; hasAst && i < ast->size(); i++) {
     if ((*ast)[i].isValue()) {
-      std::string varName = (*ast)[i].getName();
-      trimStars(varName);
+      auto [_, varName] = (*ast)[i].getNameWithStars();
       TypePtr at = extractFuncArgType(type, j++)->shared_from_this();
       bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
       if (!isStatic && at && at->getStatic())
@@ -443,12 +441,12 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   seqassert(ret, "cannot realize return type '{}'", *(type->getRetType()));
 
-  // LOG("[realize] F {} -> {}", type->getFuncName(), type->debugString(2));
+  // LOG("[realize] F {} -> {} -> {}", type->getFuncName(), type->debugString(2),
+  // type->realizedName());
 
   std::vector<Param> args;
   for (auto &i : *ast) {
-    std::string varName = i.getName();
-    trimStars(varName);
+    auto [_, varName] = i.getNameWithStars();
     args.emplace_back(varName, nullptr, nullptr, i.status);
   }
   r->ast =

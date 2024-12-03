@@ -469,7 +469,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
       {"__name__", "str"}};
   if (auto mtyp = in(specialMembers, expr->getMember())) {
     unify(expr->getType(), getStdLibType(*mtyp));
-    if (expr->expr->isDone() && realize(expr->getType()))
+    if (expr->getExpr()->isDone() && realize(expr->getType()))
       expr->setDone();
     return nullptr;
   }

@@ -95,3 +95,20 @@ print(pxf'HELLO') #: PXF HELLO 5
 print('a\\b') #: a\b
 print(r'a\tb') #: a\tb
 print(R'\n\r\t\\') #: \n\r\t\\
+
+#%% string_format
+a = 'xyz'
+print(f"{a:>10}")
+#:        xyz
+print(f"{a!r:>10}")
+#:      'xyz'
+print(f"{a=!r:>10}")
+#: a=     'xyz'
+print(f"{a=}")
+#: a=xyz
+print(f"{a=:>10}")
+#: a=       xyz
+print(f"{a!r}")
+#: 'xyz'
+print(f'{1000000=:,}')
+#: 1000000=1,000,000

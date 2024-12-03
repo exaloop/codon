@@ -446,8 +446,7 @@ void FunctionStmt::validate() const {
   bool defaultsStarted = false, hasStarArg = false, hasKwArg = false;
   for (size_t ia = 0; ia < size(); ia++) {
     auto &a = items[ia];
-    auto n = a.name;
-    int stars = trimStars(n);
+    auto [stars, n] = a.getNameWithStars();
     if (stars == 2) {
       if (hasKwArg)
         E(Error::FN_MULTIPLE_ARGS, a);
