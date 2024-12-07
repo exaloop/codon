@@ -101,47 +101,6 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
     return r;
   }
 
-  // /// Convenience method that constructs a clone of a node.
-  // template <typename Tn> auto N(const Tn &ptr) { return std::make_shared<Tn>(ptr); }
-  // /// Convenience method that constructs a node.
-  // /// @param s source location.
-  // template <typename Tn, typename... Ts> auto N(codon::SrcInfo s, Ts &&...args) {
-  //   auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-  //   t->setSrcInfo(s);
-  //   return t;
-  // }
-  // /// Convenience method that constructs a node with the visitor's source location.
-  // template <typename Tn, typename... Ts> auto N(Ts &&...args) {
-  //   auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-  //   t->setSrcInfo(getSrcInfo());
-  //   return t;
-  // }
-  // template <typename Tn, typename Tt, typename... Ts>
-  // auto NT(const Tt &tt, Ts &&...args) {
-  //   auto t = std::make_shared<Tn>(std::forward<Ts>(args)...);
-  //   t->setSrcInfo(getSrcInfo());
-  //   t->setType(tt);
-  //   return t;
-  // }
-
-  /// Convenience method that raises an error at the current source location.
-  template <typename... TArgs> void error(const char *format, TArgs &&...args) {
-    error::raise_error(-1, getSrcInfo(), fmt::format(format, args...).c_str());
-  }
-
-  /// Convenience method that raises an error at the source location of p.
-  template <typename T, typename... TArgs>
-  void error(const T &p, const char *format, TArgs &&...args) {
-    error::raise_error(-1, p->getSrcInfo(), fmt::format(format, args...).c_str());
-  }
-
-  /// Convenience method that raises an internal error.
-  template <typename T, typename... TArgs>
-  void internalError(const char *format, TArgs &&...args) {
-    throw exc::ParserException(
-        fmt::format("INTERNAL: {}", fmt::format(format, args...), getSrcInfo()));
-  }
-
 public:
   void visit(NoneExpr *expr) override {}
   void visit(BoolExpr *expr) override {}

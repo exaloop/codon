@@ -33,6 +33,7 @@
 #define VAR_CLASS_TOPLEVEL ":toplevel"
 #define VAR_ARGV "__argv__"
 
+#define MAX_ERRORS 5
 #define MAX_TUPLE 2048
 #define MAX_INT_WIDTH 10000
 #define MAX_REALIZATION_DEPTH 200
@@ -255,7 +256,7 @@ struct Cache {
 
   std::unordered_map<std::string, int> generatedTuples;
   std::vector<std::vector<std::string>> generatedTupleNames = {{}};
-  std::vector<exc::ParserException> errors;
+  ParserErrors errors;
 
   /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
   bool pythonCompat = false;

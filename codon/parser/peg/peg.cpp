@@ -53,15 +53,16 @@ std::shared_ptr<peg::Grammar> initParser() {
 }
 
 template <typename T>
-T parseCode(Cache *cache, const std::string &file, const std::string &code,
-            int line_offset, int col_offset, const std::string &rule) {
+llvm::Expected<T> parseCode(Cache *cache, const std::string &file,
+                            const std::string &code, int line_offset, int col_offset,
+                            const std::string &rule) {
   Timer t("");
   t.logged = true;
   // Initialize
   if (!grammar)
     grammar = initParser();
 
-  std::vector<std::tuple<size_t, size_t, std::string>> errors;
+  std::vector<ErrorMessage> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
     size_t ed = msg.size();
     if (startswith(msg, "syntax error, unexpected")) {
@@ -69,7 +70,7 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
       if (i != std::string::npos)
         ed = i;
     }
-    errors.emplace_back(line, col, msg.substr(0, ed));
+    errors.emplace_back(msg.substr(0, ed), file, line, col);
   };
   T result;
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
@@ -79,33 +80,27 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
   totalPeg += t.elapsed();
-  exc::ParserException ex;
-  if (!errors.empty()) {
-    for (auto &e : errors)
-      ex.track(fmt::format("{}", std::get<2>(e)),
-               SrcInfo(file, std::get<0>(e), std::get<1>(e), 0));
-    throw ex;
-    return T();
-  }
+
+  if (!errors.empty())
+    return llvm::make_error<error::ParserErrorInfo>(errors);
   return result;
 }
 
-Stmt *parseCode(Cache *cache, const std::string &file, const std::string &code,
-                int line_offset) {
+llvm::Expected<Stmt *> parseCode(Cache *cache, const std::string &file,
+                                 const std::string &code, int line_offset) {
   return parseCode<Stmt *>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-std::pair<Expr *, StringExpr::FormatSpec>
+llvm::Expected<std::pair<Expr *, StringExpr::FormatSpec>>
 parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
   auto newCode = code;
   ltrim(newCode);
   rtrim(newCode);
-  auto e = parseCode<std::pair<Expr *, StringExpr::FormatSpec>>(
+  return parseCode<std::pair<Expr *, StringExpr::FormatSpec>>(
       cache, offset.file, newCode, offset.line, offset.col, "fstring");
-  return e;
 }
 
-Stmt *parseFile(Cache *cache, const std::string &file) {
+llvm::Expected<Stmt *> parseFile(Cache *cache, const std::string &file) {
   std::vector<std::string> lines;
   std::string code;
   if (file == "-") {
@@ -116,7 +111,8 @@ Stmt *parseFile(Cache *cache, const std::string &file) {
   } else {
     std::ifstream fin(file);
     if (!fin)
-      E(error::Error::COMPILER_NO_FILE, SrcInfo(), file);
+      return llvm::make_error<error::ParserErrorInfo>(error::Error::COMPILER_NO_FILE,
+                                                      SrcInfo(), file);
     for (std::string line; getline(fin, line);) {
       lines.push_back(line);
       code += line + "\n";
@@ -143,14 +139,14 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
   return g;
 }
 
-std::vector<CallArg> parseOpenMP(Cache *cache, const std::string &code,
-                                 const codon::SrcInfo &loc) {
+llvm::Expected<std::vector<CallArg>> parseOpenMP(Cache *cache, const std::string &code,
+                                                 const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();
 
-  std::vector<std::tuple<size_t, size_t, std::string>> errors;
+  std::vector<ErrorMessage> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
-    errors.emplace_back(line, col, msg);
+    errors.emplace_back(fmt::format("openmp: {}", msg), loc.file, loc.line, loc.col);
   };
   std::vector<CallArg> result;
   auto ctx = std::make_any<ParseContext>(cache, 0, 0, 0);
@@ -159,11 +155,8 @@ std::vector<CallArg> parseOpenMP(Cache *cache, const std::string &code,
   auto ret = r.ret && r.len == code.size();
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
-  exc::ParserException ex;
-  if (!errors.empty()) {
-    ex.track(fmt::format("openmp {}", std::get<2>(errors[0])), loc);
-    throw ex;
-  }
+  if (!errors.empty())
+    return llvm::make_error<error::ParserErrorInfo>(errors);
   return result;
 }
 

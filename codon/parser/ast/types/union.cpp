@@ -101,22 +101,24 @@ std::string UnionType::realizedName() const {
   return ClassType::realizedName();
 }
 
-void UnionType::addType(Type *typ) {
+bool UnionType::addType(Type *typ) {
   seqassert(!isSealed(), "union already sealed");
   if (this == typ)
-    return;
+    return true;
   if (auto tu = typ->getUnion()) {
     if (tu->isSealed()) {
       for (auto &t : tu->generics[0].type->getClass()->generics)
-        addType(t.type.get());
+        if (!addType(t.type.get()))
+          return false;
     } else {
       for (auto &t : tu->pendingTypes) {
         if (t->getLink() && t->getLink()->kind == LinkType::Unbound)
           break;
-        else
-          addType(t.get());
+        else if (!addType(t.get()))
+          return false;
       }
     }
+    return true;
   } else {
     // Find first pending generic to which we can attach this!
     Unification us;
@@ -124,10 +126,10 @@ void UnionType::addType(Type *typ) {
       if (auto l = t->getLink()) {
         if (l->kind == LinkType::Unbound) {
           t->unify(typ, &us);
-          return;
+          return true;
         }
       }
-    E(error::Error::UNION_TOO_BIG, this, pendingTypes.size());
+    return false;
   }
 }
 

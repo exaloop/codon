@@ -30,6 +30,11 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c transformAssignment and @c unpackAssignments for more details.
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
+  if (cast<TupleExpr>(stmt->lhs) || cast<ListExpr>(stmt->lhs)) {
+    resultStmt = transform(unpackAssignment(stmt->lhs, stmt->rhs));
+    return;
+  }
+
   bool mustUpdate = stmt->isUpdate() || stmt->isAtomicUpdate();
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominated);
   mustUpdate |= stmt->hasAttribute(Attr::ExprDominatedUsed);
@@ -80,6 +85,80 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
   } else {
     E(Error::DEL_INVALID, stmt);
   }
+}
+
+/// Unpack an assignment expression `lhs = rhs` into a list of simple assignment
+/// expressions (e.g., `a = b`, `a.x = b`, or `a[x] = b`).
+/// Handle Python unpacking rules.
+/// @example
+///   `(a, b) = c`     -> `a = c[0]; b = c[1]`
+///   `a, b = c`       -> `a = c[0]; b = c[1]`
+///   `[a, *x, b] = c` -> `a = c[0]; x = c[1:-1]; b = c[-1]`.
+/// Non-trivial right-hand expressions are first stored in a temporary variable.
+/// @example
+///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
+/// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
+Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
+  std::vector<Expr *> leftSide;
+  if (auto et = cast<TupleExpr>(lhs)) {
+    // Case: (a, b) = ...
+    for (auto *i : *et)
+      leftSide.push_back(i);
+  } else if (auto el = cast<ListExpr>(lhs)) {
+    // Case: [a, b] = ...
+    for (auto *i : *el)
+      leftSide.push_back(i);
+  }
+
+  // Prepare the right-side expression
+  auto oldSrcInfo = getSrcInfo();
+  setSrcInfo(rhs->getSrcInfo());
+  auto srcPos = rhs;
+  SuiteStmt *block = N<SuiteStmt>();
+  if (!cast<IdExpr>(rhs)) {
+    // Store any non-trivial right-side expression into a variable
+    auto var = getTemporaryVar("assign");
+    auto newRhs = N<IdExpr>(var);
+    block->addStmt(N<AssignStmt>(newRhs, ast::clone(rhs)));
+    rhs = newRhs;
+  }
+
+  // Process assignments until the fist StarExpr (if any)
+  size_t st = 0;
+  for (; st < leftSide.size(); st++) {
+    if (cast<StarExpr>(leftSide[st]))
+      break;
+    // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
+    auto rightSide = N<IndexExpr>(ast::clone(rhs), N<IntExpr>(st));
+    // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
+    auto ns = unpackAssignment(leftSide[st], rightSide);
+    block->addStmt(ns);
+  }
+  // Process StarExpr (if any) and the assignments that follow it
+  if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
+    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
+    auto rightSide = N<IndexExpr>(
+        ast::clone(rhs),
+        N<SliceExpr>(N<IntExpr>(st),
+                     // this slice is either [st:] or [st:-lhs_len + st + 1]
+                     leftSide.size() == st + 1 ? nullptr
+                                               : N<IntExpr>(-leftSide.size() + st + 1),
+                     nullptr));
+    auto ns = unpackAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
+    block->addStmt(ns);
+    st += 1;
+    // Process remaining assignments. They will use negative indices (-1, -2 etc.)
+    // because we do not know how big is StarExpr
+    for (; st < leftSide.size(); st++) {
+      if (cast<StarExpr>(leftSide[st]))
+        E(Error::ASSIGN_MULTI_STAR, leftSide[st]->getSrcInfo());
+      rightSide = N<IndexExpr>(ast::clone(rhs), N<IntExpr>(-int(leftSide.size() - st)));
+      auto ns = unpackAssignment(leftSide[st], rightSide);
+      block->addStmt(ns);
+    }
+  }
+  setSrcInfo(oldSrcInfo);
+  return block;
 }
 
 /// Transform simple assignments.

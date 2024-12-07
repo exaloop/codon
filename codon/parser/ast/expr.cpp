@@ -39,7 +39,6 @@ Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
     done = false;
   }
 }
-void Expr::validate() const {}
 types::ClassType *Expr::getClassType() const {
   return type ? type->getClass() : nullptr;
 }
@@ -51,13 +50,13 @@ std::string Expr::wrapType(const std::string &sexpr) const {
                   type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "");
   return s;
 }
-Expr *Expr::operator<<(types::Type *t) {
-  seqassert(type, "lhs is nullptr");
-  if ((*type) << t) {
-    E(Error::TYPE_UNIFY, getSrcInfo(), type->prettyString(), t->prettyString());
-  }
-  return this;
-}
+// llvm::Expected<Expr> *Expr::operator<<(types::Type *t) {
+//   seqassert(type, "lhs is nullptr");
+//   if ((*type) << t) {
+//     E(Error::TYPE_UNIFY, getSrcInfo(), type->prettyString(), t->prettyString());
+//   }
+//   return this;
+// }
 
 Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
     : name(std::move(name)), type(type), defaultValue(defaultValue) {
@@ -162,9 +161,7 @@ std::string FloatExpr::toString(int) const {
 }
 
 StringExpr::StringExpr(std::vector<StringExpr::String> s)
-    : AcceptorExtend(), strings(std::move(s)) {
-  unpack();
-}
+    : AcceptorExtend(), strings(std::move(s)) {}
 StringExpr::StringExpr(std::string value, std::string prefix)
     : StringExpr(std::vector<StringExpr::String>{{value, prefix}}) {}
 StringExpr::StringExpr(const StringExpr &expr, bool clean)
@@ -185,60 +182,6 @@ std::string StringExpr::getValue() const {
 }
 bool StringExpr::isSimple() const {
   return strings.size() == 1 && strings[0].prefix.empty();
-}
-void StringExpr::unpack() {
-  std::vector<String> exprs;
-  for (auto &p : strings) {
-    if (p.prefix == "f" || p.prefix == "F") {
-      /// Transform an F-string
-      for (auto pf : unpackFString(p.value)) {
-        if (pf.prefix.empty() && !exprs.empty() && exprs.back().prefix.empty()) {
-          exprs.back().value += pf.value;
-        } else {
-          exprs.emplace_back(pf);
-        }
-      }
-    } else if (!p.prefix.empty()) {
-      exprs.emplace_back(p);
-    } else if (!exprs.empty() && exprs.back().prefix.empty()) {
-      exprs.back().value += p.value;
-    } else {
-      exprs.emplace_back(p);
-    }
-  }
-  strings = exprs;
-}
-std::vector<StringExpr::String>
-StringExpr::unpackFString(const std::string &value) const {
-  // Strings to be concatenated
-  std::vector<StringExpr::String> items;
-  int braceCount = 0, braceStart = 0;
-  for (int i = 0; i < value.size(); i++) {
-    if (value[i] == '{') {
-      if (braceStart < i)
-        items.emplace_back(value.substr(braceStart, i - braceStart));
-      if (!braceCount)
-        braceStart = i + 1;
-      braceCount++;
-    } else if (value[i] == '}') {
-      braceCount--;
-      if (!braceCount) {
-        std::string code = value.substr(braceStart, i - braceStart);
-        auto offset = getSrcInfo();
-        offset.col += i;
-        items.emplace_back(code, "#f");
-        items.back().setSrcInfo(offset);
-      }
-      braceStart = i + 1;
-    }
-  }
-  if (braceCount > 0)
-    E(Error::STR_FSTRING_BALANCE_EXTRA, getSrcInfo());
-  if (braceCount < 0)
-    E(Error::STR_FSTRING_BALANCE_MISSING, getSrcInfo());
-  if (braceStart != value.size())
-    items.emplace_back(value.substr(braceStart, value.size() - braceStart));
-  return items;
 }
 
 IdExpr::IdExpr(std::string value) : AcceptorExtend(), value(std::move(value)) {}
@@ -447,7 +390,6 @@ PipeExpr::PipeExpr(std::vector<Pipe> items)
 PipeExpr::PipeExpr(const PipeExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), Items(ast::clone(expr.items, clean)),
       inTypes(expr.inTypes) {}
-void PipeExpr::validate() const {}
 std::string PipeExpr::toString(int indent) const {
   std::vector<std::string> s;
   for (auto &i : items)
@@ -483,28 +425,12 @@ CallExpr::CallExpr(const CallExpr &expr, bool clean)
 CallExpr::CallExpr(Expr *expr, std::vector<CallArg> args)
     : AcceptorExtend(), Items(std::move(args)), expr(expr), ordered(false),
       partial(false) {
-  validate();
 }
 CallExpr::CallExpr(Expr *expr, std::vector<Expr *> args)
     : AcceptorExtend(), Items({}), expr(expr), ordered(false), partial(false) {
   for (auto a : args)
     if (a)
       items.emplace_back("", a);
-  validate();
-}
-void CallExpr::validate() const {
-  bool namesStarted = false, foundEllipsis = false;
-  for (auto &a : *this) {
-    if (a.name.empty() && namesStarted &&
-        !(cast<KeywordStarExpr>(a.value) || cast<EllipsisExpr>(a.value)))
-      E(Error::CALL_NAME_ORDER, a.value);
-    if (!a.name.empty() && (cast<StarExpr>(a.value) || cast<KeywordStarExpr>(a.value)))
-      E(Error::CALL_NAME_STAR, a.value);
-    if (cast<EllipsisExpr>(a.value) && foundEllipsis)
-      E(Error::CALL_ELLIPSIS, a.value);
-    foundEllipsis |= bool(cast<EllipsisExpr>(a.value));
-    namesStarted |= !a.name.empty();
-  }
 }
 std::string CallExpr::toString(int indent) const {
   std::vector<std::string> s;

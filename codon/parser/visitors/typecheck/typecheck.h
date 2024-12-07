@@ -133,6 +133,7 @@ private: // Node typechecking rules
   void visit(KeywordStarExpr *) override;
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
+  void validateCall(CallExpr *expr);
   bool transformCallArgs(CallExpr *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
@@ -144,6 +145,7 @@ private: // Node typechecking rules
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
   void visit(AssignStmt *) override;
+  Stmt *unpackAssignment(Expr *lhs, Expr *rhs);
   Stmt *transformUpdate(AssignStmt *);
   Stmt *transformAssignment(AssignStmt *, bool = false);
   void visit(DelStmt *) override;

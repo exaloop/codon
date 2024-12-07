@@ -26,15 +26,16 @@ char PluginErrorInfo::ID = 0;
 
 char IOErrorInfo::ID = 0;
 
-void raise_error(const char *format) { throw exc::ParserException(format); }
-
-void raise_error(int e, const ::codon::SrcInfo &info, const char *format) {
-  throw exc::ParserException(e, format, info);
-}
-
-void raise_error(int e, const ::codon::SrcInfo &info, const std::string &format) {
-  throw exc::ParserException(e, format, info);
-}
+void E(llvm::Error &&error) { throw exc::ParserException(std::move(error)); }
 
 } // namespace error
+
+namespace exc {
+ParserException::ParserException(llvm::Error &&e) noexcept : std::runtime_error("") {
+  llvm::handleAllErrors(std::move(e), [this](const error::ParserErrorInfo &e) {
+    errors = e.getErrors();
+  });
+}
+
+} // namespace exc
 } // namespace codon

@@ -73,16 +73,18 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
   input = file;
   std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
   try {
-    ast::Stmt *codeStmt = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
-                                 : ast::parseFile(cache.get(), abspath);
+    auto nodeOrErr = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
+                            : ast::parseFile(cache.get(), abspath);
+    if (!nodeOrErr)
+      throw exc::ParserException(nodeOrErr.takeError());
+    auto codeStmt = *nodeOrErr;
 
     cache->module0 = file;
 
     Timer t2("typecheck");
     t2.logged = true;
-    auto typechecked =
-        ast::TypecheckVisitor::apply(cache.get(), std::move(codeStmt), abspath, defines,
-                                     getEarlyDefines(), (testFlags > 1));
+    auto typechecked = ast::TypecheckVisitor::apply(
+        cache.get(), codeStmt, abspath, defines, getEarlyDefines(), (testFlags > 1));
     LOG_TIME("[T] parse = {:.1f}", totalPeg);
     LOG_TIME("[T] typecheck = {:.1f}", t2.elapsed() - totalPeg);
 
@@ -115,24 +117,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));
     t4.log();
   } catch (const exc::ParserException &exc) {
-    std::vector<error::Message> messages;
-    if (exc.messages.empty()) {
-      const int MAX_ERRORS = 5;
-      int ei = 0;
-      for (auto &e : cache->errors) {
-        for (unsigned i = 0; i < e.messages.size(); i++) {
-          if (!e.messages[i].empty())
-            messages.emplace_back(e.messages[i], e.locations[i].file,
-                                  e.locations[i].line, e.locations[i].col,
-                                  e.locations[i].len, e.errorCode);
-        }
-        if (ei++ > MAX_ERRORS)
-          break;
-      }
-      return llvm::make_error<error::ParserErrorInfo>(messages);
-    } else {
-      return llvm::make_error<error::ParserErrorInfo>(exc);
-    }
+    return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
   module->setSrcInfo({abspath, 0, 0, 0});
   if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
@@ -181,8 +166,8 @@ llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &fil
   try {
     auto j = ast::DocVisitor::apply(argv0, files);
     return j->toString();
-  } catch (exc::ParserException &e) {
-    return llvm::make_error<error::ParserErrorInfo>(e);
+  } catch (exc::ParserException &exc) {
+    return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
 }
 

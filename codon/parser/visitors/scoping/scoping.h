@@ -34,7 +34,7 @@ private:
   std::ostream &doFormat(std::ostream &os) const override { return os << "Bindings"; }
 };
 
-class ScopingVisitor : public CallbackASTVisitor<void, void> {
+class ScopingVisitor : public CallbackASTVisitor<bool, bool> {
   struct Context {
     /// A pointer to the shared cache.
     Cache *cache;
@@ -112,34 +112,55 @@ class ScopingVisitor : public CallbackASTVisitor<void, void> {
   };
 
 public:
-  static void apply(Cache *, Stmt *s);
-  void transform(Expr *expr) override;
-  void transform(Stmt *stmt) override;
+  ParserErrors errors;
+  bool hasErrors() const { return !errors.empty(); }
+  bool canContinue() const { return errors.size() <= MAX_ERRORS; }
 
+  template <class... TA>
+  void addError(error::Error e, const SrcInfo &o, const TA &...args) {
+    auto msg =
+        ErrorMessage(error::Emsg(e, args...), o.file, o.line, o.col, o.len, int(e));
+    errors.addError({msg});
+  }
+  template <class... TA> void addError(error::Error e, ASTNode *o, const TA &...args) {
+    this->addError(e, o->getSrcInfo(), args...);
+  }
+  void addError(llvm::Error &&e) {
+    llvm::handleAllErrors(std::move(e), [this](const error::ParserErrorInfo &e) {
+      this->errors.append(e.getErrors());
+    });
+  }
+
+  static llvm::Error apply(Cache *, Stmt *s);
+  bool transform(Expr *expr) override;
+  bool transform(Stmt *stmt) override;
+
+  // Can error!
   bool visitName(const std::string &name, bool = false, ASTNode * = nullptr,
                  const SrcInfo & = SrcInfo());
-  void transformAdding(Expr *e, ASTNode *);
-  void transformScope(Expr *);
-  void transformScope(Stmt *);
+  bool transformAdding(Expr *e, ASTNode *);
+  bool transformScope(Expr *);
+  bool transformScope(Stmt *);
 
-  void visit(IdExpr *) override;
   void visit(StringExpr *) override;
+  void visit(IdExpr *) override;
   void visit(GeneratorExpr *) override;
-  void visit(AssignExpr *) override;
-  void visit(LambdaExpr *) override;
   void visit(IfExpr *) override;
   void visit(BinaryExpr *) override;
+  void visit(LambdaExpr *) override;
   void visit(YieldExpr *) override;
+  void visit(AssignExpr *) override;
+
   void visit(AssignStmt *) override;
-  void visit(IfStmt *) override;
-  void visit(MatchStmt *) override;
+  void visit(DelStmt *) override;
+  void visit(YieldStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
+  void visit(IfStmt *) override;
+  void visit(MatchStmt *) override;
   void visit(ImportStmt *) override;
-  void visit(DelStmt *) override;
   void visit(TryStmt *) override;
   void visit(GlobalStmt *) override;
-  void visit(YieldStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
   void visit(WithStmt *) override;
@@ -147,6 +168,8 @@ public:
   Context::Item *findDominatingBinding(const std::string &, bool = true);
   void processChildCaptures();
   void switchToUpdate(ASTNode *binding, const std::string &, bool);
+
+  std::vector<StringExpr::String> unpackFString(const std::string &value);
 
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
     Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);

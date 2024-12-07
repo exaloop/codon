@@ -51,9 +51,9 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     LOG_TYPECHECK("[iter] {} :: {}", ctx->getBase()->name, ctx->getBase()->iteration);
     if (ctx->getBase()->iteration >= MAX_TYPECHECK_ITER) {
       LOG("[error=>] {}", result->toString(2));
-      error(result, "cannot typecheck '{}' in reasonable time",
-            ctx->getBase()->name.empty() ? "toplevel"
-                                         : getUnmangledName(ctx->getBase()->name));
+      E(Error::CUSTOM, result, "cannot typecheck '{}' in reasonable time",
+        ctx->getBase()->name.empty() ? "toplevel"
+                                     : getUnmangledName(ctx->getBase()->name));
     }
 
     // Keep iterating until:
@@ -92,7 +92,8 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
           if (!tu->isSealed()) {
             if (tu->pendingTypes[0]->getLink() &&
                 tu->pendingTypes[0]->getLink()->kind == LinkType::Unbound) {
-              tu->addType(getStdLibType("NoneType"));
+              auto r = tu->addType(getStdLibType("NoneType"));
+              seqassert(r, "cannot add type to union {}", tu->debugString(2));
               tu->seal();
             }
           }
@@ -160,12 +161,13 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
       auto t = realizeType(c);
       return t;
     }
-  } catch (exc::ParserException &e) {
-    if (e.errorCode == Error::MAX_REALIZATION)
+  } catch (exc::ParserException &exc) {
+    auto &bt = exc.getErrors().getLast();
+    if (bt.front().getErrorCode() == Error::MAX_REALIZATION)
       throw;
     if (auto f = typ->getFunc()) {
       if (f->ast->hasAttribute(Attr::HiddenFromUser)) {
-        e.locations.back() = getSrcInfo();
+        bt.back().setSrcInfo(getSrcInfo());
       } else {
         std::vector<std::string> args;
         for (size_t i = 0, ai = 0, gi = 0; i < f->ast->size(); i++) {
@@ -188,10 +190,12 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
           name = getUnmangledName(f->ast->name);
           name_args = fmt::format("({})", fmt::join(args, ", "));
         }
-        e.trackRealize(fmt::format("{}{}", name, name_args), getSrcInfo());
+        bt.addMessage(fmt::format("during the realization of {}{}", name, name_args),
+                      getSrcInfo());
       }
     } else {
-      e.trackRealize(typ->prettyString(), getSrcInfo());
+      bt.addMessage(fmt::format("during the realization of {}", typ->prettyString()),
+                    getSrcInfo());
     }
     throw;
   }
@@ -415,7 +419,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         // Lambda typecheck failures are "ignored" as they are treated as statements,
         // not functions.
         // TODO: generalize this further.
-        error("cannot typecheck the program [1]");
+        E(Error::CUSTOM, getSrcInfo(), "cannot typecheck the program [1]");
       }
       this->ctx = oldCtx;
       return nullptr; // inference must be delayed

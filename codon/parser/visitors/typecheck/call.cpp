@@ -60,21 +60,23 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 void TypecheckVisitor::visit(CallExpr *expr) {
   auto orig = expr->toString(0);
   if (match(expr->getExpr(), M<IdExpr>("tuple")) && expr->size() == 1)
-    expr->setAttribute("TupleFn");
+    expr->setAttribute(Attr::TupleCall);
+
+  validateCall(expr);
 
   // Check if this call is partial call
   PartialCallData part;
 
-  expr->setAttribute("CallExpr");
+  expr->setAttribute(Attr::ParentCallExpr);
   expr->expr = transform(expr->getExpr());
-  expr->eraseAttribute("CallExpr");
+  expr->eraseAttribute(Attr::ParentCallExpr);
   if (isUnbound(expr->getExpr()))
     return; // delay
 
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
   // Transform `tuple(i for i in tup)` into a GeneratorExpr that will be handled during
   // the type checking.
-  if (!calleeFn && expr->hasAttribute("TupleFn")) {
+  if (!calleeFn && expr->hasAttribute(Attr::TupleCall)) {
     if (cast<GeneratorExpr>(expr->begin()->getExpr())) {
       auto g = cast<GeneratorExpr>(expr->begin()->getExpr());
       if (!g || g->kind != GeneratorExpr::Generator || g->loopCount() != 1)
@@ -244,6 +246,24 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   }
 }
 
+void TypecheckVisitor::validateCall(CallExpr *expr) {
+  if (expr->hasAttribute(Attr::Validated))
+    return;
+  bool namesStarted = false, foundEllipsis = false;
+  for (auto &a : *expr) {
+    if (a.name.empty() && namesStarted &&
+        !(cast<KeywordStarExpr>(a.value) || cast<EllipsisExpr>(a.value)))
+      E(Error::CALL_NAME_ORDER, a.value);
+    if (!a.name.empty() && (cast<StarExpr>(a.value) || cast<KeywordStarExpr>(a.value)))
+      E(Error::CALL_NAME_STAR, a.value);
+    if (cast<EllipsisExpr>(a.value) && foundEllipsis)
+      E(Error::CALL_ELLIPSIS, a.value);
+    foundEllipsis |= bool(cast<EllipsisExpr>(a.value));
+    namesStarted |= !a.name.empty();
+  }
+  expr->setAttribute(Attr::Validated);
+}
+
 /// Transform call arguments. Expand *args and **kwargs to the list of @c CallArg
 /// objects.
 /// @return false if expansion could not be completed; true otherwise
@@ -346,10 +366,10 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       return {nullptr, nullptr};
     auto clsName = typ->name;
     if (typ->isRecord()) {
-      if (expr->hasAttribute("TupleFn")) {
+      if (expr->hasAttribute(Attr::TupleCall)) {
         if (extractType(expr->getExpr())->is(TYPE_TUPLE))
           return {nullptr, nullptr};
-        expr->eraseAttribute("TupleFn");
+        expr->eraseAttribute(Attr::TupleCall);
       }
       // Case: tuple constructor. Transform to: `T.__new__(args)`
       auto e =
@@ -419,7 +439,7 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
 ///   `foo(1, 2, baz=3, baf=4)` -> `foo(a=1, baz=2, args=(3, ), kwargs=KwArgs(baf=4))`
 Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                                              PartialCallData &part) {
-  if (calleeFn->ast->hasAttribute("std.internal.attributes.no_arg_reorder.0:0"))
+  if (calleeFn->ast->hasAttribute(Attr::NoArgReorder))
     return nullptr;
 
   std::vector<CallArg> args;    // stores ordered and processed arguments
@@ -546,7 +566,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     reorderNamedArgs(
         calleeFn, expr->items, reorderFn,
         [&](error::Error e, const SrcInfo &o, const std::string &errorMsg) {
-          error::raise_error(e, o, errorMsg);
+          E(e, o, errorMsg);
           return -1;
         },
         part.known);
@@ -585,7 +605,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       } else {
         if (isUnbound(gen.getType()) && !(*calleeFn->ast)[si].getDefault() &&
             !partial && in(niGenerics, gen.name)) {
-          error("generic '{}' not provided", gen.niceName);
+          E(Error::CUSTOM, getSrcInfo(), "generic '{}' not provided", gen.niceName);
         }
       }
     }

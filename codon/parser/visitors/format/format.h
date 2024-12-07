@@ -63,8 +63,8 @@ public:
     return fmt::format("{}{}{}", t.header, t.transform(stmt), t.footer);
   }
 
-  void defaultVisit(Expr *e) override { error("cannot format {}", *e); }
-  void defaultVisit(Stmt *e) override { error("cannot format {}", *e); }
+  void defaultVisit(Expr *e) override { seqassertn(false, "cannot format {}", *e); }
+  void defaultVisit(Stmt *e) override { seqassertn(false, "cannot format {}", *e); }
 
 public:
   void visit(NoneExpr *) override;

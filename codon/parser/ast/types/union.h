@@ -34,7 +34,7 @@ public:
 
   UnionType *getUnion() override { return this; }
 
-  void addType(Type *);
+  bool addType(Type *);
   void seal();
   std::vector<Type *> getRealizationTypes();
 };

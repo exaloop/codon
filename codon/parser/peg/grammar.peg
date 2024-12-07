@@ -114,18 +114,14 @@ assignment <-
   / (star_targets _ (!'==' '=') _)+ star_expressions !(_ '=') {
     vector<Stmt*> stmts;
     for (int i = int(VS.size()) - 2; i >= 0; i--) {
-      auto a = AssignStmt(ac_expr(VS[i]), ac_expr(VS[i + 1]));
-      a.setSrcInfo(LOC);
-      a.cache = CTX.cache;
-      stmts.push_back(a.unpack());
+      auto a = asts(Assign, LOC, ac_expr(VS[i]), ac_expr(VS[i + 1]));
+      stmts.push_back(a);
     }
     return asts(Suite, LOC, std::move(stmts));
   }
   / star_expression _ augassign '=' ^ _ star_expressions {
-    auto a = AssignStmt(ac_expr(V0), aste(Binary, LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true));
-    a.setSrcInfo(LOC);
-    a.cache = CTX.cache;
-    return a.unpack();
+    auto a = asts(Assign, LOC, ac_expr(V0), aste(Binary, LOC, clone(ac_expr(V0)), ac<string>(V1), ac_expr(V2), true));
+    return a;
   }
 augassign <- <
   '+' / '-' / '**' / '*' / '@' / '//' / '/' / '%' / '&' / '|' / '^' / '<<' / '>>'
@@ -320,7 +316,6 @@ function <-
     auto fn = (FunctionStmt*)(ac_stmt(V1));
     fn->setDecorators(ac<vector<Expr*>>(V0));
     fn->setSuite(SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, ac<string>(V2)))));
-    fn->parseDecorators();
     return (Stmt*)fn;
   }
   / decorators? function_def _ suite {
@@ -328,7 +323,6 @@ function <-
     if (VS.size() > 2)
       fn->setDecorators(ac<vector<Expr*>>(V0));
     fn->setSuite(SuiteStmt::wrap(ac_stmt(VS.size() > 2 ? V2 : V1)));
-    fn->parseDecorators();
     return (Stmt*)fn;
   }
 extern <- (empty_line* EXTERNDENT (!EOL .)* EOL empty_line*)+ {
@@ -395,7 +389,6 @@ class <- decorators? class_def {
   if (VS.size() == 2) {
     auto fn = ac_stmt(V1);
     cast<ClassStmt>(fn)->setDecorators(ac<vector<Expr*>>(V0));
-    cast<ClassStmt>(fn)->parseDecorators();
     return fn;
   }
   return ac_stmt(V0);

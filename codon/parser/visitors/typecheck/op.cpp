@@ -398,10 +398,13 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         if (!isTypeExpr((*expr)[i]))
           E(Error::EXPECTED_TYPE, (*expr)[i], "type");
       }
-      if (isUnion)
-        typ->getUnion()->addType(t.get());
-      else
+      if (isUnion) {
+        if (!typ->getUnion()->addType(t.get()))
+          E(error::Error::UNION_TOO_BIG, (*expr)[i],
+            typ->getUnion()->pendingTypes.size());
+      } else {
         unify(t.get(), generics[i].getType());
+      }
     }
     if (isUnion) {
       typ->getUnion()->seal();

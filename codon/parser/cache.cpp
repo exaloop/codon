@@ -170,9 +170,11 @@ ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
 }
 
 void Cache::parseCode(const std::string &code) {
-  auto node = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
+  auto nodeOrErr = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
+  if (nodeOrErr)
+    throw exc::ParserException(nodeOrErr.takeError());
   auto sctx = imports[MAIN_IMPORT].ctx;
-  node = ast::TypecheckVisitor::apply(sctx, node);
+  auto node = ast::TypecheckVisitor::apply(sctx, *nodeOrErr);
   ast::TranslateVisitor(codegenCtx).translateStmts(node);
 }
 

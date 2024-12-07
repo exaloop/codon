@@ -52,8 +52,6 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   void setDone() { done = true; }
   Expr *getOrigExpr() const { return origExpr; }
   void setOrigExpr(Expr *orig) { origExpr = orig; }
-  /// Validate a node. Throw ParseASTException if a node is not valid.
-  void validate() const;
 
   static const char NodeId;
   SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
@@ -211,12 +209,6 @@ struct StringExpr : public AcceptorExtend<StringExpr, Expr> {
 private:
   std::vector<String> strings;
 
-  void unpack();
-  /// Split a Python-like f-string into a list:
-  ///   `f"foo {x+1} bar"` -> `["foo ", str(x+1), " bar"]
-  /// Supports "{x=}" specifier (that prints the raw expression as well):
-  ///   `f"{x+1=}"` -> `["x+1=", str(x+1)]`
-  std::vector<String> unpackFString(const std::string &) const;
   auto begin() { return strings.begin(); }
   auto end() { return strings.end(); }
 
@@ -430,8 +422,6 @@ private:
   /// Output type of a "prefix" pipe ending at the index position.
   /// Example: for a |> b |> c, inTypes[1] is typeof(a |> b).
   std::vector<types::TypePtr> inTypes;
-
-  void validate() const;
 };
 
 /// Index expression (expr[index]).
@@ -489,8 +479,6 @@ private:
   bool ordered;
   /// True if the call is partial
   bool partial = false;
-
-  void validate() const;
 };
 
 /// Dot (access) expression (expr.member).

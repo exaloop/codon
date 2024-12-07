@@ -29,7 +29,8 @@ void TypecheckVisitor::visit(LambdaExpr *expr) {
     params.emplace_back(s);
   Stmt *f = N<FunctionStmt>(name, nullptr, params,
                             N<SuiteStmt>(N<ReturnStmt>(expr->getExpr())));
-  ScopingVisitor::apply(ctx->cache, N<SuiteStmt>(f));
+  if (auto err = ScopingVisitor::apply(ctx->cache, N<SuiteStmt>(f)))
+    throw exc::ParserException(std::move(err));
   f = transform(f);
   if (auto a = expr->getAttribute(Attr::Bindings))
     f->setAttribute(Attr::Bindings, a->clone());
@@ -557,7 +558,10 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
       std::string exprCode = code.substr(braceStart, i - braceStart);
       auto offset = getSrcInfo();
       offset.col += i;
-      auto expr = transform(parseExpr(ctx->cache, exprCode, offset).first, true);
+      auto exprOrErr = parseExpr(ctx->cache, exprCode, offset);
+      if (!exprOrErr)
+        throw exc::ParserException(exprOrErr.takeError());
+      auto expr = transform(exprOrErr->first, true);
       items.push_back(N<ExprStmt>(expr));
       braceStart = i + 1;
       finalCode += '}';

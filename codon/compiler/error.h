@@ -12,153 +12,6 @@
 namespace codon {
 namespace error {
 
-class Message {
-private:
-  std::string msg;
-  std::string file;
-  int line = 0;
-  int col = 0;
-  int len = 0;
-  int errorCode = -1;
-
-public:
-  explicit Message(const std::string &msg, const std::string &file = "", int line = 0,
-                   int col = 0, int len = 0, int errorCode = -1)
-      : msg(msg), file(file), line(line), col(col), len(len), errorCode(-1) {}
-
-  std::string getMessage() const { return msg; }
-  std::string getFile() const { return file; }
-  int getLine() const { return line; }
-  int getColumn() const { return col; }
-  int getLength() const { return len; }
-  int getErrorCode() const { return errorCode; }
-
-  void log(llvm::raw_ostream &out) const {
-    if (!getFile().empty()) {
-      out << getFile();
-      if (getLine() != 0) {
-        out << ":" << getLine();
-        if (getColumn() != 0) {
-          out << ":" << getColumn();
-        }
-      }
-      out << ": ";
-    }
-    out << getMessage();
-  }
-};
-
-class ParserErrorInfo : public llvm::ErrorInfo<ParserErrorInfo> {
-private:
-  std::vector<std::vector<Message>> messages;
-
-public:
-  explicit ParserErrorInfo(const std::vector<Message> &m) : messages() {
-    for (auto &msg : m) {
-      messages.push_back({msg});
-    }
-  }
-  explicit ParserErrorInfo(const exc::ParserException &e) : messages() {
-    std::vector<Message> group;
-    for (unsigned i = 0; i < e.messages.size(); i++) {
-      if (!e.messages[i].empty())
-        group.emplace_back(e.messages[i], e.locations[i].file, e.locations[i].line,
-                           e.locations[i].col, e.locations[i].len);
-    }
-    messages.push_back(group);
-  }
-
-  auto begin() { return messages.begin(); }
-  auto end() { return messages.end(); }
-  auto begin() const { return messages.begin(); }
-  auto end() const { return messages.end(); }
-
-  void log(llvm::raw_ostream &out) const override {
-    for (auto &group : messages) {
-      for (auto &msg : group) {
-        msg.log(out);
-        out << "\n";
-      }
-    }
-  }
-
-  std::error_code convertToErrorCode() const override {
-    return llvm::inconvertibleErrorCode();
-  }
-
-  static char ID;
-};
-
-class RuntimeErrorInfo : public llvm::ErrorInfo<RuntimeErrorInfo> {
-private:
-  std::string output;
-  std::string type;
-  Message message;
-  std::vector<std::string> backtrace;
-
-public:
-  RuntimeErrorInfo(const std::string &output, const std::string &type,
-                   const std::string &msg, const std::string &file = "", int line = 0,
-                   int col = 0, std::vector<std::string> backtrace = {})
-      : output(output), type(type), message(msg, file, line, col),
-        backtrace(std::move(backtrace)) {}
-
-  std::string getOutput() const { return output; }
-  std::string getType() const { return type; }
-  std::string getMessage() const { return message.getMessage(); }
-  std::string getFile() const { return message.getFile(); }
-  int getLine() const { return message.getLine(); }
-  int getColumn() const { return message.getColumn(); }
-  std::vector<std::string> getBacktrace() const { return backtrace; }
-
-  void log(llvm::raw_ostream &out) const override {
-    out << type << ": ";
-    message.log(out);
-  }
-
-  std::error_code convertToErrorCode() const override {
-    return llvm::inconvertibleErrorCode();
-  }
-
-  static char ID;
-};
-
-class PluginErrorInfo : public llvm::ErrorInfo<PluginErrorInfo> {
-private:
-  std::string message;
-
-public:
-  explicit PluginErrorInfo(const std::string &message) : message(message) {}
-
-  std::string getMessage() const { return message; }
-
-  void log(llvm::raw_ostream &out) const override { out << message; }
-
-  std::error_code convertToErrorCode() const override {
-    return llvm::inconvertibleErrorCode();
-  }
-
-  static char ID;
-};
-
-class IOErrorInfo : public llvm::ErrorInfo<IOErrorInfo> {
-private:
-  std::string message;
-
-public:
-  explicit IOErrorInfo(const std::string &message) : message(message) {}
-
-  std::string getMessage() const { return message; }
-
-  void log(llvm::raw_ostream &out) const override { out << message; }
-
-  std::error_code convertToErrorCode() const override {
-    return llvm::inconvertibleErrorCode();
-  }
-
-  static char ID;
-};
-
 enum Error {
   CALL_NAME_ORDER,
   CALL_NAME_STAR,
@@ -259,6 +112,111 @@ enum Error {
   MAX_REALIZATION,
   CUSTOM,
   __END__
+};
+
+class ParserErrorInfo : public llvm::ErrorInfo<ParserErrorInfo> {
+private:
+  ParserErrors errors;
+
+public:
+  static char ID;
+
+public:
+  explicit ParserErrorInfo(const ErrorMessage &msg) : errors(msg) {}
+  explicit ParserErrorInfo(const std::vector<ErrorMessage> &msgs) : errors(msgs) {}
+  explicit ParserErrorInfo(const ParserErrors &errors) : errors(errors) {}
+
+  template <class... TA>
+  ParserErrorInfo(error::Error e, const codon::SrcInfo &o = codon::SrcInfo(), const TA &...args) {
+    auto msg = Emsg(e, args...);
+    errors = ParserErrors(ErrorMessage(msg, o, (int)e));
+  }
+
+  const ParserErrors &getErrors() const { return errors; }
+  ParserErrors &getErrors() { return errors; }
+
+  void log(llvm::raw_ostream &out) const override {
+    for (const auto &trace : errors) {
+      for (const auto &msg : trace.getMessages()) {
+        msg.log(out);
+        out << "\n";
+      }
+    }
+  }
+
+  std::error_code convertToErrorCode() const override {
+    return llvm::inconvertibleErrorCode();
+  }
+};
+
+class RuntimeErrorInfo : public llvm::ErrorInfo<RuntimeErrorInfo> {
+private:
+  std::string output;
+  std::string type;
+  ErrorMessage message;
+  std::vector<std::string> backtrace;
+
+public:
+  RuntimeErrorInfo(const std::string &output, const std::string &type,
+                   const std::string &msg, const std::string &file = "", int line = 0,
+                   int col = 0, std::vector<std::string> backtrace = {})
+      : output(output), type(type), message(msg, file, line, col),
+        backtrace(std::move(backtrace)) {}
+
+  std::string getOutput() const { return output; }
+  std::string getType() const { return type; }
+  std::string getMessage() const { return message.getMessage(); }
+  std::string getFile() const { return message.getFile(); }
+  int getLine() const { return message.getLine(); }
+  int getColumn() const { return message.getColumn(); }
+  std::vector<std::string> getBacktrace() const { return backtrace; }
+
+  void log(llvm::raw_ostream &out) const override {
+    out << type << ": ";
+    message.log(out);
+  }
+
+  std::error_code convertToErrorCode() const override {
+    return llvm::inconvertibleErrorCode();
+  }
+
+  static char ID;
+};
+
+class PluginErrorInfo : public llvm::ErrorInfo<PluginErrorInfo> {
+private:
+  std::string message;
+
+public:
+  explicit PluginErrorInfo(const std::string &message) : message(message) {}
+
+  std::string getMessage() const { return message; }
+
+  void log(llvm::raw_ostream &out) const override { out << message; }
+
+  std::error_code convertToErrorCode() const override {
+    return llvm::inconvertibleErrorCode();
+  }
+
+  static char ID;
+};
+
+class IOErrorInfo : public llvm::ErrorInfo<IOErrorInfo> {
+private:
+  std::string message;
+
+public:
+  explicit IOErrorInfo(const std::string &message) : message(message) {}
+
+  std::string getMessage() const { return message; }
+
+  void log(llvm::raw_ostream &out) const override { out << message; }
+
+  std::error_code convertToErrorCode() const override {
+    return llvm::inconvertibleErrorCode();
+  }
+
+  static char ID;
 };
 
 template <class... TA> std::string Emsg(Error e, const TA &...args) {
@@ -489,17 +447,14 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   }
 }
 
-/// Raise a parsing error.
-void raise_error(const char *format);
-/// Raise a parsing error at a source location p.
-void raise_error(int e, const codon::SrcInfo &info, const char *format);
-void raise_error(int e, const codon::SrcInfo &info, const std::string &format);
-
 template <class... TA>
 void E(Error e, const codon::SrcInfo &o = codon::SrcInfo(), const TA &...args) {
   auto msg = Emsg(e, args...);
-  raise_error((int)e, o, msg);
+  auto err = ParserErrors(ErrorMessage(msg, o, (int)e));
+  throw exc::ParserException(err);
 }
+
+void E(llvm::Error &&error);
 
 } // namespace error
 } // namespace codon

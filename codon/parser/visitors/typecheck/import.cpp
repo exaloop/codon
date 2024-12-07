@@ -357,13 +357,16 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     getImport(STDLIB_IMPORT)->ctx->addToplevel(importVar, val);
     registerGlobal(val->getName());
   }
-  n = N<SuiteStmt>(n, parseFile(ctx->cache, file.path));
+  auto nodeOrErr = parseFile(ctx->cache, file.path);
+  if (!nodeOrErr)
+    throw exc::ParserException(nodeOrErr.takeError());
+  n = N<SuiteStmt>(n, *nodeOrErr);
   auto tv = TypecheckVisitor(ictx, preamble);
-  ScopingVisitor::apply(ctx->cache, n);
-  // n = tv.transform(n);
+  if (auto err = ScopingVisitor::apply(ctx->cache, n))
+    throw exc::ParserException(std::move(err));
 
   if (!ctx->cache->errors.empty())
-    throw exc::ParserException();
+    throw exc::ParserException(ctx->cache->errors);
   // Add comment to the top of import for easier dump inspection
   auto comment = N<CommentStmt>(format("import: {} at {}", file.module, file.path));
   auto suite = N<SuiteStmt>(comment, n);

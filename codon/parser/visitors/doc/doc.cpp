@@ -17,6 +17,7 @@ using fmt::format;
 
 namespace codon::ast {
 
+using namespace error;
 using namespace matcher;
 
 // clang-format off
@@ -99,24 +100,30 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->j = std::make_shared<json>();
 
   auto stdlib = getImportFile(argv0, STDLIB_INTERNAL_MODULE, "", true, "");
-  auto ast = ast::parseFile(shared->cache, stdlib->path);
-  auto core =
+  auto astOrErr = ast::parseFile(shared->cache, stdlib->path);
+  if (!astOrErr)
+    throw exc::ParserException(astOrErr.takeError());
+  auto coreOrErr =
       ast::parseCode(shared->cache, stdlib->path, "from internal.core import *");
+  if (!coreOrErr)
+    throw exc::ParserException(coreOrErr.takeError());
   shared->modules[""]->setFilename(stdlib->path);
   shared->modules[""]->add("__py_numerics__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
-  DocVisitor(shared->modules[""]).transformModule(std::move(core));
-  DocVisitor(shared->modules[""]).transformModule(std::move(ast));
+  DocVisitor(shared->modules[""]).transformModule(*coreOrErr);
+  DocVisitor(shared->modules[""]).transformModule(*astOrErr);
 
   auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
     auto path = getAbsolutePath(f);
     ctx->setFilename(path);
     LOG("-> parsing {}", path);
-    auto ast = ast::parseFile(shared->cache, path);
-    DocVisitor(ctx).transformModule(std::move(ast));
+    auto astOrErr = ast::parseFile(shared->cache, path);
+    if (!astOrErr)
+      throw exc::ParserException(astOrErr.takeError());
+    DocVisitor(ctx).transformModule(*astOrErr);
   }
 
   shared->cache = nullptr;
@@ -206,7 +213,7 @@ void DocVisitor::visit(IntExpr *expr) {
 void DocVisitor::visit(IdExpr *expr) {
   auto i = ctx->find(expr->getValue());
   if (!i)
-    error("unknown identifier {}", expr->getValue());
+    E(Error::CUSTOM, expr->getSrcInfo(), "unknown identifier {}", expr->getValue());
   resultExpr = std::make_shared<json>(*i ? std::to_string(*i) : expr->getValue());
 }
 
@@ -391,7 +398,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
     }
     if (!cast<IdExpr>(e) || !stmt->getArgs().empty() || stmt->getReturnType() ||
         (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
-      error("invalid import statement");
+      E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
     // We have an empty stmt->from in "from .. import".
     if (!cast<IdExpr>(e)->getValue().empty())
       dirs.push_back(cast<IdExpr>(e)->getValue());
@@ -399,7 +406,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
   auto ee = cast<IdExpr>(e);
   if (!ee || !stmt->getArgs().empty() || stmt->getReturnType() ||
       (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
-    error("invalid import statement");
+    E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
   // We have an empty stmt->from in "from .. import".
   if (!ee->getValue().empty())
     dirs.push_back(ee->getValue());
@@ -413,7 +420,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
   // Fetch the import!
   auto file = getImportFile(ctx->shared->argv0, path, ctx->getFilename());
   if (!file)
-    error(stmt, "cannot locate import '{}'", path);
+    E(Error::CUSTOM, stmt->getSrcInfo(), "cannot locate import '{}'", path);
 
   auto ictx = ctx;
   auto it = ctx->shared->modules.find(file->path);
@@ -421,8 +428,10 @@ void DocVisitor::visit(ImportStmt *stmt) {
     ctx->shared->modules[file->path] = ictx = std::make_shared<DocContext>(ctx->shared);
     ictx->setFilename(file->path);
     LOG("=> parsing {}", file->path);
-    auto tmp = parseFile(ctx->shared->cache, file->path);
-    DocVisitor(ictx).transformModule(std::move(tmp));
+    auto tmpOrErr = parseFile(ctx->shared->cache, file->path);
+    if (!tmpOrErr)
+      throw exc::ParserException(tmpOrErr.takeError());
+    DocVisitor(ictx).transformModule(*tmpOrErr);
   } else {
     ictx = it->second;
   }
@@ -440,7 +449,8 @@ void DocVisitor::visit(ImportStmt *stmt) {
     if (auto c = ictx->find(i->getValue()))
       ctx->add(stmt->getAs().empty() ? i->getValue() : stmt->getAs(), c);
     else
-      error(stmt, "symbol '{}' not found in {}", i->getValue(), file->path);
+      E(Error::CUSTOM, stmt->getSrcInfo(), "symbol '{}' not found in {}", i->getValue(),
+        file->path);
   }
 }
 

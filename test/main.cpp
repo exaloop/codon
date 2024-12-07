@@ -279,7 +279,7 @@ public:
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
                             [](const error::ParserErrorInfo &e) {
-                              for (auto &group : e) {
+                              for (auto &group : e.getErrors()) {
                                 for (auto &msg : group) {
                                   getLogger().level = 0;
                                   printf("%s\n", msg.getMessage().c_str());

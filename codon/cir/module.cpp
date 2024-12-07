@@ -173,9 +173,10 @@ Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodN
     return cache->realizeFunction(method, translateArgs(cache, args),
                                   translateGenerics(cache, generics), cls);
   } catch (const exc::ParserException &e) {
-    for (int i = 0; i < e.messages.size(); i++)
-      LOG_IR("getOrRealizeMethod parser error at {}: {}", e.locations[i],
-             e.messages[i]);
+    for (auto &trace : e.getErrors())
+      for (auto &msg : trace)
+        LOG_IR("getOrRealizeMethod parser error at {}: {}", msg.getSrcInfo(),
+               msg.getMessage());
     return nullptr;
   }
 }
@@ -196,8 +197,10 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
   try {
     return cache->realizeFunction(func, arg, gens);
   } catch (const exc::ParserException &e) {
-    for (int i = 0; i < e.messages.size(); i++)
-      LOG("getOrRealizeFunc parser error at {}: {}", e.locations[i], e.messages[i]);
+    for (auto &trace : e.getErrors())
+      for (auto &msg : trace)
+        LOG("getOrRealizeFunc parser error at {}: {}", msg.getSrcInfo(),
+            msg.getMessage());
     return nullptr;
   }
 }
@@ -213,8 +216,10 @@ types::Type *Module::getOrRealizeType(const std::string &typeName,
   try {
     return cache->realizeType(type, translateGenerics(cache, generics));
   } catch (const exc::ParserException &e) {
-    for (int i = 0; i < e.messages.size(); i++)
-      LOG_IR("getOrRealizeType parser error at {}: {}", e.locations[i], e.messages[i]);
+    for (auto &trace : e.getErrors())
+      for (auto &msg : trace)
+        LOG_IR("getOrRealizeType parser error at {}: {}", msg.getSrcInfo(),
+               msg.getMessage());
     return nullptr;
   }
 }

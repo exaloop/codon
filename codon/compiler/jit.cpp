@@ -90,11 +90,16 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
   try {
-    ast::Stmt *node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
-                                     /*startLine=*/line);
+    auto nodeOrErr = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
+                                    /*startLine=*/line);
+    if (!nodeOrErr)
+      throw exc::ParserException(nodeOrErr.takeError());
+    auto *node = *nodeOrErr;
+
     ast::Stmt **e = &node;
     while (auto se = ast::cast<ast::SuiteStmt>(*e)) {
-      if (se->empty()) break;
+      if (se->empty())
+        break;
       e = &se->back();
     }
     if (e)
@@ -104,11 +109,12 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             cache->N<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);
-    ast::ScopingVisitor::apply(sctx->cache, node);
+    if (auto err = ast::ScopingVisitor::apply(sctx->cache, node))
+      throw exc::ParserException(std::move(err));
     node = tv.transform(node);
 
     if (!cache->errors.empty())
-      throw exc::ParserException();
+      throw exc::ParserException(cache->errors);
     auto typechecked = cache->N<ast::SuiteStmt>();
     for (auto &s : *preamble)
       typechecked->addStmt(s);
@@ -128,18 +134,6 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
 
     return func;
   } catch (const exc::ParserException &exc) {
-    std::vector<error::Message> messages;
-    if (exc.messages.empty()) {
-      for (auto &e : cache->errors) {
-        for (unsigned i = 0; i < e.messages.size(); i++) {
-          if (!e.messages[i].empty())
-            messages.emplace_back(e.messages[i], e.locations[i].file,
-                                  e.locations[i].line, e.locations[i].col,
-                                  e.locations[i].len, e.errorCode);
-        }
-      }
-    }
-
     for (auto &f : cache->functions)
       for (auto &r : f.second.realizations)
         if (!(in(bCache.functions, f.first) &&
@@ -153,10 +147,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     *(cache->typeCtx) = bType;
     *(cache->codegenCtx) = bTranslate;
 
-    if (exc.messages.empty())
-      return llvm::make_error<error::ParserErrorInfo>(messages);
-    else
-      return llvm::make_error<error::ParserErrorInfo>(exc);
+    return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
 }
 

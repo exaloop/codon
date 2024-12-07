@@ -64,16 +64,18 @@ std::string makeOutputFilename(const std::string &filename,
 
 void display(const codon::error::ParserErrorInfo &e) {
   using codon::MessageGroupPos;
-  for (auto &group : e) {
+  for (auto &group : e.getErrors()) {
+    int i = 0;
     for (auto &msg : group) {
       MessageGroupPos pos = MessageGroupPos::NONE;
-      if (&msg == &group.front()) {
+      if (i == 0) {
         pos = MessageGroupPos::HEAD;
-      } else if (&msg == &group.back()) {
+      } else if (i == group.size() - 1) {
         pos = MessageGroupPos::LAST;
       } else {
         pos = MessageGroupPos::MID;
       }
+      i++;
       codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
                               msg.getColumn(), msg.getLength(), msg.getErrorCode(),
                               /*terminate=*/false, pos);

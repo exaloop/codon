@@ -116,6 +116,14 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (!iterType)
     return; // wait until the iterator is known
 
+  // Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
+  if (!cast<IdExpr>(stmt->getVar())) {
+    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
+    auto ns = unpackAssignment(stmt->getVar(), var);
+    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
+    stmt->var = var;
+  }
+
   auto [delay, staticLoop] = transformStaticForLoop(stmt);
   if (delay)
     return;
@@ -201,8 +209,12 @@ Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
     for (auto &a : *c) {
       if (a.getName() == "openmp" ||
           (a.getName().empty() && openmp.empty() && cast<StringExpr>(a.getExpr()))) {
-        omp = parseOpenMP(ctx->cache, cast<StringExpr>(a.getExpr())->getValue(),
-                          a.value->getSrcInfo());
+        auto ompOrErr =
+            parseOpenMP(ctx->cache, cast<StringExpr>(a.getExpr())->getValue(),
+                        a.value->getSrcInfo());
+        if (!ompOrErr)
+          throw exc::ParserException(ompOrErr.takeError());
+        omp = *ompOrErr;
       } else {
         args.emplace_back(a.getName(), transform(a.getExpr()));
       }

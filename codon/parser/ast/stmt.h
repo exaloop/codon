@@ -47,8 +47,6 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   /// @return the first statement in a suite; if a statement is not a suite, returns the
   /// statement itself
   virtual Stmt *firstInBlock() { return this; }
-  /// Validate a node. Throw ParseASTException if a node is not valid.
-  void validate() const;
 
   static const char NodeId;
   SERIALIZE(Stmt, BASE(ASTNode), done);
@@ -133,7 +131,6 @@ struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
   bool isAtomicUpdate() const { return update == UpdateAtomic; }
   void setUpdate() { update = Update; }
   void setAtomicUpdate() { update = UpdateAtomic; }
-  Stmt *unpack() const;
 
   ACCEPT(AssignStmt, ASTVisitor, lhs, rhs, type, update);
 
@@ -376,7 +373,6 @@ struct ImportStmt : public AcceptorExtend<ImportStmt, Stmt> {
   Expr *getReturnType() const { return ret; }
   const std::vector<Param> &getArgs() const { return args; }
   bool isCVar() const { return !isFunction; }
-  void validate() const;
 
   ACCEPT(ImportStmt, ASTVisitor, from, what, as, dots, args, ret, isFunction);
 
@@ -494,8 +490,6 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   std::string signature() const;
   size_t getStarArgs() const;
   size_t getKwStarArgs() const;
-  void validate() const;
-  void parseDecorators();
   std::string getDocstr() const;
   std::unordered_set<std::string> getNonInferrableGenerics() const;
 
@@ -532,8 +526,6 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
   std::string getDocstr() const;
-  void validate() const;
-  void parseDecorators();
 
   static bool isClassVar(const Param &p);
 

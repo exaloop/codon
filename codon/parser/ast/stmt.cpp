@@ -96,89 +96,6 @@ std::string AssignStmt::toString(int indent) const {
                 type ? format(" #:type {}", type->toString(indent)) : "");
 }
 
-/// Unpack an assignment expression `lhs = rhs` into a list of simple assignment
-/// expressions (e.g., `a = b`, `a.x = b`, or `a[x] = b`).
-/// Handle Python unpacking rules.
-/// @example
-///   `(a, b) = c`     -> `a = c[0]; b = c[1]`
-///   `a, b = c`       -> `a = c[0]; b = c[1]`
-///   `[a, *x, b] = c` -> `a = c[0]; x = c[1:-1]; b = c[-1]`.
-/// Non-trivial right-hand expressions are first stored in a temporary variable.
-/// @example
-///   `a, b = c, d + foo()` -> `assign = (c, d + foo); a = assign[0]; b = assign[1]`.
-/// Each assignment is unpacked recursively to allow cases like `a, (b, c) = d`.
-Stmt *AssignStmt::unpack() const {
-  std::vector<Expr *> leftSide;
-  if (auto et = cast<TupleExpr>(lhs)) {
-    // Case: (a, b) = ...
-    for (auto *i : *et)
-      leftSide.push_back(i);
-  } else if (auto el = cast<ListExpr>(lhs)) {
-    // Case: [a, b] = ...
-    for (auto *i : *el)
-      leftSide.push_back(i);
-  } else {
-    // Case: simple assignment (a = b, a.x = b, or a[x] = b)
-    return cache->NS<AssignStmt>(this, lhs, rhs, type);
-  }
-
-  // Prepare the right-side expression
-  auto srcPos = rhs;
-  SuiteStmt *block = cache->NS<SuiteStmt>(this);
-  auto rhs = this->rhs;
-  if (!cast<IdExpr>(rhs)) {
-    // Store any non-trivial right-side expression into a variable
-    auto var = cache->getTemporaryVar("assign");
-    rhs = cache->NS<IdExpr>(this->rhs, var);
-    block->addStmt(cache->NS<AssignStmt>(this, rhs, ast::clone(this->rhs)));
-  }
-
-  // Process assignments until the fist StarExpr (if any)
-  size_t st = 0;
-  for (; st < leftSide.size(); st++) {
-    if (cast<StarExpr>(leftSide[st]))
-      break;
-    // Transformation: `leftSide_st = rhs[st]` where `st` is static integer
-    auto rightSide =
-        cache->NS<IndexExpr>(rhs, ast::clone(rhs), cache->NS<IntExpr>(rhs, st));
-    // Recursively process the assignment because of cases like `(a, (b, c)) = d)`
-    auto aa = AssignStmt(leftSide[st], rightSide);
-    aa.cache = cache;
-    auto ns = aa.unpack();
-    block->addStmt(ns);
-  }
-  // Process StarExpr (if any) and the assignments that follow it
-  if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
-    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
-    auto rightSide = cache->NS<IndexExpr>(
-        rhs, ast::clone(rhs),
-        cache->NS<SliceExpr>(rhs, cache->NS<IntExpr>(rhs, st),
-                             // this slice is either [st:] or [st:-lhs_len + st + 1]
-                             leftSide.size() == st + 1
-                                 ? nullptr
-                                 : cache->NS<IntExpr>(rhs, -leftSide.size() + st + 1),
-                             nullptr));
-    auto aa = AssignStmt(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
-    aa.cache = cache;
-    auto ns = aa.unpack();
-    block->addStmt(ns);
-    st += 1;
-    // Process remaining assignments. They will use negative indices (-1, -2 etc.)
-    // because we do not know how big is StarExpr
-    for (; st < leftSide.size(); st++) {
-      if (cast<StarExpr>(leftSide[st]))
-        E(Error::ASSIGN_MULTI_STAR, leftSide[st]);
-      rightSide = cache->NS<IndexExpr>(
-          rhs, ast::clone(rhs), cache->NS<IntExpr>(rhs, -int(leftSide.size() - st)));
-      auto aa = AssignStmt(leftSide[st], rightSide);
-      aa.cache = cache;
-      auto ns = aa.unpack();
-      block->addStmt(ns);
-    }
-  }
-  return block;
-}
-
 DelStmt::DelStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 DelStmt::DelStmt(const DelStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
@@ -319,7 +236,6 @@ ImportStmt::ImportStmt(Expr *from, Expr *what, std::vector<Param> args, Expr *re
                        std::string as, size_t dots, bool isFunction)
     : AcceptorExtend(), from(from), what(what), as(std::move(as)), dots(dots),
       args(std::move(args)), ret(ret), isFunction(isFunction) {
-  validate();
 }
 ImportStmt::ImportStmt(const ImportStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), from(ast::clone(stmt.from, clean)),
@@ -336,25 +252,6 @@ std::string ImportStmt::toString(int indent) const {
                 dots ? format(" #:dots {}", dots) : "",
                 va.empty() ? "" : format(" #:args ({})", join(va)),
                 ret ? format(" #:ret {}", ret->toString(indent)) : "");
-}
-void ImportStmt::validate() const {
-  if (from) {
-    Expr *e = from;
-    while (auto d = cast<DotExpr>(e))
-      e = d->getExpr();
-    if (!isId(from, "C") && !isId(from, "python")) {
-      if (!cast<IdExpr>(e))
-        E(Error::IMPORT_IDENTIFIER, e);
-      if (!args.empty())
-        E(Error::IMPORT_FN, args[0]);
-      if (ret)
-        E(Error::IMPORT_FN, ret);
-      if (what && !cast<IdExpr>(what))
-        E(Error::IMPORT_IDENTIFIER, what);
-    }
-    if (!isFunction && !args.empty())
-      E(Error::IMPORT_FN, args[0]);
-  }
 }
 
 ExceptStmt::ExceptStmt(const std::string &var, Expr *exc, Stmt *suite)
@@ -413,7 +310,6 @@ FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
                            Stmt *suite, std::vector<Expr *> decorators)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)), ret(ret),
       suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)) {
-  parseDecorators();
 }
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
@@ -438,92 +334,11 @@ std::string FunctionStmt::toString(int indent) const {
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
 }
-void FunctionStmt::validate() const {
-  if (!ret && (hasAttribute(Attr::LLVM) || hasAttribute(Attr::C)))
-    E(Error::FN_LLVM, getSrcInfo());
-
-  std::unordered_set<std::string> seenArgs;
-  bool defaultsStarted = false, hasStarArg = false, hasKwArg = false;
-  for (size_t ia = 0; ia < size(); ia++) {
-    auto &a = items[ia];
-    auto [stars, n] = a.getNameWithStars();
-    if (stars == 2) {
-      if (hasKwArg)
-        E(Error::FN_MULTIPLE_ARGS, a);
-      if (a.defaultValue)
-        E(Error::FN_DEFAULT_STARARG, a.defaultValue);
-      if (ia != size() - 1)
-        E(Error::FN_LAST_KWARG, a);
-      hasKwArg = true;
-    } else if (stars == 1) {
-      if (hasStarArg)
-        E(Error::FN_MULTIPLE_ARGS, a);
-      if (a.defaultValue)
-        E(Error::FN_DEFAULT_STARARG, a.defaultValue);
-      hasStarArg = true;
-    }
-    if (in(seenArgs, n))
-      E(Error::FN_ARG_TWICE, a, n);
-    seenArgs.insert(n);
-    if (!a.defaultValue && defaultsStarted && !stars && a.isValue())
-      E(Error::FN_DEFAULT, a, n);
-    defaultsStarted |= bool(a.defaultValue);
-    if (hasAttribute(Attr::C)) {
-      if (a.defaultValue)
-        E(Error::FN_C_DEFAULT, a.defaultValue, n);
-      if (stars != 1 && !a.type)
-        E(Error::FN_C_TYPE, a, n);
-    }
-  }
-}
 std::string FunctionStmt::signature() const {
   std::vector<std::string> s;
   for (auto &a : items)
     s.push_back(a.type ? a.type->toString() : "-");
   return format("{}", join(s, ":"));
-}
-void FunctionStmt::parseDecorators() {
-  std::vector<Expr *> newDecorators;
-  for (auto &d : decorators) {
-    if (isId(d, Attr::Attribute)) {
-      if (decorators.size() != 1)
-        E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Attribute);
-      setAttribute(Attr::Attribute);
-    } else if (isId(d, Attr::LLVM)) {
-      setAttribute(Attr::LLVM);
-    } else if (isId(d, Attr::Python)) {
-      if (decorators.size() != 1)
-        E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Python);
-      setAttribute(Attr::Python);
-    } else if (isId(d, Attr::Internal)) {
-      setAttribute(Attr::Internal);
-    } else if (isId(d, Attr::HiddenFromUser)) {
-      setAttribute(Attr::HiddenFromUser);
-    } else if (isId(d, Attr::Atomic)) {
-      setAttribute(Attr::Atomic);
-    } else if (isId(d, Attr::Property)) {
-      setAttribute(Attr::Property);
-    } else if (isId(d, Attr::StaticMethod)) {
-      setAttribute(Attr::StaticMethod);
-    } else if (isId(d, Attr::ForceRealize)) {
-      setAttribute(Attr::ForceRealize);
-    } else if (isId(d, Attr::C)) {
-      setAttribute(Attr::C);
-    } else {
-      newDecorators.emplace_back(d);
-    }
-  }
-  if (hasAttribute(Attr::C)) {
-    for (auto &a : items) {
-      if (a.name.size() > 1 && a.name[0] == '*' && a.name[1] != '*')
-        setAttribute(Attr::CVarArg);
-    }
-  }
-  if (!items.empty() && !items[0].type && items[0].name == "self") {
-    setAttribute(Attr::HasSelf);
-  }
-  decorators = newDecorators;
-  validate();
 }
 size_t FunctionStmt::getStarArgs() const {
   size_t i = 0;
@@ -616,7 +431,6 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
       this->baseClasses.push_back(b);
     }
   }
-  parseDecorators();
 }
 ClassStmt::ClassStmt(const ClassStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
@@ -646,122 +460,7 @@ std::string ClassStmt::toString(int indent) const {
                 suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
                       : "(suite)");
 }
-void ClassStmt::validate() const {
-  std::unordered_set<std::string> seen;
-  if (hasAttribute(Attr::Extend) && !items.empty())
-    E(Error::CLASS_EXTENSION, items[0]);
-  if (hasAttribute(Attr::Extend) && !(baseClasses.empty() && staticBaseClasses.empty()))
-    E(Error::CLASS_EXTENSION,
-      baseClasses.empty() ? staticBaseClasses[0] : baseClasses[0]);
-  for (auto &a : items) {
-    if (!a.type && !a.defaultValue)
-      E(Error::CLASS_MISSING_TYPE, a, a.name);
-    if (in(seen, a.name))
-      E(Error::CLASS_ARG_TWICE, a, a.name);
-    seen.insert(a.name);
-  }
-}
 bool ClassStmt::isRecord() const { return hasAttribute(Attr::Tuple); }
-void ClassStmt::parseDecorators() {
-  // @tuple(init=, repr=, eq=, order=, hash=, pickle=, container=, python=, add=,
-  // internal=...)
-  // @dataclass(...)
-  // @extend
-
-  std::map<std::string, bool> tupleMagics = {
-      {"new", true},           {"repr", false},    {"hash", false},
-      {"eq", false},           {"ne", false},      {"lt", false},
-      {"le", false},           {"gt", false},      {"ge", false},
-      {"pickle", true},        {"unpickle", true}, {"to_py", false},
-      {"from_py", false},      {"iter", false},    {"getitem", false},
-      {"len", false},          {"to_gpu", false},  {"from_gpu", false},
-      {"from_gpu_new", false}, {"tuplesize", true}};
-
-  for (auto &d : decorators) {
-    if (isId(d, "deduce")) {
-      setAttribute(Attr::ClassDeduce);
-    } else if (isId(d, "__notuple__")) {
-      setAttribute(Attr::ClassNoTuple);
-    } else if (isId(d, "dataclass")) {
-    } else if (auto c = cast<CallExpr>(d)) {
-      if (isId(c->getExpr(), Attr::Tuple)) {
-        setAttribute(Attr::Tuple);
-        for (auto &m : tupleMagics)
-          m.second = true;
-      } else if (!isId(c->getExpr(), "dataclass")) {
-        E(Error::CLASS_BAD_DECORATOR, c->getExpr());
-      } else if (hasAttribute(Attr::Tuple)) {
-        E(Error::CLASS_CONFLICT_DECORATOR, c, "dataclass", Attr::Tuple);
-      }
-      for (const auto &a : *c) {
-        auto b = cast<BoolExpr>(a);
-        if (!b)
-          E(Error::CLASS_NONSTATIC_DECORATOR, a);
-        char val = char(b->getValue());
-        if (a.getName() == "init") {
-          tupleMagics["new"] = val;
-        } else if (a.getName() == "repr") {
-          tupleMagics["repr"] = val;
-        } else if (a.getName() == "eq") {
-          tupleMagics["eq"] = tupleMagics["ne"] = val;
-        } else if (a.getName() == "order") {
-          tupleMagics["lt"] = tupleMagics["le"] = tupleMagics["gt"] =
-              tupleMagics["ge"] = val;
-        } else if (a.getName() == "hash") {
-          tupleMagics["hash"] = val;
-        } else if (a.getName() == "pickle") {
-          tupleMagics["pickle"] = tupleMagics["unpickle"] = val;
-        } else if (a.getName() == "python") {
-          tupleMagics["to_py"] = tupleMagics["from_py"] = val;
-        } else if (a.getName() == "gpu") {
-          tupleMagics["to_gpu"] = tupleMagics["from_gpu"] =
-              tupleMagics["from_gpu_new"] = val;
-        } else if (a.getName() == "container") {
-          tupleMagics["iter"] = tupleMagics["getitem"] = val;
-        } else {
-          E(Error::CLASS_BAD_DECORATOR_ARG, a);
-        }
-      }
-    } else if (isId(d, Attr::Tuple)) {
-      if (hasAttribute(Attr::Tuple))
-        E(Error::CLASS_MULTIPLE_DECORATORS, d, Attr::Tuple);
-      setAttribute(Attr::Tuple);
-      for (auto &m : tupleMagics) {
-        m.second = true;
-      }
-    } else if (isId(d, Attr::Extend)) {
-      setAttribute(Attr::Extend);
-      if (decorators.size() != 1)
-        E(Error::CLASS_SINGLE_DECORATOR, decorators[decorators[0] == d], Attr::Extend);
-    } else if (isId(d, Attr::Internal)) {
-      setAttribute(Attr::Internal);
-    } else {
-      E(Error::CLASS_BAD_DECORATOR, d);
-    }
-  }
-  if (hasAttribute(Attr::ClassDeduce))
-    tupleMagics["new"] = false;
-  if (!hasAttribute(Attr::Tuple)) {
-    tupleMagics["init"] = tupleMagics["new"];
-    tupleMagics["new"] = tupleMagics["raw"] = true;
-    tupleMagics["len"] = false;
-  }
-  tupleMagics["dict"] = true;
-  // Internal classes do not get any auto-generated members.
-  std::vector<std::string> magics;
-  if (!hasAttribute(Attr::Internal)) {
-    for (auto &m : tupleMagics)
-      if (m.second) {
-        if (m.first == "new")
-          magics.insert(magics.begin(), m.first);
-        else
-          magics.push_back(m.first);
-      }
-  }
-  setAttribute(Attr::ClassMagic, std::make_unique<ir::StringListAttribute>(magics));
-
-  validate();
-}
 bool ClassStmt::isClassVar(const Param &p) {
   if (!p.defaultValue)
     return false;
