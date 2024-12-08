@@ -288,7 +288,6 @@ public:
                               fflush(stdout);
                               exit(EXIT_FAILURE);
                             });
-
       auto *pm = compiler->getPassManager();
       pm->registerPass(std::make_unique<TestOutliner>());
       pm->registerPass(std::make_unique<TestInliner>());
@@ -300,7 +299,6 @@ public:
                                 ir::analyze::dataflow::DominatorAnalysis::KEY});
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
-
       llvm::cantFail(compiler->compile());
       seq_exc_init(0);
       compiler->getLLVMVisitor()->run({file});
@@ -348,6 +346,8 @@ TEST_P(SeqTest, Run) {
     status = runInChildProcess();
   else
     status = runInChildProcess();
+  if (!WIFEXITED(status))
+    std::cerr << result() << std::endl;
   ASSERT_TRUE(WIFEXITED(status));
 
   string output = result();

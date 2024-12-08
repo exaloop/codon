@@ -359,8 +359,11 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   }
   for (auto &g : generics)
     params.push_back(g);
-  prependStmts->push_back(transform(
-      N<ClassStmt>(name, params, nullptr, std::vector<Expr *>{N<IdExpr>("tuple")})));
+  auto cls = N<SuiteStmt>(
+      N<ClassStmt>(name, params, nullptr, std::vector<Expr *>{N<IdExpr>("tuple")}));
+  if (auto err = ast::ScopingVisitor::apply(ctx->cache, cls))
+    throw exc::ParserException(std::move(err));
+  prependStmts->push_back(transform(cls));
   return transformType(N<IdExpr>(name));
 }
 
@@ -680,7 +683,7 @@ Expr *TypecheckVisitor::transformSetAttr(CallExpr *expr) {
 /// Raise a compiler error.
 Expr *TypecheckVisitor::transformCompileError(CallExpr *expr) {
   auto msg = getStrLiteral(extractFuncGeneric(expr->expr->getType()));
-  E(Error::CUSTOM, expr, msg);
+  E(Error::CUSTOM, expr, msg.c_str());
   return nullptr;
 }
 

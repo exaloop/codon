@@ -36,8 +36,8 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   }
 
   bool mustUpdate = stmt->isUpdate() || stmt->isAtomicUpdate();
-  mustUpdate |= stmt->hasAttribute(Attr::ExprDominated);
-  mustUpdate |= stmt->hasAttribute(Attr::ExprDominatedUsed);
+  mustUpdate |= stmt->getLhs()->hasAttribute(Attr::ExprDominated);
+  mustUpdate |= stmt->getLhs()->hasAttribute(Attr::ExprDominatedUsed);
   if (cast<BinaryExpr>(stmt->getRhs()) &&
       cast<BinaryExpr>(stmt->getRhs())->isInPlace()) {
     // Update case: a += b
@@ -46,9 +46,9 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
   }
 
   resultStmt = transformAssignment(stmt, mustUpdate);
-  if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
+  if (stmt->getLhs()->hasAttribute(Attr::ExprDominatedUsed)) {
     // If this is dominated, set __used__ if needed
-    stmt->eraseAttribute(Attr::ExprDominatedUsed);
+    stmt->getLhs()->eraseAttribute(Attr::ExprDominatedUsed);
     auto e = cast<IdExpr>(stmt->getLhs());
     seqassert(e, "dominated bad assignment");
     resultStmt = transform(N<SuiteStmt>(
@@ -108,6 +108,8 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
     // Case: [a, b] = ...
     for (auto *i : *el)
       leftSide.push_back(i);
+  } else {
+    return N<AssignStmt>(lhs, rhs);
   }
 
   // Prepare the right-side expression

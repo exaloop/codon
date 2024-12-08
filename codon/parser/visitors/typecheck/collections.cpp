@@ -126,7 +126,6 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     block->addStmt(N<AssignStmt>(N<IdExpr>(tupleVar), gen));
 
     auto forStmt = clone(cast<ForStmt>(expr->getFinalSuite()));
-    seqassert(cast<IdExpr>(forStmt->getVar()), "tuple() not simplified");
     auto finalExpr = expr->getFinalExpr();
     auto [ok, delay, preamble, staticItems] = transformStaticLoopCall(
         cast<ForStmt>(expr->getFinalSuite())->getVar(), &forStmt->suite, gen,

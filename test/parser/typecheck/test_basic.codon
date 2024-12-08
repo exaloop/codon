@@ -73,10 +73,10 @@ print(c, f'{b}{a}', f'. {1+a=} .. {b} ...')
 #: and this is 1 followed by 2 21 . 1+a=2 .. 2 ...
 
 #%% fstring_error_1,barebones
-f"a{b + 3}}" #! single '}' is not allowed in f-string
+f"a{1 + 3}}" #! single '}' is not allowed in f-string
 
 #%% fstring_error_2,barebones
-f"a{{b + 3}" #! expecting '}' in f-string
+f"a{{1 + 3}" #! expecting '}' in f-string
 
 #%% string_prefix,barebones
 @extend

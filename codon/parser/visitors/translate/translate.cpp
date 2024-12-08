@@ -532,7 +532,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   seqassert(cast<IdExpr>(stmt->getVar()), "expected IdExpr, got {}", *(stmt->getVar()));
   auto varName = cast<IdExpr>(stmt->getVar())->getValue();
   ir::Var *var = nullptr;
-  if (!ctx->find(varName) || !stmt->hasAttribute(Attr::ExprDominated)) {
+  if (!ctx->find(varName) || !stmt->getVar()->hasAttribute(Attr::ExprDominated)) {
     var =
         make<ir::Var>(stmt, getType(stmt->getVar()->getType()), false, false, varName);
   } else {

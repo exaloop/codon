@@ -518,7 +518,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   }
 
   // For debugging purposes:
-  // findMethod(typ.get(), expr->getMember());
+  findMethod(typ, expr->getMember());
   E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->getMember());
   return nullptr;
 }

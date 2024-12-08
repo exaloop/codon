@@ -219,6 +219,11 @@ public:
   static char ID;
 };
 
+template <class... TA> std::string Eformat(const TA &...args) { return ""; }
+template <class... TA> std::string Eformat(const char *fmt, const TA &...args) {
+  return fmt::format(fmt, args...);
+}
+
 template <class... TA> std::string Emsg(Error e, const TA &...args) {
   switch (e) {
   /// Validations
@@ -440,8 +445,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
     return fmt::format(
         "maximum realization depth reached during the realization of '{}'", args...);
   case Error::CUSTOM:
-    return fmt::format("{}", args...);
-
+    return Eformat(args...);
   default:
     assert(false);
   }

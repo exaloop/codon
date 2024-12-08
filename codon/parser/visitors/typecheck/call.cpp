@@ -566,7 +566,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     reorderNamedArgs(
         calleeFn, expr->items, reorderFn,
         [&](error::Error e, const SrcInfo &o, const std::string &errorMsg) {
-          E(e, o, errorMsg);
+          E(Error::CUSTOM, o, errorMsg.c_str());
           return -1;
         },
         part.known);

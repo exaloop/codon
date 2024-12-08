@@ -162,7 +162,8 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
       return t;
     }
   } catch (exc::ParserException &exc) {
-    auto &bt = exc.getErrors().getLast();
+    seqassert(!exc.getErrors().empty(), "empty error trace");
+    auto &bt = exc.getErrors().back();
     if (bt.front().getErrorCode() == Error::MAX_REALIZATION)
       throw;
     if (auto f = typ->getFunc()) {

@@ -38,6 +38,8 @@ llvm::Error ScopingVisitor::apply(Cache *cache, Stmt *s) {
   ConditionalBlock cb(c.get(), s, 0);
   if (!v.transform(s))
     return llvm::make_error<ParserErrorInfo>(v.errors);
+  if (v.hasErrors())
+    return llvm::make_error<ParserErrorInfo>(v.errors);
   v.processChildCaptures();
   return llvm::Error::success();
 }
@@ -45,8 +47,10 @@ llvm::Error ScopingVisitor::apply(Cache *cache, Stmt *s) {
 bool ScopingVisitor::transform(Expr *expr) {
   ScopingVisitor v(*this);
   if (expr) {
-    setSrcInfo(expr->getSrcInfo());
+    v.setSrcInfo(expr->getSrcInfo());
     expr->accept(v);
+    if (v.hasErrors())
+      errors.append(v.errors);
     if (!canContinue())
       return false;
   }
@@ -56,8 +60,10 @@ bool ScopingVisitor::transform(Expr *expr) {
 bool ScopingVisitor::transform(Stmt *stmt) {
   ScopingVisitor v(*this);
   if (stmt) {
-    setSrcInfo(stmt->getSrcInfo());
+    v.setSrcInfo(stmt->getSrcInfo());
     stmt->accept(v);
+    if (v.hasErrors())
+      errors.append(v.errors);
     if (!canContinue())
       return false;
   }
@@ -102,6 +108,8 @@ bool ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
 }
 
 void ScopingVisitor::visit(IdExpr *expr) {
+  if (ctx->adding)
+    ctx->root = expr;
   if (ctx->adding && ctx->tempScope)
     ctx->renames.back()[expr->getValue()] =
         ctx->cache->getTemporaryVar(expr->getValue());
@@ -301,7 +309,7 @@ void ScopingVisitor::visit(ForStmt *stmt) {
     ConditionalBlock c(ctx.get(), stmt->getSuite());
 
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
-    CHECK(transformAdding(stmt->var, stmt));
+    CHECK(transformAdding(stmt->getVar(), stmt));
     seenDef = *(ctx->scope.back().seenVars);
 
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
@@ -336,7 +344,6 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
   }
   if (ctx->functionScope && stmt->getWhat() && isId(stmt->getWhat(), "*"))
     STOP_ERROR(error::Error::IMPORT_STAR, stmt);
-  return;
 
   // dylib C imports
   if (stmt->getFrom() && isId(stmt->getFrom(), "C") && cast<DotExpr>(stmt->getWhat()))

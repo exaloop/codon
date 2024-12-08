@@ -51,6 +51,7 @@ public:
   int getErrorCode() const { return errorCode; }
   SrcInfo getSrcInfo() const { return loc; }
   void setSrcInfo(const SrcInfo &s) { loc = s; }
+  bool operator==(const ErrorMessage &t) const { return msg == t.msg && loc == t.loc; }
 
   void log(llvm::raw_ostream &out) const {
     if (!getFile().empty()) {
@@ -81,6 +82,7 @@ struct ParserErrors {
     void addMessage(const std::string &msg, const SrcInfo &info = SrcInfo()) {
       trace.emplace_back(msg, info);
     }
+    bool operator==(const Backtrace &t) const { return trace == t.trace; }
   };
   std::vector<Backtrace> errors;
 
@@ -101,17 +103,24 @@ struct ParserErrors {
   auto end() const { return errors.end(); }
   auto empty() const { return errors.empty(); }
   auto size() const { return errors.size(); }
+  auto &back() { return errors.back(); }
+  const auto &back() const { return errors.back(); }
   void append(const ParserErrors &e) {
-    errors.insert(errors.end(), e.errors.begin(), e.errors.end());
+    for (auto &trace : e)
+      addError(trace);
   }
 
-  Backtrace &getLast() {
+  Backtrace getLast() {
     assert(!empty() && "empty error trace");
     return errors.back();
   }
 
   /// Add an error message to the current backtrace
-  void addError(const std::vector<ErrorMessage> &trace) { errors.push_back({trace}); }
+  void addError(const Backtrace &trace) {
+    if (errors.empty() || !(errors.back() == trace))
+      errors.push_back({trace});
+  }
+  void addError(const std::vector<ErrorMessage> &trace) { addError(Backtrace{trace}); }
   std::string getMessage() const {
     if (empty())
       return "";
@@ -136,7 +145,8 @@ public:
       : std::runtime_error(errors.getMessage()), errors(errors) {}
   ParserException(llvm::Error &&e) noexcept;
 
-  ParserErrors getErrors() const { return errors; }
+  const ParserErrors &getErrors() const { return errors; }
+  ParserErrors &getErrors() { return errors; }
 };
 
 } // namespace codon::exc

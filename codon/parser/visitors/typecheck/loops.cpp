@@ -116,20 +116,20 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (!iterType)
     return; // wait until the iterator is known
 
-  // Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
-  if (!cast<IdExpr>(stmt->getVar())) {
-    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
-    auto ns = unpackAssignment(stmt->getVar(), var);
-    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
-    stmt->var = var;
-  }
-
   auto [delay, staticLoop] = transformStaticForLoop(stmt);
   if (delay)
     return;
   if (staticLoop) {
     resultStmt = staticLoop;
     return;
+  }
+
+  // Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
+  if (!cast<IdExpr>(stmt->getVar())) {
+    auto var = N<IdExpr>(ctx->cache->getTemporaryVar("for"));
+    auto ns = unpackAssignment(stmt->getVar(), var);
+    stmt->suite = N<SuiteStmt>(ns, stmt->getSuite());
+    stmt->var = var;
   }
 
   // Case: iterating a non-generator. Wrap with `__iter__`
@@ -143,13 +143,13 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   auto var = cast<IdExpr>(stmt->getVar());
   seqassert(var, "corrupt for variable: {}", *(stmt->getVar()));
 
-  if (!stmt->hasAttribute(Attr::ExprDominated) &&
-      !stmt->hasAttribute(Attr::ExprDominatedUsed)) {
+  if (!var->hasAttribute(Attr::ExprDominated) &&
+      !var->hasAttribute(Attr::ExprDominatedUsed)) {
     ctx->addVar(var->getValue(), ctx->generateCanonicalName(var->getValue()),
                 instantiateUnbound());
-  } else if (stmt->hasAttribute(Attr::ExprDominatedUsed)) {
-    stmt->eraseAttribute(Attr::ExprDominatedUsed);
-    stmt->setAttribute(Attr::ExprDominated);
+  } else if (var->hasAttribute(Attr::ExprDominatedUsed)) {
+    var->eraseAttribute(Attr::ExprDominatedUsed);
+    var->setAttribute(Attr::ExprDominated);
     stmt->suite = N<SuiteStmt>(
         N<AssignStmt>(N<IdExpr>(format("{}{}", var->getValue(), VAR_USED_SUFFIX)),
                       N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
@@ -288,37 +288,26 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   if (!iter->getClassType())
     return {true, true, nullptr, {}};
 
-  seqassert(cast<IdExpr>(varExpr), "bad varExpr");
-  std::function<int(Stmt **, const std::function<void(Stmt **)> &)> iterFn;
-  iterFn = [&iterFn](Stmt **s, const std::function<void(Stmt **)> &fn) -> int {
-    if (!s)
-      return 0;
-    if (auto su = cast<SuiteStmt>(*s)) {
-      int i = 0;
-      for (auto &si : *su) {
-        i += iterFn(&si, fn);
-      }
-      return i;
+  std::vector<std::string> vars{};
+  if (auto ei = cast<IdExpr>(varExpr)) {
+    vars.push_back(ei->getValue());
+  } else {
+    Items<Expr *> *list = nullptr;
+    if (auto el = cast<ListExpr>(varExpr))
+      list = el;
+    else if (auto et = cast<TupleExpr>(varExpr))
+      list = et;
+    if (list) {
+      for (const auto &it : *list)
+        if (auto ei = cast<IdExpr>(it)) {
+          vars.push_back(ei->getValue());
+        } else {
+          return {false, false, nullptr, {}};
+        }
     } else {
-      fn(s);
-      return 1;
+      return {false, false, nullptr, {}};
     }
-  };
-  std::vector<std::string> vars{cast<IdExpr>(varExpr)->getValue()};
-  iterFn((Stmt **)varSuite, [&](Stmt **s) {
-    // Handle iteration var transformations (for i, j in x -> for _ in x: (i, j = _;
-    // ...))
-    IdExpr *var = nullptr;
-    if (match(*s, M<AssignStmt>(MVar<IdExpr>(var), M<IndexExpr>(M<IdExpr>(vars[0]), M_),
-                                M_, M_))) {
-      vars.push_back(var->getValue());
-      *s = nullptr;
-    }
-  });
-  if (vars.size() > 1)
-    vars.erase(vars.begin());
-  if (vars.empty())
-    return {false, false, nullptr, {}};
+  }
 
   Stmt *preamble = nullptr;
   auto fn =
