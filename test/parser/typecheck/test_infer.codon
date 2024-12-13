@@ -850,6 +850,13 @@ print(Tuple[-5, int].__class__.__name__)
 print(Tuple[5, int, str].__class__.__name__)
 #: Tuple[int,str,int,str,int,str,int,str,int,str]
 
+def foo(t: Tuple[N, int], N: Static[int]):
+    print("foo", N, t)
+foo((1, 2, 3))
+#: foo 3 (1, 2, 3)
+foo((1, 2, 3, 4, 5))
+#: foo 5 (1, 2, 3, 4, 5)
+
 
 #%% union_hasattr,barebones
 class A:

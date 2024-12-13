@@ -491,8 +491,11 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Realize if not, and return cached value if it exists
   auto realizedName = t->ClassType::realizedName();
   auto cls = ctx->cache->getClass(t);
-  if (!in(cls->realizations, realizedName))
-    realize(t->getClass());
+  if (!in(cls->realizations, realizedName)) {
+    t = realize(t->getClass())->getClass();
+    realizedName = t->ClassType::realizedName();
+    cls = ctx->cache->getClass(t);
+  }
   if (auto l = cls->realizations[realizedName]->ir) {
     if (cls->rtti)
       cast<ir::types::RefType>(l)->setPolymorphic();

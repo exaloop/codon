@@ -82,7 +82,10 @@ void TypecheckVisitor::visit(StringExpr *expr) {
         items.emplace_back(N<StringExpr>(p.value));
       }
     }
-    resultExpr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), items));
+    if (items.size() == 1)
+      resultExpr = transform(items.front());
+    else
+      resultExpr = transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"), items));
   }
 }
 

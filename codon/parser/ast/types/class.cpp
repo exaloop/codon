@@ -91,10 +91,29 @@ int ClassType::unify(Type *typ, Unification *us) {
     } else if (name == "__NTuple__" && tc->name == TYPE_TUPLE) {
       auto n1 = generics[0].getType()->getIntStatic();
       if (!n1) {
-        auto t1 = std::make_shared<IntStaticType>(cache, 1);
-        if (generics[0].type->unify(t1.get(), us) == -1)
+        auto n = tc->generics.size();
+        auto tn = std::make_shared<IntStaticType>(cache, n);
+        // If we are unifying NT[N, T] and T[X, X, ...], we assume that N is number of
+        // X's
+        if (generics[0].type->unify(tn.get(), us) == -1)
           return -1;
-        return generics[1].type->unify(tc, us);
+
+        auto tv = TypecheckVisitor(cache->typeCtx);
+        TypePtr tt;
+        if (n) {
+          tt = tv.instantiateType(tv.generateTuple(1), {tc->generics[0].getType()});
+          for (size_t i = 1; i < tc->generics.size(); i++) {
+            if ((s = tt->getClass()->generics[0].getType()->unify(
+                     tc->generics[i].getType(), us)) == -1)
+              return -1;
+            s1 += s;
+          }
+        } else {
+          tt = tv.instantiateType(tv.generateTuple(1));
+          // tt = tv.instantiateType(tv.generateTuple(0));
+        }
+        if (generics[1].type->unify(tt.get(), us) == -1)
+          return -1;
       } else {
         auto t1 = generics[1].getType()->getClass();
         seqassert(t1, "bad ntuples");
@@ -106,8 +125,8 @@ int ClassType::unify(Type *typ, Unification *us) {
             return -1;
           s1 += s;
         }
-        return s1;
       }
+      return s1;
     }
 
     // Check names.

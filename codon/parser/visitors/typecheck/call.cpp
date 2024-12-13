@@ -690,12 +690,12 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn,
 
   // Handle default generics
   for (size_t i = 0, j = 0; wrappingDone && i < calleeFn->ast->size(); i++)
-    if ((*calleeFn->ast)[i].status == Param::Generic) {
-      if ((*calleeFn->ast)[i].defaultValue &&
+    if ((*calleeFn->ast)[i].isGeneric()) {
+      if ((*calleeFn->ast)[i].getDefault() &&
           isUnbound(extractFuncGeneric(calleeFn, j))) {
         auto def = extractType(withClassGenerics(
             calleeFn,
-            [&]() { return transform(clone((*calleeFn->ast)[i].getDefault())); },
+            [&]() { return transform(clean_clone((*calleeFn->ast)[i].getDefault())); },
             true));
         unify(extractFuncGeneric(calleeFn, j), def);
       }
