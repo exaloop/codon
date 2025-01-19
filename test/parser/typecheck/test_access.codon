@@ -431,6 +431,21 @@ fox(1, 2)
 fox(1, 2, 3)
 #: fox 1: 1 2 3
 
+# Test whether recursive self references override overloads (they shouldn't)
+
+def arange(start: int, stop: int, step: int):
+    return (start, stop, step)
+
+@overload
+def arange(stop: int):
+    return arange(0, stop, 1)
+
+print(arange(0, 1, 2))
+#: (0, 1, 2)
+print(arange(12))
+#: (0, 12, 1)
+
+
 #%% fn_shadow,barebones
 def foo(x):
     return 1, x

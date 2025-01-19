@@ -202,7 +202,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   if (!e)
     E(Error::ASSIGN_INVALID, stmt->getLhs());
 
-  auto val = ctx->find(e->getValue());
+  auto val = ctx->find(e->getValue(), getTime());
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
@@ -237,7 +237,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     //  static check)
     assign->getLhs()->getType()->getLink()->defaultType =
         getStdLibType("NoneType")->shared_from_this();
-    ctx->getBase()->pendingDefaults.insert(
+    ctx->getBase()->pendingDefaults[1].insert(
         assign->getLhs()->getType()->shared_from_this());
   }
   if (stmt->getTypeExpr()) {
@@ -248,6 +248,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
                                         assign->getLhs()->getType()->shared_from_this(),
                                         ctx->getScope());
+  val->time = getTime();
   val->setSrcInfo(getSrcInfo());
   ctx->add(e->getValue(), val);
   ctx->addAlwaysVisible(val);

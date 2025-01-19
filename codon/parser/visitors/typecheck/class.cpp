@@ -63,7 +63,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Find the canonical name and AST of the class that is to be extended
     if (!ctx->isGlobal() || ctx->isConditional())
       E(Error::EXPECTED_TOPLEVEL, getSrcInfo(), "class extension");
-    auto val = ctx->find(name);
+    auto val = ctx->find(name, getTime());
     if (!val || !val->isType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), name);
     typ = val->getName() == TYPE_TYPE ? val->getType()->getClass()

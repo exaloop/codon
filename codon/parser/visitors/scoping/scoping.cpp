@@ -18,7 +18,7 @@
   }
 #define STOP_ERROR(...)                                                                \
   do {                                                                                 \
-    addError(__VA_ARGS__);                                                           \
+    addError(__VA_ARGS__);                                                             \
     return;                                                                            \
   } while (0)
 
@@ -66,6 +66,7 @@ bool ScopingVisitor::transform(Stmt *stmt) {
       errors.append(v.errors);
     if (!canContinue())
       return false;
+    stmt->setAttribute(Attr::ExprTime, ++ctx->time);
   }
   return true;
 }
@@ -847,8 +848,6 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
       lastGood = i;
     }
   }
-  // if (commonScope != ctx->scope.size())
-  //   LOG("==> {}: {} / {} vs {}", getSrcInfo(), name, ctx->getScope(), commonScope);
   seqassert(lastGood != it->end(), "corrupted scoping ({})", name);
   if (!allowShadow) { // go to the end
     lastGood = it->end();

@@ -24,7 +24,7 @@ using namespace types;
 /// If the identifier of a generic is fully qualified, use its qualified name
 ///   (e.g., replace `Ptr` with `Ptr[byte]`).
 void TypecheckVisitor::visit(IdExpr *expr) {
-  auto val = ctx->find(expr->getValue());
+  auto val = ctx->find(expr->getValue(), getTime());
   if (!val) {
     E(Error::ID_NOT_FOUND, expr, expr->getValue());
   }
@@ -61,7 +61,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   if (expr->hasAttribute(Attr::ExprDominatedUndefCheck)) {
     auto controlVar =
         fmt::format("{}{}", getUnmangledName(val->canonicalName), VAR_USED_SUFFIX);
-    if (ctx->find(controlVar)) {
+    if (ctx->find(controlVar, getTime())) {
       auto checkStmt = N<ExprStmt>(N<CallExpr>(
           N<DotExpr>(N<IdExpr>("__internal__"), "undef"), N<IdExpr>(controlVar),
           N<StringExpr>(getUnmangledName(val->canonicalName))));
@@ -295,7 +295,7 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
   TypeContext::Item val = nullptr, importVal = nullptr;
   for (auto i = chain.size(); i-- > 0;) {
     auto name = join(chain, "/", 0, i + 1);
-    val = ctx->find(name);
+    val = ctx->find(name, getTime());
     if (val && val->type->is("Import") && startswith(val->getName(), "%_import_")) {
       importName = getStrLiteral(val->type.get());
       importEnd = i + 1;

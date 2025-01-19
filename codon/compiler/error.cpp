@@ -16,6 +16,14 @@ SrcInfo::SrcInfo() : SrcInfo("", 0, 0, 0) {}
 
 bool SrcInfo::operator==(const SrcInfo &src) const { return id == src.id; }
 
+bool SrcInfo::operator<(const SrcInfo &src) const {
+  return std::tie(file, line, col) < std::tie(src.file, src.line, src.col);
+}
+
+bool SrcInfo::operator<=(const SrcInfo &src) const {
+  return std::tie(file, line, col) <= std::tie(src.file, src.line, src.col);
+}
+
 namespace error {
 
 char ParserErrorInfo::ID = 0;

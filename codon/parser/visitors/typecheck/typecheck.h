@@ -346,6 +346,8 @@ public:
   std::string getClassMethod(types::Type *typ, const std::string &member);
   std::string getTemporaryVar(const std::string &s);
   bool isImportFn(const std::string &s);
+  int64_t getTime();
+  types::Type *getUnderlyingStaticType(types::Type *t);
 
   int64_t getIntLiteral(types::Type *t, size_t pos = 0);
   bool getBoolLiteral(types::Type *t, size_t pos = 0);

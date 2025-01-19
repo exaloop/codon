@@ -109,27 +109,35 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
       bool anotherRound = false;
       // Special case: return type might have default as well (e.g., Union)
       if (auto t = ctx->getBase()->returnType) {
-        ctx->getBase()->pendingDefaults.insert(t);
+        ctx->getBase()->pendingDefaults[0].insert(t);
       }
-      for (auto &unbound : ctx->getBase()->pendingDefaults) {
-        if (auto tu = unbound->getUnion()) {
-          // Seal all dynamic unions after the iteration is over
-          if (!tu->isSealed()) {
-            tu->seal();
-            anotherRound = true;
+      // First unify "explicit" generics (whose default type is explicit),
+      // then "implicit" ones (whose default type is compiler generated,
+      // e.g. compiler-generated variable placeholders with default NoneType)
+      for (auto &[level, unbounds] : ctx->getBase()->pendingDefaults) {
+        if (!unbounds.empty()) {
+          for (const auto &unbound : unbounds) {
+            if (auto tu = unbound->getUnion()) {
+              // Seal all dynamic unions after the iteration is over
+              if (!tu->isSealed()) {
+                tu->seal();
+                anotherRound = true;
+              }
+            } else if (auto u = unbound->getLink()) {
+              types::Type::Unification undo;
+              if (u->defaultType &&
+                  u->unify(extractClassType(u->defaultType.get()), &undo) >= 0) {
+                anotherRound = true;
+              }
+            }
           }
-        } else if (auto u = unbound->getLink()) {
-          types::Type::Unification undo;
-          if (u->defaultType &&
-              u->unify(extractClassType(u->defaultType.get()), &undo) >= 0) {
-            anotherRound = true;
-          }
+          unbounds.clear();
+          if (anotherRound)
+            break;
         }
       }
-      ctx->getBase()->pendingDefaults.clear();
       if (anotherRound)
         continue;
-
       // Nothing helps. Return nullptr.
       return nullptr;
     }
@@ -356,11 +364,21 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
           E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
       }
     }
-  // Add self reference! TODO: maybe remove later when doing contexts?
+  // Add self [recursive] reference! TODO: maybe remove later when doing contexts?
   auto pc = ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
-  if (!pc || pc->value.empty())
-    ctx->addFunc(getUnmangledName(ast->getName()), ast->getName(),
-                 ctx->forceFind(ast->getName())->type);
+  if (!pc || pc->value.empty()) {
+    // Check if we already exist?
+    bool exists = false;
+    auto val = ctx->find(getUnmangledName(ast->getName()));
+    if (val && val->getType()->getFunc()) {
+      auto fn = getFunction(val->getType());
+      exists = fn->rootName == getFunction(type)->rootName;
+    }
+    if (!exists) {
+      ctx->addFunc(getUnmangledName(ast->getName()), ast->getName(),
+                   ctx->forceFind(ast->getName())->type);
+    }
+  }
   for (size_t i = 0, j = 0; hasAst && i < ast->size(); i++) {
     if ((*ast)[i].isValue()) {
       auto [_, varName] = (*ast)[i].getNameWithStars();
@@ -407,7 +425,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         // TODO: generalize this further.
         for (size_t w = ctx->bases.size(); w-- > 0;)
           if (ctx->bases[w].suite)
-            LOG("[error=> {}] {}", ctx->bases[w].type->debugString(2),
+            LOG("[error=> {}] {}",
+                ctx->bases[w].type ? ctx->bases[w].type->debugString(2) : "-",
                 ctx->bases[w].suite->toString(2));
       }
       if (!isImport) {

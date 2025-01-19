@@ -55,6 +55,9 @@ struct ASTNode : public ir::Node {
   void setAttribute(const std::string &key, const std::string &value) {
     attributes[key] = std::make_unique<ir::StringValueAttribute>(value);
   }
+  void setAttribute(const std::string &key, int64_t value) {
+    attributes[key] = std::make_unique<ir::IntValueAttribute>(value);
+  }
   void setAttribute(const std::string &key) {
     attributes[key] = std::make_unique<ir::Attribute>();
   }

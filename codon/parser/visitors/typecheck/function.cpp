@@ -31,6 +31,7 @@ void TypecheckVisitor::visit(LambdaExpr *expr) {
                             N<SuiteStmt>(N<ReturnStmt>(expr->getExpr())));
   if (auto err = ScopingVisitor::apply(ctx->cache, N<SuiteStmt>(f)))
     throw exc::ParserException(std::move(err));
+  f->setAttribute(Attr::ExprTime, getTime()); // to handle captures properly
   f = transform(f);
   if (auto a = expr->getAttribute(Attr::Bindings))
     f->setAttribute(Attr::Bindings, a->clone());
@@ -168,7 +169,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       rootName = *n;
   } else if (stmt->hasAttribute(Attr::Overload)) {
     // Case 2: function overload
-    if (auto c = ctx->find(stmt->getName())) {
+    if (auto c = ctx->find(stmt->getName(), getTime())) {
       if (c->isFunc() && c->getModule() == ctx->getModule() &&
           c->getBaseName() == ctx->getBaseName()) {
         rootName = c->canonicalName;
@@ -196,7 +197,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   std::map<std::string, TypeContext::Item> captures;
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings))
     for (auto &[c, t] : b->captures) {
-      if (auto v = ctx->find(c)) {
+      if (auto v = ctx->find(c, getTime())) {
         if (t != BindingsAttribute::CaptureType::Global && !v->isGlobal()) {
           bool parentClassGeneric =
               ctx->bases.back().isType() && ctx->bases.back().name == v->getBaseName();
@@ -581,7 +582,7 @@ std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
   auto dt = transform(clone(e));
   auto id = cast<IdExpr>(cast<CallExpr>(dt) ? cast<CallExpr>(dt)->getExpr() : dt);
   if (id) {
-    auto ci = ctx->find(id->getValue());
+    auto ci = ctx->find(id->getValue(), getTime());
     if (ci && ci->isFunc()) {
       auto fn = ci->getName();
       auto f = getFunction(fn);

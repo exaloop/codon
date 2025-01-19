@@ -150,8 +150,10 @@ void TypecheckVisitor::visit(CallExpr *expr) {
                                              ? t.getExpr()->getClassType()->name
                                              : t.getExpr()->getType()->prettyString()));
       auto argsNice = fmt::format("({})", fmt::join(a, ", "));
-      E(Error::FN_NO_ATTR_ARGS, expr, getUnmangledName(calleeFn->getFuncName()),
-        argsNice);
+      auto name = getUnmangledName(calleeFn->getFuncName());
+      if (calleeFn->getParentType() && calleeFn->getParentType()->getClass())
+        name = format("{}.{}", calleeFn->getParentType()->getClass()->niceName, name);
+      E(Error::FN_NO_ATTR_ARGS, expr, name, argsNice);
     }
   }
 
@@ -740,11 +742,11 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformPtr(expr)};
   } else if (val == "__array__.__new__:0") {
     return {true, transformArray(expr)};
-  } else if (val == "isinstance") {
+  } else if (val == "isinstance") { // static
     return {true, transformIsInstance(expr)};
-  } else if (val == "staticlen") {
+  } else if (val == "staticlen") { // static
     return {true, transformStaticLen(expr)};
-  } else if (val == "hasattr") {
+  } else if (val == "hasattr") { // static
     return {true, transformHasAttr(expr)};
   } else if (val == "getattr") {
     return {true, transformGetAttr(expr)};
@@ -758,21 +760,21 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformRealizedFn(expr)};
   } else if (val == "std.internal.static.static_print.0") {
     return {false, transformStaticPrintFn(expr)};
-  } else if (val == "__has_rtti__") {
+  } else if (val == "__has_rtti__") { // static
     return {true, transformHasRttiFn(expr)};
   } else if (val == "std.collections.namedtuple.0") {
     return {true, transformNamedTuple(expr)};
   } else if (val == "std.functools.partial.0:0") {
     return {true, transformFunctoolsPartial(expr)};
-  } else if (val == "std.internal.static.fn_can_call.0") {
+  } else if (val == "std.internal.static.fn_can_call.0") { // static
     return {true, transformStaticFnCanCall(expr)};
-  } else if (val == "std.internal.static.fn_arg_has_type.0") {
+  } else if (val == "std.internal.static.fn_arg_has_type.0") { // static
     return {true, transformStaticFnArgHasType(expr)};
   } else if (val == "std.internal.static.fn_arg_get_type.0") {
     return {true, transformStaticFnArgGetType(expr)};
   } else if (val == "std.internal.static.fn_args.0") {
     return {true, transformStaticFnArgs(expr)};
-  } else if (val == "std.internal.static.fn_has_default.0") {
+  } else if (val == "std.internal.static.fn_has_default.0") { // static
     return {true, transformStaticFnHasDefault(expr)};
   } else if (val == "std.internal.static.fn_get_default.0") {
     return {true, transformStaticFnGetDefault(expr)};

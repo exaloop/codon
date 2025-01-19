@@ -27,6 +27,11 @@ Stmt::Stmt(const Stmt &expr, bool clean) : AcceptorExtend(expr) {
   if (clean)
     done = false;
 }
+std::string Stmt::wrapStmt(const std::string &s) const {
+  // if (auto a = ir::Node::getAttribute<ir::IntValueAttribute>(Attr::ExprTime))
+  // return format("{}%%{}", s, a->value);
+  return s;
+}
 
 SuiteStmt::SuiteStmt(std::vector<Stmt *> stmts)
     : AcceptorExtend(), Items(std::move(stmts)) {}
@@ -44,7 +49,8 @@ std::string SuiteStmt::toString(int indent) const {
         is.insert(findStar(is), "*");
       s += (i ? pad : "") + is;
     }
-  return format("({}suite{})", (isDone() ? "*" : ""), (s.empty() ? s : " " + pad + s));
+  return wrapStmt(
+      format("({}suite{})", (isDone() ? "*" : ""), (s.empty() ? s : " " + pad + s)));
 }
 void SuiteStmt::flatten() {
   std::vector<Stmt *> ns;
@@ -71,17 +77,17 @@ SuiteStmt *SuiteStmt::wrap(Stmt *s) {
 }
 
 BreakStmt::BreakStmt(const BreakStmt &stmt, bool clean) : AcceptorExtend(stmt, clean) {}
-std::string BreakStmt::toString(int indent) const { return "(break)"; }
+std::string BreakStmt::toString(int indent) const { return wrapStmt("(break)"); }
 
 ContinueStmt::ContinueStmt(const ContinueStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean) {}
-std::string ContinueStmt::toString(int indent) const { return "(continue)"; }
+std::string ContinueStmt::toString(int indent) const { return wrapStmt("(continue)"); }
 
 ExprStmt::ExprStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 ExprStmt::ExprStmt(const ExprStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string ExprStmt::toString(int indent) const {
-  return format("(expr {})", expr->toString(indent));
+  return wrapStmt(format("(expr {})", expr->toString(indent)));
 }
 
 AssignStmt::AssignStmt(Expr *lhs, Expr *rhs, Expr *type, UpdateMode update)
@@ -91,16 +97,16 @@ AssignStmt::AssignStmt(const AssignStmt &stmt, bool clean)
       rhs(ast::clone(stmt.rhs, clean)), type(ast::clone(stmt.type, clean)),
       update(stmt.update) {}
 std::string AssignStmt::toString(int indent) const {
-  return format("({} {}{}{})", update != Assign ? "update" : "assign",
-                lhs->toString(indent), rhs ? " " + rhs->toString(indent) : "",
-                type ? format(" #:type {}", type->toString(indent)) : "");
+  return wrapStmt(format("({} {}{}{})", update != Assign ? "update" : "assign",
+                         lhs->toString(indent), rhs ? " " + rhs->toString(indent) : "",
+                         type ? format(" #:type {}", type->toString(indent)) : ""));
 }
 
 DelStmt::DelStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 DelStmt::DelStmt(const DelStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string DelStmt::toString(int indent) const {
-  return format("(del {})", expr->toString(indent));
+  return wrapStmt(format("(del {})", expr->toString(indent)));
 }
 
 PrintStmt::PrintStmt(std::vector<Expr *> items, bool noNewline)
@@ -109,21 +115,21 @@ PrintStmt::PrintStmt(const PrintStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       noNewline(stmt.noNewline) {}
 std::string PrintStmt::toString(int indent) const {
-  return format("(print {}{})", noNewline ? "#:inline " : "", combine(items));
+  return wrapStmt(format("(print {}{})", noNewline ? "#:inline " : "", combine(items)));
 }
 
 ReturnStmt::ReturnStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 ReturnStmt::ReturnStmt(const ReturnStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string ReturnStmt::toString(int indent) const {
-  return expr ? format("(return {})", expr->toString(indent)) : "(return)";
+  return wrapStmt(expr ? format("(return {})", expr->toString(indent)) : "(return)");
 }
 
 YieldStmt::YieldStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
 YieldStmt::YieldStmt(const YieldStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string YieldStmt::toString(int indent) const {
-  return expr ? format("(yield {})", expr->toString(indent)) : "(yield)";
+  return wrapStmt(expr ? format("(yield {})", expr->toString(indent)) : "(yield)");
 }
 
 AssertStmt::AssertStmt(Expr *expr, Expr *message)
@@ -132,8 +138,8 @@ AssertStmt::AssertStmt(const AssertStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)),
       message(ast::clone(stmt.message, clean)) {}
 std::string AssertStmt::toString(int indent) const {
-  return format("(assert {}{})", expr->toString(indent),
-                message ? message->toString(indent) : "");
+  return wrapStmt(format("(assert {}{})", expr->toString(indent),
+                         message ? message->toString(indent) : ""));
 }
 
 WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
@@ -145,15 +151,17 @@ WhileStmt::WhileStmt(const WhileStmt &stmt, bool clean)
       elseSuite(ast::clone(stmt.elseSuite, clean)) {}
 std::string WhileStmt::toString(int indent) const {
   if (indent == -1)
-    return format("(while {})", cond->toString(indent));
+    return wrapStmt(format("(while {})", cond->toString(indent)));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
-  if (elseSuite && elseSuite->firstInBlock())
-    return format("(while-else {}{}{}{}{})", cond->toString(indent), pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
-                  elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
-  else
-    return format("(while {}{}{})", cond->toString(indent), pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+  if (elseSuite && elseSuite->firstInBlock()) {
+    return wrapStmt(
+        format("(while-else {}{}{}{}{})", cond->toString(indent), pad,
+               suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
+               elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
+  } else {
+    return wrapStmt(format("(while {}{}{})", cond->toString(indent), pad,
+                           suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
+  }
 }
 
 ForStmt::ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite, Expr *decorator,
@@ -171,7 +179,7 @@ ForStmt::ForStmt(const ForStmt &stmt, bool clean)
 std::string ForStmt::toString(int indent) const {
   auto vs = var->toString(indent);
   if (indent == -1)
-    return format("(for {} {})", vs, iter->toString(indent));
+    return wrapStmt(format("(for {} {})", vs, iter->toString(indent)));
 
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string attr;
@@ -179,13 +187,15 @@ std::string ForStmt::toString(int indent) const {
     attr += " " + decorator->toString(indent);
   if (!attr.empty())
     attr = " #:attr" + attr;
-  if (elseSuite && elseSuite->firstInBlock())
-    return format("(for-else {} {}{}{}{}{}{})", vs, iter->toString(indent), attr, pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
-                  elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
-  else
-    return format("(for {} {}{}{}{})", vs, iter->toString(indent), attr, pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+  if (elseSuite && elseSuite->firstInBlock()) {
+    return wrapStmt(
+        format("(for-else {} {}{}{}{}{}{})", vs, iter->toString(indent), attr, pad,
+               suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
+               elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
+  } else {
+    return wrapStmt(format("(for {} {}{}{}{})", vs, iter->toString(indent), attr, pad,
+                           suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
+  }
 }
 
 IfStmt::IfStmt(Expr *cond, Stmt *ifSuite, Stmt *elseSuite)
@@ -197,13 +207,13 @@ IfStmt::IfStmt(const IfStmt &stmt, bool clean)
       elseSuite(ast::clone(stmt.elseSuite, clean)) {}
 std::string IfStmt::toString(int indent) const {
   if (indent == -1)
-    return format("(if {})", cond->toString(indent));
+    return wrapStmt(format("(if {})", cond->toString(indent)));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
-  return format("(if {}{}{}{})", cond->toString(indent), pad,
-                ifSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
-                elseSuite
-                    ? pad + elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
-                    : "");
+  return wrapStmt(format(
+      "(if {}{}{}{})", cond->toString(indent), pad,
+      ifSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
+      elseSuite ? pad + elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
+                : ""));
 }
 
 MatchCase::MatchCase(Expr *pattern, Expr *guard, Stmt *suite)
@@ -220,7 +230,7 @@ MatchStmt::MatchStmt(const MatchStmt &stmt, bool clean)
       expr(ast::clone(stmt.expr, clean)) {}
 std::string MatchStmt::toString(int indent) const {
   if (indent == -1)
-    return format("(match {})", expr->toString(indent));
+    return wrapStmt(format("(match {})", expr->toString(indent)));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
   std::vector<std::string> s;
@@ -229,14 +239,13 @@ std::string MatchStmt::toString(int indent) const {
                        c.guard ? " #:guard " + c.guard->toString(indent) : "",
                        pad + padExtra,
                        c.suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
-  return format("(match {}{}{})", expr->toString(indent), pad, join(s, pad));
+  return wrapStmt(format("(match {}{}{})", expr->toString(indent), pad, join(s, pad)));
 }
 
 ImportStmt::ImportStmt(Expr *from, Expr *what, std::vector<Param> args, Expr *ret,
                        std::string as, size_t dots, bool isFunction)
     : AcceptorExtend(), from(from), what(what), as(std::move(as)), dots(dots),
-      args(std::move(args)), ret(ret), isFunction(isFunction) {
-}
+      args(std::move(args)), ret(ret), isFunction(isFunction) {}
 ImportStmt::ImportStmt(const ImportStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), from(ast::clone(stmt.from, clean)),
       what(ast::clone(stmt.what, clean)), as(stmt.as), dots(stmt.dots),
@@ -246,12 +255,12 @@ std::string ImportStmt::toString(int indent) const {
   std::vector<std::string> va;
   for (auto &a : args)
     va.push_back(a.toString(indent));
-  return format("(import {}{}{}{}{}{})", from ? from->toString(indent) : "",
-                as.empty() ? "" : format(" #:as '{}", as),
-                what ? format(" #:what {}", what->toString(indent)) : "",
-                dots ? format(" #:dots {}", dots) : "",
-                va.empty() ? "" : format(" #:args ({})", join(va)),
-                ret ? format(" #:ret {}", ret->toString(indent)) : "");
+  return wrapStmt(format("(import {}{}{}{}{}{})", from ? from->toString(indent) : "",
+                         as.empty() ? "" : format(" #:as '{}", as),
+                         what ? format(" #:what {}", what->toString(indent)) : "",
+                         dots ? format(" #:dots {}", dots) : "",
+                         va.empty() ? "" : format(" #:args ({})", join(va)),
+                         ret ? format(" #:ret {}", ret->toString(indent)) : ""));
 }
 
 ExceptStmt::ExceptStmt(const std::string &var, Expr *exc, Stmt *suite)
@@ -262,9 +271,10 @@ ExceptStmt::ExceptStmt(const ExceptStmt &stmt, bool clean)
 std::string ExceptStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
-  return format("(catch {}{}{}{})", !var.empty() ? format("#:var '{}", var) : "",
-                exc ? format(" #:exc {}", exc->toString(indent)) : "", pad + padExtra,
-                suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2));
+  return wrapStmt(
+      format("(catch {}{}{}{})", !var.empty() ? format("#:var '{}", var) : "",
+             exc ? format(" #:exc {}", exc->toString(indent)) : "", pad + padExtra,
+             suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
 }
 
 TryStmt::TryStmt(Stmt *suite, std::vector<ExceptStmt *> excepts, Stmt *finally)
@@ -275,17 +285,17 @@ TryStmt::TryStmt(const TryStmt &stmt, bool clean)
       suite(ast::clone(stmt.suite, clean)), finally(ast::clone(stmt.finally, clean)) {}
 std::string TryStmt::toString(int indent) const {
   if (indent == -1)
-    return format("(try)");
+    return wrapStmt(format("(try)"));
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> s;
   for (auto &i : items)
     s.push_back(i->toString(indent));
-  return format(
+  return wrapStmt(format(
       "(try{}{}{}{}{})", pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
       pad, join(s, pad),
       finally ? format("{}{}", pad,
                        finally->toString(indent >= 0 ? indent + INDENT_SIZE : -1))
-              : "");
+              : ""));
 }
 
 ThrowStmt::ThrowStmt(Expr *expr, Expr *from, bool transformed)
@@ -294,8 +304,8 @@ ThrowStmt::ThrowStmt(const ThrowStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)),
       from(ast::clone(stmt.from, clean)), transformed(stmt.transformed) {}
 std::string ThrowStmt::toString(int indent) const {
-  return format("(throw{}{})", expr ? " " + expr->toString(indent) : "",
-                from ? format(" :from {}", from->toString(indent)) : "");
+  return wrapStmt(format("(throw{}{})", expr ? " " + expr->toString(indent) : "",
+                         from ? format(" :from {}", from->toString(indent)) : ""));
 }
 
 GlobalStmt::GlobalStmt(std::string var, bool nonLocal)
@@ -303,14 +313,13 @@ GlobalStmt::GlobalStmt(std::string var, bool nonLocal)
 GlobalStmt::GlobalStmt(const GlobalStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), var(stmt.var), nonLocal(stmt.nonLocal) {}
 std::string GlobalStmt::toString(int indent) const {
-  return format("({} '{})", nonLocal ? "nonlocal" : "global", var);
+  return wrapStmt(format("({} '{})", nonLocal ? "nonlocal" : "global", var));
 }
 
 FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
                            Stmt *suite, std::vector<Expr *> decorators)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)), ret(ret),
-      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)) {
-}
+      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)) {}
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       name(stmt.name), ret(ast::clone(stmt.ret, clean)),
@@ -326,13 +335,13 @@ std::string FunctionStmt::toString(int indent) const {
     if (a)
       dec.push_back(format("(dec {})", a->toString(indent)));
   if (indent == -1)
-    return format("(fn '{} ({}){})", name, join(as, " "),
-                  ret ? " #:ret " + ret->toString(indent) : "");
-  return format("(fn '{} ({}){}{}{}{})", name, join(as, " "),
-                ret ? " #:ret " + ret->toString(indent) : "",
-                dec.empty() ? "" : format(" (dec {})", join(dec, " ")), pad,
-                suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
-                      : "(suite)");
+    return wrapStmt(format("(fn '{} ({}){})", name, join(as, " "),
+                           ret ? " #:ret " + ret->toString(indent) : ""));
+  return wrapStmt(format(
+      "(fn '{} ({}){}{}{}{})", name, join(as, " "),
+      ret ? " #:ret " + ret->toString(indent) : "",
+      dec.empty() ? "" : format(" (dec {})", join(dec, " ")), pad,
+      suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "(suite)"));
 }
 std::string FunctionStmt::signature() const {
   std::vector<std::string> s;
@@ -452,13 +461,13 @@ std::string ClassStmt::toString(int indent) const {
   for (auto &a : decorators)
     attr.push_back(format("(dec {})", a->toString(indent)));
   if (indent == -1)
-    return format("(class '{} ({}))", name, as);
-  return format("(class '{}{}{}{}{}{})", name,
-                bases.empty() ? "" : format(" (bases {})", join(bases, " ")),
-                attr.empty() ? "" : format(" (attr {})", join(attr, " ")),
-                as.empty() ? as : pad + as, pad,
-                suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
-                      : "(suite)");
+    return wrapStmt(format("(class '{} ({}))", name, as));
+  return wrapStmt(format(
+      "(class '{}{}{}{}{}{})", name,
+      bases.empty() ? "" : format(" (bases {})", join(bases, " ")),
+      attr.empty() ? "" : format(" (attr {})", join(attr, " ")),
+      as.empty() ? as : pad + as, pad,
+      suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "(suite)"));
 }
 bool ClassStmt::isRecord() const { return hasAttribute(Attr::Tuple); }
 bool ClassStmt::isClassVar(const Param &p) {
@@ -484,7 +493,7 @@ YieldFromStmt::YieldFromStmt(Expr *expr) : AcceptorExtend(), expr(std::move(expr
 YieldFromStmt::YieldFromStmt(const YieldFromStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
 std::string YieldFromStmt::toString(int indent) const {
-  return format("(yield-from {})", expr->toString(indent));
+  return wrapStmt(format("(yield-from {})", expr->toString(indent)));
 }
 
 WithStmt::WithStmt(std::vector<Expr *> items, std::vector<std::string> vars,
@@ -517,9 +526,9 @@ std::string WithStmt::toString(int indent) const {
                      : items[i]->toString(indent));
   }
   if (indent == -1)
-    return format("(with ({}))", join(as, " "));
-  return format("(with ({}){}{})", join(as, " "), pad,
-                suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+    return wrapStmt(format("(with ({}))", join(as, " ")));
+  return wrapStmt(format("(with ({}){}{})", join(as, " "), pad,
+                         suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)));
 }
 
 CustomStmt::CustomStmt(std::string keyword, Expr *expr, Stmt *suite)
@@ -530,9 +539,10 @@ CustomStmt::CustomStmt(const CustomStmt &stmt, bool clean)
       expr(ast::clone(stmt.expr, clean)), suite(ast::clone(stmt.suite, clean)) {}
 std::string CustomStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
-  return format("(custom-{} {}{}{})", keyword,
-                expr ? format(" #:expr {}", expr->toString(indent)) : "", pad,
-                suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "");
+  return wrapStmt(
+      format("(custom-{} {}{}{})", keyword,
+             expr ? format(" #:expr {}", expr->toString(indent)) : "", pad,
+             suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : ""));
 }
 
 AssignMemberStmt::AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs)
@@ -541,8 +551,8 @@ AssignMemberStmt::AssignMemberStmt(const AssignMemberStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), lhs(ast::clone(stmt.lhs, clean)),
       member(stmt.member), rhs(ast::clone(stmt.rhs, clean)) {}
 std::string AssignMemberStmt::toString(int indent) const {
-  return format("(assign-member {} {} {})", lhs->toString(indent), member,
-                rhs->toString(indent));
+  return wrapStmt(format("(assign-member {} {} {})", lhs->toString(indent), member,
+                         rhs->toString(indent)));
 }
 
 CommentStmt::CommentStmt(std::string comment)
@@ -550,7 +560,7 @@ CommentStmt::CommentStmt(std::string comment)
 CommentStmt::CommentStmt(const CommentStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), comment(stmt.comment) {}
 std::string CommentStmt::toString(int indent) const {
-  return format("(comment \"{}\")", comment);
+  return wrapStmt(format("(comment \"{}\")", comment));
 }
 
 const char Stmt::NodeId = 0;

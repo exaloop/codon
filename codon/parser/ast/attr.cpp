@@ -57,5 +57,6 @@ const std::string Attr::ExprOrderedCall = "exprOrderedCall";
 const std::string Attr::ExprExternVar = "exprExternVar";
 const std::string Attr::ExprDominatedUndefCheck = "exprDominatedUndefCheck";
 const std::string Attr::ExprDominatedUsed = "exprDominatedUsed";
+const std::string Attr::ExprTime = "exprTime";
 
 } // namespace codon::ast

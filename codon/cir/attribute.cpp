@@ -12,6 +12,8 @@ namespace ir {
 
 const std::string StringValueAttribute::AttributeName = "svAttribute";
 
+const std::string IntValueAttribute::AttributeName = "i64Attribute";
+
 const std::string StringListAttribute::AttributeName = "slAttribute";
 
 std::ostream &StringListAttribute::doFormat(std::ostream &os) const {

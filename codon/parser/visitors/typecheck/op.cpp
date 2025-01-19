@@ -59,6 +59,50 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 /// Also evaluate static expressions. See @c evaluateStaticBinary for details.
 void TypecheckVisitor::visit(BinaryExpr *expr) {
   expr->lexpr = transform(expr->getLhs(), true);
+
+  // Static short-circuit
+  if (expr->getLhs()->getType()->isStaticType() && expr->op == "&&") {
+    if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
+      if (!tb->value) {
+        resultExpr = transform(N<BoolExpr>(false));
+        return;
+      }
+    } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
+      if (ts->value.empty()) {
+        resultExpr = transform(N<BoolExpr>(false));
+        return;
+      }
+    } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
+      if (!ti->value) {
+        resultExpr = transform(N<BoolExpr>(false));
+        return;
+      }
+    } else {
+      expr->getType()->getUnbound()->isStatic = 3;
+      return;
+    }
+  } else if (expr->getLhs()->getType()->isStaticType() && expr->op == "||") {
+    if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
+      if (tb->value) {
+        resultExpr = transform(N<BoolExpr>(true));
+        return;
+      }
+    } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
+      if (!ts->value.empty()) {
+        resultExpr = transform(N<BoolExpr>(true));
+        return;
+      }
+    } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
+      if (ti->value) {
+        resultExpr = transform(N<BoolExpr>(true));
+        return;
+      }
+    } else {
+      expr->getType()->getUnbound()->isStatic = 3;
+      return;
+    }
+  }
+
   expr->rexpr = transform(expr->getRhs(), true);
 
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {

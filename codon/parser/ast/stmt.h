@@ -51,6 +51,8 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
   static const char NodeId;
   SERIALIZE(Stmt, BASE(ASTNode), done);
 
+  virtual std::string wrapStmt(const std::string &) const;
+
 private:
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
   /// type-checking procedure was successful).

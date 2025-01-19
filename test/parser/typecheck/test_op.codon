@@ -421,6 +421,13 @@ foo2(s[10:50])  #: kl True
 foo2(s[1:30:3])  #: behk True
 foo2(s[::-1])  #: lkjihgfedcba True
 
+#%% static_short_circuit,barebones
+x = 3.14
+if isinstance(x, List) and x.T is float:
+    print('is list')
+else:
+    print('not list')  #: not list
+
 #%% partial_star_pipe_args,barebones
 iter(['A', 'C']) |> print
 #: A

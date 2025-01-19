@@ -121,6 +121,29 @@ TypeContext::Item TypeContext::find(const std::string &name) const {
   return t;
 }
 
+TypeContext::Item TypeContext::find(const std::string &name, int64_t time) const {
+  auto it = map.find(name);
+  if (it != map.end()) {
+    for (auto &i : it->second) {
+      if (i->getBaseName() != getBaseName() || !time || i->getTime() <= time)
+        return i;
+    }
+  }
+
+  // Item is not found in the current module. Time to look in the standard library!
+  // Note: the standard library items cannot be dominated.
+  TypeContext::Item t = nullptr;
+  auto stdlib = cache->imports[STDLIB_IMPORT].ctx;
+  if (stdlib.get() != this)
+    t = stdlib->Context<TypecheckItem>::find(name);
+
+  // Maybe we are looking for a canonical identifier?
+  if (!t && cache->typeCtx.get() != this)
+    t = cache->typeCtx->Context<TypecheckItem>::find(name);
+
+  return t;
+}
+
 TypeContext::Item TypeContext::forceFind(const std::string &name) const {
   auto f = find(name);
   seqassert(f, "cannot find '{}'", name);

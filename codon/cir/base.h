@@ -161,6 +161,10 @@ public:
   AttributeType *getAttribute(const std::string &key) {
     return static_cast<AttributeType *>(getAttribute(key));
   }
+  template <typename AttributeType>
+  const AttributeType *getAttribute(const std::string &key) const {
+    return static_cast<const AttributeType *>(getAttribute(key));
+  }
   void eraseAttribute(const std::string &key) { attributes.erase(key); }
   void cloneAttributesFrom(Node *n) { attributes = codon::clone(n->attributes); }
 

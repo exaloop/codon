@@ -68,7 +68,7 @@ Stmt *TypecheckVisitor::apply(
   auto n = tv.inferTypes(suite, true);
   if (!n) {
     LOG("[error=>] {}", suite->toString(2));
-    E(Error::CUSTOM, suite, "cannot typecheck the program");
+    E(Error::CUSTOM, suite->getSrcInfo(), "cannot typecheck the program");
   }
 
   suite = tv.N<SuiteStmt>();
@@ -275,7 +275,14 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
     LOG_TYPECHECK("> [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
                   ctx->getBase()->iteration, stmt->toString(-1));
   ctx->pushNode(stmt);
+
+  int64_t time = 0;
+  if (auto a = stmt->getAttribute<ir::IntValueAttribute>(Attr::ExprTime))
+    time = a->value;
+  auto oldTime = ctx->time;
+  ctx->time = time;
   stmt->accept(v);
+  ctx->time = oldTime;
   ctx->popNode();
   if (v.resultStmt)
     stmt = v.resultStmt;
@@ -546,10 +553,9 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   auto [canWrap, newArgTyp, fn] = canWrapExpr((*expr)->getType(), expectedType, callee,
                                               allowUnwrap, cast<EllipsisExpr>(*expr));
   // TODO: get rid of this line one day!
-  if ((*expr)->getType()->getStatic() &&
+  if ((*expr)->getType()->isStaticType() &&
       (!expectedType || !expectedType->isStaticType()))
-    (*expr)->setType(
-        (*expr)->getType()->getStatic()->getNonStaticType()->shared_from_this());
+    (*expr)->setType(getUnderlyingStaticType((*expr)->getType())->shared_from_this());
   if (canWrap && fn)
     *expr = transform(fn(*expr));
   return canWrap;
@@ -583,10 +589,14 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
                                            "pyobj"};
-  if (exprType->getStatic() && (!expectedType || !expectedType->isStaticType())) {
-    exprType = exprType->getStatic()->getNonStaticType();
-    exprClass = exprType->getClass();
+  if (!expectedType || !expectedType->isStaticType()) {
+    if (auto c = exprType->isStaticType()) {
+      exprType = getUnderlyingStaticType(exprType);
+      exprClass = exprType->getClass();
+      type = exprType->shared_from_this();
+    }
   }
+
   if (!exprClass && expectedClass && in(hints, expectedClass->name)) {
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
@@ -630,8 +640,10 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       return N<CallExpr>(N<IdExpr>("pyobj"),
                          N<CallExpr>(N<DotExpr>(expr, "__to_py__")));
     };
-  } else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
-             !exprClass->is(expectedClass->name)) { // unwrap pyobj
+  }
+
+  else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
+           !exprClass->is(expectedClass->name)) { // unwrap pyobj
     if (findMethod(expectedClass, "__from_py__").empty())
       return {false, nullptr, nullptr};
     type = instantiateType(expectedClass);
@@ -692,7 +704,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     } else {
       return {false, nullptr, nullptr};
     }
-  } else if (exprClass && expectedClass && expectedClass->getUnion()) {
+  }
+
+  else if (exprClass && expectedClass && expectedClass->getUnion()) {
     // Make union types via __internal__.new_union
     if (!expectedClass->getUnion()->isSealed()) {
       if (!expectedClass->getUnion()->addType(exprClass))
@@ -1072,6 +1086,22 @@ bool TypecheckVisitor::isImportFn(const std::string &s) {
   return startswith(s, "%_import_");
 }
 
+int64_t TypecheckVisitor::getTime() { return ctx->time; }
+
+types::Type *TypecheckVisitor::getUnderlyingStaticType(types::Type *t) {
+  if (t->getStatic()) {
+    return t->getStatic()->getNonStaticType();
+  } else if (auto c = t->isStaticType()) {
+    if (c == 1)
+      return getStdLibType("int");
+    if (c == 2)
+      return getStdLibType("str");
+    if (c == 3)
+      return getStdLibType("bool");
+  }
+  return t;
+}
+
 std::shared_ptr<types::LinkType>
 TypecheckVisitor::instantiateUnbound(const SrcInfo &srcInfo, int level) const {
   auto typ = std::make_shared<types::LinkType>(
@@ -1112,7 +1142,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
     if (auto l = i.second->getLink()) {
       i.second->setSrcInfo(srcInfo);
       if (l->defaultType) {
-        ctx->getBase()->pendingDefaults.insert(i.second);
+        ctx->getBase()->pendingDefaults[0].insert(i.second);
       }
     }
   }
@@ -1164,7 +1194,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   }
   if (t->getUnion() && !t->getUnion()->isSealed()) {
     t->setSrcInfo(srcInfo);
-    ctx->getBase()->pendingDefaults.insert(t);
+    ctx->getBase()->pendingDefaults[0].insert(t);
   }
   return t;
 }

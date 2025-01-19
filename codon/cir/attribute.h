@@ -329,6 +329,23 @@ private:
   std::ostream &doFormat(std::ostream &os) const override;
 };
 
+struct IntValueAttribute : public Attribute {
+  static const std::string AttributeName;
+
+  int64_t value;
+
+  IntValueAttribute() = default;
+  /// Constructs a IntValueAttribute.
+  explicit IntValueAttribute(int64_t value) : value(value) {}
+
+  std::unique_ptr<Attribute> clone() const override {
+    return std::make_unique<IntValueAttribute>(*this);
+  }
+
+private:
+  std::ostream &doFormat(std::ostream &os) const override { return os << value; }
+};
+
 } // namespace ir
 
 std::map<std::string, std::unique_ptr<ir::Attribute>>

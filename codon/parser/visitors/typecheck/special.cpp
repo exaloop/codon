@@ -483,7 +483,7 @@ Expr *TypecheckVisitor::transformSuper() {
 /// the argument is a variable binding.
 Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
   auto id = cast<IdExpr>(expr->begin()->getExpr());
-  auto val = id ? ctx->find(id->getValue()) : nullptr;
+  auto val = id ? ctx->find(id->getValue(), getTime()) : nullptr;
   if (!val || !val->isVar())
     E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
 
@@ -511,6 +511,9 @@ Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
 ///   `isinstance(obj, ByVal)` is True if `type(obj)` is a tuple type
 ///   `isinstance(obj, ByRef)` is True if `type(obj)` is a reference type
 Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 3;
+
   expr->begin()->value = transform(expr->begin()->getExpr());
   auto typ = expr->begin()->getExpr()->getClassType();
   if (!typ || !typ->canRealize())
@@ -582,6 +585,9 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
 /// Transform staticlen method to a static integer expression. This method supports only
 /// static strings and tuple types.
 Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 1;
+
   expr->begin()->value = transform(expr->begin()->getExpr());
   auto typ = extractType(expr->begin()->getExpr());
 
@@ -605,6 +611,9 @@ Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
 /// This method also supports additional argument types that are used to check
 /// for a matching overload (not available in Python).
 Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 3;
+
   auto typ = extractClassType((*expr)[0].getExpr());
   if (!typ)
     return nullptr;
@@ -763,6 +772,9 @@ Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
 
 /// Transform __has_rtti__ to a static boolean that indicates RTTI status of a type.
 Expr *TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 3;
+
   auto t = extractFuncGeneric(expr->getExpr()->getType())->getClass();
   if (!t)
     return nullptr;
@@ -771,6 +783,9 @@ Expr *TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
 
 // Transform internal.static calls
 Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 3;
+
   auto typ = extractClassType((*expr)[0].getExpr());
   if (!typ)
     return nullptr;
@@ -800,6 +815,9 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnArgHasType(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 3;
+
   auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     E(Error::CUSTOM, getSrcInfo(), "expected a function, got '{}'",
@@ -838,6 +856,9 @@ Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->isStatic = 3;
+
   auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
     E(Error::CUSTOM, getSrcInfo(), "expected a function, got '{}'",

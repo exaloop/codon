@@ -34,6 +34,10 @@ struct TypecheckItem : public SrcObject {
 
   /// Full base scope information
   std::vector<int> scope = {0};
+  /// Specifies at which time the name was added to the context.
+  /// Used to prevent using later definitions early (can happen in
+  /// advanced type checking iterations).
+  int64_t time = 0;
 
   /// Set if an identifier is a class or a function generic
   bool generic = false;
@@ -57,6 +61,8 @@ struct TypecheckItem : public SrcObject {
 
   types::Type *getType() const { return type.get(); }
   std::string getName() const { return canonicalName; }
+
+  int64_t getTime() const { return time; }
 };
 
 /** Context class that tracks identifiers during the typechecking. **/
@@ -136,7 +142,7 @@ struct TypeContext : public Context<TypecheckItem> {
     };
     std::vector<Loop> loops;
 
-    std::set<types::TypePtr> pendingDefaults;
+    std::map<int, std::set<types::TypePtr>> pendingDefaults;
 
   public:
     Loop *getLoop() { return loops.empty() ? nullptr : &(loops.back()); }
@@ -181,6 +187,9 @@ struct TypeContext : public Context<TypecheckItem> {
   /// Stack of static loop control variables (used to emulate goto statements).
   std::vector<std::string> staticLoops = {};
 
+  /// Current statement time.
+  int64_t time;
+
 public:
   explicit TypeContext(Cache *cache, std::string filename = "");
 
@@ -198,6 +207,9 @@ public:
 
   /// Get an item from the context. If the item does not exist, nullptr is returned.
   Item find(const std::string &name) const override;
+  /// Get an item from the context before given srcInfo. If the item does not exist,
+  /// nullptr is returned.
+  Item find(const std::string &name, int64_t time) const;
   /// Get an item that exists in the context. If the item does not exist, assertion is
   /// raised.
   Item forceFind(const std::string &name) const;

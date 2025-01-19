@@ -40,3 +40,29 @@ def foo(x: List[1]): pass  #! expected type expression
 a = 5; b = 3
 print a, b  #: 5 3
 
+#%% delayed_instantiation_correct_context,barebones
+# Test timing of the statements; ensure that delayed blocks still
+# use correct names.
+def foo():
+    l = []
+
+    s = 1  # CH1
+    if isinstance(l, List[int]):  # delay typechecking this block
+        print(s)  #: 1
+        # if this is done badly, this print will print 's'
+        # or result in assertion error
+    print(s)  #: 1
+
+    s = 's'  # CH2
+    print(s)  #: s
+
+    # instantiate l so that the block above
+    # is typechecked in the next iteration
+    l.append(1)
+foo()
+
+# check that this does not mess up comprehensions
+# (where variable names are used BEFORE their declaration)
+slice_prefixes = [(start, end)
+                    for start, end in [(1, 2), (3, 4)]]
+print(slice_prefixes)  #: [(1, 2), (3, 4)]

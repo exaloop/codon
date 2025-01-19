@@ -27,6 +27,8 @@ struct SrcInfo {
   SrcInfo();
   SrcInfo(std::string file, int line, int col, int len);
   bool operator==(const SrcInfo &src) const;
+  bool operator<(const SrcInfo &src) const;
+  bool operator<=(const SrcInfo &src) const;
 };
 
 class ErrorMessage {

@@ -93,6 +93,9 @@ class ScopingVisitor : public CallbackASTVisitor<bool, bool> {
 
     std::vector<std::unordered_map<std::string, std::string>> renames = {{}};
     bool tempScope = false;
+
+    // Time to track positions of assignments and references to them.
+    int64_t time = 0;
   };
   std::shared_ptr<Context> ctx = nullptr;
 
