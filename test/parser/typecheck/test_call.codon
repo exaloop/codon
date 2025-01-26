@@ -357,8 +357,12 @@ print hasattr(type([1, 2]), "__getitem__")
 #: True
 print hasattr(int, "__getitem__")
 #: False
-print hasattr([1, 2], "__getitem__", str)
-#: False
+print hasattr([1, 2], "__getitem__") #: True
+print hasattr([1, 2], "__getitem__", int) #: True
+print hasattr([1, 2], "__getitem__", str) #: False
+print hasattr([1, 2], "__getitem__", idx=int) #: True
+print hasattr([1, 2], "__getitem__", idx=str) #: False
+
 
 #%% isinstance_inheritance,barebones
 class AX[T]:

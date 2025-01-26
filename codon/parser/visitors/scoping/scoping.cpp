@@ -41,6 +41,7 @@ llvm::Error ScopingVisitor::apply(Cache *cache, Stmt *s) {
   if (v.hasErrors())
     return llvm::make_error<ParserErrorInfo>(v.errors);
   v.processChildCaptures();
+  // LOG("-> {}", s->toString(2));
   return llvm::Error::success();
 }
 
@@ -61,12 +62,12 @@ bool ScopingVisitor::transform(Stmt *stmt) {
   ScopingVisitor v(*this);
   if (stmt) {
     v.setSrcInfo(stmt->getSrcInfo());
+    stmt->setAttribute(Attr::ExprTime, ++ctx->time);
     stmt->accept(v);
     if (v.hasErrors())
       errors.append(v.errors);
     if (!canContinue())
       return false;
-    stmt->setAttribute(Attr::ExprTime, ++ctx->time);
   }
   return true;
 }

@@ -128,6 +128,7 @@ public:
     return nodeStack[nodeStack.size() - 2];
   }
   SrcInfo getSrcInfo() const { return nodeStack.back()->getSrcInfo(); }
+  size_t getStackSize() const { return stack.size(); }
 };
 
 } // namespace codon::ast

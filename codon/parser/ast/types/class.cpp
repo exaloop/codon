@@ -249,8 +249,9 @@ std::string ClassType::debugString(char mode) const {
     for (int i = 0, gi = 0; i < known.size(); i++) {
       if ((*func->ast)[i].isValue())
         as.emplace_back(
-            known[i] ? generics[1].type->getClass()->generics[gi++].debugString(mode)
-                     : "...");
+            known[i] && generics[1].type->getClass()
+                ? generics[1].type->getClass()->generics[gi++].debugString(mode)
+                : "...");
     }
     auto fnname = func->ast->getName();
     if (mode == 0) {

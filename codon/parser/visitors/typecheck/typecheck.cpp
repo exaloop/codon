@@ -218,8 +218,9 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
       ctx->changedNodes++;
   }
   if (expr) {
-    if (auto p = realize(expr->getType()))
-      unify(expr->getType(), p);
+    if (!expr->hasAttribute(Attr::ExprDoNotRealize))
+      if (auto p = realize(expr->getType()))
+        unify(expr->getType(), p);
     LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), *(expr),
                   expr->isDone() ? "[done]" : "");
   }

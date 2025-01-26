@@ -225,14 +225,21 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
     std::array<const char *, 4> op{"", "int", "str", "bool"};
     for (auto &[c, v] : captures) {
-      if (v->isType())
+      if (v->isType()) {
         stmt->items.emplace_back(c, N<IdExpr>(TYPE_TYPE));
-      else if (auto si = v->isStatic())
+      } else if (auto si = v->isStatic()) {
         stmt->items.emplace_back(c,
                                  N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(op[si])));
-      else
+      } else {
         stmt->items.emplace_back(c);
-      partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
+      }
+      if (v->isFunc()) {
+        partialArgs.emplace_back(c,
+                                 N<CallExpr>(N<IdExpr>(v->canonicalName),
+                                             N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+      } else {
+        partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
+      }
     }
     if (!kw.name.empty())
       stmt->items.emplace_back(kw);
@@ -463,9 +470,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         a.value = clone(a.getExpr());
     }
     // todo)) right now this adds a capture hook for recursive calls
-    f->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(stmt->getName()),
-                                          N<CallExpr>(N<IdExpr>(stmt->getName()), pa)),
-                            suite);
+    auto assign = N<AssignStmt>(N<IdExpr>(stmt->getName()),
+                                N<CallExpr>(N<IdExpr>(stmt->getName()), pa));
+    f->suite = N<SuiteStmt>(assign, suite);
   }
 
   // Parse remaining decorators

@@ -123,10 +123,15 @@ TypeContext::Item TypeContext::find(const std::string &name) const {
 
 TypeContext::Item TypeContext::find(const std::string &name, int64_t time) const {
   auto it = map.find(name);
+  bool isMangled = in(name, ".");
   if (it != map.end()) {
     for (auto &i : it->second) {
-      if (i->getBaseName() != getBaseName() || !time || i->getTime() <= time)
+      if (isMangled || i->getBaseName() != getBaseName() || !time) {
         return i;
+      } else {
+        if (i->getTime() <= time)
+          return i;
+      }
     }
   }
 

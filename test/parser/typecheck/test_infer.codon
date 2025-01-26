@@ -503,7 +503,7 @@ a, b = tee(it)
 def foo[T,U](x: type, y, z: Static[int] = 10):
     print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
     return List[x]()
-print foo(T=int,U=str,...).__fn_name__ #: foo[x,10,int,str;T1]
+print foo(T=int,U=str,...).__fn_name__ #: foo[x,z,int,str;T1]
 print foo(T=int,U=str,z=5,x=bool,...).__fn_name__ #: foo[bool,5,int,str;T1]
 print foo(float,3,T=int,U=str,z=5).__class__.__name__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]

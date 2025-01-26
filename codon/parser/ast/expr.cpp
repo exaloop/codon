@@ -436,7 +436,7 @@ std::string CallExpr::toString(int indent) const {
   std::vector<std::string> s;
   auto pad = indent >= 0 ? ("\n" + std::string(indent + 2 * INDENT_SIZE, ' ')) : " ";
   for (auto &i : *this) {
-    if (i.name.empty())
+    if (!i.name.empty())
       s.emplace_back(pad + format("#:name '{}", i.name));
     s.emplace_back(pad +
                    i.value->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1));
@@ -471,7 +471,7 @@ EllipsisExpr::EllipsisExpr(const EllipsisExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), mode(expr.mode) {}
 std::string EllipsisExpr::toString(int) const {
   return wrapType(format(
-      "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? "#:partial" : "")));
+      "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? " #:partial" : "")));
 }
 
 LambdaExpr::LambdaExpr(std::vector<std::string> vars, Expr *expr)

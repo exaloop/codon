@@ -37,24 +37,35 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   // If we are accessing an outside variable, capture it or raise an error
   auto captured = checkCapture(val);
   if (captured)
-    val = ctx->forceFind(expr->value);
+    val = ctx->forceFind(expr->getValue());
 
   // Replace the variable with its canonical name
   expr->value = val->getName();
 
   // Set up type
   unify(expr->getType(), instantiateType(val->getType()));
+  if (auto f = expr->getType()->getFunc()) {
+    expr->value = f->getFuncName(); // resolve overloads
+  }
 
   // Realize a type or a function if possible and replace the identifier with
   // a qualified identifier or a static expression (e.g., `foo` -> `foo[int]`)
-  if (realize(expr->getType())) {
+  if (expr->getType()->canRealize()) {
     if (auto s = expr->getType()->getStatic()) {
       resultExpr = transform(s->getStaticExpr());
       return;
     }
-    if (!val->isVar())
-      expr->value = expr->getType()->realizedName();
-    expr->setDone();
+    if (!val->isVar()) {
+      if (!(expr->hasAttribute(Attr::ExprDoNotRealize) && expr->getType()->getFunc())) {
+        if (auto r = realize(expr->getType())) {
+          expr->value = r->realizedName();
+          expr->setDone();
+        }
+      }
+    } else {
+      realize(expr->getType());
+      expr->setDone();
+    }
   }
 
   // If this identifier needs __used__ checks (see @c ScopeVisitor), add them

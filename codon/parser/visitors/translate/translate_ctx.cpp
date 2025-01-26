@@ -36,7 +36,7 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
         in(cache->functions, tt->type->getFunc()->ast->getName()) &&
             in(cache->functions[tt->type->getFunc()->ast->getName()].realizations,
                name),
-        "cannot find type realization {}", name);
+        "cannot find function realization {}", name);
     ret->handle.func =
         cache->functions[tt->type->getFunc()->ast->getName()].realizations[name]->ir;
   }

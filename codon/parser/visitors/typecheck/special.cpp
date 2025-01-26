@@ -621,17 +621,17 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   auto member = getStrLiteral(extractFuncGeneric(expr->getExpr()->getType()));
   std::vector<std::pair<std::string, types::Type *>> args{{"", typ}};
 
-  if (auto tup = cast<TupleExpr>((*expr)[1].getExpr())) {
+  if (auto tup = cast<CallExpr>((*expr)[1].getExpr())) {
     for (auto &a : *tup) {
-      a = transform(a);
-      if (!a->getClassType())
+      a.value = transform(a.getExpr());
+      if (!a.getExpr()->getClassType())
         return nullptr;
       args.emplace_back("", extractType(a));
     }
   }
   for (auto &[n, ne] : extractNamedTuple((*expr)[2].getExpr())) {
     ne = transform(ne);
-    args.emplace_back(n, ne->getType());
+    args.emplace_back(n, extractType(ne));
   }
 
   if (typ->getUnion()) {
@@ -655,8 +655,12 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
 
   bool exists = !findMethod(typ->getClass(), member).empty() ||
                 findMember(typ->getClass(), member);
-  if (exists && args.size() > 1)
+  if (exists && args.size() > 1) {
+    for (auto &a: args)
+      if (a.second->is("TypeWrap"))
+        a.second = extractClassGeneric(a.second);
     exists &= findBestMethod(typ, member, args) != nullptr;
+  }
   return transform(N<BoolExpr>(exists));
 }
 
@@ -761,7 +765,6 @@ Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
 /// Transform __static_print__ function to a fully realized type identifier.
 Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
   for (auto &a : *cast<CallExpr>(expr->begin()->getExpr())) {
-    realize(a.getExpr()->getType());
     fmt::print(stderr, "[static_print] {}: {} ({}){}\n", getSrcInfo(),
                a.getExpr()->getType() ? a.getExpr()->getType()->debugString(2) : "-",
                a.getExpr()->getType() ? a.getExpr()->getType()->realizedName() : "-",

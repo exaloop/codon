@@ -262,7 +262,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 
 void TranslateVisitor::visit(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
-  if (ei && ei->getValue() == "__ptr__") {
+  if (ei && ei->getValue() == "__ptr__:0") {
     seqassert(cast<IdExpr>((*expr)[0].value), "expected IdExpr, got {}",
               *((*expr)[0].value));
     auto key = cast<IdExpr>((*expr)[0].value)->getValue();

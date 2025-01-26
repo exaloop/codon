@@ -80,20 +80,6 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
   auto r = std::static_pointer_cast<ClassType>(
       this->ClassType::instantiate(atLevel, unboundCount, cache));
 
-  // // Fix statics
-  // auto &at = r->generics[0].getType()->getClass()->generics;
-  // for (size_t i = 0; i < at.size(); i++) {
-  //   bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
-  //   if (!isStatic && at[i].getType() && at[i].getType()->getStatic())
-  //     at[i].type = at[i].getType()->getStatic()->getNonStaticType()->instantiate(
-  //         atLevel, unboundCount, cache);
-  // }
-  // auto rt = r->generics[0].getType();
-  // bool isStatic = ast && getStaticGeneric(ast->getReturn());
-  // if (!isStatic && rt && rt->getStatic())
-  //   r->generics[0].type =
-  //       rt->getStatic()->getNonStaticType()->instantiate(atLevel, unboundCount, cache);
-
   auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
   return t;
 }
@@ -104,7 +90,6 @@ bool FuncType::hasUnbounds(bool includeGenerics) const {
       return true;
   if (funcParent && funcParent->hasUnbounds(includeGenerics))
     return true;
-  // Important: return type unbounds are not important, so skip them
   for (const auto &a : *this)
     if (a.getType()->hasUnbounds(includeGenerics))
       return true;
@@ -164,14 +149,26 @@ std::string FuncType::debugString(char mode) const {
   std::vector<std::string> gs;
   for (auto &a : funcGenerics)
     if (!a.name.empty())
-      gs.push_back(a.type->debugString(mode));
+      gs.push_back(mode < 2
+                       ? a.type->debugString(mode)
+                       : fmt::format("{}={}", a.niceName, a.type->debugString(mode)));
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
   if (mode == 2)
-    as.push_back(getRetType()->debugString(mode));
-  for (const auto &a : *this)
-    as.push_back(a.debugString(mode));
+    as.push_back(fmt::format("RET={}", getRetType()->debugString(mode)));
+
+  if (mode < 2 || !ast) {
+    for (const auto &a : *this) {
+      as.push_back(a.debugString(mode));
+    }
+  } else {
+    for (size_t i = 0, si = 0; i < ast->size(); i++) {
+      if ((*ast)[i].isGeneric())
+        continue;
+      as.push_back(fmt::format("{}={}", (*ast)[i].getName(), (*this)[si++]->debugString(mode)));
+    }
+  }
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{s, a}, ";");
 

@@ -202,10 +202,10 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   if (!e)
     E(Error::ASSIGN_INVALID, stmt->getLhs());
 
-  auto val = ctx->find(e->getValue(), getTime());
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
+    auto val = ctx->find(e->getValue(), getTime());
     if (!val)
       E(Error::ASSIGN_LOCAL_REFERENCE, e, e->getValue(), e->getSrcInfo());
 
@@ -245,9 +245,9 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
           instantiateType(stmt->getTypeExpr()->getSrcInfo(),
                           extractType(stmt->getTypeExpr())));
   }
-  val = std::make_shared<TypecheckItem>(canonical, ctx->getBaseName(), ctx->getModule(),
-                                        assign->getLhs()->getType()->shared_from_this(),
-                                        ctx->getScope());
+  auto val = std::make_shared<TypecheckItem>(
+      canonical, ctx->getBaseName(), ctx->getModule(),
+      assign->getLhs()->getType()->shared_from_this(), ctx->getScope());
   val->time = getTime();
   val->setSrcInfo(getSrcInfo());
   ctx->add(e->getValue(), val);

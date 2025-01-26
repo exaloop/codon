@@ -66,3 +66,34 @@ foo()
 slice_prefixes = [(start, end)
                     for start, end in [(1, 2), (3, 4)]]
 print(slice_prefixes)  #: [(1, 2), (3, 4)]
+
+def foo():
+    # fn itself must be delayed and unbound for this to reproduce
+    fn = (lambda _: lambda x: x)(None)
+
+    zizzer = 1
+    y = fn(zizzer)
+    print(y)  #: 1
+
+    zizzer = 's'
+    y = fn(zizzer)
+    print(y)  #: s
+foo()
+
+#%% do_not_resolve_default_generics_on_partial,barebones
+def coerce():
+    def foo(): pass
+    def bar(T1: type, I1: type = T1):
+        print(T1 is I1)  #: False
+        foo()
+    bar(int, I1=Int[64]) # creates bar=bar(foo,...) first
+coerce()
+
+#%% compile_error_realization,barebones
+def ctx():
+    def foo(): compile_error("bah!")
+    def bar(err: Static[bool]):
+        if err: foo()
+        else: print("ok")
+    bar(False)
+ctx()  #: ok

@@ -66,8 +66,20 @@ void TypecheckVisitor::visit(CallExpr *expr) {
 
   // Check if this call is partial call
   PartialCallData part;
+  if (!expr->empty()) {
+    if (auto el = cast<EllipsisExpr>(expr->back().getExpr())) {
+      if (expr->back().getName().empty() && !el->isPipe())
+        el->mode = EllipsisExpr::PARTIAL;
+      if (el->mode == EllipsisExpr::PARTIAL)
+        part.isPartial = true;
+    }
+  }
 
+  // Do not allow realization here (function will be realized later);
+  // used to prevent early realization of compile_error
   expr->setAttribute(Attr::ParentCallExpr);
+  if (part.isPartial)
+    expr->expr->setAttribute(Attr::ExprDoNotRealize);
   expr->expr = transform(expr->getExpr());
   expr->eraseAttribute(Attr::ParentCallExpr);
   if (isUnbound(expr->getExpr()))
@@ -97,8 +109,6 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   if (!withClassGenerics(
           calleeFn.get(), [&]() { return transformCallArgs(expr); }, true, true))
     return;
-  part.isPartial = !expr->empty() && cast<EllipsisExpr>(expr->back().getExpr()) &&
-                   cast<EllipsisExpr>(expr->back().getExpr())->isPartial();
   // Early dispatch modifier
   if (isDispatch(calleeFn.get())) {
     if (startswith(calleeFn->getFuncName(), "Tuple.__new__")) {
@@ -182,8 +192,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   }
 
   // Typecheck arguments with the function signature
-  bool done = typecheckCallArgs(calleeFn.get(), expr->items);
-  if (!part.isPartial && realize(calleeFn)) {
+  bool done = typecheckCallArgs(calleeFn.get(), expr->items, part.isPartial);
+  if (!part.isPartial && calleeFn->canRealize()) {
     // Previous unifications can qualify existing identifiers.
     // Transform again to get the full identifier
     expr->expr = transform(expr->expr);
@@ -326,10 +336,6 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
         E(Error::CALL_BAD_KWUNPACK, (*expr)[ai], typ->prettyString());
       }
     } else {
-      if (auto el = cast<EllipsisExpr>((*expr)[ai].getExpr())) {
-        if (ai + 1 == expr->size() && (*expr)[ai].getName().empty() && !el->isPipe())
-          el->mode = EllipsisExpr::PARTIAL;
-      }
       // Case: normal argument (no expansion)
       (*expr)[ai].value = transform((*expr)[ai].getExpr());
       ai++;
@@ -624,8 +630,8 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 /// default generics.
 /// @example
 ///   `foo(1, 2)` -> `foo(1, Optional(2), T=int)`
-bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn,
-                                         std::vector<CallArg> &args) {
+bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg> &args,
+                                         bool isPartial) {
   bool wrappingDone = true;         // tracks whether all arguments are wrapped
   std::vector<Type *> replacements; // list of replacement arguments
 
@@ -691,18 +697,21 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn,
   }
 
   // Handle default generics
-  for (size_t i = 0, j = 0; wrappingDone && i < calleeFn->ast->size(); i++)
-    if ((*calleeFn->ast)[i].isGeneric()) {
-      if ((*calleeFn->ast)[i].getDefault() &&
-          isUnbound(extractFuncGeneric(calleeFn, j))) {
-        auto def = extractType(withClassGenerics(
-            calleeFn,
-            [&]() { return transform(clean_clone((*calleeFn->ast)[i].getDefault())); },
-            true));
-        unify(extractFuncGeneric(calleeFn, j), def);
+  if (!isPartial)
+    for (size_t i = 0, j = 0; wrappingDone && i < calleeFn->ast->size(); i++)
+      if ((*calleeFn->ast)[i].isGeneric()) {
+        if ((*calleeFn->ast)[i].getDefault() &&
+            isUnbound(extractFuncGeneric(calleeFn, j))) {
+          auto def = extractType(withClassGenerics(
+              calleeFn,
+              [&]() {
+                return transform(clean_clone((*calleeFn->ast)[i].getDefault()));
+              },
+              true));
+          unify(extractFuncGeneric(calleeFn, j), def);
+        }
+        j++;
       }
-      j++;
-    }
 
   // Replace the arguments
   for (size_t si = 0; si < replacements.size(); si++) {
@@ -733,56 +742,59 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->expr);
   if (!ei)
     return {false, nullptr};
-  auto val = ei->getValue();
-  if (val == "superf") {
+  auto isF = [](IdExpr *val, const std::string &s) {
+    return val->getValue() == s || val->getValue() == s + ":0" ||
+           val->getValue() == s + ".0:0";
+  };
+  if (isF(ei, "superf")) {
     return {true, transformSuperF(expr)};
-  } else if (val == "super:0") {
+  } else if (isF(ei, "super")) {
     return {true, transformSuper()};
-  } else if (val == "__ptr__") {
+  } else if (isF(ei, "__ptr__")) {
     return {true, transformPtr(expr)};
-  } else if (val == "__array__.__new__:0") {
+  } else if (isF(ei, "__array__.__new__")) {
     return {true, transformArray(expr)};
-  } else if (val == "isinstance") { // static
+  } else if (isF(ei, "isinstance")) { // static
     return {true, transformIsInstance(expr)};
-  } else if (val == "staticlen") { // static
+  } else if (isF(ei, "staticlen")) { // static
     return {true, transformStaticLen(expr)};
-  } else if (val == "hasattr") { // static
+  } else if (isF(ei, "hasattr")) { // static
     return {true, transformHasAttr(expr)};
-  } else if (val == "getattr") {
+  } else if (isF(ei, "getattr")) {
     return {true, transformGetAttr(expr)};
-  } else if (val == "setattr") {
+  } else if (isF(ei, "setattr")) {
     return {true, transformSetAttr(expr)};
-  } else if (val == "type.__new__") {
+  } else if (isF(ei, "type.__new__")) {
     return {true, transformTypeFn(expr)};
-  } else if (val == "compile_error") {
+  } else if (isF(ei, "compile_error")) {
     return {true, transformCompileError(expr)};
-  } else if (val == "__realized__") {
+  } else if (isF(ei, "__realized__")) {
     return {true, transformRealizedFn(expr)};
-  } else if (val == "std.internal.static.static_print.0") {
+  } else if (isF(ei, "std.internal.static.static_print")) {
     return {false, transformStaticPrintFn(expr)};
-  } else if (val == "__has_rtti__") { // static
+  } else if (isF(ei, "__has_rtti__")) { // static
     return {true, transformHasRttiFn(expr)};
-  } else if (val == "std.collections.namedtuple.0") {
+  } else if (isF(ei, "std.collections.namedtuple")) {
     return {true, transformNamedTuple(expr)};
-  } else if (val == "std.functools.partial.0:0") {
+  } else if (isF(ei, "std.functools.partial")) {
     return {true, transformFunctoolsPartial(expr)};
-  } else if (val == "std.internal.static.fn_can_call.0") { // static
+  } else if (isF(ei, "std.internal.static.fn_can_call")) { // static
     return {true, transformStaticFnCanCall(expr)};
-  } else if (val == "std.internal.static.fn_arg_has_type.0") { // static
+  } else if (isF(ei, "std.internal.static.fn_arg_has_type")) { // static
     return {true, transformStaticFnArgHasType(expr)};
-  } else if (val == "std.internal.static.fn_arg_get_type.0") {
+  } else if (isF(ei, "std.internal.static.fn_arg_get_type")) {
     return {true, transformStaticFnArgGetType(expr)};
-  } else if (val == "std.internal.static.fn_args.0") {
+  } else if (isF(ei, "std.internal.static.fn_args")) {
     return {true, transformStaticFnArgs(expr)};
-  } else if (val == "std.internal.static.fn_has_default.0") { // static
+  } else if (isF(ei, "std.internal.static.fn_has_default")) { // static
     return {true, transformStaticFnHasDefault(expr)};
-  } else if (val == "std.internal.static.fn_get_default.0") {
+  } else if (isF(ei, "std.internal.static.fn_get_default")) {
     return {true, transformStaticFnGetDefault(expr)};
-  } else if (val == "std.internal.static.fn_wrap_call_args.0") {
+  } else if (isF(ei, "std.internal.static.fn_wrap_call_args")) {
     return {true, transformStaticFnWrapCallArgs(expr)};
-  } else if (val == "std.internal.static.vars.0") {
+  } else if (isF(ei, "std.internal.static.vars")) {
     return {true, transformStaticVars(expr)};
-  } else if (val == "std.internal.static.tuple_type.0") {
+  } else if (isF(ei, "std.internal.static.tuple_type")) {
     return {true, transformStaticTupleType(expr)};
   } else {
     return {false, nullptr};

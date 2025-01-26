@@ -344,6 +344,10 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     //     ctx->getBase()->returnType->debugString(2));
   }
 
+  // Types might change after realization, fix it
+  for (auto &t: *type)
+    realizeType(t.getType()->getClass());
+
   // Clone the generic AST that is to be realized
   auto ast = clean_clone(type->ast);
   if (auto s = generateSpecialAst(type))

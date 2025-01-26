@@ -138,7 +138,7 @@ private: // Node typechecking rules
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
   Expr *callReorderArguments(types::FuncType *, CallExpr *, PartialCallData &);
-  bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &);
+  bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &, bool);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
   std::vector<types::TypePtr> getSuperTypes(types::ClassType *);
 
@@ -263,8 +263,8 @@ public:
                 types::FuncType *callee = nullptr, bool allowUnwrap = true);
   std::tuple<bool, types::TypePtr, std::function<Expr *(Expr *)>>
   canWrapExpr(types::Type *exprType, types::Type *expectedType,
-            types::FuncType *callee = nullptr, bool allowUnwrap = true,
-            bool isEllipsis = false);
+              types::FuncType *callee = nullptr, bool allowUnwrap = true,
+              bool isEllipsis = false);
   std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *) const;
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
   Expr *generatePartialCall(const std::vector<char> &, types::FuncType *,
@@ -286,6 +286,8 @@ public:
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
     Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
     t->setSrcInfo(getSrcInfo());
+    if (cast<Stmt>(t) && getTime())
+      t->setAttribute(Attr::ExprTime, getTime());
     return t;
   }
   template <typename Tn, typename... Ts> Tn *NC(Ts &&...args) {
@@ -298,6 +300,13 @@ private:
     fmt::print(codon::getLogger().log, "[{}] [{}${}]: " + prefix + "\n",
                ctx->getSrcInfo(), ctx->getBaseName(), ctx->getBase()->iteration,
                std::forward<Ts>(args)...);
+  }
+  template <typename... Ts>
+  void logfile(const std::string &file, const std::string &prefix, Ts &&...args) {
+    if (in(ctx->getSrcInfo().file, file))
+      fmt::print(codon::getLogger().log, "[{}] [{}${}]: " + prefix + "\n",
+                 ctx->getSrcInfo(), ctx->getBaseName(), ctx->getBase()->iteration,
+                 std::forward<Ts>(args)...);
   }
 
 public:
