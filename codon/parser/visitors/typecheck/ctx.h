@@ -106,6 +106,8 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Only set for functions.
     FunctionStmt *func = nullptr;
     Stmt *suite = nullptr;
+    /// Index of the parent base
+    int parent = 0;
 
     struct {
       /// Set if the base is class base and if class is marked with @deduce.
@@ -126,8 +128,8 @@ struct TypeContext : public Context<TypecheckItem> {
     /// Map of identifiers that are to be fetched from Python.
     std::unordered_set<std::string> *pyCaptures = nullptr;
 
-    /// Scope that defines the base.
-    std::vector<int> scope;
+    // /// Scope that defines the base.
+    // std::vector<int> scope;
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"
@@ -156,7 +158,6 @@ struct TypeContext : public Context<TypecheckItem> {
     BaseGuard(TypeContext *holder, const std::string &name) : holder(holder) {
       holder->bases.emplace_back();
       holder->bases.back().name = name;
-      holder->bases.back().scope = holder->getScope();
       holder->addBlock();
     }
     ~BaseGuard() {
@@ -205,11 +206,9 @@ public:
   /// modules.
   Item addAlwaysVisible(const Item &item, bool = false);
 
-  /// Get an item from the context. If the item does not exist, nullptr is returned.
-  Item find(const std::string &name) const override;
   /// Get an item from the context before given srcInfo. If the item does not exist,
   /// nullptr is returned.
-  Item find(const std::string &name, int64_t time) const;
+  Item find(const std::string &name, int64_t time = 0) const;
   /// Get an item that exists in the context. If the item does not exist, assertion is
   /// raised.
   Item forceFind(const std::string &name) const;

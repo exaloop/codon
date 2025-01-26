@@ -103,29 +103,14 @@ TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item,
   return item;
 }
 
-TypeContext::Item TypeContext::find(const std::string &name) const {
-  auto t = Context<TypecheckItem>::find(name);
-  if (t)
-    return t;
-
-  // Item is not found in the current module. Time to look in the standard library!
-  // Note: the standard library items cannot be dominated.
-  auto stdlib = cache->imports[STDLIB_IMPORT].ctx;
-  if (stdlib.get() != this)
-    t = stdlib->Context<TypecheckItem>::find(name);
-
-  // Maybe we are looking for a canonical identifier?
-  if (!t && cache->typeCtx.get() != this)
-    t = cache->typeCtx->Context<TypecheckItem>::find(name);
-
-  return t;
-}
-
 TypeContext::Item TypeContext::find(const std::string &name, int64_t time) const {
   auto it = map.find(name);
   bool isMangled = in(name, ".");
   if (it != map.end()) {
     for (auto &i : it->second) {
+      if (!isMangled && !startswith(getBaseName(), i->getBaseName())) {
+        continue; // avoid middle realizations
+      }
       if (isMangled || i->getBaseName() != getBaseName() || !time) {
         return i;
       } else {

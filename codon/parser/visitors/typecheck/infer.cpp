@@ -338,14 +338,22 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ctx->typecheckLevel++;
     ctx->bases.push_back({type->getFuncName(), type->getFunc()->shared_from_this(),
                           type->getRetType()->shared_from_this()});
-    // LOG("[realize] F {} -> {} : base {} ; depth = {} ; ctx-base: {}; ret = {}",
+    for (size_t t = ctx->bases.size() - 1; t-- > 0;) {
+      if (startswith(ctx->getBaseName(), ctx->bases[t].name)) {
+        ctx->getBase()->parent = t;
+        break;
+      }
+    }
+    // LOG("[realize] F {} -> {} : base {} ; depth = {} ; ctx-base: {}; ret = {}; "
+    //     "parent = {}",
     //     type->getFuncName(), type->realizedName(), ctx->getRealizationStackName(),
     //     ctx->getRealizationDepth(), ctx->getBaseName(),
-    //     ctx->getBase()->returnType->debugString(2));
+    //     ctx->getBase()->returnType->debugString(2),
+    //     ctx->bases[ctx->getBase()->parent].name);
   }
 
   // Types might change after realization, fix it
-  for (auto &t: *type)
+  for (auto &t : *type)
     realizeType(t.getType()->getClass());
 
   // Clone the generic AST that is to be realized

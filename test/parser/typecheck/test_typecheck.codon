@@ -97,3 +97,11 @@ def ctx():
         else: print("ok")
     bar(False)
 ctx()  #: ok
+
+#%% stdlib_name_clash,barebones
+def bar(j):
+    # captures stdlib range, not foo's range
+    for i in range(*j): print(i)
+def foo(range):
+    bar(range)
+foo((1, 2))  #: 1

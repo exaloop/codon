@@ -118,11 +118,13 @@ bool in(const std::string &m, const std::string &item) {
   return f != std::string::npos;
 }
 size_t startswith(const std::string &str, const std::string &prefix) {
+  if (prefix.empty()) return true;
   return (str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix)
              ? prefix.size()
              : 0;
 }
 size_t endswith(const std::string &str, const std::string &suffix) {
+  if (suffix.empty()) return true;
   return (str.size() >= suffix.size() &&
           str.substr(str.size() - suffix.size()) == suffix)
              ? suffix.size()
