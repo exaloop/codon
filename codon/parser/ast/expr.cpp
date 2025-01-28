@@ -2,6 +2,8 @@
 
 #include "expr.h"
 
+#include <algorithm>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
@@ -138,9 +140,14 @@ FloatExpr::FloatExpr(double floatValue)
     : AcceptorExtend(), value(fmt::format("{:g}", floatValue)), floatValue(floatValue) {
 }
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
-    : AcceptorExtend(), value(value), suffix(std::move(suffix)) {
+    : AcceptorExtend(), value(), suffix(std::move(suffix)) {
+  this->value.reserve(value.size());
+  std::copy_if(value.begin(), value.end(), std::back_inserter(this->value),
+               [](char c) { return c != '_'; });
+
   double result;
-  auto r = fast_float::from_chars(value.data(), value.data() + value.size(), result);
+  auto r = fast_float::from_chars(this->value.data(),
+                                  this->value.data() + this->value.size(), result);
   if (r.ec == std::errc() || r.ec == std::errc::result_out_of_range)
     floatValue = result;
 }
