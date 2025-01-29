@@ -1,0 +1,55 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from .seed import SeedSequence
+
+def rotl(value: u64, rot: int):
+    return (value << u64(rot)) | (value >> u64((-rot) & 63))
+
+class SFC64:
+    s0: u64
+    s1: u64
+    s2: u64
+    s3: u64
+    seed: SeedSequence
+
+    def __init__(self, s0: u64, s1: u64, s2: u64):
+        self.s0 = s0
+        self.s1 = s1
+        self.s2 = s2
+        self.s3 = u64(1)
+
+        for _ in range(12):
+            self.next64()
+
+    def __init__(self, seed):
+        if not isinstance(seed, SeedSequence):
+            self.__init__(SeedSequence(seed))
+        else:
+            val = seed.generate_state(3, u64)
+            self.__init__(val[0], val[1], val[2])
+            self.seed = seed
+
+    def __get_state__(self):
+        return (self.s0, self.s1, self.s2, self.s3)
+
+    def __set_state__(self, state):
+        s0, s1, s2, s3 = state
+        self.s0 = s0
+        self.s1 = s1
+        self.s2 = s2
+        self.s3 = s3
+
+    def next64(self):
+        s0 = self.s0
+        s1 = self.s1
+        s2 = self.s2
+        s3 = self.s3
+
+        tmp = s0 + s1 + s3
+
+        self.s0 = s1 ^ (s1 >> u64(11))
+        self.s1 = s2 + (s2 << u64(3))
+        self.s2 = rotl(s2, 24) + tmp
+        self.s3 += u64(1)
+
+        return tmp

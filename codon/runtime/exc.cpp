@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/runtime/lib.h"
 #include "llvm/BinaryFormat/Dwarf.h"
@@ -628,7 +628,7 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
 
 SEQ_FUNC int64_t seq_exc_offset() {
   static OurBaseException_t dummy = {};
-  return (int64_t)((uintptr_t)&dummy - (uintptr_t) & (dummy.unwindException));
+  return (int64_t)((uintptr_t)&dummy - (uintptr_t)&(dummy.unwindException));
 }
 
 std::string codon::runtime::makeBacktraceFrameString(uintptr_t pc,

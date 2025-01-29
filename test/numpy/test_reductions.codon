@@ -1,0 +1,1900 @@
+import numpy as np
+import numpy.util as util
+import numpy.random as rnd
+
+# Imported tests
+@test
+def test_median():
+
+    @test
+    def test_basic():
+        a0 = np.array(1)
+        a1 = np.arange(2)
+        a2 = np.arange(6).reshape(2, 3)
+        assert np.median(a0) == 1
+        assert np.isclose(np.median(a1), 0.5)
+        assert np.isclose(np.median(a2), 2.5)
+        assert np.isclose(np.median(a2, axis=0), [1.5, 2.5, 3.5]).all()
+        assert np.isclose(np.median(a2, axis=1), [1, 4]).all()
+        assert np.isclose(np.median(a2, axis=None), 2.5)
+
+        a = np.array([0.0444502, 0.0463301, 0.141249, 0.0606775])
+        np.isclose((a[1] + a[3]) / 2., np.median(a))
+        a = np.array([0.0463301, 0.0444502, 0.141249])
+        assert np.isclose(a[0], np.median(a))
+        a = np.array([0.0444502, 0.141249, 0.0463301])
+        assert np.isclose(a[-1], np.median(a))
+        # check array scalar result
+        assert np.array(np.median(a)).ndim == 0
+        a[1] = np.nan
+        assert np.array(np.median(a)).ndim == 0
+
+    test_basic()
+
+    @test
+    def test_axis_keyword():
+        a3 = np.array([[2, 3], [0, 1], [6, 7], [4, 5]])
+        for a in (a3, rnd.randint(0, 100, size=(2, 3, 4))):
+            orig = a.copy()
+            np.median(a, axis=None)
+            for ax in range(a.ndim):
+                np.median(a, axis=ax)
+            assert np.array_equal(a, orig)
+
+        assert np.isclose(np.median(a3, axis=0), [3, 4]).all()
+        assert np.isclose(np.median(a3.T, axis=1), [3, 4]).all()
+        assert np.isclose(np.median(a3), 3.5)
+        assert np.isclose(np.median(a3, axis=None), 3.5)
+        assert np.isclose(np.median(a3.T), 3.5)
+
+    test_axis_keyword()
+
+    @test
+    def test_overwrite_keyword():
+        a3 = np.array([[2, 3], [0, 1], [6, 7], [4, 5]])
+        a0 = np.array(1)
+        a1 = np.arange(2)
+        a2 = np.arange(6).reshape(2, 3)
+        assert np.isclose(np.median(a0.copy(), overwrite_input=True), 1)
+        assert np.isclose(np.median(a1.copy(), overwrite_input=True), 0.5)
+        assert np.isclose(np.median(a2.copy(), overwrite_input=True), 2.5)
+        assert np.isclose(np.median(a2.copy(), overwrite_input=True, axis=0),
+                          [1.5, 2.5, 3.5]).all()
+        assert np.isclose(np.median(a2.copy(), overwrite_input=True, axis=1),
+                          [1, 4]).all()
+        assert np.isclose(
+            np.median(a2.copy(), overwrite_input=True, axis=None), 2.5)
+        assert np.isclose(np.median(a3.copy(), overwrite_input=True, axis=0),
+                          [3, 4]).all()
+        assert np.isclose(np.median(a3.T.copy(), overwrite_input=True, axis=1),
+                          [3, 4]).all()
+
+        a4 = np.arange(3 * 4 * 5, dtype=np.float32).reshape((3, 4, 5))
+        rnd.shuffle(a4.ravel())
+        assert np.isclose(
+            np.median(a4, axis=None),
+            np.median(a4.copy(), axis=None, overwrite_input=True))
+        assert np.isclose(np.median(a4, axis=0),
+                          np.median(a4.copy(), axis=0,
+                                    overwrite_input=True)).all()
+        assert np.isclose(np.median(a4, axis=1),
+                          np.median(a4.copy(), axis=1,
+                                    overwrite_input=True)).all()
+        assert np.isclose(np.median(a4, axis=2),
+                          np.median(a4.copy(), axis=2,
+                                    overwrite_input=True)).all()
+
+    test_overwrite_keyword()
+
+    @test
+    def test_array_like():
+        x = [1, 2, 3]
+        assert np.isclose(np.median(x), 2)
+        x2 = [x]
+        assert np.isclose(np.median(x2), 2)
+        assert np.isclose(np.median(x2, axis=0), x).all()
+
+    test_array_like()
+
+    @test
+    def test_out():
+        o = np.zeros((4, ))
+        d = np.ones((3, 4))
+        assert np.array_equal(np.median(d, 0, out=o), o)
+        o = np.zeros((3, ))
+        assert np.array_equal(np.median(d, 1, out=o), o)
+        o = np.zeros(())
+        assert np.array_equal(np.median(d, out=o), o)
+
+    test_out()
+
+    @test
+    def test_out_nan():
+        o = np.zeros((4, ))
+        d = np.ones((3, 4))
+        o = np.zeros((3, ))
+        assert np.array_equal(np.median(d, 1, out=o), o)
+        o = np.zeros(())
+        assert np.array_equal(np.median(d, out=o), o)
+
+    test_out_nan()
+
+    @test
+    def test_nan_behavior():
+        a = np.arange(24, dtype=float)
+        a[2] = np.nan
+        assert np.isnan(np.median(a))
+        assert np.isnan(np.median(a, axis=0))
+
+        a = np.arange(24, dtype=float).reshape(2, 3, 4)
+        a[1, 2, 3] = np.nan
+        a[1, 1, 2] = np.nan
+
+        # no axis
+        assert np.isnan(np.median(a))
+        assert np.array(np.median(a)).ndim == 0
+
+        # axis0
+        b = np.median(np.arange(24, dtype=float).reshape(2, 3, 4), 0)
+        b[2, 3] = np.nan
+        b[1, 2] = np.nan
+        c = np.median(a, 0)
+        for i in range(3):
+            for j in range(4):
+                if np.isnan(c[i][j]):
+                    assert np.isnan(c[i][j])
+                else:
+                    assert np.isclose(c[i][j], b[i][j])
+
+        # axis1
+        b = np.median(np.arange(24, dtype=float).reshape(2, 3, 4), 1)
+        b[1, 3] = np.nan
+        b[1, 2] = np.nan
+        c = np.median(a, 1)
+        for i in range(2):
+            for j in range(4):
+                if np.isnan(c[i][j]):
+                    assert np.isnan(c[i][j])
+                else:
+                    assert np.isclose(c[i][j], b[i][j])
+
+    test_nan_behavior()
+
+    @test
+    def test_empty():
+        # mean(empty array) emits two warnings: empty slice and divide by 0
+        a = np.empty(shape=(0, ), dtype=float)
+        assert np.isnan(np.median(a))
+
+        # multiple dimensions
+        a = np.empty(shape=(0, 0, 0), dtype=float)
+        assert np.isnan(np.median(a))
+
+    test_empty()
+
+    @test
+    def test_object():
+        o = np.arange(7.)
+        assert isinstance((np.median(o)), float)
+        o[2] = np.nan
+        assert isinstance((np.median(o)), float)
+
+    test_object()
+
+    @test
+    def test_extended_axis():
+        o = rnd.normal(size=(71, 23))
+        x = np.dstack([o] * 10)
+
+        assert np.median(x, axis=(0, 1))[0] == np.median(o)
+        x = np.moveaxis(x, -1, 0)
+
+        assert np.isclose(np.median(x, axis=(-2, -1)), np.median(o)).all()
+        x = x.swapaxes(0, 1).copy()
+
+        assert np.isclose(np.median(x, axis=(0, -1)), np.median(o)).all()
+
+        assert np.isclose(np.median(x, axis=(0, 1, 2)), np.median(x,
+                                                                  axis=None))
+        assert np.isclose(np.median(x, axis=(0, )), np.median(x, axis=0)).all()
+        assert np.isclose(np.median(x, axis=(-1, )), np.median(x,
+                                                               axis=-1)).all()
+
+        d = np.arange(3 * 5 * 7 * 11).reshape((3, 5, 7, 11))
+        np.random.shuffle(d.ravel())
+        assert np.median(d, axis=(0, 1, 2))[0] == np.median(d[:, :, :,
+                                                              0].flatten())
+        assert np.median(d, axis=(0, 1, 3))[1] == np.median(d[:, :,
+                                                              1, :].flatten())
+        assert np.median(d, axis=(3, 1, -4))[2] == np.median(d[:, :,
+                                                               2, :].flatten())
+        assert np.median(d, axis=(3, 1,
+                                  2))[2] == np.median(d[2, :, :, :].flatten())
+        assert np.median(d, axis=(3, 2))[2,
+                                         1] == np.median(d[2,
+                                                           1, :, :].flatten())
+        assert np.median(d, axis=(1, -2))[2, 1] == np.median(d[2, :, :,
+                                                               1].flatten())
+        assert np.median(d, axis=(1, 3))[2, 2] == np.median(d[2, :,
+                                                              2, :].flatten())
+
+    test_extended_axis()
+
+    @test
+    def test_extended_axis_invalid():
+        d = np.ones((3, 5, 7, 11))
+        try:
+            np.median(d, axis=-5)
+            assert False
+        except np.AxisError:
+            pass
+        try:
+            np.median(d, axis=(0, -5))
+            assert False
+        except np.AxisError:
+            pass
+        try:
+            np.median(d, axis=4)
+            assert False
+        except np.AxisError:
+            pass
+        try:
+            np.median(d, axis=(0, -4))
+            assert False
+        except ValueError:
+            pass
+        try:
+            np.median(d, axis=(1, 1))
+            assert False
+        except ValueError:
+            pass
+
+    test_extended_axis_invalid()
+
+    @test
+    def test_keepdims():
+        d = np.ones((3, 5, 7, 11))
+        assert np.median(d, axis=None, keepdims=True).shape == (1, 1, 1, 1)
+        assert np.median(d, axis=(0, 1), keepdims=True).shape == (1, 1, 7, 11)
+        assert np.median(d, axis=(0, 3), keepdims=True).shape == (1, 5, 7, 1)
+        assert np.median(d, axis=(1, ), keepdims=True).shape == (3, 1, 7, 11)
+        assert np.median(d, axis=(0, 1, 2, 3),
+                         keepdims=True).shape == (1, 1, 1, 1)
+        assert np.median(d, axis=(0, 1, 3),
+                         keepdims=True).shape == (1, 1, 7, 1)
+
+    test_keepdims()
+
+test_median()
+
+@test
+def test_scalar_reduction():
+    # The functions 'sum', 'prod', etc allow specifying axis=0
+    # even for scalars
+    a = np.array(3)
+    assert np.sum(3, axis=0) == 3
+    assert np.prod(3.5, axis=0) == 3.5
+    assert np.any(True, axis=0) == True
+    assert np.all(False, axis=0) == False
+    # assert np.max(3) == 3
+    # assert np.min(2.5) == 2.5
+
+    # Check scalar behaviour for ufuncs without an identity
+    # assert np.power.reduce(3) == 3
+
+    # Make sure that scalars are coming out from this operation
+    assert isinstance(np.prod(np.float32(2.5), axis=0), np.float32)
+    assert isinstance(np.sum(np.float32(2.5), axis=0), np.float32)
+
+    # check if scalars/0-d arrays get cast
+    assert isinstance(np.any(0, axis=0), np.bool)
+
+test_scalar_reduction()
+
+@test
+def test_object_array_reduction():
+    # Reductions on object arrays
+    a = np.array(['a', 'b', 'c'], dtype=str)
+
+    assert np.sum(a) == '0abc'
+    assert np.max(a) == 'c'
+    assert np.min(a) == 'a'
+    a = np.array([True, False, True])
+    assert np.sum(a) == 2
+    assert np.prod(a) == 0
+    assert np.any(a) == True
+    assert np.all(a) == False
+    assert np.max(a) == True
+    assert np.min(a) == False
+    assert np.array([[1]]).sum() == 1
+    assert np.array_equal(np.array([[[1, 2]]]).sum((0, 1)), [1, 2])
+    assert np.array([1]).sum(initial=1), 2
+
+test_object_array_reduction()
+
+@test
+def test_axis_out_of_bounds():
+    try:
+        a = np.array([False, False])
+        np.all(a, axis=1)
+        assert False
+    except np.AxisError:
+        pass
+    try:
+        a = np.array([False, False])
+        np.all(a, axis=-2)
+        assert False
+    except np.AxisError:
+        pass
+    try:
+        a = np.array([False, False])
+        np.any(a, axis=1)
+        assert False
+    except np.AxisError:
+        pass
+    try:
+        a = np.array([False, False])
+        np.any(a, axis=-2)
+        assert False
+    except np.AxisError:
+        pass
+
+test_axis_out_of_bounds()
+
+@test
+def test_sum_initial():
+    # Integer, single axis
+    assert np.sum([3], initial=2) == 5
+
+    # Floating point
+    assert np.isclose(np.sum([0.2], initial=0.1), 0.3)
+
+    # Multiple non-adjacent axes
+    assert np.array_equal(
+        np.sum(np.ones((2, 3, 5), dtype=np.int64), axis=(0, 2), initial=2),
+        [12, 12, 12])
+
+test_sum_initial()
+
+@test
+def test_sum():
+
+    for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
+
+        tgt = np.float32(v * (v + 1) / 2)
+        overflow = not np.isfinite(tgt)
+
+        d = np.arange(1, v + 1, dtype=np.float32)
+
+        assert np.isclose(np.sum(d), tgt)
+
+        assert np.isclose(np.sum(d[::-1]), tgt)
+
+    for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
+
+        tgt = np.float32(v * (v + 1) / 2)
+        overflow = not np.isfinite(tgt)
+
+        d = np.arange(1, v + 1, dtype=np.float64)
+
+        assert np.isclose(np.sum(d), tgt)
+
+        assert np.isclose(np.sum(d[::-1]), tgt)
+
+    for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
+
+        tgt = np.float32(v * (v + 1) / 2)
+        overflow = not np.isfinite(tgt)
+
+        d = np.arange(1, v + 1, dtype=np.longdouble)
+
+        assert np.isclose(np.sum(d), tgt)
+
+        assert np.isclose(np.sum(d[::-1]), tgt)
+
+    d = np.ones(500, dtype=np.float32)
+    assert np.isclose(np.sum(d[::2]), 250.)
+    assert np.isclose(np.sum(d[1::2]), 250.)
+    assert np.isclose(np.sum(d[::3]), 167.)
+    assert np.isclose(np.sum(d[1::3]), 167.)
+    assert np.isclose(np.sum(d[::-2]), 250.)
+    assert np.isclose(np.sum(d[-1::-2]), 250.)
+    assert np.isclose(np.sum(d[::-3]), 167.)
+    assert np.isclose(np.sum(d[-1::-3]), 167.)
+    # sum with first reduction entry != 0
+    d = np.ones((1, ), dtype=np.float32)
+    d += d
+    assert np.isclose(d, 2.)
+
+    d = np.ones(500, dtype=np.float64)
+    assert np.isclose(np.sum(d[::2]), 250.)
+    assert np.isclose(np.sum(d[1::2]), 250.)
+    assert np.isclose(np.sum(d[::3]), 167.)
+    assert np.isclose(np.sum(d[1::3]), 167.)
+    assert np.isclose(np.sum(d[::-2]), 250.)
+    assert np.isclose(np.sum(d[-1::-2]), 250.)
+    assert np.isclose(np.sum(d[::-3]), 167.)
+    assert np.isclose(np.sum(d[-1::-3]), 167.)
+    # sum with first reduction entry != 0
+    d = np.ones((1, ), dtype=np.float64)
+    d += d
+    assert np.isclose(d, 2.)
+
+    d = np.ones(500, dtype=np.longdouble)
+    assert np.isclose(np.sum(d[::2]), 250.)
+    assert np.isclose(np.sum(d[1::2]), 250.)
+    assert np.isclose(np.sum(d[::3]), 167.)
+    assert np.isclose(np.sum(d[1::3]), 167.)
+    assert np.isclose(np.sum(d[::-2]), 250.)
+    assert np.isclose(np.sum(d[-1::-2]), 250.)
+    assert np.isclose(np.sum(d[::-3]), 167.)
+    assert np.isclose(np.sum(d[-1::-3]), 167.)
+    # sum with first reduction entry != 0
+    d = np.ones((1, ), dtype=np.longdouble)
+    d += d
+    assert np.isclose(d, 2.)
+
+test_sum()
+
+@test
+def test_sum_complex():
+    for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
+        tgt = -(v * (v + 1) / 2)
+        d = np.empty(v, dtype=np.complex64)
+        d.imag = -np.arange(1, v + 1)
+        assert np.isclose(np.sum(d.imag), tgt)
+
+    for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
+        tgt = -(v * (v + 1) / 2)
+        d = np.empty(v, dtype=np.complex128)
+        d.imag = -np.arange(1, v + 1)
+        assert np.isclose(np.sum(d.imag), tgt)
+
+    for v in (0, 1, 2, 7, 8, 9, 15, 16, 19, 127, 128, 1024, 1235):
+        tgt = -(v * (v + 1) / 2)
+        d = np.empty(v, dtype=np.clongdouble)
+        d.imag = -np.arange(1, v + 1)
+        assert np.isclose(np.sum(d.imag), tgt)
+
+    d = np.ones(500, dtype=np.complex64) + 1j
+    assert np.isclose(np.sum(d[::2]), 250. + 250j)
+    assert np.isclose(np.sum(d[1::2]), 250. + 250j)
+    assert np.isclose(np.sum(d[::3]), 167. + 167j)
+    assert np.isclose(np.sum(d[1::3]), 167. + 167j)
+    assert np.isclose(np.sum(d[::-2]), 250. + 250j)
+    assert np.isclose(np.sum(d[-1::-2]), 250. + 250j)
+    assert np.isclose(np.sum(d[::-3]), 167. + 167j)
+    assert np.isclose(np.sum(d[-1::-3]), 167. + 167j)
+    # sum with first reduction entry != 0
+    d = np.ones((1, ), dtype=np.complex64) + 1j
+    d += d
+    assert np.isclose(d, 2. + 2j)
+
+    d = np.ones(500, dtype=np.complex128) + 1j
+    assert np.isclose(np.sum(d[::2]), 250. + 250j)
+    assert np.isclose(np.sum(d[1::2]), 250. + 250j)
+    assert np.isclose(np.sum(d[::3]), 167. + 167j)
+    assert np.isclose(np.sum(d[1::3]), 167. + 167j)
+    assert np.isclose(np.sum(d[::-2]), 250. + 250j)
+    assert np.isclose(np.sum(d[-1::-2]), 250. + 250j)
+    assert np.isclose(np.sum(d[::-3]), 167. + 167j)
+    assert np.isclose(np.sum(d[-1::-3]), 167. + 167j)
+    # sum with first reduction entry != 0
+    d = np.ones((1, ), dtype=np.complex128) + 1j
+    d += d
+    assert np.isclose(d, 2. + 2j)
+
+    d = np.ones(500, dtype=np.clongdouble) + 1j
+    assert np.isclose(np.sum(d[::2]), 250. + 250j)
+    assert np.isclose(np.sum(d[1::2]), 250. + 250j)
+    assert np.isclose(np.sum(d[::3]), 167. + 167j)
+    assert np.isclose(np.sum(d[1::3]), 167. + 167j)
+    assert np.isclose(np.sum(d[::-2]), 250. + 250j)
+    assert np.isclose(np.sum(d[-1::-2]), 250. + 250j)
+    assert np.isclose(np.sum(d[::-3]), 167. + 167j)
+    assert np.isclose(np.sum(d[-1::-3]), 167. + 167j)
+    # sum with first reduction entry != 0
+    d = np.ones((1, ), dtype=np.clongdouble) + 1j
+    d += d
+    assert np.isclose(d, 2. + 2j)
+
+test_sum_complex()
+
+@test
+def test_sum_stability():
+    a = np.ones(500, dtype=np.float64)
+    assert np.isclose((a / 10.).sum() - a.size / 10., 0)
+
+test_sum_stability()
+
+@test
+def test_sum(a,
+             expected,
+             axis=None,
+             dtype: type = NoneType,
+             out=None,
+             keepdims: Static[int] = False,
+             initial=0,
+             where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.sum(a,
+                      axis=axis,
+                      dtype=dtype,
+                      out=out,
+                      keepdims=keepdims,
+                      initial=initial,
+                      where=where) == expected
+    else:
+        assert (np.sum(a,
+                       axis=axis,
+                       dtype=dtype,
+                       out=out,
+                       keepdims=keepdims,
+                       initial=initial,
+                       where=where) == expected).all()
+
+test_sum(np.empty(0, float), 0.0)
+test_sum([0.5, 1.5], 2.0)
+test_sum([0.5, 0.7, 0.2, 1.5], 1, dtype=int)
+test_sum([[0, 1], [0, 5]], 6)
+test_sum([[0, 1], [0, 5]], np.array([0, 6]), axis=0)
+test_sum([[0, 1], [0, 5]], np.array([1, 5]), axis=1)
+test_sum([10], 15, initial=5)
+test_sum([[0, 1], [0, 5]], np.array([[6]]), keepdims=True)
+test_sum([[0, 1], [0, 5]], np.array(6.), out=np.empty((), dtype=float))
+test_sum([[0, 1], [0, 5]],
+         np.array([1., 5.]),
+         axis=1,
+         out=np.empty(2, dtype=float))
+test_sum([[0., 1.], [np.nan, 5.]],
+         np.array([1., 5.]),
+         axis=1,
+         where=[False, True])
+test_sum([[0, 1], [0, 5]], np.array([[0, 6]]), axis=0, keepdims=True)
+test_sum(np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]), 21.)
+test_sum(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+         np.array([9. + 12.j, 27. + 30.j]),
+         axis=1)
+
+@test
+def test_prod(a,
+              expected,
+              axis=None,
+              dtype: type = NoneType,
+              out=None,
+              keepdims: Static[int] = False,
+              initial=1,
+              where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.prod(a,
+                       axis=axis,
+                       dtype=dtype,
+                       out=out,
+                       keepdims=keepdims,
+                       initial=initial,
+                       where=where) == expected
+    else:
+        assert (np.prod(a,
+                        axis=axis,
+                        dtype=dtype,
+                        out=out,
+                        keepdims=keepdims,
+                        initial=initial,
+                        where=where) == expected).all()
+
+test_prod(np.empty(0, float), 1.0)
+test_prod([0.5, 1.5], 0.75)
+test_prod([0.5, 0.7, 0.2, 1.5], 0, dtype=int)
+test_prod([[2, 1], [3, 5]], 30)
+test_prod([[2, 1], [3, 5]], np.array([6, 5]), axis=0)
+test_prod([[2, 1], [3, 5]], np.array([2, 15]), axis=1)
+test_prod([10], 50, initial=5)
+test_prod([[2, 1], [3, 5]], np.array([[30]]), keepdims=True)
+test_prod([[2, 1], [3, 5]], np.array(30.), out=np.empty((), dtype=float))
+test_prod([[2, 1], [3, 5]],
+          np.array([2., 15.]),
+          axis=1,
+          out=np.empty(2, dtype=float))
+test_prod([[2., 1.], [np.nan, 5.]],
+          np.array([1., 5.]),
+          axis=1,
+          where=[False, True])
+test_prod(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+          np.array([-85. + 20.j, -1891. + 1358.j]),
+          axis=1)
+
+@test
+def test_mean(a,
+              expected,
+              axis=None,
+              dtype: type = NoneType,
+              out=None,
+              keepdims: Static[int] = False,
+              where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float) or isinstance(
+            expected, complex):
+        assert np.mean(a,
+                       axis=axis,
+                       dtype=dtype,
+                       out=out,
+                       keepdims=keepdims,
+                       where=where) == expected
+    else:
+        assert (np.mean(a,
+                        axis=axis,
+                        dtype=dtype,
+                        out=out,
+                        keepdims=keepdims,
+                        where=where) == expected).all()
+
+test_mean(np.array([[1, 2], [3, 4]]), 2.5)
+test_mean(np.array([[1, 2], [3, 4]]), np.array([2., 3.]), axis=0)
+test_mean(np.array([[1, 2], [3, 4]]), np.array([1.5, 3.5]), axis=1)
+test_mean(np.array([[1, 2], [3, 4]]), np.array([[2.5]]), keepdims=True)
+test_mean([[2, 1], [3, 5]], np.array(2.75), out=np.empty((), dtype=float))
+test_mean([[2, 1], [3, 5]],
+          np.array([1.5, 4.]),
+          axis=1,
+          out=np.empty(2, dtype=float))
+test_mean(np.array([[1, 2], [3, 4]]),
+          np.array([[1.5], [3.5]]),
+          axis=1,
+          keepdims=True)
+test_mean(np.array([[5, 9, 13], [14, 10, 12], [11, 15, 19]]),
+          9.0,
+          where=[[True], [False], [False]])
+test_mean(np.array([1.5, 2.5, 3.5, 4.5]), 3.0)
+test_mean(np.array([1 + 2j, 3 + 4j, 5 + 6j]), (3 + 4j))
+test_mean(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+          np.array([2., 5.]),
+          axis=1)
+test_mean(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+          np.array([4. + 5.j, 6. + 7.j, 8. + 9.j]),
+          axis=0)
+
+@test
+def test_nanmean(a,
+                 expected,
+                 axis=None,
+                 dtype: type = NoneType,
+                 out=None,
+                 keepdims: Static[int] = False,
+                 where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.nanmean(a,
+                          axis=axis,
+                          dtype=dtype,
+                          out=out,
+                          keepdims=keepdims,
+                          where=where) == expected
+    else:
+        assert (np.nanmean(a,
+                           axis=axis,
+                           dtype=dtype,
+                           out=out,
+                           keepdims=keepdims,
+                           where=where) == expected).all()
+
+test_nanmean(np.array([[np.nan, 1, 2], [3, 4, np.nan]]), 2.5)
+test_nanmean(np.array([[np.nan, 1, 2], [3, np.nan, 4]]),
+             np.array([3., 1., 3.]),
+             axis=0)
+test_nanmean(np.array([[1, 2, np.nan], [3, 4, np.nan]]),
+             np.array([1.5, 3.5]),
+             axis=1)
+test_nanmean(np.array([[1, np.nan, 2], [3, np.nan, 4]]),
+             np.array([[2.5]]),
+             keepdims=True)
+test_nanmean([[2, np.nan, 1], [3, 5, np.nan]],
+             np.array(2.75),
+             out=np.empty((), dtype=float))
+test_nanmean([[np.nan, 2, 1], [np.nan, 3, 5]],
+             np.array([1.5, 4.]),
+             axis=1,
+             out=np.empty(2, dtype=float))
+test_nanmean(np.array([[np.nan, 1, 2], [3, np.nan, 4]]),
+             np.array([[1.5], [3.5]]),
+             axis=1,
+             keepdims=True)
+test_nanmean(np.array([[5, np.nan, 9, 13], [np.nan, 14, 10, 12],
+                       [11, 15, np.nan, 19]]),
+             9.0,
+             where=[[True], [False], [False]])
+
+@test
+def test_var(a,
+             expected,
+             axis=None,
+             dtype: type = NoneType,
+             out=None,
+             keepdims: Static[int] = False,
+             where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float) or isinstance(
+            expected, complex):
+        assert np.var(a,
+                      axis=axis,
+                      dtype=dtype,
+                      out=out,
+                      keepdims=keepdims,
+                      where=where) == expected
+    else:
+        assert (np.var(a,
+                       axis=axis,
+                       dtype=dtype,
+                       out=out,
+                       keepdims=keepdims,
+                       where=where) == expected).all()
+
+test_var(np.array([[1, 2], [3, 4]]), 1.25)
+test_var(np.array([[1, 2], [3, 4]]), np.array([1., 1.]), axis=0)
+test_var(np.array([[1, 2], [3, 4]]), np.array([0.25, 0.25]), axis=1)
+test_var(np.array([[1., 2.], [3., 4.]]), np.array([0.25, 0.25]), axis=1)
+test_var(np.array([[1, 2], [3, 4]]), np.array([[1.25]]), keepdims=True)
+test_var([[2, 1], [3, 5]], np.array(2.1875), out=np.empty((), dtype=float))
+test_var([[2, 1], [3, 5]],
+         np.array([0.25, 1.]),
+         axis=1,
+         out=np.empty(2, dtype=float))
+test_var(np.array([[1, 2], [3, 4]]),
+         np.array([[0.25], [0.25]]),
+         axis=1,
+         keepdims=True)
+test_var(np.array([[5, 9, 13], [14, 10, 12], [11, 15, 19]]),
+         2.6666666666666665,
+         where=[[False], [True], [False]])
+test_var(np.array([1.0, 2.0, 3.0, 4.0, 5.0]), 2.)
+test_var(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+         np.array([2.25, 2.25, 2.25]),
+         axis=0)
+
+@test
+def test_nanvar(a,
+                expected,
+                axis=None,
+                dtype: type = NoneType,
+                out=None,
+                keepdims: Static[int] = False,
+                where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.nanvar(a,
+                         axis=axis,
+                         dtype=dtype,
+                         out=out,
+                         keepdims=keepdims,
+                         where=where) == expected
+    else:
+        assert (np.nanvar(a,
+                          axis=axis,
+                          dtype=dtype,
+                          out=out,
+                          keepdims=keepdims,
+                          where=where) == expected).all()
+
+test_nanvar(np.array([[1, np.nan, 2], [np.nan, 3, 4]]), 1.25)
+test_nanvar(np.array([[1, np.nan, 2], [3, 4, np.nan]]),
+            np.array([1., 0., 0.]),
+            axis=0)
+test_nanvar(np.array([[1, 2, np.nan], [3, np.nan, 4]]),
+            np.array([0.25, 0.25]),
+            axis=1)
+test_nanvar(np.array([[1, np.nan, 2], [np.nan, 3, 4]]),
+            np.array([[1.25]]),
+            keepdims=True)
+test_nanvar([[np.nan, 2, 1], [np.nan, 3, 5]],
+            np.array(2.1875),
+            out=np.empty((), dtype=float))
+test_nanvar([[2, np.nan, 1], [3, 5, np.nan]],
+            np.array([0.25, 1.]),
+            axis=1,
+            out=np.empty(2, dtype=float))
+test_nanvar(np.array([[1, 2, np.nan], [np.nan, 3, 4]]),
+            np.array([[0.25], [0.25]]),
+            axis=1,
+            keepdims=True)
+test_nanvar(np.array([[5, 9, 13], [14, 10, 12], [11, 15, 19]]),
+            2.6666666666666665,
+            where=[[False], [True], [False]])
+
+@test
+def test_std(a,
+             expected,
+             axis=None,
+             dtype: type = NoneType,
+             out=None,
+             keepdims: Static[int] = False,
+             where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float) or isinstance(
+            expected, complex):
+        assert np.round(
+            np.std(a,
+                   axis=axis,
+                   dtype=dtype,
+                   out=out,
+                   keepdims=keepdims,
+                   where=where), 8) == np.round(expected, 8)
+    else:
+        assert (np.round(
+            np.std(a,
+                   axis=axis,
+                   dtype=dtype,
+                   out=out,
+                   keepdims=keepdims,
+                   where=where), 8) == expected).all()
+
+test_std(np.array([[1, 2], [3, 4]]), 1.118033988749895)
+test_std(np.array([[1, 2], [3, 4]]), np.array([1., 1.]), axis=0)
+test_std(np.array([[1, 2], [3, 4]]), np.array([0.5, 0.5]), axis=1)
+test_std(np.array([[1, 2], [3, 4]]), np.array([[1.11803399]]), keepdims=True)
+test_std([[2, 1], [3, 5]], np.array(1.47901995), out=np.empty((), dtype=float))
+test_std([[2, 1], [3, 5]],
+         np.array([0.5, 1.]),
+         axis=1,
+         out=np.empty(2, dtype=float))
+test_std(np.array([[1, 2], [3, 4]]),
+         np.array([[0.5], [0.5]]),
+         axis=1,
+         keepdims=True)
+test_std(np.array([[5, 9, 13], [14, 10, 12], [11, 15, 19]]),
+         3.265986323710904,
+         where=[[True], [False], [False]])
+test_std(np.array([1.0, 2.0, 3.0, 4.0, 5.0]), 1.4142135623730951)
+test_std(np.array([1 + 2j, 3 + 4j, 5 + 6j]), 2.309401076758503)
+test_std(np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+         np.array([1.5, 1.5, 1.5]),
+         axis=0)
+test_std(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+         np.array([2.30940108, 2.30940108]),
+         axis=1)
+
+@test
+def test_nanstd(a,
+                expected,
+                axis=None,
+                dtype: type = NoneType,
+                out=None,
+                keepdims: Static[int] = False,
+                where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.nanstd(a,
+                         axis=axis,
+                         dtype=dtype,
+                         out=out,
+                         keepdims=keepdims,
+                         where=where) == expected
+    else:
+        assert (np.round(
+            np.nanstd(a,
+                      axis=axis,
+                      dtype=dtype,
+                      out=out,
+                      keepdims=keepdims,
+                      where=where), 8) == expected).all()
+
+test_nanstd(np.array([[1, 2, np.nan], [np.nan, 3, 4]]), 1.118033988749895)
+test_nanstd(np.array([[np.nan, 1, 2], [3, 4, np.nan]]),
+            np.array([0., 1.5, 0.]),
+            axis=0)
+test_nanstd(np.array([[np.nan, np.nan, 1, 2], [3, 4, np.nan, np.nan]]),
+            np.array([0.5, 0.5]),
+            axis=1)
+test_nanstd(np.array([[1, 2, np.nan], [3, np.nan, 4]]),
+            np.array([[1.11803399]]),
+            keepdims=True)
+test_nanstd([[2, np.nan, 1], [np.nan, 3, 5]],
+            np.array(1.47901995),
+            out=np.empty((), dtype=float))
+test_nanstd([[2, 1, np.nan], [3, 5, np.nan]],
+            np.array([0.5, 1.]),
+            axis=1,
+            out=np.empty(2, dtype=float))
+test_nanstd(np.array([[1, np.nan, 2], [3, np.nan, 4]]),
+            np.array([[0.5], [0.5]]),
+            axis=1,
+            keepdims=True)
+test_nanstd(np.array([[np.nan, 5, 9, 13], [14, 10, 12, np.nan],
+                      [11, np.nan, 15, 19]]),
+            3.265986323710904,
+            where=[[True], [False], [False]])
+
+@test
+def test_min(a,
+             expected,
+             axis=None,
+             out=None,
+             keepdims: Static[int] = False,
+             initial=util._NoValue(),
+             where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert a.min(axis=axis,
+                     out=out,
+                     keepdims=keepdims,
+                     initial=initial,
+                     where=where) == expected
+    else:
+        assert (a.min(axis=axis,
+                      out=out,
+                      keepdims=keepdims,
+                      initial=initial,
+                      where=where) == expected).all()
+
+test_min(np.array([0.5, 1.5]), 0.5)
+test_min(np.array([[0, 1], [2, 5]]), 0)
+test_min(np.array([10]), 5, initial=5)
+test_min(np.array([[-np.inf, 1.], [0., 5.]]),
+         np.array([[-np.inf]]),
+         keepdims=True)
+test_min(np.array([[0, 1], [0, 5]]),
+         np.array(0.),
+         out=np.empty((), dtype=float))
+test_min(np.array([[3, 1], [-2, 5]]), np.array([-2, 1]), axis=0)
+test_min(np.array([[3, 1], [-2, 5]]), np.array([1, -2]), axis=1)
+test_min(np.array([[3, 1], [8, 5]]),
+         np.array([1., 5.]),
+         axis=1,
+         out=np.empty(2, dtype=float))
+test_min(np.array([[0., 1.], [np.nan, 5.]]),
+         np.array([1., 5.]),
+         axis=1,
+         initial=6,
+         where=[False, True])
+test_min(np.array([[0, 1], [0, 5]]), np.array([[0, 1]]), axis=0, keepdims=True)
+test_min(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+         np.array([1. + 2.j, 7. + 8.j]),
+         axis=1)
+
+@test
+def test_max(a,
+             expected,
+             axis=None,
+             out=None,
+             keepdims: Static[int] = False,
+             initial=util._NoValue(),
+             where=util._NoValue()):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.max(a,
+                      axis=axis,
+                      out=out,
+                      keepdims=keepdims,
+                      initial=initial,
+                      where=where) == expected
+    else:
+        assert (np.max(a,
+                       axis=axis,
+                       out=out,
+                       keepdims=keepdims,
+                       initial=initial,
+                       where=where) == expected).all()
+
+test_max([0.5, 1.5], 1.5)
+test_max([[0, 1], [2, 5]], 5)
+test_max([[3, 1], [-2, 5]], np.array([3, 5]), axis=0)
+test_max([[3, 1], [-2, 5]], np.array([3, 5]), axis=1)
+test_max([10], 10, initial=5)
+test_max([[-np.inf, 1.], [0., 5.]], np.array([[5.]]), keepdims=True)
+test_max([[0, 1], [0, 5]], np.array(5.), out=np.empty((), dtype=float))
+test_max([[3, 1], [8, 5]],
+         np.array([3., 8.]),
+         axis=1,
+         out=np.empty(2, dtype=float))
+test_max([[0., 1.], [np.nan, 5.]],
+         np.array([6., 6.]),
+         axis=1,
+         initial=6,
+         where=[False, True])
+test_max([[0, 1], [0, 5]], np.array([[0, 5]]), axis=0, keepdims=True)
+test_max(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+         np.array([5. + 6.j, 11. + 12.j]),
+         axis=1)
+
+@test
+def test_ptp(a, expected, axis=None, out=None, keepdims: Static[int] = False):
+    if isinstance(expected, int) or isinstance(expected, float) or isinstance(
+            expected, complex):
+        assert np.ptp(a, axis=axis, out=out, keepdims=keepdims) == expected
+    else:
+        assert (np.ptp(a, axis=axis, out=out,
+                       keepdims=keepdims) == expected).all()
+
+test_ptp(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]), 10)
+test_ptp(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]), np.array([8, 6]), axis=1)
+test_ptp(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]),
+         np.array([2, 0, 5, 2]),
+         axis=0)
+test_ptp(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]),
+         np.array([[2, 0, 5, 2]]),
+         axis=0,
+         keepdims=True)
+test_ptp([[3, 1], [8, 5]],
+         np.array([2., 3.]),
+         axis=1,
+         out=np.empty(2, dtype=float))
+test_ptp([[0, 1], [0, 5]], np.array(5.), out=np.empty((), dtype=float))
+test_ptp([[0, 1], [0, 5]], np.array([[0, 4]]), axis=0, keepdims=True)
+test_ptp(np.array([1.5, 2.8, 5.3, 7.1, 2.0]), 5.6)
+test_ptp(np.array([1 + 2j, 3 + 1j, 5 + 4j, 7 + 0j, 2 - 3j]), (6 - 2j))
+test_ptp(np.array([[1 + 2j, 3 + 1j, 5 + 4j], [7 + 0j, 2 - 3j, 4 - 0j]]),
+         np.array([4. + 2.j, 5. + 3.j]),
+         axis=1)
+
+@test
+def test_argmin(a,
+                expected,
+                axis=None,
+                out=None,
+                keepdims: Static[int] = False):
+    if isinstance(expected, int):
+        assert np.argmin(a, axis=axis, out=out, keepdims=keepdims) == expected
+    else:
+        assert (np.argmin(a, axis=axis, out=out,
+                          keepdims=keepdims) == expected).all()
+
+test_argmin(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]), 2)
+test_argmin(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]), np.array([2, 0]), axis=1)
+test_argmin(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]),
+            np.array([0, 0, 0, 0]),
+            axis=0)
+test_argmin(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]),
+            np.array([[0, 0, 0, 0]]),
+            axis=0,
+            keepdims=True)
+test_argmin([[0, 1], [0, 5]], np.array(0), out=np.empty((), dtype=int))
+test_argmin([[0, 1], [2, 5]], np.array([[0, 0]]), axis=0, keepdims=True)
+test_argmin(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+            np.array([0, 0]),
+            axis=1)
+
+@test
+def test_argmax(a,
+                expected,
+                axis=None,
+                out=None,
+                keepdims: Static[int] = False):
+    if isinstance(expected, int):
+        assert np.argmax(a, axis=axis, out=out, keepdims=keepdims) == expected
+    else:
+        assert (np.argmax(a, axis=axis, out=out,
+                          keepdims=keepdims) == expected).all()
+
+test_argmax(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]), 7)
+test_argmax(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]), np.array([3, 3]), axis=1)
+test_argmax(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]),
+            np.array([1, 0, 1, 1]),
+            axis=0)
+test_argmax(np.array([[4, 9, 2, 10], [6, 9, 7, 12]]),
+            np.array([[1, 0, 1, 1]]),
+            axis=0,
+            keepdims=True)
+test_argmax([[0, 1], [0, 5]], np.array(3), out=np.empty((), dtype=int))
+test_argmax([[0, 1], [2, 5]], np.array([[1, 1]]), axis=0, keepdims=True)
+test_argmax(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
+            np.array([2, 2]),
+            axis=1)
+
+@test
+def test_any():
+    assert (np.any([[True, False], [False, False]],
+                   axis=0) == np.array([True, False])).all()
+    assert np.any([-1, 0, 5]) == True
+    assert np.any(np.nan) == True
+    assert np.any([[True, False], [False, False]], where=[[False],
+                                                          [True]]) == False
+    assert (np.any([-1, 4, 5], out=np.array(False)) == np.array(True)).all()
+
+test_any()
+
+@test
+def test_all():
+    assert np.all([[True, False], [True, True]]) == False
+    assert (np.all([[True, False], [True, True]],
+                   axis=0) == np.array([True, False])).all()
+    assert np.all([-1, 4, 5]) == True
+    assert np.all([1.0, np.nan]) == True
+    assert np.all([[True, True], [False, True]], where=[[True],
+                                                        [False]]) == True
+    assert (np.all([-1, 4, 5], out=np.array(False)) == np.array(True)).all()
+
+test_all()
+
+@test
+def test_count_nonzero(a, expected, axis=None, keepdims: Static[int] = False):
+    if isinstance(expected, int) or isinstance(expected, float):
+        assert np.count_nonzero(a, axis=axis, keepdims=keepdims) == expected
+    else:
+        assert (np.count_nonzero(a, axis=axis,
+                                 keepdims=keepdims) == expected).all()
+
+test_count_nonzero(np.eye(4), 4)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]), 5)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]),
+                   np.array([1, 1, 2, 1]),
+                   axis=0)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]),
+                   np.array([2, 3]),
+                   axis=1)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]),
+                   np.array([[2], [3]]),
+                   axis=1,
+                   keepdims=True)
+
+@test
+def test_median(a,
+                expected,
+                axis=None,
+                out=None,
+                overwrite_input: bool = False,
+                keepdims: Static[int] = False):
+    if isinstance(expected, int) or isinstance(expected, float) or isinstance(
+            expected, complex):
+        if np.isnan(expected):
+            assert np.isnan(
+                np.median(a,
+                          axis=axis,
+                          out=out,
+                          overwrite_input=overwrite_input,
+                          keepdims=keepdims))
+        else:
+            assert np.median(a,
+                             axis=axis,
+                             out=out,
+                             overwrite_input=overwrite_input,
+                             keepdims=keepdims) == expected
+    else:
+        assert (np.median(a,
+                          axis=axis,
+                          out=out,
+                          overwrite_input=overwrite_input,
+                          keepdims=keepdims) == expected).all()
+
+test_median(np.empty(0, int), np.nan)
+test_median(np.array([[np.nan]]), np.nan)
+a = np.arange(24, dtype=float)
+a[2] = np.nan
+test_median(a, np.nan, axis=0)
+a1 = np.arange(24, dtype=float).reshape(2, 3, 4)
+a1[1, 2, 3] = np.nan
+a1[1, 1, 2] = np.nan
+test_median(a1, np.nan)
+test_median(np.array(1), 1.0)
+test_median(np.array([0.0444502, 0.0463301, 0.141249, 0.0606775]),
+            0.053503800000000004)
+test_median(np.arange(2), 0.5)
+test_median(np.arange(6).reshape(2, 3), 2.5)
+test_median([[1, 2, 3]], 2.0)
+test_median([[1, 2, 3]], np.array([1., 2., 3.]), axis=0)
+test_median(np.array([[2, 3], [0, 1], [6, 7], [4, 5]]),
+            np.array([3., 4.]),
+            axis=0)
+test_median(np.array([[2, 3], [0, 1], [6, 7], [4, 5]]), 3.5)
+test_median(np.array([[2, 3], [0, 1], [6, 7], [4, 5]]),
+            3.5,
+            overwrite_input=True)
+test_median(np.array([[10, 7, 4], [3, 2, 1]]), 3.5)
+test_median(np.array([[10, 7, 4], [3, 2, 1]]),
+            np.array([6.5, 4.5, 2.5]),
+            axis=0)
+test_median(np.array([[10, 7, 4], [3, 2, 1]]), np.array([[7., 2.]]), axis=1)
+test_median(np.array([[10, 7, 4], [3, 2, 1]]),
+            np.array([6.5, 4.5, 2.5]),
+            axis=0,
+            out=np.zeros((3, )))
+test_median(np.array([[10, 7, 4], [3, 2, 1]]),
+            np.array([7., 2.]),
+            axis=1,
+            overwrite_input=True)
+test_median(np.array([[10, 7, 4], [3, 2, 1]]),
+            np.array([[7.], [2.]]),
+            axis=1,
+            overwrite_input=True,
+            keepdims=True)
+test_median(np.array([1.5, 2.8, 5.3, 7.1, 2.0]), 2.8)
+test_median(
+    np.array([[1., 1., 1., 1.], [1., 1., 1., 1.], [1., np.nan, 1., 1.]]),
+    np.nan)
+test_median(np.array([1 + 2j, 3 + 1j, 5 + 4j, 7 + 0j, 2 - 3j]), (3 + 1j))
+test_median(np.array([[1.2, 3.4, 5.6], [7.8, 2.1, 4.3]]),
+            np.array([3.4, 4.3]),
+            axis=1)
+test_median(np.array([[1 + 2j, 3 + 1j, 5 + 4j], [7 - 0j, 2 - 3j, 4 - 0j]]),
+            np.array([4. + 1.j, 2.5 - 1.j, 4.5 + 2.j]),
+            axis=0)
+test_median(np.array([[[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+                       [[13, 14, 15, 16], [17, 18, 19, 20], [21, 22, 23, 24]],
+                       [[25, 26, 27, 28], [29, 30, 31, 32], [33, 34, 35, 36]]],
+                      [[[37, 38, 39, 40], [41, 42, 43, 44], [45, 46, 47, 48]],
+                       [[49, 50, 51, 52], [53, 54, 55, 56], [57, 58, 59, 60]],
+                       [[61, 62, 63, 64], [65, 66, 67, 68], [69, 70, 71,
+                                                             72]]]]),
+            np.array([[23., 24., 25., 26.], [35., 36., 37., 38.],
+                      [47., 48., 49., 50.]]),
+            axis=(0, 2))
+
+@test
+def test_median_axis_keepdims_out():
+    d = np.ones((3, 5, 7, 11))
+    assert np.median(d, axis=None) == 1.0
+    axis = 1
+    shape_out = (3, 1, 7, 11)
+    out = np.ones(shape_out)
+    result = np.median(d, axis=axis, keepdims=True, out=out)
+    assert (result == out).all()
+    assert result.shape == shape_out
+
+    axis = (1, )
+    shape_out = (3, 1, 7, 11)
+    out = np.ones(shape_out)
+    result = np.median(d, axis=axis, keepdims=True, out=out)
+    assert (result == out).all()
+    assert result.shape == shape_out
+
+    axis = (0, 1)
+    shape_out = (1, 1, 7, 11)
+    out = np.ones(shape_out)
+    result = np.median(d, axis=axis, keepdims=True, out=out)
+    assert (result == out).all()
+    assert result.shape == shape_out
+
+    axis = (-3, -1)
+    shape_out = (3, 1, 7, 1)
+    out = np.ones(shape_out)
+    result = np.median(d, axis=axis, keepdims=True, out=out)
+    assert (result == out).all()
+    assert result.shape == shape_out
+
+test_median_axis_keepdims_out()
+
+@test
+def test_median_random():
+    o = np.random.normal(size=(71, 23))
+    x = np.dstack([o] * 10)
+    assert np.median(x) == np.median(o)
+    x = np.moveaxis(x, -1, 0)
+    assert np.median(x) == np.median(o)
+    assert np.median(x, axis=(0, 1, 2)) == np.median(x, axis=None)
+    assert (np.median(x, axis=(0, )) == np.median(x, axis=0)).all()
+    d = np.arange(3 * 5 * 7 * 11).reshape((3, 5, 7, 11))
+    assert np.median(d, axis=(0, 1, 2))[0] == np.median(d[:, :, :,
+                                                          0].flatten())
+    assert np.median(d, axis=(0, 1, 3))[1] == np.median(d[:, :,
+                                                          1, :].flatten())
+    assert np.median(d, axis=(3, 1, -4))[2] == np.median(d[:, :,
+                                                           2, :].flatten())
+    assert np.median(d,
+                     axis=(3, 1, 2))[2] == np.median(d[2, :, :, :].flatten())
+    assert np.median(d, axis=(3, 2))[2, 1] == np.median(d[2,
+                                                          1, :, :].flatten())
+    assert np.median(d, axis=(1, -2))[2, 1] == np.median(d[2, :, :,
+                                                           1].flatten())
+    assert np.median(d, axis=(1, 3))[2, 2] == np.median(d[2, :,
+                                                          2, :].flatten())
+
+    d = np.ones((3, 5, 7, 11))
+    assert np.median(d, axis=None, keepdims=True).shape == (1, 1, 1, 1)
+    assert np.median(d, axis=(0, 1), keepdims=True).shape == (1, 1, 7, 11)
+    assert np.median(d, axis=(0, 3), keepdims=True).shape == (1, 5, 7, 1)
+    assert np.median(d, axis=(1, ), keepdims=True).shape == (3, 1, 7, 11)
+    assert np.median(d, axis=(0, 1, 2, 3), keepdims=True).shape == (1, 1, 1, 1)
+    assert np.median(d, axis=(0, 1, 3), keepdims=True).shape == (1, 1, 7, 1)
+
+test_median_random()
+
+@test
+def test_quantile(a,
+                  q,
+                  expected,
+                  axis=None,
+                  out=None,
+                  overwrite_input=False,
+                  method: str = "linear",
+                  keepdims: Static[int] = False,
+                  interpolation=None):
+    if isinstance(expected, float):
+        assert np.quantile(a,
+                           q,
+                           axis=axis,
+                           out=out,
+                           overwrite_input=overwrite_input,
+                           method=method,
+                           keepdims=keepdims,
+                           interpolation=interpolation) == expected
+    else:
+        assert (np.quantile(a,
+                            q,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=overwrite_input,
+                            method=method,
+                            keepdims=keepdims,
+                            interpolation=interpolation) == expected).all()
+
+test_quantile(np.array([1., 2., 3.]), [0.3], np.array([1.6]))
+test_quantile(np.array([1, 2, 3]), [0.3], np.array([1.6]))
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]), 0.3, 2.5)
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]), [0.3], np.array([2.5]))
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]),
+              0.3,
+              np.array([5.8, 1.6]),
+              axis=1)
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]),
+              0.3,
+              np.array([[5.8], [1.6]]),
+              axis=1,
+              keepdims=True)
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]),
+              0.3,
+              np.array([5.8, 1.6]),
+              axis=1,
+              out=np.array([0., 0.]))
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]), [0.3, 0.5, 1],
+              np.array([2.5, 3.5, 10.]))
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]), [0.3, 0.5, 1],
+              np.array([[[2.5]], [[3.5]], [[10.]]]),
+              keepdims=True)
+test_quantile(np.array([[10, 7, 4], [3, 2, 1]]), [0.3, 0.5, 1],
+              np.array([[5.8, 1.6], [7., 2.], [10., 3.]]),
+              axis=1)
+x = np.arange(8) * 0.5
+test_quantile(x, 0, 0.)
+test_quantile(x, 1, 3.5)
+
+@test
+def test_percentile(a,
+                    q,
+                    expected,
+                    axis=None,
+                    out=None,
+                    overwrite_input=False,
+                    method: str = "linear",
+                    keepdims: Static[int] = False,
+                    interpolation=None):
+    if isinstance(expected, float):
+        assert np.percentile(a,
+                             q,
+                             axis=axis,
+                             out=out,
+                             overwrite_input=overwrite_input,
+                             method=method,
+                             keepdims=keepdims,
+                             interpolation=interpolation) == expected
+    else:
+        assert (np.round(
+            np.percentile(a,
+                          q,
+                          axis=axis,
+                          out=out,
+                          overwrite_input=overwrite_input,
+                          method=method,
+                          keepdims=keepdims,
+                          interpolation=interpolation),
+            8) == np.round(expected, 8)).all()
+
+test_percentile(np.array([1., 2., 3.]), [0.3], np.array([1.006]))
+test_percentile(np.array([1, 2, 3]), [0.3], np.array([1.006]))
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]), [3], 1.15)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]),
+                40,
+                np.array([6.4, 1.8]),
+                axis=1)
+test_percentile(np.array([10, 7, 4, 3, 2, 1]), [40], np.array([3.]), axis=0)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]), [40],
+                np.array([[[6.4], [1.8]]]),
+                axis=1,
+                keepdims=True)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]),
+                78.25,
+                np.array([8.695, 2.565]),
+                axis=1,
+                out=np.array([0., 0.]))
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]),
+                40,
+                np.array([6.4, 1.8]),
+                axis=1)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]), [42.11, 74.21, 1.2, 55.98],
+                np.array([3.1055, 6.1315, 1.06, 3.799]))
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]),
+                84.14,
+                np.array([[8.8898, 6.207, 3.5242]]),
+                axis=0,
+                keepdims=True)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]), [42.11, 74.21, 1.2, 55.98],
+                np.array([[[3.1055]], [[6.1315]], [[1.06]], [[3.799]]]),
+                keepdims=True)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]), [42.11, 74.21, 1.2, 55.98],
+                np.array([[6.5266, 1.8422], [8.4526, 2.4842], [4.072, 1.024],
+                          [7.3588, 2.1196]]),
+                axis=1)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]), [40],
+                np.array([[5.8, 4., 2.2]]),
+                axis=0)
+test_percentile(np.array([[10, 7, 4], [3, 2, 1]]),
+                84.14,
+                np.array([[7.621]]),
+                keepdims=True)
+x = np.arange(8) * 0.5
+test_percentile(x, 100, 3.5)
+test_percentile(x, 0, 0.)
+test_percentile(x, 50, 1.75)
+xx = np.array([[1, 1, 1], [1, 1, 1], [4, 4, 3], [1, 1, 1], [1, 1, 1]])
+test_percentile(xx, 50, np.array([1, 1, 1]), axis=0)
+arr = np.array([15.0, 35.0, 40.0, 50.0])
+test_percentile(arr, 40, 35.0, method="inverted_cdf")
+test_percentile(arr, 40, 35.0, method="averaged_inverted_cdf")
+test_percentile(arr, 40, 35.0, method="closest_observation")
+test_percentile(arr, 40, 27.0, method="interpolated_inverted_cdf")
+test_percentile(arr, 40, 35.5, method="hazen")
+test_percentile(arr, 40, 35.0, method="weibull")
+test_percentile(arr, 40, 36.0, method="linear")
+test_percentile(arr, 40, 35.333333333333336, method="median_unbiased")
+test_percentile(arr, 40, 35.375, method="normal_unbiased")
+test_percentile(np.arange(10), 50, 4., method='lower')
+test_percentile(np.arange(10), 50, 5., method='higher')
+test_percentile(np.arange(10), 51, 4.5, method='midpoint')
+test_percentile(np.arange(9) + 1, 50, 5., method='midpoint')
+test_percentile(np.arange(11), 51, 5.5, method='midpoint')
+test_percentile(np.arange(11), 50, 5., method='midpoint')
+test_percentile(np.arange(10), 51, 5., method='nearest')
+test_percentile(np.arange(10), 49, 4., method='nearest')
+test_percentile(x, [0, 100, 50], np.array([0, 3.5, 1.75]))
+ax = np.arange(12).reshape(3, 4)
+test_percentile(ax, (25, 50, 100), [2.75, 5.5, 11.0])
+test_percentile(ax, (25, 50, 100),
+                [[2, 3, 4, 5], [4, 5, 6, 7], [8, 9, 10, 11]],
+                axis=0)
+test_percentile(ax, (25, 50, 100),
+                np.array([[0.75, 1.5, 3], [4.75, 5.5, 7], [8.75, 9.5, 11]]).T,
+                axis=1)
+test_percentile(np.arange(12).reshape(3, 4), (25, 50),
+                np.array([[0., 1., 2., 3.], [4., 5., 6., 7.]]),
+                method='lower',
+                axis=0,
+                out=np.empty((2, 4)))
+test_percentile(np.arange(12).reshape(3, 4), (25, 50),
+                np.array([[0.75, 4.75, 8.75], [1.5, 5.5, 9.5]]),
+                axis=1)
+d = np.arange(3 * 5 * 7 * 11).reshape((3, 5, 7, 11))
+test_percentile(d,
+                25,
+                np.array([
+                    286., 287., 288., 289., 290., 291., 292., 293., 294., 295.,
+                    296.
+                ]),
+                axis=(0, 1, 2))
+test_percentile(d,
+                25,
+                np.array([239., 250., 261., 272., 283., 294., 305.]),
+                axis=(3, 1, -4))
+
+@test
+def test_nan_percentile():
+    x = np.arange(8) * 0.5
+    x[1] = np.nan
+    assert np.isnan(np.percentile(x, 0))
+    assert np.isnan(np.percentile(x, 0, method='nearest'))
+    assert np.isnan(np.percentile(x, 0, method='inverted_cdf'))
+
+test_nan_percentile()
+
+@test
+def test_percentile_shape():
+
+    x = np.arange(4 * 5 * 6).reshape(4, 5, 6)
+    assert np.percentile(x, (25, 50)).shape == (2, )
+    assert np.percentile(x, (25, 50, 75)).shape == (3, )
+
+    assert np.percentile(x, (25, 50), axis=0).shape == (2, 5, 6)
+    assert np.percentile(x, (25, 50), axis=1).shape == (2, 4, 6)
+    a = np.array([2, 3, 4, 1])
+    np.percentile(a, [50], overwrite_input=False)
+    assert (a == np.array([2, 3, 4, 1])).all()
+    b = np.percentile(a, [50], overwrite_input=True)
+    assert (b == np.array([2.5]))
+    d = np.ones((3, 5, 7, 11))
+    assert np.percentile(d, 7, axis=(0, 1),
+                         keepdims=True).shape == (1, 1, 7, 11)
+    assert np.percentile(d, 7, axis=(0, 3),
+                         keepdims=True).shape == (1, 5, 7, 1)
+    assert np.percentile(d, 7, axis=(1, ),
+                         keepdims=True).shape == (3, 1, 7, 11)
+    assert np.percentile(d, 7, axis=(0, 1, 3),
+                         keepdims=True).shape == (1, 1, 7, 1)
+    assert np.percentile(d, 7, axis=None, keepdims=True).shape == (1, 1, 1, 1)
+    assert np.percentile(d, 7, axis=(0, 1, 2, 3),
+                         keepdims=True).shape == (1, 1, 1, 1)
+    assert np.percentile(d, 50, axis=1).shape == (3, 7, 11)
+    assert np.percentile(d, 50, axis=3).shape == (3, 5, 7)
+    assert np.percentile(d, 50, axis=-1).shape == (3, 5, 7)
+    assert np.percentile(d, 50, axis=-3).shape == (3, 7, 11)
+
+    assert (np.percentile(x, [25, 60],
+                          axis=(0, 1, 2)) == np.percentile(x, [25, 60],
+                                                           axis=None)).all()
+    assert (np.percentile(x, [25, 60],
+                          axis=(0, )) == np.percentile(x, [25, 60],
+                                                       axis=0)).all()
+
+test_percentile_shape()
+
+@test
+def test_nanpercentile(a,
+                       q,
+                       expected,
+                       axis=None,
+                       out=None,
+                       overwrite_input=False,
+                       method: str = "linear",
+                       keepdims: Static[int] = False,
+                       interpolation=None):
+    if isinstance(expected, float):
+        assert np.nanpercentile(a,
+                                q,
+                                axis=axis,
+                                out=out,
+                                overwrite_input=overwrite_input,
+                                method=method,
+                                keepdims=keepdims,
+                                interpolation=interpolation) == expected
+    else:
+        assert (np.round(
+            np.nanpercentile(a,
+                             q,
+                             axis=axis,
+                             out=out,
+                             overwrite_input=overwrite_input,
+                             method=method,
+                             keepdims=keepdims,
+                             interpolation=interpolation),
+            8) == np.round(expected, 8)).all()
+
+test_nanpercentile(np.array([1., 2., np.nan, 3.]), [0.3], np.array([1.006]))
+
+test_nanpercentile(np.array([1, 2, np.nan, 3]), [0.3], np.array([1.006]))
+
+test_nanpercentile(np.array([[np.nan, 10, 7, 4], [3, 2, np.nan, 1]]), [3],
+                   1.15)
+test_nanpercentile(np.array([[10, np.nan, 7, 4], [3, np.nan, 2, 1]]),
+                   40,
+                   np.array([6.4, 1.8]),
+                   axis=1)
+test_nanpercentile(np.array([10, 7, 4, 3, np.nan, 2, 1]), [40],
+                   np.array([3.]),
+                   axis=0)
+test_nanpercentile(np.array([[10, 7, 4, np.nan], [np.nan, 3, 2, 1]]), [40],
+                   np.array([[[6.4], [1.8]]]),
+                   axis=1,
+                   keepdims=True)
+test_nanpercentile(np.array([[10, 7, np.nan, 4], [3, np.nan, 2, 1]]),
+                   78.25,
+                   np.array([8.695, 2.565]),
+                   axis=1,
+                   out=np.array([0., 0.]))
+x = np.arange(8, dtype=float) * 0.5
+x[1] = np.nan
+test_nanpercentile(x, 100, 3.5)
+test_nanpercentile(x, 0, 0.)
+test_nanpercentile(x, 50, 2.)
+
+test_nanpercentile(x, [0, 100, 50], np.array([0, 3.5, 2.]))
+ax = np.arange(12, dtype=float).reshape(3, 4)
+ax[2][2] = np.nan
+test_nanpercentile(ax, (25, 50, 100), [2.5, 5., 11.0])
+test_nanpercentile(ax, (25, 50, 100),
+                   np.array([[2., 3., 3., 5.], [4., 5., 4., 7.],
+                             [8., 9., 6., 11.]]),
+                   axis=0)
+
+# Imported tests
+@test
+def tests_sum():
+    test_sum([[1, 2, 3], [4, 5, 6], [7, 8, 9]], [[6], [15], [24]],
+             axis=1,
+             keepdims=True)
+    x = np.array([[1, 2], [4, 3]])
+    assert (x.sum() == 10)
+    assert np.array_equal(x.sum(axis=1), np.array([3, 7]))
+    assert np.array_equal(x.sum(axis=1, dtype=float), np.array([3., 7.]))
+    assert (np.sum([np.empty(0, float)]) == 0)
+    assert (np.sum([0.5, 1.5]) == 2.0)
+    assert (np.isclose(np.sum([0.5, 0.7, 0.2, 1.5], dtype=np.int32), 1))
+    assert (np.sum([[0, 1], [0, 5]]) == 6)
+    assert (np.array_equal(np.sum([[0, 1], [0, 5]], axis=0), np.array([0, 6])))
+    assert (np.array_equal(np.sum([[0, 1], [0, 5]], axis=1), np.array([1, 5])))
+    assert (np.isclose(np.ones(128, dtype=np.int8).sum(dtype=np.int8), -128))
+    assert (np.isclose((np.array([1, 2e-9, 3e-9] * 1000000)).sum(), 1e+06))
+    assert (np.sum([10], initial=5) == 15)
+    assert (np.array_equal(
+        np.sum(((0, 1), (np.nan, 5)), where=[False, True], axis=1),
+        np.array([1, 5])))
+
+tests_sum()
+
+@test
+def tests_prod():
+    test_prod([[1, 2, 3, 4], [5, 6, 7, 9], [10, 3, 4, 5]], [24, 1890, 600],
+              axis=-1)
+    x = np.arange(12).reshape((3, 4))
+    assert (x.prod() == 0)
+    assert np.array_equal(x.prod(0), [0, 45, 120, 231])
+    assert np.array_equal(x.prod(1), [0, 840, 7920])
+    assert (np.prod(np.array([536870910, 536870910, 536870910,
+                              536870910])) == 6917529010461212688)
+    assert (np.prod([1.0, 2.0]) == 2.0)
+    assert (np.prod(np.array([[1., 2.], [3., 4.]])) == 24.0)
+    assert (np.array_equal(np.prod(np.array([[1., 2.], [3., 4.]]), axis=1),
+                           np.array([2., 12.])))
+    assert (np.array_equal(np.prod(np.array([[1., 2.], [3., 4.]]), axis=0),
+                           np.array([3., 8.])))
+    assert (np.prod((1., np.nan, 3.), where=[True, False, True]) == 3.0)
+    assert (np.prod(np.array([1, 2, 3],
+                             dtype=np.uint8)).__class__.__name__ == 'UInt[8]')
+    assert (np.prod(np.array([1, 2, 3],
+                             dtype=np.int8)).__class__.__name__ == 'Int[8]')
+    assert (np.prod([1, 2], initial=5) == 10)
+
+tests_prod()
+
+@test
+def tests_mean():
+    test_mean([[1, 2, 3], [4, 5, 6]], 3.5)
+    assert (np.all(
+        np.mean([[1, 2, 3], [4, 5, 6]], 0) == np.array([2.5, 3.5, 4.5])))
+    assert (np.all(np.mean([[1, 2, 3], [4, 5, 6]], 1) == np.array([2., 5.])))
+    assert (np.isnan(np.mean([np.empty(0, float)])))
+
+    x = np.arange(12).reshape((3, 4))
+    assert (x.mean() == 5.5)
+    assert np.array_equal(x.mean(0), [4., 5., 6., 7.])
+    assert np.array_equal(x.mean(1), [1.5, 5.5, 9.5])
+
+    rnd.seed(1234)
+    A = rnd.rand(10, 20, 5) + 0.5
+    mean_out = np.zeros((10, 1, 5))
+    mean = np.mean(A, out=mean_out, axis=1, keepdims=True)
+    assert np.array_equal(mean_out, mean)
+
+    d = np.arange(10)
+    out = np.array(0.)
+    r = np.mean(d, out=out)
+    assert np.array_equal(r, out)
+    a = np.zeros((2, 512 * 512), dtype=np.float32)
+    a[0, :] = 1.0
+    a[1, :] = 0.1
+    assert (np.isclose(np.mean(a), 0.55))
+    assert (np.isclose(np.mean(a, dtype=np.float), 0.55))
+    a = np.array([[5, 9, 13], [14, 10, 12], [11, 15, 19]])
+    assert (np.mean(a) == 12.0)
+    assert (np.mean(a, where=[[True], [False], [False]]) == 9)
+
+tests_mean()
+
+@test
+def tests_var():
+    test_var([[1, 2, 3], [4, 5, 6]], 2.9166666666666665)
+    test_var([1j, 0j], 0.25)
+    test_var(np.array([1, -1, 1, -1]), 1)
+    test_var(1, 0)
+    test_var(np.array([1.j, 1.j, -1.j, -1.j]), 1)
+    test_var(1j, 0)
+
+    assert np.array_equal(np.var([[1, 2, 3], [4, 5, 6]], 0),
+                          np.array([2.25, 2.25, 2.25]))
+    assert (np.isclose(np.var([[1, 2, 3], [4, 5, 6]], 1),
+                       np.array([0.666667, 0.666667])).all())
+    assert (np.isnan(np.var([np.empty(0, float)])))
+
+    x = np.arange(12).reshape((3, 4))
+    assert np.isclose(x.var(), 11.916666666666666)
+    assert np.isclose(
+        x.var(0), [10.66666667, 10.66666667, 10.66666667, 10.66666667]).all()
+    assert np.array_equal(x.var(1), [1.25, 1.25, 1.25])
+
+    rnd.seed(1234)
+    A = rnd.rand(10, 20, 5) + 0.5
+    var_out = np.zeros((10, 1, 5))
+    var = np.var(A, out=var_out, axis=1, keepdims=True)
+    assert np.array_equal(var_out, var)
+    assert var.shape == (10, 1, 5)
+
+    var_old = np.var(A, axis=1, keepdims=True)
+    assert np.array_equal(var, var_old)
+
+    var = np.var(A, axis=1, keepdims=False)
+    assert var.shape == (10, 5)
+
+    where = A > 0.5
+    var = np.var(A, axis=1, keepdims=False, where=where)
+    assert var.shape == (10, 5)
+
+    var_old = np.var(A, axis=1, where=where)
+    assert np.array_equal(var, var_old)
+
+    A = np.array([1, -1, 1, -1])
+    assert (np.array_equal(np.var(A, ddof=1), (1 * len(A) / (len(A) - 1))))
+    assert (np.array_equal(np.var(A, ddof=2), (1 * len(A) / (len(A) - 2))))
+
+tests_var()
+
+@test
+def tests_std():
+    test_std([[1, 2, 3], [4, 5, 6]], 1.707825127659933)
+
+    rnd.seed(1234)
+    A = rnd.rand(10, 20, 5) + 0.5
+    std_out = np.zeros((10, 1, 5))
+    std = np.std(A, out=std_out, axis=1, keepdims=True)
+    assert (np.array_equal(std_out, std))
+
+    A = [[1, 2, 3], [4, 5, 6]]
+
+    assert (np.isclose(np.std(A, 0), np.array([1.5, 1.5, 1.5])).all())
+    assert (np.isclose(np.std(A, 1), np.array([0.81649658, 0.81649658])).all())
+    assert (np.isnan(np.std([np.empty(0, float)])))
+
+    rnd.seed(1234)
+    A = rnd.rand(10, 20, 5) + 0.5
+    std_out = np.zeros((10, 1, 5))
+    std = np.std(A, out=std_out, axis=1, keepdims=True)
+    assert (np.array_equal(std_out, std))
+    assert std.shape == (10, 1, 5)
+
+    A = np.array([1, -1, 1, -1])
+    assert (np.std(A)**2 == 1)
+    assert (np.std(1) == 0)
+    assert (np.array_equal(np.std(A, ddof=1)**2, (1 * len(A) / (len(A) - 1))))
+    assert (np.isclose(np.std(A, ddof=2)**2, (1 * len(A) / (len(A) - 2))))
+
+    d = np.arange(10)
+    out = np.array(0.)
+    r = np.std(d, out=out)
+    assert (np.isclose(r, out))
+    assert (np.isclose(np.std(1j), 0))
+
+    x = np.arange(12).reshape((3, 4))
+    assert np.isclose(x.std(), 3.4520525295346629)
+    assert (np.isclose(x.std(0), np.array([3.26599, 3.26599, 3.26599,
+                                           3.26599])).all())
+    assert (np.isclose(x.std(1), np.array([1.11803, 1.11803, 1.11803])).all())
+
+tests_std()
+
+@test
+def tests_min():
+    x = -1 * np.arange(12).reshape((3, 4))
+    assert (x.min() == -11)
+    assert np.array_equal(x.min(0), np.array([-8, -9, -10, -11]))
+    assert np.array_equal(x.min(1), np.array([-3, -7, -11]))
+
+tests_min()
+
+@test
+def tests_max():
+    x = np.arange(12).reshape((3, 4))
+    assert (x.max() == 11)
+    assert np.array_equal(x.max(0), np.array([8, 9, 10, 11]))
+    assert np.array_equal(x.max(1), np.array([3, 7, 11]))
+
+tests_max()
+
+@test
+def tests_ptp():
+    a = [3, 4, 5, 10, -3, -5, 6.0]
+    test_ptp(a, 15.0, axis=0)
+
+    x = np.arange(12).reshape((3, 4))
+    assert (x.ptp() == 11)
+    assert (np.array_equal(x.ptp(0), np.array([8, 8, 8, 8])))
+    assert (np.array_equal(x.ptp(1), np.array([3, 3, 3])))
+
+tests_ptp()
+
+@test
+def tests_argmin():
+    x = -1 * np.arange(12).reshape((3, 4))
+    assert (x.argmin() == 11)
+    assert (np.array_equal(x.argmin(0), np.array([2, 2, 2, 2])))
+    assert (np.array_equal(x.argmin(1), np.array([3, 3, 3])))
+
+tests_argmin()
+
+@test
+def tests_argmax():
+    x = np.arange(12).reshape((3, 4))
+    assert (x.argmax() == 11)
+    assert (np.array_equal(x.argmax(0), np.array([2, 2, 2, 2])))
+    assert (np.array_equal(x.argmax(1), np.array([3, 3, 3])))
+
+tests_argmax()
+
+@test
+def tests_any_all():
+    t = np.array([True] * 41, dtype=bool)[1::]
+    f = np.array([False] * 41, dtype=bool)[1::]
+    o = np.array([False] * 42, dtype=bool)[2::]
+    nm = f.copy()
+    im = t.copy()
+    nm[3] = True
+    nm[-2] = True
+    im[3] = False
+    im[-2] = False
+
+    assert (t.all())
+    assert (t.any())
+    assert (not f.all())
+    assert (not f.any())
+    assert (nm.any())
+    assert (im.any())
+    assert (not nm.all())
+    assert (not im.all())
+
+    for i in range(256 - 7):
+
+        d = np.array([False] * 256, dtype=bool)[7::]
+        d[i] = True
+        assert (np.any(d))
+        e = np.array([True] * 256, dtype=bool)[7::]
+        e[i] = False
+        assert (not np.all(e))
+        assert np.array_equal(e, ~d)
+
+    for i in list(range(9, 6000, 507)) + [7764, 90021, -10]:
+        d = np.array([False] * 100043, dtype=bool)
+        d[i] = True
+        assert (np.any(d))
+        e = np.array([True] * 100043, dtype=bool)
+        e[i] = False
+        assert (not np.all(e))
+
+    x = np.arange(12).reshape((3, 4))
+    y = x[0]
+
+    assert ((x == y).all() == False)
+    assert np.array_equal((x == y).all(0),
+                          np.array([False, False, False, False]))
+    assert np.array_equal((x == y).all(1), np.array([True, False, False]))
+
+tests_any_all()
+
+@test
+def test_sum_where():
+    # More extensive tests done in test_reduction_with_where.
+    assert np.sum([[1., 2.], [3., 4.]], where=[True, False]) == 4.
+    assert np.array_equal(
+        np.sum([[1., 2.], [3., 4.]], axis=0, initial=5., where=[True, False]),
+        [9., 5.])
+
+test_sum_where()
+
+@test
+def test_empty_min_max():
+    assert np.empty(0).min(initial=42) == 42.0
+    assert np.empty(0).max(initial=42) == 42.0
+    try:
+        np.empty(0).min()
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.empty(0).max()
+        assert False
+    except ValueError:
+        pass
+
+    assert np.empty((1, 2, 0, 2, 1)).min(initial=42) == 42.0
+    assert np.empty((1, 2, 0, 2, 1)).max(initial=42) == 42.0
+    try:
+        np.empty((1, 2, 0, 2, 1)).min()
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.empty((1, 2, 0, 2, 1)).max()
+        assert False
+    except ValueError:
+        pass
+
+    assert np.asarray(42).min() == 42
+    assert np.asarray(42).max() == 42
+    assert np.asarray(42).min(initial=25) == 25
+    assert np.asarray(42).max(initial=25) == 42
+    assert np.asarray(42).min(initial=99) == 42
+    assert np.asarray(42).max(initial=99) == 99
+
+test_empty_min_max()

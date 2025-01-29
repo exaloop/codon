@@ -1,5 +1,5 @@
 from typing import Dict, List, Tuple
-
+import numpy as np
 import codon
 
 @codon.convert
@@ -151,3 +151,33 @@ def test_cross_calls():
     assert round(c(5, 6.1), 2) == 1339.56
 
 test_cross_calls()
+
+@codon.jit
+def d(x, y):
+    z = x**2 + y
+    return z
+
+def test_ndarray():
+    x = np.array([1, 2, 3, 4])
+    y = np.array([10., 100., 1000., 10000.])
+    z = d(x, y)
+    assert np.array_equal(z, [11., 104., 1009., 10016.])
+    assert z.dtype == np.float64
+
+    x = np.array([1j])
+    y = np.array([2j], np.complex64)
+    z = d(x, y)
+    assert np.array_equal(z, [-1+2j])
+    assert z.dtype == np.complex128
+
+    x = np.array([3, 4, 5], 'timedelta64[2s]')
+    y = a(x)
+    assert np.array_equal(y, np.array([4, 5, 6], 'timedelta64[2s]'))
+    assert np.datetime_data(y.dtype) == ('s', 2)
+
+    x = np.array([3, 4, 5], 'datetime64[2s]')
+    y = a(x)
+    assert np.array_equal(y, np.array([4, 5, 6], 'datetime64[2s]'))
+    assert np.datetime_data(y.dtype) == ('s', 2)
+
+test_ndarray()

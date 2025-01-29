@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -68,7 +68,7 @@ Value *makeTuple(const std::vector<Value *> &args, Module *M = nullptr);
 /// @param parent function to add the new variable to, or null for global variable
 /// @param prepend true to insert assignment at start of block
 /// @return value containing the new variable
-VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend = false);
+Var *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend = false);
 
 /// Dynamically allocates memory for the given type with the given
 /// number of elements.

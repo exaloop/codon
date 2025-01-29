@@ -1,0 +1,292 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import operator
+import util
+
+from .ndarray import ndarray
+from .routines import asarray
+
+@tuple
+class _OpWrap:
+    op: F
+    F: type
+
+    def __call__(self, a, b):
+        A = type(a)
+        B = type(b)
+        c1, c2 = util.op_types(A, B)
+        C1 = type(c1)
+        C2 = type(c2)
+        return self.op(util.cast(a, C1), util.cast(b, C2))
+
+def _fix_scalar(x, A: type):
+    X = type(x)
+
+    a_is_int: Static[int] = (A is int or A is byte or isinstance(A, Int)
+                             or isinstance(A, UInt))
+    x_is_int: Static[int] = X is int
+
+    a_is_float: Static[int] = (A is float or A is float32 or A is float16
+                               or A is bfloat16 or A is float128)
+    x_is_float: Static[int] = X is float
+
+    a_is_complex: Static[int] = (A is complex or A is complex64)
+    x_is_complex: Static[int] = X is complex
+
+    should_cast: Static[int] = ((x_is_int and
+                                 (a_is_int or a_is_float or a_is_complex)) or
+                                (x_is_float and (a_is_float or a_is_complex))
+                                or (x_is_complex and a_is_complex))
+
+    if (A is float16 or A is float32) and X is complex:
+        return util.cast(x, complex64)
+    elif should_cast:
+        return util.cast(x, A)
+    else:
+        return x
+
+@inline
+def _binop_impl(arr: ndarray, other, op):
+    op = _OpWrap(op)
+
+    if isinstance(other, ndarray):
+        return arr._op_elemwise(other, op)
+
+    if  (isinstance(other, bool) or isinstance(other, int) or
+         isinstance(other, float) or isinstance(other, complex)):
+        return arr._op_scalar(_fix_scalar(other, arr.dtype), op)
+
+    return arr._op_elemwise(asarray(other), op)
+
+@inline
+def _ibinop_impl(arr: ndarray, other, op):
+    op = _OpWrap(op)
+
+    if isinstance(other, ndarray):
+        return arr._iop_elemwise(other, op)
+
+    if  (isinstance(other, bool) or isinstance(other, int) or
+         isinstance(other, float) or isinstance(other, complex)):
+        return arr._iop_scalar(_fix_scalar(other, arr.dtype), op)
+
+    return arr._iop_elemwise(asarray(other), op)
+
+@inline
+def _rbinop_impl(arr: ndarray, other, op):
+    op = _OpWrap(op)
+
+    if isinstance(other, ndarray):
+        return arr._rop_elemwise(other, op)
+
+    if  (isinstance(other, bool) or isinstance(other, int) or
+         isinstance(other, float) or isinstance(other, complex)):
+        return arr._rop_scalar(_fix_scalar(other, arr.dtype), op)
+
+    return arr._rop_elemwise(asarray(other), op)
+
+def _floor_divide(x, y):
+    X = type(x)
+    Y = type(y)
+    if isinstance(X, Int) and isinstance(Y, Int):
+        return util.pydiv(x, y)
+    else:
+        return x // y
+
+def _remainder(x, y):
+    X = type(x)
+    Y = type(y)
+    if isinstance(X, Int) and isinstance(Y, Int):
+        return util.pymod(x, y)
+    elif ((X is float and Y is float) or
+          (X is float32 and Y is float32) or
+          (X is float16 and Y is float16)):
+        return util.pyfmod(x, y)
+    else:
+        return x % y
+
+@extend
+class ndarray:
+
+    @inline
+    def __add__(self, other):
+        return _binop_impl(self, other, operator.add)
+
+    @inline
+    def __radd__(self, other):
+        return _rbinop_impl(self, other, operator.add)
+
+    @inline
+    def __iadd__(self, other):
+        return _ibinop_impl(self, other, operator.add)
+
+    @inline
+    def __sub__(self, other):
+        return _binop_impl(self, other, operator.sub)
+
+    @inline
+    def __rsub__(self, other):
+        return _rbinop_impl(self, other, operator.sub)
+
+    @inline
+    def __isub__(self, other):
+        return _ibinop_impl(self, other, operator.sub)
+
+    @inline
+    def __mul__(self, other):
+        return _binop_impl(self, other, operator.mul)
+
+    @inline
+    def __rmul__(self, other):
+        return _rbinop_impl(self, other, operator.mul)
+
+    @inline
+    def __imul__(self, other):
+        return _ibinop_impl(self, other, operator.mul)
+
+    @inline
+    def __mod__(self, other):
+        return _binop_impl(self, other, _remainder)
+
+    @inline
+    def __rmod__(self, other):
+        return _rbinop_impl(self, other, _remainder)
+
+    @inline
+    def __imod__(self, other):
+        return _ibinop_impl(self, other, _remainder)
+
+    @inline
+    def __pow__(self, other):
+        return _binop_impl(self, other, operator.pow)
+
+    @inline
+    def __rpow__(self, other):
+        return _rbinop_impl(self, other, operator.pow)
+
+    @inline
+    def __ipow__(self, other):
+        return _ibinop_impl(self, other, operator.pow)
+
+    @inline
+    def __truediv__(self, other):
+        return _binop_impl(self, other, operator.truediv)
+
+    @inline
+    def __rtruediv__(self, other):
+        return _rbinop_impl(self, other, operator.truediv)
+
+    @inline
+    def __itruediv__(self, other):
+        return _ibinop_impl(self, other, operator.truediv)
+
+    @inline
+    def __floordiv__(self, other):
+        return _binop_impl(self, other, _floor_divide)
+
+    @inline
+    def __rfloordiv__(self, other):
+        return _rbinop_impl(self, other, _floor_divide)
+
+    @inline
+    def __ifloordiv__(self, other):
+        return _ibinop_impl(self, other, _floor_divide)
+
+    @inline
+    def __lshift__(self, other):
+        return _binop_impl(self, other, operator.lshift)
+
+    @inline
+    def __rlshift__(self, other):
+        return _rbinop_impl(self, other, operator.lshift)
+
+    @inline
+    def __ilshift__(self, other):
+        return _ibinop_impl(self, other, operator.lshift)
+
+    @inline
+    def __rshift__(self, other):
+        return _binop_impl(self, other, operator.rshift)
+
+    @inline
+    def __rrshift__(self, other):
+        return _rbinop_impl(self, other, operator.rshift)
+
+    @inline
+    def __irshift__(self, other):
+        return _ibinop_impl(self, other, operator.rshift)
+
+    @inline
+    def __and__(self, other):
+        return _binop_impl(self, other, operator.and_)
+
+    @inline
+    def __rand__(self, other):
+        return _rbinop_impl(self, other, operator.and_)
+
+    @inline
+    def __iand__(self, other):
+        return _ibinop_impl(self, other, operator.and_)
+
+    @inline
+    def __or__(self, other):
+        return _binop_impl(self, other, operator.or_)
+
+    @inline
+    def __ror__(self, other):
+        return _rbinop_impl(self, other, operator.or_)
+
+    @inline
+    def __ior__(self, other):
+        return _ibinop_impl(self, other, operator.or_)
+
+    @inline
+    def __xor__(self, other):
+        return _binop_impl(self, other, operator.xor)
+
+    @inline
+    def __rxor__(self, other):
+        return _rbinop_impl(self, other, operator.xor)
+
+    @inline
+    def __ixor__(self, other):
+        return _ibinop_impl(self, other, operator.xor)
+
+    @inline
+    def __pos__(self):
+        return self._op_unary(operator.pos)
+
+    @inline
+    def __neg__(self):
+        return self._op_unary(operator.neg)
+
+    @inline
+    def __invert__(self):
+        return self._op_unary(operator.invert)
+
+    @inline
+    def __abs__(self):
+        return self._op_unary(operator.abs)
+
+    @inline
+    def __eq__(self, other):
+        return _binop_impl(self, other, operator.eq)
+
+    @inline
+    def __ne__(self, other):
+        return _binop_impl(self, other, operator.ne)
+
+    @inline
+    def __lt__(self, other):
+        return _binop_impl(self, other, operator.lt)
+
+    @inline
+    def __le__(self, other):
+        return _binop_impl(self, other, operator.le)
+
+    @inline
+    def __gt__(self, other):
+        return _binop_impl(self, other, operator.gt)
+
+    @inline
+    def __ge__(self, other):
+        return _binop_impl(self, other, operator.ge)

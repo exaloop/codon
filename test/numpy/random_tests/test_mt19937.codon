@@ -1,0 +1,991 @@
+import numpy.random as rnd
+from numpy import *
+import numpy as np
+
+@test
+def test_MT19937_integers(seed, low, expected, high=None, size=None, e=False):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(low, int)
+                or isinstance(low, float)) and (high is None or isinstance(
+                    high, int) or isinstance(high, float)):
+            assert gen.integers(low, high, endpoint=e) == expected
+        else:
+            assert (gen.integers(low, high, endpoint=e) == expected).all()
+    else:
+        assert (gen.integers(low, high, size, endpoint=e) == expected).all()
+
+test_MT19937_integers(74, 5, 3)
+test_MT19937_integers(74, 987.4, 706)
+test_MT19937_integers(74, 98, 734, high=987)
+test_MT19937_integers(74, 89, 64, e=True)
+test_MT19937_integers(74, -1218, -277, high=98)
+test_MT19937_integers(74, -5, np.array([37, 38, 38]), 55, size=3)
+test_MT19937_integers(74, -5, np.array([38, 39, 39]), 55, size=3, e=True)
+test_MT19937_integers(74, np.array([7, 49, 17]), np.array([57, 70, 61]), 78)
+test_MT19937_integers(74, -99, np.array([26, 38, 45]), np.array([77, 89, 101]))
+test_MT19937_integers(74, np.array([7, 49, 17]), np.array([57, 78, 77]),
+                      np.array([77, 89, 101]))
+
+@test
+def test_MT19937_random(seed, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        assert gen.random() == expected
+    else:
+        assert (round(gen.random(size), 8) == round(expected, 8)).all()
+
+test_MT19937_random(0, 0.47932306384132817)
+test_MT19937_random(1, 0.24067553804036945)
+test_MT19937_random(1234, 0.12038356302504949)
+test_MT19937_random(
+    1234,
+    np.array([0.12038356, 0.40370142, 0.87770263, 0.95657880, 0.42646002]),
+    size=5)
+test_MT19937_random(74,
+                    np.array([[0.71552153, 0.72399061, 0.98011015],
+                              [0.92823638, 0.81411241, 0.85174267]]),
+                    size=(2, 3))
+
+@test
+def test_MT19937_choice(seed,
+                        a,
+                        expected,
+                        size=None,
+                        r=True,
+                        p=None,
+                        axis=0,
+                        shuffle=True):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(a, int):
+            assert gen.choice(a, size, r, p, axis, shuffle) == expected
+        elif staticlen(a.shape) == 1:
+            assert gen.choice(a, size, r, p, axis, shuffle) == expected
+        else:
+            assert (round(gen.choice(a, size, r, p, axis, shuffle),
+                          8) == expected).all()
+    else:
+        assert (round(gen.choice(a, size, r, p, axis, shuffle),
+                      8) == expected).all()
+
+test_MT19937_choice(
+    621,
+    np.array([
+        1.34, 2.15, 3.21, 4.78, 5.55, 6.42, 7.99, 8.31, 9.61, 10.75, 11.33,
+        12.93
+    ]), np.array([9.61, 8.31, 1.34]), 3)
+test_MT19937_choice(
+    318, np.array([5, 4, 2, 6, 7, 8, 2, 12, 1, 55, 33, 7, 78, 15, 43]), 5)
+test_MT19937_choice(318, np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+                    np.array([12, 1, 11]), 3, False)
+test_MT19937_choice(
+    4589,
+    np.array([
+        -1.34, -2.15, -3.21, -4.78, -5.55, -6.42, -7.99, -8.31, -9.61, -10.75,
+        -11.33, -12.93
+    ]), -1.34)
+test_MT19937_choice(318,
+                    np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]),
+                    np.array([[1, 2, 3], [10, 11, 12]]), 2)
+test_MT19937_choice(74,
+                    np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]),
+                    np.array([7, 8, 9]))
+test_MT19937_choice(74, 1, 0)
+test_MT19937_choice(74, np.array([13, -4]), -4, p=np.array([0.3, 0.7]))
+test_MT19937_choice(74,
+                    np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]),
+                    np.array([[3], [6], [9], [12]]),
+                    axis=1)
+test_MT19937_choice(74,
+                    np.array([13, -4, 3, 18]),
+                    -4,
+                    p=np.array([0.5, 0.3, 0.1, 0.1]),
+                    shuffle=True)
+
+@test
+def test_MT19937_bytes(seed, length, expected):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    check = gen.bytes(length) == expected
+    assert check
+
+test_MT19937_bytes(555, 10, "\x93\x94\x84Ym\xca5\xa7\x0bi")
+
+@test
+def test_MT19937_shuffle(seed, x, expected, axis=0):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    gen.shuffle(x, axis)
+    assert (x == expected).all()
+
+test_MT19937_shuffle(876, np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                     np.array([9, 0, 5, 7, 4, 3, 1, 8, 6, 2]))
+test_MT19937_shuffle(111, np.array([5.43, 6.56, 1.22, 4.3221, 7.88, 0.9352]),
+                     np.array([1.22, 4.3221, 6.56, 0.9352, 5.43, 7.88]))
+test_MT19937_shuffle(1234, np.array([3.14]), np.array([3.14]))
+test_MT19937_shuffle(74,
+                     np.arange(9).reshape((3, 3)),
+                     np.array([[6, 7, 8], [3, 4, 5], [0, 1, 2]]))
+test_MT19937_shuffle(74,
+                     np.arange(9).reshape((3, 3)),
+                     np.array([[2, 1, 0], [5, 4, 3], [8, 7, 6]]),
+                     axis=1)
+
+@test
+def test_MT19937_permutation(seed, x, expected, axis=0):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    assert (gen.permutation(x, axis) == expected).all()
+
+test_MT19937_permutation(12345, 10, np.array([6, 8, 0, 7, 9, 2, 5, 4, 1, 3]))
+test_MT19937_permutation(1234,
+                         np.array([1.124, 4.7532, 9.1246, 12.53243, 15.64324]),
+                         np.array([1.124, 12.53243, 4.7532, 15.64324, 9.1246]))
+test_MT19937_permutation(
+    4321,
+    np.arange(24).reshape(3, 8),
+    np.array([[0, 1, 2, 3, 4, 5, 6, 7], [8, 9, 10, 11, 12, 13, 14, 15],
+              [16, 17, 18, 19, 20, 21, 22, 23]]))
+test_MT19937_permutation(74,
+                         np.arange(9).reshape((3, 3)),
+                         np.array([[2, 1, 0], [5, 4, 3], [8, 7, 6]]),
+                         axis=1)
+
+@test
+def test_MT19937_permuted(seed, x, expected, axis=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    arr = gen.permuted(x, axis)
+    assert (arr == expected).all()
+
+test_MT19937_permuted(4321,
+                      np.array([1.124, 4.7532, 9.1246, 12.53243, 15.64324]),
+                      np.array([15.64324, 9.1246, 1.124, 12.53243, 4.7532]))
+test_MT19937_permuted(
+    4321,
+    np.arange(24).reshape(3, 8),
+    np.array([[7, 8, 10, 2, 9, 15, 23, 20], [19, 17, 13, 21, 18, 16, 4, 5],
+              [11, 3, 1, 22, 0, 14, 12, 6]]))
+
+@test
+def test_MT19937_beta(seed, a, b, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(a, int) or isinstance(a, float)) and (isinstance(
+                b, int) or isinstance(b, float)):
+            assert gen.beta(a, b) == expected
+        else:
+            assert (round(gen.beta(a, b), 8) == expected).all()
+    else:
+        assert (round(gen.beta(a, b, size), 8) == expected).all()
+
+#test_MT19937_beta(4321, -7, 0, error)
+test_MT19937_beta(4321, 0.2, 0.1, 0.001794143054409161)
+test_MT19937_beta(4321, 10, 14, 0.44288329572745766)
+test_MT19937_beta(4321, 167, 2041,
+                  np.array([0.08210844, 0.07407015, 0.07356348, 0.07749650]),
+                  4)
+test_MT19937_beta(139, 14.32, 4, 0.498515830795026)
+test_MT19937_beta(457, 12.87, 9.21, 0.5178223999023288)
+test_MT19937_beta(
+    457, np.array([12.87, 1.32, 4.532, 1.34, 8.432]), 9.21,
+    np.array([0.51782240, 0.10097888, 0.38175823, 0.36792669, 0.48282513]))
+test_MT19937_beta(
+    457, 32.14, np.array([9.21, 0.21, 14.32, 41.21, 5.55]),
+    np.array([[0.73639876, 1.00000000, 0.68338397, 0.53857496, 0.83560158]]))
+test_MT19937_beta(
+    457, np.array([12.87, 1.32, 4.532, 1.34, 8.432]),
+    np.array([9.21, 0.21, 14.32, 41.21, 5.55]),
+    np.array([0.51782240, 0.99999999, 0.29636436, 0.10105227, 0.59638962]))
+
+@test
+def test_MT19937_binomial(seed, n, p, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(n, int) or isinstance(n, float)) and (isinstance(
+                p, int) or isinstance(p, float)):
+            assert gen.binomial(n, p) == expected
+        else:
+            assert (gen.binomial(n, p) == expected).all()
+    else:
+        assert (gen.binomial(n, p, size) == expected).all()
+
+#test_MT19937_binomial(139, -2, .33, error)
+test_MT19937_binomial(139, 28400, .66, 18590)
+test_MT19937_binomial(139, 14.76, .33, 6)
+test_MT19937_binomial(139, 0, .33, 0)
+test_MT19937_binomial(139, 14, 0, 0)
+test_MT19937_binomial(147, 10, .5, np.array([6, 6, 3, 5, 7, 5, 5, 6, 5, 3]),
+                      10)
+test_MT19937_binomial(457, np.array([12, 1, 4, 7, 8]), 0.11,
+                      np.array([2, 0, 0, 0, 0]))
+test_MT19937_binomial(457, 12, np.array([0.11, 0.21, 0.32, 0.43]),
+                      np.array([2, 3, 1, 4]))
+test_MT19937_binomial(457, np.array([12, 1, 4, 7, 8]),
+                      np.array([0.11, 0.21, 0.32, 0.43, 0.55]),
+                      np.array([2, 0, 0, 2, 5]))
+
+@test
+def test_MT19937_chisquare(seed, df, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(df, float) or isinstance(df, int)):
+            assert gen.chisquare(df) == expected
+        else:
+            assert (round(gen.chisquare(df), 8) == expected).all()
+    else:
+        assert (round(gen.chisquare(df, size), 8) == expected).all()
+
+test_MT19937_chisquare(457, 12.12, 10.371553390964028)
+test_MT19937_chisquare(457, 24.12, np.array([21.88993555, 28.10914107]), 2)
+test_MT19937_chisquare(
+    457, np.array([23, 42, 34, 17]),
+    np.array([20.80858708, 47.42164781, 32.29862709, 14.08026439]))
+test_MT19937_chisquare(
+    457, np.array([274.23, 325.42, 352.34, 825.17]),
+    np.array([268.13692669, 341.31749251, 348.28803050, 807.81116202]))
+
+@test
+def test_MT19937_dirichlet(seed, alpha, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    assert (round(gen.dirichlet(alpha, size), 8) == round(expected, 8)).all()
+
+test_MT19937_dirichlet(
+    457, np.array([278.23, 325.42, 352.34, 825.17]),
+    np.array([0.15451881, 0.18988989, 0.19714225, 0.45844905]))
+test_MT19937_dirichlet(
+    874, np.array([10, 5, 3]),
+    np.array([[0.63510742, 0.22941463, 0.13547795],
+              [0.74168572, 0.20100343, 0.05731085]]), 2)
+#test_MT19937_dirichlet(1234, np.array([]), np.array([]))
+test_MT19937_dirichlet(74, np.array([0.01, 0.05]),
+                       np.array([1.85187737e-12, 1.00000000]))
+
+@test
+def test_MT19937_exponential(seed, scale, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(scale, float) or isinstance(scale, int)):
+            assert gen.exponential(scale) == expected
+        else:
+            assert (round(gen.exponential(scale), 8) == expected).all()
+    else:
+        assert (round(gen.exponential(scale, size), 8) == expected).all()
+
+test_MT19937_exponential(74, 1, 0.29730933531689413)
+test_MT19937_exponential(874, 3, 1.3077665346601641)
+test_MT19937_exponential(874, 724.952, 316.0226549449851)
+test_MT19937_exponential(
+    874, np.array([278.23, 325.42, 352.34, 825.17]),
+    np.array([121.28662765, 1308.69597268, 1407.647810890, 156.18934242]))
+test_MT19937_exponential(
+    874, 724.952,
+    np.array([
+        316.02265494, 2915.43778128, 2896.28511041, 137.21993791, 449.65873658,
+        462.39004499, 1267.56770807
+    ]), 7)
+
+@test
+def test_MT19937_f(seed, dfnum, dfden, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(dfnum, float)
+                or isinstance(dfnum, int)) and (isinstance(dfden, float)
+                                                or isinstance(dfden, int)):
+            assert gen.f(dfnum, dfden) == expected
+        else:
+            assert (round(gen.f(dfnum, dfden), 8) == expected).all()
+    else:
+        assert (round(gen.f(dfnum, dfden, size), 8) == expected).all()
+
+test_MT19937_f(874, 12, 4.21, 1.6343383299954102)
+test_MT19937_f(
+    874, np.array([14, 15, 16, 17, 18]), 4.21,
+    np.array([1.60433134, 0.33113465, 2.70993818, 1.30846860, 0.31543733]))
+test_MT19937_f(
+    874, 2557, 0.92,
+    np.array([0.35240241, 0.35598113, 1.55704194, 1.06506043, 0.51375425]), 5)
+test_MT19937_f(874, 7343, np.array([12.52, 0.92, 231.52]),
+               np.array([1.07913456, 0.35586940, 1.10156925]))
+
+@test
+def test_MT19937_gamma(seed, shape, expected, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(shape, float)
+                or isinstance(shape, int)) and (isinstance(scale, float)
+                                                or isinstance(scale, int)):
+            assert gen.gamma(shape, scale) == expected
+        else:
+            assert (round(gen.gamma(shape, scale), 8) == expected).all()
+    else:
+        assert (round(gen.gamma(shape, scale, size), 8) == expected).all()
+
+test_MT19937_gamma(318, 564, 579.9843506186213)
+test_MT19937_gamma(318, 564, 3189.9139284024172, 5.5)
+test_MT19937_gamma(318, 564, np.array([3189.91392840, 1295.02679157]),
+                   np.array([5.5, 2.2]))
+test_MT19937_gamma(
+    318, 564,
+    np.array([2391.52777079, 2427.25399922, 2330.71722926, 2310.71793516]),
+    4.123435, 4)
+test_MT19937_gamma(
+    318, np.array([19, 17, 45, 52, 21]),
+    np.array(
+        [185.59130933, 181.36147656, 384.65049865, 432.13182218,
+         150.84772053]), 8.527)
+test_MT19937_gamma(
+    318, np.array([19, 17, 45, 52, 21]),
+    np.array(
+        [23.94164891, 93.58396820, 90.21942035, 385.15326007, 174.60619229]),
+    np.array([1.1, 4.4, 2, 7.6, 9.87]))
+
+@test
+def test_MT19937_geometric(seed, p, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(p, float) or isinstance(p, int):
+            assert gen.geometric(p) == expected
+        else:
+            assert (gen.geometric(p) == expected).all()
+    else:
+        assert (gen.geometric(p, size) == expected).all()
+
+test_MT19937_geometric(457, 0.35, 3)
+test_MT19937_geometric(457, 0.2, 7)
+test_MT19937_geometric(2000, 1, 1)
+test_MT19937_geometric(12654, 0.5, np.array([1., 5., 3., 1.]), 4)
+test_MT19937_geometric(12654, np.array([0.01, 0.6, 0.45, 0.33]),
+                       np.array([53, 4, 4, 1]))
+
+@test
+def test_MT19937_gumbel(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.gumbel(loc, scale) == expected
+        else:
+            assert (round(gen.gumbel(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.gumbel(loc, scale, size), 8) == expected).all()
+
+test_MT19937_gumbel(1234, 2.0536230569636045)
+test_MT19937_gumbel(1234, 14.053623056963605, 12)
+test_MT19937_gumbel(1234, 250.54201294955973, scale=122)
+test_MT19937_gumbel(1234,
+                    np.array([2.05362306, 0.65968578, -0.74255606]),
+                    size=3)
+test_MT19937_gumbel(1234,
+                    np.array(
+                        [2.85362306, 1.82968578, -0.61255606, 264.30679443]),
+                    loc=np.array([0.8, 1.17, 0.13, 265.45]))
+test_MT19937_gumbel(1234,
+                    np.array(
+                        [24.23275207, 33.75612153, -44.64989592, -7.37367590]),
+                    scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_MT19937_hypergeometric(seed,
+                                ngood,
+                                nbad,
+                                nsample,
+                                expected,
+                                size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(ngood, int) or isinstance(ngood, float)) and (
+                isinstance(nbad, int) or isinstance(nbad, float)) and (
+                    isinstance(nsample, int) or isinstance(nsample, float)):
+            assert gen.hypergeometric(ngood, nbad, nsample) == expected
+        else:
+            assert (gen.hypergeometric(ngood, nbad, nsample) == expected).all()
+    else:
+        assert (gen.hypergeometric(ngood, nbad, nsample,
+                                   size) == expected).all()
+
+test_MT19937_hypergeometric(1234, 11, 12, 9, 6)
+test_MT19937_hypergeometric(1234, 100, 300, 200, 43)
+#test_MT19937_hypergeometric(1234, 100.31, 300.55, 200.2, 43)
+test_MT19937_hypergeometric(1234, 100, 300, np.array([200, 201, 222, 221]),
+                            np.array([43, 55, 57, 60]))
+test_MT19937_hypergeometric(1234, 100, np.array([301, 303, 304, 344, 355]),
+                            200, np.array([43, 45, 48, 41, 44]))
+test_MT19937_hypergeometric(1234, np.array([100, 111, 112, 122]), 300, 200,
+                            np.array([43, 50, 53, 53]))
+test_MT19937_hypergeometric(1234, 100, 700, 450, np.array([63, 61, 58, 61,
+                                                           56]), 5)
+
+@test
+def test_MT19937_laplace(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.laplace(loc, scale) == expected
+        else:
+            assert (round(gen.laplace(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.laplace(loc, scale, size), 8) == expected).all()
+
+test_MT19937_laplace(1234, -1.4239250945926396)
+test_MT19937_laplace(1234, 10.57607490540736, 12)
+test_MT19937_laplace(1234, -173.71886154030204, scale=122)
+test_MT19937_laplace(1234,
+                     np.array([-1.42392509, -0.21393255, 1.40815252]),
+                     size=3)
+test_MT19937_laplace(1234,
+                     np.array(
+                         [-0.62392509, 0.95606745, 1.53815252, 267.89366033]),
+                     loc=np.array([0.8, 1.17, 0.13, 265.45]))
+test_MT19937_laplace(
+    1234,
+    np.array([-16.80231612, -10.94692881, 84.67221132, 15.76160913]),
+    scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_MT19937_logistic(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.logistic(loc, scale) == expected
+        else:
+            assert (round(gen.logistic(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.logistic(loc, scale, size), 8) == expected).all()
+
+test_MT19937_logistic(1234, -1.9888029415511161)
+test_MT19937_logistic(1234, 10.011197058448884, 12)
+test_MT19937_logistic(1234, -242.63395886923618, scale=122)
+test_MT19937_logistic(1234,
+                      np.array([-1.98880294, -0.39006597, 1.97085227]),
+                      size=3)
+test_MT19937_logistic(1234,
+                      np.array(
+                          [-1.18880294, 0.77993403, 2.10085227, 268.54241540]),
+                      loc=np.array([0.8, 1.17, 0.13, 265.45]))
+test_MT19937_logistic(
+    1234,
+    np.array([-23.46787471, -19.95967576, 118.50734684, 19.94607935]),
+    scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_MT19937_lognormal(seed, expected, mean=0.0, sigma=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(mean, float) or isinstance(mean, int)) and (isinstance(
+                sigma, float) or isinstance(sigma, int)):
+            assert gen.lognormal(mean, sigma) == expected
+        else:
+            assert (round(gen.lognormal(mean, sigma), 8) == expected).all()
+    else:
+        assert (round(gen.lognormal(mean, sigma, size), 8) == expected).all()
+
+test_MT19937_lognormal(1234, 7.733643068788345)
+test_MT19937_lognormal(1234, 1258687.4645696718, 12)
+test_MT19937_lognormal(1234, 59.809235115418005, sigma=2)
+test_MT19937_lognormal(1234,
+                       np.array([7.73364307, 0.81831089, 1.03314855]),
+                       size=3)
+test_MT19937_lognormal(
+    1234,
+    np.array([17.21153918, 2.63659168, 1.17657889, 756.94196432]),
+    mean=np.array([0.8, 1.17, 0.13, 5.45]))
+test_MT19937_lognormal(1234,
+                       np.array(
+                           [39.72751712, 0.35464005, 1.00424843, 58.47145689]),
+                       sigma=np.array([1.8, 5.17, 0.13, 3.45]))
+
+@test
+def test_MT19937_logseries(seed, p, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(p, float) or isinstance(p, int):
+            assert gen.logseries(p) == expected
+        else:
+            assert (gen.logseries(p) == expected).all()
+    else:
+        assert (gen.logseries(p, size) == expected).all()
+
+test_MT19937_logseries(457, 0.35, 1)
+test_MT19937_logseries(2000, 0, 1)
+test_MT19937_logseries(457, 0.5, np.array([1., 1., 2., 1.]), 4)
+test_MT19937_logseries(457, np.array([0.01, 0.6, 0.45, 0.33]),
+                       np.array([1, 1, 2, 1]))
+
+@test
+def test_MT19937_multinomial(seed, n, pvals, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    assert (round(gen.multinomial(n, pvals, size), 8) == expected).all()
+
+test_MT19937_multinomial(457, 20, [1 / 6.], np.array([20]))
+test_MT19937_multinomial(457, 20.6, [1 / 6.], np.array([20]))
+test_MT19937_multinomial(457, 20, [1 / 6.] * 6, np.array([4, 4, 1, 3, 4, 4]))
+test_MT19937_multinomial(
+    457, 20, [1 / 6] * 6,
+    np.array([[4, 4, 1, 3, 4, 4], [4, 0, 4, 3, 6, 3], [4, 4, 5, 1, 1, 5]]), 3)
+#test_MT19937_multinomial(457, 1, np.array([[.1, .5, .4 ], [.3, .7, .0]]), np.array([[0, 0, 1], [0, 1, 0]]))
+#test_MT19937_multinomial(457, -1, [1/6.], error)
+
+@test
+def test_MT19937_multivariate_hypergeometric(seed,
+                                             colors,
+                                             nsample,
+                                             expected,
+                                             size=None,
+                                             method='marginals'):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    assert (gen.multivariate_hypergeometric(colors, nsample, size,
+                                            method) == expected).all()
+
+test_MT19937_multivariate_hypergeometric(457, np.array([16, 8, 4]), 15,
+                                         np.array([10, 4, 1]))
+test_MT19937_multivariate_hypergeometric(457,
+                                         np.array([16, 8, 4]),
+                                         15,
+                                         np.array([[10, 4, 1], [8, 5, 2],
+                                                   [9, 4, 2]]),
+                                         size=3)
+test_MT19937_multivariate_hypergeometric(457, np.array([16, 8, 4]), 0,
+                                         np.array([0, 0, 0]))
+test_MT19937_multivariate_hypergeometric(457,
+                                         np.array([16, 8, 4]),
+                                         8,
+                                         np.array([4, 3, 1]),
+                                         method='count')
+
+@test
+def test_MT19937_multivariate_normal(seed,
+                                     mean,
+                                     cov,
+                                     expected,
+                                     size=None,
+                                     check_valid: Static[str] = 'warn',
+                                     tol: float = 1e-8,
+                                     m: Static[str] = 'svd'):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    assert (round(
+        gen.multivariate_normal(mean,
+                                cov,
+                                size,
+                                check_valid=check_valid,
+                                tol=tol,
+                                method=m), 8) == expected).all()
+
+test_MT19937_multivariate_normal(1234, (1, 2), np.array([[1, 0], [0, 1]]),
+                                 np.array([3.04558004, 1.79948705]))
+test_MT19937_multivariate_normal(5432, (1, 2),
+                                 np.array([[1, 0], [0, 1]]),
+                                 np.array([0.16390254, 2.42265006]),
+                                 m='cholesky')
+
+@test
+def test_MT19937_negative_binomial(seed, n, p, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(n, int) or isinstance(n, float)) and (isinstance(
+                p, int) or isinstance(p, float)):
+            assert gen.negative_binomial(n, p) == expected
+        else:
+            assert (gen.negative_binomial(n, p) == expected).all()
+    else:
+        assert (gen.negative_binomial(n, p, size) == expected).all()
+
+test_MT19937_negative_binomial(139, 28400, .66, 14541)
+test_MT19937_negative_binomial(139, 14.76, .33, 21)
+#test_MT19937_negative_binomial(139, 14, 0, error)
+test_MT19937_negative_binomial(147, 10, .5,
+                               np.array([6, 6, 11, 9, 8, 7, 10, 22, 4, 10]),
+                               10)
+test_MT19937_negative_binomial(457, np.array([12, 1, 4, 7, 8]), 0.11,
+                               np.array([66, 1, 14, 70, 68]))
+test_MT19937_negative_binomial(457, 12, np.array([0.11, 0.21, 0.32, 0.43]),
+                               np.array([[66, 39, 41, 15]]))
+
+@test
+def test_MT19937_noncentral_chisquare(seed, df, nonc, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(df, int) or isinstance(df, float)) and (isinstance(
+                nonc, int) or isinstance(nonc, float)):
+            assert gen.noncentral_chisquare(df, nonc) == expected
+        else:
+            assert (round(gen.noncentral_chisquare(df, nonc),
+                          8) == expected).all()
+    else:
+        assert (round(gen.noncentral_chisquare(df, nonc, size),
+                      8) == expected).all()
+
+test_MT19937_noncentral_chisquare(457, 0.1, 0.2, 0.004731999292935856)
+test_MT19937_noncentral_chisquare(457, 5, 0, 3.681528279878184)
+test_MT19937_noncentral_chisquare(457, 99, 7, 104.90202975815625)
+test_MT19937_noncentral_chisquare(
+    457, 14.2, 0.5, np.array([13.21259789, 7.10349904, 15.26757211]), 3)
+test_MT19937_noncentral_chisquare(
+    457, np.array([8, 7.1, 45.3]), 0.6,
+    np.array([7.53680531, 2.86873129, 44.87145655]))
+test_MT19937_noncentral_chisquare(
+    457, 0.6, np.array([8, 7.1, 45.3]),
+    np.array([5.50303631, 0.12292794, 48.45712182]))
+
+@test
+def test_MT19937_noncentral_f(seed, dfnum, dfden, nonc, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(dfnum, float) or isinstance(dfnum, int)) and (
+                isinstance(dfden, int)
+                or isinstance(dfden, float)) and (isinstance(nonc, int)
+                                                  or isinstance(nonc, float)):
+            assert gen.noncentral_f(dfnum, dfden, nonc) == expected
+        else:
+            assert (round(gen.noncentral_f(dfnum, dfden, nonc),
+                          8) == expected).all()
+    else:
+        assert (round(gen.noncentral_f(dfnum, dfden, nonc, size),
+                      8) == expected).all()
+
+test_MT19937_noncentral_f(874, 3, 20, 3, 0.34619084015853513)
+test_MT19937_noncentral_f(874, 3, 20, 0, 1.714196752567725)
+test_MT19937_noncentral_f(
+    874, np.array([14, 15, 16, 17, 18]), 4.21, 6.7,
+    np.array([2.22094675, 1.17172906, 7.58260278, 0.82149275, 2.28171278]))
+test_MT19937_noncentral_f(
+    874, 27, 5.92, 3.1,
+    np.array([1.58502318, 0.92155582, 3.77043692, 0.68717422, 1.64072948]), 5)
+test_MT19937_noncentral_f(
+    874, 27, np.array([5.92, 8.13, 9.53, 33.14]), 3.1,
+    np.array([1.58502318, 0.89487268, 2.43982719, 0.92196298]))
+test_MT19937_noncentral_f(
+    874, 743, 8.24, np.array([0.11, 0.21, 0.32, 0.43]),
+    np.array([1.20344619, 1.02049827, 3.17379438, 0.61622202]))
+
+@test
+def test_MT19937_normal(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.normal(loc, scale) == expected
+        else:
+            assert (round(gen.normal(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.normal(loc, scale, size), 8) == expected).all()
+
+test_MT19937_normal(1234, 2.0455800412005876)
+test_MT19937_normal(1234, 14.045580041200587, 12)
+test_MT19937_normal(1234, 249.56076502647167, scale=122)
+test_MT19937_normal(1234,
+                    np.array([2.04558004, -0.20051295, 0.03261098]),
+                    size=3)
+test_MT19937_normal(1234,
+                    np.array([2.84558004, 0.96948705, 0.16261098,
+                              26.62928659]),
+                    loc=np.array([0.8, 1.17, 0.13, 25.45]))
+test_MT19937_normal(1234,
+                    np.array(
+                        [24.13784449, -10.26024755, 1.96089830, 7.60639847]),
+                    scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_MT19937_pareto(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(a, float) or isinstance(a, int):
+            assert gen.pareto(a) == expected
+        else:
+            assert (round(gen.pareto(a), 8) == expected).all()
+    else:
+        assert (round(gen.pareto(a, size), 8) == expected).all()
+
+test_MT19937_pareto(1234, 3, 0.08386598990600276)
+test_MT19937_pareto(
+    1234, 5,
+    np.array([0.04950703, 0.11427519, 0.21520507, 0.44809618, 0.16192707]), 5)
+test_MT19937_pareto(
+    1234, np.array([3, 13, 4, 23.2, 5.6]),
+    np.array([0.08386599, 0.04249510, 0.27588628, 0.08306523, 0.14339271]))
+
+@test
+def test_MT19937_poisson(seed, expected, lam=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(lam, float) or isinstance(lam, int):
+            assert gen.poisson(lam) == expected
+        else:
+            assert (round(gen.poisson(lam), 8) == expected).all()
+    else:
+        assert (round(gen.poisson(lam, size), 8) == expected).all()
+
+test_MT19937_poisson(1234, 0, 0)
+test_MT19937_poisson(1234, 0)
+test_MT19937_poisson(1234, 1, 3)
+test_MT19937_poisson(1234, 9, 14.65)
+test_MT19937_poisson(1234, np.array([27., 14., 17., 82., 30.]),
+                     np.array([35.62, 9.23, 9.57, 76.79, 21.74]))
+test_MT19937_poisson(1234, np.array([785., 818., 868., 839., 803.]), 824.14, 5)
+
+@test
+def test_MT19937_power(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(a, float) or isinstance(a, int):
+            assert gen.power(a) == expected
+        else:
+            assert (round(gen.power(a), 8) == expected).all()
+    else:
+        assert (round(gen.power(a, size), 8) == expected).all()
+
+test_MT19937_power(1234, 1, 0.21463194364452776)
+test_MT19937_power(1234, 45.11, 0.966462434390213)
+test_MT19937_power(1234, 6, np.array([0.77377684, 0.86464152, 0.92407356]), 3)
+test_MT19937_power(
+    1234, np.array([5.4, 1.1, 78, 19.34, 99999999999999]),
+    np.array(
+        array([0.75203784, 0.45234475, 0.99394429, 0.99120555, 1.00000000])))
+
+@test
+def test_MT19937_rayleigh(seed, expected, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(scale, float) or isinstance(scale, int):
+            assert gen.rayleigh(scale) == expected
+        else:
+            assert (round(gen.rayleigh(scale), 8) == expected).all()
+    else:
+        assert (round(gen.rayleigh(scale, size), 8) == expected).all()
+
+#test_MT19937_rayleigh(1234, error, -1)
+test_MT19937_rayleigh(1234, 0.6951299295551241)
+test_MT19937_rayleigh(1234, 2.0853897886653723, 3)
+test_MT19937_rayleigh(1234, 10.183653467982568, 14.65)
+test_MT19937_rayleigh(1234,
+                      np.array(
+                          [0.69512993, 1.04021218, 1.39611191, 1.92418740]),
+                      size=4)
+test_MT19937_rayleigh(
+    1234,
+    np.array([3.75370162, 1.14423340, 108.89672861, 37.21378433, 68.84898931]),
+    np.array([5.4, 1.1, 78, 19.34, 56.2]))
+
+@test
+def test_MT19937_standard_cauchy(seed, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        assert gen.standard_cauchy() == expected
+    else:
+        assert (round(gen.standard_cauchy(size), 8) == round(expected,
+                                                             8)).all()
+
+test_MT19937_standard_cauchy(1234, -10.201735410135576)
+test_MT19937_standard_cauchy(
+    1234, np.array([-10.20173541, 0.02765314, 1.39310640, 0.50990013]), 4)
+
+@test
+def test_MT19937_standard_exponential(seed, expected, size=None, m='zig'):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        assert gen.standard_exponential(method=m) == expected
+    else:
+        assert (round(gen.standard_exponential(size, method=m),
+                      8) == expected).all()
+
+test_MT19937_standard_exponential(1234, 0.24160280948165586)
+test_MT19937_standard_exponential(
+    1234, np.array([0.24160281, 0.54102069, 0.97456423, 1.85124858]), 4)
+test_MT19937_standard_exponential(1234, 0.1282693336014689, m='inv')
+
+@test
+def test_MT19937_standard_gamma(seed, shape, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(shape, float) or isinstance(shape, int):
+            assert gen.standard_gamma(shape) == expected
+        else:
+            assert (round(gen.standard_gamma(shape), 8) == expected).all()
+    else:
+        assert (round(gen.standard_gamma(shape, size), 8) == expected).all()
+
+test_MT19937_standard_gamma(318, 1, 0.0589214166795813)
+test_MT19937_standard_gamma(1234, 0, 0)
+test_MT19937_standard_gamma(1234, 0.5, 0.014492202246606063)
+test_MT19937_standard_gamma(1234, 3, 7.59601798666233)
+test_MT19937_standard_gamma(
+    1234, 0.5, np.array([0.01449220, 1.44979965, 0.18186815, 1.71465035]), 4)
+test_MT19937_standard_gamma(
+    1234, np.array([4.5, 2, 7.7, 81.15]),
+    np.array([9.89229577, 1.70912275, 8.61357207, 77.06196796]))
+
+@test
+def test_MT19937_standard_normal(seed, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        assert gen.standard_normal(size) == expected
+    else:
+        assert (round(gen.standard_normal(size), 8) == expected).all()
+
+test_MT19937_standard_normal(1234, 2.0455800412005876)
+test_MT19937_standard_normal(1234,
+                             np.array([2.04558004, -0.20051295, 0.03261098]),
+                             3)
+
+@test
+def test_MT19937_standard_t(seed, df, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if isinstance(df, float) or isinstance(df, int):
+            assert gen.standard_t(df) == expected
+        else:
+            assert (round(gen.standard_t(df), 8) == expected).all()
+    else:
+        assert (round(gen.standard_t(df, size), 8) == expected).all()
+
+test_MT19937_standard_t(1234, 3, 2.5527064129505828)
+test_MT19937_standard_t(1234, 1, 3.582953759233768)
+test_MT19937_standard_t(1234, 0.5, 6.275754251724512)
+test_MT19937_standard_t(1234, 0.5,
+                        np.array([6.27575425, 3.24214707, -0.29526934]), 3)
+test_MT19937_standard_t(1234, np.array([99, 5.6, 11.43]),
+                        np.array([2.08220290, 1.10034819, -0.52927360]))
+
+@test
+def test_MT19937_triangular(seed, left, mode, right, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(left, int) or isinstance(left, float)) and (isinstance(
+                mode, int) or isinstance(mode, float)) and (isinstance(
+                    right, int) or isinstance(right, float)):
+            assert gen.triangular(left, mode, right) == expected
+        else:
+            assert (round(gen.triangular(left, mode, right),
+                          8) == expected).all()
+    else:
+        assert (round(gen.triangular(left, mode, right, size),
+                      8) == expected).all()
+
+test_MT19937_triangular(1234, -3, 0, 8, -1.006847326513437)
+test_MT19937_triangular(1234, np.array([-1, -4.2, -3.2]), -0.2, 77,
+                        np.array([4.22158056, 15.86096882, 49.48278983]))
+test_MT19937_triangular(
+    1234, -4, np.array([0.1, 0.5, 3, 6, 7.9]), 8,
+    np.array([-1.56630501, 0.67423231, 5.29115477, 6.97916271, 3.80374854]))
+test_MT19937_triangular(1234, -77, 0, np.array([0.1, 11, 789]),
+                        np.array([-50.26647987, -24.69817576, 499.92800867]))
+test_MT19937_triangular(
+    1234,
+    2,
+    10,
+    53,
+    np.array([9.00831604, 16.83810311, 36.62324385, 43.24178867]),
+    size=4)
+
+@test
+def test_MT19937_uniform(seed, expected, low=0.0, high=1.0, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    result = round(gen.uniform(low, high, size), 8)
+    if size is None:
+        if (isinstance(low, int) or isinstance(low, float)) and (isinstance(
+                high, int) or isinstance(high, float)):
+            assert result == round(expected, 8)
+        else:
+            assert (result == expected).all()
+    else:
+        assert (result == expected).all()
+
+test_MT19937_uniform(1234, 6.203835630250495, 5, 15)
+test_MT19937_uniform(1234, 0.20834520672254453, 0.1)
+test_MT19937_uniform(1234, 14.686794689056038, high=122)
+test_MT19937_uniform(1234,
+                     np.array([0.12038356, 0.40370142, 0.87770263]),
+                     size=3)
+test_MT19937_uniform(1234,
+                     np.array(
+                         [5.76910691, 19.95545962, 40.23040240, 43.34999446]),
+                     low=np.array([0.4, 3., 6., 7.]),
+                     high=45.)
+test_MT19937_uniform(
+    1234,
+    np.array([6.74147953, 6.45922271, 38.61891553, 2.96539428, 0.08529200]),
+    high=np.array([56., 16., 44., 3.1, 0.2]))
+
+@test
+def test_MT19937_vonmises(seed, mu, kappa, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(mu, float) or isinstance(mu, int)) and (isinstance(
+                kappa, float) or isinstance(kappa, int)):
+            assert gen.vonmises(mu, kappa) == expected
+        else:
+            assert (round(gen.vonmises(mu, kappa), 8) == expected).all()
+    else:
+        assert (round(gen.vonmises(mu, kappa, size), 8) == expected).all()
+
+test_MT19937_vonmises(1234, 0, 4, 0.09543421777776429)
+test_MT19937_vonmises(1234, 0.1, 0.2, 0.412385001376804)
+test_MT19937_vonmises(1234, -1, 0, -2.3852004191648746)
+test_MT19937_vonmises(1234,
+                      0,
+                      5,
+                      np.array([0.08543132, 0.21199714, 0.75964701]),
+                      size=3)
+test_MT19937_vonmises(
+    1234, np.array([43.09, 18.62, 42, 16.94]), 5,
+    np.array([-0.80686583, -0.01755878, -1.22265014, -2.50501149]))
+test_MT19937_vonmises(
+    1234, 4, np.array([0, 0.1, 7.67, 99]),
+    np.array([-2.38520042, -1.10822682, -1.99926278, -2.42105600]))
+
+@test
+def test_MT19937_wald(seed, mean, scale, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(mean, float) or isinstance(mean, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.wald(mean, scale) == expected
+        else:
+            assert (round(gen.wald(mean, scale), 8) == expected).all()
+    else:
+        assert (round(gen.wald(mean, scale, size), 8) == expected).all()
+
+test_MT19937_wald(1234, 0.1, 0.1, 0.01661616443641617)
+test_MT19937_wald(1234, 3, 2, 0.36791953972524594)
+test_MT19937_wald(1234, 3, 2, np.array([0.36791954, 3.12223711, 1.77030450]),
+                  3)
+test_MT19937_wald(1234, np.array([0.1, 0.5, 1, 4]), 0.5,
+                  np.array([0.04124719, 0.51657353, 0.54509668, 12.47886442]))
+test_MT19937_wald(1234, 0.5, np.array([0.1, 0.5, 1, 4]),
+                  np.array([0.02185479, 0.51657353, 0.36787436, 0.58084343]))
+test_MT19937_wald(1234, np.array([0.1, 0.5, 1, 4]), np.array([3, 2, 1, 8]),
+                  np.array([0.06898142, 0.50821948, 0.64901109, 5.39356830]))
+
+@test
+def test_MT19937_weibull(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(a, float) or isinstance(a, int)):
+            assert gen.weibull(a) == expected
+        else:
+            assert (round(gen.weibull(a), 8) == expected).all()
+    else:
+        assert (round(gen.weibull(a, size), 8) == expected).all()
+
+test_MT19937_weibull(1234, 0, 0)
+test_MT19937_weibull(1234, 0.1, 6.776724055705368e-07)
+test_MT19937_weibull(1234, 1, 0.24160280948165586)
+test_MT19937_weibull(1234, 1, np.array([0.24160281, 0.54102069, 0.97456423]),
+                     3)
+test_MT19937_weibull(1234, np.array([17.8, 4.32]),
+                     np.array([0.92329994, 0.86744900]))
+
+@test
+def test_MT19937_zipf(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.MT19937(seed))
+    if size is None:
+        if (isinstance(a, float) or isinstance(a, int)):
+            assert gen.zipf(a) == expected
+        else:
+            assert (gen.zipf(a) == expected).all()
+    else:
+        assert (gen.zipf(a, size) == expected).all()
+
+test_MT19937_zipf(1234, 1.1, 3)
+test_MT19937_zipf(1234, 3, 1)
+test_MT19937_zipf(1234, 45, np.array([1, 1, 1]), 3)
+test_MT19937_zipf(1234, np.array([17.8, 4.32]), np.array([1, 1]))

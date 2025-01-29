@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #pragma once
 
@@ -20,5 +20,7 @@ getTargetMachine(llvm::Module *module, bool setFunctionAttributes = false,
 
 void optimize(llvm::Module *module, bool debug, bool jit = false,
               PluginManager *plugins = nullptr);
+
+bool isFastMathOn();
 } // namespace ir
 } // namespace codon

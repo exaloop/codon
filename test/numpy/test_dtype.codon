@@ -1,0 +1,93 @@
+import numpy as np
+
+@test
+def test_finfo():
+    def fi(s: Static[str]):
+        fi16 = getattr(np.finfo(np.float16), s)
+        fi32 = getattr(np.finfo(np.float32), s)
+        fi64 = getattr(np.finfo(np.float64), s)
+        return (fi16, fi32, fi64)
+
+    def fic(s: Static[str]):
+        fic64 = getattr(np.finfo(np.complex64), s)
+        fic128 = getattr(np.finfo(np.complex128), s)
+        return (fic64, fic128)
+
+    assert fi('bits') == (16, 32, 64)
+    assert fi('iexp') == (5, 8, 11)
+    assert fi('machep') == (-10, -23, -52)
+    assert fi('maxexp') == (16, 128, 1024)
+    assert fi('minexp') == (-14, -126, -1022)
+    assert fi('negep') == (-11, -24, -53)
+    assert fi('nexp') == (5, 8, 11)
+    assert fi('nmant') == (10, 23, 52)
+    assert fi('precision') == (3, 6, 15)
+    assert fi('eps') == (np.float16(0.000977), np.float32(1.1920929e-07), 2.220446049250313e-16)
+    assert fi('epsneg') == (np.float16(0.0004883), np.float32(5.9604645e-08), 1.1102230246251565e-16)
+    assert fi('max') == (np.float16(65500.0), np.float32(3.4028235e+38), 1.7976931348623157e+308)
+    assert fi('min') == (np.float16(-65500.0), np.float32(-3.4028235e+38), -1.7976931348623157e+308)
+    assert fi('resolution') == (np.float16(0.001), np.float32(1e-06), 1e-15)
+    assert fi('smallest_normal') == (np.float16(6.104e-05), np.float32(1.1754944e-38), 2.2250738585072014e-308)
+    assert fi('smallest_subnormal') == (np.float16(6e-08), np.float32(1e-45), np.array(1).view(float).item())
+    assert fi('tiny') == (np.float16(6.104e-05), np.float32(1.1754944e-38), 2.2250738585072014e-308)
+
+    assert fic('bits') == (32, 64)
+    assert fic('iexp') == (8, 11)
+    assert fic('machep') == (-23, -52)
+    assert fic('maxexp') == (128, 1024)
+    assert fic('minexp') == (-126, -1022)
+    assert fic('negep') == (-24, -53)
+    assert fic('nexp') == (8, 11)
+    assert fic('nmant') == (23, 52)
+    assert fic('precision') == (6, 15)
+    assert fic('eps') == (np.float32(1.1920929e-07), 2.220446049250313e-16)
+    assert fic('epsneg') == (np.float32(5.9604645e-08), 1.1102230246251565e-16)
+    assert fic('max') == (np.float32(3.4028235e+38), 1.7976931348623157e+308)
+    assert fic('min') == (np.float32(-3.4028235e+38), -1.7976931348623157e+308)
+    assert fic('resolution') == (np.float32(1e-06), 1e-15)
+    assert fic('smallest_normal') == (np.float32(1.1754944e-38), 2.2250738585072014e-308)
+    assert fic('smallest_subnormal') == (np.float32(1e-45), np.array(1).view(float).item())
+    assert fic('tiny') == (np.float32(1.1754944e-38), 2.2250738585072014e-308)
+
+    assert str(np.finfo(np.float64)) == 'Machine parameters for float64\n---------------------------------------------------------------\nprecision =  15   resolution = 1.0000000000000001e-15\nmachep =    -52   eps =        2.2204460492503131e-16\nnegep =     -53   epsneg =     1.1102230246251565e-16\nminexp =  -1022   tiny =       2.2250738585072014e-308\nmaxexp =   1024   max =        1.7976931348623157e+308\nnexp =       11   min =        -max\nsmallest_normal = 2.2250738585072014e-308   smallest_subnormal = 4.9406564584124654e-324\n---------------------------------------------------------------\n'
+    assert str(np.finfo(np.float32)) == 'Machine parameters for float32\n---------------------------------------------------------------\nprecision =   6   resolution = 1.0000000e-06\nmachep =    -23   eps =        1.1920929e-07\nnegep =     -24   epsneg =     5.9604645e-08\nminexp =   -126   tiny =       1.1754944e-38\nmaxexp =    128   max =        3.4028235e+38\nnexp =        8   min =        -max\nsmallest_normal = 1.1754944e-38   smallest_subnormal = 1.4012985e-45\n---------------------------------------------------------------\n'
+    assert str(np.finfo(np.float16)) == 'Machine parameters for float16\n---------------------------------------------------------------\nprecision =   3   resolution = 1.00040e-03\nmachep =    -10   eps =        9.76562e-04\nnegep =     -11   epsneg =     4.88281e-04\nminexp =    -14   tiny =       6.10352e-05\nmaxexp =     16   max =        6.55040e+04\nnexp =        5   min =        -max\nsmallest_normal = 6.10352e-05   smallest_subnormal = 5.96046e-08\n---------------------------------------------------------------\n'
+
+test_finfo()
+
+@test
+def test_iinfo():
+    def ii(dtype: type):
+        info = np.iinfo(dtype)
+        return (info.bits, info.min, info.max)
+
+    assert ii(np.int8) == (8, -128, 127)
+    assert ii(np.uint8) == (8, 0, 255)
+    assert ii(np.int16) == (16, -32768, 32767)
+    assert ii(np.uint16) == (16, 0, 65535)
+    assert ii(np.int32) == (32, -2147483648, 2147483647)
+    assert ii(np.uint32) == (32, 0, 4294967295)
+    assert ii(np.int64) == (64, -9223372036854775808, 9223372036854775807)
+    assert ii(np.uint64) == (64, 0, 18446744073709551615)
+    assert ii(int) == (64, -9223372036854775808, 9223372036854775807)
+
+    assert repr(np.iinfo(np.int8)) == 'iinfo(min=-128, max=127, dtype=int8)'
+    assert str(np.iinfo(np.int8)) == 'Machine parameters for int8\n---------------------------------------------------------------\nmin = -128\nmax = 127\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.uint8)) == 'iinfo(min=0, max=255, dtype=uint8)'
+    assert str(np.iinfo(np.uint8)) == 'Machine parameters for uint8\n---------------------------------------------------------------\nmin = 0\nmax = 255\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.int16)) == 'iinfo(min=-32768, max=32767, dtype=int16)'
+    assert str(np.iinfo(np.int16)) == 'Machine parameters for int16\n---------------------------------------------------------------\nmin = -32768\nmax = 32767\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.uint16)) == 'iinfo(min=0, max=65535, dtype=uint16)'
+    assert str(np.iinfo(np.uint16)) == 'Machine parameters for uint16\n---------------------------------------------------------------\nmin = 0\nmax = 65535\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.int32)) == 'iinfo(min=-2147483648, max=2147483647, dtype=int32)'
+    assert str(np.iinfo(np.int32)) == 'Machine parameters for int32\n---------------------------------------------------------------\nmin = -2147483648\nmax = 2147483647\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.uint32)) == 'iinfo(min=0, max=4294967295, dtype=uint32)'
+    assert str(np.iinfo(np.uint32)) == 'Machine parameters for uint32\n---------------------------------------------------------------\nmin = 0\nmax = 4294967295\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.int64)) == 'iinfo(min=-9223372036854775808, max=9223372036854775807, dtype=int64)'
+    assert str(np.iinfo(np.int64)) == 'Machine parameters for int64\n---------------------------------------------------------------\nmin = -9223372036854775808\nmax = 9223372036854775807\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(np.uint64)) == 'iinfo(min=0, max=18446744073709551615, dtype=uint64)'
+    assert str(np.iinfo(np.uint64)) == 'Machine parameters for uint64\n---------------------------------------------------------------\nmin = 0\nmax = 18446744073709551615\n---------------------------------------------------------------\n'
+    assert repr(np.iinfo(int)) == 'iinfo(min=-9223372036854775808, max=9223372036854775807, dtype=int64)'
+    assert str(np.iinfo(int)) == 'Machine parameters for int64\n---------------------------------------------------------------\nmin = -9223372036854775808\nmax = 9223372036854775807\n---------------------------------------------------------------\n'
+
+test_iinfo()

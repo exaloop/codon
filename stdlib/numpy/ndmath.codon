@@ -1,0 +1,1652 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import operator
+import util
+import zmath
+from .ndarray import ndarray, flagsobj, newaxis
+from .routines import _check_out, asarray, empty_like, empty, concatenate, moveaxis, broadcast_shapes, zeros, broadcast_to, atleast_1d
+from .ufunc import UnaryUFunc, UnaryUFunc2, BinaryUFunc
+from .npdatetime import datetime64, timedelta64
+from .const import pi
+
+def cumprod(a, axis=None, dtype: type = NoneType, out=None):
+    a = asarray(a)
+
+    if dtype is NoneType:
+        return cumprod(a, axis=axis, dtype=a.dtype, out=out)
+
+    if axis is None:
+        prod = util.cast(1, dtype)
+        if out is None:
+            result = empty((a.size, ), dtype=dtype)
+        else:
+            _check_out(out, (a.size, ))
+            result = out
+        i = 0
+        for idx in util.multirange(a.shape):
+            prod *= util.cast(a._ptr(idx)[0], dtype)
+            result._ptr((i, ))[0] = util.cast(prod, result.dtype)
+            i += 1
+        return result
+    else:
+        axis = util.normalize_axis_index(axis, a.ndim)
+
+    if out is None:
+        result = empty_like(a, dtype=dtype)
+    else:
+        _check_out(out, a.shape)
+        result = out
+
+    n = a.shape[axis]
+
+    for idx in util.multirange(util.tuple_delete(a.shape, axis)):
+        accum = util.cast(1, dtype)
+
+        for i in range(n):
+            full_idx = util.tuple_insert(idx, axis, i)
+            p = a._ptr(full_idx)
+            q = result._ptr(full_idx)
+            accum *= util.cast(p[0], dtype)
+            q[0] = util.cast(accum, result.dtype)
+
+    return result
+
+def cumsum(a, axis=None, dtype: type = NoneType, out=None):
+    a = asarray(a)
+
+    if dtype is NoneType:
+        return cumsum(a, axis=axis, dtype=a.dtype, out=out)
+
+    if axis is None:
+        sum = util.cast(0, dtype)
+        if out is None:
+            result = empty((a.size, ), dtype=dtype)
+        else:
+            _check_out(out, (a.size, ))
+            result = out
+
+        i = 0
+        for idx in util.multirange(a.shape):
+            sum += util.cast(a._ptr(idx)[0], dtype)
+            result._ptr((i, ))[0] = util.cast(sum, result.dtype)
+            i += 1
+        return result
+
+    else:
+        axis = util.normalize_axis_index(axis, a.ndim)
+
+    if out is None:
+        result = empty_like(a, dtype=dtype)
+    else:
+        _check_out(out, a.shape)
+        result = out
+
+    n = a.shape[axis]
+
+    for idx in util.multirange(util.tuple_delete(a.shape, axis)):
+        accum = util.cast(0, dtype)
+
+        for i in range(n):
+            full_idx = util.tuple_insert(idx, axis, i)
+            p = a._ptr(full_idx)
+            q = result._ptr(full_idx)
+            accum += util.cast(p[0], dtype)
+            q[0] = util.cast(accum, result.dtype)
+
+    return result
+
+def diff(a, axis: int = -1, n: int = 1, append=None, prepend=None):
+    a = asarray(a)
+
+    if append is None and prepend is None:
+        # If neither append nor prepend is provided, return a
+        pass
+    elif append is not None and prepend is None:
+        # If only append is provided, perform the append operation
+        a = append(a, append, axis=axis)
+    elif append is None and prepend is not None:
+        # If only prepend is provided, perform the prepend operation
+        a = append(prepend, a, axis=axis)
+    else:
+        # If both append and prepend are provided, concatenate them along the specified axis
+        a = concatenate((prepend, a, append), axis=axis)
+
+    if isinstance(a.dtype, datetime64):
+        g = a.view(timedelta64[a.dtype.base, a.dtype.num])
+        return diff(g, axis=axis, n=n, append=None, prepend=None)
+
+    axis = util.normalize_axis_index(axis, a.ndim)
+    axis_len = a.shape[axis]
+
+    new_shape = a.shape
+    value = new_shape[axis] - n
+
+    value = max(value,0)
+
+    new_shape = util.tuple_set(new_shape, axis, value)
+    dtype = a.dtype
+
+    result = empty(new_shape, dtype=dtype)
+
+    if result.size == 0:
+        return result
+
+    if n == 1:
+        # Iterate over all indices except the specified axis
+        for idx0 in util.multirange(util.tuple_delete(a.shape, axis)):
+
+            for i in range(axis_len - 1):
+                idx = util.tuple_insert(idx0, axis, i)
+                x0 = a._ptr(idx)[0]
+
+                idx1 = util.tuple_insert(idx0, axis, i + 1)
+                x1 = a._ptr(idx1)[0]
+
+                result._ptr(idx)[0] = (x1 - x0)
+
+        return result
+
+    buf = Ptr[a.dtype](axis_len)
+
+    # Iterate over all indices except the specified axis
+    for idx0 in util.multirange(util.tuple_delete(a.shape, axis)):
+        for i in range(axis_len):
+            idx = util.tuple_insert(idx0, axis, i)
+            e = a._ptr(idx)[0]
+            buf[i] = e
+
+        # Compute differences in-place on buf
+        for i in range(n):
+            for j in range(axis_len - i - 1):
+                buf[j] = buf[j + 1] - buf[j]
+
+        for i in range(axis_len - n):
+            idx = util.tuple_insert(idx0, axis, i)
+            result._ptr(idx)[0] = buf[i]
+
+    util.free(buf)
+    return result
+
+def _gradient_helper_scaler(f, dx, dtype: type, axis: int, edge_order: int):
+    if isinstance(dx, datetime64):
+        compile_error("spacing datatype cannot be of type datetime")
+
+    if not (isinstance(f.dtype, timedelta64) or isinstance(dx, timedelta64)):
+        vtype = type(util.coerce(dtype, type(dx)))
+        if isinstance(dx, vtype):
+            dxx = util.cast(dx, dtype)
+        else:
+            dxx = util.cast(dx, vtype)
+        p = util.cast(-1.5, dtype)
+        q = util.cast(2.0, dtype)
+        r = util.cast(-0.5, dtype)
+    else:
+        dxx = util.cast(dx, float)
+        p = util.cast(-1.5, float)
+        q = util.cast(2.0, float)
+        r = util.cast(-0.5, float)
+
+    if f.shape[axis] < edge_order + 1:
+        raise ValueError(
+            "Shape of array too small to calculate a numerical gradient, "
+            "at least (edge_order + 1) elements are required.")
+
+    axis_len = f.shape[axis]
+    result = empty(f.shape, dtype=dtype)
+    for idx0 in util.multirange(util.tuple_delete(f.shape, axis)):
+        if edge_order == 1:
+            #for the first element
+            idx = util.tuple_insert(idx0, axis, 0)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, 1)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            result._ptr(idx)[0] = util.cast((x1 - x0) / dxx, dtype)
+
+            #for the last element
+            idx = util.tuple_insert(idx0, axis, axis_len - 1)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, axis_len - 2)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            result._ptr(idx)[0] = util.cast((x0 - x1) / dxx, dtype)
+        else:
+            #for the first element
+            idx = util.tuple_insert(idx0, axis, 0)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, 1)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            idx3 = util.tuple_insert(idx0, axis, 2)
+            x2 = util.cast(f._ptr(idx3)[0], dtype)
+            d = p / dxx
+            b = q / dxx
+            c = r / dxx
+            result._ptr(idx)[0] = util.cast(d * x0 + b * x1 + c * x2, dtype)
+
+            #for the last element
+            idx = util.tuple_insert(idx0, axis, axis_len - 1)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, axis_len - 2)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            idx3 = util.tuple_insert(idx0, axis, axis_len - 3)
+            x2 = util.cast(f._ptr(idx3)[0], dtype)
+            result._ptr(idx)[0] = util.cast((-c) * x2 + (-b) * x1 + (-d) * x0,
+                                            dtype)
+
+        for i in range(0, axis_len - 2):
+            idx = util.tuple_insert(idx0, axis, i + 1)
+            idx1 = util.tuple_insert(idx0, axis, i)
+            x0 = util.cast(f._ptr(idx1)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, i + 2)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            result._ptr(idx)[0] = util.cast(
+                (x1 - x0) / (util.cast(2, dtype) * dxx), dtype)
+
+    return result
+
+def _gradient_helper_linear(f, dx, dtype: type, axis: int, edge_order: int):
+    if isinstance(dx, ndarray):
+        if dx.ndim == 0:
+            return _gradient_helper_scaler(f, dx.item(), dtype, axis,
+                                           edge_order)
+    dx = asarray(dx)
+
+    if isinstance(dx.dtype, datetime64):
+        compile_error("spacing datatype cannot be of type datetime")
+
+    if not (isinstance(f.dtype, timedelta64)
+            or isinstance(dx.dtype, timedelta64)):
+        vtype = type(util.coerce(dtype, dx.dtype))
+        if isinstance(vtype, dx.dtype):
+            dxx = dx.astype(dtype)
+        else:
+            dxx = dx.astype(vtype)
+        const = util.cast(2, dtype)
+    else:
+        dxx = dx.astype(float)
+        const = util.cast(2, float)
+
+    if dxx.ndim != 1:
+        compile_error("distances must be either scalars or 1d")
+    elif len(dxx) != f.shape[axis]:
+        raise ValueError("when 1d, distances must match "
+                         "the length of the corresponding dimension")
+
+    if f.shape[axis] < edge_order + 1:
+        raise ValueError(
+            "Shape of array too small to calculate a numerical gradient, "
+            "at least (edge_order + 1) elements are required.")
+
+    val = len(dxx)
+
+    uniform_spacing = True
+    m = dxx._ptr((1, ))[0] - dxx._ptr((0, ))[0]
+    for i in range(val - 1):
+        if (m != (dxx._ptr((i + 1, ))[0] - dxx._ptr((i, ))[0])):
+            uniform_spacing = False
+            break
+
+    if uniform_spacing:
+        dval = m
+        return _gradient_helper_scaler(f, dval, dtype, axis, edge_order)
+
+    axis_len = f.shape[axis]
+    result = empty(f.shape, dtype=dtype)
+    for idx0 in util.multirange(util.tuple_delete(f.shape, axis)):
+        if edge_order == 1:
+            idx = util.tuple_insert(idx0, axis, 0)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, 1)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            result._ptr(idx)[0] = util.cast((x1 - x0) / (dxx._ptr(
+                (1, ))[0] - dxx._ptr((0, ))[0]), dtype)
+            idx = util.tuple_insert(idx0, axis, axis_len - 1)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, axis_len - 2)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            result._ptr(idx)[0] = util.cast((x0 - x1) / (dxx._ptr(
+                (dxx.size - 1, ))[0] - dxx._ptr((dxx.size - 2, ))[0]), dtype)
+        else:
+            idx = util.tuple_insert(idx0, axis, 0)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, 1)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            idx3 = util.tuple_insert(idx0, axis, 2)
+            x2 = util.cast(f._ptr(idx3)[0], dtype)
+            dx1 = dxx._ptr((1, ))[0] - dxx._ptr((0, ))[0]
+            dx2 = dxx._ptr((2, ))[0] - dxx._ptr((1, ))[0]
+            d = -(const * dx1 + dx2) / (dx1 * (dx1 + dx2))
+            b = (dx1 + dx2) / (dx1 * dx2)
+            c = -dx1 / (dx2 * (dx1 + dx2))
+            result._ptr(idx)[0] = util.cast(d * x0 + b * x1 + c * x2, dtype)
+
+            idx = util.tuple_insert(idx0, axis, axis_len - 1)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, axis_len - 2)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            idx3 = util.tuple_insert(idx0, axis, axis_len - 3)
+            x2 = util.cast(f._ptr(idx3)[0], dtype)
+            dx1 = dxx._ptr((dxx.size - 2, ))[0] - dxx._ptr((dxx.size - 3, ))[0]
+            dx2 = dxx._ptr((dxx.size - 1, ))[0] - dxx._ptr((dxx.size - 2, ))[0]
+            d = (dx2) / (dx1 * (dx1 + dx2))
+            b = -(dx2 + dx1) / (dx1 * dx2)
+            c = (const * dx2 + dx1) / (dx2 * (dx1 + dx2))
+            result._ptr(idx)[0] = util.cast(d * x2 + b * x1 + c * x0, dtype)
+
+        for i in range(0, axis_len - 2):
+            idx = util.tuple_insert(idx0, axis, i)
+            x0 = util.cast(f._ptr(idx)[0], dtype)
+            idx2 = util.tuple_insert(idx0, axis, i + 1)
+            x1 = util.cast(f._ptr(idx2)[0], dtype)
+            idx3 = util.tuple_insert(idx0, axis, i + 2)
+            x2 = util.cast(f._ptr(idx3)[0], dtype)
+            dx1 = dxx._ptr((i + 1, ))[0] - dxx._ptr((i, ))[0]
+            dx2 = dxx._ptr((i + 2, ))[0] - dxx._ptr((i + 1, ))[0]
+            d = -(dx2) / (dx1 * (dx1 + dx2))
+            b = (dx2 - dx1) / (dx1 * dx2)
+            c = dx1 / (dx2 * (dx1 + dx2))
+            result._ptr(idx2)[0] = util.cast(d * x0 + b * x1 + c * x2, dtype)
+
+    return result
+
+def gradient(f, *varargs, axis=None, edge_order: int = 1):
+
+    def gradient_dtype(dtype: type):
+        if (dtype is int or dtype is byte or isinstance(dtype, Int)
+                or isinstance(dtype, UInt)):
+            return float()
+        else:
+            return dtype()
+
+    f = asarray(f)
+
+    if isinstance(f.dtype, datetime64):
+        g = f.view(timedelta64[f.dtype.base, f.dtype.num])
+        return gradient(g, *varargs, axis=axis, edge_order=edge_order)
+
+    rdtype = type(gradient_dtype(f.dtype))
+    result = empty(f.shape, dtype=rdtype)
+
+    if edge_order > 2:
+        raise ValueError("'edge_order' greater than 2 not supported")
+
+    if axis is None:
+        outval = []
+        dval = util.cast(1, rdtype)
+        if staticlen(varargs) == 0:
+            for i in staticrange(f.ndim):
+                result = _gradient_helper_scaler(f,
+                                                 dval,
+                                                 rdtype,
+                                                 axis=i,
+                                                 edge_order=edge_order)
+                outval.append(result)
+        elif staticlen(varargs) == 1:
+            if f.ndim != 1 and (isinstance(varargs[0], List)
+                                or isinstance(varargs[0], Tuple)):
+                compile_error("invalid number of arguments")
+
+            if f.ndim != 1 and isinstance(varargs[0], ndarray):
+                if varargs[0].ndim != 0:
+                    compile_error("invalid number of arguments")
+
+            for i in staticrange(f.ndim):
+                if (isinstance(varargs[0], List)
+                        or isinstance(varargs[0], Tuple)
+                        or isinstance(varargs[0], ndarray)):
+                    result = _gradient_helper_linear(f,
+                                                     varargs[0],
+                                                     rdtype,
+                                                     axis=i,
+                                                     edge_order=edge_order)
+                else:
+                    result = _gradient_helper_scaler(f,
+                                                     varargs[0],
+                                                     rdtype,
+                                                     axis=i,
+                                                     edge_order=edge_order)
+                outval.append(result)
+        else:
+            if f.ndim == staticlen(varargs):
+                for i in staticrange(f.ndim):
+                    if (isinstance(varargs[i], List)
+                            or isinstance(varargs[i], Tuple)
+                            or isinstance(varargs[i], ndarray)):
+                        result = _gradient_helper_linear(f,
+                                                         varargs[i],
+                                                         rdtype,
+                                                         axis=i,
+                                                         edge_order=edge_order)
+                    else:
+                        result = _gradient_helper_scaler(f,
+                                                         varargs[i],
+                                                         rdtype,
+                                                         axis=i,
+                                                         edge_order=edge_order)
+                    outval.append(result)
+            else:
+                compile_error("invalid number of arguments")
+        if f.ndim == 1:
+            return outval[0]
+        return outval
+    else:
+        if isinstance(axis, Tuple):
+            ax = util.normalize_axis_tuple(axis, f.ndim)
+            outval = []
+            dval = util.cast(1, rdtype)
+
+            if staticlen(varargs) == 0:
+                for i in range(staticlen(ax)):
+                    result = _gradient_helper_scaler(f,
+                                                     dval,
+                                                     rdtype,
+                                                     axis=ax[i],
+                                                     edge_order=edge_order)
+                    outval.append(result)
+            elif staticlen(varargs) == 1:
+                if staticlen(ax) != 1 and (isinstance(varargs[0], List)
+                                           or isinstance(varargs[0], Tuple)):
+                    compile_error("invalid number of arguments")
+                if staticlen(ax) != 1 and isinstance(varargs[0], ndarray):
+                    if varargs[0].ndim != 0:
+                        compile_error("invalid number of arguments")
+                for i in range(staticlen(ax)):
+                    if (isinstance(varargs[0], List)
+                            or isinstance(varargs[0], Tuple)
+                            or isinstance(varargs[0], ndarray)):
+                        result = _gradient_helper_linear(f,
+                                                         varargs[0],
+                                                         rdtype,
+                                                         axis=ax[i],
+                                                         edge_order=edge_order)
+                    else:
+                        result = _gradient_helper_scaler(f,
+                                                         varargs[0],
+                                                         rdtype,
+                                                         axis=ax[i],
+                                                         edge_order=edge_order)
+                    outval.append(result)
+            else:
+                if staticlen(ax) == staticlen(varargs):
+                    for i in range(staticlen(ax)):
+                        if (isinstance(varargs[i], List)
+                                or isinstance(varargs[i], Tuple)
+                                or isinstance(varargs[i], ndarray)):
+                            result = _gradient_helper_linear(
+                                f,
+                                varargs[i],
+                                rdtype,
+                                axis=ax[i],
+                                edge_order=edge_order)
+                        else:
+                            result = _gradient_helper_scaler(
+                                f,
+                                varargs[i],
+                                rdtype,
+                                axis=ax[i],
+                                edge_order=edge_order)
+                        outval.append(result)
+                else:
+                    compile_error("invalid number of arguments")
+
+            if staticlen(ax) == 1:
+                return outval[0]
+            return outval
+        elif isinstance(axis, List[int]):
+            ax = util.normalize_axis_tuple(axis, f.ndim)
+            outval = []
+            dval = util.cast(1, rdtype)
+
+            if staticlen(varargs) == 0:
+                for i in range(len(ax)):
+                    result = _gradient_helper_scaler(f,
+                                                     dval,
+                                                     rdtype,
+                                                     axis=ax[i],
+                                                     edge_order=edge_order)
+                    outval.append(result)
+            elif staticlen(varargs) == 1:
+                if len(ax) != 1 and (isinstance(varargs[0], List)
+                                     or isinstance(varargs[0], Tuple)):
+                    raise ValueError("invalid number of arguments")
+                if len(ax) != 1 and isinstance(varargs[0], ndarray):
+                    if varargs[0].ndim != 0:
+                        compile_error("invalid number of arguments")
+
+                for i in range(len(ax)):
+                    if (isinstance(varargs[0], List)
+                            or isinstance(varargs[0], Tuple)
+                            or isinstance(varargs[0], ndarray)):
+                        result = _gradient_helper_linear(f,
+                                                         varargs[0],
+                                                         rdtype,
+                                                         axis=ax[i],
+                                                         edge_order=edge_order)
+                    else:
+                        result = _gradient_helper_scaler(f,
+                                                         varargs[0],
+                                                         rdtype,
+                                                         axis=ax[i],
+                                                         edge_order=edge_order)
+                    outval.append(result)
+            else:
+                if len(ax) == staticlen(varargs):
+                    for i in range(len(ax)):
+                        if (isinstance(varargs[i], List)
+                                or isinstance(varargs[i], Tuple)
+                                or isinstance(varargs[i], ndarray)):
+                            result = _gradient_helper_linear(
+                                f,
+                                varargs[i],
+                                rdtype,
+                                axis=ax[i],
+                                edge_order=edge_order)
+                        else:
+                            result = _gradient_helper_scaler(
+                                f,
+                                varargs[i],
+                                rdtype,
+                                axis=ax[i],
+                                edge_order=edge_order)
+                        outval.append(result)
+                else:
+                    raise ValueError("invalid number of arguments")
+            return outval
+        else:
+            axis = util.normalize_axis_index(axis, f.ndim)
+
+            if staticlen(varargs) == 0:
+                return _gradient_helper_scaler(f,
+                                               dx=1,
+                                               dtype=rdtype,
+                                               axis=axis,
+                                               edge_order=edge_order)
+            else:
+                if staticlen(varargs) == 1:
+                    if (isinstance(varargs[0], List)
+                            or isinstance(varargs[0], Tuple)
+                            or isinstance(varargs[0], ndarray)):
+                        return _gradient_helper_linear(f,
+                                                       varargs[0],
+                                                       rdtype,
+                                                       axis=axis,
+                                                       edge_order=edge_order)
+                    else:
+                        return _gradient_helper_scaler(f,
+                                                       varargs[0],
+                                                       rdtype,
+                                                       axis=axis,
+                                                       edge_order=edge_order)
+                else:
+                    compile_error("invalid number of arguments")
+
+def ediff1d(ary, to_begin=None, to_end=None):
+    a = asarray(ary).ravel()
+    n = a.size - 1
+
+    if to_begin is not None:
+        begin = asarray(to_begin).ravel()
+        n += begin.size
+    else:
+        begin = None
+
+    if to_end is not None:
+        end = asarray(to_end).ravel()
+        n += end.size
+    else:
+        end = None
+
+    ans = empty(n, a.dtype)
+    k = 0
+
+    if to_begin is not None:
+        for i in range(begin.size):
+            ans._ptr((i, ))[0] = util.cast(begin._ptr((i, ))[0], a.dtype)
+        k = begin.size
+
+    for i in range(a.size - 1):
+        ans._ptr((k + i, ))[0] = a._ptr((i + 1, ))[0] - a._ptr((i, ))[0]
+    k += a.size - 1
+
+    if to_end is not None:
+        for i in range(end.size):
+            ans._ptr((k + i, ))[0] = util.cast(end._ptr((i, ))[0], a.dtype)
+
+    return ans
+
+def cross(a, b, axisa: int = -1, axisb: int = -1, axisc: int = -1, axis = None):
+    if axis is not None:
+        axisa, axisb, axisc = (axis, ) * 3
+    a = asarray(a)
+    b = asarray(b)
+
+    # Check axisa and axisb are within bounds
+    axisa = util.normalize_axis_index(axisa, a.ndim)
+    axisb = util.normalize_axis_index(axisb, b.ndim)
+
+    # Move working axis to the end of the shape
+    a = moveaxis(a, axisa, -1)
+    b = moveaxis(b, axisb, -1)
+    msg = ("incompatible dimensions for cross product\n"
+           "(dimension must be 2 or 3)")
+    if a.shape[-1] not in (2, 3) or b.shape[-1] not in (2, 3):
+        raise ValueError(msg)
+
+    # Create the output array
+    x = a[..., 0]
+    x = asarray(x)
+    y = b[..., 0]
+    y = asarray(y)
+    shape = broadcast_shapes(x.shape, y.shape)
+
+    if a.shape[-1] == 3 or b.shape[-1] == 3:
+        new_shape = shape + (3, )
+        # Check axisc is within bounds
+        axisc = util.normalize_axis_index(axisc, len(new_shape))
+    else:
+        new_shape = shape + (1, )
+
+    dtype = type(util.coerce(a.dtype, b.dtype))
+
+    cp = zeros(new_shape, dtype)
+
+    # recast arrays as dtype
+    a = a.astype(dtype)
+    b = b.astype(dtype)
+
+    # create local aliases for readability
+    a0 = a[..., 0]
+    a1 = a[..., 1]
+    if a.shape[-1] == 3:
+        a2 = a[..., 2]
+    b0 = b[..., 0]
+    b1 = b[..., 1]
+    if b.shape[-1] == 3:
+        b2 = b[..., 2]
+    if cp.ndim != 0 and cp.shape[-1] == 3:
+
+        cp0 = cp[..., 0]
+        cp1 = cp[..., 1]
+        cp2 = cp[..., 2]
+
+    if a.shape[-1] == 2:
+        if b.shape[-1] == 2:
+            # a0 * b1 - a1 * b0
+            cp[0] = a[..., 0] * b[..., 1] - a[..., 1] * b[
+                ..., 0]  # cp2 = a0 * b1 - a1 * b0
+            return cp
+
+        else:
+            assert b.shape[-1] == 3
+
+            # cp0 = 0 - a1 * b2  (a2 = 0)
+            cp[..., 0] = -a[..., 1] * b[..., 2]
+
+            # cp1 = a0 * b2 - 0  (a2 = 0)
+            cp[..., 1] = a[..., 0] * b[..., 2]
+
+            # cp2 = a0 * b1 - a1 * b0
+            cp[..., 2] = a[..., 0] * b[..., 1] - a[..., 1] * b[..., 0]
+
+    else:
+        assert a.shape[-1] == 3
+        if b.shape[-1] == 3:
+
+            # cp0 = a1 * b2 - a2 * b1
+            cp[..., 0] = a[..., 1] * b[..., 2] - a[..., 2] * b[..., 1]
+
+            # cp1 = a2 * b0 - a0 * b2
+            cp[..., 1] = a[..., 2] * b[..., 0] - a[..., 0] * b[..., 2]
+
+            # cp2 = a0 * b1 - a1 * b0
+            cp[..., 2] = a[..., 0] * b[..., 1] - a[..., 1] * b[..., 0]
+
+        else:
+            assert b.shape[-1] == 2
+
+            # cp0 = a2 * b1 - 0  (b2 = 0)
+            cp[..., 0] = a[..., 2] * b[..., 1]
+
+            # cp1 = 0 - a2 * b0  (b2 = 0)
+            cp[..., 1] = -a[..., 2] * b[..., 0]
+
+            # cp2 = a0 * b1 - a1 * b0
+            cp[..., 2] = a[..., 0] * b[..., 1] - a[..., 1] * b[..., 0]
+
+    return moveaxis(cp, -1, axisc)
+
+def trapz(y, x=None, dx=1.0, axis: int = -1):
+    def trapz_helper(a, axis, dx, dtype: type):
+        axis = util.normalize_axis_index(axis, a.ndim)
+        axis_len = a.shape[axis]
+        new_shape = util.tuple_delete(a.shape, axis)
+
+        # Create empty array
+        result = empty(new_shape, dtype=dtype)
+
+        # Iterate over all indices except the specified axis
+        for idx0 in util.multirange(util.tuple_delete(a.shape, axis)):
+            ans = dtype()
+
+            for i in range(axis_len - 1):
+                idx = util.tuple_insert(idx0, axis, i)
+                y0 = a._ptr(idx)[0]
+
+                idx = util.tuple_insert(idx0, axis, i + 1)
+                y1 = a._ptr(idx)[0]
+
+                ans += y1 + y0
+
+            result._ptr(idx0)[0] = ans * dx / dtype(2)
+        return result
+
+    def trapz_helper_with_x(a, axis, x, dtype: type):
+        axis = util.normalize_axis_index(axis, a.ndim)
+        axis_len = a.shape[axis]
+        new_shape = util.tuple_delete(a.shape, axis)
+
+        # Create empty array
+        result = empty(new_shape, dtype=dtype)
+
+        x = broadcast_to(x, a.shape)
+
+        # Iterate over all indices except the specified axis
+        for idx0 in util.multirange(util.tuple_delete(a.shape, axis)):
+            ans = dtype()
+
+            for i in range(axis_len - 1):
+                idx = util.tuple_insert(idx0, axis, i)
+                x0 = x._ptr(idx)[0]
+                y0 = a._ptr(idx)[0]
+
+                idx = util.tuple_insert(idx0, axis, i + 1)
+                x1 = x._ptr(idx)[0]
+                y1 = a._ptr(idx)[0]
+
+                ans += (y1 + y0) * (x1 - x0)
+
+            result._ptr(idx0)[0] = ans / dtype(2)
+        return result
+
+    def trapz_helper_with_x_1d(a, axis, x, dtype: type):
+        axis = util.normalize_axis_index(axis, a.ndim)
+        axis_len = a.shape[axis]
+
+        if len(x) != axis_len:
+            raise ValueError(
+                "length of 'x' does not match dimension along axis")
+
+        new_shape = util.tuple_delete(a.shape, axis)
+
+        # Create empty array
+        result = empty(new_shape, dtype=dtype)
+
+        # Iterate over all indices except the specified axis
+        for idx0 in util.multirange(util.tuple_delete(a.shape, axis)):
+            ans = dtype()
+
+            for i in range(axis_len - 1):
+                idx = util.tuple_insert(idx0, axis, i)
+                x0 = x._ptr((i, ))[0]
+                y0 = a._ptr(idx)[0]
+
+                idx = util.tuple_insert(idx0, axis, i + 1)
+                x1 = x._ptr((i + 1, ))[0]
+                y1 = a._ptr(idx)[0]
+
+                ans += (y1 + y0) * (x1 - x0)
+
+            result._ptr(idx0)[0] = ans / dtype(2)
+        return result
+
+    def trapz_dtype(dtype: type):
+        if (dtype is int or dtype is byte or isinstance(dtype, Int)
+                or isinstance(dtype, UInt)):
+            return float()
+        else:
+            return dtype()
+
+    def zero_dim_to_scalar(arr: ndarray):
+        if arr.ndim == 0:
+            return arr.item()
+        else:
+            return arr
+
+    y = asarray(y)
+    dtype = type(trapz_dtype(y.dtype))
+    axis = util.normalize_axis_index(axis, y.ndim)
+    if x is None:
+        return zero_dim_to_scalar(
+            trapz_helper(y, axis=axis, dx=dx, dtype=dtype))
+    else:
+        x = asarray(x)
+        if x.ndim == 1:
+            return zero_dim_to_scalar(
+                trapz_helper_with_x_1d(y, axis=axis, x=x, dtype=dtype))
+        else:
+            return zero_dim_to_scalar(
+                trapz_helper_with_x(y, axis=axis, x=x, dtype=dtype))
+
+def convolve(v, a, mode: str = "full"):
+    # Convert inputs to NumPy arrays
+    v = atleast_1d(asarray(v))
+    a = atleast_1d(asarray(a))
+
+    if len(v) < len(a):
+        return convolve(a, v, mode=mode)
+
+    res_dtype = type(util.coerce(v.dtype, a.dtype))
+
+    if v.size == 0 or a.size == 0:
+        raise ValueError("Input arrays cannot be empty")
+
+    if a.ndim > 1 or v.ndim > 1:
+        compile_error(
+            "incompatible dimensions for convolution\n(dimension must be 0 or 1)"
+        )
+
+    a = a[::-1]
+
+    length = len(v)
+    n = len(a)
+    n_left = 0
+    n_right = 0
+
+    if mode == "valid":
+        reslen = length - n + 1
+    elif mode == "same":
+        if n % 2 == 1:
+            n_left = n // 2
+            n_right = n // 2
+            desc = n - n_left - 1
+        else:
+            n_left = n // 2
+            n_right = n - n_left - 1
+            desc = n - n_left
+        reslen = length
+
+    elif mode == "full":
+        n_right = n - 1
+        n_left = n - 1
+        desc = n - 1
+        reslen = length + n - 1
+    else:
+        raise ValueError(
+            f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})"
+        )
+
+    # Allocate result array
+    ret = zeros(reslen, dtype=res_dtype)
+    for i in range(n_left):
+        k = desc - i
+        l = 0
+        for j in range(k, n, 1):
+            ret._ptr((i, ))[0] += util.cast(v._ptr(
+                (l, ))[0], res_dtype) * util.cast(a._ptr((j, ))[0], res_dtype)
+            l += 1
+
+    b = reslen - n_right
+    for i in range(n_left, b):
+        k = i - n_left
+        for j in range(n):
+            ret._ptr((i, ))[0] += util.cast(v._ptr(
+                (k, ))[0], res_dtype) * util.cast(a._ptr((j, ))[0], res_dtype)
+            k += 1
+
+    c = length - n + 1
+    for i in range(n_right):
+        k = length - (n - i) + 1
+        for j in range(n - i - 1):
+            ret._ptr((n_left + c +
+                      i, ))[0] += util.cast(v._ptr(
+                          (k, ))[0], res_dtype) * util.cast(
+                              a._ptr((j, ))[0], res_dtype)
+            k += 1
+
+    return ret
+
+def _apply(x, f, f_complex = None):
+    if f_complex is not None and (isinstance(x, complex) or isinstance(x, complex64)):
+        return f_complex(x)
+    elif isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return f(x)
+    else:
+        return f(util.to_float(x))
+
+def _apply2(x, y, f, f_complex = None):
+    if type(x) is not type(y):
+        compile_error("[internal error] type mismatch")
+
+    if f_complex is not None and (isinstance(x, complex) or isinstance(x, complex64)):
+        return f_complex(x, y)
+    elif isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return f(x, y)
+    else:
+        return f(util.to_float(x), util.to_float(y))
+
+def _fabs(x):
+    return _apply(x, util.fabs)
+
+def _rint(x):
+    def rint_complex(x):
+        C = type(x)
+        return C(util.rint(x.real), util.rint(x.imag))
+
+    return _apply(x, util.rint, rint_complex)
+
+def _exp(x):
+    return _apply(x, util.exp, zmath.exp)
+
+def _exp2(x):
+    return _apply(x, util.exp2, zmath.exp2)
+
+def _expm1(x):
+    return _apply(x, util.expm1, zmath.expm1)
+
+def _log(x):
+    return _apply(x, util.log, zmath.log)
+
+def _log2(x):
+    return _apply(x, util.log2, zmath.log2)
+
+def _log10(x):
+    return _apply(x, util.log10, zmath.log10)
+
+def _log1p(x):
+    return _apply(x, util.log1p, zmath.log1p)
+
+def _sqrt(x):
+    return _apply(x, util.sqrt, zmath.sqrt)
+
+def _cbrt(x):
+    return _apply(x, util.cbrt)
+
+def _square(x):
+    return x * x
+
+def _sin(x):
+    return _apply(x, util.sin, zmath.sin)
+
+def _cos(x):
+    return _apply(x, util.cos, zmath.cos)
+
+def _tan(x):
+    return _apply(x, util.tan, zmath.tan)
+
+def _arcsin(x):
+    return _apply(x, util.asin, zmath.asin)
+
+def _arccos(x):
+    return _apply(x, util.acos, zmath.acos)
+
+def _arctan(x):
+    return _apply(x, util.atan, zmath.atan)
+
+def _sinh(x):
+    return _apply(x, util.sinh, zmath.sinh)
+
+def _cosh(x):
+    return _apply(x, util.cosh, zmath.cosh)
+
+def _tanh(x):
+    return _apply(x, util.tanh, zmath.tanh)
+
+def _arcsinh(x):
+    return _apply(x, util.asinh, zmath.asinh)
+
+def _arccosh(x):
+    return _apply(x, util.acosh, zmath.acosh)
+
+def _arctanh(x):
+    return _apply(x, util.atanh, zmath.atanh)
+
+def _rad2deg(x):
+    r2d = 180.0 / util.PI
+    x = util.to_float(x)
+    F = type(x)
+    return x * F(r2d)
+
+def _deg2rad(x):
+    d2r = util.PI / 180.0
+    x = util.to_float(x)
+    F = type(x)
+    return x * F(d2r)
+
+def _arctan2(x, y):
+    return _apply2(x, y, util.atan2)
+
+def _hypot(x, y):
+    return _apply2(x, y, util.hypot)
+
+def _logaddexp(x, y):
+    return _apply2(x, y, util.logaddexp)
+
+def _logaddexp2(x, y):
+    return _apply2(x, y, util.logaddexp2)
+
+def _isnan(x):
+    if isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return util.isnan(x)
+    elif isinstance(x, complex) or isinstance(x, complex64):
+        return util.isnan(x.real) or util.isnan(x.imag)
+    elif isinstance(x, datetime64) or isinstance(x, timedelta64):
+        return x._nat
+    else:
+        return False
+
+def _isinf(x):
+    if isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return util.isinf(x)
+    elif isinstance(x, complex) or isinstance(x, complex64):
+        return util.isinf(x.real) or util.isinf(x.imag)
+    else:
+        return False
+
+def _isfinite(x):
+    if isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return util.isfinite(x)
+    elif isinstance(x, complex) or isinstance(x, complex64):
+        return util.isfinite(x.real) and util.isfinite(x.imag)
+    elif isinstance(x, datetime64) or isinstance(x, timedelta64):
+        return not x._nat
+    else:
+        return True
+
+def _signbit(x):
+    if isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return util.signbit(x)
+    else:
+        T = type(x)
+        return x < T()
+
+def _copysign(x, y):
+    return _apply2(x, y, util.copysign)
+
+def _nextafter(x, y):
+    return _apply2(x, y, util.nextafter)
+
+def _ldexp(x, y):
+    y = util.cast(y, int)
+    if isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+        return util.ldexp(x, y)
+    else:
+        return util.ldexp(util.to_float(x), y)
+
+def _floor(x):
+    return _apply(x, util.floor)
+
+def _ceil(x):
+    return _apply(x, util.ceil)
+
+def _trunc(x):
+    return _apply(x, util.trunc)
+
+def _sign(x):
+    def sign1(x):
+        T = type(x)
+        if x < T(0):
+            return T(-1)
+        elif x > T(0):
+            return T(1)
+        else:
+            return x
+
+    if isinstance(x, complex):
+        if _isnan(x):
+            return complex(util.nan64(), 0.0)
+        return complex(sign1(x.real), 0) if x.real else complex(sign1(x.imag), 0)
+    elif isinstance(x, complex64):
+        if _isnan(x):
+            return complex64(util.nan64(), 0.0)
+        return complex64(sign1(x.real), 0) if x.real else complex64(sign1(x.imag), 0)
+    elif isinstance(x, timedelta64):
+        return x._sign
+    else:
+        return sign1(x)
+
+def _heaviside(x, y):
+    def heaviside(x, y):
+        if isinstance(x, float16) and isinstance(y, float16):
+            if x < float16(0):
+                return float16(0)
+            elif x > float16(0):
+                return float16(1)
+            elif x == float16(0):
+                return y
+            else:
+                return x
+        elif isinstance(x, float32) and isinstance(y, float32):
+            if x < float32(0):
+                return float32(0)
+            elif x > float32(0):
+                return float32(1)
+            elif x == float32(0):
+                return y
+            else:
+                return x
+        elif isinstance(x, float) and isinstance(y, float):
+            if x < 0:
+                return 0.0
+            elif x > 0:
+                return 1.0
+            elif x == 0.0:
+                return y
+            else:
+                return x
+
+    return _apply2(x, y, heaviside)
+
+def _conj(x):
+    if isinstance(x, complex) or isinstance(x, complex64):
+        return x.conjugate()
+    else:
+        return x
+
+def _gcd(x, y):
+    '''  # fails with optionals
+    if not (
+        isinstance(x, int) or
+        isinstance(x, Int) or
+        isinstance(x, UInt) or
+        isinstance(x, byte)
+    ):
+        compile_error("gcd/lcm can only be used on integral types")
+    '''
+
+    while x:
+        z = x
+        x = y % x
+        y = z
+    return y
+
+def _lcm(x, y):
+    gcd = _gcd(x, y)
+    return x // gcd * y if gcd else 0
+
+def _reciprocal(x: T, T: type):
+    if (
+        isinstance(x, int) or
+        isinstance(x, Int) or
+        isinstance(x, UInt) or
+        isinstance(x, byte)
+    ):
+        return T(1) // x
+    else:
+        return T(1) / x
+
+def _logical_and(x, y):
+    return bool(x) and bool(y)
+
+def _logical_or(x, y):
+    return bool(x) or bool(y)
+
+def _logical_xor(x, y):
+    return bool(x) ^ bool(y)
+
+def _logical_not(x):
+    return not bool(x)
+
+def _coerce_types_for_minmax(x, y):
+    if isinstance(x, complex):
+        if isinstance(y, complex64):
+            return x, complex(y)
+        elif not isinstance(y, complex):
+            return x, complex(util.cast(y, float))
+    elif isinstance(x, complex64):
+        if isinstance(y, complex):
+            return complex(x), y
+        elif not isinstance(y, complex64):
+            return complex(x), complex(util.cast(y, float))
+
+    if isinstance(y, complex):
+        if isinstance(x, complex64):
+            return complex(x), y
+        elif not isinstance(x, complex):
+            return complex(util.cast(x, float)), y
+    elif isinstance(y, complex64):
+        if isinstance(x, complex):
+           return x, complex(y)
+        elif not isinstance(x, complex64):
+            return complex(util.cast(x, float)), complex(y)
+
+    T = type(util.coerce(type(x), type(y)))
+    return util.cast(x, T), util.cast(y, T)
+
+def _compare_le(x, y):
+    if isinstance(x, complex) or isinstance(x, complex64):
+        return (x.real, x.imag) <= (y.real, y.imag)
+    else:
+        return x <= y
+
+def _compare_ge(x, y):
+    if isinstance(x, complex) or isinstance(x, complex64):
+        return (x.real, x.imag) >= (y.real, y.imag)
+    else:
+        return x >= y
+
+def _maximum(x, y):
+    x, y = _coerce_types_for_minmax(x, y)
+
+    if _isnan(x):
+        return x
+
+    if _isnan(y):
+        return y
+
+    return x if _compare_ge(x, y) else y
+
+def _minimum(x, y):
+    x, y = _coerce_types_for_minmax(x, y)
+
+    if _isnan(x):
+        return x
+
+    if _isnan(y):
+        return y
+
+    return x if _compare_le(x, y) else y
+
+def _fmax(x, y):
+    x, y = _coerce_types_for_minmax(x, y)
+
+    if _isnan(y):
+        return x
+
+    if _isnan(x):
+        return y
+
+    return x if _compare_ge(x, y) else y
+
+def _fmin(x, y):
+    x, y = _coerce_types_for_minmax(x, y)
+
+    if _isnan(y):
+        return x
+
+    if _isnan(x):
+        return y
+
+    return x if _compare_le(x, y) else y
+
+def _divmod_float(x, y):
+    F = type(x)
+    mod = util.cmod(x, y)
+    if not y:
+        return util.cdiv(x, y), mod
+
+    div = util.cdiv(x - mod, y)
+    if mod:
+        if (y < F(0)) != (mod < F(0)):
+            mod += y
+            div -= F(1)
+    else:
+        mod = util.copysign(F(0), y)
+
+    floordiv = F()
+    if div:
+        floordiv = util.floor(div)
+        if div - floordiv > F(0.5):
+            floordiv += F(1)
+    else:
+        floordiv = util.copysign(F(0), util.cdiv(x, y))
+
+    return floordiv, mod
+
+def _divmod(x, y):
+    if isinstance(x, float16) and isinstance(y, float16):
+        return _divmod_float(x, y)
+
+    if isinstance(x, float32) and isinstance(y, float32):
+        return _divmod_float(x, y)
+
+    if isinstance(x, float) or isinstance(y, float):
+        return _divmod_float(util.cast(x, float), util.cast(y, float))
+
+    return (x // y, x % y)
+
+def _modf(x):
+    return _apply(x, util.modf)
+
+def _frexp(x):
+    def frexp(x):
+        a, b = util.frexp(x)
+        return a, i32(b)
+
+    return _apply(x, frexp)
+
+def _spacing16(h: float16):
+    h_u16 = util.bitcast(h, u16)
+    h_exp = h_u16 & u16(0x7c00)
+    h_sig = h_u16 & u16(0x03ff)
+
+    if h_exp == u16(0x7c00):
+        return util.nan16()
+    elif h_u16 == u16(0x7bff):
+        return util.inf16()
+    elif (h_u16 & u16(0x8000)) and not h_sig:
+        if h_exp > u16(0x2c00):
+            return util.bitcast(h_exp - u16(0x2c00), float16)
+        elif h_exp > u16(0x0400):
+            return util.bitcast(u16(1) << ((h_exp >> u16(10)) - u16(2)), float16)
+        else:
+            return util.bitcast(u16(0x0001), float16)
+    elif h_exp > u16(0x2800):
+        return util.bitcast(h_exp - u16(0x2800), float16)
+    elif h_exp > u16(0x0400):
+        return util.bitcast(u16(1) << ((h_exp >> u16(10)) - u16(1)), float16)
+    else:
+        return util.bitcast(u16(0x0001), float16)
+
+def _spacing(x):
+    if isinstance(x, float16):
+        return _spacing16(x)
+    elif isinstance(x, float32):
+        if util.isinf32(x):
+            return util.nan32()
+        p = util.inf32() if x >= float32(0) else -util.inf32()
+        return util.nextafter32(x, util.inf32()) - x
+    elif isinstance(x, float):
+        x = util.cast(x, float)
+        if util.isinf64(x):
+            return util.nan64()
+        p = util.inf64() if x >= 0 else -util.inf64()
+        return util.nextafter64(x, p) - x
+    else:
+        return _spacing(util.to_float(x))
+
+def _isnat(x):
+    if isinstance(x, datetime64) or isinstance(x, timedelta64):
+        return x._nat
+    else:
+        compile_error("ufunc 'isnat' is only defined for np.datetime64 and np.timedelta64.")
+
+def _floor_divide(x, y):
+    X = type(x)
+    Y = type(y)
+    if isinstance(X, Int) and isinstance(Y, Int):
+        return util.pydiv(x, y)
+    else:
+        return x // y
+
+def _remainder(x, y):
+    X = type(x)
+    Y = type(y)
+    if isinstance(X, Int) and isinstance(Y, Int):
+        return util.pymod(x, y)
+    elif ((X is float and Y is float) or
+          (X is float32 and Y is float32) or
+          (X is float16 and Y is float16)):
+        return util.pyfmod(x, y)
+    else:
+        return x % y
+
+def _fmod(x, y):
+    X = type(x)
+    Y = type(y)
+    if isinstance(X, Int) and isinstance(Y, Int):
+        return util.cmod_int(x, y)
+    elif ((X is float and Y is float) or
+          (X is float32 and Y is float32) or
+          (X is float16 and Y is float16)):
+        return util.cmod(x, y)
+    else:
+        return x % y
+
+add = BinaryUFunc(operator.add, 'add', 0)
+subtract = BinaryUFunc(operator.sub, 'subtract')
+multiply = BinaryUFunc(operator.mul, 'multiply', 1)
+divide = BinaryUFunc(operator.truediv, 'divide')
+true_divide = divide
+logaddexp = BinaryUFunc(_logaddexp, 'logaddexp')
+logaddexp2 = BinaryUFunc(_logaddexp2, 'logaddexp2')
+floor_divide = BinaryUFunc(_floor_divide, 'floor_divide')
+negative = UnaryUFunc(operator.neg, 'negative')
+positive = UnaryUFunc(operator.pos, 'positive')
+power = BinaryUFunc(operator.pow, 'power')
+remainder = BinaryUFunc(_remainder, 'remainder')
+mod = remainder
+fmod = BinaryUFunc(_fmod, 'fmod')
+# divmod
+absolute = UnaryUFunc(operator.abs, 'absolute')
+abs = absolute
+fabs = UnaryUFunc(_fabs, 'fabs')
+rint = UnaryUFunc(_rint, 'rint')
+sign = UnaryUFunc(_sign, 'sign')
+heaviside = BinaryUFunc(_heaviside, 'heaviside')
+conjugate = UnaryUFunc(_conj, 'conjugate')
+conj = conjugate
+exp = UnaryUFunc(_exp, 'exp')
+exp2 = UnaryUFunc(_exp2, 'exp2')
+log = UnaryUFunc(_log, 'log')
+log2 = UnaryUFunc(_log2, 'log2')
+log10 = UnaryUFunc(_log10, 'log10')
+expm1 = UnaryUFunc(_expm1, 'expm1')
+log1p = UnaryUFunc(_log1p, 'log1p')
+sqrt = UnaryUFunc(_sqrt, 'sqrt')
+square = UnaryUFunc(_square, 'square')
+cbrt = UnaryUFunc(_cbrt, 'cbrt')
+reciprocal = UnaryUFunc(_reciprocal, 'reciprocal')
+gcd = BinaryUFunc(_gcd, 'gcd', 0)
+lcm = BinaryUFunc(_lcm, 'lcm')
+
+sin = UnaryUFunc(_sin, 'sin')
+cos = UnaryUFunc(_cos, 'cos')
+tan = UnaryUFunc(_tan, 'tan')
+arcsin = UnaryUFunc(_arcsin, 'arcsin')
+arccos = UnaryUFunc(_arccos, 'arccos')
+arctan = UnaryUFunc(_arctan, 'arctan')
+arctan2 = BinaryUFunc(_arctan2, 'arctan2')
+hypot = BinaryUFunc(_hypot, 'hypot')
+sinh = UnaryUFunc(_sinh, 'sinh')
+cosh = UnaryUFunc(_cosh, 'cosh')
+tanh = UnaryUFunc(_tanh, 'tanh')
+arcsinh = UnaryUFunc(_arcsinh, 'arcsinh')
+arccosh = UnaryUFunc(_arccosh, 'arccosh')
+arctanh = UnaryUFunc(_arctanh, 'arctanh')
+deg2rad = UnaryUFunc(_deg2rad, 'deg2rad')
+radians = UnaryUFunc(_deg2rad, 'radians')
+rad2deg = UnaryUFunc(_rad2deg, 'rad2deg')
+degrees = UnaryUFunc(_rad2deg, 'degrees')
+
+bitwise_and = BinaryUFunc(operator.and_, 'bitwise_and')
+bitwise_or = BinaryUFunc(operator.or_, 'bitwise_or')
+bitwise_xor = BinaryUFunc(operator.xor, 'bitwise_xor')
+invert = UnaryUFunc(operator.invert, 'invert')
+left_shift = BinaryUFunc(operator.lshift, 'left_shift')
+right_shift = BinaryUFunc(operator.rshift, 'right_shift')
+
+greater = BinaryUFunc(operator.gt, 'greater')
+greater_equal = BinaryUFunc(operator.ge, 'greater_equal')
+less = BinaryUFunc(operator.lt, 'less')
+less_equal = BinaryUFunc(operator.le, 'less_equal')
+not_equal = BinaryUFunc(operator.ne, 'not_equal')
+equal = BinaryUFunc(operator.eq, 'equal')
+
+logical_and = BinaryUFunc(_logical_and, 'logical_and')
+logical_or = BinaryUFunc(_logical_or, 'logical_or')
+logical_xor = BinaryUFunc(_logical_xor, 'logical_xor')
+logical_not = UnaryUFunc(_logical_not, 'logical_not')
+
+maximum = BinaryUFunc(_maximum, 'maximum')
+minimum = BinaryUFunc(_minimum, 'minimum')
+fmax = BinaryUFunc(_fmax, 'fmax')
+fmin = BinaryUFunc(_fmin, 'fmin')
+
+isfinite = UnaryUFunc(_isfinite, 'isfinite')
+isinf = UnaryUFunc(_isinf, 'isinf')
+isnan = UnaryUFunc(_isnan, 'isnan')
+isnat = UnaryUFunc(_isnat, 'isnat')
+signbit = UnaryUFunc(_signbit, 'signbit')
+copysign = BinaryUFunc(_copysign, 'copysign')
+nextafter = BinaryUFunc(_nextafter, 'nextafter')
+spacing = UnaryUFunc(_spacing, 'spacing')
+modf = UnaryUFunc2(_modf, 'modf')
+ldexp = BinaryUFunc(_ldexp, 'ldexp')
+frexp = UnaryUFunc2(_frexp, 'frexp')
+floor = UnaryUFunc(_floor, 'floor')
+ceil = UnaryUFunc(_ceil, 'ceil')
+trunc = UnaryUFunc(_trunc, 'trunc')
+
+def i0(x):
+    def i0_helper(x):
+        if isinstance(x, float) or isinstance(x, float32) or isinstance(x, float16):
+            return util.i0(x)
+        else:
+            return util.i0(util.cast(x, float))
+
+    x = asarray(x)
+    if x.dtype is complex or x.dtype is complex64:
+        compile_error("i0 is not supported for complex values")
+    return x.map(i0_helper)
+
+def sinc(x):
+    def sinc_helper(x):
+        if isinstance(x, float32):
+            if not x:
+                x = float32(1e-20)
+            x *= float32(pi)
+            return util.sin32(x) / x
+        elif isinstance(x, float16):
+            if not x:
+                x = float16(1e-7)
+            x *= float16(pi)
+            return util.sin16(x) / x
+        elif isinstance(x, complex):
+            if not x:
+                x = complex(1e-20)
+            x *= pi
+            return zmath.sin(x) / x
+        elif isinstance(x, complex64):
+            if not x:
+                x = complex64(1e-20)
+            x *= float32(pi)
+            return zmath.sin(x) / x
+        else:
+            x = util.cast(x, float)
+            if not x:
+                x = 1e-20
+            x *= pi
+            return util.sin64(x) / x
+
+    ans = asarray(x).map(sinc_helper)
+    if ans.ndim == 0:
+        return ans.item()
+    else:
+        return ans
+
+def nancumprod(a, axis=None, dtype: type = NoneType, out=None):
+    a = asarray(a)
+
+    if dtype is NoneType:
+        return nancumprod(a, axis=axis, dtype=a.dtype, out=out)
+
+    if axis is None:
+        prod = util.cast(1, dtype)
+        if out is None:
+            result = empty((a.size, ), dtype=dtype)
+        else:
+            _check_out(out, (a.size, ))
+            result = out
+
+        i = 0
+        for idx in util.multirange(a.shape):
+            if not isnan(a._ptr(idx)[0]):
+                prod *= util.cast(a._ptr(idx)[0], dtype)
+            result._ptr((i, ))[0] = util.cast(prod, result.dtype)
+            i += 1
+        return result
+    else:
+        axis = util.normalize_axis_index(axis, a.ndim)
+
+    if out is None:
+        result = empty_like(a, dtype=dtype)
+    else:
+        _check_out(out, a.shape)
+        result = out
+
+    n = a.shape[axis]
+
+    for idx in util.multirange(util.tuple_delete(a.shape, axis)):
+        accum = util.cast(1, dtype)
+
+        for i in range(n):
+            full_idx = util.tuple_insert(idx, axis, i)
+            p = a._ptr(full_idx)
+            q = result._ptr(full_idx)
+            if not isnan(p[0]):
+                accum *= util.cast(p[0], dtype)
+            q[0] = util.cast(accum, result.dtype)
+
+    return result
+
+def nancumsum(a, axis=None, dtype: type = NoneType, out=None):
+    a = asarray(a)
+
+    if dtype is NoneType:
+        return nancumsum(a, axis=axis, dtype=a.dtype, out=out)
+
+    if axis is None:
+        sum = util.cast(0, dtype)
+        if out is None:
+            result = empty((a.size, ), dtype=dtype)
+        else:
+            _check_out(out, (a.size, ))
+            result = out
+
+        i = 0
+        for idx in util.multirange(a.shape):
+            if not isnan(a._ptr(idx)[0]):
+                sum += util.cast(a._ptr(idx)[0], dtype)
+            result._ptr((i, ))[0] = util.cast(sum, result.dtype)
+            i += 1
+        return result
+    else:
+        axis = util.normalize_axis_index(axis, a.ndim)
+
+    if out is None:
+        result = empty_like(a, dtype=dtype)
+    else:
+        _check_out(out, a.shape)
+        result = out
+
+    n = a.shape[axis]
+
+    for idx in util.multirange(util.tuple_delete(a.shape, axis)):
+        accum = util.cast(0, dtype)
+
+        for i in range(n):
+            full_idx = util.tuple_insert(idx, axis, i)
+            p = a._ptr(full_idx)
+            q = result._ptr(full_idx)
+            if not isnan(p[0]):
+                accum += util.cast(p[0], dtype)
+            q[0] = util.cast(accum, result.dtype)
+
+    return result
+
+@extend
+class ndarray:
+
+    def cumprod(
+        self,
+        axis=None,
+        dtype: type = NoneType,
+        out=None
+    ):
+        return cumprod(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out
+        )
+
+    def cumsum(
+        self,
+        axis=None,
+        dtype: type = NoneType,
+        out=None
+    ):
+        return cumsum(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out
+        )

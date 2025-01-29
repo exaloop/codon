@@ -1,0 +1,178 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from .. import *
+
+from .pcg64 import PCG64, PCG64DXSM
+from .philox import Philox
+from .mt19937 import MT19937
+from .sfc64 import SFC64
+from .bitgen import BitGenerator, Generator
+from .seed import SeedSequence
+
+def default_rng(seed = None):
+    if isinstance(seed, BitGenerator):
+        return Generator(seed)
+
+    if isinstance(seed, Generator):
+        return seed
+
+    return Generator(PCG64(seed))
+
+_global_rng: Generator[MT19937] = Generator(MT19937(None))
+
+def beta(a, b, size = None):
+    return _global_rng.beta(a, b, size)
+
+def binomial(n, p, size = None):
+    return _global_rng.binomial(n, p, size)
+
+def bytes(length: int):
+    return _global_rng.bytes(length)
+
+def chisquare(df, size = None):
+    return _global_rng.chisquare(df, size)
+
+def choice(a, size = None, replace: bool = True, p = None):
+    return _global_rng.choice(a, size, replace, p)
+
+def dirichlet(alpha, size = None):
+    return _global_rng.dirichlet(alpha, size)
+
+def exponential(scale = 1.0, size = None):
+    return _global_rng.exponential(scale, size)
+
+def f(dfnum, dfden, size = None):
+    return _global_rng.f(dfnum, dfden, size)
+
+def gamma(shape, scale = 1.0, size = None):
+    return _global_rng.gamma(shape, scale, size)
+
+def geometric(p, size = None):
+    return _global_rng.geometric(p, size)
+
+def get_state(legacy: bool):
+    return _global_rng.bit_generator.state.__get_state__()
+
+def gumbel(loc = 0.0, scale = 1.0, size = None):
+    return _global_rng.gumbel(loc, scale, size)
+
+def hypergeometric(ngood, nbad, nsample, size = None):
+    return _global_rng.hypergeometric(ngood, nbad, nsample, size)
+
+def laplace(loc = 0.0, scale = 1.0, size = None):
+    return _global_rng.laplace(loc, scale, size)
+
+def logistic(loc = 0.0, scale = 1.0, size = None):
+    return _global_rng.logistic(loc, scale, size)
+
+def lognormal(mean = 0.0, sigma = 1.0, size = None):
+    return _global_rng.lognormal(mean, sigma, size)
+
+def logseries(p, size = None):
+    return _global_rng.logseries(p, size)
+
+def multinomial(n, pvals, size = None):
+    return _global_rng.multinomial(n, pvals, size)
+
+def multivariate_normal(mean, cov, size = None, check_valid: Static[str] = 'warn',
+                        tol: float = 1e-8):
+    return _global_rng.multivariate_normal(mean, cov, size, check_valid, tol)
+
+def negative_binomial(n, p, size = None):
+    return _global_rng.negative_binomial(n, p, size)
+
+def noncentral_chisquare(df, nonc, size = None):
+    return _global_rng.noncentral_chisquare(df, nonc, size)
+
+def noncentral_f(dfnum, dfden, nonc, size = None):
+    return _global_rng.noncentral_f(dfnum, dfden, nonc, size)
+
+def normal(loc = 0.0, scale = 1.0, size = None):
+    return _global_rng.normal(loc, scale, size)
+
+def pareto(a, size = None):
+    return _global_rng.pareto(a, size)
+
+def permutation(x):
+    return _global_rng.permutation(x)
+
+def poisson(lam = 1.0, size = None):
+    return _global_rng.poisson(lam, size)
+
+def power(a, size = None):
+    return _global_rng.power(a, size)
+
+def rand(*d):
+    if staticlen(d) == 0:
+        return _global_rng.random()
+    else:
+        return _global_rng.random(d)
+
+def randint(low, high = None, size = None, dtype: type = int):
+    return _global_rng.integers(low, high, size, dtype)
+
+def randn(*d):
+    if staticlen(d) == 0:
+        return _global_rng.standard_normal()
+    else:
+        return _global_rng.standard_normal(d)
+
+def random(size = None):
+    return _global_rng.random(size)
+
+def random_integers(low, high = None, size = None):
+    return _global_rng.integers(low, high, size, endpoint=True)
+
+def random_sample(size = None):
+    return _global_rng.random(size)
+
+def ranf(size = None):
+    return _global_rng.random(size)
+
+def rayleigh(scale = 1.0, size = None):
+    return _global_rng.rayleigh(scale, size)
+
+def sample(size = None):
+    return _global_rng.random(size)
+
+def seed(seed = None):
+    _global_rng.bit_generator.state.seed_legacy(seed)
+
+def set_state(state):
+    _global_rng.bit_generator.state.__set_state__(state)
+
+def shuffle(x):
+    return _global_rng.shuffle(x)
+
+def standard_cauchy(size = None):
+    return _global_rng.standard_cauchy(size)
+
+def standard_exponential(size = None):
+    return _global_rng.standard_exponential(size)
+
+def standard_gamma(shape, size = None):
+    return _global_rng.standard_gamma(size)
+
+def standard_normal(size = None):
+    return _global_rng.standard_normal(size)
+
+def standard_t(df, size = None):
+    return _global_rng.standard_t(df, size)
+
+def triangular(left, mode, right, size = None):
+    return _global_rng.triangular(left, mode, right, size)
+
+def uniform(low = 0.0, high = 1.0, size = None):
+    return _global_rng.uniform(low, high, size)
+
+def vonmises(mu, kappa, size = None):
+    return _global_rng.vonmises(mu, kappa, size)
+
+def wald(mean, scale, size = None):
+    return _global_rng.wald(mean, scale, size)
+
+def weibull(a, size = None):
+    return _global_rng.weibull(a, size)
+
+def zipf(a, size = None):
+    return _global_rng.zipf(a, size)

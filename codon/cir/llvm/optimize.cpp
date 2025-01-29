@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "optimize.h"
 
@@ -6,12 +6,23 @@
 #include <deque>
 
 #include "codon/cir/llvm/gpu.h"
+#include "codon/cir/llvm/native/native.h"
 #include "codon/util/common.h"
 
 static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
 namespace ir {
+namespace {
+llvm::cl::opt<bool>
+    AutoFree("auto-free",
+             llvm::cl::desc("Insert free() calls on allocated memory automatically"),
+             llvm::cl::init(false), llvm::cl::Hidden);
+
+llvm::cl::opt<bool> FastMath("fast-math",
+                             llvm::cl::desc("Apply fastmath optimizations"),
+                             llvm::cl::init(false));
+} // namespace
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
@@ -74,6 +85,27 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
     }
   } else {
     llvm::StripDebugInfo(*module);
+  }
+}
+
+void applyFastMathTransformations(llvm::Module *module) {
+  if (!FastMath)
+    return;
+
+  for (auto &f : *module) {
+    for (auto &block : f) {
+      for (auto &inst : block) {
+        if (auto *binop = llvm::dyn_cast<llvm::BinaryOperator>(&inst)) {
+          if (binop->getType()->isFloatingPointTy())
+            binop->setFast(true);
+        }
+
+        if (auto *intrinsic = llvm::dyn_cast<llvm::IntrinsicInst>(&inst)) {
+          if (intrinsic->getType()->isFloatingPointTy())
+            intrinsic->setFast(true);
+        }
+      }
+    }
   }
 }
 
@@ -751,6 +783,136 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
   }
 };
 
+struct AllocationAutoFree : public llvm::PassInfoMixin<AllocationAutoFree> {
+  AllocInfo info;
+
+  explicit AllocationAutoFree(
+      std::vector<std::string> allocators = {"seq_alloc", "seq_alloc_atomic",
+                                             "seq_alloc_uncollectable",
+                                             "seq_alloc_atomic_uncollectable"},
+      const std::string &realloc = "seq_realloc", const std::string &free = "seq_free")
+      : info(std::move(allocators), realloc, free) {}
+
+  llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &FAM) {
+    // Get the necessary analysis results.
+    auto &MSSA = FAM.getResult<llvm::MemorySSAAnalysis>(F);
+    auto &TLI = FAM.getResult<llvm::TargetLibraryAnalysis>(F);
+    auto &AA = FAM.getResult<llvm::AAManager>(F);
+    auto &DT = FAM.getResult<llvm::DominatorTreeAnalysis>(F);
+    auto &PDT = FAM.getResult<llvm::PostDominatorTreeAnalysis>(F);
+    auto &LI = FAM.getResult<llvm::LoopAnalysis>(F);
+    auto &CI = FAM.getResult<llvm::CycleAnalysis>(F);
+    bool Changed = false;
+
+    // Traverse the function to find allocs and insert corresponding frees.
+    for (auto &BB : F) {
+      for (auto &I : BB) {
+        if (auto *Alloc = llvm::dyn_cast<llvm::CallInst>(&I)) {
+          auto *Callee = Alloc->getCalledFunction();
+          if (!Callee || !Callee->isDeclaration())
+            continue;
+
+          if (info.isAlloc(Alloc)) {
+            if (llvm::PointerMayBeCaptured(Alloc, /*ReturnCaptures=*/true,
+                                           /*StoreCaptures=*/true))
+              continue;
+
+            Changed |= insertFree(Alloc, F, DT, PDT, LI, CI);
+          }
+        }
+      }
+    }
+
+    return (Changed ? llvm::PreservedAnalyses::none() : llvm::PreservedAnalyses::all());
+  }
+
+  bool insertFree(llvm::Instruction *Alloc, llvm::Function &F, llvm::DominatorTree &DT,
+                  llvm::PostDominatorTree &PDT, llvm::LoopInfo &LI,
+                  llvm::CycleInfo &CI) {
+    llvm::SmallVector<llvm::Value *, 8> Worklist;
+    llvm::SmallPtrSet<llvm::Value *, 8> Visited;
+    llvm::SmallVector<llvm::BasicBlock *, 8> UseBlocks;
+
+    // We need to find a basic block that:
+    //   1. Post-dominates the allocation block (so we always free it)
+    //   2. Is dominated by the allocation block (so the use is valid)
+    //   3. Post-dominates all uses
+
+    // Start with the original pointer.
+    Worklist.push_back(Alloc);
+    UseBlocks.push_back(Alloc->getParent());
+
+    // Track all blocks where the pointer or its derived values are used.
+    while (!Worklist.empty()) {
+      auto *CurrentPtr = Worklist.pop_back_val();
+      if (!Visited.insert(CurrentPtr).second)
+        continue;
+
+      // Traverse all users of the current pointer.
+      for (auto *U : CurrentPtr->users()) {
+        if (auto *Inst = llvm::dyn_cast<llvm::Instruction>(U)) {
+          if (auto *call = llvm::dyn_cast<llvm::CallBase>(Inst))
+            if (call->getCalledFunction() && info.isFree(call->getCalledFunction()))
+              return false;
+
+          if (llvm::isa<llvm::GetElementPtrInst>(Inst) ||
+              llvm::isa<llvm::BitCastInst>(Inst) || llvm::isa<llvm::PHINode>(Inst) ||
+              llvm::isa<llvm::SelectInst>(Inst)) {
+            Worklist.push_back(Inst);
+          } else {
+            // If this is a real use, record the block.
+            UseBlocks.push_back(Inst->getParent());
+          }
+        }
+      }
+    }
+
+    // Find the closest post-dominating block of all the use blocks.
+    llvm::BasicBlock *PostDomBlock = nullptr;
+    for (auto *BB : UseBlocks) {
+      if (!PostDomBlock) {
+        PostDomBlock = BB;
+      } else {
+        PostDomBlock = PDT.findNearestCommonDominator(PostDomBlock, BB);
+        if (!PostDomBlock) {
+          return false;
+        }
+      }
+    }
+
+    auto *allocLoop = LI.getLoopFor(Alloc->getParent());
+    auto *freeLoop = LI.getLoopFor(PostDomBlock);
+
+    while (allocLoop != freeLoop) {
+      if (!freeLoop)
+        return false;
+      PostDomBlock = freeLoop->getExitBlock();
+      if (!PostDomBlock)
+        return false;
+      freeLoop = LI.getLoopFor(PostDomBlock);
+    }
+
+    if (!DT.dominates(Alloc->getParent(), PostDomBlock)) {
+      return false;
+    }
+
+    llvm::IRBuilder<> B(PostDomBlock->getTerminator());
+    auto *FreeFunc = F.getParent()->getFunction(info.free);
+    if (!FreeFunc) {
+      FreeFunc = llvm::Function::Create(
+          llvm::FunctionType::get(B.getVoidTy(), {B.getPtrTy()}, false),
+          llvm::Function::ExternalLinkage, info.free, F.getParent());
+      FreeFunc->setWillReturn();
+      FreeFunc->setDoesNotThrow();
+    }
+
+    // Add free
+    B.CreateCall(FreeFunc, Alloc);
+
+    return true;
+  }
+};
+
 /// Sometimes coroutine lowering produces hard-to-analyze loops involving
 /// function pointer comparisons. This pass puts them into a somewhat
 /// easier-to-analyze form.
@@ -826,9 +988,15 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   }
 };
 
+llvm::cl::opt<bool>
+    DisableNative("disable-native",
+                  llvm::cl::desc("Disable architecture-specific optimizations"),
+                  llvm::cl::init(false));
+
 void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
                                PluginManager *plugins) {
   applyDebugTransformations(module, debug, jit);
+  applyFastMathTransformations(module);
 
   llvm::LoopAnalysisManager lam;
   llvm::FunctionAnalysisManager fam;
@@ -860,8 +1028,13 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
           pm.addPass(llvm::LoopSimplifyPass());
           pm.addPass(llvm::LCSSAPass());
           pm.addPass(AllocationHoister());
+          if (AutoFree)
+            pm.addPass(AllocationAutoFree());
         }
       });
+
+  if (!DisableNative)
+    addNativeLLVMPasses(&pb);
 
   if (plugins) {
     for (auto *plugin : *plugins) {
@@ -884,7 +1057,15 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
 
 void verify(llvm::Module *module) {
   const bool broken = llvm::verifyModule(*module, &llvm::errs());
-  seqassertn(!broken, "module broken");
+  if (broken) {
+    auto fo = fopen("_dump.ll", "w");
+    llvm::raw_fd_ostream fout(fileno(fo), true);
+    fout << *module;
+    fout.close();
+  }
+  seqassertn(!broken, "Generated LLVM IR is invalid and has been dumped to '_dump.ll'. "
+                      "Please submit a bug report at https://github.com/exaloop/codon "
+                      "including the code and generated LLVM IR.");
 }
 
 } // namespace
@@ -905,6 +1086,8 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
   }
   verify(module);
 }
+
+bool isFastMathOn() { return FastMath; }
 
 } // namespace ir
 } // namespace codon

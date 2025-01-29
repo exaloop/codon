@@ -26,7 +26,12 @@ jobs:
         uses: ncipollo/release-action@v1
 
   manylinux:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch:
+          - x86_64
+          # - aarch64
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-arm-latest' || 'ubuntu-latest' }}
     name: Codon CI (manylinux)
     needs: create_release
     permissions:
@@ -39,10 +44,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm
-          key: manylinux-llvm
+          key: manylinux-${{ matrix.arch }}-llvm
 
-      - name: Main
-        uses: ./.github/actions/build-manylinux
+      - name: Main x86_64
+        if: matrix.arch == 'x86_64'
+        uses: ./.github/actions/build-manylinux-x86_64
+
+      - name: Main aarch64
+        if: matrix.arch == 'aarch64'
+        uses: ./.github/actions/build-manylinux-aarch64
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v')
@@ -66,7 +76,8 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-12
+          - macos-latest
+          # - ubuntu-arm-latest
     runs-on: ${{ matrix.os }}
     name: Codon CI
     needs: create_release
@@ -79,23 +90,49 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Linux Setup
-        if: startsWith(matrix.os, 'ubuntu')
+      - name: x86_64 Linux Setup
+        if: startsWith(matrix.os, 'ubuntu') && matrix.os != 'ubuntu-arm-latest'
         run: |
+          sudo apt update
+          sudo apt install -y gfortran libgfortran5 lsb-release wget software-properties-common gnupg
+          wget https://apt.llvm.org/llvm.sh
+          sudo chmod +x llvm.sh
+          sudo ./llvm.sh 17
           echo "LIBEXT=so" >> $GITHUB_ENV
           echo "OS_NAME=linux" >> $GITHUB_ENV
+          echo "CODON_SYSTEM_LIBRARIES=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+          echo "CC=clang-17" >> $GITHUB_ENV
+          echo "CXX=clang++-17" >> $GITHUB_ENV
+
+      - name: Arm Linux Setup
+        if: matrix.os == 'ubuntu-arm-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y gfortran libgfortran5 lsb-release wget software-properties-common gnupg
+          wget https://apt.llvm.org/llvm.sh
+          sudo chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          echo "LIBEXT=so" >> $GITHUB_ENV
+          echo "OS_NAME=linux" >> $GITHUB_ENV
+          echo "CODON_SYSTEM_LIBRARIES=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
+          echo "CC=clang-17" >> $GITHUB_ENV
+          echo "CXX=clang++-17" >> $GITHUB_ENV
 
       - name: macOS Setup
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew install automake
           echo "LIBEXT=dylib" >> $GITHUB_ENV
           echo "OS_NAME=osx" >> $GITHUB_ENV
+          echo "CODON_SYSTEM_LIBRARIES=$(brew --prefix gcc)/lib/gcc/current" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+          echo "FC=gfortran-12" >> $GITHUB_ENV
 
       - name: Set up Python
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install numpy cython wheel astunparse
+          python -m pip install cython wheel astunparse
+          python -m pip install --force-reinstall -v "numpy==1.26.4"
           which python
           which pip
           echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
@@ -105,14 +142,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm
-          key: ${{ runner.os }}-llvm
+          key: ${{ runner.os }}-${{ matrix.os }}-llvm
 
       - name: Build Dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: ./scripts/deps.sh 2
-        env:
-          CC: clang
-          CXX: clang++
 
       - name: Build
         run: |
@@ -123,18 +157,12 @@ jobs:
                                 -DCMAKE_CXX_COMPILER=${CXX})
           cmake --build build --config Release -- VERBOSE=1
           cmake --install build --prefix=codon-deploy
-        env:
-          CC: clang
-          CXX: clang++
 
       - name: Build Cython
         run: |
           (cd codon-deploy/python && python3 setup.py sdist)
           CODON_DIR=$(pwd)/codon-deploy python -m pip install -v codon-deploy/python/dist/*.gz
-          python test/python/cython_jit.py
-        env:
-          CC: clang
-          CXX: clang++
+          CODON_PATH=$(pwd)/codon-deploy/lib/codon/stdlib python test/python/cython_jit.py
 
       - name: Test
         run: |
@@ -150,6 +178,11 @@ jobs:
       - name: Artifact Environment
         run: |
           echo "CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz" >> $GITHUB_ENV
+
+      - name: Codesign (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          codesign -f -s - codon-deploy/bin/codon codon-deploy/lib/codon/*.dylib
 
       - name: Prepare Artifacts
         run: |

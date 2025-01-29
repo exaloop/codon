@@ -7,11 +7,12 @@ Codon uses an LLVM fork based on LLVM 17. To build it, you can do:
 
 ``` bash
 git clone --depth 1 -b codon https://github.com/exaloop/llvm-project
-cmake -S llvm-project/llvm -B llvm-project/build -G Ninja \
+cmake -S llvm-project/llvm -B llvm-project/build \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_INCLUDE_TESTS=OFF \
     -DLLVM_ENABLE_RTTI=ON \
     -DLLVM_ENABLE_ZLIB=OFF \
+    -DLLVM_ENABLE_ZSTD=OFF \
     -DLLVM_ENABLE_TERMINFO=OFF \
     -DLLVM_TARGETS_TO_BUILD=all
 cmake --build llvm-project/build
@@ -24,11 +25,25 @@ avoid clashes with the system LLVM.
 
 # Build
 
-The following can generally be used to build Codon. The build process
+Codon requires `libgfortran`, the parent directory of which must be specified via the
+`CODON_SYSTEM_LIBRARIES` environment variable. For example, on macOS, with a
+`brew`-installed `libgfortran` (obtainable via `brew install gcc`):
+
+```bash
+export CODON_SYSTEM_LIBRARIES=/opt/homebrew/opt/gcc/lib/gcc/current
+```
+
+On Linux:
+
+```bash
+export CODON_SYSTEM_LIBRARIES=/usr/lib/x86_64-linux-gnu
+```
+
+Then, the following can generally be used to build Codon. The build process
 will automatically download and build several smaller dependencies.
 
 ```bash
-cmake -S . -B build -G Ninja \
+cmake -S . -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_DIR=$(llvm-config --cmakedir) \
     -DCMAKE_C_COMPILER=clang \
@@ -62,7 +77,6 @@ To enable Jupyter support, you will need to build the Jupyter plugin:
 ```bash
 # Linux version:
 cmake -S jupyter -B jupyter/build \
-    -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \
@@ -75,7 +89,6 @@ cmake -S jupyter -B jupyter/build \
 
 # On macOS, do this instead:
 OPENSSL_ROOT_DIR=/usr/local/opt/openssl cmake -S jupyter -B jupyter/build \
-    -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=clang \
     -DCMAKE_CXX_COMPILER=clang++ \

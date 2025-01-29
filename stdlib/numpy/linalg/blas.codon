@@ -1,0 +1,111 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+fint = i32
+fintp = Ptr[fint]
+
+# Constants
+CBLAS_ROW_MAJOR = fint(101)
+CBLAS_COL_MAJOR = fint(102)
+
+CBLAS_NO_TRANS   = fint(111)
+CBLAS_TRANS      = fint(112)
+CBLAS_CONJ_TRANS = fint(113)
+
+CBLAS_UPPER = fint(121)
+CBLAS_LOWER = fint(122)
+
+CBLAS_NON_UNIT = fint(131)
+CBLAS_UNIT     = fint(132)
+
+CBLAS_LEFT  = fint(141)
+CBLAS_RIGHT = fint(142)
+
+LAPACK_ROW_MAJOR = fint(101)
+LAPACK_COL_MAJOR = fint(102)
+
+# Stubs
+# Note: D=float64, S=float32, Z=complex128, C=complex64
+from C import cblas_dcopy(fint, Ptr[float], fint, Ptr[float], fint)
+from C import cblas_scopy(fint, Ptr[float32], fint, Ptr[float32], fint)
+from C import cblas_zcopy(fint, Ptr[complex], fint, Ptr[complex], fint)
+from C import cblas_ccopy(fint, Ptr[complex64], fint, Ptr[complex64], fint)
+
+from C import cblas_dgemm(fint, fint, fint, fint, fint, fint, float,
+                          Ptr[float], fint, Ptr[float], fint,
+                          float, Ptr[float], fint)
+from C import cblas_sgemm(fint, fint, fint, fint, fint, fint, float32,
+                          Ptr[float32], fint, Ptr[float32], fint,
+                          float32, Ptr[float32], fint)
+from C import cblas_zgemm(fint, fint, fint, fint, fint, fint, cobj,
+                          Ptr[complex], fint, Ptr[complex], fint,
+                          cobj, Ptr[complex], fint)
+from C import cblas_cgemm(fint, fint, fint, fint, fint, fint, cobj,
+                          Ptr[complex64], fint, Ptr[complex64], fint,
+                          cobj, Ptr[complex64], fint)
+
+from C import cblas_dsyrk(fint, fint, fint, fint, fint, float, Ptr[float],
+                          fint, float, Ptr[float], fint)
+from C import cblas_ssyrk(fint, fint, fint, fint, fint, float32, Ptr[float32],
+                          fint, float32, Ptr[float32], fint)
+from C import cblas_zsyrk(fint, fint, fint, fint, fint, cobj, Ptr[complex],
+                          fint, cobj, Ptr[complex], fint)
+from C import cblas_csyrk(fint, fint, fint, fint, fint, cobj, Ptr[complex64],
+                          fint, cobj, Ptr[complex64], fint)
+
+from C import cblas_ddot(fint, cobj, fint, cobj, fint) -> float
+from C import cblas_sdot(fint, cobj, fint, cobj, fint) -> float32
+from C import cblas_zdotu_sub(fint, cobj, fint, cobj, fint, Ptr[complex])
+from C import cblas_cdotu_sub(fint, cobj, fint, cobj, fint, Ptr[complex64])
+
+from C import cblas_zdotc_sub(fint, cobj, fint, cobj, fint, cobj)
+from C import cblas_cdotc_sub(fint, cobj, fint, cobj, fint, cobj)
+
+from C import cblas_dgemv(fint, fint, fint, fint, float, cobj, fint, cobj, fint, float, cobj, fint)
+from C import cblas_sgemv(fint, fint, fint, fint, float32, cobj, fint, cobj, fint, float32, cobj, fint)
+from C import cblas_zgemv(fint, fint, fint, fint, cobj, cobj, fint, cobj, fint, cobj, cobj, fint)
+from C import cblas_cgemv(fint, fint, fint, fint, cobj, cobj, fint, cobj, fint, cobj, cobj, fint)
+
+from C import dpotrf_(cobj, fintp, cobj, fintp, fintp)
+from C import spotrf_(cobj, fintp, cobj, fintp, fintp)
+from C import zpotrf_(cobj, fintp, cobj, fintp, fintp)
+from C import cpotrf_(cobj, fintp, cobj, fintp, fintp)
+
+from C import dgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
+from C import sgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
+from C import zgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
+from C import cgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
+
+from C import dgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+from C import sgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+from C import zgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+from C import cgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+
+from C import dorgqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+from C import sorgqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+from C import zungqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+from C import cungqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+
+from C import dgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
+from C import sgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
+from C import zgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp)
+from C import cgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp)
+
+from C import dsyevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, fintp, fintp, fintp)
+from C import ssyevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, fintp, fintp, fintp)
+from C import zheevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp, fintp)
+from C import cheevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp, fintp)
+
+from C import dgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
+from C import sgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
+from C import zgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
+from C import cgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
+
+from C import dgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp)
+from C import sgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp)
+from C import zgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
+from C import cgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
+
+from C import dgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp, fintp)
+from C import sgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp, fintp)
+from C import zgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
+from C import cgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp, fintp)

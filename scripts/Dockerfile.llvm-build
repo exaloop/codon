@@ -1,14 +1,13 @@
-FROM quay.io/pypa/manylinux2014_x86_64
+FROM nvidia/cuda:12.6.0-cudnn-devel-rockylinux8
 
-RUN yum -y update
-RUN yum -y install devtoolset-7 ninja-build cmake3 bzip2-devel
-RUN python3 -m pip install --upgrade pip
-RUN python3 -m pip install --upgrade twine setuptools wheel
+RUN yum -y install epel-release && \
+    yum -y install --enablerepo=devel --enablerepo=powertools \
+    	ninja-build libuuid-devel openssl openssl-devel python3 bzip2 \
+    	libsodium-devel zlib-devel git patch perl-Data-Dumper wget cmake libgfortran \
+	    bzip2-devel xz-devel gcc-gfortran gcc-c++ libstdc++-static
 
-RUN mkdir -p /opt/llvm-codon
-RUN git clone --depth 1 -b codon https://github.com/exaloop/llvm-project /github/llvm-src
-RUN scl enable devtoolset-7 -- \
-    cmake3 -S /github/llvm-src/llvm -G Ninja \
+RUN git clone --depth 1 -b codon https://github.com/exaloop/llvm-project /github/llvm-src && \
+    cmake -S /github/llvm-src/llvm -G Ninja \
            -B /github/llvm-src/llvm/build \
            -DCMAKE_BUILD_TYPE=Release \
            -DLLVM_INCLUDE_TESTS=OFF \
@@ -19,8 +18,7 @@ RUN scl enable devtoolset-7 -- \
            -DLLVM_BUILD_TOOLS=OFF \
            -DLLVM_ENABLE_PROJECTS=clang \
            -DCMAKE_INSTALL_PREFIX=/opt/llvm-codon
-RUN scl enable devtoolset-7 -- cmake3 --build /github/llvm-src/llvm/build
-RUN cmake3 --install /github/llvm-src/llvm/build
-RUN cd /github/llvm-src && tar cjvf /opt/llvm-codon-$(git rev-parse --short HEAD).tar.bz2 -C /opt llvm-codon/
-RUN cp /opt/llvm-codon-*.tar.bz2 /mnt/
-CMD echo "done"
+
+RUN cmake --build /github/llvm-src/llvm/build
+RUN cmake --install /github/llvm-src/llvm/build && \
+    cd /github/llvm-src && tar cjvf /opt/llvm-$(git rev-parse --abbrev-ref HEAD)-$(git rev-parse --short HEAD).tar.bz2 -C /opt /opt/llvm-codon/
