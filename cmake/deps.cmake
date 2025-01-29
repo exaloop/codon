@@ -163,3 +163,28 @@ CPMAddPackage(
     GITHUB_REPOSITORY "fastfloat/fast_float"
     GIT_TAG v6.1.1
     EXCLUDE_FROM_ALL YES)
+
+if(NOT APPLE)
+    enable_language(Fortran)
+    CPMAddPackage(
+        NAME openblas
+        GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
+        GIT_TAG v0.3.28
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "DYNAMIC_ARCH ON"
+                "BUILD_TESTING OFF"
+                "BUILD_BENCHMARKS OFF"
+                "NUM_THREADS 64"
+                "CCOMMON_OPT -O3")
+endif()
+
+CPMAddPackage(
+    NAME highway
+    GITHUB_REPOSITORY "google/highway"
+    GIT_TAG 1.2.0
+    EXCLUDE_FROM_ALL YES
+    OPTIONS "HWY_ENABLE_CONTRIB ON"
+            "HWY_ENABLE_EXAMPLES OFF"
+            "HWY_ENABLE_INSTALL OFF"
+            "HWY_ENABLE_TESTS OFF"
+            "BUILD_TESTING OFF")

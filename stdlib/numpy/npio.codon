@@ -1,0 +1,2357 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from .ndarray import ndarray
+from .routines import array, empty, asarray, atleast_2d
+import util
+import gzip
+import re
+
+_ALLOCATIONGRANULARITY: Static[int] = 16384
+
+_PROT_NONE: Static[int] = 0
+_PROT_READ: Static[int] = 1
+_PROT_WRITE: Static[int] = 2
+_PROT_EXEC: Static[int] = 4
+
+_MAP_SHARED: Static[int] = 1
+_MAP_PRIVATE: Static[int] = 2
+
+_MAGIC_PREFIX: Static[str] = '\x93NUMPY'
+_ARRAY_ALIGN: Static[int] = 64
+
+
+##################
+# Memory Mapping #
+##################
+
+def _io_error(base_msg: str):
+    from C import seq_check_errno() -> str
+    c_msg = seq_check_errno()
+    raise IOError(f"{base_msg}: {c_msg}" if c_msg else base_msg)
+
+def _mmap(f, length: int, access: int, flags: int, offset: int = 0):
+    from C import mmap(cobj, int, i32, i32, i32, int) -> cobj
+    from C import fileno(cobj) -> i32
+
+    fd = fileno(f.fp)
+    mm = mmap(cobj(), length, i32(access), i32(flags), fd, offset)
+    if int(mm) == -1:
+        _io_error("mmap() call failed")
+    return mm
+
+def _munmap(p: cobj, length: int):
+    from C import munmap(cobj, int) -> i32
+    if munmap(p, length) == i32(-1):
+        _io_error("munmap() call failed")
+
+def _fix_mmap_mode(mode: str):
+    if mode == 'readonly':
+        mode = 'r'
+    elif mode == 'copyonwrite':
+        mode = 'c'
+    elif mode == 'readwrite':
+        mode = 'r+'
+    elif mode == 'write':
+        mode = 'w+'
+    elif mode not in ('r', 'c', 'r+', 'w+'):
+        raise ValueError(
+            f"mode must be one of ['r', 'c', 'r+', 'w+', 'readonly', 'copyonwrite', 'readwrite', 'write'] (got {repr(mode)})"
+        )
+    return mode
+
+def _memmap(fid, dtype: type, mode: str, offset: int, shape, forder: bool):
+    fid.seek(0, 2)
+    flen = fid.tell()
+    dbytes = util.sizeof(dtype)
+
+    if shape is None:
+        nbytes = flen - offset
+        if nbytes % dbytes:
+            raise ValueError("Size of available data is not a "
+                             "multiple of the data-type size.")
+        size = nbytes // dbytes
+        sh = (size, )
+    else:
+        if isinstance(shape, int):
+            sh = (shape, )
+        else:
+            sh = shape
+        size = util.count(shape)
+
+    nbytes = offset + size * dbytes
+
+    if mode in ('w+', 'r+') and flen < nbytes:
+        fid.seek(nbytes - 1, 0)
+        fid.write('\0')
+        fid.flush()
+
+    if mode == 'c':
+        flags = _MAP_PRIVATE
+        acc = _PROT_READ | _PROT_WRITE
+    elif mode == 'r':
+        flags = _MAP_SHARED
+        acc = _PROT_READ
+    else:
+        flags = _MAP_SHARED
+        acc = _PROT_READ | _PROT_WRITE
+
+    start = offset - offset % _ALLOCATIONGRANULARITY
+    nbytes -= start
+    array_offset = offset - start
+    mm = _mmap(fid, length=nbytes, access=acc, flags=flags, offset=start)
+    return ndarray(sh, Ptr[dtype](mm + array_offset), fcontig=forder)
+
+def memmap(filename,
+           dtype: type = u8,
+           mode: str = 'r+',
+           offset: int = 0,
+           shape=None,
+           order: str = 'C'):
+    mode = _fix_mmap_mode(mode)
+
+    if mode == 'w+' and shape is None:
+        raise ValueError("shape must be given if mode == 'w+'")
+
+    if offset < 0:
+        raise ValueError(
+            f"memmap() 'offset' cannot be negative (got {offset})")
+
+    forder = False
+    if order == 'C' or order == 'c':
+        forder = False
+    elif order == 'F' or order == 'f':
+        forder = True
+    else:
+        raise ValueError(f"memmap() 'order' must be 'C' or 'F' (got {order})")
+
+    if hasattr(filename, 'read'):
+        return _memmap(filename,
+                       dtype=dtype,
+                       mode=mode,
+                       offset=offset,
+                       shape=shape,
+                       forder=forder)
+    elif isinstance(filename, str):
+        with open(filename, ('r' if mode == 'c' else mode) + 'b') as f:
+            return _memmap(f,
+                           dtype=dtype,
+                           mode=mode,
+                           offset=offset,
+                           shape=shape,
+                           forder=forder)
+    else:
+        compile_error("filename must be a string or file handle")
+
+
+###############
+# General I/O #
+###############
+
+def parse_header(header: str):
+    regex = (
+        r"{\s*"
+        r"(?:"
+        r"(?:'descr'|\"descr\")\s*:\s*'(?P<descr>.*?)'\s*,?\s*"
+        r"|"
+        r"(?:'fortran_order'|\"fortran_order\")\s*:\s*(?P<fortran_order>True|False)\s*,?\s*"
+        r"|"
+        r"(?:'shape'|\"shape\")\s*:\s*(?P<shape>\(\)|\(\d+(?:, \d+)*(?:,)?\))\s*,?\s*"
+        r"){3}"
+        r"\s*}")
+    m = re.match(regex, header)
+    if m:
+        # Use the named groups to access the matched values
+        dtype = m.group(1)
+        fortran_order = m.group(2)
+        shape = m.group(3)
+        return shape, fortran_order, dtype
+    else:
+        raise ValueError(f"Cannot parse header: {repr(header)}")
+
+def _load(f, mmap_mode: Optional[str], ndim: Static[int], dtype: type):
+    magic = f.read(len(_MAGIC_PREFIX))
+
+    if magic != _MAGIC_PREFIX:
+        raise ValueError("Invalid magic string.")
+
+    # Extract the major and minor version numbers
+    major = f.read(1)
+    minor = f.read(1)
+    if (major != '\x01' and major != '\x02'
+            and major != '\x03') or minor != '\x00':
+        raise ValueError("Invalid version numbers.")
+
+    # Extract the header length as a little-endian unsigned int
+    if major == '\x01':
+        header_len_enc = f.read(2)
+        header_len = (int(header_len_enc.ptr[1]) << 8) | int(
+            header_len_enc.ptr[0])
+    else:
+        header_len_enc = f.read(4)
+        header_len = ((int(header_len_enc.ptr[3]) << 24) |
+                      (int(header_len_enc.ptr[2]) << 16) |
+                      (int(header_len_enc.ptr[1]) << 8)
+                      | int(header_len_enc.ptr[0]))
+
+    # Read the header data
+    header_data = f.read(header_len)
+
+    # Deserialize the header dictionary data
+    shape, fortran_order, dt = parse_header(header_data)
+
+    # Extract shape information from the header data
+    elements = [
+        elem.strip() for elem in shape[1:-1].split(',') if elem.strip()
+    ]
+    if len(elements) != ndim:
+        raise ValueError(
+            f"Loaded array has dimension {len(elements)}, but expected dimension {ndim} (specified by 'ndim' argument)"
+        )
+    shape = tuple(int(elements[i]) for i in staticrange(ndim))
+    forder = (fortran_order == 'True')
+
+    # Read the binary data
+    if mmap_mode is None:
+        str_data = f.read()
+        binary_data = str_data.ptr
+        got_bytes = len(str_data)
+    else:
+        arr_data = _memmap(f, dtype=byte, mode=mmap_mode, offset=f.tell(), shape=None, forder=forder)
+        binary_data = arr_data.data
+        got_bytes = arr_data.size
+
+    exp_bytes = util.count(shape) * util.sizeof(dtype)
+    if got_bytes != exp_bytes:
+        raise ValueError(
+            f"Unexpected number of bytes read from file for given array shape and dtype (expected {exp_bytes} but got {got_bytes})"
+        )
+
+    # Create a ndarray from the binary data
+    data = Ptr[dtype](binary_data)
+    array = ndarray[dtype, ndim](shape, data, fcontig=forder)
+
+    if dt.startswith('>') and mmap_mode is None:
+        array.byteswap(inplace=True)
+
+    return array
+
+def load(file, mmap_mode: Optional[str] = None, ndim: Static[int] = 1, dtype: type = float):
+    if mmap_mode is not None:
+        mmap_mode = _fix_mmap_mode(mmap_mode)
+        if mmap_mode == 'w+':
+            raise ValueError("cannot use mmap_mode='w+' in load()")
+
+    if hasattr(file, 'read'):
+        return _load(file, mmap_mode=mmap_mode, ndim=ndim, dtype=dtype)
+    elif isinstance(file, str):
+        open_mode = 'rb'
+        if mmap_mode is not None:
+            open_mode = ('r' if mmap_mode == 'c' else mmap_mode) + 'b'
+        with open(file, open_mode) as f:
+            return _load(f, mmap_mode=mmap_mode, ndim=ndim, dtype=dtype)
+    else:
+        compile_error("fname must be a string or file handle")
+
+def _save(f, arr):
+    arr = asarray(arr)
+    cc, fc = arr._contig
+    fortran_order = (fc and not cc)
+    header_parts = ("{'descr': '",
+                    util.dtype_to_str(arr.dtype, include_byteorder=True),
+                    "', 'fortran_order': ",
+                    "True, 'shape': " if fortran_order else "False, 'shape': ",
+                    str(arr.shape), ", }")
+    header_len = sum(len(h) for h in header_parts) + 1  # +1 for newline
+    long_header = False
+
+    if header_len > 0xffffffff:
+        raise ValueError("Header is too long for .npy format")
+    elif header_len > 0xffff:
+        long_header = True
+    else:
+        long_header = False
+
+    f.write(_MAGIC_PREFIX)
+    f.write('\x02\x00' if long_header else '\x01\x00')
+
+    m = len(_MAGIC_PREFIX) + 2 + (4 if long_header else 2) + header_len
+    rem = m % _ARRAY_ALIGN
+    spaces = (_ARRAY_ALIGN - rem) if rem else 0
+    header_len += spaces
+
+    if long_header:
+        byte1 = byte(header_len & 0xFF)
+        byte2 = byte((header_len >> 8) & 0xFF)
+        byte3 = byte((header_len >> 16) & 0xFF)
+        byte4 = byte((header_len >> 24) & 0xFF)
+        f.write(str(__ptr__(byte1), 1))
+        f.write(str(__ptr__(byte2), 1))
+        f.write(str(__ptr__(byte3), 1))
+        f.write(str(__ptr__(byte4), 1))
+    else:
+        byte1 = byte(header_len & 0xFF)
+        byte2 = byte((header_len >> 8) & 0xFF)
+        f.write(str(__ptr__(byte1), 1))
+        f.write(str(__ptr__(byte2), 1))
+
+    for h in header_parts:
+        f.write(h)
+
+    for _ in range(spaces):
+        f.write('\x20')
+
+    f.write('\n')
+
+    if cc or fc:
+        f.write(str(arr.data.as_byte(), arr.nbytes))
+    else:
+        for idx in util.multirange(arr.shape):
+            e = arr._ptr(idx)[0]
+            s = str(__ptr__(e).as_byte(), util.sizeof(arr.dtype))
+            f.write(s)
+
+def save(file, arr):
+    if hasattr(file, 'write'):
+        _save(file, arr)
+    elif isinstance(file, str):
+        if not file.endswith('.npy'):
+            file += '.npy'
+        with open(file, 'wb') as f:
+            _save(f, arr)
+    else:
+        compile_error("fname must be a string or file handle")
+
+def _savetxt(f, X, delimiter: str, newline: str, header: str, footer: str,
+             comments: str):
+    X = asarray(X)
+
+    if header:
+        header = header.replace('\n', '\n' + comments)
+        f.write(comments)
+        f.write(header)
+        f.write(newline)
+
+    if X.ndim == 1:
+        for x in X:
+            f.write(str(x))
+            f.write(newline)
+    elif X.ndim == 2:
+        m, n = X.shape
+        if m and n:
+            for i in range(m):
+                for j in range(n):
+                    x = X._ptr((i, j))[0]
+                    f.write(str(x))
+                    if j < n - 1:
+                        f.write(delimiter)
+                f.write(newline)
+    else:
+        compile_error("Expected 1D or 2D array")
+
+    if footer:
+        footer = footer.replace('\n', '\n' + comments)
+        f.write(comments)
+        f.write(footer)
+        f.write(newline)
+
+def savetxt(fname,
+            X,
+            delimiter: str = ' ',
+            newline: str = '\n',
+            header: str = '',
+            footer: str = '',
+            comments: str = '# '):
+    if hasattr(fname, 'write'):
+        _savetxt(fname,
+                 X,
+                 delimiter=delimiter,
+                 newline=newline,
+                 header=header,
+                 footer=footer,
+                 comments=comments)
+    elif isinstance(fname, str):
+        if fname.endswith('.gz'):
+            with gzip.open(fname, 'w9') as f:
+                _savetxt(f,
+                         X,
+                         delimiter=delimiter,
+                         newline=newline,
+                         header=header,
+                         footer=footer,
+                         comments=comments)
+        else:
+            with open(fname, 'w') as f:
+                _savetxt(f,
+                         X,
+                         delimiter=delimiter,
+                         newline=newline,
+                         header=header,
+                         footer=footer,
+                         comments=comments)
+    else:
+        compile_error("fname must be a string or a file handle")
+
+def _fromfile(f, dtype: type, count: int, sep: str, offset: int):
+    if sep:
+        if offset:
+            raise TypeError(
+                "'offset' argument only permitted for binary files")
+
+        string_data = f.read()
+        if sep.isspace():
+            string_split = string_data.split(None, count)
+        else:
+            string_split = string_data.split(sep, count)
+
+        n = len(string_split)
+        p = Ptr[dtype](n)
+        for i in range(n):
+            p[i] = dtype(string_split[i])
+    else:
+        if offset:
+            f.seek(offset, 1)
+
+        if count < 0:
+            binary_data = f.read()
+        else:
+            binary_data = f.read(count * util.sizeof(dtype))
+
+        p = Ptr[dtype](binary_data.ptr)
+        n = len(binary_data) // util.sizeof(dtype)
+
+    return ndarray((n, ), p)
+
+def fromfile(file,
+             dtype: type = float,
+             count: int = -1,
+             sep: str = '',
+             offset: int = 0):
+    if hasattr(file, 'read'):
+        return _fromfile(file,
+                         dtype=dtype,
+                         count=count,
+                         sep=sep,
+                         offset=offset)
+    elif isinstance(file, str):
+        with open(file, 'rb') as f:
+            return _fromfile(f,
+                             dtype=dtype,
+                             count=count,
+                             sep=sep,
+                             offset=offset)
+    else:
+        compile_error("fname must be a string or a file handle")
+
+def fromstring(string: str,
+               dtype: type = float,
+               count: int = -1,
+               sep: str = ''):
+    if sep:
+        split = string.split(sep, count)
+        k = len(split)
+        n = count if count >= 0 else k
+        result = empty((n, ), dtype=dtype)
+
+        p = result.data
+        for i in range(k if count < 0 else min(k, count)):
+            p[i] = dtype(split[i])
+
+        return result
+    else:
+        if count < 0:
+            if len(string) < util.sizeof(dtype):
+                raise ValueError("string is smaller than requested size")
+
+            if len(string) % util.sizeof(dtype) != 0:
+                raise ValueError(
+                    "string size must be a multiple of element size")
+        else:
+            if len(string) < count * util.sizeof(dtype):
+                raise ValueError("string is smaller than requested size")
+
+        n = count if count >= 0 else (len(string) // util.sizeof(dtype))
+        return ndarray((n, ), Ptr[dtype](string.ptr))
+
+def _tofile(arr, f, sep: str):
+    if sep:
+        k = 0
+        n = arr.size
+
+        for idx in util.multirange(arr.shape):
+            e = arr._ptr(idx)[0]
+            f.write(str(e))
+            if k < n - 1:
+                f.write(sep)
+            k += 1
+    else:
+        cc, _ = arr._contig
+        if cc:
+            f.write(str(arr.data.as_byte(), arr.nbytes))
+        else:
+            for idx in util.multirange(arr.shape):
+                e = arr._ptr(idx)[0]
+                s = str(__ptr__(e).as_byte(), util.sizeof(arr.dtype))
+                f.write(s)
+
+@extend
+class ndarray:
+
+    def tofile(self, file, sep: str = ''):
+        if hasattr(file, 'write'):
+            _tofile(self, file, sep=sep)
+        elif isinstance(file, str):
+            with open(file, 'w' if sep else 'wb') as f:
+                _tofile(self, f, sep=sep)
+        else:
+            compile_error("fname must be a string or file handle")
+
+########################
+# loadtxt / genfromtxt #
+########################
+
+_NEWLINE: Static[int] = 10
+_CARTRIDGE: Static[int] = 13
+_DEFAULT_ROWS: Static[int] = 512
+
+@tuple
+class Converters:
+    funcs: F
+    mask: M
+    usecols: U
+    dtype: type
+    F: type
+    M: type
+    U: type
+
+    def __new__(funcs, mask, usecols,
+                dtype: type) -> Converters[dtype, F, M, U]:
+        return (funcs, mask, usecols)
+
+    def __call__(self, field: str, idx: int):
+        usecols = self.usecols
+        if usecols is not None:
+            idx = usecols[idx]
+
+        if self.mask[idx]:
+            return self.funcs[idx](field)
+        else:
+            return self.dtype(field)
+
+def normalize_col(col: int, num_fields: int):
+    if col >= num_fields or col < -num_fields:
+        raise ValueError(
+            f"given column {col} is out of bounds (file has {num_fields} columns)"
+        )
+    elif col < 0:
+        return col + num_fields
+    else:
+        return col
+
+def default_fill(dtype: type):
+    if dtype is bool:
+        return False
+    elif dtype is int or isinstance(dtype, Int) or isinstance(dtype, UInt):
+        return dtype(-1)
+    elif dtype is float or dtype is float32 or dtype is float16:
+        return util.nan(dtype)
+    elif dtype is complex:
+        return complex(util.nan64(), 0.0)
+    elif dtype is complex64:
+        return complex64(util.nan32(), float32(0.0))
+    elif dtype is str:
+        return '???'
+    else:
+        return util.zero(dtype)
+
+def malformed(row: int, num_fields: int):
+    raise IOError(
+        f"inconsistent number of fields in file (row = {row}, expected fields = {num_fields})"
+    )
+
+def min_dim(arr: ndarray, ndmin: Static[int]):
+    if arr.ndim == 1 and ndmin == 2:
+        return arr.reshape(arr.size, 1)
+    else:
+        return arr
+
+def make_conv(converters, num_fields: int, usecols, dtype: type):
+    if isinstance(converters, Dict):
+        funcs = Ptr[converters.V](num_fields)
+        mask = Ptr[bool](num_fields)
+
+        for i in range(num_fields):
+            mask[i] = False
+
+        for k, v in converters.items():
+            col = normalize_col(k, num_fields)
+            mask[col] = True
+            funcs[col] = v
+
+        return Converters[dtype, type(funcs),
+                          type(mask),
+                          type(usecols)](funcs, mask, usecols, dtype)
+    else:
+        return converters
+
+class CSVReader:
+    _path: str
+    _delimiter: byte
+    _quotechar: byte
+    _comments: str
+    _mmap_ptr: cobj
+    _mmap_len: int
+
+    def __init__(self,
+                 path: str,
+                 delimiter: str = ',',
+                 quotechar: str = '"',
+                 comments: str = ''):
+        dm = byte(0)
+        if len(delimiter) == 1:
+            dm = delimiter.ptr[0]
+        elif len(delimiter) != 0:
+            raise ValueError("'delimiter' must be a length-1 string")
+
+        qc = byte(0)
+        if len(quotechar) == 1:
+            qc = quotechar.ptr[0]
+        elif len(quotechar) != 0:
+            raise ValueError("'quotechar' must be a length-1 string")
+
+        self._path = path
+        self._delimiter = dm
+        self._quotechar = qc
+        self._comments = comments
+        self._mmap_ptr = cobj()
+        self._mmap_len = 0
+
+    def __enter__(self):
+        with open(self._path) as f:
+            f.seek(0, 2)
+            n = f.tell()
+            if n > 0:
+                self._mmap_ptr = _mmap(f, length=n, access=_PROT_READ, flags=_MAP_SHARED)
+            self._mmap_len = n
+
+        if int(self._mmap_ptr) == -1:
+            raise IOError("CSVReader error: mmap() failed")
+
+    def __exit__(self):
+        if self._mmap_len > 0:
+            _munmap(self._mmap_ptr, self._mmap_len)
+            self._mmap_ptr = cobj()
+            self._mmap_len = 0
+
+    def is_delimiter(self, c: byte):
+        delimiter = self._delimiter
+        if delimiter:
+            return c == delimiter
+        else:
+            return bool(_C.isspace(i32(int(c))))
+
+    def is_comment(self, c: byte):
+        comments = self._comments
+        for i in range(len(comments)):
+            if comments.ptr[i] == c:
+                return True
+        return False
+
+    def skip_delimiter(self, i: int):
+        delimiter = self._delimiter
+        i += 1
+
+        # Single-char case
+        if delimiter:
+            return i
+
+        # Whitespace case
+        p = self._mmap_ptr
+        n = self._mmap_len
+
+        while i < n:
+            c = p[i]
+            if (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)
+                    or not self.is_delimiter(c)):
+                break
+            i += 1
+
+        return i
+
+    def skip_comments(self, i: int):
+        if not self._comments:
+            return i
+
+        p = self._mmap_ptr
+        n = self._mmap_len
+
+        while i < n:
+            c = p[i]
+            if self.is_comment(c):
+                i += 1
+                while i < n:
+                    c = p[i]
+                    i += 1
+                    if c == byte(_NEWLINE) or c == byte(_CARTRIDGE):
+                        if c == byte(_CARTRIDGE) and i < n and p[i] == byte(
+                                _NEWLINE):
+                            i += 1
+                        break
+            else:
+                break
+
+        return i
+
+    def skip_lines(self, i: int, skip: int):
+        p = self._mmap_ptr
+        n = self._mmap_len
+        skipped = 0
+
+        while i < n and skipped < skip:
+            c = p[i]
+            if (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)):
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                skipped += 1
+            else:
+                i += 1
+
+        return i
+
+    def get_num_fields(self, i0: int):
+        p = self._mmap_ptr
+        n = self._mmap_len
+        quotechar = self._quotechar
+        comments = self._comments
+
+        if n == 0:
+            return 0
+
+        quote = False
+        num_fields = 1
+        i = self.skip_comments(i0)
+
+        if i >= n:
+            return 0
+
+        # Parse first row to get field count
+        while i < n:
+            c = p[i]
+            if quotechar and c == quotechar:
+                if quote:
+                    if i + 1 < n and p[i + 1] == quotechar:
+                        i += 2
+                    else:
+                        quote = False
+                        i += 1
+                else:
+                    quote = True
+                    i += 1
+            elif (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)) and not quote:
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                break
+            elif self.is_delimiter(c) and not quote:
+                num_fields += 1
+                i = self.skip_delimiter(i)
+            elif self.is_comment(c) and not quote:
+                break
+            else:
+                i += 1
+
+        return num_fields
+
+    def parse(self, row_callback, num_fields: int, maxrows: int, i0: int):
+        p = self._mmap_ptr
+        n = self._mmap_len
+        quotechar = self._quotechar
+
+        if n == 0 or num_fields == 0 or maxrows == 0:
+            return
+
+        quote = False
+        field = 0
+        fields = Ptr[str](num_fields)
+        row = 0
+        i = self.skip_comments(i0)
+        last_field_start = i
+
+        while i < n:
+            c = p[i]
+            if quotechar and c == quotechar:
+                if quote:
+                    if i + 1 < n and p[i + 1] == quotechar:
+                        i += 2
+                    else:
+                        quote = False
+                        i += 1
+                else:
+                    quote = True
+                    i += 1
+            elif (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)) and not quote:
+                if field != num_fields - 1:
+                    malformed(row, num_fields)
+
+                fields[field] = str(p + last_field_start, i - last_field_start)
+                row_callback(fields, num_fields, row)
+
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+
+                i = self.skip_comments(i)
+                last_field_start = i
+                field = 0
+                row += 1
+                if maxrows >= 0 and row >= maxrows:
+                    break
+            elif self.is_delimiter(c) and not quote:
+                fields[field] = str(p + last_field_start, i - last_field_start)
+                field += 1
+
+                if field >= num_fields:
+                    malformed(row, num_fields)
+
+                i = self.skip_delimiter(i)
+                last_field_start = i
+            elif self.is_comment(c) and not quote:
+                if field != num_fields - 1:
+                    malformed(row, num_fields)
+
+                fields[field] = str(p + last_field_start, i - last_field_start)
+                row_callback(fields, num_fields, row)
+
+                i = self.skip_comments(i)
+                last_field_start = i
+                field = 0
+                row += 1
+                if maxrows >= 0 and row >= maxrows:
+                    break
+            else:
+                i += 1
+
+        if field > 0:
+            if field != num_fields - 1:
+                malformed(row, num_fields)
+
+            if maxrows < 0 or row <= maxrows:
+                fields[field] = str(p + last_field_start, i - last_field_start)
+                row_callback(fields, num_fields, row)
+
+class ArrayUpdate:
+    arr: A
+    cols: C
+    conv: F
+    last_row: int
+    A: type
+    C: type
+    F: type
+
+    def __init__(self, arr: A, cols: C, conv: F):
+        self.arr = arr
+        self.cols = cols
+        self.conv = conv
+        self.last_row = 0
+
+    @property
+    def cap(self):
+        arr = self.arr
+        if isinstance(arr, Tuple):
+            return arr[0].size
+        else:
+            return arr.shape[0]
+
+    def resize_arrays(self, new_cap: int):
+
+        def resize_one(a, new_cap: int):
+            if a.ndim == 1:
+                data_new = util.realloc(a.data, new_cap, a.size)
+                return ndarray((new_cap, ), data_new)
+            else:
+                rows, cols = a.shape
+                data_new = util.realloc(a.data, new_cap * cols, a.size)
+                return ndarray((new_cap, cols), data_new)
+
+        arr = self.arr
+        if isinstance(arr, Tuple):
+            self.arr = tuple(resize_one(a, new_cap) for a in arr)
+        else:
+            self.arr = resize_one(arr, new_cap)
+
+    def trim_arrays(self):
+        if self.last_row < self.cap - 1:
+            self.resize_arrays(self.last_row + 1)
+
+    def convert(self, field: str, idx: int, dtype: type) -> dtype:
+        conv = self.conv
+        if conv is None:
+            r = dtype(field)
+        elif isinstance(conv, Converters):
+            r = conv(field, idx)
+        elif hasattr(conv, '__call__'):
+            r = conv(field)
+        else:
+            r = conv[idx](field)
+
+        # Make sure we copy strings out of the mmap buffer
+        if isinstance(r, str):
+            return r.__ptrcopy__()
+        else:
+            return r
+
+    def convert_static(self, field: str, idx: Static[int],
+                       dtype: type) -> dtype:
+        conv = self.conv
+        if conv is None:
+            r = dtype(field)
+        elif isinstance(conv, Converters):
+            r = conv(field, idx)
+        elif hasattr(conv, '__call__'):
+            r = conv(field)
+        else:
+            r = conv[idx](field)
+
+        # Make sure we copy strings out of the mmap buffer
+        if isinstance(r, str):
+            return r.__ptrcopy__()
+        else:
+            return r
+
+    def __call__(self, fields: Ptr[str], num_fields: int, row: int):
+
+        def get_new_size(size: int, min_grow: int = 512):
+            new_size = size
+            growth = size >> 2
+            if growth <= min_grow:
+                new_size += min_grow
+            else:
+                new_size += growth + min_grow - 1
+                new_size &= ~min_grow
+            return new_size
+
+        arr = self.arr
+        cols = self.cols
+        cap = self.cap
+
+        if row >= cap:
+            new_cap = get_new_size(cap)
+            self.resize_arrays(new_cap)
+
+        # Lots of different cases to consider...
+        if cols is not None:
+            if isinstance(arr, Tuple):
+                for i in staticrange(staticlen(cols)):
+                    col = cols[i]
+                    arr[i].data[row] = self.convert_static(
+                        fields[col], i, arr[i].dtype)
+            else:
+                if isinstance(arr.dtype, Tuple):
+                    dummy = util.zero(arr.dtype)
+                    tup = tuple(
+                        self.convert(fields[cols[i]], i, type(dummy[i]))
+                        for i in staticrange(staticlen(arr.dtype)))
+                    arr._ptr((row, ))[0] = tup
+                else:
+                    if arr.ndim == 1:
+                        col = cols[0]
+                        arr.data[row] = self.convert_static(
+                            fields[col], 0, arr.dtype)
+                    else:
+                        for i in staticrange(staticlen(cols)):
+                            col = cols[i]
+                            arr._ptr((row, i))[0] = self.convert_static(
+                                fields[col], i, arr.dtype)
+        else:
+            if isinstance(arr, Tuple):
+                for i in staticrange(staticlen(arr)):
+                    arr[i]._ptr((row, ))[0] = self.convert_static(
+                        fields[i], i, arr[i].dtype)
+            elif isinstance(arr.dtype, Tuple):
+                dummy = util.zero(arr.dtype)
+                tup = tuple(
+                    self.convert(fields[i], i, type(dummy[i]))
+                    for i in staticrange(staticlen(arr.dtype)))
+                arr._ptr((row, ))[0] = tup
+            else:
+                for i in range(num_fields):
+                    arr._ptr(
+                        (row, i))[0] = self.convert(fields[i], i, arr.dtype)
+
+        self.last_row = row
+
+def loadtxt(fname: str,
+            dtype: type = float,
+            comments: Optional[str] = '#',
+            delimiter: Optional[str] = None,
+            converters=None,
+            skiprows: int = 0,
+            usecols=None,
+            unpack: Static[int] = False,
+            ndmin: Static[int] = 0,
+            max_rows: Optional[int] = None,
+            quotechar: Optional[str] = None):
+
+    if isinstance(usecols, int):
+        cols = (usecols, )
+    else:
+        cols = usecols
+        if cols is not None:
+            if staticlen(cols) == 0:
+                compile_error("cannot pass empty tuple to 'usecols'")
+
+    if ndmin != 0 and ndmin != 1 and ndmin != 2:
+        compile_error("'ndmin' must be 0, 1 or 2")
+
+    maxrows: int = max_rows if max_rows is not None else -1
+    block_size = maxrows if maxrows >= 0 else _DEFAULT_ROWS
+
+    with CSVReader(fname,
+                   delimiter=(delimiter if delimiter is not None else ''),
+                   quotechar=(quotechar if quotechar is not None else ''),
+                   comments=comments if comments is not None else '') as csv:
+        i0 = csv.skip_lines(i=0, skip=skiprows) if skiprows > 0 else 0
+        num_fields = csv.get_num_fields(i0)
+
+        if cols is None:
+            if isinstance(dtype, Tuple):
+                if staticlen(dtype) != num_fields:
+                    raise ValueError(
+                        "number of fields is different than given tuple 'dtype' length"
+                    )
+                if unpack:
+                    dummy = util.zero(dtype)
+                    arr = tuple(
+                        empty((block_size, ), type(dummy[i]))
+                        for i in staticrange(staticlen(dtype)))
+                else:
+                    arr = empty((block_size, ), dtype)
+            else:
+                arr = empty((block_size, num_fields), dtype)
+        else:
+            if isinstance(dtype, Tuple):
+                if staticlen(dtype) != staticlen(cols):
+                    compile_error(
+                        "'usecols' has different length than given tuple 'dtype'"
+                    )
+
+            cols = tuple(normalize_col(col, num_fields) for col in cols)
+            for i in range(1, len(cols)):
+                for j in range(i):
+                    if cols[i] == cols[j]:
+                        raise ValueError(
+                            f"duplicate column {cols[i]} given in 'usecols'")
+
+            if staticlen(cols) == 1:
+                arr = empty((block_size, ), dtype)
+            else:
+                if unpack:
+                    if isinstance(dtype, Tuple):
+                        dummy = util.zero(dtype)
+                        ncols: Static[int] = staticlen(cols)
+                        arr = tuple(
+                            empty((block_size, ), type(dummy[i]))
+                            for i in staticrange(ncols))
+                    else:
+                        arr = tuple(empty((block_size, ), dtype) for _ in cols)
+                else:
+                    if isinstance(dtype, Tuple):
+                        arr = empty((block_size, ), dtype)
+                    else:
+                        arr = empty((block_size, len(cols)), dtype)
+
+        converters = make_conv(converters, num_fields, cols, dtype)
+        callback = ArrayUpdate(arr, cols, converters)
+        csv.parse(callback,
+                  num_fields=num_fields,
+                  maxrows=maxrows,
+                  i0=i0)
+        callback.trim_arrays()
+        arr = callback.arr
+
+        if isinstance(arr, ndarray):
+            if unpack:
+                return min_dim(arr, ndmin).T
+            else:
+                return min_dim(arr, ndmin)
+        else:
+            return arr
+
+class CSVReaderGen:
+    _path: str
+    _delimiter: byte
+    _comments: str
+    _names: List[str]
+    _mmap_ptr: cobj
+    _mmap_len: int
+    _length: int
+
+    def __init__(self, path: str, delimiter: str = ',', comments: str = ''):
+        dm = byte(0)
+        if len(delimiter) == 1:
+            dm = delimiter.ptr[0]
+        elif len(delimiter) != 0:
+            raise ValueError("'delimiter' must be a length-1 string")
+
+        self._path = path
+        self._delimiter = dm
+        self._comments = comments
+        self._names = []
+        self._mmap_ptr = cobj()
+        self._mmap_len = 0
+        self._length = 0
+
+    def __enter__(self):
+        if not self._path:
+            return
+
+        with open(self._path) as f:
+            f.seek(0, 2)
+            n = f.tell()
+            if n > 0:
+                self._mmap_ptr = _mmap(f, length=n, access=_PROT_READ, flags=_MAP_SHARED)
+            self._mmap_len = n
+
+        if int(self._mmap_ptr) == -1:
+            raise IOError("CSVReader error: mmap() failed")
+
+    def __exit__(self):
+        if self._mmap_len > 0:
+            _munmap(self._mmap_ptr, self._mmap_len)
+            self._mmap_ptr = cobj()
+            self._mmap_len = 0
+
+    def fix_names(self, excludelist: List[str], deletechars: str,
+                  replace_space: str, upper: bool, lower: bool):
+
+        def fix_name(name: str, excludelist: List[str], deletechars: str,
+                     replace_space: str, upper: bool, lower: bool):
+            s = _strbuf(capacity=len(name))
+            for c in name:
+                if c in deletechars:
+                    continue
+                elif c.isspace():
+                    s.append(replace_space)
+                elif upper:
+                    s.append(c.upper())
+                elif lower:
+                    s.append(c.lower())
+                else:
+                    s.append(c)
+
+            if s.__str__() in excludelist:
+                s.append('_')
+
+            return s.__str__()
+
+        names = self._names
+        for i in range(len(names)):
+            names[i] = fix_name(names[i],
+                                excludelist=excludelist,
+                                deletechars=deletechars,
+                                replace_space=replace_space,
+                                upper=upper,
+                                lower=lower)
+
+    def is_delimiter(self, c: byte):
+        delimiter = self._delimiter
+        if delimiter:
+            return c == delimiter
+        else:
+            return bool(_C.isspace(i32(int(c))))
+
+    def is_comment(self, c: byte):
+        comments = self._comments
+        for i in range(len(comments)):
+            if comments.ptr[i] == c:
+                return True
+        return False
+
+    def skip_lines(self, i: int, skip: int):
+        p = self._mmap_ptr
+        n = self._length
+        skipped = 0
+
+        while i < n and skipped < skip:
+            c = p[i]
+            if (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)):
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                skipped += 1
+            else:
+                i += 1
+
+        return i
+
+    def find_length(self, skip_footer: int):
+        p = self._mmap_ptr
+        n = self._mmap_len
+        skipped = 0
+
+        if skip_footer <= 0:
+            self._length = n
+            return
+
+        i = n - 1
+
+        # Newline at the very end doesn't count
+        if i >= 0 and p[i] == byte(_NEWLINE):
+            i -= 1
+
+        while i >= 0:
+            c = p[i]
+            if c == byte(_NEWLINE):
+                skipped += 1
+                if skipped == skip_footer:
+                    self._length = i + 1
+                    return
+            i -= 1
+
+        self._length = 0
+
+    def skip_delimiter(self, i: int):
+        delimiter = self._delimiter
+        i += 1
+
+        # Single-char case
+        if delimiter:
+            return i
+
+        # Whitespace case
+        p = self._mmap_ptr
+        n = self._length
+
+        while i < n:
+            c = p[i]
+            if not self.is_delimiter(c):
+                break
+            i += 1
+
+        return i
+
+    def skip_delimiter(self, i: int, line: str):
+        delimiter = self._delimiter
+        i += 1
+
+        # Single-char case
+        if delimiter:
+            return i
+
+        # Whitespace case
+        p = line.ptr
+        n = len(line)
+
+        while i < n:
+            c = p[i]
+            if not self.is_delimiter(c):
+                break
+            i += 1
+
+        return i
+
+    def skip_comments(self, i: int):
+        if not self._comments:
+            return i
+
+        p = self._mmap_ptr
+        n = self._length
+
+        while i < n:
+            c = p[i]
+            if self.is_comment(c):
+                i += 1
+                while i < n:
+                    c = p[i]
+                    i += 1
+                    if c == byte(_NEWLINE) or c == byte(_CARTRIDGE):
+                        if c == byte(_CARTRIDGE) and i < n and p[i] == byte(
+                                _NEWLINE):
+                            i += 1
+                        break
+            else:
+                break
+
+        return i
+
+    def get_num_fields(self, i: int, get_names: bool):
+        p = self._mmap_ptr
+        n = self._length
+        comments = self._comments
+        names = self._names
+
+        if i >= n:
+            return 0, i
+
+        i0 = i
+        num_fields = 1
+        if self.is_comment(p[0]):
+            i += 1
+        last_field_start = i
+
+        while i < n:
+            c = p[i]
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE) or self.is_comment(
+                    c):
+                if get_names:
+                    name = str(p + last_field_start, i - last_field_start)
+                    names.append(name.strip())
+
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                break
+
+            if self.is_delimiter(c):
+                if get_names:
+                    name = str(p + last_field_start, i - last_field_start)
+                    names.append(name.strip())
+
+                num_fields += 1
+                i = self.skip_delimiter(i)
+                last_field_start = i
+            else:
+                i += 1
+
+        return num_fields, i if get_names else i0
+
+    def partition_line(self, line: str, delimiter, num_fields: int, row: int,
+                       invalid_raise: bool):
+        if isinstance(delimiter, int):
+            n = 0
+            i = 0
+
+            while i < len(line) and n < num_fields:
+                yield line[i:i + delimiter]
+                i += delimiter
+                n += 1
+
+            if n < num_fields:
+                if invalid_raise:
+                    malformed(row, num_fields)
+
+                while True:
+                    yield ''
+                    n += 1
+                    if n >= num_fields:
+                        break
+        else:
+            n = 0
+            i = 0
+
+            while i < len(line) and n < len(delimiter):
+                d = delimiter[n]
+                if not isinstance(d, int):
+                    compile_error(
+                        "'delimiter' must be an int or a sequence of ints")
+                yield line[i:i + d]
+                i += d
+                n += 1
+
+            if n < num_fields:
+                if invalid_raise:
+                    malformed(row, num_fields)
+
+                while True:
+                    yield ''
+                    n += 1
+                    if n >= num_fields:
+                        break
+
+    def get_num_fields_spaced(self, i: int, get_names: bool, delimiter):
+        p = self._mmap_ptr
+        n = self._length
+        comments = self._comments
+        names = self._names
+
+        if i >= n:
+            return 0, i
+
+        i0 = i
+        if self.is_comment(p[0]):
+            i += 1
+        line_start = i
+        line = ''
+
+        while i < n:
+            c = p[i]
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE) or self.is_comment(
+                    c):
+                line = str(p + line_start, i - line_start)
+
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                break
+            else:
+                i += 1
+
+        num_fields = 0
+        if isinstance(delimiter, int):
+            num_fields = len(line) // delimiter + (1 if len(line) %
+                                                   delimiter else 0)
+        else:
+            num_fields = len(delimiter)
+
+        if get_names:
+            for name in self.partition_line(line,
+                                            delimiter=delimiter,
+                                            num_fields=num_fields,
+                                            row=0,
+                                            invalid_raise=False):
+                names.append(name)
+
+        return num_fields, i if get_names else i0
+
+    def get_num_fields_single(self, line: str, get_names: bool):
+        p = line.ptr
+        n = len(line)
+        names = self._names
+
+        i = 0
+        if n > 0 and self.is_comment(p[0]):
+            i += 1
+        last_field_start = i
+        num_fields = 0
+
+        while i < n:
+            c = p[i]
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE) or self.is_comment(
+                    c):
+                if get_names:
+                    name = str(p + last_field_start, i - last_field_start)
+                    names.append(name.strip())
+
+                num_fields += 1
+                break
+            elif self.is_delimiter(c):
+                if get_names:
+                    name = str(p + last_field_start, i - last_field_start)
+                    names.append(name.strip())
+
+                num_fields += 1
+                i = self.skip_delimiter(i, line)
+                last_field_start = i
+            else:
+                i += 1
+
+        return num_fields
+
+    def get_num_fields_single_spaced(self, line: str, get_names: bool,
+                                     delimiter):
+        p = line.ptr
+        n = len(line)
+        names = self._names
+
+        i = 0
+        if n > 0 and self.is_comment(p[0]):
+            i += 1
+        line_start = i
+
+        while i < n:
+            c = p[i]
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE) or self.is_comment(
+                    c):
+                line = str(p + line_start, i - line_start)
+                break
+            else:
+                i += 1
+
+        if isinstance(delimiter, int):
+            num_fields = len(line) // delimiter + (1 if len(line) %
+                                                   delimiter else 0)
+        else:
+            num_fields = len(delimiter)
+
+        if get_names:
+            for name in self.partition_line(line,
+                                            delimiter=delimiter,
+                                            num_fields=num_fields,
+                                            row=0,
+                                            invalid_raise=False):
+                names.append(name)
+
+        return num_fields
+
+    def translate_cols(self, usecols, num_fields: int):
+
+        def translate_one(self, c, num_fields: int):
+            if isinstance(c, int):
+                return normalize_col(c, num_fields)
+            elif isinstance(c, str):
+                return self._names.index(c)
+            else:
+                compile_error("'usecols' elements must be either int or str")
+
+        cols = tuple(translate_one(self, c, num_fields) for c in usecols)
+        for i in range(1, len(cols)):
+            for j in range(i):
+                if cols[i] == cols[j]:
+                    raise ValueError(
+                        f"duplicate column {cols[i]} given in 'usecols'")
+
+        return cols
+
+    def parse(self, i: int, row_callback, num_fields: int, maxrows: int,
+              invalid_raise: bool):
+        p = self._mmap_ptr
+        n = self._length
+
+        if n == 0 or num_fields == 0 or maxrows == 0:
+            return
+
+        field = 0
+        fields = Ptr[str](num_fields)
+        row = 0
+        last_field_start = i
+
+        while i < n:
+            c = p[i]
+            if (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)):
+                ok = True
+                if field != num_fields - 1:
+                    if invalid_raise:
+                        malformed(row, num_fields)
+                    else:
+                        ok = False
+
+                if ok:
+                    fields[field] = str(p + last_field_start,
+                                        i - last_field_start)
+                    row_callback(fields, num_fields, row)
+
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+
+                i = self.skip_comments(i)
+                last_field_start = i
+                field = 0
+                row += 1
+                if maxrows >= 0 and row >= maxrows:
+                    break
+            elif self.is_delimiter(c):
+                if invalid_raise or field < num_fields:
+                    fields[field] = str(p + last_field_start,
+                                        i - last_field_start)
+                field += 1
+
+                ok = True
+                if field >= num_fields:
+                    if invalid_raise:
+                        malformed(row, num_fields)
+                    else:
+                        ok = False
+
+                i = self.skip_delimiter(i)
+                last_field_start = i
+            elif self.is_comment(c):
+                ok = True
+                if field != num_fields - 1:
+                    if invalid_raise:
+                        malformed(row, num_fields)
+                    else:
+                        ok = False
+
+                if ok:
+                    fields[field] = str(p + last_field_start,
+                                        i - last_field_start)
+                    row_callback(fields, num_fields, row)
+
+                i = self.skip_comments(i)
+                last_field_start = i
+                field = 0
+                row += 1
+                if maxrows >= 0 and row >= maxrows:
+                    break
+            else:
+                i += 1
+
+        if field > 0:
+            ok = True
+            if field != num_fields - 1:
+                if invalid_raise:
+                    malformed(row, num_fields)
+                else:
+                    ok = False
+
+            if ok and (maxrows < 0 or row <= maxrows):
+                fields[field] = str(p + last_field_start, i - last_field_start)
+                row_callback(fields, num_fields, row)
+
+    def parse_spaced(self, i: int, row_callback, num_fields: int, maxrows: int,
+                     invalid_raise: bool, delimiter):
+        p = self._mmap_ptr
+        n = self._length
+
+        if n == 0 or num_fields == 0 or maxrows == 0:
+            return
+
+        fields = Ptr[str](num_fields)
+        row = 0
+        last_line_start = i
+
+        while i < n:
+            c = p[i]
+            if (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)):
+                line = str(p + last_line_start, i - last_line_start)
+                k = 0
+                for f in self.partition_line(line,
+                                             delimiter=delimiter,
+                                             num_fields=num_fields,
+                                             row=row,
+                                             invalid_raise=invalid_raise):
+                    fields[k] = f
+                    k += 1
+
+                row_callback(fields, num_fields, row)
+
+                i += 1
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+
+                i = self.skip_comments(i)
+                last_line_start = i
+                row += 1
+                if maxrows >= 0 and row >= maxrows:
+                    break
+            elif self.is_comment(c):
+                line = str(p + last_line_start, i - last_line_start)
+                k = 0
+                for f in self.partition_line(line,
+                                             delimiter=delimiter,
+                                             num_fields=num_fields,
+                                             row=row,
+                                             invalid_raise=invalid_raise):
+                    fields[k] = f
+                    k += 1
+
+                row_callback(fields, num_fields, row)
+                i = self.skip_comments(i)
+                last_line_start = i
+                row += 1
+                if maxrows >= 0 and row >= maxrows:
+                    break
+            else:
+                i += 1
+
+        if last_line_start < i and (maxrows < 0 or row < maxrows):
+            line = str(p + last_line_start, i - last_line_start)
+            k = 0
+            for f in self.partition_line(line,
+                                         delimiter=delimiter,
+                                         num_fields=num_fields,
+                                         row=row,
+                                         invalid_raise=invalid_raise):
+                fields[k] = f
+                k += 1
+
+            row_callback(fields, num_fields, row)
+
+    def parse_single(self, line: str, row_callback, row: int, fields: Ptr[str],
+                     num_fields: int, invalid_raise: bool):
+        if not line:
+            return False
+
+        p = line.ptr
+        n = len(line)
+        i = 0
+        last_field_start = 0
+        field = 0
+
+        if n > 0 and self.is_comment(p[0]):
+            return False
+
+        while i < n:
+            c = p[i]
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE) or self.is_comment(
+                    c):
+                break
+            elif self.is_delimiter(c):
+                if field >= num_fields:
+                    if invalid_raise:
+                        malformed(row, num_fields)
+                    else:
+                        return False
+
+                fields[field] = str(p + last_field_start, i - last_field_start)
+                field += 1
+                i = self.skip_delimiter(i, line)
+                last_field_start = i
+            else:
+                i += 1
+
+        if i > last_field_start:
+            if field >= num_fields:
+                if invalid_raise:
+                    malformed(row, num_fields)
+                else:
+                    return False
+
+            fields[field] = str(p + last_field_start, i - last_field_start)
+            field += 1
+
+        if field != num_fields:
+            if invalid_raise:
+                malformed(row, num_fields)
+            else:
+                return False
+
+        row_callback(fields, num_fields, row)
+        return True
+
+    def parse_single_spaced(self, line: str, row_callback, row: int,
+                            fields: Ptr[str], num_fields: int,
+                            invalid_raise: bool, delimiter):
+        if not line:
+            return False
+
+        p = line.ptr
+        n = len(line)
+        i = 0
+
+        if n > 0 and self.is_comment(p[0]):
+            return False
+
+        while i < n:
+            c = p[i]
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE) or self.is_comment(
+                    c):
+                line = line[:i]
+                break
+            else:
+                i += 1
+
+        k = 0
+        for f in self.partition_line(line,
+                                     delimiter=delimiter,
+                                     num_fields=num_fields,
+                                     row=row,
+                                     invalid_raise=invalid_raise):
+            fields[k] = f
+            k += 1
+
+        row_callback(fields, num_fields, row)
+        return True
+
+class ArrayUpdateGen:
+    arr: A
+    cols: C
+    conv: F
+    filling_values: M
+    autostrip: bool
+    loose: bool
+    last_row: int
+    A: type
+    C: type
+    F: type
+    M: type
+
+    def __init__(self, arr: A, cols: C, conv: F, filling_values: M,
+                 autostrip: bool, loose: bool):
+        self.arr = arr
+        self.cols = cols
+        self.conv = conv
+        self.filling_values = filling_values
+        self.autostrip = autostrip
+        self.loose = loose
+        self.last_row = 0
+
+    @property
+    def cap(self):
+        arr = self.arr
+        if isinstance(arr, Tuple):
+            return arr[0].size
+        else:
+            return arr.shape[0]
+
+    def resize_arrays(self, new_cap: int):
+
+        def resize_one(a, new_cap: int):
+            if a.ndim == 1:
+                data_new = util.realloc(a.data, new_cap, a.size)
+                return ndarray((new_cap, ), data_new)
+            else:
+                rows, cols = a.shape
+                data_new = util.realloc(a.data, new_cap * cols, a.size)
+                return ndarray((new_cap, cols), data_new)
+
+        arr = self.arr
+        if isinstance(arr, Tuple):
+            self.arr = tuple(resize_one(a, new_cap) for a in arr)
+        else:
+            self.arr = resize_one(arr, new_cap)
+
+    def trim_arrays(self):
+        if self.last_row < self.cap - 1:
+            self.resize_arrays(self.last_row + 1)
+
+    def fill_value(self, idx: int, dtype: type) -> dtype:
+        filling_values = self.filling_values
+        if filling_values is None:
+            return default_fill(dtype)
+        elif (isinstance(filling_values, List)
+              or isinstance(filling_values, Tuple)
+              or isinstance(filling_values, ndarray)):
+            return filling_values[idx]
+        elif isinstance(filling_values, Dict):
+            default = default_fill(dtype)
+            if filling_values.K is int:
+                return filling_values.get(idx, default)
+            elif filling_values.K is str:
+                return filling_values.get(self._names[idx], default)
+            else:
+                compile_error("'filling_values' keys must be int or str")
+        else:
+            return filling_values
+
+    def fill_value_static(self, idx: Static[int], dtype: type) -> dtype:
+        filling_values = self.filling_values
+        if filling_values is None:
+            return default_fill(dtype)
+        elif (isinstance(filling_values, List)
+              or isinstance(filling_values, Tuple)
+              or isinstance(filling_values, ndarray)):
+            return filling_values[idx]
+        elif isinstance(filling_values, Dict):
+            default = default_fill(dtype)
+            if filling_values.K is int:
+                return filling_values.get(idx, default)
+            elif filling_values.K is str:
+                return filling_values.get(self._names[idx], default)
+            else:
+                compile_error("'filling_values' keys must be int or str")
+        else:
+            return filling_values
+
+    def convert(self, field: str, idx: int, dtype: type) -> dtype:
+        field0 = field
+        conv = self.conv
+
+        if self.autostrip:
+            field = field.strip()
+
+        if not field and conv is None:
+            r = self.fill_value(idx, dtype)
+        else:
+            try:
+                if conv is None:
+                    r = dtype(field)
+                elif isinstance(conv, Converters):
+                    r = conv(field, idx)
+                elif hasattr(conv, '__call__'):
+                    r = conv(field)
+                else:
+                    r = conv[idx](field)
+            except:
+                if not self.loose:
+                    raise ValueError(f"Cannot convert string '{field0}'")
+                r = self.fill_value(idx, dtype)
+
+        # Make sure we copy strings out of the mmap buffer
+        if isinstance(r, str):
+            return r.__ptrcopy__()
+        else:
+            return r
+
+    def convert_static(self, field: str, idx: Static[int],
+                       dtype: type) -> dtype:
+        field0 = field
+        conv = self.conv
+
+        if self.autostrip:
+            field = field.strip()
+
+        if not field and conv is None:
+            r = self.fill_value_static(idx, dtype)
+        else:
+            try:
+                if conv is None:
+                    r = dtype(field)
+                elif isinstance(conv, Converters):
+                    r = conv(field, idx)
+                elif hasattr(conv, '__call__'):
+                    r = conv(field)
+                else:
+                    r = conv[idx](field)
+            except:
+                if not self.loose:
+                    raise ValueError(f"Cannot convert string '{field0}'")
+                r = self.fill_value_static(idx, dtype)
+
+        # Make sure we copy strings out of the mmap buffer
+        if isinstance(r, str):
+            return r.__ptrcopy__()
+        else:
+            return r
+
+    def __call__(self, fields: Ptr[str], num_fields: int, row: int):
+
+        def get_new_size(size: int, min_grow: int = 512):
+            new_size = size
+            growth = size >> 2
+            if growth <= min_grow:
+                new_size += min_grow
+            else:
+                new_size += growth + min_grow - 1
+                new_size &= ~min_grow
+            return new_size
+
+        arr = self.arr
+        cols = self.cols
+        cap = self.cap
+
+        if row >= cap:
+            new_cap = get_new_size(cap)
+            self.resize_arrays(new_cap)
+
+        # Lots of different cases to consider...
+        if cols is not None:
+            if isinstance(arr, Tuple):
+                for i in staticrange(staticlen(cols)):
+                    col = cols[i]
+                    arr[i].data[row] = self.convert_static(
+                        fields[col], i, arr[i].dtype)
+            else:
+                if isinstance(arr.dtype, Tuple):
+                    dummy = util.zero(arr.dtype)
+                    tup = tuple(
+                        self.convert(fields[cols[i]], i, type(dummy[i]))
+                        for i in staticrange(staticlen(arr.dtype)))
+                    arr._ptr((row, ))[0] = tup
+                else:
+                    if arr.ndim == 1:
+                        col = cols[0]
+                        arr.data[row] = self.convert_static(
+                            fields[col], 0, arr.dtype)
+                    else:
+                        for i in staticrange(staticlen(cols)):
+                            col = cols[i]
+                            arr._ptr((row, i))[0] = self.convert_static(
+                                fields[col], i, arr.dtype)
+        else:
+            if isinstance(arr, Tuple):
+                for i in staticrange(staticlen(arr)):
+                    arr[i]._ptr((row, ))[0] = self.convert_static(
+                        fields[i], i, arr[i].dtype)
+            elif isinstance(arr.dtype, Tuple):
+                dummy = util.zero(arr.dtype)
+                tup = tuple(
+                    self.convert(fields[i], i, type(dummy[i]))
+                    for i in staticrange(staticlen(arr.dtype)))
+                arr._ptr((row, ))[0] = tup
+            else:
+                for i in range(num_fields):
+                    arr._ptr(
+                        (row, i))[0] = self.convert(fields[i].strip(), i,
+                                                    arr.dtype)
+
+        self.last_row = row
+
+def genfromtxt(fname,
+               dtype: type = float,
+               comments: Optional[str] = '#',
+               delimiter=None,
+               skip_header: int = 0,
+               skip_footer: int = 0,
+               converters=None,
+               filling_values=None,
+               usecols=None,
+               names=None,
+               excludelist=None,
+               deletechars: str = " !#$%&'()*+, -./:;<=>?@[\\]^{|}~",
+               replace_space: str = '_',
+               autostrip: bool = False,
+               case_sensitive=True,
+               unpack: Static[int] = False,
+               loose: bool = True,
+               invalid_raise: bool = True,
+               max_rows: Optional[int] = None,
+               ndmin: Static[int] = 0):
+
+    def make_callback(csv,
+                      cols,
+                      converters,
+                      filling_values,
+                      loose: bool,
+                      autostrip: bool,
+                      num_fields: int,
+                      block_size: int,
+                      dtype: type,
+                      unpack: Static[int] = False):
+        if cols is None:
+            if isinstance(dtype, Tuple):
+                if staticlen(dtype) != num_fields:
+                    raise ValueError(
+                        "number of fields is different than given tuple 'dtype' length"
+                    )
+                if unpack:
+                    dummy = util.zero(dtype)
+                    arr = tuple(
+                        empty((block_size, ), type(dummy[i]))
+                        for i in staticrange(staticlen(dtype)))
+                else:
+                    arr = empty((block_size, ), dtype)
+            else:
+                arr = empty((block_size, num_fields), dtype)
+            xcols = cols
+        else:
+            if isinstance(dtype, Tuple):
+                if staticlen(dtype) != staticlen(cols):
+                    compile_error(
+                        "'usecols' has different length than given tuple 'dtype'"
+                    )
+
+            xcols = csv.translate_cols(cols, num_fields)
+
+            if staticlen(xcols) == 1:
+                arr = empty((block_size, ), dtype)
+            else:
+                if unpack:
+                    if isinstance(dtype, Tuple):
+                        dummy = util.zero(dtype)
+                        ncols: Static[int] = staticlen(xcols)
+                        arr = tuple(
+                            empty((block_size, ), type(dummy[i]))
+                            for i in staticrange(ncols))
+                    else:
+                        arr = tuple(
+                            empty((block_size, ), dtype) for _ in xcols)
+                else:
+                    if isinstance(dtype, Tuple):
+                        arr = empty((block_size, ), dtype)
+                    else:
+                        arr = empty((block_size, len(xcols)), dtype)
+
+        converters = make_conv(converters, num_fields, xcols, dtype)
+        callback = ArrayUpdateGen(arr,
+                                  cols=xcols,
+                                  conv=converters,
+                                  filling_values=filling_values,
+                                  autostrip=autostrip,
+                                  loose=loose)
+        return callback
+
+    def update_names(csv, excludelist, case_sensitive, replace_space: str,
+                     deletechars: str):
+        if csv._names:
+            ex = ['return', 'file', 'print']
+            if excludelist is not None:
+                ex.extend(excludelist)
+
+            upper = False
+            lower = False
+            BAD_CASE_SENSITIVE: Static[
+                str] = "'case_sensitive' must be True, False, 'upper' or 'lower'"
+
+            if isinstance(case_sensitive, bool):
+                if not case_sensitive:
+                    upper = True
+            elif isinstance(case_sensitive, str):
+                if case_sensitive == 'upper':
+                    upper = True
+                elif case_sensitive == 'lower':
+                    lower = True
+                else:
+                    raise ValueError(BAD_CASE_SENSITIVE)
+            else:
+                compile_error(BAD_CASE_SENSITIVE)
+
+            csv.fix_names(excludelist=ex,
+                          deletechars=deletechars,
+                          replace_space=replace_space,
+                          upper=upper,
+                          lower=lower)
+
+    if isinstance(fname, str):
+        if fname.endswith('.gz'):
+            from gzip import open as gz_open
+            with gz_open(fname, 'rb') as f:
+                return genfromtxt(f,
+                                  dtype=dtype,
+                                  comments=comments,
+                                  delimiter=delimiter,
+                                  skip_header=skip_header,
+                                  skip_footer=skip_footer,
+                                  converters=converters,
+                                  filling_values=filling_values,
+                                  usecols=usecols,
+                                  names=names,
+                                  excludelist=excludelist,
+                                  deletechars=deletechars,
+                                  replace_space=replace_space,
+                                  autostrip=autostrip,
+                                  case_sensitive=case_sensitive,
+                                  unpack=unpack,
+                                  loose=loose,
+                                  invalid_raise=invalid_raise,
+                                  max_rows=max_rows,
+                                  ndmin=ndmin)
+        elif fname.endswith('.bz2'):
+            from bz2 import open as bz_open
+            with bz_open(fname, 'r') as f:
+                return genfromtxt(f,
+                                  dtype=dtype,
+                                  comments=comments,
+                                  delimiter=delimiter,
+                                  skip_header=skip_header,
+                                  skip_footer=skip_footer,
+                                  converters=converters,
+                                  filling_values=filling_values,
+                                  usecols=usecols,
+                                  names=names,
+                                  excludelist=excludelist,
+                                  deletechars=deletechars,
+                                  replace_space=replace_space,
+                                  autostrip=autostrip,
+                                  case_sensitive=case_sensitive,
+                                  unpack=unpack,
+                                  loose=loose,
+                                  invalid_raise=invalid_raise,
+                                  max_rows=max_rows,
+                                  ndmin=ndmin)
+
+    if max_rows is not None:
+        if skip_footer:
+            raise ValueError(
+                "The keywords 'skip_footer' and 'max_rows' can not be "
+                "specified at the same time.")
+        if max_rows < 1:
+            raise ValueError("'max_rows' must be at least 1.")
+
+    if ndmin != 0 and ndmin != 1 and ndmin != 2:
+        compile_error("'ndmin' must be 0, 1 or 2")
+
+    if delimiter is None:
+        dm = ''
+        dx = 0
+        spaced = False
+    elif isinstance(delimiter, str):
+        dm = delimiter
+        dx = 0
+        spaced = False
+    else:
+        dm = ''
+        dx = delimiter
+        spaced = True
+
+    if isinstance(usecols, int) or isinstance(usecols, str):
+        cols = (usecols, )
+    else:
+        cols = usecols
+        if cols is not None:
+            if staticlen(cols) == 0:
+                compile_error("cannot pass empty tuple to 'usecols'")
+
+    if ndmin != 0 and ndmin != 1 and ndmin != 2:
+        compile_error("'ndmin' must be 0, 1 or 2")
+
+    maxrows: int = max_rows if max_rows is not None else -1
+    block_size = maxrows if maxrows >= 0 else _DEFAULT_ROWS
+
+    if names is None:
+        get_names = False
+        given_names = None
+    elif isinstance(names, bool):
+        get_names = names
+        given_names = None
+    elif isinstance(names, str):
+        get_names = False
+        given_names = names.split(',')
+        for i in range(names):
+            names[i] = names[i].strip()
+    elif isinstance(names, List[str]):
+        get_names = False
+        given_names = names
+    else:
+        get_names = False
+        given_names = [a for a in names]
+
+    if not isinstance(fname, str):
+        # line-by-line mode
+        if skip_footer > 0:
+            raise ValueError(
+                "'skip_footer' not supported in line-by-line mode")
+
+        csv = CSVReaderGen('',
+                           delimiter=dm,
+                           comments=comments if comments is not None else '')
+        k = 0
+        row = 0
+        first = True
+        num_fields = 0
+        fields = Ptr[str]()
+        callback = None
+
+        for line in fname:
+            if k < skip_header or (comments is not None
+                                   and line.startswith(comments)):
+                k += 1
+                continue
+
+            if maxrows >= 0 and row >= maxrows:
+                break
+
+            if first:
+                if spaced:
+                    num_fields = csv.get_num_fields_single_spaced(
+                        line, get_names=get_names, delimiter=dx)
+                else:
+                    num_fields = csv.get_num_fields_single(line,
+                                                           get_names=get_names)
+
+                update_names(csv,
+                             excludelist=excludelist,
+                             case_sensitive=case_sensitive,
+                             replace_space=replace_space,
+                             deletechars=deletechars)
+                callback = make_callback(csv=csv,
+                                         cols=cols,
+                                         converters=converters,
+                                         filling_values=filling_values,
+                                         loose=loose,
+                                         autostrip=autostrip,
+                                         num_fields=num_fields,
+                                         block_size=block_size,
+                                         dtype=dtype,
+                                         unpack=unpack)
+
+                fields = Ptr[str](num_fields)
+                first = False
+
+                if not get_names:
+                    if spaced:
+                        row += int(
+                            csv.parse_single_spaced(line, callback, row,
+                                                    fields, num_fields,
+                                                    invalid_raise, dx))
+                    else:
+                        row += int(
+                            csv.parse_single(line, callback, row, fields,
+                                             num_fields, invalid_raise))
+            else:
+                if spaced:
+                    row += int(
+                        csv.parse_single_spaced(line, callback, row, fields,
+                                                num_fields, invalid_raise, dx))
+                else:
+                    row += int(
+                        csv.parse_single(line, callback, row, fields,
+                                         num_fields, invalid_raise))
+
+            k += 1
+
+        if callback is None:
+            raise ValueError("empty input")
+
+        callback.trim_arrays()
+        arr = callback.arr
+
+        if isinstance(arr, ndarray):
+            if unpack:
+                return min_dim(arr, ndmin).T
+            else:
+                return min_dim(arr, ndmin)
+        else:
+            return arr
+    else:
+        with CSVReaderGen(
+                fname,
+                delimiter=dm,
+                comments=comments if comments is not None else '') as csv:
+            if given_names is not None:
+                csv._names = given_names
+
+            csv.find_length(skip_footer)
+            i = 0
+            i = csv.skip_lines(i, skip_header)
+            i = csv.skip_comments(i)
+
+            if spaced:
+                num_fields, i = csv.get_num_fields_spaced(i,
+                                                          get_names=get_names,
+                                                          delimiter=dx)
+            else:
+                num_fields, i = csv.get_num_fields(i, get_names=get_names)
+
+            update_names(csv,
+                         excludelist=excludelist,
+                         case_sensitive=case_sensitive,
+                         replace_space=replace_space,
+                         deletechars=deletechars)
+            callback = make_callback(csv=csv,
+                                     cols=cols,
+                                     converters=converters,
+                                     filling_values=filling_values,
+                                     loose=loose,
+                                     autostrip=autostrip,
+                                     num_fields=num_fields,
+                                     block_size=block_size,
+                                     dtype=dtype,
+                                     unpack=unpack)
+
+            if spaced:
+                csv.parse_spaced(i,
+                                 callback,
+                                 num_fields=num_fields,
+                                 maxrows=maxrows,
+                                 invalid_raise=invalid_raise,
+                                 delimiter=dx)
+            else:
+                csv.parse(i,
+                          callback,
+                          num_fields=num_fields,
+                          maxrows=maxrows,
+                          invalid_raise=invalid_raise)
+
+            callback.trim_arrays()
+            arr = callback.arr
+
+            if isinstance(arr, ndarray):
+                if unpack:
+                    return min_dim(arr, ndmin).T
+                else:
+                    return min_dim(arr, ndmin)
+            else:
+                return arr
+
+
+##########
+# Pickle #
+##########
+
+@extend
+class ndarray:
+
+    def __pickle__(self, jar: Jar):
+        from pickle import _write_raw
+        atomic = util.atomic(self.dtype)
+        cc, fc = self._contig
+        forder = (fc and not cc)
+
+        int(forder).__pickle__(jar)
+        for s in self.shape:
+            s.__pickle__(jar)
+
+        if atomic and (fc or cc):
+            _write_raw(jar, self.data.as_byte(), self.nbytes)
+        else:
+            for idx in util.multirange(self.shape):
+                e = self._ptr(idx)[0]
+                e.__pickle__(jar)
+
+    def __unpickle__(jar: Jar):
+        from pickle import _read_raw
+        atomic = util.atomic(dtype)
+        forder = bool(int.__unpickle__(jar))
+        shape = tuple(int.__unpickle__(jar) for _ in staticrange(ndim))
+        n = util.count(shape)
+        p = Ptr[dtype](n)
+
+        if atomic:
+            _read_raw(jar, p.as_byte(), n * util.sizeof(dtype))
+        else:
+            for i in range(n):
+                p[i] = dtype.__unpickle__(jar)
+
+        return ndarray(shape, p, fcontig=forder)

@@ -1,0 +1,1596 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import util
+
+_DIGIT_MODE_UNIQUE: Static[int] = 0
+_DIGIT_MODE_EXACT: Static[int] = 1
+
+_CUTOFF_MODE_TOTAL_LENGTH: Static[int] = 0
+_CUTOFF_MODE_FRACTION_LENGTH: Static[int] = 1
+
+_TRIM_MODE_NONE: Static[int] = 0
+_TRIM_MODE_LEAVE_ONE_ZERO: Static[int] = 1
+_TRIM_MODE_ZEROS: Static[int] = 2
+_TRIM_MODE_DPT_ZEROS: Static[int] = 3
+
+def _bitmask_u64(n):
+    return ~(~u64(0) << u64(n))
+
+def _bitmask_u32(n):
+    return ~(~u32(0) << u32(n))
+
+@pure
+@llvm
+def _log_tab(idx: u32) -> u32:
+    @data = private unnamed_addr constant [256 x i8] c"\00\00\01\01\02\02\02\02\03\03\03\03\03\03\03\03\04\04\04\04\04\04\04\04\04\04\04\04\04\04\04\04\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\05\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\06\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07\07"
+    %i = zext i32 %idx to i64
+    %p = getelementptr inbounds [256 x i8], ptr @data, i64 0, i64 %i
+    %x = load i8, ptr %p, align 1
+    %y = zext i8 %x to i32
+    ret i32 %y
+
+@pure
+@llvm
+def _pow10_tab(idx: u32) -> u32:
+    @data = private unnamed_addr constant [8 x i32] [i32 1, i32 10, i32 100, i32 1000, i32 10000, i32 100000, i32 1000000, i32 10000000], align 16
+    %i = zext i32 %idx to i64
+    %p = getelementptr inbounds [8 x i32], ptr @data, i64 0, i64 %i
+    %x = load i32, ptr %p, align 4
+    ret i32 %x
+
+@pure
+@llvm
+def _pow10_8_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [1 x i32] [i32 100000000], align 4
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_16_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [2 x i32] [i32 1874919424, i32 2328306], align 4
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_32_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [4 x i32] [i32 0, i32 -2052264063, i32 762134875, i32 1262], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_64_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [7 x i32] [i32 0, i32 0, i32 -1083564287, i32 1849224548, i32 -626550803, i32 -381683212, i32 1593091], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_128_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [14 x i32] [i32 0, i32 0, i32 0, i32 0, i32 781532673, i32 64985353, i32 253049085, i32 594863151, i32 -741345812, i32 -1006314488, i32 -1127370534, i32 -1506574567, i32 -383834621, i32 590], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_256_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [27 x i32] [i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 -1741784063, i32 -1093433509, i32 -656826510, i32 303378311, i32 1809731782, i32 -817205648, i32 -711600113, i32 649228654, i32 -1379506512, i32 487929380, i32 1011012442, i32 1677677582, i32 -866815040, i32 1710878487, i32 1438394610, i32 -2133014537, i32 -194056740, i32 1608314830, i32 349175], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_512_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [54 x i32] [i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 -59967487, i32 2012377703, i32 -1886042404, i32 1570150255, i32 -1204122985, i32 -1021437223, i32 1187251475, i32 -1796843705, i32 -930515263, i32 1148564857, i32 687371067, i32 -1440898625, i32 1883165473, i32 505794538, i32 -1306906846, i32 -1135477970, i32 -1763618979, i32 -1079775828, i32 849106862, i32 -402886317, i32 -1006893419, i32 -2052515548, i32 -111189154, i32 -1299149088, i32 -1817465372, i32 325481258, i32 -1807124644, i32 1774082830, i32 1933815724, i32 -1332102015, i32 1168579910, i32 -1570138296, i32 -1934593277, i32 -1978982637, i32 -1934914921, i32 -1043187495, i32 1664357844, i32 28], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_1024_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [107 x i32] [i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 689565697, i32 -178574478, i32 1853628763, i32 516071302, i32 -1726198137, i32 365238920, i32 336250165, i32 1283268122, i32 -869476327, i32 248595470, i32 -1989790482, i32 2111925499, i32 507770399, i32 -1613855875, i32 589114268, i32 591287751, i32 1708941527, i32 -196009589, i32 475844916, i32 -916235898, i32 -1842627681, i32 -1477929935, i32 -1616958969, i32 1656645978, i32 -1911536956, i32 73103988, i32 448667107, i32 -1965546843, i32 -1170947055, i32 -669731579, i32 -1086333261, i32 -1882908138, i32 -1313302852, i32 -177344788, i32 838560765, i32 -1225497269, i32 270153238, i32 1802868219, i32 -602257410, i32 -2133229431, i32 -2135054939, i32 -1709168510, i32 837488486, i32 -57729136, i32 -1754647792, i32 -496338050, i32 -546818422, i32 1021550776, i32 -1908251954, i32 1973637538, i32 1823520457, i32 1146713475, i32 833971519, i32 -1017715830, i32 905620390, i32 26278816, i32 -1614484142, i32 -2000926437, i32 373297482, i32 5996609, i32 -185392290, i32 512575049, i32 917036550, i32 1942311753, i32 -1478050518, i32 -1046046964, i32 1192784020, i32 -757380625, i32 -1838399653, i32 -1369306668, i32 759380297, i32 888447942, i32 -735027820, i32 -640280059, i32 805], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_2048_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [213 x i32] [i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 322166785, i32 -485922715, i32 -1300411073, i32 1239584207, i32 -332511455, i32 -293084332, i32 -1241090684, i32 915114683, i32 -1511677551, i32 785739093, i32 -41781389, i32 -363802302, i32 1370983858, i32 -1741411170, i32 -934225220, i32 -2039556367, i32 422849554, i32 -1837545081, i32 -755471934, i32 1720790602, i32 1908931983, i32 1470596141, i32 592794347, i32 -75502132, i32 -209314592, i32 941661409, i32 -1760316343, i32 885063988, i32 -1939057442, i32 -1482151780, i32 767256131, i32 -473209613, i32 -2139816191, i32 -477548823, i32 281116564, i32 -1460572270, i32 -1473765674, i32 -1770341453, i32 1511330880, i32 -1722614803, i32 330571332, i32 -1343878717, i32 -1564695530, i32 -250510817, i32 -82680652, i32 -1850029708, i32 -691546453, i32 -1907818699, i32 1142537539, i32 -995731867, i32 1751012624, i32 861228086, i32 -1421244777, i32 230498814, i32 1023297821, i32 -1741839258, i32 -873837401, i32 -1643049861, i32 2042981258, i32 1606787143, i32 -2066215378, i32 447345732, i32 1930371132, i32 1784132011, i32 -682428506, i32 -2019042206, i32 -1807399425, i32 1080427616, i32 2009179183, i32 -911460515, i32 -395913233, i32 1950782960, i32 -2126345083, i32 -1577292906, i32 -678331269, i32 2079341593, i32 1530129217, i32 1461057425, i32 -1888702881, i32 -620295939, i32 -1322931058, i32 2019354295, i32 1455849819, i32 1866918619, i32 1324269294, i32 424891864, i32 -1572544964, i32 -1653372480, i32 1400249021, i32 -812003303, i32 -560020917, i32 225889849, i32 1891545473, i32 777383150, i32 -705142663, i32 -177365685, i32 -74938629, i32 334453379, i32 1083130821, i32 1060342180, i32 -86804157, i32 1489826908, i32 -131205050, i32 1096580926, i32 689301528, i32 -1958912780, i32 1782865703, i32 -119818886, i32 -896597904, i32 -1965554708, i32 -1293386700, i32 59740741, i32 -1092777364, i32 -943071520, i32 246185302, i32 718535188, i32 -522319808, i32 -143300740, i32 -239269163, i32 -1833033186, i32 -2013651015, i32 -828570460, i32 -758943831, i32 1064267812, i32 -1339510942, i32 -1871161874, i32 -667006506, i32 1325057500, i32 -418047317, i32 2009959531, i32 175455101, i32 184092852, i32 -1936181725, i32 -451989465, i32 -1809701007, i32 487121622, i32 -135714586, i32 -219259738, i32 459389244, i32 300652075, i32 -1773620708, i32 -835990623, i32 888631636, i32 2076098096, i32 -450452711, i32 -1931269716, i32 -565545774, i32 -1243851819, i32 649395], align 16
+    ret ptr @data
+
+@pure
+@llvm
+def _pow10_4096_blocks() -> Ptr[u32]:
+    @data = private unnamed_addr constant [426 x i32] [i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 0, i32 711442433, i32 -730706291, i32 -1895925017, i32 -124117360, i32 -284671721, i32 1423987028, i32 330414929, i32 1349249065, i32 -81153678, i32 -442935474, i32 -254123706, i32 -2140401965, i32 -1200953922, i32 1159028371, i32 -1067901758, i32 2115927092, i32 2085102554, i32 488590542, i32 -1685347864, i32 -692068491, i32 -482230768, i32 -1025528200, i32 23816114, i32 253984538, i32 1035905997, i32 -1351998092, i32 -894179625, i32 338562688, i32 1637191975, i32 740509713, i32 -2030004479, i32 -884213374, i32 -132735868, i32 -2012926068, i32 1759373012, i32 -1139599519, i32 -16054011, i32 1420532801, i32 1981002276, i32 438054990, i32 1006507643, i32 1142697287, i32 1332538012, i32 2029019521, i32 -345661512, i32 818392641, i32 -1803678450, i32 -1578382633, i32 -646081194, i32 556814413, i32 444795339, i32 -223554297, i32 1066321706, i32 -41797830, i32 -1784134980, i32 672091442, i32 -211711296, i32 -2128982268, i32 1841538484, i32 -745113061, i32 364431512, i32 -587319153, i32 1162785440, i32 -2026325751, i32 281340310, i32 735693841, i32 848809228, i32 1700785200, i32 -1375263311, i32 -200732952, i32 58530286, i32 965505005, i32 1000010347, i32 -913005488, i32 -1254877373, i32 1973852082, i32 -1403995711, i32 1019960210, i32 -2072059, i32 -1473079455, i32 -538291646, i32 -343684389, i32 -409096713, i32 1008791145, i32 503998487, i32 1881258362, i32 1949332730, i32 392996726, i32 2012973814, i32 -324953109, i32 -1833242146, i32 -1352419566, i32 -566900597, i32 -1528066164, i32 -516434455, i32 1085564064, i32 -2016293400, i32 1116879805, i32 -846241025, i32 774279411, i32 157211670, i32 1506320155, i32 531168605, i32 1362654525, i32 956967721, i32 -2146095336, i32 769186085, i32 -108734402, i32 2055679604, i32 -1046601809, i32 -313699283, i32 -319179312, i32 -1805456779, i32 -985920801, i32 212771124, i32 933418041, i32 -923128182, i32 562115198, i32 1853601831, i32 757336096, i32 1354633440, i32 1486083256, i32 -1422840903, i32 522920738, i32 1141587749, i32 -1084064034, i32 1926940553, i32 -1240942443, i32 2021162538, i32 -2032225296, i32 1877899947, i32 -1147964428, i32 669840763, i32 -136792706, i32 -56464737, i32 1023731922, i32 -908127285, i32 829588074, i32 -845247108, i32 -1459824416, i32 -1295805289, i32 813056473, i32 482949569, i32 638108879, i32 -1227765825, i32 1026714238, i32 -290514458, i32 -1911299489, i32 -295489493, i32 771648919, i32 630660440, i32 -467845948, i32 176185980, i32 -1416776294, i32 -1628817464, i32 -385156233, i32 -1865803313, i32 -1629276884, i32 907266128, i32 -25635198, i32 2022665808, i32 1527122180, i32 -1222913628, i32 1072477492, i32 -1288944372, i32 549664855, i32 -1494626342, i32 37352654, i32 1212772743, i32 -1583686763, i32 -1265439350, i32 -1783847256, i32 1305308377, i32 -820305072, i32 -68636374, i32 442988428, i32 954940108, i32 -1020419197, i32 -82679119, i32 -1606467416, i32 -312740538, i32 -372357340, i32 1279948029, i32 1939943640, i32 -644477395, i32 -1561602367, i32 -1800704021, i32 1864579964, i32 1225941120, i32 -1904502157, i32 1267503249, i32 -761726567, i32 904410805, i32 -1452417281, i32 -1777231055, i32 1796069820, i32 -959692915, i32 673539835, i32 1924694759, i32 -696869061, i32 -1502333891, i32 16535707, i32 -591431799, i32 -702125505, i32 -1365884419, i32 1317622811, i32 294990855, i32 1396706563, i32 -1911695526, i32 -441109691, i32 277813677, i32 277580220, i32 1101318484, i32 -532993181, i32 1132150143, i32 -1750274674, i32 -875141520, i32 743770306, i32 1695464553, i32 1548693232, i32 -1873807681, i32 -1719295265, i32 -1615995490, i32 1591267897, i32 626546738, i32 -471524167, i32 267710932, i32 1455435162, i32 -1940981756, i32 -1046443501, i32 335348168, i32 -422414735, i32 -1480444684, i32 -1660848436, i32 -791200270, i32 1301019273, i32 1414467789, i32 722985138, i32 -1224057731, i32 -41484727, i32 -550027455, i32 558142907, i32 -2065147907, i32 13833173, i32 77003966, i32 -1531295932, i32 -389363326, i32 -1362977170, i32 -2014547912, i32 1879090457, i32 -1360121029, i32 -10034132, i32 -1963103451, i32 62191163, i32 -1116106276, i32 1522063815, i32 785672270, i32 1215568492, i32 -1358523379, i32 802972489, i32 -1338147123, i32 -378234513, i32 -1401395207, i32 1391232801, i32 -1126326966, i32 -1898107648, i32 894950918, i32 1103583736, i32 961991865, i32 -1487664654, i32 305977505, i32 -1240461397, i32 1048256994, i32 781017659, i32 -1835688542, i32 -1130143881, i32 537658277, i32 905753687, i32 464963300, i32 -145835736, i32 1029507924, i32 -2016666335, i32 1231291503, i32 414073408, i32 -664227211, i32 -1949125482, i32 475358196, i32 -1036723979, i32 -127342224, i32 -116056065, i32 -1367612254, i32 655438830, i32 -1156589278, i32 623200562, i32 -1509253184, i32 273403236, i32 807993669, i32 98], align 16
+    ret ptr @data
+
+def _pow10_blocks(i: u32):
+    if i == u32(0):
+        return (1, _pow10_8_blocks())
+    elif i == u32(1):
+        return (2, _pow10_16_blocks())
+    elif i == u32(2):
+        return (4, _pow10_32_blocks())
+    elif i == u32(3):
+        return (7, _pow10_64_blocks())
+    elif i == u32(4):
+        return (14, _pow10_128_blocks())
+    elif i == u32(5):
+        return (27, _pow10_256_blocks())
+    elif i == u32(6):
+        return (54, _pow10_512_blocks())
+    elif i == u32(7):
+        return (107, _pow10_1024_blocks())
+    elif i == u32(8):
+        return (213, _pow10_2048_blocks())
+    elif i == u32(9):
+        return (426, _pow10_4096_blocks())
+    else:
+        return (0, Ptr[u32]())
+
+def _log_base2_32(val: u32):
+    temp = val >> u32(24)
+    if temp:
+        return u32(24) + _log_tab(temp)
+
+    temp = val >> u32(16)
+    if temp:
+        return u32(16) + _log_tab(temp)
+
+    temp = val >> u32(8)
+    if temp:
+        return u32(8) + _log_tab(temp)
+
+    return _log_tab(val)
+
+def _log_base2_64(val: u64):
+    temp = val >> u64(32)
+    if temp:
+        return u64(32) + util.zext(_log_base2_32(util.itrunc(temp, u32)), u64)
+
+    return util.zext(_log_base2_32(util.itrunc(val, u32)), u64)
+
+def _log_base2_128(hi: u64, lo: u64):
+    if hi:
+        return u64(64) + _log_base2_64(hi)
+
+    return _log_base2_64(lo)
+
+_BIGINT_MAX_BLOCKS: Static[int] = 1023
+_BIGINT_DRAGON4_GROUPSIZE: Static[int] = 7
+
+class BigInt:
+    length: int
+    blocks: Ptr[u32]
+
+    def __init__(self, length: int, blocks: Ptr[u32]):
+        self.length = length
+        self.blocks = blocks
+
+    def __init__(self):
+        self.__init__(0, Ptr[u32](_BIGINT_MAX_BLOCKS))
+
+    def __str__(self):
+        return f'BigInt: len={len(self)} blocks=[{", ".join(str(self[i]) for i in range(len(self)))}]'
+
+    def make_pow10(i: u32):
+        return BigInt(*_pow10_blocks(i))
+
+    def copy(self, dst: BigInt):
+        length = len(self)
+        srcp = self.blocks
+        dstp = dst.blocks
+        while srcp != self.blocks + length:
+            dstp[0] = srcp[0]
+            dstp += 1
+            srcp += 1
+        dst.length = length
+
+    def __getitem__(self, idx: int):
+        return self.blocks[idx]
+
+    def __setitem__(self, idx: int, val: u32):
+        self.blocks[idx] = val
+
+    def __setitem__(self, idx: int, val: u64):
+        self.blocks[idx] = util.itrunc(val, u32)
+
+    def __len__(self):
+        return self.length
+
+    def __bool__(self):
+        return self.length != 0
+
+    def set(self, val: u64):
+        if val > _bitmask_u64(32):
+            self[0] = val & _bitmask_u64(32)
+            self[1] = (val >> u64(32)) & _bitmask_u64(32)
+            self.length = 2
+        elif val:
+            self[0] = val & _bitmask_u64(32)
+            self.length = 1
+        else:
+            self.length = 0
+
+    def set(self, hi: u64, lo: u64):
+        if hi > _bitmask_u64(32):
+            self.length = 4
+        elif hi:
+            self.length = 3
+        elif lo > _bitmask_u64(32):
+            self.length = 2
+        elif lo:
+            self.length = 1
+        else:
+            self.length = 0
+
+        n = self.length
+
+        if n >= 4:
+            self[3] = (hi >> u64(32)) & _bitmask_u64(32)
+        if n >= 3:
+            self[2] = hi & _bitmask_u64(32)
+        if n >= 2:
+            self[1] = (lo >> u64(32)) & _bitmask_u64(32)
+        if n >= 1:
+            self[0] = lo & _bitmask_u64(32)
+
+    def set(self, val: u32):
+        if val:
+            self[0] = val
+            self.length = 1
+        else:
+            self.length = 0
+
+    @property
+    def even(self):
+        return len(self) == 0 or (self[0] % u32(2) == u32(0))
+
+    def compare(self, rhs: BigInt):
+        lhs = self
+        ldiff = len(lhs) - len(rhs)
+        if ldiff != 0:
+            return ldiff
+
+        i = len(lhs) - 1
+        while i >= 0:
+            if lhs[i] == rhs[i]:
+                i -= 1
+            elif lhs[i] > rhs[i]:
+                return 1
+            else:
+                return -1
+        return 0
+
+    def __eq__(self, other: BigInt):
+        return self.compare(other) == 0
+
+    def __ne__(self, other: BigInt):
+        return self.compare(other) != 0
+
+    def __lt__(self, other: BigInt):
+        return self.compare(other) < 0
+
+    def __le__(self, other: BigInt):
+        return self.compare(other) <= 0
+
+    def __gt__(self, other: BigInt):
+        return self.compare(other) > 0
+
+    def __ge__(self, other: BigInt):
+        return self.compare(other) >= 0
+
+    def add(self, lhs: BigInt, rhs: BigInt):
+        result = self
+        if len(lhs) < len(rhs):
+            small = lhs
+            large = rhs
+        else:
+            small = rhs
+            large = lhs
+
+        result.length = len(large)
+
+        large_cur = large.blocks
+        large_end = large_cur + len(large)
+        small_cur = small.blocks
+        small_end = small_cur + len(small)
+        result_cur = result.blocks
+        carry = u64(0)
+
+        while small_cur != small_end:
+            s = carry + util.zext(large_cur[0], u64) + util.zext(small_cur[0], u64)
+            carry = s >> u64(32)
+            result_cur[0] = util.itrunc(s & _bitmask_u64(32), u32)
+            large_cur += 1
+            small_cur += 1
+            result_cur += 1
+
+        while large_cur != large_end:
+            s = carry + util.zext(large_cur[0], u64)
+            carry = s >> u64(32)
+            result_cur[0] = util.itrunc(s & _bitmask_u64(32), u32)
+            large_cur += 1
+            result_cur += 1
+
+        if carry:
+            result_cur[0] = u32(1)
+            result.length = len(large) + 1
+        else:
+            result.length = len(large)
+
+    def mul(self, lhs: BigInt, rhs: BigInt):
+        result = self
+        if len(lhs) < len(rhs):
+            small = lhs
+            large = rhs
+        else:
+            small = rhs
+            large = lhs
+
+        max_result_len = len(large) + len(small)
+        cur = result.blocks
+        end = cur + max_result_len
+        while cur != end:
+            cur[0] = u32(0)
+            cur += 1
+
+        result_start = result.blocks
+        small_cur = small.blocks
+
+        while small_cur != small.blocks + len(small):
+            multiplier = small_cur[0]
+            if multiplier:
+                large_cur = large.blocks
+                result_cur = result_start
+                carry = u64(0)
+                while True:
+                    product = (util.zext(result_cur[0], u64) +
+                               (util.zext(large_cur[0], u64) *
+                                util.zext(multiplier, u64)) + carry)
+                    carry = product >> u64(32)
+                    result_cur[0] = util.itrunc(product & _bitmask_u64(32), u32)
+                    large_cur += 1
+                    result_cur += 1
+
+                    if large_cur == large.blocks + len(large):
+                        break
+
+                result_cur[0] = util.itrunc(carry & _bitmask_u64(32), u32)
+
+            small_cur += 1
+            result_start += 1
+
+        if max_result_len > 0 and not result[max_result_len - 1]:
+            result.length = max_result_len - 1
+        else:
+            result.length = max_result_len
+
+    def mul(self, lhs: BigInt, rhs: u32):
+        result = self
+        carry = u32(0)
+        result_cur = result.blocks
+        p_lhs_cur = lhs.blocks
+        p_lhs_end = lhs.blocks + len(lhs)
+
+        while p_lhs_cur != p_lhs_end:
+            product = (util.zext(p_lhs_cur[0], u64) *
+                        util.zext(rhs, u64) +
+                         util.zext(carry, u64))
+            result_cur[0] = util.itrunc(product & _bitmask_u64(32), u32)
+            carry = util.itrunc(product >> u64(32), u32)
+            p_lhs_cur += 1
+            result_cur += 1
+
+        if carry:
+            result_cur[0] = carry
+            result.length = len(lhs) + 1
+        else:
+            result.length = len(lhs)
+
+    def mul2(self, in_: BigInt):
+        result = self
+        carry = u32(0)
+        result_cur = result.blocks
+        p_lhs_cur = in_.blocks
+        p_lhs_end = in_.blocks + len(in_)
+
+        while p_lhs_cur != p_lhs_end:
+            cur = p_lhs_cur[0]
+            result_cur[0] = (cur << u32(1)) | carry
+            carry = cur >> u32(31)
+            p_lhs_cur += 1
+            result_cur += 1
+
+        if carry:
+            result_cur[0] = carry
+            result.length = len(in_) + 1
+        else:
+            result.length = len(in_)
+
+    def mul2(self):
+        result = self
+        carry = u32(0)
+        cur = result.blocks
+        end = result.blocks + len(result)
+
+        while cur != end:
+            tmpcur = cur[0]
+            cur[0] = (tmpcur << u32(1)) | carry
+            carry = tmpcur >> u32(31)
+            cur += 1
+
+        if carry:
+            cur[0] = carry
+            result.length = len(result) + 1
+
+    def mul10(self):
+        result = self
+        carry = u64(0)
+        cur = result.blocks
+        end = result.blocks + len(result)
+
+        while cur != end:
+            product = util.zext(cur[0], u64) * u64(10) + carry
+            cur[0] = util.itrunc(product & _bitmask_u64(32), u32)
+            carry = product >> u64(32)
+            cur += 1
+
+        if carry:
+            cur[0] = util.itrunc(carry, u32)
+            result.length = len(result) + 1
+
+    def pow10(self, exponent: u32, temp: BigInt):
+        result = self
+        cur_temp = result
+        p_next_temp = temp
+        table_idx = u32(0)
+
+        small_exponent = exponent & _bitmask_u32(3)
+        cur_temp.set(_pow10_tab(small_exponent))
+        exponent >>= u32(3)
+
+        while exponent:
+            if exponent & u32(1):
+                p_next_temp.mul(cur_temp, BigInt.make_pow10(table_idx))
+                p_swap = cur_temp
+                cur_temp = p_next_temp
+                p_next_temp = p_swap
+
+            table_idx += u32(1)
+            exponent >>= u32(1)
+
+        if cur_temp is not result:
+            cur_temp.copy(result)
+
+    def mul_pow10(self, exponent: u32, temp: BigInt):
+        in_ = self
+        table_idx = u32(0)
+
+        small_exponent = exponent & _bitmask_u32(3)
+        if small_exponent:
+            temp.mul(in_, _pow10_tab(small_exponent))
+            cur_temp = temp
+            p_next_temp = in_
+        else:
+            cur_temp = in_
+            p_next_temp = temp
+
+        exponent >>= u32(3)
+
+        while exponent:
+            if exponent & u32(1):
+                p_next_temp.mul(cur_temp, BigInt.make_pow10(table_idx))
+                p_swap = cur_temp
+                cur_temp = p_next_temp
+                p_next_temp = p_swap
+
+            table_idx += u32(1)
+            exponent >>= u32(1)
+
+        if cur_temp is not in_:
+            cur_temp.copy(in_)
+
+    def pow2(self, exponent: u32):
+        result = self
+        block_idx = int(exponent) >> 5
+
+        for i in range(block_idx + 1):
+            result[i] = u32(0)
+        result.length = block_idx + 1
+
+        bit_idx = int(exponent) & (32 - 1)
+        self[block_idx] |= (u32(1) << u32(bit_idx))
+
+    def div_with_rem_maxq9(self, divisor: BigInt):
+        dividend = self
+        length = len(divisor)
+        if len(dividend) < len(divisor):
+            return u32(0)
+
+        final_divisor_block = divisor.blocks + (length - 1)
+        final_dividend_block = dividend.blocks + (length - 1)
+        quotient = final_dividend_block[0] // (final_divisor_block[0] + u32(1))
+
+        if quotient:
+            divisor_cur = divisor.blocks
+            dividend_cur = dividend.blocks
+            borrow = u64(0)
+            carry = u64(0)
+
+            while True:
+                product = util.zext(divisor_cur[0], u64) * util.zext(quotient, u64) + carry
+                carry = product >> u64(32)
+
+                difference = util.zext(dividend_cur[0], u64) - (product & _bitmask_u64(32)) - borrow
+                borrow = (difference >> u64(32)) & u64(1)
+
+                dividend_cur[0] = util.itrunc(difference & _bitmask_u64(32), u32)
+                divisor_cur += 1
+                dividend_cur += 1
+
+                if divisor_cur > final_divisor_block:
+                    break
+
+            while length > 0 and dividend[length - 1] == u32(0):
+                length -= 1
+
+            dividend.length = length
+
+        if dividend >= divisor:
+            divisor_cur = divisor.blocks
+            dividend_cur = dividend.blocks
+            borrow = u64(0)
+
+            quotient += u32(1)
+
+            while True:
+                difference = util.zext(dividend_cur[0], u64) - util.zext(divisor_cur[0], u64) - borrow
+                borrow = (difference >> u64(32)) & u64(1)
+
+                dividend_cur[0] = util.itrunc(difference & _bitmask_u64(32), u32)
+                divisor_cur += 1
+                dividend_cur += 1
+
+                if divisor_cur > final_divisor_block:
+                    break
+
+            while length > 0 and dividend[length - 1] == u32(0):
+                length -= 1
+
+            dividend.length = length
+
+        return quotient
+
+    def lshift(self, shift: u32):
+        result = self
+        shift_blocks = int(shift // u32(32))
+        shift_bits = int(shift % u32(32))
+
+        p_in_blocks = result.blocks
+        in_length = len(result)
+
+        if not shift_bits:
+            p_in_cur = result.blocks + len(result)
+            p_out_cur = p_in_cur + shift_blocks
+            while p_in_cur >= p_in_blocks:
+                p_out_cur[0] = p_in_cur[0]
+                p_in_cur -= 1
+                p_out_cur -= 1
+
+            for i in range(shift_blocks):
+                result[i] = u32(0)
+
+            result.length += shift_blocks
+        else:
+            in_block_idx = in_length - 1
+            out_block_idx = in_length + shift_blocks
+
+            low_bits_shift = u32(32 - shift_bits)
+            high_bits = u32(0)
+            block = result[in_block_idx]
+            low_bits = block >> low_bits_shift
+
+            result.length = out_block_idx + 1
+
+            while in_block_idx > 0:
+                result[out_block_idx] = high_bits | low_bits
+                high_bits = block << u32(shift_bits)
+                in_block_idx -= 1
+                out_block_idx -= 1
+                block = result[in_block_idx]
+                low_bits = block >> low_bits_shift
+
+            result[out_block_idx] = high_bits | low_bits
+            result[out_block_idx - 1] = block << u32(shift_bits)
+
+            for i in range(shift_blocks):
+                result[i] = u32(0)
+
+            if result[len(result) - 1] == u32(0):
+                result.length -= 1
+
+def dragon4(bigints,
+            exponent: i32,
+            mantissa_bit: u32,
+            has_unequal_margins: bool,
+            digit_mode: int,
+            cutoff_mode: int,
+            cutoff_max: int,
+            cutoff_min: int,
+            out_buffer: cobj,
+            buffer_size: int,
+            out_exponent: Ptr[i32]):
+
+    cur_digit = out_buffer
+    mantissa = bigints[0]
+    scale = bigints[1]
+    scaled_value = bigints[2]
+    scaled_margin_low = bigints[3]
+    optional_margin_high = bigints[4]
+    temp1 = bigints[5]
+    temp2 = bigints[6]
+
+    log10_2 = 0.30102999566398119521373889472449
+    is_even = mantissa.even
+
+    if not mantissa:
+        cur_digit[0] = byte(48)
+        out_exponent[0] = i32(0)
+        return 1
+
+    mantissa.copy(scaled_value)
+    exponent_u32 = util.bitcast(exponent, u32)
+
+    if has_unequal_margins:
+        if exponent > i32(0):
+            scaled_value.lshift(exponent_u32 + u32(2))
+            scale.set(u32(4))
+            scaled_margin_low.pow2(exponent_u32)
+            optional_margin_high.pow2(exponent_u32 + u32(1))
+        else:
+            scaled_value.lshift(u32(2))
+            scale.pow2(util.bitcast(-exponent + i32(2), u32))
+            scaled_margin_low.set(u32(1))
+            optional_margin_high.set(u32(2))
+
+        scaled_margin_high = optional_margin_high
+    else:
+        if exponent > i32(0):
+            scaled_value.lshift(exponent_u32 + u32(1))
+            scale.set(u32(2))
+            scaled_margin_low.pow2(exponent_u32)
+        else:
+            scaled_value.lshift(u32(1))
+            scale.pow2(util.bitcast(-exponent + i32(1), u32))
+            scaled_margin_low.set(u32(1))
+
+        scaled_margin_high = scaled_margin_low
+
+    digit_exponent = util.fptosi(util.ceil64(util.sitofp(util.bitcast(mantissa_bit, i32) + exponent, float) * log10_2 - 0.69), int)
+
+    if cutoff_max >= 0 and cutoff_mode == _CUTOFF_MODE_FRACTION_LENGTH and digit_exponent <= -cutoff_max:
+        digit_exponent = -cutoff_max + 1
+
+    if digit_exponent > 0:
+        scale.mul_pow10(u32(digit_exponent), temp1)
+    elif digit_exponent < 0:
+        temp = temp1
+        pow10 = temp2
+        pow10.pow10(u32(-digit_exponent), temp)
+
+        temp.mul(scaled_value, pow10)
+        temp.copy(scaled_value)
+
+        temp.mul(scaled_margin_low, pow10)
+        temp.copy(scaled_margin_low)
+
+        if scaled_margin_high is not scaled_margin_low:
+            scaled_margin_high.mul2(scaled_margin_low)
+
+    if scaled_value >= scale:
+        digit_exponent += 1
+    else:
+        scaled_value.mul10()
+        scaled_margin_low.mul10()
+        if scaled_margin_high is not scaled_margin_low:
+            scaled_margin_high.mul2(scaled_margin_low)
+
+    cutoff_max_exponent = digit_exponent - buffer_size
+    if cutoff_max >= 0:
+        if cutoff_mode == _CUTOFF_MODE_TOTAL_LENGTH:
+            desired_cutoff_exponent = digit_exponent - cutoff_max
+            if desired_cutoff_exponent > cutoff_max_exponent:
+                cutoff_max_exponent = desired_cutoff_exponent
+        else:
+            desired_cutoff_exponent = -cutoff_max
+            if desired_cutoff_exponent > cutoff_max_exponent:
+                cutoff_max_exponent = desired_cutoff_exponent
+
+    cutoff_min_exponent = digit_exponent
+    if cutoff_min >= 0:
+        if cutoff_mode == _CUTOFF_MODE_TOTAL_LENGTH:
+            desired_cutoff_exponent = digit_exponent - cutoff_min
+            if desired_cutoff_exponent < cutoff_min_exponent:
+                cutoff_min_exponent = desired_cutoff_exponent
+        else:
+            desired_cutoff_exponent = -cutoff_min
+            if desired_cutoff_exponent < cutoff_min_exponent:
+                cutoff_min_exponent = desired_cutoff_exponent
+
+    out_exponent[0] = i32(digit_exponent - 1)
+    low = False
+    high = False
+    output_digit = u32(0)
+
+    hi_block = scale[len(scale) - 1]
+    if hi_block < u32(8) or hi_block > u32(429496729):
+        hi_block_log2 = _log_base2_32(hi_block)
+        shift = (u32(32) + u32(27) - hi_block_log2) % u32(32)
+
+        scale.lshift(shift)
+        scaled_value.lshift(shift)
+        scaled_margin_low.lshift(shift)
+        if scaled_margin_high is not scaled_margin_low:
+            scaled_margin_high.mul2(scaled_margin_low)
+
+    if digit_mode == _DIGIT_MODE_UNIQUE:
+        while True:
+            scaled_value_high = temp1
+            digit_exponent -= 1
+            output_digit = scaled_value.div_with_rem_maxq9(scale)
+
+            scaled_value_high.add(scaled_value, scaled_margin_high)
+            comp = scaled_value.compare(scaled_margin_low)
+            low = (comp <= 0) if is_even else (comp < 0)
+            comp = scaled_value_high.compare(scale)
+            high = (comp >= 0) if is_even else (comp > 0)
+
+            if (((low or high) and (digit_exponent <= cutoff_min_exponent)) or
+                digit_exponent == cutoff_max_exponent):
+                break
+
+            cur_digit[0] = byte(48 + int(output_digit))
+            cur_digit += 1
+
+            scaled_value.mul10()
+            scaled_margin_low.mul10()
+            if scaled_margin_high is not scaled_margin_low:
+                scaled_margin_high.mul2(scaled_margin_low)
+    else:
+        while True:
+            digit_exponent -= 1
+            output_digit = scaled_value.div_with_rem_maxq9(scale)
+
+            if len(scaled_value) == 0 or digit_exponent == cutoff_max_exponent:
+                break
+
+            cur_digit[0] = byte(48 + int(output_digit))
+            cur_digit += 1
+
+            scaled_value.mul10()
+
+    round_down = low
+    if low == high:
+        scaled_value.mul2()
+        compare = scaled_value.compare(scale)
+        round_down = (compare < 0)
+
+        if compare == 0:
+            round_down = (output_digit & u32(1) == u32(0))
+
+    if round_down:
+        cur_digit[0] = byte(48 + int(output_digit))
+        cur_digit += 1
+    else:
+        if output_digit == u32(9):
+            while True:
+                if cur_digit == out_buffer:
+                    cur_digit[0] = byte(48 + 1)
+                    cur_digit += 1
+                    out_exponent[0] += i32(1)
+                    break
+
+                cur_digit -= 1
+                if cur_digit[0] != byte(48 + 9):
+                    cur_digit[0] = byte(int(cur_digit[0]) + 1)
+                    cur_digit += 1
+                    break
+        else:
+            cur_digit[0] = byte(48 + int(output_digit) + 1)
+            cur_digit += 1
+
+    output_len = cur_digit - out_buffer
+    return output_len
+
+def format_positional(buffer: cobj,
+                      buffer_size: int,
+                      mantissa,
+                      exponent: i32,
+                      signbit: byte,
+                      mantissa_bit: u32,
+                      has_unequal_margins: bool,
+                      digit_mode: int,
+                      cutoff_mode: int,
+                      precision: i32,
+                      min_digits: i32,
+                      trim_mode: int,
+                      digits_left: int,
+                      digits_right: int):
+    num_whole_digits = 0
+    has_sign = 0
+    max_print_len = buffer_size - 1
+    pos = 0
+    num_fraction_digits = 0
+    print_exponent = i32(0)
+
+    if signbit == byte(43) and pos < max_print_len:  # '+'
+        buffer[pos] = byte(43)
+        pos += 1
+        has_sign = 1
+    elif signbit == byte(45) and pos < max_print_len:  # '-'
+        buffer[pos] = byte(45)
+        pos += 1
+        has_sign = 1
+
+    num_digits = dragon4(mantissa, exponent, mantissa_bit,
+                        has_unequal_margins, digit_mode,
+                        cutoff_mode, int(precision), int(min_digits),
+                        buffer + has_sign, max_print_len - has_sign,
+                        __ptr__(print_exponent))
+
+    if print_exponent >= i32(0):
+        num_whole_digits = int(print_exponent) + 1
+        if num_digits <= num_whole_digits:
+            count = num_whole_digits - num_digits
+            pos += num_digits
+
+            if pos + count > max_print_len:
+                count = max_print_len - pos
+
+            num_digits += count
+            while count > 0:
+                buffer[pos] = byte(48)
+                pos += 1
+                count -= 1
+        elif num_digits > num_whole_digits:
+            num_fraction_digits = num_digits - num_whole_digits
+            max_fraction_digits = max_print_len - num_whole_digits - 1 - pos
+            if num_fraction_digits > max_fraction_digits:
+                num_fraction_digits = max_fraction_digits
+
+            str.memmove(buffer + pos + num_whole_digits + 1,
+                        buffer + pos + num_whole_digits,
+                        num_fraction_digits)
+            pos += num_whole_digits
+            buffer[pos] = byte(46)  # '.'
+            num_digits = num_whole_digits + 1 + num_fraction_digits
+            pos += 1 + num_fraction_digits
+    else:
+        num_fraction_zeros = 0
+        if pos + 2 < max_print_len:
+            max_fraction_zeros = max_print_len - 2 - pos
+            num_fraction_zeros = -(int(print_exponent) + 1)
+            if num_fraction_zeros > max_fraction_zeros:
+                num_fraction_zeros = max_fraction_zeros
+
+            digits_start_idx = 2 + num_fraction_zeros
+            num_fraction_digits = num_digits
+            max_fraction_digits = max_print_len - digits_start_idx - pos
+            if num_fraction_digits > max_fraction_digits:
+                num_fraction_digits = max_fraction_digits
+
+            str.memmove(buffer + pos + digits_start_idx,
+                        buffer + pos,
+                        num_fraction_digits)
+
+            for i in range(2, digits_start_idx):
+                buffer[pos + i] = byte(48)
+
+            num_fraction_digits += num_fraction_zeros
+            num_digits = num_fraction_digits
+
+        if pos + 1 < max_print_len:
+            buffer[pos + 1] = byte(46)  # '.'
+
+        if pos < max_print_len:
+            buffer[pos] = byte(48)
+            num_digits += 1
+
+        num_whole_digits = 1
+        pos += 2 + num_fraction_digits
+
+    if (trim_mode != _TRIM_MODE_DPT_ZEROS and
+        num_fraction_digits == 0 and pos < max_print_len):
+        buffer[pos] = byte(46)  # '.'
+        pos += 1
+
+    add_digits = int(min_digits if digit_mode == _DIGIT_MODE_UNIQUE else precision)
+    desired_fractional_digits = 0 if add_digits < 0 else add_digits
+    if cutoff_mode == _CUTOFF_MODE_TOTAL_LENGTH:
+        desired_fractional_digits = add_digits - num_whole_digits
+
+    if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO:
+        if num_fraction_digits == 0 and pos < max_print_len:
+            buffer[pos] = byte(48)
+            pos += 1
+            num_fraction_digits += 1
+    elif (trim_mode == _TRIM_MODE_NONE and
+          desired_fractional_digits > num_fraction_digits and
+          pos < max_print_len):
+        count = desired_fractional_digits - num_fraction_digits
+        if pos + count > max_print_len:
+            count = max_print_len - pos
+        num_fraction_digits += count
+
+        while count > 0:
+            buffer[pos] = byte(48)
+            pos += 1
+            count -= 1
+
+    if trim_mode != _TRIM_MODE_NONE and num_fraction_digits > 0:
+        while buffer[pos - 1] == byte(48):
+            pos -= 1
+            num_fraction_digits -= 1
+
+        if buffer[pos - 1] == byte(46):  # '.'
+            if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO:
+                buffer[pos] = byte(48)
+                pos += 1
+                num_fraction_digits += 1
+            elif trim_mode == _TRIM_MODE_DPT_ZEROS:
+                pos -= 1
+
+    if digits_right >= num_fraction_digits:
+        count = digits_right - num_fraction_digits
+
+        if (trim_mode == _TRIM_MODE_DPT_ZEROS and
+            num_fraction_digits == 0 and
+            pos < max_print_len):
+            buffer[pos] = byte(32)  # ' '
+            pos += 1
+
+        if pos + count > max_print_len:
+            count = max_print_len - pos
+
+        while count > 0:
+            buffer[pos] = byte(32)  # ' '
+            pos += 1
+            count -= 1
+
+    if digits_left > num_whole_digits + has_sign:
+        shift = digits_left - (num_whole_digits + has_sign)
+        count = pos
+
+        if count + shift > max_print_len:
+            count = max_print_len - shift
+
+        if count > 0:
+            str.memmove(buffer + shift, buffer, count)
+
+        pos = shift + count
+        while shift > 0:
+            buffer[shift - 1] = byte(32)  # ' '
+            shift -= 1
+
+    # buffer[pos] = byte(0)
+    return pos
+
+def format_scientific(buffer: cobj,
+                      buffer_size: int,
+                      mantissa,
+                      exponent: i32,
+                      signbit: byte,
+                      mantissa_bit: u32,
+                      has_unequal_margins: bool,
+                      digit_mode: int,
+                      precision: i32,
+                      min_digits: i32,
+                      trim_mode: int,
+                      digits_left: int,
+                      exp_digits: int):
+    cur_out = buffer
+    leftchars = 1 + int(signbit == byte(43) or signbit == byte(45))  # '+'/'-'
+    print_exponent = i32(0)
+
+    if digits_left > leftchars:
+        i = 0
+        while i < digits_left - leftchars and buffer_size > 1:
+            cur_out[0] = byte(32)  # ' '
+            cur_out += 1
+            buffer_size -= 1
+            i += 1
+
+    if signbit == byte(43) and buffer_size > 1:  # '+'
+        cur_out[0] = byte(43)
+        cur_out += 1
+        buffer_size -= 1
+    elif signbit == byte(45) and buffer_size > 1:  # '-'
+        cur_out[0] = byte(45)
+        cur_out += 1
+        buffer_size -= 1
+
+    num_digits = dragon4(mantissa, exponent, mantissa_bit, has_unequal_margins,
+                         digit_mode, _CUTOFF_MODE_TOTAL_LENGTH,
+                         -1 if precision < i32(0) else int(precision) + 1,
+                         -1 if min_digits < i32(0) else int(min_digits) + 1,
+                         cur_out, buffer_size, __ptr__(print_exponent))
+
+    if buffer_size > 1:
+        cur_out += 1
+        buffer_size -= 1
+
+    num_fraction_digits = num_digits - 1
+    if num_fraction_digits > 0 and buffer_size > 1:
+        max_fraction_digits = buffer_size - 2
+        if num_fraction_digits > max_fraction_digits:
+            num_fraction_digits = max_fraction_digits
+
+        str.memmove(cur_out + 1, cur_out, num_fraction_digits)
+        cur_out[0] = byte(46)  # '.'
+        cur_out += 1 + num_fraction_digits
+        buffer_size -= 1 + num_fraction_digits
+
+    if (trim_mode != _TRIM_MODE_DPT_ZEROS and
+        num_fraction_digits == 0 and
+        buffer_size > 1):
+        cur_out[0] = byte(46)  # '.'
+        cur_out += 1
+        buffer_size -= 1
+
+    add_digits = int(min_digits) if digit_mode == _DIGIT_MODE_UNIQUE else int(precision)
+    add_digits = 0 if add_digits < 0 else add_digits
+    if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO:
+        if num_fraction_digits == 0 and buffer_size > 1:
+            cur_out[0] = byte(48)
+            cur_out += 1
+            buffer_size -= 1
+            num_fraction_digits += 1
+    elif trim_mode == _TRIM_MODE_NONE:
+        if add_digits > num_fraction_digits:
+            num_zeros = add_digits - num_fraction_digits
+
+            if num_zeros > buffer_size - 1:
+                num_zeros = buffer_size - 1
+
+            end = cur_out + num_zeros
+            while cur_out < end:
+                cur_out[0] = byte(48)
+                num_fraction_digits += 1
+                cur_out += 1
+
+    if trim_mode != _TRIM_MODE_NONE and num_fraction_digits > 0:
+        cur_out -= 1
+        while cur_out[0] == byte(48):
+            cur_out -= 1
+            buffer_size += 1
+            num_fraction_digits -= 1
+
+        if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO and cur_out[0] == byte(46):
+            cur_out += 1
+            cur_out[0] = byte(48)
+            buffer_size -= 1
+            num_fraction_digits += 1
+
+        cur_out += 1
+
+    if buffer_size > 1:
+        exponent_buffer_t = (byte(0),) * 7
+        digits_t = (i32(0),) * 5
+        exponent_buffer = __ptr__(exponent_buffer_t).as_byte()
+        digits = Ptr[i32](__ptr__(digits_t).as_byte())
+
+        if exp_digits > 5:
+            exp_digits = 5
+        if exp_digits < 0:
+            exp_digits = 2
+
+        exponent_buffer[0] = byte(101)  # 'e'
+        if print_exponent >= i32(0):
+            exponent_buffer[1] = byte(43)  # '+'
+        else:
+            exponent_buffer[1] = byte(45)  # '-'
+            print_exponent = -print_exponent
+
+        for i in range(5):
+            digits[i] = print_exponent % i32(10)
+            print_exponent //= i32(10)
+
+        i = 5
+        while i > exp_digits and digits[i - 1] == i32(0):
+            i -= 1
+        exp_size = i
+
+        while i > 0:
+            exponent_buffer[2 + (exp_size - i)] = byte(48 + int(digits[i - 1]))
+            i -= 1
+
+        count = exp_size + 2
+        if count > buffer_size - 1:
+            count = buffer_size - 1
+
+        str.memcpy(cur_out, exponent_buffer, count)
+        cur_out += count
+        buffer_size -= count
+
+    # cur_out[0] = byte(0)
+    return cur_out - buffer
+
+def print_inf_nan(buffer: cobj,
+                  buffer_size: int,
+                  mantissa: u64,
+                  mantissa_hex_width: int,
+                  signbit: byte):
+    max_print_len = buffer_size - 1
+    pos = 0
+
+    if mantissa == u64(0):
+        if signbit == byte(43):  # '+'
+            if pos < max_print_len - 1:
+                buffer[pos] = byte(43)
+                pos += 1
+        elif signbit == byte(45):  # '-'
+            if pos < max_print_len - 1:
+                buffer[pos] = byte(45)
+                pos += 1
+
+        print_len = 3 if 3 < max_print_len - pos else max_print_len - pos
+        str.memcpy(buffer + pos, "inf".ptr, print_len)
+        # buffer[pos + print_len] = byte(0)
+        return pos + print_len
+    else:
+        print_len = 3 if 3 < max_print_len - pos else max_print_len - pos
+        str.memcpy(buffer + pos, "nan".ptr, print_len)
+        # buffer[pos + print_len] = byte(0)
+        return pos + print_len
+
+def format_float_bits(buffer: cobj,
+                      buffer_size: int,
+                      mantissa,
+                      exponent: i32,
+                      signbit: byte,
+                      mantissa_bit: u32,
+                      has_unequal_margins: bool,
+                      scientific: bool,
+                      digit_mode: int,
+                      cutoff_mode: int,
+                      precision: i32,
+                      min_digits: i32,
+                      sign: bool,
+                      trim_mode: int,
+                      digits_left: int,
+                      digits_right: int,
+                      exp_digits: int):
+    if scientific:
+        return format_scientific(buffer, buffer_size, mantissa, exponent,
+                                 signbit, mantissa_bit, has_unequal_margins,
+                                 digit_mode, precision, min_digits, trim_mode,
+                                 digits_left, exp_digits)
+    else:
+        return format_positional(buffer, buffer_size, mantissa, exponent,
+                                 signbit, mantissa_bit, has_unequal_margins,
+                                 digit_mode, cutoff_mode, precision, min_digits,
+                                 trim_mode, digits_left, digits_right)
+
+def _trim_mode_code(trim_mode: str):
+    if trim_mode == 'k':
+        return _TRIM_MODE_NONE
+    elif trim_mode == '0':
+        return _TRIM_MODE_LEAVE_ONE_ZERO
+    elif trim_mode == '.':
+        return _TRIM_MODE_ZEROS
+    elif trim_mode == '-':
+        return _TRIM_MODE_DPT_ZEROS
+    else:
+        raise ValueError(f"if supplied, trim must be 'k', '.', '0' or '-' found `{trim_mode}`")
+
+def _from_buffer(buffer: cobj, n: int):
+    p = cobj(n)
+    str.memcpy(p, buffer, n)
+    return str(p, n)
+
+# Buffer size that can hold any float128 string
+# TODO: Make this smaller for other float types
+_BUFFER_SIZE: Static[int] = 16384
+
+def format_ieee16(value: float16,
+                  scientific: bool = False,
+                  unique: bool = True,
+                  fractional: bool = True,
+                  precision: int = -1,
+                  min_digits: int = -1,
+                  sign: bool = False,
+                  trim_mode: str = 'k',
+                  digits_left: int = -1,
+                  digits_right: int = -1,
+                  exp_digits: int = -1):
+    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
+    scratch = __array__[byte](_BUFFER_SIZE)
+    buffer = scratch.ptr
+    blocks = bigint_data.ptr
+    bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
+                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+
+    signbit = byte(0)
+    digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
+    cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
+
+    integer = util.zext(util.bitcast(value, u16), u32)
+    float_mantissa = integer & _bitmask_u32(10)
+    float_exponent = (integer >> u32(10)) & _bitmask_u32(5)
+    float_sign = integer >> u32(15)
+
+    if float_sign:
+        signbit = byte(45)  # '-'
+    elif sign:
+        signbit = byte(43)  # '+'
+
+    if float_exponent == _bitmask_u32(5):
+        n = print_inf_nan(buffer, _BUFFER_SIZE, util.zext(float_mantissa, u64), 3, signbit)
+        return _from_buffer(buffer, n)
+
+    mantissa = u32(0)
+    exponent = i32(0)
+    mantissa_bit = u32(0)
+    has_unequal_margins = False
+
+    if float_exponent:
+        mantissa = (u32(1) << u32(10)) | float_mantissa
+        exponent = util.bitcast(float_exponent, i32) - i32(15) - i32(10)
+        mantissa_bit = u32(10)
+        has_unequal_margins = (float_exponent != u32(1)) and (float_mantissa == u32(0))
+    else:
+        mantissa = float_mantissa
+        exponent = i32(1 - 15 - 10)
+        mantissa_bit = _log_base2_32(mantissa)
+        has_unequal_margins = False
+
+    bigints[0].set(mantissa)
+    n = format_float_bits(buffer,
+                          _BUFFER_SIZE,
+                          bigints,
+                          exponent,
+                          signbit,
+                          mantissa_bit,
+                          has_unequal_margins,
+                          scientific,
+                          digit_mode,
+                          cutoff_mode,
+                          i32(precision),
+                          i32(min_digits),
+                          sign,
+                          _trim_mode_code(trim_mode),
+                          digits_left,
+                          digits_right,
+                          exp_digits)
+    return _from_buffer(buffer, n)
+
+def format_ieee32(value: float32,
+                  scientific: bool = False,
+                  unique: bool = True,
+                  fractional: bool = True,
+                  precision: int = -1,
+                  min_digits: int = -1,
+                  sign: bool = False,
+                  trim_mode: str = 'k',
+                  digits_left: int = -1,
+                  digits_right: int = -1,
+                  exp_digits: int = -1):
+    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
+    scratch = __array__[byte](_BUFFER_SIZE)
+    buffer = scratch.ptr
+    blocks = bigint_data.ptr
+    bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
+                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+
+    signbit = byte(0)
+    digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
+    cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
+
+    integer = util.bitcast(value, u32)
+    float_mantissa = integer & _bitmask_u32(23)
+    float_exponent = (integer >> u32(23)) & _bitmask_u32(8)
+    float_sign = integer >> u32(31)
+
+    if float_sign:
+        signbit = byte(45)  # '-'
+    elif sign:
+        signbit = byte(43)  # '+'
+
+    if float_exponent == _bitmask_u32(8):
+        n = print_inf_nan(buffer, _BUFFER_SIZE, util.zext(float_mantissa, u64), 6, signbit)
+        return _from_buffer(buffer, n)
+
+    mantissa = u32(0)
+    exponent = i32(0)
+    mantissa_bit = u32(0)
+    has_unequal_margins = False
+
+    if float_exponent:
+        mantissa = (u32(1) << u32(23)) | float_mantissa
+        exponent = util.bitcast(float_exponent, i32) - i32(127) - i32(23)
+        mantissa_bit = u32(23)
+        has_unequal_margins = (float_exponent != u32(1)) and (float_mantissa == u32(0))
+    else:
+        mantissa = float_mantissa
+        exponent = i32(1 - 127 - 23)
+        mantissa_bit = _log_base2_32(mantissa)
+        has_unequal_margins = False
+
+    bigints[0].set(mantissa)
+    n = format_float_bits(buffer,
+                          _BUFFER_SIZE,
+                          bigints,
+                          exponent,
+                          signbit,
+                          mantissa_bit,
+                          has_unequal_margins,
+                          scientific,
+                          digit_mode,
+                          cutoff_mode,
+                          i32(precision),
+                          i32(min_digits),
+                          sign,
+                          _trim_mode_code(trim_mode),
+                          digits_left,
+                          digits_right,
+                          exp_digits)
+    return _from_buffer(buffer, n)
+
+def format_ieee64(value: float,
+                  scientific: bool = False,
+                  unique: bool = True,
+                  fractional: bool = True,
+                  precision: int = -1,
+                  min_digits: int = -1,
+                  sign: bool = False,
+                  trim_mode: str = 'k',
+                  digits_left: int = -1,
+                  digits_right: int = -1,
+                  exp_digits: int = -1):
+    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
+    scratch = __array__[byte](_BUFFER_SIZE)
+    buffer = scratch.ptr
+    blocks = bigint_data.ptr
+    bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
+                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+
+    signbit = byte(0)
+    digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
+    cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
+
+    integer = util.bitcast(value, u64)
+    float_mantissa = integer & _bitmask_u64(52)
+    float_exponent = util.itrunc(integer >> u64(52), u32) & _bitmask_u32(11)
+    float_sign = integer >> u64(63)
+
+    if float_sign:
+        signbit = byte(45)  # '-'
+    elif sign:
+        signbit = byte(43)  # '+'
+
+    if float_exponent == _bitmask_u32(11):
+        n = print_inf_nan(buffer, _BUFFER_SIZE, float_mantissa, 13, signbit)
+        return _from_buffer(buffer, n)
+
+    mantissa = u64(0)
+    exponent = i32(0)
+    mantissa_bit = u32(0)
+    has_unequal_margins = False
+
+    if float_exponent:
+        mantissa = (u64(1) << u64(52)) | float_mantissa
+        exponent = util.bitcast(float_exponent, i32) - i32(1023) - i32(52)
+        mantissa_bit = u32(52)
+        has_unequal_margins = (float_exponent != u32(1)) and (float_mantissa == u64(0))
+    else:
+        mantissa = float_mantissa
+        exponent = i32(1 - 1023 - 52)
+        mantissa_bit = util.itrunc(_log_base2_64(mantissa), u32)
+        has_unequal_margins = False
+
+    bigints[0].set(mantissa)
+    n = format_float_bits(buffer,
+                          _BUFFER_SIZE,
+                          bigints,
+                          exponent,
+                          signbit,
+                          mantissa_bit,
+                          has_unequal_margins,
+                          scientific,
+                          digit_mode,
+                          cutoff_mode,
+                          i32(precision),
+                          i32(min_digits),
+                          sign,
+                          _trim_mode_code(trim_mode),
+                          digits_left,
+                          digits_right,
+                          exp_digits)
+    return _from_buffer(buffer, n)
+
+def format_ieee128(value: float128,
+                   scientific: bool = False,
+                   unique: bool = True,
+                   fractional: bool = True,
+                   precision: int = -1,
+                   min_digits: int = -1,
+                   sign: bool = False,
+                   trim_mode: str = 'k',
+                   digits_left: int = -1,
+                   digits_right: int = -1,
+                   exp_digits: int = -1):
+    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
+    scratch = __array__[byte](_BUFFER_SIZE)
+    buffer = scratch.ptr
+    blocks = bigint_data.ptr
+    bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
+                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+
+    signbit = byte(0)
+    digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
+    cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
+
+    integer = util.bitcast(value, u128)
+    val_hi = util.itrunc(integer >> u128(64), u64)
+    val_lo = util.itrunc(integer & ((u128(1) << u128(64)) - u128(1)), u64)
+    mantissa_hi = val_hi & _bitmask_u64(48)
+    mantissa_lo = val_lo
+
+    float_exponent = util.itrunc(val_hi >> u64(48), u32) & _bitmask_u32(15)
+    float_sign = util.itrunc(val_hi >> u64(63), u32)
+
+    if float_sign:
+        signbit = byte(45)  # '-'
+    elif sign:
+        signbit = byte(43)  # '+'
+
+    if float_exponent == _bitmask_u32(15):
+        mantissa_zero = u64(1 if mantissa_hi or mantissa_lo else 0)
+        n = print_inf_nan(buffer, _BUFFER_SIZE, mantissa_zero, 16, signbit)
+        return _from_buffer(buffer, n)
+
+    exponent = i32(0)
+    mantissa_bit = u32(0)
+    has_unequal_margins = False
+
+    if float_exponent:
+        mantissa_hi = (u64(1) << u64(48)) | mantissa_hi
+        exponent = util.bitcast(float_exponent, i32) - i32(16383) - i32(112)
+        mantissa_bit = u32(112)
+        has_unequal_margins = (float_exponent != u32(1)) and (mantissa_hi == u64(0)) and (mantissa_lo == u64(0))
+    else:
+        exponent = i32(1 - 16383 - 112)
+        mantissa_bit = util.itrunc(_log_base2_128(mantissa_hi, mantissa_lo), u32)
+        has_unequal_margins = False
+
+    bigints[0].set(mantissa_hi, mantissa_lo)
+    n = format_float_bits(buffer,
+                          _BUFFER_SIZE,
+                          bigints,
+                          exponent,
+                          signbit,
+                          mantissa_bit,
+                          has_unequal_margins,
+                          scientific,
+                          digit_mode,
+                          cutoff_mode,
+                          i32(precision),
+                          i32(min_digits),
+                          sign,
+                          _trim_mode_code(trim_mode),
+                          digits_left,
+                          digits_right,
+                          exp_digits)
+    return _from_buffer(buffer, n)
+
+def format_float(value,
+                 scientific: bool = False,
+                 unique: bool = True,
+                 fractional: bool = True,
+                 precision: int = -1,
+                 min_digits: int = -1,
+                 sign: bool = False,
+                 trim_mode: str = 'k',
+                 digits_left: int = -1,
+                 digits_right: int = -1,
+                 exp_digits: int = -1):
+    if isinstance(value, float16):
+        return format_ieee16(value,
+                             scientific=scientific,
+                             unique=unique,
+                             fractional=fractional,
+                             precision=precision,
+                             min_digits=min_digits,
+                             sign=sign,
+                             trim_mode=trim_mode,
+                             digits_left=digits_left,
+                             digits_right=digits_right,
+                             exp_digits=exp_digits)
+
+    if isinstance(value, float32):
+        return format_ieee32(value,
+                             scientific=scientific,
+                             unique=unique,
+                             fractional=fractional,
+                             precision=precision,
+                             min_digits=min_digits,
+                             sign=sign,
+                             trim_mode=trim_mode,
+                             digits_left=digits_left,
+                             digits_right=digits_right,
+                             exp_digits=exp_digits)
+
+    if isinstance(value, float):
+        return format_ieee64(value,
+                             scientific=scientific,
+                             unique=unique,
+                             fractional=fractional,
+                             precision=precision,
+                             min_digits=min_digits,
+                             sign=sign,
+                             trim_mode=trim_mode,
+                             digits_left=digits_left,
+                             digits_right=digits_right,
+                             exp_digits=exp_digits)
+
+    if isinstance(value, float128):
+        return format_ieee128(value,
+                              scientific=scientific,
+                              unique=unique,
+                              fractional=fractional,
+                              precision=precision,
+                              min_digits=min_digits,
+                              sign=sign,
+                              trim_mode=trim_mode,
+                              digits_left=digits_left,
+                              digits_right=digits_right,
+                              exp_digits=exp_digits)
+
+    compile_error("cannot format non-float value")
+
+def _none_or_positive_arg(x: Optional[int], name: str) -> int:
+    if x is None:
+        return -1
+    if x < 0:
+        raise ValueError(f"{name} must be >= 0")
+    return x
+
+def format_float_positional(x,
+                            precision: Optional[int] = None,
+                            unique: bool = True,
+                            fractional: bool = True,
+                            trim: str = 'k',
+                            sign: bool = False,
+                            pad_left: Optional[int] = None,
+                            pad_right: Optional[int] = None,
+                            min_digits: Optional[int] = None):
+    precision = _none_or_positive_arg(precision, "precision")
+    pad_left = _none_or_positive_arg(pad_left, "pad_left")
+    pad_right = _none_or_positive_arg(pad_right, "pad_right")
+    min_digits = _none_or_positive_arg(min_digits, "min_digits")
+
+    if not fractional and precision == 0:
+        raise ValueError("precision must be greater than 0 if "
+                         "fractional=False")
+
+    if min_digits > 0 and precision > 0 and min_digits > precision:
+        raise ValueError("min_digits must be less than or equal to precision")
+
+    return format_float(x, scientific=False, precision=precision, unique=unique,
+                        fractional=fractional, trim_mode=trim, sign=sign, digits_left=pad_left,
+                        digits_right=pad_right, min_digits=min_digits)
+
+def format_float_scientific(x,
+                            precision: Optional[int] = None,
+                            unique: bool = True,
+                            trim: str = 'k',
+                            sign: bool = False,
+                            pad_left: Optional[int] = None,
+                            exp_digits: Optional[int] = None,
+                            min_digits: Optional[int] = None):
+    precision = _none_or_positive_arg(precision, "precision")
+    pad_left = _none_or_positive_arg(pad_left, "pad_left")
+    exp_digits = _none_or_positive_arg(exp_digits, "exp_digits")
+    min_digits = _none_or_positive_arg(min_digits, "min_digits")
+
+    if min_digits > 0 and precision > 0 and min_digits > precision:
+        raise ValueError("min_digits must be less than or equal to precision")
+
+    return format_float(x, scientific=True, precision=precision, unique=unique,
+                        trim_mode=trim, sign=sign, digits_left=pad_left,
+                        exp_digits=exp_digits, min_digits=min_digits)

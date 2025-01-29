@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include <string>
 #include <tuple>
@@ -56,6 +56,7 @@ void SimplifyVisitor::visit(IdExpr *expr) {
   //   print(x)  # mark x as seen
   //   x = 2     # so that this is an error
   if (!val->isGeneric() && ctx->isOuter(val) &&
+      in(ctx->cache->reverseIdentifierLookup, val->canonicalName) &&
       !in(ctx->seenGlobalIdentifiers[ctx->getBaseName()],
           ctx->cache->rev(val->canonicalName))) {
     ctx->seenGlobalIdentifiers[ctx->getBaseName()]

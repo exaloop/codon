@@ -1,0 +1,39 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from .linalg import _matmul_ufunc, _linalg_dot, _linalg_vdot, \
+                    _linalg_tensordot, _linalg_inner, _linalg_outer, \
+                    _linalg_kron, _trace_ufunc, \
+                    matrix_transpose as _linalg_matrix_transpose
+
+def matmul(x1, x2, out = None, dtype: type = NoneType):
+    return _matmul_ufunc(x1, x2, out=out, dtype=dtype)
+
+def dot(a, b, out = None):
+    return _linalg_dot(a, b, out=out)
+
+def vdot(a, b):
+    return _linalg_vdot(a, b)
+
+def tensordot(a, b, axes):
+    return _linalg_tensordot(a, b, axes=axes)
+
+@overload
+def tensordot(a, b, axes: Static[int] = 2):
+    return _linalg_tensordot(a, b, axes=axes)
+
+def inner(a, b):
+    return _linalg_inner(a, b)
+
+def outer(a, b, out = None):
+    return _linalg_outer(a, b, out=out)
+
+def kron(a, b):
+    return _linalg_kron(a, b)
+
+def trace(a, offset: int = 0, axis1: int = 0, axis2: int = 1,
+          dtype: type = NoneType, out = None):
+    return _trace_ufunc(a, offset=offset, axis1=axis1, axis2=axis2,
+                        dtype=dtype, out=out)
+
+def matrix_transpose(x):
+    return _linalg_matrix_transpose(x)

@@ -1,0 +1,1084 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+# Adapted from NumPy's "npy_core_math_complex"
+
+import util
+
+SCALED_CEXP_LOWERF = 88.722839  # f
+SCALED_CEXP_UPPERF = 192.69492  # f
+SCALED_CEXP_LOWER = 710.47586007394386
+SCALED_CEXP_UPPER = 1454.9159319953251
+#SCALED_CEXP_LOWERL = 11357.216553474703895  # L
+#SCALED_CEXP_UPPERL = 22756.021937783004509  # L
+
+def _bad_input(F: type):
+    compile_error("internal error: bad input type '" + F.__name__ + "'")
+
+def scaled_cexp_lower(z):
+    if isinstance(z, complex):
+        return SCALED_CEXP_LOWER
+    elif isinstance(z, complex64):
+        return float32(SCALED_CEXP_LOWERF)
+    else:
+        _bad_input(type(z))
+
+def scaled_cexp_upper(z):
+    if isinstance(z, complex):
+        return SCALED_CEXP_UPPER
+    elif isinstance(z, complex64):
+        return float32(SCALED_CEXP_UPPERF)
+    else:
+        _bad_input(type(z))
+
+def scaled_cexp_k(z):
+    if isinstance(z, float):
+        return 1799
+    elif isinstance(z, float32):
+        return 235
+    else:
+        _bad_input(type(z))
+
+def scaled_cexp(x, y, expt: int, C: type):
+    F = type(x)
+    k = scaled_cexp_k(x)
+    kln2 = F(k * util.LOGE2)
+
+    mant, ex = util.frexp(util.exp(x - kln2))
+    mantcos, excos = util.frexp(util.cos(y))
+    mantsin, exsin = util.frexp(util.sin(y))
+
+    expt += ex + k
+    return C(util.ldexp(mant * mantcos, expt + excos),
+             util.ldexp(mant * mantsin, expt + exsin))
+
+def cosh_big(z):
+    if isinstance(z, float):
+        return 22.0
+    elif isinstance(z, float32):
+        return float32(9.0)
+    else:
+        _bad_input(type(z))
+
+def cosh_huge(z):
+    if isinstance(z, float):
+        return 8.9884656743115795e+307
+    elif isinstance(z, float32):
+        return float32(1.70141183e+38)
+    else:
+        _bad_input(type(z))
+
+def tanh_huge(z):
+    if isinstance(z, float):
+        return 22.0
+    elif isinstance(z, float32):
+        return float32(11.0)
+    else:
+        _bad_input(type(z))
+
+def arg(z):
+    return util.atan2(z.imag, z.real)
+
+def exp(z):
+    @pure
+    @C
+    def cexp(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_cexpf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return cexp(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_cexpf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex exp(): got non-complex input type")
+
+def _exp_impl(z):
+    r = z.real
+    i = z.imag
+    C = type(z)
+    F = type(r)
+
+    ret = C()
+    nan = util.nan(F)
+
+    if util.isfinite(r):
+        if r >= scaled_cexp_lower(z) and r <= scaled_cexp_upper(z):
+            ret = scaled_cexp(r, i, 0, C)
+        else:
+            x = util.exp(r)
+            c = util.cos(i)
+            s = util.sin(i)
+
+            if util.isfinite(i):
+                ret = C(x * c, x * s)
+            else:
+                ret = C(nan, util.copysign(nan, i))
+    elif util.isnan(r):
+        if i == F(0):
+            ret = z
+        else:
+            ret = C(r, util.copysign(nan, i))
+    else:
+        if r > F(0):
+            if i == F(0):
+                return C(r, i)
+            elif util.isfinite(i):
+                c = util.cos(i)
+                s = util.sin(i)
+                ret = C(r * c, r * s)
+            else:
+                # npy_set_floatstatus_invalid()
+                ret = C(r, nan)
+        else:
+            if util.isfinite(i):
+                x = util.exp(r)
+                c = util.cos(i)
+                s = util.sin(i)
+                r = C(x * c, x * s)
+            else:
+                ret = C()
+
+    return ret
+
+def log(z):
+    @pure
+    @C
+    def clog(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_clogf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return clog(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_clogf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex log(): got non-complex input type")
+
+def _log_impl(z):
+    C = type(z)
+    F = type(z.real)
+    ax = util.fabs(z.real)
+    ay = util.fabs(z.imag)
+    rr = F()
+    ri = F()
+
+    maxnum = util.maxnum(F)
+    minnum = util.minnum(F)
+    mantdig = util.mantdig(F)
+
+    if ax > maxnum / F(4) or ay > maxnum / F(4):
+        rr = util.log(util.hypot(ax / F(2), ay / F(2))) + F(util.LOGE2)
+    elif ax < minnum and ay < minnum:
+        if ax > F(0) or ay > F(0):
+            rr = util.log(util.hypot(util.ldexp(ax, mantdig),
+                 util.ldexp(ay, mantdig))) - F(mantdig)*F(util.LOGE2)
+        else:
+            rr = F(-1) / z.real
+            rr = util.copysign(rr, F(-1))
+            ri = arg(z)
+            return C(rr, ri)
+    else:
+        h = util.hypot(ax, ay)
+        if F(0.71) <= h <= F(1.73):
+            am = ax if ax > ay else ay
+            an = ay if ax > ay else ax
+            rr = util.log1p((am-F(1))*(am+F(1))+an*an)/F(2)
+        else:
+            rr = util.log(h)
+    ri = arg(z)
+
+    return C(rr, ri)
+
+def sqrt(z):
+    @pure
+    @C
+    def csqrt(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_csqrtf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return csqrt(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_csqrtf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex sqrt(): got non-complex input type")
+
+def _sqrt_impl(z):
+    a = z.real
+    b = z.imag
+    C = type(z)
+    F = type(a)
+    thresh = util.maxnum(F) / F(1 + util.SQRT2)
+    scale = False
+    result = C()
+
+    if a == F(0) and b == F(0):
+        return C(F(0), b)
+
+    if util.isinf(b):
+        return C(util.inf(F), b)
+
+    if util.isnan(a):
+        t = (b - b) / (b - b)
+        return C(a, t)
+
+    if util.isinf(a):
+        if util.signbit(a):
+            return C(util.fabs(b - b), util.copysign(a, b))
+        else:
+            return C(a, util.copysign(b - b, b))
+
+    if util.fabs(a) >= thresh or util.fabs(b) >= thresh:
+        a *= F(0.25)
+        b *= F(0.25)
+        scale = True
+    else:
+        scale = False
+
+    if a >= F(0):
+        t = util.sqrt((a + util.hypot(a, b)) * F(0.5))
+        result = C(t, b / (F(2) * t))
+    else:
+        t = util.sqrt((-a + util.hypot(a, b)) * F(0.5))
+        result = C(util.fabs(b) / (F(2) * t), util.copysign(t, b))
+
+    if scale:
+        return C(result.real * F(2), result.imag)
+    else:
+        return result
+
+def cosh(z):
+    @pure
+    @C
+    def ccosh(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_ccoshf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return ccosh(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_ccoshf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex cosh(): got non-complex input type")
+
+def _cosh_impl(z):
+    x = z.real
+    y = z.imag
+    xfinite = util.isfinite(x)
+    yfinite = util.isfinite(y)
+    big = cosh_big(x)
+    huge = cosh_huge(x)
+    C = type(z)
+    F = type(x)
+
+    if xfinite and yfinite:
+        if y == F(0):
+            return C(util.cosh(x), x * y)
+        absx = util.fabs(x)
+        if absx < big:
+            return C(util.cosh(x) * util.cos(y),
+                     util.sinh(x) * util.sin(y))
+
+        if absx < scaled_cexp_lower(z):
+            h = util.exp(absx) * F(0.5)
+            return C(h * util.cos(y),
+                     util.copysign(h, x) * util.sin(y))
+        elif absx < scaled_cexp_upper(z):
+            z = scaled_cexp(absx, y, -1, C)
+            return C(z.real, z.imag * util.copysign(F(1), x))
+        else:
+            h = huge * x
+            return C(h * h * util.cos(y), h * util.sin(y))
+
+
+    if x == F(0) and not yfinite:
+        return C(y - y, util.copysign(F(0), x * (y - y)))
+
+    if y == F(0) and not xfinite:
+        return C(x * x, util.copysign(F(0), x) * y)
+
+    if xfinite and not yfinite:
+        return C(y - y, x * (y - y))
+
+    if util.isinf(x):
+        if not yfinite:
+            return C(x * x, x * (y - y))
+        return C((x * x) * util.cos(y), x * util.sin(y))
+
+    return C((x * x) * (y - y), (x + x) * (y - y))
+
+def sinh(z):
+    @pure
+    @C
+    def csinh(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_csinhf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return csinh(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_csinhf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex sinh(): got non-complex input type")
+
+def _sinh_impl(z):
+    x = z.real
+    y = z.imag
+    xfinite = util.isfinite(x)
+    yfinite = util.isfinite(y)
+    big = cosh_big(x)
+    huge = cosh_huge(x)
+    C = type(z)
+    F = type(x)
+
+    if xfinite and yfinite:
+        if y == F(0):
+            return C(util.sinh(x), y)
+        absx = util.fabs(x)
+        if absx < big:
+            return C(util.sinh(x) * util.cos(y),
+                     util.cosh(x) * util.sin(y))
+
+        if absx < scaled_cexp_lower(z):
+            h = util.exp(absx) * F(0.5)
+            return C(util.copysign(h, x) * util.cos(y),
+                     h * util.sin(y))
+        elif absx < scaled_cexp_upper(z):
+            z = scaled_cexp(absx, y, -1, C)
+            return C(z.real * util.copysign(F(1), x), z.imag)
+        else:
+            h = huge * x
+            return C(h * util.cos(y), h * h * util.sin(y))
+
+
+    if x == F(0) and not yfinite:
+        return C(util.copysign(F(0), x * (y - y)), y - y)
+
+    if y == F(0) and not xfinite:
+        if util.isnan(x):
+            return z
+        return C(x, util.copysign(F(0), y))
+
+    if xfinite and not yfinite:
+        return C(y - y, x * (y - y))
+
+    if not xfinite and not util.isnan(x):
+        if not yfinite:
+            return C(x * x, x * (y - y))
+        return C(x * util.cos(y),
+                 util.inf(F) * util.sin(y))
+
+    return C((x * x) * (y - y), (x + x) * (y - y))
+
+def tanh(z):
+    @pure
+    @C
+    def ctanh(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_ctanhf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return ctanh(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_ctanhf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex tanh(): got non-complex input type")
+
+def _tanh_impl(z):
+    x = z.real
+    y = z.imag
+    xfinite = util.isfinite(x)
+    yfinite = util.isfinite(y)
+    huge = tanh_huge(x)
+    C = type(z)
+    F = type(x)
+
+    if not util.isfinite(x):
+        if util.isnan(x):
+            return C(x, y if y == F(0) else x * y)
+        return C(util.copysign(F(1), x),
+                 util.copysign(F(0), y if util.isinf(y) else util.sin(y) * util.cos(y)))
+
+    if not util.isfinite(y):
+        return C(y - y, y - y)
+
+    if util.fabs(x) >= huge:
+        exp_mx = util.exp(-util.fabs(x))
+        return C(util.copysign(F(1), x),
+                 F(4) * util.sin(y) * util.cos(y) *
+                        exp_mx * exp_mx)
+
+    t = util.tan(y)
+    beta = F(1) + t * t
+    s = util.sinh(x)
+    rho = util.sqrt(F(1) + s * s)
+    denom = F(1) + beta * s * s
+    return C((beta * rho * s) / denom, t / denom)
+
+def _f(a, b, hypot_a_b):
+    F = type(a)
+
+    if b < F(0):
+        return (hypot_a_b - b) / F(2)
+
+    if b == F(0):
+        return a / F(2)
+
+    return a * a / (hypot_a_b + b) / F(2);
+
+def _hard_work_params(F: type):  # -> (A_crossover, B_crossover, FOUR_SQRT_MIN)
+    if F is float:
+        return (10.0, 0.6417, 5.9666725849601654e-154)
+    elif F is float32:
+        return (float32(10.0), float32(0.6417), float32(4.3368086899420177e-19))
+    else:
+        _bad_input(F)
+
+def _do_hard_work(x, y):  # -> (rx, B_is_usable, B, sqrt_A2my2, new_y)
+    F = type(x)
+    A_crossover, B_crossover, four_sqrt_min = _hard_work_params(F)
+    eps = util.eps(F)
+
+    rx = F()
+    sqrt_A2my2 = F()
+
+    R = util.hypot(x, y + F(1))
+    S = util.hypot(x, y - F(1))
+    A = (R + S) / F(2)
+    B = F()
+
+    if A < F(1):
+        A = F(1)
+
+    if A < A_crossover:
+        if y == F(1) and x < eps * eps / F(128):
+            rx = util.sqrt(x)
+        elif x >= eps * util.fabs(y - F(1)):
+            Am1 = _f(x, F(1) + y, R) + _f(x, F(1) - y, S)
+            rx = util.log1p(Am1 + util.sqrt(Am1 * (A + F(1))))
+        elif y < F(1):
+            rx = x / util.sqrt((F(1) - y) * (F(1) + y))
+        else:
+            rx = util.log1p(y - F(1) + util.sqrt((y - F(1)) * (y + F(1))))
+    else:
+        rx = util.log(A + util.sqrt(A * A - F(1)))
+
+    new_y = y
+    B_is_usable = False
+
+    if y < four_sqrt_min:
+        B_is_usable = False
+        sqrt_A2my2 = A * (F(2) / eps)
+        new_y = y * (F(2) / eps)
+        return rx, B_is_usable, B, sqrt_A2my2, new_y
+
+    B = y / A
+    B_is_usable = True
+
+    if B > B_crossover:
+        B_is_usable = False
+
+        if y == F(1) and x < eps / F(128):
+            sqrt_A2my2 = util.sqrt(x) * util.sqrt((A + y) / F(2))
+        elif x >= eps * util.fabs(y - F(1)):
+            Amy = _f(x, y + F(1), R) + _f(x, y - F(1), S)
+            sqrt_A2my2 = util.sqrt(Amy * (A + y))
+        elif y > F(1):
+            sqrt_A2my2 = (x * (F(4) / eps / eps) * y /
+                util.sqrt((y + F(1)) * (y - F(1))))
+            new_y = y * (F(4) / eps / eps)
+        else:
+            sqrt_A2my2 = util.sqrt((F(1) - y) * (F(1) + y))
+
+    return rx, B_is_usable, B, sqrt_A2my2, new_y
+
+def _clog_for_large_values_params(F: type):  # -> (QUARTER_SQRT_MAX, SQRT_MIN)
+    if F is float:
+        return (3.3519519824856489e+153, 1.4916681462400413e-154)
+    elif F is float32:
+        return (float32(4.611685743549481e+18), float32(1.0842021724855044e-19))
+    else:
+        _bad_input(F)
+
+def _clog_for_large_values(x: F, y: F, F: type):
+    quarter_sqrt_max, sqrt_min = _clog_for_large_values_params(F)
+    rr = F()
+    ri = F()
+
+    ax = util.fabs(x)
+    ay = util.fabs(y)
+    if ax < ay:
+        ax, ay = ay, ax
+
+    if ax > util.maxnum(F) / F(2):
+        rr = util.log(util.hypot(x / F(util.E), y / F(util.E))) + F(1)
+    elif ax > quarter_sqrt_max or ay < sqrt_min:
+        rr = util.log(util.hypot(x, y))
+    else:
+        rr = util.log(ax * ax + ay * ay) / F(2)
+    ri = util.atan2(y, x)
+
+    return rr, ri
+
+def _acos_params(F: type):  # -> (SQRT_6_EPSILON, pio2_lo)
+    if F is float:
+        return (3.65002414998885671e-08, 6.1232339957367659e-17)
+    elif F is float32:
+        return (float32(8.4572793338e-4), float32(7.5497899549e-9))
+    else:
+        _bad_input(F)
+
+def acos(z):
+    @pure
+    @C
+    def cacos(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_cacosf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return cacos(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_cacosf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex acos(): got non-complex input type")
+
+def _acos_impl(z):
+    x = z.real
+    y = z.imag
+    C = type(z)
+    F = type(x)
+    sqrt_6_epsilon, pio2_lo = _acos_params(F)
+    pio2_hi = F(util.PI_2)
+    eps = util.eps(F)
+    recip_epsilon = F(1) / eps
+
+    sx = util.signbit(x)
+    sy = util.signbit(y)
+    ax = util.fabs(x)
+    ay = util.fabs(y)
+
+    rx = F()
+    ry = F()
+
+    if util.isnan(x) or util.isnan(y):
+        if util.isinf(x):
+            return C(y + y, -util.inf(F))
+
+        if util.isinf(y):
+            return C(x + x, -y)
+
+        if x == F(0):
+            return C(pio2_hi + pio2_lo, y + y)
+
+        return C(util.nan(F), util.nan(F))
+
+    if ax > recip_epsilon or ay > recip_epsilon:
+        wx, wy = _clog_for_large_values(x, y)
+        rx = util.fabs(wy)
+        ry = wx + F(util.LOGE2)
+        if not sy:
+            ry = -ry
+        return C(rx, ry)
+
+    if x == F(1) and y == F(0):
+        return C(F(0), -y)
+
+    # raise inexact
+
+    if ax < sqrt_6_epsilon / F(4) and ay < sqrt_6_epsilon / F(4):
+        return C(pio2_hi - (x - pio2_lo), -y)
+
+    ry, B_is_usable, B, sqrt_A2my2, new_x = _do_hard_work(ay, ax)
+    if B_is_usable:
+        if not sx:
+            rx = util.acos(B)
+        else:
+            rx = util.acos(-B)
+    else:
+        if not sx:
+            rx = util.atan2(sqrt_A2my2, new_x)
+        else:
+            rx = util.atan2(sqrt_A2my2, -new_x)
+
+    if not sy:
+        ry = -ry
+
+    return C(rx, ry)
+
+def acosh(z):
+    @pure
+    @C
+    def cacosh(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_cacoshf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return cacosh(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_cacoshf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex acosh(): got non-complex input type")
+
+def _acosh_impl(z):
+    C = type(z)
+    w = acos(z)
+    rx = w.real
+    ry = w.imag
+
+    if util.isnan(rx) and util.isnan(ry):
+        return C(ry, rx)
+
+    if util.isnan(rx):
+        return C(util.fabs(ry), rx)
+
+    if util.isnan(ry):
+        return C(ry, ry)
+
+    return C(util.fabs(ry), util.copysign(rx, z.imag))
+
+def _asinh_params(F: type):  # -> SQRT_6_EPSILON
+    if F is float:
+        return 3.65002414998885671e-08
+    elif F is float32:
+        return float32(8.4572793338e-4)
+    else:
+        _bad_input(F)
+
+def asinh(z):
+    @pure
+    @C
+    def casinh(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_casinhf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return casinh(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_casinhf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex asinh(): got non-complex input type")
+
+def _asinh_impl(z):
+    x = z.real
+    y = z.imag
+    C = type(z)
+    F = type(x)
+    sqrt_6_epsilon = _asinh_params(F)
+    recip_epsilon = F(1) / util.eps(F)
+
+    ax = util.fabs(x)
+    ay = util.fabs(y)
+    rx = F()
+    ry = F()
+
+    if util.isnan(x) or util.isnan(y):
+        if util.isinf(x):
+            return C(x, y + y)
+
+        if util.isinf(y):
+            return C(y, x + x)
+
+        if y == F(0):
+            return C(x + x, y)
+
+        return C(util.nan(F), util.nan(F))
+
+    if ax > recip_epsilon or ay > recip_epsilon:
+        if not util.signbit(x):
+            wx, wy = _clog_for_large_values(x, y)
+            wx += F(util.LOGE2)
+        else:
+            wx, wy = _clog_for_large_values(-x, -y)
+            wx += F(util.LOGE2)
+
+        return C(util.copysign(wx, x), util.copysign(wy, y))
+
+    if x == F(0) and y == F(0):
+        return z
+
+    # raise_inexact()
+
+    if ax < sqrt_6_epsilon / F(4) and ay < sqrt_6_epsilon / F(4):
+        return z
+
+    rx, B_is_usable, B, sqrt_A2my2, new_y = _do_hard_work(ax, ay)
+    if B_is_usable:
+        ry = util.asin(B)
+    else:
+        ry = util.atan2(new_y, sqrt_A2my2)
+
+    return C(util.copysign(rx, x), util.copysign(ry, y))
+
+def _sum_squares_params(F: type):  # -> SQRT_MIN
+    if F is float:
+        return 1.4916681462400413e-154
+    elif F is float32:
+        return float32(1.0842022e-19)
+    else:
+        _bad_input(F)
+
+def _sum_squares(x, y):
+    F = type(x)
+    sqrt_min = _sum_squares_params(F)
+
+    if y < sqrt_min:
+        return x * x
+
+    return x * x + y * y
+
+def _bitcast(x, T: type):
+    return Ptr[T](__ptr__(x).as_byte())[0]
+
+def _get_float_word(x: float32):
+    return _bitcast(x, u32)
+
+def _set_float_word(x: u32):
+    return _bitcast(x, float32)
+
+def _real_part_reciprocal32(x, y):
+    F = type(x)
+    bias = util.maxexp(F) - 1
+    cutoff = util.mantdig(F) // 2 + 1
+    hx = _get_float_word(x)
+    ix = hx & u32(0x7f800000)
+    hy = _get_float_word(y)
+    iy = hy & u32(0x7f800000)
+
+    if ix - iy >= u32(cutoff << 23) or util.isinf(x):
+        return F(1) / x
+
+    if iy - ix >= u32(cutoff << 23):
+        return x / y / y
+
+    if ix <= u32((bias + util.maxexp(F) // 2 - cutoff) << 23):
+        return (x / (x * x + y * y))
+
+    scale = _set_float_word(u32(0x7f800000) - ix)
+    x *= scale
+    y *= scale
+    return x / (x * x + y * y) * scale
+
+def _get_low_word(x):
+    return _bitcast(x, Tuple[u32, u32])[0]
+
+def _get_high_word(x):
+    return _bitcast(x, Tuple[u32, u32])[1]
+
+def _set_high_word(d, v):
+    w = (_get_low_word(d), v)
+    return _bitcast(w, float)
+
+def _real_part_reciprocal64(x, y):
+    F = type(x)
+    bias = util.maxexp(F) - 1
+    cutoff = util.mantdig(F) // 2 + 1
+    hx = _get_high_word(x)
+    ix = hx & u32(0x7ff00000)
+    hy = _get_high_word(y)
+    iy = hy & u32(0x7ff00000)
+
+    if ix - iy >= u32(cutoff << 20) or util.isinf(x):
+        return F(1) / x
+
+    if iy - ix >= u32(cutoff << 20):
+        return x / y / y
+
+    if ix <= u32((bias + util.maxexp(F) // 2 - cutoff) << 20):
+        return (x / (x * x + y * y))
+
+    scale = _set_high_word(1.0, u32(0x7ff00000) - ix)
+    x *= scale
+    y *= scale
+    return x / (x * x + y * y) * scale
+
+def _real_part_reciprocal(x, y):
+    if isinstance(x, float) and isinstance(y, float):
+        return _real_part_reciprocal64(x, y)
+    elif isinstance(x, float32) and isinstance(y, float32):
+        return _real_part_reciprocal32(x, y)
+    else:
+        _bad_input(type(x))
+
+def _atanh_params(F: type):  # -> (SQRT_3_EPSILON, pio2_lo)
+    if F is float:
+        return (2.5809568279517849e-8, 6.1232339957367659e-17)
+    elif F is float32:
+        return (float32(5.9801995673e-4), float32(7.5497899549e-9))
+    else:
+        _bad_input(F)
+
+def atanh(z):
+    @pure
+    @C
+    def catanh(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_catanhf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return catanh(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_catanhf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex atanh(): got non-complex input type")
+
+def _atanh_impl(z):
+    x = z.real
+    y = z.imag
+    C = type(z)
+    F = type(x)
+    sqrt_3_epsilon, pio2_lo = _atanh_params(F)
+    pio2_hi = F(util.PI_2)
+    recip_epsilon = F(1) / util.eps(F)
+
+    ax = util.fabs(x)
+    ay = util.fabs(y)
+    rx = F()
+    ry = F()
+
+    if y == F(0) and ax <= F(1):
+        return C(util.atanh(x), y)
+
+    if x == F(0):
+        return C(x, util.atan(y))
+
+    if util.isnan(x) or util.isnan(y):
+        if util.isinf(x):
+            return C(util.copysign(F(0), x), y + y)
+
+        if util.isinf(y):
+            return C(util.copysign(F(0), x),
+                     util.copysign(pio2_hi + pio2_lo, y))
+
+        return C(util.nan(F), util.nan(F))
+
+    if ax > recip_epsilon or ay > recip_epsilon:
+        return C(_real_part_reciprocal(x, y),
+                 util.copysign(pio2_hi + pio2_lo, y))
+
+    if ax < sqrt_3_epsilon / F(2) and ay < sqrt_3_epsilon / F(2):
+        # raise_inexact()
+        return z
+
+    if ax == F(1) and ay < util.eps(F):
+        rx = F(util.LOGE2) - util.log(ay) / F(2)
+    else:
+        rx = util.log1p(F(4) * ax / _sum_squares(ax - F(1), ay)) / F(4)
+
+    if ax == F(1):
+        ry = util.atan2(F(2), -ay) / F(2)
+    elif ay < util.eps(F):
+        ry = util.atan2(F(2) * ay, (F(1) - ax) * (F(1) + ax)) / F(2)
+    else:
+        ry = util.atan2(F(2) * ay, (F(1) - ax) * (F(1) + ax) - ay * ay) / F(2)
+
+    return C(util.copysign(rx, x), util.copysign(ry, y))
+
+def asin(z):
+    @pure
+    @C
+    def casin(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_casinf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return casin(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_casinf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex asin(): got non-complex input type")
+
+def _asin_impl(z):
+    C = type(z)
+    z = asinh(C(z.imag, z.real))
+    return C(z.imag, z.real)
+
+def atan(z):
+    @pure
+    @C
+    def catan(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_catanf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return catan(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_catanf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex atan(): got non-complex input type")
+
+def _atan_impl(z):
+    C = type(z)
+    z = atanh(C(z.imag, z.real))
+    return C(z.imag, z.real)
+
+def cos(z):
+    @pure
+    @C
+    def ccos(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_ccosf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return ccos(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_ccosf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex cos(): got non-complex input type")
+
+def _cos_impl(z):
+    C = type(z)
+    return cosh(C(-z.imag, z.real))
+
+def sin(z):
+    @pure
+    @C
+    def csin(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_csinf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return csin(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_csinf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex sin(): got non-complex input type")
+
+def _sin_impl(z):
+    C = type(z)
+    z = sinh(C(-z.imag, z.real))
+    return C(z.imag, -z.real)
+
+def tan(z):
+    @pure
+    @C
+    def ctan(r: float, i: float) -> complex:
+        pass
+
+    @C
+    def cnp_ctanf(r: float32, i: float32, z: Ptr[complex64]) -> None:
+        pass
+
+    if isinstance(z, complex):
+        return ctan(z.real, z.imag)
+    elif isinstance(z, complex64):
+        o = complex64()
+        cnp_ctanf(z.real, z.imag, __ptr__(o))
+        return o
+    else:
+        compile_error("complex tan(): got non-complex input type")
+
+def _tan_impl(z):
+    C = type(z)
+    z = tanh(C(-z.imag, z.real))
+    return C(z.imag, -z.real)
+
+def log2(z):
+    C = type(z)
+    F = type(z.real)
+    z = log(z)
+    z = C(z.real * F(util.LOG2E), z.imag * F(util.LOG2E))
+    return z
+
+def log10(z):
+    C = type(z)
+    F = type(z.real)
+    z = log(z)
+    z = C(z.real * F(util.LOG10E), z.imag * F(util.LOG10E))
+    return z
+
+def exp2(z):
+    C = type(z)
+    F = type(z.real)
+    z = C(z.real * F(util.LOGE2), z.imag * F(util.LOGE2))
+    return exp(z)
+
+def expm1(z):
+    x = z.real
+    y = z.imag
+    C = type(z)
+    F = type(x)
+    a = util.sin(y / F(2))
+    rx = util.expm1(x) * util.cos(y) - F(2) * a * a
+    ry = util.exp(x) * util.sin(y)
+    return C(rx, ry)
+
+def log1p(z):
+    x = z.real
+    y = z.imag
+    C = type(z)
+    F = type(x)
+
+    l = util.hypot(x + F(1), y)
+    ry = util.atan2(y, x + F(1))
+    rx = util.log(l)
+    return C(rx, ry)

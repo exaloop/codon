@@ -1,0 +1,2352 @@
+import numpy as np
+from numpy import *
+
+@test
+def test_sin():
+    assert np.sin(np.pi / 2.) == 1.0
+    assert (round(np.sin(np.array((0., 30., 45., 60., 90.)) * np.pi / 180.),
+                  8) == round(array([0., 0.5, 0.70710678, 0.86602540, 1.]),
+                              8)).all()
+    assert np.sin(-1 + 1j) == (-1.2984575814159773 + 0.6349639147847361j)
+    assert np.isclose(np.sin(2.5 + 2j),
+                      (2.2515693217814876 - 2.905636060226587j))
+    assert np.isclose(np.sin(10**9), 0.5458434494486996)
+    assert np.sin(10**(-5)) == 0
+
+test_sin()
+
+@test
+def test_cos():
+    assert (round(np.cos(np.array([0, np.pi / 2, np.pi])),
+                  8) == round(np.array([1., 6.12303177e-17, -1]), 8)).all()
+    assert np.isclose(np.cos(2.5 + 2j),
+                      (-3.0140590583498352 - 2.170574924649956j))
+    assert np.cos(-1.5 + 1j) == (0.10915320605445292 + 1.1722572989107924j)
+    assert np.cos(-1.5 - 1j) == (0.10915320605445292 - 1.1722572989107924j)
+    assert np.cos(10**(-5)) == 1
+    assert np.isclose(np.cos(10**(9)), 0.8378871813639024)
+
+test_cos()
+
+@test
+def test_tan():
+    assert round(np.tan(-np.pi), 8) == round(1.22460635e-16, 8)
+    assert round(np.tan(np.pi), 8) == round(-1.22460635e-16, 8)
+    assert np.isclose(np.tan(-1.5 + 1j),
+                      (-0.050905362327228636 + 1.3082952992279357j))
+    assert np.isclose(np.tan(10**(9)), 0.6514522021451413)
+    assert np.tan(10**(-9)) == 0
+
+test_tan()
+
+@test
+def test_arcsin():
+    assert np.arcsin(1) == 1.5707963267948966
+    assert np.arcsin(-1) == -1.5707963267948966
+    assert np.arcsin(0) == 0.0
+    assert np.isclose(np.arcsin(-1.5 + 1j), (-0.9063757759747444 + 1.2604751877984541j))
+
+test_arcsin()
+
+@test
+def test_arccos():
+    assert np.arccos(1) == 0.0
+    assert np.arccos(-1) == 3.141592653589793
+    assert np.arccos(0) == 1.5707963267948966
+    assert np.isclose(np.arccos(1.5 + 2j), (0.964284808595142 - 1.6224941488715938j))
+
+test_arccos()
+
+@test
+def test_arctan():
+    assert np.arctan(1) == 0.7853981633974483
+    assert np.arctan(-1) == -0.7853981633974483
+    assert np.arctan(0) == 0.0
+    assert np.arctan(1.5 + 2j) == (1.311223269671635 + 0.3104282830771958j)
+
+test_arctan()
+
+@test
+def test_hypot():
+    assert (np.hypot(3 * np.ones((3, 3)),
+                     4 * np.ones((3, 3))) == np.array([[5., 5., 5.],
+                                                       [5., 5., 5.],
+                                                       [5., 5., 5.]])).all()
+    assert (np.hypot(3 * np.ones((3, 3)), [4]) == np.array([[5., 5., 5.],
+                                                            [5., 5., 5.],
+                                                            [5., 5.,
+                                                             5.]])).all()
+
+test_hypot()
+
+@test
+def test_arctan2():
+    assert (round(np.arctan2([1., -1.], [0., 0.]),
+                  8) == np.array([1.57079633, -1.57079633])).all()
+    assert (round(np.arctan2([0., 0., np.inf], [+0., -0., np.inf]),
+                  8) == np.array([0., 3.14159265, 0.78539816])).all()
+    x = np.array([-1, +1, +1, -1])
+    y = np.array([-1, -1, +1, +1])
+    assert (np.arctan2(y, x) * 180 / np.pi == array([-135., -45., 45.,
+                                                     135.])).all()
+
+@test
+def test_degrees():
+    assert np.degrees(np.pi / 6) == 29.999999999999996
+    assert np.degrees(0.) == 0.0
+
+test_degrees()
+
+@test
+def test_radians():
+    assert np.radians(30.) == 0.5235987755982988
+    assert np.radians(180.) == 3.141592653589793
+
+test_radians()
+
+@test
+def test_deg2rad():
+    assert np.deg2rad(180) == 3.1415926535897931
+    assert np.deg2rad(-90) == -1.5707963267948966
+
+test_deg2rad()
+
+@test
+def test_rad2deg():
+    assert np.rad2deg(np.pi / 2) == 90.0
+    assert np.rad2deg(-np.pi / 2) == -90.0
+    assert np.rad2deg(np.pi) == 180.0
+
+test_rad2deg()
+
+@test
+def test_sinh():
+    assert np.sinh(0) == 0.0
+    assert np.sinh(np.pi * 1j / 2) == 1j
+    assert np.isclose(np.sinh(np.pi), 11.548739357257748)
+    assert np.sinh(1.5 - 1j) == (1.1504545994253859 - 1.9794844356103j)
+    assert np.sinh(0 + 1j) == 0.8414709848078965j
+
+test_sinh()
+
+@test
+def test_cosh():
+    assert np.cosh(0) == 1.0
+    assert np.cosh(np.pi * 1j) == (-1 + 0j)
+    assert np.cosh(np.pi) == 11.591953275521519
+    assert np.cosh(0 + 1j) == (0.5403023058681398 + 0j)
+    assert np.cosh(-1.5 + 1j) == (1.2710123394623098 - 1.7917268800098571j)
+
+test_cosh()
+
+@test
+def test_tanh():
+    assert np.tanh(0) == 0.0
+    assert np.tanh(np.pi * 1j) == -1.2246467991473532e-16j
+    assert np.tanh(np.pi * 1j / 2) == 1.633123935319537e+16j
+    assert round(np.tanh(-1.5 + 1j), 8) == (-1.03795878 + 0.09421292j)
+    assert np.tanh(1 + 0j) == (0.7615941559557649 + 0j)
+
+test_tanh()
+
+@test
+def test_arcsinh():
+    assert np.arcsinh(np.e) == 1.725382558852315
+    assert np.arcsinh(10) == 2.99822295029797
+    assert np.arcsinh(np.inf) == np.inf
+    assert np.isclose(np.arcsinh(1 + 0j), (0.881373587019543 + 0j))
+    assert np.isclose(np.arcsinh(1.5 + 1j),
+                      (1.3169578969248166 + 0.5235987755982989j))
+
+test_arcsinh()
+
+@test
+def test_arccosh():
+    assert np.arccosh(np.e) == 1.6574544541530771
+    assert np.arccosh(10) == 2.993222846126381
+    assert np.arccosh(np.inf) == np.inf
+    assert np.arccosh(1.5 + 1j) == (1.2604751877984541 + 0.6644205508201522j)
+    assert np.arccosh(1 + 0j) == 0j
+
+test_arccosh()
+
+@test
+def test_arctanh():
+    assert np.arctanh(0) == 0.0
+    assert np.isclose(np.arctanh(0.5), 0.5493061443340548)
+    assert np.isclose(np.arctanh(-0.5), -0.5493061443340548)
+    assert np.isclose(np.arctanh(1 + 1j), (0.40235947810852507 + 1.0172219678978514j))
+    assert np.arctanh(-1.5 + 1j) == (-0.4394644793880934 + 1.2074751564540338j)
+
+test_arctanh()
+
+@test
+def test_rint():
+    assert (np.rint(np.array([-1.7, -1.5, -0.2, 0.2, 1.5, 1.7, 2.0
+                              ])) == np.array([-2., -2., -0., 0., 2., 2.,
+                                               2.])).all()
+
+test_rint()
+
+@test
+def test_floor():
+    assert (np.floor(np.array([-1.7, -1.5, -0.2, 0.2, 1.5, 1.7, 2.0
+                               ])) == np.array([-2., -2., -1., 0., 1., 1.,
+                                                2.])).all()
+
+test_floor()
+
+@test
+def test_ceil():
+    assert (np.ceil(np.array([-1.7, -1.5, -0.2, 0.2, 1.5, 1.7, 2.0
+                              ])) == np.array([-1., -1., -0., 1., 2., 2.,
+                                               2.])).all()
+
+test_ceil()
+
+@test
+def test_trunc():
+    assert (np.trunc(np.array([-1.7, -1.5, -0.2, 0.2, 1.5, 1.7, 2.0
+                               ])) == np.array([-1., -1., -0., 0., 1., 1.,
+                                                2.])).all()
+
+test_trunc()
+
+@test
+def test_prod():
+    a = np.array([[1., 2.], [3., 4.]])
+    assert a.prod() == 24.0
+    assert (a.prod(axis=0) == np.array([3., 8.])).all()
+    assert (a.prod(axis=1) == np.array([2., 12.])).all()
+    assert np.array([2]).prod() == 2.
+    assert np.array([1, 4, 5, 6, 0, 9]).prod() == 0
+    assert np.array([1000000, 1000000, 1000000]).prod() == 1000000000000000000
+    assert np.array(empty(0, float)).prod() == 1.
+
+test_prod()
+
+@test
+def test_sum():
+    assert np.array([0.5, 1.5]).sum() == 2.0
+    assert np.array([0.5, 0.7, 0.2, 1.5]).sum() == 2.9
+    assert np.array([[0, 1], [0, 5]]).sum() == 6
+    assert np.array([[0, 1], [0, -5]]).sum() == -4
+    assert (np.array([[0, 1], [0, 5]]).sum(axis=0) == np.array([0, 6])).all()
+    assert (np.array([[0, 1], [0, 5]]).sum(axis=1) == np.array([1, 5])).all()
+    assert np.array([10**9, 10**9]).sum() == 2000000000
+
+#    assert np.array([10**(-9), 10**(-9)]).sum() == 2e-09
+
+test_sum()
+
+@test
+def test_gradient_basic():
+    # Make sure that gradient supports subclasses like masked arrays
+    v = [[1, 1], [3, 4]]
+    x = np.array(v)
+    dx = [np.array([[2., 3.], [2., 3.]]), np.array([[0., 0.], [1., 1.]])]
+    assert array_equal(gradient(x), dx)
+    assert array_equal(gradient(v), dx)
+
+test_gradient_basic()
+
+@test
+def test_gradient_datetime64():
+    # Make sure gradient() can handle special types like datetime64
+    x = np.array([
+        '1910-08-16', '1910-08-11', '1910-08-10', '1910-08-12', '1910-10-12',
+        '1910-12-12', '1912-12-12'
+    ],
+                 dtype=datetime64['D', 1])
+
+    x1 = np.array([
+        '1910-08-16', '1910-08-11', '1910-08-10', '1910-08-12', '1910-10-12',
+        '1910-12-12', '1912-12-12'
+    ],
+                  dtype=datetime64['Y', 1])
+
+    dx = np.array([-5, -3, 0, 31, 61, 396, 731], dtype=timedelta64['D', 1])
+
+    dx1 = np.array([0, 0, 0, 0, 0, 0, 0], dtype=timedelta64['Y', 1])
+
+    assert array_equal(gradient(x), dx)
+    assert array_equal(gradient(x1, [2, 3, 7, 9, 12, 56, 34]), dx1)
+
+    assert isinstance(gradient(x).dtype, np.timedelta64['D', 1])
+    assert isinstance(
+        gradient(x1, [2, 3, 7, 9, 12, 56, 34]).dtype, np.timedelta64['Y', 1])
+
+test_gradient_datetime64()
+
+@test
+def test_gradient_timedelta64():
+    # Make sure gradient() can handle special types like timedelta64
+    x = np.array([-5, -3, 10, 12, 61, 321, 300], dtype=np.timedelta64['D', 1])
+
+    dx = np.array([2, 7, 7, 25, 154, 119, -21], dtype=np.timedelta64['D', 1])
+
+    dx1 = np.array([2, 2, 2, 7, 15, -5, 0], dtype=np.timedelta64['D', 1])
+
+    assert array_equal(gradient(x), dx)
+    assert array_equal(gradient(x, [2, 3, 7, 9, 12, 56, 34]), dx1)
+
+    assert isinstance(gradient(x).dtype, np.timedelta64['D', 1])
+    assert isinstance(
+        gradient(x, [2, 3, 7, 9, 12, 56, 34]).dtype, np.timedelta64['D', 1])
+
+test_gradient_timedelta64()
+
+@test
+def test_gradient_args():
+    dx = np.cumsum(np.ones(5))
+    dx_uneven = [1., 2., 5., 9., 11.]
+    f_2d = np.arange(25).reshape(5, 5)
+
+    # distances must be scalars or have size equal to gradient[axis]
+    assert np.isclose(
+        np.gradient(np.arange(5), 3.),
+        np.array([0.333333, 0.333333, 0.333333, 0.333333, 0.333333])).all()
+    assert np.isclose(
+        np.gradient(np.arange(5), np.array(3.)),
+        np.array([0.333333, 0.333333, 0.333333, 0.333333, 0.333333])).all()
+    assert np.isclose(np.gradient(np.arange(5), dx),
+                      np.array([1., 1., 1., 1., 1.])).all()
+    # dy is set equal to dx because scalar
+    np.gradient(f_2d, 1.5)
+
+    np.gradient(f_2d, dx_uneven, dx_uneven)
+    # mix between even and uneven spaces and
+    # mix between scalar and vector
+    np.gradient(f_2d, dx, 2)
+
+    # 2D but axis specified
+    np.gradient(f_2d, dx, axis=1)
+
+test_gradient_args()
+
+@test
+def test_gradient_badargs():
+    f_2d = np.arange(25).reshape(5, 5)
+    x = np.cumsum(np.ones(5))
+
+    try:
+        np.gradient(x, axis=3)
+        assert False
+    except AxisError:
+        pass
+    try:
+        np.gradient(f_2d, 1, np.ones(2))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.gradient(f_2d, np.ones(2), np.ones(2))
+        assert False
+    except ValueError:
+        pass
+
+    # TODO: Below tests returns comiplation errors and
+    # will be active once test infra in updated to handle them.
+
+    # try:
+    #     np.gradient(f_2d, x)
+    #     assert False
+    # except ValueError:
+    #     pass
+
+    # try:
+    #     np.gradient(f_2d, x, axis=(0,1))
+    #     assert False
+    # except ValueError:
+    #     pass
+
+    # try:
+    #     np.gradient(f_2d, x, x, x)
+    #     assert False
+    # except ValueError:
+    #     pass
+
+    # try:
+    #     np.gradient(f_2d, 1, 1, 1)
+    #     assert False
+    # except ValueError:
+    #     pass
+
+    # try:
+    #     np.gradient(f_2d, x, x, axis=1)
+    #     assert False
+    # except ValueError:
+    #     pass
+
+    # try:
+    #     np.gradient(f_2d, 1, 1, axis=1)
+    #     assert False
+    # except ValueError:
+
+test_gradient_badargs()
+
+@test
+def test_gradient_second_order_accurate():
+    # Testing that the relative numerical error is less that 3% for
+    # this example problem. This corresponds to second order
+    # accurate finite differences for all interior and boundary
+    # points.
+    x = np.linspace(0, 1, 10)
+    dx = x[1] - x[0]
+    y = 2 * x**3 + 4 * x**2 + 2 * x
+    analytical = 6 * x**2 + 8 * x + 2
+    num_error = np.abs((np.gradient(y, dx, edge_order=2) / analytical) - 1)
+    assert (np.all(num_error < 0.03) == True)
+
+    #test with unevenly spaced
+    import numpy.random as rnd
+    rnd.seed(0)
+    x = np.sort(rnd.random(10))
+    y = 2 * x**3 + 4 * x**2 + 2 * x
+    analytical = 6 * x**2 + 8 * x + 2
+    num_error = np.abs((np.gradient(y, x, edge_order=2) / analytical) - 1)
+    assert (np.all(num_error < 0.03) == True)
+
+test_gradient_second_order_accurate()
+
+@test
+def test_gradient_spacing():
+    f = np.array([0, 2., 3., 4., 5., 5.])
+    f = np.tile(f, (6, 1)) + f.reshape(-1, 1)
+    x_uneven = np.array([0., 0.5, 1., 3., 5., 7.])
+    x_even = np.arange(6.)
+    fdx_even_ord1 = np.tile([2., 1.5, 1., 1., 0.5, 0.], (6, 1))
+    fdx_even_ord2 = np.tile([2.5, 1.5, 1., 1., 0.5, -0.5], (6, 1))
+    fdx_uneven_ord1 = np.tile([4., 3., 1.7, 0.5, 0.25, 0.], (6, 1))
+    fdx_uneven_ord2 = np.tile([5., 3., 1.7, 0.5, 0.25, -0.25], (6, 1))
+    # evenly spaced
+    for edge_order, exp_res in [(1, fdx_even_ord1), (2, fdx_even_ord2)]:
+        res1 = np.gradient(f, 1., axis=(0, 1), edge_order=edge_order)
+        res2 = np.gradient(f,
+                           x_even,
+                           x_even,
+                           axis=(0, 1),
+                           edge_order=edge_order)
+        res3 = np.gradient(f, x_even, x_even, axis=None, edge_order=edge_order)
+        assert array_equal(res1, res2)
+        assert array_equal(res2, res3)
+        assert array_equal(res1[0], exp_res.T)
+        assert array_equal(res1[1], exp_res)
+
+        res1 = gradient(f, 1., axis=0, edge_order=edge_order)
+        res2 = gradient(f, x_even, axis=0, edge_order=edge_order)
+        assert (res1.shape == res2.shape)
+        assert array_equal(res2, exp_res.T)
+
+        res1 = gradient(f, 1., axis=1, edge_order=edge_order)
+        res2 = gradient(f, x_even, axis=1, edge_order=edge_order)
+        assert (res1.shape == res2.shape)
+        assert array_equal(res2, exp_res)
+
+        # unevenly spaced
+    for edge_order, exp_res in [(1, fdx_uneven_ord1), (2, fdx_uneven_ord2)]:
+        res1 = gradient(f,
+                        x_uneven,
+                        x_uneven,
+                        axis=(0, 1),
+                        edge_order=edge_order)
+        res2 = gradient(f,
+                        x_uneven,
+                        x_uneven,
+                        axis=None,
+                        edge_order=edge_order)
+        assert array_equiv(res1, res2)
+        assert np.isclose(res1[0], exp_res.T).all()
+        assert np.isclose(res1[1], exp_res).all()
+
+        res1 = gradient(f, x_uneven, axis=0, edge_order=edge_order)
+        assert isclose(res1, exp_res.T).all()
+
+        res1 = gradient(f, x_uneven, axis=1, edge_order=edge_order)
+        assert isclose(res1, exp_res).all()
+
+    # mixed
+    res1 = gradient(f, x_even, x_uneven, axis=(0, 1), edge_order=1)
+    res2 = gradient(f, x_uneven, x_even, axis=(1, 0), edge_order=1)
+    assert array_equal(res1[0], res2[1])
+    assert array_equal(res1[1], res2[0])
+    assert array_equal(res1[0], fdx_even_ord1.T)
+    assert np.isclose(res1[1], fdx_uneven_ord1).all()
+
+    res1 = gradient(f, x_even, x_uneven, axis=(0, 1), edge_order=2)
+    res2 = gradient(f, x_uneven, x_even, axis=(1, 0), edge_order=2)
+    assert array_equal(res1[0], res2[1])
+    assert array_equal(res1[1], res2[0])
+    assert array_equal(res1[0], fdx_even_ord2.T)
+    assert np.isclose(res1[1], fdx_uneven_ord2).all()
+
+test_gradient_spacing()
+
+@test
+def test_gradient_specific_axes():
+    # Testing that gradient can work on a given axis only
+    v = [[1, 1], [3, 4]]
+    x = np.array(v)
+    dx = [np.array([[2., 3.], [2., 3.]]), np.array([[0., 0.], [1., 1.]])]
+    assert array_equal(gradient(x, axis=0), dx[0])
+    assert array_equal(gradient(x, axis=1), dx[1])
+    assert array_equal(gradient(x, axis=-1), dx[1])
+    assert array_equal(gradient(x, axis=(1, 0)), [dx[1], dx[0]])
+
+    # test axis=None which means all axes
+    assert array_equal(gradient(x, axis=None), [dx[0], dx[1]])
+    # and is the same as no axis keyword given
+    assert array_equal(gradient(x, axis=None), gradient(x))
+
+    # test vararg order
+    assert array_equal(gradient(x, 2, 3, axis=(1, 0)),
+                       [dx[1] / 2.0, dx[0] / 3.0])
+    # test maximal number of varargs
+
+    try:
+        np.gradient(x, axis=3)
+        assert False
+    except AxisError:
+        pass
+
+    try:
+        np.gradient(x, axis=-3)
+        assert False
+    except AxisError:
+        pass
+
+test_gradient_specific_axes()
+
+@test
+def test_gradient_inexact_dtypes():
+    x = np.array([1, 2, 3], dtype=float16)
+    assert isinstance(gradient(x).dtype, np.diff(x).dtype)
+
+    x = np.array([1, 2, 3], dtype=float32)
+    assert isinstance(gradient(x).dtype, np.diff(x).dtype)
+
+    x = np.array([1, 2, 3], dtype=float64)
+    assert isinstance(gradient(x).dtype, np.diff(x).dtype)
+
+    f = np.array([1.2, 3.4, -1.0, 2.5], np.float32)
+    d = np.array([1.0, 2.1, 2.9, 6.1], np.float32)
+
+    res = np.gradient(f, d)
+    assert np.isclose(res, np.array([2, -2.3421, -4.18125, 1.09375])).all()
+    assert isinstance(gradient(f, d).dtype, np.diff(f).dtype)
+
+    f = np.array([1.2, 3.4, -1.0, 2.5], np.float32)
+    d = np.array([1.0, 2.1, 2.9, 6.1], np.float16)
+
+    res = np.gradient(f, d)
+    assert np.isclose(res, np.array([2.00071, -2.33627, -4.17639,
+                                     1.09335])).all()
+    assert isinstance(gradient(f, d).dtype, np.diff(f).dtype)
+
+    #test when dx is linear
+    f = np.array([1.2, 3.4, -1.0, 2.5], np.float16)
+    d = np.array([1.0, 2.1, 2.9, 6.1], np.float32)
+
+    res = np.gradient(f, d)
+    assert np.isclose(res, np.array([2, -2.33594, -4.17969, 1.09375])).all()
+    assert isinstance(gradient(f, d).dtype, np.diff(f).dtype)
+
+    #test when dx is scaler
+    f = np.array([1.2, 3.4, -1.0, 2.5], np.float16)
+    d = np.float32(2.0)
+
+    res = np.gradient(f, d)
+    assert np.isclose(res, np.array([1.09961, -0.549805, -0.225098,
+                                     1.75])).all()
+    assert isinstance(gradient(f, d).dtype, np.diff(f).dtype)
+
+test_gradient_inexact_dtypes()
+
+@test
+def test_gradient_values():
+    # needs at least 2 points for edge_order ==1
+    np.gradient(np.arange(2), edge_order=1)
+    # needs at least 3 points for edge_order ==1
+    np.gradient(np.arange(3), edge_order=2)
+
+    try:
+        np.gradient(np.arange(0), edge_order=1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.gradient(np.arange(0), edge_order=2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.gradient(np.arange(1), edge_order=1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.gradient(np.arange(1), edge_order=2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.gradient(np.arange(2), edge_order=2)
+        assert False
+    except ValueError:
+        pass
+
+test_gradient_values()
+
+@test
+def test_gradient_x_decreasing_unsigned(x_dtype: type):
+    x = np.array([3, 2, 1], x_dtype)
+    f = np.array([0, 2, 4])
+    dfdx = np.gradient(f, x)
+    assert array_equal(dfdx, [-2] * len(x))
+
+test_gradient_x_decreasing_unsigned(x_dtype=float)
+test_gradient_x_decreasing_unsigned(x_dtype=int)
+test_gradient_x_decreasing_unsigned(x_dtype=double)
+test_gradient_x_decreasing_unsigned(x_dtype=int64)
+test_gradient_x_decreasing_unsigned(x_dtype=int8)
+test_gradient_x_decreasing_unsigned(x_dtype=int32)
+test_gradient_x_decreasing_unsigned(x_dtype=int16)
+
+@test
+def test_gradient_f_signed_int_big_jump(f_dtype: type):
+    maxint = 2.2250738585072014e-308
+    x = np.array([1, 3])
+    f = np.array([-1, maxint], dtype=f_dtype)
+    dfdx = gradient(f, x)
+    assert array_equal(dfdx, [0.5] * len(x))
+
+test_gradient_f_signed_int_big_jump(float)
+
+@test
+def test_gradient_f_decreasing_unsigned_int(f_dtype: type):
+    f = np.array([5, 4, 3, 2, 1], dtype=f_dtype)
+    g = np.gradient(f)
+    assert array_equal(g, [-1] * len(f))
+
+test_gradient_f_decreasing_unsigned_int(f_dtype=uint)
+test_gradient_f_decreasing_unsigned_int(f_dtype=uint8)
+test_gradient_f_decreasing_unsigned_int(f_dtype=uint16)
+test_gradient_f_decreasing_unsigned_int(f_dtype=uint32)
+test_gradient_f_decreasing_unsigned_int(f_dtype=uint64)
+test_gradient_f_decreasing_unsigned_int(f_dtype=float)
+test_gradient_f_decreasing_unsigned_int(f_dtype=double)
+
+@test
+def test_gradient():
+
+    def gradient_test_helper(res, out):
+        for i in range(len(res)):
+            assert np.isclose(res[i], out[i]).all()
+
+    #(1d,2d,3d) without spacing axis is none, edge_order = 1
+    assert np.isclose(np.gradient(np.array([3, 5, 8])), np.array([2, 2.5,
+                                                                  3])).all()
+    assert np.isclose(
+        np.gradient(
+            np.array([[[1, 2], [4, 5]], [[10, 11], [13, 14]],
+                      [[19, 20], [22, 23]]])),
+        np.array([[[[9, 9], [9, 9]], [[9, 9], [9, 9]], [[9, 9], [9, 9]]],
+                  [[[3, 3], [3, 3]], [[3, 3], [3, 3]], [[3, 3], [3, 3]]],
+                  [[[1, 1], [1, 1]], [[1, 1], [1, 1]], [[1, 1], [1,
+                                                                 1]]]])).all()
+
+    #(1d,2d,3d) without spacing axis is none, edge_order = 2
+    assert np.isclose(np.gradient(np.array([3, 5, 8]), edge_order=2),
+                      np.array([1.5, 2.5, 3.5])).all()
+    assert np.isclose(
+        np.gradient(np.array([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10],
+                              [11, 12, 13, 14, 15], [16, 17, 18, 19, 20],
+                              [21, 22, 23, 24, 25]]),
+                    edge_order=2),
+        np.array([[[5, 5, 5, 5, 5], [5, 5, 5, 5, 5], [5, 5, 5, 5, 5],
+                   [5, 5, 5, 5, 5], [5, 5, 5, 5, 5]],
+                  [[1, 1, 1, 1, 1], [1, 1, 1, 1, 1], [1, 1, 1, 1, 1],
+                   [1, 1, 1, 1, 1], [1, 1, 1, 1, 1]]])).all()
+    assert np.isclose(
+        np.gradient(np.array([[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
+                              [[10, 11, 12], [13, 14, 15], [16, 17, 18]],
+                              [[19, 20, 21], [22, 23, 24], [25, 26, 27]]]),
+                    edge_order=2),
+        np.array([[[[9, 9, 9], [9, 9, 9], [9, 9, 9]],
+                   [[9, 9, 9], [9, 9, 9], [9, 9, 9]],
+                   [[9, 9, 9], [9, 9, 9], [9, 9, 9]]],
+                  [[[3, 3, 3], [3, 3, 3], [3, 3, 3]],
+                   [[3, 3, 3], [3, 3, 3], [3, 3, 3]],
+                   [[3, 3, 3], [3, 3, 3], [3, 3, 3]]],
+                  [[[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+                   [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+                   [[1, 1, 1], [1, 1, 1], [1, 1, 1]]]])).all()
+
+    #(1d,2d,3d) without spacing axis is not none, edge_order = 1
+    assert np.isclose(np.gradient(np.array([3, 5, 8]), axis=-1),
+                      np.array([2, 2.5, 3])).all()
+    assert np.isclose(np.gradient(np.array([[3, 5, 8], [5, 7, 9]]), axis=-1),
+                      np.array([[2, 2.5, 3], [2, 2.0, 2]])).all()
+    assert np.isclose(
+        np.gradient(np.array([[[1, 2], [4, 5]], [[10, 11], [13, 14]],
+                              [[19, 20], [22, 23]]]),
+                    axis=-1),
+        np.array([[[1, 1], [1, 1]], [[1, 1], [1, 1]], [[1, 1], [1,
+                                                                1]]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([1, 2, 4, 7, 11]), axis=0, edge_order=1),
+        np.array([1., 1.5, 2.5, 3.5, 4.])).all()
+    assert np.isclose(
+        np.gradient(np.array([[2.5, 3, 4], [7, 11, 8.9]]),
+                    axis=1,
+                    edge_order=1), np.array([[0.5, 0.75, 1.], [4., 0.95,
+                                                               -2.1]])).all()
+    assert np.isclose(
+        np.gradient(np.array([[[2.5, 3.566, 4.47], [7.98, 11.67, 8.9]],
+                              [[1.89, 9, 4.23], [3.55, 11.877, 10.9]]]),
+                    axis=2,
+                    edge_order=1),
+        np.array([[[1.066, 0.985, 0.904], [3.69, 0.46, -2.77]],
+                  [[7.11, 1.17, -4.77], [8.327, 3.675, -0.977]]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([1, 2, 4, 7, 11]), axis=0, edge_order=2),
+        np.array([0.5, 1.5, 2.5, 3.5, 4.5])).all()
+    assert np.isclose(
+        np.gradient(np.array([[2.5, 3, 4], [7, 11, 8.9]]),
+                    axis=1,
+                    edge_order=2),
+        np.array([[0.25, 0.75, 1.25], [7.05, 0.95, -5.15]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([[[2.5, 3.566, 4.47], [7.98, 11.67, 8.9]],
+                              [[1.89, 9, 4.23], [3.55, 11.877, 10.9]]]),
+                    axis=2,
+                    edge_order=2),
+        np.array([[[1.147, 0.985, 0.823], [6.92, 0.46, -6.]],
+                  [[13.05, 1.17, -10.71], [12.979, 3.675, -5.629]]])).all()
+    assert np.isclose(
+        np.gradient(np.array([1, 2, 4, 7, 11]), 2.5, axis=0, edge_order=1),
+        np.array([0.4, 0.6, 1., 1.4, 1.6])).all()
+    assert np.isclose(
+        np.gradient(np.array([[2.5, 3, 4], [7, 11, 8.9]]),
+                    9.45,
+                    axis=1,
+                    edge_order=1),
+        np.array([[0.05291005, 0.07936508, 0.10582011],
+                  [0.42328042, 0.1005291, -0.22222222]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([[[2.5, 3.566, 4.47], [7.98, 11.67, 8.9]],
+                              [[1.89, 9, 4.23], [3.55, 11.877, 10.9]]]),
+                    6.7,
+                    axis=2,
+                    edge_order=1),
+        np.array([[[0.15910448, 0.14701493, 0.13492537],
+                   [0.55074627, 0.06865672, -0.41343284]],
+                  [[1.06119403, 0.17462687, -0.7119403],
+                   [1.24283582, 0.54850746, -0.1458209]]])).all()
+    assert np.isclose(
+        np.gradient(np.array([1, 2, 4, 7, 11]), 2.5, axis=0, edge_order=2),
+        np.array([0.2, 0.6, 1., 1.4, 1.8])).all()
+    assert np.isclose(
+        np.gradient(np.array([[2.5, 3, 4], [7, 11, 8.9]]),
+                    9.45,
+                    axis=1,
+                    edge_order=2),
+        np.array([[0.02645503, 0.07936508, 0.13227513],
+                  [0.74603175, 0.1005291, -0.54497354]])).all()
+    assert np.isclose(
+        np.gradient(np.array([[[2.5, 3.566, 4.47], [7.98, 11.67, 8.9]],
+                              [[1.89, 9, 4.23], [3.55, 11.877, 10.9]]]),
+                    6.7,
+                    axis=2,
+                    edge_order=2),
+        np.array([[[0.17119403, 0.14701493, 0.12283582],
+                   [1.03283582, 0.06865672, -0.89552239]],
+                  [[1.94776119, 0.17462687, -1.59850746],
+                   [1.93716418, 0.54850746, -0.84014925]]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([1, 2, 4, 7, 11]), axis=None, edge_order=1),
+        np.array([1., 1.5, 2.5, 3.5, 4.])).all()
+
+    # arr_2d = [[2, 4], [3, 6]]
+    res = np.gradient(np.array([[2.5, 3, 4], [7, 11, 8.9]]),
+                      axis=None,
+                      edge_order=1)
+
+    out = []
+    a = np.array([[4.5, 8., 4.9], [4.5, 8., 4.9]])
+    out.append(a)
+    b = np.array([[0.5, 0.75, 1.], [4., 0.95, -2.1]])
+    out.append(b)
+
+    assert np.array_equal(res[0], out[0])
+    gradient_test_helper(res, out)
+
+    res = np.gradient(np.array([[[2.5, 3.566, 4.47], [7.98, 11.67, 8.9]],
+                                [[1.89, 9, 4.23], [3.55, 11.877, 10.9]]]),
+                      axis=None,
+                      edge_order=1)
+    out = []
+    a = np.array([[[-0.61, 5.434, -0.24], [-4.43, 0.207, 2.]],
+                  [[-0.61, 5.434, -0.24], [-4.43, 0.207, 2.]]])
+    out.append(a)
+    b = np.array([[[5.48, 8.104, 4.43], [5.48, 8.104, 4.43]],
+                  [[1.66, 2.877, 6.67], [1.66, 2.877, 6.67]]])
+    out.append(b)
+    c = np.array([[[1.066, 0.985, 0.904], [3.69, 0.46, -2.77]],
+                  [[7.11, 1.17, -4.77], [8.327, 3.675, -0.977]]])
+    out.append(c)
+    gradient_test_helper(res, out)
+
+    assert np.isclose(
+        np.gradient(np.array([1, 2, 4, 7, 11]), axis=None, edge_order=2),
+        np.array([0.5, 1.5, 2.5, 3.5, 4.5])).all()
+
+    # arr_2d = [[2, 4], [3, 6]]
+    res = np.gradient(np.array([[2.5, 3, 4], [7, 11, 8.9], [3, 4, 8.9]]),
+                      axis=None,
+                      edge_order=2)
+    out = []
+    a = np.array([[8.75, 15.5, 7.35], [0.25, 0.5, 2.45], [-8.25, -14.5,
+                                                          -2.45]])
+    out.append(a)
+    b = np.array([[0.25, 0.75, 1.25], [7.05, 0.95, -5.15], [-0.95, 2.95,
+                                                            6.85]])
+    out.append(b)
+    gradient_test_helper(res, out)
+
+    res = np.gradient(np.array([[[2.5, 3.566, 4.47], [7.98, 11.67, 8.9],
+                                 [7.98, 11.67, 8.9]],
+                                [[1.89, 9, 4.23], [3.55, 11.877, 10.9],
+                                 [1.89, 9, 4.23]],
+                                [[2.5, 3.566, 4.47], [7.98, 11.67, 8.9],
+                                 [2.5, 3.566, 4.47]],
+                                [[1.89, 9, 4.23], [3.55, 11.877, 10.9],
+                                 [1.89, 9, 4.23]]]),
+                      axis=None,
+                      edge_order=2)
+    out = []
+    a = np.array([[[-1.22, 10.868, -0.48], [-8.86, 0.414, 4.],
+                   [-9.44, -1.288, -7.125]],
+                  [[0., 0., 0.], [0., 0., 0.], [-2.74, -4.052, -2.215]],
+                  [[0., 0., 0.], [0., 0., 0.], [0., 0., 0.]],
+                  [[-1.22, 10.868, -0.48], [-8.86, 0.414, 4.],
+                   [-1.22, 10.868, -0.48]]])
+    out.append(a)
+    b = np.array([[[8.22, 12.156, 6.645], [2.74, 4.052, 2.215],
+                   [-2.74, -4.052, -2.215]],
+                  [[3.32, 5.754, 13.34], [0., 0., 0.], [-3.32, -5.754,
+                                                        -13.34]],
+                  [[10.96, 16.208, 8.86], [0., 0., 0.],
+                   [-10.96, -16.208, -8.86]],
+                  [[3.32, 5.754, 13.34], [0., 0., 0.], [-3.32, -5.754,
+                                                        -13.34]]])
+    out.append(b)
+    c = np.array([[[1.147, 0.985, 0.823], [6.92, 0.46, -6.], [6.92, 0.46,
+                                                              -6.]],
+                  [[13.05, 1.17, -10.71], [12.979, 3.675, -5.629],
+                   [13.05, 1.17, -10.71]],
+                  [[1.147, 0.985, 0.823], [6.92, 0.46, -6.],
+                   [1.147, 0.985, 0.823]],
+                  [[13.05, 1.17, -10.71], [12.979, 3.675, -5.629],
+                   [13.05, 1.17, -10.71]]])
+    out.append(c)
+
+    gradient_test_helper(res, out)
+
+    assert np.isclose(np.gradient(np.array([3j, 5j, 8j])),
+                      np.array([0. + 2.j, 0. + 2.5j, 0. + 3.j])).all()
+    assert np.array_equal(
+        np.gradient(np.array([[3j, 5j, 8j], [5j, 7j, 9j]])),
+        [[[2j, 2j, 1j], [2j, 2j, 1j]], [[2j, 2.5j, 3j], [2j, 2j, 2j]]])
+    assert np.array_equal(
+        np.gradient(((((1j, 2), (4, 5j)), ((10j, 11), (13, 14j)),
+                      ((19, 20), (22, 23))))),
+        [[[[0. + 9.j, 9. + 0.j], [9. + 0.j, 0. + 9.j]],
+          [[9.5 - 0.5j, 9. + 0.j], [9. + 0.j, 11.5 - 2.5j]],
+          [[19. - 10.j, 9. + 0.j], [9. + 0.j, 23. - 14.j]]],
+         [[[4. - 1.j, -2. + 5.j], [4. - 1.j, -2. + 5.j]],
+          [[13. - 10.j, -11. + 14.j], [13. - 10.j, -11. + 14.j]],
+          [[3. + 0.j, 3. + 0.j], [3. + 0.j, 3. + 0.j]]],
+         [[[2. - 1.j, 2. - 1.j], [-4. + 5.j, -4. + 5.j]],
+          [[11. - 10.j, 11. - 10.j], [-13. + 14.j, -13. + 14.j]],
+          [[1. + 0.j, 1. + 0.j], [1. + 0.j, 1. + 0.j]]]])
+
+    # (1d,2d,3d) without spacing axis is none, edge_order = 2
+    assert np.isclose(np.gradient(np.array([3j, 5j, 8j]), edge_order=2),
+                      np.array([0. + 1.5j, 0. + 2.5j, 0. + 3.5j])).all()
+    assert np.array_equal(
+        np.gradient(
+            ((1j, 2j, 3, 4j, 5), (6j, 7, 8, 9j, 10), (11j, 12, 13j, 14, 15j),
+             (16j, 17j, 18, 19j, 20), (21j, 22, 23, 24, 25j)),
+            edge_order=2),
+        [[[5j, (8 - 3j), (11.5 - 6.5j), (-7 + 12j), (12.5 - 7.5j)],
+          [5j, (6 - 1j), (-1.5 + 6.5j), (7 - 2j),
+           (-2.5 + 7.5j)], [5j, (-3.5 + 8.5j), (5 + 0j), 5j, (5 + 0j)],
+          [5j, (5 + 0j), (11.5 - 6.5j), (5 + 0j), 5j],
+          [5j, (39 - 34j), (-1.5 + 6.5j), (43 - 38j), (-40 + 45j)]],
+         [[(-1.5 + 2.5j), (1.5 - 0.5j), 1j, (1 + 0j),
+           (9 - 8j)], [(10 - 9j), (4 - 3j), (-3.5 + 4.5j), (1 + 0j),
+                       (19 - 18j)], [(24 - 23j), 1j, (1 + 0j), 1j,
+                                     (-28 + 29j)],
+          [(-9 + 10j), (9 - 8j), 1j, (1 + 0j), (39 - 38j)],
+          [(32.5 - 31.5j), (11.5 - 10.5j), (1 + 0j), (-11.5 + 12.5j),
+           (-36.5 + 37.5j)]]])
+    assert np.array_equal(
+        np.gradient(np.array([[[1j, 2j, 3j], [4j, 5j, 6j], [7j, 8j, 9j]],
+                              [[10j, 11j, 12j], [13j, 14j, 15j],
+                               [16j, 17j, 18j]],
+                              [[19j, 20j, 21j], [22j, 23j, 24j],
+                               [25j, 26j, 27j]]]),
+                    edge_order=2),
+        [[[[0. + 9.j, 0. + 9.j, 0. + 9.j], [0. + 9.j, 0. + 9.j, 0. + 9.j],
+           [0. + 9.j, 0. + 9.j, 0. + 9.j]],
+          [[0. + 9.j, 0. + 9.j, 0. + 9.j], [0. + 9.j, 0. + 9.j, 0. + 9.j],
+           [0. + 9.j, 0. + 9.j, 0. + 9.j]],
+          [[0. + 9.j, 0. + 9.j, 0. + 9.j], [0. + 9.j, 0. + 9.j, 0. + 9.j],
+           [0. + 9.j, 0. + 9.j, 0. + 9.j]]],
+         [[[0. + 3.j, 0. + 3.j, 0. + 3.j], [0. + 3.j, 0. + 3.j, 0. + 3.j],
+           [0. + 3.j, 0. + 3.j, 0. + 3.j]],
+          [[0. + 3.j, 0. + 3.j, 0. + 3.j], [0. + 3.j, 0. + 3.j, 0. + 3.j],
+           [0. + 3.j, 0. + 3.j, 0. + 3.j]],
+          [[0. + 3.j, 0. + 3.j, 0. + 3.j], [0. + 3.j, 0. + 3.j, 0. + 3.j],
+           [0. + 3.j, 0. + 3.j, 0. + 3.j]]],
+         [[[0. + 1.j, 0. + 1.j, 0. + 1.j], [0. + 1.j, 0. + 1.j, 0. + 1.j],
+           [0. + 1.j, 0. + 1.j, 0. + 1.j]],
+          [[0. + 1.j, 0. + 1.j, 0. + 1.j], [0. + 1.j, 0. + 1.j, 0. + 1.j],
+           [0. + 1.j, 0. + 1.j, 0. + 1.j]],
+          [[0. + 1.j, 0. + 1.j, 0. + 1.j], [0. + 1.j, 0. + 1.j, 0. + 1.j],
+           [0. + 1.j, 0. + 1.j, 0. + 1.j]]]])
+
+    # #(1d,2d,3d) without spacing axis is not none, edge_order = 1
+    assert np.isclose(np.gradient(np.array([3j, 5j, 8j]), axis=-1),
+                      np.array([0. + 2.j, 0. + 2.5j, 0. + 3.j])).all()
+    assert np.array_equal(
+        np.gradient(np.array([[3j, 5j, 8j], [5j, 7j, 9j]]), axis=-1),
+        [[0. + 2.j, 0. + 2.5j, 0. + 3.j], [0. + 2.j, 0. + 2.j, 0. + 2.j]])
+    assert np.array_equal(
+        np.gradient(np.array([[[1j, 2j], [4j, 5j]], [[10j, 11j], [13j, 14j]],
+                              [[19j, 20j], [22j, 23j]]]),
+                    axis=-1), [[[0. + 1.j, 0. + 1.j], [0. + 1.j, 0. + 1.j]],
+                               [[0. + 1.j, 0. + 1.j], [0. + 1.j, 0. + 1.j]],
+                               [[0. + 1.j, 0. + 1.j], [0. + 1.j, 0. + 1.j]]])
+
+    assert np.isclose(
+        np.gradient(np.array([1j, 2j, 4j, 7j, 11j]), axis=0, edge_order=1),
+        np.array([0. + 1.j, 0. + 1.5j, 0. + 2.5j, 0. + 3.5j, 0. + 4.j])).all()
+    assert np.isclose(
+        np.gradient(np.array([[2.5j, 3j, 4j], [7j, 11j, 8.9j]]),
+                    axis=1,
+                    edge_order=1),
+        np.array([[0. + 0.5j, 0. + 0.75j, 0. + 1.j],
+                  [0. + 4.j, 0. + 0.95j, 0. - 2.1j]])).all()
+    assert np.isclose(
+        np.gradient(np.array([[[2.5j, 3.566j, 4.47j], [7.98j, 11.67j, 8.9j]],
+                              [[1.89j, 9j, 4.23j], [3.55j, 11.877j, 10.9j]]]),
+                    axis=2,
+                    edge_order=1),
+        np.array([[[0. + 1.066j, 0. + 0.985j, 0. + 0.904j],
+                   [0. + 3.69j, 0. + 0.46j, 0. - 2.77j]],
+                  [[0. + 7.11j, 0. + 1.17j, 0. - 4.77j],
+                   [0. + 8.327j, 0. + 3.675j, 0. - 0.977j]]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([1j, 5 + 2j, 2 + 4j, 6 + 7j, 11j]),
+                    axis=0,
+                    edge_order=2),
+        np.array([9. + 0.5j, 1. + 1.5j, 0.5 + 2.5j, -1. + 3.5j,
+                  -11. + 4.5j])).all()
+    assert np.isclose(
+        np.gradient(np.array([[2.5 + 3.6j, 1.77 + 5.3j, 4.1 + 8.9j],
+                              [7.7j, 11.23j, 8.9j]]),
+                    axis=1,
+                    edge_order=2),
+        np.array([[-2.26 + 0.75j, 0.8 + 2.65j, 3.86 + 4.55j],
+                  [0. + 6.46j, 0. + 0.6j, 0. - 5.26j]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([[[2.5j, 3.566 + 3.45j, 4.47j],
+                               [7.98 + 2.34j, 11.67j + 4.13j, 8.9j]],
+                              [[1.89j, 9.59 + 7.34j, 4.23j],
+                               [3.55 + 5.3j, 11.877 + 6.987j, 10.9 + 6.98j]]]),
+                    axis=2,
+                    edge_order=2),
+        np.array([[[(7.132 + 0.915j), 0.985j, (-7.132 + 1.055j)],
+                   [(-11.97 + 23.64j), (-3.99 + 3.28j), (3.99 - 17.08j)]],
+                  [[(19.18 + 9.73j), 1.17j, (-19.18 - 7.39j)],
+                   [(12.979 + 2.534j), (3.675 + 0.84j),
+                    (-5.629 - 0.854j)]]])).all()
+    assert np.isclose(
+        np.gradient(np.array([1j, 2j, 4j, 7j, 11j]),
+                    2.5j,
+                    axis=0,
+                    edge_order=1),
+        np.array([0.4 + 0.j, 0.6 + 0.j, 1. + 0.j, 1.4 + 0.j,
+                  1.6 + 0.j])).all()
+    assert np.isclose(
+        np.gradient(((4.6 + 2.5j, 3, 4.9j), (7.8 + 3.6j, 11.9, 8.9j)),
+                    9.45,
+                    axis=1,
+                    edge_order=1),
+        np.array([[
+            -0.16931217 - 0.26455026j, -0.24338624 + 0.12698413j,
+            -0.31746032 + 0.51851852j
+        ],
+                  [
+                      0.43386243 - 0.38095238j, -0.41269841 + 0.28042328j,
+                      -1.25925926 + 0.94179894j
+                  ]])).all()
+
+    assert np.isclose(
+        np.gradient(np.array([[[2.5j, 3.566 + 3.45j, 4.47j],
+                               [7.98 + 2.34j, 11.67j + 4.13j, 8.9j]],
+                              [[1.89j, 9.59 + 7.34j, 4.23j],
+                               [3.55 + 5.3j, 11.877 + 6.987j, 10.9 + 6.98j]]]),
+                    6.7,
+                    axis=2,
+                    edge_order=1),
+        np.array([[[
+            0.53223881 + 1.41791045e-01j, 0. + 1.47014925e-01j,
+            -0.53223881 + 1.52238806e-01j
+        ],
+                   [
+                       -1.19104478 + 2.00895522e+00j,
+                       -0.59552239 + 4.89552239e-01j, 0. - 1.02985075e+00j
+                   ]],
+                  [[
+                      1.43134328 + 8.13432836e-01j, 0. + 1.74626866e-01j,
+                      -1.43134328 - 4.64179104e-01j
+                  ],
+                   [
+                       1.24283582 + 2.51791045e-01j,
+                       0.54850746 + 1.25373134e-01j,
+                       -0.1458209 - 1.04477612e-03j
+                   ]]])).all()
+    assert np.isclose(
+        np.gradient(np.array([1j, 2j, 4j, 7j, 11j]),
+                    2.5j,
+                    axis=0,
+                    edge_order=2),
+        np.array([0.2 + 0.j, 0.6 + 0.j, 1. + 0.j, 1.4 + 0.j,
+                  1.8 + 0.j])).all()
+
+test_gradient()
+
+@test
+def test_cumsum():
+    assert (np.empty(0, float).cumsum() == np.empty(0, float)).all()
+    assert (np.array([0.5, 1.5]).cumsum() == np.array([0.5, 2.0])).all()
+    assert (np.array([1, 2, 3, 4, 5]).cumsum() == np.array([1, 3, 6, 10,
+                                                            15])).all()
+    assert (np.array([[1, 2, 3],
+                      [4, 5, 6]]).cumsum(axis=0) == np.array([[1, 2, 3],
+                                                              [5, 7,
+                                                               9]])).all()
+    assert (np.array([[1, 2, 3],
+                      [4, 5, 6]]).cumsum(axis=1) == np.array([[1, 3, 6],
+                                                              [4, 9,
+                                                               15]])).all()
+    assert (np.array([[1, 2, 3],
+                      [4, 5, 6]]).cumsum(axis=-2) == np.array([[1, 2, 3],
+                                                               [5, 7,
+                                                                9]])).all()
+    assert (np.array([[1, 2, 3],
+                      [4, 5, 6]]).cumsum(axis=-1) == np.array([[1, 3, 6],
+                                                               [4, 9,
+                                                                15]])).all()
+    assert (np.array([[1, 1, 1],
+                      [1, 1, 1]]).cumsum(axis=0) == np.array([[1, 1, 1],
+                                                              [2, 2,
+                                                               2]])).all()
+    assert (np.array([[1, 1, 1],
+                      [1, 1, 1]]).cumsum(axis=1) == np.array([[1, 2, 3],
+                                                              [1, 2,
+                                                               3]])).all()
+    assert (np.array([1, 2, 3, 4, 5,
+                      6]).cumsum() == np.array([1, 3, 6, 10, 15, 21])).all()
+    assert (np.cumsum([[1.4, 2], [3.4, 2]], axis=0,
+                      dtype=int) == np.array([[1, 2], [4, 4]])).all()
+    assert (np.cumsum([[1.4, 2], [3.4, 2]], axis=1,
+                      dtype=int) == np.array([[1, 3], [3, 5]])).all()
+    assert (np.cumsum([[1.4, 2], [3.4, 2]], axis=0,
+                      dtype=float) == np.array([[1.4, 2], [4.8, 4]])).all()
+    assert (np.cumsum([[1.4, 2], [3.4, 2]], axis=1,
+                      dtype=float) == np.array([[1.4, 3.4], [3.4,
+                                                             5.4]])).all()
+
+    ar = np.array([1, 2, 3, 4, 5])
+    b = np.empty_like(ar, dtype=int)
+    np.cumsum(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 3, 6, 10, 15])).all()
+
+    ar = np.array([1, 2, 3, 4, 5])
+    b = np.empty_like(ar, dtype=float)
+    np.cumsum(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 3, 6, 10, 15])).all()
+
+    ar = np.array([[1.4, 2], [3.4, 2]])
+    b = np.empty_like(ar, dtype=int)
+    np.cumsum(ar, axis=1, dtype=int, out=b)
+    assert (b.tolist() == np.array([[1, 3], [3, 5]])).all()
+
+    b = np.empty_like(ar, dtype=float)
+    np.cumsum(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1.4, 3.4], [3.4, 5.4]])).all()
+
+    b = np.empty_like(ar, dtype=int)
+    np.cumsum(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1, 3], [3, 5]])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.cumsum(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 3, 6, 8])).all()
+
+    b = np.empty((4, ), dtype=int)
+    np.cumsum(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([1, 3, 6, 8])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.cumsum(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([1.4, 3.4, 6.8, 8.8])).all()
+
+    #NEWTEST
+
+    # Create a 3D NumPy array (3x3x2)
+    ar = np.array([[[1.1, 2.2], [3.3, 4.4], [5.5, 6.6]],
+                   [[7.7, 8.8], [9.9, 10.1], [11.1, 12.2]],
+                   [[13.3, 14.4], [15.5, 16.6], [17.7, 18.8]]])
+
+    # Create an empty array with the same shape as ar and integer dtype
+    b = np.empty_like(ar, dtype=int)
+
+    # Calculate cumulative sum along the last axis (axis=2)
+    np.cumsum(ar, axis=2, dtype=int, out=b)
+
+    # Define the expected output array for the given operation
+    expected_output = np.array([[[1, 3], [3, 7], [5, 11]],
+                                [[7, 15], [9, 19], [11, 23]],
+                                [[13, 27], [15, 31], [17, 35]]])
+
+    # Check if the calculated array matches the expected output
+    assert (b == expected_output).all()
+
+    try:
+        b = np.empty((3, ), dtype=float)
+        np.cumsum(ar, dtype=float, out=b)
+        assert False
+    except ValueError:
+        pass
+
+test_cumsum()
+
+@test
+def test_cumprod():
+    assert (np.empty(0, float).cumprod() == np.empty(0, float)).all()
+    assert (np.array([0.5, 1.5]).cumprod() == np.array([0.5, 0.75])).all()
+    assert (np.array([1, 2, 3, 4, 5]).cumprod() == np.array([1, 2, 6, 24,
+                                                             120])).all()
+    assert (np.array([[1, 2, 3],
+                      [4, 5, 6]]).cumprod(axis=0) == np.array([[1, 2, 3],
+                                                               [4, 10,
+                                                                18]])).all()
+    assert (np.array([[1, 2, 3],
+                      [4, 5, 6]]).cumprod(axis=1) == np.array([[1, 2, 6],
+                                                               [4, 20,
+                                                                120]])).all()
+    assert (np.array([[1, 1, 1],
+                      [1, 1, 1]]).cumprod(axis=0) == np.array([[1, 1, 1],
+                                                               [1, 1,
+                                                                1]])).all()
+    assert (np.array([[1, 1, 1],
+                      [1, 1, 1]]).cumprod(axis=1) == np.array([[1, 1, 1],
+                                                               [1, 1,
+                                                                1]])).all()
+    assert (np.array([1, 2, 3, 4, 5,
+                      6]).cumprod() == np.array([1, 2, 6, 24, 120,
+                                                 720])).all()
+    assert (np.cumprod([[1.4, 2], [3.4, 2]], axis=0,
+                       dtype=int) == np.array([[1, 2], [3, 4]])).all()
+    assert (np.cumprod([[1.4, 2], [3.4, 2]], axis=1,
+                       dtype=int) == np.array([[1, 2], [3, 6]])).all()
+    assert (np.cumprod([[1.4, 2], [3.4, 2]], axis=0,
+                       dtype=float) == np.array([[1.4, 2], [4.76, 4]])).all()
+    assert (np.cumprod([[1.4, 2], [3.4, 2]], axis=1,
+                       dtype=float) == np.array([[1.4, 2.8], [3.4,
+                                                              6.8]])).all()
+
+    assert (np.array([9223372036854775807, 1, 1, 1, 1,
+                      1]).cumprod() == np.array([
+                          9223372036854775807, 9223372036854775807,
+                          9223372036854775807, 9223372036854775807,
+                          9223372036854775807, 9223372036854775807
+                      ])).all()
+
+    ar = np.array([1, 2, 3, 4, 5])
+    b = np.empty_like(ar, dtype=int)
+    np.cumprod(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 2, 6, 24, 120])).all()
+
+    ar = np.array([1, 2, 3, 4, 5])
+    b = np.empty_like(ar, dtype=float)
+    np.cumprod(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 2, 6, 24, 120])).all()
+
+    ar = np.array([[1.4, 2], [3.4, 2]])
+
+    b = np.empty_like(ar, dtype=float)
+    np.cumprod(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1.4, 2.8], [3.4, 6.8]])).all()
+
+    b = np.empty_like(ar, dtype=int)
+    np.cumprod(ar, axis=1, dtype=int, out=b)
+    assert (b.tolist() == np.array([[1, 2], [3, 6]])).all()
+
+    b = np.empty_like(ar, dtype=float)
+    np.cumprod(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1.4, 2.8], [3.4, 6.8]])).all()
+
+    b = np.empty_like(ar, dtype=int)
+    np.cumprod(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1, 2], [3, 6]])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.cumprod(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 2, 6, 12])).all()
+
+    b = np.empty((4, ), dtype=int)
+    np.cumprod(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([1, 2, 9, 19])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.cumprod(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([1.4, 2.8, 9.52, 19.04])).all()
+
+    #NEWTEST
+
+    # Create a 3D NumPy array (3x3x2)
+    ar = np.array([[[1.1, 2.2], [3.3, 4.4], [5.5, 6.6]],
+                   [[7.7, 8.8], [9.9, 10.1], [11.1, 12.2]],
+                   [[13.3, 14.4], [15.5, 16.6], [17.7, 18.8]]])
+
+    # Create an empty array with the same shape as ar and integer dtype
+    b = np.empty_like(ar, dtype=int)
+
+    # Calculate cumulative product along the last axis (axis=2)
+    np.cumprod(ar, axis=2, dtype=int, out=b)
+
+    # Define the expected output array for the given operation
+    expected_output = np.array([[[1, 2], [3, 12], [5, 30]],
+                                [[7, 56], [9, 90], [11, 132]],
+                                [[13, 182], [15, 240], [17, 306]]])
+
+    # Check if the calculated array matches the expected output
+    assert (b == expected_output).all()
+
+    try:
+        b = np.empty((3, ), dtype=float)
+        np.cumprod(ar, dtype=float, out=b)
+        assert False
+    except ValueError:
+        pass
+
+test_cumprod()
+
+@test
+def test_nancumsum():
+    assert (np.nancumsum(np.empty(0, float)) == np.empty(0, float)).all()
+    assert (np.nancumsum([0.5, 1.5]) == np.array([0.5, 2.0])).all()
+    assert (np.nancumsum([np.nan, 2, 3, 4, 5]) == np.array([0, 2, 5, 9,
+                                                            14])).all()
+    assert (np.nancumsum([[1.3, 2.4, 3],
+                          [np.nan, 5,
+                           6]]) == np.array([1.3, 3.7, 6.7, 6.7, 11.7,
+                                             17.7])).all()
+    assert (np.nancumsum([[1.3, 2.4, 3], [np.nan, 5, 6]],
+                         axis=0) == np.array([[1.3, 2.4, 3], [1.3, 7.4,
+                                                              9]])).all()
+    assert (np.nancumsum([[1, 2, 3], [4, 5, 6]],
+                         axis=1) == np.array([[1, 3, 6], [4, 9, 15]])).all()
+    assert (np.nancumsum([[np.nan, np.nan, 1], [np.nan, np.nan, 1]],
+                         axis=0) == np.array([[0, 0, 1], [0, 0, 2]])).all()
+    assert (np.nancumsum([[1, np.nan, 1], [1, np.nan, np.nan]],
+                         axis=1) == np.array([[1, 1, 2], [1, 1, 1]])).all()
+    assert (np.nancumsum([1, 2, 3, 4, 5, 6]) == np.array([1, 3, 6, 10, 15,
+                                                          21])).all()
+    assert (np.nancumsum([[1.4, 2], [3.4, 2]], axis=0,
+                         dtype=int) == np.array([[1, 2], [4, 4]])).all()
+    assert (np.nancumsum([[1.4, np.nan], [3.4, 2]], axis=1,
+                         dtype=int) == np.array([[1, 1], [3, 5]])).all()
+    assert (np.nancumsum([[1.4, 2], [3.4, 2]], axis=0,
+                         dtype=float) == np.array([[1.4, 2], [4.8, 4]])).all()
+    assert (np.nancumsum([[1.4, np.nan], [3.4, 2]],
+                         axis=1, dtype=float) == np.array([[1.4, 1.4],
+                                                           [3.4, 5.4]])).all()
+
+    ar = np.array([[np.nan, 2], [3.4, np.nan]])
+
+    b = np.empty_like(ar, dtype=int)
+    np.nancumsum(ar, axis=1, dtype=int, out=b)
+    assert (b.tolist() == np.array([[0, 2], [3, 3]])).all()
+
+    b = np.empty_like(ar, dtype=int)
+    np.nancumsum(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[0, 2], [3, 3]])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.nancumsum(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([0, 2, 5, 5])).all()
+
+    b = np.empty((4, ), dtype=int)
+    np.nancumsum(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([0, 2, 5, 5])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.nancumsum(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([0, 2, 5.4, 5.4])).all()
+    #NEWTEST
+
+    # Create a 3D NumPy array (3x3x2)
+    ar = np.array([[[1.1, 2.2], [3.3, 4.4], [5.5, 6.6]],
+                   [[7.7, 8.8], [9.9, 10.1], [11.1, 12.2]],
+                   [[13.3, 14.4], [15.5, 16.6], [17.7, 18.8]]])
+
+    # Create an empty array with the same shape as ar and integer dtype
+    b = np.empty_like(ar, dtype=int)
+
+    # Calculate cumulative sum along the last axis (axis=2)
+    np.nancumsum(ar, axis=2, dtype=int, out=b)
+
+    # Define the expected output array for the given operation
+    expected_output = np.array([[[1, 3], [3, 7], [5, 11]],
+                                [[7, 15], [9, 19], [11, 23]],
+                                [[13, 27], [15, 31], [17, 35]]])
+
+    # Check if the calculated array matches the expected output
+    assert (b == expected_output).all()
+
+    try:
+        b = np.empty((3, ), dtype=float)
+        np.nancumsum(ar, dtype=float, out=b)
+        assert False
+    except ValueError:
+        pass
+
+test_nancumsum()
+
+@test
+def test_nancumprod():
+    assert (np.nancumprod(np.empty(0, float)) == np.empty(0, float)).all()
+    assert (np.nancumprod([0.5, 1.5]) == np.array([0.5, 0.75])).all()
+    assert (np.nancumprod([np.nan, 2, 3, 4, 5]) == np.array([1, 2, 6, 24,
+                                                             120])).all()
+    assert (np.nancumprod([[1.3, 2.4, 3], [np.nan, 5, 6]],
+                          axis=0) == np.array([[1.3, 2.4, 3], [1.3, 12,
+                                                               18]])).all()
+    assert (np.nancumprod([[1, 2, 3], [4, 5, 6]],
+                          axis=1) == np.array([[1, 2, 6], [4, 20,
+                                                           120]])).all()
+    assert (np.nancumprod([[np.nan, np.nan, 1], [np.nan, np.nan, 1]],
+                          axis=0) == np.array([[1, 1, 1], [1, 1, 1]])).all()
+    assert (np.nancumprod([[1, 2, 3], [4, 5, 6]],
+                          axis=1) == np.array([[1, 2, 6], [4, 20,
+                                                           120]])).all()
+    assert (np.nancumprod([1, 2, 3, 4, 5,
+                           6]) == np.array([1, 2, 6, 24, 120, 720])).all()
+    assert (np.nancumprod([[1.4, 2], [3.4, 2]], axis=0,
+                          dtype=int) == np.array([[1, 2], [3, 4]])).all()
+    assert (np.nancumprod([[1.4, np.nan], [3.4, 2]], axis=1,
+                          dtype=int) == np.array([[1, 1], [3, 6]])).all()
+    assert (np.nancumprod([[1.4, 2], [3.4, 2]], axis=0,
+                          dtype=float) == np.array([[1.4, 2], [4.76,
+                                                               4]])).all()
+
+    ar = np.array([[np.nan, 2], [3.4, np.nan]])
+
+    b = np.empty_like(ar, dtype=int)
+    np.nancumprod(ar, axis=1, dtype=int, out=b)
+    assert (b.tolist() == np.array([[1, 2], [3, 3]])).all()
+
+    b = np.empty_like(ar, dtype=float)
+    np.nancumprod(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1.0, 2.0], [3.4, 3.4]])).all()
+
+    b = np.empty_like(ar, dtype=float)
+    np.nancumprod(ar, axis=1, dtype=int, out=b)
+    assert (b.tolist() == np.array([[1, 2], [3, 3]])).all()
+
+    b = np.empty_like(ar, dtype=int)
+    np.nancumprod(ar, axis=1, dtype=float, out=b)
+    assert (b.tolist() == np.array([[1, 2], [3, 3]])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.nancumprod(ar, dtype=int, out=b)
+    assert (b.tolist() == np.array([1, 2, 6, 6])).all()
+
+    b = np.empty((4, ), dtype=int)
+    np.nancumprod(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([1, 2, 6, 6])).all()
+
+    b = np.empty((4, ), dtype=float)
+    np.nancumprod(ar, dtype=float, out=b)
+    assert (b.tolist() == np.array([1, 2, 6.8, 6.8])).all()
+
+    # Create a 3D NumPy array (3x3x2)
+    ar = np.array([[[1.1, 2.2], [3.3, 4.4], [5.5, 6.6]],
+                   [[7.7, 8.8], [9.9, 10.1], [11.1, 12.2]],
+                   [[13.3, 14.4], [15.5, 16.6], [17.7, 18.8]]])
+
+    # Create an empty array with the same shape as ar and integer dtype
+    b = np.empty_like(ar, dtype=int)
+
+    # Calculate cumulative product along the last axis (axis=2)
+    np.nancumprod(ar, axis=2, dtype=int, out=b)
+
+    # Define the expected output array for the given operation
+    expected_output = np.array([[[1, 2], [3, 12], [5, 30]],
+                                [[7, 56], [9, 90], [11, 132]],
+                                [[13, 182], [15, 240], [17, 306]]])
+
+    # Check if the calculated array matches the expected output
+    assert (b == expected_output).all()
+
+    b = np.empty((3, ), dtype=float)
+    try:
+        np.nancumprod(ar, dtype=float, out=b)
+        assert False
+    except ValueError:
+        pass
+
+test_nancumprod()
+
+@test
+def test_diff():
+    assert (np.diff([1, 2, 3], n=3) == np.empty(0, float)).all()
+
+    a = np.array([[1, 3, 4], [5, 7, 6]])
+
+    assert (np.diff(a, n=2, axis=0, append=a,
+                    prepend=a) == np.array([[-8, -8, -4], [8, 8, 4],
+                                            [-8, -8, -4], [8, 8, 4]])).all()
+    assert (np.diff(a, n=2, axis=1, append=a,
+                    prepend=a) == np.array([[-1, -4, 5, -1, -4, 5, -1],
+                                            [-3, 0, 3, -3, 0, 3, -3]])).all()
+    assert (np.diff(a, n=1, axis=0, append=a,
+                    prepend=a) == np.array([[4, 4, 2], [-4, -4, -2], [4, 4, 2],
+                                            [-4, -4, -2], [4, 4, 2]])).all()
+    assert (np.diff(a, n=1, axis=1, append=a,
+                    prepend=a) == np.array([[2, 1, -3, 2, 1, -3, 2, 1],
+                                            [2, -1, -1, 2, -1, -1, 2,
+                                             -1]])).all()
+    assert (np.diff(a, n=2, append=a,
+                    prepend=a) == np.array([[-1, -4, 5, -1, -4, 5, -1],
+                                            [-3, 0, 3, -3, 0, 3, -3]])).all()
+    assert (np.diff(a, n=1, append=a,
+                    prepend=a) == np.array([[2, 1, -3, 2, 1, -3, 2, 1],
+                                            [2, -1, -1, 2, -1, -1, 2,
+                                             -1]])).all()
+    assert (np.diff(a, append=a,
+                    prepend=a) == np.array([[2, 1, -3, 2, 1, -3, 2, 1],
+                                            [2, -1, -1, 2, -1, -1, 2,
+                                             -1]])).all()
+
+    assert (np.diff(
+        np.arange('1066-10-13', '1066-10-16',
+                  dtype=np.datetime64['D', 1])) == np.array(
+                      [1, 1], dtype=np.timedelta64['D', 1])).all()
+
+    assert (np.diff(np.arange('1066-10-13',
+                              '1066-10-16',
+                              dtype=np.datetime64['D', 1]),
+                    n=2) == np.array([0], dtype=np.timedelta64['D', 1])).all()
+
+    assert (np.diff(np.arange('1066-10-13',
+                              '1066-10-16',
+                              dtype=np.datetime64['D', 1]),
+                    append=np.arange('1066-10-13',
+                                     '1066-10-16',
+                                     dtype=np.datetime64['D', 1]),
+                    prepend=np.arange(
+                        '1066-10-13',
+                        '1066-10-16',
+                        dtype=np.datetime64['D', 1])) == np.array(
+                            [1, 1, -2, 1, 1, -2, 1, 1],
+                            dtype=np.timedelta64['D', 1])).all()
+
+    x = np.array([[
+        '1910-08-16', '1910-08-11', '1910-08-10', '1910-08-12', '1910-10-12',
+        '1910-12-12', '1912-12-12'
+    ]],
+                 dtype=np.datetime64['Y', 1])
+
+    assert (np.diff(x, axis=1) == np.array([0, 0, 0, 0, 0, 2],
+                                           dtype=np.timedelta64['Y',
+                                                                1])).all()
+
+    td = np.array([100, 200, 300], dtype=np.timedelta64['D', 1])
+
+    td_2d = np.array([[100, 200, 300]], dtype=np.timedelta64['D', 1])
+
+    assert (np.diff(td) == np.array([100, 100],
+                                    dtype=np.timedelta64['D', 1])).all()
+
+    assert (np.diff(td, n=2) == np.array([0], dtype=np.timedelta64['D',
+                                                                   1])).all()
+
+    assert (np.diff(td, append=td, prepend=td) == np.array(
+        [100, 100, -200, 100, 100, -200, 100, 100],
+        dtype=np.timedelta64['D', 1])).all()
+
+    assert (np.diff(td_2d, axis=1) == np.array([100, 100],
+                                               dtype=np.timedelta64['D',
+                                                                    1])).all()
+
+test_diff()
+
+@test
+def test_cross():
+    assert np.cross([1, 2], [1, 2]) == 0
+    assert (np.cross([1, 2, 3], [1, 2]) == np.array([6, -3, 0])).all()
+    assert np.isclose(np.cross([1, 2.4, 3], [1.4, 2]),
+                      np.array([6, -4.2, -1.36])).all()
+    assert (np.cross([[1, 2, 3], [4, 5, 6]],
+                     [[4, 5, 6], [1, 2, 3]]) == np.array([[-3, 6, -3],
+                                                          [3, -6, 3]])).all()
+    assert (np.cross([[1, 2, 3], [4, 5, 6]], [[4, 5, 6], [1, 2, 3]],
+                     axis=1) == np.array([[-3, 6, -3], [3, -6, 3]])).all()
+    assert (np.cross([[1, 2, 3], [4, 5, 6]], [[4, 5, 6], [1, 2, 3]],
+                     axisa=1,
+                     axisb=1) == np.array([[-3, 6, -3], [3, -6, 3]])).all()
+
+    try:
+        np.cross(np.empty(0), np.empty(0))
+        assert False
+    except ValueError:
+        pass
+
+test_cross()
+
+@test
+def test_ediff1d():
+    assert (np.ediff1d([1, 2, 4, 7, 0]) == np.array([1, 2, 3, -7])).all()
+    assert (np.ediff1d([[1, 4], [4, 6]]) == np.array([3, 0, 2])).all()
+    assert (np.ediff1d([1, 2, 4, 7, 0],
+                       to_begin=-99,
+                       to_end=np.array([88, 99])) == np.array(
+                           [-99, 1, 2, 3, -7, 88, 99])).all()
+    assert (np.ediff1d([[1, 2, 4],
+                        [1, 6, 24]]) == np.array([1.0, 2, -3, 5, 18])).all()
+    assert np.isclose(np.ediff1d([[1.5, 2.2, 4.5], [1.2, 6.3, 5.4]]),
+                      np.array([0.7, 2.3, -3.3, 5.1, -0.9])).all()
+    assert (np.ediff1d([11, 2, 24, 37, 10],
+                       to_begin=-86,
+                       to_end=np.array([103, 104])) == np.array(
+                           [-86, -9, 22, 13, -27, 103, 104])).all()
+    assert (np.ediff1d([23, 22, 41, 27, 5],
+                       to_begin=1,
+                       to_end=np.array([49, 59])) == np.array(
+                           [1, -1, 19, -14, -22, 49, 59])).all()
+    assert np.isclose(
+        np.ediff1d([1, 2, 4.6, 3, 0.8],
+                   to_begin=-99,
+                   to_end=np.array([45, 99.8])),
+        np.array([-99, 1, 2.6, -1.6, -2.2, 45, 99.8])).all()
+    assert np.isclose(
+        np.ediff1d([22.4, 48.9, 4.86, 33.66, 0.845],
+                   to_begin=-55,
+                   to_end=np.array([101.46, 180.8])),
+        np.array([-55., 26.5, -44.04, 28.8, -32.815, 101.46, 180.8])).all()
+    assert np.isclose(np.ediff1d([1.465, 2.3445, 7.45326, 3.231, 0.9238]),
+                      np.array([0.8795, 5.10876, -4.22226, -2.3072])).all()
+    assert (np.ediff1d([1 + 2j, 3 + 2j, 24j]) == np.array([2 + 0j,
+                                                           -3 + 22j])).all()
+
+test_ediff1d()
+
+@test
+def test_trapz():
+    x = np.array([3 + 2j, 4 + 5j, 5 + 6j])
+    assert np.trapz(x) == 8 + 9j
+    assert np.trapz([1, 2, 3], x=[4, 6, 8]) == 8
+    assert (np.trapz([[1, 2, 3], [4, 5, 6]], x=[0, 2],
+                     axis=0) == np.array([5, 7, 9])).all()
+    assert (np.trapz([[1, 2, 3], [4, 5, 6]], x=[0, 2, 4],
+                     axis=1) == np.array([8, 20])).all()
+    assert (np.trapz([[1, 2, 3], [4, 5, 6]], x=[[0, 1, 2], [3, 4, 5]],
+                     axis=1) == np.array([4, 10])).all()
+
+    array_3d = np.array([[[1, 2, 7], [3, 4, 15], [5, 6, 13]],
+                         [[7, 8, 8], [9, 10, 5], [11, 12, 6]]])
+
+    assert (np.trapz(array_3d, axis=1) == np.array([[6, 8, 25], [18, 20,
+                                                                 12]])).all()
+
+test_trapz()
+
+@test
+def test_convolve():
+
+    assert (np.convolve(3, 4) == np.array([12])).all()
+    assert (np.convolve(3.2, 4.5) == np.array([14.4])).all()
+    assert (np.convolve(np.array([1, 2, 3]),
+                        np.array([4, 5, 6])) == np.array([4, 13, 28, 27,
+                                                          18])).all()
+    assert (np.convolve(np.array([1.5, 2, 3]),
+                        np.array([4, 5,
+                                  6])) == np.array([6., 15.5, 31., 27.,
+                                                    18.])).all()
+    assert (np.convolve(np.array([1, 2, 3]),
+                        np.array([4, 5, 6, 7,
+                                  8])) == np.array([4, 13, 28, 34, 40, 37,
+                                                    24])).all()
+    assert (np.convolve(np.array([4, 5, 6, 7, 8]),
+                        np.array([1, 2,
+                                  3])) == np.array([4, 13, 28, 34, 40, 37,
+                                                    24])).all()
+    assert (np.convolve(np.array([1j, 2 + 6j, 3j]),
+                        np.array([10, 1, 0.5, 6, 8, 9])) == np.array([
+                            0. + 10.j, 20. + 61.j, 2. + 36.5j, 1. + 12.j,
+                            12. + 45.5j, 16. + 75.j, 18. + 78.j, 0. + 27.j
+                        ])).all()
+
+    assert (np.convolve(3, 4, 'full') == np.array([12])).all()
+    assert (np.convolve(3.2, 4.5, 'full') == np.array([14.4])).all()
+    assert (np.convolve(np.array([1, 2, 3]), np.array([4, 5, 6]),
+                        'full') == np.array([4, 13, 28, 27, 18])).all()
+    assert (np.convolve(np.array([1.5, 2, 3]), np.array([4, 5, 6]),
+                        'full') == np.array([6., 15.5, 31., 27., 18.])).all()
+    assert (np.convolve(np.array([1, 2, 3]), np.array([4, 5, 6, 7, 8]),
+                        'full') == np.array([4, 13, 28, 34, 40, 37,
+                                             24])).all()
+    assert (np.convolve(np.array([4, 5, 6, 7, 8]), np.array([1, 2, 3]),
+                        'full') == np.array([4, 13, 28, 34, 40, 37,
+                                             24])).all()
+    assert (np.convolve(np.array([1j, 2 + 6j, 3j]),
+                        np.array([10, 1, 0.5, 6, 8, 9]), 'full') == np.array([
+                            0. + 10.j, 20. + 61.j, 2. + 36.5j, 1. + 12.j,
+                            12. + 45.5j, 16. + 75.j, 18. + 78.j, 0. + 27.j
+                        ])).all()
+
+    assert (np.convolve(3, 4, 'same') == np.array([12])).all()
+    assert (np.convolve(3.2, 4.5, 'same') == np.array([14.4])).all()
+    assert (np.convolve(np.array([1, 2, 3]), np.array([4, 5, 6]),
+                        'same') == np.array([13, 28, 27])).all()
+    assert (np.convolve(np.array([1.5, 2, 3]), np.array([4, 5, 6]),
+                        'same') == np.array([15.5, 31., 27.])).all()
+    assert (np.convolve(np.array([1, 2, 3]), np.array([4, 5, 6, 7, 8]),
+                        'same') == np.array([13, 28, 34, 40, 37])).all()
+    assert (np.convolve(np.array([4, 5, 6, 7, 8]), np.array([1, 2, 3]),
+                        'same') == np.array([13, 28, 34, 40, 37])).all()
+    assert (np.convolve(np.array([1j, 2 + 6j, 3j]),
+                        np.array([10, 1, 0.5, 6, 8, 9]), 'same') == np.array([
+                            20. + 61.j, 2. + 36.5j, 1. + 12.j, 12. + 45.5j,
+                            16. + 75.j, 18. + 78.j
+                        ])).all()
+
+    assert (np.convolve(3, 4, 'valid') == np.array([12])).all()
+    assert (np.convolve(3.2, 4.5, 'valid') == np.array([14.4])).all()
+    assert (np.convolve(np.array([1, 2, 3]), np.array([4, 5, 6]),
+                        'valid') == np.array([28])).all()
+    assert (np.convolve(np.array([1.5, 2, 3]), np.array([4, 5, 6]),
+                        'valid') == np.array([31.])).all()
+    assert (np.convolve(np.array([1, 2, 3]), np.array([4, 5, 6, 7, 8]),
+                        'valid') == np.array([28, 34, 40])).all()
+    assert (np.convolve(np.array([4, 5, 6, 7, 8]), np.array([1, 2, 3]),
+                        'valid') == np.array([28, 34, 40])).all()
+    assert (np.convolve(np.array([1j, 2 + 6j, 3j]),
+                        np.array([10, 1, 0.5, 6, 8, 9]), 'valid') == np.array(
+                            [2. + 36.5j, 1. + 12.j, 12. + 45.5j,
+                             16. + 75.j])).all()
+
+    try:
+        np.convolve(np.empty(0), np.empty(0))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.convolve(np.empty(0), [1, 2, 3])
+        assert False
+    except ValueError:
+        pass
+
+test_convolve()
+
+@test
+def test_interp():
+    assert np.interp(2.5, np.array([1, 2, 3]), np.array([3, 2, 0])) == 1.0
+    assert np.isclose(
+        np.interp(np.array([0, 1, 1.5, 2.72, 3.14]), np.array([1, 2, 3]),
+                  np.array([3, 2, 0])), np.array([3, 3, 2.5, 0.56, 0])).all()
+    assert np.interp(3.14,
+                     np.array([1, 2, 3]),
+                     np.array([3, 2, 0]),
+                     right=-99.0) == -99.0
+    assert np.interp(0.14,
+                     np.array([1, 2, 3]),
+                     np.array([3, 2, 0]),
+                     left=-99.0) == -99.0
+    assert np.isclose(
+        np.interp(np.array([-180, -170, -185, 185, -10, -5, 0, 365]),
+                  np.array([190, -190, 350, -350]),
+                  np.array([5, 10, 3, 4]),
+                  period=360),
+        np.array([7.5, 5., 8.75, 6.25, 3., 3.25, 3.5, 3.75])).all()
+    assert np.isclose(
+        np.interp(np.array([1.5, 4.0]), np.array([2, 3, 5]),
+                  np.array((1.0j, 0, 2 + 3j))), np.array([0. + 1.j,
+                                                          1. + 1.5j])).all()
+    assert np.isclose(
+        np.interp(np.array([6, 9, 7.5]), np.array([6, 9, 12, 15, 18]),
+                  np.array((3, 2, 0, 5, 8))), np.array([3, 2, 2.5])).all()
+    assert np.isclose(
+        np.interp(np.array([6, 9, 7.5]), np.array([18, 15, 12, 9, 6]),
+                  np.array((3, 2, 0, 5, 8))), np.array([3., 8., 8.])).all()
+    assert np.isclose(
+        np.interp(np.array([6, 9, 7.5]),
+                  np.array([18, 15, 12, 9, 6, 9, 12, 15, 18]),
+                  np.array((3, 2, 0, 5, 8, 9, 12, 34, 9))),
+        np.array([3., 3., 3.])).all()
+    assert np.isclose(
+        np.interp(np.array([6, 9, 7.5]),
+                  np.array([6, 9, 12, 15, 18, 18, 15, 12, 9]),
+                  np.array((3, 2, 0, 5, 8, 9, 12, 34, 9))),
+        np.array([3., 2., 2.5])).all()
+    assert np.isclose(
+        np.interp(np.array([6, 9, 7.5]), np.array([1, 6, 2, 5, 9, 4, 7, 3, 8]),
+                  np.array((3, 2, 0, 5, 8, 9, 12, 34, 9))),
+        np.array([5.75, 9., 11.5])).all()
+
+    try:
+        np.interp(np.array([6, 9, 7.5]), np.array([1, 6, 2, 5, 9, 4, 7, 3, 8]),
+                  np.array((3, 0, 5, 8, 9, 12, 34, 9)))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.interp(np.array([6, 9, 7.5]),
+                  np.array([1, 6, 2, 5, 9, 4, 7, 3, 8]),
+                  np.array([3, 2, 0, 5, 8, 9, 12, 34, 9]),
+                  left=None,
+                  right=None,
+                  period=0)
+        assert False
+    except ValueError:
+        pass
+
+test_interp()
+
+@test
+def test_exp():
+    assert np.exp(-2 * np.pi) == 0.0018674427317079893
+    assert np.exp(2 * np.pi) == 535.4916555247646
+    assert np.exp(-np.pi) == 0.04321391826377226
+    assert np.exp(np.pi) == 23.140692632779267
+    assert np.exp(0) == 1.0
+    assert np.exp(np.e) == 15.154262241479262
+    assert np.exp(-1.5 + 1j) == (0.12055774003692393 + 0.1877575556004429j)
+    assert np.exp(0 + 1.5j) == (0.0707372016677029 + 0.9974949866040544j)
+
+test_exp()
+
+@test
+def test_expm1():
+    assert np.expm1(1e-10) == 1.00000000005e-10
+    assert np.expm1(np.e) == 14.154262241479262
+    assert np.expm1(-2 * np.pi) == -0.998132557268292
+    assert np.expm1(2 * np.pi) == 534.4916555247646
+    assert np.isclose(np.expm1(0 + 1.5j), -0.929262798332297 + 0.9974949866040544j)
+    assert np.expm1(1.5 + 1j) == (1.4214669388876962 + 3.771211315620157j)
+
+test_expm1()
+
+@test
+def test_exp2():
+    assert (np.exp2([2, 3]) == np.array([4., 8.])).all()
+    assert np.exp2(0) == 1.0
+    assert np.exp2(np.e) == 6.5808859910179205
+    assert np.exp2(1.5 + 1j) == (2.1757361740278176 + 1.8072554055879297j)
+    assert np.exp2(0 + 1j) == (0.7692389013639721 + 0.6389612763136348j)
+
+test_exp2()
+
+@test
+def test_log():
+    assert (np.log([1, np.e, np.e**2, 0]) == np.array([0., 1., 2.,
+                                                       -np.inf])).all()
+    assert np.log(0 + 1j) == 1.5707963267948966j
+    assert np.isclose(np.log(1.5 + 1j), (0.5893274981708231 + 0.5880026035475675j))
+
+test_log()
+
+@test
+def test_log10():
+    assert np.log10(1e-15) == -15.
+    assert np.isnan(np.log10(-3))
+    assert np.isclose(np.log10(1.5 + 1j), (0.2559416804894372 + 0.25536628606545403j))
+    assert np.log10(0 + 1j) == 0.6821881769209206j
+    assert isnan(np.log(np.nan))
+    assert np.log10(10**9) == 9.
+
+test_log10()
+
+@test
+def test_log2():
+    assert (np.log2(np.array([0, 1, 2,
+                              2**4])) == np.array([-np.inf, 0., 1.,
+                                                   4.])).all()
+    assert (round(np.log2(np.array([0 + 1.j, 1 + 0.j, 2 + 0.j, 4.j])),
+                  8) == np.array(
+                      [0. + 2.26618007j, 0. + 0.j, 1. + 0.j,
+                       2. + 2.26618007j])).all()
+    assert np.log2(0 + 1j) == 2.2661800709135966j
+    assert np.isclose(np.log2(1.5 + 1j), (0.8502198590705461 + 0.8483084401678749j))
+    assert np.log2(10**18) == 59.794705707972525
+
+test_log2()
+
+@test
+def test_log1p():
+    assert np.log1p(1e-99) == 1e-99
+    assert np.log1p(1 + 1e-99) == 0.6931471805599453
+    assert np.log1p(1.5 + 1j) == (0.9905007344332917 + 0.3805063771123649j)
+    assert np.log1p(1 + 0j) == (0.6931471805599453 + 0j)
+
+test_log1p()
+
+@test
+def test_logaddexp():
+    assert np.logaddexp(np.log(1e-50), np.log(2.5e-50)) == -113.87649168120691
+    assert np.logaddexp(np.log(1e-5), np.log(2.5e-5)) == -10.26016249647486
+
+test_logaddexp()
+
+@test
+def test_logaddexp2():
+    assert np.logaddexp2(np.log(1e-50), np.log(2.5e-50)) == -113.59955522772194
+    assert np.logaddexp2(np.log(1e-5), np.log(2.5e-5)) == -9.983226042989871
+
+test_logaddexp2()
+
+@test
+def test_signbit():
+    assert np.signbit(-1.2)
+    assert (np.signbit(np.array([1, -2.3,
+                                 2.1])) == np.array([False, True,
+                                                     False])).all()
+
+test_signbit()
+
+@test
+def test_copysign():
+    assert np.copysign(1.3, -1) == -1.3
+    assert 1 / np.copysign(0, 1) == np.inf
+    assert 1 / np.copysign(0, -1) == -np.inf
+    assert (np.copysign([-1, 0, 1], -1.1) == np.array([-1., -0., -1.])).all()
+
+test_copysign()
+
+@test
+def test_frexp():
+    y1, y2 = np.frexp(np.arange(9))
+    assert (y1 == np.array([
+        0., 0.5, 0.5, 0.75, 0.5, 0.625, 0.75, 0.875, 0.5
+    ])).all() and (y2 == np.array([0, 1, 2, 2, 3, 3, 3, 3, 4])).all()
+
+test_frexp()
+
+@test
+def test_ldexp():
+    assert (np.ldexp(5, np.arange(4)) == np.array([5., 10., 20., 40.])).all()
+
+test_ldexp()
+
+@test
+def test_nextafter():
+    assert np.nextafter(1, 2) == 1.0000000000000002
+    assert (np.nextafter([1, 2], [2, 1]) == np.array(
+        [1.0000000000000002, 1.9999999999999998])).all()
+
+test_nextafter()
+
+@test
+def test_spacing():
+    assert np.spacing(1) == 2.220446049250313e-16
+    assert np.spacing(np.e) == 4.440892098500626e-16
+    assert np.spacing(1024) == 2.2737367544323206e-13
+
+test_spacing()
+
+@test
+def test_lcm():
+    assert np.lcm(12, 20) == 60
+    assert np.lcm.reduce([3, 12, 20]) == 60
+    assert np.lcm.reduce([40, 12, 20]) == 120
+    assert (np.lcm(np.arange(6), 20) == np.array([0, 20, 20, 60, 20,
+                                                  20])).all()
+
+test_lcm()
+
+@test
+def test_gcd():
+    assert np.gcd(12, 20) == 4
+    assert np.gcd.reduce([15, 25, 35]) == 5
+    assert (np.gcd(np.arange(6), 20) == np.array([20, 1, 2, 1, 4, 5])).all()
+
+test_gcd()
+
+@test
+def test_reciprocal():
+    assert np.reciprocal(2.) == 0.5
+    assert (np.reciprocal([1, 2.,
+                           3.33]) == np.array([1., 0.5,
+                                               0.3003003003003003])).all()
+
+test_reciprocal()
+
+@test
+def test_positive():
+    assert (np.positive(np.array(([1., -1.]))) == np.array([1., -1.])).all()
+    assert (+np.array(([1., -1.])) == np.array([1., -1.])).all()
+
+test_positive()
+
+@test
+def test_negative():
+    assert (np.negative(np.array(([1., -1.]))) == np.array([-1., 1.])).all()
+    assert (-np.array(([1., -1.])) == np.array([-1., 1.])).all()
+
+test_negative()
+
+@test
+def test_multiply():
+    assert np.multiply(2.0, 4.0) == 8.0
+    x1 = np.arange(9.0).reshape((3, 3))
+    x2 = np.arange(3.0)
+    assert (np.multiply(x1, x2) == np.array([[0., 1., 4.], [0., 4., 10.],
+                                             [0., 7., 16.]])).all()
+    assert (x1 * x2 == np.array([[0., 1., 4.], [0., 4., 10.], [0., 7.,
+                                                               16.]])).all()
+
+test_multiply()
+
+@test
+def test_divide():
+    assert np.divide(-2.0, 4.0) == -0.5
+    assert np.divide(-2.0, -4.0) == 0.5
+    x1 = np.arange(9.0).reshape((3, 3))
+    x2 = 2 * np.ones(3)
+    assert (np.divide(x1, x2) == np.array([[0., 0.5, 1.], [1.5, 2., 2.5],
+                                           [3., 3.5, 4.]])).all()
+    assert (x1 / x2 == np.array([[0., 0.5, 1.], [1.5, 2., 2.5], [3., 3.5,
+                                                                 4.]])).all()
+    assert np.divide(10**18, 10**9) == 10**9
+
+test_divide()
+
+@test
+def test_power():
+    assert (np.power([0, 1, 2, 3, 4, 5], 3) == np.array([0, 1, 8, 27, 64,
+                                                         125])).all()
+    x2 = [1.0, 2.0, 3.0, 3.0, 2.0, 1.0]
+    assert (np.power([0, 1, 2, 3, 4, 5],
+                     x2) == np.array([0., 1., 8., 27., 16., 5.])).all()
+    x3 = np.array([[1, 2, 3, 3, 2, 1], [1, 2, 3, 3, 2, 1]])
+    assert (np.power([0, 1, 2, 3, 4, 5], x3) == np.array([[0, 1, 8, 27, 16, 5],
+                                                          [0, 1, 8, 27, 16,
+                                                           5]])).all()
+    assert (np.array([0, 1, 2, 3, 4,
+                      5])**x2 == np.array([0., 1., 8., 27., 16., 5.])).all()
+
+test_power()
+
+@test
+def test_subtract():
+    assert np.subtract(1.0, 4.0) == -3.0
+    x1 = np.arange(9.0).reshape((3, 3))
+    x2 = np.arange(3.0)
+    assert (np.subtract(x1, x2) == np.array([[0., 0., 0.], [3., 3., 3.],
+                                             [6., 6., 6.]])).all()
+    assert (x1 - x2 == np.array([[0., 0., 0.], [3., 3., 3.], [6., 6.,
+                                                              6.]])).all()
+
+test_subtract()
+
+@test
+def test_true_divide():
+    assert np.true_divide(2.0, 4.0) == 0.5
+    x1 = np.arange(9.0).reshape((3, 3))
+    x2 = 2 * np.ones(3)
+    assert (np.true_divide(x1, x2) == np.array([[0., 0.5, 1.], [1.5, 2., 2.5],
+                                                [3., 3.5, 4.]])).all()
+    assert (x1 / x2 == np.array([[0., 0.5, 1.], [1.5, 2., 2.5], [3., 3.5,
+                                                                 4.]])).all()
+
+test_true_divide()
+
+@test
+def test_floor_divide():
+    assert np.floor_divide(7, 3) == 2
+    x1 = np.array([1., 2., 3., 4.])
+    assert (np.floor_divide(x1, 2.5) == np.array([0., 0., 1., 1.])).all()
+    assert (x1 // 2.5 == np.array([0., 0., 1., 1.])).all()
+
+test_floor_divide()
+
+@test
+def test_fmod():
+    assert (np.fmod([-3, -2, -1, 1, 2, 3], 2) == np.array([-1, 0, -1, 1, 0,
+                                                           1])).all()
+    assert (np.fmod([5, 3], [2, 2.]) == np.array([1., 1.])).all()
+
+test_fmod()
+
+@test
+def test_mod():
+    assert (np.mod([4, 7], [2, 3]) == np.array([0, 1])).all()
+    assert (np.mod(np.arange(7), 5) == np.array([0, 1, 2, 3, 4, 0, 1])).all()
+
+test_mod()
+
+@test
+def test_modf():
+    x1, x2 = np.modf([0, 3.5])
+    assert (x1 == array([0., 0.5])).all() and (x2 == np.array([0., 3.])).all()
+    x1, x2 = np.modf(-0.5)
+    assert x1 == -0.5 and x2 == -0
+
+test_modf()
+
+@test
+def test_remainder():
+    assert (np.remainder([4, 7], [2, 3]) == np.array([0, 1])).all()
+    assert (np.remainder(np.arange(7), 5) == np.array([0, 1, 2, 3, 4, 0,
+                                                       1])).all()
+
+test_remainder()
+
+@test
+def test_divmod():
+    x1, x2 = divmod(np.arange(5), 3)
+    assert (x1 == np.array([0, 0, 0, 1, 1])).all() and (x2 == np.array(
+        [0, 1, 2, 0, 1])).all()
+
+test_divmod()
+
+###########
+# Complex #
+###########
+
+@test
+def test_real():
+    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
+    assert (a.real == np.array([1., 3., 5.])).all()
+
+#    a.real = 9
+#    assert (a == np.array([9.+2.j,  8.+4.j,  7.+6.j])).all()
+#    a.real = np.array([9, 8, 7])
+#    assert (a == np.array([9.+2.j,  8.+4.j,  7.+6.j])).all()
+
+test_real()
+
+@test
+def test_imag():
+    a = np.array([1 + 2j, 3 + 4j, 5 + 6j])
+    assert (a.imag == np.array([2., 4., 6.])).all()
+
+#    a.imag = 9
+#    assert (a == np.array([1.+9.j,  3.+9.j,  5.+9.j])).all()
+#    a.imag = np.array([9, 8, 7])
+#    assert (a == np.array([1.+9.j,  3.+8.j,  5.+7.j])).all()
+
+test_imag()
+
+@test
+def test_conjugate():
+    assert np.conj(1 + 2j) == (1 - 2j)
+    assert np.conjugate(1 + 2j) == (1 - 2j)
+    x = array([[1. + 1.j, 0. + 0.j], [0. + 0.j, 1. + 1.j]])
+    assert (np.conj(x) == np.array([[1. - 1.j, 0. - 0.j], [0. - 0.j,
+                                                           1. - 1.j]])).all()
+    assert (np.conjugate(x) == np.array([[1. - 1.j, 0. - 0.j],
+                                         [0. - 0.j, 1. - 1.j]])).all()
+
+test_conjugate()
+
+@test
+def test_maximum():
+    assert np.maximum(np.inf, 1) == np.inf
+    assert (np.maximum([2, 3, 4], [1, 5, 2]) == np.array([2, 5, 4])).all()
+    assert (np.maximum(np.eye(2), [0.5, 2]) == np.array([[1., 2.],
+                                                         [0.5, 2.]])).all()
+    assert isnan(np.maximum(np.nan, 0))
+
+test_maximum()
+
+@test
+def test_max():
+    a = np.arange(4).reshape((2, 2))
+    assert a.max() == 3
+    assert (a.max(axis=0) == np.array([2, 3])).all()
+    assert (a.max(axis=1) == np.array([1, 3])).all()
+
+test_max()
+
+@test
+def test_fmax():
+    assert (np.fmax([2, 3, 4], [1, 5, 2]) == np.array([2., 5., 4.])).all()
+    assert (np.fmax(np.eye(2), [0.5, 2]) == np.array([[1., 2.], [0.5,
+                                                                 2.]])).all()
+    assert np.fmax(np.nan, 0) == 0.
+
+test_fmax()
+
+@test
+def test_minimum():
+    assert (np.minimum([2, 3, 4], [1, 5, 2]) == np.array([1, 3, 2])).all()
+    assert (np.minimum(np.eye(2), [0.5, 2]) == np.array([[0.5, 0.],
+                                                         [0., 1.]])).all()
+    assert np.minimum(-np.inf, 1) == -np.inf
+    assert isnan(np.minimum(np.nan, 0))
+
+test_minimum()
+
+@test
+def test_min():
+    a = np.arange(4).reshape((2, 2))
+    assert a.min() == 0
+    assert (a.min(axis=0) == np.array([0, 1])).all()
+    assert (a.min(axis=1) == np.array([0, 2])).all()
+
+test_min()
+
+@test
+def test_fmin():
+    assert (np.fmin([2, 3, 4], [1, 5, 2]) == np.array([1., 3., 2.])).all()
+    assert (np.fmin(np.eye(2), [0.5, 2]) == np.array([[0.5, 0.], [0.,
+                                                                  1.]])).all()
+    assert np.fmin(np.nan, 0) == 0.
+
+test_fmin()
+
+@test
+def test_clip():
+    a = np.arange(10)
+    assert (a.clip(1, 8) == np.array([1, 1, 2, 3, 4, 5, 6, 7, 8, 8])).all()
+    assert (a.clip(3, 6) == np.array([3, 3, 3, 3, 4, 5, 6, 6, 6, 6])).all()
+    assert (a.clip([3, 4, 1, 1, 1, 4, 4, 4, 4, 4],
+                   8) == np.array([3, 4, 2, 3, 4, 5, 6, 7, 8, 8])).all()
+    assert (np.clip(a, 1, 8) == np.array([1, 1, 2, 3, 4, 5, 6, 7, 8, 8])).all()
+    assert (np.clip(a, 3, 6) == np.array([3, 3, 3, 3, 4, 5, 6, 6, 6, 6])).all()
+    assert (np.clip(a, [3, 4, 1, 1, 1, 4, 4, 4, 4, 4],
+                    8) == np.array([3, 4, 2, 3, 4, 5, 6, 7, 8, 8])).all()
+
+test_clip()
+
+@test
+def test_sqrt():
+    assert np.sqrt(49) == 7.0
+    assert np.sqrt(1) == 1.0
+    assert (np.sqrt([1, 4]) == np.array([1., 2.])).all()
+    assert np.isnan(np.sqrt(-1))
+    assert (np.sqrt([4 + 0j, -1 + 0j,
+                     -3 + 4j]) == np.array([2. + 0.j, 0. + 1.j,
+                                            1. + 2.j])).all()
+
+test_sqrt()
+
+@test
+def test_cbrt():
+    assert (np.cbrt([1, 8]) == np.array([1.0, 2.0])).all()
+    assert (np.cbrt([-1, -8]) == np.array([-1.0, -2.0])).all()
+    assert np.cbrt(0) == 0.0
+    assert isnan(np.cbrt(np.nan))
+    assert np.cbrt(-np.inf) == -np.inf
+
+test_cbrt()
+
+@test
+def test_square():
+    assert (np.square([1, 2, 3]) == np.array([1, 4, 9])).all()
+    assert (np.square([-1, -2, -3]) == np.array([1, 4, 9])).all()
+    assert (np.square([-1j, 1 + 0j]) == np.array([-1. - 0.j, 1. + 0.j])).all()
+    assert isnan(np.square(np.nan))
+
+test_square()
+
+@test
+def test_absolute():
+    assert (np.absolute(np.array([-1.2, 1.2])) == np.array([1.2, 1.2])).all()
+    assert np.absolute(1.2 + 1j) == 1.5620499351813308
+    assert (np.abs(np.array([-1.2, 1.2])) == np.array([1.2, 1.2])).all()
+    assert np.absolute(-np.inf) == np.inf
+
+test_absolute()
+
+@test
+def test_fabs():
+    assert np.fabs(-1) == 1.0
+    assert (np.fabs([-1.2, 1.2]) == np.array([1.2, 1.2])).all()
+    assert np.fabs(-np.inf) == np.inf
+
+test_fabs()
+
+@test
+def test_sign():
+    assert (np.sign([-5., 4.5]) == np.array([-1., 1.])).all()
+    assert np.sign(0) == 0
+    assert np.sign(5 - 2j) == (1 + 0j)
+
+test_sign()
+
+@test
+def test_heaviside():
+    assert (np.heaviside([-1.5, 0, 2.0], 0.5) == np.array([0., 0.5, 1.])).all()
+    assert (np.heaviside([-1.5, 0, 2.0], 1) == np.array([0., 1., 1.])).all()
+
+test_heaviside()
+
+@test
+def test_mean():
+    a = np.array([[1, 2], [3, 4]])
+    assert a.mean() == 2.5
+    assert (a.mean(axis=0) == np.array([2., 3.])).all()
+    assert (a.mean(axis=1) == np.array([1.5, 3.5])).all()
+    b = np.zeros((2, 512 * 512))
+    b[0, :] = 1.0
+    b[1, :] = 0.1
+    assert round(b.mean(), 8) == 0.550000
+    assert round(np.array([10**8, 10**6, 10**(-3)]).mean(), 3) == 33666666.667
+
+test_mean()
+
+@test
+def test_var():
+    a = np.array([[1, 2], [3, 4]])
+    assert a.var() == 1.25
+    assert (a.var(axis=0) == np.array([1., 1.])).all()
+    assert (a.var(axis=1) == np.array([0.25, 0.25])).all()
+    b = np.zeros((2, 512 * 512))
+    b[0, :] = 1.0
+    b[1, :] = 0.1
+    assert round(b.var(), 4) == 0.2025
+
+#    assert round(np.array([10**4, 10**6, 10**(-3)]).var(), 4) == 220022221997.7778
+
+test_var()
+
+@test
+def test_std():
+    a = np.array([[1, 2], [3, 4]])
+    assert a.std() == 1.1180339887498949
+    assert (a.std(axis=0) == np.array([1., 1.])).all()
+    assert (a.std(axis=1) == np.array([0.5, 0.5])).all()
+    b = np.zeros((2, 512 * 512))
+    b[0, :] = 1.0
+    b[1, :] = 0.1
+    assert round(b.std(), 4) == 0.4500
+    assert np.array([-2, -5, 7, 12, 0.4]).std() == 6.187212619588888
+
+#    assert np.array([10**4, 10**6, 10**(-3)]).std() == 469065.
+
+test_std()
+
+@test
+def test_ptp():
+    x = np.array([[4, 9, 2, 10], [6, 9, 7, 12]])
+    assert x.ptp() == 10
+    assert (x.ptp(axis=0) == np.array([2, 0, 5, 2])).all()
+    assert (x.ptp(axis=1) == np.array([8, 6])).all()
+    y = np.array([[1, 127], [0, 127], [-1, 127], [-2, 127]])
+    assert (y.ptp(axis=1) == np.array([126, 127, 128, 129])).all()
+    assert np.array([-8, -12, -0.5, -2, -4]).ptp() == 11.5
+
+test_ptp()
+
+#########
+# Logic #
+#########
+
+@test
+def test_any():
+    assert np.any([[True, False], [True, True]])
+    assert np.any([-1, 0, 5])
+    assert not np.any([0, 0, 0])
+    assert (np.array([[True, False],
+                      [False, False]]).any(axis=0) == np.array([True,
+                                                                False])).all()
+    assert (np.any([[True, False], [False, False]],
+                   axis=0) == np.array([True, False])).all()
+    assert not np.any([[True, False], [False, False]], where=[[False], [True]])
+    assert np.any(np.nan)
+
+test_any()
+
+@test
+def test_all():
+    assert not np.all([[True, False], [True, True]])
+    assert np.all([-1, 1, 5])
+    assert not np.all([-1, 0, 5])
+    assert (np.array([[True, False],
+                      [True, True]]).all(axis=0) == np.array([True,
+                                                              False])).all()
+    assert (np.all([[True, False], [True, True]],
+                   axis=0) == np.array([True, False])).all()
+    assert np.all([[True, True], [False, True]], where=[[True], [False]])
+    assert np.all(np.nan)
+
+test_all()
+
+@test
+def test_i0():
+    assert np.i0(0) == np.array(1.)
+    assert np.allclose(np.i0([0, 1, 2, 3]),
+                       np.array([1., 1.26606588, 2.2795853, 4.88079259]))
+    assert np.allclose(np.i0([[0, 1], [2, 3]]),
+                       np.array([[1., 1.26606588], [2.2795853, 4.88079259]]))
+    assert np.allclose(np.i0([8, 9]), np.array([427.56411572, 1093.58835451]))
+
+    assert np.allclose(np.i0(np.float32(0)), np.array(np.float32(1.)))
+    assert np.allclose(
+        np.i0(np.array([0, 1, 2, 3], np.float32)),
+        np.array([1., 1.26606588, 2.2795853, 4.88079259], np.float32))
+    assert np.allclose(
+        np.i0(np.array([[0, 1], [2, 3]], np.float32)),
+        np.array([[1., 1.26606588], [2.2795853, 4.88079259]], np.float32))
+    assert np.allclose(np.i0(np.array([8, 9], np.float32)),
+                       np.array([427.56411572, 1093.58835451], np.float32))
+
+test_i0()
+
+@test
+def test_sinc():
+    assert np.allclose(np.sinc(2), -3.8981718325193755e-17)
+    assert np.sinc(0.0) == 1.0
+    assert np.allclose(np.sinc(1 + 2j),
+                       -34.09033869939481 - 17.04516934969741j)
+    got = np.sinc(np.linspace(-4, 4, 41))
+    exp = np.array([
+        -3.89804309e-17, -4.92362781e-02, -8.40918587e-02, -8.90384387e-02,
+        -5.84680802e-02, 3.89804309e-17, 6.68206631e-02, 1.16434881e-01,
+        1.26137788e-01, 8.50444803e-02, -3.89804309e-17, -1.03943254e-01,
+        -1.89206682e-01, -2.16236208e-01, -1.55914881e-01, 3.89804309e-17,
+        2.33872321e-01, 5.04551152e-01, 7.56826729e-01, 9.35489284e-01,
+        1.00000000e+00, 9.35489284e-01, 7.56826729e-01, 5.04551152e-01,
+        2.33872321e-01, 3.89804309e-17, -1.55914881e-01, -2.16236208e-01,
+        -1.89206682e-01, -1.03943254e-01, -3.89804309e-17, 8.50444803e-02,
+        1.26137788e-01, 1.16434881e-01, 6.68206631e-02, 3.89804309e-17,
+        -5.84680802e-02, -8.90384387e-02, -8.40918587e-02, -4.92362781e-02,
+        -3.89804309e-17
+    ])
+    assert np.allclose(got, exp)
+
+test_sinc()

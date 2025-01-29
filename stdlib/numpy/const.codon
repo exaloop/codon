@@ -1,0 +1,52 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+@pure
+@llvm
+def _inf() -> float:
+    ret double 0x7FF0000000000000
+
+@pure
+@llvm
+def _ninf() -> float:
+    ret double 0xFFF0000000000000
+
+@pure
+@llvm
+def _nan() -> float:
+    ret double 0x7FF8000000000000
+
+@pure
+@llvm
+def _pzero() -> float:
+    ret double 0.000000e+00
+
+@pure
+@llvm
+def _nzero() -> float:
+    ret double -0.000000e+00
+
+@pure
+@llvm
+def _pi() -> float:
+    ret double 0x400921FB54442D18
+
+@pure
+@llvm
+def _e() -> float:
+    ret double 0x4005BF0A8B145769
+
+inf = _inf()
+infty = _inf()
+Inf = _inf()
+Infinity = _inf()
+PINF = _inf()
+NINF = _ninf()
+PZERO = _pzero()
+NZERO = _nzero()
+nan = _nan()
+NaN = _nan()
+NAN = _nan()
+pi = _pi()
+e = _e()
+euler_gamma = 0.577215664901532860606512090082402431
+newaxis = None

@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "irtools.h"
 
@@ -111,7 +111,7 @@ Value *makeTuple(const std::vector<Value *> &args, Module *M) {
   return M->Nr<CallInstr>(M->Nr<VarValue>(newFunc), args);
 }
 
-VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) {
+Var *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) {
   const bool global = (parent == nullptr);
   auto *M = x->getModule();
   auto *v = M->Nr<Var>(x->getType(), global);
@@ -128,7 +128,7 @@ VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) 
   if (!global) {
     parent->push_back(v);
   }
-  return M->Nr<VarValue>(v);
+  return v;
 }
 
 Value *alloc(types::Type *type, Value *count) {

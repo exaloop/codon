@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.17.0"
+  VERSION "0.18.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.2.0")
+set(CODON_JIT_PYTHON_VERSION "0.3.0")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -73,17 +73,72 @@ set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
+add_library(codonfloat STATIC
+            codon/runtime/floatlib/extenddftf2.c
+            codon/runtime/floatlib/fp_trunc.h
+            codon/runtime/floatlib/truncdfhf2.c
+            codon/runtime/floatlib/extendhfsf2.c
+            codon/runtime/floatlib/int_endianness.h
+            codon/runtime/floatlib/truncdfsf2.c
+            codon/runtime/floatlib/extendhftf2.c
+            codon/runtime/floatlib/int_lib.h
+#            codon/runtime/floatlib/truncsfbf2.c
+            codon/runtime/floatlib/extendsfdf2.c
+            codon/runtime/floatlib/int_math.h
+            codon/runtime/floatlib/truncsfhf2.c
+            codon/runtime/floatlib/extendsftf2.c
+            codon/runtime/floatlib/int_types.h
+            codon/runtime/floatlib/trunctfdf2.c
+            codon/runtime/floatlib/fp_extend.h
+            codon/runtime/floatlib/int_util.h
+            codon/runtime/floatlib/trunctfhf2.c
+            codon/runtime/floatlib/fp_lib.h
+#            codon/runtime/floatlib/truncdfbf2.c
+            codon/runtime/floatlib/trunctfsf2.c)
+target_compile_options(codonfloat PRIVATE -O3)
+target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
+
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
-                  codon/runtime/gpu.cpp)
+                  codon/runtime/gpu.cpp codon/runtime/numpy/sort.cpp
+                  codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
-add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma re2 fast_float)
+add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
+                         re2 hwy hwy_contrib fast_float codonfloat)
+
+if(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
+  if(APPLE)
+    set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran.5${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath.0${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s.1.1${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  else()
+    set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran${CMAKE_SHARED_LIBRARY_SUFFIX}.5")
+    set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath${CMAKE_SHARED_LIBRARY_SUFFIX}.0")
+    set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
+  endif()
+
+  add_custom_command(
+    OUTPUT ${copied_libgfortran}
+    DEPENDS "${CMAKE_SOURCE_DIR}/scripts/get_system_libs.sh"
+    COMMAND ${CMAKE_SOURCE_DIR}/scripts/get_system_libs.sh "$ENV{CODON_SYSTEM_LIBRARIES}" ${CMAKE_BINARY_DIR}
+    COMMENT "Copying system libraries to build directory")
+
+  add_custom_target(copy_libraries ALL DEPENDS ${copied_libgfortran})
+  add_dependencies(codonrt copy_libraries)
+
+  add_library(libgfortran SHARED IMPORTED)
+  set_target_properties(libgfortran PROPERTIES IMPORTED_LOCATION ${copied_libgfortran})
+  target_link_libraries(codonrt PRIVATE libgfortran)
+else()
+  message(FATAL_ERROR "Set 'CODON_SYSTEM_LIBRARIES' to the directory containing system libraries.")
+endif()
+
 target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${re2_SOURCE_DIR}
+                                           ${highway_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
-target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP}
-                                      LLVMSupport)
+target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP} LLVMSupport)
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -91,13 +146,19 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:gc>
             -Wl,-force_load,$<TARGET_FILE:bz2>
             -Wl,-force_load,$<TARGET_FILE:liblzma>
-            -Wl,-force_load,$<TARGET_FILE:re2>)
+            -Wl,-force_load,$<TARGET_FILE:re2>
+            -Wl,-force_load,$<TARGET_FILE:hwy>
+            -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
+            -Wl,-force_load,$<TARGET_FILE:codonfloat>)
+  target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 else()
+  add_dependencies(codonrt openblas)
   target_link_libraries(
     codonrt
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
-            -Wl,--no-whole-archive)
+            $<TARGET_FILE:openblas> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
+            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
 endif()
 if(ASAN)
   target_compile_options(
@@ -173,6 +234,10 @@ set(CODON_HPPFILES
     codon/cir/llvm/gpu.h
     codon/cir/llvm/llvisitor.h
     codon/cir/llvm/llvm.h
+    codon/cir/llvm/native/native.h
+    codon/cir/llvm/native/targets/aarch64.h
+    codon/cir/llvm/native/targets/target.h
+    codon/cir/llvm/native/targets/x86.h
     codon/cir/llvm/optimize.h
     codon/cir/module.h
     codon/cir/pyextension.h
@@ -187,6 +252,7 @@ set(CODON_HPPFILES
     codon/cir/transform/folding/rule.h
     codon/cir/transform/lowering/imperative.h
     codon/cir/transform/lowering/pipeline.h
+    codon/cir/transform/numpy/numpy.h
     codon/cir/transform/manager.h
     codon/cir/transform/parallel/openmp.h
     codon/cir/transform/parallel/schedule.h
@@ -283,6 +349,9 @@ set(CODON_CPPFILES
     codon/cir/instr.cpp
     codon/cir/llvm/gpu.cpp
     codon/cir/llvm/llvisitor.cpp
+    codon/cir/llvm/native/native.cpp
+    codon/cir/llvm/native/targets/aarch64.cpp
+    codon/cir/llvm/native/targets/x86.cpp
     codon/cir/llvm/optimize.cpp
     codon/cir/module.cpp
     codon/cir/transform/cleanup/canonical.cpp
@@ -294,6 +363,9 @@ set(CODON_CPPFILES
     codon/cir/transform/folding/folding.cpp
     codon/cir/transform/lowering/imperative.cpp
     codon/cir/transform/lowering/pipeline.cpp
+    codon/cir/transform/numpy/expr.cpp
+    codon/cir/transform/numpy/forward.cpp
+    codon/cir/transform/numpy/numpy.cpp
     codon/cir/transform/manager.cpp
     codon/cir/transform/parallel/openmp.cpp
     codon/cir/transform/parallel/schedule.cpp
@@ -399,7 +471,13 @@ add_custom_target(
   COMMAND
     ${CMAKE_COMMAND} -E copy
     "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon")
+    "${CMAKE_BINARY_DIR}/lib/codon"
+  COMMAND
+    ${CMAKE_COMMAND} -E copy ${copied_libgfortran} "${CMAKE_BINARY_DIR}/lib/codon"
+  COMMAND
+    ${CMAKE_COMMAND} -E copy ${copied_libquadmath} "${CMAKE_BINARY_DIR}/lib/codon"
+  COMMAND
+    ${CMAKE_COMMAND} -E copy ${copied_libgcc} "${CMAKE_BINARY_DIR}/lib/codon")
 add_dependencies(libs codonrt codonc)
 
 # Codon command-line tool
@@ -442,6 +520,9 @@ target_compile_definitions(codon_test
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
+install(FILES ${copied_libgfortran} DESTINATION lib/codon)
+install(FILES ${copied_libquadmath} DESTINATION lib/codon)
+install(FILES ${copied_libgcc} DESTINATION lib/codon)
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)

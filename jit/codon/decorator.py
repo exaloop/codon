@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from argparse import ArgumentError
 import ctypes
@@ -10,6 +10,7 @@ import itertools
 import ast
 import textwrap
 import astunparse
+import numpy as np
 from pathlib import Path
 
 sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
@@ -41,6 +42,20 @@ pod_conversions = {
     str: "str",
     complex: "complex",
     slice: "slice",
+    np.bool_: "bool",
+    np.int8: "i8",
+    np.uint8: "u8",
+    np.int16: "i16",
+    np.uint16: "u16",
+    np.int32: "i32",
+    np.uint32: "u32",
+    np.int64: "int",
+    np.uint64: "u64",
+    np.float16: "float16",
+    np.float32: "float32",
+    np.float64: "float",
+    np.complex64: "complex64",
+    np.complex128: "complex",
 }
 
 custom_conversions = {}
@@ -78,6 +93,45 @@ def _codon_type(arg, **kwargs):
         )
     if issubclass(t, tuple):
         return "Tuple[{}]".format(",".join(_codon_type(a, **kwargs) for a in arg))
+    if issubclass(t, np.ndarray):
+        if arg.dtype == np.bool_:
+            dtype = "bool"
+        elif arg.dtype == np.int8:
+            dtype = "i8"
+        elif arg.dtype == np.uint8:
+            dtype = "u8"
+        elif arg.dtype == np.int16:
+            dtype = "i16"
+        elif arg.dtype == np.uint16:
+            dtype = "u16"
+        elif arg.dtype == np.int32:
+            dtype = "i32"
+        elif arg.dtype == np.uint32:
+            dtype = "u32"
+        elif arg.dtype == np.int64:
+            dtype = "int"
+        elif arg.dtype == np.uint64:
+            dtype = "u64"
+        elif arg.dtype == np.float16:
+            dtype = "float16"
+        elif arg.dtype == np.float32:
+            dtype = "float32"
+        elif arg.dtype == np.float64:
+            dtype = "float"
+        elif arg.dtype == np.complex64:
+            dtype = "complex64"
+        elif arg.dtype == np.complex128:
+            dtype = "complex"
+        elif arg.dtype.name.startswith("datetime64["):
+            units, step = np.datetime_data(arg.dtype)
+            dtype = "np.datetime64['{}',{}]".format(units, step)
+        elif arg.dtype.name.startswith("timedelta64["):
+            units, step = np.datetime_data(arg.dtype)
+            dtype = "np.timedelta64['{}',{}]".format(units, step)
+        else:
+            return "pyobj"
+        return "np.ndarray[{},{}]".format(dtype, arg.ndim)
+
     s = custom_conversions.get(t, "")
     if s:
         j = ",".join(_codon_type(getattr(arg, slot), **kwargs) for slot in t.__slots__)
@@ -103,6 +157,8 @@ def _reset_jit():
         "from internal.python import "
         "setup_decorator, PyTuple_GetItem, PyObject_GetAttrString\n"
         "setup_decorator()\n"
+        "import numpy as np\n"
+        "import numpy.pybridge\n"
     )
     _jit.execute(init_code, "", 0, False)
     return _jit

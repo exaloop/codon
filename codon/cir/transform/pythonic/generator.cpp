@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "generator.h"
 
@@ -150,7 +150,7 @@ Func *genToSum(BodiedFunc *gen, types::Type *startType, types::Type *outType) {
   if (!init || !init->getType()->is(outType))
     return nullptr;
 
-  auto *accumulator = util::makeVar(init, body, fn, /*prepend=*/true)->getVar();
+  auto *accumulator = util::makeVar(init, body, fn, /*prepend=*/true);
   GeneratorSumTransformer xgen(accumulator);
   fn->accept(xgen);
   body->push_back(M->Nr<ReturnInstr>(M->Nr<VarValue>(accumulator)));

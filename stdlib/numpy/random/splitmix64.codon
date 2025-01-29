@@ -1,0 +1,26 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+class Splitmix64:
+    state: u64
+
+    def __init__(self, state: u64):
+        self.state = state
+
+    def __init__(self, state: int = 0):
+        self.state = u64(state)
+
+    def __get_state__(self):
+        return (self.state,)
+
+    def __set_state__(self, state):
+        self.state = state[0]
+
+    def next64(self):
+        c0 = (u64(0x9e3779b9) << u64(32)) | u64(0x7f4a7c15)
+        c1 = (u64(0xbf58476d) << u64(32)) | u64(0x1ce4e5b9)
+        c2 = (u64(0x94d049bb) << u64(32)) | u64(0x133111eb)
+        self.state += c0
+        z = self.state
+        z = (z ^ (z >> u64(30))) * c1
+        z = (z ^ (z >> u64(27))) * c2
+        return z ^ (z >> u64(31))

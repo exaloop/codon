@@ -1,0 +1,2966 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from ..routines import *
+from ..util import PI, uitofp, zext, itrunc, signbit, isnan, nan64, fabs, cmod, floor, ceil, log, log1p, exp, expm1, pow, sqrt, cos, acos
+from .logfactorial import logfactorial
+from .seed import SeedSequence
+from .ziggurat import *
+
+u128 = UInt[128]
+
+class Binomial:
+    psave: float
+    nsave: int
+    r: float
+    q: float
+    fm: float
+    m: int
+    p1: float
+    xm: float
+    xl: float
+    xr: float
+    c: float
+    laml: float
+    lamr: float
+    p2: float
+    p3: float
+    p4: float
+
+    def __init__(self):
+        pass
+
+class BitGenerator[G]:
+    state: G
+    binomial: Optional[Binomial]
+    uinteger: u32
+    has_uint32: bool
+
+    def __init__(self, state: G):
+        self.state = state
+        self.binomial = None
+        self.uinteger = u32(0)
+        self.has_uint32 = False
+
+    @property
+    def seed_seq(self):
+        return self.state.seed
+
+    def next64(self):
+        if hasattr(self.state, "next64"):
+            return self.state.next64()
+        else:
+            hi = zext(self.next32(), u64)
+            lo = zext(self.next32(), u64)
+            return (hi << u64(32)) | lo
+
+    def next32(self):
+        if hasattr(self.state, "next32"):
+            return self.state.next32()
+        else:
+            if self.has_uint32:
+                self.has_uint32 = False
+                return self.uinteger
+
+            n64 = self.next64()
+            self.has_uint32 = True
+            self.uinteger = itrunc(n64 >> u64(32), u32)
+            return itrunc(n64 & u64(0xffffffff), u32)
+
+    def next_double(self):
+        if hasattr(self.state, "next_double"):
+            return self.state.next_double()
+        else:
+            r = self.next64()
+            return uitofp(r >> u64(11), float) * (1.0 / 9007199254740992.0)
+
+    def next_float(self):
+        return uitofp(self.next32() >> u32(8), float32) * (float32(1.0) / float32(16777216.0))
+
+    def jumped(self, jumps: int):
+        if not hasattr(self.state, "jump_inplace"):
+            compile_error("generator '" + G.__name__ + "' is not jumpable")
+
+        s = self.state.__get_state__()
+        g = G.__new__()
+        g.__set_state__(s)
+        g.jump_inplace(jumps)
+        return BitGenerator(g)
+
+    # distributions
+
+    def standard_uniform(self):
+        return self.next_double()
+
+    def standard_uniform_f(self):
+        return self.next_float()
+
+    def random_standard_uniform_fill(self, cnt: int, out: Ptr[float]):
+        for i in range(cnt):
+            out[i] = self.next_double()
+
+    def random_standard_uniform_fill_f(self, cnt: int, out: Ptr[float32]):
+        for i in range(cnt):
+            out[i] = self.next_float()
+
+    def standard_exponential_unlikely(self, idx: int, x: float):
+        if idx == 0:
+            return ziggurat_exp_r - log1p(-self.next_double())
+        elif (fe_double(idx - 1) - fe_double(idx)) * self.next_double() + fe_double(idx) < exp(-x):
+            return x
+        else:
+            return self.random_standard_exponential()
+
+    def random_standard_exponential(self):
+        ri = self.next64()
+        ri >>= u64(3)
+        idx = int(ri & u64(0xff))
+        ri >>= u64(8)
+        x = uitofp(ri, float) * we_double(idx)
+        if ri < ke_double(idx):
+            return x
+        return self.standard_exponential_unlikely(idx, x)
+
+    def random_standard_exponential_fill(self, cnt: int, out: Ptr[float]):
+        for i in range(cnt):
+            out[i] = self.random_standard_exponential()
+
+    def standard_exponential_unlikely_f(self, idx: int, x: float32):
+        if idx == 0:
+            return ziggurat_exp_r_f - log1p(-self.next_float())
+        elif (fe_float(idx - 1) - fe_float(idx)) * self.next_float() + fe_float(idx) < exp(-x):
+            return x
+        else:
+            return self.random_standard_exponential_f()
+
+    def random_standard_exponential_f(self):
+        ri = self.next32()
+        ri >>= u32(1)
+        idx = int(ri & u32(0xff))
+        ri >>= u32(8)
+        x = uitofp(ri, float32) * we_float(idx)
+        if ri < ke_float(idx):
+            return x
+        return self.standard_exponential_unlikely_f(idx, x)
+
+    def random_standard_exponential_fill_f(self, cnt: int, out: Ptr[float32]):
+        for i in range(cnt):
+            out[i] = self.random_standard_exponential_f()
+
+    def random_standard_exponential_inv_fill(self, cnt: int, out: Ptr[float]):
+        for i in range(cnt):
+            out[i] = -log1p(-self.next_double())
+
+    def random_standard_exponential_inv_fill_f(self, cnt: int, out: Ptr[float32]):
+        for i in range(cnt):
+            out[i] = -log1p(-self.next_float())
+
+    def random_standard_normal(self):
+        while True:
+            r = self.next64()
+            idx = int(r & u64(0xff))
+            r >>= u64(8)
+            sign = r & u64(0x1)
+            rabs = (r >> u64(1)) & u64(0x000fffffffffffff)
+            x = uitofp(rabs, float) * wi_double(idx)
+            if sign & u64(0x1):
+                x = -x
+            if rabs < ki_double(idx):
+                return x
+            if idx == 0:
+                while True:
+                    xx = -ziggurat_nor_inv_r * log1p(-self.next_double())
+                    yy = -log1p(-self.next_double())
+                    if yy + yy > xx * xx:
+                        return -(ziggurat_nor_r + xx) if ((rabs >> u64(8)) & u64(0x1)) else ziggurat_nor_r + xx
+            else:
+                if (((fi_double(idx - 1) - fi_double(idx)) * self.next_double() +
+                        fi_double(idx)) < exp(-0.5 * x * x)):
+                    return x
+
+    def random_standard_normal_fill(self, cnt: int, out: Ptr[float]):
+        for i in range(cnt):
+            out[i] = self.random_standard_normal()
+
+    def random_standard_normal_f(self):
+        while True:
+            r = self.next32()
+            idx = int(r & u32(0xff))
+            sign = (r >> u32(8)) & u32(0x1)
+            rabs = (r >> u32(9)) & u32(0x0007fffff)
+            x = uitofp(rabs, float32) * wi_float(idx)
+            if sign & u32(0x1):
+                x = -x
+            if rabs < ki_float(idx):
+                return x
+            if idx == 0:
+                while True:
+                    xx = -ziggurat_nor_inv_r_f * log1p(-self.next_float())
+                    yy = -log1p(-self.next_float())
+                    if yy + yy > xx * xx:
+                        return -(ziggurat_nor_r_f + xx) if ((rabs >> u32(8)) & u32(0x1)) else ziggurat_nor_r_f + xx
+            else:
+                if (((fi_float(idx - 1) - fi_float(idx)) * self.next_float() +
+                        fi_float(idx)) < exp(float32(-0.5) * x * x)):
+                    return x
+
+    def random_standard_normal_fill_f(self, cnt: int, out: Ptr[float32]):
+        for i in range(cnt):
+            out[i] = self.random_standard_normal_f()
+
+    def random_standard_gamma(self, shape: float):
+        if shape == 1.0:
+            return self.random_standard_exponential()
+        elif shape == 0.0:
+            return 0.0
+        elif shape < 1.0:
+            while True:
+                U = self.next_double()
+                V = self.random_standard_exponential()
+                if U < 1.0 - shape:
+                    X = pow(U, 1. / shape)
+                    if X <= V:
+                        return X
+                else:
+                    Y = -log((1. - U) / shape)
+                    X = pow(1.0 - shape + shape * Y, 1. / shape)
+                    if X <= V + Y:
+                        return X
+        else:
+            b = shape - 1. / 3.
+            c = 1. / sqrt(9 * b)
+            while True:
+                while True:
+                    X = self.random_standard_normal()
+                    V = 1.0 + c * X
+                    if V > 0.0:
+                        break
+
+                V = V * V * V
+                U = self.next_double()
+                if U < 1.0 - 0.0331 * (X * X) * (X * X):
+                    return b * V
+                if log(U) < 0.5 * X * X + b * (1. - V + log(V)):
+                    return b * V
+
+    def random_standard_gamma_f(self, shape: float32):
+        if shape == f32(1.0):
+            return self.random_standard_exponential_f()
+        elif shape == f32(0.0):
+            return f32(0.0)
+        elif shape < f32(1.0):
+            while True:
+                U = self.next_float()
+                V = self.random_standard_exponential_f()
+                if U < f32(1.0) - shape:
+                    X = pow(U, f32(1.) / shape)
+                    if X <= V:
+                        return X
+                else:
+                    Y = -log((f32(1.) - U) / shape)
+                    X = pow(f32(1.0) - shape + shape * Y, f32(1.) / shape)
+                    if X <= V + Y:
+                        return X
+        else:
+            b = shape - f32(1.) / f32(3.)
+            c = f32(1.) / sqrt(f32(9.) * b)
+            while True:
+                while True:
+                    X = self.random_standard_normal_f()
+                    V = f32(1.0) + c * X
+                    if V > f32(0.0):
+                        break
+
+                V = V * V * V
+                U = self.next_float()
+                if U < f32(1.0) - f32(0.0331) * (X * X) * (X * X):
+                    return b * V
+                if log(U) < f32(0.5) * X * X + b * (f32(1.) - V + log(V)):
+                    return b * V
+
+    def random_positive_int64(self):
+        return int(self.next64() >> u64(1))
+
+    def random_positive_int32(self):
+        return i32(self.next32() >> u32(1))
+
+    def random_positive_int(self):
+        return self.random_positive_int64()
+
+    def random_uint(self):
+        return self.next64()
+
+    def random_loggam(x: float):
+        @pure
+        @llvm
+        def a(idx: int) -> float:
+            @data = private unnamed_addr constant [10 x double] [double 0x3FB5555555555555, double 0xBF66C16C16C16C17, double 0x3F4A01A01A01A01A, double 0xBF43813813813813, double 0x3F4B951E2B18FF24, double 0xBF5F6AB0D9993C7F, double 0x3F7A41A41A41A41A, double 0xBF9E4286CB0F5397, double 0x3FC6FE96381E0685, double 0xBFF6476701181F35], align 16
+            %p = getelementptr inbounds [10 x double], ptr @data, i64 0, i64 %idx
+            %x = load double, ptr %p, align 8
+            ret double %x
+
+        n = 0
+        if x == 1.0 or x == 2.0:
+            return 0.0
+        elif x < 7.0:
+            n = int(7 - x)
+        else:
+            n = 0
+        x0 = x + n
+        x2 = (1.0 / x0) * (1.0 / x0)
+        lg2pi = 1.8378770664093453e+00
+        gl0 = a(9)
+        k = 8
+        while k >= 0:
+            gl0 *= x2
+            gl0 += a(k)
+            k -= 1
+        gl = gl0 / x0 + 0.5 * lg2pi + (x0 - 0.5) * log(x0) - x0
+        if x < 7.0:
+            k = 1
+            while k <= n:
+                gl -= log(x0 - 1.0)
+                x0 -= 1.0
+                k += 1
+        return gl
+
+    def random_normal(self, loc: float, scale: float):
+        return loc + scale * self.random_standard_normal()
+
+    def random_exponential(self, scale: float):
+        return scale * self.random_standard_exponential()
+
+    def random_uniform(self, off: float, rng: float):
+        return off + rng * self.next_double()
+
+    def random_gamma(self, shape: float, scale: float):
+        return scale * self.random_standard_gamma(shape)
+
+    def random_gamma_f(self, shape: float32, scale: float32):
+        return scale * self.random_standard_gamma_f(shape)
+
+    def random_beta(self, a: float, b: float):
+        if a <= 1.0 and b <= 1.0:
+            while True:
+                U = self.next_double()
+                V = self.next_double()
+                X = pow(U, 1.0 / a)
+                Y = pow(V, 1.0 / b)
+                XpY = X + Y
+
+                if XpY <= 1.0 and XpY > 0.0:
+                    if X + Y > 0:
+                        return X / XpY
+                    else:
+                        logX = log(U) / a
+                        logY = log(V) / b
+                        logM = logX if logX > logY else logY
+                        logX -= logM
+                        logY -= logM
+
+                        return exp(logX - log(exp(logX) + exp(logY)))
+        else:
+            Ga = self.random_standard_gamma(a)
+            Gb = self.random_standard_gamma(b)
+            return Ga / (Ga + Gb)
+
+    def random_chisquare(self, df: float):
+        return 2.0 * self.random_standard_gamma(df / 2.0)
+
+    def random_f(self, dfnum: float, dfden: float):
+        return (self.random_chisquare(dfnum) * dfden) / (self.random_chisquare(dfden) * dfnum)
+
+    def random_standard_cauchy(self):
+        return self.random_standard_normal() / self.random_standard_normal()
+
+    def random_pareto(self, a: float):
+        return expm1(self.random_standard_exponential() / a)
+
+    def random_weibull(self, a: float):
+        if a == 0.0:
+            return 0.0
+        return pow(self.random_standard_exponential(), 1. / a)
+
+    def random_power(self, a: float):
+        return pow(-expm1(-self.random_standard_exponential()), 1. / a)
+
+    def random_laplace(self, loc: float, scale: float):
+        U = self.next_double()
+        if U >= 0.5:
+            U = loc - scale * log(2.0 - U - U)
+        elif U > 0.0:
+            U = loc + scale * log(U + U)
+        else:
+            U = self.random_laplace(loc, scale)
+        return U
+
+    def random_gumbel(self, loc: float, scale: float):
+        U = 1.0 - self.next_double()
+        if U < 1.0:
+            return loc - scale * log(-log(U))
+        return self.random_gumbel(loc, scale)
+
+    def random_logistic(self, loc: float, scale: float):
+        U = self.next_double()
+        if U > 0.0:
+            return loc + scale * log(U / (1.0 - U))
+        return self.random_logistic(loc, scale)
+
+    def random_lognormal(self, mean: float, sigma: float):
+        return exp(self.random_normal(mean, sigma))
+
+    def random_rayleigh(self, mode: float):
+        return mode * sqrt(2.0 * self.random_standard_exponential())
+
+    def random_standard_t(self, df: float):
+        num = self.random_standard_normal()
+        denom = self.random_standard_gamma(df / 2)
+        return sqrt(df / 2) * num / sqrt(denom)
+
+    def random_poisson_mult(self, lam: float):
+        enlam = exp(-lam)
+        X = 0
+        prod = 1.0
+        while True:
+            U = self.next_double()
+            prod *= U
+            if prod > enlam:
+                X += 1
+            else:
+                return X
+
+    def random_poisson_ptrs(self, lam: float):
+        LS2PI = 0.91893853320467267
+        TWELFTH = 0.083333333333333333333333
+
+        slam = sqrt(lam)
+        loglam = log(lam)
+        b = 0.931 + 2.53 * slam
+        a = -0.059 + 0.02483 * b
+        invalpha = 1.1239 + 1.1328 / (b - 3.4)
+        vr = 0.9277 - 3.6224 / (b - 2)
+
+        while True:
+            U = self.next_double() - 0.5
+            V = self.next_double()
+            us = 0.5 - fabs(U)
+            k = int(floor((2 * a / us + b) * U + lam + 0.43))
+            if us >= 0.07 and V <= vr:
+                return k
+            if k < 0 or (us < 0.013 and V > us):
+                continue
+            if ((log(V) + log(invalpha) - log(a / (us * us) + b)) <=
+                (-lam + k * loglam - BitGenerator.random_loggam(k + 1))):
+                return k
+
+    def random_poisson(self, lam: float):
+        if lam >= 10:
+            return self.random_poisson_ptrs(lam)
+        elif lam == 0:
+            return 0
+        else:
+            return self.random_poisson_mult(lam)
+
+    def random_negative_binomial(self, n: float, p: float):
+        Y = self.random_gamma(n, (1 - p) / p)
+        return self.random_poisson(Y)
+
+    def random_binomial_btpe(self, n: int, p: float):
+        # god help us...
+        r = 0.0
+        q = 0.0
+        fm = 0.0
+        p1 = 0.0
+        xm = 0.0
+        xl = 0.0
+        xr = 0.0
+        c = 0.0
+        laml = 0.0
+        lamr = 0.0
+        p2 = 0.0
+        p3 = 0.0
+        p4 = 0.0
+        m = 0
+
+        binomial = self.binomial
+        if binomial is None or binomial.nsave != n or binomial.psave != p:
+            b = Binomial()
+            b.nsave = n
+            b.psave = p
+
+            r = min(p, 1.0 - p)
+            q = 1.0 - r
+            fm = n * r + r
+            m = int(floor(fm))
+            p1 = floor(2.195 * sqrt(n * r * q) - 4.6 * q) + 0.5
+            xm = m + 0.5
+            xl = xm - p1
+            xr = xm + p1
+            c = 0.134 + 20.5 / (15.3 + m)
+
+            b.r = r
+            b.q = q
+            b.fm = fm
+            b.m = m
+            b.p1 = p1
+            b.xm = xm
+            b.xl = xl
+            b.xr = xr
+            b.c = c
+
+            a = (fm - xl) / (fm - xl * r)
+            laml = a * (1.0 + a / 2.0)
+            b.laml = laml
+            a = (xr - fm) / (xr * q)
+            lamr = a * (1.0 + a / 2.0)
+            b.lamr = lamr
+
+            p2 = p1 * (1.0 + 2.0 * c)
+            p3 = p2 + c / laml
+            p4 = p3 + c / lamr
+
+            b.p2 = p2
+            b.p3 = p3
+            b.p4 = p4
+
+            self.binomial = b
+        else:
+            r = binomial.r
+            q = binomial.q
+            fm = binomial.fm
+            m = binomial.m
+            p1 = binomial.p1
+            xm = binomial.xm
+            xl = binomial.xl
+            xr = binomial.xr
+            c = binomial.c
+            laml = binomial.laml
+            lamr = binomial.lamr
+            p2 = binomial.p2
+            p3 = binomial.p3
+            p4 = binomial.p4
+
+        a = 0.0
+        u = 0.0
+        v = 0.0
+        s = 0.0
+        F = 0.0
+        rho = 0.0
+        t = 0.0
+        A = 0.0
+        nrq = 0.0
+        x1 = 0.0
+        x2 = 0.0
+        f1 = 0.0
+        f2 = 0.0
+        z = 0.0
+        z2 = 0.0
+        w = 0.0
+        w2 = 0.0
+        x = 0.0
+
+        y = 0
+        k = 0
+        i = 0
+
+        def step10(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            nrq = n * r * q
+            u = self.next_double() * p4
+            v = self.next_double()
+            if u > p1:
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step20(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            y = int(floor(xm - p1 * v + u))
+
+            args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                    lamr, p2, p3, p4, m, a, u, v, s, F,
+                    rho, t, A, nrq, x1, x2, f1, f2, z,
+                    z2, w, w2, x, y, k, i)
+            return step60(step10, step20, step30, step40,
+                          step50, step52, step60, args, self, n, p)
+
+        def step20(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            if u > p2:
+                return step30(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            x = xl + (u - p1) / c
+            v = v * c + 1.0 - fabs(m - x + 0.5) / p1
+            if v > 1.0:
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step10(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            y = int(floor(x))
+            args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                    lamr, p2, p3, p4, m, a, u, v, s, F,
+                    rho, t, A, nrq, x1, x2, f1, f2, z,
+                    z2, w, w2, x, y, k, i)
+            return step50(step10, step20, step30, step40,
+                          step50, step52, step60, args, self, n, p)
+
+        def step30(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            if u > p3:
+                return step40(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            y = int(floor(xl + log(v) / laml))
+            if y < 0 or v == 0.0:
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step10(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            v = v * (u - p2) * laml
+            args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                    lamr, p2, p3, p4, m, a, u, v, s, F,
+                    rho, t, A, nrq, x1, x2, f1, f2, z,
+                    z2, w, w2, x, y, k, i)
+            return step50(step10, step20, step30, step40,
+                          step50, step52, step60, args, self, n, p)
+
+        def step40(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            y = int(floor(xr - log(v) / lamr))
+            if y > n or v == 0.0:
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step10(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            v = v * (u - p3) * lamr
+            args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                    lamr, p2, p3, p4, m, a, u, v, s, F,
+                    rho, t, A, nrq, x1, x2, f1, f2, z,
+                    z2, w, w2, x, y, k, i)
+            return step50(step10, step20, step30, step40,
+                          step50, step52, step60, args, self, n, p)
+
+        def step50(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            k = abs(y - m)
+            if k > 20 and k < (nrq / 2.0 - 1):
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step52(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+
+            s = r / q
+            a = s * (n + 1)
+            F = 1.0
+            if m < y:
+                for i in range(m + 1, y + 1):
+                    F *= (a / i - s)
+            elif m > y:
+                for i in range(y + 1, m + 1):
+                    F /= (a / i - s)
+
+            args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                    lamr, p2, p3, p4, m, a, u, v, s, F,
+                    rho, t, A, nrq, x1, x2, f1, f2, z,
+                    z2, w, w2, x, y, k, i)
+            if v > F:
+                return step10(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            return step60(step10, step20, step30, step40,
+                          step50, step52, step60, args, self, n, p)
+
+        def step52(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            rho = \
+                  (k / (nrq)) * ((k * (k / 3.0 + 0.625) + 0.16666666666666666) / nrq + 0.5)
+            t = -k * k / (2 * nrq)
+            A = log(v)
+            if A < t - rho:
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step60(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            if A > t + rho:
+                args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                        lamr, p2, p3, p4, m, a, u, v, s, F,
+                        rho, t, A, nrq, x1, x2, f1, f2, z,
+                        z2, w, w2, x, y, k, i)
+                return step10(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+
+            x1 = y + 1
+            f1 = m + 1
+            z = n + 1 - m
+            w = n - y + 1
+            x2 = x1 * x1
+            f2 = f1 * f1
+            z2 = z * z
+            w2 = w * w
+            args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                    lamr, p2, p3, p4, m, a, u, v, s, F,
+                    rho, t, A, nrq, x1, x2, f1, f2, z,
+                    z2, w, w2, x, y, k, i)
+            if (A > (xm * log(f1 / x1) + (n - m + 0.5) * log(z / w) +
+                    (y - m) * log(w * r / (x1 * q)) +
+                    (13680. - (462. - (132. - (99. - 140. / f2) / f2) / f2) / f2) / f1 /
+                        166320. +
+                    (13680. - (462. - (132. - (99. - 140. / z2) / z2) / z2) / z2) / z /
+                        166320. +
+                    (13680. - (462. - (132. - (99. - 140. / x2) / x2) / x2) / x2) / x1 /
+                        166320. +
+                    (13680. - (462. - (132. - (99. - 140. / w2) / w2) / w2) / w2) / w /
+                        166320.)):
+                return step10(step10, step20, step30, step40,
+                              step50, step52, step60, args, self, n, p)
+            return step60(step10, step20, step30, step40,
+                          step50, step52, step60, args, self, n, p)
+
+        def step60(step10, step20, step30, step40,
+                   step50, step52, step60, args, self, n, p):
+            r, q, fm, p1, xm, xl, xr, c, laml, \
+            lamr, p2, p3, p4, m, a, u, v, s, F, \
+            rho, t, A, nrq, x1, x2, f1, f2, z, \
+            z2, w, w2, x, y, k, i = args
+
+            if p > 0.5:
+                y = n - y
+
+            return y
+
+        args = (r, q, fm, p1, xm, xl, xr, c, laml,
+                lamr, p2, p3, p4, m, a, u, v, s, F,
+                rho, t, A, nrq, x1, x2, f1, f2, z,
+                z2, w, w2, x, y, k, i)
+        return step10(step10, step20, step30, step40,
+                      step50, step52, step60, args, self, n, p)
+
+    def random_binomial_inversion(self, n: int, p: float):
+        q = 0.0
+        qn = 0.0
+        np = 0.0
+        bound = 0
+
+        binomial = self.binomial
+        if binomial is None or binomial.nsave != n or binomial.psave != p:
+            b = Binomial()
+            b.nsave = n
+            b.psave = p
+            q = 1.0 - p
+            qn = exp(n * log(q))
+            np = n * p
+            bound = int(min(float(n), np + 10.0 * sqrt(np * q + 1)))
+            b.q = q
+            b.r = qn
+            b.c = np
+            b.m = bound
+            self.binomial = b
+        else:
+            q = binomial.q
+            qn = binomial.r
+            np = binomial.c
+            bound = binomial.m
+
+        X = 0
+        px = qn
+        U = self.next_double()
+        while U > px:
+            X += 1
+            if X > bound:
+                X = 0
+                px = qn
+                U = self.next_double()
+            else:
+                U -= px
+                px = ((n - X + 1) * p * px) / (X * q)
+        return X
+
+    def random_binomial(self, p: float, n: int):
+        if n == 0 or p == 0.0:
+            return 0
+
+        if p <= 0.5:
+            if p * n <= 30.0:
+                return self.random_binomial_inversion(n, p)
+            else:
+                return self.random_binomial_btpe(n, p)
+        else:
+            q = 1.0 - p
+            if q * n <= 30.0:
+                return n - self.random_binomial_inversion(n, q)
+            else:
+                return n - self.random_binomial_btpe(n, q)
+
+    def random_noncentral_chisquare(self, df: float, nonc: float):
+        if isnan(nonc):
+            return nan64()
+        if nonc == 0:
+            return self.random_chisquare(df)
+        if 1 < df:
+            Chi2 = self.random_chisquare(df - 1)
+            n = self.random_standard_normal() + sqrt(nonc)
+            return Chi2 + n * n
+        else:
+            i = self.random_poisson(nonc / 2.0)
+            return self.random_chisquare(df + 2 * i)
+
+    def random_noncentral_f(self, dfnum: float, dfden: float, nonc: float):
+        t = self.random_noncentral_chisquare(dfnum, nonc) * dfden
+        return t / (self.random_chisquare(dfden) * dfnum)
+
+    def random_wald(self, mean: float, scale: float):
+        mu_2l = mean / (2 * scale)
+        Y = self.random_standard_normal()
+        Y = mean * Y * Y
+        X = mean + mu_2l * (Y - sqrt(4 * scale * Y + Y * Y))
+        U = self.next_double()
+        if U <= mean / (mean + X):
+            return X
+        else:
+            return mean * mean / X
+
+    def random_vonmises(self, mu: float, kappa: float):
+        if isnan(kappa):
+            return nan64()
+
+        s = 0.0
+        if kappa < 1e-8:
+            return PI * (2 * self.next_double() - 1)
+        else:
+            if kappa < 1e-5:
+                s = 1. / kappa + kappa
+            else:
+                if kappa < 1e6:
+                    r = 1 + sqrt(1 + 4 * kappa * kappa)
+                    rho = (r - sqrt(2 * r)) / (2 * kappa)
+                    s = (1 + rho * rho) / (2 * rho)
+                else:
+                    result = mu + sqrt(1. / kappa) + self.random_standard_normal()
+                    if result < -PI:
+                        result += 2*PI
+                    if result > PI:
+                        result -= 2*PI
+                    return result
+
+            while True:
+                U = self.next_double()
+                Z = cos(PI * U)
+                W = (1 + s * Z) / (s + Z)
+                Y = kappa * (s - W)
+                V = self.next_double()
+
+                if (Y * (2 - Y) - V >= 0) or (log(Y / V) + 1 - Y >= 0):
+                    break
+
+            U = self.next_double()
+
+            result = acos(W)
+            if U < 0.5:
+                result = -result
+            result += mu
+            neg = (result < 0)
+            mod = fabs(result)
+            mod = cmod(mod + PI, 2 * PI) - PI
+            if neg:
+                mod *= -1
+
+            return mod
+
+    def random_logseries(self, p: float):
+        r = log1p(-p)
+
+        while True:
+            V = self.next_double()
+            if V >= p:
+                return 1
+            U = self.next_double()
+            q = -expm1(r * U)
+            if V <= q * q:
+                result = int(floor(1 + log(V) / log(q)))
+                if result < 1 or V == 0.0:
+                    continue
+                else:
+                    return result
+            if V >= q:
+                return 1
+            return 2
+
+    def random_geometric_search(self, p: float):
+        X = 1
+        s = p
+        prod = p
+        q = 1.0 - p
+        U = self.next_double()
+        while U > s:
+            prod *= q
+            s += prod
+            X += 1
+        return X
+
+    def random_geometric_inversion(self, p: float):
+        z = ceil(-self.random_standard_exponential() / log1p(-p))
+        if z >= 9.223372036854776e+18:
+            return 0x7FFFFFFFFFFFFFFF
+        return int(z)
+
+    def random_geometric(self, p: float):
+        if p >= 0.333333333333333333333333:
+            return self.random_geometric_search(p)
+        else:
+            return self.random_geometric_inversion(p)
+
+    def random_zipf(self, a: float):
+        am1 = a - 1.0
+        b = pow(2.0, am1)
+        while True:
+            U = 1.0 - self.next_double()
+            V = self.next_double()
+            X = floor(pow(U, -1.0 / am1))
+
+            if X > 0x7FFFFFFFFFFFFFFF or X < 1.0:
+                continue
+
+            T = pow(1.0 + 1.0 / X, am1)
+            if V * X * (T - 1.0) / (b - 1.0) <= T / b:
+                return int(X)
+
+    def random_triangular(self, left: float, mode: float, right: float):
+        base = right - left
+        leftbase = mode - left
+        ratio = leftbase / base
+        leftprod = leftbase * base
+        rightprod = (right - mode) * base
+
+        U = self.next_double()
+        if U <= ratio:
+            return left + sqrt(U * leftprod)
+        else:
+            return right - sqrt((1.0 - U) * rightprod)
+
+    def random_interval(self, max: u64):
+        if max == u64(0):
+            return u64(0)
+
+        mask = max
+        value = u64(0)
+
+        mask |= mask >> u64(1)
+        mask |= mask >> u64(2)
+        mask |= mask >> u64(4)
+        mask |= mask >> u64(8)
+        mask |= mask >> u64(16)
+        mask |= mask >> u64(32)
+
+        if max <= u64(0xffffffff):
+            while True:
+                value = zext(self.next32(), u64) & mask
+                if value <= max:
+                    break
+        else:
+            while True:
+                value = self.next64() & mask
+                if value <= max:
+                    break
+
+        return value
+
+    def gen_mask(max: u64):
+        mask = max
+        mask |= mask >> u64(1)
+        mask |= mask >> u64(2)
+        mask |= mask >> u64(4)
+        mask |= mask >> u64(8)
+        mask |= mask >> u64(16)
+        mask |= mask >> u64(32)
+        return mask
+
+    def buffered_uint16(self, bcnt: int, buf: u32):
+        if not bcnt:
+            buf = self.next32()
+            bcnt = 1
+        else:
+            buf >>= u32(16)
+            bcnt -= 1
+        return itrunc(buf, u16), bcnt, buf
+
+    def buffered_uint8(self, bcnt: int, buf: u32):
+        if not bcnt:
+            buf = self.next32()
+            bcnt = 3
+        else:
+            buf >>= u32(8)
+            bcnt -= 1
+        return itrunc(buf, u8), bcnt, buf
+
+    def bounded_masked_uint64(self, rng: u64, mask: u64):
+        val = u64(0)
+        while True:
+            val = self.next64() & mask
+            if val <= rng:
+                break
+        return val
+
+    def buffered_bounded_masked_uint32(self, rng: u32, mask: u32, bcnt: int, buf: u32):
+        val = u32(0)
+        while True:
+            val = self.next32() & mask
+            if val <= rng:
+                break
+        return val, bcnt, buf
+
+    def buffered_bounded_masked_uint16(self, rng: u16, mask: u16, bcnt: int, buf: u32):
+        val = u16(0)
+        while True:
+            val, bcnt, buf = self.buffered_uint16(bcnt, buf)
+            val &= mask
+            if val <= rng:
+                break
+        return val, bcnt, buf
+
+    def buffered_bounded_masked_uint8(self, rng: u8, mask: u8, bcnt: int, buf: u32):
+        val = u8(0)
+        while True:
+            val, bcnt, buf = self.buffered_uint8(bcnt, buf)
+            val &= mask
+            if val <= rng:
+                break
+        return val, bcnt, buf
+
+    def buffered_bounded_bool(self, off: bool, rng: bool, mask: bool, bcnt: int, buf: u32):
+        if not rng:
+            return off, bcnt, buf
+
+        if not bcnt:
+            buf = self.next32()
+            bcnt = 31
+        else:
+            buf >>= u32(1)
+            bcnt -= 1
+
+        return bool(buf & u32(1)), bcnt, buf
+
+    def bounded_lemire_uint64(self, rng: u64):
+        rng_excl = rng + u64(1)
+
+        m = zext(self.next64(), u128) * zext(rng_excl, u128)
+        leftover = itrunc(m & u128(0xFFFFFFFFFFFFFFFF), u64)
+
+        if leftover < rng_excl:
+            threshold = (u64(0xFFFFFFFFFFFFFFFF) - rng) % rng_excl
+
+            while leftover < threshold:
+                m = zext(self.next64(), u128) * zext(rng_excl, u128)
+                leftover = itrunc(m & u128(0xFFFFFFFFFFFFFFFF), u64)
+
+        return itrunc(m >> u128(64), u64)
+
+    def buffered_bounded_lemire_uint32(self, rng: u32, bcnt: int, buf: u32):
+        rng_excl = rng + u32(1)
+
+        m = zext(self.next32(), u64) * zext(rng_excl, u64)
+        leftover = itrunc(m & u64(0xFFFFFFFF), u32)
+
+        if leftover < rng_excl:
+            threshold = (u32(0xFFFFFFFF) - rng) % rng_excl
+
+            while leftover < threshold:
+                m = zext(self.next32(), u64) * zext(rng_excl, u64)
+                leftover = itrunc(m & u64(0xFFFFFFFF), u32)
+
+        return itrunc(m >> u64(32), u32), bcnt, buf
+
+    def buffered_bounded_lemire_uint16(self, rng: u16, bcnt: int, buf: u32):
+        rng_excl = rng + u16(1)
+
+        val, bcnt, buf = self.buffered_uint16(bcnt, buf)
+        m = zext(val, u32) * zext(rng_excl, u32)
+        leftover = itrunc(m & u32(0xFFFF), u16)
+
+        if leftover < rng_excl:
+            threshold = (u16(0xFFFF) - rng) % rng_excl
+
+            while leftover < threshold:
+                val, bcnt, buf = self.buffered_uint16(bcnt, buf)
+                m = zext(val, u32) * zext(rng_excl, u32)
+                leftover = itrunc(m & u32(0xFFFF), u16)
+
+        return itrunc(m >> u32(16), u16), bcnt, buf
+
+    def buffered_bounded_lemire_uint8(self, rng: u8, bcnt: int, buf: u32):
+        rng_excl = rng + u8(1)
+
+        val, bcnt, buf = self.buffered_uint8(bcnt, buf)
+        m = zext(val, u16) * zext(rng_excl, u16)
+        leftover = itrunc(m & u16(0xFF), u8)
+
+        if leftover < rng_excl:
+            threshold = (u8(0xFF) - rng) % rng_excl
+
+            while leftover < threshold:
+                val, bcnt, buf = self.buffered_uint8(bcnt, buf)
+                m = zext(val, u16) * zext(rng_excl, u16)
+                leftover = itrunc(m & u16(0xFF), u8)
+
+        return itrunc(m >> u16(8), u8), bcnt, buf
+
+    def random_bounded_uint64(self, off: u64, rng: u64, mask: u64, use_masked: bool):
+        if rng == u64(0):
+            return off
+        elif rng <= u64(0xFFFFFFFF):
+            if rng == u64(0xFFFFFFFF):
+                return off + zext(self.next32(), u64)
+
+            if use_masked:
+                return off + zext(self.buffered_bounded_masked_uint32(itrunc(rng, u32), itrunc(mask, u32), 0, u32(0))[0], u64)
+            else:
+                return off + zext(self.buffered_bounded_lemire_uint32(itrunc(rng, u32), 0, u32(0))[0], u64)
+        elif rng == u64(0xFFFFFFFFFFFFFFFF):
+            return off + self.next64()
+        else:
+            if use_masked:
+                return off + self.bounded_masked_uint64(rng, mask)
+            else:
+                return off + self.bounded_lemire_uint64(rng)
+
+    def random_buffered_bounded_uint32(self, off: u32, rng: u32, mask: u32, use_masked: bool, bcnt: int, buf: u32):
+        if rng == u32(0):
+            return off, bcnt, buf
+        elif rng == u32(0xFFFFFFFF):
+            return off + self.next32(), bcnt, buf
+        else:
+            if use_masked:
+                val, bcnt, buf = self.buffered_bounded_masked_uint32(rng, mask, bcnt, buf)
+                return off + val, bcnt, buf
+            else:
+                val, bcnt, buf = self.buffered_bounded_lemire_uint32(rng, bcnt, buf)
+                return off + val, bcnt, buf
+
+    def random_buffered_bounded_uint16(self, off: u16, rng: u16, mask: u16, use_masked: bool, bcnt: int, buf: u32):
+        if rng == u16(0):
+            return off, bcnt, buf
+        elif rng == u16(0xFFFF):
+            val, bcnt, buf = self.buffered_uint16(bcnt, buf)
+            return off + val, bcnt, buf
+        else:
+            if use_masked:
+                val, bcnt, buf = self.buffered_bounded_masked_uint16(rng, mask, bcnt, buf)
+                return off + val, bcnt, buf
+            else:
+                val, bcnt, buf = self.buffered_bounded_lemire_uint16(rng, bcnt, buf)
+                return off + val, bcnt, buf
+
+    def random_buffered_bounded_uint8(self, off: u8, rng: u8, mask: u8, use_masked: bool, bcnt: int, buf: u32):
+        if rng == u8(0):
+            return off, bcnt, buf
+        elif rng == u8(0xFF):
+            val, bcnt, buf = self.buffered_uint8(bcnt, buf)
+            return off + val, bcnt, buf
+        else:
+            if use_masked:
+                val, bcnt, buf = self.buffered_bounded_masked_uint8(rng, mask, bcnt, buf)
+                return off + val, bcnt, buf
+            else:
+                val, bcnt, buf = self.buffered_bounded_lemire_uint8(rng, bcnt, buf)
+                return off + val, bcnt, buf
+
+    def random_buffered_bounded_bool(self, off: bool, rng: bool, mask: bool, use_masked_bool, bcnt: int, buf: u32):
+        return self.buffered_bounded_bool(off, rng, mask, bcnt, buf)
+
+    def random_bounded_uint64_fill(self, off: u64, rng: u64, cnt: int, use_masked: bool, out: Ptr[u64]):
+        if rng == u64(0):
+            for i in range(cnt):
+                out[i] = off
+        elif rng <= u64(0xFFFFFFFF):
+            if rng == u64(0xFFFFFFFF):
+                for i in range(cnt):
+                    out[i] = off + zext(self.next32(), u64)
+            else:
+                rng32 = util.itrunc(rng, u32)
+                buf = u32(0)
+                bcnt = 0
+
+                if use_masked:
+                    mask = itrunc(BitGenerator.gen_mask(rng), u32)
+
+                    for i in range(cnt):
+                        val, bcnt, buf = self.buffered_bounded_masked_uint32(rng32, mask, bcnt, buf)
+                        out[i] = off + zext(val, u64)
+                else:
+                    for i in range(cnt):
+                        val, bcnt, buf = self.buffered_bounded_lemire_uint32(rng32, bcnt, buf)
+                        out[i] = off + zext(val, u64)
+        elif rng == u64(0xFFFFFFFFFFFFFFFF):
+            for i in range(cnt):
+                out[i] = off + self.next64()
+        else:
+            if use_masked:
+                mask = BitGenerator.gen_mask(rng)
+
+                for i in range(cnt):
+                    out[i] = off + self.bounded_masked_uint64(rng, mask)
+            else:
+                for i in range(cnt):
+                    out[i] = off + self.bounded_lemire_uint64(rng)
+
+    def random_bounded_uint32_fill(self, off: u32, rng: u32, cnt: int, use_masked: bool, out: Ptr[u32]):
+        buf = u32(0)
+        bcnt = 0
+
+        if rng == u32(0):
+            for i in range(cnt):
+                out[i] = off
+        elif rng == u32(0xFFFFFFFF):
+            for i in range(cnt):
+                out[i] = off + self.next32()
+        else:
+            if use_masked:
+                mask = itrunc(BitGenerator.gen_mask(zext(rng, u64)), u32)
+
+                for i in range(cnt):
+                    val, bcnt, buf = self.buffered_bounded_masked_uint32(rng, mask, bcnt, buf)
+                    out[i] = off + val
+            else:
+                for i in range(cnt):
+                    val, bcnt, buf = self.buffered_bounded_lemire_uint32(rng, bcnt, buf)
+                    out[i] = off + val
+
+    def random_bounded_uint16_fill(self, off: u16, rng: u16, cnt: int, use_masked: bool, out: Ptr[u16]):
+        buf = u32(0)
+        bcnt = 0
+
+        if rng == u16(0):
+            for i in range(cnt):
+                out[i] = off
+        elif rng == u16(0xFFFF):
+            for i in range(cnt):
+                val, bcnt, buf = self.buffered_uint16(bcnt, buf)
+                out[i] = off + val
+        else:
+            if use_masked:
+                mask = itrunc(BitGenerator.gen_mask(zext(rng, u64)), u16)
+
+                for i in range(cnt):
+                    val, bcnt, buf = self.buffered_bounded_masked_uint16(rng, mask, bcnt, buf)
+                    out[i] = off + val
+            else:
+                for i in range(cnt):
+                    val, bcnt, buf = self.buffered_bounded_lemire_uint16(rng, bcnt, buf)
+                    out[i] = off + val
+
+    def random_bounded_uint8_fill(self, off: u8, rng: u8, cnt: int, use_masked: bool, out: Ptr[u8]):
+        buf = u32(0)
+        bcnt = 0
+
+        if rng == u8(0):
+            for i in range(cnt):
+                out[i] = off
+        elif rng == u8(0xFF):
+            for i in range(cnt):
+                val, bcnt, buf = self.buffered_uint8(bcnt, buf)
+                out[i] = off + val
+        else:
+            if use_masked:
+                mask = itrunc(BitGenerator.gen_mask(zext(rng, u64)), u8)
+
+                for i in range(cnt):
+                    val, bcnt, buf = self.buffered_bounded_masked_uint8(rng, mask, bcnt, buf)
+                    out[i] = off + val
+            else:
+                for i in range(cnt):
+                    val, bcnt, buf = self.buffered_bounded_lemire_uint8(rng, bcnt, buf)
+                    out[i] = off + val
+
+    def random_bounded_bool_fill(self, off: bool, rng: bool, cnt: int, use_masked: bool, out: Ptr[bool]):
+        buf = u32(0)
+        bcnt = 0
+        mask = False
+
+        for i in range(cnt):
+            val, bcnt, buf = self.buffered_bounded_bool(off, rng, mask, bcnt, buf)
+            out[i] = val
+
+    def random_multinomial(self, n: int, mnix: Ptr[int], pix: Ptr[float], d: int):
+        remaining_p = 1.0
+        dn = n
+
+        for j in range(d - 1):
+            mnix[j] = self.random_binomial(pix[j] / remaining_p, dn)
+            dn = dn - mnix[j]
+            if dn <= 0:
+                break
+            remaining_p -= pix[j]
+
+        if dn > 0:
+            mnix[d - 1] = dn
+
+    def hypergeometric_sample(self, good: int, bad: int, sample: int):
+        computed_sample = 0
+        total = good + bad
+
+        if sample > total // 2:
+            computed_sample = total - sample
+        else:
+            computed_sample = sample
+
+        remaining_total = total
+        remaining_good = good
+
+        while (computed_sample > 0 and
+               remaining_good > 0 and
+               remaining_total > remaining_good):
+            remaining_total -= 1
+            if int(self.random_interval(u64(remaining_total))) < remaining_good:
+                remaining_good -= 1
+            computed_sample -= 1
+
+        if remaining_total == remaining_good:
+            remaining_good -= computed_sample
+
+        result = 0
+        if sample > total // 2:
+            result = remaining_good
+        else:
+            result = good - remaining_good
+
+        return result
+
+    def hypergeometric_hrua(self, good: int, bad: int, sample: int):
+        D1 = 1.7155277699214135
+        D2 = 0.8989161620588988
+
+        popsize = good + bad
+        computed_sample = min(sample, popsize - sample)
+        mingoodbad = min(good, bad)
+        maxgoodbad = max(good, bad)
+
+        p = mingoodbad / popsize
+        q = maxgoodbad / popsize
+
+        mu = computed_sample * p
+
+        a = mu + 0.5
+
+        var = float(popsize - computed_sample) * computed_sample * p * q / (popsize - 1)
+
+        c = sqrt(var + 0.5)
+
+        h = D1*c + D2
+
+        m = int(floor(float(computed_sample + 1) * (mingoodbad + 1) / (popsize + 2)))
+
+        g = (logfactorial(m) +
+             logfactorial(mingoodbad - m) +
+             logfactorial(computed_sample - m) +
+             logfactorial(maxgoodbad - computed_sample + m))
+
+        b = min(min(computed_sample, mingoodbad) + 1., floor(a + 16*c))
+        K = 0
+
+        while True:
+            U = self.next_double()
+            V = self.next_double()
+            X = a + h*(V - 0.5) / U
+
+            if X < 0.0 or X >= b:
+                continue
+
+            K = int(floor(X))
+
+            gp = (logfactorial(K) +
+                  logfactorial(mingoodbad - K) +
+                  logfactorial(computed_sample - K) +
+                  logfactorial(maxgoodbad - computed_sample + K))
+
+            T = g - gp
+
+            if (U*(4.0 - U) - 3.0) <= T:
+                break
+
+            if U*(U - T) >= 1:
+                continue
+
+            if 2.0*log(U) <= T:
+                break
+
+        if good > bad:
+            K = computed_sample - K
+
+        if computed_sample < sample:
+            K = good - K
+
+        return K
+
+    def random_hypergeometric(self, good: int, bad: int, sample: int):
+        if sample >= 10 and sample <= good + bad - 10:
+            return self.hypergeometric_hrua(good, bad, sample)
+        else:
+            return self.hypergeometric_sample(good, bad, sample)
+
+    def random_multivariate_hypergeometric_count(self, total: int, num_colors: int, colors: Ptr[int],
+                                                 nsample: int, num_variates: int, variates: Ptr[int]):
+        from internal.gc import free
+
+        if total == 0 or nsample == 0 or num_variates == 0:
+            return
+
+        choices = Ptr[int](total)
+
+        k = 0
+        for i in range(num_colors):
+            for j in range(colors[i]):
+                choices[k] = i
+                k += 1
+
+        more_than_half = nsample > (total // 2)
+        if more_than_half:
+            nsample = total - nsample
+
+        for i in range(0, num_variates * num_colors, num_colors):
+            for j in range(nsample):
+                k = j + int(self.random_interval(u64(total - j - 1)))
+                tmp = choices[k]
+                choices[k] = choices[j]
+                choices[j] = tmp
+
+            for j in range(nsample):
+                idx = i + choices[j]
+                variates[idx] += 1
+
+            if more_than_half:
+                for k in range(num_colors):
+                    variates[i + k] = colors[k] - variates[i + k]
+
+        free(choices.as_byte())
+
+    def random_multivariate_hypergeometric_marginals(self, total: int, num_colors: int, colors: Ptr[int],
+                                                     nsample: int, num_variates: int, variates: Ptr[int]):
+        if total == 0 or nsample == 0 or num_variates == 0:
+            return
+
+        more_than_half = nsample > total // 2
+        if more_than_half:
+            nsample = total - nsample
+
+        for i in range(0, num_variates * num_colors, num_colors):
+            num_to_sample = nsample
+            remaining = total
+            j = 0
+
+            while num_to_sample > 0 and j + 1 < num_colors:
+                remaining -= colors[j]
+                r = self.random_hypergeometric(colors[j], remaining, num_to_sample)
+                variates[i + j] = r
+                num_to_sample -= r
+                j += 1
+
+            if num_to_sample > 0:
+                variates[i + num_colors - 1] = num_to_sample
+
+            if more_than_half:
+                for k in range(num_colors):
+                    variates[i + k] = colors[k] - variates[i + k]
+
+    def next_raw(self):
+        return self.next64()
+
+    def random_raw(self, lock, size, output):
+        if isinstance(size, int):
+            return self.random_raw(lock, (size,), output)
+
+        if output is None:
+            if size is None:
+                with lock:
+                    self.next_raw()
+                return None
+
+            n = 0
+            for a in size:
+                n += a
+            with lock:
+                for _ in range(n):
+                    self.next_raw()
+            return None
+
+        if size is None:
+            with lock:
+                return self.next_raw()
+
+        randoms = empty(size, u64)
+        randoms_data = randoms.data
+        n = randoms.size
+
+        with lock:
+            for i in range(n):
+                randoms_data[i] = self.next_raw()
+        return randoms
+
+    def random_raw(self, size = None):
+        if isinstance(size, int):
+            return self.random_raw((size,))
+        elif size is None:
+            return int(self.next64())
+        else:
+            arr = empty(size, u64)
+            p = arr.data
+            for i in range(arr.size):
+                p[i] = self.next64()
+            return arr
+
+    def shuffle_raw(self, n: int, first: int, itemsize: int,
+                    stride: int, data: cobj, buf: cobj):
+        for i in range(n - 1, first - 1, -1):
+            j = int(self.random_interval(u64(i)))
+            str.memcpy(buf, data + j * stride, itemsize)
+            str.memcpy(data + j * stride, data + i * stride, itemsize)
+            str.memcpy(data + i * stride, buf, itemsize)
+
+    def shuffle_int(self, n: int, first: int, data: Ptr[int]):
+        for i in range(n - 1, first - 1, -1):
+            j = int(self.random_bounded_uint64(u64(0), u64(i), u64(0), False))
+            temp = data[j]
+            data[j] = data[i]
+            data[i] = temp
+
+    def shuffle_raw_wrap(self, n: int, first: int, itemsize: int,
+                         stride: int, data: cobj, buf: cobj):
+        int_size = util.sizeof(int)
+        if itemsize == int_size:
+            self.shuffle_raw(n, first, int_size, stride, data, buf)
+        else:
+            self.shuffle_raw(n, first, itemsize, stride, data, buf)
+
+def validate_output_shape(iter_shape, output: ndarray):
+    dims = output.shape
+    ndim: Static[int] = staticlen(dims)
+
+    if ndim != staticlen(iter_shape):
+        compile_error("Output size is not compatible with broadcast dimensions of inputs")
+
+    if iter_shape != dims:
+        raise ValueError(f"Output size {dims} is not compatible with broadcast "
+                         f"dimensions of inputs {iter_shape}.")
+
+def check_output(out, dtype: type, size, require_c_array: bool):
+    if isinstance(size, int):
+        return check_output(out, dtype, (size,), require_c_array)
+
+    if out is None:
+        return
+
+    T = out.dtype
+    if T is not dtype:
+        compile_error("Supplied output array has the wrong type. Expected "
+                        + dtype.__name__ + " but got " + T.__name__)
+
+    cc, fc = out._contig
+    if not (cc or (fc and not require_c_array)):
+        req = "C-" if require_c_array else ""
+        raise ValueError(
+            f'Supplied output array must be {req}contiguous, writable, '
+            f'aligned, and in machine byte-order.'
+        )
+
+    if size is not None:
+        if staticlen(size) != staticlen(out.shape):
+            compile_error("size must match out.shape when used together")
+
+        if size != out.shape:
+            raise ValueError("size must match out.shape when used together")
+
+def double_fill(func, size, lock, out):
+    out_val = 0.0
+
+    if size is None and out is None:
+        with lock:
+            func(1, __ptr__(out_val))
+            return out_val
+    else:
+        if out is not None:
+            check_output(out, float, size, False)
+            out_array = out
+        else:
+            out_array = empty(size, float)
+
+        n = out_array.size
+        out_array_data = out_array.data
+        with lock:
+            func(n, out_array_data)
+        return out_array
+
+def float_fill(func, size, lock, out):
+    out_val = float32(0.0)
+
+    if size is None and out is None:
+        with lock:
+            func(1, __ptr__(out_val))
+            return out_val
+    else:
+        if out is not None:
+            check_output(out, float32, size, False)
+            out_array = out
+        else:
+            out_array = empty(size, float32)
+
+        n = out_array.size
+        out_array_data = out_array.data
+        with lock:
+            func(n, out_array_data)
+        return out_array
+
+def float_fill_from_double(func, size, lock, out):
+    if size is None and out is None:
+        with lock:
+            return func()
+    else:
+        if out is not None:
+            check_output(out, float32, size, False)
+            out_array = out
+        else:
+            out_array = empty(size, float32)
+
+        n = out_array.size
+        out_array_data = out_array.data
+        with lock:
+            for i in range(n):
+                out_array_data[i] = float32(func())
+        return out_array
+
+def _check_all(fn, val, name: str, msg):
+    if isinstance(val, ndarray):
+        cc, fc = val._contig
+
+        if cc or fc:
+            val_data = val.data
+            for i in range(val.size):
+                e = util.cast(val_data[i], float)
+                if not fn(e):
+                    raise ValueError(msg(name))
+        else:
+            for idx in util.multirange(val.shape):
+                e = util.cast(val._ptr(idx)[0], float)
+                if not fn(e):
+                    raise ValueError(msg(name))
+    else:
+        if not fn(val):
+            raise ValueError(msg(name))
+
+CONS_NONE            : Static[int] = 0
+CONS_NON_NEGATIVE    : Static[int] = 1
+CONS_POSITIVE        : Static[int] = 2
+CONS_POSITIVE_NOT_NAN: Static[int] = 3
+CONS_BOUNDED_0_1     : Static[int] = 4
+CONS_BOUNDED_GT_0_1  : Static[int] = 5
+CONS_BOUNDED_LT_0_1  : Static[int] = 6
+CONS_GT_1            : Static[int] = 7
+CONS_GTE_1           : Static[int] = 8
+CONS_POISSON         : Static[int] = 9
+
+MAX_INT = 0x7FFFFFFFFFFFFFFF
+MAXSIZE = MAX_INT
+POISSON_LAM_MAX = MAX_INT - sqrt(float(MAX_INT))*10
+
+def _signbit(x: T, T: type):
+    if isinstance(x, float) or isinstance(x, float32):
+        return signbit(x)
+    else:
+        zero = T()
+        return x < zero
+
+def check_array_constraint(val, name: str, const: int):
+    if const == CONS_NONE:
+        pass
+    elif const == CONS_NON_NEGATIVE:
+        fn = lambda x: not ((not isnan(x)) and _signbit(x))
+        msg = lambda name: f"{name} < 0"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_POSITIVE or const == CONS_POSITIVE_NOT_NAN:
+        if const == CONS_POSITIVE_NOT_NAN:
+            fn = lambda x: not isnan(x)
+            msg = lambda name: f"{name} must not be NaN"
+            _check_all(fn, val, name, msg)
+
+        fn = lambda x: x > type(x)(0)
+        msg = lambda name: f"{name} <= 0"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_BOUNDED_0_1:
+        fn = lambda x: x >= type(x)(0) and x <= type(x)(1)
+        msg = lambda name: f"{name} < 0, {name} > 1 or {name} contains NaNs"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_BOUNDED_GT_0_1:
+        fn = lambda x: x > type(x)(0) and x <= type(x)(1)
+        msg = lambda name: f"{name} <= 0, {name} > 1 or {name} contains NaNs"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_BOUNDED_LT_0_1:
+        fn = lambda x: x >= type(x)(0) and x < type(x)(1)
+        msg = lambda name: f"{name} < 0, {name} >= 1 or {name} contains NaNs"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_BOUNDED_LT_0_1:
+        fn = lambda x: x >= type(x)(0) and x < type(x)(1)
+        msg = lambda name: f"{name} < 0, {name} >= 1 or {name} contains NaNs"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_GT_1:
+        fn = lambda x: x > type(x)(1)
+        msg = lambda name: f"{name} <= 1 or {name} contains NaNs"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_GTE_1:
+        fn = lambda x: x >= type(x)(1)
+        msg = lambda name: f"{name} < 1 or {name} contains NaNs"
+        _check_all(fn, val, name, msg)
+    elif const == CONS_POISSON:
+        fn = lambda x: util.cast(x, float) >= 0.0
+        msg = lambda name: f"{name} < 0 or {name} is NaN"
+        _check_all(fn, val, name, msg)
+
+        fn = lambda x: util.cast(x, float) <= POISSON_LAM_MAX
+        msg = lambda name: f"{name} value too large"
+        _check_all(fn, val, name, msg)
+
+def convert_array_like(a):
+    if (isinstance(a, ndarray) or
+        isinstance(a, List) or
+        isinstance(a, Tuple)):
+        return asarray(a)
+    else:
+        return a
+
+def gather_arrays(t):
+    if staticlen(t) == 0:
+        return ()
+
+    a, rest = t[0], gather_arrays(t[1:])
+
+    if isinstance(a, ndarray):
+        return (a, *rest)
+    else:
+        return rest
+
+def cont(fn, size, lock, arrays, names, constraints, out = None, dtype: type = float):
+    if not (staticlen(arrays) == staticlen(names) and staticlen(names) == staticlen(constraints)):
+        compile_error("[internal error] tuple size mismatch")
+
+    if isinstance(size, int):
+        return cont(fn, (size,), lock, arrays, names, constraints, out)
+
+    arrays = tuple(convert_array_like(arr) for arr in arrays)
+
+    for i in staticrange(staticlen(names)):
+        check_array_constraint(arrays[i], names[i], constraints[i])
+
+    # constant parameters case
+    if staticlen(gather_arrays(arrays)) == 0:
+        args = arrays
+
+        if size is not None and out is None:
+            randoms = empty(size, dtype)
+            randoms_data = randoms.data
+            n = randoms.size
+
+            for i in range(n):
+                randoms_data[i] = fn(*args)
+
+            return randoms
+        else:
+            if out is None:
+                return fn(*args)
+            else:
+                randoms = out
+                validate_output_shape((), randoms)
+                randoms_data = randoms.data
+                n = randoms.size
+                cc, fc = randoms._contig
+
+                if cc or fc:
+                    for i in range(n):
+                        randoms_data[i] = fn(*args)
+                else:
+                    for idx in util.multirange(randoms.shape):
+                        p = randoms._ptr(idx)
+                        p[0] = fn(*args)
+
+                return randoms
+
+    arrays = tuple(asarray(arr) for arr in arrays)
+
+    if size is not None and out is None:
+        shapes = tuple(arr.shape for arr in arrays)
+        broadcast_shapes(*shapes, size)  # error check
+        randoms = empty(size, dtype)
+    else:
+        shapes = tuple(arr.shape for arr in arrays)
+        if size is None:
+            bshape = broadcast_shapes(*shapes)
+        else:
+            bshape = broadcast_shapes(*shapes, size)
+
+        if out is None:
+            randoms = empty(bshape, dtype)
+        else:
+            randoms = out
+            validate_output_shape(bshape, randoms)
+
+    randoms_data = randoms.data
+    n = randoms.size
+
+    for idx in util.multirange(randoms.shape):
+        args = tuple(arr._ptr(idx, broadcast=True)[0] for arr in arrays)
+        p = randoms._ptr(idx)
+        p[0] = fn(*args)
+
+    return randoms
+
+def kahan_sum(darr: Ptr[float], n: int):
+    if n <= 0:
+        return 0.0
+    sum = darr[0]
+    c = 0.0
+    for i in range(1, n):
+        y = darr[i] - c
+        t = sum + y
+        c = (t-sum) - y
+        sum = t
+    return sum
+
+
+from threading import Lock
+
+@tuple
+class Generator[G]:
+    lock: Lock
+    bit_generator: BitGenerator[G]
+
+    def __new__(g: G):
+        return Generator[G](Lock(), BitGenerator[G](g))
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.bit_generator.__class__.__name__})"
+
+    # TODO: pickle support
+
+    def spawn(self, n_children: int):
+        return [Generator(G(seed)) for seed in self.bit_generator.seed_seq.spawn(n_children)]
+
+    def random(self, size = None, dtype: type = float, out = None):
+        if dtype is float:
+            return double_fill(self.bit_generator.random_standard_uniform_fill, size, self.lock, out)
+        elif dtype is float32:
+            return float_fill(self.bit_generator.random_standard_uniform_fill_f, size, self.lock, out)
+        else:
+            compile_error("Unsupported dtype " + dtype.__name__ + " for random")
+
+    def beta(self, a, b, size = None):
+        return cont(self.bit_generator.random_beta,
+                    size, self.lock, (a, b), ('a', 'b'),
+                    (CONS_POSITIVE, CONS_POSITIVE))
+
+    def exponential(self, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_exponential,
+                    size, self.lock, (scale,), ('scale',),
+                    (CONS_NON_NEGATIVE,))
+
+    def standard_exponential(self, size = None, dtype: type = float,
+                             method: str = 'zig', out = None):
+        def bad_method():
+            raise ValueError("'method' argument must be either 'zig' or 'inv'")
+
+        if dtype is float:
+            if method == 'zig':
+                return double_fill(self.bit_generator.random_standard_exponential_fill, size, self.lock, out)
+            elif method == 'inv':
+                return double_fill(self.bit_generator.random_standard_exponential_inv_fill, size, self.lock, out)
+            else:
+                bad_method()
+        elif dtype is float32:
+            if method == 'zig':
+                return float_fill(self.bit_generator.random_standard_exponential_fill_f, size, self.lock, out)
+            elif method == 'inv':
+                return float_fill(self.bit_generator.random_standard_exponential_inv_fill_f, size, self.lock, out)
+            else:
+                bad_method()
+        else:
+            compile_error("Unsupported dtype " + dtype.__name__ + " for standard_exponential")
+
+    def integers(self, low, high = None, size = None, dtype: type = int, endpoint: bool = False):
+        if high is None:
+            return self.integers(0, low, size=size, dtype=dtype, endpoint=endpoint)
+
+        if isinstance(size, int):
+            return self.integers(low, high, size=(size,), dtype=dtype, endpoint=endpoint)
+        elif size is not None:
+            for s in size:
+                if s == 0:
+                    return empty(size, dtype)
+
+        if dtype is u64:
+            lb = 0
+            ub = 0x7FFFFFFFFFFFFFFF
+            fn = self.bit_generator.random_bounded_uint64_fill
+            out_val = u64()
+        elif dtype is u32:
+            lb = 0
+            ub = 0xFFFFFFFF
+            fn = self.bit_generator.random_bounded_uint32_fill
+            out_val = u32()
+        elif dtype is u16:
+            lb = 0
+            ub = 0xFFFF
+            fn = self.bit_generator.random_bounded_uint16_fill
+            out_val = u16()
+        elif dtype is u8:
+            lb = 0
+            ub = 0xFF
+            fn = self.bit_generator.random_bounded_uint8_fill
+            out_val = u8()
+        elif dtype is bool:
+            lb = 0
+            ub = 1
+            fn = self.bit_generator.random_bounded_bool_fill
+            out_val = False
+        elif dtype is i64 or dtype is int:
+            lb = -9223372036854775808
+            ub = 0x7FFFFFFFFFFFFFFF
+            fn = self.bit_generator.random_bounded_uint64_fill
+            out_val = u64()
+        elif dtype is i32:
+            lb = -0x80000000
+            ub = 0x7FFFFFFF
+            fn = self.bit_generator.random_bounded_uint32_fill
+            out_val = u32()
+        elif dtype is i16:
+            lb = -0x8000
+            ub = 0x7FFF
+            fn = self.bit_generator.random_bounded_uint16_fill
+            out_val = u16()
+        elif dtype is i8:
+            lb = -0x80
+            ub = 0x7F
+            fn = self.bit_generator.random_bounded_uint8_fill
+            out_val = u8()
+        else:
+            compile_error("Unsupported dtype " + dtype.__name__ + " for integers")
+
+        use_masked = False
+        low = convert_array_like(low)
+        high = convert_array_like(high)
+
+        if staticlen(gather_arrays((low, high))) == 0:
+            ilow = int(low)
+            ihigh = int(high)
+
+            if not endpoint:
+                ihigh -= 1
+
+            if ilow < lb:
+                raise ValueError("low is out of bounds for " + dtype.__name__)
+
+            if ihigh > ub:
+                raise ValueError("high is out of bounds for " + dtype.__name__)
+
+            if ilow > ihigh:
+                raise ValueError("low > high" if endpoint else "low >= high")
+
+            rng = type(out_val)(ihigh - ilow)
+            off = type(out_val)(ilow)
+
+            if size is None:
+                with self.lock:
+                    fn(off, rng, 1, use_masked, __ptr__(out_val))
+                return util.cast(out_val, dtype)
+            else:
+                out_arr = empty(size, dtype)
+                cnt = out_arr.size
+                out_data = Ptr[type(out_val)](out_arr.data.as_byte())
+                with self.lock:
+                    fn(off, rng, cnt, use_masked, out_data)
+                return out_arr
+        else:
+            low = asarray(low)
+            high = asarray(high)
+
+            if size is None:
+                bshape = broadcast_shapes(low.shape, high.shape)
+            else:
+                bshape = broadcast_shapes(low.shape, high.shape, size)
+
+            randoms = empty(bshape, dtype)
+            randoms_data = randoms.data
+            n = randoms.size
+
+            for idx in util.multirange(randoms.shape):
+                e_low = int(low._ptr(idx, broadcast=True)[0])
+                e_high = int(high._ptr(idx, broadcast=True)[0])
+
+                if not endpoint:
+                    e_high -= 1
+
+                if e_low < lb:
+                    raise ValueError("low is out of bounds for " + dtype.__name__)
+
+                if e_high > ub:
+                    raise ValueError("high is out of bounds for " + dtype.__name__)
+
+                if e_low > e_high:
+                    raise ValueError("low > high" if endpoint else "low >= high")
+
+                rng = type(out_val)(e_high - e_low)
+                off = type(out_val)(e_low)
+
+                with self.lock:
+                    fn(off, rng, 1, use_masked, __ptr__(out_val))
+                p = randoms._ptr(idx)
+                p[0] = util.cast(out_val, dtype)
+
+            return randoms
+
+    def bytes(self, length: int):
+        if length < 0:
+            raise ValueError("length must be non-negative")
+        n_uint32 = ((length - 1) // 4 + 1)
+        arr = self.integers(0, 4294967296, size=n_uint32, dtype=u32)
+        return str(arr.data.as_byte(), length)
+
+    def choice(self, a, size = None, replace: bool = True, p = None, axis: int = 0, shuffle: bool = True):
+        def prod(s):
+            if s is None:
+                return 0
+            else:
+                return util.count(s)
+
+        def bisect_right(a, x, n: int):
+            lo = 0
+            hi = n
+            while lo < hi:
+                mid = (lo + hi) // 2
+                if x < a[mid]:
+                    hi = mid
+                else:
+                    lo = mid + 1
+            return lo
+
+        if isinstance(size, int):
+            return self.choice(a, size=(size,), replace=replace, p=p, axis=axis, shuffle=shuffle)
+
+        pop_size = 0
+        if isinstance(a, int):
+            pop_size = a
+            if pop_size <= 0 and prod(size) != 0:
+                raise ValueError("a must be a positive integer unless no "
+                                 "samples are taken")
+            a1 = asarray(a)
+        else:
+            a1 = asarray(a)
+            pop_size = a1.shape[axis]
+            if pop_size == 0 and prod(size) != 0:
+                raise ValueError("a cannot be empty unless no samples are "
+                                 "taken")
+
+        a = a1
+        pix = Ptr[float]()
+
+        if p is not None:
+            p1 = asarray(p, order='C')
+            d = len(p1)
+
+            if staticlen(p1.shape) != 1:
+                compile_error("p must be 1-dimensional")
+
+            if p1.dtype is not float:
+                compile_error("p must contain floats")
+
+            atol = util.sqrt(util.eps64())
+            pix = p1.data
+
+            if p1.size != pop_size:
+                raise ValueError("a and p must have same size")
+            p_sum = kahan_sum(pix, d)
+            if util.isnan(p_sum):
+                raise ValueError("probabilities contain NaN")
+            for i in range(pop_size):
+                if pix[i] < 0:
+                    raise ValueError("probabilities are not non-negative")
+            if abs(p_sum - 1.) > atol:
+                raise ValueError("probabilities do not sum to 1")
+
+        is_scalar: Static[int] = size is None
+        if not is_scalar:
+            shape = size
+            size1 = prod(shape)
+        else:
+            shape = ()
+            size1 = 1
+
+        if replace:
+            if p is not None:
+                cdf = Ptr[float](pop_size)
+                s = 0.0
+                for i in range(pop_size):
+                    s += pix[i]
+                    cdf[i] = s
+                for i in range(pop_size):
+                    cdf[i] /= cdf[pop_size - 1]
+                uniform_samples = atleast_1d(self.random(shape))
+                nu = len(uniform_samples)
+                idx1 = empty(shape, dtype=int)
+
+                for idx in util.multirange(shape):
+                    px = uniform_samples._ptr(idx)
+                    qx = idx1._ptr(idx)
+                    qx[0] = bisect_right(cdf, px[0], pop_size)
+            else:
+                idx1 = self.integers(0, pop_size, size=shape, dtype=int)
+
+            idx2 = idx1
+        else:
+            if size1 > pop_size:
+                raise ValueError("Cannot take a larger sample than "
+                                 "population when replace is False")
+            elif size1 < 0:
+                raise ValueError("negative dimensions are not allowed")
+
+            if p is not None:
+                num_non_zero = 0
+                for i in range(pop_size):
+                    if pix[i] > 0:
+                        num_non_zero += 1
+                if num_non_zero < size1:
+                    raise ValueError("Fewer non-zero entries in p than size")
+
+                n_uniq = 0
+                p1 = p1.copy()
+                found = zeros(shape, dtype=int)
+                flat_found = found.ravel()
+
+                while n_uniq < size1:
+                    m = size1 - n_uniq
+                    x = self.random((m,))
+                    if n_uniq > 0:
+                        for i in flat_found[0:n_uniq]:
+                            pix[i] = 0
+
+                    cdf = Ptr[float](pop_size)
+                    s = 0.0
+                    for i in range(pop_size):
+                        s += pix[i]
+                        cdf[i] = s
+                    for i in range(pop_size):
+                        cdf[i] /= cdf[pop_size - 1]
+
+                    new = Ptr[int](m)
+                    for i in range(m):
+                        new[i] = bisect_right(cdf, x[i], pop_size)
+
+                    idx_val = [(new[i], i) for i in range(m)]
+                    idx_val.sort()
+                    unique_indices = []
+
+                    i = 0
+                    j = 1
+                    while i < m:
+                        e, k = idx_val[i]
+                        unique_indices.append(k)
+                        while j < m and idx_val[j][0] == e:
+                            j += 1
+                        i = j
+                    unique_indices.sort()
+
+                    for i in range(n_uniq, n_uniq + len(unique_indices)):
+                        flat_found[i] = new[unique_indices[i - n_uniq]]
+
+                    n_uniq += len(unique_indices)
+                idx2 = found
+            else:
+                size_i = size1
+                pop_size_i = pop_size
+                if shuffle:
+                    cutoff = 50
+                else:
+                    cutoff = 20
+
+                if pop_size_i > 10000 and (size_i > (pop_size_i // cutoff)):
+                    idx1a = arange(0, pop_size_i, 1, int)
+                    idx_data = idx1a.data
+                    with self.lock:
+                        self.bit_generator.shuffle_int(pop_size_i, max(pop_size_i - size_i, 1), idx_data)
+                    idx1a = idx1a[(pop_size - size1):].copy()
+                else:
+                    idx1a = empty(size1, dtype=int)
+                    idx_data = idx1a.data
+                    set_size = u64(int(1.2 * size_i))
+                    mask = BitGenerator.gen_mask(set_size)
+                    set_size = u64(1) + mask
+                    hash_set = full(int(set_size), u64(-1), u64)
+                    with self.lock:
+                        for j in range(pop_size_i - size_i, pop_size_i):
+                            val = self.bit_generator.random_bounded_uint64(u64(0), u64(j), u64(0), False)
+                            loc = int(val & mask)
+                            while hash_set[loc] != u64(-1) and hash_set[loc] != val:
+                                loc = (loc + 1) & int(mask)
+                            if hash_set[loc] == u64(-1): # then val not in hash_set
+                                hash_set[loc] = val
+                                idx_data[j - pop_size_i + size_i] = int(val)
+                            else: # we need to insert j instead
+                                loc = j & int(mask)
+                                while hash_set[loc] != u64(-1):
+                                    loc = (loc + 1) & int(mask)
+                                hash_set[loc] = u64(j)
+                                idx_data[j - pop_size_i + size_i] = int(j)
+                        if shuffle:
+                            self.bit_generator.shuffle_int(size_i, 1, idx_data)
+
+                idx2 = idx1a.reshape(shape)
+
+        if is_scalar and isinstance(idx2, ndarray):
+            idx3 = idx2.item(0)
+        else:
+            idx3 = idx2
+
+        if staticlen(a.shape) == 0:
+            return idx2
+
+        if not is_scalar and staticlen(asarray(idx3).shape) == 0:
+            res = empty((), dtype=a.dtype)
+            res[()] = a[asarray(idx3).item()]
+            return res
+
+        axis = util.normalize_axis_index(axis, a.ndim)
+        idx3 = asarray(idx3)
+
+        if staticlen(idx3.shape) == 0 and staticlen(a.shape) == 1:
+            return a._ptr((idx3.item(),))[0]
+
+        idx3 = atleast_1d(idx3)
+        new_shape = util.tuple_set(a.shape, axis, len(idx3))
+        rest_shape = util.tuple_delete(a.shape, axis)
+        res = empty(new_shape, dtype=a.dtype)
+
+        ai1 = 0
+        for ai2 in idx3:
+            for idx_rest in util.multirange(rest_shape):
+                i2 = util.tuple_insert(idx_rest, axis, ai1)
+                i1 = util.tuple_insert(idx_rest, axis, ai2)
+                p = a._ptr(i1)
+                q = res._ptr(i2)
+                q[0] = p[0]
+
+            ai1 += 1
+
+        return res
+
+    def uniform(self, low = 0.0, high = 1.0, size = None):
+        low = convert_array_like(low)
+        high = convert_array_like(high)
+
+        if staticlen(gather_arrays((low, high))) == 0:
+            rng = float(high - low)
+            if not util.isfinite(rng):
+                raise OverflowError("high - low range exceeds valid bounds")
+
+        def random_uniform_low_high(low: float, high: float):
+            rng = high - low
+            if not util.isfinite(rng):
+                raise OverflowError("high - low range exceeds valid bounds")
+            if util.signbit(rng):
+                raise ValueError("low > high")
+            return self.bit_generator.random_uniform(low, rng)
+
+        return cont(random_uniform_low_high,
+                    size, self.lock, (low, high), ('low', 'high'),
+                    (CONS_NONE, CONS_NONE))
+
+    def standard_normal(self, size = None, dtype: type = float, out = None):
+        if dtype is float:
+            return double_fill(self.bit_generator.random_standard_normal_fill, size, self.lock, out)
+        elif dtype is float32:
+            return float_fill(self.bit_generator.random_standard_normal_fill_f, size, self.lock, out)
+        else:
+            compile_error("Unsupported dtype " + dtype.__name__ + " for standard_normal")
+
+    def normal(self, loc = 0.0, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_normal,
+                    size, self.lock, (loc, scale), ('loc', 'scale'),
+                    (CONS_NONE, CONS_NON_NEGATIVE))
+
+    def standard_gamma(self, shape, size = None, dtype: type = float, out = None):
+        if dtype is float:
+            return cont(self.bit_generator.random_standard_gamma,
+                        size, self.lock, (shape,), ('shape',),
+                        (CONS_NON_NEGATIVE,))
+        elif dtype is float32:
+            @tuple
+            class U[G]:
+                bit_generator: G
+
+                def standard_gamma_f_cast(self, shape: float):
+                    return self.bit_generator.random_standard_gamma_f(util.cast(shape, float32))
+
+            return cont(U(self.bit_generator).standard_gamma_f_cast,
+                        size, self.lock, (shape,), ('shape',),
+                        (CONS_NON_NEGATIVE,), dtype=float32)
+        else:
+            compile_error("Unsupported dtype " + dtype.__name__ + " for standard_gamma")
+
+    def gamma(self, shape, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_gamma,
+                    size, self.lock, (shape, scale), ('shape', 'scale'),
+                    (CONS_NON_NEGATIVE, CONS_NON_NEGATIVE))
+
+    def f(self, dfnum, dfden, size = None):
+        return cont(self.bit_generator.random_f,
+                    size, self.lock, (dfnum, dfden), ('dfnum', 'dfden'),
+                    (CONS_POSITIVE, CONS_POSITIVE))
+
+    def noncentral_f(self, dfnum, dfden, nonc, size = None):
+        return cont(self.bit_generator.random_noncentral_f,
+                    size, self.lock, (dfnum, dfden, nonc), ('dfnum', 'dfden', 'nonc'),
+                    (CONS_POSITIVE, CONS_POSITIVE, CONS_NON_NEGATIVE))
+
+    def chisquare(self, df, size = None):
+        return cont(self.bit_generator.random_chisquare,
+                    size, self.lock, (df,), ('df',),
+                    (CONS_POSITIVE,))
+
+    def noncentral_chisquare(self, df, nonc, size = None):
+        return cont(self.bit_generator.random_noncentral_chisquare,
+                    size, self.lock, (df, nonc), ('df', 'nonc'),
+                    (CONS_POSITIVE, CONS_NON_NEGATIVE))
+
+    def standard_cauchy(self, size = None):
+        return cont(self.bit_generator.random_standard_cauchy,
+                    size, self.lock, (), (), ())
+
+    def standard_t(self, df, size = None):
+        return cont(self.bit_generator.random_standard_t,
+                    size, self.lock, (df,), ('df',),
+                    (CONS_POSITIVE,))
+
+    def vonmises(self, mu, kappa, size = None):
+        return cont(self.bit_generator.random_vonmises,
+                    size, self.lock, (mu, kappa), ('mu', 'kappa'),
+                    (CONS_NONE, CONS_NON_NEGATIVE))
+
+    def pareto(self, a, size = None):
+        return cont(self.bit_generator.random_pareto,
+                    size, self.lock, (a,), ('a',),
+                    (CONS_POSITIVE,))
+
+    def weibull(self, a, size = None):
+        return cont(self.bit_generator.random_weibull,
+                    size, self.lock, (a,), ('a',),
+                    (CONS_NON_NEGATIVE,))
+
+    def power(self, a, size = None):
+        return cont(self.bit_generator.random_power,
+                    size, self.lock, (a,), ('a',),
+                    (CONS_POSITIVE,))
+
+    def laplace(self, loc = 0.0, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_laplace,
+                    size, self.lock, (loc, scale), ('loc', 'scale'),
+                    (CONS_NONE, CONS_NON_NEGATIVE))
+
+    def gumbel(self, loc = 0.0, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_gumbel,
+                    size, self.lock, (loc, scale), ('loc', 'scale'),
+                    (CONS_NONE, CONS_NON_NEGATIVE))
+
+    def logistic(self, loc = 0.0, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_logistic,
+                    size, self.lock, (loc, scale), ('loc', 'scale'),
+                    (CONS_NONE, CONS_NON_NEGATIVE))
+
+    def lognormal(self, mean = 0.0, sigma = 1.0, size = None):
+        return cont(self.bit_generator.random_lognormal,
+                    size, self.lock, (mean, sigma), ('mean', 'sigma'),
+                    (CONS_NONE, CONS_NON_NEGATIVE))
+
+    def rayleigh(self, scale = 1.0, size = None):
+        return cont(self.bit_generator.random_rayleigh,
+                    size, self.lock, (scale,), ('scale',),
+                    (CONS_NON_NEGATIVE,))
+
+    def wald(self, mean, scale, size = None):
+        return cont(self.bit_generator.random_wald,
+                    size, self.lock, (mean, scale), ('mean', 'scale'),
+                    (CONS_POSITIVE, CONS_POSITIVE))
+
+    def triangular(self, left, mode, right, size = None):
+        if staticlen(gather_arrays((asarray(left), asarray(mode), asarray(right)))) == 0:
+            if left > mode:
+                raise ValueError("left > mode")
+            if mode > right:
+                raise ValueError("mode > right")
+            if left == right:
+                raise ValueError("left == right")
+        else:
+            oleft = asarray(left)
+            omode = asarray(mode)
+            oright = asarray(right)
+
+            if (oleft > omode).any():
+                raise ValueError("left > mode")
+            if (omode > oright).any():
+                raise ValueError("mode > right")
+            if (oleft == oright).any():
+                raise ValueError("left == right")
+
+        return cont(self.bit_generator.random_triangular,
+                    size, self.lock, (left, mode, right), ('left', 'mode', 'right'),
+                    (CONS_NONE, CONS_NONE, CONS_NONE))
+
+    def binomial(self, n, p, size = None):
+        if isinstance(size, int):
+            return self.binomial(n, p, size=(size,))
+
+        n = convert_array_like(n)
+        p = convert_array_like(p)
+        if staticlen(gather_arrays((n, p))) > 0:
+            an = asarray(n).astype(int, copy=False)
+            ap = asarray(p)
+            check_array_constraint(ap, 'p', CONS_BOUNDED_0_1)
+            check_array_constraint(an, 'n', CONS_NON_NEGATIVE)
+            bshape = broadcast_shapes(ap.shape, an.shape)
+            if size is not None:
+                randoms = empty(size, int)
+                broadcast_shapes(randoms.shape, bshape)  # error check
+            else:
+                randoms = empty(bshape, int)
+
+            with self.lock:
+                for idx in util.multirange(randoms.shape):
+                    e_n = an._ptr(idx, broadcast=True)[0]
+                    e_p = ap._ptr(idx, broadcast=True)[0]
+                    randoms._ptr(idx)[0] = self.bit_generator.random_binomial(e_p, e_n)
+
+            return randoms
+
+        p = float(p)
+        n = int(n)
+        check_array_constraint(p, 'p', CONS_BOUNDED_0_1)
+        check_array_constraint(n, 'n', CONS_NON_NEGATIVE)
+
+        if size is None:
+            with self.lock:
+                return self.bit_generator.random_binomial(p, n)
+        else:
+            randoms = empty(size, int)
+            cnt = randoms.size
+            randoms_data = randoms.data
+
+            with self.lock:
+                for i in range(cnt):
+                    randoms_data[i] = self.bit_generator.random_binomial(p, n)
+
+            return randoms
+
+    def negative_binomial(self, n, p, size = None):
+        if isinstance(size, int):
+            return self.negative_binomial(n, p, size=(size,))
+
+        n = convert_array_like(n)
+        p = convert_array_like(p)
+        if staticlen(gather_arrays((n, p))) > 0:
+            an = asarray(n)
+            ap = asarray(p)
+            check_array_constraint(an, 'n', CONS_POSITIVE_NOT_NAN)
+            check_array_constraint(ap, 'p', CONS_BOUNDED_GT_0_1)
+
+            for idx in util.multirange(broadcast_shapes(an.shape, ap.shape)):
+                e_n = an._ptr(idx, broadcast=True)[0]
+                e_p = ap._ptr(idx, broadcast=True)[0]
+                if (1 - e_p) / e_p * (e_n + 10 * util.sqrt(util.cast(e_n, float))) > POISSON_LAM_MAX:
+                    raise ValueError("n too large or p too small, see Generator.negative_binomial Notes")
+        else:
+            check_array_constraint(n, 'n', CONS_POSITIVE_NOT_NAN)
+            check_array_constraint(p, 'p', CONS_BOUNDED_GT_0_1)
+
+            dmax_lam = (1 - p) / p * (n + 10 * util.sqrt(util.cast(n, float)))
+            if dmax_lam > POISSON_LAM_MAX:
+                raise ValueError("n too large or p too small, see Generator.negative_binomial Notes")
+
+        return cont(self.bit_generator.random_negative_binomial,
+                    size, self.lock, (n, p), ('n', 'p'),
+                    (CONS_NONE, CONS_NONE), dtype=int)
+
+    def poisson(self, lam = 1.0, size = None):
+        return cont(self.bit_generator.random_poisson,
+                    size, self.lock, (lam,), ('lam',),
+                    (CONS_POISSON,), dtype=int)
+
+    def zipf(self, a, size = None):
+        return cont(self.bit_generator.random_zipf,
+                    size, self.lock, (a,), ('a',),
+                    (CONS_GT_1,), dtype=int)
+
+    def geometric(self, p, size = None):
+        return cont(self.bit_generator.random_geometric,
+                    size, self.lock, (p,), ('p',),
+                    (CONS_BOUNDED_GT_0_1,), dtype=int)
+
+    def hypergeometric(self, ngood, nbad, nsample, size = None):
+        HYPERGEOM_MAX = 1_000_000_000
+        ngood = convert_array_like(ngood)
+        nbad = convert_array_like(nbad)
+        nsample = convert_array_like(nsample)
+
+        if staticlen(gather_arrays((ngood, nbad, nsample))) == 0:
+            if ngood >= HYPERGEOM_MAX or nbad >= HYPERGEOM_MAX:
+                raise ValueError("both ngood and nbad must be less than 1000000000")
+            if ngood + nbad < nsample:
+                raise ValueError("ngood + nbad < nsample")
+        else:
+            angood = asarray(ngood)
+            anbad = asarray(nbad)
+            ansample = asarray(nsample)
+
+            for idx in util.multirange(broadcast_shapes(angood.shape, anbad.shape, ansample.shape)):
+                e_ngood = angood._ptr(idx, broadcast=True)[0]
+                e_nbad = anbad._ptr(idx, broadcast=True)[0]
+                e_nsample = ansample._ptr(idx, broadcast=True)[0]
+
+                if e_ngood >= HYPERGEOM_MAX or e_nbad >= HYPERGEOM_MAX:
+                    raise ValueError("both ngood and nbad must be less than 1000000000")
+                if e_ngood + e_nbad < e_nsample:
+                    raise ValueError("ngood + nbad < nsample")
+
+        return cont(self.bit_generator.random_hypergeometric,
+                    size, self.lock, (ngood, nbad, nsample), ('ngood', 'nbad', 'nsample'),
+                    (CONS_NON_NEGATIVE, CONS_NON_NEGATIVE, CONS_NON_NEGATIVE), dtype=int)
+
+    def logseries(self, p, size = None):
+        return cont(self.bit_generator.random_logseries,
+                    size, self.lock, (p,), ('p',),
+                    (CONS_BOUNDED_LT_0_1,), dtype=int)
+
+    def multivariate_normal(self, mean, cov, size = None, check_valid: Static[str] = 'warn',
+                            tol: float = 1e-8, method: Static[str] = 'svd'):
+        if method != 'eigh' and method != 'svd' and method != 'cholesky':
+            compile_error(
+                "method must be one of {'eigh', 'svd', 'cholesky'}")
+
+        mean = asarray(mean)
+        cov = asarray(cov)
+
+        dtype_mean = mean.dtype
+        dtype_cov = cov.dtype
+        if (dtype_mean is complex or dtype_mean is complex64 or
+            dtype_cov is complex or dtype_cov is complex64):
+            compile_error("mean and cov must not be complex")
+
+        if size is None:
+            shape = ()
+        elif isinstance(size, int):
+            shape = (size,)
+        else:
+            shape = size
+
+        if staticlen(mean.shape) != 1:
+            compile_error("mean must be 1 dimensional")
+        if staticlen(cov.shape) != 2:
+            compile_error("cov must be 2 dimensional")
+        if cov.shape[0] != cov.shape[1]:
+            raise ValueError("cov must be square")
+        if mean.shape[0] != cov.shape[0]:
+            raise ValueError("mean and cov must have same length")
+
+        final_shape = shape + (mean.shape[0],)
+        x = self.standard_normal(final_shape).reshape(-1, mean.shape[0])
+
+        cov = cov.astype(float)
+        if method == 'svd':
+            from ..linalg import svd
+            (u, s, vh) = svd(cov)
+        elif method == 'eigh':
+            from ..linalg import eigh
+            (s, u)  = eigh(cov)
+        else:
+            from ..linalg import cholesky
+            l = cholesky(cov)
+
+        if check_valid != 'ignore' and method != 'cholesky':
+            if check_valid != 'warn' and check_valid != 'raise':
+                compile_error(
+                    "check_valid must equal 'warn', 'raise', or 'ignore'")
+            if method == 'svd':
+                from ..linalg import _linalg_dot
+                psd = allclose(_linalg_dot(vh.T * s, vh), cov, rtol=tol, atol=tol)
+            else:
+                psd = True
+                for a in s:
+                    if a < -tol:
+                        psd = False
+            if not psd:
+                if check_valid == 'warn':
+                    # TODO: warn "covariance is not symmetric positive-semidefinite"
+                    pass
+                else:
+                    raise ValueError("covariance is not symmetric positive-semidefinite.")
+
+        if method == 'cholesky':
+            _factor = l
+        elif method == 'eigh':
+            for i in range(len(s)):
+                s[i] = util.sqrt(abs(s[i]))
+            _factor = u * s
+        else:
+            for i in range(len(s)):
+                s[i] = util.sqrt(s[i])
+            _factor = u * s
+
+        x = mean + x @ _factor.T
+        x = x.reshape(final_shape)
+        return x
+
+    def multinomial(self, n, pvals, size = None):
+        if isinstance(size, int):
+            return self.multinomial(n, pvals, size=(size,))
+
+        on = asarray(n).astype(int, copy=False)
+        parr = asarray(pvals)
+        ndim: Static[int] = staticlen(parr.shape)
+
+        if ndim >= 1:
+            d = parr.shape[ndim - 1]
+        else:
+            d = 0
+
+        if d == 0:
+            raise ValueError(
+                "pvals must have at least 1 dimension and the last dimension "
+                "of pvals must be greater than 0."
+            )
+
+        check_array_constraint(parr, 'pvals', CONS_BOUNDED_0_1)
+        pix = parr.data
+        sz = parr.size
+        offset = 0
+
+        while offset < sz:
+            if kahan_sum(pix + offset, d - 1) > 1.0 + 1e-12:
+                slice_repr = "[:-1]" if ndim == 1 else "[...,:-1]"
+                raise ValueError(f"sum(pvals{slice_repr}) > 1.0")
+            offset += d
+
+        check_array_constraint(on, 'n', CONS_NON_NEGATIVE)
+
+        if staticlen(on.shape) != 0 or ndim > 1:
+            offsets = arange(0, parr.size, d, dtype=int).reshape(parr.shape[:ndim - 1])
+            if size is None:
+                it = broadcast_shapes(on.shape, offsets.shape)
+            else:
+                it = broadcast_shapes(on.shape, offsets.shape, size)
+
+                if not util.tuple_equal(it, size):
+                    raise ValueError(
+                        f"Output size {size} is not compatible with "
+                        f"broadcast dimensions of inputs."
+                    )
+
+            shape = it + (d,)
+            multin = zeros(shape, dtype=int)
+            mnix = multin.data
+            offset = 0
+            sz = util.count(it)
+            with self.lock:
+                for idx in util.multirange(shape):
+                    ni = on._ptr(idx, broadcast=True)[0]
+                    pi = offsets._ptr(idx, broadcast=True)[0]
+                    self.bit_generator.random_multinomial(ni, mnix + offset, pix + pi, d)
+                    offset += d
+            return multin
+
+        if size is None:
+            shape = (d,)
+        else:
+            shape = size + (d,)
+
+        multin = zeros(shape, dtype=int)
+        mnix = multin.data
+        sz = multin.size
+        ni = on.data[0]
+        check_array_constraint(ni, 'n', CONS_NON_NEGATIVE)
+        offset = 0
+        with self.lock:
+            for i in range(sz // d):
+                self.bit_generator.random_multinomial(ni, mnix + offset, pix, d)
+                offset += d
+
+        return multin
+
+    def multivariate_hypergeometric(self, colors, nsample: int, size = None, method: str = 'marginals'):
+        def safe_sum_nonneg_int64(num_colors: int, colors: Ptr[int]):
+            sum = 0
+            for i in range(num_colors):
+                if colors[i] > MAX_INT - sum:
+                    return -1
+                sum += colors[i]
+            return sum
+
+        if isinstance(size, int):
+            return self.multivariate_hypergeometric(colors, nsample, size=(size,), method=method)
+
+        if method != 'count' and method != 'marginals':
+            raise ValueError('method must be "count" or "marginals"')
+
+        if nsample < 0:
+            raise ValueError("nsample must be nonnegative.")
+        nsamp = nsample
+
+        invalid_colors = False
+        colors = asarray(colors)
+        if staticlen(colors.shape) != 1:
+            compile_error("colors must be one-dimensional")
+
+        if colors.size == 0 or any(c < 0 for c in colors):
+            raise ValueError("colors must be a one-dimensional "
+                             "sequence of nonnegative integers")
+
+        colors = ascontiguousarray(colors, dtype=int)
+        num_colors = colors.size
+        colors_ptr = colors.data
+
+        total = safe_sum_nonneg_int64(num_colors, colors_ptr)
+        if total == -1:
+            raise ValueError("sum(colors) must not exceed the maximum value "
+                             "of a 64 bit signed integer")
+
+        if method == 'marginals':
+            if total >= 1000000000:
+                raise ValueError('When method is "marginals", sum(colors) must '
+                                 'be less than 1000000000.')
+
+        max_index = MAXSIZE // util.sizeof(int)
+        if method == 'count' and total > max_index:
+            raise ValueError(f"When method is 'count', sum(colors) must not "
+                             f"exceed {max_index}")
+        if nsamp > total:
+            raise ValueError("nsample > sum(colors)")
+
+        if size is None:
+            shape = (num_colors,)
+        else:
+            shape = size + (num_colors,)
+
+        variates = zeros(shape, dtype=int)
+
+        if num_colors == 0:
+            return variates
+
+        num_variates = variates.size // num_colors
+        variates_ptr = variates.data
+
+        if method == 'count':
+            with self.lock:
+                self.bit_generator.random_multivariate_hypergeometric_count(
+                    total, num_colors, colors_ptr, nsamp, num_variates, variates_ptr)
+        else:
+            with self.lock:
+                self.bit_generator.random_multivariate_hypergeometric_marginals(
+                    total, num_colors, colors_ptr, nsamp, num_variates, variates_ptr)
+
+        return variates
+
+    def dirichlet(self, alpha, size = None):
+        if isinstance(size, int):
+            return self.dirichlet(alpha, size=(size,))
+
+        alpha = ascontiguousarray(asarray(alpha), dtype=float)
+        if staticlen(alpha.shape) != 1:
+            compile_error("alpha must be a one-dimensional sequence of floats")
+        k = len(alpha)
+
+        m = alpha[0] if k > 0 else 0.0
+        for a in alpha:
+            if a < 0.0:
+                raise ValueError("alpha < 0")
+            if a > m:
+                m = a
+
+        alpha_data = alpha.data
+
+        if size is None:
+            shape = (k,)
+        else:
+            shape = size + (k,)
+
+        diric = zeros(shape, dtype=float)
+        val_data = diric.data
+
+        i = 0
+        totsize = diric.size
+
+        if k > 0 and m < 0.1:
+            alpha_csum_arr = empty_like(alpha)
+            alpha_csum_data = alpha_csum_arr.data
+            csum = 0.0
+            for j in range(k - 1, -1, -1):
+                csum += alpha_data[j]
+                alpha_csum_data[j] = csum
+
+            with self.lock:
+                while i < totsize:
+                    acc = 1.
+                    for j in range(k - 1):
+                        v = self.bit_generator.random_beta(alpha_data[j], alpha_csum_data[j + 1])
+                        val_data[i + j] = acc * v
+                        acc *= (1. - v)
+                    val_data[i + k - 1] = acc
+                    i = i + k
+        else:
+            with self.lock:
+                while i < totsize:
+                    acc = 0.
+                    for j in range(k):
+                        val_data[i + j] = self.bit_generator.random_standard_gamma(alpha_data[j])
+                        acc = acc + val_data[i + j]
+                    invacc = 1. / acc
+                    for j in range(k):
+                        val_data[i + j] = val_data[i + j] * invacc
+                    i = i + k
+
+        return diric
+
+    def permuted(self, x, axis = None, out = None):
+        x = asarray(x)
+
+        if out is None:
+            return self.permuted(x, axis=axis, out=x.copy(order='K'))
+        else:
+            if not isinstance(out, ndarray):
+                compile_error("out must be a numpy array")
+            if not util.tuple_equal(out.shape, x.shape):
+                raise ValueError("out must have the same shape as x")
+            copyto(out, x)
+
+        if axis is None:
+            if staticlen(x.shape) > 1:
+                cc, fc = out._contig
+                if not (cc or fc):
+                    to_shuffle = array(out, order='C')
+                    self.shuffle(to_shuffle.ravel(order='K'))
+                    copyto(out, to_shuffle)
+                else:
+                    self.shuffle(out.ravel(order='A'))
+            else:
+                self.shuffle(out)
+            return out
+
+        ax = util.normalize_axis_index(axis, out.ndim)
+        itemsize = out.itemsize
+        axlen = out.shape[ax]
+        axstride = out.strides[ax]
+
+        shape = out.shape
+        buf = cobj(itemsize)
+
+        with self.lock:
+            for idx0 in util.multirange(util.tuple_delete(shape, ax)):
+                idx = util.tuple_insert(idx0, ax, 0)
+                data = out._ptr(idx).as_byte()
+                self.bit_generator.shuffle_raw_wrap(axlen, 0, itemsize, axstride, data, buf)
+
+        return out
+
+    def shuffle(self, x, axis: int = 0):
+        n = len(x)
+
+        if isinstance(x, ndarray):
+            ndim: Static[int] = staticlen(x.shape)
+            axis = util.normalize_axis_index(axis, ndim)
+            if x.size <= 1:
+                return
+
+            if ndim == 1:
+                x_ptr = x.data.as_byte()
+                stride = x.strides[0]
+                itemsize = x.itemsize
+                buf_ptr = cobj(itemsize)
+                with self.lock:
+                    self.bit_generator.shuffle_raw_wrap(n, 1, itemsize, stride, x_ptr, buf_ptr)
+            else:
+                x = swapaxes(x, 0, axis)
+                buf = empty_like(x[0, ...])
+
+                with self.lock:
+                    for i in range(len(x) - 1, 0, -1):
+                        j = int(self.bit_generator.random_interval(u64(i)))
+                        if i == j:
+                            continue
+                        buf[...] = x[j, ...]
+                        x[j, ...] = x[i, ...]
+                        x[i, ...] = buf
+        else:
+            if axis != 0:
+                raise ValueError("Axis argument is only supported on ndarray objects")
+
+            with self.lock:
+                for i in range(len(x) - 1, 0, -1):
+                    j = int(self.bit_generator.random_interval(u64(i)))
+                    x[i], x[j] = x[j], x[i]
+
+    def permutation(self, x, axis: int = 0):
+        if isinstance(x, int):
+            arr = arange(x)
+            self.shuffle(arr)
+            return arr
+
+        x = asarray(x)
+        arr = x.copy()
+        ndim: Static[int] = staticlen(arr.shape)
+        axis = util.normalize_axis_index(axis, ndim)
+
+        if ndim == 1:
+            self.shuffle(arr)
+            return arr
+
+        shape = x.shape
+        axlen = shape[axis]
+        perm = arange(arr.shape[axis], dtype=int)
+        self.shuffle(perm)
+
+        with self.lock:
+            for ai in range(axlen):
+                src_on_axis = perm[ai]
+                for idx0 in util.multirange(util.tuple_delete(shape, axis)):
+                    src_idx = util.tuple_insert(idx0, axis, src_on_axis)
+                    dst_idx = util.tuple_insert(idx0, axis, ai)
+                    p = x._ptr(src_idx)
+                    q = arr._ptr(dst_idx)
+                    q[0] = p[0]
+
+        return arr

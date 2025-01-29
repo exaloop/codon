@@ -12,25 +12,47 @@ on:
       - develop
 
 jobs:
-  create_release:
+  release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    permissions:
-      contents: write
     steps:
-      - name: Create Release
+      - name: Check
         if: contains(github.ref, 'tags/v')
+        id: check
+        run: echo "::set-output name=MAKE_RELEASE::true"
+
+      - name: Create Release
         id: create_release
-        uses: ncipollo/release-action@v1
+        if: steps.check.outputs.MAKE_RELEASE
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Output Release URL File
+        if: steps.check.outputs.MAKE_RELEASE
+        run: echo "${{ steps.create_release.outputs.upload_url }}" > release_url.txt
+
+      - name: Save Release URL File for Publish
+        if: steps.check.outputs.MAKE_RELEASE
+        uses: actions/upload-artifact@v4
+        with:
+          name: release_url
+          path: release_url.txt
 
   manylinux:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch:
+          - x86_64
+          # - aarch64
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-arm-latest' || 'ubuntu-latest' }}
     name: Codon CI (manylinux)
-    needs: create_release
-    permissions:
-      contents: write
+    needs: [ release ]
     steps:
       - uses: actions/checkout@v4
 
@@ -39,10 +61,32 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm
-          key: manylinux-llvm
+          key: manylinux-${{ matrix.arch }}-llvm
 
-      - name: Main
-        uses: ./.github/actions/build-manylinux
+      - name: Main x86_64
+        if: matrix.arch == 'x86_64'
+        uses: ./.github/actions/build-manylinux-x86_64
+
+      - name: Main aarch64
+        if: matrix.arch == 'aarch64'
+        uses: ./.github/actions/build-manylinux-aarch64
+
+      - name: Load Release URL File
+        if: contains(github.ref, 'tags/v')
+        uses: actions/download-artifact@v4
+        with:
+          name: release_url
+
+      - name: Get Release URL
+        id: get_release_url
+        if: contains(github.ref, 'tags/v')
+        run: |
+          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
+          value=`cat release_url/release_url.txt`
+          echo ::set-output name=upload_url::$value
+        env:
+          TAG_REF_NAME: ${{ github.ref }}
+          REPOSITORY_NAME: ${{ github.repository }}
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v')
@@ -50,52 +94,76 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./codon-linux-x86_64.tar.gz
-          asset_name: codon-linux-x86_64.tar.gz
+          upload_url: ${{ steps.get_release_url.outputs.upload_url }}
+          asset_path: ./codon-linux-${{ matrix.arch }}.tar.gz
+          asset_name: codon-linux-${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: manylinux-x86_64
-          path: codon-linux-x86_64.tar.gz
+          name: manylinux-${{ matrix.arch }}
+          path: codon-linux-${{ matrix.arch }}.tar.gz
 
   main:
     strategy:
       matrix:
         os:
           - ubuntu-latest
-          - macos-12
+          - macos-latest
+          # - ubuntu-arm-latest
     runs-on: ${{ matrix.os }}
     name: Codon CI
-    needs: create_release
-    permissions:
-      contents: write
-      id-token: write
+    needs: [ release ]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: Linux Setup
-        if: startsWith(matrix.os, 'ubuntu')
+      - name: x86_64 Linux Setup
+        if: startsWith(matrix.os, 'ubuntu') && matrix.os != 'ubuntu-arm-latest'
         run: |
+          sudo apt update
+          sudo apt install -y gfortran libgfortran5 lsb-release wget software-properties-common gnupg
+          wget https://apt.llvm.org/llvm.sh
+          sudo chmod +x llvm.sh
+          sudo ./llvm.sh 17
           echo "LIBEXT=so" >> $GITHUB_ENV
           echo "OS_NAME=linux" >> $GITHUB_ENV
+          echo "CODON_SYSTEM_LIBRARIES=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
+          echo "CC=clang-17" >> $GITHUB_ENV
+          echo "CXX=clang++-17" >> $GITHUB_ENV
+
+      - name: Arm Linux Setup
+        if: matrix.os == 'ubuntu-arm-latest'
+        run: |
+          sudo apt update
+          sudo apt install -y gfortran libgfortran5 lsb-release wget software-properties-common gnupg
+          wget https://apt.llvm.org/llvm.sh
+          sudo chmod +x llvm.sh
+          sudo ./llvm.sh 17
+          echo "LIBEXT=so" >> $GITHUB_ENV
+          echo "OS_NAME=linux" >> $GITHUB_ENV
+          echo "CODON_SYSTEM_LIBRARIES=/usr/lib/aarch64-linux-gnu" >> $GITHUB_ENV
+          echo "CC=clang-17" >> $GITHUB_ENV
+          echo "CXX=clang++-17" >> $GITHUB_ENV
 
       - name: macOS Setup
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew install automake
           echo "LIBEXT=dylib" >> $GITHUB_ENV
           echo "OS_NAME=osx" >> $GITHUB_ENV
+          echo "CODON_SYSTEM_LIBRARIES=$(brew --prefix gcc)/lib/gcc/current" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+          echo "FC=gfortran-12" >> $GITHUB_ENV
 
       - name: Set up Python
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install numpy cython wheel astunparse
+          python -m pip install cython wheel astunparse
+          python -m pip install --force-reinstall -v "numpy==1.26.4"
           which python
           which pip
           echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
@@ -105,14 +173,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm
-          key: ${{ runner.os }}-llvm
+          key: ${{ runner.os }}-${{ matrix.os }}-llvm
 
       - name: Build Dependencies
         if: steps.cache-deps.outputs.cache-hit != 'true'
         run: ./scripts/deps.sh 2
-        env:
-          CC: clang
-          CXX: clang++
 
       - name: Build
         run: |
@@ -123,18 +188,12 @@ jobs:
                                 -DCMAKE_CXX_COMPILER=${CXX})
           cmake --build build --config Release -- VERBOSE=1
           cmake --install build --prefix=codon-deploy
-        env:
-          CC: clang
-          CXX: clang++
 
       - name: Build Cython
         run: |
           (cd codon-deploy/python && python3 setup.py sdist)
           CODON_DIR=$(pwd)/codon-deploy python -m pip install -v codon-deploy/python/dist/*.gz
-          python test/python/cython_jit.py
-        env:
-          CC: clang
-          CXX: clang++
+          CODON_PATH=$(pwd)/codon-deploy/lib/codon/stdlib python test/python/cython_jit.py
 
       - name: Test
         run: |
@@ -151,6 +210,11 @@ jobs:
         run: |
           echo "CODON_BUILD_ARCHIVE=codon-$(uname -s | awk '{print tolower($0)}')-$(uname -m).tar.gz" >> $GITHUB_ENV
 
+      - name: Codesign (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          codesign -f -s - codon-deploy/bin/codon codon-deploy/lib/codon/*.dylib
+
       - name: Prepare Artifacts
         run: |
           cp -rf codon-deploy/python/dist .
@@ -158,31 +222,51 @@ jobs:
           tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
           du -sh codon-deploy
 
+      - name: Load Release URL File
+        if: contains(github.ref, 'tags/v')
+        uses: actions/download-artifact@v4
+        with:
+          name: release_url
+
+      - name: Get Release URL
+        id: get_release_url
+        if: contains(github.ref, 'tags/v')
+        run: |
+          echo ::set-output name=file_name::${REPOSITORY_NAME##*/}-${TAG_REF_NAME##*/v} # RepositoryName-v1.0.0
+          value=`cat release_url/release_url.txt`
+          echo ::set-output name=upload_url::$value
+        env:
+          TAG_REF_NAME: ${{ github.ref }}
+          REPOSITORY_NAME: ${{ github.repository }}
+
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v') && startsWith(matrix.os, 'macos')
         uses: actions/upload-release-asset@v1.0.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./codon-darwin-x86_64.tar.gz
-          asset_name: codon-darwin-x86_64.tar.gz
+          upload_url: ${{ steps.get_release_url.outputs.upload_url }}
+          asset_path: ./codon-darwin-arm64.tar.gz
+          asset_name: codon-darwin-arm64.tar.gz
           asset_content_type: application/gzip
 
       - name: Upload Artifacts
         if: startsWith(matrix.os, 'macos')
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-x86_64
-          path: codon-darwin-x86_64.tar.gz
+          name: ${{ matrix.os }}-arm64
+          path: codon-darwin-arm64.tar.gz
 
       - name: Upload Artifacts
-        if: startsWith(matrix.os, 'ubuntu')
+        if: startsWith(matrix.os, 'ubuntu') && matrix.os != 'ubuntu-arm-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-x86_64
           path: codon-linux-x86_64.tar.gz
 
-      # - name: Publish Package
-      #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
-      #   uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Upload Artifacts
+        if: matrix.os == 'ubuntu-arm-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-arm64
+          path: codon-linux-arm64.tar.gz

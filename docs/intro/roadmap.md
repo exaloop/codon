@@ -71,6 +71,7 @@ modules natively:
   popular 3rd-party libraries would allow them to work with Codon's
   other features like multithreading and GPU. We're currently prioritizing
   NumPy and Pandas but aim to later target other popular libraries as well.
+  - **As of Codon 0.18, NumPy is natively supported!**
 
 - Unicode support
 

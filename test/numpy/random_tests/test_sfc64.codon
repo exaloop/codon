@@ -1,0 +1,976 @@
+import numpy.random as rnd
+from numpy import *
+import numpy as np
+
+@test
+def test_SFC64_integers(seed, low, expected, high=None, size=None, e=False):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(low, int)
+                or isinstance(low, float)) and (high is None or isinstance(
+                    high, int) or isinstance(high, float)):
+            assert gen.integers(low, high, endpoint=e) == expected
+        else:
+            assert (gen.integers(low, high, endpoint=e) == expected).all()
+    else:
+        assert (gen.integers(low, high, size, endpoint=e) == expected).all()
+
+test_SFC64_integers(74, 5, 4)
+test_SFC64_integers(74, 987.4, 897)
+test_SFC64_integers(74, 98, 906, high=987)
+test_SFC64_integers(74, 89, 81, e=True)
+test_SFC64_integers(74, -1218, -22, high=98)
+test_SFC64_integers(74, -5, np.array([49, 17, 46]), 55, size=3)
+test_SFC64_integers(74, -5, np.array([50, 18, 47]), 55, size=3, e=True)
+test_SFC64_integers(74, np.array([7, 49, 17]), np.array([71, 60, 69]), 78)
+test_SFC64_integers(74, -99, np.array([61, -28, 72]), np.array([77, 89, 101]))
+test_SFC64_integers(74, np.array([7, 49, 17]), np.array([70, 64, 88]),
+                    np.array([77, 89, 101]))
+
+@test
+def test_SFC64_random(seed, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        assert gen.random() == expected
+    else:
+        assert (round(gen.random(size), 8) == round(expected, 8)).all()
+
+test_SFC64_random(0, 0.5686892493917326)
+test_SFC64_random(1, 0.9956200510286735)
+test_SFC64_random(1234, 0.845119081462231)
+test_SFC64_random(
+    1234,
+    np.array([0.84511908, 0.55138007, 0.31781911, 0.05565777, 0.96435368]),
+    size=5)
+test_SFC64_random(74,
+                  np.array([[0.38219269, 0.67730401, 0.68207767],
+                            [0.40336162, 0.58776338, 0.35552843]]),
+                  size=(2, 3))
+
+@test
+def test_SFC64_choice(seed,
+                      a,
+                      expected,
+                      size=None,
+                      r=True,
+                      p=None,
+                      axis=0,
+                      shuffle=True):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(a, int):
+            assert gen.choice(a, size, r, p, axis, shuffle) == expected
+        elif staticlen(a.shape) == 1:
+            assert gen.choice(a, size, r, p, axis, shuffle) == expected
+        else:
+            assert (round(gen.choice(a, size, r, p, axis, shuffle),
+                          8) == expected).all()
+    else:
+        assert (round(gen.choice(a, size, r, p, axis, shuffle),
+                      8) == expected).all()
+
+test_SFC64_choice(
+    621,
+    np.array([
+        1.34, 2.15, 3.21, 4.78, 5.55, 6.42, 7.99, 8.31, 9.61, 10.75, 11.33,
+        12.93
+    ]), np.array([1.34, 10.75, 7.99]), 3)
+test_SFC64_choice(
+    318, np.array([5, 4, 2, 6, 7, 8, 2, 12, 1, 55, 33, 7, 78, 15, 43]), 7)
+test_SFC64_choice(318, np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
+                  np.array([11, 3, 5]), 3, False)
+test_SFC64_choice(
+    4589,
+    np.array([
+        -1.34, -2.15, -3.21, -4.78, -5.55, -6.42, -7.99, -8.31, -9.61, -10.75,
+        -11.33, -12.93
+    ]), -9.61)
+test_SFC64_choice(318, np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11,
+                                                                   12]]),
+                  np.array([[4, 5, 6], [10, 11, 12]]), 2)
+test_SFC64_choice(74, np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11,
+                                                                  12]]),
+                  np.array([10, 11, 12]))
+test_SFC64_choice(74, 1, 0)
+test_SFC64_choice(74, np.array([13, -4]), -4, p=np.array([0.3, 0.7]))
+test_SFC64_choice(74,
+                  np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]]),
+                  np.array([[3], [6], [9], [12]]),
+                  axis=1)
+test_SFC64_choice(74,
+                  np.array([13, -4, 3, 18]),
+                  13,
+                  p=np.array([0.5, 0.3, 0.1, 0.1]),
+                  shuffle=True)
+
+@test
+def test_SFC64_bytes(seed, length, expected):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    check = gen.bytes(length) == expected
+    assert check
+
+test_SFC64_bytes(555, 10, "O\x9e\x1b<\x9cR\x1c.H\x19")
+
+@test
+def test_SFC64_shuffle(seed, x, expected, axis=0):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    gen.shuffle(x, axis)
+    assert (x == expected).all()
+
+test_SFC64_shuffle(876, np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                   np.array([9, 0, 8, 2, 7, 3, 4, 6, 1, 5]))
+test_SFC64_shuffle(111, np.array([5.43, 6.56, 1.22, 4.3221, 7.88, 0.9352]),
+                   np.array([7.88, 0.9352, 6.56, 1.22, 5.43, 4.3221]))
+test_SFC64_shuffle(1234, np.array([3.14]), np.array([3.14]))
+test_SFC64_shuffle(74,
+                   np.arange(9).reshape((3, 3)),
+                   np.array([[6, 7, 8], [0, 1, 2], [3, 4, 5]]))
+test_SFC64_shuffle(74,
+                   np.arange(9).reshape((3, 3)),
+                   np.array([[2, 0, 1], [5, 3, 4], [8, 6, 7]]),
+                   axis=1)
+
+@test
+def test_SFC64_permutation(seed, x, expected, axis=0):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    assert (gen.permutation(x, axis) == expected).all()
+
+test_SFC64_permutation(12345, 10, np.array([4, 3, 1, 5, 9, 8, 6, 0, 7, 2]))
+test_SFC64_permutation(1234,
+                       np.array([1.124, 4.7532, 9.1246, 12.53243, 15.64324]),
+                       np.array([15.64324, 4.7532, 9.1246, 12.53243, 1.124]))
+test_SFC64_permutation(
+    4321,
+    np.arange(24).reshape(3, 8),
+    np.array([[16, 17, 18, 19, 20, 21, 22, 23], [8, 9, 10, 11, 12, 13, 14, 15],
+              [0, 1, 2, 3, 4, 5, 6, 7]]))
+test_SFC64_permutation(74,
+                       np.arange(9).reshape((3, 3)),
+                       np.array([[2, 0, 1], [5, 3, 4], [8, 6, 7]]),
+                       axis=1)
+
+@test
+def test_SFC64_permuted(seed, x, expected, axis=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    arr = gen.permuted(x, axis)
+    assert (arr == expected).all()
+
+test_SFC64_permuted(4321, np.array([1.124, 4.7532, 9.1246, 12.53243,
+                                    15.64324]),
+                    np.array([9.1246, 15.64324, 4.7532, 1.124, 12.53243]))
+test_SFC64_permuted(
+    4321,
+    np.arange(24).reshape(3, 8),
+    np.array([[21, 7, 22, 5, 9, 1, 6, 19], [18, 16, 14, 0, 20, 17, 12, 3],
+              [8, 11, 10, 23, 2, 13, 4, 15]]))
+
+@test
+def test_SFC64_beta(seed, a, b, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(a, int) or isinstance(a, float)) and (isinstance(
+                b, int) or isinstance(b, float)):
+            assert gen.beta(a, b) == expected
+        else:
+            assert (round(gen.beta(a, b), 8) == expected).all()
+    else:
+        assert (round(gen.beta(a, b, size), 8) == expected).all()
+
+#test_SFC64_beta(4321, -7, 0, error)
+test_SFC64_beta(4321, 0.2, 0.1, 0.997423991996233)
+test_SFC64_beta(4321, 10, 14, 0.28271738921432865)
+test_SFC64_beta(4321, 167, 2041,
+                np.array([0.06958452, 0.07693825, 0.07529241, 0.08165749]), 4)
+test_SFC64_beta(139, 14.32, 4, 0.8247260405458904)
+test_SFC64_beta(457, 12.87, 9.21, 0.5617457872800475)
+test_SFC64_beta(
+    457, np.array([12.87, 1.32, 4.532, 1.34, 8.432]), 9.21,
+    np.array([0.56174579, 0.00369936, 0.25818220, 0.13144450, 0.36499717]))
+test_SFC64_beta(
+    457, 32.14, np.array([9.21, 0.21, 14.32, 41.21, 5.55]),
+    np.array([0.76283046, 0.99080339, 0.69766178, 0.38339742, 0.89963656]))
+test_SFC64_beta(
+    457, np.array([12.87, 1.32, 4.532, 1.34, 8.432]),
+    np.array([9.21, 0.21, 14.32, 41.21, 5.55]),
+    np.array([0.56174579, 0.11208923, 0.25413326, 0.00258646, 0.77501163]))
+
+@test
+def test_SFC64_binomial(seed, n, p, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(n, int) or isinstance(n, float)) and (isinstance(
+                p, int) or isinstance(p, float)):
+            assert gen.binomial(n, p) == expected
+        else:
+            assert (gen.binomial(n, p) == expected).all()
+    else:
+        assert (gen.binomial(n, p, size) == expected).all()
+
+#test_SFC64_binomial(139, -2, .33, 0)
+test_SFC64_binomial(139, 28400, .66, 18691)
+test_SFC64_binomial(139, 14.76, .33, 6)
+test_SFC64_binomial(139, 0, .33, 0)
+test_SFC64_binomial(139, 14, 0, 0)
+test_SFC64_binomial(147, 10, .5, np.array([6, 4, 7, 6, 5, 5, 4, 5, 6, 3]), 10)
+test_SFC64_binomial(457, np.array([12, 1, 4, 7, 8]), 0.11,
+                    np.array([1, 0, 0, 1, 1]))
+test_SFC64_binomial(457, 12, np.array([0.11, 0.21, 0.32, 0.43]),
+                    np.array([1, 2, 3, 5]))
+test_SFC64_binomial(457, np.array([12, 1, 4, 7, 8]),
+                    np.array([0.11, 0.21, 0.32, 0.43, 0.55]),
+                    np.array([1, 0, 1, 3, 4]))
+
+@test
+def test_SFC64_chisquare(seed, df, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(df, float) or isinstance(df, int)):
+            assert gen.chisquare(df) == expected
+        else:
+            assert (round(gen.chisquare(df), 8) == expected).all()
+    else:
+        assert (round(gen.chisquare(df, size), 8) == expected).all()
+
+test_SFC64_chisquare(457, 12.12, 11.966063817767916)
+test_SFC64_chisquare(457, 24.12, np.array([24.18381621, 26.19325346]), 2)
+test_SFC64_chisquare(
+    457, np.array([23, 42, 34, 17]),
+    np.array([23.04634179, 44.93754189, 18.93394980, 12.24727194]))
+test_SFC64_chisquare(
+    457, np.array([274.23, 325.42, 352.34, 825.17]),
+    np.array([276.04011404, 334.67517564, 298.76233776, 793.05450604]))
+
+@test
+def test_SFC64_dirichlet(seed, alpha, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    assert (round(gen.dirichlet(alpha, size), 8) == round(expected, 8)).all()
+
+test_SFC64_dirichlet(
+    457, np.array([278.23, 325.42, 352.34, 825.17]),
+    np.array([0.16181824, 0.19215271, 0.18167716, 0.46435189]))
+test_SFC64_dirichlet(
+    874, np.array([10, 5, 3]),
+    np.array([[0.51743412, 0.34158578, 0.14098010],
+              [0.83079306, 0.06186507, 0.10734187]]), 2)
+#test_SFC64_dirichlet(1234, np.array([]), np.array([]))
+test_SFC64_dirichlet(74, np.array([0.01, 0.05]),
+                     np.array([4.09793014e-39, 1.00000000]))
+
+@test
+def test_SFC64_exponential(seed, scale, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(scale, float) or isinstance(scale, int)):
+            assert gen.exponential(scale) == expected
+        else:
+            assert (round(gen.exponential(scale), 8) == expected).all()
+    else:
+        assert (round(gen.exponential(scale, size), 8) == expected).all()
+
+test_SFC64_exponential(74, 1, 0.614763996552136)
+test_SFC64_exponential(874, 3, 0.13467829696559896)
+test_SFC64_exponential(874, 724.952, 32.5451002472683)
+test_SFC64_exponential(
+    874, np.array([278.23, 325.42, 352.34, 825.17]),
+    np.array([12.49051419, 58.84353559, 22.45415942, 593.22299347]))
+test_SFC64_exponential(
+    874, 724.952,
+    np.array([
+        32.54510025, 131.08825152, 46.20022644, 521.17526760, 1494.82126609,
+        45.90285356, 239.67612418
+    ]), 7)
+
+@test
+def test_SFC64_f(seed, dfnum, dfden, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(dfnum, float)
+                or isinstance(dfnum, int)) and (isinstance(dfden, float)
+                                                or isinstance(dfden, int)):
+            assert gen.f(dfnum, dfden) == expected
+        else:
+            assert (round(gen.f(dfnum, dfden), 8) == expected).all()
+    else:
+        assert (round(gen.f(dfnum, dfden, size), 8) == expected).all()
+
+test_SFC64_f(874, 12, 4.21, 0.6713378390508739)
+test_SFC64_f(
+    874, np.array([14, 15, 16, 17, 18]), 4.21,
+    np.array([0.67043074, 0.36520957, 0.55067818, 1.16853235, 14.44185656]))
+test_SFC64_f(
+    874, 2557, 0.92,
+    np.array([12.55103903, 4.24970982, 4.78102326, 4.87903268, 4.01745429]), 5)
+test_SFC64_f(874, 7343, np.array([12.52, 0.92, 231.52]),
+             np.array([0.73535605, 4.24355837, 0.91151352]))
+
+@test
+def test_SFC64_gamma(seed, shape, expected, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(shape, float)
+                or isinstance(shape, int)) and (isinstance(scale, float)
+                                                or isinstance(scale, int)):
+            assert gen.gamma(shape, scale) == expected
+        else:
+            assert (round(gen.gamma(shape, scale), 8) == expected).all()
+    else:
+        assert (round(gen.gamma(shape, scale, size), 8) == expected).all()
+
+test_SFC64_gamma(318, 564, 598.378275104569)
+test_SFC64_gamma(318, 564, 3291.080513075129, 5.5)
+test_SFC64_gamma(318, 564, np.array([3291.08051308, 1306.08172100]),
+                 np.array([5.5, 2.2]))
+test_SFC64_gamma(
+    318, 564,
+    np.array([2467.37392281, 2447.97412784, 2399.22002265, 2336.40987953]),
+    4.123435, 4)
+test_SFC64_gamma(
+    318, np.array([19, 17, 45, 52, 21]),
+    np.array(
+        [218.01672004, 189.88935671, 425.71054348, 448.20979789,
+         155.14718090]), 8.527)
+test_SFC64_gamma(
+    318, np.array([19, 17, 45, 52, 21]),
+    np.array(
+        [28.12459154, 97.98442237, 99.85001606, 399.48334279, 179.58281641]),
+    np.array([1.1, 4.4, 2, 7.6, 9.87]))
+
+@test
+def test_SFC64_geometric(seed, p, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(p, float) or isinstance(p, int):
+            assert gen.geometric(p) == expected
+        else:
+            assert (gen.geometric(p) == expected).all()
+    else:
+        assert (gen.geometric(p, size) == expected).all()
+
+test_SFC64_geometric(457, 0.35, 2)
+test_SFC64_geometric(457, 0.2, 2)
+test_SFC64_geometric(2000, 1, 1)
+test_SFC64_geometric(12654, 0.5, np.array([2., 4., 3., 1.]), 4)
+test_SFC64_geometric(12654, np.array([0.01, 0.6, 0.45, 0.33]),
+                     np.array([67, 3, 3, 1]))
+
+@test
+def test_SFC64_gumbel(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.gumbel(loc, scale) == expected
+        else:
+            assert (round(gen.gumbel(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.gumbel(loc, scale, size), 8) == expected).all()
+
+test_SFC64_gumbel(1234, -0.6233139872603548)
+test_SFC64_gumbel(1234, 11.376686012739645, 12)
+test_SFC64_gumbel(1234, -76.04430644576328, scale=122)
+test_SFC64_gumbel(1234,
+                  np.array([-0.62331399, 0.22117146, 0.96113010]),
+                  size=3)
+test_SFC64_gumbel(1234,
+                  np.array(
+                      [-7.35510505, 11.31734384, 57.79275280, 18.44723753]),
+                  scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_SFC64_hypergeometric(seed, ngood, nbad, nsample, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(ngood, int) or isinstance(ngood, float)) and (
+                isinstance(nbad, int) or isinstance(nbad, float)) and (
+                    isinstance(nsample, int) or isinstance(nsample, float)):
+            assert gen.hypergeometric(ngood, nbad, nsample) == expected
+        else:
+            assert (gen.hypergeometric(ngood, nbad, nsample) == expected).all()
+    else:
+        assert (gen.hypergeometric(ngood, nbad, nsample,
+                                   size) == expected).all()
+
+test_SFC64_hypergeometric(1234, 11, 12, 9, 6)
+test_SFC64_hypergeometric(1234, 100, 300, 200, 51)
+#test_SFC64_hypergeometric(1234, 100.31, 300.55, 200.2, 51)
+test_SFC64_hypergeometric(1234, 100, 300, np.array([200, 201, 222, 221]),
+                          np.array([51, 51, 54, 62]))
+test_SFC64_hypergeometric(1234, 100, np.array([301, 303, 304, 344, 355]), 200,
+                          np.array([50, 49, 51, 38, 38]))
+test_SFC64_hypergeometric(1234, np.array([100, 111, 112, 122]), 300, 200,
+                          np.array([51, 53, 55, 50]))
+test_SFC64_hypergeometric(1234, 100, 700, 450, np.array([56, 57, 55, 64, 62]),
+                          5)
+
+@test
+def test_SFC64_laplace(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.laplace(loc, scale) == expected
+        else:
+            assert (round(gen.laplace(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.laplace(loc, scale, size), 8) == expected).all()
+
+test_SFC64_laplace(1234, 1.1719515442699244)
+test_SFC64_laplace(1234, 13.171951544269925, 12)
+test_SFC64_laplace(1234, 142.97808840093077, scale=122)
+test_SFC64_laplace(1234,
+                   np.array([1.17195154, 0.10843205, -0.45312571]),
+                   size=3)
+test_SFC64_laplace(1234,
+                   np.array(
+                       [1.97195154, 1.27843205, -0.32312571, 263.25461367]),
+                   loc=np.array([0.8, 1.17, 0.13, 265.45]))
+test_SFC64_laplace(1234,
+                   np.array(
+                       [13.82902822, 5.54846777, -27.24644891, -14.16024183]),
+                   scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_SFC64_logistic(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.logistic(loc, scale) == expected
+        else:
+            assert (round(gen.logistic(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.logistic(loc, scale, size), 8) == expected).all()
+
+test_SFC64_logistic(1234, 1.6968209880833125)
+test_SFC64_logistic(1234, 13.696820988083312, 12)
+test_SFC64_logistic(1234, 207.01216054616413, scale=122)
+test_SFC64_logistic(1234,
+                    np.array([1.69682099, 0.20624830, -0.76381247]),
+                    size=3)
+test_SFC64_logistic(1234,
+                    np.array(
+                        [2.49682099, 1.37624830, -0.63381247, 262.61873314]),
+                    loc=np.array([0.8, 1.17, 0.13, 265.45]))
+test_SFC64_logistic(
+    1234,
+    np.array([20.02248766, 10.55372536, -45.92804359, -18.26167125]),
+    scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_SFC64_lognormal(seed, expected, mean=0.0, sigma=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(mean, float) or isinstance(mean, int)) and (isinstance(
+                sigma, float) or isinstance(sigma, int)):
+            assert gen.lognormal(mean, sigma) == expected
+        else:
+            assert (round(gen.lognormal(mean, sigma), 8) == expected).all()
+    else:
+        assert (round(gen.lognormal(mean, sigma, size), 8) == expected).all()
+
+test_SFC64_lognormal(1234, 0.23949890805477525)
+test_SFC64_lognormal(1234, 38979.59482553418, 12)
+test_SFC64_lognormal(1234, 0.05735972695942969, sigma=2)
+test_SFC64_lognormal(1234,
+                     np.array([0.23949891, 2.19364846, 1.33309599]),
+                     size=3)
+test_SFC64_lognormal(1234,
+                     np.array(
+                         [0.53301462, 7.06791919, 1.51816755, 117.49197082]),
+                     mean=np.array([0.8, 1.17, 0.13, 5.45]))
+test_SFC64_lognormal(1234,
+                     np.array([0.07633898, 5.49961716, 1.25138778,
+                               0.37110750]),
+                     sigma=np.array([1.8, 2.17, 0.78, 1.45]))
+
+@test
+def test_SFC64_logseries(seed, p, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(p, float) or isinstance(p, int):
+            assert gen.logseries(p) == expected
+        else:
+            assert (gen.logseries(p) == expected).all()
+    else:
+        assert (gen.logseries(p, size) == expected).all()
+
+test_SFC64_logseries(457, 0.35, 1)
+test_SFC64_logseries(2000, 0, 1)
+test_SFC64_logseries(457, 0.5, np.array([1., 2., 1., 2.]), 4)
+test_SFC64_logseries(457, np.array([0.01, 0.6, 0.45, 0.33]),
+                     np.array([1, 1, 1, 1]))
+
+@test
+def test_SFC64_multinomial(seed, n, pvals, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    assert (round(gen.multinomial(n, pvals, size), 8) == expected).all()
+
+test_SFC64_multinomial(457, 20, [1 / 6.], np.array([20]))
+test_SFC64_multinomial(457, 20.6, [1 / 6.], np.array([20]))
+test_SFC64_multinomial(457, 20, [1 / 6.] * 6, np.array([3, 3, 2, 4, 4, 4]))
+test_SFC64_multinomial(
+    457, 20, [1 / 6] * 6,
+    np.array([[3, 3, 2, 4, 4, 4], [2, 4, 1, 9, 2, 2], [4, 3, 4, 3, 5, 1]]), 3)
+#test_SFC64_multinomial(457, 1, np.array([[.1, .5, .4 ], [.3, .7, .0]]), np.array([[0, 1, 0], [0, 1, 0]]))
+#test_SFC64_multinomial(457, -1, [1/6.], error)
+
+@test
+def test_SFC64_multivariate_hypergeometric(seed,
+                                           colors,
+                                           nsample,
+                                           expected,
+                                           size=None,
+                                           method='marginals'):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    assert (gen.multivariate_hypergeometric(colors, nsample, size,
+                                            method) == expected).all()
+
+test_SFC64_multivariate_hypergeometric(457, np.array([16, 8, 4]), 15,
+                                       np.array([7, 7, 1]))
+test_SFC64_multivariate_hypergeometric(457,
+                                       np.array([16, 8, 4]),
+                                       15,
+                                       np.array([[7, 7, 1], [10, 4, 1],
+                                                 [9, 4, 2]]),
+                                       size=3)
+test_SFC64_multivariate_hypergeometric(457, np.array([16, 8, 4]), 0,
+                                       np.array([0, 0, 0]))
+test_SFC64_multivariate_hypergeometric(457,
+                                       np.array([16, 8, 4]),
+                                       8,
+                                       np.array([5, 3, 0]),
+                                       method='count')
+
+@test
+def test_SFC64_multivariate_normal(seed,
+                                   mean,
+                                   cov,
+                                   expected,
+                                   size=None,
+                                   check_valid: Static[str] = 'warn',
+                                   tol: float = 1e-8,
+                                   m: Static[str] = 'svd'):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    assert (round(
+        gen.multivariate_normal(mean,
+                                cov,
+                                size,
+                                check_valid=check_valid,
+                                tol=tol,
+                                method=m), 8) == expected).all()
+
+test_SFC64_multivariate_normal(1234, (1, 2), np.array([[1, 0], [0, 1]]),
+                               np.array([-0.42920642, 2.78556612]))
+test_SFC64_multivariate_normal(5432, (1, 2),
+                               np.array([[1, 0], [0, 1]]),
+                               np.array([-0.56243526, 4.58304033]),
+                               m='cholesky')
+
+@test
+def test_SFC64_negative_binomial(seed, n, p, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(n, int) or isinstance(n, float)) and (isinstance(
+                p, int) or isinstance(p, float)):
+            assert gen.negative_binomial(n, p) == expected
+        else:
+            assert (gen.negative_binomial(n, p) == expected).all()
+    else:
+        assert (gen.negative_binomial(n, p, size) == expected).all()
+
+test_SFC64_negative_binomial(139, 28400, .66, 14582)
+test_SFC64_negative_binomial(139, 14.76, .33, 28)
+#test_SFC64_negative_binomial(139, 14, 0, error)
+test_SFC64_negative_binomial(147, 10, .5,
+                             np.array([10, 6, 6, 13, 12, 5, 16, 13, 10, 13]),
+                             10)
+test_SFC64_negative_binomial(457, np.array([12, 1, 4, 7, 8]), 0.11,
+                             np.array([89, 26, 50, 33, 48]))
+test_SFC64_negative_binomial(457, 12, np.array([0.11, 0.21, 0.32, 0.43]),
+                             np.array([[89, 23, 18, 24]]))
+
+@test
+def test_SFC64_noncentral_chisquare(seed, df, nonc, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(df, int) or isinstance(df, float)) and (isinstance(
+                nonc, int) or isinstance(nonc, float)):
+            assert gen.noncentral_chisquare(df, nonc) == expected
+        else:
+            assert (round(gen.noncentral_chisquare(df, nonc),
+                          8) == expected).all()
+    else:
+        assert (round(gen.noncentral_chisquare(df, nonc, size),
+                      8) == expected).all()
+
+test_SFC64_noncentral_chisquare(457, 0.1, 0.2, 8.383813499573139e-10)
+test_SFC64_noncentral_chisquare(457, 5, 0, 4.651609985678877)
+test_SFC64_noncentral_chisquare(457, 99, 7, 108.00168289970618)
+test_SFC64_noncentral_chisquare(
+    457, 14.2, 0.5, np.array([14.26295297, 7.90698982, 9.56194238]), 3)
+test_SFC64_noncentral_chisquare(
+    457, np.array([8, 7.1, 45.3]), 0.6,
+    np.array([8.06216455, 2.67439755, 37.17123094]))
+test_SFC64_noncentral_chisquare(
+    457, 0.6, np.array([8, 7.1, 45.3]),
+    np.array([1.23557513, 3.84927719, 43.61419849]))
+
+@test
+def test_SFC64_noncentral_f(seed, dfnum, dfden, nonc, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(dfnum, float) or isinstance(dfnum, int)) and (
+                isinstance(dfden, int)
+                or isinstance(dfden, float)) and (isinstance(nonc, int)
+                                                  or isinstance(nonc, float)):
+            assert gen.noncentral_f(dfnum, dfden, nonc) == expected
+        else:
+            assert (round(gen.noncentral_f(dfnum, dfden, nonc),
+                          8) == expected).all()
+    else:
+        assert (round(gen.noncentral_f(dfnum, dfden, nonc, size),
+                      8) == expected).all()
+
+test_SFC64_noncentral_f(874, 3, 20, 3, 1.2543069110903733)
+test_SFC64_noncentral_f(874, 3, 20, 0, 0.790159454240572)
+test_SFC64_noncentral_f(
+    874, np.array([14, 15, 16, 17, 18]), 4.21, 6.7,
+    np.array([10.25330200, 20.13749033, 12.78219243, 15.78411365, 3.22543898]))
+test_SFC64_noncentral_f(
+    874, 27, 5.92, 3.1,
+    np.array([4.76909802, 8.23160216, 5.56157716, 6.50176072, 2.50623523]), 5)
+test_SFC64_noncentral_f(
+    874, 27, np.array([5.92, 8.13, 9.53, 33.14]), 3.1,
+    np.array([4.76909802, 5.33473529, 3.53537993, 1.94776216]))
+test_SFC64_noncentral_f(
+    874, 743, 8.24, np.array([0.11, 0.21, 0.32, 0.43]),
+    np.array([2.86196164, 4.87847860, 3.43786139, 3.98570386]))
+
+@test
+def test_SFC64_normal(seed, expected, loc=0.0, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(loc, float) or isinstance(loc, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.normal(loc, scale) == expected
+        else:
+            assert (round(gen.normal(loc, scale), 8) == expected).all()
+    else:
+        assert (round(gen.normal(loc, scale, size), 8) == expected).all()
+
+test_SFC64_normal(1234, -1.42920642141181)
+test_SFC64_normal(1234, 10.57079357858819, 12)
+test_SFC64_normal(1234, -174.36318341224083, scale=122)
+test_SFC64_normal(1234,
+                  np.array([-1.42920642, 0.78556612, 0.28750405]),
+                  size=3)
+test_SFC64_normal(1234,
+                  np.array([-0.62920642, 1.95556612, 0.41750405,
+                            264.76637000]),
+                  loc=np.array([0.8, 1.17, 0.13, 265.45]))
+test_SFC64_normal(1234,
+                  np.array(
+                      [-16.86463577, 40.19741841, 17.28761860, -4.40941351]),
+                  scale=np.array([11.8, 51.17, 60.13, 6.45]))
+
+@test
+def test_SFC64_pareto(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(a, float) or isinstance(a, int):
+            assert gen.pareto(a) == expected
+        else:
+            assert (round(gen.pareto(a), 8) == expected).all()
+    else:
+        assert (round(gen.pareto(a, size), 8) == expected).all()
+
+test_SFC64_pareto(1234, 3, 0.5414922795373657)
+test_SFC64_pareto(
+    1234, 5,
+    np.array([0.29647699, 0.13971592, 0.00406694, 0.30058308, 0.31654861]), 5)
+test_SFC64_pareto(
+    1234, np.array([3, 13, 4, 23.2, 5.6]),
+    np.array([0.54149228, 0.05158614, 0.00508625, 0.05827547, 0.27832148]))
+
+@test
+def test_SFC64_poisson(seed, expected, lam=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(lam, float) or isinstance(lam, int):
+            assert gen.poisson(lam) == expected
+        else:
+            assert (round(gen.poisson(lam), 8) == expected).all()
+    else:
+        assert (round(gen.poisson(lam, size), 8) == expected).all()
+
+test_SFC64_poisson(1234, 0, 0)
+test_SFC64_poisson(1234, 2)
+test_SFC64_poisson(1234, 3, 3)
+test_SFC64_poisson(1234, 19, 14.65)
+test_SFC64_poisson(1234, np.array([43., 7., 10., 65., 23.]),
+                   np.array([35.62, 9.23, 9.57, 76.79, 21.74]))
+test_SFC64_poisson(1234, np.array([857., 809., 837., 886., 788.]), 824.14, 5)
+
+@test
+def test_SFC64_power(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(a, float) or isinstance(a, int):
+            assert np.isclose(gen.power(a), expected)
+        else:
+            assert (round(gen.power(a), 8) == expected).all()
+    else:
+        assert (round(gen.power(a, size), 8) == expected).all()
+
+test_SFC64_power(1234, 1, 0.7269916449719858)
+test_SFC64_power(1234, 45.11, 0.992956857625712)
+test_SFC64_power(1234, 6, np.array([0.94824720, 0.88485292, 0.52138604]), 3)
+test_SFC64_power(
+    1234, np.array([5.4, 1.1, 78, 19.34, 99999999999999]),
+    np.array(
+        array([0.94266482, 0.51310462, 0.95113690, 0.98394787, 1.00000000])))
+
+@test
+def test_SFC64_rayleigh(seed, expected, scale=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(scale, float) or isinstance(scale, int):
+            assert gen.rayleigh(scale) == expected
+        else:
+            assert (round(gen.rayleigh(scale), 8) == expected).all()
+    else:
+        assert (round(gen.rayleigh(scale, size), 8) == expected).all()
+
+#test_SFC64_rayleigh(1234, error, -1)
+test_SFC64_rayleigh(1234, 1.6113676673976456)
+test_SFC64_rayleigh(1234, 4.834103002192936, 3)
+test_SFC64_rayleigh(1234, 23.606536327375508, 14.65)
+test_SFC64_rayleigh(1234,
+                    np.array([1.61136767, 1.14358662, 0.20146185, 1.62114986]),
+                    size=4)
+test_SFC64_rayleigh(
+    1234,
+    np.array([8.70138540, 1.25794529, 15.71402409, 31.35303831, 93.19946494]),
+    np.array([5.4, 1.1, 78, 19.34, 56.2]))
+
+@test
+def test_SFC64_standard_cauchy(seed, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        assert gen.standard_cauchy() == expected
+    else:
+        assert (round(gen.standard_cauchy(size), 8) == round(expected,
+                                                             8)).all()
+
+test_SFC64_standard_cauchy(1234, -1.8193330687397915)
+test_SFC64_standard_cauchy(
+    1234, np.array([-1.81933307, -0.42055505, -0.93484213, -3.48517456]), 4)
+
+@test
+def test_SFC64_standard_exponential(seed, expected, size=None, m='zig'):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        assert np.isclose(gen.standard_exponential(method=m), expected)
+    else:
+        assert (round(gen.standard_exponential(size, method=m),
+                      8) == expected).all()
+
+test_SFC64_standard_exponential(1234, 1.2982528797672646)
+test_SFC64_standard_exponential(
+    1234, np.array([1.29825288, 0.65389518, 0.02029344, 1.31406344]), 4)
+test_SFC64_standard_exponential(1234, 1.8650987248298696, m='inv')
+
+@test
+def test_SFC64_standard_gamma(seed, shape, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(shape, float) or isinstance(shape, int):
+            assert gen.standard_gamma(shape) == expected
+        else:
+            assert (round(gen.standard_gamma(shape), 8) == expected).all()
+    else:
+        assert (round(gen.standard_gamma(shape, size), 8) == expected).all()
+
+test_SFC64_standard_gamma(318, 1, 0.44353979202019395)
+test_SFC64_standard_gamma(1234, 0, 0)
+test_SFC64_standard_gamma(1234, 0.5, 1.1793433776641271)
+test_SFC64_standard_gamma(1234, 3, 0.9474473458925592)
+test_SFC64_standard_gamma(
+    1234, 0.5, np.array([1.17934338, 3.31415165, 2.61458827, 0.01842475]), 4)
+test_SFC64_standard_gamma(
+    1234, np.array([4.5, 2, 7.7, 81.15]),
+    np.array([1.87721867, 2.06606744, 5.58659139, 87.42655316]))
+
+@test
+def test_SFC64_standard_normal(seed, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        assert gen.standard_normal(size) == expected
+    else:
+        assert (round(gen.standard_normal(size), 8) == expected).all()
+
+test_SFC64_standard_normal(1234, -1.42920642141181)
+test_SFC64_standard_normal(1234,
+                           np.array([-1.42920642, 0.78556612, 0.28750405]), 3)
+
+@test
+def test_SFC64_standard_t(seed, df, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if isinstance(df, float) or isinstance(df, int):
+            assert gen.standard_t(df) == expected
+        else:
+            assert (round(gen.standard_t(df), 8) == expected).all()
+    else:
+        assert (round(gen.standard_t(df, size), 8) == expected).all()
+
+test_SFC64_standard_t(1234, 3, -1.1701964917825112)
+test_SFC64_standard_t(1234, 1, -0.5551288173526309)
+test_SFC64_standard_t(1234, 0.5, -0.46704423557734326)
+test_SFC64_standard_t(1234, 0.6,
+                      np.array([-0.48120758, 204.42340747, -16.42414839]), 3)
+test_SFC64_standard_t(1234, np.array([99, 5.6, 11.43]),
+                      np.array([-1.35730576, -0.93306323, 0.77185391]))
+
+@test
+def test_SFC64_triangular(seed, left, mode, right, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(left, int) or isinstance(left, float)) and (isinstance(
+                mode, int) or isinstance(mode, float)) and (isinstance(
+                    right, int) or isinstance(right, float)):
+            assert gen.triangular(left, mode, right) == expected
+        else:
+            assert (round(gen.triangular(left, mode, right),
+                          8) == expected).all()
+    else:
+        assert (round(gen.triangular(left, mode, right, size),
+                      8) == expected).all()
+
+test_SFC64_triangular(1234, -3, 0, 8, 4.308181907064803)
+test_SFC64_triangular(1234, np.array([-1, -4.2, -3.2]), -0.2, 77,
+                      np.array([46.46099316, 23.96947246, 12.01013894]))
+test_SFC64_triangular(
+    1234, -4, np.array([0.1, 0.5, 3, 6, 7.9]), 8,
+    np.array([4.16819741, 1.64580502, 1.16689514, -1.41563685, 7.73497789]))
+test_SFC64_triangular(1234, -77, 0, np.array([0.1, 11, 789]),
+                      np.array([-6.16767369, -15.87593485, 106.27277449]))
+test_SFC64_triangular(1234,
+                      2,
+                      10,
+                      53,
+                      np.array(
+                          [34.57029967, 21.63403897, 14.32154749, 6.76533020]),
+                      size=4)
+
+@test
+def test_SFC64_uniform(seed, expected, low=0.0, high=1.0, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    result = round(gen.uniform(low, high, size), 8)
+    if size is None:
+        if (isinstance(low, int) or isinstance(low, float)) and (isinstance(
+                high, int) or isinstance(high, float)):
+            assert result == round(expected, 8)
+        else:
+            assert (result == expected).all()
+    else:
+        assert (result == expected).all()
+
+test_SFC64_uniform(1234, 13.45119081462231, 5, 15)
+test_SFC64_uniform(1234, 0.8606071733160079, 0.1)
+test_SFC64_uniform(1234, 103.10452793839218, high=122)
+test_SFC64_uniform(1234,
+                   np.array([0.84511908, 0.55138007, 0.31781911]),
+                   size=3)
+test_SFC64_uniform(1234,
+                   np.array(
+                       [38.09231103, 26.15796285, 18.39494535, 9.11499542]),
+                   low=np.array([0.4, 3., 6., 7.]),
+                   high=45.)
+test_SFC64_uniform(
+    1234,
+    np.array([47.32666856, 8.82208109, 13.98404090, 0.17253910, 0.19287074]),
+    high=np.array([56., 16., 44., 3.1, 0.2]))
+
+@test
+def test_SFC64_vonmises(seed, mu, kappa, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(mu, float) or isinstance(mu, int)) and (isinstance(
+                kappa, float) or isinstance(kappa, int)):
+            assert gen.vonmises(mu, kappa) == expected
+        else:
+            assert (round(gen.vonmises(mu, kappa), 8) == expected).all()
+    else:
+        assert (round(gen.vonmises(mu, kappa, size), 8) == expected).all()
+
+test_SFC64_vonmises(1234, 0, 4, 0.2704612302733711)
+test_SFC64_vonmises(1234, 0.1, 0.2, -2.4556551142789758)
+test_SFC64_vonmises(1234, -1, 0, 2.168447141870805)
+test_SFC64_vonmises(1234,
+                    0,
+                    5,
+                    np.array([0.24236946, -0.35020145, -0.09662924]),
+                    size=3)
+test_SFC64_vonmises(
+    1234, np.array([43.09, 18.62, 42, 16.94]), 5,
+    np.array([-0.64992769, -0.57975737, -2.07892639, -2.04431317]))
+test_SFC64_vonmises(
+    1234, 4, np.array([0, 0.1, 7.67, 99]),
+    np.array([2.16844714, 2.36646913, -1.69291029, -2.42902277]))
+
+@test
+def test_SFC64_wald(seed, mean, scale, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(mean, float) or isinstance(mean, int)) and (isinstance(
+                scale, float) or isinstance(scale, int)):
+            assert gen.wald(mean, scale) == expected
+        else:
+            assert (round(gen.wald(mean, scale), 8) == expected).all()
+    else:
+        assert (round(gen.wald(mean, scale, size), 8) == expected).all()
+
+test_SFC64_wald(1234, 0.1, 0.1, 0.02646947813421463)
+test_SFC64_wald(1234, 3, 2, 0.6175247458060582)
+test_SFC64_wald(1234, 3, 2, np.array([0.61752475, 2.11337747, 1.27929571]), 3)
+test_SFC64_wald(1234, np.array([0.1, 0.5, 1, 4]), 0.5,
+                np.array([0.05332567, 0.37543492, 0.37714757, 0.67411925]))
+test_SFC64_wald(1234, 0.5, np.array([0.1, 0.5, 1, 4]),
+                np.array([0.04121767, 0.37543492, 0.30271246, 0.38842724]))
+test_SFC64_wald(1234, np.array([0.1, 0.5, 1, 4]), np.array([3, 2, 1, 8]),
+                np.array([0.07708962, 0.43310473, 0.49528816, 2.42348396]))
+
+@test
+def test_SFC64_weibull(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(a, float) or isinstance(a, int)):
+            assert gen.weibull(a) == expected
+        else:
+            assert (round(gen.weibull(a), 8) == expected).all()
+    else:
+        assert (round(gen.weibull(a, size), 8) == expected).all()
+
+test_SFC64_weibull(1234, 0, 0)
+test_SFC64_weibull(1234, 0.1, 13.601692306667198)
+test_SFC64_weibull(1234, 1, 1.2982528797672646)
+test_SFC64_weibull(1234, 1, np.array([1.29825288, 0.65389518, 0.02029344]), 3)
+test_SFC64_weibull(1234, np.array([17.8, 4.32]),
+                   np.array([1.01477206, 0.90634502]))
+
+@test
+def test_SFC64_zipf(seed, a, expected, size=None):
+    gen = rnd.Generator(rnd.SFC64(seed))
+    if size is None:
+        if (isinstance(a, float) or isinstance(a, int)):
+            assert gen.zipf(a) == expected
+        else:
+            assert (gen.zipf(a) == expected).all()
+    else:
+        assert (gen.zipf(a, size) == expected).all()
+
+test_SFC64_zipf(1234, 1.1, 125898583)
+test_SFC64_zipf(1234, 3, 2)
+test_SFC64_zipf(1234, 45, np.array([1, 1, 1]), 3)
+test_SFC64_zipf(1234, np.array([17.8, 4.32]), np.array([1, 1]))

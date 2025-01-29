@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "cache.h"
 
@@ -182,6 +182,13 @@ void Cache::parseCode(const std::string &code) {
   auto sctx = imports[MAIN_IMPORT].ctx;
   node = ast::SimplifyVisitor::apply(sctx, node, "<internal>", 99999);
   node = ast::TypecheckVisitor::apply(this, node);
+  for (auto &[name, p] : globals)
+    if (p.first && !p.second) {
+      p.second = name == VAR_ARGV ? codegenCtx->getModule()->getArgVar()
+                                  : codegenCtx->getModule()->N<ir::Var>(
+                                        SrcInfo(), nullptr, true, false, name);
+      codegenCtx->add(ast::TranslateItem::Var, name, p.second);
+    }
   ast::TranslateVisitor(codegenCtx).transform(node);
 }
 

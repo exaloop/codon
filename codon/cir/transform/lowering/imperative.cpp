@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "imperative.h"
 
@@ -117,7 +117,7 @@ void ImperativeForFlowLowering::handle(ForFlow *v) {
     //     body
     auto *parent = cast<BodiedFunc>(getParentFunc());
     auto *series = M->N<SeriesFlow>(v->getSrcInfo());
-    auto *listVar = util::makeVar(list, series, parent)->getVar();
+    auto *listVar = util::makeVar(list, series, parent);
     auto *lenVal = M->Nr<ExtractInstr>(M->Nr<VarValue>(listVar), "len");
     auto *lenVar = util::makeVar(lenVal, series, parent);
     auto *ptrVal = M->Nr<ExtractInstr>(
@@ -129,12 +129,14 @@ void ImperativeForFlowLowering::handle(ForFlow *v) {
     auto *oldLoopVar = v->getVar();
     auto *newLoopVar = M->Nr<Var>(M->getIntType());
     parent->push_back(newLoopVar);
-    auto *replacement = M->N<ImperativeForFlow>(
-        v->getSrcInfo(), M->getInt(0), 1, lenVar, body, newLoopVar, std::move(sched));
+    auto *replacement = M->N<ImperativeForFlow>(v->getSrcInfo(), M->getInt(0), 1,
+                                                M->Nr<VarValue>(lenVar), body,
+                                                newLoopVar, std::move(sched));
     series->push_back(replacement);
     body->insert(
         body->begin(),
-        M->Nr<AssignInstr>(oldLoopVar, (*ptrVar)[*M->Nr<VarValue>(newLoopVar)]));
+        M->Nr<AssignInstr>(oldLoopVar,
+                           (*M->Nr<VarValue>(ptrVar))[*M->Nr<VarValue>(newLoopVar)]));
     v->replaceAll(series);
   }
 }

@@ -1,0 +1,785 @@
+import numpy as np
+import numpy.fft as fft
+import numpy.random as rnd
+
+def fft1(x):
+    L = len(x)
+    phase = np.pi * (np.arange(L) / L) * -2j
+    phase = np.arange(L).reshape(-1, 1) * phase
+    return np.sum(x*np.exp(phase), axis=1)
+
+@test
+def test_fft_n():
+    try:
+        fft.fft([1, 2, 3], 0)
+        assert False
+    except ValueError:
+        pass
+
+@test
+def test_fft1d_identity():
+    gen = rnd.default_rng(seed=0)
+    maxlen = 512
+    x = gen.random(maxlen) + gen.random(maxlen)*1j
+    xr = gen.random(maxlen)
+    for i in range(1, maxlen):
+        assert np.allclose(np.fft.ifft(np.fft.fft(x[0:i])), x[0:i],
+                           atol=1e-12)
+        assert np.allclose(np.fft.irfft(np.fft.rfft(xr[0:i]), i),
+                           xr[0:i], atol=1e-12)
+
+@test
+def test_fft1d_identity_long_short(dtype: type):
+    # Test with explicitly given number of points, both for n
+    # smaller and for n larger than the input size.
+    gen = rnd.default_rng(seed=0)
+    maxlen = 16
+    atol = 4 * float(np.spacing(np.array(1., dtype=dtype)))
+    x = gen.random(maxlen).astype(dtype) + gen.random(maxlen).astype(dtype)*1j
+    xx = np.concatenate([x, np.zeros_like(x)])
+    xr = gen.random(maxlen).astype(dtype)
+    xxr = np.concatenate([xr, np.zeros_like(xr)])
+    for i in range(1, maxlen*2):
+        check_c = np.fft.ifft(np.fft.fft(x, n=i), n=i)
+        assert check_c.real.dtype is dtype
+        assert np.allclose(check_c, xx[0:i], atol=atol, rtol=0)
+        check_r = np.fft.irfft(np.fft.rfft(xr, n=i), n=i)
+        assert check_r.dtype is dtype
+        assert np.allclose(check_r, xxr[0:i], atol=atol, rtol=0)
+
+@test
+def test_fft1d_identity_long_short_reversed(dtype: type):
+    # Also test explicitly given number of points in reversed order.
+    gen = rnd.default_rng(seed=1)
+    maxlen = 16
+    atol = 5 * float(np.spacing(np.array(1., dtype=dtype)))
+    x = gen.random(maxlen).astype(dtype) + gen.random(maxlen).astype(dtype)*1j
+    xx = np.concatenate([x, np.zeros_like(x)])
+    for i in range(1, maxlen*2):
+        check_via_c = np.fft.fft(np.fft.ifft(x, n=i), n=i)
+        assert check_via_c.dtype is x.dtype
+        assert np.allclose(check_via_c, xx[0:i], atol=atol, rtol=0)
+        # For irfft, we can neither recover the imaginary part of
+        # the first element, nor the imaginary part of the last
+        # element if npts is even.  So, set to 0 for the comparison.
+        y = x.copy()
+        n = i // 2 + 1
+        y.imag[0] = 0
+        if i % 2 == 0:
+            y.imag[n-1:] = 0
+        yy = np.concatenate([y, np.zeros_like(y)])
+        check_via_r = np.fft.rfft(np.fft.irfft(x, n=i), n=i)
+        assert check_via_r.dtype is x.dtype
+        assert np.allclose(check_via_r, yy[0:n], atol=atol, rtol=0)
+
+@test
+def test_fft():
+    gen = rnd.default_rng(seed=2)
+    x = gen.random(30) + gen.random(30)*1j
+    assert np.allclose(fft1(x), np.fft.fft(x), atol=1e-6)
+    assert np.allclose(fft1(x), np.fft.fft(x, norm="backward"), atol=1e-6)
+    assert np.allclose(fft1(x) / np.sqrt(30),
+                       np.fft.fft(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(fft1(x) / 30.,
+                       np.fft.fft(x, norm="forward"), atol=1e-6)
+
+@test
+def test_fft_out_argument(dtype: type, transpose: bool, axis: int):
+    def zeros_like(x):
+        if transpose:
+            return np.zeros_like(x.T).T
+        else:
+            return np.zeros_like(x)
+
+    gen = rnd.default_rng(seed=2)
+
+    # tests below only test the out parameter
+    if dtype is complex:
+        y = gen.random((10, 20)) + gen.random((10, 20))*1j
+        fft, ifft = np.fft.fft, np.fft.ifft
+    else:
+        y = gen.random((10, 20))
+        fft, ifft = np.fft.rfft, np.fft.irfft
+
+    expected = fft(y, axis=axis)
+    out = zeros_like(expected)
+    result = fft(y, out=out, axis=axis)
+    assert result.data == out.data
+    assert np.array_equal(result, expected)
+
+    expected2 = ifft(expected, axis=axis)
+    out2 = out if dtype is complex else zeros_like(expected2)
+    result2 = ifft(out, out=out2, axis=axis)
+    assert result2.data == out2.data
+    assert np.array_equal(result2, expected2)
+
+@test
+def test_fft_inplace_out(axis: int):
+    gen = rnd.default_rng(seed=3)
+    # Test some weirder in-place combinations
+    y = gen.random((20, 20)) + gen.random((20, 20))*1j
+    # Fully in-place.
+    y1 = y.copy()
+    expected1 = np.fft.fft(y1, axis=axis)
+    result1 = np.fft.fft(y1, axis=axis, out=y1)
+    assert result1.data == y1.data
+    assert np.array_equal(result1, expected1)
+    # In-place of part of the array; rest should be unchanged.
+    y2 = y.copy()
+    out2 = y2[:10] if axis == 0 else y2[:, :10]
+    expected2 = np.fft.fft(y2, n=10, axis=axis)
+    result2 = np.fft.fft(y2, n=10, axis=axis, out=out2)
+    assert result2.data == out2.data
+    assert np.array_equal(result2, expected2)
+    if axis == 0:
+        assert np.array_equal(y2[10:], y[10:])
+    else:
+        assert np.array_equal(y2[:, 10:], y[:, 10:])
+    # In-place of another part of the array.
+    y3 = y.copy()
+    y3_sel = y3[5:] if axis == 0 else y3[:, 5:]
+    out3 = y3[5:15] if axis == 0 else y3[:, 5:15]
+    expected3 = np.fft.fft(y3_sel, n=10, axis=axis)
+    result3 = np.fft.fft(y3_sel, n=10, axis=axis, out=out3)
+    assert result3.data == out3.data
+    assert np.array_equal(result3, expected3)
+    if axis == 0:
+        assert np.array_equal(y3[:5], y[:5])
+        assert np.array_equal(y3[15:], y[15:])
+    else:
+        assert np.array_equal(y3[:, :5], y[:, :5])
+        assert np.array_equal(y3[:, 15:], y[:, 15:])
+    # In-place with n > nin; rest should be unchanged.
+    y4 = y.copy()
+    y4_sel = y4[:10] if axis == 0 else y4[:, :10]
+    out4 = y4[:15] if axis == 0 else y4[:, :15]
+    expected4 = np.fft.fft(y4_sel, n=15, axis=axis)
+    result4 = np.fft.fft(y4_sel, n=15, axis=axis, out=out4)
+    assert result4.data == out4.data
+    assert np.array_equal(result4, expected4)
+    if axis == 0:
+        assert np.array_equal(y4[15:], y[15:])
+    else:
+        assert np.array_equal(y4[:, 15:], y[:, 15:])
+    # Overwrite in a transpose.
+    y5 = y.copy()
+    out5 = y5.T
+    result5 = np.fft.fft(y5, axis=axis, out=out5)
+    assert result5.data == out5.data
+    # assert np.array_equal(result5, expected1)  # TODO: we don't check for this
+    # Reverse strides.
+    y6 = y.copy()
+    out6 = y6[::-1] if axis == 0 else y6[:, ::-1]
+    result6 = np.fft.fft(y6, axis=axis, out=out6)
+    assert result6.data == out6.data
+    assert np.array_equal(result6, expected1)
+
+@test
+def test_fft_bad_out():
+    x = np.arange(30.)
+    try:
+        np.fft.fft(x, out=np.zeros(5, complex))
+        assert False
+    except ValueError:
+        pass
+
+@test
+def test_ifft(norm: Optional[str]):
+    gen = rnd.default_rng(seed=4)
+    x = gen.random(30) + gen.random(30)*1j
+    assert np.allclose(
+        x, np.fft.ifft(np.fft.fft(x, norm=norm), norm=norm),
+        atol=1e-6)
+    try:
+        np.fft.ifft(x[0:0], norm=norm)
+        assert False
+    except ValueError:
+        pass
+
+@test
+def test_fft2():
+    gen = rnd.default_rng(seed=5)
+    x = gen.random((30, 20)) + gen.random((30, 20))*1j
+    assert np.allclose(np.fft.fft(np.fft.fft(x, axis=1), axis=0),
+                       np.fft.fft2(x), atol=1e-6)
+    assert np.allclose(np.fft.fft2(x),
+                       np.fft.fft2(x, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.fft2(x) / np.sqrt(30 * 20),
+                       np.fft.fft2(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.fft2(x) / (30. * 20.),
+                       np.fft.fft2(x, norm="forward"), atol=1e-6)
+
+@test
+def test_ifft2():
+    gen = rnd.default_rng(seed=6)
+    x = gen.random((30, 20)) + gen.random((30, 20))*1j
+    assert np.allclose(np.fft.ifft(np.fft.ifft(x, axis=1), axis=0),
+                       np.fft.ifft2(x), atol=1e-6)
+    assert np.allclose(np.fft.ifft2(x),
+                       np.fft.ifft2(x, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.ifft2(x) * np.sqrt(30 * 20),
+                    np.fft.ifft2(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.ifft2(x) * (30. * 20.),
+                       np.fft.ifft2(x, norm="forward"), atol=1e-6)
+
+@test
+def test_fftn():
+    gen = rnd.default_rng(seed=7)
+    x = gen.random((30, 20, 10)) + gen.random((30, 20, 10))*1j
+    assert np.allclose(
+        np.fft.fft(np.fft.fft(np.fft.fft(x, axis=2), axis=1), axis=0),
+        np.fft.fftn(x), atol=1e-6)
+    assert np.allclose(np.fft.fftn(x),
+                       np.fft.fftn(x, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.fftn(x) / np.sqrt(30 * 20 * 10),
+                       np.fft.fftn(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.fftn(x) / (30. * 20. * 10.),
+                       np.fft.fftn(x, norm="forward"), atol=1e-6)
+
+@test
+def test_ifftn():
+    gen = rnd.default_rng(seed=8)
+    x = gen.random((30, 20, 10)) + gen.random((30, 20, 10))*1j
+    assert np.allclose(
+        np.fft.ifft(np.fft.ifft(np.fft.ifft(x, axis=2), axis=1), axis=0),
+        np.fft.ifftn(x), atol=1e-6)
+    assert np.allclose(np.fft.ifftn(x),
+                       np.fft.ifftn(x, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.ifftn(x) * np.sqrt(30 * 20 * 10),
+                       np.fft.ifftn(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.ifftn(x) * (30. * 20. * 10.),
+                       np.fft.ifftn(x, norm="forward"), atol=1e-6)
+
+@test
+def test_rfft():
+    gen = rnd.default_rng(seed=9)
+    x = gen.random(30)
+    for n in [x.size, 2*x.size]:
+        for norm in [None, 'backward', 'ortho', 'forward']:
+            assert np.allclose(
+                np.fft.fft(x, n=n, norm=norm)[:(n//2 + 1)],
+                np.fft.rfft(x, n=n, norm=norm), atol=1e-6)
+        assert np.allclose(
+            np.fft.rfft(x, n=n),
+            np.fft.rfft(x, n=n, norm="backward"), atol=1e-6)
+        assert np.allclose(
+            np.fft.rfft(x, n=n) / np.sqrt(n),
+            np.fft.rfft(x, n=n, norm="ortho"), atol=1e-6)
+        assert np.allclose(
+            np.fft.rfft(x, n=n) / n,
+            np.fft.rfft(x, n=n, norm="forward"), atol=1e-6)
+
+@test
+def test_rfft_even():
+    x = np.arange(8)
+    n = 4
+    y = np.fft.rfft(x, n)
+    assert np.allclose(y, np.fft.fft(x[:n])[:n//2 + 1], rtol=1e-14)
+
+@test
+def test_rfft_odd():
+    x = np.array([1, 0, 2, 3, -3])
+    y = np.fft.rfft(x)
+    assert np.allclose(y, np.fft.fft(x)[:3], rtol=1e-14)
+
+@test
+def test_irfft():
+    gen = rnd.default_rng(seed=10)
+    x = gen.random(30)
+    assert np.allclose(x, np.fft.irfft(np.fft.rfft(x)), atol=1e-6)
+    assert np.allclose(x, np.fft.irfft(np.fft.rfft(x, norm="backward"),
+                       norm="backward"), atol=1e-6)
+    assert np.allclose(x, np.fft.irfft(np.fft.rfft(x, norm="ortho"),
+                       norm="ortho"), atol=1e-6)
+    assert np.allclose(x, np.fft.irfft(np.fft.rfft(x, norm="forward"),
+                       norm="forward"), atol=1e-6)
+
+@test
+def test_rfft2():
+    gen = rnd.default_rng(seed=11)
+    x = gen.random((30, 20))
+    assert np.allclose(np.fft.fft2(x)[:, :11], np.fft.rfft2(x), atol=1e-6)
+    assert np.allclose(np.fft.rfft2(x),
+                       np.fft.rfft2(x, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.rfft2(x) / np.sqrt(30 * 20),
+                       np.fft.rfft2(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.rfft2(x) / (30. * 20.),
+                       np.fft.rfft2(x, norm="forward"), atol=1e-6)
+
+@test
+def test_irfft2():
+    gen = rnd.default_rng(seed=12)
+    x = gen.random((30, 20))
+    assert np.allclose(x, np.fft.irfft2(np.fft.rfft2(x)), atol=1e-6)
+    assert np.allclose(x, np.fft.irfft2(np.fft.rfft2(x, norm="backward"),
+                       norm="backward"), atol=1e-6)
+    assert np.allclose(x, np.fft.irfft2(np.fft.rfft2(x, norm="ortho"),
+                       norm="ortho"), atol=1e-6)
+    assert np.allclose(x, np.fft.irfft2(np.fft.rfft2(x, norm="forward"),
+                       norm="forward"), atol=1e-6)
+
+@test
+def test_rfftn():
+    gen = rnd.default_rng(seed=13)
+    x = gen.random((30, 20, 10))
+    assert np.allclose(np.fft.fftn(x)[:, :, :6], np.fft.rfftn(x), atol=1e-6)
+    assert np.allclose(np.fft.rfftn(x),
+                       np.fft.rfftn(x, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.rfftn(x) / np.sqrt(30 * 20 * 10),
+                       np.fft.rfftn(x, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.rfftn(x) / (30. * 20. * 10.),
+                       np.fft.rfftn(x, norm="forward"), atol=1e-6)
+
+@test
+def test_irfftn():
+    gen = rnd.default_rng(seed=14)
+    x = gen.random((30, 20, 10))
+    assert np.allclose(x, np.fft.irfftn(np.fft.rfftn(x)), atol=1e-6)
+    assert np.allclose(x, np.fft.irfftn(np.fft.rfftn(x, norm="backward"),
+                       norm="backward"), atol=1e-6)
+    assert np.allclose(x, np.fft.irfftn(np.fft.rfftn(x, norm="ortho"),
+                       norm="ortho"), atol=1e-6)
+    assert np.allclose(x, np.fft.irfftn(np.fft.rfftn(x, norm="forward"),
+                       norm="forward"), atol=1e-6)
+
+@test
+def test_hfft():
+    gen = rnd.default_rng(seed=15)
+    x = gen.random(14) + gen.random(14)*1j
+    x_herm = np.concatenate((gen.random(1), x, gen.random(1)))
+    x = np.concatenate((x_herm, x[::-1].conj()))
+    assert np.allclose(np.fft.fft(x), np.fft.hfft(x_herm), atol=1e-6)
+    assert np.allclose(np.fft.hfft(x_herm),
+                       np.fft.hfft(x_herm, norm="backward"), atol=1e-6)
+    assert np.allclose(np.fft.hfft(x_herm) / np.sqrt(30),
+                       np.fft.hfft(x_herm, norm="ortho"), atol=1e-6)
+    assert np.allclose(np.fft.hfft(x_herm) / 30.,
+                       np.fft.hfft(x_herm, norm="forward"), atol=1e-6)
+
+@test
+def test_ihfft():
+    gen = rnd.default_rng(seed=16)
+    x = gen.random(14) + gen.random(14)*1j
+    x_herm = np.concatenate((gen.random(1), x, gen.random(1)))
+    x = np.concatenate((x_herm, x[::-1].conj()))
+    assert np.allclose(x_herm, np.fft.ihfft(np.fft.hfft(x_herm)), atol=1e-6)
+    assert np.allclose(x_herm, np.fft.ihfft(np.fft.hfft(x_herm,
+                       norm="backward"), norm="backward"), atol=1e-6)
+    assert np.allclose(x_herm, np.fft.ihfft(np.fft.hfft(x_herm,
+                       norm="ortho"), norm="ortho"), atol=1e-6)
+    assert np.allclose(x_herm, np.fft.ihfft(np.fft.hfft(x_herm,
+                       norm="forward"), norm="forward"), atol=1e-6)
+
+@test
+def test_axes(op):
+    gen = rnd.default_rng(seed=17)
+    x = gen.random((30, 20, 10))
+    axes = [(0, 1, 2), (0, 2, 1), (1, 0, 2), (1, 2, 0), (2, 0, 1), (2, 1, 0)]
+    for a in axes:
+        op_tr = op(np.transpose(x, a))
+        tr_op = np.transpose(op(x, axes=a), a)
+        assert np.allclose(op_tr, tr_op, atol=1e-6)
+
+@test
+def test_s_negative_1(op):
+    x = np.arange(100).reshape(10, 10)
+    # should use the whole input array along the first axis
+    assert op(x, s=(-1, 5), axes=(0, 1)).shape == (10, 5)
+
+@test
+def test_s_axes_none(op):
+    x = np.arange(100).reshape(10, 10)
+    # Should test warning here:
+    op(x, s=(-1, 5))
+
+@test
+def test_s_axes_none_2D(op):
+    x = np.arange(100).reshape(10, 10)
+    # Should test warning here:
+    op(x, s=(-1, 5), axes=None)
+
+@test
+def test_all_1d_norm_preserving():
+    gen = rnd.default_rng(seed=18)
+    # verify that round-trip transforms are norm-preserving
+    x = gen.random(30)
+    x_norm = np.linalg.norm(x)
+    n = x.size * 2
+    func_pairs = ((np.fft.fft, np.fft.ifft),
+                  (np.fft.rfft, np.fft.irfft),
+                  # hfft: order so the first function takes x.size samples
+                  #       (necessary for comparison to x_norm above)
+                  (np.fft.ihfft, np.fft.hfft),
+                  )
+    for forw, back in func_pairs:
+        for n in [x.size, 2*x.size]:
+            for norm in [None, 'backward', 'ortho', 'forward']:
+                tmp = forw(x, n=n, norm=norm)
+                tmp = back(tmp, n=n, norm=norm)
+                assert np.allclose(x_norm,
+                                   np.linalg.norm(tmp), atol=1e-6)
+
+@test
+def test_fftn_out_argument(dtype: type, transpose: bool, axes):
+    def zeros_like(x):
+        if transpose:
+            return np.zeros_like(x.T).T
+        else:
+            return np.zeros_like(x)
+
+    gen = rnd.default_rng(seed=19)
+    # tests below only test the out parameter
+    if dtype is complex:
+        x = gen.random((10, 5, 6)) + gen.random((10, 5, 6))*1j
+        fft, ifft = np.fft.fftn, np.fft.ifftn
+    else:
+        x = gen.random((10, 5, 6))
+        fft, ifft = np.fft.rfftn, np.fft.irfftn
+
+    expected = fft(x, axes=axes)
+    out = zeros_like(expected)
+    result = fft(x, out=out, axes=axes)
+    assert result.data == out.data
+    assert np.array_equal(result, expected)
+
+    expected2 = ifft(expected, axes=axes)
+    out2 = out if dtype is complex else zeros_like(expected2)
+    result2 = ifft(out, out=out2, axes=axes)
+    assert result2.data == out2.data
+    assert np.array_equal(result2, expected2)
+
+@test
+def test_fftn_out_and_s_interaction(fft, rfftn: Static[int]):
+    # With s, shape varies, so generally one cannot pass in out.
+    gen = rnd.default_rng(seed=20)
+    if rfftn:
+        x = gen.random((10, 5, 6))
+    else:
+        x = gen.random((10, 5, 6)) + gen.random((10, 5, 6))*1j
+    try:
+        fft(x, out=np.zeros_like(x, dtype=complex), s=(3, 3, 3), axes=(0, 1, 2))
+        assert False
+    except ValueError:
+        pass
+    # Except on the first axis done (which is the last of axes).
+    s = (10, 5, 5)
+    expected = fft(x, s=s, axes=(0, 1, 2))
+    out = np.zeros_like(expected)
+    result = fft(x, s=s, axes=(0, 1, 2), out=out)
+    assert result.data == out.data
+    assert np.array_equal(result, expected)
+
+@test
+def test_irfftn_out_and_s_interaction(s):
+    gen = rnd.default_rng(seed=21)
+    # Since for irfftn, the output is real and thus cannot be used for
+    # intermediate steps, it should always work.
+    x = gen.random((9, 5, 6, 2)) + gen.random((9, 5, 6, 2))*1j
+    expected = np.fft.irfftn(x, s=s, axes=(0, 1, 2))
+    out = np.zeros_like(expected)
+    result = np.fft.irfftn(x, s=s, axes=(0, 1, 2), out=out)
+    assert result.data == out.data
+    assert np.array_equal(result, expected)
+
+@test
+def test_fft_with_order(dtype: type, order: str, fft, fftname: Static[str]):
+    def eps(dtype: type):
+        if dtype is complex or dtype is float:
+            return 2.220446049250313e-16
+        elif dtype is complex64 or dtype is float32:
+            return 1.1920929e-07
+        else:
+            compile_error("unknown type for eps")
+
+    # Check that FFT/IFFT produces identical results for C, Fortran and
+    # non contiguous arrays
+    gen = rnd.default_rng(seed=22)
+    X = gen.random((8, 7, 13)).astype(dtype, copy=False)
+    # See discussion in pull/14178
+    _tol = 8.0 * np.sqrt(np.log2(X.size)) * eps(X.dtype)
+    if order == 'F':
+        Y = np.asfortranarray(X)
+    else:
+        # Make a non contiguous array
+        Y = X[::-1]
+        X = np.ascontiguousarray(X[::-1])
+
+    if fftname[-3:] == 'fft':
+        for axis in range(3):
+            X_res = fft(X, axis=axis)
+            Y_res = fft(Y, axis=axis)
+            assert np.allclose(X_res, Y_res, atol=_tol, rtol=_tol)
+    elif fftname[-4:] == 'fft2' or fftname[-4:] == 'fftn':
+        for ax in ((0, 1), (1, 2), (0, 2)):
+            X_res = fft(X, axes=ax)
+            Y_res = fft(Y, axes=ax)
+            assert np.allclose(X_res, Y_res, atol=_tol, rtol=_tol)
+        if fftname[-4:] == 'fftn':
+            for ax in ((0,), (1,), (2,), None):
+                X_res = fft(X, axes=ax)
+                Y_res = fft(Y, axes=ax)
+                assert np.allclose(X_res, Y_res, atol=_tol, rtol=_tol)
+    else:
+        raise ValueError()
+
+@test
+def test_fft_output_order(order: str, n):
+    gen = rnd.default_rng(seed=22)
+    x = gen.random(10)
+    x = np.asarray(x, dtype=np.complex64, order=order)
+    res = np.fft.fft(x, n=n)
+    assert res.flags.c_contiguous == x.flags.c_contiguous
+    assert res.flags.f_contiguous == x.flags.f_contiguous
+
+@test
+def test_irfft_with_n_1_regression():
+    # Regression test for gh-25661
+    x = np.arange(10)
+    np.fft.irfft(x, n=1)
+    np.fft.hfft(x, n=1)
+    np.fft.irfft(np.array([0], complex), n=10)
+
+@test
+def test_irfft_with_n_large_regression():
+    # Regression test for gh-25679
+    x = np.arange(5) * (1 + 1j)
+    result = np.fft.hfft(x, n=10)
+    expected = np.array([20., 9.91628173, -11.8819096, 7.1048486,
+                         -6.62459848, 4., -3.37540152, -0.16057669,
+                         1.8819096, -20.86055364])
+    assert np.allclose(result, expected)
+
+@test
+def test_fft_with_integer_or_bool_input(data, fft):
+    # Regression test for gh-25819
+    result = fft(data)
+    float_data = data.astype(float)
+    expected = fft(float_data)
+    assert np.array_equal(result, expected)
+
+
+test_fft_n()
+test_fft1d_identity()
+test_fft1d_identity_long_short(np.float32)
+test_fft1d_identity_long_short(np.float64)
+test_fft1d_identity_long_short_reversed(np.float32)
+test_fft1d_identity_long_short_reversed(np.float64)
+test_fft()
+
+for axis in (0, 1):
+    for transpose in (False, True):
+        test_fft_out_argument(complex, transpose, axis)
+        test_fft_out_argument(float, transpose, axis)
+
+test_fft_inplace_out(0)
+test_fft_inplace_out(1)
+test_fft_bad_out()
+test_ifft(None)
+test_ifft('backward')
+test_ifft('ortho')
+test_ifft('forward')
+test_fft2()
+test_ifft2()
+test_fftn()
+test_ifftn()
+test_rfft()
+test_rfft_even()
+test_rfft_odd()
+test_irfft()
+test_rfft2()
+test_irfft2()
+test_rfftn()
+test_irfftn()
+test_hfft()
+test_ihfft()
+
+for op in (np.fft.fftn, np.fft.ifftn,
+           np.fft.rfftn, np.fft.irfftn):
+    test_axes(op)
+
+for op in (np.fft.fftn, np.fft.ifftn,
+           np.fft.fft2, np.fft.ifft2):
+    test_s_negative_1(op)
+
+for op in (np.fft.fftn, np.fft.ifftn,
+           np.fft.rfftn, np.fft.irfftn):
+    test_s_axes_none(op)
+
+for op in (np.fft.fft2, np.fft.ifft2):
+    test_s_axes_none_2D(op)
+
+test_all_1d_norm_preserving()
+
+for axes in ((0, 1), (0, 2), None):
+    for transpose in (False, True):
+        test_fftn_out_argument(complex, transpose, axes)
+        test_fftn_out_argument(float, transpose, axes)
+
+test_fftn_out_and_s_interaction(np.fft.fftn, rfftn=False)
+test_fftn_out_and_s_interaction(np.fft.ifftn, rfftn=False)
+test_fftn_out_and_s_interaction(np.fft.rfftn, rfftn=True)
+test_irfftn_out_and_s_interaction((9, 5, 5))
+test_irfftn_out_and_s_interaction((3, 3, 3))
+
+for order in ('F', 'non-contiguous'):
+    test_fft_with_order(np.float32, order, np.fft.fft, 'fft')
+    test_fft_with_order(np.float64, order, np.fft.fft, 'fft')
+    test_fft_with_order(np.complex64, order, np.fft.fft, 'fft')
+    test_fft_with_order(np.complex128, order, np.fft.fft, 'fft')
+
+    test_fft_with_order(np.float32, order, np.fft.fft2, 'fft2')
+    test_fft_with_order(np.float64, order, np.fft.fft2, 'fft2')
+    test_fft_with_order(np.complex64, order, np.fft.fft2, 'fft2')
+    test_fft_with_order(np.complex128, order, np.fft.fft2, 'fft2')
+
+    test_fft_with_order(np.float32, order, np.fft.fftn, 'fftn')
+    test_fft_with_order(np.float64, order, np.fft.fftn, 'fftn')
+    test_fft_with_order(np.complex64, order, np.fft.fftn, 'fftn')
+    test_fft_with_order(np.complex128, order, np.fft.fftn, 'fftn')
+
+    test_fft_with_order(np.float32, order, np.fft.ifft, 'ifft')
+    test_fft_with_order(np.float64, order, np.fft.ifft, 'ifft')
+    test_fft_with_order(np.complex64, order, np.fft.ifft, 'ifft')
+    test_fft_with_order(np.complex128, order, np.fft.ifft, 'ifft')
+
+    test_fft_with_order(np.float32, order, np.fft.ifft2, 'ifft2')
+    test_fft_with_order(np.float64, order, np.fft.ifft2, 'ifft2')
+    test_fft_with_order(np.complex64, order, np.fft.ifft2, 'ifft2')
+    test_fft_with_order(np.complex128, order, np.fft.ifft2, 'ifft2')
+
+    test_fft_with_order(np.float32, order, np.fft.ifftn, 'ifftn')
+    test_fft_with_order(np.float64, order, np.fft.ifftn, 'ifftn')
+    test_fft_with_order(np.complex64, order, np.fft.ifftn, 'ifftn')
+    test_fft_with_order(np.complex128, order, np.fft.ifftn, 'ifftn')
+
+for order in ('F', 'C'):
+    for n in [None, 7, 12]:
+        test_fft_output_order(order, n)
+
+test_irfft_with_n_1_regression()
+test_irfft_with_n_large_regression()
+
+for fft in (np.fft.fft, np.fft.ifft, np.fft.rfft, np.fft.irfft):
+    for data in (np.array([False, True, False]),
+                 np.arange(10, dtype=np.uint8),
+                 np.arange(5, dtype=np.int16)):
+        test_fft_with_integer_or_bool_input(data, fft)
+
+
+# Helper Tests
+
+import numpy.fft as fft
+
+@test
+def TestFFTShift_test_definition():
+    x = [0, 1, 2, 3, 4, -4, -3, -2, -1]
+    y = [-4, -3, -2, -1, 0, 1, 2, 3, 4]
+    assert np.allclose(fft.fftshift(x), y)
+    assert np.allclose(fft.ifftshift(y), x)
+    x = [0, 1, 2, 3, 4, -5, -4, -3, -2, -1]
+    y = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4]
+    assert np.allclose(fft.fftshift(x), y)
+    assert np.allclose(fft.ifftshift(y), x)
+
+@test
+def TestFFTShift_test_inverse():
+    for n in [1, 4, 9, 100, 211]:
+        x = np.random.random((n,))
+        assert np.allclose(fft.ifftshift(fft.fftshift(x)), x)
+
+@test
+def TestFFTShift_test_axes_keyword():
+    freqs = [[0, 1, 2], [3, 4, -4], [-3, -2, -1]]
+    shifted = [[-1, -3, -2], [2, 0, 1], [-4, 3, 4]]
+    assert np.allclose(fft.fftshift(freqs, axes=(0, 1)), shifted)
+    assert np.allclose(fft.fftshift(freqs, axes=0),
+                              fft.fftshift(freqs, axes=(0,)))
+    assert np.allclose(fft.ifftshift(shifted, axes=(0, 1)), freqs)
+    assert np.allclose(fft.ifftshift(shifted, axes=0),
+                              fft.ifftshift(shifted, axes=(0,)))
+
+    assert np.allclose(fft.fftshift(freqs), shifted)
+    assert np.allclose(fft.ifftshift(shifted), freqs)
+
+@test
+def TestFFTShift_test_uneven_dims():
+    """ Test 2D input, which has uneven dimension sizes """
+    freqs = [
+        [0, 1],
+        [2, 3],
+        [4, 5]
+    ]
+
+    # shift in dimension 0
+    shift_dim0 = [
+        [4, 5],
+        [0, 1],
+        [2, 3]
+    ]
+    assert np.allclose(fft.fftshift(freqs, axes=0), shift_dim0)
+    assert np.allclose(fft.ifftshift(shift_dim0, axes=0), freqs)
+    assert np.allclose(fft.fftshift(freqs, axes=(0,)), shift_dim0)
+    assert np.allclose(fft.ifftshift(shift_dim0, axes=(0,)), freqs)
+
+    # shift in dimension 1
+    shift_dim1 = [
+        [1, 0],
+        [3, 2],
+        [5, 4]
+    ]
+    assert np.allclose(fft.fftshift(freqs, axes=1), shift_dim1)
+    assert np.allclose(fft.ifftshift(shift_dim1, axes=1), freqs)
+
+    # shift in both dimensions
+    shift_dim_both = [
+        [5, 4],
+        [1, 0],
+        [3, 2]
+    ]
+    assert np.allclose(fft.fftshift(freqs, axes=(0, 1)), shift_dim_both)
+    assert np.allclose(fft.ifftshift(shift_dim_both, axes=(0, 1)), freqs)
+    assert np.allclose(fft.fftshift(freqs, axes=(0, 1)), shift_dim_both)
+    assert np.allclose(fft.ifftshift(shift_dim_both, axes=(0, 1)), freqs)
+
+    # axes=None (default) shift in all dimensions
+    assert np.allclose(fft.fftshift(freqs, axes=None), shift_dim_both)
+    assert np.allclose(fft.ifftshift(shift_dim_both, axes=None), freqs)
+    assert np.allclose(fft.fftshift(freqs), shift_dim_both)
+    assert np.allclose(fft.ifftshift(shift_dim_both), freqs)
+
+@test
+def TestFFTFreq_test_definition():
+    x = [0, 1, 2, 3, 4, -4, -3, -2, -1]
+    assert np.allclose(9*fft.fftfreq(9), x)
+    assert np.allclose(9*np.pi*fft.fftfreq(9, np.pi), x)
+    x = [0, 1, 2, 3, 4, -5, -4, -3, -2, -1]
+    assert np.allclose(10*fft.fftfreq(10), x)
+    assert np.allclose(10*np.pi*fft.fftfreq(10, np.pi), x)
+
+@test
+def TestRFFTFreq_test_definition():
+    x = [0, 1, 2, 3, 4]
+    assert np.allclose(9*fft.rfftfreq(9), x)
+    assert np.allclose(9*np.pi*fft.rfftfreq(9, np.pi), x)
+    x = [0, 1, 2, 3, 4, 5]
+    assert np.allclose(10*fft.rfftfreq(10), x)
+    assert np.allclose(10*np.pi*fft.rfftfreq(10, np.pi), x)
+
+@test
+def TestIRFFTN_test_not_last_axis_success():
+    ar, ai = np.random.random((2, 16, 8, 32))
+    a = ar + ai*1j
+
+    axes = (-2,)
+
+    # Should not raise error
+    fft.irfftn(a, axes=axes)
+
+
+TestFFTShift_test_definition()
+TestFFTShift_test_inverse()
+TestFFTShift_test_axes_keyword()
+TestFFTShift_test_uneven_dims()
+TestFFTFreq_test_definition()
+TestRFFTFreq_test_definition()
+TestIRFFTN_test_not_last_axis_success()

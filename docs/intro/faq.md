@@ -70,7 +70,7 @@ performance drawbacks.
   and language features with respect to Python.
 
 You can see results from [Codon's benchmark suite](https://github.com/exaloop/codon/tree/develop/bench)
-suite at [exaloop.io/benchmarks](https://exaloop.io/benchmarks).
+suite at [exaloop.io/#benchmarks](https://exaloop.io/#benchmarks).
 More benchmarks can be found in the [2019 paper](https://dl.acm.org/doi/10.1145/3360551)
 on bioinformatics-specific use cases (note that the name used in that paper is that of Codon's predecessor,
 "Seq").
@@ -115,24 +115,11 @@ Please report any cases where Codon is noticeably slower than Python as bugs on 
 
 # Usage
 
-## Is Codon free?
+## Is Codon free and open source?
 
-Codon is and always will be free for non-production use. That means you can use Codon
-freely for personal, academic, or other non-commercial applications.
-
-## Is Codon open source?
-
-Codon is licensed under the [Business Source License (BSL)](https://mariadb.com/bsl11/), which
-means its source code is publicly available and it's free for non-production use. The BSL
-is technically *not* an "open source" license, although in many circumstances you can still treat
-Codon as you would any other open source project. Importantly, as per the BSL, each version of
-Codon converts to an actual open source license (specifically, [Apache](https://www.apache.org/licenses/LICENSE-2.0))
-after 3 years.
-
-## How can I use Codon for production or commercial use?
-
-Please reach out to [info@exaloop.io](mailto:info@exaloop.io) to inquire about a
-production-use license.
+Yes, Codon is free and open source under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+Exaloop offers enterprise and custom solutions on top of Codon for a variety of applications, use cases and
+industries; please email [info@exaloop.io](mailto:info@exaloop.io) to learn more.
 
 # Contributing
 
@@ -163,5 +150,5 @@ have any question or suggestions, please feel free to ask in [the forum](https:/
 ## Is there a Contributor License Agreement (CLA)?
 
 Yes, there is a CLA that is required to be agreed to before any pull requests are merged.
-Please see [exaloop.io/cla.txt](https://exaloop.io/cla.txt) for more information. To agree to
+Please see [exaloop.io/legal/cla](https://exaloop.io/legal/cla) for more information. To agree to
 the CLA, send an email with your GitHub username to [info@exaloop.io](mailto:info@exaloop.io).

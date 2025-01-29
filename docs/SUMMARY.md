@@ -10,7 +10,7 @@
 * [Release notes](intro/releases.md)
 * [Roadmap](intro/roadmap.md)
 
-## Language
+## Language Features
 
 * [Basics](language/basics.md)
 * [Collections](language/collections.md)
@@ -24,6 +24,7 @@
 
 ## Interoperability
 
+* [NumPy support](interop/numpy.md)
 * [Python integration](interop/python.md)
 * [Python decorator](interop/decorator.md)
 * [Python extensions](interop/pyext.md)
