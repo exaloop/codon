@@ -216,6 +216,6 @@ jobs:
           name: ${{ matrix.os }}-x86_64
           path: codon-linux-x86_64.tar.gz
 
-      # - name: Publish Package
-      #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
-      #   uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Publish Package
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
+        uses: pypa/gh-action-pypi-publish@release/v1
