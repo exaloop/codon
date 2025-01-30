@@ -198,23 +198,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./codon-darwin-x86_64.tar.gz
-          asset_name: codon-darwin-x86_64.tar.gz
+          asset_path: ./codon-darwin-arm64.tar.gz
+          asset_name: codon-darwin-arm64.tar.gz
           asset_content_type: application/gzip
 
       - name: Upload Artifacts
         if: startsWith(matrix.os, 'macos')
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-x86_64
-          path: codon-darwin-x86_64.tar.gz
+          name: ${{ matrix.os }}-arm64
+          path: codon-darwin-arm64.tar.gz
 
       - name: Upload Artifacts
-        if: startsWith(matrix.os, 'ubuntu')
+        if: startsWith(matrix.os, 'ubuntu') && matrix.os != 'ubuntu-arm-latest'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.os }}-x86_64
           path: codon-linux-x86_64.tar.gz
+
+      - name: Upload Artifacts
+        if: matrix.os == 'ubuntu-arm-latest'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-arm64
+          path: codon-linux-arm64.tar.gz
 
       - name: Publish Package
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && startsWith(matrix.os, 'ubuntu')
