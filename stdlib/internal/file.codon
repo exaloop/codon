@@ -17,6 +17,12 @@ class File:
             raise IOError(f"file {path} could not be opened")
         self._reset()
 
+    def __init__(self, fd: int, mode: str):
+        self.fp = _C.fdopen(fd, mode.c_str()) 
+        if not self.fp:
+            raise IOError(f"file descriptor {fd} could not be opened")
+        self._reset()
+
     def _errcheck(self, msg: str):
         err = int(_C.ferror(self.fp))
         if err:
@@ -394,6 +400,9 @@ class bzFile:
 
 def open(path: str, mode: str = "r") -> File:
     return File(path, mode)
+
+def open(fd: int, mode: str = "r") -> File:
+    return File(fd, mode)
 
 def gzopen(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)
