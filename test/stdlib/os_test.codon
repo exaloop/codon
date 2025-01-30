@@ -1,0 +1,11 @@
+import os
+
+@test
+def test_environ_setdefault():
+    rnd_env_key = "RND_KZBAF"
+    assert os.environ.setdefault(rnd_env_key, "VALUE_1") == "VALUE_1"
+    assert os.environ[rnd_env_key] == "VALUE_1"
+    assert os.environ.setdefault(rnd_env_key, "VALUE_2") == "VALUE_1"
+    assert os.environ[rnd_env_key] == "VALUE_1"
+
+test_environ_setdefault()
