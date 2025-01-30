@@ -483,9 +483,15 @@ Expr *TypecheckVisitor::transformSuper() {
 /// the argument is a variable binding.
 Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
   auto id = cast<IdExpr>(expr->begin()->getExpr());
+  if (!id) {
+    // Case where id is guarded by a check
+    if (auto sexp = cast<StmtExpr>(expr->begin()->getExpr()))
+      id = cast<IdExpr>(sexp->getExpr());
+  }
   auto val = id ? ctx->find(id->getValue(), getTime()) : nullptr;
-  if (!val || !val->isVar())
+  if (!val || !val->isVar()) {
     E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
+  }
 
   expr->begin()->value = transform(expr->begin()->getExpr());
   unify(expr->getType(),

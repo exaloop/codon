@@ -125,9 +125,16 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
               }
             } else if (auto u = unbound->getLink()) {
               types::Type::Unification undo;
-              if (u->defaultType &&
-                  u->unify(extractClassType(u->defaultType.get()), &undo) >= 0) {
-                anotherRound = true;
+              if (u->defaultType) {
+                if (u->defaultType->getClass()) { // type[...]
+                  if (u->unify(extractClassType(u->defaultType.get()), &undo) >= 0) {
+                    anotherRound = true;
+                  }
+                } else { // generic
+                  if (u->unify(u->defaultType.get(), &undo) >= 0) {
+                    anotherRound = true;
+                  }
+                }
               }
             }
           }

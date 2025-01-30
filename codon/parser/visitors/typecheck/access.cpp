@@ -496,8 +496,9 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   if (generic) {
     if (generic->isStatic) {
       unify(expr->getType(), generic->getType());
-      if (realize(expr->getType()))
+      if (realize(expr->getType())) {
         return transform(generic->type->getStatic()->getStaticExpr());
+      }
     } else {
       unify(expr->getType(), instantiateTypeVar(generic->getType()));
       if (realize(expr->getType()))
