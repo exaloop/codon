@@ -79,7 +79,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // used to prevent early realization of compile_error
   expr->setAttribute(Attr::ParentCallExpr);
   if (part.isPartial)
-    expr->expr->setAttribute(Attr::ExprDoNotRealize);
+    expr->getExpr()->setAttribute(Attr::ExprDoNotRealize);
   expr->expr = transform(expr->getExpr());
   expr->eraseAttribute(Attr::ParentCallExpr);
   if (isUnbound(expr->getExpr()))

@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
 
+#include <algorithm>
 #include <string>
 #include <tuple>
 
@@ -396,7 +397,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
   }
   stmt->setAttribute(Attr::Module, ctx->moduleName.path);
-  ctx->cache->overloads[rootName].push_back(canonicalName);
 
   // Make function AST and cache it for later realization
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite);
@@ -422,6 +422,19 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   funcTyp = std::static_pointer_cast<types::FuncType>(
       funcTyp->generalize(ctx->typecheckLevel));
   fn.type = funcTyp;
+
+  auto &overloads = ctx->cache->overloads[rootName];
+  if (rootName == "Tuple.__new__") {
+    overloads.insert(
+        std::upper_bound(overloads.begin(), overloads.end(), canonicalName,
+                         [&](const auto &a, const auto &b) {
+                           return getFunction(a)->getType()->funcGenerics.size() <
+                                  getFunction(b)->getType()->funcGenerics.size();
+                         }),
+        canonicalName);
+  } else {
+    overloads.push_back(canonicalName);
+  }
 
   ctx->addFunc(stmt->name, rootName, funcTyp);
   ctx->addFunc(canonicalName, canonicalName, funcTyp);

@@ -20,6 +20,8 @@ class str:
     def __new__(what) -> str:
         if isinstance(what, Union):
             return __internal__.union_str(what)
+        elif isinstance(what, type):
+            return what.__repr__()
         elif hasattr(what, "__str__"):
             return what.__str__()
         else:

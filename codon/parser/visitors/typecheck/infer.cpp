@@ -405,8 +405,12 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
       bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
       if (!isStatic && at && at->getStatic())
         at = at->getStatic()->getNonStaticType()->shared_from_this();
-      auto v = ctx->addVar(getUnmangledName(varName), varName,
-                           std::make_shared<LinkType>(at));
+      if (at->is("TypeWrap")) {
+        ctx->addType(getUnmangledName(varName), varName,
+                     instantiateTypeVar(extractClassGeneric(at.get())));
+      } else {
+        ctx->addVar(getUnmangledName(varName), varName, std::make_shared<LinkType>(at));
+      }
     }
   }
 

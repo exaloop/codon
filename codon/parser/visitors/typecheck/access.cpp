@@ -170,6 +170,12 @@ void TypecheckVisitor::visit(DotExpr *expr) {
           transform(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
     return;
   }
+  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
+    resultExpr =
+        transform(N<CallExpr>(N<IdExpr>("std.internal.internal.__type_repr__.0"),
+                              expr->getExpr(), N<EllipsisExpr>()));
+    return;
+  }
   // Special case: expr.__is_static__
   if (expr->getMember() == "__is_static__") {
     if (expr->getExpr()->isDone())

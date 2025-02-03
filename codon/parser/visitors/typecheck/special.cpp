@@ -543,7 +543,9 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   }
 
   auto tei = cast<IdExpr>(typExpr);
-  if (tei && tei->getValue() == "type[Tuple]") {
+  if (tei && tei->getValue() == "type") {
+    return transform(N<BoolExpr>(isTypeExpr(expr->begin()->value)));
+  } else if (tei && tei->getValue() == "type[Tuple]") {
     return transform(N<BoolExpr>(typ->is(TYPE_TUPLE)));
   } else if (tei && tei->getValue() == "type[ByVal]") {
     return transform(N<BoolExpr>(typ->isRecord()));
@@ -632,12 +634,14 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
       a.value = transform(a.getExpr());
       if (!a.getExpr()->getClassType())
         return nullptr;
-      args.emplace_back("", extractType(a));
+      auto t = extractType(a);
+      args.emplace_back("", t->is("TypeWrap") ? extractClassGeneric(t) : t);
     }
   }
   for (auto &[n, ne] : extractNamedTuple((*expr)[2].getExpr())) {
     ne = transform(ne);
-    args.emplace_back(n, extractType(ne));
+    auto t = extractType(ne);
+    args.emplace_back(n, t->is("TypeWrap") ? extractClassGeneric(t) : t);
   }
 
   if (typ->getUnion()) {
@@ -662,9 +666,6 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   bool exists = !findMethod(typ->getClass(), member).empty() ||
                 findMember(typ->getClass(), member);
   if (exists && args.size() > 1) {
-    for (auto &a: args)
-      if (a.second->is("TypeWrap"))
-        a.second = extractClassGeneric(a.second);
     exists &= findBestMethod(typ, member, args) != nullptr;
   }
   return transform(N<BoolExpr>(exists));

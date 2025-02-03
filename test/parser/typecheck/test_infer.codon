@@ -918,17 +918,45 @@ def foo(a):
     print(a().__class__.__name__, a())
 
 foo(float)
-#: TypeWrap[float] <class 'float'>
+#: float <class 'float'>
 #: float 0
 print(float)
 #: <class 'float'>
 foo(list[int])
-#: TypeWrap[List[int]] <class 'List[int]'>
+#: List[int] <class 'List[int]'>
 #: List[int] []
 print(list[int])
 #: <class 'List[int]'>
 foo(type(list[int]))
-#: TypeWrap[List[int]] <class 'List[int]'>
+#: List[int] <class 'List[int]'>
 #: List[int] []
 
 # TODO: print(list)
+
+def typtest(a, b):
+    print isinstance(a, b)
+    print isinstance(a, int)
+    print(a)
+    print(b)
+    print(a.__repr__())
+
+typtest(int, int)
+#: True
+#: True
+#: <class 'int'>
+#: <class 'int'>
+#: <class 'int'>
+typtest(int, float)
+#: False
+#: True
+#: <class 'int'>
+#: <class 'float'>
+#: <class 'int'>
+
+print(List[int])
+print(List[int].__repr__())
+# print(int.__repr__())  # this catches int.__repr__ as it should...
+print(type(int).__repr__())
+#: <class 'List[int]'>
+#: <class 'List[int]'>
+#: <class 'int'>

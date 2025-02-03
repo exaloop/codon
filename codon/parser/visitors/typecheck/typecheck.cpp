@@ -557,8 +557,9 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   if ((*expr)->getType()->isStaticType() &&
       (!expectedType || !expectedType->isStaticType()))
     (*expr)->setType(getUnderlyingStaticType((*expr)->getType())->shared_from_this());
-  if (canWrap && fn)
+  if (canWrap && fn) {
     *expr = transform(fn(*expr));
+  }
   return canWrap;
 }
 
@@ -725,6 +726,15 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     } else {
       return {false, nullptr, nullptr};
     }
+  }
+
+  else if (exprClass && exprClass->is(TYPE_TYPE) && expectedClass &&
+           expectedClass->is("TypeWrap")) {
+    type = instantiateType(getStdLibType("TypeWrap"),
+                           std::vector<types::Type *>{exprClass});
+    fn = [this](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>("TypeWrap"), expr);
+    };
   }
 
   else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {

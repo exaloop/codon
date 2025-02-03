@@ -788,6 +788,9 @@ class __cast__:
     def conv_float(obj: float) -> int:
         return int(obj)
 
+def __type_repr__(T: type):
+    return f"<class '{T.__name__}'>"
+
 @extend
 class TypeWrap:
     def __new__(T: type) -> TypeWrap[T]:
@@ -800,7 +803,7 @@ class TypeWrap:
         return T(*args, **kwargs)
 
     def __repr__(self):
-        return f"<class '{T.__name__}'>"
+        return __type_repr__(T)
 
     @property
     def __name__(self):
