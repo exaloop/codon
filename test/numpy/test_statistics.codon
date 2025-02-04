@@ -248,6 +248,67 @@ test_correlate(np.array([1 + 0j, 2 + 0j, 3 + 0j, 4 + 1j]),
                np.array([8. + 1.j, 11. + 5.j]))
 
 @test
+def test_correlate2():
+    # Integer inputs
+    a = np.array([1, 2, 3])
+    b = np.array([4, 5, 6])
+    assert np.allclose(np.correlate(a, b, mode="valid"), [32])
+    assert np.allclose(np.correlate(a, b, mode="same"), [17, 32, 23])
+    assert np.allclose(np.correlate(a, b, mode="full"), [6, 17, 32, 23, 12])
+
+    # Floating-point inputs
+    a = np.array([1.5, 2.5, 3.5])
+    b = np.array([4.0, 5.0, 6.0])
+    assert np.allclose(np.correlate(a, b, mode="valid"), [39.5])
+    assert np.allclose(np.correlate(a, b, mode="same"), [22.5, 39.5, 27.5])
+    assert np.allclose(np.correlate(a, b, mode="full"), [9.0, 22.5, 39.5, 27.5, 14.0])
+
+    # Complex numbers
+    a = np.array([1+2j, 3+4j])
+    b = np.array([5+6j, 7+8j])
+    assert np.allclose(np.correlate(a, b, mode="valid"), [70+8j])
+    assert np.allclose(np.correlate(a, b, mode="same"), [23+6j, 70+8j])
+    assert np.allclose(np.correlate(a, b, mode="full"), [23+6j, 70+8j, 39+2j])
+
+    # Different-length arrays
+    a = np.array([1, 2, 3, 4])
+    b = np.array([0, 1])
+    assert np.allclose(np.correlate(a, b, mode="valid"), [2, 3, 4])
+    assert np.allclose(np.correlate(a, b, mode="same"), [1, 2, 3, 4])
+    assert np.allclose(np.correlate(a, b, mode="full"), [1, 2, 3, 4, 0])
+    a = np.array([0, 1])
+    b = np.array([1, 2, 3, 4])
+    assert np.allclose(np.correlate(a, b, mode="valid")[::-1], [2, 3, 4])
+    assert np.allclose(np.correlate(a, b, mode="same")[::-1], [1, 2, 3, 4])
+    assert np.allclose(np.correlate(a, b, mode="full")[::-1], [1, 2, 3, 4, 0])
+
+    # Large array test
+    a = np.arange(20)
+    b = np.arange(10)
+    expected_valid = np.array([np.sum(a[i : i + len(b)] * b) for i in range(len(a) - len(b) + 1)])
+    expected_full = np.correlate(a, b, mode="full")
+    expected_same = np.correlate(a, b, mode="same")
+    assert np.allclose(np.correlate(a, b, mode="valid"), expected_valid)
+    assert np.allclose(np.correlate(a, b, mode="full"), expected_full)
+    assert np.allclose(np.correlate(a, b, mode="same"), expected_same)
+
+    # Different dtypes (int and float)
+    a = np.array([1, 2, 3], dtype=int)
+    b = np.array([1.5, 2.5, 3.5], dtype=float)
+    assert np.allclose(np.correlate(a, b, mode="valid"), [17.0])
+    assert np.allclose(np.correlate(a, b, mode="same"), [9.5, 17.0, 10.5])
+    assert np.allclose(np.correlate(a, b, mode="full"), [3.5, 9.5, 17.0, 10.5, 4.5])
+
+    # Edge case: Single-element arrays
+    a = np.array([5])
+    b = np.array([10])
+    assert np.allclose(np.correlate(a, b, mode="valid"), [50])
+    assert np.allclose(np.correlate(a, b, mode="same"), [50])
+    assert np.allclose(np.correlate(a, b, mode="full"), [50])
+
+test_correlate2()
+
+@test
 def test_bincount(x, expected, weights=None, minlength=0):
     assert (np.bincount(x, weights=weights,
                         minlength=minlength) == expected).all()

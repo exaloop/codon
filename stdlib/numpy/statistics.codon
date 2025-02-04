@@ -270,84 +270,174 @@ def corrcoef(x, y=None, rowvar=True, dtype: type = NoneType):
 
     return c
 
-def correlate(a, b, mode: Static[str] = 'valid'):
+def _correlate(a, b, mode: str):
+
+    def kernel(d, dstride: int, nd: int, dtype: type,
+               k, kstride: int, nk: Static[int], ktype: type,
+               out, ostride: int):
+        for i in range(nd):
+            acc = util.zero(dtype)
+            for j in staticrange(nk):
+                acc += d[(i + j) * dstride] * k[j * kstride]
+            out[i * ostride] = acc
+
+    def small_correlate(d, dstride: int, nd: int, dtype: type,
+                        k, kstride: int, nk: int, ktype: type,
+                        out, ostride: int):
+        if dtype is not ktype:
+            return False
+
+        dstride //= util.sizeof(dtype)
+        kstride //= util.sizeof(dtype)
+        ostride //= util.sizeof(dtype)
+
+        if nk == 1:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=1, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 2:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=2, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 3:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=3, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 4:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=4, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 5:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=5, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 6:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=6, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 7:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=7, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 8:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=8, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 9:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=9, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 10:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=10, ktype=ktype,
+                   out=out, ostride=ostride)
+        elif nk == 11:
+            kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,
+                   k=k, kstride=kstride, nk=11, ktype=ktype,
+                   out=out, ostride=ostride)
+        else:
+            return False
+
+        return True
+
+    def dot(_ip1: Ptr[T1], is1: int, _ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
+            T1: type, T2: type, T3: type):
+        ip1 = _ip1.as_byte()
+        ip2 = _ip2.as_byte()
+        ans = util.zero(T3)
+
+        for i in range(n):
+            e1 = Ptr[T1](ip1)[0]
+            e2 = Ptr[T2](ip2)[0]
+            ans += util.cast(e1, T3) * util.cast(e2, T3)
+            ip1 += is1
+            ip2 += is2
+
+        op[0] = ans
+
+    def incr(p: Ptr[T], s: int, T: type):
+        return Ptr[T](p.as_byte() + s)
+
+    n1 = a.size
+    n2 = b.size
+    length = n1
+    n = n2
+
+    if mode == 'valid':
+        length = length = length - n + 1
+        n_left = 0
+        n_right = 0
+    elif mode == 'same':
+        n_left = n >> 1
+        n_right = n - n_left - 1
+    elif mode == 'full':
+        n_right = n - 1
+        n_left = n - 1
+        length = length + n - 1
+    else:
+        raise ValueError(
+            f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})"
+        )
+
+    dt = type(util.coerce(a.dtype, b.dtype))
+    ret = empty(length, dtype=dt)
+
+    is1 = a.strides[0]
+    is2 = b.strides[0]
+    op = ret.data
+    os = ret.itemsize
+    ip1 = a.data
+    ip2 = Ptr[b.dtype](b.data.as_byte() + n_left * is2)
+    n = n - n_left
+
+    for i in range(n_left):
+        dot(ip1, is1, ip2, is2, op, n)
+        n += 1
+        ip2 = incr(ip2, -is2)
+        op = incr(op, os)
+
+    if small_correlate(ip1, is1, n1 - n2 + 1, a.dtype,
+                       ip2, is2, n, b.dtype,
+                       op, os):
+        ip1 = incr(ip1, is1 * (n1 - n2 + 1))
+        op = incr(op, os * (n1 - n2 + 1))
+    else:
+        for i in range(n1 - n2 + 1):
+            dot(ip1, is1, ip2, is2, op, n)
+            ip1 = incr(ip1, is1)
+            op = incr(op, os)
+
+    for i in range(n_right):
+        n -= 1
+        dot(ip1, is1, ip2, is2, op, n)
+        ip1 = incr(ip1, is1)
+        op = incr(op, os)
+
+    return ret
+
+def correlate(a, b, mode: str = 'valid'):
     a = asarray(a)
     b = asarray(b)
 
     if a.ndim != 1 or b.ndim != 1:
         compile_error('object too deep for desired array')
 
-    n1 = len(a)
-    n2 = len(b)
+    n1 = a.size
+    n2 = b.size
+
+    if n1 == 0:
+        raise ValueError("first argument cannot be empty")
+
+    if n2 == 0:
+        raise ValueError("second argument cannot be empty")
+
+    if b.dtype is complex or b.dtype is complex64:
+        b = b.conjugate()
+
     if n1 < n2:
-        inverted = 1
-        inv = n1
-        n1 = n2
-        n2 = inv
-        correlate(b, a, mode)
+        return _correlate(b, a, mode=mode)[::-1]
     else:
-        inverted = 0
-
-    length = n1
-    n = n2
-    if mode == 'valid':
-        length = length - n + 1
-        if (a.dtype is complex or b.dtype is complex or a.dtype is complex64
-                or b.dtype is complex64):
-            ret = zeros(length, dtype=complex)
-        else:
-            ret = empty(length)
-        for i in range(length):
-            for j in range(n):
-                if inverted == 0:
-                    ret.data[i] += a._ptr(
-                        (j + i, ))[0] * conjugate(b._ptr((j, ))[0])
-                else:
-                    ret.data[i] += a._ptr((j, ))[0] * b._ptr((j + i, ))[0]
-    elif mode == 'same':
-        if (a.dtype is complex or b.dtype is complex or a.dtype is complex64
-                or b.dtype is complex64):
-            ret = zeros(length, dtype=complex)
-        else:
-            ret = empty(length)
-        for i in range(length):
-            for j in range(n):
-                signal_index = i - int(n / 2) + j
-                if signal_index >= 0 and signal_index < length:
-                    if inverted == 0:
-                        ret.data[i] += a._ptr(
-                            (signal_index, ))[0] * conjugate(b._ptr((j, ))[0])
-                    else:
-                        ret.data[i] += a._ptr((j, ))[0] * b._ptr(
-                            (signal_index, ))[0]
-    elif mode == 'full':
-        full_length = length + n - 1
-        if (a.dtype is complex or b.dtype is complex or a.dtype is complex64
-                or b.dtype is complex64):
-            ret = zeros(full_length, dtype=complex)
-        else:
-            ret = empty(full_length)
-        for i in range(full_length):
-            for j in range(n):
-                signal_index = i + j - 2
-                if signal_index >= 0 and signal_index < length:
-                    if inverted == 0:
-                        ret.data[i] += a._ptr(
-                            (signal_index, ))[0] * conjugate(b._ptr((j, ))[0])
-                    else:
-                        ret.data[i] += a._ptr((j, ))[0] * b._ptr(
-                            (signal_index, ))[0]
-    else:
-        raise ValueError(
-            f"mode must be one of 'valid', 'same', or 'full' (got {repr(mode)})"
-        )
-
-    if inverted:
-        ret = ret[::-1]
-        if ret.dtype is complex or ret.dtype is complex64:
-            ret.map(conjugate, inplace=True)
-
-    return ret
+        return _correlate(a, b, mode=mode)
 
 def bincount(x, weights=None, minlength: int = 0):
     x = asarray(x).astype(int)
