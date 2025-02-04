@@ -410,6 +410,7 @@ public:
                                                  const std::vector<std::string> &);
   std::vector<Stmt *>
   populateStaticHeterogenousTupleLoop(Expr *, const std::vector<std::string> &);
+  ParserErrors findTypecheckErrors(Stmt *n);
 
 public:
 public:

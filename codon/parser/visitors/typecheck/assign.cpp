@@ -268,9 +268,16 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
 
   // Mark declarations or generalizedtype/functions as done
-  if (((!assign->getRhs() || assign->getRhs()->isDone()) &&
-       realize(assign->getLhs()->getType())) ||
-      (assign->getRhs() && !val->isVar() && !val->type->hasUnbounds())) {
+  if ((!assign->getRhs() || assign->getRhs()->isDone()) &&
+      assign->getLhs()->getType()->canRealize()) {
+    if (auto r = realize(assign->getLhs()->getType())) {
+      // overwrite types to remove dangling unbounds with some partials...
+      assign->getLhs()->setType(r->shared_from_this());
+      if (assign->getRhs())
+        assign->getRhs()->setType(r->shared_from_this());
+      assign->setDone();
+    }
+  } else if (assign->getRhs() && !val->isVar() && !val->type->hasUnbounds()) {
     assign->setDone();
   }
 

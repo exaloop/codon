@@ -67,8 +67,8 @@ Stmt *TypecheckVisitor::apply(
     throw exc::ParserException(std::move(err));
   auto n = tv.inferTypes(suite, true);
   if (!n) {
-    LOG("[error=>] {}", suite->toString(2));
-    E(Error::CUSTOM, suite->getSrcInfo(), "cannot typecheck the program");
+    auto errors = tv.findTypecheckErrors(suite);
+    throw exc::ParserException(errors);
   }
 
   suite = tv.N<SuiteStmt>();
@@ -160,8 +160,10 @@ Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *nod
   auto tv = TypecheckVisitor(ctx, preamble);
   auto n = tv.inferTypes(node, true);
   ctx->setFilename(oldFilename);
-  if (!n)
-    E(Error::CUSTOM, tv.getSrcInfo(), "cannot typecheck the program");
+  if (!n) {
+    auto errors = tv.findTypecheckErrors(node);
+    throw exc::ParserException(errors);
+  }
   if (!ctx->cache->errors.empty())
     throw exc::ParserException(ctx->cache->errors);
 
@@ -1417,6 +1419,47 @@ types::FuncType *TypecheckVisitor::extractFunction(types::Type *t) const {
   if (auto p = t->getPartial())
     return p->getPartialFunc();
   return nullptr;
+}
+
+class SearchVisitor : public CallbackASTVisitor<void, void> {
+  std::function<bool(Expr *)> exprPredicate;
+  std::function<bool(Stmt *)> stmtPredicate;
+
+public:
+  std::vector<ASTNode *> result;
+
+public:
+  SearchVisitor(const std::function<bool(Expr *)> &exprPredicate,
+                const std::function<bool(Stmt *)> &stmtPredicate)
+      : exprPredicate(exprPredicate), stmtPredicate(stmtPredicate) {}
+  void transform(Expr *expr) override {
+    if (expr && exprPredicate(expr)) {
+      result.push_back(expr);
+    } else {
+      SearchVisitor v(exprPredicate, stmtPredicate);
+      if (expr)
+        expr->accept(v);
+      result.insert(result.end(), v.result.begin(), v.result.end());
+    }
+  }
+  void transform(Stmt *stmt) override {
+    if (stmt && stmtPredicate(stmt)) {
+      SearchVisitor v(exprPredicate, stmtPredicate);
+      stmt->accept(v);
+      result.insert(result.end(), v.result.begin(), v.result.end());
+    }
+  }
+};
+
+ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) {
+  SearchVisitor v([](Expr *e) { return !e->isDone(); },
+                  [](Stmt *s) { return !s->isDone(); });
+  v.transform(n);
+  std::vector<ErrorMessage> errors;
+  for (auto e : v.result)
+    errors.emplace_back(fmt::format("cannot typecheck {}", e->toString(0)),
+                        e->getSrcInfo());
+  return ParserErrors(errors);
 }
 
 ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {

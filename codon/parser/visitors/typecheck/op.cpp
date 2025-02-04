@@ -512,7 +512,8 @@ Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
   }
 
   // Case: static integers
-  if (expr->getOp() == "-" || expr->getOp() == "+" || expr->getOp() == "!") {
+  if (expr->getOp() == "-" || expr->getOp() == "+" || expr->getOp() == "!" ||
+      expr->getOp() == "~") {
     if (expr->getExpr()->getType()->canRealize()) {
       int64_t value = getIntLiteral(expr->getExpr()->getType());
       if (expr->getOp() == "+")
