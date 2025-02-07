@@ -38,16 +38,21 @@ bool isCallOf(const Value *value, const std::string &name,
 
     unsigned i = 0;
     for (auto *arg : *call) {
-      if (!arg->getType()->is(inputs[i++]))
+      if (inputs[i] && !arg->getType()->is(inputs[i]))
         return false;
+      ++i;
     }
 
     if (output && !value->getType()->is(output))
       return false;
 
-    if (method &&
-        (inputs.empty() || !fn->getParentType() || !fn->getParentType()->is(inputs[0])))
-      return false;
+    if (method) {
+      if (inputs.empty() || !fn->getParentType())
+        return false;
+
+      if (inputs[0] && !fn->getParentType()->is(inputs[0]))
+        return false;
+    }
 
     return true;
   }

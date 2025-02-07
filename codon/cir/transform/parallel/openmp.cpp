@@ -402,7 +402,8 @@ struct ReductionIdentifier : public util::Operator {
   static void extractAssociativeOpChain(Value *v, const std::string &op,
                                         types::Type *type,
                                         std::vector<Value *> &result) {
-    if (util::isCallOf(v, op, {type, type}, type, /*method=*/true)) {
+    if (util::isCallOf(v, op, {type, nullptr}, type, /*method=*/true) ||
+        util::isCallOf(v, op, {nullptr, type}, type, /*method=*/true)) {
       auto *call = cast<CallInstr>(v);
       extractAssociativeOpChain(call->front(), op, type, result);
       extractAssociativeOpChain(call->back(), op, type, result);
@@ -450,7 +451,8 @@ struct ReductionIdentifier : public util::Operator {
 
     for (auto &rf : reductionFunctions) {
       if (rf.method) {
-        if (!util::isCallOf(item, rf.name, {type, type}, type, /*method=*/true))
+        if (!(util::isCallOf(item, rf.name, {type, nullptr}, type, /*method=*/true) ||
+              util::isCallOf(item, rf.name, {nullptr, type}, type, /*method=*/true)))
           continue;
       } else {
         if (!util::isCallOf(item, rf.name,
@@ -464,8 +466,7 @@ struct ReductionIdentifier : public util::Operator {
 
       if (rf.method) {
         std::vector<Value *> opChain;
-        extractAssociativeOpChain(callRHS, rf.name, callRHS->front()->getType(),
-                                  opChain);
+        extractAssociativeOpChain(callRHS, rf.name, type, opChain);
         if (opChain.size() < 2)
           continue;
 
