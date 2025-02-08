@@ -33,6 +33,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
   auto classItem = std::make_shared<TypecheckItem>("", "", ctx->getModule(), nullptr,
                                                    ctx->getScope());
   classItem->setSrcInfo(stmt->getSrcInfo());
+  std::shared_ptr<TypecheckItem> timedItem = nullptr;
   types::ClassType *typ = nullptr;
   if (!stmt->hasAttribute(Attr::Extend)) {
     classItem->canonicalName = canonicalName =
@@ -52,11 +53,14 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (canonicalName != TYPE_TYPE)
       classItem->type = instantiateTypeVar(classItem->getType());
 
+    timedItem = std::make_shared<TypecheckItem>(*classItem);
+    // timedItem->time = getTime();
+
     // Reference types are added to the context here.
     // Tuple types are added after class contents are parsed to prevent
     // recursive record types (note: these are allowed for reference types)
     if (!stmt->hasAttribute(Attr::Tuple)) {
-      ctx->add(name, classItem);
+      ctx->add(name, timedItem);
       ctx->addAlwaysVisible(classItem);
     }
   } else {
@@ -241,7 +245,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (!stmt->hasAttribute(Attr::Extend)) {
       // Now that we are done with arguments, add record type to the context
       if (stmt->hasAttribute(Attr::Tuple)) {
-        ctx->add(name, classItem);
+        ctx->add(name, timedItem);
         ctx->addAlwaysVisible(classItem);
       }
       // Create a cached AST.

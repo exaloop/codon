@@ -98,10 +98,30 @@ def ctx():
     bar(False)
 ctx()  #: ok
 
-#%% stdlib_name_clash,barebones
+#%% ctx_time_resolver,barebones
 def bar(j):
     # captures stdlib range, not foo's range
     for i in range(*j): print(i)
 def foo(range):
     bar(range)
 foo((1, 2))  #: 1
+
+# Test whether for loop variables respect ctx->add() time
+slopes = [1.0,2,3] if len("abc") <= 5 else None
+if slopes is not None:
+    for ixx in range(3):
+        slopes[ixx] = ixx
+for ixx in range(5):
+    ixx
+
+#%% capture_function_partial_proper_realize,barebones
+def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
+    def concat_inner(arrays, axis, out, dtype: type):
+        return 1
+
+    def concat_tuple(arrays, axis = 0, out = None, dtype: type = NoneType):
+        return concat_inner(arrays, axis, out=None, dtype=dtype)
+
+    return 1
+
+print concatenate((1, 2))  #: 1

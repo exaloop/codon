@@ -399,7 +399,10 @@ class A[T]:
     y: T = T()
     def foo(self, y): self.y = y
 a = A()
-a.foo(1) #! cannot typecheck the program
+a.foo(1)
+#! cannot typecheck
+#! cannot typecheck
+#! cannot typecheck
 
 #%% return_deduction,barebones
 def fun[T, R](x, y: T) -> R:
@@ -413,7 +416,7 @@ print fun(2, 1.1, float, byte).__class__.__name__ #: byte
 #%% return_auto_deduction_err,barebones
 def fun[T, R](x, y: T) -> R:
    	return byte(1)
-print fun(2, 1.1).__class__.__name__ #! cannot typecheck the program
+print fun(2, 1.1).__class__.__name__ #! cannot typecheck
 
 #%% random
 # shuffle used to fail before for some reason (sth about unbound variables)...
@@ -496,7 +499,11 @@ def tee(iterable, n=2):
     return list(gen(d) for d in deques)
 it = [1,2,3,4]
 a, b = tee(it)
-#! cannot typecheck the program
+#! cannot typecheck
+#! cannot typecheck
+#! cannot typecheck
+#! cannot typecheck
+#! cannot typecheck
 #! during the realization of tee(iterable: List[int], n: int)
 
 #%% new_syntax,barebones

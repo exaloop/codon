@@ -118,13 +118,15 @@ bool in(const std::string &m, const std::string &item) {
   return f != std::string::npos;
 }
 size_t startswith(const std::string &str, const std::string &prefix) {
-  if (prefix.empty()) return true;
+  if (prefix.empty())
+    return true;
   return (str.size() >= prefix.size() && str.substr(0, prefix.size()) == prefix)
              ? prefix.size()
              : 0;
 }
 size_t endswith(const std::string &str, const std::string &suffix) {
-  if (suffix.empty()) return true;
+  if (suffix.empty())
+    return true;
   return (str.size() >= suffix.size() &&
           str.substr(str.size() - suffix.size()) == suffix)
              ? suffix.size()
@@ -258,6 +260,11 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
     ext = ".py";
   seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
              "bad path substitution: {}, {}", s, root);
+  // LOG("{} -> {} {}", s, root, ext);
+  // Find toplevel enclosing import!
+  // for (auto &x: ctx->cache->imports) {
+  //   if (substr(x.module, )
+  // }
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::replace(module.begin(), module.end(), '/', '.');
   return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
@@ -312,9 +319,11 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
   }
 
   auto module0Root = llvm::sys::path::parent_path(getAbsolutePath(module0)).str();
-  return paths.empty() ? nullptr
-                       : std::make_shared<ImportFile>(
-                             getRoot(argv0, plugins, module0Root, paths[0]));
+  auto file = paths.empty() ? nullptr
+                            : std::make_shared<ImportFile>(
+                                  getRoot(argv0, plugins, module0Root, paths[0]));
+
+  return file;
 }
 
 } // namespace codon::ast

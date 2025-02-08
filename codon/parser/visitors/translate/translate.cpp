@@ -263,9 +263,14 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 void TranslateVisitor::visit(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
   if (ei && ei->getValue() == "__ptr__:0") {
-    seqassert(cast<IdExpr>((*expr)[0].value), "expected IdExpr, got {}",
-              *((*expr)[0].value));
-    auto key = cast<IdExpr>((*expr)[0].value)->getValue();
+    auto id = cast<IdExpr>(expr->begin()->getExpr());
+    if (!id) {
+      // Case where id is guarded by a check
+      if (auto sexp = cast<StmtExpr>(expr->begin()->getExpr()))
+        id = cast<IdExpr>(sexp->getExpr());
+    }
+    seqassert(id, "expected IdExpr, got {}", *((*expr)[0].value));
+    auto key = id->getValue();
     auto val = ctx->find(key);
     seqassert(val && val->getVar(), "{} is not a variable", key);
     result = make<ir::PointerValue>(expr, val->getVar());

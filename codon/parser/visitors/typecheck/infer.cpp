@@ -50,10 +50,16 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
   for (ctx->getBase()->iteration = 1;; ctx->getBase()->iteration++) {
     LOG_TYPECHECK("[iter] {} :: {}", ctx->getBase()->name, ctx->getBase()->iteration);
     if (ctx->getBase()->iteration >= MAX_TYPECHECK_ITER) {
-      LOG("[error=>] {}", result->toString(2));
-      E(Error::CUSTOM, result, "cannot typecheck '{}' in reasonable time",
-        ctx->getBase()->name.empty() ? "toplevel"
-                                     : getUnmangledName(ctx->getBase()->name));
+      // log("-> {}", result->toString(2));
+      ParserErrors errors;
+      errors.addError({ErrorMessage{fmt::format("cannot typecheck '{}' in reasonable time",
+                                  ctx->getBase()->name.empty()
+                                      ? "toplevel"
+                                      : getUnmangledName(ctx->getBase()->name)),
+                      result->getSrcInfo()}});
+      for (auto &error : findTypecheckErrors(result))
+        errors.addError(error);
+      throw exc::ParserException(errors);
     }
 
     // Keep iterating until:

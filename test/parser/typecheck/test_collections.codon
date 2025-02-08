@@ -1,6 +1,7 @@
 #%% list_unbound,barebones
 a = []
-#! cannot typecheck the program
+#! cannot typecheck
+#! cannot typecheck
 
 #%% star_err,barebones
 a = (1, 2, 3)

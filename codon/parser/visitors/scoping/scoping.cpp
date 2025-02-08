@@ -124,6 +124,16 @@ void ScopingVisitor::visit(IdExpr *expr) {
     expr->setAttribute(Attr::ExprDominatedUndefCheck);
 }
 
+void ScopingVisitor::visit(DotExpr *expr) {
+  SetInScope s(&(ctx->adding), false); // to handle a.x, y = b
+  CallbackASTVisitor<bool, bool>::visit(expr);
+}
+
+void ScopingVisitor::visit(IndexExpr *expr) {
+  SetInScope s(&(ctx->adding), false); // to handle a[x], y = b
+  CallbackASTVisitor<bool, bool>::visit(expr);
+}
+
 void ScopingVisitor::visit(StringExpr *expr) {
   std::vector<StringExpr::String> exprs;
   for (auto &p : *expr) {
@@ -534,11 +544,14 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
 
   auto b = std::make_unique<BindingsAttribute>();
   b->captures = c->captures;
-  for (const auto &n : c->captures)
+  for (const auto &n : c->captures) {
     ctx->childCaptures.insert(n);
-  for (auto &[u, v] : c->map)
+  }
+  for (auto &[u, v] : c->map) {
     b->bindings[u] = v.size();
+  }
   stmt->setAttribute(Attr::Bindings, std::move(b));
+
 
   if (!c->classDeduce.second.empty()) {
     auto s = std::make_unique<ir::StringListAttribute>();

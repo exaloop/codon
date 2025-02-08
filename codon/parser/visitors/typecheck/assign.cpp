@@ -262,6 +262,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     // `a = foo(x, ...); a(1); a('s')`
     if (!val->isVar()) {
       val->type = val->type->generalize(ctx->typecheckLevel - 1);
+      // See capture_function_partial_proper_realize test
       assign->getLhs()->setType(val->type);
       assign->getRhs()->setType(val->type);
     }

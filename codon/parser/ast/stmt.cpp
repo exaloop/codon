@@ -29,7 +29,9 @@ Stmt::Stmt(const Stmt &expr, bool clean) : AcceptorExtend(expr) {
 }
 std::string Stmt::wrapStmt(const std::string &s) const {
   // if (auto a = ir::Node::getAttribute<ir::IntValueAttribute>(Attr::ExprTime))
-  // return format("{}%%{}", s, a->value);
+  // return format("(${}...{}",
+  //   a->value,
+  //   s.substr(1));
   return s;
 }
 

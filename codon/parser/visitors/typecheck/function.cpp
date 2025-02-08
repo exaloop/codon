@@ -436,7 +436,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     overloads.push_back(canonicalName);
   }
 
-  ctx->addFunc(stmt->name, rootName, funcTyp);
+  auto val = ctx->addFunc(stmt->name, rootName, funcTyp);
+  // val->time = getTime();
   ctx->addFunc(canonicalName, canonicalName, funcTyp);
   if (stmt->hasAttribute(Attr::Overload) || isClassMember) {
     ctx->remove(stmt->name); // first overload will handle it!

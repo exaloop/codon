@@ -68,6 +68,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
           !c->hasAttribute(Attr::ExprDominatedUsed)) {
         val = ctx->addVar(c->getVar(), ctx->generateCanonicalName(c->getVar()),
                           instantiateUnbound());
+        val->time = getTime();
       } else if (c->hasAttribute(Attr::ExprDominatedUsed)) {
         val = ctx->forceFind(c->getVar());
         c->eraseAttribute(Attr::ExprDominatedUsed);
@@ -125,6 +126,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
     auto val =
         ctx->addVar(pyVar, pyVar, extractType(c->getException())->shared_from_this());
+    val->time = getTime();
     ctx->blockLevel++;
     c->suite = SuiteStmt::wrap(transform(c->getSuite()));
     ctx->blockLevel--;

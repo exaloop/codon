@@ -103,6 +103,17 @@ def foo():
 f = foo()
 f(5)  #: 10
 
+# This should compile.
+def rad4f(ido: int, l1: int, cxai):
+    def CC(a: int, b: int, c: int):
+        return cxai[a+ido*(b+l1*c)]
+    for k in range(l1):
+        # Make sure that cxai[0] assignment does not mark
+        # cxai as "adding" variable
+        # See scoping.cpp:visit(DotExpr*) (or IndexExpr*)
+        tr1, cxai[0] = 1, 1
+rad4f(1, 2, [1, 2])
+
 #%% new_scoping_loops_try,barebones
 for i in range(10):
     pass

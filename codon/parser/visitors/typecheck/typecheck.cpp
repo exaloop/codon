@@ -1457,8 +1457,9 @@ ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) {
   v.transform(n);
   std::vector<ErrorMessage> errors;
   for (auto e : v.result)
-    errors.emplace_back(fmt::format("cannot typecheck {}", e->toString(0)),
-                        e->getSrcInfo());
+    errors.emplace_back(
+        fmt::format("cannot typecheck {}", split(e->toString(0), '\n').front()),
+        e->getSrcInfo());
   return ParserErrors(errors);
 }
 

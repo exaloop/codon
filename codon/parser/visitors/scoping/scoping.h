@@ -147,6 +147,8 @@ public:
 
   void visit(StringExpr *) override;
   void visit(IdExpr *) override;
+  void visit(DotExpr *) override;
+  void visit(IndexExpr *) override;
   void visit(GeneratorExpr *) override;
   void visit(IfExpr *) override;
   void visit(BinaryExpr *) override;

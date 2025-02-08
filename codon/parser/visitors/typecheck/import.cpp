@@ -220,6 +220,7 @@ Stmt *TypecheckVisitor::transformCVarImport(const std::string &name, Expr *type,
   auto val = ctx->addVar(
       altName.empty() ? name : altName, canonical,
       std::make_shared<types::LinkType>(extractClassType(typ)->shared_from_this()));
+  val->time = getTime();
   auto s = N<AssignStmt>(N<IdExpr>(canonical), nullptr, typ);
   s->lhs->setAttribute(Attr::ExprExternVar);
   s->lhs->setType(val->type);
