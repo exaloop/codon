@@ -2119,9 +2119,31 @@ void LLVMVisitor::visit(const VarValue *x) {
 }
 
 void LLVMVisitor::visit(const PointerValue *x) {
+  auto *xvar = x->getVar();
+  std::vector<llvm::Value *> gepIndices;
+  auto *type = x->getVar()->getType();
+
+  for (auto &field : x->getFields()) {
+    if (auto *rec = cast<types::RecordType>(type)) {
+      auto membIndex = rec->getMemberIndex(field);
+      auto membType = rec->getMemberType(field);
+      seqassertn(membIndex >= 0 && membType, "field {} not found in pointer value",
+                 field);
+      gepIndices.push_back(B->getInt32(membIndex));
+      type = membType;
+    } else {
+      seqassertn(false, "type in pointer value was not a tuple type");
+    }
+  }
+
   llvm::Value *var = getVar(x->getVar());
   seqassertn(var, "{} variable not found", *x);
-  value = var; // note: we don't load the pointer
+
+  if (gepIndices.empty()) {
+    value = var; // note: we don't load the pointer
+  } else {
+    value = B->CreateInBoundsGEP(getLLVMType(x->getVar()->getType()), var, gepIndices);
+  }
 }
 
 /*

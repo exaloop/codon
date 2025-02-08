@@ -156,7 +156,8 @@ public:
     fmt::print(os, FMT_STRING("'\"{}\""), v->getVar()->referenceString());
   }
   void visit(const PointerValue *v) override {
-    fmt::print(os, FMT_STRING("(ptr '\"{}\")"), v->getVar()->referenceString());
+    fmt::print(os, FMT_STRING("(ptr '\"{}\" \"{}\")"), v->getVar()->referenceString(),
+               fmt::join(v->getFields().begin(), v->getFields().end(), "."));
   }
 
   void visit(const SeriesFlow *v) override {

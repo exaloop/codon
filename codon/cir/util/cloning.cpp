@@ -174,7 +174,9 @@ void CloneVisitor::visit(const LLVMFunc *v) {
 
 void CloneVisitor::visit(const VarValue *v) { result = Nt(v, clone(v->getVar())); }
 
-void CloneVisitor::visit(const PointerValue *v) { result = Nt(v, clone(v->getVar())); }
+void CloneVisitor::visit(const PointerValue *v) {
+  result = Nt(v, clone(v->getVar()), v->getFields());
+}
 
 void CloneVisitor::visit(const SeriesFlow *v) {
   auto *res = Nt(v);
