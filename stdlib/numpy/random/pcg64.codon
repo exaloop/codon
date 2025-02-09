@@ -1,0 +1,238 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from .seed import SeedSequence
+from ..util import itrunc, zext
+
+u128 = UInt[128]
+
+def pcg_int(hi, lo):
+    return (u128(hi) << u128(64)) | u128(lo)
+
+PCG_DEFAULT_MULTIPLIER_HIGH = u128(2549297995355413924)
+PCG_DEFAULT_MULTIPLIER_LOW  = u128(4865540595714422341)
+PCG_DEFAULT_MULTIPLIER_128  = pcg_int(PCG_DEFAULT_MULTIPLIER_HIGH,
+                                      PCG_DEFAULT_MULTIPLIER_LOW)
+PCG_DEFAULT_INCREMENT_128   = pcg_int(6364136223846793005,
+                                      1442695040888963407)
+PCG_STATE_SETSEQ_128_INITIALIZER = (
+    pcg_int(0x979c9a98d8462005, 0x7d3e9cb6cfe0549b),
+    pcg_int(1, 0xda3e39cb94b95bdb)
+)
+PCG_CHEAP_MULTIPLIER_128 = (u128(0xda942042) << u128(32)) | u128(0xe4dd58b5)
+
+PCG64_INITIALIZER = PCG_STATE_SETSEQ_128_INITIALIZER
+
+def rotr64(value: u64, rot: int):
+    return (value >> u64(rot)) | (value << u64((-rot) & 63))
+
+class PCG64:
+    state: u128
+    inc: u128
+    seed: SeedSequence
+
+    def __init__(self, initstate: u128, initseq: u128):
+        self.srandom_r(initstate, initseq)
+
+    def __init__(self, seed):
+        if not isinstance(seed, SeedSequence):
+            self.__init__(SeedSequence(seed))
+        else:
+            val = seed.generate_state(4, u64)
+            v0 = zext(val[0], u128)
+            v1 = zext(val[1], u128)
+            v2 = zext(val[2], u128)
+            v3 = zext(val[3], u128)
+
+            p = val.data
+            initstate = pcg_int(v0, v1)
+            initseq = pcg_int(v2, v3)
+            self.__init__(initstate, initseq)
+            self.seed = seed
+
+    def __get_state__(self):
+        return (self.state, self.inc)
+
+    def __set_state__(self, state):
+        s, i = state
+        self.state = s
+        self.inc = i
+
+    def setseq_128_step_r(self):
+        self.state = (self.state * PCG_DEFAULT_MULTIPLIER_128) + self.inc
+
+    def output_xsl_rr_128_64(self):
+        state = self.state
+        state_high = itrunc(state >> u128(64), u64)
+        state_low = itrunc(state, u64)
+        return rotr64(state_high ^ state_low, int(state >> u128(122)))
+
+    def setseq_128_xsl_rr_64_random_r(self):
+        self.setseq_128_step_r()
+        return self.output_xsl_rr_128_64()
+
+    def setseq_128_srandom_r(self, initstate: u128, initseq: u128):
+        self.state = u128(0)
+        self.inc = (initseq << u128(1)) | u128(1)
+        self.setseq_128_step_r()
+        self.state += initstate
+        self.setseq_128_step_r()
+
+    def advance_lcg_128(self, delta: u128, cur_mult: u128, cur_plus: u128):
+        acc_mult = u128(1)
+        acc_plus = u128(0)
+
+        while delta > u128(0):
+            if delta & u128(1):
+               acc_mult *= cur_mult
+               acc_plus = acc_plus * cur_mult + cur_plus
+            cur_plus = (cur_mult + u128(1)) * cur_plus
+            cur_mult *= cur_mult
+            delta //= u128(2)
+
+        self.state = acc_mult * self.state + acc_plus
+
+    def setseq_128_advance_r(self, delta: u128):
+        self.advance_lcg_128(delta, PCG_DEFAULT_MULTIPLIER_128, self.inc)
+
+    def random_r(self):
+        return self.setseq_128_xsl_rr_64_random_r()
+
+    def srandom_r(self, initstate: u128, initseq: u128):
+        return self.setseq_128_srandom_r(initstate, initseq)
+
+    def advance_r(self, delta: u128):
+        self.setseq_128_advance_r(delta)
+
+    def next64(self):
+        return self.random_r()
+
+    def pcg_advance(self, step: Tuple[u64, u64]):
+        delta = (u128(step[0]) << u128(64)) | u128(step[1])
+        self.advance_r(delta)
+
+    def advance(self, step: int):
+        self.pcg_advance((u64(0), u64(step)))
+
+    def jump_inplace(self, jumps: int):
+        step = ((u128(0x9e3779b9) << u128(96)) |
+                (u128(0x7f4a7c15) << u128(64)) |
+                (u128(0xf39cc060) << u128(32)) |
+                 u128(0x5cedc835))
+        self.advance_r(step * u128(jumps))
+
+    def set_seed(self, seed: Tuple[u64, u64], inc: Tuple[u64, u64]):
+        s = (u128(seed[0]) << u128(64)) | u128(seed[1])
+        i = (u128(inc[0]) << u128(64)) | u128(inc[1])
+        self.srandom_r(s, i)
+
+class PCG64DXSM:
+    state: u128
+    inc: u128
+    seed: SeedSequence
+
+    def __init__(self, initstate: u128, initseq: u128):
+        # For some reason NumPy uses PCG64 seeding here...
+        # self.cm_srandom_r(initstate, initseq)
+        self.srandom_r(initstate, initseq)
+
+    def __init__(self, seed):
+        if not isinstance(seed, SeedSequence):
+            self.__init__(SeedSequence(seed))
+        else:
+            val = seed.generate_state(4, u64)
+            v0 = zext(val[0], u128)
+            v1 = zext(val[1], u128)
+            v2 = zext(val[2], u128)
+            v3 = zext(val[3], u128)
+
+            p = val.data
+            initstate = pcg_int(v0, v1)
+            initseq = pcg_int(v2, v3)
+            self.__init__(initstate, initseq)
+            self.seed = seed
+
+    def __get_state__(self):
+        return (self.state, self.inc)
+
+    def __set_state__(self, state):
+        s, i = state
+        self.state = s
+        self.inc = i
+
+    def cm_step_r(self):
+        self.state = (self.state * PCG_CHEAP_MULTIPLIER_128) + self.inc
+
+    def setseq_128_srandom_r(self, initstate: u128, initseq: u128):
+        self.state = u128(0)
+        self.inc = (initseq << u128(1)) | u128(1)
+        self.setseq_128_step_r()
+        self.state += initstate
+        self.setseq_128_step_r()
+
+    def srandom_r(self, initstate: u128, initseq: u128):
+        return self.setseq_128_srandom_r(initstate, initseq)
+
+    def setseq_128_step_r(self):
+        self.state = (self.state * PCG_DEFAULT_MULTIPLIER_128) + self.inc
+
+    def output_cm_128_64(self):
+        state = self.state
+        hi = itrunc(state >> u128(64), u64)
+        lo = itrunc(state, u64)
+        lo |= u64(1)
+        hi ^= hi >> u64(32)
+        hi *= u64(0xda942042e4dd58b5)
+        hi ^= hi >> u64(48)
+        hi *= lo
+        return hi
+
+    def cm_random_r(self):
+        ret = self.output_cm_128_64()
+        self.cm_step_r()
+        return ret
+
+    def cm_srandom_r(self, initstate: u128, initseq: u128):
+        self.state = u128(0)
+        self.inc = (initseq << u128(1)) | u128(1)
+        self.cm_step_r()
+        self.state += initstate
+        self.cm_step_r()
+
+    def advance_lcg_128(self, delta: u128, cur_mult: u128, cur_plus: u128):
+        acc_mult = u128(1)
+        acc_plus = u128(0)
+
+        while delta > u128(0):
+            if delta & u128(1):
+               acc_mult *= cur_mult
+               acc_plus = acc_plus * cur_mult + cur_plus
+            cur_plus = (cur_mult + u128(1)) * cur_plus
+            cur_mult *= cur_mult
+            delta //= u128(2)
+
+        self.state = acc_mult * self.state + acc_plus
+
+    def cm_advance_r(self, delta: u128):
+        self.advance_lcg_128(delta, pcg_int(0, PCG_CHEAP_MULTIPLIER_128), self.inc)
+
+    def next64(self):
+        return self.cm_random_r()
+
+    def pcg_advance(self, step: Tuple[u64, u64]):
+        delta = (u128(step[0]) << u128(64)) | u128(step[1])
+        self.cm_advance_r(delta)
+
+    def advance(self, step: int):
+        self.pcg_advance((u64(0), u64(step)))
+
+    def jump_inplace(self, jumps: int):
+        step = ((u128(0x9e3779b9) << u128(96)) |
+                (u128(0x7f4a7c15) << u128(64)) |
+                (u128(0xf39cc060) << u128(32)) |
+                 u128(0x5cedc835))
+        self.cm_advance_r(step * u128(jumps))
+
+    def set_seed(self, seed: Tuple[u64, u64], inc: Tuple[u64, u64]):
+        s = (u128(seed[0]) << u128(64)) | u128(seed[1])
+        i = (u128(inc[0]) << u128(64)) | u128(inc[1])
+        self.cm_srandom_r(s, i)

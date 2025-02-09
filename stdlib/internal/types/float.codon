@@ -1,7 +1,23 @@
-# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from internal.attributes import commutative
 from internal.gc import alloc_atomic, free
+
+def _float_int_pow(a: F, b: int, F: type) -> F:
+    abs_exp = b.__abs__()
+    result = F(1)
+    factor = a
+
+    while abs_exp:
+        if abs_exp & 1:
+            result *= factor
+        factor *= factor
+        abs_exp >>= 1
+
+    if b < 0:
+        result = F(1) / result
+
+    return result
 
 @extend
 class float:
@@ -397,6 +413,50 @@ class float:
     def imag(self) -> float:
         return 0.0
 
+    @commutative
+    def __add__(self: float, b: int) -> float:
+        return self + float(b)
+
+    def __sub__(self: float, b: int) -> float:
+        return self - float(b)
+
+    @commutative
+    def __mul__(self: float, b: int) -> float:
+        return self * float(b)
+
+    def __floordiv__(self, b: int) -> float:
+        return self // float(b)
+
+    def __truediv__(self: float, b: int) -> float:
+        return self / float(b)
+
+    def __mod__(self: float, b: int) -> float:
+        return self % float(b)
+
+    def __divmod__(self, b: int):
+        return self.__divmod__(float(b))
+
+    def __eq__(self: float, b: int) -> bool:
+        return self == float(b)
+
+    def __ne__(self: float, b: int) -> bool:
+        return self != float(b)
+
+    def __lt__(self: float, b: int) -> bool:
+        return self < float(b)
+
+    def __gt__(self: float, b: int) -> bool:
+        return self > float(b)
+
+    def __le__(self: float, b: int) -> bool:
+        return self <= float(b)
+
+    def __ge__(self: float, b: int) -> bool:
+        return self >= float(b)
+
+    def __pow__(self: float, b: int) -> float:
+        return _float_int_pow(self, b)
+
 @extend
 class float32:
     @pure
@@ -751,6 +811,50 @@ class float32:
     def __match__(self, obj: float32) -> bool:
         return self == obj
 
+    @commutative
+    def __add__(self: float32, b: int) -> float32:
+        return self + float32(b)
+
+    def __sub__(self: float32, b: int) -> float32:
+        return self - float32(b)
+
+    @commutative
+    def __mul__(self: float32, b: int) -> float32:
+        return self * float32(b)
+
+    def __floordiv__(self, b: int) -> float32:
+        return self // float32(b)
+
+    def __truediv__(self: float32, b: int) -> float32:
+        return self / float32(b)
+
+    def __mod__(self: float32, b: int) -> float32:
+        return self % float32(b)
+
+    def __divmod__(self, b: int):
+        return self.__divmod__(float32(b))
+
+    def __eq__(self: float32, b: int) -> bool:
+        return self == float32(b)
+
+    def __ne__(self: float32, b: int) -> bool:
+        return self != float32(b)
+
+    def __lt__(self: float32, b: int) -> bool:
+        return self < float32(b)
+
+    def __gt__(self: float32, b: int) -> bool:
+        return self > float32(b)
+
+    def __le__(self: float32, b: int) -> bool:
+        return self <= float32(b)
+
+    def __ge__(self: float32, b: int) -> bool:
+        return self >= float32(b)
+
+    def __pow__(self: float32, b: int) -> float32:
+        return _float_int_pow(self, b)
+
 @extend
 class float16:
     @pure
@@ -1050,6 +1154,50 @@ class float16:
 
     def __match__(self, obj: float16) -> bool:
         return self == obj
+
+    @commutative
+    def __add__(self: float16, b: int) -> float16:
+        return self + float16(b)
+
+    def __sub__(self: float16, b: int) -> float16:
+        return self - float16(b)
+
+    @commutative
+    def __mul__(self: float16, b: int) -> float16:
+        return self * float16(b)
+
+    def __floordiv__(self, b: int) -> float16:
+        return self // float16(b)
+
+    def __truediv__(self: float16, b: int) -> float16:
+        return self / float16(b)
+
+    def __mod__(self: float16, b: int) -> float16:
+        return self % float16(b)
+
+    def __divmod__(self, b: int):
+        return self.__divmod__(float16(b))
+
+    def __eq__(self: float16, b: int) -> bool:
+        return self == float16(b)
+
+    def __ne__(self: float16, b: int) -> bool:
+        return self != float16(b)
+
+    def __lt__(self: float16, b: int) -> bool:
+        return self < float16(b)
+
+    def __gt__(self: float16, b: int) -> bool:
+        return self > float16(b)
+
+    def __le__(self: float16, b: int) -> bool:
+        return self <= float16(b)
+
+    def __ge__(self: float16, b: int) -> bool:
+        return self >= float16(b)
+
+    def __pow__(self: float16, b: int) -> float16:
+        return _float_int_pow(self, b)
 
 @extend
 class bfloat16:
@@ -1351,6 +1499,50 @@ class bfloat16:
     def __match__(self, obj: bfloat16) -> bool:
         return self == obj
 
+    @commutative
+    def __add__(self: bfloat16, b: int) -> bfloat16:
+        return self + bfloat16(b)
+
+    def __sub__(self: bfloat16, b: int) -> bfloat16:
+        return self - bfloat16(b)
+
+    @commutative
+    def __mul__(self: bfloat16, b: int) -> bfloat16:
+        return self * bfloat16(b)
+
+    def __floordiv__(self, b: int) -> bfloat16:
+        return self // bfloat16(b)
+
+    def __truediv__(self: bfloat16, b: int) -> bfloat16:
+        return self / bfloat16(b)
+
+    def __mod__(self: bfloat16, b: int) -> bfloat16:
+        return self % bfloat16(b)
+
+    def __divmod__(self, b: int):
+        return self.__divmod__(bfloat16(b))
+
+    def __eq__(self: bfloat16, b: int) -> bool:
+        return self == bfloat16(b)
+
+    def __ne__(self: bfloat16, b: int) -> bool:
+        return self != bfloat16(b)
+
+    def __lt__(self: bfloat16, b: int) -> bool:
+        return self < bfloat16(b)
+
+    def __gt__(self: bfloat16, b: int) -> bool:
+        return self > bfloat16(b)
+
+    def __le__(self: bfloat16, b: int) -> bool:
+        return self <= bfloat16(b)
+
+    def __ge__(self: bfloat16, b: int) -> bool:
+        return self >= bfloat16(b)
+
+    def __pow__(self: bfloat16, b: int) -> bfloat16:
+        return _float_int_pow(self, b)
+
 @extend
 class float128:
     @pure
@@ -1648,6 +1840,50 @@ class float128:
     def __match__(self, obj: float128) -> bool:
         return self == obj
 
+    @commutative
+    def __add__(self: float128, b: int) -> float128:
+        return self + float128(b)
+
+    def __sub__(self: float128, b: int) -> float128:
+        return self - float128(b)
+
+    @commutative
+    def __mul__(self: float128, b: int) -> float128:
+        return self * float128(b)
+
+    def __floordiv__(self, b: int) -> float128:
+        return self // float128(b)
+
+    def __truediv__(self: float128, b: int) -> float128:
+        return self / float128(b)
+
+    def __mod__(self: float128, b: int) -> float128:
+        return self % float128(b)
+
+    def __divmod__(self, b: int):
+        return self.__divmod__(float128(b))
+
+    def __eq__(self: float128, b: int) -> bool:
+        return self == float128(b)
+
+    def __ne__(self: float128, b: int) -> bool:
+        return self != float128(b)
+
+    def __lt__(self: float128, b: int) -> bool:
+        return self < float128(b)
+
+    def __gt__(self: float128, b: int) -> bool:
+        return self > float128(b)
+
+    def __le__(self: float128, b: int) -> bool:
+        return self <= float128(b)
+
+    def __ge__(self: float128, b: int) -> bool:
+        return self >= float128(b)
+
+    def __pow__(self: float128, b: int) -> float128:
+        return _float_int_pow(self, b)
+
 @extend
 class float:
     def __suffix_f32__(double) -> float32:
@@ -1661,6 +1897,184 @@ class float:
 
     def __suffix_f128__(double) -> float128:
         return float128.__new__(double)
+
+@extend
+class int:
+    @commutative
+    def __add__(self, b: float32) -> float32:
+        return float32(self) + b
+
+    def __sub__(self, b: float32) -> float32:
+        return float32(self) - b
+
+    @commutative
+    def __mul__(self, b: float32) -> float32:
+        return float32(self) * b
+
+    def __floordiv__(self, b: float32) -> float32:
+        return float32(self) // b
+
+    def __truediv__(self, b: float32) -> float32:
+        return float32(self) / b
+
+    def __mod__(self, b: float32) -> float32:
+        return float32(self) % b
+
+    def __divmod__(self, b: float32):
+        return float32(self).__divmod__(b)
+
+    def __pow__(self, b: float32) -> float32:
+        return float32(self) ** b
+
+    def __eq__(self, b: float32) -> bool:
+        return float32(self) == b
+
+    def __ne__(self, b: float32) -> bool:
+        return float32(self) != b
+
+    def __lt__(self, b: float32) -> bool:
+        return float32(self) < b
+
+    def __gt__(self, b: float32) -> bool:
+        return float32(self) > b
+
+    def __le__(self, b: float32) -> bool:
+        return float32(self) <= b
+
+    def __ge__(self, b: float32) -> bool:
+        return float32(self) >= b
+
+    @commutative
+    def __add__(self, b: float16) -> float16:
+        return float16(self) + b
+
+    def __sub__(self, b: float16) -> float16:
+        return float16(self) - b
+
+    @commutative
+    def __mul__(self, b: float16) -> float16:
+        return float16(self) * b
+
+    def __floordiv__(self, b: float16) -> float16:
+        return float16(self) // b
+
+    def __truediv__(self, b: float16) -> float16:
+        return float16(self) / b
+
+    def __mod__(self, b: float16) -> float16:
+        return float16(self) % b
+
+    def __divmod__(self, b: float16):
+        return float16(self).__divmod__(b)
+
+    def __pow__(self, b: float16) -> float16:
+        return float16(self) ** b
+
+    def __eq__(self, b: float16) -> bool:
+        return float16(self) == b
+
+    def __ne__(self, b: float16) -> bool:
+        return float16(self) != b
+
+    def __lt__(self, b: float16) -> bool:
+        return float16(self) < b
+
+    def __gt__(self, b: float16) -> bool:
+        return float16(self) > b
+
+    def __le__(self, b: float16) -> bool:
+        return float16(self) <= b
+
+    def __ge__(self, b: float16) -> bool:
+        return float16(self) >= b
+
+    @commutative
+    def __add__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) + b
+
+    def __sub__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) - b
+
+    @commutative
+    def __mul__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) * b
+
+    def __floordiv__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) // b
+
+    def __truediv__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) / b
+
+    def __mod__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) % b
+
+    def __divmod__(self, b: bfloat16):
+        return bfloat16(self).__divmod__(b)
+
+    def __pow__(self, b: bfloat16) -> bfloat16:
+        return bfloat16(self) ** b
+
+    def __eq__(self, b: bfloat16) -> bool:
+        return bfloat16(self) == b
+
+    def __ne__(self, b: bfloat16) -> bool:
+        return bfloat16(self) != b
+
+    def __lt__(self, b: bfloat16) -> bool:
+        return bfloat16(self) < b
+
+    def __gt__(self, b: bfloat16) -> bool:
+        return bfloat16(self) > b
+
+    def __le__(self, b: bfloat16) -> bool:
+        return bfloat16(self) <= b
+
+    def __ge__(self, b: bfloat16) -> bool:
+        return bfloat16(self) >= b
+
+    @commutative
+    def __add__(self, b: float128) -> float128:
+        return float128(self) + b
+
+    def __sub__(self, b: float128) -> float128:
+        return float128(self) - b
+
+    @commutative
+    def __mul__(self, b: float128) -> float128:
+        return float128(self) * b
+
+    def __floordiv__(self, b: float128) -> float128:
+        return float128(self) // b
+
+    def __truediv__(self, b: float128) -> float128:
+        return float128(self) / b
+
+    def __mod__(self, b: float128) -> float128:
+        return float128(self) % b
+
+    def __divmod__(self, b: float128):
+        return float128(self).__divmod__(b)
+
+    def __pow__(self, b: float128) -> float128:
+        return float128(self) ** b
+
+    def __eq__(self, b: float128) -> bool:
+        return float128(self) == b
+
+    def __ne__(self, b: float128) -> bool:
+        return float128(self) != b
+
+    def __lt__(self, b: float128) -> bool:
+        return float128(self) < b
+
+    def __gt__(self, b: float128) -> bool:
+        return float128(self) > b
+
+    def __le__(self, b: float128) -> bool:
+        return float128(self) <= b
+
+    def __ge__(self, b: float128) -> bool:
+        return float128(self) >= b
 
 f16 = float16
 bf16 = bfloat16

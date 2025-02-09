@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 # Methods for static reflection. Implemented within call.cpp and/or loops.cpp.
 # !! Not intended for public use !!

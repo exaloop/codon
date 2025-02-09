@@ -1,0 +1,2934 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from .ndarray import ndarray
+from .routines import asarray, broadcast_to, full, copyto, round, moveaxis, concatenate, take, atleast_1d
+from .ndmath import isnan as math_isnan, floor, ceil, subtract, add, true_divide
+from .lib.arraysetops import unique
+import util
+
+newaxis = None
+
+def _check_out(out, shape):
+    if not isinstance(out, ndarray):
+        compile_error("output must be an array")
+
+    if out.ndim != staticlen(shape):
+        compile_error("output parameter has the wrong number of dimensions")
+
+    if out.shape != shape:
+        raise ValueError("output parameter has incorrect shape")
+
+def _float(x):
+    T = type(x)
+    if (T is float or T is float32 or T is float16 or T is complex
+            or T is complex64):
+        return x
+    else:
+        return util.cast(x, float)
+
+def _nan(T: type):
+    if T is float or T is float32 or T is float16:
+        return util.nan(T)
+    elif T is complex:
+        return complex(util.nan64(), util.nan64())
+    elif T is complex64:
+        return complex64(util.nan32(), util.nan32())
+    else:
+        compile_error("[internal error] no nan for type " + T.__name__)
+
+def _isnan(x):
+    T = type(x)
+    if T is float or T is float32 or T is float16:
+        return util.isnan(x)
+    else:
+        return math_isnan(x)
+
+def _supports_nan(T: type):
+    return (T is float or T is float32 or T is float16 or T is float128
+            or T is bfloat16 or T is complex or T is complex64)
+
+def _nan_to_back(v: Ptr[T], n: int, T: type):
+    if _supports_nan(T):
+        fill_index = 0
+        while fill_index < n and not _isnan(v[fill_index]):
+            fill_index += 1
+
+        for i in range(fill_index + 1, n):
+            e = v[i]
+            if not _isnan(e):
+                v[fill_index] = e
+                fill_index += 1
+        return fill_index
+    else:
+        return n
+
+def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Static[int],
+                  bool_to_int: Static[int], **kwargs):
+    if dtype is NoneType:
+        if conv_to_float:
+            ftype = type(_float(ans_type()))
+            return R(ftype, **kwargs)
+        elif bool_to_int and ans_type is bool:
+            return R(int, **kwargs)
+        else:
+            return R(ans_type, **kwargs)
+    else:
+        if conv_to_float:
+            ftype = type(_float(dtype()))
+            return R(ftype, **kwargs)
+        else:
+            return R(dtype, **kwargs)
+
+def _cast_elem(e0, dtype: type, conv_to_float: Static[int]):
+    if dtype is not NoneType:
+        e1 = util.cast(e0, dtype)
+    else:
+        e1 = e0
+
+    if conv_to_float:
+        e2 = _float(e1)
+    else:
+        e2 = e1
+
+    return e2
+
+def _increment_ptr(p: Ptr[T], stride: int, T: type):
+    return Ptr[T](p.as_byte() + stride)
+
+def _where_to_array(where, arr):
+    if where is None or isinstance(where, util._NoValue):
+        return None
+    else:
+        return broadcast_to(asarray(where), arr.shape)
+
+def _pairwise_sum_complex(a: Ptr[C], n: int, stride: int, C: type):
+    PW_BLOCKSIZE: Static[int] = 128
+    T = type(C().real)
+    sz = T.__elemsize__
+    p = a.as_byte()
+
+    if n < 8:
+        rr = T(-0.0)
+        ri = T(-0.0)
+        for i in range(0, n, 2):
+            rr += Ptr[T](p + i * stride + 0)[0]
+            ri += Ptr[T](p + i * stride + sz)[0]
+        return C(rr, ri)
+    elif n <= PW_BLOCKSIZE:
+        r0 = Ptr[T](p + 0 * stride)[0]
+        r1 = Ptr[T](p + 0 * stride + sz)[0]
+        r2 = Ptr[T](p + 2 * stride)[0]
+        r3 = Ptr[T](p + 2 * stride + sz)[0]
+        r4 = Ptr[T](p + 4 * stride)[0]
+        r5 = Ptr[T](p + 4 * stride + sz)[0]
+        r6 = Ptr[T](p + 6 * stride)[0]
+        r7 = Ptr[T](p + 6 * stride + sz)[0]
+
+        i = 8
+        while i < n - (n & 7):
+            (p + (i + 512//sz)*stride).__prefetch_r3__()
+            r0 += Ptr[T](p + (i + 0) * stride)[0]
+            r1 += Ptr[T](p + (i + 0) * stride + sz)[0]
+            r2 += Ptr[T](p + (i + 2) * stride)[0]
+            r3 += Ptr[T](p + (i + 2) * stride + sz)[0]
+            r4 += Ptr[T](p + (i + 4) * stride)[0]
+            r5 += Ptr[T](p + (i + 4) * stride + sz)[0]
+            r6 += Ptr[T](p + (i + 6) * stride)[0]
+            r7 += Ptr[T](p + (i + 6) * stride + sz)[0]
+            i += 8
+
+        rr = (r0 + r2) + (r4 + r6)
+        ri = (r1 + r3) + (r5 + r7)
+
+        while i < n:
+            rr += Ptr[T](p + i * stride + 0)[0]
+            ri += Ptr[T](p + i * stride + sz)[0]
+            i += 2
+
+        return C(rr, ri)
+    else:
+        n2 = n >> 1
+        n2 -= n2 & 7
+        return (_pairwise_sum_complex(a, n2, stride) +
+                _pairwise_sum_complex(Ptr[C](p + n2 * stride), n - n2, stride))
+
+def _pairwise_sum(a: Ptr[T], n: int, stride: int, T: type, dtype: type = NoneType):
+    if T is complex or T is complex64:
+        return _pairwise_sum_complex(a, n << 1, stride >> 1)
+
+    if dtype is NoneType:
+        return _pairwise_sum(a, n, stride, dtype=T)
+
+    PW_BLOCKSIZE: Static[int] = 128
+    p = a.as_byte()
+
+    if n < 8:
+        res = util.cast(T(-0.0), dtype)
+        for i in range(n):
+            res += util.cast(Ptr[T](p + i * stride)[0], dtype)
+        return res
+    elif n <= PW_BLOCKSIZE:
+        r0 = util.cast(Ptr[T](p + 0 * stride)[0], dtype)
+        r1 = util.cast(Ptr[T](p + 1 * stride)[0], dtype)
+        r2 = util.cast(Ptr[T](p + 2 * stride)[0], dtype)
+        r3 = util.cast(Ptr[T](p + 3 * stride)[0], dtype)
+        r4 = util.cast(Ptr[T](p + 4 * stride)[0], dtype)
+        r5 = util.cast(Ptr[T](p + 5 * stride)[0], dtype)
+        r6 = util.cast(Ptr[T](p + 6 * stride)[0], dtype)
+        r7 = util.cast(Ptr[T](p + 7 * stride)[0], dtype)
+
+        i = 8
+        while i < n - (n & 7):
+            (p + (i + 512//T.__elemsize__)*stride).__prefetch_r3__()
+            r0 += util.cast(Ptr[T](p + (i + 0) * stride)[0], dtype)
+            r1 += util.cast(Ptr[T](p + (i + 1) * stride)[0], dtype)
+            r2 += util.cast(Ptr[T](p + (i + 2) * stride)[0], dtype)
+            r3 += util.cast(Ptr[T](p + (i + 3) * stride)[0], dtype)
+            r4 += util.cast(Ptr[T](p + (i + 4) * stride)[0], dtype)
+            r5 += util.cast(Ptr[T](p + (i + 5) * stride)[0], dtype)
+            r6 += util.cast(Ptr[T](p + (i + 6) * stride)[0], dtype)
+            r7 += util.cast(Ptr[T](p + (i + 7) * stride)[0], dtype)
+            i += 8
+
+        res = ((r0 + r1) + (r2 + r3)) + ((r4 + r5) + (r6 + r7))
+        while i < n:
+            res += util.cast(Ptr[T](p + i * stride)[0], dtype)
+            i += 1
+
+        return res
+    else:
+        n2 = n >> 1
+        n2 -= n2 & 7
+        return (_pairwise_sum(a, n2, stride, dtype=dtype) +
+                _pairwise_sum(Ptr[T](p + n2 * stride), n - n2, stride, dtype=dtype))
+
+def _empty_like(arr, shape, dtype: type):
+    fcontig = arr._should_transpose()
+    p = Ptr[dtype](util.count(shape))
+    return ndarray(shape, p, fcontig=fcontig)
+
+def _reduce_all(arr,
+                R,
+                empty,
+                dtype: type = NoneType,
+                out=None,
+                keepdims: Static[int] = False,
+                where=util._NoValue(),
+                conv_to_float: Static[int] = False,
+                bool_to_int: Static[int] = False,
+                **kwargs):
+    if out is not None:
+        if keepdims:
+            _check_out(out, (1, ) * arr.ndim)
+        else:
+            _check_out(out, ())
+
+    n = arr.size
+    p = arr.data
+    shape = arr.shape
+    strides = arr.strides
+
+    if empty is not None:
+        if n == 0:
+            empty(**kwargs)
+
+    where = _where_to_array(where, arr)
+    redux = _make_reducer(R, arr.dtype, dtype, conv_to_float, bool_to_int, **kwargs)
+    i = 0
+
+    if where is None:
+        if arr.ndim == 1:
+            stride = strides[0]
+            if hasattr(redux, "loop"):
+                redux.loop(p, n, stride, partial=False)
+                i = n
+            else:
+                while i < n:
+                    e = _cast_elem(p[0], dtype, conv_to_float)
+                    redux.accept(e, i)
+                    if redux.done():
+                        break
+                    p = _increment_ptr(p, stride)
+                    i += 1
+        else:
+            if arr._is_contig:
+                if hasattr(redux, "loop"):
+                    redux.loop(p, n, arr.itemsize, partial=False)
+                    i = n
+                else:
+                    while i < n:
+                        e = _cast_elem(p[i], dtype, conv_to_float)
+                        redux.accept(e, i)
+                        if redux.done():
+                            break
+                        i += 1
+            else:
+                if hasattr(redux, "loop") and arr.ndim > 0:
+                    loop_axis = -1
+                    min_abs_stride = 0x7FFFFFFFFFFFFFFF
+
+                    for i in staticrange(staticlen(arr.ndim)):
+                        stride = strides[i]
+                        if stride:
+                            abs_stride = abs(stride)
+                            if abs_stride < min_abs_stride:
+                                loop_axis = i
+                                min_abs_stride = abs_stride
+
+                    if loop_axis == -1:
+                        loop_axis = arr.ndim - 1
+
+                    outer_loop_shape = util.tuple_delete(shape, loop_axis)
+                    loop_size = util.tuple_get(shape, loop_axis)
+                    loop_stride = util.tuple_get(strides, loop_axis)
+
+                    for idx in util.multirange(outer_loop_shape):
+                        idx1 = util.tuple_insert(idx, loop_axis, 0)
+                        q = arr._ptr(idx1)
+                        redux.loop(q, loop_size, loop_stride, partial=True)
+
+                    i = loop_size * util.count(outer_loop_shape)
+                else:
+                    A = arr.T if arr._should_transpose() else arr
+                    for idx in util.multirange(A.shape):
+                        e = _cast_elem(A._ptr(idx)[0], dtype, conv_to_float)
+                        redux.accept(e, i)
+                        if redux.done():
+                            break
+                        i += 1
+    else:
+        if arr._contig_match(where):
+            w = where.data
+            for k in range(n):
+                if not w[k]:
+                    continue
+                e = _cast_elem(p[k], dtype, conv_to_float)
+                redux.accept(e, i)
+                if redux.done():
+                    break
+                i += 1
+        else:
+            transpose = arr._should_transpose(where)
+            A = arr
+            W = where
+            if transpose:
+                A = A.T
+                W = W.T
+
+            for idx in util.multirange(A.shape):
+                if not W._ptr(idx)[0]:
+                    continue
+                e = _cast_elem(A._ptr(idx)[0], dtype, conv_to_float)
+                redux.accept(e, i)
+                if redux.done():
+                    break
+                i += 1
+
+    ans = redux.result(i)
+
+    if out is not None:
+        out.data[0] = util.cast(ans, out.dtype)
+        return out
+    else:
+        if keepdims:
+            return asarray(ans).reshape((1, ) * arr.ndim)
+        else:
+            return ans
+
+@tuple
+class _GradualFunctor:
+    redux: R
+    k: int
+    kwargs: KW
+    dtype: type
+    conv_to_float: Static[int]
+    R: type
+    KW: type
+
+    def __new__(redux: R,
+                k: int,
+                dtype: type,
+                conv_to_float: Static[int],
+                kwargs: KW,
+                R: type,
+                KW: type) -> _GradualFunctor[dtype, conv_to_float, R, KW]:
+        return (redux, k, kwargs)
+
+    def __call__(self, q, p):
+        e = _cast_elem(p[0], self.dtype, self.conv_to_float)
+        q[0] = util.cast(
+                self.redux.gradual_accept(q[0], e, self.k, **self.kwargs), type(q[0]))
+
+def _reduce_gradual(arr,
+                    R,
+                    empty,
+                    axis=None,
+                    dtype: type = NoneType,
+                    out=None,
+                    keepdims: Static[int] = False,
+                    conv_to_float: Static[int] = False,
+                    bool_to_int: Static[int] = False,
+                    **kwargs):
+    data = arr.data
+    shape = arr.shape
+    strides = arr.strides
+    ax = axis
+
+    redux = _make_reducer(R, arr.dtype, dtype, conv_to_float,
+                          bool_to_int, **kwargs)
+    if hasattr(redux, "gradual_init"):
+        init_value = redux.gradual_init(**kwargs)
+    else:
+        init_value = None
+
+    if staticlen(ax) == 1:
+        ax0 = ax[0]
+        length = util.tuple_get(shape, ax0)
+        stride = util.tuple_get(arr.strides, ax0)
+        iter_shape = util.tuple_delete(shape, ax0)
+        sub_strides = util.tuple_delete(arr.strides, ax0)
+
+        if keepdims:
+            ans_shape = util.tuple_set(shape, ax0, 1)
+        else:
+            ans_shape = iter_shape
+
+        if out is None:
+            out_type = type(redux.result(0))
+            ans = _empty_like(arr, iter_shape, out_type)
+        else:
+            _check_out(out, ans_shape)
+            if keepdims:
+                sub_ans_strides = util.tuple_delete(out.strides, ax0)
+                ans = ndarray(iter_shape, sub_ans_strides, out.data)
+            else:
+                ans = out
+
+        if init_value is not None:
+            for i in range(ans.size):
+                ans.data[i] = util.cast(init_value, ans.dtype)
+
+        for k in range(length):
+            sub_arr_ptr = _increment_ptr(arr.data, k * stride)
+            sub_arr = ndarray(iter_shape, sub_strides, sub_arr_ptr)
+            fn = _GradualFunctor(redux, k, dtype, conv_to_float, kwargs)
+            ndarray._loop((ans, sub_arr), fn, broadcast='none')
+
+        if hasattr(redux, "gradual_result"):
+            ans.map(lambda e: redux.gradual_result(e, length), inplace=True)
+
+        if out is not None:
+            return out
+        elif keepdims:
+            return ans.reshape(ans_shape)
+        elif ans.ndim == 0:
+            return ans.item()
+        else:
+            return ans
+
+    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
+    idx_bound = (0, ) * staticlen(ax)
+    out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
+    sub_strides = (0, ) * staticlen(ax)
+    mask = (False, ) * staticlen(shape)
+    ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+    ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
+    ptr_out_strides = Ptr[int](__ptr__(out_strides).as_byte())
+    ptr_sub_strides = Ptr[int](__ptr__(sub_strides).as_byte())
+    ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
+
+    shape_size = 1
+    bound_size = 1
+    a = 0
+    b = 0
+
+    for i in staticrange(staticlen(shape)):
+        s = shape[i]
+        stride = strides[i]
+
+        if i in ax:
+            bound_size *= s
+            ptr_idx_bound[a] = s
+            ptr_sub_strides[a] = stride
+            ptr_mask[i] = False
+            a += 1
+        else:
+            shape_size *= s
+            ptr_new_shape[b] = s
+            ptr_out_strides[b] = stride
+            ptr_mask[i] = True
+            b += 1
+
+    if keepdims:
+        ones = (1, ) * staticlen(idx_bound)
+        ans_shape = util.reconstruct_index(new_shape, ones, mask)
+    else:
+        ans_shape = new_shape
+
+    redux = _make_reducer(R, arr.dtype, dtype, conv_to_float, bool_to_int, **kwargs)
+    k = 0
+
+    if out is None:
+        out_type = type(redux.result(0))
+        ans = _empty_like(arr, new_shape, out_type)
+    else:
+        _check_out(out, ans_shape)
+        if keepdims:
+            sub_ans_strides = (0, ) * staticlen(new_shape)
+            ptr_sub_ans_strides = Ptr[int](__ptr__(sub_ans_strides).as_byte())
+            a = 0
+            for i in staticrange(out.ndim):
+                if i not in ax:
+                    ptr_sub_ans_strides[a] = out.strides[i]
+                    a += 1
+            ans = ndarray(new_shape, sub_ans_strides, out.data)
+        else:
+            ans = out
+
+    if init_value is not None:
+        for i in range(ans.size):
+            ans.data[i] = util.cast(init_value, ans.dtype)
+
+    if arr._should_transpose():
+        idx_bound = idx_bound[::-1]
+        sub_strides = sub_strides[::-1]
+
+    for t2 in util.multirange(idx_bound):
+        offset = 0
+        for i in staticrange(staticlen(sub_strides)):
+            offset += sub_strides[i] * t2[i]
+
+        sub_arr_ptr = _increment_ptr(arr.data, offset)
+        sub_arr = ndarray(new_shape, out_strides, sub_arr_ptr)
+        fn = _GradualFunctor(redux, k, dtype, conv_to_float, kwargs)
+        ndarray._loop((ans, sub_arr), fn, broadcast='none')
+        k += 1
+
+    if hasattr(redux, "gradual_result"):
+        ans.map(lambda e: redux.gradual_result(e, bound_size), inplace=True)
+
+    if out is not None:
+        return out
+    elif keepdims:
+        return ans.reshape(ans_shape)
+    elif ans.ndim == 0:
+        return ans.item()
+    else:
+        return ans
+
+def _reduce(arr,
+            R,
+            empty,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+            conv_to_float: Static[int] = False,
+            bool_to_int: Static[int] = False,
+            **kwargs):
+    data = arr.data
+    shape = arr.shape
+    strides = arr.strides
+
+    # Strangely, NumPy supports this, so we do too...
+    if arr.ndim == 0 and isinstance(axis, int):
+        if axis != 0 and axis != -1:
+            util.normalize_axis_index(axis=axis, ndim=0)  # raises error
+        return _reduce(arr,
+                       R=R,
+                       empty=empty,
+                       axis=None,
+                       dtype=dtype,
+                       out=out,
+                       keepdims=keepdims,
+                       where=where,
+                       conv_to_float=conv_to_float,
+                       bool_to_int=bool_to_int,
+                       **kwargs)
+
+    if axis is None:
+        ax = util.tuple_range(arr.ndim)
+    elif isinstance(axis, int):
+        ax = (util.normalize_axis_index(axis, arr.ndim), )
+    else:
+        ax = util.normalize_axis_tuple(axis, arr.ndim)
+
+    if staticlen(ax) == staticlen(shape):
+        return _reduce_all(arr,
+                           R=R,
+                           empty=empty,
+                           dtype=dtype,
+                           out=out,
+                           keepdims=keepdims,
+                           where=where,
+                           conv_to_float=conv_to_float,
+                           bool_to_int=bool_to_int,
+                           **kwargs)
+
+    if empty is not None:
+        if arr.size == 0:
+            empty(**kwargs)
+
+    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
+    idx_bound = (0, ) * staticlen(ax)
+    out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
+    sub_strides = (0, ) * staticlen(ax)
+    mask = (False, ) * staticlen(shape)
+    ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+    ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
+    ptr_out_strides = Ptr[int](__ptr__(out_strides).as_byte())
+    ptr_sub_strides = Ptr[int](__ptr__(sub_strides).as_byte())
+    ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
+
+    shape_size = 1
+    bound_size = 1
+    min_stride_bound = -1
+    min_stride_shape = -1
+    a = 0
+    b = 0
+
+    for i in staticrange(staticlen(shape)):
+        s = shape[i]
+        stride = strides[i]
+
+        if i in ax:
+            bound_size *= s
+            ptr_idx_bound[a] = s
+            ptr_sub_strides[a] = stride
+            ptr_mask[i] = False
+            if (stride and
+                (min_stride_bound == -1 or abs(stride) < min_stride_bound)):
+                min_stride_bound = stride
+            a += 1
+        else:
+            shape_size *= s
+            ptr_new_shape[b] = s
+            ptr_out_strides[b] = stride
+            ptr_mask[i] = True
+            if (stride and
+                (min_stride_shape == -1 or abs(stride) < min_stride_shape)):
+                min_stride_shape = stride
+            b += 1
+
+    if hasattr(type(
+            _make_reducer(R, arr.dtype, dtype, conv_to_float,
+                          bool_to_int, **kwargs)), "gradual_init"):
+        if (out is None and (where is None or isinstance(where, util._NoValue)) and arr.ndim > 1 and
+            min_stride_shape > 0 and min_stride_shape < min_stride_bound):
+            return _reduce_gradual(arr,
+                                   R=R,
+                                   empty=empty,
+                                   axis=ax,
+                                   dtype=dtype,
+                                   out=out,
+                                   keepdims=keepdims,
+                                   conv_to_float=conv_to_float,
+                                   bool_to_int=bool_to_int,
+                                   **kwargs)
+    if keepdims:
+        ones = (1, ) * staticlen(idx_bound)
+        ans_shape = util.reconstruct_index(new_shape, ones, mask)
+    else:
+        ans_shape = new_shape
+
+    if out is None:
+        out_type = type(
+            _make_reducer(R, arr.dtype, dtype, conv_to_float,
+                          bool_to_int, **kwargs).result(0))
+        ans = _empty_like(arr, new_shape, out_type)
+    else:
+        _check_out(out, ans_shape)
+        if keepdims:
+            if staticlen(ax) == 1:
+                sub_ans_strides = util.tuple_delete(out.strides, ax[0])
+            else:
+                sub_ans_strides = (0, ) * staticlen(new_shape)
+                ptr_sub_ans_strides = Ptr[int](__ptr__(sub_ans_strides).as_byte())
+                a = 0
+                for i in staticrange(out.ndim):
+                    if i not in ax:
+                        ptr_sub_ans_strides[a] = out.strides[i]
+                        a += 1
+            ans = ndarray(new_shape, sub_ans_strides, out.data)
+        else:
+            ans = out
+
+    where = _where_to_array(where, arr)
+    where_out_shape = (0, ) * (staticlen(shape) - staticlen(ax))
+    where_sub_shape = (0, ) * staticlen(ax)
+    where_out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
+    where_sub_strides = (0, ) * staticlen(ax)
+
+    if where is not None and staticlen(shape) > 0:
+        ptr_where_out_shape = Ptr[int](__ptr__(where_out_shape).as_byte())
+        ptr_where_sub_shape = Ptr[int](__ptr__(where_sub_shape).as_byte())
+        ptr_where_out_strides = Ptr[int](__ptr__(where_out_strides).as_byte())
+        ptr_where_sub_strides = Ptr[int](__ptr__(where_sub_strides).as_byte())
+        a = 0
+        b = 0
+        for i in staticrange(staticlen(shape)):
+            if i in ax:
+                ptr_where_sub_shape[a] = where.shape[i]
+                ptr_where_sub_strides[a] = where.strides[i]
+                a += 1
+            else:
+                ptr_where_out_shape[b] = where.shape[i]
+                ptr_where_out_strides[b] = where.strides[i]
+                b += 1
+
+    if arr._should_transpose():
+        new_shape = new_shape[::-1]
+        out_strides = out_strides[::-1]
+        where_out_strides = where_out_strides[::-1]
+        ans1 = ndarray(ans.shape, ans.strides[::-1], ans.data)
+    else:
+        ans1 = ans
+
+    for idx in util.multirange(new_shape):
+        offset = 0
+        for i in staticrange(staticlen(out_strides)):
+            offset += out_strides[i] * idx[i]
+
+        sub_arr_ptr = _increment_ptr(arr.data, offset)
+        sub_arr = ndarray(idx_bound, sub_strides, sub_arr_ptr)
+
+        if where is None:
+            sub_where = None
+        else:
+            offset = 0
+            for i in staticrange(staticlen(where_out_strides)):
+                offset += where_out_strides[i] * idx[i]
+
+            sub_where_ptr = _increment_ptr(where.data, offset)
+            sub_where = ndarray(where_sub_shape, where_sub_strides, sub_where_ptr)
+
+        sub_rdx = _reduce_all(sub_arr,
+                              R=R,
+                              empty=None,
+                              dtype=dtype,
+                              out=None,
+                              keepdims=False,
+                              where=sub_where,
+                              conv_to_float=conv_to_float,
+                              bool_to_int=bool_to_int,
+                              **kwargs)
+
+        ans1._ptr(idx)[0] = util.cast(sub_rdx, ans.dtype)
+
+    if out is not None:
+        return out
+    elif keepdims:
+        return ans.reshape(ans_shape)
+    elif ans.ndim == 0:
+        return ans.item()
+    else:
+        return ans
+
+class _FlattenFunctor:
+    buffer: Ptr[dtype]
+    k: int
+    dtype: type
+
+    def __init__(self, buffer: Ptr[dtype]):
+        self.buffer = buffer
+        self.k = 0
+
+    def __call__(self, x):
+        self.buffer[self.k] = x[0]
+        self.k += 1
+
+class _FlattenWhereFunctor:
+    buffer: Ptr[dtype]
+    k: int
+    dtype: type
+
+    def __init__(self, buffer: Ptr[dtype]):
+        self.buffer = buffer
+        self.k = 0
+
+    def __call__(self, x, w):
+        if w[0]:
+            self.buffer[self.k] = x[0]
+            self.k += 1
+
+def _reduce_buffered(arr,
+                     reducer,
+                     dtype: type,
+                     axis=None,
+                     out=None,
+                     overwrite_input: bool = False,
+                     force_contig: bool = True,
+                     keepdims: Static[int] = False,
+                     where=util._NoValue(),
+                     **kwargs):
+    data = arr.data
+    shape = arr.shape
+    strides = arr.strides
+    where = _where_to_array(where, arr)
+
+    if axis is None:
+        ax = util.tuple_range(arr.ndim)
+    elif isinstance(axis, int):
+        ax = (util.normalize_axis_index(axis, arr.ndim), )
+    else:
+        ax = util.normalize_axis_tuple(axis, arr.ndim)
+
+    if staticlen(ax) == staticlen(shape):
+        sz = arr.size
+        if arr._is_contig and overwrite_input and where is None:
+            result = reducer(arr.data, util.sizeof(arr.dtype), sz, dtype,
+                             **kwargs)
+        else:
+            buffer = Ptr[arr.dtype](sz)
+            if where is None:
+                fn = _FlattenFunctor(buffer)
+                ndarray._loop((arr,), fn, broadcast='none')
+                n = sz
+            else:
+                fn = _FlattenWhereFunctor(buffer)
+                ndarray._loop((arr, where), fn, broadcast='none')
+                n = fn.k
+            result = reducer(buffer, util.sizeof(arr.dtype), n, dtype,
+                             **kwargs)
+            util.free(buffer)
+
+        if out is None:
+            if keepdims:
+                return asarray(result).reshape((1, ) * arr.ndim)
+            else:
+                return result
+        else:
+            if keepdims:
+                _check_out(out, (1, ) * arr.ndim)
+            else:
+                _check_out(out, ())
+            out.data[0] = util.cast(result, out.dtype)
+            return out
+
+    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
+    idx_bound = (0, ) * staticlen(ax)
+    out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
+    stride_bound = (0, ) * staticlen(ax)
+    mask = (False, ) * staticlen(shape)
+    ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+    ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
+    ptr_out_strides = Ptr[int](__ptr__(out_strides).as_byte())
+    ptr_stride_bound = Ptr[int](__ptr__(stride_bound).as_byte())
+    ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
+
+    shape_size = 1
+    bound_size = 1
+    a = 0
+    b = 0
+
+    for i in staticrange(staticlen(shape)):
+        s = shape[i]
+        stride = strides[i]
+
+        if i in ax:
+            bound_size *= s
+            ptr_idx_bound[a] = s
+            ptr_stride_bound[a] = stride
+            ptr_mask[i] = False
+            a += 1
+        else:
+            shape_size *= s
+            ptr_new_shape[b] = s
+            ptr_out_strides[b] = stride
+            ptr_mask[i] = True
+            b += 1
+
+    if keepdims:
+        ones = (1, ) * staticlen(idx_bound)
+        ans_shape = util.reconstruct_index(new_shape, ones, mask)
+    else:
+        ans_shape = new_shape
+
+    if out is None:
+        out_type = type(reducer(Ptr[arr.dtype](), 0, 0, dtype, **kwargs))
+        ans = _empty_like(arr, new_shape, out_type)
+    else:
+        _check_out(out, ans_shape)
+        if keepdims:
+            if staticlen(ax) == 1:
+                sub_ans_strides = util.tuple_delete(out.strides, ax[0])
+            else:
+                sub_ans_strides = (0, ) * staticlen(new_shape)
+                ptr_sub_ans_strides = Ptr[int](__ptr__(sub_ans_strides).as_byte())
+                a = 0
+                for i in staticrange(out.ndim):
+                    if i not in ax:
+                        ptr_sub_ans_strides[a] = out.strides[i]
+                        a += 1
+            ans = ndarray(new_shape, sub_ans_strides, out.data)
+        else:
+            ans = out
+
+    inplace = False
+    stride = 0
+
+    if where is not None or not overwrite_input:
+        inplace = False
+        stride = util.sizeof(arr.dtype)
+    else:
+        if staticlen(ax) == 1:
+            inplace = True
+            stride = stride_bound[0]
+        else:
+            if stride_bound == util.strides(idx_bound, False, arr.dtype):
+                inplace = True
+                stride = stride_bound[-1]
+            elif stride_bound == util.strides(idx_bound, True, arr.dtype):
+                inplace = True
+                stride = stride_bound[0]
+            else:
+                inplace = False
+                stride = util.sizeof(arr.dtype)
+
+        if force_contig and stride != util.sizeof(arr.dtype):
+            inplace = False
+            stride = util.sizeof(arr.dtype)
+
+    where_out_shape = (0, ) * (staticlen(shape) - staticlen(ax))
+    where_sub_shape = (0, ) * staticlen(ax)
+    where_out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
+    where_sub_strides = (0, ) * staticlen(ax)
+
+    if where is not None and staticlen(shape) > 0:
+        ptr_where_out_shape = Ptr[int](__ptr__(where_out_shape).as_byte())
+        ptr_where_sub_shape = Ptr[int](__ptr__(where_sub_shape).as_byte())
+        ptr_where_out_strides = Ptr[int](__ptr__(where_out_strides).as_byte())
+        ptr_where_sub_strides = Ptr[int](__ptr__(where_sub_strides).as_byte())
+        a = 0
+        b = 0
+        for i in staticrange(staticlen(shape)):
+            if i in ax:
+                ptr_where_sub_shape[a] = where.shape[i]
+                ptr_where_sub_strides[a] = where.strides[i]
+                a += 1
+            else:
+                ptr_where_out_shape[b] = where.shape[i]
+                ptr_where_out_strides[b] = where.strides[i]
+                b += 1
+
+    buffer = Ptr[arr.dtype]() if inplace else Ptr[arr.dtype](bound_size)
+
+    if arr._should_transpose():
+        new_shape = new_shape[::-1]
+        out_strides = out_strides[::-1]
+        where_out_strides = where_out_strides[::-1]
+        ans1 = ndarray(ans.shape, ans.strides[::-1], ans.data)
+    else:
+        ans1 = ans
+
+    for idx in util.multirange(new_shape):
+        n = bound_size
+        offset = 0
+        for i in staticrange(staticlen(out_strides)):
+            offset += out_strides[i] * idx[i]
+        sub_arr_ptr = _increment_ptr(arr.data, offset)
+
+        if inplace:
+            data_ptr = sub_arr_ptr
+        else:
+            sub_arr = ndarray(idx_bound, stride_bound, sub_arr_ptr)
+            if where is None:
+                fn = _FlattenFunctor(buffer)
+                ndarray._loop((sub_arr,), fn, broadcast='none')
+            else:
+                offset = 0
+                for i in staticrange(staticlen(where_out_strides)):
+                    offset += where_out_strides[i] * idx[i]
+
+                sub_where_ptr = _increment_ptr(where.data, offset)
+                sub_where = ndarray(where_sub_shape, where_sub_strides, sub_where_ptr)
+
+                fn = _FlattenWhereFunctor(buffer)
+                ndarray._loop((sub_arr, sub_where), fn, broadcast='none')
+                n = fn.k
+            data_ptr = buffer
+
+        result = reducer(data_ptr, stride, n, dtype, **kwargs)
+        ans1._ptr(idx)[0] = util.cast(result, ans.dtype)
+
+    if not inplace:
+        util.free(buffer)
+
+    if out is not None:
+        return out
+    elif keepdims:
+        return ans.reshape(ans_shape)
+    elif ans.ndim == 0:
+        return ans.item()
+    else:
+        return ans
+
+def _reduce_buffered_multi(arr,
+                           reducer,
+                           multi_num: int,
+                           dtype: type,
+                           axis=None,
+                           out=None,
+                           overwrite_input: bool = False,
+                           force_contig: bool = True,
+                           keepdims: Static[int] = False,
+                           where=util._NoValue(),
+                           **kwargs):
+    data = arr.data
+    shape = arr.shape
+    strides = arr.strides
+    where = _where_to_array(where, arr)
+
+    if axis is None:
+        ax = util.tuple_range(arr.ndim)
+    elif isinstance(axis, int):
+        ax = (util.normalize_axis_index(axis, arr.ndim), )
+    else:
+        ax = util.normalize_axis_tuple(axis, arr.ndim)
+
+    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
+    idx_bound = (0, ) * staticlen(ax)
+    stride_bound = (0, ) * staticlen(ax)
+    mask = (False, ) * staticlen(shape)
+    ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+    ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
+    ptr_stride_bound = Ptr[int](__ptr__(stride_bound).as_byte())
+    ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
+
+    shape_size = 1
+    bound_size = 1
+    a = 0
+    b = 0
+
+    for i in staticrange(staticlen(shape)):
+        s = shape[i]
+
+        if i in ax:
+            bound_size *= s
+            ptr_idx_bound[a] = s
+            ptr_stride_bound[a] = strides[i]
+            ptr_mask[i] = False
+            a += 1
+        else:
+            shape_size *= s
+            ptr_new_shape[b] = s
+            ptr_mask[i] = True
+            b += 1
+
+    if keepdims:
+        ones = (1, ) * staticlen(idx_bound)
+        ans_shape = (multi_num, ) + util.reconstruct_index(
+            new_shape, ones, mask)
+    else:
+        ans_shape = (multi_num, ) + new_shape
+
+    if out is None:
+        ans = _empty_like(arr, ans_shape, dtype)
+    else:
+        _check_out(out, ans_shape)
+        ans = out
+
+    if staticlen(ax) == staticlen(shape):
+        sz = arr.size
+        if arr._is_contig and overwrite_input and where is None:
+            reducer(arr.data, util.sizeof(arr.dtype), sz, ans.data, dtype,
+                    **kwargs)
+        else:
+            buffer = Ptr[arr.dtype](sz)
+            k = 0
+            for idx in util.multirange(shape):
+                if where is not None:
+                    if not where._ptr(idx)[0]:
+                        continue
+                buffer[k] = arr._ptr(idx)[0]
+                k += 1
+            n = sz if where is None else k
+            reducer(buffer, util.sizeof(arr.dtype), n, ans.data, dtype,
+                    **kwargs)
+            util.free(buffer)
+        return ans
+
+    inplace = False
+    stride = 0
+
+    if where is not None or not overwrite_input:
+        inplace = False
+        stride = util.sizeof(arr.dtype)
+    else:
+        if staticlen(ax) == 1:
+            inplace = True
+            stride = stride_bound[0]
+        else:
+            if stride_bound == util.strides(idx_bound, False, arr.dtype):
+                inplace = True
+                stride = stride_bound[-1]
+            elif stride_bound == util.strides(idx_bound, True, arr.dtype):
+                inplace = True
+                stride = stride_bound[0]
+            else:
+                inplace = False
+                stride = util.sizeof(arr.dtype)
+
+        if force_contig and stride != util.sizeof(arr.dtype):
+            inplace = False
+            stride = util.sizeof(arr.dtype)
+
+    buffer = Ptr[arr.dtype]() if inplace else Ptr[arr.dtype](bound_size)
+    out_buffer = Ptr[ans.dtype](multi_num)
+
+    for t1 in util.multirange(new_shape):
+        n = bound_size
+        if inplace:
+            idx = util.reconstruct_index(t1, (0, ) * staticlen(idx_bound),
+                                         mask)
+            subdata = arr._ptr(idx)
+        else:
+            k = 0
+            for t2 in util.multirange(idx_bound):
+                idx = util.reconstruct_index(t1, t2, mask)
+                if where is not None:
+                    if not where._ptr(idx)[0]:
+                        continue
+                e = arr._ptr(idx)[0]
+                buffer[k] = e
+                k += 1
+            subdata = buffer
+            if where is not None:
+                n = k
+
+        reducer(subdata, stride, n, out_buffer, dtype, **kwargs)
+
+        if keepdims:
+            zeros = (0, ) * staticlen(idx_bound)
+            t3 = util.reconstruct_index(t1, zeros, mask)
+        else:
+            t3 = t1
+
+        for i in range(multi_num):
+            ans._ptr((i, ) + t3)[0] = util.cast(out_buffer[i], ans.dtype)
+
+    if not inplace:
+        util.free(buffer)
+    util.free(out_buffer)
+
+    return ans
+
+class SumRedux:
+    total: T
+    T: type
+
+    def create(T: type, **kwargs):
+        return SumRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        initial = kwargs.get("initial", T())
+        self.total = util.cast(initial, T)
+
+    def accept(self, item, index: int):
+        self.total += util.cast(item, T)
+
+    def result(self, count: int):
+        return self.total
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        return util.cast(kwargs.get("initial", T()), T)
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        return curr + util.cast(item, T)
+
+    def _loop(a: Ptr[S], n: int, stride: int, S: type):
+        ans = T()
+
+        if (T is float or T is float32 or T is float16 or
+            T is complex or T is complex64):
+            ans += _pairwise_sum(a, n, stride, dtype=T)
+        else:
+            for i in range(n):
+                item = _increment_ptr(a, i * stride)[0]
+                ans += util.cast(item, T)
+
+        return ans
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        self.total += SumRedux[T]._loop(a, n, stride, S)
+
+class NanSumRedux:
+    total: T
+    T: type
+
+    def create(T: type, **kwargs):
+        return NanSumRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        initial = kwargs.get("initial", T())
+        self.total = util.cast(initial, T)
+
+    def accept(self, item, index: int):
+        if not _isnan(item):
+            self.total += util.cast(item, T)
+
+    def result(self, count: int):
+        return self.total
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        return util.cast(kwargs.get("initial", T()), T)
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        return curr if _isnan(item) else curr + util.cast(item, T)
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        ans = T()
+
+        for i in range(n):
+            item = _increment_ptr(a, i * stride)[0]
+            if not _isnan(item):
+                ans += util.cast(item, T)
+
+        self.total += ans
+
+class ProdRedux:
+    total: T
+    T: type
+
+    def create(T: type, **kwargs):
+        return ProdRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        initial = kwargs.get("initial", T(1))
+        self.total = util.cast(initial, T)
+
+    def accept(self, item, index: int):
+        self.total *= util.cast(item, T)
+
+    def result(self, count: int):
+        return self.total
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        return util.cast(kwargs.get("initial", T(1)), T)
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        return curr * util.cast(item, T)
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        ans = T(1)
+
+        for i in range(n):
+            item = _increment_ptr(a, i * stride)[0]
+            ans *= util.cast(item, T)
+
+        self.total *= ans
+
+class NanProdRedux:
+    total: T
+    T: type
+
+    def create(T: type, **kwargs):
+        return NanProdRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        initial = kwargs.get("initial", T(1))
+        self.total = util.cast(initial, T)
+
+    def accept(self, item, index: int):
+        if not _isnan(item):
+            self.total *= util.cast(item, T)
+
+    def result(self, count: int):
+        return self.total
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        return util.cast(kwargs.get("initial", T(1)), T)
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        return curr if _isnan(item) else curr * util.cast(item, T)
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        ans = T(1)
+
+        for i in range(n):
+            item = _increment_ptr(a, i * stride)[0]
+            if not _isnan(item):
+                ans *= util.cast(item, T)
+
+        self.total *= ans
+
+class MeanRedux:
+    total: T
+    T: type
+
+    def create(T: type, **kwargs):
+        return MeanRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.total = T()
+
+    def accept(self, item: T, index: int):
+        self.total += item
+
+    def result(self, count: int):
+        return self.total / T(count) if count else _nan(T)
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        return T()
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        return curr + util.cast(item, T)
+
+    def gradual_result(self, curr, count: int):
+        return curr / T(count) if count else _nan(T)
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        self.total += SumRedux[T]._loop(a, n, stride, S)
+
+class NanMeanRedux:
+    total: T
+    T: type
+    nan_count: int
+
+    def create(T: type, **kwargs):
+        return NanMeanRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.total = T()
+        self.nan_count = 0
+
+    def accept(self, item: T, index: int):
+        if not _isnan(item):
+            self.total += item
+        else:
+            self.nan_count += 1
+
+    def result(self, count: int):
+        count -= self.nan_count
+        return self.total / T(count) if count else _nan(T)
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        ans = T()
+        nan_count = 0
+
+        for i in range(n):
+            item = _increment_ptr(a, i * stride)[0]
+            if _isnan(item):
+                nan_count += 1
+            else:
+                ans += util.cast(item, T)
+
+        self.total += ans
+        self.nan_count += nan_count
+
+class MinRedux:
+    m: Optional[T]
+    T: type
+
+    def create(T: type, **kwargs):
+        return MinRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        initial = kwargs.get("initial", util._NoValue())
+        if isinstance(initial, util._NoValue):
+            self.m = None
+        else:
+            self.m = util.cast(initial, T)
+
+    def accept(self, item: T, index: int):
+        if self.m is None:
+            self.m = item
+        else:
+            self.m = MinRedux[T]._min(self.m, item)
+
+    def result(self, count: int) -> T:
+        return self.m
+
+    def empty(**kwargs):
+        if isinstance(kwargs.get("initial", util._NoValue()), util._NoValue):
+            raise ValueError(
+                "zero-size array to reduction operation minimum which has no identity"
+            )
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        initial = kwargs.get("initial", util._NoValue())
+        if isinstance(initial, util._NoValue):
+            return None
+        else:
+            return util.cast(initial, T)
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        item = util.cast(item, T)
+        initial = kwargs.get("initial", util._NoValue())
+        if isinstance(initial, util._NoValue):
+            if index == 0:
+                return item
+        return MinRedux[T]._min(curr, item)
+
+    def _min(m: T, x):
+        x = util.cast(x, T)
+        if T is float or T is float32 or T is float16:
+            return util.fmin(m, x)
+        else:
+            return x if x < m else m
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        if self.m is None:
+            m: T = util.cast(a[0], T)
+            a = _increment_ptr(a, stride)
+            n -= 1
+        else:
+            m: T = self.m
+
+        for i in range(n):
+            m = MinRedux[T]._min(m, a[0])
+            a = _increment_ptr(a, stride)
+
+        if partial:
+            self.accept(m, 0)
+        else:
+            self.m = m
+
+class MaxRedux:
+    m: Optional[T]
+    T: type
+
+    def create(T: type, **kwargs):
+        return MaxRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        initial = kwargs.get("initial", util._NoValue())
+        if isinstance(initial, util._NoValue):
+            self.m = None
+        else:
+            self.m = util.cast(initial, T)
+
+    def accept(self, item: T, index: int):
+        if self.m is None:
+            self.m = item
+        else:
+            self.m = MaxRedux[T]._max(self.m, item)
+
+    def result(self, count: int) -> T:
+        return self.m
+
+    def empty(**kwargs):
+        if isinstance(kwargs.get("initial", util._NoValue()), util._NoValue):
+            raise ValueError(
+                "zero-size array to reduction operation maximum which has no identity"
+            )
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        initial = kwargs.get("initial", util._NoValue())
+        if isinstance(initial, util._NoValue):
+            return None
+        else:
+            return util.cast(initial, T)
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        item = util.cast(item, T)
+        initial = kwargs.get("initial", util._NoValue())
+        if isinstance(initial, util._NoValue):
+            if index == 0:
+                return item
+        return MaxRedux[T]._max(curr, item)
+
+    def _max(m: T, x):
+        x = util.cast(x, T)
+        if T is float or T is float32 or T is float16:
+            return util.fmax(m, x)
+        else:
+            return x if x > m else m
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        if self.m is None and n > 0:
+            m: T = util.cast(a[0], T)
+            a = _increment_ptr(a, stride)
+            n -= 1
+        else:
+            m: T = self.m
+
+        for i in range(n):
+            m = MaxRedux[T]._max(m, a[0])
+            a = _increment_ptr(a, stride)
+
+        if partial:
+            self.accept(m, 0)
+        else:
+            self.m = m
+
+class PTPRedux:
+    hi: Optional[T]
+    lo: Optional[T]
+    T: type
+
+    def create(T: type, **kwargs):
+        return PTPRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.hi = None
+        self.lo = None
+
+    def accept(self, item: T, index: int):
+        if self.hi is None:
+            self.hi = item
+        else:
+            self.hi = MaxRedux[T]._max(self.hi, item)
+
+        if self.lo is None:
+            self.lo = item
+        else:
+            self.lo = MinRedux[T]._min(self.lo, item)
+
+    def result(self, count: int) -> T:
+        return self.hi - self.lo
+
+    def empty(**kwargs):
+        raise ValueError(
+            "zero-size array to reduction operation maximum which has no identity"
+        )
+
+    def done(self):
+        return False
+
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+        # n must be >0 here or we would've thrown an exception earlier
+        m = util.cast(a[0], T)
+        M = m
+        a = _increment_ptr(a, stride)
+        n -= 1
+
+        for i in range(n):
+            m = MinRedux[T]._min(m, a[0])
+            M = MaxRedux[T]._max(M, a[0])
+            a = _increment_ptr(a, stride)
+
+        if partial:
+            if self.hi is None or (M > self.hi):
+                self.hi = M
+            if self.lo is None or (m < self.lo):
+                self.lo = m
+        else:
+            self.hi = M
+            self.lo = m
+
+class ArgMinRedux:
+    m: Optional[T]
+    i: int
+    T: type
+
+    def create(T: type, **kwargs):
+        return ArgMinRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.m = None
+        self.i = 0
+
+    def accept(self, item: T, index: int):
+        if self.m is None or (item < self.m):
+            self.m = item
+            self.i = index
+
+    def result(self, count: int):
+        return self.i
+
+    def empty(**kwargs):
+        raise ValueError("attempt to get argmin of an empty sequence")
+
+    def done(self):
+        return False
+
+class ArgMaxRedux:
+    m: Optional[T]
+    i: int
+    T: type
+
+    def create(T: type, **kwargs):
+        return ArgMaxRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.m = None
+        self.i = 0
+
+    def accept(self, item: T, index: int):
+        if self.m is None or (item > self.m):
+            self.m = item
+            self.i = index
+
+    def result(self, count: int):
+        return self.i
+
+    def empty(**kwargs):
+        raise ValueError("attempt to get argmax of an empty sequence")
+
+    def done(self):
+        return False
+
+class AnyRedux:
+    a: bool
+    T: type
+
+    def create(T: type, **kwargs):
+        return AnyRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.a = False
+
+    def accept(self, item: T, index: int):
+        if item:
+            self.a = True
+
+    def result(self, count: int):
+        return self.a
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return self.a
+
+class AllRedux:
+    a: bool
+    T: type
+
+    def create(T: type, **kwargs):
+        return AllRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.a = True
+
+    def accept(self, item: T, index: int):
+        if not item:
+            self.a = False
+
+    def result(self, count: int):
+        return self.a
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return not self.a
+
+class NonZeroRedux:
+    nonzero: int
+    T: type
+
+    def create(T: type, **kwargs):
+        return NonZeroRedux[T](**kwargs)
+
+    def __init__(self, **kwargs):
+        self.nonzero = 0
+
+    def accept(self, item: T, index: int):
+        if item:
+            self.nonzero += 1
+
+    def result(self, count: int):
+        return self.nonzero
+
+    def empty(**kwargs):
+        pass
+
+    def done(self):
+        return False
+
+    def gradual_init(self, **kwargs):
+        return 0
+
+    def gradual_accept(self, curr, item, index: int, **kwargs):
+        if item:
+            curr += 1
+        return curr
+
+def sum(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        keepdims: Static[int] = False,
+        initial=0,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=SumRedux.create,
+        empty=SumRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        initial=initial,
+        bool_to_int=True,
+    )
+
+def nansum(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        keepdims: Static[int] = False,
+        initial=0,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=NanSumRedux.create,
+        empty=NanSumRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        initial=initial,
+        bool_to_int=True,
+    )
+
+def prod(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        keepdims: Static[int] = False,
+        initial=1,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=ProdRedux.create,
+        empty=ProdRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        initial=initial,
+        bool_to_int=True,
+    )
+
+def nanprod(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        keepdims: Static[int] = False,
+        initial=1,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=NanProdRedux.create,
+        empty=NanProdRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        initial=initial,
+        bool_to_int=True,
+    )
+
+def mean(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        keepdims: Static[int] = False,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=MeanRedux.create,
+        empty=MeanRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        conv_to_float=True,
+    )
+
+def nanmean(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        keepdims: Static[int] = False,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=NanMeanRedux.create,
+        empty=NanMeanRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        conv_to_float=True,
+    )
+
+def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
+    if dtype is NoneType:
+        zero = _cast_elem(util.zero(T), dtype, conv_to_float=True)
+    else:
+        zero = _cast_elem(util.zero(dtype), dtype, conv_to_float=True)
+
+    Z = type(zero)
+    u = zero
+    q = p
+    u = _pairwise_sum(p, n, s, dtype=Z)
+    u /= util.cast(n, Z)
+
+    if Z is complex:
+        v = 0.0
+    elif Z is complex64:
+        v = float32(0.0)
+    else:
+        v = zero
+
+    q = p
+    for _ in range(n):
+        t = util.cast(q[0], Z) - u
+        if Z is complex or Z is complex64:
+            r = abs(t)
+            v += r * r
+        else:
+            v += t * t
+        q = _increment_ptr(q, s)
+
+    v /= util.cast(n - kwargs['ddof'], type(v))
+    return v
+
+def var(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        ddof: int = 0,
+        keepdims: Static[int] = False,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce_buffered(a,
+                            _var_reducer,
+                            dtype=dtype,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=True,
+                            force_contig=False,
+                            keepdims=keepdims,
+                            where=where,
+                            ddof=ddof)
+
+def _nanvar_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
+    if dtype is NoneType:
+        zero = _cast_elem(util.zero(T), dtype, conv_to_float=True)
+    else:
+        zero = _cast_elem(util.zero(dtype), dtype, conv_to_float=True)
+
+    Z = type(zero)
+    u = zero
+    q = p
+    nans = 0
+    for _ in range(n):
+        e = util.cast(q[0], Z)
+        if _isnan(e):
+            nans += 1
+        else:
+            u += e
+        q = _increment_ptr(q, s)
+    u /= util.cast(n - nans, Z)
+
+    if Z is complex:
+        v = 0.0
+    elif Z is complex64:
+        v = float32(0.0)
+    else:
+        v = zero
+
+    q = p
+    for _ in range(n):
+        e = util.cast(q[0], Z)
+        if not _isnan(e):
+            t = util.cast(q[0], Z) - u
+            if Z is complex or Z is complex64:
+                r = abs(t)
+                v += r * r
+            else:
+                v += t * t
+        q = _increment_ptr(q, s)
+
+    v /= util.cast(n - nans - kwargs['ddof'], type(v))
+    return v
+
+def nanvar(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        ddof: int = 0,
+        keepdims: Static[int] = False,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce_buffered(a,
+                            _nanvar_reducer,
+                            dtype=dtype,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=True,
+                            force_contig=False,
+                            keepdims=keepdims,
+                            where=where,
+                            ddof=ddof)
+
+def _std_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
+    x = _var_reducer(p=p, s=s, n=n, dtype=dtype, T=T, **kwargs)
+    return util.sqrt(x)
+
+def std(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        ddof: int = 0,
+        keepdims: Static[int] = False,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce_buffered(a,
+                            _std_reducer,
+                            dtype=dtype,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=True,
+                            force_contig=False,
+                            keepdims=keepdims,
+                            where=where,
+                            ddof=ddof)
+
+def _nanstd_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
+    x = _nanvar_reducer(p=p, s=s, n=n, dtype=dtype, T=T, **kwargs)
+    return util.sqrt(x)
+
+def nanstd(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        ddof: int = 0,
+        keepdims: Static[int] = False,
+        where=util._NoValue(),
+):
+    a = asarray(a)
+    return _reduce_buffered(a,
+                            _nanstd_reducer,
+                            dtype=dtype,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=True,
+                            force_contig=False,
+                            keepdims=keepdims,
+                            where=where,
+                            ddof=ddof)
+
+def min(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        ddof: int = 0,
+        keepdims: Static[int] = False,
+        initial=util._NoValue(),
+        where=util._NoValue(),
+):
+    if not isinstance(where, util._NoValue) and isinstance(
+            initial, util._NoValue):
+        compile_error(
+            "reduction operation 'minimum' does not have an identity, so to use a where mask one has to specify 'initial'"
+        )
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=MinRedux.create,
+        empty=MinRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        initial=initial,
+    )
+
+def max(
+        a,
+        axis=None,
+        dtype: type = NoneType,
+        out=None,
+        ddof: int = 0,
+        keepdims: Static[int] = False,
+        initial=util._NoValue(),
+        where=util._NoValue(),
+):
+    if not isinstance(where, util._NoValue) and isinstance(
+            initial, util._NoValue):
+        compile_error(
+            "reduction operation 'maximum' does not have an identity, so to use a where mask one has to specify 'initial'"
+        )
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=MaxRedux.create,
+        empty=MaxRedux.empty,
+        axis=axis,
+        dtype=dtype,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+        initial=initial,
+    )
+
+def ptp(a, axis=None, out=None, keepdims: Static[int] = False):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=PTPRedux.create,
+        empty=PTPRedux.empty,
+        axis=axis,
+        out=out,
+        keepdims=keepdims,
+    )
+
+def argmin(a, axis=None, out=None, keepdims: Static[int] = False):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=ArgMinRedux.create,
+        empty=ArgMinRedux.empty,
+        axis=axis,
+        out=out,
+        keepdims=keepdims,
+    )
+
+def argmax(a, axis=None, out=None, keepdims: Static[int] = False):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=ArgMaxRedux.create,
+        empty=ArgMaxRedux.empty,
+        axis=axis,
+        out=out,
+        keepdims=keepdims,
+    )
+
+def any(a,
+        axis=None,
+        out=None,
+        keepdims: Static[int] = False,
+        where=util._NoValue()):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=AnyRedux.create,
+        empty=AnyRedux.empty,
+        axis=axis,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+    )
+
+def all(a,
+        axis=None,
+        out=None,
+        keepdims: Static[int] = False,
+        where=util._NoValue()):
+    a = asarray(a)
+    return _reduce(
+        a,
+        R=AllRedux.create,
+        empty=AllRedux.empty,
+        axis=axis,
+        out=out,
+        keepdims=keepdims,
+        where=where,
+    )
+
+def count_nonzero(a, axis=None, keepdims: Static[int] = False):
+    a = asarray(a)
+    return _reduce(a,
+                   R=NonZeroRedux.create,
+                   empty=NonZeroRedux.empty,
+                   axis=axis,
+                   keepdims=keepdims)
+
+def _median_reducer_no_nan(v: Ptr[T], s: int, n: int, dtype: type, T: type,
+                           **kwargs):
+    if n == 0:
+        if T is complex or T is complex64:
+            return _nan(T)
+        else:
+            return _nan(float)
+
+    m1, m2 = util.median(v, n)
+    if n & 1 == 0:
+        if T is complex:
+            return (m1 + m2) / 2.0
+        elif T is complex64:
+            return (m1 + m2) / float32(2.0)
+        else:
+            return (util.cast(m1, float) + util.cast(m2, float)) / 2.0
+    else:
+        if T is complex or T is complex64:
+            return m1
+        else:
+            return util.cast(m1, float)
+
+def _median_reducer(v: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
+    if _supports_nan(T):
+        for i in range(n):
+            if _isnan(v[i]):
+                if T is complex or T is complex64:
+                    return _nan(T)
+                else:
+                    return _nan(float)
+
+    return _median_reducer_no_nan(v, s, n, dtype, T, **kwargs)
+
+def median(a,
+           axis=None,
+           out=None,
+           overwrite_input: bool = False,
+           keepdims: Static[int] = False):
+    a = asarray(a)
+    return _reduce_buffered(a,
+                            _median_reducer,
+                            dtype=a.dtype,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=overwrite_input,
+                            force_contig=True,
+                            keepdims=keepdims,
+                            where=None)
+
+def _nanmedian_reducer(v: Ptr[T], s: int, n: int, dtype: type, T: type,
+                       **kwargs):
+    n = _nan_to_back(v, n)
+    return _median_reducer_no_nan(v, s, n, dtype, T, **kwargs)
+
+def nanmedian(a,
+              axis=None,
+              out=None,
+              overwrite_input: bool = False,
+              keepdims: Static[int] = False):
+    a = asarray(a)
+    return _reduce_buffered(a,
+                            _nanmedian_reducer,
+                            dtype=a.dtype,
+                            axis=axis,
+                            out=out,
+                            overwrite_input=overwrite_input,
+                            force_contig=True,
+                            keepdims=keepdims,
+                            where=None)
+
+def _sorted(ar):
+    if isinstance(ar, ndarray):
+        x = ar.flatten()
+        x.sort()
+        return x
+    else:
+        x = asarray(ar).ravel()
+        x.sort()
+        return x
+
+def _check_interpolation_as_method(method, interpolation):
+    if method != "linear":
+        # sanity check, we assume this basically never happens
+        raise TypeError(
+            "You shall not pass both `method` and `interpolation`!\n"
+            "(`interpolation` is Deprecated in favor of `method`)")
+    return interpolation
+
+def _quantile_is_valid(q):
+    # avoid expensive reductions, relevant for arrays with < O(1000) elements
+    if staticlen(q.shape) == 1 and q.size < 10:
+        for i in range(q.size):
+            if not (0.0 <= q[i] <= 1.0):
+                return False
+    else:
+        for idx in util.multirange(q.shape):
+            if not ((0.0 <= q._ptr(idx)[0]) and (q._ptr(idx)[0] <= 1.0)):
+                return False
+    return True
+
+def _get_gamma_mask(shape, default_value, conditioned_value, where):
+    out = full(shape, default_value)
+    copyto(out, conditioned_value, where=where)
+    return out
+
+def _discret_interpolation_to_boundaries(index, gamma_condition_fun):
+    if not isinstance(index, ndarray):
+        shape = ()
+    else:
+        shape = index.shape
+    previous = floor(index)
+    next = previous + 1
+    gamma = index - previous
+    res = _get_gamma_mask(shape=shape,
+                          default_value=next,
+                          conditioned_value=previous,
+                          where=gamma_condition_fun(gamma, index)).astype(int)
+    # Some methods can lead to out-of-bound integers so we clip them
+    res[res < 0] = 0
+    return res
+
+def _inverted_cdf(n, quantiles):
+    gamma_fun = lambda gamma, _: (gamma == 0)
+    return _discret_interpolation_to_boundaries((n * quantiles) - 1, gamma_fun)
+
+def _closest_observation(n, quantiles):
+    gamma_fun = lambda gamma, index: (gamma == 0) & (floor(index) % 2 == 0)
+    return _discret_interpolation_to_boundaries((n * quantiles) - 1 - 0.5,
+                                                gamma_fun)
+
+def _compute_virtual_index(n, quantiles, alpha: float, beta: float):
+    return n * quantiles + (alpha + quantiles * (1 - alpha - beta)) - 1
+
+def _get_indexes(arr, virtual_indexes, valid_values_count, supports_nan: bool):
+    previous_indexes = asarray(floor(virtual_indexes))
+    next_indexes = asarray(previous_indexes + 1)
+    indexes_above_bounds = virtual_indexes >= valid_values_count - 1
+    # When indexes is above max index, take the max value of the array
+    if indexes_above_bounds.any():
+        previous_indexes[indexes_above_bounds] = -1
+        next_indexes[indexes_above_bounds] = -1
+    # When indexes is below min index, take the min value of the array
+    indexes_below_bounds = virtual_indexes < 0
+    if indexes_below_bounds.any():
+        previous_indexes[indexes_below_bounds] = 0
+        next_indexes[indexes_below_bounds] = 0
+    if supports_nan:
+        # After the sort, slices having NaNs will have for last element a NaN
+        virtual_indexes_nans = _isnan(virtual_indexes)
+        if isinstance(virtual_indexes_nans, bool):
+            if virtual_indexes_nans:
+                previous_indexes[()] = -1
+                next_indexes[()] = -1
+        elif isinstance(virtual_indexes_nans, ndarray):
+            if virtual_indexes_nans.any():
+                previous_indexes[virtual_indexes_nans] = -1
+                next_indexes[virtual_indexes_nans] = -1
+    previous_indexes = previous_indexes.astype(int)
+    next_indexes = next_indexes.astype(int)
+    return previous_indexes, next_indexes
+
+def _lerp(a, b, t, out=None):
+    diff_b_a = subtract(b, a)
+    lerp_interpolation = asarray(add(a, diff_b_a * t, out=out))
+    subtract(b, diff_b_a * (1 - t), out=lerp_interpolation, where=t >= 0.5)
+    if staticlen(lerp_interpolation.shape) == 0 and out is None:
+        lerp_interpolation2 = lerp_interpolation[()]  # unpack 0d arrays
+    else:
+        lerp_interpolation2 = lerp_interpolation
+    return lerp_interpolation2
+
+def _quantile(
+    arr,
+    quantiles,
+    axis: int = -1,
+    method: str = "linear",
+    out=None,
+):
+    supports_nan = _supports_nan(arr.dtype)
+    arr = asarray(arr, float)
+    values_count = arr.shape[axis]
+    if axis != 0:
+        arr = moveaxis(arr, axis, destination=0)
+
+    def compute_quantile(arr, quantiles, axis: int, method: str, out,
+                         virtual_indexes, supports_nan: bool):
+        virtual_indexes = asarray(virtual_indexes)
+
+        if (virtual_indexes.dtype is int
+                or isinstance(virtual_indexes.dtype, Int)):
+            # No interpolation needed, take the points along axis
+            if supports_nan:
+                # may contain nan, which would sort to the end
+                arr.partition(concatenate((virtual_indexes.ravel(), [-1])),
+                              axis=0)
+                slices_having_nans = _isnan(arr[-1, ...])
+            else:
+                # cannot contain nan
+                arr.partition(virtual_indexes.ravel(), axis=0)
+            result = take(arr, virtual_indexes, axis=0, out=out)
+        else:
+            previous_indexes, next_indexes = _get_indexes(
+                arr, virtual_indexes, values_count, supports_nan)
+            # --- Sorting
+            arr.partition(unique(
+                concatenate((
+                    [0, -1],
+                    previous_indexes.ravel(),
+                    next_indexes.ravel(),
+                ))),
+                          axis=0)
+            if supports_nan:
+                slices_having_nans = _isnan(arr[-1, ...])
+            # --- Get values from indexes
+            previous = arr[previous_indexes]
+            next = arr[next_indexes]
+
+            # --- Linear interpolation
+            def _get_gamma(virtual_indexes, previous_indexes, method: str):
+                gamma = asarray(virtual_indexes - previous_indexes)
+                if (method == 'inverted_cdf' or method == 'closest_observation'
+                        or method == 'interpolated_inverted_cdf'
+                        or method == 'hazen' or method == 'weibull'
+                        or method == 'linear' or method == 'median_unbiased'
+                        or method == 'normal_unbiased' or method == 'lower'
+                        or method == 'higher' or method == 'nearest'):
+                    return gamma
+                elif method == 'averaged_inverted_cdf':
+                    return _get_gamma_mask(shape=gamma.shape,
+                                           default_value=1.,
+                                           conditioned_value=0.5,
+                                           where=gamma == 0)
+                elif method == 'midpoint':
+                    return _get_gamma_mask(shape=gamma.shape,
+                                           default_value=0.5,
+                                           conditioned_value=0.,
+                                           where=virtual_indexes % 1 == 0)
+
+            gamma = _get_gamma(virtual_indexes, previous_indexes, method)
+            gamma = asarray(gamma)
+            result_shape = virtual_indexes.shape + (1, ) * (arr.ndim - 1)
+            gamma = gamma.reshape(result_shape)
+            result = _lerp(previous, next, gamma, out=out)
+
+        if supports_nan:
+            if any(slices_having_nans):
+                if isinstance(result, ndarray):
+                    if result.ndim == 0 and out is None:
+                        # can't write to a scalar, but indexing will be correct
+                        result = arr[-1]
+                    else:
+                        copyto(result, arr[-1, ...], where=slices_having_nans)
+                else:
+                    if out is None:
+                        result = util.nan64()
+                    else:
+                        out[()] = util.nan64()
+        return result
+
+    # --- Computation of indexes
+    # Index where to find the value in the sorted array.
+    # Virtual because it is a floating point value, not an valid index.
+    # The nearest neighbours are used for interpolation
+    if method == 'inverted_cdf':
+        virtual_indexes = _inverted_cdf(values_count, quantiles)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'averaged_inverted_cdf':
+        virtual_indexes = (values_count * quantiles) - 1
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'closest_observation':
+        virtual_indexes = _closest_observation(values_count, quantiles)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'interpolated_inverted_cdf':
+        virtual_indexes = _compute_virtual_index(values_count, quantiles, 0, 1)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'hazen':
+        virtual_indexes = _compute_virtual_index(values_count, quantiles, 0.5,
+                                                 0.5)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'weibull':
+        virtual_indexes = _compute_virtual_index(values_count, quantiles, 0, 0)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'linear':
+        virtual_indexes = (values_count - 1) * quantiles
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'median_unbiased':
+        virtual_indexes = _compute_virtual_index(values_count, quantiles,
+                                                 1 / 3.0, 1 / 3.0)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'normal_unbiased':
+        virtual_indexes = _compute_virtual_index(values_count, quantiles,
+                                                 3 / 8.0, 3 / 8.0)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'lower':
+
+        def get_virtual_indexes(quantiles, values_count):
+            if isinstance(quantiles, ndarray):
+                return floor((values_count - 1) * quantiles).astype(int)
+            else:
+                return int(floor((values_count - 1) * quantiles))
+
+        virtual_indexes2 = get_virtual_indexes(quantiles, values_count)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes2,
+                                supports_nan=supports_nan)
+    elif method == 'higher':
+
+        def get_virtual_indexes(quantiles, values_count):
+            if isinstance(quantiles, ndarray):
+                return ceil((values_count - 1) * quantiles).astype(int)
+            else:
+                return int(ceil((values_count - 1) * quantiles))
+
+        virtual_indexes2 = get_virtual_indexes(quantiles, values_count)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes2,
+                                supports_nan=supports_nan)
+    elif method == 'midpoint':
+        virtual_indexes = 0.5 * (floor((values_count - 1) * quantiles) + ceil(
+            (values_count - 1) * quantiles))
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes,
+                                supports_nan=supports_nan)
+    elif method == 'nearest':
+
+        def get_virtual_indexes(quantiles, values_count):
+            if isinstance(quantiles, ndarray):
+                return round((values_count - 1) * quantiles).astype(int)
+            else:
+                return int(round((values_count - 1) * quantiles))
+
+        virtual_indexes2 = get_virtual_indexes(quantiles, values_count)
+        return compute_quantile(arr,
+                                quantiles=quantiles,
+                                axis=axis,
+                                method=method,
+                                out=out,
+                                virtual_indexes=virtual_indexes2,
+                                supports_nan=supports_nan)
+    else:
+        raise ValueError(f"{method} is not a valid method.")
+
+def _quantile_reducer(v: Ptr[T], s: int, n: int, dtype: type, T: type,
+                      **kwargs):
+    return _quantile(ndarray((n, ), (s, ), v),
+                     quantiles=kwargs['q'],
+                     axis=0,
+                     method=kwargs['method'],
+                     out=None)
+
+def _quantile_reducer_multi(v: Ptr[T], s: int, n: int, out: Ptr[float],
+                            dtype: type, T: type, **kwargs):
+    q = kwargs['q']
+    _quantile(ndarray((n, ), (s, ), v),
+              quantiles=q,
+              axis=0,
+              method=kwargs['method'],
+              out=ndarray((q.size, ), (util.sizeof(dtype), ), out))
+
+def _quantile_unchecked(a,
+                        q,
+                        axis=None,
+                        out=None,
+                        overwrite_input: bool = False,
+                        method: str = "linear",
+                        keepdims: Static[int] = False):
+    # Assumes that q is in [0, 1], and is an ndarray
+    if q.ndim == 0:
+        return _reduce_buffered(a,
+                                _quantile_reducer,
+                                dtype=a.dtype,
+                                axis=axis,
+                                out=out,
+                                overwrite_input=overwrite_input,
+                                keepdims=keepdims,
+                                q=q.item(),
+                                method=method)
+    elif q.ndim == 1:
+        return _reduce_buffered_multi(a,
+                                      _quantile_reducer_multi,
+                                      multi_num=q.size,
+                                      dtype=float,
+                                      axis=axis,
+                                      out=out,
+                                      overwrite_input=overwrite_input,
+                                      keepdims=keepdims,
+                                      q=q,
+                                      method=method)
+    else:
+        compile_error("q must be a scalar or 1d")
+
+def _asarray_no_complex(a):
+    a = asarray(a)
+    if a.dtype is complex or a.dtype is complex64:
+        compile_error("a must be an array of real numbers")
+    return a
+
+def quantile(a,
+             q,
+             axis=None,
+             out=None,
+             overwrite_input: bool = False,
+             method: str = "linear",
+             keepdims: Static[int] = False,
+             interpolation=None):
+    if interpolation is not None:
+        method = _check_interpolation_as_method(method, interpolation)
+
+    a = _asarray_no_complex(a)
+    q = asarray(q)
+
+    if not _quantile_is_valid(q):
+        raise ValueError("Quantiles must be in the range [0, 1]")
+    return _quantile_unchecked(a, q, axis, out, overwrite_input, method,
+                               keepdims)
+
+def _nanquantile_reducer(v: Ptr[T], s: int, n: int, dtype: type, T: type,
+                         **kwargs):
+    n = _nan_to_back(v, n)
+    return _quantile(ndarray((n, ), (s, ), v),
+                     quantiles=kwargs['q'],
+                     axis=0,
+                     method=kwargs['method'],
+                     out=None)
+
+def _nanquantile_reducer_multi(v: Ptr[T], s: int, n: int, out: Ptr[dtype],
+                               dtype: type, T: type, **kwargs):
+    n = _nan_to_back(v, n)
+    q = kwargs['q']
+    _quantile(ndarray((n, ), (s, ), v),
+              quantiles=q,
+              axis=0,
+              method=kwargs['method'],
+              out=ndarray((q.size, ), (util.sizeof(dtype), ), out))
+
+def _nanquantile_unchecked(a,
+                           q,
+                           axis=None,
+                           out=None,
+                           overwrite_input: bool = False,
+                           method: str = "linear",
+                           keepdims: Static[int] = False):
+    # Assumes that q is in [0, 1], and is an ndarray
+    if q.ndim == 0:
+        return _reduce_buffered(a,
+                                _nanquantile_reducer,
+                                dtype=a.dtype,
+                                axis=axis,
+                                out=out,
+                                overwrite_input=overwrite_input,
+                                keepdims=keepdims,
+                                q=q.item(),
+                                method=method)
+    elif q.ndim == 1:
+        return _reduce_buffered_multi(a,
+                                      _nanquantile_reducer_multi,
+                                      multi_num=q.size,
+                                      dtype=float,
+                                      axis=axis,
+                                      out=out,
+                                      overwrite_input=overwrite_input,
+                                      keepdims=keepdims,
+                                      q=q,
+                                      method=method)
+    else:
+        compile_error("q must be a scalar or 1d")
+
+def nanquantile(a,
+                q,
+                axis=None,
+                out=None,
+                overwrite_input: bool = False,
+                method: str = "linear",
+                keepdims: Static[int] = False,
+                interpolation=None):
+    if interpolation is not None:
+        method = _check_interpolation_as_method(method, interpolation)
+
+    a = _asarray_no_complex(a)
+
+    if not _supports_nan(a.dtype):
+        return quantile(a,
+                        q,
+                        axis=axis,
+                        out=out,
+                        overwrite_input=overwrite_input,
+                        method=method,
+                        keepdims=keepdims,
+                        interpolation=interpolation)
+
+    q = asarray(q)
+
+    if not _quantile_is_valid(q):
+        raise ValueError("Quantiles must be in the range [0, 1]")
+    return _nanquantile_unchecked(a, q, axis, out, overwrite_input, method,
+                                  keepdims)
+
+def percentile(a,
+               q,
+               axis=None,
+               out=None,
+               overwrite_input: bool = False,
+               method: str = "linear",
+               keepdims: Static[int] = False,
+               interpolation=None):
+    if interpolation is not None:
+        method = _check_interpolation_as_method(method, interpolation)
+
+    a = _asarray_no_complex(a)
+    q = true_divide(q, 100)
+    q = asarray(q)
+
+    if not _quantile_is_valid(q):
+        raise ValueError("Percentiles must be in the range [0, 100]")
+    return _quantile_unchecked(a, q, axis, out, overwrite_input, method,
+                               keepdims)
+
+def nanpercentile(a,
+                  q,
+                  axis=None,
+                  out=None,
+                  overwrite_input: bool = False,
+                  method: str = "linear",
+                  keepdims: Static[int] = False,
+                  interpolation=None):
+    if interpolation is not None:
+        method = _check_interpolation_as_method(method, interpolation)
+
+    a = _asarray_no_complex(a)
+
+    if not _supports_nan(a.dtype):
+        return percentile(a,
+                          q,
+                          axis=axis,
+                          out=out,
+                          overwrite_input=overwrite_input,
+                          method=method,
+                          keepdims=keepdims,
+                          interpolation=interpolation)
+
+    q = true_divide(q, 100)
+    q = asarray(q)
+
+    if not _quantile_is_valid(q):
+        raise ValueError("Percentiles must be in the range [0, 100]")
+    return _nanquantile_unchecked(a, q, axis, out, overwrite_input, method,
+                                  keepdims)
+
+@extend
+class ndarray:
+
+    def sum(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            keepdims: Static[int] = False,
+            initial=0,
+            where=util._NoValue(),
+    ):
+        return sum(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            keepdims=keepdims,
+            initial=initial,
+            where=where,
+        )
+
+    def prod(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            keepdims: Static[int] = False,
+            initial=1,
+            where=util._NoValue(),
+    ):
+        return prod(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            keepdims=keepdims,
+            initial=initial,
+            where=where,
+        )
+
+    def mean(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+    ):
+        return mean(self,
+                    axis=axis,
+                    dtype=dtype,
+                    out=out,
+                    keepdims=keepdims,
+                    where=where)
+
+    def nanmean(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+    ):
+        return nanmean(self,
+                       axis=axis,
+                       dtype=dtype,
+                       out=out,
+                       keepdims=keepdims,
+                       where=where)
+
+    def var(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            ddof: int = 0,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+    ):
+        return var(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            ddof=ddof,
+            keepdims=keepdims,
+            where=where,
+        )
+
+    def nanvar(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            ddof: int = 0,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+    ):
+        return nanvar(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            ddof=ddof,
+            keepdims=keepdims,
+            where=where,
+        )
+
+    def std(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            ddof: int = 0,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+    ):
+        return std(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            ddof=ddof,
+            keepdims=keepdims,
+            where=where,
+        )
+
+    def nanstd(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            ddof: int = 0,
+            keepdims: Static[int] = False,
+            where=util._NoValue(),
+    ):
+        return nanstd(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            ddof=ddof,
+            keepdims=keepdims,
+            where=where,
+        )
+
+    def min(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            ddof: int = 0,
+            keepdims: Static[int] = False,
+            initial=util._NoValue(),
+            where=util._NoValue(),
+    ):
+        return min(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            ddof=ddof,
+            keepdims=keepdims,
+            initial=initial,
+            where=where,
+        )
+
+    def ptp(self, axis=None, out=None, keepdims: Static[int] = False):
+        return ptp(self, axis=axis, out=out, keepdims=keepdims)
+
+    def max(
+            self,
+            axis=None,
+            dtype: type = NoneType,
+            out=None,
+            ddof: int = 0,
+            keepdims: Static[int] = False,
+            initial=util._NoValue(),
+            where=util._NoValue(),
+    ):
+        return max(
+            self,
+            axis=axis,
+            dtype=dtype,
+            out=out,
+            ddof=ddof,
+            keepdims=keepdims,
+            initial=initial,
+            where=where,
+        )
+
+    def argmin(self, axis=None, out=None, keepdims: Static[int] = False):
+        return argmin(self, axis=axis, out=out, keepdims=keepdims)
+
+    def argmax(self, axis=None, out=None, keepdims: Static[int] = False):
+        return argmax(self, axis=axis, out=out, keepdims=keepdims)
+
+    def any(self,
+            axis=None,
+            out=None,
+            keepdims: Static[int] = False,
+            where=util._NoValue()):
+        return any(self, axis=axis, out=out, keepdims=keepdims, where=where)
+
+    def all(self,
+            axis=None,
+            out=None,
+            keepdims: Static[int] = False,
+            where=util._NoValue()):
+        return all(self, axis=axis, out=out, keepdims=keepdims, where=where)

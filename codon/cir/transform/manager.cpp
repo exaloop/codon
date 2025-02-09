@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "manager.h"
 
@@ -15,6 +15,7 @@
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
 #include "codon/cir/transform/manager.h"
+#include "codon/cir/transform/numpy/numpy.h"
 #include "codon/cir/transform/parallel/openmp.h"
 #include "codon/cir/transform/pass.h"
 #include "codon/cir/transform/pythonic/dict.h"
@@ -195,6 +196,9 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
                      seKey1, rdKey, globalKey, /*repeat=*/5, /*runGlobalDemoton=*/false,
                      pyNumerics),
                  /*insertBefore=*/"", {seKey1, rdKey, globalKey},
+                 {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<numpy::NumPyFusionPass>(rdKey, seKey2),
+                 /*insertBefore=*/"", {rdKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel

@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import os
 import sys
@@ -84,7 +84,7 @@ setup(
     long_description="Please see https://exaloop.io for more details.",
     author="Exaloop Inc.",
     author_email="info@exaloop.io",
-    license="Commercial",
+    license="Apache License 2.0",
     ext_modules=[jit_extension],
     packages=["codon"],
     include_package_data=True,

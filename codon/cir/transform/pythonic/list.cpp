@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "list.h"
 
@@ -45,7 +45,7 @@ struct ElementHandler {
   void doSetup(const std::vector<Value *> &values, SeriesFlow *block,
                BodiedFunc *parent) {
     for (auto *v : values) {
-      vars.push_back(util::makeVar(v, block, parent)->getVar());
+      vars.push_back(util::makeVar(v, block, parent));
     }
   }
 
@@ -226,7 +226,7 @@ Value *optimize(BodiedFunc *parent, InspectionResult &r) {
   }
 
   auto *opt = M->Nr<SeriesFlow>();
-  auto *len = util::makeVar(M->getInt(0), opt, parent)->getVar();
+  auto *len = util::makeVar(M->getInt(0), opt, parent);
 
   for (auto &h : handlers) {
     h->setup(opt, parent);
@@ -238,8 +238,7 @@ Value *optimize(BodiedFunc *parent, InspectionResult &r) {
 
   auto *fn = M->getOrRealizeMethod(ty, "_list_add_opt_opt_new", {M->getIntType()});
   seqassertn(fn, "could not find list new helper");
-  auto *result =
-      util::makeVar(util::call(fn, {M->Nr<VarValue>(len)}), opt, parent)->getVar();
+  auto *result = util::makeVar(util::call(fn, {M->Nr<VarValue>(len)}), opt, parent);
 
   for (auto &h : handlers) {
     opt->push_back(h->append(M->Nr<VarValue>(result)));

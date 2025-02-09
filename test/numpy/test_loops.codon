@@ -1,0 +1,157 @@
+import numpy as np
+
+test_values0 = [
+    3.,4.,5.,-3.,-4.,-5.,
+    0.0,
+    -0.0,
+    1.0,
+    -1.0,
+    2.0,
+    -2.0,
+
+    np.inf,
+    -np.inf,
+    np.nan,
+
+    np.array(9221120237041090560).view(float).item(),  # qnan
+    np.array(-2251799813685248).view(float).item(),  # snan
+
+    np.pi,
+    -np.pi,
+    np.pi/2,
+    -np.pi/2,
+
+    np.finfo(float).max,
+    np.finfo(float).min,
+    np.finfo(float).resolution,
+    np.array(1).view(float).item(),
+
+    float(np.finfo(np.float32).max),
+    float(np.finfo(np.float32).min),
+    float(np.finfo(np.float32).resolution),
+    float(np.array(1, dtype=np.uint32).view(np.float32).item()),
+
+    1.,
+    10.,
+    100.,
+    1000.,
+    10000.,
+    100000.,
+
+    -1.,
+    -10.,
+    -100.,
+    -1000.,
+    -10000.,
+    -100000.,
+
+    1e9,
+    -1e9,
+
+    1e100,
+    -1e100,
+
+    1e-100,
+    -1e-100,
+]
+
+test_values = test_values0 + list(np.arange(-1_000_001, 1_000_001, dtype=float))
+
+N = len(test_values)
+test_values *= 4  # Make sure we evenly divide the number of SIMD lanes
+
+@test
+def test_func(fn, name: Static[str]):
+    # Test float64
+    vals = np.array(test_values, dtype=float)
+    ans1 = fn(vals)
+    ans2 = vals
+    for i in range(len(ans2)):
+        ans2[i] = fn(ans2[i])
+
+    fail = False
+    for i in range(N):
+        a1 = ans1[i]
+        a2 = ans2[i]
+        n1 = np.asarray(a1).view(np.int64).item()
+        n2 = np.asarray(a2).view(np.int64).item()
+        if not ((np.isfinite(a1) and np.isfinite(a2) and np.isclose(a1, a2, atol=1e-30)) or n1 == n2 or (np.isnan(a1) and np.isnan(a2))):
+            fail = True
+    assert not fail
+
+    # Test float32
+    vals = np.array(test_values).astype(np.float32)
+    ans1 = fn(vals)
+    ans2 = vals.copy()
+    for i in range(len(ans2)):
+        ans2[i] = fn(ans2[i])
+
+    fail = False
+    for i in range(N):
+        a1 = ans1[i]
+        a2 = ans2[i]
+        n1 = np.asarray(a1).view(np.int32).item()
+        n2 = np.asarray(a2).view(np.int32).item()
+        if not ((np.isfinite(a1) and np.isfinite(a2) and np.isclose(a1, a2, atol=1e-30)) or n1 == n2 or (np.isnan(a1) and np.isnan(a2))):
+            fail = True
+    assert not fail
+
+test_func(np.arccos, 'arccos')
+test_func(np.arccosh, 'arccosh')
+test_func(np.arcsin, 'arcsin')
+test_func(np.arcsinh, 'arcsinh')
+test_func(np.arctan, 'arctan')
+test_func(np.arctanh, 'arctanh')
+test_func(np.cos, 'cos')
+test_func(np.exp, 'exp')
+test_func(np.exp2, 'exp2')
+test_func(np.expm1, 'expm1')
+test_func(np.log, 'log')
+test_func(np.log10, 'log10')
+test_func(np.log1p, 'log1p')
+test_func(np.log2, 'log2')
+test_func(np.sin, 'sin')
+test_func(np.sinh, 'sinh')
+test_func(np.tanh, 'tanh')
+
+@test
+def test_func2(fn, name: Static[str]):
+    for shift in range(1, len(test_values0)):
+        # Test float64
+        vals = np.array(test_values0, dtype=float)
+        vals1 = np.roll(vals, shift)
+        ans1 = fn(vals, vals1)
+        ans2 = vals
+        for i in range(len(ans2)):
+            ans2[i] = fn(ans2[i], vals1[i])
+
+        fail = False
+        for i in range(len(ans1)):
+            a1 = ans1[i]
+            a2 = ans2[i]
+            n1 = np.asarray(a1).view(np.int64).item()
+            n2 = np.asarray(a2).view(np.int64).item()
+            if not ((np.isfinite(a1) and np.isfinite(a2) and np.isclose(a1, a2, atol=1e-30)) or n1 == n2 or (np.isnan(a1) and np.isnan(a2))):
+                fail = True
+        assert not fail
+
+        # Test float32
+        vals = np.array(test_values0).astype(np.float32)
+        vals1 = np.roll(vals, shift)
+        ans1 = fn(vals, vals1)
+        ans2 = vals.copy()
+        for i in range(len(ans2)):
+            ans2[i] = fn(ans2[i], vals1[i])
+
+        fail = False
+        for i in range(len(ans1)):
+            a1 = ans1[i]
+            a2 = ans2[i]
+            n1 = np.asarray(a1).view(np.int32).item()
+            n2 = np.asarray(a2).view(np.int32).item()
+            if not ((np.isfinite(a1) and np.isfinite(a2) and np.isclose(a1, a2, atol=1e-30)) or n1 == n2 or (np.isnan(a1) and np.isnan(a2))):
+                fail = True
+        assert not fail
+
+test_func2(np.hypot, 'hypot')
+test_func2(np.arctan2, 'arctan2')

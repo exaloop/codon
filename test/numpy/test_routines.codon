@@ -1,0 +1,2087 @@
+import numpy as np
+from numpy import *
+
+############
+# creation #
+############
+
+@test
+def test_empty(shape, expected_shape):
+    assert np.empty(shape).shape == expected_shape
+
+test_empty((2, 2), (2, 2))
+test_empty(2, (2, ))
+
+@test
+def test_empty_like(prototype, expected_shape):
+    assert np.empty_like(prototype).shape == expected_shape
+
+test_empty_like(np.array([[1, 2, 3], [4, 5, 6]]), (2, 3))
+test_empty_like(np.array([[1, 2, 3], [4, 5, 6]])[::2], (1, 3))
+
+@test
+def test_eye(N, expected, M: Optional[int] = None):
+    assert (np.eye(N, M) == expected).all()
+
+test_eye(2, np.array([[1., 0., 0.], [0., 1., 0.]]), 3)
+test_eye(3, np.array([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]))
+
+@test
+def test_identity(N, expected):
+    assert (np.identity(N) == expected).all()
+
+test_identity(2, np.array([[1., 0.], [0., 1.]]))
+test_identity(3, np.array([[1., 0., 0.], [0., 1., 0.], [0., 0., 1.]]))
+
+@test
+def test_ones(shape, expected):
+    assert (np.ones(shape) == expected).all()
+
+test_ones(5, np.array([1., 1., 1., 1., 1.]))
+test_ones((2, 1), np.array([[1.], [1.]]))
+
+@test
+def test_ones_like(a, expected):
+    assert (np.ones_like(a) == expected).all()
+
+test_ones_like(np.array([[0, 1, 2], [3, 4, 5]]),
+               np.array([[1, 1, 1], [1, 1, 1]]))
+test_ones_like(np.array([0, 1, 2, 3, 4, 5])[::2], np.array([1, 1, 1]))
+
+@test
+def test_zeros(shape, expected):
+    assert (np.zeros(shape) == expected).all()
+
+test_zeros(5, np.array([0., 0., 0., 0., 0.]))
+test_zeros((2, 1), np.array([[0.], [0.]]))
+
+@test
+def test_zeros_like(a, expected):
+    assert (np.zeros_like(a) == expected).all()
+
+test_zeros_like(np.array([[0, 1, 2], [3, 4, 5]]),
+                np.array([[0, 0, 0], [0, 0, 0]]))
+test_zeros_like(np.array([0, 1, 2, 3, 4, 5])[::2], np.array([0, 0, 0]))
+
+@test
+def test_full(shape, fill_val, expected):
+    assert (np.full(shape, fill_val) == expected).all()
+
+test_full(5, 5, np.array([5, 5, 5, 5, 5]))
+test_full((2, 1), np.inf, np.array([[inf], [inf]]))
+test_full((2, 2), [1, 2], np.array([[1, 2], [1, 2]]))
+
+@test
+def test_full_like(a, fill_val, expected):
+    assert (np.full_like(a, fill_val) == expected).all()
+
+test_full_like(np.array([[0, 1, 2], [3, 4, 5]]), 0.1,
+               np.array([[0.1, 0.1, 0.1], [0.1, 0.1, 0.1]]))
+test_full_like(np.array([0, 1, 2, 3, 4, 5])[::2], 10, np.array([10, 10, 10]))
+
+@test
+def test_array(a,
+               expected,
+               dtype: type = NoneType,
+               copy: bool = True,
+               order: str = 'K',
+               ndmin: Static[int] = 0):
+    assert (np.array(a, dtype, copy, order, ndmin) == expected).all()
+
+test_array(np.array([1, 2, 3.0]), np.array([1., 2., 3.]))
+test_array([[1, 2], [3, 4]], np.array([[1, 2], [3, 4]]))
+test_array([1, 2, 3], np.array([1. + 0.j, 2. + 0.j, 3. + 0.j]), dtype=complex)
+test_array([1, 2, 3], np.array([[1, 2, 3]]), ndmin=2)
+
+@test
+def test_copy(a):
+    x = a.copy()
+    assert (x == a).all()
+
+test_copy(np.array([1, 2, 3]))
+
+@test
+def test_frombuffer(buffer,
+                    expected,
+                    dtype: type = float,
+                    count: int = -1,
+                    offset: int = 0):
+    print(np.frombuffer(buffer, dtype, count, offset))
+    assert (np.frombuffer(buffer, dtype, count, offset) == expected).all()
+
+#test_frombuffer('hello world', array(['w', 'o', 'r', 'l', 'd'], dtype='|S1'), dtype='S1', count=5, offset=6)
+
+@test
+def test_fromfunction(function, shape, expected, dtype: type = float):
+    assert (np.fromfunction(function, shape, dtype) == expected).all()
+
+test_fromfunction(lambda i, j: i, (2, 2),
+                  np.array([[0., 0.], [1., 1.]]),
+                  dtype=float)
+test_fromfunction(lambda i, j: i + j, (3, 3),
+                  np.array([[0, 1, 2], [1, 2, 3], [2, 3, 4]]),
+                  dtype=int)
+
+@test
+def test_fromiter(iter, expected, dtype: type = float, count: int = -1):
+    assert (np.fromiter(iter, dtype, count) == expected).all()
+
+test_fromiter((x * x for x in range(5)), np.array([0., 1., 4., 9., 16.]))
+
+@test
+def test_arange(expected, start, stop, step, dtype: type = float):
+    assert (np.arange(start, stop, step) == expected).all()
+
+test_arange(np.array([3, 5]), 3, 7, 2)
+
+@test
+def test_linspace(start,
+                  stop,
+                  expected,
+                  num: int = 50,
+                  endpoint: bool = True,
+                  retstep: Static[int] = False,
+                  dtype: type = float):
+    assert (np.linspace(start, stop, num, endpoint, retstep,
+                        dtype) == expected).all()
+
+test_linspace(2.0, 3.0, np.array([2., 2.25, 2.5, 2.75, 3.]), num=5)
+test_linspace(2.0,
+              3.0,
+              np.array([2., 2.2, 2.4, 2.6, 2.8]),
+              num=5,
+              endpoint=False)
+
+@test
+def test_logspace(start,
+                  stop,
+                  expected,
+                  num: int = 50,
+                  endpoint: bool = True,
+                  base: float = 10.0,
+                  retstep: Static[int] = False,
+                  dtype: type = float):
+    assert (round(
+        np.logspace(start, stop, num, endpoint, base, retstep, dtype),
+        8) == round(expected, 8)).all()
+
+test_logspace(2.0,
+              3.0,
+              np.array([100., 215.44346900, 464.15888336, 1000.]),
+              num=4)
+test_logspace(2.0,
+              3.0,
+              np.array([100., 177.82794100, 316.22776602, 562.34132519]),
+              num=4,
+              endpoint=False)
+test_logspace(2.0,
+              3.0,
+              np.array([4., 5.03968420, 6.34960421, 8.]),
+              num=4,
+              base=2)
+
+@test
+def test_geomspace(start,
+                   stop,
+                   expected,
+                   num: int = 50,
+                   endpoint: bool = True):
+    assert (np.geomspace(start, stop, num, endpoint) == expected).all()
+
+test_geomspace(1000, 1, np.array([1000., 100., 10., 1.]), num=4)
+test_geomspace(-1000, -1, np.array([-1000., -100., -10., -1.]), num=4)
+#test_geomspace(1j, 1000j, np.array([0.+1.j, 0.+10.j, 0.+100.j, 0.+1000.j]), num=4)
+
+@test
+def test_meshgrid(expected, *xi):
+    list1 = np.meshgrid(*xi)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_meshgrid([
+    np.array([[0., 0.5, 1.], [0., 0.5, 1.]]),
+    np.array([[0., 0., 0.], [1., 1., 1.]])
+]), np.array([0., 0.5, 1.]), np.array([0., 1.])
+
+@test
+def test_diag(v, expected, k: int = 0):
+    assert (np.diag(v, k) == expected).all()
+
+test_diag(np.arange(9).reshape((3, 3)), np.array([0, 4, 8]))
+test_diag(np.arange(9).reshape((3, 3)), np.array([1, 5]), k=1)
+test_diag(np.arange(9).reshape((3, 3)), np.array([3, 7]), k=-1)
+
+@test
+def test_diagflat(v, expected, k: int = 0):
+    assert (np.diagflat(v, k) == expected).all()
+
+test_diagflat(
+    np.array([[1, 2], [3, 4]]),
+    np.array([[1, 0, 0, 0], [0, 2, 0, 0], [0, 0, 3, 0], [0, 0, 0, 4]]))
+test_diagflat([1, 2], np.array([[0, 1, 0], [0, 0, 2], [0, 0, 0]]), k=1)
+
+@test
+def test_tri(N,
+             expected,
+             M: Optional[int] = None,
+             k: int = 0,
+             dtype: type = float):
+    assert (np.tri(N, M, k, dtype) == expected).all()
+
+test_tri(3, np.array([[1, 1, 1, 0, 0], [1, 1, 1, 1, 0], [1, 1, 1, 1, 1]]), 5,
+         2, int)
+test_tri(
+    3,
+    np.array([[0., 0., 0., 0., 0.], [1., 0., 0., 0., 0.], [1., 1., 0., 0.,
+                                                           0.]]), 5, -1)
+
+@test
+def test_tril(m, expected, k: int = 0):
+    assert (np.tril(m, k) == expected).all()
+
+test_tril([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]],
+          np.array([[0, 0, 0], [4, 0, 0], [7, 8, 0], [10, 11, 12]]), -1)
+test_tril(
+    np.arange(1 * 2 * 3).reshape(1, 2, 3), np.array([[[0, 0, 0], [3, 4, 0]]]))
+
+@test
+def test_triu(m, expected, k: int = 0):
+    assert (np.triu(m, k) == expected).all()
+
+test_triu([[1, 2, 3], [4, 5, 6], [7, 8, 9], [10, 11, 12]],
+          np.array([[1, 2, 3], [4, 5, 6], [0, 8, 9], [0, 0, 12]]), -1)
+test_triu(
+    np.arange(1 * 2 * 3).reshape(1, 2, 3), np.array([[[0, 1, 2], [0, 4, 5]]]))
+
+@test
+def test_vander(x,
+                expected,
+                N: Optional[int] = None,
+                increasing: bool = False):
+    assert (np.vander(x, N, increasing) == expected).all()
+
+test_vander(np.array([1, 2, 3, 5]),
+            np.array([[1, 1, 1], [4, 2, 1], [9, 3, 1], [25, 5, 1]]),
+            N=3)
+test_vander(
+    np.array([1, 2, 3, 5]),
+    np.array([[1, 1, 1, 1], [8, 4, 2, 1], [27, 9, 3, 1], [125, 25, 5, 1]]))
+test_vander(np.array([1, 2, 3, 5]),
+            np.array([[1, 1, 1, 1], [1, 2, 4, 8], [1, 3, 9, 27],
+                      [1, 5, 25, 125]]),
+            increasing=True)
+
+################
+# manipulation #
+################
+
+@test
+def test_copyto(dst, src):
+    np.copyto(dst, src)
+    if len(dst) == len(src):
+        assert (dst == src).all()
+    else:
+        arr = np.array([src[0]] * len(dst))
+        assert (dst == arr).all()
+
+test_copyto(np.array([4, 5, 6]), np.array([1, 2, 3]))
+test_copyto(np.array([4, 5, 6]), np.array([4, 5, 6]))
+test_copyto(np.array([1, 2]), np.array([1]))
+test_copyto(np.array([[1, 2, 3], [4, 5, 6]]), [[4, 5, 6], [7, 8, 9]])
+
+@test
+def test_shape(a, expected_shape):
+    assert np.shape(a) == expected_shape
+
+test_shape(np.eye(3), (3, 3))
+test_shape([[1, 3]], (1, 2))
+test_shape([0], (1, ))
+test_shape(0, ())
+
+@test
+def test_reshape(a, newshape, expected):
+    assert (np.reshape(a, newshape) == expected).all()
+
+test_reshape(np.arange(6), (3, 2), np.array([[0, 1], [2, 3], [4, 5]]))
+test_reshape(np.array([[1, 2, 3], [4, 5, 6]]), 6, np.array([1, 2, 3, 4, 5, 6]))
+test_reshape(np.arange(6), (3, -1), np.array([[0, 1], [2, 3], [4, 5]]))
+
+@test
+def test_ravel(a, expected):
+    assert (np.ravel(a) == expected).all()
+
+test_ravel(np.array([[1, 2, 3], [4, 5, 6]]), np.array([1, 2, 3, 4, 5, 6]))
+test_ravel(np.arange(3)[::-1], np.array([2, 1, 0]))
+
+@test
+def test_flat(a, index, expected):
+    assert a.flat[index] == expected
+
+test_flat(np.array([[1, 2, 3], [4, 5, 6]]), 3, 4)
+test_flat(np.array([[1, 4], [2, 5], [3, 6]]), 3, 5)
+
+@test
+def test_flatten(a, expected):
+    assert (a.flatten() == expected).all()
+
+test_flatten(np.array([[1, 2], [3, 4]]), np.array([1, 2, 3, 4]))
+test_flatten(np.array([[1, 4], [2, 5], [3, 6]]), np.array([1, 4, 2, 5, 3, 6]))
+
+@test
+def test_moveaxis(a, source, dest, expected_shape):
+    assert np.moveaxis(a, source, dest).shape == expected_shape
+
+test_moveaxis(np.zeros((3, 4, 5)), 0, -1, (4, 5, 3))
+test_moveaxis(np.zeros((3, 4, 5)), -1, 0, (5, 3, 4))
+test_moveaxis(np.zeros((3, 4, 5)), [0, 1], [-1, -2], (5, 4, 3))
+
+@test
+def test_swapaxes(a, axis1, axis2, expected_shape):
+    assert np.swapaxes(a, axis1, axis2).shape == expected_shape
+
+test_swapaxes(np.array([[1, 2, 3]]), 0, 1, (3, 1))
+test_swapaxes(np.array([[[0, 1], [2, 3]], [[4, 5], [6, 7]]]), 0, 2, (2, 2, 2))
+
+@test
+def test_transpose(a, expected):
+    assert (a.T == expected).all()
+    assert (np.transpose(a) == expected).all()
+
+test_transpose(np.array([[1, 2], [3, 4]]), np.array([[1, 3], [2, 4]]))
+test_transpose(np.array([1, 2, 3, 4]), np.array([1, 2, 3, 4]))
+
+@test
+def test_atleast_1d(arr, expected):
+    assert (np.atleast_1d(arr) == expected).all()
+
+test_atleast_1d(1.0, np.array([1.]))
+test_atleast_1d(
+    np.arange(9.0).reshape(3, 3),
+    np.array([[0., 1., 2.], [3., 4., 5.], [6., 7., 8.]]))
+
+@test
+def test_atleast_2d(arr, expected):
+    assert (np.atleast_2d(arr) == expected).all()
+
+test_atleast_2d(3.0, np.array([[3.]]))
+test_atleast_2d(np.arange(3.0), np.array([[0., 1., 2.]]))
+
+@test
+def test_atleast_3d(arr, expected_shape):
+    assert np.atleast_3d(arr).shape == expected_shape
+
+test_atleast_3d(3.0, (1, 1, 1))
+test_atleast_3d(np.arange(3.0), (1, 3, 1))
+test_atleast_3d(np.arange(12.0).reshape(4, 3), (4, 3, 1))
+
+@test
+def test_broadcast_to(x, dim):
+    assert np.broadcast_to(x, dim).shape == dim
+
+test_broadcast_to(np.array([1, 2, 3]), (3, 3))
+
+@test
+def test_broadcast_arrays(expected1, expected2, *args):
+    x = np.broadcast_arrays(*args)
+    assert (x[0] == expected1).all() and (x[1] == expected2).all()
+
+test_broadcast_arrays(np.array([[1, 2, 3], [1, 2, 3]]),
+                      np.array([[4, 4, 4], [5, 5, 5]]), np.array([[1, 2, 3]]),
+                      np.array([[4], [5]]))
+
+@test
+def test_expand_dims(a, axis, expected_shape):
+    assert np.expand_dims(a, axis).shape == expected_shape
+
+test_expand_dims(np.array([1, 2]), 0, (1, 2))
+test_expand_dims(np.array([1, 2]), 1, (2, 1))
+test_expand_dims(np.array([1, 2]), (0, 1), (1, 1, 2))
+
+@test
+def test_allclose(a,
+                  b,
+                  expected,
+                  rtol: float = 1e-05,
+                  atol: float = 1e-08,
+                  equal_nan: bool = False):
+    assert np.allclose(a, b, rtol=rtol, atol=atol,
+                       equal_nan=equal_nan) == expected
+
+test_allclose([1e10, 1e-7], [1.00001e10, 1e-8], False)
+test_allclose([1e10, 1e-8], [1.00001e10, 1e-9], True)
+test_allclose([1e10, 1e-8], [1.0001e10, 1e-9], False)
+test_allclose([1.0, np.nan], [1.0, np.nan], False)
+test_allclose([1.0, np.nan], [1.0, np.nan], True, equal_nan=True)
+
+@test
+def test_isclose(a,
+                 b,
+                 expected,
+                 rtol: float = 1e-05,
+                 atol: float = 1e-08,
+                 equal_nan: bool = False):
+    assert (np.isclose(a, b, rtol=rtol, atol=atol,
+                       equal_nan=equal_nan) == expected).all()
+
+test_isclose([1e10, 1e-7], [1.00001e10, 1e-8], np.array([True, False]))
+test_isclose([1e10, 1e-8], [1.00001e10, 1e-9], np.array([True, True]))
+test_isclose([1e10, 1e-8], [1.0001e10, 1e-9], np.array([False, True]))
+test_isclose([1.0, np.nan], [1.0, np.nan], np.array([True, False]))
+test_isclose([1.0, np.nan], [1.0, np.nan],
+             np.array([True, True]),
+             equal_nan=True)
+test_isclose([1e-8, 1e-7], [0.0, 0.0], np.array([True, False]))
+test_isclose([1e-100, 1e-7], [0.0, 0.0], np.array([False, False]), atol=0.0)
+test_isclose([1e-10, 1e-10], [1e-20, 0.0], np.array([True, True]))
+test_isclose([1e-10, 1e-10], [1e-20, 0.999999e-10],
+             np.array([False, True]),
+             atol=0.0)
+
+@test
+def test_array_equal():
+    assert np.array_equal([1, 2], [1, 2])
+    assert np.array_equal(np.array([1, 2]), np.array([1, 2]))
+    assert not np.array_equal([1, 2], [1, 2, 3])
+    assert not np.array_equal([1, 2], [1, 4])
+    a = np.array([1, np.nan])
+    assert not np.array_equal(a, a)
+    assert np.array_equal(a, a, equal_nan=True)
+    a = np.array([np.nan + 1j])
+    b = np.array([1 + np.nan * 1j])
+    assert np.array_equal(a, b, equal_nan=True)
+    assert np.array_equal([1, 2, 3], [1.0, 2.0, 3.0])
+
+test_array_equal()
+
+@test
+def test_array_equiv():
+    assert np.array_equiv([1, 2], [1, 2])
+    assert not np.array_equiv([1, 2], [1, 3])
+    assert np.array_equiv([1, 2], [[1, 2], [1, 2]])
+    assert not np.array_equiv([1, 2], [[1, 2, 1, 2], [1, 2, 1, 2]])
+    assert not np.array_equiv([1, 2], [[1, 2], [1, 3]])
+    assert np.array_equiv([[1, 1]], [[1], [1]])
+    assert not np.array_equiv([[1, 2]], [[1], [2]])
+    assert np.array_equiv([1, 2, 3], [1.0, 2.0, 3.0])
+
+test_array_equiv()
+
+@test
+def test_squeeze(a, axis, expected_shape):
+    assert np.squeeze(a, axis).shape == expected_shape
+
+test_squeeze(np.array([[[0], [1], [2]]]), 0, (3, 1))
+test_squeeze(np.array([[[0], [1], [2]]]), (0, 2), (3, ))
+
+@test
+def test_asarray(a, expected, dtype: type = NoneType, order: str = 'K'):
+    assert (np.asarray(a, dtype=dtype, order=order) == expected).all()
+
+test_asarray([1, 2], np.array([1, 2]))
+test_asarray(np.array([1, 2]), np.array([1, 2]))
+test_asarray([1, 2], np.array([1., 2.]), float)
+test_asarray([[1, 2], [3, 4]], np.array([[1, 2], [3, 4]]), order='F')
+
+@test
+def test_asanyarray(a, expected, dtype: type = NoneType, order: str = 'K'):
+    assert (np.asanyarray(a, dtype=dtype, order=order) == expected).all()
+
+test_asanyarray([1, 2], np.array([1, 2]))
+test_asanyarray([[1, 2], [3, 4]], np.array([[1, 2], [3, 4]]), order='F')
+
+@test
+def test_asfarray(a, expected, dtype: type = NoneType):
+    assert (np.asfarray(a, dtype=dtype) == expected).all()
+
+test_asfarray([2, 3], np.array([2., 3.]))
+test_asfarray([2, 3], np.array([2., 3.]), float)
+test_asfarray([2, 3], np.array([2., 3.]), int)
+
+@test
+def test_asfortranarray(a, expected, dtype: type = NoneType):
+    assert (np.asfortranarray(a, dtype=dtype) == expected).all()
+
+test_asfortranarray(np.ones((2, 3), order='F'), np.ones((2, 3), order='F'))
+test_asfortranarray(np.ones((2, 3), order='C'), np.ones((2, 3), order='F'))
+
+@test
+def test_ascontiguousarray(a, expected, dtype: type = NoneType):
+    assert (np.ascontiguousarray(a, dtype=dtype) == expected).all()
+
+test_ascontiguousarray(np.ones((2, 3), order='F'), np.ones((2, 3), order='C'))
+test_ascontiguousarray(np.ones((2, 3), order='C'), np.ones((2, 3), order='C'))
+
+@test
+def test_asarray_chkfinite(a, expected, dtype: type = NoneType):
+    assert (np.asarray_chkfinite(a, dtype=dtype) == expected).all()
+
+test_asarray_chkfinite([1, 2], np.array([1., 2.]), float)
+#test_asarray_chkfinite([1, 2, np.inf], error)
+
+@test
+def test_require(a, expected, req=None, dt: type = NoneType):
+    assert (np.require(a, dtype=dt, requirements=req) == expected).all()
+
+test_require(np.ones((2, 3), order='C'), np.ones((2, 3), order='C'))
+test_require(
+    np.arange(6).reshape(2, 3), np.array([[0., 1., 2.], [3., 4., 5.]]),
+    ['A', 'O', 'W', 'F'], float)
+
+@test
+def test_concatenate(arrays, expected, axis=0):
+    assert (np.concatenate((arrays), axis) == expected).all()
+
+test_concatenate((np.array([[1, 2], [3, 4]]), np.array([[5, 6]])),
+                 np.array([[1, 2], [3, 4], [5, 6]]))
+test_concatenate((np.array([[1, 2], [3, 4]]), np.array([[5, 6]])),
+                 np.array([1, 2, 3, 4, 5, 6]),
+                 axis=None)
+test_concatenate((np.array([[1, 2], [3, 4]]), np.array([[5], [6]])),
+                 np.array([[1, 2, 5], [3, 4, 6]]), 1)
+
+# Test concatenation of integer arrays
+@test
+def test_concatenate_int_arrays():
+    a = np.array([1, 2, 3])
+    b = np.array([4, 5, 6])
+
+    result = np.concatenate((a, b))
+    expected = np.array([1, 2, 3, 4, 5, 6])
+    assert np.array_equal(result, expected)
+
+    result = np.concatenate((a, b), dtype=float)
+    expected = np.array([1, 2, 3, 4, 5, 6], dtype=float)
+    assert np.array_equal(result, expected)
+
+# Test concatenation of float arrays
+@test
+def test_concatenate_float_arrays():
+    a = np.array([1.1, 2.2, 3.3])
+    b = np.array([4.4, 5.5, 6.6])
+    result = np.concatenate((a, b))
+    expected = np.array([1.1, 2.2, 3.3, 4.4, 5.5, 6.6])
+    assert np.array_equal(result, expected)
+
+# Test concatenation along axis 0
+@test
+def test_concatenate_axis_0():
+    a = np.array([[1, 2], [3, 4]])
+    b = np.array([[5, 6], [7, 8]])
+    result = np.concatenate((a, b), axis=0)
+    expected = np.array([[1, 2], [3, 4], [5, 6], [7, 8]])
+    assert np.array_equal(result, expected)
+
+# Test concatenation along axis 1
+@test
+def test_concatenate_axis_1():
+    a = np.array([[1, 2], [3, 4]])
+    b = np.array([[5, 6], [7, 8]])
+    result = np.concatenate((a, b), axis=1)
+    expected = np.array([[1, 2, 5, 6], [3, 4, 7, 8]])
+    assert np.array_equal(result, expected)
+
+# Test concatenation with None axis (flattened arrays)
+@test
+def test_concatenate_none_axis():
+    a = np.array([[1, 2], [3, 4]])
+    b = np.array([[5, 6], [7, 8]])
+    result = np.concatenate((a, b), axis=None)
+    expected = np.array([1, 2, 3, 4, 5, 6, 7, 8])
+    assert np.array_equal(result, expected)
+
+# Test concatenation of arrays of different data types
+@test
+def test_concatenate_mixed_dtypes():
+    a = np.array([1, 2, 3])
+    b = np.array([4.0, 5.0, 6.0])
+    result = np.concatenate((a, b))
+    expected = np.array([1, 2, 3, 4.0, 5.0, 6.0])
+    assert np.array_equal(result, expected)
+
+# Test concatenation of list and ndarray
+@test
+def test_concatenate_list_and_ndarray():
+    a = [1, 2, 3]
+    b = np.array([4, 5, 6])
+    result = np.concatenate((a, b))
+    expected = np.array([1, 2, 3, 4, 5, 6])
+    assert np.array_equal(result, expected)
+
+# Test concatenation of tuple and ndarray
+@test
+def test_concatenate_tuple_and_ndarray():
+    a = (1, 2, 3)
+    b = np.array([4, 5, 6])
+    result = np.concatenate((a, b))
+    expected = np.array([1, 2, 3, 4, 5, 6])
+    assert np.array_equal(result, expected)
+
+# Test concatenation of non-contiguous arrays
+@test
+def test_concatenate_non_contiguous():
+    a = np.arange(10)[::2]  # Non-contiguous array
+    b = np.arange(10, 20)[::2]  # Non-contiguous array
+    result = np.concatenate((a, b))
+    expected = np.array([0, 2, 4, 6, 8, 10, 12, 14, 16, 18])
+    assert np.array_equal(result, expected)
+
+# Test concatenation along higher dimensions
+@test
+def test_concatenate_higher_dims():
+    a = np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]]])
+    b = np.array([[[9, 10], [11, 12]], [[13, 14], [15, 16]]])
+
+    result = np.concatenate((a, b), axis=0)
+    expected = np.array([[[1, 2], [3, 4]], [[5, 6], [7, 8]], [[9, 10], [11, 12]], [[13, 14], [15, 16]]])
+    assert np.array_equal(result, expected)
+
+    result = np.concatenate((a, a.T, b, b.T), axis=0)
+    expected = np.array([[[ 1,  2],
+                          [ 3,  4]],
+                         [[ 5,  6],
+                          [ 7,  8]],
+                         [[ 1,  5],
+                          [ 3,  7]],
+                         [[ 2,  6],
+                          [ 4,  8]],
+                         [[ 9, 10],
+                          [11, 12]],
+                         [[13, 14],
+                          [15, 16]],
+                         [[ 9, 13],
+                          [11, 15]],
+                         [[10, 14],
+                          [12, 16]]])
+    assert np.array_equal(result, expected)
+
+@test
+def test_concatenate_one_array():
+    a = np.array([[1, 2], [3, 4]])
+    assert np.array_equal(np.concatenate(a), [1, 2, 3, 4])
+    assert np.array_equal(np.concatenate([a]), a)
+    assert np.array_equal(np.concatenate((a,)), a)
+    assert np.array_equal(np.concatenate([a], axis=None), a.ravel())
+    assert np.array_equal(np.concatenate((a,), axis=None), a.ravel())
+
+test_concatenate_int_arrays()
+test_concatenate_float_arrays()
+test_concatenate_axis_0()
+test_concatenate_axis_1()
+test_concatenate_none_axis()
+test_concatenate_mixed_dtypes()
+test_concatenate_list_and_ndarray()
+test_concatenate_tuple_and_ndarray()
+test_concatenate_non_contiguous()
+test_concatenate_higher_dims()
+test_concatenate_one_array()
+
+@test
+def test_stack(arrays, expected_shape, axis=0):
+    assert np.stack((arrays), axis).shape == expected_shape
+
+test_stack((np.array([1, 2, 3]), np.array([4, 5, 6])), (2, 3))
+test_stack((np.array([1, 2, 3]), np.array([4, 5, 6])), (3, 2), -1)
+test_stack([np.zeros((3, 4)) for _ in range(10)], (10, 3, 4))
+test_stack([np.zeros((3, 4)) for _ in range(10)], (3, 10, 4), 1)
+test_stack([np.zeros((3, 4)) for _ in range(10)], (3, 4, 10), 2)
+
+@test
+def test_block(arrays, expected):
+    assert (np.block(arrays) == expected).all()
+
+test_block([1, 2, 3], np.array([1, 2, 3]))
+test_block([np.eye(2) * 2, np.zeros((2, 2))],
+           np.array([[2., 0., 0., 0.], [0., 2., 0., 0.]]))
+test_block([np.array([1, 2, 3]),
+            np.array([4, 5, 6]),
+            np.array([10])], np.array([1, 2, 3, 4, 5, 6, 10]))
+
+@test
+def test_vstack(arrays, expected_shape):
+    assert np.vstack((arrays)).shape == expected_shape
+
+test_vstack((np.array([1, 2, 3]), np.array([4, 5, 6])), (2, 3))
+test_vstack((np.array([[1], [2], [3]]), np.array([[4], [5], [6]])), (6, 1))
+
+@test
+def test_hstack(arrays, expected_shape):
+    assert np.hstack((arrays)).shape == expected_shape
+
+test_hstack((np.array([1, 2, 3]), np.array([4, 5, 6])), (6, ))
+test_hstack((np.array([[1], [2], [3]]), np.array([[4], [5], [6]])), (3, 2))
+
+@test
+def test_dstack(arrays, expected_shape):
+    assert np.dstack((arrays)).shape == expected_shape
+
+test_dstack((np.array([1, 2, 3]), np.array([4, 5, 6])), (1, 3, 2))
+test_dstack((np.array([[1], [2], [3]]), np.array([[4], [5], [6]])), (3, 1, 2))
+
+@test
+def test_column_stack(arrays, expected_shape):
+    assert np.column_stack((arrays)).shape == expected_shape
+
+test_column_stack((np.array([1, 2, 3]), np.array([4, 5, 6])), (3, 2))
+test_column_stack((np.array([[1], [2], [3]]), np.array([[4], [5], [6]])),
+                  (3, 2))
+
+@test
+def test_row_stack(arrays, expected_shape):
+    assert np.row_stack((arrays)).shape == expected_shape
+
+test_row_stack((np.array([1, 2, 3]), np.array([4, 5, 6])), (2, 3))
+test_row_stack((np.array([[1], [2], [3]]), np.array([[4], [5], [6]])), (6, 1))
+
+@test
+def test_split(ary, splits, expected, axis=0):
+    list1 = np.split(ary, splits, axis)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_split(
+    np.arange(9.0), 3,
+    [np.array([0., 1., 2.]),
+     np.array([3., 4., 5.]),
+     np.array([6., 7., 8.])])
+test_split(np.arange(8.0), [3, 5, 6], [
+    np.array([0., 1., 2.]),
+    np.array([3., 4.]),
+    np.array([5.]),
+    np.array([6., 7.])
+])
+
+@test
+def test_array_split(ary, splits, expected, axis=0):
+    list1 = np.array_split(ary, splits, axis)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_array_split(
+    np.arange(8.0), 3,
+    [np.array([0., 1., 2.]),
+     np.array([3., 4., 5.]),
+     np.array([6., 7.])])
+test_array_split(np.arange(9), 4, [
+    np.array([0, 1, 2]),
+    np.array([3, 4]),
+    np.array([5, 6]),
+    np.array([7, 8])
+])
+
+@test
+def test_dsplit(ary, splits, expected):
+    list1 = np.dsplit(ary, splits)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_dsplit(
+    np.arange(16.0).reshape(2, 2, 4), 2, [
+        np.array([[[0., 1.], [4., 5.]], [[8., 9.], [12., 13.]]]),
+        np.array([[[2., 3.], [6., 7.]], [[10., 11.], [14., 15.]]])
+    ])
+
+@test
+def test_hsplit(ary, splits, expected):
+    list1 = np.hsplit(ary, splits)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_hsplit(
+    np.arange(16.0).reshape(4, 4), 2, [
+        np.array([[0., 1.], [4., 5.], [8., 9.], [12., 13.]]),
+        np.array([[2., 3.], [6., 7.], [10., 11.], [14., 15.]])
+    ])
+test_hsplit(
+    np.arange(8.0).reshape(2, 2, 2), 2,
+    [np.array([[[0., 1.]], [[4., 5.]]]),
+     np.array([[[2., 3.]], [[6., 7.]]])])
+test_hsplit(np.array([0, 1, 2, 3, 4, 5]), 2,
+            [np.array([0, 1, 2]), np.array([3, 4, 5])])
+
+@test
+def test_vsplit(ary, splits, expected):
+    list1 = np.vsplit(ary, splits)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_vsplit(
+    np.arange(16.0).reshape(4, 4), 2, [
+        np.array([[0., 1., 2., 3.], [4., 5., 6., 7.]]),
+        array([[8., 9., 10., 11.], [12., 13., 14., 15.]])
+    ])
+test_vsplit(
+    np.arange(8.0).reshape(2, 2, 2), 2,
+    [np.array([[[0., 1.], [2., 3.]]]),
+     np.array([[[4., 5.], [6., 7.]]])])
+
+@test
+def test_tile(a, reps, expected):
+    assert (np.tile(a, reps) == expected).all()
+
+test_tile(np.array([0, 1, 2]), 2, np.array([0, 1, 2, 0, 1, 2]))
+test_tile(np.array([0, 1, 2]), (2, 2),
+          np.array([[0, 1, 2, 0, 1, 2], [0, 1, 2, 0, 1, 2]]))
+test_tile(np.array([[1, 2], [3, 4]]), (2, 1),
+          np.array([[1, 2], [3, 4], [1, 2], [3, 4]]))
+test_tile(np.array([[1, 2], [3, 4]]), 2, np.array([[1, 2, 1, 2], [3, 4, 3,
+                                                                  4]]))
+
+@test
+def test_repeat(a, repeats, expected, axis=None):
+    assert (expected == np.repeat(a, repeats, axis)).all()
+    assert (expected == np.asarray(a).repeat(repeats, axis)).all()
+
+test_repeat(3, 4, np.array([3, 3, 3, 3]))
+test_repeat(np.array([[1, 2], [3, 4]]), 2, np.array([1, 1, 2, 2, 3, 3, 4, 4]))
+test_repeat(np.array([[1, 2], [3, 4]]),
+            3,
+            np.array([[1, 1, 1, 2, 2, 2], [3, 3, 3, 4, 4, 4]]),
+            axis=1)
+test_repeat(np.array([[1, 2], [3, 4]]), [1, 2],
+            np.array([[1, 2], [3, 4], [3, 4]]),
+            axis=0)
+
+@test
+def test_delete(arr, obj, expected, axis=None):
+    assert (np.delete(arr, obj, axis) == expected).all()
+
+test_delete(np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]), 1,
+            np.array([[1, 2, 3, 4], [9, 10, 11, 12]]), 0)
+test_delete(np.array([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]), [1, 3, 5],
+            np.array([1, 3, 5, 7, 8, 9, 10, 11, 12]))
+
+@test
+def test_insert(arr, obj, values, expected, axis=None):
+    assert (np.insert(arr, obj, values, axis) == expected).all()
+
+test_insert(np.array([[1, 1], [2, 2], [3, 3]]), 1, 5,
+            np.array([1, 5, 1, 2, 2, 3, 3]))
+test_insert(np.array([[1, 1], [2, 2], [3, 3]]),
+            1,
+            5,
+            np.array([[1, 5, 1], [2, 5, 2], [3, 5, 3]]),
+            axis=1)
+test_insert(np.array([1, 1, 2, 2, 3, 3]), [2, 2], [5, 6],
+            np.array([1, 1, 5, 6, 2, 2, 3, 3]))
+
+@test
+def test_append(arr, values, expected, axis=None):
+    assert (np.append(arr, values, axis) == expected).all()
+
+test_append([1, 2, 3], [4, 5, 6], np.array([1, 2, 3, 4, 5, 6]))
+test_append([[1, 2, 3], [4, 5, 6]], [[7, 8, 9]],
+            np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]]),
+            axis=0)
+
+@test
+def test_resize(a, newshape, expected):
+    assert (np.resize(a, newshape) == expected).all()
+
+test_resize(np.array([[0, 1], [2, 3]]), (2, 3), np.array([[0, 1, 2], [3, 0,
+                                                                      1]]))
+test_resize(np.array([[0, 1], [2, 3]]), (1, 4), np.array([[0, 1, 2, 3]]))
+test_resize(np.array([[0, 1], [2, 3]]), (2, 4),
+            np.array([[0, 1, 2, 3], [0, 1, 2, 3]]))
+
+@test
+def test_trim_zeros(filt, expected, trim: str = 'fb'):
+    assert (np.trim_zeros(filt, trim) == expected).all()
+
+test_trim_zeros(np.array((0, 0, 0, 1, 2, 3, 0, 2, 1, 0)),
+                np.array([1, 2, 3, 0, 2, 1]))
+test_trim_zeros(np.array((0, 0, 0, 1, 2, 3, 0, 2, 1, 0)),
+                np.array([0, 0, 0, 1, 2, 3, 0, 2, 1]), 'b')
+
+@test
+def test_flip(m, expected, axis=None):
+    assert (np.flip(m, axis) == expected).all()
+
+test_flip(
+    np.arange(8).reshape((2, 2, 2)),
+    np.array([[[4, 5], [6, 7]], [[0, 1], [2, 3]]]), 0)
+test_flip(
+    np.arange(8).reshape((2, 2, 2)),
+    np.array([[[2, 3], [0, 1]], [[6, 7], [4, 5]]]), 1)
+test_flip(
+    np.arange(8).reshape((2, 2, 2)),
+    np.array([[[7, 6], [5, 4]], [[3, 2], [1, 0]]]))
+test_flip(
+    np.arange(8).reshape((2, 2, 2)),
+    np.array([[[5, 4], [7, 6]], [[1, 0], [3, 2]]]), (0, 2))
+
+@test
+def test_fliplr(m, expected):
+    assert (np.fliplr(m) == expected).all()
+
+test_fliplr(np.diag([1., 2., 3.]),
+            np.array([[0., 0., 1.], [0., 2., 0.], [3., 0., 0.]]))
+
+@test
+def test_flipud(m, expected):
+    assert (np.flipud(m) == expected).all()
+
+test_flipud(np.diag([1., 2., 3.]),
+            np.array([[0., 0., 3.], [0., 2., 0.], [1., 0., 0.]]))
+
+@test
+def test_roll(a, shift, expected, axis=None):
+    assert (np.roll(a, shift, axis) == expected).all()
+
+test_roll(np.arange(10), 2, np.array([8, 9, 0, 1, 2, 3, 4, 5, 6, 7]))
+test_roll(np.arange(10), -2, np.array([2, 3, 4, 5, 6, 7, 8, 9, 0, 1]))
+test_roll(np.reshape(np.arange(10), (2, 5)), 1,
+          np.array([[9, 0, 1, 2, 3], [4, 5, 6, 7, 8]]))
+test_roll(np.reshape(np.arange(10), (2, 5)), -1,
+          np.array([[1, 2, 3, 4, 5], [6, 7, 8, 9, 0]]))
+test_roll(np.reshape(np.arange(10), (2, 5)), (1, 1),
+          np.array([[9, 5, 6, 7, 8], [4, 0, 1, 2, 3]]),
+          axis=(1, 0))
+test_roll(np.reshape(np.arange(10), (2, 5)),
+          -1,
+          np.array([[1, 2, 3, 4, 0], [6, 7, 8, 9, 5]]),
+          axis=1)
+
+@test
+def test_rot90(m, expected, k=1, axes=(0, 1)):
+    assert (np.rot90(m, k, axes) == expected).all()
+
+test_rot90(np.array([[1, 2], [3, 4]]), np.array([[2, 4], [1, 3]]))
+test_rot90(np.array([[1, 2], [3, 4]]), np.array([[4, 3], [2, 1]]), k=2)
+test_rot90(
+    np.arange(8).reshape((2, 2, 2)),
+    np.array([[[1, 3], [0, 2]], [[5, 7], [4, 6]]]), 1, (1, 2))
+
+############
+# indexing #
+############
+
+@test
+def test_indices(dimensions,
+                 expected,
+                 dtype: type = int,
+                 sparse: Static[int] = False):
+    assert (np.indices(dimensions, dtype, sparse) == expected).all()
+
+test_indices((2, 3), np.array([[[0, 0, 0], [1, 1, 1]], [[0, 1, 2], [0, 1,
+                                                                    2]]]))
+
+@test
+def test_ix_(expected, *args):
+    list1 = np.ix_(*args)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_ix_((np.array([[0], [1]]), np.array([[2, 4]])), [0, 1], [2, 4])
+test_ix_((np.array([[0]]), np.array([[2, 4]])), [True, False], [2, 4])
+
+@test
+def test_ravel_multi_index(multi_index,
+                           dims,
+                           expected,
+                           mode: str = 'raise',
+                           order: str = 'C'):
+    assert (np.ravel_multi_index(multi_index, dims, mode,
+                                 order) == expected).all()
+
+test_ravel_multi_index(np.array([[3, 6, 6], [4, 5, 1]]), (7, 6),
+                       np.array([22, 41, 37]))
+test_ravel_multi_index(np.array([[3, 6, 6], [4, 5, 1]]), (7, 6),
+                       np.array([31, 41, 13]),
+                       order='F')
+test_ravel_multi_index(np.array([[3, 6, 6], [4, 5, 1]]), (4, 6),
+                       np.array([22, 23, 19]),
+                       mode='clip')
+test_ravel_multi_index(np.array([[3, 6, 6], [4, 5, 1]]), (4, 4),
+                       np.array([12, 9, 9]),
+                       mode='wrap')
+
+@test
+def test_unravel_index(indices, shape, expected, order: str = 'C'):
+    list1 = np.unravel_index(indices, shape, order)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_unravel_index([22, 41, 37], (7, 6),
+                   (np.array([3, 6, 6]), np.array([4, 5, 1])))
+test_unravel_index([31, 41, 13], (7, 6),
+                   (np.array([3, 6, 6]), np.array([4, 5, 1])),
+                   order='F')
+
+@test
+def test_diag_indices(n, expected, ndim: int = 2):
+    list1 = np.diag_indices(n, ndim)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_diag_indices(4, (array([0, 1, 2, 3]), array([0, 1, 2, 3])))
+test_diag_indices(2, (array([0, 1]), array([0, 1]), array([0, 1])), 3)
+
+@test
+def test_diag_indices_from(arr, expected):
+    list1 = np.diag_indices_from(arr)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_diag_indices_from(
+    np.arange(16).reshape(4, 4), (array([0, 1, 2, 3]), array([0, 1, 2, 3])))
+
+@test
+def test_mask_indices(n, mask_func, expected, k=0):
+    list1 = np.mask_indices(n, mask_func, k)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_mask_indices(3, np.triu,
+                  (array([0, 0, 0, 1, 1, 2]), array([0, 1, 2, 1, 2, 2])))
+test_mask_indices(3, np.triu, (array([0, 0, 1]), array([1, 2, 2])), 1)
+
+@test
+def test_tril_indices(n, expected, k: int = 0, m: Optional[int] = None):
+    list1 = np.tril_indices(n, k, m)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_tril_indices(4, (array([0, 1, 1, 2, 2, 2, 3, 3, 3, 3
+                             ]), array([0, 0, 1, 0, 1, 2, 0, 1, 2, 3])))
+test_tril_indices(4, (array([0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3]),
+                      array([0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3])),
+                  k=2)
+test_tril_indices(
+    np.arange(16).reshape(4, 4).shape[0],
+    (array([0, 1, 1, 2, 2, 2, 3, 3, 3, 3
+            ]), array([0, 0, 1, 0, 1, 2, 0, 1, 2, 3])))
+
+@test
+def test_tril_indices_from(arr, expected, k: int = 0):
+    list1 = np.tril_indices_from(arr, k)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_tril_indices_from(
+    np.arange(16).reshape(4, 4),
+    (array([0, 1, 1, 2, 2, 2, 3, 3, 3, 3
+            ]), array([0, 0, 1, 0, 1, 2, 0, 1, 2, 3])))
+test_tril_indices_from(np.arange(16).reshape(4, 4),
+                       (array([0, 0, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3]),
+                        array([0, 1, 0, 1, 2, 0, 1, 2, 3, 0, 1, 2, 3])),
+                       k=1)
+
+@test
+def test_triu_indices(n, expected, k: int = 0, m: Optional[int] = None):
+    list1 = np.triu_indices(n, k, m)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_triu_indices(4, (array([0, 0, 0, 0, 1, 1, 1, 2, 2, 3
+                             ]), array([0, 1, 2, 3, 1, 2, 3, 2, 3, 3])))
+test_triu_indices(4, (array([0, 0, 1]), array([2, 3, 3])), k=2)
+test_triu_indices(
+    np.arange(16).reshape(4, 4).shape[0],
+    (array([0, 0, 0, 0, 1, 1, 1, 2, 2, 3
+            ]), array([0, 1, 2, 3, 1, 2, 3, 2, 3, 3])))
+
+@test
+def test_triu_indices_from(arr, expected, k: int = 0):
+    list1 = np.triu_indices_from(arr, k)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_triu_indices_from(
+    np.arange(16).reshape(4, 4),
+    (array([0, 0, 0, 0, 1, 1, 1, 2, 2, 3
+            ]), array([0, 1, 2, 3, 1, 2, 3, 2, 3, 3])))
+test_triu_indices_from(np.arange(16).reshape(4, 4),
+                       (array([0, 0, 0, 1, 1, 2]), array([1, 2, 3, 2, 3, 3])),
+                       k=1)
+
+@test
+def test_take(a, indices, expected, m: str = 'raise', axis=None):
+    assert (np.asarray(np.take(a, indices, mode=m,
+                               axis=axis)) == np.asarray(expected)).all()
+
+test_take([4, 3, 5, 7, 6, 8], [0, 1, 4], np.array([4, 3, 6]))
+test_take([4, 3, 5, 7, 6, 8], [[0, 1], [2, 3]], np.array([[4, 3], [5, 7]]))
+test_take([4, 3, 5, 7, 6, 8], [0, 1, 4], np.array([4, 3, 6]), m='wrap')
+test_take([42], 0, 42)
+test_take([[42, 1], [99, 2]], 2, 99)
+test_take(np.array([[42, 1], [99, 2]]), 1, np.array([1, 2]), axis=1)
+
+@test
+def test_take_along_axis(a, indices, axis, expected):
+    assert (np.take_along_axis(a, indices, axis) == expected).all()
+
+test_take_along_axis(np.array([[10, 30, 20], [60, 40, 50]]),
+                     np.array([[0, 2, 1], [1, 2, 0]]), 1,
+                     np.array([[10, 20, 30], [40, 50, 60]]))
+test_take_along_axis(np.array([[10, 30, 20], [60, 40, 50]]),
+                     np.array([[0, 1], [1, 0]]), 1,
+                     np.array([[10, 30], [40, 60]]))
+
+@test
+def test_choose(a, choices, expected, m: str = 'raise'):
+    assert (np.choose(a, choices, mode=m) == expected).all()
+
+test_choose(
+    [2, 3, 1, 0],
+    [[0, 1, 2, 3], [10, 11, 12, 13], [20, 21, 22, 23], [30, 31, 32, 33]],
+    np.array([20, 31, 12, 3]))
+test_choose(
+    [2, 3, 1, 0],
+    [[0, 1, 2, 3], [10, 11, 12, 13], [20, 21, 22, 23], [30, 31, 32, 33]],
+    np.array([20, 31, 12, 3]),
+    m='clip')
+test_choose(
+    [2, 4, 1, 0],
+    [[0, 1, 2, 3], [10, 11, 12, 13], [20, 21, 22, 23], [30, 31, 32, 33]],
+    np.array([20, 1, 12, 3]),
+    m='wrap')
+
+@test
+def test_compress(condition, a, expected, axis=None):
+    assert (np.compress(condition, a, axis) == expected).all()
+    assert (np.asarray(a).compress(condition, axis) == expected).all()
+
+test_compress([0, 1],
+              np.array([[1, 2], [3, 4], [5, 6]]),
+              np.array([[3, 4]]),
+              axis=0)
+test_compress([False, True, True],
+              np.array([[1, 2], [3, 4], [5, 6]]),
+              np.array([[3, 4], [5, 6]]),
+              axis=0)
+test_compress([False, True],
+              np.array([[1, 2], [3, 4], [5, 6]]),
+              np.array([[2], [4], [6]]),
+              axis=1)
+
+@test
+def test_diagonal(a,
+                  expected,
+                  offset: int = 0,
+                  axis1: int = 0,
+                  axis2: int = 1):
+    assert (np.diagonal(a, offset, axis1, axis2) == expected).all()
+
+test_diagonal(np.arange(4).reshape(2, 2), np.array([0, 3]))
+test_diagonal(np.arange(4).reshape(2, 2), np.array([1]), 1)
+test_diagonal(
+    np.arange(8).reshape(2, 2, 2), np.array([[0, 6], [1, 7]]), 0, 0, 1)
+
+@test
+def test_select(condlist, choicelist, expected, default: int = 0):
+    assert (np.select(condlist, choicelist, default) == expected).all()
+
+test_select([np.arange(6) < 3, np.arange(6) > 3],
+            [np.arange(6), np.arange(6)**2], np.array([0, 1, 2, 42, 16,
+                                                       25]), 42)
+test_select([np.arange(6) <= 4, np.arange(6) > 3],
+            [np.arange(6), np.arange(6)**2], np.array([0, 1, 2, 3, 4, 25]), 55)
+
+@test
+def test_place(arr, mask, val, expected):
+    np.place(arr, mask, val)
+    assert (arr == expected).all()
+
+test_place(
+    np.arange(6).reshape(2, 3),
+    np.arange(6).reshape(2, 3) > 2, [44, 55],
+    np.array([[0, 1, 2], [44, 55, 44]]))
+
+@test
+def test_put(a, ind, v, expected, mode: str = 'raise'):
+    np.put(a, ind, v, mode=mode)
+    assert (a == expected).all()
+
+test_put(np.arange(5), [0, 2], [-44, -55], np.array([-44, 1, -55, 3, 4]))
+test_put(np.arange(5), 22, -5, np.array([0, 1, 2, 3, -5]), mode='clip')
+
+@test
+def test_put_along_axis(arr, indices, values, axis, expected):
+    np.put_along_axis(arr, indices, values, axis)
+    assert (arr == expected).all()
+
+test_put_along_axis(np.array([[10, 30, 20], [60, 40, 50]]), array([[1], [0]]),
+                    99, 1, np.array([[10, 99, 20], [99, 40, 50]]))
+
+@test
+def test_putmask(a, mask, values, expected):
+    np.putmask(a, mask, values)
+    assert (a == expected).all()
+
+test_putmask(
+    np.arange(6).reshape(2, 3),
+    np.arange(6).reshape(2, 3) > 2,
+    np.arange(6).reshape(2, 3)**2, np.array([[0, 1, 2], [9, 16, 25]]))
+test_putmask(np.arange(5),
+             np.arange(5) > 1, [-33, -44], np.array([0, 1, -33, -44, -33]))
+
+@test
+def test_fill_diagonal(a, val, expected, wrap: bool = False):
+    np.fill_diagonal(a, val, wrap=wrap)
+    assert (a == expected).all()
+
+test_fill_diagonal(np.zeros((3, 3), int), 5,
+                   np.array([[5, 0, 0], [0, 5, 0], [0, 0, 5]]))
+test_fill_diagonal(
+    np.zeros((5, 3), int), 4,
+    np.array([[4, 0, 0], [0, 4, 0], [0, 0, 4], [0, 0, 0], [0, 0, 0]]))
+test_fill_diagonal(np.zeros((5, 3), int),
+                   4,
+                   np.array([[4, 0, 0], [0, 4, 0], [0, 0, 4], [0, 0, 0],
+                             [4, 0, 0]]),
+                   wrap=True)
+test_fill_diagonal(np.zeros((3, 5), int),
+                   4,
+                   np.array([[4, 0, 0, 0, 0], [0, 4, 0, 0, 0], [0, 0, 4, 0,
+                                                                0]]),
+                   wrap=True)
+
+@test
+def test_pad(array, pad_width, expected, mode='constant', **kwargs):
+    assert (np.pad(array, pad_width, mode, **kwargs) == expected).all()
+
+test_pad([1, 2, 3, 4, 5], (2, 3),
+         np.array([4, 4, 1, 2, 3, 4, 5, 6, 6, 6]),
+         'constant',
+         constant_values=(4, 6))
+test_pad([1, 2, 3, 4, 5], (2, 3), np.array([1, 1, 1, 2, 3, 4, 5, 5, 5, 5]),
+         'edge')
+test_pad([1, 2, 3, 4, 5], (2, 3),
+         np.array([5, 3, 1, 2, 3, 4, 5, 2, -1, -4]),
+         'linear_ramp',
+         end_values=(5, -4))
+test_pad([1, 2, 3, 4, 5], (2, ), np.array([5, 5, 1, 2, 3, 4, 5, 5, 5]),
+         'maximum')
+test_pad([1, 2, 3, 4, 5], (2, ), np.array([3, 3, 1, 2, 3, 4, 5, 3, 3]), 'mean')
+test_pad([1, 2, 3, 4, 5], (2, ), np.array([3, 3, 1, 2, 3, 4, 5, 3, 3]),
+         'median')
+test_pad([1, 2, 3, 4, 5], (2, 3), np.array([3, 2, 1, 2, 3, 4, 5, 4, 3, 2]),
+         'reflect')
+test_pad([1, 2, 3, 4, 5], (2, 3),
+         np.array([-1, 0, 1, 2, 3, 4, 5, 6, 7, 8]),
+         'reflect',
+         reflect_type='odd')
+test_pad([1, 2, 3, 4, 5], (2, 3), np.array([2, 1, 1, 2, 3, 4, 5, 5, 4, 3]),
+         'symmetric')
+test_pad([1, 2, 3, 4, 5], (2, 3),
+         np.array([0, 1, 1, 2, 3, 4, 5, 5, 6, 7]),
+         'symmetric',
+         reflect_type='odd')
+test_pad([1, 2, 3, 4, 5], (2, 3), np.array([4, 5, 1, 2, 3, 4, 5, 1, 2, 3]),
+         'wrap')
+
+#############
+# searching #
+#############
+
+@test
+def test_argmax(a, expected, axis=None):
+    if isinstance(expected, int):
+        assert a.argmax() == expected
+    else:
+        assert (a.argmax(axis) == expected).all()
+
+test_argmax(
+    np.arange(24).reshape((2, 3, 4)), np.array([[2, 2, 2, 2], [2, 2, 2, 2]]),
+    1)
+test_argmax(np.array([[4, 2, 3], [1, 0, 3]]), np.array([0, 2]), -1)
+test_argmax(np.arange(6), 5)
+test_argmax(np.arange(6).reshape(2, 3) + 10, 5)
+test_argmax(np.arange(6).reshape(2, 3) + 10, np.array([1, 1, 1]), 0)
+test_argmax(np.arange(6).reshape(2, 3) + 10, np.array([2, 2]), 1)
+
+@test
+def test_argmin(a, expected, axis=None):
+    if isinstance(expected, int):
+        assert a.argmin() == expected
+    else:
+        assert (a.argmin(axis) == expected).all()
+
+test_argmin(
+    np.arange(24).reshape((2, 3, 4)), np.array([[0, 0, 0, 0], [0, 0, 0, 0]]),
+    1)
+test_argmin(np.array([[4, 2, 3], [1, 0, 3]]), np.array([1, 1]), -1)
+test_argmin(np.arange(6), 0)
+test_argmin(np.arange(6).reshape(2, 3) + 10, 0)
+test_argmin(np.arange(6).reshape(2, 3) - 10, np.array([0, 0, 0]), 0)
+test_argmin(np.arange(6).reshape(2, 3) + 10, np.array([0, 0]), 1)
+
+@test
+def test_argwhere(a, expected):
+    assert (np.argwhere(a) == expected).all()
+
+test_argwhere(
+    np.arange(6).reshape(2, 3) > 1, np.array([[0, 2], [1, 0], [1, 1], [1, 2]]))
+
+@test
+def test_nonzero(a, expected):
+    list1 = np.nonzero(a)
+    for arr1, arr2 in zip(list1, expected):
+        assert (arr1 == arr2).all()
+
+test_nonzero(np.array([[3, 0, 0], [0, 4, 0], [5, 6, 0]]),
+             (np.array([0, 1, 2, 2]), np.array([0, 1, 0, 1])))
+
+@test
+def test_flatnonzero(a, expected):
+    assert (np.flatnonzero(a) == expected).all()
+
+test_flatnonzero(np.arange(-2, 3), np.array([0, 1, 3, 4]))
+
+@test
+def test_where(condition, x, y, expected):
+    assert (np.where(condition, x, y) == expected).all()
+
+test_where(
+    np.arange(10) < 5, np.arange(10), 10 * np.arange(10),
+    np.array([0, 1, 2, 3, 4, 50, 60, 70, 80, 90]))
+test_where([[True, False], [True, True]], [[1, 2], [3, 4]], [[9, 8], [7, 6]],
+           np.array([[1, 8], [3, 4]]))
+
+@test
+def test_searchsorted(a, v, expected, side: str = 'left', sorter=None):
+    if isinstance(v, int):
+        assert np.searchsorted(a, v, side=side, sorter=sorter) == expected
+    else:
+        assert (np.searchsorted(a, v, side=side,
+                                sorter=sorter) == expected).all()
+
+test_searchsorted([1, 2, 3, 4, 5], 3, 2)
+test_searchsorted([1, 2, 3, 4, 5], 3, 3, side='right')
+test_searchsorted([1, 2, 3, 4, 5], [-10, 10, 2, 3], array([0, 5, 1, 2]))
+
+@test
+def test_extract(arr, condition, expected):
+    assert (np.extract(condition, arr) == expected).all()
+
+test_extract(
+    np.arange(12).reshape((3, 4)),
+    np.mod(np.arange(12).reshape((3, 4)), 3) == 0, np.array([0, 3, 6, 9]))
+
+@test
+def test_count_nonzero(a, expected, axis=None, keepdims: Static[int] = False):
+    x = np.count_nonzero(a, axis=axis, keepdims=keepdims)
+    if isinstance(x, int):
+        assert x == expected
+    else:
+        assert (x == expected).all()
+
+test_count_nonzero(np.eye(4), 4)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]),
+                   np.array([1, 1, 2, 1]),
+                   axis=0)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]),
+                   np.array([2, 3]),
+                   axis=1)
+test_count_nonzero(np.array([[0, 1, 7, 0], [3, 0, 2, 19]]),
+                   np.array([[2], [3]]),
+                   axis=1,
+                   keepdims=True)
+
+########
+# Misc #
+########
+
+@test
+def test_round(a, expected, decimals: int = 0):
+    assert (np.round(a, decimals=decimals) == expected).all()
+    assert (np.around(a, decimals=decimals) == expected).all()
+
+test_round([0.37, 1.64], np.array([0., 2.]))
+test_round([0.37, 1.64], np.array([0.4, 1.6]), 1)
+test_round([.5, 1.5, 2.5, 3.5, 4.5], np.array([0., 2., 2., 4., 4.]))
+test_round([1, 2, 3, 11], np.array([1, 2, 3, 11]), 1)
+test_round([1, 2, 3, 11], np.array([0, 0, 0, 10]), -1)
+
+@test
+def test_ndenumerate(arr, expected_index, expected_val):
+    i = 0
+    for index, x in np.ndenumerate(arr):
+        assert (index == expected_index[i]).all() and x == expected_val[i]
+        i += 1
+
+test_ndenumerate(np.array([[1, 2], [3, 4]]),
+                 np.array([[0, 0], [0, 1], [1, 0], [1, 1]]),
+                 np.array([1, 2, 3, 4]))
+
+@test
+def test_ndindex(expected, *shape):
+    i = 0
+    for index in np.ndindex(*shape):
+        assert (index == expected[i]).all()
+        i += 1
+
+test_ndindex(
+    np.array([(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0), (2, 0, 0),
+              (2, 1, 0)]), 3, 2, 1)
+test_ndindex(
+    np.array([(0, 0, 0), (0, 1, 0), (1, 0, 0), (1, 1, 0), (2, 0, 0),
+              (2, 1, 0)]), (3, 2, 1))
+
+@test
+def test_iterable(y, expected):
+    assert np.iterable(y) == expected
+
+test_iterable(np.array(1.), False)
+test_iterable([1, 2, 3], True)
+test_iterable(2, False)
+
+@test
+def test_view():
+    a = np.array([[1, 2], [3, 4]])
+    assert (a.view(np.int32) == np.array([[1, 0, 2, 0], [3, 0, 4, 0]],
+                                         dtype=np.int32)).all()
+    assert (a.T.view(float).view(int) == a.T).all()
+    assert (a.view(np.int32).view(np.int64) == a).all()
+
+    try:
+        a.T.view(np.int32)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        a.T.view(Int[256])
+        assert False
+    except ValueError:
+        pass
+
+test_view()
+
+@test
+def test_isposinf():
+    assert not np.isposinf(np.NINF)
+    assert np.isposinf(np.inf)
+    assert np.isposinf(np.PINF)
+    assert (np.isposinf([-np.inf, 0.,
+                         np.inf]) == np.array([False, False, True])).all()
+    x = np.array([-np.inf, 0., np.inf])
+    y = np.array([2, 2, 2])
+    assert (np.isposinf(x, y) == np.array([0, 0, 1])).all()
+    assert (y == np.array([0, 0, 1])).all()
+
+test_isposinf()
+
+@test
+def test_isneginf():
+    assert np.isneginf(np.NINF)
+    assert not np.isneginf(np.inf)
+    assert not np.isneginf(np.PINF)
+    assert (np.isneginf([-np.inf, 0.,
+                         np.inf]) == np.array([True, False, False])).all()
+    x = np.array([-np.inf, 0., np.inf])
+    y = np.array([2, 2, 2])
+    assert (np.isneginf(x, y) == np.array([1, 0, 0])).all()
+    assert (y == np.array([1, 0, 0])).all()
+
+test_isneginf()
+
+@test
+def test_iscomplex():
+    assert np.iscomplex(1 + 2j)
+    assert not np.iscomplex(1 + 0j)
+    assert not np.iscomplex(42)
+    assert (np.iscomplex([1 + 1j, 1 + 0j, 4.5 + 0j, 3 + 0j, 2 + 0j,
+                          2j]) == np.array(
+                              [True, False, False, False, False, True])).all()
+    assert (np.iscomplex([1.1, 2.2, 3.3]) == np.array([False, False,
+                                                       False])).all()
+
+test_iscomplex()
+
+@test
+def test_iscomplexobj():
+    assert not np.iscomplexobj(1)
+    assert np.iscomplexobj(1 + 0j)
+    assert not np.iscomplexobj(np.array(1))
+    assert np.iscomplexobj(np.array(1 + 0j))
+    assert not np.iscomplexobj(np.array([1]))
+    assert np.iscomplexobj(np.array([1 + 0j]))
+    assert np.iscomplexobj([3 + 0j, 1 + 0j, 0 + 0j])
+    assert not np.iscomplexobj([1.1, 2.2, 3.3])
+    assert not np.iscomplexobj(np.array([1.1, 2.2, 3.3]))
+
+test_iscomplexobj()
+
+@test
+def test_isreal():
+    assert not np.isreal(1 + 2j)
+    assert np.isreal(1 + 0j)
+    assert np.isreal(42)
+    assert (np.isreal([1 + 1j, 1 + 0j, 4.5 + 0j, 3 + 0j, 2 + 0j,
+                       2j]) == np.array([False, True, True, True, True,
+                                         False])).all()
+    assert (np.isreal([1.1, 2.2, 3.3]) == np.array([True, True, True])).all()
+
+test_isreal()
+
+@test
+def test_isrealobj():
+    assert np.isrealobj(1)
+    assert not np.isrealobj(1 + 0j)
+    assert np.isrealobj(np.array(1))
+    assert not np.isrealobj(np.array(1 + 0j))
+    assert np.isrealobj(np.array([1]))
+    assert not np.isrealobj(np.array([1 + 0j]))
+    assert not np.isrealobj([3 + 0j, 1 + 0j, 0 + 0j])
+    assert np.isrealobj([1.1, 2.2, 3.3])
+    assert np.isrealobj(np.array([1.1, 2.2, 3.3]))
+
+test_isrealobj()
+
+@test
+def test_isfortran():
+    a = np.array([[1, 2, 3], [4, 5, 6]], order='C')
+    assert not np.isfortran(a)
+    assert np.isfortran(a.T)
+    b = np.array([[1, 2, 3], [4, 5, 6]], order='F')
+    assert np.isfortran(b)
+    assert not np.isfortran(np.array([1, 2], order='F'))
+
+test_isfortran()
+
+@test
+def test_isscalar():
+    assert np.isscalar(3.1)
+    assert not np.isscalar(np.array(3.1))
+    assert not np.isscalar([3.1])
+    assert np.isscalar(False)
+    assert np.isscalar('numpy')
+    import re
+    assert not np.isscalar(re.compile('x'))
+
+test_isscalar()
+
+@test
+def test_byteswap():
+    assert np.array(0x1122334455667788).byteswap() == np.array(
+        -8613303245920329199)
+
+    a = np.array([1, 256, 8755], dtype=np.int16)
+    assert (a.byteswap(inplace=False) == np.array([256, 1, 13090],
+                                                  dtype=np.int16)).all()
+    assert (a == np.array([1, 256, 8755], dtype=np.int16)).all()
+
+    a = np.array([1, 256, 8755], dtype=np.int16)
+    assert (a.byteswap(inplace=True) == np.array([256, 1, 13090],
+                                                 dtype=np.int16)).all()
+    assert (a == np.array([256, 1, 13090], dtype=np.int16)).all()
+    assert np.isclose(np.array(1e100).byteswap(), 6.40220504e+297)
+
+    x = np.array(1e100).byteswap().item()
+    assert np.isclose(x, 6.40220504e+297)
+
+    x = np.array(1e10, dtype=np.float32).byteswap().item()
+    assert np.isclose(x, -4.221443e+34)
+
+    x = np.array(1e100 + 2e200j).byteswap().item()
+    assert x.real == np.array(1e100).byteswap().item()
+    assert x.imag == np.array(2e200).byteswap().item()
+
+    x = np.array(1e10 + 2e20j, dtype=np.complex64).byteswap().item()
+    assert x.real == np.array(1e10, dtype=np.float32).byteswap().item()
+    assert x.imag == np.array(2e20, dtype=np.float32).byteswap().item()
+
+    assert np.array(True).byteswap() == True
+    assert np.array(False).byteswap() == False
+
+test_byteswap()
+
+@test
+def test_packbits():
+    # Test with binary data, default axis and bitorder
+    data = np.array([[1, 0, 1], [0, 1, 0]], dtype=bool)
+    packed_data = np.packbits(data)
+    assert np.array_equal(packed_data, np.array([168], dtype=np.uint8))
+
+    # Test with non-binary data, default axis and bitorder
+    data = np.array([[2, 3, 0], [1, 4, 5]], dtype=np.uint8)
+    packed_data = np.packbits(data)
+    assert np.array_equal(packed_data, np.array([220], dtype=np.uint8))
+
+    # Test with empty input
+    data = np.empty((0, ), dtype=bool)
+    packed_data = np.packbits(data)
+    assert np.array_equal(packed_data, np.empty((0, ), dtype=bool))
+
+    # Test with specified bitorder
+    data = np.array([1, 1, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0], dtype=bool)
+    packed_data = np.packbits(data, bitorder='little')
+    assert np.array_equal(packed_data, np.array([35, 33], dtype=np.uint8))
+    packed_data = np.packbits(data, bitorder='big')
+    assert np.array_equal(packed_data, np.array([196, 132], dtype=np.uint8))
+
+    # Test with truncated data
+    data = np.array([True])
+    assert np.array_equal(np.packbits(data), np.array([128], dtype=np.uint8))
+    assert np.array_equal(np.packbits(data, bitorder='big'),
+                          np.array([128], dtype=np.uint8))
+    assert np.array_equal(np.packbits(data, bitorder='little'),
+                          np.array([1], dtype=np.uint8))
+
+    data = np.array([[True]])
+    assert np.array_equal(np.packbits(data, axis=0),
+                          np.array([[128]], dtype=np.uint8))
+    assert np.array_equal(np.packbits(data, bitorder='big', axis=0),
+                          np.array([[128]], dtype=np.uint8))
+    assert np.array_equal(np.packbits(data, bitorder='little', axis=0),
+                          np.array([[1]], dtype=np.uint8))
+
+test_packbits()
+
+@test
+def test_unpackbits():
+    # Test with packed binary data, default axis and count
+    packed_data = np.array([160, 64], dtype=np.uint8)
+    unpacked_data = np.unpackbits(packed_data)
+    assert np.array_equal(
+        unpacked_data,
+        np.array([1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],
+                 dtype=np.uint8))
+    unpacked_data = np.unpackbits(packed_data, bitorder='little')
+    assert np.array_equal(
+        unpacked_data,
+        np.array([0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0],
+                 dtype=np.uint8))
+
+    # Test with packed non-binary data, default axis and count
+    packed_data = np.array([147, 128, 120, 64], dtype=np.uint8)
+    unpacked_data = np.unpackbits(packed_data)
+    assert np.array_equal(
+        unpacked_data,
+        np.array([
+            1, 0, 0, 1, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 0,
+            0, 0, 0, 1, 0, 0, 0, 0, 0, 0
+        ],
+                 dtype=np.uint8))
+
+    # Test with empty input
+    packed_data = np.empty((0, ), dtype=np.uint8)
+    unpacked_data = np.unpackbits(packed_data)
+    assert np.array_equal(unpacked_data, np.empty((0, ), dtype=bool))
+
+    # Test with specified axis
+    packed_data = np.array([[160, 64], [99, 42]], dtype=np.uint8)
+    unpacked_data = np.unpackbits(packed_data, axis=0)
+    assert np.array_equal(
+        unpacked_data,
+        np.array(
+            [[1, 0], [0, 1], [1, 0], [0, 0], [0, 0], [0, 0], [0, 0], [0, 0],
+             [0, 0], [1, 0], [1, 1], [0, 0], [0, 1], [0, 0], [1, 1], [1, 0]],
+            dtype=np.uint8))
+    unpacked_data = np.unpackbits(packed_data, axis=1, count=-3)
+    assert np.array_equal(
+        unpacked_data,
+        np.array([[1, 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0],
+                  [0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 1]],
+                 dtype=np.uint8))
+
+    # Test with specified count
+    packed_data = np.array([160, 64], dtype=np.uint8)
+    unpacked_data = np.unpackbits(packed_data, count=6)
+    assert np.array_equal(unpacked_data,
+                          np.array([1, 0, 1, 0, 0, 0], dtype=np.uint8))
+    unpacked_data = np.unpackbits(packed_data, count=6, bitorder='little')
+    assert np.array_equal(unpacked_data,
+                          np.array([0, 0, 0, 0, 0, 1], dtype=np.uint8))
+
+    packed_data = np.array([111], dtype=np.uint8)
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=3, bitorder='little'),
+        np.array([1, 1, 1], dtype=np.uint8))
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=-3, bitorder='little'),
+        np.array([1, 1, 1, 1, 0], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=3, bitorder='big'),
+                          np.array([0, 1, 1], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=-3, bitorder='big'),
+                          np.array([0, 1, 1, 0, 1], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=3),
+                          np.array([0, 1, 1], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=-3),
+                          np.array([0, 1, 1, 0, 1], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=0),
+                          np.empty((0, ), dtype=np.uint8))
+
+    packed_data = np.array([[111]], dtype=np.uint8)
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=3, bitorder='little', axis=0),
+        np.array([[1], [1], [1]], dtype=np.uint8))
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=3, bitorder='little', axis=1),
+        np.array([[1, 1, 1]], dtype=np.uint8))
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=-3, bitorder='little', axis=1),
+        np.array([[1, 1, 1, 1, 0]], dtype=np.uint8))
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=3, bitorder='big', axis=1),
+        np.array([[0, 1, 1]], dtype=np.uint8))
+    assert np.array_equal(
+        np.unpackbits(packed_data, count=-3, bitorder='big', axis=1),
+        np.array([[0, 1, 1, 0, 1]], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=3, axis=1),
+                          np.array([[0, 1, 1]], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=-3, axis=1),
+                          np.array([[0, 1, 1, 0, 1]], dtype=np.uint8))
+    assert np.array_equal(np.unpackbits(packed_data, count=0, axis=1),
+                          np.empty((1, 0), dtype=np.uint8))
+
+test_unpackbits()
+
+@test
+def test_tobytes():
+    a = np.arange(9).reshape(3, 3) + .5
+    assert a.tobytes(
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00!@'
+    assert a.tobytes(
+        order='C'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00!@'
+    assert a.tobytes(
+        order='F'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00!@'
+    assert a.tobytes(
+        order='A'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00!@'
+    assert a.tobytes(
+        order='K'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00!@'
+    assert a.T.tobytes(
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00!@'
+    assert a.T.tobytes(
+        order='C'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00!@'
+    assert a.T.tobytes(
+        order='F'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00!@'
+    assert a.T.tobytes(
+        order='A'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00!@'
+    assert a.T.tobytes(
+        order='K'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x0c@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\xf8?\x00\x00\x00\x00\x00\x00\x12@\x00\x00\x00\x00\x00\x00\x1e@\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x16@\x00\x00\x00\x00\x00\x00!@'
+    assert a[::2, ::2].tobytes(
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00!@'
+    assert a[::2, ::2].tobytes(
+        order='C'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00!@'
+    assert a[::2, ::2].tobytes(
+        order='F'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00!@'
+    assert a[::2, ::2].tobytes(
+        order='A'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00!@'
+    assert a[::2, ::2].tobytes(
+        order='K'
+    ) == '\x00\x00\x00\x00\x00\x00\xe0?\x00\x00\x00\x00\x00\x00\x04@\x00\x00\x00\x00\x00\x00\x1a@\x00\x00\x00\x00\x00\x00!@'
+
+test_tobytes()
+
+@test
+def test_real_imag():
+    a = np.arange(9).reshape(3, 3)
+    assert np.array_equal(a.real, a)
+    assert np.array_equal(a.imag, np.zeros((3, 3)))
+    assert np.array_equal(a.conj(), a)
+    assert np.array_equal(a.conjugate(), a)
+    a_copy = a.copy()
+    a_copy.real = [33.9, 22.2, 11.1]
+    assert np.array_equal(a_copy, [[33, 22, 11], [33, 22, 11], [33, 22, 11]])
+
+    b = np.arange(9).reshape(3, 3) * (1 + 2j)
+    assert np.array_equal(b.real, a)
+    assert np.array_equal(b.imag, 2 * a)
+    assert np.array_equal(b.conj(), a * (1 - 2j))
+    assert np.array_equal(b.conjugate(), a * (1 - 2j))
+    assert np.array_equal(b[::2, ::2].real, a[::2, ::2])
+    assert np.array_equal(b[::2, ::2].imag, 2 * a[::2, ::2])
+    assert np.array_equal(b[::2, ::2].conj(), a[::2, ::2] * (1 - 2j))
+    assert np.array_equal(b[::2, ::2].conjugate(), a[::2, ::2] * (1 - 2j))
+    b.real = 7 * a
+    assert np.array_equal(b.real, 7 * a)
+    b.imag = 8 * a
+    assert np.array_equal(b.imag, 8 * a)
+    assert np.array_equal(b, a * (7 + 8j))
+
+    b = np.arange(9).reshape(3, 3) * np.complex64(1 + 2j)
+    assert np.array_equal(b.real, a)
+    assert np.array_equal(b.imag, 2 * a.astype(float32))
+    assert np.array_equal(b.conj(), a * np.complex64(1 - 2j))
+    assert np.array_equal(b.conjugate(), a * np.complex64(1 - 2j))
+    assert np.array_equal(b[::2, ::2].real, a.astype(float32)[::2, ::2])
+    assert np.array_equal(b[::2, ::2].imag, 2 * a.astype(float32)[::2, ::2])
+    assert np.array_equal(b[::2, ::2].conj(),
+                          a[::2, ::2] * np.complex64(1 - 2j))
+    assert np.array_equal(b[::2, ::2].conjugate(),
+                          a[::2, ::2] * np.complex64(1 - 2j))
+    b.real = 7 * a.astype(float32)
+    assert np.array_equal(b.real, 7 * a.astype(float32))
+    b.imag = 8 * a.astype(float32)
+    assert np.array_equal(b.imag, 8 * a.astype(float32))
+    assert np.array_equal(b, a * np.complex64(7 + 8j))
+
+test_real_imag()
+
+@test
+def test_flat_setter():
+    a = np.array(42)
+    a.flat = 3.14
+    assert a.item() == 3
+
+    a.flat = [9, 8]
+    assert a.item() == 9
+
+    a = np.array([[4, 4], [1, 1], [0, 1]]).T
+    a.flat = [[11.1], [22.2], [33.3], [44.4]]
+    assert np.array_equal(a, [[11, 22, 33], [44, 11, 22]])
+    a.flat = 99
+    assert np.array_equal(a, [[99, 99, 99], [99, 99, 99]])
+    a.flat = np.empty(0)
+    assert np.array_equal(a, [[99, 99, 99], [99, 99, 99]])
+    b = np.array([[999, 888, 777, 666], [555, 444, 333, 222]])
+    a.flat = b
+    assert np.array_equal(a, [[999, 888, 777], [666, 555, 444]])
+
+test_flat_setter()
+
+@test
+def test_dragon4():
+    # these tests are adapted from Ryan Juckett's dragon4 implementation,
+    # see dragon4.c for details.
+
+    def fpos32(x, **k):
+        return np.format_float_positional(np.float32(float(x)), **k)
+
+    def fsci32(x, **k):
+        return np.format_float_scientific(np.float32(float(x)), **k)
+
+    def fpos64(x, **k):
+        return np.format_float_positional(np.float64(x), **k)
+
+    def fsci64(x, **k):
+        return np.format_float_scientific(np.float64(x), **k)
+
+    def equal(a, b):
+        return a == b
+
+    assert equal(fpos32('1.0'), "1.")
+    assert equal(fsci32('1.0'), "1.e+00")
+    assert equal(fpos32('10.234'), "10.234")
+    assert equal(fpos32('-10.234'), "-10.234")
+    assert equal(fsci32('10.234'), "1.0234e+01")
+    assert equal(fsci32('-10.234'), "-1.0234e+01")
+    assert equal(fpos32('1000.0'), "1000.")
+    assert equal(fpos32('1.0', precision=0), "1.")
+    assert equal(fsci32('1.0', precision=0), "1.e+00")
+    assert equal(fpos32('10.234', precision=0), "10.")
+    assert equal(fpos32('-10.234', precision=0), "-10.")
+    assert equal(fsci32('10.234', precision=0), "1.e+01")
+    assert equal(fsci32('-10.234', precision=0), "-1.e+01")
+    assert equal(fpos32('10.234', precision=2), "10.23")
+    assert equal(fsci32('-10.234', precision=2), "-1.02e+01")
+    assert equal(fsci64('9.9999999999999995e-08', unique=False, precision=16),
+                 '9.9999999999999995e-08')
+    assert equal(fsci64('9.8813129168249309e-324', unique=False, precision=16),
+                 '9.8813129168249309e-324')
+    assert equal(fsci64('9.9999999999999694e-311', unique=False, precision=16),
+                 '9.9999999999999694e-311')
+
+    # test rounding
+    # 3.1415927410 is closest float32 to np.pi
+    assert equal(fpos32('3.14159265358979323846', unique=False, precision=10),
+                 "3.1415927410")
+    assert equal(fsci32('3.14159265358979323846', unique=False, precision=10),
+                 "3.1415927410e+00")
+    assert equal(fpos64('3.14159265358979323846', unique=False, precision=10),
+                 "3.1415926536")
+    assert equal(fsci64('3.14159265358979323846', unique=False, precision=10),
+                 "3.1415926536e+00")
+    # 299792448 is closest float32 to 299792458
+    assert equal(fpos32('299792458.0', unique=False, precision=5),
+                 "299792448.00000")
+    assert equal(fsci32('299792458.0', unique=False, precision=5),
+                 "2.99792e+08")
+    assert equal(fpos64('299792458.0', unique=False, precision=5),
+                 "299792458.00000")
+    assert equal(fsci64('299792458.0', unique=False, precision=5),
+                 "2.99792e+08")
+
+    assert equal(fpos32('3.14159265358979323846', unique=False, precision=25),
+                 "3.1415927410125732421875000")
+    assert equal(fpos64('3.14159265358979323846', unique=False, precision=50),
+                 "3.14159265358979311599796346854418516159057617187500")
+    assert equal(fpos64('3.14159265358979323846'), "3.141592653589793")
+
+    # smallest numbers
+    assert equal(
+        fpos32(0.5**(126 + 23), unique=False, precision=149),
+        "0.00000000000000000000000000000000000000000000140129846432"
+        "4817070923729583289916131280261941876515771757068283889791"
+        "08268586060148663818836212158203125")
+
+    assert equal(
+        fpos64('5e-324', unique=False, precision=1074),
+        "0.00000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000000000000000000000000000"
+        "0000000000000000000000000000000000049406564584124654417656"
+        "8792868221372365059802614324764425585682500675507270208751"
+        "8652998363616359923797965646954457177309266567103559397963"
+        "9877479601078187812630071319031140452784581716784898210368"
+        "8718636056998730723050006387409153564984387312473397273169"
+        "6151400317153853980741262385655911710266585566867681870395"
+        "6031062493194527159149245532930545654440112748012970999954"
+        "1931989409080416563324524757147869014726780159355238611550"
+        "1348035264934720193790268107107491703332226844753335720832"
+        "4319360923828934583680601060115061698097530783422773183292"
+        "4790498252473077637592724787465608477820373446969953364701"
+        "7972677717585125660551199131504891101451037862738167250955"
+        "8373897335989936648099411642057026370902792427675445652290"
+        "87538682506419718265533447265625")
+
+    # largest numbers
+    f32x = np.float32(3.4028235e+38)  # np.finfo(np.float32).max
+    assert equal(fpos32(f32x, unique=False, precision=0),
+                 "340282346638528859811704183484516925440.")
+    assert equal(
+        fpos64(1.7976931348623157e+308, unique=False, precision=0),
+        "1797693134862315708145274237317043567980705675258449965989"
+        "1747680315726078002853876058955863276687817154045895351438"
+        "2464234321326889464182768467546703537516986049910576551282"
+        "0762454900903893289440758685084551339423045832369032229481"
+        "6580855933212334827479782620414472316873817718091929988125"
+        "0404026184124858368.")
+
+    # Warning: In unique mode only the integer digits necessary for
+    # uniqueness are computed, the rest are 0.
+    assert equal(fpos32(f32x), "340282350000000000000000000000000000000.")
+
+    # Further tests of zero-padding vs rounding in different combinations
+    # of unique, fractional, precision, min_digits
+    # precision can only reduce digits, not add them.
+    # min_digits can only extend digits, not reduce them.
+    assert equal(fpos32(f32x, unique=True, fractional=True, precision=0),
+                 "340282350000000000000000000000000000000.")
+    assert equal(fpos32(f32x, unique=True, fractional=True, precision=4),
+                 "340282350000000000000000000000000000000.")
+    assert equal(fpos32(f32x, unique=True, fractional=True, min_digits=0),
+                 "340282346638528859811704183484516925440.")
+    assert equal(fpos32(f32x, unique=True, fractional=True, min_digits=4),
+                 "340282346638528859811704183484516925440.0000")
+    assert equal(
+        fpos32(f32x, unique=True, fractional=True, min_digits=4, precision=4),
+        "340282346638528859811704183484516925440.0000")
+    try:
+        fpos32(f32x, unique=True, fractional=False, precision=0)
+        assert False
+    except ValueError:
+        pass
+    assert equal(fpos32(f32x, unique=True, fractional=False, precision=4),
+                 "340300000000000000000000000000000000000.")
+    assert equal(fpos32(f32x, unique=True, fractional=False, precision=20),
+                 "340282350000000000000000000000000000000.")
+    assert equal(fpos32(f32x, unique=True, fractional=False, min_digits=4),
+                 "340282350000000000000000000000000000000.")
+    assert equal(fpos32(f32x, unique=True, fractional=False, min_digits=20),
+                 "340282346638528859810000000000000000000.")
+    assert equal(fpos32(f32x, unique=True, fractional=False, min_digits=15),
+                 "340282346638529000000000000000000000000.")
+    assert equal(fpos32(f32x, unique=False, fractional=False, precision=4),
+                 "340300000000000000000000000000000000000.")
+    # test that unique rounding is preserved when precision is supplied
+    # but no extra digits need to be printed (gh-18609)
+    a = np.array(np.uint64('13393705291799855104')).view(
+        np.float64).item()  #np.float64.fromhex('-1p-97')
+    assert equal(fsci64(a, unique=True), '-6.310887241768095e-30')
+    assert equal(fsci64(a, unique=False, precision=15),
+                 '-6.310887241768094e-30')
+    assert equal(fsci64(a, unique=True, precision=15),
+                 '-6.310887241768095e-30')
+    assert equal(fsci64(a, unique=True, min_digits=15),
+                 '-6.310887241768095e-30')
+    assert equal(fsci64(a, unique=True, precision=15, min_digits=15),
+                 '-6.310887241768095e-30')
+    # adds/remove digits in unique mode with unbiased rnding
+    assert equal(fsci64(a, unique=True, precision=14), '-6.31088724176809e-30')
+    assert equal(fsci64(a, unique=True, min_digits=16),
+                 '-6.3108872417680944e-30')
+    assert equal(fsci64(a, unique=True, precision=16),
+                 '-6.310887241768095e-30')
+    assert equal(fsci64(a, unique=True, min_digits=14),
+                 '-6.310887241768095e-30')
+    # test min_digits in unique mode with different rounding cases
+    assert equal(fsci64('1e120', min_digits=3), '1.000e+120')
+    assert equal(fsci64('1e100', min_digits=3), '1.000e+100')
+
+    # test trailing zeros
+    assert equal(fpos32('1.0', unique=False, precision=3), "1.000")
+    assert equal(fpos64('1.0', unique=False, precision=3), "1.000")
+    assert equal(fsci32('1.0', unique=False, precision=3), "1.000e+00")
+    assert equal(fsci64('1.0', unique=False, precision=3), "1.000e+00")
+    assert equal(fpos32('1.5', unique=False, precision=3), "1.500")
+    assert equal(fpos64('1.5', unique=False, precision=3), "1.500")
+    assert equal(fsci32('1.5', unique=False, precision=3), "1.500e+00")
+    assert equal(fsci64('1.5', unique=False, precision=3), "1.500e+00")
+    # gh-10713
+    assert equal(fpos64('324', unique=False, precision=5, fractional=False),
+                 "324.00")
+
+test_dragon4()
+
+@test
+def test_dragon4_interface():
+    tps = (np.float16(), np.float32(), np.float64(), np.float128())
+    fpos = np.format_float_positional
+    fsci = np.format_float_scientific
+
+    def f(s: str, tp: type):
+        return tp(float(s))
+
+    def equal(a, b):
+        return a == b
+
+    for tp_ in tps:
+        tp = type(tp_)
+        # test padding
+        assert equal(fpos(f('1.0', tp), pad_left=4, pad_right=4), "   1.    ")
+        assert equal(fpos(f('-1.0', tp), pad_left=4, pad_right=4), "  -1.    ")
+        assert equal(fpos(f('-10.2', tp), pad_left=4, pad_right=4),
+                     (" -10.2   " if tp is not np.float128 else
+                      " -10.199999999999999289457264239899814"))
+
+        # test exp_digits
+        assert equal(fsci(f('1.23e1', tp), exp_digits=5),
+                     ("1.23e+00001" if tp is not np.float128 else
+                      "1.2300000000000000710542735760100186e+00001"))
+
+        # test fixed (non-unique) mode
+        assert equal(fpos(f('1.0', tp), unique=False, precision=4), "1.0000")
+        assert equal(fsci(f('1.0', tp), unique=False, precision=4),
+                     "1.0000e+00")
+
+        # test trimming
+        # trim of 'k' or '.' only affects non-unique mode, since unique
+        # mode will not output trailing 0s.
+        assert equal(fpos(f('1.', tp), unique=False, precision=4, trim='k'),
+                     "1.0000")
+
+        assert equal(fpos(f('1.', tp), unique=False, precision=4, trim='.'),
+                     "1.")
+        assert equal(fpos(f('1.2', tp), unique=False, precision=4, trim='.'),
+                     "1.2" if tp is not np.float16 else "1.2002")
+
+        assert equal(fpos(f('1.', tp), unique=False, precision=4, trim='0'),
+                     "1.0")
+        assert equal(fpos(f('1.2', tp), unique=False, precision=4, trim='0'),
+                     "1.2" if tp is not np.float16 else "1.2002")
+        assert equal(fpos(f('1.', tp), trim='0'), "1.0")
+
+        assert equal(fpos(f('1.', tp), unique=False, precision=4, trim='-'),
+                     "1")
+        assert equal(fpos(f('1.2', tp), unique=False, precision=4, trim='-'),
+                     "1.2" if tp is not np.float16 else "1.2002")
+        assert equal(fpos(f('1.', tp), trim='-'), "1")
+        assert equal(fpos(f('1.001', tp), precision=1, trim='-'), "1")
+
+test_dragon4_interface()

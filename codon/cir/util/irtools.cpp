@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "irtools.h"
 
@@ -38,16 +38,21 @@ bool isCallOf(const Value *value, const std::string &name,
 
     unsigned i = 0;
     for (auto *arg : *call) {
-      if (!arg->getType()->is(inputs[i++]))
+      if (inputs[i] && !arg->getType()->is(inputs[i]))
         return false;
+      ++i;
     }
 
     if (output && !value->getType()->is(output))
       return false;
 
-    if (method &&
-        (inputs.empty() || !fn->getParentType() || !fn->getParentType()->is(inputs[0])))
-      return false;
+    if (method) {
+      if (inputs.empty() || !fn->getParentType())
+        return false;
+
+      if (inputs[0] && !fn->getParentType()->is(inputs[0]))
+        return false;
+    }
 
     return true;
   }
@@ -111,7 +116,7 @@ Value *makeTuple(const std::vector<Value *> &args, Module *M) {
   return M->Nr<CallInstr>(M->Nr<VarValue>(newFunc), args);
 }
 
-VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) {
+Var *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) {
   const bool global = (parent == nullptr);
   auto *M = x->getModule();
   auto *v = M->Nr<Var>(x->getType(), global);
@@ -128,7 +133,7 @@ VarValue *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) 
   if (!global) {
     parent->push_back(v);
   }
-  return M->Nr<VarValue>(v);
+  return v;
 }
 
 Value *alloc(types::Type *type, Value *count) {

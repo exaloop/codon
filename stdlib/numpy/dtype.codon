@@ -1,0 +1,476 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+int8 = Int[8]
+int16 = Int[16]
+int32 = Int[32]
+int64 = int
+
+uint8 = UInt[8]
+uint16 = UInt[16]
+uint32 = UInt[32]
+uint64 = UInt[64]
+
+intp = int64
+uintp = uint64
+# float16 already present in Codon
+# float32 already present in Codon
+float64 = float
+# float128 already present in Codon
+# complex64 already present in Codon
+complex128 = complex
+
+bool_ = bool
+# byte already present in Codon
+ubyte = uint8
+short = int16
+ushort = uint16
+intc = int32
+uintc = uint32
+int_ = int64
+uint = uint64
+longlong = int64
+ulonglong = uint64
+# half / float16
+single = float32
+double = float
+longdouble = float
+csingle = complex64
+cdouble = complex
+clongdouble = complex
+
+float_ = double
+complex_ = cdouble
+longfloat = longdouble
+singlecomplex = csingle
+cfloat = cdouble
+longcomplex = clongdouble
+clongfloat = clongdouble
+
+@tuple
+class finfo:
+    dtype: type
+
+    def __new__(x):
+        return finfo(type(x))
+
+    def __new__(dtype: type):
+        if (dtype is float64 or
+            dtype is float32 or
+            dtype is float16):
+            return finfo[dtype]()
+        elif dtype is complex128:
+            return finfo[float64]()
+        elif dtype is complex64:
+            return finfo[float32]()
+        else:
+            if dtype is float128 or dtype is bfloat16:
+                compile_error("data type '" + dtype.__name__ + "' not supported by finfo")
+            else:
+                compile_error("data type '" + dtype.__name__ + "' not inexact")
+
+    @property
+    def bits(self):
+        if dtype is float64:
+            return 64
+        elif dtype is float32:
+            return 32
+        elif dtype is float16:
+            return 16
+
+    @property
+    def iexp(self):
+        if dtype is float64:
+            return 11
+        elif dtype is float32:
+            return 8
+        elif dtype is float16:
+            return 5
+
+    @property
+    def machep(self):
+        if dtype is float64:
+            return -52
+        elif dtype is float32:
+            return -23
+        elif dtype is float16:
+            return -10
+
+    @property
+    def maxexp(self):
+        if dtype is float64:
+            return 1024
+        elif dtype is float32:
+            return 128
+        elif dtype is float16:
+            return 16
+
+    @property
+    def minexp(self):
+        if dtype is float64:
+            return -1022
+        elif dtype is float32:
+            return -126
+        elif dtype is float16:
+            return -14
+
+    @property
+    def negep(self):
+        if dtype is float64:
+            return -53
+        elif dtype is float32:
+            return -24
+        elif dtype is float16:
+            return -11
+
+    @property
+    def nexp(self):
+        if dtype is float64:
+            return 11
+        elif dtype is float32:
+            return 8
+        elif dtype is float16:
+            return 5
+
+    @property
+    def nmant(self):
+        if dtype is float64:
+            return 52
+        elif dtype is float32:
+            return 23
+        elif dtype is float16:
+            return 10
+
+    @property
+    def precision(self):
+        if dtype is float64:
+            return 15
+        elif dtype is float32:
+            return 6
+        elif dtype is float16:
+            return 3
+        else:
+            return 0
+
+    @property
+    def eps(self):
+        @pure
+        @llvm
+        def eps64() -> float:
+            declare double @llvm.exp2.f64(double)
+            %y = call double @llvm.exp2.f64(double -52.0)
+            ret double %y
+
+        @pure
+        @llvm
+        def eps32() -> float32:
+            declare float @llvm.exp2.f32(float)
+            %y = call float @llvm.exp2.f32(float -23.0)
+            ret float %y
+
+        @pure
+        @llvm
+        def eps16() -> float16:
+            declare half @llvm.exp2.f16(half)
+            %y = call half @llvm.exp2.f16(half -10.0)
+            ret half %y
+
+        if dtype is float64:
+            return eps64()
+        elif dtype is float32:
+            return eps32()
+        elif dtype is float16:
+            return eps16()
+
+    @property
+    def epsneg(self):
+        @pure
+        @llvm
+        def epsneg64() -> float:
+            declare double @llvm.exp2.f64(double)
+            %y = call double @llvm.exp2.f64(double -53.0)
+            ret double %y
+
+        @pure
+        @llvm
+        def epsneg32() -> float32:
+            declare float @llvm.exp2.f32(float)
+            %y = call float @llvm.exp2.f32(float -24.0)
+            ret float %y
+
+        @pure
+        @llvm
+        def epsneg16() -> float16:
+            declare half @llvm.exp2.f16(half)
+            %y = call half @llvm.exp2.f16(half -11.0)
+            ret half %y
+
+        if dtype is float64:
+            return epsneg64()
+        elif dtype is float32:
+            return epsneg32()
+        elif dtype is float16:
+            return epsneg16()
+
+    @property
+    def max(self):
+        @pure
+        @llvm
+        def max64() -> float:
+            ret double 0x7FEFFFFFFFFFFFFF
+
+        @pure
+        @llvm
+        def max32() -> float32:
+            ret float 0x47EFFFFFE0000000
+
+        @pure
+        @llvm
+        def max16() -> float16:
+            ret half 0xH7BFF
+
+        if dtype is float64:
+            return max64()
+        elif dtype is float32:
+            return max32()
+        elif dtype is float16:
+            return max16()
+
+    @property
+    def min(self):
+        @pure
+        @llvm
+        def min64() -> float:
+            ret double 0xFFEFFFFFFFFFFFFF
+
+        @pure
+        @llvm
+        def min32() -> float32:
+            ret float 0xC7EFFFFFE0000000
+
+        @pure
+        @llvm
+        def min16() -> float16:
+            ret half 0xHFBFF
+
+        if dtype is float64:
+            return min64()
+        elif dtype is float32:
+            return min32()
+        elif dtype is float16:
+            return min16()
+
+    @property
+    def resolution(self):
+        if dtype is float64:
+            return 1e-15
+        elif dtype is float32:
+            return float32(1e-06)
+        elif dtype is float16:
+            return float16(0.001)
+
+    @property
+    def smallest_normal(self):
+        @pure
+        @llvm
+        def smallest_normal64() -> float:
+            ret double 0x10000000000000
+
+        @pure
+        @llvm
+        def smallest_normal32() -> float32:
+            ret float 0x3810000000000000
+
+        @pure
+        @llvm
+        def smallest_normal16() -> float16:
+            ret half 0xH0400
+
+        if dtype is float64:
+            return smallest_normal64()
+        elif dtype is float32:
+            return smallest_normal32()
+        elif dtype is float16:
+            return smallest_normal16()
+
+    @property
+    def smallest_subnormal(self):
+        @pure
+        @llvm
+        def smallest_subnormal64() -> float:
+            ret double 4.940660e-324
+
+        @pure
+        @llvm
+        def smallest_subnormal32() -> float32:
+            ret float 0x36A0000000000000
+
+        @pure
+        @llvm
+        def smallest_subnormal16() -> float16:
+            ret half 0xH0001
+
+        if dtype is float64:
+            return smallest_subnormal64()
+        elif dtype is float32:
+            return smallest_subnormal32()
+        elif dtype is float16:
+            return smallest_subnormal16()
+
+    @property
+    def tiny(self):
+        return self.smallest_normal()
+
+    def _type_name(self):
+        if dtype is float64:
+            return 'float64'
+        elif dtype is float32:
+            return 'float32'
+        elif dtype is float16:
+            return 'float16'
+        else:
+            return '?'
+
+    def __repr__(self):
+        return f'finfo(resolution={self.resolution}, min={self.min}, max={self.max}, dtype={self._type_name()})'
+
+    def __str__(self):
+        if dtype is float64:
+            return '''Machine parameters for float64
+---------------------------------------------------------------
+precision =  15   resolution = 1.0000000000000001e-15
+machep =    -52   eps =        2.2204460492503131e-16
+negep =     -53   epsneg =     1.1102230246251565e-16
+minexp =  -1022   tiny =       2.2250738585072014e-308
+maxexp =   1024   max =        1.7976931348623157e+308
+nexp =       11   min =        -max
+smallest_normal = 2.2250738585072014e-308   smallest_subnormal = 4.9406564584124654e-324
+---------------------------------------------------------------
+'''
+        elif dtype is float32:
+            return '''Machine parameters for float32
+---------------------------------------------------------------
+precision =   6   resolution = 1.0000000e-06
+machep =    -23   eps =        1.1920929e-07
+negep =     -24   epsneg =     5.9604645e-08
+minexp =   -126   tiny =       1.1754944e-38
+maxexp =    128   max =        3.4028235e+38
+nexp =        8   min =        -max
+smallest_normal = 1.1754944e-38   smallest_subnormal = 1.4012985e-45
+---------------------------------------------------------------
+'''
+        elif dtype is float16:
+            return '''Machine parameters for float16
+---------------------------------------------------------------
+precision =   3   resolution = 1.00040e-03
+machep =    -10   eps =        9.76562e-04
+negep =     -11   epsneg =     4.88281e-04
+minexp =    -14   tiny =       6.10352e-05
+maxexp =     16   max =        6.55040e+04
+nexp =        5   min =        -max
+smallest_normal = 6.10352e-05   smallest_subnormal = 5.96046e-08
+---------------------------------------------------------------
+'''
+        else:
+            return '?'
+
+@tuple
+class iinfo:
+    dtype: type
+
+    def __new__(x):
+        return iinfo(type(x))
+
+    def __new__(int_type: type):
+        if (int_type is int8 or
+            int_type is uint8 or
+            int_type is int16 or
+            int_type is uint16 or
+            int_type is int32 or
+            int_type is uint32 or
+            int_type is int64 or
+            int_type is uint64 or
+            int_type is int):
+            return iinfo[int_type]()
+        else:
+            compile_error("data type '" + int_type.__name__ + "' not supported by iinfo")
+
+    @property
+    def bits(self):
+        if dtype is int8 or dtype is uint8:
+            return 8
+        elif dtype is int16 or dtype is uint16:
+            return 16
+        elif dtype is int32 or dtype is uint32:
+            return 32
+        elif dtype is int64 or dtype is uint64 or dtype is int:
+            return 64
+
+    @property
+    def min(self):
+        if dtype is int8:
+            return -128
+        elif dtype is uint8:
+            return 0
+        elif dtype is int16:
+            return -32768
+        elif dtype is uint16:
+            return 0
+        elif dtype is int32:
+            return -2147483648
+        elif dtype is uint32:
+            return 0
+        elif dtype is int64:
+            return -9223372036854775808
+        elif dtype is uint64:
+            return 0
+        elif dtype is int:
+            return -9223372036854775808
+
+    @property
+    def max(self):
+        if dtype is int8:
+            return 127
+        elif dtype is uint8:
+            return 255
+        elif dtype is int16:
+            return 32767
+        elif dtype is uint16:
+            return 65535
+        elif dtype is int32:
+            return 2147483647
+        elif dtype is uint32:
+            return 4294967295
+        elif dtype is int64:
+            return 9223372036854775807
+        elif dtype is uint64:
+            return 0xFFFFFFFFFFFFFFFF
+        elif dtype is int:
+            return 9223372036854775807
+
+    def _type_name(self):
+        if dtype is int8:
+            return 'int8'
+        elif dtype is uint8:
+            return 'uint8'
+        elif dtype is int16:
+            return 'int16'
+        elif dtype is uint16:
+            return 'uint16'
+        elif dtype is int32:
+            return 'int32'
+        elif dtype is uint32:
+            return 'uint32'
+        elif dtype is int64:
+            return 'int64'
+        elif dtype is uint64:
+            return 'uint64'
+        elif dtype is int:
+            return 'int64'
+        else:
+            return '?'
+
+    def __repr__(self):
+        return f'iinfo(min={dtype(self.min)}, max={dtype(self.max)}, dtype={self._type_name()})'
+
+    def __str__(self):
+        return f'Machine parameters for {self._type_name()}\n---------------------------------------------------------------\nmin = {dtype(self.min)}\nmax = {dtype(self.max)}\n---------------------------------------------------------------\n'

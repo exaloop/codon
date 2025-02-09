@@ -6,6 +6,28 @@ These release notes generally do not include small bug fixes. See the
 [closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed)
 for more information.
 
+# v0.18
+
+## License change
+
+- Codon is now truly open source under the Apache license.
+- Exaloop continues to offer enterprise licenses with added support, services
+  and custom solutions for organizations that want and need them. Contact
+  [info@exaloop.io](mailto:info@exaloop.io) to learn more.
+
+## New Codon-native NumPy implementation
+
+- New NumPy implementation for Codon, written in Codon itself.
+- Interoperable with Codon's multithreading and GPU backends.
+- NumPy-specific compiler optimizations (e.g. operator fusion optimizations)
+  added to Codon's standard optimization suite.
+- Learn more in the [Codon-NumPy docs](../interop/numpy.md).
+
+## New compiler options
+
+- `-fast-math` will enable [fast-math optimizations](https://llvm.org/docs/LangRef.html#fast-math-flags).
+  Use this flag with caution as it changes floating-point semantics.
+
 # v0.17
 
 ## LLVM upgrade

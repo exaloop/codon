@@ -1,19 +1,19 @@
-<p align="center">
- <img src="docs/img/codon.png?raw=true" width="600" alt="Codon"/>
-</p>
+<h1 align="center">
+ <img src="docs/img/codon-banner.svg" alt="Codon banner"/>
+</h1>
 
 <h3 align="center">
   <a href="https://docs.exaloop.io/codon" target="_blank"><b>Docs</b></a>
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/faq" target="_blank"><b>FAQ</b></a>
   &nbsp;&#183;&nbsp;
-  <a href="https://blog.exaloop.io" target="_blank"><b>Blog</b></a>
+  <a href="https://exaloop.io/blog" target="_blank"><b>Blog</b></a>
   &nbsp;&#183;&nbsp;
   <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/roadmap" target="_blank">Roadmap</a>
   &nbsp;&#183;&nbsp;
-  <a href="https://exaloop.io/benchmarks" target="_blank">Benchmarks</a>
+  <a href="https://exaloop.io/#benchmarks" target="_blank">Benchmarks</a>
 </h3>
 
 <a href="https://github.com/exaloop/codon/actions/workflows/ci.yml">
@@ -21,7 +21,7 @@
        alt="Build Status">
 </a>
 
-## What is Codon?
+# What is Codon?
 
 Codon is a high-performance Python implementation that compiles to native machine code without
 any runtime overhead. Typical speedups over vanilla Python are on the order of 10-100x or more, on
@@ -32,7 +32,7 @@ higher still.
 *Think of Codon as Python reimagined for static, ahead-of-time compilation, built from the ground
 up with best possible performance in mind.*
 
-### Goals
+## Goals
 
 - :bulb: **No learning curve:** Be as close to CPython as possible in terms of syntax, semantics and libraries
 - :rocket: **Top-notch performance:** At *least* on par with low-level languages like C, C++ or Rust
@@ -41,7 +41,7 @@ up with best possible performance in mind.*
   and libraries
 - :battery: **Interoperability:** Full interoperability with Python's ecosystem of packages and libraries
 
-### Non-goals
+## Non-goals
 
 - :x: *Drop-in replacement for CPython:* Codon is not a drop-in replacement for CPython. There are some
   aspects of Python that are not suitable for static compilation — we don't support these in Codon.
@@ -54,55 +54,62 @@ up with best possible performance in mind.*
   features as much as possible. While Codon does add some new syntax in a couple places (e.g. to express
   parallelism), we try to make it as familiar and intuitive as possible.
 
-## Install
+## How it works
 
-Pre-built binaries for Linux (x86_64) and macOS (x86_64 and arm64) are available alongside [each release](https://github.com/exaloop/codon/releases).
-Download and install with:
+<p align="center">
+ <img src="docs/img/codon-figure.svg" width="90%" alt="Codon figure"/>
+</p>
+
+# Quick start
+
+Download and install Codon with this command:
 
 ```bash
 /bin/bash -c "$(curl -fsSL https://exaloop.io/install.sh)"
 ```
 
-Or you can [build from source](https://docs.exaloop.io/codon/advanced/build).
+After following the prompts, the `codon` command will be available to use. For example:
 
-## Examples
+- To run a program: `codon run file.py`
+- To run a program with optimizations enabled: `codon run -release file.py`
+- To compile to an executable: `codon build -release file.py`
+- To generate LLVM IR: `codon build -release -llvm file.py`
 
-Codon is a Python-compatible language, and many Python programs will work with few if any modifications:
+Many more options are available and described in [the docs](https://docs.exaloop.io/codon/general/intro).
 
-```python
+Alternatively, you can [build from source](https://docs.exaloop.io/codon/advanced/build).
+
+# Examples
+
+## Basics
+
+Codon supports much of Python, and many Python programs will work with few if any modifications.
+Here's a simple script `fib.py` that computes the 40th Fibonacci number...
+
+``` python
+from time import time
+
 def fib(n):
-    a, b = 0, 1
-    while a < n:
-        print(a, end=' ')
-        a, b = b, a+b
-    print()
-fib(1000)
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+
+t0 = time()
+ans = fib(40)
+t1 = time()
+print(f'Computed fib(40) = {ans} in {t1 - t0} seconds.')
 ```
 
-The `codon` compiler has a number of options and modes:
+... run through Python and Codon:
 
-```bash
-# compile and run the program
-codon run fib.py
-# 0 1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987
-
-# compile and run the program with optimizations enabled
-codon run -release fib.py
-# 0 1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987
-
-# compile to executable with optimizations enabled
-codon build -release -exe fib.py
-./fib
-# 0 1 1 2 3 5 8 13 21 34 55 89 144 233 377 610 987
-
-# compile to LLVM IR file with optimizations enabled
-codon build -release -llvm fib.py
-# outputs file fib.ll
+```
+$ python3 fib.py
+Computed fib(40) = 102334155 in 17.979357957839966 seconds.
+$ codon run -release fib.py
+Computed fib(40) = 102334155 in 0.275645 seconds.
 ```
 
-See [the docs](https://docs.exaloop.io/codon/general/intro) for more options and examples.
+## Using Python libraries
 
-You can import and use any Python package from Codon. For example:
+You can import and use any Python package from Codon via `from python import`. For example:
 
 ```python
 from python import matplotlib.pyplot as plt
@@ -112,11 +119,13 @@ plt.show()
 ```
 
 (Just remember to set the `CODON_PYTHON` environment variable to the CPython shared library,
-as explained in the [the docs](https://docs.exaloop.io/codon/interoperability/python).)
+as explained in the [the Python interoperability docs](https://docs.exaloop.io/codon/interoperability/python).)
 
-This prime counting example showcases Codon's [OpenMP](https://www.openmp.org/) support, enabled
-with the addition of one line. The `@par` annotation tells the compiler to parallelize the
-following `for`-loop, in this case using a dynamic schedule, chunk size of 100, and 16 threads.
+## Parallelism
+
+Codon supports native multithreading via [OpenMP](https://www.openmp.org/). The `@par` annotation
+in the code below tells the compiler to parallelize the following `for`-loop, in this case using
+a dynamic schedule, chunk size of 100, and 16 threads.
 
 ```python
 from sys import argv
@@ -139,7 +148,10 @@ for i in range(2, limit):
 print(total)
 ```
 
-Codon supports writing and executing GPU kernels. Here's an example that computes the
+Note that Codon automatically turns the `total += 1` statement in the loop body into an atomic
+reduction to avoid race conditions. Learn more in the [multitheading docs](advanced/parallel.md).
+
+Codon also supports writing and executing GPU kernels. Here's an example that computes the
 [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set):
 
 ```python
@@ -169,8 +181,47 @@ def mandelbrot(pixels):
 mandelbrot(pixels, grid=(N*N)//1024, block=1024)
 ```
 
-GPU programming can also be done using the `@par` syntax with `@par(gpu=True)`.
+GPU programming can also be done using the `@par` syntax with `@par(gpu=True)`. See the
+[GPU programming docs](https://docs.exaloop.io/codon/advanced/gpu) for more details.
 
-## Documentation
+## NumPy support
 
-Please see [docs.exaloop.io](https://docs.exaloop.io/codon) for in-depth documentation.
+Codon includes a feature-complete, fully-compiled native NumPy implementation. It uses the same
+API as NumPy, but re-implements everything in Codon itself, allowing for a range of optimizations
+and performance improvements.
+
+Here's an example NumPy program that approximates $\pi$ using random numbers...
+
+``` python
+import time
+import numpy as np
+
+rng = np.random.default_rng(seed=0)
+x = rng.random(500_000_000)
+y = rng.random(500_000_000)
+
+t0 = time.time()
+# pi ~= 4 x (fraction of points in circle)
+pi = ((x-1)**2 + (y-1)**2 < 1).sum() * (4 / len(x))
+t1 = time.time()
+
+print(f'Computed pi~={pi:.4f} in {t1 - t0:.2f} sec')
+```
+
+... run through Python and Codon:
+
+```
+$ python3 pi.py
+Computed pi~=3.1417 in 2.25 sec
+$ codon run -release pi.py
+Computed pi~=3.1417 in 0.43 sec
+```
+
+Codon can speed up NumPy code through general-purpose and NumPy-specific compiler optimizations,
+including inlining, fusion, memory allocation elision and more. Furthermore, Codon's NumPy
+implementation works with its multithreading and GPU capabilities, and can even integrate with
+[PyTorch](https://pytorch.org). Learn more in the [Codon-NumPy docs](https://docs.exaloop.io/codon/interoperability/numpy).
+
+# Documentation
+
+Please see [docs.exaloop.io](https://docs.exaloop.io) for in-depth documentation.

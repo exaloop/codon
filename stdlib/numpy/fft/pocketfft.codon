@@ -1,0 +1,2262 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+# Adapted from PocketFFT - https://github.com/mreineck/pocketfft
+
+from ..util import free, sqrt, sin, cos, cast, count, sizeof, PI
+
+def _special_mul(v1, v2, fwd: bool):
+    if type(v1) is complex and type(v2) is complex64:
+        return _special_mul(v1, complex(v2), fwd)
+
+    if type(v1) is complex64 and type(v2) is complex:
+        return _special_mul(complex(v1), v2, fwd)
+
+    T = type(v1)
+    if fwd:
+        return T(
+            v1.real * v2.real + v1.imag * v2.imag,
+            v1.imag * v2.real - v1.real * v2.imag
+        )
+    else:
+        return T(
+            v1.real * v2.real - v1.imag * v2.imag,
+            v1.real * v2.imag + v1.imag * v2.real
+        )
+
+def ROT90(a):
+    T = type(a)
+    return T(-a.imag, a.real)
+
+def ROTX90(a, fwd: bool):
+    T = type(a)
+    if fwd:
+        return T(a.imag, -a.real)
+    else:
+        return T(-a.imag, a.real)
+
+def ROTX45(a, fwd: bool):
+    T = type(a)
+    T0 = type(a.real)
+    hsqt2 = cast(0.707106781186547524400844362104849, T0)
+    if fwd:
+        return T(hsqt2*(a.real+a.imag), hsqt2*(a.imag-a.real))
+    else:
+        return T(hsqt2*(a.real-a.imag), hsqt2*(a.imag+a.real))
+
+def ROTX135(a, fwd: bool):
+    T = type(a)
+    T0 = type(a.real)
+    hsqt2 = cast(0.707106781186547524400844362104849, T0)
+    if fwd:
+        return T(hsqt2*(a.imag-a.real), hsqt2*(-a.real-a.imag))
+    else:
+        return T(hsqt2*(-a.real-a.imag), hsqt2*(a.real-a.imag))
+
+@tuple
+class arr:
+    p: Ptr[T]
+    sz: int
+    T: type
+
+    def __new__(sz: int) -> arr[T]:
+        return (Ptr[T](sz), sz)
+
+    def dealloc(self):
+        free(self.p)
+
+    def __getitem__(self, idx: int):
+        return self.p[idx]
+
+    def __setitem__(self, idx: int, val: T):
+        self.p[idx] = val
+
+    def size(self):
+        return self.sz
+
+    def data(self):
+        return self.p
+
+@tuple
+class sincos_2pibyn:
+    N: int
+    mask: int
+    shift: int
+    v1: arr[complex]
+    v2: arr[complex]
+    T: type
+
+    def calc(x: int, n: int, ang: float):
+        x <<= 3
+        if x < 4*n:
+            if x < 2*n:
+                if x < n:
+                    y = cast(x, float) * ang
+                    return complex(cos(y), sin(y))
+                else:
+                    y = cast(2*n - x, float) * ang
+                    return complex(sin(y), cos(y))
+            else:
+                x -= 2*n
+                if x < n:
+                    y = cast(x, float) * ang
+                    return complex(-sin(y), cos(y))
+                else:
+                    y = cast(2*n - x, float) * ang
+                    return complex(-cos(y), sin(y))
+        else:
+            x = 8*n - x
+            if x < 2*n:
+                if x < n:
+                    y = cast(x, float) * ang
+                    return complex(cos(y), -sin(y))
+                else:
+                    y = cast(2*n - x, float) * ang
+                    return complex(sin(y), -cos(y))
+            else:
+                x -= 2*n
+                if x < n:
+                    y = cast(x, float) * ang
+                    return complex(-sin(y), -cos(y))
+                else:
+                    y = cast(2*n - x, float) * ang
+                    return complex(-cos(y), -sin(y))
+
+    def __new__(n: int) -> sincos_2pibyn[T]:
+        ang = 0.25 * PI / n
+        nval = (n + 2) >> 1
+        shift = 1
+        while (1 << shift) * (1 << shift) < nval:
+            shift += 1
+        mask = (1 << shift) - 1
+
+        v1 = arr[complex](mask + 1)
+        v1[0] = complex(1, 0)
+        for i in range(1, v1.size()):
+            v1[i] = sincos_2pibyn.calc(i, n, ang)
+
+        v2 = arr[complex]((nval + mask) // (mask + 1))
+        v2[0] = complex(1, 0)
+        for i in range(1, v2.size()):
+            v2[i] = sincos_2pibyn.calc(i*(mask+1), n, ang)
+
+        return (n, mask, shift, v1, v2)
+
+    def cmplx(self, re, im):
+        if T is float:
+            return complex(cast(re, float), cast(im, float))
+        elif T is float32:
+            return complex64(cast(re, float32), cast(im, float32))
+        else:
+            compile_error("[internal error] bad float type")
+
+    def __getitem__(self, idx: int):
+        if 2 * idx <= self.N:
+            x1 = self.v1[idx & self.mask]
+            x2 = self.v2[idx >> self.shift]
+            return self.cmplx(x1.real * x2.real - x1.imag * x2.imag,
+                              x1.real * x2.imag + x1.imag * x2.real)
+        else:
+            idx = self.N - idx
+            x1 = self.v1[idx & self.mask]
+            x2 = self.v2[idx >> self.shift]
+            return self.cmplx(x1.real * x2.real - x1.imag * x2.imag,
+                              -(x1.real * x2.imag + x1.imag * x2.real))
+
+    def dealloc(self):
+        self.v1.dealloc()
+        self.v2.dealloc()
+
+def _largest_prime_factor(n: int):
+    res = 1
+    while n & 1 == 0:
+        res = 2
+        n >>= 1
+
+    x = 3
+    while x * x <= n:
+        while n % x == 0:
+            res = x
+            n //= x
+        x += 2
+
+    if n > 1:
+        res = n
+    return res
+
+def _cost_guess(n: int):
+    lfp = 1.1
+    ni = n
+    result = 0.0
+
+    while n & 1 == 0:
+        result += 2
+        n >>= 1
+
+    x = 3
+    while x * x <= n:
+        while n % x == 0:
+            result += float(x) if x <= 5 else lfp*float(x)
+            n //= x
+        x += 2
+
+    if n > 1:
+        result += float(n) if n <= 5 else lfp*float(n)
+    return result*float(ni)
+
+def _good_size_cmplx(n: int):
+    if n <= 12:
+        return n
+    bestfac = 2*n
+    f11 = 1
+    while f11 < bestfac:
+        f117 = f11
+        while f117 < bestfac:
+            f1175 = f117
+            while f1175 < bestfac:
+                x = f1175
+                while x < n:
+                    x *= 2
+                while True:
+                    if x < n:
+                        x *= 3
+                    elif x > n:
+                        if x < bestfac:
+                            bestfac = x
+                        if x & 1:
+                            break
+                        x >>= 1
+                    else:
+                        return n
+                f1175 *= 5
+            f117 *= 7
+        f11 *= 11
+    return bestfac
+
+def _good_size_real(n: int):
+    if n <= 6:
+        return n
+    bestfac = 2*n
+    f5 = 1
+    while f5 < bestfac:
+        x = f5
+        while x < n:
+            x *= 2
+        while True:
+            if x < n:
+                x *= 3
+            elif x > n:
+                if x < bestfac:
+                    bestfac = x
+                if x & 1:
+                    break
+                x >>= 1
+            else:
+                return n
+        f5 *= 5
+    return bestfac
+
+def _prev_good_size_cmplx(n: int):
+    if n <= 12:
+        return n
+    bestfound = 1
+    f11 = 1
+    while f11 <= n:
+        f117 = f11
+        while f117 <= n:
+            f1175 = f117
+            while f1175 <= n:
+                x = f1175
+                while x*2 <= n:
+                    x *= 2
+                if x > bestfound:
+                    bestfound = x
+                while True:
+                    if x * 3 <= n:
+                        x *= 3
+                    elif x % 2 == 0:
+                        x //= 2
+                    else:
+                        break
+
+                    if x > bestfound:
+                        bestfound = x
+                f1175 *= 5
+            f117 *= 7
+        f11 *= 11
+    return bestfound
+
+def _prev_good_size_real(n: int):
+    if n <= 6:
+        return n
+    bestfound = 1
+    f5 = 1
+    while f5 <= n:
+        x = f5
+        while x*2 <= n:
+            x *= 2
+        if x > bestfound:
+            bestfound = x
+        while True:
+            if x * 3 <= n:
+                x *= 3
+            elif x % 2 == 0:
+                x //= 2
+            else:
+                break
+
+            if x > bestfound:
+                bestfound = x
+        f5 *= 5
+    return bestfound
+
+def PM(a, b):
+    return a + b, a - b
+
+def MP(a, b):
+    return a - b, a + b
+
+@tuple
+class fctdata:
+    fct: int
+    tw: Ptr[T]
+    tws: Ptr[T]
+    T: type
+
+    def with_fct(self, fct: int):
+        return fctdata[T](fct, self.tw, self.tws)
+
+    def with_tw(self, tw: Ptr[T]):
+        return fctdata[T](self.fct, tw, self.tws)
+
+    def with_tws(self, tws: Ptr[T]):
+        return fctdata[T](self.fct, self.tw, tws)
+
+class cfftp:
+    length: int
+    mem: arr[T]
+    fact: List[fctdata[T]]
+    T: type   # complex datatype
+    T0: type  # real datatype
+
+    def add_factor(self, factor: int):
+        self.fact.append(fctdata(factor, Ptr[T](), Ptr[T]()))
+
+    def pass2(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+2*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        if ido == 1:
+            for k in range(l1):
+                CH(0,k,0)[0] = CC(0,0,k)+CC(0,1,k)
+                CH(0,k,1)[0] = CC(0,0,k)-CC(0,1,k)
+        else:
+            for k in range(l1):
+                CH(0,k,0)[0] = CC(0,0,k)+CC(0,1,k)
+                CH(0,k,1)[0] = CC(0,0,k)-CC(0,1,k)
+                for i in range(1, ido):
+                    CH(i,k,0)[0] = CC(i,0,k)+CC(i,1,k)
+                    CH(i,k,1)[0] = _special_mul(CC(i,0,k)-CC(i,1,k), WA(0,i), fwd)
+
+    def pass3(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+3*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        tw1r = cast(-0.5, T0)
+        tw1i = cast(0.8660254037844386467637231707529362, T0)
+        if fwd:
+            tw1i = -tw1i
+
+        if ido == 1:
+            for k in range(l1):
+                # POCKETFFT_PREP3(0)
+                t0 = CC(0,0,k)
+                t1, t2 = PM(CC(0,1,k), CC(0,2,k))
+                CH(0,k,0)[0] = t0 + t1
+                # POCKETFFT_PARTSTEP3a(1,2,tw1r,tw1i)
+                ca = t0 + t1*tw1r
+                cb = T(-t2.imag*tw1i, t2.real*tw1i)
+                CH(0,k,1)[0], CH(0,k,2)[0] = PM(ca, cb)
+        else:
+            for k in range(l1):
+                # POCKETFFT_PREP3(0)
+                t0 = CC(0,0,k)
+                t1, t2 = PM(CC(0,1,k), CC(0,2,k))
+                CH(0,k,0)[0] = t0 + t1
+                # POCKETFFT_PARTSTEP3a(1,2,tw1r,tw1i)
+                ca = t0 + t1*tw1r
+                cb = T(-t2.imag*tw1i, t2.real*tw1i)
+                CH(0,k,1)[0], CH(0,k,2)[0] = PM(ca, cb)
+
+                for i in range(1, ido):
+                    # POCKETFFT_PREP3(i)
+                    t0 = CC(i,0,k)
+                    t1, t2 = PM(CC(i,1,k), CC(i,2,k))
+                    CH(i,k,0)[0] = t0 + t1
+                    # POCKETFFT_PARTSTEP3b(1,2,tw1r,tw1i)
+                    ca = t0 + t1*tw1r
+                    cb = T(-t2.imag*tw1i, t2.real*tw1i)
+                    CH(i,k,1)[0] = _special_mul(ca+cb, WA(1-1,i), fwd)
+                    CH(i,k,2)[0] = _special_mul(ca-cb, WA(2-1,i), fwd)
+
+    def pass4(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+4*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        if ido == 1:
+            for k in range(l1):
+                t2, t1 = PM(CC(0,0,k), CC(0,2,k))
+                t3, t4 = PM(CC(0,1,k), CC(0,3,k))
+                t4 = ROTX90(t4, fwd)
+                CH(0,k,0)[0], CH(0,k,2)[0] = PM(t2, t3)
+                CH(0,k,1)[0], CH(0,k,3)[0] = PM(t1, t4)
+        else:
+            for k in range(l1):
+                t2, t1 = PM(CC(0,0,k), CC(0,2,k))
+                t3, t4 = PM(CC(0,1,k), CC(0,3,k))
+                t4 = ROTX90(t4, fwd)
+                CH(0,k,0)[0], CH(0,k,2)[0] = PM(t2, t3)
+                CH(0,k,1)[0], CH(0,k,3)[0] = PM(t1, t4)
+
+                for i in range(1, ido):
+                    cc0 = CC(i,0,k)
+                    cc1 = CC(i,1,k)
+                    cc2 = CC(i,2,k)
+                    cc3 = CC(i,3,k)
+                    t2, t1 = PM(cc0, cc2)
+                    t3, t4 = PM(cc1, cc3)
+                    t4 = ROTX90(t4, fwd)
+                    CH(i,k,0)[0] = t2 + t3
+                    CH(i,k,1)[0] = _special_mul(t1+t4, WA(0,i), fwd)
+                    CH(i,k,2)[0] = _special_mul(t2-t3, WA(1,i), fwd)
+                    CH(i,k,3)[0] = _special_mul(t1-t4, WA(2,i), fwd)
+
+    def pass5(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+5*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        tw1r = cast(0.3090169943749474241022934171828191, T0)
+        tw1i = cast(0.9510565162951535721164393333793821, T0)
+        if fwd:
+            tw1i = -tw1i
+        tw2r = cast(-0.8090169943749474241022934171828191, T0)
+        tw2i = cast(0.5877852522924731291687059546390728, T0)
+        if fwd:
+            tw2i = -tw2i
+
+        if ido == 1:
+            for k in range(l1):
+                # POCKETFFT_PREP5(0)
+                t0 = CC(0,0,k)
+                t1, t4 = PM(CC(0,1,k), CC(0,4,k))
+                t2, t3 = PM(CC(0,2,k), CC(0,3,k))
+                CH(0,k,0)[0] = T(t0.real+t1.real+t2.real, t0.imag+t1.imag+t2.imag)
+                # POCKETFFT_PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+                ca = T(t0.real+tw1r*t1.real+tw2r*t2.real,
+                       t0.imag+tw1r*t1.imag+tw2r*t2.imag)
+                cb = T(-(tw1i*t4.imag+tw2i*t3.imag),
+                       tw1i*t4.real+tw2i*t3.real)
+                CH(0,k,1)[0], CH(0,k,4)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+                ca = T(t0.real+tw2r*t1.real+tw1r*t2.real,
+                       t0.imag+tw2r*t1.imag+tw1r*t2.imag)
+                cb = T(-(tw2i*t4.imag-tw1i*t3.imag),
+                       tw2i*t4.real-tw1i*t3.real)
+                CH(0,k,2)[0], CH(0,k,3)[0] = PM(ca, cb)
+        else:
+            for k in range(l1):
+                # POCKETFFT_PREP5(0)
+                t0 = CC(0,0,k)
+                t1, t4 = PM(CC(0,1,k), CC(0,4,k))
+                t2, t3 = PM(CC(0,2,k), CC(0,3,k))
+                CH(0,k,0)[0] = T(t0.real+t1.real+t2.real, t0.imag+t1.imag+t2.imag)
+                # POCKETFFT_PARTSTEP5a(1,4,tw1r,tw2r,+tw1i,+tw2i)
+                ca = T(t0.real+tw1r*t1.real+tw2r*t2.real,
+                       t0.imag+tw1r*t1.imag+tw2r*t2.imag)
+                cb = T(-(tw1i*t4.imag+tw2i*t3.imag),
+                       tw1i*t4.real+tw2i*t3.real)
+                CH(0,k,1)[0], CH(0,k,4)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP5a(2,3,tw2r,tw1r,+tw2i,-tw1i)
+                ca = T(t0.real+tw2r*t1.real+tw1r*t2.real,
+                       t0.imag+tw2r*t1.imag+tw1r*t2.imag)
+                cb = T(-(tw2i*t4.imag-tw1i*t3.imag),
+                       tw2i*t4.real-tw1i*t3.real)
+                CH(0,k,2)[0], CH(0,k,3)[0] = PM(ca, cb)
+                for i in range(1, ido):
+                    # POCKETFFT_PREP5(i)
+                    t0 = CC(i,0,k)
+                    t1, t4 = PM(CC(i,1,k), CC(i,4,k))
+                    t2, t3 = PM(CC(i,2,k), CC(i,3,k))
+                    CH(i,k,0)[0] = T(t0.real+t1.real+t2.real, t0.imag+t1.imag+t2.imag)
+                    # POCKETFFT_PARTSTEP5b(1,4,tw1r,tw2r,+tw1i,+tw2i)
+                    ca = T(t0.real+tw1r*t1.real+tw2r*t2.real,
+                           t0.imag+tw1r*t1.imag+tw2r*t2.imag)
+                    cb = T(-(tw1i*t4.imag+tw2i*t3.imag),
+                           tw1i*t4.real+tw2i*t3.real)
+                    CH(i,k,1)[0] = _special_mul(ca+cb, WA(1-1,i), fwd)
+                    CH(i,k,4)[0] = _special_mul(ca-cb, WA(4-1,i), fwd)
+                    # POCKETFFT_PARTSTEP5b(2,3,tw2r,tw1r,+tw2i,-tw1i)
+                    ca = T(t0.real+tw2r*t1.real+tw1r*t2.real,
+                           t0.imag+tw2r*t1.imag+tw1r*t2.imag)
+                    cb = T(-(tw2i*t4.imag-tw1i*t3.imag),
+                           tw2i*t4.real-tw1i*t3.real)
+                    CH(i,k,2)[0] = _special_mul(ca+cb, WA(2-1,i), fwd)
+                    CH(i,k,3)[0] = _special_mul(ca-cb, WA(3-1,i), fwd)
+
+    def pass7(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+7*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        tw1r = cast(0.6234898018587335305250048840042398, T0)
+        tw1i = cast(0.7818314824680298087084445266740578, T0)
+        if fwd:
+            tw1i = -tw1i
+        tw2r = cast(-0.2225209339563144042889025644967948, T0)
+        tw2i = cast(0.9749279121818236070181316829939312, T0)
+        if fwd:
+            tw2i = -tw2i
+        tw3r = cast(-0.9009688679024191262361023195074451, T0)
+        tw3i = cast(0.433883739117558120475768332848359, T0)
+        if fwd:
+            tw3i = -tw3i
+
+        if ido == 1:
+            for k in range(l1):
+                # POCKETFFT_PREP7(0)
+                t1 = CC(0,0,k)
+                t2, t7 = PM(CC(0,1,k), CC(0,6,k))
+                t3, t6 = PM(CC(0,2,k), CC(0,5,k))
+                t4, t5 = PM(CC(0,3,k), CC(0,4,k))
+                CH(0,k,0)[0] = T(t1.real+t2.real+t3.real+t4.real,
+                                 t1.imag+t2.imag+t3.imag+t4.imag)
+                # POCKETFFT_PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+                ca = T(t1.real+tw1r*t2.real+tw2r*t3.real+tw3r*t4.real,
+                       t1.imag+tw1r*t2.imag+tw2r*t3.imag+tw3r*t4.imag)
+                cb = T(-(tw1i*t7.imag+tw2i*t6.imag+tw3i*t5.imag),
+                       tw1i*t7.real+tw2i*t6.real+tw3i*t5.real)
+                CH(0,k,1)[0], CH(0,k,6)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+                ca = T(t1.real+tw2r*t2.real+tw3r*t3.real+tw1r*t4.real,
+                       t1.imag+tw2r*t2.imag+tw3r*t3.imag+tw1r*t4.imag)
+                cb = T(-(tw2i*t7.imag-tw3i*t6.imag-tw1i*t5.imag),
+                       tw2i*t7.real-tw3i*t6.real-tw1i*t5.real)
+                CH(0,k,2)[0], CH(0,k,5)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+                ca = T(t1.real+tw3r*t2.real+tw1r*t3.real+tw2r*t4.real,
+                       t1.imag+tw3r*t2.imag+tw1r*t3.imag+tw2r*t4.imag)
+                cb = T(-(tw3i*t7.imag-tw1i*t6.imag+tw2i*t5.imag),
+                       tw3i*t7.real-tw1i*t6.real+tw2i*t5.real)
+                CH(0,k,3)[0], CH(0,k,4)[0] = PM(ca, cb)
+        else:
+            for k in range(l1):
+                # POCKETFFT_PREP7(0)
+                t1 = CC(0,0,k)
+                t2, t7 = PM(CC(0,1,k), CC(0,6,k))
+                t3, t6 = PM(CC(0,2,k), CC(0,5,k))
+                t4, t5 = PM(CC(0,3,k), CC(0,4,k))
+                CH(0,k,0)[0] = T(t1.real+t2.real+t3.real+t4.real,
+                                 t1.imag+t2.imag+t3.imag+t4.imag)
+                # POCKETFFT_PARTSTEP7a(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+                ca = T(t1.real+tw1r*t2.real+tw2r*t3.real+tw3r*t4.real,
+                       t1.imag+tw1r*t2.imag+tw2r*t3.imag+tw3r*t4.imag)
+                cb = T(-(tw1i*t7.imag+tw2i*t6.imag+tw3i*t5.imag),
+                       tw1i*t7.real+tw2i*t6.real+tw3i*t5.real)
+                CH(0,k,1)[0], CH(0,k,6)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP7a(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+                ca = T(t1.real+tw2r*t2.real+tw3r*t3.real+tw1r*t4.real,
+                       t1.imag+tw2r*t2.imag+tw3r*t3.imag+tw1r*t4.imag)
+                cb = T(-(tw2i*t7.imag-tw3i*t6.imag-tw1i*t5.imag),
+                       tw2i*t7.real-tw3i*t6.real-tw1i*t5.real)
+                CH(0,k,2)[0], CH(0,k,5)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP7a(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+                ca = T(t1.real+tw3r*t2.real+tw1r*t3.real+tw2r*t4.real,
+                       t1.imag+tw3r*t2.imag+tw1r*t3.imag+tw2r*t4.imag)
+                cb = T(-(tw3i*t7.imag-tw1i*t6.imag+tw2i*t5.imag),
+                       tw3i*t7.real-tw1i*t6.real+tw2i*t5.real)
+                CH(0,k,3)[0], CH(0,k,4)[0] = PM(ca, cb)
+                for i in range(1, ido):
+                    # POCKETFFT_PREP7(i)
+                    t1 = CC(i,0,k)
+                    t2, t7 = PM(CC(i,1,k), CC(i,6,k))
+                    t3, t6 = PM(CC(i,2,k), CC(i,5,k))
+                    t4, t5 = PM(CC(i,3,k), CC(i,4,k))
+                    CH(i,k,0)[0] = T(t1.real+t2.real+t3.real+t4.real,
+                                     t1.imag+t2.imag+t3.imag+t4.imag)
+                    # POCKETFFT_PARTSTEP7(1,6,tw1r,tw2r,tw3r,+tw1i,+tw2i,+tw3i)
+                    ca = T(t1.real+tw1r*t2.real+tw2r*t3.real+tw3r*t4.real,
+                           t1.imag+tw1r*t2.imag+tw2r*t3.imag+tw3r*t4.imag)
+                    cb = T(-(tw1i*t7.imag+tw2i*t6.imag+tw3i*t5.imag),
+                           tw1i*t7.real+tw2i*t6.real+tw3i*t5.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,1)[0] = _special_mul(da, WA(1-1,i), fwd)
+                    CH(i,k,6)[0] = _special_mul(db, WA(6-1,i), fwd)
+                    # POCKETFFT_PARTSTEP7(2,5,tw2r,tw3r,tw1r,+tw2i,-tw3i,-tw1i)
+                    ca = T(t1.real+tw2r*t2.real+tw3r*t3.real+tw1r*t4.real,
+                           t1.imag+tw2r*t2.imag+tw3r*t3.imag+tw1r*t4.imag)
+                    cb = T(-(tw2i*t7.imag-tw3i*t6.imag-tw1i*t5.imag),
+                           tw2i*t7.real-tw3i*t6.real-tw1i*t5.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,2)[0] = _special_mul(da, WA(2-1,i), fwd)
+                    CH(i,k,5)[0] = _special_mul(db, WA(5-1,i), fwd)
+                    # POCKETFFT_PARTSTEP7(3,4,tw3r,tw1r,tw2r,+tw3i,-tw1i,+tw2i)
+                    ca = T(t1.real+tw3r*t2.real+tw1r*t3.real+tw2r*t4.real,
+                           t1.imag+tw3r*t2.imag+tw1r*t3.imag+tw2r*t4.imag)
+                    cb = T(-(tw3i*t7.imag-tw1i*t6.imag+tw2i*t5.imag),
+                           tw3i*t7.real-tw1i*t6.real+tw2i*t5.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,3)[0] = _special_mul(da, WA(3-1,i), fwd)
+                    CH(i,k,4)[0] = _special_mul(db, WA(4-1,i), fwd)
+
+    def pass8(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+8*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        if ido == 1:
+            for k in range(l1):
+                a1, a5 = PM(CC(0,1,k), CC(0,5,k))
+                a3, a7 = PM(CC(0,3,k), CC(0,7,k))
+                a1, a3 = PM(a1, a3)
+                a3 = ROTX90(a3, fwd)
+
+                a7 = ROTX90(a7, fwd)
+                a5, a7 = PM(a5, a7)
+                a5 = ROTX45(a5, fwd)
+                a7 = ROTX135(a7, fwd)
+
+                a0, a4 = PM(CC(0,0,k), CC(0,4,k))
+                a2, a6 = PM(CC(0,2,k), CC(0,6,k))
+                CH(0,k,0)[0], CH(0,k,4)[0] = PM(a0+a2, a1)
+                CH(0,k,2)[0], CH(0,k,6)[0] = PM(a0-a2, a3)
+                a6 = ROTX90(a6, fwd)
+                CH(0,k,1)[0], CH(0,k,5)[0] = PM(a4+a6, a5)
+                CH(0,k,3)[0], CH(0,k,7)[0] = PM(a4-a6, a7)
+        else:
+            for k in range(l1):
+                a1, a5 = PM(CC(0,1,k), CC(0,5,k))
+                a3, a7 = PM(CC(0,3,k), CC(0,7,k))
+                a1, a3 = PM(a1, a3)
+                a3 = ROTX90(a3, fwd)
+
+                a7 = ROTX90(a7, fwd)
+                a5, a7 = PM(a5, a7)
+                a5 = ROTX45(a5, fwd)
+                a7 = ROTX135(a7, fwd)
+
+                a0, a4 = PM(CC(0,0,k), CC(0,4,k))
+                a2, a6 = PM(CC(0,2,k), CC(0,6,k))
+                CH(0,k,0)[0], CH(0,k,4)[0] = PM(a0+a2, a1)
+                CH(0,k,2)[0], CH(0,k,6)[0] = PM(a0-a2, a3)
+                a6 = ROTX90(a6, fwd)
+                CH(0,k,1)[0], CH(0,k,5)[0] = PM(a4+a6, a5)
+                CH(0,k,3)[0], CH(0,k,7)[0] = PM(a4-a6, a7)
+
+                for i in range(1, ido):
+                    a1, a5 = PM(CC(i,1,k), CC(i,5,k))
+                    a3, a7 = PM(CC(i,3,k), CC(i,7,k))
+                    a7 = ROTX90(a7, fwd)
+                    a1, a3 = PM(a1, a3)
+                    a3 = ROTX90(a3, fwd)
+                    a5, a7 = PM(a5, a7)
+                    a5 = ROTX45(a5, fwd)
+                    a7 = ROTX135(a7, fwd)
+                    a0, a4 = PM(CC(i,0,k), CC(i,4,k))
+                    a2, a6 = PM(CC(i,2,k), CC(i,6,k))
+                    a0, a2 = PM(a0, a2)
+                    CH(i,k,0)[0] = a0+a1
+                    CH(i,k,4)[0] = _special_mul(a0-a1, WA(3,i), fwd)
+                    CH(i,k,2)[0] = _special_mul(a2+a3, WA(1,i), fwd)
+                    CH(i,k,6)[0] = _special_mul(a2-a3, WA(5,i), fwd)
+                    a6 = ROTX90(a6, fwd)
+                    a4, a6 = PM(a4, a6)
+                    CH(i,k,1)[0] = _special_mul(a4+a5, WA(0,i), fwd)
+                    CH(i,k,5)[0] = _special_mul(a4-a5, WA(4,i), fwd)
+                    CH(i,k,3)[0] = _special_mul(a6+a7, WA(2,i), fwd)
+                    CH(i,k,7)[0] = _special_mul(a6-a7, WA(6,i), fwd)
+
+    def pass11(ido: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], fwd: bool):
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+11*c)]
+        @inline
+        def WA(x: int, i: int):
+            return wa[i-1+x*(ido-1)]
+
+        tw1r = cast(0.8412535328311811688618116489193677, T0)
+        tw1i = cast(0.5406408174555975821076359543186917, T0)
+        if fwd:
+            tw1i = -tw1i
+        tw2r = cast(0.4154150130018864255292741492296232, T0)
+        tw2i = cast(0.9096319953545183714117153830790285, T0)
+        if fwd:
+            tw2i = -tw2i
+        tw3r = cast(-0.1423148382732851404437926686163697, T0)
+        tw3i = cast(0.9898214418809327323760920377767188, T0)
+        if fwd:
+            tw3i = -tw3i
+        tw4r = cast(-0.6548607339452850640569250724662936, T0)
+        tw4i = cast(0.7557495743542582837740358439723444, T0)
+        if fwd:
+            tw4i = -tw4i
+        tw5r = cast(-0.9594929736144973898903680570663277, T0)
+        tw5i = cast(0.2817325568414296977114179153466169, T0)
+        if fwd:
+            tw5i = -tw5i
+
+        if ido == 1:
+            for k in range(l1):
+                # POCKETFFT_PREP11(0)
+                t1 = CC(0,0,k)
+                t2, t11 = PM(CC(0,1,k), CC(0,10,k))
+                t3, t10 = PM(CC(0,2,k), CC(0,9,k))
+                t4, t9 = PM(CC(0,3,k), CC(0,8,k))
+                t5, t8 = PM(CC(0,4,k), CC(0,7,k))
+                t6, t7 = PM(CC(0,5,k), CC(0,6,k))
+                CH(0,k,0)[0] = T(t1.real+t2.real+t3.real+t4.real+t5.real+t6.real,
+                                 t1.imag+t2.imag+t3.imag+t4.imag+t5.imag+t6.imag)
+                # POCKETFFT_PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+                ca = t1 + t2*tw1r + t3*tw2r + t4*tw3r + t5*tw4r + t6*tw5r
+                cb = T(-(tw1i*t11.imag + tw2i*t10.imag + tw3i*t9.imag + tw4i*t8.imag + tw5i*t7.imag),
+                       tw1i*t11.real + tw2i*t10.real + tw3i*t9.real + tw4i*t8.real + tw5i*t7.real)
+                CH(0,k,1)[0], CH(0,k,10)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+                ca = t1 + t2*tw2r + t3*tw4r + t4*tw5r + t5*tw3r + t6*tw1r
+                cb = T(-(tw2i*t11.imag + tw4i*t10.imag - tw5i*t9.imag - tw3i*t8.imag - tw1i*t7.imag),
+                       tw2i*t11.real + tw4i*t10.real - tw5i*t9.real - tw3i*t8.real - tw1i*t7.real)
+                CH(0,k,2)[0], CH(0,k,9)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+                ca = t1 + t2*tw3r + t3*tw5r + t4*tw2r + t5*tw1r + t6*tw4r
+                cb = T(-(tw3i*t11.imag - tw5i*t10.imag - tw2i*t9.imag + tw1i*t8.imag + tw4i*t7.imag),
+                       tw3i*t11.real - tw5i*t10.real - tw2i*t9.real + tw1i*t8.real + tw4i*t7.real)
+                CH(0,k,3)[0], CH(0,k,8)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+                ca = t1 + t2*tw4r + t3*tw3r + t4*tw1r + t5*tw5r + t6*tw2r
+                cb = T(-(tw4i*t11.imag - tw3i*t10.imag + tw1i*t9.imag + tw5i*t8.imag - tw2i*t7.imag),
+                       tw4i*t11.real - tw3i*t10.real + tw1i*t9.real + tw5i*t8.real - tw2i*t7.real)
+                CH(0,k,4)[0], CH(0,k,7)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+                ca = t1 + t2*tw5r + t3*tw1r + t4*tw4r + t5*tw2r + t6*tw3r
+                cb = T(-(tw5i*t11.imag - tw1i*t10.imag + tw4i*t9.imag - tw2i*t8.imag + tw3i*t7.imag),
+                       tw5i*t11.real - tw1i*t10.real + tw4i*t9.real - tw2i*t8.real + tw3i*t7.real)
+                CH(0,k,5)[0], CH(0,k,6)[0] = PM(ca, cb)
+        else:
+            for k in range(l1):
+                # POCKETFFT_PREP11(0)
+                t1 = CC(0,0,k)
+                t2, t11 = PM(CC(0,1,k), CC(0,10,k))
+                t3, t10 = PM(CC(0,2,k), CC(0,9,k))
+                t4, t9 = PM(CC(0,3,k), CC(0,8,k))
+                t5, t8 = PM(CC(0,4,k), CC(0,7,k))
+                t6, t7 = PM(CC(0,5,k), CC(0,6,k))
+                CH(0,k,0)[0] = T(t1.real+t2.real+t3.real+t4.real+t5.real+t6.real,
+                                 t1.imag+t2.imag+t3.imag+t4.imag+t5.imag+t6.imag)
+                # POCKETFFT_PARTSTEP11a(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+                ca = t1 + t2*tw1r + t3*tw2r + t4*tw3r + t5*tw4r + t6*tw5r
+                cb = T(-(tw1i*t11.imag + tw2i*t10.imag + tw3i*t9.imag + tw4i*t8.imag + tw5i*t7.imag),
+                       tw1i*t11.real + tw2i*t10.real + tw3i*t9.real + tw4i*t8.real + tw5i*t7.real)
+                CH(0,k,1)[0], CH(0,k,10)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+                ca = t1 + t2*tw2r + t3*tw4r + t4*tw5r + t5*tw3r + t6*tw1r
+                cb = T(-(tw2i*t11.imag + tw4i*t10.imag - tw5i*t9.imag - tw3i*t8.imag - tw1i*t7.imag),
+                       tw2i*t11.real + tw4i*t10.real - tw5i*t9.real - tw3i*t8.real - tw1i*t7.real)
+                CH(0,k,2)[0], CH(0,k,9)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+                ca = t1 + t2*tw3r + t3*tw5r + t4*tw2r + t5*tw1r + t6*tw4r
+                cb = T(-(tw3i*t11.imag - tw5i*t10.imag - tw2i*t9.imag + tw1i*t8.imag + tw4i*t7.imag),
+                       tw3i*t11.real - tw5i*t10.real - tw2i*t9.real + tw1i*t8.real + tw4i*t7.real)
+                CH(0,k,3)[0], CH(0,k,8)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+                ca = t1 + t2*tw4r + t3*tw3r + t4*tw1r + t5*tw5r + t6*tw2r
+                cb = T(-(tw4i*t11.imag - tw3i*t10.imag + tw1i*t9.imag + tw5i*t8.imag - tw2i*t7.imag),
+                       tw4i*t11.real - tw3i*t10.real + tw1i*t9.real + tw5i*t8.real - tw2i*t7.real)
+                CH(0,k,4)[0], CH(0,k,7)[0] = PM(ca, cb)
+                # POCKETFFT_PARTSTEP11a(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+                ca = t1 + t2*tw5r + t3*tw1r + t4*tw4r + t5*tw2r + t6*tw3r
+                cb = T(-(tw5i*t11.imag - tw1i*t10.imag + tw4i*t9.imag - tw2i*t8.imag + tw3i*t7.imag),
+                       tw5i*t11.real - tw1i*t10.real + tw4i*t9.real - tw2i*t8.real + tw3i*t7.real)
+                CH(0,k,5)[0], CH(0,k,6)[0] = PM(ca, cb)
+                for i in range(1, ido):
+                    # POCKETFFT_PREP11(i)
+                    t1 = CC(i,0,k)
+                    t2, t11 = PM(CC(i,1,k), CC(i,10,k))
+                    t3, t10 = PM(CC(i,2,k), CC(i,9,k))
+                    t4, t9 = PM(CC(i,3,k), CC(i,8,k))
+                    t5, t8 = PM(CC(i,4,k), CC(i,7,k))
+                    t6, t7 = PM(CC(i,5,k), CC(i,6,k))
+                    CH(i,k,0)[0] = T(t1.real+t2.real+t3.real+t4.real+t5.real+t6.real,
+                                     t1.imag+t2.imag+t3.imag+t4.imag+t5.imag+t6.imag)
+                    # POCKETFFT_PARTSTEP11(1,10,tw1r,tw2r,tw3r,tw4r,tw5r,+tw1i,+tw2i,+tw3i,+tw4i,+tw5i)
+                    ca = t1 + t2*tw1r + t3*tw2r + t4*tw3r + t5*tw4r + t6*tw5r
+                    cb = T(-(tw1i*t11.imag + tw2i*t10.imag + tw3i*t9.imag + tw4i*t8.imag + tw5i*t7.imag),
+                           tw1i*t11.real + tw2i*t10.real + tw3i*t9.real + tw4i*t8.real + tw5i*t7.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,1)[0] = _special_mul(da, WA(1-1,i), fwd)
+                    CH(i,k,10)[0] = _special_mul(db, WA(10-1,i), fwd)
+                    # POCKETFFT_PARTSTEP11(2, 9,tw2r,tw4r,tw5r,tw3r,tw1r,+tw2i,+tw4i,-tw5i,-tw3i,-tw1i)
+                    ca = t1 + t2*tw2r + t3*tw4r + t4*tw5r + t5*tw3r + t6*tw1r
+                    cb = T(-(tw2i*t11.imag + tw4i*t10.imag - tw5i*t9.imag - tw3i*t8.imag - tw1i*t7.imag),
+                           tw2i*t11.real + tw4i*t10.real - tw5i*t9.real - tw3i*t8.real - tw1i*t7.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,2)[0] = _special_mul(da, WA(2-1,i), fwd)
+                    CH(i,k,9)[0] = _special_mul(db, WA(9-1,i), fwd)
+                    # POCKETFFT_PARTSTEP11(3, 8,tw3r,tw5r,tw2r,tw1r,tw4r,+tw3i,-tw5i,-tw2i,+tw1i,+tw4i)
+                    ca = t1 + t2*tw3r + t3*tw5r + t4*tw2r + t5*tw1r + t6*tw4r
+                    cb = T(-(tw3i*t11.imag - tw5i*t10.imag - tw2i*t9.imag + tw1i*t8.imag + tw4i*t7.imag),
+                           tw3i*t11.real - tw5i*t10.real - tw2i*t9.real + tw1i*t8.real + tw4i*t7.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,3)[0] = _special_mul(da, WA(3-1,i), fwd)
+                    CH(i,k,8)[0] = _special_mul(db, WA(8-1,i), fwd)
+                    # POCKETFFT_PARTSTEP11(4, 7,tw4r,tw3r,tw1r,tw5r,tw2r,+tw4i,-tw3i,+tw1i,+tw5i,-tw2i)
+                    ca = t1 + t2*tw4r + t3*tw3r + t4*tw1r + t5*tw5r + t6*tw2r
+                    cb = T(-(tw4i*t11.imag - tw3i*t10.imag + tw1i*t9.imag + tw5i*t8.imag - tw2i*t7.imag),
+                           tw4i*t11.real - tw3i*t10.real + tw1i*t9.real + tw5i*t8.real - tw2i*t7.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,4)[0] = _special_mul(da, WA(4-1,i), fwd)
+                    CH(i,k,7)[0] = _special_mul(db, WA(7-1,i), fwd)
+                    # POCKETFFT_PARTSTEP11(5, 6,tw5r,tw1r,tw4r,tw2r,tw3r,+tw5i,-tw1i,+tw4i,-tw2i,+tw3i)
+                    ca = t1 + t2*tw5r + t3*tw1r + t4*tw4r + t5*tw2r + t6*tw3r
+                    cb = T(-(tw5i*t11.imag - tw1i*t10.imag + tw4i*t9.imag - tw2i*t8.imag + tw3i*t7.imag),
+                           tw5i*t11.real - tw1i*t10.real + tw4i*t9.real - tw2i*t8.real + tw3i*t7.real)
+                    da, db = PM(ca, cb)
+                    CH(i,k,5)[0] = _special_mul(da, WA(5-1,i), fwd)
+                    CH(i,k,6)[0] = _special_mul(db, WA(6-1,i), fwd)
+
+    def passg(ido: int, ip: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], csarr: Ptr[T], fwd: bool):
+        cdim = ip
+        ipph = (ip + 1) // 2
+        idl1 = ido * l1
+
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+cdim*c)]
+        @inline
+        def CX(a: int, b: int, c: int):
+            return cc + (a+ido*(b+l1*c))
+        @inline
+        def CX2(a: int, b: int):
+            return cc + (a+idl1*b)
+        @inline
+        def CH2(a: int, b: int):
+            return ch[a+idl1*b]
+
+        wal = arr[T](ip)
+        wal[0] = T(1., 0.)
+        for i in range(1, ip):
+            wal[i] = T(csarr[i].real, -csarr[i].imag if fwd else csarr[i].imag)
+
+        for k in range(l1):
+            for i in range(ido):
+                CH(i,k,0)[0] = CC(i,0,k)
+        jc = ip - 1
+        for j in range(1, ipph):
+            for k in range(l1):
+                for i in range(ido):
+                    CH(i,k,j)[0], CH(i,k,jc)[0] = PM(CC(i,j,k), CC(i,jc,k))
+            jc -= 1
+
+        for k in range(l1):
+            for i in range(ido):
+                tmp = CH(i,k,0)[0]
+                for j in range(1, ipph):
+                    tmp += CH(i,k,j)[0]
+                CX(i,k,0)[0] = tmp
+
+        lc = ip - 1
+        for l in range(1, ipph):
+            for ik in range(idl1):
+                CX2(ik,l)[0] = T(CH2(ik,0).real+wal[l].real*CH2(ik,1).real+wal[2*l].real*CH2(ik,2).real,
+                                 CH2(ik,0).imag+wal[l].real*CH2(ik,1).imag+wal[2*l].real*CH2(ik,2).imag)
+                CX2(ik,lc)[0] = T(-wal[l].imag*CH2(ik,ip-1).imag-wal[2*l].imag*CH2(ik,ip-2).imag,
+                                  wal[l].imag*CH2(ik,ip-1).real+wal[2*l].imag*CH2(ik,ip-2).real)
+
+            iwal = 2*l
+            j = 3
+            jc = ip - 3
+            while j < ipph - 1:
+                iwal += l
+                if iwal > ip:
+                    iwal -= ip
+                xwal = wal[iwal]
+                iwal += l
+                if iwal > ip:
+                    iwal -= ip
+                xwal2 = wal[iwal]
+
+                for ik in range(idl1):
+                    CX2(ik,l)[0] += T(CH2(ik,j).real*xwal.real+CH2(ik,j+1).real*xwal2.real,
+                                      CH2(ik,j).imag*xwal.real+CH2(ik,j+1).imag*xwal2.real)
+                    CX2(ik,lc)[0] += T(-(CH2(ik,jc).imag*xwal.imag+CH2(ik,jc-1).imag*xwal2.imag),
+                                       CH2(ik,jc).real*xwal.imag+CH2(ik,jc-1).real*xwal2.imag)
+                j += 2
+                jc -= 2
+
+            while j < ipph:
+                iwal += l
+                if iwal > ip:
+                    iwal -= ip
+                xwal = wal[iwal]
+                for ik in range(idl1):
+                    CX2(ik,l)[0] += T(CH2(ik,j).real*xwal.real,
+                                      CH2(ik,j).imag*xwal.real)
+                    CX2(ik,lc)[0] += T(-(CH2(ik,jc).imag*xwal.imag),
+                                       CH2(ik,jc).real*xwal.imag)
+                j += 1
+                jc -= 1
+
+            lc -= 1
+
+        if ido == 1:
+            jc = ip - 1
+            for j in range(1, ipph):
+                for ik in range(idl1):
+                    t1 = CX2(ik,j)[0]
+                    t2 = CX2(ik,jc)[0]
+                    CX2(ik,j)[0], CX2(ik,jc)[0] = PM(t1, t2)
+                jc -= 1
+        else:
+            jc = ip - 1
+            for j in range(1, ipph):
+                for k in range(l1):
+                    t1 = CX(0,k,j)[0]
+                    t2 = CX(0,k,jc)[0]
+                    CX(0,k,j)[0], CX(0,k,jc)[0] = PM(t1, t2)
+
+                    for i in range(1, ido):
+                        x1, x2 = PM(CX(i,k,j)[0], CX(i,k,jc)[0])
+                        idij = (j-1)*(ido-1)+i-1
+                        CX(i,k,j)[0] = _special_mul(x1, wa[idij], fwd)
+                        idij = (jc-1)*(ido-1)+i-1
+                        CX(i,k,jc)[0] = _special_mul(x2, wa[idij], fwd)
+                jc -= 1
+        wal.dealloc()
+
+    def pass_all(self, c: Ptr[T], fct: T0, fwd: bool):
+        length = self.length
+        fact = self.fact
+
+        if length == 1:
+            c[0] *= fct
+            return
+
+        l1 = 1
+        ch = arr[T](length)
+        p1 = c
+        p2 = ch.data()
+
+        for k1 in range(len(fact)):
+            ip = fact[k1].fct
+            l2 = ip*l1
+            ido = length // l2
+
+            if ip == 4:
+                type(self).pass4(ido, l1, p1, p2, fact[k1].tw, fwd)
+            elif ip == 8:
+                type(self).pass8(ido, l1, p1, p2, fact[k1].tw, fwd)
+            elif ip == 2:
+                type(self).pass2(ido, l1, p1, p2, fact[k1].tw, fwd)
+            elif ip == 3:
+                type(self).pass3(ido, l1, p1, p2, fact[k1].tw, fwd)
+            elif ip == 5:
+                type(self).pass5(ido, l1, p1, p2, fact[k1].tw, fwd)
+            elif ip == 7:
+                type(self).pass7(ido, l1, p1, p2, fact[k1].tw, fwd)
+            elif ip == 11:
+                type(self).pass11(ido, l1, p1, p2, fact[k1].tw, fwd)
+            else:
+                type(self).passg(ido, ip, l1, p1, p2, fact[k1].tw, fact[k1].tws, fwd)
+                p1, p2 = p2, p1
+
+            p1, p2 = p2, p1
+            l1 = l2
+
+        if p1 != c:
+            if fct != T0(1):
+                for i in range(length):
+                    c[i] = ch[i] * fct
+            else:
+                str.memcpy(c.as_byte(), p1.as_byte(), length * sizeof(T))
+        else:
+            if fct != T0(1):
+                for i in range(length):
+                    c[i] *= fct
+
+        ch.dealloc()
+
+    def exec(self, c: Ptr[T], fct: T0, fwd: bool):
+        self.pass_all(c, fct, fwd)
+
+    def factorize(self):
+        n = self.length
+        fact = self.fact
+
+        while n & 7 == 0:
+            self.add_factor(8)
+            n >>= 3
+
+        while n & 3 == 0:
+            self.add_factor(4)
+            n >>= 2
+
+        if n & 1 == 0:
+            n >>= 1
+            self.add_factor(2)
+            fct_front = fact[0].fct
+            fct_back = fact[-1].fct
+            fact[0] = fact[0].with_fct(fct_back)
+            fact[-1] = fact[-1].with_fct(fct_front)
+
+        divisor = 3
+        while divisor * divisor <= n:
+            while n % divisor == 0:
+                self.add_factor(divisor)
+                n //= divisor
+            divisor += 2
+
+        if n > 1:
+            self.add_factor(n)
+
+    def twsize(self):
+        twsize = 0
+        l1 = 1
+        for k in range(len(self.fact)):
+            ip = self.fact[k].fct
+            ido = self.length // (l1*ip)
+            twsize += (ip-1)*(ido-1)
+            if ip > 11:
+                twsize += ip
+            l1 *= ip
+        return twsize
+
+    def comp_twiddle(self):
+        twiddle = sincos_2pibyn[T0](self.length)
+        l1 = 1
+        memofs = 0
+        fact = self.fact
+
+        for k in range(len(self.fact)):
+            ip = fact[k].fct
+            ido = self.length // (l1*ip)
+            fact[k] = fact[k].with_tw(self.mem.data() + memofs)
+            memofs += (ip-1)*(ido-1)
+
+            for j in range(1, ip):
+                for i in range(1, ido):
+                    fact[k].tw[(j-1)*(ido-1)+i-1] = twiddle[j*l1*i]
+            if ip > 11:
+                fact[k] = fact[k].with_tws(self.mem.data() + memofs)
+                memofs += ip
+                for j in range(ip):
+                    fact[k].tws[j] = twiddle[j*l1*ido]
+            l1 *= ip
+
+        twiddle.dealloc()
+
+    def __init__(self, length: int):
+        if length == 0:
+            raise ValueError("Invalid number of FFT data points (0) specified.")
+        self.length = length
+        self.fact = []
+        if length != 1:
+            self.factorize()
+            self.mem = arr[T](self.twsize())
+            self.comp_twiddle()
+
+    def dealloc(self):
+        self.mem.dealloc()
+
+def MULPM(c, d, e, f):
+    return c*e+d*f, c*f-d*e
+
+def REARRANGE(rx, ix, ry, iy):
+    t1 = rx+ry
+    t2 = ry-rx
+    t3 = ix+iy
+    t4 = ix-iy
+    return t1, t3, t4, t2
+
+class rfftp:
+    length: int
+    mem: arr[T0]
+    fact: List[fctdata[T0]]
+    T: type   # complex datatype
+    T0: type  # real datatype
+
+    def add_factor(self, factor: int):
+        self.fact.append(fctdata[T0](factor, Ptr[T0](), Ptr[T0]()))
+
+    def radf2(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+l1*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+2*c))
+
+        for k in range(l1):
+            CH(0,0,k)[0], CH(ido-1,1,k)[0] = PM(CC(0,k,0), CC(0,k,1))
+
+        if ido & 1 == 0:
+            for k in range(l1):
+                CH(0,1,k)[0] = -CC(ido-1,k,1)
+                CH(ido-1,0,k)[0] = CC(ido-1,k,0)
+
+        if ido <= 2:
+            return
+
+        for k in range(l1):
+            for i in range(2, ido, 2):
+                ic = ido-i
+                tr2, ti2 = MULPM(WA(0,i-2),WA(0,i-1),CC(i-1,k,1),CC(i,k,1))
+                CH(i-1,0,k)[0], CH(ic-1,1,k)[0] = PM(CC(i-1,k,0), tr2)
+                CH(i  ,0,k)[0], CH(ic  ,1,k)[0] = PM(ti2, CC(i,k,0))
+
+    def radf3(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+l1*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+3*c))
+
+        taur = cast(-0.5, T0)
+        taui = cast(0.8660254037844386467637231707529362, T0)
+
+        for k in range(l1):
+            cr2 = CC(0,k,1) + CC(0,k,2)
+            CH(0,0,k)[0] = CC(0,k,0) + cr2
+            CH(0,2,k)[0] = taui*(CC(0,k,2)-CC(0,k,1))
+            CH(ido-1,1,k)[0] = CC(0,k,0)+taur*cr2
+
+        if ido == 1:
+            return
+
+        for k in range(l1):
+            for i in range(2, ido, 2):
+                ic = ido-i
+                dr2, di2 = MULPM(WA(0,i-2),WA(0,i-1),CC(i-1,k,1),CC(i,k,1))
+                dr3, di3 = MULPM(WA(1,i-2),WA(1,i-1),CC(i-1,k,2),CC(i,k,2))
+                dr2, di2, dr3, di3 = REARRANGE(dr2, di2, dr3, di3)
+                CH(i-1,0,k)[0] = CC(i-1,k,0)+dr2
+                CH(i  ,0,k)[0] = CC(i  ,k,0)+di2
+                tr2 = CC(i-1,k,0)+taur*dr2
+                ti2 = CC(i  ,k,0)+taur*di2
+                tr3 = taui*dr3
+                ti3 = taui*di3
+                CH(i-1,2,k)[0], CH(ic-1,1,k)[0] = PM(tr2, tr3)
+                CH(i  ,2,k)[0], CH(ic  ,1,k)[0] = PM(ti3, ti2)
+
+    def radf4(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+l1*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+4*c))
+
+        hsqt2 = cast(0.707106781186547524400844362104849, T0)
+
+        for k in range(l1):
+            tr1, CH(0,2,k)[0] = PM(CC(0,k,3), CC(0,k,1))
+            tr2, CH(ido-1,1,k)[0] = PM(CC(0,k,0),CC(0,k,2))
+            CH(0,0,k)[0], CH(ido-1,3,k)[0] = PM(tr2, tr1)
+
+        if ido & 1 == 0:
+            for k in range(l1):
+                ti1 = -hsqt2*(CC(ido-1,k,1)+CC(ido-1,k,3))
+                tr1 = hsqt2*(CC(ido-1,k,1)-CC(ido-1,k,3))
+                CH(ido-1,0,k)[0], CH(ido-1,2,k)[0] = PM(CC(ido-1,k,0), tr1)
+                CH(    0,3,k)[0], CH(    0,1,k)[0] = PM(ti1, CC(ido-1,k,2))
+
+        if ido <= 2:
+            return
+
+        for k in range(l1):
+            for i in range(2, ido, 2):
+                ic = ido - i
+                cr2,ci2 = MULPM(WA(0,i-2),WA(0,i-1),CC(i-1,k,1),CC(i,k,1))
+                cr3,ci3 = MULPM(WA(1,i-2),WA(1,i-1),CC(i-1,k,2),CC(i,k,2))
+                cr4,ci4 = MULPM(WA(2,i-2),WA(2,i-1),CC(i-1,k,3),CC(i,k,3))
+                tr1,tr4 = PM(cr4,cr2)
+                ti1,ti4 = PM(ci2,ci4)
+                tr2,tr3 = PM(CC(i-1,k,0),cr3)
+                ti2,ti3 = PM(CC(i  ,k,0),ci3)
+                CH(i-1,0,k)[0], CH(ic-1,3,k)[0] = PM(tr2,tr1)
+                CH(i  ,0,k)[0], CH(ic  ,3,k)[0] = PM(ti1,ti2)
+                CH(i-1,2,k)[0], CH(ic-1,1,k)[0] = PM(tr3,ti4)
+                CH(i  ,2,k)[0], CH(ic  ,1,k)[0] = PM(tr4,ti3)
+
+    def radf5(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+l1*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+5*c))
+
+        tr11 = cast(0.3090169943749474241022934171828191, T0)
+        ti11 = cast(0.9510565162951535721164393333793821, T0)
+        tr12 = cast(-0.8090169943749474241022934171828191, T0)
+        ti12 = cast(0.5877852522924731291687059546390728, T0)
+
+        for k in range(l1):
+            cr2,ci5 = PM(CC(0,k,4),CC(0,k,1))
+            cr3,ci4 = PM(CC(0,k,3),CC(0,k,2))
+            CH(0,0,k)[0] = CC(0,k,0)+cr2+cr3
+            CH(ido-1,1,k)[0] = CC(0,k,0)+tr11*cr2+tr12*cr3
+            CH(0,2,k)[0] = ti11*ci5+ti12*ci4
+            CH(ido-1,3,k)[0] = CC(0,k,0)+tr12*cr2+tr11*cr3
+            CH(0,4,k)[0] = ti12*ci5-ti11*ci4
+
+        if ido == 1:
+            return
+
+        for k in range(l1):
+            ic = ido-2
+            for i in range(2, ido, 2):
+                dr2,di2 = MULPM(WA(0,i-2),WA(0,i-1),CC(i-1,k,1),CC(i,k,1))
+                dr3,di3 = MULPM(WA(1,i-2),WA(1,i-1),CC(i-1,k,2),CC(i,k,2))
+                dr4,di4 = MULPM(WA(2,i-2),WA(2,i-1),CC(i-1,k,3),CC(i,k,3))
+                dr5,di5 = MULPM(WA(3,i-2),WA(3,i-1),CC(i-1,k,4),CC(i,k,4))
+                dr2, di2, dr5, di5 = REARRANGE(dr2, di2, dr5, di5)
+                dr3, di3, dr4, di4 = REARRANGE(dr3, di3, dr4, di4)
+                CH(i-1,0,k)[0] = CC(i-1,k,0)+dr2+dr3
+                CH(i  ,0,k)[0] = CC(i  ,k,0)+di2+di3
+                tr2 = CC(i-1,k,0)+tr11*dr2+tr12*dr3
+                ti2 = CC(i  ,k,0)+tr11*di2+tr12*di3
+                tr3 = CC(i-1,k,0)+tr12*dr2+tr11*dr3
+                ti3 = CC(i  ,k,0)+tr12*di2+tr11*di3
+                tr5 = ti11*dr5 + ti12*dr4
+                ti5 = ti11*di5 + ti12*di4
+                tr4 = ti12*dr5 - ti11*dr4
+                ti4 = ti12*di5 - ti11*di4
+                CH(i-1,2,k)[0], CH(ic-1,1,k)[0] = PM(tr2,tr5)
+                CH(i  ,2,k)[0], CH(ic  ,1,k)[0] = PM(ti5,ti2)
+                CH(i-1,4,k)[0], CH(ic-1,3,k)[0] = PM(tr3,tr4)
+                CH(i  ,4,k)[0], CH(ic  ,3,k)[0] = PM(ti4,ti3)
+                ic -= 2
+
+    def radfg(ido: int, ip: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0], csarr: Ptr[T0]):
+        cdim = ip
+        ipph = (ip + 1) // 2
+        idl1 = ido * l1
+
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc + a+ido*(b+cdim*c)
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def C1(a: int, b: int, c: int):
+            return cc + (a+ido*(b+l1*c))
+        @inline
+        def C2(a: int, b: int):
+            return cc + (a+idl1*b)
+        @inline
+        def CH2(a: int, b: int):
+            return ch + a+idl1*b
+
+        if ido > 1:
+            jc = ip - 1
+            for j in range(1, ipph):
+                is_ = (j-1)*(ido-1)
+                is2 = (jc-1)*(ido-1)
+                for k in range(l1):
+                    idij = is_
+                    idij2 = is2
+                    i = 1
+                    while i <= ido - 2:
+                        t1 = C1(i,k,j )[0]
+                        t2 = C1(i+1,k,j )[0]
+                        t3 = C1(i,k,jc)[0]
+                        t4 = C1(i+1,k,jc)[0]
+                        x1 = wa[idij]*t1 + wa[idij+1]*t2
+                        x2 = wa[idij]*t2 - wa[idij+1]*t1
+                        x3 = wa[idij2]*t3 + wa[idij2+1]*t4
+                        x4 = wa[idij2]*t4 - wa[idij2+1]*t3
+                        C1(i,k,j)[0], C1(i+1,k,jc)[0] = PM(x3,x1)
+                        C1(i+1,k,j)[0], C1(i,k,jc)[0] = PM(x2,x4)
+                        idij += 2
+                        idij2 += 2
+                        i += 2
+                jc -= 1
+
+        jc = ip - 1
+        for j in range(1, ipph):
+            for k in range(l1):
+                C1(0,k,jc)[0], C1(0,k,j)[0] = MP(C1(0,k,jc)[0], C1(0,k,j)[0])
+            jc -= 1
+
+        lc = ip-1
+        for l in range(1, ipph):
+            for ik in range(idl1):
+                CH2(ik,l )[0] = C2(ik,0)[0]+csarr[2*l]*C2(ik,1)[0]+csarr[4*l]*C2(ik,2)[0]
+                CH2(ik,lc)[0] = csarr[2*l+1]*C2(ik,ip-1)[0]+csarr[4*l+1]*C2(ik,ip-2)[0]
+
+            iang = 2*l
+            j = 3
+            jc = ip - 3
+
+            while j < ipph - 3:
+                iang+=l
+                if iang>=ip:
+                    iang-=ip
+                ar1 = csarr[2*iang]
+                ai1 = csarr[2*iang+1]
+                iang+=l
+                if iang>=ip:
+                    iang-=ip
+                ar2=csarr[2*iang]
+                ai2=csarr[2*iang+1]
+                iang+=l
+                if iang>=ip:
+                    iang-=ip
+                ar3=csarr[2*iang]
+                ai3=csarr[2*iang+1]
+                iang+=l
+                if iang>=ip:
+                    iang-=ip
+                ar4 = csarr[2*iang]
+                ai4 = csarr[2*iang+1]
+
+                for ik in range(idl1):
+                    CH2(ik,l )[0] += ar1*C2(ik,j )[0]+ar2*C2(ik,j +1)[0] + ar3*C2(ik,j +2)[0]+ar4*C2(ik,j +3)[0]
+                    CH2(ik,lc)[0] += ai1*C2(ik,jc)[0]+ai2*C2(ik,jc-1)[0] + ai3*C2(ik,jc-2)[0]+ai4*C2(ik,jc-3)[0]
+
+                j += 4
+                jc -= 4
+
+            while j < ipph - 1:
+                iang += l
+                if iang >= ip:
+                    iang -= ip
+                ar1 = csarr[2*iang]
+                ai1 = csarr[2*iang+1]
+                iang += l
+                if iang >= ip:
+                    iang -= ip
+                ar2 = csarr[2*iang]
+                ai2 = csarr[2*iang+1]
+
+                for ik in range(idl1):
+                    CH2(ik,l )[0] += ar1*C2(ik,j )[0] + ar2*C2(ik,j +1)[0]
+                    CH2(ik,lc)[0] += ai1*C2(ik,jc)[0] + ai2*C2(ik,jc-1)[0]
+
+                j += 2
+                jc -= 2
+
+            while j < ipph:
+                iang += l
+                if iang >= ip:
+                    iang -= ip
+                ar=csarr[2*iang]
+                ai=csarr[2*iang+1]
+
+                for ik in range(idl1):
+                    CH2(ik,l )[0] += ar*C2(ik,j )[0]
+                    CH2(ik,lc)[0] += ai*C2(ik,jc)[0]
+
+                j += 1
+                jc -= 1
+
+            lc -= 1
+
+        for ik in range(idl1):
+            CH2(ik,0)[0] = C2(ik,0)[0]
+
+        for j in range(1, ipph):
+            for ik in range(idl1):
+                CH2(ik,0)[0] += C2(ik,j)[0]
+
+        for k in range(l1):
+            for i in range(ido):
+                CC(i,0,k)[0] = CH(i,k,0)[0]
+
+        jc = ip - 1
+        for j in range(1, ipph):
+            j2 = 2*j-1
+            for k in range(l1):
+                CC(ido-1,j2,k)[0] = CH(0,k,j)[0]
+                CC(0,j2+1,k)[0] = CH(0,k,jc)[0]
+            jc -= 1
+
+        if ido == 1:
+            return
+
+        jc = ip - 1
+        for j in range(1, ipph):
+            j2 = 2*j - 1
+            for k in range(l1):
+                i = 1
+                ic = ido - i - 2
+                while i <= ido - 2:
+                    CC(i   ,j2+1,k)[0] = CH(i  ,k,j )[0]+CH(i  ,k,jc)[0]
+                    CC(ic  ,j2  ,k)[0] = CH(i  ,k,j )[0]-CH(i  ,k,jc)[0]
+                    CC(i+1 ,j2+1,k)[0] = CH(i+1,k,j )[0]+CH(i+1,k,jc)[0]
+                    CC(ic+1,j2  ,k)[0] = CH(i+1,k,jc)[0]-CH(i+1,k,j )[0]
+                    i += 2
+                    ic -= 2
+            jc -= 1
+
+    def radb2(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+2*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+
+        for k in range(l1):
+            CH(0,k,0)[0], CH(0,k,1)[0] = PM(CC(0,0,k),CC(ido-1,1,k))
+
+        if ido & 1 == 0:
+            for k in range(l1):
+                CH(ido-1,k,0)[0] =  T0(2)*CC(ido-1,0,k)
+                CH(ido-1,k,1)[0] = -T0(2)*CC(0    ,1,k)
+
+        if ido <= 2:
+            return
+
+        for k in range(l1):
+            for i in range(2, ido, 2):
+                ic = ido-i
+                CH(i-1,k,0)[0], tr2 = PM(CC(i-1,0,k),CC(ic-1,1,k))
+                ti2, CH(i  ,k,0)[0] = PM(CC(i  ,0,k), CC(ic  ,1,k))
+                CH(i,k,1)[0], CH(i-1,k,1)[0] = MULPM(WA(0,i-2),WA(0,i-1),ti2,tr2)
+
+    def radb3(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+3*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+
+        taur = cast(-0.5, T0)
+        taui = cast(0.8660254037844386467637231707529362, T0)
+
+        for k in range(l1):
+            tr2=T0(2)*CC(ido-1,1,k)
+            cr2=CC(0,0,k)+taur*tr2
+            CH(0,k,0)[0]=CC(0,0,k)+tr2
+            ci3=T0(2)*taui*CC(0,2,k)
+            CH(0,k,2)[0], CH(0,k,1)[0] = PM(cr2,ci3)
+
+        if ido == 1:
+            return
+
+        for k in range(l1):
+            ic = ido - 2
+            for i in range(2, ido, 2):
+                tr2=CC(i-1,2,k)+CC(ic-1,1,k)
+                ti2=CC(i  ,2,k)-CC(ic  ,1,k)
+                cr2=CC(i-1,0,k)+taur*tr2
+                ci2=CC(i  ,0,k)+taur*ti2
+                CH(i-1,k,0)[0]=CC(i-1,0,k)+tr2
+                CH(i  ,k,0)[0]=CC(i  ,0,k)+ti2
+                cr3=taui*(CC(i-1,2,k)-CC(ic-1,1,k))
+                ci3=taui*(CC(i  ,2,k)+CC(ic  ,1,k))
+                dr3,dr2=PM(cr2,ci3)
+                di2,di3=PM(ci2,cr3)
+                CH(i,k,1)[0],CH(i-1,k,1)[0]=MULPM(WA(0,i-2),WA(0,i-1),di2,dr2)
+                CH(i,k,2)[0],CH(i-1,k,2)[0]=MULPM(WA(1,i-2),WA(1,i-1),di3,dr3)
+                ic -= 2
+
+    def radb4(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+4*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+
+        sqrt2 = cast(1.414213562373095048801688724209698, T0)
+
+        for k in range(l1):
+            tr2,tr1 = PM(CC(0,0,k),CC(ido-1,3,k))
+            tr3=T0(2)*CC(ido-1,1,k)
+            tr4=T0(2)*CC(0,2,k)
+            CH(0,k,0)[0],CH(0,k,2)[0] = PM(tr2,tr3)
+            CH(0,k,3)[0],CH(0,k,1)[0] = PM(tr1,tr4)
+
+        if ido & 1 == 0:
+            for k in range(l1):
+                ti1,ti2 = PM(CC(0    ,3,k),CC(0    ,1,k))
+                tr2,tr1 = PM(CC(ido-1,0,k),CC(ido-1,2,k))
+                CH(ido-1,k,0)[0]=tr2+tr2
+                CH(ido-1,k,1)[0]=sqrt2*(tr1-ti1)
+                CH(ido-1,k,2)[0]=ti2+ti2
+                CH(ido-1,k,3)[0]=-sqrt2*(tr1+ti1)
+
+        if ido <= 2:
+            return
+
+        for k in range(l1):
+            for i in range(2, ido, 2):
+                ic=ido-i
+                tr2,tr1 = PM(CC(i-1,0,k),CC(ic-1,3,k))
+                ti1,ti2 = PM(CC(i  ,0,k),CC(ic  ,3,k))
+                tr4,ti3 = PM(CC(i  ,2,k),CC(ic  ,1,k))
+                tr3,ti4 = PM(CC(i-1,2,k),CC(ic-1,1,k))
+                CH(i-1,k,0)[0],cr3 = PM(tr2,tr3)
+                CH(i  ,k,0)[0],ci3 = PM(ti2,ti3)
+                cr4,cr2 = PM (tr1,tr4)
+                ci2,ci4 = PM (ti1,ti4)
+                CH(i,k,1)[0],CH(i-1,k,1)[0] = MULPM(WA(0,i-2),WA(0,i-1),ci2,cr2)
+                CH(i,k,2)[0],CH(i-1,k,2)[0] = MULPM(WA(1,i-2),WA(1,i-1),ci3,cr3)
+                CH(i,k,3)[0],CH(i-1,k,3)[0] = MULPM(WA(2,i-2),WA(2,i-1),ci4,cr4)
+
+    def radb5(ido: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0]):
+        @inline
+        def WA(x: int, i: int):
+            return wa[i+x*(ido-1)]
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+5*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+
+        tr11 = cast(0.3090169943749474241022934171828191, T0)
+        ti11 = cast(0.9510565162951535721164393333793821, T0)
+        tr12 = cast(-0.8090169943749474241022934171828191, T0)
+        ti12 = cast(0.5877852522924731291687059546390728, T0)
+
+        for k in range(l1):
+            ti5=CC(0,2,k)+CC(0,2,k)
+            ti4=CC(0,4,k)+CC(0,4,k)
+            tr2=CC(ido-1,1,k)+CC(ido-1,1,k)
+            tr3=CC(ido-1,3,k)+CC(ido-1,3,k)
+            CH(0,k,0)[0]=CC(0,0,k)+tr2+tr3
+            cr2=CC(0,0,k)+tr11*tr2+tr12*tr3
+            cr3=CC(0,0,k)+tr12*tr2+tr11*tr3
+            ci5,ci4=MULPM(ti5,ti4,ti11,ti12)
+            CH(0,k,4)[0],CH(0,k,1)[0]=PM(cr2,ci5)
+            CH(0,k,3)[0],CH(0,k,2)[0]=PM(cr3,ci4)
+
+        if ido == 1:
+            return
+
+        for k in range(l1):
+            ic = ido-2
+            for i in range(2, ido, 2):
+                tr2,tr5=PM(CC(i-1,2,k),CC(ic-1,1,k))
+                ti5,ti2=PM(CC(i  ,2,k),CC(ic  ,1,k))
+                tr3,tr4=PM(CC(i-1,4,k),CC(ic-1,3,k))
+                ti4,ti3=PM(CC(i  ,4,k),CC(ic  ,3,k))
+                CH(i-1,k,0)[0]=CC(i-1,0,k)+tr2+tr3
+                CH(i  ,k,0)[0]=CC(i  ,0,k)+ti2+ti3
+                cr2=CC(i-1,0,k)+tr11*tr2+tr12*tr3
+                ci2=CC(i  ,0,k)+tr11*ti2+tr12*ti3
+                cr3=CC(i-1,0,k)+tr12*tr2+tr11*tr3
+                ci3=CC(i  ,0,k)+tr12*ti2+tr11*ti3
+                cr5,cr4=MULPM(tr5,tr4,ti11,ti12)
+                ci5,ci4=MULPM(ti5,ti4,ti11,ti12)
+                dr4,dr3=PM(cr3,ci4)
+                di3,di4=PM(ci3,cr4)
+                dr5,dr2=PM(cr2,ci5)
+                di2,di5=PM(ci2,cr5)
+                CH(i,k,1)[0],CH(i-1,k,1)[0]=MULPM(WA(0,i-2),WA(0,i-1),di2,dr2)
+                CH(i,k,2)[0],CH(i-1,k,2)[0]=MULPM(WA(1,i-2),WA(1,i-1),di3,dr3)
+                CH(i,k,3)[0],CH(i-1,k,3)[0]=MULPM(WA(2,i-2),WA(2,i-1),di4,dr4)
+                CH(i,k,4)[0],CH(i-1,k,4)[0]=MULPM(WA(3,i-2),WA(3,i-1),di5,dr5)
+
+                ic -= 2
+
+    def radbg(ido: int, ip: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0], csarr: Ptr[T0]):
+        cdim = ip
+        ipph = (ip + 1) // 2
+        idl1 = ido * l1
+
+        @inline
+        def CC(a: int, b: int, c: int):
+            return cc[a+ido*(b+cdim*c)]
+        @inline
+        def CH(a: int, b: int, c: int):
+            return ch + (a+ido*(b+l1*c))
+        @inline
+        def C1(a: int, b: int, c: int):
+            return cc + (a+ido*(b+l1*c))
+        @inline
+        def C2(a: int, b: int):
+            return cc + (a+idl1*b)
+        @inline
+        def CH2(a: int, b: int):
+            return ch + a+idl1*b
+
+        for k in range(l1):
+            for i in range(ido):
+                CH(i,k,0)[0] = CC(i,0,k)
+
+        jc=ip-1
+        for j in range(1, ipph):
+            j2 = 2*j - 1
+            for k in range(l1):
+                CH(0,k,j )[0] = T0(2)*CC(ido-1,j2,k)
+                CH(0,k,jc)[0] = T0(2)*CC(0,j2+1,k)
+            jc -= 1
+
+        if ido != -1:
+            jc = ip-1
+            for j in range(1, ipph):
+                j2 = 2*j - 1
+                for k in range(l1):
+                    i=1
+                    ic=ido-i-2
+                    while i <= ido - 2:
+                        CH(i  ,k,j )[0] = CC(i  ,j2+1,k)+CC(ic  ,j2,k)
+                        CH(i  ,k,jc)[0] = CC(i  ,j2+1,k)-CC(ic  ,j2,k)
+                        CH(i+1,k,j )[0] = CC(i+1,j2+1,k)-CC(ic+1,j2,k)
+                        CH(i+1,k,jc)[0] = CC(i+1,j2+1,k)+CC(ic+1,j2,k)
+                        i += 2
+                        ic -= 2
+                jc -= 1
+
+        lc = ip-1
+        for l in range(1, ipph):
+            for ik in range(idl1):
+                C2(ik,l )[0] = CH2(ik,0)[0]+csarr[2*l]*CH2(ik,1)[0]+csarr[4*l]*CH2(ik,2)[0]
+                C2(ik,lc)[0] = csarr[2*l+1]*CH2(ik,ip-1)[0]+csarr[4*l+1]*CH2(ik,ip-2)[0]
+            iang = 2*l
+            j=3
+            jc=ip-3
+            while j < ipph - 3:
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                ar1=csarr[2*iang]
+                ai1=csarr[2*iang+1]
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                ar2=csarr[2*iang]
+                ai2=csarr[2*iang+1]
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                ar3=csarr[2*iang]
+                ai3=csarr[2*iang+1]
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                ar4=csarr[2*iang]
+                ai4=csarr[2*iang+1]
+                for ik in range(idl1):
+                    C2(ik,l )[0] += ar1*CH2(ik,j )[0]+ar2*CH2(ik,j +1)[0] + ar3*CH2(ik,j +2)[0]+ar4*CH2(ik,j +3)[0]
+                    C2(ik,lc)[0] += ai1*CH2(ik,jc)[0]+ai2*CH2(ik,jc-1)[0] + ai3*CH2(ik,jc-2)[0]+ai4*CH2(ik,jc-3)[0]
+                j += 4
+                jc -= 4
+
+            while j < ipph - 1:
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                ar1=csarr[2*iang]
+                ai1=csarr[2*iang+1]
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                ar2=csarr[2*iang]
+                ai2=csarr[2*iang+1]
+                for ik in range(idl1):
+                    C2(ik,l )[0] += ar1*CH2(ik,j )[0]+ar2*CH2(ik,j +1)[0]
+                    C2(ik,lc)[0] += ai1*CH2(ik,jc)[0]+ai2*CH2(ik,jc-1)[0]
+                j += 2
+                jc -= 2
+
+            while j < ipph:
+                iang+=l
+                if iang>ip:
+                    iang-=ip
+                war=csarr[2*iang]
+                wai=csarr[2*iang+1]
+                for ik in range(idl1):
+                    C2(ik,l )[0] += war*CH2(ik,j )[0]
+                    C2(ik,lc)[0] += wai*CH2(ik,jc)[0]
+                j += 1
+                jc -= 1
+
+            lc -= 1
+
+        for j in range(1, ipph):
+            for ik in range(idl1):
+                CH2(ik,0)[0] += CH2(ik,j)[0]
+
+        jc = ip-1
+        for j in range(1, ipph):
+            for k in range(l1):
+                CH(0,k,jc)[0],CH(0,k,j)[0] = PM(C1(0,k,j)[0],C1(0,k,jc)[0])
+            jc -= 1
+
+        if ido == 1:
+            return
+
+        jc = ip - 1
+        for j in range(1, ipph):
+            for k in range(l1):
+                i = 1
+                while i <= ido - 2:
+                    CH(i  ,k,j )[0] = C1(i  ,k,j)[0]-C1(i+1,k,jc)[0]
+                    CH(i  ,k,jc)[0] = C1(i  ,k,j)[0]+C1(i+1,k,jc)[0]
+                    CH(i+1,k,j )[0] = C1(i+1,k,j)[0]+C1(i  ,k,jc)[0]
+                    CH(i+1,k,jc)[0] = C1(i+1,k,j)[0]-C1(i  ,k,jc)[0]
+                    i += 2
+            jc -= 1
+
+        for j in range(1, ip):
+            is_ = (j-1)*(ido-1)
+            for k in range(l1):
+                idij = is_
+                i = 1
+                while i <= ido - 2:
+                    t1=CH(i,k,j)[0]
+                    t2=CH(i+1,k,j)[0]
+                    CH(i  ,k,j)[0] = wa[idij]*t1-wa[idij+1]*t2
+                    CH(i+1,k,j)[0] = wa[idij]*t2+wa[idij+1]*t1
+                    idij+=2
+                    i += 2
+
+    def copy_and_norm(self, c: Ptr[T0], p1: Ptr[T0], fct: T0):
+        if p1 != c:
+            if fct != cast(1, T0):
+                for i in range(self.length):
+                    c[i] = fct * p1[i]
+            else:
+                str.memcpy(c.as_byte(), p1.as_byte(), self.length * sizeof(T0))
+        else:
+            if fct != cast(1, T0):
+                for i in range(self.length):
+                    c[i] *= fct
+
+    def exec(self, c: Ptr[T0], fct: T0, r2hc: bool):
+        length = self.length
+
+        if length == 1:
+            c[0] *= fct
+            return
+
+        fact = self.fact
+        nf = len(fact)
+        ch = arr[T0](length)
+        p1 = c
+        p2 = ch.data()
+
+        if r2hc:
+            l1 = length
+            for k1 in range(nf):
+                k = nf-k1-1
+                ip = fact[k].fct
+                ido = length // l1
+                l1 //= ip
+                if ip == 4:
+                    type(self).radf4(ido, l1, p1, p2, fact[k].tw)
+                elif ip == 2:
+                    type(self).radf2(ido, l1, p1, p2, fact[k].tw)
+                elif ip == 3:
+                    type(self).radf3(ido, l1, p1, p2, fact[k].tw)
+                elif ip == 5:
+                    type(self).radf5(ido, l1, p1, p2, fact[k].tw)
+                else:
+                    type(self).radfg(ido, ip, l1, p1, p2, fact[k].tw, fact[k].tws)
+                    p1, p2 = p2, p1
+                p1, p2 = p2, p1
+        else:
+            l1 = 1
+            for k in range(nf):
+                ip = fact[k].fct
+                ido = length // (ip * l1)
+                if ip == 4:
+                    type(self).radb4(ido, l1, p1, p2, fact[k].tw)
+                elif ip == 2:
+                    type(self).radb2(ido, l1, p1, p2, fact[k].tw)
+                elif ip == 3:
+                    type(self).radb3(ido, l1, p1, p2, fact[k].tw)
+                elif ip == 5:
+                    type(self).radb5(ido, l1, p1, p2, fact[k].tw)
+                else:
+                    type(self).radbg(ido, ip, l1, p1, p2, fact[k].tw, fact[k].tws)
+                p1, p2 = p2, p1
+                l1 *= ip
+
+        self.copy_and_norm(c, p1, fct)
+        ch.dealloc()
+
+    def factorize(self):
+        n = self.length
+        fact = self.fact
+
+        while n % 4 == 0:
+            self.add_factor(4)
+            n >>= 2
+
+        if n % 2 == 0:
+            n >>= 1
+            self.add_factor(2)
+            fct_front = fact[0].fct
+            fct_back = fact[-1].fct
+            fact[0] = fact[0].with_fct(fct_back)
+            fact[-1] = fact[-1].with_fct(fct_front)
+
+        divisor = 3
+        while divisor * divisor <= n:
+            while n % divisor == 0:
+                self.add_factor(divisor)
+                n //= divisor
+            divisor += 2
+
+        if n > 1:
+            self.add_factor(n)
+
+    def twsize(self):
+        length = self.length
+        fact = self.fact
+        twsz = 0
+        l1 = 1
+        for k in range(len(fact)):
+            ip = fact[k].fct
+            ido = length // (l1*ip)
+            twsz += (ip-1)*(ido-1)
+            if ip > 5:
+                twsz += 2*ip
+            l1 *= ip
+        return twsz
+
+    def comp_twiddle(self):
+        length = self.length
+        fact = self.fact
+        twid = sincos_2pibyn[T0](self.length)
+        l1 = 1
+        p = self.mem.data()
+
+        for k in range(len(fact)):
+            ip = fact[k].fct
+            ido = length // (l1*ip)
+
+            if k < len(fact) - 1:
+                fact[k] = fact[k].with_tw(p)
+                p += (ip-1)*(ido-1)
+
+                for j in range(1, ip):
+                    i = 1
+                    while i <= (ido-1)//2:
+                        fact[k].tw[(j-1)*(ido-1)+2*i-2] = twid[j*l1*i].real
+                        fact[k].tw[(j-1)*(ido-1)+2*i-1] = twid[j*l1*i].imag
+                        i += 1
+
+            if ip > 5:
+                fact[k] = fact[k].with_tws(p)
+                p += 2*ip
+                fact[k].tws[0] = cast(1, T0)
+                fact[k].tws[1] = cast(0, T0)
+                i = 2
+                ic = 2*ip-2
+                while i <= ic:
+                    fact[k].tws[i  ] = twid[i//2*(length//ip)].real
+                    fact[k].tws[i+1] = twid[i//2*(length//ip)].imag
+                    fact[k].tws[ic]   = twid[i//2*(length//ip)].real
+                    fact[k].tws[ic+1] = -twid[i//2*(length//ip)].imag
+                    i += 2
+                    ic -= 2
+
+            l1 *= ip
+
+        twid.dealloc()
+
+    def __init__(self, length: int):
+        if length == 0:
+            raise ValueError("Invalid number of FFT data points (0) specified.")
+        self.length = length
+        self.fact = []
+        if length != 1:
+            self.factorize()
+            self.mem = arr[T0](self.twsize())
+            self.comp_twiddle()
+
+    def dealloc(self):
+        self.mem.dealloc()
+
+class fftblue:
+    n: int
+    n2: int
+    plan: cfftp[T,T0]
+    mem: arr[T]
+    bk: Ptr[T]
+    bkf: Ptr[T]
+    T: type
+    T0: type
+
+    def fft(self, c: Ptr[T], fct: T0, fwd: bool):
+        n = self.n
+        n2 = self.n2
+        plan = self.plan
+        bk = self.bk
+        bkf = self.bkf
+
+        akf = arr[T](n2)
+
+        for m in range(n):
+            akf[m] = _special_mul(c[m], bk[m], fwd)
+
+        zero = akf[0] * cast(0, T0)
+        for m in range(n, n2):
+            akf[m] = zero
+
+        plan.exec(akf.data(), cast(1, T0), True)
+
+        akf[0] = _special_mul(akf[0], bkf[0], not fwd)
+        for m in range(1, (n2 + 1) // 2):
+            akf[m] = _special_mul(akf[m], bkf[m], not fwd)
+            akf[n2-m] = _special_mul(akf[n2-m], bkf[m], not fwd)
+
+        if n2 & 1 == 0:
+            akf[n2//2] = _special_mul(akf[n2//2], bkf[n2//2], not fwd)
+
+        plan.exec(akf.data(), cast(1, T0), False)
+
+        for m in range(n):
+            c[m] = _special_mul(akf[m], bk[m], fwd) * fct
+
+        akf.dealloc()
+
+    def __init__(self, length: int):
+        n = length
+        self.n = n
+        self.n2 = _good_size_cmplx(n*2-1)
+        n2 = self.n2
+        self.plan = cfftp[T,T0](n2)
+        self.mem = arr[T](n+n2//2+1)
+        self.bk = self.mem.data()
+        self.bkf = self.mem.data() + n
+
+        plan = self.plan
+        mem = self.mem
+        bk = self.bk
+        bkf = self.bkf
+
+        tmp = sincos_2pibyn[T0](2*n)
+        bk[0] = T(cast(1, T0), cast(0, T0))
+
+        coeff = 0
+        for m in range(1, n):
+            coeff += 2*m - 1
+            if coeff >= 2*n:
+                coeff -= 2*n
+            bk[m] = tmp[coeff]
+
+        tbkf = arr[T](n2)
+        xn2 = cast(1, T0) / cast(n2, T0)
+        tbkf[0] = bk[0]*xn2
+
+        for m in range(1, n):
+            x = bk[m]*xn2
+            tbkf[m] = x
+            tbkf[n2-m] = x
+
+        m = n
+        while m <= n2-n:
+            tbkf[m] = T(cast(0, T0), cast(0, T0))
+            m += 1
+
+        plan.exec(tbkf.data(), cast(1, T0), True)
+
+        for i in range(n2//2 + 1):
+            bkf[i] = tbkf[i]
+
+        tbkf.dealloc()
+        tmp.dealloc()
+
+    def exec(self, c: Ptr[T], fct: T0, fwd: bool):
+        return self.fft(c, fct, fwd)
+
+    def exec_r(self, c: Ptr[T0], fct: T0, fwd: bool):
+        n = self.n
+        tmp = arr[T](n)
+        if fwd:
+            zero = cast(0, T0) * c[0]
+            for m in range(n):
+                tmp[m] = T(c[m], zero)
+            self.fft(tmp.data(), fct, True)
+            c[0] = tmp[0].real
+            str.memcpy((c + 1).as_byte(), (tmp.data() + 1).as_byte(), (n-1) * sizeof(T0))
+        else:
+            tmp[0] = T(c[0], c[0] * cast(0, T0))
+            str.memcpy((tmp.data() + 1).as_byte(), (c + 1).as_byte(), (n-1) * sizeof(T0))
+            if n & 1 == 0:
+                tmp[n//2] = T(tmp[n//2].real, cast(0, T0) * c[0])
+            m = 1
+            while 2*m < n:
+                tmp[n-m] = T(tmp[m].real, -tmp[m].imag)
+                m += 1
+            self.fft(tmp.data(), fct, False)
+            for m in range(n):
+                c[m] = tmp[m].real
+        tmp.dealloc()
+
+    def dealloc(self):
+        self.plan.dealloc()
+        self.mem.dealloc()
+
+class pocketfft_c:
+    packplan: Optional[cfftp[T,T0]]
+    blueplan: Optional[fftblue[T,T0]]
+    length: int
+    T: type
+    T0: type
+
+    def __init__(self, length: int):
+        self.packplan = None
+        self.blueplan = None
+        self.length = length
+
+        if length == 0:
+            raise ValueError("Invalid number of FFT data points (0) specified.")
+
+        tmp = 0 if length < 50 else _largest_prime_factor(length)
+        if tmp * tmp <= length:
+            self.packplan = cfftp[T,T0](length)
+            return
+
+        comp1 = _cost_guess(length)
+        comp2 = 2*_cost_guess(_good_size_cmplx(2*length - 1))
+        comp2 *= 1.5
+
+        if comp2 < comp1:
+            self.blueplan = fftblue[T,T0](length)
+        else:
+            self.packplan = cfftp[T,T0](length)
+
+    def exec(self, c: Ptr[T], fct: T0, fwd: bool):
+        if self.packplan is not None:
+            self.packplan.exec(c, fct, fwd)
+            self.packplan.dealloc()
+        else:
+            self.blueplan.exec(c, fct, fwd)
+            self.blueplan.dealloc()
+
+class pocketfft_r:
+    packplan: Optional[rfftp[T,T0]]
+    blueplan: Optional[fftblue[T,T0]]
+    length: int
+    T: type
+    T0: type
+
+    def __init__(self, length: int):
+        self.packplan = None
+        self.blueplan = None
+        self.length = length
+
+        if length == 0:
+            raise ValueError("Invalid number of FFT data points (0) specified.")
+
+        tmp = 0 if length < 50 else _largest_prime_factor(length)
+        if tmp * tmp <= length:
+            self.packplan = rfftp[T,T0](length)
+            return
+
+        comp1 = 0.5*_cost_guess(length)
+        comp2 = 2*_cost_guess(_good_size_cmplx(2*length - 1))
+        comp2 *= 1.5
+
+        if comp2 < comp1:
+            self.blueplan = fftblue[T,T0](length)
+        else:
+            self.packplan = rfftp[T,T0](length)
+
+    def exec(self, c: Ptr[T0], fct: T0, fwd: bool):
+        if self.packplan is not None:
+            self.packplan.exec(c, fct, fwd)
+            self.packplan.dealloc()
+        else:
+            self.blueplan.exec_r(c, fct, fwd)
+            self.blueplan.dealloc()
+
+def _bad_norm(norm: str):
+    raise ValueError(f'Invalid norm value {repr(norm)}; should be "backward", "ortho" or "forward".')
+
+def _bad_length(n: int):
+    raise ValueError(f"Invalid number of FFT data points ({n}) specified.")
+
+def _swap_direction(norm: Optional[str]) -> Optional[str]:
+    if norm is None:
+        return "forward"
+    if norm == "backward":
+        return "forward"
+    if norm == "ortho":
+        return "ortho"
+    if norm == "forward":
+        return "backward"
+    _bad_norm(norm)
+
+def _fft(v: Ptr[T], n: int, is_forward: bool, norm: Optional[str], T: type):
+    if n < 1:
+        _bad_length(n)
+
+    if not is_forward:
+        norm = _swap_direction(norm)
+
+    real_dtype = type(T().real)
+    fct = cast(0, real_dtype)
+
+    if norm is None or norm == "backward":
+        fct = cast(1, real_dtype)
+    elif norm == "ortho":
+        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+    elif norm == "forward":
+        fct = cast(1, real_dtype) / cast(n, real_dtype)
+    else:
+        _bad_norm(norm)
+
+    plan = pocketfft_c(n)
+    plan.exec(v, fct, is_forward)
+
+def fft(v: Ptr[T], n: int, norm: Optional[str], T: type):
+    return _fft(v, n, is_forward=True, norm=norm)
+
+def ifft(v: Ptr[T], n: int, norm: Optional[str], T: type):
+    return _fft(v, n, is_forward=False, norm=norm)
+
+def rfft(v: Ptr[T0], n: int, is_forward: bool, norm: Optional[str], o: Ptr[T], T: type, T0: type):
+    if n < 1:
+        _bad_length(n)
+
+    real_dtype = type(T().real)
+    fct = cast(0, real_dtype)
+
+    if norm is None or norm == "backward":
+        fct = cast(1, real_dtype)
+    elif norm == "ortho":
+        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+    elif norm == "forward":
+        fct = cast(1, real_dtype) / cast(n, real_dtype)
+    else:
+        _bad_norm(norm)
+
+    plan = pocketfft_r[T, T0](n)
+    plan.exec(v, fct, True)
+
+    i = 1
+    ii = 1
+    o[0] = T(v[0], cast(0, T0))
+
+    if is_forward:
+        while i < n - 1:
+            o[ii] = T(v[i], v[i+1])
+            i += 2
+            ii += 1
+    else:
+        while i < n - 1:
+            o[ii] = T(v[i], -v[i+1])
+            i += 2
+            ii += 1
+
+    if i < n:
+        o[ii] = T(v[i], cast(0, T0))
+
+def irfft(v: Ptr[T], n: int, norm: Optional[str], o: Ptr[T0], T: type, T0: type):
+    if n < 1:
+        _bad_length(n)
+
+    real_dtype = type(T().real)
+    fct = cast(0, real_dtype)
+    norm = _swap_direction(norm)
+
+    if norm is None or norm == "backward":
+        fct = cast(1, real_dtype)
+    elif norm == "ortho":
+        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+    elif norm == "forward":
+        fct = cast(1, real_dtype) / cast(n, real_dtype)
+    else:
+        _bad_norm(norm)
+
+    plan = pocketfft_r[T, T0](n)
+
+    i = 1
+    ii = 1
+    o[0] = v[0].real
+    is_forward = False  # hardcoded, but kept for reference
+
+    if is_forward:
+        while i < n - 1:
+            o[i] = v[ii].real
+            o[i+1] = -v[ii].imag
+            i += 2
+            ii += 1
+    else:
+        while i < n - 1:
+            o[i] = v[ii].real
+            o[i+1] = v[ii].imag
+            i += 2
+            ii += 1
+
+    if i < n:
+        o[i] = v[ii].real
+
+    plan.exec(o, fct, False)

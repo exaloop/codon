@@ -1,0 +1,2581 @@
+import numpy as np
+from numpy import *
+
+@test
+def test_compare_generic_nat():
+    # regression tests for gh-6452
+    assert np.datetime64('NaT') != (np.datetime64('2000') +
+                                    np.timedelta64('NaT'))
+    assert np.datetime64('NaT') != np.datetime64('NaT', 'us')
+    assert np.datetime64('NaT', 'us') != np.datetime64('NaT')
+
+test_compare_generic_nat()
+
+@test
+def test_datetime_nat_argsort_stability():
+    # NaT < NaT should be False internally for sort stability
+    sizes = [3, 21, 217, 1000]
+    for size in sizes:
+        expected = np.arange(size)
+        arr = np.tile(np.datetime64('NaT'), size)
+        assert array_equal(np.argsort(arr, kind='mergesort'), expected)
+
+test_datetime_nat_argsort_stability()
+
+def test_datetime_maximum_reduce():
+    a = np.array(['2010-01-02', '1999-03-14', '1833-03'], np.datetime64['D',
+                                                                        1])
+    assert isinstance(np.maximum.reduce(a), np.datetime64['D', 1])
+    assert np.maximum.reduce(a) == np.datetime64('2010-01-02')
+
+    a = np.array([1, 4, 0, 7, 2], np.timedelta64['s', 1])
+    assert isinstance(np.maximum.reduce(a), np.timedelta64['s', 1])
+    assert np.maximum.reduce(a) == np.timedelta64(7, 's')
+
+test_datetime_maximum_reduce()
+
+@test
+def test_timedelta_nat_argsort_stability():
+    # NaT < NaT should be False internally for sort stability
+    sizes = [3, 21, 217, 1000]
+    for size in sizes:
+        expected = np.arange(size)
+        arr = np.tile(np.timedelta64('NaT'), size)
+        assert array_equal(np.argsort(arr, kind='mergesort'), expected)
+
+test_timedelta_nat_argsort_stability()
+
+@test
+def test_datetime_timedelta_sort_nat():
+    arr = (
+        # the example provided in gh-12629
+        ('NaT', 1, 2, 3),
+        (
+            'NaT',
+            1,
+            -2,
+            3,
+        ))
+
+    expected = ((1, 2, 3, 'NaT'), (-2, 1, 3, 'NaT'))
+
+    dtypes = ['M8[ns]', 'M8[us]']
+    for i in range(2):
+        arr1 = np.array(arr[i], dtype=dtypes[i])
+
+        expect = np.array(expected[i], dtype=dtypes[i])
+        arr1.sort()
+        assert array_equal(arr1, expect)
+
+test_datetime_timedelta_sort_nat()
+
+@test
+def test_datetime_scalar_construction():
+    # Construct with different units
+    assert np.datetime64('1950-03-12', 'D') == np.datetime64('1950-03-12')
+    assert np.datetime64('1950-03-12T13',
+                         's') == np.datetime64('1950-03-12T13', 'm')
+
+    # Default construction means NaT
+    # TODO: Datetme64 currently does not have default constructor.
+    # assert array_equal(np.datetime64(), np.datetime64('NaT'))
+
+    # Some basic strings and repr
+    assert str(np.datetime64('NaT')) == 'NaT'
+    assert repr(np.datetime64('NaT')) == "numpy.datetime64('NaT', 'us')"
+    assert str(np.datetime64('2011-02')) == '2011-02-01T00:00:00.000000'
+    assert repr(np.datetime64(
+        '2011-02')) == "numpy.datetime64('2011-02-01T00:00:00.000000', 'us')"
+
+    # Construction with time units from a date is okay
+    assert np.datetime64('1920-03-13', 'h') == np.datetime64('1920-03-13T00')
+    assert np.datetime64('1920-03', 'm') == np.datetime64('1920-03-01T00:00')
+    assert np.datetime64('1920', 's') == np.datetime64('1920-01-01T00:00:00')
+    assert np.datetime64(datetime.date(2045, 3, 25),
+                         'ms') == np.datetime64('2045-03-25T00:00:00.000')
+
+    # Construction with date units from a datetime is also okay
+    assert np.datetime64('1920-03-13T18', 'D') == np.datetime64('1920-03-13')
+    assert np.datetime64('1920-03-13T18:33:12',
+                         'M') == np.datetime64('1920-03')
+    assert np.datetime64('1920-03-13T18:33:12.5', 'Y') == np.datetime64('1920')
+
+    # None gets constructed as NaT
+    # TODO: Datetme64 currently does not work without None parameter as well.
+    # assert np.datetime64(None) == np.datetime64('NaT')
+
+    # Default construction of NaT is in generic units
+    # TODO: Datetme64 currently does not have default constructor.
+    # assert np.datetime64().dtype == dtype = 'M8'
+    assert isinstance(np.datetime64('NaT', 'h'), np.datetime64['h', 1])
+
+    # When constructing from a scalar or zero-dimensional array,
+    # it either keeps the units or you can override them.
+    a = np.datetime64('2000-03-18T16', 'h')
+    b = np.array('2000-03-18T16', dtype=np.datetime64['h', 1])
+
+    assert isinstance(a, np.datetime64['h', 1])
+    assert isinstance(b.dtype, np.datetime64['h', 1])
+    assert isinstance(np.datetime64(a, 'h'), np.datetime64['h', 1])
+    assert np.datetime64(a, 'h') == a
+
+    assert b == a
+    # assert isinstance(np.datetime64(b, 'h'), np.datetime64['h',1])
+    # print(np.datetime64(b, 'h'))
+
+    assert np.datetime64(a, 's') == a
+    assert isinstance(np.datetime64(a, 's'), np.datetime64['s', 1])
+
+    # assert array_equal(np.datetime64(b, 's'), a)
+    # assert array_equal(np.datetime64(b, 's').dtype, dtype='M8[s]')
+
+    # Construction from datetime.date
+    assert np.datetime64('1945-03-25') == np.datetime64(
+        datetime.date(1945, 3, 25))
+    assert np.datetime64('2045-03-25',
+                         'D') == np.datetime64(datetime.date(2045, 3, 25), 'D')
+    # Construction from datetime.datetime
+    assert np.datetime64('1980-01-25T14:36:22.5') == np.datetime64(
+        datetime.datetime(1980, 1, 25, 14, 36, 22, 500000))
+
+    # Construction with time units from a date is okay
+    assert np.datetime64('1920-03-13',
+                         'h') == np.datetime64('1920-03-13T00', 'h')
+    assert np.datetime64('1920-03',
+                         'm') == np.datetime64('1920-03-01T00:00', 'm')
+    assert np.datetime64('1920', 's') == np.datetime64('1920-01-01T00:00:00',
+                                                       's')
+    assert np.datetime64(datetime.date(2045, 3, 25),
+                         'ms') == np.datetime64('2045-03-25T00:00:00.000',
+                                                'ms')
+
+    # Construction with date units from a datetime is also okay
+    assert np.datetime64('1920-03-13T18',
+                         'D') == np.datetime64('1920-03-13', 'D')
+    assert np.datetime64('1920-03-13T18:33:12',
+                         'M') == np.datetime64('1920-03', 'M')
+    assert np.datetime64('1920-03-13T18:33:12.5',
+                         'Y') == np.datetime64('1920', 'Y')
+
+test_datetime_scalar_construction()
+
+@test
+def test_timedelta_np_int_construction():
+    assert np.timedelta64(np.int64(123), "Y") == np.timedelta64(123, "Y")
+    assert np.timedelta64(np.int64(123), "M") == np.timedelta64(123, "M")
+    assert np.timedelta64(np.int64(123), "W") == np.timedelta64(123, "W")
+    assert np.timedelta64(np.int64(123), "D") == np.timedelta64(123, "D")
+    assert np.timedelta64(np.int64(123), "h") == np.timedelta64(123, "h")
+    assert np.timedelta64(np.int64(123), "m") == np.timedelta64(123, "m")
+    assert np.timedelta64(np.int64(123), "s") == np.timedelta64(123, "s")
+    assert np.timedelta64(np.int64(123), "ms") == np.timedelta64(123, "ms")
+    assert np.timedelta64(np.int64(123), "us") == np.timedelta64(123, "us")
+    assert np.timedelta64(np.int64(123), "ns") == np.timedelta64(123, "ns")
+    assert np.timedelta64(np.int64(123), "ps") == np.timedelta64(123, "ps")
+    assert np.timedelta64(np.int64(123), "fs") == np.timedelta64(123, "fs")
+    assert np.timedelta64(np.int64(123), "as") == np.timedelta64(123, "as")
+
+test_timedelta_np_int_construction()
+
+@test()
+def test_timedelta_scalar_construction():
+    # Construct with different units
+    assert np.timedelta64(7, 'D') == np.timedelta64(1, 'W')
+    assert np.timedelta64(120, 's') == np.timedelta64(2, 'm')
+
+    # Default construction means 0
+    # TODO: Timedelta64 currently does not have default constructor.
+    # assert np.timedelta64() == np.timedelta64(0)
+
+    # None gets constructed as NaT
+    # assert np.timedelta64(None) == np.timedelta64('NaT')
+
+    # Some basic strings and repr
+    assert str(np.timedelta64('NaT')) == 'NaT'
+    assert repr(np.timedelta64('NaT')) == "numpy.timedelta64(NaT, 'generic')"
+    assert str(np.timedelta64(3, 's')) == '3 seconds'
+    assert repr(np.timedelta64(-3, 's')) == "numpy.timedelta64(-3)"
+    assert repr(np.timedelta64(12, 's')) == "numpy.timedelta64(12)"
+
+    # Construction from an integer produces generic units
+    assert isinstance(np.timedelta64(12, 'h'), np.timedelta64['h', 1])
+
+    # When constructing from a scalar or zero-dimensional array,
+    # it either keeps the units or you can override them.
+    a = np.timedelta64(2, 'h')
+    b = np.array(2, dtype=np.timedelta64['h', 1])
+
+    assert isinstance(a, np.timedelta64['h', 1])
+    assert isinstance(b.dtype, np.timedelta64['h', 1])
+
+    assert np.timedelta64(a, 'h') == a
+
+    assert isinstance(a, np.timedelta64['h', 1])
+    assert isinstance(b.dtype, np.timedelta64['h', 1])
+    assert isinstance(np.timedelta64(a, 'h'), np.timedelta64['h', 1])
+
+    assert np.timedelta64(a, 's') == a
+    assert isinstance(np.timedelta64(a, 's'), np.timedelta64['s', 1])
+
+    # Construction from datetime.timedelta
+    assert np.timedelta64(5, 'D') == np.timedelta64(datetime.timedelta(days=5))
+    assert np.timedelta64(102347621, 's') == np.timedelta64(
+        datetime.timedelta(seconds=102347621))
+    assert np.timedelta64(-10234760000, 'us') == np.timedelta64(
+        datetime.timedelta(microseconds=-10234760000))
+    assert np.timedelta64(10234760000, 'us') == np.timedelta64(
+        datetime.timedelta(microseconds=10234760000))
+    assert np.timedelta64(1023476, 'ms') == np.timedelta64(
+        datetime.timedelta(milliseconds=1023476))
+    assert np.timedelta64(10, 'm') == np.timedelta64(
+        datetime.timedelta(minutes=10))
+    assert np.timedelta64(281,
+                          'h') == np.timedelta64(datetime.timedelta(hours=281))
+    assert np.timedelta64(28,
+                          'W') == np.timedelta64(datetime.timedelta(weeks=28))
+
+test_timedelta_scalar_construction()
+
+@test()
+def test_timedelta_array_str():
+    a = np.array([-1, 0, 100], dtype='m')
+    assert np.array_equal(a, np.array(['-1', '0', '100']))
+    a = np.array(['NaT', 'NaT'], dtype='m')
+    assert np.array_equal(a, np.array(['NaT', 'NaT']))
+    # Check right-alignment with NaTs
+    a = np.array(('NaT', -1, 0), dtype='m')
+    assert np.array_equal(a, np.array(['NaT', '-1', '0']))
+
+test_timedelta_array_str()
+
+@test
+def test_datetime_array_find_type():
+    dt = np.datetime64('1970-01-01', 'M')
+    arr = np.array([dt])
+    assert isinstance(arr.dtype, np.datetime64['M', 1])
+
+test_datetime_array_find_type()
+
+@test
+def test_datetime_nat_casting():
+    a = np.array('NaT', dtype='M8[D]')
+    b = np.datetime64('NaT', 'D')
+
+    assert np.isnat(a.astype(np.datetime64['s', 1]),
+                    np.array('NaT', np.datetime64['s', 1]))
+    assert np.isnat(a.astype(np.datetime64['ms', 1]),
+                    np.array('NaT', np.datetime64['ms', 1]))
+    assert np.isnat(a.astype(np.datetime64['M', 1]),
+                    np.array('NaT', np.datetime64['M', 1]))
+    assert np.isnat(a.astype(np.datetime64['Y', 1]),
+                    np.array('NaT', np.datetime64['Y', 1]))
+    assert np.isnat(a.astype(np.datetime64['W', 1]),
+                    np.array('NaT', np.datetime64['W', 1]))
+    # Scalars -> Scalars
+    assert np.isnat(np.datetime64(b, 's'))
+    assert np.isnat(np.datetime64(b, 'ms'))
+    assert np.isnat(np.datetime64(b, 'M'))
+    assert np.isnat(np.datetime64(b, 'Y'))
+    assert np.isnat(np.datetime64(b, 'W'))
+
+    # Arrays -> Scalars
+    # assert np.datetime64(a, 's') == np.datetime64('NaT', 's')
+    # assert np.datetime64(a, 'ms]') == np.datetime64('NaT', 'ms')
+    # assert np.datetime64(a, 'M') == np.datetime64('NaT', 'M')
+    # assert np.datetime64(a, 'Y') == np.datetime64('NaT', 'Y')
+    # assert np.datetime64(a, 'W') == np.datetime64('NaT', 'W')
+
+    nan = np.array((np.nan, ) * 8 + (0, ))
+    fnan = nan.astype(np.float32)
+    lnan = nan.astype(np.float128)
+    cnan = nan.astype(complex)
+    cfnan = nan.astype(np.complex64)
+    clnan = nan.astype(np.complex128)
+    nat = np.array([np.datetime64('NaT')] * 8 + [np.datetime64(0, 'us')])
+    assert np.array_equal(nan.astype(np.datetime64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(fnan.astype(np.datetime64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(cnan.astype(np.datetime64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(cfnan.astype(np.datetime64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(clnan.astype(np.datetime64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+
+    nat = np.array([np.timedelta64('NaT', 'us')] * 8 +
+                   [np.timedelta64(0, 'us')])
+    assert np.array_equal(nan.astype(np.timedelta64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(fnan.astype(np.timedelta64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(cnan.astype(np.timedelta64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(cfnan.astype(np.timedelta64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+    assert np.array_equal(clnan.astype(np.timedelta64['ns', 1]),
+                          nat,
+                          equal_nan=True)
+
+test_datetime_nat_casting()
+
+@test
+def test_pydatetime_creation():
+    a = np.array(('1960-03-12', datetime.date(1960, 3, 12)), dtype='M8[D]')
+    assert a[0] == a[1]
+    a = np.array(('1999-12-31', datetime.date(1999, 12, 31)), dtype='M8[D]')
+    assert a[0] == a[1]
+    a = np.array(('2000-01-01', datetime.date(2000, 1, 1)), dtype='M8[D]')
+    assert a[0] == a[1]
+
+test_pydatetime_creation()
+
+@test
+def test_timedelta_scalar_construction_units():
+    # String construction detecting units
+    assert isinstance(np.datetime64('2010', 'Y'), np.datetime64['Y', 1])
+    assert isinstance(np.datetime64('2010-03', 'M'), np.datetime64['M', 1])
+    assert isinstance(np.datetime64('2010-03-12', 'D'), np.datetime64['D', 1])
+    assert isinstance(np.datetime64('2010-03-12T17', 'h'), np.datetime64['h',
+                                                                         1])
+    assert isinstance(np.datetime64('2010-03-12T17:15', 'm'),
+                      np.datetime64['m', 1])
+    assert isinstance(np.datetime64('2010-03-12T17:15:08', 's'),
+                      np.datetime64['s', 1])
+
+    assert isinstance(np.datetime64('2010-03-12T17:15:08.1', 'ms'),
+                      np.datetime64['ms', 1])
+    assert isinstance(np.datetime64('2010-03-12T17:15:08.12', 'ms'),
+                      np.datetime64['ms', 1])
+    assert isinstance(np.datetime64('2010-03-12T17:15:08.123', 'ms'),
+                      np.datetime64['ms', 1])
+
+    assert isinstance(np.datetime64('2010-03-12T17:15:08.1234', 'us'),
+                      np.datetime64['us', 1])
+    assert isinstance(np.datetime64('2010-03-12T17:15:08.12345', 'us'),
+                      np.datetime64['us', 1])
+    assert isinstance(np.datetime64('2010-03-12T17:15:08.123456', 'us'),
+                      np.datetime64['us', 1])
+
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.1234567', 'ns'),
+                      np.datetime64['ns', 1])
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.12345678', 'ns'),
+                      np.datetime64['ns', 1])
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.123456789', 'ns'),
+                      np.datetime64['ns', 1])
+
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.1234567890', 'ps'),
+                      np.datetime64['ps', 1])
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.12345678901', 'ps'),
+                      np.datetime64['ps', 1])
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.123456789012', 'ps'),
+                      np.datetime64['ps', 1])
+
+    assert isinstance(np.datetime64('1970-01-01T00:00:02.1234567890123', 'fs'),
+                      np.datetime64['fs', 1])
+    assert isinstance(
+        np.datetime64('1970-01-01T00:00:02.12345678901234', 'fs'),
+        np.datetime64['fs', 1])
+    assert isinstance(
+        np.datetime64('1970-01-01T00:00:02.123456789012345', 'fs'),
+        np.datetime64['fs', 1])
+
+    assert isinstance(
+        np.datetime64('1970-01-01T00:00:02.1234567890123456', 'as'),
+        np.datetime64['as', 1])
+    assert isinstance(
+        np.datetime64('1970-01-01T00:00:02.12345678901234567', 'as'),
+        np.datetime64['as', 1])
+    assert isinstance(
+        np.datetime64('1970-01-01T00:00:02.123456789012345678', 'as'),
+        np.datetime64['as', 1])
+
+    # Python date object
+    assert isinstance(np.datetime64(datetime.date(2010, 4, 16)),
+                      np.datetime64['D', 1])
+
+    # Python datetime object
+    assert isinstance(
+        np.datetime64(datetime.datetime(2010, 4, 16, 13, 45, 18)),
+        np.datetime64['us', 1])
+
+    # 'today' special value
+    assert isinstance(np.datetime64('today'), np.datetime64['us', 1])
+
+    # 'now' special value
+    assert isinstance(np.datetime64('now'), np.datetime64['us', 1])
+
+test_timedelta_scalar_construction_units()
+
+@test()
+def test_days_creation():
+    assert np.array_equal(
+        np.array('1599', np.datetime64['D', 1]).astype(int),
+        np.array((1600 - 1970) * 365 - (1972 - 1600) / 4 + 3 - 365))
+    assert np.array_equal(
+        np.array('1600', np.datetime64['D', 1]).astype(int),
+        np.array((1600 - 1970) * 365 - (1972 - 1600) / 4 + 3))
+    assert np.array_equal(
+        np.array('1601', np.datetime64['D', 1]).astype(int),
+        np.array((1600 - 1970) * 365 - (1972 - 1600) / 4 + 3 + 366))
+    assert np.array_equal(
+        np.array('1900', np.datetime64['D', 1]).astype(int),
+        np.array((1900 - 1970) * 365 - (1970 - 1900) // 4))
+    assert np.array_equal(
+        np.array('1901', np.datetime64['D', 1]).astype(int),
+        np.array((1900 - 1970) * 365 - (1970 - 1900) // 4 + 365))
+    assert np.array_equal(
+        np.array('1967', np.datetime64['D', 1]).astype(int),
+        np.array(-3 * 365 - 1))
+    assert np.array_equal(
+        np.array('1968', np.datetime64['D', 1]).astype(int),
+        np.array(-2 * 365 - 1))
+    assert np.array_equal(
+        np.array('1969', np.datetime64['D', 1]).astype(int),
+        np.array(-1 * 365))
+    assert np.array_equal(
+        np.array('1970', np.datetime64['D', 1]).astype(int), np.array(0 * 365))
+    assert np.array_equal(
+        np.array('1971', np.datetime64['D', 1]).astype(int), np.array(1 * 365))
+    assert np.array_equal(
+        np.array('1972', np.datetime64['D', 1]).astype(int), np.array(2 * 365))
+    assert np.array_equal(
+        np.array('1973', np.datetime64['D', 1]).astype(int),
+        np.array(3 * 365 + 1))
+    assert np.array_equal(
+        np.array('1974', np.datetime64['D', 1]).astype(int),
+        np.array(4 * 365 + 1))
+    assert np.array_equal(
+        np.array('2000', np.datetime64['D', 1]).astype(int),
+        np.array((2000 - 1970) * 365 + (2000 - 1972) // 4))
+    assert np.array_equal(
+        np.array('2001', np.datetime64['D', 1]).astype(int),
+        np.array((2000 - 1970) * 365 + (2000 - 1972) // 4 + 366))
+    assert np.array_equal(
+        np.array('2400', np.datetime64['D', 1]).astype(int),
+        np.array((2400 - 1970) * 365 + (2400 - 1972) // 4 - 3))
+    assert np.array_equal(
+        np.array('2401', np.datetime64['D', 1]).astype(int),
+        np.array((2400 - 1970) * 365 + (2400 - 1972) // 4 - 3 + 366))
+
+    assert np.array_equal(
+        np.array('1600-02-29', np.datetime64['D', 1]).astype(int),
+        np.array((1600 - 1970) * 365 - (1972 - 1600) // 4 + 3 + 31 + 28))
+    assert np.array_equal(
+        np.array('1600-03-01', np.datetime64['D', 1]).astype(int),
+        np.array((1600 - 1970) * 365 - (1972 - 1600) // 4 + 3 + 31 + 29))
+    assert np.array_equal(
+        np.array('2000-02-29', np.datetime64['D', 1]).astype(int),
+        np.array((2000 - 1970) * 365 + (2000 - 1972) // 4 + 31 + 28))
+    assert np.array_equal(
+        np.array('2000-03-01', np.datetime64['D', 1]).astype(int),
+        np.array((2000 - 1970) * 365 + (2000 - 1972) // 4 + 31 + 29))
+    assert np.array_equal(
+        np.array('2001-03-22', np.datetime64['D', 1]).astype(int),
+        np.array((2000 - 1970) * 365 + (2000 - 1972) // 4 + 366 + 31 + 28 +
+                 21))
+
+test_days_creation()
+
+@test
+def test_datetime_string_conversion():
+    a = ['2011-03-16', '1920-01-01', '2013-05-19']
+    str_a = np.array(a, dtype='S')
+    uni_a = np.array(a, dtype='U')
+    dt_a = np.array(a, np.datetime64['D', 1])
+    # String to datetime
+    assert np.array_equal(dt_a, str_a.astype(np.datetime64['D', 1]))
+    assert isinstance(dt_a.dtype, str_a.astype(np.datetime64['D', 1]).dtype)
+    dt_b = np.empty_like(dt_a)
+    dt_b[...] = str_a
+    assert np.array_equal(dt_a, dt_b)
+
+    assert np.array_equal(dt_a, uni_a.astype(np.datetime64['D', 1]))
+    assert isinstance(dt_a.dtype, uni_a.astype(np.datetime64['D', 1]).dtype)
+    dt_b = np.empty_like(dt_a)
+    dt_b[...] = uni_a
+    assert np.array_equal(dt_a, dt_b)
+
+test_datetime_string_conversion()
+
+@test
+def test_month_truncation():
+    # Make sure that months are truncating correctly
+    assert np.array_equal(np.array('1945-03-01', np.datetime64['M', 1]),
+                          np.array('1945-03-31', np.datetime64['M', 1]))
+    assert np.array_equal(
+        np.array('1969-11-01', np.datetime64['M', 1]),
+        np.array('1969-11-30T23:59:59.99999',
+                 np.datetime64['M', 1]).astype(np.datetime64['M', 1]))
+    assert np.array_equal(
+        np.array('1969-12-01', np.datetime64['M', 1]),
+        np.array('1969-12-31T23:59:59.99999',
+                 np.datetime64['M', 1]).astype(np.datetime64['M', 1]))
+    assert np.array_equal(
+        np.array('1970-01-01', np.datetime64['M', 1]),
+        np.array('1970-01-31T23:59:59.99999',
+                 np.datetime64['M', 1]).astype(np.datetime64['M', 1]))
+    assert np.array_equal(
+        np.array('1980-02-01', np.datetime64['M', 1]),
+        np.array('1980-02-29T23:59:59.99999',
+                 np.datetime64['M', 1]).astype(np.datetime64['M', 1]))
+
+test_month_truncation()
+
+@test
+def test_dtype_promotion():
+    a = np.array('2011-03-16', np.datetime64['Y', 12])
+    b = np.array('200', np.timedelta64['Y', 15])
+    assert np.array_equal(np.array('5006', np.datetime64['Y', 3]), a + b)
+    a = np.array('2011-03-15', np.datetime64['Y', 2])
+    b = np.array('2001', np.timedelta64['Y', 2])
+    assert np.array_equal(np.array('6012', np.datetime64['Y', 2]), a + b)
+    a = np.array('2011-03-15', np.datetime64['M', 62])
+    b = np.array('200', np.timedelta64['M', 24])
+    assert np.array_equal(np.array('2406-03', np.datetime64['M', 2]), a + b)
+    a = np.array('2011-03-15', np.datetime64['W', 1])
+    b = np.array('200', np.timedelta64['D', 2])
+    assert np.array_equal(np.array('2012-04-13', np.datetime64['D', 1]), a + b)
+    a = np.array('2011-03-15', np.datetime64['W', 1])
+    b = np.array('200', np.timedelta64['s', 13])
+    assert np.array_equal(
+        np.array('2011-03-10T00:43:20', np.datetime64['s', 1]), a + b)
+
+test_dtype_promotion()
+
+@test
+def test_pyobject_roundtrip():
+    # All datetime types should be able to roundtrip through object
+    a = np.array([
+        0, 0, 0, 0, 0, 0, 0, 0, 0, -1020040340, -2942398, -1, 0, 1, 234523453,
+        1199164176
+    ],
+                 dtype=np.int64)
+    # ['Y', 'M', 'D']
+    # With date units
+    b = a.copy().view(dtype=np.datetime64['D', 1])
+    b[0] = '-0001-01-01'
+    b[1] = '-0001-12-31'
+    b[2] = '0000-01-01'
+    b[3] = '0001-01-01'
+    b[4] = '1969-12-31'
+    b[5] = '1970-01-01'
+    b[6] = '9999-12-31'
+    b[7] = '10000-01-01'
+
+    assert np.array_equal(b.astype(np.datetime64['D', 1]), b)
+
+    b = a.copy().view(dtype=np.datetime64['W', 1])
+    b[0] = '-0001-01-01'
+    b[1] = '-0001-12-31'
+    b[2] = '0000-01-01'
+    b[3] = '0001-01-01'
+    b[4] = '1969-12-31'
+    b[5] = '1970-01-01'
+    b[6] = '9999-12-31'
+    b[7] = '10000-01-01'
+
+    assert np.array_equal(b.astype(np.datetime64['W', 1]), b)
+
+    b = a.copy().view(dtype=np.datetime64['M', 1])
+    b[0] = '-0001-01-01'
+    b[1] = '-0001-12-31'
+    b[2] = '0000-01-01'
+    b[3] = '0001-01-01'
+    b[4] = '1969-12-31'
+    b[5] = '1970-01-01'
+    b[6] = '9999-12-31'
+    b[7] = '10000-01-01'
+
+    assert np.array_equal(b.astype(np.datetime64['M', 1]), b)
+
+    b = a.copy().view(dtype=np.datetime64['Y', 1])
+    b[0] = '-0001-01-01'
+    b[1] = '-0001-12-31'
+    b[2] = '0000-01-01'
+    b[3] = '0001-01-01'
+    b[4] = '1969-12-31'
+    b[5] = '1970-01-01'
+    b[6] = '9999-12-31'
+    b[7] = '10000-01-01'
+
+    assert np.array_equal(b.astype(np.datetime64['Y', 1]), b)
+
+    # With time units
+    b = a.copy().view(dtype=np.datetime64['as', 1])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['as', 1]), b)
+
+    b = a.copy().view(dtype=np.datetime64['fs', 16])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['fs', 16]), b)
+
+    b = a.copy().view(dtype=np.datetime64['ps', 16])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['ps', 16]), b)
+
+    b = a.copy().view(dtype=np.datetime64['us', 16])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['us', 16]), b)
+
+    b = a.copy().view(dtype=np.datetime64['as', 300])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['as', 300]), b)
+
+    b = a.copy().view(dtype=np.datetime64['us', 20])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['us', 20]), b)
+
+    b = a.copy().view(dtype=np.datetime64['us', 56])
+    b[0] = '-0001-01-01T00'
+    b[1] = '-0001-12-31T00'
+    b[2] = '0000-01-01T00'
+    b[3] = '0001-01-01T00'
+    b[4] = '1969-12-31T23:59:59.999999'
+    b[5] = '1970-01-01T00'
+    b[6] = '9999-12-31T23:59:59.999999'
+    b[7] = '10000-01-01T00'
+
+    assert np.array_equal(b.astype(np.datetime64['us', 56]), b)
+
+test_pyobject_roundtrip()
+
+@test
+def test_different_unit_comparison():
+    assert np.array_equal(np.array('1945', dtype=(np.datetime64['Y', 1])),
+                          np.array('1945', dtype=(np.datetime64['Y', 1])))
+    assert np.array_equal(np.array('1970', dtype=(np.datetime64['Y', 1])),
+                          np.array('1970', dtype=(np.datetime64['Y', 1])))
+    assert np.array_equal(np.array('9999', dtype=(np.datetime64['Y', 1])),
+                          np.array('9999', dtype=(np.datetime64['Y', 1])))
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['Y', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['Y', 1])))
+    assert np.datetime64('1945', 'Y') == np.datetime64('1945', 'Y')
+    assert np.datetime64('1970', 'Y') == np.datetime64('1970', 'Y')
+    assert np.datetime64('9999', 'Y') == np.datetime64('9999', 'Y')
+    assert np.datetime64('10000', 'Y') == np.datetime64('10000-01-01', 'Y')
+
+    assert np.array_equal(np.array('1945', dtype=(np.datetime64['Y', 1])),
+                          np.array('1945', dtype=(np.datetime64['M', 1])))
+    assert np.array_equal(np.array('1970', dtype=(np.datetime64['Y', 1])),
+                          np.array('1970', dtype=(np.datetime64['M', 1])))
+    assert np.array_equal(np.array('9999', dtype=(np.datetime64['Y', 1])),
+                          np.array('9999', dtype=(np.datetime64['M', 1])))
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['Y', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['M', 1])))
+    assert np.datetime64('1945', 'Y') == np.datetime64('1945', 'M')
+    assert np.datetime64('1970', 'Y') == np.datetime64('1970', 'M')
+    assert np.datetime64('9999', 'Y') == np.datetime64('9999', 'M')
+    assert np.datetime64('10000', 'Y') == np.datetime64('10000-01-01', 'M')
+
+    assert np.array_equal(np.array('1945', dtype=(np.datetime64['Y', 1])),
+                          np.array('1945', dtype=(np.datetime64['D', 1])))
+    assert np.array_equal(np.array('1970', dtype=(np.datetime64['Y', 1])),
+                          np.array('1970', dtype=(np.datetime64['D', 1])))
+    assert np.array_equal(np.array('9999', dtype=(np.datetime64['Y', 1])),
+                          np.array('9999', dtype=(np.datetime64['D', 1])))
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['Y', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['D', 1])))
+    assert np.datetime64('1945', 'Y') == np.datetime64('1945', 'D')
+    assert np.datetime64('1970', 'Y') == np.datetime64('1970', 'D')
+    assert np.datetime64('9999', 'Y') == np.datetime64('9999', 'D')
+    assert np.datetime64('10000', 'Y') == np.datetime64('10000-01-01', 'D')
+
+    assert np.array_equal(np.array('1945', dtype=(np.datetime64['M', 1])),
+                          np.array('1945', dtype=(np.datetime64['M', 1])))
+    assert np.array_equal(np.array('1970', dtype=(np.datetime64['M', 1])),
+                          np.array('1970', dtype=(np.datetime64['M', 1])))
+    assert np.array_equal(np.array('9999', dtype=(np.datetime64['M', 1])),
+                          np.array('9999', dtype=(np.datetime64['M', 1])))
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['M', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['M', 1])))
+    assert np.datetime64('1945', 'M') == np.datetime64('1945', 'M')
+    assert np.datetime64('1970', 'M') == np.datetime64('1970', 'M')
+    assert np.datetime64('9999', 'M') == np.datetime64('9999', 'M')
+    assert np.datetime64('10000', 'M') == np.datetime64('10000-01-01', 'M')
+
+    assert np.array_equal(np.array('1945', dtype=(np.datetime64['D', 1])),
+                          np.array('1945', dtype=(np.datetime64['D', 1])))
+    assert np.array_equal(np.array('1970', dtype=(np.datetime64['D', 1])),
+                          np.array('1970', dtype=(np.datetime64['D', 1])))
+    assert np.array_equal(np.array('9999', dtype=(np.datetime64['D', 1])),
+                          np.array('9999', dtype=(np.datetime64['D', 1])))
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['D', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['D', 1])))
+    assert np.datetime64('1945', 'D') == np.datetime64('1945', 'D')
+    assert np.datetime64('1970', 'D') == np.datetime64('1970', 'D')
+    assert np.datetime64('9999', 'D') == np.datetime64('9999', 'D')
+    assert np.datetime64('10000', 'D') == np.datetime64('10000-01-01', 'D')
+
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['M', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['D', 1])))
+    assert np.datetime64('10000', 'M') == np.datetime64('10000-01-01', 'D')
+
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['D', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['Y', 1])))
+    assert np.datetime64('10000', 'D') == np.datetime64('10000-01-01', 'Y')
+
+    assert np.array_equal(
+        np.array('10000', dtype=(np.datetime64['D', 1])),
+        np.array('10000-01-01', dtype=(np.datetime64['Y', 1])))
+    assert np.datetime64('10000', 'D') == np.datetime64('10000-01-01', 'Y')
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['D', 1]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['D', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['D', 1]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['D',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['h', 12]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['h', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['h', 12]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['h',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['h', 1]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['h', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['h', 1]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['h',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['m', 1]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['m', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['m', 1]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['m',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['s', 4]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['s', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['s', 4]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['s',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['s', 1]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['s', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['s', 1]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['s',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['ms', 1]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['ms', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['ms', 1]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['ms',
+                                                                         1]))
+
+    assert np.array_equal(
+        np.array('1932-02-17',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['us', 1]),
+        np.array('1932-02-17T00:00:00',
+                 dtype=np.datetime64['s', 1]).astype(np.datetime64['us', 1]))
+    assert np.array_equal(
+        np.array('10000-04-27',
+                 dtype=np.datetime64['D', 1]).astype(np.datetime64['us', 1]),
+        np.array('10000-04-27T00:00:00', dtype='s').astype(np.datetime64['us',
+                                                                         1]))
+
+test_different_unit_comparison()
+
+@test
+def test_timedelta_modulus_error():
+    a = np.timedelta64(7, 's')
+    b = np.timedelta64(3, 's')
+    assert a % b == np.timedelta64(1, 's')
+    # negative value cases
+    a = np.timedelta64(3, 's')
+    b = np.timedelta64(-2, 's')
+    assert a % b == np.timedelta64(-1, 's')
+    a = np.timedelta64(-3, 's')
+    b = np.timedelta64(2, 's')
+    assert a % b == np.timedelta64(1, 's')
+    # larger value cases
+    a = np.timedelta64(17, 's')
+    b = np.timedelta64(22, 's')
+    assert a % b == np.timedelta64(17, 's')
+    a = np.timedelta64(22, 's')
+    b = np.timedelta64(17, 's')
+    assert a % b == np.timedelta64(5, 's')
+    # different units
+    a = np.timedelta64(1, 'm')
+    b = np.timedelta64(57, 's')
+    assert a % b == np.timedelta64(3, 's')
+    a = np.timedelta64(1, 'us')
+    b = np.timedelta64(727, 'ns')
+    assert a % b == np.timedelta64(273, 'ns')
+    # Y % M works
+    a = np.timedelta64(2, 'Y')
+    b = np.timedelta64(22, 'M')
+    assert a % b == np.timedelta64(2, 'M')
+    # NaT is propagated
+    a = np.timedelta64('NaT', 'ns')
+    b = np.timedelta64(50, 'ns')
+    assert np.isnat(a % b)
+
+test_timedelta_modulus_error()
+
+@test
+def test_timedelta_modulus_div_by_zero():
+    actual = np.timedelta64(10, 's') % np.timedelta64(0, 's')
+    assert np.isnat(actual)
+
+test_timedelta_modulus_div_by_zero()
+
+@test
+def test_timedelta_arange_no_dtype():
+    d = np.array([5], dtype=np.timedelta64['D', 1])
+    assert np.array_equal(np.arange(5, 6, np.timedelta64['D', 1]), d)
+    assert np.array_equal(np.arange(5, np.timedelta64['D', 1]),
+                          np.arange(0, 5, np.timedelta64['D', 1]))
+
+test_timedelta_arange_no_dtype()
+
+@test
+def test_datetime_busday_offset():
+    assert np.busday_offset('2011-06', 0, roll='forward',
+                            weekmask='Mon') == np.datetime64(
+                                '2011-06-06', 'D')
+    assert np.busday_offset('2011-07', -1, roll='forward',
+                            weekmask='Mon') == np.datetime64(
+                                '2011-06-27', 'D')
+    assert np.busday_offset('2010-08', 0, roll='backward') == np.datetime64(
+        '2010-07-30', 'D')
+    assert np.busday_offset('2010-08', 0, roll='preceding') == np.datetime64(
+        '2010-07-30', 'D')
+    assert np.busday_offset('2010-08', 0,
+                            roll='modifiedpreceding') == np.datetime64(
+                                '2010-08-02', 'D')
+    assert np.busday_offset('2010-08', 0,
+                            roll='modifiedfollowing') == np.datetime64(
+                                '2010-08-02', 'D')
+    assert np.busday_offset('2010-08', 0, roll='forward') == np.datetime64(
+        '2010-08-02', 'D')
+    assert np.busday_offset('2010-08', 0, roll='following') == np.datetime64(
+        '2010-08-02', 'D')
+    assert np.busday_offset('2010-10-30', 0,
+                            roll='following') == np.datetime64(
+                                '2010-11-01', 'D')
+    assert np.busday_offset('2010-10-30', 0,
+                            roll='modifiedfollowing') == np.datetime64(
+                                '2010-10-29', 'D')
+    assert np.busday_offset('2010-10-30', 0,
+                            roll='modifiedpreceding') == np.datetime64(
+                                '2010-10-29', 'D')
+    assert np.busday_offset('2010-10-16', 0,
+                            roll='modifiedpreceding') == np.datetime64(
+                                '2010-10-15', 'D')
+    assert np.busday_offset('2010-10-16', 0,
+                            roll='modifiedfollowing') == np.datetime64(
+                                '2010-10-18', 'D')
+
+    # Bigger offset values
+    assert np.busday_offset('2006-02-01',
+                            25) == np.datetime64('2006-03-08', 'D')
+    assert np.busday_offset('2006-03-08',
+                            -25) == np.datetime64('2006-02-01', 'D')
+
+    # NaT values when roll is not raise
+    assert np.isnat(np.busday_offset(np.datetime64('NaT', 'D'), 1, roll='nat'))
+    assert np.isnat(
+        np.busday_offset(np.datetime64('NaT', 'D'), 1, roll='following'))
+    assert np.isnat(
+        np.busday_offset(np.datetime64('NaT', 'D'), 1, roll='preceding'))
+
+test_datetime_busday_offset()
+
+@test
+def test_datetime_busdaycalendar():
+    # Check that it removes NaT, duplicates, and weekends
+    # and sorts the result.
+    bdd = np.busdaycalendar(holidays=[
+        'NaT', '2011-01-17', '2011-03-06', 'NaT', '2011-12-26', '2011-05-30',
+        '2011-01-17'
+    ])
+    assert np.array_equal(
+        bdd.holidays,
+        np.array(['2011-01-17', '2011-05-30', '2011-12-26'],
+                 np.datetime64('NaT', 'D')))
+    # Default M-F weekmask
+    assert np.array_equal(bdd.weekmask,
+                          np.array([1, 1, 1, 1, 1, 0, 0], dtype=bool))
+
+    # Check length 7 0/1 string
+    bdd = np.busdaycalendar(weekmask="0011001")
+    assert np.array_equal(bdd.weekmask,
+                          np.array([0, 0, 1, 1, 0, 0, 1], dtype=bool))
+
+    # Check length 7 string weekmask.
+    bdd = np.busdaycalendar(weekmask="Mon Tue")
+    assert np.array_equal(bdd.weekmask,
+                          np.array([1, 1, 0, 0, 0, 0, 0], dtype=bool))
+
+    # All-zeros weekmask should raise
+    try:
+        np.busdaycalendar(weekmask=[0, 0, 0, 0, 0, 0, 0])
+        assert False
+    except ValueError:
+        pass
+
+    # weekday names must be correct case
+    try:
+        np.busdaycalendar(weekmask="satsun")
+        assert False
+    except ValueError:
+        pass
+
+    # All-zeros weekmask should raise
+    try:
+        np.busdaycalendar(weekmask="")
+        assert False
+    except ValueError:
+        pass
+
+    # Invalid weekday name codes should raise
+    try:
+        np.busdaycalendar(weekmask="Mon Tue We")
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.busdaycalendar(weekmask="Max")
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.busdaycalendar(weekmask="Monday Tue")
+        assert False
+    except ValueError:
+        pass
+
+test_datetime_busdaycalendar()
+
+@test
+def test_datetime_busday_holidays_offset():
+    # With exactly one holiday
+    assert np.busday_offset('2011-11-10', 1,
+                            holidays=['2011-11-11'
+                                      ]) == np.datetime64('2011-11-14', 'D')
+    assert np.busday_offset('2011-11-04', 5,
+                            holidays=['2011-11-11'
+                                      ]) == np.datetime64('2011-11-14', 'D')
+    assert np.busday_offset('2011-11-10', 5,
+                            holidays=['2011-11-11'
+                                      ]) == np.datetime64('2011-11-18', 'D')
+
+    # With the holiday appearing twice
+    assert np.busday_offset('2011-11-10',
+                            1,
+                            holidays=['2011-11-11', '2011-11-11'
+                                      ]) == np.datetime64('2011-11-14', 'D')
+
+    # With a NaT holiday
+    assert np.busday_offset('2011-11-10', 1,
+                            holidays=['2011-11-11', 'NaT'
+                                      ]) == np.datetime64('2011-11-14', 'D')
+
+    # With another holiday after
+    assert np.busday_offset('2011-11-10',
+                            1,
+                            holidays=['2011-11-11', '2011-11-24'
+                                      ]) == np.datetime64('2011-11-14', 'D')
+    assert np.busday_offset('2011-11-14',
+                            -1,
+                            holidays=['2011-11-11', '2011-11-24'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+
+    # With another holiday before
+    assert np.busday_offset('2011-11-10',
+                            1,
+                            holidays=['2011-10-10', '2011-11-11'
+                                      ]) == np.datetime64('2011-11-14', 'D')
+
+    # With another holiday before and after
+    assert np.busday_offset('2011-11-10',
+                            1,
+                            holidays=[
+                                '2011-10-10', '2011-11-11', '2011-11-24'
+                            ]) == np.datetime64('2011-11-14', 'D')
+    assert np.busday_offset('2011-11-14',
+                            -1,
+                            holidays=[
+                                '2011-10-10', '2011-11-11', '2011-11-24'
+                            ]) == np.datetime64('2011-11-10', 'D')
+
+    # A bigger forward jump across more than one week/holiday
+    holidays = [
+        '2011-10-10', '2011-11-11', '2011-11-24', '2011-12-25', '2011-05-30',
+        '2011-02-21', '2011-12-26', '2012-01-02'
+    ]
+    bdd = np.busdaycalendar(weekmask='1111100', holidays=holidays)
+    assert np.busday_offset('2011-10-03', 4,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 4)
+    assert np.busday_offset('2011-10-03', 5,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 5 + 1)
+    assert np.busday_offset('2011-10-03', 27,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 27 + 1)
+    assert np.busday_offset('2011-10-03', 28,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 28 + 2)
+    assert np.busday_offset('2011-10-03', 35,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 35 + 2)
+    assert np.busday_offset('2011-10-03', 36,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 36 + 3)
+    assert np.busday_offset('2011-10-03', 56,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 56 + 3)
+    assert np.busday_offset('2011-10-03', 57,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 57 + 4)
+    assert np.busday_offset('2011-10-03', 60,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 60 + 4)
+    assert np.busday_offset('2011-10-03', 61,
+                            holidays=holidays) == np.busday_offset(
+                                '2011-10-03', 61 + 5)
+
+    # Roll with the holidays
+    assert np.busday_offset('2011-12-25', 0, roll='forward',
+                            holidays=holidays) == np.datetime64('2011-12-27')
+
+    assert np.busday_offset('2011-12-26', 0, roll='forward',
+                            holidays=holidays) == np.datetime64('2011-12-27')
+    assert np.busday_offset('2011-12-26',
+                            0,
+                            roll='backward',
+                            holidays=holidays) == np.datetime64('2011-12-23')
+    assert np.busday_offset('2012-02-27',
+                            0,
+                            roll='modifiedfollowing',
+                            holidays=[
+                                '2012-02-27', '2012-02-26', '2012-02-28',
+                                '2012-03-01', '2012-02-29'
+                            ]) == np.datetime64('2012-02-24')
+    assert np.busday_offset('2012-03-06',
+                            0,
+                            roll='modifiedpreceding',
+                            holidays=[
+                                '2012-03-02', '2012-03-03', '2012-03-01',
+                                '2012-03-05', '2012-03-07', '2012-03-06'
+                            ]) == np.datetime64('2012-03-08')
+
+test_datetime_busday_holidays_offset()
+
+@test
+def test_datetime_busday_holidays_count():
+    holidays = [
+        '2011-01-01', '2011-10-10', '2011-11-11', '2011-11-24', '2011-12-25',
+        '2011-05-30', '2011-02-21', '2011-01-17', '2011-12-26', '2012-01-02',
+        '2011-02-21', '2011-05-30', '2011-07-01', '2011-07-04', '2011-09-05',
+        '2011-10-10'
+    ]
+    bdd = np.busdaycalendar(weekmask='1111100', holidays=holidays)
+
+    # Validate against busday_offset broadcast against
+    # a range of offsets
+    dates = np.busday_offset('2011-01-01',
+                             np.arange(366),
+                             roll='forward',
+                             busdaycal=bdd)
+    assert np.array_equal(np.busday_count('2011-01-01', dates, busdaycal=bdd),
+                          np.arange(366))
+    # Returns negative value when reversed
+    # -1 since the '2011-01-01' is not a busday
+    assert np.array_equal(np.busday_count(dates, '2011-01-01', busdaycal=bdd),
+                          -np.arange(366) - 1)
+
+    # 2011-12-31 is a saturday
+    dates = np.busday_offset('2011-12-31',
+                             -np.arange(366),
+                             roll='forward',
+                             busdaycal=bdd)
+    # only the first generated date is in the future of 2011-12-31
+    expected = np.arange(366)
+    expected[0] = -1
+    # Returns negative value when reversed
+    expected = -np.arange(366) + 1
+    expected[0] = 0
+
+    # Number of Mondays in March 2011
+    assert np.busday_count('2011-03', '2011-04', weekmask='Mon') == 4
+    # Returns negative value when reversed
+    assert np.busday_count('2011-04', '2011-03', weekmask='Mon') == -4
+
+    sunday = np.datetime64('2023-03-05')
+    monday = sunday + 1
+    friday = sunday + 5
+    saturday = sunday + 6
+    assert np.busday_count(sunday, monday) == 0
+    assert np.busday_count(saturday, friday) == 0
+
+test_datetime_busday_holidays_count()
+
+@test
+def test_datetime_add():
+    for dta, dtb, dtc, dtnat, tda, tdb, tdc in \
+                (
+
+                 (np.array(['2012-12-21'], dtype=np.datetime64['D', 1]),
+                  np.array(['2012-12-24'], dtype=np.datetime64['D', 1]),
+                  np.array(['2012-12-21T11'], dtype=np.datetime64['h', 1]),
+                  np.array(['NaT'], dtype=np.datetime64['D', 1]),
+                  np.array([3], dtype=np.timedelta64['D', 1]),
+                  np.array([11], dtype=np.timedelta64['h', 1]),
+                  np.array([3*24 + 11], dtype=np.timedelta64['h', 1])),
+
+                 (np.datetime64('2012-12-21', 'D'),
+                  np.datetime64('2012-12-24', 'D'),
+                  np.datetime64('2012-12-21T11', 'h'),
+                  np.datetime64('NaT', 'D'),
+                  np.timedelta64(3, 'D'),
+                  np.timedelta64(11, 'h'),
+                  np.timedelta64(3*24 + 11, 'h'))):
+
+        assert array_equal(tda + tdb, tdc)
+        if isinstance((tda + tdb), ndarray):
+            assert isinstance((tda + tdb).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tda + tdb), np.timedelta64['h', 1])
+
+        assert array_equal(tdb + True, tdb + 1)
+        if isinstance((tdb + True), ndarray):
+            assert isinstance((tdb + True).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdb + True), np.timedelta64['h', 1])
+
+        assert array_equal(tdb + 3 * 24, tdc)
+        if isinstance((tdb + 3 * 24), ndarray):
+            assert isinstance((tdb + 3 * 24).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdb + 3 * 24), np.timedelta64['h', 1])
+
+        assert array_equal(False + tdb, tdb)
+        if isinstance((False + tdb), ndarray):
+            assert isinstance((False + tdb).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((False + tdb), np.timedelta64['h', 1])
+
+        assert array_equal(3 * 24 + tdb, tdc)
+        if isinstance((3 * 24 + tdb), ndarray):
+            assert isinstance((3 * 24 + tdb).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((3 * 24 + tdb), np.timedelta64['h', 1])
+
+        assert array_equal(dta + True, dta + 1)
+        assert array_equal(isnat(dtnat + True), isnat(dtnat))
+        if isinstance((dta + True), ndarray):
+            assert isinstance((dta + True).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((dta + True), np.datetime64['D', 1])
+
+        assert array_equal(dta + 3, dtb)
+        assert array_equal(isnat(dtnat + 3), isnat(dtnat))
+        if isinstance((dta + 3), ndarray):
+            assert isinstance((dta + 3).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((dta + 3), np.datetime64['D', 1])
+
+        assert array_equal(False + dta, dta)
+        assert array_equal(isnat(False + dtnat), isnat(dtnat))
+        if isinstance((False + dta), ndarray):
+            assert isinstance((False + dta).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((False + dta), np.datetime64['D', 1])
+
+        assert array_equal(3 + dta, dtb)
+        assert array_equal(isnat(3 + dtnat), isnat(dtnat))
+        if isinstance((3 + dta), ndarray):
+            assert isinstance((3 + dta).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((3 + dta), np.datetime64['D', 1])
+
+        assert array_equal(dta + tda, dtb)
+        assert array_equal(isnat(dtnat + tda), isnat(dtnat))
+        if isinstance((dta + tda), ndarray):
+            assert isinstance((dta + tda).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((dta + tda), np.datetime64['D', 1])
+
+        assert array_equal(tda + dta, dtb)
+        assert array_equal(isnat(tda + dtnat), isnat(dtnat))
+        if isinstance((tda + dta), ndarray):
+            assert isinstance((tda + dta).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((tda + dta), np.datetime64['D', 1])
+
+        assert array_equal(np.add(dta, tdb), dtc)
+        if isinstance(np.add(dta, tdb), ndarray):
+            assert isinstance(np.add(dta, tdb).dtype, np.datetime64['h', 1])
+        else:
+            assert isinstance(np.add(dta, tdb), np.datetime64['h', 1])
+
+        assert array_equal(np.add(tdb, dta), dtc)
+        if isinstance(np.add(dta, tdb), ndarray):
+            assert isinstance(np.add(tdb, dta).dtype, np.datetime64['h', 1])
+        else:
+            assert isinstance(np.add(tdb, dta), np.datetime64['h', 1])
+
+test_datetime_add()
+
+@test
+def test_datetime_subtract():
+    for dta, dtb, dtc, dtd, dte, dtnat, tda, tdb, tdc in \
+                    (
+
+                     (np.array(['2012-12-21'], dtype=np.datetime64['D', 1]),
+                      np.array(['2012-12-24'], dtype=np.datetime64['D', 1]),
+                      np.array(['1940-12-24'], dtype=np.datetime64['D', 1]),
+                      np.array(['1940-12-24T00'], dtype=np.datetime64['h',1]),
+                      np.array(['1940-12-23T13'], dtype=np.datetime64['h', 1]),
+                      np.array(['NaT'], dtype=np.datetime64['D', 1]),
+                      np.array([3], dtype=np.timedelta64['D', 1]),
+                      np.array([11], dtype=np.timedelta64['h', 1]),
+                      np.array([3*24 - 11], dtype=np.timedelta64['h', 1])),
+
+                     (np.datetime64('2012-12-21', 'D'),
+                      np.datetime64('2012-12-24', 'D'),
+                      np.datetime64('1940-12-24', 'D'),
+                      np.datetime64('1940-12-24T00', 'h'),
+                      np.datetime64('1940-12-23T13', 'h'),
+                      np.datetime64('NaT', 'D'),
+                      np.timedelta64(3, 'D'),
+                      np.timedelta64(11, 'h'),
+                      np.timedelta64(3*24 - 11, 'h'))):
+
+        assert array_equal(tda - tdb, tdc)
+        if isinstance((tda - tdb), ndarray):
+            assert isinstance((tda - tdb).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tda - tdb), np.timedelta64['h', 1])
+
+        assert array_equal(tdb - tda, -tdc)
+        if isinstance((tdb - tda), ndarray):
+            assert isinstance((tdb - tda).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdb - tda), np.timedelta64['h', 1])
+
+        assert array_equal(tdc - True, tdc - 1)
+        if isinstance((tdc - True), ndarray):
+            assert isinstance((tdc - True).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdc - True), np.timedelta64['h', 1])
+
+        assert array_equal(tdc - 3 * 24, -tdb)
+        if isinstance((tdb - 3 * 24), ndarray):
+            assert isinstance((tdb - 3 * 24).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdb - 3 * 24), np.timedelta64['h', 1])
+
+        assert array_equal(False - tdb, -tdb)
+        if isinstance((False - tdb), ndarray):
+            assert isinstance((False - tdb).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((False - tdb), np.timedelta64['h', 1])
+
+        assert array_equal(3 * 24 - tdb, tdc)
+        if isinstance((3 * 24 - tdb), ndarray):
+            assert isinstance((3 * 24 - tdb).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((3 * 24 - tdb), np.timedelta64['h', 1])
+
+        assert array_equal(dtb - True, dtb - 1)
+        assert array_equal(isnat(dtnat - True), isnat(dtnat))
+        if isinstance((tdb - True), ndarray):
+            assert isinstance((tdb - True).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdb - True), np.timedelta64['h', 1])
+
+        assert array_equal(dtb - 3, dta)
+        assert array_equal(isnat(dtnat - 3), isnat(dtnat))
+        if isinstance((dtb - 3), ndarray):
+            assert isinstance((dtb - 3).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((dtb - 3), np.datetime64['D', 1])
+
+        assert array_equal(dtb - tda, dta)
+        assert array_equal(isnat(dtnat - tda), isnat(dtnat))
+        if isinstance((dtb - tda), ndarray):
+            assert isinstance((dtb - tda).dtype, np.datetime64['D', 1])
+        else:
+            assert isinstance((dtb - tda), np.datetime64['D', 1])
+
+        assert array_equal(np.subtract(dtc, tdb), dte)
+
+        if isinstance(np.subtract(dtc, tdb), ndarray):
+            assert isinstance(
+                np.subtract(dtc, tdb).dtype, np.datetime64['h', 1])
+        else:
+            assert isinstance(np.subtract(dtc, tdb), np.datetime64['h', 1])
+
+        assert (np.subtract(dtc, dtd) == np.array(0,
+                                                  dtype=np.timedelta64['h',
+                                                                       1]))
+
+        if isinstance(np.subtract(dtc, dtd), ndarray):
+            assert isinstance(
+                np.subtract(dtc, dtd).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance(np.subtract(dtc, dtd), np.timedelta64['h', 1])
+
+        assert (np.subtract(dtd, dtc) == np.array(0,
+                                                  dtype=np.timedelta64['h',
+                                                                       1]))
+
+        if isinstance(np.subtract(dtd, dtc), ndarray):
+            assert isinstance(
+                np.subtract(dtd, dtc).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance(np.subtract(dtd, dtc), np.timedelta64['h', 1])
+
+test_datetime_subtract()
+
+@test
+def test_datetime_multiply():
+    for dta, tda, tdb, tdc in \
+                (
+                 (np.array(['2012-12-21'], dtype=np.datetime64['D',1]),
+                  np.array([6], dtype=np.timedelta64['h',1]),
+                  np.array([9], dtype=np.timedelta64['h',1]),
+                  np.array([12], dtype=np.timedelta64['h',1])),
+                 (np.datetime64('2012-12-21', 'D'),
+                  np.timedelta64(6, 'h'),
+                  np.timedelta64(9, 'h'),
+                  np.timedelta64(12, 'h'))):
+
+        assert array_equal(tda * 2, tdc)
+        if isinstance((tda * 2), ndarray):
+            assert isinstance((tda * 2).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tda * 2), np.timedelta64['h', 1])
+
+        assert array_equal(2 * tda, tdc)
+        if isinstance((2 * tda), ndarray):
+            assert isinstance((2 * tda).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((2 * tda), np.timedelta64['h', 1])
+
+        assert array_equal(tda * 1.5, tdb)
+        if isinstance((tda * 1.5), ndarray):
+            assert isinstance((tda * 1.5).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tda * 1.5), np.timedelta64['h', 1])
+
+        assert array_equal(1.5 * tda, tdb)
+        if isinstance((1.5 * tda), ndarray):
+            assert isinstance((1.5 * tda).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((1.5 * tda), np.timedelta64['h', 1])
+
+test_datetime_multiply()
+
+@test
+def test_datetime_divide():
+    for dta, tda, tdb, tdc, tdd in \
+                (
+                 (np.array(['2012-12-21'], dtype=np.datetime64['D',1]),
+                  np.array([6], dtype=np.timedelta64['h',1]),
+                  np.array([9], dtype=np.timedelta64['h',1]),
+                  np.array([12], dtype=np.timedelta64['h',1]),
+                  np.array([6], dtype=np.timedelta64['h',1])),
+
+                 (np.datetime64('2012-12-21', 'D'),
+                  np.timedelta64(6, 'h'),
+                  np.timedelta64(9, 'h'),
+                  np.timedelta64(12, 'h'),
+                  np.timedelta64(6, 'm'))):
+
+        assert array_equal(tdc / 2, tda)
+        if isinstance((tdc / 2), ndarray):
+            assert isinstance((tdc / 2).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdc / 2), np.timedelta64['h', 1])
+
+        assert array_equal(tda / 0.5, tdc)
+        if isinstance((tdc / 0.5), ndarray):
+            assert isinstance((tdc / 0.5).dtype, np.timedelta64['h', 1])
+        else:
+            assert isinstance((tdc / 0.5), np.timedelta64['h', 1])
+
+test_datetime_divide()
+
+@test
+def test_datetime_compare():
+    a = np.datetime64('2000-03-12T18:00:00.000000', 'us')
+    b = np.array([
+        '2000-03-12T18:00:00.000000', '2000-03-12T17:59:59.999999',
+        '2000-03-12T18:00:00.000001', '1970-01-11T12:00:00.909090',
+        '2016-01-11T12:00:00.909090'
+    ],
+                 dtype=np.datetime64['us', 1])
+    assert array_equal(np.equal(a, b), [1, 0, 0, 0, 0])
+    assert array_equal(np.not_equal(a, b), [0, 1, 1, 1, 1])
+    assert (np.less(a, b) == np.array([0, 0, 1, 0, 1])).all()
+    assert array_equal(np.less_equal(a, b), [1, 0, 1, 0, 1])
+    assert array_equal(np.greater(a, b), [0, 1, 0, 1, 0])
+    assert array_equal(np.greater_equal(a, b), [1, 1, 0, 1, 0])
+
+test_datetime_compare()
+
+@test
+def test_datetime_compare_nat():
+    dt_nat = np.datetime64('NaT', 'D')
+    dt_other = np.datetime64('2000-01-01', 'D')
+    td_nat = np.timedelta64('NaT', 'h')
+    td_other = np.timedelta64(1, 'h')
+
+    for op in (np.equal, np.less, np.less_equal, np.greater, np.greater_equal):
+
+        assert (not op(dt_nat, dt_nat))
+        assert (not op(dt_nat, dt_other))
+        assert (not op(dt_other, dt_nat))
+        assert (not op(td_nat, td_nat))
+        assert (not op(td_nat, td_other))
+        assert (not op(td_other, td_nat))
+
+    assert (np.not_equal(dt_nat, dt_nat))
+    assert (np.not_equal(dt_nat, dt_other))
+    assert (np.not_equal(dt_other, dt_nat))
+
+    assert (np.not_equal(td_nat, td_nat))
+    assert (np.not_equal(td_nat, td_other))
+    assert (np.not_equal(td_other, td_nat))
+
+test_datetime_compare_nat()
+
+@test
+def test_datetime_minmax():
+
+    a = np.array('1999-03-12T13', dtype=np.datetime64['m', 2])
+    b = np.array('1999-03-12T12', dtype=np.datetime64['s', 1])
+    assert array_equal(np.minimum(a, b), b)
+    assert (isinstance(np.minimum(a, b), np.datetime64['s', 1]))
+    assert array_equal(np.fmin(a, b), b)
+    assert isinstance(np.fmin(a, b), np.datetime64['s', 1])
+    assert array_equal(np.maximum(a, b), a)
+    assert isinstance(np.maximum(a, b), np.datetime64['s', 1])
+    assert array_equal(np.fmax(a, b), a)
+    assert array_equal(np.minimum(a.view(int), b.view(int)), a.view(int))
+
+    a = np.array('1999-03-12T13', dtype=np.datetime64['m', 2])
+    dtnat = np.array('NaT', dtype=np.datetime64['h', 1])
+    assert array_equal(isnan(np.minimum(a, dtnat)), isnan(dtnat))
+    assert array_equal(isnan(np.minimum(dtnat, a)), isnan(dtnat))
+    assert array_equal(isnan(np.maximum(a, dtnat)), isnan(dtnat))
+    assert array_equal(isnan(np.maximum(dtnat, a)), isnan(dtnat))
+    assert array_equal(np.fmin(dtnat, a), a)
+    assert array_equal(np.fmin(a, dtnat), a)
+    assert array_equal(np.fmax(dtnat, a), a)
+    assert array_equal(np.fmax(a, dtnat), a)
+
+    a = np.array(3, dtype=np.timedelta64['h', 1])
+    b = np.array(3 * 3600 - 3, dtype=np.timedelta64['s', 1])
+    assert array_equal(np.minimum(a, b), b)
+    assert isinstance(np.minimum(a, b), np.timedelta64['s', 1])
+    assert array_equal(np.fmin(a, b), b)
+    assert isinstance(np.fmin(a, b), np.timedelta64['s', 1])
+    assert array_equal(np.maximum(a, b), a)
+    assert isinstance(np.maximum(a, b), np.timedelta64['s', 1])
+    assert array_equal(np.fmax(a, b), a)
+    assert isinstance(np.fmax(a, b), np.timedelta64['s', 1])
+    assert array_equal(np.minimum(a.view(int), b.view(int)), a.view(int))
+
+test_datetime_minmax()
+
+@test
+def test_string_parser_variants():
+    assert array_equal(
+        np.array(['1980-02-29T01:02:03'], dtype=np.datetime64['s', 1]),
+        np.array(['1980-02-29 01:02:03'], dtype=np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['+1980-02-29T01:02:03'], dtype=np.datetime64['s', 1]),
+        np.array(['+1980-02-29 01:02:03'], dtype=np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['-1980-02-29T01:02:03'], dtype=np.datetime64['s', 1]),
+        np.array(['-1980-02-29 01:02:03'], dtype=np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['+1980-02-29T01:02:03'], dtype=np.datetime64['s', 1]),
+        np.array(['+1980-02-29 01:02:03Z'], dtype=np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['-1980-02-29T01:02:03'], np.datetime64['s', 1]),
+        np.array(['-1980-02-29 01:02:03Z'], np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['1980-02-29T02:02:03'], np.datetime64['s', 1]),
+        np.array(['1980-02-29 00:32:03-0130'], np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['1980-02-28T22:32:03'], np.datetime64['s', 1]),
+        np.array(['1980-02-29 00:02:03+01:30'], np.datetime64['s', 1]))
+    assert array_equal(
+        np.array(['1980-02-29T02:32:03.506'], np.datetime64['s', 1]),
+        np.array(['1980-02-29 00:32:03.506-02'], np.datetime64['s', 1]))
+    assert array_equal(np.datetime64('1977-03-02T12:30-0230'),
+                       np.datetime64('1977-03-02T15:00'))
+
+test_string_parser_variants()
+
+@test
+def test_string_parser_error_check():
+    msg = "no explicit representation of timezones available for " \
+          "np.datetime64"
+
+    try:
+        np.array('badvalue', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980X', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-00', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-13', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-1', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-1-02', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-Mor', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-01-', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-01-0', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-01-00', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-01-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1979-02-29', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-02-30', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-03-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-04-31', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-05-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-06-31', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-07-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-08-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-09-31', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-10-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-11-31', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+    try:
+        np.array('1980-12-32', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03%', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 q', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 25', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03T25', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 24:01', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03T24:01', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 -1', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:-1', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:60', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:60:', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:10:-1', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:01:60', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:01:00+0661', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:01:00+2500', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:01:00-0070', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:01:00-3000', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        np.array('1980-02-03 01:01:00-25:00', np.datetime64['us', 1])
+        assert False
+    except ValueError:
+        pass
+
+test_string_parser_error_check()
+
+@test
+def test_datetime_as_string():
+    # Check all the units with default string conversion
+    date = '1959-10-13'
+    datetime = '1959-10-13T12:34:56.789012345678901234'
+
+    assert array_equal(np.datetime_as_string(np.datetime64(date, 'Y')), '1959')
+    assert array_equal(np.datetime_as_string(np.datetime64(date, 'M')),
+                       '1959-10')
+    assert array_equal(np.datetime_as_string(np.datetime64(date, 'D')),
+                       '1959-10-13')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'h')),
+                       '1959-10-13T12')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'm')),
+                       '1959-10-13T12:34')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 's')),
+                       '1959-10-13T12:34:56')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'ms')),
+                       '1959-10-13T12:34:56.789')
+
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'us')),
+                       '1959-10-13T12:34:56.789012')
+
+    datetime = '1969-12-31T23:34:56.789012345678901234'
+
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'ns')),
+                       '1969-12-31T23:34:56.789012345')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'ps')),
+                       '1969-12-31T23:34:56.789012345678')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'fs')),
+                       '1969-12-31T23:34:56.789012345678901')
+
+    datetime = '1969-12-31T23:59:57.789012345678901234'
+
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'as')),
+                       datetime)
+    datetime = '1970-01-01T00:34:56.789012345678901234'
+
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'ns')),
+                       '1970-01-01T00:34:56.789012345')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'ps')),
+                       '1970-01-01T00:34:56.789012345678')
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'fs')),
+                       '1970-01-01T00:34:56.789012345678901')
+
+    datetime = '1970-01-01T00:00:05.789012345678901234'
+
+    assert array_equal(np.datetime_as_string(np.datetime64(datetime, 'as')),
+                       datetime)
+
+    a = np.datetime64('2032-07-18T12:23:34.123456', 'us')
+    assert array_equal(np.datetime_as_string(a, unit='h'), '2032-07-18T12')
+    assert array_equal(np.datetime_as_string(a, unit='m'), '2032-07-18T12:23')
+    assert array_equal(np.datetime_as_string(a, unit='s'),
+                       '2032-07-18T12:23:34')
+    assert array_equal(np.datetime_as_string(a, unit='ms'),
+                       '2032-07-18T12:23:34.123')
+    assert array_equal(np.datetime_as_string(a, unit='us'),
+                       '2032-07-18T12:23:34.123456')
+    assert array_equal(np.datetime_as_string(a, unit='ns'),
+                       '2032-07-18T12:23:34.123456000')
+    assert array_equal(np.datetime_as_string(a, unit='ps'),
+                       '2032-07-18T12:23:34.123456000000')
+    assert array_equal(np.datetime_as_string(a, unit='fs'),
+                       '2032-07-18T12:23:34.123456000000000')
+    assert array_equal(np.datetime_as_string(a, unit='as'),
+                       '2032-07-18T12:23:34.123456000000000000')
+
+    # unit='auto' parameter
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-18T12:23:34.123456',
+                                            'us'),
+                              unit='auto'), '2032-07-18T12:23:34.123456')
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-18T12:23:34.12', 'us'),
+                              unit='auto'), '2032-07-18T12:23:34.120')
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-18T12:23:34', 'us'),
+                              unit='auto'), '2032-07-18T12:23:34')
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-18T12:23:00', 'us'),
+                              unit='auto'), '2032-07-18T12:23')
+    # 'auto' doesn't split up hour and minute
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-18T12:00:00', 'us'),
+                              unit='auto'), '2032-07-18T12:00')
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-18T00:00:00', 'us'),
+                              unit='auto'), '2032-07-18')
+    # 'auto' doesn't split up the date
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-07-01T00:00:00', 'us'),
+                              unit='auto'), '2032-07-01')
+    assert array_equal(
+        np.datetime_as_string(np.datetime64('2032-01-01T00:00:00', 'us'),
+                              unit='auto'), '2032-01-01')
+
+test_datetime_as_string()
+
+def test_datetime_as_string_timezone():
+    # timezone='local' vs 'UTC'
+    a = np.datetime64('2010-03-15T06:30', 'm')
+    assert array_equal(np.datetime_as_string(a), '2010-03-15T06:30')
+    assert array_equal(np.datetime_as_string(a, timezone='naive'),
+                       '2010-03-15T06:30')
+    assert array_equal(np.datetime_as_string(a, timezone='UTC'),
+                       '2010-03-15T06:30Z')
+    assert (np.datetime_as_string(a, timezone='local') != '2010-03-15T06:30')
+
+    b = np.datetime64('2010-02-15T06:30', 'm')
+
+test_datetime_as_string_timezone()
+
+def test_datetime_arange():
+    # With two datetimes provided as strings
+    a = np.arange('2010-01-05', '2010-01-10', dtype=np.datetime64['D', 1])
+    assert isinstance(a.dtype, np.datetime64['D', 1])
+    assert array_equal(
+        a,
+        np.array([
+            '2010-01-05', '2010-01-06', '2010-01-07', '2010-01-08',
+            '2010-01-09'
+        ],
+                 dtype=np.datetime64['D', 1]))
+
+    a = np.arange('1950-02-10', '1950-02-06', -1, dtype=np.datetime64['D', 1])
+    assert isinstance(a.dtype, np.datetime64['D', 1])
+    assert array_equal(
+        a,
+        np.array(['1950-02-10', '1950-02-09', '1950-02-08', '1950-02-07'],
+                 dtype=np.datetime64['D', 1]))
+
+    # #     # Unit should be detected as months here
+    a = np.arange('1969-05', '1970-05', 2, dtype=np.datetime64['M', 1])
+    assert isinstance(a.dtype, np.datetime64['M', 1])
+    assert array_equal(
+        a,
+        np.array('1969-05', np.datetime64['M', 1]) + np.arange(12, step=2))
+
+    a = np.arange('1969', 18, 3, dtype=np.datetime64['Y', 1])
+    assert isinstance(a.dtype, np.datetime64['Y', 1])
+    assert array_equal(
+        a,
+        np.array('1969', dtype=np.datetime64['Y', 1]) + np.arange(18, step=3))
+    a = np.arange('1969-12-19',
+                  22,
+                  np.timedelta64(2, 'D'),
+                  dtype=np.datetime64['D', 1])
+    assert array_equal(a.dtype, np.datetime64['D', 1])
+    assert array_equal(
+        a,
+        np.array('1969-12-19', dtype=np.datetime64['D', 1]) +
+        np.arange(22, step=2))
+
+    try:
+        np.arange(np.datetime64('today'), np.datetime64('today') + 3, 0)
+        assert False
+    except ValueError:
+        pass
+
+test_datetime_arange()
+
+@test
+def test_timedelta_arange():
+    a = np.arange(3, 10, dtype=np.timedelta64['generic', 1])
+    assert array_equal(a.dtype, np.timedelta64['generic', 1])
+    assert array_equal(
+        a,
+        np.array(0, dtype=np.timedelta64['generic', 1]) + np.arange(3, 10))
+    a = np.arange(np.timedelta64(3, 's'),
+                  10,
+                  2,
+                  dtype=np.timedelta64['generic', 1])
+    assert array_equal(a.dtype, np.timedelta64['s', 1])
+    assert array_equal(
+        a,
+        np.array(0, dtype=np.timedelta64['s', 1]) + np.arange(3, 10, 2))
+
+    try:
+        np.arange(np.timedelta64(0, 'generic'), np.timedelta64(5, 'generic'),
+                  0)
+        assert False
+    except ValueError:
+        pass
+
+test_timedelta_arange()
+
+@test
+def test_datetime_is_busday():
+    holidays = [
+        '2011-01-01', '2011-10-10', '2011-11-11', '2011-11-24', '2011-12-25',
+        '2011-05-30', '2011-02-21', '2011-01-17', '2011-12-26', '2012-01-02',
+        '2011-02-21', '2011-05-30', '2011-07-01', '2011-07-04', '2011-09-05',
+        '2011-10-10', 'NaT'
+    ]
+    bdd = np.busdaycalendar(weekmask='1111100', holidays=holidays)
+
+    # Weekend/weekday tests
+    assert array_equal(np.is_busday('2011-01-01'), False)
+    assert array_equal(np.is_busday('2011-01-02'), False)
+    assert array_equal(np.is_busday('2011-01-03'), True)
+
+test_datetime_is_busday()
+
+@test
+def test_isnat():
+    assert (isnat(np.datetime64('NaT', 'ms')))
+    assert (isnat(np.datetime64('NaT', 'ns')))
+    assert (not isnat(np.datetime64('2038-01-19T03:14:07')))
+
+    assert (isnat(np.timedelta64('NaT', "ms")))
+    assert (not isnat(np.timedelta64(34, "ms")))
+
+test_isnat()
+
+@test
+def test_isfinite_scalar():
+    assert (not isfinite(np.datetime64('NaT', 'ms')))
+    assert (not isfinite(np.datetime64('NaT', 'ns')))
+    assert (isfinite(np.datetime64('2038-01-19T03:14:07')))
+
+    assert (not isfinite(np.timedelta64('NaT', "ms")))
+    assert (isfinite(np.timedelta64(34, "ms")))
+
+test_isfinite_scalar()
+
+@test
+def test_datetime64():
+    assert np.datetime64(np.datetime64('2009', 'Y'),
+                         'Y') == np.datetime64("2009")
+    assert np.datetime64(np.datetime64('2009', 'M'),
+                         'M') == np.datetime64("2009-01")
+    assert np.datetime64(np.datetime64('2009', 'D'),
+                         'D') == np.datetime64("2009-01-01")
+
+    assert np.timedelta64(np.timedelta64(1, 'Y'), 'Y') == np.timedelta64("1")
+    assert np.timedelta64(np.timedelta64(1, 'Y'), 'M') == np.timedelta64("12")
+    assert np.timedelta64(np.timedelta64(1, 'Y'), 'D') == np.timedelta64("365")
+
+    assert array_equal(
+        np.timedelta64(1, 'Y') + np.int8(10), np.timedelta64(11, 'Y'))
+    assert array_equal(
+        np.timedelta64(1, 'Y') + np.int16(10), np.timedelta64(11, 'Y'))
+    assert array_equal(
+        np.timedelta64(1, 'Y') + np.int32(10), np.timedelta64(11, 'Y'))
+    assert array_equal(
+        np.timedelta64(1, 'Y') + np.int64(10), np.timedelta64(11, 'Y'))
+
+    assert array_equal(
+        np.timedelta64(21, 'Y') - np.uint8(10), np.timedelta64(11, 'Y'))
+    assert array_equal(
+        np.timedelta64(21, 'Y') - np.uint16(10), np.timedelta64(11, 'Y'))
+    assert array_equal(
+        np.timedelta64(21, 'Y') - np.uint32(10), np.timedelta64(11, 'Y'))
+    assert array_equal(
+        np.timedelta64(21, 'Y') - np.uint64(10), np.timedelta64(11, 'Y'))
+
+    assert array_equal(
+        np.timedelta64(1, 'Y') + 0x12AF, np.timedelta64(4784, 'Y'))
+
+    assert array_equal(
+        np.timedelta64(1, 'h') * np.float(10.0), np.timedelta64(10, 'h'))
+    assert array_equal(
+        np.timedelta64(1, 'h') * np.float16(10.0), np.timedelta64(10, 'h'))
+    assert array_equal(
+        np.timedelta64(1, 'h') * np.float32(10.0), np.timedelta64(10, 'h'))
+
+    assert array_equal(
+        np.timedelta64(1, 's') / np.float(10.0), np.timedelta64(0, 's'))
+    assert array_equal(
+        np.timedelta64(1, 's') / np.float16(10.0), np.timedelta64(0, 's'))
+    assert array_equal(
+        np.timedelta64(1, 's') / np.float32(10.0), np.timedelta64(0, 's'))
+
+    assert array_equal(
+        np.timedelta64(1, 's') / np.double(10.0), np.timedelta64(0, 's'))
+
+    assert np.datetime64('2005-02-25') == np.datetime64(
+        "2005-02-25T00:00:00.000000")
+    assert np.datetime64('2005-02') == np.datetime64(
+        "2005-02-01T00:00:00.000000")
+    assert np.datetime64(1, 'Y') == np.datetime64("1971")
+    assert np.datetime64('2005-02-25T03:30') == np.datetime64(
+        "2005-02-25T03:30:00.000000")
+    assert (np.array(['2001-01-01T12:00', '2002-02-03T13:56:03.172'],
+                     dtype='datetime64') == np.array(
+                         ["2001-01-01T12:00",
+                          "2002-02-03T13:56:03.172"])).all()
+    assert (np.array([0, 1577836800],
+                     dtype='datetime64[s]') == np.array(["0",
+                                                         "1577836800"])).all()
+    assert (np.datetime64('2009-01-01') -
+            np.datetime64('2008-01-01')) == np.timedelta64(366, "D")
+    assert (
+        np.datetime64('2009') +
+        np.timedelta64(20, 'D')) == np.datetime64('2009-01-21T00:00:00.000000')
+    assert (
+        np.datetime64('2011-06-15T00:00') +
+        np.timedelta64(12, 'h')) == np.datetime64('2011-06-15T12:00:00.000000')
+    assert (np.timedelta64(1, 'W') / np.timedelta64(1, 'D')) == 7
+    assert (np.timedelta64(1, 'W') %
+            np.timedelta64(10, 'D')) == np.timedelta64(7, "D")
+    assert np.isnat(np.datetime64('nat') - np.datetime64('2009-01-01'))
+    assert np.isnat(np.datetime64('2009-01-01') + np.timedelta64('nat'))
+
+    assert (np.datetime64('2010-01-01') -
+            np.datetime64('2008-01-01')) == np.timedelta64(731, "D")
+    assert (np.datetime64('2010-01-01T04:30') -
+            np.datetime64('2008-01-01T05:30')) == np.timedelta64(1052580, "m")
+    assert (np.datetime64('2009', 'Y') -
+            np.datetime64('2010', 'Y')) == np.timedelta64(-1, "Y")
+    assert (np.timedelta64(4, 'h') +
+            np.timedelta64(30, 'D')) == np.timedelta64(724, "h")
+    assert (np.timedelta64(4, 'h') +
+            np.timedelta64(30, 'ns')) == np.timedelta64(14400000000030, "ns")
+    assert (np.timedelta64(2, 'W') / np.timedelta64(1, 'D')) == 14
+    assert (np.timedelta64(2, 'W') %
+            np.timedelta64(11, 'D')) == np.timedelta64(3, "D")
+    assert (np.timedelta64(3, 'W') %
+            np.timedelta64(12, 'D')) == np.timedelta64(9, "D")
+    assert (np.datetime64('2010-01-01') -
+            np.datetime64('2012-01-01')) == np.timedelta64(-730, "D")
+    assert (np.datetime64('2011-06-15T03:00') -
+            np.datetime64('2019-11-01')) == np.timedelta64(-4407660, "m")
+    assert (np.timedelta64(1, 'W') / np.timedelta64(-8, 'D')) == -0.875
+    assert (np.timedelta64(2, 'W') %
+            np.timedelta64(15, 'D')) == np.timedelta64(14, "D")
+
+    assert (np.datetime64('2022-01-01', 'D') +
+            5) == np.datetime64("2022-01-06")
+    assert (np.datetime64('2022-01-10', 'D') -
+            3) == np.datetime64("2022-01-07")
+    assert (np.datetime64('2022-01-05', 'D') +
+            2) == np.datetime64("2022-01-07")
+    assert (np.datetime64('2022-01-10', 'D') -
+            9) == np.datetime64("2022-01-01")
+    assert (np.datetime64('2022-01-01T12:00', 's') +
+            3) == np.datetime64("2022-01-01T12:00:03")
+    assert (np.datetime64('2022-01-01T12:00', 'ns') + 67) == np.datetime64(
+        "2022-01-01T12:00:00.000000067", 'ns')
+    assert (np.datetime64('2022-01-10T10:45', 'm') -
+            5) == np.datetime64("2022-01-10T10:40")
+
+    assert (np.datetime64('2022-01-01', 'Y') +
+            np.byte(5)) == np.datetime64("2027")
+    assert (np.datetime64('2022-01-01', 'Y') +
+            np.ubyte(5)) == np.datetime64("2027")
+    assert (np.datetime64('2022-01-01', 'M') -
+            np.short(4)) == np.datetime64("2021-09")
+    assert (np.datetime64('2022-01-01', 'M') -
+            np.ushort(3)) == np.datetime64("2021-10")
+    assert (np.datetime64('2022-01-01', 'D') +
+            np.intc(5)) == np.datetime64("2022-01-06")
+    assert (np.datetime64('2022-01-01', 'D') +
+            np.int_(7)) == np.datetime64("2022-01-08")
+    assert (np.datetime64('2022-01-01', 'Y') -
+            np.uint(3)) == np.datetime64("2019")
+    assert (np.datetime64('2022-01-01', 'D') +
+            np.longlong(2)) == np.datetime64("2022-01-03")
+    assert (np.datetime64('2022-01-01', 'W') +
+            np.ulonglong(7)) == np.datetime64("2022-02-17")
+    assert (np.datetime64('2022-01-01', 'W') +
+            np.int8(74)) == np.datetime64("2023-06-01")
+
+    x = np.array(['1910-08-16', '1910-08-11', '1910-08-10'],
+                 dtype=np.datetime64['Y', 1])
+    assert array_equal(x - np.array([6, -1, 4], dtype=np.datetime64['Y', 1]),
+                       np.array([-66, -59, -64], dtype=np.datetime64['Y', 1]))
+    assert array_equal(
+        x - np.array(['2022-01-23', '2022-01-23', '2022-01-23'],
+                     dtype=np.datetime64['Y', 1]),
+        np.array([-112, -112, -112], dtype=np.datetime64['Y', 1]))
+    assert array_equal(x - np.array([-5, -3, 0], dtype=np.datetime64['D', 1]),
+                       np.array([-21910, -21912, -21915]))
+    assert array_equal(
+        x - np.array(['2019-01-23', '2020-11-06', '1998-08-23'],
+                     dtype=np.datetime64['D', 1]),
+        np.array([-39834, -40487, -32376]))
+    assert array_equal(
+        x - np.array(['2019-01-23', '2020-11-06', '1998-08-23'],
+                     dtype=np.datetime64['s', 1]),
+        np.array([-3441657600, -3498076800, -2797286400]))
+
+    x = np.array(['2002-10-27', '2002-10-27', '2002-10-27', '2002-10-27'],
+                 dtype=np.datetime64['m', 1])
+    assert (np.datetime_as_string(x, timezone='UTC') == np.array([
+        '2002-10-27T00:00Z', '2002-10-27T00:00Z', '2002-10-27T00:00Z',
+        '2002-10-27T00:00Z'
+    ])).all()
+    assert (np.datetime_as_string(x, unit='h') == np.array(
+        ['2002-10-27T00', '2002-10-27T00', '2002-10-27T00',
+         '2002-10-27T00'])).all()
+    assert (np.datetime_as_string(x, unit='s') == np.array([
+        '2002-10-27T00:00:00', '2002-10-27T00:00:00', '2002-10-27T00:00:00',
+        '2002-10-27T00:00:00'
+    ])).all()
+
+test_datetime64()
+
+@test
+def test_busday_offset():
+    assert array_equal(np.busday_offset('2011-10', 0, roll='forward'),
+                       np.datetime64['D', 1]('2011-10-03'))
+    assert array_equal(np.busday_offset('2012-03', -1, roll='forward'),
+                       np.datetime64['D', 1]('2012-02-29'))
+    assert array_equal(
+        np.busday_offset('2011-01', 2, roll='forward', weekmask='Wed'),
+        np.datetime64['D', 1]('2011-01-19'))
+    assert array_equal(
+        np.busday_offset('2012-05', 1, roll='forward', weekmask='Sun'),
+        np.datetime64['D', 1]('2012-05-13'))
+    assert array_equal(np.busday_offset('2011-03-20', 0, roll='forward'),
+                       np.datetime64['D', 1]('2011-03-21'))
+    assert array_equal(np.busday_offset('2011-03-22', 0, roll='forward'),
+                       np.datetime64['D', 1]('2011-03-22'))
+    assert array_equal(np.busday_offset('2011-03-20', 1, roll='backward'),
+                       np.datetime64['D', 1]('2011-03-21'))
+    assert array_equal(np.busday_offset('2011-03-22', 1, roll='backward'),
+                       np.datetime64['D', 1]('2011-03-23'))
+
+test_busday_offset()
+
+@test
+def test_is_busday():
+    assert array_equal(
+        np.is_busday(['2011-07-01', '2011-07-02', '2011-07-18'],
+                     holidays=['2011-07-01', '2011-07-04', '2011-07-17']),
+        np.array([False, False, True]))
+    assert array_equal(np.is_busday("2012"), False)
+    assert array_equal(np.is_busday(["2012"]), np.array([False]))
+    assert array_equal(
+        np.is_busday(
+            np.array([
+                '2022-02-14', '2022-02-15', '2022-02-16', '2022-02-17',
+                '2022-02-18'
+            ],
+                     dtype=datetime64['D', 1])),
+        np.array([True, True, True, True, True]))
+    assert array_equal(
+        np.is_busday(
+            np.array(['2022-02-19', '2022-02-20'], dtype=datetime64['D', 1])),
+        np.array([False, False]))
+    assert array_equal(
+        np.is_busday(np.array([
+            '2022-02-14', '2022-02-15', '2022-02-16', '2022-02-17',
+            '2022-02-18'
+        ],
+                              dtype=datetime64['D', 1]),
+                     holidays=np.array(['2022-02-17'],
+                                       dtype=datetime64['D', 1])),
+        np.array([True, True, True, False, True]))
+    assert array_equal(
+        np.is_busday(np.array([
+            '2022-02-14', '2022-02-15', '2022-02-16', '2022-02-17',
+            '2022-02-18'
+        ],
+                              dtype=datetime64['D', 1]),
+                     weekmask='1111000'),
+        np.array([True, True, True, True, False]))
+    assert array_equal(
+        np.is_busday(np.array([
+            '2022-02-14', '2022-02-15', '2022-02-16', '2022-02-17',
+            '2022-02-18'
+        ],
+                              dtype=datetime64['D', 1]),
+                     holidays=np.array(['2022-02-17'],
+                                       dtype=datetime64['D', 1]),
+                     weekmask='1111000'),
+        np.array([True, True, True, False, False]))
+
+test_is_busday()
+
+@test
+def test_busday_count():
+    assert array_equal(np.busday_count('2022-02-14', '2022-02-18'), 4)
+    assert array_equal(np.busday_count('2022-02-18', '2022-02-14'), -4)
+    assert array_equal(
+        np.busday_count('2022-02-14', '2022-02-18', holidays=['2022-02-16']),
+        3)
+    assert array_equal(
+        np.busday_count('2022-02-14', '2022-02-18', weekmask='1111000'), 4)
+    assert array_equal(
+        np.busday_count('2022-02-14',
+                        '2022-02-18',
+                        busdaycal=np.busdaycalendar(weekmask='1111100',
+                                                    holidays=['2022-02-16'])),
+        3)
+    assert array_equal(
+        np.busday_count('2022-02-14', '2022-02-18', out=np.array(0)),
+        np.array(4))
+    begindates = '2022-02-14'
+    enddates = '2022-02-18'
+
+test_busday_count()
+
+@test
+def test_datetime_data():
+    assert np.datetime_data(np.datetime64['Y', 1]) == ('Y', 1)
+    assert np.datetime_data(np.datetime64['M', 1]) == ('M', 1)
+    assert np.datetime_data(np.datetime64['W', 1]) == ('W', 1)
+    assert np.datetime_data(np.datetime64['D', 1]) == ('D', 1)
+    assert np.datetime_data(np.datetime64['h', 1]) == ('h', 1)
+    assert np.datetime_data(np.datetime64['m', 1]) == ('m', 1)
+    assert np.datetime_data(np.datetime64['s', 1]) == ('s', 1)
+    assert np.datetime_data(np.timedelta64['D', 1]) == ('D', 1)
+    assert np.datetime_data(np.timedelta64['h', 1]) == ('h', 1)
+    assert np.datetime_data(np.timedelta64['m', 1]) == ('m', 1)
+    assert np.datetime_data(np.timedelta64['s', 1]) == ('s', 1)
+
+test_datetime_data()
+
+@test
+def test_datetime_as_string():
+
+    assert array_equal(
+        np.datetime_as_string(
+            np.array(['2022-02-14T12:34:56', '2022-02-15T08:45:30'],
+                     dtype=datetime64['s', 1])),
+        np.array(['2022-02-14T12:34:56', '2022-02-15T08:45:30']))
+    arr = np.array(['2022-02-14T12:34:56', '2022-02-15T08:45:30'],
+                   dtype=datetime64['Y', 1])
+    result = np.datetime_as_string(arr, unit='Y', timezone='UTC')
+    x = np.array(['2002-10-27', '2002-10-27', '2002-10-27', '2002-10-27'],
+                 dtype=np.datetime64['m', 1])
+    assert (np.datetime_as_string(x, timezone='UTC') == np.array([
+        '2002-10-27T00:00Z', '2002-10-27T00:00Z', '2002-10-27T00:00Z',
+        '2002-10-27T00:00Z'
+    ])).all()
+    assert (np.datetime_as_string(x, unit='h') == np.array(
+        ['2002-10-27T00', '2002-10-27T00', '2002-10-27T00',
+         '2002-10-27T00'])).all()
+    assert (np.datetime_as_string(x, unit='s') == np.array([
+        '2002-10-27T00:00:00', '2002-10-27T00:00:00', '2002-10-27T00:00:00',
+        '2002-10-27T00:00:00'
+    ])).all()
+
+test_datetime_as_string()
+
+@test
+def test_datetime_timedelta_op():
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 'Y'),
+        np.datetime64['Y', 1]('2029'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 'M'),
+        np.datetime64['M', 1]('2010-09'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 'W'),
+        np.datetime64['W', 1]('2009-05-21'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 'D'),
+        np.datetime64['D', 1]('2009-01-21'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 'h'),
+        np.datetime64['h', 1]('2009-01-01T20'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 'm'),
+        np.datetime64['m', 1]('2009-01-01T00:20'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') + np.timedelta64(20, 's'),
+        np.datetime64['s', 1]('2009-01-01T00:00:20'))
+
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 'Y'),
+        np.datetime64['Y', 1]('1989'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 'M'),
+        np.datetime64['M', 1]('2007-05'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 'W'),
+        np.datetime64['W', 1]('2008-08-14'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 'D'),
+        np.datetime64['D', 1]('2008-12-12'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 'h'),
+        np.datetime64['h', 1]('2008-12-31T04'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 'm'),
+        np.datetime64['m', 1]('2008-12-31T23:40'))
+    assert array_equal(
+        np.datetime64('2009', 'Y') - np.timedelta64(20, 's'),
+        np.datetime64['s', 1]('2008-12-31T23:59:40'))
+
+    x = np.array(['1910-08-16', '1910-08-11', '1910-08-10'],
+                 dtype=np.datetime64['Y', 1])
+    assert array_equal(
+        x + np.array([-5, -3, 0], dtype=np.timedelta64['Y', 1]),
+        np.array(['1905', '1907', '1910'], dtype=np.datetime64['Y', 1]))
+    assert array_equal(
+        x + np.array([-5, -3, 0], dtype=np.timedelta64['M', 1]),
+        np.array(['1909-08', '1909-10', '1910-01'],
+                 dtype=np.datetime64['M', 1]))
+    assert array_equal(
+        x + np.array([-5, -3, 0], dtype=np.timedelta64['D', 1]),
+        np.array(['1909-12-27', '1909-12-29', '1910-01-01'],
+                 dtype=np.datetime64['D', 1]))
+
+    assert array_equal(
+        x - np.array([-5, -3, 0], dtype=np.timedelta64['Y', 1]),
+        np.array(['1915', '1913', '1910'], dtype=np.datetime64['Y', 1]))
+    assert array_equal(
+        x - np.array([-5, -3, 0], dtype=np.timedelta64['M', 1]),
+        np.array(['1910-06', '1910-04', '1910-01'],
+                 dtype=np.datetime64['M', 1]))
+    assert array_equal(
+        x - np.array([-5, -3, 0], dtype=np.timedelta64['D', 1]),
+        np.array(['1910-01-06', '1910-01-04', '1910-01-01'],
+                 dtype=np.datetime64['D', 1]))
+
+    assert array_equal(np.timedelta64(1, 'Y') + 10, np.timedelta64(11, 'Y'))
+    assert array_equal(np.timedelta64(1, 'Y') - 10, np.timedelta64(-9, 'Y'))
+    assert array_equal(np.timedelta64(1, 'Y') * 10, np.timedelta64(10, 'Y'))
+    assert array_equal(np.timedelta64(1, 'Y') / 10, np.timedelta64(0, 'Y'))
+    assert array_equal(np.timedelta64(1, 'Y') * 10.0, np.timedelta64(10, 'Y'))
+    assert array_equal(np.timedelta64(1, 'Y') / 10.0, np.timedelta64(0, 'Y'))
+
+    assert array_equal(np.timedelta64(1, 'M') + 10, np.timedelta64(11, 'M'))
+    assert array_equal(np.timedelta64(1, 'D') - 10, np.timedelta64(-9, 'D'))
+    assert array_equal(np.timedelta64(1, 'h') * 10, np.timedelta64(10, 'h'))
+    assert array_equal(np.timedelta64(1, 's') / 10, np.timedelta64(0, 's'))
+    assert array_equal(np.timedelta64(1, 'h') * 10.0, np.timedelta64(10, 'h'))
+    assert array_equal(np.timedelta64(1, 's') / 10.0, np.timedelta64(0, 's'))
+
+test_datetime_timedelta_op()
+
+@test
+def test_busdaycalender():
+    assert array_equal((np.busdaycalendar()).weekmask,
+                       np.array([True, True, True, True, True, False, False]))
+    assert array_equal(
+        (np.busdaycalendar(holidays=['2022-02-16', '2022-05-01'])).weekmask,
+        np.array([True, True, True, True, True, False, False]))
+    assert array_equal(
+        (np.busdaycalendar(holidays=['2022-02-16', '2022-05-01'])).holidays,
+        np.array(['2022-02-16'], dtype=np.datetime64['D', 1]))
+    holidays = '2024-02-14', np.datetime64('NaT')
+    assert array_equal((np.busdaycalendar(holidays=holidays)).holidays,
+                       np.array(['2024-02-14'], dtype=np.datetime64['D', 1]))
+    assert array_equal(
+        (np.busdaycalendar(holidays=['2022-02-16', '2022-05-01'],
+                           weekmask='0011111')).holidays,
+        np.array(['2022-02-16', '2022-05-01'], dtype=np.datetime64['D', 1]))
+    assert array_equal(
+        (np.busdaycalendar(weekmask='1100011',
+                           holidays=['2022-02-16', '2022-05-01']).weekmask),
+        np.array([True, True, False, False, False, True, True]))
+
+test_busdaycalender()
+
+@test
+def miscellaneous():
+    assert np.busday_offset('2007-02-25', 11,
+                            weekmask='SatSun') == np.datetime64(
+                                '2007-04-07', 'D')
+    assert np.busday_offset('2007-04-07', -11,
+                            weekmask='SatSun') == np.datetime64(
+                                '2007-02-25', 'D')
+    bdd = np.busdaycalendar(weekmask="Sun TueWed  Thu\tFri")
+    assert np.array_equal(bdd.weekmask,
+                          np.array([0, 1, 1, 1, 1, 0, 1], dtype=bool))
+    assert np.busday_offset('2011-11-14', -1,
+                            holidays=['2011-11-11'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+    assert np.busday_offset('2011-11-18', -5,
+                            holidays=['2011-11-11'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+    assert np.busday_offset('2011-11-14', -5,
+                            holidays=['2011-11-11'
+                                      ]) == np.datetime64('2011-11-04', 'D')
+    assert np.busday_offset('2011-11-14',
+                            -1,
+                            holidays=['2011-11-11', '2011-11-11'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+
+    # With a NaT holiday
+    assert np.busday_offset('2011-11-14', -1,
+                            holidays=['NaT', '2011-11-11'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+
+    # With another holiday after
+    assert np.busday_offset('2011-11-14',
+                            -1,
+                            holidays=['2011-11-11', '2011-11-24'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+    holidays = [
+        '2011-10-10', '2011-11-11', '2011-11-24', '2011-12-25', '2011-05-30',
+        '2011-02-21', '2011-12-26', '2012-01-02'
+    ]
+    # With another holiday before
+    assert np.busday_offset('2011-11-14',
+                            -1,
+                            holidays=['2011-10-10', '2011-11-11'
+                                      ]) == np.datetime64('2011-11-10', 'D')
+    assert np.busday_offset('2012-01-03', -1,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -1 - 1)
+    assert np.busday_offset('2012-01-03', -4,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -4 - 1)
+    assert np.busday_offset('2012-01-03', -5,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -5 - 2)
+    assert np.busday_offset('2012-01-03', -25,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -25 - 2)
+    assert np.busday_offset('2012-01-03', -26,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -26 - 3)
+    assert np.busday_offset('2012-01-03', -33,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -33 - 3)
+    assert np.busday_offset('2012-01-03', -34,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -34 - 4)
+    assert np.busday_offset('2012-01-03', -56,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -56 - 4)
+    assert np.busday_offset('2012-01-03', -57,
+                            holidays=holidays) == np.busday_offset(
+                                '2012-01-03', -57 - 5)
+
+miscellaneous()

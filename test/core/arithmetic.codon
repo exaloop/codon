@@ -199,3 +199,55 @@ def test_float_out_of_range_parse():
     assert 1e10000 == float('inf')
 
 test_float_out_of_range_parse()
+
+@test
+def test_int_float_ops(F: type):
+    def check(got, exp=True):
+        return (exp == got) and (type(exp) is type(got))
+
+    # standard
+    assert check(F(1.5) + 1, F(2.5))
+    assert check(F(1.5) - 1, F(0.5))
+    assert check(F(1.5) * 2, F(3.0))
+    assert check(F(1.5) / 2, F(0.75))
+    assert check(F(3.5) // 2, F(1.0))
+    assert check(F(3.5) % 2, F(1.5))
+    assert check(F(3.5) ** 2, F(12.25))
+    assert check(divmod(F(3.5), 2), (F(1.0), F(1.5)))
+
+    # right-hand ops
+    assert check(1 + F(1.5), F(2.5))
+    assert check(1 - F(1.5), F(-0.5))
+    assert check(2 * F(1.5), F(3.0))
+    assert check(2 / F(2.5), F(0.8))
+    assert check(2 // F(1.5), F(1.0))
+    assert check(2 % F(1.5), F(0.5))
+    assert check(4 ** F(2.5), F(32.0))
+    assert check(divmod(4, F(2.5)), (F(1.0), F(1.5)))
+
+    # comparisons
+    assert check(F(1.0) == 1)
+    assert check(F(2.0) != 1)
+    assert check(F(0.0) < 1)
+    assert check(F(2.0) > 1)
+    assert check(F(0.0) <= 1)
+    assert check(F(2.0) >= 1)
+    assert check(1 == F(1.0))
+    assert check(1 != F(2.0))
+    assert check(1 < F(2.0))
+    assert check(1 > F(0.0))
+    assert check(1 <= F(2.0))
+    assert check(1 >= F(0.0))
+
+    # power
+    assert check(F(3.5) ** 1, F(3.5))
+    assert check(F(3.5) ** 2, F(12.25))
+    assert check(F(3.5) ** 3, F(42.875))
+    assert check(F(4.0) ** -1, F(0.25))
+    assert check(F(4.0) ** -2, F(0.0625))
+    assert check(F(4.0) ** -3, F(0.015625))
+    assert check(F(3.5) ** 0, F(1.0))
+
+test_int_float_ops(float)
+test_int_float_ops(float32)
+test_int_float_ops(float16)

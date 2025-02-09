@@ -1,0 +1,986 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import util
+import routines
+from .ndarray import ndarray
+from .npdatetime import datetime64, timedelta64
+
+def _have_vectorized_loop(dtype: type, func: Static[str]):
+    if not (dtype is float or dtype is float32):
+        return False
+    return (func == 'arccos' or func == 'arccosh' or func == 'arcsin'
+            or func == 'arcsinh' or func == 'arctan' or func == 'arctanh'
+            or func == 'arctan2' or func == 'cos' or func == 'exp'
+            or func == 'exp2' or func == 'expm1' or func == 'log'
+            or func == 'log10' or func == 'log1p' or func == 'log2'
+            or func == 'sin' or func == 'sinh' or func == 'tanh'
+            or func == 'hypot')
+
+def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
+    if arr.ndim == 0 or out.ndim == 0 or arr.ndim > out.ndim:
+        compile_error("[internal error] bad array dims for vectorized loop")
+
+    if out.ndim == 1:
+        util.call_vectorized_loop(arr.data, arr.strides[0], Ptr[arr.dtype](),
+                                  0, out.data, out.strides[0], out.size, func)
+        return
+
+    shape = arr.shape
+    arr = routines.broadcast_to(arr, shape)
+
+    if arr._contig_match(out):
+        s = util.sizeof(out.dtype)
+        util.call_vectorized_loop(arr.data, s, Ptr[arr.dtype](), 0, out.data,
+                                  s, out.size, func)
+    else:
+        # Find smallest stride to use in vectorized loop
+        arr_strides = arr.strides
+        out_strides = out.strides
+        n = 0
+        si = 0
+        so = 0
+        loop_axis = -1
+
+        for i in staticrange(arr.ndim):
+            if shape[i] > 1 and (loop_axis == -1 or arr_strides[i] < si):
+                n = shape[i]
+                si = arr_strides[i]
+                so = out_strides[i]
+                loop_axis = i
+
+        if loop_axis == -1:
+            n = shape[0]
+            si = arr_strides[0]
+            so = out_strides[0]
+            loop_axis = 0
+
+        for idx in util.multirange(util.tuple_delete(shape, loop_axis)):
+            idx1 = util.tuple_insert(idx, loop_axis, 0)
+            p = arr._ptr(idx1)
+            q = out._ptr(idx1)
+            util.call_vectorized_loop(p, si, Ptr[arr.dtype](), 0, q, so, n,
+                                      func)
+
+def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
+    if (arr1.ndim == 0 and arr2.ndim == 0
+        ) or out.ndim == 0 or arr1.ndim > out.ndim or arr2.ndim > out.ndim:
+        compile_error("[internal error] bad array dims for vectorized loop")
+
+    if arr1.ndim == 0:
+        st1 = 0
+    else:
+        st1 = arr1.strides[0]
+
+    if arr2.ndim == 0:
+        st2 = 0
+    else:
+        st2 = arr2.strides[0]
+
+    if out.ndim == 1:
+        util.call_vectorized_loop(arr1.data, st1, arr2.data, st2, out.data,
+                                  out.strides[0], out.size, func)
+        return
+
+    shape = out.shape
+    arr1 = routines.broadcast_to(arr1, shape)
+    arr2 = routines.broadcast_to(arr2, shape)
+
+    if arr1._contig_match(out) and arr2._contig_match(out):
+        s = util.sizeof(out.dtype)
+        util.call_vectorized_loop(arr1.data, s, arr2.data, s, out.data, s,
+                                  out.size, func)
+    else:
+        # Find smallest stride to use in vectorized loop
+        arr1_strides = arr1.strides
+        arr2_strides = arr2.strides
+        out_strides = out.strides
+        n = 0
+        si1 = 0
+        si2 = 0
+        so = 0
+        loop_axis = -1
+
+        for i in staticrange(arr1.ndim):
+            if shape[i] > 1 and (loop_axis == -1 or arr1_strides[i] < si1):
+                n = shape[i]
+                si1 = arr1_strides[i]
+                si2 = arr2_strides[i]
+                so = out_strides[i]
+                loop_axis = i
+
+        if loop_axis == -1:
+            n = shape[0]
+            si1 = arr1_strides[0]
+            si2 = arr2_strides[0]
+            so = out_strides[0]
+            loop_axis = 0
+
+        for idx in util.multirange(util.tuple_delete(shape, loop_axis)):
+            idx1 = util.tuple_insert(idx, loop_axis, 0)
+            p1 = arr1._ptr(idx1)
+            p2 = arr2._ptr(idx1)
+            q = out._ptr(idx1)
+            util.call_vectorized_loop(p1, si1, p2, si2, q, so, n, func)
+
+def _fix_scalar(x, A: type):
+    X = type(x)
+
+    a_is_int: Static[int] = (A is int or A is byte or isinstance(A, Int)
+                             or isinstance(A, UInt))
+    x_is_int: Static[int] = X is bool or X is int
+
+    a_is_float: Static[int] = (A is float or A is float32 or A is float16
+                               or A is bfloat16 or A is float128)
+    x_is_float: Static[int] = X is float
+
+    a_is_complex: Static[int] = (A is complex or A is complex64)
+    x_is_complex: Static[int] = X is complex
+
+    should_cast: Static[int] = ((x_is_int and
+                                 (a_is_int or a_is_float or a_is_complex)) or
+                                (x_is_float and (a_is_float or a_is_complex))
+                                or (x_is_complex and a_is_complex))
+
+    if (A is float16 or A is float32) and X is complex:
+        return util.cast(x, complex64)
+    elif should_cast:
+        return util.cast(x, A)
+    else:
+        return x
+
+def decide_types(x, y, dtype: type):
+    def t1(T: type):
+        return (util.zero(T), util.zero(T))
+
+    def t2(S: type, T: type):
+        return (util.zero(S), util.zero(T))
+
+    if dtype is not NoneType:
+        return t1(dtype)
+
+    X = type(routines.asarray(x).data[0])
+    Y = type(routines.asarray(y).data[0])
+
+    x_scalar: Static[int] = (isinstance(x, bool) or isinstance(x, int)
+                             or isinstance(x, float) or isinstance(x, complex))
+    y_scalar: Static[int] = (isinstance(y, bool) or isinstance(y, int)
+                             or isinstance(y, float) or isinstance(y, complex))
+
+    if x_scalar and y_scalar:
+        return t1(util.coerce(X, Y))
+    elif x_scalar:
+        return t1(type(_fix_scalar(x, Y)))
+    elif y_scalar:
+        return t1(type(_fix_scalar(y, X)))
+    else:
+        ct1, ct2 = util.op_types(X, Y)
+        return t2(type(ct1), type(ct2))
+
+def decide_types_copysign(x, y, dtype: type):
+    def t2(S: type, T: type):
+        return (util.zero(S), util.zero(T))
+
+    X = type(routines.asarray(x).data[0])
+    Y = type(routines.asarray(y).data[0])
+    XF = type(util.to_float(util.zero(X)))
+    YF = type(util.to_float(util.zero(Y)))
+
+    x_scalar: Static[int] = (isinstance(x, bool) or isinstance(x, int)
+                             or isinstance(x, float) or isinstance(x, complex))
+    y_scalar: Static[int] = (isinstance(y, bool) or isinstance(y, int)
+                             or isinstance(y, float) or isinstance(y, complex))
+
+    if dtype is float16 or dtype is float32 or dtype is float:
+        return t2(dtype, dtype)
+    elif dtype is NoneType:
+        if (x_scalar and y_scalar) or not (x_scalar or y_scalar):
+            Z = type(util.coerce(XF, YF))
+            return t2(Z, Z)
+        elif x_scalar:
+            return t2(YF, YF)
+        else:
+            return t2(XF, XF)
+    else:
+        compile_error("copysign dtype must be a floating-point type")
+
+def decide_types_ldexp(x, y, dtype: type):
+    def t2(S: type, T: type):
+        return (util.zero(S), util.zero(T))
+
+    X = type(routines.asarray(x).data[0])
+    Y = type(routines.asarray(y).data[0])
+    XF = type(util.to_float(util.zero(X)))
+    YF = type(util.to_float(util.zero(Y)))
+
+    if not (Y is int or Y is byte or isinstance(Y, Int)
+            or isinstance(Y, UInt)):
+        compile_error("ldexp 2nd argument must be of integral type")
+
+    x_scalar: Static[int] = (isinstance(x, bool) or isinstance(x, int)
+                             or isinstance(x, float) or isinstance(x, complex))
+    y_scalar: Static[int] = isinstance(y, int)
+
+    if dtype is float16 or dtype is float32 or dtype is float:
+        return t2(dtype, int)
+    elif dtype is NoneType:
+        if x_scalar:
+            return t2(YF, int)
+        else:
+            return t2(XF, int)
+    else:
+        compile_error("ldexp dtype must be a floating-point type")
+
+@tuple
+class _UnaryFunctor:
+    ufunc: UF
+    dtype: type
+    UF: type
+
+    def __new__(ufunc: UF, dtype: type, UF: type) -> _UnaryFunctor[dtype, UF]:
+        return (ufunc, )
+
+    def __call__(self, y, x):
+        y[0] = self.ufunc._f(x[0], dtype=self.dtype, dtype_out=type(y[0]))
+
+@tuple
+class _UnaryWhereFunctor:
+    ufunc: UF
+    dtype: type
+    UF: type
+
+    def __new__(ufunc: UF, dtype: type,
+                UF: type) -> _UnaryWhereFunctor[dtype, UF]:
+        return (ufunc, )
+
+    def __call__(self, y, x, w):
+        if w[0]:
+            y[0] = self.ufunc._f(x[0], dtype=self.dtype, dtype_out=type(y[0]))
+
+@tuple
+class _Unary2Functor:
+    ufunc: UF
+    UF: type
+
+    def __new__(ufunc: UF, UF: type) -> _Unary2Functor[UF]:
+        return (ufunc, )
+
+    def __call__(self, y1, y2, x):
+        e1, e2 = self.ufunc._op(x[0])
+        y1[0] = util.cast(e1, type(y1[0]))
+        y2[0] = util.cast(e2, type(y2[0]))
+
+@tuple
+class _Unary2WhereFunctor:
+    ufunc: UF
+    UF: type
+
+    def __new__(ufunc: UF, UF: type) -> _Unary2WhereFunctor[UF]:
+        return (ufunc, )
+
+    def __call__(self, y1, y2, x, w):
+        if w[0]:
+            e1, e2 = self.ufunc._op(x[0])
+            y1[0] = util.cast(e1, type(y1[0]))
+            y2[0] = util.cast(e2, type(y2[0]))
+
+@tuple
+class _BinaryFunctor:
+    ufunc: UF
+    CT1: type
+    CT2: type
+    dtype: type
+    UF: type
+
+    def __new__(ufunc: UF, CT1: type, CT2: type, dtype: type,
+                UF: type) -> _BinaryFunctor[CT1, CT2, dtype, UF]:
+        return (ufunc, )
+
+    def __call__(self, z, x, y):
+        z[0] = self.ufunc._f(util.cast(x[0], CT1),
+                             util.cast(y[0], CT2),
+                             dtype=self.dtype,
+                             dtype_out=type(z[0]))
+
+@tuple
+class _BinaryScalar1Functor:
+    ufunc: UF
+    x: X
+    CT1: type
+    CT2: type
+    dtype: type
+    UF: type
+    X: type
+
+    def __new__(ufunc: UF, x: X, CT1: type, CT2: type, dtype: type, UF: type,
+                X: type) -> _BinaryScalar1Functor[CT1, CT2, dtype, UF, X]:
+        return (ufunc, x)
+
+    def __call__(self, z, y):
+        z[0] = self.ufunc._f(util.cast(self.x, CT1),
+                             util.cast(y[0], CT2),
+                             dtype=self.dtype,
+                             dtype_out=type(z[0]))
+
+@tuple
+class _BinaryScalar2Functor:
+    ufunc: UF
+    y: Y
+    CT1: type
+    CT2: type
+    dtype: type
+    UF: type
+    Y: type
+
+    def __new__(ufunc: UF, y: Y, CT1: type, CT2: type, dtype: type, UF: type,
+                Y: type) -> _BinaryScalar2Functor[CT1, CT2, dtype, UF, Y]:
+        return (ufunc, y)
+
+    def __call__(self, z, x):
+        z[0] = self.ufunc._f(util.cast(x[0], CT1),
+                             util.cast(self.y, CT2),
+                             dtype=self.dtype,
+                             dtype_out=type(z[0]))
+
+@tuple
+class _BinaryWhereFunctor:
+    ufunc: UF
+    CT1: type
+    CT2: type
+    dtype: type
+    UF: type
+
+    def __new__(ufunc: UF, CT1: type, CT2: type, dtype: type,
+                UF: type) -> _BinaryWhereFunctor[CT1, CT2, dtype, UF]:
+        return (ufunc, )
+
+    def __call__(self, z, x, y, w):
+        if w[0]:
+            z[0] = self.ufunc._f(util.cast(x[0], CT1),
+                                 util.cast(y[0], CT2),
+                                 dtype=self.dtype,
+                                 dtype_out=type(z[0]))
+
+@tuple
+class UnaryUFunc:
+    _op: F
+    __name__: Static[str]
+    F: type
+
+    def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc[name, F]:
+        return (op, )
+
+    @property
+    def nin(self):
+        return 1
+
+    @property
+    def nout(self):
+        return 1
+
+    def _f(self, x, dtype: type = NoneType, dtype_out: type = NoneType):
+        if dtype is NoneType:
+            x1 = x
+        else:
+            x1 = util.cast(x, dtype)
+
+        y = self._op(x1)
+
+        if dtype_out is NoneType:
+            return y
+        else:
+            return util.cast(y, dtype_out)
+
+    def __call__(self, x, out=None, where=True, dtype: type = NoneType):
+        fn = self._op
+        x = routines.asarray(x)
+
+        if x.ndim == 0:
+            if out is None:
+                return self._f(x.data[0], dtype=dtype)
+            elif isinstance(out, ndarray):
+                r = self._f(x.data[0], dtype=dtype, dtype_out=out.dtype)
+                out.map(lambda x: r, inplace=True)
+                return out
+            else:
+                compile_error("'out' argument must be ndarray or None")
+
+        if out is None:
+            ans = routines.empty_like(x,
+                                      dtype=type(
+                                          self._f(x.data[0], dtype=dtype)))
+        elif isinstance(out, ndarray):
+            ans = out
+            bshape = util.broadcast(x.shape, ans.shape)
+            if bshape != ans.shape:
+                raise ValueError(
+                    f"non-broadcastable output operand with shape {ans.shape} doesn't match the broadcast shape {bshape}"
+                )
+        else:
+            compile_error("'out' argument must be ndarray or None")
+
+        if isinstance(ans, ndarray):
+            a = x._data
+            b = ans._data
+            n = x.size
+
+            if isinstance(where, bool):
+                if where:
+                    if x.dtype is ans.dtype:
+                        if _have_vectorized_loop(x.dtype, __name__):
+                            _apply_vectorized_loop_unary(x, ans, __name__)
+                            return ans
+
+                    functor = _UnaryFunctor(self, dtype)
+                    ndarray._loop((ans, x), functor, check=False)
+            else:
+                where = routines.asarray(where)
+                functor = _UnaryWhereFunctor(self, dtype)
+                ndarray._loop((ans, x, where), functor, broadcast='first')
+
+            return ans
+
+    def at(self, a, indices):
+        if not isinstance(a, ndarray):
+            return self.at(routines.asarray(a), indices)
+
+        fn = self._op
+
+        for idx in indices:
+            a[idx] = fn(a[idx])
+
+@tuple
+class UnaryUFunc2:
+    _op: F
+    __name__: Static[str]
+    F: type
+
+    def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc2[name, F]:
+        return (op, )
+
+    @property
+    def nin(self):
+        return 1
+
+    @property
+    def nout(self):
+        return 2
+
+    def __call__(self, x, out1=None, out2=None, out=None, where=True):
+        fn = self._op
+
+        if out is not None:
+            if not isinstance(out, Tuple):
+                compile_error("'out' must be a tuple of arrays")
+
+            if not (out1 is None and out2 is None):
+                compile_error(
+                    "cannot specify 'out' as both a positional and keyword argument"
+                )
+
+            return self(x, out[0], out[1], out=None, where=where)
+
+        if not isinstance(x, ndarray):
+            return self(routines.asarray(x), out1=out1, out2=out2, where=where)
+
+        if x.ndim == 0 and out1 is None and out2 is None:
+            return fn(x.data[0])
+
+        if out1 is None:
+            T1 = type(fn(x.data[0])[0])
+            ans1 = routines.empty_like(x, dtype=T1)
+        elif isinstance(out1, ndarray):
+            ans1 = out1
+            bshape = util.broadcast(x.shape, ans1.shape)
+            if bshape != ans1.shape:
+                raise ValueError(
+                    f"non-broadcastable output operand with shape {ans1.shape} doesn't match the broadcast shape {bshape}"
+                )
+        else:
+            compile_error("'out1' argument must be ndarray or None")
+
+        if out2 is None:
+            T2 = type(fn(x.data[0])[1])
+            ans2 = routines.empty_like(x, dtype=T2)
+        elif isinstance(out2, ndarray):
+            ans2 = out2
+            bshape = util.broadcast(x.shape, ans2.shape)
+            if bshape != ans2.shape:
+                raise ValueError(
+                    f"non-broadcastable output operand with shape {ans2.shape} doesn't match the broadcast shape {bshape}"
+                )
+        else:
+            compile_error("'out2' argument must be ndarray or None")
+
+        if ans1.ndim != ans2.ndim:
+            compile_error("ufunc output arguments have different dimensions")
+
+        if ans1.shape != ans2.shape:
+            raise ValueError(
+                f"non-broadcastable output operand with shape {ans1.shape} doesn't match the broadcast shape {ans2.shape}"
+            )
+
+        if isinstance(where, bool):
+            if where:
+                functor = _Unary2Functor(self)
+                ndarray._loop((ans1, ans2, x), functor, check=False)
+        else:
+            where = routines.asarray(where)
+            functor = _Unary2WhereFunctor(self)
+            ndarray._loop((ans1, ans2, x, where), functor)
+
+        return ans1, ans2
+
+@tuple
+class BinaryUFunc:
+    _op: F
+    identity: I
+    __name__: Static[str]
+    F: type
+    I: type
+
+    def __new__(op: F,
+                name: Static[str],
+                identity: I = None,
+                F: type,
+                I: type) -> BinaryUFunc[name, F, I]:
+        return (op, identity)
+
+    @property
+    def nin(self):
+        return 2
+
+    @property
+    def nout(self):
+        return 1
+
+    def _f(self, x, y, dtype: type = NoneType, dtype_out: type = NoneType):
+        if dtype is NoneType:
+            x1 = x
+            y1 = y
+        else:
+            x1 = util.cast(x, dtype)
+            y1 = util.cast(y, dtype)
+
+        z = self._op(x1, y1)
+
+        if dtype_out is NoneType:
+            return z
+        else:
+            return util.cast(z, dtype_out)
+
+    def __call__(self, x, y, out=None, where=True, dtype: type = NoneType):
+        fn = self._op
+        if __name__ == 'ldexp':
+            ct1, ct2 = decide_types_ldexp(x, y, dtype)
+        elif __name__ == 'copysign':
+            ct1, ct2 = decide_types_copysign(x, y, dtype)
+        else:
+            ct1, ct2 = decide_types(x, y, dtype)
+        CT1 = type(ct1)
+        CT2 = type(ct2)
+
+        x = routines.asarray(x)
+        y = routines.asarray(y)
+
+        if out is None:
+            if x.ndim == 0 and y.ndim == 0:
+                x0 = util.cast(x.data[0], CT1)
+                y0 = util.cast(y.data[0], CT2)
+                return fn(x0, y0)
+
+            out_shape = util.broadcast(x.shape, y.shape)
+            fcontig = x._should_transpose(
+            ) if x.ndim >= y.ndim else y._should_transpose()
+            RT = type(
+                self._f(util.cast(x.data[0], CT1),
+                        util.cast(y.data[0], CT2),
+                        dtype=dtype))
+            ans = ndarray(out_shape,
+                          Ptr[RT](util.count(out_shape)),
+                          fcontig=fcontig)
+        elif isinstance(out, ndarray):
+            ans = out
+            bshape = util.broadcast(x.shape, ans.shape)
+            if bshape != ans.shape:
+                raise ValueError(
+                    f"non-broadcastable output operand with shape {ans.shape} doesn't match the broadcast shape {bshape}"
+                )
+        else:
+            compile_error("'out' argument must be ndarray or None")
+
+        if isinstance(where, bool):
+            if where:
+                if x.dtype is ans.dtype and y.dtype is ans.dtype:
+                    if _have_vectorized_loop(x.dtype, __name__):
+                        _apply_vectorized_loop_binary(x, y, ans, __name__)
+                        return ans
+
+                if x.ndim == 0:
+                    functor = _BinaryScalar1Functor(self, x.data[0], CT1, CT2,
+                                                    dtype)
+                    ndarray._loop((ans, y),
+                                  functor,
+                                  broadcast='first',
+                                  check=False)
+                elif y.ndim == 0:
+                    functor = _BinaryScalar2Functor(self, y.data[0], CT1, CT2,
+                                                    dtype)
+                    ndarray._loop((ans, x),
+                                  functor,
+                                  broadcast='first',
+                                  check=False)
+                else:
+                    functor = _BinaryFunctor(self, CT1, CT2, dtype)
+                    ndarray._loop((ans, x, y),
+                                  functor,
+                                  broadcast='first',
+                                  check=False)
+        else:
+            where = routines.asarray(where)
+            functor = _BinaryWhereFunctor(self, CT1, CT2, dtype)
+            ndarray._loop((ans, x, y, where), functor, broadcast='first')
+
+        return ans
+
+    def _reduce_all(self,
+                    array,
+                    dtype: type = NoneType,
+                    keepdims: Static[int] = False,
+                    initial=util._NoValue(),
+                    where=True):
+        if isinstance(where, bool):
+            if not where:
+                if keepdims:
+                    return routines.empty_like(array, dtype=dtype)
+                else:
+                    return dtype()
+        else:
+            where = routines.asarray(where)
+            util.broadcast(where.shape, array.shape)  # error check
+
+        n = array.size
+        p = array._data
+        fn = self._op
+
+        if initial is None:
+            ans: Optional[dtype] = None
+        else:
+            ans: dtype = initial
+
+        if array._is_contig and isinstance(where, bool):
+            i = 0
+            while i < n:
+                e = p[i]
+                e = util.cast(e, dtype)
+                if initial is None:
+                    if ans is None:
+                        ans = e
+                    else:
+                        ans_e: dtype = ans
+                        ans = util.cast(fn(ans_e, e), dtype)
+                else:
+                    ans = util.cast(fn(ans, e), dtype)
+                i += 1
+        else:
+            for idx in util.multirange(array.shape):
+                if not isinstance(where, bool):
+                    if not where._ptr(idx, broadcast=True)[0]:
+                        continue
+
+                e = array._ptr(idx)[0]
+                e = util.cast(e, dtype)
+
+                if initial is None:
+                    if ans is None:
+                        ans = e
+                    else:
+                        ans_e: dtype = ans
+                        ans = util.cast(fn(ans_e, e), dtype)
+                else:
+                    ans = util.cast(fn(ans, e), dtype)
+
+        if keepdims:
+            shape = (1, ) * staticlen(array.shape)
+            out = routines.empty(shape, dtype=dtype)
+            out.data[0] = ans
+            return out
+        else:
+            return ans
+
+    def reduce(self,
+               array,
+               axis=0,
+               dtype: type = NoneType,
+               out=None,
+               keepdims: Static[int] = False,
+               initial=util._NoValue(),
+               where=True):
+        if not isinstance(array, ndarray):
+            return self.reduce(routines.asarray(array),
+                               axis=axis,
+                               dtype=dtype,
+                               out=out,
+                               keepdims=keepdims,
+                               initial=initial,
+                               where=where)
+
+        if isinstance(axis, int):
+            return self.reduce(array,
+                               axis=(axis, ),
+                               dtype=dtype,
+                               out=out,
+                               keepdims=keepdims,
+                               initial=initial,
+                               where=where)
+
+        if isinstance(initial, util._NoValue):
+            return self.reduce(array,
+                               axis=axis,
+                               dtype=dtype,
+                               out=out,
+                               keepdims=keepdims,
+                               initial=self.identity,
+                               where=where)
+
+        if not isinstance(where, bool) and initial is None:
+            compile_error(
+                "reduction operation does not have an identity, so to use a where mask one has to specify 'initial'"
+            )
+
+        if out is not None and not isinstance(out, ndarray):
+            compile_error("output must be an array")
+
+        if dtype is NoneType:
+            if out is None:
+                return self.reduce(array,
+                                   axis=axis,
+                                   dtype=array.dtype,
+                                   out=out,
+                                   keepdims=keepdims,
+                                   initial=initial,
+                                   where=where)
+            else:
+                return self.reduce(array,
+                                   axis=axis,
+                                   dtype=out.dtype,
+                                   out=out,
+                                   keepdims=keepdims,
+                                   initial=initial,
+                                   where=where)
+
+        data = array.data
+        shape = array.shape
+        axis = tuple(util.normalize_axis_index(a, len(shape)) for a in axis)
+        if util.has_duplicate(axis):
+            raise ValueError("duplicate value in 'axis'")
+
+        if initial is None and self.identity is None:
+            if array.size == 0:
+                raise ValueError(
+                    "zero-size array to reduction operation add which has no identity"
+                )
+
+        if staticlen(axis) == staticlen(shape):
+            ans = self._reduce_all(array,
+                                   dtype=dtype,
+                                   keepdims=keepdims,
+                                   initial=initial,
+                                   where=where)
+            if out is None:
+                return ans
+            else:
+                compile_error(
+                    "cannot specify output when reducing over all axes")
+
+        fn = self._op
+        new_shape = (0, ) * (staticlen(shape) - staticlen(axis))
+        idx_bound = (0, ) * staticlen(axis)
+        mask = (False, ) * staticlen(shape)
+        ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+        ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
+        ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
+
+        shape_size = 1
+        bound_size = 1
+        a = 0
+        b = 0
+
+        for i in range(len(shape)):
+            s = shape[i]
+
+            if i in axis:
+                bound_size *= s
+                ptr_idx_bound[a] = s
+                ptr_mask[i] = False
+                a += 1
+            else:
+                shape_size *= s
+                ptr_new_shape[b] = s
+                ptr_mask[i] = True
+                b += 1
+
+        if out is None:
+            result = routines.empty(new_shape, dtype=dtype)
+        else:
+            util.broadcast(array.shape, out.shape)  # error check
+            result = out
+
+        calc = True
+        if isinstance(where, bool):
+            calc = where
+        else:
+            where = routines.asarray(where)
+            util.broadcast(where.shape, array.shape)  # error check
+
+        if calc:
+            for t1 in util.multirange(new_shape):
+                if initial is None:
+                    ans: Optional[dtype] = None
+                else:
+                    ans: dtype = initial
+
+                for t2 in util.multirange(idx_bound):
+                    idx = util.reconstruct_index(t1, t2, mask)
+                    e = array._ptr(idx)[0]
+                    e = util.cast(e, dtype)
+
+                    if not isinstance(where, bool):
+                        if not where._ptr(idx, broadcast=True)[0]:
+                            continue
+
+                    if initial is None:
+                        if ans is None:
+                            ans = e
+                        else:
+                            ans_e: dtype = ans
+                            ans = util.cast(fn(ans_e, e), dtype)
+                    else:
+                        ans = util.cast(fn(ans, e), dtype)
+                result._ptr(t1, broadcast=(out is not None))[0] = ans
+
+        if keepdims:
+            ones = (1, ) * staticlen(idx_bound)
+            ans_shape = util.reconstruct_index(new_shape, ones, mask)
+            return result.reshape(ans_shape)
+        else:
+            return result
+
+    def accumulate(self,
+                   array,
+                   axis: int = 0,
+                   dtype: type = NoneType,
+                   out=None):
+        if not isinstance(array, ndarray):
+            return self.accumulate(routines.asarray(array),
+                                   axis=axis,
+                                   dtype=dtype,
+                                   out=out)
+
+        if out is not None and not isinstance(out, ndarray):
+            compile_error("output must be an array")
+
+        if dtype is NoneType:
+            if out is None:
+                return self.accumulate(array,
+                                       axis=axis,
+                                       dtype=array.dtype,
+                                       out=out)
+            else:
+                return self.accumulate(array,
+                                       axis=axis,
+                                       dtype=out.dtype,
+                                       out=out)
+
+        shape = array.shape
+        axis = util.normalize_axis_index(axis, len(shape))
+
+        if staticlen(shape) == 0:
+            compile_error("cannot accumulate on a scalar")
+
+        if out is None:
+            result = routines.empty(shape, dtype=dtype)
+        else:
+            util.broadcast(shape, out.shape)  # error check
+            result = out
+
+        fn = self._op
+        new_shape = (0, ) * (staticlen(shape) - 1)
+        idx_bound = 0
+        mask = (False, ) * staticlen(shape)
+        ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
+        ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
+        b = 0
+
+        for i in range(len(shape)):
+            s = shape[i]
+
+            if i == axis:
+                idx_bound = s
+                ptr_mask[i] = False
+            else:
+                ptr_new_shape[b] = s
+                ptr_mask[i] = True
+                b += 1
+
+        if out is None:
+            result = routines.empty(array.shape, dtype=dtype)
+        else:
+            util.broadcast(array.shape, out.shape)  # error check
+            result = out
+
+        for t1 in util.multirange(new_shape):
+            idx = util.reconstruct_index(t1, (0, ), mask)
+            curr = array._ptr(idx)[0]
+            result._ptr(idx, broadcast=(out is not None))[0] = curr
+
+            for t2 in range(1, idx_bound):
+                idx = util.reconstruct_index(t1, (t2, ), mask)
+                e = array._ptr(idx)[0]
+                e = util.cast(e, dtype)
+                curr = util.cast(fn(curr, e), dtype)
+                result._ptr(idx, broadcast=(out is not None))[0] = curr
+
+        return result
+
+    def at(self, a, indices, b):
+        if not isinstance(a, ndarray):
+            return self.at(routines.asarray(a), indices, b)
+
+        if not isinstance(b, ndarray):
+            return self.at(a, indices, routines.asarray(b))
+
+        fn = self._op
+
+        for idx in indices:
+            if staticlen(b.shape) == 0:
+                a[idx] = fn(a[idx], b.data[0])
+            else:
+                a[idx] = fn(a[idx], b[idx])
+
+    def outer(self, A, B, dtype: type = NoneType):
+        if not isinstance(A, ndarray):
+            return self.outer(routines.asarray(A), B, dtype=dtype)
+
+        if not isinstance(B, ndarray):
+            return self.outer(A, routines.asarray(B), dtype=dtype)
+
+        r1, r2 = util.op_types(A.dtype, B.dtype)
+        R1 = type(r1)
+        R2 = type(r2)
+        sa = A.shape
+        sb = B.shape
+        sc = sa + sb
+        fn = self._op
+
+        if dtype is NoneType:
+            out = routines.empty(sc, dtype=type(fn(r1, r2)))
+        else:
+            out = routines.empty(sc, dtype=dtype)
+
+        for idx1 in util.multirange(sa):
+            for idx2 in util.multirange(sb):
+                xa = util.cast(A._ptr(idx1)[0], R1)
+                xb = util.cast(B._ptr(idx2)[0], R2)
+                out._ptr(idx1 + idx2)[0] = util.cast(fn(xa, xb), out.dtype)
+
+        return out

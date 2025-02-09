@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "side_effect.h"
 
@@ -293,7 +293,7 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   }
 
   void visit(const CallInstr *v) override {
-    auto s = Status::PURE;
+    auto s = process(v->getCallee());
     auto callStatus = Status::UNKNOWN;
     for (auto *x : *v) {
       s = max(s, process(x));
@@ -303,7 +303,6 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
       s = max(s, callStatus);
     } else {
       // unknown function
-      process(v->getCallee());
       s = Status::UNKNOWN;
     }
     set(v, s, callStatus);

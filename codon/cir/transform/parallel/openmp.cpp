@@ -1,4 +1,4 @@
-// Copyright (C) 2022-2024 Exaloop Inc. <https://exaloop.io>
+// Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 #include "openmp.h"
 
@@ -402,7 +402,8 @@ struct ReductionIdentifier : public util::Operator {
   static void extractAssociativeOpChain(Value *v, const std::string &op,
                                         types::Type *type,
                                         std::vector<Value *> &result) {
-    if (util::isCallOf(v, op, {type, type}, type, /*method=*/true)) {
+    if (util::isCallOf(v, op, {type, nullptr}, type, /*method=*/true) ||
+        util::isCallOf(v, op, {nullptr, type}, type, /*method=*/true)) {
       auto *call = cast<CallInstr>(v);
       extractAssociativeOpChain(call->front(), op, type, result);
       extractAssociativeOpChain(call->back(), op, type, result);
@@ -450,7 +451,8 @@ struct ReductionIdentifier : public util::Operator {
 
     for (auto &rf : reductionFunctions) {
       if (rf.method) {
-        if (!util::isCallOf(item, rf.name, {type, type}, type, /*method=*/true))
+        if (!(util::isCallOf(item, rf.name, {type, nullptr}, type, /*method=*/true) ||
+              util::isCallOf(item, rf.name, {nullptr, type}, type, /*method=*/true)))
           continue;
       } else {
         if (!util::isCallOf(item, rf.name,
@@ -464,8 +466,7 @@ struct ReductionIdentifier : public util::Operator {
 
       if (rf.method) {
         std::vector<Value *> opChain;
-        extractAssociativeOpChain(callRHS, rf.name, callRHS->front()->getType(),
-                                  opChain);
+        extractAssociativeOpChain(callRHS, rf.name, type, opChain);
         if (opChain.size() < 2)
           continue;
 
@@ -640,10 +641,11 @@ struct ParallelLoopTemplateReplacer : public LoopTemplateReplacer {
 
       auto *series = M->Nr<SeriesFlow>();
       auto *tupleVal = util::makeVar(reductionTuple, series, parent);
-      auto *reduceCode = util::call(
-          reduceNoWait, {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid),
-                         tupleVal, rawReducer, M->Nr<PointerValue>(lck)});
-      auto *codeVar = util::makeVar(reduceCode, series, parent)->getVar();
+      auto *reduceCode =
+          util::call(reduceNoWait,
+                     {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid),
+                      M->Nr<VarValue>(tupleVal), rawReducer, M->Nr<PointerValue>(lck)});
+      auto *codeVar = util::makeVar(reduceCode, series, parent);
       seqassertn(codeVar->getType()->is(M->getIntType()), "wrong reduce code type");
 
       auto *sectionNonAtomic = M->Nr<SeriesFlow>();
@@ -740,11 +742,11 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
                          "unknown reduction init value");
             }
 
-            VarValue *newVar = util::makeVar(
-                initVal, cast<SeriesFlow>(parent->getBody()), parent, /*prepend=*/true);
-            sharedInfo.push_back({next, newVar->getVar(), reduction});
+            auto *newVar = util::makeVar(initVal, cast<SeriesFlow>(parent->getBody()),
+                                         parent, /*prepend=*/true);
+            sharedInfo.push_back({next, newVar, reduction});
 
-            newArg = M->Nr<PointerValue>(newVar->getVar());
+            newArg = M->Nr<PointerValue>(newVar);
             ++next;
           } else {
             newArg = util::tupleGet(M->Nr<VarValue>(extras), next++);
@@ -918,9 +920,9 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     for (auto *val : shareds) {
       if (getVarFromOutlinedArg(val)->getId() != loopVar->getId()) {
         if (auto &reduction = sharedRedux[sharedsNext]) {
-          Var *newVar = util::getVar(util::makeVar(
-              reduction.getInitial(), cast<SeriesFlow>(parent->getBody()), parent,
-              /*prepend=*/true));
+          auto *newVar = util::makeVar(reduction.getInitial(),
+                                       cast<SeriesFlow>(parent->getBody()), parent,
+                                       /*prepend=*/true);
           sharedInfo.push_back({sharedsNext, newVar, reduction});
         }
       }
@@ -1053,7 +1055,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
       seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
-      array = util::getVar(taskRedInputsArray);
+      array = taskRedInputsArray;
       auto *taskRedInputsArrayType = taskRedInputsArray->getType();
 
       auto *taskRedSetItem = M->getOrRealizeMethod(
@@ -1084,7 +1086,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
                                                      M->Nr<VarValue>(gtid),
                                                      M->getInt(numRed), arrayPtr}),
                         taskRedInitSeries, parent);
-      tskgrp = util::getVar(taskRedInitResult);
+      tskgrp = taskRedInitResult;
       v->replaceAll(taskRedInitSeries);
     }
 
@@ -1348,14 +1350,13 @@ CollapseResult collapseLoop(BodiedFunc *parent, ImperativeForFlow *v, int64_t le
   for (auto *loop : loopNests) {
     LoopRange range;
     range.loop = loop;
-    range.start = util::makeVar(loop->getStart(), setup, parent)->getVar();
-    range.stop = util::makeVar(loop->getEnd(), setup, parent)->getVar();
+    range.start = util::makeVar(loop->getStart(), setup, parent);
+    range.stop = util::makeVar(loop->getEnd(), setup, parent);
     range.step = loop->getStep();
-    range.len = util::makeVar(util::call(lenCalc, {M->Nr<VarValue>(range.start),
-                                                   M->Nr<VarValue>(range.stop),
-                                                   M->getInt(range.step)}),
-                              setup, parent)
-                    ->getVar();
+    range.len = util::makeVar(
+        util::call(lenCalc, {M->Nr<VarValue>(range.start), M->Nr<VarValue>(range.stop),
+                             M->getInt(range.step)}),
+        setup, parent);
     ranges.push_back(range);
   }
 
@@ -1377,11 +1378,9 @@ CollapseResult collapseLoop(BodiedFunc *parent, ImperativeForFlow *v, int64_t le
   for (auto it = ranges.rbegin(); it != ranges.rend(); ++it) {
     auto *k = lastDiv ? lastDiv : collapsedVar;
     auto *div =
-        util::makeVar(*M->Nr<VarValue>(k) / *M->Nr<VarValue>(it->len), body, parent)
-            ->getVar();
+        util::makeVar(*M->Nr<VarValue>(k) / *M->Nr<VarValue>(it->len), body, parent);
     auto *mod =
-        util::makeVar(*M->Nr<VarValue>(k) % *M->Nr<VarValue>(it->len), body, parent)
-            ->getVar();
+        util::makeVar(*M->Nr<VarValue>(k) % *M->Nr<VarValue>(it->len), body, parent);
     auto *i =
         *M->Nr<VarValue>(it->start) + *(*M->Nr<VarValue>(mod) * *M->getInt(it->step));
     body->push_back(M->Nr<AssignInstr>(it->loop->getVar(), i));

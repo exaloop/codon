@@ -450,6 +450,18 @@ def test_omp_reductions():
         c = min(b, c)
     assert c == -1.
 
+    c = 0.
+    @par
+    for i in L:
+        c += i  # float-int op
+    assert c == expected(N, 0., float.__add__)
+
+    c = 0.
+    @par
+    for i in L:
+        c = i + c  # int-float op
+    assert c == expected(N, 0., float.__add__)
+
     # float32s
     c = f32(0.)
     # this one can give different results due to
@@ -478,6 +490,18 @@ def test_omp_reductions():
         b = f32(-1 if i == N//2 else i)
         c = min(b, c)
     assert c == f32(-1.)
+
+    c = f32(0.)
+    @par
+    for i in L[:12]:
+        c += i  # float-int op
+    assert c == f32(1+2+3+4+5+6+7+8+9+10+11)
+
+    c = f32(0.)
+    @par
+    for i in L[:12]:
+        c = i + c  # int-float op
+    assert c == f32(1+2+3+4+5+6+7+8+9+10+11)
 
     x_add = 10.
     x_min = inf
