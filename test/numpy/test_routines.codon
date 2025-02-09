@@ -140,7 +140,7 @@ def test_linspace(start,
                   expected,
                   num: int = 50,
                   endpoint: bool = True,
-                  retstep: Static[int] = False,
+                  retstep: Static[bool] = False,
                   dtype: type = float):
     assert (np.linspace(start, stop, num, endpoint, retstep,
                         dtype) == expected).all()
@@ -159,7 +159,7 @@ def test_logspace(start,
                   num: int = 50,
                   endpoint: bool = True,
                   base: float = 10.0,
-                  retstep: Static[int] = False,
+                  retstep: Static[bool] = False,
                   dtype: type = float):
     assert (round(
         np.logspace(start, stop, num, endpoint, base, retstep, dtype),
@@ -959,7 +959,7 @@ test_rot90(
 def test_indices(dimensions,
                  expected,
                  dtype: type = int,
-                 sparse: Static[int] = False):
+                 sparse: Static[bool] = False):
     assert (np.indices(dimensions, dtype, sparse) == expected).all()
 
 test_indices((2, 3), np.array([[[0, 0, 0], [1, 1, 1]], [[0, 1, 2], [0, 1,
@@ -1359,7 +1359,7 @@ test_extract(
     np.mod(np.arange(12).reshape((3, 4)), 3) == 0, np.array([0, 3, 6, 9]))
 
 @test
-def test_count_nonzero(a, expected, axis=None, keepdims: Static[int] = False):
+def test_count_nonzero(a, expected, axis=None, keepdims: Static[bool] = False):
     x = np.count_nonzero(a, axis=axis, keepdims=keepdims)
     if isinstance(x, int):
         assert x == expected

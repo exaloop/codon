@@ -11,8 +11,8 @@ from .sorting import sort, argsort
 def average(a,
             axis=None,
             weights=None,
-            returned: Static[int] = False,
-            keepdims: Static[int] = False):
+            returned: Static[bool] = False,
+            keepdims: Static[bool] = False):
 
     def result_type(a_dtype: type, w_dtype: type):
         common_dtype = type(util.coerce(a_dtype, w_dtype))
@@ -909,7 +909,7 @@ def _histogram_fast(a, bins=10, range=None):
 def histogram(a,
               bins=10,
               range=None,
-              density: Static[int] = False,
+              density: Static[bool] = False,
               weights=None):
 
     def return_zeros(size, weights):
@@ -918,7 +918,7 @@ def histogram(a,
         else:
             return zeros(size, dtype=weights.dtype)
 
-    def histogram_result(n, bin_edges, density: Static[int] = False):
+    def histogram_result(n, bin_edges, density: Static[bool] = False):
         if density:
             db = array(_diff(bin_edges), float)
             return (n / db / n.sum(), bin_edges)
@@ -942,11 +942,11 @@ def histogram(a,
     BLOCK = 65536
 
     # The fast path uses bincount, but that only works for certain types of weight
-    simple_weights1: Static[int] = weights is None
+    simple_weights1: Static[bool] = weights is None
     if isinstance(weights, ndarray):
-        simple_weights2: Static[int] = (weights.dtype is float
-                                        or weights.dtype is complex
-                                        or weights.dtype is complex64)
+        simple_weights2: Static[bool] = (weights.dtype is float
+                                         or weights.dtype is complex
+                                         or weights.dtype is complex64)
 
     if uniform_bins is not None and (simple_weights1 or simple_weights2):
         # Fast algorithm for equal bins

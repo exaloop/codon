@@ -111,10 +111,6 @@ class LinearizeData:
     col_strides: int
     out_lead_dim: int
 
-    def __new__(rows: int, cols: int, row_strides: int, col_strides: int,
-                out_lead_dim: int) -> LinearizeData:
-        return (rows, cols, row_strides, col_strides, out_lead_dim)
-
     def __new__(rows: int, cols: int, row_strides: int, col_strides: int):
         return LinearizeData(rows, cols, row_strides, col_strides, cols)
 
@@ -512,7 +508,7 @@ class EighResult[A, B]:
         else:
             compile_error("tuple ('EighResult') index out of range")
 
-def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Static[int]):
+def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Static[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
 
@@ -761,7 +757,7 @@ def solve(a, b):
     else:
         return _solve(a, b)
 
-def _inv(a, ignore_errors: Static[int]):
+def _inv(a, ignore_errors: Static[bool]):
     a = _asarray(a)
     n = _square_rows(a)
 
@@ -1160,7 +1156,7 @@ class EigResult[A, B]:
         else:
             compile_error("tuple ('EigResult') index out of range")
 
-def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Static[int]):
+def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Static[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
     C = type(_complextype(a.dtype))
@@ -1469,7 +1465,7 @@ class SVDResult[A1, A2]:
         else:
             compile_error("tuple ('SVDResult') index out of range")
 
-def _svd(a, JOBZ: byte, compute_uv: Static[int]):
+def _svd(a, JOBZ: byte, compute_uv: Static[bool]):
     B = type(_basetype(a.dtype))
     m, n = _rows_cols(a)
     min_m_n = min(m, n)
@@ -1544,7 +1540,7 @@ def _svd(a, JOBZ: byte, compute_uv: Static[int]):
 
 def svd(a,
         full_matrices: bool = True,
-        compute_uv: Static[int] = True,
+        compute_uv: Static[bool] = True,
         hermitian: bool = False):
 
     a = _asarray(a)
@@ -3003,7 +2999,7 @@ def _multi_dot(arrays, order, i, j, out=None):
                    _multi_dot(arrays, order, order[i, j] + 1, j),
                    out=out)
 
-def _multi_dot_matrix_chain_order(arrays, return_costs: Static[int] = False):
+def _multi_dot_matrix_chain_order(arrays, return_costs: Static[bool] = False):
     n = len(arrays)
     p = [a.shape[0] for a in arrays] + [arrays[-1].shape[1]]
     m = zeros((n, n), dtype=float)
@@ -4006,13 +4002,13 @@ def _multi_svd_norm(x: ndarray, row_axis: int, col_axis: int, op):
     y = moveaxis(x, (row_axis, col_axis), (-2, -1))
     return op(svd(y, compute_uv=False), axis=-1)
 
-def _norm_wrap(x, kd_shape, keepdims: Static[int]):
+def _norm_wrap(x, kd_shape, keepdims: Static[bool]):
     if keepdims:
         return asarray(x).reshape(kd_shape)
     else:
         return x
 
-def norm(x, ord = None, axis = None, keepdims: Static[int] = False):
+def norm(x, ord = None, axis = None, keepdims: Static[bool] = False):
     x = asarray(x)
 
     if not (x.dtype is float or x.dtype is float32 or x.dtype is float16):

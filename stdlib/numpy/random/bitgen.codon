@@ -2117,7 +2117,7 @@ class Generator[G]:
             if abs(p_sum - 1.) > atol:
                 raise ValueError("probabilities do not sum to 1")
 
-        is_scalar: Static[int] = size is None
+        is_scalar: Static[bool] = size is None
         if not is_scalar:
             shape = size
             size1 = prod(shape)

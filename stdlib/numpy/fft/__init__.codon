@@ -251,8 +251,8 @@ def ihfft(a, n: Optional[int] = None,
     out.map(lambda x: x.conjugate(), inplace=True)
     return out
 
-def _cook_nd_args(a, s = None, axes = None, invreal: Static[int] = False):
-    shapeless: Static[int] = (s is None)
+def _cook_nd_args(a, s = None, axes = None, invreal: Static[bool] = False):
+    shapeless: Static[bool] = (s is None)
 
     if s is None:
         if axes is None:

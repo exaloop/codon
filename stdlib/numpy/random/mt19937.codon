@@ -25,7 +25,7 @@ class MT19937:
     data: Ptr[u32]
     seed: SeedSequence
 
-    def __new__(seed, legacy: Static[int] = False):
+    def __new__(seed, legacy: Static[bool] = False):
         if not isinstance(seed, SeedSequence):
             return MT19937(SeedSequence(seed))
         else:

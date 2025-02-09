@@ -38,8 +38,9 @@ class _time_t:
     isdst: i8
 
     def __new__() -> _time_t:
-        return (i16(0), i16(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0),
-                i8(0))
+        return _time_t(
+            i16(0), i16(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0)
+        )
 
 @pure
 @llvm
@@ -737,8 +738,8 @@ def _static_gcd(x: Static[int], y: Static[int]):
     else:
         return _static_gcd(y, x % y)
 
-def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Static[int],
-              strict2: Static[int]):
+def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Static[bool],
+              strict2: Static[bool]):
 
     def incompatible_units(base1: Static[str], base2: Static[str]):
         compile_error(
@@ -867,8 +868,8 @@ def _parse_datetime_type(s: Static[str]):
 def _promote(T1: type, T2: type):
     meta1 = _Meta[T1.base, T1.num]()
     meta2 = _Meta[T2.base, T2.num]()
-    strict1: Static[int] = isinstance(T1, timedelta64)
-    strict2: Static[int] = isinstance(T2, timedelta64)
+    strict1: Static[bool] = isinstance(T1, timedelta64)
+    strict2: Static[bool] = isinstance(T2, timedelta64)
     meta_out = _meta_gcd(meta1, meta2, strict1, strict2)
 
     if isinstance(T1, datetime64) or isinstance(T2, datetime64):
@@ -895,7 +896,7 @@ def _coerce(d1, d2):
 class DatetimeMetaData:
 
     def __new__(base: int, num: int = 1) -> DatetimeMetaData:
-        return (i32(base), i32(num))
+        return DatetimeMetaData(i32(base), i32(num))
 
     def __new__(base: Static[str], num: int = 1) -> DatetimeMetaData:
         return DatetimeMetaData(base=_base_code(base), num=num)
@@ -1012,14 +1013,14 @@ class DatetimeMetaData:
 class timedelta64:
 
     def __new__() -> timedelta64[base, num]:
-        return (0, )
+        return timedelta64[base, num](0)
 
     def __new__(value: int,
                 base: Static[str],
                 num: Static[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        return (value, )
+        return superf(value)
 
     def __new__(td: timedelta64,
                 base: Static[str],
@@ -1036,9 +1037,9 @@ class timedelta64:
         if (len(s) == 3 and (s.ptr[0] == byte(78) or s.ptr[0] == byte(110))
                 and (s.ptr[1] == byte(65) or s.ptr[1] == byte(97))
                 and (s.ptr[2] == byte(116) or s.ptr[2] == byte(84))):
-            return (_DATETIME_NAT, )
+            return timedelta64[base, num](_DATETIME_NAT)
         else:
-            return (int(s), )
+            return timedelta64[base, num](int(s))
 
     def __new__(value: int, unit: Static[str]):
         TD = _parse_datetime_type("timedelta64[" + unit + "]")
@@ -1434,14 +1435,14 @@ class timedelta64:
 class datetime64:
 
     def __new__() -> datetime64[base, num]:
-        return (0, )
+        return datetime64[base, num](0)
 
     def __new__(value: int,
                 base: Static[str],
                 num: Static[int]) -> datetime64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        return (value, )
+        return superf(value)
 
     def __new__(value: datetime64,
                 base: Static[str],
@@ -1457,7 +1458,7 @@ class datetime64:
         _validate_num(num)
         meta = DatetimeMetaData(base=base, num=num)
         dts = datetimestruct(s)
-        return (dts.to_datetime64(meta), )
+        return datetime64[base, num](dts.to_datetime64(meta))
 
     def __new__(value: int, unit: Static[str]):
         DT = _parse_datetime_type("datetime64[" + unit + "]")

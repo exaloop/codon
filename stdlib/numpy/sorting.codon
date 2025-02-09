@@ -1550,7 +1550,7 @@ def _store_pivot(pivot: int, kth: int, pivots: Ptr[int], npiv: Ptr[int]):
         pivots[npiv[0]] = pivot
         npiv[0] += 1
 
-def _median3_swap(v: Ptr[T], tosort: Ptr[int], low: int, mid: int, high: int, arg: Static[int], T: type):
+def _median3_swap(v: Ptr[T], tosort: Ptr[int], low: int, mid: int, high: int, arg: Static[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1569,7 +1569,7 @@ def _median3_swap(v: Ptr[T], tosort: Ptr[int], low: int, mid: int, high: int, ar
 
     sortee.swap(mid, low + 1)
 
-def _median5(v: Ptr[T], tosort: Ptr[int], arg: Static[int], T: type):
+def _median5(v: Ptr[T], tosort: Ptr[int], arg: Static[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1600,7 +1600,7 @@ def _median5(v: Ptr[T], tosort: Ptr[int], arg: Static[int], T: type):
     else:
         return 2
 
-def _unguarded_partition(v: Ptr[T], tosort: Ptr[int], pivot: T, ll: int, hh: int, arg: Static[int], T: type):
+def _unguarded_partition(v: Ptr[T], tosort: Ptr[int], pivot: T, ll: int, hh: int, arg: Static[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1626,7 +1626,7 @@ def _unguarded_partition(v: Ptr[T], tosort: Ptr[int], pivot: T, ll: int, hh: int
 
     return ll, hh
 
-def _median_of_median5(v: Ptr[T], tosort: Ptr[int], num: int, pivots: Ptr[int], npiv: Ptr[int], arg: Static[int], isel, T: type):
+def _median_of_median5(v: Ptr[T], tosort: Ptr[int], num: int, pivots: Ptr[int], npiv: Ptr[int], arg: Static[bool], isel, T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1648,7 +1648,7 @@ def _median_of_median5(v: Ptr[T], tosort: Ptr[int], num: int, pivots: Ptr[int], 
 
     return nmed // 2
 
-def _dumb_select(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, arg: Static[int], T: type):
+def _dumb_select(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, arg: Static[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1672,7 +1672,7 @@ def _msb(unum: u64):
         unum >>= u64(1)
     return depth_limit
 
-def _introselect(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, pivots: Ptr[int], npiv: Ptr[int], arg: Static[int], T: type):
+def _introselect(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, pivots: Ptr[int], npiv: Ptr[int], arg: Static[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1814,7 +1814,7 @@ def _fix_kth(kth, n: int):
 
     return pkth, nkth
 
-def _partition_helper(a: ndarray, kth, axis, kind: str, force_compact: Static[int] = False):
+def _partition_helper(a: ndarray, kth, axis, kind: str, force_compact: Static[bool] = False):
     if axis is None:
         _partition_helper(a.flatten(), kth=kth, axis=-1, kind=kind, force_compact=force_compact)
         return
@@ -2055,7 +2055,7 @@ def _sort_buffered(a: ndarray, axis: int, sorter):
 
     util.free(buf)
 
-def _sort_dispatch(a: ndarray, axis: int, sorter, force_compact: Static[int] = False):
+def _sort_dispatch(a: ndarray, axis: int, sorter, force_compact: Static[bool] = False):
     axis = util.normalize_axis_index(axis, a.ndim)
 
     if force_compact:
@@ -2066,7 +2066,7 @@ def _sort_dispatch(a: ndarray, axis: int, sorter, force_compact: Static[int] = F
         else:
             _sort_buffered(a, axis, sorter)
 
-def _sort(a: ndarray, axis: int, kind: Optional[str], force_compact: Static[int] = False):
+def _sort(a: ndarray, axis: int, kind: Optional[str], force_compact: Static[bool] = False):
     if kind is None or kind == 'quicksort' or kind == 'quick':
         _sort_dispatch(a, axis, quicksort, force_compact)
     elif kind == 'mergesort' or kind == 'merge' or kind == 'stable':

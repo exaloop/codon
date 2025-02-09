@@ -125,21 +125,21 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
 def _fix_scalar(x, A: type):
     X = type(x)
 
-    a_is_int: Static[int] = (A is int or A is byte or isinstance(A, Int)
-                             or isinstance(A, UInt))
-    x_is_int: Static[int] = X is bool or X is int
+    a_is_int: Static[bool] = (A is int or A is byte or isinstance(A, Int)
+                              or isinstance(A, UInt))
+    x_is_int: Static[bool] = X is bool or X is int
 
-    a_is_float: Static[int] = (A is float or A is float32 or A is float16
-                               or A is bfloat16 or A is float128)
-    x_is_float: Static[int] = X is float
+    a_is_float: Static[bool] = (A is float or A is float32 or A is float16
+                                or A is bfloat16 or A is float128)
+    x_is_float: Static[bool] = X is float
 
-    a_is_complex: Static[int] = (A is complex or A is complex64)
-    x_is_complex: Static[int] = X is complex
+    a_is_complex: Static[bool] = (A is complex or A is complex64)
+    x_is_complex: Static[bool] = X is complex
 
-    should_cast: Static[int] = ((x_is_int and
-                                 (a_is_int or a_is_float or a_is_complex)) or
-                                (x_is_float and (a_is_float or a_is_complex))
-                                or (x_is_complex and a_is_complex))
+    should_cast: Static[bool] = ((x_is_int and
+                                  (a_is_int or a_is_float or a_is_complex)) or
+                                 (x_is_float and (a_is_float or a_is_complex))
+                                 or (x_is_complex and a_is_complex))
 
     if (A is float16 or A is float32) and X is complex:
         return util.cast(x, complex64)
@@ -161,10 +161,10 @@ def decide_types(x, y, dtype: type):
     X = type(routines.asarray(x).data[0])
     Y = type(routines.asarray(y).data[0])
 
-    x_scalar: Static[int] = (isinstance(x, bool) or isinstance(x, int)
-                             or isinstance(x, float) or isinstance(x, complex))
-    y_scalar: Static[int] = (isinstance(y, bool) or isinstance(y, int)
-                             or isinstance(y, float) or isinstance(y, complex))
+    x_scalar: Static[bool] = (isinstance(x, bool) or isinstance(x, int)
+                              or isinstance(x, float) or isinstance(x, complex))
+    y_scalar: Static[bool] = (isinstance(y, bool) or isinstance(y, int)
+                              or isinstance(y, float) or isinstance(y, complex))
 
     if x_scalar and y_scalar:
         return t1(util.coerce(X, Y))
@@ -185,10 +185,10 @@ def decide_types_copysign(x, y, dtype: type):
     XF = type(util.to_float(util.zero(X)))
     YF = type(util.to_float(util.zero(Y)))
 
-    x_scalar: Static[int] = (isinstance(x, bool) or isinstance(x, int)
-                             or isinstance(x, float) or isinstance(x, complex))
-    y_scalar: Static[int] = (isinstance(y, bool) or isinstance(y, int)
-                             or isinstance(y, float) or isinstance(y, complex))
+    x_scalar: Static[bool] = (isinstance(x, bool) or isinstance(x, int)
+                              or isinstance(x, float) or isinstance(x, complex))
+    y_scalar: Static[bool] = (isinstance(y, bool) or isinstance(y, int)
+                              or isinstance(y, float) or isinstance(y, complex))
 
     if dtype is float16 or dtype is float32 or dtype is float:
         return t2(dtype, dtype)
@@ -216,9 +216,9 @@ def decide_types_ldexp(x, y, dtype: type):
             or isinstance(Y, UInt)):
         compile_error("ldexp 2nd argument must be of integral type")
 
-    x_scalar: Static[int] = (isinstance(x, bool) or isinstance(x, int)
-                             or isinstance(x, float) or isinstance(x, complex))
-    y_scalar: Static[int] = isinstance(y, int)
+    x_scalar: Static[bool] = (isinstance(x, bool) or isinstance(x, int)
+                              or isinstance(x, float) or isinstance(x, complex))
+    y_scalar: Static[bool] = isinstance(y, int)
 
     if dtype is float16 or dtype is float32 or dtype is float:
         return t2(dtype, int)
@@ -237,7 +237,7 @@ class _UnaryFunctor:
     UF: type
 
     def __new__(ufunc: UF, dtype: type, UF: type) -> _UnaryFunctor[dtype, UF]:
-        return (ufunc, )
+        return _UnaryFunctor[dtype, UF](ufunc)
 
     def __call__(self, y, x):
         y[0] = self.ufunc._f(x[0], dtype=self.dtype, dtype_out=type(y[0]))
@@ -250,7 +250,7 @@ class _UnaryWhereFunctor:
 
     def __new__(ufunc: UF, dtype: type,
                 UF: type) -> _UnaryWhereFunctor[dtype, UF]:
-        return (ufunc, )
+        return _UnaryWhereFunctor[dtype, UF](ufunc)
 
     def __call__(self, y, x, w):
         if w[0]:
@@ -262,7 +262,7 @@ class _Unary2Functor:
     UF: type
 
     def __new__(ufunc: UF, UF: type) -> _Unary2Functor[UF]:
-        return (ufunc, )
+        return _Unary2Functor[UF](ufunc)
 
     def __call__(self, y1, y2, x):
         e1, e2 = self.ufunc._op(x[0])
@@ -275,7 +275,7 @@ class _Unary2WhereFunctor:
     UF: type
 
     def __new__(ufunc: UF, UF: type) -> _Unary2WhereFunctor[UF]:
-        return (ufunc, )
+        return _Unary2WhereFunctor[UF](ufunc, )
 
     def __call__(self, y1, y2, x, w):
         if w[0]:
@@ -293,7 +293,7 @@ class _BinaryFunctor:
 
     def __new__(ufunc: UF, CT1: type, CT2: type, dtype: type,
                 UF: type) -> _BinaryFunctor[CT1, CT2, dtype, UF]:
-        return (ufunc, )
+        return _BinaryFunctor[CT1, CT2, dtype, UF](ufunc)
 
     def __call__(self, z, x, y):
         z[0] = self.ufunc._f(util.cast(x[0], CT1),
@@ -313,7 +313,7 @@ class _BinaryScalar1Functor:
 
     def __new__(ufunc: UF, x: X, CT1: type, CT2: type, dtype: type, UF: type,
                 X: type) -> _BinaryScalar1Functor[CT1, CT2, dtype, UF, X]:
-        return (ufunc, x)
+        return _BinaryScalar1Functor[CT1, CT2, dtype, UF, X](ufunc, x)
 
     def __call__(self, z, y):
         z[0] = self.ufunc._f(util.cast(self.x, CT1),
@@ -333,7 +333,7 @@ class _BinaryScalar2Functor:
 
     def __new__(ufunc: UF, y: Y, CT1: type, CT2: type, dtype: type, UF: type,
                 Y: type) -> _BinaryScalar2Functor[CT1, CT2, dtype, UF, Y]:
-        return (ufunc, y)
+        return _BinaryScalar2Functor[CT1, CT2, dtype, UF, Y](ufunc, y)
 
     def __call__(self, z, x):
         z[0] = self.ufunc._f(util.cast(x[0], CT1),
@@ -351,7 +351,7 @@ class _BinaryWhereFunctor:
 
     def __new__(ufunc: UF, CT1: type, CT2: type, dtype: type,
                 UF: type) -> _BinaryWhereFunctor[CT1, CT2, dtype, UF]:
-        return (ufunc, )
+        return _BinaryWhereFunctor[CT1, CT2, dtype, UF](ufunc)
 
     def __call__(self, z, x, y, w):
         if w[0]:
@@ -367,7 +367,7 @@ class UnaryUFunc:
     F: type
 
     def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc[name, F]:
-        return (op, )
+        return UnaryUFunc[name, F](op)
 
     @property
     def nin(self):
@@ -455,7 +455,7 @@ class UnaryUFunc2:
     F: type
 
     def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc2[name, F]:
-        return (op, )
+        return UnaryUFunc2[name, F](op)
 
     @property
     def nin(self):
@@ -543,7 +543,7 @@ class BinaryUFunc:
                 identity: I = None,
                 F: type,
                 I: type) -> BinaryUFunc[name, F, I]:
-        return (op, identity)
+        return BinaryUFunc[name, F, I](op, identity)
 
     @property
     def nin(self):
@@ -645,7 +645,7 @@ class BinaryUFunc:
     def _reduce_all(self,
                     array,
                     dtype: type = NoneType,
-                    keepdims: Static[int] = False,
+                    keepdims: Static[bool] = False,
                     initial=util._NoValue(),
                     where=True):
         if isinstance(where, bool):
@@ -712,7 +712,7 @@ class BinaryUFunc:
                axis=0,
                dtype: type = NoneType,
                out=None,
-               keepdims: Static[int] = False,
+               keepdims: Static[bool] = False,
                initial=util._NoValue(),
                where=True):
         if not isinstance(array, ndarray):

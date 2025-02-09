@@ -449,7 +449,7 @@ def test_fftn_out_argument(dtype: type, transpose: bool, axes):
     assert np.array_equal(result2, expected2)
 
 @test
-def test_fftn_out_and_s_interaction(fft, rfftn: Static[int]):
+def test_fftn_out_and_s_interaction(fft, rfftn: Static[bool]):
     # With s, shape varies, so generally one cannot pass in out.
     gen = rnd.default_rng(seed=20)
     if rfftn:

@@ -549,7 +549,7 @@ def arange(start: str, stop, step = None, dtype: type = datetime64['D', 1]):
     return _datetime_arange(start, stop, step, dtype)
 
 def linspace(start: float, stop: float, num: int = 50,
-             endpoint: bool = True, retstep: Static[int] = False,
+             endpoint: bool = True, retstep: Static[bool] = False,
              dtype: type = float):
     if num < 0:
         raise ValueError(f'Number of samples, {num}, must be non-negative.')
@@ -583,8 +583,8 @@ def linspace(start: float, stop: float, num: int = 50,
         return result
 
 def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
-                 out_sign: int = 1, endpoint: bool = True, retstep: Static[int] = False,
-                 dtype: type = float, log: Static[int] = False):
+                 out_sign: int = 1, endpoint: bool = True, retstep: Static[bool] = False,
+                 dtype: type = float, log: Static[bool] = False):
     if num < 0:
         raise ValueError(f'Number of samples, {num}, must be non-negative.')
 
@@ -633,7 +633,7 @@ def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
         return result
 
 def linspace(start: float, stop: float, num: int = 50,
-             endpoint: bool = True, retstep: Static[int] = False,
+             endpoint: bool = True, retstep: Static[bool] = False,
              dtype: type = float):
     return _linlogspace(start=start, stop=stop, num=num,
                         endpoint=endpoint, retstep=retstep,
@@ -641,7 +641,7 @@ def linspace(start: float, stop: float, num: int = 50,
 
 def logspace(start: float, stop: float, num: int = 50,
              endpoint: bool = True, base: float = 10.0,
-             retstep: Static[int] = False,
+             retstep: Static[bool] = False,
              dtype: type = float):
     return _linlogspace(start=start, stop=stop, num=num,
                         endpoint=endpoint, retstep=retstep,
@@ -799,7 +799,7 @@ def broadcast_arrays(*args):
     bshape = broadcast_shapes(*shapes)
     return [broadcast_to(a, bshape) for a in args]
 
-def meshgrid(*xi, copy: bool = True, sparse: Static[int] = False, indexing: Static[str] = 'xy'):
+def meshgrid(*xi, copy: bool = True, sparse: Static[bool] = False, indexing: Static[str] = 'xy'):
     def make_shape(i, ndim: Static[int]):
         t = (1,) * ndim
         p = Ptr[int](__ptr__(t).as_byte())
@@ -1965,7 +1965,7 @@ def array_split(ary, indices_or_sections, axis: int = 0):
             return idx
 
     def slice_axis(arr, axis: int, start: int, stop: int):
-        ndim: Static[int] = staticlen(ary.shape)
+        ndim: Static[int] = staticlen(arr.shape)
         dtype = arr.dtype
 
         shape = arr.shape
@@ -3474,7 +3474,7 @@ def take(a, indices, axis = None, out = None, mode: str = 'raise'):
     else:
         return res
 
-def indices(dimensions, dtype: type = int, sparse: Static[int] = False):
+def indices(dimensions, dtype: type = int, sparse: Static[bool] = False):
     if not isinstance(dimensions, Tuple):
         compile_error("dimensions must be a tuple of integers")
 
@@ -4713,7 +4713,7 @@ def isscalar(element):
             T is str or
             T is NoneType)
 
-def _array_get_part(arr: ndarray, imag: Static[int]):
+def _array_get_part(arr: ndarray, imag: Static[bool]):
     if arr.dtype is complex:
         offset = util.sizeof(float) if imag else 0
         data = Ptr[float](arr.data.as_byte() + offset)

@@ -227,7 +227,7 @@ def _adv_idx_eliminate_new_and_used(arr, indexes):
         indexes = _adv_idx_prune_index(indexes)
         return arr, indexes
 
-def _adv_idx_build_for_contig_array(indexes, shape_from_non_arrays, arr_shape, saw_array: Static[int] = False):
+def _adv_idx_build_for_contig_array(indexes, shape_from_non_arrays, arr_shape, saw_array: Static[bool] = False):
     if staticlen(indexes) == 0:
         return ()
 

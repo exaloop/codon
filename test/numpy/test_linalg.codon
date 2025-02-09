@@ -2029,10 +2029,10 @@ def TestDet_test_zero():
     assert (isinstance(alg.det([[0.0]]), double))
     assert (alg.det([[0.0j]]) == 0.0)
     assert (isinstance(alg.det([[0.0j]]), cdouble))
-    assert (alg.slogdet([[0.0]]) == (0.0, -inf))
+    assert (tuple(alg.slogdet([[0.0]])) == (0.0, -inf))
     assert (isinstance(alg.slogdet([[0.0]])[0], double))
     assert (isinstance(alg.slogdet([[0.0]])[1], double))
-    assert (alg.slogdet([[0.0j]]) == (0.0j, -inf))
+    assert (tuple(alg.slogdet([[0.0j]])) == (0.0j, -inf))
     assert (isinstance(alg.slogdet([[0.0j]])[0], cdouble))
     assert (isinstance(alg.slogdet([[0.0j]])[1], double))
 
@@ -2288,7 +2288,7 @@ test_qr(
 @test
 def test_svd(a,
              full_matrices: bool = True,
-             compute_uv: Static[int] = True,
+             compute_uv: Static[bool] = True,
              hermitian: bool = False,
              expected=0):
     if hermitian:

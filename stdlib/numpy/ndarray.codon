@@ -209,7 +209,7 @@ class _UnaryFunctor:
     F: type
 
     def __new__(op: F, F: type) -> _UnaryFunctor[F]:
-        return (op, )
+        return _UnaryFunctor[F](op)
 
     def __call__(self, y, x):
         y[0] = self.op(x[0])
@@ -220,7 +220,7 @@ class _InplaceUnaryFunctor:
     F: type
 
     def __new__(op: F, F: type) -> _InplaceUnaryFunctor[F]:
-        return (op, )
+        return _InplaceUnaryFunctor[F](op)
 
     def __call__(self, x):
         x[0] = self.op(x[0])
@@ -233,7 +233,7 @@ class _BinaryFunctor:
     R2: type
 
     def __new__(op: F, R1: type, R2: type, F: type) -> _BinaryFunctor[F, R1, R2]:
-        return (op, )
+        return _BinaryFunctor[F, R1, R2](op)
 
     def __call__(self, z, x, y):
         z[0] = self.op(util.cast(x[0], R1), util.cast(y[0], R2))
@@ -244,7 +244,7 @@ class _InplaceBinaryFunctor:
     F: type
 
     def __new__(op: F, F: type) -> _InplaceBinaryFunctor[F]:
-        return (op, )
+        return _InplaceBinaryFunctor[F](op)
 
     def __call__(self, x, y):
         x[0] = self.op(x[0], util.cast(y[0], type(x[0])))
@@ -257,7 +257,7 @@ class _RightBinaryFunctor:
     R2: type
 
     def __new__(op: F, R1: type, R2: type, F: type) -> _RightBinaryFunctor[F, R1, R2]:
-        return (op, )
+        return _RightBinaryFunctor[F, R1, R2](op)
 
     def __call__(self, z, x, y):
         z[0] = self.op(util.cast(y[0], R2), util.cast(x[0], R1))
@@ -272,7 +272,7 @@ class _ScalarFunctor:
     R2: type
 
     def __new__(op: F, y: Y, R1: type, R2: type, F: type, Y: type) -> _ScalarFunctor[F, Y, R1, R2]:
-        return (op, y)
+        return _ScalarFunctor[F, Y, R1, R2](op, y)
 
     def __call__(self, z, x):
         z[0] = self.op(util.cast(x[0], R1), util.cast(self.y, R2))
@@ -285,7 +285,7 @@ class _InplaceScalarFunctor:
     Y: type
 
     def __new__(op: F, y: Y, F: type, Y: type) -> _InplaceScalarFunctor[F, Y]:
-        return (op, y)
+        return _InplaceScalarFunctor[F, Y](op, y)
 
     def __call__(self, x):
         x[0] = self.op(x[0], util.cast(self.y, type(x[0])))
@@ -301,7 +301,7 @@ class _RightScalarFunctor:
     R2: type
 
     def __new__(op: F, y: Y, R1: type, R2: type, F: type, Y: type) -> _RightScalarFunctor[F, Y, R1, R2]:
-        return (op, y)
+        return _RightScalarFunctor[F, Y, R1, R2](op, y)
 
     def __call__(self, z, x):
         z[0] = self.op(util.cast(self.y, R2), util.cast(x[0], R1))
@@ -315,7 +315,7 @@ class ndarray[dtype, ndim: Static[int]]:
     def __new__(shape: Tuple[ndim, int],
                 strides: Tuple[ndim, int],
                 data: Ptr[dtype]) -> ndarray[dtype, ndim]:
-        return (shape, strides, data)
+        return __internal__.tuple_cast_unsafe((shape, strides, data), ndarray[dtype, ndim])
 
     def __new__(shape: Tuple[ndim, int], data: Ptr[dtype], fcontig: bool = False):
         strides = util.strides(shape, fcontig, dtype)
@@ -619,8 +619,8 @@ class ndarray[dtype, ndim: Static[int]]:
         return ndarray(shape, self._data, fcontig=(order == 'F'))
 
     def _loop(arrays, func, broadcast: Static[str] = 'all',
-              check: Static[int] = True, alloc: type = type(()),
-              optimize_order: Static[int] = True, extra = None):
+              check: Static[bool] = True, alloc: type = type(()),
+              optimize_order: Static[bool] = True, extra = None):
         def call(func, args, extra):
             if extra is None:
                 return func(*args)
@@ -721,7 +721,7 @@ class ndarray[dtype, ndim: Static[int]]:
             perm, _ = util.sort_by_stride(perm, strides)
             return perm
 
-        def broadcast_shapes(args, check: Static[int]):
+        def broadcast_shapes(args, check: Static[bool]):
             def largest(args):
                 if staticlen(args) == 1:
                     return args[0]
@@ -757,7 +757,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
             return ans
 
-        def broadcast_to(x, shape, check: Static[int]):
+        def broadcast_to(x, shape, check: Static[bool]):
             N: Static[int] = x.ndim
             substrides = (0,) * N
             p = Ptr[int](__ptr__(substrides).as_byte())
@@ -778,7 +778,7 @@ class ndarray[dtype, ndim: Static[int]]:
             new_strides = (*z, *substrides)
             return ndarray(shape, new_strides, x.data)
 
-        def broadcast_arrays(arrays, check: Static[int]):
+        def broadcast_arrays(arrays, check: Static[bool]):
             shape = broadcast_shapes(tuple(arr.shape for arr in arrays), check=check)
             return tuple(broadcast_to(arr, shape, check=False) for arr in arrays)
 
@@ -833,7 +833,7 @@ class ndarray[dtype, ndim: Static[int]]:
             strides = ndarray(perm_shape, p).strides
             return (p, strides)
 
-        def broadcast_args(arrays, broadcast: Static[str], check: Static[int]):
+        def broadcast_args(arrays, broadcast: Static[str], check: Static[bool]):
             if broadcast == 'none':
                 shape = arrays[0].shape
                 strides = tuple(arr.strides for arr in arrays)
@@ -918,7 +918,7 @@ class ndarray[dtype, ndim: Static[int]]:
         else:
             return tuple(ndarray(shape0, tup[1], tup[0]) for tup in allocated)
 
-    def _contiguous(self, copy: Static[int] = False):
+    def _contiguous(self, copy: Static[bool] = False):
         ccontig, _ = self._contig
         if ccontig:
             if copy:
@@ -938,7 +938,7 @@ class ndarray[dtype, ndim: Static[int]]:
                 i += 1
             return p
 
-    def _fcontiguous(self, copy: Static[int] = False):
+    def _fcontiguous(self, copy: Static[bool] = False):
         _, fcontig = self._contig
         if fcontig:
             if copy:
@@ -1037,7 +1037,7 @@ class ndarray[dtype, ndim: Static[int]]:
         else:
             return [a.tolist() for a in self]
 
-    def _ptr_for_index(self, indexes, check: Static[int] = True, broadcast: Static[int] = False):
+    def _ptr_for_index(self, indexes, check: Static[bool] = True, broadcast: Static[bool] = False):
         s = self.shape
         strides = self.strides
         pshape = Ptr[int](__ptr__(s).as_byte())
@@ -1065,7 +1065,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
         return Ptr[dtype](self._data.as_byte() + offset)
 
-    def _ptr(self, indexes, broadcast: Static[int] = False):
+    def _ptr(self, indexes, broadcast: Static[bool] = False):
         return self._ptr_for_index(indexes, check=False, broadcast=broadcast)
 
     def __len__(self):
@@ -1298,7 +1298,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
         return m, M
 
-    def map(self, fn, inplace: Static[int] = False):
+    def map(self, fn, inplace: Static[bool] = False):
         if inplace:
             return self._iop_unary(fn)
         else:
@@ -1394,7 +1394,7 @@ class ndarray[dtype, ndim: Static[int]]:
         else:
             return self.map(bswap, inplace=False)
 
-    def _ptr_flat(self, idx: int, check: Static[int]):
+    def _ptr_flat(self, idx: int, check: Static[bool]):
         if check:
             n = self.size
             if idx < -n or idx >= n:
@@ -1403,8 +1403,8 @@ class ndarray[dtype, ndim: Static[int]]:
                 idx += n
         return self._ptr(util.index_to_coords(idx, self.shape))
 
-    def _get_flat(self, idx: int, check: Static[int]):
+    def _get_flat(self, idx: int, check: Static[bool]):
         return self._ptr_flat(idx, check=check)[0]
 
-    def _set_flat(self, idx: int, val, check: Static[int]):
+    def _set_flat(self, idx: int, val, check: Static[bool]):
         self._ptr_flat(idx, check=check)[0] = util.cast(val, dtype)

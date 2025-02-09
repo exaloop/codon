@@ -5,8 +5,8 @@ def test_average(a,
                  expected,
                  axis=None,
                  weights=None,
-                 returned: Static[int] = False,
-                 keepdims: Static[int] = False):
+                 returned: Static[bool] = False,
+                 keepdims: Static[bool] = False):
     if isinstance(expected, int) or isinstance(expected, float):
         assert np.average(a,
                           axis=axis,
@@ -542,7 +542,7 @@ def test_histogram(a,
                    expected_edges,
                    bins=10,
                    range=None,
-                   density: Static[int] = False,
+                   density: Static[bool] = False,
                    weights=None):
     hist, bin_edges = np.histogram(a,
                                    bins=bins,

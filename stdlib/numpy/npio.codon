@@ -525,7 +525,7 @@ class Converters:
 
     def __new__(funcs, mask, usecols,
                 dtype: type) -> Converters[dtype, F, M, U]:
-        return (funcs, mask, usecols)
+        return Converters[dtype, F, M, U](funcs, mask, usecols)
 
     def __call__(self, field: str, idx: int):
         usecols = self.usecols
@@ -987,7 +987,7 @@ def loadtxt(fname: str,
             converters=None,
             skiprows: int = 0,
             usecols=None,
-            unpack: Static[int] = False,
+            unpack: Static[bool] = False,
             ndmin: Static[int] = 0,
             max_rows: Optional[int] = None,
             quotechar: Optional[str] = None):
@@ -1963,7 +1963,7 @@ def genfromtxt(fname,
                replace_space: str = '_',
                autostrip: bool = False,
                case_sensitive=True,
-               unpack: Static[int] = False,
+               unpack: Static[bool] = False,
                loose: bool = True,
                invalid_raise: bool = True,
                max_rows: Optional[int] = None,
@@ -1978,7 +1978,7 @@ def genfromtxt(fname,
                       num_fields: int,
                       block_size: int,
                       dtype: type,
-                      unpack: Static[int] = False):
+                      unpack: Static[bool] = False):
         if cols is None:
             if isinstance(dtype, Tuple):
                 if staticlen(dtype) != num_fields:

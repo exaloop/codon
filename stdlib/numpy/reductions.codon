@@ -62,8 +62,8 @@ def _nan_to_back(v: Ptr[T], n: int, T: type):
     else:
         return n
 
-def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Static[int],
-                  bool_to_int: Static[int], **kwargs):
+def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Static[bool],
+                  bool_to_int: Static[bool], **kwargs):
     if dtype is NoneType:
         if conv_to_float:
             ftype = type(_float(ans_type()))
@@ -79,7 +79,7 @@ def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Static[int],
         else:
             return R(dtype, **kwargs)
 
-def _cast_elem(e0, dtype: type, conv_to_float: Static[int]):
+def _cast_elem(e0, dtype: type, conv_to_float: Static[bool]):
     if dtype is not NoneType:
         e1 = util.cast(e0, dtype)
     else:
@@ -212,10 +212,10 @@ def _reduce_all(arr,
                 empty,
                 dtype: type = NoneType,
                 out=None,
-                keepdims: Static[int] = False,
+                keepdims: Static[bool] = False,
                 where=util._NoValue(),
-                conv_to_float: Static[int] = False,
-                bool_to_int: Static[int] = False,
+                conv_to_float: Static[bool] = False,
+                bool_to_int: Static[bool] = False,
                 **kwargs):
     if out is not None:
         if keepdims:
@@ -267,12 +267,12 @@ def _reduce_all(arr,
                     loop_axis = -1
                     min_abs_stride = 0x7FFFFFFFFFFFFFFF
 
-                    for i in staticrange(staticlen(arr.ndim)):
-                        stride = strides[i]
+                    for j in staticrange(arr.ndim):
+                        stride = strides[j]
                         if stride:
                             abs_stride = abs(stride)
                             if abs_stride < min_abs_stride:
-                                loop_axis = i
+                                loop_axis = j
                                 min_abs_stride = abs_stride
 
                     if loop_axis == -1:
@@ -341,18 +341,18 @@ class _GradualFunctor:
     k: int
     kwargs: KW
     dtype: type
-    conv_to_float: Static[int]
+    conv_to_float: Static[bool]
     R: type
     KW: type
 
     def __new__(redux: R,
                 k: int,
                 dtype: type,
-                conv_to_float: Static[int],
+                conv_to_float: Static[bool],
                 kwargs: KW,
                 R: type,
                 KW: type) -> _GradualFunctor[dtype, conv_to_float, R, KW]:
-        return (redux, k, kwargs)
+        return _GradualFunctor[dtype, conv_to_float, R, KW](redux, k, kwargs)
 
     def __call__(self, q, p):
         e = _cast_elem(p[0], self.dtype, self.conv_to_float)
@@ -365,9 +365,9 @@ def _reduce_gradual(arr,
                     axis=None,
                     dtype: type = NoneType,
                     out=None,
-                    keepdims: Static[int] = False,
-                    conv_to_float: Static[int] = False,
-                    bool_to_int: Static[int] = False,
+                    keepdims: Static[bool] = False,
+                    conv_to_float: Static[bool] = False,
+                    bool_to_int: Static[bool] = False,
                     **kwargs):
     data = arr.data
     shape = arr.shape
@@ -522,10 +522,10 @@ def _reduce(arr,
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
-            conv_to_float: Static[int] = False,
-            bool_to_int: Static[int] = False,
+            conv_to_float: Static[bool] = False,
+            bool_to_int: Static[bool] = False,
             **kwargs):
     data = arr.data
     shape = arr.shape
@@ -759,7 +759,7 @@ def _reduce_buffered(arr,
                      out=None,
                      overwrite_input: bool = False,
                      force_contig: bool = True,
-                     keepdims: Static[int] = False,
+                     keepdims: Static[bool] = False,
                      where=util._NoValue(),
                      **kwargs):
     data = arr.data
@@ -972,7 +972,7 @@ def _reduce_buffered_multi(arr,
                            out=None,
                            overwrite_input: bool = False,
                            force_contig: bool = True,
-                           keepdims: Static[int] = False,
+                           keepdims: Static[bool] = False,
                            where=util._NoValue(),
                            **kwargs):
     data = arr.data
@@ -1156,7 +1156,7 @@ class SumRedux:
 
         return ans
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         self.total += SumRedux[T]._loop(a, n, stride, S)
 
 class NanSumRedux:
@@ -1189,7 +1189,7 @@ class NanSumRedux:
     def gradual_accept(self, curr, item, index: int, **kwargs):
         return curr if _isnan(item) else curr + util.cast(item, T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         ans = T()
 
         for i in range(n):
@@ -1228,7 +1228,7 @@ class ProdRedux:
     def gradual_accept(self, curr, item, index: int, **kwargs):
         return curr * util.cast(item, T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         ans = T(1)
 
         for i in range(n):
@@ -1267,7 +1267,7 @@ class NanProdRedux:
     def gradual_accept(self, curr, item, index: int, **kwargs):
         return curr if _isnan(item) else curr * util.cast(item, T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         ans = T(1)
 
         for i in range(n):
@@ -1308,7 +1308,7 @@ class MeanRedux:
     def gradual_result(self, curr, count: int):
         return curr / T(count) if count else _nan(T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         self.total += SumRedux[T]._loop(a, n, stride, S)
 
 class NanMeanRedux:
@@ -1339,7 +1339,7 @@ class NanMeanRedux:
     def done(self):
         return False
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         ans = T()
         nan_count = 0
 
@@ -1407,7 +1407,7 @@ class MinRedux:
         else:
             return x if x < m else m
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         if self.m is None:
             m: T = util.cast(a[0], T)
             a = _increment_ptr(a, stride)
@@ -1478,7 +1478,7 @@ class MaxRedux:
         else:
             return x if x > m else m
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         if self.m is None and n > 0:
             m: T = util.cast(a[0], T)
             a = _increment_ptr(a, stride)
@@ -1529,7 +1529,7 @@ class PTPRedux:
     def done(self):
         return False
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[int], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
         # n must be >0 here or we would've thrown an exception earlier
         m = util.cast(a[0], T)
         M = m
@@ -1684,7 +1684,7 @@ def sum(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         initial=0,
         where=util._NoValue(),
 ):
@@ -1707,7 +1707,7 @@ def nansum(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         initial=0,
         where=util._NoValue(),
 ):
@@ -1730,7 +1730,7 @@ def prod(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         initial=1,
         where=util._NoValue(),
 ):
@@ -1753,7 +1753,7 @@ def nanprod(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         initial=1,
         where=util._NoValue(),
 ):
@@ -1776,7 +1776,7 @@ def mean(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1797,7 +1797,7 @@ def nanmean(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1851,7 +1851,7 @@ def var(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1913,7 +1913,7 @@ def nanvar(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1938,7 +1938,7 @@ def std(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1963,7 +1963,7 @@ def nanstd(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1984,7 +1984,7 @@ def min(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         initial=util._NoValue(),
         where=util._NoValue(),
 ):
@@ -2012,7 +2012,7 @@ def max(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         initial=util._NoValue(),
         where=util._NoValue(),
 ):
@@ -2034,7 +2034,7 @@ def max(
         initial=initial,
     )
 
-def ptp(a, axis=None, out=None, keepdims: Static[int] = False):
+def ptp(a, axis=None, out=None, keepdims: Static[bool] = False):
     a = asarray(a)
     return _reduce(
         a,
@@ -2045,7 +2045,7 @@ def ptp(a, axis=None, out=None, keepdims: Static[int] = False):
         keepdims=keepdims,
     )
 
-def argmin(a, axis=None, out=None, keepdims: Static[int] = False):
+def argmin(a, axis=None, out=None, keepdims: Static[bool] = False):
     a = asarray(a)
     return _reduce(
         a,
@@ -2056,7 +2056,7 @@ def argmin(a, axis=None, out=None, keepdims: Static[int] = False):
         keepdims=keepdims,
     )
 
-def argmax(a, axis=None, out=None, keepdims: Static[int] = False):
+def argmax(a, axis=None, out=None, keepdims: Static[bool] = False):
     a = asarray(a)
     return _reduce(
         a,
@@ -2070,7 +2070,7 @@ def argmax(a, axis=None, out=None, keepdims: Static[int] = False):
 def any(a,
         axis=None,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue()):
     a = asarray(a)
     return _reduce(
@@ -2086,7 +2086,7 @@ def any(a,
 def all(a,
         axis=None,
         out=None,
-        keepdims: Static[int] = False,
+        keepdims: Static[bool] = False,
         where=util._NoValue()):
     a = asarray(a)
     return _reduce(
@@ -2099,7 +2099,7 @@ def all(a,
         where=where,
     )
 
-def count_nonzero(a, axis=None, keepdims: Static[int] = False):
+def count_nonzero(a, axis=None, keepdims: Static[bool] = False):
     a = asarray(a)
     return _reduce(a,
                    R=NonZeroRedux.create,
@@ -2144,7 +2144,7 @@ def median(a,
            axis=None,
            out=None,
            overwrite_input: bool = False,
-           keepdims: Static[int] = False):
+           keepdims: Static[bool] = False):
     a = asarray(a)
     return _reduce_buffered(a,
                             _median_reducer,
@@ -2165,7 +2165,7 @@ def nanmedian(a,
               axis=None,
               out=None,
               overwrite_input: bool = False,
-              keepdims: Static[int] = False):
+              keepdims: Static[bool] = False):
     a = asarray(a)
     return _reduce_buffered(a,
                             _nanmedian_reducer,
@@ -2538,7 +2538,7 @@ def _quantile_unchecked(a,
                         out=None,
                         overwrite_input: bool = False,
                         method: str = "linear",
-                        keepdims: Static[int] = False):
+                        keepdims: Static[bool] = False):
     # Assumes that q is in [0, 1], and is an ndarray
     if q.ndim == 0:
         return _reduce_buffered(a,
@@ -2576,7 +2576,7 @@ def quantile(a,
              out=None,
              overwrite_input: bool = False,
              method: str = "linear",
-             keepdims: Static[int] = False,
+             keepdims: Static[bool] = False,
              interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2614,7 +2614,7 @@ def _nanquantile_unchecked(a,
                            out=None,
                            overwrite_input: bool = False,
                            method: str = "linear",
-                           keepdims: Static[int] = False):
+                           keepdims: Static[bool] = False):
     # Assumes that q is in [0, 1], and is an ndarray
     if q.ndim == 0:
         return _reduce_buffered(a,
@@ -2646,7 +2646,7 @@ def nanquantile(a,
                 out=None,
                 overwrite_input: bool = False,
                 method: str = "linear",
-                keepdims: Static[int] = False,
+                keepdims: Static[bool] = False,
                 interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2676,7 +2676,7 @@ def percentile(a,
                out=None,
                overwrite_input: bool = False,
                method: str = "linear",
-               keepdims: Static[int] = False,
+               keepdims: Static[bool] = False,
                interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2696,7 +2696,7 @@ def nanpercentile(a,
                   out=None,
                   overwrite_input: bool = False,
                   method: str = "linear",
-                  keepdims: Static[int] = False,
+                  keepdims: Static[bool] = False,
                   interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2729,7 +2729,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             initial=0,
             where=util._NoValue(),
     ):
@@ -2748,7 +2748,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             initial=1,
             where=util._NoValue(),
     ):
@@ -2767,7 +2767,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
     ):
         return mean(self,
@@ -2782,7 +2782,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
     ):
         return nanmean(self,
@@ -2798,7 +2798,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
     ):
         return var(
@@ -2817,7 +2817,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
     ):
         return nanvar(
@@ -2836,7 +2836,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
     ):
         return std(
@@ -2855,7 +2855,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue(),
     ):
         return nanstd(
@@ -2874,7 +2874,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             initial=util._NoValue(),
             where=util._NoValue(),
     ):
@@ -2889,7 +2889,7 @@ class ndarray:
             where=where,
         )
 
-    def ptp(self, axis=None, out=None, keepdims: Static[int] = False):
+    def ptp(self, axis=None, out=None, keepdims: Static[bool] = False):
         return ptp(self, axis=axis, out=out, keepdims=keepdims)
 
     def max(
@@ -2898,7 +2898,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             initial=util._NoValue(),
             where=util._NoValue(),
     ):
@@ -2913,22 +2913,22 @@ class ndarray:
             where=where,
         )
 
-    def argmin(self, axis=None, out=None, keepdims: Static[int] = False):
+    def argmin(self, axis=None, out=None, keepdims: Static[bool] = False):
         return argmin(self, axis=axis, out=out, keepdims=keepdims)
 
-    def argmax(self, axis=None, out=None, keepdims: Static[int] = False):
+    def argmax(self, axis=None, out=None, keepdims: Static[bool] = False):
         return argmax(self, axis=axis, out=out, keepdims=keepdims)
 
     def any(self,
             axis=None,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue()):
         return any(self, axis=axis, out=out, keepdims=keepdims, where=where)
 
     def all(self,
             axis=None,
             out=None,
-            keepdims: Static[int] = False,
+            keepdims: Static[bool] = False,
             where=util._NoValue()):
         return all(self, axis=axis, out=out, keepdims=keepdims, where=where)

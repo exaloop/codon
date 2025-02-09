@@ -54,9 +54,6 @@ class DiophantineTerm:
     a: int
     ub: int
 
-    def __new__(a: int, ub: int) -> DiophantineTerm:
-        return (a, ub)
-
     def __lt__(self, other: DiophantineTerm):
         return self.a < other.a
 
