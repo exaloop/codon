@@ -18,7 +18,7 @@ class File:
         self._reset()
 
     def __init__(self, fd: int, mode: str):
-        self.fp = _C.fdopen(fd, mode.c_str()) 
+        self.fp = _C.fdopen(fd, mode.c_str())
         if not self.fp:
             raise IOError(f"file descriptor {fd} could not be opened")
         self._reset()
