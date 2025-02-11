@@ -2661,7 +2661,7 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
         if dtype is int or isinstance(dtype, Int) or isinstance(dtype, UInt):
             return util.cast(util.rint(x), dtype)
         else:
-            return x
+            return util.cast(x, dtype)
 
     def pad_from_function(a: ndarray, pw, padding_func, kwargs, extra = None):
         shape = a.shape
@@ -2915,7 +2915,7 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
         fill_linear(vector,
                     offset=(n - p2),
                     start=util.cast(end2, float),
-                    stop=util.cast(start1, float),
+                    stop=util.cast(start2, float),
                     num=p2,
                     rev=True)
 
