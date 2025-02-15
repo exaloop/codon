@@ -187,7 +187,7 @@ jobs:
       - name: Prepare Artifacts
         run: |
           cp -rf codon-deploy/python/dist .
-          rm -rf codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon.egg-info codon-deploy/python/dist codon-deploy/python/build
+          rm -rf codon-deploy/lib/libfmt.a codon-deploy/lib/pkgconfig codon-deploy/lib/cmake codon-deploy/python/codon_jit.egg-info codon-deploy/python/build
           tar -czf ${CODON_BUILD_ARCHIVE} codon-deploy
           du -sh codon-deploy
 
