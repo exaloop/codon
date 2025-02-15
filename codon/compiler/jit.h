@@ -31,6 +31,15 @@ public:
     ir::types::Type *getCObjType(ir::Module *M);
   };
 
+  struct JITResult {
+    void *result;
+    std::string message;
+
+    operator bool() const { return message.empty(); }
+    static JITResult success(void *result = nullptr) { return {result, ""}; }
+    static JITResult error(const std::string &message) { return {nullptr, message}; }
+  };
+
 private:
   std::unique_ptr<Compiler> compiler;
   std::unique_ptr<Engine> engine;
