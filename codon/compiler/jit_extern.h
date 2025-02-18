@@ -2,35 +2,30 @@
 
 #pragma once
 
-#include <string>
-#include <vector>
+#include <stddef.h>
+#include <stdint.h>
 
-namespace codon {
-namespace jit {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class JIT;
-
-struct JITResult {
+struct CJITResult {
   void *result;
-  std::string message;
-
-  operator bool() const { return message.empty(); }
-  static JITResult success(void *result) { return {result, ""}; }
-  static JITResult error(const std::string &message) { return {nullptr, message}; }
+  char *error;
 };
 
-JIT *jitInit(const std::string &name);
+void *jit_init(char *name);
+void jit_exit(void *jit);
 
-JITResult jitExecutePython(JIT *jit, const std::string &name,
-                           const std::vector<std::string> &types,
-                           const std::string &pyModule,
-                           const std::vector<std::string> &pyVars, void *arg,
-                           bool debug);
+struct CJITResult jit_execute_python(void *jit, char *name, char **types,
+                                     size_t types_size, char *pyModule, char **py_vars,
+                                     size_t py_vars_size, void *arg, uint8_t debug);
 
-JITResult jitExecuteSafe(JIT *jit, const std::string &code, const std::string &file,
-                         int line, bool debug);
+struct CJITResult jit_execute_safe(void *jit, char *code, char *file, int32_t line,
+                                   uint8_t debug);
 
-std::string getJITLibrary();
+char *get_jit_library();
 
-} // namespace jit
-} // namespace codon
+#ifdef __cplusplus
+}
+#endif
