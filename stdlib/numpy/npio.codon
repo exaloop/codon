@@ -525,7 +525,7 @@ class Converters:
 
     def __new__(funcs, mask, usecols,
                 dtype: type) -> Converters[dtype, F, M, U]:
-        return Converters[dtype, F, M, U](funcs, mask, usecols)
+        return superf(funcs, mask, usecols)
 
     def __call__(self, field: str, idx: int):
         usecols = self.usecols

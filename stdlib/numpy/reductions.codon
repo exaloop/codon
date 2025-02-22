@@ -352,7 +352,7 @@ class _GradualFunctor:
                 kwargs: KW,
                 R: type,
                 KW: type) -> _GradualFunctor[dtype, conv_to_float, R, KW]:
-        return _GradualFunctor[dtype, conv_to_float, R, KW](redux, k, kwargs)
+        return superf(redux, k, kwargs)
 
     def __call__(self, q, p):
         e = _cast_elem(p[0], self.dtype, self.conv_to_float)

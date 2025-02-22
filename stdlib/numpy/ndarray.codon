@@ -203,29 +203,29 @@ class flatiter[A]:
     def copy(self):
         return self.base.flatten()
 
-@tuple(init=False)
+@tuple
 class _UnaryFunctor:
     op: F
     F: type
 
     def __new__(op: F, F: type) -> _UnaryFunctor[F]:
-        return _UnaryFunctor[F](op)
+        return superf(op)
 
     def __call__(self, y, x):
         y[0] = self.op(x[0])
 
-@tuple(init=False)
+@tuple
 class _InplaceUnaryFunctor:
     op: F
     F: type
 
     def __new__(op: F, F: type) -> _InplaceUnaryFunctor[F]:
-        return _InplaceUnaryFunctor[F](op)
+        return superf(op)
 
     def __call__(self, x):
         x[0] = self.op(x[0])
 
-@tuple(init=False)
+@tuple
 class _BinaryFunctor:
     op: F
     F: type
@@ -233,23 +233,23 @@ class _BinaryFunctor:
     R2: type
 
     def __new__(op: F, R1: type, R2: type, F: type) -> _BinaryFunctor[F, R1, R2]:
-        return _BinaryFunctor[F, R1, R2](op)
+        return superf(op)
 
     def __call__(self, z, x, y):
         z[0] = self.op(util.cast(x[0], R1), util.cast(y[0], R2))
 
-@tuple(init=False)
+@tuple
 class _InplaceBinaryFunctor:
     op: F
     F: type
 
     def __new__(op: F, F: type) -> _InplaceBinaryFunctor[F]:
-        return _InplaceBinaryFunctor[F](op)
+        return superf(op)
 
     def __call__(self, x, y):
         x[0] = self.op(x[0], util.cast(y[0], type(x[0])))
 
-@tuple(init=False)
+@tuple
 class _RightBinaryFunctor:
     op: F
     F: type
@@ -257,12 +257,12 @@ class _RightBinaryFunctor:
     R2: type
 
     def __new__(op: F, R1: type, R2: type, F: type) -> _RightBinaryFunctor[F, R1, R2]:
-        return _RightBinaryFunctor[F, R1, R2](op)
+        return superf(op)
 
     def __call__(self, z, x, y):
         z[0] = self.op(util.cast(y[0], R2), util.cast(x[0], R1))
 
-@tuple(init=False)
+@tuple
 class _ScalarFunctor:
     op: F
     y: Y
@@ -272,12 +272,12 @@ class _ScalarFunctor:
     R2: type
 
     def __new__(op: F, y: Y, R1: type, R2: type, F: type, Y: type) -> _ScalarFunctor[F, Y, R1, R2]:
-        return _ScalarFunctor[F, Y, R1, R2](op, y)
+        return superf(op, y)
 
     def __call__(self, z, x):
         z[0] = self.op(util.cast(x[0], R1), util.cast(self.y, R2))
 
-@tuple(init=False)
+@tuple
 class _InplaceScalarFunctor:
     op: F
     y: Y
@@ -285,13 +285,13 @@ class _InplaceScalarFunctor:
     Y: type
 
     def __new__(op: F, y: Y, F: type, Y: type) -> _InplaceScalarFunctor[F, Y]:
-        return _InplaceScalarFunctor[F, Y](op, y)
+        return superf(op, y)
 
     def __call__(self, x):
         x[0] = self.op(x[0], util.cast(self.y, type(x[0])))
 
 
-@tuple(init=False)
+@tuple
 class _RightScalarFunctor:
     op: F
     y: Y
@@ -301,7 +301,7 @@ class _RightScalarFunctor:
     R2: type
 
     def __new__(op: F, y: Y, R1: type, R2: type, F: type, Y: type) -> _RightScalarFunctor[F, Y, R1, R2]:
-        return _RightScalarFunctor[F, Y, R1, R2](op, y)
+        return superf(op, y)
 
     def __call__(self, z, x):
         z[0] = self.op(util.cast(self.y, R2), util.cast(x[0], R1))

@@ -237,7 +237,7 @@ class _UnaryFunctor:
     UF: type
 
     def __new__(ufunc: UF, dtype: type, UF: type) -> _UnaryFunctor[dtype, UF]:
-        return _UnaryFunctor[dtype, UF](ufunc)
+        return superf(ufunc)
 
     def __call__(self, y, x):
         y[0] = self.ufunc._f(x[0], dtype=self.dtype, dtype_out=type(y[0]))
@@ -250,7 +250,7 @@ class _UnaryWhereFunctor:
 
     def __new__(ufunc: UF, dtype: type,
                 UF: type) -> _UnaryWhereFunctor[dtype, UF]:
-        return _UnaryWhereFunctor[dtype, UF](ufunc)
+        return superf(ufunc)
 
     def __call__(self, y, x, w):
         if w[0]:
@@ -262,7 +262,7 @@ class _Unary2Functor:
     UF: type
 
     def __new__(ufunc: UF, UF: type) -> _Unary2Functor[UF]:
-        return _Unary2Functor[UF](ufunc)
+        return superf(ufunc)
 
     def __call__(self, y1, y2, x):
         e1, e2 = self.ufunc._op(x[0])
@@ -275,7 +275,7 @@ class _Unary2WhereFunctor:
     UF: type
 
     def __new__(ufunc: UF, UF: type) -> _Unary2WhereFunctor[UF]:
-        return _Unary2WhereFunctor[UF](ufunc, )
+        return superf(ufunc)
 
     def __call__(self, y1, y2, x, w):
         if w[0]:
@@ -293,7 +293,7 @@ class _BinaryFunctor:
 
     def __new__(ufunc: UF, CT1: type, CT2: type, dtype: type,
                 UF: type) -> _BinaryFunctor[CT1, CT2, dtype, UF]:
-        return _BinaryFunctor[CT1, CT2, dtype, UF](ufunc)
+        return superf(ufunc)
 
     def __call__(self, z, x, y):
         z[0] = self.ufunc._f(util.cast(x[0], CT1),
@@ -313,7 +313,7 @@ class _BinaryScalar1Functor:
 
     def __new__(ufunc: UF, x: X, CT1: type, CT2: type, dtype: type, UF: type,
                 X: type) -> _BinaryScalar1Functor[CT1, CT2, dtype, UF, X]:
-        return _BinaryScalar1Functor[CT1, CT2, dtype, UF, X](ufunc, x)
+        return superf(ufunc, x)
 
     def __call__(self, z, y):
         z[0] = self.ufunc._f(util.cast(self.x, CT1),
@@ -333,7 +333,7 @@ class _BinaryScalar2Functor:
 
     def __new__(ufunc: UF, y: Y, CT1: type, CT2: type, dtype: type, UF: type,
                 Y: type) -> _BinaryScalar2Functor[CT1, CT2, dtype, UF, Y]:
-        return _BinaryScalar2Functor[CT1, CT2, dtype, UF, Y](ufunc, y)
+        return superf(ufunc, y)
 
     def __call__(self, z, x):
         z[0] = self.ufunc._f(util.cast(x[0], CT1),
@@ -351,7 +351,7 @@ class _BinaryWhereFunctor:
 
     def __new__(ufunc: UF, CT1: type, CT2: type, dtype: type,
                 UF: type) -> _BinaryWhereFunctor[CT1, CT2, dtype, UF]:
-        return _BinaryWhereFunctor[CT1, CT2, dtype, UF](ufunc)
+        return superf(ufunc)
 
     def __call__(self, z, x, y, w):
         if w[0]:
@@ -367,7 +367,7 @@ class UnaryUFunc:
     F: type
 
     def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc[name, F]:
-        return UnaryUFunc[name, F](op)
+        return superf(op)
 
     @property
     def nin(self):
@@ -455,7 +455,7 @@ class UnaryUFunc2:
     F: type
 
     def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc2[name, F]:
-        return UnaryUFunc2[name, F](op)
+        return superf(op)
 
     @property
     def nin(self):
@@ -543,7 +543,7 @@ class BinaryUFunc:
                 identity: I = None,
                 F: type,
                 I: type) -> BinaryUFunc[name, F, I]:
-        return BinaryUFunc[name, F, I](op, identity)
+        return superf(op, identity)
 
     @property
     def nin(self):
