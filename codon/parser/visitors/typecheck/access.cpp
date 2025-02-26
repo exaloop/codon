@@ -481,12 +481,15 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
 
   // Case: special members
   std::unordered_map<std::string, std::string> specialMembers{
-      {"__elemsize__", "int"},
-      {"__atomic__", "bool"},
-      {"__contents_atomic__", "bool"},
-      {"__name__", "str"}};
+      {"__elemsize__", "int"}, {"__atomic__", "bool"}, {"__contents_atomic__", "bool"}};
   if (auto mtyp = in(specialMembers, expr->getMember())) {
     unify(expr->getType(), getStdLibType(*mtyp));
+    if (expr->getExpr()->isDone() && realize(expr->getType()))
+      expr->setDone();
+    return nullptr;
+  }
+  if (expr->getMember() == "__name__" && isTypeExpr(expr->getExpr())) {
+    unify(expr->getType(), getStdLibType("str"));
     if (expr->getExpr()->isDone() && realize(expr->getType()))
       expr->setDone();
     return nullptr;
