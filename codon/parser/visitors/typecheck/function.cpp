@@ -469,6 +469,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Expression to be used if function binding is modified by captures or decorators
   Expr *finalExpr = nullptr;
+  Expr *selfAssign = nullptr;
   // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
   if (!captures.empty()) {
     if (isClassMember)
@@ -484,9 +485,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         a.value = clone(a.getExpr());
     }
     // todo)) right now this adds a capture hook for recursive calls
-    auto assign = N<AssignStmt>(N<IdExpr>(stmt->getName()),
-                                N<CallExpr>(N<IdExpr>(stmt->getName()), pa));
-    f->suite = N<SuiteStmt>(assign, suite);
+    selfAssign = N<CallExpr>(N<IdExpr>(stmt->getName()), pa);
   }
 
   // Parse remaining decorators
@@ -497,9 +496,14 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
                               finalExpr ? finalExpr : N<IdExpr>(canonicalName));
+      selfAssign = N<CallExpr>(clone(stmt->decorators[i]),
+                               selfAssign ? selfAssign : N<IdExpr>(canonicalName));
     }
   }
 
+  if (selfAssign)
+    f->suite =
+        N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(stmt->getName()), selfAssign), suite);
   if (finalExpr) {
     resultStmt = N<SuiteStmt>(
         f, transform(N<AssignStmt>(N<IdExpr>(stmt->getName()), finalExpr)));

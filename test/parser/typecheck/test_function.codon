@@ -632,3 +632,49 @@ for fn in l: print(fn(1, 2))
 #: f1:1.2
 #: f2:1+2
 #: f3:<1+2+hey!>
+
+#%% decorator_self_reference
+store = Dict[int, int]()   # need to manually configure cache for now.
+def memoize(func):
+    def inner(val: int) -> int:
+        if val in store:
+            print(f"<- cache[{val}]")
+            return store[val]
+        else:
+            result = func(val)
+            store[val] = result
+            return result
+    return inner
+
+@memoize
+def fib(n: int) -> int:
+    print(f"<- fib[{n}]")
+    if n < 2:
+        return n
+    else:
+        return fib(n - 1) + fib(n - 2)    ## << not accessing decorated function
+
+f4 = fib(4)
+print(f"{f4=} : {store=}")
+#: <- fib[4]
+#: <- fib[3]
+#: <- fib[2]
+#: <- fib[1]
+#: <- fib[0]
+#: <- cache[1]
+#: <- cache[2]
+#: f4=3 : store={0: 0, 1: 1, 2: 1, 3: 2, 4: 3}
+
+f6 = fib(6)
+print(f"{f6=} : {store=}")
+#: <- fib[6]
+#: <- fib[5]
+#: <- cache[4]
+#: <- cache[3]
+#: <- cache[4]
+#: f6=8 : store={0: 0, 1: 1, 2: 1, 3: 2, 4: 3, 5: 5, 6: 8}
+
+f6 = fib(6)
+print(f"{f6=} : {store=}")
+#: <- cache[6]
+#: f6=8 : store={0: 0, 1: 1, 2: 1, 3: 2, 4: 3, 5: 5, 6: 8}
