@@ -813,6 +813,6 @@ EXTERNDENT__PREDICATE {
 >
 
 # https://docs.python.org/3/library/string.html#formatspec
-format_spec <- ([<>=^] / [^{}] [<>=^])? [+- ]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
+format_spec <- ([^{}] [<>=^] / [<>=^])? [+- ]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
   return string(VS.sv());
 }

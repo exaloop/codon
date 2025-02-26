@@ -496,8 +496,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
                               finalExpr ? finalExpr : N<IdExpr>(canonicalName));
-      selfAssign = N<CallExpr>(clone(stmt->decorators[i]),
-                               selfAssign ? selfAssign : N<IdExpr>(canonicalName));
+      // selfAssign = N<CallExpr>(clone(stmt->decorators[i]),
+      //                          selfAssign ? selfAssign : N<IdExpr>(canonicalName));
     }
   }
 
