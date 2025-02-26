@@ -605,6 +605,14 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
 
+  else if ((!expectedClass || !expectedClass->is("Ref")) && exprClass &&
+           exprClass->is("Ref")) {
+    type = extractClassGeneric(exprClass)->shared_from_this();
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>("__internal__.ref_get"), expr);
+    };
+  }
+
   else if (expectedClass && expectedClass->is("Generator") &&
            !exprClass->is(expectedClass->name) && !isEllipsis) {
     if (findMethod(exprClass, "__iter__").empty())
@@ -658,8 +666,111 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (callee && exprClass && exprType->getFunc() &&
-           !(expectedClass && expectedClass->is("Function"))) {
+  else if (expectedClass && expectedClass->is("ProxyFunc") && exprClass &&
+           (exprClass->getPartial() || exprClass->getFunc() ||
+            exprClass->is("Function"))) {
+    // Get list of arguments
+    std::vector<Type *> argTypes;
+    Type *retType;
+    std::shared_ptr<FuncType> fnType = nullptr;
+    if (!exprClass->getPartial()) {
+      auto targs = extractClassGeneric(exprClass)->getClass();
+      for (size_t i = 0; i < targs->size(); i++)
+        argTypes.push_back((*targs)[i]);
+      retType = extractClassGeneric(exprClass, 1);
+    } else {
+      fnType = instantiateType(exprClass->getPartial()->getPartialFunc());
+      std::vector<types::Type *> argumentTypes;
+      auto known = exprClass->getPartial()->getPartialMask();
+      for (size_t i = 0; i < known.size(); i++) {
+        if (!known[i])
+          argTypes.push_back((*fnType)[i]);
+      }
+      retType = fnType->getRetType();
+    }
+    auto expectedArgs = extractClassGeneric(expectedClass)->getClass();
+    if (argTypes.size() != expectedArgs->size())
+      return {false, nullptr, nullptr};
+    for (size_t i = 0; i < argTypes.size(); i++) {
+      if (argTypes[i]->unify((*expectedArgs)[i], nullptr) < 0)
+        return {false, nullptr, nullptr};
+    }
+    if (retType->unify(extractClassGeneric(expectedClass, 1), nullptr) < 0)
+      return {false, nullptr, nullptr};
+
+    type = expectedType->shared_from_this();
+    fn = [this, type](Expr *expr) -> Expr * {
+      auto exprClass = expr->getType()->getClass();
+      auto expectedClass = type->getClass();
+
+      std::vector<Type *> argTypes;
+      Type *retType;
+      std::shared_ptr<FuncType> fnType = nullptr;
+      if (!exprClass->getPartial()) {
+        auto targs = extractClassGeneric(exprClass)->getClass();
+        for (size_t i = 0; i < targs->size(); i++)
+          argTypes.push_back((*targs)[i]);
+        retType = extractClassGeneric(exprClass, 1);
+      } else {
+        fnType = instantiateType(exprClass->getPartial()->getPartialFunc());
+        std::vector<types::Type *> argumentTypes;
+        auto known = exprClass->getPartial()->getPartialMask();
+        for (size_t i = 0; i < known.size(); i++) {
+          if (!known[i])
+            argTypes.push_back((*fnType)[i]);
+        }
+        retType = fnType->getRetType();
+      }
+      auto expectedArgs = extractClassGeneric(expectedClass)->getClass();
+      for (size_t i = 0; i < argTypes.size(); i++)
+        unify(argTypes[i], (*expectedArgs)[i]);
+      auto tr = unify(retType, extractClassGeneric(expectedClass, 1));
+
+      std::string fname;
+      Expr *retFn = nullptr, *dataArg = nullptr, *dataType = nullptr;
+      if (exprClass->getPartial()) {
+        auto rf = realize(exprClass);
+        fname = rf->realizedName();
+        seqassert(rf, "not realizable");
+        retFn = N<IndexExpr>(
+            N<CallExpr>(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>(rf->realizedName())),
+                        N<IdExpr>("data")),
+            N<IntExpr>(0));
+        dataType = N<IdExpr>("cobj");
+      } else if (exprClass->getFunc()) {
+        auto rf = realize(exprClass);
+        seqassert(rf, "not realizable");
+        fname = rf->realizedName();
+        retFn = N<IdExpr>(rf->getFunc()->realizedName());
+        dataArg = N<CallExpr>(N<IdExpr>("cobj"));
+        dataType = N<IdExpr>("cobj");
+      } else {
+        seqassert(exprClass->is("Function"), "bad type: {}", exprClass->toString());
+        auto rf = realize(exprClass);
+        seqassert(rf, "not realizable");
+        fname = rf->realizedName();
+        retFn = N<CallExpr>(N<IdExpr>(rf->realizedName()), N<IdExpr>("data"));
+        dataType = N<IdExpr>("cobj");
+      }
+      fname = fmt::format(".proxy.{}", fname);
+
+      if (!ctx->find(fname)) {
+        // Create wrapper if needed
+        auto f = N<FunctionStmt>(
+            fname, nullptr,
+            std::vector<Param>{
+                Param{"data", dataType},
+                Param{"args", N<IdExpr>(expectedArgs->realizedName())}}, // Tuple[...]
+            N<SuiteStmt>(
+                N<ReturnStmt>(N<CallExpr>(retFn, N<StarExpr>(N<IdExpr>("args"))))));
+        f = cast<FunctionStmt>(transform(f));
+      }
+      auto e = N<CallExpr>(N<IdExpr>("ProxyFunc"), N<IdExpr>(fname),
+                           dataArg ? dataArg : expr);
+      return e;
+    };
+  } else if (callee && exprClass && exprType->getFunc() &&
+             !(expectedClass && expectedClass->is("Function"))) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
     // Special case: Seq functions are embedded (via lambda!)
     // seqassert(cast<IdExpr>(expr) || (cast<StmtExpr>(expr) &&
@@ -1039,12 +1150,12 @@ types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) {
   return extractClassType(t);
 }
 
-types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, int idx) {
+types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, int idx) const {
   seqassert(t->getClass() && idx < t->getClass()->generics.size(), "bad class");
   return t->getClass()->generics[idx].type.get();
 }
 
-types::Type *TypecheckVisitor::extractFuncGeneric(types::Type *t, int idx) {
+types::Type *TypecheckVisitor::extractFuncGeneric(types::Type *t, int idx) const {
   seqassert(t->getFunc() && idx < t->getFunc()->funcGenerics.size(), "bad function");
   return t->getFunc()->funcGenerics[idx].type.get();
 }
@@ -1262,7 +1373,10 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       }
     }
   };
-  if (type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
+  if (type->is("Ref")) {
+    type = extractClassGeneric(type)->getClass();
+  }
+  if (type && type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
     generateTuple(type->generics.size());
     auto mc = getClass(TYPE_TUPLE);
     populate(*mc);
@@ -1282,6 +1396,9 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
 
 Cache::Class::ClassField *
 TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) const {
+  if (type->is("Ref")) {
+    type = extractClassGeneric(type)->getClass();
+  }
   if (auto cls = getClass(type)) {
     for (const auto &pc : cls->mro) {
       auto mc = getClass(pc.get());

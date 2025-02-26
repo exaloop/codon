@@ -78,6 +78,8 @@ public:
   ClassType *getClass() override { return this; }
   ClassType *getPartial() override { return name == "Partial" ? getClass() : nullptr; }
   bool isRecord() const { return isTuple; }
+
+  size_t size() const { return generics.size(); }
   Type *operator[](int i) const { return generics[i].getType(); }
 
 public:

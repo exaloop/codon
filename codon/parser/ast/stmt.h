@@ -420,16 +420,19 @@ private:
 ///           finally: print
 struct TryStmt : public AcceptorExtend<TryStmt, Stmt>, Items<ExceptStmt *> {
   TryStmt(Stmt *suite = nullptr, std::vector<ExceptStmt *> catches = {},
-          Stmt *finally = nullptr);
+          Stmt *elseSuite = nullptr, Stmt *finally = nullptr);
   TryStmt(const TryStmt &, bool);
 
   SuiteStmt *getSuite() const { return suite; }
+  SuiteStmt *getElse() const { return elseSuite; }
   SuiteStmt *getFinally() const { return finally; }
 
-  ACCEPT(TryStmt, ASTVisitor, items, suite, finally);
+  ACCEPT(TryStmt, ASTVisitor, items, suite, elseSuite, finally);
 
 private:
   SuiteStmt *suite;
+  /// nullptr if there is no else block.
+  SuiteStmt *elseSuite;
   /// nullptr if there is no finally block.
   SuiteStmt *finally;
 };

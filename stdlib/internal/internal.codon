@@ -148,6 +148,24 @@ class __internal__:
                 pr = RTTI(B.__id__).__raw__()
             return __internal__.to_class_ptr_rtti((ptr, pr), B)
 
+    @llvm
+    def _ref_make_helper(val: Ptr[T], T: type) -> Ref[T]:
+        %0 = insertvalue { ptr } undef, ptr %val, 0
+        ret { ptr } %0
+
+    def ref_make(val: T, T: type) -> Ref[T]:
+        p = Ptr[T](1)
+        p[0] = val
+        return __internal__._ref_make_helper(p)
+
+    @llvm
+    def ref_get(ref: Ref[T], T: type) -> T:
+        %0 = extractvalue { ptr } %ref, 0
+        %1 = getelementptr {=T}, ptr %0, i64 0
+        %2 = load {=T}, ptr %1
+        ret {=T} %2
+
+
     # Unions
 
     def get_union_tag(u, tag: Static[int]):  # compiler-generated
@@ -808,3 +826,34 @@ class TypeWrap:
     @property
     def __name__(self):
         return T.__name__
+
+@extend
+class Ref:
+    def __init__(self, val: T):
+        self.val = val
+
+@extend
+class ProxyFunc:
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Ptr[byte]) -> ProxyFunc[T, TR]:
+        return __internal__.tuple_cast_unsafe((fn, data), ProxyFunc[T, TR])
+
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Partial[M,PT,K,F],
+                T: type, TR: type,
+                M: Static[str], PT: type, F: type, K: type) -> ProxyFunc[T, TR]:
+        p = Ptr[Partial[M,PT,K,F]](1)
+        p[0] = data
+        return ProxyFunc(fn, p.as_byte())
+
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Function[T, TR]) -> ProxyFunc[T, TR]:
+        return ProxyFunc(fn, data.__raw__())
+
+    def __new__(fn: Function[T, TR]) -> ProxyFunc[T, TR]:
+        def _wrap(data: Ptr[byte], args, f: type):
+            return f(data)(*args)
+        return ProxyFunc(
+            __realized__(_wrap(f=Function[T, TR], ...), (Ptr[byte], T)),
+            fn.__raw__()
+        )
+
+    def __call__(self, *args):
+        return self.fn.__call__(self.data, args)

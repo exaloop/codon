@@ -349,8 +349,8 @@ public:
   types::TypePtr instantiateTypeVar(types::Type *t);
   void registerGlobal(const std::string &s, bool = false);
   types::ClassType *getStdLibType(const std::string &type);
-  types::Type *extractClassGeneric(types::Type *t, int idx = 0);
-  types::Type *extractFuncGeneric(types::Type *t, int idx = 0);
+  types::Type *extractClassGeneric(types::Type *t, int idx = 0) const;
+  types::Type *extractFuncGeneric(types::Type *t, int idx = 0) const;
   types::Type *extractFuncArgType(types::Type *t, int idx = 0);
   std::string getClassMethod(types::Type *typ, const std::string &member);
   std::string getTemporaryVar(const std::string &s);

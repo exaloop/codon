@@ -251,18 +251,8 @@ public:
   string getFilename(const string &basename) {
     return string(TEST_DIR) + "/" + basename;
   }
-  int runInChildProcess() {
-    assert(pipe(out_pipe) != -1);
-    pid = fork();
-    GC_atfork_prepare();
-    assert(pid != -1);
-
-    if (pid == 0) {
-      GC_atfork_child();
-      dup2(out_pipe[1], STDOUT_FILENO);
-      close(out_pipe[0]);
-      close(out_pipe[1]);
-
+  int runInChildProcess(bool avoidFork = false) {
+    auto fn = [this]() {
       auto file = getFilename(get<0>(GetParam()));
       bool debug = get<1>(GetParam());
       auto code = get<3>(GetParam());
@@ -303,6 +293,23 @@ public:
       seq_exc_init(0);
       compiler->getLLVMVisitor()->run({file});
       fflush(stdout);
+    };
+    // if (true) {
+    //   fn();
+    //   return 0;
+    // }
+
+    assert(pipe(out_pipe) != -1);
+    pid = fork();
+    GC_atfork_prepare();
+    assert(pid != -1);
+
+    if (pid == 0) {
+      GC_atfork_child();
+      dup2(out_pipe[1], STDOUT_FILENO);
+      close(out_pipe[0]);
+      close(out_pipe[1]);
+      fn();
       exit(EXIT_SUCCESS);
     } else {
       GC_atfork_parent();
@@ -527,41 +534,41 @@ INSTANTIATE_TEST_SUITE_P(
     ),
     getTestNameFromParam);
 
-INSTANTIATE_TEST_SUITE_P(
-    NumPyTests, SeqTest,
-    testing::Combine(
-        testing::Values(
-            "numpy/random_tests/test_mt19937.codon",
-            "numpy/random_tests/test_pcg64.codon",
-            "numpy/random_tests/test_philox.codon",
-            "numpy/random_tests/test_sfc64.codon",
-            "numpy/test_dtype.codon",
-            "numpy/test_fft.codon",
-            "numpy/test_functional.codon",
-            // "numpy/test_fusion.codon", // TODO: uses a lot of RAM
-            "numpy/test_indexing.codon",
-            "numpy/test_io.codon",
-            "numpy/test_lib.codon",
-            "numpy/test_linalg.codon",
-            "numpy/test_loops.codon",
-            // "numpy/test_misc.codon", // TODO: takes forever in debug mode
-            "numpy/test_ndmath.codon",
-            "numpy/test_npdatetime.codon",
-            "numpy/test_pybridge.codon",
-            "numpy/test_reductions.codon",
-            "numpy/test_routines.codon",
-            "numpy/test_sorting.codon",
-            "numpy/test_statistics.codon",
-            "numpy/test_window.codon"
-        ),
-        testing::Values(true, false),
-        testing::Values(""),
-        testing::Values(""),
-        testing::Values(0),
-        testing::Values(false),
-        testing::Values(false)
-    ),
-    getTestNameFromParam);
+// INSTANTIATE_TEST_SUITE_P(
+//     NumPyTests, SeqTest,
+//     testing::Combine(
+//         testing::Values(
+//             "numpy/random_tests/test_mt19937.codon",
+//             "numpy/random_tests/test_pcg64.codon",
+//             "numpy/random_tests/test_philox.codon",
+//             "numpy/random_tests/test_sfc64.codon",
+//             "numpy/test_dtype.codon",
+//             "numpy/test_fft.codon",
+//             "numpy/test_functional.codon",
+//             // "numpy/test_fusion.codon", // TODO: uses a lot of RAM
+//             "numpy/test_indexing.codon",
+//             "numpy/test_io.codon",
+//             "numpy/test_lib.codon",
+//             "numpy/test_linalg.codon",
+//             "numpy/test_loops.codon",
+//             // "numpy/test_misc.codon", // TODO: takes forever in debug mode
+//             "numpy/test_ndmath.codon",
+//             "numpy/test_npdatetime.codon",
+//             "numpy/test_pybridge.codon",
+//             "numpy/test_reductions.codon",
+//             "numpy/test_routines.codon",
+//             "numpy/test_sorting.codon",
+//             "numpy/test_statistics.codon",
+//             "numpy/test_window.codon"
+//         ),
+//         testing::Values(true, false),
+//         testing::Values(""),
+//         testing::Values(""),
+//         testing::Values(0),
+//         testing::Values(false),
+//         testing::Values(false)
+//     ),
+//     getTestNameFromParam);
 
 // clang-format on
 

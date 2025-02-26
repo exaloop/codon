@@ -248,6 +248,7 @@ public:
     transform(stmt->suite);
     for (auto &a : stmt->items)
       transform(a);
+    transform(stmt->elseSuite);
     transform(stmt->finally);
   }
   void visit(ExceptStmt *stmt) override {
@@ -441,6 +442,7 @@ public:
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
     for (auto &a : stmt->items)
       a = (ExceptStmt *)transform(a);
+    stmt->elseSuite = SuiteStmt::wrap(transform(stmt->elseSuite));
     stmt->finally = SuiteStmt::wrap(transform(stmt->finally));
   }
   void visit(ExceptStmt *stmt) override {

@@ -187,6 +187,7 @@ class Ptr:
     def __repr__(self) -> str:
         return self.__format__("")
 
+
 ptr = Ptr
 Jar = Ptr[byte]
 

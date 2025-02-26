@@ -63,8 +63,8 @@ NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
       u32(M->getIntNType(32, false)), i64(M->getIntType()),
       u64(M->getIntNType(64, false)), f16(M->getFloat16Type()),
       f32(M->getFloat32Type()), f64(M->getFloatType()),
-      c64(M->getType("std.internal.types.complex.complex64")),
-      c128(M->getType("std.internal.types.complex.complex")) {}
+      c64(M->getType("std.internal.types.complex.complex64.0")),
+      c128(M->getType("std.internal.types.complex.complex.0")) {}
 
 NumPyType::NumPyType(Type dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {
   seqassertn(ndim >= 0, "ndim must be non-negative");

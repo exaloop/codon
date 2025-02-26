@@ -756,11 +756,25 @@ Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
 
 /// Transform __realized__ function to a fully realized type identifier.
 Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
-  auto call = cast<CallExpr>(
-      transform(N<CallExpr>((*expr)[0].getExpr(), N<StarExpr>((*expr)[1].getExpr()))));
-  if (!call || !call->getExpr()->getType()->getFunc())
+  auto fn = (*expr)[0].getExpr()->getType()->shared_from_this();
+  auto pt = (*expr)[0].getExpr()->getType()->getPartial();
+  if (!fn->getFunc() && pt && pt->isPartialEmpty())
+    fn = instantiateType(pt->getPartialFunc());
+  if (!fn->getFunc())
     E(Error::CALL_REALIZED_FN, (*expr)[0].getExpr());
-  if (auto f = realize(call->getExpr()->getType())) {
+  std::vector<types::Type *> args;
+  if (auto tup = cast<CallExpr>((*expr)[1].getExpr())) {
+    for (auto &a : *tup) {
+      a.value = transform(a.getExpr());
+      if (!a.getExpr()->getClassType())
+        return nullptr;
+      auto t = extractType(a);
+      args.emplace_back(t->is("TypeWrap") ? extractClassGeneric(t) : t);
+    }
+  }
+  for (size_t i = 0; i < std::min(args.size(), fn->getFunc()->size()); i++)
+    unify((*fn->getFunc())[i], args[i]);
+  if (auto f = realize(fn.get())) {
     auto e = N<IdExpr>(f->getFunc()->realizedName());
     e->setType(f->shared_from_this());
     e->setDone();

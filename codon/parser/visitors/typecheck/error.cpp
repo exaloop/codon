@@ -52,6 +52,17 @@ void TypecheckVisitor::visit(AssertStmt *stmt) {
 ///          f = exc; ...; break                       # PyExc
 ///          raise```
 void TypecheckVisitor::visit(TryStmt *stmt) {
+  if (stmt->getElse()) {
+    auto successVar = getTemporaryVar("try_success");
+    prependStmts->push_back(
+        transform(N<AssignStmt>(N<IdExpr>(successVar), N<BoolExpr>(false))));
+    stmt->getSuite()->addStmt(N<AssignStmt>(N<IdExpr>(successVar), N<BoolExpr>(true),
+                                            nullptr, AssignStmt::UpdateMode::Update));
+    stmt->finally =
+        N<SuiteStmt>(N<IfStmt>(N<IdExpr>(successVar), stmt->getElse()), stmt->finally);
+    stmt->elseSuite = nullptr;
+  }
+
   ctx->blockLevel++;
   stmt->suite = SuiteStmt::wrap(transform(stmt->getSuite()));
   ctx->blockLevel--;
@@ -134,6 +145,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     catches.push_back(c);
   }
   stmt->items = catches;
+
   if (stmt->getFinally()) {
     ctx->blockLevel++;
     stmt->finally = SuiteStmt::wrap(transform(stmt->getFinally()));

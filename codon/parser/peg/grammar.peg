@@ -287,13 +287,13 @@ as_item <-
   / expression { return pair(ac_expr(V0), (Expr*)nullptr); }
 # TODO: else block?
 try_stmt <-
-  / ('try' _ ':' _ suite)
-    excepts
-    (SAMEDENT 'finally' _ ':' _ suite)? {
+  / ('try' _ ':' _ suite) excepts else_finally? {
+    std::pair<Stmt*, Stmt*> ef {nullptr, nullptr};
+    if (VS.size() > 2) ef = ac<std::pair<Stmt *, Stmt *>>(V2);
     return asts(Try, LOC,
       ac_stmt(V0),
       ac<SemVals>(V1).transform<ExceptStmt*>(),
-      VS.size() > 2 ? ac_stmt(V2): nullptr
+      ef.first, ef.second
     );
   }
   / ('try' _ ':' _ suite) (SAMEDENT 'finally' _ ':' _ suite)? {
@@ -302,6 +302,11 @@ try_stmt <-
       VS.size() > 1 ? ac_stmt(V1): nullptr
     );
   }
+else_finally <-
+  / SAMEDENT 'else' _ ':' _ suite
+    SAMEDENT 'finally' _ ':' _ suite { return std::pair<Stmt *, Stmt *>(ac_stmt(V0), ac_stmt(V1)); }
+  / SAMEDENT 'else' _ ':' _ suite { return std::pair<Stmt *, Stmt *>(ac_stmt(V0), nullptr); }
+  / SAMEDENT 'finally' _ ':' _ suite { return std::pair<Stmt *, Stmt *>(nullptr, ac_stmt(V0)); }
 excepts <- (SAMEDENT except_block)+ { return VS; }
 except_block <-
   / 'except' SPACE expression (SPACE 'as' SPACE NAME)? _ ':' _ suite {

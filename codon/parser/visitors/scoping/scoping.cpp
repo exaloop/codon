@@ -392,6 +392,7 @@ void ScopingVisitor::visit(TryStmt *stmt) {
     if (!a->getVar().empty())
       ctx->renames.pop_back();
   }
+  CHECK(transform(stmt->getElse()));
   CHECK(transform(stmt->getFinally()));
 }
 

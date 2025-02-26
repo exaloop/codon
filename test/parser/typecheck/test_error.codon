@@ -72,3 +72,33 @@ try:
     foo(bar3)
 except RuntimeError as e:
     print(e.message, e.__cause__)  #: oops None
+
+#%% try_else,barebones
+def div(x, y):
+    if y == 0: raise ZeroDivisionError("oops!")
+    return x // y
+def divide(x: int, y: int):
+    try:
+        result = div(x, y)
+    except ZeroDivisionError:
+        print("ZeroDivisionError")
+    else:
+        print(result)
+    finally:
+        print('Done!')
+
+    try:
+        result = div(x, y)
+    except ZeroDivisionError:
+        print("ZeroDivisionError")
+    else:
+        print(result)
+
+divide(3, 2)
+#: 1
+#: Done!
+#: 1
+divide(3, 0)
+#: ZeroDivisionError
+#: Done!
+#: ZeroDivisionError

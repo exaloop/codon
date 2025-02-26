@@ -279,12 +279,15 @@ std::string ExceptStmt::toString(int indent) const {
              suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
 }
 
-TryStmt::TryStmt(Stmt *suite, std::vector<ExceptStmt *> excepts, Stmt *finally)
+TryStmt::TryStmt(Stmt *suite, std::vector<ExceptStmt *> excepts, Stmt *elseSuite,
+                 Stmt *finally)
     : AcceptorExtend(), Items(std::move(excepts)), suite(SuiteStmt::wrap(suite)),
-      finally(SuiteStmt::wrap(finally)) {}
+      elseSuite(SuiteStmt::wrap(elseSuite)), finally(SuiteStmt::wrap(finally)) {}
 TryStmt::TryStmt(const TryStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
-      suite(ast::clone(stmt.suite, clean)), finally(ast::clone(stmt.finally, clean)) {}
+      suite(ast::clone(stmt.suite, clean)),
+      elseSuite(ast::clone(stmt.elseSuite, clean)),
+      finally(ast::clone(stmt.finally, clean)) {}
 std::string TryStmt::toString(int indent) const {
   if (indent == -1)
     return wrapStmt(format("(try)"));
@@ -295,7 +298,10 @@ std::string TryStmt::toString(int indent) const {
   return wrapStmt(format(
       "(try{}{}{}{}{})", pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
       pad, join(s, pad),
-      finally ? format("{}{}", pad,
+      elseSuite ? format("{}(else {})", pad,
+                         elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1))
+                : "",
+      finally ? format("{}(finally {})", pad,
                        finally->toString(indent >= 0 ? indent + INDENT_SIZE : -1))
               : ""));
 }

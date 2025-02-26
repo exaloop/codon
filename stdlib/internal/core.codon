@@ -108,6 +108,12 @@ cobj = Ptr[byte]
 @tuple
 @__internal__
 @__notuple__
+class Ref[T]:
+    val: Ptr[T]
+
+@tuple
+@__internal__
+@__notuple__
 class Generator[T]:
     pass
 
@@ -224,10 +230,6 @@ class type:
     def __new__(obj):
         pass
 function = Function
-
-@__internal__
-class Ref[T]:
-    pass
 
 @tuple
 @__internal__
@@ -394,9 +396,6 @@ class Partial:
         %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
         ret { {=T}, {=K} } %1
 
-    # def __new__(M: Static[str], F: type) -> Partial[M, Tuple[Tuple], NamedTuple[0,Tuple], F]:
-    #     return Partial.__new__((), NamedTuple[0,Tuple](), M=M, F=F)
-
     def __repr__(self):
         return __magic__.repr_partial(self)
 
@@ -410,3 +409,11 @@ class Partial:
     def __raw__(self):
         # TODO: better error message
         return F.T.__raw__()
+
+@__internal__
+@tuple
+class ProxyFunc:
+    fn: Function[[Ptr[byte], T], TR]
+    data: Ptr[byte]
+    T: type
+    TR: type
