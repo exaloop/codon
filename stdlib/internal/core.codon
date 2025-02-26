@@ -417,3 +417,5 @@ class ProxyFunc:
     data: Ptr[byte]
     T: type
     TR: type
+
+__codon__: Static[bool] = True

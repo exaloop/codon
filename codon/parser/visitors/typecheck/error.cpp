@@ -11,6 +11,7 @@ namespace codon::ast {
 
 using namespace types;
 using namespace matcher;
+using namespace error;
 
 /// Transform asserts.
 /// @example
@@ -119,6 +120,16 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     } else {
       // Handle all other exceptions
       c->exc = transformType(c->getException());
+
+      auto t = extractClassType(c->exc);
+      bool exceptionOK = false;
+      for (auto &p : getSuperTypes(t))
+        if (p->is("std.internal.types.error.BaseException.0")) {
+          exceptionOK = true;
+          break;
+        }
+      if (!exceptionOK)
+        E(Error::CATCH_EXCEPTION_TYPE, c->exc, t->toString());
       if (val)
         unify(val->getType(), extractType(c->getException()));
       ctx->blockLevel++;

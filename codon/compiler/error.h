@@ -106,6 +106,7 @@ enum Error {
   SLICE_STEP_ZERO,
   OP_NO_MAGIC,
   INST_CALLABLE_STATIC,
+  CATCH_EXCEPTION_TYPE,
   TYPE_CANNOT_REALIZE_ATTR,
   TYPE_UNIFY,
   TYPE_FAILED,
@@ -426,6 +427,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
     return fmt::format("unsupported operand type(s) for {}: '{}' and '{}'", args...);
   case Error::INST_CALLABLE_STATIC:
     return fmt::format("Callable cannot take static types");
+  case Error::CATCH_EXCEPTION_TYPE:
+    return fmt::format("'{}' does not inherit from BaseException", args...);
 
   case Error::TYPE_CANNOT_REALIZE_ATTR:
     return fmt::format("type of attribute '{}' of object '{}' cannot be inferred",

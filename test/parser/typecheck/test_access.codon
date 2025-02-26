@@ -569,3 +569,11 @@ def foo(x, y):
             return a
     return a
 print foo(5, (1, 2, 3))  #: 40
+
+#%% nontype_name,barebones
+class Foo:
+    def goo(self):
+        print(self.__name__)
+Foo().goo()
+#! error: 'Foo' object has no attribute '__name__'
+#! during the realization
