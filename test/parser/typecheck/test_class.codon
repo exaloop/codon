@@ -474,3 +474,10 @@ print(f._x)
 #: getter
 #: 99
 #: 99
+
+#%% inherit_surrounding,barebones
+class A:
+    pass
+class B:
+    class C(B): pass
+#! nested classes cannot inherit surrounding classes

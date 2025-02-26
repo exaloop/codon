@@ -400,7 +400,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     const std::string &canonicalName, Expr *typeAst, types::ClassType *typ) {
   std::vector<TypePtr> asts;
 
-  // MAJOR TODO: fix MRO it to work with generic classes (maybe replacements? IDK...)
+  // TODO)) fix MRO it to work with generic classes (maybe replacements? IDK...)
   std::vector<std::vector<TypePtr>> mro{{typ->shared_from_this()}};
   for (auto &cls : baseClasses) {
     std::vector<Expr *> subs;
@@ -414,6 +414,8 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     auto clsTyp = extractClassType(cls);
     asts.push_back(clsTyp->shared_from_this());
     auto cachedCls = getClass(clsTyp);
+    if (!cachedCls->ast)
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "nested", "surrounding");
     std::vector<TypePtr> rootMro;
     for (auto &t : cachedCls->mro)
       rootMro.push_back(instantiateType(t.get(), clsTyp));
@@ -421,16 +423,15 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 
     // Sanity checks
     if (attr->hasAttribute(Attr::Tuple) && typeAst)
-      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple");
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "tuple", "other");
     if (!attr->hasAttribute(Attr::Tuple) && cachedCls->ast->hasAttribute(Attr::Tuple))
       E(Error::CLASS_TUPLE_INHERIT, getSrcInfo());
     if (cachedCls->ast->hasAttribute(Attr::Internal))
-      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal");
+      E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal", "other");
 
     // Mark parent classes as polymorphic as well.
-    if (typeAst) {
+    if (typeAst)
       cachedCls->rtti = true;
-    }
 
     // Add hidden generics
     addClassGenerics(clsTyp);

@@ -332,7 +332,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::CLASS_INVALID_BIND:
     return fmt::format("cannot bind '{}' to class or function", args...);
   case Error::CLASS_NO_INHERIT:
-    return fmt::format("{} classes cannot inherit other classes", args...);
+    return fmt::format("{} classes cannot inherit {} classes", args...);
   case Error::CLASS_TUPLE_INHERIT:
     return fmt::format("reference classes cannot inherit tuple classes");
   case Error::CLASS_BAD_MRO:
