@@ -481,13 +481,16 @@ std::string EllipsisExpr::toString(int) const {
       "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? " #:partial" : "")));
 }
 
-LambdaExpr::LambdaExpr(std::vector<std::string> vars, Expr *expr)
+LambdaExpr::LambdaExpr(std::vector<Param> vars, Expr *expr)
     : AcceptorExtend(), Items(std::move(vars)), expr(expr) {}
 LambdaExpr::LambdaExpr(const LambdaExpr &expr, bool clean)
-    : AcceptorExtend(expr, clean), Items(expr.items),
+    : AcceptorExtend(expr, clean), Items(ast::clone(expr.items, clean)),
       expr(ast::clone(expr.expr, clean)) {}
 std::string LambdaExpr::toString(int indent) const {
-  return wrapType(format("lambda ({}) {}", join(items, " "), expr->toString(indent)));
+  std::vector<std::string> as;
+  for (auto &a : items)
+    as.push_back(a.toString(indent));
+  return wrapType(format("lambda ({}) {}", join(as, " "), expr->toString(indent)));
 }
 
 YieldExpr::YieldExpr() : AcceptorExtend() {}

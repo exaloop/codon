@@ -94,6 +94,13 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
 
 SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
   auto baseTyp = extractFuncGeneric(f, 0)->getClass();
+  size_t baseTypFields = 0;
+  for (auto &f : getClassFields(baseTyp)) {
+    if (f.baseClass == baseTyp->name) {
+      baseTypFields++;
+    }
+  }
+
   auto derivedTyp = extractFuncGeneric(f, 1)->getClass();
   auto fields = getClassFields(derivedTyp);
   auto types = std::vector<Expr *>{};
@@ -107,8 +114,8 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
       types.push_back(N<IdExpr>(ft->realizedName()));
     }
   }
-  seqassert(found || getClassFields(baseTyp).empty(),
-            "cannot find distance between {} and {}", derivedTyp->name, baseTyp->name);
+  seqassert(found || !baseTypFields, "cannot find distance between {} and {}",
+            derivedTyp->name, baseTyp->name);
   Stmt *suite = N<ReturnStmt>(
       N<DotExpr>(N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), types), "__elemsize__"));
   return SuiteStmt::wrap(suite);

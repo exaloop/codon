@@ -161,7 +161,13 @@ public:
     transform(expr->step);
   }
   void visit(EllipsisExpr *expr) override {}
-  void visit(LambdaExpr *expr) override { transform(expr->expr); }
+  void visit(LambdaExpr *expr) override {
+    for (auto &a : expr->items) {
+      transform(a.type);
+      transform(a.defaultValue);
+    }
+    transform(expr->expr);
+  }
   void visit(YieldExpr *expr) override {}
   void visit(AssignExpr *expr) override {
     transform(expr->var);
@@ -357,7 +363,13 @@ public:
     expr->step = transform(expr->step);
   }
   void visit(EllipsisExpr *expr) override {}
-  void visit(LambdaExpr *expr) override { expr->expr = transform(expr->expr); }
+  void visit(LambdaExpr *expr) override {
+    for (auto &a : expr->items) {
+      a.type = transform(a.type);
+      a.defaultValue = transform(a.defaultValue);
+    }
+    expr->expr = transform(expr->expr);
+  }
   void visit(YieldExpr *expr) override {}
   void visit(AssignExpr *expr) override {
     expr->var = transform(expr->var);

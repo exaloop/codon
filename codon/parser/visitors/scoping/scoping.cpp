@@ -248,8 +248,12 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
   ScopingVisitor v;
   c->scope.emplace_back(0, nullptr);
   v.ctx = c;
-  for (const auto &a : *expr)
-    v.visitName(a, true, expr, expr->getSrcInfo());
+  for (const auto &a : *expr) {
+    auto [_, n] = a.getNameWithStars();
+    v.visitName(n, true, expr, a.getSrcInfo());
+    if (a.defaultValue)
+      CHECK(transform(a.defaultValue));
+  }
   c->scope.pop_back();
 
   SuiteStmt s;

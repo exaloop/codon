@@ -18,6 +18,16 @@ def foox(a, l):
     return l(a)
 print foox(4, lp) #: 11
 
+# Fix 216
+g = lambda a, L=List[int]() : (L.append(a), L)[1]
+print(g(1))
+#: [1]
+g = lambda a, b=1, *s, **kw: ((a,b,*s),kw)
+print(g('hey!', c=3))
+#: (('hey!', 1), (c: 3))
+print(g('hey!', 2, 3, 4, zz=3))
+#: (('hey!', 2, 3, 4), (zz: 3))
+
 #%% nested_lambda,barebones
 def foo():
     print list(a*a for a in range(3))

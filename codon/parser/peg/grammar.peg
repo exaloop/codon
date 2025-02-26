@@ -472,15 +472,18 @@ expression <-
     return aste(If, LOC, ac_expr(V1), ac_expr(V0), ac_expr(V2));
   }
   / pipe { return ac_expr(V0); }
-# TODO: make it more pythonic
 lambdef <-
-  / 'lambda' SPACE list(',', NAME) _ ':' _ expression {
+  / 'lambda' SPACE lparams _ ':' _ expression {
     return aste(Lambda, LOC,
-      VS.transform<string>(0, VS.size() - 1), ac_expr(VS.back())
+      ac<SemVals>(V0).transform<Param>(), ac_expr(V1)
     );
   }
   / 'lambda' _ ':' _ expression {
-    return aste(Lambda, LOC, vector<string>{}, ac_expr(VS.back()));
+    return aste(Lambda, LOC, vector<Param>{}, ac_expr(V0));
+  }
+lparams <- tlist(',', lparam)? { return VS; }
+lparam <- param_name (_ '=' _ expression)? {
+    return Param(LOC, ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
   }
 pipe <-
   / disjunction (_ <'|>' / '||>'> _ disjunction)+ {

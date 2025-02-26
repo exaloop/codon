@@ -542,8 +542,8 @@ private:
 
 /// Lambda expression (lambda (vars)...: expr).
 /// @li lambda a, b: a + b
-struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr>, Items<std::string> {
-  LambdaExpr(std::vector<std::string> vars = {}, Expr *expr = nullptr);
+struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr>, Items<Param> {
+  LambdaExpr(std::vector<Param> vars = {}, Expr *expr = nullptr);
   LambdaExpr(const LambdaExpr &, bool);
 
   Expr *getExpr() const { return expr; }

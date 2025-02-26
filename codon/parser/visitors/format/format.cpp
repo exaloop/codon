@@ -216,7 +216,7 @@ void FormatVisitor::visit(EllipsisExpr *expr) { result = renderExpr(expr, "...")
 void FormatVisitor::visit(LambdaExpr *expr) {
   std::vector<std::string> s;
   for (const auto &v : *expr)
-    s.emplace_back(v);
+    s.emplace_back(v.getName());
   result = renderExpr(expr, "{} {}: {}", keyword("lambda"), join(s, ", "),
                       transform(expr->getExpr()));
 }

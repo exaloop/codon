@@ -481,3 +481,18 @@ class A:
 class B:
     class C(B): pass
 #! nested classes cannot inherit surrounding classes
+
+#%% inherit_no_member_middle,barebones
+# Fix #532
+class A:
+    _map: Dict[str, str]
+    def __init__(self):
+        self._map = Dict[str, str]()
+class B(A):
+     def __init__(self):
+        super().__init__()
+class C(B):
+    placeholder: str
+    def __init__(self):
+        super().__init__()
+test = C()
