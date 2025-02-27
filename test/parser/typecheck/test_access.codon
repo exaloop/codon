@@ -571,6 +571,7 @@ def foo(x, y):
 print foo(5, (1, 2, 3))  #: 40
 
 #%% nontype_name,barebones
+# Fix #357
 class Foo:
     def goo(self):
         print(self.__name__)

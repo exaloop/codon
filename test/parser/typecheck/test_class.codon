@@ -476,6 +476,7 @@ print(f._x)
 #: 99
 
 #%% inherit_surrounding,barebones
+# Fix 354
 class A:
     pass
 class B:
