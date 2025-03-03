@@ -245,7 +245,7 @@ class ndarray:
             k = 0
             for idx in util.multirange(shape):
                 off = 0
-                for i in range(ndim):
+                for i in staticrange(ndim):
                     off += idx[i] * strides[i]
                 e = Ptr[cobj](arr_data + off)[0]
                 if hasattr(dtype, "__from_py__"):
@@ -263,7 +263,7 @@ class ndarray:
                 k = 0
                 for idx in util.multirange(shape):
                     off = 0
-                    for i in range(ndim):
+                    for i in staticrange(ndim):
                         off += idx[i] * strides[i]
                     e = Ptr[dtype](arr_data + off)[0]
                     data[k] = e
