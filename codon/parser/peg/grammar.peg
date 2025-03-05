@@ -298,8 +298,8 @@ try_stmt <-
   }
   / ('try' _ ':' _ suite) (SAMEDENT 'finally' _ ':' _ suite)? {
     return asts(Try, LOC,
-      ac_stmt(V0), vector<ExceptStmt*>{},
-      VS.size() > 1 ? ac_stmt(V1): nullptr
+      ac_stmt(V0), vector<ExceptStmt*>{}, nullptr,
+      VS.size() > 1 ? ac_stmt(V1) : nullptr
     );
   }
 else_finally <-

@@ -121,17 +121,19 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       // Handle all other exceptions
       c->exc = transformType(c->getException());
 
-      auto t = extractClassType(c->exc);
-      bool exceptionOK = false;
-      for (auto &p : getSuperTypes(t))
-        if (p->is("std.internal.types.error.BaseException.0")) {
-          exceptionOK = true;
-          break;
-        }
-      if (!exceptionOK)
-        E(Error::CATCH_EXCEPTION_TYPE, c->exc, t->toString());
-      if (val)
-        unify(val->getType(), extractType(c->getException()));
+      if (c->getException()) {
+        auto t = extractClassType(c->getException());
+        bool exceptionOK = false;
+        for (auto &p : getSuperTypes(t))
+          if (p->is("std.internal.types.error.BaseException.0")) {
+            exceptionOK = true;
+            break;
+          }
+        if (!exceptionOK)
+          E(Error::CATCH_EXCEPTION_TYPE, c->getException(), t->toString());
+        if (val)
+          unify(val->getType(), extractType(c->getException()));
+      }
       ctx->blockLevel++;
       c->suite = SuiteStmt::wrap(transform(c->getSuite()));
       ctx->blockLevel--;
@@ -221,6 +223,7 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
         as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__enter__"))),
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite()),
                    std::vector<ExceptStmt *>{},
+                   nullptr,
                    N<SuiteStmt>(N<ExprStmt>(
                        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__exit__")))))};
   }

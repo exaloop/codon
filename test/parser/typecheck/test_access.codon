@@ -576,5 +576,5 @@ class Foo:
     def goo(self):
         print(self.__name__)
 Foo().goo()
-#! error: 'Foo' object has no attribute '__name__'
-#! during the realization
+#! 'Foo' object has no attribute '__name__'
+#! during the realization of goo
