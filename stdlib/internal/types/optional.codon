@@ -30,7 +30,7 @@ class Optional:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_bool(self, T)
         elif __has_rtti__(T):
-            return __internal__.opt_ref_bool_rtti(T)
+            return __internal__.opt_ref_bool_rtti(self, T)
         else:
             return __internal__.opt_ref_bool(self, T)
 
@@ -38,7 +38,7 @@ class Optional:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_invert(self, T)
         elif __has_rtti__(T):
-            return __internal__.opt_ref_invert_rtti(T)
+            return __internal__.opt_ref_invert_rtti(self, T)
         else:
             return __internal__.opt_ref_invert(self, T)
 

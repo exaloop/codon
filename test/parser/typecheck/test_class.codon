@@ -497,3 +497,17 @@ class C(B):
     def __init__(self):
         super().__init__()
 test = C()
+
+#%% inherit_optional
+# Fix 554
+class A:
+    pass
+class B(A):
+    pass
+def foo(val: Optional[A]):
+    if val:
+        print("A")
+    else:
+        print("None[A]")
+foo(A())   #: A
+foo(None)  #: None[A]

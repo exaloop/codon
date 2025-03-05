@@ -339,12 +339,10 @@ class __internal__:
     def opt_ref_new(T: type) -> Optional[T]:
         ret ptr null
 
+    @pure
+    @llvm
     def opt_ref_new_rtti(T: type) -> Optional[T]:
-        obj = Ptr[byte]()
-        rsz = sizeof(tuple(T))
-        rtti = alloc_atomic(rsz) if RTTI.__contents_atomic__ else alloc(rsz)
-        __internal__.to_class_ptr(rtti, RTTI).id = T.__id__
-        return __internal__.opt_ref_new_arg(__internal__.to_class_ptr_rtti((obj, rtti), T))
+        ret { ptr, ptr } { ptr null, ptr null }
 
     @pure
     @derives
@@ -381,7 +379,7 @@ class __internal__:
 
     @pure
     def opt_ref_bool_rtti(what: Optional[T], T: type) -> bool:
-        return __internal__.class_raw_rtti_ptr() != cobj()
+        return __internal__.class_raw_rtti_ptr(what) != cobj()
 
     @pure
     @derives
