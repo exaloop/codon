@@ -498,7 +498,7 @@ class C(B):
         super().__init__()
 test = C()
 
-#%% inherit_optional
+#%% inherit_optional,barebones
 # Fix 554
 class A:
     pass
