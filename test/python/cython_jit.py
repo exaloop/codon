@@ -183,7 +183,7 @@ def test_ndarray():
 test_ndarray()
 
 @codon.jit
-def e(x, y=99):
+def e(x=2, y=99):
     return 2*x + y
 
 def test_arg_order():
@@ -192,3 +192,5 @@ def test_arg_order():
     assert e(y=10, x=1) == 12
     assert e(x=1) == 101
     assert e() == 103
+
+test_arg_order()
