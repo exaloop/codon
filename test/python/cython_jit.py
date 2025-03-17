@@ -181,3 +181,14 @@ def test_ndarray():
     assert np.datetime_data(y.dtype) == ('s', 2)
 
 test_ndarray()
+
+@codon.jit
+def e(x, y=99):
+    return 2*x + y
+
+def test_arg_order():
+    assert e(1, 2) == 4
+    assert e(1) == 101
+    assert e(y=10, x=1) == 12
+    assert e(x=1) == 101
+    assert e() == 103
