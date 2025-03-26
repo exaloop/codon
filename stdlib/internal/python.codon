@@ -24,6 +24,7 @@ PyFloat_AsDouble = Function[[cobj], float](cobj())
 PyFloat_FromDouble = Function[[float], cobj](cobj())
 PyBool_FromLong = Function[[int], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
+PyBytes_Size = Function[[cobj], int](cobj())
 PyList_New = Function[[int], cobj](cobj())
 PyList_Size = Function[[cobj], int](cobj())
 PyList_GetItem = Function[[cobj, int], cobj](cobj())
@@ -130,6 +131,7 @@ PyLong_Type = cobj()
 PyFloat_Type = cobj()
 PyBool_Type = cobj()
 PyUnicode_Type = cobj()
+PyBytes_Type = cobj()
 PyComplex_Type = cobj()
 PyList_Type = cobj()
 PyDict_Type = cobj()
@@ -213,6 +215,7 @@ def init_handles_dlopen(py_handle: cobj):
     global PyFloat_FromDouble
     global PyBool_FromLong
     global PyBytes_AsString
+    global PyBytes_Size
     global PyList_New
     global PyList_Size
     global PyList_GetItem
@@ -303,6 +306,7 @@ def init_handles_dlopen(py_handle: cobj):
     global PyFloat_Type
     global PyBool_Type
     global PyUnicode_Type
+    global PyBytes_Type
     global PyComplex_Type
     global PyList_Type
     global PyDict_Type
@@ -347,6 +351,7 @@ def init_handles_dlopen(py_handle: cobj):
     PyFloat_FromDouble = dlsym(py_handle, "PyFloat_FromDouble")
     PyBool_FromLong = dlsym(py_handle, "PyBool_FromLong")
     PyBytes_AsString = dlsym(py_handle, "PyBytes_AsString")
+    PyBytes_Size = dlsym(py_handle, "PyBytes_Size")
     PyList_New = dlsym(py_handle, "PyList_New")
     PyList_Size = dlsym(py_handle, "PyList_Size")
     PyList_GetItem = dlsym(py_handle, "PyList_GetItem")
@@ -437,6 +442,7 @@ def init_handles_dlopen(py_handle: cobj):
     PyFloat_Type = dlsym(py_handle, "PyFloat_Type")
     PyBool_Type = dlsym(py_handle, "PyBool_Type")
     PyUnicode_Type = dlsym(py_handle, "PyUnicode_Type")
+    PyBytes_Type = dlsym(py_handle, "PyBytes_Type")
     PyComplex_Type = dlsym(py_handle, "PyComplex_Type")
     PyList_Type = dlsym(py_handle, "PyList_Type")
     PyDict_Type = dlsym(py_handle, "PyDict_Type")
@@ -482,6 +488,7 @@ def init_handles_static():
     from C import PyFloat_FromDouble(float) -> cobj as _PyFloat_FromDouble
     from C import PyBool_FromLong(int) -> cobj as _PyBool_FromLong
     from C import PyBytes_AsString(cobj) -> cobj as _PyBytes_AsString
+    from C import PyBytes_Size(cobj) -> int as _PyBytes_Size
     from C import PyList_New(int) -> cobj as _PyList_New
     from C import PyList_Size(cobj) -> int as _PyList_Size
     from C import PyList_GetItem(cobj, int) -> cobj as _PyList_GetItem
@@ -572,6 +579,7 @@ def init_handles_static():
     from C import PyFloat_Type: cobj as _PyFloat_Type
     from C import PyBool_Type: cobj as _PyBool_Type
     from C import PyUnicode_Type: cobj as _PyUnicode_Type
+    from C import PyBytes_Type: cobj as _PyBytes_Type
     from C import PyComplex_Type: cobj as _PyComplex_Type
     from C import PyList_Type: cobj as _PyList_Type
     from C import PyDict_Type: cobj as _PyDict_Type
@@ -616,6 +624,7 @@ def init_handles_static():
     global PyFloat_FromDouble
     global PyBool_FromLong
     global PyBytes_AsString
+    global PyBytes_Size
     global PyList_New
     global PyList_Size
     global PyList_GetItem
@@ -706,6 +715,7 @@ def init_handles_static():
     global PyFloat_Type
     global PyBool_Type
     global PyUnicode_Type
+    global PyBytes_Type
     global PyComplex_Type
     global PyList_Type
     global PyDict_Type
@@ -750,6 +760,7 @@ def init_handles_static():
     PyFloat_FromDouble = _PyFloat_FromDouble
     PyBool_FromLong = _PyBool_FromLong
     PyBytes_AsString = _PyBytes_AsString
+    PyBytes_Size = _PyBytes_Size
     PyList_New = _PyList_New
     PyList_Size = _PyList_Size
     PyList_GetItem = _PyList_GetItem
@@ -840,6 +851,7 @@ def init_handles_static():
     PyFloat_Type = __ptr__(_PyFloat_Type).as_byte()
     PyBool_Type = __ptr__(_PyBool_Type).as_byte()
     PyUnicode_Type = __ptr__(_PyUnicode_Type).as_byte()
+    PyBytes_Type = __ptr__(_PyBytes_Type).as_byte()
     PyComplex_Type = __ptr__(_PyComplex_Type).as_byte()
     PyList_Type = __ptr__(_PyList_Type).as_byte()
     PyDict_Type = __ptr__(_PyDict_Type).as_byte()
@@ -1174,7 +1186,7 @@ class pyobj:
         return pyobj.to_str(self.p, errors, empty)
 
     def to_str(p: cobj, errors: str, empty: str = "") -> str:
-        obj = PyUnicode_AsEncodedString(p, "utf-8".c_str(), errors.c_str())
+        obj = PyUnicode_AsEncodedString(p, "utf-8".ptr, errors.c_str() if errors else "".ptr)
         if obj == cobj():
             return empty
         bts = PyBytes_AsString(obj)
@@ -1292,8 +1304,11 @@ class _PyObject_Struct:
 def _conversion_error(name: Static[str]):
     raise PyError("conversion error: Python object did not have type '" + name + "'")
 
+def _get_type(o: cobj):
+    return Ptr[_PyObject_Struct](o)[0].pytype
+
 def _ensure_type(o: cobj, t: cobj, name: Static[str]):
-    if Ptr[_PyObject_Struct](o)[0].pytype != t:
+    if _get_type(o) != t:
         _conversion_error(name)
 
 
@@ -1350,7 +1365,14 @@ class str:
         return pyobj.exc_wrap(PyUnicode_DecodeFSDefaultAndSize(self.ptr, self.len))
 
     def __from_py__(s: cobj) -> str:
-        return pyobj.exc_wrap(pyobj.to_str(s, "strict"))
+        if _get_type(s) == PyBytes_Type:
+            n = PyBytes_Size(s)
+            p0 = PyBytes_AsString(s)
+            p1 = cobj(n)
+            str.memcpy(p1, p0, n)
+            return str(p1, n)
+        else:
+            return pyobj.exc_wrap(pyobj.to_str(s, "strict"))
 
 @extend
 class complex:

@@ -88,6 +88,7 @@ def test_codon_extensions(m):
         assert m.f4(a=2.2) == (2.2, 2.22)
         assert m.f4(b=3.3) == (1.11, 3.3)
         assert m.f4('foo') == ('foo', 'foo')
+        assert m.f4(b'foo') == ('foo', 'foo')
         assert m.f4({1}) == {1}
         assert m.f5() is None
         assert equal(m.f6(1.9, 't'), 1.9, 1.9, 't')
