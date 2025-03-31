@@ -2871,6 +2871,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   process(x->getBody());
   exitTryCatch();
 
+  // translate else
+  if (x->getElse()) {
+    B->SetInsertPoint(block);
+    auto *elseBlock = llvm::BasicBlock::Create(*context, "trycatch.else", func);
+    B->CreateBr(elseBlock);
+    process(x->getElse());
+  }
+
   // make sure we always get to finally block
   B->SetInsertPoint(block);
   B->CreateBr(tc.finallyBlock);

@@ -385,6 +385,8 @@ private:
 
   /// the body
   Value *body;
+  /// the else block, may be nullptr
+  Value *else_;
   /// the finally, may be nullptr
   Value *finally;
 
@@ -395,23 +397,32 @@ public:
   /// @param name the's name
   /// @param body the body
   /// @param finally the finally
-  explicit TryCatchFlow(Flow *body, Flow *finally = nullptr, std::string name = "")
-      : AcceptorExtend(std::move(name)), body(body), finally(finally) {}
+  explicit TryCatchFlow(Flow *body, Flow *finally = nullptr, Flow *else_ = nullptr,
+                        std::string name = "")
+      : AcceptorExtend(std::move(name)), body(body), else_(else_), finally(finally) {}
 
   /// @return the body
   Flow *getBody() { return cast<Flow>(body); }
   /// @return the body
   const Flow *getBody() const { return cast<Flow>(body); }
   /// Sets the body.
-  /// @param f the new
+  /// @param f the new body
   void setBody(Flow *f) { body = f; }
+
+  /// @return the else block
+  Flow *getElse() { return cast<Flow>(else_); }
+  /// @return the else block
+  const Flow *getElse() const { return cast<Flow>(else_); }
+  /// Sets the else block.
+  /// @param f the new else block
+  void setElse(Flow *f) { else_ = f; }
 
   /// @return the finally
   Flow *getFinally() { return cast<Flow>(finally); }
   /// @return the finally
   const Flow *getFinally() const { return cast<Flow>(finally); }
   /// Sets the finally.
-  /// @param f the new
+  /// @param f the new finally
   void setFinally(Flow *f) { finally = f; }
 
   /// @return an iterator to the first catch
