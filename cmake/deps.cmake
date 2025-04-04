@@ -169,7 +169,7 @@ if(NOT APPLE)
     CPMAddPackage(
         NAME openblas
         GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
-        GIT_TAG v0.3.28
+        GIT_TAG v0.3.29
         EXCLUDE_FROM_ALL YES
         OPTIONS "DYNAMIC_ARCH ON"
                 "BUILD_TESTING OFF"
