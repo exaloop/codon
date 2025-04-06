@@ -11,6 +11,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "codon/cir/util/format.h"
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/error.h"
 #include "codon/compiler/jit.h"
@@ -87,7 +88,7 @@ void initLogFlags(const llvm::cl::opt<std::string> &log) {
     codon::getLogger().parse(std::string(d));
 }
 
-enum BuildKind { LLVM, Bitcode, Object, Executable, Library, PyExtension, Detect };
+enum BuildKind { LLVM, Bitcode, Object, Executable, Library, PyExtension, Detect, CIR };
 enum OptMode { Debug, Release };
 enum Numerics { C, Python };
 } // namespace
@@ -333,6 +334,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
           clEnumValN(Executable, "exe", "Generate executable"),
           clEnumValN(Library, "lib", "Generate shared library"),
           clEnumValN(PyExtension, "pyext", "Generate Python extension module"),
+          clEnumValN(CIR, "cir", "Generate Codon Intermediate Representation"),
           clEnumValN(Detect, "detect",
                      "Detect output type based on output file extension")),
       llvm::cl::init(Detect));
@@ -372,6 +374,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   case BuildKind::Detect:
     extension = "";
     break;
+  case BuildKind::CIR:
+    extension = ".cir";
+    break;
   default:
     seqassertn(0, "unknown build kind");
   }
@@ -401,6 +406,11 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     compiler->getLLVMVisitor()->writeToPythonExtension(*compiler->getCache()->pyModule,
                                                        filename);
     break;
+  case BuildKind::CIR: {
+    std::ofstream out(filename);
+    codon::ir::util::format(out, compiler->getModule());
+    break;
+  }
   case BuildKind::Detect:
     compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);
     break;
