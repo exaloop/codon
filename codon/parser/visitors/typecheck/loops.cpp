@@ -245,7 +245,7 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) 
         Stmt *ret = nullptr;
         if (!stmt->flat) {
           auto brk = N<BreakStmt>();
-          brk->setDone(); // Avoid transforming this one to continue
+          brk->setDone(); // Avoid transforming this one to skip extra checks
           // var [: Static] := expr; suite...
           auto loop = N<WhileStmt>(N<IdExpr>(loopVar),
                                    N<SuiteStmt>(assigns, clone(suite), brk));

@@ -23,7 +23,7 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
   expr->expr = transform(expr->expr);
 
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
-      {1, {"-", "+", "!", "~"}}, {2, {"@"}}, {3, {"!"}}};
+      {1, {"-", "+", "!", "~"}}, {2, {"!"}}, {3, {"!"}}};
   // Handle static expressions
   if (auto s = expr->getExpr()->getType()->isStaticType()) {
     if (in(staticOps[s], expr->getOp())) {

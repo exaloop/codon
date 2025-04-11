@@ -275,8 +275,6 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
   expr->setAttribute(Attr::Bindings, std::move(b));
 }
 
-// todo)) Globals/nonlocals cannot be shadowed in children scopes (as in Python)
-
 void ScopingVisitor::visit(AssignStmt *stmt) {
   CHECK(transform(stmt->getRhs()));
   CHECK(transform(stmt->getTypeExpr()));
@@ -396,14 +394,11 @@ void ScopingVisitor::visit(TryStmt *stmt) {
     if (!a->getVar().empty())
       ctx->renames.pop_back();
   }
-  CHECK(transform(stmt->getElse()));
+  CHECK(transformScope(stmt->getElse()));
   CHECK(transform(stmt->getFinally()));
 }
 
-void ScopingVisitor::visit(DelStmt *stmt) {
-  /// TODO
-  CHECK(transform(stmt->getExpr()));
-}
+void ScopingVisitor::visit(DelStmt *stmt) { CHECK(transform(stmt->getExpr())); }
 
 /// Process `global` statements. Remove them upon completion.
 void ScopingVisitor::visit(GlobalStmt *stmt) {

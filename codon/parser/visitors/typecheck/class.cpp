@@ -571,7 +571,6 @@ void TypecheckVisitor::transformNestedClasses(ClassStmt *stmt,
 /// @li Pickling: __pickle__, __unpickle__
 /// @li Python: __to_py__, __from_py__
 /// @li GPU: __to_gpu__, __from_gpu__, __from_gpu_new__
-/// TODO: move to Codon as much as possible
 Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
                                      const std::vector<Param> &allArgs, bool isRecord) {
 #define I(s) N<IdExpr>(s)

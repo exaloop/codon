@@ -22,8 +22,8 @@ namespace codon::ast {
 
 Stmt::Stmt() : AcceptorExtend(), done(false) {}
 Stmt::Stmt(const Stmt &stmt) : AcceptorExtend(stmt), done(stmt.done) {}
-Stmt::Stmt(const codon::SrcInfo &s) : AcceptorExtend() { setSrcInfo(s); }
-Stmt::Stmt(const Stmt &expr, bool clean) : AcceptorExtend(expr) {
+Stmt::Stmt(const codon::SrcInfo &s) : AcceptorExtend(), done(false) { setSrcInfo(s); }
+Stmt::Stmt(const Stmt &stmt, bool clean) : AcceptorExtend(stmt), done(stmt.done) {
   if (clean)
     done = false;
 }

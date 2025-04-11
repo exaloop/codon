@@ -18,7 +18,7 @@ template <class Archive, class Base> struct PolymorphicSerializer {
     return {[](Base *b, Archive &a) { a.save(*(static_cast<Derived *>(b))); },
             [](Base *&b, Archive &a) {
               b = new Derived();
-              a.template load(static_cast<Derived &>(*b));
+              a.load(static_cast<Derived &>(*b));
             }};
   }
 
