@@ -20,7 +20,9 @@ template <> bool match(const char *c, std::string d) { return std::string(c) == 
 
 template <> bool match(std::string c, const char *d) { return std::string(d) == c; }
 
-template <> bool match(double &a, double b) { return abs(a - b) < __FLT_EPSILON__; }
+template <> bool match(double &a, double b) {
+  return std::abs(a - b) < __FLT_EPSILON__;
+}
 
 template <> bool match(std::string s, match_startswith_t m) {
   return m.s.size() <= s.size() && s.substr(0, m.s.size()) == m.s;

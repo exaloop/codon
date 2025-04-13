@@ -39,7 +39,7 @@ bool Type::hasUnbounds(bool) const { return false; }
 
 std::vector<Type *> Type::getUnbounds() const { return {}; }
 
-std::string Type::toString() const { return debugString(1); }
+std::string Type::toString() const { return debugString(2); }
 
 std::string Type::prettyString() const { return debugString(0); }
 

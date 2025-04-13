@@ -457,10 +457,10 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     unify(expr->getType(), instantiateTypeVar(typ.get()));
     // If the type is realizable, use the realized name instead of instantiation
     // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
-    if (realize(expr->getType())) {
-      auto t = extractType(expr);
+    if (auto rt = realize(expr->getType())) {
+      auto t = extractType(rt);
       resultExpr = N<IdExpr>(t->realizedName());
-      resultExpr->setType(expr->getType()->shared_from_this());
+      resultExpr->setType(rt->shared_from_this());
       resultExpr->setDone();
     }
   }

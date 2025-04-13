@@ -93,7 +93,7 @@ public:
   virtual bool canRealize() const = 0;
   /// True if a type is completely instantiated (has no unbounds or generics).
   virtual bool isInstantiated() const = 0;
-  /// Pretty-print facility.
+  /// Debug print facility.
   std::string toString() const;
   /// Pretty-print facility.
   std::string prettyString() const;

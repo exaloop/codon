@@ -35,6 +35,8 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) {
   if (!((*a) << b)) {
     types::Type::Unification undo;
     a->unify(b, &undo);
+    // log("[unify] {} {}", a->debugString(2), b->debugString(2));
+    // log("[unify] {} {}", a->debugString(1), b->debugString(1));
     E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
     return nullptr;
   }
@@ -52,11 +54,12 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     if (ctx->getBase()->iteration >= MAX_TYPECHECK_ITER) {
       // log("-> {}", result->toString(2));
       ParserErrors errors;
-      errors.addError({ErrorMessage{fmt::format("cannot typecheck '{}' in reasonable time",
-                                  ctx->getBase()->name.empty()
-                                      ? "toplevel"
-                                      : getUnmangledName(ctx->getBase()->name)),
-                      result->getSrcInfo()}});
+      errors.addError(
+          {ErrorMessage{fmt::format("cannot typecheck '{}' in reasonable time",
+                                    ctx->getBase()->name.empty()
+                                        ? "toplevel"
+                                        : getUnmangledName(ctx->getBase()->name)),
+                        result->getSrcInfo()}});
       for (auto &error : findTypecheckErrors(result))
         errors.addError(error);
       throw exc::ParserException(errors);
@@ -180,6 +183,8 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
       }
     } else if (auto c = typ->getClass()) {
       auto t = realizeType(c);
+      if (t && in(t->realizedName(), "__NTu"))
+        log("huh? -> {}", t->debugString(2));
       return t;
     }
   } catch (exc::ParserException &exc) {
@@ -210,7 +215,7 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
           name = fmt::format("<import {}>", name);
         } else {
           name = getUnmangledName(f->ast->name);
-          name_args = fmt::format("({})", fmt::join(args, ", "));
+          name_args = fmt::format("({})", join(args, ", "));
         }
         bt.addMessage(fmt::format("during the realization of {}{}", name, name_args),
                       getSrcInfo());
@@ -501,20 +506,21 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->cloneAttributesFrom(ast);
 
-  auto newKey = type->realizedName();
-  if (newKey != key) {
-    LOG("!! oldKey={}, newKey={}", key, newKey);
-  }
-  if (!in(ctx->cache->pendingRealizations, make_pair(type->getFuncName(), newKey))) {
-    if (!r->ir)
-      r->ir = makeIRFunction(r);
+  auto newType = std::static_pointer_cast<types::FuncType>(type->generalize(0));
+  auto newKey = newType->realizedName();
+  // if (newKey != key) {
+  //   LOG("!! oldKey={}, newKey={}", key, newKey);
+  // }
+  if (!in(ctx->cache->pendingRealizations, make_pair(newType->getFuncName(), newKey))) {
     realizations[newKey] = r;
   } else {
     realizations[key] = realizations[newKey];
   }
   if (force)
     realizations[newKey]->ast = r->ast;
-  r->type = std::static_pointer_cast<types::FuncType>(type->generalize(0));
+  r->type = newType;
+  if (!r->ir)
+    r->ir = makeIRFunction(r);
   val = std::make_shared<TypecheckItem>(newKey, "", ctx->getModule(), r->type);
   ctx->addAlwaysVisible(val, true);
   if (!isImport) {

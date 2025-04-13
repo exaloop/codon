@@ -134,7 +134,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
     std::vector<std::string> a;
     for (auto &t : args)
       a.emplace_back(fmt::format("{}", t->prettyString()));
-    std::string argsNice = fmt::format("({})", fmt::join(a, ", "));
+    std::string argsNice = fmt::format("({})", join(a, ", "));
     E(Error::DOT_NO_ATTR_ARGS, getSrcInfo(), ct->prettyString(),
       getUnmangledName(fp->getFuncName()), argsNice);
   }
@@ -143,7 +143,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
   for (auto &a : args)
     ns.push_back(a->realizedName());
   auto thunkName =
-      format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), fmt::join(ns, "."));
+      format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), join(ns, "."));
   if (getFunction(thunkName + ":0"))
     return nullptr;
 
@@ -175,7 +175,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
 /// @return unique thunk ID.
 size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType *fp) {
   seqassert(cp->canRealize() && fp->canRealize() && fp->getRetType()->canRealize(),
-            "{} not realized", fp->debugString(1));
+            "{} not realized", fp->debugString(2));
 
   // TODO: ugly, ugly; surely needs refactoring
 
@@ -1172,7 +1172,7 @@ TypecheckVisitor::populateStaticVarTypesLoop(Expr *iter,
     size_t idx = 0;
     for (auto &f : getClassFields(typ->getClass())) {
       auto ta = realize(instantiateType(f.type.get(), typ->getClass()));
-      seqassert(ta, "cannot realize '{}'", f.type->debugString(1));
+      seqassert(ta, "cannot realize '{}'", f.type->debugString(2));
       std::vector<Stmt *> stmts;
       if (withIdx) {
         stmts.push_back(

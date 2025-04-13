@@ -492,7 +492,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.
   /// @li (T U (int 0))
-  std::string signature() const;
+  std::string getSignature();
   size_t getStarArgs() const;
   size_t getKwStarArgs() const;
   std::string getDocstr() const;
@@ -506,6 +506,7 @@ private:
   Expr *ret;
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
+  std::string signature;
 
   friend class Cache;
 };

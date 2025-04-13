@@ -48,20 +48,6 @@ TypePtr FuncType::generalize(int atLevel) {
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
 
   auto r = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
-
-  // // Fix statics
-  // auto &at = r->generics[0].getType()->getClass()->generics;
-  // for (size_t i = 0; i < at.size(); i++) {
-  //   bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
-  //   if (!isStatic && at[i].getType() && at[i].getType()->getStatic())
-  //     at[i].type =
-  //         at[i].getType()->getStatic()->getNonStaticType()->generalize(atLevel);
-  // }
-  // auto rt = r->generics[0].getType();
-  // bool isStatic = ast && getStaticGeneric(ast->getReturn());
-  // if (!isStatic && rt && rt->getStatic())
-  //   r->generics[0].type = rt->getStatic()->getNonStaticType()->generalize(atLevel);
-
   auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
   return t;
 }
@@ -71,15 +57,14 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
   std::vector<Generic> fg;
   for (auto &t : funcGenerics) {
     fg.push_back(t.instantiate(atLevel, unboundCount, cache));
-    if (fg.back().type) {
-      if (cache && cache->find(t.id) == cache->end())
-        (*cache)[t.id] = fg.back().type;
+    if (cache && fg.back().type) {
+      if (auto c = in(*cache, t.id))
+        *c = fg.back().type;
     }
   }
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
   auto r = std::static_pointer_cast<ClassType>(
       this->ClassType::instantiate(atLevel, unboundCount, cache));
-
   auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
   return t;
 }
@@ -149,14 +134,13 @@ std::string FuncType::debugString(char mode) const {
   std::vector<std::string> gs;
   for (auto &a : funcGenerics)
     if (!a.name.empty())
-      gs.push_back(mode < 2
-                       ? a.type->debugString(mode)
-                       : fmt::format("{}={}", a.niceName, a.type->debugString(mode)));
+      gs.push_back(mode < 2 ? a.type->debugString(mode)
+                            : (a.niceName + "=" + a.type->debugString(mode)));
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.
   if (mode == 2)
-    as.push_back(fmt::format("RET={}", getRetType()->debugString(mode)));
+    as.push_back("RET=" + getRetType()->debugString(mode));
 
   if (mode < 2 || !ast) {
     for (const auto &a : *this) {
@@ -166,7 +150,7 @@ std::string FuncType::debugString(char mode) const {
     for (size_t i = 0, si = 0; i < ast->size(); i++) {
       if ((*ast)[i].isGeneric())
         continue;
-      as.push_back(fmt::format("{}={}", (*ast)[i].getName(), (*this)[si++]->debugString(mode)));
+      as.push_back(((*ast)[i].getName() + "=" + (*this)[si++]->debugString(mode)));
     }
   }
   std::string a = join(as, ",");
@@ -179,8 +163,8 @@ std::string FuncType::debugString(char mode) const {
   if (mode && index)
     fnname += fmt::format("/{}", index);
   if (mode == 2 && funcParent)
-    s += fmt::format(";{}", funcParent->debugString(mode));
-  return fmt::format("{}{}", fnname, s.empty() ? "" : fmt::format("[{}]", s));
+    s += ";" + funcParent->debugString(mode);
+  return fnname + (s.empty() ? "" : ("[" + s + "]"));
 }
 
 std::string FuncType::realizedName() const {
@@ -196,9 +180,8 @@ std::string FuncType::realizedName() const {
                                         : a.realizedName());
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
-  return fmt::format("{}{}{}{}", funcParent ? funcParent->realizedName() + ":" : "",
-                     ast->getName(), index ? fmt::format("/{}", index) : "",
-                     s.empty() ? "" : fmt::format("[{}]", s));
+  return (funcParent ? funcParent->realizedName() + ":" : "") + ast->getName() +
+         (index ? fmt::format("/{}", index) : "") + (s.empty() ? "" : ("[" + s + "]"));
 }
 
 Type *FuncType::getRetType() const { return generics[1].type.get(); }

@@ -54,7 +54,8 @@ if [ "$UNAME" = "Darwin" ]; then
   codesign -f -s - ${LIBQUADMATH}
   codesign -f -s - ${LIBGCC}
 else
-  patchelf --set-rpath '$ORIGIN' ${LIBGFORTRAN}
-  patchelf --set-rpath '$ORIGIN' ${LIBQUADMATH}
-  patchelf --set-rpath '$ORIGIN' ${LIBGCC}
+  # HACK: add || true to ignore errors when the libraries are not there and not needed (e.g., aarch64)
+  patchelf --set-rpath '$ORIGIN' ${LIBGFORTRAN} || true;
+  patchelf --set-rpath '$ORIGIN' ${LIBQUADMATH} || true;
+  patchelf --set-rpath '$ORIGIN' ${LIBGCC} || true;
 fi

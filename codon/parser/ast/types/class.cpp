@@ -230,8 +230,8 @@ bool ClassType::isInstantiated() const {
 }
 
 ClassType *ClassType::getHeterogenousTuple() {
-  seqassert(canRealize(), "{} not realizable", toString());
-  seqassert(name == TYPE_TUPLE, "{} not a tuple", toString());
+  seqassert(canRealize(), "{} not realizable", debugString(2));
+  seqassert(name == TYPE_TUPLE, "{} not a tuple", debugString(2));
   if (generics.size() > 1) {
     std::string first = generics[0].type->realizedName();
     for (int i = 1; i < generics.size(); i++)
@@ -242,27 +242,66 @@ ClassType *ClassType::getHeterogenousTuple() {
 }
 
 std::string ClassType::debugString(char mode) const {
-  if (name == "Partial" && generics[3].type->getClass()) {
+  if (name == "NamedTuple") {
+    if (auto ids = generics[0].type->getIntStatic()) {
+      auto id = ids->value;
+      seqassert(id >= 0 && id < cache->generatedTupleNames.size(), "bad id: {}", id);
+      const auto &names = cache->generatedTupleNames[id];
+      auto ts = generics[1].getType()->getClass();
+      if (names.empty())
+        return name;
+      std::vector<std::string> as;
+      for (size_t i = 0; i < names.size(); i++)
+        as.push_back(names[i] + "=" + ts->generics[i].debugString(mode));
+      return name + "[" + join(as, ",") + "]";
+    } else {
+      return name + "[" + generics[0].type->debugString(mode) + "]";
+    }
+  } else if (name == "Partial" && generics[3].type->getClass() && mode != 2) {
+    // Name: function[full_args](instantiated_args...)
     std::vector<std::string> as;
     auto known = getPartialMask();
     auto func = getPartialFunc();
-    for (int i = 0, gi = 0; i < known.size(); i++) {
-      if ((*func->ast)[i].isValue())
+
+    std::vector<std::string> args;
+    if (auto ta = generics[1].type->getClass())
+      for (const auto &i : ta->generics)
+        args.push_back(i.debugString(mode));
+    size_t ai = 0, gi = 0;
+    for (size_t i = 0; i < known.size(); i++) {
+      if ((*func->ast)[i].isValue()) {
         as.emplace_back(
-            known[i] && generics[1].type->getClass()
-                ? generics[1].type->getClass()->generics[gi++].debugString(mode)
+            ai < args.size()
+                ? (known[i] ? args[ai] : ("..." + (mode == 0 ? "" : args[ai])))
                 : "...");
+        if (known[i])
+          ai++;
+      } else {
+        auto s = func->funcGenerics[gi].debugString(mode);
+        as.emplace_back( // func->funcGenerics[gi].niceName + "=" +
+            (known[i] ? s : ("..." + (mode == 0 ? "" : s))));
+        gi++;
+      }
     }
+    if (!args.empty()) {
+      if (args.back() != "Tuple") // unused *args (by default always 0 in mask)
+        as.push_back(args.back());
+    }
+    auto ks = generics[2].type->debugString(mode);
+    if (ks.size() > 10) {                 // if **kwargs is used
+      ks = ks.substr(11, ks.size() - 12); // chop off NamedTuple[...]
+      as.push_back(ks);
+    }
+
     auto fnname = func->ast->getName();
     if (mode == 0) {
       fnname = cache->rev(func->ast->getName());
-    } else if (mode == 2) {
-      fnname = func->debugString(mode);
+    } else {
+      fnname = func->ast->getName(); // func->debugString(mode);
+      if (mode == 1)
+        fnname += fmt::format("/{}", func->index);
     }
-    return fmt::format("{}[{}{}]", fnname, join(as, ","),
-                       mode == 2 ? fmt::format(";{};{}", generics[1].debugString(mode),
-                                               generics[2].debugString(mode))
-                                 : "");
+    return fnname + "(" + join(as, ",") + ")";
   }
   std::vector<std::string> gs;
   for (auto &a : generics)
@@ -275,7 +314,7 @@ std::string ClassType::debugString(char mode) const {
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? niceName : name;
-  return fmt::format("{}{}", n, gs.empty() ? "" : fmt::format("[{}]", join(gs, ",")));
+  return n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
 }
 
 std::string ClassType::realizedName() const {
@@ -283,23 +322,27 @@ std::string ClassType::realizedName() const {
     return _rn;
 
   std::string s;
-  std::vector<std::string> gs;
   if (name == "Partial") {
-    gs.push_back(generics[3].realizedName());
-    for (size_t i = 0; i < generics.size() - 1; i++)
-      gs.push_back(generics[i].realizedName());
-  } else if (name == "Union" && generics[0].type->getClass()) {
-    std::set<std::string> gss;
-    for (auto &a : generics[0].type->getClass()->generics)
-      gss.insert(a.realizedName());
-    gs = {join(gss, " | ")};
+    s = debugString(1);
   } else {
-    for (auto &a : generics)
-      if (!a.name.empty())
-        gs.push_back(a.realizedName());
+    std::vector<std::string> gs;
+    if (name == "Union" && generics[0].type->getClass()) {
+      std::set<std::string> gss;
+      for (auto &a : generics[0].type->getClass()->generics)
+        gss.insert(a.realizedName());
+      gs = {join(gss, " | ")};
+    } else {
+      for (auto &a : generics)
+        if (!a.name.empty())
+          gs.push_back(a.realizedName());
+    }
+    s = join(gs, ",");
+    s = name + (s.empty() ? "" : ("[" + s + "]"));
   }
-  s = join(gs, ",");
-  s = fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+
+  if (canRealize())
+    const_cast<ClassType *>(this)->_rn = s;
+
   return s;
 }
 

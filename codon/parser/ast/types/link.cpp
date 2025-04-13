@@ -112,8 +112,9 @@ TypePtr LinkType::generalize(int atLevel) {
 TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
                               std::unordered_map<int, TypePtr> *cache) {
   if (kind == Generic) {
-    if (cache && cache->find(id) != cache->end())
-      return (*cache)[id];
+    TypePtr *res = nullptr;
+    if (cache && (res = in(*cache, id)))
+      return *res;
     auto t = std::make_shared<LinkType>(
         this->cache, Unbound, unboundCount ? (*unboundCount)++ : id, atLevel, nullptr,
         isStatic,
@@ -170,10 +171,10 @@ bool LinkType::isInstantiated() const { return kind == Link && type->isInstantia
 std::string LinkType::debugString(char mode) const {
   if (kind == Unbound || kind == Generic) {
     if (mode == 2) {
-      return fmt::format("{}{}{}{}{}", genericName.empty() ? "" : genericName + ":",
-                         kind == Unbound ? '?' : '#', id,
-                         trait ? ":" + trait->debugString(mode) : "",
-                         isStatic ? fmt::format(":S{}", int(isStatic)) : "");
+      return (genericName.empty() ? "" : genericName + ":") +
+             (kind == Unbound ? "?" : "#") + fmt::format("{}", id) +
+             (trait ? ":" + trait->debugString(mode) : "") +
+             (isStatic ? fmt::format(":S{}", int(isStatic)) : "");
     } else if (trait) {
       return trait->debugString(mode);
     }
@@ -187,9 +188,9 @@ std::string LinkType::debugString(char mode) const {
 std::string LinkType::realizedName() const {
   if (kind == Unbound)
     // return "?";
-    return fmt::format("#{}", genericName);
+    return ("#" + genericName);
   if (kind == Generic)
-    return fmt::format("#{}", genericName);
+    return ("#" + genericName);
   seqassert(kind == Link, "unexpected generic link");
   return type->realizedName();
 }

@@ -453,10 +453,10 @@ print a, b #: None None [1, 2] 3
 def retfn(a):
     def inner(b, *args, **kwargs):
         print a, b, args, kwargs
-    print inner.__class__.__name__ #: inner[...,...,int,...]
+    print inner.__class__.__name__ #: inner(...,...,int,...)
     return inner(15, ...)
 f = retfn(1)
-print f.__class__.__name__ #: inner[int,...,int,...]
+print f.__class__.__name__ #: inner(int,...,int,...)
 f(2,3,foo='bar') #: 1 15 (2, 3) (foo: 'bar')
 
 #%% decorator_manual,barebones
@@ -464,7 +464,7 @@ def foo(x, *args, **kwargs):
     print x, args, kwargs
     return 1
 def dec(fn, a):
-    print 'decorating', fn.__class__.__name__ #: decorating foo[...,...,...]
+    print 'decorating', fn.__class__.__name__ #: decorating foo(...,...,...)
     def inner(*args, **kwargs):
         print 'decorator', args, kwargs #: decorator (5.5, 's') (z: True)
         return fn(a, *args, **kwargs)
@@ -489,7 +489,7 @@ def dec(a):
     return f
 ff = dec(10)(foo)
 print ff(5.5, 's', z=True)
-#: decorating foo[...,...,...]
+#: decorating foo(...,...,...)
 #: decorator (5.5, 's') (z: True)
 #: 10 (5.5, 's') (z: True)
 #: 1
@@ -499,7 +499,7 @@ def zoo(e, b, *args):
     return f'zoo: {e}, {b}, {args}'
 print zoo(2, 3)
 print zoo('s', 3)
-#: decorating zoo[...,...,...]
+#: decorating zoo(...,...,...)
 #: decorator (2, 3) ()
 #: zoo: 5, 2, (3,)
 #: decorator ('s', 3) ()
@@ -534,7 +534,7 @@ def factorial(num):
     return n
 factorial(10)
 #: 3628800
-#: time needed for factorial[...] is 3628799
+#: time needed for factorial(...) is 3628799
 
 def dx1(func):
     def inner():

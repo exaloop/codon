@@ -48,9 +48,8 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
   if (done)
     is.insert(findStar(is), "*");
-  auto s = format("({}{})", is,
-                  type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "");
-  return s;
+  return "(" + is +
+         (type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "") + ")";
 }
 // llvm::Expected<Expr> *Expr::operator<<(types::Type *t) {
 //   seqassert(type, "lhs is nullptr");
@@ -91,7 +90,6 @@ std::pair<int, std::string> Param::getNameWithStars() const {
   auto n = name.substr(stars);
   return {stars, n};
 }
-
 
 NoneExpr::NoneExpr() : AcceptorExtend() {}
 NoneExpr::NoneExpr(const NoneExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
@@ -431,8 +429,7 @@ CallExpr::CallExpr(const CallExpr &expr, bool clean)
 }
 CallExpr::CallExpr(Expr *expr, std::vector<CallArg> args)
     : AcceptorExtend(), Items(std::move(args)), expr(expr), ordered(false),
-      partial(false) {
-}
+      partial(false) {}
 CallExpr::CallExpr(Expr *expr, std::vector<Expr *> args)
     : AcceptorExtend(), Items({}), expr(expr), ordered(false), partial(false) {
   for (auto a : args)
@@ -449,7 +446,7 @@ std::string CallExpr::toString(int indent) const {
                    i.value->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1));
   }
   return wrapType(format("call{} {}{}", partial ? "-partial" : "",
-                         expr->toString(indent), fmt::join(s, "")));
+                         expr->toString(indent), join(s, "")));
 }
 
 DotExpr::DotExpr(Expr *expr, std::string member)
@@ -536,8 +533,7 @@ std::string StmtExpr::toString(int indent) const {
   s.reserve(items.size());
   for (auto &i : items)
     s.emplace_back(pad + i->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1));
-  return wrapType(
-      format("stmt-expr {} ({})", expr->toString(indent), fmt::join(s, "")));
+  return wrapType(format("stmt-expr {} ({})", expr->toString(indent), join(s, "")));
 }
 
 InstantiateExpr::InstantiateExpr(Expr *expr, std::vector<Expr *> typeParams)

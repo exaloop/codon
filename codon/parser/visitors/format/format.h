@@ -130,7 +130,7 @@ public:
     std::vector<std::string> r;
     for (auto &e : ts)
       r.push_back(transform(e));
-    return fmt::format("{}", fmt::join(r, ", "));
+    return fmt::format("{}", join(r, ", "));
   }
 };
 

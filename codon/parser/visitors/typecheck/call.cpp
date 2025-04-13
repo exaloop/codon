@@ -159,7 +159,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         a.emplace_back(fmt::format("{}", t.getExpr()->getType()->getStatic()
                                              ? t.getExpr()->getClassType()->name
                                              : t.getExpr()->getType()->prettyString()));
-      auto argsNice = fmt::format("({})", fmt::join(a, ", "));
+      auto argsNice = fmt::format("({})", join(a, ", "));
       auto name = getUnmangledName(calleeFn->getFuncName());
       if (calleeFn->getParentType() && calleeFn->getParentType()->getClass())
         name = format("{}.{}", calleeFn->getParentType()->getClass()->niceName, name);

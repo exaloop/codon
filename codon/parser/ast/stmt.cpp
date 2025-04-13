@@ -351,11 +351,14 @@ std::string FunctionStmt::toString(int indent) const {
       dec.empty() ? "" : format(" (dec {})", join(dec, " ")), pad,
       suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "(suite)"));
 }
-std::string FunctionStmt::signature() const {
-  std::vector<std::string> s;
-  for (auto &a : items)
-    s.push_back(a.type ? a.type->toString() : "-");
-  return format("{}", join(s, ":"));
+std::string FunctionStmt::getSignature() {
+  if (signature.empty()) {
+    std::vector<std::string> s;
+    for (auto &a : items)
+      s.push_back(a.type ? a.type->toString() : "-");
+    signature = join(s, ":");
+  }
+  return signature;
 }
 size_t FunctionStmt::getStarArgs() const {
   size_t i = 0;

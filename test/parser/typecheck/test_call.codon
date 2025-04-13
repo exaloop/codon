@@ -104,7 +104,7 @@ def foo(i, j, k):
     return i + j + k
 print foo(1.1, 2.2, 3.3)  #: 6.6
 p = foo(6, ...)
-print p.__class__.__name__ #: foo[int,...,...]
+print p.__class__.__name__ #: foo(int,...,...)
 print p(2, 1)  #: 9
 print p(k=3, j=6) #: 15
 q = p(k=1, ...)
@@ -120,11 +120,11 @@ print 42 |> add_two  #: 44
 def moo(a, b, c=3):
     print a, b, c
 m = moo(b=2, ...)
-print m.__class__.__name__ #: moo[...,int,...]
+print m.__class__.__name__ #: moo(...,int,...)
 m('s', 1.1) #: s 2 1.1
 # #
 n = m(c=2.2, ...)
-print n.__class__.__name__ #: moo[...,int,float]
+print n.__class__.__name__ #: moo(...,int,float)
 n('x') #: x 2 2.2
 print n('y').__class__.__name__ #: NoneType
 
@@ -133,11 +133,11 @@ def ff(a, b, c):
 print ff(1.1, 2, True).__class__.__name__ #: Tuple[float,int,bool]
 print ff(1.1, ...)(2, True).__class__.__name__ #: Tuple[float,int,bool]
 y = ff(1.1, ...)(c=True, ...)
-print y.__class__.__name__ #: ff[float,...,bool]
+print y.__class__.__name__ #: ff(float,...,bool)
 print ff(1.1, ...)(2, ...)(True).__class__.__name__ #: Tuple[float,int,bool]
 print y('hei').__class__.__name__ #: Tuple[float,str,bool]
 z = ff(1.1, ...)(c='s', ...)
-print z.__class__.__name__ #: ff[float,...,str]
+print z.__class__.__name__ #: ff(float,...,str)
 
 def fx(*args, **kw):
     print(args, kw)
@@ -170,7 +170,7 @@ l = [1]
 def adder(a, b): return a+b
 doo(b=l, d=Optional(5), c=l[0], a=adder(b=4, ...))
 #: int int
-#: adder[.. Generator[int]
+#: adder(.. Generator[int]
 #: 5
 #: 1 Optional[int]
 #: 5 int
@@ -616,10 +616,10 @@ def bar[T](x):
     print x, T.__class__.__name__
 foo(bar, 1)
 #: 1 int
-#: bar[...]
+#: bar(...,...)
 foo(bar(...), 's')
 #: s str
-#: bar[...]
+#: bar(...,...)
 z = bar
 z('s', int)
 #: s int
@@ -638,7 +638,7 @@ def bar[T](x):
     print x, T.__class__.__name__
 foo(bar(T=int,...), 1)
 #! bar() takes 2 arguments (2 given)
-#! during the realization of foo(f: bar[...], x: int)
+#! during the realization of foo(f: bar(...,int), x: int)
 # TODO fix this error message
 
 #%% sort_partial

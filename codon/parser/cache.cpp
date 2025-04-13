@@ -64,7 +64,7 @@ std::string Cache::getMethod(types::ClassType *typ, const std::string &member) {
     if (auto t = in(cls->methods, member))
       return *t;
   }
-  seqassertn(false, "cannot find '{}' in '{}'", member, typ->toString());
+  seqassertn(false, "cannot find '{}' in '{}'", member, typ->name);
   return "";
 }
 

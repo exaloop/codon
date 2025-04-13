@@ -745,7 +745,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         dataArg = N<CallExpr>(N<IdExpr>("cobj"));
         dataType = N<IdExpr>("cobj");
       } else {
-        seqassert(exprClass->is("Function"), "bad type: {}", exprClass->toString());
+        seqassert(exprClass->is("Function"), "bad type: {}", exprClass->debugString(2));
         auto rf = realize(exprClass);
         seqassert(rf, "not realizable");
         fname = rf->realizedName();
@@ -1363,7 +1363,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       if (isDispatch(method) || !f->getType())
         continue;
       if (hideShadowed) {
-        auto sig = f->ast->signature();
+        auto sig = f->ast->getSignature();
         if (!in(signatureLoci, sig)) {
           signatureLoci.insert(sig);
           vv.emplace_back(f->getType());

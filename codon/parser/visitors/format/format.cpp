@@ -335,7 +335,7 @@ void FormatVisitor::visit(TryStmt *stmt) {
         newline(), transform(c->getSuite(), 1)));
   }
   result = fmt::format("{}:{}{}{}{}", keyword("try"), newline(),
-                       transform(stmt->getSuite(), 1), fmt::join(catches, ""),
+                       transform(stmt->getSuite(), 1), join(catches, ""),
                        stmt->getFinally()
                            ? fmt::format("{}:{}{}", keyword("finally"), newline(),
                                          transform(stmt->getFinally(), 1))
@@ -385,7 +385,7 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
           result += fmt::format(
               "{}{}{}{} {}({}){}:{}{}", newline(), pad(),
               attrs.size() ? join(attrs, newline() + pad()) + newline() + pad() : "",
-              keyword("def"), anchor_root(name), fmt::join(args, ", "),
+              keyword("def"), anchor_root(name), join(args, ", "),
               fmt::format(" -> {}", anchor(ft->getRetType()->realizedName())),
               newline(), body.empty() ? fmt::format("{}", keyword("pass")) : body);
         }
@@ -422,7 +422,7 @@ void FormatVisitor::visit(ClassStmt *stmt) {
                                 keyword("class"), anchor_root(real.first));
           if (!args.empty())
             result += fmt::format(":{}{}{}", newline(), pad(indent + 1),
-                                  fmt::join(args, newline() + pad(indent + 1)));
+                                  join(args, newline() + pad(indent + 1)));
         }
         result += "</details>";
       }

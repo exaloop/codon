@@ -276,7 +276,7 @@ print h(list(map(lambda i: i-1, map(lambda i: i+2, range(5)))))
 #%% func_unify_error,barebones
 def foo(x:int):
     print x
-z = 1 & foo #! 'foo[...]' does not match expected type 'int'
+z = 1 & foo #! 'foo(...)' does not match expected type 'int'
 
 #%% tuple_type_late,barebones
 coords = []

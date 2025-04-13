@@ -91,13 +91,13 @@ std::string UnionType::debugString(char mode) const {
   for (auto &a : generics[0].type->getClass()->generics)
     gss.insert(a.debugString(mode));
   std::string s = join(gss, " | ");
-  return fmt::format("{}{}", name, s.empty() ? "" : fmt::format("[{}]", s));
+  return (name + (s.empty() ? "" : ("[" + s + "]")));
 }
 
 bool UnionType::canRealize() const { return isSealed() && ClassType::canRealize(); }
 
 std::string UnionType::realizedName() const {
-  seqassert(canRealize(), "cannot realize {}", toString());
+  seqassert(canRealize(), "cannot realize {}", debugString(2));
   return ClassType::realizedName();
 }
 
@@ -153,7 +153,7 @@ void UnionType::seal() {
 }
 
 std::vector<Type *> UnionType::getRealizationTypes() {
-  seqassert(canRealize(), "cannot realize {}", debugString(1));
+  seqassert(canRealize(), "cannot realize {}", debugString(2));
   std::map<std::string, Type *> unionTypes;
   for (auto &u : generics[0].type->getClass()->generics)
     unionTypes[u.type->realizedName()] = u.type.get();

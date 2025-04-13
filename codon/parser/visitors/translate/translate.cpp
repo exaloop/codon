@@ -633,6 +633,7 @@ codon::ir::types::Type *TranslateVisitor::getType(types::Type *t) {
   std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
   seqassert(i, "type {} not realized: {}", t->debugString(2), name);
+  seqassert(i->getType(), "type {} not IR-realized: {}", t->debugString(2), name);
   return i->getType();
 }
 
