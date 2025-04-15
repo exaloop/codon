@@ -68,3 +68,4 @@ jit/codon/version.py
 temp/
 playground/
 scratch*.*
+/_*

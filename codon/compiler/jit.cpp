@@ -25,7 +25,7 @@ const std::string JIT_FILENAME = "<jit>";
 JIT::JIT(const std::string &argv0, const std::string &mode)
     : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      mode(mode) {
+      mode(mode), forgetful(false) {
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
@@ -92,6 +92,22 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   ast::SimplifyContext stdlibSimplify = *(cache->imports[STDLIB_IMPORT].ctx);
   ast::TypeContext bType = *(cache->typeCtx);
   ast::TranslateContext bTranslate = *(cache->codegenCtx);
+  auto reset = [&](bool cleanIR = true) {
+    if (cleanIR)
+      for (auto &f : cache->functions)
+        for (auto &r : f.second.realizations)
+          if (!(in(bCache.functions, f.first) &&
+                in(bCache.functions[f.first].realizations, r.first)) &&
+              r.second->ir) {
+            cache->module->remove(r.second->ir);
+          }
+    *cache = bCache;
+    *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
+    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
+    *(cache->typeCtx) = bType;
+    *(cache->codegenCtx) = bTranslate;
+  };
+
   try {
     ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
                                        /*startLine=*/line);
@@ -126,6 +142,9 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
         ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
     cache->jitCell++;
 
+    if (forgetful)
+      reset(false);
+
     return func;
   } catch (const exc::ParserException &exc) {
     std::vector<error::Message> messages;
@@ -140,18 +159,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
       }
     }
 
-    for (auto &f : cache->functions)
-      for (auto &r : f.second.realizations)
-        if (!(in(bCache.functions, f.first) &&
-              in(bCache.functions[f.first].realizations, r.first)) &&
-            r.second->ir) {
-          cache->module->remove(r.second->ir);
-        }
-    *cache = bCache;
-    *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
-    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
-    *(cache->typeCtx) = bType;
-    *(cache->codegenCtx) = bTranslate;
+    reset();
 
     if (exc.messages.empty())
       return llvm::make_error<error::ParserErrorInfo>(messages);
