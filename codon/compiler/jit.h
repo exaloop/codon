@@ -48,7 +48,8 @@ private:
   bool forgetful = false;
 
 public:
-  explicit JIT(const std::string &argv0, const std::string &mode = "");
+  explicit JIT(const std::string &argv0, const std::string &mode = "",
+               const std::string &stdlibRoot = "");
 
   Compiler *getCompiler() const { return compiler.get(); }
   Engine *getEngine() const { return engine.get(); }

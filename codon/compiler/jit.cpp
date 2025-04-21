@@ -22,8 +22,12 @@ typedef void *PyWrapperFunc(void *);
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
-JIT::JIT(const std::string &argv0, const std::string &mode)
-    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)),
+JIT::JIT(const std::string &argv0, const std::string &mode,
+         const std::string &stdlibRoot)
+    : compiler(std::make_unique<Compiler>(
+          argv0, Compiler::Mode::JIT, /*disabledPasses=*/std::vector<std::string>{},
+          /*isTest=*/false,
+          /*pyNumerics=*/false, /*pyExtension=*/false, stdlibRoot)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
       mode(mode), forgetful(false) {
   compiler->getLLVMVisitor()->setJIT(true);
