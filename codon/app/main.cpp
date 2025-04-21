@@ -292,7 +292,6 @@ int jitMode(const std::vector<const char *> &args) {
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   initLogFlags(log);
   codon::jit::JIT jit(args[0]);
-  // jit.setForgetful();
 
   // load plugins
   for (const auto &plugin : plugins) {
