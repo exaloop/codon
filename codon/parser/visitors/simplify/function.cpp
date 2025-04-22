@@ -120,8 +120,14 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       stmt->attributes.set(attrName);
-      if (isAttr)
+      if (isAttr) {
+        const auto &otherAttr =
+            ctx->cache->functions[ctx->cache->overloads[attrName][0].name]
+                .ast->attributes.customAttr;
+        for (const auto &a : otherAttr)
+          stmt->attributes.set(a);
         stmt->decorators[i] = nullptr; // remove it from further consideration
+      }
     }
   }
 

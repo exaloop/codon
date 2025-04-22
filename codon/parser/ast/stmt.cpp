@@ -414,8 +414,6 @@ void FunctionStmt::parseDecorators() {
   std::vector<ExprPtr> newDecorators;
   for (auto &d : decorators) {
     if (d->isId(Attr::Attribute)) {
-      if (decorators.size() != 1)
-        E(Error::FN_SINGLE_DECORATOR, decorators[1], Attr::Attribute);
       attributes.isAttribute = true;
     } else if (d->isId(Attr::LLVM)) {
       attributes.set(Attr::LLVM);

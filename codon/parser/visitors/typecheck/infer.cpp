@@ -81,6 +81,7 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
         if (f.second.type && f.second.realizations.empty() &&
             (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
+          LOG("force-realize {}", f.first);
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
           realize(ctx->instantiate(f.second.type)->getFunc());
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
@@ -409,7 +410,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     realizations[key] = realizations[type->realizedName()];
   }
 
-  LOG("[realize] {} {}", type->realizedName(), ctx->realizationBases.back().iteration);
+  // LOG("[realize] {} {}", type->realizedName(),
+  // ctx->realizationBases.back().iteration);
 
   if (force)
     realizations[type->realizedName()]->ast = r->ast;

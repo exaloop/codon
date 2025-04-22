@@ -99,26 +99,26 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
         ast::TypecheckVisitor::apply(cache.get(), std::move(transformed));
     t3.log();
 
-    std::unordered_map<std::string, double> wxt;
-    std::unordered_map<std::string, std::unordered_map<std::string, double>> wx;
-    for (auto &[r, t] : cache->_timings) {
-      if (auto f = cache->typeCtx->find(r)) {
-        auto n = f->type->getFunc()->ast->name;
-        wx[n][r] = t;
-        wxt[n] += t;
-      } else {
-        wx["?"][r] = t;
-        wxt["?"] += t;
-      }
-    }
-    std::vector<std::pair<std::string, double>> q(wxt.begin(), wxt.end());
-    sort(q.begin(), q.end(),
-         [](const auto &a, const auto &b) { return b.second < a.second; });
-    double s = 0;
-    for (auto &[k, v] : q) {
-      s += v;
-      LOG_TIME("  [->] {:60} = {:10.3f} / {:10.3f}", k, v, s);
-    }
+    // std::unordered_map<std::string, double> wxt;
+    // std::unordered_map<std::string, std::unordered_map<std::string, double>> wx;
+    // for (auto &[r, t] : cache->_timings) {
+    //   if (auto f = cache->typeCtx->find(r)) {
+    //     auto n = f->type->getFunc()->ast->name;
+    //     wx[n][r] = t;
+    //     wxt[n] += t;
+    //   } else {
+    //     wx["?"][r] = t;
+    //     wxt["?"] += t;
+    //   }
+    // }
+    // std::vector<std::pair<std::string, double>> q(wxt.begin(), wxt.end());
+    // sort(q.begin(), q.end(),
+    //      [](const auto &a, const auto &b) { return b.second < a.second; });
+    // double s = 0;
+    // for (auto &[k, v] : q) {
+    //   s += v;
+    //   LOG_TIME("  [->] {:60} = {:10.3f} / {:10.3f}", k, v, s);
+    // }
 
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_typecheck.sexp", "w");
