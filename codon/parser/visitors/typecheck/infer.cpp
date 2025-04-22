@@ -318,6 +318,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
   }
 
+  Cache::CTimer _t(ctx->cache, "");
+
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
               type->realizedName(), ctx->getRealizationStackName(),
               ctx->getRealizationDepth());
@@ -406,6 +408,9 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   } else {
     realizations[key] = realizations[type->realizedName()];
   }
+
+  LOG("[realize] {} {}", type->realizedName(), ctx->realizationBases.back().iteration);
+
   if (force)
     realizations[type->realizedName()]->ast = r->ast;
   ctx->addToplevel(type->realizedName(), std::make_shared<TypecheckItem>(
@@ -414,6 +419,8 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   ctx->popBlock();
   ctx->typecheckLevel--;
   getLogger().level--;
+
+  _t.name = type->realizedName();
 
   return type->getFunc();
 }

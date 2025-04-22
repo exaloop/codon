@@ -318,6 +318,20 @@ public:
 
   std::shared_ptr<ir::PyModule> pyModule = nullptr;
   void populatePythonModule();
+
+public:
+  std::unordered_map<std::string, double> _timings;
+
+  struct CTimer {
+    Cache *c;
+    Timer t;
+    std::string name;
+    CTimer(Cache *c, std::string name) : c(c), name(std::move(name)), t(Timer("")) {}
+    ~CTimer() {
+      c->_timings[name] += t.elapsed();
+      t.logged = true;
+    }
+  };
 };
 
 } // namespace codon::ast
