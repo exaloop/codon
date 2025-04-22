@@ -150,8 +150,24 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       if (isAttr) {
-        attributes.push_back(attrName);
-        stmt->setAttribute(attrName);
+        if (attrName == "std.internal.attributes.realize_without_self.0:0")
+          stmt->setAttribute(Attr::RealizeWithoutSelf);
+        else if (attrName == "std.internal.attributes.test.0:0")
+          stmt->setAttribute(Attr::Test);
+        else if (attrName == "std.internal.attributes.export.0:0")
+          stmt->setAttribute(Attr::Export);
+        else if (attrName == "std.internal.attributes.inline.0:0")
+          stmt->setAttribute(Attr::Inline);
+        else if (attrName == "std.internal.attributes.no_arg_reorder.0:0")
+          stmt->setAttribute(Attr::NoArgReorder);
+        else if (attrName == "overload:0")
+          stmt->setAttribute(Attr::Overload);
+
+        if (!stmt->hasAttribute(Attr::FunctionAttributes))
+          stmt->setAttribute(Attr::FunctionAttributes,
+                             std::make_unique<ir::KeyValueAttribute>());
+        stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+            ->attributes[attrName] = "";
         stmt->decorators[i] = nullptr; // remove it from further consideration
       }
     }
@@ -206,7 +222,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             stmt->setAttribute(Attr::Method);
           }
           if (!v->isGeneric() || (v->isStatic() && !parentClassGeneric)) {
-            captures[c] = v;
+            if (!v->isFunc()) {
+              // log("capture: {} -> {} '' {}", canonicalName, c,
+              //     v->getType()->debugString(2));
+              captures[c] = v;
+            }
           }
         }
       }

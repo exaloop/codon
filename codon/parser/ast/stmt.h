@@ -497,6 +497,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   size_t getKwStarArgs() const;
   std::string getDocstr() const;
   std::unordered_set<std::string> getNonInferrableGenerics() const;
+  bool hasFunctionAttribute(const std::string &attr) const;
 
   ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators);
 

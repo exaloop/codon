@@ -341,12 +341,12 @@ public:
 
 public:
   std::unordered_map<std::string, double> _timings;
-
   struct CTimer {
     Cache *c;
     Timer t;
     std::string name;
-    CTimer(Cache *c, std::string name) : c(c), name(std::move(name)), t(Timer("")) {}
+    CTimer(Cache *c, std::string n) : c(c), name(std::move(n)), t(Timer("")) {}
+    double elapsed() const { return t.elapsed(); }
     ~CTimer() {
       c->_timings[name] += t.elapsed();
       t.logged = true;

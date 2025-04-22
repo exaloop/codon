@@ -51,7 +51,7 @@ Stmt *TypecheckVisitor::apply(
   SuiteStmt *suite = tv.N<SuiteStmt>();
   auto &stmts = suite->items;
   stmts.push_back(tv.N<ClassStmt>(".toplevel", std::vector<Param>{}, nullptr,
-                                  std::vector<Expr *>{tv.N<IdExpr>(Attr::Internal)}));
+                                  std::vector<Expr *>{tv.N<IdExpr>("__internal__")}));
   // Load compile-time defines (e.g., codon run -DFOO=1 ...)
   for (auto &d : defines) {
     stmts.push_back(
@@ -272,11 +272,12 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   if (!stmt || stmt->isDone())
     return stmt;
 
+  // auto _t = std::chrono::high_resolution_clock::now();
   TypecheckVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());
-  if (!stmt->toString(-1).empty())
-    LOG_TYPECHECK("> [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
-                  ctx->getBase()->iteration, stmt->toString(-1));
+  // if (!stmt->toString(-1).empty())
+  //   LOG_TYPECHECK("> [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
+  //                 ctx->getBase()->iteration, stmt->toString(-1));
   ctx->pushNode(stmt);
 
   int64_t time = 0;
@@ -301,9 +302,15 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   }
   if (stmt->isDone())
     ctx->changedNodes++;
-  if (!stmt->toString(-1).empty())
-    LOG_TYPECHECK("< [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
-                  ctx->getBase()->iteration, stmt->toString(-1));
+  // if (!stmt->toString(-1).empty())
+  //   LOG_TYPECHECK("< [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
+  //                 ctx->getBase()->iteration, stmt->toString(-1));
+  // if (stmt && !cast<SuiteStmt>(stmt))
+  //   LOG("{} | {}: {} | {}",
+  //       int64_t(std::chrono::duration_cast<std::chrono::microseconds>(
+  //                   std::chrono::high_resolution_clock::now() - _t)
+  //                   .count()),
+  //       stmt->getSrcInfo(), ctx->getBaseName(), split(stmt->toString(0), '\n')[0]);
   return stmt;
 }
 
@@ -570,7 +577,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
                               bool allowUnwrap, bool isEllipsis) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = exprType->getClass();
-  auto doArgWrap = !callee || !callee->ast->hasAttribute(
+  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(
                                   "std.internal.attributes.no_argument_wrap.0:0");
   if (!doArgWrap)
     return {true, expectedType ? expectedType->shared_from_this() : nullptr, nullptr};

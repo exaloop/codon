@@ -672,10 +672,11 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
     indices.pop_back();
   }
   // TODO: refactor IR attribute API
-  std::map<std::string, std::string> attr;
+  std::unordered_map<std::string, std::string> attr;
+  if (ast->hasAttribute(Attr::FunctionAttributes))
+    attr =
+        ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)->attributes;
   attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-  for (auto it = ast->attributes_begin(); it != ast->attributes_end(); ++it)
-    attr[*it] = "";
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo((*ast)[indices[i]].getSrcInfo());
@@ -706,11 +707,11 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
       j++;
     }
   auto f = cast<ir::LLVMFunc>(func);
-  // TODO: refactor IR attribute API
-  std::map<std::string, std::string> attr;
+  std::unordered_map<std::string, std::string> attr;
+  if (ast->hasAttribute(Attr::FunctionAttributes))
+    attr =
+        ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)->attributes;
   attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-  for (auto it = ast->attributes_begin(); it != ast->attributes_end(); ++it)
-    attr[*it] = "";
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
     func->getArgVar(names[i])->setSrcInfo((*ast)[indices[i]].getSrcInfo());

@@ -191,6 +191,8 @@ struct TypeContext : public Context<TypecheckItem> {
   /// Current statement time.
   int64_t time = 0;
 
+  std::unordered_map<std::string, double> _itime;
+
 public:
   explicit TypeContext(Cache *cache, std::string filename = "");
 

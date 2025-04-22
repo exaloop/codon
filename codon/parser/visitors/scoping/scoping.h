@@ -17,7 +17,7 @@
 namespace codon::ast {
 
 struct BindingsAttribute : public ir::Attribute {
-  static const std::string AttributeName;
+  static const int AttributeID = 190;
 
   enum CaptureType { Read, Global, Nonlocal };
   std::unordered_map<std::string, CaptureType> captures;

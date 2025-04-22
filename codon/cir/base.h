@@ -16,6 +16,7 @@
 #include <fmt/ostream.h>
 
 namespace codon {
+
 namespace ir {
 
 using id_t = std::int64_t;
@@ -55,7 +56,7 @@ private:
 
 protected:
   /// key-value attribute store
-  std::map<std::string, std::unique_ptr<Attribute>> attributes;
+  std::unordered_map<int, std::unique_ptr<Attribute>> attributes;
 
 public:
   // RTTI is implemented using a port of LLVM's Extensible RTTI
@@ -109,30 +110,30 @@ public:
   /// Sets an attribute
   /// @param the attribute key
   /// @param value the attribute
-  void setAttribute(std::unique_ptr<Attribute> value, const std::string &key) {
+  void setAttribute(std::unique_ptr<Attribute> value, int key) {
     getActual()->attributes[key] = std::move(value);
   }
   /// Sets an attribute
   /// @param value the attribute
   template <typename AttributeType>
   void setAttribute(std::unique_ptr<AttributeType> value) {
-    setAttribute(std::move(value), AttributeType::AttributeName);
+    setAttribute(std::move(value), AttributeType::AttributeID);
   }
 
-  /// @param n the name
+  /// @param n attribute ID
   /// @return true if the attribute is in the store
-  bool hasAttribute(const std::string &n) const {
+  bool hasAttribute(int n) const {
     auto *actual = getActual();
     return actual->attributes.find(n) != actual->attributes.end();
   }
   /// @return true if the attribute is in the store
   template <typename AttributeType> bool hasAttribute() const {
-    return hasAttribute(AttributeType::AttributeName);
+    return hasAttribute(AttributeType::AttributeID);
   }
 
   /// Gets the appropriate attribute.
   /// @param key the attribute key
-  Attribute *getAttribute(const std::string &key) {
+  Attribute *getAttribute(int key) {
     auto *actual = getActual();
 
     auto it = actual->attributes.find(key);
@@ -140,7 +141,7 @@ public:
   }
   /// Gets the appropriate attribute.
   /// @param key the attribute key
-  const Attribute *getAttribute(const std::string &key) const {
+  const Attribute *getAttribute(int key) const {
     auto *actual = getActual();
 
     auto it = actual->attributes.find(key);
@@ -149,23 +150,20 @@ public:
   /// Gets the appropriate attribute.
   /// @tparam AttributeType the return type
   template <typename AttributeType> AttributeType *getAttribute() {
-    return static_cast<AttributeType *>(getAttribute(AttributeType::AttributeName));
+    return static_cast<AttributeType *>(getAttribute(AttributeType::AttributeID));
   }
   /// Gets the appropriate attribute.
   /// @tparam AttributeType the return type
   template <typename AttributeType> const AttributeType *getAttribute() const {
-    return static_cast<const AttributeType *>(
-        getAttribute(AttributeType::AttributeName));
+    return static_cast<const AttributeType *>(getAttribute(AttributeType::AttributeID));
   }
-  template <typename AttributeType>
-  AttributeType *getAttribute(const std::string &key) {
+  template <typename AttributeType> AttributeType *getAttribute(int key) {
     return static_cast<AttributeType *>(getAttribute(key));
   }
-  template <typename AttributeType>
-  const AttributeType *getAttribute(const std::string &key) const {
+  template <typename AttributeType> const AttributeType *getAttribute(int key) const {
     return static_cast<const AttributeType *>(getAttribute(key));
   }
-  void eraseAttribute(const std::string &key) { attributes.erase(key); }
+  void eraseAttribute(int key) { attributes.erase(key); }
   void cloneAttributesFrom(Node *n) { attributes = codon::clone(n->attributes); }
 
   /// @return iterator to the first attribute
@@ -190,8 +188,8 @@ public:
   }
   /// @return the src info
   codon::SrcInfo getSrcInfo() const {
-    return getAttribute<SrcInfoAttribute>() ? getAttribute<SrcInfoAttribute>()->info
-                                            : codon::SrcInfo();
+    auto a = getAttribute<SrcInfoAttribute>();
+    return a ? a->info : codon::SrcInfo();
   }
 
   /// @return a text representation of a reference to the object

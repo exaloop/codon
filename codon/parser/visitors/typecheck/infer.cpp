@@ -183,8 +183,6 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
       }
     } else if (auto c = typ->getClass()) {
       auto t = realizeType(c);
-      if (t && in(t->realizedName(), "__NTu"))
-        log("huh? -> {}", t->debugString(2));
       return t;
     }
   } catch (exc::ParserException &exc) {
@@ -343,6 +341,9 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     }
   }
 
+  // auto *_t = new Cache::CTimer(ctx->cache, ctx->getRealizationStackName() + ":" +
+  //                                              type->realizedName());
+
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
@@ -493,9 +494,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   seqassert(ret, "cannot realize return type '{}'", *(type->getRetType()));
 
-  // LOG("[realize] F {} -> {} -> {}", type->getFuncName(), type->debugString(2),
-  // type->realizedName());
-
   std::vector<Param> args;
   for (auto &i : *ast) {
     auto [_, varName] = i.getNameWithStars();
@@ -508,6 +506,10 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   auto newType = std::static_pointer_cast<types::FuncType>(type->generalize(0));
   auto newKey = newType->realizedName();
+
+  // if (!isImport)
+  //   LOG("[realize] {} {}", newKey, ctx->bases.back().iteration);
+
   // if (newKey != key) {
   //   LOG("!! oldKey={}, newKey={}", key, newKey);
   // }
@@ -530,6 +532,13 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     getLogger().level--;
   }
   this->ctx = oldCtx;
+
+  // auto _el = _t->elapsed();
+  // delete _t;
+  // for (auto &b : ctx->bases)
+  //   if (b.type && b.type->getFunc()) {
+  //     ctx->cache->_timings[b.type->getFunc()->ast->getName()] -= _el;
+  //   }
 
   return r->getType();
 }

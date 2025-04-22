@@ -235,8 +235,9 @@ void TypecheckVisitor::visit(DotExpr *expr) {
         if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
           methodArgs.emplace_back(expr->getExpr());
         // If a method is marked with @property, just call it directly
-        if (!bestMethod->ast->hasAttribute(Attr::Property))
+        if (!bestMethod->ast->hasAttribute(Attr::Property)) {
           methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+        }
         e = N<CallExpr>(e, methodArgs);
       }
       resultExpr = transform(e);

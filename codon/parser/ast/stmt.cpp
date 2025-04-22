@@ -387,6 +387,12 @@ std::string FunctionStmt::getDocstr() const {
   }
   return "";
 }
+bool FunctionStmt::hasFunctionAttribute(const std::string &attr) const {
+  if (auto f = getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)) {
+    return in(f->attributes, attr) != nullptr;
+  }
+  return false;
+}
 
 // Search expression tree for a identifier
 class IdSearchVisitor : public CallbackASTVisitor<bool, bool> {

@@ -49,18 +49,16 @@ struct ASTNode : public ir::Node {
     return out << expr.toString();
   }
 
-  void setAttribute(const std::string &key, std::unique_ptr<ir::Attribute> value) {
+  void setAttribute(int key, std::unique_ptr<ir::Attribute> value) {
     attributes[key] = std::move(value);
   }
-  void setAttribute(const std::string &key, const std::string &value) {
+  void setAttribute(int key, const std::string &value) {
     attributes[key] = std::make_unique<ir::StringValueAttribute>(value);
   }
-  void setAttribute(const std::string &key, int64_t value) {
+  void setAttribute(int key, int64_t value) {
     attributes[key] = std::make_unique<ir::IntValueAttribute>(value);
   }
-  void setAttribute(const std::string &key) {
-    attributes[key] = std::make_unique<ir::Attribute>();
-  }
+  void setAttribute(int key) { attributes[key] = std::make_unique<ir::Attribute>(); }
 
   inline decltype(auto) members() {
     int a = 0;

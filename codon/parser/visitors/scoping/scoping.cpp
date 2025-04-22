@@ -429,30 +429,30 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   // Validate
   std::vector<Expr *> newDecorators;
   for (auto &d : stmt->getDecorators()) {
-    if (isId(d, Attr::Attribute)) {
+    if (isId(d, "__attribute__")) {
       if (stmt->getDecorators().size() != 1)
         STOP_ERROR(Error::FN_SINGLE_DECORATOR, stmt->getDecorators()[1],
-                   Attr::Attribute);
+                   "__attribute__");
       stmt->setAttribute(Attr::Attribute);
-    } else if (isId(d, Attr::LLVM)) {
+    } else if (isId(d, "llvm")) {
       stmt->setAttribute(Attr::LLVM);
-    } else if (isId(d, Attr::Python)) {
+    } else if (isId(d, "python")) {
       if (stmt->getDecorators().size() != 1)
-        STOP_ERROR(Error::FN_SINGLE_DECORATOR, stmt->getDecorators()[1], Attr::Python);
+        STOP_ERROR(Error::FN_SINGLE_DECORATOR, stmt->getDecorators()[1], "python");
       stmt->setAttribute(Attr::Python);
-    } else if (isId(d, Attr::Internal)) {
+    } else if (isId(d, "__internal__")) {
       stmt->setAttribute(Attr::Internal);
-    } else if (isId(d, Attr::HiddenFromUser)) {
+    } else if (isId(d, "__hidden__")) {
       stmt->setAttribute(Attr::HiddenFromUser);
-    } else if (isId(d, Attr::Atomic)) {
+    } else if (isId(d, "atomic")) {
       stmt->setAttribute(Attr::Atomic);
-    } else if (isId(d, Attr::Property)) {
+    } else if (isId(d, "property")) {
       stmt->setAttribute(Attr::Property);
-    } else if (isId(d, Attr::StaticMethod)) {
+    } else if (isId(d, "staticmethod")) {
       stmt->setAttribute(Attr::StaticMethod);
-    } else if (isId(d, Attr::ForceRealize)) {
+    } else if (isId(d, "__force__")) {
       stmt->setAttribute(Attr::ForceRealize);
-    } else if (isId(d, Attr::C)) {
+    } else if (isId(d, "C")) {
       stmt->setAttribute(Attr::C);
     } else {
       newDecorators.emplace_back(d);
@@ -593,14 +593,14 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
       stmt->setAttribute(Attr::ClassNoTuple);
     } else if (isId(d, "dataclass")) {
     } else if (auto c = cast<CallExpr>(d)) {
-      if (isId(c->getExpr(), Attr::Tuple)) {
+      if (isId(c->getExpr(), "tuple")) {
         stmt->setAttribute(Attr::Tuple);
         for (auto &m : tupleMagics)
           m.second = true;
       } else if (!isId(c->getExpr(), "dataclass")) {
         STOP_ERROR(Error::CLASS_BAD_DECORATOR, c->getExpr());
       } else if (stmt->hasAttribute(Attr::Tuple)) {
-        STOP_ERROR(Error::CLASS_CONFLICT_DECORATOR, c, "dataclass", Attr::Tuple);
+        STOP_ERROR(Error::CLASS_CONFLICT_DECORATOR, c, "dataclass", "tuple");
       }
       for (const auto &a : *c) {
         auto b = cast<BoolExpr>(a);
@@ -631,22 +631,22 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
           STOP_ERROR(Error::CLASS_BAD_DECORATOR_ARG, a.getSrcInfo());
         }
       }
-    } else if (isId(d, Attr::Tuple)) {
+    } else if (isId(d, "tuple")) {
       if (stmt->hasAttribute(Attr::Tuple))
-        STOP_ERROR(Error::CLASS_MULTIPLE_DECORATORS, d, Attr::Tuple);
+        STOP_ERROR(Error::CLASS_MULTIPLE_DECORATORS, d, "tuple");
       stmt->setAttribute(Attr::Tuple);
       for (auto &m : tupleMagics) {
         m.second = true;
       }
-    } else if (isId(d, Attr::Extend)) {
+    } else if (isId(d, "extend")) {
       stmt->setAttribute(Attr::Extend);
       if (stmt->getDecorators().size() != 1) {
         STOP_ERROR(
             Error::CLASS_SINGLE_DECORATOR,
             stmt->getDecorators()[stmt->getDecorators().front() == d]->getSrcInfo(),
-            Attr::Extend);
+            "extend");
       }
-    } else if (isId(d, Attr::Internal)) {
+    } else if (isId(d, "__internal__")) {
       stmt->setAttribute(Attr::Internal);
     } else {
       STOP_ERROR(Error::CLASS_BAD_DECORATOR, d);
