@@ -9,7 +9,7 @@ yum -y install python3 python3-devel gcc-gfortran
 # env
 export PYTHONPATH=$(pwd)/test/python
 export CODON_PYTHON=$(python3 test/python/find-python-library.py)
-python3 -m pip install -Iv pip==21.3.1 numpy==1.17.5
+python3 -m pip install -Iv pip==21.3.1 numpy==2.2.5
 
 # deps
 if [ ! -d ./llvm ]; then
