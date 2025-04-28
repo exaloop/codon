@@ -8,17 +8,25 @@ yum -y install gcc gcc-c++ gcc-gfortran make wget openssl-devel bzip2-devel libf
 
 # python
 cd /usr/src
+wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
+tar xzf openssl-1.1.1w.tar.gz
+cd openssl-1.1.1w
+./config --prefix=/opt/openssl --openssldir=/opt/openssl no-shared
+make -j2
+make install
+
+cd /usr/src
 wget https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz
 tar xzf Python-3.11.9.tgz
 cd Python-3.11.9
-./configure --enable-optimizations --prefix=/opt/python311
+./configure --enable-optimizations --prefix=/opt/python311 --with-openssl=/opt/openssl
 make -j2
 make altinstall
 export PATH="/opt/python311/bin:$PATH"
 alias python=python3.11
-cd /github/workspace
 
 # env
+cd /github/workspace
 export PYTHONPATH=$(pwd)/test/python
 export CODON_PYTHON=$(python test/python/find-python-library.py)
 python -m pip install -Iv pip==21.3.1 numpy==2.0.2
