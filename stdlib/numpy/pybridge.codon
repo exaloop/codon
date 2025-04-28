@@ -163,7 +163,7 @@ def _setup_numpy_bridge():
     from internal.python import PyImport_ImportModule, PyObject_GetAttrString, PyCapsule_Type, PyCapsule_GetPointer
     global PyArray_Type, PyArray_New
 
-    module = PyImport_ImportModule("numpy.core._multiarray_umath".ptr)
+    module = PyImport_ImportModule("numpy._core._multiarray_umath".ptr)
 
     if not module:
         raise RuntimeError("Failed to import 'numpy.core._multiarray_umath'")
