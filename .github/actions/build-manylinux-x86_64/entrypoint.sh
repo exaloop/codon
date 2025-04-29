@@ -19,7 +19,14 @@ cd /usr/src
 wget https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz
 tar xzf Python-3.11.9.tgz
 cd Python-3.11.9
-./configure --enable-optimizations --prefix=/opt/python311 --with-openssl=/opt/openssl
+export LD_RUN_PATH=/opt/python311/lib
+./configure \
+    --prefix=/opt/python311 \
+    --with-openssl=/opt/openssl \
+    --enable-optimizations \
+    --enable-shared \
+    --without-static-libpython \
+    LDFLAGS="-Wl,-rpath=/opt/python311/lib"
 make -j2
 make altinstall
 export PATH="/opt/python311/bin:$PATH"
