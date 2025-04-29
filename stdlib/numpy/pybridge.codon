@@ -120,17 +120,19 @@ class PyArrayDescr:
     kind: u8
     type: u8
     byteorder: u8
-    flags: u8
+    former_flags: u8
     type_num: i32
-    elsize: i32
-    alignment: i32
+    flags: u64
+    elsize: int
+    alignment: int
+    metadata: cobj
+    hash: int
+    reserved0: cobj
+    reserved1: cobj
     subarray: cobj
     fields: cobj
     names: cobj
-    f: cobj
-    metadata: cobj
     c_metadata: cobj
-    hash: int
 
 @tuple
 class PyArrayObject:
@@ -149,19 +151,16 @@ NPY_ARRAY_F_CONTIGUOUS: Static[int] = 2
 
 PyArray_Type = cobj()
 PyArray_New = Function[[cobj, i32, cobj, i32, cobj, cobj, i32, i32, cobj], cobj](cobj())
+PyArray_NewFromDescr = Function[[cobj, cobj, i32, cobj, cobj, cobj, i32, cobj], cobj](cobj())
+PyArray_DescrNewFromType = Function[[i32], cobj](cobj())
 
 def _pyobj_type(p: cobj):
     return Ptr[PyObject](p)[0].typptr
 
-def _set_datetime_descr(a: Ptr[PyArrayObject], T: type):
-    p = Ptr[PyArray_DatetimeDTypeMetaData](a[0].descr[0].c_metadata)
-    meta = PyArray_DatetimeMetaData(i32(T._code()), i32(T.num))
-    p[0] = PyArray_DatetimeDTypeMetaData(p[0].base, meta)
-
 def _setup_numpy_bridge():
     import python
     from internal.python import PyImport_ImportModule, PyObject_GetAttrString, PyCapsule_Type, PyCapsule_GetPointer
-    global PyArray_Type, PyArray_New
+    global PyArray_Type, PyArray_New, PyArray_NewFromDescr, PyArray_DescrNewFromType
 
     module = PyImport_ImportModule("numpy._core._multiarray_umath".ptr)
 
@@ -177,6 +176,8 @@ def _setup_numpy_bridge():
     # https://github.com/numpy/numpy/blob/main/numpy/_core/code_generators/numpy_api.py
     PyArray_Type = api[2]
     PyArray_New = Function[[cobj, i32, cobj, i32, cobj, cobj, i32, i32, cobj], cobj](api[93])
+    PyArray_NewFromDescr = Function[[cobj, cobj, i32, cobj, cobj, cobj, i32, cobj], cobj](api[94])
+    PyArray_DescrNewFromType = Function[[i32], cobj](api[96])
 
 _setup_numpy_bridge()
 
@@ -185,8 +186,19 @@ class ndarray:
     def __to_py__(self):
         dims = self.shape
         code = _type_code(self.dtype)
-        arr = PyArray_New(PyArray_Type, i32(self.ndim), __ptr__(dims).as_byte(),
-                          i32(code), cobj(), cobj(), i32(0), i32(0), cobj())
+
+        if isinstance(self.dtype, datetime64) or isinstance(self.dtype, timedelta64):
+            descr = Ptr[PyArrayDescr](PyArray_DescrNewFromType(i32(code)))
+            p = Ptr[PyArray_DatetimeDTypeMetaData](descr[0].c_metadata)
+            meta = PyArray_DatetimeMetaData(i32(self.dtype._code()), i32(self.dtype.num))
+            p[0] = PyArray_DatetimeDTypeMetaData(p[0].base, meta)
+            arr = PyArray_NewFromDescr(PyArray_Type, descr.as_byte(), i32(self.ndim),
+                                       __ptr__(dims).as_byte(), cobj(), cobj(), i32(0),
+                                       cobj())
+        else:
+            arr = PyArray_New(PyArray_Type, i32(self.ndim), __ptr__(dims).as_byte(),
+                              i32(code), cobj(), cobj(), i32(0), i32(0), cobj())
+
         arr_ptr = Ptr[PyArrayObject](arr)
         data = arr_ptr[0].data
 
@@ -209,9 +221,6 @@ class ndarray:
                     e = self._ptr(idx)[0]
                     p[k] = e
                     k += 1
-
-        if isinstance(self.dtype, datetime64) or isinstance(self.dtype, timedelta64):
-            _set_datetime_descr(arr_ptr, self.dtype)
 
         return arr
 
