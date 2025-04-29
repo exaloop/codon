@@ -4,12 +4,32 @@ set -e
 # setup
 cd /github/workspace
 yum -y update
-yum -y install python3 python3-devel gcc-gfortran
+yum -y install gcc gcc-c++ gcc-gfortran make wget openssl-devel bzip2-devel libffi-devel xz-devel zlib-devel
+
+# python
+cd /usr/src
+wget https://www.openssl.org/source/openssl-1.1.1w.tar.gz
+tar xzf openssl-1.1.1w.tar.gz
+cd openssl-1.1.1w
+./config --prefix=/opt/openssl --openssldir=/opt/openssl no-shared
+make -j2
+make install
+
+cd /usr/src
+wget https://www.python.org/ftp/python/3.11.9/Python-3.11.9.tgz
+tar xzf Python-3.11.9.tgz
+cd Python-3.11.9
+./configure --enable-optimizations --prefix=/opt/python311 --with-openssl=/opt/openssl
+make -j2
+make altinstall
+export PATH="/opt/python311/bin:$PATH"
+alias python=python3.11
 
 # env
+cd /github/workspace
 export PYTHONPATH=$(pwd)/test/python
-export CODON_PYTHON=$(python3 test/python/find-python-library.py)
-python3 -m pip install -Iv pip==21.3.1 numpy==2.0.2
+export CODON_PYTHON=$(python test/python/find-python-library.py)
+python -m pip install -Iv pip==21.3.1 numpy==2.0.2
 
 # deps
 if [ ! -d ./llvm ]; then
@@ -30,10 +50,10 @@ cmake --install build --prefix=codon-deploy
 
 # build cython
 export PATH=$PATH:$(pwd)/llvm/bin
-python3 -m pip install cython wheel astunparse
-(cd codon-deploy/python && python3 setup.py sdist)
-CODON_DIR=$(pwd)/codon-deploy python3 -m pip install -v codon-deploy/python/dist/*.gz
-python3 test/python/cython_jit.py
+python -m pip install cython wheel astunparse
+(cd codon-deploy/python && python setup.py sdist)
+CODON_DIR=$(pwd)/codon-deploy python -m pip install -v codon-deploy/python/dist/*.gz
+python test/python/cython_jit.py
 
 # test
 export LD_LIBRARY_PATH=$(pwd)/build:$LD_LIBRARY_PATH
