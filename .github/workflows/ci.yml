@@ -132,7 +132,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install cython wheel astunparse
-          python -m pip install --force-reinstall -v "numpy==1.26.4"
+          python -m pip install --force-reinstall -v "numpy==2.0.2"
           which python
           which pip
           echo "CODON_PYTHON=$(python test/python/find-python-library.py)" >> $GITHUB_ENV
