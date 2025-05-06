@@ -43,14 +43,15 @@ private:
 public:
   Compiler(const std::string &argv0, Mode mode,
            const std::vector<std::string> &disabledPasses = {}, bool isTest = false,
-           bool pyNumerics = false, bool pyExtension = false);
+           bool pyNumerics = false, bool pyExtension = false,
+           const std::string &stdlibRoot = "");
 
   explicit Compiler(const std::string &argv0, bool debug = false,
                     const std::vector<std::string> &disabledPasses = {},
                     bool isTest = false, bool pyNumerics = false,
-                    bool pyExtension = false)
+                    bool pyExtension = false, const std::string &stdlibRoot = "")
       : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest,
-                 pyNumerics, pyExtension) {}
+                 pyNumerics, pyExtension, stdlibRoot) {}
 
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }

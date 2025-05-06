@@ -45,9 +45,11 @@ private:
   std::unique_ptr<Engine> engine;
   std::unique_ptr<PythonData> pydata;
   std::string mode;
+  bool forgetful = false;
 
 public:
-  explicit JIT(const std::string &argv0, const std::string &mode = "");
+  explicit JIT(const std::string &argv0, const std::string &mode = "",
+               const std::string &stdlibRoot = "");
 
   Compiler *getCompiler() const { return compiler.get(); }
   Engine *getEngine() const { return engine.get(); }
@@ -77,6 +79,8 @@ public:
 
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
+
+  void setForgetful() { forgetful = true; }
 };
 
 } // namespace jit

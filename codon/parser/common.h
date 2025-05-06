@@ -157,12 +157,11 @@ struct ImportFile {
 /// Find an import file what given an executable path (argv0) either in the standard
 /// library or relative to a file relativeTo. Set forceStdlib for searching only the
 /// standard library.
-std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
-                                          const std::string &what,
-                                          const std::string &relativeTo,
-                                          bool forceStdlib = false,
-                                          const std::string &module0 = "",
-                                          const std::vector<std::string> &plugins = {});
+std::shared_ptr<ImportFile>
+getImportFile(const std::string &argv0, const std::string &what,
+              const std::string &relativeTo, bool forceStdlib = false,
+              const std::string &module0 = "",
+              const std::vector<std::string> &extraPaths = {});
 
 } // namespace ast
 } // namespace codon

@@ -217,7 +217,7 @@ bool addPath(std::vector<std::string> &paths, const std::string &path) {
 }
 
 std::vector<std::string> getStdLibPaths(const std::string &argv0,
-                                        const std::vector<std::string> &plugins) {
+                                        const std::vector<std::string> &extraPaths) {
   std::vector<std::string> paths;
   if (auto c = getenv("CODON_PATH")) {
     addPath(paths, c);
@@ -230,17 +230,17 @@ std::vector<std::string> getStdLibPaths(const std::string &argv0,
       addPath(paths, std::string(path));
     }
   }
-  for (auto &path : plugins) {
+  for (auto &path : extraPaths) {
     addPath(paths, path);
   }
   return paths;
 }
 
-ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plugins,
+ImportFile getRoot(const std::string argv0, const std::vector<std::string> &extraPaths,
                    const std::string &module0Root, const std::string &s) {
   bool isStdLib = false;
   std::string root;
-  for (auto &p : getStdLibPaths(argv0, plugins))
+  for (auto &p : getStdLibPaths(argv0, extraPaths))
     if (startswith(s, p)) {
       root = p;
       isStdLib = true;
@@ -274,7 +274,7 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
                                           const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib, const std::string &module0,
-                                          const std::vector<std::string> &plugins) {
+                                          const std::vector<std::string> &extraPaths) {
   std::vector<std::string> paths;
   if (what != "<jit>") {
     auto parentRelativeTo = llvm::sys::path::parent_path(relativeTo);
@@ -296,7 +296,7 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
       addPath(paths, std::string(path));
     }
   }
-  for (auto &p : getStdLibPaths(argv0, plugins)) {
+  for (auto &p : getStdLibPaths(argv0, extraPaths)) {
     auto path = llvm::SmallString<128>(p);
     llvm::sys::path::append(path, what);
     llvm::sys::path::replace_extension(path, "codon");
@@ -309,7 +309,7 @@ std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
   auto module0Root = llvm::sys::path::parent_path(getAbsolutePath(module0)).str();
   return paths.empty() ? nullptr
                        : std::make_shared<ImportFile>(
-                             getRoot(argv0, plugins, module0Root, paths[0]));
+                             getRoot(argv0, extraPaths, module0Root, paths[0]));
 }
 
 } // namespace codon::ast
