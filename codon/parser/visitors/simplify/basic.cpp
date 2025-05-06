@@ -11,7 +11,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -35,9 +34,9 @@ void SimplifyVisitor::visit(StringExpr *expr) {
     } else if (!p.second.empty()) {
       /// Custom prefix strings:
       /// call `str.__prefix_[prefix]__(str, [static length of str])`
-      exprs.push_back(
-          transform(N<CallExpr>(N<DotExpr>("str", format("__prefix_{}__", p.second)),
-                                N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
+      exprs.push_back(transform(
+          N<CallExpr>(N<DotExpr>("str", fmt::format("__prefix_{}__", p.second)),
+                      N<StringExpr>(p.first), N<IntExpr>(p.first.size()))));
     } else {
       exprs.push_back(N<StringExpr>(p.first));
       concat.push_back(p.first);
@@ -99,7 +98,7 @@ ExprPtr SimplifyVisitor::transformInt(IntExpr *expr) {
   } else {
     // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(
-        N<CallExpr>(N<DotExpr>("int", format("__suffix_{}__", expr->suffix)),
+        N<CallExpr>(N<DotExpr>("int", fmt::format("__suffix_{}__", expr->suffix)),
                     N<IntExpr>(*(expr->intValue))));
   }
 }
@@ -120,7 +119,7 @@ ExprPtr SimplifyVisitor::transformFloat(FloatExpr *expr) {
   } else {
     // Custom suffix: call `float.__suffix_[suffix]__(value)`
     return transform(
-        N<CallExpr>(N<DotExpr>("float", format("__suffix_{}__", expr->suffix)),
+        N<CallExpr>(N<DotExpr>("float", fmt::format("__suffix_{}__", expr->suffix)),
                     N<FloatExpr>(*(expr->floatValue))));
   }
 }

@@ -18,8 +18,15 @@ PREAMBLE {
   #define ac_stmt std::any_cast<StmtPtr>
   #define SemVals peg::SemanticValues
 
+  /// @return vector c transformed by the function f.
+  template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
+    using VT = std::decay_t<decltype(std::forward<F>(f)(*std::begin(c)))>;
+    std::vector<VT> ret;
+    std::transform(std::begin(c), std::end(c), std::inserter(ret, std::end(ret)), f);
+    return ret;
+  }
   template<typename F> auto vmap(const peg::SemanticValues &c, F &&f) {
-    return vmap(static_cast<const vector<any>&>(c), f);
+    return vmap(static_cast<const std::vector<std::any>&>(c), f);
   }
   template <typename Tn, typename Tsv, typename... Ts> auto ast(Tsv &s, Ts &&...args) {
     auto t = make_shared<Tn>(std::forward<Ts>(args)...);

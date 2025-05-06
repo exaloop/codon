@@ -9,8 +9,6 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
-
 namespace codon::ast {
 
 using namespace types;
@@ -134,20 +132,22 @@ std::string TypecheckVisitor::generateTuple(size_t len, const std::string &name,
     // combination.
     if (!in(ctx->cache->generatedTuples, key))
       ctx->cache->generatedTuples[key] = int(ctx->cache->generatedTuples.size());
-    suffix = format("_{}", ctx->cache->generatedTuples[key]);
+    suffix = fmt::format("_{}", ctx->cache->generatedTuples[key]);
   } else {
     for (size_t i = 1; i <= len; i++)
-      names.push_back(format("item{}", i));
+      names.push_back(fmt::format("item{}", i));
   }
 
-  auto typeName = format("{}{}", name, hasSuffix ? format("{}{}", len, suffix) : "");
+  auto typeName =
+      fmt::format("{}{}", name, hasSuffix ? fmt::format("{}{}", len, suffix) : "");
   if (!ctx->find(typeName)) {
     // Generate the appropriate ClassStmt
     std::vector<Param> args;
     for (size_t i = 0; i < len; i++)
-      args.emplace_back(Param(names[i], N<IdExpr>(format("T{}", i + 1)), nullptr));
+      args.emplace_back(Param(names[i], N<IdExpr>(fmt::format("T{}", i + 1)), nullptr));
     for (size_t i = 0; i < len; i++)
-      args.emplace_back(Param(format("T{}", i + 1), N<IdExpr>("type"), nullptr, true));
+      args.emplace_back(
+          Param(fmt::format("T{}", i + 1), N<IdExpr>("type"), nullptr, true));
     StmtPtr stmt = N<ClassStmt>(ctx->cache->generateSrcInfo(), typeName, args, nullptr,
                                 std::vector<ExprPtr>{N<IdExpr>("tuple")});
 

@@ -10,7 +10,6 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -182,8 +181,8 @@ SimplifyContext::Item SimplifyContext::findDominatingBinding(const std::string &
     // These bindings (and their canonical identifiers) will be replaced by the
     // dominating binding during the type checking pass.
     cache->replacements[(*i)->canonicalName] = {canonicalName, hasUsed};
-    cache->replacements[format("{}.__used__", (*i)->canonicalName)] = {
-        format("{}.__used__", canonicalName), false};
+    cache->replacements[fmt::format("{}.__used__", (*i)->canonicalName)] = {
+        fmt::format("{}.__used__", canonicalName), false};
     seqassert((*i)->canonicalName != canonicalName, "invalid replacement at {}: {}",
               getSrcInfo(), canonicalName);
     auto it = std::find(stack.front().begin(), stack.front().end(), name);
@@ -221,7 +220,7 @@ std::string SimplifyContext::generateCanonicalName(const std::string &name,
   }
   auto num = cache->identifierCount[newName]++;
   if (num)
-    newName = format("{}.{}", newName, num);
+    newName = fmt::format("{}.{}", newName, num);
   if (name != newName && !zeroId)
     cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;
@@ -277,7 +276,7 @@ void SimplifyContext::dump(int pad) {
     bool f = true;
     for (auto &t : i.second) {
       LOG("{}{} {} {:40} {:30} {}", std::string(pad * 2, ' '),
-          !f ? std::string(40, ' ') : format("{:.<40}", i.first),
+          !f ? std::string(40, ' ') : fmt::format("{:.<40}", i.first),
           (t->isFunc() ? "F" : (t->isType() ? "T" : (t->isImport() ? "I" : "V"))),
           t->canonicalName, t->getBaseName(), combine2(t->scope, ","));
       f = false;

@@ -11,7 +11,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -155,7 +154,7 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     rootName = ctx->generateCanonicalName(stmt->name, true);
   // Append overload number to the name
   auto canonicalName =
-      format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
+      fmt::format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->name;
 
   // Ensure that function binding does not shadow anything.
@@ -258,8 +257,8 @@ void SimplifyVisitor::visit(FunctionStmt *stmt) {
     }
   }
   stmt->attributes.module =
-      format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
-             ctx->moduleName.module);
+      fmt::format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
+                  ctx->moduleName.module);
   ctx->cache->overloads[rootName].push_back({canonicalName, ctx->cache->age});
 
   // Special method handling
@@ -392,7 +391,7 @@ StmtPtr SimplifyVisitor::transformPythonDefinition(const std::string &name,
   pyargs.reserve(args.size());
   for (const auto &a : args)
     pyargs.emplace_back(a.name);
-  code = format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
+  code = fmt::format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
   return transform(N<SuiteStmt>(
       N<ExprStmt>(N<CallExpr>(N<DotExpr>("pyobj", "_exec"), N<StringExpr>(code))),
       N<ImportStmt>(N<IdExpr>("python"), N<DotExpr>("__main__", name), clone_nop(args),

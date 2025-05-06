@@ -9,7 +9,6 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -177,7 +176,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 
     if (!member) {
       // Case: setters
-      auto setters = ctx->findMethod(lhsClass.get(), format(".set_{}", stmt->member));
+      auto setters =
+          ctx->findMethod(lhsClass.get(), fmt::format(".set_{}", stmt->member));
       if (!setters.empty()) {
         resultStmt = transform(N<ExprStmt>(
             N<CallExpr>(N<IdExpr>(setters[0]->ast->name), stmt->lhs, stmt->rhs)));
@@ -257,7 +257,7 @@ std::pair<bool, ExprPtr> TypecheckVisitor::transformInplaceUpdate(AssignStmt *st
     call->args[1].value = transform(call->args[1].value);
     auto rhsTyp = call->args[1].value->getType()->getClass();
     if (auto method = findBestMethod(
-            lhsClass, format("__atomic_{}__", call->expr->getId()->value),
+            lhsClass, fmt::format("__atomic_{}__", call->expr->getId()->value),
             {ptrTyp, rhsTyp})) {
       return {true, transform(N<CallExpr>(N<IdExpr>(method->ast->name),
                                           N<CallExpr>(N<IdExpr>("__ptr__"), stmt->lhs),

@@ -7,8 +7,6 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
-
 namespace codon::ast {
 
 /// Transform asserts.

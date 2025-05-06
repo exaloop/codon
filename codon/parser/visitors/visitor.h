@@ -131,20 +131,22 @@ struct CallbackASTVisitor : public ASTVisitor, public SrcObject {
 
   /// Convenience method that raises an error at the current source location.
   template <typename... TArgs> void error(const char *format, TArgs &&...args) {
-    error::raise_error(-1, getSrcInfo(), fmt::format(format, args...).c_str());
+    error::raise_error(-1, getSrcInfo(),
+                       fmt::format(fmt::runtime(format), args...).c_str());
   }
 
   /// Convenience method that raises an error at the source location of p.
   template <typename T, typename... TArgs>
   void error(const T &p, const char *format, TArgs &&...args) {
-    error::raise_error(-1, p->getSrcInfo(), fmt::format(format, args...).c_str());
+    error::raise_error(-1, p->getSrcInfo(),
+                       fmt::format(fmt::runtime(format), args...).c_str());
   }
 
   /// Convenience method that raises an internal error.
   template <typename T, typename... TArgs>
   void internalError(const char *format, TArgs &&...args) {
-    throw exc::ParserException(
-        fmt::format("INTERNAL: {}", fmt::format(format, args...), getSrcInfo()));
+    throw exc::ParserException(fmt::format(
+        "INTERNAL: {}", fmt::format(fmt::runtime(format), args...), getSrcInfo()));
   }
 
 public:

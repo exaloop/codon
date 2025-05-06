@@ -71,7 +71,8 @@ llvm::Expected<Plugin *> PluginManager::load(const std::string &path) {
       linkArgs.push_back(l);
   }
   for (auto &l : linkArgs)
-    l = fmt::format(l, fmt::arg("root", llvm::sys::path::parent_path(tomlPath)));
+    l = fmt::format(fmt::runtime(l),
+                    fmt::arg("root", llvm::sys::path::parent_path(tomlPath)));
 
   std::string codonLib = library["codon"].value_or("");
   std::string stdlibPath;

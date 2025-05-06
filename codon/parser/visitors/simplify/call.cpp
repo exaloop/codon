@@ -7,7 +7,6 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -118,9 +117,10 @@ ExprPtr SimplifyVisitor::transformNamedTuple(const std::vector<CallExpr::Arg> &a
   int ti = 1;
   for (auto &i : args[1].value->getList()->items) {
     if (auto s = i->getString()) {
-      generics.emplace_back(Param{format("T{}", ti), N<IdExpr>("type"), nullptr, true});
+      generics.emplace_back(
+          Param{fmt::format("T{}", ti), N<IdExpr>("type"), nullptr, true});
       params.emplace_back(
-          Param{s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr});
+          Param{s->getValue(), N<IdExpr>(fmt::format("T{}", ti++)), nullptr});
     } else if (i->getTuple() && i->getTuple()->items.size() == 2 &&
                i->getTuple()->items[0]->getString()) {
       params.emplace_back(Param{i->getTuple()->items[0]->getString()->getValue(),

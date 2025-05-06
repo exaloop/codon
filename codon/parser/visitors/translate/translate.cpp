@@ -15,7 +15,6 @@
 
 using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
-using fmt::format;
 
 namespace codon::ast {
 
@@ -25,7 +24,7 @@ TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
 ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   ir::BodiedFunc *main = nullptr;
   if (cache->isJit) {
-    auto fnName = format("_jit_{}", cache->jitCell);
+    auto fnName = fmt::format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});
     main->setGlobal();

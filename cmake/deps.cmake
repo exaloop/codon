@@ -15,7 +15,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME fmt
     GITHUB_REPOSITORY "fmtlib/fmt"
-    GIT_TAG 9.1.0
+    GIT_TAG 11.1.0
     OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
             "FMT_INSTALL ON")
 

@@ -5,8 +5,6 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
-
 namespace codon::ast {
 
 using namespace types;
@@ -83,8 +81,8 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         while (auto s = in(ctx->cache->replacements, c.var))
           c.var = s->first, changed = s;
         if (changed && changed->second) {
-          auto update =
-              N<AssignStmt>(N<IdExpr>(format("{}.__used__", c.var)), N<BoolExpr>(true));
+          auto update = N<AssignStmt>(N<IdExpr>(fmt::format("{}.__used__", c.var)),
+                                      N<BoolExpr>(true));
           update->setUpdate();
           c.suite = N<SuiteStmt>(update, c.suite);
         }

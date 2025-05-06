@@ -9,7 +9,6 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 namespace codon::ast {
 
@@ -1255,7 +1254,7 @@ std::string TypecheckVisitor::generatePartialStub(const std::vector<char> &mask,
     else
       genericSize++;
   }
-  auto typeName = format(TYPE_PARTIAL "{}.{}", strMask, fn->toString());
+  auto typeName = fmt::format(TYPE_PARTIAL "{}.{}", strMask, fn->toString());
   if (!ctx->find(typeName)) {
     ctx->cache->partials[typeName] = {fn->generalize(0)->getFunc(), mask};
     generateTuple(tupleSize + 2, typeName, {}, false);

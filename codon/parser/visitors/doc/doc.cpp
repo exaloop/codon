@@ -12,8 +12,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/format/format.h"
 
-using fmt::format;
-
 namespace codon::ast {
 
 // clang-format off

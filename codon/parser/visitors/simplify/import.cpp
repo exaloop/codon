@@ -10,7 +10,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -174,7 +173,7 @@ StmtPtr SimplifyVisitor::transformCImport(const std::string &name,
       fnArgs.emplace_back(Param{"*args", nullptr, nullptr});
     } else {
       fnArgs.emplace_back(
-          Param{args[ai].name.empty() ? format("a{}", ai) : args[ai].name,
+          Param{args[ai].name.empty() ? fmt::format("a{}", ai) : args[ai].name,
                 args[ai].type->clone(), nullptr});
     }
   }
@@ -279,8 +278,8 @@ StmtPtr SimplifyVisitor::transformPythonImport(Expr *what,
   std::vector<Param> params;
   std::vector<ExprPtr> callArgs;
   for (int i = 0; i < args.size(); i++) {
-    params.emplace_back(Param{format("a{}", i), clone(args[i].type), nullptr});
-    callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
+    params.emplace_back(Param{fmt::format("a{}", i), clone(args[i].type), nullptr});
+    callArgs.emplace_back(N<IdExpr>(fmt::format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
   auto retType = (ret && !ret->getNone()) ? ret->clone() : N<IdExpr>("NoneType");
@@ -312,7 +311,7 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
       ctx->cache->imports[ctx->moduleName.path].loadedAtToplevel &&
       (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.blocks.size() == 1));
   auto importVar = import->second.importVar =
-      ctx->cache->getTemporaryVar(format("import_{}", file.module));
+      ctx->cache->getTemporaryVar(fmt::format("import_{}", file.module));
   import->second.moduleName = file.module;
   LOG_TYPECHECK("[import] initializing {} ({})", importVar,
                 import->second.loadedAtToplevel);
@@ -337,7 +336,8 @@ StmtPtr SimplifyVisitor::transformNewImport(const ImportFile &file) {
   if (!ctx->cache->errors.empty())
     throw exc::ParserException();
   // Add comment to the top of import for easier dump inspection
-  auto comment = N<CommentStmt>(format("import: {} at {}", file.module, file.path));
+  auto comment =
+      N<CommentStmt>(fmt::format("import: {} at {}", file.module, file.path));
   if (ctx->isStdlibLoading) {
     // When loading the standard library, imports are not wrapped.
     // We assume that the standard library has no recursive imports and that all

@@ -30,13 +30,15 @@ class FormatVisitor : public CallbackASTVisitor<std::string, std::string> {
   Cache *cache;
 
 private:
-  template <typename T, typename... Ts> std::string renderExpr(T &&t, Ts &&...args) {
+  template <typename T, typename... Ts>
+  std::string renderExpr(T &&t, const char *fmt, Ts &&...args) {
     std::string s;
-    return fmt::format("{}{}{}{}{}{}", exprStart, s, nodeStart, fmt::format(args...),
-                       nodeEnd, exprEnd);
+    return fmt::format("{}{}{}{}{}{}", exprStart, s, nodeStart,
+                       fmt::format(fmt::runtime(fmt), args...), nodeEnd, exprEnd);
   }
-  template <typename... Ts> std::string renderComment(Ts &&...args) {
-    return fmt::format("{}{}{}", commentStart, fmt::format(args...), commentEnd);
+  template <typename... Ts> std::string renderComment(const char *fmt, Ts &&...args) {
+    return fmt::format("{}{}{}", commentStart, fmt::format(fmt::runtime(fmt), args...),
+                       commentEnd);
   }
   std::string pad(int indent = 0) const;
   std::string newline() const;

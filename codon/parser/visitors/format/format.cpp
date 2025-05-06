@@ -5,8 +5,6 @@
 
 #include "codon/parser/visitors/format/format.h"
 
-using fmt::format;
-
 namespace codon {
 namespace ast {
 
@@ -225,7 +223,7 @@ void FormatVisitor::visit(YieldExpr *expr) { result = renderExpr(expr, "(yield)"
 void FormatVisitor::visit(StmtExpr *expr) {
   std::string s;
   for (int i = 0; i < expr->stmts.size(); i++)
-    s += format("{}{}", pad(2), transform(expr->stmts[i].get(), 2));
+    s += fmt::format("{}{}", pad(2), transform(expr->stmts[i].get(), 2));
   result = renderExpr(expr, "({}{}{}{}{})", newline(), s, newline(), pad(2),
                       transform(expr->expr));
 }
@@ -293,11 +291,12 @@ void FormatVisitor::visit(ForStmt *stmt) {
 }
 
 void FormatVisitor::visit(IfStmt *stmt) {
-  result = fmt::format("{} {}:{}{}{}", keyword("if"), transform(stmt->cond), newline(),
-                       transform(stmt->ifSuite.get(), 1),
-                       stmt->elseSuite ? format("{}:{}{}", keyword("else"), newline(),
+  result =
+      fmt::format("{} {}:{}{}{}", keyword("if"), transform(stmt->cond), newline(),
+                  transform(stmt->ifSuite.get(), 1),
+                  stmt->elseSuite ? fmt::format("{}:{}{}", keyword("else"), newline(),
                                                 transform(stmt->elseSuite.get(), 1))
-                                       : "");
+                                  : "");
 }
 
 void FormatVisitor::visit(MatchStmt *stmt) {

@@ -8,7 +8,6 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {

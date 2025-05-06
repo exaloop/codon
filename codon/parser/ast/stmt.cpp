@@ -14,7 +14,6 @@
   StmtPtr T::clone() const { return std::make_shared<T>(*this); }                      \
   void T::accept(X &visitor) { visitor.visit(this); }
 
-using fmt::format;
 using namespace codon::error;
 
 const int INDENT_SIZE = 2;
@@ -42,7 +41,7 @@ std::string SuiteStmt::toString(int indent) const {
         is.insert(findStar(is), "*");
       s += (i ? pad : "") + is;
     }
-  return format("(suite{})", s.empty() ? s : " " + pad + s);
+  return fmt::format("(suite{})", s.empty() ? s : " " + pad + s);
 }
 ACCEPT_IMPL(SuiteStmt, ASTVisitor);
 void SuiteStmt::flatten(const StmtPtr &s, std::vector<StmtPtr> &stmts) {
@@ -75,7 +74,7 @@ ACCEPT_IMPL(ContinueStmt, ASTVisitor);
 ExprStmt::ExprStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
 ExprStmt::ExprStmt(const ExprStmt &stmt) : Stmt(stmt), expr(ast::clone(stmt.expr)) {}
 std::string ExprStmt::toString(int) const {
-  return format("(expr {})", expr->toString());
+  return fmt::format("(expr {})", expr->toString());
 }
 ACCEPT_IMPL(ExprStmt, ASTVisitor);
 
@@ -86,16 +85,16 @@ AssignStmt::AssignStmt(const AssignStmt &stmt)
     : Stmt(stmt), lhs(ast::clone(stmt.lhs)), rhs(ast::clone(stmt.rhs)),
       type(ast::clone(stmt.type)), update(stmt.update) {}
 std::string AssignStmt::toString(int) const {
-  return format("({} {}{}{})", update != Assign ? "update" : "assign", lhs->toString(),
-                rhs ? " " + rhs->toString() : "",
-                type ? format(" #:type {}", type->toString()) : "");
+  return fmt::format("({} {}{}{})", update != Assign ? "update" : "assign",
+                     lhs->toString(), rhs ? " " + rhs->toString() : "",
+                     type ? fmt::format(" #:type {}", type->toString()) : "");
 }
 ACCEPT_IMPL(AssignStmt, ASTVisitor);
 
 DelStmt::DelStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
 DelStmt::DelStmt(const DelStmt &stmt) : Stmt(stmt), expr(ast::clone(stmt.expr)) {}
 std::string DelStmt::toString(int) const {
-  return format("(del {})", expr->toString());
+  return fmt::format("(del {})", expr->toString());
 }
 ACCEPT_IMPL(DelStmt, ASTVisitor);
 
@@ -104,7 +103,7 @@ PrintStmt::PrintStmt(std::vector<ExprPtr> items, bool isInline)
 PrintStmt::PrintStmt(const PrintStmt &stmt)
     : Stmt(stmt), items(ast::clone(stmt.items)), isInline(stmt.isInline) {}
 std::string PrintStmt::toString(int) const {
-  return format("(print {}{})", isInline ? "#:inline " : "", combine(items));
+  return fmt::format("(print {}{})", isInline ? "#:inline " : "", combine(items));
 }
 ACCEPT_IMPL(PrintStmt, ASTVisitor);
 
@@ -112,14 +111,14 @@ ReturnStmt::ReturnStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
 ReturnStmt::ReturnStmt(const ReturnStmt &stmt)
     : Stmt(stmt), expr(ast::clone(stmt.expr)) {}
 std::string ReturnStmt::toString(int) const {
-  return expr ? format("(return {})", expr->toString()) : "(return)";
+  return expr ? fmt::format("(return {})", expr->toString()) : "(return)";
 }
 ACCEPT_IMPL(ReturnStmt, ASTVisitor);
 
 YieldStmt::YieldStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
 YieldStmt::YieldStmt(const YieldStmt &stmt) : Stmt(stmt), expr(ast::clone(stmt.expr)) {}
 std::string YieldStmt::toString(int) const {
-  return expr ? format("(yield {})", expr->toString()) : "(yield)";
+  return expr ? fmt::format("(yield {})", expr->toString()) : "(yield)";
 }
 ACCEPT_IMPL(YieldStmt, ASTVisitor);
 
@@ -128,7 +127,8 @@ AssertStmt::AssertStmt(ExprPtr expr, ExprPtr message)
 AssertStmt::AssertStmt(const AssertStmt &stmt)
     : Stmt(stmt), expr(ast::clone(stmt.expr)), message(ast::clone(stmt.message)) {}
 std::string AssertStmt::toString(int) const {
-  return format("(assert {}{})", expr->toString(), message ? message->toString() : "");
+  return fmt::format("(assert {}{})", expr->toString(),
+                     message ? message->toString() : "");
 }
 ACCEPT_IMPL(AssertStmt, ASTVisitor);
 
@@ -141,12 +141,12 @@ WhileStmt::WhileStmt(const WhileStmt &stmt)
 std::string WhileStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   if (elseSuite && elseSuite->firstInBlock())
-    return format("(while-else {}{}{}{}{})", cond->toString(), pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
-                  elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+    return fmt::format("(while-else {}{}{}{}{})", cond->toString(), pad,
+                       suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
+                       elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
   else
-    return format("(while {}{}{})", cond->toString(), pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+    return fmt::format("(while {}{}{})", cond->toString(), pad,
+                       suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
 }
 ACCEPT_IMPL(WhileStmt, ASTVisitor);
 
@@ -168,12 +168,13 @@ std::string ForStmt::toString(int indent) const {
   if (!attr.empty())
     attr = " #:attr" + attr;
   if (elseSuite && elseSuite->firstInBlock())
-    return format("(for-else {} {}{}{}{}{}{})", var->toString(), iter->toString(), attr,
-                  pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
-                  elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+    return fmt::format("(for-else {} {}{}{}{}{}{})", var->toString(), iter->toString(),
+                       attr, pad,
+                       suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1), pad,
+                       elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
   else
-    return format("(for {} {}{}{}{})", var->toString(), iter->toString(), attr, pad,
-                  suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+    return fmt::format("(for {} {}{}{}{})", var->toString(), iter->toString(), attr,
+                       pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
 }
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 
@@ -185,11 +186,11 @@ IfStmt::IfStmt(const IfStmt &stmt)
       elseSuite(ast::clone(stmt.elseSuite)) {}
 std::string IfStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
-  return format("(if {}{}{}{})", cond->toString(), pad,
-                ifSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
-                elseSuite
-                    ? pad + elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
-                    : "");
+  return fmt::format(
+      "(if {}{}{}{})", cond->toString(), pad,
+      ifSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
+      elseSuite ? pad + elseSuite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
+                : "");
 }
 ACCEPT_IMPL(IfStmt, ASTVisitor);
 
@@ -206,10 +207,11 @@ std::string MatchStmt::toString(int indent) const {
   std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
   std::vector<std::string> s;
   for (auto &c : cases)
-    s.push_back(format("(case {}{}{}{})", c.pattern->toString(),
-                       c.guard ? " #:guard " + c.guard->toString() : "", pad + padExtra,
-                       c.suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
-  return format("(match {}{}{})", what->toString(), pad, join(s, pad));
+    s.push_back(
+        fmt::format("(case {}{}{}{})", c.pattern->toString(),
+                    c.guard ? " #:guard " + c.guard->toString() : "", pad + padExtra,
+                    c.suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
+  return fmt::format("(match {}{}{})", what->toString(), pad, join(s, pad));
 }
 ACCEPT_IMPL(MatchStmt, ASTVisitor);
 
@@ -227,12 +229,12 @@ std::string ImportStmt::toString(int) const {
   std::vector<std::string> va;
   for (auto &a : args)
     va.push_back(a.toString());
-  return format("(import {}{}{}{}{}{})", from->toString(),
-                as.empty() ? "" : format(" #:as '{}", as),
-                what ? format(" #:what {}", what->toString()) : "",
-                dots ? format(" #:dots {}", dots) : "",
-                va.empty() ? "" : format(" #:args ({})", join(va)),
-                ret ? format(" #:ret {}", ret->toString()) : "");
+  return fmt::format("(import {}{}{}{}{}{})", from->toString(),
+                     as.empty() ? "" : fmt::format(" #:as '{}", as),
+                     what ? fmt::format(" #:what {}", what->toString()) : "",
+                     dots ? fmt::format(" #:dots {}", dots) : "",
+                     va.empty() ? "" : fmt::format(" #:args ({})", join(va)),
+                     ret ? fmt::format(" #:ret {}", ret->toString()) : "");
 }
 void ImportStmt::validate() const {
   if (from) {
@@ -270,15 +272,15 @@ std::string TryStmt::toString(int indent) const {
   std::string padExtra = indent > 0 ? std::string(INDENT_SIZE, ' ') : "";
   std::vector<std::string> s;
   for (auto &i : catches)
-    s.push_back(
-        format("(catch {}{}{}{})", !i.var.empty() ? format("#:var '{}", i.var) : "",
-               i.exc ? format(" #:exc {}", i.exc->toString()) : "", pad + padExtra,
-               i.suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
-  return format(
+    s.push_back(fmt::format(
+        "(catch {}{}{}{})", !i.var.empty() ? fmt::format("#:var '{}", i.var) : "",
+        i.exc ? fmt::format(" #:exc {}", i.exc->toString()) : "", pad + padExtra,
+        i.suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1 * 2)));
+  return fmt::format(
       "(try{}{}{}{}{})", pad, suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1),
       pad, join(s, pad),
-      finally ? format("{}{}", pad,
-                       finally->toString(indent >= 0 ? indent + INDENT_SIZE : -1))
+      finally ? fmt::format("{}{}", pad,
+                            finally->toString(indent >= 0 ? indent + INDENT_SIZE : -1))
               : "");
 }
 ACCEPT_IMPL(TryStmt, ASTVisitor);
@@ -288,14 +290,14 @@ ThrowStmt::ThrowStmt(ExprPtr expr, bool transformed)
 ThrowStmt::ThrowStmt(const ThrowStmt &stmt)
     : Stmt(stmt), expr(ast::clone(stmt.expr)), transformed(stmt.transformed) {}
 std::string ThrowStmt::toString(int) const {
-  return format("(throw{})", expr ? " " + expr->toString() : "");
+  return fmt::format("(throw{})", expr ? " " + expr->toString() : "");
 }
 ACCEPT_IMPL(ThrowStmt, ASTVisitor);
 
 GlobalStmt::GlobalStmt(std::string var, bool nonLocal)
     : Stmt(), var(std::move(var)), nonLocal(nonLocal) {}
 std::string GlobalStmt::toString(int) const {
-  return format("({} '{})", nonLocal ? "nonlocal" : "global", var);
+  return fmt::format("({} '{})", nonLocal ? "nonlocal" : "global", var);
 }
 ACCEPT_IMPL(GlobalStmt, ASTVisitor);
 
@@ -351,15 +353,15 @@ std::string FunctionStmt::toString(int indent) const {
   std::vector<std::string> dec, attr;
   for (auto &a : decorators)
     if (a)
-      dec.push_back(format("(dec {})", a->toString()));
+      dec.push_back(fmt::format("(dec {})", a->toString()));
   for (auto &a : attributes.customAttr)
-    attr.push_back(format("'{}'", a));
-  return format("(fn '{} ({}){}{}{}{}{})", name, join(as, " "),
-                ret ? " #:ret " + ret->toString() : "",
-                dec.empty() ? "" : format(" (dec {})", join(dec, " ")),
-                attr.empty() ? "" : format(" (attr {})", join(attr, " ")), pad,
-                suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
-                      : "(suite)");
+    attr.push_back(fmt::format("'{}'", a));
+  return fmt::format(
+      "(fn '{} ({}){}{}{}{}{})", name, join(as, " "),
+      ret ? " #:ret " + ret->toString() : "",
+      dec.empty() ? "" : fmt::format(" (dec {})", join(dec, " ")),
+      attr.empty() ? "" : fmt::format(" (attr {})", join(attr, " ")), pad,
+      suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "(suite)");
 }
 void FunctionStmt::validate() const {
   if (!ret && (attributes.has(Attr::LLVM) || attributes.has(Attr::C)))
@@ -405,7 +407,7 @@ std::string FunctionStmt::signature() const {
   std::vector<std::string> s;
   for (auto &a : args)
     s.push_back(a.type ? a.type->toString() : "-");
-  return format("{}", join(s, ":"));
+  return fmt::format("{}", join(s, ":"));
 }
 bool FunctionStmt::hasAttr(const std::string &attr) const {
   return attributes.has(attr);
@@ -568,13 +570,13 @@ std::string ClassStmt::toString(int indent) const {
     as += (i ? pad : "") + args[i].toString();
   std::vector<std::string> attr;
   for (auto &a : decorators)
-    attr.push_back(format("(dec {})", a->toString()));
-  return format("(class '{}{}{}{}{}{})", name,
-                bases.empty() ? "" : format(" (bases {})", join(bases, " ")),
-                attr.empty() ? "" : format(" (attr {})", join(attr, " ")),
-                as.empty() ? as : pad + as, pad,
-                suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
-                      : "(suite)");
+    attr.push_back(fmt::format("(dec {})", a->toString()));
+  return fmt::format("(class '{}{}{}{}{}{})", name,
+                     bases.empty() ? "" : fmt::format(" (bases {})", join(bases, " ")),
+                     attr.empty() ? "" : fmt::format(" (attr {})", join(attr, " ")),
+                     as.empty() ? as : pad + as, pad,
+                     suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
+                           : "(suite)");
 }
 void ClassStmt::validate() const {
   std::unordered_set<std::string> seen;
@@ -712,7 +714,7 @@ YieldFromStmt::YieldFromStmt(ExprPtr expr) : Stmt(), expr(std::move(expr)) {}
 YieldFromStmt::YieldFromStmt(const YieldFromStmt &stmt)
     : Stmt(stmt), expr(ast::clone(stmt.expr)) {}
 std::string YieldFromStmt::toString(int) const {
-  return format("(yield-from {})", expr->toString());
+  return fmt::format("(yield-from {})", expr->toString());
 }
 ACCEPT_IMPL(YieldFromStmt, ASTVisitor);
 
@@ -743,11 +745,11 @@ std::string WithStmt::toString(int indent) const {
   as.reserve(items.size());
   for (int i = 0; i < items.size(); i++) {
     as.push_back(!vars[i].empty()
-                     ? format("({} #:var '{})", items[i]->toString(), vars[i])
+                     ? fmt::format("({} #:var '{})", items[i]->toString(), vars[i])
                      : items[i]->toString());
   }
-  return format("(with ({}){}{})", join(as, " "), pad,
-                suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
+  return fmt::format("(with ({}){}{})", join(as, " "), pad,
+                     suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1));
 }
 ACCEPT_IMPL(WithStmt, ASTVisitor);
 
@@ -759,9 +761,10 @@ CustomStmt::CustomStmt(const CustomStmt &stmt)
       suite(ast::clone(stmt.suite)) {}
 std::string CustomStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
-  return format("(custom-{} {}{}{})", keyword,
-                expr ? format(" #:expr {}", expr->toString()) : "", pad,
-                suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : "");
+  return fmt::format("(custom-{} {}{}{})", keyword,
+                     expr ? fmt::format(" #:expr {}", expr->toString()) : "", pad,
+                     suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1)
+                           : "");
 }
 ACCEPT_IMPL(CustomStmt, ASTVisitor);
 
@@ -771,13 +774,14 @@ AssignMemberStmt::AssignMemberStmt(const AssignMemberStmt &stmt)
     : Stmt(stmt), lhs(ast::clone(stmt.lhs)), member(stmt.member),
       rhs(ast::clone(stmt.rhs)) {}
 std::string AssignMemberStmt::toString(int) const {
-  return format("(assign-member {} {} {})", lhs->toString(), member, rhs->toString());
+  return fmt::format("(assign-member {} {} {})", lhs->toString(), member,
+                     rhs->toString());
 }
 ACCEPT_IMPL(AssignMemberStmt, ASTVisitor);
 
 CommentStmt::CommentStmt(std::string comment) : Stmt(), comment(std::move(comment)) {}
 std::string CommentStmt::toString(int) const {
-  return format("(comment \"{}\")", comment);
+  return fmt::format("(comment \"{}\")", comment);
 }
 ACCEPT_IMPL(CommentStmt, ASTVisitor);
 

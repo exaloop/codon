@@ -13,7 +13,6 @@
 #include "codon/parser/visitors/simplify/ctx.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -141,7 +140,7 @@ TypeContext::instantiateTuple(const SrcInfo &srcInfo,
 }
 
 std::string TypeContext::generateTuple(size_t n) {
-  auto key = format("_{}:{}", TYPE_TUPLE, n);
+  auto key = fmt::format("_{}:{}", TYPE_TUPLE, n);
   if (!in(cache->classes, key)) {
     cache->classes[key].fields.clear();
     cache->classes[key].ast =
@@ -150,18 +149,18 @@ std::string TypeContext::generateTuple(size_t n) {
     for (size_t i = 0; i < n; i++) { // generate unique ID
       auto g = getUnbound()->getLink();
       g->kind = types::LinkType::Generic;
-      g->genericName = format("T{}", i + 1);
+      g->genericName = fmt::format("T{}", i + 1);
       auto gn = cache->imports[MAIN_IMPORT].ctx->generateCanonicalName(g->genericName);
       root->generics.emplace_back(gn, g->genericName, g, g->id);
       root->args.emplace_back(g);
       cache->classes[key].ast->args.emplace_back(
           g->genericName, std::make_shared<IdExpr>("type"), nullptr, Param::Generic);
       cache->classes[key].fields.push_back(
-          Cache::Class::ClassField{format("item{}", i + 1), g, ""});
+          Cache::Class::ClassField{fmt::format("item{}", i + 1), g, ""});
     }
     std::vector<ExprPtr> eTypeArgs;
     for (size_t i = 0; i < n; i++)
-      eTypeArgs.push_back(std::make_shared<IdExpr>(format("T{}", i + 1)));
+      eTypeArgs.push_back(std::make_shared<IdExpr>(fmt::format("T{}", i + 1)));
     auto eType = std::make_shared<InstantiateExpr>(std::make_shared<IdExpr>(TYPE_TUPLE),
                                                    eTypeArgs);
     eType->type = root;
@@ -175,7 +174,7 @@ std::shared_ptr<types::RecordType> TypeContext::instantiateTuple(size_t n) {
   std::vector<types::TypePtr> t(n);
   for (size_t i = 0; i < n; i++) {
     auto g = getUnbound()->getLink();
-    g->genericName = format("T{}", i + 1);
+    g->genericName = fmt::format("T{}", i + 1);
     t[i] = g;
   }
   return instantiateTuple(getSrcInfo(), t);
@@ -190,7 +189,7 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
     if (sz != -1)
       type->getRecord()->flatten();
     sz = int64_t(type->getRecord()->args.size());
-    typeName = format("_{}:{}", TYPE_TUPLE, sz);
+    typeName = fmt::format("_{}:{}", TYPE_TUPLE, sz);
     if (in(cache->classes[TYPE_TUPLE].methods, method) &&
         !in(cache->classes[typeName].methods, method)) {
       auto type = forceFind(typeName)->type;
@@ -204,7 +203,8 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
       seqassert(f.type, "tuple fn type not yet set");
       f.ast->attributes.parentClass = typeName;
       f.ast = std::static_pointer_cast<FunctionStmt>(clone(f.ast));
-      f.ast->name = format("{}{}", f.ast->name.substr(0, f.ast->name.size() - 1), sz);
+      f.ast->name =
+          fmt::format("{}{}", f.ast->name.substr(0, f.ast->name.size() - 1), sz);
       f.ast->attributes.set(Attr::Method);
 
       auto eType = clone(cache->classes[typeName].mro[0]);
@@ -218,10 +218,10 @@ std::vector<types::FuncTypePtr> TypeContext::findMethod(types::ClassType *type,
       // TODO: resurrect Tuple[N].__new__(defaults...)
       if (method == "__new__") {
         for (size_t i = 0; i < sz; i++) {
-          auto n = format("item{}", i + 1);
+          auto n = fmt::format("item{}", i + 1);
           f.ast->args.emplace_back(
               cache->imports[MAIN_IMPORT].ctx->generateCanonicalName(n),
-              std::make_shared<IdExpr>(format("T{}", i + 1))
+              std::make_shared<IdExpr>(fmt::format("T{}", i + 1))
               // std::make_shared<CallExpr>(
               // std::make_shared<IdExpr>(format("T{}", i + 1)))
           );

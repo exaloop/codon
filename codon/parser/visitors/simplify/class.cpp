@@ -10,7 +10,6 @@
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/simplify/simplify.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -137,7 +136,7 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
           }
         } else if (!stmt->attributes.has(Attr::Extend)) {
           // Handle class variables. Transform them later to allow self-references
-          auto name = format("{}.{}", canonicalName, a.name);
+          auto name = fmt::format("{}.{}", canonicalName, a.name);
           preamble->push_back(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
           ctx->cache->addGlobal(name);
           auto assign = N<AssignStmt>(N<IdExpr>(name), a.defaultValue,
@@ -169,9 +168,9 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
         ctx->addAlwaysVisible(classItem);
       }
       // Create a cached AST.
-      stmt->attributes.module =
-          format("{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
-                 ctx->moduleName.module);
+      stmt->attributes.module = fmt::format(
+          "{}{}", ctx->moduleName.status == ImportFile::STDLIB ? "std::" : "::",
+          ctx->moduleName.module);
       ctx->cache->classes[canonicalName].ast =
           N<ClassStmt>(canonicalName, args, N<SuiteStmt>(), stmt->attributes);
       ctx->cache->classes[canonicalName].ast->baseClasses = stmt->baseClasses;
@@ -198,8 +197,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
                 rootName = it->second;
               else
                 rootName = ctx->generateCanonicalName(ctx->cache->rev(f->name), true);
-              auto newCanonicalName =
-                  format("{}:{}", rootName, ctx->cache->overloads[rootName].size());
+              auto newCanonicalName = fmt::format(
+                  "{}:{}", rootName, ctx->cache->overloads[rootName].size());
               ctx->cache->overloads[rootName].push_back(
                   {newCanonicalName, ctx->cache->age});
               ctx->cache->reverseIdentifierLookup[newCanonicalName] =
@@ -227,7 +226,8 @@ void SimplifyVisitor::visit(ClassStmt *stmt) {
             if (auto d = dc->getDot()) {
               if (d->member == "setter" and d->expr->isId(sp->getFunction()->name) &&
                   sp->getFunction()->args.size() == 2) {
-                sp->getFunction()->name = format(".set_{}", sp->getFunction()->name);
+                sp->getFunction()->name =
+                    fmt::format(".set_{}", sp->getFunction()->name);
                 dc = nullptr;
                 break;
               }
@@ -381,7 +381,7 @@ std::vector<ClassStmt *> SimplifyVisitor::parseBaseClasses(
         for (auto &aa : args)
           i += aa.name == a.name || startswith(aa.name, a.name + "#");
         if (i)
-          name = format("{}#{}", name, i);
+          name = fmt::format("{}#{}", name, i);
         seqassert(ctx->cache->classes[ast->name].fields[ai].name == a.name,
                   "bad class fields: {} vs {}",
                   ctx->cache->classes[ast->name].fields[ai].name, a.name);
@@ -435,7 +435,7 @@ SimplifyVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
         int i = 0;
         // Once done, add arguments
         for (auto &m : *(ctx->getBase()->deducedMembers)) {
-          auto varName = ctx->generateCanonicalName(format("T{}", ++i));
+          auto varName = ctx->generateCanonicalName(fmt::format("T{}", ++i));
           auto memberName = ctx->cache->rev(varName);
           ctx->addType(memberName, varName, stmt->getSrcInfo())->generic = true;
           args.emplace_back(varName, N<IdExpr>("type"), nullptr, Param::Generic);
@@ -667,7 +667,7 @@ StmtPtr SimplifyVisitor::codegenMagic(const std::string &op, const ExprPtr &typE
   }
 #undef I
 #undef NS
-  auto t = std::make_shared<FunctionStmt>(format("__{}__", op), ret, fargs,
+  auto t = std::make_shared<FunctionStmt>(fmt::format("__{}__", op), ret, fargs,
                                           N<SuiteStmt>(stmts), attr);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
   return t;

@@ -12,7 +12,6 @@
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include <fmt/format.h>
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {

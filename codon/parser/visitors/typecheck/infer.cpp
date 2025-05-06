@@ -13,7 +13,6 @@
 #include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 const int MAX_TYPECHECK_ITER = 1000;
@@ -81,7 +80,6 @@ StmtPtr TypecheckVisitor::inferTypes(StmtPtr result, bool isToplevel) {
         if (f.second.type && f.second.realizations.empty() &&
             (attr.has(Attr::ForceRealize) || attr.has(Attr::Export) ||
              (attr.has(Attr::C) && !attr.has(Attr::CVarArg)))) {
-          LOG("force-realize {}", f.first);
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
           realize(ctx->instantiate(f.second.type)->getFunc());
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
@@ -319,8 +317,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
     E(Error::MAX_REALIZATION, getSrcInfo(), ctx->cache->rev(type->ast->name));
   }
 
-  Cache::CTimer _t(ctx->cache, "");
-
   LOG_REALIZE("[realize] fn {} -> {} : base {} ; depth = {}", type->ast->name,
               type->realizedName(), ctx->getRealizationStackName(),
               ctx->getRealizationDepth());
@@ -421,8 +417,6 @@ types::TypePtr TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) 
   ctx->popBlock();
   ctx->typecheckLevel--;
   getLogger().level--;
-
-  _t.name = type->realizedName();
 
   return type->getFunc();
 }
@@ -590,7 +584,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
 
         // Thunk name: _thunk.<BASE>.<FN>.<ARGS>
         auto thunkName =
-            format("_thunk.{}.{}.{}", baseCls, m->ast->name, fmt::join(ns, "."));
+            fmt::format("_thunk.{}.{}.{}", baseCls, m->ast->name, fmt::join(ns, "."));
         if (in(ctx->cache->functions, thunkName))
           continue;
 
@@ -724,7 +718,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     std::vector<std::string> names;
     std::map<std::string, SrcInfo> memberInfo;
     for (int ai = 0; ai < tr->args.size(); ai++) {
-      auto n = t->name == TYPE_TUPLE ? format("item{}", ai + 1)
+      auto n = t->name == TYPE_TUPLE ? fmt::format("item{}", ai + 1)
                                      : ctx->cache->classes[t->name].fields[ai].name;
       names.emplace_back(n);
       typeArgs.emplace_back(forceFindIRType(tr->args[ai]));
@@ -836,17 +830,17 @@ TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     auto ag = ast->args[1].name;
     trimStars(ag);
     for (int i = 0; i < as.size(); i++) {
-      ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
+      ll.push_back(fmt::format("%{} = extractvalue {{}} %args, {}", i, i));
       items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
     }
     items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
     for (int i = 0; i < as.size(); i++) {
       items.push_back(N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
-      lla.push_back(format("{{}} %{}", i));
+      lla.push_back(fmt::format("{{}} %{}", i));
     }
     items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-    ll.push_back(format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
-    ll.push_back(format("ret {{}} %{}", as.size()));
+    ll.push_back(fmt::format("%{} = call {{}} %self({})", as.size(), combine2(lla)));
+    ll.push_back(fmt::format("ret {{}} %{}", as.size()));
     items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
     ast->suite = N<SuiteStmt>(items);
   } else if (startswith(ast->name, "Union.__new__:0")) {

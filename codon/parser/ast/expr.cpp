@@ -20,7 +20,6 @@
   ExprPtr T::clone() const { return std::make_shared<T>(*this); }                      \
   void T::accept(X &visitor) { visitor.visit(this); }
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -37,7 +36,8 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   auto is = sexpr;
   if (done)
     is.insert(findStar(is), "*");
-  auto s = format("({}{})", is, type ? format(" #:type \"{}\"", type->toString()) : "");
+  auto s = fmt::format("({}{})", is,
+                       type ? fmt::format(" #:type \"{}\"", type->toString()) : "");
   // if (hasAttr(ExprAttr::SequenceItem)) s += "%";
   return s;
 }
@@ -97,9 +97,9 @@ Param::Param(const SrcInfo &info, std::string name, ExprPtr type, ExprPtr defaul
   setSrcInfo(info);
 }
 std::string Param::toString() const {
-  return format("({}{}{}{})", name, type ? " #:type " + type->toString() : "",
-                defaultValue ? " #:default " + defaultValue->toString() : "",
-                status != Param::Normal ? " #:generic" : "");
+  return fmt::format("({}{}{}{})", name, type ? " #:type " + type->toString() : "",
+                     defaultValue ? " #:default " + defaultValue->toString() : "",
+                     status != Param::Normal ? " #:generic" : "");
 }
 Param Param::clone() const {
   return Param(name, ast::clone(type), ast::clone(defaultValue), status);
@@ -113,7 +113,7 @@ BoolExpr::BoolExpr(bool value) : Expr(), value(value) {
   staticValue = StaticValue(value);
 }
 std::string BoolExpr::toString() const {
-  return wrapType(format("bool {}", int(value)));
+  return wrapType(fmt::format("bool {}", int(value)));
 }
 ACCEPT_IMPL(BoolExpr, ASTVisitor);
 
@@ -141,8 +141,9 @@ IntExpr::IntExpr(const IntExpr &expr)
   intValue = expr.intValue ? std::make_unique<int64_t>(*(expr.intValue)) : nullptr;
 }
 std::string IntExpr::toString() const {
-  return wrapType(format("int {}{}", value,
-                         suffix.empty() ? "" : format(" #:suffix \"{}\"", suffix)));
+  return wrapType(
+      fmt::format("int {}{}", value,
+                  suffix.empty() ? "" : fmt::format(" #:suffix \"{}\"", suffix)));
 }
 ACCEPT_IMPL(IntExpr, ASTVisitor);
 
@@ -169,8 +170,9 @@ FloatExpr::FloatExpr(const FloatExpr &expr)
   floatValue = expr.floatValue ? std::make_unique<double>(*(expr.floatValue)) : nullptr;
 }
 std::string FloatExpr::toString() const {
-  return wrapType(format("float {}{}", value,
-                         suffix.empty() ? "" : format(" #:suffix \"{}\"", suffix)));
+  return wrapType(
+      fmt::format("float {}{}", value,
+                  suffix.empty() ? "" : fmt::format(" #:suffix \"{}\"", suffix)));
 }
 ACCEPT_IMPL(FloatExpr, ASTVisitor);
 
@@ -184,9 +186,10 @@ StringExpr::StringExpr(std::string value, std::string prefix)
 std::string StringExpr::toString() const {
   std::vector<std::string> s;
   for (auto &vp : strings)
-    s.push_back(format("\"{}\"{}", escape(vp.first),
-                       vp.second.empty() ? "" : format(" #:prefix \"{}\"", vp.second)));
-  return wrapType(format("string ({})", join(s)));
+    s.push_back(fmt::format(
+        "\"{}\"{}", escape(vp.first),
+        vp.second.empty() ? "" : fmt::format(" #:prefix \"{}\"", vp.second)));
+  return wrapType(fmt::format("string ({})", join(s)));
 }
 std::string StringExpr::getValue() const {
   seqassert(!strings.empty(), "invalid StringExpr");
@@ -196,14 +199,14 @@ ACCEPT_IMPL(StringExpr, ASTVisitor);
 
 IdExpr::IdExpr(std::string value) : Expr(), value(std::move(value)) {}
 std::string IdExpr::toString() const {
-  return !type ? format("'{}", value) : wrapType(format("'{}", value));
+  return !type ? fmt::format("'{}", value) : wrapType(fmt::format("'{}", value));
 }
 ACCEPT_IMPL(IdExpr, ASTVisitor);
 
 StarExpr::StarExpr(ExprPtr what) : Expr(), what(std::move(what)) {}
 StarExpr::StarExpr(const StarExpr &expr) : Expr(expr), what(ast::clone(expr.what)) {}
 std::string StarExpr::toString() const {
-  return wrapType(format("star {}", what->toString()));
+  return wrapType(fmt::format("star {}", what->toString()));
 }
 ACCEPT_IMPL(StarExpr, ASTVisitor);
 
@@ -211,7 +214,7 @@ KeywordStarExpr::KeywordStarExpr(ExprPtr what) : Expr(), what(std::move(what)) {
 KeywordStarExpr::KeywordStarExpr(const KeywordStarExpr &expr)
     : Expr(expr), what(ast::clone(expr.what)) {}
 std::string KeywordStarExpr::toString() const {
-  return wrapType(format("kwstar {}", what->toString()));
+  return wrapType(fmt::format("kwstar {}", what->toString()));
 }
 ACCEPT_IMPL(KeywordStarExpr, ASTVisitor);
 
@@ -219,21 +222,21 @@ TupleExpr::TupleExpr(std::vector<ExprPtr> items) : Expr(), items(std::move(items
 TupleExpr::TupleExpr(const TupleExpr &expr)
     : Expr(expr), items(ast::clone(expr.items)) {}
 std::string TupleExpr::toString() const {
-  return wrapType(format("tuple {}", combine(items)));
+  return wrapType(fmt::format("tuple {}", combine(items)));
 }
 ACCEPT_IMPL(TupleExpr, ASTVisitor);
 
 ListExpr::ListExpr(std::vector<ExprPtr> items) : Expr(), items(std::move(items)) {}
 ListExpr::ListExpr(const ListExpr &expr) : Expr(expr), items(ast::clone(expr.items)) {}
 std::string ListExpr::toString() const {
-  return wrapType(!items.empty() ? format("list {}", combine(items)) : "list");
+  return wrapType(!items.empty() ? fmt::format("list {}", combine(items)) : "list");
 }
 ACCEPT_IMPL(ListExpr, ASTVisitor);
 
 SetExpr::SetExpr(std::vector<ExprPtr> items) : Expr(), items(std::move(items)) {}
 SetExpr::SetExpr(const SetExpr &expr) : Expr(expr), items(ast::clone(expr.items)) {}
 std::string SetExpr::toString() const {
-  return wrapType(!items.empty() ? format("set {}", combine(items)) : "set");
+  return wrapType(!items.empty() ? fmt::format("set {}", combine(items)) : "set");
 }
 ACCEPT_IMPL(SetExpr, ASTVisitor);
 
@@ -245,7 +248,7 @@ DictExpr::DictExpr(std::vector<ExprPtr> items) : Expr(), items(std::move(items))
 }
 DictExpr::DictExpr(const DictExpr &expr) : Expr(expr), items(ast::clone(expr.items)) {}
 std::string DictExpr::toString() const {
-  return wrapType(!items.empty() ? format("dict {}", combine(items)) : "set");
+  return wrapType(!items.empty() ? fmt::format("dict {}", combine(items)) : "set");
 }
 ACCEPT_IMPL(DictExpr, ASTVisitor);
 
@@ -269,10 +272,10 @@ std::string GeneratorExpr::toString() const {
   for (auto &i : loops) {
     std::string q;
     for (auto &k : i.conds)
-      q += format(" (if {})", k->toString());
-    s += format(" (for {} {}{})", i.vars->toString(), i.gen->toString(), q);
+      q += fmt::format(" (if {})", k->toString());
+    s += fmt::format(" (for {} {}{})", i.vars->toString(), i.gen->toString(), q);
   }
-  return wrapType(format("{}gen {}{}", prefix, expr->toString(), s));
+  return wrapType(fmt::format("{}gen {}{}", prefix, expr->toString(), s));
 }
 ACCEPT_IMPL(GeneratorExpr, ASTVisitor);
 
@@ -287,10 +290,11 @@ std::string DictGeneratorExpr::toString() const {
   for (auto &i : loops) {
     std::string q;
     for (auto &k : i.conds)
-      q += format("( if {})", k->toString());
-    s += format(" (for {} {}{})", i.vars->toString(), i.gen->toString(), q);
+      q += fmt::format("( if {})", k->toString());
+    s += fmt::format(" (for {} {}{})", i.vars->toString(), i.gen->toString(), q);
   }
-  return wrapType(format("dict-gen {} {}{}", key->toString(), expr->toString(), s));
+  return wrapType(
+      fmt::format("dict-gen {} {}{}", key->toString(), expr->toString(), s));
 }
 ACCEPT_IMPL(DictGeneratorExpr, ASTVisitor);
 
@@ -301,8 +305,8 @@ IfExpr::IfExpr(const IfExpr &expr)
     : Expr(expr), cond(ast::clone(expr.cond)), ifexpr(ast::clone(expr.ifexpr)),
       elsexpr(ast::clone(expr.elsexpr)) {}
 std::string IfExpr::toString() const {
-  return wrapType(format("if-expr {} {} {}", cond->toString(), ifexpr->toString(),
-                         elsexpr->toString()));
+  return wrapType(fmt::format("if-expr {} {} {}", cond->toString(), ifexpr->toString(),
+                              elsexpr->toString()));
 }
 ACCEPT_IMPL(IfExpr, ASTVisitor);
 
@@ -311,7 +315,7 @@ UnaryExpr::UnaryExpr(std::string op, ExprPtr expr)
 UnaryExpr::UnaryExpr(const UnaryExpr &expr)
     : Expr(expr), op(expr.op), expr(ast::clone(expr.expr)) {}
 std::string UnaryExpr::toString() const {
-  return wrapType(format("unary \"{}\" {}", op, expr->toString()));
+  return wrapType(fmt::format("unary \"{}\" {}", op, expr->toString()));
 }
 ACCEPT_IMPL(UnaryExpr, ASTVisitor);
 
@@ -322,8 +326,8 @@ BinaryExpr::BinaryExpr(const BinaryExpr &expr)
     : Expr(expr), op(expr.op), lexpr(ast::clone(expr.lexpr)),
       rexpr(ast::clone(expr.rexpr)), inPlace(expr.inPlace) {}
 std::string BinaryExpr::toString() const {
-  return wrapType(format("binary \"{}\" {} {}{}", op, lexpr->toString(),
-                         rexpr->toString(), inPlace ? " #:in-place" : ""));
+  return wrapType(fmt::format("binary \"{}\" {} {}{}", op, lexpr->toString(),
+                              rexpr->toString(), inPlace ? " #:in-place" : ""));
 }
 ACCEPT_IMPL(BinaryExpr, ASTVisitor);
 
@@ -336,8 +340,8 @@ ChainBinaryExpr::ChainBinaryExpr(const ChainBinaryExpr &expr) : Expr(expr) {
 std::string ChainBinaryExpr::toString() const {
   std::vector<std::string> s;
   for (auto &i : exprs)
-    s.push_back(format("({} \"{}\")", i.first, i.second->toString()));
-  return wrapType(format("chain {}", join(s, " ")));
+    s.push_back(fmt::format("({} \"{}\")", i.first, i.second->toString()));
+  return wrapType(fmt::format("chain {}", join(s, " ")));
 }
 ACCEPT_IMPL(ChainBinaryExpr, ASTVisitor);
 
@@ -359,8 +363,8 @@ void PipeExpr::validate() const {}
 std::string PipeExpr::toString() const {
   std::vector<std::string> s;
   for (auto &i : items)
-    s.push_back(format("({} \"{}\")", i.expr->toString(), i.op));
-  return wrapType(format("pipe {}", join(s, " ")));
+    s.push_back(fmt::format("({} \"{}\")", i.expr->toString(), i.op));
+  return wrapType(fmt::format("pipe {}", join(s, " ")));
 }
 ACCEPT_IMPL(PipeExpr, ASTVisitor);
 
@@ -369,7 +373,7 @@ IndexExpr::IndexExpr(ExprPtr expr, ExprPtr index)
 IndexExpr::IndexExpr(const IndexExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), index(ast::clone(expr.index)) {}
 std::string IndexExpr::toString() const {
-  return wrapType(format("index {} {}", expr->toString(), index->toString()));
+  return wrapType(fmt::format("index {} {}", expr->toString(), index->toString()));
 }
 ACCEPT_IMPL(IndexExpr, ASTVisitor);
 
@@ -418,9 +422,9 @@ std::string CallExpr::toString() const {
     if (i.name.empty())
       s += " " + i.value->toString();
     else
-      s += format("({}{})", i.value->toString(),
-                  i.name.empty() ? "" : format(" #:name '{}", i.name));
-  return wrapType(format("call {} {}", expr->toString(), s));
+      s += fmt::format("({}{})", i.value->toString(),
+                       i.name.empty() ? "" : fmt::format(" #:name '{}", i.name));
+  return wrapType(fmt::format("call {} {}", expr->toString(), s));
 }
 ACCEPT_IMPL(CallExpr, ASTVisitor);
 
@@ -431,7 +435,7 @@ DotExpr::DotExpr(const std::string &left, std::string member)
 DotExpr::DotExpr(const DotExpr &expr)
     : Expr(expr), expr(ast::clone(expr.expr)), member(expr.member) {}
 std::string DotExpr::toString() const {
-  return wrapType(format("dot {} '{}", expr->toString(), member));
+  return wrapType(fmt::format("dot {} '{}", expr->toString(), member));
 }
 ACCEPT_IMPL(DotExpr, ASTVisitor);
 
@@ -441,16 +445,16 @@ SliceExpr::SliceExpr(const SliceExpr &expr)
     : Expr(expr), start(ast::clone(expr.start)), stop(ast::clone(expr.stop)),
       step(ast::clone(expr.step)) {}
 std::string SliceExpr::toString() const {
-  return wrapType(format("slice{}{}{}",
-                         start ? format(" #:start {}", start->toString()) : "",
-                         stop ? format(" #:end {}", stop->toString()) : "",
-                         step ? format(" #:step {}", step->toString()) : ""));
+  return wrapType(fmt::format(
+      "slice{}{}{}", start ? fmt::format(" #:start {}", start->toString()) : "",
+      stop ? fmt::format(" #:end {}", stop->toString()) : "",
+      step ? fmt::format(" #:step {}", step->toString()) : ""));
 }
 ACCEPT_IMPL(SliceExpr, ASTVisitor);
 
 EllipsisExpr::EllipsisExpr(EllipsisType mode) : Expr(), mode(mode) {}
 std::string EllipsisExpr::toString() const {
-  return wrapType(format(
+  return wrapType(fmt::format(
       "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? "#:partial" : "")));
 }
 ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
@@ -460,7 +464,7 @@ LambdaExpr::LambdaExpr(std::vector<std::string> vars, ExprPtr expr)
 LambdaExpr::LambdaExpr(const LambdaExpr &expr)
     : Expr(expr), vars(expr.vars), expr(ast::clone(expr.expr)) {}
 std::string LambdaExpr::toString() const {
-  return wrapType(format("lambda ({}) {}", join(vars, " "), expr->toString()));
+  return wrapType(fmt::format("lambda ({}) {}", join(vars, " "), expr->toString()));
 }
 ACCEPT_IMPL(LambdaExpr, ASTVisitor);
 
@@ -473,7 +477,7 @@ AssignExpr::AssignExpr(ExprPtr var, ExprPtr expr)
 AssignExpr::AssignExpr(const AssignExpr &expr)
     : Expr(expr), var(ast::clone(expr.var)), expr(ast::clone(expr.expr)) {}
 std::string AssignExpr::toString() const {
-  return wrapType(format("assign-expr '{} {}", var->toString(), expr->toString()));
+  return wrapType(fmt::format("assign-expr '{} {}", var->toString(), expr->toString()));
 }
 ACCEPT_IMPL(AssignExpr, ASTVisitor);
 
@@ -482,7 +486,7 @@ RangeExpr::RangeExpr(ExprPtr start, ExprPtr stop)
 RangeExpr::RangeExpr(const RangeExpr &expr)
     : Expr(expr), start(ast::clone(expr.start)), stop(ast::clone(expr.stop)) {}
 std::string RangeExpr::toString() const {
-  return wrapType(format("range {} {}", start->toString(), stop->toString()));
+  return wrapType(fmt::format("range {} {}", start->toString(), stop->toString()));
 }
 ACCEPT_IMPL(RangeExpr, ASTVisitor);
 
@@ -501,7 +505,8 @@ StmtExpr::StmtExpr(std::shared_ptr<Stmt> stmt, std::shared_ptr<Stmt> stmt2,
 StmtExpr::StmtExpr(const StmtExpr &expr)
     : Expr(expr), stmts(ast::clone(expr.stmts)), expr(ast::clone(expr.expr)) {}
 std::string StmtExpr::toString() const {
-  return wrapType(format("stmt-expr ({}) {}", combine(stmts, " "), expr->toString()));
+  return wrapType(
+      fmt::format("stmt-expr ({}) {}", combine(stmts, " "), expr->toString()));
 }
 ACCEPT_IMPL(StmtExpr, ASTVisitor);
 
@@ -516,7 +521,7 @@ InstantiateExpr::InstantiateExpr(const InstantiateExpr &expr)
       typeParams(ast::clone(expr.typeParams)) {}
 std::string InstantiateExpr::toString() const {
   return wrapType(
-      format("instantiate {} {}", typeExpr->toString(), combine(typeParams)));
+      fmt::format("instantiate {} {}", typeExpr->toString(), combine(typeParams)));
 }
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
