@@ -56,14 +56,17 @@ public:
 
   // General
   llvm::Error init();
-  llvm::Error compile(const ir::Func *input);
+  llvm::Error compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt = nullptr);
   llvm::Expected<ir::Func *> compile(const std::string &code,
                                      const std::string &file = "", int line = 0);
-  llvm::Expected<void *> address(const ir::Func *input);
-  llvm::Expected<std::string> run(const ir::Func *input);
+  llvm::Expected<void *> address(const ir::Func *input,
+                                 llvm::orc::ResourceTrackerSP rt = nullptr);
+  llvm::Expected<std::string> run(const ir::Func *input,
+                                  llvm::orc::ResourceTrackerSP rt = nullptr);
   llvm::Expected<std::string> execute(const std::string &code,
                                       const std::string &file = "", int line = 0,
-                                      bool debug = false);
+                                      bool debug = false,
+                                      llvm::orc::ResourceTrackerSP rt = nullptr);
 
   // Python
   llvm::Expected<void *> runPythonWrapper(const ir::Func *wrapper, void *arg);

@@ -64,7 +64,7 @@ llvm::Error JIT::init() {
   return llvm::Error::success();
 }
 
-llvm::Error JIT::compile(const ir::Func *input) {
+llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt) {
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
@@ -78,7 +78,7 @@ llvm::Error JIT::compile(const ir::Func *input) {
   t2.log();
 
   Timer t3("jit/engine");
-  if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
+  if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}, rt))
     return std::move(err);
   t3.log();
 
@@ -172,8 +172,9 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   }
 }
 
-llvm::Expected<void *> JIT::address(const ir::Func *input) {
-  if (auto err = compile(input))
+llvm::Expected<void *> JIT::address(const ir::Func *input,
+                                    llvm::orc::ResourceTrackerSP rt) {
+  if (auto err = compile(input, rt))
     return std::move(err);
 
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
@@ -184,8 +185,9 @@ llvm::Expected<void *> JIT::address(const ir::Func *input) {
   return (void *)func->getValue();
 }
 
-llvm::Expected<std::string> JIT::run(const ir::Func *input) {
-  auto result = address(input);
+llvm::Expected<std::string> JIT::run(const ir::Func *input,
+                                     llvm::orc::ResourceTrackerSP rt) {
+  auto result = address(input, rt);
   if (auto err = result.takeError())
     return std::move(err);
 
@@ -198,14 +200,15 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   return runtime::getCapturedOutput();
 }
 
-llvm::Expected<std::string>
-JIT::execute(const std::string &code, const std::string &file, int line, bool debug) {
+llvm::Expected<std::string> JIT::execute(const std::string &code,
+                                         const std::string &file, int line, bool debug,
+                                         llvm::orc::ResourceTrackerSP rt) {
   if (debug)
     fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
   auto result = compile(code, file, line);
   if (auto err = result.takeError())
     return std::move(err);
-  if (auto err = compile(result.get()))
+  if (auto err = compile(result.get(), rt))
     return std::move(err);
   return run(result.get());
 }
