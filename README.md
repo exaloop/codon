@@ -238,7 +238,7 @@ This project would not be possible without:
   - Natural Sciences and Engineering Research Council (NSERC) 🇨🇦
   - Canada Research Chairs 🇨🇦
   - Canada Foundation for Innovation 🇨🇦
-  - BC Knowledge and Development Fund 🇨🇦
+  - B.C. Knowledge Development Fund 🇨🇦
   - University of Victoria 🇨🇦
 - **Libraries**:
   - [LLVM Compiler Infrastructure](https://llvm.org/)
