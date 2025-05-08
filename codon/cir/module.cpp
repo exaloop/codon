@@ -426,5 +426,27 @@ types::Type *Module::unsafeGetUnionType(const std::vector<types::Type *> &types)
   return Nr<types::UnionType>(types);
 }
 
+void Module::pushArena() { arenas.emplace_back(); }
+
+void Module::popArena() {
+  auto &arena = arenas.back();
+  for (auto id : arena.values) {
+    auto it = valueMap.find(id);
+    values.erase(it->second);
+    valueMap.erase(it);
+  }
+  for (auto id : arena.vars) {
+    auto it = varMap.find(id);
+    vars.erase(it->second);
+    varMap.erase(it);
+  }
+  for (auto &type : arena.types) {
+    auto it = typesMap.find(type);
+    types.erase(it->second);
+    typesMap.erase(it);
+  }
+  arenas.pop_back();
+}
+
 } // namespace ir
 } // namespace codon
