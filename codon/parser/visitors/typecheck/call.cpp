@@ -471,16 +471,33 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     return withClassGenerics(
         calleeFn,
         [&]() {
-          for (size_t si = 0, pi = 0; si < slots.size(); si++) {
+          for (size_t si = 0, pi = 0, gi = 0; si < slots.size(); si++) {
             // Get the argument name to be used later
             auto [_, rn] = (*calleeFn->ast)[si].getNameWithStars();
             auto realName = getUnmangledName(rn);
 
             if ((*calleeFn->ast)[si].isGeneric()) {
               // Case: generic arguments. Populate typeArgs
-              typeArgs.push_back(slots[si].empty() ? nullptr
-                                                   : (*expr)[slots[si][0]].getExpr());
-              newMask[si] = slots[si].empty() ? 0 : 1;
+              if (startswith(realName, "$")) {
+                if (slots[si].empty()) {
+                  if (!part.known.empty() && part.known[si]) {
+                    auto t = N<IdExpr>(realName);
+                    t->setType(
+                        calleeFn->funcGenerics[gi].getType()->shared_from_this());
+                    typeArgs.emplace_back(t);
+                  } else {
+                    typeArgs.emplace_back(transform(N<IdExpr>(realName.substr(1))));
+                  }
+                } else {
+                  typeArgs.emplace_back((*expr)[slots[si][0]].getExpr());
+                }
+                newMask[si] = 1;
+              } else {
+                typeArgs.push_back(slots[si].empty() ? nullptr
+                                                     : (*expr)[slots[si][0]].getExpr());
+                newMask[si] = slots[si].empty() ? 0 : 1;
+              }
+              gi++;
             } else if (si == starArgIndex &&
                        !(slots[si].size() == 1 &&
                          (*expr)[slots[si][0]].getExpr()->hasAttribute(
@@ -540,6 +557,8 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
               // type (if calling it) or if a default argument can be used
               if (!part.known.empty() && part.known[si]) {
                 args.emplace_back(realName, getPartialArg(pi++));
+              } else if (startswith(realName, "$")) {
+                args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
               } else if (partial) {
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
@@ -547,12 +566,12 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
               } else {
                 if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
                     !(*calleeFn->ast)[si].type) {
-                  args.push_back(
-                      {realName, transform(N<CallExpr>(N<InstantiateExpr>(
-                                     N<IdExpr>("Optional"), N<IdExpr>("NoneType"))))});
+                  args.emplace_back(
+                      realName, transform(N<CallExpr>(N<InstantiateExpr>(
+                                    N<IdExpr>("Optional"), N<IdExpr>("NoneType")))));
                 } else {
-                  args.push_back({realName, transform(clean_clone(
-                                                (*calleeFn->ast)[si].getDefault()))});
+                  args.emplace_back(realName, transform(clean_clone(
+                                                  (*calleeFn->ast)[si].getDefault())));
                 }
               }
             } else {
@@ -718,10 +737,10 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
     if (replacements[si]) {
       extractClassGeneric(calleeFn)->getClass()->generics[si].type =
           replacements[si]->shared_from_this();
-      extractClassGeneric(calleeFn)->getClass()->_rn = "";
-      calleeFn->getClass()->_rn = ""; /// TODO: TERRIBLE!
     }
   }
+  extractClassGeneric(calleeFn)->getClass()->_rn = "";
+  calleeFn->getClass()->_rn = ""; /// TODO: TERRIBLE!
 
   return done;
 }

@@ -453,7 +453,7 @@ print a, b #: None None [1, 2] 3
 def retfn(a):
     def inner(b, *args, **kwargs):
         print a, b, args, kwargs
-    print inner.__class__.__name__ #: inner(...,...,int,...)
+    print inner.__class__.__name__ #: inner[T1,T2,T3,T4]
     return inner(15, ...)
 f = retfn(1)
 print f.__class__.__name__ #: inner(int,...,int,...)

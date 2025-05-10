@@ -82,7 +82,9 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (stmt->getExpr()->getType()->getFunc() &&
         !(ctx->getBase()->returnType->getClass() &&
           ctx->getBase()->returnType->is("Function"))) {
-      stmt->expr = transform(partializeFunction(stmt->getExpr()->getType()->getFunc()));
+      stmt->expr = transform(
+          N<CallExpr>(N<IdExpr>(stmt->getExpr()->getType()->getFunc()->ast->getName()),
+                      N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
     }
 
     if (!ctx->getBase()->returnType->isStaticType() &&
@@ -212,7 +214,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
   std::map<std::string, TypeContext::Item> captures;
-  if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings))
+  if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
     for (auto &[c, t] : b->captures) {
       if (auto v = ctx->find(c, getTime())) {
         if (t != BindingsAttribute::CaptureType::Global && !v->isGlobal()) {
@@ -223,21 +225,14 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           }
           if (!v->isGeneric() || (v->isStatic() && !parentClassGeneric)) {
             if (!v->isFunc()) {
-              // log("capture: {} -> {} '' {}", canonicalName, c,
-              //     v->getType()->debugString(2));
               captures[c] = v;
             }
           }
         }
       }
     }
-  std::vector<CallArg> partialArgs;
+  }
   if (!captures.empty()) {
-    std::vector<std::string> itemKeys;
-    itemKeys.reserve(captures.size());
-    for (const auto &[key, _] : captures)
-      itemKeys.emplace_back(key);
-
     // Handle partial arguments (and static special cases)
     Param kw;
     if (!stmt->empty() && startswith(stmt->back().name, "**")) {
@@ -246,25 +241,18 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
     std::array<const char *, 4> op{"", "int", "str", "bool"};
     for (auto &[c, v] : captures) {
+      std::string cc = "$" + c;
       if (v->isType()) {
-        stmt->items.emplace_back(c, N<IdExpr>(TYPE_TYPE));
+        stmt->items.emplace_back(cc, N<IdExpr>(TYPE_TYPE));
       } else if (auto si = v->isStatic()) {
-        stmt->items.emplace_back(c,
+        stmt->items.emplace_back(cc,
                                  N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(op[si])));
       } else {
-        stmt->items.emplace_back(c);
-      }
-      if (v->isFunc()) {
-        partialArgs.emplace_back(c,
-                                 N<CallExpr>(N<IdExpr>(v->canonicalName),
-                                             N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
-      } else {
-        partialArgs.emplace_back(c, N<IdExpr>(v->canonicalName));
+        stmt->items.emplace_back(cc);
       }
     }
     if (!kw.name.empty())
       stmt->items.emplace_back(kw);
-    partialArgs.emplace_back("", N<EllipsisExpr>(EllipsisExpr::PARTIAL));
   }
 
   std::vector<Param> args;
@@ -330,6 +318,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             generic->defaultType = extractType(defType)->shared_from_this();
         }
         auto g = generic->generalize(ctx->typecheckLevel);
+        if (startswith(varName, "$"))
+          varName = varName.substr(1);
         explicits.emplace_back(name, varName, g, typId, g->isStaticType());
       }
     }
@@ -489,25 +479,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Expression to be used if function binding is modified by captures or decorators
   Expr *finalExpr = nullptr;
-  Expr *selfAssign = nullptr;
-  // If there are captures, replace `fn` with `fn(cap1=cap1, cap2=cap2, ...)`
-  if (!captures.empty()) {
-    if (isClassMember)
-      E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), captures.begin()->first);
-
-    finalExpr = N<CallExpr>(N<IdExpr>(canonicalName), partialArgs);
-    // Add updated self reference in case function is recursive!
-    auto pa = partialArgs;
-    for (auto &a : pa) {
-      if (!a.getName().empty())
-        a.value = N<IdExpr>(a.getName());
-      else
-        a.value = clone(a.getExpr());
-    }
-    // todo)) right now this adds a capture hook for recursive calls
-    selfAssign = N<CallExpr>(N<IdExpr>(stmt->getName()), pa);
-  }
-
   // Parse remaining decorators
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (stmt->decorators[i]) {
@@ -516,14 +487,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
                               finalExpr ? finalExpr : N<IdExpr>(canonicalName));
-      // selfAssign = N<CallExpr>(clone(stmt->decorators[i]),
-      //                          selfAssign ? selfAssign : N<IdExpr>(canonicalName));
     }
   }
-
-  if (selfAssign)
-    f->suite =
-        N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(stmt->getName()), selfAssign), suite);
   if (finalExpr) {
     resultStmt = N<SuiteStmt>(
         f, transform(N<AssignStmt>(N<IdExpr>(stmt->getName()), finalExpr)));
@@ -642,21 +607,6 @@ std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
     }
   }
   return {false, ""};
-}
-
-/// Make an empty partial call `fn(...)` for a given function.
-Expr *TypecheckVisitor::partializeFunction(types::FuncType *fn) {
-  // Create function mask
-  std::vector<char> mask(fn->ast->size(), 0);
-  for (int i = 0, j = 0; i < fn->ast->size(); i++)
-    if ((*fn->ast)[i].isGeneric()) {
-      if (!extractFuncGeneric(fn, j)->getUnbound())
-        mask[i] = 1;
-      j++;
-    }
-
-  // Generate partial class
-  return generatePartialCall(mask, fn);
 }
 
 /// Generate and return `Function[Tuple[args...], ret]` type

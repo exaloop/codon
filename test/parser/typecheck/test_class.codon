@@ -99,21 +99,23 @@ class F[T: Static[float]]:
 def foo(x):
     class A:
         def bar():
-            print x
-foo(1)
-#! name 'x' cannot be captured
-#! during the realization
+            print(x)
+    a = A()
+    return a
+a = foo(1)
+type(a).bar()
+#! name 'x' is not defined
+# TODO: store captures in class functions somehow or make them globally accessible!...
 
-#%% class_err_12,barebones
+#%% class_capture_outside,barebones
 def foo(x):
     T = type(x)
     class A:
         def bar():
             print T()
     A.bar()
-foo(1)
-#! name 'T' cannot be captured
-#! during the realization of foo
+foo(1)  #: 0
+# TODO: see above
 
 #%% recursive_class,barebones
 class Node[T]:

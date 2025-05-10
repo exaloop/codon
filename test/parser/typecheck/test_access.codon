@@ -11,8 +11,7 @@ def foo():
         print(a)
     bar()  #: 5
     a = 4
-    bar()  #: 5
-    ## TODO: should be 4, needs Cell pointer
+    bar()  #: 4
 foo()
 
 d = {}
@@ -96,9 +95,9 @@ except NameError:
 def foo():
     if len("s") == 3:
         x = 3
-    x = 5  ## TODO: MOVE AFTER THE FN ONCE REF-CAPTURES ARE IMPLEMENTED
     def bar(y):
         print(x + y)
+    x = 5
     return bar
 f = foo()
 f(5)  #: 10
@@ -403,8 +402,7 @@ class X[T]:
     def foo[U](self, x, y: U):
         return (x+x, y+y)
 y = X[X[int]]()
-# TODO: should this even be the case?
-# print y.foo(U=float,...).__class__.__name__  ->  X.foo[X[X[int]],...,...]
+print y.foo(U=float,...).__class__.__name__  #: foo(X[X[int]],...,...,float)
 print y.foo(1, 2.2, float) #: (2, 4.4)
 
 #%% fn_overloads_NOPY,barebones

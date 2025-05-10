@@ -108,7 +108,7 @@ cobj = Ptr[byte]
 @tuple
 @__internal__
 @__notuple__
-class Ref[T]:
+class Capsule[T]:
     val: Ptr[T]
 
 @tuple

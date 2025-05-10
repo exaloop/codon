@@ -271,7 +271,7 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
   for (const auto &n : c->captures)
     ctx->childCaptures.insert(n);
   for (auto &[u, v] : c->map)
-    b->bindings[u] = v.size();
+    b->bindings[u] = {u, v.size()};
   expr->setAttribute(Attr::Bindings, std::move(b));
 }
 
@@ -400,7 +400,7 @@ void ScopingVisitor::visit(TryStmt *stmt) {
 
 void ScopingVisitor::visit(DelStmt *stmt) { CHECK(transform(stmt->getExpr())); }
 
-/// Process `global` statements. Remove them upon completion.
+/// Process `global` statements.
 void ScopingVisitor::visit(GlobalStmt *stmt) {
   if (!ctx->functionScope)
     STOP_ERROR(Error::FN_OUTSIDE_ERROR, stmt,
@@ -409,6 +409,8 @@ void ScopingVisitor::visit(GlobalStmt *stmt) {
     STOP_ERROR(Error::FN_GLOBAL_ASSIGNED, stmt, stmt->getVar());
 
   visitName(stmt->getVar(), true, stmt, stmt->getSrcInfo());
+  // No shadowing od global/nonlocal allowed
+  findDominatingBinding(stmt->getVar(), /* alowShadow= */ false);
   ctx->captures[stmt->getVar()] = stmt->isNonLocal()
                                       ? BindingsAttribute::CaptureType::Nonlocal
                                       : BindingsAttribute::CaptureType::Global;
@@ -547,11 +549,20 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   for (const auto &n : c->captures) {
     ctx->childCaptures.insert(n);
   }
+  // Recursive capture if used
+  if (c->map[stmt->getName()].size() == 1 && in(c->firstSeen, stmt->getName()))
+    b->captures[stmt->getName()] = BindingsAttribute::Read;
   for (auto &[u, v] : c->map) {
-    b->bindings[u] = v.size();
+    b->bindings[u] = {u, v.size()};
+    auto cp = in(c->childCaptures, u);
+    if (!cp)
+      cp = in(c->captures, u);
+    if (cp && *cp == BindingsAttribute::Nonlocal) {
+      b->bindings[u].isNonlocal = true;
+      ctx->childCaptures[u] = BindingsAttribute::Nonlocal;
+    }
   }
   stmt->setAttribute(Attr::Bindings, std::move(b));
-
 
   if (!c->classDeduce.second.empty()) {
     auto s = std::make_unique<ir::StringListAttribute>();
@@ -769,7 +780,8 @@ bool ScopingVisitor::visitName(const std::string &name, bool adding, ASTNode *ro
                 Attr::Bindings, std::make_unique<BindingsAttribute>());
           ctx->scope.front()
               .suite->getAttribute<BindingsAttribute>(Attr::Bindings)
-              ->bindings[name] = false;
+              ->bindings[name] = {name, 0,
+                                  *i == BindingsAttribute::CaptureType::Nonlocal};
           auto newItem = ScopingVisitor::Context::Item(src, newScope, nullptr);
           ctx->map[name].push_back(newItem);
         }
@@ -890,7 +902,7 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
                                            std::make_unique<BindingsAttribute>());
       ctx->scope[si]
           .suite->getAttribute<BindingsAttribute>(Attr::Bindings)
-          ->bindings[name] = true;
+          ->bindings[name] = {name, 1};
       auto newItem = ScopingVisitor::Context::Item(
           getSrcInfo(), newScope, ctx->scope[si].suite, {lastGood->scope});
       lastGood = it->insert(++lastGood, newItem);
@@ -899,7 +911,8 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
     }
   } else if (lastGood->binding && lastGood->binding->hasAttribute(Attr::Bindings)) {
     gotUsedVar = lastGood->binding->getAttribute<BindingsAttribute>(Attr::Bindings)
-                     ->bindings[name];
+                     ->bindings[name]
+                     .count > 0;
   }
   // Remove all bindings after the dominant binding.
   for (auto i = it->begin(); i != it->end(); i++) {
@@ -911,9 +924,14 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
   }
   if (!gotUsedVar && lastGood->binding &&
       lastGood->binding->hasAttribute(Attr::Bindings))
-    lastGood->binding->getAttribute<BindingsAttribute>(Attr::Bindings)->bindings[name] =
-        false;
+    lastGood->binding->getAttribute<BindingsAttribute>(Attr::Bindings)
+        ->bindings[name] = {name, 0};
   return &(*lastGood);
+}
+
+auto format_as(BindingsAttribute::CaptureType c) {
+  return c == BindingsAttribute::Read ? "RD"
+                                      : (c == BindingsAttribute::Global ? "GL" : "NL");
 }
 
 } // namespace codon::ast

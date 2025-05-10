@@ -150,7 +150,7 @@ private: // Node typechecking rules
   Stmt *transformAssignment(AssignStmt *, bool = false);
   void visit(DelStmt *) override;
   void visit(AssignMemberStmt *) override;
-  std::pair<bool, Expr *> transformInplaceUpdate(AssignStmt *);
+  std::pair<bool, Stmt *> transformInplaceUpdate(AssignStmt *);
 
   /* Imports (import.cpp) */
   void visit(ImportStmt *) override;
@@ -191,7 +191,6 @@ private: // Node typechecking rules
                                   Expr *, Stmt *);
   Stmt *transformLLVMDefinition(Stmt *);
   std::pair<bool, std::string> getDecorator(Expr *);
-  Expr *partializeFunction(types::FuncType *);
   std::shared_ptr<types::ClassType> getFuncTypeBase(size_t);
 
 private:

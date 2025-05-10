@@ -340,9 +340,9 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
 
   std::vector<Stmt *> prepend;
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
-    for (auto &[n, hasUsed] : b->bindings) {
+    for (auto &[n, bd] : b->bindings) {
       prepend.push_back(N<AssignStmt>(N<IdExpr>(n), nullptr));
-      if (hasUsed)
+      if (bd.count > 0)
         prepend.push_back(N<AssignStmt>(
             N<IdExpr>(fmt::format("{}{}", n, VAR_USED_SUFFIX)), N<BoolExpr>(false)));
     }
@@ -612,11 +612,17 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
 
-  else if ((!expectedClass || !expectedClass->is("Ref")) && exprClass &&
-           exprClass->is("Ref")) {
+  else if (expectedClass && !expectedClass->is("Capsule") && exprClass &&
+           exprClass->is("Capsule")) {
     type = extractClassGeneric(exprClass)->shared_from_this();
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("__internal__.ref_get"), expr);
+      return N<CallExpr>(N<IdExpr>("__internal__.capsule_get"), expr);
+    };
+  } else if (expectedClass && expectedClass->is("Capsule") && exprClass &&
+             !exprClass->is("Capsule")) {
+    type = instantiateType(getStdLibType("Capsule"), std::vector<Type *>{exprClass});
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>("__internal__.capsule_make"), expr);
     };
   }
 
@@ -780,13 +786,11 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
              !(expectedClass && expectedClass->is("Function"))) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
     // Special case: Seq functions are embedded (via lambda!)
-    // seqassert(cast<IdExpr>(expr) || (cast<StmtExpr>(expr) &&
-    //                                  cast<IdExpr>(cast<StmtExpr>(expr)->getExpr())),
-    //           "bad partial function: {}", *expr);
-    auto p = partializeFunction(exprType->getFunc());
     if (expectedClass)
       type = instantiateType(expectedClass);
-    fn = [&](Expr *expr) -> Expr * {
+    auto fnName = exprType->getFunc()->ast->getName();
+    fn = [&, fnName](Expr *expr) -> Expr * {
+      auto p = N<CallExpr>(N<IdExpr>(fnName), N<EllipsisExpr>(EllipsisExpr::PARTIAL));
       if (auto se = cast<StmtExpr>(expr))
         return N<StmtExpr>(se->items, p);
       return p;
@@ -1105,10 +1109,9 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
               *(g.type));
     if (!g.isStatic && !t->is(TYPE_TYPE))
       t = instantiateTypeVar(t.get());
-    auto v = ctx->addType(onlyMangled ? g.name : getUnmangledName(g.name), g.name, t);
+    auto n = onlyMangled ? g.name : getUnmangledName(g.name);
+    auto v = ctx->addType(n, g.name, t);
     v->generic = true;
-    // LOG("+ {} {} {} {}", getUnmangledName(g.name), g.name, t->debugString(2),
-    // v->getBaseName());
   };
 
   if (func && typ->getFunc()) {
@@ -1380,7 +1383,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       }
     }
   };
-  if (type->is("Ref")) {
+  if (type->is("Capsule")) {
     type = extractClassGeneric(type)->getClass();
   }
   if (type && type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
@@ -1403,7 +1406,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
 
 Cache::Class::ClassField *
 TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) const {
-  if (type->is("Ref")) {
+  if (type->is("Capsule")) {
     type = extractClassGeneric(type)->getClass();
   }
   if (auto cls = getClass(type)) {
@@ -1518,8 +1521,9 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
   // 5. Fill in the default arguments
   for (auto i = 0; i < func->ast->size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
-      if ((*func->ast)[i].isValue() &&
-          ((*func->ast)[i].getDefault() || (!known.empty() && known[i]))) {
+      if (((*func->ast)[i].isValue() &&
+           ((*func->ast)[i].getDefault() || (!known.empty() && known[i]))) ||
+          startswith((*func->ast)[i].getName(), "$")) {
         score -= 2;
       } else if (!partial && (*func->ast)[i].isValue()) {
         auto [_, n] = (*func->ast)[i].getNameWithStars();

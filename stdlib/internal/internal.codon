@@ -149,17 +149,23 @@ class __internal__:
             return __internal__.to_class_ptr_rtti((ptr, pr), B)
 
     @llvm
-    def _ref_make_helper(val: Ptr[T], T: type) -> Ref[T]:
+    def _capsule_make_helper(val: Ptr[T], T: type) -> Capsule[T]:
         %0 = insertvalue { ptr } undef, ptr %val, 0
         ret { ptr } %0
 
-    def ref_make(val: T, T: type) -> Ref[T]:
+    def capsule_make(val: T, T: type) -> Capsule[T]:
         p = Ptr[T](1)
         p[0] = val
-        return __internal__._ref_make_helper(p)
+        return __internal__._capsule_make_helper(p)
 
     @llvm
-    def ref_get(ref: Ref[T], T: type) -> T:
+    def capsule_get_ptr(ref: Capsule[T], T: type) -> Ptr[T]:
+        %0 = extractvalue { ptr } %ref, 0
+        %1 = getelementptr {=T}, ptr %0, i64 0
+        ret ptr %1
+
+    @llvm
+    def capsule_get(ref: Capsule[T], T: type) -> T:
         %0 = extractvalue { ptr } %ref, 0
         %1 = getelementptr {=T}, ptr %0, i64 0
         %2 = load {=T}, ptr %1
@@ -826,9 +832,9 @@ class TypeWrap:
         return T.__name__
 
 @extend
-class Ref:
+class Capsule:
     def __init__(self, val: T):
-        self.val = val
+        self.val[0] = val
 
 @extend
 class ProxyFunc:

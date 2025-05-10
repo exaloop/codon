@@ -159,8 +159,9 @@ except IndexError:
     print("assign failed") #: assign failed
 
 #%% assign_comprehension,barebones
+# TODO: make b list as in Pyhton
 g = ((b, a, c) for a, *b, c in ['ABC','DEEEEF','FHGIJ'])
-x, *q, y = list(g) # TODO: auto-unroll as in Python
+x, *q, y = list(g)
 print(x, y, q) #: ('B', 'A', 'C') ('HGI', 'F', 'J') [('EEEE', 'D', 'F')]
 
 #%% assign_shadow,barebones

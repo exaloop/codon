@@ -502,8 +502,6 @@ a, b = tee(it)
 #! cannot typecheck
 #! cannot typecheck
 #! cannot typecheck
-#! cannot typecheck
-#! cannot typecheck
 #! during the realization of tee(iterable: List[int], n: int)
 
 #%% new_syntax,barebones
@@ -592,9 +590,12 @@ def foo(*x): return f"{x}_{x.__class__.__name__}",1
 call(foo)
 #: ('(1, 2)_Tuple[int,int]', 1)
 
-def foo(a:int, *b: float): return f"{a}_{b}", a+b[0]
+def foo(a:int, *b: int): return f"f1_{a}_{b}", a+b[0]
 call(foo)
-#: ('1_(2,)', 3)
+#: ('f1_1_(2,)', 3)
+def foo(a:int, *b: float): return f"f2_{a}_{b}", int(a+b[0])
+call(foo)
+#: ('f2_1_(2,)', 3)
 
 def call(f: Callable[[int,int],str]):
     print(f(1, 2))

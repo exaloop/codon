@@ -109,7 +109,6 @@ int CallableTrait::unify(Type *typ, Unification *us) {
           return -1;
       }
     }
-    // NOTE: *args / **kwargs types will be typecheck when the function is called
     auto tv = TypecheckVisitor(cache->typeCtx);
     if (auto pf = trFun->getFunc()) {
       // Make sure to set types of *args/**kwargs so that the function that
@@ -127,6 +126,13 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         }
         for (; i < inArgs->generics.size(); i++)
           starArgTypes.push_back(inArgs->generics[i].getType());
+        if ((*pf->ast)[star].getType()) {
+          // if we have *args: type, use those types
+          auto starTyp =
+              tv.extractType(tv.transform(clone((*pf->ast)[star].getType())));
+          for (auto &t : starArgTypes)
+            t = starTyp;
+        }
 
         auto tn =
             tv.instantiateType(tv.generateTuple(starArgTypes.size()), starArgTypes);

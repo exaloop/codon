@@ -24,11 +24,11 @@ b: type(a) = 1
 print(b.__class__.__name__) #: int
 
 #%% multi_error,barebones
+a = 55
+print z  #! name 'z' is not defined
 # TODO in new parser!
-# a = 55
-# print z  # name 'z' is not defined
-# print(a, q, w)  # name 'q' is not defined
-# print quit  # name 'quit' is not defined
+print(a, q, w)  # name 'q' is not defined
+print quit  # name 'quit' is not defined
 
 #%% static_unify,barebones
 def foo(x: Callable[[1,2], 3]): pass  #! Callable cannot take static types

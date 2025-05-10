@@ -21,7 +21,13 @@ struct BindingsAttribute : public ir::Attribute {
 
   enum CaptureType { Read, Global, Nonlocal };
   std::unordered_map<std::string, CaptureType> captures;
-  std::unordered_map<std::string, size_t> bindings;
+
+  struct Binding {
+    std::string name;
+    size_t count;
+    bool isNonlocal = false;
+  };
+  std::unordered_map<std::string, Binding> bindings;
 
   std::unique_ptr<Attribute> clone() const override {
     auto p = std::make_unique<BindingsAttribute>();
@@ -33,6 +39,8 @@ struct BindingsAttribute : public ir::Attribute {
 private:
   std::ostream &doFormat(std::ostream &os) const override { return os << "Bindings"; }
 };
+
+auto format_as(BindingsAttribute::CaptureType c);
 
 class ScopingVisitor : public CallbackASTVisitor<bool, bool> {
   struct Context {

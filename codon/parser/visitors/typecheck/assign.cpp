@@ -7,6 +7,7 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using fmt::format;
@@ -139,7 +140,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
-    auto rightSide = N<IndexExpr>(
+    Expr *rightSide = N<IndexExpr>(
         ast::clone(rhs),
         N<SliceExpr>(N<IntExpr>(st),
                      // this slice is either [st:] or [st:-lhs_len + st + 1]
@@ -201,6 +202,19 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
     E(Error::ASSIGN_INVALID, stmt->getLhs());
+
+  if (ctx->inFunction() && stmt->getRhs() && !mustExist) {
+    if (auto b =
+            ctx->getBase()->func->getAttribute<BindingsAttribute>(Attr::Bindings)) {
+      const auto &bd = b->bindings[e->getValue()];
+      if (bd.isNonlocal) {
+        if (stmt->getTypeExpr())
+          stmt->type = N<IndexExpr>(N<IdExpr>("Capsule"), stmt->getTypeExpr());
+        else
+          stmt->type = N<IdExpr>("Capsule");
+      }
+    }
+  }
 
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
@@ -268,7 +282,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     }
   }
 
-  // Mark declarations or generalizedtype/functions as done
+  // Mark declarations or generalized type/functions as done
   if ((!assign->getRhs() || assign->getRhs()->isDone()) &&
       assign->getLhs()->getType()->canRealize()) {
     if (auto r = realize(assign->getLhs()->getType())) {
@@ -298,15 +312,9 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   stmt->lhs = transform(stmt->getLhs());
 
   // Check inplace updates
-  auto [inPlace, inPlaceExpr] = transformInplaceUpdate(stmt);
+  auto [inPlace, inPlaceStmt] = transformInplaceUpdate(stmt);
   if (inPlace) {
-    if (inPlaceExpr) {
-      auto s = N<ExprStmt>(inPlaceExpr);
-      if (inPlaceExpr->isDone())
-        s->setDone();
-      return s;
-    }
-    return nullptr;
+    return inPlaceStmt;
   }
 
   stmt->rhs = transform(stmt->getRhs());
@@ -316,6 +324,7 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
     unify(stmt->getRhs()->getType(), stmt->getLhs()->getType());
   if (stmt->getRhs()->isDone() && realize(stmt->getLhs()->getType()))
     stmt->setDone();
+
   return nullptr;
 }
 
@@ -381,16 +390,28 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 /// Transform in-place and atomic updates.
 /// @example
 ///   `a += b` -> `a.__iadd__(a, b)` if `__iadd__` exists
+///   Capsule operations:
+///   `a = b` -> a.val[0] = b
+///   `a += b` -> a.val[0] += b
 ///   Atomic operations (when the needed magics are available):
 ///   `a = b`         -> `type(a).__atomic_xchg__(__ptr__(a), b)`
 ///   `a += b`        -> `type(a).__atomic_add__(__ptr__(a), b)`
 ///   `a = min(a, b)` -> `type(a).__atomic_min__(__ptr__(a), b)` (same for `max`)
 /// @return a tuple indicating whether (1) the update statement can be replaced with an
 ///         expression, and (2) the replacement expression.
-std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
+std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
+  // Case: capsule oeprations
+  if (stmt->getLhs()->getType()->is("Capsule")) {
+    return {true,
+            transform(N<AssignStmt>(
+                N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.capsule_get_ptr"),
+                                         stmt->getLhs()),
+                             N<IntExpr>(0)),
+                stmt->getRhs()))};
+  }
+
   // Case: in-place updates (e.g., `a += b`).
   // They are stored as `Update(a, Binary(a + b, inPlace=true))`
-
   auto bin = cast<BinaryExpr>(stmt->getRhs());
   if (bin && bin->isInPlace()) {
     bin->lexpr = transform(bin->getLhs());
@@ -401,7 +422,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     if (bin->getLhs()->getClassType() && bin->getRhs()->getClassType()) {
       if (auto transformed = transformBinaryInplaceMagic(bin, stmt->isAtomicUpdate())) {
         unify(stmt->getRhs()->getType(), transformed->getType());
-        return {true, transformed};
+        return {true, transform(N<ExprStmt>(transformed))};
       } else if (!stmt->isAtomicUpdate()) {
         // If atomic, call normal magic and then use __atomic_xchg__ below
         return {false, nullptr};
@@ -433,9 +454,9 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
               findBestMethod(lhsClass, format("__atomic_{}__", cei->getValue()),
                              {ptrTyp.get(), rhsTyp})) {
         return {true,
-                transform(N<CallExpr>(N<IdExpr>(method->getFuncName()),
-                                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->getLhs()),
-                                      (*call)[1]))};
+                transform(N<ExprStmt>(N<CallExpr>(
+                    N<IdExpr>(method->getFuncName()),
+                    N<CallExpr>(N<IdExpr>("__ptr__"), stmt->getLhs()), (*call)[1])))};
       }
     }
   }
@@ -449,9 +470,10 @@ std::pair<bool, Expr *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
                                      std::vector<types::Type *>{lhsClass});
       if (auto m =
               findBestMethod(lhsClass, "__atomic_xchg__", {ptrType.get(), rhsClass})) {
-        return {true, N<CallExpr>(N<IdExpr>(m->getFuncName()),
-                                  N<CallExpr>(N<IdExpr>("__ptr__"), stmt->getLhs()),
-                                  stmt->getRhs())};
+        return {true, transform(N<ExprStmt>(
+                          N<CallExpr>(N<IdExpr>(m->getFuncName()),
+                                      N<CallExpr>(N<IdExpr>("__ptr__"), stmt->getLhs()),
+                                      stmt->getRhs())))};
       }
     }
   }

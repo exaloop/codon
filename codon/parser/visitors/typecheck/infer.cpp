@@ -395,34 +395,33 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
           E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
       }
     }
-  // Add self [recursive] reference! TODO: maybe remove later when doing contexts?
-  auto pc = ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
-  if (!pc || pc->value.empty()) {
-    // Check if we already exist?
-    bool exists = false;
-    auto val = ctx->find(getUnmangledName(ast->getName()));
-    if (val && val->getType()->getFunc()) {
-      auto fn = getFunction(val->getType());
-      exists = fn->rootName == getFunction(type)->rootName;
-    }
-    if (!exists) {
-      ctx->addFunc(getUnmangledName(ast->getName()), ast->getName(),
-                   ctx->forceFind(ast->getName())->type);
-    }
-  }
-  for (size_t i = 0, j = 0; hasAst && i < ast->size(); i++) {
+  for (size_t i = 0, j = 0, gi = 0; hasAst && i < ast->size(); i++) {
+    auto [_, varName] = (*ast)[i].getNameWithStars();
+    auto un = getUnmangledName(varName);
     if ((*ast)[i].isValue()) {
-      auto [_, varName] = (*ast)[i].getNameWithStars();
       TypePtr at = extractFuncArgType(type, j++)->shared_from_this();
       bool isStatic = ast && getStaticGeneric((*ast)[i].getType());
       if (!isStatic && at && at->getStatic())
         at = at->getStatic()->getNonStaticType()->shared_from_this();
+
+      if (startswith(un, "$"))
+        un = un.substr(1);
       if (at->is("TypeWrap")) {
-        ctx->addType(getUnmangledName(varName), varName,
-                     instantiateTypeVar(extractClassGeneric(at.get())));
+        ctx->addType(un, varName, instantiateTypeVar(extractClassGeneric(at.get())));
       } else {
-        ctx->addVar(getUnmangledName(varName), varName, std::make_shared<LinkType>(at));
+        ctx->addVar(un, varName, std::make_shared<LinkType>(at));
       }
+    } else {
+      if (startswith(un, "$")) {
+        un = un.substr(1);
+        auto g = type->funcGenerics[gi];
+        auto t = g.type;
+        if (!g.isStatic && !t->is(TYPE_TYPE))
+          t = instantiateTypeVar(t.get());
+        auto v = ctx->addType(un, varName, t);
+        v->generic = true;
+      }
+      gi++;
     }
   }
 
