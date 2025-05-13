@@ -309,6 +309,7 @@ int jitMode(const std::vector<const char *> &args) {
       return EXIT_FAILURE;
   }
 
+  jit.setForgetful();
   llvm::cantFail(jit.init());
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
   if (input == "-") {

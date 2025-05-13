@@ -49,6 +49,8 @@ struct TranslateContext;
  * Implemented to avoid bunch of global objects.
  */
 struct Cache : public std::enable_shared_from_this<Cache> {
+  /// Filesystem object used for accessing files.
+  std::shared_ptr<IFilesystem> fs;
   /// Stores a count for each identifier (name) seen in the code.
   /// Used to generate unique identifier for each name in the code (e.g. Foo -> Foo.2).
   std::unordered_map<std::string, int> identifierCount;
@@ -84,10 +86,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
     bool loadedAtToplevel = true;
   };
 
-  /// Absolute path of seqc executable (if available).
-  std::string argv0;
-  /// Absolute path of the entry-point module (if available).
-  std::string module0;
   /// IR module.
   ir::Module *module = nullptr;
 
@@ -238,9 +236,6 @@ struct Cache : public std::enable_shared_from_this<Cache> {
                      std::function<StmtPtr(ast::SimplifyVisitor *, ast::CustomStmt *)>>
       customExprStmts;
 
-  /// Plugin-added import paths
-  std::vector<std::string> pluginImportPaths;
-
   /// Set if the Codon is running in JIT mode.
   bool isJit;
   int jitCell;
@@ -255,7 +250,8 @@ struct Cache : public std::enable_shared_from_this<Cache> {
   bool pythonExt = false;
 
 public:
-  explicit Cache(std::string argv0 = "");
+  explicit Cache(std::string argv0 = "",
+                 const std::shared_ptr<IFilesystem> &fs = nullptr);
 
   /// Return a uniquely named temporary variable of a format
   /// "{sigil}_{prefix}{counter}". A sigil should be a non-lexable symbol.

@@ -36,8 +36,7 @@ SimplifyVisitor::apply(Cache *cache, const StmtPtr &node, const std::string &fil
   if (!in(cache->imports, STDLIB_IMPORT)) {
     // Load the internal.__init__
     auto stdlib = std::make_shared<SimplifyContext>(STDLIB_IMPORT, cache);
-    auto stdlibPath = getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true,
-                                    cache->module0, cache->pluginImportPaths);
+    auto stdlibPath = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
     const std::string initFile = "__init__.codon";
     if (!stdlibPath || !endswith(stdlibPath->path, initFile))
       E(Error::COMPILER_NO_STDLIB);

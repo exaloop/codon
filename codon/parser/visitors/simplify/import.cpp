@@ -30,8 +30,7 @@ void SimplifyVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->from.get(), stmt->dots);
   auto path = combine2(components, "/");
-  auto file = getImportFile(ctx->cache->argv0, path, ctx->getFilename(), false,
-                            ctx->cache->module0, ctx->cache->pluginImportPaths);
+  auto file = getImportFile(ctx->cache->fs.get(), path, ctx->getFilename());
   if (!file) {
     std::string s(stmt->dots, '.');
     for (size_t i = 0; i < components.size(); i++)

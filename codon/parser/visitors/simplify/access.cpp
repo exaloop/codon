@@ -276,9 +276,7 @@ SimplifyVisitor::getImport(const std::vector<std::string> &chain) {
     } else if (itemName.empty()) {
       if (!ctx->isStdlibLoading && endswith(importName, "__init__.codon")) {
         auto import = ctx->cache->imports[importName];
-        auto file =
-            getImportFile(ctx->cache->argv0, chain[importEnd], importName, false,
-                          ctx->cache->module0, ctx->cache->pluginImportPaths);
+        auto file = getImportFile(ctx->cache->fs.get(), chain[importEnd], importName);
         if (file) {
           auto s = SimplifyVisitor(import.ctx, preamble)
                        .transform(N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr));

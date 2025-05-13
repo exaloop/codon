@@ -83,7 +83,7 @@ public:
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
 
-  void setForgetful() { forgetful = true; }
+  void setForgetful();
 };
 
 } // namespace jit

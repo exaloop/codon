@@ -24,12 +24,14 @@ const std::string JIT_FILENAME = "<jit>";
 
 JIT::JIT(const std::string &argv0, const std::string &mode,
          const std::string &stdlibRoot)
-    : compiler(std::make_unique<Compiler>(
-          argv0, Compiler::Mode::JIT, /*disabledPasses=*/std::vector<std::string>{},
-          /*isTest=*/false,
-          /*pyNumerics=*/false, /*pyExtension=*/false, stdlibRoot)),
+    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT,
+                                          /*disabledPasses=*/std::vector<std::string>{},
+                                          /*isTest=*/false,
+                                          /*pyNumerics=*/false, /*pyExtension=*/false)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
       mode(mode), forgetful(false) {
+  if (!stdlibRoot.empty())
+    compiler->getCache()->fs->add_search_path(stdlibRoot);
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
@@ -83,6 +85,13 @@ llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt)
   t3.log();
 
   return llvm::Error::success();
+}
+
+void JIT::setForgetful() {
+  forgetful = true;
+  auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
+                                                      /*allowExternal*/ false);
+  compiler->getCache()->fs = fs;
 }
 
 llvm::Expected<ir::Func *> JIT::compile(const std::string &code,

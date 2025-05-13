@@ -93,7 +93,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->j = std::make_shared<json>();
 
-  auto stdlib = getImportFile(argv0, STDLIB_INTERNAL_MODULE, "", true, "");
+  auto stdlib = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
   auto ast = ast::parseFile(shared->cache, stdlib->path);
   auto core =
       ast::parseCode(shared->cache, stdlib->path, "from internal.core import *");
@@ -107,7 +107,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
 
   auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
-    auto path = getAbsolutePath(f);
+    auto path = std::string(cache->fs->canonical(f));
     ctx->setFilename(path);
     LOG("-> parsing {}", path);
     auto ast = ast::parseFile(shared->cache, path);
@@ -397,7 +397,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
   for (int i = int(dirs.size()) - 1; i >= 0; i--)
     path += dirs[i] + (i ? "/" : "");
   // Fetch the import!
-  auto file = getImportFile(ctx->shared->argv0, path, ctx->getFilename());
+  auto file = getImportFile(ctx->shared->cache->fs.get(), path, ctx->getFilename());
   if (!file)
     error(stmt, "cannot locate import '{}'", path);
 

@@ -17,10 +17,14 @@
 
 namespace codon::ast {
 
-Cache::Cache(std::string argv0)
-    : generatedSrcInfoCount(0), unboundCount(256), varCount(0), age(0),
-      argv0(std::move(argv0)), typeCtx(nullptr), codegenCtx(nullptr), isJit(false),
-      jitCell(0), pythonExt(false), pyModule(nullptr) {}
+Cache::Cache(std::string argv0, const std::shared_ptr<IFilesystem> &fs)
+    : fs(fs), generatedSrcInfoCount(0), unboundCount(256), varCount(0), age(0),
+      typeCtx(nullptr), codegenCtx(nullptr), isJit(false), jitCell(0), pythonExt(false),
+      pyModule(nullptr) {
+  if (!this->fs) {
+    this->fs = std::make_shared<Filesystem>(argv0);
+  }
+}
 
 std::string Cache::getTemporaryVar(const std::string &prefix, char sigil) {
   return fmt::format("{}{}_{}", sigil ? fmt::format("{}_", sigil) : "", prefix,

@@ -44,15 +44,17 @@ public:
   Compiler(const std::string &argv0, Mode mode,
            const std::vector<std::string> &disabledPasses = {}, bool isTest = false,
            bool pyNumerics = false, bool pyExtension = false,
-           const std::string &stdlibRoot = "");
+           const std::shared_ptr<ast::IFilesystem> &fs = nullptr);
 
   explicit Compiler(const std::string &argv0, bool debug = false,
                     const std::vector<std::string> &disabledPasses = {},
                     bool isTest = false, bool pyNumerics = false,
-                    bool pyExtension = false, const std::string &stdlibRoot = "")
+                    bool pyExtension = false,
+                    const std::shared_ptr<ast::IFilesystem> &fs = nullptr)
       : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest,
-                 pyNumerics, pyExtension, stdlibRoot) {}
+                 pyNumerics, pyExtension, fs) {}
 
+  std::string getArgv0() const { return argv0; }
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }
   ast::Cache *getCache() const { return cache.get(); }

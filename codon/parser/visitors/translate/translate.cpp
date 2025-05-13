@@ -34,7 +34,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     main->setJIT();
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
-    auto path = getAbsolutePath(cache->module0);
+    auto path = cache->fs->get_module0();
     main->setSrcInfo({path, 0, 0, 0});
   }
 

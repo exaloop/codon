@@ -478,7 +478,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile, /*pic=*/library);
 
-  const std::string base = ast::executable_path(argv0.c_str());
+  const std::string base = ast::Filesystem::executable_path(argv0.c_str());
   auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
 
   std::vector<std::string> relatives = {"../lib", "../lib/codon"};
