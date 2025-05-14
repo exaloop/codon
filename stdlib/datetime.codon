@@ -836,7 +836,7 @@ class time:
             microsecond = self.microsecond
         return time(hour, minute, second, microsecond)
 
-    def isoformat(self, timespec: Static[str] = "auto") -> str:
+    def isoformat(self, timespec: Literal[str] = "auto") -> str:
         hh = str(self.hour).zfill(2)
         mm = str(self.minute).zfill(2)
         ss = str(self.second).zfill(2)
@@ -1093,7 +1093,7 @@ class datetime:
     def isocalendar(self) -> IsoCalendarDate:
         return self.date().isocalendar()
 
-    def isoformat(self, sep: str = "T", timespec: Static[str] = "auto") -> str:
+    def isoformat(self, sep: str = "T", timespec: Literal[str] = "auto") -> str:
         date_part = str(self.date())
         time_part = self.time().isoformat(timespec=timespec)
         return f"{date_part}{sep}{time_part}"

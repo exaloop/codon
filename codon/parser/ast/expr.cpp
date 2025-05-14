@@ -553,19 +553,13 @@ bool isId(Expr *e, const std::string &s) {
 }
 
 char getStaticGeneric(Expr *e) {
-  auto ie = cast<IndexExpr>(e);
-  if (!ie)
-    return 0;
-  if (cast<IdExpr>(ie->getExpr()) &&
-      cast<IdExpr>(ie->getExpr())->getValue() == "Static") {
-    auto ixe = cast<IdExpr>(ie->getIndex());
-    if (!ixe)
-      return 0;
-    if (ixe->getValue() == "bool")
+  IdExpr *ie = nullptr;
+  if (match(e, M<IndexExpr>(M<IdExpr>(MOr("Static", "Literal")), MVar<IdExpr>(ie)))) {
+    if (ie->getValue() == "bool")
       return 3;
-    if (ixe->getValue() == "str")
+    if (ie->getValue() == "str")
       return 2;
-    if (ixe->getValue() == "int")
+    if (ie->getValue() == "int")
       return 1;
     return 4;
   }

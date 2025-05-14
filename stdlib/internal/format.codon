@@ -134,7 +134,7 @@ class Ptr:
             _format_error(ret)
         return ret
 
-def _divmod_10(dividend, N: Static[int]):
+def _divmod_10(dividend, N: Literal[int]):
     T = type(dividend)
     zero, one = T(0), T(1)
     neg = dividend < zero

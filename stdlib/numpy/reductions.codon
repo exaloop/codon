@@ -4,7 +4,9 @@ from .ndarray import ndarray
 from .routines import asarray, broadcast_to, full, copyto, round, moveaxis, concatenate, take, atleast_1d
 from .ndmath import isnan as math_isnan, floor, ceil, subtract, add, true_divide
 from .lib.arraysetops import unique
+
 import util
+import internal.static as static
 
 newaxis = None
 
@@ -12,7 +14,7 @@ def _check_out(out, shape):
     if not isinstance(out, ndarray):
         compile_error("output must be an array")
 
-    if out.ndim != staticlen(shape):
+    if out.ndim != static.len(shape):
         compile_error("output parameter has the wrong number of dimensions")
 
     if out.shape != shape:
@@ -62,8 +64,8 @@ def _nan_to_back(v: Ptr[T], n: int, T: type):
     else:
         return n
 
-def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Static[bool],
-                  bool_to_int: Static[bool], **kwargs):
+def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Literal[bool],
+                  bool_to_int: Literal[bool], **kwargs):
     if dtype is NoneType:
         if conv_to_float:
             ftype = type(_float(ans_type()))
@@ -79,7 +81,7 @@ def _make_reducer(R, ans_type: type, dtype: type, conv_to_float: Static[bool],
         else:
             return R(dtype, **kwargs)
 
-def _cast_elem(e0, dtype: type, conv_to_float: Static[bool]):
+def _cast_elem(e0, dtype: type, conv_to_float: Literal[bool]):
     if dtype is not NoneType:
         e1 = util.cast(e0, dtype)
     else:
@@ -102,7 +104,7 @@ def _where_to_array(where, arr):
         return broadcast_to(asarray(where), arr.shape)
 
 def _pairwise_sum_complex(a: Ptr[C], n: int, stride: int, C: type):
-    PW_BLOCKSIZE: Static[int] = 128
+    PW_BLOCKSIZE: Literal[int] = 128
     T = type(C().real)
     sz = T.__elemsize__
     p = a.as_byte()
@@ -159,7 +161,7 @@ def _pairwise_sum(a: Ptr[T], n: int, stride: int, T: type, dtype: type = NoneTyp
     if dtype is NoneType:
         return _pairwise_sum(a, n, stride, dtype=T)
 
-    PW_BLOCKSIZE: Static[int] = 128
+    PW_BLOCKSIZE: Literal[int] = 128
     p = a.as_byte()
 
     if n < 8:
@@ -212,10 +214,10 @@ def _reduce_all(arr,
                 empty,
                 dtype: type = NoneType,
                 out=None,
-                keepdims: Static[bool] = False,
+                keepdims: Literal[bool] = False,
                 where=util._NoValue(),
-                conv_to_float: Static[bool] = False,
-                bool_to_int: Static[bool] = False,
+                conv_to_float: Literal[bool] = False,
+                bool_to_int: Literal[bool] = False,
                 **kwargs):
     if out is not None:
         if keepdims:
@@ -267,7 +269,7 @@ def _reduce_all(arr,
                     loop_axis = -1
                     min_abs_stride = 0x7FFFFFFFFFFFFFFF
 
-                    for j in staticrange(arr.ndim):
+                    for j in static.range(arr.ndim):
                         stride = strides[j]
                         if stride:
                             abs_stride = abs(stride)
@@ -341,14 +343,14 @@ class _GradualFunctor:
     k: int
     kwargs: KW
     dtype: type
-    conv_to_float: Static[bool]
+    conv_to_float: Literal[bool]
     R: type
     KW: type
 
     def __new__(redux: R,
                 k: int,
                 dtype: type,
-                conv_to_float: Static[bool],
+                conv_to_float: Literal[bool],
                 kwargs: KW,
                 R: type,
                 KW: type) -> _GradualFunctor[dtype, conv_to_float, R, KW]:
@@ -365,9 +367,9 @@ def _reduce_gradual(arr,
                     axis=None,
                     dtype: type = NoneType,
                     out=None,
-                    keepdims: Static[bool] = False,
-                    conv_to_float: Static[bool] = False,
-                    bool_to_int: Static[bool] = False,
+                    keepdims: Literal[bool] = False,
+                    conv_to_float: Literal[bool] = False,
+                    bool_to_int: Literal[bool] = False,
                     **kwargs):
     data = arr.data
     shape = arr.shape
@@ -381,7 +383,7 @@ def _reduce_gradual(arr,
     else:
         init_value = None
 
-    if staticlen(ax) == 1:
+    if static.len(ax) == 1:
         ax0 = ax[0]
         length = util.tuple_get(shape, ax0)
         stride = util.tuple_get(arr.strides, ax0)
@@ -426,11 +428,11 @@ def _reduce_gradual(arr,
         else:
             return ans
 
-    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
-    idx_bound = (0, ) * staticlen(ax)
-    out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
-    sub_strides = (0, ) * staticlen(ax)
-    mask = (False, ) * staticlen(shape)
+    new_shape = (0, ) * (static.len(shape) - static.len(ax))
+    idx_bound = (0, ) * static.len(ax)
+    out_strides = (0, ) * (static.len(shape) - static.len(ax))
+    sub_strides = (0, ) * static.len(ax)
+    mask = (False, ) * static.len(shape)
     ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
     ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
     ptr_out_strides = Ptr[int](__ptr__(out_strides).as_byte())
@@ -442,7 +444,7 @@ def _reduce_gradual(arr,
     a = 0
     b = 0
 
-    for i in staticrange(staticlen(shape)):
+    for i in static.range(static.len(shape)):
         s = shape[i]
         stride = strides[i]
 
@@ -460,7 +462,7 @@ def _reduce_gradual(arr,
             b += 1
 
     if keepdims:
-        ones = (1, ) * staticlen(idx_bound)
+        ones = (1, ) * static.len(idx_bound)
         ans_shape = util.reconstruct_index(new_shape, ones, mask)
     else:
         ans_shape = new_shape
@@ -474,10 +476,10 @@ def _reduce_gradual(arr,
     else:
         _check_out(out, ans_shape)
         if keepdims:
-            sub_ans_strides = (0, ) * staticlen(new_shape)
+            sub_ans_strides = (0, ) * static.len(new_shape)
             ptr_sub_ans_strides = Ptr[int](__ptr__(sub_ans_strides).as_byte())
             a = 0
-            for i in staticrange(out.ndim):
+            for i in static.range(out.ndim):
                 if i not in ax:
                     ptr_sub_ans_strides[a] = out.strides[i]
                     a += 1
@@ -495,7 +497,7 @@ def _reduce_gradual(arr,
 
     for t2 in util.multirange(idx_bound):
         offset = 0
-        for i in staticrange(staticlen(sub_strides)):
+        for i in static.range(static.len(sub_strides)):
             offset += sub_strides[i] * t2[i]
 
         sub_arr_ptr = _increment_ptr(arr.data, offset)
@@ -522,10 +524,10 @@ def _reduce(arr,
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
-            conv_to_float: Static[bool] = False,
-            bool_to_int: Static[bool] = False,
+            conv_to_float: Literal[bool] = False,
+            bool_to_int: Literal[bool] = False,
             **kwargs):
     data = arr.data
     shape = arr.shape
@@ -554,7 +556,7 @@ def _reduce(arr,
     else:
         ax = util.normalize_axis_tuple(axis, arr.ndim)
 
-    if staticlen(ax) == staticlen(shape):
+    if static.len(ax) == static.len(shape):
         return _reduce_all(arr,
                            R=R,
                            empty=empty,
@@ -570,11 +572,11 @@ def _reduce(arr,
         if arr.size == 0:
             empty(**kwargs)
 
-    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
-    idx_bound = (0, ) * staticlen(ax)
-    out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
-    sub_strides = (0, ) * staticlen(ax)
-    mask = (False, ) * staticlen(shape)
+    new_shape = (0, ) * (static.len(shape) - static.len(ax))
+    idx_bound = (0, ) * static.len(ax)
+    out_strides = (0, ) * (static.len(shape) - static.len(ax))
+    sub_strides = (0, ) * static.len(ax)
+    mask = (False, ) * static.len(shape)
     ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
     ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
     ptr_out_strides = Ptr[int](__ptr__(out_strides).as_byte())
@@ -588,7 +590,7 @@ def _reduce(arr,
     a = 0
     b = 0
 
-    for i in staticrange(staticlen(shape)):
+    for i in static.range(static.len(shape)):
         s = shape[i]
         stride = strides[i]
 
@@ -627,7 +629,7 @@ def _reduce(arr,
                                    bool_to_int=bool_to_int,
                                    **kwargs)
     if keepdims:
-        ones = (1, ) * staticlen(idx_bound)
+        ones = (1, ) * static.len(idx_bound)
         ans_shape = util.reconstruct_index(new_shape, ones, mask)
     else:
         ans_shape = new_shape
@@ -640,13 +642,13 @@ def _reduce(arr,
     else:
         _check_out(out, ans_shape)
         if keepdims:
-            if staticlen(ax) == 1:
+            if static.len(ax) == 1:
                 sub_ans_strides = util.tuple_delete(out.strides, ax[0])
             else:
-                sub_ans_strides = (0, ) * staticlen(new_shape)
+                sub_ans_strides = (0, ) * static.len(new_shape)
                 ptr_sub_ans_strides = Ptr[int](__ptr__(sub_ans_strides).as_byte())
                 a = 0
-                for i in staticrange(out.ndim):
+                for i in static.range(out.ndim):
                     if i not in ax:
                         ptr_sub_ans_strides[a] = out.strides[i]
                         a += 1
@@ -655,19 +657,19 @@ def _reduce(arr,
             ans = out
 
     where = _where_to_array(where, arr)
-    where_out_shape = (0, ) * (staticlen(shape) - staticlen(ax))
-    where_sub_shape = (0, ) * staticlen(ax)
-    where_out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
-    where_sub_strides = (0, ) * staticlen(ax)
+    where_out_shape = (0, ) * (static.len(shape) - static.len(ax))
+    where_sub_shape = (0, ) * static.len(ax)
+    where_out_strides = (0, ) * (static.len(shape) - static.len(ax))
+    where_sub_strides = (0, ) * static.len(ax)
 
-    if where is not None and staticlen(shape) > 0:
+    if where is not None and static.len(shape) > 0:
         ptr_where_out_shape = Ptr[int](__ptr__(where_out_shape).as_byte())
         ptr_where_sub_shape = Ptr[int](__ptr__(where_sub_shape).as_byte())
         ptr_where_out_strides = Ptr[int](__ptr__(where_out_strides).as_byte())
         ptr_where_sub_strides = Ptr[int](__ptr__(where_sub_strides).as_byte())
         a = 0
         b = 0
-        for i in staticrange(staticlen(shape)):
+        for i in static.range(static.len(shape)):
             if i in ax:
                 ptr_where_sub_shape[a] = where.shape[i]
                 ptr_where_sub_strides[a] = where.strides[i]
@@ -687,7 +689,7 @@ def _reduce(arr,
 
     for idx in util.multirange(new_shape):
         offset = 0
-        for i in staticrange(staticlen(out_strides)):
+        for i in static.range(static.len(out_strides)):
             offset += out_strides[i] * idx[i]
 
         sub_arr_ptr = _increment_ptr(arr.data, offset)
@@ -697,7 +699,7 @@ def _reduce(arr,
             sub_where = None
         else:
             offset = 0
-            for i in staticrange(staticlen(where_out_strides)):
+            for i in static.range(static.len(where_out_strides)):
                 offset += where_out_strides[i] * idx[i]
 
             sub_where_ptr = _increment_ptr(where.data, offset)
@@ -759,7 +761,7 @@ def _reduce_buffered(arr,
                      out=None,
                      overwrite_input: bool = False,
                      force_contig: bool = True,
-                     keepdims: Static[bool] = False,
+                     keepdims: Literal[bool] = False,
                      where=util._NoValue(),
                      **kwargs):
     data = arr.data
@@ -774,7 +776,7 @@ def _reduce_buffered(arr,
     else:
         ax = util.normalize_axis_tuple(axis, arr.ndim)
 
-    if staticlen(ax) == staticlen(shape):
+    if static.len(ax) == static.len(shape):
         sz = arr.size
         if arr._is_contig and overwrite_input and where is None:
             result = reducer(arr.data, util.sizeof(arr.dtype), sz, dtype,
@@ -806,11 +808,11 @@ def _reduce_buffered(arr,
             out.data[0] = util.cast(result, out.dtype)
             return out
 
-    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
-    idx_bound = (0, ) * staticlen(ax)
-    out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
-    stride_bound = (0, ) * staticlen(ax)
-    mask = (False, ) * staticlen(shape)
+    new_shape = (0, ) * (static.len(shape) - static.len(ax))
+    idx_bound = (0, ) * static.len(ax)
+    out_strides = (0, ) * (static.len(shape) - static.len(ax))
+    stride_bound = (0, ) * static.len(ax)
+    mask = (False, ) * static.len(shape)
     ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
     ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
     ptr_out_strides = Ptr[int](__ptr__(out_strides).as_byte())
@@ -822,7 +824,7 @@ def _reduce_buffered(arr,
     a = 0
     b = 0
 
-    for i in staticrange(staticlen(shape)):
+    for i in static.range(static.len(shape)):
         s = shape[i]
         stride = strides[i]
 
@@ -840,7 +842,7 @@ def _reduce_buffered(arr,
             b += 1
 
     if keepdims:
-        ones = (1, ) * staticlen(idx_bound)
+        ones = (1, ) * static.len(idx_bound)
         ans_shape = util.reconstruct_index(new_shape, ones, mask)
     else:
         ans_shape = new_shape
@@ -851,13 +853,13 @@ def _reduce_buffered(arr,
     else:
         _check_out(out, ans_shape)
         if keepdims:
-            if staticlen(ax) == 1:
+            if static.len(ax) == 1:
                 sub_ans_strides = util.tuple_delete(out.strides, ax[0])
             else:
-                sub_ans_strides = (0, ) * staticlen(new_shape)
+                sub_ans_strides = (0, ) * static.len(new_shape)
                 ptr_sub_ans_strides = Ptr[int](__ptr__(sub_ans_strides).as_byte())
                 a = 0
-                for i in staticrange(out.ndim):
+                for i in static.range(out.ndim):
                     if i not in ax:
                         ptr_sub_ans_strides[a] = out.strides[i]
                         a += 1
@@ -872,7 +874,7 @@ def _reduce_buffered(arr,
         inplace = False
         stride = util.sizeof(arr.dtype)
     else:
-        if staticlen(ax) == 1:
+        if static.len(ax) == 1:
             inplace = True
             stride = stride_bound[0]
         else:
@@ -890,19 +892,19 @@ def _reduce_buffered(arr,
             inplace = False
             stride = util.sizeof(arr.dtype)
 
-    where_out_shape = (0, ) * (staticlen(shape) - staticlen(ax))
-    where_sub_shape = (0, ) * staticlen(ax)
-    where_out_strides = (0, ) * (staticlen(shape) - staticlen(ax))
-    where_sub_strides = (0, ) * staticlen(ax)
+    where_out_shape = (0, ) * (static.len(shape) - static.len(ax))
+    where_sub_shape = (0, ) * static.len(ax)
+    where_out_strides = (0, ) * (static.len(shape) - static.len(ax))
+    where_sub_strides = (0, ) * static.len(ax)
 
-    if where is not None and staticlen(shape) > 0:
+    if where is not None and static.len(shape) > 0:
         ptr_where_out_shape = Ptr[int](__ptr__(where_out_shape).as_byte())
         ptr_where_sub_shape = Ptr[int](__ptr__(where_sub_shape).as_byte())
         ptr_where_out_strides = Ptr[int](__ptr__(where_out_strides).as_byte())
         ptr_where_sub_strides = Ptr[int](__ptr__(where_sub_strides).as_byte())
         a = 0
         b = 0
-        for i in staticrange(staticlen(shape)):
+        for i in static.range(static.len(shape)):
             if i in ax:
                 ptr_where_sub_shape[a] = where.shape[i]
                 ptr_where_sub_strides[a] = where.strides[i]
@@ -925,7 +927,7 @@ def _reduce_buffered(arr,
     for idx in util.multirange(new_shape):
         n = bound_size
         offset = 0
-        for i in staticrange(staticlen(out_strides)):
+        for i in static.range(static.len(out_strides)):
             offset += out_strides[i] * idx[i]
         sub_arr_ptr = _increment_ptr(arr.data, offset)
 
@@ -938,7 +940,7 @@ def _reduce_buffered(arr,
                 ndarray._loop((sub_arr,), fn, broadcast='none')
             else:
                 offset = 0
-                for i in staticrange(staticlen(where_out_strides)):
+                for i in static.range(static.len(where_out_strides)):
                     offset += where_out_strides[i] * idx[i]
 
                 sub_where_ptr = _increment_ptr(where.data, offset)
@@ -972,7 +974,7 @@ def _reduce_buffered_multi(arr,
                            out=None,
                            overwrite_input: bool = False,
                            force_contig: bool = True,
-                           keepdims: Static[bool] = False,
+                           keepdims: Literal[bool] = False,
                            where=util._NoValue(),
                            **kwargs):
     data = arr.data
@@ -987,10 +989,10 @@ def _reduce_buffered_multi(arr,
     else:
         ax = util.normalize_axis_tuple(axis, arr.ndim)
 
-    new_shape = (0, ) * (staticlen(shape) - staticlen(ax))
-    idx_bound = (0, ) * staticlen(ax)
-    stride_bound = (0, ) * staticlen(ax)
-    mask = (False, ) * staticlen(shape)
+    new_shape = (0, ) * (static.len(shape) - static.len(ax))
+    idx_bound = (0, ) * static.len(ax)
+    stride_bound = (0, ) * static.len(ax)
+    mask = (False, ) * static.len(shape)
     ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
     ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
     ptr_stride_bound = Ptr[int](__ptr__(stride_bound).as_byte())
@@ -1001,7 +1003,7 @@ def _reduce_buffered_multi(arr,
     a = 0
     b = 0
 
-    for i in staticrange(staticlen(shape)):
+    for i in static.range(static.len(shape)):
         s = shape[i]
 
         if i in ax:
@@ -1017,7 +1019,7 @@ def _reduce_buffered_multi(arr,
             b += 1
 
     if keepdims:
-        ones = (1, ) * staticlen(idx_bound)
+        ones = (1, ) * static.len(idx_bound)
         ans_shape = (multi_num, ) + util.reconstruct_index(
             new_shape, ones, mask)
     else:
@@ -1029,7 +1031,7 @@ def _reduce_buffered_multi(arr,
         _check_out(out, ans_shape)
         ans = out
 
-    if staticlen(ax) == staticlen(shape):
+    if static.len(ax) == static.len(shape):
         sz = arr.size
         if arr._is_contig and overwrite_input and where is None:
             reducer(arr.data, util.sizeof(arr.dtype), sz, ans.data, dtype,
@@ -1056,7 +1058,7 @@ def _reduce_buffered_multi(arr,
         inplace = False
         stride = util.sizeof(arr.dtype)
     else:
-        if staticlen(ax) == 1:
+        if static.len(ax) == 1:
             inplace = True
             stride = stride_bound[0]
         else:
@@ -1080,7 +1082,7 @@ def _reduce_buffered_multi(arr,
     for t1 in util.multirange(new_shape):
         n = bound_size
         if inplace:
-            idx = util.reconstruct_index(t1, (0, ) * staticlen(idx_bound),
+            idx = util.reconstruct_index(t1, (0, ) * static.len(idx_bound),
                                          mask)
             subdata = arr._ptr(idx)
         else:
@@ -1100,7 +1102,7 @@ def _reduce_buffered_multi(arr,
         reducer(subdata, stride, n, out_buffer, dtype, **kwargs)
 
         if keepdims:
-            zeros = (0, ) * staticlen(idx_bound)
+            zeros = (0, ) * static.len(idx_bound)
             t3 = util.reconstruct_index(t1, zeros, mask)
         else:
             t3 = t1
@@ -1156,7 +1158,7 @@ class SumRedux:
 
         return ans
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         self.total += SumRedux[T]._loop(a, n, stride, S)
 
 class NanSumRedux:
@@ -1189,7 +1191,7 @@ class NanSumRedux:
     def gradual_accept(self, curr, item, index: int, **kwargs):
         return curr if _isnan(item) else curr + util.cast(item, T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         ans = T()
 
         for i in range(n):
@@ -1228,7 +1230,7 @@ class ProdRedux:
     def gradual_accept(self, curr, item, index: int, **kwargs):
         return curr * util.cast(item, T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         ans = T(1)
 
         for i in range(n):
@@ -1267,7 +1269,7 @@ class NanProdRedux:
     def gradual_accept(self, curr, item, index: int, **kwargs):
         return curr if _isnan(item) else curr * util.cast(item, T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         ans = T(1)
 
         for i in range(n):
@@ -1308,7 +1310,7 @@ class MeanRedux:
     def gradual_result(self, curr, count: int):
         return curr / T(count) if count else _nan(T)
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         self.total += SumRedux[T]._loop(a, n, stride, S)
 
 class NanMeanRedux:
@@ -1339,7 +1341,7 @@ class NanMeanRedux:
     def done(self):
         return False
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         ans = T()
         nan_count = 0
 
@@ -1407,7 +1409,7 @@ class MinRedux:
         else:
             return x if x < m else m
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         if self.m is None:
             m: T = util.cast(a[0], T)
             a = _increment_ptr(a, stride)
@@ -1478,7 +1480,7 @@ class MaxRedux:
         else:
             return x if x > m else m
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         if self.m is None and n > 0:
             m: T = util.cast(a[0], T)
             a = _increment_ptr(a, stride)
@@ -1529,7 +1531,7 @@ class PTPRedux:
     def done(self):
         return False
 
-    def loop(self, a: Ptr[S], n: int, stride: int, partial: Static[bool], S: type):
+    def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         # n must be >0 here or we would've thrown an exception earlier
         m = util.cast(a[0], T)
         M = m
@@ -1684,7 +1686,7 @@ def sum(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         initial=0,
         where=util._NoValue(),
 ):
@@ -1707,7 +1709,7 @@ def nansum(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         initial=0,
         where=util._NoValue(),
 ):
@@ -1730,7 +1732,7 @@ def prod(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         initial=1,
         where=util._NoValue(),
 ):
@@ -1753,7 +1755,7 @@ def nanprod(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         initial=1,
         where=util._NoValue(),
 ):
@@ -1776,7 +1778,7 @@ def mean(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1797,7 +1799,7 @@ def nanmean(
         axis=None,
         dtype: type = NoneType,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1851,7 +1853,7 @@ def var(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1913,7 +1915,7 @@ def nanvar(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1938,7 +1940,7 @@ def std(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1963,7 +1965,7 @@ def nanstd(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue(),
 ):
     a = asarray(a)
@@ -1984,7 +1986,7 @@ def min(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         initial=util._NoValue(),
         where=util._NoValue(),
 ):
@@ -2012,7 +2014,7 @@ def max(
         dtype: type = NoneType,
         out=None,
         ddof: int = 0,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         initial=util._NoValue(),
         where=util._NoValue(),
 ):
@@ -2034,7 +2036,7 @@ def max(
         initial=initial,
     )
 
-def ptp(a, axis=None, out=None, keepdims: Static[bool] = False):
+def ptp(a, axis=None, out=None, keepdims: Literal[bool] = False):
     a = asarray(a)
     return _reduce(
         a,
@@ -2045,7 +2047,7 @@ def ptp(a, axis=None, out=None, keepdims: Static[bool] = False):
         keepdims=keepdims,
     )
 
-def argmin(a, axis=None, out=None, keepdims: Static[bool] = False):
+def argmin(a, axis=None, out=None, keepdims: Literal[bool] = False):
     a = asarray(a)
     return _reduce(
         a,
@@ -2056,7 +2058,7 @@ def argmin(a, axis=None, out=None, keepdims: Static[bool] = False):
         keepdims=keepdims,
     )
 
-def argmax(a, axis=None, out=None, keepdims: Static[bool] = False):
+def argmax(a, axis=None, out=None, keepdims: Literal[bool] = False):
     a = asarray(a)
     return _reduce(
         a,
@@ -2070,7 +2072,7 @@ def argmax(a, axis=None, out=None, keepdims: Static[bool] = False):
 def any(a,
         axis=None,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue()):
     a = asarray(a)
     return _reduce(
@@ -2086,7 +2088,7 @@ def any(a,
 def all(a,
         axis=None,
         out=None,
-        keepdims: Static[bool] = False,
+        keepdims: Literal[bool] = False,
         where=util._NoValue()):
     a = asarray(a)
     return _reduce(
@@ -2099,7 +2101,7 @@ def all(a,
         where=where,
     )
 
-def count_nonzero(a, axis=None, keepdims: Static[bool] = False):
+def count_nonzero(a, axis=None, keepdims: Literal[bool] = False):
     a = asarray(a)
     return _reduce(a,
                    R=NonZeroRedux.create,
@@ -2144,7 +2146,7 @@ def median(a,
            axis=None,
            out=None,
            overwrite_input: bool = False,
-           keepdims: Static[bool] = False):
+           keepdims: Literal[bool] = False):
     a = asarray(a)
     return _reduce_buffered(a,
                             _median_reducer,
@@ -2165,7 +2167,7 @@ def nanmedian(a,
               axis=None,
               out=None,
               overwrite_input: bool = False,
-              keepdims: Static[bool] = False):
+              keepdims: Literal[bool] = False):
     a = asarray(a)
     return _reduce_buffered(a,
                             _nanmedian_reducer,
@@ -2197,7 +2199,7 @@ def _check_interpolation_as_method(method, interpolation):
 
 def _quantile_is_valid(q):
     # avoid expensive reductions, relevant for arrays with < O(1000) elements
-    if staticlen(q.shape) == 1 and q.size < 10:
+    if static.len(q.shape) == 1 and q.size < 10:
         for i in range(q.size):
             if not (0.0 <= q[i] <= 1.0):
                 return False
@@ -2272,7 +2274,7 @@ def _lerp(a, b, t, out=None):
     diff_b_a = subtract(b, a)
     lerp_interpolation = asarray(add(a, diff_b_a * t, out=out))
     subtract(b, diff_b_a * (1 - t), out=lerp_interpolation, where=t >= 0.5)
-    if staticlen(lerp_interpolation.shape) == 0 and out is None:
+    if static.len(lerp_interpolation.shape) == 0 and out is None:
         lerp_interpolation2 = lerp_interpolation[()]  # unpack 0d arrays
     else:
         lerp_interpolation2 = lerp_interpolation
@@ -2538,7 +2540,7 @@ def _quantile_unchecked(a,
                         out=None,
                         overwrite_input: bool = False,
                         method: str = "linear",
-                        keepdims: Static[bool] = False):
+                        keepdims: Literal[bool] = False):
     # Assumes that q is in [0, 1], and is an ndarray
     if q.ndim == 0:
         return _reduce_buffered(a,
@@ -2576,7 +2578,7 @@ def quantile(a,
              out=None,
              overwrite_input: bool = False,
              method: str = "linear",
-             keepdims: Static[bool] = False,
+             keepdims: Literal[bool] = False,
              interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2614,7 +2616,7 @@ def _nanquantile_unchecked(a,
                            out=None,
                            overwrite_input: bool = False,
                            method: str = "linear",
-                           keepdims: Static[bool] = False):
+                           keepdims: Literal[bool] = False):
     # Assumes that q is in [0, 1], and is an ndarray
     if q.ndim == 0:
         return _reduce_buffered(a,
@@ -2646,7 +2648,7 @@ def nanquantile(a,
                 out=None,
                 overwrite_input: bool = False,
                 method: str = "linear",
-                keepdims: Static[bool] = False,
+                keepdims: Literal[bool] = False,
                 interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2676,7 +2678,7 @@ def percentile(a,
                out=None,
                overwrite_input: bool = False,
                method: str = "linear",
-               keepdims: Static[bool] = False,
+               keepdims: Literal[bool] = False,
                interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2696,7 +2698,7 @@ def nanpercentile(a,
                   out=None,
                   overwrite_input: bool = False,
                   method: str = "linear",
-                  keepdims: Static[bool] = False,
+                  keepdims: Literal[bool] = False,
                   interpolation=None):
     if interpolation is not None:
         method = _check_interpolation_as_method(method, interpolation)
@@ -2729,7 +2731,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             initial=0,
             where=util._NoValue(),
     ):
@@ -2748,7 +2750,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             initial=1,
             where=util._NoValue(),
     ):
@@ -2767,7 +2769,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
     ):
         return mean(self,
@@ -2782,7 +2784,7 @@ class ndarray:
             axis=None,
             dtype: type = NoneType,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
     ):
         return nanmean(self,
@@ -2798,7 +2800,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
     ):
         return var(
@@ -2817,7 +2819,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
     ):
         return nanvar(
@@ -2836,7 +2838,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
     ):
         return std(
@@ -2855,7 +2857,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue(),
     ):
         return nanstd(
@@ -2874,7 +2876,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             initial=util._NoValue(),
             where=util._NoValue(),
     ):
@@ -2889,7 +2891,7 @@ class ndarray:
             where=where,
         )
 
-    def ptp(self, axis=None, out=None, keepdims: Static[bool] = False):
+    def ptp(self, axis=None, out=None, keepdims: Literal[bool] = False):
         return ptp(self, axis=axis, out=out, keepdims=keepdims)
 
     def max(
@@ -2898,7 +2900,7 @@ class ndarray:
             dtype: type = NoneType,
             out=None,
             ddof: int = 0,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             initial=util._NoValue(),
             where=util._NoValue(),
     ):
@@ -2913,22 +2915,22 @@ class ndarray:
             where=where,
         )
 
-    def argmin(self, axis=None, out=None, keepdims: Static[bool] = False):
+    def argmin(self, axis=None, out=None, keepdims: Literal[bool] = False):
         return argmin(self, axis=axis, out=out, keepdims=keepdims)
 
-    def argmax(self, axis=None, out=None, keepdims: Static[bool] = False):
+    def argmax(self, axis=None, out=None, keepdims: Literal[bool] = False):
         return argmax(self, axis=axis, out=out, keepdims=keepdims)
 
     def any(self,
             axis=None,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue()):
         return any(self, axis=axis, out=out, keepdims=keepdims, where=where)
 
     def all(self,
             axis=None,
             out=None,
-            keepdims: Static[bool] = False,
+            keepdims: Literal[bool] = False,
             where=util._NoValue()):
         return all(self, axis=axis, out=out, keepdims=keepdims, where=where)

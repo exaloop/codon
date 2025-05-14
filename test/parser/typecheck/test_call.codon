@@ -348,7 +348,7 @@ print isinstance(None, Optional[NoneType])
 print isinstance({1, 2}, List)
 #: False
 
-print staticlen((1, 2, 3)), staticlen((1, )), staticlen('hehe')
+print static.len((1, 2, 3)), static.len((1, )), static.len('hehe')
 #: 3 1 4
 
 print hasattr([1, 2], "__getitem__")
@@ -389,7 +389,7 @@ print isinstance(c, BX[str, bool]), isinstance(c, BX[str, str]), isinstance(c, A
 #: True False False
 
 #%% staticlen_err,barebones
-print staticlen([1, 2]) #! expected tuple type
+print static.len([1, 2]) #! expected tuple type
 
 #%% compile_error,barebones
 compile_error("woo-hoo") #! woo-hoo
@@ -584,7 +584,7 @@ Foo.foo(1)
 #! during the realization of foo(a: int)
 
 #%% static_getitem
-print Int[staticlen("ee")].__class__.__name__ #: Int[2]
+print Int[static.len("ee")].__class__.__name__ #: Int[2]
 
 y = [1, 2]
 print getattr(y, "len") #: 2
@@ -594,12 +594,12 @@ print y #: [1, 2, 1]
 
 @extend
 class Dict:
-    def __getitem2__(self, attr: Static[str]):
+    def __getitem2__(self, attr: Literal[str]):
         if hasattr(self, attr):
             return getattr(self, attr)
         else:
             return self[attr]
-    def __getitem1__(self, attr: Static[int]):
+    def __getitem1__(self, attr: Literal[int]):
         return self[attr]
 
 d = {'s': 3.19}
@@ -661,8 +661,8 @@ def foo():
     return bar
 foo()(1, 2) #: bar 1 2
 
-def methodcaller(foo: Static[str]):
-    def caller(foo: Static[str], obj, *args, **kwargs):
+def methodcaller(foo: Literal[str]):
+    def caller(foo: Literal[str], obj, *args, **kwargs):
         if isinstance(getattr(obj, foo)(*args, **kwargs), None):
             getattr(obj, foo)(*args, **kwargs)
         else:

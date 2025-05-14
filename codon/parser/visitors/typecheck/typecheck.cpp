@@ -54,9 +54,9 @@ Stmt *TypecheckVisitor::apply(
                                   std::vector<Expr *>{tv.N<IdExpr>("__internal__")}));
   // Load compile-time defines (e.g., codon run -DFOO=1 ...)
   for (auto &d : defines) {
-    stmts.push_back(
-        tv.N<AssignStmt>(tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
-                         tv.N<IndexExpr>(tv.N<IdExpr>("Static"), tv.N<IdExpr>("int"))));
+    stmts.push_back(tv.N<AssignStmt>(
+        tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
+        tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int"))));
   }
   // Set up __name__
   stmts.push_back(
@@ -133,7 +133,7 @@ void TypecheckVisitor::loadStdLibrary(
     auto tv = TypecheckVisitor(stdlib, preamble);
     auto s =
         tv.N<AssignStmt>(tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
-                         tv.N<IndexExpr>(tv.N<IdExpr>("Static"), tv.N<IdExpr>("int")));
+                         tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int")));
     auto def = tv.transform(s);
     preamble->push_back(def);
   }
@@ -1212,7 +1212,7 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
   if (t->getBoolStatic())
     return t->getBoolStatic()->value;
   auto ct = extractClassGeneric(t, pos);
-  seqassert(ct->canRealize() && ct->getBoolStatic(), "not a string literal");
+  seqassert(ct->canRealize() && ct->getBoolStatic(), "not a bool literal");
   return ct->getBoolStatic()->value;
 }
 

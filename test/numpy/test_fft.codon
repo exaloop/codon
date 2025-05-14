@@ -449,7 +449,7 @@ def test_fftn_out_argument(dtype: type, transpose: bool, axes):
     assert np.array_equal(result2, expected2)
 
 @test
-def test_fftn_out_and_s_interaction(fft, rfftn: Static[bool]):
+def test_fftn_out_and_s_interaction(fft, rfftn: Literal[bool]):
     # With s, shape varies, so generally one cannot pass in out.
     gen = rnd.default_rng(seed=20)
     if rfftn:
@@ -482,7 +482,7 @@ def test_irfftn_out_and_s_interaction(s):
     assert np.array_equal(result, expected)
 
 @test
-def test_fft_with_order(dtype: type, order: str, fft, fftname: Static[str]):
+def test_fft_with_order(dtype: type, order: str, fft, fftname: Literal[str]):
     def eps(dtype: type):
         if dtype is complex or dtype is float:
             return 2.220446049250313e-16

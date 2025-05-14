@@ -1,6 +1,7 @@
 import itertools
 from itertools import *
 import math
+import internal.static as static
 
 
 def lzip(*args):
@@ -332,9 +333,9 @@ def test_permutations():
         (2, 1),
     ]
 
-    for n in staticrange(3):
+    for n in static.range(3):
         values = [5 * x - 12 for x in range(n)]
-        for r in staticrange(n + 2):
+        for r in static.range(n + 2):
             result = list(itertools.permutations(values, r))
             if r > n:  # right number of perms
                 assert len(result) == 0
@@ -619,9 +620,9 @@ def test_combinations_from_cpython():
         (1, 2, 3),
     ]
 
-    for n in staticrange(7):
+    for n in static.range(7):
         values = [5 * x - 12 for x in range(n)]
-        for r in staticrange(n + 2):
+        for r in static.range(n + 2):
             result = list(combinations(values, r))
 
             assert len(result) == (0 if r > n else fact(n) // fact(r) // fact(n - r))
@@ -703,9 +704,9 @@ def test_combinations_with_replacement_from_cpython():
         ("C", "C"),
     ]
 
-    for n in staticrange(7):
+    for n in static.range(7):
         values = [5 * x - 12 for x in range(n)]
-        for r in staticrange(n + 2):
+        for r in static.range(n + 2):
             result = list(combinations_with_replacement(values, r))
             regular_combs = list(combinations(values, r))
 
@@ -782,9 +783,9 @@ def test_permutations_from_cpython():
         (2, 1),
     ]
 
-    for n in staticrange(7):
+    for n in static.range(7):
         values = [5 * x - 12 for x in range(n)]
-        for r in staticrange(n + 2):
+        for r in static.range(n + 2):
             result = list(permutations(values, r))
             assert len(result) == (
                 0 if r > n else fact(n) // fact(n - r)
@@ -892,9 +893,9 @@ def test_combinatorics_from_cpython():
             )  # comb: cwr that is a perm
             assert comb == sorted(set(cwr) & set(perm))  # comb: both a cwr and a perm
 
-    for n in staticrange(6):
+    for n in static.range(6):
         s = "ABCDEFG"[:n]
-        for r in staticrange(8):
+        for r in static.range(8):
             prod = list(product(s, repeat=r))
             cwr = list(combinations_with_replacement(s, r))
             perm = list(permutations(s, r))

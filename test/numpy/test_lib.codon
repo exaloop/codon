@@ -29,9 +29,9 @@ test_sliding_window_view(np.array([[0, 1, 2, 3], [10, 11, 12, 13],
 @test
 def test_unique(ar,
                 expected,
-                return_index: Static[bool] = False,
-                return_inverse: Static[bool] = False,
-                return_counts: Static[bool] = False,
+                return_index: Literal[bool] = False,
+                return_inverse: Literal[bool] = False,
+                return_counts: Literal[bool] = False,
                 axis=None,
                 equal_nan: bool = True):
     if return_index or return_counts or return_inverse:
@@ -97,7 +97,7 @@ def test_intersect1d(ar1,
                      ar2,
                      expected,
                      assume_unique: bool = False,
-                     return_indices: Static[bool] = False):
+                     return_indices: Literal[bool] = False):
     if return_indices:
         u = np.intersect1d(ar1, ar2, assume_unique, return_indices)
         for i in range(len(expected)):

@@ -4,6 +4,15 @@ import internal.gc as gc
 
 @extend
 class List:
+    @staticmethod
+    def as_list(x):
+        if isinstance(x, List):
+            return x
+        elif isinstance(x, Tuple):
+            return x
+        else:
+            return List(x)
+
     def __init__(self):
         self.arr = Array[T](10)
         self.len = 0

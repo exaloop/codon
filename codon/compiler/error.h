@@ -402,7 +402,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::EXPECTED_TUPLE:
     return fmt::format("expected tuple type");
   case Error::CALL_REALIZED_FN:
-    return fmt::format("__realized__() only takes functions as a first argument");
+    return fmt::format("static.realized() only takes functions as a first argument");
   case Error::CALL_ARGS_MANY:
     return fmt::format("{}() takes {} arguments ({} given)", args...);
   case Error::CALL_ARGS_INVALID:
@@ -414,7 +414,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::EXPECTED_GENERATOR:
     return fmt::format("expected iterable expression");
   case Error::STATIC_RANGE_BOUNDS:
-    return fmt::format("staticrange too large (expected 0..{}, got instead {})",
+    return fmt::format("static.range too large (expected 0..{}, got instead {})",
                        args...);
   case Error::TUPLE_RANGE_BOUNDS:
     return fmt::format("tuple index out of range (expected 0..{}, got instead {})",

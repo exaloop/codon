@@ -83,13 +83,13 @@ f"a{{1 + 3}" #! expecting '}' in f-string
 #%% string_prefix,barebones
 @extend
 class str:
-    def __prefix_pfx__(s: str, N: Static[int]):
+    def __prefix_pfx__(s: str, N: Literal[int]):
         return 'PFX ' + s
 print(pfx'HELLO') #: PFX HELLO
 
 @extend
 class str:
-    def __prefix_pxf__(s: str, N: Static[int]):
+    def __prefix_pxf__(s: str, N: Literal[int]):
         return 'PXF ' + s + " " + str(N)
 print(pxf'HELLO') #: PXF HELLO 5
 

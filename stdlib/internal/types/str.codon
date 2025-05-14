@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 @pure
 @C
 def strlen(a: cobj) -> int:
@@ -107,7 +109,7 @@ class str:
     def cat(*args) -> str:
         total = 0
         if (
-            staticlen(args) == 1
+            static.len(args) == 1
             and hasattr(args[0], "__iter__")
             and hasattr(args[0], "__len__")
         ):
@@ -121,7 +123,7 @@ class str:
                 str.memcpy(p + n, s.ptr, s.len)
                 n += s.len
             return str(p, total)
-        elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+        elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
             sz = 10
             p = cobj(sz)
             n = 0
@@ -149,6 +151,6 @@ class str:
                 n += i.len
             return str(p, total)
 
-    def __prefix_b__(s: str, N: Static[int]):
+    def __prefix_b__(s: str, N: Literal[int]):
         # Currently a no-op, as Codon str's are just bytes
         return s

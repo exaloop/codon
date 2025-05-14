@@ -4,13 +4,12 @@ from internal.gc import (
     alloc, alloc_atomic, alloc_atomic_uncollectable,
     free, sizeof, register_finalizer
 )
-from internal.static import vars_types, tuple_type, vars as _vars, fn_overloads, fn_can_call
+import internal.static as static
 
-def vars(obj, with_index: Static[bool] = False):
-    return _vars(obj, with_index)
 
 __vtables__ = Ptr[Ptr[cobj]]()
 __vtable_size__ = 0
+
 
 @extend
 class __internal__:
@@ -44,7 +43,7 @@ class __internal__:
         """Allocates a new reference (class) type"""
         sz = sizeof(tuple(T))
         obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
-        if __has_rtti__(T):
+        if static.has_rtti(T):
             register_finalizer(obj)
             rtti = RTTI(T.__id__).__raw__()
             return __internal__.to_class_ptr_rtti((obj, rtti), T)
@@ -87,21 +86,21 @@ class __internal__:
         pass
 
     def class_get_rtti_vtable(obj) -> Ptr[cobj]:
-        if not __has_rtti__(type(obj)):
+        if not static.has_rtti(type(obj)):
             compile_error("class is not polymorphic")
         rtti = __internal__.class_raw_rtti_rtti(obj)
         id = __internal__.to_class_ptr(rtti, RTTI).id
         return __vtables__[id]
 
     def class_set_rtti_vtable(id: int, sz: int, T: type):
-        if not __has_rtti__(T):
+        if not static.has_rtti(T):
             compile_error("class is not polymorphic")
         p = alloc_atomic_uncollectable((sz + 1) * sizeof(cobj))
         __vtables__[id] = Ptr[cobj](p)
         __internal__.class_set_typeinfo(__vtables__[id], id)
 
     def class_set_rtti_vtable_fn(id: int, fid: int, f: cobj, T: type):
-        if not __has_rtti__(T):
+        if not static.has_rtti(T):
             compile_error("class is not polymorphic")
         __vtables__[id][fid] = f
 
@@ -122,7 +121,7 @@ class __internal__:
 
     @inline
     def class_base_to_derived(b: B, B: type, D: type) -> D:
-        if not (__has_rtti__(D) and __has_rtti__(B)):
+        if not (static.has_rtti(D) and static.has_rtti(B)):
             compile_error("classes are not polymorphic")
         off = __internal__.class_base_derived_dist(B, D)
         ptr = __internal__.class_raw_rtti_ptr(b) - off
@@ -134,12 +133,12 @@ class __internal__:
         str.memcpy(p.__raw__(), obj.__raw__(), sizeof(tuple(T)))
         return p
 
-    def class_super(obj, B: type, change_rtti: Static[int] = 0) -> B:
+    def class_super(obj, B: type, change_rtti: Literal[int] = 0) -> B:
         D = type(obj)
-        if not __has_rtti__(D):  # static inheritance
+        if not static.has_rtti(D):  # static inheritance
             return __internal__.to_class_ptr(obj.__raw__(), B)
         else:
-            if not __has_rtti__(B):
+            if not static.has_rtti(B):
                 compile_error("classes are not polymorphic")
             off = __internal__.class_base_derived_dist(B, D)
             ptr = __internal__.class_raw_rtti_ptr(obj) + off
@@ -174,7 +173,7 @@ class __internal__:
 
     # Unions
 
-    def get_union_tag(u, tag: Static[int]):  # compiler-generated
+    def get_union_tag(u, tag: Literal[int]):  # compiler-generated
         pass
 
     @llvm
@@ -201,7 +200,7 @@ class __internal__:
         return u
 
     def new_union(value, U: type) -> U:
-        for tag, T in vars_types(U, with_index=True):
+        for tag, T in static.vars_types(U, with_index=True):
             if isinstance(value, T):
                 return __internal__.union_make(tag, value, U)
             if isinstance(value, Union[T]):
@@ -210,46 +209,46 @@ class __internal__:
         raise TypeError("invalid union constructor")
 
     def get_union(union, T: type) -> T:
-        for tag, TU in vars_types(union, with_index=True):
+        for tag, TU in static.vars_types(union, with_index=True):
             if isinstance(TU, T):
                 if __internal__.union_get_tag(union) == tag:
                     return __internal__.union_get_data(union, TU)
         raise TypeError(f"invalid union getter for type '{T.__class__.__name__}'")
 
-    def _union_member_helper(union, member: Static[str]) -> Union:
-        for tag, T in vars_types(union, with_index=True):
+    def _union_member_helper(union, member: Literal[str]) -> Union:
+        for tag, T in static.vars_types(union, with_index=True):
             if hasattr(T, member):
                 if __internal__.union_get_tag(union) == tag:
                     return getattr(__internal__.union_get_data(union, T), member)
         raise TypeError(f"invalid union call '{member}'")
 
-    def union_member(union, member: Static[str]):
+    def union_member(union, member: Literal[str]):
         t = __internal__._union_member_helper(union, member)
-        if staticlen(t) == 1:
+        if static.len(t) == 1:
             return __internal__.get_union_tag(t, 0)
         else:
             return t
 
     def _union_call_helper(union, args, kwargs) -> Union:
-        for tag, T in vars_types(union, with_index=True):
-            if fn_can_call(T, *args, **kwargs):
+        for tag, T in static.vars_types(union, with_index=True):
+            if static.function.can_call(T, *args, **kwargs):
                 if __internal__.union_get_tag(union) == tag:
                     return __internal__.union_get_data(union, T)(*args, **kwargs)
             elif hasattr(T, '__call__'):
-                if fn_can_call(T.__call__, *args, **kwargs):
+                if static.function.can_call(T.__call__, *args, **kwargs):
                     if __internal__.union_get_tag(union) == tag:
                         return __internal__.union_get_data(union, T).__call__(*args, **kwargs)
         raise TypeError("cannot call union " + union.__class__.__name__)
 
     def union_call(union, args, kwargs):
         t = __internal__._union_call_helper(union, args, kwargs)
-        if staticlen(t) == 1:
+        if static.len(t) == 1:
             return __internal__.get_union_tag(t, 0)
         else:
             return t
 
     def union_str(union):
-        for tag, T in vars_types(union, with_index=True):
+        for tag, T in static.vars_types(union, with_index=True):
             if hasattr(T, '__str__'):
                 if __internal__.union_get_tag(union) == tag:
                     return __internal__.union_get_data(union, T).__str__()
@@ -260,7 +259,7 @@ class __internal__:
 
     # Tuples
 
-    def namedkeys(N: Static[int]):
+    def namedkeys(N: Literal[int]):
         pass
 
     @pure
@@ -282,7 +281,7 @@ class __internal__:
 
     def tuple_getitem(t: T, idx: int, T: type, E: type) -> E:
         return __internal__._tuple_getitem_llvm(
-            t, __internal__.tuple_fix_index(idx, staticlen(t)), T, E
+            t, __internal__.tuple_fix_index(idx, static.len(t)), T, E
         )
 
     @llvm
@@ -303,19 +302,19 @@ class __internal__:
 
     @pure
     @llvm
-    def int_sext(what, F: Static[int], T: Static[int]) -> Int[T]:
+    def int_sext(what, F: Literal[int], T: Literal[int]) -> Int[T]:
         %0 = sext i{=F} %what to i{=T}
         ret i{=T} %0
 
     @pure
     @llvm
-    def int_zext(what, F: Static[int], T: Static[int]) -> Int[T]:
+    def int_zext(what, F: Literal[int], T: Literal[int]) -> Int[T]:
         %0 = zext i{=F} %what to i{=T}
         ret i{=T} %0
 
     @pure
     @llvm
-    def int_trunc(what, F: Static[int], T: Static[int]) -> Int[T]:
+    def int_trunc(what, F: Literal[int], T: Literal[int]) -> Int[T]:
         %0 = trunc i{=F} %what to i{=T}
         ret i{=T} %0
 
@@ -418,10 +417,10 @@ class __internal__:
     def to_class_ptr_rtti(p: Tuple[Ptr[byte], Ptr[byte]], T: type) -> T:
         ret { ptr, ptr } %p
 
-    def _tuple_offsetof(x, field: Static[int]) -> int:
+    def _tuple_offsetof(x, field: Literal[int]) -> int:
         @pure
         @llvm
-        def _llvm_offsetof(T: type, idx: Static[int], TE: type) -> int:
+        def _llvm_offsetof(T: type, idx: Literal[int], TE: type) -> int:
             %a = alloca {=T}
             %b = getelementptr inbounds {=T}, ptr %a, i64 0, i32 {=idx}
             %base = ptrtoint ptr %a to i64
@@ -520,7 +519,7 @@ class __internal__:
             e.cause = cause
         return e
 
-    def kwargs_get(kw, key: Static[str], default):
+    def kwargs_get(kw, key: Literal[str], default):
         if hasattr(kw, key):
             return getattr(kw, key)
         else:
@@ -530,7 +529,7 @@ class __internal__:
 class __magic__:
     # always present
     def tuplesize(T: type) -> int:
-        return (t() for t in vars_types(T)).__elemsize__
+        return (t() for t in static.vars_types(T)).__elemsize__
 
     # @dataclass parameter: init=True for tuples;
     # always present for reference types only
@@ -543,21 +542,21 @@ class __magic__:
 
     # always present for reference types only
     def raw(obj) -> Ptr[byte]:
-        if __has_rtti__(type(obj)):
+        if static.has_rtti(type(obj)):
             return __internal__.class_raw_rtti_ptr(obj)
         else:
             return __internal__.class_raw_ptr(obj)
 
     # always present for reference types only
     def dict(slf) -> List[str]:
-        d = List[str](staticlen(slf))
-        for k, _ in vars(slf):
+        d = List[str](static.len(slf))
+        for k, _ in static.vars(slf):
             d.append(k)
         return d
 
     # always present for tuple types only
     def len(slf) -> int:
-        return staticlen(slf)
+        return static.len(slf)
 
     # always present for tuple types only
     def add(slf, obj):
@@ -566,7 +565,7 @@ class __magic__:
         return (*slf, *obj)
 
     # always present for tuple types only
-    def mul(slf, i: Static[int]):
+    def mul(slf, i: Literal[int]):
         if i < 1:
             return ()
         elif i == 1:
@@ -576,7 +575,7 @@ class __magic__:
 
     # always present for tuples
     def contains(slf, what) -> bool:
-        for _, v in vars(slf):
+        for _, v in static.vars(slf):
             if isinstance(what, type(v)):
                 if what == v:
                     return True
@@ -584,21 +583,21 @@ class __magic__:
 
     # @dataclass parameter: container=True
     def getitem(slf, index: int):
-        if staticlen(slf) == 0:
+        if static.len(slf) == 0:
             __internal__.tuple_fix_index(index, 0)  # raise exception
         else:
-            return __internal__.tuple_getitem(slf, index, type(slf), tuple_type(slf, 0))
+            return __internal__.tuple_getitem(slf, index, type(slf), static.tuple_type(slf, 0))
 
     # @dataclass parameter: container=True
     def iter(slf):
-        if staticlen(slf) == 0:
+        if static.len(slf) == 0:
             if int(0): yield 0  # set generator type without yielding anything
-        for _, v in vars(slf):
+        for _, v in static.vars(slf):
             yield v
 
     # @dataclass parameter: order=True or eq=True
     def eq(slf, obj) -> bool:
-        for k, v in vars(slf):
+        for k, v in static.vars(slf):
             if not (v == getattr(obj, k)):
                 return False
         return True
@@ -609,7 +608,7 @@ class __magic__:
 
     # @dataclass parameter: order=True
     def lt(slf, obj) -> bool:
-        for k, v in vars(slf):
+        for k, v in static.vars(slf):
             z = getattr(obj, k)
             if v < z:
                 return True
@@ -619,7 +618,7 @@ class __magic__:
 
     # @dataclass parameter: order=True
     def le(slf, obj) -> bool:
-        for k, v in vars(slf):
+        for k, v in static.vars(slf):
             z = getattr(obj, k)
             if v < z:
                 return True
@@ -629,7 +628,7 @@ class __magic__:
 
     # @dataclass parameter: order=True
     def gt(slf, obj) -> bool:
-        for k, v in vars(slf):
+        for k, v in static.vars(slf):
             z = getattr(obj, k)
             if z < v:
                 return True
@@ -639,7 +638,7 @@ class __magic__:
 
     # @dataclass parameter: order=True
     def ge(slf, obj) -> bool:
-        for k, v in vars(slf):
+        for k, v in static.vars(slf):
             z = getattr(obj, k)
             if z < v:
                 return True
@@ -650,29 +649,29 @@ class __magic__:
     # @dataclass parameter: hash=True
     def hash(slf) -> int:
         seed = 0
-        for _, v in vars(slf):
+        for _, v in static.vars(slf):
             seed = seed ^ ((v.__hash__() + 2_654_435_769) + ((seed << 6) + (seed >> 2)))
         return seed
 
     # @dataclass parameter: pickle=True
     def pickle(slf, dest: Ptr[byte]) -> None:
-        for _, v in vars(slf):
+        for _, v in static.vars(slf):
             v.__pickle__(dest)
 
     # @dataclass parameter: pickle=True
     def unpickle(src: Ptr[byte], T: type) -> T:
         if isinstance(T, ByVal):
-            return __internal__.tuple_cast_unsafe(tuple(type(t).__unpickle__(src) for t in vars_types(T)), T)
+            return __internal__.tuple_cast_unsafe(tuple(type(t).__unpickle__(src) for t in static.vars_types(T)), T)
         else:
             obj = T.__new__()
-            for k, v in vars(obj):
+            for k, v in static.vars(obj):
                 setattr(obj, k, type(v).__unpickle__(src))
             return obj
 
     # @dataclass parameter: python=True
     def to_py(slf) -> Ptr[byte]:
-        o = pyobj._tuple_new(staticlen(slf))
-        for i, _, v in vars(slf, with_index=True):
+        o = pyobj._tuple_new(static.len(slf))
+        for i, _, v in static.vars(slf, with_index=True):
             pyobj._tuple_set(o, i, v.__to_py__())
         return o
 
@@ -681,11 +680,11 @@ class __magic__:
         if isinstance(T, ByVal):
             return __internal__.tuple_cast_unsafe(tuple(
                 type(t).__from_py__(pyobj._tuple_get(src, i))
-                for i, t in vars_types(T, with_index=True)
+                for i, t in static.vars_types(T, with_index=True)
             ), T)
         else:
             obj = T.__new__()
-            for i, k, v in vars(obj, with_index=True):
+            for i, k, v in static.vars(obj, with_index=True):
                 setattr(obj, k, type(v).__from_py__(pyobj._tuple_get(src, i)))
             return obj
 
@@ -703,17 +702,17 @@ class __magic__:
 
     # @dataclass parameter: repr=True
     def repr(slf) -> str:
-        if staticlen(slf) == 0:
+        if static.len(slf) == 0:
             return "()"
-        a = __array__[str](staticlen(slf))
-        n = __array__[str](staticlen(slf))
-        for i, k, v in vars(slf, with_index=True):
+        a = __array__[str](static.len(slf))
+        n = __array__[str](static.len(slf))
+        for i, k, v in static.vars(slf, with_index=True):
             a[i] = v.__repr__()
             if isinstance(slf, Tuple):
                 n[i] = ""
             else:
                 n[i] = k
-        return __internal__.tuple_str(a.ptr, n.ptr, staticlen(slf))
+        return __internal__.tuple_str(a.ptr, n.ptr, static.len(slf))
 
     # @dataclass parameter: repr=True
     def str(slf) -> str:
@@ -843,7 +842,7 @@ class ProxyFunc:
 
     def __new__(fn: Function[[Ptr[byte], T], TR], data: Partial[M,PT,K,F],
                 T: type, TR: type,
-                M: Static[str], PT: type, F: type, K: type) -> ProxyFunc[T, TR]:
+                M: Literal[str], PT: type, F: type, K: type) -> ProxyFunc[T, TR]:
         p = Ptr[Partial[M,PT,K,F]](1)
         p[0] = data
         return ProxyFunc(fn, p.as_byte())
@@ -855,7 +854,7 @@ class ProxyFunc:
         def _wrap(data: Ptr[byte], args, f: type):
             return f(data)(*args)
         return ProxyFunc(
-            __realized__(_wrap(f=Function[T, TR], ...), (Ptr[byte], T)),
+            static.function.realized(_wrap(f=Function[T, TR], ...), (Ptr[byte], T)),
             fn.__raw__()
         )
 

@@ -126,13 +126,13 @@ class Optional:
 @tuple
 @__internal__
 @__notuple__
-class Int[N: Static[int]]:
+class Int[N: Literal[int]]:
     pass
 
 @tuple
 @__internal__
 @__notuple__
-class UInt[N: Static[int]]:
+class UInt[N: Literal[int]]:
     pass
 
 @__internal__
@@ -153,7 +153,7 @@ class Tuple:
         ret {} {}
     def __add__(self: __SELF__, obj, __SELF__: type):
         return __magic__.add(self, obj)
-    def __mul__(self: __SELF__, n: Static[int], __SELF__: type):
+    def __mul__(self: __SELF__, n: Literal[int], __SELF__: type):
         return __magic__.mul(self, n)
     def __contains__(self: __SELF__, obj, __SELF__: type) -> bool:
         return __magic__.contains(self, obj)
@@ -199,7 +199,7 @@ tuple = Tuple
 
 @tuple
 @__internal__
-class __NTuple__[N: Static[int], T]:
+class __NTuple__[N: Literal[int], T]:
     pass
 
 @__attribute__
@@ -279,20 +279,20 @@ Ellipsis = ellipsis()
 @__internal__
 class __array__:
     T: type
-    def __new__(sz: Static[int]) -> Array[T]:
+    def __new__(sz: Literal[int]) -> Array[T]:
         pass
 
 @tuple
 @__internal__
 class Import:
     loaded: bool
-    file: Static[str]
-    name: Static[str]
+    file: Literal[str]
+    name: Literal[str]
 
     @pure
     @derives
     @llvm
-    def __new__(loaded: bool, file: Static[str], name: Static[str]) -> Import[file, name]:
+    def __new__(loaded: bool, file: Literal[str], name: Literal[str]) -> Import[file, name]:
         %0 = insertvalue { {=bool} } undef, {=bool} %loaded, 0
         ret { {=bool} } %0
 
@@ -305,10 +305,7 @@ class Import:
 def __ptr__(var):
     pass
 
-def staticlen(obj):
-    pass
-
-def compile_error(msg: Static[str]):
+def compile_error(msg: Literal[str]):
     pass
 
 def isinstance(obj, what):
@@ -318,14 +315,14 @@ def isinstance(obj, what):
 def overload():
     pass
 
-def hasattr(obj, attr: Static[str], *args, **kwargs):
+def hasattr(obj, attr: Literal[str], *args, **kwargs):
     """Special handling"""
     pass
 
-def getattr(obj, attr: Static[str]):
+def getattr(obj, attr: Literal[str]):
     pass
 
-def setattr(obj, attr: Static[str], what):
+def setattr(obj, attr: Literal[str], what):
     pass
 
 def super():
@@ -335,37 +332,28 @@ def superf(*args):
     """Special handling"""
     pass
 
-def __realized__(fn, args):
-    pass
-
-def statictuple(*args):
-    return args
-
-def __has_rtti__(T: type):
-    pass
-
 #(init=False, repr=False, eq=False, order=False, hash=False, pickle=False, python=False, gpu=False, container=False)
 @__internal__
 @tuple
 class NamedTuple:
     args: T
-    N: Static[int]  # name cache ID
+    N: Literal[int]  # name cache ID
     T: type
 
     @pure
     @derives
     @llvm
-    def __new__(args: T = (), N: Static[int] = 0, T: type) -> NamedTuple[N, T]:
+    def __new__(args: T = (), N: Literal[int] = 0, T: type) -> NamedTuple[N, T]:
         %0 = insertvalue { {=T} } undef, {=T} %args, 0
         ret { {=T} } %0
 
-    def __getitem__(self, key: Static[str]):
+    def __getitem__(self, key: Literal[str]):
         return getattr(self, key)
 
-    def __contains__(self, key: Static[str]):
+    def __contains__(self, key: Literal[str]):
         return hasattr(self, key)
 
-    def get(self, key: Static[str], default = NoneType()):
+    def get(self, key: Literal[str], default = NoneType()):
         return __internal__.kwargs_get(self, key, default)
 
     def __keys__(self):
@@ -383,7 +371,7 @@ class Partial:
     args: T  # format: (arg1, arg2, ..., (star_args...))
     kwargs: K
 
-    M: Static[str] # mask
+    M: Literal[str] # mask
     T: type # Tuple
     K: type # NamedTuple
     F: type # must be unrealized_type
@@ -391,7 +379,7 @@ class Partial:
     @pure
     @derives
     @llvm
-    def __new__(args: T, kwargs: K, M: Static[str], F: type, T: type, K: type) -> Partial[M, T, K, F]:
+    def __new__(args: T, kwargs: K, M: Literal[str], F: type, T: type, K: type) -> Partial[M, T, K, F]:
         %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0
         %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
         ret { {=T}, {=K} } %1
@@ -418,4 +406,4 @@ class ProxyFunc:
     T: type
     TR: type
 
-__codon__: Static[bool] = True
+__codon__: Literal[bool] = True

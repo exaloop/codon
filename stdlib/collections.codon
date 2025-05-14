@@ -429,5 +429,5 @@ class Dict:
     def __init__(self: Dict[K, V], other: defaultdict[K, V, S], S: type):
         self._init_from(other)
 
-def namedtuple(name: Static[str], args):  # internal
+def namedtuple(name: Literal[str], args):  # internal
     pass

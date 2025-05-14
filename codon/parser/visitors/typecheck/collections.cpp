@@ -65,9 +65,8 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     IdExpr *id = nullptr;
     if (ce && (id = cast<IdExpr>(ce->getExpr()))) {
       // Turn off this optimization for static items
-      canOptimize &=
-          !startswith(id->getValue(), "std.internal.types.range.staticrange");
-      canOptimize &= !startswith(id->getValue(), "statictuple");
+      canOptimize &= !startswith(id->getValue(), "std.internal.static.range");
+      canOptimize &= !startswith(id->getValue(), "std.internal.static.tuple");
     }
   }
 

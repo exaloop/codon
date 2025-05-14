@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 from .blas import *
 from ..ndarray import ndarray
 from ..ndmath import divide, greater, isnan, multiply, sqrt
@@ -22,7 +24,7 @@ class LinAlgError(Static[Exception]):
 def _square_rows(a):
     s = a.shape
 
-    if staticlen(s) < 2:
+    if static.len(s) < 2:
         compile_error("Array must be at least 2-dimensional")
 
     n = s[-1]
@@ -33,7 +35,7 @@ def _square_rows(a):
 def _rows_cols(a):
     s = a.shape
 
-    if staticlen(s) < 2:
+    if static.len(s) < 2:
         compile_error("Array must be at least 2-dimensional")
 
     m, n = s[-2:]
@@ -255,7 +257,7 @@ class SlogdetResult[A, B]:
     sign: A
     logabsdet: B
 
-    def __getitem__(self, idx: Static[int]):
+    def __getitem__(self, idx: Literal[int]):
         if idx == 0 or idx == -2:
             return self.sign
         elif idx == 1 or idx == -1:
@@ -500,7 +502,7 @@ class EighResult[A, B]:
     eigenvalues: A
     eigenvectors: B
 
-    def __getitem__(self, idx: Static[int]):
+    def __getitem__(self, idx: Literal[int]):
         if idx == 0 or idx == -2:
             return self.eigenvalues
         elif idx == 1 or idx == -1:
@@ -508,7 +510,7 @@ class EighResult[A, B]:
         else:
             compile_error("tuple ('EighResult') index out of range")
 
-def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Static[bool]):
+def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Literal[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
 
@@ -757,7 +759,7 @@ def solve(a, b):
     else:
         return _solve(a, b)
 
-def _inv(a, ignore_errors: Static[bool]):
+def _inv(a, ignore_errors: Literal[bool]):
     a = _asarray(a)
     n = _square_rows(a)
 
@@ -1148,7 +1150,7 @@ class EigResult[A, B]:
     eigenvalues: A
     eigenvectors: B
 
-    def __getitem__(self, idx: Static[int]):
+    def __getitem__(self, idx: Literal[int]):
         if idx == 0 or idx == -2:
             return self.eigenvalues
         elif idx == 1 or idx == -1:
@@ -1156,7 +1158,7 @@ class EigResult[A, B]:
         else:
             compile_error("tuple ('EigResult') index out of range")
 
-def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Static[bool]):
+def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Literal[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
     C = type(_complextype(a.dtype))
@@ -1455,7 +1457,7 @@ class SVDResult[A1, A2]:
     S: A2
     Vh: A1
 
-    def __getitem__(self, idx: Static[int]):
+    def __getitem__(self, idx: Literal[int]):
         if idx == 0 or idx == -3:
             return self.U
         elif idx == 1 or idx == -2:
@@ -1465,7 +1467,7 @@ class SVDResult[A1, A2]:
         else:
             compile_error("tuple ('SVDResult') index out of range")
 
-def _svd(a, JOBZ: byte, compute_uv: Static[bool]):
+def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
     B = type(_basetype(a.dtype))
     m, n = _rows_cols(a)
     min_m_n = min(m, n)
@@ -1540,7 +1542,7 @@ def _svd(a, JOBZ: byte, compute_uv: Static[bool]):
 
 def svd(a,
         full_matrices: bool = True,
-        compute_uv: Static[bool] = True,
+        compute_uv: Literal[bool] = True,
         hermitian: bool = False):
 
     a = _asarray(a)
@@ -2047,7 +2049,7 @@ class QRResult[A]:
     Q: A
     R: A
 
-    def __getitem__(self, idx: Static[int]):
+    def __getitem__(self, idx: Literal[int]):
         if idx == 0 or idx == -2:
             return self.Q
         elif idx == 1 or idx == -1:
@@ -2067,7 +2069,7 @@ def _triu(a):
                 p = a_ptr.as_byte() + i*sm + j*sn
                 Ptr[a.dtype](p)[0] = zero(a.dtype)
 
-def qr(a, mode: Static[str] = 'reduced'):
+def qr(a, mode: Literal[str] = 'reduced'):
     if (mode != 'reduced' and mode != 'complete' and
         mode != 'r' and mode != 'raw'):
         compile_error("Unrecognized mode '" + mode + "'")
@@ -2455,7 +2457,7 @@ def _dot_noblas(_ip1: Ptr[T1], is1: int, _ip2: Ptr[T2], is2: int, op: Ptr[T3], n
 
     op[0] = ans
 
-_CBLAS_INT_MAX: Static[int] = 0x7fffffff
+_CBLAS_INT_MAX: Literal[int] = 0x7fffffff
 
 def _blas_stride(stride: int, itemsize: int):
     if stride > 0 and stride % itemsize == 0:
@@ -2484,7 +2486,7 @@ def _dot(ip1: Ptr[T1], is1: int, ip2: Ptr[T2], is2: int, op: Ptr[T3], n: int,
         else:
             _dot_noblas(ip1, is1, ip2, is2, op, n)
 
-BLAS_MAXSIZE: Static[int] = 2147483646  # 2^31 - 1
+BLAS_MAXSIZE: Literal[int] = 2147483646  # 2^31 - 1
 
 def _is_blasable2d(byte_stride1: int,
                    byte_stride2: int,
@@ -2754,7 +2756,7 @@ def _check_out(out, ans_shape, dtype: type):
     if out.dtype is not dtype:
         compile_error("'out' array has incorrect type '" + out.dtype.__name__ + "'")
 
-    if staticlen(out.shape) != staticlen(ans_shape):
+    if static.len(out.shape) != static.len(ans_shape):
         compile_error("'out' array has incorrect number of dimensions")
 
     if out.shape != ans_shape:
@@ -2768,8 +2770,8 @@ def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
 
     T1 = x1.dtype
     T2 = x2.dtype
-    x1d: Static[int] = x1.ndim
-    x2d: Static[int] = x2.ndim
+    x1d: Literal[int] = x1.ndim
+    x2d: Literal[int] = x2.ndim
 
     if dtype is NoneType:
         return _matmul_ufunc(x1, x2, out=out, dtype=type(coerce(T1, T2)))
@@ -2799,8 +2801,8 @@ def _matmul_ufunc(x1, x2, out = None, dtype: type = NoneType):
 
     y1s = y1.shape
     y2s = y2.shape
-    y1d: Static[int] = y1.ndim
-    y2d: Static[int] = y2.ndim
+    y1d: Literal[int] = y1.ndim
+    y2d: Literal[int] = y2.ndim
 
     base1s = y1s[:-2]
     base2s = y2s[:-2]
@@ -2863,8 +2865,8 @@ def dot(a, b, out = None):
     x2 = asarray(b)
     T1 = x1.dtype
     T2 = x2.dtype
-    x1d: Static[int] = staticlen(x1.shape)
-    x2d: Static[int] = staticlen(x2.shape)
+    x1d: Literal[int] = static.len(x1.shape)
+    x2d: Literal[int] = static.len(x2.shape)
 
     if x1d == 0 or x2d == 0:
         return multiply(a, b, out=out)
@@ -2916,7 +2918,7 @@ def _matrix_power(a, n: int):
     m = _square_rows(a)
 
     if n == 0:
-        if staticlen(s) == 2:
+        if static.len(s) == 2:
             return eye(m, dtype=dtype)
         else:
             b = empty_like(a)
@@ -2970,7 +2972,7 @@ def matrix_power(a, n: int):
     return _matrix_power(a, n)
 
 @overload
-def matrix_power(a, n: Static[int]):
+def matrix_power(a, n: Literal[int]):
     nonstatic = lambda x: x  # hack to get non-static argument
     if n >= 0:
         return _matrix_power(a, n)
@@ -2999,7 +3001,7 @@ def _multi_dot(arrays, order, i, j, out=None):
                    _multi_dot(arrays, order, order[i, j] + 1, j),
                    out=out)
 
-def _multi_dot_matrix_chain_order(arrays, return_costs: Static[bool] = False):
+def _multi_dot_matrix_chain_order(arrays, return_costs: Literal[bool] = False):
     n = len(arrays)
     p = [a.shape[0] for a in arrays] + [arrays[-1].shape[1]]
     m = zeros((n, n), dtype=float)
@@ -3024,10 +3026,10 @@ def multi_dot(arrays, out = None):
     n = len(arrays)
 
     if isinstance(arrays, Tuple):
-        if staticlen(arrays) < 2:
+        if static.len(arrays) < 2:
             compile_error("Expecting at least two arrays.")
 
-        if staticlen(arrays) == 2:
+        if static.len(arrays) == 2:
             return dot(arrays[0], arrays[1], out=out)
     else:
         if n < 2:
@@ -3036,19 +3038,19 @@ def multi_dot(arrays, out = None):
         if n == 2:
             return dot(arrays[0], arrays[1], out=out)
 
-    ndim_first: Static[int] = staticlen(arrays[0].shape)
-    ndim_last:  Static[int] = staticlen(arrays[-1].shape)
+    ndim_first: Literal[int] = static.len(arrays[0].shape)
+    ndim_last:  Literal[int] = static.len(arrays[-1].shape)
 
     def fix_first(arr):
         arr = asarray(arr)
-        if staticlen(arr.shape) == 1:
+        if static.len(arr.shape) == 1:
             return atleast_2d(arr)
         else:
             return arr
 
     def fix_last(arr):
         arr = asarray(arr)
-        if staticlen(arr.shape) == 1:
+        if static.len(arr.shape) == 1:
             return atleast_2d(arr).T
         else:
             return arr
@@ -3061,7 +3063,7 @@ def multi_dot(arrays, out = None):
         xarrays[-1] = fix_last(xarrays[-1])
 
     for arr in xarrays:
-        if staticlen(arr.shape) != 2:
+        if static.len(arr.shape) != 2:
             compile_error("1-dimensional array given. Array must be two-dimensional")
 
     if n == 3:
@@ -3113,7 +3115,7 @@ def vdot(a, b):
     a = asarray(a)
     b = asarray(b)
 
-    if staticlen(a.shape) == 0 and staticlen(b.shape) == 0:
+    if static.len(a.shape) == 0 and static.len(b.shape) == 0:
         x = a.data[0]
         y = b.data[0]
         TR = coerce(type(x), type(y))
@@ -3127,7 +3129,7 @@ def vdot(a, b):
     if n != b.size:
         mismatch()
 
-    if staticlen(a.shape) == 1 and staticlen(b.shape) == 1:
+    if static.len(a.shape) == 1 and static.len(b.shape) == 1:
         inca = a.strides[0] // a.itemsize
         incb = b.strides[0] // b.itemsize
         return _vdot_ptr(a.data, b.data, n, inca, incb)
@@ -3158,10 +3160,10 @@ def inner(a, b):
     shape_a = a.shape
     shape_b = b.shape
 
-    if staticlen(shape_a) == 0 or staticlen(shape_b) == 0:
+    if static.len(shape_a) == 0 or static.len(shape_b) == 0:
         return multiply(a, b)
 
-    if staticlen(shape_a) == 1 and staticlen(shape_b) == 1:
+    if static.len(shape_a) == 1 and static.len(shape_b) == 1:
         return dot(a, b)
 
     n = shape_a[-1]
@@ -3186,7 +3188,7 @@ def inner(a, b):
 
     return out
 
-def _tensordot(a, b, axes, ndim: Static[int] = -1):
+def _tensordot(a, b, axes, ndim: Literal[int] = -1):
     def get_axes(axes):
         if isinstance(axes, int):
             axes_a = list(range(-axes, 0))
@@ -3291,7 +3293,7 @@ def tensordot(a, b, axes):
     return _tensordot(a, b, axes)
 
 @overload
-def tensordot(a, b, axes: Static[int] = 2):
+def tensordot(a, b, axes: Literal[int] = 2):
     if axes < 0:
         return tensordot(a, b, axes=0)
 
@@ -3305,10 +3307,10 @@ def tensordot(a, b, axes: Static[int] = 2):
 
 def kron(a, b):
     b = asarray(b)
-    ndb: Static[int] = staticlen(b.shape)
+    ndb: Literal[int] = static.len(b.shape)
     a = array(a, copy=False, ndmin=ndb)
-    nda: Static[int] = staticlen(a.shape)
-    nd: Static[int] = ndb if ndb >= nda else nda
+    nda: Literal[int] = static.len(a.shape)
+    nd: Literal[int] = ndb if ndb >= nda else nda
 
     if nda == 0 or ndb == 0:
         return multiply(a, b)
@@ -3323,14 +3325,14 @@ def kron(a, b):
     as_ = (1,)*(ndb-nda if ndb-nda >= 0 else 0) + as_
     bs = (1,)*(nda-ndb if nda-ndb >= 0 else 0) + bs
 
-    a_arr = expand_dims(a, axis=tuple(i for i in staticrange(ndb-nda)))
-    b_arr = expand_dims(b, axis=tuple(i for i in staticrange(nda-ndb)))
+    a_arr = expand_dims(a, axis=tuple(i for i in static.range(ndb-nda)))
+    b_arr = expand_dims(b, axis=tuple(i for i in static.range(nda-ndb)))
 
-    a_arr = expand_dims(a_arr, axis=tuple(i for i in staticrange(1, nd*2, 2)))
-    b_arr = expand_dims(b_arr, axis=tuple(i for i in staticrange(0, nd*2, 2)))
+    a_arr = expand_dims(a_arr, axis=tuple(i for i in static.range(1, nd*2, 2)))
+    b_arr = expand_dims(b_arr, axis=tuple(i for i in static.range(0, nd*2, 2)))
     result = multiply(a_arr, b_arr)
 
-    res_shape = tuple(as_[i] * bs[i] for i in staticrange(staticlen(as_)))
+    res_shape = tuple(as_[i] * bs[i] for i in static.range(static.len(as_)))
     result = result.reshape(res_shape)
 
     return result
@@ -3352,7 +3354,7 @@ def _trace_ufunc(a, offset: int = 0, axis1: int = 0, axis2: int = 1,
     if axis1 == axis2:
         raise ValueError("axis1 and axis2 cannot be the same")
 
-    if staticlen(s) == 2:
+    if static.len(s) == 2:
         i = 0
         t = zero(dtype)
         while ((offset >= 0 and (i < m and i + offset < n)) or
@@ -3364,7 +3366,7 @@ def _trace_ufunc(a, offset: int = 0, axis1: int = 0, axis2: int = 1,
         if out is None:
             return t
         else:
-            if staticlen(out.shape) != 0:
+            if static.len(out.shape) != 0:
                 compile_error("expected 0-dimensional output parameter")
 
             if out.dtype is not dtype:
@@ -3382,7 +3384,7 @@ def _trace_ufunc(a, offset: int = 0, axis1: int = 0, axis2: int = 1,
         if out is None:
             ans = empty(ans_shape, dtype=dtype)
         else:
-            if staticlen(out.shape) != staticlen(ans_shape):
+            if static.len(out.shape) != static.len(ans_shape):
                 compile_error("output parameter has the wrong number of dimensions")
 
             if out.dtype is not dtype:
@@ -3420,8 +3422,8 @@ def trace(x, offset: int = 0, dtype: type = NoneType):
 def tensorsolve(a, b, axes = None):
     a = asarray(a)
     b = asarray(b)
-    an: Static[int] = staticlen(a.shape)
-    bn: Static[int] = staticlen(b.shape)
+    an: Literal[int] = static.len(a.shape)
+    bn: Literal[int] = static.len(b.shape)
 
     if axes is not None:
         allaxes = list(range(0, an))
@@ -3490,7 +3492,7 @@ def _norm_cast(elem: T, T: type):
         return cast(elem, float)
 
 def _vector_norm_f(x: ndarray, axis: int, R: type):
-    if staticlen(x.shape) == 1:
+    if static.len(x.shape) == 1:
         dtype = x.dtype
         sh = x.shape[0]
         st = x.strides[0]
@@ -3534,7 +3536,7 @@ def _vector_norm_inf(x: ndarray, axis: int, R: type):
     if sh == 0:
         _norm_error_zero_max()
 
-    if staticlen(x.shape) == 1:
+    if static.len(x.shape) == 1:
         dtype = x.dtype
         sh = x.shape[0]
         st = x.strides[0]
@@ -3575,7 +3577,7 @@ def _vector_norm_ninf(x: ndarray, axis: int, R: type):
     if sh == 0:
         _norm_error_zero_min()
 
-    if staticlen(x.shape) == 1:
+    if static.len(x.shape) == 1:
         dtype = x.dtype
         st = x.strides[0]
         data = x.data
@@ -3611,7 +3613,7 @@ def _vector_norm_ninf(x: ndarray, axis: int, R: type):
         return ans
 
 def _vector_norm_0(x: ndarray, axis: int, R: type):
-    if staticlen(x.shape) == 1:
+    if static.len(x.shape) == 1:
         dtype = x.dtype
         sh = x.shape[0]
         st = x.strides[0]
@@ -3646,7 +3648,7 @@ def _vector_norm_0(x: ndarray, axis: int, R: type):
         return ans
 
 def _vector_norm_1(x: ndarray, axis: int, R: type):
-    if staticlen(x.shape) == 1:
+    if static.len(x.shape) == 1:
         dtype = x.dtype
         sh = x.shape[0]
         st = x.strides[0]
@@ -3679,7 +3681,7 @@ def _vector_norm_1(x: ndarray, axis: int, R: type):
         return ans
 
 def _vector_norm_g(x: ndarray, axis: int, g, R: type):
-    if staticlen(x.shape) == 1:
+    if static.len(x.shape) == 1:
         dtype = x.dtype
         sh = x.shape[0]
         st = x.strides[0]
@@ -3713,7 +3715,7 @@ def _vector_norm_g(x: ndarray, axis: int, g, R: type):
 
 def _matrix_norm_f(x: ndarray, row_axis: int, col_axis: int, R: type):
     s = x.shape
-    if staticlen(s) == 2:
+    if static.len(s) == 2:
         dtype = x.dtype
         sh1, sh2 = s
         data = x.data
@@ -3755,7 +3757,7 @@ def _matrix_norm_1(x: ndarray, row_axis: int, col_axis: int, R: type):
     if s[col_axis] == 0:
         _norm_error_zero_max()
 
-    if staticlen(s) == 2:
+    if static.len(s) == 2:
         dtype = x.dtype
         row_dim = s[row_axis]
         col_dim = s[col_axis]
@@ -3817,7 +3819,7 @@ def _matrix_norm_inf(x: ndarray, row_axis: int, col_axis: int, R: type):
     if s[row_axis] == 0:
         _norm_error_zero_max()
 
-    if staticlen(s) == 2:
+    if static.len(s) == 2:
         dtype = x.dtype
         row_dim = s[row_axis]
         col_dim = s[col_axis]
@@ -3879,7 +3881,7 @@ def _matrix_norm_n1(x: ndarray, row_axis: int, col_axis: int, R: type):
     if s[col_axis] == 0:
         _norm_error_zero_min()
 
-    if staticlen(s) == 2:
+    if static.len(s) == 2:
         dtype = x.dtype
         row_dim = s[row_axis]
         col_dim = s[col_axis]
@@ -3941,7 +3943,7 @@ def _matrix_norm_ninf(x: ndarray, row_axis: int, col_axis: int, R: type):
     if s[row_axis] == 0:
         _norm_error_zero_min()
 
-    if staticlen(s) == 2:
+    if static.len(s) == 2:
         dtype = x.dtype
         row_dim = s[row_axis]
         col_dim = s[col_axis]
@@ -4002,19 +4004,19 @@ def _multi_svd_norm(x: ndarray, row_axis: int, col_axis: int, op):
     y = moveaxis(x, (row_axis, col_axis), (-2, -1))
     return op(svd(y, compute_uv=False), axis=-1)
 
-def _norm_wrap(x, kd_shape, keepdims: Static[bool]):
+def _norm_wrap(x, kd_shape, keepdims: Literal[bool]):
     if keepdims:
         return asarray(x).reshape(kd_shape)
     else:
         return x
 
-def norm(x, ord = None, axis = None, keepdims: Static[bool] = False):
+def norm(x, ord = None, axis = None, keepdims: Literal[bool] = False):
     x = asarray(x)
 
     if not (x.dtype is float or x.dtype is float32 or x.dtype is float16):
         return norm(x.astype(float), ord=ord, axis=axis, keepdims=keepdims)
 
-    ndim: Static[int] = staticlen(x.shape)
+    ndim: Literal[int] = static.len(x.shape)
     dtype = x.dtype
 
     if dtype is complex or dtype is float:
@@ -4073,7 +4075,7 @@ def norm(x, ord = None, axis = None, keepdims: Static[bool] = False):
         for a in ax:
             kd_shape = tuple_set(kd_shape, a, 1)
 
-    if staticlen(ax) == 1:
+    if static.len(ax) == 1:
         if ord is None:
             return _norm_wrap(_vector_norm_f(x, ax[0], R), kd_shape, keepdims)
         elif isinstance(ord, int):
@@ -4100,7 +4102,7 @@ def norm(x, ord = None, axis = None, keepdims: Static[bool] = False):
                 return _norm_wrap(_vector_norm_g(x, ax[0], ord, R), kd_shape, keepdims)
         else:
             compile_error("Invalid norm order for vectors")
-    elif staticlen(ax) == 2:
+    elif static.len(ax) == 2:
         row_axis, col_axis = ax
         if row_axis == col_axis:
             raise ValueError("Duplicate axes given.")
@@ -4180,21 +4182,21 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
     A = asarray(A)
     dtype = A.dtype
 
-    if staticlen(A.shape) == 0:
+    if static.len(A.shape) == 0:
         return int(bool(A.data[0]))
-    elif staticlen(A.shape) == 1:
+    elif static.len(A.shape) == 1:
         for a in A:
             if a:
                 return 1
         return 0
-    elif staticlen(A.shape) == 2:
+    elif static.len(A.shape) == 2:
         m, n = _rows_cols(A)
         if m == 0 or n == 0:
             raise ValueError("cannot take rank of empty matrix")
         S = svd(A, compute_uv=False, hermitian=hermitian)
         R = S.dtype
 
-        if staticlen(asarray(tol).shape) != 0:
+        if static.len(asarray(tol).shape) != 0:
             compile_error("invalid tolerance dimension")
 
         s_max = -inf(R)
@@ -4227,8 +4229,8 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
             t = 0
         else:
             t = asarray(tol)
-            if staticlen(t.shape) > 0:
-                if staticlen(t.shape) != staticlen(A.shape) - 2:
+            if static.len(t.shape) > 0:
+                if static.len(t.shape) != static.len(A.shape) - 2:
                     compile_error("invalid tolerance dimension")
                 else:
                     if t.shape != A.shape[:-2]:
@@ -4251,7 +4253,7 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
                     if e > s_max * cast(max(m, n), R) * eps(R):
                         r += 1
                 else:
-                    if staticlen(t.shape) == 0:
+                    if static.len(t.shape) == 0:
                         if e > cast(t.data[0], R):
                             r += 1
                     else:
@@ -4290,7 +4292,7 @@ def cond(x, p = None):
         r = cond_r_2(x, p)
 
     r = asarray(r)
-    if staticlen(r.shape) == 0:
+    if static.len(r.shape) == 0:
         any_nan = False
         for i in range(m):
             for j in range(n):

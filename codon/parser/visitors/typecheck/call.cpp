@@ -58,9 +58,9 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
-  auto orig = expr->toString(0);
-  if (match(expr->getExpr(), M<IdExpr>("tuple")) && expr->size() == 1)
+  if (match(expr->getExpr(), M<IdExpr>("tuple")) && expr->size() == 1) {
     expr->setAttribute(Attr::TupleCall);
+  }
 
   validateCall(expr);
 
@@ -86,8 +86,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     return; // delay
 
   auto [calleeFn, newExpr] = getCalleeFn(expr, part);
-  // Transform `tuple(i for i in tup)` into a GeneratorExpr that will be handled during
-  // the type checking.
+  // Transform `tuple(i for i in tup)` into a GeneratorExpr
+  // that will be handled during the type checking.
   if (!calleeFn && expr->hasAttribute(Attr::TupleCall)) {
     if (cast<GeneratorExpr>(expr->begin()->getExpr())) {
       auto g = cast<GeneratorExpr>(expr->begin()->getExpr());
@@ -366,6 +366,12 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     return {nullptr, nullptr};
   }
 
+  if (expr->hasAttribute(Attr::TupleCall) &&
+      (extractType(expr->getExpr())->is(TYPE_TUPLE) ||
+       (callee->getFunc() &&
+        startswith(callee->getFunc()->ast->name, "std.internal.static.tuple."))))
+    return {nullptr, nullptr};
+
   if (isTypeExpr(expr->getExpr())) {
     auto typ = expr->getExpr()->getClassType();
     if (!isId(expr->getExpr(), TYPE_TYPE))
@@ -375,8 +381,6 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     auto clsName = typ->name;
     if (typ->isRecord()) {
       if (expr->hasAttribute(Attr::TupleCall)) {
-        if (extractType(expr->getExpr())->is(TYPE_TUPLE))
-          return {nullptr, nullptr};
         expr->eraseAttribute(Attr::TupleCall);
       }
       // Case: tuple constructor. Transform to: `T.__new__(args)`
@@ -751,13 +755,16 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
 ///   `__ptr__(var)`
 ///   `__array__[int](sz)`
 ///   `isinstance(obj, type)`
-///   `staticlen(tup)`
+///   `static.len(tup)`
 ///   `hasattr(obj, "attr")`
 ///   `getattr(obj, "attr")`
 ///   `type(obj)`
 ///   `compile_err("msg")`
 /// See below for more details.
 std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
+  if (expr->hasAttribute(Attr::ExprNoSpecial))
+    return {false, nullptr};
+
   auto ei = cast<IdExpr>(expr->expr);
   if (!ei)
     return {false, nullptr};
@@ -775,7 +782,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformArray(expr)};
   } else if (isF(ei, "isinstance")) { // static
     return {true, transformIsInstance(expr)};
-  } else if (isF(ei, "staticlen")) { // static
+  } else if (isF(ei, "std.internal.static.len")) { // static
     return {true, transformStaticLen(expr)};
   } else if (isF(ei, "hasattr")) { // static
     return {true, transformHasAttr(expr)};
@@ -787,29 +794,29 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformTypeFn(expr)};
   } else if (isF(ei, "compile_error")) {
     return {true, transformCompileError(expr)};
-  } else if (isF(ei, "__realized__")) {
-    return {true, transformRealizedFn(expr)};
-  } else if (isF(ei, "std.internal.static.static_print")) {
+  } else if (isF(ei, "std.internal.static.print")) {
     return {false, transformStaticPrintFn(expr)};
-  } else if (isF(ei, "__has_rtti__")) { // static
-    return {true, transformHasRttiFn(expr)};
   } else if (isF(ei, "std.collections.namedtuple")) {
     return {true, transformNamedTuple(expr)};
   } else if (isF(ei, "std.functools.partial")) {
     return {true, transformFunctoolsPartial(expr)};
-  } else if (isF(ei, "std.internal.static.fn_can_call")) { // static
+  } else if (isF(ei, "std.internal.static.has_rtti")) { // static
+    return {true, transformHasRttiFn(expr)};
+  } else if (isF(ei, "std.internal.static.function.0.realized")) {
+    return {true, transformRealizedFn(expr)};
+  } else if (isF(ei, "std.internal.static.function.0.can_call")) { // static
     return {true, transformStaticFnCanCall(expr)};
-  } else if (isF(ei, "std.internal.static.fn_arg_has_type")) { // static
+  } else if (isF(ei, "std.internal.static.function.0.has_type")) { // static
     return {true, transformStaticFnArgHasType(expr)};
-  } else if (isF(ei, "std.internal.static.fn_arg_get_type")) {
+  } else if (isF(ei, "std.internal.static.function.0.get_type")) {
     return {true, transformStaticFnArgGetType(expr)};
-  } else if (isF(ei, "std.internal.static.fn_args")) {
+  } else if (isF(ei, "std.internal.static.function.0.args")) {
     return {true, transformStaticFnArgs(expr)};
-  } else if (isF(ei, "std.internal.static.fn_has_default")) { // static
+  } else if (isF(ei, "std.internal.static.function.0.has_default")) { // static
     return {true, transformStaticFnHasDefault(expr)};
-  } else if (isF(ei, "std.internal.static.fn_get_default")) {
+  } else if (isF(ei, "std.internal.static.function.0.get_default")) {
     return {true, transformStaticFnGetDefault(expr)};
-  } else if (isF(ei, "std.internal.static.fn_wrap_call_args")) {
+  } else if (isF(ei, "std.internal.static.function.0.wrap_args")) {
     return {true, transformStaticFnWrapCallArgs(expr)};
   } else if (isF(ei, "std.internal.static.vars")) {
     return {true, transformStaticVars(expr)};

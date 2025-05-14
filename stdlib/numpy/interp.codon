@@ -4,7 +4,7 @@ from .routines import empty as empty_array, asarray, atleast_1d, empty, ascontig
 from .sorting import argsort
 import util
 
-_LIKELY_IN_CACHE_SIZE: Static[int] = 8
+_LIKELY_IN_CACHE_SIZE: Literal[int] = 8
 
 def _linear_search(key, arr, lenxp):
     for i in range(lenxp):

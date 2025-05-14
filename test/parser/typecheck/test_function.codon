@@ -237,7 +237,7 @@ foo()
 #! during the realization of foo()
 
 #%% function_err_2,barebones
-def f[T: Static[float]]():
+def f[T: Literal[float]]():
     pass
 #! expected 'int', 'bool' or 'str'
 
@@ -296,8 +296,8 @@ print f(5) #: 6
 
 #%% nested_generic_static,barebones
 def foo():
-    N: Static[int] = 5
-    Z: Static[int] = 15
+    N: Literal[int] = 5
+    Z: Literal[int] = 15
     T = Int[Z]
     def bar():
         x = __array__[T](N)
@@ -338,11 +338,11 @@ def f(x: int) -> int:
 print(f(3))  #: 1296
 
 #%% id_static,barebones
-def foo[N: Static[int]]():
+def foo[N: Literal[int]]():
     print N
 foo(5) #: 5
 
-def fox(N: Static[int]):
+def fox(N: Literal[int]):
     print N
 fox(6) #: 6
 
@@ -396,11 +396,11 @@ c = A[str]('s')
 c.dump('y', 1.1)  #: A y 1.1
 
 #%% static_fn_overload,barebones
-def foo(x: Static[int]):
+def foo(x: Literal[int]):
     print('int', x)
 
 @overload
-def foo(x: Static[str]):
+def foo(x: Literal[str]):
     print('str', x)
 
 foo(10)

@@ -1,4 +1,5 @@
 import gpu
+import internal.static as static
 
 @test
 def test_hello_world():
@@ -35,7 +36,7 @@ def test_conversions():
         v[0] = x
 
     def empty_tuple(x):
-        if staticlen(x) == 0:
+        if static.len(x) == 0:
             return ()
         else:
             T = type(x[0])

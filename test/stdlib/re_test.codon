@@ -1,5 +1,6 @@
 import re
 import string
+import internal.static as static
 
 @test
 def test_search_star_plus():
@@ -184,9 +185,9 @@ def cmp_list(a, b):
     return True
 
 def cmp_tuple(a, b):
-    if staticlen(a) != staticlen(b):
+    if static.len(a) != static.len(b):
         return False
-    elif staticlen(a) == 0:
+    elif static.len(a) == 0:
         return True
     else:
         if not cmp_opt(a[0], b[0]):

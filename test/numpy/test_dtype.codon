@@ -2,13 +2,13 @@ import numpy as np
 
 @test
 def test_finfo():
-    def fi(s: Static[str]):
+    def fi(s: Literal[str]):
         fi16 = getattr(np.finfo(np.float16), s)
         fi32 = getattr(np.finfo(np.float32), s)
         fi64 = getattr(np.finfo(np.float64), s)
         return (fi16, fi32, fi64)
 
-    def fic(s: Static[str]):
+    def fic(s: Literal[str]):
         fic64 = getattr(np.finfo(np.complex64), s)
         fic128 = getattr(np.finfo(np.complex128), s)
         return (fic64, fic128)

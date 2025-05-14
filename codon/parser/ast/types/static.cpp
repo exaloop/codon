@@ -49,7 +49,7 @@ int IntStaticType::unify(Type *typ, Unification *us) {
 }
 
 std::string IntStaticType::debugString(char mode) const {
-  return mode < 2 ? fmt::format("{}", value) : fmt::format("Static[{}]", value);
+  return mode < 2 ? fmt::format("{}", value) : fmt::format("Literal[{}]", value);
 }
 
 Expr *IntStaticType::getStaticExpr() const { return cache->N<IntExpr>(value); }
@@ -73,7 +73,7 @@ int StrStaticType::unify(Type *typ, Unification *us) {
 
 std::string StrStaticType::debugString(char mode) const {
   return mode < 2 ? fmt::format("'{}'", escape(value))
-                  : fmt::format("Static['{}']", escape(value));
+                  : fmt::format("Literal['{}']", escape(value));
 }
 
 Expr *StrStaticType::getStaticExpr() const { return cache->N<StringExpr>(value); }
@@ -97,7 +97,7 @@ int BoolStaticType::unify(Type *typ, Unification *us) {
 
 std::string BoolStaticType::debugString(char mode) const {
   return mode < 2 ? (value ? "1" : "0")
-                  : fmt::format("Static[{}]", value ? "True" : "False");
+                  : fmt::format("Literal[{}]", value ? "True" : "False");
 }
 
 Expr *BoolStaticType::getStaticExpr() const { return cache->N<BoolExpr>(value); }

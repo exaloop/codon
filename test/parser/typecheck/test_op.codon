@@ -321,16 +321,16 @@ f = Optional[Optional[Optional[int]]](Optional[Optional[int]](Optional[int](5)))
 print x.len, f  #: 0 5
 
 #%% static,barebones
-class Num[N_: Static[int]]:
+class Num[N_: Literal[int]]:
     def __str__(self):
         return f'[{N_}]'
     def __init__(self):
         pass
-def foo[N: Static[int]]():
+def foo[N: Literal[int]]():
     print Num[N*2]()
 foo(3) #: [6]
 
-class XX[N_: Static[int]]:
+class XX[N_: Literal[int]]:
     a: Num[N_*2]
     def __init__(self):
         self.a = Num()
@@ -338,13 +338,13 @@ y = XX[5]()
 print y.a, y.__class__.__name__, y.a.__class__.__name__ #: [10] XX[5] Num[10]
 
 @tuple
-class FooBar[N: Static[int]]:
+class FooBar[N: Literal[int]]:
     x: Int[N]
 z = FooBar(i32(5))
 print z, z.__class__.__name__, z.x.__class__.__name__ #: (x: Int[32](5)) FooBar[32] Int[32]
 
 @tuple
-class Foo[N: Static[int]]:
+class Foo[N: Literal[int]]:
     x: Int[2*N]
     def ctr(x: Int[2*N]) -> Foo[N]:
         return Foo[N](x)
@@ -352,12 +352,12 @@ foo = Foo[10].ctr(Int[20](0))
 print foo.__class__.__name__, foo.x.__class__.__name__ #: Foo[10] Int[20]
 
 #%% static_2,barebones
-class Num[N: Static[int]]:
+class Num[N: Literal[int]]:
     def __str__(self):
         return f'~{N}'
     def __init__(self):
         pass
-class Foo[T, A: Static[int], B: Static[int]]:
+class Foo[T, A: Literal[int], B: Literal[int]]:
     a: Num[A+B]
     b: Num[A-B]
     c: Num[A if A > 3 else B]
@@ -373,13 +373,13 @@ print Foo[int, 3, 4](), Foo[int, 5, 4]()
 #: <~7 ~-1 ~4 :: 0> <~9 ~1 ~5 :: 0>
 
 #%% static_int,barebones
-def foo(n: Static[int]):
+def foo(n: Literal[int]):
     print n
 @overload
-def foo(n: Static[bool]):
+def foo(n: Literal[bool]):
     print n
 
-a: Static[int] = 5
+a: Literal[int] = 5
 foo(a < 1)   #: False
 foo(a <= 1)  #: False
 foo(a > 1)   #: True
@@ -399,21 +399,21 @@ foo(a ^ 1)   #: 4
 
 #%% static_str,barebones
 class X:
-    s: Static[str]
+    s: Literal[str]
     i: Int[1 + (s == "abc")]
-    def __init__(self: X[s], s: Static[str]):
+    def __init__(self: X[s], s: Literal[str]):
         i = Int[1+(s=="abc")]()
         print s, self.s, self.i.__class__.__name__
-def foo(x: Static[str], y: Static[str]):
+def foo(x: Literal[str], y: Literal[str]):
     print x+y
-z: Static[str] = "woo"
+z: Literal[str] = "woo"
 foo("he", z)  #: hewoo
 X(s='lolo') #: lolo lolo Int[1]
 X('abc') #: abc abc Int[2]
 
-def foo2(x: Static[str]):
+def foo2(x: Literal[str]):
     print(x, x.__is_static__)
-s: Static[str] = "abcdefghijkl"
+s: Literal[str] = "abcdefghijkl"
 foo2(s)  #: abcdefghijkl True
 foo2(s[1])  #: b True
 foo2(s[1:5])  #: bcde True
@@ -439,13 +439,13 @@ iter(range(4)) |> print('x', ..., 1)
 #: x 3 1
 
 #%% partial_static_keep,barebones
-def foo(x: Static[int]):
+def foo(x: Literal[int]):
     return lambda: str(x)
 f = foo(5)
 print foo(5)() #: 5
 print foo(8)() #: 8
 
-def itemgetter(item: Static[int]):
+def itemgetter(item: Literal[int]):
     return lambda o: o[item]
 print itemgetter(1)([1, 2, 3])  #: 2
 print itemgetter(2)("abc")  #: c

@@ -849,7 +849,7 @@ test_unpack_float_data()
 # def test_squeeze_scalar(): TODO
 
 @test
-def test_ndmin_keyword(ndim: Static[int]):
+def test_ndmin_keyword(ndim: Literal[int]):
     """Test ndmin keyword consistency between genfromtxt and loadtxt."""
     txt = "42"
     data = test_dir + '/temp.txt'

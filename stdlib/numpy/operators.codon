@@ -22,18 +22,18 @@ class _OpWrap:
 def _fix_scalar(x, A: type):
     X = type(x)
 
-    a_is_int: Static[bool] = (A is int or A is byte or isinstance(A, Int)
+    a_is_int: Literal[bool] = (A is int or A is byte or isinstance(A, Int)
                               or isinstance(A, UInt))
-    x_is_int: Static[bool] = X is int
+    x_is_int: Literal[bool] = X is int
 
-    a_is_float: Static[bool] = (A is float or A is float32 or A is float16
+    a_is_float: Literal[bool] = (A is float or A is float32 or A is float16
                                 or A is bfloat16 or A is float128)
-    x_is_float: Static[bool] = X is float
+    x_is_float: Literal[bool] = X is float
 
-    a_is_complex: Static[bool] = (A is complex or A is complex64)
-    x_is_complex: Static[bool] = X is complex
+    a_is_complex: Literal[bool] = (A is complex or A is complex64)
+    x_is_complex: Literal[bool] = X is complex
 
-    should_cast: Static[bool] = ((x_is_int and
+    should_cast: Literal[bool] = ((x_is_int and
                                   (a_is_int or a_is_float or a_is_complex)) or
                                  (x_is_float and (a_is_float or a_is_complex))
                                  or (x_is_complex and a_is_complex))

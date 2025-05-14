@@ -100,14 +100,14 @@ if 1:
     print '1' #: 1
 
 #%% static_if,barebones
-def foo(x, N: Static[int]):
+def foo(x, N: Literal[int]):
     if isinstance(x, int):
         return x + 1
     elif isinstance(x, float):
         return x.__pow__(.5)
     elif isinstance(x, Tuple[int, str]):
         return f'foo: {x[1]}'
-    elif isinstance(x, Tuple) and (N >= 3 or staticlen(x) > 2):
+    elif isinstance(x, Tuple) and (N >= 3 or static.len(x) > 2):
         return x[2:]
     elif hasattr(x, '__len__'):
         return 'len ' + str(x.__len__())

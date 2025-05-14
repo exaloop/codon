@@ -40,10 +40,10 @@ print sa, sb, sc # EXPECT: X Y Z
 # (sa, sb), sc = 'XYZ' # ERROR:
 
 sa, *la = 'X'
-print sa, la, 1 # EXPECT: X  1
+print sa, la, 1 # EXPECT: X [] 1
 
 sa, *la = 'XYZ'
-print sa, la # EXPECT: X YZ
+print sa, la # EXPECT: X ['Y', 'Z']
 
 # a, *b, c, *d = 1,2,3,4,5             # ERROR -- two starred expressions in assignment
 
@@ -51,23 +51,12 @@ print sa, la # EXPECT: X YZ
 print xa, xb, xc, xd # EXPECT: 1 2 () this
 
 (a, b), (sc, *sl) = [1,2], 'this'
-print a, b, sc, sl # EXPECT: 1 2 t his
+print a, b, sc, sl # EXPECT: 1 2 t ['h', 'i', 's']
 
-
-
-# // a, b, *x, c, d = y
-#   // (^) = y
-#   // [^] = y
-#   // *a = y NO ; *a, = y YES
-#   // (a, b), c = d, e
-#   // *(a, *b), c = this
-#   // a = *iterable
-
-
-# # Issue #116
-# def foo():
-#     a = 42
-#     def bar():
-#         print a  # <-- this should be a parser error; 'a' has to be global
-#     bar()
-# foo() # ERROR: identifier 'a' not found
+# Issue #116
+def foo():
+    a = 42
+    def bar():
+        print a
+    bar()
+foo() # EXPECT: 42

@@ -7,9 +7,9 @@ from ..ndmath import isnan
 from ..util import multirange, free, count, normalize_axis_index, coerce, cast
 
 def _unique1d(ar,
-              return_index: Static[bool] = False,
-              return_inverse: Static[bool] = False,
-              return_counts: Static[bool] = False,
+              return_index: Literal[bool] = False,
+              return_inverse: Literal[bool] = False,
+              return_counts: Literal[bool] = False,
               equal_nan: bool = True):
     n = ar.size
 
@@ -117,9 +117,9 @@ def _unique1d(ar,
     return ans3
 
 def unique(ar,
-           return_index: Static[bool] = False,
-           return_inverse: Static[bool] = False,
-           return_counts: Static[bool] = False,
+           return_index: Literal[bool] = False,
+           return_inverse: Literal[bool] = False,
+           return_counts: Literal[bool] = False,
            axis=None,
            equal_nan: bool = True):
 
@@ -583,7 +583,7 @@ def _intersect1d_indices(ar1, ar2, assume_unique: bool = False):
 def intersect1d(ar1,
                 ar2,
                 assume_unique: bool = False,
-                return_indices: Static[bool] = False):
+                return_indices: Literal[bool] = False):
     if return_indices:
         return _intersect1d_indices(ar1, ar2, assume_unique=assume_unique)
     else:

@@ -10,4 +10,4 @@ class A:
             print 'a.b.A.B.b_foo()'
             return 1
 
-stt: Static[int] = 5
+stt: Literal[int] = 5

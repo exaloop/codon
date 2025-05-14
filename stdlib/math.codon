@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 @pure
 @llvm
 def _inf() -> float:
@@ -529,13 +531,13 @@ def gcd(*args):
 
     returns greatest common divisor of arguments.
     """
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         return 0
 
     res = args[0]
     T = type(res)
 
-    if staticlen(args) == 1:
+    if static.len(args) == 1:
         return abs(res)
 
     for i in range(1, len(args)):
@@ -554,13 +556,13 @@ def lcm(*args):
     def lcm2(a, b):
         return abs((a // _gcd2(a, b)) * b)
 
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         return 1
 
     res = args[0]
     T = type(res)
 
-    if staticlen(args) == 1:
+    if static.len(args) == 1:
         return abs(res)
 
     for i in range(1, len(args)):
@@ -642,7 +644,7 @@ def fsum(seq):
                 v = Ptr[float](realloc(p.as_byte(), m * sizeof(float), n * sizeof(float)))
         return v, m
 
-    _NUM_PARTIALS: Static[int] = 32
+    _NUM_PARTIALS: Literal[int] = 32
     ps_arr = __array__[float](_NUM_PARTIALS)
     ps = ps_arr.ptr
     p = ps
@@ -733,7 +735,7 @@ def prod(iterable, start = 1):
         return result
 
     def prod_tuple(iterable, start):
-        if staticlen(iterable) == 0:
+        if static.len(iterable) == 0:
             return start
         else:
             return prod(iterable[1:], start=(start * iterable[0]))

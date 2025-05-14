@@ -684,9 +684,9 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     fargs.emplace_back("obj", nullptr);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("obj"))));
   } else if (op == "mul") {
-    // def __mul__(self, i: Static[int])
+    // def __mul__(self, i: Literal[int])
     fargs.emplace_back("self", clone(typExpr));
-    fargs.emplace_back("i", N<IndexExpr>(I("Static"), I("int")));
+    fargs.emplace_back("i", N<IndexExpr>(I("Literal"), I("int")));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("i"))));
   } else {
     seqassert(false, "invalid magic {}", op);

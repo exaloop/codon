@@ -2,10 +2,12 @@
 
 import util
 import routines
+import internal.static as static
+
 from .ndarray import ndarray
 from .npdatetime import datetime64, timedelta64
 
-def _have_vectorized_loop(dtype: type, func: Static[str]):
+def _have_vectorized_loop(dtype: type, func: Literal[str]):
     if not (dtype is float or dtype is float32):
         return False
     return (func == 'arccos' or func == 'arccosh' or func == 'arcsin'
@@ -16,7 +18,7 @@ def _have_vectorized_loop(dtype: type, func: Static[str]):
             or func == 'sin' or func == 'sinh' or func == 'tanh'
             or func == 'hypot')
 
-def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
+def _apply_vectorized_loop_unary(arr, out, func: Literal[str]):
     if arr.ndim == 0 or out.ndim == 0 or arr.ndim > out.ndim:
         compile_error("[internal error] bad array dims for vectorized loop")
 
@@ -41,7 +43,7 @@ def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
         so = 0
         loop_axis = -1
 
-        for i in staticrange(arr.ndim):
+        for i in static.range(arr.ndim):
             if shape[i] > 1 and (loop_axis == -1 or arr_strides[i] < si):
                 n = shape[i]
                 si = arr_strides[i]
@@ -61,7 +63,7 @@ def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
             util.call_vectorized_loop(p, si, Ptr[arr.dtype](), 0, q, so, n,
                                       func)
 
-def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
+def _apply_vectorized_loop_binary(arr1, arr2, out, func: Literal[str]):
     if (arr1.ndim == 0 and arr2.ndim == 0
         ) or out.ndim == 0 or arr1.ndim > out.ndim or arr2.ndim > out.ndim:
         compile_error("[internal error] bad array dims for vectorized loop")
@@ -100,7 +102,7 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
         so = 0
         loop_axis = -1
 
-        for i in staticrange(arr1.ndim):
+        for i in static.range(arr1.ndim):
             if shape[i] > 1 and (loop_axis == -1 or arr1_strides[i] < si1):
                 n = shape[i]
                 si1 = arr1_strides[i]
@@ -125,18 +127,18 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
 def _fix_scalar(x, A: type):
     X = type(x)
 
-    a_is_int: Static[bool] = (A is int or A is byte or isinstance(A, Int)
+    a_is_int: Literal[bool] = (A is int or A is byte or isinstance(A, Int)
                               or isinstance(A, UInt))
-    x_is_int: Static[bool] = X is bool or X is int
+    x_is_int: Literal[bool] = X is bool or X is int
 
-    a_is_float: Static[bool] = (A is float or A is float32 or A is float16
+    a_is_float: Literal[bool] = (A is float or A is float32 or A is float16
                                 or A is bfloat16 or A is float128)
-    x_is_float: Static[bool] = X is float
+    x_is_float: Literal[bool] = X is float
 
-    a_is_complex: Static[bool] = (A is complex or A is complex64)
-    x_is_complex: Static[bool] = X is complex
+    a_is_complex: Literal[bool] = (A is complex or A is complex64)
+    x_is_complex: Literal[bool] = X is complex
 
-    should_cast: Static[bool] = ((x_is_int and
+    should_cast: Literal[bool] = ((x_is_int and
                                   (a_is_int or a_is_float or a_is_complex)) or
                                  (x_is_float and (a_is_float or a_is_complex))
                                  or (x_is_complex and a_is_complex))
@@ -161,9 +163,9 @@ def decide_types(x, y, dtype: type):
     X = type(routines.asarray(x).data[0])
     Y = type(routines.asarray(y).data[0])
 
-    x_scalar: Static[bool] = (isinstance(x, bool) or isinstance(x, int)
+    x_scalar: Literal[bool] = (isinstance(x, bool) or isinstance(x, int)
                               or isinstance(x, float) or isinstance(x, complex))
-    y_scalar: Static[bool] = (isinstance(y, bool) or isinstance(y, int)
+    y_scalar: Literal[bool] = (isinstance(y, bool) or isinstance(y, int)
                               or isinstance(y, float) or isinstance(y, complex))
 
     if x_scalar and y_scalar:
@@ -185,9 +187,9 @@ def decide_types_copysign(x, y, dtype: type):
     XF = type(util.to_float(util.zero(X)))
     YF = type(util.to_float(util.zero(Y)))
 
-    x_scalar: Static[bool] = (isinstance(x, bool) or isinstance(x, int)
+    x_scalar: Literal[bool] = (isinstance(x, bool) or isinstance(x, int)
                               or isinstance(x, float) or isinstance(x, complex))
-    y_scalar: Static[bool] = (isinstance(y, bool) or isinstance(y, int)
+    y_scalar: Literal[bool] = (isinstance(y, bool) or isinstance(y, int)
                               or isinstance(y, float) or isinstance(y, complex))
 
     if dtype is float16 or dtype is float32 or dtype is float:
@@ -216,9 +218,9 @@ def decide_types_ldexp(x, y, dtype: type):
             or isinstance(Y, UInt)):
         compile_error("ldexp 2nd argument must be of integral type")
 
-    x_scalar: Static[bool] = (isinstance(x, bool) or isinstance(x, int)
+    x_scalar: Literal[bool] = (isinstance(x, bool) or isinstance(x, int)
                               or isinstance(x, float) or isinstance(x, complex))
-    y_scalar: Static[bool] = isinstance(y, int)
+    y_scalar: Literal[bool] = isinstance(y, int)
 
     if dtype is float16 or dtype is float32 or dtype is float:
         return t2(dtype, int)
@@ -363,10 +365,10 @@ class _BinaryWhereFunctor:
 @tuple
 class UnaryUFunc:
     _op: F
-    __name__: Static[str]
+    __name__: Literal[str]
     F: type
 
-    def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc[name, F]:
+    def __new__(op: F, name: Literal[str], F: type) -> UnaryUFunc[name, F]:
         return superf(op)
 
     @property
@@ -451,10 +453,10 @@ class UnaryUFunc:
 @tuple
 class UnaryUFunc2:
     _op: F
-    __name__: Static[str]
+    __name__: Literal[str]
     F: type
 
-    def __new__(op: F, name: Static[str], F: type) -> UnaryUFunc2[name, F]:
+    def __new__(op: F, name: Literal[str], F: type) -> UnaryUFunc2[name, F]:
         return superf(op)
 
     @property
@@ -534,12 +536,12 @@ class UnaryUFunc2:
 class BinaryUFunc:
     _op: F
     identity: I
-    __name__: Static[str]
+    __name__: Literal[str]
     F: type
     I: type
 
     def __new__(op: F,
-                name: Static[str],
+                name: Literal[str],
                 identity: I = None,
                 F: type,
                 I: type) -> BinaryUFunc[name, F, I]:
@@ -645,7 +647,7 @@ class BinaryUFunc:
     def _reduce_all(self,
                     array,
                     dtype: type = NoneType,
-                    keepdims: Static[bool] = False,
+                    keepdims: Literal[bool] = False,
                     initial=util._NoValue(),
                     where=True):
         if isinstance(where, bool):
@@ -700,7 +702,7 @@ class BinaryUFunc:
                     ans = util.cast(fn(ans, e), dtype)
 
         if keepdims:
-            shape = (1, ) * staticlen(array.shape)
+            shape = (1, ) * static.len(array.shape)
             out = routines.empty(shape, dtype=dtype)
             out.data[0] = ans
             return out
@@ -712,7 +714,7 @@ class BinaryUFunc:
                axis=0,
                dtype: type = NoneType,
                out=None,
-               keepdims: Static[bool] = False,
+               keepdims: Literal[bool] = False,
                initial=util._NoValue(),
                where=True):
         if not isinstance(array, ndarray):
@@ -780,7 +782,7 @@ class BinaryUFunc:
                     "zero-size array to reduction operation add which has no identity"
                 )
 
-        if staticlen(axis) == staticlen(shape):
+        if static.len(axis) == static.len(shape):
             ans = self._reduce_all(array,
                                    dtype=dtype,
                                    keepdims=keepdims,
@@ -793,9 +795,9 @@ class BinaryUFunc:
                     "cannot specify output when reducing over all axes")
 
         fn = self._op
-        new_shape = (0, ) * (staticlen(shape) - staticlen(axis))
-        idx_bound = (0, ) * staticlen(axis)
-        mask = (False, ) * staticlen(shape)
+        new_shape = (0, ) * (static.len(shape) - static.len(axis))
+        idx_bound = (0, ) * static.len(axis)
+        mask = (False, ) * static.len(shape)
         ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
         ptr_idx_bound = Ptr[int](__ptr__(idx_bound).as_byte())
         ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
@@ -859,7 +861,7 @@ class BinaryUFunc:
                 result._ptr(t1, broadcast=(out is not None))[0] = ans
 
         if keepdims:
-            ones = (1, ) * staticlen(idx_bound)
+            ones = (1, ) * static.len(idx_bound)
             ans_shape = util.reconstruct_index(new_shape, ones, mask)
             return result.reshape(ans_shape)
         else:
@@ -894,7 +896,7 @@ class BinaryUFunc:
         shape = array.shape
         axis = util.normalize_axis_index(axis, len(shape))
 
-        if staticlen(shape) == 0:
+        if static.len(shape) == 0:
             compile_error("cannot accumulate on a scalar")
 
         if out is None:
@@ -904,9 +906,9 @@ class BinaryUFunc:
             result = out
 
         fn = self._op
-        new_shape = (0, ) * (staticlen(shape) - 1)
+        new_shape = (0, ) * (static.len(shape) - 1)
         idx_bound = 0
-        mask = (False, ) * staticlen(shape)
+        mask = (False, ) * static.len(shape)
         ptr_new_shape = Ptr[int](__ptr__(new_shape).as_byte())
         ptr_mask = Ptr[bool](__ptr__(mask).as_byte())
         b = 0
@@ -952,7 +954,7 @@ class BinaryUFunc:
         fn = self._op
 
         for idx in indices:
-            if staticlen(b.shape) == 0:
+            if static.len(b.shape) == 0:
                 a[idx] = fn(a[idx], b.data[0])
             else:
                 a[idx] = fn(a[idx], b[idx])

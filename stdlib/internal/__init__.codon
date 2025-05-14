@@ -3,7 +3,8 @@
 # Core library
 # from internal.core import *  # done automatically by compiler
 from internal.attributes import *
-from internal.static import static_print as __static_print__
+import internal.static as static
+from internal.static import print as __print__
 from internal.types.ptr import *
 from internal.types.str import *
 from internal.types.int import *

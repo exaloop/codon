@@ -1,9 +1,11 @@
+import internal.static as static
+
 cat_count = 0
 
 # c/p from str.seq
 def old_cat(*args):
     total = 0
-    if staticlen(args) == 1 and hasattr(args[0], "__iter__") and hasattr(args[0], "__len__"):
+    if static.len(args) == 1 and hasattr(args[0], "__iter__") and hasattr(args[0], "__len__"):
         for s in args[0]:
             if not isinstance(s, str):
                 compile_error("not a string")
@@ -14,7 +16,7 @@ def old_cat(*args):
             str.memcpy(p + n, s.ptr, s.len)
             n += s.len
         return str(p, total)
-    elif staticlen(args) == 1 and hasattr(args[0], "__iter__"):
+    elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
         sz = 10
         p = cobj(sz)
         n = 0

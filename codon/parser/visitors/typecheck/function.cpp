@@ -246,7 +246,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         stmt->items.emplace_back(cc, N<IdExpr>(TYPE_TYPE));
       } else if (auto si = v->isStatic()) {
         stmt->items.emplace_back(cc,
-                                 N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(op[si])));
+                                 N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[si])));
       } else {
         stmt->items.emplace_back(cc);
       }

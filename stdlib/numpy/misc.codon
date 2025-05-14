@@ -1,16 +1,18 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from .ndarray import ndarray
-import util
 
-MAXDIMS             : Static[int] = 32
-MAY_SHARE_BOUNDS    : Static[int] = 0
-MAY_SHARE_EXACT     : Static[int] = -1
-_MEM_OVERLAP_NO      : Static[int] = 0   # no solution exists
-_MEM_OVERLAP_YES     : Static[int] = 1   # solution found
-_MEM_OVERLAP_TOO_HARD: Static[int] = -1  # max_work exceeded
-_MEM_OVERLAP_OVERFLOW: Static[int] = -2  # algorithm failed due to integer overflow
-_MEM_OVERLAP_ERROR   : Static[int] = -3  # invalid input
+import util
+import internal.static as static
+
+MAXDIMS             : Literal[int] = 32
+MAY_SHARE_BOUNDS    : Literal[int] = 0
+MAY_SHARE_EXACT     : Literal[int] = -1
+_MEM_OVERLAP_NO      : Literal[int] = 0   # no solution exists
+_MEM_OVERLAP_YES     : Literal[int] = 1   # solution found
+_MEM_OVERLAP_TOO_HARD: Literal[int] = -1  # max_work exceeded
+_MEM_OVERLAP_OVERFLOW: Literal[int] = -2  # algorithm failed due to integer overflow
+_MEM_OVERLAP_ERROR   : Literal[int] = -3  # invalid input
 
 i128 = Int[128]
 
@@ -593,7 +595,7 @@ def byte_bounds(a: ndarray):
     if cc or fc:
         a_high += a.size * bytes_a
     else:
-        for i in staticrange(staticlen(ashape)):
+        for i in static.range(static.len(ashape)):
             shape = ashape[i]
             stride = astrides[i]
             if stride < 0:

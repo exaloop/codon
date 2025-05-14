@@ -102,6 +102,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   std::string breakVar;
   // Needs in-advance transformation to prevent name clashes with the iterator variable
+  stmt->getIter()->setAttribute(
+      Attr::ExprNoSpecial); // do not expand special calls here,
+                            // might be needed for statis loops!
   stmt->iter = transform(stmt->getIter());
 
   // Check for for-else clause
@@ -231,7 +234,7 @@ Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
 ///   ```loop = True
 ///      while loop:
 ///        while loop:
-///          i: Static[int] = 1; <suite>; break
+///          i: Literal[int] = 1; <suite>; break
 ///        while loop:
 ///          i = x; <suite>; break
 ///        loop = False   # also set to False on break
@@ -314,20 +317,18 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   auto fn =
       cast<CallExpr>(iter) ? cast<IdExpr>(cast<CallExpr>(iter)->getExpr()) : nullptr;
   std::vector<Stmt *> block;
-  if (fn && startswith(fn->getValue(), "statictuple")) {
+  if (fn && startswith(fn->getValue(), "std.internal.static.tuple.0")) {
     block = populateStaticTupleLoop(iter, vars);
-  } else if (fn &&
-             startswith(fn->getValue(), "std.internal.types.range.staticrange.0:1")) {
+  } else if (fn && startswith(fn->getValue(), "std.internal.static.range.0:1")) {
     block = populateSimpleStaticRangeLoop(iter, vars);
-  } else if (fn &&
-             startswith(fn->getValue(), "std.internal.types.range.staticrange.0")) {
+  } else if (fn && startswith(fn->getValue(), "std.internal.static.range.0")) {
     block = populateStaticRangeLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.static.fn_overloads.0")) {
-    block = populateStaticFnOverloadsLoop(iter, vars);
   } else if (fn &&
-             startswith(fn->getValue(), "std.internal.builtin.staticenumerate.0")) {
+             startswith(fn->getValue(), "std.internal.static.function.0.overloads.0")) {
+    block = populateStaticFnOverloadsLoop(iter, vars);
+  } else if (fn && startswith(fn->getValue(), "std.internal.static.enumerate.0")) {
     block = populateStaticEnumerateLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.internal.vars.0")) {
+  } else if (fn && startswith(fn->getValue(), "std.internal.static.vars.0")) {
     block = populateStaticVarsLoop(iter, vars);
   } else if (fn && startswith(fn->getValue(), "std.internal.static.vars_types.0")) {
     block = populateStaticVarTypesLoop(iter, vars);

@@ -2,39 +2,41 @@
 
 from .ndarray import ndarray
 from .npdatetime import datetime64, timedelta64
+
 import util
+import internal.static as static
 
 # https://github.com/numpy/numpy/blob/main/numpy/_core/include/numpy/ndarraytypes.h
-NPY_BOOL: Static[int] = 0
-NPY_BYTE: Static[int] = 1
-NPY_UBYTE: Static[int] = 2
-NPY_SHORT: Static[int] = 3
-NPY_USHORT: Static[int] = 4
-NPY_INT: Static[int] = 5
-NPY_UINT: Static[int] = 6
-NPY_LONG: Static[int] = 7
-NPY_ULONG: Static[int] = 8
-NPY_LONGLONG: Static[int] = 9
-NPY_ULONGLONG: Static[int] = 10
-NPY_FLOAT: Static[int] = 11
-NPY_DOUBLE: Static[int] = 12
-NPY_LONGDOUBLE: Static[int] = 13
-NPY_CFLOAT: Static[int] = 14
-NPY_CDOUBLE: Static[int] = 15
-NPY_CLONGDOUBLE: Static[int] = 16
-NPY_OBJECT: Static[int] = 17
-NPY_STRING: Static[int] = 18
-NPY_UNICODE: Static[int] = 19
-NPY_VOID: Static[int] = 20
-NPY_DATETIME: Static[int] = 21
-NPY_TIMEDELTA: Static[int] = 22
-NPY_HALF: Static[int] = 23
-NPY_NTYPES: Static[int] = 24
-NPY_NOTYPE: Static[int] = 25
-NPY_CHAR: Static[int] = 26
-NPY_STRING: Static[int] = 18
-NPY_USERDEF: Static[int] = 256
-NPY_NTYPES_ABI_COMPATIBLE: Static[int] = 21
+NPY_BOOL: Literal[int] = 0
+NPY_BYTE: Literal[int] = 1
+NPY_UBYTE: Literal[int] = 2
+NPY_SHORT: Literal[int] = 3
+NPY_USHORT: Literal[int] = 4
+NPY_INT: Literal[int] = 5
+NPY_UINT: Literal[int] = 6
+NPY_LONG: Literal[int] = 7
+NPY_ULONG: Literal[int] = 8
+NPY_LONGLONG: Literal[int] = 9
+NPY_ULONGLONG: Literal[int] = 10
+NPY_FLOAT: Literal[int] = 11
+NPY_DOUBLE: Literal[int] = 12
+NPY_LONGDOUBLE: Literal[int] = 13
+NPY_CFLOAT: Literal[int] = 14
+NPY_CDOUBLE: Literal[int] = 15
+NPY_CLONGDOUBLE: Literal[int] = 16
+NPY_OBJECT: Literal[int] = 17
+NPY_STRING: Literal[int] = 18
+NPY_UNICODE: Literal[int] = 19
+NPY_VOID: Literal[int] = 20
+NPY_DATETIME: Literal[int] = 21
+NPY_TIMEDELTA: Literal[int] = 22
+NPY_HALF: Literal[int] = 23
+NPY_NTYPES: Literal[int] = 24
+NPY_NOTYPE: Literal[int] = 25
+NPY_CHAR: Literal[int] = 26
+NPY_STRING: Literal[int] = 18
+NPY_USERDEF: Literal[int] = 256
+NPY_NTYPES_ABI_COMPATIBLE: Literal[int] = 21
 
 def _type_code(dtype: type):
     if dtype is bool:
@@ -144,8 +146,8 @@ class PyArrayObject:
     flags: i32
     weakreflist: cobj
 
-NPY_ARRAY_C_CONTIGUOUS: Static[int] = 1
-NPY_ARRAY_F_CONTIGUOUS: Static[int] = 2
+NPY_ARRAY_C_CONTIGUOUS: Literal[int] = 1
+NPY_ARRAY_F_CONTIGUOUS: Literal[int] = 2
 
 PyArray_Type = cobj()
 PyArray_New = Function[[cobj, i32, cobj, i32, cobj, cobj, i32, i32, cobj], cobj](cobj())
@@ -232,8 +234,8 @@ class ndarray:
         arr_shape = arr.dimensions
         arr_strides = arr.strides
         arr_flags = int(arr.flags)
-        shape = tuple(arr_shape[i] for i in staticrange(ndim))
-        strides = tuple(arr_strides[i] for i in staticrange(ndim))
+        shape = tuple(arr_shape[i] for i in static.range(ndim))
+        strides = tuple(arr_strides[i] for i in static.range(ndim))
         size = util.count(shape)
 
         if code != NPY_OBJECT and not copy:

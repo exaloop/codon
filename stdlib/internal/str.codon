@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
-_MAX: Static[int] = 0x7FFFFFFFFFFFFFFF
+_MAX: Literal[int] = 0x7FFFFFFFFFFFFFFF
 
 @extend
 class str:

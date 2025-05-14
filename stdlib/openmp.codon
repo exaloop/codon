@@ -2,6 +2,8 @@
 # OpenMP interface
 # Ref: https://github.com/llvm/llvm-project/tree/main/openmp
 
+import internal.static as static
+
 Routine = Function[[i32, cobj], i32]
 
 _KMP_IDENT_IMB = 0x01
@@ -264,7 +266,7 @@ def _reduce(
     from internal.gc import sizeof
 
     from C import __kmpc_reduce(Ptr[Ident], i32, i32, int, cobj, cobj, cobj) -> i32
-    num_vars = staticlen(reduce_data)
+    num_vars = static.len(reduce_data)
     reduce_size = sizeof(T)
     return int(
         __kmpc_reduce(
@@ -293,7 +295,7 @@ def _reduce_nowait(
     from internal.gc import sizeof
 
     from C import __kmpc_reduce_nowait(Ptr[Ident], i32, i32, int, cobj, cobj, Ptr[Lock]) -> i32
-    num_vars = staticlen(reduce_data)
+    num_vars = static.len(reduce_data)
     reduce_size = sizeof(T)
     return int(
         __kmpc_reduce_nowait(
@@ -518,10 +520,10 @@ def _spawn_and_run_task(
             loc_ref, gtid, flags, size_of_kmp_task_t, size_of_shareds, Routine(routine)
         )
     )
-    if staticlen(shared) != 0:
+    if static.len(shared) != 0:
         shared_ptr = task[0].task.shareds
         str.memcpy(shared_ptr, __ptr__(shared).as_byte(), size_of_shareds)
-    if staticlen(priv) != 0:
+    if static.len(priv) != 0:
         priv_ptr = task.as_byte() + sizeof(Task)
         str.memcpy(priv_ptr, __ptr__(priv).as_byte(), size_of_privs)
 
@@ -538,7 +540,7 @@ def _task_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
         task = Ptr[TaskWithPrivates[P]](data)[0]
         priv = task.data
         gtid64 = int(gtid)
-        if staticlen(S) != 0:
+        if static.len(S) != 0:
             shared = Ptr[S](task.task.shareds)[0]
             _task_loop_body_stub(gtid64, priv, shared)
         else:
@@ -886,9 +888,9 @@ def _range_len(start: int, stop: int, step: int):
 def for_par(
     num_threads: int = -1,
     chunk_size: int = -1,
-    schedule: Static[str] = "static",
-    ordered: Static[bool] = False,
-    collapse: Static[int] = 0,
-    gpu: Static[bool] = False,
+    schedule: Literal[str] = "static",
+    ordered: Literal[bool] = False,
+    collapse: Literal[int] = 0,
+    gpu: Literal[bool] = False,
 ):
     pass

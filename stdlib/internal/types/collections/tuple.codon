@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 @tuple
 class DynamicTuple:
     _ptr: Ptr[T]
@@ -53,10 +55,10 @@ class DynamicTuple:
         p = self._ptr
         n = self._len
 
-        if staticlen(other) == 0:
+        if static.len(other) == 0:
             return n == 0
 
-        if n != staticlen(other):
+        if n != static.len(other):
             return False
 
         for i in range(n):
@@ -92,10 +94,10 @@ class DynamicTuple:
         p = self._ptr
         n = self._len
 
-        if staticlen(other) == 0:
+        if static.len(other) == 0:
             return (1 if n > 0 else 0)
 
-        m = staticlen(other)
+        m = static.len(other)
 
         for i in range(n if n < m else m):
             a = p[i]

@@ -139,14 +139,18 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   }
   // Process StarExpr (if any) and the assignments that follow it
   if (st < leftSide.size() && cast<StarExpr>(leftSide[st])) {
-    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes `d[1:-2]`)
-    Expr *rightSide = N<IndexExpr>(
-        ast::clone(rhs),
-        N<SliceExpr>(N<IntExpr>(st),
-                     // this slice is either [st:] or [st:-lhs_len + st + 1]
-                     leftSide.size() == st + 1 ? nullptr
-                                               : N<IntExpr>(-leftSide.size() + st + 1),
-                     nullptr));
+    // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes
+    // `list(d[1:-2])`)
+    Expr *rightSide = N<CallExpr>(
+        N<IdExpr>("std.internal.types.array.List.0.as_list:0"),
+        N<IndexExpr>(
+            ast::clone(rhs),
+            N<SliceExpr>(N<IntExpr>(st),
+                         // this slice is either [st:] or [st:-lhs_len + st + 1]
+                         leftSide.size() == st + 1
+                             ? nullptr
+                             : N<IntExpr>(-leftSide.size() + st + 1),
+                         nullptr)));
     auto ns = unpackAssignment(cast<StarExpr>(leftSide[st])->getExpr(), rightSide);
     block->addStmt(ns);
     st += 1;

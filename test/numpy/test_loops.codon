@@ -61,7 +61,7 @@ N = len(test_values)
 test_values *= 4  # Make sure we evenly divide the number of SIMD lanes
 
 @test
-def test_func(fn, name: Static[str]):
+def test_func(fn, name: Literal[str]):
     # Test float64
     vals = np.array(test_values, dtype=float)
     ans1 = fn(vals)
@@ -115,7 +115,7 @@ test_func(np.sinh, 'sinh')
 test_func(np.tanh, 'tanh')
 
 @test
-def test_func2(fn, name: Static[str]):
+def test_func2(fn, name: Literal[str]):
     for shift in range(1, len(test_values0)):
         # Test float64
         vals = np.array(test_values0, dtype=float)

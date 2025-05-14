@@ -761,7 +761,7 @@ Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
   return e;
 }
 
-/// Transform __realized__ function to a fully realized type identifier.
+/// Transform static.realized function to a fully realized type identifier.
 Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
   auto fn = (*expr)[0].getExpr()->getType()->shared_from_this();
   auto pt = (*expr)[0].getExpr()->getType()->getPartial();
@@ -793,7 +793,7 @@ Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
 /// Transform __static_print__ function to a fully realized type identifier.
 Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
   for (auto &a : *cast<CallExpr>(expr->begin()->getExpr())) {
-    fmt::print(stderr, "[static_print] {}: {} ({}){}\n", getSrcInfo(),
+    fmt::print(stderr, "[print] {}: {} ({}){}\n", getSrcInfo(),
                a.getExpr()->getType() ? a.getExpr()->getType()->debugString(2) : "-",
                a.getExpr()->getType() ? a.getExpr()->getType()->realizedName() : "-",
                a.getExpr()->getType()->getStatic() ? " [static]" : "");
@@ -801,7 +801,7 @@ Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
   return nullptr;
 }
 
-/// Transform __has_rtti__ to a static boolean that indicates RTTI status of a type.
+/// Transform static.has_rtti to a static boolean that indicates RTTI status of a type.
 Expr *TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->isStatic = 3;
@@ -947,7 +947,10 @@ Expr *TypecheckVisitor::transformStaticFnWrapCallArgs(CallExpr *expr) {
 }
 
 Expr *TypecheckVisitor::transformStaticVars(CallExpr *expr) {
-  auto withIdx = getBoolLiteral(extractFuncGeneric(expr->getExpr()->getType()));
+  auto t = extractFuncGeneric(expr->getExpr()->getType());
+  if (!t || !t->getClass())
+    return nullptr;
+  auto withIdx = getBoolLiteral(t);
 
   types::ClassType *typ = nullptr;
   std::vector<Expr *> tupleItems;
@@ -995,7 +998,7 @@ TypecheckVisitor::populateStaticTupleLoop(Expr *iter,
   for (auto &a : *call) {
     stmt->rhs = transform(clean_clone(a.value));
     if (auto st = stmt->rhs->getType()->getStatic()) {
-      stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>(st->name));
+      stmt->type = N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(st->name));
     } else {
       stmt->type = nullptr;
     }
@@ -1018,7 +1021,7 @@ TypecheckVisitor::populateSimpleStaticRangeLoop(Expr *iter,
     E(Error::STATIC_RANGE_BOUNDS, fn, MAX_STATIC_ITER, ed);
   for (int64_t i = 0; i < ed; i++) {
     stmt->rhs = N<IntExpr>(i);
-    stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+    stmt->type = N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"));
     block.push_back(clone(stmt));
   }
   return block;
@@ -1041,7 +1044,7 @@ TypecheckVisitor::populateStaticRangeLoop(Expr *iter,
       std::abs(st - ed) / std::abs(step));
   for (int64_t i = st; step > 0 ? i < ed : i > ed; i += step) {
     stmt->rhs = N<IntExpr>(i);
-    stmt->type = N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"));
+    stmt->type = N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"));
     block.push_back(clone(stmt));
   }
   return block;
@@ -1095,14 +1098,14 @@ TypecheckVisitor::populateStaticEnumerateLoop(Expr *iter,
     for (size_t i = 0; i < getClassFields(typ).size(); i++) {
       auto b = N<SuiteStmt>(std::vector<Stmt *>{
           N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
-                        N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))),
+                        N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))),
           N<AssignStmt>(
               N<IdExpr>(vars[1]),
               N<IndexExpr>(clone((*cast<CallExpr>(iter))[0].value), N<IntExpr>(i)))});
       block.push_back(b);
     }
   } else {
-    E(Error::CUSTOM, getSrcInfo(), "staticenumerate needs a tuple");
+    E(Error::CUSTOM, getSrcInfo(), "static.enumerate needs a tuple");
   }
   return block;
 }
@@ -1125,10 +1128,11 @@ TypecheckVisitor::populateStaticVarsLoop(Expr *iter,
     if (withIdx) {
       stmts.push_back(
           N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                        N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+                        N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
     }
-    stmts.push_back(N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
-                                  N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("str"))));
+    stmts.push_back(
+        N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
+                      N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
     stmts.push_back(
         N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
                       N<DotExpr>(clone((*cast<CallExpr>(iter))[0].value), f.name)));
@@ -1160,7 +1164,7 @@ TypecheckVisitor::populateStaticVarTypesLoop(Expr *iter,
       if (withIdx) {
         stmts.push_back(
             N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(i),
-                          N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+                          N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
       }
       stmts.push_back(
           N<AssignStmt>(N<IdExpr>(vars[1]),
@@ -1177,7 +1181,7 @@ TypecheckVisitor::populateStaticVarTypesLoop(Expr *iter,
       if (withIdx) {
         stmts.push_back(
             N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                          N<IndexExpr>(N<IdExpr>("Static"), N<IdExpr>("int"))));
+                          N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
       }
       stmts.push_back(
           N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<IdExpr>(ta->realizedName())));

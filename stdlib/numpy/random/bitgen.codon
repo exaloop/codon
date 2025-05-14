@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 from ..routines import *
 from ..util import PI, uitofp, zext, itrunc, signbit, isnan, nan64, fabs, cmod, floor, ceil, log, log1p, exp, expm1, pow, sqrt, cos, acos
 from .logfactorial import logfactorial
@@ -1568,9 +1570,9 @@ class BitGenerator[G]:
 
 def validate_output_shape(iter_shape, output: ndarray):
     dims = output.shape
-    ndim: Static[int] = staticlen(dims)
+    ndim: Literal[int] = static.len(dims)
 
-    if ndim != staticlen(iter_shape):
+    if ndim != static.len(iter_shape):
         compile_error("Output size is not compatible with broadcast dimensions of inputs")
 
     if iter_shape != dims:
@@ -1598,7 +1600,7 @@ def check_output(out, dtype: type, size, require_c_array: bool):
         )
 
     if size is not None:
-        if staticlen(size) != staticlen(out.shape):
+        if static.len(size) != static.len(out.shape):
             compile_error("size must match out.shape when used together")
 
         if size != out.shape:
@@ -1681,16 +1683,16 @@ def _check_all(fn, val, name: str, msg):
         if not fn(val):
             raise ValueError(msg(name))
 
-CONS_NONE            : Static[int] = 0
-CONS_NON_NEGATIVE    : Static[int] = 1
-CONS_POSITIVE        : Static[int] = 2
-CONS_POSITIVE_NOT_NAN: Static[int] = 3
-CONS_BOUNDED_0_1     : Static[int] = 4
-CONS_BOUNDED_GT_0_1  : Static[int] = 5
-CONS_BOUNDED_LT_0_1  : Static[int] = 6
-CONS_GT_1            : Static[int] = 7
-CONS_GTE_1           : Static[int] = 8
-CONS_POISSON         : Static[int] = 9
+CONS_NONE            : Literal[int] = 0
+CONS_NON_NEGATIVE    : Literal[int] = 1
+CONS_POSITIVE        : Literal[int] = 2
+CONS_POSITIVE_NOT_NAN: Literal[int] = 3
+CONS_BOUNDED_0_1     : Literal[int] = 4
+CONS_BOUNDED_GT_0_1  : Literal[int] = 5
+CONS_BOUNDED_LT_0_1  : Literal[int] = 6
+CONS_GT_1            : Literal[int] = 7
+CONS_GTE_1           : Literal[int] = 8
+CONS_POISSON         : Literal[int] = 9
 
 MAX_INT = 0x7FFFFFFFFFFFFFFF
 MAXSIZE = MAX_INT
@@ -1761,7 +1763,7 @@ def convert_array_like(a):
         return a
 
 def gather_arrays(t):
-    if staticlen(t) == 0:
+    if static.len(t) == 0:
         return ()
 
     a, rest = t[0], gather_arrays(t[1:])
@@ -1772,7 +1774,7 @@ def gather_arrays(t):
         return rest
 
 def cont(fn, size, lock, arrays, names, constraints, out = None, dtype: type = float):
-    if not (staticlen(arrays) == staticlen(names) and staticlen(names) == staticlen(constraints)):
+    if not (static.len(arrays) == static.len(names) and static.len(names) == static.len(constraints)):
         compile_error("[internal error] tuple size mismatch")
 
     if isinstance(size, int):
@@ -1780,11 +1782,11 @@ def cont(fn, size, lock, arrays, names, constraints, out = None, dtype: type = f
 
     arrays = tuple(convert_array_like(arr) for arr in arrays)
 
-    for i in staticrange(staticlen(names)):
+    for i in static.range(static.len(names)):
         check_array_constraint(arrays[i], names[i], constraints[i])
 
     # constant parameters case
-    if staticlen(gather_arrays(arrays)) == 0:
+    if static.len(gather_arrays(arrays)) == 0:
         args = arrays
 
         if size is not None and out is None:
@@ -1979,7 +1981,7 @@ class Generator[G]:
         low = convert_array_like(low)
         high = convert_array_like(high)
 
-        if staticlen(gather_arrays((low, high))) == 0:
+        if static.len(gather_arrays((low, high))) == 0:
             ilow = int(low)
             ihigh = int(high)
 
@@ -2097,7 +2099,7 @@ class Generator[G]:
             p1 = asarray(p, order='C')
             d = len(p1)
 
-            if staticlen(p1.shape) != 1:
+            if static.len(p1.shape) != 1:
                 compile_error("p must be 1-dimensional")
 
             if p1.dtype is not float:
@@ -2117,7 +2119,7 @@ class Generator[G]:
             if abs(p_sum - 1.) > atol:
                 raise ValueError("probabilities do not sum to 1")
 
-        is_scalar: Static[bool] = size is None
+        is_scalar: Literal[bool] = size is None
         if not is_scalar:
             shape = size
             size1 = prod(shape)
@@ -2250,10 +2252,10 @@ class Generator[G]:
         else:
             idx3 = idx2
 
-        if staticlen(a.shape) == 0:
+        if static.len(a.shape) == 0:
             return idx2
 
-        if not is_scalar and staticlen(asarray(idx3).shape) == 0:
+        if not is_scalar and static.len(asarray(idx3).shape) == 0:
             res = empty((), dtype=a.dtype)
             res[()] = a[asarray(idx3).item()]
             return res
@@ -2261,7 +2263,7 @@ class Generator[G]:
         axis = util.normalize_axis_index(axis, a.ndim)
         idx3 = asarray(idx3)
 
-        if staticlen(idx3.shape) == 0 and staticlen(a.shape) == 1:
+        if static.len(idx3.shape) == 0 and static.len(a.shape) == 1:
             return a._ptr((idx3.item(),))[0]
 
         idx3 = atleast_1d(idx3)
@@ -2286,7 +2288,7 @@ class Generator[G]:
         low = convert_array_like(low)
         high = convert_array_like(high)
 
-        if staticlen(gather_arrays((low, high))) == 0:
+        if static.len(gather_arrays((low, high))) == 0:
             rng = float(high - low)
             if not util.isfinite(rng):
                 raise OverflowError("high - low range exceeds valid bounds")
@@ -2420,7 +2422,7 @@ class Generator[G]:
                     (CONS_POSITIVE, CONS_POSITIVE))
 
     def triangular(self, left, mode, right, size = None):
-        if staticlen(gather_arrays((asarray(left), asarray(mode), asarray(right)))) == 0:
+        if static.len(gather_arrays((asarray(left), asarray(mode), asarray(right)))) == 0:
             if left > mode:
                 raise ValueError("left > mode")
             if mode > right:
@@ -2449,7 +2451,7 @@ class Generator[G]:
 
         n = convert_array_like(n)
         p = convert_array_like(p)
-        if staticlen(gather_arrays((n, p))) > 0:
+        if static.len(gather_arrays((n, p))) > 0:
             an = asarray(n).astype(int, copy=False)
             ap = asarray(p)
             check_array_constraint(ap, 'p', CONS_BOUNDED_0_1)
@@ -2494,7 +2496,7 @@ class Generator[G]:
 
         n = convert_array_like(n)
         p = convert_array_like(p)
-        if staticlen(gather_arrays((n, p))) > 0:
+        if static.len(gather_arrays((n, p))) > 0:
             an = asarray(n)
             ap = asarray(p)
             check_array_constraint(an, 'n', CONS_POSITIVE_NOT_NAN)
@@ -2538,7 +2540,7 @@ class Generator[G]:
         nbad = convert_array_like(nbad)
         nsample = convert_array_like(nsample)
 
-        if staticlen(gather_arrays((ngood, nbad, nsample))) == 0:
+        if static.len(gather_arrays((ngood, nbad, nsample))) == 0:
             if ngood >= HYPERGEOM_MAX or nbad >= HYPERGEOM_MAX:
                 raise ValueError("both ngood and nbad must be less than 1000000000")
             if ngood + nbad < nsample:
@@ -2567,8 +2569,8 @@ class Generator[G]:
                     size, self.lock, (p,), ('p',),
                     (CONS_BOUNDED_LT_0_1,), dtype=int)
 
-    def multivariate_normal(self, mean, cov, size = None, check_valid: Static[str] = 'warn',
-                            tol: float = 1e-8, method: Static[str] = 'svd'):
+    def multivariate_normal(self, mean, cov, size = None, check_valid: Literal[str] = 'warn',
+                            tol: float = 1e-8, method: Literal[str] = 'svd'):
         if method != 'eigh' and method != 'svd' and method != 'cholesky':
             compile_error(
                 "method must be one of {'eigh', 'svd', 'cholesky'}")
@@ -2589,9 +2591,9 @@ class Generator[G]:
         else:
             shape = size
 
-        if staticlen(mean.shape) != 1:
+        if static.len(mean.shape) != 1:
             compile_error("mean must be 1 dimensional")
-        if staticlen(cov.shape) != 2:
+        if static.len(cov.shape) != 2:
             compile_error("cov must be 2 dimensional")
         if cov.shape[0] != cov.shape[1]:
             raise ValueError("cov must be square")
@@ -2652,7 +2654,7 @@ class Generator[G]:
 
         on = asarray(n).astype(int, copy=False)
         parr = asarray(pvals)
-        ndim: Static[int] = staticlen(parr.shape)
+        ndim: Literal[int] = static.len(parr.shape)
 
         if ndim >= 1:
             d = parr.shape[ndim - 1]
@@ -2678,7 +2680,7 @@ class Generator[G]:
 
         check_array_constraint(on, 'n', CONS_NON_NEGATIVE)
 
-        if staticlen(on.shape) != 0 or ndim > 1:
+        if static.len(on.shape) != 0 or ndim > 1:
             offsets = arange(0, parr.size, d, dtype=int).reshape(parr.shape[:ndim - 1])
             if size is None:
                 it = broadcast_shapes(on.shape, offsets.shape)
@@ -2743,7 +2745,7 @@ class Generator[G]:
 
         invalid_colors = False
         colors = asarray(colors)
-        if staticlen(colors.shape) != 1:
+        if static.len(colors.shape) != 1:
             compile_error("colors must be one-dimensional")
 
         if colors.size == 0 or any(c < 0 for c in colors):
@@ -2800,7 +2802,7 @@ class Generator[G]:
             return self.dirichlet(alpha, size=(size,))
 
         alpha = ascontiguousarray(asarray(alpha), dtype=float)
-        if staticlen(alpha.shape) != 1:
+        if static.len(alpha.shape) != 1:
             compile_error("alpha must be a one-dimensional sequence of floats")
         k = len(alpha)
 
@@ -2868,7 +2870,7 @@ class Generator[G]:
             copyto(out, x)
 
         if axis is None:
-            if staticlen(x.shape) > 1:
+            if static.len(x.shape) > 1:
                 cc, fc = out._contig
                 if not (cc or fc):
                     to_shuffle = array(out, order='C')
@@ -2900,7 +2902,7 @@ class Generator[G]:
         n = len(x)
 
         if isinstance(x, ndarray):
-            ndim: Static[int] = staticlen(x.shape)
+            ndim: Literal[int] = static.len(x.shape)
             axis = util.normalize_axis_index(axis, ndim)
             if x.size <= 1:
                 return
@@ -2941,7 +2943,7 @@ class Generator[G]:
 
         x = asarray(x)
         arr = x.copy()
-        ndim: Static[int] = staticlen(arr.shape)
+        ndim: Literal[int] = static.len(arr.shape)
         axis = util.normalize_axis_index(axis, ndim)
 
         if ndim == 1:

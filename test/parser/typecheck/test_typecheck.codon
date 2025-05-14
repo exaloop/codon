@@ -92,7 +92,7 @@ coerce()
 #%% compile_error_realization,barebones
 def ctx():
     def foo(): compile_error("bah!")
-    def bar(err: Static[bool]):
+    def bar(err: Literal[bool]):
         if err: foo()
         else: print("ok")
     bar(False)

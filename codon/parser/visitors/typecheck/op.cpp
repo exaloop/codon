@@ -318,15 +318,15 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
   std::string staticType;
-  if (match(expr,
-            M<IndexExpr>(M<IdExpr>("Static"), M<IdExpr>(MOr("int", "str", "bool"))))) {
+  if (match(expr, M<IndexExpr>(M<IdExpr>(MOr("Literal", "Static")),
+                               M<IdExpr>(MOr("int", "str", "bool"))))) {
     // Special case: static types.
     auto typ = instantiateUnbound();
     typ->isStatic = getStaticGeneric(expr);
     unify(expr->getType(), typ);
     expr->setDone();
     return;
-  } else if (match(expr->expr, M<IdExpr>("Static"))) {
+  } else if (match(expr->expr, M<IdExpr>(MOr("Literal", "Static")))) {
     E(Error::BAD_STATIC_TYPE, expr->getIndex());
   }
   if (match(expr->expr, M<IdExpr>("tuple")))

@@ -310,7 +310,7 @@ test3(zi) #! expected type expression
 
 #%% static_fail_3,barebones
 zi = Int[32](6)
-def test3[N: Static[int]](i: Int[N]):
+def test3[N: Literal[int]](i: Int[N]):
     print int(i)
 test3(1, int) #! expected static expression
 # TODO: nicer error message!
@@ -505,7 +505,7 @@ a, b = tee(it)
 #! during the realization of tee(iterable: List[int], n: int)
 
 #%% new_syntax,barebones
-def foo[T,U](x: type, y, z: Static[int] = 10):
+def foo[T,U](x: type, y, z: Literal[int] = 10):
     print T.__class__.__name__, U.__class__.__name__, x.__class__.__name__, y.__class__.__name__, Int[z+1].__class__.__name__
     return List[x]()
 print foo(T=int,U=str,...).__fn_name__ #: foo[x,z,int,str;T1]
@@ -514,9 +514,9 @@ print foo(float,3,T=int,U=str,z=5).__class__.__name__ #: List[float]
 foo(float,1,10,str,int) #: str int float int Int[11]
 
 
-class Foo[T,U: Static[int]]:
+class Foo[T,U: Literal[int]]:
     a: T
-    b: Static[int]
+    b: Literal[int]
     c: Int[U]
     d: type
     e: List[d]
@@ -525,28 +525,28 @@ print Foo[5,int,float,6].__class__.__name__ #: Foo[5,int,float,6]
 print Foo(1.1, 10i32, [False], 10u66).__class__.__name__ #: Foo[66,bool,float,32]
 
 
-def foo2[N: Static[int]]():
+def foo2[N: Literal[int]]():
     print Int[N].__class__.__name__, N
-x: Static[int] = 5
-y: Static[int] = 105 - x * 2
+x: Literal[int] = 5
+y: Literal[int] = 105 - x * 2
 foo2(y-x) #: Int[90] 90
 
 if 1.1+2.2 > 0:
-    z: Static[int] = 88
+    z: Literal[int] = 88
     print z #: 88
 print x #: 5
-x : Static[int] = 3
+x : Literal[int] = 3
 print x #: 3
 
-def fox(N: Static[int] = 4):
+def fox(N: Literal[int] = 4):
     print Int[N].__class__.__name__, N
 fox(5) #: Int[5] 5
 fox() #: Int[4] 4
 
 #%% new_syntax_err,barebones
-class Foo[T,U: Static[int]]:
+class Foo[T,U: Literal[int]]:
     a: T
-    b: Static[int]
+    b: Literal[int]
     c: Int[U]
     d: type
     e: List[d]
@@ -687,8 +687,8 @@ def foo(x):
 a: Union[int, str] = 5
 foo_int(a)  #: 5 int
 foo(a)  #: 5 0 Union[int | str]
-print(staticlen(a))  #: 2
-print(staticlen(Union[int, int]), staticlen(Tuple[int, float, int]))  #: 1 3
+print(static.len(a))  #: 2
+print(static.len(Union[int, int]), static.len(Tuple[int, float, int]))  #: 1 3
 
 @extend
 class str:
@@ -804,7 +804,7 @@ for i in range(2):
 #: False
 
 #%% no_generic,barebones
-def foo(a, b: Static[int]):
+def foo(a, b: Literal[int]):
     pass
 foo(5)  #! generic 'b' not provided
 
@@ -823,7 +823,7 @@ nb = Tuple[5, str]('a', 'b', 'c', 'd', 'e')
 print(nb, nb.__class__.__name__)
 #: ('a', 'b', 'c', 'd', 'e') Tuple[str,str,str,str,str]
 
-class Foo[N: Static[int], T: type]:
+class Foo[N: Literal[int], T: type]:
     x: Tuple[N, T]
     def __init__(self, t: T):
         self.x = (t, ) * N
@@ -858,7 +858,7 @@ print(Tuple[-5, int].__class__.__name__)
 print(Tuple[5, int, str].__class__.__name__)
 #: Tuple[int,str,int,str,int,str,int,str,int,str]
 
-def foo(t: Tuple[N, int], N: Static[int]):
+def foo(t: Tuple[N, int], N: Literal[int]):
     print("foo", N, t)
 foo((1, 2, 3))
 #: foo 3 (1, 2, 3)

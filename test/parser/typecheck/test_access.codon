@@ -1,5 +1,6 @@
 #%% __ignore__
 from typing import Optional
+import internal.static as static
 
 #%% id_fstring_error,barebones
 f"a{b + 3}" #! name 'b' is not defined
@@ -112,6 +113,109 @@ def rad4f(ido: int, l1: int, cxai):
         # See scoping.cpp:visit(DotExpr*) (or IndexExpr*)
         tr1, cxai[0] = 1, 1
 rad4f(1, 2, [1, 2])
+
+#%% new_capture_scoping,barebones
+g = 5
+def foo():
+    def f0():
+        print('f0')
+
+    def f1():
+        print('f1', a)
+
+    def f2(a):
+        print('f2', a)
+
+    def f3():
+        f0()
+
+    def f4(x = 1):
+        if x > 5: print('f4', x)
+        else: f4(x + x)
+
+    def f5(x = 1):
+        if x > 5: print('f5', x, a)
+        else: f5(x + x)
+
+    def f6():
+        nonlocal a
+        print('f6', a)
+        a += a
+        print('f6', a, a.__class__.__name__)
+        return a
+
+    def f7():  # capture A
+        a = 1
+
+        def f7_1():  # capture A
+
+            def f7_11():  # capture A
+                global g
+                nonlocal a
+                a += a
+                g += g
+                print('f7_11', a, a.__class__.__name__)
+            f7_11()
+        f7_1()
+        print('f7', a)
+
+    a = 5
+    f0()  #: f0
+    f1()  #: f1 5
+    f2(1)  #: f2 1
+    print(a)  #: 5
+    f3()  #: f0
+    f4()  #: f4 8
+    f5()  #: f5 8 5
+    f6()  #: f6 5
+          #: f6 10 Capsule[int]
+    print(a)  #: 10
+    f7()  #: f7_11 2 Capsule[int]
+          #: f7 2
+    print(a)  #: 10
+
+    fp = f6(...)  # this captures stuff at this point!
+
+    a = 's'
+    f0()  #: f0
+    f1()  #: f1 s
+    f2(1)  #: f2 1
+    print(a)  #: s
+    f3()  #: f0
+    f4()  #: f4 8
+    f5()  #: f5 8 s
+    f6()  #: f6 s
+          #: f6 ss Capsule[str]
+    print(a)  #: ss
+    f7()  #: f7_11 2 Capsule[int]
+          #: f7 2
+    print(a)  #: ss
+
+    # if len("abc") < 5:
+    a = 1.1
+    f6()  #: f6 1.1
+          #: f6 2.2 Capsule[float]
+    print(a)  #: 2.2
+
+    return fp
+
+fp = foo()
+a = fp()  #: f6 10
+          #: f6 20 Capsule[int]
+print(a, a.__class__.__name__)  #: 20 Capsule[int]
+print(g, g.__class__.__name__)  #: 20 int
+
+# Lambda capture test
+l = [1, 2, 3, 4]
+fns = []
+for i in range(len(l)):
+   fns.append(lambda x: l[i] ** x)  # this captures always _here_!
+for f in fns:
+  print(f(2))
+#: 16
+#: 16
+#: 16
+#: 16
 
 #%% new_scoping_loops_try,barebones
 for i in range(10):
@@ -557,9 +661,9 @@ print(correlate([1], [2], 'full'))  #: 5z
 def foo(x, y):
     a = 5
     if isinstance(a, int):
-        if staticlen(y) == 0:
+        if static.len(y) == 0:
             a = 0
-        elif staticlen(y) == 1:
+        elif static.len(y) == 1:
             a = 1
         else:
             for i in range(10):

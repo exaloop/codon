@@ -1,6 +1,8 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import util
+import internal.static as static
+
 from .npdatetime import datetime64, timedelta64, busdaycalendar, _apply_busines_day_offset, \
                         _apply_busines_day_count, _apply_is_business_day, _BUSDAY_FORWARD, \
                         _BUSDAY_FOLLOWING, _BUSDAY_BACKWARD, _BUSDAY_PRECEDING, \
@@ -12,7 +14,7 @@ def _check_out(out, shape):
     if not isinstance(out, ndarray):
         compile_error("output must be an array")
 
-    if out.ndim != staticlen(shape):
+    if out.ndim != static.len(shape):
         compile_error("output parameter has the wrong number of dimensions")
 
     if out.shape != shape:
@@ -66,7 +68,7 @@ def _validate_shape(t, shape):
     def error():
         raise ValueError('array dimensions mismatch (jagged arrays are not allowed)')
 
-    if staticlen(shape) == 0:
+    if static.len(shape) == 0:
         return
     else:
         if not hasattr(type(t), "__getitem__"):
@@ -126,10 +128,10 @@ def _array(a, dtype: type = NoneType, copy: bool = True, order: str = 'K'):
         data[0] = util.cast(a, dtype)
         return ndarray(shape, data)
 
-def array(a, dtype: type = NoneType, copy: bool = True, order: str = 'K', ndmin: Static[int] = 0):
+def array(a, dtype: type = NoneType, copy: bool = True, order: str = 'K', ndmin: Literal[int] = 0):
     result = _array(a, dtype=dtype, copy=copy, order=order)
-    if staticlen(result.shape) < ndmin:
-        o = (1,) * (ndmin - staticlen(result.shape))
+    if static.len(result.shape) < ndmin:
+        o = (1,) * (ndmin - static.len(result.shape))
         return result.reshape((*o, *result.shape))
     return result
 
@@ -185,15 +187,15 @@ def empty_like(prototype, dtype: type = NoneType, order: str = 'K', shape = None
     if order == 'A':
         order = 'F' if fc else 'C'
     elif order == 'K':
-        if staticlen(shape) == prototype.ndim:
+        if static.len(shape) == prototype.ndim:
             if cc or prototype.ndim <= 1:
                 order = 'C'
             elif fc:
                 order = 'F'
             else:
-                strides = (0,) * staticlen(prototype.strides)
+                strides = (0,) * static.len(prototype.strides)
                 pstrides = Ptr[int](__ptr__(strides).as_byte())
-                r = util.tuple_range(staticlen(shape))
+                r = util.tuple_range(static.len(shape))
                 perm, strides_sorted = util.sort_by_stride(r, prototype.strides)
                 stride = util.sizeof(dtype)
                 ndim = prototype.ndim
@@ -271,7 +273,7 @@ def diag(v, k: int = 0):
     data = v.data
     T = type(data[0])
 
-    if staticlen(v.shape) == 1:
+    if static.len(v.shape) == 1:
         count = v.shape[0]
         n = count + abs(k)
         result = zeros((n, n), dtype=T)
@@ -287,7 +289,7 @@ def diag(v, k: int = 0):
             p += n + 1
 
         return result
-    elif staticlen(v.shape) == 2:
+    elif static.len(v.shape) == 2:
         n, m = v.shape
         sn, sm = v.strides
         new_shape = (_diag_count(k, n, m),)
@@ -319,9 +321,9 @@ def triu(x, k: int = 0):
     x = asarray(x)
     T = x.dtype
 
-    if staticlen(x.shape) == 0:
+    if static.len(x.shape) == 0:
         compile_error('Cannot call triu on 0-d array.')
-    elif staticlen(x.shape) == 1:
+    elif static.len(x.shape) == 1:
         n = x.shape[0]
         result = zeros((n, n), dtype=T)
         p = result.data
@@ -332,7 +334,7 @@ def triu(x, k: int = 0):
     else:
         y = x.copy()
         n, m = x.shape[-2], x.shape[-1]
-        pre = (slice(None, None, None),) * (staticlen(x.shape) - 2)
+        pre = (slice(None, None, None),) * (static.len(x.shape) - 2)
         for i in range(n):
             for j in range(min(i + k, m)):
                 y[(*pre, i, j)] = T(0)
@@ -342,9 +344,9 @@ def tril(x, k: int = 0):
     x = asarray(x)
     T = x.dtype
 
-    if staticlen(x.shape) == 0:
+    if static.len(x.shape) == 0:
         compile_error('Cannot call tril on 0-d array.')
-    elif staticlen(x.shape) == 1:
+    elif static.len(x.shape) == 1:
         n = x.shape[0]
         result = zeros((n, n), dtype=T)
         p = result.data
@@ -355,7 +357,7 @@ def tril(x, k: int = 0):
     else:
         y = x.copy()
         n, m = x.shape[-2], x.shape[-1]
-        pre = (slice(None, None, None),) * (staticlen(x.shape) - 2)
+        pre = (slice(None, None, None),) * (static.len(x.shape) - 2)
         for i in range(n):
             for j in range(max(0, i + k + 1), m):
                 y[(*pre, i, j)] = T(0)
@@ -364,7 +366,7 @@ def tril(x, k: int = 0):
 def vander(x, N: Optional[int] = None, increasing: bool = False):
     x = asarray(x)
 
-    if staticlen(x.shape) != 1:
+    if static.len(x.shape) != 1:
         compile_error('x must be a one-dimensional array or sequence.')
 
     T = x.dtype
@@ -389,8 +391,8 @@ def _signbit(x: float) -> bool:
     %b = zext i1 %z to i8
     ret i8 %b
 
-_imin: Static[int] = -9223372036854775808
-_imax: Static[int] = 9223372036854775807
+_imin: Literal[int] = -9223372036854775808
+_imax: Literal[int] = 9223372036854775807
 
 def _safe_ceil(value: float):
     ivalue = util.ceil64(value)
@@ -549,7 +551,7 @@ def arange(start: str, stop, step = None, dtype: type = datetime64['D', 1]):
     return _datetime_arange(start, stop, step, dtype)
 
 def linspace(start: float, stop: float, num: int = 50,
-             endpoint: bool = True, retstep: Static[bool] = False,
+             endpoint: bool = True, retstep: Literal[bool] = False,
              dtype: type = float):
     if num < 0:
         raise ValueError(f'Number of samples, {num}, must be non-negative.')
@@ -583,8 +585,8 @@ def linspace(start: float, stop: float, num: int = 50,
         return result
 
 def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
-                 out_sign: int = 1, endpoint: bool = True, retstep: Static[bool] = False,
-                 dtype: type = float, log: Static[bool] = False):
+                 out_sign: int = 1, endpoint: bool = True, retstep: Literal[bool] = False,
+                 dtype: type = float, log: Literal[bool] = False):
     if num < 0:
         raise ValueError(f'Number of samples, {num}, must be non-negative.')
 
@@ -633,7 +635,7 @@ def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
         return result
 
 def linspace(start: float, stop: float, num: int = 50,
-             endpoint: bool = True, retstep: Static[bool] = False,
+             endpoint: bool = True, retstep: Literal[bool] = False,
              dtype: type = float):
     return _linlogspace(start=start, stop=stop, num=num,
                         endpoint=endpoint, retstep=retstep,
@@ -641,7 +643,7 @@ def linspace(start: float, stop: float, num: int = 50,
 
 def logspace(start: float, stop: float, num: int = 50,
              endpoint: bool = True, base: float = 10.0,
-             retstep: Static[bool] = False,
+             retstep: Literal[bool] = False,
              dtype: type = float):
     return _linlogspace(start=start, stop=stop, num=num,
                         endpoint=endpoint, retstep=retstep,
@@ -671,7 +673,7 @@ def fromfunction(function, shape, dtype: type = float, **kwargs):
     result_dtype = type(
                     function(
                      *tuple(util.zero(dtype)
-                            for _ in staticrange(staticlen(shape))),
+                            for _ in static.range(static.len(shape))),
                      **kwargs))
     result = empty(shape, dtype=result_dtype)
     for idx in util.multirange(shape):
@@ -710,12 +712,12 @@ def frombuffer(buffer: str, dtype: type = float, count: int = -1, offset: int = 
 
 def broadcast_shapes(*args):
     def _largest(args):
-        if staticlen(args) == 1:
+        if static.len(args) == 1:
             return args[0]
 
         a = args[0]
         b = _largest(args[1:])
-        if staticlen(b) > staticlen(a):
+        if static.len(b) > static.len(a):
             return b
         else:
             return a
@@ -726,7 +728,7 @@ def broadcast_shapes(*args):
         else:
             return (x,)
 
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         return ()
 
     args = tuple(_ensure_tuple(a) for a in args)
@@ -736,15 +738,15 @@ def broadcast_shapes(*args):
                 raise ValueError('negative dimensions are not allowed')
 
     t = _largest(args)
-    N: Static[int] = staticlen(t)
+    N: Literal[int] = static.len(t)
     ans = (0,) * N
     p = Ptr[int](__ptr__(ans).as_byte())
 
-    for i in staticrange(N):
+    for i in static.range(N):
         p[i] = t[i]
 
     for a in args:
-        for i in staticrange(staticlen(a)):
+        for i in static.range(static.len(a)):
             x = a[len(a) - 1 - i]
             q = p + (len(t) - 1 - i)
             y = q[0]
@@ -762,9 +764,9 @@ def broadcast_to(x, shape):
     if not isinstance(shape, Tuple):
         return broadcast_to(x, (shape,))
 
-    N: Static[int] = staticlen(x.shape)
+    N: Literal[int] = static.len(x.shape)
 
-    if staticlen(shape) < N:
+    if static.len(shape) < N:
         compile_error('input operand has more dimensions than allowed by the axis remapping')
 
     shape1, shape2 = shape[:-N], shape[-N:]
@@ -783,7 +785,7 @@ def broadcast_to(x, shape):
             else:
                 raise ValueError(f'cannot broadcast array of shape {x.shape} to shape {shape}')
 
-    z = (0,) * (staticlen(shape) - N)
+    z = (0,) * (static.len(shape) - N)
     new_strides = (*z, *substrides)
     return ndarray(shape, new_strides, x.data)
 
@@ -799,15 +801,15 @@ def broadcast_arrays(*args):
     bshape = broadcast_shapes(*shapes)
     return [broadcast_to(a, bshape) for a in args]
 
-def meshgrid(*xi, copy: bool = True, sparse: Static[bool] = False, indexing: Static[str] = 'xy'):
-    def make_shape(i, ndim: Static[int]):
+def meshgrid(*xi, copy: bool = True, sparse: Literal[bool] = False, indexing: Literal[str] = 'xy'):
+    def make_shape(i, ndim: Literal[int]):
         t = (1,) * ndim
         p = Ptr[int](__ptr__(t).as_byte())
         p[i] = -1
         return t
 
-    def build_output(xi, i: int = 0, ndim: Static[int]):
-        if staticlen(xi) == 0:
+    def build_output(xi, i: int = 0, ndim: Literal[int]):
+        if static.len(xi) == 0:
             return ()
 
         x = xi[0]
@@ -818,7 +820,7 @@ def meshgrid(*xi, copy: bool = True, sparse: Static[bool] = False, indexing: Sta
     if indexing != 'xy' and indexing != 'ij':
         compile_error("Valid values for `indexing` are 'xy' and 'ij'.")
 
-    ndim: Static[int] = staticlen(xi)
+    ndim: Literal[int] = static.len(xi)
     s0 = (1,) * ndim
     output = build_output(xi, ndim=ndim)
 
@@ -861,7 +863,7 @@ class _broadcast[A, S]:
 
     @property
     def ndim(self):
-        return staticlen(self.shape)
+        return static.len(self.shape)
 
     @property
     def nd(self):
@@ -869,7 +871,7 @@ class _broadcast[A, S]:
 
     @property
     def numiter(self):
-        return staticlen(self._arrays)
+        return static.len(self._arrays)
 
     @property
     def iters(self):
@@ -1042,12 +1044,12 @@ def swapaxes(a, axis1: int, axis2: int):
 def atleast_1d(*arys):
     def atl1d(a):
         a = asarray(a)
-        if staticlen(a.shape) == 0:
+        if static.len(a.shape) == 0:
             return a.reshape(1)
         else:
             return a
 
-    if staticlen(arys) == 1:
+    if static.len(arys) == 1:
         return atl1d(arys[0])
     else:
         return tuple(atl1d(a) for a in arys)
@@ -1055,14 +1057,14 @@ def atleast_1d(*arys):
 def atleast_2d(*arys):
     def atl2d(a):
         a = asarray(a)
-        if staticlen(a.shape) == 0:
+        if static.len(a.shape) == 0:
             return a.reshape(1, 1)
-        elif staticlen(a.shape) == 1:
+        elif static.len(a.shape) == 1:
             return a[None, :]
         else:
             return a
 
-    if staticlen(arys) == 1:
+    if static.len(arys) == 1:
         return atl2d(arys[0])
     else:
         return tuple(atl2d(a) for a in arys)
@@ -1070,27 +1072,27 @@ def atleast_2d(*arys):
 def atleast_3d(*arys):
     def atl3d(a):
         a = asarray(a)
-        if staticlen(a.shape) == 0:
+        if static.len(a.shape) == 0:
             return a.reshape(1, 1, 1)
-        elif staticlen(a.shape) == 1:
+        elif static.len(a.shape) == 1:
             return a[None, :, None]
-        elif staticlen(a.shape) == 2:
+        elif static.len(a.shape) == 2:
             return a[:, :, None]
         else:
             return a
 
-    if staticlen(arys) == 1:
+    if static.len(arys) == 1:
         return atl3d(arys[0])
     else:
         return tuple(atl3d(a) for a in arys)
 
 def require(a, dtype: type = NoneType, requirements = None):
-    REQ_C: Static[int] = 1
-    REQ_F: Static[int] = 2
-    REQ_A: Static[int] = 4
-    REQ_W: Static[int] = 8
-    REQ_O: Static[int] = 16
-    REQ_E: Static[int] = 32
+    REQ_C: Literal[int] = 1
+    REQ_F: Literal[int] = 2
+    REQ_A: Literal[int] = 4
+    REQ_W: Literal[int] = 8
+    REQ_O: Literal[int] = 16
+    REQ_E: Literal[int] = 32
 
     if requirements is None:
         return asarray(a, dtype=dtype)
@@ -1133,7 +1135,7 @@ def require(a, dtype: type = NoneType, requirements = None):
 
 def _copy_data_c(dst: cobj, src: cobj, shape: Ptr[int],
                 strides: Ptr[int], dst_strides: Ptr[int],
-                ndim: Static[int], element_size: int,
+                ndim: Literal[int], element_size: int,
                 block: int, block_dim: int):
     if ndim < 0:
         return
@@ -1150,7 +1152,7 @@ def _copy_data_c(dst: cobj, src: cobj, shape: Ptr[int],
 
 def _copy_data_f(dst: cobj, src: cobj, shape: Ptr[int],
                 strides: Ptr[int], dst_strides: Ptr[int],
-                ndim: Static[int], element_size: int,
+                ndim: Literal[int], element_size: int,
                 block: int, block_dim: int):
     if ndim < 0:
         return
@@ -1166,14 +1168,14 @@ def _copy_data_f(dst: cobj, src: cobj, shape: Ptr[int],
                          ndim - 1, element_size, block, block_dim)
 
 def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
-    def check_array_dims_static(arrays, ndim: Static[int]):
-        if staticlen(arrays) > 0:
-            if staticlen(arrays[0].shape) != ndim:
+    def check_array_dims_static(arrays, ndim: Literal[int]):
+        if static.len(arrays) > 0:
+            if static.len(arrays[0].shape) != ndim:
                 compile_error("all the input arrays must have same number of dimensions")
             check_array_dims_static(arrays[1:], ndim)
 
     def find_out_type(arrays, dtype: type):
-        if staticlen(arrays) == 0:
+        if static.len(arrays) == 0:
             return dtype()
         else:
             x = util.coerce(arrays[0].dtype, dtype)
@@ -1187,7 +1189,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
             compile_error("[internal error] bad out and dtype given to concat_inner")
 
         arr0 = asarray(arrays[0])
-        ndim: Static[int] = arrays[0].ndim
+        ndim: Literal[int] = arrays[0].ndim
         axis = util.normalize_axis_index(axis, ndim)
         shape = arr0.shape
         pshape = Ptr[int](__ptr__(shape).as_byte())
@@ -1199,7 +1201,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
             if arr.ndim != ndim:
                 compile_error("all the input arrays must have same number of dimensions")
 
-            for idim in staticrange(ndim):
+            for idim in static.range(ndim):
                 if idim == axis:
                     pshape[idim] += arr_shape[idim]
                 elif pshape[idim] != arr_shape[idim]:
@@ -1296,7 +1298,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
         return out
 
     def concat_tuple(arrays, axis = 0, out = None, dtype: type = NoneType):
-        if staticlen(arrays) == 0:
+        if static.len(arrays) == 0:
             compile_error("need at least one array to concatenate")
 
         arrays = tuple(asarray(arr) for arr in arrays)
@@ -1314,7 +1316,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
                 else:
                     return concat_flatten(arrays, empty(shape, dtype=dtype))
             else:
-                if staticlen(out.shape) != 1:
+                if static.len(out.shape) != 1:
                     compile_error("Output array has wrong dimensionality")
 
                 if not util.tuple_equal(out.shape, shape):
@@ -1322,7 +1324,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
 
                 return concat_flatten(arrays, out)
         else:
-            ndim: Static[int] = staticlen(arrays[0].shape)
+            ndim: Literal[int] = static.len(arrays[0].shape)
             if ndim == 0:
                 compile_error("zero-dimensional arrays cannot be concatenated")
 
@@ -1359,7 +1361,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
                 else:
                     return concat_flatten(arrays, empty(shape, dtype=dtype))
             else:
-                if staticlen(out.shape) != 1:
+                if static.len(out.shape) != 1:
                     compile_error("Output array has wrong dimensionality")
 
                 if not util.tuple_equal(out.shape, shape):
@@ -1367,7 +1369,7 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
 
                 return concat_flatten(arrays, out)
         else:
-            ndim: Static[int] = staticlen(arrays[0].shape)
+            ndim: Literal[int] = static.len(arrays[0].shape)
             if ndim == 0:
                 compile_error("zero-dimensional arrays cannot be concatenated")
 
@@ -1411,9 +1413,9 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
 
 def expand_dims(a, axis):
     a = asarray(a)
-    old_ndims: Static[int] = staticlen(a.shape)
-    new_ndims: Static[int] = (old_ndims +
-        staticlen(util.normalize_axis_tuple(axis, 9999999)))
+    old_ndims: Literal[int] = static.len(a.shape)
+    new_ndims: Literal[int] = (old_ndims +
+        static.len(util.normalize_axis_tuple(axis, 9999999)))
     axis = util.normalize_axis_tuple(axis, new_ndims)
 
     old_shape = a.shape
@@ -1485,7 +1487,7 @@ row_stack = vstack
 def column_stack(tup):
     def fix_array(v):
         arr = asarray(v)
-        if staticlen(arr.shape) < 2:
+        if static.len(arr.shape) < 2:
             return array(arr, copy=False, ndmin=2).T
         else:
             return arr
@@ -1781,14 +1783,14 @@ def append(arr, values, axis = None):
     arr = asarray(arr)
     values = asarray(values)
 
-    if staticlen(arr.shape) != staticlen(values.shape):
+    if static.len(arr.shape) != static.len(values.shape):
         compile_error("'arr' and 'values' must have the same number of dimensions")
 
     dtype1 = arr.dtype
     dtype2 = values.dtype
     dtype_out = type(util.coerce(dtype1, dtype2))
 
-    ndim: Static[int] = staticlen(arr.shape)
+    ndim: Literal[int] = static.len(arr.shape)
     shape = arr.shape
     val_shape = values.shape
     arr_nbytes = arr.nbytes
@@ -1873,7 +1875,7 @@ def insert(arr, obj, values, axis = None):
 
     cc, fc = arr._contig
     arrorder = 'F' if (fc and not cc) else 'C'
-    ndim: Static[int] = staticlen(arr.shape)
+    ndim: Literal[int] = static.len(arr.shape)
 
     if isinstance(axis, int):
         axis = util.normalize_axis_index(axis, arr.ndim)
@@ -1914,7 +1916,7 @@ def insert(arr, obj, values, axis = None):
         off = 0
         next_index, next_rank = indices[curr]
         multiple_values = False
-        if staticlen(values.shape) > 0:
+        if static.len(values.shape) > 0:
             multiple_values = (len(values) == numnew)
 
         for ai in range(pnewshape[axis]):
@@ -1924,7 +1926,7 @@ def insert(arr, obj, values, axis = None):
                     idx2 = util.tuple_insert(idx0, axis, ai)
                     q = new._ptr(idx2)
 
-                    if staticlen(values.shape) == 0:
+                    if static.len(values.shape) == 0:
                         q[0] = util.cast(values.data[0], dtype)
                     else:
                         if multiple_values:
@@ -1965,7 +1967,7 @@ def array_split(ary, indices_or_sections, axis: int = 0):
             return idx
 
     def slice_axis(arr, axis: int, start: int, stop: int):
-        ndim: Static[int] = staticlen(arr.shape)
+        ndim: Literal[int] = static.len(arr.shape)
         dtype = arr.dtype
 
         shape = arr.shape
@@ -2025,7 +2027,7 @@ def split(ary, indices_or_sections, axis: int = 0):
 def vsplit(ary, indices_or_sections):
     ary = asarray(ary)
 
-    if staticlen(ary.shape) < 2:
+    if static.len(ary.shape) < 2:
         compile_error("vsplit only works on arrays of 2 or more dimensions")
 
     return split(ary, indices_or_sections, 0)
@@ -2033,7 +2035,7 @@ def vsplit(ary, indices_or_sections):
 def hsplit(ary, indices_or_sections):
     ary = asarray(ary)
 
-    if staticlen(ary.shape) == 0:
+    if static.len(ary.shape) == 0:
         compile_error("hsplit only works on arrays of 1 or more dimensions")
 
     return split(ary, indices_or_sections, 1 if ary.ndim > 1 else 0)
@@ -2041,7 +2043,7 @@ def hsplit(ary, indices_or_sections):
 def dsplit(ary, indices_or_sections):
     ary = asarray(ary)
 
-    if staticlen(ary.shape) < 3:
+    if static.len(ary.shape) < 3:
         compile_error("dsplit only works on arrays of 3 or more dimensions")
 
     return split(ary, indices_or_sections, 2)
@@ -2049,7 +2051,7 @@ def dsplit(ary, indices_or_sections):
 def trim_zeros(filt, trim: str = 'fb'):
     filt = asarray(filt)
 
-    if staticlen(filt.shape) != 1:
+    if static.len(filt.shape) != 1:
         compile_error("trim_zeros() only takes 1-dimensional arrays as input")
 
     fb = (trim == 'fb' or trim == 'bf')
@@ -2076,7 +2078,7 @@ def trim_zeros(filt, trim: str = 'fb'):
 
 def flip(m, axis = None):
     m = asarray(m)
-    ndim: Static[int] = staticlen(m.shape)
+    ndim: Literal[int] = static.len(m.shape)
 
     if axis is None:
         return flip(m, util.tuple_range(ndim))
@@ -2091,7 +2093,7 @@ def flip(m, axis = None):
     pshape = Ptr[int](__ptr__(shape).as_byte())
     pstrides = Ptr[int](__ptr__(strides).as_byte())
 
-    for i in staticrange(ndim):
+    for i in static.range(ndim):
         if i in axis:
             st = pstrides[i]
             offset += (pshape[i] - 1) * st
@@ -2101,19 +2103,19 @@ def flip(m, axis = None):
 
 def fliplr(m):
     m = asarray(m)
-    if staticlen(m.shape) < 2:
+    if static.len(m.shape) < 2:
         compile_error("Input must be >= 2-d.")
     return flip(m, axis=1)
 
 def flipud(m):
     m = asarray(m)
-    if staticlen(m.shape) < 1:
+    if static.len(m.shape) < 1:
         compile_error("Input must be >= 1-d.")
     return flip(m, axis=0)
 
 def rot90(m, k: int = 1, axes: Tuple[int,int] = (0, 1)):
     m = asarray(m)
-    ndim: Static[int] = staticlen(m.shape)
+    ndim: Literal[int] = static.len(m.shape)
 
     if axes[0] == axes[1] or abs(axes[0] - axes[1]) == ndim:
         raise ValueError("Axes must be different.")
@@ -2176,8 +2178,8 @@ def tile(A, reps):
 
     A = asarray(A)
     dtype = A.dtype
-    ndim: Static[int] = staticlen(A.shape)
-    d: Static[int] = staticlen(reps)
+    ndim: Literal[int] = static.len(A.shape)
+    d: Literal[int] = static.len(reps)
 
     if ndim < d:
         new_shape = ((1,) * (d - ndim)) + A.shape
@@ -2200,7 +2202,7 @@ def tile(A, reps):
 
 def roll(a, shift, axis = None):
     a = asarray(a)
-    ndim: Static[int] = staticlen(a.shape)
+    ndim: Literal[int] = static.len(a.shape)
 
     if axis is None:
         return roll(a.ravel(), shift, axis=0).reshape(a.shape)
@@ -2211,8 +2213,8 @@ def roll(a, shift, axis = None):
     if isinstance(shift, int):
         return roll(a, (shift,), axis)
 
-    na: Static[int] = staticlen(axis)
-    ns: Static[int] = staticlen(shift)
+    na: Literal[int] = static.len(axis)
+    ns: Literal[int] = static.len(shift)
 
     if na == 0:
         compile_error("empty tuple given for 'axis'")
@@ -2226,7 +2228,7 @@ def roll(a, shift, axis = None):
     if na != 1 and ns == 1:
         return roll(a, shift * na, axis)
 
-    if staticlen(axis) != staticlen(shift):
+    if static.len(axis) != static.len(shift):
         compile_error("'shift' and 'axis' must be tuples of the same size")
 
     axis = util.normalize_axis_tuple(axis, a.ndim, allow_duplicates=True)
@@ -2234,7 +2236,7 @@ def roll(a, shift, axis = None):
     shifts = (0,) * ndim
     pshifts = Ptr[int](__ptr__(shifts).as_byte())
 
-    for i in staticrange(staticlen(axis)):
+    for i in static.range(static.len(axis)):
         pshifts[axis[i]] += shift[i]
 
     new = empty_like(a)
@@ -2261,7 +2263,7 @@ def roll(a, shift, axis = None):
 
     return new
 
-def _atleast_nd(a, ndim: Static[int]):
+def _atleast_nd(a, ndim: Literal[int]):
     return array(a, ndmin=ndim, copy=False)
 
 def _accumulate(values):
@@ -2270,19 +2272,19 @@ def _accumulate(values):
 
 def _longest_shape(a):
     if isinstance(a, ndarray):
-        return (0,) * staticlen(a.shape)
+        return (0,) * static.len(a.shape)
     elif isinstance(a, List):
         if len(a) == 0:
             raise ValueError("Lists passed to block cannot be empty")
         return _longest_shape(a[0])
     elif isinstance(a, Tuple):
-        if staticlen(a) == 0:
+        if static.len(a) == 0:
             compile_error("Tuples passed to block cannot be empty")
-        if staticlen(a) == 1:
+        if static.len(a) == 1:
             return _longest_shape(a[0])
         ls1 = _longest_shape(a[0])
         ls2 = _longest_shape(a[1:])
-        if staticlen(ls1) > staticlen(ls2):
+        if static.len(ls1) > static.len(ls2):
             return ls1
         else:
             return ls2
@@ -2296,8 +2298,8 @@ def _bottom_index(a):
         return (0,) + _bottom_index(a[0])
     elif isinstance(a, Tuple):
         bi0 = _bottom_index(a[0])
-        for i in staticrange(1, staticlen(a)):
-            if staticlen(_bottom_index(a[i])) != staticlen(bi0):
+        for i in static.range(1, static.len(a)):
+            if static.len(_bottom_index(a[i])) != static.len(bi0):
                 compile_error("Depths of block argument are mismatched")
 
         return (0,) + bi0
@@ -2315,7 +2317,7 @@ def _final_size(a):
     else:
         return 1
 
-def _block(arrays, max_depth: Static[int], result_ndim: Static[int], depth: Static[int] = 0):
+def _block(arrays, max_depth: Literal[int], result_ndim: Literal[int], depth: Literal[int] = 0):
     if depth < max_depth:
         arrs = [_block(arr, max_depth, result_ndim, depth+1)
                 for arr in arrays]
@@ -2323,13 +2325,13 @@ def _block(arrays, max_depth: Static[int], result_ndim: Static[int], depth: Stat
     else:
         return _atleast_nd(arrays, result_ndim)
 
-def _block_concatenate(arrays, list_ndim: Static[int], result_ndim: Static[int]):
+def _block_concatenate(arrays, list_ndim: Literal[int], result_ndim: Literal[int]):
     result = _block(arrays, list_ndim, result_ndim)
     if list_ndim == 0:
         result = result.copy()
     return result
 
-def _concatenate_shapes(shapes, axis: Static[int]):
+def _concatenate_shapes(shapes, axis: Literal[int]):
     # Cache a result that will be reused.
     shape_at_axis = [shape[axis] for shape in shapes]
 
@@ -2351,7 +2353,7 @@ def _concatenate_shapes(shapes, axis: Static[int]):
                                             offsets_at_axis)]
     return shape, slice_prefixes
 
-def _block_info_recursion(arrs, max_depth: Static[int], result_ndim: Static[int], depth: Static[int] = 0):
+def _block_info_recursion(arrs, max_depth: Literal[int], result_ndim: Literal[int], depth: Literal[int] = 0):
     if depth < max_depth:
         shapes = []
         slices = []
@@ -2363,7 +2365,7 @@ def _block_info_recursion(arrs, max_depth: Static[int], result_ndim: Static[int]
             slices.append(sl)
             arrays.append(ar)
 
-        axis: Static[int] = result_ndim - max_depth + depth
+        axis: Literal[int] = result_ndim - max_depth + depth
         shape, slice_prefixes = _concatenate_shapes(shapes, axis)
 
         # Prepend the slice prefix and flatten the slices
@@ -2382,7 +2384,7 @@ def _block_info_recursion(arrs, max_depth: Static[int], result_ndim: Static[int]
         arr = _atleast_nd(arrs, result_ndim)
         return arr.shape, [()], [arr]
 
-def _block_slicing(arrays, list_ndim: Static[int], result_ndim: Static[int]):
+def _block_slicing(arrays, list_ndim: Literal[int], result_ndim: Literal[int]):
     shape, slices, arrays = _block_info_recursion(
         arrays, list_ndim, result_ndim)
     dtype = arrays[0].dtype
@@ -2408,9 +2410,9 @@ def block(arrays):
     bi = _bottom_index(arrays)
     final_size = _final_size(arrays)
 
-    list_ndim: Static[int] = staticlen(bi)
-    arr_ndim: Static[int] = staticlen(ls)
-    result_ndim: Static[int] = arr_ndim if arr_ndim > list_ndim else list_ndim
+    list_ndim: Literal[int] = static.len(bi)
+    arr_ndim: Literal[int] = static.len(ls)
+    result_ndim: Literal[int] = arr_ndim if arr_ndim > list_ndim else list_ndim
 
     # Note: This is just the heuristic NumPy uses. I have not tested how
     # good it is for Codon.
@@ -2559,12 +2561,12 @@ def array_equal(a1, a2, equal_nan: bool = False):
 
 def array_equiv(a1, a2):
     def can_broadcast(s1, s2):
-        if staticlen(s1) > staticlen(s2):
-            return can_broadcast(s1[-staticlen(s2):], s2)
-        elif staticlen(s1) < staticlen(s2):
-            return can_broadcast(s1, s2[-staticlen(s1):])
+        if static.len(s1) > static.len(s2):
+            return can_broadcast(s1[-static.len(s2):], s2)
+        elif static.len(s1) < static.len(s2):
+            return can_broadcast(s1, s2[-static.len(s1):])
         else:
-            for i in staticrange(staticlen(s1)):
+            for i in static.range(static.len(s1)):
                 d1 = s1[i]
                 d2 = s2[i]
                 if d1 != d2 and not (d1 == 1 or d2 == 1):
@@ -2603,13 +2605,13 @@ def squeeze(a, axis = None):
     shape = a.shape
     strides = a.strides
 
-    new_shape = (0,) * (staticlen(shape) - staticlen(axis))
-    new_strides = (0,) * (staticlen(shape) - staticlen(axis))
+    new_shape = (0,) * (static.len(shape) - static.len(axis))
+    new_strides = (0,) * (static.len(shape) - static.len(axis))
     pnew_shape = Ptr[int](__ptr__(new_shape).as_byte())
     pnew_strides = Ptr[int](__ptr__(new_strides).as_byte())
 
     j = 0
-    for i in staticrange(staticlen(shape)):
+    for i in static.range(static.len(shape)):
         if i in axis:
             if shape[i] != 1:
                 raise ValueError("cannot select an axis to squeeze out which has size not equal to one")
@@ -2623,19 +2625,19 @@ def squeeze(a, axis = None):
 def pad(array, pad_width, mode = 'constant', **kwargs):
     from .ndmath import isnan
 
-    def unpack_params(x, iaxis: int, name: Static[str]):
+    def unpack_params(x, iaxis: int, name: Literal[str]):
         if isinstance(x, Tuple):
-            if staticlen(x) == 1:
+            if static.len(x) == 1:
                 if isinstance(x[0], Tuple):
-                    if staticlen(x[0]) == 1:
+                    if static.len(x[0]) == 1:
                         return x[0][0], x[0][0]
-                    elif staticlen(x[0]) == 2:
+                    elif static.len(x[0]) == 2:
                         return x[0]
                     else:
                         compile_error("invalid parameter '" + name + "' given")
                 else:
                     return x[0], x[0]
-            elif staticlen(x) == 2:
+            elif static.len(x) == 2:
                 if isinstance(x[0], Tuple):
                     return x[iaxis]
                 else:
@@ -2666,9 +2668,9 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
     def pad_from_function(a: ndarray, pw, padding_func, kwargs, extra = None):
         shape = a.shape
         strides = a.strides
-        ndim: Static[int] = staticlen(shape)
+        ndim: Literal[int] = static.len(shape)
 
-        for i in staticrange(ndim):
+        for i in static.range(ndim):
             length = shape[i]
             stride = strides[i]
 
@@ -2977,7 +2979,7 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
     a = asarray(array)
     s = a.shape
     dtype = a.dtype
-    ndim: Static[int] = staticlen(s)
+    ndim: Literal[int] = static.len(s)
 
     if ndim == 0:
         return a
@@ -2994,19 +2996,19 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
         pw = (pad_width,) * ndim
     elif isinstance(pad_width, Tuple[Tuple[int, int]]):
         pw = (pad_width[0],) * ndim
-    elif staticlen(pad_width) == 1:
+    elif static.len(pad_width) == 1:
         pw = pad_width * ndim
     else:
         pw = pad_width
 
-    if staticlen(pw) != ndim:
+    if static.len(pw) != ndim:
         compile_error("invalid pad_width")
 
     for p in pw:
         if p[0] < 0 or p[1] < 0:
             raise ValueError("padding can't be negative")
 
-    new_shape = tuple(s[i] + pw[i][0] + pw[i][1] for i in staticrange(ndim))
+    new_shape = tuple(s[i] + pw[i][0] + pw[i][1] for i in static.range(ndim))
 
     if isinstance(mode, str):
         ans = empty(new_shape, dtype)
@@ -3015,7 +3017,7 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
 
     # copy in original array
     for idx in util.multirange(s):
-        idx1 = tuple(idx[i] + pw[i][0] for i in staticrange(ndim))
+        idx1 = tuple(idx[i] + pw[i][0] for i in static.range(ndim))
         p = a._ptr(idx)
         q = ans._ptr(idx1)
         q[0] = p[0]
@@ -3065,7 +3067,7 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
 def nonzero(a):
     a = asarray(a)
 
-    if staticlen(a.shape) == 0:
+    if static.len(a.shape) == 0:
         # Note: this is technically deprecated behavior
         if bool(a.item()):
             ans = empty(1, int)
@@ -3089,7 +3091,7 @@ def nonzero(a):
 
         for idx in util.multirange(a.shape):
             if bool(a._ptr(idx)[0]):
-                for i in staticrange(staticlen(ans)):
+                for i in static.range(static.len(ans)):
                     ans[i].data[k] = idx[i]
                 k += 1
 
@@ -3098,7 +3100,7 @@ def nonzero(a):
 def flatnonzero(a):
     a = asarray(a)
 
-    if staticlen(a.shape) <= 1:
+    if static.len(a.shape) <= 1:
         return nonzero(a)[0]
     else:
         sz = a.size
@@ -3135,7 +3137,7 @@ def flatnonzero(a):
 def argwhere(a):
     a = asarray(a)
 
-    if staticlen(a.shape) == 0:
+    if static.len(a.shape) == 0:
         m = 1 if bool(a.item()) else 0
         return empty((m, 0), int)
     else:
@@ -3281,7 +3283,7 @@ def searchsorted(a, v, side: str = 'left', sorter = None):
     a = asarray(a)
     v = asarray(v)
 
-    if staticlen(a.shape) != 1:
+    if static.len(a.shape) != 1:
         compile_error("searchsorted requires 1-dimensional input array")
 
     n = a.size
@@ -3301,7 +3303,7 @@ def searchsorted(a, v, side: str = 'left', sorter = None):
     else:
         perm = asarray(sorter)
 
-        if staticlen(perm.shape) != 1:
+        if static.len(perm.shape) != 1:
             compile_error("sorter argument must be 1-dimensional")
 
         if perm.dtype is not int:
@@ -3321,7 +3323,7 @@ def searchsorted(a, v, side: str = 'left', sorter = None):
         a = ascontiguousarray(a)
         s = a.strides[0]
 
-    if staticlen(v.shape) == 0:
+    if static.len(v.shape) == 0:
         x = v.item()
         if sorter is None:
             if left:
@@ -3339,7 +3341,7 @@ def searchsorted(a, v, side: str = 'left', sorter = None):
         if v.size == 0:
             return ans
 
-        last_x = v._ptr((0,) * staticlen(v.shape))[0]
+        last_x = v._ptr((0,) * static.len(v.shape))[0]
         lo = 0
         hi = n
 
@@ -3385,7 +3387,7 @@ def take(a, indices, axis = None, out = None, mode: str = 'raise'):
     n = 1
     m = 1
     chunk = 1
-    nd: Static[int] = staticlen(a.shape) + staticlen(indices.shape) - 1
+    nd: Literal[int] = static.len(a.shape) + static.len(indices.shape) - 1
     shape = (0,) * nd
     ashape0 = a.shape
     ishape0 = indices.shape
@@ -3393,7 +3395,7 @@ def take(a, indices, axis = None, out = None, mode: str = 'raise'):
     ishape = Ptr[int](__ptr__(ishape0).as_byte())
     pshape = Ptr[int](__ptr__(shape).as_byte())
 
-    for i in staticrange(nd):
+    for i in static.range(nd):
         if i < axis:
             pshape[i] = ashape[i]
             n *= pshape[i]
@@ -3408,7 +3410,7 @@ def take(a, indices, axis = None, out = None, mode: str = 'raise'):
     if out is None:
         res = empty(shape, dtype=a.dtype)
     elif isinstance(out, ndarray):
-        if staticlen(out.shape) != staticlen(shape) or out.dtype is not a.dtype:
+        if static.len(out.shape) != static.len(shape) or out.dtype is not a.dtype:
             compile_error("output array does not match result of ndarray.take")
 
         if out.shape != shape:
@@ -3474,21 +3476,21 @@ def take(a, indices, axis = None, out = None, mode: str = 'raise'):
     else:
         return res
 
-def indices(dimensions, dtype: type = int, sparse: Static[bool] = False):
+def indices(dimensions, dtype: type = int, sparse: Literal[bool] = False):
     if not isinstance(dimensions, Tuple):
         compile_error("dimensions must be a tuple of integers")
 
-    N: Static[int] = staticlen(dimensions)
+    N: Literal[int] = static.len(dimensions)
     shape = (1,) * N
 
     if sparse:
         return tuple(
             arange(dimensions[i], dtype=dtype).reshape(
-                shape[:i] + (dimensions[i],) + shape[i+1:]) for i in staticrange(N))
+                shape[:i] + (dimensions[i],) + shape[i+1:]) for i in static.range(N))
 
     res = empty((N,) + dimensions, dtype=dtype)
 
-    for i in staticrange(N):
+    for i in static.range(N):
         dim = dimensions[i]
         idx = arange(dim, dtype=dtype).reshape(shape[:i] + (dim,) + shape[i+1:])
         res[i] = idx
@@ -3496,9 +3498,9 @@ def indices(dimensions, dtype: type = int, sparse: Static[bool] = False):
     return res
 
 def ix_(*args):
-    def ix_one(new, nd: Static[int], k: Static[int]):
+    def ix_one(new, nd: Literal[int], k: Literal[int]):
         new = asarray(new)
-        if staticlen(new.shape) != 1:
+        if static.len(new.shape) != 1:
             compile_error("Cross index must be 1 dimensional")
 
         if new.dtype is bool:
@@ -3508,8 +3510,8 @@ def ix_(*args):
 
         return newx.reshape((1,)*k + (newx.size,) + (1,)*(nd-k-1))
 
-    nd: Static[int] = staticlen(args)
-    return tuple(ix_one(args[k], nd, k) for k in staticrange(nd))
+    nd: Literal[int] = static.len(args)
+    return tuple(ix_one(args[k], nd, k) for k in static.range(nd))
 
 def ravel_multi_index(multi_index, dims, mode: str = 'raise', order: str = 'C'):
     def fix_index(idx: int, axis: int, dim: int, mode: str):
@@ -3532,7 +3534,7 @@ def ravel_multi_index(multi_index, dims, mode: str = 'raise', order: str = 'C'):
         return idx
 
     def gather_non_ints(x):
-        if staticlen(x) == 0:
+        if static.len(x) == 0:
             return ()
 
         i = x[0]
@@ -3561,27 +3563,27 @@ def ravel_multi_index(multi_index, dims, mode: str = 'raise', order: str = 'C'):
     else:
         raise ValueError("only 'C' or 'F' order is permitted")
 
-    N: Static[int] = staticlen(dims)
+    N: Literal[int] = static.len(dims)
 
     if isinstance(multi_index, List[int]):
         if len(multi_index) != N:
             raise ValueError(f"parameter multi_index must be a sequence of length {N}")
 
-        idx = tuple(fix_index(multi_index[j], j, dims[j], mode) for j in staticrange(N))
+        idx = tuple(fix_index(multi_index[j], j, dims[j], mode) for j in static.range(N))
         return util.coords_to_index(idx, dims) if corder else util.coords_to_findex(idx, dims)
     elif isinstance(multi_index, Tuple):
-        if staticlen(gather_non_ints(multi_index)) == 0:
-            if staticlen(multi_index) != staticlen(dims):
+        if static.len(gather_non_ints(multi_index)) == 0:
+            if static.len(multi_index) != static.len(dims):
                 compile_error("parameter multi_index does not match dims in size")
 
-            idx = tuple(fix_index(multi_index[j], j, dims[j], mode) for j in staticrange(N))
+            idx = tuple(fix_index(multi_index[j], j, dims[j], mode) for j in static.range(N))
             return util.coords_to_index(idx, dims) if corder else util.coords_to_findex(idx, dims)
 
         midx = vstack(multi_index)
     else:
         midx = asarray(multi_index)
 
-    if staticlen(midx.shape) != 2:
+    if static.len(midx.shape) != 2:
         compile_error("multi_index must be 2 dimensional")
 
     if len(multi_index) != N:
@@ -3590,8 +3592,8 @@ def ravel_multi_index(multi_index, dims, mode: str = 'raise', order: str = 'C'):
     ans = empty(midx.shape[1], int)
 
     for i in range(ans.size):
-        idx = tuple(midx._ptr((j, i))[0] for j in staticrange(N))
-        idx = tuple(fix_index(idx[j], j, dims[j], mode) for j in staticrange(N))
+        idx = tuple(midx._ptr((j, i))[0] for j in static.range(N))
+        idx = tuple(fix_index(idx[j], j, dims[j], mode) for j in static.range(N))
         res = util.coords_to_index(idx, dims) if corder else util.coords_to_findex(idx, dims)
         ans.data[i] = res
 
@@ -3614,7 +3616,7 @@ def unravel_index(indices, shape, order: str = 'C'):
     else:
         raise ValueError("only 'C' or 'F' order is permitted")
 
-    N: Static[int] = staticlen(shape)
+    N: Literal[int] = static.len(shape)
     if N == 0:
         if not isinstance(indices, int):
             compile_error("multiple indices are not supported for 0d arrays")
@@ -3633,7 +3635,7 @@ def unravel_index(indices, shape, order: str = 'C'):
         return util.index_to_coords(indices, shape) if corder else util.index_to_fcoords(indices, shape)
 
     indices = asarray(indices)
-    N: Static[int] = staticlen(shape)
+    N: Literal[int] = static.len(shape)
     ans = tuple(empty(indices.shape, int) for _ in shape)
 
     for idx in util.multirange(indices.shape):
@@ -3641,7 +3643,7 @@ def unravel_index(indices, shape, order: str = 'C'):
         check(index, n)
         res = util.index_to_coords(index, shape) if corder else util.index_to_fcoords(index, shape)
 
-        for i in staticrange(N):
+        for i in static.range(N):
             ans[i]._ptr(idx)[0] = res[i]
 
     return ans
@@ -3651,19 +3653,19 @@ def diag_indices(n: int, ndim: int):
     return [idx for _ in range(ndim)]
 
 @overload
-def diag_indices(n: int, ndim: Static[int] = 2):
+def diag_indices(n: int, ndim: Literal[int] = 2):
     idx = arange(n)
     return (idx,) * ndim
 
 def diag_indices_from(arr):
     arr = asarray(arr)
     shape = arr.shape
-    ndim: Static[int] = staticlen(shape)
+    ndim: Literal[int] = static.len(shape)
 
     if ndim < 2:
         compile_error("input array must be at least 2-d")
 
-    for i in staticrange(1, ndim):
+    for i in static.range(1, ndim):
         if shape[i] != shape[0]:
             raise ValueError("All dimensions of input must be of equal length")
 
@@ -3681,7 +3683,7 @@ def tril_indices(n: int, k: int = 0, m: Optional[int] = None):
 
 def tril_indices_from(arr, k: int = 0):
     arr = asarray(arr)
-    if staticlen(arr.shape) != 2:
+    if static.len(arr.shape) != 2:
         compile_error("input array must be 2-d")
     return tril_indices(arr.shape[-2], k=k, m=arr.shape[-1])
 
@@ -3692,7 +3694,7 @@ def triu_indices(n: int, k: int = 0, m: Optional[int] = None):
 
 def triu_indices_from(arr, k: int = 0):
     arr = asarray(arr)
-    if staticlen(arr.shape) != 2:
+    if static.len(arr.shape) != 2:
         compile_error("input array must be 2-d")
     return triu_indices(arr.shape[-2], k=k, m=arr.shape[-1])
 
@@ -3707,7 +3709,7 @@ def take_along_axis(arr, indices, axis):
         compile_error("`indices` must be an integer array")
 
     if axis is None:
-        if staticlen(indices.shape) != 1:
+        if static.len(indices.shape) != 1:
             dim_mismatch()
 
         out = empty(indices.size, arr.dtype)
@@ -3716,7 +3718,7 @@ def take_along_axis(arr, indices, axis):
 
         return out
 
-    if staticlen(arr.shape) != staticlen(indices.shape):
+    if static.len(arr.shape) != static.len(indices.shape):
         dim_mismatch()
 
     axis = util.normalize_axis_index(axis, arr.ndim)
@@ -3744,9 +3746,9 @@ def take_along_axis(arr, indices, axis):
     return out
 
 def choose(a, choices, out = None, mode: str = 'raise'):
-    MODE_RAISE: Static[int] = 0
-    MODE_WRAP : Static[int] = 1
-    MODE_CLIP : Static[int] = 2
+    MODE_RAISE: Literal[int] = 0
+    MODE_WRAP : Literal[int] = 1
+    MODE_CLIP : Literal[int] = 2
 
     a = asarray(a)
 
@@ -3794,7 +3796,7 @@ def choose(a, choices, out = None, mode: str = 'raise'):
         if out.dtype is not dtype:
             compile_error("'out' has incorrect dtype")
 
-        if staticlen(bshape) != staticlen(out.shape):
+        if static.len(bshape) != static.len(out.shape):
             compile_error("'out' has incorrect number of dimensions")
 
         if bshape != out.shape:
@@ -3830,7 +3832,7 @@ def compress(condition, a, axis = None, out = None):
     condition = asarray(condition)
     a = asarray(a)
 
-    if staticlen(condition.shape) != 1:
+    if static.len(condition.shape) != 1:
         compile_error("condition must be a 1-d array")
 
     if axis is None:
@@ -3851,7 +3853,7 @@ def compress(condition, a, axis = None, out = None):
             if not isinstance(out, ndarray):
                 compile_error("'out' must be an array")
 
-            if staticlen(out.shape) != 1:
+            if static.len(out.shape) != 1:
                 compile_error("'out' must be 1-dimensional")
 
             if out.size != num_true:
@@ -3900,7 +3902,7 @@ def compress(condition, a, axis = None, out = None):
         if not isinstance(out, ndarray):
             compile_error("'out' must be an array")
 
-        if staticlen(out.shape) != staticlen(ans_shape):
+        if static.len(out.shape) != static.len(ans_shape):
             compile_error("'out' has incorrect number of dimensions")
 
         if out.shape != ans_shape:
@@ -3928,7 +3930,7 @@ def diagonal(a, offset: int = 0, axis1: int = 0, axis2: int = 1):
     a = asarray(a)
     shape = a.shape
     strides = a.strides
-    ndim: Static[int] = staticlen(shape)
+    ndim: Literal[int] = static.len(shape)
 
     if ndim < 2:
         compile_error("diag requires an array of at least two dimensions")
@@ -4144,7 +4146,7 @@ def put_along_axis(arr: ndarray, indices, values, axis):
     indices = broadcast_to(indices, bshape)
     values = broadcast_to(values, bshape)
 
-    if staticlen(arr.shape) != staticlen(indices.shape):
+    if static.len(arr.shape) != static.len(indices.shape):
         dim_mismatch()
 
     axis = util.normalize_axis_index(axis, arr.ndim)
@@ -4200,7 +4202,7 @@ def putmask(a: ndarray, mask, values):
                 j = 0
 
 def fill_diagonal(a: ndarray, val, wrap: bool = False):
-    if staticlen(a.shape) < 2:
+    if static.len(a.shape) < 2:
         compile_error("array must be at least 2-d")
 
     val = asarray(val)
@@ -4210,7 +4212,7 @@ def fill_diagonal(a: ndarray, val, wrap: bool = False):
     if nv == 0 or end == 0:
         return
 
-    if staticlen(a.shape) == 2:
+    if static.len(a.shape) == 2:
         step = a.shape[1] + 1
         if not wrap:
             end = min(end, a.shape[1] * a.shape[1])
@@ -4280,7 +4282,7 @@ def _round(x: T, decimals: int, T: type):
 def round(a, decimals: int = 0, out = None):
     a = asarray(a)
 
-    if staticlen(a.shape) == 0:
+    if static.len(a.shape) == 0:
         return _round(a.data[0], decimals)
 
     cc, fc = a._contig
@@ -4326,7 +4328,7 @@ def _clip_full(a, a_min, a_max, out):
     if out is None:
         ans = empty(bshape, a.dtype)
     elif isinstance(out, ndarray):
-        if staticlen(bshape) != staticlen(out.shape):
+        if static.len(bshape) != static.len(out.shape):
             compile_error("'out' has incorrect number of dimensions")
 
         if bshape != out.shape:
@@ -4359,7 +4361,7 @@ def _clip_min(a, a_min, out):
     if out is None:
         ans = empty(bshape, a.dtype)
     elif isinstance(out, ndarray):
-        if staticlen(bshape) != staticlen(out.shape):
+        if static.len(bshape) != static.len(out.shape):
             compile_error("'out' has incorrect number of dimensions")
 
         if bshape != out.shape:
@@ -4389,7 +4391,7 @@ def _clip_max(a, a_max, out):
     if out is None:
         ans = empty(bshape, a.dtype)
     elif isinstance(out, ndarray):
-        if staticlen(bshape) != staticlen(out.shape):
+        if static.len(bshape) != static.len(out.shape):
             compile_error("'out' has incorrect number of dimensions")
 
         if bshape != out.shape:
@@ -4427,7 +4429,7 @@ def ndenumerate(arr):
         yield (idx, arr._ptr(idx)[0])
 
 def ndindex(*shape):
-    if staticlen(shape) == 1:
+    if static.len(shape) == 1:
         if isinstance(shape[0], Tuple):
             return ndindex(*shape[0])
 
@@ -4440,7 +4442,7 @@ def iterable(y):
     if not hasattr(y, "__iter__"):
         return False
     elif isinstance(y, ndarray):
-        if staticlen(y.shape) == 0:
+        if static.len(y.shape) == 0:
             return False
         else:
             return True
@@ -4713,7 +4715,7 @@ def isscalar(element):
             T is str or
             T is NoneType)
 
-def _array_get_part(arr: ndarray, imag: Static[bool]):
+def _array_get_part(arr: ndarray, imag: Literal[bool]):
     if arr.dtype is complex:
         offset = util.sizeof(float) if imag else 0
         data = Ptr[float](arr.data.as_byte() + offset)
@@ -4922,7 +4924,7 @@ def busday_offset(dates, offsets, roll: str = "raise", weekmask=None,
         if out.dtype is not datetime64['D', 1]:
             compile_error("'out' must have dtype datetime64[D]")
 
-        if out.ndim != staticlen(bshape):
+        if out.ndim != static.len(bshape):
             compile_error("'out' has incorrect number of dimensions")
 
         if out.shape != bshape:

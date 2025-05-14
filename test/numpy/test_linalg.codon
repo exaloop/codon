@@ -3,6 +3,7 @@ import numpy.linalg as alg
 import numpy.random as rnd
 from numpy import *
 import itertools
+import internal.static as static
 
 def identity_like_generalized(a):
     a = np.array(a)
@@ -1614,14 +1615,14 @@ def test_tensorsolve():
         a = rnd.randn(*shape)
         b = np.ones(a.shape[:2])
         x = alg.tensorsolve(a, b)
-        axis: Static[int] = 1
+        axis: Literal[int] = 1
         assert np.isclose(np.tensordot(a, x, axes=axis), b).all()
 
         shape = (3, 4, 4, 3)
         a = rnd.randn(*shape)
         b = np.ones(a.shape[:2])
         x = alg.tensorsolve(a, b)
-        axis: Static[int] = 2
+        axis: Literal[int] = 2
         assert np.isclose(np.tensordot(a, x, axes=axis), b).all()
 
     test_tensorsolve_result()
@@ -2159,7 +2160,7 @@ test_vdot(np.array([[1, 4], [5, 6]]), np.array([[4, 1], [2, 2]]), 30)
 def test_inner(a, b, expected):
     if isinstance(a, int) or isinstance(b, int):
         assert (np.inner(a, b) == expected).all()
-    elif (staticlen(a.shape) == 1 and staticlen(b.shape) == 1):
+    elif (static.len(a.shape) == 1 and static.len(b.shape) == 1):
         assert np.inner(a, b) == expected
     else:
         assert (np.inner(a, b) == expected).all()
@@ -2250,7 +2251,7 @@ test_cholesky(np.array([[1, -2], [2, 5]]), np.array([[1., 0.], [2., 1.]]))
 test_cholesky(np.array([[1]]), np.array([[1.]]))
 
 @test
-def test_qr(a, expected_Q, expected_R, mode: Static[str] = 'reduced'):
+def test_qr(a, expected_Q, expected_R, mode: Literal[str] = 'reduced'):
     Q, R = alg.qr(a, mode=mode)
     assert (round(Q, 8) == expected_Q).all() and (round(R, 8)
                                                   == expected_R).all()
@@ -2288,7 +2289,7 @@ test_qr(
 @test
 def test_svd(a,
              full_matrices: bool = True,
-             compute_uv: Static[bool] = True,
+             compute_uv: Literal[bool] = True,
              hermitian: bool = False,
              expected=0):
     if hermitian:

@@ -1,6 +1,8 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import util
+import internal.static as static
+
 from .reductions import mean, std, percentile
 from .ndarray import ndarray
 from .routines import array, asarray, full, broadcast_to, swapaxes, empty, concatenate, around, diag, clip, zeros, searchsorted, linspace
@@ -11,8 +13,8 @@ from .sorting import sort, argsort
 def average(a,
             axis=None,
             weights=None,
-            returned: Static[bool] = False,
-            keepdims: Static[bool] = False):
+            returned: Literal[bool] = False,
+            keepdims: Literal[bool] = False):
 
     def result_type(a_dtype: type, w_dtype: type):
         common_dtype = type(util.coerce(a_dtype, w_dtype))
@@ -273,11 +275,11 @@ def corrcoef(x, y=None, rowvar=True, dtype: type = NoneType):
 def _correlate(a, b, mode: str):
 
     def kernel(d, dstride: int, nd: int, dtype: type,
-               k, kstride: int, nk: Static[int], ktype: type,
+               k, kstride: int, nk: Literal[int], ktype: type,
                out, ostride: int):
         for i in range(nd):
             acc = util.zero(dtype)
-            for j in staticrange(nk):
+            for j in static.range(nk):
                 acc += d[(i + j) * dstride] * k[j * kstride]
             out[i * ostride] = acc
 
@@ -909,7 +911,7 @@ def _histogram_fast(a, bins=10, range=None):
 def histogram(a,
               bins=10,
               range=None,
-              density: Static[bool] = False,
+              density: Literal[bool] = False,
               weights=None):
 
     def return_zeros(size, weights):
@@ -918,7 +920,7 @@ def histogram(a,
         else:
             return zeros(size, dtype=weights.dtype)
 
-    def histogram_result(n, bin_edges, density: Static[bool] = False):
+    def histogram_result(n, bin_edges, density: Literal[bool] = False):
         if density:
             db = array(_diff(bin_edges), float)
             return (n / db / n.sum(), bin_edges)
@@ -942,9 +944,9 @@ def histogram(a,
     BLOCK = 65536
 
     # The fast path uses bincount, but that only works for certain types of weight
-    simple_weights1: Static[bool] = weights is None
+    simple_weights1: Literal[bool] = weights is None
     if isinstance(weights, ndarray):
-        simple_weights2: Static[bool] = (weights.dtype is float
+        simple_weights2: Literal[bool] = (weights.dtype is float
                                          or weights.dtype is complex
                                          or weights.dtype is complex64)
 

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "codon/parser/cache.h"
+#include "codon/parser/match.h"
 #include "codon/parser/visitors/visitor.h"
 
 #define ACCEPT_IMPL(T, X)                                                              \
@@ -17,6 +18,7 @@
 
 using fmt::format;
 using namespace codon::error;
+using namespace codon::matcher;
 
 namespace codon::ast {
 
@@ -451,8 +453,9 @@ ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
       suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),
       staticBaseClasses(std::move(staticBaseClasses)) {
   for (auto &b : baseClasses) {
-    if (cast<IndexExpr>(b) && isId(cast<IndexExpr>(b)->getExpr(), "Static")) {
-      this->staticBaseClasses.push_back(cast<IndexExpr>(b)->getIndex());
+    Expr *e = nullptr;
+    if (match(b, M<IndexExpr>(M<IdExpr>("Static"), MVar<Expr>(e)))) {
+      this->staticBaseClasses.push_back(e);
     } else {
       this->baseClasses.push_back(b);
     }

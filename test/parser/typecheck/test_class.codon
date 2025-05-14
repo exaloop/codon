@@ -91,7 +91,7 @@ class Foo:
 #! unexpected expression in class definition
 
 #%% class_err_9,barebones
-class F[T: Static[float]]:
+class F[T: Literal[float]]:
     pass
 #! expected 'int', 'bool' or 'str'
 

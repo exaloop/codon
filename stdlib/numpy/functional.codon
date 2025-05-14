@@ -3,7 +3,9 @@
 from .ndarray import ndarray
 from .routines import asarray, empty, expand_dims
 from .ufunc import UnaryUFunc, UnaryUFunc2, BinaryUFunc
+
 import util
+import internal.static as static
 
 def apply_along_axis(func1d, axis: int, arr, *args, **kwargs):
     a = asarray(arr)
@@ -46,7 +48,7 @@ def apply_over_axes(func, a, axes):
     a = asarray(a)
     dtype = func(a, 0).dtype
 
-    if staticlen(dtype) >= 0:
+    if static.len(dtype) >= 0:
         val = a.astype(dtype)
         if asarray(axes).ndim == 0:
             ax = (axes,)
@@ -70,7 +72,7 @@ def apply_over_axes(func, a, axes):
 
         return val
 
-def frompyfunc(func, nin: Static[int], nout: Static[int], identity):
+def frompyfunc(func, nin: Literal[int], nout: Literal[int], identity):
     if nin == 1 and nout == 1:
         return UnaryUFunc(func, func.__name__ + ' (vectorized)')
     elif nin == 1 and nout == 2:
@@ -82,8 +84,8 @@ def frompyfunc(func, nin: Static[int], nout: Static[int], identity):
 
 def vectorize(pyfunc):
     import internal.static as S
-    nout: Static[int] = 1
-    nin: Static[int] = staticlen(S.fn_args(pyfunc))
+    nout: Literal[int] = 1
+    nin: Literal[int] = static.len(static.function.args(pyfunc))
     return frompyfunc(pyfunc, nin=nin, nout=nout, identity=None)
 
 def piecewise(x, condlist: List, funclist: List, *args, **kw):

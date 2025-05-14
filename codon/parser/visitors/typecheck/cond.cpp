@@ -149,7 +149,7 @@ void TypecheckVisitor::visit(MatchStmt *stmt) {
 ///   `case 1`             -> `if isinstance(var, "int"): if var == 1`
 ///   `case 1...3`         -> ```if isinstance(var, "int"):
 ///                                if var >= 1: if var <= 3```
-///   `case (1, pat)`      -> ```if isinstance(var, "Tuple"): if staticlen(var) == 2:
+///   `case (1, pat)`      -> ```if isinstance(var, "Tuple"): if static.len(var) == 2:
 ///                                 if match(var[0], 1): if match(var[1], pat)```
 ///   `case [1, ..., pat]` -> ```if isinstance(var, "List"): if len(var) >= 2:
 ///                                 if match(var[0], 1): if match(var[-1], pat)```
@@ -195,10 +195,12 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
       suite =
           transformPattern(N<IndexExpr>(clone(var), N<IntExpr>(it)), (*et)[it], suite);
     }
-    return N<IfStmt>(isinstance(var, "Tuple"),
-                     N<IfStmt>(N<BinaryExpr>(N<CallExpr>(N<IdExpr>("staticlen"), var),
-                                             "==", N<IntExpr>(et->size())),
-                               suite));
+    return N<IfStmt>(
+        isinstance(var, "Tuple"),
+        N<IfStmt>(
+            N<BinaryExpr>(N<CallExpr>(N<IdExpr>("std.internal.static.len.0"), var),
+                          "==", N<IntExpr>(et->size())),
+            suite));
   } else if (auto el = cast<ListExpr>(pattern)) {
     // List pattern
     size_t ellipsis = findEllipsis(el->items), sz = el->size();
