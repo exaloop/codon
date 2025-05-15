@@ -188,6 +188,12 @@ void TranslateVisitor::visit(IdExpr *expr) {
     result = make<ir::VarValue>(expr, v);
   } else if (auto *f = val->getFunc()) {
     result = make<ir::VarValue>(expr, f);
+  } else {
+    // Just use NoneType which is {} (same as type)
+    auto ntval = ctx->find("NoneType.__new__:0");
+    seqassert(ntval, "cannot find '{}'", "NoneType.__new__:0");
+    result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, ntval->getFunc()),
+                                 std::vector<ir::Value *>{});
   }
 }
 

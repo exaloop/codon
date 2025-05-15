@@ -853,7 +853,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   }
 
   else if (exprClass && exprClass->is(TYPE_TYPE) && expectedClass &&
-           expectedClass->is("TypeWrap")) {
+           (expectedClass->is("TypeWrap"))) {
     type = instantiateType(getStdLibType("TypeWrap"),
                            std::vector<types::Type *>{exprClass});
     fn = [this](Expr *expr) -> Expr * {

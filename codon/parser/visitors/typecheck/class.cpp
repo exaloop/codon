@@ -144,19 +144,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     }
 
     // Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
-    Expr *typeAst = nullptr, *transformedTypeAst = nullptr;
+    Expr *transformedTypeAst = nullptr;
     if (!stmt->hasAttribute(Attr::Extend)) {
-      typeAst = N<IdExpr>(name);
       transformedTypeAst = N<IdExpr>(canonicalName);
       for (auto &a : args) {
         if (a.isGeneric()) {
-          if (!cast<IndexExpr>(typeAst)) {
-            typeAst = N<IndexExpr>(N<IdExpr>(name), N<TupleExpr>());
+          if (!cast<InstantiateExpr>(transformedTypeAst)) {
             transformedTypeAst =
                 N<InstantiateExpr>(N<IdExpr>(canonicalName), std::vector<Expr *>{});
           }
-          cast<TupleExpr>(cast<IndexExpr>(typeAst)->getIndex())
-              ->items.push_back(N<IdExpr>(a.getName()));
           cast<InstantiateExpr>(transformedTypeAst)
               ->items.push_back(transform(N<IdExpr>(a.getName()), true));
         }
@@ -263,8 +259,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       // __new__ must be the first
       if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
         for (auto &m : aa->values) {
-          fnStmts.push_back(transform(
-              codegenMagic(m, typeAst, memberArgs, stmt->hasAttribute(Attr::Tuple))));
+          fnStmts.push_back(transform(codegenMagic(m, transformedTypeAst, memberArgs,
+                                                   stmt->hasAttribute(Attr::Tuple))));
         }
       // Add inherited methods
       for (auto &base : staticBaseASTs) {
