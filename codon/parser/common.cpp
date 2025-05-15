@@ -42,7 +42,7 @@ ImportFile IFilesystem::get_root(const path_t &sp) {
       isStdLib = true;
       break;
     }
-  auto module0 = get_module0();
+  auto module0 = get_module0().parent_path();
   if (!isStdLib && !module0.empty() && startswith(s, module0))
     root = module0;
   std::string ext = ".codon";
