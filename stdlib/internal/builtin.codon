@@ -246,7 +246,7 @@ def zip(*args):
         for i in iters:
             i.destroy()
 
-def filter(f: Callable[[T], bool], x: Generator[T], T: type) -> Generator[T]:
+def filter(f: CallableTrait[[T], bool], x: Generator[T], T: type) -> Generator[T]:
     """
     Returns all a from the iterable x that are filtered by f
     """

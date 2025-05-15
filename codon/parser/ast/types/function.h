@@ -17,10 +17,8 @@ struct FunctionStmt;
 namespace codon::ast::types {
 
 /**
- * A generic type that represents a Seq function instantiation.
- * It inherits ClassType that realizes Callable[...].
- *
- * ⚠️ This is not a function pointer (Function[...]) type.
+ * A generic type that represents a Codon function instantiation.
+ * It inherits ClassType that realizes Function[...].
  */
 struct FuncType : public ClassType {
   /// Canonical AST node.

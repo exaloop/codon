@@ -148,7 +148,7 @@ f3()
 #: (1, 2, 3) (x: 1, y: 2, z: 3)
 
 #%% call_arguments_partial,barebones
-def doo[R, T](a: Callable[[T], R], b: Generator[T], c: Optional[T], d: T):
+def doo[R, T](a: CallableTrait[[T], R], b: Generator[T], c: Optional[T], d: T):
     print R.__class__.__name__, T.__class__.__name__
     print a.__class__.__name__[:8], b.__class__.__name__
     for i in b:

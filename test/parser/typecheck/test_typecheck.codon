@@ -31,7 +31,7 @@ print(a, q, w)  # name 'q' is not defined
 print quit  # name 'quit' is not defined
 
 #%% static_unify,barebones
-def foo(x: Callable[[1,2], 3]): pass  #! Callable cannot take static types
+def foo(x: CallableTrait[[1,2], 3]): pass  #! CallableTrait cannot take static types
 
 #%% static_unify_2,barebones
 def foo(x: List[1]): pass  #! expected type expression

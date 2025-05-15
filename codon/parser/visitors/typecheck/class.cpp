@@ -125,8 +125,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           if (cast<IndexExpr>(a.getType())) { // Parse TraitVar
             a.type = transform(a.getType());
             auto ti = cast<InstantiateExpr>(a.getType());
-            seqassert(ti && isId(ti->getExpr(), TYPE_TYPEVAR),
-                      "not a TypeVar instantiation: {}", *(a.getType()));
+            seqassert(ti && isId(ti->getExpr(), TRAIT_TYPE),
+                      "not a TypeTrait instantiation: {}", *(a.getType()));
             auto l = extractType(ti->front());
             if (l->getLink() && l->getLink()->trait)
               generic->getLink()->trait = l->getLink()->trait;

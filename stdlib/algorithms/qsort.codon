@@ -19,7 +19,7 @@
 #    3. This notice may not be removed or altered from any source distribution.
 
 def _med3(
-    a: int, b: int, c: int, d: Array[T], k: Callable[[T], S], T: type, S: type
+    a: int, b: int, c: int, d: Array[T], k: CallableTrait[[T], S], T: type, S: type
 ) -> int:
     if k(d[a]) < k(d[b]):
         return b if (k(d[b]) < k(d[c])) else (c if k(d[a]) < k(d[c]) else a)
@@ -41,7 +41,7 @@ def _vecswap(i: int, j: int, n: int, a: Array[T], T: type):
         n -= 1
 
 def _qsort(
-    arr: Array[T], frm: int, cnt: int, key: Callable[[T], S], T: type, S: type
+    arr: Array[T], frm: int, cnt: int, key: CallableTrait[[T], S], T: type, S: type
 ):
     if cnt <= 7:
         i = frm + 1
@@ -109,7 +109,7 @@ def _qsort(
         _qsort(arr, hi - span, span, key)
 
 def qsort_array(
-    collection: Array[T], size: int, key: Callable[[T], S], T: type, S: type
+    collection: Array[T], size: int, key: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Pattern-defeating Quicksort
@@ -120,7 +120,7 @@ def qsort_array(
     _qsort(collection, 0, size, key)
 
 def qsort_inplace(
-    collection: List[T], key: Callable[[T], S], T: type, S: type
+    collection: List[T], key: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Pattern-defeating Quicksort
@@ -130,7 +130,7 @@ def qsort_inplace(
     """
     qsort_array(collection.arr, collection.len, key)
 
-def qsort(collection: List[T], key: Callable[[T], S], T: type, S: type) -> List[T]:
+def qsort(collection: List[T], key: CallableTrait[[T], S], T: type, S: type) -> List[T]:
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort

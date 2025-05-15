@@ -277,11 +277,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Handle default values
       auto defaultValue = a.getDefault();
       if (a.getType() && defaultValue && cast<NoneExpr>(defaultValue)) {
-        // Special case: `arg: Callable = None` -> `arg: Callable = NoneType()`
-        if (match(a.getType(), M<IndexExpr>(M<IdExpr>(TYPE_CALLABLE), M_)))
+        // Special case: `arg: CallableTrait = None` -> `arg: CallableTrait =
+        // NoneType()`
+        if (match(a.getType(), M<IndexExpr>(M<IdExpr>(TRAIT_CALLABLE), M_)))
           defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
         // Special case: `arg: type = None` -> `arg: type = NoneType`
-        if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TYPE_TYPEVAR))))
+        if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE))))
           defaultValue = N<IdExpr>("NoneType");
       }
       /// TODO: Python-style defaults
@@ -302,7 +303,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (defType)
             generic->defaultType = extractType(defType)->shared_from_this();
         } else {
-          if (match(a.getType(), M<InstantiateExpr>(M<IdExpr>(TYPE_TYPEVAR), M_))) {
+          if (match(a.getType(), M<InstantiateExpr>(M<IdExpr>(TRAIT_TYPE), M_))) {
             // Parse TraitVar
             auto l =
                 transformType(cast<InstantiateExpr>(a.getType())->front())->getType();

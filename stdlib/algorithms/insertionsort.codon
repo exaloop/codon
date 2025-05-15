@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 def _insertion_sort(
-    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     i = begin + 1
     while i < end:
@@ -14,7 +14,7 @@ def _insertion_sort(
         i += 1
 
 def insertion_sort_array(
-    collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
+    collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Insertion Sort
@@ -23,7 +23,7 @@ def insertion_sort_array(
     _insertion_sort(collection, 0, size, keyf)
 
 def insertion_sort_inplace(
-    collection: List[T], keyf: Callable[[T], S], T: type, S: type
+    collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Insertion Sort
@@ -32,7 +32,7 @@ def insertion_sort_inplace(
     insertion_sort_array(collection.arr, collection.len, keyf)
 
 def insertion_sort(
-    collection: List[T], keyf: Callable[[T], S], T: type, S: type
+    collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ) -> List[T]:
     """
     Insertion Sort

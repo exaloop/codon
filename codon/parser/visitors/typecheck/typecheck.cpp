@@ -679,9 +679,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is("ProxyFunc") && exprClass &&
+  else if (expectedClass && expectedClass->is(TYPE_CALLABLE) && exprClass &&
            (exprClass->getPartial() || exprClass->getFunc() ||
-            exprClass->is("Function"))) {
+            exprClass->is(TYPE_FUNCTION))) {
     // Get list of arguments
     std::vector<Type *> argTypes;
     Type *retType;
@@ -778,7 +778,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
                 N<ReturnStmt>(N<CallExpr>(retFn, N<StarExpr>(N<IdExpr>("args"))))));
         f = cast<FunctionStmt>(transform(f));
       }
-      auto e = N<CallExpr>(N<IdExpr>("ProxyFunc"), N<IdExpr>(fname),
+      auto e = N<CallExpr>(N<IdExpr>(TYPE_CALLABLE), N<IdExpr>(fname),
                            dataArg ? dataArg : expr);
       return e;
     };

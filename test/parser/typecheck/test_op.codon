@@ -51,7 +51,7 @@ print tt #: (1,)
 
 def foo(i: int) -> int:
     return i + 1
-f: Callable[[int], int] = foo
+f: CallableTrait[[int], int] = foo
 print f(1) #: 2
 fx: function[[int], int] = foo
 print fx(2) #: 3
@@ -84,7 +84,7 @@ Ptr[int, 's'] #! Ptr takes 1 generics (2 given)
 Ptr[1, 's'] #! Ptr takes 1 generics (2 given)
 
 #%% callable_error,barebones
-def foo(x: Callable[[]]): pass  #! Callable takes 2 generics (1 given)
+def foo(x: CallableTrait[[]]): pass  #! CallableTrait takes 2 generics (1 given)
 
 #%% binary,barebones
 @extend

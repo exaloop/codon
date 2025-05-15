@@ -90,7 +90,7 @@ class Function[T, TR]:
 
 @tuple
 @__internal__
-class Callable[T, TR]:
+class CallableTrait[T, TR]:
     pass
 
 @tuple
@@ -251,7 +251,7 @@ class Function:
 
 # dummy
 @__internal__
-class TypeVar[T]: pass
+class TypeTrait[T]: pass
 @__internal__
 class ByVal: pass
 @__internal__
@@ -400,7 +400,7 @@ class Partial:
 
 @__internal__
 @tuple
-class ProxyFunc:
+class Callable:
     fn: Function[[Ptr[byte], T], TR]
     data: Ptr[byte]
     T: type

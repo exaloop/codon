@@ -17,7 +17,7 @@ print a.__class__.__name__ #: XX[int]
 print XX[bool].__class__.__name__ #: XX[bool]
 
 #%% map_unify
-def map[T,S](l: List[T], f: Callable[[T], S]):
+def map[T,S](l: List[T], f: CallableTrait[[T], S]):
     return [f(x) for x in l]
 e = 1
 print map([1, 2, 3], lambda x: x+e)  #: [2, 3, 4]
@@ -466,7 +466,7 @@ def foo(l, f):
     return [f(i) for i in l]
 test('hi', foo, lambda x: x+1) #: hi [2, 3, 4, 5]
 
-def foof(l: List[int], x, f: Callable[[int], int]):
+def foof(l: List[int], x, f: CallableTrait[[int], int]):
     return [f(i)+x for i in l]
 test('qsort', foof(x=3, ...), lambda x: x+1) #: qsort [5, 6, 7, 8]
 
@@ -559,7 +559,7 @@ print list(map(str, range(5)))
 
 
 #%% traits,barebones
-def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
+def t[T](x: T, key: Optional[CallableTrait[[T], S]] = None, S: type = NoneType):
     if isinstance(S, NoneType):
         return x
     else:
@@ -567,10 +567,10 @@ def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
 print t(5) #: 5
 print t(6, lambda x: f'#{x}') #: #6
 
-z: Callable[[int],int] = lambda x: x+1
+z: CallableTrait[[int],int] = lambda x: x+1
 print z(5) #: 6
 
-def foo[T](x: T, func: Optional[Callable[[], T]] = None) -> T:
+def foo[T](x: T, func: Optional[CallableTrait[[], T]] = None) -> T:
     return x
 print foo(1) #: 1
 
@@ -583,7 +583,7 @@ foo = {1: "a", 2: "a", 11: "c"}
 print(sorted(foo.items(), key=str))
 #: [(1, 'a'), (11, 'c'), (2, 'a')]
 
-def call(f: Callable[[int,int], Tuple[str,int]]):
+def call(f: CallableTrait[[int,int], Tuple[str,int]]):
     print(f(1, 2))
 
 def foo(*x): return f"{x}_{x.__class__.__name__}",1
@@ -597,31 +597,31 @@ def foo(a:int, *b: float): return f"f2_{a}_{b}", int(a+b[0])
 call(foo)
 #: ('f2_1_(2,)', 3)
 
-def call(f: Callable[[int,int],str]):
+def call(f: CallableTrait[[int,int],str]):
     print(f(1, 2))
 def foo(a: int, *b: int, **kw): return f"{a}_{b}_{kw}"
 call(foo(zzz=1.1, ...))
 #: 1_(2,)_(zzz: 1.1)
 
 #%% traits_error,barebones
-def t[T](x: T, key: Optional[Callable[[T], S]] = None, S: type = NoneType):
+def t[T](x: T, key: Optional[CallableTrait[[T], S]] = None, S: type = NoneType):
     if isinstance(S, NoneType):
         return x
     else:
         return (key.__val__())(x)
-print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optional[Callable[[int],S]]'
+print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optional[CallableTrait[[int],S]]'
 
 #%% traits_error_2,barebones
-z: Callable[[int],int] = 4 #! 'Callable[[int],int]' does not match expected type 'int'
+z: CallableTrait[[int],int] = 4 #! 'CallableTrait[[int],int]' does not match expected type 'int'
 
 #%% trait_defdict
 class dd(Static[Dict[K,V]]):
     fn: S
     K: type
     V: type
-    S: TypeVar[Callable[[], V]]
+    S: TypeTrait[CallableTrait[[], V]]
 
-    def __init__(self: dd[K, VV, Function[[], V]], VV: TypeVar[V]):
+    def __init__(self: dd[K, VV, Function[[], V]], VV: TypeTrait[V]):
         self.fn = lambda: VV()
 
     def __init__(self, f: S):

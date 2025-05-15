@@ -836,24 +836,24 @@ class Capsule:
         self.val[0] = val
 
 @extend
-class ProxyFunc:
-    def __new__(fn: Function[[Ptr[byte], T], TR], data: Ptr[byte]) -> ProxyFunc[T, TR]:
-        return __internal__.tuple_cast_unsafe((fn, data), ProxyFunc[T, TR])
+class Callable:
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Ptr[byte]) -> Callable[T, TR]:
+        return __internal__.tuple_cast_unsafe((fn, data), Callable[T, TR])
 
     def __new__(fn: Function[[Ptr[byte], T], TR], data: Partial[M,PT,K,F],
                 T: type, TR: type,
-                M: Literal[str], PT: type, F: type, K: type) -> ProxyFunc[T, TR]:
+                M: Literal[str], PT: type, F: type, K: type) -> Callable[T, TR]:
         p = Ptr[Partial[M,PT,K,F]](1)
         p[0] = data
-        return ProxyFunc(fn, p.as_byte())
+        return Callable(fn, p.as_byte())
 
-    def __new__(fn: Function[[Ptr[byte], T], TR], data: Function[T, TR]) -> ProxyFunc[T, TR]:
-        return ProxyFunc(fn, data.__raw__())
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Function[T, TR]) -> Callable[T, TR]:
+        return Callable(fn, data.__raw__())
 
-    def __new__(fn: Function[T, TR]) -> ProxyFunc[T, TR]:
+    def __new__(fn: Function[T, TR]) -> Callable[T, TR]:
         def _wrap(data: Ptr[byte], args, f: type):
             return f(data)(*args)
-        return ProxyFunc(
+        return Callable(
             static.function.realized(_wrap(f=Function[T, TR], ...), (Ptr[byte], T)),
             fn.__raw__()
         )

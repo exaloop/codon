@@ -409,10 +409,10 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     E(Error::GENERICS_MISMATCH, expr, getUnmangledName(typ->getClass()->name),
       generics.size(), typeParamsSize);
 
-  if (isId(expr->getExpr(), TYPE_CALLABLE)) {
-    // Case: Callable[...] trait instantiation
+  if (isId(expr->getExpr(), TRAIT_CALLABLE)) {
+    // Case: CallableTrait[...] trait instantiation
 
-    // Callable error checking.
+    // CallableTrait error checking.
     std::vector<TypePtr> types;
     for (auto &typeParam : *expr) {
       typeParam = transformType(typeParam);
@@ -421,11 +421,11 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       types.push_back(extractType(typeParam)->shared_from_this());
     }
     auto typ = instantiateUnbound();
-    // Set up the Callable trait
+    // Set up the CallableTrait
     typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
     unify(expr->getType(), instantiateTypeVar(typ.get()));
-  } else if (isId(expr->getExpr(), TYPE_TYPEVAR)) {
-    // Case: TypeVar[...] trait instantiation
+  } else if (isId(expr->getExpr(), TRAIT_TYPE)) {
+    // Case: TypeTrait[...] trait instantiation
     (*expr)[0] = transformType((*expr)[0]);
     auto typ = instantiateUnbound();
     typ->getLink()->trait =

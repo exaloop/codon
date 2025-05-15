@@ -10,7 +10,7 @@ print lp(1) #: 6
 e = 7
 print lp(2) #: 9
 
-def foo[T](a: T, l: Callable[[T], T]):
+def foo[T](a: T, l: CallableTrait[[T], T]):
     return l(a)
 print foo(4, lp) #: 11
 
@@ -601,8 +601,8 @@ yield 5 #! 'yield' outside function
 #%% yield_fail_2,barebones
 (yield) #! 'yield' outside function
 
-#%% proxyfunc,barebones
-def foo(x: ProxyFunc[[int, int], str]):
+#%% real_callable,barebones
+def foo(x: Callable[[int, int], str]):
     return x(1, 2)
 
 def f1(a, b):
@@ -633,11 +633,11 @@ def i2i_1(x: int) -> int:
 def i2i_2(x: int) -> int:
   return x + 2
 # TODO: auto-deduction!
-fn = ProxyFunc[[int], int](i2i_1) if int(1) else i2i_2
+fn = Callable[[int], int](i2i_1) if int(1) else i2i_2
 print(fn(1)) #: 2
-print (ProxyFunc[[int], int](i2i_1) if int(0) else i2i_2)(1)  #: 3
+print (Callable[[int], int](i2i_1) if int(0) else i2i_2)(1)  #: 3
 # TODO: auto-deduction!
-l = [ProxyFunc[[int, int],str](f1), f2p, pt]
+l = [Callable[[int, int],str](f1), f2p, pt]
 for fn in l: print(fn(1, 2))
 #: f1:1.2
 #: f2:1+2

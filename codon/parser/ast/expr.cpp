@@ -51,20 +51,12 @@ std::string Expr::wrapType(const std::string &sexpr) const {
   return "(" + is +
          (type && !done ? format(" #:type \"{}\"", type->debugString(2)) : "") + ")";
 }
-// llvm::Expected<Expr> *Expr::operator<<(types::Type *t) {
-//   seqassert(type, "lhs is nullptr");
-//   if ((*type) << t) {
-//     E(Error::TYPE_UNIFY, getSrcInfo(), type->prettyString(), t->prettyString());
-//   }
-//   return this;
-// }
 
 Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
     : name(std::move(name)), type(type), defaultValue(defaultValue) {
-  if (status == 0 &&
-      (match(getType(), MOr(M<IdExpr>(TYPE_TYPE), M<IdExpr>(TYPE_TYPEVAR),
-                            M<IndexExpr>(M<IdExpr>(TYPE_TYPEVAR), M_))) ||
-       getStaticGeneric(getType()))) {
+  if (status == 0 && (match(getType(), MOr(M<IdExpr>(TYPE_TYPE), M<IdExpr>(TRAIT_TYPE),
+                                           M<IndexExpr>(M<IdExpr>(TRAIT_TYPE), M_))) ||
+                      getStaticGeneric(getType()))) {
     this->status = Generic;
   } else {
     this->status = (status == 0 ? Value : (status == 1 ? Generic : HiddenGeneric));

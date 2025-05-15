@@ -100,7 +100,7 @@ def compress(
 
 @inline
 def dropwhile(
-    predicate: Callable[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
     """
     Drop items from the iterable while predicate(item) is true.
@@ -115,7 +115,7 @@ def dropwhile(
 
 @inline
 def filterfalse(
-    predicate: Callable[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
     """
     Return those items of iterable for which function(item) is false.
@@ -220,7 +220,7 @@ def starmap(function, iterable):
 
 @inline
 def takewhile(
-    predicate: Callable[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
     """
     Return successive entries from an iterable as long as the predicate evaluates to true for each entry.

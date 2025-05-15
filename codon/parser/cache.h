@@ -15,23 +15,30 @@
 #include "codon/parser/ctx.h"
 
 #define FILE_GENERATED "<generated>"
+
 #define MODULE_MAIN "__main__"
-#define MAIN_IMPORT ""
-#define STDLIB_IMPORT ":stdlib:"
 #define STDLIB_INTERNAL_MODULE "internal"
 
-#define TYPE_TUPLE "Tuple"
-#define TYPE_TYPEVAR "TypeVar"
+#define MAIN_IMPORT ""
+#define STDLIB_IMPORT ":stdlib:"
+
 #define TYPE_CALLABLE "Callable"
+#define TYPE_FUNCTION "Function"
 #define TYPE_OPTIONAL "Optional"
 #define TYPE_SLICE "std.internal.types.slice.Slice"
-#define FN_UNWRAP "std.internal.types.optional.unwrap.0:0"
+#define TYPE_TUPLE "Tuple"
 #define TYPE_TYPE "type"
+
+#define TRAIT_TYPE "TypeTrait"
+#define TRAIT_CALLABLE "CallableTrait"
+
 #define FN_DISPATCH_SUFFIX ":dispatch"
-#define VAR_USED_SUFFIX ":used"
 #define FN_SETTER_SUFFIX ":set_"
-#define VAR_CLASS_TOPLEVEL ":toplevel"
+#define FN_UNWRAP "std.internal.types.optional.unwrap.0:0"
+
 #define VAR_ARGV "__argv__"
+#define VAR_CLASS_TOPLEVEL ":toplevel"
+#define VAR_USED_SUFFIX ":used"
 
 #define MAX_ERRORS 5
 #define MAX_TUPLE 2048

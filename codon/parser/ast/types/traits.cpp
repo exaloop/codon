@@ -112,7 +112,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     auto tv = TypecheckVisitor(cache->typeCtx);
     if (auto pf = trFun->getFunc()) {
       // Make sure to set types of *args/**kwargs so that the function that
-      // is being unified with Callable[] can be realized
+      // is being unified with CallableTrait[] can be realized
       if (star < trInArgs->generics.size() - (kwStar < trInArgs->generics.size())) {
         std::vector<Type *> starArgTypes;
         if (auto tp = tr->getPartial()) {
@@ -202,7 +202,7 @@ TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
 
 std::string CallableTrait::debugString(char mode) const {
   auto s = args[0]->debugString(mode);
-  return fmt::format("Callable[{},{}]", startswith(s, "Tuple") ? s.substr(5) : s,
+  return fmt::format("CallableTrait[{},{}]", startswith(s, "Tuple") ? s.substr(5) : s,
                      args[1]->debugString(mode));
 }
 

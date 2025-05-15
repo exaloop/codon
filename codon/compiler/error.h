@@ -426,7 +426,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::OP_NO_MAGIC:
     return fmt::format("unsupported operand type(s) for {}: '{}' and '{}'", args...);
   case Error::INST_CALLABLE_STATIC:
-    return fmt::format("Callable cannot take static types");
+    return fmt::format("CallableTrait cannot take static types");
   case Error::CATCH_EXCEPTION_TYPE:
     return fmt::format("'{}' does not inherit from BaseException", args...);
 
