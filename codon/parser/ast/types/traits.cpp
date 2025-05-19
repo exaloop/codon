@@ -42,7 +42,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     if (args.empty())
       return 1;
 
-    std::vector<char> known;
+    std::string known;
     TypePtr func = nullptr; // trFun can point to it
     auto trFun = tr;
     if (auto pt = tr->getPartial()) {
@@ -56,14 +56,15 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
         if ((*func->getFunc()->ast)[i].isGeneric()) {
           j++;
-        } else if (known[i]) {
+        } else if (known[i] == ClassType::PartialFlag::Included) {
           if ((*func->getFunc())[i - j]->unify(knownArgTypes->generics[k].type.get(),
                                                us) == -1)
             return -1;
           k++;
         }
     } else {
-      known = std::vector<char>(tr->generics[0].type->getClass()->generics.size(), 0);
+      known = std::string(tr->generics[0].type->getClass()->generics.size(),
+                          ClassType::PartialFlag::Missing);
     }
 
     auto inArgs = args[0]->getClass();
@@ -84,7 +85,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         star -= 1;
       size_t preStar = 0;
       for (size_t fi = 0; fi < trAst->size(); fi++) {
-        if (fi != kwStar && !known[fi] && (*trAst)[fi].isValue()) {
+        if (fi != kwStar && known[fi] != ClassType::PartialFlag::Included &&
+            (*trAst)[fi].isValue()) {
           total++;
           if (fi < star)
             preStar++;
@@ -103,7 +105,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     }
     size_t i = 0;
     for (size_t fi = 0; i < inArgs->generics.size() && fi < star; fi++) {
-      if (!known[fi] && (*trAst)[fi].isValue()) {
+      if (known[fi] != ClassType::PartialFlag::Included && (*trAst)[fi].isValue()) {
         if (inArgs->generics[i++].type->unify(trInArgs->generics[fi].type.get(), us) ==
             -1)
           return -1;

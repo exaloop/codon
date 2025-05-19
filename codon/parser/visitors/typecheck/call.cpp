@@ -192,7 +192,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   }
 
   // Typecheck arguments with the function signature
-  bool done = typecheckCallArgs(calleeFn.get(), expr->items, part.isPartial);
+  bool done = typecheckCallArgs(calleeFn.get(), expr->items, part);
   if (!part.isPartial && calleeFn->canRealize()) {
     // Previous unifications can qualify existing identifiers.
     // Transform again to get the full identifier
@@ -408,7 +408,8 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
         std::static_pointer_cast<types::FuncType>(instantiateType(genFn.get()));
 
     if (!partType->isPartialEmpty() ||
-        std::any_of(mask.begin(), mask.end(), [](char c) { return c; })) {
+        std::any_of(mask.begin(), mask.end(),
+                    [](char c) { return c != ClassType::PartialFlag::Missing; })) {
       // Case: calling partial object `p`. Transform roughly to
       // `part = callee; partial_fn(*part.args, args...)`
       Expr *var = N<IdExpr>(part.var = getTemporaryVar("partcall"));
@@ -427,9 +428,11 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     for (size_t i = 0, j = 0, k = 0; i < mask.size(); i++)
       if ((*calleeFn->ast)[i].isGeneric()) {
         j++;
-      } else if (mask[i]) {
+      } else if (mask[i] == ClassType::PartialFlag::Included) {
         unify(extractFuncArgType(calleeFn.get(), i - j),
               extractClassGeneric(knownArgTypes, k));
+        k++;
+      } else if (mask[i] == ClassType::PartialFlag::Default) {
         k++;
       }
     return {calleeFn, nullptr};
@@ -456,7 +459,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 
   std::vector<CallArg> args;    // stores ordered and processed arguments
   std::vector<Expr *> typeArgs; // stores type and static arguments (e.g., `T: type`)
-  auto newMask = std::vector<char>(calleeFn->ast->size(), 1);
+  auto newMask = std::string(calleeFn->ast->size(), ClassType::PartialFlag::Included);
 
   // Extract pi-th partial argument from a partial object
   auto getPartialArg = [&](size_t pi) {
@@ -484,7 +487,8 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
               // Case: generic arguments. Populate typeArgs
               if (startswith(realName, "$")) {
                 if (slots[si].empty()) {
-                  if (!part.known.empty() && part.known[si]) {
+                  if (!part.known.empty() &&
+                      part.known[si] == ClassType::PartialFlag::Included) {
                     auto t = N<IdExpr>(realName);
                     t->setType(
                         calleeFn->funcGenerics[gi].getType()->shared_from_this());
@@ -495,11 +499,12 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 } else {
                   typeArgs.emplace_back((*expr)[slots[si][0]].getExpr());
                 }
-                newMask[si] = 1;
+                newMask[si] = ClassType::PartialFlag::Included;
               } else {
                 typeArgs.push_back(slots[si].empty() ? nullptr
                                                      : (*expr)[slots[si][0]].getExpr());
-                newMask[si] = slots[si].empty() ? 0 : 1;
+                newMask[si] = slots[si].empty() ? ClassType::PartialFlag::Missing
+                                                : ClassType::PartialFlag::Included;
               }
               gi++;
             } else if (si == starArgIndex &&
@@ -521,7 +526,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 part.args = e;
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
-                newMask[si] = 0;
+                newMask[si] = ClassType::PartialFlag::Missing;
               } else {
                 args.emplace_back(realName, e);
               }
@@ -532,11 +537,17 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
               // Case: **kwargs. Build the named tuple that holds them all
               std::vector<std::string> names;
               std::vector<Expr *> values;
+              std::unordered_set<std::string> newNames;
+              for (auto &e : slots[si]) // kwargs names can be overriden later
+                newNames.insert((*expr)[e].getName());
               if (!part.known.empty()) {
                 auto e = transform(N<DotExpr>(N<IdExpr>(part.var), "kwargs"));
                 for (auto &[n, ne] : extractNamedTuple(e)) {
-                  names.emplace_back(n);
-                  values.emplace_back(transform(ne));
+                  if (!in(newNames, n)) {
+                    newNames.insert(n);
+                    names.emplace_back(n);
+                    values.emplace_back(transform(ne));
+                  }
                 }
               }
               for (auto &e : slots[si]) {
@@ -552,37 +563,69 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 part.kwArgs = e;
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
-                newMask[si] = 0;
+                newMask[si] = ClassType::PartialFlag::Missing;
               } else {
                 args.emplace_back(realName, e);
               }
             } else if (slots[si].empty()) {
-              // Case: no argument. Check if the arguments is provided by the partial
-              // type (if calling it) or if a default argument can be used
-              if (!part.known.empty() && part.known[si]) {
-                args.emplace_back(realName, getPartialArg(pi++));
+              // Case: no arguments provided.
+              if (!part.known.empty() &&
+                  part.known[si] == ClassType::PartialFlag::Included) {
+                // Case 1: Argument captured by partial
+                args.emplace_back(realName, getPartialArg(pi));
               } else if (startswith(realName, "$")) {
+                // Case 3: Local name capture
                 args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
+              } else if ((*calleeFn->ast)[si].getDefault()) {
+                // Case 4: default is present
+                if (auto ai = cast<IdExpr>((*calleeFn->ast)[si].getDefault())) {
+                  // Case 4a: non-values (Ids / .default names)
+                  if (!part.known.empty() &&
+                      part.known[si] == ClassType::PartialFlag::Default) {
+                    // Case 4a/1: Default already captured by partial.
+                    args.emplace_back(realName, getPartialArg(pi));
+                  } else {
+                    // TODO: check if the value is toplevel and avoid capturing it if so
+                    auto e = transform(N<IdExpr>(ai->getValue()));
+                    seqassert(e->getType()->getLink(), "not a link type");
+                    e->getType()->getLink()->passThrough = true;
+                    args.emplace_back(realName, e);
+                  }
+                  if (partial)
+                    newMask[si] = ClassType::PartialFlag::Default;
+                } else if (!partial) {
+                  // Case 4b: values / non-Id defaults (None, etc.)
+                  if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
+                      !(*calleeFn->ast)[si].type) {
+                    args.emplace_back(
+                        realName, transform(N<CallExpr>(N<InstantiateExpr>(
+                                      N<IdExpr>("Optional"), N<IdExpr>("NoneType")))));
+                  } else {
+                    args.emplace_back(
+                        realName,
+                        transform(clean_clone((*calleeFn->ast)[si].getDefault())));
+                  }
+                } else {
+                  args.emplace_back(realName,
+                                    transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+                  newMask[si] = ClassType::PartialFlag::Missing;
+                }
               } else if (partial) {
+                // Case 5: this is partial call. Just add ... for missing arguments
                 args.emplace_back(realName,
                                   transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
-                newMask[si] = 0;
+                newMask[si] = ClassType::PartialFlag::Missing;
               } else {
-                if (cast<NoneExpr>((*calleeFn->ast)[si].getDefault()) &&
-                    !(*calleeFn->ast)[si].type) {
-                  args.emplace_back(
-                      realName, transform(N<CallExpr>(N<InstantiateExpr>(
-                                    N<IdExpr>("Optional"), N<IdExpr>("NoneType")))));
-                } else {
-                  args.emplace_back(realName, transform(clean_clone(
-                                                  (*calleeFn->ast)[si].getDefault())));
-                }
+                seqassert(expr, "cannot happen");
               }
             } else {
               // Case: argument provided
               seqassert(slots[si].size() == 1, "call transformation failed");
               args.emplace_back(realName, (*expr)[slots[si][0]].getExpr());
             }
+            if (!part.known.empty() &&
+                part.known[si] != ClassType::PartialFlag::Missing)
+              pi++;
           }
           return 0;
         },
@@ -654,7 +697,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
 /// @example
 ///   `foo(1, 2)` -> `foo(1, Optional(2), T=int)`
 bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg> &args,
-                                         bool isPartial) {
+                                         const PartialCallData &partial) {
   bool wrappingDone = true;         // tracks whether all arguments are wrapped
   std::vector<Type *> replacements; // list of replacement arguments
 
@@ -693,6 +736,10 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
             }
             replacements.push_back(args[si].getExpr()->getType());
             // else this is empty and is a partial call; leave it for later
+          } else if (partial.isPartial && !partial.known.empty() &&
+                     partial.known[si] == ClassType::PartialFlag::Default) {
+            // Defaults should not be unified (yet)!
+            replacements.push_back(extractFuncArgType(calleeFn, si));
           } else {
             if (wrapExpr(&args[si].value, extractFuncArgType(calleeFn, si), calleeFn)) {
               unify(args[si].getExpr()->getType(), extractFuncArgType(calleeFn, si));
@@ -720,7 +767,7 @@ bool TypecheckVisitor::typecheckCallArgs(FuncType *calleeFn, std::vector<CallArg
   }
 
   // Handle default generics
-  if (!isPartial)
+  if (!partial.isPartial)
     for (size_t i = 0, j = 0; wrappingDone && i < calleeFn->ast->size(); i++)
       if ((*calleeFn->ast)[i].isGeneric()) {
         if ((*calleeFn->ast)[i].getDefault() &&
@@ -859,15 +906,9 @@ std::vector<TypePtr> TypecheckVisitor::getSuperTypes(ClassType *cls) {
 /// @param mask a 0-1 vector whose size matches the number of function arguments.
 ///             1 indicates that the argument has been provided and is cached within
 ///             the partial object.
-Expr *TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
+Expr *TypecheckVisitor::generatePartialCall(const std::string &mask,
                                             types::FuncType *fn, Expr *args,
                                             Expr *kwargs) {
-  std::string strMask(mask.size(), '1');
-  for (size_t i = 0; i < mask.size(); i++) {
-    if (!mask[i])
-      strMask[i] = '0';
-  }
-
   if (!args)
     args = N<TupleExpr>(std::vector<Expr *>{N<TupleExpr>()});
   if (!kwargs)
@@ -877,11 +918,10 @@ Expr *TypecheckVisitor::generatePartialCall(const std::vector<char> &mask,
   efn->setType(instantiateType(getStdLibType("unrealized_type"),
                                std::vector<types::Type *>{fn->getFunc()}));
   efn->setDone();
-  Expr *call = N<CallExpr>(N<IdExpr>("Partial"),
-                           std::vector<CallArg>{{"args", args},
-                                                {"kwargs", kwargs},
-                                                {"M", N<StringExpr>(strMask)},
-                                                {"F", efn}});
+  Expr *call = N<CallExpr>(
+      N<IdExpr>("Partial"),
+      std::vector<CallArg>{
+          {"args", args}, {"kwargs", kwargs}, {"M", N<StringExpr>(mask)}, {"F", efn}});
   return call;
 }
 

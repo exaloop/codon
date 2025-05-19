@@ -13,6 +13,7 @@ class complex:
     def __new__() -> complex:
         return complex(0.0, 0.0)
 
+    @overload
     def __new__(what):
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):
@@ -20,6 +21,7 @@ class complex:
         else:
             return what.__complex__()
 
+    @overload
     def __new__(real, imag) -> complex:
         return superf(float(real), float(imag))
 

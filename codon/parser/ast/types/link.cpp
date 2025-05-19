@@ -12,10 +12,10 @@ namespace codon::ast::types {
 
 LinkType::LinkType(Cache *cache, Kind kind, int id, int level, TypePtr type,
                    char isStatic, std::shared_ptr<Trait> trait, TypePtr defaultType,
-                   std::string genericName)
+                   std::string genericName, bool passThrough)
     : Type(cache), kind(kind), id(id), level(level), type(std::move(type)),
       isStatic(isStatic), trait(std::move(trait)), genericName(std::move(genericName)),
-      defaultType(std::move(defaultType)) {
+      defaultType(std::move(defaultType)), passThrough(passThrough) {
   seqassert((this->type && kind == Link) || (!this->type && kind == Generic) ||
                 (!this->type && kind == Unbound),
             "inconsistent link state");
@@ -23,7 +23,7 @@ LinkType::LinkType(Cache *cache, Kind kind, int id, int level, TypePtr type,
 
 LinkType::LinkType(TypePtr type)
     : Type(type), kind(Link), id(0), level(0), type(std::move(type)), isStatic(0),
-      trait(nullptr), defaultType(nullptr) {
+      trait(nullptr), defaultType(nullptr), passThrough(false) {
   seqassert(this->type, "link to nullptr");
 }
 
@@ -100,7 +100,8 @@ TypePtr LinkType::generalize(int atLevel) {
       return std::make_shared<LinkType>(
           cache, Generic, id, 0, nullptr, isStatic,
           trait ? std::static_pointer_cast<Trait>(trait->generalize(atLevel)) : nullptr,
-          defaultType ? defaultType->generalize(atLevel) : nullptr, genericName);
+          defaultType ? defaultType->generalize(atLevel) : nullptr, genericName,
+          passThrough);
     else
       return shared_from_this();
   } else {
@@ -122,7 +123,7 @@ TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
                     trait->instantiate(atLevel, unboundCount, cache))
               : nullptr,
         defaultType ? defaultType->instantiate(atLevel, unboundCount, cache) : nullptr,
-        genericName);
+        genericName, passThrough);
     if (cache)
       (*cache)[id] = t;
     return t;

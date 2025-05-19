@@ -18,6 +18,7 @@ class Optional:
         else:
             return __internal__.opt_ref_new(T)
 
+    @overload
     def __new__(what: T) -> Optional[T]:
         if isinstance(T, ByVal):
             return __internal__.opt_tuple_new_arg(what, T)
@@ -60,6 +61,7 @@ class Optional:
             return False
         return self.__val__() == other
 
+    @overload
     def __eq__(self, other: Optional[T]) -> bool:
         if (self is None) or (other is None):
             return (self is None) and (other is None)
@@ -70,6 +72,7 @@ class Optional:
             return True
         return self.__val__() != other
 
+    @overload
     def __ne__(self, other: Optional[T]) -> bool:
         if (self is None) or (other is None):
             return not ((self is None) and (other is None))

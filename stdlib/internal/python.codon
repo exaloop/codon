@@ -948,6 +948,8 @@ class PyError(Static[Exception]):
     def __init__(self, message: str):
         super().__init__("PyError", message)
         self.pytype = pyobj(cobj(), steal=True)
+
+    @overload
     def __init__(self, message: str, pytype: pyobj):
         super().__init__("PyError", message)
         self.pytype = pytype
@@ -1517,6 +1519,7 @@ class _PyWrapError(Static[PyError]):
         super().__init__("_PyWrapError", message)
         self.pytype = pytype
 
+    @overload
     def __init__(self, e: PyError):
         self.__init__("_PyWrapError", e.message, e.pytype)
 
@@ -1913,6 +1916,7 @@ class _PyWrap:
         def _init(obj: cobj, T: type) -> cobj:
             return _PyWrap.IterWrap(T.__from_py__(obj)).__to_py__()
 
+        @overload
         @realize_without_self
         def __init__(self, it: T):
             self._gen = it.__iter__().__raw__()

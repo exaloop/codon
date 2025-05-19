@@ -37,7 +37,7 @@ from C import seq_print_full(str, cobj)
 
 class Set:
     items: List[T]
-    T: type
+    T: type = NoneType
 
     def __init__(self):
         self.items = []
@@ -58,8 +58,8 @@ class Set:
 class Dict:
     keys: List[K]
     values: List[V]
-    K: type
-    V: type
+    K: type = NoneType
+    V: type = NoneType
 
     def __init__(self):
         self.keys = []

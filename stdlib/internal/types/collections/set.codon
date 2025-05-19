@@ -18,7 +18,7 @@ class Set:
     _flags: Ptr[u32]
     _keys: Ptr[K]
 
-    K: type
+    K: type = NoneType
 
     # Magic methods
     def _init(self):

@@ -125,7 +125,12 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
     }
   }
 
-  if (auto e = transformBinarySimple(expr)) {
+  if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs()) &&
+      expr->getOp() == "|") {
+    // Case: unions
+    resultExpr = transform(N<InstantiateExpr>(
+        N<IdExpr>("Union"), std::vector<Expr *>{expr->getLhs(), expr->getRhs()}));
+  } else if (auto e = transformBinarySimple(expr)) {
     // Case: simple binary expressions
     resultExpr = e;
   } else if (expr->getLhs()->getType()->getUnbound() ||

@@ -13,16 +13,19 @@ class Int:
         check_N(N)
         return Int[N](0)
 
+    @overload
     def __new__(what: Int[N]) -> Int[N]:
         check_N(N)
         return what
 
     @pure
+    @overload
     @llvm
     def __new__(what: float) -> Int[N]:
         %n = fptosi double %what to i{=N}
         ret i{=N} %n
 
+    @overload
     def __new__(what: int) -> Int[N]:
         check_N(N)
         if N < 64:
@@ -33,10 +36,12 @@ class Int:
             return __internal__.int_sext(what, 64, N)
 
     @pure
+    @overload
     @llvm
     def __new__(what: UInt[N]) -> Int[N]:
         ret i{=N} %what
 
+    @overload
     def __new__(what: str) -> Int[N]:
         check_N(N)
         ret = Int[N]()

@@ -135,6 +135,9 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
 void TypecheckVisitor::visit(FunctionStmt *stmt) {
+  if (stmt->isAsync())
+    E(Error::CUSTOM, stmt, "async not yet supported");
+
   if (stmt->hasAttribute(Attr::Python)) {
     // Handle Python block
     resultStmt =
@@ -186,6 +189,18 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Case 1: method overload
     if (auto n = in(getClass(ctx->getBase()->name)->methods, stmt->getName()))
       rootName = *n;
+
+    // TODO: handle static inherits and auto-generated cases
+    // if (!rootName.empty() && stmt->hasAttribute(Attr::Overload)) {
+    //   compilationWarning(
+    //       fmt::format("function '{}' should be marked with @overload",
+    //       stmt->getName()), getSrcInfo().file, getSrcInfo().line);
+    // }
+    if (rootName.empty() && stmt->hasAttribute(Attr::Overload)) {
+      compilationWarning(fmt::format("function '{}' marked with unnecessary @overload",
+                                     stmt->getName()),
+                         getSrcInfo().file, getSrcInfo().line);
+    }
   } else if (stmt->hasAttribute(Attr::Overload)) {
     // Case 2: function overload
     if (auto c = ctx->find(stmt->getName(), getTime())) {
@@ -276,16 +291,31 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
       // Handle default values
       auto defaultValue = a.getDefault();
-      if (a.getType() && defaultValue && cast<NoneExpr>(defaultValue)) {
-        // Special case: `arg: CallableTrait = None` -> `arg: CallableTrait =
-        // NoneType()`
-        if (match(a.getType(), M<IndexExpr>(M<IdExpr>(TRAIT_CALLABLE), M_)))
-          defaultValue = N<CallExpr>(N<IdExpr>("NoneType"));
-        // Special case: `arg: type = None` -> `arg: type = NoneType`
-        if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE))))
+      if (cast<NoneExpr>(defaultValue)) {
+        // Special case: all Nones are handled at call site (as they are not mutable).
+        if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
+          // Special case: `arg: type = None` -> `arg: type = NoneType`
           defaultValue = N<IdExpr>("NoneType");
+        }
+      } else if (defaultValue && a.getType()) {
+        // Special case: generic defaults are evaluated as-is!
+        defaultValue = transform(defaultValue);
+      } else if (defaultValue) {
+        auto name = fmt::format(".default.{}.{}", canonicalName, a.getName());
+        auto nctx = std::make_shared<TypeContext>(ctx->cache);
+        *nctx = *ctx;
+        nctx->bases.pop_back();
+        if (isClassMember) // class variable; go to the global context!
+          nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end());
+        auto tv = TypecheckVisitor(nctx);
+        auto das = tv.transform(N<AssignStmt>(N<IdExpr>(name), defaultValue,
+                                              a.isValue() ? nullptr : a.getType()));
+        if (isClassMember)
+          preamble->push_back(das);
+        else
+          prependStmts->push_back(das);
+        defaultValue = tv.transform(N<IdExpr>(name));
       }
-      /// TODO: Python-style defaults
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
                         a.status);
 
@@ -347,7 +377,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // to support cases like `foo(a: T, T: type)`
     for (auto &a : args) {
       a.type = transformType(a.getType(), false);
-      a.defaultValue = transform(a.getDefault(), true);
     }
 
     // Unify base type generics with argument types. Add non-generic arguments to the

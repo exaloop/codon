@@ -270,16 +270,18 @@ std::string ClassType::debugString(char mode) const {
     size_t ai = 0, gi = 0;
     for (size_t i = 0; i < known.size(); i++) {
       if ((*func->ast)[i].isValue()) {
-        as.emplace_back(
-            ai < args.size()
-                ? (known[i] ? args[ai] : ("..." + (mode == 0 ? "" : args[ai])))
-                : "...");
-        if (known[i])
+        as.emplace_back(ai < args.size() ? (known[i] == ClassType::PartialFlag::Included
+                                                ? args[ai]
+                                                : ("..." + (mode == 0 ? "" : args[ai])))
+                                         : "...");
+        if (known[i] == ClassType::PartialFlag::Included)
           ai++;
       } else {
         auto s = func->funcGenerics[gi].debugString(mode);
         as.emplace_back( // func->funcGenerics[gi].niceName + "=" +
-            (known[i] ? s : ("..." + (mode == 0 ? "" : s))));
+            (known[i] == ClassType::PartialFlag::Included
+                 ? s
+                 : ("..." + (mode == 0 ? "" : s))));
         gi++;
       }
     }
@@ -353,14 +355,10 @@ FuncType *ClassType::getPartialFunc() const {
   return n->getFunc();
 }
 
-std::vector<char> ClassType::getPartialMask() const {
+std::string ClassType::getPartialMask() const {
   seqassert(name == "Partial", "not a partial");
   auto n = generics[0].type->getStrStatic()->value;
-  std::vector<char> r(n.size(), 0);
-  for (size_t i = 0; i < n.size(); i++)
-    if (n[i] == '1')
-      r[i] = 1;
-  return r;
+  return n;
 }
 
 bool ClassType::isPartialEmpty() const {

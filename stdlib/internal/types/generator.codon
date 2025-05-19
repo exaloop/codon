@@ -30,6 +30,7 @@ class Generator:
     def __new__(ptr: cobj) -> Generator[T]:
         ret ptr %ptr
 
+    @overload
     def __new__() -> Generator[T]:
         raise ValueError("invalid generator")
 

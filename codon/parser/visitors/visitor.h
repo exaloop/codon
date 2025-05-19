@@ -64,6 +64,7 @@ public:
   virtual void visit(ReturnStmt *);
   virtual void visit(YieldStmt *);
   virtual void visit(AssertStmt *);
+  virtual void visit(AwaitStmt *);
   virtual void visit(WhileStmt *);
   virtual void visit(ForStmt *);
   virtual void visit(IfStmt *);
@@ -214,6 +215,7 @@ public:
     transform(stmt->expr);
     transform(stmt->message);
   }
+  void visit(AwaitStmt *stmt) override { transform(stmt->expr); }
   void visit(WhileStmt *stmt) override {
     transform(stmt->cond);
     transform(stmt->suite);
@@ -414,6 +416,7 @@ public:
     stmt->expr = transform(stmt->expr);
     stmt->message = transform(stmt->message);
   }
+  void visit(AwaitStmt *stmt) override { stmt->expr = transform(stmt->expr); }
   void visit(WhileStmt *stmt) override {
     stmt->cond = transform(stmt->cond);
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));

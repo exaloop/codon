@@ -361,8 +361,10 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
         stmts.push_back(s);
       } else {
         for (auto *ss : *cast<SuiteStmt>(s)) {
-          done &= ss->isDone();
-          stmts.push_back(ss);
+          if (ss) {
+            done &= ss->isDone();
+            stmts.push_back(ss);
+          }
         }
       }
     }
@@ -377,6 +379,10 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
   stmt->expr = transform(stmt->getExpr());
   if (stmt->getExpr()->isDone())
     stmt->setDone();
+}
+
+void TypecheckVisitor::visit(AwaitStmt *stmt) {
+  E(Error::CUSTOM, stmt, "await not yet supported");
 }
 
 void TypecheckVisitor::visit(CustomStmt *stmt) {
@@ -447,8 +453,10 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
     auto known = part->getPartialMask();
     auto knownArgTypes = extractClassGeneric(part, 1)->getClass();
     for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
-      if (known[i]) {
+      if (known[i] == ClassType::PartialFlag::Included) {
         partialArgs.push_back(extractClassGeneric(knownArgTypes, k));
+        k++;
+      } else if (known[i] == ClassType::PartialFlag::Default) {
         k++;
       }
   }
@@ -478,7 +486,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
           } else if (si == s || si == k || slots[si].size() != 1) {
             // Partials
             if (slots[si].empty() && part && part->getPartial() &&
-                part->getPartialMask()[si]) {
+                part->getPartialMask()[si] == ClassType::PartialFlag::Included) {
               reordered.emplace_back(partialArgs[pi++], 0);
             } else {
               // Ignore *args, *kwargs and default arguments
@@ -492,7 +500,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
         return 0;
       },
       [](error::Error, const SrcInfo &, const std::string &) { return -1; },
-      part && part->getPartial() ? part->getPartialMask() : std::vector<char>{});
+      part && part->getPartial() ? part->getPartialMask() : "");
   int ai = 0, mai = 0, gi = 0, real_gi = 0;
   for (; score != -1 && ai < reordered.size(); ai++) {
     auto expectTyp = (*fn->ast)[ai].isValue() ? extractFuncArgType(fn, mai++)
@@ -696,7 +704,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       std::vector<types::Type *> argumentTypes;
       auto known = exprClass->getPartial()->getPartialMask();
       for (size_t i = 0; i < known.size(); i++) {
-        if (!known[i])
+        if (known[i] != ClassType::PartialFlag::Included)
           argTypes.push_back((*fnType)[i]);
       }
       retType = fnType->getRetType();
@@ -729,7 +737,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         std::vector<types::Type *> argumentTypes;
         auto known = exprClass->getPartial()->getPartialMask();
         for (size_t i = 0; i < known.size(); i++) {
-          if (!known[i])
+          if (known[i] != ClassType::PartialFlag::Included)
             argTypes.push_back((*fnType)[i]);
         }
         retType = fnType->getRetType();
@@ -1427,7 +1435,7 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
                                        const std::vector<CallArg> &args,
                                        const ReorderDoneFn &onDone,
                                        const ReorderErrorFn &onError,
-                                       const std::vector<char> &known) {
+                                       const std::string &known) {
   // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
   // Final score:
   //  - +1 for each matched argument
@@ -1456,10 +1464,11 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
   seqassert(known.empty() || func->ast->size() == known.size(), "bad 'known' string");
   std::vector<int> extra;
   std::map<std::string, int> namedArgs,
-      extraNamedArgs; // keep the map--- we need it sorted!
+      extraNamedArgs; // keep the map---we need it sorted!
   for (int ai = 0, si = 0; ai < args.size() - partial; ai++) {
     if (args[ai].name.empty()) {
-      while (!known.empty() && si < slots.size() && known[si])
+      while (!known.empty() && si < slots.size() &&
+             known[si] == ClassType::PartialFlag::Included)
         si++;
       if (si < slots.size() && (starArgIndex == -1 || si < starArgIndex))
         slots[si++] = {ai};
@@ -1482,7 +1491,7 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
   if (!namedArgs.empty()) {
     std::map<std::string, int> slotNames;
     for (int i = 0; i < func->ast->size(); i++)
-      if (known.empty() || !known[i]) {
+      if (known.empty() || known[i] != ClassType::PartialFlag::Included) {
         auto [_, n] = (*func->ast)[i].getNameWithStars();
         slotNames[getUnmangledName(n)] = i;
       }
@@ -1500,10 +1509,8 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
-                   Emsg(Error::CALL_ARGS_MANY,
-                        // func->ast->getName(),
-                        getUnmangledName(func->ast->getName()), func->ast->size(),
-                        args.size() - partial));
+                   Emsg(Error::CALL_ARGS_MANY, getUnmangledName(func->ast->getName()),
+                        func->ast->size(), args.size() - partial));
 
   if (starArgIndex != -1)
     slots[starArgIndex] = extra;
@@ -1522,7 +1529,8 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
   for (auto i = 0; i < func->ast->size(); i++)
     if (slots[i].empty() && i != starArgIndex && i != kwstarArgIndex) {
       if (((*func->ast)[i].isValue() &&
-           ((*func->ast)[i].getDefault() || (!known.empty() && known[i]))) ||
+           ((*func->ast)[i].getDefault() ||
+            (!known.empty() && known[i] == ClassType::PartialFlag::Included))) ||
           startswith((*func->ast)[i].getName(), "$")) {
         score -= 2;
       } else if (!partial && (*func->ast)[i].isValue()) {

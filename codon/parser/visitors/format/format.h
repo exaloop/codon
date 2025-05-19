@@ -106,6 +106,7 @@ public:
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(AssertStmt *) override;
+  void visit(AwaitStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   void visit(IfStmt *) override;

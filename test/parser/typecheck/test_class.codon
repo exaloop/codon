@@ -136,13 +136,13 @@ print Node2(3).data #: 3
 
 #%% class_auto_init,barebones
 class X[T]:
+    c: T
     a: int = 4
     b: int = 0
-    c: T = T()
     d: str = 'oops'
     def __str__(self):
         return f'X({self.a},{self.b},{self.c},{self.d})'
-x = X[float]()
+x = X[float](c=0)
 print x #: X(4,0,0,oops)
 y = X(c='darius',a=5)
 print y #: X(5,0,darius,oops)
@@ -311,15 +311,15 @@ class Foo:
     def foo(self):
         return f'foo {self.x}'
 class Bar[T]:
-    y: T = T()
+    y: Optional[T] = None
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
 class FooBarBaz[T](Static[Foo], Static[Bar[T]]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
 print FooBarBaz[str]().foo() #: foo 0
-print FooBarBaz[float]().bar() #: bar 0/float
-print FooBarBaz[str]().baz() #: baz! foo 0 bar /str
+print FooBarBaz[float]().bar() #: bar None/Optional[float]
+print FooBarBaz[str]().baz() #: baz! foo 0 bar None/Optional[str]
 
 #%% inherit_class_err_5,barebones
 class defdict(Static[Dict[str,float]]):

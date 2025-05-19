@@ -131,14 +131,14 @@ a = 1
 l: List[type(a)] = []
 print(l, l.__class__.__name__)  #: [] List[int]
 
-def foo(t: type) -> type:  # 🚧
+def foo(t: type) -> type:
   return List[t]
 l = foo(int)()
 print(l, l.__class__.__name__)  #: [] List[int]
 l = foo(str)()
 print(l, l.__class__.__name__)  #: [] List[str]
 
-def bar() -> type: # 🚧
+def bar() -> type:
   class Foo:
      a: int
      def __init__(self, a=1):

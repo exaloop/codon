@@ -12,6 +12,7 @@ class Array:
         %1 = insertvalue { i64, ptr } %0, ptr %ptr, 1
         ret { i64, ptr } %1
 
+    @overload
     def __new__(sz: int) -> Array[T]:
         return Array[T](Ptr[T](sz), sz)
 
@@ -50,4 +51,4 @@ array = Array
 class List:
     len: int
     arr: Array[T]
-    T: type
+    T: type = NoneType

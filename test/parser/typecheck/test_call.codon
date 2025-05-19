@@ -187,6 +187,10 @@ r = q(5, 38, ...)
 r() #: 5 (38,) (zh: 43)
 r(1, a=1) #: 5 (38, 1) (zh: 43, a: 1)
 
+# kwarg overwrite!
+q(1, zh=99)  #: 1 () (zh: 99)
+r(zh=55)  #: 5 (38,) (zh: 55)
+
 #%% call_args_kwargs_type,barebones
 def foo(*args: float, **kwargs: int):
     print(args, kwargs, args.__class__.__name__)

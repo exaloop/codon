@@ -721,10 +721,12 @@ class __magic__:
 @extend
 class Function:
     @pure
+    @overload
     @llvm
     def __new__(what: Ptr[byte]) -> Function[T, TR]:
         ret ptr %what
 
+    @overload
     def __new__(what: Function[T, TR]) -> Function[T, TR]:
        return what
 
@@ -780,18 +782,23 @@ class __cast__:
     def cast(obj: T, T: type) -> Generator[T]:
         return obj.__iter__()
 
+    @overload
     def cast(obj: int) -> float:
         return float(obj)
 
+    @overload
     def cast(obj: T, T: type) -> Optional[T]:
         return Optional[T](obj)
 
+    @overload
     def cast(obj: Optional[T], T: type) -> T:
         return obj.unwrap()
 
+    @overload
     def cast(obj: T, T: type) -> pyobj:
         return obj.__to_py__()
 
+    @overload
     def cast(obj: pyobj, T: type) -> T:
         return T.__from_py__(obj)
 
@@ -840,6 +847,7 @@ class Callable:
     def __new__(fn: Function[[Ptr[byte], T], TR], data: Ptr[byte]) -> Callable[T, TR]:
         return __internal__.tuple_cast_unsafe((fn, data), Callable[T, TR])
 
+    @overload
     def __new__(fn: Function[[Ptr[byte], T], TR], data: Partial[M,PT,K,F],
                 T: type, TR: type,
                 M: Literal[str], PT: type, F: type, K: type) -> Callable[T, TR]:
@@ -847,9 +855,11 @@ class Callable:
         p[0] = data
         return Callable(fn, p.as_byte())
 
+    @overload
     def __new__(fn: Function[[Ptr[byte], T], TR], data: Function[T, TR]) -> Callable[T, TR]:
         return Callable(fn, data.__raw__())
 
+    @overload
     def __new__(fn: Function[T, TR]) -> Callable[T, TR]:
         def _wrap(data: Ptr[byte], args, f: type):
             return f(data)(*args)

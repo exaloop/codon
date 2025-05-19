@@ -13,12 +13,15 @@ class str:
     def __new__(l: int, p: Ptr[byte]) -> str:
         pass
 
+    @overload
     def __new__(p: Ptr[byte], l: int) -> str:
         return str(l, p)
 
+    @overload
     def __new__() -> str:
         return str(Ptr[byte](), 0)
 
+    @overload
     def __new__(what) -> str:
         if isinstance(what, Union):
             return __internal__.union_str(what)

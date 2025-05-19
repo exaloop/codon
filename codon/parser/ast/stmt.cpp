@@ -146,6 +146,13 @@ std::string AssertStmt::toString(int indent) const {
                          message ? message->toString(indent) : ""));
 }
 
+AwaitStmt::AwaitStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
+AwaitStmt::AwaitStmt(const AwaitStmt &stmt, bool clean)
+    : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
+std::string AwaitStmt::toString(int indent) const {
+  return wrapStmt(format("(await {})", expr->toString(indent)));
+}
+
 WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
     : AcceptorExtend(), cond(cond), suite(SuiteStmt::wrap(suite)),
       elseSuite(SuiteStmt::wrap(elseSuite)) {}
@@ -169,17 +176,17 @@ std::string WhileStmt::toString(int indent) const {
 }
 
 ForStmt::ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite, Expr *decorator,
-                 std::vector<CallArg> ompArgs)
+                 std::vector<CallArg> ompArgs, bool async)
     : AcceptorExtend(), var(var), iter(iter), suite(SuiteStmt::wrap(suite)),
       elseSuite(SuiteStmt::wrap(elseSuite)), decorator(decorator),
-      ompArgs(std::move(ompArgs)), wrapped(false), flat(false) {}
+      ompArgs(std::move(ompArgs)), async(async), wrapped(false), flat(false) {}
 ForStmt::ForStmt(const ForStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), var(ast::clone(stmt.var, clean)),
       iter(ast::clone(stmt.iter, clean)), suite(ast::clone(stmt.suite, clean)),
       elseSuite(ast::clone(stmt.elseSuite, clean)),
       decorator(ast::clone(stmt.decorator, clean)),
-      ompArgs(ast::clone(stmt.ompArgs, clean)), wrapped(stmt.wrapped), flat(stmt.flat) {
-}
+      ompArgs(ast::clone(stmt.ompArgs, clean)), async(stmt.async),
+      wrapped(stmt.wrapped), flat(stmt.flat) {}
 std::string ForStmt::toString(int indent) const {
   auto vs = var->toString(indent);
   if (indent == -1)
@@ -327,14 +334,14 @@ std::string GlobalStmt::toString(int indent) const {
 }
 
 FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
-                           Stmt *suite, std::vector<Expr *> decorators)
+                           Stmt *suite, std::vector<Expr *> decorators, bool async)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)), ret(ret),
-      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)) {}
+      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)), async(async) {}
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       name(stmt.name), ret(ast::clone(stmt.ret, clean)),
       suite(ast::clone(stmt.suite, clean)),
-      decorators(ast::clone(stmt.decorators, clean)) {}
+      decorators(ast::clone(stmt.decorators, clean)), async(stmt.async) {}
 std::string FunctionStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> as;
@@ -594,6 +601,7 @@ ACCEPT_IMPL(PrintStmt, ASTVisitor);
 ACCEPT_IMPL(ReturnStmt, ASTVisitor);
 ACCEPT_IMPL(YieldStmt, ASTVisitor);
 ACCEPT_IMPL(AssertStmt, ASTVisitor);
+ACCEPT_IMPL(AwaitStmt, ASTVisitor);
 ACCEPT_IMPL(WhileStmt, ASTVisitor);
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 ACCEPT_IMPL(IfStmt, ASTVisitor);

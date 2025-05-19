@@ -286,6 +286,10 @@ void FormatVisitor::visit(AssertStmt *stmt) {
   result = fmt::format("{} {}", keyword("assert"), transform(stmt->getExpr()));
 }
 
+void FormatVisitor::visit(AwaitStmt *stmt) {
+  result = fmt::format("{} {}", keyword("await"), transform(stmt->getExpr()));
+}
+
 void FormatVisitor::visit(WhileStmt *stmt) {
   result = fmt::format("{} {}:{}{}", keyword("while"), transform(stmt->getCond()),
                        newline(), transform(stmt->getSuite(), 1));

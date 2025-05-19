@@ -24,6 +24,7 @@ class float:
     def __new__() -> float:
         return 0.0
 
+    @overload
     def __new__(what) -> float:
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):
@@ -414,46 +415,60 @@ class float:
         return 0.0
 
     @commutative
+    @overload
     def __add__(self: float, b: int) -> float:
         return self + float(b)
 
+    @overload
     def __sub__(self: float, b: int) -> float:
         return self - float(b)
 
     @commutative
+    @overload
     def __mul__(self: float, b: int) -> float:
         return self * float(b)
 
+    @overload
     def __floordiv__(self, b: int) -> float:
         return self // float(b)
 
+    @overload
     def __truediv__(self: float, b: int) -> float:
         return self / float(b)
 
+    @overload
     def __mod__(self: float, b: int) -> float:
         return self % float(b)
 
+    @overload
     def __divmod__(self, b: int):
         return self.__divmod__(float(b))
 
+    @overload
     def __eq__(self: float, b: int) -> bool:
         return self == float(b)
 
+    @overload
     def __ne__(self: float, b: int) -> bool:
         return self != float(b)
 
+    @overload
     def __lt__(self: float, b: int) -> bool:
         return self < float(b)
 
+    @overload
     def __gt__(self: float, b: int) -> bool:
         return self > float(b)
 
+    @overload
     def __le__(self: float, b: int) -> bool:
         return self <= float(b)
 
+    @overload
     def __ge__(self: float, b: int) -> bool:
         return self >= float(b)
 
+    @overload
     def __pow__(self: float, b: int) -> float:
         return _float_int_pow(self, b)
 
@@ -465,12 +480,15 @@ class float32:
         %0 = fptrunc double %self to float
         ret float %0
 
+    @overload
     def __new__(what: float32) -> float32:
         return what
 
+    @overload
     def __new__(what: str) -> float32:
         return float32._from_str(what)
 
+    @overload
     def __new__() -> float32:
         return float32.__new__(0.0)
 
@@ -812,46 +830,60 @@ class float32:
         return self == obj
 
     @commutative
+    @overload
     def __add__(self: float32, b: int) -> float32:
         return self + float32(b)
 
+    @overload
     def __sub__(self: float32, b: int) -> float32:
         return self - float32(b)
 
     @commutative
+    @overload
     def __mul__(self: float32, b: int) -> float32:
         return self * float32(b)
 
+    @overload
     def __floordiv__(self, b: int) -> float32:
         return self // float32(b)
 
+    @overload
     def __truediv__(self: float32, b: int) -> float32:
         return self / float32(b)
 
+    @overload
     def __mod__(self: float32, b: int) -> float32:
         return self % float32(b)
 
+    @overload
     def __divmod__(self, b: int):
         return self.__divmod__(float32(b))
 
+    @overload
     def __eq__(self: float32, b: int) -> bool:
         return self == float32(b)
 
+    @overload
     def __ne__(self: float32, b: int) -> bool:
         return self != float32(b)
 
+    @overload
     def __lt__(self: float32, b: int) -> bool:
         return self < float32(b)
 
+    @overload
     def __gt__(self: float32, b: int) -> bool:
         return self > float32(b)
 
+    @overload
     def __le__(self: float32, b: int) -> bool:
         return self <= float32(b)
 
+    @overload
     def __ge__(self: float32, b: int) -> bool:
         return self >= float32(b)
 
+    @overload
     def __pow__(self: float32, b: int) -> float32:
         return _float_int_pow(self, b)
 
@@ -863,12 +895,15 @@ class float16:
         %0 = fptrunc double %self to half
         ret half %0
 
+    @overload
     def __new__(what: float16) -> float16:
         return what
 
+    @overload
     def __new__(what: str) -> float16:
         return float16._from_str(what)
 
+    @overload
     def __new__() -> float16:
         return float16.__new__(0.0)
 
@@ -1156,46 +1191,60 @@ class float16:
         return self == obj
 
     @commutative
+    @overload
     def __add__(self: float16, b: int) -> float16:
         return self + float16(b)
 
+    @overload
     def __sub__(self: float16, b: int) -> float16:
         return self - float16(b)
 
     @commutative
+    @overload
     def __mul__(self: float16, b: int) -> float16:
         return self * float16(b)
 
+    @overload
     def __floordiv__(self, b: int) -> float16:
         return self // float16(b)
 
+    @overload
     def __truediv__(self: float16, b: int) -> float16:
         return self / float16(b)
 
+    @overload
     def __mod__(self: float16, b: int) -> float16:
         return self % float16(b)
 
+    @overload
     def __divmod__(self, b: int):
         return self.__divmod__(float16(b))
 
+    @overload
     def __eq__(self: float16, b: int) -> bool:
         return self == float16(b)
 
+    @overload
     def __ne__(self: float16, b: int) -> bool:
         return self != float16(b)
 
+    @overload
     def __lt__(self: float16, b: int) -> bool:
         return self < float16(b)
 
+    @overload
     def __gt__(self: float16, b: int) -> bool:
         return self > float16(b)
 
+    @overload
     def __le__(self: float16, b: int) -> bool:
         return self <= float16(b)
 
+    @overload
     def __ge__(self: float16, b: int) -> bool:
         return self >= float16(b)
 
+    @overload
     def __pow__(self: float16, b: int) -> float16:
         return _float_int_pow(self, b)
 
@@ -1207,12 +1256,15 @@ class bfloat16:
         %0 = fptrunc double %self to bfloat
         ret bfloat %0
 
+    @overload
     def __new__(what: bfloat16) -> bfloat16:
         return what
 
+    @overload
     def __new__(what: str) -> bfloat16:
         return bfloat16._from_str(what)
 
+    @overload
     def __new__() -> bfloat16:
         return bfloat16.__new__(0.0)
 
@@ -1500,46 +1552,60 @@ class bfloat16:
         return self == obj
 
     @commutative
+    @overload
     def __add__(self: bfloat16, b: int) -> bfloat16:
         return self + bfloat16(b)
 
+    @overload
     def __sub__(self: bfloat16, b: int) -> bfloat16:
         return self - bfloat16(b)
 
     @commutative
+    @overload
     def __mul__(self: bfloat16, b: int) -> bfloat16:
         return self * bfloat16(b)
 
+    @overload
     def __floordiv__(self, b: int) -> bfloat16:
         return self // bfloat16(b)
 
+    @overload
     def __truediv__(self: bfloat16, b: int) -> bfloat16:
         return self / bfloat16(b)
 
+    @overload
     def __mod__(self: bfloat16, b: int) -> bfloat16:
         return self % bfloat16(b)
 
+    @overload
     def __divmod__(self, b: int):
         return self.__divmod__(bfloat16(b))
 
+    @overload
     def __eq__(self: bfloat16, b: int) -> bool:
         return self == bfloat16(b)
 
+    @overload
     def __ne__(self: bfloat16, b: int) -> bool:
         return self != bfloat16(b)
 
+    @overload
     def __lt__(self: bfloat16, b: int) -> bool:
         return self < bfloat16(b)
 
+    @overload
     def __gt__(self: bfloat16, b: int) -> bool:
         return self > bfloat16(b)
 
+    @overload
     def __le__(self: bfloat16, b: int) -> bool:
         return self <= bfloat16(b)
 
+    @overload
     def __ge__(self: bfloat16, b: int) -> bool:
         return self >= bfloat16(b)
 
+    @overload
     def __pow__(self: bfloat16, b: int) -> bfloat16:
         return _float_int_pow(self, b)
 
@@ -1551,9 +1617,11 @@ class float128:
         %0 = fpext double %self to fp128
         ret fp128 %0
 
+    @overload
     def __new__(what: float128) -> float128:
         return what
 
+    @overload
     def __new__() -> float128:
         return float128.__new__(0.0)
 
@@ -1841,46 +1909,60 @@ class float128:
         return self == obj
 
     @commutative
+    @overload
     def __add__(self: float128, b: int) -> float128:
         return self + float128(b)
 
+    @overload
     def __sub__(self: float128, b: int) -> float128:
         return self - float128(b)
 
     @commutative
+    @overload
     def __mul__(self: float128, b: int) -> float128:
         return self * float128(b)
 
+    @overload
     def __floordiv__(self, b: int) -> float128:
         return self // float128(b)
 
+    @overload
     def __truediv__(self: float128, b: int) -> float128:
         return self / float128(b)
 
+    @overload
     def __mod__(self: float128, b: int) -> float128:
         return self % float128(b)
 
+    @overload
     def __divmod__(self, b: int):
         return self.__divmod__(float128(b))
 
+    @overload
     def __eq__(self: float128, b: int) -> bool:
         return self == float128(b)
 
+    @overload
     def __ne__(self: float128, b: int) -> bool:
         return self != float128(b)
 
+    @overload
     def __lt__(self: float128, b: int) -> bool:
         return self < float128(b)
 
+    @overload
     def __gt__(self: float128, b: int) -> bool:
         return self > float128(b)
 
+    @overload
     def __le__(self: float128, b: int) -> bool:
         return self <= float128(b)
 
+    @overload
     def __ge__(self: float128, b: int) -> bool:
         return self >= float128(b)
 
+    @overload
     def __pow__(self: float128, b: int) -> float128:
         return _float_int_pow(self, b)
 
@@ -1901,178 +1983,234 @@ class float:
 @extend
 class int:
     @commutative
+    @overload
     def __add__(self, b: float32) -> float32:
         return float32(self) + b
 
+    @overload
     def __sub__(self, b: float32) -> float32:
         return float32(self) - b
 
     @commutative
+    @overload
     def __mul__(self, b: float32) -> float32:
         return float32(self) * b
 
+    @overload
     def __floordiv__(self, b: float32) -> float32:
         return float32(self) // b
 
+    @overload
     def __truediv__(self, b: float32) -> float32:
         return float32(self) / b
 
+    @overload
     def __mod__(self, b: float32) -> float32:
         return float32(self) % b
 
+    @overload
     def __divmod__(self, b: float32):
         return float32(self).__divmod__(b)
 
+    @overload
     def __pow__(self, b: float32) -> float32:
         return float32(self) ** b
 
+    @overload
     def __eq__(self, b: float32) -> bool:
         return float32(self) == b
 
+    @overload
     def __ne__(self, b: float32) -> bool:
         return float32(self) != b
 
+    @overload
     def __lt__(self, b: float32) -> bool:
         return float32(self) < b
 
+    @overload
     def __gt__(self, b: float32) -> bool:
         return float32(self) > b
 
+    @overload
     def __le__(self, b: float32) -> bool:
         return float32(self) <= b
 
+    @overload
     def __ge__(self, b: float32) -> bool:
         return float32(self) >= b
 
     @commutative
+    @overload
     def __add__(self, b: float16) -> float16:
         return float16(self) + b
 
+    @overload
     def __sub__(self, b: float16) -> float16:
         return float16(self) - b
 
     @commutative
+    @overload
     def __mul__(self, b: float16) -> float16:
         return float16(self) * b
 
+    @overload
     def __floordiv__(self, b: float16) -> float16:
         return float16(self) // b
 
+    @overload
     def __truediv__(self, b: float16) -> float16:
         return float16(self) / b
 
+    @overload
     def __mod__(self, b: float16) -> float16:
         return float16(self) % b
 
+    @overload
     def __divmod__(self, b: float16):
         return float16(self).__divmod__(b)
 
+    @overload
     def __pow__(self, b: float16) -> float16:
         return float16(self) ** b
 
+    @overload
     def __eq__(self, b: float16) -> bool:
         return float16(self) == b
 
+    @overload
     def __ne__(self, b: float16) -> bool:
         return float16(self) != b
 
+    @overload
     def __lt__(self, b: float16) -> bool:
         return float16(self) < b
 
+    @overload
     def __gt__(self, b: float16) -> bool:
         return float16(self) > b
 
+    @overload
     def __le__(self, b: float16) -> bool:
         return float16(self) <= b
 
+    @overload
     def __ge__(self, b: float16) -> bool:
         return float16(self) >= b
 
     @commutative
+    @overload
     def __add__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) + b
 
+    @overload
     def __sub__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) - b
 
     @commutative
+    @overload
     def __mul__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) * b
 
+    @overload
     def __floordiv__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) // b
 
+    @overload
     def __truediv__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) / b
 
+    @overload
     def __mod__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) % b
 
+    @overload
     def __divmod__(self, b: bfloat16):
         return bfloat16(self).__divmod__(b)
 
+    @overload
     def __pow__(self, b: bfloat16) -> bfloat16:
         return bfloat16(self) ** b
 
+    @overload
     def __eq__(self, b: bfloat16) -> bool:
         return bfloat16(self) == b
 
+    @overload
     def __ne__(self, b: bfloat16) -> bool:
         return bfloat16(self) != b
 
+    @overload
     def __lt__(self, b: bfloat16) -> bool:
         return bfloat16(self) < b
 
+    @overload
     def __gt__(self, b: bfloat16) -> bool:
         return bfloat16(self) > b
 
+    @overload
     def __le__(self, b: bfloat16) -> bool:
         return bfloat16(self) <= b
 
+    @overload
     def __ge__(self, b: bfloat16) -> bool:
         return bfloat16(self) >= b
 
     @commutative
+    @overload
     def __add__(self, b: float128) -> float128:
         return float128(self) + b
 
+    @overload
     def __sub__(self, b: float128) -> float128:
         return float128(self) - b
 
     @commutative
+    @overload
     def __mul__(self, b: float128) -> float128:
         return float128(self) * b
 
+    @overload
     def __floordiv__(self, b: float128) -> float128:
         return float128(self) // b
 
+    @overload
     def __truediv__(self, b: float128) -> float128:
         return float128(self) / b
 
+    @overload
     def __mod__(self, b: float128) -> float128:
         return float128(self) % b
 
+    @overload
     def __divmod__(self, b: float128):
         return float128(self).__divmod__(b)
 
+    @overload
     def __pow__(self, b: float128) -> float128:
         return float128(self) ** b
 
+    @overload
     def __eq__(self, b: float128) -> bool:
         return float128(self) == b
 
+    @overload
     def __ne__(self, b: float128) -> bool:
         return float128(self) != b
 
+    @overload
     def __lt__(self, b: float128) -> bool:
         return float128(self) < b
 
+    @overload
     def __gt__(self, b: float128) -> bool:
         return float128(self) > b
 
+    @overload
     def __le__(self, b: float128) -> bool:
         return float128(self) <= b
 
+    @overload
     def __ge__(self, b: float128) -> bool:
         return float128(self) >= b
 

@@ -372,7 +372,7 @@ f('s')
 
 #%% func_arg_instantiate,barebones
 class A[T]:
-    y: T = T()
+    y: Optional[T] = None
     def foo(self, y: T):
         self.y = y
         return y
@@ -394,15 +394,13 @@ print aa.foo('s') #: s
 print aa.__class__.__name__, aa.y, aa.bar(5.1).__class__.__name__ #: A[str] s float
 
 #%% no_func_arg_instantiate_err,barebones
-# TODO: allow unbound self?
 class A[T]:
-    y: T = T()
+    y: Optional[T] = None
     def foo(self, y): self.y = y
 a = A()
 a.foo(1)
-#! cannot typecheck
-#! cannot typecheck
-#! cannot typecheck
+#! 'Optional[int]' does not match expected type 'Optional[NoneType]'
+#! during the realization
 
 #%% return_deduction,barebones
 def fun[T, R](x, y: T) -> R:
@@ -499,7 +497,6 @@ def tee(iterable, n=2):
     return list(gen(d) for d in deques)
 it = [1,2,3,4]
 a, b = tee(it)
-#! cannot typecheck
 #! cannot typecheck
 #! cannot typecheck
 #! during the realization of tee(iterable: List[int], n: int)

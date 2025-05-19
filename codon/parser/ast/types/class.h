@@ -83,9 +83,11 @@ public:
   Type *operator[](int i) const { return generics[i].getType(); }
 
 public:
+  enum PartialFlag { Missing = '0', Included, Default };
+
   ClassType *getHeterogenousTuple() override;
   FuncType *getPartialFunc() const;
-  std::vector<char> getPartialMask() const;
+  std::string getPartialMask() const;
   bool isPartialEmpty() const;
 };
 

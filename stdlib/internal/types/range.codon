@@ -8,12 +8,15 @@ class range:
 
     # Magic methods
 
+    @overload
     def __new__(start: int, stop: int) -> range:
         return range(start, stop, 1)
 
+    @overload
     def __new__(stop: int) -> range:
         return range(0, stop, 1)
 
+    @overload
     def __new__(start: int, stop: int, step: int) -> range:
         if step == 0:
             raise ValueError("range() step argument must not be zero")
@@ -22,6 +25,7 @@ class range:
     def _get(self, idx: int) -> int:
         return self.start + (idx * self.step)
 
+    @overload
     def __getitem__(self, idx: int) -> int:
         n = self.__len__()
         if idx < 0:
@@ -30,6 +34,7 @@ class range:
             raise IndexError("range object index out of range")
         return self._get(idx)
 
+    @overload
     def __getitem__(self, s: Slice) -> range:
         if s.start is None and s.stop is None and s.step is None:
             return self
@@ -60,6 +65,7 @@ class range:
     def count(self, n: int) -> int:
         return int(n in self)
 
+    @overload
     def __iter__(self) -> Generator[int]:
         start, stop, step = self.start, self.stop, self.step
         i = start
@@ -72,6 +78,7 @@ class range:
                 yield i
                 i += step
 
+    @overload
     def __len__(self) -> int:
         start, stop, step = self.start, self.stop, self.step
         if step > 0 and start < stop:
@@ -89,6 +96,7 @@ class range:
         n = self.__len__()
         return range(start + (n - 1) * step, start - step, -step).__iter__()
 
+    @overload
     def __repr__(self) -> str:
         if self.step == 1:
             return f"range({self.start}, {self.stop})"

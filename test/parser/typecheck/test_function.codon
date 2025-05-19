@@ -688,3 +688,48 @@ f6 = fib(6)
 print(f"{f6=} : {store=}")
 #: <- cache[6]
 #: f6=8 : store={0: 0, 1: 1, 2: 1, 3: 2, 4: 3, 5: 5, 6: 8}
+
+
+#%% fn_defaults,barebones
+def foo(x, a = List[int](), b = List[str]()):
+    a.append(1)
+    b.append(x)
+    print('foo', a, b)
+
+foo('a')
+#: foo [1] ['a']
+foo('b')
+#: foo [1, 1] ['a', 'b']
+
+def wrap(s, i):
+    def foo(x, a = List[int](), b = List[str]()):
+        a.append(i)
+        b.append(x)
+        print('wrap.foo', a, b)
+    for c in s: foo(c)
+    return foo
+f = wrap(['a', 'b'], 1)
+#: wrap.foo [1] ['a']
+#: wrap.foo [1, 1] ['a', 'b']
+f('a')
+#: wrap.foo [1, 1, 1] ['a', 'b', 'a']
+f('b')
+#: wrap.foo [1, 1, 1, 1] ['a', 'b', 'a', 'b']
+f = wrap(['x'], 2)
+#: wrap.foo [2] ['x']
+f('c')
+f('d')
+#: wrap.foo [2, 2] ['x', 'c']
+#: wrap.foo [2, 2, 2] ['x', 'c', 'd']
+
+#%% fn_defaults_err,barebones
+def foo(x, a = List[int](), b = List[str]()):
+    a.append(1)
+    b.append(x)
+    print('foo', a, b)
+
+foo('a')
+foo(3)
+#! 'int' does not match expected type 'str'
+#! during the realization of foo
+

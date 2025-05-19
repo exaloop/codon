@@ -221,6 +221,20 @@ private:
   Expr *message;
 };
 
+/// Await statement (await expr).
+/// @li await a
+struct AwaitStmt : public AcceptorExtend<AwaitStmt, Stmt> {
+  explicit AwaitStmt(Expr *expr);
+  AwaitStmt(const AwaitStmt &, bool);
+
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(AwaitStmt, ASTVisitor, expr);
+
+private:
+  Expr *expr;
+};
+
 /// While loop statement (while cond: suite; else: elseSuite).
 /// @li while True: print
 /// @li while True: break
@@ -254,9 +268,10 @@ private:
 struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
   ForStmt()
       : var(nullptr), iter(nullptr), suite(nullptr), elseSuite(nullptr),
-        decorator(nullptr), ompArgs(), wrapped(false), flat(false) {}
+        decorator(nullptr), ompArgs(), async(false), wrapped(false), flat(false) {}
   ForStmt(Expr *var, Expr *iter, Stmt *suite, Stmt *elseSuite = nullptr,
-          Expr *decorator = nullptr, std::vector<CallArg> ompArgs = {});
+          Expr *decorator = nullptr, std::vector<CallArg> ompArgs = {},
+          bool async = false);
   ForStmt(const ForStmt &, bool);
 
   Expr *getVar() const { return var; }
@@ -265,11 +280,13 @@ struct ForStmt : public AcceptorExtend<ForStmt, Stmt> {
   SuiteStmt *getElse() const { return elseSuite; }
   Expr *getDecorator() const { return decorator; }
   void setDecorator(Expr *e) { decorator = e; }
+  bool isAsync() const { return async; }
+  void setAsync() { async = true; }
   bool isWrapped() const { return wrapped; }
   bool isFlat() const { return flat; }
 
-  ACCEPT(ForStmt, ASTVisitor, var, iter, suite, elseSuite, decorator, ompArgs, wrapped,
-         flat);
+  ACCEPT(ForStmt, ASTVisitor, var, iter, suite, elseSuite, decorator, ompArgs, async,
+         wrapped, flat);
 
 private:
   Expr *var;
@@ -278,6 +295,7 @@ private:
   SuiteStmt *elseSuite;
   Expr *decorator;
   std::vector<CallArg> ompArgs;
+  bool async;
 
   /// Indicates if iter was wrapped with __iter__() call.
   bool wrapped;
@@ -479,7 +497,8 @@ private:
 ///           def foo[T=int, U: int](a, b: int = 0) -> list[T]: pass
 struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   FunctionStmt(std::string name = "", Expr *ret = nullptr, std::vector<Param> args = {},
-               Stmt *suite = nullptr, std::vector<Expr *> decorators = {});
+               Stmt *suite = nullptr, std::vector<Expr *> decorators = {},
+               bool async = false);
   FunctionStmt(const FunctionStmt &, bool);
 
   std::string getName() const { return name; }
@@ -488,6 +507,8 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   void setSuite(SuiteStmt *s) { suite = s; }
   const std::vector<Expr *> &getDecorators() const { return decorators; }
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
+  bool isAsync() const { return async; }
+  void setAsync() { async = true; }
 
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.
@@ -499,14 +520,14 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   std::unordered_set<std::string> getNonInferrableGenerics() const;
   bool hasFunctionAttribute(const std::string &attr) const;
 
-  ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators);
+  ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators, async);
 
 private:
   std::string name;
-  /// nullptr if return type is not specified.
-  Expr *ret;
+  Expr *ret; /// nullptr if return type is not specified.
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
+  bool async;
   std::string signature;
 
   friend class Cache;

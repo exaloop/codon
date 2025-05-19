@@ -18,8 +18,8 @@ class Dict:
     _keys: Ptr[K]
     _vals: Ptr[V]
 
-    K: type
-    V: type
+    K: type = NoneType
+    V: type = NoneType
 
     # Magic methods
 

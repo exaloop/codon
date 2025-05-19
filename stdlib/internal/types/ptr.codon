@@ -7,18 +7,21 @@ class Ptr:
     def __new__() -> Ptr[T]:
         ret ptr null
 
+    @overload
     @__internal__
     def __new__(sz: int) -> Ptr[T]:
         pass
 
     @pure
     @derives
+    @overload
     @llvm
     def __new__(other: Ptr[T]) -> Ptr[T]:
         ret ptr %other
 
     @pure
     @derives
+    @overload
     @llvm
     def __new__(other: Ptr[byte]) -> Ptr[T]:
         ret ptr %other

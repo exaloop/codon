@@ -1,7 +1,15 @@
 #%% list_unbound,barebones
 a = []
-#! cannot typecheck
-#! cannot typecheck
+print(a, a.__class__.__name__)
+#: [] List[NoneType]
+
+d = {}
+print(d, d.__class__.__name__)
+#: {} Dict[NoneType,NoneType]
+
+s = set()
+print(s, s.__class__.__name__)
+#: {} Set[NoneType]
 
 #%% star_err,barebones
 a = (1, 2, 3)

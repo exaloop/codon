@@ -50,6 +50,7 @@ void ASTVisitor::visit(PrintStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ReturnStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(YieldStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(AssertStmt *stmt) { defaultVisit(stmt); }
+void ASTVisitor::visit(AwaitStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(WhileStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ForStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(IfStmt *stmt) { defaultVisit(stmt); }

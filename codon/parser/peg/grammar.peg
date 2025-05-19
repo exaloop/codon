@@ -97,6 +97,7 @@ small_stmt <-
   / nonlocal_stmt
   / yield_stmt &(SPACE / ';' / EOL)
   / assert_stmt
+  / await_stmt
   / del_stmt
   / return_stmt &(SPACE / ';' / EOL)
   / raise_stmt &(SPACE / ';' / EOL)
@@ -146,6 +147,10 @@ yield_stmt <-
 assert_stmt <- 'assert' SPACE expression (_ ',' _ expression)? {
   return asts(Assert, LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
 }
+await_stmt <- 'await' SPACE expression {
+  return asts(Await, LOC, ac_expr(V0));
+}
+
 # TODO: do targets as in Python
 del_stmt <- 'del' SPACE tlist(',', expression) {
   return asts(Suite, LOC,
@@ -258,7 +263,7 @@ while_stmt <- ('while' SPACE named_expression _ ':' _ suite)
     ac_expr(V0), ac_stmt(V1), VS.size() > 2 ? ac_stmt(V2) : nullptr
   );
 }
-for <- decorator? for_stmt {
+for <- decorator? for_stmt_async {
   if (VS.size() > 1) {
     auto s = (ForStmt*)(ac_stmt(V1));
     s->setDecorator(ac_expr(V0));
@@ -266,6 +271,13 @@ for <- decorator? for_stmt {
   }
   return ac_stmt(V0);
 }
+for_stmt_async <-
+  / 'async' SPACE for_stmt {
+    auto s = (ForStmt*)(ac_stmt(V0));
+    s->setAsync();
+    return make_any<Stmt*>(s);
+  }
+  / for_stmt { return V0; }
 for_stmt <- ('for' SPACE star_targets)
             (SPACE 'in' SPACE star_expressions _ ':' _ suite)
             (SAMEDENT 'else' (SPACE 'not' SPACE 'break')* _ ':' _ suite)? {
@@ -317,13 +329,13 @@ except_block <-
   }
   / 'except' _ ':' _ suite { return setSI<ExceptStmt>(CTX.cache->N<ExceptStmt>("", nullptr, ac_stmt(V0)), LOC); }
 function <-
-  / extern_decorators function_def (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
+  / extern_decorators function_def_async (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
     auto fn = (FunctionStmt*)(ac_stmt(V1));
     fn->setDecorators(ac<vector<Expr*>>(V0));
     fn->setSuite(SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, ac<string>(V2)))));
     return (Stmt*)fn;
   }
-  / decorators? function_def _ suite {
+  / decorators? function_def_async _ suite {
     auto fn = (FunctionStmt*)(ac_stmt(VS.size() > 2 ? V1 : V0));
     if (VS.size() > 2)
       fn->setDecorators(ac<vector<Expr*>>(V0));
@@ -334,6 +346,13 @@ extern <- (empty_line* EXTERNDENT (!EOL .)* EOL empty_line*)+ {
   return string(VS.sv());
 }
 ~empty_line <- [ \t]* EOL
+function_def_async <-
+  / 'async' SPACE function_def {
+    auto fn = (FunctionStmt*)(ac_stmt(V0));
+    fn->setAsync();
+    return make_any<Stmt*>(fn);
+  }
+  / function_def { return V0; }
 function_def <-
   / 'def' SPACE NAME _ generics _ params (_ '->' _ expression)? _ ':' {
     auto params = ac<SemVals>(V2).transform<Param>();
@@ -651,21 +670,30 @@ double_starred_kvpair <-
 kvpair <- expression _ ':' _ expression {
   return aste(Tuple, LOC, std::vector<Expr*>{ac_expr(V0), ac_expr(V1)});
 }
-for_if_clauses <- for_if_clause (SPACE for_if_clause)* {
+for_if_clauses <- for_if_clause_async (SPACE for_if_clause_async)* {
   std::vector<Stmt*> v = ac<std::vector<Stmt*>>(V0);
   auto tail = VS.transform<std::vector<Stmt*>>(1);
   for (auto &t: tail)
     v.insert(v.end(), t.begin(), t.end());
   return v;
 }
-for_if_clause <- 'for' SPACE star_targets SPACE 'in' SPACE disjunction
+for_if_clause_async <-
+  / 'async' SPACE for_if_clause {
+    auto s = ac<std::vector<Stmt*>>(V0);
+    if (!s.empty() && cast<ForStmt>(s.front()))
+      cast<ForStmt>(s.front())->setAsync();
+    return make_any<std::vector<Stmt*>>(s);
+  }
+  / for_if_clause { return V0; }
+for_if_clause <-
+  / 'for' SPACE star_targets SPACE 'in' SPACE disjunction
                  (SPACE? 'if' SPACE? disjunction)* {
-  std::vector<Stmt*> v{asts(For, LOC, ac_expr(V0), ac_expr(V1), nullptr)};
-  auto tail = VS.transform<Expr*>(2);
-  for (auto &t: tail)
-    v.push_back(asts(If, LOC, t, nullptr));
-  return v;
-}
+    std::vector<Stmt*> v{asts(For, LOC, ac_expr(V0), ac_expr(V1), nullptr)};
+    auto tail = VS.transform<Expr*>(2);
+    for (auto &t: tail)
+      v.push_back(asts(If, LOC, t, nullptr));
+    return v;
+  }
 
 star_targets <- tlist(',', star_target) { return wrap_tuple(CTX, VS, LOC); }
 star_target <-
@@ -804,12 +832,11 @@ EXTERNDENT__PREDICATE {
 ~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?
 ~_ <- SPACE?
 
-# TODO: add async / await
 ~keyword <- <
   'False' / 'else' / 'import' / 'pass' / 'None' / 'break' / 'except' / 'in' / 'raise' /
   'True' / 'class' / 'finally' / 'is' / 'return' / 'and' / 'continue' / 'for' / 'as'  /
   'lambda' / 'try' / 'def' / 'from' / 'while' / 'assert' / 'del' / 'global' / 'not' /
-  'with' / 'elif' / 'if' / 'or' / 'yield'
+  'with' / 'elif' / 'if' / 'or' / 'yield' / 'async' / 'await'
 >
 
 # https://docs.python.org/3/library/string.html#formatspec

@@ -29,11 +29,15 @@ struct LinkType : public Type {
   std::string genericName;
   /// Type that will be used if an unbound is not resolved.
   TypePtr defaultType;
+  /// Set if this type can be used unrealized as function argument during function
+  /// realization.
+  bool passThrough;
 
 public:
   LinkType(Cache *cache, Kind kind, int id, int level = 0, TypePtr type = nullptr,
            char isStatic = 0, std::shared_ptr<Trait> trait = nullptr,
-           TypePtr defaultType = nullptr, std::string genericName = "");
+           TypePtr defaultType = nullptr, std::string genericName = "",
+           bool passThrough = false);
   /// Convenience constructor for linked types.
   explicit LinkType(TypePtr type);
 

@@ -126,7 +126,8 @@ ir::Value *TranslateVisitor::transform(Expr *expr) {
     auto known = p->getPartialMask();
     auto func = p->getPartialFunc();
     for (int i = 0; i < known.size(); i++) {
-      if (known[i] && (*func->ast)[i].isValue()) {
+      if (known[i] == types::ClassType::PartialFlag::Included &&
+          (*func->ast)[i].isValue()) {
         seqassert(j < ctx->seqItems.back().size() &&
                       ctx->seqItems.back()[j].first == Attr::ExprSequenceItem,
                   "invalid partial element: {}");

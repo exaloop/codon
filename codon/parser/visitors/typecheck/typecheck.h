@@ -126,7 +126,7 @@ private: // Node typechecking rules
   struct PartialCallData {
     bool isPartial = false;                  // true if the call is partial
     std::string var;                         // set if calling a partial type itself
-    std::vector<char> known = {};            // mask of known arguments
+    std::string known = "";                  // mask of known arguments
     Expr *args = nullptr, *kwArgs = nullptr; // partial *args/**kwargs expressions
   };
   void visit(StarExpr *) override;
@@ -138,7 +138,8 @@ private: // Node typechecking rules
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
   Expr *callReorderArguments(types::FuncType *, CallExpr *, PartialCallData &);
-  bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &, bool);
+  bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &,
+                         const PartialCallData &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
   std::vector<types::TypePtr> getSuperTypes(types::ClassType *);
 
@@ -215,6 +216,7 @@ private:
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
   void visit(StmtExpr *) override;
+  void visit(AwaitStmt *) override;
   void visit(CommentStmt *stmt) override;
   void visit(CustomStmt *) override;
 
@@ -266,8 +268,8 @@ public:
               bool isEllipsis = false);
   std::vector<Cache::Class::ClassField> getClassFields(types::ClassType *) const;
   std::shared_ptr<TypeContext> getCtx() const { return ctx; }
-  Expr *generatePartialCall(const std::vector<char> &, types::FuncType *,
-                            Expr * = nullptr, Expr * = nullptr);
+  Expr *generatePartialCall(const std::string &, types::FuncType *, Expr * = nullptr,
+                            Expr * = nullptr);
 
   friend class Cache;
   friend class TypeContext;
@@ -476,7 +478,7 @@ public:
   ///              (partial function) or not.
   int reorderNamedArgs(types::FuncType *func, const std::vector<CallArg> &args,
                        const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
-                       const std::vector<char> &known = std::vector<char>());
+                       const std::string &known = "");
 
   bool isCanonicalName(const std::string &name) const;
   types::FuncType *extractFunction(types::Type *t) const;
