@@ -172,7 +172,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   // Deduce the super type of the collection--- in other words, the least common
   // ancestor of all types in the collection. For example, `type([1, 1.2]) == type([1.2,
   // 1]) == float` because float is an "ancestor" of int.
-  // TOOD: use wrapExpr...
+  // TODO: use wrapExpr...
   auto superTyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
     if (!collectionCls)
       return ti->shared_from_this();

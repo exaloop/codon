@@ -7,12 +7,48 @@ print not a, not b, ~b, +b, -b, -(+(-b)) #: True False -2 1 -1 1
 x, y = 1, 0
 c = [1, 2, 3]
 
-print x and y, x or y #: False True
+print x and y, x or y #: 0 1
 print x in c, x not in c #: True False
 print c is c, c is not c #: True False
 
 z: Optional[int] = None
 print z is None, None is z, None is not z, None is None #: True True False True
+
+#%% binary_and_or,barebones
+a = 'hehe' or 5.2
+print(a, a.__class__.__name__)  #: hehe str
+a = 'hehe' and 5.2
+print(a, a.__class__.__name__)  #: 5.2 Union[float | str]
+
+a = '' or 5.1
+print(a, a.__class__.__name__)  #: 5.1 Union[float | str]
+a = '' and 5.1
+print(a, a.__class__.__name__)  #:  str
+
+
+s = 'hehe'
+a = s or 'aaa'
+print(a, a.__class__.__name__)  #: hehe str
+a = s and 'aaa'
+print(a, a.__class__.__name__)  #: aaa str
+
+s = ''
+a = s or 'bbb'
+print(a, a.__class__.__name__)  #: bbb str
+a = s and 'bbb'
+print(a, a.__class__.__name__)  #:  str
+
+s = 'hehe'
+a = s or 1
+print(a, a.__class__.__name__)  #: hehe Union[int | str]
+a = s and 1
+print(a, a.__class__.__name__)  #: 1 Union[int | str]
+
+s = ''
+a = s or 1
+print(a, a.__class__.__name__)  #: 1 Union[int | str]
+a = s and 1
+print(a, a.__class__.__name__)  #:  Union[int | str]
 
 #%% chain_binary,barebones
 def foo():
@@ -386,8 +422,8 @@ foo(a > 1)   #: True
 foo(a >= 1)  #: True
 foo(a == 1)  #: False
 foo(a != 1)  #: True
-foo(a and 1) #: True
-foo(a or 1)  #: True
+foo(a and 1) #: 1
+foo(a or 1)  #: 5
 foo(a + 1)   #: 6
 foo(a - 1)   #: 4
 foo(a * 1)   #: 5

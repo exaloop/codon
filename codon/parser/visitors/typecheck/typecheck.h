@@ -61,7 +61,7 @@ public: // Convenience transformators
   Expr *transform(Expr *e) override;
   Expr *transform(Expr *expr, bool allowTypes);
   Stmt *transform(Stmt *s) override;
-  Expr *transformType(Expr *expr, bool allowTypeOf = true);
+  Expr *transformType(Expr *expr);
 
 private:
   void defaultVisit(Expr *e) override;

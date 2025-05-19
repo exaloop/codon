@@ -376,7 +376,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Parse arguments to the context. Needs to be done after adding generics
     // to support cases like `foo(a: T, T: type)`
     for (auto &a : args) {
-      a.type = transformType(a.getType(), false);
+      a.type = transformType(a.getType());
     }
 
     // Unify base type generics with argument types. Add non-generic arguments to the
@@ -406,7 +406,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     }
 
     // Parse the return type
-    ret = transformType(stmt->getReturn(), false);
+    ret = transformType(stmt->getReturn());
     auto retType = extractClassGeneric(baseType.get(), 1);
     if (ret) {
       unify(retType, extractType(ret));

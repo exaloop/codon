@@ -64,17 +64,26 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   if (expr->getLhs()->getType()->isStaticType() && expr->op == "&&") {
     if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
       if (!tb->value) {
-        resultExpr = transform(N<BoolExpr>(false));
+        if (ctx->expectedType && ctx->expectedType->is("bool"))
+          resultExpr = transform(N<BoolExpr>(false));
+        else
+          resultExpr = expr->getLhs();
         return;
       }
     } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
       if (ts->value.empty()) {
-        resultExpr = transform(N<BoolExpr>(false));
+        if (ctx->expectedType && ctx->expectedType->is("bool"))
+          resultExpr = transform(N<BoolExpr>(false));
+        else
+          resultExpr = expr->getLhs();
         return;
       }
     } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
       if (!ti->value) {
-        resultExpr = transform(N<BoolExpr>(false));
+        if (ctx->expectedType && ctx->expectedType->is("bool"))
+          resultExpr = transform(N<BoolExpr>(false));
+        else
+          resultExpr = expr->getLhs();
         return;
       }
     } else {
@@ -84,17 +93,26 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   } else if (expr->getLhs()->getType()->isStaticType() && expr->op == "||") {
     if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
       if (tb->value) {
-        resultExpr = transform(N<BoolExpr>(true));
+        if (ctx->expectedType && ctx->expectedType->is("bool"))
+          resultExpr = transform(N<BoolExpr>(true));
+        else
+          resultExpr = expr->getLhs();
         return;
       }
     } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
       if (!ts->value.empty()) {
-        resultExpr = transform(N<BoolExpr>(true));
+        if (ctx->expectedType && ctx->expectedType->is("bool"))
+          resultExpr = transform(N<BoolExpr>(true));
+        else
+          resultExpr = expr->getLhs();
         return;
       }
     } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
       if (ti->value) {
-        resultExpr = transform(N<BoolExpr>(true));
+        if (ctx->expectedType && ctx->expectedType->is("bool"))
+          resultExpr = transform(N<BoolExpr>(true));
+        else
+          resultExpr = expr->getLhs();
         return;
       }
     } else {
@@ -184,7 +202,11 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
   Expr *final = items.back();
   for (auto i = items.size() - 1; i-- > 0;)
     final = N<BinaryExpr>(items[i], "&&", final);
+
+  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
+  std::swap(ctx->expectedType, oldExpectedType);
   resultExpr = transform(final);
+  std::swap(ctx->expectedType, oldExpectedType);
 }
 
 /// Helper function that locates the pipe ellipsis within a collection of (possibly
@@ -218,8 +240,7 @@ std::vector<std::pair<size_t, Expr *>> TypecheckVisitor::findEllipsis(Expr *expr
 /// Stages that are not in the form of CallExpr will be transformed to it (e.g., `foo`
 /// -> `foo(...)`).
 /// Special care is taken of stages that can expand to multiple stages (e.g., `a |> foo`
-/// might become `a |> unwrap |> foo` to satisfy type constraints; see @c wrapExpr for
-/// details).
+/// might become `a |> unwrap |> foo` to satisfy type constraints.
 void TypecheckVisitor::visit(PipeExpr *expr) {
   bool hasGenerator = false;
 
@@ -622,9 +643,9 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     else if (expr->getOp() == "!=")
       lvalue = lvalue != rvalue;
     else if (expr->getOp() == "&&")
-      lvalue = lvalue && rvalue;
+      lvalue = lvalue ? rvalue : lvalue;
     else if (expr->getOp() == "||")
-      lvalue = lvalue || rvalue;
+      lvalue = lvalue ? lvalue : rvalue;
     else if (expr->getOp() == "+")
       lvalue = lvalue + rvalue;
     else if (expr->getOp() == "-")
@@ -648,15 +669,13 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     else
       seqassert(false, "unknown static operator {}", expr->getOp());
     LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), lvalue);
-    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
-           expr->getOp()))
+    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">="}, expr->getOp()))
       return transform(N<BoolExpr>(lvalue));
     else
       return transform(N<IntExpr>(lvalue));
   } else {
     // Cannot be evaluated yet: just set the type
-    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">=", "&&", "||"},
-           expr->getOp()))
+    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">="}, expr->getOp()))
       expr->getType()->getUnbound()->isStatic = 3;
     else
       expr->getType()->getUnbound()->isStatic = 1;
@@ -675,12 +694,21 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
 Expr *TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
   // Case: simple transformations
   if (expr->getOp() == "&&") {
-    return transform(N<IfExpr>(expr->getLhs(),
-                               N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__")),
-                               N<BoolExpr>(false)));
+    if (ctx->expectedType && ctx->expectedType->is("bool"))
+      return transform(N<IfExpr>(expr->getLhs(),
+                                 N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__")),
+                                 N<BoolExpr>(false)));
+    else
+      return transform(N<CallExpr>(N<IdExpr>("__internal__.and_union"), expr->getLhs(),
+                                   expr->getRhs()));
   } else if (expr->getOp() == "||") {
-    return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
-                               N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
+    if (ctx->expectedType && ctx->expectedType->is("bool"))
+      return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
+                                 N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
+    else {
+      return transform(N<CallExpr>(N<IdExpr>("__internal__.or_union"), expr->getLhs(),
+                                   expr->getRhs()));
+    }
   } else if (expr->getOp() == "not in") {
     return transform(N<CallExpr>(N<DotExpr>(
         N<CallExpr>(N<DotExpr>(expr->getRhs(), "__contains__"), expr->getLhs()),

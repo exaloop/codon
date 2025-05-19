@@ -257,6 +257,23 @@ class __internal__:
                     return __internal__.union_get_data(union, T).__repr__()
         return ''
 
+    # and/or
+
+    def and_union(x, y):
+        if type(x) is type(y):
+            return y if x else x
+        else:
+            T = Union[type(x),type(y)]
+            return T(y) if x else T(x)
+
+    def or_union(x, y):
+        if type(x) is type(y):
+            return x if x else y
+        else:
+            T = Union[type(x),type(y)]
+            return T(x) if x else T(y)
+
+
     # Tuples
 
     def namedkeys(N: Literal[int]):

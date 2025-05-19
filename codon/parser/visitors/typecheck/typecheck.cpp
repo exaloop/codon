@@ -220,9 +220,11 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
       ctx->changedNodes++;
   }
   if (expr) {
-    if (!expr->hasAttribute(Attr::ExprDoNotRealize))
-      if (auto p = realize(expr->getType()))
+    if (!expr->hasAttribute(Attr::ExprDoNotRealize)) {
+      if (auto p = realize(expr->getType())) {
         unify(expr->getType(), p);
+      }
+    }
     LOG_TYPECHECK("[expr] {}: {}{}", getSrcInfo(), *(expr),
                   expr->isDone() ? "[done]" : "");
   }
@@ -230,20 +232,15 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 }
 
 /// Transform a type expression node.
-/// @param allowTypeOf Set if `type()` expressions are allowed. Usually disallowed in
-///                    class/function definitions.
 /// Special case: replace `None` with `NoneType`
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
-Expr *TypecheckVisitor::transformType(Expr *expr, bool allowTypeOf) {
-  auto oldTypeOf = ctx->allowTypeOf;
-  ctx->allowTypeOf = allowTypeOf;
+Expr *TypecheckVisitor::transformType(Expr *expr) {
   if (cast<NoneExpr>(expr)) {
     auto ne = N<IdExpr>("NoneType");
     ne->setSrcInfo(expr->getSrcInfo());
     expr = ne;
   }
   expr = transform(expr);
-  ctx->allowTypeOf = oldTypeOf;
   if (expr) {
     if (expr->getType()->isStaticType()) {
       ;
@@ -650,7 +647,15 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
 
-  else if (expectedClass && expectedClass->is(TYPE_OPTIONAL) &&
+  else if (expectedClass && expectedClass->is("bool") && exprClass &&
+           !exprClass->is("bool")) {
+    type = instantiateType(expectedClass);
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<DotExpr>(expr, "__bool__"));
+    };
+  }
+
+  else if (expectedClass && expectedClass->is(TYPE_OPTIONAL) && exprClass &&
            !exprClass->is(expectedClass->name)) {
     type =
         instantiateType(getStdLibType(TYPE_OPTIONAL), std::vector<Type *>{exprClass});

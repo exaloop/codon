@@ -36,11 +36,14 @@ void TypecheckVisitor::visit(RangeExpr *expr) {
 }
 
 /// Typecheck if expressions. Evaluate static if blocks if possible.
-/// Also wrap the condition with `__bool__()` if needed and wrap both conditional
-/// expressions. See @c wrapExpr for more details.
+/// Also wrap conditional expressions to match each other. See @c wrapExpr for more
+/// details.
 void TypecheckVisitor::visit(IfExpr *expr) {
-  // C++ call order is not defined; make sure to transform the conditional first
+  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
+  std::swap(ctx->expectedType, oldExpectedType);
   expr->cond = transform(expr->getCond());
+  std::swap(ctx->expectedType, oldExpectedType);
+
   // Static if evaluation
   if (expr->getCond()->getType()->isStaticType()) {
     resultExpr = evaluateStaticCondition(
@@ -60,9 +63,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   expr->ifexpr = transform(expr->getIf());
   expr->elsexpr = transform(expr->getElse());
 
-  // Add __bool__ wrapper
-  while (expr->getCond()->getClassType() && !expr->getCond()->getType()->is("bool"))
-    expr->cond = transform(N<CallExpr>(N<DotExpr>(expr->getCond(), "__bool__")));
+  wrapExpr(&expr->cond, getStdLibType("bool"));
   // Add wrappers and unify both sides
   if (expr->getIf()->getType()->getStatic())
     expr->getIf()->setType(
@@ -83,10 +84,12 @@ void TypecheckVisitor::visit(IfExpr *expr) {
 }
 
 /// Typecheck if statements. Evaluate static if blocks if possible.
-/// Also wrap the condition with `__bool__()` if needed.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfStmt *stmt) {
+  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
+  std::swap(ctx->expectedType, oldExpectedType);
   stmt->cond = transform(stmt->getCond());
+  std::swap(ctx->expectedType, oldExpectedType);
 
   // Static if evaluation
   if (stmt->getCond()->getType()->isStaticType()) {
@@ -101,8 +104,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
     return;
   }
 
-  while (stmt->getCond()->getClassType() && !stmt->getCond()->getType()->is("bool"))
-    stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->getCond(), "__bool__")));
+  wrapExpr(&stmt->cond, getStdLibType("bool"));
   ctx->blockLevel++;
   stmt->ifSuite = SuiteStmt::wrap(transform(stmt->getIf()));
   stmt->elseSuite = SuiteStmt::wrap(transform(stmt->getElse()));

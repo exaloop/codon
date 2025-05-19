@@ -57,9 +57,9 @@ void TypecheckVisitor::visit(ContinueStmt *stmt) {
 
 /// Transform a while loop.
 /// @example
-///   `while cond: ...`           ->  `while cond.__bool__(): ...`
+///   `while cond: ...`           ->  `while cond: ...`
 ///   `while cond: ... else: ...` -> ```no_break = True
-///                                     while cond.__bool__():
+///                                     while cond:
 ///                                       ...
 ///                                     if no_break: ...```
 void TypecheckVisitor::visit(WhileStmt *stmt) {
@@ -74,9 +74,12 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   ctx->getBase()->loops.emplace_back(breakVar);
+
+  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
+  std::swap(ctx->expectedType, oldExpectedType);
   stmt->cond = transform(stmt->getCond());
-  if (stmt->getCond()->getClassType() && !stmt->getCond()->getType()->is("bool"))
-    stmt->cond = transform(N<CallExpr>(N<DotExpr>(stmt->getCond(), "__bool__")));
+  std::swap(ctx->expectedType, oldExpectedType);
+  wrapExpr(&stmt->cond, getStdLibType("bool"));
 
   ctx->blockLevel++;
   stmt->suite = SuiteStmt::wrap(transform(stmt->getSuite()));

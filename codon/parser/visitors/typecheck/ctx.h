@@ -170,9 +170,6 @@ struct TypeContext : public Context<TypecheckItem> {
   ImportFile moduleName = {ImportFile::PACKAGE, "", ""};
   /// Set if the standard library is currently being loaded.
   bool isStdlibLoading = false;
-  /// Allow type() expressions. Currently used to disallow type() in class
-  /// and function definitions.
-  bool allowTypeOf = true;
 
   /// The current type-checking level (for type instantiation and generalization).
   int typecheckLevel = 0;
@@ -190,6 +187,9 @@ struct TypeContext : public Context<TypecheckItem> {
 
   /// Current statement time.
   int64_t time = 0;
+
+  /// @brief  Type to be expected upon completed typechecking.
+  types::TypePtr expectedType = nullptr;
 
   std::unordered_map<std::string, double> _itime;
 

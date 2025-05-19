@@ -239,7 +239,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
 
   stmt->rhs = transform(stmt->getRhs(), true);
-  stmt->type = transformType(stmt->getTypeExpr(), false);
+  stmt->type = transformType(stmt->getTypeExpr());
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->getValue());
