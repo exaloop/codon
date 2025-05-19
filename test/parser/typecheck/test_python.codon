@@ -134,3 +134,8 @@ except ValueError:
 except PyError as e:
     print 'PyError', e
 
+#%% python_directive
+## codon: auto_python=1
+import json
+s = json.dumps({'6': 7, '4': 5})
+print(s.__class__.__name__, s)  #: pyobj {"4": 5, "6": 7}

@@ -64,6 +64,7 @@ public:
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
   void visit(CommentStmt *) override {}
+  void visit(DirectiveStmt *) override {}
 
 private:
   ir::types::Type *getType(types::Type *t);

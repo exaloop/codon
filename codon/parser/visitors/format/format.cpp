@@ -446,5 +446,7 @@ void FormatVisitor::visit(CommentStmt *stmt) {
   result = fmt::format("{}# {}{}", commentStart, stmt->getComment(), commentEnd);
 }
 
+void FormatVisitor::visit(DirectiveStmt *stmt) {}
+
 } // namespace ast
 } // namespace codon

@@ -22,6 +22,7 @@ using namespace codon::error;
 namespace codon::ast {
 
 using namespace types;
+using namespace matcher;
 
 /// Simplify an AST node. Load standard library if needed.
 /// @param cache     Pointer to the shared cache ( @c Cache )
@@ -395,6 +396,20 @@ void TypecheckVisitor::visit(CustomStmt *stmt) {
 }
 
 void TypecheckVisitor::visit(CommentStmt *stmt) { stmt->setDone(); }
+
+void TypecheckVisitor::visit(DirectiveStmt *stmt) {
+  if (stmt->getKey() == "auto_python") {
+    ctx->autoPython = stmt->getValue() == "1";
+    compilationWarning(
+        fmt::format("directive '{}' = {}", stmt->getKey(), ctx->autoPython),
+        stmt->getSrcInfo().file, stmt->getSrcInfo().line, stmt->getSrcInfo().col);
+  } else {
+    compilationWarning(fmt::format("unknown directive '{}'", stmt->getKey()),
+                       stmt->getSrcInfo().file, stmt->getSrcInfo().line,
+                       stmt->getSrcInfo().col);
+  }
+  stmt->setDone();
+}
 
 /**************************************************************************************/
 

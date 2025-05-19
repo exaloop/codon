@@ -65,6 +65,7 @@ void ASTVisitor::visit(ClassStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(YieldFromStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(WithStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(CustomStmt *stmt) { defaultVisit(stmt); }
+void ASTVisitor::visit(DirectiveStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(CommentStmt *stmt) { defaultVisit(stmt); }
 
 } // namespace codon::ast

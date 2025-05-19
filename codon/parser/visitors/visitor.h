@@ -79,6 +79,7 @@ public:
   virtual void visit(YieldFromStmt *);
   virtual void visit(WithStmt *);
   virtual void visit(CustomStmt *);
+  virtual void visit(DirectiveStmt *);
   virtual void visit(CommentStmt *);
 };
 

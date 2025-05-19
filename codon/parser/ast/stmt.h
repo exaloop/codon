@@ -619,6 +619,19 @@ private:
   SuiteStmt *suite;
 };
 
+struct DirectiveStmt : public AcceptorExtend<DirectiveStmt, Stmt> {
+  DirectiveStmt(std::string key = "", std::string value = "");
+  DirectiveStmt(const DirectiveStmt &, bool);
+
+  std::string getKey() const { return key; }
+  std::string getValue() const { return value; }
+
+  ACCEPT(DirectiveStmt, ASTVisitor, key, value);
+
+private:
+  std::string key, value;
+};
+
 /// The following nodes are created during typechecking.
 
 /// Member assignment statement (lhs.member = rhs).

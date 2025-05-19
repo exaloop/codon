@@ -120,6 +120,7 @@ public:
   void visit(YieldFromStmt *) override;
   void visit(WithStmt *) override;
   void visit(CommentStmt *) override;
+  void visit(DirectiveStmt *) override;
 
 public:
   friend std::ostream &operator<<(std::ostream &out, const FormatVisitor &c) {

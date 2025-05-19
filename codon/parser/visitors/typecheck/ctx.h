@@ -191,6 +191,8 @@ struct TypeContext : public Context<TypecheckItem> {
   /// @brief  Type to be expected upon completed typechecking.
   types::TypePtr expectedType = nullptr;
 
+  bool autoPython = false;
+
   std::unordered_map<std::string, double> _itime;
 
 public:

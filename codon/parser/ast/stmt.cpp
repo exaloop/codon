@@ -572,6 +572,15 @@ std::string CustomStmt::toString(int indent) const {
              suite ? suite->toString(indent >= 0 ? indent + INDENT_SIZE : -1) : ""));
 }
 
+DirectiveStmt::DirectiveStmt(std::string key, std::string value)
+    : AcceptorExtend(), key(std::move(key)), value(std::move(value)) {}
+DirectiveStmt::DirectiveStmt(const DirectiveStmt &stmt, bool clean)
+    : AcceptorExtend(stmt, clean), key(stmt.key), value(stmt.value) {}
+std::string DirectiveStmt::toString(int indent) const {
+  std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
+  return wrapStmt(format("(directive {} '{}')", key, value));
+}
+
 AssignMemberStmt::AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs)
     : AcceptorExtend(), lhs(lhs), member(std::move(member)), rhs(rhs) {}
 AssignMemberStmt::AssignMemberStmt(const AssignMemberStmt &stmt, bool clean)
@@ -616,6 +625,7 @@ ACCEPT_IMPL(ClassStmt, ASTVisitor);
 ACCEPT_IMPL(YieldFromStmt, ASTVisitor);
 ACCEPT_IMPL(WithStmt, ASTVisitor);
 ACCEPT_IMPL(CustomStmt, ASTVisitor);
+ACCEPT_IMPL(DirectiveStmt, ASTVisitor);
 ACCEPT_IMPL(AssignMemberStmt, ASTVisitor);
 ACCEPT_IMPL(CommentStmt, ASTVisitor);
 

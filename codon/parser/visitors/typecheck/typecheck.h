@@ -219,6 +219,7 @@ private:
   void visit(AwaitStmt *) override;
   void visit(CommentStmt *stmt) override;
   void visit(CustomStmt *) override;
+  void visit(DirectiveStmt *) override;
 
 public:
   /* Type inference (infer.cpp) */

@@ -9,6 +9,7 @@
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
+#include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
@@ -37,6 +38,22 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   auto file = getImportFile(getArgv(), path, ctx->getFilename(), false,
                             getRootModulePath(), getPluginImportPaths());
   if (!file) {
+    if (stmt->getDots() == 0 && ctx->autoPython) {
+      auto newStr = FormatVisitor::apply(stmt->getFrom());
+      if (stmt->getWhat())
+        newStr += "." + FormatVisitor::apply(stmt->getWhat());
+      compilationWarning(fmt::format("importing '{}' from Python", newStr),
+                         stmt->getSrcInfo().file, stmt->getSrcInfo().line,
+                         stmt->getSrcInfo().col);
+      auto exprOrErr = parseExpr(ctx->cache, newStr, stmt->getFrom()->getSrcInfo());
+      if (!exprOrErr)
+        throw exc::ParserException(exprOrErr.takeError());
+      resultStmt = transform(N<ImportStmt>(N<IdExpr>("python"), exprOrErr->first,
+                                           stmt->getArgs(), stmt->getReturnType(),
+                                           stmt->getAs()));
+      return;
+    }
+
     std::string s(stmt->getDots(), '.');
     for (auto &c : components) {
       if (c == "..") {
