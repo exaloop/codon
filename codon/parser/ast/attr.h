@@ -35,6 +35,7 @@ struct Attr {
     IsGenerator,
     Extend,
     Tuple,
+    Dataclass,
     ClassDeduce,
     ClassNoTuple,
     Test,

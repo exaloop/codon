@@ -204,6 +204,7 @@ public:
   void visit(AssignMemberStmt *stmt) override {
     transform(stmt->lhs);
     transform(stmt->rhs);
+    transform(stmt->type);
   }
   void visit(DelStmt *stmt) override { transform(stmt->expr); }
   void visit(PrintStmt *stmt) override {
@@ -405,6 +406,7 @@ public:
   void visit(AssignMemberStmt *stmt) override {
     stmt->lhs = transform(stmt->lhs);
     stmt->rhs = transform(stmt->rhs);
+    stmt->type = transform(stmt->type);
   }
   void visit(DelStmt *stmt) override { stmt->expr = transform(stmt->expr); }
   void visit(PrintStmt *stmt) override {

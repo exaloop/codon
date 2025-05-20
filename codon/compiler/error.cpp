@@ -24,6 +24,21 @@ bool SrcInfo::operator<=(const SrcInfo &src) const {
   return std::tie(file, line, col) <= std::tie(src.file, src.line, src.col);
 }
 
+std::string ErrorMessage::toString() const {
+  std::string s;
+  if (!getFile().empty()) {
+    s += getFile();
+    if (getLine() != 0) {
+      s += fmt::format(":{}", getLine());
+      if (getColumn() != 0)
+        s += fmt::format(":{}", getColumn());
+    }
+    s += ": ";
+  }
+  s += getMessage();
+  return s;
+}
+
 namespace error {
 
 char ParserErrorInfo::ID = 0;
@@ -39,6 +54,7 @@ void E(llvm::Error &&error) { throw exc::ParserException(std::move(error)); }
 } // namespace error
 
 namespace exc {
+
 ParserException::ParserException(llvm::Error &&e) noexcept : std::runtime_error("") {
   llvm::handleAllErrors(std::move(e), [this](const error::ParserErrorInfo &e) {
     errors = e.getErrors();

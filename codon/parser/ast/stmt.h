@@ -637,19 +637,22 @@ private:
 /// Member assignment statement (lhs.member = rhs).
 /// @li: a.x = b
 struct AssignMemberStmt : public AcceptorExtend<AssignMemberStmt, Stmt> {
-  AssignMemberStmt(Expr *lhs = nullptr, std::string member = "", Expr *rhs = nullptr);
+  AssignMemberStmt(Expr *lhs = nullptr, std::string member = "", Expr *rhs = nullptr,
+                   Expr *type = nullptr);
   AssignMemberStmt(const AssignMemberStmt &, bool);
 
   Expr *getLhs() const { return lhs; }
   std::string getMember() const { return member; }
   Expr *getRhs() const { return rhs; }
+  Expr *getTypeExpr() const { return type; }
 
-  ACCEPT(AssignMemberStmt, ASTVisitor, lhs, member, rhs);
+  ACCEPT(AssignMemberStmt, ASTVisitor, lhs, member, rhs, type);
 
 private:
   Expr *lhs;
   std::string member;
   Expr *rhs;
+  Expr *type;
 };
 
 /// Comment statement (# comment).

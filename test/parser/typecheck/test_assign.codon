@@ -140,14 +140,6 @@ print(v)
 #%% assign_err_1,barebones
 a, *b, c, *d = 1,2,3,4,5 #! multiple starred expressions in assignment
 
-#%% assign_err_2_NOPY,barebones
-a = [1, 2, 3]
-a[1]: int = 3 #! syntax error, unexpected ':'
-
-#%% assign_err_3,barebones
-a = 5
-a.x: int = 3 #! syntax error, unexpected ':'
-
 #%% assign_err_4,barebones
 *x = range(5) #! cannot assign to given expression
 

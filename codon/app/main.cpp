@@ -64,9 +64,15 @@ std::string makeOutputFilename(const std::string &filename,
 
 void display(const codon::error::ParserErrorInfo &e) {
   using codon::MessageGroupPos;
+  std::unordered_set<std::string> seen;
   for (auto &group : e.getErrors()) {
     int i = 0;
     for (auto &msg : group) {
+      auto t = msg.toString();
+      if (seen.find(t) != seen.end()) {
+        continue;
+      }
+      seen.insert(t);
       MessageGroupPos pos = MessageGroupPos::NONE;
       if (i == 0) {
         pos = MessageGroupPos::HEAD;

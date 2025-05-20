@@ -55,19 +55,9 @@ public:
   void setSrcInfo(const SrcInfo &s) { loc = s; }
   bool operator==(const ErrorMessage &t) const { return msg == t.msg && loc == t.loc; }
 
-  void log(llvm::raw_ostream &out) const {
-    if (!getFile().empty()) {
-      out << getFile();
-      if (getLine() != 0) {
-        out << ":" << getLine();
-        if (getColumn() != 0) {
-          out << ":" << getColumn();
-        }
-      }
-      out << ": ";
-    }
-    out << getMessage();
-  }
+  std::string toString() const;
+
+  void log(llvm::raw_ostream &out) const { out << toString(); }
 };
 
 struct ParserErrors {

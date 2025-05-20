@@ -196,10 +196,9 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 
   if (auto dot = cast<DotExpr>(stmt->getLhs())) {
     // Case: a.x = b
-    seqassert(!stmt->type, "unexpected type annotation");
     dot->expr = transform(dot->getExpr(), true);
-    return transform(
-        N<AssignMemberStmt>(dot->getExpr(), dot->member, transform(stmt->getRhs())));
+    return transform(N<AssignMemberStmt>(
+        dot->getExpr(), dot->member, transform(stmt->getRhs()), stmt->getTypeExpr()));
   }
 
   // Case: a (: t) = b
@@ -227,7 +226,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     if (!val)
       E(Error::ASSIGN_LOCAL_REFERENCE, e, e->getValue(), e->getSrcInfo());
 
-    auto s = N<AssignStmt>(stmt->getLhs(), stmt->getRhs());
+    auto s = N<AssignStmt>(stmt->getLhs(), stmt->getRhs(), stmt->getTypeExpr());
     if (!ctx->getBase()->isType() && ctx->getBase()->func->hasAttribute(Attr::Atomic))
       s->setAtomicUpdate();
     else
@@ -322,6 +321,11 @@ Stmt *TypecheckVisitor::transformUpdate(AssignStmt *stmt) {
   }
 
   stmt->rhs = transform(stmt->getRhs());
+  stmt->type = transformType(stmt->getTypeExpr());
+  if (stmt->getTypeExpr()) {
+    unify(stmt->getLhs()->getType(), instantiateType(stmt->getTypeExpr()->getSrcInfo(),
+                                                     extractType(stmt->getTypeExpr())));
+  }
 
   // Case: wrap expressions if needed (e.g. floats or optionals)
   if (wrapExpr(&stmt->rhs, stmt->getLhs()->getType()))
@@ -376,6 +380,13 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->getLhs());
 
     stmt->rhs = transform(stmt->getRhs());
+    stmt->type = transformType(stmt->getTypeExpr());
+    if (stmt->getTypeExpr()) {
+      unify(stmt->getRhs()->getType(),
+            instantiateType(stmt->getTypeExpr()->getSrcInfo(),
+                            extractType(stmt->getTypeExpr())));
+    }
+
     auto ftyp =
         instantiateType(stmt->getLhs()->getSrcInfo(), member->getType(), lhsClass);
     if (!ftyp->canRealize() && member->typeExpr) {
@@ -386,6 +397,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     if (!wrapExpr(&stmt->rhs, ftyp.get()))
       return;
     unify(stmt->getRhs()->getType(), ftyp.get());
+
     if (stmt->getRhs()->isDone())
       stmt->setDone();
   }

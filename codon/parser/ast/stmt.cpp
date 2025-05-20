@@ -581,11 +581,12 @@ std::string DirectiveStmt::toString(int indent) const {
   return wrapStmt(format("(directive {} '{}')", key, value));
 }
 
-AssignMemberStmt::AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs)
-    : AcceptorExtend(), lhs(lhs), member(std::move(member)), rhs(rhs) {}
+AssignMemberStmt::AssignMemberStmt(Expr *lhs, std::string member, Expr *rhs, Expr *type)
+    : AcceptorExtend(), lhs(lhs), member(std::move(member)), rhs(rhs), type(type) {}
 AssignMemberStmt::AssignMemberStmt(const AssignMemberStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), lhs(ast::clone(stmt.lhs, clean)),
-      member(stmt.member), rhs(ast::clone(stmt.rhs, clean)) {}
+      member(stmt.member), rhs(ast::clone(stmt.rhs, clean)),
+      type(ast::clone(stmt.type, clean)) {}
 std::string AssignMemberStmt::toString(int indent) const {
   return wrapStmt(format("(assign-member {} {} {})", lhs->toString(indent), member,
                          rhs->toString(indent)));

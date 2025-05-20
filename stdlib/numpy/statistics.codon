@@ -947,8 +947,8 @@ def histogram(a,
     simple_weights1: Literal[bool] = weights is None
     if isinstance(weights, ndarray):
         simple_weights2: Literal[bool] = (weights.dtype is float
-                                         or weights.dtype is complex
-                                         or weights.dtype is complex64)
+                                          or weights.dtype is complex
+                                          or weights.dtype is complex64)
 
     if uniform_bins is not None and (simple_weights1 or simple_weights2):
         # Fast algorithm for equal bins

@@ -366,7 +366,6 @@ class FooBar(Static[Foo], Static[Bar]):
 
 
 #%% class_deduce,barebones
-@deduce
 class Foo:
     def __init__(self, x):
         self.x = [x]
@@ -378,7 +377,6 @@ print(f.x, f.y, f.__class__.__name__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]
 f: Foo = Foo('s')
 print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
 
-@deduce
 class Bar:
     def __init__(self, y: float):
         self.y = Foo(y)

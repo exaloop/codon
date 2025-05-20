@@ -46,6 +46,9 @@ llvm::Error ScopingVisitor::apply(Cache *cache, Stmt *s) {
 }
 
 bool ScopingVisitor::transform(Expr *expr) {
+  if (!canContinue())
+    return false;
+
   ScopingVisitor v(*this);
   if (expr) {
     v.setSrcInfo(expr->getSrcInfo());
@@ -59,6 +62,9 @@ bool ScopingVisitor::transform(Expr *expr) {
 }
 
 bool ScopingVisitor::transform(Stmt *stmt) {
+  if (!canContinue())
+    return false;
+
   ScopingVisitor v(*this);
   if (stmt) {
     v.setSrcInfo(stmt->getSrcInfo());
@@ -598,11 +604,10 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
       {"from_gpu_new", false}, {"tuplesize", true}};
 
   for (auto &d : stmt->getDecorators()) {
-    if (isId(d, "deduce")) {
-      stmt->setAttribute(Attr::ClassDeduce);
-    } else if (isId(d, "__notuple__")) {
+    if (isId(d, "__notuple__")) {
       stmt->setAttribute(Attr::ClassNoTuple);
     } else if (isId(d, "dataclass")) {
+      stmt->setAttribute(Attr::Dataclass);
     } else if (auto c = cast<CallExpr>(d)) {
       if (isId(c->getExpr(), "tuple")) {
         stmt->setAttribute(Attr::Tuple);
@@ -663,8 +668,11 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
       STOP_ERROR(Error::CLASS_BAD_DECORATOR, d);
     }
   }
-  if (stmt->hasAttribute(Attr::ClassDeduce))
-    tupleMagics["new"] = false;
+  if (!stmt->hasAttribute(Attr::Tuple) && !stmt->hasAttribute(Attr::Internal) &&
+      !stmt->hasAttribute(Attr::Dataclass) && stmt->getStaticBaseClasses().empty() &&
+      stmt->size() == 0) {
+    stmt->setAttribute(Attr::ClassDeduce);
+  }
   if (!stmt->hasAttribute(Attr::Tuple)) {
     tupleMagics["init"] = tupleMagics["new"];
     tupleMagics["new"] = tupleMagics["raw"] = true;

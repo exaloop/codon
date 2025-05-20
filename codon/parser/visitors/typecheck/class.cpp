@@ -98,7 +98,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         args.emplace_back(val->canonicalName, nullptr, nullptr, a.status);
       }
     } else {
-      if (stmt->hasAttribute(Attr::ClassDeduce) && args.empty()) {
+      if (stmt->hasAttribute(Attr::ClassDeduce)) {
         autoDeduceMembers(stmt, argsToParse);
         stmt->eraseAttribute(Attr::ClassDeduce);
       }
@@ -501,11 +501,17 @@ void TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &ar
             members.insert(m);
         }
     }
-  for (auto m : members) {
-    auto genericName = fmt::format("T_{}", m);
-    args.emplace_back(genericName, N<IdExpr>(TYPE_TYPE), N<IdExpr>("NoneType"),
-                      Param::Generic);
-    args.emplace_back(m, N<IdExpr>(genericName));
+  if (!members.empty()) {
+    log("auto-deducing {}: {}", stmt->name, members);
+    if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
+      aa->values.erase(std::remove(aa->values.begin(), aa->values.end(), "init"),
+                       aa->values.end());
+    for (auto m : members) {
+      auto genericName = fmt::format("T_{}", m);
+      args.emplace_back(genericName, N<IdExpr>(TYPE_TYPE), N<IdExpr>("NoneType"),
+                        Param::Generic);
+      args.emplace_back(m, N<IdExpr>(genericName));
+    }
   }
 }
 

@@ -669,16 +669,26 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
     else
       seqassert(false, "unknown static operator {}", expr->getOp());
     LOG_TYPECHECK("[cond::bin] {}: {}", getSrcInfo(), lvalue);
-    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">="}, expr->getOp()))
+    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">="}, expr->getOp())) {
       return transform(N<BoolExpr>(lvalue));
-    else
+    } else if ((expr->getOp() == "&&" || expr->getOp() == "||") &&
+               expr->getLhs()->getType()->getBoolStatic() &&
+               expr->getLhs()->getType()->getBoolStatic()) {
+      return transform(N<BoolExpr>(lvalue));
+    } else {
       return transform(N<IntExpr>(lvalue));
+    }
   } else {
     // Cannot be evaluated yet: just set the type
-    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">="}, expr->getOp()))
+    if (in(std::set<std::string>{"==", "!=", "<", "<=", ">", ">="}, expr->getOp())) {
       expr->getType()->getUnbound()->isStatic = 3;
-    else
+    } else if ((expr->getOp() == "&&" || expr->getOp() == "||") &&
+               expr->getLhs()->getType()->getBoolStatic() &&
+               expr->getLhs()->getType()->getBoolStatic()) {
+      expr->getType()->getUnbound()->isStatic = 3;
+    } else {
       expr->getType()->getUnbound()->isStatic = 1;
+    }
   }
 
   return nullptr;
@@ -694,18 +704,19 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
 Expr *TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
   // Case: simple transformations
   if (expr->getOp() == "&&") {
-    if (ctx->expectedType && ctx->expectedType->is("bool"))
+    if (ctx->expectedType && ctx->expectedType->is("bool")) {
       return transform(N<IfExpr>(expr->getLhs(),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__")),
                                  N<BoolExpr>(false)));
-    else
+    } else {
       return transform(N<CallExpr>(N<IdExpr>("__internal__.and_union"), expr->getLhs(),
                                    expr->getRhs()));
+    }
   } else if (expr->getOp() == "||") {
-    if (ctx->expectedType && ctx->expectedType->is("bool"))
+    if (ctx->expectedType && ctx->expectedType->is("bool")) {
       return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
-    else {
+    } else {
       return transform(N<CallExpr>(N<IdExpr>("__internal__.or_union"), expr->getLhs(),
                                    expr->getRhs()));
     }

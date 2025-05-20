@@ -3,6 +3,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "codon/parser/ast/error.h"
@@ -128,7 +129,8 @@ public:
   explicit ParserErrorInfo(const ParserErrors &errors) : errors(errors) {}
 
   template <class... TA>
-  ParserErrorInfo(error::Error e, const codon::SrcInfo &o = codon::SrcInfo(), const TA &...args) {
+  ParserErrorInfo(error::Error e, const codon::SrcInfo &o = codon::SrcInfo(),
+                  const TA &...args) {
     auto msg = Emsg(e, args...);
     errors = ParserErrors(ErrorMessage(msg, o, (int)e));
   }
@@ -139,8 +141,8 @@ public:
   void log(llvm::raw_ostream &out) const override {
     for (const auto &trace : errors) {
       for (const auto &msg : trace.getMessages()) {
-        msg.log(out);
-        out << "\n";
+        auto t = msg.toString();
+        out << t << "\n";
       }
     }
   }

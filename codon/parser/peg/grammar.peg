@@ -113,6 +113,13 @@ assignment <-
       ac_expr(V0), VS.size() > 2 ? ac_expr(V2) : nullptr, ac_expr(V1)
     );
   }
+  / primary _ ':' _ expression (_ '=' _ star_expressions)? {
+    return asts(Assign, LOC,
+      ac_expr(V0),
+      VS.size() > 2 ? ac_expr(V2) : nullptr,
+      ac_expr(V1)
+    );
+  }
   / (star_targets _ (!'==' '=') _)+ star_expressions !(_ '=') {
     vector<Stmt*> stmts;
     for (int i = int(VS.size()) - 2; i >= 0; i--) {
