@@ -254,21 +254,21 @@ ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   return cobj;
 }
 
-JITResult JIT::executeSafe(const std::string &code, const std::string &file, int line,
-                           bool debug) {
+JIT::JITResult JIT::executeSafe(const std::string &code, const std::string &file,
+                                int line, bool debug) {
   auto result = execute(code, file, line, debug);
   if (auto err = result.takeError()) {
     auto errorInfo = llvm::toString(std::move(err));
     return JITResult::error(errorInfo);
   }
-  return JITResult::success(nullptr);
+  return JITResult::success();
 }
 
-JITResult JIT::executePython(const std::string &name,
-                             const std::vector<std::string> &types,
-                             const std::string &pyModule,
-                             const std::vector<std::string> &pyVars, void *arg,
-                             bool debug) {
+JIT::JITResult JIT::executePython(const std::string &name,
+                                  const std::vector<std::string> &types,
+                                  const std::string &pyModule,
+                                  const std::vector<std::string> &pyVars, void *arg,
+                                  bool debug) {
   auto key = buildKey(name, types);
   auto &cache = pydata->cache;
   auto it = cache.find(key);
@@ -313,26 +313,48 @@ JITResult JIT::executePython(const std::string &name,
   }
 }
 
-JIT *jitInit(const std::string &name) {
-  auto jit = new JIT(name);
+} // namespace jit
+} // namespace codon
+
+void *jit_init(char *name) {
+  auto jit = new codon::jit::JIT(std::string(name));
   llvm::cantFail(jit->init());
   return jit;
 }
 
-JITResult jitExecutePython(JIT *jit, const std::string &name,
-                           const std::vector<std::string> &types,
-                           const std::string &pyModule,
-                           const std::vector<std::string> &pyVars, void *arg,
-                           bool debug) {
-  return jit->executePython(name, types, pyModule, pyVars, arg, debug);
+void jit_exit(void *jit) { delete ((codon::jit::JIT *)jit); }
+
+CJITResult jit_execute_python(void *jit, char *name, char **types, size_t types_size,
+                              char *pyModule, char **py_vars, size_t py_vars_size,
+                              void *arg, uint8_t debug) {
+  std::vector<std::string> cppTypes;
+  cppTypes.reserve(types_size);
+  for (size_t i = 0; i < types_size; i++)
+    cppTypes.emplace_back(types[i]);
+  std::vector<std::string> cppPyVars;
+  cppPyVars.reserve(py_vars_size);
+  for (size_t i = 0; i < py_vars_size; i++)
+    cppPyVars.emplace_back(py_vars[i]);
+  auto t = ((codon::jit::JIT *)jit)
+               ->executePython(std::string(name), cppTypes, std::string(pyModule),
+                               cppPyVars, arg, bool(debug));
+  void *result = t.result;
+  char *message =
+      t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
+  return {result, message};
 }
 
-JITResult jitExecuteSafe(JIT *jit, const std::string &code, const std::string &file,
-                         int line, bool debug) {
-  return jit->executeSafe(code, file, line, debug);
+CJITResult jit_execute_safe(void *jit, char *code, char *file, int32_t line,
+                            uint8_t debug) {
+  auto t = ((codon::jit::JIT *)jit)
+               ->executeSafe(std::string(code), std::string(file), line, bool(debug));
+  void *result = t.result;
+  char *message =
+      t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
+  return {result, message};
 }
 
-std::string getJITLibrary() { return ast::library_path(); }
-
-} // namespace jit
-} // namespace codon
+char *get_jit_library() {
+  auto t = codon::ast::library_path();
+  return strndup(t.c_str(), t.size());
+}

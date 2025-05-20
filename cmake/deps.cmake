@@ -1,8 +1,8 @@
-set(CPM_DOWNLOAD_VERSION 0.32.3)
+set(CPM_DOWNLOAD_VERSION 0.40.8)
 set(CPM_DOWNLOAD_LOCATION "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
 if(NOT (EXISTS ${CPM_DOWNLOAD_LOCATION}))
     message(STATUS "Downloading CPM.cmake...")
-    file(DOWNLOAD https://github.com/TheLartians/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
+    file(DOWNLOAD https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake ${CPM_DOWNLOAD_LOCATION})
 endif()
 include(${CPM_DOWNLOAD_LOCATION})
 
@@ -82,9 +82,9 @@ endif()
 
 CPMAddPackage(
     NAME bdwgc
-    GITHUB_REPOSITORY "ivmai/bdwgc"
+    GITHUB_REPOSITORY "exaloop/bdwgc"
     VERSION 8.0.5
-    GIT_TAG d0ba209660ea8c663e06d9a68332ba5f42da54ba
+    GIT_TAG e16c67244aff26802203060422545d38305e0160
     EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
             "BUILD_SHARED_LIBS OFF"
@@ -174,7 +174,7 @@ if(NOT APPLE)
     CPMAddPackage(
         NAME openblas
         GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
-        GIT_TAG v0.3.28
+        GIT_TAG v0.3.29
         EXCLUDE_FROM_ALL YES
         OPTIONS "DYNAMIC_ARCH ON"
                 "BUILD_TESTING OFF"

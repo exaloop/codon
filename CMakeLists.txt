@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.18.0"
+  VERSION "0.18.2"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.3.0")
+set(CODON_JIT_PYTHON_VERSION "0.3.2")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
@@ -48,10 +48,8 @@ include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
   set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/codon")
-  set(STATIC_LIBCPP "")
 else()
   set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/codon")
-  set(STATIC_LIBCPP "-static-libstdc++")
 endif()
 
 add_executable(peg2cpp codon/util/peg2cpp.cpp)
@@ -138,7 +136,7 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${highway_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
-target_link_libraries(codonrt PRIVATE fmt omp backtrace ${STATIC_LIBCPP} LLVMSupport)
+target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -428,11 +426,7 @@ llvm_map_components_to_libnames(
   TransformUtils
   Vectorize
   Passes)
-if(APPLE)
-  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt)
-else()
-  target_link_libraries(codonc PRIVATE ${STATIC_LIBCPP} ${LLVM_LIBS} fmt tser dl codonrt)
-endif()
+target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt)
 
 # Gather headers
 add_custom_target(
@@ -476,13 +470,13 @@ add_dependencies(libs codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC ${STATIC_LIBCPP} fmt tser codonc codon_jupyter Threads::Threads)
+target_link_libraries(codon PUBLIC fmt tser codonc codon_jupyter Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
 FetchContent_Declare(
   googletest
-  URL https://github.com/google/googletest/archive/609281088cfefc76f9d0ce82e1ff6c30cc3591e5.zip
+  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
 )
 # For Windows: Prevent overriding the parent project's compiler/linker settings
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)

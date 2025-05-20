@@ -124,7 +124,7 @@ print(total)
 ```
 
 Note that Codon automatically turns the `total += 1` statement in the loop body into an atomic
-reduction to avoid race conditions. Learn more in the [multitheading docs](advanced/parallel.md).
+reduction to avoid race conditions. Learn more in the [multithreading docs](advanced/parallel.md).
 
 Codon also supports writing and executing GPU kernels. Here's an example that computes the
 [Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set):

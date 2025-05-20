@@ -59,8 +59,8 @@ class FloatingFormat:
             self.__init__()
             return
 
-        min_val = None
-        max_val = None
+        min_val: Optional[a.dtype] = None
+        max_val: Optional[a.dtype] = None
         finite = 0
         abs_non_zero = 0
         exp_format = False
