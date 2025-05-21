@@ -279,7 +279,10 @@ void CFVisitor::visit(const ImperativeForFlow *v) {
 void CFVisitor::visit(const TryCatchFlow *v) {
   auto *routeBlock = graph->newBlock("tcRoute");
   auto *end = graph->newBlock("tcEnd");
+  analyze::dataflow::CFBlock *else_ = nullptr;
   analyze::dataflow::CFBlock *finally = nullptr;
+  if (v->getElse())
+    else_ = graph->newBlock("tcElse");
   if (v->getFinally())
     finally = graph->newBlock("tcFinally");
 
@@ -287,7 +290,7 @@ void CFVisitor::visit(const TryCatchFlow *v) {
 
   tryCatchStack.emplace_back(routeBlock, finally);
   process(v->getBody());
-  graph->getCurrentBlock()->successors_insert(dst);
+  graph->getCurrentBlock()->successors_insert(else_ ? else_ : dst);
 
   for (auto &c : *v) {
     auto *cBlock = graph->newBlock("catch", true);
@@ -296,6 +299,12 @@ void CFVisitor::visit(const TryCatchFlow *v) {
           const_cast<Var *>(c.getVar())));
     process(c.getHandler());
     routeBlock->successors_insert(cBlock);
+    graph->getCurrentBlock()->successors_insert(dst);
+  }
+
+  if (v->getElse()) {
+    graph->setCurrentBlock(else_);
+    process(v->getElse());
     graph->getCurrentBlock()->successors_insert(dst);
   }
 

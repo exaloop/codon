@@ -233,7 +233,7 @@ void CloneVisitor::visit(const ImperativeForFlow *v) {
 }
 
 void CloneVisitor::visit(const TryCatchFlow *v) {
-  auto *res = Nt(v, clone(v->getBody()), clone(v->getFinally()));
+  auto *res = Nt(v, clone(v->getBody()), clone(v->getFinally()), clone(v->getElse()));
   for (auto &c : *v) {
     res->emplace_back(clone(c.getHandler()), c.getType(), clone(c.getVar()));
   }

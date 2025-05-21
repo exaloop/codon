@@ -192,10 +192,10 @@ public:
                       makeFormatter(c.getVar()), makeFormatter(c.getHandler())));
     }
 
-    fmt::print(os, FMT_STRING("(try {}\n{}\n(finally\n{}\n)\n)"),
+    fmt::print(os, FMT_STRING("(try {}\n{}\n(else\n{}\n)\n(finally\n{})\n)"),
                makeFormatter(v->getBody()),
                fmt::join(catches.begin(), catches.end(), "\n"),
-               makeFormatter(v->getFinally()));
+               makeFormatter(v->getElse()), makeFormatter(v->getFinally()));
   }
   void visit(const PipelineFlow *v) override {
     std::vector<std::string> stages;
