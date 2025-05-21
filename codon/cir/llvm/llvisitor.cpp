@@ -2876,6 +2876,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     B->SetInsertPoint(block);
     auto *elseBlock = llvm::BasicBlock::Create(*context, "trycatch.else", func);
     B->CreateBr(elseBlock);
+    block = elseBlock;
     process(x->getElse());
   }
 
