@@ -117,7 +117,7 @@ std::vector<Type *> RecordType::doGetUsedTypes() const {
 Type *RecordType::getMemberType(const std::string &n) const {
   auto it = std::find_if(fields.begin(), fields.end(),
                          [n](auto &x) { return x.getName() == n; });
-  return it->getType();
+  return (it != fields.end()) ? it->getType() : nullptr;
 }
 
 int RecordType::getMemberIndex(const std::string &n) const {

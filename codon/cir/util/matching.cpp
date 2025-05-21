@@ -84,7 +84,7 @@ public:
   }
   VISIT(PointerValue);
   void handle(const PointerValue *x, const PointerValue *y) {
-    result = compareVars(x->getVar(), y->getVar());
+    result = compareVars(x->getVar(), y->getVar()) && x->getFields() == y->getFields();
   }
 
   VISIT(Flow);
