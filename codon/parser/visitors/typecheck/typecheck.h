@@ -27,7 +27,7 @@ class TypecheckVisitor : public ReplacingCallbackASTVisitor {
   std::shared_ptr<TypeContext> ctx;
   /// Statements to prepend before the current statement.
   std::shared_ptr<std::vector<Stmt *>> prependStmts = nullptr;
-  std::shared_ptr<std::vector<Stmt *>> preamble = nullptr;
+  SuiteStmt *preamble = nullptr;
 
   /// Each new expression is stored here (as @c visit does not return anything) and
   /// later returned by a @c transform call.
@@ -47,14 +47,13 @@ public:
                      const std::string &file = "<internal>");
 
 private:
-  static void loadStdLibrary(Cache *, const std::shared_ptr<std::vector<Stmt *>> &,
+  static void loadStdLibrary(Cache *, SuiteStmt *,
                              const std::unordered_map<std::string, std::string> &,
                              bool);
 
 public:
   explicit TypecheckVisitor(
-      std::shared_ptr<TypeContext> ctx,
-      const std::shared_ptr<std::vector<Stmt *>> &preamble = nullptr,
+      std::shared_ptr<TypeContext> ctx, SuiteStmt *preamble = nullptr,
       const std::shared_ptr<std::vector<Stmt *>> &stmts = nullptr);
 
 public: // Convenience transformators
@@ -201,7 +200,7 @@ private:
                                                std::vector<Param> &, Stmt *,
                                                const std::string &, Expr *,
                                                types::ClassType *);
-  void autoDeduceMembers(ClassStmt *, std::vector<Param> &);
+  bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
   std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(ClassStmt *, std::vector<Stmt *> &, std::vector<Stmt *> &,
                               std::vector<Stmt *> &);

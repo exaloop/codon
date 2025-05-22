@@ -34,7 +34,7 @@ Stmt *TypecheckVisitor::apply(
     Cache *cache, Stmt *node, const std::string &file,
     const std::unordered_map<std::string, std::string> &defines,
     const std::unordered_map<std::string, std::string> &earlyDefines, bool barebones) {
-  auto preamble = std::make_shared<std::vector<Stmt *>>();
+  auto preamble = cache->N<SuiteStmt>();
   seqassertn(cache->module, "cache's module is not set");
 
   // Load standard library if it has not been loaded
@@ -73,7 +73,7 @@ Stmt *TypecheckVisitor::apply(
   }
 
   suite = tv.N<SuiteStmt>();
-  suite->items.push_back(tv.N<SuiteStmt>(*preamble));
+  suite->items.push_back(preamble);
 
   // Add dominated assignment declarations
   suite->items.insert(suite->items.end(), ctx->scope.back().stmts.begin(),
@@ -90,7 +90,7 @@ Stmt *TypecheckVisitor::apply(
 }
 
 void TypecheckVisitor::loadStdLibrary(
-    Cache *cache, const std::shared_ptr<std::vector<Stmt *>> &preamble,
+    Cache *cache, SuiteStmt *preamble,
     const std::unordered_map<std::string, std::string> &earlyDefines, bool barebones) {
   // Load the internal.__init__
   auto stdlib = std::make_shared<TypeContext>(cache, STDLIB_IMPORT);
@@ -127,7 +127,7 @@ void TypecheckVisitor::loadStdLibrary(
     throw exc::ParserException(std::move(err));
   auto tv = TypecheckVisitor(stdlib, preamble);
   core = tv.inferTypes(core, true);
-  preamble->push_back(core);
+  preamble->addStmt(core);
 
   // 2. Load early compile-time defines (for standard library)
   for (auto &d : earlyDefines) {
@@ -136,7 +136,7 @@ void TypecheckVisitor::loadStdLibrary(
         tv.N<AssignStmt>(tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
                          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int")));
     auto def = tv.transform(s);
-    preamble->push_back(def);
+    preamble->addStmt(def);
   }
 
   // 3. Load stdlib
@@ -148,7 +148,7 @@ void TypecheckVisitor::loadStdLibrary(
     throw exc::ParserException(std::move(err));
   tv = TypecheckVisitor(stdlib, preamble);
   std = tv.inferTypes(std, true);
-  preamble->push_back(std);
+  preamble->addStmt(std);
   stdlib->isStdlibLoading = false;
 }
 
@@ -157,7 +157,7 @@ Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *nod
                               const std::string &file) {
   auto oldFilename = ctx->getFilename();
   ctx->setFilename(file);
-  auto preamble = std::make_shared<std::vector<Stmt *>>();
+  auto preamble = ctx->cache->N<ast::SuiteStmt>();
   auto tv = TypecheckVisitor(ctx, preamble);
   auto n = tv.inferTypes(node, true);
   ctx->setFilename(oldFilename);
@@ -168,18 +168,17 @@ Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *nod
   if (!ctx->cache->errors.empty())
     throw exc::ParserException(ctx->cache->errors);
 
-  auto suite = ctx->cache->N<SuiteStmt>(*preamble);
+  auto suite = ctx->cache->N<SuiteStmt>(preamble);
   suite->addStmt(n);
   return suite;
 }
 
 /**************************************************************************************/
 
-TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx,
-                                   const std::shared_ptr<std::vector<Stmt *>> &pre,
+TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx, SuiteStmt *pre,
                                    const std::shared_ptr<std::vector<Stmt *>> &stmts)
     : resultExpr(nullptr), resultStmt(nullptr), ctx(std::move(ctx)) {
-  preamble = pre ? pre : std::make_shared<std::vector<Stmt *>>();
+  preamble = pre ? pre : this->ctx->cache->N<SuiteStmt>();
   prependStmts = stmts ? stmts : std::make_shared<std::vector<Stmt *>>();
 }
 

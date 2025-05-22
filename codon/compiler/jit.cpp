@@ -82,7 +82,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
                                         const std::string &file, int line) {
   auto *cache = compiler->getCache();
   auto sctx = cache->imports[MAIN_IMPORT].ctx;
-  auto preamble = std::make_shared<std::vector<ast::Stmt *>>();
+  auto preamble = cache->N<ast::SuiteStmt>();
 
   ast::Cache bCache = *cache;
   auto bTypecheck = *sctx;

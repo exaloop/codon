@@ -81,36 +81,46 @@ bool FuncType::hasUnbounds(bool includeGenerics) const {
   return getRetType()->hasUnbounds(includeGenerics);
 }
 
-std::vector<Type *> FuncType::getUnbounds() const {
+std::vector<Type *> FuncType::getUnbounds(bool includeGenerics) const {
   std::vector<Type *> u;
   for (auto &t : funcGenerics)
     if (t.type) {
-      auto tu = t.type->getUnbounds();
+      auto tu = t.type->getUnbounds(includeGenerics);
       u.insert(u.begin(), tu.begin(), tu.end());
     }
   if (funcParent) {
-    auto tu = funcParent->getUnbounds();
+    auto tu = funcParent->getUnbounds(includeGenerics);
     u.insert(u.begin(), tu.begin(), tu.end());
   }
   // Important: return type unbounds are not important, so skip them.
   for (const auto &a : *this) {
-    auto tu = a.getType()->getUnbounds();
+    auto tu = a.getType()->getUnbounds(includeGenerics);
     u.insert(u.begin(), tu.begin(), tu.end());
   }
   return u;
 }
 
 bool FuncType::canRealize() const {
+  bool allowPassThrough = ast->hasAttribute(Attr::AllowPassThrough);
   // Important: return type does not have to be realized.
-  bool skipSelf = ast->hasAttribute(Attr::RealizeWithoutSelf);
-
-  for (int ai = skipSelf; ai < size(); ai++)
-    if (!(*this)[ai]->getFunc() && !(*this)[ai]->canRealize())
-      return false;
+  for (int ai = 0; ai < size(); ai++)
+    if (!(*this)[ai]->getFunc() && !(*this)[ai]->canRealize()) {
+      if (!allowPassThrough)
+        return false;
+      for (auto &u : (*this)[ai]->getUnbounds(true))
+        if (u->getLink()->kind == LinkType::Generic || !u->getLink()->passThrough)
+          return false;
+    }
   bool generics = std::all_of(funcGenerics.begin(), funcGenerics.end(),
                               [](auto &a) { return !a.type || a.type->canRealize(); });
-  if (!skipSelf)
-    generics &= (!funcParent || funcParent->canRealize());
+  if (generics && funcParent && !funcParent->canRealize()) {
+    if (!allowPassThrough)
+      return false;
+    for (auto &u : funcParent->getUnbounds(true)) {
+      if (u->getLink()->kind == LinkType::Generic || !u->getLink()->passThrough)
+        return false;
+    }
+  }
   return generics;
 }
 

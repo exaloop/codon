@@ -71,8 +71,10 @@ void SuiteStmt::flatten() {
   items = ns;
 }
 void SuiteStmt::addStmt(Stmt *s) {
-  if (s)
+  if (s) {
     items.push_back(s);
+    done = false;
+  }
 }
 SuiteStmt *SuiteStmt::wrap(Stmt *s) {
   if (s && !cast<SuiteStmt>(s))

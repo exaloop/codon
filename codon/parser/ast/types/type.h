@@ -88,7 +88,7 @@ public:
   /// Check if type has unbound/generic types.
   virtual bool hasUnbounds(bool = false) const;
   /// Obtain the list of internal unbound types.
-  virtual std::vector<Type *> getUnbounds() const;
+  virtual std::vector<Type *> getUnbounds(bool = false) const;
   /// True if a type is realizable.
   virtual bool canRealize() const = 0;
   /// True if a type is completely instantiated (has no unbounds or generics).

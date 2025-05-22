@@ -99,8 +99,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
     } else {
       if (stmt->hasAttribute(Attr::ClassDeduce)) {
-        autoDeduceMembers(stmt, argsToParse);
-        stmt->eraseAttribute(Attr::ClassDeduce);
+        if (!autoDeduceMembers(stmt, argsToParse))
+          stmt->eraseAttribute(Attr::ClassDeduce);
       }
 
       // Add all generics before parent classes, fields and methods
@@ -182,7 +182,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           // Handle class variables. Transform them later to allow self-references
           auto name = format("{}.{}", canonicalName, a.getName());
           auto h = transform(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
-          preamble->push_back(h);
+          preamble->addStmt(h);
           auto val = ctx->forceFind(name);
           val->baseName = "";
           val->scope = {0};
@@ -490,19 +490,18 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 ///        x: T1
 ///        y: T2```
 /// @return the transformed init and the pointer to the original function.
-void TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
+bool TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
   std::set<std::string> members;
   for (const auto &sp : getClassMethods(stmt->suite))
     if (auto f = cast<FunctionStmt>(sp)) {
       if (f->name == "__init__")
         if (auto b = f->getAttribute<ir::StringListAttribute>(Attr::ClassDeduce)) {
-          f->setAttribute(Attr::RealizeWithoutSelf);
           for (auto m : b->values)
             members.insert(m);
         }
     }
   if (!members.empty()) {
-    log("auto-deducing {}: {}", stmt->name, members);
+    // log("auto-deducing {}: {}", stmt->name, members);
     if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
       aa->values.erase(std::remove(aa->values.begin(), aa->values.end(), "init"),
                        aa->values.end());
@@ -512,7 +511,9 @@ void TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &ar
                         Param::Generic);
       args.emplace_back(m, N<IdExpr>(genericName));
     }
+    return true;
   }
+  return false;
 }
 
 /// Return a list of all statements within a given class suite.
@@ -767,7 +768,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
     rctx->bases.push_back(oldBases[0]);
     ext = TypecheckVisitor::apply(rctx, ext);
     rctx->bases = oldBases;
-    preamble->push_back(ext);
+    preamble->addStmt(ext);
   }
   return t;
 }

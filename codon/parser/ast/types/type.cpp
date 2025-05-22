@@ -37,7 +37,7 @@ TypePtr Type::follow() { return shared_from_this(); }
 
 bool Type::hasUnbounds(bool) const { return false; }
 
-std::vector<Type *> Type::getUnbounds() const { return {}; }
+std::vector<Type *> Type::getUnbounds(bool) const { return {}; }
 
 std::string Type::toString() const { return debugString(2); }
 

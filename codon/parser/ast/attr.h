@@ -23,7 +23,7 @@ struct Attr {
     Internal,
     HiddenFromUser,
     ForceRealize,
-    RealizeWithoutSelf,
+    AllowPassThrough,
     ParentCallExpr,
     TupleCall,
     Validated,

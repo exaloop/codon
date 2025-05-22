@@ -1938,8 +1938,6 @@ class _PyWrap:
         def _init(obj: cobj, T: type) -> cobj:
             return _PyWrap.IterWrap(T.__from_py__(obj)).__to_py__()
 
-        @overload
-        @realize_without_self
         def __init__(self, it: T):
             self._gen = it.__iter__().__raw__()
 

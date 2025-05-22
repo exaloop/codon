@@ -183,6 +183,8 @@ TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
 }
 
 bool ClassType::hasUnbounds(bool includeGenerics) const {
+  if (name == "unrealized_type")
+    return false;
   for (auto &t : generics)
     if (t.type && t.type->hasUnbounds(includeGenerics))
       return true;
@@ -192,16 +194,18 @@ bool ClassType::hasUnbounds(bool includeGenerics) const {
   return false;
 }
 
-std::vector<Type *> ClassType::getUnbounds() const {
+std::vector<Type *> ClassType::getUnbounds(bool includeGenerics) const {
   std::vector<Type *> u;
+  if (name == "unrealized_type")
+    return u;
   for (auto &t : generics)
     if (t.type) {
-      auto tu = t.type->getUnbounds();
+      auto tu = t.type->getUnbounds(includeGenerics);
       u.insert(u.begin(), tu.begin(), tu.end());
     }
   for (auto &t : hiddenGenerics)
     if (t.type) {
-      auto tu = t.type->getUnbounds();
+      auto tu = t.type->getUnbounds(includeGenerics);
       u.insert(u.begin(), tu.begin(), tu.end());
     }
   return u;

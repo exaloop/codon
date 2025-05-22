@@ -50,7 +50,7 @@ public:
 public:
   TypePtr follow() override;
   bool hasUnbounds(bool = false) const override;
-  std::vector<Type *> getUnbounds() const override;
+  std::vector<Type *> getUnbounds(bool = false) const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;

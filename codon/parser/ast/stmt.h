@@ -53,7 +53,7 @@ struct Stmt : public AcceptorExtend<Stmt, ASTNode> {
 
   virtual std::string wrapStmt(const std::string &) const;
 
-private:
+protected:
   /// Flag that indicates if all types in a statement are inferred (i.e. if a
   /// type-checking procedure was successful).
   bool done;

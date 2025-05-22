@@ -75,6 +75,10 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     auto returnEarly = ctx->returnEarly;
     ctx->returnEarly = false;
     auto tv = TypecheckVisitor(ctx, preamble);
+    // if (preamble) {
+    //   auto pt = tv.transform(preamble);
+    //   preamble = cast<SuiteStmt>(pt);
+    // }
     result = tv.transform(result);
     std::swap(ctx->changedNodes, changedNodes);
     std::swap(ctx->returnEarly, returnEarly);
@@ -482,8 +486,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   // Realize the return type
   auto ret = realize(type->getRetType());
-  if (ast->hasAttribute(Attr::RealizeWithoutSelf) &&
-      !extractFuncArgType(type)->canRealize()) { // For RealizeWithoutSelf
+  if (type->hasUnbounds()) {
+    log("cannot realize {}; undoing...", type->debugString(2));
     realizations.erase(key);
     ctx->bases.pop_back();
     ctx->popBlock();

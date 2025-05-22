@@ -362,7 +362,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     // str is not defined when loading internal.core; __name__ is not needed anyway
     n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
     ctx->addBlock();
-    preamble->push_back(transform(
+    preamble->addStmt(transform(
         N<AssignStmt>(N<IdExpr>(importVar),
                       N<CallExpr>(N<IdExpr>("Import.__new__"), N<BoolExpr>(false),
                                   N<StringExpr>(file.path), N<StringExpr>(file.module)),
@@ -411,7 +411,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
         N<FunctionStmt>(fnName, N<IdExpr>("NoneType"), std::vector<Param>{}, stmts);
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(fnName)->getType());
-    preamble->push_back(fn);
+    preamble->addStmt(fn);
     // LOG_USER("[import] done importing {}", file.module);
   }
   return nullptr;

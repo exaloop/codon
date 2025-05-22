@@ -180,7 +180,10 @@ void TranslateVisitor::visit(StringExpr *expr) {
 
 void TranslateVisitor::visit(IdExpr *expr) {
   auto val = ctx->find(expr->getValue());
-  seqassert(val, "cannot find '{}'", expr->getValue());
+  if (!val) {
+    ctx->find(expr->getValue());
+    seqassert(val, "cannot find '{}'", expr->getValue());
+  }
   if (expr->getValue() == "__vtable_size__.0") {
     // LOG("[] __vtable_size__={}", ctx->cache->classRealizationCnt + 2);
     result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
@@ -586,14 +589,22 @@ void TranslateVisitor::visit(TryStmt *stmt) {
   transform(stmt->getSuite());
   ctx->popSeries();
 
-  auto finallySeries = make<ir::SeriesFlow>(stmt, "finally");
+  ir::SeriesFlow *finallySeries = make<ir::SeriesFlow>(stmt, "finally");
   if (stmt->getFinally()) {
     ctx->addSeries(finallySeries);
     transform(stmt->getFinally());
     ctx->popSeries();
   }
 
-  auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries);
+  ir::SeriesFlow *elseSeries = nullptr;
+  if (stmt->getElse()) {
+    elseSeries = make<ir::SeriesFlow>(stmt, "else");
+    ctx->addSeries(elseSeries);
+    transform(stmt->getElse());
+    ctx->popSeries();
+  }
+
+  auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries, elseSeries);
   for (auto *c : *stmt) {
     auto *catchBody = make<ir::SeriesFlow>(stmt, "catch");
     auto *excType = c->getException()

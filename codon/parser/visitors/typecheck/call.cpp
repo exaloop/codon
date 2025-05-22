@@ -588,7 +588,6 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                     // TODO: check if the value is toplevel and avoid capturing it if so
                     auto e = transform(N<IdExpr>(ai->getValue()));
                     seqassert(e->getType()->getLink(), "not a link type");
-                    e->getType()->getLink()->passThrough = true;
                     args.emplace_back(realName, e);
                   }
                   if (partial)

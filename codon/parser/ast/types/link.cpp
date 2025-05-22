@@ -142,11 +142,13 @@ TypePtr LinkType::follow() {
     return shared_from_this();
 }
 
-std::vector<Type *> LinkType::getUnbounds() const {
+std::vector<Type *> LinkType::getUnbounds(bool includeGenerics) const {
   if (kind == Unbound)
     return {(Type *)this};
   else if (kind == Link)
-    return type->getUnbounds();
+    return type->getUnbounds(includeGenerics);
+  else if (includeGenerics)
+    return {(Type *)this};
   return {};
 }
 

@@ -155,9 +155,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       if (isAttr) {
-        if (attrName == "std.internal.attributes.realize_without_self.0:0")
-          stmt->setAttribute(Attr::RealizeWithoutSelf);
-        else if (attrName == "std.internal.attributes.test.0:0")
+        if (attrName == "std.internal.attributes.test.0:0")
           stmt->setAttribute(Attr::Test);
         else if (attrName == "std.internal.attributes.export.0:0")
           stmt->setAttribute(Attr::Export);
@@ -308,12 +306,24 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         if (isClassMember) // class variable; go to the global context!
           nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end());
         auto tv = TypecheckVisitor(nctx);
-        auto das = tv.transform(N<AssignStmt>(N<IdExpr>(name), defaultValue,
-                                              a.isValue() ? nullptr : a.getType()));
-        if (isClassMember)
-          preamble->push_back(das);
-        else
-          prependStmts->push_back(das);
+        auto as = N<AssignStmt>(N<IdExpr>(name), defaultValue,
+                                a.isValue() ? nullptr : a.getType());
+        if (isClassMember) {
+          preamble->addStmt(
+              tv.transform(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr)));
+          registerGlobal(name);
+          as->setUpdate();
+        }
+        auto das = tv.transform(as);
+        prependStmts->push_back(das);
+        // Default unbounds must be allowed to pass through
+        // to support cases such as `a = []`
+        auto f = ctx->forceFind(name);
+        for (auto &u : f->getType()->getUnbounds()) {
+          // log("pass-through: {} / {}", stmt->getName(), u->debugString(2));
+          u->getUnbound()->passThrough = true;
+          stmt->setAttribute(Attr::AllowPassThrough);
+        }
         defaultValue = tv.transform(N<IdExpr>(name));
       }
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
@@ -389,7 +399,16 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!(*stmt)[ai].getType()) {
         if (parentClass && ai == 0 && (*stmt)[ai].getName() == "self") {
           // Special case: self in methods
-          unify(extractClassGeneric(argType, aj), parentClass);
+          auto *st = unify(extractClassGeneric(argType, aj), parentClass);
+          if (getClass(parentClass->name)->ast->hasAttribute(Attr::ClassDeduce) &&
+              stmt->hasAttribute(Attr::ClassDeduce) && stmt->getName() == "__init__") {
+            for (auto &u : st->getUnbounds(true)) {
+              stmt->setAttribute(Attr::AllowPassThrough);
+              // log("pass-through: {}.__init__ / {}", parentClass->name,
+              //     u->debugString(2));
+              u->getLink()->passThrough = true;
+            }
+          }
         } else {
           generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
         }
