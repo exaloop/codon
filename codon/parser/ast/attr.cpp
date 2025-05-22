@@ -2,6 +2,4 @@
 
 #include "attr.h"
 
-namespace codon::ast {
-
-} // namespace codon::ast
+namespace codon::ast {} // namespace codon::ast

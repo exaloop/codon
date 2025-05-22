@@ -40,7 +40,7 @@ struct ClassType : public Type {
     types::Type *getType() const { return type.get(); }
     Generic generalize(int atLevel);
     Generic instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache);
+                        std::unordered_map<int, TypePtr> *cache);
     std::string debugString(char mode) const;
     std::string realizedName() const;
   };
