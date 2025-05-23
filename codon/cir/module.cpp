@@ -432,16 +432,22 @@ void Module::popArena() {
   auto &arena = arenas.back();
   for (auto id : arena.values) {
     auto it = valueMap.find(id);
+    if (it == valueMap.end())
+      continue;
     values.erase(it->second);
     valueMap.erase(it);
   }
   for (auto id : arena.vars) {
     auto it = varMap.find(id);
+    if (it == varMap.end())
+      continue;
     vars.erase(it->second);
     varMap.erase(it);
   }
   for (auto &type : arena.types) {
     auto it = typesMap.find(type);
+    if (it == typesMap.end())
+      continue;
     types.erase(it->second);
     typesMap.erase(it);
   }
