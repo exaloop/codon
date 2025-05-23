@@ -113,12 +113,9 @@ ResourceFilesystem::ResourceFilesystem(const std::string &argv0,
 std::vector<std::string> ResourceFilesystem::read_lines(const path_t &path) const {
   auto fs = cmrc::codon::get_filesystem();
 
-  if (!fs.exists(path) && allowExternal) {
-    LOG("[reading external {}]", path);
+  if (!fs.exists(path) && allowExternal)
     return Filesystem::read_lines(path);
-  }
 
-  LOG("[reading internal {}]", path);
   std::vector<std::string> lines;
   if (path == "-") {
     E(error::Error::COMPILER_NO_FILE, SrcInfo(), "<stdin>");
