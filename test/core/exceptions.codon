@@ -537,3 +537,41 @@ def test_empty_raise():
 # EXPECT: A
 # EXPECT: C
 test_empty_raise()
+
+def test_raise_from_except_or_else():
+    def div(x, y):
+        if y == 0: raise ZeroDivisionError("oops!")
+        return x // y
+
+    try:
+        try:
+            div(5, 0)
+        except ZeroDivisionError:
+            print('Zero')
+            div(5, 0)
+        finally:
+            print("finally")
+    except:
+        print('caught')
+
+    try:
+        try:
+            div(5, 1)
+        except ZeroDivisionError:
+            print('Zero')
+        else:
+            print('else before')
+            div(5, 0)
+            print('else after')
+        finally:
+            print("finally")
+    except:
+        print('caught')
+
+# EXPECT: Zero
+# EXPECT: finally
+# EXPECT: caught
+# EXPECT: else before
+# EXPECT: finally
+# EXPECT: caught
+test_raise_from_except_or_else()

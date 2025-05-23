@@ -75,8 +75,8 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
 LLVMVisitor::LLVMVisitor()
     : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
-      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), catches(), db(),
-      plugins(nullptr) {
+      value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), finally(),
+      catches(), db(), plugins(nullptr) {
   llvm::InitializeAllTargets();
   llvm::InitializeAllTargetMCs();
   llvm::InitializeAllAsmPrinters();
@@ -291,6 +291,7 @@ void LLVMVisitor::clearLLVMData() {
   coro.reset();
   loops.clear();
   trycatch.clear();
+  finally.clear();
   catches.clear();
   db.reset();
   context = {};
@@ -1415,11 +1416,20 @@ int LLVMVisitor::getTypeIdx(types::Type *catchType) {
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
-  if (trycatch.empty() || DisableExceptions) {
+  if ((trycatch.empty() && finally.empty()) || DisableExceptions) {
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
-    auto *unwindBlock = trycatch.back().exceptionBlock;
+    // use non-empty of finally-stack and try-stack, or whichever is most recent if both
+    // are non-empty
+    auto *unwindBlock =
+        finally.empty()
+            ? trycatch.back().exceptionBlock
+            : (trycatch.empty()
+                   ? finally.back().finallyExceptionBlock
+                   : (trycatch.back().sequenceNumber > finally.back().sequenceNumber
+                          ? trycatch.back().exceptionBlock
+                          : finally.back().finallyExceptionBlock));
     auto *result = B->CreateInvoke(callee, normalBlock, unwindBlock, args);
     block = normalBlock;
     return result;
@@ -1438,14 +1448,24 @@ void LLVMVisitor::exitLoop() {
   loops.pop_back();
 }
 
-void LLVMVisitor::enterTryCatch(TryCatchData data) {
+void LLVMVisitor::enterTry(TryCatchData data) {
   trycatch.push_back(std::move(data));
   trycatch.back().sequenceNumber = nextSequenceNumber++;
 }
 
-void LLVMVisitor::exitTryCatch() {
+void LLVMVisitor::exitTry() {
   seqassertn(!trycatch.empty(), "no try catches present");
   trycatch.pop_back();
+}
+
+void LLVMVisitor::enterFinally(TryCatchData data) {
+  finally.push_back(std::move(data));
+  finally.back().sequenceNumber = nextSequenceNumber++;
+}
+
+void LLVMVisitor::exitFinally() {
+  seqassertn(!finally.empty(), "no finally present");
+  finally.pop_back();
 }
 
 void LLVMVisitor::enterCatch(CatchData data) {
@@ -1470,11 +1490,11 @@ LLVMVisitor::TryCatchData *LLVMVisitor::getInnermostTryCatchBeforeLoop() {
 }
 
 /*
- * General values, M, functions, vars
+ * General values, module, functions, vars
  */
 
 void LLVMVisitor::visit(const Module *x) {
-  // initialize M
+  // initialize module
   M = makeModule(*context, getSrcInfo(x));
 
   // args variable
@@ -2735,11 +2755,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   tc.exceptionRouteBlock =
       llvm::BasicBlock::Create(*context, "trycatch.exception_route", func);
   tc.finallyBlock = llvm::BasicBlock::Create(*context, "trycatch.finally", func);
+  tc.finallyExceptionBlock =
+      llvm::BasicBlock::Create(*context, "trycatch.finally.exception", func);
 
   auto *externalExcBlock =
       llvm::BasicBlock::Create(*context, "trycatch.exception_external", func);
   auto *unwindResumeBlock =
       llvm::BasicBlock::Create(*context, "trycatch.unwind_resume", func);
+  auto *rethrowBlock = llvm::BasicBlock::Create(*context, "trycatch.rethrow", func);
   auto *endBlock = llvm::BasicBlock::Create(*context, "trycatch.end", func);
 
   B->SetInsertPoint(func->getEntryBlock().getTerminator());
@@ -2749,6 +2772,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   auto *excStateReturn = B->getInt8(TryCatchData::State::RETURN);
   auto *excStateBreak = B->getInt8(TryCatchData::State::BREAK);
   auto *excStateContinue = B->getInt8(TryCatchData::State::CONTINUE);
+  auto *excStateRethrow = B->getInt8(TryCatchData::State::RETHROW);
 
   llvm::StructType *padType = getPadType();
   llvm::StructType *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
@@ -2802,11 +2826,28 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     B->SetInsertPoint(finallyNormal);
   }
 
+  // handle exceptions that must route through 'finally'
+  B->SetInsertPoint(tc.finallyExceptionBlock);
+  if (!DisableExceptions) {
+    llvm::LandingPadInst *finallyCaughtResult = B->CreateLandingPad(padType, 1);
+    finallyCaughtResult->setCleanup(true);
+    finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
+
+    B->CreateStore(finallyCaughtResult, tc.catchStore);
+    B->CreateStore(excStateRethrow, tc.excFlag);
+    llvm::Value *depthMax = B->getInt64(trycatch.size());
+    B->CreateStore(depthMax, tc.delegateDepth);
+    B->CreateBr(tc.finallyBlock);
+  } else {
+    B->CreateUnreachable();
+  }
+
   B->SetInsertPoint(finallyBlock);
   llvm::SwitchInst *theSwitch =
-      B->CreateSwitch(excFlagRead, endBlock, supportBreakAndContinue ? 5 : 3);
+      B->CreateSwitch(excFlagRead, endBlock, supportBreakAndContinue ? 6 : 4);
   theSwitch->addCase(excStateCaught, endBlock);
   theSwitch->addCase(excStateThrown, unwindResumeBlock);
+  theSwitch->addCase(excStateRethrow, rethrowBlock);
 
   if (isRoot) {
     auto *finallyReturn =
@@ -2890,9 +2931,10 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // translate try
   block = entryBlock;
-  enterTryCatch(tc);
+  enterFinally(tc);
+  enterTry(tc); // this is last so as to have larger sequence number
   process(x->getBody());
-  exitTryCatch();
+  exitTry();
 
   // translate else
   if (x->getElse()) {
@@ -2907,7 +2949,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   B->SetInsertPoint(block);
   B->CreateBr(tc.finallyBlock);
 
-  // rethrow if uncaught
+  // resume if uncaught
   B->SetInsertPoint(unwindResumeBlock);
   if (DisableExceptions) {
     B->CreateUnreachable();
@@ -3051,6 +3093,21 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       B->SetInsertPoint(block);
       B->CreateBr(tc.finallyBlock);
     }
+  }
+
+  exitFinally();
+
+  // rethrow if handling 'finally' after exception raised from 'except'/'else'
+  B->SetInsertPoint(rethrowBlock);
+  if (DisableExceptions) {
+    B->CreateUnreachable();
+  } else {
+    auto throwFunc = makeThrowFunc();
+    unwindException = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+    block = rethrowBlock;
+    call(throwFunc, unwindException);
+    B->SetInsertPoint(block);
+    B->CreateUnreachable();
   }
 
   block = endBlock;
@@ -3321,10 +3378,10 @@ void LLVMVisitor::visit(const BreakInstr *x) {
 
   auto *loop = !x->getLoop() ? &loops.back() : getLoopData(x->getLoop()->getId());
 
-  if (trycatch.empty() || trycatch.back().sequenceNumber < loop->sequenceNumber) {
+  if (finally.empty() || finally.back().sequenceNumber < loop->sequenceNumber) {
     B->CreateBr(loop->breakBlock);
   } else {
-    auto *tc = &trycatch.back();
+    auto *tc = &finally.back();
     auto *excStateBreak = B->getInt8(TryCatchData::State::BREAK);
     B->CreateStore(excStateBreak, tc->excFlag);
     B->CreateStore(B->getInt64(loop->sequenceNumber), tc->loopSequence);
@@ -3339,10 +3396,10 @@ void LLVMVisitor::visit(const ContinueInstr *x) {
   B->SetInsertPoint(block);
   auto *loop = !x->getLoop() ? &loops.back() : getLoopData(x->getLoop()->getId());
 
-  if (trycatch.empty() || trycatch.back().sequenceNumber < loop->sequenceNumber) {
+  if (finally.empty() || finally.back().sequenceNumber < loop->sequenceNumber) {
     B->CreateBr(loop->continueBlock);
   } else {
-    auto *tc = &trycatch.back();
+    auto *tc = &finally.back();
     auto *excStateContinue = B->getInt8(TryCatchData::State::CONTINUE);
     B->CreateStore(excStateContinue, tc->excFlag);
     B->CreateStore(B->getInt64(loop->sequenceNumber), tc->loopSequence);

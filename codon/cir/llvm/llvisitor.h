@@ -56,13 +56,15 @@ private:
 
   struct TryCatchData : NestableData {
     /// Possible try-catch states when reaching finally block
-    enum State { NOT_THROWN = 0, THROWN, CAUGHT, RETURN, BREAK, CONTINUE };
+    enum State { NOT_THROWN = 0, THROWN, CAUGHT, RETURN, BREAK, CONTINUE, RETHROW };
     /// Exception block
     llvm::BasicBlock *exceptionBlock;
     /// Exception route block
     llvm::BasicBlock *exceptionRouteBlock;
     /// Finally start block
     llvm::BasicBlock *finallyBlock;
+    /// Block to support exceptions raised from 'except' and 'else' blocks
+    llvm::BasicBlock *finallyExceptionBlock;
     /// Try-catch catch types
     std::vector<types::Type *> catchTypes;
     /// Try-catch handlers, corresponding to catch types
@@ -80,12 +82,13 @@ private:
 
     TryCatchData()
         : NestableData(), exceptionBlock(nullptr), exceptionRouteBlock(nullptr),
-          finallyBlock(nullptr), catchTypes(), handlers(), excFlag(nullptr),
-          catchStore(nullptr), delegateDepth(nullptr), retStore(nullptr),
-          loopSequence(nullptr) {}
+          finallyBlock(nullptr), finallyExceptionBlock(nullptr), catchTypes(),
+          handlers(), excFlag(nullptr), catchStore(nullptr), delegateDepth(nullptr),
+          retStore(nullptr), loopSequence(nullptr) {}
 
     void reset() {
-      exceptionBlock = exceptionRouteBlock = finallyBlock = nullptr;
+      exceptionBlock = exceptionRouteBlock = finallyBlock = finallyExceptionBlock =
+          nullptr;
       catchTypes.clear();
       handlers.clear();
       excFlag = catchStore = delegateDepth = loopSequence = nullptr;
@@ -93,7 +96,9 @@ private:
   };
 
   struct CatchData : NestableData {
+    /// Exception object
     llvm::Value *exception;
+    /// Exception type ID
     llvm::Value *typeId;
   };
 
@@ -145,8 +150,10 @@ private:
   CoroData coro;
   /// Loop data stack, containing break/continue blocks
   std::vector<LoopData> loops;
-  /// Try-catch data stack
+  /// Try-block data stack
   std::vector<TryCatchData> trycatch;
+  /// Finally-block data stack
+  std::vector<TryCatchData> finally;
   /// Catch-block data stack
   std::vector<CatchData> catches;
   /// Debug information
@@ -193,8 +200,10 @@ private:
   // Loop and try-catch state
   void enterLoop(LoopData data);
   void exitLoop();
-  void enterTryCatch(TryCatchData data);
-  void exitTryCatch();
+  void enterTry(TryCatchData data);
+  void exitTry();
+  void enterFinally(TryCatchData data);
+  void exitFinally();
   void enterCatch(CatchData data);
   void exitCatch();
   TryCatchData *getInnermostTryCatch();
