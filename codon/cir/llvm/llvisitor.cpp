@@ -2746,6 +2746,8 @@ bool anyMatch(types::Type *type, std::vector<types::Type *> types) {
 void LLVMVisitor::visit(const TryCatchFlow *x) {
   const bool isRoot = trycatch.empty();
   const bool supportBreakAndContinue = !loops.empty();
+  auto *finallyFlow = cast<SeriesFlow>(x->getFinally());
+  const bool haveFinally = (finallyFlow && finallyFlow->begin() != finallyFlow->end());
   B->SetInsertPoint(block);
   auto *entryBlock = llvm::BasicBlock::Create(*context, "trycatch.entry", func);
   B->CreateBr(entryBlock);
@@ -2930,8 +2932,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   }
 
   // translate try
+  if (!loops.empty()) {
+    // make sure we reset the state to avoid issues with 'break'/'continue'
+    B->SetInsertPoint(entryBlock);
+    B->CreateStore(excStateNotThrown, tc.excFlag);
+  }
   block = entryBlock;
-  enterFinally(tc);
+  if (haveFinally)
+    enterFinally(tc);
   enterTry(tc); // this is last so as to have larger sequence number
   process(x->getBody());
   exitTry();
@@ -3095,11 +3103,12 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     }
   }
 
-  exitFinally();
+  if (haveFinally)
+    exitFinally();
 
   // rethrow if handling 'finally' after exception raised from 'except'/'else'
   B->SetInsertPoint(rethrowBlock);
-  if (DisableExceptions) {
+  if (!haveFinally || DisableExceptions) {
     B->CreateUnreachable();
   } else {
     auto throwFunc = makeThrowFunc();

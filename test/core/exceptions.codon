@@ -575,3 +575,39 @@ def test_raise_from_except_or_else():
 # EXPECT: finally
 # EXPECT: caught
 test_raise_from_except_or_else()
+
+def test_abrupt_break_continue():
+    for i in range(6):
+        print('->', i)
+        try:
+            if i == 0:
+                raise ValueError("v1")
+            if i == 5:
+                raise IOError("io1")
+        except ValueError as e:
+            print(e)
+            break
+        except IOError as e:
+            print(e)
+            break
+        else:
+            if i == 3:
+                raise ZeroDivisionError("z1")
+        finally:
+            if i == 0 or i == 3:
+                continue
+            print(i)
+
+# EXPECT: -> 0
+# EXPECT: v1
+# EXPECT: -> 1
+# EXPECT: 1
+# EXPECT: -> 2
+# EXPECT: 2
+# EXPECT: -> 3
+# EXPECT: -> 4
+# EXPECT: 4
+# EXPECT: -> 5
+# EXPECT: io1
+# EXPECT: 5
+test_abrupt_break_continue()
