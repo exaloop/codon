@@ -55,7 +55,7 @@ public:
   Engine *getEngine() const { return engine.get(); }
 
   // General
-  llvm::Error init();
+  llvm::Error init(bool forgetful = false);
   llvm::Error compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt = nullptr);
   llvm::Expected<ir::Func *> compile(const std::string &code,
                                      const std::string &file = "", int line = 0);
@@ -82,8 +82,6 @@ public:
 
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
-
-  void setForgetful();
 };
 
 } // namespace jit

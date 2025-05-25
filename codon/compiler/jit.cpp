@@ -35,7 +35,15 @@ JIT::JIT(const std::string &argv0, const std::string &mode,
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
-llvm::Error JIT::init() {
+llvm::Error JIT::init(bool forgetful) {
+  if (forgetful) {
+    this->forgetful = true;
+    auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
+                                                        /*allowExternal*/ false);
+    compiler->getCache()->fs = fs;
+    LOG("forgetful mode!");
+  }
+
   auto *cache = compiler->getCache();
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
@@ -63,6 +71,7 @@ llvm::Error JIT::init() {
 
   auto *main = func->toPtr<MainFunc>();
   (*main)(0, nullptr);
+
   return llvm::Error::success();
 }
 
@@ -87,39 +96,71 @@ llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt)
   return llvm::Error::success();
 }
 
-void JIT::setForgetful() {
-  forgetful = true;
-  auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
-                                                      /*allowExternal*/ false);
-  compiler->getCache()->fs = fs;
-}
+class Reset {
+  ast::Cache *cache;
+  bool onlyLeftovers;
 
-llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
-                                        const std::string &file, int line) {
-  auto *cache = compiler->getCache();
-  auto sctx = cache->imports[MAIN_IMPORT].ctx;
-  auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
+  ast::Cache bCache;
+  ast::SimplifyContext bSimplify;
+  ast::SimplifyContext stdlibSimplify;
+  ast::TypeContext bType;
+  ast::TranslateContext bTranslate;
 
-  ast::Cache bCache = *cache;
-  ast::SimplifyContext bSimplify = *sctx;
-  ast::SimplifyContext stdlibSimplify = *(cache->imports[STDLIB_IMPORT].ctx);
-  ast::TypeContext bType = *(cache->typeCtx);
-  ast::TranslateContext bTranslate = *(cache->codegenCtx);
-  auto reset = [&](bool cleanIR = true) {
-    if (cleanIR)
-      for (auto &f : cache->functions)
-        for (auto &r : f.second.realizations)
-          if (!(in(bCache.functions, f.first) &&
-                in(bCache.functions[f.first].realizations, r.first)) &&
-              r.second->ir) {
-            cache->module->remove(r.second->ir);
-          }
+public:
+  Reset(ast::Cache *cache, bool onlyLeftovers = true)
+      : cache(cache), onlyLeftovers(onlyLeftovers), bCache(*cache),
+        bSimplify(*(cache->imports[MAIN_IMPORT].ctx)),
+        stdlibSimplify(*(cache->imports[STDLIB_IMPORT].ctx)), bType(*(cache->typeCtx)),
+        bTranslate(*(cache->codegenCtx)) {}
+
+  void undo() {
+    undoIR(true);
+
     *cache = bCache;
     *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
     *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
     *(cache->typeCtx) = bType;
     *(cache->codegenCtx) = bTranslate;
-  };
+
+    if (!onlyLeftovers)
+      undoIR(false);
+  }
+
+  void undoIR(bool onlyLeftovers) {
+    // TODO: clean global ir::Vars?!
+    for (auto &f : cache->functions) {
+      if (f.first == "__internal__.class_populate_vtables:0")
+        continue;
+      for (auto &r : f.second.realizations) {
+        if (onlyLeftovers) {
+          if (!(in(bCache.functions, f.first) &&
+                in(bCache.functions[f.first].realizations, r.first)) &&
+              r.second->ir)
+            cache->module->remove(r.second->ir);
+        } else if (r.second->ir) {
+          cache->module->remove(r.second->ir);
+        }
+      }
+      if (!onlyLeftovers)
+        f.second.realizations.clear();
+    }
+    if (!onlyLeftovers)
+      for (auto &c : cache->classes) {
+        for (auto &r : c.second.realizations) {
+          if (r.second->ir)
+            cache->module->remove(r.second->ir);
+        }
+        c.second.realizations.clear();
+      }
+  }
+};
+
+llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
+                                        const std::string &file, int line) {
+  auto *cache = compiler->getCache();
+  auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
+
+  Reset reset(cache);
 
   try {
     ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
@@ -131,7 +172,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
             std::make_shared<ast::StringExpr>(mode)));
       }
-    auto s = ast::SimplifyVisitor(sctx, preamble).transform(node);
+    auto s = ast::SimplifyVisitor(cache->imports[STDLIB_IMPORT].ctx, preamble)
+                 .transform(node);
     if (!cache->errors.empty())
       throw exc::ParserException();
     auto simplified = std::make_shared<ast::SuiteStmt>();
@@ -140,7 +182,6 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     simplified->stmts.push_back(s);
     // TODO: unroll on errors...
 
-    auto *cache = compiler->getCache();
     auto typechecked = ast::TypecheckVisitor::apply(cache, simplified);
 
     // add newly realized functions
@@ -154,9 +195,6 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     auto func =
         ast::TranslateVisitor::apply(cache, std::make_shared<ast::SuiteStmt>(v));
     cache->jitCell++;
-
-    if (forgetful)
-      reset(false);
 
     return func;
   } catch (const exc::ParserException &exc) {
@@ -172,7 +210,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
       }
     }
 
-    reset();
+    reset.undo();
 
     if (exc.messages.empty())
       return llvm::make_error<error::ParserErrorInfo>(messages);
@@ -214,12 +252,20 @@ llvm::Expected<std::string> JIT::execute(const std::string &code,
                                          llvm::orc::ResourceTrackerSP rt) {
   if (debug)
     fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
+
+  Reset reset(compiler->getCache(), /*onlyLeftovers*/ false);
+
   auto result = compile(code, file, line);
   if (auto err = result.takeError())
     return std::move(err);
   if (auto err = compile(result.get(), rt))
     return std::move(err);
-  return run(result.get());
+  auto r = run(result.get());
+
+  if (forgetful)
+    reset.undo();
+
+  return r;
 }
 
 llvm::Error JIT::handleJITError(const runtime::JITError &e) {
