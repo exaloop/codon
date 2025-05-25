@@ -137,8 +137,6 @@ public:
                 in(bCache.functions[f.first].realizations, r.first)) &&
               r.second->ir)
             cache->module->remove(r.second->ir);
-        } else if (r.second->ir) {
-          cache->module->remove(r.second->ir);
         }
       }
       if (!onlyLeftovers)
@@ -146,10 +144,6 @@ public:
     }
     if (!onlyLeftovers)
       for (auto &c : cache->classes) {
-        for (auto &r : c.second.realizations) {
-          if (r.second->ir)
-            cache->module->remove(r.second->ir);
-        }
         c.second.realizations.clear();
       }
   }
