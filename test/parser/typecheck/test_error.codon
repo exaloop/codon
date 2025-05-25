@@ -102,3 +102,18 @@ divide(3, 0)
 #: ZeroDivisionError
 #: Done!
 #: ZeroDivisionError
+
+try:
+    try:
+        div(5, 1)
+    except ZeroDivisionError:
+        print('Zero')
+    else:
+        print('else before')  #: else before
+        div(5, 0)
+        print('else after')
+    finally:
+        print("finally")  #: finally
+except:
+    print('caught') #: caught
+

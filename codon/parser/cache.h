@@ -94,6 +94,13 @@ struct Cache {
     std::vector<std::string> content;
     /// Set if loaded at toplevel
     bool loadedAtToplevel = true;
+
+    void update(const std::string &name, const std::string &filename,
+                const std::shared_ptr<TypeContext> &ctx) {
+      this->name = name;
+      this->filename = filename;
+      this->ctx = ctx;
+    }
   };
 
   /// Absolute path of seqc executable (if available).

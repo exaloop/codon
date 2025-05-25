@@ -43,7 +43,8 @@ Stmt *TypecheckVisitor::apply(
 
   // Set up the context and the cache
   auto ctx = std::make_shared<TypeContext>(cache, file);
-  cache->imports[file] = cache->imports[MAIN_IMPORT] = {MAIN_IMPORT, file, ctx};
+  cache->imports[file].update(MAIN_IMPORT, file, ctx);
+  cache->imports[MAIN_IMPORT] = cache->imports[file];
   ctx->setFilename(file);
   ctx->moduleName = {ImportFile::PACKAGE, file, MODULE_MAIN};
 
@@ -108,8 +109,8 @@ void TypecheckVisitor::loadStdLibrary(
         "__init_test__.codon";
   }
   stdlib->setFilename(stdlibPath->path);
-  cache->imports[stdlibPath->path] =
-      cache->imports[STDLIB_IMPORT] = {STDLIB_IMPORT, stdlibPath->path, stdlib};
+  cache->imports[stdlibPath->path].update(STDLIB_IMPORT, stdlibPath->path, stdlib);
+  cache->imports[STDLIB_IMPORT] = cache->imports[stdlibPath->path];
 
   // Load the standard library
   stdlib->isStdlibLoading = true;
@@ -1611,10 +1612,14 @@ ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) {
                   [](Stmt *s) { return !s->isDone(); });
   v.transform(n);
   std::vector<ErrorMessage> errors;
-  for (auto e : v.result)
-    errors.emplace_back(
-        fmt::format("cannot typecheck {}", split(e->toString(0), '\n').front()),
-        e->getSrcInfo());
+  for (auto e : v.result) {
+    auto code = ctx->cache->getContent(e->getSrcInfo());
+    if (!code.empty())
+      errors.emplace_back(fmt::format("cannot typecheck '{}'", code), e->getSrcInfo());
+    else
+      errors.emplace_back(fmt::format("cannot typecheck the expression"),
+                          e->getSrcInfo());
+  }
   return ParserErrors(errors);
 }
 

@@ -346,15 +346,13 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   auto ictx = std::make_shared<TypeContext>(ctx->cache, file.path);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;
-  auto import =
-      ctx->cache->imports.insert({file.path, {file.module, file.path, ictx}}).first;
-  import->second.loadedAtToplevel =
+  auto &import = ctx->cache->imports[file.path];
+  import.update(file.module, file.path, ictx);
+  import.loadedAtToplevel =
       getImport(ctx->moduleName.path)->loadedAtToplevel &&
       (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.size() == 1));
-  auto importVar = import->second.importVar =
-      getTemporaryVar(format("import_{}", moduleID));
-  LOG_TYPECHECK("[import] initializing {} ({})", importVar,
-                import->second.loadedAtToplevel);
+  auto importVar = import.importVar = getTemporaryVar(format("import_{}", moduleID));
+  LOG_TYPECHECK("[import] initializing {} ({})", importVar, import.loadedAtToplevel);
 
   // __name__ = [import name]
   Stmt *n = nullptr;
