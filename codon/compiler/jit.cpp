@@ -98,7 +98,7 @@ llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt)
 
 class Reset {
   ast::Cache *cache;
-  bool onlyLeftovers;
+  bool forgetful;
 
   ast::Cache bCache;
   ast::SimplifyContext bSimplify;
@@ -107,14 +107,15 @@ class Reset {
   ast::TranslateContext bTranslate;
 
 public:
-  Reset(ast::Cache *cache, bool onlyLeftovers = true)
-      : cache(cache), onlyLeftovers(onlyLeftovers), bCache(*cache),
+  Reset(ast::Cache *cache, bool forgetful = false)
+      : cache(cache), forgetful(forgetful), bCache(*cache),
         bSimplify(*(cache->imports[MAIN_IMPORT].ctx)),
         stdlibSimplify(*(cache->imports[STDLIB_IMPORT].ctx)), bType(*(cache->typeCtx)),
         bTranslate(*(cache->codegenCtx)) {}
 
   void undo() {
-    undoIR(true);
+    if (!forgetful)
+      undoUnusedIR();
 
     *cache = bCache;
     *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
@@ -122,30 +123,33 @@ public:
     *(cache->typeCtx) = bType;
     *(cache->codegenCtx) = bTranslate;
 
-    if (!onlyLeftovers)
-      undoIR(false);
+    if (forgetful)
+      cleanUpRealizations();
   }
 
-  void undoIR(bool onlyLeftovers) {
+  void undoUnusedIR() {
+    // Clean-up unused IR nodes made before Typechecker raised an error
+    for (auto &f : cache->functions) {
+      for (auto &r : f.second.realizations) {
+        if (!(in(bCache.functions, f.first) &&
+              in(bCache.functions[f.first].realizations, r.first)) &&
+            r.second->ir) {
+          cache->module->remove(r.second->ir);
+        }
+      }
+    }
+  }
+
+  void cleanUpRealizations() {
     // TODO: clean global ir::Vars?!
     for (auto &f : cache->functions) {
       if (f.first == "__internal__.class_populate_vtables:0")
         continue;
-      for (auto &r : f.second.realizations) {
-        if (onlyLeftovers) {
-          if (!(in(bCache.functions, f.first) &&
-                in(bCache.functions[f.first].realizations, r.first)) &&
-              r.second->ir)
-            cache->module->remove(r.second->ir);
-        }
-      }
-      if (!onlyLeftovers)
-        f.second.realizations.clear();
+      f.second.realizations.clear();
     }
-    if (!onlyLeftovers)
-      for (auto &c : cache->classes) {
-        c.second.realizations.clear();
-      }
+    for (auto &c : cache->classes) {
+      c.second.realizations.clear();
+    }
   }
 };
 
@@ -154,7 +158,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
   auto *cache = compiler->getCache();
   auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
 
-  Reset reset(cache);
+  Reset reset(cache, forgetful);
 
   try {
     ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
@@ -247,7 +251,9 @@ llvm::Expected<std::string> JIT::execute(const std::string &code,
   if (debug)
     fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
 
-  Reset reset(compiler->getCache(), /*onlyLeftovers*/ false);
+  std::shared_ptr<Reset> reset = nullptr;
+  if (forgetful)
+    reset = std::make_shared<Reset>(compiler->getCache(), forgetful);
 
   auto result = compile(code, file, line);
   if (auto err = result.takeError())
@@ -256,8 +262,8 @@ llvm::Expected<std::string> JIT::execute(const std::string &code,
     return std::move(err);
   auto r = run(result.get());
 
-  if (forgetful)
-    reset.undo();
+  if (reset)
+    reset->undo();
 
   return r;
 }
