@@ -39,9 +39,8 @@ llvm::Error JIT::init(bool forgetful) {
   if (forgetful) {
     this->forgetful = true;
     auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
-                                                        /*allowExternal*/ false);
+                                                        /*allowExternal=*/false);
     compiler->getCache()->fs = fs;
-    LOG("forgetful mode!");
   }
 
   auto *cache = compiler->getCache();
@@ -71,7 +70,6 @@ llvm::Error JIT::init(bool forgetful) {
 
   auto *main = func->toPtr<MainFunc>();
   (*main)(0, nullptr);
-
   return llvm::Error::success();
 }
 
