@@ -105,7 +105,7 @@ class Reset {
   ast::TranslateContext bTranslate;
 
 public:
-  Reset(ast::Cache *cache, bool forgetful = false)
+  explicit Reset(ast::Cache *cache, bool forgetful = false)
       : cache(cache), forgetful(forgetful), bCache(*cache),
         bSimplify(*(cache->imports[MAIN_IMPORT].ctx)),
         stdlibSimplify(*(cache->imports[STDLIB_IMPORT].ctx)), bType(*(cache->typeCtx)),
@@ -249,9 +249,9 @@ llvm::Expected<std::string> JIT::execute(const std::string &code,
   if (debug)
     fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
 
-  std::shared_ptr<Reset> reset = nullptr;
+  std::unique_ptr<Reset> reset = nullptr;
   if (forgetful)
-    reset = std::make_shared<Reset>(compiler->getCache(), forgetful);
+    reset = std::make_unique<Reset>(compiler->getCache(), forgetful);
 
   auto result = compile(code, file, line);
   if (auto err = result.takeError())
