@@ -368,7 +368,6 @@ JIT::JITResult JIT::executePython(const std::string &name,
     }
 
     auto *M = compiler->getModule();
-    wrapname = wrapname;
     auto *func = M->getOrRealizeFunc(wrapname, {pydata->getCObjType(M)});
     seqassertn(func, "could not access wrapper func '{}'", wrapname);
     cache.emplace(key, func);
