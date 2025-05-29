@@ -139,7 +139,7 @@ public:
   }
 
   void cleanUpRealizations() {
-    // TODO: clean global ir::Vars?!
+    // Clean-up IR nodes after single JIT input
     for (auto &f : cache->functions) {
       if (f.first == "__internal__.class_populate_vtables:0")
         continue;
