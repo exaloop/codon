@@ -168,8 +168,8 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             std::make_shared<ast::IdExpr>("_jit_display"), ex->expr->clone(),
             std::make_shared<ast::StringExpr>(mode)));
       }
-    auto s = ast::SimplifyVisitor(cache->imports[STDLIB_IMPORT].ctx, preamble)
-                 .transform(node);
+    auto s =
+        ast::SimplifyVisitor(cache->imports[MAIN_IMPORT].ctx, preamble).transform(node);
     if (!cache->errors.empty())
       throw exc::ParserException();
     auto simplified = std::make_shared<ast::SuiteStmt>();
@@ -368,7 +368,7 @@ JIT::JITResult JIT::executePython(const std::string &name,
     }
 
     auto *M = compiler->getModule();
-    wrapname = "std.__init__." + wrapname;
+    wrapname = wrapname;
     auto *func = M->getOrRealizeFunc(wrapname, {pydata->getCObjType(M)});
     seqassertn(func, "could not access wrapper func '{}'", wrapname);
     cache.emplace(key, func);
