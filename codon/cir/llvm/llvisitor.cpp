@@ -1697,8 +1697,10 @@ void LLVMVisitor::makeYield(llvm::Value *value, bool finalYield) {
 
 void LLVMVisitor::visit(const ExternalFunc *x) {
   func = M->getFunction(getNameForFunction(x));
-  if (!func)
+  if (!func) {
     func = makeLLVMFunction(x);
+    insertFunc(x, func);
+  }
   coro = {};
   func->setDoesNotThrow();
   func->setWillReturn();
