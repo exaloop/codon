@@ -121,8 +121,7 @@ jobs:
       - name: macOS Setup
         if: startsWith(matrix.os, 'macos')
         run: |
-          brew update
-          brew upgrade gcc
+          brew install gcc
           echo "LIBEXT=dylib" >> $GITHUB_ENV
           echo "OS_NAME=osx" >> $GITHUB_ENV
           echo "CODON_SYSTEM_LIBRARIES=$(brew --prefix gcc)/lib/gcc/current" >> $GITHUB_ENV
