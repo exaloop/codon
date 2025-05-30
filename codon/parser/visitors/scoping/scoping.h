@@ -142,7 +142,8 @@ public:
     });
   }
 
-  static llvm::Error apply(Cache *, Stmt *s);
+  static llvm::Error apply(Cache *, Stmt *s,
+                           std::unordered_map<std::string, size_t> * = nullptr);
   bool transform(Expr *expr) override;
   bool transform(Stmt *stmt) override;
 

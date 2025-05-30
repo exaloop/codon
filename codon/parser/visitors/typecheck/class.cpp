@@ -195,7 +195,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           cls.classVars[a.getName()] = name;
         } else if (!stmt->hasAttribute(Attr::Extend)) {
           std::string varName = a.getName();
-          args.emplace_back(varName, transformType(clean_clone(a.getType())),
+          args.emplace_back(varName, transformType(clean_clone(a.getType()), true),
                             transform(clone(a.getDefault()), true));
           cls.fields.emplace_back(varName, nullptr, canonicalName);
         }
@@ -403,7 +403,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 
     // Get the base class and generic replacements (e.g., if there is Bar[T],
     // Bar in Foo(Bar[int]) will have `T = int`)
-    cls = transformType(cls);
+    cls = transformType(cls, true);
     if (!cls->getClassType())
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
@@ -454,7 +454,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
             name = format("{}#{}", name, i);
           seqassert(acls->fields[ai].name == a.getName(), "bad class fields: {} vs {}",
                     acls->fields[ai].name, a.getName());
-          args.emplace_back(name, transformType(clean_clone(a.getType())),
+          args.emplace_back(name, transformType(clean_clone(a.getType()), true),
                             transform(clean_clone(a.getDefault())));
           cls->fields.emplace_back(
               name, extractType(args.back().getType())->shared_from_this(),

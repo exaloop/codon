@@ -217,6 +217,48 @@ for f in fns:
 #: 16
 #: 16
 
+def enclose():
+    a = 3
+    def fp(x): return (a,x)
+    ff = fp
+    a = 's'
+    return fp
+f = enclose()
+print(f(3))
+#: ('s', 3)
+print(f('x'))
+#: ('s', 'x')
+
+def enclose():
+  a = 3
+  f = lambda x: (a, x)  # captures a in the block
+  a = 's'
+  return f
+f = enclose()
+print(f(3))
+#: ('s', 3)
+print(f('x'))
+#: ('s', 'x')
+
+def foo(x = None, dtype: type = bool):
+    if x is None:
+        ans: Optional[dtype] = None
+    else:
+        ans: dtype = dtype()
+    print(ans.__class__.__name__)
+
+    if x is None:
+        var: Literal[bool] = True
+
+    print(var.__class__.__name__, var.__is_static__)
+
+foo()
+#: Optional[bool]
+#: bool True
+foo(int)
+#: bool
+#: NoneType False
+
 #%% new_scoping_loops_try,barebones
 for i in range(10):
     pass

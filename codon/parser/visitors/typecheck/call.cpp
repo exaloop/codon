@@ -58,6 +58,8 @@ void TypecheckVisitor::visit(EllipsisExpr *expr) {
 /// See @c transformCallArgs , @c getCalleeFn , @c callReorderArguments ,
 ///     @c typecheckCallArgs , @c transformSpecialCall and @c wrapExpr for more details.
 void TypecheckVisitor::visit(CallExpr *expr) {
+  if (ctx->simpleTypes)
+    E(Error::CALL_NO_TYPE, expr);
   if (match(expr->getExpr(), M<IdExpr>("tuple")) && expr->size() == 1) {
     expr->setAttribute(Attr::TupleCall);
   }
@@ -115,8 +117,10 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       generateTuple(expr->size());
     }
     std::unique_ptr<std::vector<FuncType *>> m = nullptr;
-    if (auto id = cast<IdExpr>(expr->getExpr())) {
+    auto id = cast<IdExpr>(getHeadExpr(expr->getExpr()));
+    if (id && part.var.empty()) {
       // Case: function overloads (IdExpr)
+      // Make sure to ignore partial constructs (they are also StmtExpr(IdExpr, ...))
       std::vector<types::FuncType *> methods;
       auto key = id->getValue();
       if (isDispatch(key))
@@ -149,6 +153,16 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       e->setType(calleeFn);
       if (cast<IdExpr>(expr->getExpr())) {
         expr->expr = e;
+      } else if (cast<StmtExpr>(expr->getExpr())) {
+        // Side effect...
+        for (StmtExpr *se = cast<StmtExpr>(expr->getExpr());;) {
+          if (auto ne = cast<StmtExpr>(se->getExpr())) {
+            se = ne;
+          } else {
+            se->expr = e;
+            break;
+          }
+        }
       } else {
         expr->expr = N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e);
       }
@@ -406,7 +420,6 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     auto genFn = partType->getPartialFunc()->generalize(0);
     auto calleeFn =
         std::static_pointer_cast<types::FuncType>(instantiateType(genFn.get()));
-
     if (!partType->isPartialEmpty() ||
         std::any_of(mask.begin(), mask.end(),
                     [](char c) { return c != ClassType::PartialFlag::Missing; })) {
@@ -457,8 +470,16 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
   if (calleeFn->ast->hasAttribute(Attr::NoArgReorder))
     return nullptr;
 
+  bool inOrder = true;
+  std::vector<std::pair<size_t, Expr **>> ordered;
+
   std::vector<CallArg> args;    // stores ordered and processed arguments
   std::vector<Expr *> typeArgs; // stores type and static arguments (e.g., `T: type`)
+  int64_t starIdx = -1;         // for *args
+  std::vector<Expr *> starArgs;
+  int64_t kwStarIdx = -1; // for **kwargs
+  std::vector<std::string> kwStarNames;
+  std::vector<Expr *> kwStarArgs;
   auto newMask = std::string(calleeFn->ast->size(), ClassType::PartialFlag::Included);
 
   // Extract pi-th partial argument from a partial object
@@ -470,10 +491,24 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
     return ex.second;
   };
 
+  auto addReordered = [&](size_t i) -> bool {
+    Expr **e = &((*expr)[i].value);
+    if (hasSideEffect(*e)) {
+      if (!ordered.empty() && i < ordered.back().first)
+        inOrder = false;
+      ordered.emplace_back(i, e);
+      return true;
+    }
+    return false;
+  };
+
   // Handle reordered arguments (see @c reorderNamedArgs for details)
   bool partial = false;
   auto reorderFn = [&](int starArgIndex, int kwstarArgIndex,
                        const std::vector<std::vector<int>> &slots, bool _partial) {
+    if (in(calleeFn->debugString(2), "methodcaller.0:0.caller.0:0"))
+      logfile("scr", "->{}", calleeFn->debugString(2));
+
     partial = _partial;
     return withClassGenerics(
         calleeFn,
@@ -498,13 +533,18 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                   }
                 } else {
                   typeArgs.emplace_back((*expr)[slots[si][0]].getExpr());
+                  if (addReordered(slots[si][0]))
+                    inOrder = false; // type arguments always need preprocessing
                 }
                 newMask[si] = ClassType::PartialFlag::Included;
+              } else if (slots[si].empty()) {
+                typeArgs.push_back(nullptr);
+                newMask[si] = ClassType::PartialFlag::Missing;
               } else {
-                typeArgs.push_back(slots[si].empty() ? nullptr
-                                                     : (*expr)[slots[si][0]].getExpr());
-                newMask[si] = slots[si].empty() ? ClassType::PartialFlag::Missing
-                                                : ClassType::PartialFlag::Included;
+                typeArgs.push_back((*expr)[slots[si][0]].getExpr());
+                newMask[si] = ClassType::PartialFlag::Included;
+                if (addReordered(slots[si][0]))
+                  inOrder = false; // type arguments always need preprocessing
               }
               gi++;
             } else if (si == starArgIndex &&
@@ -512,31 +552,22 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                          (*expr)[slots[si][0]].getExpr()->hasAttribute(
                              Attr::ExprStarArgument))) {
               // Case: *args. Build the tuple that holds them all
-              std::vector<Expr *> extra;
-              if (!part.known.empty())
-                extra.push_back(N<StarExpr>(getPartialArg(-1)));
+              if (!part.known.empty()) {
+                starArgs.push_back(N<StarExpr>(getPartialArg(-1)));
+              }
               for (auto &e : slots[si]) {
-                extra.push_back((*expr)[e].getExpr());
+                starArgs.push_back((*expr)[e].getExpr());
+                addReordered(e);
               }
-              Expr *e = N<TupleExpr>(extra);
-              e->setAttribute(Attr::ExprStarArgument);
-              if (!match(expr->getExpr(), M<IdExpr>("hasattr")))
-                e = transform(e);
-              if (partial) {
-                part.args = e;
-                args.emplace_back(realName,
-                                  transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+              starIdx = args.size();
+              args.emplace_back(realName, nullptr);
+              if (partial)
                 newMask[si] = ClassType::PartialFlag::Missing;
-              } else {
-                args.emplace_back(realName, e);
-              }
             } else if (si == kwstarArgIndex &&
                        !(slots[si].size() == 1 &&
                          (*expr)[slots[si][0]].getExpr()->hasAttribute(
                              Attr::ExprKwStarArgument))) {
               // Case: **kwargs. Build the named tuple that holds them all
-              std::vector<std::string> names;
-              std::vector<Expr *> values;
               std::unordered_set<std::string> newNames;
               for (auto &e : slots[si]) // kwargs names can be overriden later
                 newNames.insert((*expr)[e].getName());
@@ -545,37 +576,46 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 for (auto &[n, ne] : extractNamedTuple(e)) {
                   if (!in(newNames, n)) {
                     newNames.insert(n);
-                    names.emplace_back(n);
-                    values.emplace_back(transform(ne));
+                    kwStarNames.emplace_back(n);
+                    kwStarArgs.emplace_back(transform(ne));
                   }
                 }
               }
               for (auto &e : slots[si]) {
-                names.emplace_back((*expr)[e].getName());
-                values.emplace_back((*expr)[e].getExpr());
+                kwStarNames.emplace_back((*expr)[e].getName());
+                kwStarArgs.emplace_back((*expr)[e].getExpr());
+                addReordered(e);
               }
 
-              auto kwid = generateKwId(names);
-              auto e = transform(N<CallExpr>(N<IdExpr>("NamedTuple"),
-                                             N<TupleExpr>(values), N<IntExpr>(kwid)));
-              e->setAttribute(Attr::ExprKwStarArgument);
-              if (partial) {
-                part.kwArgs = e;
-                args.emplace_back(realName,
-                                  transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+              kwStarIdx = args.size();
+              args.emplace_back(realName, nullptr);
+              if (partial)
                 newMask[si] = ClassType::PartialFlag::Missing;
-              } else {
-                args.emplace_back(realName, e);
-              }
             } else if (slots[si].empty()) {
               // Case: no arguments provided.
               if (!part.known.empty() &&
                   part.known[si] == ClassType::PartialFlag::Included) {
                 // Case 1: Argument captured by partial
                 args.emplace_back(realName, getPartialArg(pi));
+                pi++;
               } else if (startswith(realName, "$")) {
                 // Case 3: Local name capture
-                args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
+                bool added = false;
+                if (partial) {
+                  if (auto val = ctx->find(realName.substr(1))) {
+                    if (val->isFunc() && val->getType()->getFunc()->ast->getName() ==
+                                             calleeFn->ast->getName()) {
+                      // Special case: fn(fn=fn)
+                      // Delay this one.
+                      args.emplace_back(
+                          realName, transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+                      newMask[si] = ClassType::PartialFlag::Missing;
+                      added = true;
+                    }
+                  }
+                }
+                if (!added)
+                  args.emplace_back(realName, transform(N<IdExpr>(realName.substr(1))));
               } else if ((*calleeFn->ast)[si].getDefault()) {
                 // Case 4: default is present
                 if (auto ai = cast<IdExpr>((*calleeFn->ast)[si].getDefault())) {
@@ -584,6 +624,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                       part.known[si] == ClassType::PartialFlag::Default) {
                     // Case 4a/1: Default already captured by partial.
                     args.emplace_back(realName, getPartialArg(pi));
+                    pi++;
                   } else {
                     // TODO: check if the value is toplevel and avoid capturing it if so
                     auto e = transform(N<IdExpr>(ai->getValue()));
@@ -620,11 +661,10 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
             } else {
               // Case: argument provided
               seqassert(slots[si].size() == 1, "call transformation failed");
+
               args.emplace_back(realName, (*expr)[slots[si][0]].getExpr());
+              addReordered(slots[si][0]);
             }
-            if (!part.known.empty() &&
-                part.known[si] != ClassType::PartialFlag::Missing)
-              pi++;
           }
           return 0;
         },
@@ -643,6 +683,50 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
           return -1;
         },
         part.known);
+  }
+
+  // Do reordering
+  if (!inOrder) {
+    std::vector<Stmt *> prepends;
+    sort(ordered.begin(), ordered.end(),
+         [](const auto &a, const auto &b) { return a.first < b.first; });
+    for (auto &[_, eptr] : ordered) {
+      auto name = getTemporaryVar("call");
+      auto front = transform(
+          N<AssignStmt>(N<IdExpr>(name), *eptr, getParamType((*eptr)->getType())));
+      auto swap = transform(N<IdExpr>(name));
+      *eptr = swap;
+      prepends.emplace_back(front);
+    }
+    return transform(N<StmtExpr>(prepends, expr));
+  }
+
+  // Handle *args
+  if (starIdx != -1) {
+    Expr *se = N<TupleExpr>(starArgs);
+    se->setAttribute(Attr::ExprStarArgument);
+    if (!match(expr->getExpr(), M<IdExpr>("hasattr")))
+      se = transform(se);
+    if (partial) {
+      part.args = se;
+      args[starIdx].value = transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+    } else {
+      args[starIdx].value = se;
+    }
+  }
+
+  // Handle **kwargs
+  if (kwStarIdx != -1) {
+    auto kwid = generateKwId(kwStarNames);
+    auto kwe = transform(N<CallExpr>(N<IdExpr>("NamedTuple"), N<TupleExpr>(kwStarArgs),
+                                     N<IntExpr>(kwid)));
+    kwe->setAttribute(Attr::ExprKwStarArgument);
+    if (partial) {
+      part.kwArgs = kwe;
+      args[kwStarIdx] = transform(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+    } else {
+      args[kwStarIdx] = kwe;
+    }
   }
 
   // Populate partial data
@@ -672,8 +756,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       if (typeArgs[si]) {
         auto typ = extractType(typeArgs[si]);
         if (gen.isStatic)
-          if (!typ->isStaticType())
+          if (!typ->isStaticType()) {
             E(Error::EXPECTED_STATIC, typeArgs[si]);
+          }
         unify(typ, gen.getType());
       } else {
         if (isUnbound(gen.getType()) && !(*calleeFn->ast)[si].getDefault() &&
@@ -811,7 +896,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   if (expr->hasAttribute(Attr::ExprNoSpecial))
     return {false, nullptr};
 
-  auto ei = cast<IdExpr>(expr->expr);
+  auto ei = cast<IdExpr>(expr->getExpr());
   if (!ei)
     return {false, nullptr};
   auto isF = [](IdExpr *val, const std::string &s) {

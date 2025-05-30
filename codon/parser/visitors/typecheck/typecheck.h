@@ -60,7 +60,7 @@ public: // Convenience transformators
   Expr *transform(Expr *e) override;
   Expr *transform(Expr *expr, bool allowTypes);
   Stmt *transform(Stmt *s) override;
-  Expr *transformType(Expr *expr);
+  Expr *transformType(Expr *expr, bool simple = false);
 
 private:
   void defaultVisit(Expr *e) override;
@@ -362,6 +362,9 @@ public:
   int64_t getIntLiteral(types::Type *t, size_t pos = 0);
   bool getBoolLiteral(types::Type *t, size_t pos = 0);
   std::string getStrLiteral(types::Type *t, size_t pos = 0);
+  Expr *getParamType(types::Type *t);
+  bool hasSideEffect(Expr *) const;
+  Expr *getHeadExpr(Expr *e) const;
 
   Expr *transformNamedTuple(CallExpr *);
   Expr *transformFunctoolsPartial(CallExpr *);

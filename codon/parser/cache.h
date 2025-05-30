@@ -234,7 +234,6 @@ struct Cache {
     std::unordered_map<std::string, std::shared_ptr<FunctionRealization>> realizations =
         {};
     std::set<std::string> captures = {};
-    std::vector<std::unordered_map<std::string, std::string>> captureMappings = {};
 
     types::FuncType *getType() const { return type.get(); }
   };

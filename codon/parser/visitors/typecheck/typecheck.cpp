@@ -65,7 +65,7 @@ Stmt *TypecheckVisitor::apply(
       tv.N<AssignStmt>(tv.N<IdExpr>("__name__"), tv.N<StringExpr>(MODULE_MAIN)));
   stmts.push_back(node);
 
-  if (auto err = ScopingVisitor::apply(cache, suite))
+  if (auto err = ScopingVisitor::apply(cache, suite, &ctx->globalShadows))
     throw exc::ParserException(std::move(err));
   auto n = tv.inferTypes(suite, true);
   if (!n) {
@@ -145,7 +145,7 @@ void TypecheckVisitor::loadStdLibrary(
   if (!stdOrErr)
     throw exc::ParserException(stdOrErr.takeError());
   auto std = *stdOrErr;
-  if (auto err = ScopingVisitor::apply(stdlib->cache, std))
+  if (auto err = ScopingVisitor::apply(stdlib->cache, std, &stdlib->globalShadows))
     throw exc::ParserException(std::move(err));
   tv = TypecheckVisitor(stdlib, preamble);
   std = tv.inferTypes(std, true);
@@ -235,13 +235,17 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 /// Transform a type expression node.
 /// Special case: replace `None` with `NoneType`
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
-Expr *TypecheckVisitor::transformType(Expr *expr) {
+Expr *TypecheckVisitor::transformType(Expr *expr, bool simple) {
   if (cast<NoneExpr>(expr)) {
     auto ne = N<IdExpr>("NoneType");
     ne->setSrcInfo(expr->getSrcInfo());
     expr = ne;
   }
+  if (simple != ctx->simpleTypes)
+    std::swap(ctx->simpleTypes, simple);
   expr = transform(expr);
+  if (simple != ctx->simpleTypes)
+    std::swap(ctx->simpleTypes, simple);
   if (expr) {
     if (expr->getType()->isStaticType()) {
       ;
@@ -662,8 +666,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
 
-  else if (expectedClass && expectedClass->is("bool") && exprClass &&
+  else if (!callee && expectedClass && expectedClass->is("bool") && exprClass &&
            !exprClass->is("bool")) {
+    // Do not do this in function calls---only use for if-else wrapping
     type = instantiateType(expectedClass);
     fn = [&](Expr *expr) -> Expr * {
       return N<CallExpr>(N<DotExpr>(expr, "__bool__"));
@@ -1244,6 +1249,29 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
   return ct->getBoolStatic()->value;
 }
 
+Expr *TypecheckVisitor::getParamType(Type *t) {
+  std::array<const char *, 4> op{"", "int", "str", "bool"};
+  if (t && t->is(TYPE_TYPE)) {
+    return N<IdExpr>(TYPE_TYPE);
+  } else if (auto st = t->isStaticType()) {
+    return N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[st]));
+  } else {
+    return nullptr;
+  }
+}
+
+bool TypecheckVisitor::hasSideEffect(Expr *e) const {
+  return !match(e, MOr(M<IdExpr>(), M<DotExpr>(M<IdExpr>()), M<InstantiateExpr>(),
+                       M<BoolExpr>(), M<IntExpr>(), M<StringExpr>(), M<NoneExpr>(),
+                       M<FloatExpr>(), M<EllipsisExpr>(), M<YieldExpr>()));
+}
+
+Expr *TypecheckVisitor::getHeadExpr(Expr *e) const {
+  while (auto se = cast<StmtExpr>(e))
+    e = se->getExpr();
+  return e;
+}
+
 bool TypecheckVisitor::isImportFn(const std::string &s) {
   return startswith(s, "%_import_");
 }
@@ -1305,52 +1333,6 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
       i.second->setSrcInfo(srcInfo);
       if (l->defaultType) {
         ctx->getBase()->pendingDefaults[0].insert(i.second);
-      }
-    }
-  }
-  if (auto ft = t->getFunc()) {
-    if (auto b = ft->ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
-      auto module =
-          ft->ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
-      auto imp = getImport(module);
-      std::unordered_map<std::string, std::string> key;
-
-      // look for generics [todo: speed-up!]
-      std::unordered_set<std::string> generics;
-      for (auto &g : ft->funcGenerics)
-        generics.insert(getUnmangledName(g.name));
-      for (auto parent = ft->funcParent; parent;) {
-        if (auto f = parent->getFunc()) {
-          for (auto &g : f->funcGenerics)
-            generics.insert(getUnmangledName(g.name));
-          parent = f->funcParent;
-        } else {
-          for (auto &g : parent->getClass()->generics)
-            generics.insert(getUnmangledName(g.name));
-          for (auto &g : parent->getClass()->hiddenGenerics)
-            generics.insert(getUnmangledName(g.name));
-          break;
-        }
-      }
-      for (const auto &[c, _] : b->captures) {
-        if (!in(generics, c)) { // ignore inherited captures!
-          if (auto h = imp->ctx->find(c)) {
-            key[c] = h->canonicalName;
-          } else {
-            key.clear();
-            break;
-          }
-        }
-      }
-      if (!key.empty()) {
-        auto &cm = getFunction(ft->getFuncName())->captureMappings;
-        size_t idx = 0;
-        for (; idx < cm.size(); idx++)
-          if (cm[idx] == key)
-            break;
-        if (idx == cm.size())
-          cm.push_back(key);
-        ft->index = idx;
       }
     }
   }

@@ -10,10 +10,10 @@
 
 namespace codon::ast::types {
 
-FuncType::FuncType(ClassType *baseType, FunctionStmt *ast, size_t index,
+FuncType::FuncType(ClassType *baseType, FunctionStmt *ast,
                    std::vector<Generic> funcGenerics, TypePtr funcParent)
-    : ClassType(baseType), ast(ast), index(index),
-      funcGenerics(std::move(funcGenerics)), funcParent(std::move(funcParent)) {}
+    : ClassType(baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
+      funcParent(std::move(funcParent)) {}
 
 int FuncType::unify(Type *typ, Unification *us) {
   if (this == typ)
@@ -21,8 +21,7 @@ int FuncType::unify(Type *typ, Unification *us) {
   int s1 = 2, s = 0;
   if (auto t = typ->getFunc()) {
     // Check if names and parents match.
-    if (ast->getName() != t->ast->getName() || index != t->index ||
-        (bool(funcParent) ^ bool(t->funcParent)))
+    if (ast->getName() != t->ast->getName() || (bool(funcParent) ^ bool(t->funcParent)))
       return -1;
     if (funcParent && (s = funcParent->unify(t->funcParent.get(), us)) == -1) {
       return -1;
@@ -48,7 +47,7 @@ TypePtr FuncType::generalize(int atLevel) {
   auto p = funcParent ? funcParent->generalize(atLevel) : nullptr;
 
   auto r = std::static_pointer_cast<ClassType>(this->ClassType::generalize(atLevel));
-  auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
+  auto t = std::make_shared<FuncType>(r->getClass(), ast, fg, p);
   return t;
 }
 
@@ -65,7 +64,7 @@ TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
   auto p = funcParent ? funcParent->instantiate(atLevel, unboundCount, cache) : nullptr;
   auto r = std::static_pointer_cast<ClassType>(
       this->ClassType::instantiate(atLevel, unboundCount, cache));
-  auto t = std::make_shared<FuncType>(r->getClass(), ast, index, fg, p);
+  auto t = std::make_shared<FuncType>(r->getClass(), ast, fg, p);
   return t;
 }
 
@@ -170,8 +169,6 @@ std::string FuncType::debugString(char mode) const {
   if (mode == 0) {
     fnname = cache->rev(ast->getName());
   }
-  if (mode && index)
-    fnname += fmt::format("/{}", index);
   if (mode == 2 && funcParent)
     s += ";" + funcParent->debugString(mode);
   return fnname + (s.empty() ? "" : ("[" + s + "]"));
@@ -191,7 +188,7 @@ std::string FuncType::realizedName() const {
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{a, s}, ",");
   return (funcParent ? funcParent->realizedName() + ":" : "") + ast->getName() +
-         (index ? fmt::format("/{}", index) : "") + (s.empty() ? "" : ("[" + s + "]"));
+         (s.empty() ? "" : ("[" + s + "]"));
 }
 
 Type *FuncType::getRetType() const { return generics[1].type.get(); }

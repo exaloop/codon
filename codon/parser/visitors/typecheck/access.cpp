@@ -146,28 +146,37 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   }
   expr->expr = transform(expr->getExpr());
 
+  bool hasSide = hasSideEffect(expr->getExpr());
+  auto wrapSide = [&](Expr *e) -> Expr * {
+    if (hasSide) {
+      return transform(N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e));
+    }
+    return transform(e);
+  };
+
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
+  // NOTE: NO SIDE EFFECTS! (because of generic function support!)
   if (extractType(expr->getExpr())->getFunc() && expr->getMember() == "__name__") {
-    resultExpr = transform(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
+    resultExpr = N<StringExpr>(extractType(expr->getExpr())->prettyString());
     return;
   }
   if (expr->getExpr()->getType()->getPartial() && expr->getMember() == "__name__") {
-    resultExpr = transform(
+    resultExpr = wrapSide(
         N<StringExpr>(expr->getExpr()->getType()->getPartial()->prettyString()));
     return;
   }
   // Special case: fn.__llvm_name__ or obj.__llvm_name__
   if (expr->getMember() == "__llvm_name__") {
     if (realize(expr->getExpr()->getType()))
-      resultExpr = transform(N<StringExpr>(expr->getExpr()->getType()->realizedName()));
+      resultExpr = wrapSide(N<StringExpr>(expr->getExpr()->getType()->realizedName()));
     return;
   }
   // Special case: cls.__name__
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__name__") {
     if (realize(expr->getExpr()->getType()))
       resultExpr =
-          transform(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
+          wrapSide(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
     return;
   }
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
@@ -179,14 +188,13 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // Special case: expr.__is_static__
   if (expr->getMember() == "__is_static__") {
     if (expr->getExpr()->isDone())
-      resultExpr =
-          transform(N<BoolExpr>(bool(expr->getExpr()->getType()->getStatic())));
+      resultExpr = wrapSide(N<BoolExpr>(bool(expr->getExpr()->getType()->getStatic())));
     return;
   }
   // Special case: cls.__id__
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__id__") {
     if (auto c = realize(extractType(expr->getExpr())))
-      resultExpr = transform(N<IntExpr>(getClassRealization(c)->id));
+      resultExpr = wrapSide(N<IntExpr>(getClassRealization(c)->id));
     return;
   }
 
@@ -220,6 +228,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
       if (isTypeExpr(expr->getExpr())) {
         // Static access: `cls.method`
         unify(expr->getType(), e->getType());
+        resultExpr = wrapSide(e);
       } else if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
                  !bestMethod->ast->hasAttribute(Attr::Property)) {
         // Instance access: `obj.method` from the call
@@ -227,6 +236,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
         // Avoids creating partial functions.
         parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
         unify(expr->getType(), e->getType());
+        resultExpr = transform(e);
       } else {
         // Instance access: `obj.method`
         // Transform y.method to a partial call `type(y).method(y, ...)`
@@ -238,9 +248,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
         if (!bestMethod->ast->hasAttribute(Attr::Property)) {
           methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
         }
-        e = N<CallExpr>(e, methodArgs);
+        resultExpr = transform(N<CallExpr>(e, methodArgs));
       }
-      resultExpr = transform(e);
     }
     break;
   }
@@ -436,7 +445,7 @@ types::FuncType *TypecheckVisitor::getDispatch(const std::string &fn) {
   ctx->cache->reverseIdentifierLookup[name] = getUnmangledName(fn);
 
   auto baseType = getFuncTypeBase(2);
-  auto typ = std::make_shared<FuncType>(baseType.get(), ast, 0);
+  auto typ = std::make_shared<FuncType>(baseType.get(), ast);
   /// Make sure that parent is set so that the parent type can be passed to the inner
   /// call
   ///   (e.g., A[B].foo -> A.foo.dispatch() { A[B].foo() })
@@ -474,10 +483,17 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
     }
   }
 
+  bool hasSide = hasSideEffect(expr->getExpr());
+  auto wrapSide = [&](Expr *e) -> Expr * {
+    if (hasSide)
+      return transform(N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e));
+    return transform(e);
+  };
+
   // Case: class variable (`Cls.var`)
   if (auto cls = getClass(typ))
     if (auto var = in(cls->classVars, expr->getMember())) {
-      return transform(N<IdExpr>(*var));
+      return wrapSide(N<IdExpr>(*var));
     }
 
   // Case: special members
@@ -507,12 +523,12 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
     if (generic->isStatic) {
       unify(expr->getType(), generic->getType());
       if (realize(expr->getType())) {
-        return transform(generic->type->getStatic()->getStaticExpr());
+        return wrapSide(generic->type->getStatic()->getStaticExpr());
       }
     } else {
       unify(expr->getType(), instantiateTypeVar(generic->getType()));
       if (realize(expr->getType()))
-        return transform(N<IdExpr>(generic->getType()->realizedName()));
+        return wrapSide(N<IdExpr>(generic->getType()->realizedName()));
     }
     return nullptr;
   }

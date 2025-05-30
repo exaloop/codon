@@ -28,7 +28,9 @@ using namespace codon::matcher;
 
 namespace codon::ast {
 
-llvm::Error ScopingVisitor::apply(Cache *cache, Stmt *s) {
+llvm::Error
+ScopingVisitor::apply(Cache *cache, Stmt *s,
+                      std::unordered_map<std::string, size_t> *globalShadows) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = cache;
   c->functionScope = nullptr;
@@ -41,6 +43,19 @@ llvm::Error ScopingVisitor::apply(Cache *cache, Stmt *s) {
   if (v.hasErrors())
     return llvm::make_error<ParserErrorInfo>(v.errors);
   v.processChildCaptures();
+
+  /// Count number of shadowed names to know which names change or not later on
+  if (globalShadows) {
+    for (auto &[u, v] : c->map) {
+      size_t i = 0;
+      for (auto &ii : v)
+        if (!ii.ignore)
+          i++;
+      if (i > 1)
+        (*globalShadows)[u] = i;
+    }
+  }
+
   // LOG("-> {}", s->toString(2));
   return llvm::Error::success();
 }
@@ -371,7 +386,8 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
 
   if (stmt->getAs().empty()) {
     if (stmt->getWhat()) {
-      CHECK(transformAdding(stmt->getWhat(), stmt));
+      if (!match(stmt->getWhat(), M<IdExpr>("*")))
+        CHECK(transformAdding(stmt->getWhat(), stmt));
     } else {
       CHECK(transformAdding(stmt->getFrom(), stmt));
     }

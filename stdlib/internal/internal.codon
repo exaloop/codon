@@ -719,17 +719,18 @@ class __magic__:
 
     # @dataclass parameter: repr=True
     def repr(slf) -> str:
-        if static.len(slf) == 0:
+        l: Literal[int] = static.len(tuple(slf))
+        if l == 0:
             return "()"
-        a = __array__[str](static.len(slf))
-        n = __array__[str](static.len(slf))
+        a = __array__[str](l)
+        n = __array__[str](l)
         for i, k, v in static.vars(slf, with_index=True):
             a[i] = v.__repr__()
             if isinstance(slf, Tuple):
                 n[i] = ""
             else:
                 n[i] = k
-        return __internal__.tuple_str(a.ptr, n.ptr, static.len(slf))
+        return __internal__.tuple_str(a.ptr, n.ptr, l)
 
     # @dataclass parameter: repr=True
     def str(slf) -> str:

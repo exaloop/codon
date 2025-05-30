@@ -378,7 +378,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     throw exc::ParserException(nodeOrErr.takeError());
   n = N<SuiteStmt>(n, *nodeOrErr);
   auto tv = TypecheckVisitor(ictx, preamble);
-  if (auto err = ScopingVisitor::apply(ctx->cache, n))
+  if (auto err = ScopingVisitor::apply(ctx->cache, n, &ictx->globalShadows))
     throw exc::ParserException(std::move(err));
 
   if (!ctx->cache->errors.empty())

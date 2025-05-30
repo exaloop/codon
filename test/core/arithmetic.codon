@@ -206,6 +206,7 @@ def test_int_float_ops(F: type):
         return (exp == got) and (type(exp) is type(got))
 
     # standard
+    print(F(1.5) + 1, F(2.5), type(F(1.5)+1), type(F(2.5)))
     assert check(F(1.5) + 1, F(2.5))
     assert check(F(1.5) - 1, F(0.5))
     assert check(F(1.5) * 2, F(3.0))

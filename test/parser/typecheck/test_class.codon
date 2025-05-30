@@ -371,11 +371,52 @@ class Foo:
         self.x = [x]
         self.y = 1, x
 
+    def foo(self, x, a=[]):
+        a.append(x)
+        print(a)
+        return a
+
+    def nloc(self, x):
+        a = x
+        def bar():
+            nonlocal a
+            a += 1
+            return a
+        a += 1
+        return bar
+
 f = Foo(1)
 print(f.x, f.y, f.__class__.__name__) #: [1] (1, 1) Foo[List[int],Tuple[int,int]]
 
 f: Foo = Foo('s')
 print(f.x, f.y, f.__class__.__name__) #: ['s'] (1, 's') Foo[List[str],Tuple[int,str]]
+
+f.foo(1.1)
+#: [1.1]
+l = f.foo(2)
+#: [1.1, 2]
+assert l == [1.1, 2]
+
+b = f.nloc(5)
+print(b())  #: 7
+print(b())  #: 8
+print(b())  #: 9
+
+class Fox:
+    def __init__(self):
+        self.x: List[int] = []
+
+f = Fox()
+print(f.__class__.__name__)
+#: Fox[List[int]]
+
+class Fox:
+    def __init__(self):
+        self.x = 5
+        self.y = []
+f = Fox()
+print(f.__class__.__name__, f.x, f.y)
+#: Fox[int,List[NoneType]] 5 []
 
 class Bar:
     def __init__(self, y: float):

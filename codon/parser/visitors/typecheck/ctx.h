@@ -192,6 +192,10 @@ struct TypeContext : public Context<TypecheckItem> {
   types::TypePtr expectedType = nullptr;
 
   bool autoPython = false;
+  /// True if no side-effects allowed
+  bool simpleTypes = false;
+
+  std::unordered_map<std::string, size_t> globalShadows;
 
   std::unordered_map<std::string, double> _itime;
 

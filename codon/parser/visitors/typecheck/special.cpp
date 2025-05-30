@@ -489,12 +489,7 @@ Expr *TypecheckVisitor::transformSuper() {
 /// Typecheck __ptr__ method. This method creates a pointer to an object. Ensure that
 /// the argument is a variable binding.
 Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
-  auto id = cast<IdExpr>(expr->begin()->getExpr());
-  if (!id) {
-    // Case where id is guarded by a check
-    if (auto sexp = cast<StmtExpr>(expr->begin()->getExpr()))
-      id = cast<IdExpr>(sexp->getExpr());
-  }
+  auto id = cast<IdExpr>(getHeadExpr(expr->begin()->getExpr()));
   auto val = id ? ctx->find(id->getValue(), getTime()) : nullptr;
   if (!val || !val->isVar()) {
     E(Error::CALL_PTR_VAR, expr->begin()->getExpr());

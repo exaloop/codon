@@ -30,6 +30,8 @@ void TypecheckVisitor::visit(LambdaExpr *expr) {
     params.emplace_back(s);
   Stmt *f = N<FunctionStmt>(name, nullptr, params,
                             N<SuiteStmt>(N<ReturnStmt>(expr->getExpr())));
+
+  /// TODO: just copy BindingsAttribute from expr instead?
   if (auto err = ScopingVisitor::apply(ctx->cache, N<SuiteStmt>(f)))
     throw exc::ParserException(std::move(err));
   f->setAttribute(Attr::ExprTime, getTime()); // to handle captures properly
@@ -37,7 +39,7 @@ void TypecheckVisitor::visit(LambdaExpr *expr) {
   if (auto a = expr->getAttribute(Attr::Bindings))
     f->setAttribute(Attr::Bindings, a->clone());
   prependStmts->push_back(f);
-  resultExpr = transform(N<CallExpr>(N<IdExpr>(name), N<EllipsisExpr>()));
+  resultExpr = transform(N<IdExpr>(name));
 }
 
 /// Unify the function return type with `Generator[?]`.
@@ -149,12 +151,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Parse attributes
   std::vector<std::string> attributes;
+  bool hasDecorators = false;
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (!stmt->decorators[i])
       continue;
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
-    if (!attrName.empty()) {
-      if (isAttr) {
+    if (isAttr) {
+      if (!attrName.empty()) {
         if (attrName == "std.internal.attributes.test.0:0")
           stmt->setAttribute(Attr::Test);
         else if (attrName == "std.internal.attributes.export.0:0")
@@ -173,6 +176,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             ->attributes[attrName] = "";
         stmt->decorators[i] = nullptr; // remove it from further consideration
       }
+    } else {
+      hasDecorators = true;
     }
   }
 
@@ -226,10 +231,15 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
-  std::map<std::string, TypeContext::Item> captures;
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
+    std::array<const char *, 4> op{"", "int", "str", "bool"};
+    size_t insertSize = stmt->size();
+    if (!stmt->empty() && startswith(stmt->back().name, "**"))
+      insertSize--;
     for (auto &[c, t] : b->captures) {
-      if (auto v = ctx->find(c, getTime())) {
+      std::string cc = "$" + c;
+      auto v = ctx->find(c, getTime());
+      if (v) {
         if (t != BindingsAttribute::CaptureType::Global && !v->isGlobal()) {
           bool parentClassGeneric =
               ctx->bases.back().isType() && ctx->bases.back().name == v->getBaseName();
@@ -238,34 +248,27 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           }
           if (!v->isGeneric() || (v->isStatic() && !parentClassGeneric)) {
             if (!v->isFunc()) {
-              captures[c] = v;
+              if (v->isType()) {
+                stmt->items.insert(stmt->items.begin() + insertSize++,
+                                   Param(cc, N<IdExpr>(TYPE_TYPE)));
+              } else if (auto si = v->isStatic()) {
+                stmt->items.insert(
+                    stmt->items.begin() + insertSize++,
+                    Param(cc, N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[si]))));
+              } else {
+                stmt->items.insert(stmt->items.begin() + insertSize++, Param(cc));
+              }
             }
           }
+          continue;
         }
       }
-    }
-  }
-  if (!captures.empty()) {
-    // Handle partial arguments (and static special cases)
-    Param kw;
-    if (!stmt->empty() && startswith(stmt->back().name, "**")) {
-      kw = stmt->back();
-      stmt->items.pop_back();
-    }
-    std::array<const char *, 4> op{"", "int", "str", "bool"};
-    for (auto &[c, v] : captures) {
-      std::string cc = "$" + c;
-      if (v->isType()) {
-        stmt->items.emplace_back(cc, N<IdExpr>(TYPE_TYPE));
-      } else if (auto si = v->isStatic()) {
-        stmt->items.emplace_back(cc,
-                                 N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[si])));
-      } else {
-        stmt->items.emplace_back(cc);
+      if ((c == stmt->getName() && hasDecorators) /* decorated recursive fns */ ||
+          in(ctx->globalShadows, c)) {
+        // log("-> {} / {}", stmt->getName(), c);
+        stmt->items.insert(stmt->items.begin() + insertSize++, Param(cc));
       }
     }
-    if (!kw.name.empty())
-      stmt->items.emplace_back(kw);
   }
 
   std::vector<Param> args;
@@ -345,8 +348,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         } else {
           if (match(a.getType(), M<InstantiateExpr>(M<IdExpr>(TRAIT_TYPE), M_))) {
             // Parse TraitVar
-            auto l =
-                transformType(cast<InstantiateExpr>(a.getType())->front())->getType();
+            auto l = transformType(cast<InstantiateExpr>(a.getType())->front(), true)
+                         ->getType();
             if (l->getLink() && l->getLink()->trait)
               generic->getLink()->trait = l->getLink()->trait;
             else
@@ -386,7 +389,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     // Parse arguments to the context. Needs to be done after adding generics
     // to support cases like `foo(a: T, T: type)`
     for (auto &a : args) {
-      a.type = transformType(a.getType());
+      a.type = transformType(a.getType(), true);
     }
 
     // Unify base type generics with argument types. Add non-generic arguments to the
@@ -419,15 +422,19 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         generics.push_back(extractClassGeneric(argType, aj)->shared_from_this());
       } else {
         unify(extractClassGeneric(argType, aj),
-              extractType(transformType((*stmt)[ai].getType())));
+              extractType(transformType((*stmt)[ai].getType(), true)));
       }
       aj++;
     }
 
     // Parse the return type
-    ret = transformType(stmt->getReturn());
+    ret = transformType(stmt->getReturn(), true);
     auto retType = extractClassGeneric(baseType.get(), 1);
     if (ret) {
+      // Fix for functions returning Literal types
+      if (auto st = getStaticGeneric(ret))
+        baseType->generics[1].isStatic = st;
+
       unify(retType, extractType(ret));
       if (isId(ret, "Union"))
         extractClassGeneric(retType)->getUnbound()->kind = LinkType::Generic;
@@ -473,7 +480,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   // Construct the type
   auto funcTyp =
-      std::make_shared<types::FuncType>(baseType.get(), fn.ast, 0, explicits);
+      std::make_shared<types::FuncType>(baseType.get(), fn.ast, explicits);
   funcTyp->setSrcInfo(getSrcInfo());
   if (isClassMember && stmt->hasAttribute(Attr::Method)) {
     funcTyp->funcParent = parentClass->shared_from_this();
@@ -639,6 +646,7 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 /// actually an attribute (a function with `@__attribute__`).
 std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
   auto dt = transform(clone(e));
+  dt = getHeadExpr(dt);
   auto id = cast<IdExpr>(cast<CallExpr>(dt) ? cast<CallExpr>(dt)->getExpr() : dt);
   if (id) {
     auto ci = ctx->find(id->getValue(), getTime());

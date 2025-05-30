@@ -17,11 +17,26 @@ print 3 |> foo(1)  #: 4
 
 #%% typeof_definitions,barebones
 a = 10
-def foo(a)->type(a): return a
-print(foo(5).__class__.__name__)  #: int
-
 b: type(a) = 1
 print(b.__class__.__name__) #: int
+
+l = []
+c: type(l) = []
+l.append(1)
+print(l.__class__.__name__, c.__class__.__name__) #: List[int] List[int]
+
+#%% typeof_definitions_error,barebones
+a = 10
+def foo(a)->type(a): return a
+#! cannot use calls in type signatures
+
+#%% typeof_definitions_error_2,barebones
+def foo() -> type:
+    return int
+class Foo:
+    a: foo()
+#! cannot use calls in type signatures
+
 
 #%% multi_error,barebones
 a = 55
@@ -139,6 +154,7 @@ l = foo(str)()
 print(l, l.__class__.__name__)  #: [] List[str]
 
 def bar() -> type:
+  print("side effect!")
   class Foo:
      a: int
      def __init__(self, a=1):
@@ -147,6 +163,10 @@ def bar() -> type:
      def bar(self, x: Foo):
        return f'{self.a}-{x.a}'
   return Foo
-f = bar()()  #: Foo! 1
-print f.bar(bar()(2))  #: Foo! 2
+f = bar()()
+#: side effect!
+#: Foo! 1
+print f.bar(bar()(2))
+#: side effect!
+#: Foo! 2
 #: 1-2

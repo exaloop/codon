@@ -318,7 +318,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::STR_FSTRING_BALANCE_MISSING:
     return fmt::format("single '}}' is not allowed in f-string");
   case Error::CALL_NO_TYPE:
-    return fmt::format("cannot use type() in type signatures", args...);
+    return fmt::format("cannot use calls in type signatures", args...);
   case Error::CALL_TUPLE_COMPREHENSION:
     return fmt::format(
         "tuple constructor does not accept nested or conditioned comprehensions",

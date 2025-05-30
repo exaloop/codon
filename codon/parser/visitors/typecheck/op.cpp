@@ -20,15 +20,25 @@ using namespace matcher;
 /// Replace unary operators with the appropriate magic calls.
 /// Also evaluate static expressions. See @c evaluateStaticUnary for details.
 void TypecheckVisitor::visit(UnaryExpr *expr) {
-  expr->expr = transform(expr->expr);
+  expr->expr = transform(expr->getExpr());
 
+  if (cast<IntExpr>(expr->getExpr()) && expr->getOp() == "-") {
+    // Special case: make - INT(val) same as INT(-val) to simplify IR and everything
+    resultExpr = transform(N<IntExpr>(-cast<IntExpr>(expr->getExpr())->getValue()));
+    return;
+  }
+
+  StaticType *staticType = nullptr;
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
       {1, {"-", "+", "!", "~"}}, {2, {"!"}}, {3, {"!"}}};
   // Handle static expressions
   if (auto s = expr->getExpr()->getType()->isStaticType()) {
     if (in(staticOps[s], expr->getOp())) {
-      resultExpr = evaluateStaticUnary(expr);
-      return;
+      if ((resultExpr = evaluateStaticUnary(expr))) {
+        staticType = resultExpr->getType()->getStatic();
+      } else {
+        return;
+      }
     }
   } else if (isUnbound(expr->getExpr())) {
     return;
@@ -51,6 +61,9 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
     resultExpr =
         transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), format("__{}__", magic))));
   }
+
+  if (staticType)
+    resultExpr->setType(staticType->shared_from_this());
 }
 
 /// Replace binary operators with the appropriate magic calls.
@@ -123,6 +136,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
 
   expr->rexpr = transform(expr->getRhs(), true);
 
+  StaticType *staticType = nullptr;
   static std::unordered_map<int, std::unordered_set<std::string>> staticOps = {
       {1,
        {"<", "<=", ">", ">=", "==", "!=", "&&", "||", "+", "-", "*", "//", "%", "&",
@@ -138,8 +152,10 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
         in(staticOps[1], expr->getOp()))
       isStatic = true;
     if (isStatic) {
-      resultExpr = evaluateStaticBinary(expr);
-      return;
+      if ((resultExpr = evaluateStaticBinary(expr)))
+        staticType = resultExpr->getType()->getStatic();
+      else
+        return;
     }
   }
 
@@ -178,6 +194,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
         expr->getRhs()->getType()->prettyString());
     }
   }
+
+  if (staticType)
+    resultExpr->setType(staticType->shared_from_this());
 }
 
 /// Transform chain binary expression.
@@ -488,6 +507,24 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       resultExpr = N<IdExpr>(t->realizedName());
       resultExpr->setType(rt->shared_from_this());
       resultExpr->setDone();
+    }
+  }
+
+  // Handle side effects
+  if (!ctx->simpleTypes) {
+    std::vector<Stmt *> prepends;
+    for (auto &t : *expr) {
+      if (hasSideEffect(t)) {
+        auto name = getTemporaryVar("call");
+        auto front =
+            transform(N<AssignStmt>(N<IdExpr>(name), t, getParamType(t->getType())));
+        auto swap = transformType(N<IdExpr>(name));
+        t = swap;
+        prepends.emplace_back(front);
+      }
+    }
+    if (!prepends.empty()) {
+      resultExpr = transform(N<StmtExpr>(prepends, resultExpr ? resultExpr : expr));
     }
   }
 }
@@ -939,7 +976,11 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
   auto getInt = [&](int64_t *o, Expr *e) {
     if (!e)
       return true;
-    auto f = transform(clean_clone(e));
+
+    // Some statics have been transformed (-5 is 5.__neg__())
+    // so clean_clone will remove its staticness... hence origExpr here
+    auto ore = e->getOrigExpr() ? e->getOrigExpr() : e;
+    auto f = transform(clean_clone(ore));
     if (auto s = f->getType()->getIntStatic()) {
       *o = s->value;
       return true;

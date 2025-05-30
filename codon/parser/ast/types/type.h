@@ -104,7 +104,7 @@ public:
   /// (e.g. the function return type).
   virtual std::string realizedName() const = 0;
 
-  /// Convenience virtual functions to avoid unnecessary dynamic_cast calls.
+  /// Convenience virtual functions to avoid unnecessary casts.
   virtual FuncType *getFunc() { return nullptr; }
   virtual ClassType *getPartial() { return nullptr; }
   virtual ClassType *getClass() { return nullptr; }

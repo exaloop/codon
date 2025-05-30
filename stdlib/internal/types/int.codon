@@ -79,6 +79,16 @@ class int:
 
     @pure
     @commutative
+    @associative
+    @llvm
+    def __add__(self, b: bool) -> int:
+        %0 = sext {=bool} %b to i64
+        %1 = add i64 %self, %0
+        ret i64 %1
+
+    @pure
+    @commutative
+    @overload
     @llvm
     def __add__(self, other: float) -> float:
         %0 = sitofp i64 %self to double

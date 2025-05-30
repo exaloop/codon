@@ -470,8 +470,12 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   }
 
   if (!stmt->getLhs()->getType()->isInstantiated() ||
-      (stmt->getLhs()->getType()->is(TYPE_TYPE))) {
-    // LOG("{} {}", getSrcInfo(), stmt->toString(0));
+      (stmt->getLhs()->getType()->is(TYPE_TYPE)) ||
+      stmt->getLhs()->getType()->getFunc()) {
+    if (!cast<IdExpr>(stmt->getRhs())) {
+      // Side effect
+      result = transform(stmt->getRhs());
+    }
     return; // type aliases/fn aliases etc
   }
 

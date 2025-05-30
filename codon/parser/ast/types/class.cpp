@@ -303,9 +303,7 @@ std::string ClassType::debugString(char mode) const {
     if (mode == 0) {
       fnname = cache->rev(func->ast->getName());
     } else {
-      fnname = func->ast->getName(); // func->debugString(mode);
-      if (mode == 1)
-        fnname += fmt::format("/{}", func->index);
+      fnname = func->ast->getName();
     }
     return fnname + "(" + join(as, ",") + ")";
   }

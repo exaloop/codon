@@ -320,6 +320,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   }
 
   Stmt *preamble = nullptr;
+  iter = getHeadExpr(iter);
   auto fn =
       cast<CallExpr>(iter) ? cast<IdExpr>(cast<CallExpr>(iter)->getExpr()) : nullptr;
   std::vector<Stmt *> block;

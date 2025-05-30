@@ -1011,4 +1011,74 @@ c: List[BX] = [s, table]
 print(c[0].hai())  #: hai/BX: 17
 print(c[1].hai())  #: hai/CX: 17
 
+#%% side_effects,barebones
+def foo(a, b, T: type, N: Literal[int]):
+    print(a, b, N, T.__class__.__name__)
+def side(x):
+    print('side', x)
+    return x
+def side_T(T: type) -> type:
+    print('side_T', T.__class__.__name__)
+    return List[T]
+def side_N(N: Literal[int]) -> Literal[int]:
+    print('side_N', N)
+    return N*N
 
+foo(a=side('a'), b=side('b'), T=int, N=0)
+#: side a
+#: side b
+#: a b 0 int
+foo(b=side('b'), a=side('a'), T=side_T(int), N=0)
+#: side b
+#: side a
+#: side_T int
+#: a b 0 List[int]
+foo(b=side('b'), T=side_T(float), a=side('a'), N=side_N(5))
+#: side b
+#: side_T float
+#: side a
+#: side_N 5
+#: a b 25 List[float]
+foo(N=side_N(3), T=side_T(str), b=side('b'), a=side('a'))
+#: side_N 3
+#: side_T str
+#: side b
+#: side a
+#: a b 9 List[str]
+
+def foo(a, b, *args, T: type, N: Literal[int], **kwargs):
+    print(a, b, args, kwargs, T, N)
+
+foo(side('a'), side('b'), side('3'), side('4'), T=side_T(int), N=side_N(5))
+#: side a
+#: side b
+#: side 3
+#: side 4
+#: side_T int
+#: side_N 5
+#: a b ('3', '4') () <class 'List[int]'> 25
+
+foo(z=side('z'), T=side_T(int), k=side('k'), b=side('b'), a=side('a'), N=side_N(5))
+#: side z
+#: side_T int
+#: side k
+#: side b
+#: side a
+#: side_N 5
+#: a b () (k: 'k', z: 'z') <class 'List[int]'> 25
+
+t = List[side_T(int)]
+#: side_T int
+print(t, t().__class__.__name__)
+#: <class 'List[List[int]]'> List[List[int]]
+
+a: Literal[int] = - side_N(5)
+print(Int[a])
+#: side_N 5
+#: <class 'Int[-25]'>
+a: Literal[int] = side_N(3) + 50 - side_N(5)
+# Important: should be again side_N(5) to test caching of literal fns
+print(Int[a])
+#: side_N 3
+#: side_N 5
+#: <class 'Int[34]'>

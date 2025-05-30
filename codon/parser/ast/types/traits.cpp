@@ -24,6 +24,7 @@ CallableTrait::CallableTrait(Cache *cache, std::vector<TypePtr> args)
     : Trait(cache), args(std::move(args)) {}
 
 int CallableTrait::unify(Type *typ, Unification *us) {
+  /// TODO: one day merge with the CallExpr's logic...
   if (auto tr = typ->getClass()) {
     TypePtr ft = nullptr;
     if (typ->is("TypeWrap")) {
@@ -86,7 +87,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
       size_t preStar = 0;
       for (size_t fi = 0; fi < trAst->size(); fi++) {
         if (fi != kwStar && known[fi] != ClassType::PartialFlag::Included &&
-            (*trAst)[fi].isValue()) {
+            (*trAst)[fi].isValue() && !startswith((*trAst)[fi].getName(), "$")) {
           total++;
           if (fi < star)
             preStar++;
@@ -105,7 +106,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     }
     size_t i = 0;
     for (size_t fi = 0; i < inArgs->generics.size() && fi < star; fi++) {
-      if (known[fi] != ClassType::PartialFlag::Included && (*trAst)[fi].isValue()) {
+      if (known[fi] != ClassType::PartialFlag::Included && (*trAst)[fi].isValue() &&
+          !startswith((*trAst)[fi].getName(), "$")) {
         if (inArgs->generics[i++].type->unify(trInArgs->generics[fi].type.get(), us) ==
             -1)
           return -1;

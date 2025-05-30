@@ -109,7 +109,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             cache->N<ast::StringExpr>(mode)));
       }
     auto tv = ast::TypecheckVisitor(sctx, preamble);
-    if (auto err = ast::ScopingVisitor::apply(sctx->cache, node))
+    if (auto err = ast::ScopingVisitor::apply(sctx->cache, node, &sctx->globalShadows))
       throw exc::ParserException(std::move(err));
     node = tv.transform(node);
 

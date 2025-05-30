@@ -389,7 +389,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   // Internal functions have no AST that can be realized
   bool hasAst = ast->getSuite() && !ast->hasAttribute(Attr::Internal);
   // Add function arguments
-  if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
+  if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings)) {
     for (auto &[c, t] : b->captures) {
       if (t == BindingsAttribute::CaptureType::Global) {
         auto cp = ctx->find(c);
@@ -399,6 +399,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
           E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
       }
     }
+  }
   for (size_t i = 0, j = 0, gi = 0; hasAst && i < ast->size(); i++) {
     auto [_, varName] = (*ast)[i].getNameWithStars();
     auto un = getUnmangledName(varName);
