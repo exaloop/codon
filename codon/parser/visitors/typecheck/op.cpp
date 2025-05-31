@@ -362,7 +362,6 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   `foo[idx]` -> `foo.__getitem__(idx)`
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
-  std::string staticType;
   if (match(expr, M<IndexExpr>(M<IdExpr>(MOr("Literal", "Static")),
                                M<IdExpr>(MOr("int", "str", "bool"))))) {
     // Special case: static types.
@@ -388,6 +387,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   } else {
     items.push_back(expr->getIndex());
   }
+  auto origIndex = clone(expr->getIndex());
   for (auto &i : items) {
     if (cast<ListExpr>(i) && isTypeExpr(expr->getExpr())) {
       // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
@@ -409,8 +409,9 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
 
   // Case: static tuple access
+  // Note: needs untransformed origIndex to parse statics nicely
   auto [isStaticTuple, tupleExpr] =
-      transformStaticTupleIndex(cls, expr->getExpr(), expr->getIndex());
+      transformStaticTupleIndex(cls, expr->getExpr(), origIndex);
   if (isStaticTuple) {
     if (tupleExpr)
       resultExpr = tupleExpr;
@@ -977,11 +978,8 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
     if (!e)
       return true;
 
-    // Some statics have been transformed (-5 is 5.__neg__())
-    // so clean_clone will remove its staticness... hence origExpr here
-    auto ore = e->getOrigExpr() ? e->getOrigExpr() : e;
-    auto f = transform(clean_clone(ore));
-    if (auto s = f->getType()->getIntStatic()) {
+    auto ore = transform(clone(e));
+    if (auto s = ore->getType()->getIntStatic()) {
       *o = s->value;
       return true;
     }
@@ -997,7 +995,7 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
     if (i < 0 || i >= stop)
       E(Error::TUPLE_RANGE_BOUNDS, index, stop - 1, i);
     start = i;
-  } else if (auto slice = cast<SliceExpr>(index->getOrigExpr())) {
+  } else if (auto slice = cast<SliceExpr>(index)) {
     // Case: `tuple[int:int:int]`
     if (!getInt(&start, slice->getStart()) || !getInt(&stop, slice->getStop()) ||
         !getInt(&step, slice->getStep()))

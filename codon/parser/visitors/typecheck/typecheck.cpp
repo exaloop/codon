@@ -210,7 +210,7 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
         if (!v.resultExpr->hasAttribute(*it))
           v.resultExpr->setAttribute(*it, attr->clone());
       }
-      v.resultExpr->setOrigExpr(expr);
+      v.resultExpr->setOrigExpr(expr->getOrigExpr() ? expr->getOrigExpr() : expr);
       expr = v.resultExpr;
       if (!expr->getType())
         expr->setType(instantiateUnbound());

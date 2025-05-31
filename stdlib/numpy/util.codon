@@ -1811,20 +1811,6 @@ def hypot(x, y):
     elif isinstance(x, float16) and isinstance(y, float16):
         return _fp16_op_via_fp32_2(x, y, hypot32)
 
-def atan2_64(x: float, y: float):
-    return _C.atan2(x, y)
-
-def atan2_32(x: float32, y: float32):
-    return _C.atan2f(x, y)
-
-def atan2(x, y):
-    if isinstance(x, float) and isinstance(y, float):
-        return atan2_64(x, y)
-    elif isinstance(x, float32) and isinstance(y, float32):
-        return atan2_32(x, y)
-    elif isinstance(x, float16) and isinstance(y, float16):
-        return _fp16_op_via_fp32_2(x, y, atan2_32)
-
 def modf64(x: float):
     i = float()
     a = _C.modf(x, __ptr__(i))
