@@ -376,7 +376,7 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
 
   llvm::TargetLibraryInfoImpl tlii(llvm::Triple(M->getTargetTriple()));
   pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-  if (!machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_ObjectFile,
+  if (machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_ObjectFile,
                                     /*DisableVerify=*/true, mmiwp))
     seqassertn(false, "could not add passes");
   const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
