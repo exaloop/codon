@@ -105,7 +105,8 @@ void addNativeLLVMPasses(llvm::PassBuilder *pb) {
   std::string features = target->getFeatures(triple);
 
   pb->registerPipelineEarlySimplificationEPCallback(
-      [cpu, features](llvm::ModulePassManager &pm, llvm::OptimizationLevel opt) {
+      [cpu, features](llvm::ModulePassManager &pm, llvm::OptimizationLevel opt,
+                      llvm::ThinOrFullLTOPhase lto) {
         pm.addPass(
             llvm::createModuleToFunctionPassAdaptor(ArchNativePass(cpu, features)));
       });

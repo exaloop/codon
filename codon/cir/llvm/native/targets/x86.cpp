@@ -74,11 +74,8 @@ std::string X86::getCPU(const llvm::Triple &triple) const {
 
 std::string X86::getFeatures(const llvm::Triple &triple) const {
   std::vector<std::string> features;
-  llvm::StringMap<bool> hostFeatures;
-  if (llvm::sys::getHostCPUFeatures(hostFeatures)) {
-    for (auto &f : hostFeatures) {
-      features.push_back((f.second ? "+" : "-") + f.first().str());
-    }
+  for (auto &f : llvm::sys::getHostCPUFeatures()) {
+    features.push_back((f.second ? "+" : "-") + f.first().str());
   }
 
   if (triple.getArchName() == "x86_64h") {

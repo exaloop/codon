@@ -23,6 +23,7 @@ std::string Aarch64::getCPU(const llvm::Triple &triple) const {
 }
 
 std::string Aarch64::getFeatures(const llvm::Triple &triple) const {
+  llvm::AArch64::ExtensionSet extensions;
   std::vector<llvm::StringRef> features;
   // Enable NEON by default.
   features.push_back("+neon");
@@ -32,16 +33,18 @@ std::string Aarch64::getFeatures(const llvm::Triple &triple) const {
   if (!cpuInfo)
     return "";
 
-  if (cpu == "cyclone" || llvm::StringRef(cpu).startswith("apple")) {
+  extensions.addCPUDefaults(*cpuInfo);
+
+  if (cpu == "cyclone" || llvm::StringRef(cpu).starts_with("apple")) {
     features.push_back("+zcm");
     features.push_back("+zcz");
   }
 
   auto *archInfo = &cpuInfo->Arch;
   features.push_back(archInfo->ArchFeature);
-  uint64_t extension = cpuInfo->getImpliedExtensions();
-  if (!llvm::AArch64::getExtensionFeatures(extension, features))
-    return "";
+  // uint64_t extension = cpuInfo->getImpliedExtensions();
+  // if (!llvm::AArch64::getExtensionFeatures(extension, features))
+  //   return "";
 
   // Handle (arch-dependent) fp16fml/fullfp16 relationship.
   // FIXME: this fp16fml option handling will be reimplemented after the
