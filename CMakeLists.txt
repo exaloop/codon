@@ -234,6 +234,7 @@ set(CODON_HPPFILES
     codon/cir/llvm/llvm.h
     codon/cir/llvm/native/native.h
     codon/cir/llvm/native/targets/aarch64.h
+    codon/cir/llvm/native/targets/arm.h
     codon/cir/llvm/native/targets/target.h
     codon/cir/llvm/native/targets/x86.h
     codon/cir/llvm/optimize.h
@@ -349,6 +350,7 @@ set(CODON_CPPFILES
     codon/cir/llvm/llvisitor.cpp
     codon/cir/llvm/native/native.cpp
     codon/cir/llvm/native/targets/aarch64.cpp
+    codon/cir/llvm/native/targets/arm.cpp
     codon/cir/llvm/native/targets/x86.cpp
     codon/cir/llvm/optimize.cpp
     codon/cir/module.cpp
