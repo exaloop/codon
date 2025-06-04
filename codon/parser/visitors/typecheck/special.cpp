@@ -663,6 +663,13 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     if (!cond)
       return transform(N<BoolExpr>(false));
     return transform(cond);
+  } else if (typ->is("NamedTuple")) {
+    if (!typ->canRealize())
+      return nullptr;
+    auto id = getIntLiteral(typ);
+    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
+    const auto &names = ctx->cache->generatedTupleNames[id];
+    return transform(N<BoolExpr>(in(names, member)));
   }
 
   bool exists = !findMethod(typ->getClass(), member).empty() ||

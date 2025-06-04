@@ -1236,7 +1236,7 @@ int64_t TypecheckVisitor::getIntLiteral(types::Type *t, size_t pos) {
   if (t->getIntStatic())
     return t->getIntStatic()->value;
   auto ct = extractClassGeneric(t, pos);
-  seqassert(ct->canRealize() && ct->getIntStatic(), "not a string literal");
+  seqassert(ct->canRealize() && ct->getIntStatic(), "not a int literal");
   return ct->getIntStatic()->value;
 }
 

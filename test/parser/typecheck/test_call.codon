@@ -367,6 +367,12 @@ print hasattr([1, 2], "__getitem__", str) #: False
 print hasattr([1, 2], "__getitem__", idx=int) #: True
 print hasattr([1, 2], "__getitem__", idx=str) #: False
 
+def kw(**kwargs):
+    print hasattr(kwargs, "yes"), hasattr(kwargs, "no")
+kw(yes=1)  #: True False
+kw()  #: False False
+kw(no=1)  #: False True
+kw(no=1, yes=1)  #: True True
 
 #%% isinstance_inheritance,barebones
 class AX[T]:

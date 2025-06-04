@@ -36,7 +36,7 @@
 #define FN_SETTER_SUFFIX ":set_"
 #define FN_UNWRAP "std.internal.types.optional.unwrap.0:0"
 
-#define VAR_ARGV "__argv__"
+#define VAR_ARGV "__argv__.0"
 #define VAR_CLASS_TOPLEVEL ":toplevel"
 #define VAR_USED_SUFFIX ":used"
 

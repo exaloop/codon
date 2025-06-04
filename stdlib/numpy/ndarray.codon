@@ -1134,7 +1134,7 @@ class ndarray[dtype, ndim: Literal[int]]:
     def __copy__(self):
         return self.copy()
 
-    def _should_transpose(self, other = None):
+    def _should_transpose(self, other = None) -> bool:
         if other is None:
             if self.ndim > 1:
                 s1 = self.strides[0]

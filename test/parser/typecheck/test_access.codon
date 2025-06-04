@@ -298,6 +298,23 @@ try:
 except NameError:
     print('error')
 
+#%% new_scoping_loops,barebones
+go = True
+while go:
+    for idx in range(10):
+        if idx == 5:
+            go = False
+            break
+print("hi")  #: hi
+
+l = 0
+i = 0
+fn = lambda x: x+1
+while l < 10:
+    l = fn(i)
+    i += 1
+print("hi")  #: hi
+
 #%% dot_access_error_NOPY,barebones
 class Foo:
     x: int = 1
