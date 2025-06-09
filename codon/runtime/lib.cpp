@@ -33,6 +33,8 @@
  * General
  */
 
+ #define USE_STANDARD_MALLOC 0
+
 // OpenMP patch with GC callbacks
 typedef int (*gc_setup_callback)(GC_stack_base *);
 typedef void (*gc_roots_callback)(void *, void *);
@@ -50,11 +52,14 @@ void seq_nvptx_init();
 int seq_flags;
 
 SEQ_FUNC void seq_init(int flags) {
+#if !USE_STANDARD_MALLOC
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
+#endif
+
   seq_exc_init(flags);
 #ifdef CODON_GPU
   seq_nvptx_init();
@@ -151,7 +156,6 @@ SEQ_FUNC char **seq_env() { return environ; }
 /*
  * GC
  */
-#define USE_STANDARD_MALLOC 0
 
 SEQ_FUNC void *seq_alloc(size_t n) {
 #if USE_STANDARD_MALLOC
