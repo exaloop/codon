@@ -14,12 +14,33 @@
 #include "codon/compiler/engine.h"
 #include "codon/compiler/error.h"
 #include "codon/parser/cache.h"
+#include "codon/parser/visitors/simplify/simplify.h"
+#include "codon/parser/visitors/translate/translate.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 #include "codon/runtime/lib.h"
 
 #include "codon/compiler/jit_extern.h"
 
 namespace codon {
 namespace jit {
+
+class JITState {
+  ast::Cache *cache;
+  bool forgetful;
+
+  ast::Cache bCache;
+  ast::SimplifyContext bSimplify;
+  ast::SimplifyContext stdlibSimplify;
+  ast::TypeContext bType;
+  ast::TranslateContext bTranslate;
+
+public:
+  explicit JITState(ast::Cache *cache, bool forgetful = false);
+
+  void undo();
+  void undoUnusedIR();
+  void cleanUpRealizations();
+};
 
 class JIT {
 public:

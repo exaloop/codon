@@ -94,69 +94,57 @@ llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt)
   return llvm::Error::success();
 }
 
-class Reset {
-  ast::Cache *cache;
-  bool forgetful;
+JITState::JITState(ast::Cache *cache, bool forgetful)
+    : cache(cache), forgetful(forgetful), bCache(*cache),
+      bSimplify(*(cache->imports[MAIN_IMPORT].ctx)),
+      stdlibSimplify(*(cache->imports[STDLIB_IMPORT].ctx)), bType(*(cache->typeCtx)),
+      bTranslate(*(cache->codegenCtx)) {}
 
-  ast::Cache bCache;
-  ast::SimplifyContext bSimplify;
-  ast::SimplifyContext stdlibSimplify;
-  ast::TypeContext bType;
-  ast::TranslateContext bTranslate;
+void JITState::undo() {
+  if (!forgetful)
+    undoUnusedIR();
 
-public:
-  explicit Reset(ast::Cache *cache, bool forgetful = false)
-      : cache(cache), forgetful(forgetful), bCache(*cache),
-        bSimplify(*(cache->imports[MAIN_IMPORT].ctx)),
-        stdlibSimplify(*(cache->imports[STDLIB_IMPORT].ctx)), bType(*(cache->typeCtx)),
-        bTranslate(*(cache->codegenCtx)) {}
+  *cache = bCache;
+  *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
+  *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
+  *(cache->typeCtx) = bType;
+  *(cache->codegenCtx) = bTranslate;
 
-  void undo() {
-    if (!forgetful)
-      undoUnusedIR();
+  if (forgetful)
+    cleanUpRealizations();
+}
 
-    *cache = bCache;
-    *(cache->imports[MAIN_IMPORT].ctx) = bSimplify;
-    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibSimplify;
-    *(cache->typeCtx) = bType;
-    *(cache->codegenCtx) = bTranslate;
-
-    if (forgetful)
-      cleanUpRealizations();
-  }
-
-  void undoUnusedIR() {
-    // Clean-up unused IR nodes made before Typechecker raised an error
-    for (auto &f : cache->functions) {
-      for (auto &r : f.second.realizations) {
-        if (!(in(bCache.functions, f.first) &&
-              in(bCache.functions[f.first].realizations, r.first)) &&
-            r.second->ir) {
-          cache->module->remove(r.second->ir);
-        }
+void JITState::undoUnusedIR() {
+  // Clean-up unused IR nodes made before Typechecker raised an error
+  for (auto &f : cache->functions) {
+    for (auto &r : f.second.realizations) {
+      if (!(in(bCache.functions, f.first) &&
+            in(bCache.functions[f.first].realizations, r.first)) &&
+          r.second->ir) {
+        cache->module->remove(r.second->ir);
       }
     }
   }
+}
 
-  void cleanUpRealizations() {
-    // Clean-up IR nodes after single JIT input
-    for (auto &f : cache->functions) {
-      if (f.first == "__internal__.class_populate_vtables:0")
-        continue;
-      f.second.realizations.clear();
-    }
-    for (auto &c : cache->classes) {
-      c.second.realizations.clear();
-    }
+void JITState::cleanUpRealizations() {
+  // Clean-up IR nodes after single JIT input
+  for (auto &f : cache->functions) {
+    if (f.first == "__internal__.class_populate_vtables:0")
+      continue;
+    f.second.realizations.clear();
   }
-};
+  for (auto &c : cache->classes) {
+    c.second.realizations.clear();
+  }
+}
 
 llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
                                         const std::string &file, int line) {
   auto *cache = compiler->getCache();
   auto preamble = std::make_shared<std::vector<ast::StmtPtr>>();
 
-  Reset reset(cache, forgetful);
+  JITState state(cache, forgetful);
 
   try {
     ast::StmtPtr node = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
@@ -206,7 +194,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
       }
     }
 
-    reset.undo();
+    state.undo();
 
     if (exc.messages.empty())
       return llvm::make_error<error::ParserErrorInfo>(messages);
@@ -249,9 +237,9 @@ llvm::Expected<std::string> JIT::execute(const std::string &code,
   if (debug)
     fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
 
-  std::unique_ptr<Reset> reset = nullptr;
+  std::unique_ptr<JITState> state = nullptr;
   if (forgetful)
-    reset = std::make_unique<Reset>(compiler->getCache(), forgetful);
+    state = std::make_unique<JITState>(compiler->getCache(), forgetful);
 
   auto result = compile(code, file, line);
   if (auto err = result.takeError())
@@ -260,8 +248,8 @@ llvm::Expected<std::string> JIT::execute(const std::string &code,
     return std::move(err);
   auto r = run(result.get());
 
-  if (reset)
-    reset->undo();
+  if (state)
+    state->undo();
 
   return r;
 }
