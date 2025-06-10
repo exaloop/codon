@@ -88,19 +88,6 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     LOG_TIME("[T] parse = {:.1f}", totalPeg);
     LOG_TIME("[T] typecheck = {:.1f}", t2.elapsed() - totalPeg);
 
-    // std::unordered_map<std::string, double> wxt = cache->_timings;
-    // std::vector<std::pair<std::string, double>> q(wxt.begin(), wxt.end());
-    // sort(q.begin(), q.end(),
-    //      [](const auto &a, const auto &b) { return b.second < a.second; });
-    // double s = 0;
-    // int _x = 0;
-    // for (auto &[k, v] : q) {
-    //   s += v;
-    //   LOG_TIME("  [->] {:60} = {:10.3f} / {:10.3f}", k, v, s);
-    //   if (_x++ > 10)
-    //     break;
-    // }
-
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_typecheck.sexp", "w");
       fmt::print(fo, "{}\n", typechecked->toString(0));

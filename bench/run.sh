@@ -74,9 +74,6 @@ bench() {
     echo "      T: ${duration}"
 }
 
-bench ../test/numpy/test_fft.codon
-exit 0
-
 bench ../test/stdlib/bisect_test.codon
 bench ../test/stdlib/cmath_test.codon
 bench ../test/stdlib/datetime_test.codon

@@ -52,10 +52,6 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
     if (auto f = t->getAstType()->getFunc()) {
       auto *irType = cast<types::FuncType>(t);
       std::vector<char> mask(std::distance(irType->begin(), irType->end()), 0);
-      // ast::TypecheckVisitor tv(cache->typeCtx);
-      // auto Expr * = tv.generatePartialCall(mask, f.get());
-      // tv.transform(Expr *);
-      // ret.push_back(Expr *->type);
       ret.push_back(t->getAstType());
     } else {
       ret.push_back(t->getAstType());

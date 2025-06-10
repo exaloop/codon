@@ -32,7 +32,7 @@ class Generator:
 
     @overload
     def __new__() -> Generator[T]:
-        raise ValueError("invalid generator")
+        compile_error("invalid generator")
 
     @pure
     @llvm

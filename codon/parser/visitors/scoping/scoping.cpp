@@ -182,9 +182,9 @@ void ScopingVisitor::visit(StringExpr *expr) {
 }
 
 /// Split a Python-like f-string into a list:
-///   `f"foo {x+1} bar"` -> `["foo ", str(x+1), " bar"]
+///   `f"foo {x+1} bar"` -> `("foo ", str(x+1), " bar")
 /// Supports "{x=}" specifier (that prints the raw expression as well):
-///   `f"{x+1=}"` -> `["x+1=", str(x+1)]`
+///   `f"{x+1=}"` -> `("x+1=", str(x+1))`
 std::vector<StringExpr::String>
 ScopingVisitor::unpackFString(const std::string &value) {
   // Strings to be concatenated

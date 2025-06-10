@@ -29,13 +29,10 @@ public:
 struct IntStaticType : public StaticType {
   int64_t value;
 
-public:
   explicit IntStaticType(Cache *cache, int64_t);
 
-public:
   int unify(Type *typ, Unification *undo) override;
 
-public:
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
 
@@ -45,13 +42,10 @@ public:
 struct StrStaticType : public StaticType {
   std::string value;
 
-public:
   explicit StrStaticType(Cache *cache, std::string);
 
-public:
   int unify(Type *typ, Unification *undo) override;
 
-public:
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
 
@@ -61,13 +55,10 @@ public:
 struct BoolStaticType : public StaticType {
   bool value;
 
-public:
   explicit BoolStaticType(Cache *cache, bool);
 
-public:
   int unify(Type *typ, Unification *undo) override;
 
-public:
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
 

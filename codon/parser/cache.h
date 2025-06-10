@@ -352,7 +352,6 @@ public:
     return t;
   }
 
-public:
   std::unordered_map<std::string, double> _timings;
   struct CTimer {
     Cache *c;

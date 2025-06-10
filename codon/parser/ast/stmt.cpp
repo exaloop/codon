@@ -30,10 +30,6 @@ Stmt::Stmt(const Stmt &stmt, bool clean) : AcceptorExtend(stmt), done(stmt.done)
     done = false;
 }
 std::string Stmt::wrapStmt(const std::string &s) const {
-  // if (auto a = ir::Node::getAttribute<ir::IntValueAttribute>(Attr::ExprTime))
-  // return format("(${}...{}",
-  //   a->value,
-  //   s.substr(1));
   return s;
 }
 

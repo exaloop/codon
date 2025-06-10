@@ -117,13 +117,11 @@ enum Error {
 };
 
 class ParserErrorInfo : public llvm::ErrorInfo<ParserErrorInfo> {
-private:
   ParserErrors errors;
 
 public:
   static char ID;
 
-public:
   explicit ParserErrorInfo(const ErrorMessage &msg) : errors(msg) {}
   explicit ParserErrorInfo(const std::vector<ErrorMessage> &msgs) : errors(msgs) {}
   explicit ParserErrorInfo(const ParserErrors &errors) : errors(errors) {}

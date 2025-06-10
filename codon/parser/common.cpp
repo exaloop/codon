@@ -108,8 +108,6 @@ int findStar(const std::string &s) {
       return i + 1;
     if (!isspace(s[i]))
       return i;
-    // if (start && (s[i] == '\n' || s[i] == ' ' || s[i] == ')'))
-    // break;
   }
   return i;
 }
@@ -260,11 +258,6 @@ ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plug
     ext = ".py";
   seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
              "bad path substitution: {}, {}", s, root);
-  // LOG("{} -> {} {}", s, root, ext);
-  // Find toplevel enclosing import!
-  // for (auto &x: ctx->cache->imports) {
-  //   if (substr(x.module, )
-  // }
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::replace(module.begin(), module.end(), '/', '.');
   return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
