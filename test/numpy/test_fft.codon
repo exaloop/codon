@@ -659,16 +659,14 @@ for order in ('F', 'C'):
 test_irfft_with_n_1_regression()
 test_irfft_with_n_large_regression()
 
-for fft in (np.fft.fft, np.fft.ifft, np.fft.rfft, np.fft.irfft):
+for ffti in (np.fft.fft, np.fft.ifft, np.fft.rfft, np.fft.irfft):
     for data in (np.array([False, True, False]),
                  np.arange(10, dtype=np.uint8),
                  np.arange(5, dtype=np.int16)):
-        test_fft_with_integer_or_bool_input(data, fft)
+        test_fft_with_integer_or_bool_input(data, ffti)
 
 
 # Helper Tests
-
-import numpy.fft as fft
 
 @test
 def TestFFTShift_test_definition():

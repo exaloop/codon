@@ -9,7 +9,7 @@ print(d, d.__class__.__name__)
 
 s = set()
 print(s, s.__class__.__name__)
-#: {} Set[NoneType]
+#: set() Set[NoneType]
 
 #%% star_err,barebones
 a = (1, 2, 3)

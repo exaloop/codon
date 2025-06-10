@@ -154,9 +154,9 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
 
   if (!var->hasAttribute(Attr::ExprDominated) &&
       !var->hasAttribute(Attr::ExprDominatedUsed)) {
-    auto val = ctx->addVar(var->getValue(), ctx->generateCanonicalName(var->getValue()),
-                           instantiateUnbound());
-    val->time = getTime();
+    auto val = ctx->addVar(getUnmangledName(var->getValue()),
+                           ctx->generateCanonicalName(var->getValue()),
+                           instantiateUnbound(), getTime());
   } else if (var->hasAttribute(Attr::ExprDominatedUsed)) {
     var->eraseAttribute(Attr::ExprDominatedUsed);
     var->setAttribute(Attr::ExprDominated);

@@ -205,7 +205,8 @@ public:
   void add(const std::string &name, const Item &var) override;
   /// Convenience method for adding an object to the context.
   Item addVar(const std::string &name, const std::string &canonicalName,
-              const types::TypePtr &type, const SrcInfo &srcInfo = SrcInfo());
+              const types::TypePtr &type, int64_t time = 0,
+              const SrcInfo &srcInfo = SrcInfo());
   Item addType(const std::string &name, const std::string &canonicalName,
                const types::TypePtr &type, const SrcInfo &srcInfo = SrcInfo());
   Item addFunc(const std::string &name, const std::string &canonicalName,

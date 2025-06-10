@@ -50,6 +50,8 @@ class Set:
             self.items.append(what)
 
     def __repr__(self) -> str:
+        if len(self.items) == 0:
+            return "set()"
         s = self.items.__repr__()
         s.ptr[0] = "{".ptr[0]
         s.ptr[s.len - 1] = "}".ptr[0]

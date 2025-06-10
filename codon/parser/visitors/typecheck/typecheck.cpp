@@ -1055,7 +1055,9 @@ std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root)
 }
 
 std::string TypecheckVisitor::getUnmangledName(const std::string &s) const {
-  return ctx->cache->rev(s);
+  if (in(ctx->cache->reverseIdentifierLookup, s))
+    return ctx->cache->rev(s);
+  return s;
 }
 
 Cache::Class *TypecheckVisitor::getClass(const std::string &t) const {

@@ -46,13 +46,14 @@ void TypeContext::removeFromMap(const std::string &name) {
 
 TypeContext::Item TypeContext::addVar(const std::string &name,
                                       const std::string &canonicalName,
-                                      const types::TypePtr &type,
+                                      const types::TypePtr &type, int64_t time,
                                       const SrcInfo &srcInfo) {
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   // seqassert(type->getLink(), "bad var");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
                                            type, getScope());
   t->setSrcInfo(srcInfo);
+  t->time = time;
   add(name, t);
   addAlwaysVisible(t);
   return t;
