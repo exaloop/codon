@@ -46,7 +46,7 @@
 #define MAX_REALIZATION_DEPTH 200
 #define MAX_STATIC_ITER 1024
 
-#define CYTHON_PYWRAP "std.internal.python._PyWrap"
+#define CYTHON_PYWRAP "std.internal.python._PyWrap.0"
 #define CYTHON_ITER "_PyWrap.IterWrap"
 
 namespace codon::ast {

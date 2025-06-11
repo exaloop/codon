@@ -31,7 +31,7 @@ compile() {
     extra=$3
     echo -n "====> C: ${name} ${path} "
     start=$(date +%s.%N)
-    CODON_DEBUG=lt /usr/bin/time -f 'time=%e mem=%M exit=%x' \
+    CODON_DEBUG=lt /usr/bin/time -o run/log/${name}.time.txt -f 'time=%e mem=%M exit=%x' \
         codon build -release $extra $path -o run/exe/${name}.exe \
         >run/log/${name}.compile.txt 2>&1
     duration=$(echo "$(date +%s.%N) $start" | awk '{printf "%.1f", $1-$2}')
@@ -43,7 +43,7 @@ run() {
     args="${@:2}"
     echo -n "      R: $name $args "
     start=$(date +%s.%N)
-    eval "/usr/bin/time -f 'time=%e mem=%M exit=%x' run/exe/${name}.exe $args >run/log/${name}.run.txt 2>&1"
+    eval "/usr/bin/time -o run/log/${name}.time.txt -f 'time=%e mem=%M exit=%x' run/exe/${name}.exe $args >run/log/${name}.run.txt 2>&1"
     duration=$(echo "$(date +%s.%N) $start" | awk '{printf "%.1f", $1-$2}')
     echo "[$? run/log/${name}.run.txt ${duration}]"
 }

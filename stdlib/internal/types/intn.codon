@@ -158,6 +158,7 @@ class Int:
     def _mod(self, other: Int[N]) -> Int[N]:
         %0 = srem i{=N} %self, %other
         ret i{=N} %0
+
     def __mod__(self, other: Int[N]) -> Int[N]:
         if N > 128:
             compile_error("modulus is not supported on Int[N] when N > 128")
