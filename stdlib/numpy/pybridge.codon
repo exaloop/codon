@@ -281,5 +281,5 @@ class ndarray:
                     k += 1
                 return ndarray(shape, data)
 
-    def __from_py__(a: cobj):
+    def __from_py__(a: cobj) -> ndarray[dtype, ndim]:
         return ndarray[dtype, ndim]._from_py(a, copy=False)

@@ -192,9 +192,6 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
   if (!expr)
     return nullptr;
 
-  // auto k = typeid(*expr).name();
-  // Cache::CTimer t(ctx->cache, k);
-
   if (!expr->getType())
     expr->setType(instantiateUnbound());
 
@@ -274,12 +271,8 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   if (!stmt || stmt->isDone())
     return stmt;
 
-  // auto _t = std::chrono::high_resolution_clock::now();
   TypecheckVisitor v(ctx, preamble);
   v.setSrcInfo(stmt->getSrcInfo());
-  // if (!stmt->toString(-1).empty())
-  //   LOG_TYPECHECK("> [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
-  //                 ctx->getBase()->iteration, stmt->toString(-1));
   ctx->pushNode(stmt);
 
   int64_t time = 0;
@@ -304,15 +297,6 @@ Stmt *TypecheckVisitor::transform(Stmt *stmt) {
   }
   if (stmt->isDone())
     ctx->changedNodes++;
-  // if (!stmt->toString(-1).empty())
-  //   LOG_TYPECHECK("< [{}] [{}:{}] {}", getSrcInfo(), ctx->getBaseName(),
-  //                 ctx->getBase()->iteration, stmt->toString(-1));
-  // if (stmt && !cast<SuiteStmt>(stmt))
-  //   LOG("{} | {}: {} | {}",
-  //       int64_t(std::chrono::duration_cast<std::chrono::microseconds>(
-  //                   std::chrono::high_resolution_clock::now() - _t)
-  //                   .count()),
-  //       stmt->getSrcInfo(), ctx->getBaseName(), split(stmt->toString(0), '\n')[0]);
   return stmt;
 }
 

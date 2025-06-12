@@ -1,1 +1,1103 @@
-psi24-numpy/npbench/benchmarks/npbench_codon.codon
+# Copyright 2021 ETH Zurich and the NPBench authors. All rights reserved.
+
+__CODON_RET__: Literal[bool] = True
+
+import numpy as np
+import numpy.pybridge
+
+def adi(TSTEPS: int, N: int, u: np.ndarray[float, 2]):
+    v = np.empty(u.shape, dtype=u.dtype)
+    p = np.empty(u.shape, dtype=u.dtype)
+    q = np.empty(u.shape, dtype=u.dtype)
+
+    DX = 1.0 / N
+    DY = 1.0 / N
+    DT = 1.0 / TSTEPS
+    B1 = 2.0
+    B2 = 1.0
+    mul1 = B1 * DT / (DX * DX)
+    mul2 = B2 * DT / (DY * DY)
+
+    a = -mul1 / 2.0
+    b = 1.0 + mul2
+    c = a
+    d = -mul2 / 2.0
+    e = 1.0 + mul2
+    f = d
+
+    for t in range(1, TSTEPS + 1):
+        v[0, 1:N - 1] = 1.0
+        p[1:N - 1, 0] = 0.0
+        q[1:N - 1, 0] = v[0, 1:N - 1]
+        for j in range(1, N - 1):
+            p[1:N - 1, j] = -c / (a * p[1:N - 1, j - 1] + b)
+            q[1:N - 1,
+              j] = (-d *u[j, 0:N - 2] +
+                    (1.0 + 2.0 * d) *u[j, 1:N - 1] - f *u[j, 2:N] -
+                    a * q[1:N - 1, j - 1]) / (a * p[1:N - 1, j - 1] + b)
+        v[N - 1, 1:N - 1] = 1.0
+        for j in range(N - 2, 0, -1):
+            v[j, 1:N - 1] = p[1:N - 1, j] * v[j + 1, 1:N - 1] + q[1:N - 1, j]
+
+        u[1:N - 1, 0] = 1.0
+        p[1:N - 1, 0] = 0.0
+        q[1:N - 1, 0] = u[1:N - 1, 0]
+        for j in range(1, N - 1):
+            p[1:N - 1, j] = -f / (d * p[1:N - 1, j - 1] + e)
+            q[1:N - 1,
+              j] = (-a * v[0:N - 2, j] +
+                    (1.0 + 2.0 * a) * v[1:N - 1, j] - c * v[2:N, j] -
+                    d * q[1:N - 1, j - 1]) / (d * p[1:N - 1, j - 1] + e)
+        u[1:N - 1, N - 1] = 1.0
+        for j in range(N - 2, 0, -1):
+            u[1:N - 1, j] = p[1:N - 1, j] *u[1:N - 1, j + 1] + q[1:N - 1, j]
+
+def arc_distance(theta_1: np.ndarray[float, 1], phi_1: np.ndarray[float, 1], theta_2: np.ndarray[float, 1], phi_2: np.ndarray[float, 1]):
+    """
+    Calculates the pairwise arc distance between all points in vector a and b.
+    """
+    temp = np.sin((theta_2 - theta_1) /
+                  2)**2 + np.cos(theta_1) * np.cos(theta_2) * np.sin(
+                      (phi_2 - phi_1) / 2)**2
+    distance_matrix = 2 * (np.arctan2(np.sqrt(temp), np.sqrt(1 - temp)))
+    if __CODON_RET__: return distance_matrix
+
+def azimint_naive(data: np.ndarray[float, 1], radius: np.ndarray[float, 1], npt: int):
+    rmax = radius.max()
+    res = np.zeros(npt, dtype=np.float64)
+    for i in range(npt):
+        r1 = rmax * i / npt
+        r2 = rmax * (i + 1) / npt
+        mask_r12 = np.logical_and((r1 <= radius), (radius < r2))
+        values_r12 = data[mask_r12]
+        res[i] = values_r12.mean()
+    if __CODON_RET__: return res
+
+def azimint_hist(data: np.ndarray[float,1], radius: np.ndarray[float,1], npt: int):
+    histu = np.histogram(radius, npt)[0]
+    histw = np.histogram(radius, npt, weights=data)[0]
+    res = histw / histu
+    if __CODON_RET__: return res
+
+def atax(A: np.ndarray[float,2], x: np.ndarray[float,1]):
+    res = (A @ x) @ A
+    if __CODON_RET__: return res
+
+def bicg(A: np.ndarray[float,2], p: np.ndarray[float,1], r: np.ndarray[float,1]):
+    res = r @ A, A @ p
+    if __CODON_RET__: return res
+
+def cavity_flow(nx: int, ny: int, nt: int, nit: int, u: np.ndarray[float,2], v: np.ndarray[float,2], dt: float, dx: float, dy: float, p: np.ndarray[float,2], rho: float, nu: float):
+    def build_up_b(b, rho, dt, u, v, dx, dy):
+        b[1:-1,
+        1:-1] = (rho * (1 / dt * ((u[1:-1, 2:] - u[1:-1, 0:-2]) / (2 * dx) +
+                                    (v[2:, 1:-1] - v[0:-2, 1:-1]) / (2 * dy)) -
+                        ((u[1:-1, 2:] - u[1:-1, 0:-2]) / (2 * dx))**2 - 2 *
+                        ((u[2:, 1:-1] - u[0:-2, 1:-1]) / (2 * dy) *
+                        (v[1:-1, 2:] - v[1:-1, 0:-2]) / (2 * dx)) -
+                        ((v[2:, 1:-1] - v[0:-2, 1:-1]) / (2 * dy))**2))
+
+    def pressure_poisson(nit, p, dx, dy, b):
+        pn = np.empty_like(p)
+        pn = p.copy()
+
+        for q in range(nit):
+            pn = p.copy()
+            p[1:-1, 1:-1] = (((pn[1:-1, 2:] + pn[1:-1, 0:-2]) * dy**2 +
+                            (pn[2:, 1:-1] + pn[0:-2, 1:-1]) * dx**2) /
+                            (2 * (dx**2 + dy**2)) - dx**2 * dy**2 /
+                            (2 * (dx**2 + dy**2)) * b[1:-1, 1:-1])
+
+            p[:, -1] = p[:, -2]  # dp/dx = 0 at x = 2
+            p[0, :] = p[1, :]  # dp/dy = 0 at y = 0
+            p[:, 0] = p[:, 1]  # dp/dx = 0 at x = 0
+            p[-1, :] = 0  # p = 0 at y = 2
+
+    un = np.empty_like(u)
+    vn = np.empty_like(v)
+    b = np.zeros((ny, nx))
+
+    for n in range(nt):
+        un = u.copy()
+        vn = v.copy()
+
+        build_up_b(b, rho, dt, u, v, dx, dy)
+        pressure_poisson(nit, p, dx, dy, b)
+
+        u[1:-1,
+          1:-1] = (un[1:-1, 1:-1] - un[1:-1, 1:-1] * dt / dx *
+                   (un[1:-1, 1:-1] - un[1:-1, 0:-2]) -
+                   vn[1:-1, 1:-1] * dt / dy *
+                   (un[1:-1, 1:-1] - un[0:-2, 1:-1]) - dt / (2 * rho * dx) *
+                   (p[1:-1, 2:] - p[1:-1, 0:-2]) + nu *
+                   (dt / dx**2 *
+                    (un[1:-1, 2:] - 2 * un[1:-1, 1:-1] + un[1:-1, 0:-2]) +
+                    dt / dy**2 *
+                    (un[2:, 1:-1] - 2 * un[1:-1, 1:-1] + un[0:-2, 1:-1])))
+
+        v[1:-1,
+          1:-1] = (vn[1:-1, 1:-1] - un[1:-1, 1:-1] * dt / dx *
+                   (vn[1:-1, 1:-1] - vn[1:-1, 0:-2]) -
+                   vn[1:-1, 1:-1] * dt / dy *
+                   (vn[1:-1, 1:-1] - vn[0:-2, 1:-1]) - dt / (2 * rho * dy) *
+                   (p[2:, 1:-1] - p[0:-2, 1:-1]) + nu *
+                   (dt / dx**2 *
+                    (vn[1:-1, 2:] - 2 * vn[1:-1, 1:-1] + vn[1:-1, 0:-2]) +
+                    dt / dy**2 *
+                    (vn[2:, 1:-1] - 2 * vn[1:-1, 1:-1] + vn[0:-2, 1:-1])))
+
+        u[0, :] = 0
+        u[:, 0] = 0
+        u[:, -1] = 0
+        u[-1, :] = 1  # set velocity on cavity lid equal to 1
+        v[0, :] = 0
+        v[-1, :] = 0
+        v[:, 0] = 0
+        v[:, -1] = 0
+
+def channel_flow(nit: int, u: np.ndarray[float, 2], v: np.ndarray[float, 2],
+                 dt: float, dx:float, dy: float, p: np.ndarray[float, 2],
+                 rho: float, nu: float, F: float):
+    def build_up_b(rho, dt, dx, dy, u, v):
+        b = np.zeros_like(u)
+        b[1:-1,
+        1:-1] = (rho * (1 / dt * ((u[1:-1, 2:] - u[1:-1, 0:-2]) / (2 * dx) +
+                                    (v[2:, 1:-1] - v[0:-2, 1:-1]) / (2 * dy)) -
+                        ((u[1:-1, 2:] - u[1:-1, 0:-2]) / (2 * dx))**2 - 2 *
+                        ((u[2:, 1:-1] - u[0:-2, 1:-1]) / (2 * dy) *
+                        (v[1:-1, 2:] - v[1:-1, 0:-2]) / (2 * dx)) -
+                        ((v[2:, 1:-1] - v[0:-2, 1:-1]) / (2 * dy))**2))
+
+        # Periodic BC Pressure @ x = 2
+        b[1:-1, -1] = (rho * (1 / dt * ((u[1:-1, 0] - u[1:-1, -2]) / (2 * dx) +
+                                        (v[2:, -1] - v[0:-2, -1]) / (2 * dy)) -
+                            ((u[1:-1, 0] - u[1:-1, -2]) / (2 * dx))**2 - 2 *
+                            ((u[2:, -1] - u[0:-2, -1]) / (2 * dy) *
+                            (v[1:-1, 0] - v[1:-1, -2]) / (2 * dx)) -
+                            ((v[2:, -1] - v[0:-2, -1]) / (2 * dy))**2))
+
+        # Periodic BC Pressure @ x = 0
+        b[1:-1, 0] = (rho * (1 / dt * ((u[1:-1, 1] - u[1:-1, -1]) / (2 * dx) +
+                                    (v[2:, 0] - v[0:-2, 0]) / (2 * dy)) -
+                            ((u[1:-1, 1] - u[1:-1, -1]) / (2 * dx))**2 - 2 *
+                            ((u[2:, 0] - u[0:-2, 0]) / (2 * dy) *
+                            (v[1:-1, 1] - v[1:-1, -1]) /
+                            (2 * dx)) - ((v[2:, 0] - v[0:-2, 0]) / (2 * dy))**2))
+
+        return b
+
+    def pressure_poisson_periodic(nit, p, dx, dy, b):
+        pn = np.empty_like(p)
+
+        for q in range(nit):
+            pn = p.copy()
+            p[1:-1, 1:-1] = (((pn[1:-1, 2:] + pn[1:-1, 0:-2]) * dy**2 +
+                            (pn[2:, 1:-1] + pn[0:-2, 1:-1]) * dx**2) /
+                            (2 * (dx**2 + dy**2)) - dx**2 * dy**2 /
+                            (2 * (dx**2 + dy**2)) * b[1:-1, 1:-1])
+
+            # Periodic BC Pressure @ x = 2
+            p[1:-1, -1] = (((pn[1:-1, 0] + pn[1:-1, -2]) * dy**2 +
+                            (pn[2:, -1] + pn[0:-2, -1]) * dx**2) /
+                        (2 * (dx**2 + dy**2)) - dx**2 * dy**2 /
+                        (2 * (dx**2 + dy**2)) * b[1:-1, -1])
+
+            # Periodic BC Pressure @ x = 0
+            p[1:-1,
+            0] = (((pn[1:-1, 1] + pn[1:-1, -1]) * dy**2 +
+                    (pn[2:, 0] + pn[0:-2, 0]) * dx**2) / (2 * (dx**2 + dy**2)) -
+                    dx**2 * dy**2 / (2 * (dx**2 + dy**2)) * b[1:-1, 0])
+
+            # Wall boundary conditions, pressure
+            p[-1, :] = p[-2, :]  # dp/dy = 0 at y = 2
+            p[0, :] = p[1, :]  # dp/dy = 0 at y = 0
+
+
+    udiff = 1.0
+    stepcount = 0
+
+    while udiff > .001:
+        un = u.copy()
+        vn = v.copy()
+
+        b = build_up_b(rho, dt, dx, dy, u, v)
+        pressure_poisson_periodic(nit, p, dx, dy, b)
+
+        u[1:-1,
+          1:-1] = (un[1:-1, 1:-1] - un[1:-1, 1:-1] * dt / dx *
+                   (un[1:-1, 1:-1] - un[1:-1, 0:-2]) -
+                   vn[1:-1, 1:-1] * dt / dy *
+                   (un[1:-1, 1:-1] - un[0:-2, 1:-1]) - dt / (2 * rho * dx) *
+                   (p[1:-1, 2:] - p[1:-1, 0:-2]) + nu *
+                   (dt / dx**2 *
+                    (un[1:-1, 2:] - 2 * un[1:-1, 1:-1] + un[1:-1, 0:-2]) +
+                    dt / dy**2 *
+                    (un[2:, 1:-1] - 2 * un[1:-1, 1:-1] + un[0:-2, 1:-1])) +
+                   F * dt)
+
+        v[1:-1,
+          1:-1] = (vn[1:-1, 1:-1] - un[1:-1, 1:-1] * dt / dx *
+                   (vn[1:-1, 1:-1] - vn[1:-1, 0:-2]) -
+                   vn[1:-1, 1:-1] * dt / dy *
+                   (vn[1:-1, 1:-1] - vn[0:-2, 1:-1]) - dt / (2 * rho * dy) *
+                   (p[2:, 1:-1] - p[0:-2, 1:-1]) + nu *
+                   (dt / dx**2 *
+                    (vn[1:-1, 2:] - 2 * vn[1:-1, 1:-1] + vn[1:-1, 0:-2]) +
+                    dt / dy**2 *
+                    (vn[2:, 1:-1] - 2 * vn[1:-1, 1:-1] + vn[0:-2, 1:-1])))
+
+        # Periodic BC u @ x = 2
+        u[1:-1, -1] = (
+            un[1:-1, -1] - un[1:-1, -1] * dt / dx *
+            (un[1:-1, -1] - un[1:-1, -2]) - vn[1:-1, -1] * dt / dy *
+            (un[1:-1, -1] - un[0:-2, -1]) - dt / (2 * rho * dx) *
+            (p[1:-1, 0] - p[1:-1, -2]) + nu *
+            (dt / dx**2 *
+             (un[1:-1, 0] - 2 * un[1:-1, -1] + un[1:-1, -2]) + dt / dy**2 *
+             (un[2:, -1] - 2 * un[1:-1, -1] + un[0:-2, -1])) + F * dt)
+
+        # Periodic BC u @ x = 0
+        u[1:-1,
+          0] = (un[1:-1, 0] - un[1:-1, 0] * dt / dx *
+                (un[1:-1, 0] - un[1:-1, -1]) - vn[1:-1, 0] * dt / dy *
+                (un[1:-1, 0] - un[0:-2, 0]) - dt / (2 * rho * dx) *
+                (p[1:-1, 1] - p[1:-1, -1]) + nu *
+                (dt / dx**2 *
+                 (un[1:-1, 1] - 2 * un[1:-1, 0] + un[1:-1, -1]) + dt / dy**2 *
+                 (un[2:, 0] - 2 * un[1:-1, 0] + un[0:-2, 0])) + F * dt)
+
+        # Periodic BC v @ x = 2
+        v[1:-1, -1] = (
+            vn[1:-1, -1] - un[1:-1, -1] * dt / dx *
+            (vn[1:-1, -1] - vn[1:-1, -2]) - vn[1:-1, -1] * dt / dy *
+            (vn[1:-1, -1] - vn[0:-2, -1]) - dt / (2 * rho * dy) *
+            (p[2:, -1] - p[0:-2, -1]) + nu *
+            (dt / dx**2 *
+             (vn[1:-1, 0] - 2 * vn[1:-1, -1] + vn[1:-1, -2]) + dt / dy**2 *
+             (vn[2:, -1] - 2 * vn[1:-1, -1] + vn[0:-2, -1])))
+
+        # Periodic BC v @ x = 0
+        v[1:-1,
+          0] = (vn[1:-1, 0] - un[1:-1, 0] * dt / dx *
+                (vn[1:-1, 0] - vn[1:-1, -1]) - vn[1:-1, 0] * dt / dy *
+                (vn[1:-1, 0] - vn[0:-2, 0]) - dt / (2 * rho * dy) *
+                (p[2:, 0] - p[0:-2, 0]) + nu *
+                (dt / dx**2 *
+                 (vn[1:-1, 1] - 2 * vn[1:-1, 0] + vn[1:-1, -1]) + dt / dy**2 *
+                 (vn[2:, 0] - 2 * vn[1:-1, 0] + vn[0:-2, 0])))
+
+        # Wall BC: u,v = 0 @ y = 0,2
+        u[0, :] = 0
+        u[-1, :] = 0
+        v[0, :] = 0
+        v[-1, :] = 0
+
+        udiff = (np.sum(u) - np.sum(un)) / np.sum(u)
+        stepcount += 1
+
+    if __CODON_RET__: return stepcount
+
+def cholesky2(A: np.ndarray[float,2]):
+    A[:] = np.linalg.cholesky(A) + np.triu(A, k=1)
+
+def cholesky(A: np.ndarray[float,2]):
+    A[0, 0] = np.sqrt(A[0, 0])
+    for i in range(1, A.shape[0]):
+        for j in range(i):
+            A[i, j] -= np.dot(A[i, :j], A[j, :j])
+            A[i, j] /= A[j, j]
+        A[i, i] -= np.dot(A[i, :i], A[i, :i])
+        A[i, i] = np.sqrt(A[i, i])
+
+def compute(array_1: np.ndarray[int,2], array_2: np.ndarray[int,2], a: int, b: int, c: int):
+    res = np.clip(array_1, 2, 10) * a + array_2 * b + c
+    if __CODON_RET__: return res
+
+def contour_integral(NR: int, NM: int, slab_per_bc: int, Ham: np.ndarray[complex, 3], int_pts: np.ndarray[complex, 1], Y: np.ndarray[complex, 2]):
+    P0 = np.zeros((NR, NM), dtype=np.complex128)
+    P1 = np.zeros((NR, NM), dtype=np.complex128)
+    for z in int_pts:
+        Tz = np.zeros((NR, NR), dtype=np.complex128)
+        for n in range(slab_per_bc + 1):
+            zz = np.power(z, slab_per_bc / 2 - n)
+            Tz += zz * Ham[n]
+        if NR == NM:
+            X = np.linalg.inv(Tz)
+        else:
+            X = np.linalg.solve(Tz, Y)
+        if abs(z) < 1.0:
+            X = -X
+        P0 += X
+        P1 += z * X
+
+    res = P0, P1
+    if __CODON_RET__: return res
+
+def conv2d_bias(input: np.ndarray[float32,4], weights: np.ndarray[float32,4], bias: np.ndarray[float32,1]):
+    def conv2d(input, weights):
+        K = weights.shape[0]  # Assuming square kernel
+        N = input.shape[0]
+        H_out = input.shape[1] - K + 1
+        W_out = input.shape[2] - K + 1
+        C_out = weights.shape[3]
+        output = np.empty((N, H_out, W_out, C_out), dtype=np.float32)
+
+        # Loop structure adapted from https://github.com/SkalskiP/ILearnDeepLearning.py/blob/ba0b5ba589d4e656141995e8d1a06d44db6ce58d/01_mysteries_of_neural_networks/06_numpy_convolutional_neural_net/src/layers/convolutional.py#L88
+        for i in range(H_out):
+            for j in range(W_out):
+                output[:, i, j, :] = np.sum(
+                    input[:, i:i + K, j:j + K, :, np.newaxis] *
+                    weights[np.newaxis, :, :, :],
+                    axis=(1, 2, 3),
+                )
+
+        return output
+    res = conv2d(input, weights) + bias
+    if __CODON_RET__: return res
+
+def correlation(M: int, float_n: float, data: np.ndarray[float,2]):
+
+    mean = np.mean(data, axis=0)
+    stddev = np.std(data, axis=0)
+    stddev[stddev <= 0.1] = 1.0
+    data -= mean
+    data /= np.sqrt(float_n) * stddev
+    corr = np.eye(M, dtype=data.dtype)
+    for i in range(M - 1):
+        corr[i + 1:M, i] = corr[i, i + 1:M] = data[:, i] @ data[:, i + 1:M]
+
+    if __CODON_RET__: return corr
+
+def covariance(M: int, float_n: float, data: np.ndarray[float, 2]):
+
+    mean = np.mean(data, axis=0)
+    data -= mean
+    cov = np.zeros((M, M), dtype=data.dtype)
+    for i in range(M):
+        cov[i:M, i] = cov[i, i:M] = data[:, i] @ data[:, i:M] / (float_n - 1.0)
+
+    if __CODON_RET__: return cov
+
+def crc16(data: np.ndarray[np.uint8, 1]):
+    '''
+    CRC-16-CCITT Algorithm
+    '''
+    poly=0x8408
+    crc = 0xFFFF
+    for b in data:
+        cur_byte = 0xFF & int(b)
+        for _ in range(0, 8):
+            if (crc & 0x0001) ^ (cur_byte & 0x0001):
+                crc = (crc >> 1) ^ poly
+            else:
+                crc >>= 1
+            cur_byte >>= 1
+    crc = (~crc & 0xFFFF)
+    crc = (crc << 8) | ((crc >> 8) & 0xFF)
+
+    res = crc & 0xFFFF
+    if __CODON_RET__: return res
+
+def deriche(alpha: float, imgIn: np.ndarray[float,2]):
+
+    k = (1.0 - np.exp(-alpha)) * (1.0 - np.exp(-alpha)) / (
+        1.0 + alpha * np.exp(-alpha) - np.exp(2.0 * alpha))
+    a1 = a5 = k
+    a2 = a6 = k * np.exp(-alpha) * (alpha - 1.0)
+    a3 = a7 = k * np.exp(-alpha) * (alpha + 1.0)
+    a4 = a8 = -k * np.exp(-2.0 * alpha)
+    b1 = 2.0**(-alpha)
+    b2 = -np.exp(-2.0 * alpha)
+    c1 = c2 = 1
+
+    y1 = np.empty_like(imgIn)
+    y1[:, 0] = a1 * imgIn[:, 0]
+    y1[:, 1] = a1 * imgIn[:, 1] + a2 * imgIn[:, 0] + b1 * y1[:, 0]
+    for j in range(2, imgIn.shape[1]):
+        y1[:, j] = (a1 * imgIn[:, j] + a2 * imgIn[:, j - 1] +
+                    b1 * y1[:, j - 1] + b2 * y1[:, j - 2])
+
+    y2 = np.empty_like(imgIn)
+    y2[:, -1] = 0.0
+    y2[:, -2] = a3 * imgIn[:, -1]
+    for j in range(imgIn.shape[1] - 3, -1, -1):
+        y2[:, j] = (a3 * imgIn[:, j + 1] + a4 * imgIn[:, j + 2] +
+                    b1 * y2[:, j + 1] + b2 * y2[:, j + 2])
+
+    imgOut = c1 * (y1 + y2)
+
+    y1[0, :] = a5 * imgOut[0, :]
+    y1[1, :] = a5 * imgOut[1, :] + a6 * imgOut[0, :] + b1 * y1[0, :]
+    for i in range(2, imgIn.shape[0]):
+        y1[i, :] = (a5 * imgOut[i, :] + a6 * imgOut[i - 1, :] +
+                    b1 * y1[i - 1, :] + b2 * y1[i - 2, :])
+
+    y2[-1, :] = 0.0
+    y2[-2, :] = a7 * imgOut[-1, :]
+    for i in range(imgIn.shape[0] - 3, -1, -1):
+        y2[i, :] = (a7 * imgOut[i + 1, :] + a8 * imgOut[i + 2, :] +
+                    b1 * y2[i + 1, :] + b2 * y2[i + 2, :])
+
+    imgOut[:] = c2 * (y1 + y2)
+
+    if __CODON_RET__: return imgOut
+
+def doitgen(NR: int, NQ: int, NP: int, A: np.ndarray[float,3], C4: np.ndarray[float,2]):
+
+    A[:] = np.reshape(np.reshape(A, (NR, NQ, 1, NP)) @ C4, (NR, NQ, NP))
+
+def durbin(r: np.ndarray[float,1]):
+
+    y = np.empty_like(r)
+    alpha = -r[0]
+    beta = 1.0
+    y[0] = -r[0]
+
+    for k in range(1, r.shape[0]):
+        beta *= 1.0 - alpha * alpha
+        alpha = -(r[k] + np.dot(np.flip(r[:k]), y[:k])) / beta
+        y[:k] += alpha * np.flip(y[:k])
+        y[k] = alpha
+
+    if __CODON_RET__: return y
+
+def fdtd_2d(TMAX: int, ex: np.ndarray[float,2], ey: np.ndarray[float,2], hz: np.ndarray[float,2], _fict_: np.ndarray[float,1]):
+
+    for t in range(TMAX):
+        ey[0, :] = _fict_[t]
+        ey[1:, :] -= 0.5 * (hz[1:, :] - hz[:-1, :])
+        ex[:, 1:] -= 0.5 * (hz[:, 1:] - hz[:, :-1])
+        hz[:-1, :-1] -= 0.7 * (ex[:-1, 1:] - ex[:-1, :-1] + ey[1:, :-1] - ey[:-1, :-1])
+
+def floyd_warshall(path: np.ndarray[Int[32],2]):
+
+    for k in range(path.shape[0]):
+        path[:] = np.minimum(path[:], np.add.outer(path[:, k], path[k, :]))
+
+def gemm(alpha: float, beta: float, C: np.ndarray[float,2], A: np.ndarray[float,2], B: np.ndarray[float,2]):
+
+    C[:] = alpha * A @ B + beta * C
+
+def gemver(alpha: float, beta: float, A: np.ndarray[float,2], u1: np.ndarray[float,1], v1: np.ndarray[float,1], u2: np.ndarray[float,1], v2: np.ndarray[float,1], w: np.ndarray[float,1], x: np.ndarray[float,1], y: np.ndarray[float,1], z: np.ndarray[float,1]):
+
+    A += np.outer(u1, v1) + np.outer(u2, v2)
+    x += beta * y @ A + z
+    w += alpha * A @ x
+
+def gesummv(alpha: float, beta: float, A: np.ndarray[float,2], B: np.ndarray[float,2], x: np.ndarray[float,1]):
+
+    res = alpha * A @ x + beta * B @ x
+    if __CODON_RET__: return res
+
+def go_fast(a: np.ndarray[float,2]):
+    trace = 0.0
+    for i in range(a.shape[0]):
+        trace += np.tanh(a[i, i])
+    res = a + trace
+    if __CODON_RET__: return res
+
+def gramschmidt(A: np.ndarray[float,2]):
+
+    Q = np.zeros_like(A)
+    R = np.zeros((A.shape[1], A.shape[1]), dtype=A.dtype)
+
+    for k in range(A.shape[1]):
+        nrm = np.dot(A[:, k], A[:, k])
+        R[k, k] = np.sqrt(nrm)
+        Q[:, k] = A[:, k] / R[k, k]
+        for j in range(k + 1, A.shape[1]):
+            R[k, j] = np.dot(Q[:, k], A[:, j])
+            A[:, j] -= Q[:, k] * R[k, j]
+
+    res = Q, R
+    if __CODON_RET__: return res
+
+def hdiff(in_field: np.ndarray[float,3], out_field: np.ndarray[float,3], coeff: np.ndarray[float,3]):
+    I, J, K = out_field.shape[0], out_field.shape[1], out_field.shape[2]
+    lap_field = 4.0 * in_field[1:I + 3, 1:J + 3, :] - (
+        in_field[2:I + 4, 1:J + 3, :] + in_field[0:I + 2, 1:J + 3, :] +
+        in_field[1:I + 3, 2:J + 4, :] + in_field[1:I + 3, 0:J + 2, :])
+
+    res = lap_field[1:, 1:J + 1, :] - lap_field[:-1, 1:J + 1, :]
+    flx_field = np.where(
+        (res *
+         (in_field[2:I + 3, 2:J + 2, :] - in_field[1:I + 2, 2:J + 2, :])) > 0,
+        0,
+        res,
+    )
+
+    res = lap_field[1:I + 1, 1:, :] - lap_field[1:I + 1, :-1, :]
+    fly_field = np.where(
+        (res *
+         (in_field[2:I + 2, 2:J + 3, :] - in_field[2:I + 2, 1:J + 2, :])) > 0,
+        0,
+        res,
+    )
+
+    out_field[:, :, :] = in_field[2:I + 2, 2:J + 2, :] - coeff[:, :, :] * (
+        flx_field[1:, :, :] - flx_field[:-1, :, :] + fly_field[:, 1:, :] -
+        fly_field[:, :-1, :])
+
+def heat_3d(TSTEPS: int, A: np.ndarray[float, 3], B: np.ndarray[float, 3]):
+    for t in range(1, TSTEPS):
+        B[1:-1, 1:-1,
+          1:-1] = (0.125 * (A[2:, 1:-1, 1:-1] - 2.0 * A[1:-1, 1:-1, 1:-1] +
+                            A[:-2, 1:-1, 1:-1]) + 0.125 *
+                   (A[1:-1, 2:, 1:-1] - 2.0 * A[1:-1, 1:-1, 1:-1] +
+                    A[1:-1, :-2, 1:-1]) + 0.125 *
+                   (A[1:-1, 1:-1, 2:] - 2.0 * A[1:-1, 1:-1, 1:-1] +
+                    A[1:-1, 1:-1, 0:-2]) + A[1:-1, 1:-1, 1:-1])
+        A[1:-1, 1:-1,
+          1:-1] = (0.125 * (B[2:, 1:-1, 1:-1] - 2.0 * B[1:-1, 1:-1, 1:-1] +
+                            B[:-2, 1:-1, 1:-1]) + 0.125 *
+                   (B[1:-1, 2:, 1:-1] - 2.0 * B[1:-1, 1:-1, 1:-1] +
+                    B[1:-1, :-2, 1:-1]) + 0.125 *
+                   (B[1:-1, 1:-1, 2:] - 2.0 * B[1:-1, 1:-1, 1:-1] +
+                    B[1:-1, 1:-1, 0:-2]) + B[1:-1, 1:-1, 1:-1])
+
+def jacobi_1d(TSTEPS: int, A: np.ndarray[float, 1], B: np.ndarray[float, 1]):
+
+    for t in range(1, TSTEPS):
+        B[1:-1] = 0.33333 * (A[:-2] + A[1:-1] + A[2:])
+        A[1:-1] = 0.33333 * (B[:-2] + B[1:-1] + B[2:])
+
+def jacobi_2d(TSTEPS: int, A: np.ndarray[float, 2], B: np.ndarray[float, 2]):
+
+    for t in range(1, TSTEPS):
+        B[1:-1, 1:-1] = 0.2 * (A[1:-1, 1:-1] + A[1:-1, :-2] + A[1:-1, 2:] +
+                               A[2:, 1:-1] + A[:-2, 1:-1])
+        A[1:-1, 1:-1] = 0.2 * (B[1:-1, 1:-1] + B[1:-1, :-2] + B[1:-1, 2:] +
+                               B[2:, 1:-1] + B[:-2, 1:-1])
+
+def k2mm(alpha: float, beta: float, A: np.ndarray[float,2], B: np.ndarray[float,2], C: np.ndarray[float,2], D: np.ndarray[float,2]):
+
+    D[:] = alpha * A @ B @ C + beta * D
+
+def k3mm(A: np.ndarray[float,2], B: np.ndarray[float,2], C: np.ndarray[float,2], D: np.ndarray[float,2]):
+
+    res = A @ B @ C @ D
+    if __CODON_RET__: return res
+
+def lenet(input: np.ndarray[float32,4], conv1: np.ndarray[float32,4], conv1bias: np.ndarray[float32,1],
+          conv2: np.ndarray[float32,4], conv2bias: np.ndarray[float32,1], fc1w: np.ndarray[float32,2], fc1b: np.ndarray[float32,1], fc2w: np.ndarray[float32,2], fc2b: np.ndarray[float32,1],
+          fc3w: np.ndarray[float32,2], fc3b: np.ndarray[float32,1], N:int, C_before_fc1:int):
+    def relu(x):
+        return np.maximum(x, 0)
+
+    def conv2d(input, weights):
+        K = weights.shape[0]  # Assuming square kernel
+        N = input.shape[0]
+        H_out = input.shape[1] - K + 1
+        W_out = input.shape[2] - K + 1
+        C_out = weights.shape[3]
+        output = np.empty((N, H_out, W_out, C_out), dtype=np.float32)
+
+        # Loop structure adapted from https://github.com/SkalskiP/ILearnDeepLearning.py/blob/ba0b5ba589d4e656141995e8d1a06d44db6ce58d/01_mysteries_of_neural_networks/06_numpy_convolutional_neural_net/src/layers/convolutional.py#L88
+        for i in range(H_out):
+            for j in range(W_out):
+                output[:, i, j, :] = np.sum(
+                    input[:, i:i + K, j:j + K, :, np.newaxis] *
+                    weights[np.newaxis, :, :, :],
+                    axis=(1, 2, 3),
+                )
+
+        return output
+
+    def maxpool2d(x):
+        output = np.empty(
+            (x.shape[0], x.shape[1] // 2, x.shape[2] // 2, x.shape[3]),
+            dtype=x.dtype)
+        for i in range(x.shape[1] // 2):
+            for j in range(x.shape[2] // 2):
+                output[:, i, j, :] = np.max(x[:, 2 * i:2 * i + 2,
+                                            2 * j:2 * j + 2, :],
+                                            axis=(1, 2))
+        return output
+
+    x = relu(conv2d(input, conv1) + conv1bias)
+    x = maxpool2d(x)
+    x = relu(conv2d(x, conv2) + conv2bias)
+    x = maxpool2d(x)
+    x = np.reshape(x, (N, C_before_fc1))
+    x = relu(x @ fc1w + fc1b)
+    x = relu(x @ fc2w + fc2b)
+    res = x @ fc3w + fc3b
+    if __CODON_RET__: return res
+
+def lu(A: np.ndarray[float, 2]):
+
+    for i in range(A.shape[0]):
+        for j in range(i):
+            A[i, j] -= A[i, :j] @ A[:j, j]
+            A[i, j] /= A[j, j]
+        for j in range(i, A.shape[0]):
+            A[i, j] -= A[i, :i] @ A[:i, j]
+
+def ludcmp(A: np.ndarray[float, 2], b: np.ndarray[float,1]):
+
+    x = np.zeros_like(b)
+    y = np.zeros_like(b)
+
+    for i in range(A.shape[0]):
+        for j in range(i):
+            A[i, j] -= A[i, :j] @ A[:j, j]
+            A[i, j] /= A[j, j]
+        for j in range(i, A.shape[0]):
+            A[i, j] -= A[i, :i] @ A[:i, j]
+    for i in range(A.shape[0]):
+        y[i] = b[i] - A[i, :i] @ y[:i]
+    for i in range(A.shape[0] - 1, -1, -1):
+        x[i] = (y[i] - A[i, i + 1:] @ x[i + 1:]) / A[i, i]
+
+    res = x, y
+    if __CODON_RET__: return res
+
+def mandelbrot1(xmin: float, xmax: float, ymin: float, ymax: float, xn: int, yn: int, maxiter: int, horizon: float):
+    horizon = 2.0
+    X = np.linspace(xmin, xmax, xn, dtype=np.float64)
+    Y = np.linspace(ymin, ymax, yn, dtype=np.float64)
+    C = X + Y[:, None] * 1j
+    N = np.zeros(C.shape, dtype=np.int64)
+    Z = np.zeros(C.shape, dtype=np.complex128)
+    for n in range(maxiter):
+        I = np.less(abs(Z), horizon)
+        N[I] = n
+        Z[I] = Z[I]**2 + C[I]
+    N[N == maxiter - 1] = 0
+    res = Z, N
+    if __CODON_RET__: return res
+
+def mandelbrot2(xmin: float, xmax: float, ymin: float, ymax: float, xn: int, yn: int, itermax: int, horizon: float):
+    def mgrid(xn, yn):
+        Xi = np.empty((xn, yn), dtype=np.int64)
+        Yi = np.empty((xn, yn), dtype=np.int64)
+        for i in range(xn):
+            Xi[i, :] = i
+        for j in range(yn):
+            Yi[:, j] = j
+        return Xi, Yi
+
+    Xi, Yi = mgrid(xn, yn)
+    X = np.linspace(xmin, xmax, xn, dtype=np.float64)[Xi]
+    Y = np.linspace(ymin, ymax, yn, dtype=np.float64)[Yi]
+    C = X + Y * 1j
+    N_ = np.zeros(C.shape, dtype=np.int64)
+    Z_ = np.zeros(C.shape, dtype=np.complex128)
+    # Xi.shape = Yi.shape = C.shape = xn * yn
+    Xi = Xi.reshape(xn * yn)
+    Yi = Yi.reshape(xn * yn)
+    C = C.reshape(xn * yn)
+
+    Z = np.zeros(C.shape, np.complex128)
+    for i in range(itermax):
+        if not len(Z):
+            break
+
+        # Compute for relevant points only
+        np.multiply(Z, Z, Z)
+        np.add(Z, C, Z)
+
+        # Failed convergence
+        I = abs(Z) > horizon
+        N_[Xi[I], Yi[I]] = i + 1
+        Z_[Xi[I], Yi[I]] = Z[I]
+
+        # Keep going with those who have not diverged yet
+        np.logical_not(I, I)  # np.negative(I, I) not working any longer
+        Z = Z[I]
+        Xi, Yi = Xi[I], Yi[I]
+        C = C[I]
+    res = Z_.T, N_.T
+    if __CODON_RET__: return res
+
+def mlp(input: np.ndarray[float32, 2], w1: np.ndarray[float32,2], b1: np.ndarray[float32,1], w2: np.ndarray[float32,2], b2: np.ndarray[float32,1], w3: np.ndarray[float32, 2], b3: np.ndarray[float32, 1]):
+    def relu(x):
+        return np.maximum(x, 0)
+
+    def softmax(x):
+        tmp_max = np.max(x, axis=-1, keepdims=True)
+        tmp_out = np.exp(x - tmp_max)
+        tmp_sum = np.sum(tmp_out, axis=-1, keepdims=True)
+        return tmp_out / tmp_sum
+
+    x = relu(input @ w1 + b1)
+    # x = np.array(x, dtype=np.float32)
+    x = relu(x @ w2 + b2)
+    # x = np.array(x, dtype=np.float32)
+    x = softmax(x @ w3 + b3)  # Softmax call can be omitted if necessary
+    if __CODON_RET__: return x
+
+def mvt(x1: np.ndarray[float, 1], x2: np.ndarray[float, 1], y_1: np.ndarray[float,1], y_2: np.ndarray[float,1], A: np.ndarray[float, 2]):
+    x1 += A @ y_1
+    x2 += y_2 @ A
+
+def nbody(mass: np.ndarray[float, 2], pos: np.ndarray[float, 2], vel: np.ndarray[float, 2],
+          N: int, Nt: int, dt: float, G: float, softening: float):
+    def getAcc(pos, mass, G, softening):
+        """
+        Calculate the acceleration on each particle due to Newton's Law
+        pos  is an N x 3 matrix of positions
+        mass is an N x 1 vector of masses
+        G is Newton's Gravitational constant
+        softening is the softening length
+        a is N x 3 matrix of accelerations
+        """
+        # positions r = [x,y,z] for all particles
+        x = pos[:, 0:1]
+        y = pos[:, 1:2]
+        z = pos[:, 2:3]
+
+        # matrix that stores all pairwise particle separations: r_j - r_i
+        dx = x.T - x
+        dy = y.T - y
+        dz = z.T - z
+
+        # matrix that stores 1/r^3 for all particle pairwise particle separations
+        inv_r3 = (dx**2 + dy**2 + dz**2 + softening**2)
+        inv_r3[inv_r3 > 0] = inv_r3[inv_r3 > 0]**(-1.5)
+
+        ax = G * (dx * inv_r3) @ mass
+        ay = G * (dy * inv_r3) @ mass
+        az = G * (dz * inv_r3) @ mass
+
+        # pack together the acceleration components
+        a = np.hstack((ax, ay, az))
+
+        return a
+
+    def getEnergy(pos, vel, mass, G):
+        """
+        Get kinetic energy (KE) and potential energy (PE) of simulation
+        pos is N x 3 matrix of positions
+        vel is N x 3 matrix of velocities
+        mass is an N x 1 vector of masses
+        G is Newton's Gravitational constant
+        KE is the kinetic energy of the system
+        PE is the potential energy of the system
+        """
+        # Kinetic Energy:
+        # KE = 0.5 * np.sum(np.sum( mass * vel**2 ))
+        KE = 0.5 * np.sum(mass * vel**2)
+
+        # Potential Energy:
+
+        # positions r = [x,y,z] for all particles
+        x = pos[:, 0:1]
+        y = pos[:, 1:2]
+        z = pos[:, 2:3]
+
+        # matrix that stores all pairwise particle separations: r_j - r_i
+        dx = x.T - x
+        dy = y.T - y
+        dz = z.T - z
+
+        # matrix that stores 1/r for all particle pairwise particle separations
+        inv_r = np.sqrt(dx**2 + dy**2 + dz**2)
+        inv_r[inv_r > 0] = 1.0 / inv_r[inv_r > 0]
+
+        # sum over upper triangle, to count each interaction only once
+        # PE = G * np.sum(np.sum(np.triu(-(mass*mass.T)*inv_r,1)))
+        PE = G * np.sum(np.triu(-(mass * mass.T) * inv_r, 1))
+
+        return KE, PE
+
+    # Convert to Center-of-Mass frame
+    vel -= np.mean(mass * vel, axis=0) / np.mean(mass)
+
+    # calculate initial gravitational accelerations
+    acc = getAcc(pos, mass, G, softening)
+
+    # calculate initial energy of system
+    KE = np.empty(Nt + 1, dtype=np.float64)
+    PE = np.empty(Nt + 1, dtype=np.float64)
+    KE[0], PE[0] = getEnergy(pos, vel, mass, G)
+
+    t = 0.0
+
+    # Simulation Main Loop
+    for i in range(Nt):
+        # (1/2) kick
+        vel += acc * dt / 2.0
+
+        # drift
+        pos += vel * dt
+
+        # update accelerations
+        acc = getAcc(pos, mass, G, softening)
+
+        # (1/2) kick
+        vel += acc * dt / 2.0
+
+        # update time
+        t += dt
+
+        # get energy of system
+        KE[i + 1], PE[i + 1] = getEnergy(pos, vel, mass, G)
+
+    res = KE, PE
+    if __CODON_RET__: return res
+
+def nussinov(N: int, seq: np.ndarray[Int[32], 1]):
+    def match(b1, b2):
+        if b1 + b2 == 3:
+            return 1
+        else:
+            return 0
+
+    table = np.zeros((N, N), np.int32)
+
+    for i in range(N - 1, -1, -1):
+        for j in range(i + 1, N):
+            if j - 1 >= 0:
+                table[i, j] = max(table[i, j], table[i, j - 1])
+            if i + 1 < N:
+                table[i, j] = max(table[i, j], table[i + 1, j])
+            if j - 1 >= 0 and i + 1 < N:
+                if i < j - 1:
+                    table[i, j] = max(table[i, j], table[i + 1, j - 1] + Int[32](match(int(seq[i]), int(seq[j]))))
+                else:
+                    table[i, j] = max(table[i, j], table[i + 1, j - 1])
+            for k in range(i + 1, j):
+                table[i, j] = max(table[i, j], table[i, k] + table[k + 1, j])
+
+    if __CODON_RET__: return table
+
+def resnet(input: np.ndarray[float32, 4], conv1: np.ndarray[float32, 4], conv2: np.ndarray[float32, 4], conv3: np.ndarray[float32, 4]):
+    def relu(x):
+        return np.maximum(x, 0)
+
+    def conv2d(input, weights):
+        K = weights.shape[0]  # Assuming square kernel
+        N = input.shape[0]
+        H_out = input.shape[1] - K + 1
+        W_out = input.shape[2] - K + 1
+        C_out = weights.shape[3]
+        output = np.empty((N, H_out, W_out, C_out), dtype=np.float32)
+
+        # Loop structure adapted from https://github.com/SkalskiP/ILearnDeepLearning.py/blob/ba0b5ba589d4e656141995e8d1a06d44db6ce58d/01_mysteries_of_neural_networks/06_numpy_convolutional_neural_net/src/layers/convolutional.py#L88
+        for i in range(H_out):
+            for j in range(W_out):
+                output[:, i, j, :] = np.sum(np.sum(
+                    np.sum(input[:, i:i + K, j:j + K, :, np.newaxis] *
+                        weights[np.newaxis, :, :, :],
+                        axis=1),
+                    axis=1),
+                                            axis=1)
+        return output
+
+    def batchnorm2d(x):
+        # mean = np.mean(x, axis=0, keepdims=True)
+        eps=1e-5
+        mean = np.mean(x, axis=0)[np.newaxis, :, :, :]
+        # std = np.std(x, axis=0, keepdims=True)
+        std = np.std(x, axis=0)[np.newaxis, :, :, :]
+        return (x - mean) / np.sqrt(std + eps)
+
+
+    # Pad output of first convolution for second convolution
+    padded = np.zeros((input.shape[0], input.shape[1] + 2, input.shape[2] + 2,
+                       conv1.shape[3]))
+
+    padded[:, 1:-1, 1:-1, :] = conv2d(input, conv1)
+    x = batchnorm2d(padded)
+    x = relu(x)
+    x = conv2d(x, conv2)
+    x = batchnorm2d(x)
+    x = relu(x)
+    x = conv2d(x, conv3)
+    x = batchnorm2d(x)
+    res = relu(x + input)
+    if __CODON_RET__: return res
+
+def scattering_self_energies(neigh_idx: np.ndarray[Int[32], 2], dH: np.ndarray[complex, 5], G: np.ndarray[complex, 5], D: np.ndarray[complex, 6], Sigma: np.ndarray[complex, 5]):
+
+    for k in range(G.shape[0]):
+        for E in range(G.shape[1]):
+            for q in range(D.shape[0]):
+                for w in range(D.shape[1]):
+                    for i in range(D.shape[-2]):
+                        for j in range(D.shape[-1]):
+                            for a in range(neigh_idx.shape[0]):
+                                for b in range(neigh_idx.shape[1]):
+                                    if E - w >= 0:
+                                        dHG = G[k, E - w, int(neigh_idx[a, b])] @ dH[a, b, i]
+                                        dHD = dH[a, b, j] * D[q, w, a, b, i, j]
+                                        Sigma[k, E, a] += dHG @ dHD
+
+def seidel_2d(TSTEPS: int, N: int, A: np.ndarray[float,2]):
+
+    for t in range(0, TSTEPS - 1):
+        for i in range(1, N - 1):
+            A[i, 1:-1] += (A[i - 1, :-2] + A[i - 1, 1:-1] + A[i - 1, 2:] +
+                           A[i, 2:] + A[i + 1, :-2] + A[i + 1, 1:-1] +
+                           A[i + 1, 2:])
+            for j in range(1, N - 1):
+                A[i, j] += A[i, j - 1]
+                A[i, j] /= 9.0
+
+def softmax(x: np.ndarray[float32, 4]):
+    tmp_max = np.max(x, axis=-1, keepdims=True)
+    tmp_out = np.exp(x - tmp_max)
+    tmp_sum = np.sum(tmp_out, axis=-1, keepdims=True)
+    res = tmp_out / tmp_sum
+    if __CODON_RET__: return res
+
+def spmv(A_row: np.ndarray[u32,1], A_col: np.ndarray[u32,1], A_val: np.ndarray[float,1], x: np.ndarray[float,1]):
+    y = np.empty(A_row.size - 1, A_val.dtype)
+
+    for i in range(A_row.size - 1):
+        cols = A_col[int(A_row[i]):int(A_row[i + 1])].astype(np.int64)
+        vals = A_val[int(A_row[i]):int(A_row[i + 1])]
+        y[i] = vals @ x[cols]
+
+    if __CODON_RET__: return y
+
+def stockham_fft(N: int, R: int, K: int, x: np.ndarray[complex, 1], y: np.ndarray[complex, 1]):
+    def mgrid_stockham(xn, yn):
+        Xi = np.empty((xn, yn), dtype=np.int32)
+        Yi = np.empty((xn, yn), dtype=np.int32)
+        for i in range(xn):
+            Xi[i, :] = i
+        for j in range(yn):
+            Yi[:, j] = j
+        return Xi, Yi
+
+    # Generate DFT matrix for radix R.
+    # Define transient variable for matrix.
+    # i_coord, j_coord = np.mgrid[0:R, 0:R]
+    i_coord, j_coord = mgrid_stockham(R, R)
+    dft_mat = np.empty((R, R), dtype=np.complex128)
+    dft_mat = np.exp(-2.0j * np.pi * i_coord * j_coord / R)
+    # Move input x to output y
+    # to avoid overwriting the input.
+    y[:] = x[:]
+
+    # ii_coord, jj_coord = np.mgrid[0:R, 0:R**K]
+    ii_coord, jj_coord = mgrid_stockham(R, R**K)
+
+    # Main Stockham loop
+    for i in range(K):
+        # Stride permutation
+        yv = np.reshape(y, (R**i, R, R**(K-i-1)))
+        tmp_perm = np.transpose(yv, axes=(1, 0, 2))
+        # Twiddle Factor multiplication
+        D = np.empty((R, R**i, R**(K - i - 1)), dtype=np.complex128)
+        tmp = np.exp(-2.0j * np.pi * ii_coord[:, :R**i] * jj_coord[:, :R**i] /
+                     R**(i + 1))
+        D[:] = np.repeat(np.reshape(tmp, (R, R**i, 1)), R ** (K-i-1), axis=2)
+        tmp_twid = np.reshape(tmp_perm, (N, )) * np.reshape(D, (N, ))
+        # Product with Butterfly
+        y[:] = np.reshape(dft_mat @ np.reshape(tmp_twid, (R, R**(K-1))), (N, ))
+
+def symm(alpha: float, beta: float, C: np.ndarray[float, 2], A: np.ndarray[float, 2], B: np.ndarray[float, 2]):
+
+    temp2 = np.empty((C.shape[1], ), dtype=C.dtype)
+    C *= beta
+    for i in range(C.shape[0]):
+        for j in range(C.shape[1]):
+            C[:i, j] += alpha * B[i, j] * A[i, :i]
+            temp2[j] = B[:i, j] @ A[i, :i]
+        C[i, :] += alpha * B[i, :] * A[i, i] + alpha * temp2
+
+def syr2k(alpha: float, beta: float, C: np.ndarray[float,2], A: np.ndarray[float,2], B: np.ndarray[float,2]):
+
+    for i in range(A.shape[0]):
+        C[i, :i + 1] *= beta
+        for k in range(A.shape[1]):
+            C[i, :i + 1] += (A[:i + 1, k] * alpha * B[i, k] +
+                             B[:i + 1, k] * alpha * A[i, k])
+
+def syrk(alpha: float, beta: float, C: np.ndarray[float, 2], A: np.ndarray[float, 2]):
+
+    for i in range(A.shape[0]):
+        C[i, :i + 1] *= beta
+        for k in range(A.shape[1]):
+            C[i, :i + 1] += alpha * A[i, k] * A[:i + 1, k]
+
+def trisolv(L: np.ndarray[float, 2], x: np.ndarray[float, 1], b: np.ndarray[float,1]):
+    for i in range(x.shape[0]):
+        x[i] = (b[i] - L[i, :i] @ x[:i]) / L[i, i]
+
+def trmm(alpha: float, A: np.ndarray[float,2], B: np.ndarray[float,2]):
+
+    for i in range(B.shape[0]):
+        for j in range(B.shape[1]):
+            B[i, j] += np.dot(A[i + 1:, i], B[i + 1:, j])
+    B *= alpha
+
+def vadv(utens_stage: np.ndarray[float, 3], u_stage: np.ndarray[float,3], wcon: np.ndarray[float,3], u_pos: np.ndarray[float,3], utens: np.ndarray[float,3], dtr_stage: float):
+    BET_M = 0.5
+    BET_P = 0.5
+
+    I, J, K = utens_stage.shape[0], utens_stage.shape[1], utens_stage.shape[2]
+    # ccol = np.ndarray((I, J, K), dtype=utens_stage.dtype)
+    # dcol = np.ndarray((I, J, K), dtype=utens_stage.dtype)
+    # data_col = np.ndarray((I, J), dtype=utens_stage.dtype)
+    ccol = np.empty((I, J, K), dtype=utens_stage.dtype)
+    dcol = np.empty((I, J, K), dtype=utens_stage.dtype)
+    data_col = np.empty((I, J), dtype=utens_stage.dtype)
+
+    for k in range(1):
+        gcv = 0.25 * (wcon[1:, :, k + 1] + wcon[:-1, :, k + 1])
+        cs = gcv * BET_M
+
+        ccol[:, :, k] = gcv * BET_P
+        bcol = dtr_stage - ccol[:, :, k]
+
+        # update the d column
+        correction_term = -cs * (u_stage[:, :, k + 1] - u_stage[:, :, k])
+        dcol[:, :, k] = (dtr_stage * u_pos[:, :, k] + utens[:, :, k] +
+                         utens_stage[:, :, k] + correction_term)
+
+        # Thomas forward
+        divided = 1.0 / bcol
+        ccol[:, :, k] = ccol[:, :, k] * divided
+        dcol[:, :, k] = dcol[:, :, k] * divided
+
+    for k in range(1, K - 1):
+        gav = -0.25 * (wcon[1:, :, k] + wcon[:-1, :, k])
+        gcv = 0.25 * (wcon[1:, :, k + 1] + wcon[:-1, :, k + 1])
+
+        as_ = gav * BET_M
+        cs = gcv * BET_M
+
+        acol = gav * BET_P
+        ccol[:, :, k] = gcv * BET_P
+        bcol = dtr_stage - acol - ccol[:, :, k]
+
+        # update the d column
+        correction_term = -as_ * (u_stage[:, :, k - 1] -
+                                  u_stage[:, :, k]) - cs * (
+                                      u_stage[:, :, k + 1] - u_stage[:, :, k])
+        dcol[:, :, k] = (dtr_stage * u_pos[:, :, k] + utens[:, :, k] +
+                         utens_stage[:, :, k] + correction_term)
+
+        # Thomas forward
+        divided = 1.0 / (bcol - ccol[:, :, k - 1] * acol)
+        ccol[:, :, k] = ccol[:, :, k] * divided
+        dcol[:, :, k] = (dcol[:, :, k] - (dcol[:, :, k - 1]) * acol) * divided
+
+    for k in range(K - 1, K):
+        gav = -0.25 * (wcon[1:, :, k] + wcon[:-1, :, k])
+        as_ = gav * BET_M
+        acol = gav * BET_P
+        bcol = dtr_stage - acol
+
+        # update the d column
+        correction_term = -as_ * (u_stage[:, :, k - 1] - u_stage[:, :, k])
+        dcol[:, :, k] = (dtr_stage * u_pos[:, :, k] + utens[:, :, k] +
+                         utens_stage[:, :, k] + correction_term)
+
+        # Thomas forward
+        divided = 1.0 / (bcol - ccol[:, :, k - 1] * acol)
+        dcol[:, :, k] = (dcol[:, :, k] - (dcol[:, :, k - 1]) * acol) * divided
+
+    for k in range(K - 1, K - 2, -1):
+        datacol = dcol[:, :, k]
+        data_col[:] = datacol
+        utens_stage[:, :, k] = dtr_stage * (datacol - u_pos[:, :, k])
+
+    for k in range(K - 2, -1, -1):
+        datacol = dcol[:, :, k] - ccol[:, :, k] * data_col[:, :]
+        data_col[:] = datacol
+        utens_stage[:, :, k] = dtr_stage * (datacol - u_pos[:, :, k])

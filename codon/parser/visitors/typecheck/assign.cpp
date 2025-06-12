@@ -272,8 +272,9 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 
   if (assign->getRhs()) { // not a declaration!
     // Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-    if (wrapExpr(&assign->rhs, assign->getLhs()->getType()))
+    if (wrapExpr(&assign->rhs, assign->getLhs()->getType())) {
       unify(assign->getLhs()->getType(), assign->getRhs()->getType());
+    }
 
     // Generalize non-variable types. That way we can support cases like:
     // `a = foo(x, ...); a(1); a('s')`
@@ -416,7 +417,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 /// @return a tuple indicating whether (1) the update statement can be replaced with an
 ///         expression, and (2) the replacement expression.
 std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
-  // Case: capsule oeprations
+  // Case: capsule operations
   if (stmt->getLhs()->getType()->is("Capsule")) {
     return {true,
             transform(N<AssignStmt>(
