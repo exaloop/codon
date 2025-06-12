@@ -31,7 +31,7 @@ compile() {
     extra=$3
     echo -n "====> C: ${name} ${path} "
     start=$(date +%s.%N)
-    CODON_DEBUG=lt /usr/bin/time -o run/log/${name}.time.txt -f 'time=%e mem=%M exit=%x' \
+    CODON_DEBUG=lt /usr/bin/time -f 'time=%e mem=%M exit=%x' \
         codon build -release $extra $path -o run/exe/${name}.exe \
         >run/log/${name}.compile.txt 2>&1
     duration=$(echo "$(date +%s.%N) $start" | awk '{printf "%.1f", $1-$2}')
@@ -113,6 +113,7 @@ bench codon/float.py
 bench codon/go.codon
 # TODO: bench codon/mandelbrot.codon
 bench codon/nbody.py 10000000 # 6s
+bench codon/npbench.codon # ...s
 bench codon/set_partition.py 15 # 15s
 bench codon/spectral_norm.py
 bench codon/primes.codon 100000 # 3s
