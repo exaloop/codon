@@ -34,20 +34,7 @@
  * General
  */
 
-/// ORC patches
-
-#include "llvm/BinaryFormat/MachO.h"
-
-// Define a minimal mach header for JIT'd code.
-static llvm::MachO::mach_header_64 fake_mach_header = {
-    .magic = llvm::MachO::MH_MAGIC_64,
-    .cputype = llvm::MachO::CPU_TYPE_ARM64,
-    .cpusubtype = llvm::MachO::CPU_SUBTYPE_ARM64_ALL,
-    .filetype = llvm::MachO::MH_DYLIB,
-    .ncmds = 0,
-    .sizeofcmds = 0,
-    .flags = 0,
-    .reserved = 0};
+ #define USE_STANDARD_MALLOC 0
 
 // OpenMP patch with GC callbacks
 typedef int (*gc_setup_callback)(GC_stack_base *);
@@ -66,11 +53,14 @@ void seq_nvptx_init();
 int seq_flags;
 
 SEQ_FUNC void seq_init(int flags) {
+#if !USE_STANDARD_MALLOC
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
+#endif
+
   seq_exc_init(flags);
 #ifdef CODON_GPU
   seq_nvptx_init();
@@ -167,7 +157,6 @@ SEQ_FUNC char **seq_env() { return environ; }
 /*
  * GC
  */
-#define USE_STANDARD_MALLOC 0
 
 SEQ_FUNC void *seq_alloc(size_t n) {
 #if USE_STANDARD_MALLOC
