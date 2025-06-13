@@ -129,14 +129,17 @@ void JITState::undoUnusedIR() {
 
 void JITState::cleanUpRealizations() {
   // Clean-up IR nodes after single JIT input
-  for (auto &f : cache->functions) {
-    if (f.first == "__internal__.class_populate_vtables:0")
-      continue;
-    f.second.realizations.clear();
-  }
-  for (auto &c : cache->classes) {
-    c.second.realizations.clear();
-  }
+  // for (auto &f : cache->functions) {
+  //   if (f.first == "__internal__.class_populate_vtables:0")
+  //     continue;
+  //   f.second.realizations.clear();
+  // }
+  // for (auto &c : cache->classes) {
+  //   c.second.realizations.clear();
+  // }
+  // for (auto &c : cache->globals) {
+  //   c.second.second = nullptr;
+  // }
 }
 
 llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
