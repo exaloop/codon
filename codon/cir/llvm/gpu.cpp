@@ -358,8 +358,8 @@ llvm::Function *makeFillIn(llvm::Function *F, Codegen codegen) {
 
 llvm::Function *makeMalloc(llvm::Module *M) {
   auto &context = M->getContext();
-  auto F = M->getOrInsertFunction("malloc", llvm::Type::getInt8PtrTy(context),
-                                  llvm::Type::getInt64Ty(context));
+  llvm::IRBuilder<> B(context);
+  auto F = M->getOrInsertFunction("malloc", B.getPtrTy(), B.getInt64Ty());
   auto *G = llvm::cast<llvm::Function>(F.getCallee());
   G->setLinkage(llvm::GlobalValue::ExternalLinkage);
   G->setDoesNotThrow();
@@ -506,8 +506,7 @@ void remapFunctions(llvm::Module *M) {
          auto *M = B.GetInsertBlock()->getModule();
          llvm::Value *mem = B.CreateCall(makeMalloc(M), args[1]);
          auto F = llvm::Intrinsic::getDeclaration(
-             M, llvm::Intrinsic::memcpy,
-             {B.getInt8PtrTy(), B.getInt8PtrTy(), B.getInt64Ty()});
+             M, llvm::Intrinsic::memcpy, {B.getPtrTy(), B.getPtrTy(), B.getInt64Ty()});
          B.CreateCall(F, {mem, args[0], args[2], B.getFalse()});
          B.CreateRet(mem);
        }},
@@ -518,7 +517,7 @@ void remapFunctions(llvm::Module *M) {
          llvm::Value *size = B.CreateMul(args[0], args[1]);
          llvm::Value *mem = B.CreateCall(makeMalloc(M), size);
          auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
-                                                  {B.getInt8PtrTy(), B.getInt64Ty()});
+                                                  {B.getPtrTy(), B.getInt64Ty()});
          B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
          B.CreateRet(mem);
        }},
@@ -529,7 +528,7 @@ void remapFunctions(llvm::Module *M) {
          llvm::Value *size = B.CreateMul(args[0], args[1]);
          llvm::Value *mem = B.CreateCall(makeMalloc(M), size);
          auto F = llvm::Intrinsic::getDeclaration(M, llvm::Intrinsic::memset,
-                                                  {B.getInt8PtrTy(), B.getInt64Ty()});
+                                                  {B.getPtrTy(), B.getInt64Ty()});
          B.CreateCall(F, {mem, B.getInt8(0), size, B.getFalse()});
          B.CreateRet(mem);
        }},
@@ -703,7 +702,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       triple.getTriple(), cpuStr, featuresStr, options,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
-      llvm::CodeGenOpt::Aggressive));
+      llvm::CodeGenOptLevel::Aggressive));
 
   M->setDataLayout(machine->createDataLayout());
   auto keep = getRequiredGVs(kernels);
@@ -802,15 +801,15 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
       compilationError(errcode.message());
     llvm::raw_pwrite_stream *os = &out->os();
 
-    auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
-    auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
+    auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(machine.get());
     llvm::legacy::PassManager pm;
 
     pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-    seqassertn(!machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_AssemblyFile,
+    seqassertn(!machine->addPassesToEmitFile(pm, *os, nullptr,
+                                             llvm::CodeGenFileType::AssemblyFile,
                                              /*DisableVerify=*/false, mmiwp),
                "could not add passes");
-    const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
+    const_cast<llvm::TargetLoweringObjectFile *>(machine->getObjFileLowering())
         ->Initialize(mmiwp->getMMI().getContext(), *machine);
     pm.run(*M);
     out->keep();
@@ -819,9 +818,8 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 
 void addInitCall(llvm::Module *M, const std::string &filename) {
   llvm::LLVMContext &context = M->getContext();
-  auto f =
-      M->getOrInsertFunction("seq_nvptx_load_module", llvm::Type::getVoidTy(context),
-                             llvm::Type::getInt8PtrTy(context));
+  llvm::IRBuilder<> B(context);
+  auto f = M->getOrInsertFunction("seq_nvptx_load_module", B.getVoidTy(), B.getPtrTy());
   auto *g = llvm::cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
 
@@ -830,20 +828,19 @@ void addInitCall(llvm::Module *M, const std::string &filename) {
       /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantDataArray::getString(context, filename), ".nvptx.filename");
   filenameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  llvm::IRBuilder<> B(context);
 
   if (auto *init = M->getFunction("seq_init")) {
     seqassertn(init->hasOneUse(), "seq_init used more than once");
     auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->getUser());
     seqassertn(use, "seq_init use was not a call");
     B.SetInsertPoint(use->getNextNode());
-    B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
+    B.CreateCall(g, B.CreateBitCast(filenameVar, B.getPtrTy()));
   }
 
   for (auto &F : M->functions()) {
     if (F.hasFnAttribute("jit")) {
       B.SetInsertPoint(F.getEntryBlock().getFirstNonPHI());
-      B.CreateCall(g, B.CreateBitCast(filenameVar, B.getInt8PtrTy()));
+      B.CreateCall(g, B.CreateBitCast(filenameVar, B.getPtrTy()));
     }
   }
 }
@@ -853,7 +850,7 @@ void cleanUpIntrinsics(llvm::Module *M) {
   llvm::SmallVector<llvm::Function *, 16> remove;
   for (auto &F : *M) {
     if (F.getIntrinsicID() != llvm::Intrinsic::not_intrinsic &&
-        F.getName().startswith("llvm.nvvm"))
+        F.getName().starts_with("llvm.nvvm"))
       remove.push_back(&F);
   }
 

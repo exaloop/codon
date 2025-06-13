@@ -95,24 +95,24 @@ LLVMVisitor::LLVMVisitor()
 
   llvm::initializeExpandLargeDivRemLegacyPassPass(registry);
   llvm::initializeExpandLargeFpConvertLegacyPassPass(registry);
-  llvm::initializeExpandMemCmpPassPass(registry);
+  llvm::initializeExpandMemCmpLegacyPassPass(registry);
   llvm::initializeScalarizeMaskedMemIntrinLegacyPassPass(registry);
   llvm::initializeSelectOptimizePass(registry);
   llvm::initializeCallBrPreparePass(registry);
-  llvm::initializeCodeGenPreparePass(registry);
-  llvm::initializeAtomicExpandPass(registry);
+  llvm::initializeCodeGenPrepareLegacyPassPass(registry);
+  llvm::initializeAtomicExpandLegacyPass(registry);
   llvm::initializeWinEHPreparePass(registry);
   llvm::initializeDwarfEHPrepareLegacyPassPass(registry);
   llvm::initializeSafeStackLegacyPassPass(registry);
   llvm::initializeSjLjEHPreparePass(registry);
   llvm::initializePreISelIntrinsicLoweringLegacyPassPass(registry);
   llvm::initializeGlobalMergePass(registry);
-  llvm::initializeIndirectBrExpandPassPass(registry);
+  llvm::initializeIndirectBrExpandLegacyPassPass(registry);
   llvm::initializeInterleavedLoadCombinePass(registry);
   llvm::initializeInterleavedAccessPass(registry);
+  llvm::initializePostInlineEntryExitInstrumenterPass(registry);
   llvm::initializeUnreachableBlockElimLegacyPassPass(registry);
   llvm::initializeExpandReductionsPass(registry);
-  llvm::initializeExpandVectorPredicationPass(registry);
   llvm::initializeWasmEHPreparePass(registry);
   llvm::initializeWriteBitcodePassPass(registry);
   llvm::initializeReplaceWithVeclibLegacyPass(registry);
@@ -371,16 +371,15 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
   llvm::raw_pwrite_stream *os = &out->os();
 
   auto machine = getTargetMachine(M.get(), /*setFunctionAttributes=*/false, pic);
-  auto &llvmtm = static_cast<llvm::LLVMTargetMachine &>(*machine);
-  auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(&llvmtm);
+  auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(machine.get());
   llvm::legacy::PassManager pm;
 
   llvm::TargetLibraryInfoImpl tlii(llvm::Triple(M->getTargetTriple()));
   pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-  if (machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CGFT_ObjectFile,
+  if (machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CodeGenFileType::ObjectFile,
                                    /*DisableVerify=*/true, mmiwp))
     seqassertn(false, "could not add passes");
-  const_cast<llvm::TargetLoweringObjectFile *>(llvmtm.getObjFileLowering())
+  const_cast<llvm::TargetLoweringObjectFile *>(machine->getObjFileLowering())
       ->Initialize(mmiwp->getMMI().getContext(), *machine);
   pm.run(*M);
   out->keep();
@@ -445,8 +444,8 @@ void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   }
 
   auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
-  auto *ctorEntryTy = llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(),
-                                            B->getInt8PtrTy());
+  auto *ctorEntryTy =
+      llvm::StructType::get(B->getInt32Ty(), ctorFuncTy->getPointerTo(), B->getPtrTy());
   auto *ctorArrayTy = llvm::ArrayType::get(ctorEntryTy, 1);
 
   auto *ctor =
@@ -454,15 +453,15 @@ void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
   ctor->setLinkage(llvm::GlobalValue::InternalLinkage);
   auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
   B->SetInsertPoint(entry);
-  B->CreateCall({main->getFunctionType(), main},
-                {B->getInt32(0),
-                 llvm::ConstantPointerNull::get(B->getInt8PtrTy()->getPointerTo())});
+  B->CreateCall(
+      {main->getFunctionType(), main},
+      {B->getInt32(0), llvm::ConstantPointerNull::get(B->getPtrTy()->getPointerTo())});
   B->CreateRetVoid();
 
   const int priority = 65535; // default
   auto *ctorEntry = llvm::ConstantStruct::get(
       ctorEntryTy,
-      {B->getInt32(priority), ctor, llvm::ConstantPointerNull::get(B->getInt8PtrTy())});
+      {B->getInt32(priority), ctor, llvm::ConstantPointerNull::get(B->getPtrTy())});
   new llvm::GlobalVariable(*M, ctorArrayTy,
                            /*isConstant=*/true, llvm::GlobalValue::AppendingLinkage,
                            llvm::ConstantArray::get(ctorArrayTy, {ctorEntry}),
@@ -541,7 +540,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
           continue;
 
         auto stem = llvm::sys::path::stem(dylibPath);
-        if (stem.startswith("lib"))
+        if (stem.starts_with("lib"))
           stem = stem.substr(3);
 
         command.push_back("-l" + stem.str());
@@ -631,7 +630,7 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
           unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
           0));
   unwindException = B->CreateExtractValue(caughtResult, 0);
-  auto *excType = llvm::StructType::get(getTypeInfoType(), B->getInt8PtrTy());
+  auto *excType = llvm::StructType::get(getTypeInfoType(), B->getPtrTy());
   auto *excVal =
       B->CreatePointerCast(B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
                                                  (uint64_t)seq_exc_offset()),
@@ -639,10 +638,10 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *loadedExc = B->CreateLoad(excType, excVal);
   auto *objPtr = B->CreateExtractValue(loadedExc, 1);
 
-  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
+  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
   auto *excHeader =
       llvm::StructType::get(strType, strType, strType, strType, B->getInt64Ty(),
-                            B->getInt64Ty(), B->getInt8PtrTy());
+                            B->getInt64Ty(), B->getPtrTy());
   auto *header = B->CreateLoad(excHeader, objPtr);
   auto *msg = B->CreateExtractValue(header, 1);
   auto *msgLen = B->CreateExtractValue(msg, 0);
@@ -657,23 +656,23 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   B->CreateStore(B->getInt8(0), last);
 
   auto *pyErrSetString = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("PyErr_SetString", B->getVoidTy(), B->getInt8PtrTy(),
-                             B->getInt8PtrTy())
+      M->getOrInsertFunction("PyErr_SetString", B->getVoidTy(), B->getPtrTy(),
+                             B->getPtrTy())
           .getCallee());
 
   const std::string pyExcRuntimeErrorName = "PyExc_RuntimeError";
   llvm::Value *pyExcRuntimeError = M->getNamedValue(pyExcRuntimeErrorName);
   if (!pyExcRuntimeError) {
     auto *pyExcRuntimeErrorVar = new llvm::GlobalVariable(
-        *M, B->getInt8PtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
+        *M, B->getPtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
         /*Initializer=*/nullptr, pyExcRuntimeErrorName);
     pyExcRuntimeErrorVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
     pyExcRuntimeError = pyExcRuntimeErrorVar;
   }
-  pyExcRuntimeError = B->CreateLoad(B->getInt8PtrTy(), pyExcRuntimeError);
+  pyExcRuntimeError = B->CreateLoad(B->getPtrTy(), pyExcRuntimeError);
 
   auto *havePyType =
-      B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getInt8PtrTy()));
+      B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getPtrTy()));
   B->CreateCall(pyErrSetString,
                 {B->CreateSelect(havePyType, pyType, pyExcRuntimeError), buf});
 
@@ -693,7 +692,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
   auto *i64 = B->getInt64Ty();
   auto *i32 = B->getInt32Ty();
   auto *i8 = B->getInt8Ty();
-  auto *ptr = B->getInt8PtrTy();
+  auto *ptr = B->getPtrTy();
   auto *pyMethodDefType = llvm::StructType::create("PyMethodDef", ptr, ptr, i32, ptr);
   auto *pyObjectType = llvm::StructType::create("PyObject", i64, ptr);
   auto *pyVarObjectType = llvm::StructType::create("PyVarObject", pyObjectType, i64);
@@ -1204,13 +1203,13 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
                           const std::vector<std::string> &libs,
                           const std::string &lflags) {
   llvm::StringRef f(filename);
-  if (f.endswith(".ll")) {
+  if (f.ends_with(".ll")) {
     writeToLLFile(filename);
-  } else if (f.endswith(".bc")) {
+  } else if (f.ends_with(".bc")) {
     writeToBitcodeFile(filename);
-  } else if (f.endswith(".o") || f.endswith(".obj")) {
+  } else if (f.ends_with(".o") || f.ends_with(".obj")) {
     writeToObjectFile(filename);
-  } else if (f.endswith(".so") || f.endswith(".dylib")) {
+  } else if (f.ends_with(".so") || f.ends_with(".dylib")) {
     writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
     writeToExecutable(filename, argv0, /*library=*/false, libs, lflags);
@@ -1235,7 +1234,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
       std::make_shared<llvm::orc::SymbolStringPool>()));
 
   llvm::orc::LLJITBuilder builder;
-  builder.setDataLayout(llvm::DataLayout(M.get()));
+  builder.setDataLayout(M->getDataLayout());
   builder.setObjectLinkingLayerCreator(
       [&epc, &dbp](llvm::orc::ExecutionSession &es, const llvm::Triple &triple)
           -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
@@ -1289,7 +1288,7 @@ llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic, bool uncollectable)
   const std::string name =
       atomic ? (uncollectable ? "seq_alloc_atomic_uncollectable" : "seq_alloc_atomic")
              : (uncollectable ? "seq_alloc_uncollectable" : "seq_alloc");
-  auto f = M->getOrInsertFunction(name, B->getInt8PtrTy(), B->getInt64Ty());
+  auto f = M->getOrInsertFunction(name, B->getPtrTy(), B->getInt64Ty());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   g->setReturnDoesNotAlias();
@@ -1306,7 +1305,7 @@ llvm::FunctionCallee LLVMVisitor::makeAllocFunc(bool atomic, bool uncollectable)
 
 llvm::FunctionCallee LLVMVisitor::makeReallocFunc() {
   // note that seq_realloc takes arguments (ptr, new_size, old_size)
-  auto f = M->getOrInsertFunction("seq_realloc", B->getInt8PtrTy(), B->getInt8PtrTy(),
+  auto f = M->getOrInsertFunction("seq_realloc", B->getPtrTy(), B->getPtrTy(),
                                   B->getInt64Ty(), B->getInt64Ty());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
@@ -1322,7 +1321,7 @@ llvm::FunctionCallee LLVMVisitor::makeReallocFunc() {
 }
 
 llvm::FunctionCallee LLVMVisitor::makeFreeFunc() {
-  auto f = M->getOrInsertFunction("seq_free", B->getVoidTy(), B->getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_free", B->getVoidTy(), B->getPtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   g->addParamAttr(0, llvm::Attribute::AttrKind::AllocatedPointer);
@@ -1336,27 +1335,27 @@ llvm::FunctionCallee LLVMVisitor::makeFreeFunc() {
 
 llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
   return M->getOrInsertFunction("seq_personality", B->getInt32Ty(), B->getInt32Ty(),
-                                B->getInt32Ty(), B->getInt64Ty(), B->getInt8PtrTy(),
-                                B->getInt8PtrTy());
+                                B->getInt32Ty(), B->getInt64Ty(), B->getPtrTy(),
+                                B->getPtrTy());
 }
 
 llvm::FunctionCallee LLVMVisitor::makeExcAllocFunc() {
-  auto f = M->getOrInsertFunction("seq_alloc_exc", B->getInt8PtrTy(), B->getInt32Ty(),
-                                  B->getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_alloc_exc", B->getPtrTy(), B->getInt32Ty(),
+                                  B->getPtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   return f;
 }
 
 llvm::FunctionCallee LLVMVisitor::makeThrowFunc() {
-  auto f = M->getOrInsertFunction("seq_throw", B->getVoidTy(), B->getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_throw", B->getVoidTy(), B->getPtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotReturn();
   return f;
 }
 
 llvm::FunctionCallee LLVMVisitor::makeTerminateFunc() {
-  auto f = M->getOrInsertFunction("seq_terminate", B->getVoidTy(), B->getInt8PtrTy());
+  auto f = M->getOrInsertFunction("seq_terminate", B->getVoidTy(), B->getPtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotReturn();
   return f;
@@ -1367,11 +1366,11 @@ llvm::StructType *LLVMVisitor::getTypeInfoType() {
 }
 
 llvm::StructType *LLVMVisitor::getPadType() {
-  return llvm::StructType::get(B->getInt8PtrTy(), B->getInt32Ty());
+  return llvm::StructType::get(B->getPtrTy(), B->getInt32Ty());
 }
 
 llvm::StructType *LLVMVisitor::getExceptionType() {
-  return llvm::StructType::get(getTypeInfoType(), B->getInt8PtrTy());
+  return llvm::StructType::get(getTypeInfoType(), B->getPtrTy());
 }
 
 namespace {
@@ -1519,20 +1518,20 @@ void LLVMVisitor::visit(const Module *x) {
   setDebugInfoForNode(nullptr);
 
   // build canonical main function
-  auto *strType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getInt8PtrTy()});
+  auto *strType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
   auto *arrType =
       llvm::StructType::get(*context, {B->getInt64Ty(), strType->getPointerTo()});
 
   auto *initFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("seq_init", B->getVoidTy(), B->getInt32Ty()).getCallee());
   auto *strlenFunc = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("strlen", B->getInt64Ty(), B->getInt8PtrTy()).getCallee());
+      M->getOrInsertFunction("strlen", B->getInt64Ty(), B->getPtrTy()).getCallee());
 
   // check if main exists already as an exported function
   const std::string mainName = M->getFunction("main") ? MAIN_UNCLASH : "main";
   auto *canonicalMainFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction(mainName, B->getInt32Ty(), B->getInt32Ty(),
-                             B->getInt8PtrTy()->getPointerTo())
+                             B->getPtrTy()->getPointerTo())
           .getCallee());
 
   canonicalMainFunc->setPersonalityFn(
@@ -1573,7 +1572,7 @@ void LLVMVisitor::visit(const Module *x) {
 
   B->SetInsertPoint(bodyBlock);
   llvm::Value *arg =
-      B->CreateLoad(B->getInt8PtrTy(), B->CreateGEP(B->getInt8PtrTy(), argv, control));
+      B->CreateLoad(B->getPtrTy(), B->CreateGEP(B->getPtrTy(), argv, control));
   llvm::Value *argLen =
       B->CreateZExtOrTrunc(B->CreateCall(strlenFunc, arg), B->getInt64Ty());
   llvm::Value *str = llvm::UndefValue::get(strType);
@@ -1813,7 +1812,8 @@ void LLVMVisitor::visit(const InternalFunc *x) {
     } else {
       llvm::FunctionCallee coroPromise =
           llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
-      llvm::Value *aln = B->getInt32(M->getDataLayout().getPrefTypeAlignment(baseType));
+      llvm::Value *aln =
+          B->getInt32(M->getDataLayout().getPrefTypeAlign(baseType).value());
       llvm::Value *from = B->getFalse();
       llvm::Value *ptr = B->CreateCall(coroPromise, {args[0], aln, from});
       result = B->CreateBitCast(ptr, baseType->getPointerTo());
@@ -2056,11 +2056,11 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
     // coro ID and promise
     llvm::Value *id = nullptr;
-    llvm::Value *nullPtr = llvm::ConstantPointerNull::get(B->getInt8PtrTy());
+    llvm::Value *nullPtr = llvm::ConstantPointerNull::get(B->getPtrTy());
     if (!cast<types::VoidType>(generatorType->getBase())) {
       coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
       coro.promise->setName("coro.promise");
-      llvm::Value *promiseRaw = B->CreateBitCast(coro.promise, B->getInt8PtrTy());
+      llvm::Value *promiseRaw = B->CreateBitCast(coro.promise, B->getPtrTy());
       id = B->CreateCall(coroId, {B->getInt32(0), promiseRaw, nullPtr, nullPtr});
     } else {
       id = B->CreateCall(coroId, {B->getInt32(0), nullPtr, nullPtr, nullPtr});
@@ -2078,7 +2078,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
     // coro start
     B->SetInsertPoint(startBlock);
-    llvm::PHINode *phi = B->CreatePHI(B->getInt8PtrTy(), 2);
+    llvm::PHINode *phi = B->CreatePHI(B->getPtrTy(), 2);
     phi->addIncoming(nullPtr, entryBlock);
     phi->addIncoming(alloc, allocBlock);
     coro.handle = B->CreateCall(coroBegin, {id, phi});
@@ -2096,7 +2096,8 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
     // coro suspend
     B->SetInsertPoint(coro.suspend);
-    B->CreateCall(coroEnd, {coro.handle, B->getFalse()});
+    B->CreateCall(coroEnd,
+                  {coro.handle, B->getFalse(), llvm::ConstantTokenNone::get(*context)});
     B->CreateRet(coro.handle);
 
     // coro exit
@@ -2220,7 +2221,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::RefType>(t)) {
-    auto *p = B->getInt8PtrTy();
+    auto *p = B->getPtrTy();
     if (x->isPolymorphic()) {
       return llvm::StructType::get(*context, {p, p});
     } else {
@@ -2245,7 +2246,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::GeneratorType>(t)) {
-    return B->getInt8PtrTy();
+    return B->getPtrTy();
   }
 
   if (auto *x = cast<types::IntNType>(t)) {
@@ -2395,7 +2396,7 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     auto *ref = db.builder->createReferenceType(
         llvm::dwarf::DW_TAG_reference_type, getDITypeHelper(x->getContents(), cache));
     if (x->isPolymorphic()) {
-      auto *p = B->getInt8PtrTy();
+      auto *p = B->getPtrTy();
       auto pointerSizeInBits = layout.getTypeAllocSizeInBits(p);
       auto *rtti = db.builder->createBasicType("rtti", pointerSizeInBits,
                                                llvm::dwarf::DW_ATE_address);
@@ -2548,8 +2549,8 @@ void LLVMVisitor::visit(const StringConst *x) {
                                /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
                                llvm::ConstantDataArray::getString(*context, s), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getInt8PtrTy());
-  llvm::Value *ptr = B->CreateBitCast(strVar, B->getInt8PtrTy());
+  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
+  llvm::Value *ptr = B->CreateBitCast(strVar, B->getPtrTy());
   llvm::Value *len = B->getInt64(s.length());
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, len, 0);
@@ -2661,7 +2662,7 @@ void LLVMVisitor::visit(const ForFlow *x) {
   if (!loopVarType->isVoidTy()) {
     B->SetInsertPoint(bodyBlock);
     llvm::Value *alignment =
-        B->getInt32(M->getDataLayout().getPrefTypeAlignment(loopVarType));
+        B->getInt32(M->getDataLayout().getPrefTypeAlign(loopVarType).value());
     llvm::Value *from = B->getFalse();
     llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
     llvm::Value *generatedValue = B->CreateLoad(loopVarType, promise);
@@ -2781,8 +2782,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   llvm::StructType *padType = getPadType();
   llvm::StructType *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
-  llvm::StructType *excType =
-      llvm::StructType::get(getTypeInfoType(), B->getInt8PtrTy());
+  llvm::StructType *excType = llvm::StructType::get(getTypeInfoType(), B->getPtrTy());
 
   if (isRoot) {
     tc.excFlag = B->CreateAlloca(B->getInt8Ty());
@@ -3194,7 +3194,7 @@ void LLVMVisitor::codegenPipeline(
 
     B->SetInsertPoint(bodyBlock);
     llvm::Value *alignment =
-        B->getInt32(M->getDataLayout().getPrefTypeAlignment(baseType));
+        B->getInt32(M->getDataLayout().getPrefTypeAlign(baseType).value());
     llvm::Value *from = B->getFalse();
     llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
     promise = B->CreateBitCast(promise, baseType->getPointerTo());

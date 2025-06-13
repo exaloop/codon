@@ -6,27 +6,6 @@
 
 namespace codon {
 
-BoehmGCMemoryManager::BoehmGCMemoryManager() : SectionMemoryManager(), roots() {}
-
-uint8_t *BoehmGCMemoryManager::allocateDataSection(uintptr_t size, unsigned alignment,
-                                                   unsigned sectionID,
-                                                   llvm::StringRef sectionName,
-                                                   bool isReadOnly) {
-  auto *result = SectionMemoryManager::allocateDataSection(size, alignment, sectionID,
-                                                           sectionName, isReadOnly);
-  void *start = result;
-  void *end = result + size;
-  seq_gc_add_roots(start, end);
-  roots.emplace_back(start, end);
-  return result;
-}
-
-BoehmGCMemoryManager::~BoehmGCMemoryManager() {
-  for (const auto &root : roots) {
-    seq_gc_remove_roots(root.first, root.second);
-  }
-}
-
 class BoehmGCJITLinkMemoryManager::IPInFlightAlloc
     : public llvm::jitlink::JITLinkMemoryManager::InFlightAlloc {
 public:
@@ -101,23 +80,19 @@ private:
 
 llvm::Expected<std::unique_ptr<BoehmGCJITLinkMemoryManager>>
 BoehmGCJITLinkMemoryManager::Create() {
-  if (auto PageSize = llvm::sys::Process::getPageSize())
+  if (auto PageSize = llvm::sys::Process::getPageSize()) {
+    if (!llvm::isPowerOf2_64((uint64_t)*PageSize))
+      return llvm::make_error<llvm::StringError>("Page size is not a power of 2",
+                                                 llvm::inconvertibleErrorCode());
     return std::make_unique<BoehmGCJITLinkMemoryManager>(*PageSize);
-  else
+  } else {
     return PageSize.takeError();
+  }
 }
 
 void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD,
                                            llvm::jitlink::LinkGraph &G,
                                            OnAllocatedFunction OnAllocated) {
-
-  // FIXME: Just check this once on startup.
-  if (!llvm::isPowerOf2_64((uint64_t)PageSize)) {
-    OnAllocated(llvm::make_error<llvm::StringError>("Page size is not a power of 2",
-                                                    llvm::inconvertibleErrorCode()));
-    return;
-  }
-
   llvm::jitlink::BasicLayout BL(G);
 
   /// Scan the request and calculate the group and total sizes.
@@ -178,10 +153,9 @@ void BoehmGCJITLinkMemoryManager::allocate(const llvm::jitlink::JITLinkDylib *JD
     auto &AG = KV.first;
     auto &Seg = KV.second;
 
-    auto &SegAddr =
-        (AG.getMemLifetimePolicy() == llvm::orc::MemLifetimePolicy::Standard)
-            ? NextStandardSegAddr
-            : NextFinalizeSegAddr;
+    auto &SegAddr = (AG.getMemLifetime() == llvm::orc::MemLifetime::Standard)
+                        ? NextStandardSegAddr
+                        : NextFinalizeSegAddr;
 
     Seg.WorkingMem = SegAddr.toPtr<char *>();
     Seg.Addr = SegAddr;
@@ -213,8 +187,7 @@ void BoehmGCJITLinkMemoryManager::deallocate(std::vector<FinalizedAlloc> Allocs,
     for (auto &Alloc : Allocs) {
       auto *FA = Alloc.release().toPtr<FinalizedAllocInfo *>();
       StandardSegmentsList.push_back(std::move(FA->StandardSegments));
-      if (!FA->DeallocActions.empty())
-        DeallocActionsList.push_back(std::move(FA->DeallocActions));
+      DeallocActionsList.push_back(std::move(FA->DeallocActions));
       FA->~FinalizedAllocInfo();
       FinalizedAllocInfos.Deallocate(FA);
     }

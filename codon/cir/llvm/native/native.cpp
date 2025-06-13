@@ -4,7 +4,11 @@
 
 #include "codon/cir/llvm/llvm.h"
 #include "codon/cir/llvm/native/targets/aarch64.h"
+#include "codon/cir/llvm/native/targets/arm.h"
 #include "codon/cir/llvm/native/targets/x86.h"
+
+// Targets adapted from
+// https://github.com/llvm/llvm-project/tree/main/clang/lib/Driver/ToolChains/Arch
 
 namespace codon {
 namespace ir {
@@ -25,7 +29,7 @@ std::unique_ptr<Target> getNativeTarget(const llvm::Triple &triple) {
   case llvm::Triple::armeb:
   case llvm::Triple::thumb:
   case llvm::Triple::thumbeb:
-    // nothing
+    result = std::make_unique<ARM>();
     break;
 
   case llvm::Triple::ppc:
@@ -105,7 +109,8 @@ void addNativeLLVMPasses(llvm::PassBuilder *pb) {
   std::string features = target->getFeatures(triple);
 
   pb->registerPipelineEarlySimplificationEPCallback(
-      [cpu, features](llvm::ModulePassManager &pm, llvm::OptimizationLevel opt) {
+      [cpu, features](llvm::ModulePassManager &pm, llvm::OptimizationLevel opt,
+                      llvm::ThinOrFullLTOPhase lto) {
         pm.addPass(
             llvm::createModuleToFunctionPassAdaptor(ArchNativePass(cpu, features)));
       });

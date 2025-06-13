@@ -275,6 +275,7 @@ set(CODON_HPPFILES
   codon/cir/value.h
   codon/cir/llvm/native/native.h
   codon/cir/llvm/native/targets/aarch64.h
+  codon/cir/llvm/native/targets/arm.h
   codon/cir/llvm/native/targets/target.h
   codon/cir/llvm/native/targets/x86.h
   codon/cir/transform/numpy/numpy.h
@@ -375,6 +376,7 @@ set(CODON_CPPFILES
   codon/cir/var.cpp
   codon/cir/llvm/native/native.cpp
   codon/cir/llvm/native/targets/aarch64.cpp
+  codon/cir/llvm/native/targets/arm.cpp
   codon/cir/llvm/native/targets/x86.cpp
   codon/cir/transform/numpy/expr.cpp
   codon/cir/transform/numpy/forward.cpp
