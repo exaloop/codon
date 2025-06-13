@@ -6,7 +6,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -75,9 +74,9 @@ void TypecheckVisitor::visit(StringExpr *expr) {
       } else if (!p.prefix.empty()) {
         /// Custom prefix strings:
         /// call `str.__prefsix_[prefix]__(str, [static length of str])`
-        items.emplace_back(
-            N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), format("__prefix_{}__", p.prefix)),
-                        N<StringExpr>(p.value), N<IntExpr>(p.value.size())));
+        items.emplace_back(N<CallExpr>(
+            N<DotExpr>(N<IdExpr>("str"), fmt::format("__prefix_{}__", p.prefix)),
+            N<StringExpr>(p.value), N<IntExpr>(p.value.size())));
       } else {
         items.emplace_back(N<StringExpr>(p.value));
       }
@@ -137,7 +136,7 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
   } else {
     // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("int"), format("__suffix_{}__", suffix)), holder));
+        N<DotExpr>(N<IdExpr>("int"), fmt::format("__suffix_{}__", suffix)), holder));
   }
 }
 
@@ -164,7 +163,7 @@ Expr *TypecheckVisitor::transformFloat(FloatExpr *expr) {
   } else {
     // Custom suffix: call `float.__suffix_[suffix]__(value)`
     return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("float"), format("__suffix_{}__", suffix)), holder));
+        N<DotExpr>(N<IdExpr>("float"), fmt::format("__suffix_{}__", suffix)), holder));
   }
 }
 

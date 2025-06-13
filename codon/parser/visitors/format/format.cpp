@@ -5,8 +5,6 @@
 
 #include "codon/parser/visitors/format/format.h"
 
-using fmt::format;
-
 namespace codon {
 namespace ast {
 
@@ -222,13 +220,13 @@ void FormatVisitor::visit(LambdaExpr *expr) {
 }
 
 void FormatVisitor::visit(YieldExpr *expr) {
-  result = renderExpr(expr, "(" + keyword("yield") + ")");
+  result = renderExpr(expr, "{}", "(" + keyword("yield") + ")");
 }
 
 void FormatVisitor::visit(StmtExpr *expr) {
   std::string s;
   for (auto *i : *expr)
-    s += format("{}{}", pad(2), transform(i, 2));
+    s += fmt::format("{}{}", pad(2), transform(i, 2));
   result = renderExpr(expr, "《{}{}{}{}{}》", newline(), s, newline(), pad(2),
                       transform(expr->getExpr()));
 }
@@ -302,11 +300,12 @@ void FormatVisitor::visit(ForStmt *stmt) {
 }
 
 void FormatVisitor::visit(IfStmt *stmt) {
-  result = fmt::format("{} {}:{}{}{}", keyword("if"), transform(stmt->getCond()),
-                       newline(), transform(stmt->getIf(), 1),
-                       stmt->getElse() ? format("{}:{}{}", keyword("else"), newline(),
+  result =
+      fmt::format("{} {}:{}{}{}", keyword("if"), transform(stmt->getCond()), newline(),
+                  transform(stmt->getIf(), 1),
+                  stmt->getElse() ? fmt::format("{}:{}{}", keyword("else"), newline(),
                                                 transform(stmt->getElse(), 1))
-                                       : "");
+                                  : "");
 }
 
 void FormatVisitor::visit(MatchStmt *stmt) {
@@ -421,7 +420,7 @@ void FormatVisitor::visit(ClassStmt *stmt) {
           }
           result += fmt::format("{}{}{}{} {}", newline(), pad(),
                                 (stmt->hasAttribute(Attr::Tuple)
-                                     ? format("@tuple{}{}", newline(), pad())
+                                     ? fmt::format("@tuple{}{}", newline(), pad())
                                      : ""),
                                 keyword("class"), anchor_root(real.first));
           if (!args.empty())

@@ -9,7 +9,6 @@
 #include "codon/parser/match.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -58,8 +57,8 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
       magic = "neg";
     else
       seqassert(false, "invalid unary operator '{}'", expr->getOp());
-    resultExpr =
-        transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), format("__{}__", magic))));
+    resultExpr = transform(
+        N<CallExpr>(N<DotExpr>(expr->getExpr(), fmt::format("__{}__", magic))));
   }
 
   if (staticType)
@@ -881,7 +880,7 @@ Expr *TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAto
   // Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
   if (isAtomic) {
     auto ptr = instantiateType(getStdLibType("Ptr"), std::vector<types::Type *>{lt});
-    if ((method = findBestMethod(lt, format("__atomic_{}__", magic),
+    if ((method = findBestMethod(lt, fmt::format("__atomic_{}__", magic),
                                  {ptr.get(), expr->getRhs()->getType()}))) {
       expr->lexpr = N<CallExpr>(N<IdExpr>("__ptr__"), expr->getLhs());
     }
@@ -889,7 +888,7 @@ Expr *TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAto
 
   // In-place operations: check if `lhs.__iop__(lhs, rhs)` exists
   if (!method && expr->isInPlace()) {
-    method = findBestMethod(lt, format("__i{}__", magic),
+    method = findBestMethod(lt, fmt::format("__i{}__", magic),
                             std::vector<Expr *>{expr->getLhs(), expr->getRhs()});
   }
 
@@ -912,21 +911,21 @@ Expr *TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
     // Assumes that pyobj implements all left and right magics
     auto l = getTemporaryVar("l");
     auto r = getTemporaryVar("r");
-    return transform(
-        N<StmtExpr>(N<AssignStmt>(N<IdExpr>(l), expr->getLhs()),
-                    N<AssignStmt>(N<IdExpr>(r), expr->getRhs()),
-                    N<CallExpr>(N<DotExpr>(N<IdExpr>(r), format("__{}__", rightMagic)),
-                                N<IdExpr>(l))));
+    return transform(N<StmtExpr>(
+        N<AssignStmt>(N<IdExpr>(l), expr->getLhs()),
+        N<AssignStmt>(N<IdExpr>(r), expr->getRhs()),
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(r), fmt::format("__{}__", rightMagic)),
+                    N<IdExpr>(l))));
   }
   if (lt->getUnion()) {
     // Special case: `union op obj` -> `union.__magic__(rhs)`
-    return transform(N<CallExpr>(N<DotExpr>(expr->getLhs(), format("__{}__", magic)),
-                                 expr->getRhs()));
+    return transform(N<CallExpr>(
+        N<DotExpr>(expr->getLhs(), fmt::format("__{}__", magic)), expr->getRhs()));
   }
 
   // Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
   if (auto method =
-          findBestMethod(lt->getClass(), format("__{}__", magic),
+          findBestMethod(lt->getClass(), fmt::format("__{}__", magic),
                          std::vector<Expr *>{expr->getLhs(), expr->getRhs()})) {
     // Normal case: `__magic__(lhs, rhs)`
     return transform(
@@ -935,7 +934,7 @@ Expr *TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
 
   // Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
   if (auto method =
-          findBestMethod(rt->getClass(), format("__{}__", rightMagic),
+          findBestMethod(rt->getClass(), fmt::format("__{}__", rightMagic),
                          std::vector<Expr *>{expr->getRhs(), expr->getLhs()})) {
     auto l = getTemporaryVar("l");
     auto r = getTemporaryVar("r");

@@ -5,8 +5,6 @@
 #include "codon/parser/match.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
-
 namespace codon::ast {
 
 using namespace types;
@@ -75,8 +73,8 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         c->eraseAttribute(Attr::ExprDominatedUsed);
         c->setAttribute(Attr::ExprDominated);
         c->suite = N<SuiteStmt>(
-            N<AssignStmt>(N<IdExpr>(format("{}{}", getUnmangledName(c->getVar()),
-                                           VAR_USED_SUFFIX)),
+            N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(c->getVar()),
+                                                VAR_USED_SUFFIX)),
                           N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
             c->getSuite());
       } else {

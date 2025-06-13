@@ -11,8 +11,6 @@
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
-
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -180,7 +178,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       if (a.isValue()) {
         if (ClassStmt::isClassVar(a)) {
           // Handle class variables. Transform them later to allow self-references
-          auto name = format("{}.{}", canonicalName, a.getName());
+          auto name = fmt::format("{}.{}", canonicalName, a.getName());
           auto h = transform(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr));
           preamble->addStmt(h);
           auto val = ctx->forceFind(name);
@@ -301,7 +299,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           // Handle @setter setters
           if (match(dc, M<DotExpr>(M<IdExpr>(fp->getName()), "setter")) &&
               fp->size() == 2) {
-            fp->name = format("{}{}", FN_SETTER_SUFFIX, fp->getName());
+            fp->name = fmt::format("{}{}", FN_SETTER_SUFFIX, fp->getName());
             dc = nullptr;
             break;
           }
@@ -451,7 +449,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
             i += aa.getName() == a.getName() ||
                  startswith(aa.getName(), a.getName() + "#");
           if (i)
-            name = format("{}#{}", name, i);
+            name = fmt::format("{}#{}", name, i);
           seqassert(acls->fields[ai].name == a.getName(), "bad class fields: {} vs {}",
                     acls->fields[ai].name, a.getName());
           args.emplace_back(name, transformType(clean_clone(a.getType()), true),
@@ -696,7 +694,8 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
   }
 #undef I
 #undef NS
-  auto t = NC<FunctionStmt>(format("__{}__", op), ret, fargs, NC<SuiteStmt>(stmts));
+  auto t =
+      NC<FunctionStmt>(fmt::format("__{}__", op), ret, fargs, NC<SuiteStmt>(stmts));
   for (auto &a : attrs)
     t->setAttribute(a);
   t->setSrcInfo(ctx->cache->generateSrcInfo());
@@ -747,11 +746,12 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
     std::vector<Param> newFnArgs;
     std::vector<Expr *> typeArgs;
     for (size_t i = 0; i < n; i++) {
-      newFnArgs.emplace_back(format("item{}", i + 1), N<IdExpr>(format("T{}", i + 1)));
-      typeArgs.emplace_back(N<IdExpr>(format("T{}", i + 1)));
+      newFnArgs.emplace_back(fmt::format("item{}", i + 1),
+                             N<IdExpr>(fmt::format("T{}", i + 1)));
+      typeArgs.emplace_back(N<IdExpr>(fmt::format("T{}", i + 1)));
     }
     for (size_t i = 0; i < n; i++) {
-      newFnArgs.emplace_back(format("T{}", i + 1), N<IdExpr>(TYPE_TYPE));
+      newFnArgs.emplace_back(fmt::format("T{}", i + 1), N<IdExpr>(TYPE_TYPE));
     }
     Stmt *fn = N<FunctionStmt>(
         "__new__", N<IndexExpr>(N<IdExpr>(TYPE_TUPLE), N<TupleExpr>(typeArgs)),

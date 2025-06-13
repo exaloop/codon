@@ -10,7 +10,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 using namespace codon::matcher;
 
@@ -389,8 +388,7 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
     if (!ctx->isStdlibLoading && endswith(importName, "__init__.codon")) {
       // Special case: subimport is not yet loaded
       //   (e.g., import a; a.b.x where a.b is a module as well)
-      auto file = getImportFile(getArgv(), chain[importEnd], importName, false,
-                                getRootModulePath(), getPluginImportPaths());
+      auto file = getImportFile(ctx->cache->fs.get(), chain[importEnd], importName);
       if (file) { // auto-load support
         Stmt *s = N<SuiteStmt>(N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr));
         if (auto err = ScopingVisitor::apply(ctx->cache, s))

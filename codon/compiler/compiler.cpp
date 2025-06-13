@@ -31,10 +31,11 @@ ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool is
 
 Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
                    const std::vector<std::string> &disabledPasses, bool isTest,
-                   bool pyNumerics, bool pyExtension)
+                   bool pyNumerics, bool pyExtension,
+                   const std::shared_ptr<ast::IFilesystem> &fs)
     : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics),
       pyExtension(pyExtension), input(), plm(std::make_unique<PluginManager>(argv0)),
-      cache(std::make_unique<ast::Cache>(argv0)),
+      cache(std::make_unique<ast::Cache>(argv0, fs)),
       module(std::make_unique<ir::Module>()),
       pm(std::make_unique<ir::transform::PassManager>(
           getPassManagerInit(mode, isTest), disabledPasses, pyNumerics, pyExtension)),
@@ -54,7 +55,7 @@ llvm::Error Compiler::load(const std::string &plugin) {
 
   auto *p = *result;
   if (!p->info.stdlibPath.empty()) {
-    cache->pluginImportPaths.push_back(p->info.stdlibPath);
+    cache->fs->add_search_path(p->info.stdlibPath);
   }
   for (auto &kw : p->dsl->getExprKeywords()) {
     cache->customExprStmts[kw.keyword] = kw.callback;
@@ -71,7 +72,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
-  std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
+  std::string abspath = (file != "-") ? std::string(cache->fs->canonical(file)) : file;
   try {
     auto nodeOrErr = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
                             : ast::parseFile(cache.get(), abspath);
@@ -79,7 +80,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
       throw exc::ParserException(nodeOrErr.takeError());
     auto codeStmt = *nodeOrErr;
 
-    cache->module0 = file;
+    cache->fs->set_module0(file);
 
     Timer t2("typecheck");
     t2.logged = true;

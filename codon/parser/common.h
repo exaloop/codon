@@ -3,6 +3,7 @@
 #pragma once
 
 #include <chrono>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -122,12 +123,6 @@ V *in(std::unordered_map<K, V> &m, const U &item) {
   auto f = m.find(item);
   return f != m.end() ? &(f->second) : nullptr;
 }
-/// @return vector c transformed by the function f.
-template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
-  std::vector<typename std::result_of<F(const T &)>::type> ret;
-  std::transform(std::begin(c), std::end(c), std::inserter(ret, std::end(ret)), f);
-  return ret;
-}
 /// @return True if an item is found in an string m.
 bool in(const std::string &m, const std::string &item);
 
@@ -157,12 +152,6 @@ std::vector<typename std::remove_const<T>::type> clone(const std::vector<T> &t,
 
 /// Path utilities
 
-/// @return The absolute canonical path of a given path.
-std::string getAbsolutePath(const std::string &path);
-
-/// Detect an absolute path of the current executable (whose argv0 is known).
-/// @return Absolute executable path or argv0 if one cannot be found.
-std::string executable_path(const char *argv0);
 /// Detect an absolute path of the current libcodonc.
 /// @return Absolute executable path or argv0 if one cannot be found.
 std::string library_path();
@@ -175,15 +164,69 @@ struct ImportFile {
   /// Module name (e.g. foo.bar.baz).
   std::string module;
 };
+
+class IFilesystem {
+public:
+  using path_t = std::filesystem::path;
+
+protected:
+  std::vector<path_t> search_paths;
+
+public:
+  virtual ~IFilesystem() {};
+
+  virtual std::vector<std::string> read_lines(const path_t &path) const = 0;
+  virtual bool exists(const path_t &path) const = 0;
+  virtual std::vector<path_t> get_stdlib_paths() const;
+  virtual path_t canonical(const path_t &path) const;
+  ImportFile get_root(const path_t &s);
+
+  virtual path_t get_module0() const { return ""; }
+  virtual void set_module0(const std::string &) {}
+  virtual void add_search_path(const std::string &p);
+};
+
+class Filesystem : public IFilesystem {
+public:
+  using IFilesystem::path_t;
+
+private:
+  path_t argv0, module0;
+  std::vector<path_t> extraPaths;
+
+public:
+  Filesystem(const std::string &argv0, const std::string &module0 = "");
+  std::vector<std::string> read_lines(const path_t &path) const override;
+  bool exists(const path_t &path) const override;
+
+  path_t get_module0() const override;
+  void set_module0(const std::string &s) override;
+
+public:
+  /// Detect an absolute path of the current executable (whose argv0 is known).
+  /// @return Absolute executable path or argv0 if one cannot be found.
+  static path_t executable_path(const char *argv0);
+
+  /// @return The absolute canonical path of a given path.
+  static std::string get_absolute_path(const std::string &path);
+};
+
+class ResourceFilesystem : public Filesystem {
+  bool allowExternal;
+
+public:
+  ResourceFilesystem(const std::string &argv0, const std::string &module0 = "",
+                     bool allowExternal = true);
+  std::vector<std::string> read_lines(const path_t &path) const override;
+  bool exists(const path_t &path) const override;
+};
+
 /// Find an import file what given an executable path (argv0) either in the standard
 /// library or relative to a file relativeTo. Set forceStdlib for searching only the
 /// standard library.
-std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
-                                          const std::string &what,
+std::shared_ptr<ImportFile> getImportFile(IFilesystem *fs, const std::string &what,
                                           const std::string &relativeTo,
-                                          bool forceStdlib = false,
-                                          const std::string &module0 = "",
-                                          const std::vector<std::string> &plugins = {});
+                                          bool forceStdlib = false);
 
 template <typename T> class SetInScope {
   T *t;

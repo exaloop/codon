@@ -225,3 +225,22 @@ implementation works with its multithreading and GPU capabilities, and can even 
 # Documentation
 
 Please see [docs.exaloop.io](https://docs.exaloop.io) for in-depth documentation.
+
+# Acknowledgements
+
+This project would not be possible without:
+
+- **Funding**:
+  - National Science Foundation (NSF) 🇺🇸
+  - National Institutes for Health (NIH) 🇺🇸
+  - MIT 🇺🇸
+  - MIT E14 Fund 🇺🇸
+  - Natural Sciences and Engineering Research Council (NSERC) 🇨🇦
+  - Canada Research Chairs 🇨🇦
+  - Canada Foundation for Innovation 🇨🇦
+  - B.C. Knowledge Development Fund 🇨🇦
+  - University of Victoria 🇨🇦
+- **Libraries**:
+  - [LLVM Compiler Infrastructure](https://llvm.org/)
+  - [yhirose's peglib](https://github.com/yhirose/cpp-peglib)
+  - [Boehm-Demers-Weiser Garbage Collector](https://github.com/ivmai/bdwgc)

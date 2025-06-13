@@ -13,7 +13,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 using namespace codon::matcher;
 
@@ -35,8 +34,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
-  auto file = getImportFile(getArgv(), path, ctx->getFilename(), false,
-                            getRootModulePath(), getPluginImportPaths());
+  auto file = getImportFile(ctx->cache->fs.get(), path, ctx->getFilename());
   if (!file) {
     if (stmt->getDots() == 0 && ctx->autoPython) {
       auto newStr = FormatVisitor::apply(stmt->getFrom());
@@ -205,7 +203,7 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
       hasVarArgs = true;
       fnArgs.emplace_back("*args", nullptr, nullptr);
     } else {
-      fnArgs.emplace_back(args[ai].getName().empty() ? format("a{}", ai)
+      fnArgs.emplace_back(args[ai].getName().empty() ? fmt::format("a{}", ai)
                                                      : args[ai].getName(),
                           clone(args[ai].getType()), nullptr);
     }
@@ -318,8 +316,8 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
   std::vector<Param> params;
   std::vector<Expr *> callArgs;
   for (int i = 0; i < args.size(); i++) {
-    params.emplace_back(format("a{}", i), clone(args[i].getType()), nullptr);
-    callArgs.emplace_back(N<IdExpr>(format("a{}", i)));
+    params.emplace_back(fmt::format("a{}", i), clone(args[i].getType()), nullptr);
+    callArgs.emplace_back(N<IdExpr>(fmt::format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
   auto retType = (ret && !cast<NoneExpr>(ret)) ? clone(ret) : N<IdExpr>("NoneType");
@@ -351,7 +349,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   import.loadedAtToplevel =
       getImport(ctx->moduleName.path)->loadedAtToplevel &&
       (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.size() == 1));
-  auto importVar = import.importVar = getTemporaryVar(format("import_{}", moduleID));
+  auto importVar = import.importVar =
+      getTemporaryVar(fmt::format("import_{}", moduleID));
   LOG_TYPECHECK("[import] initializing {} ({})", importVar, import.loadedAtToplevel);
 
   // __name__ = [import name]
@@ -384,7 +383,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   if (!ctx->cache->errors.empty())
     throw exc::ParserException(ctx->cache->errors);
   // Add comment to the top of import for easier dump inspection
-  auto comment = N<CommentStmt>(format("import: {} at {}", file.module, file.path));
+  auto comment =
+      N<CommentStmt>(fmt::format("import: {} at {}", file.module, file.path));
   auto suite = N<SuiteStmt>(comment, n);
 
   if (ctx->isStdlibLoading) {

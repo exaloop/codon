@@ -22,14 +22,27 @@ typedef void *PyWrapperFunc(void *);
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
-JIT::JIT(const std::string &argv0, const std::string &mode)
-    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT)),
+JIT::JIT(const std::string &argv0, const std::string &mode,
+         const std::string &stdlibRoot)
+    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT,
+                                          /*disabledPasses=*/std::vector<std::string>{},
+                                          /*isTest=*/false,
+                                          /*pyNumerics=*/false, /*pyExtension=*/false)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      mode(mode) {
+      mode(mode), forgetful(false) {
+  if (!stdlibRoot.empty())
+    compiler->getCache()->fs->add_search_path(stdlibRoot);
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
-llvm::Error JIT::init() {
+llvm::Error JIT::init(bool forgetful) {
+  if (forgetful) {
+    this->forgetful = true;
+    auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
+                                                        /*allowExternal=*/false);
+    compiler->getCache()->fs = fs;
+  }
+
   auto *cache = compiler->getCache();
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
@@ -57,7 +70,7 @@ llvm::Error JIT::init() {
   return llvm::Error::success();
 }
 
-llvm::Error JIT::compile(const ir::Func *input) {
+llvm::Error JIT::compile(const ir::Func *input, llvm::orc::ResourceTrackerSP rt) {
   auto *module = compiler->getModule();
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
@@ -71,24 +84,65 @@ llvm::Error JIT::compile(const ir::Func *input) {
   t2.log();
 
   Timer t3("jit/engine");
-  if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}))
+  if (auto err = engine->addModule({std::move(pair.first), std::move(pair.second)}, rt))
     return std::move(err);
   t3.log();
 
   return llvm::Error::success();
 }
 
+JITState::JITState(ast::Cache *cache, bool forgetful)
+    : cache(cache), forgetful(forgetful), bCache(*cache),
+      mainCtx(*(cache->imports[MAIN_IMPORT].ctx)),
+      stdlibCtx(*(cache->imports[STDLIB_IMPORT].ctx)), typeCtx(*(cache->typeCtx)),
+      translateCtx(*(cache->codegenCtx)) {}
+
+void JITState::undo() {
+  if (!forgetful)
+    undoUnusedIR();
+
+  *cache = bCache;
+  *(cache->imports[MAIN_IMPORT].ctx) = mainCtx;
+  *(cache->imports[STDLIB_IMPORT].ctx) = stdlibCtx;
+  *(cache->typeCtx) = typeCtx;
+  *(cache->codegenCtx) = translateCtx;
+
+  if (forgetful)
+    cleanUpRealizations();
+}
+
+void JITState::undoUnusedIR() {
+  // Clean-up unused IR nodes made before Typechecker raised an error
+  for (auto &f : cache->functions) {
+    for (auto &r : f.second.realizations) {
+      if (!(in(bCache.functions, f.first) &&
+            in(bCache.functions[f.first].realizations, r.first)) &&
+          r.second->ir) {
+        cache->module->remove(r.second->ir);
+      }
+    }
+  }
+}
+
+void JITState::cleanUpRealizations() {
+  // Clean-up IR nodes after single JIT input
+  for (auto &f : cache->functions) {
+    if (f.first == "__internal__.class_populate_vtables:0")
+      continue;
+    f.second.realizations.clear();
+  }
+  for (auto &c : cache->classes) {
+    c.second.realizations.clear();
+  }
+}
+
 llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
                                         const std::string &file, int line) {
   auto *cache = compiler->getCache();
-  auto sctx = cache->imports[MAIN_IMPORT].ctx;
   auto preamble = cache->N<ast::SuiteStmt>();
 
-  ast::Cache bCache = *cache;
-  auto bTypecheck = *sctx;
-  auto stdlibTypecheck = *(cache->imports[STDLIB_IMPORT].ctx);
-  ast::TypeContext bType = *(cache->typeCtx);
-  ast::TranslateContext bTranslate = *(cache->codegenCtx);
+  JITState state(cache, forgetful);
+
   try {
     auto nodeOrErr = ast::parseCode(cache, file.empty() ? JIT_FILENAME : file, code,
                                     /*startLine=*/line);
@@ -108,9 +162,10 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
             cache->N<ast::IdExpr>("_jit_display"), clone(ex->getExpr()),
             cache->N<ast::StringExpr>(mode)));
       }
-    auto tv = ast::TypecheckVisitor(sctx, preamble);
+    auto sctx = cache->imports[MAIN_IMPORT].ctx;
     if (auto err = ast::ScopingVisitor::apply(sctx->cache, node, &sctx->globalShadows))
       throw exc::ParserException(std::move(err));
+    auto tv = ast::TypecheckVisitor(sctx, preamble);
     node = tv.transform(node);
 
     if (!cache->errors.empty())
@@ -134,25 +189,15 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
 
     return func;
   } catch (const exc::ParserException &exc) {
-    for (auto &f : cache->functions)
-      for (auto &r : f.second.realizations)
-        if (!(in(bCache.functions, f.first) &&
-              in(bCache.functions[f.first].realizations, r.first)) &&
-            r.second->ir) {
-          cache->module->remove(r.second->ir);
-        }
-    *cache = bCache;
-    *(cache->imports[MAIN_IMPORT].ctx) = bTypecheck;
-    *(cache->imports[STDLIB_IMPORT].ctx) = stdlibTypecheck;
-    *(cache->typeCtx) = bType;
-    *(cache->codegenCtx) = bTranslate;
+    state.undo();
 
     return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
 }
 
-llvm::Expected<void *> JIT::address(const ir::Func *input) {
-  if (auto err = compile(input))
+llvm::Expected<void *> JIT::address(const ir::Func *input,
+                                    llvm::orc::ResourceTrackerSP rt) {
+  if (auto err = compile(input, rt))
     return std::move(err);
 
   const std::string name = ir::LLVMVisitor::getNameForFunction(input);
@@ -163,8 +208,9 @@ llvm::Expected<void *> JIT::address(const ir::Func *input) {
   return (void *)func->getValue();
 }
 
-llvm::Expected<std::string> JIT::run(const ir::Func *input) {
-  auto result = address(input);
+llvm::Expected<std::string> JIT::run(const ir::Func *input,
+                                     llvm::orc::ResourceTrackerSP rt) {
+  auto result = address(input, rt);
   if (auto err = result.takeError())
     return std::move(err);
 
@@ -177,16 +223,27 @@ llvm::Expected<std::string> JIT::run(const ir::Func *input) {
   return runtime::getCapturedOutput();
 }
 
-llvm::Expected<std::string>
-JIT::execute(const std::string &code, const std::string &file, int line, bool debug) {
+llvm::Expected<std::string> JIT::execute(const std::string &code,
+                                         const std::string &file, int line, bool debug,
+                                         llvm::orc::ResourceTrackerSP rt) {
   if (debug)
     fmt::print(stderr, "[codon::jit::execute] code:\n{}-----\n", code);
+
+  std::unique_ptr<JITState> state = nullptr;
+  if (forgetful)
+    state = std::make_unique<JITState>(compiler->getCache(), forgetful);
+
   auto result = compile(code, file, line);
   if (auto err = result.takeError())
     return std::move(err);
-  if (auto err = compile(result.get()))
+  if (auto err = compile(result.get(), rt))
     return std::move(err);
-  return run(result.get());
+  auto r = run(result.get());
+
+  if (state)
+    state->undo();
+
+  return r;
 }
 
 llvm::Error JIT::handleJITError(const runtime::JITError &e) {

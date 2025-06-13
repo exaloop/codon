@@ -473,4 +473,4 @@ std::ostream &format(std::ostream &os, const Node *node) {
 } // namespace codon
 
 template <>
-struct fmt::formatter<codon::ir::util::NodeFormatter> : fmt::ostream_formatter {};
+struct fmt::formatter<codon::ir::util::NodeFormatter> : ostream_formatter {};

@@ -14,7 +14,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -176,7 +175,7 @@ std::string TypeContext::generateCanonicalName(const std::string &name,
   }
   auto num = cache->identifierCount[newName]++;
   if (!noSuffix && !alreadyGenerated)
-    newName = format("{}.{}", newName, num);
+    newName = fmt::format("{}.{}", newName, num);
   if (name != newName)
     cache->identifierCount[newName]++;
   cache->reverseIdentifierLookup[newName] = name;

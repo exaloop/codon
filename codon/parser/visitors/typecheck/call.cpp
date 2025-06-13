@@ -9,7 +9,6 @@
 #include "codon/parser/match.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 namespace codon::ast {
 
@@ -176,7 +175,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       auto argsNice = fmt::format("({})", join(a, ", "));
       auto name = getUnmangledName(calleeFn->getFuncName());
       if (calleeFn->getParentType() && calleeFn->getParentType()->getClass())
-        name = format("{}.{}", calleeFn->getParentType()->getClass()->niceName, name);
+        name =
+            fmt::format("{}.{}", calleeFn->getParentType()->getClass()->niceName, name);
       E(Error::FN_NO_ATTR_ARGS, expr, name, argsNice);
     }
   }
@@ -334,7 +334,7 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
               expr->items.begin() + ai,
               CallArg{names[i],
                       transform(N<DotExpr>(N<DotExpr>(kwstar->getExpr(), "args"),
-                                           format("item{}", i + 1)))});
+                                           fmt::format("item{}", i + 1)))});
         }
         expr->items.erase(expr->items.begin() + ai);
       } else if (typ->isRecord()) {

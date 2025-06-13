@@ -16,7 +16,6 @@
 
 using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
-using fmt::format;
 
 namespace codon::ast {
 
@@ -26,7 +25,7 @@ TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
 ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   ir::BodiedFunc *main = nullptr;
   if (cache->isJit) {
-    auto fnName = format("_jit_{}", cache->jitCell);
+    auto fnName = fmt::format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});
     main->setGlobal();
@@ -36,7 +35,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
     main->setJIT();
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
-    auto path = getAbsolutePath(cache->module0);
+    auto path = cache->fs->get_module0();
     main->setSrcInfo({path, 0, 0, 0});
   }
 
@@ -130,7 +129,7 @@ ir::Value *TranslateVisitor::transform(Expr *expr) {
           (*func->ast)[i].isValue()) {
         seqassert(j < ctx->seqItems.back().size() &&
                       ctx->seqItems.back()[j].first == Attr::ExprSequenceItem,
-                  "invalid partial element: {}");
+                  "invalid partial element");
         v.push_back(ctx->seqItems.back()[j++].second);
       } else if ((*func->ast)[i].isValue()) {
         v.push_back({nullptr});

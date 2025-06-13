@@ -16,7 +16,10 @@
 
 namespace codon::ast {
 
-Cache::Cache(std::string argv0) : argv0(std::move(argv0)) {
+Cache::Cache(std::string argv0, const std::shared_ptr<IFilesystem> &fs) : fs(fs) {
+  if (!this->fs) {
+    this->fs = std::make_shared<Filesystem>(argv0);
+  }
   this->_nodes = new std::vector<std::unique_ptr<ast::ASTNode>>();
   typeCtx = std::make_shared<TypeContext>(this, ".root");
 }

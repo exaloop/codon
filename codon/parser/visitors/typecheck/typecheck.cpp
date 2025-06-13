@@ -16,7 +16,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -95,8 +94,7 @@ void TypecheckVisitor::loadStdLibrary(
     const std::unordered_map<std::string, std::string> &earlyDefines, bool barebones) {
   // Load the internal.__init__
   auto stdlib = std::make_shared<TypeContext>(cache, STDLIB_IMPORT);
-  auto stdlibPath =
-      getImportFile(cache->argv0, STDLIB_INTERNAL_MODULE, "", true, cache->module0);
+  auto stdlibPath = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
   const std::string initFile = "__init__.codon";
   if (!stdlibPath || !endswith(stdlibPath->path, initFile))
     E(Error::COMPILER_NO_STDLIB);
@@ -1092,14 +1090,6 @@ Cache::Module *TypecheckVisitor::getImport(const std::string &s) {
   return i;
 }
 
-std::string TypecheckVisitor::getArgv() const { return ctx->cache->argv0; }
-
-std::string TypecheckVisitor::getRootModulePath() const { return ctx->cache->module0; }
-
-std::vector<std::string> TypecheckVisitor::getPluginImportPaths() const {
-  return ctx->cache->pluginImportPaths;
-}
-
 bool TypecheckVisitor::isDispatch(const std::string &s) {
   return endswith(s, FN_DISPATCH_SUFFIX);
 }
@@ -1612,16 +1602,16 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   if (auto ofnn = in(c->methods, "__to_py__")) {
     auto fnn = getOverloads(*ofnn).front(); // default first overload!
     auto fna = getFunction(fnn)->ast;
-    fna->suite = SuiteStmt::wrap(
-        N<ReturnStmt>(N<CallExpr>(N<IdExpr>(format("{}.wrap_to_py:0", CYTHON_PYWRAP)),
-                                  N<IdExpr>(fna->begin()->name))));
+    fna->suite = SuiteStmt::wrap(N<ReturnStmt>(
+        N<CallExpr>(N<IdExpr>(fmt::format("{}.wrap_to_py:0", CYTHON_PYWRAP)),
+                    N<IdExpr>(fna->begin()->name))));
   }
   if (auto ofnn = in(c->methods, "__from_py__")) {
     auto fnn = getOverloads(*ofnn).front(); // default first overload!
     auto fna = getFunction(fnn)->ast;
-    fna->suite = SuiteStmt::wrap(
-        N<ReturnStmt>(N<CallExpr>(N<IdExpr>(format("{}.wrap_from_py:0", CYTHON_PYWRAP)),
-                                  N<IdExpr>(fna->begin()->name), N<IdExpr>(name))));
+    fna->suite = SuiteStmt::wrap(N<ReturnStmt>(
+        N<CallExpr>(N<IdExpr>(fmt::format("{}.wrap_from_py:0", CYTHON_PYWRAP)),
+                    N<IdExpr>(fna->begin()->name), N<IdExpr>(name))));
   }
   for (auto &n : std::vector<std::string>{"__from_py__", "__to_py__"}) {
     auto fnn = getOverloads(*in(c->methods, n)).front();
@@ -1642,7 +1632,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     }
   }
   for (auto &[rn, r] :
-       getFunction(format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
+       getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
     if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
@@ -1660,7 +1650,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     bool isMethod = fna->hasAttribute(Attr::Method);
     bool isProperty = fna->hasAttribute(Attr::Property);
 
-    std::string call = format("{}.wrap_multiple", CYTHON_PYWRAP);
+    std::string call = fmt::format("{}.wrap_multiple", CYTHON_PYWRAP);
     bool isMagic = false;
     if (startswith(n, "__") && endswith(n, "__")) {
       auto m = n.substr(2, n.size() - 4);
@@ -1673,7 +1663,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
       }
     }
     if (isProperty)
-      call = format("{}.wrap_get", CYTHON_PYWRAP);
+      call = fmt::format("{}.wrap_get", CYTHON_PYWRAP);
 
     auto fnName = call + ":0";
     auto generics = std::vector<types::TypePtr>{tc->shared_from_this()};
@@ -1799,7 +1789,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
                                  "__ge__"},
            m.name)) {
       py.cmp = realizeIRFunc(
-          ctx->forceFind(format("{}.wrap_cmp:0", CYTHON_PYWRAP))->type->getFunc(),
+          ctx->forceFind(fmt::format("{}.wrap_cmp:0", CYTHON_PYWRAP))->type->getFunc(),
           {tc->shared_from_this()});
       break;
     }
@@ -1816,11 +1806,12 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     auto generics =
         std::vector<types::TypePtr>{tc->shared_from_this(), instantiateStatic(mn)};
     auto gf = realizeIRFunc(
-        getFunction(format("{}.wrap_get:0", CYTHON_PYWRAP))->getType(), generics);
+        getFunction(fmt::format("{}.wrap_get:0", CYTHON_PYWRAP))->getType(), generics);
     ir::Func *sf = nullptr;
     if (!c->ast->hasAttribute(Attr::Tuple))
-      sf = realizeIRFunc(getFunction(format("{}.wrap_set:0", CYTHON_PYWRAP))->getType(),
-                         generics);
+      sf = realizeIRFunc(
+          getFunction(fmt::format("{}.wrap_set:0", CYTHON_PYWRAP))->getType(),
+          generics);
     py.getset.push_back({mn, "", gf, sf});
     LOG_USER("[py] {}: {} . {}", "member", name, mn);
   }
@@ -1833,7 +1824,7 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
   auto cr = ctx->cache->classes[CYTHON_ITER].realizations[name];
   auto tc = cr->getType();
   for (auto &[rn, r] :
-       getFunction(format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
+       getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
     if (extractFuncGeneric(r->getType())->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
@@ -1858,7 +1849,7 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
 ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
   auto f = getFunction(name);
   if (f->isToplevel) {
-    auto fnName = format("{}.wrap_multiple:0", CYTHON_PYWRAP);
+    auto fnName = fmt::format("{}.wrap_multiple:0", CYTHON_PYWRAP);
     auto generics = std::vector<types::TypePtr>{
         ctx->forceFind(".toplevel")->type,
         instantiateStatic(getUnmangledName(f->ast->getName())),

@@ -1,18 +1,22 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.18.2"
+  VERSION "0.19.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.3.2")
+set(CODON_JIT_PYTHON_VERSION "0.4.0")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/jit/codon/version.py")
 
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 option(CODON_GPU "build Codon GPU backend" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
@@ -37,13 +41,10 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 find_package(LLVM REQUIRED)
 
-if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
-  cmake_policy(SET CMP0135 NEW)
-endif()
-
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
@@ -426,7 +427,18 @@ llvm_map_components_to_libnames(
   TransformUtils
   Vectorize
   Passes)
-target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt)
+
+file(GLOB_RECURSE CODON_STDLIB_RESOURCES
+  CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/*.codon"
+)
+cmrc_add_resource_library(
+  codon-stdlib
+  NAMESPACE codon
+  ${CODON_STDLIB_RESOURCES}
+)
+
+target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt codon-stdlib)
 
 # Gather headers
 add_custom_target(
@@ -512,6 +524,8 @@ install(FILES ${copied_libquadmath} DESTINATION lib/codon)
 install(FILES ${copied_libgcc} DESTINATION lib/codon)
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
+install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)
+install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)

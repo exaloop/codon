@@ -573,7 +573,7 @@ INSTANTIATE_TEST_SUITE_P(
 // clang-format on
 
 int main(int argc, char *argv[]) {
-  argv0 = ast::executable_path(argv[0]);
+  argv0 = ast::Filesystem::executable_path(argv[0]);
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

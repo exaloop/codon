@@ -4,6 +4,7 @@
 
 #include <cinttypes>
 #include <climits>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -11,7 +12,133 @@
 #include "llvm/Support/Path.h"
 #include <fmt/format.h>
 
+#include <cmrc/cmrc.hpp>
+CMRC_DECLARE(codon);
+
 namespace codon::ast {
+
+IFilesystem::path_t IFilesystem::canonical(const path_t &path) const {
+  return std::filesystem::weakly_canonical(path);
+}
+
+void IFilesystem::add_search_path(const std::string &p) {
+  auto path = path_t(p);
+  if (exists(path)) {
+    search_paths.emplace_back(canonical(path));
+  }
+}
+
+std::vector<IFilesystem::path_t> IFilesystem::get_stdlib_paths() const {
+  return search_paths;
+}
+
+ImportFile IFilesystem::get_root(const path_t &sp) {
+  bool isStdLib = false;
+  std::string s = sp;
+  std::string root;
+  for (auto &p : get_stdlib_paths())
+    if (startswith(s, p)) {
+      root = p;
+      isStdLib = true;
+      break;
+    }
+  auto module0 = get_module0().parent_path();
+  if (!isStdLib && !module0.empty() && startswith(s, module0))
+    root = module0;
+  std::string ext = ".codon";
+  if (!((root.empty() || startswith(s, root)) && endswith(s, ext)))
+    ext = ".py";
+  seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
+             "bad path substitution: {}, {}", s, root);
+  auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
+  std::replace(module.begin(), module.end(), '/', '.');
+  return ImportFile{(!isStdLib && root == module0) ? ImportFile::PACKAGE
+                                                   : ImportFile::STDLIB,
+                    s, module};
+}
+
+Filesystem::Filesystem(const std::string &argv0, const std::string &module0)
+    : argv0(argv0), module0(module0) {
+  if (auto p = getenv("CODON_PATH")) {
+    add_search_path(p);
+  }
+  if (!argv0.empty()) {
+    auto root = executable_path(argv0.c_str()).parent_path();
+    for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
+      add_search_path(root / loci);
+    }
+  }
+}
+
+std::vector<std::string> Filesystem::read_lines(const path_t &path) const {
+  std::vector<std::string> lines;
+  if (path == "-") {
+    for (std::string line; getline(std::cin, line);) {
+      lines.push_back(line);
+    }
+  } else {
+    std::ifstream fin(path);
+    if (!fin)
+      E(error::Error::COMPILER_NO_FILE, SrcInfo(), path);
+    for (std::string line; getline(fin, line);) {
+      lines.push_back(line);
+    }
+    fin.close();
+  }
+  return lines;
+}
+
+void Filesystem::set_module0(const std::string &s) { module0 = canonical(path_t(s)); }
+
+IFilesystem::path_t Filesystem::get_module0() const {
+  return module0.empty() ? IFilesystem::path_t() : canonical(module0);
+}
+
+IFilesystem::path_t Filesystem::executable_path(const char *argv0) {
+  void *p = (void *)(intptr_t)executable_path;
+  auto exc = llvm::sys::fs::getMainExecutable(argv0, p);
+  return path_t(exc);
+}
+
+bool Filesystem::exists(const IFilesystem::path_t &path) const {
+  return std::filesystem::exists(path);
+}
+
+ResourceFilesystem::ResourceFilesystem(const std::string &argv0,
+                                       const std::string &module0, bool allowExternal)
+    : Filesystem(argv0, module0), allowExternal(allowExternal) {
+  search_paths = {"/stdlib"};
+}
+
+std::vector<std::string> ResourceFilesystem::read_lines(const path_t &path) const {
+  auto fs = cmrc::codon::get_filesystem();
+
+  if (!fs.exists(path) && allowExternal)
+    return Filesystem::read_lines(path);
+
+  std::vector<std::string> lines;
+  if (path == "-") {
+    E(error::Error::COMPILER_NO_FILE, SrcInfo(), "<stdin>");
+  } else {
+    try {
+      auto fd = fs.open(path);
+      auto contents = std::string(fd.begin(), fd.end());
+      lines = split(contents, '\n');
+    } catch (std::system_error &) {
+      E(error::Error::COMPILER_NO_FILE, SrcInfo(), path);
+    }
+  }
+  return lines;
+}
+
+bool ResourceFilesystem::exists(const path_t &path) const {
+  auto fs = cmrc::codon::get_filesystem();
+  if (fs.exists(path))
+    return true;
+  if (allowExternal)
+    return Filesystem::exists(path);
+  return false;
+}
 
 /// String and collection utilities
 
@@ -146,13 +273,6 @@ bool isdigit(const std::string &str) {
   return std::all_of(str.begin(), str.end(), ::isdigit);
 }
 
-/// Path utilities
-
-std::string executable_path(const char *argv0) {
-  void *p = (void *)(intptr_t)executable_path;
-  return llvm::sys::fs::getMainExecutable(argv0, p);
-}
-
 // Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__
 #include <dlfcn.h>
@@ -211,62 +331,7 @@ std::string library_path() {
   return result;
 }
 
-namespace {
-
-bool addPath(std::vector<std::string> &paths, const std::string &path) {
-  if (llvm::sys::fs::exists(path)) {
-    paths.push_back(getAbsolutePath(path));
-    return true;
-  }
-  return false;
-}
-
-std::vector<std::string> getStdLibPaths(const std::string &argv0,
-                                        const std::vector<std::string> &plugins) {
-  std::vector<std::string> paths;
-  if (auto c = getenv("CODON_PATH")) {
-    addPath(paths, c);
-  }
-  if (!argv0.empty()) {
-    auto base = executable_path(argv0.c_str());
-    for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
-      auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
-      llvm::sys::path::append(path, loci);
-      addPath(paths, std::string(path));
-    }
-  }
-  for (auto &path : plugins) {
-    addPath(paths, path);
-  }
-  return paths;
-}
-
-ImportFile getRoot(const std::string argv0, const std::vector<std::string> &plugins,
-                   const std::string &module0Root, const std::string &s) {
-  bool isStdLib = false;
-  std::string root;
-  for (auto &p : getStdLibPaths(argv0, plugins))
-    if (startswith(s, p)) {
-      root = p;
-      isStdLib = true;
-      break;
-    }
-  if (!isStdLib && startswith(s, module0Root))
-    root = module0Root;
-  std::string ext = ".codon";
-  if (!((root.empty() || startswith(s, root)) && endswith(s, ext)))
-    ext = ".py";
-  seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
-             "bad path substitution: {}, {}", s, root);
-  auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
-  std::replace(module.begin(), module.end(), '/', '.');
-  return ImportFile{(!isStdLib && root == module0Root) ? ImportFile::PACKAGE
-                                                       : ImportFile::STDLIB,
-                    s, module};
-}
-} // namespace
-
-std::string getAbsolutePath(const std::string &path) {
+std::string Filesystem::get_absolute_path(const std::string &path) {
   char *c = realpath(path.c_str(), nullptr);
   if (!c)
     return path;
@@ -275,48 +340,46 @@ std::string getAbsolutePath(const std::string &path) {
   return result;
 }
 
-std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
-                                          const std::string &what,
+std::shared_ptr<ImportFile> getImportFile(IFilesystem *fs, const std::string &what,
                                           const std::string &relativeTo,
-                                          bool forceStdlib, const std::string &module0,
-                                          const std::vector<std::string> &plugins) {
+                                          bool forceStdlib) {
   std::vector<std::string> paths;
   if (what != "<jit>") {
-    auto parentRelativeTo = llvm::sys::path::parent_path(relativeTo);
+    auto parentRelativeTo = IFilesystem::path_t(relativeTo).parent_path();
     if (!forceStdlib) {
-      auto path = llvm::SmallString<128>(parentRelativeTo);
-      llvm::sys::path::append(path, what);
-      llvm::sys::path::replace_extension(path, "codon");
-      addPath(paths, std::string(path));
-      path = llvm::SmallString<128>(parentRelativeTo);
-      llvm::sys::path::append(path, what, "__init__.codon");
-      addPath(paths, std::string(path));
+      auto path = parentRelativeTo / what;
+      path.replace_extension("codon");
+      if (fs->exists(path))
+        paths.emplace_back(fs->canonical(path));
 
-      path = llvm::SmallString<128>(parentRelativeTo);
-      llvm::sys::path::append(path, what);
-      llvm::sys::path::replace_extension(path, "py");
-      addPath(paths, std::string(path));
-      path = llvm::SmallString<128>(parentRelativeTo);
-      llvm::sys::path::append(path, what, "__init__.py");
-      addPath(paths, std::string(path));
+      path = parentRelativeTo / what / "__init__.codon";
+      if (fs->exists(path))
+        paths.emplace_back(fs->canonical(path));
+
+      path = parentRelativeTo / what;
+      path.replace_extension("py");
+      if (fs->exists(path))
+        paths.emplace_back(fs->canonical(path));
+
+      path = parentRelativeTo / what / "__init__.py";
+      if (fs->exists(path))
+        paths.emplace_back(fs->canonical(path));
     }
   }
-  for (auto &p : getStdLibPaths(argv0, plugins)) {
-    auto path = llvm::SmallString<128>(p);
-    llvm::sys::path::append(path, what);
-    llvm::sys::path::replace_extension(path, "codon");
-    addPath(paths, std::string(path));
-    path = llvm::SmallString<128>(p);
-    llvm::sys::path::append(path, what, "__init__.codon");
-    addPath(paths, std::string(path));
+  for (auto &p : fs->get_stdlib_paths()) {
+    auto path = p / what;
+    path.replace_extension("codon");
+    if (fs->exists(path))
+      paths.emplace_back(fs->canonical(path));
+
+    path = p / what / "__init__.codon";
+    if (fs->exists(path))
+      paths.emplace_back(fs->canonical(path));
   }
 
-  auto module0Root = llvm::sys::path::parent_path(getAbsolutePath(module0)).str();
-  auto file = paths.empty() ? nullptr
-                            : std::make_shared<ImportFile>(
-                                  getRoot(argv0, plugins, module0Root, paths[0]));
-
-  return file;
+  if (paths.empty())
+    return nullptr;
+  return std::make_shared<ImportFile>(fs->get_root(paths[0]));
 }
 
 } // namespace codon::ast

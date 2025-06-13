@@ -298,14 +298,14 @@ public:
 
 private:
   template <typename... Ts> void log(const std::string &prefix, Ts &&...args) {
-    fmt::print(codon::getLogger().log, "[{}] [{}${}]: " + prefix + "\n",
+    fmt::print(codon::getLogger().log, fmt::runtime("[{}] [{}${}]: " + prefix + "\n"),
                ctx->getSrcInfo(), ctx->getBaseName(), ctx->getBase()->iteration,
                std::forward<Ts>(args)...);
   }
   template <typename... Ts>
   void logfile(const std::string &file, const std::string &prefix, Ts &&...args) {
     if (in(ctx->getSrcInfo().file, file))
-      fmt::print(codon::getLogger().log, "[{}] [{}${}]: " + prefix + "\n",
+      fmt::print(codon::getLogger().log, fmt::runtime("[{}] [{}${}]: " + prefix + "\n"),
                  ctx->getSrcInfo(), ctx->getBaseName(), ctx->getBase()->iteration,
                  std::forward<Ts>(args)...);
   }
@@ -330,9 +330,6 @@ public:
   std::string getRootName(types::FuncType *t);
   bool isTypeExpr(Expr *e);
   Cache::Module *getImport(const std::string &s);
-  std::string getArgv() const;
-  std::string getRootModulePath() const;
-  std::vector<std::string> getPluginImportPaths() const;
   bool isDispatch(const std::string &s);
   bool isDispatch(FunctionStmt *ast);
   bool isDispatch(types::Type *f);

@@ -10,7 +10,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -54,9 +53,9 @@ void TypecheckVisitor::visit(AssignStmt *stmt) {
     seqassert(e, "dominated bad assignment");
     resultStmt = transform(N<SuiteStmt>(
         resultStmt,
-        N<AssignStmt>(
-            N<IdExpr>(format("{}{}", getUnmangledName(e->getValue()), VAR_USED_SUFFIX)),
-            N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
+        N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", getUnmangledName(e->getValue()),
+                                            VAR_USED_SUFFIX)),
+                      N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update)));
   }
 }
 
@@ -349,8 +348,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     auto member = findMember(lhsClass, stmt->getMember());
     if (!member) {
       // Case: property setters
-      auto setters =
-          findMethod(lhsClass, format("{}{}", FN_SETTER_SUFFIX, stmt->getMember()));
+      auto setters = findMethod(
+          lhsClass, fmt::format("{}{}", FN_SETTER_SUFFIX, stmt->getMember()));
       if (!setters.empty()) {
         resultStmt =
             transform(N<ExprStmt>(N<CallExpr>(N<IdExpr>(setters.front()->getFuncName()),
@@ -468,7 +467,7 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
       (*call)[1].value = transform((*call)[1]);
       auto rhsTyp = extractClassType((*call)[1].value);
       if (auto method =
-              findBestMethod(lhsClass, format("__atomic_{}__", cei->getValue()),
+              findBestMethod(lhsClass, fmt::format("__atomic_{}__", cei->getValue()),
                              {ptrTyp.get(), rhsTyp})) {
         return {true,
                 transform(N<ExprStmt>(N<CallExpr>(

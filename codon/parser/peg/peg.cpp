@@ -101,29 +101,11 @@ parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
 }
 
 llvm::Expected<Stmt *> parseFile(Cache *cache, const std::string &file) {
-  std::vector<std::string> lines;
-  std::string code;
-  if (file == "-") {
-    for (std::string line; getline(std::cin, line);) {
-      lines.push_back(line);
-      code += line + "\n";
-    }
-  } else {
-    std::ifstream fin(file);
-    if (!fin)
-      return llvm::make_error<error::ParserErrorInfo>(error::Error::COMPILER_NO_FILE,
-                                                      SrcInfo(), file);
-    for (std::string line; getline(fin, line);) {
-      lines.push_back(line);
-      code += line + "\n";
-    }
-    fin.close();
-  }
-
+  auto lines = cache->fs->read_lines(file);
   cache->imports[file].content = lines;
+  std::string code = join(lines, "\n");
   auto result = parseCode(cache, file, code);
-  // For debugging purposes:
-  // LOG("peg/{} :=  {}", file, result);
+  // /* For debugging purposes: */ LOG("peg/{} :=  {}", file, result);
   return result;
 }
 

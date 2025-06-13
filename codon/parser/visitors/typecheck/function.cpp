@@ -12,7 +12,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -174,6 +173,24 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
                              std::make_unique<ir::KeyValueAttribute>());
         stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
             ->attributes[attrName] = "";
+
+        const auto &attrFn = getFunction(attrName);
+        if (attrFn && attrFn->ast) {
+          if (attrFn->ast->hasAttribute(Attr::Export))
+            stmt->setAttribute(Attr::Export);
+          if (attrFn->ast->hasAttribute(Attr::Inline))
+            stmt->setAttribute(Attr::Inline);
+          if (attrFn->ast->hasAttribute(Attr::NoArgReorder))
+            stmt->setAttribute(Attr::NoArgReorder);
+          if (attrFn->ast->hasAttribute(Attr::FunctionAttributes)) {
+            for (auto &k :
+                 attrFn->ast
+                     ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+                     ->attributes)
+              stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+                  ->attributes[k.first] = "";
+          }
+        }
         stmt->decorators[i] = nullptr; // remove it from further consideration
       }
     } else {
@@ -219,7 +236,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto canonicalName = rootName;
   if (!in(ctx->cache->overloads, rootName))
     ctx->cache->overloads.insert({rootName, {}});
-  canonicalName += format(":{}", getOverloads(rootName).size());
+  canonicalName += fmt::format(":{}", getOverloads(rootName).size());
   ctx->cache->reverseIdentifierLookup[canonicalName] = stmt->getName();
 
   if (isClassMember) {
@@ -479,8 +496,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto parentClass = aa ? extractClassType(aa->value) : nullptr;
 
   // Construct the type
-  auto funcTyp =
-      std::make_shared<types::FuncType>(baseType.get(), fn.ast, explicits);
+  auto funcTyp = std::make_shared<types::FuncType>(baseType.get(), fn.ast, explicits);
   funcTyp->setSrcInfo(getSrcInfo());
   if (isClassMember && stmt->hasAttribute(Attr::Method)) {
     funcTyp->funcParent = parentClass->shared_from_this();
@@ -574,7 +590,7 @@ Stmt *TypecheckVisitor::transformPythonDefinition(const std::string &name,
   pyargs.reserve(args.size());
   for (const auto &a : args)
     pyargs.emplace_back(a.getName());
-  code = format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
+  code = fmt::format("def {}({}):\n{}\n", name, join(pyargs, ", "), code);
   return transform(N<SuiteStmt>(
       N<ExprStmt>(
           N<CallExpr>(N<DotExpr>(N<IdExpr>("pyobj"), "_exec"), N<StringExpr>(code))),

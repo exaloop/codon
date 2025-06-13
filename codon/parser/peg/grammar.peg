@@ -27,8 +27,15 @@ PREAMBLE {
     return (T*)n;
   }
 
+  /// @return vector c transformed by the function f.
+  template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
+    using VT = std::decay_t<decltype(std::forward<F>(f)(*std::begin(c)))>;
+    std::vector<VT> ret;
+    std::transform(std::begin(c), std::end(c), std::inserter(ret, std::end(ret)), f);
+    return ret;
+  }
   template<typename F> auto vmap(const peg::SemanticValues &c, F &&f) {
-    return vmap(static_cast<const vector<any>&>(c), f);
+    return vmap(static_cast<const std::vector<std::any>&>(c), f);
   }
   Expr *chain(const codon::ast::ParseContext &CTX, peg::SemanticValues &VS, const codon::SrcInfo &LOC) {
     Expr *b = ac_expr(V0);

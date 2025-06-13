@@ -9,7 +9,6 @@
 #include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/scoping/scoping.h"
-#include <fmt/format.h>
 
 #define CHECK(x)                                                                       \
   {                                                                                    \
@@ -22,7 +21,6 @@
     return;                                                                            \
   } while (0)
 
-using fmt::format;
 using namespace codon::error;
 using namespace codon::matcher;
 

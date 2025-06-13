@@ -14,7 +14,6 @@
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 namespace codon::ast {
@@ -143,7 +142,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
   for (auto &a : args)
     ns.push_back(a->realizedName());
   auto thunkName =
-      format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), join(ns, "."));
+      fmt::format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), join(ns, "."));
   if (getFunction(thunkName + ":0"))
     return nullptr;
 
@@ -243,17 +242,17 @@ SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {
   auto as = extractFuncArgType(type, 1)->getClass()->generics.size();
   auto [_, ag] = (*type->ast)[1].getNameWithStars();
   for (int i = 0; i < as; i++) {
-    ll.push_back(format("%{} = extractvalue {{}} %args, {}", i, i));
+    ll.push_back(fmt::format("%{} = extractvalue {{}} %args, {}", i, i));
     items.push_back(N<ExprStmt>(N<IdExpr>(ag)));
   }
   items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
   for (int i = 0; i < as; i++) {
     items.push_back(N<ExprStmt>(N<IndexExpr>(N<IdExpr>(ag), N<IntExpr>(i))));
-    lla.push_back(format("{{}} %{}", i));
+    lla.push_back(fmt::format("{{}} %{}", i));
   }
   items.push_back(N<ExprStmt>(N<IdExpr>("TR")));
-  ll.push_back(format("%{} = call {{}} %self({})", as, combine2(lla)));
-  ll.push_back(format("ret {{}} %{}", as));
+  ll.push_back(fmt::format("%{} = call {{}} %self({})", as, combine2(lla)));
+  ll.push_back(fmt::format("ret {{}} %{}", as));
   items[0] = N<ExprStmt>(N<StringExpr>(combine2(ll, "\n")));
   return N<SuiteStmt>(items);
 }
@@ -352,8 +351,9 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   size_t ti = 1;
   for (auto *i : *orig) {
     if (auto s = cast<StringExpr>(i)) {
-      generics.emplace_back(format("T{}", ti), N<IdExpr>(TYPE_TYPE), nullptr, true);
-      params.emplace_back(s->getValue(), N<IdExpr>(format("T{}", ti++)), nullptr);
+      generics.emplace_back(fmt::format("T{}", ti), N<IdExpr>(TYPE_TYPE), nullptr,
+                            true);
+      params.emplace_back(s->getValue(), N<IdExpr>(fmt::format("T{}", ti++)), nullptr);
       continue;
     }
     auto t = cast<TupleExpr>(i);

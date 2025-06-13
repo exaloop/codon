@@ -213,7 +213,7 @@ std::unique_ptr<codon::Compiler> processSource(
     llvm::handleAllErrors(
         compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
           codon::compilationError(e.getMessage(), /*file=*/"",
-                                  /*line=*/0, /*col=*/0, /*len*/ 0, /*errorCode*/ -1,
+                                  /*line=*/0, /*col=*/0, /*len=*/0, /*errorCode=*/-1,
                                   /*terminate=*/false);
           failed = true;
         });
@@ -309,7 +309,7 @@ int jitMode(const std::vector<const char *> &args) {
                           [&failed](const codon::error::PluginErrorInfo &e) {
                             codon::compilationError(e.getMessage(), /*file=*/"",
                                                     /*line=*/0, /*col=*/0, /*len=*/0,
-                                                    /*errorCode*/ -1,
+                                                    /*errorCode=*/-1,
                                                     /*terminate=*/false);
                             failed = true;
                           });

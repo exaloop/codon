@@ -9,7 +9,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 namespace codon::ast {
 
@@ -163,7 +162,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
     var->eraseAttribute(Attr::ExprDominatedUsed);
     var->setAttribute(Attr::ExprDominated);
     stmt->suite = N<SuiteStmt>(
-        N<AssignStmt>(N<IdExpr>(format("{}{}", var->getValue(), VAR_USED_SUFFIX)),
+        N<AssignStmt>(N<IdExpr>(fmt::format("{}{}", var->getValue(), VAR_USED_SUFFIX)),
                       N<BoolExpr>(true), nullptr, AssignStmt::UpdateMode::Update),
         stmt->getSuite());
   }

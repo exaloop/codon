@@ -15,7 +15,6 @@
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
-using fmt::format;
 using namespace codon::error;
 
 const int MAX_TYPECHECK_ITER = 1000;
@@ -511,12 +510,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto newType = std::static_pointer_cast<types::FuncType>(type->generalize(0));
   auto newKey = newType->realizedName();
 
-  // if (!isImport)
-  //   LOG("[realize] {} {}", newKey, ctx->bases.back().iteration);
-
-  // if (newKey != key) {
-  //   LOG("!! oldKey={}, newKey={}", key, newKey);
-  // }
   if (!in(ctx->cache->pendingRealizations, make_pair(newType->getFuncName(), newKey))) {
     realizations[newKey] = r;
   } else {
@@ -536,13 +529,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     getLogger().level--;
   }
   this->ctx = oldCtx;
-
-  // auto _el = _t->elapsed();
-  // delete _t;
-  // for (auto &b : ctx->bases)
-  //   if (b.type && b.type->getFunc()) {
-  //     ctx->cache->_timings[b.type->getFunc()->ast->getName()] -= _el;
-  //   }
 
   return r->getType();
 }
