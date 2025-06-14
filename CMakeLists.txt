@@ -439,6 +439,7 @@ cmrc_add_resource_library(
   NAMESPACE codon
   ${CODON_STDLIB_RESOURCES}
 )
+set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt codon-stdlib)
 
