@@ -414,7 +414,6 @@ public:
   ParserErrors findTypecheckErrors(Stmt *n);
 
 public:
-public:
   /// Get the current realization depth (i.e., the number of nested realizations).
   size_t getRealizationDepth() const;
   /// Get the name of the current realization stack (e.g., `fn1:fn2:...`).
