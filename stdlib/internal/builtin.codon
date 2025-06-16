@@ -15,9 +15,7 @@ def id(x) -> int:
     else:
         return 0
 
-_stdout = _C.seq_stdout()
-
-def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
+def print(*args, sep: str = " ", end: str = "\n", file=_C.seq_stdout(), flush: bool = False):
     """
     Print args to the text stream file.
     """

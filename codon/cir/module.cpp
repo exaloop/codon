@@ -185,7 +185,7 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
       module.empty() ? funcName : fmt::format(FMT_STRING("{}.{}"), module, funcName);
   auto func = cache->findFunction(fqName);
   if (!func)
-    func = cache->findFunction(fqName + ".0:0");
+    func = cache->findFunction(fqName + ".0");
   if (!func)
     return nullptr;
   auto arg = translateArgs(cache, args);

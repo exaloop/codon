@@ -48,10 +48,13 @@ llvm::Error JIT::init(bool forgetful) {
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
 
+  cache->isJit = true;
   auto typechecked = ast::TypecheckVisitor::apply(
       cache, cache->N<ast::SuiteStmt>(), JIT_FILENAME, {}, compiler->getEarlyDefines());
+  cache->isJit =
+      false; // we still need main(), so pause isJit first time during translation
   ast::TranslateVisitor::apply(cache, std::move(typechecked));
-  cache->isJit = true; // we still need main(), so set isJit after it has been set
+  cache->isJit = true;
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
 
   pm->run(module);
@@ -165,11 +168,7 @@ llvm::Expected<ir::Func *> JIT::compile(const std::string &code,
     auto sctx = cache->imports[MAIN_IMPORT].ctx;
     if (auto err = ast::ScopingVisitor::apply(sctx->cache, node, &sctx->globalShadows))
       throw exc::ParserException(std::move(err));
-    auto tv = ast::TypecheckVisitor(sctx, preamble);
-    node = tv.transform(node);
-
-    if (!cache->errors.empty())
-      throw exc::ParserException(cache->errors);
+    auto tv = ast::TypecheckVisitor::apply(sctx, node, JIT_FILENAME);
     auto typechecked = cache->N<ast::SuiteStmt>();
     for (auto &s : *preamble)
       typechecked->addStmt(s);

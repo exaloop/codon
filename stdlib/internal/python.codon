@@ -1547,8 +1547,12 @@ class _PyWrapError(Static[PyError]):
 
 
 class _PyWrap:
-    def _dispatch_error(F: Literal[str]):
-        raise TypeError("could not find callable method '" + F + "' for given arguments")
+    def _dispatch_error(F: Literal[str], args):
+        if isinstance(args, cobj):
+            s = str(pyobj(args, steal=False))
+        else:
+            s = str([pyobj(i, steal=False) for i in args])
+        raise TypeError("could not find callable method '" + F + "' for given arguments " + s)
 
     def _wrap(args, T: type, F: Literal[str], map):
         for fn in static.function.overloads(T, F):
@@ -1560,7 +1564,7 @@ class _PyWrap:
                     return map(fn, a)
                 except PyError as e:
                     pass
-        _PyWrap._dispatch_error(F)
+        _PyWrap._dispatch_error(F, args)
 
     def _wrap_unary(obj: cobj, T: type, F: Literal[str]) -> cobj:
         return _PyWrap._wrap(
@@ -1590,8 +1594,8 @@ class _PyWrap:
             ta = tuple(get_arg(fn, pargs, k, __ptr__(fail), i) for i, k in static.enumerate(static.function.args(fn)))
             if fail:
                 return None
-            return static.function.wrap_call_args(fn, *ta)
-        except PyError:
+            return static.function.wrap_args(fn, *ta)
+        except PyError as e:
             return None
 
     def _reorder_args(fn, self: cobj, args: cobj, kwargs: cobj, M: Literal[int] = 1):
@@ -1851,7 +1855,7 @@ class _PyWrap:
                 if a is not None and static.function.can_call(fn, *a):
                     fn(*a)
                     return i32(0)
-            _PyWrap._dispatch_error(F)
+            _PyWrap._dispatch_error(F, args)
         else:
             F: Literal[str] = "__new__"
             for fn in static.function.overloads(T, F):
@@ -1861,7 +1865,7 @@ class _PyWrap:
                     p = Ptr[PyObject](obj) + 1
                     Ptr[T](p.as_byte())[0] = x
                     return i32(0)
-            _PyWrap._dispatch_error(F)
+            _PyWrap._dispatch_error(F, args)
 
     def wrap_magic_call(obj: cobj, args: cobj, kwargs: cobj, T: type) -> cobj:
         F: Literal[str] = "__call__"
@@ -1869,7 +1873,7 @@ class _PyWrap:
             a = _PyWrap._reorder_args(fn, obj, args, kwargs, M=1)
             if a is not None and static.function.can_call(fn, *a):
                 return fn(*a).__to_py__()
-        _PyWrap._dispatch_error(F)
+        _PyWrap._dispatch_error(F, args)
 
     def _wrap_cmp(obj: cobj, other: cobj, T: type, F: Literal[str]) -> cobj:
         return _PyWrap._wrap(
@@ -1948,12 +1952,12 @@ class _PyWrap:
             p[0] = PyObject(o.refcnt + 1, o.pytype)
             return obj
 
-        def _iternext(self: cobj) -> cobj:
+        def _iternext(self: cobj, TO: type) -> cobj:
             pt = _PyWrap.IterWrap[T].__from_py__(self)
             if pt._gen == cobj():
                 return cobj()
 
-            gt = type(T().__iter__())(pt._gen)
+            gt = TO(pt._gen)
             if gt.done():
                 pt._gen = cobj()
                 return cobj()
@@ -1986,7 +1990,7 @@ class _PyWrap:
             if a is not None and static.function.can_call(fn, *a):
                 return fn(*a).__to_py__()
 
-        _PyWrap._dispatch_error(F)
+        _PyWrap._dispatch_error(F, [args[i] for i in range(nargs)])
 
     def wrap_get(obj: cobj, closure: cobj, T: type, S: Literal[str]):
         return getattr(T.__from_py__(obj), S).__to_py__()

@@ -51,8 +51,6 @@ Stmt *TypecheckVisitor::apply(
   auto tv = TypecheckVisitor(ctx, preamble);
   SuiteStmt *suite = tv.N<SuiteStmt>();
   auto &stmts = suite->items;
-  stmts.push_back(tv.N<ClassStmt>(".toplevel", std::vector<Param>{}, nullptr,
-                                  std::vector<Expr *>{tv.N<IdExpr>("__internal__")}));
   // Load compile-time defines (e.g., codon run -DFOO=1 ...)
   for (auto &d : defines) {
     stmts.push_back(tv.N<AssignStmt>(
@@ -1583,15 +1581,16 @@ ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) {
 
 ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   auto c = getClass(name);
-  if (!c->module.empty())
+  auto ci = getImport(c->module);
+  if (!ci->name.empty())
     return {"", ""};
   if (!in(c->methods, "__to_py__") || !in(c->methods, "__from_py__"))
     return {"", ""};
 
-  LOG_USER("[py] Cythonizing {}", name);
+  LOG_USER("[py] Cythonizing {} ({})", getUnmangledName(name), name);
   ir::PyType py{getUnmangledName(name), c->ast->getDocstr()};
 
-  auto tc = ctx->forceFind(name)->getType();
+  auto tc = extractType(ctx->forceFind(name)->getType());
   if (!tc->canRealize())
     E(Error::CUSTOM, c->ast, "cannot realize '{}' for Python export",
       getUnmangledName(name));
@@ -1657,7 +1656,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
       if (m == "new" && c->ast->hasAttribute(Attr::Tuple))
         m = "init";
       auto cls = getClass(CYTHON_PYWRAP);
-      if (auto i = in(c->methods, "wrap_magic_" + m)) {
+      if (auto i = in(cls->methods, "wrap_magic_" + m)) {
         call = *i;
         isMagic = true;
       }
@@ -1677,7 +1676,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     if (!f)
       continue;
 
-    LOG_USER("[py] {} -> {} ({}; {})", n, call, isMethod, isProperty);
+    LOG_USER("[py] {} -> {} (method={}; property={})", n, call, isMethod, isProperty);
     if (isProperty) {
       py.getset.push_back({getUnmangledName(canonicalName), "", f, nullptr});
     } else if (n == "__repr__") {
@@ -1813,7 +1812,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
           getFunction(fmt::format("{}.wrap_set:0", CYTHON_PYWRAP))->getType(),
           generics);
     py.getset.push_back({mn, "", gf, sf});
-    LOG_USER("[py] {}: {} . {}", "member", name, mn);
+    LOG_USER("[py] member -> {} . {}", name, mn);
   }
   return py;
 }
@@ -1834,13 +1833,31 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
   const auto &methods = getClass(CYTHON_ITER)->methods;
   for (auto &n : std::vector<std::string>{"_iter", "_iternext"}) {
     auto fnn = getOverloads(getClass(CYTHON_ITER)->methods[n]).front();
-    auto rtv = realize(instantiateType(getFunction(fnn)->getType(), tc->getClass()));
-    auto f =
-        getFunction(rtv->getFunc()->getFuncName())->realizations[rtv->realizedName()];
-    if (n == "_iter")
-      py.iter = f->ir;
-    else
-      py.iternext = f->ir;
+    TypePtr t;
+    if (n == "_iter") {
+      t = instantiateType(getFunction(fnn)->getType(), tc->getClass());
+    } else {
+      auto ut = extractClassGeneric(tc)->getClass();
+      if (!ut)
+        continue;
+      auto fn = findBestMethod(ut, "__iter__", std::vector<types::Type *>{ut});
+      if (!fn)
+        continue;
+      auto fnt = realize(instantiateType(fn, ut));
+      if (!fnt)
+        continue;
+      t = instantiateType(getFunction(fnn)->getType(), tc->getClass());
+      unify(extractFuncGeneric(t->getFunc()), fnt->getFunc()->getRetType());
+    }
+    auto rtv = realize(t.get());
+    if (rtv) {
+      auto f =
+          getFunction(rtv->getFunc()->getFuncName())->realizations[rtv->realizedName()];
+      if (n == "_iter")
+        py.iter = f->ir;
+      else
+        py.iternext = f->ir;
+    }
   }
   py.type = cr->ir;
   return py;
@@ -1851,11 +1868,11 @@ ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
   if (f->isToplevel) {
     auto fnName = fmt::format("{}.wrap_multiple:0", CYTHON_PYWRAP);
     auto generics = std::vector<types::TypePtr>{
-        ctx->forceFind(".toplevel")->type,
-        instantiateStatic(getUnmangledName(f->ast->getName())),
-        instantiateStatic(int64_t(0))};
+        getStdLibType("NoneType")->shared_from_this(),
+        instantiateStatic(f->ast->getName()), instantiateStatic(int64_t(0))};
     if (auto ir = realizeIRFunc(getFunction(fnName)->getType(), generics)) {
-      LOG_USER("[py] {}: {}", "toplevel", name);
+      LOG_USER("[py] toplevel -> {} ({}): ({})", getUnmangledName(name), name,
+               f->getType()->debugString(2));
       ir::PyFunction fn{getUnmangledName(name), f->ast->getDocstr(), ir,
                         ir::PyFunction::Type::TOPLEVEL, int(f->ast->size())};
       fn.keywords = true;

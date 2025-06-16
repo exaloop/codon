@@ -262,7 +262,8 @@ struct Cache {
   bool isJit = false;
   int jitCell = 0;
 
-  std::unordered_map<std::string, int> generatedTuples;
+  std::unordered_set<size_t> generatedTuples;
+  std::unordered_map<std::string, int> generatedKwTuples;
   std::vector<std::vector<std::string>> generatedTupleNames = {{}};
   ParserErrors errors;
 

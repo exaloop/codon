@@ -687,7 +687,7 @@ class __magic__:
 
     # @dataclass parameter: python=True
     def to_py(slf) -> Ptr[byte]:
-        o = pyobj._tuple_new(static.len(slf))
+        o = pyobj._tuple_new(static.len(tuple(slf)))
         for i, _, v in static.vars(slf, with_index=True):
             pyobj._tuple_set(o, i, v.__to_py__())
         return o

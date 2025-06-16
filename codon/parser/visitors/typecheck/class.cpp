@@ -709,19 +709,18 @@ int TypecheckVisitor::generateKwId(const std::vector<std::string> &names) {
     // Each set of names generates different tuple (i.e., `KwArgs[foo, bar]` is not the
     // same as `KwArgs[bar, baz]`). Cache the names and use an integer for each name
     // combination.
-    if (!in(ctx->cache->generatedTuples, key)) {
+    if (!in(ctx->cache->generatedKwTuples, key)) {
       ctx->cache->generatedTupleNames.push_back(names);
-      ctx->cache->generatedTuples[key] = int(ctx->cache->generatedTuples.size()) + 1;
+      ctx->cache->generatedKwTuples[key] =
+          int(ctx->cache->generatedKwTuples.size()) + 1;
     }
-    return ctx->cache->generatedTuples[key];
+    return ctx->cache->generatedKwTuples[key];
   } else {
     return 0;
   }
 }
 
 types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
-  static std::unordered_set<size_t> funcArgTypes;
-
   if (n > MAX_TUPLE)
     E(Error::CUSTOM, getSrcInfo(), "tuple too large ({})", n);
 
@@ -741,8 +740,8 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
     val = getImport(STDLIB_IMPORT)->ctx->addType(key, key, t);
   }
   auto t = val->getType()->getClass();
-  if (generateNew && !in(funcArgTypes, n)) {
-    funcArgTypes.insert(n);
+  if (generateNew && !in(ctx->cache->generatedTuples, n)) {
+    ctx->cache->generatedTuples.insert(n);
     std::vector<Param> newFnArgs;
     std::vector<Expr *> typeArgs;
     for (size_t i = 0; i < n; i++) {

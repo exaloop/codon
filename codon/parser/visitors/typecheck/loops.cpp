@@ -332,7 +332,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   } else if (fn && startswith(fn->getValue(), "std.internal.static.range.0")) {
     block = populateStaticRangeLoop(iter, vars);
   } else if (fn &&
-             startswith(fn->getValue(), "std.internal.static.function.0.overloads.0")) {
+             startswith(fn->getValue(), "std.internal.static.function.0.overloads")) {
     block = populateStaticFnOverloadsLoop(iter, vars);
   } else if (fn && startswith(fn->getValue(), "std.internal.static.enumerate.0")) {
     block = populateStaticEnumerateLoop(iter, vars);

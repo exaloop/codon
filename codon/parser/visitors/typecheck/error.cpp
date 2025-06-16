@@ -56,7 +56,6 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   ctx->blockLevel--;
 
   std::vector<ExceptStmt *> catches;
-  auto pyVar = getTemporaryVar("pyexc");
   auto pyCatchStmt = N<WhileStmt>(N<BoolExpr>(true), N<SuiteStmt>());
 
   auto done = stmt->getSuite()->isDone();
@@ -85,6 +84,11 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     c->exc = transform(c->getException());
     if (c->getException() && extractClassType(c->getException())->is("pyobj")) {
       // Transform python.Error exceptions
+
+      if (!stmt->hasAttribute(Attr::TryPyVar))
+        stmt->setAttribute(Attr::TryPyVar, getTemporaryVar("pyexc"));
+      auto pyVar = stmt->getAttribute<ir::StringValueAttribute>(Attr::TryPyVar)->value;
+
       if (!c->var.empty()) {
         c->suite = N<SuiteStmt>(
             N<AssignStmt>(N<IdExpr>(c->var), N<DotExpr>(N<IdExpr>(pyVar), "pytype")),
@@ -98,6 +102,10 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
     } else if (c->getException() && extractClassType(c->getException())
                                         ->is("std.internal.python.PyError.0")) {
       // Transform PyExc exceptions
+      if (!stmt->hasAttribute(Attr::TryPyVar))
+        stmt->setAttribute(Attr::TryPyVar, getTemporaryVar("pyexc"));
+      auto pyVar = stmt->getAttribute<ir::StringValueAttribute>(Attr::TryPyVar)->value;
+
       if (!c->var.empty()) {
         c->suite = N<SuiteStmt>(N<AssignStmt>(N<IdExpr>(c->var), N<IdExpr>(pyVar)),
                                 c->getSuite());
@@ -131,6 +139,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   }
   if (!cast<SuiteStmt>(pyCatchStmt->getSuite())->empty()) {
     // Process PyError catches
+    auto pyVar = stmt->getAttribute<ir::StringValueAttribute>(Attr::TryPyVar)->value;
     auto exc = N<IdExpr>("std.internal.python.PyError.0");
     cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(N<ThrowStmt>(nullptr));
     auto c = N<ExceptStmt>(pyVar, transformType(exc), pyCatchStmt);
