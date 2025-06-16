@@ -16,7 +16,6 @@
 #include <fmt/ostream.h>
 
 namespace codon {
-
 namespace ir {
 
 using id_t = std::int64_t;
@@ -201,12 +200,6 @@ public:
   /// @param m the new module
   void setModule(Module *m) { getActual()->module = m; }
 
-  /// Convert a node to a string expression.
-  // virtual std::string toString(int) const = 0;
-  // virtual std::string toString() const { return toString(-1); }
-  // friend std::ostream &operator<<(std::ostream &os, const Node &a) {
-  //   return out << expr.toString();
-  // }
   friend std::ostream &operator<<(std::ostream &os, const Node &a);
 
   bool hasReplacement() const { return replacement != nullptr; }

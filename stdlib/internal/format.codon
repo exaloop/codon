@@ -3,18 +3,28 @@
 def _format_error(ret: str):
 	raise ValueError(f"invalid format specifier: {ret}")
 
-def python_to_fmt_format(s):
-    i = 0
+def _python_to_fmt_format(s):
+    if not s:
+        return s
 
+    i = 0
     fill, align = None, None
-    if i + 1 < len(s) and (s[i + 1] == '<' or s[i + 1] == '>' or s[i + 1] == '=' or s[i + 1] == '^'):
+    if (i + 1 < len(s) and
+        (s[i + 1] == '<' or
+         s[i + 1] == '>' or
+         s[i + 1] == '=' or
+         s[i + 1] == '^')):
         fill = s[i]
         align = s[i + 1]
         i += 2
-    elif i < len(s) and (s[i] == '<' or s[i] == '>' or s[i] == '=' or s[i] == '^'):
+    elif (i < len(s) and
+          (s[i] == '<' or
+           s[i] == '>' or
+           s[i] == '=' or
+           s[i] == '^')):
         align = s[i]
         i += 1
-    if align and align == '=':
+    if align == '=':
         raise NotImplementedError("'=' alignment not yet supported")
 
     sign = None
@@ -67,24 +77,26 @@ def python_to_fmt_format(s):
         raise ValueError("bad format string")
 
     # Construct fmt::format-compatible string
-    ns = ""
+    ns = _strbuf()
     if align:
-        if fill: ns += fill
-        ns += align
-    if sign: ns += sign
-    if alternate_form: ns += "#"
-    if width_pre_zero: ns += "0"
-    if width: ns += str(width)
-    if precision is not None: ns += f".{precision}"
-    if grouping: ns += "L"
-    if type: ns += type
-    return ns
+        if fill: ns.append(fill)
+        ns.append(align)
+    if sign: ns.append(sign)
+    if alternate_form: ns.append("#")
+    if width_pre_zero: ns.append("0")
+    if width: ns.append(str(width))
+    if precision is not None:
+        ns.append(".")
+        ns.append(str(precision))
+    if grouping: ns.append("L")
+    if type: ns.append(type)
+    return str(ns)
 
 @extend
 class int:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_int(self, python_to_fmt_format(format_spec), __ptr__(err))
+        ret = _C.seq_str_int(self, _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -93,7 +105,7 @@ class int:
 class Int:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_int(self.__int__(), python_to_fmt_format(format_spec), __ptr__(err))
+        ret = _C.seq_str_int(self.__int__(), _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -102,7 +114,7 @@ class Int:
 class UInt:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_uint(self.__int__(), python_to_fmt_format(format_spec), __ptr__(err))
+        ret = _C.seq_str_uint(self.__int__(), _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -111,7 +123,7 @@ class UInt:
 class float:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_float(self, python_to_fmt_format(format_spec), __ptr__(err))
+        ret = _C.seq_str_float(self, _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret if ret != "-nan" else "nan"
@@ -120,7 +132,7 @@ class float:
 class str:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_str(self, python_to_fmt_format(format_spec), __ptr__(err))
+        ret = _C.seq_str_str(self, _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -129,7 +141,7 @@ class str:
 class Ptr:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_ptr(self.as_byte(), python_to_fmt_format(format_spec), __ptr__(err))
+        ret = _C.seq_str_ptr(self.as_byte(), _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret

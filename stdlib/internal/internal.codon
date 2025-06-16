@@ -147,6 +147,8 @@ class __internal__:
                 pr = RTTI(B.__id__).__raw__()
             return __internal__.to_class_ptr_rtti((ptr, pr), B)
 
+    @pure
+    @derives
     @llvm
     def _capsule_make_helper(val: Ptr[T], T: type) -> Capsule[T]:
         %0 = insertvalue { ptr } undef, ptr %val, 0
@@ -157,12 +159,16 @@ class __internal__:
         p[0] = val
         return __internal__._capsule_make_helper(p)
 
+    @pure
+    @derives
     @llvm
     def capsule_get_ptr(ref: Capsule[T], T: type) -> Ptr[T]:
         %0 = extractvalue { ptr } %ref, 0
         %1 = getelementptr {=T}, ptr %0, i64 0
         ret ptr %1
 
+    @pure
+    @derives
     @llvm
     def capsule_get(ref: Capsule[T], T: type) -> T:
         %0 = extractvalue { ptr } %ref, 0
@@ -301,6 +307,8 @@ class __internal__:
             t, __internal__.tuple_fix_index(idx, static.len(t)), T, E
         )
 
+    @pure
+    @derives
     @llvm
     def tuple_cast_unsafe(t, U: type) -> U:
         ret {=U} %t

@@ -176,9 +176,8 @@ struct DerivedSet {
     if (!shouldTrack(v))
       return;
 
-    if (v->isGlobal()) {
+    if (v->isGlobal())
       setExternCaptured();
-    }
 
     auto id = v->getId();
     if (shouldArgCapture && root && id != root->getId()) {

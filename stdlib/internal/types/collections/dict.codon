@@ -287,7 +287,6 @@ class Dict:
         if new_n_buckets < 4:
             new_n_buckets = 4
 
-
         if self._size >= int(new_n_buckets * HASH_UPPER + 0.5):
             j = 0
         else:
