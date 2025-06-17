@@ -40,12 +40,12 @@ llvm::cl::opt<bool> Verbose("npfuse-verbose",
 
 bool isArrayType(types::Type *t) {
   return t && isA<types::RecordType>(t) &&
-         t->getName().rfind("std.numpy.ndarray.ndarray[", 0) == 0;
+         t->getName().rfind("std.numpy.ndarray.ndarray.0[", 0) == 0;
 }
 
 bool isUFuncType(types::Type *t) {
-  return t && (t->getName().rfind("std.numpy.ufunc.UnaryUFunc[", 0) == 0 ||
-               t->getName().rfind("std.numpy.ufunc.BinaryUFunc[", 0) == 0);
+  return t && (t->getName().rfind("std.numpy.ufunc.UnaryUFunc.0[", 0) == 0 ||
+               t->getName().rfind("std.numpy.ufunc.BinaryUFunc.0[", 0) == 0);
 }
 
 bool isNoneType(types::Type *t, NumPyPrimitiveTypes &T) {
