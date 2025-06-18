@@ -200,6 +200,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
     registerPass(std::make_unique<numpy::NumPyFusionPass>(rdKey, seKey2),
                  /*insertBefore=*/"", {rdKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
+    registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
 
     // parallel
     registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
