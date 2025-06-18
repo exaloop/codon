@@ -27,10 +27,10 @@ struct ASTNode : public ir::Node {
     return other == nodeId() || ir::Node::isConvertible(other);
   }
 
-  Cache *cache;
+  Cache *cache = nullptr;
 
   ASTNode() = default;
-  ASTNode(const ASTNode &);
+  ASTNode(const ASTNode &) = default;
   virtual ~ASTNode() = default;
 
   /// Convert a node to an S-expression.
@@ -87,9 +87,9 @@ public:
 };
 
 template <class T> struct Items {
-  Items(std::vector<T> items) : items(std::move(items)) {}
-  const T &operator[](int i) const { return items[i]; }
-  T &operator[](int i) { return items[i]; }
+  explicit Items(std::vector<T> items) : items(std::move(items)) {}
+  const T &operator[](size_t i) const { return items[i]; }
+  T &operator[](size_t i) { return items[i]; }
   auto begin() { return items.begin(); }
   auto end() { return items.end(); }
   auto begin() const { return items.begin(); }
@@ -108,6 +108,6 @@ protected:
 } // namespace codon::ast
 
 template <typename T>
-struct fmt::formatter<
-    T, std::enable_if_t<std::is_base_of<codon::ast::ASTNode, T>::value, char>>
+struct fmt::formatter<T,
+                      std::enable_if_t<std::is_base_of_v<codon::ast::ASTNode, T>, char>>
     : fmt::ostream_formatter {};

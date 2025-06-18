@@ -136,7 +136,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
 
 /// Transform special `from C` and `from python` imports.
 /// See @c transformCImport, @c transformCDLLImport and @c transformPythonImport
-Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
+Stmt *TypecheckVisitor::transformSpecialImport(const ImportStmt *stmt) {
   if (auto fi = cast<IdExpr>(stmt->getFrom())) {
     if (fi->getValue() == "C") {
       auto wi = cast<IdExpr>(stmt->getWhat());
@@ -165,7 +165,8 @@ Stmt *TypecheckVisitor::transformSpecialImport(ImportStmt *stmt) {
 
 /// Transform Dot(Dot(a, b), c...) into "{a, b, c, ...}".
 /// Useful for getting import paths.
-std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from, size_t dots) {
+std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from,
+                                                         size_t dots) const {
   std::vector<std::string> components; // Path components
   if (from) {
     for (; cast<DotExpr>(from); from = cast<DotExpr>(from)->getExpr())
@@ -177,7 +178,7 @@ std::vector<std::string> TypecheckVisitor::getImportPath(Expr *from, size_t dots
   // Handle dots (i.e., `..` in `from ..m import x`)
   for (size_t i = 1; i < dots; i++)
     components.emplace_back("..");
-  std::reverse(components.begin(), components.end());
+  std::ranges::reverse(components);
   return components;
 }
 
@@ -208,7 +209,7 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
                           clone(args[ai].getType()), nullptr);
     }
   }
-  ctx->generateCanonicalName(name); // avoid canonicalName == name
+  auto _ = ctx->generateCanonicalName(name); // avoid canonicalName == name
   Stmt *f =
       N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs, nullptr);
   f->setAttribute(Attr::C);
@@ -271,8 +272,8 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
   return transform(N<AssignStmt>(
       N<IdExpr>(altName.empty() ? name : altName),
       N<CallExpr>(N<IdExpr>("_dlsym"),
-                  std::vector<CallArg>{
-                      CallArg(c), CallArg(N<StringExpr>(name)), {"Fn", type}})));
+                  std::vector<CallArg>{CallArg(c), CallArg(N<StringExpr>(name)),
+                                       CallArg{"Fn", type}})));
 }
 
 /// Transform a Python module and function imports.
@@ -306,12 +307,12 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
   // f = pyobj._import("foo")._getattr("bar")
   auto call = N<AssignStmt>(
       N<IdExpr>("f"),
-      N<CallExpr>(
-          N<DotExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("pyobj"), "_import"),
-                                 N<StringExpr>(combine2(components, ".", 0,
-                                                        int(components.size()) - 1))),
-                     "_getattr"),
-          N<StringExpr>(components.back())));
+      N<CallExpr>(N<DotExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("pyobj"), "_import"),
+                                         N<StringExpr>(combine2(
+                                             components, ".", 0,
+                                             static_cast<int>(components.size()) - 1))),
+                             "_getattr"),
+                  N<StringExpr>(components.back())));
   // f(a1, ...)
   std::vector<Param> params;
   std::vector<Expr *> callArgs;
@@ -340,7 +341,7 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
 Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   // Use a clean context to parse a new file
   auto moduleID = file.module;
-  std::replace(moduleID.begin(), moduleID.end(), '.', '_');
+  std::ranges::replace(moduleID, '.', '_');
   auto ictx = std::make_shared<TypeContext>(ctx->cache, file.path);
   ictx->isStdlibLoading = ctx->isStdlibLoading;
   ictx->moduleName = file;

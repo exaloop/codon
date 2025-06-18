@@ -3,15 +3,10 @@
 #pragma once
 
 #include <string>
-#include <tuple>
 #include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 #include "codon/cir/cir.h"
 #include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
-#include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
@@ -24,7 +19,7 @@ class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
 public:
   explicit TranslateVisitor(std::shared_ptr<TranslateContext> ctx);
   static codon::ir::Func *apply(Cache *cache, Stmt *stmts);
-  void translateStmts(Stmt *stmts);
+  void translateStmts(Stmt *stmts) const;
 
   ir::Value *transform(Expr *expr) override;
   ir::Value *transform(Stmt *stmt) override;
@@ -67,11 +62,13 @@ public:
   void visit(DirectiveStmt *) override {}
 
 private:
-  ir::types::Type *getType(types::Type *t);
+  ir::types::Type *getType(types::Type *t) const;
 
   void transformFunctionRealizations(const std::string &name, bool isLLVM);
-  void transformFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);
-  void transformLLVMFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);
+  void transformFunction(const types::FuncType *type, FunctionStmt *ast,
+                         ir::Func *func);
+  void transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,
+                             ir::Func *func) const;
 
   template <typename ValueType, typename... Args> ValueType *make(Args &&...args) {
     auto *ret = ctx->getModule()->N<ValueType>(std::forward<Args>(args)...);

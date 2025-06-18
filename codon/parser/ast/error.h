@@ -5,6 +5,7 @@
 #include "llvm/Support/Error.h"
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 /**
@@ -38,12 +39,11 @@ private:
   int errorCode = -1;
 
 public:
-  explicit ErrorMessage(const std::string &msg, const SrcInfo &loc = SrcInfo(),
-                        int errorCode = -1)
-      : msg(msg), loc(loc), errorCode(-1) {}
-  explicit ErrorMessage(const std::string &msg, const std::string &file = "",
-                        int line = 0, int col = 0, int len = 0, int errorCode = -1)
-      : msg(msg), loc(file, line, col, len), errorCode(-1) {}
+  explicit ErrorMessage(std::string msg, SrcInfo loc = SrcInfo(), int errorCode = -1)
+      : msg(std::move(msg)), loc(std::move(loc)), errorCode(-1) {}
+  explicit ErrorMessage(std::string msg, const std::string &file = "", int line = 0,
+                        int col = 0, int len = 0, int errorCode = -1)
+      : msg(std::move(msg)), loc(file, line, col, len), errorCode(-1) {}
 
   std::string getMessage() const { return msg; }
   std::string getFile() const { return loc.file; }
@@ -78,13 +78,14 @@ struct ParserErrors {
   };
   std::vector<Backtrace> errors;
 
-  ParserErrors() {}
-  ParserErrors(const ErrorMessage &msg) : errors{Backtrace{{msg}}} {}
+  ParserErrors() = default;
+  explicit ParserErrors(const ErrorMessage &msg) : errors{Backtrace{{msg}}} {}
   ParserErrors(const std::string &msg, const SrcInfo &info)
-      : ParserErrors({msg, info}) {}
-  ParserErrors(const std::string &msg) : ParserErrors(msg, {}) {}
-  ParserErrors(const ParserErrors &e) : errors(e.errors) {}
-  ParserErrors(const std::vector<ErrorMessage> &m) : ParserErrors() {
+      : ParserErrors(ErrorMessage{msg, info}) {}
+  explicit ParserErrors(const std::string &msg)
+      : ParserErrors(ErrorMessage{msg, SrcInfo{}}) {}
+  ParserErrors(const ParserErrors &e) = default;
+  explicit ParserErrors(const std::vector<ErrorMessage> &m) : ParserErrors() {
     for (auto &msg : m)
       errors.push_back(Backtrace{{msg}});
   }
@@ -109,8 +110,9 @@ struct ParserErrors {
 
   /// Add an error message to the current backtrace
   void addError(const Backtrace &trace) {
-    if (errors.empty() || !(errors.back() == trace))
-      errors.push_back({trace});
+    if (!errors.empty() && errors.back() == trace)
+      return;
+    errors.push_back({trace});
   }
   void addError(const std::vector<ErrorMessage> &trace) { addError(Backtrace{trace}); }
   std::string getMessage() const {
@@ -133,9 +135,9 @@ class ParserException : public std::runtime_error {
 
 public:
   ParserException() noexcept : std::runtime_error("") {}
-  ParserException(const ParserErrors &errors) noexcept
+  explicit ParserException(const ParserErrors &errors) noexcept
       : std::runtime_error(errors.getMessage()), errors(errors) {}
-  ParserException(llvm::Error &&e) noexcept;
+  explicit ParserException(llvm::Error &&e) noexcept;
 
   const ParserErrors &getErrors() const { return errors; }
   ParserErrors &getErrors() { return errors; }

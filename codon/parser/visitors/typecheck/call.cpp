@@ -124,25 +124,22 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       auto key = id->getValue();
       if (isDispatch(key))
         key = key.substr(0, key.size() - std::string(FN_DISPATCH_SUFFIX).size());
-      for (auto &m : getOverloads(key)) {
-        if (!isDispatch(m))
-          methods.push_back(getFunction(m)->getType());
+      for (auto &ovs : getOverloads(key)) {
+        if (!isDispatch(ovs))
+          methods.push_back(getFunction(ovs)->getType());
       }
-      std::reverse(methods.begin(), methods.end());
+      std::ranges::reverse(methods);
       m = std::make_unique<std::vector<FuncType *>>(findMatchingMethods(
           calleeFn->funcParent ? calleeFn->funcParent->getClass() : nullptr, methods,
           expr->items, expr->getExpr()->getType()->getPartial()));
     }
     // partials have dangling ellipsis that messes up with the unbound check below
-    bool doDispatch = !m || m->size() == 0 || part.isPartial;
+    bool doDispatch = !m || m->empty() || part.isPartial;
     if (!doDispatch && m && m->size() > 1) {
-      auto unbounds = 0;
       for (auto &a : *expr) {
         if (isUnbound(a.getExpr()))
           return; // typecheck this later once we know the argument
       }
-      if (unbounds)
-        return;
     }
     if (!doDispatch) {
       calleeFn = instantiateType(m->front(), calleeFn->funcParent
@@ -154,7 +151,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
         expr->expr = e;
       } else if (cast<StmtExpr>(expr->getExpr())) {
         // Side effect...
-        for (StmtExpr *se = cast<StmtExpr>(expr->getExpr());;) {
+        for (auto *se = cast<StmtExpr>(expr->getExpr());;) {
           if (auto ne = cast<StmtExpr>(se->getExpr())) {
             se = ne;
           } else {
@@ -185,7 +182,7 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   if (auto dot = cast<DotExpr>(expr->getExpr()->getOrigExpr())) {
     if (auto baseTyp = dot->getExpr()->getClassType()) {
       auto cls = getClass(baseTyp);
-      isVirtual = bool(in(cls->virtuals, dot->getMember())) && cls->rtti &&
+      isVirtual = static_cast<bool>(in(cls->virtuals, dot->getMember())) && cls->rtti &&
                   !isTypeExpr(expr->getExpr()) && !isDispatch(calleeFn.get()) &&
                   !calleeFn->ast->hasAttribute(Attr::StaticMethod) &&
                   !calleeFn->ast->hasAttribute(Attr::Property);
@@ -284,7 +281,7 @@ void TypecheckVisitor::validateCall(CallExpr *expr) {
       E(Error::CALL_NAME_STAR, a.value);
     if (cast<EllipsisExpr>(a.value) && foundEllipsis)
       E(Error::CALL_ELLIPSIS, a.value);
-    foundEllipsis |= bool(cast<EllipsisExpr>(a.value));
+    foundEllipsis |= static_cast<bool>(cast<EllipsisExpr>(a.value));
     namesStarted |= !a.name.empty();
   }
   expr->setAttribute(Attr::Validated);
@@ -311,10 +308,10 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       for (size_t i = 0; i < fields.size(); i++, ai++) {
         expr->items.insert(
             expr->items.begin() + ai,
-            {"", transform(N<DotExpr>(clone(star->getExpr()), fields[i].name))});
+            CallArg{"", transform(N<DotExpr>(clone(star->getExpr()), fields[i].name))});
       }
       expr->items.erase(expr->items.begin() + ai);
-    } else if (auto kwstar = cast<KeywordStarExpr>((*expr)[ai].getExpr())) {
+    } else if (const auto kwstar = cast<KeywordStarExpr>((*expr)[ai].getExpr())) {
       // Case: **kwargs expansion
       kwstar->expr = transform(kwstar->getExpr());
       auto typ = kwstar->getExpr()->getClassType();
@@ -420,9 +417,9 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     auto genFn = partType->getPartialFunc()->generalize(0);
     auto calleeFn =
         std::static_pointer_cast<types::FuncType>(instantiateType(genFn.get()));
-    if (!partType->isPartialEmpty() ||
-        std::any_of(mask.begin(), mask.end(),
-                    [](char c) { return c != ClassType::PartialFlag::Missing; })) {
+    if (!partType->isPartialEmpty() || std::ranges::any_of(mask, [](char c) {
+          return c != ClassType::PartialFlag::Missing;
+        })) {
       // Case: calling partial object `p`. Transform roughly to
       // `part = callee; partial_fn(*part.args, args...)`
       Expr *var = N<IdExpr>(part.var = getTemporaryVar("partcall"));
@@ -506,9 +503,6 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
   bool partial = false;
   auto reorderFn = [&](int starArgIndex, int kwstarArgIndex,
                        const std::vector<std::vector<int>> &slots, bool _partial) {
-    if (in(calleeFn->debugString(2), "methodcaller.0:0.caller.0:0"))
-      logfile("scr", "->{}", calleeFn->debugString(2));
-
     partial = _partial;
     return withClassGenerics(
         calleeFn,
@@ -559,7 +553,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 starArgs.push_back((*expr)[e].getExpr());
                 addReordered(e);
               }
-              starIdx = args.size();
+              starIdx = static_cast<int>(args.size());
               args.emplace_back(realName, nullptr);
               if (partial)
                 newMask[si] = ClassType::PartialFlag::Missing;
@@ -587,7 +581,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                 addReordered(e);
               }
 
-              kwStarIdx = args.size();
+              kwStarIdx = static_cast<int>(args.size());
               args.emplace_back(realName, nullptr);
               if (partial)
                 newMask[si] = ClassType::PartialFlag::Missing;
@@ -688,9 +682,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
   // Do reordering
   if (!inOrder) {
     std::vector<Stmt *> prepends;
-    sort(ordered.begin(), ordered.end(),
-         [](const auto &a, const auto &b) { return a.first < b.first; });
-    for (auto &[_, eptr] : ordered) {
+    std::ranges::sort(ordered,
+                      [](const auto &a, const auto &b) { return a.first < b.first; });
+    for (auto &eptr : ordered | std::views::values) {
       auto name = getTemporaryVar("call");
       auto front = transform(
           N<AssignStmt>(N<IdExpr>(name), *eptr, getParamType((*eptr)->getType())));
@@ -899,7 +893,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
   if (!ei)
     return {false, nullptr};
-  auto isF = [](IdExpr *val, const std::string &s) {
+  auto isF = [](const IdExpr *val, const std::string &s) {
     return val->getValue() == s || val->getValue() == s + ":0" ||
            val->getValue() == s + ".0:0";
   };
@@ -1004,8 +998,8 @@ Expr *TypecheckVisitor::generatePartialCall(const std::string &mask,
   efn->setDone();
   Expr *call = N<CallExpr>(
       N<IdExpr>("Partial"),
-      std::vector<CallArg>{
-          {"args", args}, {"kwargs", kwargs}, {"M", N<StringExpr>(mask)}, {"F", efn}});
+      std::vector<CallArg>{CallArg{"args", args}, CallArg{"kwargs", kwargs},
+                           CallArg{"M", N<StringExpr>(mask)}, CallArg{"F", efn}});
   return call;
 }
 

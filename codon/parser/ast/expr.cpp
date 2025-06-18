@@ -6,9 +6,9 @@
 #include <iterator>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/match.h"
@@ -29,11 +29,7 @@ using namespace codon::matcher;
 
 namespace codon::ast {
 
-ASTNode::ASTNode(const ASTNode &node) : Node(node), cache(node.cache) {}
-
 Expr::Expr() : AcceptorExtend(), type(nullptr), done(false), origExpr(nullptr) {}
-Expr::Expr(const Expr &expr)
-    : AcceptorExtend(expr), type(expr.type), done(expr.done), origExpr(expr.origExpr) {}
 Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   if (clean) {
     type = nullptr;
@@ -64,7 +60,7 @@ Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
 }
 Param::Param(const SrcInfo &info, std::string name, Expr *type, Expr *defaultValue,
              int status)
-    : Param(name, type, defaultValue, status) {
+    : Param(std::move(name), type, defaultValue, status) {
   setSrcInfo(info);
 }
 std::string Param::toString(int indent) const {
@@ -93,7 +89,7 @@ BoolExpr::BoolExpr(const BoolExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), value(expr.value) {}
 bool BoolExpr::getValue() const { return value; }
 std::string BoolExpr::toString(int) const {
-  return wrapType(fmt::format("bool {}", int(value)));
+  return wrapType(fmt::format("bool {}", static_cast<int>(value)));
 }
 
 IntExpr::IntExpr(int64_t intValue)
@@ -134,8 +130,8 @@ FloatExpr::FloatExpr(double floatValue)
 FloatExpr::FloatExpr(const std::string &value, std::string suffix)
     : AcceptorExtend(), value(), suffix(std::move(suffix)) {
   this->value.reserve(value.size());
-  std::copy_if(value.begin(), value.end(), std::back_inserter(this->value),
-               [](char c) { return c != '_'; });
+  std::ranges::copy_if(value.begin(), value.end(), std::back_inserter(this->value),
+                       [](char c) { return c != '_'; });
 
   double result;
   auto r = fast_float::from_chars(this->value.data(),
@@ -160,10 +156,11 @@ std::string FloatExpr::toString(int) const {
                   suffix.empty() ? "" : fmt::format(" #:suffix \"{}\"", suffix)));
 }
 
-StringExpr::StringExpr(std::vector<StringExpr::String> s)
-    : AcceptorExtend(), strings(std::move(s)) {}
+StringExpr::StringExpr(std::vector<StringExpr::String> strings)
+    : AcceptorExtend(), strings(std::move(strings)) {}
 StringExpr::StringExpr(std::string value, std::string prefix)
-    : StringExpr(std::vector<StringExpr::String>{{value, prefix}}) {}
+    : StringExpr(std::vector<StringExpr::String>{
+          StringExpr::String{std::move(value), std::move(prefix)}}) {}
 StringExpr::StringExpr(const StringExpr &expr, bool clean)
     : AcceptorExtend(expr, clean), strings(expr.strings) {
   for (auto &s : strings)
@@ -245,7 +242,7 @@ std::string DictExpr::toString(int) const {
 
 GeneratorExpr::GeneratorExpr(Cache *cache, GeneratorExpr::GeneratorKind kind,
                              Expr *expr, std::vector<Stmt *> loops)
-    : AcceptorExtend(), kind(kind) {
+    : AcceptorExtend(), kind(kind), loops() {
   this->cache = cache;
   seqassert(!loops.empty() && cast<ForStmt>(loops[0]), "bad generator constructor");
   loops.push_back(cache->N<SuiteStmt>(cache->N<ExprStmt>(expr)));
@@ -253,7 +250,7 @@ GeneratorExpr::GeneratorExpr(Cache *cache, GeneratorExpr::GeneratorKind kind,
 }
 GeneratorExpr::GeneratorExpr(Cache *cache, Expr *key, Expr *expr,
                              std::vector<Stmt *> loops)
-    : AcceptorExtend(), kind(GeneratorExpr::DictGenerator) {
+    : AcceptorExtend(), kind(GeneratorExpr::DictGenerator), loops() {
   this->cache = cache;
   seqassert(!loops.empty() && cast<ForStmt>(loops[0]), "bad generator constructor");
   Expr *t = cache->N<TupleExpr>(std::vector<Expr *>{key, expr});
@@ -307,9 +304,9 @@ Stmt *GeneratorExpr::getFinalSuite() const { return loops; }
 Stmt **GeneratorExpr::getFinalStmt() {
   for (Stmt **i = &loops;;) {
     if (auto sf = cast<ForStmt>(*i))
-      i = (Stmt **)&sf->suite;
+      i = reinterpret_cast<Stmt **>(&sf->suite);
     else if (auto si = cast<IfStmt>(*i))
-      i = (Stmt **)&si->ifSuite;
+      i = reinterpret_cast<Stmt **>(&si->ifSuite);
     else if (auto ss = cast<SuiteStmt>(*i)) {
       if (ss->empty())
         return i;
@@ -367,7 +364,7 @@ ChainBinaryExpr::ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exp
 ChainBinaryExpr::ChainBinaryExpr(const ChainBinaryExpr &expr, bool clean)
     : AcceptorExtend(expr, clean) {
   for (auto &e : expr.exprs)
-    exprs.emplace_back(make_pair(e.first, ast::clone(e.second, clean)));
+    exprs.emplace_back(e.first, ast::clone(e.second, clean));
 }
 std::string ChainBinaryExpr::toString(int indent) const {
   std::vector<std::string> s;
@@ -408,12 +405,14 @@ std::string IndexExpr::toString(int indent) const {
       fmt::format("index {} {}", expr->toString(indent), index->toString(indent)));
 }
 
-CallArg CallArg::clone(bool clean) const { return {name, ast::clone(value, clean)}; }
-CallArg::CallArg(const SrcInfo &info, const std::string &name, Expr *value)
-    : name(name), value(value) {
+CallArg CallArg::clone(bool clean) const {
+  return CallArg{name, ast::clone(value, clean)};
+}
+CallArg::CallArg(const SrcInfo &info, std::string name, Expr *value)
+    : name(std::move(name)), value(value) {
   setSrcInfo(info);
 }
-CallArg::CallArg(const std::string &name, Expr *value) : name(name), value(value) {
+CallArg::CallArg(std::string name, Expr *value) : name(std::move(name)), value(value) {
   if (value)
     setSrcInfo(value->getSrcInfo());
 }
@@ -426,7 +425,7 @@ CallExpr::CallExpr(const CallExpr &expr, bool clean)
 CallExpr::CallExpr(Expr *expr, std::vector<CallArg> args)
     : AcceptorExtend(), Items(std::move(args)), expr(expr), ordered(false),
       partial(false) {}
-CallExpr::CallExpr(Expr *expr, std::vector<Expr *> args)
+CallExpr::CallExpr(Expr *expr, const std::vector<Expr *> &args)
     : AcceptorExtend(), Items({}), expr(expr), ordered(false), partial(false) {
   for (auto a : args)
     if (a)

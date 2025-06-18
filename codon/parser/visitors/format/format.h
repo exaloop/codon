@@ -49,8 +49,8 @@ private:
   std::string newline() const;
   std::string keyword(const std::string &s) const;
   std::string literal(const std::string &s) const;
-  std::string anchor_root(const std::string &s) const;
-  std::string anchor(const std::string &s) const;
+  static std::string anchor_root(const std::string &s);
+  static std::string anchor(const std::string &s);
 
 public:
   FormatVisitor(bool html, Cache *cache = nullptr);

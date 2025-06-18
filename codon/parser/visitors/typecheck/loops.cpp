@@ -247,7 +247,7 @@ Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
 ///        loop = False   # also set to False on break
 /// If a loop is flat, while wrappers are removed.
 /// A separate suite is generated for each static iteration.
-std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(ForStmt *stmt) {
+std::pair<bool, Stmt *> TypecheckVisitor::transformStaticForLoop(const ForStmt *stmt) {
   auto loopVar = getTemporaryVar("loop");
   auto suite = clean_clone(stmt->getSuite());
   auto [ok, delay, preamble, items] = transformStaticLoopCall(
@@ -310,8 +310,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
       list = et;
     if (list) {
       for (const auto &it : *list)
-        if (auto ei = cast<IdExpr>(it)) {
-          vars.push_back(ei->getValue());
+        if (auto eli = cast<IdExpr>(it)) {
+          vars.push_back(eli->getValue());
         } else {
           return {false, false, nullptr, {}};
         }
@@ -341,8 +341,8 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   } else if (fn && startswith(fn->getValue(), "std.internal.static.vars_types.0")) {
     block = populateStaticVarTypesLoop(iter, vars);
   } else {
-    bool maybeHeterogenous = iter->getType()->is(TYPE_TUPLE);
-    if (maybeHeterogenous) {
+    if (iter->getType()->is(TYPE_TUPLE)) {
+      // Maybe heterogenous?
       if (!iter->getType()->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable
       if (!iter->getClassType()->getHeterogenousTuple() && !allowNonHeterogenous)

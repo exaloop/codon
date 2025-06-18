@@ -92,18 +92,23 @@ int LinkType::unify(Type *typ, Unification *undo) {
   }
 }
 
-TypePtr LinkType::generalize(int atLevel) {
+TypePtr LinkType::generalize(int atLevel) const {
+  // We need to preserve the pointers as something else might be pointing
+  // to this unbound, hence the const_casts because shared_from_ptr
+  // needs it.
+
   if (kind == Generic) {
-    return shared_from_this();
+    return const_cast<LinkType *>(this)->shared_from_this();
   } else if (kind == Unbound) {
-    if (level >= atLevel)
+    if (level >= atLevel) {
       return std::make_shared<LinkType>(
           cache, Generic, id, 0, nullptr, isStatic,
           trait ? std::static_pointer_cast<Trait>(trait->generalize(atLevel)) : nullptr,
           defaultType ? defaultType->generalize(atLevel) : nullptr, genericName,
           passThrough);
-    else
-      return shared_from_this();
+    } else {
+      return const_cast<LinkType *>(this)->shared_from_this();
+    }
   } else {
     seqassert(type, "link is null");
     return type->generalize(atLevel);
@@ -111,10 +116,9 @@ TypePtr LinkType::generalize(int atLevel) {
 }
 
 TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
-                              std::unordered_map<int, TypePtr> *cache) {
+                              std::unordered_map<int, TypePtr> *cache) const {
   if (kind == Generic) {
-    TypePtr *res = nullptr;
-    if (cache && (res = in(*cache, id)))
+    if (TypePtr *res = nullptr; cache && ((res = in(*cache, id))))
       return *res;
     auto t = std::make_shared<LinkType>(
         this->cache, Unbound, unboundCount ? (*unboundCount)++ : id, atLevel, nullptr,
@@ -128,7 +132,10 @@ TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
       (*cache)[id] = t;
     return t;
   } else if (kind == Unbound) {
-    return shared_from_this();
+    // We need to preserve the pointers as something else might be pointing
+    // to this unbound, hence the const_casts because shared_from_ptr
+    // needs it.
+    return const_cast<LinkType *>(this)->shared_from_this();
   } else {
     seqassert(type, "link is null");
     return type->instantiate(atLevel, unboundCount, cache);
@@ -177,7 +184,7 @@ std::string LinkType::debugString(char mode) const {
       return (genericName.empty() ? "" : genericName + ":") +
              (kind == Unbound ? "?" : "#") + fmt::format("{}", id) +
              (trait ? ":" + trait->debugString(mode) : "") +
-             (isStatic ? fmt::format(":S{}", int(isStatic)) : "");
+             (isStatic ? fmt::format(":S{}", static_cast<int>(isStatic)) : "");
     } else if (trait) {
       return trait->debugString(mode);
     }
@@ -246,14 +253,13 @@ bool LinkType::occurs(Type *typ, Type::Unification *undo) {
     } else {
       return false;
     }
-  } else if (auto ts = typ->getStatic()) {
+  } else if (typ->getStatic()) {
     return false;
   }
-  if (auto tc = typ->getClass()) {
-    for (auto &g : tc->generics)
-      if (g.type && occurs(g.type.get(), undo))
-        return true;
-    return false;
+  if (const auto tc = typ->getClass()) {
+    return std::ranges::any_of(
+        tc->generics.begin(), tc->generics.end(),
+        [&](const auto &g) { return g.type && occurs(g.type.get(), undo); });
   } else {
     return false;
   }

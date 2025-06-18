@@ -8,7 +8,6 @@
 #include <variant>
 #include <vector>
 
-#include "codon/parser/ast/attr.h"
 #include "codon/parser/ast/node.h"
 #include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
@@ -40,7 +39,7 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   using base_type = Expr;
 
   Expr();
-  Expr(const Expr &);
+  Expr(const Expr &) = default;
   Expr(const Expr &, bool);
 
   /// Get a node type.
@@ -191,7 +190,7 @@ struct StringExpr : public AcceptorExtend<StringExpr, Expr> {
     Expr *expr;
     FormatSpec format;
 
-    String(std::string v, std::string p = "", Expr *e = nullptr)
+    explicit String(std::string v, std::string p = "", Expr *e = nullptr)
         : value(std::move(v)), prefix(std::move(p)), expr(e), format() {}
 
     SERIALIZE(String, value, prefix, expr, format);
@@ -337,7 +336,8 @@ private:
 /// Conditional expression [cond if ifexpr else elsexpr].
 /// @li 1 if a else 2
 struct IfExpr : public AcceptorExtend<IfExpr, Expr> {
-  IfExpr(Expr *cond = nullptr, Expr *ifexpr = nullptr, Expr *elsexpr = nullptr);
+  explicit IfExpr(Expr *cond = nullptr, Expr *ifexpr = nullptr,
+                  Expr *elsexpr = nullptr);
   IfExpr(const IfExpr &, bool);
 
   Expr *getCond() const { return cond; }
@@ -353,7 +353,7 @@ private:
 /// Unary expression [op expr].
 /// @li -56
 struct UnaryExpr : public AcceptorExtend<UnaryExpr, Expr> {
-  UnaryExpr(std::string op = "", Expr *expr = nullptr);
+  explicit UnaryExpr(std::string op = "", Expr *expr = nullptr);
   UnaryExpr(const UnaryExpr &, bool);
 
   std::string getOp() const { return op; }
@@ -370,8 +370,8 @@ private:
 /// @li 1 + 2
 /// @li 3 or 4
 struct BinaryExpr : public AcceptorExtend<BinaryExpr, Expr> {
-  BinaryExpr(Expr *lexpr = nullptr, std::string op = "", Expr *rexpr = nullptr,
-             bool inPlace = false);
+  explicit BinaryExpr(Expr *lexpr = nullptr, std::string op = "", Expr *rexpr = nullptr,
+                      bool inPlace = false);
   BinaryExpr(const BinaryExpr &, bool);
 
   std::string getOp() const { return op; }
@@ -392,7 +392,7 @@ private:
 /// Chained binary expression.
 /// @li 1 <= x <= 2
 struct ChainBinaryExpr : public AcceptorExtend<ChainBinaryExpr, Expr> {
-  ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs = {});
+  explicit ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs = {});
   ChainBinaryExpr(const ChainBinaryExpr &, bool);
 
   ACCEPT(ChainBinaryExpr, ASTVisitor, exprs);
@@ -427,7 +427,7 @@ private:
 /// Index expression (expr[index]).
 /// @li a[5]
 struct IndexExpr : public AcceptorExtend<IndexExpr, Expr> {
-  IndexExpr(Expr *expr = nullptr, Expr *index = nullptr);
+  explicit IndexExpr(Expr *expr = nullptr, Expr *index = nullptr);
   IndexExpr(const IndexExpr &, bool);
 
   Expr *getExpr() const { return expr; }
@@ -443,8 +443,8 @@ struct CallArg : public codon::SrcObject {
   std::string name;
   Expr *value;
 
-  CallArg(const std::string &name = "", Expr *value = nullptr);
-  CallArg(const SrcInfo &info, const std::string &name, Expr *value);
+  explicit CallArg(std::string name = "", Expr *value = nullptr);
+  CallArg(const SrcInfo &info, std::string name, Expr *value);
   CallArg(Expr *value);
 
   std::string getName() const { return name; }
@@ -459,9 +459,9 @@ struct CallArg : public codon::SrcObject {
 /// @li a(1, b=2)
 struct CallExpr : public AcceptorExtend<CallExpr, Expr>, Items<CallArg> {
   /// Each argument can have a name (e.g. foo(1, b=5))
-  CallExpr(Expr *expr = nullptr, std::vector<CallArg> args = {});
+  explicit CallExpr(Expr *expr = nullptr, std::vector<CallArg> args = {});
   /// Convenience constructors
-  CallExpr(Expr *expr, std::vector<Expr *> args);
+  CallExpr(Expr *expr, const std::vector<Expr *> &args);
   template <typename... Ts>
   CallExpr(Expr *expr, Expr *arg, Ts... args)
       : CallExpr(expr, std::vector<Expr *>{arg, args...}) {}
@@ -503,7 +503,7 @@ private:
 /// @li s::-1
 /// @li :::
 struct SliceExpr : public AcceptorExtend<SliceExpr, Expr> {
-  SliceExpr(Expr *start = nullptr, Expr *stop = nullptr, Expr *step = nullptr);
+  explicit SliceExpr(Expr *start = nullptr, Expr *stop = nullptr, Expr *step = nullptr);
   SliceExpr(const SliceExpr &, bool);
 
   Expr *getStart() const { return start; }
@@ -537,13 +537,13 @@ struct EllipsisExpr : public AcceptorExtend<EllipsisExpr, Expr> {
 private:
   EllipsisType mode;
 
-  friend class PipeExpr;
+  friend struct PipeExpr;
 };
 
 /// Lambda expression (lambda (vars)...: expr).
 /// @li lambda a, b: a + b
 struct LambdaExpr : public AcceptorExtend<LambdaExpr, Expr>, Items<Param> {
-  LambdaExpr(std::vector<Param> vars = {}, Expr *expr = nullptr);
+  explicit LambdaExpr(std::vector<Param> vars = {}, Expr *expr = nullptr);
   LambdaExpr(const LambdaExpr &, bool);
 
   Expr *getExpr() const { return expr; }
@@ -566,7 +566,7 @@ struct YieldExpr : public AcceptorExtend<YieldExpr, Expr> {
 /// Assignment (walrus) expression (var := expr).
 /// @li a := 5 + 3
 struct AssignExpr : public AcceptorExtend<AssignExpr, Expr> {
-  AssignExpr(Expr *var = nullptr, Expr *expr = nullptr);
+  explicit AssignExpr(Expr *var = nullptr, Expr *expr = nullptr);
   AssignExpr(const AssignExpr &, bool);
 
   Expr *getVar() const { return var; }
@@ -582,7 +582,7 @@ private:
 /// Used only in match-case statements.
 /// @li 1 ... 2
 struct RangeExpr : public AcceptorExtend<RangeExpr, Expr> {
-  RangeExpr(Expr *start = nullptr, Expr *stop = nullptr);
+  explicit RangeExpr(Expr *start = nullptr, Expr *stop = nullptr);
   RangeExpr(const RangeExpr &, bool);
 
   Expr *getStart() const { return start; }
@@ -601,7 +601,7 @@ private:
 /// (to support short-circuiting).
 /// @li (a = 1; b = 2; a + b)
 struct StmtExpr : public AcceptorExtend<StmtExpr, Expr>, Items<Stmt *> {
-  StmtExpr(Stmt *stmt = nullptr, Expr *expr = nullptr);
+  explicit StmtExpr(Stmt *stmt = nullptr, Expr *expr = nullptr);
   StmtExpr(std::vector<Stmt *> stmts, Expr *expr);
   StmtExpr(Stmt *stmt, Stmt *stmt2, Expr *expr);
   StmtExpr(const StmtExpr &, bool);
@@ -617,7 +617,7 @@ private:
 /// Static tuple indexing expression (expr[index]).
 /// @li (1, 2, 3)[2]
 struct InstantiateExpr : public AcceptorExtend<InstantiateExpr, Expr>, Items<Expr *> {
-  InstantiateExpr(Expr *expr = nullptr, std::vector<Expr *> typeParams = {});
+  explicit InstantiateExpr(Expr *expr = nullptr, std::vector<Expr *> typeParams = {});
   /// Convenience constructor for a single type parameter.
   InstantiateExpr(Expr *expr, Expr *typeParam);
   InstantiateExpr(const InstantiateExpr &, bool);
@@ -663,8 +663,8 @@ static void operator<<(codon::ast::Expr *t, Archive &a) {
   using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
   a.save(t != nullptr);
   if (t) {
-    auto typ = t->dynamicNodeId();
-    auto key = S::_serializers[(void *)typ];
+    void *typ = const_cast<void *>(t->dynamicNodeId());
+    auto key = S::_serializers[typ];
     a.save(key);
     S::save(key, t, a);
   }
@@ -673,7 +673,7 @@ static void operator>>(codon::ast::Expr *&t, Archive &a) {
   using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
   bool empty = a.load<bool>();
   if (!empty) {
-    std::string key = a.load<std::string>();
+    const auto key = a.load<std::string>();
     S::load(key, t, a);
   } else {
     t = nullptr;

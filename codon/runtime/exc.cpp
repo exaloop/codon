@@ -14,11 +14,8 @@
 #include <string>
 #include <vector>
 
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#if TARGET_OS_MAC && __arm64__
+#ifdef __APPLE__ &&TARGET_OS_MAC &&__arm64__
 #define APPLE_SILICON
-#endif
 #endif
 
 #ifdef APPLE_SILICON

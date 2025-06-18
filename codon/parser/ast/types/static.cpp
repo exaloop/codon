@@ -2,26 +2,17 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/ast/types/static.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
-#include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon::ast::types {
 
 StaticType::StaticType(Cache *cache, const std::string &typeName)
     : ClassType(cache, typeName, typeName) {}
-
-TypePtr StaticType::generalize(int atLevel) { return shared_from_this(); }
-
-TypePtr StaticType::instantiate(int atLevel, int *unboundCount,
-                                std::unordered_map<int, TypePtr> *cache) {
-  return shared_from_this();
-}
 
 bool StaticType::canRealize() const { return true; }
 
@@ -48,6 +39,19 @@ int IntStaticType::unify(Type *typ, Unification *us) {
   }
 }
 
+TypePtr IntStaticType::generalize(int atLevel) const {
+  auto c = std::make_shared<IntStaticType>(cache, value);
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+
+TypePtr IntStaticType::instantiate(int atLevel, int *unboundCount,
+                                   std::unordered_map<int, TypePtr> *cache) const {
+  auto c = std::make_shared<IntStaticType>(this->cache, value);
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+
 std::string IntStaticType::debugString(char mode) const {
   return mode < 2 ? fmt::format("{}", value) : fmt::format("Literal[{}]", value);
 }
@@ -69,6 +73,19 @@ int StrStaticType::unify(Type *typ, Unification *us) {
   } else {
     return -1;
   }
+}
+
+TypePtr StrStaticType::generalize(int atLevel) const {
+  auto c = std::make_shared<StrStaticType>(cache, value);
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+
+TypePtr StrStaticType::instantiate(int atLevel, int *unboundCount,
+                                   std::unordered_map<int, TypePtr> *cache) const {
+  auto c = std::make_shared<StrStaticType>(this->cache, value);
+  c->setSrcInfo(getSrcInfo());
+  return c;
 }
 
 std::string StrStaticType::debugString(char mode) const {
@@ -93,6 +110,19 @@ int BoolStaticType::unify(Type *typ, Unification *us) {
   } else {
     return -1;
   }
+}
+
+TypePtr BoolStaticType::generalize(int atLevel) const {
+  auto c = std::make_shared<BoolStaticType>(cache, value);
+  c->setSrcInfo(getSrcInfo());
+  return c;
+}
+
+TypePtr BoolStaticType::instantiate(int atLevel, int *unboundCount,
+                                    std::unordered_map<int, TypePtr> *cache) const {
+  auto c = std::make_shared<BoolStaticType>(this->cache, value);
+  c->setSrcInfo(getSrcInfo());
+  return c;
 }
 
 std::string BoolStaticType::debugString(char mode) const {

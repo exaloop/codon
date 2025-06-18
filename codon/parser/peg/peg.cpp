@@ -3,7 +3,6 @@
 #include "peg.h"
 
 #include <any>
-#include <iostream>
 #include <memory>
 #include <peglib.h>
 #include <string>
@@ -13,6 +12,8 @@
 #include "codon/parser/common.h"
 #include "codon/parser/peg/rules.h"
 #include "codon/parser/visitors/format/format.h"
+
+#include <ranges>
 
 double totalPeg = 0.0;
 
@@ -32,9 +33,9 @@ std::shared_ptr<peg::Grammar> initParser() {
           e = 0;
         return e;
       });
-  for (auto &x : *g) {
-    auto v = peg::LinkReferences(*g, x.second.params);
-    x.second.accept(v);
+  for (auto &val : *g | std::views::values) {
+    auto v = peg::LinkReferences(*g, val.params);
+    val.accept(v);
   }
   (*g)["program"].enablePackratParsing = true;
   (*g)["fstring"].enablePackratParsing = true;
@@ -113,9 +114,9 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
   auto g = std::make_shared<peg::Grammar>();
   init_omp_rules(*g);
   init_omp_actions(*g);
-  for (auto &x : *g) {
-    auto v = peg::LinkReferences(*g, x.second.params);
-    x.second.accept(v);
+  for (auto &val : *g | std::views::values) {
+    auto v = peg::LinkReferences(*g, val.params);
+    val.accept(v);
   }
   (*g)["pragma"].enablePackratParsing = true;
   return g;

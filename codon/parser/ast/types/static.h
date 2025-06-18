@@ -5,7 +5,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "codon/parser/ast/types/class.h"
 
@@ -15,9 +14,6 @@ struct StaticType : public ClassType {
   explicit StaticType(Cache *, const std::string &);
 
 public:
-  TypePtr generalize(int atLevel) override;
-  TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string realizedName() const override;
@@ -32,6 +28,9 @@ struct IntStaticType : public StaticType {
   explicit IntStaticType(Cache *cache, int64_t);
 
   int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
@@ -45,6 +44,9 @@ struct StrStaticType : public StaticType {
   explicit StrStaticType(Cache *cache, std::string);
 
   int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
@@ -58,6 +60,9 @@ struct BoolStaticType : public StaticType {
   explicit BoolStaticType(Cache *cache, bool);
 
   int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;

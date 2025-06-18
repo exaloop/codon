@@ -105,7 +105,7 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional,
                                    llvm::cl::desc("<input directory or file>"),
                                    llvm::cl::init("-"));
-  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  llvm::cl::ParseCommandLineOptions(static_cast<int>(args.size()), args.data());
   std::vector<std::string> files;
   auto collectPaths = [&files](const std::string &path) {
     llvm::sys::fs::file_status status;

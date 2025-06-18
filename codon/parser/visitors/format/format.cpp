@@ -8,11 +8,11 @@
 namespace codon {
 namespace ast {
 
-std::string FormatVisitor::anchor_root(const std::string &s) const {
+std::string FormatVisitor::anchor_root(const std::string &s) {
   return fmt::format("<a class=\".root\" name=\"{}\">{}</a>", s, s);
 }
 
-std::string FormatVisitor::anchor(const std::string &s) const {
+std::string FormatVisitor::anchor(const std::string &s) {
   return fmt::format("<a class=\".anchor\" href=\"#{}\">{}</a>", s, s);
 }
 
@@ -362,9 +362,10 @@ void FormatVisitor::visit(FunctionStmt *fstmt) {
       if (!cache->functions[fstmt->getName()].realizations.empty()) {
         result += fmt::format("<details><summary># {}</summary>",
                               fmt::format("{} {}", keyword("def"), fstmt->getName()));
-        for (auto &real : cache->functions[fstmt->getName()].realizations) {
-          auto fa = real.second->ast;
-          auto ft = real.second->type;
+        for (auto &val :
+             cache->functions[fstmt->getName()].realizations | std::views::values) {
+          auto fa = val->ast;
+          auto ft = val->type;
           std::vector<std::string> attrs;
           for (const auto &a : fa->getDecorators())
             attrs.push_back(fmt::format("@{}", transform(a)));

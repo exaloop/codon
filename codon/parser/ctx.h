@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "codon/parser/ast.h"
-#include "codon/parser/common.h"
 
 namespace codon::ast {
 
@@ -62,7 +61,7 @@ public:
   void remove(const std::string &name) {
     removeFromMap(name);
     for (auto &s : stack) {
-      auto i = std::find(s.begin(), s.end(), name);
+      auto i = std::ranges::find(s, name);
       if (i != s.end()) {
         s.erase(i);
         return;
@@ -89,7 +88,7 @@ public:
   }
 
   void removeFromTopStack(const std::string &name) {
-    auto it = std::find(stack.front().begin(), stack.front().end(), name);
+    auto it = std::ranges::find(stack.front(), name);
     if (it != stack.front().end())
       stack.front().erase(it);
   }

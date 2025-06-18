@@ -54,11 +54,11 @@ std::shared_ptr<TranslateItem>
 TranslateContext::add(TranslateItem::Kind kind, const std::string &name, void *type) {
   auto it = std::make_shared<TranslateItem>(kind, getBase());
   if (kind == TranslateItem::Var)
-    it->handle.var = (ir::Var *)type;
+    it->handle.var = static_cast<ir::Var *>(type);
   else if (kind == TranslateItem::Func)
-    it->handle.func = (ir::Func *)type;
+    it->handle.func = static_cast<ir::Func *>(type);
   else
-    it->handle.type = (ir::types::Type *)type;
+    it->handle.type = static_cast<ir::types::Type *>(type);
   add(name, it);
   return it;
 }

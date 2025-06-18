@@ -115,8 +115,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
   // Prepare the right-side expression
   auto oldSrcInfo = getSrcInfo();
   setSrcInfo(rhs->getSrcInfo());
-  auto srcPos = rhs;
-  SuiteStmt *block = N<SuiteStmt>();
+  auto *block = N<SuiteStmt>();
   if (!cast<IdExpr>(rhs)) {
     // Store any non-trivial right-side expression into a variable
     auto var = getTemporaryVar("assign");
@@ -158,9 +157,10 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
     for (; st < leftSide.size(); st++) {
       if (cast<StarExpr>(leftSide[st]))
         E(Error::ASSIGN_MULTI_STAR, leftSide[st]->getSrcInfo());
-      rightSide = N<IndexExpr>(ast::clone(rhs), N<IntExpr>(-int(leftSide.size() - st)));
-      auto ns = unpackAssignment(leftSide[st], rightSide);
-      block->addStmt(ns);
+      rightSide = N<IndexExpr>(ast::clone(rhs),
+                               N<IntExpr>(-static_cast<int>(leftSide.size() - st)));
+      auto next = unpackAssignment(leftSide[st], rightSide);
+      block->addStmt(next);
     }
   }
   setSrcInfo(oldSrcInfo);
@@ -202,8 +202,10 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 
   // Case: a (: t) = b
   auto e = cast<IdExpr>(stmt->getLhs());
-  if (!e)
+  if (!e) {
     E(Error::ASSIGN_INVALID, stmt->getLhs());
+    return nullptr;
+  }
 
   if (ctx->inFunction() && stmt->getRhs() && !mustExist) {
     if (auto b =
@@ -295,7 +297,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
         assign->getRhs()->setType(r->shared_from_this());
       assign->setDone();
     }
-  } else if (assign->getRhs() && !val->isVar() && !val->type->hasUnbounds()) {
+  } else if (assign->getRhs() && !val->isVar() && !val->type->hasUnbounds(false)) {
     assign->setDone();
   }
 
@@ -374,9 +376,11 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       return;
     }
 
-    if (!member)
+    if (!member) {
       E(Error::DOT_NO_ATTR, stmt->getLhs(), lhsClass->prettyString(),
         stmt->getMember());
+      return;
+    }
     if (lhsClass->isRecord()) // prevent tuple member assignment
       E(Error::ASSIGN_UNEXPECTED_FROZEN, stmt->getLhs());
 

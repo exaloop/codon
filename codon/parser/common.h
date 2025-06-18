@@ -4,15 +4,12 @@
 
 #include <chrono>
 #include <filesystem>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <set>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include "codon/util/common.h"
@@ -130,21 +127,18 @@ bool in(const std::string &m, const std::string &item);
 
 template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }
 
-template <typename T>
-typename std::remove_const<T>::type *clone(T *t, bool clean = false) {
-  return t ? static_cast<typename std::remove_const<T>::type *>(t->clone(clean))
-           : nullptr;
+template <typename T> std::remove_const_t<T> *clone(T *t, bool clean = false) {
+  return t ? static_cast<std::remove_const_t<T> *>(t->clone(clean)) : nullptr;
 }
 
-template <typename T> typename std::remove_const<T>::type *clean_clone(T *t) {
+template <typename T> std::remove_const_t<T> *clean_clone(T *t) {
   return clone(t, true);
 }
 
 /// Clones a vector of cloneable pointer objects.
 template <typename T>
-std::vector<typename std::remove_const<T>::type> clone(const std::vector<T> &t,
-                                                       bool clean = false) {
-  std::vector<typename std::remove_const<T>::type> v;
+std::vector<std::remove_const_t<T>> clone(const std::vector<T> &t, bool clean = false) {
+  std::vector<std::remove_const_t<T>> v;
   for (auto &i : t)
     v.push_back(clone(i, clean));
   return v;
@@ -179,7 +173,7 @@ public:
   virtual bool exists(const path_t &path) const = 0;
   virtual std::vector<path_t> get_stdlib_paths() const;
   virtual path_t canonical(const path_t &path) const;
-  ImportFile get_root(const path_t &s);
+  ImportFile get_root(const path_t &s) const;
 
   virtual path_t get_module0() const { return ""; }
   virtual void set_module0(const std::string &) {}
@@ -224,7 +218,8 @@ public:
 /// Find an import file what given an executable path (argv0) either in the standard
 /// library or relative to a file relativeTo. Set forceStdlib for searching only the
 /// standard library.
-std::shared_ptr<ImportFile> getImportFile(IFilesystem *fs, const std::string &what,
+std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
+                                          const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib = false);
 

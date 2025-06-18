@@ -2,11 +2,9 @@
 
 #pragma once
 
-#include <string>
-
 namespace codon::ast {
 
-const int INDENT_SIZE = 2;
+constexpr int INDENT_SIZE = 2;
 
 struct Attr {
   enum {

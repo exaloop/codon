@@ -34,9 +34,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
 
   // If we are accessing an outside variable, capture it or raise an error
-  auto captured = checkCapture(val);
-  if (captured)
-    val = ctx->forceFind(expr->getValue());
+  checkCapture(val);
 
   // Replace the variable with its canonical name
   expr->value = val->getName();
@@ -92,7 +90,7 @@ void TypecheckVisitor::visit(IdExpr *expr) {
 void TypecheckVisitor::visit(DotExpr *expr) {
   // Check if this is being called from CallExpr (e.g., foo.bar(...))
   // and mark it as such (to inline useless partial expression)
-  CallExpr *parentCall = cast<CallExpr>(ctx->getParentNode());
+  auto *parentCall = cast<CallExpr>(ctx->getParentNode());
   if (parentCall && !parentCall->hasAttribute(Attr::ParentCallExpr))
     parentCall = nullptr;
 
@@ -108,7 +106,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   if (auto id = cast<IdExpr>(head)) {
     // Case: a.bar.baz
     chain.push_back(id->getValue());
-    std::reverse(chain.begin(), chain.end());
+    std::ranges::reverse(chain);
     auto [pos, val] = getImport(chain);
     if (!val) {
       // Python capture
@@ -187,7 +185,8 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // Special case: expr.__is_static__
   if (expr->getMember() == "__is_static__") {
     if (expr->getExpr()->isDone())
-      resultExpr = wrapSide(N<BoolExpr>(bool(expr->getExpr()->getType()->getStatic())));
+      resultExpr = wrapSide(
+          N<BoolExpr>(static_cast<bool>(expr->getExpr()->getType()->getStatic())));
     return;
   }
   // Special case: cls.__id__
@@ -254,14 +253,14 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   }
 }
 
-/// Access identifiers from outside of the current function/class scope.
+/// Access identifiers outside of the current function/class scope.
 /// Either use them as-is (globals), capture them if allowed (nonlocals),
 /// or raise an error.
-bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
+void TypecheckVisitor::checkCapture(const TypeContext::Item &val) const {
   if (!ctx->isOuter(val))
-    return false;
+    return;
   if ((val->isType() && !val->isGeneric()) || val->isFunc())
-    return false;
+    return;
 
   // Ensure that outer variables can be captured (i.e., do not cross no-capture
   // boundary). Example:
@@ -279,7 +278,7 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
       (ctx->bases.size() > 1 && ctx->bases[ctx->bases.size() - 2].isType() &&
        ctx->bases[ctx->bases.size() - 2].name == val->getBaseName());
   auto i = ctx->bases.size();
-  for (; i-- > 0;) {
+  while (i-- > 0) {
     if (ctx->bases[i].name == val->getBaseName())
       break;
     if (!localGeneric && !parentClassGeneric)
@@ -292,12 +291,12 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
 
   // Ignore generics
   if (parentClassGeneric || localGeneric)
-    return false;
+    return;
 
   // Case: a global variable that has not been marked with `global` statement
   if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
     registerGlobal(val->getName(), true);
-    return false;
+    return;
   }
 
   // Check if a real variable (not a static) is defined outside the current scope
@@ -307,7 +306,6 @@ bool TypecheckVisitor::checkCapture(const TypeContext::Item &val) {
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is *not* enabled
   E(Error::ID_NONLOCAL, getSrcInfo(), getUnmangledName(val->getName()));
-  return false;
 }
 
 /// Check if a chain (a.b.c.d...) contains an import or a class prefix.
@@ -370,8 +368,8 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
         break;
       }
       // Resolve the identifier from the import
-      if (auto i = ctx->find("Import")) {
-        auto t = extractClassType(i->getType());
+      if (auto imp = ctx->find("Import")) {
+        auto t = extractClassType(imp->getType());
         if (findMember(t, key))
           return {importEnd, importVal};
         if (!findMethod(t, key).empty())
@@ -388,8 +386,9 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
     if (!ctx->isStdlibLoading && endswith(importName, "__init__.codon")) {
       // Special case: subimport is not yet loaded
       //   (e.g., import a; a.b.x where a.b is a module as well)
-      auto file = getImportFile(ctx->cache->fs.get(), chain[importEnd], importName);
-      if (file) { // auto-load support
+      if (auto file =
+              getImportFile(ctx->cache->fs.get(), chain[importEnd], importName)) {
+        // Auto-load support
         Stmt *s = N<SuiteStmt>(N<ImportStmt>(N<IdExpr>(chain[importEnd]), nullptr));
         if (auto err = ScopingVisitor::apply(ctx->cache, s))
           throw exc::ParserException(std::move(err));
@@ -408,7 +407,8 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
 ///  Dispatch functions ensure that a function call is being routed to the correct
 ///  overload
 /// even when dealing with partial functions and decorators.
-/// @example This is how dispatch looks like:
+/// @example
+/// This is how dispatch looks like:
 ///   ```def foo:dispatch(*args, **kwargs):
 ///        return foo(*args, **kwargs)```
 types::FuncType *TypecheckVisitor::getDispatch(const std::string &fn) {
@@ -549,8 +549,8 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
       return nullptr; // delay!
     return transform(N<CallExpr>(
         N<DotExpr>(N<IdExpr>("__internal__"), "union_member"),
-        std::vector<CallArg>{{"union", expr->getExpr()},
-                             {"member", N<StringExpr>(expr->getMember())}}));
+        std::vector<CallArg>{CallArg{"union", expr->getExpr()},
+                             CallArg{"member", N<StringExpr>(expr->getMember())}}));
   }
 
   // For debugging purposes:

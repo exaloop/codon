@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -34,13 +33,13 @@ struct ClassType : public Type {
     char isStatic;
 
     Generic(std::string name, std::string niceName, TypePtr type, int id, char isStatic)
-        : name(std::move(name)), niceName(std::move(niceName)), type(std::move(type)),
-          id(id), isStatic(isStatic) {}
+        : name(std::move(name)), niceName(std::move(niceName)), id(id),
+          type(std::move(type)), isStatic(isStatic) {}
 
     types::Type *getType() const { return type.get(); }
-    Generic generalize(int atLevel);
+    Generic generalize(int atLevel) const;
     Generic instantiate(int atLevel, int *unboundCount,
-                        std::unordered_map<int, TypePtr> *cache);
+                        std::unordered_map<int, TypePtr> *cache) const;
     std::string debugString(char mode) const;
     std::string realizedName() const;
   };
@@ -60,17 +59,17 @@ struct ClassType : public Type {
   explicit ClassType(Cache *cache, std::string name, std::string niceName,
                      std::vector<Generic> generics = {},
                      std::vector<Generic> hiddenGenerics = {});
-  explicit ClassType(ClassType *base);
+  explicit ClassType(const ClassType *base);
 
 public:
   int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
+  TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
 public:
-  bool hasUnbounds(bool = false) const override;
-  std::vector<Type *> getUnbounds(bool = false) const override;
+  bool hasUnbounds(bool) const override;
+  std::vector<Type *> getUnbounds(bool) const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
@@ -80,7 +79,7 @@ public:
   bool isRecord() const { return isTuple; }
 
   size_t size() const { return generics.size(); }
-  Type *operator[](int i) const { return generics[i].getType(); }
+  Type *operator[](size_t i) const { return generics[i].getType(); }
 
 public:
   enum PartialFlag { Missing = '0', Included, Default };

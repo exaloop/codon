@@ -189,9 +189,9 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
         N<StringExpr>(ctx->getBase()->name), N<StringExpr>(stmt->getSrcInfo().file),
         N<IntExpr>(stmt->getSrcInfo().line), N<IntExpr>(stmt->getSrcInfo().col),
         stmt->getFrom()
-            ? (Expr *)N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
-                                  stmt->getFrom(),
-                                  N<IdExpr>("std.internal.types.error.BaseException.0"))
+            ? N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
+                          stmt->getFrom(),
+                          N<IdExpr>("std.internal.types.error.BaseException.0"))
             : N<CallExpr>(N<IdExpr>("NoneType"))));
   }
   if (stmt->getExpr()->isDone())

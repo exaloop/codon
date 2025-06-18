@@ -59,7 +59,7 @@ struct TranslateContext;
  * Cache encapsulation that holds data structures shared across various transformation
  * stages (AST transformation, type checking etc.). The subsequent stages (e.g. type
  * checking) assumes that previous stages populated this structure correctly.
- * Implemented to avoid bunch of global objects.
+ * Implemented to avoid a bunch of global objects.
  */
 struct Cache {
   /// Filesystem object used for accessing files.
@@ -108,7 +108,7 @@ struct Cache {
   /// IR module.
   ir::Module *module = nullptr;
 
-  /// Table of imported files that maps an absolute filename to a Import structure.
+  /// Table of imported files that maps an absolute filename to an Import structure.
   /// By convention, the key of the Codon's standard library is ":stdlib:",
   /// and the main module is "".
   std::unordered_map<std::string, Module> imports;
@@ -198,7 +198,7 @@ struct Cache {
   std::unordered_map<std::string, Class> classes;
   size_t classRealizationCnt = 0;
 
-  Class *getClass(types::ClassType *);
+  Class *getClass(const types::ClassType *);
 
   struct Function {
     /// Module information
@@ -302,7 +302,7 @@ public:
   /// Find the class method in a given class type that best matches the given arguments.
   /// Returns an _uninstantiated_ type.
   types::FuncType *findMethod(types::ClassType *typ, const std::string &member,
-                              const std::vector<types::Type *> &args);
+                              const std::vector<types::Type *> &args) const;
 
   /// Given a class type and the matching generic vector, instantiate the type and
   /// realize it.
@@ -337,13 +337,13 @@ public:
   /// Convenience method that constructs a node with the visitor's source location.
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
     _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
-    Tn *t = (Tn *)(_nodes->back().get());
+    Tn *t = static_cast<Tn *>(_nodes->back().get());
     t->cache = this;
     return t;
   }
   template <typename Tn, typename... Ts> Tn *NS(const ASTNode *srcInfo, Ts &&...args) {
     _nodes->emplace_back(std::make_unique<Tn>(std::forward<Ts>(args)...));
-    Tn *t = (Tn *)(_nodes->back().get());
+    Tn *t = static_cast<Tn *>(_nodes->back().get());
     t->cache = this;
     t->setSrcInfo(srcInfo->getSrcInfo());
     return t;
@@ -354,7 +354,7 @@ public:
     Cache *c;
     Timer t;
     std::string name;
-    CTimer(Cache *c, std::string n) : c(c), name(std::move(n)), t(Timer("")) {}
+    CTimer(Cache *c, std::string n) : c(c), t(Timer("")), name(std::move(n)) {}
     double elapsed() const { return t.elapsed(); }
     ~CTimer() {
       c->_timings[name] += t.elapsed();

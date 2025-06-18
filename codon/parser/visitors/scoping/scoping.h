@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "codon/parser/ast.h"
-#include "codon/parser/common.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
@@ -129,8 +128,8 @@ public:
 
   template <class... TA>
   void addError(error::Error e, const SrcInfo &o, const TA &...args) {
-    auto msg =
-        ErrorMessage(error::Emsg(e, args...), o.file, o.line, o.col, o.len, int(e));
+    auto msg = ErrorMessage(error::Emsg(e, args...), o.file, o.line, o.col, o.len,
+                            static_cast<int>(e));
     errors.addError({msg});
   }
   template <class... TA> void addError(error::Error e, ASTNode *o, const TA &...args) {

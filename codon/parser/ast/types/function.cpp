@@ -4,13 +4,13 @@
 #include <string>
 #include <vector>
 
-#include "codon/parser/ast/types/class.h"
-#include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/typecheck/typecheck.h"
+#include "codon/parser/ast/stmt.h"
+#include "codon/parser/ast/types/function.h"
+#include "codon/parser/cache.h"
 
 namespace codon::ast::types {
 
-FuncType::FuncType(ClassType *baseType, FunctionStmt *ast,
+FuncType::FuncType(const ClassType *baseType, FunctionStmt *ast,
                    std::vector<Generic> funcGenerics, TypePtr funcParent)
     : ClassType(baseType), ast(ast), funcGenerics(std::move(funcGenerics)),
       funcParent(std::move(funcParent)) {}
@@ -21,7 +21,8 @@ int FuncType::unify(Type *typ, Unification *us) {
   int s1 = 2, s = 0;
   if (auto t = typ->getFunc()) {
     // Check if names and parents match.
-    if (ast->getName() != t->ast->getName() || (bool(funcParent) ^ bool(t->funcParent)))
+    if (ast->getName() != t->ast->getName() ||
+        (static_cast<bool>(funcParent) ^ static_cast<bool>(t->funcParent)))
       return -1;
     if (funcParent && (s = funcParent->unify(t->funcParent.get(), us)) == -1) {
       return -1;
@@ -40,7 +41,7 @@ int FuncType::unify(Type *typ, Unification *us) {
   return s == -1 ? s : s1 + s;
 }
 
-TypePtr FuncType::generalize(int atLevel) {
+TypePtr FuncType::generalize(int atLevel) const {
   std::vector<Generic> fg;
   for (auto &t : funcGenerics)
     fg.push_back(t.generalize(atLevel));
@@ -52,7 +53,7 @@ TypePtr FuncType::generalize(int atLevel) {
 }
 
 TypePtr FuncType::instantiate(int atLevel, int *unboundCount,
-                              std::unordered_map<int, TypePtr> *cache) {
+                              std::unordered_map<int, TypePtr> *cache) const {
   std::vector<Generic> fg;
   for (auto &t : funcGenerics) {
     fg.push_back(t.instantiate(atLevel, unboundCount, cache));
@@ -110,8 +111,9 @@ bool FuncType::canRealize() const {
         if (u->getLink()->kind == LinkType::Generic || !u->getLink()->passThrough)
           return false;
     }
-  bool generics = std::all_of(funcGenerics.begin(), funcGenerics.end(),
-                              [](auto &a) { return !a.type || a.type->canRealize(); });
+  bool generics =
+      std::ranges::all_of(funcGenerics.begin(), funcGenerics.end(),
+                          [](auto &a) { return !a.type || a.type->canRealize(); });
   if (generics && funcParent && !funcParent->canRealize()) {
     if (!allowPassThrough)
       return false;
@@ -130,8 +132,9 @@ bool FuncType::isInstantiated() const {
     removed = retType->getFunc()->funcParent;
     retType->getFunc()->funcParent = nullptr;
   }
-  auto res = std::all_of(funcGenerics.begin(), funcGenerics.end(),
-                         [](auto &a) { return !a.type || a.type->isInstantiated(); }) &&
+  auto res = std::ranges::all_of(
+                 funcGenerics.begin(), funcGenerics.end(),
+                 [](auto &a) { return !a.type || a.type->isInstantiated(); }) &&
              (!funcParent || funcParent->isInstantiated()) &&
              this->ClassType::isInstantiated();
   if (removed)
@@ -165,6 +168,7 @@ std::string FuncType::debugString(char mode) const {
   std::string a = join(as, ",");
   s = s.empty() ? a : join(std::vector<std::string>{s, a}, ";");
 
+  seqassert(ast, "ast must not be null");
   auto fnname = ast->getName();
   if (mode == 0) {
     fnname = cache->rev(ast->getName());
@@ -195,7 +199,7 @@ Type *FuncType::getRetType() const { return generics[1].type.get(); }
 
 std::string FuncType::getFuncName() const { return ast->getName(); }
 
-Type *FuncType::operator[](int i) const {
+Type *FuncType::operator[](size_t i) const {
   return generics[0].type->getClass()->generics[i].getType();
 }
 
@@ -204,8 +208,7 @@ std::vector<ClassType::Generic>::iterator FuncType::begin() const {
 }
 
 std::vector<ClassType::Generic>::iterator FuncType::end() const {
-  return generics[0].type->getClass()->generics.begin() +
-         generics[0].type->getClass()->generics.size();
+  return generics[0].type->getClass()->generics.end();
 }
 
 size_t FuncType::size() const { return generics[0].type->getClass()->generics.size(); }

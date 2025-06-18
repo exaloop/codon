@@ -72,7 +72,7 @@ void SuiteStmt::addStmt(Stmt *s) {
 SuiteStmt *SuiteStmt::wrap(Stmt *s) {
   if (s && !cast<SuiteStmt>(s))
     return s->cache->NS<SuiteStmt>(s, s);
-  return (SuiteStmt *)s;
+  return static_cast<SuiteStmt *>(s);
 }
 
 BreakStmt::BreakStmt(const BreakStmt &stmt, bool clean) : AcceptorExtend(stmt, clean) {}
@@ -458,7 +458,8 @@ std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() const {
 }
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
-                     std::vector<Expr *> decorators, std::vector<Expr *> baseClasses,
+                     std::vector<Expr *> decorators,
+                     const std::vector<Expr *> &baseClasses,
                      std::vector<Expr *> staticBaseClasses)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)),
       suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),

@@ -4,7 +4,6 @@
 
 #include <memory>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "codon/parser/ast.h"
@@ -118,10 +117,10 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
     auto path = std::string(cache->fs->canonical(f));
     ctx->setFilename(path);
     LOG("-> parsing {}", path);
-    auto astOrErr = ast::parseFile(shared->cache, path);
-    if (!astOrErr)
-      throw exc::ParserException(astOrErr.takeError());
-    DocVisitor(ctx).transformModule(*astOrErr);
+    auto fAstOrErr = ast::parseFile(shared->cache, path);
+    if (!fAstOrErr)
+      throw exc::ParserException(fAstOrErr.takeError());
+    DocVisitor(ctx).transformModule(*fAstOrErr);
   }
 
   shared->cache = nullptr;
@@ -257,14 +256,14 @@ void DocVisitor::visit(FunctionStmt *stmt) {
     }
   for (auto &a : *stmt)
     if (a.isValue()) {
-      auto j = std::make_shared<json>();
-      j->set("name", a.name);
+      auto jj = std::make_shared<json>();
+      jj->set("name", a.name);
       if (a.type)
-        j->set("type", transform(a.type));
+        jj->set("type", transform(a.type));
       if (a.defaultValue) {
-        j->set("default", FormatVisitor::apply(a.defaultValue));
+        jj->set("default", FormatVisitor::apply(a.defaultValue));
       }
-      args.push_back(j);
+      args.push_back(jj);
     }
   j->set("generics", std::make_shared<json>(generics));
   bool isLLVM = false;
@@ -366,10 +365,11 @@ void DocVisitor::visit(ImportStmt *stmt) {
     ctx->add(name, std::make_shared<int>(id));
     name = stmt->getAs().empty() ? name : stmt->getAs();
 
-    auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-        {"name", name},
-        {"kind", "function"},
-        {"extern", cast<IdExpr>(stmt->getFrom())->getValue()}});
+    auto dict = std::unordered_map<std::string, std::string>{{"name", name},
+                                                             {"kind", "function"}};
+    if (stmt->getFrom() && cast<IdExpr>(stmt->getFrom()))
+      dict["extern"] = cast<IdExpr>(stmt->getFrom())->getValue();
+    auto j = std::make_shared<json>(dict);
     j->set("pos", jsonify(stmt->getSrcInfo()));
     std::vector<std::shared_ptr<json>> args;
     if (stmt->getReturnType())
@@ -389,7 +389,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
 
   std::vector<std::string> dirs; // Path components
   Expr *e = stmt->getFrom();
-  while (auto d = cast<DotExpr>(e)) {
+  while (cast<DotExpr>(e)) {
     while (auto d = cast<DotExpr>(e)) {
       dirs.push_back(d->getMember());
       e = d->getExpr();
@@ -409,11 +409,10 @@ void DocVisitor::visit(ImportStmt *stmt) {
   if (!ee->getValue().empty())
     dirs.push_back(ee->getValue());
   // Handle dots (e.g. .. in from ..m import x).
-  seqassert(stmt->getDots() >= 0, "negative dots in ImportStmt");
   for (size_t i = 1; i < stmt->getDots(); i++)
     dirs.emplace_back("..");
   std::string path;
-  for (int i = int(dirs.size()) - 1; i >= 0; i--)
+  for (int i = static_cast<int>(dirs.size()) - 1; i >= 0; i--)
     path += dirs[i] + (i ? "/" : "");
   // Fetch the import!
   auto file = getImportFile(ctx->shared->cache->fs.get(), path, ctx->getFilename());

@@ -2,12 +2,11 @@
 
 #pragma once
 
-#include <memory>
 #include <vector>
 
-#include "codon/compiler/error.h"
 #include "codon/parser/ast.h"
-#include "codon/parser/common.h"
+
+#include <ranges>
 
 namespace codon::ast {
 
@@ -16,6 +15,8 @@ namespace codon::ast {
  * Each visit() by default calls an appropriate defaultVisit().
  */
 struct ASTVisitor {
+  virtual ~ASTVisitor() {}
+
 protected:
   /// Default expression node visitor if a particular visitor is not overloaded.
   virtual void defaultVisit(Expr *expr);
@@ -140,8 +141,8 @@ public:
     transform(expr->rexpr);
   }
   void visit(ChainBinaryExpr *expr) override {
-    for (auto &e : expr->exprs)
-      transform(e.second);
+    for (auto &val : expr->exprs | std::views::values)
+      transform(val);
   }
   void visit(PipeExpr *expr) override {
     for (auto &e : expr->items)
@@ -344,8 +345,8 @@ public:
     expr->rexpr = transform(expr->rexpr);
   }
   void visit(ChainBinaryExpr *expr) override {
-    for (auto &e : expr->exprs)
-      e.second = transform(e.second);
+    for (auto &val : expr->exprs | std::views::values)
+      val = transform(val);
   }
   void visit(PipeExpr *expr) override {
     for (auto &e : expr->items)
@@ -459,7 +460,7 @@ public:
   void visit(TryStmt *stmt) override {
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));
     for (auto &a : stmt->items)
-      a = (ExceptStmt *)transform(a);
+      a = static_cast<ExceptStmt *>(transform(a));
     stmt->elseSuite = SuiteStmt::wrap(transform(stmt->elseSuite));
     stmt->finally = SuiteStmt::wrap(transform(stmt->finally));
   }

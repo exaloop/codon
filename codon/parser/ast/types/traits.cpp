@@ -106,8 +106,8 @@ int CallableTrait::unify(Type *typ, Unification *us) {
     }
     size_t i = 0;
     for (size_t fi = 0; i < inArgs->generics.size() && fi < star; fi++) {
-      if (known[fi] != ClassType::PartialFlag::Included && (*trAst)[fi].isValue() &&
-          !startswith((*trAst)[fi].getName(), "$")) {
+      if (known[fi] != ClassType::PartialFlag::Included && trAst &&
+          (*trAst)[fi].isValue() && !startswith((*trAst)[fi].getName(), "$")) {
         if (inArgs->generics[i++].type->unify(trInArgs->generics[fi].type.get(), us) ==
             -1)
           return -1;
@@ -185,7 +185,7 @@ int CallableTrait::unify(Type *typ, Unification *us) {
   return -1;
 }
 
-TypePtr CallableTrait::generalize(int atLevel) {
+TypePtr CallableTrait::generalize(int atLevel) const {
   auto g = args;
   for (auto &t : g)
     t = t ? t->generalize(atLevel) : nullptr;
@@ -195,7 +195,7 @@ TypePtr CallableTrait::generalize(int atLevel) {
 }
 
 TypePtr CallableTrait::instantiate(int atLevel, int *unboundCount,
-                                   std::unordered_map<int, TypePtr> *cache) {
+                                   std::unordered_map<int, TypePtr> *cache) const {
   auto g = args;
   for (auto &t : g)
     t = t ? t->instantiate(atLevel, unboundCount, cache) : nullptr;
@@ -213,7 +213,7 @@ std::string CallableTrait::debugString(char mode) const {
 TypeTrait::TypeTrait(TypePtr typ) : Trait(typ), type(std::move(typ)) {}
 
 int TypeTrait::unify(Type *typ, Unification *us) {
-  if (auto tc = typ->getClass()) {
+  if (typ->getClass()) {
     // does not make sense otherwise and results in infinite cycles
     return typ->unify(type.get(), us);
   }
@@ -222,14 +222,14 @@ int TypeTrait::unify(Type *typ, Unification *us) {
   return -1;
 }
 
-TypePtr TypeTrait::generalize(int atLevel) {
+TypePtr TypeTrait::generalize(int atLevel) const {
   auto c = std::make_shared<TypeTrait>(type->generalize(atLevel));
   c->setSrcInfo(getSrcInfo());
   return c;
 }
 
 TypePtr TypeTrait::instantiate(int atLevel, int *unboundCount,
-                               std::unordered_map<int, TypePtr> *cache) {
+                               std::unordered_map<int, TypePtr> *cache) const {
   auto c = std::make_shared<TypeTrait>(type->instantiate(atLevel, unboundCount, cache));
   c->setSrcInfo(getSrcInfo());
   return c;

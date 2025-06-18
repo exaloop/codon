@@ -17,7 +17,7 @@
 
 using namespace codon::error;
 
-const int MAX_TYPECHECK_ITER = 1000;
+constexpr int MAX_TYPECHECK_ITER = 1000;
 
 namespace codon::ast {
 
@@ -29,7 +29,7 @@ using namespace types;
 /// @param a Type (by reference)
 /// @param b Type
 /// @return a
-Type *TypecheckVisitor::unify(Type *a, Type *b) {
+Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   seqassert(a, "lhs is nullptr");
   if (!((*a) << b)) {
     types::Type::Unification undo;
@@ -126,7 +126,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
       // First unify "explicit" generics (whose default type is explicit),
       // then "implicit" ones (whose default type is compiler generated,
       // e.g. compiler-generated variable placeholders with default NoneType)
-      for (auto &[level, unbounds] : ctx->getBase()->pendingDefaults) {
+      for (auto &unbounds : ctx->getBase()->pendingDefaults | std::views::values) {
         if (!unbounds.empty()) {
           for (const auto &unbound : unbounds) {
             if (auto tu = unbound->getUnion()) {
@@ -208,7 +208,7 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
         auto name = f->ast->name;
         std::string name_args;
         if (startswith(name, "%_import_")) {
-          for (auto &[_, i] : ctx->cache->imports)
+          for (auto &i : ctx->cache->imports | std::views::values)
             if (i.importVar + "_call.0:0" == name) {
               name = i.name;
               break;
@@ -243,7 +243,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
     type->generics[0].type = extractClassGeneric(type)->generalize(0);
 
   if (type->is("__NTuple__")) {
-    auto n = std::max(int64_t(0), getIntLiteral(type));
+    auto n = std::max(static_cast<int64_t>(0), getIntLiteral(type));
     auto tt = extractClassGeneric(type, 1)->getClass();
     std::vector<ClassType::Generic> generics;
     auto t = instantiateType(generateTuple(n * tt->generics.size()));
@@ -323,10 +323,10 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Set IR attributes
   if (!names.empty()) {
-    if (auto *cls = cast<ir::types::RefType>(lt)) {
-      cls->getContents()->realize(typeArgs, names);
-      cls->setAttribute(std::make_unique<ir::MemberAttribute>(memberInfo));
-      cls->getContents()->setAttribute(
+    if (auto *ir = cast<ir::types::RefType>(lt)) {
+      ir->getContents()->realize(typeArgs, names);
+      ir->setAttribute(std::make_unique<ir::MemberAttribute>(memberInfo));
+      ir->getContents()->setAttribute(
           std::make_unique<ir::MemberAttribute>(memberInfo));
     }
   }
@@ -362,7 +362,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
                           type->getRetType()->shared_from_this()});
     for (size_t t = ctx->bases.size() - 1; t-- > 0;) {
       if (startswith(ctx->getBaseName(), ctx->bases[t].name)) {
-        ctx->getBase()->parent = t;
+        ctx->getBase()->parent = static_cast<int>(t);
         break;
       }
     }
@@ -438,7 +438,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   r->type = std::static_pointer_cast<FuncType>(type->shared_from_this());
   r->ir = oldIR;
   if (auto b = ast->getAttribute<BindingsAttribute>(Attr::Bindings))
-    for (auto &[c, _] : b->captures) {
+    for (const auto &c : b->captures | std::views::keys) {
       auto h = ctx->find(c);
       r->captures.push_back(h ? h->canonicalName : "");
     }
@@ -486,8 +486,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   // Realize the return type
   auto ret = realize(type->getRetType());
-  if (type->hasUnbounds()) {
-    log("cannot realize {}; undoing...", type->debugString(2));
+  if (type->hasUnbounds(/*includeGenerics*/ false)) {
+    // log("cannot realize {}; undoing...", type->debugString(2));
     realizations.erase(key);
     ctx->bases.pop_back();
     ctx->popBlock();
@@ -550,11 +550,11 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   }
 
   auto forceFindIRType = [&](Type *tt) {
-    auto t = tt->getClass();
-    auto rn = t->ClassType::realizedName();
-    auto cls = ctx->cache->getClass(t);
-    seqassert(t && in(cls->realizations, rn), "{} not realized", *tt);
-    auto l = cls->realizations[rn]->ir;
+    auto ttc = tt->getClass();
+    auto rn = ttc->ClassType::realizedName();
+    auto ttcls = ctx->cache->getClass(ttc);
+    seqassert(ttc && in(ttcls->realizations, rn), "{} not realized", *tt);
+    auto l = ttcls->realizations[rn]->ir;
     seqassert(l, "no LLVM type for {}", *tt);
     return l;
   };
@@ -739,9 +739,9 @@ ir::Func *TypecheckVisitor::realizeIRFunc(types::FuncType *fn,
     return nullptr;
 
   auto pr = ctx->cache->pendingRealizations; // copy it as it might be modified
-  for (auto &fn : pr)
+  for (const auto &key : pr | std::views::keys)
     TranslateVisitor(ctx->cache->codegenCtx)
-        .translateStmts(clone(getFunction(fn.first)->ast));
+        .translateStmts(clone(getFunction(key)->ast));
   return getFunction(fn->ast->getName())->realizations[fnType->realizedName()]->ir;
 }
 

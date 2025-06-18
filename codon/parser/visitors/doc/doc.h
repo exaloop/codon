@@ -3,7 +3,6 @@
 #pragma once
 
 #include <string>
-#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -11,7 +10,6 @@
 
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
-#include "codon/parser/common.h"
 #include "codon/parser/ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
@@ -68,9 +66,9 @@ public:
   std::string transform(Stmt *e) override;
 
   void transformModule(Stmt *stmt);
-  std::shared_ptr<json> jsonify(const codon::SrcInfo &s);
-  std::vector<Stmt *> flatten(Stmt *stmt, std::string *docstr = nullptr,
-                              bool deep = true);
+  static std::shared_ptr<json> jsonify(const codon::SrcInfo &s);
+  static std::vector<Stmt *> flatten(Stmt *stmt, std::string *docstr = nullptr,
+                                     bool deep = true);
 
 public:
   void visit(IntExpr *) override;

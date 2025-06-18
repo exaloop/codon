@@ -520,7 +520,7 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
     seenArgs.insert(n);
     if (!a.getDefault() && defaultsStarted && !stars && a.isValue())
       STOP_ERROR(Error::FN_DEFAULT, a.getSrcInfo(), n);
-    defaultsStarted |= bool(a.getDefault());
+    defaultsStarted |= static_cast<bool>(a.getDefault());
     if (stmt->hasAttribute(Attr::C)) {
       if (a.getDefault())
         STOP_ERROR(Error::FN_C_DEFAULT, a.getDefault(), n);
@@ -625,8 +625,8 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     } else if (auto c = cast<CallExpr>(d)) {
       if (isId(c->getExpr(), "tuple")) {
         stmt->setAttribute(Attr::Tuple);
-        for (auto &m : tupleMagics)
-          m.second = true;
+        for (auto &val : tupleMagics | std::views::values)
+          val = true;
       } else if (!isId(c->getExpr(), "dataclass")) {
         STOP_ERROR(Error::CLASS_BAD_DECORATOR, c->getExpr());
       } else if (stmt->hasAttribute(Attr::Tuple)) {
@@ -636,7 +636,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
         auto b = cast<BoolExpr>(a);
         if (!b)
           STOP_ERROR(Error::CLASS_NONSTATIC_DECORATOR, a.getSrcInfo());
-        char val = char(b->getValue());
+        char val = static_cast<char>(b->getValue());
         if (a.getName() == "init") {
           tupleMagics["new"] = val;
         } else if (a.getName() == "repr") {
@@ -665,8 +665,8 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
       if (stmt->hasAttribute(Attr::Tuple))
         STOP_ERROR(Error::CLASS_MULTIPLE_DECORATORS, d, "tuple");
       stmt->setAttribute(Attr::Tuple);
-      for (auto &m : tupleMagics) {
-        m.second = true;
+      for (auto &val : tupleMagics | std::views::values) {
+        val = true;
       }
     } else if (isId(d, "extend")) {
       stmt->setAttribute(Attr::Extend);
@@ -869,11 +869,11 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
     return nullptr;
   auto lastGood = it->begin();
   while (lastGood != it->end() && lastGood->ignore)
-    lastGood++;
-  int commonScope = int(ctx->scope.size());
+    ++lastGood;
+  int commonScope = static_cast<int>(ctx->scope.size());
   // Iterate through all bindings with the given name and find the closest binding that
   // dominates the current scope.
-  for (auto i = it->begin(); i != it->end(); i++) {
+  for (auto i = it->begin(); i != it->end(); ++i) {
     if (i->ignore)
       continue;
 
@@ -887,7 +887,7 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
       seqassert(i->scope[0] == 0, "bad scoping");
       seqassert(ctx->scope[0].id == 0, "bad scoping");
       // Find the longest block prefix between the binding and the current common scope.
-      commonScope = std::min(commonScope, int(i->scope.size()));
+      commonScope = std::min(commonScope, static_cast<int>(i->scope.size()));
       while (commonScope > 0 &&
              i->scope[commonScope - 1] != ctx->scope[commonScope - 1].id)
         commonScope--;
@@ -900,7 +900,7 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
   if (!allowShadow) { // go to the end
     lastGood = it->end();
     --lastGood;
-    int p = std::min(commonScope, int(lastGood->scope.size()));
+    int p = std::min(commonScope, static_cast<int>(lastGood->scope.size()));
     while (p >= 0 && lastGood->scope[p - 1] != ctx->scope[p - 1].id)
       p--;
     commonScope = p;
@@ -937,7 +937,7 @@ ScopingVisitor::findDominatingBinding(const std::string &name, bool allowShadow)
                      .count > 0;
   }
   // Remove all bindings after the dominant binding.
-  for (auto i = it->begin(); i != it->end(); i++) {
+  for (auto i = it->begin(); i != it->end(); ++i) {
     if (i == lastGood)
       break;
     switchToUpdate(i->binding, name, gotUsedVar);

@@ -36,7 +36,7 @@ void TypecheckVisitor::prepareVTables() {
   //   return Tuple[<types before B is reached in D>].__elemsize__
   fn = getFunction("__internal__.class_base_derived_dist:0");
   auto oldAst = fn->ast;
-  for (const auto &[_, real] : fn->realizations) {
+  for (const auto &real : fn->realizations | std::views::values) {
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
     LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), *fn->ast->suite);
     real->type->ast = fn->ast;
@@ -47,10 +47,10 @@ void TypecheckVisitor::prepareVTables() {
 
 SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
   auto suite = N<SuiteStmt>();
-  for (const auto &[_, cls] : ctx->cache->classes) {
+  for (const auto &cls : ctx->cache->classes | std::views::values) {
     for (const auto &[r, real] : cls.realizations) {
       size_t vtSz = 0;
-      for (auto &[base, vtable] : real->vtables) {
+      for (const auto &vtable : real->vtables | std::views::values) {
         if (!vtable.ir)
           vtSz += vtable.table.size();
       }
@@ -62,12 +62,12 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
                       N<IntExpr>(real->id), N<IntExpr>(vtSz + 2), N<IdExpr>(r))));
       // LOG("[poly] {} -> {}", r, real->id);
       vtSz = 0;
-      for (const auto &[base, vtable] : real->vtables) {
+      for (const auto &vtable : real->vtables | std::views::values) {
         if (!vtable.ir) {
-          for (const auto &[k, v] : vtable.table) {
+          for (const auto &v : vtable.table | std::views::values) {
             auto &[fn, id] = v;
             std::vector<Expr *> ids;
-            for (auto t : *fn)
+            for (const auto &t : *fn)
               ids.push_back(N<IdExpr>(t.getType()->realizedName()));
             // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
             LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id,
@@ -94,8 +94,8 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
 SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
   auto baseTyp = extractFuncGeneric(f, 0)->getClass();
   size_t baseTypFields = 0;
-  for (auto &f : getClassFields(baseTyp)) {
-    if (f.baseClass == baseTyp->name) {
+  for (auto &fld : getClassFields(baseTyp)) {
+    if (fld.baseClass == baseTyp->name) {
       baseTypFields++;
     }
   }
@@ -104,12 +104,12 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
   auto fields = getClassFields(derivedTyp);
   auto types = std::vector<Expr *>{};
   auto found = false;
-  for (auto &f : fields) {
-    if (f.baseClass == baseTyp->name) {
+  for (auto &fld : fields) {
+    if (fld.baseClass == baseTyp->name) {
       found = true;
       break;
     } else {
-      auto ft = realize(instantiateType(f.getType(), derivedTyp));
+      auto ft = realize(instantiateType(fld.getType(), derivedTyp));
       types.push_back(N<IdExpr>(ft->realizedName()));
     }
   }
@@ -120,8 +120,8 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
   return SuiteStmt::wrap(suite);
 }
 
-FunctionStmt *TypecheckVisitor::generateThunkAST(FuncType *fp, ClassType *base,
-                                                 ClassType *derived) {
+FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *base,
+                                                 const ClassType *derived) {
   auto ct = instantiateType(extractClassType(derived->name), base->getClass());
   std::vector<types::Type *> args;
   for (const auto &a : *fp)
@@ -179,12 +179,12 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
   // TODO: ugly, ugly; surely needs refactoring
 
   // Function signature for storing thunks
-  auto sig = [](types::FuncType *fp) {
+  auto sig = [](const types::FuncType *ft) {
     std::vector<std::string> gs;
-    for (auto a : *fp)
+    for (const auto &a : *ft)
       gs.emplace_back(a.getType()->realizedName());
     gs.emplace_back("|");
-    for (auto &a : fp->funcGenerics)
+    for (auto &a : ft->funcGenerics)
       if (!a.name.empty())
         gs.push_back(a.type->realizedName());
     return join(gs, ",");
@@ -214,7 +214,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         break;
       }
     if (clsName != baseCls && inMro) {
-      for (const auto &[_, real] : cls.realizations) {
+      for (const auto &real : cls.realizations | std::views::values) {
         if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
           auto thunkFn = getFunction(thunkAst->name);
           auto ti =
@@ -257,7 +257,7 @@ SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {
   return N<SuiteStmt>(items);
 }
 
-SuiteStmt *TypecheckVisitor::generateUnionNewAST(FuncType *type) {
+SuiteStmt *TypecheckVisitor::generateUnionNewAST(const FuncType *type) {
   auto unionType = type->funcParent->getUnion();
   seqassert(unionType, "expected union, got {}", *(type->funcParent));
 
@@ -293,7 +293,7 @@ SuiteStmt *TypecheckVisitor::generateNamedKeysAST(FuncType *type) {
 }
 
 SuiteStmt *TypecheckVisitor::generateTupleMulAST(FuncType *type) {
-  auto n = std::max(int64_t(0), getIntLiteral(extractFuncGeneric(type)));
+  auto n = std::max(static_cast<int64_t>(0), getIntLiteral(extractFuncGeneric(type)));
   auto t = extractFuncArgType(type)->getClass();
   if (!t || !t->is(TYPE_TUPLE))
     return nullptr;
@@ -412,7 +412,7 @@ Expr *TypecheckVisitor::transformSuperF(CallExpr *expr) {
           supers.emplace_back(getFunction(overload)->getType());
         }
       }
-      std::reverse(supers.begin(), supers.end());
+      std::ranges::reverse(supers);
     }
   }
   if (supers.empty())
@@ -464,7 +464,7 @@ Expr *TypecheckVisitor::transformSuper() {
                                  self, typExpr, N<IntExpr>(1)));
   }
 
-  auto name = cands.front(); // the first inherited type
+  const auto &name = cands.front(); // the first inherited type
   auto superTyp = instantiateType(extractClassType(name), typ);
   if (typ->isRecord()) {
     // Case: tuple types. Return `tuple(obj.args...)`
@@ -531,7 +531,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
 
   typ = extractClassType(typ);
   auto &typExpr = (*expr)[1].value;
-  if (auto c = cast<CallExpr>(typExpr)) {
+  if (cast<CallExpr>(typExpr)) {
     // Handle `isinstance(obj, (type1, type2, ...))`
     if (typExpr->getOrigExpr() && cast<TupleExpr>(typExpr->getOrigExpr())) {
       Expr *result = transform(N<BoolExpr>(false));
@@ -560,7 +560,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     int tag = -1;
     for (size_t ui = 0; ui < unionTypes.size(); ui++) {
       if (extractType(typExpr)->unify(unionTypes[ui], nullptr) >= 0) {
-        tag = int(ui);
+        tag = static_cast<int>(ui);
         break;
       }
     }
@@ -649,9 +649,8 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   if (typ->getUnion()) {
     Expr *cond = nullptr;
     auto unionTypes = typ->getUnion()->getRealizationTypes();
-    int tag = -1;
-    for (size_t ui = 0; ui < unionTypes.size(); ui++) {
-      auto tu = realize(unionTypes[ui]);
+    for (auto &unionType : unionTypes) {
+      auto tu = realize(unionType);
       if (!tu)
         return nullptr;
       auto te = N<IdExpr>(tu->getClass()->realizedName());
@@ -710,7 +709,7 @@ Expr *TypecheckVisitor::transformSetAttr(CallExpr *expr) {
 }
 
 /// Raise a compiler error.
-Expr *TypecheckVisitor::transformCompileError(CallExpr *expr) {
+Expr *TypecheckVisitor::transformCompileError(CallExpr *expr) const {
   auto msg = getStrLiteral(extractFuncGeneric(expr->expr->getType()));
   E(Error::CUSTOM, expr, msg.c_str());
   return nullptr;
@@ -793,7 +792,7 @@ Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
 }
 
 /// Transform __static_print__ function to a fully realized type identifier.
-Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
+Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) const {
   for (auto &a : *cast<CallExpr>(expr->begin()->getExpr())) {
     fmt::print(stderr, "[print] {}: {} ({}){}\n", getSrcInfo(),
                a.getExpr()->getType() ? a.getExpr()->getType()->debugString(2) : "-",
@@ -804,7 +803,7 @@ Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) {
 }
 
 /// Transform static.has_rtti to a static boolean that indicates RTTI status of a type.
-Expr *TypecheckVisitor::transformHasRttiFn(CallExpr *expr) {
+Expr *TypecheckVisitor::transformHasRttiFn(const CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->isStatic = 3;
 
@@ -957,7 +956,7 @@ Expr *TypecheckVisitor::transformStaticVars(CallExpr *expr) {
   types::ClassType *typ = nullptr;
   std::vector<Expr *> tupleItems;
   auto e = transform(expr->begin()->getExpr());
-  if (!(typ = e->getClassType()))
+  if (!((typ = e->getClassType())))
     return nullptr;
 
   size_t idx = 0;
@@ -975,7 +974,7 @@ Expr *TypecheckVisitor::transformStaticVars(CallExpr *expr) {
   return transform(N<TupleExpr>(tupleItems));
 }
 
-Expr *TypecheckVisitor::transformStaticTupleType(CallExpr *expr) {
+Expr *TypecheckVisitor::transformStaticTupleType(const CallExpr *expr) {
   auto funcTyp = expr->getExpr()->getType()->getFunc();
   auto t = extractFuncGeneric(funcTyp)->getClass();
   if (!t || !realize(t))
@@ -1076,7 +1075,7 @@ TypecheckVisitor::populateStaticFnOverloadsLoop(Expr *iter,
       overloads = getOverloads(*n);
   }
   if (!overloads.empty()) {
-    for (int mti = int(overloads.size()) - 1; mti >= 0; mti--) {
+    for (int mti = static_cast<int>(overloads.size()) - 1; mti >= 0; mti--) {
       auto &method = overloads[mti];
       auto cfn = getFunction(method);
       if (isDispatch(method) || !cfn->type)
@@ -1103,7 +1102,6 @@ TypecheckVisitor::populateStaticEnumerateLoop(Expr *iter,
     E(Error::CUSTOM, getSrcInfo(), "expected two items");
   auto fn =
       cast<CallExpr>(iter) ? cast<IdExpr>(cast<CallExpr>(iter)->getExpr()) : nullptr;
-  auto stmt = N<AssignStmt>(N<IdExpr>(vars[0]), nullptr, nullptr);
   std::vector<Stmt *> block;
   auto typ = extractFuncArgType(fn->getType())->getClass();
   if (typ && typ->isRecord()) {

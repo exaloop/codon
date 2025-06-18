@@ -183,12 +183,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (attrFn->ast->hasAttribute(Attr::NoArgReorder))
             stmt->setAttribute(Attr::NoArgReorder);
           if (attrFn->ast->hasAttribute(Attr::FunctionAttributes)) {
-            for (auto &k :
+            for (const auto &key :
                  attrFn->ast
-                     ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-                     ->attributes)
+                         ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+                         ->attributes |
+                     std::views::keys)
               stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-                  ->attributes[k.first] = "";
+                  ->attributes[key] = "";
           }
         }
         stmt->decorators[i] = nullptr; // remove it from further consideration
@@ -255,8 +256,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       insertSize--;
     for (auto &[c, t] : b->captures) {
       std::string cc = "$" + c;
-      auto v = ctx->find(c, getTime());
-      if (v) {
+      if (auto v = ctx->find(c, getTime())) {
         if (t != BindingsAttribute::CaptureType::Global && !v->isGlobal()) {
           bool parentClassGeneric =
               ctx->bases.back().isType() && ctx->bases.back().name == v->getBaseName();
@@ -319,32 +319,32 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         // Special case: generic defaults are evaluated as-is!
         defaultValue = transform(defaultValue);
       } else if (defaultValue) {
-        auto name = fmt::format(".default.{}.{}", canonicalName, a.getName());
+        auto defName = fmt::format(".default.{}.{}", canonicalName, a.getName());
         auto nctx = std::make_shared<TypeContext>(ctx->cache);
         *nctx = *ctx;
         nctx->bases.pop_back();
         if (isClassMember) // class variable; go to the global context!
           nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end());
         auto tv = TypecheckVisitor(nctx);
-        auto as = N<AssignStmt>(N<IdExpr>(name), defaultValue,
+        auto as = N<AssignStmt>(N<IdExpr>(defName), defaultValue,
                                 a.isValue() ? nullptr : a.getType());
         if (isClassMember) {
           preamble->addStmt(
-              tv.transform(N<AssignStmt>(N<IdExpr>(name), nullptr, nullptr)));
-          registerGlobal(name);
+              tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
+          registerGlobal(defName);
           as->setUpdate();
         }
         auto das = tv.transform(as);
         prependStmts->push_back(das);
         // Default unbounds must be allowed to pass through
         // to support cases such as `a = []`
-        auto f = ctx->forceFind(name);
-        for (auto &u : f->getType()->getUnbounds()) {
+        auto f = ctx->forceFind(defName);
+        for (auto &u : f->getType()->getUnbounds(false)) {
           // log("pass-through: {} / {}", stmt->getName(), u->debugString(2));
           u->getUnbound()->passThrough = true;
           stmt->setAttribute(Attr::AllowPassThrough);
         }
-        defaultValue = tv.transform(N<IdExpr>(name));
+        defaultValue = tv.transform(N<IdExpr>(defName));
       }
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
                         a.status);
@@ -462,7 +462,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
     // Generalize generics and remove them from the context
     for (const auto &g : generics) {
-      for (auto &u : g->getUnbounds())
+      for (auto &u : g->getUnbounds(false))
         if (u->getUnbound()) {
           u->getUnbound()->kind = LinkType::Generic;
         }
@@ -507,13 +507,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
   auto &overloads = ctx->cache->overloads[rootName];
   if (rootName == "Tuple.__new__") {
-    overloads.insert(
-        std::upper_bound(overloads.begin(), overloads.end(), canonicalName,
+    overloads.insert(std::ranges::upper_bound(
+                         overloads, canonicalName,
                          [&](const auto &a, const auto &b) {
                            return getFunction(a)->getType()->funcGenerics.size() <
                                   getFunction(b)->getType()->funcGenerics.size();
                          }),
-        canonicalName);
+                     canonicalName);
   } else {
     overloads.push_back(canonicalName);
   }
@@ -653,7 +653,8 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   if (braceCount)
     E(Error::FN_BAD_LLVM, getSrcInfo());
   if (braceStart != code.size())
-    finalCode += escapeFStringBraces(code, braceStart, int(code.size()) - braceStart);
+    finalCode += escapeFStringBraces(code, braceStart,
+                                     static_cast<int>(code.size()) - braceStart);
   items[0] = N<ExprStmt>(N<StringExpr>(finalCode));
   return N<SuiteStmt>(items);
 }
@@ -663,8 +664,7 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
   auto dt = transform(clone(e));
   dt = getHeadExpr(dt);
-  auto id = cast<IdExpr>(cast<CallExpr>(dt) ? cast<CallExpr>(dt)->getExpr() : dt);
-  if (id) {
+  if (auto id = cast<IdExpr>(cast<CallExpr>(dt) ? cast<CallExpr>(dt)->getExpr() : dt)) {
     auto ci = ctx->find(id->getValue(), getTime());
     if (ci && ci->isFunc()) {
       auto fn = ci->getName();

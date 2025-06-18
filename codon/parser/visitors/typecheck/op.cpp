@@ -231,7 +231,8 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
 /// nested) CallExprs.
 /// @return  List of CallExprs and their locations within the parent CallExpr
 ///          needed to access the ellipsis.
-/// @example `foo(bar(1, baz(...)))` returns `[{0, baz}, {1, bar}, {0, foo}]`
+/// @example
+/// `foo(bar(1, baz(...)))` returns `[{0, baz}, {1, bar}, {0, foo}]`
 std::vector<std::pair<size_t, Expr *>> TypecheckVisitor::findEllipsis(Expr *expr) {
   auto call = cast<CallExpr>(expr);
   if (!call)
@@ -258,7 +259,7 @@ std::vector<std::pair<size_t, Expr *>> TypecheckVisitor::findEllipsis(Expr *expr
 /// Stages that are not in the form of CallExpr will be transformed to it (e.g., `foo`
 /// -> `foo(...)`).
 /// Special care is taken of stages that can expand to multiple stages (e.g., `a |> foo`
-/// might become `a |> unwrap |> foo` to satisfy type constraints.
+/// might become `a |> unwrap |> foo` to satisfy type constraints).
 void TypecheckVisitor::visit(PipeExpr *expr) {
   bool hasGenerator = false;
 
@@ -292,11 +293,11 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
       // Case: a call. Find the position of the pipe ellipsis within it
       for (size_t ia = 0; inTypePos == -1 && ia < call->size(); ia++)
         if (cast<EllipsisExpr>((*call)[ia].value))
-          inTypePos = int(ia);
+          inTypePos = static_cast<int>(ia);
       // No ellipses found? Prepend it as the first argument
       if (inTypePos == -1) {
         call->items.insert(call->items.begin(),
-                           {"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)});
+                           CallArg{"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)});
         inTypePos = 0;
       }
     } else {
@@ -465,17 +466,17 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
         E(Error::INST_CALLABLE_STATIC, typeParam);
       types.push_back(extractType(typeParam)->shared_from_this());
     }
-    auto typ = instantiateUnbound();
+    auto ub = instantiateUnbound();
     // Set up the CallableTrait
-    typ->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
-    unify(expr->getType(), instantiateTypeVar(typ.get()));
+    ub->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
+    unify(expr->getType(), instantiateTypeVar(ub.get()));
   } else if (isId(expr->getExpr(), TRAIT_TYPE)) {
     // Case: TypeTrait[...] trait instantiation
     (*expr)[0] = transformType((*expr)[0]);
-    auto typ = instantiateUnbound();
-    typ->getLink()->trait =
+    auto ub = instantiateUnbound();
+    ub->getLink()->trait =
         std::make_shared<TypeTrait>(extractType(expr->front())->shared_from_this());
-    unify(expr->getType(), typ);
+    unify(expr->getType(), ub);
   } else {
     for (size_t i = 0; i < expr->size(); i++) {
       (*expr)[i] = transformType((*expr)[i]);
@@ -543,7 +544,7 @@ void TypecheckVisitor::visit(SliceExpr *expr) {
 /// Evaluate a static unary expression and return the resulting static expression.
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) not (ints) not, -, +
-Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
+Expr *TypecheckVisitor::evaluateStaticUnary(const UnaryExpr *expr) {
   // Case: static strings
   if (expr->getExpr()->getType()->isStaticType() == 2) {
     if (expr->getOp() == "!") {
@@ -586,7 +587,7 @@ Expr *TypecheckVisitor::evaluateStaticUnary(UnaryExpr *expr) {
       else if (expr->getOp() == "~")
         value = ~value;
       else
-        value = !bool(value);
+        value = !static_cast<bool>(value);
       LOG_TYPECHECK("[cond::un] {}: {}", getSrcInfo(), value);
       if (expr->getOp() == "!")
         return transform(N<BoolExpr>(value));
@@ -626,7 +627,7 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
 /// If the expression cannot be evaluated yet, return nullptr.
 /// Supported operators: (strings) +, ==, !=
 ///                      (ints) <, <=, >, >=, ==, !=, and, or, +, -, *, //, %, ^, |, &
-Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
+Expr *TypecheckVisitor::evaluateStaticBinary(const BinaryExpr *expr) {
   // Case: static strings
   if (expr->getRhs()->getType()->isStaticType() == 2) {
     if (expr->getOp() == "+") {
@@ -738,7 +739,7 @@ Expr *TypecheckVisitor::evaluateStaticBinary(BinaryExpr *expr) {
 ///   `a in b`     -> `a.__contains__(b)`
 ///   `a not in b` -> `not (a in b)`
 ///   `a is not b` -> `not (a is b)`
-Expr *TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
+Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
   // Case: simple transformations
   if (expr->getOp() == "&&") {
     if (ctx->expectedType && ctx->expectedType->is("bool")) {
@@ -778,7 +779,7 @@ Expr *TypecheckVisitor::transformBinarySimple(BinaryExpr *expr) {
 
 /// Transform a binary `is` expression by checking for type equality. Handle special `is
 /// None` cаses as well. See inside for details.
-Expr *TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
+Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
   seqassert(expr->op == "is", "not an is binary expression");
 
   // Case: `is None` expressions
@@ -846,7 +847,8 @@ Expr *TypecheckVisitor::transformBinaryIs(BinaryExpr *expr) {
 }
 
 /// Return a binary magic opcode for the provided operator.
-std::pair<std::string, std::string> TypecheckVisitor::getMagic(const std::string &op) {
+std::pair<std::string, std::string>
+TypecheckVisitor::getMagic(const std::string &op) const {
   // Table of supported binary operations and the corresponding magic methods.
   static auto magics = std::unordered_map<std::string, std::string>{
       {"+", "add"},     {"-", "sub"},       {"*", "mul"},     {"**", "pow"},
@@ -901,7 +903,7 @@ Expr *TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAto
 /// Transform a magic binary expression.
 /// @example
 ///   `a op b` -> `a.__opmagic__(b)`
-Expr *TypecheckVisitor::transformBinaryMagic(BinaryExpr *expr) {
+Expr *TypecheckVisitor::transformBinaryMagic(const BinaryExpr *expr) {
   auto [magic, rightMagic] = getMagic(expr->getOp());
   auto lt = expr->getLhs()->getType();
   auto rt = expr->getRhs()->getType();
@@ -986,7 +988,8 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
   };
 
   std::string str = isStaticString ? getStrLiteral(expr->getType()) : "";
-  auto sz = int64_t(isStaticString ? str.size() : getClassFields(tuple).size());
+  auto sz =
+      static_cast<int64_t>(isStaticString ? str.size() : getClassFields(tuple).size());
   int64_t start = 0, stop = sz, step = 1, multiple = 0;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
@@ -1034,7 +1037,7 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
           E(Error::TUPLE_RANGE_BOUNDS, index, sz - 1, i);
         te.push_back(N<DotExpr>(clone(var), classFields[i].name));
       }
-      auto s = generateTuple(te.size());
+      generateTuple(te.size());
       Expr *e = transform(N<StmtExpr>(std::vector<Stmt *>{ass},
                                       N<CallExpr>(N<IdExpr>(TYPE_TUPLE), te)));
       return {true, e};
@@ -1044,7 +1047,7 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
 
 /// Follow Python indexing rules for static tuple indices.
 /// Taken from https://github.com/python/cpython/blob/main/Objects/sliceobject.c.
-int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) {
+int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) const {
   if (idx < 0)
     idx += len;
   if (clamp) {
@@ -1062,7 +1065,7 @@ int64_t TypecheckVisitor::translateIndex(int64_t idx, int64_t len, bool clamp) {
 /// Taken from https://github.com/python/cpython/blob/main/Objects/sliceobject.c.
 /// Quote (sliceobject.c:269): "this is harder to get right than you might think"
 int64_t TypecheckVisitor::sliceAdjustIndices(int64_t length, int64_t *start,
-                                             int64_t *stop, int64_t step) {
+                                             int64_t *stop, int64_t step) const {
   if (step == 0)
     E(Error::SLICE_STEP_ZERO, getSrcInfo());
 

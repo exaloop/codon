@@ -30,19 +30,19 @@ struct FuncType : public ClassType {
 
 public:
   FuncType(
-      ClassType *baseType, FunctionStmt *ast,
+      const ClassType *baseType, FunctionStmt *ast,
       std::vector<ClassType::Generic> funcGenerics = std::vector<ClassType::Generic>(),
       TypePtr funcParent = nullptr);
 
 public:
   int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
+  TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
 public:
-  bool hasUnbounds(bool = false) const override;
-  std::vector<Type *> getUnbounds(bool = false) const override;
+  bool hasUnbounds(bool) const override;
+  std::vector<Type *> getUnbounds(bool) const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
@@ -54,7 +54,7 @@ public:
   Type *getParentType() const { return funcParent.get(); }
   std::string getFuncName() const;
 
-  Type *operator[](int i) const;
+  Type *operator[](size_t i) const;
   std::vector<ClassType::Generic>::iterator begin() const;
   std::vector<ClassType::Generic>::iterator end() const;
   size_t size() const;

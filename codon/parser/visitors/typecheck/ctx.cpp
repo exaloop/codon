@@ -7,12 +7,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "codon/cir/attribute.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/format/format.h"
 #include "codon/parser/visitors/scoping/scoping.h"
-#include "codon/parser/visitors/typecheck/typecheck.h"
 
 using namespace codon::error;
 
@@ -159,11 +157,10 @@ void TypeContext::dump() { dump(0); }
 std::string TypeContext::generateCanonicalName(const std::string &name,
                                                bool includeBase, bool noSuffix) const {
   std::string newName = name;
-  bool alreadyGenerated = name.find('.') != std::string::npos;
-  if (alreadyGenerated)
+  if (name.find('.') != std::string::npos)
     return name;
   includeBase &= !(!name.empty() && name[0] == '%');
-  if (includeBase && !alreadyGenerated) {
+  if (includeBase) {
     std::string base = getBaseName();
     if (base.empty())
       base = getModule();
@@ -174,7 +171,7 @@ std::string TypeContext::generateCanonicalName(const std::string &name,
     newName = (base.empty() ? "" : (base + ".")) + newName;
   }
   auto num = cache->identifierCount[newName]++;
-  if (!noSuffix && !alreadyGenerated)
+  if (!noSuffix)
     newName = fmt::format("{}.{}", newName, num);
   if (name != newName)
     cache->identifierCount[newName]++;
@@ -224,14 +221,14 @@ void TypeContext::dump(int pad) {
   for (auto &i : ordered) {
     std::string s;
     auto t = i.second.front();
-    LOG("{}{:.<25}", std::string(size_t(pad) * 2, ' '), i.first);
+    LOG("{}{:.<25}", std::string(static_cast<size_t>(pad) * 2, ' '), i.first);
     LOG("   ... kind:      {}", t->isType() * 100 + t->isFunc() * 10 + t->isVar());
     LOG("   ... canonical: {}", t->canonicalName);
     LOG("   ... base:      {}", t->baseName);
     LOG("   ... module:    {}", t->moduleName);
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
     LOG("   ... scope:     {}", t->scope);
-    LOG("   ... gnrc/sttc: {} / {}", t->generic, int(t->isStatic()));
+    LOG("   ... gnrc/sttc: {} / {}", t->generic, static_cast<int>(t->isStatic()));
   }
 }
 

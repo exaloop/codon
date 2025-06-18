@@ -98,9 +98,9 @@ template <> bool match(const char *s, match_endswith_t m);
 template <> bool match(const char *s, match_contains_t m);
 
 template <int i, typename T, typename TM> bool match_help(T &t, TM m) {
-  if constexpr (i == std::tuple_size<decltype(m.args)>::value) {
-    return i == std::tuple_size<decltype(t.match_members())>::value;
-  } else if constexpr (i < std::tuple_size<decltype(m.args)>::value) {
+  if constexpr (i == std::tuple_size_v<decltype(m.args)>) {
+    return i == std::tuple_size_v<decltype(t.match_members())>;
+  } else if constexpr (i < std::tuple_size_v<decltype(m.args)>) {
     if constexpr (std::is_same_v<std::remove_reference_t<decltype(std::get<i>(m.args))>,
                                  match_zero_or_more_t>) {
       return true;
@@ -114,7 +114,7 @@ template <int i, typename T, typename TM> bool match_help(T &t, TM m) {
 
 template <int i, typename T, typename... TO>
 bool match_or_help(T &t, match_or_t<TO...> m) {
-  if constexpr (i >= 0 && i < std::tuple_size<decltype(m.args)>::value) {
+  if constexpr (i >= 0 && i < std::tuple_size_v<decltype(m.args)>) {
     return match(t, std::get<i>(m.args)) || match_or_help<i + 1>(t, m);
   } else {
     return false;

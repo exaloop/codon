@@ -20,9 +20,9 @@ PREAMBLE {
 }
 
 pragma <- "omp"? _ "parallel"? _ (clause _)* {
-  vector<CallArg> v;
+  std::vector<CallArg> v;
   for (auto &i: VS) {
-    auto vi = ac<vector<CallArg>>(i);
+    auto vi = ac<std::vector<CallArg>>(i);
     v.insert(v.end(), vi.begin(), vi.end());
   }
   return v;
@@ -30,22 +30,22 @@ pragma <- "omp"? _ "parallel"? _ (clause _)* {
 clause <-
   / "schedule" _ "(" _ schedule_kind (_ "," _ int)? _ ")" {
     // CTX;
-    vector<CallArg> v{{"schedule", ast(String, LOC, ac<string>(V0))}};
+    std::vector<CallArg> v{CallArg{"schedule", ast(String, LOC, ac<string>(V0))}};
     if (VS.size() > 1)
-      v.push_back({"chunk_size", ast(Int, LOC, ac<int>(V1))});
+      v.push_back(CallArg{"chunk_size", ast(Int, LOC, ac<int>(V1))});
     return v;
   }
   / "num_threads" _ "(" _ int _ ")" {
-    return vector<CallArg>{{"num_threads", ast(Int, LOC, ac<int>(V0))}};
+    return std::vector<CallArg>{CallArg{"num_threads", ast(Int, LOC, ac<int>(V0))}};
   }
   / "ordered" {
-    return vector<CallArg>{{"ordered", ast(Bool, LOC, true)}};
+    return std::vector<CallArg>{CallArg{"ordered", ast(Bool, LOC, true)}};
   }
   / "collapse" {
-    return vector<CallArg>{{"collapse", ast(Int, LOC, ac<int>(V0))}};
+    return std::vector<CallArg>{CallArg{"collapse", ast(Int, LOC, ac<int>(V0))}};
   }
   / "gpu" {
-    return vector<CallArg>{{"gpu", ast(Bool, LOC, true)}};
+    return std::vector<CallArg>{CallArg{"gpu", ast(Bool, LOC, true)}};
   }
 schedule_kind <- ("static" / "dynamic" / "guided" / "auto" / "runtime") {
   return VS.token_to_string();

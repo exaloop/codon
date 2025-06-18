@@ -3,7 +3,6 @@
 #pragma once
 
 #include <memory>
-#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -28,9 +27,9 @@ struct CallableTrait : public Trait {
 public:
   explicit CallableTrait(Cache *cache, std::vector<TypePtr> args);
   int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
+  TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+                      std::unordered_map<int, TypePtr> *cache) const override;
   std::string debugString(char mode) const override;
 };
 
@@ -40,9 +39,9 @@ struct TypeTrait : public Trait {
 public:
   explicit TypeTrait(TypePtr type);
   int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
+  TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+                      std::unordered_map<int, TypePtr> *cache) const override;
   std::string debugString(char mode) const override;
 };
 

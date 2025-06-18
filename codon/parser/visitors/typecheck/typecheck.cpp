@@ -49,7 +49,7 @@ Stmt *TypecheckVisitor::apply(
 
   // Prepare the code
   auto tv = TypecheckVisitor(ctx, preamble);
-  SuiteStmt *suite = tv.N<SuiteStmt>();
+  auto *suite = tv.N<SuiteStmt>();
   auto &stmts = suite->items;
   // Load compile-time defines (e.g., codon run -DFOO=1 ...)
   for (auto &d : defines) {
@@ -128,7 +128,6 @@ void TypecheckVisitor::loadStdLibrary(
 
   // 2. Load early compile-time defines (for standard library)
   for (auto &d : earlyDefines) {
-    auto tv = TypecheckVisitor(stdlib, preamble);
     auto s =
         tv.N<AssignStmt>(tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
                          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int")));
@@ -174,7 +173,7 @@ Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *nod
 
 TypecheckVisitor::TypecheckVisitor(std::shared_ptr<TypeContext> ctx, SuiteStmt *pre,
                                    const std::shared_ptr<std::vector<Stmt *>> &stmts)
-    : resultExpr(nullptr), resultStmt(nullptr), ctx(std::move(ctx)) {
+    : ctx(std::move(ctx)), resultExpr(nullptr), resultStmt(nullptr) {
   preamble = pre ? pre : this->ctx->cache->N<SuiteStmt>();
   prependStmts = stmts ? stmts : std::make_shared<std::vector<Stmt *>>();
 }
@@ -371,7 +370,7 @@ void TypecheckVisitor::visit(CustomStmt *stmt) {
   if (stmt->getSuite()) {
     auto fn = in(ctx->cache->customBlockStmts, stmt->getKeyword());
     seqassert(fn, "unknown keyword {}", stmt->getKeyword());
-    resultStmt = (*fn).second(this, stmt);
+    resultStmt = fn->second(this, stmt);
   } else {
     auto fn = in(ctx->cache->customExprStmts, stmt->getKeyword());
     seqassert(fn, "unknown keyword {}", stmt->getKeyword());
@@ -448,9 +447,9 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
   if (part && part->getPartial()) {
     auto known = part->getPartialMask();
     auto knownArgTypes = extractClassGeneric(part, 1)->getClass();
-    for (size_t i = 0, j = 0, k = 0; i < known.size(); i++)
+    for (size_t i = 0, k = 0; i < known.size(); i++)
       if (known[i] == ClassType::PartialFlag::Included) {
-        partialArgs.push_back(extractClassGeneric(knownArgTypes, k));
+        partialArgs.push_back(extractClassGeneric(knownArgTypes, static_cast<int>(k)));
         k++;
       } else if (known[i] == ClassType::PartialFlag::Default) {
         k++;
@@ -520,7 +519,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
       }
     }
 
-    auto [_, newArgTyp, __] = canWrapExpr(argType, expectTyp, fn);
+    auto [_, newArgTyp, _ignore] = canWrapExpr(argType, expectTyp, fn);
     if (!newArgTyp)
       newArgTyp = argType->shared_from_this();
     if (newArgTyp->unify(expectTyp, nullptr) < 0)
@@ -605,7 +604,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
                                            "pyobj"};
   if (!expectedType || !expectedType->isStaticType()) {
-    if (auto c = exprType->isStaticType()) {
+    if (exprType->isStaticType()) {
       exprType = getUnderlyingStaticType(exprType);
       exprClass = exprType->getClass();
       type = exprType->shared_from_this();
@@ -750,7 +749,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       auto expectedArgs = extractClassGeneric(expectedClass)->getClass();
       for (size_t i = 0; i < argTypes.size(); i++)
         unify(argTypes[i], (*expectedArgs)[i]);
-      auto tr = unify(retType, extractClassGeneric(expectedClass, 1));
+      unify(retType, extractClassGeneric(expectedClass, 1));
 
       std::string fname;
       Expr *retFn = nullptr, *dataArg = nullptr, *dataType = nullptr;
@@ -912,7 +911,7 @@ Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassType *superTyp,
 /// Unpack a Tuple or KwTuple expression into (name, type) vector.
 /// Name is empty when handling Tuple; otherwise it matches names of KwTuple.
 std::shared_ptr<std::vector<std::pair<std::string, types::Type *>>>
-TypecheckVisitor::unpackTupleTypes(Expr *expr) {
+TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
   auto ret = std::make_shared<std::vector<std::pair<std::string, types::Type *>>>();
   if (auto tup = cast<TupleExpr>(expr->getOrigExpr())) {
     for (auto &a : *tup) {
@@ -921,7 +920,7 @@ TypecheckVisitor::unpackTupleTypes(Expr *expr) {
         return nullptr;
       ret->emplace_back("", a->getType());
     }
-  } else if (auto kw = cast<CallExpr>(expr->getOrigExpr())) {
+  } else if (cast<CallExpr>(expr->getOrigExpr())) {
     auto val = extractClassType(expr->getType());
     if (!val || !val->is("NamedTuple") || !extractClassGeneric(val, 1)->getClass() ||
         !extractClassGeneric(val)->canRealize())
@@ -983,13 +982,13 @@ TypecheckVisitor::getClassFieldTypes(types::ClassType *cls) {
   });
 }
 
-types::Type *TypecheckVisitor::extractType(types::Type *t) {
+types::Type *TypecheckVisitor::extractType(types::Type *t) const {
   while (t && t->is(TYPE_TYPE))
     t = extractClassGeneric(t);
   return t;
 }
 
-types::Type *TypecheckVisitor::extractType(Expr *e) {
+types::Type *TypecheckVisitor::extractType(Expr *e) const {
   if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == TYPE_TYPE)
     return e->getType();
   if (auto i = cast<InstantiateExpr>(e))
@@ -999,36 +998,34 @@ types::Type *TypecheckVisitor::extractType(Expr *e) {
   return extractType(e->getType());
 }
 
-types::Type *TypecheckVisitor::extractType(const std::string &s) {
+types::Type *TypecheckVisitor::extractType(const std::string &s) const {
   auto c = ctx->forceFind(s);
   return s == TYPE_TYPE ? c->getType() : extractType(c->getType());
 }
 
-types::ClassType *TypecheckVisitor::extractClassType(Expr *e) {
+types::ClassType *TypecheckVisitor::extractClassType(Expr *e) const {
   auto t = extractType(e);
   return t->getClass();
 }
 
-types::ClassType *TypecheckVisitor::extractClassType(types::Type *t) {
+types::ClassType *TypecheckVisitor::extractClassType(types::Type *t) const {
   return extractType(t)->getClass();
 }
 
-types::ClassType *TypecheckVisitor::extractClassType(const std::string &s) {
+types::ClassType *TypecheckVisitor::extractClassType(const std::string &s) const {
   return extractType(s)->getClass();
 }
 
-bool TypecheckVisitor::isUnbound(types::Type *t) const {
-  return t->getUnbound() != nullptr;
-}
+bool TypecheckVisitor::isUnbound(types::Type *t) { return t->getUnbound() != nullptr; }
 
-bool TypecheckVisitor::isUnbound(Expr *e) const { return isUnbound(e->getType()); }
+bool TypecheckVisitor::isUnbound(const Expr *e) { return isUnbound(e->getType()); }
 
-bool TypecheckVisitor::hasOverloads(const std::string &root) {
+bool TypecheckVisitor::hasOverloads(const std::string &root) const {
   auto i = in(ctx->cache->overloads, root);
   return i && i->size() > 1;
 }
 
-std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root) {
+std::vector<std::string> TypecheckVisitor::getOverloads(const std::string &root) const {
   auto i = in(ctx->cache->overloads, root);
   seqassert(i, "bad root");
   return *i;
@@ -1072,17 +1069,17 @@ TypecheckVisitor::getClassRealization(types::Type *t) const {
   return i->get();
 }
 
-std::string TypecheckVisitor::getRootName(types::FuncType *t) {
+std::string TypecheckVisitor::getRootName(const types::FuncType *t) const {
   auto i = in(ctx->cache->functions, t->getFuncName());
   seqassert(i && !i->rootName.empty(), "bad function");
   return i->rootName;
 }
 
-bool TypecheckVisitor::isTypeExpr(Expr *e) {
+bool TypecheckVisitor::isTypeExpr(const Expr *e) {
   return e && e->getType() && e->getType()->is(TYPE_TYPE);
 }
 
-Cache::Module *TypecheckVisitor::getImport(const std::string &s) {
+Cache::Module *TypecheckVisitor::getImport(const std::string &s) const {
   auto i = in(ctx->cache->imports, s);
   seqassert(i, "bad import");
   return i;
@@ -1092,7 +1089,7 @@ bool TypecheckVisitor::isDispatch(const std::string &s) {
   return endswith(s, FN_DISPATCH_SUFFIX);
 }
 
-bool TypecheckVisitor::isDispatch(FunctionStmt *ast) {
+bool TypecheckVisitor::isDispatch(const FunctionStmt *ast) {
   return ast && isDispatch(ast->name);
 }
 
@@ -1154,36 +1151,36 @@ types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
   return instantiateType(ctx->forceFind(TYPE_TYPE)->getType(), {t});
 }
 
-void TypecheckVisitor::registerGlobal(const std::string &name, bool initialized) {
+void TypecheckVisitor::registerGlobal(const std::string &name, bool initialized) const {
   if (!in(ctx->cache->globals, name)) {
     ctx->cache->globals[name] = {initialized, nullptr};
   }
 }
 
-types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) {
+types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) const {
   auto t = getImport(STDLIB_IMPORT)->ctx->forceFind(type)->getType();
   if (type == TYPE_TYPE)
     return t->getClass();
   return extractClassType(t);
 }
 
-types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, int idx) const {
+types::Type *TypecheckVisitor::extractClassGeneric(types::Type *t, size_t idx) const {
   seqassert(t->getClass() && idx < t->getClass()->generics.size(), "bad class");
   return t->getClass()->generics[idx].type.get();
 }
 
-types::Type *TypecheckVisitor::extractFuncGeneric(types::Type *t, int idx) const {
+types::Type *TypecheckVisitor::extractFuncGeneric(types::Type *t, size_t idx) const {
   seqassert(t->getFunc() && idx < t->getFunc()->funcGenerics.size(), "bad function");
   return t->getFunc()->funcGenerics[idx].type.get();
 }
 
-types::Type *TypecheckVisitor::extractFuncArgType(types::Type *t, int idx) {
+types::Type *TypecheckVisitor::extractFuncArgType(types::Type *t, size_t idx) const {
   seqassert(t->getFunc(), "bad function");
   return extractClassGeneric(extractClassGeneric(t), idx);
 }
 
 std::string TypecheckVisitor::getClassMethod(types::Type *typ,
-                                             const std::string &member) {
+                                             const std::string &member) const {
   if (auto cls = getClass(typ)) {
     if (auto t = in(cls->methods, member))
       return *t;
@@ -1192,11 +1189,11 @@ std::string TypecheckVisitor::getClassMethod(types::Type *typ,
   return "";
 }
 
-std::string TypecheckVisitor::getTemporaryVar(const std::string &s) {
+std::string TypecheckVisitor::getTemporaryVar(const std::string &s) const {
   return ctx->cache->getTemporaryVar(s);
 }
 
-std::string TypecheckVisitor::getStrLiteral(types::Type *t, size_t pos) {
+std::string TypecheckVisitor::getStrLiteral(types::Type *t, size_t pos) const {
   seqassert(t && t->getClass(), "not a class");
   if (t->getStrStatic())
     return t->getStrStatic()->value;
@@ -1205,7 +1202,7 @@ std::string TypecheckVisitor::getStrLiteral(types::Type *t, size_t pos) {
   return ct->getStrStatic()->value;
 }
 
-int64_t TypecheckVisitor::getIntLiteral(types::Type *t, size_t pos) {
+int64_t TypecheckVisitor::getIntLiteral(types::Type *t, size_t pos) const {
   seqassert(t && t->getClass(), "not a class");
   if (t->getIntStatic())
     return t->getIntStatic()->value;
@@ -1214,7 +1211,7 @@ int64_t TypecheckVisitor::getIntLiteral(types::Type *t, size_t pos) {
   return ct->getIntStatic()->value;
 }
 
-bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
+bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) const {
   seqassert(t && t->getClass(), "not a class");
   if (t->getBoolStatic())
     return t->getBoolStatic()->value;
@@ -1224,23 +1221,23 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) {
 }
 
 Expr *TypecheckVisitor::getParamType(Type *t) {
-  std::array<const char *, 4> op{"", "int", "str", "bool"};
   if (t && t->is(TYPE_TYPE)) {
     return N<IdExpr>(TYPE_TYPE);
-  } else if (auto st = t->isStaticType()) {
+  } else if (const auto st = t->isStaticType()) {
+    std::array<const char *, 4> op{"", "int", "str", "bool"};
     return N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[st]));
   } else {
     return nullptr;
   }
 }
 
-bool TypecheckVisitor::hasSideEffect(Expr *e) const {
+bool TypecheckVisitor::hasSideEffect(Expr *e) {
   return !match(e, MOr(M<IdExpr>(), M<DotExpr>(M<IdExpr>()), M<InstantiateExpr>(),
                        M<BoolExpr>(), M<IntExpr>(), M<StringExpr>(), M<NoneExpr>(),
                        M<FloatExpr>(), M<EllipsisExpr>(), M<YieldExpr>()));
 }
 
-Expr *TypecheckVisitor::getHeadExpr(Expr *e) const {
+Expr *TypecheckVisitor::getHeadExpr(Expr *e) {
   while (auto se = cast<StmtExpr>(e))
     e = se->getExpr();
   return e;
@@ -1250,9 +1247,9 @@ bool TypecheckVisitor::isImportFn(const std::string &s) {
   return startswith(s, "%_import_");
 }
 
-int64_t TypecheckVisitor::getTime() { return ctx->time; }
+int64_t TypecheckVisitor::getTime() const { return ctx->time; }
 
-types::Type *TypecheckVisitor::getUnderlyingStaticType(types::Type *t) {
+types::Type *TypecheckVisitor::getUnderlyingStaticType(types::Type *t) const {
   if (t->getStatic()) {
     return t->getStatic()->getNonStaticType();
   } else if (auto c = t->isStaticType()) {
@@ -1285,7 +1282,7 @@ std::shared_ptr<types::LinkType> TypecheckVisitor::instantiateUnbound() const {
 
 types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
                                                  types::Type *type,
-                                                 types::ClassType *generics) {
+                                                 types::ClassType *generics) const {
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
@@ -1302,11 +1299,11 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   }
   auto t = type->instantiate(ctx->typecheckLevel, &(ctx->cache->unboundCount),
                              &genericCache);
-  for (auto &i : genericCache) {
-    if (auto l = i.second->getLink()) {
-      i.second->setSrcInfo(srcInfo);
+  for (auto &val : genericCache | std::views::values) {
+    if (auto l = val->getLink()) {
+      val->setSrcInfo(srcInfo);
       if (l->defaultType) {
-        ctx->getBase()->pendingDefaults[0].insert(i.second);
+        ctx->getBase()->pendingDefaults[0].insert(val);
       }
     }
   }
@@ -1319,7 +1316,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
 
 types::TypePtr
 TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
-                                  const std::vector<types::Type *> &generics) {
+                                  const std::vector<types::Type *> &generics) const {
   auto c = root->getClass();
   seqassert(c, "root class is null");
   // dummy generic type
@@ -1351,10 +1348,10 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       return;
 
     auto mt = getOverloads(*t);
-    for (int mti = int(mt.size()) - 1; mti >= 0; mti--) {
-      auto method = mt[mti];
-      auto f = getFunction(method);
-      if (isDispatch(method) || !f->getType())
+    for (int mti = static_cast<int>(mt.size()) - 1; mti >= 0; --mti) {
+      const auto &exactMethod = mt[mti];
+      auto f = getFunction(exactMethod);
+      if (isDispatch(exactMethod) || !f->getType())
         continue;
       if (hideShadowed) {
         auto sig = f->ast->getSignature();
@@ -1407,11 +1404,11 @@ TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) 
   return nullptr;
 }
 
-int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
+int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
                                        const std::vector<CallArg> &args,
                                        const ReorderDoneFn &onDone,
                                        const ReorderErrorFn &onError,
-                                       const std::string &known) {
+                                       const std::string &known) const {
   // See https://docs.python.org/3.6/reference/expressions.html#calls for details.
   // Final score:
   //  - +1 for each matched argument
@@ -1454,7 +1451,7 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
       namedArgs[args[ai].name] = ai;
     }
   }
-  score += 2 * int(slots.size() - func->funcGenerics.size());
+  score += 2 * static_cast<int>(slots.size() - func->funcGenerics.size());
 
   for (auto ai : std::vector<int>{std::max(starArgIndex, kwstarArgIndex),
                                   std::min(starArgIndex, kwstarArgIndex)})
@@ -1498,8 +1495,8 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
                    Emsg(Error::CALL_ARGS_INVALID, extraNamedArgs.begin()->first,
                         getUnmangledName(func->ast->getName())));
   if (kwstarArgIndex != -1)
-    for (auto &e : extraNamedArgs)
-      slots[kwstarArgIndex].push_back(e.second);
+    for (auto &val : extraNamedArgs | std::views::values)
+      slots[kwstarArgIndex].push_back(val);
 
   // 5. Fill in the default arguments
   for (auto i = 0; i < func->ast->size(); i++)
@@ -1521,11 +1518,11 @@ int TypecheckVisitor::reorderNamedArgs(types::FuncType *func,
   return s != -1 ? score + s : -1;
 }
 
-bool TypecheckVisitor::isCanonicalName(const std::string &name) const {
+bool TypecheckVisitor::isCanonicalName(const std::string &name) {
   return name.rfind('.') != std::string::npos;
 }
 
-types::FuncType *TypecheckVisitor::extractFunction(types::Type *t) const {
+types::FuncType *TypecheckVisitor::extractFunction(types::Type *t) {
   if (auto f = t->getFunc())
     return f;
   if (auto p = t->getPartial())
@@ -1563,9 +1560,9 @@ public:
   }
 };
 
-ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) {
-  SearchVisitor v([](Expr *e) { return !e->isDone(); },
-                  [](Stmt *s) { return !s->isDone(); });
+ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) const {
+  SearchVisitor v([](const Expr *e) { return !e->isDone(); },
+                  [](const Stmt *s) { return !s->isDone(); });
   v.transform(n);
   std::vector<ErrorMessage> errors;
   for (auto e : v.result) {
@@ -1630,8 +1627,8 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
           ir::util::series(ir::util::call(fn->realizations.begin()->second->ir, args)));
     }
   }
-  for (auto &[rn, r] :
-       getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
+  for (auto &r : getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations |
+                     std::views::values) {
     if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
@@ -1670,7 +1667,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
       generics.push_back(instantiateStatic(getUnmangledName(canonicalName)));
     } else if (!isMagic) {
       generics.push_back(instantiateStatic(n));
-      generics.push_back(instantiateStatic(int64_t(isMethod)));
+      generics.push_back(instantiateStatic(static_cast<int64_t>(isMethod)));
     }
     auto f = realizeIRFunc(getFunction(fnName)->getType(), generics);
     if (!f)
@@ -1799,7 +1796,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   auto r = c->realizations.begin()->second;
   py.type = r->ir;
   seqassertn(!r->type->is(TYPE_TUPLE), "tuples not yet done");
-  for (auto &[mn, mt] : r->fields) {
+  for (auto &mn : r->fields | std::views::keys) {
     /// TODO: handle PyMember for tuples
     // Generate getters & setters
     auto generics =
@@ -1822,15 +1819,14 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
   ir::PyType py{name, ""};
   auto cr = ctx->cache->classes[CYTHON_ITER].realizations[name];
   auto tc = cr->getType();
-  for (auto &[rn, r] :
-       getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations) {
+  for (auto &r : getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations |
+                     std::views::values) {
     if (extractFuncGeneric(r->getType())->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
       break;
     }
   }
 
-  const auto &methods = getClass(CYTHON_ITER)->methods;
   for (auto &n : std::vector<std::string>{"_iter", "_iternext"}) {
     auto fnn = getOverloads(getClass(CYTHON_ITER)->methods[n]).front();
     TypePtr t;
@@ -1849,8 +1845,7 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
       t = instantiateType(getFunction(fnn)->getType(), tc->getClass());
       unify(extractFuncGeneric(t->getFunc()), fnt->getFunc()->getRetType());
     }
-    auto rtv = realize(t.get());
-    if (rtv) {
+    if (auto rtv = realize(t.get())) {
       auto f =
           getFunction(rtv->getFunc()->getFuncName())->realizations[rtv->realizedName()];
       if (n == "_iter")
@@ -1864,17 +1859,18 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
 }
 
 ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
-  auto f = getFunction(name);
-  if (f->isToplevel) {
+  if (auto f = getFunction(name); f->isToplevel) {
     auto fnName = fmt::format("{}.wrap_multiple:0", CYTHON_PYWRAP);
-    auto generics = std::vector<types::TypePtr>{
-        getStdLibType("NoneType")->shared_from_this(),
-        instantiateStatic(f->ast->getName()), instantiateStatic(int64_t(0))};
+    auto generics =
+        std::vector<types::TypePtr>{getStdLibType("NoneType")->shared_from_this(),
+                                    instantiateStatic(f->ast->getName()),
+                                    instantiateStatic(static_cast<int64_t>(0))};
     if (auto ir = realizeIRFunc(getFunction(fnName)->getType(), generics)) {
       LOG_USER("[py] toplevel -> {} ({}): ({})", getUnmangledName(name), name,
                f->getType()->debugString(2));
       ir::PyFunction fn{getUnmangledName(name), f->ast->getDocstr(), ir,
-                        ir::PyFunction::Type::TOPLEVEL, int(f->ast->size())};
+                        ir::PyFunction::Type::TOPLEVEL,
+                        static_cast<int>(f->ast->size())};
       fn.keywords = true;
       return fn;
     }

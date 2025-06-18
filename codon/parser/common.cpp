@@ -32,7 +32,7 @@ std::vector<IFilesystem::path_t> IFilesystem::get_stdlib_paths() const {
   return search_paths;
 }
 
-ImportFile IFilesystem::get_root(const path_t &sp) {
+ImportFile IFilesystem::get_root(const path_t &sp) const {
   bool isStdLib = false;
   std::string s = sp;
   std::string root;
@@ -51,7 +51,7 @@ ImportFile IFilesystem::get_root(const path_t &sp) {
   seqassertn((root.empty() || startswith(s, root)) && endswith(s, ext),
              "bad path substitution: {}, {}", s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
-  std::replace(module.begin(), module.end(), '/', '.');
+  std::ranges::replace(module, '/', '.');
   return ImportFile{(!isStdLib && root == module0) ? ImportFile::PACKAGE
                                                    : ImportFile::STDLIB,
                     s, module};
@@ -95,8 +95,8 @@ IFilesystem::path_t Filesystem::get_module0() const {
 }
 
 IFilesystem::path_t Filesystem::executable_path(const char *argv0) {
-  void *p = (void *)(intptr_t)executable_path;
-  auto exc = llvm::sys::fs::getMainExecutable(argv0, p);
+  auto exc = llvm::sys::fs::getMainExecutable(
+      argv0, reinterpret_cast<void *>(executable_path));
   return path_t(exc);
 }
 
@@ -195,7 +195,7 @@ std::string unescape(const std::string &str) {
           throw std::invalid_argument("invalid \\x code");
         size_t pos = 0;
         auto code = std::stoi(str.substr(i + 2, 2), &pos, 16);
-        r += char(code);
+        r += static_cast<char>(code);
         i += pos + 1;
         break;
       }
@@ -203,7 +203,7 @@ std::string unescape(const std::string &str) {
         if (str[i + 1] >= '0' && str[i + 1] <= '7') {
           size_t pos = 0;
           auto code = std::stoi(str.substr(i + 1, 3), &pos, 8);
-          r += char(code);
+          r += static_cast<char>(code);
           i += pos;
         } else {
           r += str[i];
@@ -228,7 +228,6 @@ std::string escapeFStringBraces(const std::string &str, int start, int len) {
   return t;
 }
 int findStar(const std::string &s) {
-  bool start = false;
   int i = 0;
   for (; i < s.size(); i++) {
     if (s[i] == '(')
@@ -258,9 +257,8 @@ size_t endswith(const std::string &str, const std::string &suffix) {
              : 0;
 }
 void ltrim(std::string &str) {
-  str.erase(str.begin(), std::find_if(str.begin(), str.end(), [](unsigned char ch) {
-              return !std::isspace(ch);
-            }));
+  str.erase(str.begin(), std::ranges::find_if(
+                             str, [](unsigned char ch) { return !std::isspace(ch); }));
 }
 void rtrim(std::string &str) {
   /// https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
@@ -269,9 +267,7 @@ void rtrim(std::string &str) {
                 .base(),
             str.end());
 }
-bool isdigit(const std::string &str) {
-  return std::all_of(str.begin(), str.end(), ::isdigit);
-}
+bool isdigit(const std::string &str) { return std::ranges::all_of(str, ::isdigit); }
 
 // Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__
@@ -340,7 +336,8 @@ std::string Filesystem::get_absolute_path(const std::string &path) {
   return result;
 }
 
-std::shared_ptr<ImportFile> getImportFile(IFilesystem *fs, const std::string &what,
+std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
+                                          const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib) {
   std::vector<std::string> paths;

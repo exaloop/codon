@@ -8,6 +8,8 @@
 #include "codon/parser/cache.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
+#include <ranges>
+
 namespace codon::ast::types {
 
 UnionType::UnionType(Cache *cache) : ClassType(cache, "Union", "Union") {
@@ -60,7 +62,7 @@ int UnionType::unify(Type *typ, Unification *us) {
   return -1;
 }
 
-TypePtr UnionType::generalize(int atLevel) {
+TypePtr UnionType::generalize(int atLevel) const {
   auto r = ClassType::generalize(atLevel);
   auto p = pendingTypes;
   for (auto &t : p)
@@ -71,7 +73,7 @@ TypePtr UnionType::generalize(int atLevel) {
 }
 
 TypePtr UnionType::instantiate(int atLevel, int *unboundCount,
-                               std::unordered_map<int, TypePtr> *cache) {
+                               std::unordered_map<int, TypePtr> *cache) const {
   auto r = ClassType::instantiate(atLevel, unboundCount, cache);
   auto p = pendingTypes;
   for (auto &t : p)
@@ -145,21 +147,22 @@ void UnionType::seal() {
         pendingTypes[i]->getLink()->kind == LinkType::Unbound)
       break;
   std::vector<Type *> typeSet;
+  typeSet.reserve(i);
   for (size_t j = 0; j < i; j++)
-    typeSet.push_back(pendingTypes[j].get());
+    typeSet.emplace_back(pendingTypes[j].get());
   auto t = tv.instantiateType(tv.generateTuple(typeSet.size()), typeSet);
   Unification us;
   generics[0].type->unify(t.get(), &us);
 }
 
-std::vector<Type *> UnionType::getRealizationTypes() {
+std::vector<Type *> UnionType::getRealizationTypes() const {
   seqassert(canRealize(), "cannot realize {}", debugString(2));
   std::map<std::string, Type *> unionTypes;
   for (auto &u : generics[0].type->getClass()->generics)
     unionTypes[u.type->realizedName()] = u.type.get();
   std::vector<Type *> r;
   r.reserve(unionTypes.size());
-  for (auto &[_, t] : unionTypes)
+  for (auto &t : unionTypes | std::views::values)
     r.emplace_back(t);
   return r;
 }

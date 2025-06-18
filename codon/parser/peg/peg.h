@@ -2,12 +2,10 @@
 
 #pragma once
 
-#include <memory>
 #include <string>
 #include <vector>
 
 #include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
 #include "codon/util/common.h"
 
 namespace codon::ast {

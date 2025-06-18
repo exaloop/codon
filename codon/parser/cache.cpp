@@ -3,6 +3,7 @@
 #include "cache.h"
 
 #include <chrono>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -57,7 +58,7 @@ std::string Cache::getContent(const SrcInfo &info) {
   return s.substr(col, len);
 }
 
-Cache::Class *Cache::getClass(types::ClassType *type) {
+Cache::Class *Cache::getClass(const types::ClassType *type) {
   auto name = type->name;
   return in(classes, name);
 }
@@ -89,7 +90,7 @@ types::FuncType *Cache::findFunction(const std::string &name) const {
 }
 
 types::FuncType *Cache::findMethod(types::ClassType *typ, const std::string &member,
-                                   const std::vector<types::Type *> &args) {
+                                   const std::vector<types::Type *> &args) const {
   auto f = TypecheckVisitor(typeCtx).findBestMethod(typ, member, args);
   return f;
 }
@@ -139,8 +140,8 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   ir::Func *f = nullptr;
   if (auto rtv = tv.realize(t.get())) {
     auto pr = pendingRealizations; // copy it as it might be modified
-    for (auto &fn : pr)
-      TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
+    for (const auto &key : pr | std::views::keys)
+      TranslateVisitor(codegenCtx).translateStmts(clone(functions[key].ast));
     f = functions[rtv->getFunc()->ast->getName()].realizations[rtv->realizedName()]->ir;
   }
   return f;
@@ -244,20 +245,20 @@ void Cache::populatePythonModule() {
   LOG_USER("[py] ====== module generation =======");
   auto tv = TypecheckVisitor(typeCtx);
   auto clss = classes; // needs copy as below fns can mutate this
-  for (const auto &[cn, _] : clss) {
+  for (const auto &cn : clss | std::views::keys) {
     auto py = tv.cythonizeClass(cn);
     if (!py.name.empty())
       pyModule->types.push_back(py);
   }
 
   // Handle __iternext__ wrappers
-  for (auto &[cn, _] : classes[CYTHON_ITER].realizations) {
+  for (const auto &cn : classes[CYTHON_ITER].realizations | std::views::keys) {
     auto py = tv.cythonizeIterator(cn);
     pyModule->types.push_back(py);
   }
 
   auto fns = functions; // needs copy as below fns can mutate this
-  for (const auto &[fn, _] : fns) {
+  for (const auto &fn : fns | std::views::keys) {
     auto py = tv.cythonizeFunction(fn);
     if (!py.name.empty())
       pyModule->functions.push_back(py);
@@ -265,8 +266,8 @@ void Cache::populatePythonModule() {
 
   // Handle pending realizations!
   auto pr = pendingRealizations; // copy it as it might be modified
-  for (auto &fn : pr)
-    TranslateVisitor(codegenCtx).translateStmts(clone(functions[fn.first].ast));
+  for (const auto &key : pr | std::views::keys)
+    TranslateVisitor(codegenCtx).translateStmts(clone(functions[key].ast));
 }
 
 } // namespace codon::ast

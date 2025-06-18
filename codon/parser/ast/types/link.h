@@ -42,15 +42,15 @@ public:
   explicit LinkType(TypePtr type);
 
 public:
-  int unify(Type *typ, Unification *undodo) override;
-  TypePtr generalize(int atLevel) override;
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
 public:
   TypePtr follow() override;
-  bool hasUnbounds(bool = false) const override;
-  std::vector<Type *> getUnbounds(bool = false) const override;
+  bool hasUnbounds(bool) const override;
+  std::vector<Type *> getUnbounds(bool) const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;

@@ -62,7 +62,7 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
     auto iter = transform(clone(cast<ForStmt>(expr->getFinalSuite())->getIter()));
     auto ce = cast<CallExpr>(iter);
     IdExpr *id = nullptr;
-    if (ce && (id = cast<IdExpr>(ce->getExpr()))) {
+    if (ce && ((id = cast<IdExpr>(ce->getExpr())))) {
       // Turn off this optimization for static items
       canOptimize &= !startswith(id->getValue(), "std.internal.static.range");
       canOptimize &= !startswith(id->getValue(), "std.internal.static.tuple");
@@ -194,7 +194,6 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
         auto t = instantiateType(mros[i].get(), collectionCls);
         if (t->unify(ti, nullptr) >= 0) {
           return ti->shared_from_this();
-          break;
         }
       }
     }

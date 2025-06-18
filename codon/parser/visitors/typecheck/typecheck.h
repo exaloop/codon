@@ -78,7 +78,7 @@ private: // Node typechecking rules
 
   /* Identifier access expressions (access.cpp) */
   void visit(IdExpr *) override;
-  bool checkCapture(const TypeContext::Item &);
+  void checkCapture(const TypeContext::Item &) const;
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
   Expr *getClassMember(DotExpr *);
@@ -102,20 +102,20 @@ private: // Node typechecking rules
 
   /* Operators (op.cpp) */
   void visit(UnaryExpr *) override;
-  Expr *evaluateStaticUnary(UnaryExpr *);
+  Expr *evaluateStaticUnary(const UnaryExpr *);
   void visit(BinaryExpr *) override;
-  Expr *evaluateStaticBinary(BinaryExpr *);
-  Expr *transformBinarySimple(BinaryExpr *);
-  Expr *transformBinaryIs(BinaryExpr *);
-  std::pair<std::string, std::string> getMagic(const std::string &);
+  Expr *evaluateStaticBinary(const BinaryExpr *);
+  Expr *transformBinarySimple(const BinaryExpr *);
+  Expr *transformBinaryIs(const BinaryExpr *);
+  std::pair<std::string, std::string> getMagic(const std::string &) const;
   Expr *transformBinaryInplaceMagic(BinaryExpr *, bool);
-  Expr *transformBinaryMagic(BinaryExpr *);
+  Expr *transformBinaryMagic(const BinaryExpr *);
   void visit(ChainBinaryExpr *) override;
   void visit(PipeExpr *) override;
   void visit(IndexExpr *) override;
   std::pair<bool, Expr *> transformStaticTupleIndex(types::ClassType *, Expr *, Expr *);
-  int64_t translateIndex(int64_t, int64_t, bool = false);
-  int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t);
+  int64_t translateIndex(int64_t, int64_t, bool = false) const;
+  int64_t sliceAdjustIndices(int64_t, int64_t *, int64_t *, int64_t) const;
   void visit(InstantiateExpr *) override;
   void visit(SliceExpr *) override;
 
@@ -125,14 +125,14 @@ private: // Node typechecking rules
   struct PartialCallData {
     bool isPartial = false;                  // true if the call is partial
     std::string var;                         // set if calling a partial type itself
-    std::string known = "";                  // mask of known arguments
+    std::string known;                       // mask of known arguments
     Expr *args = nullptr, *kwArgs = nullptr; // partial *args/**kwargs expressions
   };
   void visit(StarExpr *) override;
   void visit(KeywordStarExpr *) override;
   void visit(EllipsisExpr *) override;
   void visit(CallExpr *) override;
-  void validateCall(CallExpr *expr);
+  static void validateCall(CallExpr *expr);
   bool transformCallArgs(CallExpr *);
   std::pair<std::shared_ptr<types::FuncType>, Expr *> getCalleeFn(CallExpr *,
                                                                   PartialCallData &);
@@ -154,8 +154,8 @@ private: // Node typechecking rules
 
   /* Imports (import.cpp) */
   void visit(ImportStmt *) override;
-  Stmt *transformSpecialImport(ImportStmt *);
-  std::vector<std::string> getImportPath(Expr *, size_t = 0);
+  Stmt *transformSpecialImport(const ImportStmt *);
+  std::vector<std::string> getImportPath(Expr *, size_t = 0) const;
   Stmt *transformCImport(const std::string &, const std::vector<Param> &, Expr *,
                          const std::string &);
   Stmt *transformCVarImport(const std::string &, Expr *, const std::string &);
@@ -171,7 +171,7 @@ private: // Node typechecking rules
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   Expr *transformForDecorator(Expr *);
-  std::pair<bool, Stmt *> transformStaticForLoop(ForStmt *);
+  std::pair<bool, Stmt *> transformStaticForLoop(const ForStmt *);
 
   /* Errors and exceptions (error.cpp) */
   void visit(AssertStmt *) override;
@@ -197,15 +197,15 @@ private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
   std::vector<types::TypePtr> parseBaseClasses(std::vector<Expr *> &,
-                                               std::vector<Param> &, Stmt *,
-                                               const std::string &, Expr *,
+                                               std::vector<Param> &, const Stmt *,
+                                               const std::string &, const Expr *,
                                                types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
-  std::vector<Stmt *> getClassMethods(Stmt *s);
-  void transformNestedClasses(ClassStmt *, std::vector<Stmt *> &, std::vector<Stmt *> &,
-                              std::vector<Stmt *> &);
+  static std::vector<Stmt *> getClassMethods(Stmt *s);
+  void transformNestedClasses(const ClassStmt *, std::vector<Stmt *> &,
+                              std::vector<Stmt *> &, std::vector<Stmt *> &);
   Stmt *codegenMagic(const std::string &, Expr *, const std::vector<Param> &, bool);
-  int generateKwId(const std::vector<std::string> & = {});
+  int generateKwId(const std::vector<std::string> & = {}) const;
 
 public:
   types::ClassType *generateTuple(size_t n, bool = true);
@@ -222,7 +222,7 @@ private:
 
 public:
   /* Type inference (infer.cpp) */
-  types::Type *unify(types::Type *a, types::Type *b);
+  types::Type *unify(types::Type *a, types::Type *b) const;
   types::Type *unify(types::Type *a, types::TypePtr &&b) { return unify(a, b.get()); }
   types::Type *realize(types::Type *);
   types::TypePtr &&realize(types::TypePtr &&t) {
@@ -257,7 +257,7 @@ private:
   void prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
   std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
-  std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
+  static std::vector<std::pair<size_t, Expr *>> findEllipsis(Expr *);
 
 public:
   bool wrapExpr(Expr **expr, types::Type *expectedType,
@@ -271,14 +271,14 @@ public:
   Expr *generatePartialCall(const std::string &, types::FuncType *, Expr * = nullptr,
                             Expr * = nullptr);
 
-  friend class Cache;
-  friend class TypeContext;
+  friend struct Cache;
+  friend struct TypeContext;
   friend class types::CallableTrait;
   friend class types::UnionType;
 
 private: // Helpers
   std::shared_ptr<std::vector<std::pair<std::string, types::Type *>>>
-  unpackTupleTypes(Expr *);
+  unpackTupleTypes(const Expr *);
   std::tuple<bool, bool, Stmt *, std::vector<ASTNode *>>
   transformStaticLoopCall(Expr *, SuiteStmt **, Expr *,
                           const std::function<ASTNode *(Stmt *)> &, bool = false);
@@ -311,28 +311,28 @@ private:
   }
 
 public:
-  types::Type *extractType(types::Type *t);
-  types::Type *extractType(Expr *e);
-  types::Type *extractType(const std::string &);
-  types::ClassType *extractClassType(Expr *e);
-  types::ClassType *extractClassType(types::Type *t);
-  types::ClassType *extractClassType(const std::string &s);
-  bool isUnbound(types::Type *t) const;
-  bool isUnbound(Expr *e) const;
-  bool hasOverloads(const std::string &root);
-  std::vector<std::string> getOverloads(const std::string &root);
+  types::Type *extractType(types::Type *t) const;
+  types::Type *extractType(Expr *e) const;
+  types::Type *extractType(const std::string &) const;
+  types::ClassType *extractClassType(Expr *e) const;
+  types::ClassType *extractClassType(types::Type *t) const;
+  types::ClassType *extractClassType(const std::string &s) const;
+  static bool isUnbound(types::Type *t);
+  static bool isUnbound(const Expr *e);
+  bool hasOverloads(const std::string &root) const;
+  std::vector<std::string> getOverloads(const std::string &root) const;
   std::string getUnmangledName(const std::string &s) const;
   Cache::Class *getClass(const std::string &t) const;
   Cache::Class *getClass(types::Type *t) const;
   Cache::Function *getFunction(const std::string &n) const;
   Cache::Function *getFunction(types::Type *t) const;
   Cache::Class::ClassRealization *getClassRealization(types::Type *t) const;
-  std::string getRootName(types::FuncType *t);
-  bool isTypeExpr(Expr *e);
-  Cache::Module *getImport(const std::string &s);
-  bool isDispatch(const std::string &s);
-  bool isDispatch(FunctionStmt *ast);
-  bool isDispatch(types::Type *f);
+  std::string getRootName(const types::FuncType *t) const;
+  static bool isTypeExpr(const Expr *e);
+  Cache::Module *getImport(const std::string &s) const;
+  static bool isDispatch(const std::string &s);
+  static bool isDispatch(const FunctionStmt *ast);
+  static bool isDispatch(types::Type *f);
   void addClassGenerics(types::ClassType *typ, bool func = false,
                         bool onlyMangled = false, bool instantiate = false);
   template <typename F>
@@ -345,23 +345,23 @@ public:
     return t;
   }
   types::TypePtr instantiateTypeVar(types::Type *t);
-  void registerGlobal(const std::string &s, bool = false);
-  types::ClassType *getStdLibType(const std::string &type);
-  types::Type *extractClassGeneric(types::Type *t, int idx = 0) const;
-  types::Type *extractFuncGeneric(types::Type *t, int idx = 0) const;
-  types::Type *extractFuncArgType(types::Type *t, int idx = 0);
-  std::string getClassMethod(types::Type *typ, const std::string &member);
-  std::string getTemporaryVar(const std::string &s);
-  bool isImportFn(const std::string &s);
-  int64_t getTime();
-  types::Type *getUnderlyingStaticType(types::Type *t);
+  void registerGlobal(const std::string &s, bool = false) const;
+  types::ClassType *getStdLibType(const std::string &type) const;
+  types::Type *extractClassGeneric(types::Type *t, size_t idx = 0) const;
+  types::Type *extractFuncGeneric(types::Type *t, size_t idx = 0) const;
+  types::Type *extractFuncArgType(types::Type *t, size_t idx = 0) const;
+  std::string getClassMethod(types::Type *typ, const std::string &member) const;
+  std::string getTemporaryVar(const std::string &s) const;
+  static bool isImportFn(const std::string &s);
+  int64_t getTime() const;
+  types::Type *getUnderlyingStaticType(types::Type *t) const;
 
-  int64_t getIntLiteral(types::Type *t, size_t pos = 0);
-  bool getBoolLiteral(types::Type *t, size_t pos = 0);
-  std::string getStrLiteral(types::Type *t, size_t pos = 0);
+  int64_t getIntLiteral(types::Type *t, size_t pos = 0) const;
+  bool getBoolLiteral(types::Type *t, size_t pos = 0) const;
+  std::string getStrLiteral(types::Type *t, size_t pos = 0) const;
   Expr *getParamType(types::Type *t);
-  bool hasSideEffect(Expr *) const;
-  Expr *getHeadExpr(Expr *e) const;
+  static bool hasSideEffect(Expr *);
+  static Expr *getHeadExpr(Expr *e);
 
   Expr *transformNamedTuple(CallExpr *);
   Expr *transformFunctoolsPartial(CallExpr *);
@@ -374,12 +374,12 @@ public:
   Expr *transformHasAttr(CallExpr *);
   Expr *transformGetAttr(CallExpr *);
   Expr *transformSetAttr(CallExpr *);
-  Expr *transformCompileError(CallExpr *);
+  Expr *transformCompileError(CallExpr *) const;
   Expr *transformTupleFn(CallExpr *);
   Expr *transformTypeFn(CallExpr *);
   Expr *transformRealizedFn(CallExpr *);
-  Expr *transformStaticPrintFn(CallExpr *);
-  Expr *transformHasRttiFn(CallExpr *);
+  Expr *transformStaticPrintFn(CallExpr *) const;
+  Expr *transformHasRttiFn(const CallExpr *);
   Expr *transformStaticFnCanCall(CallExpr *);
   Expr *transformStaticFnArgHasType(CallExpr *);
   Expr *transformStaticFnArgGetType(CallExpr *);
@@ -388,13 +388,13 @@ public:
   Expr *transformStaticFnGetDefault(CallExpr *);
   Expr *transformStaticFnWrapCallArgs(CallExpr *);
   Expr *transformStaticVars(CallExpr *);
-  Expr *transformStaticTupleType(CallExpr *);
+  Expr *transformStaticTupleType(const CallExpr *);
   SuiteStmt *generateClassPopulateVTablesAST();
   SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
-  FunctionStmt *generateThunkAST(types::FuncType *fp, types::ClassType *base,
-                                 types::ClassType *derived);
+  FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,
+                                 const types::ClassType *derived);
   SuiteStmt *generateFunctionCallInternalAST(types::FuncType *);
-  SuiteStmt *generateUnionNewAST(types::FuncType *);
+  SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
@@ -411,13 +411,7 @@ public:
                                                  const std::vector<std::string> &);
   std::vector<Stmt *>
   populateStaticHeterogenousTupleLoop(Expr *, const std::vector<std::string> &);
-  ParserErrors findTypecheckErrors(Stmt *n);
-
-public:
-  /// Get the current realization depth (i.e., the number of nested realizations).
-  size_t getRealizationDepth() const;
-  /// Get the name of the current realization stack (e.g., `fn1:fn2:...`).
-  std::string getRealizationStackName() const;
+  ParserErrors findTypecheckErrors(Stmt *n) const;
 
 public:
   /// Create an unbound type with the provided typechecking level.
@@ -427,15 +421,13 @@ public:
   std::shared_ptr<types::LinkType> instantiateUnbound() const;
 
   /// Call `type->instantiate`.
-  /// Prepare the generic instantiation table with the given generics parameter.
+  /// Prepare the generic instantiation table with the given a generic parameter.
   /// Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
   ///          T=int.
-  /// @param expr Expression that needs the type. Used to set type's srcInfo.
-  /// @param setActive If True, add unbounds to activeUnbounds.
   types::TypePtr instantiateType(const SrcInfo &info, types::Type *type,
-                                 types::ClassType *generics = nullptr);
+                                 types::ClassType *generics = nullptr) const;
   types::TypePtr instantiateType(const SrcInfo &info, types::Type *root,
-                                 const std::vector<types::Type *> &generics);
+                                 const std::vector<types::Type *> &generics) const;
   template <typename T>
   std::shared_ptr<T> instantiateType(T *type, types::ClassType *generics = nullptr) {
     return std::static_pointer_cast<T>(
@@ -447,13 +439,13 @@ public:
     return std::static_pointer_cast<T>(
         instantiateType(getSrcInfo(), std::move(root), generics));
   }
-  std::shared_ptr<types::IntStaticType> instantiateStatic(int64_t i) {
+  std::shared_ptr<types::IntStaticType> instantiateStatic(int64_t i) const {
     return std::make_shared<types::IntStaticType>(ctx->cache, i);
   }
-  std::shared_ptr<types::StrStaticType> instantiateStatic(const std::string &s) {
+  std::shared_ptr<types::StrStaticType> instantiateStatic(const std::string &s) const {
     return std::make_shared<types::StrStaticType>(ctx->cache, s);
   }
-  std::shared_ptr<types::BoolStaticType> instantiateStatic(bool i) {
+  std::shared_ptr<types::BoolStaticType> instantiateStatic(bool i) const {
     return std::make_shared<types::BoolStaticType>(ctx->cache, i);
   }
 
@@ -475,12 +467,12 @@ public:
   /// Score is -1 if the given arguments cannot be reordered.
   /// @param known Bitmask that indicated if an argument is already provided
   ///              (partial function) or not.
-  int reorderNamedArgs(types::FuncType *func, const std::vector<CallArg> &args,
+  int reorderNamedArgs(const types::FuncType *func, const std::vector<CallArg> &args,
                        const ReorderDoneFn &onDone, const ReorderErrorFn &onError,
-                       const std::string &known = "");
+                       const std::string &known = "") const;
 
-  bool isCanonicalName(const std::string &name) const;
-  types::FuncType *extractFunction(types::Type *t) const;
+  static bool isCanonicalName(const std::string &name);
+  static types::FuncType *extractFunction(types::Type *t);
 
   ir::PyType cythonizeClass(const std::string &name);
   ir::PyType cythonizeIterator(const std::string &name);

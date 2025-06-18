@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "codon/parser/ast/expr.h"
-#include "codon/parser/ast/types.h"
 #include "codon/parser/common.h"
 #include "codon/util/serialize.h"
 
@@ -65,7 +64,7 @@ struct SuiteStmt : public AcceptorExtend<SuiteStmt, Stmt>, Items<Stmt *> {
   explicit SuiteStmt(std::vector<Stmt *> stmts = {});
   /// Convenience constructor
   template <typename... Ts>
-  SuiteStmt(Stmt *stmt, Ts... stmts) : Items({stmt, stmts...}) {}
+  explicit SuiteStmt(Stmt *stmt, Ts... stmts) : Items({stmt, stmts...}) {}
   SuiteStmt(const SuiteStmt &, bool);
 
   Stmt *firstInBlock() override {
@@ -302,7 +301,7 @@ private:
   /// True if there are no break/continue within the loop
   bool flat;
 
-  friend class GeneratorExpr;
+  friend struct GeneratorExpr;
   friend class ScopingVisitor;
 };
 
@@ -328,7 +327,7 @@ private:
   /// elseSuite can be nullptr (if no else is found).
   SuiteStmt *ifSuite, *elseSuite;
 
-  friend class GeneratorExpr;
+  friend struct GeneratorExpr;
 };
 
 struct MatchCase {
@@ -346,7 +345,7 @@ private:
   Expr *guard;
   SuiteStmt *suite;
 
-  friend class MatchStmt;
+  friend struct MatchStmt;
   friend class TypecheckVisitor;
   template <typename TE, typename TS> friend struct CallbackASTVisitor;
   friend struct ReplacingCallbackASTVisitor;
@@ -530,7 +529,7 @@ private:
   bool async;
   std::string signature;
 
-  friend class Cache;
+  friend struct Cache;
 };
 
 /// Class statement (@(attributes...) class name[generics...]: args... ; suite).
@@ -540,7 +539,8 @@ private:
 ///              def __new__() -> F[T]: ...
 struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   ClassStmt(std::string name = "", std::vector<Param> args = {}, Stmt *suite = nullptr,
-            std::vector<Expr *> decorators = {}, std::vector<Expr *> baseClasses = {},
+            std::vector<Expr *> decorators = {},
+            const std::vector<Expr *> &baseClasses = {},
             std::vector<Expr *> staticBaseClasses = {});
   ClassStmt(const ClassStmt &, bool);
 
@@ -679,7 +679,7 @@ static void operator<<(codon::ast::Stmt *t, Archive &a) {
   a.save(t != nullptr);
   if (t) {
     auto typ = t->dynamicNodeId();
-    auto key = S::_serializers[(void *)typ];
+    auto key = S::_serializers[const_cast<void *>(typ)];
     a.save(key);
     S::save(key, t, a);
   }

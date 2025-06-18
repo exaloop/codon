@@ -21,32 +21,32 @@ std::string ClassType::Generic::realizedName() const {
   return type->realizedName();
 }
 
-ClassType::Generic ClassType::Generic::generalize(int atLevel) {
+ClassType::Generic ClassType::Generic::generalize(int atLevel) const {
   TypePtr t = nullptr;
   if (!isStatic && type && type->getStatic())
     t = type->getStatic()->getNonStaticType()->generalize(atLevel);
   else if (type)
     t = type->generalize(atLevel);
-  return ClassType::Generic(name, niceName, t, id, isStatic);
+  return {name, niceName, t, id, isStatic};
 }
 
 ClassType::Generic
 ClassType::Generic::instantiate(int atLevel, int *unboundCount,
-                                std::unordered_map<int, TypePtr> *cache) {
+                                std::unordered_map<int, TypePtr> *cache) const {
   TypePtr t = nullptr;
   if (!isStatic && type && type->getStatic())
     t = type->getStatic()->getNonStaticType()->instantiate(atLevel, unboundCount,
                                                            cache);
   else if (type)
     t = type->instantiate(atLevel, unboundCount, cache);
-  return ClassType::Generic(name, niceName, t, id, isStatic);
+  return {name, niceName, t, id, isStatic};
 }
 
 ClassType::ClassType(Cache *cache, std::string name, std::string niceName,
                      std::vector<Generic> generics, std::vector<Generic> hiddenGenerics)
     : Type(cache), name(std::move(name)), niceName(std::move(niceName)),
       generics(std::move(generics)), hiddenGenerics(std::move(hiddenGenerics)) {}
-ClassType::ClassType(ClassType *base)
+ClassType::ClassType(const ClassType *base)
     : Type(*base), name(base->name), niceName(base->niceName), generics(base->generics),
       hiddenGenerics(base->hiddenGenerics), isTuple(base->isTuple) {}
 
@@ -157,7 +157,7 @@ int ClassType::unify(Type *typ, Unification *us) {
   }
 }
 
-TypePtr ClassType::generalize(int atLevel) {
+TypePtr ClassType::generalize(int atLevel) const {
   std::vector<Generic> g, hg;
   for (auto &t : generics)
     g.push_back(t.generalize(atLevel));
@@ -170,7 +170,7 @@ TypePtr ClassType::generalize(int atLevel) {
 }
 
 TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
-                               std::unordered_map<int, TypePtr> *cache) {
+                               std::unordered_map<int, TypePtr> *cache) const {
   std::vector<Generic> g, hg;
   for (auto &t : generics)
     g.push_back(t.instantiate(atLevel, unboundCount, cache));
@@ -185,13 +185,11 @@ TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
 bool ClassType::hasUnbounds(bool includeGenerics) const {
   if (name == "unrealized_type")
     return false;
-  for (auto &t : generics)
-    if (t.type && t.type->hasUnbounds(includeGenerics))
-      return true;
-  for (auto &t : hiddenGenerics)
-    if (t.type && t.type->hasUnbounds(includeGenerics))
-      return true;
-  return false;
+  auto pred = [includeGenerics](const auto &t) {
+    return t.type && t.type->hasUnbounds(includeGenerics);
+  };
+  return std::ranges::any_of(generics.begin(), generics.end(), pred) ||
+         std::ranges::any_of(hiddenGenerics.begin(), hiddenGenerics.end(), pred);
 }
 
 std::vector<Type *> ClassType::getUnbounds(bool includeGenerics) const {
@@ -213,24 +211,22 @@ std::vector<Type *> ClassType::getUnbounds(bool includeGenerics) const {
 
 bool ClassType::canRealize() const {
   if (name == "type") {
-    if (!hasUnbounds())
+    if (!hasUnbounds(/*includeGenerics*/ false))
       return true; // always true!
   }
   if (name == "unrealized_type")
     return generics[0].type->getClass() != nullptr;
-  return std::all_of(generics.begin(), generics.end(),
-                     [](auto &t) { return !t.type || t.type->canRealize(); }) &&
-         std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
-                     [](auto &t) { return !t.type || t.type->canRealize(); });
+  auto pred = [](auto &t) { return !t.type || t.type->canRealize(); };
+  return std::ranges::all_of(generics.begin(), generics.end(), pred) &&
+         std::ranges::all_of(hiddenGenerics.begin(), hiddenGenerics.end(), pred);
 }
 
 bool ClassType::isInstantiated() const {
   if (name == "unrealized_type")
     return generics[0].type->getClass() != nullptr;
-  return std::all_of(generics.begin(), generics.end(),
-                     [](auto &t) { return !t.type || t.type->isInstantiated(); }) &&
-         std::all_of(hiddenGenerics.begin(), hiddenGenerics.end(),
-                     [](auto &t) { return !t.type || t.type->isInstantiated(); });
+  auto pred = [](auto &t) { return !t.type || t.type->isInstantiated(); };
+  return std::ranges::all_of(generics.begin(), generics.end(), pred) &&
+         std::ranges::all_of(hiddenGenerics.begin(), hiddenGenerics.end(), pred);
 }
 
 ClassType *ClassType::getHeterogenousTuple() {
