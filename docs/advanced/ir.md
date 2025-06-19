@@ -179,13 +179,11 @@ CIR's `Module` class has three methods to enable this feature:
                            std::vector<types::Generic> generics = {});
 
   /// Gets or realizes a type.
-  /// @param typeName the type name
+  /// @param typeName mangled type name
   /// @param generics the generics
-  /// @param module the module of the type
   /// @return the function or nullptr
   types::Type *getOrRealizeType(const std::string &typeName,
-                                std::vector<types::Generic> generics = {},
-                                const std::string &module = "");
+                                std::vector<types::Generic> generics = {});
 ```
 
 Let's see bidirectionality in action. Consider the following Codon code:

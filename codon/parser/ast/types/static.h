@@ -18,6 +18,7 @@ public:
   bool isInstantiated() const override;
   std::string realizedName() const override;
   virtual Expr *getStaticExpr() const = 0;
+  virtual LiteralKind getStaticKind() = 0;
   virtual Type *getNonStaticType() const;
   StaticType *getStatic() override { return this; }
 };
@@ -34,6 +35,7 @@ struct IntStaticType : public StaticType {
 
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
+  LiteralKind getStaticKind() override { return LiteralKind::Int; }
 
   IntStaticType *getIntStatic() override { return this; }
 };
@@ -50,6 +52,7 @@ struct StrStaticType : public StaticType {
 
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
+  LiteralKind getStaticKind() override { return LiteralKind::String; }
 
   StrStaticType *getStrStatic() override { return this; }
 };
@@ -66,6 +69,7 @@ struct BoolStaticType : public StaticType {
 
   std::string debugString(char mode) const override;
   Expr *getStaticExpr() const override;
+  LiteralKind getStaticKind() override { return LiteralKind::Bool; }
 
   BoolStaticType *getBoolStatic() override { return this; }
 };

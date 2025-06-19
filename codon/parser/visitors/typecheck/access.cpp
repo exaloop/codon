@@ -177,9 +177,9 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     return;
   }
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
-    resultExpr =
-        transform(N<CallExpr>(N<IdExpr>("std.internal.internal.__type_repr__.0"),
-                              expr->getExpr(), N<EllipsisExpr>()));
+    resultExpr = transform(
+        N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.internal", "__type_repr__")),
+                    expr->getExpr(), N<EllipsisExpr>()));
     return;
   }
   // Special case: expr.__is_static__
@@ -518,7 +518,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
       break;
     }
   if (generic) {
-    if (generic->isStatic) {
+    if (generic->staticKind) {
       unify(expr->getType(), generic->getType());
       if (realize(expr->getType())) {
         return wrapSide(generic->type->getStatic()->getStaticExpr());
@@ -533,7 +533,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
 
   // Case: transform `optional.member` to `unwrap(optional).member`
   if (typ->is(TYPE_OPTIONAL)) {
-    expr->expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr->getExpr()));
+    expr->expr = transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr->getExpr()));
     return nullptr;
   }
 

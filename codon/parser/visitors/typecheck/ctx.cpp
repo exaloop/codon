@@ -228,7 +228,7 @@ void TypeContext::dump(int pad) {
     LOG("   ... module:    {}", t->moduleName);
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
     LOG("   ... scope:     {}", t->scope);
-    LOG("   ... gnrc/sttc: {} / {}", t->generic, static_cast<int>(t->isStatic()));
+    LOG("   ... gnrc/sttc: {} / {}", t->generic, static_cast<int>(t->getStaticKind()));
   }
 }
 

@@ -13,8 +13,9 @@ namespace transform {
 namespace pythonic {
 namespace {
 
-static const std::string LIST = "std.internal.types.array.List.0";
-static const std::string SLICE = "std.internal.types.slice.Slice.0[int,int,int]";
+const std::string LIST = ast::getMangledClass("std.internal.types.array", "List");
+const std::string SLICE =
+    ast::getMangledClass("std.internal.types.slice", "Slice") + "[int,int,int]";
 
 bool isList(Value *v) { return v->getType()->getName().rfind(LIST + "[", 0) == 0; }
 bool isSlice(Value *v) { return v->getType()->getName() == SLICE; }

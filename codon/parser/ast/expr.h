@@ -633,7 +633,7 @@ private:
 #undef ACCEPT
 
 bool isId(Expr *e, const std::string &s);
-char getStaticGeneric(Expr *e);
+types::LiteralKind getStaticGeneric(Expr *e);
 
 } // namespace codon::ast
 

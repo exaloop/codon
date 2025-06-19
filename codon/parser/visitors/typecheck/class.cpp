@@ -114,9 +114,9 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         if (defType)
           generic->defaultType = extractType(defType)->shared_from_this();
         if (auto st = getStaticGeneric(a.getType())) {
-          if (st > 3)
-            a.type = transform(a.getType()); // error check
-          generic->isStatic = st;
+          if (st == LiteralKind::Runtime)
+            a.type = transform(a.getType()); // trigger error
+          generic->staticKind = st;
           auto val = ctx->addVar(genName, varName, generic);
           val->generic = true;
         } else {
@@ -136,7 +136,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         }
         typ->generics.emplace_back(varName, genName,
                                    generic->generalize(ctx->typecheckLevel), typId,
-                                   generic->isStatic);
+                                   generic->staticKind);
         args.emplace_back(varName, a.getType(), defType, a.status);
       }
     }
@@ -733,7 +733,7 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
       const auto &f = cls->fields[i];
       auto gt = f.getType()->getLink();
       t->generics.emplace_back(cast<IdExpr>(f.typeExpr)->getValue(), gt->genericName,
-                               f.type, gt->id, 0);
+                               f.type, gt->id, LiteralKind::Runtime);
     }
     val = getImport(STDLIB_IMPORT)->ctx->addType(key, key, t);
   }

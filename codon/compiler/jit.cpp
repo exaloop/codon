@@ -130,7 +130,8 @@ void JITState::undoUnusedIR() {
 void JITState::cleanUpRealizations() {
   // Clean-up IR nodes after single JIT input
   for (auto &f : cache->functions) {
-    if (f.first == "__internal__.class_populate_vtables:0")
+    if (f.first == ast::getMangledMethod("std.internal.core", "__internal__",
+                                         "class_populate_vtables"))
       continue;
     f.second.realizations.clear();
   }

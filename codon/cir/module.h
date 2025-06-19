@@ -336,8 +336,7 @@ public:
   /// @param module the module of the type
   /// @return the function or nullptr
   types::Type *getOrRealizeType(const std::string &typeName,
-                                std::vector<types::Generic> generics = {},
-                                const std::string &module = "");
+                                std::vector<types::Generic> generics = {});
 
   /// @return the void type
   types::Type *getVoidType();

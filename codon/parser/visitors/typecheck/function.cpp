@@ -58,7 +58,8 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (stmt->hasAttribute(Attr::Internal)) {
-    stmt->expr = transform(N<CallExpr>(N<IdExpr>("NoneType.__new__:0")));
+    stmt->expr = transform(N<CallExpr>(
+        N<IdExpr>(getMangledMethod("std.internal.core", "NoneType", "__new__"))));
     stmt->setDone();
     return;
   }
@@ -88,7 +89,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
                       N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
     }
 
-    if (!ctx->getBase()->returnType->isStaticType() &&
+    if (!ctx->getBase()->returnType->getStaticKind() &&
         stmt->getExpr()->getType()->getStatic())
       stmt->getExpr()->setType(stmt->getExpr()
                                    ->getType()
@@ -157,15 +158,16 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
     if (isAttr) {
       if (!attrName.empty()) {
-        if (attrName == "std.internal.attributes.test.0:0")
+        if (attrName == getMangledFunc("std.internal.attributes", "test"))
           stmt->setAttribute(Attr::Test);
-        else if (attrName == "std.internal.attributes.export.0:0")
+        else if (attrName == getMangledFunc("std.internal.attributes", "export"))
           stmt->setAttribute(Attr::Export);
-        else if (attrName == "std.internal.attributes.inline.0:0")
+        else if (attrName == getMangledFunc("std.internal.attributes", "inline"))
           stmt->setAttribute(Attr::Inline);
-        else if (attrName == "std.internal.attributes.no_arg_reorder.0:0")
+        else if (attrName ==
+                 getMangledFunc("std.internal.attributes", "no_arg_reorder"))
           stmt->setAttribute(Attr::NoArgReorder);
-        else if (attrName == "overload:0")
+        else if (attrName == getMangledFunc("std.internal.core", "overload"))
           stmt->setAttribute(Attr::Overload);
 
         if (!stmt->hasAttribute(Attr::FunctionAttributes))
@@ -250,7 +252,6 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Handle captures. Add additional argument to the function for every capture.
   // Make sure to account for **kwargs if present
   if (auto b = stmt->getAttribute<BindingsAttribute>(Attr::Bindings)) {
-    std::array<const char *, 4> op{"", "int", "str", "bool"};
     size_t insertSize = stmt->size();
     if (!stmt->empty() && startswith(stmt->back().name, "**"))
       insertSize--;
@@ -263,15 +264,16 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (v->isGeneric() && parentClassGeneric) {
             stmt->setAttribute(Attr::Method);
           }
-          if (!v->isGeneric() || (v->isStatic() && !parentClassGeneric)) {
+          if (!v->isGeneric() || (v->getStaticKind() && !parentClassGeneric)) {
             if (!v->isFunc()) {
               if (v->isType()) {
                 stmt->items.insert(stmt->items.begin() + insertSize++,
                                    Param(cc, N<IdExpr>(TYPE_TYPE)));
-              } else if (auto si = v->isStatic()) {
+              } else if (auto si = v->getStaticKind()) {
                 stmt->items.insert(
                     stmt->items.begin() + insertSize++,
-                    Param(cc, N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[si]))));
+                    Param(cc, N<IndexExpr>(N<IdExpr>("Literal"),
+                                           N<IdExpr>(Type::stringFromLiteral(si)))));
               } else {
                 stmt->items.insert(stmt->items.begin() + insertSize++, Param(cc));
               }
@@ -359,7 +361,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         if (auto st = getStaticGeneric(a.getType())) {
           auto val = ctx->addVar(varName, name, generic);
           val->generic = true;
-          generic->isStatic = st;
+          generic->staticKind = st;
           if (defType)
             generic->defaultType = extractType(defType)->shared_from_this();
         } else {
@@ -381,7 +383,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         auto g = generic->generalize(ctx->typecheckLevel);
         if (startswith(varName, "$"))
           varName = varName.substr(1);
-        explicits.emplace_back(name, varName, g, typId, g->isStaticType());
+        explicits.emplace_back(name, varName, g, typId, g->getStaticKind());
       }
     }
 
@@ -450,7 +452,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     if (ret) {
       // Fix for functions returning Literal types
       if (auto st = getStaticGeneric(ret))
-        baseType->generics[1].isStatic = st;
+        baseType->generics[1].staticKind = st;
 
       unify(retType, extractType(ret));
       if (isId(ret, "Union"))

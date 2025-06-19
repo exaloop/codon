@@ -22,10 +22,13 @@
 namespace codon {
 namespace ir {
 namespace {
-const std::string EXPORT_ATTR = "std.internal.attributes.export.0:0";
-const std::string INLINE_ATTR = "std.internal.attributes.inline.0:0";
-const std::string NOINLINE_ATTR = "std.internal.attributes.noinline.0:0";
-const std::string GPU_KERNEL_ATTR = "std.gpu.kernel.0:0";
+const std::string EXPORT_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "export");
+const std::string INLINE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "inline");
+const std::string NOINLINE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "noinline");
+const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";

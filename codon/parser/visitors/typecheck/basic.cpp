@@ -17,7 +17,9 @@ void TypecheckVisitor::visit(NoneExpr *expr) {
   unify(expr->getType(), instantiateType(getStdLibType(TYPE_OPTIONAL)));
   if (realize(expr->getType())) {
     // Realize the appropriate `Optional.__new__` for the translation stage
-    auto f = ctx->forceFind(TYPE_OPTIONAL ".__new__:0")->getType();
+    auto f =
+        ctx->forceFind(getMangledMethod("std.internal.core", TYPE_OPTIONAL, "__new__"))
+            ->getType();
     auto t = realize(instantiateType(f, extractClassType(expr)));
     expr->setDone();
   }

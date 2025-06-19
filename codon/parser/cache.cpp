@@ -17,6 +17,10 @@
 
 namespace codon::ast {
 
+const std::string VAR_ARGV = getMangledVar("", "__argv__");
+const std::string FN_OPTIONAL_UNWRAP =
+    getMangledFunc("std.internal.types.optional", "unwrap");
+
 Cache::Cache(std::string argv0, const std::shared_ptr<IFilesystem> &fs) : fs(fs) {
   if (!this->fs) {
     this->fs = std::make_shared<Filesystem>(argv0);
@@ -236,6 +240,8 @@ Cache::mergeC3(std::vector<std::vector<types::TypePtr>> &seqs) {
  */
 void Cache::populatePythonModule() {
   using namespace ast;
+
+  const std::string CYTHON_ITER = "_PyWrap.IterWrap";
 
   if (!pythonExt)
     return;

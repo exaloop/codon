@@ -297,7 +297,8 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       star->expr = transform(star->getExpr());
       auto typ = star->getExpr()->getClassType();
       while (typ && typ->is(TYPE_OPTIONAL)) {
-        star->expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), star->getExpr()));
+        star->expr =
+            transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), star->getExpr()));
         typ = star->getExpr()->getClassType();
       }
       if (!typ) // Process later
@@ -316,7 +317,8 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       kwstar->expr = transform(kwstar->getExpr());
       auto typ = kwstar->getExpr()->getClassType();
       while (typ && typ->is(TYPE_OPTIONAL)) {
-        kwstar->expr = transform(N<CallExpr>(N<IdExpr>(FN_UNWRAP), kwstar->getExpr()));
+        kwstar->expr =
+            transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), kwstar->getExpr()));
         typ = kwstar->getExpr()->getClassType();
       }
       if (!typ)
@@ -749,10 +751,9 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       const auto &gen = calleeFn->funcGenerics[si];
       if (typeArgs[si]) {
         auto typ = extractType(typeArgs[si]);
-        if (gen.isStatic)
-          if (!typ->isStaticType()) {
-            E(Error::EXPECTED_STATIC, typeArgs[si]);
-          }
+        if (gen.staticKind && !typ->getStaticKind()) {
+          E(Error::EXPECTED_STATIC, typeArgs[si]);
+        }
         unify(typ, gen.getType());
       } else {
         if (isUnbound(gen.getType()) && !(*calleeFn->ast)[si].getDefault() &&
@@ -893,59 +894,62 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
   if (!ei)
     return {false, nullptr};
-  auto isF = [](const IdExpr *val, const std::string &s) {
-    return val->getValue() == s || val->getValue() == s + ":0" ||
-           val->getValue() == s + ".0:0";
+  auto isF = [](const IdExpr *val, const std::string &module, const std::string &cls,
+                const std::string &name = "") {
+    if (name.empty())
+      return val->getValue() == getMangledFunc(module, cls);
+    else
+      return val->getValue() == getMangledMethod(module, cls, name);
   };
-  if (isF(ei, "superf")) {
+  if (isF(ei, "std.internal.core", "superf")) {
     return {true, transformSuperF(expr)};
-  } else if (isF(ei, "super")) {
+  } else if (isF(ei, "std.internal.core", "super")) {
     return {true, transformSuper()};
-  } else if (isF(ei, "__ptr__")) {
+  } else if (isF(ei, "std.internal.core", "__ptr__")) {
     return {true, transformPtr(expr)};
-  } else if (isF(ei, "__array__.__new__")) {
+  } else if (isF(ei, "std.internal.core", "__array__", "__new__")) {
     return {true, transformArray(expr)};
-  } else if (isF(ei, "isinstance")) { // static
+  } else if (isF(ei, "std.internal.core", "isinstance")) { // static
     return {true, transformIsInstance(expr)};
-  } else if (isF(ei, "std.internal.static.len")) { // static
+  } else if (isF(ei, "std.internal.static", "len")) { // static
     return {true, transformStaticLen(expr)};
-  } else if (isF(ei, "hasattr")) { // static
+  } else if (isF(ei, "std.internal.core", "hasattr")) { // static
     return {true, transformHasAttr(expr)};
-  } else if (isF(ei, "getattr")) {
+  } else if (isF(ei, "std.internal.core", "getattr")) {
     return {true, transformGetAttr(expr)};
-  } else if (isF(ei, "setattr")) {
+  } else if (isF(ei, "std.internal.core", "setattr")) {
     return {true, transformSetAttr(expr)};
-  } else if (isF(ei, "type.__new__")) {
+  } else if (isF(ei, "std.internal.core", "type", "__new__")) {
     return {true, transformTypeFn(expr)};
-  } else if (isF(ei, "compile_error")) {
+  } else if (isF(ei, "std.internal.core", "compile_error")) {
     return {true, transformCompileError(expr)};
-  } else if (isF(ei, "std.internal.static.print")) {
+  } else if (isF(ei, "std.internal.static", "print")) {
     return {false, transformStaticPrintFn(expr)};
-  } else if (isF(ei, "std.collections.namedtuple")) {
+  } else if (isF(ei, "std.collections", "namedtuple")) {
     return {true, transformNamedTuple(expr)};
-  } else if (isF(ei, "std.functools.partial")) {
+  } else if (isF(ei, "std.functools", "partial")) {
     return {true, transformFunctoolsPartial(expr)};
-  } else if (isF(ei, "std.internal.static.has_rtti")) { // static
+  } else if (isF(ei, "std.internal.static", "has_rtti")) { // static
     return {true, transformHasRttiFn(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.realized")) {
+  } else if (isF(ei, "std.internal.static", "function", "realized")) {
     return {true, transformRealizedFn(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.can_call")) { // static
+  } else if (isF(ei, "std.internal.static", "function", "can_call")) { // static
     return {true, transformStaticFnCanCall(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.has_type")) { // static
+  } else if (isF(ei, "std.internal.static", "function", "has_type")) { // static
     return {true, transformStaticFnArgHasType(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.get_type")) {
+  } else if (isF(ei, "std.internal.static", "function", "get_type")) {
     return {true, transformStaticFnArgGetType(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.args")) {
+  } else if (isF(ei, "std.internal.static", "function", "args")) {
     return {true, transformStaticFnArgs(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.has_default")) { // static
+  } else if (isF(ei, "std.internal.static", "function", "has_default")) { // static
     return {true, transformStaticFnHasDefault(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.get_default")) {
+  } else if (isF(ei, "std.internal.static", "function", "get_default")) {
     return {true, transformStaticFnGetDefault(expr)};
-  } else if (isF(ei, "std.internal.static.function.0.wrap_args")) {
+  } else if (isF(ei, "std.internal.static", "function", "wrap_args")) {
     return {true, transformStaticFnWrapCallArgs(expr)};
-  } else if (isF(ei, "std.internal.static.vars")) {
+  } else if (isF(ei, "std.internal.static", "vars")) {
     return {true, transformStaticVars(expr)};
-  } else if (isF(ei, "std.internal.static.tuple_type")) {
+  } else if (isF(ei, "std.internal.static", "tuple_type")) {
     return {true, transformStaticTupleType(expr)};
   } else {
     return {false, nullptr};

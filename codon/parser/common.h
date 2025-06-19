@@ -122,6 +122,7 @@ V *in(std::unordered_map<K, V> &m, const U &item) {
 }
 /// @return True if an item is found in an string m.
 bool in(const std::string &m, const std::string &item);
+bool in(const std::string &m, char item);
 
 /// AST utilities
 
@@ -231,6 +232,19 @@ public:
   SetInScope(T *t, const T &val) : t(t), origVal(*t) { *t = val; }
   ~SetInScope() { *t = origVal; }
 };
+
+std::string getMangledClass(const std::string &module, const std::string &cls,
+                            size_t id = 0);
+
+std::string getMangledFunc(const std::string &module, const std::string &fn,
+                           size_t overload = 0, size_t id = 0);
+
+std::string getMangledMethod(const std::string &module, const std::string &cls,
+                             const std::string &method, size_t overload = 0,
+                             size_t id = 0);
+
+std::string getMangledVar(const std::string &module, const std::string &var,
+                          size_t id = 0);
 
 } // namespace ast
 } // namespace codon

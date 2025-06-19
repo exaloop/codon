@@ -237,6 +237,10 @@ int findStar(const std::string &s) {
   }
   return i;
 }
+bool in(const std::string &m, char item) {
+  auto f = m.find(item);
+  return f != std::string::npos;
+}
 bool in(const std::string &m, const std::string &item) {
   auto f = m.find(item);
   return f != std::string::npos;
@@ -377,6 +381,46 @@ std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
   if (paths.empty())
     return nullptr;
   return std::make_shared<ImportFile>(fs->get_root(paths[0]));
+}
+
+std::string getMangledClass(const std::string &module, const std::string &cls,
+                            size_t id) {
+  if (module == "std.internal.core")
+    return cls;
+  std::string num;
+  if (!in(cls, '.'))
+    num = "." + std::to_string(id);
+  return (module.empty() ? "" : (module + ".")) + cls + num;
+}
+
+std::string getMangledFunc(const std::string &module, const std::string &fn,
+                           size_t overload, size_t id) {
+  if (module == "std.internal.core")
+    return fn + ":" + std::to_string(overload);
+  std::string num;
+  if (!in(fn, '.'))
+    num = "." + std::to_string(id);
+  return (module.empty() ? "" : (module + ".")) + fn + num + ":" +
+         std::to_string(overload);
+}
+
+std::string getMangledMethod(const std::string &module, const std::string &cls,
+                             const std::string &method, size_t overload, size_t id) {
+  if (module == "std.internal.core")
+    return cls + "." + method + ":" + std::to_string(overload);
+  std::string num;
+  if (!in(cls, '.'))
+    num = "." + std::to_string(id);
+  return (module.empty() ? "" : (module + ".")) + cls + num + "." + method + ":" +
+         std::to_string(overload);
+}
+
+std::string getMangledVar(const std::string &module, const std::string &var,
+                          size_t id) {
+  std::string num;
+  if (!in(var, '.'))
+    num = "." + std::to_string(id);
+  return (module.empty() ? "" : (module + ".")) + var + num;
 }
 
 } // namespace codon::ast

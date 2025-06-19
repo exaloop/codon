@@ -56,7 +56,7 @@ struct TypecheckItem : public SrcObject {
   /// (i.e., a block that might not be executed during the runtime)
   bool isConditional() const { return scope.size() > 1; }
   bool isGeneric() const { return generic; }
-  char isStatic() const { return type->isStaticType(); }
+  types::LiteralKind getStaticKind() const { return type->getStaticKind(); }
 
   types::Type *getType() const { return type.get(); }
   std::string getName() const { return canonicalName; }

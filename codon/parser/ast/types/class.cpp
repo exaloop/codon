@@ -10,36 +10,36 @@
 namespace codon::ast::types {
 
 std::string ClassType::Generic::debugString(char mode) const {
-  if (!isStatic && type->getStatic() && mode != 2)
+  if (!staticKind && type->getStatic() && mode != 2)
     return type->getStatic()->getNonStaticType()->debugString(mode);
   return type->debugString(mode);
 }
 
 std::string ClassType::Generic::realizedName() const {
-  if (!isStatic && type->getStatic())
+  if (!staticKind && type->getStatic())
     return type->getStatic()->getNonStaticType()->realizedName();
   return type->realizedName();
 }
 
 ClassType::Generic ClassType::Generic::generalize(int atLevel) const {
   TypePtr t = nullptr;
-  if (!isStatic && type && type->getStatic())
+  if (!staticKind && type && type->getStatic())
     t = type->getStatic()->getNonStaticType()->generalize(atLevel);
   else if (type)
     t = type->generalize(atLevel);
-  return {name, niceName, t, id, isStatic};
+  return {name, niceName, t, id, staticKind};
 }
 
 ClassType::Generic
 ClassType::Generic::instantiate(int atLevel, int *unboundCount,
                                 std::unordered_map<int, TypePtr> *cache) const {
   TypePtr t = nullptr;
-  if (!isStatic && type && type->getStatic())
+  if (!staticKind && type && type->getStatic())
     t = type->getStatic()->getNonStaticType()->instantiate(atLevel, unboundCount,
                                                            cache);
   else if (type)
     t = type->instantiate(atLevel, unboundCount, cache);
-  return {name, niceName, t, id, isStatic};
+  return {name, niceName, t, id, staticKind};
 }
 
 ClassType::ClassType(Cache *cache, std::string name, std::string niceName,

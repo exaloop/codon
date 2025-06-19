@@ -11,19 +11,20 @@
 namespace codon::ast::types {
 
 LinkType::LinkType(Cache *cache, Kind kind, int id, int level, TypePtr type,
-                   char isStatic, std::shared_ptr<Trait> trait, TypePtr defaultType,
-                   std::string genericName, bool passThrough)
+                   LiteralKind staticKind, std::shared_ptr<Trait> trait,
+                   TypePtr defaultType, std::string genericName, bool passThrough)
     : Type(cache), kind(kind), id(id), level(level), type(std::move(type)),
-      isStatic(isStatic), trait(std::move(trait)), genericName(std::move(genericName)),
-      defaultType(std::move(defaultType)), passThrough(passThrough) {
+      staticKind(staticKind), trait(std::move(trait)),
+      genericName(std::move(genericName)), defaultType(std::move(defaultType)),
+      passThrough(passThrough) {
   seqassert((this->type && kind == Link) || (!this->type && kind == Generic) ||
                 (!this->type && kind == Unbound),
             "inconsistent link state");
 }
 
 LinkType::LinkType(TypePtr type)
-    : Type(type), kind(Link), id(0), level(0), type(std::move(type)), isStatic(0),
-      trait(nullptr), defaultType(nullptr), passThrough(false) {
+    : Type(type), kind(Link), id(0), level(0), type(std::move(type)),
+      staticKind(Runtime), trait(nullptr), defaultType(nullptr), passThrough(false) {
   seqassert(this->type, "link to nullptr");
 }
 
@@ -33,12 +34,12 @@ int LinkType::unify(Type *typ, Unification *undo) {
     return type->unify(typ, undo);
   } else {
     // Case 3: Unbound unification
-    if (isStaticType() != typ->isStaticType()) {
-      if (!isStaticType()) {
+    if (getStaticKind() != typ->getStaticKind()) {
+      if (!getStaticKind()) {
         // other one is; move this to non-static equivalent
         if (undo) {
           undo->statics.push_back(shared_from_this());
-          isStatic = typ->isStaticType();
+          staticKind = typ->getStaticKind();
         }
       } else {
         return -1;
@@ -77,16 +78,16 @@ int LinkType::unify(Type *typ, Unification *undo) {
       LOG_TYPECHECK("[unify] {} := {}", id, typ->debugString(2));
       // Link current type to typ and ensure that this modification is recorded in undo.
       undo->linked.push_back(shared_from_this());
-      kind = Link;
+      this->kind = Link;
       seqassert(!typ->getLink() || typ->getLink()->kind != Unbound ||
                     typ->getLink()->id <= id,
                 "type unification is not consistent");
-      type = typ->follow();
-      if (auto t = type->getLink())
-        if (trait && t->kind == Unbound && !t->trait) {
-          undo->traits.push_back(t->shared_from_this());
-          t->trait = trait;
-        }
+      this->type = typ->follow()->shared_from_this();
+
+      if (auto t = type->getLink(); t && trait && t->kind == Unbound && !t->trait) {
+        undo->traits.push_back(t->shared_from_this());
+        t->trait = trait;
+      }
     }
     return 0;
   }
@@ -102,7 +103,7 @@ TypePtr LinkType::generalize(int atLevel) const {
   } else if (kind == Unbound) {
     if (level >= atLevel) {
       return std::make_shared<LinkType>(
-          cache, Generic, id, 0, nullptr, isStatic,
+          cache, Generic, id, 0, nullptr, staticKind,
           trait ? std::static_pointer_cast<Trait>(trait->generalize(atLevel)) : nullptr,
           defaultType ? defaultType->generalize(atLevel) : nullptr, genericName,
           passThrough);
@@ -122,7 +123,7 @@ TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
       return *res;
     auto t = std::make_shared<LinkType>(
         this->cache, Unbound, unboundCount ? (*unboundCount)++ : id, atLevel, nullptr,
-        isStatic,
+        staticKind,
         trait ? std::static_pointer_cast<Trait>(
                     trait->instantiate(atLevel, unboundCount, cache))
               : nullptr,
@@ -142,11 +143,11 @@ TypePtr LinkType::instantiate(int atLevel, int *unboundCount,
   }
 }
 
-TypePtr LinkType::follow() {
+Type *LinkType::follow() {
   if (kind == Link)
     return type->follow();
   else
-    return shared_from_this();
+    return this;
 }
 
 std::vector<Type *> LinkType::getUnbounds(bool includeGenerics) const {
@@ -184,7 +185,7 @@ std::string LinkType::debugString(char mode) const {
       return (genericName.empty() ? "" : genericName + ":") +
              (kind == Unbound ? "?" : "#") + fmt::format("{}", id) +
              (trait ? ":" + trait->debugString(mode) : "") +
-             (isStatic ? fmt::format(":S{}", static_cast<int>(isStatic)) : "");
+             (staticKind ? fmt::format(":S{}", static_cast<int>(staticKind)) : "");
     } else if (trait) {
       return trait->debugString(mode);
     }

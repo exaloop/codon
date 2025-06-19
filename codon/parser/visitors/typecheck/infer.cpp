@@ -209,7 +209,7 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
         std::string name_args;
         if (startswith(name, "%_import_")) {
           for (auto &i : ctx->cache->imports | std::views::values)
-            if (i.importVar + "_call.0:0" == name) {
+            if (getMangledFunc("", i.importVar + "_call") == name) {
               name = i.name;
               break;
             }
@@ -420,7 +420,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         un = un.substr(1);
         auto g = type->funcGenerics[gi];
         auto t = g.type;
-        if (!g.isStatic && !t->is(TYPE_TYPE))
+        if (!g.staticKind && !t->is(TYPE_TYPE))
           t = instantiateTypeVar(t.get());
         auto v = ctx->addType(un, varName, t);
         v->generic = true;
@@ -480,7 +480,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     }
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
-    if (!ast->ret && isUnbound(type->getRetType())) {
+    if (!ast->getReturn() && isUnbound(type->getRetType())) {
       unify(type->getRetType(), getStdLibType("NoneType"));
     }
   }
@@ -626,7 +626,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
       types.push_back(forceFindIRType(m.getType()));
     auto ret = forceFindIRType(extractClassGeneric(t, 1));
     handle = module->unsafeGetFuncType(realizedName, ret, types);
-  } else if (t->name == "std.experimental.simd.Vec") {
+  } else if (t->name == getMangledClass("std.experimental.simd", "Vec")) {
     seqassert(types.size() == 2 && !statics.empty(), "bad generics/statics");
     handle = module->unsafeGetVectorType(getIntLiteral(statics[0]), types[0]);
   } else {

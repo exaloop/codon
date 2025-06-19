@@ -155,7 +155,8 @@ void TranslateVisitor::defaultVisit(Expr *n) {
 }
 
 void TranslateVisitor::visit(NoneExpr *expr) {
-  auto f = expr->getType()->realizedName() + ":Optional.__new__:0";
+  auto f = expr->getType()->realizedName() + ":" +
+           getMangledMethod("std.internal.core", TYPE_OPTIONAL, "__new__");
   auto val = ctx->find(f);
   seqassert(val, "cannot find '{}'", f);
   result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),
@@ -184,7 +185,7 @@ void TranslateVisitor::visit(IdExpr *expr) {
     // ctx->find(expr->getValue());
     seqassert(val, "cannot find '{}'", expr->getValue());
   }
-  if (expr->getValue() == "__vtable_size__.0") {
+  if (expr->getValue() == getMangledVar("", "__vtable_size__")) {
     // LOG("[] __vtable_size__={}", ctx->cache->classRealizationCnt + 2);
     result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
                                 getType(expr->getType()));
@@ -194,8 +195,9 @@ void TranslateVisitor::visit(IdExpr *expr) {
     result = make<ir::VarValue>(expr, f);
   } else {
     // Just use NoneType which is {} (same as type)
-    auto ntval = ctx->find("NoneType.__new__:0");
-    seqassert(ntval, "cannot find '{}'", "NoneType.__new__:0");
+    auto ntval =
+        ctx->find(getMangledMethod("std.internal.core", "NoneType", "__new__"));
+    seqassert(ntval, "cannot find '{}'", "NoneType.__new__");
     result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, ntval->getFunc()),
                                  std::vector<ir::Value *>{});
   }
@@ -272,7 +274,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 
 void TranslateVisitor::visit(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
-  if (ei && ei->getValue() == "__ptr__:0") {
+  if (ei && ei->getValue() == getMangledFunc("std.internal.core", "__ptr__")) {
     auto id = cast<IdExpr>(expr->begin()->getExpr());
     if (!id) {
       // Case where id is guarded by a check
@@ -285,7 +287,8 @@ void TranslateVisitor::visit(CallExpr *expr) {
     seqassert(val && val->getVar(), "{} is not a variable", key);
     result = make<ir::PointerValue>(expr, val->getVar());
     return;
-  } else if (ei && ei->getValue() == "__array__.__new__:0") {
+  } else if (ei && ei->getValue() ==
+                       getMangledMethod("std.internal.core", "__array__", "__new__")) {
     auto fnt = expr->getExpr()->getType()->getFunc();
     auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
     auto typ = fnt->funcParent->getClass()->generics[0].getType();
@@ -436,7 +439,8 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
   IdExpr *ei = nullptr;
   auto ce = cast<CallExpr>(stmt->getExpr());
   if (ce && ((ei = cast<IdExpr>(ce->getExpr()))) &&
-      ei->getValue() == "__internal__.yield_final:0") {
+      ei->getValue() ==
+          getMangledMethod("std.internal.core", "__internal__", "yield_final")) {
     result = make<ir::YieldInstr>(stmt, transform((*ce)[0].value), true);
     ctx->getBase()->setGenerator();
   } else {
@@ -536,7 +540,7 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     auto c = cast<CallExpr>(stmt->getDecorator());
     seqassert(c, "for par is not a call: {}", *(stmt->getDecorator()));
     auto fc = c->getExpr()->getType()->getFunc();
-    seqassert(fc && fc->ast->getName() == "std.openmp.for_par.0:0",
+    seqassert(fc && fc->ast->getName() == getMangledFunc("std.openmp", "for_par"),
               "for par is not a function");
     auto schedule = fc->funcGenerics[0].type->getStrStatic()->value;
     bool ordered = fc->funcGenerics[1].type->getBoolStatic()->value;

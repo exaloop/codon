@@ -13,7 +13,7 @@ using namespace types;
 /// evaluated or not.
 template <typename TT, typename TF>
 auto evaluateStaticCondition(Expr *cond, TT ready, TF notReady) {
-  seqassertn(cond->getType()->isStaticType(), "not a static condition");
+  seqassertn(cond->getType()->getStaticKind(), "not a static condition");
   if (cond->getType()->canRealize()) {
     bool isTrue = false;
     if (auto as = cond->getType()->getStrStatic())
@@ -43,7 +43,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   std::swap(ctx->expectedType, oldExpectedType);
 
   // Static if evaluation
-  if (expr->getCond()->getType()->isStaticType()) {
+  if (expr->getCond()->getType()->getStaticKind()) {
     resultExpr = evaluateStaticCondition(
         expr->getCond(),
         [&](bool isTrue) {
@@ -54,7 +54,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
     if (resultExpr)
       unify(expr->getType(), resultExpr->getType());
     else
-      expr->getType()->getUnbound()->isStatic = 1; // TODO: determine later!
+      expr->getType()->getUnbound()->staticKind = LiteralKind::Int; // determine later!
     return;
   }
 
@@ -90,7 +90,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   std::swap(ctx->expectedType, oldExpectedType);
 
   // Static if evaluation
-  if (stmt->getCond()->getType()->isStaticType()) {
+  if (stmt->getCond()->getType()->getStaticKind()) {
     resultStmt = evaluateStaticCondition(
         stmt->getCond(),
         [&](bool isTrue) {
@@ -197,10 +197,11 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
     }
     return N<IfStmt>(
         isinstance(var, "Tuple"),
-        N<IfStmt>(
-            N<BinaryExpr>(N<CallExpr>(N<IdExpr>("std.internal.static.len.0"), var),
-                          "==", N<IntExpr>(et->size())),
-            suite));
+        N<IfStmt>(N<BinaryExpr>(
+                      N<CallExpr>(
+                          N<IdExpr>(getMangledFunc("std.internal.static", "len")), var),
+                      "==", N<IntExpr>(et->size())),
+                  suite));
   } else if (auto el = cast<ListExpr>(pattern)) {
     // List pattern
     size_t ellipsis = findEllipsis(el->items), sz = el->size();

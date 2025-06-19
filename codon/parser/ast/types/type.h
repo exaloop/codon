@@ -27,6 +27,8 @@ struct StrStaticType;
 struct BoolStaticType;
 struct UnionType;
 
+enum LiteralKind { Runtime, Int, String, Bool };
+
 /**
  * An abstract type class that describes methods needed for the type inference.
  * (Hindley-Milner's Algorithm W inference; see
@@ -83,7 +85,7 @@ public:
 public:
   /// Get the final type (follow through all LinkType links).
   /// For example, for (a->b->c->d) it returns d.
-  virtual std::shared_ptr<Type> follow();
+  virtual Type *follow();
   /// Check if type has unbound/generic types.
   virtual bool hasUnbounds(bool includeGenerics) const;
   /// Obtain the list of internal unbound types.
@@ -102,6 +104,7 @@ public:
   /// Similar to toString, but does not print the data unnecessary for realization
   /// (e.g. the function return type).
   virtual std::string realizedName() const = 0;
+  LiteralKind getStaticKind();
 
   /// Convenience virtual functions to avoid unnecessary casts.
   virtual FuncType *getFunc() { return nullptr; }
@@ -117,9 +120,11 @@ public:
   virtual ClassType *getHeterogenousTuple() { return nullptr; }
 
   virtual bool is(const std::string &s);
-  char isStaticType();
 
   Type *operator<<(Type *t);
+
+  static LiteralKind literalFromString(const std::string &s);
+  static std::string stringFromLiteral(LiteralKind k);
 
 protected:
   Cache *cache;

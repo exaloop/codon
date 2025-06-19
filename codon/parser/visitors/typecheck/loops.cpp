@@ -209,7 +209,7 @@ Expr *TypecheckVisitor::transformForDecorator(Expr *decorator) {
   if (auto c = cast<CallExpr>(callee))
     callee = c->getExpr();
   auto ci = cast<IdExpr>(transform(callee));
-  if (!ci || !startswith(ci->getValue(), "std.openmp.for_par.0")) {
+  if (!ci || !startswith(ci->getValue(), getMangledFunc("std.openmp", "for_par"))) {
     E(Error::LOOP_DECORATOR, decorator);
   }
 
@@ -325,20 +325,27 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
   auto fn =
       cast<CallExpr>(iter) ? cast<IdExpr>(cast<CallExpr>(iter)->getExpr()) : nullptr;
   std::vector<Stmt *> block;
-  if (fn && startswith(fn->getValue(), "std.internal.static.tuple.0")) {
+  if (fn &&
+      startswith(fn->getValue(), getMangledFunc("std.internal.static", "tuple"))) {
     block = populateStaticTupleLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.static.range.0:1")) {
+  } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "range", 1))) {
     block = populateSimpleStaticRangeLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.static.range.0")) {
+  } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "range"))) {
     block = populateStaticRangeLoop(iter, vars);
   } else if (fn &&
-             startswith(fn->getValue(), "std.internal.static.function.0.overloads")) {
+             startswith(fn->getValue(), getMangledMethod("std.internal.static",
+                                                         "function", "overloads"))) {
     block = populateStaticFnOverloadsLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.static.enumerate.0")) {
+  } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "enumerate"))) {
     block = populateStaticEnumerateLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.static.vars.0")) {
+  } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "vars"))) {
     block = populateStaticVarsLoop(iter, vars);
-  } else if (fn && startswith(fn->getValue(), "std.internal.static.vars_types.0")) {
+  } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "vars_types"))) {
     block = populateStaticVarTypesLoop(iter, vars);
   } else {
     if (iter->getType()->is(TYPE_TUPLE)) {

@@ -24,7 +24,7 @@ void Type::Unification::undo() {
   for (auto &t : traits)
     t->getLink()->trait = nullptr;
   for (auto &t : statics)
-    t->getLink()->isStatic = 0;
+    t->getLink()->staticKind = LiteralKind::Runtime;
 }
 
 Type::Type(const std::shared_ptr<Type> &typ) : cache(typ->cache) {
@@ -33,7 +33,7 @@ Type::Type(const std::shared_ptr<Type> &typ) : cache(typ->cache) {
 
 Type::Type(Cache *cache, const SrcInfo &info) : cache(cache) { setSrcInfo(info); }
 
-TypePtr Type::follow() { return shared_from_this(); }
+Type *Type::follow() { return this; }
 
 bool Type::hasUnbounds(bool) const { return false; }
 
@@ -45,17 +45,32 @@ std::string Type::prettyString() const { return debugString(0); }
 
 bool Type::is(const std::string &s) { return getClass() && getClass()->name == s; }
 
-char Type::isStaticType() {
-  auto t = follow();
-  if (t->getBoolStatic())
-    return 3;
-  if (t->getStrStatic())
-    return 2;
-  if (t->getIntStatic())
-    return 1;
-  if (auto l = t->getLink())
-    return l->isStatic;
-  return 0;
+LiteralKind Type::getStaticKind() {
+  if (auto s = getStatic())
+    return s->getStaticKind();
+  if (auto l = follow()->getLink())
+    return l->staticKind;
+  return LiteralKind::Runtime;
+}
+
+LiteralKind Type::literalFromString(const std::string &s) {
+  if (s == "int")
+    return LiteralKind::Int;
+  if (s == "str")
+    return LiteralKind::String;
+  if (s == "bool")
+    return LiteralKind::Bool;
+  return LiteralKind::Runtime;
+}
+
+std::string Type::stringFromLiteral(LiteralKind k) {
+  if (k == LiteralKind::Int)
+    return "int";
+  if (k == LiteralKind::String)
+    return "str";
+  if (k == LiteralKind::Bool)
+    return "bool";
+  return "";
 }
 
 Type *Type::operator<<(Type *t) {

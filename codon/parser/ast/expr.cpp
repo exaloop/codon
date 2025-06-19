@@ -549,18 +549,12 @@ bool isId(Expr *e, const std::string &s) {
   return ie && ie->getValue() == s;
 }
 
-char getStaticGeneric(Expr *e) {
+types::LiteralKind getStaticGeneric(Expr *e) {
   IdExpr *ie = nullptr;
   if (match(e, M<IndexExpr>(M<IdExpr>(MOr("Static", "Literal")), MVar<IdExpr>(ie)))) {
-    if (ie->getValue() == "bool")
-      return 3;
-    if (ie->getValue() == "str")
-      return 2;
-    if (ie->getValue() == "int")
-      return 1;
-    return 4;
+    return types::Type::literalFromString(ie->getValue());
   }
-  return 0;
+  return types::LiteralKind::Runtime;
 }
 
 const char ASTNode::NodeId = 0;

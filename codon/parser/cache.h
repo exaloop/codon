@@ -25,7 +25,6 @@
 #define TYPE_CALLABLE "Callable"
 #define TYPE_FUNCTION "Function"
 #define TYPE_OPTIONAL "Optional"
-#define TYPE_SLICE "std.internal.types.slice.Slice"
 #define TYPE_TUPLE "Tuple"
 #define TYPE_TYPE "type"
 
@@ -34,9 +33,7 @@
 
 #define FN_DISPATCH_SUFFIX ":dispatch"
 #define FN_SETTER_SUFFIX ":set_"
-#define FN_UNWRAP "std.internal.types.optional.unwrap.0:0"
 
-#define VAR_ARGV "__argv__.0"
 #define VAR_CLASS_TOPLEVEL ":toplevel"
 #define VAR_USED_SUFFIX ":used"
 
@@ -46,10 +43,10 @@
 #define MAX_REALIZATION_DEPTH 200
 #define MAX_STATIC_ITER 1024
 
-#define CYTHON_PYWRAP "std.internal.python._PyWrap.0"
-#define CYTHON_ITER "_PyWrap.IterWrap"
-
 namespace codon::ast {
+
+extern const std::string VAR_ARGV;
+extern const std::string FN_OPTIONAL_UNWRAP;
 
 /// Forward declarations
 struct TypeContext;

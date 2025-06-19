@@ -66,7 +66,7 @@ struct ReductionLocks {
   Var *critLock = nullptr; // lock used in reduction critical sections
 
   Var *createLock(Module *M) {
-    auto *lockType = M->getOrRealizeType("Lock.0", {}, ompModule);
+    auto *lockType = M->getOrRealizeType(ast::getMangledClass(ompModule, "Lock"));
     seqassertn(lockType, "openmp.Lock type not found");
     auto *var = M->Nr<Var>(lockType, /*global=*/true);
     static int counter = 1;
@@ -980,7 +980,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto *init = ptrFromFunc(makeTaskRedInitFunc(reduction));
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
 
-    auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput.0", {}, ompModule);
+    auto *taskRedInputType =
+        M->getOrRealizeType(ast::getMangledClass(ompModule, "TaskReductionInput"));
     seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
     auto *result = taskRedInputType->construct({shar, orig, size, init, comb});
     seqassertn(result, "bad construction of 'TaskReductionInput' type");
@@ -1048,10 +1049,10 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
       // add task reduction inputs
       auto *taskRedInitSeries = M->Nr<SeriesFlow>();
       auto *taskRedInputType =
-          M->getOrRealizeType("TaskReductionInput.0", {}, ompModule);
+          M->getOrRealizeType(ast::getMangledClass(ompModule, "TaskReductionInput"));
       seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType =
-          M->getOrRealizeType("TaskReductionInputArray.0", {}, ompModule);
+      auto *irArrayType = M->getOrRealizeType(
+          ast::getMangledClass(ompModule, "TaskReductionInputArray"));
       seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);

@@ -40,12 +40,16 @@ llvm::cl::opt<bool> Verbose("npfuse-verbose",
 
 bool isArrayType(types::Type *t) {
   return t && isA<types::RecordType>(t) &&
-         t->getName().rfind("std.numpy.ndarray.ndarray.0[", 0) == 0;
+         t->getName().rfind(ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[",
+                            0) == 0;
 }
 
 bool isUFuncType(types::Type *t) {
-  return t && (t->getName().rfind("std.numpy.ufunc.UnaryUFunc.0[", 0) == 0 ||
-               t->getName().rfind("std.numpy.ufunc.BinaryUFunc.0[", 0) == 0);
+  return t &&
+         (t->getName().rfind(
+              ast::getMangledClass("std.numpy.ufunc", "UnaryUFunc") + "[", 0) == 0 ||
+          t->getName().rfind(
+              ast::getMangledClass("std.numpy.ufunc", "BinaryUFunc") + "[", 0) == 0);
 }
 
 bool isNoneType(types::Type *t, NumPyPrimitiveTypes &T) {
@@ -63,8 +67,8 @@ NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
       u32(M->getIntNType(32, false)), i64(M->getIntType()),
       u64(M->getIntNType(64, false)), f16(M->getFloat16Type()),
       f32(M->getFloat32Type()), f64(M->getFloatType()),
-      c64(M->getType("std.internal.types.complex.complex64.0")),
-      c128(M->getType("std.internal.types.complex.complex.0")) {}
+      c64(M->getType(ast::getMangledClass("std.internal.types.complex", "complex64"))),
+      c128(M->getType(ast::getMangledClass("std.internal.types.complex", "complex"))) {}
 
 NumPyType::NumPyType(Type dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {
   seqassertn(ndim >= 0, "ndim must be non-negative");
@@ -469,8 +473,10 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
 
     // Check for matmul
     if (f && c->numArgs() == 3 && isNoneType(c->back()->getType(), T) &&
-        (f->getName().rfind("std.numpy.linalg_sym.matmul:0[", 0) == 0 ||
-         (f->getName().rfind("std.numpy.linalg_sym.dot:0[", 0) == 0 &&
+        (f->getName().rfind(ast::getMangledFunc("std.numpy.linalg_sym", "matmul") + "[",
+                            0) == 0 ||
+         (f->getName().rfind(ast::getMangledFunc("std.numpy.linalg_sym", "dot") + "[]",
+                             0) == 0 &&
           type.ndim == 2))) {
       std::vector<Value *> args(c->begin(), c->end());
       auto op = NumPyExpr::NP_OP_MATMUL;
@@ -487,7 +493,8 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
 
     // Check for builtin abs()
     if (f && c->numArgs() == 1 &&
-        (f->getName().rfind("std.internal.builtin.abs:0[", 0) == 0)) {
+        (f->getName().rfind(ast::getMangledFunc("std.internal.builtin", "abs") + "[",
+                            0) == 0)) {
       auto op = NumPyExpr::NP_OP_ABS;
       auto lhs = parse(c->front(), leaves, T);
       if (!lhs)

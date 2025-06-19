@@ -202,11 +202,8 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
 }
 
 types::Type *Module::getOrRealizeType(const std::string &typeName,
-                                      std::vector<types::Generic> generics,
-                                      const std::string &module) {
-  auto fqName =
-      module.empty() ? typeName : fmt::format(FMT_STRING("{}.{}"), module, typeName);
-  auto type = cache->findClass(fqName);
+                                      std::vector<types::Generic> generics) {
+  auto type = cache->findClass(typeName);
   if (!type)
     return nullptr;
   try {

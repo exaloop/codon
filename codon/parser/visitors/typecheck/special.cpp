@@ -25,7 +25,8 @@ using namespace types;
 /// TODO: add JIT compatibility.
 
 void TypecheckVisitor::prepareVTables() {
-  auto fn = getFunction("__internal__.class_populate_vtables:0");
+  auto fn = getFunction(
+      getMangledMethod("std.internal.core", "__internal__", "class_populate_vtables"));
   fn->ast->suite = generateClassPopulateVTablesAST();
   auto typ = fn->realizations.begin()->second->getType();
   LOG_REALIZE("[poly] {} : {}", typ->debugString(2), fn->ast->suite->toString(2));
@@ -34,7 +35,8 @@ void TypecheckVisitor::prepareVTables() {
 
   // def class_base_derived_dist(B, D):
   //   return Tuple[<types before B is reached in D>].__elemsize__
-  fn = getFunction("__internal__.class_base_derived_dist:0");
+  fn = getFunction(
+      getMangledMethod("std.internal.core", "__internal__", "class_base_derived_dist"));
   auto oldAst = fn->ast;
   for (const auto &real : fn->realizations | std::views::values) {
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
@@ -143,7 +145,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
     ns.push_back(a->realizedName());
   auto thunkName =
       fmt::format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), join(ns, "."));
-  if (getFunction(thunkName + ":0"))
+  if (getFunction(getMangledFunc("", thunkName)))
     return nullptr;
 
   // Thunk contents:
@@ -276,8 +278,9 @@ SuiteStmt *TypecheckVisitor::generateUnionTagAST(FuncType *type) {
     E(Error::CUSTOM, getSrcInfo(), "bad union tag");
   auto selfVar = type->ast->begin()->name;
   auto suite = N<SuiteStmt>(N<ReturnStmt>(
-      N<CallExpr>(N<IdExpr>("__internal__.union_get_data:0"), N<IdExpr>(selfVar),
-                  N<IdExpr>(unionTypes[tag]->realizedName()))));
+      N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
+                                             "union_get_data")),
+                  N<IdExpr>(selfVar), N<IdExpr>(unionTypes[tag]->realizedName()))));
   return suite;
 }
 
@@ -323,11 +326,14 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateFunctionCallInternalAST(type);
   } else if (startswith(ast->name, "Union.__new__")) {
     return generateUnionNewAST(type);
-  } else if (startswith(ast->name, "__internal__.get_union_tag:0")) {
+  } else if (startswith(ast->name, getMangledMethod("std.internal.core", "__internal__",
+                                                    "get_union_tag"))) {
     return generateUnionTagAST(type);
-  } else if (startswith(ast->name, "__internal__.namedkeys")) {
+  } else if (startswith(ast->name, getMangledMethod("std.internal.core", "__internal__",
+                                                    "namedkeys"))) {
     return generateNamedKeysAST(type);
-  } else if (startswith(ast->name, "__magic__.mul:0")) {
+  } else if (startswith(ast->name,
+                        getMangledMethod("std.internal.core", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
   }
   return nullptr;
@@ -520,7 +526,7 @@ Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
 ///   `isinstance(obj, ByRef)` is True if `type(obj)` is a reference type
 Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 3;
+    u->staticKind = LiteralKind::Bool;
 
   expr->begin()->value = transform(expr->begin()->getExpr());
   auto typ = expr->begin()->getExpr()->getClassType();
@@ -572,8 +578,9 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
         "==", N<IntExpr>(tag)));
   } else if (typExpr->getType()->is("pyobj")) {
     if (typ->is("pyobj")) {
-      return transform(N<CallExpr>(N<IdExpr>("std.internal.python._isinstance.0"),
-                                   expr->begin()->getExpr(), (*expr)[1].getExpr()));
+      return transform(
+          N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.python", "_isinstance")),
+                      expr->begin()->getExpr(), (*expr)[1].getExpr()));
     } else {
       return transform(N<BoolExpr>(false));
     }
@@ -596,7 +603,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
 /// static strings and tuple types.
 Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 1;
+    u->staticKind = LiteralKind::Int;
 
   expr->begin()->value = transform(expr->begin()->getExpr());
   auto typ = extractType(expr->begin()->getExpr());
@@ -622,7 +629,7 @@ Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
 /// for a matching overload (not available in Python).
 Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 3;
+    u->staticKind = LiteralKind::Bool;
 
   auto typ = extractClassType((*expr)[0].getExpr());
   if (!typ)
@@ -805,7 +812,7 @@ Expr *TypecheckVisitor::transformStaticPrintFn(CallExpr *expr) const {
 /// Transform static.has_rtti to a static boolean that indicates RTTI status of a type.
 Expr *TypecheckVisitor::transformHasRttiFn(const CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 3;
+    u->staticKind = LiteralKind::Bool;
 
   auto t = extractFuncGeneric(expr->getExpr()->getType())->getClass();
   if (!t)
@@ -816,7 +823,7 @@ Expr *TypecheckVisitor::transformHasRttiFn(const CallExpr *expr) {
 // Transform internal.static calls
 Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 3;
+    u->staticKind = LiteralKind::Bool;
 
   auto typ = extractClassType((*expr)[0].getExpr());
   if (!typ)
@@ -848,7 +855,7 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
 
 Expr *TypecheckVisitor::transformStaticFnArgHasType(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 3;
+    u->staticKind = LiteralKind::Bool;
 
   auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)
@@ -889,7 +896,7 @@ Expr *TypecheckVisitor::transformStaticFnArgs(CallExpr *expr) {
 
 Expr *TypecheckVisitor::transformStaticFnHasDefault(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
-    u->isStatic = 3;
+    u->staticKind = LiteralKind::Bool;
 
   auto fn = extractFunction(expr->begin()->getExpr()->getType());
   if (!fn)

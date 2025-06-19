@@ -91,8 +91,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
   if (!handled) {
-    resultStmt =
-        N<ExprStmt>(N<CallExpr>(N<IdExpr>(fmt::format("{}_call.0", importVar))));
+    resultStmt = N<ExprStmt>(
+        N<CallExpr>(N<IdExpr>(getMangledFunc("", fmt::format("{}_call", importVar)))));
     LOG_TYPECHECK("[import] loading {}", importVar);
   }
 

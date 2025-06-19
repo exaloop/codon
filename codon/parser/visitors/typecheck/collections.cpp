@@ -61,11 +61,9 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   if (canOptimize) {
     auto iter = transform(clone(cast<ForStmt>(expr->getFinalSuite())->getIter()));
     auto ce = cast<CallExpr>(iter);
-    IdExpr *id = nullptr;
-    if (ce && ((id = cast<IdExpr>(ce->getExpr())))) {
+    if (IdExpr *id = nullptr; ce && ((id = cast<IdExpr>(ce->getExpr())))) {
       // Turn off this optimization for static items
-      canOptimize &= !startswith(id->getValue(), "std.internal.static.range");
-      canOptimize &= !startswith(id->getValue(), "std.internal.static.tuple");
+      canOptimize &= !startswith(id->getValue(), "std.internal.static");
     }
   }
 

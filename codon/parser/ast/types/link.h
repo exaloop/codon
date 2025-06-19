@@ -22,7 +22,7 @@ struct LinkType : public Type {
   /// The type to which LinkType points to. nullptr if unknown (unbound or generic).
   TypePtr type;
   /// >0 if a type is a static type (e.g. N in Int[N: int]); 0 otherwise.
-  char isStatic;
+  LiteralKind staticKind;
   /// Optional trait that unbound type requires prior to unification.
   std::shared_ptr<Trait> trait;
   /// The generic name of a generic type, if applicable. Used for pretty-printing.
@@ -35,9 +35,9 @@ struct LinkType : public Type {
 
 public:
   LinkType(Cache *cache, Kind kind, int id, int level = 0, TypePtr type = nullptr,
-           char isStatic = 0, std::shared_ptr<Trait> trait = nullptr,
-           TypePtr defaultType = nullptr, std::string genericName = "",
-           bool passThrough = false);
+           LiteralKind staticKind = LiteralKind::Runtime,
+           std::shared_ptr<Trait> trait = nullptr, TypePtr defaultType = nullptr,
+           std::string genericName = "", bool passThrough = false);
   /// Convenience constructor for linked types.
   explicit LinkType(TypePtr type);
 
@@ -48,7 +48,7 @@ public:
                       std::unordered_map<int, TypePtr> *cache) const override;
 
 public:
-  TypePtr follow() override;
+  Type *follow() override;
   bool hasUnbounds(bool) const override;
   std::vector<Type *> getUnbounds(bool) const override;
   bool canRealize() const override;

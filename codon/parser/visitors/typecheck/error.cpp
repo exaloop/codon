@@ -99,8 +99,9 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
                       c->getException()),
           N<SuiteStmt>(c->getSuite(), N<BreakStmt>()), nullptr));
       cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->getSuite());
-    } else if (c->getException() && extractClassType(c->getException())
-                                        ->is("std.internal.python.PyError.0")) {
+    } else if (c->getException() &&
+               extractClassType(c->getException())
+                   ->is(getMangledClass("std.internal.python", "PyError"))) {
       // Transform PyExc exceptions
       if (!stmt->hasAttribute(Attr::TryPyVar))
         stmt->setAttribute(Attr::TryPyVar, getTemporaryVar("pyexc"));
@@ -120,7 +121,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         auto t = extractClassType(c->getException());
         bool exceptionOK = false;
         for (auto &p : getSuperTypes(t))
-          if (p->is("std.internal.types.error.BaseException.0")) {
+          if (p->is(getMangledClass("std.internal.types.error", "BaseException"))) {
             exceptionOK = true;
             break;
           }
@@ -140,7 +141,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   if (!cast<SuiteStmt>(pyCatchStmt->getSuite())->empty()) {
     // Process PyError catches
     auto pyVar = stmt->getAttribute<ir::StringValueAttribute>(Attr::TryPyVar)->value;
-    auto exc = N<IdExpr>("std.internal.python.PyError.0");
+    auto exc = N<IdExpr>(getMangledClass("std.internal.python", "PyError"));
     cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(N<ThrowStmt>(nullptr));
     auto c = N<ExceptStmt>(pyVar, transformType(exc), pyCatchStmt);
 
@@ -183,15 +184,19 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 
   stmt->expr = transform(stmt->getExpr());
   if (!match(stmt->getExpr(),
-             M<CallExpr>(M<IdExpr>("__internal__.set_header:0"), M_))) {
+             M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
+                                                    "set_header")),
+                         M_))) {
     stmt->expr = transform(N<CallExpr>(
-        N<IdExpr>("__internal__.set_header:0"), stmt->getExpr(),
-        N<StringExpr>(ctx->getBase()->name), N<StringExpr>(stmt->getSrcInfo().file),
-        N<IntExpr>(stmt->getSrcInfo().line), N<IntExpr>(stmt->getSrcInfo().col),
+        N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "set_header")),
+        stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
+        N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
+        N<IntExpr>(stmt->getSrcInfo().col),
         stmt->getFrom()
             ? N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
                           stmt->getFrom(),
-                          N<IdExpr>("std.internal.types.error.BaseException.0"))
+                          N<IdExpr>(getMangledClass("std.internal.types.error",
+                                                    "BaseException")))
             : N<CallExpr>(N<IdExpr>("NoneType"))));
   }
   if (stmt->getExpr()->isDone())

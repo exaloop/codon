@@ -239,7 +239,7 @@ Expr *TypecheckVisitor::transformType(Expr *expr, bool simple) {
   if (simple != ctx->simpleTypes)
     std::swap(ctx->simpleTypes, simple);
   if (expr) {
-    if (expr->getType()->isStaticType()) {
+    if (expr->getType()->getStaticKind()) {
       ;
     } else if (isTypeExpr(expr)) {
       expr->setType(instantiateType(expr->getType()));
@@ -471,7 +471,7 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
               reordered.emplace_back(nullptr, 0);
             } else {
               seqassert(gi < fn->funcGenerics.size(), "bad fn");
-              if (!extractFuncGeneric(fn, gi)->isStaticType() &&
+              if (!extractFuncGeneric(fn, gi)->getStaticKind() &&
                   !isTypeExpr(args[slots[si][0]]))
                 return -1;
               reordered.emplace_back(args[slots[si][0]].getExpr()->getType(),
@@ -506,8 +506,8 @@ int TypecheckVisitor::canCall(types::FuncType *fn, const std::vector<CallArg> &a
     real_gi += !(*fn->ast)[ai].isValue();
     if (!(*fn->ast)[ai].isValue()) {
       // Check if this is a good generic!
-      if (expectTyp && expectTyp->isStaticType()) {
-        if (!args[argTypeIdx].getExpr()->getType()->isStaticType()) {
+      if (expectTyp && expectTyp->getStaticKind()) {
+        if (!args[argTypeIdx].getExpr()->getType()->getStaticKind()) {
           score = -1;
           break;
         } else {
@@ -566,8 +566,8 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   auto [canWrap, newArgTyp, fn] = canWrapExpr((*expr)->getType(), expectedType, callee,
                                               allowUnwrap, cast<EllipsisExpr>(*expr));
   // TODO: get rid of this line one day!
-  if ((*expr)->getType()->isStaticType() &&
-      (!expectedType || !expectedType->isStaticType()))
+  if ((*expr)->getType()->getStaticKind() &&
+      (!expectedType || !expectedType->getStaticKind()))
     (*expr)->setType(getUnderlyingStaticType((*expr)->getType())->shared_from_this());
   if (canWrap && fn) {
     *expr = transform(fn(*expr));
@@ -580,8 +580,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
                               bool allowUnwrap, bool isEllipsis) {
   auto expectedClass = expectedType->getClass();
   auto exprClass = exprType->getClass();
-  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(
-                                  "std.internal.attributes.no_argument_wrap.0:0");
+  auto doArgWrap = !callee || !callee->ast->hasFunctionAttribute(getMangledFunc(
+                                  "std.internal.attributes", "no_argument_wrap"));
   if (!doArgWrap)
     return {true, expectedType ? expectedType->shared_from_this() : nullptr, nullptr};
 
@@ -603,8 +603,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
                                            "pyobj"};
-  if (!expectedType || !expectedType->isStaticType()) {
-    if (exprType->isStaticType()) {
+  if (!expectedType || !expectedType->getStaticKind()) {
+    if (exprType->getStaticKind()) {
       exprType = getUnderlyingStaticType(exprType);
       exprClass = exprType->getClass();
       type = exprType->shared_from_this();
@@ -665,7 +665,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
              exprClass->is(TYPE_OPTIONAL) &&
              !exprClass->is(expectedClass->name)) { // unwrap optional
     type = instantiateType(extractClassGeneric(exprClass));
-    fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>(FN_UNWRAP), expr); };
+    fn = [&](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr);
+    };
   }
 
   else if (expectedClass && expectedClass->is("pyobj") &&
@@ -835,8 +837,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       if (ok) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(N<IdExpr>("__internal__.get_union:0"), expr,
-                             N<IdExpr>(type->realizedName()));
+          return N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
+                                                        "__internal__", "get_union")),
+                             expr, N<IdExpr>(type->realizedName()));
         };
       }
     } else {
@@ -1109,9 +1112,9 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
           t = lx;
         }
     }
-    seqassert(!g.isStatic || t->isStaticType(), "{} not a static: {}", g.name,
+    seqassert(!g.staticKind || t->getStaticKind(), "{} not a static: {}", g.name,
               *(g.type));
-    if (!g.isStatic && !t->is(TYPE_TYPE))
+    if (!g.staticKind && !t->is(TYPE_TYPE))
       t = instantiateTypeVar(t.get());
     auto n = onlyMangled ? g.name : getUnmangledName(g.name);
     auto v = ctx->addType(n, g.name, t);
@@ -1221,11 +1224,12 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) const {
 }
 
 Expr *TypecheckVisitor::getParamType(Type *t) {
-  if (t && t->is(TYPE_TYPE)) {
+  if (!t)
+    return nullptr;
+  if (t->is(TYPE_TYPE)) {
     return N<IdExpr>(TYPE_TYPE);
-  } else if (const auto st = t->isStaticType()) {
-    std::array<const char *, 4> op{"", "int", "str", "bool"};
-    return N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(op[st]));
+  } else if (auto st = t->getStaticKind()) {
+    return N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(Type::stringFromLiteral(st)));
   } else {
     return nullptr;
   }
@@ -1252,13 +1256,8 @@ int64_t TypecheckVisitor::getTime() const { return ctx->time; }
 types::Type *TypecheckVisitor::getUnderlyingStaticType(types::Type *t) const {
   if (t->getStatic()) {
     return t->getStatic()->getNonStaticType();
-  } else if (auto c = t->isStaticType()) {
-    if (c == 1)
-      return getStdLibType("int");
-    if (c == 2)
-      return getStdLibType("str");
-    if (c == 3)
-      return getStdLibType("bool");
+  } else if (auto c = t->getStaticKind()) {
+    return getStdLibType(Type::stringFromLiteral(c));
   }
   return t;
 }
@@ -1328,10 +1327,10 @@ TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
   for (int i = 0; i < c->generics.size(); i++) {
     auto t = generics[i];
     seqassert(c->generics[i].type, "generic is null");
-    if (!c->generics[i].isStatic && t->getStatic())
+    if (!c->generics[i].staticKind && t->getStatic())
       t = t->getStatic()->getNonStaticType();
     g->generics.emplace_back("", "", t->shared_from_this(), c->generics[i].id,
-                             c->generics[i].isStatic);
+                             c->generics[i].staticKind);
   }
   return instantiateType(srcInfo, root, g.get());
 }
@@ -1576,6 +1575,12 @@ ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) const {
   return ParserErrors(errors);
 }
 
+/***** Cython-like code generation *****/
+
+const std::string CYTHON_MODULE = "std.internal.python";
+const std::string CYTHON_WRAP = "_PyWrap";
+const std::string CYTHON_ITER = "_PyWrap.IterWrap";
+
 ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   auto c = getClass(name);
   auto ci = getImport(c->module);
@@ -1598,16 +1603,16 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   if (auto ofnn = in(c->methods, "__to_py__")) {
     auto fnn = getOverloads(*ofnn).front(); // default first overload!
     auto fna = getFunction(fnn)->ast;
-    fna->suite = SuiteStmt::wrap(N<ReturnStmt>(
-        N<CallExpr>(N<IdExpr>(fmt::format("{}.wrap_to_py:0", CYTHON_PYWRAP)),
-                    N<IdExpr>(fna->begin()->name))));
+    fna->suite = SuiteStmt::wrap(N<ReturnStmt>(N<CallExpr>(
+        N<IdExpr>(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_to_py")),
+        N<IdExpr>(fna->begin()->name))));
   }
   if (auto ofnn = in(c->methods, "__from_py__")) {
     auto fnn = getOverloads(*ofnn).front(); // default first overload!
     auto fna = getFunction(fnn)->ast;
-    fna->suite = SuiteStmt::wrap(N<ReturnStmt>(
-        N<CallExpr>(N<IdExpr>(fmt::format("{}.wrap_from_py:0", CYTHON_PYWRAP)),
-                    N<IdExpr>(fna->begin()->name), N<IdExpr>(name))));
+    fna->suite = SuiteStmt::wrap(N<ReturnStmt>(N<CallExpr>(
+        N<IdExpr>(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_from_py")),
+        N<IdExpr>(fna->begin()->name), N<IdExpr>(name))));
   }
   for (auto &n : std::vector<std::string>{"__from_py__", "__to_py__"}) {
     auto fnn = getOverloads(*in(c->methods, n)).front();
@@ -1627,7 +1632,8 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
           ir::util::series(ir::util::call(fn->realizations.begin()->second->ir, args)));
     }
   }
-  for (auto &r : getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations |
+  for (auto &r : getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
+                         ->realizations |
                      std::views::values) {
     if (r->type->funcGenerics[0].type->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
@@ -1646,22 +1652,21 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     bool isMethod = fna->hasAttribute(Attr::Method);
     bool isProperty = fna->hasAttribute(Attr::Property);
 
-    std::string call = fmt::format("{}.wrap_multiple", CYTHON_PYWRAP);
+    std::string call = getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_multiple");
     bool isMagic = false;
     if (startswith(n, "__") && endswith(n, "__")) {
       auto m = n.substr(2, n.size() - 4);
       if (m == "new" && c->ast->hasAttribute(Attr::Tuple))
         m = "init";
-      auto cls = getClass(CYTHON_PYWRAP);
+      auto cls = getClass(getMangledClass(CYTHON_MODULE, CYTHON_WRAP));
       if (auto i = in(cls->methods, "wrap_magic_" + m)) {
         call = *i;
         isMagic = true;
       }
     }
     if (isProperty)
-      call = fmt::format("{}.wrap_get", CYTHON_PYWRAP);
+      call = getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_get");
 
-    auto fnName = call + ":0";
     auto generics = std::vector<types::TypePtr>{tc->shared_from_this()};
     if (isProperty) {
       generics.push_back(instantiateStatic(getUnmangledName(canonicalName)));
@@ -1669,7 +1674,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
       generics.push_back(instantiateStatic(n));
       generics.push_back(instantiateStatic(static_cast<int64_t>(isMethod)));
     }
-    auto f = realizeIRFunc(getFunction(fnName)->getType(), generics);
+    auto f = realizeIRFunc(getFunction(call)->getType(), generics);
     if (!f)
       continue;
 
@@ -1785,7 +1790,8 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
                                  "__ge__"},
            m.name)) {
       py.cmp = realizeIRFunc(
-          ctx->forceFind(fmt::format("{}.wrap_cmp:0", CYTHON_PYWRAP))->type->getFunc(),
+          ctx->forceFind(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_cmp"))
+              ->type->getFunc(),
           {tc->shared_from_this()});
       break;
     }
@@ -1802,11 +1808,14 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     auto generics =
         std::vector<types::TypePtr>{tc->shared_from_this(), instantiateStatic(mn)};
     auto gf = realizeIRFunc(
-        getFunction(fmt::format("{}.wrap_get:0", CYTHON_PYWRAP))->getType(), generics);
+        getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_get"))
+            ->getType(),
+        generics);
     ir::Func *sf = nullptr;
     if (!c->ast->hasAttribute(Attr::Tuple))
       sf = realizeIRFunc(
-          getFunction(fmt::format("{}.wrap_set:0", CYTHON_PYWRAP))->getType(),
+          getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_set"))
+              ->getType(),
           generics);
     py.getset.push_back({mn, "", gf, sf});
     LOG_USER("[py] member -> {} . {}", name, mn);
@@ -1819,7 +1828,8 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
   ir::PyType py{name, ""};
   auto cr = ctx->cache->classes[CYTHON_ITER].realizations[name];
   auto tc = cr->getType();
-  for (auto &r : getFunction(fmt::format("{}.py_type:0", CYTHON_PYWRAP))->realizations |
+  for (auto &r : getFunction(getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "py_type"))
+                         ->realizations |
                      std::views::values) {
     if (extractFuncGeneric(r->getType())->unify(tc, nullptr) >= 0) {
       py.typePtrHook = r->ir;
@@ -1860,7 +1870,7 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
 
 ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
   if (auto f = getFunction(name); f->isToplevel) {
-    auto fnName = fmt::format("{}.wrap_multiple:0", CYTHON_PYWRAP);
+    auto fnName = getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_multiple");
     auto generics =
         std::vector<types::TypePtr>{getStdLibType("NoneType")->shared_from_this(),
                                     instantiateStatic(f->ast->getName()),

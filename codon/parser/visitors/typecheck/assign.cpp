@@ -140,7 +140,7 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes
     // `list(d[1:-2])`)
     Expr *rightSide = N<CallExpr>(
-        N<IdExpr>("std.internal.types.array.List.0.as_list:0"),
+        N<IdExpr>(getMangledMethod("std.internal.types.array", "List", "as_list")),
         N<IndexExpr>(
             ast::clone(rhs),
             N<SliceExpr>(N<IntExpr>(st),
@@ -370,9 +370,9 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
     }
     if (!member && lhsClass->is(TYPE_OPTIONAL)) {
       // Unwrap optional and look up there
-      resultStmt = transform(
-          N<AssignMemberStmt>(N<CallExpr>(N<IdExpr>(FN_UNWRAP), stmt->getLhs()),
-                              stmt->getMember(), stmt->getRhs()));
+      resultStmt = transform(N<AssignMemberStmt>(
+          N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), stmt->getLhs()), stmt->getMember(),
+          stmt->getRhs()));
       return;
     }
 
