@@ -179,7 +179,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
     resultExpr = transform(
         N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.internal", "__type_repr__")),
-                    expr->getExpr(), N<EllipsisExpr>()));
+                    expr->getExpr(), N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
     return;
   }
   // Special case: expr.__is_static__

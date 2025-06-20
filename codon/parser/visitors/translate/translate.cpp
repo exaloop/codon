@@ -275,17 +275,23 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
 void TranslateVisitor::visit(CallExpr *expr) {
   auto ei = cast<IdExpr>(expr->getExpr());
   if (ei && ei->getValue() == getMangledFunc("std.internal.core", "__ptr__")) {
-    auto id = cast<IdExpr>(expr->begin()->getExpr());
-    if (!id) {
-      // Case where id is guarded by a check
-      if (auto sexp = cast<StmtExpr>(expr->begin()->getExpr()))
-        id = cast<IdExpr>(sexp->getExpr());
+    auto head = expr->begin()->getExpr();
+    while (auto sexp = cast<StmtExpr>(head))
+      head = sexp->getExpr();
+
+    std::string member;
+    if (auto id = cast<DotExpr>(head)) {
+      head = id->getExpr();
+      member = id->getMember();
     }
+    auto id = cast<IdExpr>(head);
     seqassert(id, "expected IdExpr, got {}", *((*expr)[0].value));
     auto key = id->getValue();
     auto val = ctx->find(key);
     seqassert(val && val->getVar(), "{} is not a variable", key);
-    result = make<ir::PointerValue>(expr, val->getVar());
+    result = make<ir::PointerValue>(expr, val->getVar(),
+                                    member.empty() ? std::vector<std::string>{}
+                                                   : std::vector<std::string>{member});
     return;
   } else if (ei && ei->getValue() ==
                        getMangledMethod("std.internal.core", "__array__", "__new__")) {

@@ -21,8 +21,6 @@ def _multiindex(indexes, shape, index: int = 0):
         idx = util.normalize_index(idx, index, n)
         return ((idx, idx + 1, 1, 1), *rest)
     else:
-        static.print(indexes)
-        static.print(idx)
         return (idx.adjust_indices(n), *rest)
 
 def _keep_axes(indexes, index: int = 0):

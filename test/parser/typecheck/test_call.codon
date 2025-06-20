@@ -4,6 +4,43 @@ v = 5
 p = __ptr__(v)
 print p[0] #: 5
 
+def test_tuple():
+    @tuple
+    class Foo:
+        x: int
+
+    f = Foo(6)
+    pf = __ptr__(f.x)
+    print pf[0]  #: 6
+
+    def foo(x):
+        return Foo(x)
+
+    ff = foo(16)
+    pff = __ptr__(ff.x)
+    print pff[0]  #: 16
+test_tuple()
+
+def test_class():
+    class Foo:
+        x: int
+
+    f = Foo(6)
+    pf = __ptr__(f.x)
+    print pf[0]  # 6
+    f.x = 7
+    print pf[0]  # 7
+
+    def foo(x):
+        return Foo(x)
+    ff = foo(16)
+    pff = __ptr__(ff.x)
+    print pff[0]  # 16
+    ff.x = 17
+    print pff[0]  # 17
+# test_class()
+
+
 #%% call_ptr_error,barebones
 __ptr__(1) #! __ptr__() only takes identifiers as arguments
 

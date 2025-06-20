@@ -2021,7 +2021,7 @@ test_datetime_arange()
 @test
 def test_timedelta_arange():
     a = np.arange(3, 10, dtype=np.timedelta64['generic', 1])
-    assert isinstance(a.dtype, np.timedelta64['generic', 1])
+    assert array_equal(a.dtype, np.timedelta64['generic', 1])
     assert array_equal(
         a,
         np.array(0, dtype=np.timedelta64['generic', 1]) + np.arange(3, 10))
@@ -2029,7 +2029,7 @@ def test_timedelta_arange():
                   10,
                   2,
                   dtype=np.timedelta64['generic', 1])
-    assert isinstance(a.dtype, np.timedelta64['s', 1])
+    assert array_equal(a.dtype, np.timedelta64['s', 1])
     assert array_equal(
         a,
         np.array(0, dtype=np.timedelta64['s', 1]) + np.arange(3, 10, 2))

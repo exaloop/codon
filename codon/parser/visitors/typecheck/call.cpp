@@ -68,11 +68,8 @@ void TypecheckVisitor::visit(CallExpr *expr) {
   // Check if this call is partial call
   PartialCallData part;
   if (!expr->empty()) {
-    if (auto el = cast<EllipsisExpr>(expr->back().getExpr())) {
-      if (expr->back().getName().empty() && !el->isPipe())
-        el->mode = EllipsisExpr::PARTIAL;
-      if (el->mode == EllipsisExpr::PARTIAL)
-        part.isPartial = true;
+    if (auto el = cast<EllipsisExpr>(expr->back().getExpr()); el && el->isPartial()) {
+      part.isPartial = true;
     }
   }
 

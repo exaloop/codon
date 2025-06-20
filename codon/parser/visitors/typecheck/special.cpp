@@ -495,13 +495,27 @@ Expr *TypecheckVisitor::transformSuper() {
 /// Typecheck __ptr__ method. This method creates a pointer to an object. Ensure that
 /// the argument is a variable binding.
 Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
-  auto id = cast<IdExpr>(getHeadExpr(expr->begin()->getExpr()));
+  expr->begin()->value = transform(expr->begin()->getExpr());
+
+  auto head = getHeadExpr(expr->begin()->getExpr());
+  auto id = cast<IdExpr>(head);
+  std::string member;
+  if (auto dot = cast<DotExpr>(head)) {
+    if (((id = cast<IdExpr>(dot->getExpr())))) {
+      member = dot->getMember();
+    } else {
+      auto tmp = getTemporaryVar("ptr");
+      return transform(N<StmtExpr>(
+          N<AssignStmt>(N<IdExpr>(tmp), dot->getExpr()),
+          N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.core", "__ptr__")),
+                      N<DotExpr>(N<IdExpr>(tmp), dot->getMember()))));
+    }
+  }
   auto val = id ? ctx->find(id->getValue(), getTime()) : nullptr;
   if (!val || !val->isVar()) {
     E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
   }
 
-  expr->begin()->value = transform(expr->begin()->getExpr());
   unify(expr->getType(),
         instantiateType(getStdLibType("Ptr"), {expr->begin()->getExpr()->getType()}));
   if (expr->begin()->getExpr()->isDone())

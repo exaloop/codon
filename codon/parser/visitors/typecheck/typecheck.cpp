@@ -1417,10 +1417,9 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
 
   // 0. Find *args and **kwargs
   // True if there is a trailing ellipsis (full partial: fn(all_args, ...))
-  bool partial =
-      !args.empty() && cast<EllipsisExpr>(args.back().value) &&
-      cast<EllipsisExpr>(args.back().value)->getMode() != EllipsisExpr::PIPE &&
-      args.back().name.empty();
+  bool partial = !args.empty() && args.back().name.empty() &&
+                 cast<EllipsisExpr>(args.back().value) &&
+                 cast<EllipsisExpr>(args.back().value)->isPartial();
 
   int starArgIndex = -1, kwstarArgIndex = -1;
   for (int i = 0; i < func->ast->size(); i++) {

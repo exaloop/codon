@@ -2521,6 +2521,9 @@ def allclose(a, b, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = F
     return True
 
 def array_equal(a1, a2, equal_nan: bool = False):
+    if isinstance(a1, type) and isinstance(a2, type):
+        return array_equal(a1(), a2(), equal_nan)
+
     from .ndmath import isnan
     a1 = asarray(a1)
     a2 = asarray(a2)

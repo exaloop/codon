@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#ifdef __APPLE__ &&TARGET_OS_MAC &&__arm64__
+#if defined(__APPLE__) && defined(TARGET_OS_MAC) && defined(__arm64__)
 #define APPLE_SILICON
 #endif
 
