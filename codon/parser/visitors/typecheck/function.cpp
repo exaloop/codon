@@ -311,42 +311,47 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
       // Handle default values
       auto defaultValue = a.getDefault();
-      if (cast<NoneExpr>(defaultValue)) {
-        // Special case: all Nones are handled at call site (as they are not mutable).
-        if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
+      if (match(defaultValue,
+                MOr(M<NoneExpr>(), M<IntExpr>(), M<BoolExpr>(), M<FloatExpr>()))) {
+        // Special case: all simple types and Nones are handled at call site
+        // (as they are not mutable).
+        if (match(defaultValue, M<NoneExpr>()) &&
+            match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
           // Special case: `arg: type = None` -> `arg: type = NoneType`
           defaultValue = N<IdExpr>("NoneType");
         }
-      } else if (defaultValue && a.getType()) {
-        // Special case: generic defaults are evaluated as-is!
-        defaultValue = transform(defaultValue);
       } else if (defaultValue) {
-        auto defName = fmt::format(".default.{}.{}", canonicalName, a.getName());
-        auto nctx = std::make_shared<TypeContext>(ctx->cache);
-        *nctx = *ctx;
-        nctx->bases.pop_back();
-        if (isClassMember) // class variable; go to the global context!
-          nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end());
-        auto tv = TypecheckVisitor(nctx);
-        auto as = N<AssignStmt>(N<IdExpr>(defName), defaultValue,
-                                a.isValue() ? nullptr : a.getType());
-        if (isClassMember) {
-          preamble->addStmt(
-              tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
-          registerGlobal(defName);
-          as->setUpdate();
+        if (!a.isValue()) {
+          // Special case: generic defaults are evaluated as-is!
+          defaultValue = transform(defaultValue);
+        } else {
+          auto defName = fmt::format(".default.{}.{}", canonicalName, a.getName());
+          auto nctx = std::make_shared<TypeContext>(ctx->cache);
+          *nctx = *ctx;
+          nctx->bases.pop_back();
+          if (isClassMember) // class variable; go to the global context!
+            nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end());
+          auto tv = TypecheckVisitor(nctx);
+          auto as = N<AssignStmt>(N<IdExpr>(defName), defaultValue,
+                                  a.isValue() ? nullptr : a.getType());
+          if (isClassMember) {
+            preamble->addStmt(
+                tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
+            registerGlobal(defName);
+            as->setUpdate();
+          }
+          auto das = tv.transform(as);
+          prependStmts->push_back(das);
+          // Default unbounds must be allowed to pass through
+          // to support cases such as `a = []`
+          auto f = ctx->forceFind(defName);
+          for (auto &u : f->getType()->getUnbounds(false)) {
+            // log("pass-through: {} / {}", stmt->getName(), u->debugString(2));
+            u->getUnbound()->passThrough = true;
+            stmt->setAttribute(Attr::AllowPassThrough);
+          }
+          defaultValue = tv.transform(N<IdExpr>(defName));
         }
-        auto das = tv.transform(as);
-        prependStmts->push_back(das);
-        // Default unbounds must be allowed to pass through
-        // to support cases such as `a = []`
-        auto f = ctx->forceFind(defName);
-        for (auto &u : f->getType()->getUnbounds(false)) {
-          // log("pass-through: {} / {}", stmt->getName(), u->debugString(2));
-          u->getUnbound()->passThrough = true;
-          stmt->setAttribute(Attr::AllowPassThrough);
-        }
-        defaultValue = tv.transform(N<IdExpr>(defName));
       }
       args.emplace_back(std::string(stars, '*') + name, a.getType(), defaultValue,
                         a.status);

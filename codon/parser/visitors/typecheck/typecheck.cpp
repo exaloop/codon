@@ -1666,7 +1666,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
         m = "init";
       auto cls = getClass(getMangledClass(CYTHON_MODULE, CYTHON_WRAP));
       if (auto i = in(cls->methods, "wrap_magic_" + m)) {
-        call = *i;
+        call = getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_magic_" + m);
         isMagic = true;
       }
     }
