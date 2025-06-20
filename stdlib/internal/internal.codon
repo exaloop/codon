@@ -67,7 +67,7 @@ class __internal__:
 
     def _print(a):
         from C import seq_print(str)
-        if hasattr(a, '__repr__'):
+        if hasattr(a, "__repr__"):
             seq_print(a.__repr__())
         else:
             seq_print(a.__str__())
@@ -740,8 +740,14 @@ class __magic__:
                 n[i] = k
         return __internal__.tuple_str(a.ptr, n.ptr, l)
 
+    # @dataclass parameter: repr=False
+    def repr_default(slf) -> str:
+        return f'<{type(slf).__class__.__name__} object at {slf.__raw__()}>'
+
     # @dataclass parameter: repr=True
     def str(slf) -> str:
+        if not hasattr(slf, "__repr__") and hasattr(slf, "__repr_default__"):
+            return slf.__repr_default__()
         return slf.__repr__()
 
 @extend

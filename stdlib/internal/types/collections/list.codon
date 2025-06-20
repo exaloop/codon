@@ -108,14 +108,18 @@ class List:
 
         start, stop, step, length = s.adjust_indices(self.__len__())
         if s.step is None or step == 1:
-            items = [a for a in other]
-            self._assign_slice(start, stop, items.arr.ptr, items.__len__())
+            if other.__raw__() == self.__raw__():
+                other = other.__copy__()
+            self._assign_slice(start, stop, other.arr.ptr, other.__len__())
         else:
             if (step < 0 and start < stop) or (step > 0 and start > stop):
                 stop = start
 
             seq: Optional[List[T]] = None
-            seq = [a for a in other]
+            if other.__raw__() == self.__raw__():
+                seq = other.__copy__()
+            else:
+                seq = other
 
             seq_len = seq.__len__()
             if seq_len != length:

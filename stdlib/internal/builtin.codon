@@ -325,6 +325,8 @@ def sum(x, start=0):
 
 def repr(x):
     """Return the string representation of x"""
+    if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):
+        return x.__repr_default__()
     return x.__repr__()
 
 def _int_format(a: int, base: int, prefix: str = ""):

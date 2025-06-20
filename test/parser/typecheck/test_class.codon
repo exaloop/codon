@@ -183,6 +183,9 @@ print a >= a, a >= b, b >= a #: True False True
 # Right magic test
 class X:
     x: int
+x = X(1)
+print(str(x)[:15])  #: <X object at 0x
+
 class Y:
     y: int
     def __eq__(self, o: X): return self.y == o.x

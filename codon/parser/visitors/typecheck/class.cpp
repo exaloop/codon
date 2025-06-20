@@ -256,7 +256,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       // Codegen default magic methods
       // __new__ must be the first
       if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
-        for (auto &m : aa->values) {
+        for (const auto &m : aa->values) {
           fnStmts.push_back(transform(codegenMagic(m, transformedTypeAst, memberArgs,
                                                    stmt->hasAttribute(Attr::Tuple))));
         }
@@ -315,8 +315,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       addLater.emplace_back(ctx->forceFind(name));
 
     // Mark functions as virtual:
-    auto banned =
-        std::set<std::string>{"__init__", "__new__", "__raw__", "__tuplesize__"};
+    auto banned = std::set<std::string>{"__init__", "__new__", "__raw__",
+                                        "__tuplesize__", "__repr_default__"};
     for (const auto &method : cls.methods | std::views::keys) {
       for (size_t mi = 1; mi < cls.mro.size(); mi++) {
         // ... in the current class
@@ -673,6 +673,11 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     ret = clone(typExpr);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("other"))));
   } else if (op == "repr") {
+    // def __repr__(self: T) -> str
+    fargs.emplace_back("self", clone(typExpr));
+    ret = I("str");
+    stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
+  } else if (op == "repr_default") {
     // def __repr__(self: T) -> str
     fargs.emplace_back("self", clone(typExpr));
     ret = I("str");

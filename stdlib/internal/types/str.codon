@@ -30,6 +30,8 @@ class str:
         elif hasattr(what, "__str__"):
             return what.__str__()
         else:
+            if not hasattr(what, "__repr__") and hasattr(what, "__repr_default__"):
+                return what.__repr_default__()
             return what.__repr__()
 
     def __str__(what: str) -> str:

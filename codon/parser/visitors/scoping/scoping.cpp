@@ -691,6 +691,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     tupleMagics["init"] = tupleMagics["new"];
     tupleMagics["new"] = tupleMagics["raw"] = true;
     tupleMagics["len"] = false;
+    tupleMagics["repr_default"] = true;
   }
   tupleMagics["dict"] = true;
   // Internal classes do not get any auto-generated members.
