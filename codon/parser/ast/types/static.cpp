@@ -12,7 +12,7 @@
 namespace codon::ast::types {
 
 StaticType::StaticType(Cache *cache, const std::string &typeName)
-    : ClassType(cache, typeName, typeName) {}
+    : ClassType(cache, typeName) {}
 
 bool StaticType::canRealize() const { return true; }
 

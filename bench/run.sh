@@ -105,6 +105,10 @@ bench ../test/numpy/test_routines.codon
 bench ../test/numpy/test_sorting.codon
 bench ../test/numpy/test_statistics.codon
 bench ../test/numpy/test_window.codon
+bench ../test/numpy/random_tests/test_mt19937.codon
+bench ../test/numpy/random_tests/test_pcg64.codon
+bench ../test/numpy/random_tests/test_philox.codon
+bench ../test/numpy/random_tests/test_sfc64.codon
 
 bench codon/binary_trees.codon 20 # 6s
 bench codon/chaos.codon /dev/null # 1s
@@ -135,7 +139,7 @@ bench ../seq/test/core/serialization.codon
 bench ../seq/test/pipeline/canonical_opt.codon
 bench ../seq/test/pipeline/interalign.codon # 25s
 bench ../seq/test/pipeline/prefetch.codon
-bench ../seq/test/pipeline/revcomp_opt.codon # FAILS
+bench ../seq/test/pipeline/revcomp_opt.codon # 1s
 
 bench ../seq/test/bench/16mer.codon data/chr22.fa # 10s
 bench ../seq/test/bench/bedcov.codon "data/biofast-data-v1/ex-anno.bed data/biofast-data-v1/ex-rna.bed" # 25s

@@ -383,7 +383,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         auto g = generic->generalize(ctx->typecheckLevel);
         if (startswith(varName, "$"))
           varName = varName.substr(1);
-        explicits.emplace_back(name, varName, g, typId, g->getStaticKind());
+        explicits.emplace_back(name, g, typId, g->getStaticKind());
       }
     }
 

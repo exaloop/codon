@@ -16,7 +16,7 @@
 
 namespace codon {
 namespace ir {
-class Attribute;
+struct Attribute;
 }
 
 namespace ast {

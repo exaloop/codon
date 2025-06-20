@@ -455,7 +455,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
   auto &generics = typ->getClass()->generics;
   bool isUnion = typ->getUnion() != nullptr;
   if (!isUnion && typeParamsSize != generics.size())
-    E(Error::GENERICS_MISMATCH, expr, getUnmangledName(typ->getClass()->name),
+    E(Error::GENERICS_MISMATCH, expr, getUserFacingName(typ->getClass()->name),
       generics.size(), typeParamsSize);
 
   if (isId(expr->getExpr(), TRAIT_CALLABLE)) {

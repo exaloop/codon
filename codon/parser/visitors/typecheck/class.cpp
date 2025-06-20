@@ -41,8 +41,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     if (canonicalName == "Union")
       classItem->type = std::make_shared<types::UnionType>(ctx->cache);
     else
-      classItem->type =
-          std::make_shared<types::ClassType>(ctx->cache, canonicalName, name);
+      classItem->type = std::make_shared<types::ClassType>(ctx->cache, canonicalName);
     if (stmt->isRecord())
       classItem->type->getClass()->isTuple = true;
     classItem->type->setSrcInfo(stmt->getSrcInfo());
@@ -106,10 +105,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
         if (!a.isGeneric())
           continue;
 
-        auto varName = ctx->generateCanonicalName(a.getName()), genName = a.getName();
+        auto varName = ctx->generateCanonicalName(a.getName());
         auto generic = instantiateUnbound();
         auto typId = generic->id;
-        generic->getLink()->genericName = genName;
+        generic->getLink()->genericName = varName;
         auto defType = transformType(clone(a.getDefault()));
         if (defType)
           generic->defaultType = extractType(defType)->shared_from_this();
@@ -117,7 +116,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           if (st == LiteralKind::Runtime)
             a.type = transform(a.getType()); // trigger error
           generic->staticKind = st;
-          auto val = ctx->addVar(genName, varName, generic);
+          auto val = ctx->addVar(a.getName(), varName, generic);
           val->generic = true;
         } else {
           if (cast<IndexExpr>(a.getType())) { // Parse TraitVar
@@ -132,11 +131,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
               generic->getLink()->trait =
                   std::make_shared<types::TypeTrait>(l->shared_from_this());
           }
-          ctx->addType(genName, varName, generic)->generic = true;
+          ctx->addType(a.getName(), varName, generic)->generic = true;
         }
-        typ->generics.emplace_back(varName, genName,
-                                   generic->generalize(ctx->typecheckLevel), typId,
-                                   generic->staticKind);
+        typ->generics.emplace_back(varName, generic->generalize(ctx->typecheckLevel),
+                                   typId, generic->staticKind);
         args.emplace_back(varName, a.getType(), defType, a.status);
       }
     }
@@ -730,15 +728,15 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
   auto key = fmt::format("{}.{}", TYPE_TUPLE, n);
   auto val = getImport(STDLIB_IMPORT)->ctx->find(key);
   if (!val) {
-    auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE, TYPE_TUPLE);
+    auto t = std::make_shared<types::ClassType>(ctx->cache, TYPE_TUPLE);
     t->isTuple = true;
     auto cls = getClass(t.get());
     seqassert(n <= cls->fields.size(), "tuple too large");
     for (size_t i = 0; i < n; i++) {
       const auto &f = cls->fields[i];
       auto gt = f.getType()->getLink();
-      t->generics.emplace_back(cast<IdExpr>(f.typeExpr)->getValue(), gt->genericName,
-                               f.type, gt->id, LiteralKind::Runtime);
+      t->generics.emplace_back(cast<IdExpr>(f.typeExpr)->getValue(), f.type, gt->id,
+                               LiteralKind::Runtime);
     }
     val = getImport(STDLIB_IMPORT)->ctx->addType(key, key, t);
   }

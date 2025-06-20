@@ -169,8 +169,9 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       auto argsNice = fmt::format("({})", join(a, ", "));
       auto name = getUnmangledName(calleeFn->getFuncName());
       if (calleeFn->getParentType() && calleeFn->getParentType()->getClass())
-        name =
-            fmt::format("{}.{}", calleeFn->getParentType()->getClass()->niceName, name);
+        name = fmt::format(
+            "{}.{}", getUserFacingName(calleeFn->getParentType()->getClass()->name),
+            name);
       E(Error::FN_NO_ATTR_ARGS, expr, name, argsNice);
     }
   }
@@ -755,7 +756,8 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
       } else {
         if (isUnbound(gen.getType()) && !(*calleeFn->ast)[si].getDefault() &&
             !partial && in(niGenerics, gen.name)) {
-          E(Error::CUSTOM, getSrcInfo(), "generic '{}' not provided", gen.niceName);
+          E(Error::CUSTOM, getSrcInfo(), "generic '{}' not provided",
+            getUnmangledName(gen.name));
         }
       }
     }

@@ -201,7 +201,7 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
         for (size_t i = 0, ai = 0, gi = 0; i < f->ast->size(); i++) {
           auto [ns, n] = (*f->ast)[i].getNameWithStars();
           args.push_back(fmt::format(
-              "{}{}: {}", std::string(ns, '*'), getUnmangledName(n),
+              "{}{}: {}", std::string(ns, '*'), getUserFacingName(n),
               (*f->ast)[i].isGeneric() ? extractFuncGeneric(f, gi++)->prettyString()
                                        : extractFuncArgType(f, ai++)->prettyString()));
         }
@@ -215,7 +215,7 @@ types::Type *TypecheckVisitor::realize(types::Type *typ) {
             }
           name = fmt::format("<import {}>", name);
         } else {
-          name = getUnmangledName(f->ast->name);
+          name = getUserFacingName(f->ast->getName());
           name_args = fmt::format("({})", join(args, ", "));
         }
         bt.addMessage(fmt::format("during the realization of {}{}", name, name_args),
@@ -254,7 +254,6 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
         j++;
       }
     type->name = TYPE_TUPLE;
-    type->niceName = t->niceName;
     type->generics = generics;
     type->_rn = "";
   }
@@ -350,7 +349,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
-    E(Error::MAX_REALIZATION, getSrcInfo(), getUnmangledName(type->getFuncName()));
+    E(Error::MAX_REALIZATION, getSrcInfo(), getUserFacingName(type->getFuncName()));
   }
 
   bool isImport = isImportFn(type->getFuncName());

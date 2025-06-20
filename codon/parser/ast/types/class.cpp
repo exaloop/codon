@@ -27,7 +27,7 @@ ClassType::Generic ClassType::Generic::generalize(int atLevel) const {
     t = type->getStatic()->getNonStaticType()->generalize(atLevel);
   else if (type)
     t = type->generalize(atLevel);
-  return {name, niceName, t, id, staticKind};
+  return {name, t, id, staticKind};
 }
 
 ClassType::Generic
@@ -39,15 +39,15 @@ ClassType::Generic::instantiate(int atLevel, int *unboundCount,
                                                            cache);
   else if (type)
     t = type->instantiate(atLevel, unboundCount, cache);
-  return {name, niceName, t, id, staticKind};
+  return {name, t, id, staticKind};
 }
 
-ClassType::ClassType(Cache *cache, std::string name, std::string niceName,
-                     std::vector<Generic> generics, std::vector<Generic> hiddenGenerics)
-    : Type(cache), name(std::move(name)), niceName(std::move(niceName)),
-      generics(std::move(generics)), hiddenGenerics(std::move(hiddenGenerics)) {}
+ClassType::ClassType(Cache *cache, std::string name, std::vector<Generic> generics,
+                     std::vector<Generic> hiddenGenerics)
+    : Type(cache), name(std::move(name)), generics(std::move(generics)),
+      hiddenGenerics(std::move(hiddenGenerics)) {}
 ClassType::ClassType(const ClassType *base)
-    : Type(*base), name(base->name), niceName(base->niceName), generics(base->generics),
+    : Type(*base), name(base->name), generics(base->generics),
       hiddenGenerics(base->hiddenGenerics), isTuple(base->isTuple) {}
 
 int ClassType::unify(Type *typ, Unification *us) {
@@ -163,7 +163,7 @@ TypePtr ClassType::generalize(int atLevel) const {
     g.push_back(t.generalize(atLevel));
   for (auto &t : hiddenGenerics)
     hg.push_back(t.generalize(atLevel));
-  auto c = std::make_shared<ClassType>(cache, name, niceName, g, hg);
+  auto c = std::make_shared<ClassType>(cache, name, g, hg);
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
@@ -176,7 +176,7 @@ TypePtr ClassType::instantiate(int atLevel, int *unboundCount,
     g.push_back(t.instantiate(atLevel, unboundCount, cache));
   for (auto &t : hiddenGenerics)
     hg.push_back(t.instantiate(atLevel, unboundCount, cache));
-  auto c = std::make_shared<ClassType>(this->cache, name, niceName, g, hg);
+  auto c = std::make_shared<ClassType>(this->cache, name, g, hg);
   c->isTuple = isTuple;
   c->setSrcInfo(getSrcInfo());
   return c;
@@ -211,7 +211,7 @@ std::vector<Type *> ClassType::getUnbounds(bool includeGenerics) const {
 
 bool ClassType::canRealize() const {
   if (name == "type") {
-    if (!hasUnbounds(/*includeGenerics*/ false))
+    if (!hasUnbounds(false))
       return true; // always true!
   }
   if (name == "unrealized_type")
@@ -278,10 +278,9 @@ std::string ClassType::debugString(char mode) const {
           ai++;
       } else {
         auto s = func->funcGenerics[gi].debugString(mode);
-        as.emplace_back( // func->funcGenerics[gi].niceName + "=" +
-            (known[i] == ClassType::PartialFlag::Included
-                 ? s
-                 : ("..." + (mode == 0 ? "" : s))));
+        as.emplace_back((known[i] == ClassType::PartialFlag::Included
+                             ? s
+                             : ("..." + (mode == 0 ? "" : s))));
         gi++;
       }
     }
@@ -313,7 +312,7 @@ std::string ClassType::debugString(char mode) const {
         gs.push_back("-" + a.debugString(mode));
   }
   // Special formatting for Functions and Tuples
-  auto n = mode == 0 ? niceName : name;
+  auto n = mode == 0 ? cache->rev(name) : name;
   return n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
 }
 

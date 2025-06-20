@@ -23,8 +23,6 @@ struct ClassType : public Type {
   struct Generic {
     // Generic name.
     std::string name;
-    // Name used for pretty-printing.
-    std::string niceName;
     // Unique generic ID.
     int id;
     // Pointer to realized type (or generic LinkType).
@@ -32,10 +30,9 @@ struct ClassType : public Type {
     // Set if this is a static generic
     LiteralKind staticKind;
 
-    Generic(std::string name, std::string niceName, TypePtr type, int id,
-            LiteralKind staticKind)
-        : name(std::move(name)), niceName(std::move(niceName)), id(id),
-          type(std::move(type)), staticKind(staticKind) {}
+    Generic(std::string name, TypePtr type, int id, LiteralKind staticKind)
+        : name(std::move(name)), id(id), type(std::move(type)), staticKind(staticKind) {
+    }
 
     types::Type *getType() const { return type.get(); }
     Generic generalize(int atLevel) const;
@@ -47,8 +44,6 @@ struct ClassType : public Type {
 
   /// Canonical type name.
   std::string name;
-  /// Name used for pretty-printing.
-  std::string niceName;
   /// List of generics, if present.
   std::vector<Generic> generics;
 
@@ -57,8 +52,7 @@ struct ClassType : public Type {
   bool isTuple = false;
   std::string _rn;
 
-  explicit ClassType(Cache *cache, std::string name, std::string niceName,
-                     std::vector<Generic> generics = {},
+  explicit ClassType(Cache *cache, std::string name, std::vector<Generic> generics = {},
                      std::vector<Generic> hiddenGenerics = {});
   explicit ClassType(const ClassType *base);
 

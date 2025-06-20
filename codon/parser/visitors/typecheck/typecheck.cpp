@@ -1040,6 +1040,13 @@ std::string TypecheckVisitor::getUnmangledName(const std::string &s) const {
   return s;
 }
 
+std::string TypecheckVisitor::getUserFacingName(const std::string &s) const {
+  auto n = getUnmangledName(s);
+  if (startswith(n, "$"))
+    n = n.substr(1);
+  return n;
+}
+
 Cache::Class *TypecheckVisitor::getClass(const std::string &t) const {
   auto i = in(ctx->cache->classes, t);
   return i;
@@ -1292,7 +1299,7 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
       }
     // special case: __SELF__
     if (type->getFunc() && !type->getFunc()->funcGenerics.empty() &&
-        type->getFunc()->funcGenerics[0].niceName == "__SELF__") {
+        getUnmangledName(type->getFunc()->funcGenerics[0].name) == "__SELF__") {
       genericCache[type->getFunc()->funcGenerics[0].id] = generics->shared_from_this();
     }
   }
@@ -1319,9 +1326,9 @@ TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
   auto c = root->getClass();
   seqassert(c, "root class is null");
   // dummy generic type
-  auto g = std::make_shared<types::ClassType>(ctx->cache, "", "");
+  auto g = std::make_shared<types::ClassType>(ctx->cache, "");
   if (generics.size() != c->generics.size()) {
-    E(Error::GENERICS_MISMATCH, srcInfo, getUnmangledName(c->name), c->generics.size(),
+    E(Error::GENERICS_MISMATCH, srcInfo, getUserFacingName(c->name), c->generics.size(),
       generics.size());
   }
   for (int i = 0; i < c->generics.size(); i++) {
@@ -1329,7 +1336,7 @@ TypecheckVisitor::instantiateType(const SrcInfo &srcInfo, types::Type *root,
     seqassert(c->generics[i].type, "generic is null");
     if (!c->generics[i].staticKind && t->getStatic())
       t = t->getStatic()->getNonStaticType();
-    g->generics.emplace_back("", "", t->shared_from_this(), c->generics[i].id,
+    g->generics.emplace_back("", t->shared_from_this(), c->generics[i].id,
                              c->generics[i].staticKind);
   }
   return instantiateType(srcInfo, root, g.get());
@@ -1480,7 +1487,7 @@ int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
   // 3. Fill in *args, if present
   if (!extra.empty() && starArgIndex == -1)
     return onError(Error::CALL_ARGS_MANY, getSrcInfo(),
-                   Emsg(Error::CALL_ARGS_MANY, getUnmangledName(func->ast->getName()),
+                   Emsg(Error::CALL_ARGS_MANY, getUserFacingName(func->ast->getName()),
                         func->ast->size(), args.size() - partial));
 
   if (starArgIndex != -1)
@@ -1588,7 +1595,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
   if (!in(c->methods, "__to_py__") || !in(c->methods, "__from_py__"))
     return {"", ""};
 
-  LOG_USER("[py] Cythonizing {} ({})", getUnmangledName(name), name);
+  LOG_USER("[py] Cythonizing {} ({})", getUserFacingName(name), name);
   ir::PyType py{getUnmangledName(name), c->ast->getDocstr()};
 
   auto tc = extractType(ctx->forceFind(name)->getType());
@@ -1875,7 +1882,7 @@ ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
                                     instantiateStatic(f->ast->getName()),
                                     instantiateStatic(static_cast<int64_t>(0))};
     if (auto ir = realizeIRFunc(getFunction(fnName)->getType(), generics)) {
-      LOG_USER("[py] toplevel -> {} ({}): ({})", getUnmangledName(name), name,
+      LOG_USER("[py] toplevel -> {} ({}): ({})", getUserFacingName(name), name,
                f->getType()->debugString(2));
       ir::PyFunction fn{getUnmangledName(name), f->ast->getDocstr(), ir,
                         ir::PyFunction::Type::TOPLEVEL,

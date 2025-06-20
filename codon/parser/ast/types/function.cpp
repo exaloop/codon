@@ -147,7 +147,7 @@ std::string FuncType::debugString(char mode) const {
   for (auto &a : funcGenerics)
     if (!a.name.empty())
       gs.push_back(mode < 2 ? a.type->debugString(mode)
-                            : (a.niceName + "=" + a.type->debugString(mode)));
+                            : (cache->rev(a.name) + "=" + a.type->debugString(mode)));
   std::string s = join(gs, ",");
   std::vector<std::string> as;
   // Important: return type does not have to be realized.

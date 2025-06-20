@@ -12,7 +12,7 @@
 
 namespace codon::ast::types {
 
-UnionType::UnionType(Cache *cache) : ClassType(cache, "Union", "Union") {
+UnionType::UnionType(Cache *cache) : ClassType(cache, "Union") {
   isTuple = true;
   for (size_t i = 0; i < MAX_UNION; i++)
     pendingTypes.emplace_back(
@@ -21,7 +21,7 @@ UnionType::UnionType(Cache *cache) : ClassType(cache, "Union", "Union") {
 
 UnionType::UnionType(Cache *cache, const std::vector<ClassType::Generic> &generics,
                      const std::vector<TypePtr> &pendingTypes)
-    : ClassType(cache, "Union", "Union", generics), pendingTypes(pendingTypes) {
+    : ClassType(cache, "Union", generics), pendingTypes(pendingTypes) {
   isTuple = true;
 }
 

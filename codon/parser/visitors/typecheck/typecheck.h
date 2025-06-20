@@ -322,6 +322,7 @@ public:
   bool hasOverloads(const std::string &root) const;
   std::vector<std::string> getOverloads(const std::string &root) const;
   std::string getUnmangledName(const std::string &s) const;
+  std::string getUserFacingName(const std::string &s) const;
   Cache::Class *getClass(const std::string &t) const;
   Cache::Class *getClass(types::Type *t) const;
   Cache::Function *getFunction(const std::string &n) const;

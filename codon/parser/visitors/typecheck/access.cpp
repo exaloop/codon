@@ -301,11 +301,11 @@ void TypecheckVisitor::checkCapture(const TypeContext::Item &val) const {
 
   // Check if a real variable (not a static) is defined outside the current scope
   if (crossCaptureBoundary)
-    E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), getUnmangledName(val->getName()));
+    E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), getUserFacingName(val->getName()));
 
   // Case: a nonlocal variable that has not been marked with `nonlocal` statement
   //       and capturing is *not* enabled
-  E(Error::ID_NONLOCAL, getSrcInfo(), getUnmangledName(val->getName()));
+  E(Error::ID_NONLOCAL, getSrcInfo(), getUserFacingName(val->getName()));
 }
 
 /// Check if a chain (a.b.c.d...) contains an import or a class prefix.
