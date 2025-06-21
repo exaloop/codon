@@ -9,7 +9,7 @@
   &nbsp;&#183;&nbsp;
   <a href="https://exaloop.io/blog" target="_blank"><b>Blog</b></a>
   &nbsp;&#183;&nbsp;
-  <a href="https://join.slack.com/t/exaloop/shared_invite/zt-1jusa4kc0-T3rRWrrHDk_iZ1dMS8s0JQ" target="_blank">Chat</a>
+  <a href="https://discord.gg/HeWRhagCmP" target="_blank">Discord</a>
   &nbsp;&#183;&nbsp;
   <a href="https://docs.exaloop.io/codon/general/roadmap" target="_blank">Roadmap</a>
   &nbsp;&#183;&nbsp;
