@@ -520,28 +520,28 @@ def arange(stop: int, dtype: type = int):
 
 @overload
 def arange(start: datetime64, stop, step = None, dtype: type = NoneType):
-    if dtype is NoneType:
+    if dtype is NoneType or (isinstance(dtype, datetime64) and dtype.base == 'generic'):
         return _datetime_arange(start, stop, step, type(start))
     else:
         return _datetime_arange(start, stop, step, dtype)
 
 @overload
 def arange(start: timedelta64, stop, step, dtype: type = NoneType):
-    if dtype is NoneType:
+    if dtype is NoneType or (isinstance(dtype, timedelta64) and dtype.base == 'generic'):
         return _datetime_arange(start, stop, step, type(start))
     else:
         return _datetime_arange(start, stop, step, dtype)
 
 @overload
 def arange(start: timedelta64, stop, dtype: type = NoneType):
-    if dtype is NoneType:
+    if dtype is NoneType or (isinstance(dtype, timedelta64) and dtype.base == 'generic'):
         return _datetime_arange(start, stop, 1, type(start))
     else:
         return _datetime_arange(start, stop, 1, dtype)
 
 @overload
 def arange(stop: timedelta64, dtype: type = NoneType):
-    if dtype is NoneType:
+    if dtype is NoneType or (isinstance(dtype, timedelta64) and dtype.base == 'generic'):
         return _datetime_arange(0, stop, 1, type(stop))
     else:
         return _datetime_arange(0, stop, 1, dtype)
@@ -2521,9 +2521,6 @@ def allclose(a, b, rtol: float = 1e-05, atol: float = 1e-08, equal_nan: bool = F
     return True
 
 def array_equal(a1, a2, equal_nan: bool = False):
-    if isinstance(a1, type) and isinstance(a2, type):
-        return array_equal(a1(), a2(), equal_nan)
-
     from .ndmath import isnan
     a1 = asarray(a1)
     a2 = asarray(a2)
