@@ -896,7 +896,7 @@ class Callable:
         def _wrap(data: Ptr[byte], args, f: type):
             return f(data)(*args)
         return Callable(
-            static.function.realized(_wrap(f=Function[T, TR], ...), (Ptr[byte], T)),
+            static.function.realized(_wrap(f=Function[T, TR], ...), Ptr[byte], T),
             fn.__raw__()
         )
 

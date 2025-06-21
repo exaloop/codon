@@ -24,6 +24,7 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
       -DLLVM_ENABLE_ZSTD=OFF \
       -DLLVM_ENABLE_TERMINFO=OFF \
       -DLLVM_TARGETS_TO_BUILD=all \
+      -DLLVM_ENABLE_PROJECTS=openmp \
       -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
   make -j "${JOBS}"
   make install

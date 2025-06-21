@@ -787,22 +787,20 @@ Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
 Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
   auto fn = (*expr)[0].getExpr()->getType()->shared_from_this();
   auto pt = (*expr)[0].getExpr()->getType()->getPartial();
-  if (!fn->getFunc() && pt && pt->isPartialEmpty())
-    fn = instantiateType(pt->getPartialFunc());
+  if (!fn->getFunc() && pt && pt->isPartialEmpty()) {
+    auto pft = pt->getPartialFunc()->generalize(0);
+    fn = instantiateType(pft.get());
+  }
   if (!fn->getFunc())
     E(Error::CALL_REALIZED_FN, (*expr)[0].getExpr());
-  std::vector<types::Type *> args;
-  if (auto tup = cast<CallExpr>((*expr)[1].getExpr())) {
-    for (auto &a : *tup) {
-      a.value = transform(a.getExpr());
-      if (!a.getExpr()->getClassType())
-        return nullptr;
-      auto t = extractType(a);
-      args.emplace_back(t->is("TypeWrap") ? extractClassGeneric(t) : t);
-    }
+  auto argt = (*expr)[1].getExpr()->getType()->getClass();
+  if (!argt)
+    return nullptr;
+  seqassert(argt->name == TYPE_TUPLE, "not a tuple");
+  for (size_t i = 0; i < std::min(argt->size(), fn->getFunc()->size()); i++) {
+    auto at = (*argt)[i]->is("TypeWrap") ? extractClassGeneric((*argt)[i]) : (*argt)[i];
+    unify((*fn->getFunc())[i], at);
   }
-  for (size_t i = 0; i < std::min(args.size(), fn->getFunc()->size()); i++)
-    unify((*fn->getFunc())[i], args[i]);
   if (auto f = realize(fn.get())) {
     auto e = N<IdExpr>(f->getFunc()->realizedName());
     e->setType(f->shared_from_this());

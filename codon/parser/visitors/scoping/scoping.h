@@ -28,10 +28,13 @@ struct BindingsAttribute : public ir::Attribute {
   };
   std::unordered_map<std::string, Binding> bindings;
 
+  std::unordered_map<std::string, std::string> localRenames;
+
   std::unique_ptr<Attribute> clone() const override {
     auto p = std::make_unique<BindingsAttribute>();
     p->captures = captures;
     p->bindings = bindings;
+    p->localRenames = localRenames;
     return p;
   }
 

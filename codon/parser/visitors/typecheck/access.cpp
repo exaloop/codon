@@ -299,6 +299,10 @@ void TypecheckVisitor::checkCapture(const TypeContext::Item &val) const {
     return;
   }
 
+  // Not in module; probably some capture
+  if (val->getModule() != ctx->getModule())
+    return;
+
   // Check if a real variable (not a static) is defined outside the current scope
   if (crossCaptureBoundary)
     E(Error::ID_CANNOT_CAPTURE, getSrcInfo(), getUserFacingName(val->getName()));
@@ -346,7 +350,8 @@ TypecheckVisitor::getImport(const std::vector<std::string> &chain) {
       return {importEnd, val};
     } else {
       auto key = join(chain, ".", importEnd, i + 1);
-      val = ictx->find(key);
+      // check only globals for imports!
+      val = ictx->find(key, 0, importName.empty() ? nullptr : "");
       if (val && i + 1 != chain.size() && val->getType()->is("Import") &&
           startswith(val->getName(), "%_import_")) {
         importName = getStrLiteral(val->getType());

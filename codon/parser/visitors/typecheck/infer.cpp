@@ -397,6 +397,10 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
           E(Error::FN_GLOBAL_NOT_FOUND, getSrcInfo(), "global", c);
       }
     }
+    for (const auto [name, canonical] : b->localRenames) {
+      auto val = ctx->forceFind(canonical);
+      ctx->add(name, val);
+    }
   }
   for (size_t i = 0, j = 0, gi = 0; hasAst && i < ast->size(); i++) {
     auto [_, varName] = (*ast)[i].getNameWithStars();

@@ -156,47 +156,46 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
     if (!stmt->decorators[i])
       continue;
     auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
-    if (isAttr) {
-      if (!attrName.empty()) {
-        if (attrName == getMangledFunc("std.internal.attributes", "test"))
-          stmt->setAttribute(Attr::Test);
-        else if (attrName == getMangledFunc("std.internal.attributes", "export"))
+    if (!attrName.empty()) {
+      if (attrName == getMangledFunc("std.internal.attributes", "test"))
+        stmt->setAttribute(Attr::Test);
+      else if (attrName == getMangledFunc("std.internal.attributes", "export"))
+        stmt->setAttribute(Attr::Export);
+      else if (attrName == getMangledFunc("std.internal.attributes", "inline"))
+        stmt->setAttribute(Attr::Inline);
+      else if (attrName == getMangledFunc("std.internal.attributes", "no_arg_reorder"))
+        stmt->setAttribute(Attr::NoArgReorder);
+      else if (attrName == getMangledFunc("std.internal.core", "overload"))
+        stmt->setAttribute(Attr::Overload);
+
+      if (!stmt->hasAttribute(Attr::FunctionAttributes))
+        stmt->setAttribute(Attr::FunctionAttributes,
+                           std::make_unique<ir::KeyValueAttribute>());
+      stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+          ->attributes[attrName] = "";
+
+      const auto &attrFn = getFunction(attrName);
+      if (attrFn && attrFn->ast) {
+        if (attrFn->ast->hasAttribute(Attr::Export))
           stmt->setAttribute(Attr::Export);
-        else if (attrName == getMangledFunc("std.internal.attributes", "inline"))
+        if (attrFn->ast->hasAttribute(Attr::Inline))
           stmt->setAttribute(Attr::Inline);
-        else if (attrName ==
-                 getMangledFunc("std.internal.attributes", "no_arg_reorder"))
+        if (attrFn->ast->hasAttribute(Attr::NoArgReorder))
           stmt->setAttribute(Attr::NoArgReorder);
-        else if (attrName == getMangledFunc("std.internal.core", "overload"))
-          stmt->setAttribute(Attr::Overload);
-
-        if (!stmt->hasAttribute(Attr::FunctionAttributes))
-          stmt->setAttribute(Attr::FunctionAttributes,
-                             std::make_unique<ir::KeyValueAttribute>());
-        stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-            ->attributes[attrName] = "";
-
-        const auto &attrFn = getFunction(attrName);
-        if (attrFn && attrFn->ast) {
-          if (attrFn->ast->hasAttribute(Attr::Export))
-            stmt->setAttribute(Attr::Export);
-          if (attrFn->ast->hasAttribute(Attr::Inline))
-            stmt->setAttribute(Attr::Inline);
-          if (attrFn->ast->hasAttribute(Attr::NoArgReorder))
-            stmt->setAttribute(Attr::NoArgReorder);
-          if (attrFn->ast->hasAttribute(Attr::FunctionAttributes)) {
-            for (const auto &key :
-                 attrFn->ast
-                         ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-                         ->attributes |
-                     std::views::keys)
-              stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-                  ->attributes[key] = "";
-          }
+        if (attrFn->ast->hasAttribute(Attr::FunctionAttributes)) {
+          for (const auto &key :
+               attrFn->ast
+                       ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+                       ->attributes |
+                   std::views::keys)
+            stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+                ->attributes[key] = "";
         }
-        stmt->decorators[i] = nullptr; // remove it from further consideration
       }
-    } else {
+      if (isAttr)
+        stmt->decorators[i] = nullptr; // remove it from further consideration
+    }
+    if (!isAttr) {
       hasDecorators = true;
     }
   }
@@ -277,6 +276,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
               } else {
                 stmt->items.insert(stmt->items.begin() + insertSize++, Param(cc));
               }
+            } else {
+              // Local function is captured. Just note its canonical name and add it to
+              // the context during realization.
+              b->localRenames[c] = v->getName();
             }
           }
           continue;
@@ -311,14 +314,20 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
       // Handle default values
       auto defaultValue = a.getDefault();
-      if (match(defaultValue,
-                MOr(M<NoneExpr>(), M<IntExpr>(), M<BoolExpr>(), M<FloatExpr>()))) {
+      if (match(defaultValue, MOr(M<NoneExpr>(), M<IntExpr>(), M<BoolExpr>(),
+                                  M<FloatExpr>(), M<IdExpr>()))) {
         // Special case: all simple types and Nones are handled at call site
         // (as they are not mutable).
-        if (match(defaultValue, M<NoneExpr>()) &&
-            match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
-          // Special case: `arg: type = None` -> `arg: type = NoneType`
-          defaultValue = N<IdExpr>("NoneType");
+        if (match(defaultValue, M<NoneExpr>())) {
+          if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
+            // Special case: `arg: type = None` -> `arg: type = NoneType`
+            defaultValue = N<IdExpr>("NoneType");
+          } else {
+            ; // Do nothing. NoneExpr will be handled later (we don't want it
+              // to be converted to Optional call yet.)
+          }
+        } else {
+          defaultValue = transform(defaultValue);
         }
       } else if (defaultValue) {
         if (!a.isValue()) {

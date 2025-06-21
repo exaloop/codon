@@ -216,7 +216,7 @@ public:
 
   /// Get an item from the context before given srcInfo. If the item does not exist,
   /// nullptr is returned.
-  Item find(const std::string &name, int64_t time = 0) const;
+  Item find(const std::string &name, int64_t time = 0, const char * = nullptr) const;
   /// Get an item that exists in the context. If the item does not exist, assertion is
   /// raised.
   Item forceFind(const std::string &name) const;

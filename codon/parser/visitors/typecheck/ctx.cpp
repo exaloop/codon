@@ -101,15 +101,17 @@ TypeContext::Item TypeContext::addAlwaysVisible(const TypeContext::Item &item,
   return item;
 }
 
-TypeContext::Item TypeContext::find(const std::string &name, int64_t time) const {
+TypeContext::Item TypeContext::find(const std::string &name, int64_t time,
+                                    const char *inBase) const {
   auto it = map.find(name);
   bool isMangled = in(name, ".");
+  std::string base = inBase ? inBase : getBaseName();
   if (it != map.end()) {
     for (auto &i : it->second) {
-      if (!isMangled && !startswith(getBaseName(), i->getBaseName())) {
+      if (!isMangled && !startswith(base, i->getBaseName())) {
         continue; // avoid middle realizations
       }
-      if (isMangled || i->getBaseName() != getBaseName() || !time) {
+      if (isMangled || i->getBaseName() != base || !time) {
         return i;
       } else {
         if (i->getTime() <= time)

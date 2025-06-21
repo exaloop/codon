@@ -33,7 +33,7 @@ def has_rtti(T: type):
     pass
 
 class function:
-    def realized(fn, args):
+    def realized(fn, *args):
         pass
 
     def overloads(T: type, F: Literal[str]):

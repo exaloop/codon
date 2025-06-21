@@ -280,7 +280,7 @@ def kernel(fn):
         cache = AllocCache([])
         shared_mem = 0
         gpu_args = tuple(arg.__to_gpu__(cache) for arg in args)
-        kernel_ptr = seq_nvptx_function(static.function.realized(fn, gpu_args).__llvm_name__)
+        kernel_ptr = seq_nvptx_function(static.function.realized(fn, *gpu_args).__llvm_name__)
         p = __ptr__(gpu_args).as_byte()
         arg_ptrs = tuple((p + offset) for offset in offsets(gpu_args))
         seq_nvptx_invoke(kernel_ptr, u32(grid[0]), u32(grid[1]), u32(grid[2]), u32(block[0]),
