@@ -23,7 +23,7 @@ class Ptr:
     @derives
     @overload
     @llvm
-    def __new__(other: Ptr[byte]) -> Ptr[T]:
+    def __new__(other: Ptr) -> Ptr[T]:
         ret ptr %other
 
     @pure
