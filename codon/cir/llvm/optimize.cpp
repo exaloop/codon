@@ -1005,7 +1005,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   auto machine = getTargetMachine(module, /*setFunctionAttributes=*/true);
 
   llvm::PipelineTuningOptions pto;
-  pto.InlinerThreshold = 1000; // need higher threshold as of LLVM 20
+  pto.InlinerThreshold = 275; // need higher threshold as of LLVM 20
   pto.SLPVectorization = true;
 
   llvm::PassBuilder pb(machine.get(), pto);
