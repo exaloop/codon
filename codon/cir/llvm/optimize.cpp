@@ -1003,12 +1003,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   llvm::CGSCCAnalysisManager cgam;
   llvm::ModuleAnalysisManager mam;
   auto machine = getTargetMachine(module, /*setFunctionAttributes=*/true);
-
-  llvm::PipelineTuningOptions pto;
-  pto.InlinerThreshold = 275; // need higher threshold as of LLVM 20
-  pto.SLPVectorization = true;
-
-  llvm::PassBuilder pb(machine.get(), pto);
+  llvm::PassBuilder pb(machine.get());
 
   llvm::Triple moduleTriple(module->getTargetTriple());
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
