@@ -22,24 +22,23 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
       -DLLVM_ENABLE_RTTI=ON \
       -DLLVM_ENABLE_ZLIB=OFF \
       -DLLVM_ENABLE_ZSTD=OFF \
-      -DLLVM_ENABLE_TERMINFO=OFF \
       -DLLVM_TARGETS_TO_BUILD=all \
-      -DLLVM_ENABLE_PROJECTS=openmp \
+      -DLLVM_ENABLE_PROJECTS="clang;openmp" \
       -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
   make -j "${JOBS}"
   make install
 
-  # clang
-  if ! command -v clang &> /dev/null; then
-    mkdir -p "${SRCDIR}/clang/build"
-    cd "${SRCDIR}/clang/build"
-    cmake .. \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DLLVM_INCLUDE_TESTS=OFF \
-        -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
-    make -j "${JOBS}"
-    make install
-  fi
+  # # clang
+  # if ! command -v clang &> /dev/null; then
+  #   mkdir -p "${SRCDIR}/clang/build"
+  #   cd "${SRCDIR}/clang/build"
+  #   cmake .. \
+  #       -DCMAKE_BUILD_TYPE=Release \
+  #       -DLLVM_INCLUDE_TESTS=OFF \
+  #       -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
+  #   make -j "${JOBS}"
+  #   make install
+  # fi
 
   "${INSTALLDIR}/bin/llvm-config" --cmakedir
   cd ${INSTALLDIR}
