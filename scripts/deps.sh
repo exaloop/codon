@@ -13,7 +13,6 @@ LLVM_BRANCH="codon-19"
 if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
   git clone --depth 1 -b "${LLVM_BRANCH}" https://github.com/exaloop/llvm-project "${SRCDIR}"
 
-  # llvm
   mkdir -p "${SRCDIR}/llvm/build"
   cd "${SRCDIR}/llvm/build"
   cmake .. \
@@ -27,18 +26,6 @@ if [ ! -f "${INSTALLDIR}/bin/llvm-config" ]; then
       -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
   make -j "${JOBS}"
   make install
-
-  # # clang
-  # if ! command -v clang &> /dev/null; then
-  #   mkdir -p "${SRCDIR}/clang/build"
-  #   cd "${SRCDIR}/clang/build"
-  #   cmake .. \
-  #       -DCMAKE_BUILD_TYPE=Release \
-  #       -DLLVM_INCLUDE_TESTS=OFF \
-  #       -DCMAKE_INSTALL_PREFIX="${INSTALLDIR}"
-  #   make -j "${JOBS}"
-  #   make install
-  # fi
 
   "${INSTALLDIR}/bin/llvm-config" --cmakedir
   cd ${INSTALLDIR}
