@@ -26,8 +26,8 @@ Engine::Engine() : jit(), debug(nullptr) {
           -> llvm::Expected<std::unique_ptr<llvm::orc::ObjectLayer>> {
         auto L = std::make_unique<llvm::orc::ObjectLinkingLayer>(
             es, llvm::cantFail(BoehmGCJITLinkMemoryManager::Create()));
-        L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
-            es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
+        // L->addPlugin(std::make_unique<llvm::orc::EHFrameRegistrationPlugin>(
+        //     es, llvm::cantFail(llvm::orc::EPCEHFrameRegistrar::Create(es))));
         L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
             es, llvm::cantFail(llvm::orc::createJITLoaderGDBRegistrar(es))));
         auto dbPlugin = std::make_unique<DebugPlugin>();
