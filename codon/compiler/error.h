@@ -419,7 +419,7 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
   case Error::CALL_SUPER_PARENT:
     return fmt::format("no super methods found");
   case Error::CALL_PTR_VAR:
-    return fmt::format("__ptr__() only takes identifiers as arguments");
+    return fmt::format("__ptr__() only takes identifiers or tuple fields as arguments");
   case Error::EXPECTED_TUPLE:
     return fmt::format("expected tuple type");
   case Error::CALL_REALIZED_FN:

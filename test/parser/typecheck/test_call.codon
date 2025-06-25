@@ -41,12 +41,64 @@ def test_class():
 # test_class()
 
 
+@tuple
+class A:
+    n: int
+
+@tuple
+class B:
+    a: A
+
+@tuple
+class C:
+    b: B
+
+x = C(B(A(1)))
+p = __ptr__(x.b.a.n)
+p[0] = 55
+print(x)  #: (b: (a: (n: 55)))
+
+
 #%% call_ptr_error,barebones
-__ptr__(1) #! __ptr__() only takes identifiers as arguments
+__ptr__(1) #! __ptr__() only takes identifiers or tuple fields as arguments
+
+#%% call_ptr_error_2,barebones
+__ptr__([1]) #! __ptr__() only takes identifiers or tuple fields as arguments
 
 #%% call_ptr_error_3,barebones
 v = 1
 __ptr__(v, 1) #! __ptr__() takes 1 arguments (2 given)
+
+#%% call_ptr_error_4,barebones
+@tuple
+class A:
+    n: int
+
+class B:
+    a: A
+
+@tuple
+class C:
+    b: B
+
+x = C(B(A(1)))
+print(__ptr__(x.b.a.n)) #! __ptr__() only takes identifiers or tuple fields as arguments
+
+#%% call_ptr_error_5,barebones
+@tuple
+class A:
+    n: int
+
+class B:
+    a: A
+
+@tuple
+class C:
+    b: B
+
+x = C(B(A(1)))
+print(__ptr__(A(1).n))   #! __ptr__() only takes identifiers or tuple fields as arguments
+
 
 #%% call_array,barebones
 a = __array__[int](2)
