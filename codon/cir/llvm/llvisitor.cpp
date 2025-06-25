@@ -2150,15 +2150,23 @@ void LLVMVisitor::visit(const PointerValue *x) {
   auto *type = x->getVar()->getType();
 
   for (auto &field : x->getFields()) {
-    if (auto *rec = cast<types::RecordType>(type)) {
+    if (auto *ref = cast<types::RefType>(type)) {
+      auto membIndex = ref->getMemberIndex(field);
+      auto membType = ref->getMemberType(field);
+      seqassertn(membIndex >= 0 && membType, "field {} not found in referecne type",
+                 field);
+      gepIndices.push_back(B->getInt32(0));
+      gepIndices.push_back(B->getInt32(membIndex));
+      type = membType;
+    } else if (auto *rec = cast<types::RecordType>(type)) {
       auto membIndex = rec->getMemberIndex(field);
       auto membType = rec->getMemberType(field);
-      seqassertn(membIndex >= 0 && membType, "field {} not found in pointer value",
+      seqassertn(membIndex >= 0 && membType, "field {} not found in record type",
                  field);
       gepIndices.push_back(B->getInt32(membIndex));
       type = membType;
     } else {
-      seqassertn(false, "type in pointer value was not a tuple type");
+      seqassertn(false, "type in pointer value was not a record or reference type");
     }
   }
 
