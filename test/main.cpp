@@ -263,8 +263,8 @@ public:
       auto compiler = std::make_unique<Compiler>(
           argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
           pyNumerics);
-      compiler->getLLVMVisitor()->setStandalone(
-          true); // make sure we abort() on runtime error
+      // make sure we abort() on runtime error
+      compiler->getLLVMVisitor()->setStandalone(true);
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
@@ -290,14 +290,9 @@ public:
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
       llvm::cantFail(compiler->compile());
-      seq_exc_init(0);
       compiler->getLLVMVisitor()->run({file});
       fflush(stdout);
     };
-    // if (true) {
-    //   fn();
-    //   return 0;
-    // }
 
     assert(pipe(out_pipe) != -1);
     pid = fork();
