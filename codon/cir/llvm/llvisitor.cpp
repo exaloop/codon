@@ -2145,7 +2145,6 @@ void LLVMVisitor::visit(const VarValue *x) {
 }
 
 void LLVMVisitor::visit(const PointerValue *x) {
-  auto *xvar = x->getVar();
   std::vector<llvm::Value *> gepIndices;
   auto *type = x->getVar()->getType();
 
