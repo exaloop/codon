@@ -12,20 +12,6 @@ by using various Codon-specific features, but their adaptations here are
 virtually identical to the original implementations (mainly just the use
 of the `pyperf` module is removed).
 
-## Setup
-
-The `bench.sh` script can be used to run all the benchmarks and output a
-CSV file with the results. The benchmark script looks at the following
-environment variables:
-
-- `EXE_PYTHON`: Python command (default: `python3`)
-- `EXE_PYPY`: PyPy command (default: `pypy3`)
-- `EXE_CPP`: C++ compiler command (default: `clang++`; run with `-std=c++17 -O3`)
-- `EXE_CODON`: Codon command (default: `build/codon`; run with `-release`)
-
-Some benchmarks also require specific environment variables to be set
-for accessing data (details below).
-
 ## Benchmarks
 
 - `chaos`: [Pyperformance's `chaos` benchmark](https://github.com/python/pyperformance/blob/main/pyperformance/data-files/benchmarks/bm_chaos/run_benchmark.py).
