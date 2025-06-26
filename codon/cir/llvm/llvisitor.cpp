@@ -2145,9 +2145,17 @@ void LLVMVisitor::visit(const VarValue *x) {
 }
 
 void LLVMVisitor::visit(const PointerValue *x) {
-  std::vector<llvm::Value *> gepIndices;
-  auto *type = x->getVar()->getType();
+  const auto &fields = x->getFields();
+  llvm::Value *var = getVar(x->getVar());
+  seqassertn(var, "{} variable not found", *x);
 
+  if (fields.empty()) {
+    value = var; // note: we don't load the pointer
+    return;
+  }
+
+  auto *type = x->getVar()->getType();
+  std::vector<llvm::Value *> gepIndices = {B->getInt32(0)};
   for (auto &field : x->getFields()) {
     if (auto *ref = cast<types::RefType>(type)) {
       auto membIndex = ref->getMemberIndex(field);
@@ -2169,14 +2177,7 @@ void LLVMVisitor::visit(const PointerValue *x) {
     }
   }
 
-  llvm::Value *var = getVar(x->getVar());
-  seqassertn(var, "{} variable not found", *x);
-
-  if (gepIndices.empty()) {
-    value = var; // note: we don't load the pointer
-  } else {
-    value = B->CreateInBoundsGEP(getLLVMType(x->getVar()->getType()), var, gepIndices);
-  }
+  value = B->CreateInBoundsGEP(getLLVMType(x->getVar()->getType()), var, gepIndices);
 }
 
 /*

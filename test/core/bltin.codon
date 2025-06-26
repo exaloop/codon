@@ -1107,3 +1107,66 @@ test_wide_uint_str(UInt[1024])
 # test_wide_int_str(Int[4096])
 # test_wide_uint_str(UInt[2048])
 # test_wide_uint_str(UInt[4096])
+
+
+# __ptr__
+@test
+def test_ptr_fields():
+    @tuple
+    class A:
+        n1: int
+        n2: int
+        n3: int
+
+    @tuple
+    class B:
+        a1: A
+        a2: A
+
+    @tuple
+    class C:
+        b1: B
+        b2: B
+
+    x1 = A(1, 2, 3)
+    __ptr__(x1.n1)[0] += 10
+    __ptr__(x1.n2)[0] += 20
+    __ptr__(x1.n3)[0] += 30
+
+    assert x1.n1 == 10 + 1
+    assert x1.n2 == 20 + 2
+    assert x1.n3 == 30 + 3
+
+    x2 = C(B(A(1, 2, 3), A(4, 5, 6)), B(A(7, 8, 9), A(10, 11, 12)))
+    __ptr__(x2.b1.a1.n1)[0] += 10
+    __ptr__(x2.b1.a1.n2)[0] += 20
+    __ptr__(x2.b1.a1.n3)[0] += 30
+    __ptr__(x2.b1.a2.n1)[0] += 40
+    __ptr__(x2.b1.a2.n2)[0] += 50
+    __ptr__(x2.b1.a2.n3)[0] += 60
+    __ptr__(x2.b2.a1.n1)[0] += 70
+    __ptr__(x2.b2.a1.n2)[0] += 80
+    __ptr__(x2.b2.a1.n3)[0] += 90
+    __ptr__(x2.b2.a2.n1)[0] += 100
+    __ptr__(x2.b2.a2.n2)[0] += 110
+    __ptr__(x2.b2.a2.n3)[0] += 120
+
+    assert x2.b1.a1.n1 == 10 + 1
+    assert x2.b1.a1.n2 == 20 + 2
+    assert x2.b1.a1.n3 == 30 + 3
+    assert x2.b1.a2.n1 == 40 + 4
+    assert x2.b1.a2.n2 == 50 + 5
+    assert x2.b1.a2.n3 == 60 + 6
+    assert x2.b2.a1.n1 == 70 + 7
+    assert x2.b2.a1.n2 == 80 + 8
+    assert x2.b2.a1.n3 == 90 + 9
+    assert x2.b2.a2.n1 == 100 + 10
+    assert x2.b2.a2.n2 == 110 + 11
+    assert x2.b2.a2.n3 == 120 + 12
+
+    __ptr__(x1)[0] = A(-1, -2, -3)
+    assert x1.n1 == -1
+    assert x1.n2 == -2
+    assert x1.n3 == -3
+
+test_ptr_fields()
