@@ -503,29 +503,15 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
     auto t = extractClassType(head);
     if (!t)
       return nullptr;
-    if (!t->isRecord())
+    if (!last && !t->isRecord())
       E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
 
     if (auto id = cast<IdExpr>(head)) {
       auto val = id ? ctx->find(id->getValue(), getTime()) : nullptr;
-      if (!val || !val->isVar()) {
+      if (!val || !val->isVar())
         E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
-      }
       break;
     } else if (auto dot = cast<DotExpr>(head)) {
-      if (last && !t->isRecord()) {
-        E(Error::CALL_PTR_VAR, expr->begin()->getExpr());
-      } else if (!t->isRecord()) {
-        auto tmp = getTemporaryVar("ptr");
-        auto newDot = N<DotExpr>(N<IdExpr>(tmp), dot->getMember());
-        std::ranges::reverse(members);
-        for (auto &m : members)
-          newDot = N<DotExpr>(newDot, m);
-        return transform(N<StmtExpr>(
-            N<AssignStmt>(N<IdExpr>(tmp), dot->getExpr()),
-            N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.core", "__ptr__")),
-                        newDot)));
-      }
       head = dot->getExpr();
     } else {
       E(Error::CALL_PTR_VAR, expr->begin()->getExpr());

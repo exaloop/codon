@@ -295,6 +295,7 @@ void TranslateVisitor::visit(CallExpr *expr) {
     auto pv = make<ir::PointerValue>(expr, val->getVar(), members);
     if (pre) {
       pre->setValue(pv);
+      result = pre;
     } else {
       result = pv;
     }

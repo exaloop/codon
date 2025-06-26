@@ -62,9 +62,6 @@ print(x)  #: (b: (a: (n: 55)))
 #%% call_ptr_error,barebones
 __ptr__(1) #! __ptr__() only takes identifiers or tuple fields as arguments
 
-#%% call_ptr_error_2,barebones
-__ptr__([1]) #! __ptr__() only takes identifiers or tuple fields as arguments
-
 #%% call_ptr_error_3,barebones
 v = 1
 __ptr__(v, 1) #! __ptr__() takes 1 arguments (2 given)
