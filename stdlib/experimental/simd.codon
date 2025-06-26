@@ -1,8 +1,9 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
 
 @tuple(container=False)  # disallow default __getitem__
-class Vec[T, N: Static[int]]:
+class Vec[T, N: Literal[int]]:
     ZERO_16x8i = Vec[u8,16](u8(0))
     FF_16x8i = Vec[u8,16](u8(0xff))
     ZERO_32x8i = Vec[u8,32](u8(0))
@@ -157,7 +158,7 @@ class Vec[T, N: Static[int]]:
         %0 = bitcast <16 x i32> %vec to <16 x float>
         ret <16 x float> %0
 
-    def __new__(x, T: type, N: Static[int]) -> Vec[T, N]:
+    def __new__(x, T: type, N: Literal[int]) -> Vec[T, N]:
         if isinstance(T, u8) and N == 16:
             if isinstance(x, u8) or isinstance(x, byte): # TODO: u8<->byte
                 return Vec._mm_set1_epi8(x)
@@ -405,7 +406,7 @@ class Vec[T, N: Static[int]]:
         %0 = fadd <8 x float> %x, %y
         ret <8 x float> %0
 
-    def __rshift__(self: Vec[u8, 16], shift: Static[int]) -> Vec[u8, 16]:
+    def __rshift__(self: Vec[u8, 16], shift: Literal[int]) -> Vec[u8, 16]:
         if shift == 0:
             return self
         elif shift == 8:
@@ -418,7 +419,7 @@ class Vec[T, N: Static[int]]:
         %0 = shufflevector <32 x i8> %vec, <32 x i8> zeroinitializer, <32 x i32> <i32 16, i32 17, i32 18, i32 19, i32 20, i32 21, i32 22, i32 23, i32 24, i32 25, i32 26, i32 27, i32 28, i32 29, i32 30, i32 31, i32 32, i32 33, i32 34, i32 35, i32 36, i32 37, i32 38, i32 39, i32 40, i32 41, i32 42, i32 43, i32 44, i32 45, i32 46, i32 47>
         ret <32 x i8> %0
 
-    def __rshift__(self: Vec[u8, 32], shift: Static[int]) -> Vec[u8, 32]:
+    def __rshift__(self: Vec[u8, 32], shift: Literal[int]) -> Vec[u8, 32]:
         if shift == 0:
             return self
         elif shift == 16:
@@ -448,13 +449,13 @@ class Vec[T, N: Static[int]]:
 
     # Constructors
     @llvm
-    def generic_init[SLS: Static[int]](val: T) -> Vec[T, SLS]:
+    def generic_init[SLS: Literal[int]](val: T) -> Vec[T, SLS]:
         %0 = insertelement <{=SLS} x {=T}> undef, {=T} %val, i32 0
         %1 = shufflevector <{=SLS} x {=T}> %0, <{=SLS} x {=T}> undef, <{=SLS} x i32> zeroinitializer
         ret <{=SLS} x {=T}> %1
 
     @llvm
-    def generic_load[SLS: Static[int]](data: Ptr[T]) -> Vec[T, SLS]:
+    def generic_load[SLS: Literal[int]](data: Ptr[T]) -> Vec[T, SLS]:
         %0 = bitcast T* %data to <{=SLS} x {=T}>*
         %1 = load <{=SLS} x {=T}>, <{=SLS} x {=T}>* %0
         ret <{=SLS} x {=T}> %1
@@ -865,7 +866,7 @@ class Vec[T, N: Static[int]]:
         ret <{=N} x {=T}> %0
 
     def scatter(self: Vec[T, N]) -> List[T]:
-        return [self[i] for i in staticrange(N)]
+        return [self[i] for i in static.range(N)]
 
 
 u8x16 = Vec[u8, 16]
@@ -874,12 +875,12 @@ f32x8 = Vec[f32, 8]
 
 
 @llvm
-def bitcast_scatter[N: Static[int]](ptr_in: Ptr[Vec[u64, N]]) -> Ptr[u64]:
+def bitcast_scatter[N: Literal[int]](ptr_in: Ptr[Vec[u64, N]]) -> Ptr[u64]:
     %0 = bitcast <{=N} x i64>* %ptr_in to i64*
     ret i64* %0
 
 
 @llvm
-def bitcast_vectorize[N: Static[int]](ptr_in: Ptr[u64]) -> Ptr[Vec[u64, N]]:
+def bitcast_vectorize[N: Literal[int]](ptr_in: Ptr[u64]) -> Ptr[Vec[u64, N]]:
     %0 = bitcast i64* %ptr_in to <{=N} x i64>*
     ret <{=N} x i64>* %0

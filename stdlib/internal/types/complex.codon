@@ -11,8 +11,9 @@ class complex:
     imag: float
 
     def __new__() -> complex:
-        return (0.0, 0.0)
+        return complex(0.0, 0.0)
 
+    @overload
     def __new__(what):
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):
@@ -20,8 +21,9 @@ class complex:
         else:
             return what.__complex__()
 
+    @overload
     def __new__(real, imag) -> complex:
-        return (float(real), float(imag))
+        return superf(float(real), float(imag))
 
     def __complex__(self) -> complex:
         return self
@@ -340,6 +342,9 @@ class int:
 
 @extend
 class float:
+    def __complex__(self) -> complex:
+        return complex(self, 0.0)
+
     def __suffix_j__(x: float) -> complex:
         return complex(0, x)
 
@@ -348,7 +353,7 @@ f32 = float32
 @extend
 class complex64:
     def __new__() -> complex64:
-        return (f32(0.0), f32(0.0))
+        return complex64(f32(0.0), f32(0.0))
 
     def __new__(other):
         if isinstance(other, str):
@@ -360,10 +365,10 @@ class complex64:
         return complex64(real, f32(0.0))
 
     def __new__(other: complex) -> complex64:
-        return (f32(other.real), f32(other.imag))
+        return complex64(f32(other.real), f32(other.imag))
 
     def __new__(real, imag) -> complex64:
-        return (f32(float(real)), f32(float(imag)))
+        return superf(f32(float(real)), f32(float(imag)))
 
     def __complex__(self) -> complex:
         return complex(float(self.real), float(self.imag))
@@ -762,3 +767,8 @@ class complex64:
         declare float @llvm.log.f32(float)
         %y = call float @llvm.log.f32(float %x)
         ret float %y
+
+@extend
+class int:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)

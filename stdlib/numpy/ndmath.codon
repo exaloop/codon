@@ -3,6 +3,8 @@
 import operator
 import util
 import zmath
+import internal.static as static
+
 from .ndarray import ndarray, flagsobj, newaxis
 from .routines import _check_out, asarray, empty_like, empty, concatenate, moveaxis, broadcast_shapes, zeros, broadcast_to, atleast_1d
 from .ufunc import UnaryUFunc, UnaryUFunc2, BinaryUFunc
@@ -371,15 +373,15 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
     if axis is None:
         outval = []
         dval = util.cast(1, rdtype)
-        if staticlen(varargs) == 0:
-            for i in staticrange(f.ndim):
+        if static.len(varargs) == 0:
+            for i in static.range(f.ndim):
                 result = _gradient_helper_scaler(f,
                                                  dval,
                                                  rdtype,
                                                  axis=i,
                                                  edge_order=edge_order)
                 outval.append(result)
-        elif staticlen(varargs) == 1:
+        elif static.len(varargs) == 1:
             if f.ndim != 1 and (isinstance(varargs[0], List)
                                 or isinstance(varargs[0], Tuple)):
                 compile_error("invalid number of arguments")
@@ -388,7 +390,7 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
                 if varargs[0].ndim != 0:
                     compile_error("invalid number of arguments")
 
-            for i in staticrange(f.ndim):
+            for i in static.range(f.ndim):
                 if (isinstance(varargs[0], List)
                         or isinstance(varargs[0], Tuple)
                         or isinstance(varargs[0], ndarray)):
@@ -405,8 +407,8 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
                                                      edge_order=edge_order)
                 outval.append(result)
         else:
-            if f.ndim == staticlen(varargs):
-                for i in staticrange(f.ndim):
+            if f.ndim == static.len(varargs):
+                for i in static.range(f.ndim):
                     if (isinstance(varargs[i], List)
                             or isinstance(varargs[i], Tuple)
                             or isinstance(varargs[i], ndarray)):
@@ -433,22 +435,22 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
             outval = []
             dval = util.cast(1, rdtype)
 
-            if staticlen(varargs) == 0:
-                for i in range(staticlen(ax)):
+            if static.len(varargs) == 0:
+                for i in range(static.len(ax)):
                     result = _gradient_helper_scaler(f,
                                                      dval,
                                                      rdtype,
                                                      axis=ax[i],
                                                      edge_order=edge_order)
                     outval.append(result)
-            elif staticlen(varargs) == 1:
-                if staticlen(ax) != 1 and (isinstance(varargs[0], List)
+            elif static.len(varargs) == 1:
+                if static.len(ax) != 1 and (isinstance(varargs[0], List)
                                            or isinstance(varargs[0], Tuple)):
                     compile_error("invalid number of arguments")
-                if staticlen(ax) != 1 and isinstance(varargs[0], ndarray):
+                if static.len(ax) != 1 and isinstance(varargs[0], ndarray):
                     if varargs[0].ndim != 0:
                         compile_error("invalid number of arguments")
-                for i in range(staticlen(ax)):
+                for i in range(static.len(ax)):
                     if (isinstance(varargs[0], List)
                             or isinstance(varargs[0], Tuple)
                             or isinstance(varargs[0], ndarray)):
@@ -465,8 +467,8 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
                                                          edge_order=edge_order)
                     outval.append(result)
             else:
-                if staticlen(ax) == staticlen(varargs):
-                    for i in range(staticlen(ax)):
+                if static.len(ax) == static.len(varargs):
+                    for i in range(static.len(ax)):
                         if (isinstance(varargs[i], List)
                                 or isinstance(varargs[i], Tuple)
                                 or isinstance(varargs[i], ndarray)):
@@ -487,7 +489,7 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
                 else:
                     compile_error("invalid number of arguments")
 
-            if staticlen(ax) == 1:
+            if static.len(ax) == 1:
                 return outval[0]
             return outval
         elif isinstance(axis, List[int]):
@@ -495,7 +497,7 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
             outval = []
             dval = util.cast(1, rdtype)
 
-            if staticlen(varargs) == 0:
+            if static.len(varargs) == 0:
                 for i in range(len(ax)):
                     result = _gradient_helper_scaler(f,
                                                      dval,
@@ -503,7 +505,7 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
                                                      axis=ax[i],
                                                      edge_order=edge_order)
                     outval.append(result)
-            elif staticlen(varargs) == 1:
+            elif static.len(varargs) == 1:
                 if len(ax) != 1 and (isinstance(varargs[0], List)
                                      or isinstance(varargs[0], Tuple)):
                     raise ValueError("invalid number of arguments")
@@ -528,7 +530,7 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
                                                          edge_order=edge_order)
                     outval.append(result)
             else:
-                if len(ax) == staticlen(varargs):
+                if len(ax) == static.len(varargs):
                     for i in range(len(ax)):
                         if (isinstance(varargs[i], List)
                                 or isinstance(varargs[i], Tuple)
@@ -553,14 +555,14 @@ def gradient(f, *varargs, axis=None, edge_order: int = 1):
         else:
             axis = util.normalize_axis_index(axis, f.ndim)
 
-            if staticlen(varargs) == 0:
+            if static.len(varargs) == 0:
                 return _gradient_helper_scaler(f,
                                                dx=1,
                                                dtype=rdtype,
                                                axis=axis,
                                                edge_order=edge_order)
             else:
-                if staticlen(varargs) == 1:
+                if static.len(varargs) == 1:
                     if (isinstance(varargs[0], List)
                             or isinstance(varargs[0], Tuple)
                             or isinstance(varargs[0], ndarray)):

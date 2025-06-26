@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 def _heapify(
-    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Makes the array a heap from [begin, end).
@@ -21,7 +21,7 @@ def _heapify(
         _heapify(arr, root, end, keyf)
 
 def _heap_sort(
-    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     if end - begin < 2:
         return
@@ -42,7 +42,7 @@ def _heap_sort(
         i -= 1
 
 def heap_sort_array(
-    collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
+    collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Heap Sort
@@ -51,7 +51,7 @@ def heap_sort_array(
     _heap_sort(collection, 0, size, keyf)
 
 def heap_sort_inplace(
-    collection: List[T], keyf: Callable[[T], S], T: type, S: type
+    collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Heap Sort
@@ -59,7 +59,7 @@ def heap_sort_inplace(
     """
     heap_sort_array(collection.arr, collection.len, keyf)
 
-def heap_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
+def heap_sort(collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type) -> List[T]:
     """
     Heap Sort
     Returns a sorted list.

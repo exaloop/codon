@@ -1,5 +1,6 @@
 import re
 import string
+import internal.static as static
 
 @test
 def test_search_star_plus():
@@ -184,9 +185,9 @@ def cmp_list(a, b):
     return True
 
 def cmp_tuple(a, b):
-    if staticlen(a) != staticlen(b):
+    if static.len(a) != static.len(b):
         return False
-    elif staticlen(a) == 0:
+    elif static.len(a) == 0:
         return True
     else:
         if not cmp_opt(a[0], b[0]):
@@ -424,12 +425,12 @@ def check_match(pattern, text, match: Optional[str] = None, span: Optional[re.Sp
     if match is None and span is None:
         # the pattern matches the whole text
         match = text
-        span = (0, len(text))
+        span = re.Span(0, len(text))
     elif match is None or span is None:
         raise ValueError('If match is not None, span should be specified '
                          '(and vice versa).')
     m = matcher(pattern, text)
-    return bool(m) and m.group() == match and m.span() == span
+    return bool(m) and m.group() == match and m.span() == (*span,)
 
 LITERAL_CHARS = string.ascii_letters + string.digits
 

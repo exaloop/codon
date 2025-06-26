@@ -22,7 +22,6 @@ void ASTVisitor::visit(ListExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(SetExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(DictExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(GeneratorExpr *expr) { defaultVisit(expr); }
-void ASTVisitor::visit(DictGeneratorExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(IfExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(UnaryExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(BinaryExpr *expr) { defaultVisit(expr); }
@@ -51,12 +50,14 @@ void ASTVisitor::visit(PrintStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ReturnStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(YieldStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(AssertStmt *stmt) { defaultVisit(stmt); }
+void ASTVisitor::visit(AwaitStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(WhileStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ForStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(IfStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(MatchStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ImportStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(TryStmt *stmt) { defaultVisit(stmt); }
+void ASTVisitor::visit(ExceptStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(GlobalStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ThrowStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(FunctionStmt *stmt) { defaultVisit(stmt); }
@@ -64,6 +65,7 @@ void ASTVisitor::visit(ClassStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(YieldFromStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(WithStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(CustomStmt *stmt) { defaultVisit(stmt); }
+void ASTVisitor::visit(DirectiveStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(CommentStmt *stmt) { defaultVisit(stmt); }
 
 } // namespace codon::ast

@@ -2,7 +2,6 @@
 
 #pragma once
 
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -10,6 +9,8 @@
 #include "codon/parser/ast/types/type.h"
 
 namespace codon::ast::types {
+
+struct FuncType;
 
 /**
  * A generic class reference type. All Seq types inherit from this class.
@@ -22,93 +23,66 @@ struct ClassType : public Type {
   struct Generic {
     // Generic name.
     std::string name;
-    // Name used for pretty-printing.
-    std::string niceName;
     // Unique generic ID.
     int id;
     // Pointer to realized type (or generic LinkType).
     TypePtr type;
+    // Set if this is a static generic
+    LiteralKind staticKind;
 
-    Generic(std::string name, std::string niceName, TypePtr type, int id)
-        : name(std::move(name)), niceName(std::move(niceName)), id(id),
-          type(std::move(type)) {}
+    Generic(std::string name, TypePtr type, int id, LiteralKind staticKind)
+        : name(std::move(name)), id(id), type(std::move(type)), staticKind(staticKind) {
+    }
+
+    types::Type *getType() const { return type.get(); }
+    Generic generalize(int atLevel) const;
+    Generic instantiate(int atLevel, int *unboundCount,
+                        std::unordered_map<int, TypePtr> *cache) const;
+    std::string debugString(char mode) const;
+    std::string realizedName() const;
   };
 
   /// Canonical type name.
   std::string name;
-  /// Name used for pretty-printing.
-  std::string niceName;
   /// List of generics, if present.
   std::vector<Generic> generics;
 
   std::vector<Generic> hiddenGenerics;
 
+  bool isTuple = false;
   std::string _rn;
 
-  explicit ClassType(Cache *cache, std::string name, std::string niceName,
-                     std::vector<Generic> generics = {},
+  explicit ClassType(Cache *cache, std::string name, std::vector<Generic> generics = {},
                      std::vector<Generic> hiddenGenerics = {});
-  explicit ClassType(const std::shared_ptr<ClassType> &base);
+  explicit ClassType(const ClassType *base);
 
 public:
   int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
+  TypePtr generalize(int atLevel) const override;
   TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+                      std::unordered_map<int, TypePtr> *cache) const override;
 
 public:
-  std::vector<TypePtr> getUnbounds() const override;
+  bool hasUnbounds(bool) const override;
+  std::vector<Type *> getUnbounds(bool) const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
-  /// Convenience function to get the name of realized type
-  /// (needed if a subclass realizes something else as well).
-  virtual std::string realizedTypeName() const;
-  std::shared_ptr<ClassType> getClass() override {
-    return std::static_pointer_cast<ClassType>(shared_from_this());
-  }
-};
-using ClassTypePtr = std::shared_ptr<ClassType>;
+  ClassType *getClass() override { return this; }
+  ClassType *getPartial() override { return name == "Partial" ? getClass() : nullptr; }
+  bool isRecord() const { return isTuple; }
 
-/**
- * A generic class tuple (record) type. All Seq tuples inherit from this class.
- */
-struct RecordType : public ClassType {
-  /// List of tuple arguments.
-  std::vector<TypePtr> args;
-  bool noTuple;
-  std::shared_ptr<StaticType> repeats = nullptr;
-
-  explicit RecordType(
-      Cache *cache, std::string name, std::string niceName,
-      std::vector<ClassType::Generic> generics = std::vector<ClassType::Generic>(),
-      std::vector<TypePtr> args = std::vector<TypePtr>(), bool noTuple = false,
-      const std::shared_ptr<StaticType> &repeats = nullptr);
-  RecordType(const ClassTypePtr &base, std::vector<TypePtr> args, bool noTuple = false,
-             const std::shared_ptr<StaticType> &repeats = nullptr);
+  size_t size() const { return generics.size(); }
+  Type *operator[](size_t i) const { return generics[i].getType(); }
 
 public:
-  int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
-  TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
+  enum PartialFlag { Missing = '0', Included, Default };
 
-public:
-  std::vector<TypePtr> getUnbounds() const override;
-  bool canRealize() const override;
-  bool isInstantiated() const override;
-  std::string debugString(char mode) const override;
-  std::string realizedName() const override;
-  std::string realizedTypeName() const override;
-
-  std::shared_ptr<RecordType> getRecord() override {
-    return std::static_pointer_cast<RecordType>(shared_from_this());
-  }
-  std::shared_ptr<RecordType> getHeterogenousTuple() override;
-
-  int64_t getRepeats() const;
-  void flatten();
+  ClassType *getHeterogenousTuple() override;
+  FuncType *getPartialFunc() const;
+  std::string getPartialMask() const;
+  bool isPartialEmpty() const;
 };
 
 } // namespace codon::ast::types

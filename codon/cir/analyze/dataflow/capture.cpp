@@ -689,7 +689,6 @@ std::vector<CaptureInfo> CaptureContext::get(const Func *func) {
   if (isA<InternalFunc>(func)) {
     bool isTupleNew = func->getUnmangledName() == "__new__" &&
                       isA<types::RecordType>(util::getReturnType(func));
-
     bool isPromise = func->getUnmangledName() == "__promise__" &&
                      std::distance(func->arg_begin(), func->arg_end()) == 1 &&
                      isA<types::GeneratorType>(func->arg_front()->getType());

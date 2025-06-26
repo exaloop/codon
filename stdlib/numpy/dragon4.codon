@@ -1,17 +1,18 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import util
+import internal.static as static
 
-_DIGIT_MODE_UNIQUE: Static[int] = 0
-_DIGIT_MODE_EXACT: Static[int] = 1
+_DIGIT_MODE_UNIQUE: Literal[int] = 0
+_DIGIT_MODE_EXACT: Literal[int] = 1
 
-_CUTOFF_MODE_TOTAL_LENGTH: Static[int] = 0
-_CUTOFF_MODE_FRACTION_LENGTH: Static[int] = 1
+_CUTOFF_MODE_TOTAL_LENGTH: Literal[int] = 0
+_CUTOFF_MODE_FRACTION_LENGTH: Literal[int] = 1
 
-_TRIM_MODE_NONE: Static[int] = 0
-_TRIM_MODE_LEAVE_ONE_ZERO: Static[int] = 1
-_TRIM_MODE_ZEROS: Static[int] = 2
-_TRIM_MODE_DPT_ZEROS: Static[int] = 3
+_TRIM_MODE_NONE: Literal[int] = 0
+_TRIM_MODE_LEAVE_ONE_ZERO: Literal[int] = 1
+_TRIM_MODE_ZEROS: Literal[int] = 2
+_TRIM_MODE_DPT_ZEROS: Literal[int] = 3
 
 def _bitmask_u64(n):
     return ~(~u64(0) << u64(n))
@@ -150,8 +151,8 @@ def _log_base2_128(hi: u64, lo: u64):
 
     return _log_base2_64(lo)
 
-_BIGINT_MAX_BLOCKS: Static[int] = 1023
-_BIGINT_DRAGON4_GROUPSIZE: Static[int] = 7
+_BIGINT_MAX_BLOCKS: Literal[int] = 1023
+_BIGINT_DRAGON4_GROUPSIZE: Literal[int] = 7
 
 class BigInt:
     length: int
@@ -1185,7 +1186,7 @@ def _from_buffer(buffer: cobj, n: int):
 
 # Buffer size that can hold any float128 string
 # TODO: Make this smaller for other float types
-_BUFFER_SIZE: Static[int] = 16384
+_BUFFER_SIZE: Literal[int] = 16384
 
 def format_ieee16(value: float16,
                   scientific: bool = False,
@@ -1203,7 +1204,7 @@ def format_ieee16(value: float16,
     buffer = scratch.ptr
     blocks = bigint_data.ptr
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
-                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+                    for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
     signbit = byte(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
@@ -1275,7 +1276,7 @@ def format_ieee32(value: float32,
     buffer = scratch.ptr
     blocks = bigint_data.ptr
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
-                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+                    for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
     signbit = byte(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
@@ -1347,7 +1348,7 @@ def format_ieee64(value: float,
     buffer = scratch.ptr
     blocks = bigint_data.ptr
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
-                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+                    for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
     signbit = byte(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
@@ -1419,7 +1420,7 @@ def format_ieee128(value: float128,
     buffer = scratch.ptr
     blocks = bigint_data.ptr
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
-                    for i in staticrange(_BIGINT_DRAGON4_GROUPSIZE))
+                    for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
     signbit = byte(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT

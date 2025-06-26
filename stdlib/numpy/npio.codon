@@ -2,22 +2,24 @@
 
 from .ndarray import ndarray
 from .routines import array, empty, asarray, atleast_2d
+
 import util
 import gzip
 import re
+import internal.static as static
 
-_ALLOCATIONGRANULARITY: Static[int] = 16384
+_ALLOCATIONGRANULARITY: Literal[int] = 16384
 
-_PROT_NONE: Static[int] = 0
-_PROT_READ: Static[int] = 1
-_PROT_WRITE: Static[int] = 2
-_PROT_EXEC: Static[int] = 4
+_PROT_NONE: Literal[int] = 0
+_PROT_READ: Literal[int] = 1
+_PROT_WRITE: Literal[int] = 2
+_PROT_EXEC: Literal[int] = 4
 
-_MAP_SHARED: Static[int] = 1
-_MAP_PRIVATE: Static[int] = 2
+_MAP_SHARED: Literal[int] = 1
+_MAP_PRIVATE: Literal[int] = 2
 
-_MAGIC_PREFIX: Static[str] = '\x93NUMPY'
-_ARRAY_ALIGN: Static[int] = 64
+_MAGIC_PREFIX: Literal[str] = '\x93NUMPY'
+_ARRAY_ALIGN: Literal[int] = 64
 
 
 ##################
@@ -168,7 +170,7 @@ def parse_header(header: str):
     else:
         raise ValueError(f"Cannot parse header: {repr(header)}")
 
-def _load(f, mmap_mode: Optional[str], ndim: Static[int], dtype: type):
+def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
     magic = f.read(len(_MAGIC_PREFIX))
 
     if magic != _MAGIC_PREFIX:
@@ -207,7 +209,7 @@ def _load(f, mmap_mode: Optional[str], ndim: Static[int], dtype: type):
         raise ValueError(
             f"Loaded array has dimension {len(elements)}, but expected dimension {ndim} (specified by 'ndim' argument)"
         )
-    shape = tuple(int(elements[i]) for i in staticrange(ndim))
+    shape = tuple(int(elements[i]) for i in static.range(ndim))
     forder = (fortran_order == 'True')
 
     # Read the binary data
@@ -235,7 +237,7 @@ def _load(f, mmap_mode: Optional[str], ndim: Static[int], dtype: type):
 
     return array
 
-def load(file, mmap_mode: Optional[str] = None, ndim: Static[int] = 1, dtype: type = float):
+def load(file, mmap_mode: Optional[str] = None, ndim: Literal[int] = 1, dtype: type = float):
     if mmap_mode is not None:
         mmap_mode = _fix_mmap_mode(mmap_mode)
         if mmap_mode == 'w+':
@@ -509,9 +511,9 @@ class ndarray:
 # loadtxt / genfromtxt #
 ########################
 
-_NEWLINE: Static[int] = 10
-_CARTRIDGE: Static[int] = 13
-_DEFAULT_ROWS: Static[int] = 512
+_NEWLINE: Literal[int] = 10
+_CARTRIDGE: Literal[int] = 13
+_DEFAULT_ROWS: Literal[int] = 512
 
 @tuple
 class Converters:
@@ -525,7 +527,7 @@ class Converters:
 
     def __new__(funcs, mask, usecols,
                 dtype: type) -> Converters[dtype, F, M, U]:
-        return (funcs, mask, usecols)
+        return superf(funcs, mask, usecols)
 
     def __call__(self, field: str, idx: int):
         usecols = self.usecols
@@ -568,7 +570,7 @@ def malformed(row: int, num_fields: int):
         f"inconsistent number of fields in file (row = {row}, expected fields = {num_fields})"
     )
 
-def min_dim(arr: ndarray, ndmin: Static[int]):
+def min_dim(arr: ndarray, ndmin: Literal[int]):
     if arr.ndim == 1 and ndmin == 2:
         return arr.reshape(arr.size, 1)
     else:
@@ -900,7 +902,7 @@ class ArrayUpdate:
         else:
             return r
 
-    def convert_static(self, field: str, idx: Static[int],
+    def convert_static(self, field: str, idx: Literal[int],
                        dtype: type) -> dtype:
         conv = self.conv
         if conv is None:
@@ -941,7 +943,7 @@ class ArrayUpdate:
         # Lots of different cases to consider...
         if cols is not None:
             if isinstance(arr, Tuple):
-                for i in staticrange(staticlen(cols)):
+                for i in static.range(static.len(cols)):
                     col = cols[i]
                     arr[i].data[row] = self.convert_static(
                         fields[col], i, arr[i].dtype)
@@ -950,7 +952,7 @@ class ArrayUpdate:
                     dummy = util.zero(arr.dtype)
                     tup = tuple(
                         self.convert(fields[cols[i]], i, type(dummy[i]))
-                        for i in staticrange(staticlen(arr.dtype)))
+                        for i in static.range(static.len(arr.dtype)))
                     arr._ptr((row, ))[0] = tup
                 else:
                     if arr.ndim == 1:
@@ -958,20 +960,20 @@ class ArrayUpdate:
                         arr.data[row] = self.convert_static(
                             fields[col], 0, arr.dtype)
                     else:
-                        for i in staticrange(staticlen(cols)):
+                        for i in static.range(static.len(cols)):
                             col = cols[i]
                             arr._ptr((row, i))[0] = self.convert_static(
                                 fields[col], i, arr.dtype)
         else:
             if isinstance(arr, Tuple):
-                for i in staticrange(staticlen(arr)):
+                for i in static.range(static.len(arr)):
                     arr[i]._ptr((row, ))[0] = self.convert_static(
                         fields[i], i, arr[i].dtype)
             elif isinstance(arr.dtype, Tuple):
                 dummy = util.zero(arr.dtype)
                 tup = tuple(
                     self.convert(fields[i], i, type(dummy[i]))
-                    for i in staticrange(staticlen(arr.dtype)))
+                    for i in static.range(static.len(arr.dtype)))
                 arr._ptr((row, ))[0] = tup
             else:
                 for i in range(num_fields):
@@ -987,8 +989,8 @@ def loadtxt(fname: str,
             converters=None,
             skiprows: int = 0,
             usecols=None,
-            unpack: Static[int] = False,
-            ndmin: Static[int] = 0,
+            unpack: Literal[bool] = False,
+            ndmin: Literal[int] = 0,
             max_rows: Optional[int] = None,
             quotechar: Optional[str] = None):
 
@@ -997,7 +999,7 @@ def loadtxt(fname: str,
     else:
         cols = usecols
         if cols is not None:
-            if staticlen(cols) == 0:
+            if static.len(cols) == 0:
                 compile_error("cannot pass empty tuple to 'usecols'")
 
     if ndmin != 0 and ndmin != 1 and ndmin != 2:
@@ -1015,7 +1017,7 @@ def loadtxt(fname: str,
 
         if cols is None:
             if isinstance(dtype, Tuple):
-                if staticlen(dtype) != num_fields:
+                if static.len(dtype) != num_fields:
                     raise ValueError(
                         "number of fields is different than given tuple 'dtype' length"
                     )
@@ -1023,14 +1025,14 @@ def loadtxt(fname: str,
                     dummy = util.zero(dtype)
                     arr = tuple(
                         empty((block_size, ), type(dummy[i]))
-                        for i in staticrange(staticlen(dtype)))
+                        for i in static.range(static.len(dtype)))
                 else:
                     arr = empty((block_size, ), dtype)
             else:
                 arr = empty((block_size, num_fields), dtype)
         else:
             if isinstance(dtype, Tuple):
-                if staticlen(dtype) != staticlen(cols):
+                if static.len(dtype) != static.len(cols):
                     compile_error(
                         "'usecols' has different length than given tuple 'dtype'"
                     )
@@ -1042,16 +1044,16 @@ def loadtxt(fname: str,
                         raise ValueError(
                             f"duplicate column {cols[i]} given in 'usecols'")
 
-            if staticlen(cols) == 1:
+            if static.len(cols) == 1:
                 arr = empty((block_size, ), dtype)
             else:
                 if unpack:
                     if isinstance(dtype, Tuple):
                         dummy = util.zero(dtype)
-                        ncols: Static[int] = staticlen(cols)
+                        ncols: Literal[int] = static.len(cols)
                         arr = tuple(
                             empty((block_size, ), type(dummy[i]))
-                            for i in staticrange(ncols))
+                            for i in static.range(ncols))
                     else:
                         arr = tuple(empty((block_size, ), dtype) for _ in cols)
                 else:
@@ -1805,7 +1807,7 @@ class ArrayUpdateGen:
         else:
             return filling_values
 
-    def fill_value_static(self, idx: Static[int], dtype: type) -> dtype:
+    def fill_value_static(self, idx: Literal[int], dtype: type) -> dtype:
         filling_values = self.filling_values
         if filling_values is None:
             return default_fill(dtype)
@@ -1854,7 +1856,7 @@ class ArrayUpdateGen:
         else:
             return r
 
-    def convert_static(self, field: str, idx: Static[int],
+    def convert_static(self, field: str, idx: Literal[int],
                        dtype: type) -> dtype:
         field0 = field
         conv = self.conv
@@ -1908,7 +1910,7 @@ class ArrayUpdateGen:
         # Lots of different cases to consider...
         if cols is not None:
             if isinstance(arr, Tuple):
-                for i in staticrange(staticlen(cols)):
+                for i in static.range(static.len(cols)):
                     col = cols[i]
                     arr[i].data[row] = self.convert_static(
                         fields[col], i, arr[i].dtype)
@@ -1917,7 +1919,7 @@ class ArrayUpdateGen:
                     dummy = util.zero(arr.dtype)
                     tup = tuple(
                         self.convert(fields[cols[i]], i, type(dummy[i]))
-                        for i in staticrange(staticlen(arr.dtype)))
+                        for i in static.range(static.len(arr.dtype)))
                     arr._ptr((row, ))[0] = tup
                 else:
                     if arr.ndim == 1:
@@ -1925,20 +1927,20 @@ class ArrayUpdateGen:
                         arr.data[row] = self.convert_static(
                             fields[col], 0, arr.dtype)
                     else:
-                        for i in staticrange(staticlen(cols)):
+                        for i in static.range(static.len(cols)):
                             col = cols[i]
                             arr._ptr((row, i))[0] = self.convert_static(
                                 fields[col], i, arr.dtype)
         else:
             if isinstance(arr, Tuple):
-                for i in staticrange(staticlen(arr)):
+                for i in static.range(static.len(arr)):
                     arr[i]._ptr((row, ))[0] = self.convert_static(
                         fields[i], i, arr[i].dtype)
             elif isinstance(arr.dtype, Tuple):
                 dummy = util.zero(arr.dtype)
                 tup = tuple(
                     self.convert(fields[i], i, type(dummy[i]))
-                    for i in staticrange(staticlen(arr.dtype)))
+                    for i in static.range(static.len(arr.dtype)))
                 arr._ptr((row, ))[0] = tup
             else:
                 for i in range(num_fields):
@@ -1963,11 +1965,11 @@ def genfromtxt(fname,
                replace_space: str = '_',
                autostrip: bool = False,
                case_sensitive=True,
-               unpack: Static[int] = False,
+               unpack: Literal[bool] = False,
                loose: bool = True,
                invalid_raise: bool = True,
                max_rows: Optional[int] = None,
-               ndmin: Static[int] = 0):
+               ndmin: Literal[int] = 0):
 
     def make_callback(csv,
                       cols,
@@ -1978,10 +1980,10 @@ def genfromtxt(fname,
                       num_fields: int,
                       block_size: int,
                       dtype: type,
-                      unpack: Static[int] = False):
+                      unpack: Literal[bool] = False):
         if cols is None:
             if isinstance(dtype, Tuple):
-                if staticlen(dtype) != num_fields:
+                if static.len(dtype) != num_fields:
                     raise ValueError(
                         "number of fields is different than given tuple 'dtype' length"
                     )
@@ -1989,7 +1991,7 @@ def genfromtxt(fname,
                     dummy = util.zero(dtype)
                     arr = tuple(
                         empty((block_size, ), type(dummy[i]))
-                        for i in staticrange(staticlen(dtype)))
+                        for i in static.range(static.len(dtype)))
                 else:
                     arr = empty((block_size, ), dtype)
             else:
@@ -1997,23 +1999,23 @@ def genfromtxt(fname,
             xcols = cols
         else:
             if isinstance(dtype, Tuple):
-                if staticlen(dtype) != staticlen(cols):
+                if static.len(dtype) != static.len(cols):
                     compile_error(
                         "'usecols' has different length than given tuple 'dtype'"
                     )
 
             xcols = csv.translate_cols(cols, num_fields)
 
-            if staticlen(xcols) == 1:
+            if static.len(xcols) == 1:
                 arr = empty((block_size, ), dtype)
             else:
                 if unpack:
                     if isinstance(dtype, Tuple):
                         dummy = util.zero(dtype)
-                        ncols: Static[int] = staticlen(xcols)
+                        ncols: Literal[int] = static.len(xcols)
                         arr = tuple(
                             empty((block_size, ), type(dummy[i]))
-                            for i in staticrange(ncols))
+                            for i in static.range(ncols))
                     else:
                         arr = tuple(
                             empty((block_size, ), dtype) for _ in xcols)
@@ -2140,7 +2142,7 @@ def genfromtxt(fname,
     else:
         cols = usecols
         if cols is not None:
-            if staticlen(cols) == 0:
+            if static.len(cols) == 0:
                 compile_error("cannot pass empty tuple to 'usecols'")
 
     if ndmin != 0 and ndmin != 1 and ndmin != 2:
@@ -2344,7 +2346,7 @@ class ndarray:
         from pickle import _read_raw
         atomic = util.atomic(dtype)
         forder = bool(int.__unpickle__(jar))
-        shape = tuple(int.__unpickle__(jar) for _ in staticrange(ndim))
+        shape = tuple(int.__unpickle__(jar) for _ in static.range(ndim))
         n = util.count(shape)
         p = Ptr[dtype](n)
 

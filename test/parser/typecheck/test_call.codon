@@ -1,0 +1,1176 @@
+
+#%% call_ptr,barebones
+v = 5
+p = __ptr__(v)
+print p[0] #: 5
+
+def test_tuple():
+    @tuple
+    class Foo:
+        x: int
+
+    f = Foo(6)
+    pf = __ptr__(f.x)
+    print pf[0]  #: 6
+
+    def foo(x):
+        return Foo(x)
+
+    ff = foo(16)
+    pff = __ptr__(ff.x)
+    print pff[0]  #: 16
+test_tuple()
+
+def test_class():
+    class Foo:
+        x: int
+
+    f = Foo(6)
+    pf = __ptr__(f.x)
+    print pf[0]  # 6
+    f.x = 7
+    print pf[0]  # 7
+
+    def foo(x):
+        return Foo(x)
+    ff = foo(16)
+    pff = __ptr__(ff.x)
+    print pff[0]  # 16
+    ff.x = 17
+    print pff[0]  # 17
+# test_class()
+
+
+@tuple
+class A:
+    n: int
+
+@tuple
+class B:
+    a: A
+
+@tuple
+class C:
+    b: B
+
+x = C(B(A(1)))
+p = __ptr__(x.b.a.n)
+p[0] = 55
+print(x)  #: (b: (a: (n: 55)))
+
+
+#%% call_ptr_error,barebones
+__ptr__(1) #! __ptr__() only takes identifiers or tuple fields as arguments
+
+#%% call_ptr_error_3,barebones
+v = 1
+__ptr__(v, 1) #! __ptr__() takes 1 arguments (2 given)
+
+#%% call_ptr_error_4,barebones
+@tuple
+class A:
+    n: int
+
+class B:
+    a: A
+
+@tuple
+class C:
+    b: B
+
+x = C(B(A(1)))
+print(__ptr__(x.b.a.n)) #! __ptr__() only takes identifiers or tuple fields as arguments
+
+#%% call_ptr_error_5,barebones
+@tuple
+class A:
+    n: int
+
+class B:
+    a: A
+
+@tuple
+class C:
+    b: B
+
+x = C(B(A(1)))
+print(__ptr__(A(1).n))   #! __ptr__() only takes identifiers or tuple fields as arguments
+
+
+#%% call_array,barebones
+a = __array__[int](2)
+a[0] = a[1] = 5
+print a[0], a[1] #: 5 5
+
+#%% call_array_error,barebones
+a = __array__[int](2, 3) #! __new__() takes 1 arguments (2 given)
+
+#%% call_err_1,barebones
+seq_print(1, name="56", 2) #! positional argument follows keyword argument
+
+#%% call_err_2,barebones
+x = (1, 2)
+seq_print(1, name=*x) #! syntax error, unexpected '*'
+
+#%% call_err_3,barebones
+x = (1, 2)
+seq_print(1, name=**x) #! syntax error, unexpected '*'
+
+#%% call_collections
+from collections import namedtuple as nt
+
+ee = nt('Foo', ('x', 'y'))
+f = ee(1, 2)
+print f #: (x: 1, y: 2)
+
+ee = nt('FooX', (('x', str), 'y'))
+fd = ee('s', 2)
+print fd #: (x: 's', y: 2)
+
+#%% call_partial_functools
+from functools import partial
+def foo(x, y, z):
+    print x,y,z
+f1 = partial(foo, 1, z=3)
+f1(2) #: 1 2 3
+f2 = partial(foo, y=2)
+f2(1, 2) #: 1 2 2
+
+#%% call,barebones
+def foo(a, b, c='hi'):
+    print 'foo', a, b, c
+    return 1
+class Foo:
+    def __init__(self):
+        print 'Foo.__init__'
+    def foo(self, a):
+        print 'Foo.foo', a
+        return 's'
+    def bar[T](self, a: T):
+        print 'Foo.bar', a
+        return a.__class__.__name__
+    def __call__(self, y):
+        print 'Foo.__call__'
+        return foo(2, y)
+
+foo(1, 2.2, True) #: foo 1 2.2 True
+foo(1, 2.2) #: foo 1 2.2 hi
+foo(b=2.2, a=1) #: foo 1 2.2 hi
+foo(b=2.2, c=12u, a=1) #: foo 1 2.2 12
+
+f = Foo() #: Foo.__init__
+print f.foo(a=5) #: Foo.foo 5
+#: s
+print f.bar(a=1, T=int) #: Foo.bar 1
+#: int
+print Foo.bar(Foo(), 1.1, T=float) #: Foo.__init__
+#: Foo.bar 1.1
+#: float
+print Foo.bar(Foo(), 's') #: Foo.__init__
+#: Foo.bar s
+#: str
+print f('hahaha') #: Foo.__call__
+#: foo 2 hahaha hi
+#: 1
+
+@tuple
+class Moo:
+    moo: int
+    def __new__(i: int) -> Moo:
+        print 'Moo.__new__'
+        return superf(i)
+print Moo(1) #: Moo.__new__
+#: (moo: 1)
+
+#%% call_err_6,barebones
+seq_print_full(1, name="56", name=2) #! keyword argument repeated: name
+
+#%% call_partial,barebones
+def foo(i, j, k):
+    return i + j + k
+print foo(1.1, 2.2, 3.3)  #: 6.6
+p = foo(6, ...)
+print p.__class__.__name__ #: foo(int,...,...)
+print p(2, 1)  #: 9
+print p(k=3, j=6) #: 15
+q = p(k=1, ...)
+print q(3)  #: 10
+qq = q(2, ...)
+print qq()  #: 9
+#
+add_two = foo(3, k=-1, ...)
+print add_two(42)  #: 44
+print 3 |> foo(1, 2)  #: 6
+print 42 |> add_two  #: 44
+#
+def moo(a, b, c=3):
+    print a, b, c
+m = moo(b=2, ...)
+print m.__class__.__name__ #: moo(...,int,...)
+m('s', 1.1) #: s 2 1.1
+# #
+n = m(c=2.2, ...)
+print n.__class__.__name__ #: moo(...,int,float)
+n('x') #: x 2 2.2
+print n('y').__class__.__name__ #: NoneType
+
+def ff(a, b, c):
+    return a, b, c
+print ff(1.1, 2, True).__class__.__name__ #: Tuple[float,int,bool]
+print ff(1.1, ...)(2, True).__class__.__name__ #: Tuple[float,int,bool]
+y = ff(1.1, ...)(c=True, ...)
+print y.__class__.__name__ #: ff(float,...,bool)
+print ff(1.1, ...)(2, ...)(True).__class__.__name__ #: Tuple[float,int,bool]
+print y('hei').__class__.__name__ #: Tuple[float,str,bool]
+z = ff(1.1, ...)(c='s', ...)
+print z.__class__.__name__ #: ff(float,...,str)
+
+def fx(*args, **kw):
+    print(args, kw)
+f1 = fx(1, x=1, ...)
+f2 = f1(2, y=2, ...)
+f3 = f2(3, z=3, ...)
+f3()
+#: (1, 2, 3) (x: 1, y: 2, z: 3)
+
+#%% call_arguments_partial,barebones
+def doo[R, T](a: CallableTrait[[T], R], b: Generator[T], c: Optional[T], d: T):
+    print R.__class__.__name__, T.__class__.__name__
+    print a.__class__.__name__[:8], b.__class__.__name__
+    for i in b:
+        print a(i)
+    print c, c.__class__.__name__
+    print d, d.__class__.__name__
+
+l = [1, 2, 3]
+doo(b=l, d=Optional(5), c=l[0], a=lambda x: x+1)
+#: int int
+#: %_lambda Generator[int]
+#: 2
+#: 3
+#: 4
+#: 1 Optional[int]
+#: 5 int
+
+l = [1]
+def adder(a, b): return a+b
+doo(b=l, d=Optional(5), c=l[0], a=adder(b=4, ...))
+#: int int
+#: adder(.. Generator[int]
+#: 5
+#: 1 Optional[int]
+#: 5 int
+
+#%% call_partial_star,barebones
+def foo(x, *args, **kwargs):
+    print x, args, kwargs
+p = foo(...)
+p(1, z=5) #: 1 () (z: 5)
+p('s', zh=65) #: s () (zh: 65)
+q = p(zh=43, ...)
+q(1) #: 1 () (zh: 43)
+r = q(5, 38, ...)
+r() #: 5 (38,) (zh: 43)
+r(1, a=1) #: 5 (38, 1) (zh: 43, a: 1)
+
+# kwarg overwrite!
+q(1, zh=99)  #: 1 () (zh: 99)
+r(zh=55)  #: 5 (38,) (zh: 55)
+
+#%% call_args_kwargs_type,barebones
+def foo(*args: float, **kwargs: int):
+    print(args, kwargs, args.__class__.__name__)
+
+foo(1, f=1)  #: (1,) (f: 1) Tuple[float]
+foo(1, 2.1, 3, z=2)  #: (1, 2.1, 3) (z: 2) Tuple[float,float,float]
+
+def sum(x: Generator[int]):
+    a = 0
+    for i in x:
+        a += i
+    return a
+
+def sum_gens(*x: Generator[int]) -> int:
+    a = 0
+    for i in x:
+        a += sum(i)
+    return a
+print sum_gens([1, 2, 3])  #: 6
+print sum_gens({1, 2, 3})  #: 6
+print sum_gens(iter([1, 2, 3]))  #: 6
+
+#%% call_kwargs,barebones
+def kwhatever(**kwargs):
+    print 'k', kwargs
+def whatever(*args):
+    print 'a', args
+def foo(a, b, c=1, *args, **kwargs):
+    print a, b, c, args, kwargs
+    whatever(a, b, *args, c)
+    kwhatever(x=1, **kwargs)
+foo(1, 2, 3, 4, 5, arg1='s', kwa=2)
+#: 1 2 3 (4, 5) (arg1: 's', kwa: 2)
+#: a (1, 2, 4, 5, 3)
+#: k (arg1: 's', kwa: 2, x: 1)
+foo(1, 2)
+#: 1 2 1 () ()
+#: a (1, 2, 1)
+#: k (x: 1)
+foo(1, 2, 3)
+#: 1 2 3 () ()
+#: a (1, 2, 3)
+#: k (x: 1)
+foo(1, 2, 3, 4)
+#: 1 2 3 (4,) ()
+#: a (1, 2, 4, 3)
+#: k (x: 1)
+foo(1, 2, zamboni=3)
+#: 1 2 1 () (zamboni: 3)
+#: a (1, 2, 1)
+#: k (x: 1, zamboni: 3)
+
+#%% call_unpack,barebones
+def foo(*args, **kwargs):
+    print args, kwargs
+
+@tuple
+class Foo:
+    x: int = 5
+    y: bool = True
+
+t = (1, 's')
+f = Foo(6)
+foo(*t, **f) #: (1, 's') (x: 6, y: True)
+foo(*(1,2)) #: (1, 2) ()
+foo(3, f) #: (3, (x: 6, y: True)) ()
+foo(k = 3, **f) #: () (k: 3, x: 6, y: True)
+
+#%% call_partial_args_kwargs,barebones
+def foo(*args):
+    print(args)
+a = foo(1, 2, ...)
+b = a(3, 4, ...)
+c = b(5, ...)
+c('zooooo')
+#: (1, 2, 3, 4, 5, 'zooooo')
+
+def fox(*args, **kwargs):
+    print(args, kwargs)
+xa = fox(1, 2, x=5, ...)
+xb = xa(3, 4, q=6, ...)
+xc = xb(5, ...)
+xd = xc(z=5.1, ...)
+xd('zooooo', w='lele')
+#: (1, 2, 3, 4, 5, 'zooooo') (x: 5, q: 6, z: 5.1, w: 'lele')
+
+class Foo:
+    i: int
+    def __str__(self):
+        return f'#{self.i}'
+    def foo(self, a):
+        return f'{self}:generic'
+    def foo(self, a: float):
+        return f'{self}:float'
+    def foo(self, a: int):
+        return f'{self}:int'
+f = Foo(4)
+
+def pacman(x, f):
+    print f(x, '5')
+    print f(x, 2.1)
+    print f(x, 4)
+pacman(f, Foo.foo)
+#: #4:generic
+#: #4:float
+#: #4:int
+
+def macman(f):
+    print f('5')
+    print f(2.1)
+    print f(4)
+macman(f.foo)
+#: #4:generic
+#: #4:float
+#: #4:int
+
+class Fox:
+    i: int
+    def __str__(self):
+        return f'#{self.i}'
+    def foo(self, a, b):
+        return f'{self}:generic b={b}'
+    def foo(self, a: float, c):
+        return f'{self}:float, c={c}'
+    def foo(self, a: int):
+        return f'{self}:int'
+    def foo(self, a: int, z, q):
+        return f'{self}:int z={z} q={q}'
+ff = Fox(5)
+def maxman(f):
+    print f('5', b=1)
+    print f(2.1, 3)
+    print f(4)
+    print f(5, 1, q=3)
+maxman(ff.foo)
+#: #5:generic b=1
+#: #5:float, c=3
+#: #5:int
+#: #5:int z=1 q=3
+
+
+#%% call_static,barebones
+print isinstance(1, int), isinstance(2.2, float), isinstance(3, bool)
+#: True True False
+print isinstance((1, 2), Tuple), isinstance((1, 2), Tuple[int, int]), isinstance((1, 2), Tuple[float, int])
+#: True True False
+print isinstance([1, 2], List), isinstance([1, 2], List[int]), isinstance([1, 2], List[float])
+#: True True False
+print isinstance({1, 2}, List), isinstance({1, 2}, Set[float])
+#: False False
+print isinstance(Optional(5), Optional[int]), isinstance(Optional(), Optional)
+#: True True
+print isinstance(Optional(), Optional[int]), isinstance(Optional('s'), Optional[int])
+#: False False
+print isinstance(None, Optional), isinstance(None, Optional[int])
+#: True False
+print isinstance(None, Optional[NoneType])
+#: True
+print isinstance({1, 2}, List)
+#: False
+
+print static.len((1, 2, 3)), static.len((1, )), static.len('hehe')
+#: 3 1 4
+
+print hasattr([1, 2], "__getitem__")
+#: True
+print hasattr(type([1, 2]), "__getitem__")
+#: True
+print hasattr(int, "__getitem__")
+#: False
+print hasattr([1, 2], "__getitem__") #: True
+print hasattr([1, 2], "__getitem__", int) #: True
+print hasattr([1, 2], "__getitem__", str) #: False
+print hasattr([1, 2], "__getitem__", idx=int) #: True
+print hasattr([1, 2], "__getitem__", idx=str) #: False
+
+def kw(**kwargs):
+    print hasattr(kwargs, "yes"), hasattr(kwargs, "no")
+kw(yes=1)  #: True False
+kw()  #: False False
+kw(no=1)  #: False True
+kw(no=1, yes=1)  #: True True
+
+#%% isinstance_inheritance,barebones
+class AX[T]:
+    a: T
+    def __init__(self, a: T):
+        self.a = a
+class Side:
+    def __init__(self):
+        pass
+class BX[T,U](Static[AX[T]], Static[Side]):
+    b: U
+    def __init__(self, a: T, b: U):
+        super().__init__(a)
+        self.b = b
+class CX[T,U](Static[BX[T,U]]):
+    c: int
+    def __init__(self, a: T, b: U):
+        super().__init__(a, b)
+        self.c = 1
+c = CX('a', False)
+print isinstance(c, CX), isinstance(c, BX), isinstance(c, AX), isinstance(c, Side)
+#: True True True True
+print isinstance(c, BX[str, bool]), isinstance(c, BX[str, str]), isinstance(c, AX[int])
+#: True False False
+
+#%% staticlen_err,barebones
+print static.len([1, 2]) #! expected tuple type
+
+#%% compile_error,barebones
+compile_error("woo-hoo") #! woo-hoo
+
+#%% stack_alloc,barebones
+a = __array__[int](2)
+print a.__class__.__name__ #: Array[int]
+
+#%% typeof,barebones
+a = 5
+z = []
+z.append(6)
+print z.__class__.__name__, z, type(1.1).__class__.__name__  #: List[int] [6] float
+
+#%% ptr,barebones
+v = 5
+c = __ptr__(v)
+print c.__class__.__name__ #: Ptr[int]
+
+#%% tuple_fn,barebones
+@tuple
+class unpackable_plain:
+  a: int
+  b: str
+
+u = unpackable_plain(1, 'str')
+a, b = tuple(u)
+print a, b #: 1 str
+
+@tuple
+class unpackable_gen:
+  a: int
+  b: T
+  T: type
+
+u2 = unpackable_gen(1, 'str')
+a2, b2 = tuple(u2)
+print a2,b2  #: 1 str
+
+class plain:
+  a: int
+  b: str
+
+c = plain(3, 'heh')
+z = tuple(c)
+print z, z.__class__.__name__  #: (3, 'heh') Tuple[int,str]
+
+#%% super,barebones
+class A[T]:
+    a: T
+    def __init__(self, t: T):
+        self.a = t
+    def foo(self):
+        return f'A:{self.a}'
+class B(Static[A[str]]):
+    b: int
+    def __init__(self):
+        super().__init__('s')
+        self.b = 6
+    def baz(self):
+        return f'{super().foo()}::{self.b}'
+b = B()
+print b.foo() #: A:s
+print b.baz() #: A:s::6
+
+class AX[T]:
+    a: T
+    def __init__(self, a: T):
+        self.a = a
+    def foo(self):
+        return f'[AX:{self.a}]'
+class BX[T,U](Static[AX[T]]):
+    b: U
+    def __init__(self, a: T, b: U):
+        print super().__class__.__name__
+        super().__init__(a)
+        self.b = b
+    def foo(self):
+        return f'[BX:{super().foo()}:{self.b}]'
+class CX[T,U](Static[BX[T,U]]):
+    c: int
+    def __init__(self, a: T, b: U):
+        print super().__class__.__name__
+        super().__init__(a, b)
+        self.c = 1
+    def foo(self):
+        return f'CX:{super().foo()}:{self.c}'
+c = CX('a', False)
+print c.__class__.__name__, c.foo()
+#: BX[str,bool]
+#: AX[str]
+#: CX[str,bool] CX:[BX:[AX:a]:False]:1
+
+#%% super_vtable_2
+class Base:
+    def test(self):
+        print('base.test')
+class A(Base):
+    def test(self):
+        super().test()
+        Base.test(self)
+        print('a.test')
+a = A()
+a.test()
+def moo(x: Base):
+    x.test()
+moo(a)
+Base.test(a)
+#: base.test
+#: base.test
+#: a.test
+#: base.test
+#: base.test
+#: a.test
+#: base.test
+
+#%% super_tuple,barebones
+@tuple
+class A[T]:
+    a: T
+    x: int
+    def __new__(a: T) -> A[T]:
+        return A[T](a, 1)
+    def foo(self):
+        return f'A:{self.a}'
+@tuple
+class B(Static[A[str]]):
+    b: int
+    def __new__() -> B:
+        return B(*(A('s')), 6)
+    def baz(self):
+        return f'{super().foo()}::{self.b}'
+
+b = B()
+print b.foo() #: A:s
+print b.baz() #: A:s::6
+
+
+#%% super_error,barebones
+class A:
+    def __init__(self):
+        super().__init__()
+a = A()
+#! no super methods found
+#! during the realization of __init__(self: A)
+
+#%% super_error_2,barebones
+super().foo(1) #! no super methods found
+
+#%% superf,barebones
+class Foo:
+    def foo(a):
+        # superf(a)
+        print 'foo-1', a
+    def foo(a: int):
+        superf(a)
+        print 'foo-2', a
+    def foo(a: str):
+        superf(a)
+        print 'foo-3', a
+    def foo(a):
+        superf(a)
+        print 'foo-4', a
+Foo.foo(1)
+#: foo-1 1
+#: foo-2 1
+#: foo-4 1
+
+class Bear:
+    def woof(x):
+        return f'bear woof {x}'
+@extend
+class Bear:
+    def woof(x):
+        return superf(x) + f' bear w--f {x}'
+print Bear.woof('!')
+#: bear woof ! bear w--f !
+
+class PolarBear(Static[Bear]):
+    def woof():
+        return 'polar ' + superf('@')
+print PolarBear.woof()
+#: polar bear woof @ bear w--f @
+
+#%% superf_error,barebones
+class Foo:
+    def foo(a):
+        superf(a)
+        print 'foo-1', a
+Foo.foo(1)
+#! no superf methods found
+#! during the realization of foo(a: int)
+
+#%% static_getitem
+print Int[static.len("ee")].__class__.__name__ #: Int[2]
+
+y = [1, 2]
+print getattr(y, "len") #: 2
+print y.len #: 2
+getattr(y, 'append')(1)
+print y #: [1, 2, 1]
+
+@extend
+class Dict:
+    def __getitem2__(self, attr: Literal[str]):
+        if hasattr(self, attr):
+            return getattr(self, attr)
+        else:
+            return self[attr]
+    def __getitem1__(self, attr: Literal[int]):
+        return self[attr]
+
+d = {'s': 3.19}
+print d.__getitem2__('_upper_bound') #: 3
+print d.__getitem2__('s') #: 3.19
+e = {1: 3.33}
+print e.__getitem1__(1) #: 3.33
+
+#%% forward,barebones
+def foo(f, x):
+    f(x, type(x))
+    print f.__class__.__name__
+def bar[T](x):
+    print x, T.__class__.__name__
+foo(bar, 1)
+#: 1 int
+#: bar(...,...)
+foo(bar(...), 's')
+#: s str
+#: bar(...,...)
+z = bar
+z('s', int)
+#: s int
+z(1, T=str)
+#: 1 str
+
+zz = bar(T=int,...)
+zz(1)
+#: 1 int
+
+#%% forward_error,barebones
+def foo(f, x):
+    f(x, type(x))
+    print f.__class__.__name__
+def bar[T](x):
+    print x, T.__class__.__name__
+foo(bar(T=int,...), 1)
+#! bar() takes 2 arguments (2 given)
+#! during the realization of foo(f: bar(...,int), x: int)
+# TODO fix this error message
+
+#%% sort_partial
+def foo(x, y):
+    return y**x
+print sorted([1,2,3,4,5], key=foo(y=2, ...))
+print sorted([1,2,3,4,5], key=foo(y=-2, ...))
+#: [1, 2, 3, 4, 5]
+#: [5, 3, 1, 2, 4]
+
+#%% type_loc,barebones
+a = 1
+T = type(a)
+print T.__class__.__name__  #: int
+
+#%% methodcaller,barebones
+def foo():
+    def bar(a, b):
+        print 'bar', a, b
+    return bar
+foo()(1, 2) #: bar 1 2
+
+def methodcaller(foo: Literal[str]):
+    def caller(foo: Literal[str], obj, *args, **kwargs):
+        if isinstance(getattr(obj, foo)(*args, **kwargs), None):
+            getattr(obj, foo)(*args, **kwargs)
+        else:
+            return getattr(obj, foo)(*args, **kwargs)
+    return caller(foo=foo, ...)
+v = [1]
+methodcaller('append')(v, 42)
+print v #: [1, 42]
+print methodcaller('index')(v, 42) #: 1
+
+#%% constructor_passing
+class A:
+    s: str
+    def __init__(self, x):
+        self.s = str(x)[::-1]
+    def __lt__(self, o): return self.s < o.s
+    def __eq__(self, o): return self.s == o.s
+    def __ge__(self, o): return self.s >= o.s
+foo = [1,2,11,30]
+print(sorted(foo, key=str))
+#: [1, 11, 2, 30]
+print(sorted(foo, key=A))
+#: [30, 1, 11, 2]
+
+@tuple
+class AT:
+    s: str
+    def __new__(i: int) -> AT: return AT(str(i))
+print(sorted(foo, key=AT))
+#: [1, 11, 2, 30]
+
+#%% polymorphism,barebones
+class A:
+    a: int
+    def foo(self, a: int): return (f'A({self.a})', a)
+    def bar(self): return 'A.bar'
+    def aaz(self): return 'A.aaz'
+class B(A):
+    b: int
+    def foo(self, a): return (f'B({self.a},{self.b})', a + self.b)
+    def bar(self): return 'B.bar'
+    def baz(self): return 'B.baz'
+class M[T]:
+    m: T
+    def moo(self): return (f'M_{T.__class__.__name__}', self.m)
+class X(B,M[int]):
+    def foo(self, a): return (f'X({self.a},{self.b},{self.m})', a + self.b + self.m)
+    def bar(self): return 'X.bar'
+
+def foo(i):
+    x = i.foo(1)
+    y = i.bar()
+    z = i.aaz()
+    print(*x, y, z)
+a = A(1)
+l = [a, B(2,3), X(2,3,-1)]
+for i in l: foo(i)
+#: A(1) 1 A.bar A.aaz
+#: B(2,3) 4 B.bar A.aaz
+#: X(2,3,-1) 3 X.bar A.aaz
+
+def moo(m: M):
+    print(m.moo())
+moo(M[float](5.5))
+moo(X(1,2,3))
+#: ('M_float', 5.5)
+#: ('M_int', 3)
+
+
+class A[T]:
+    def __init__(self):
+        print("init A", T.__class__.__name__)
+class Ho:
+    def __init__(self):
+        print("init Ho")
+# TODO: this throws and error: B[U](U)
+class B[U](A[U], Ho):
+    def __init__(self):
+        super().__init__()
+        print("init B", U.__class__.__name__)
+B[Ho]()
+#: init A Ho
+#: init B Ho
+
+
+class Vehicle:
+    def drive(self):
+        return "I'm driving a vehicle"
+
+class Car(Vehicle):
+    def drive(self):
+        return "I'm driving a car"
+
+class Truck(Vehicle):
+    def drive(self):
+        return "I'm driving a truck"
+
+class SUV(Car, Truck):
+    def drive(self):
+        return "I'm driving an SUV"
+
+suv = SUV()
+def moo(s):
+    print(s.drive())
+moo(suv)
+moo(Truck())
+moo(Car())
+moo(Vehicle())
+#: I'm driving an SUV
+#: I'm driving a truck
+#: I'm driving a car
+#: I'm driving a vehicle
+
+
+#%% polymorphism_error_1,barebones
+class M[T]:
+    m: T
+class X(M[int]):
+    pass
+l = [M[float](1.1), X(2)]
+#! 'X' does not match expected type 'M[float]'
+
+#%% polymorphism_2
+class Expr:
+    def __init__(self):
+        pass
+    def eval(self):
+        raise ValueError('invalid expr')
+        return 0.0
+    def __str__(self):
+        return "Expr"
+class Const(Expr):
+    x: float
+    def __init__(self, x):
+        self.x=x
+    def __str__(self):
+        return f"{self.x}"
+    def eval(self):
+        return self.x
+class Add(Expr):
+    lhs: Expr
+    rhs: Expr
+    def __init__(self, lhs, rhs):
+        self.lhs=lhs
+        self.rhs=rhs
+        # print(f'ctr: {self}')
+    def eval(self):
+        return self.lhs.eval()+self.rhs.eval()
+    def __str__(self):
+        return f"({self.lhs}) + ({self.rhs})"
+class Mul(Expr):
+    lhs: Expr
+    rhs: Expr
+    def __init__(self, lhs, rhs):
+        self.lhs=lhs
+        self.rhs=rhs
+    def eval(self):
+        return self.lhs.eval()*self.rhs.eval()
+    def __str__(self):
+        return f"({self.lhs}) * ({self.rhs})"
+
+c1 = Const(5)
+c2 = Const(4)
+m = Add(c1, c2)
+c3 = Const(2)
+a : Expr = Mul(m, c3)
+print(f'{a} = {a.eval()}')
+#: ((5) + (4)) * (2) = 18
+
+from random import random, seed
+seed(137)
+def random_expr(depth) -> Expr:
+    if depth<=0:
+        return Const(int(random()*42.0))
+    else:
+        lhs=random_expr(depth-1)
+        rhs=random_expr(depth-1)
+        ctorid = int(random()*3)
+        if ctorid==0:
+            return Mul(lhs,rhs)
+        else:
+            return Add(lhs,rhs)
+for i in range(11):
+    print(random_expr(i).eval())
+#: 17
+#: 71
+#: 1760
+#: 118440
+#: 94442
+#: 8.02435e+15
+#: 1.07463e+13
+#: 1.43017e+19
+#: 2.40292e+34
+#: 6.1307e+28
+#: 5.16611e+49
+
+#%% polymorphism_3
+import operator
+
+class Expr:
+    def eval(self):
+        return 0
+
+class Const(Expr):
+    value: int
+
+    def __init__(self, value):
+        self.value = value
+
+    def eval(self):
+        return self.value
+
+class BinOp(Expr):
+    lhs: Expr
+    rhs: Expr
+
+    def __init__(self, lhs, rhs):
+        self.lhs = lhs
+        self.rhs = rhs
+
+    def eval_from_fn(self, fn):
+        return fn(self.lhs.eval(), self.rhs.eval())
+
+class Add(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.add)
+
+class Sub(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.sub)
+
+class Mul(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.mul)
+
+class Div(BinOp):
+    def eval(self):
+        return self.eval_from_fn(operator.floordiv)
+
+# TODO: remove Expr requirement
+expr : Expr = Mul(Const(3), Add(Const(10), Const(5)))
+print(expr.eval()) #: 45
+
+#%% polymorphism_4
+class A(object):
+    a: int
+    def __init__(self, a: int):
+        self.a = a
+
+    def test_a(self, n: int):
+        print("test_a:A", n)
+
+    def test(self, n: int):
+        print("test:A", n)
+
+    def test2(self, n: int):
+        print("test2:A", n)
+
+class B(A):
+    b: int
+    def __init__(self, a: int, b: int):
+        super().__init__(a)
+        self.b = b
+
+    def test(self, n: int):
+        print("test:B", n)
+
+    def test2(self, n: int):
+        print("test2:B", n)
+
+class C(B):
+    pass
+
+b = B(1, 2)
+b.test_a(1)
+b.test(1)
+#: test_a:A 1
+#: test:B 1
+
+a: A = b
+a.test(1)
+a.test2(2)
+#: test:B 1
+#: test2:B 2
+
+
+
+class AX(object):
+    value: u64
+
+    def __init__(self):
+        print('init/AX')
+        self.value = 15u64
+
+    def get_value(self) -> u64:
+        return self.value
+
+class BX(object):
+    a: AX
+    def __init__(self):
+        print('init/BX')
+        self.a = AX()
+    def hai(self):
+        return f"hai/BX: {self.a.value}"
+
+class CX(BX):
+    def __init__(self):
+        print('init/CX')
+        super().__init__()
+
+    def getsuper(self):
+        return super()
+
+    def test(self):
+        print('test/CX:', self.a.value)
+        return self.a.get_value()
+
+    def hai(self):
+        return f"hai/CX: {self.a.value}"
+
+table = CX()
+#: init/CX
+#: init/BX
+#: init/AX
+print table.test()
+#: test/CX: 15
+#: 15
+
+s = table.getsuper()
+print(s.hai())
+#: hai/BX: 15
+s.a.value += 1u64
+print(s.hai())
+#: hai/BX: 16
+table.a.value += 1u64
+print(s.hai())
+#: hai/BX: 17
+table.test()
+#: test/CX: 17
+
+c: List[BX] = [s, table]
+print(c[0].hai())  #: hai/BX: 17
+print(c[1].hai())  #: hai/CX: 17
+
+#%% side_effects,barebones
+def foo(a, b, T: type, N: Literal[int]):
+    print(a, b, N, T.__class__.__name__)
+def side(x):
+    print('side', x)
+    return x
+def side_T(T: type) -> type:
+    print('side_T', T.__class__.__name__)
+    return List[T]
+def side_N(N: Literal[int]) -> Literal[int]:
+    print('side_N', N)
+    return N*N
+
+foo(a=side('a'), b=side('b'), T=int, N=0)
+#: side a
+#: side b
+#: a b 0 int
+foo(b=side('b'), a=side('a'), T=side_T(int), N=0)
+#: side b
+#: side a
+#: side_T int
+#: a b 0 List[int]
+foo(b=side('b'), T=side_T(float), a=side('a'), N=side_N(5))
+#: side b
+#: side_T float
+#: side a
+#: side_N 5
+#: a b 25 List[float]
+foo(N=side_N(3), T=side_T(str), b=side('b'), a=side('a'))
+#: side_N 3
+#: side_T str
+#: side b
+#: side a
+#: a b 9 List[str]
+
+def foo(a, b, *args, T: type, N: Literal[int], **kwargs):
+    print(a, b, args, kwargs, T, N)
+
+foo(side('a'), side('b'), side('3'), side('4'), T=side_T(int), N=side_N(5))
+#: side a
+#: side b
+#: side 3
+#: side 4
+#: side_T int
+#: side_N 5
+#: a b ('3', '4') () <class 'List[int]'> 25
+
+foo(z=side('z'), T=side_T(int), k=side('k'), b=side('b'), a=side('a'), N=side_N(5))
+#: side z
+#: side_T int
+#: side k
+#: side b
+#: side a
+#: side_N 5
+#: a b () (k: 'k', z: 'z') <class 'List[int]'> 25
+
+t = List[side_T(int)]
+#: side_T int
+print(t, t().__class__.__name__)
+#: <class 'List[List[int]]'> List[List[int]]
+
+a: Literal[int] = - side_N(5)
+print(Int[a])
+#: side_N 5
+#: <class 'Int[-25]'>
+a: Literal[int] = side_N(3) + 50 - side_N(5)
+# Important: should be again side_N(5) to test caching of literal fns
+print(Int[a])
+#: side_N 3
+#: side_N 5
+#: <class 'Int[34]'>

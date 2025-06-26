@@ -7,6 +7,7 @@
 
 #include "codon/cir/func.h"
 #include "codon/parser/cache.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon {
 namespace ir {
@@ -16,22 +17,27 @@ translateGenerics(codon::ast::Cache *cache, std::vector<types::Generic> &generic
   std::vector<codon::ast::types::TypePtr> ret;
   for (auto &g : generics) {
     seqassertn(g.isStatic() || g.getTypeValue(), "generic must be static or a type");
-    ret.push_back(std::make_shared<codon::ast::types::LinkType>(
-        g.isStatic()
-            ? std::make_shared<codon::ast::types::StaticType>(cache, g.getStaticValue())
-            : (g.isStaticStr() ? std::make_shared<codon::ast::types::StaticType>(
-                                     cache, g.getStaticStringValue())
-                               : g.getTypeValue()->getAstType())));
+    if (g.isStaticStr())
+      ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+          std::make_shared<codon::ast::types::StrStaticType>(
+              cache, g.getStaticStringValue())));
+    else if (g.isStatic())
+      ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+          std::make_shared<codon::ast::types::IntStaticType>(cache,
+                                                             g.getStaticValue())));
+    else
+      ret.push_back(std::make_shared<codon::ast::types::LinkType>(
+          g.getTypeValue()->getAstType()));
   }
   return ret;
 }
 
-std::vector<codon::ast::types::TypePtr>
+std::vector<codon::ast::types::Type *>
 generateDummyNames(std::vector<types::Type *> &types) {
-  std::vector<codon::ast::types::TypePtr> ret;
+  std::vector<codon::ast::types::Type *> ret;
   for (auto *t : types) {
     seqassertn(t->getAstType(), "{} must have an ast type", *t);
-    ret.emplace_back(t->getAstType());
+    ret.emplace_back(t->getAstType().get());
   }
   return ret;
 }
@@ -46,8 +52,7 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
     if (auto f = t->getAstType()->getFunc()) {
       auto *irType = cast<types::FuncType>(t);
       std::vector<char> mask(std::distance(irType->begin(), irType->end()), 0);
-      ret.push_back(std::make_shared<codon::ast::types::PartialType>(
-          t->getAstType()->getRecord(), f, mask));
+      ret.push_back(t->getAstType());
     } else {
       ret.push_back(t->getAstType());
     }
@@ -157,16 +162,17 @@ Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodN
 
   auto cls =
       std::const_pointer_cast<ast::types::Type>(parent->getAstType())->getClass();
-  auto method = cache->findMethod(cls.get(), methodName, generateDummyNames(args));
+  auto method = cache->findMethod(cls, methodName, generateDummyNames(args));
   if (!method)
     return nullptr;
   try {
     return cache->realizeFunction(method, translateArgs(cache, args),
                                   translateGenerics(cache, generics), cls);
   } catch (const exc::ParserException &e) {
-    for (int i = 0; i < e.messages.size(); i++)
-      LOG_IR("getOrRealizeMethod parser error at {}: {}", e.locations[i],
-             e.messages[i]);
+    for (auto &trace : e.getErrors())
+      for (auto &msg : trace)
+        LOG_IR("getOrRealizeMethod parser error at {}: {}", msg.getSrcInfo(),
+               msg.getMessage());
     return nullptr;
   }
 }
@@ -179,31 +185,34 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
       module.empty() ? funcName : fmt::format(FMT_STRING("{}.{}"), module, funcName);
   auto func = cache->findFunction(fqName);
   if (!func)
+    func = cache->findFunction(fqName + ".0");
+  if (!func)
     return nullptr;
   auto arg = translateArgs(cache, args);
   auto gens = translateGenerics(cache, generics);
   try {
     return cache->realizeFunction(func, arg, gens);
   } catch (const exc::ParserException &e) {
-    for (int i = 0; i < e.messages.size(); i++)
-      LOG_IR("getOrRealizeFunc parser error at {}: {}", e.locations[i], e.messages[i]);
+    for (auto &trace : e.getErrors())
+      for (auto &msg : trace)
+        LOG("getOrRealizeFunc parser error at {}: {}", msg.getSrcInfo(),
+            msg.getMessage());
     return nullptr;
   }
 }
 
 types::Type *Module::getOrRealizeType(const std::string &typeName,
-                                      std::vector<types::Generic> generics,
-                                      const std::string &module) {
-  auto fqName =
-      module.empty() ? typeName : fmt::format(FMT_STRING("{}.{}"), module, typeName);
-  auto type = cache->findClass(fqName);
+                                      std::vector<types::Generic> generics) {
+  auto type = cache->findClass(typeName);
   if (!type)
     return nullptr;
   try {
     return cache->realizeType(type, translateGenerics(cache, generics));
   } catch (const exc::ParserException &e) {
-    for (int i = 0; i < e.messages.size(); i++)
-      LOG_IR("getOrRealizeType parser error at {}: {}", e.locations[i], e.messages[i]);
+    for (auto &trace : e.getErrors())
+      for (auto &msg : trace)
+        LOG_IR("getOrRealizeType parser error at {}: {}", msg.getSrcInfo(),
+               msg.getMessage());
     return nullptr;
   }
 }
@@ -424,6 +433,34 @@ types::Type *Module::unsafeGetUnionType(const std::vector<types::Type *> &types)
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<types::UnionType>(types);
+}
+
+void Module::pushArena() { arenas.emplace_back(); }
+
+void Module::popArena() {
+  auto &arena = arenas.back();
+  for (auto id : arena.values) {
+    auto it = valueMap.find(id);
+    if (it == valueMap.end())
+      continue;
+    values.erase(it->second);
+    valueMap.erase(it);
+  }
+  for (auto id : arena.vars) {
+    auto it = varMap.find(id);
+    if (it == varMap.end())
+      continue;
+    vars.erase(it->second);
+    varMap.erase(it);
+  }
+  for (auto &type : arena.types) {
+    auto it = typesMap.find(type);
+    if (it == typesMap.end())
+      continue;
+    types.erase(it->second);
+    typesMap.erase(it);
+  }
+  arenas.pop_back();
 }
 
 } // namespace ir

@@ -9,6 +9,7 @@
 #include "codon/parser/ctx.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/ctx.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 namespace codon::ast {
 
@@ -21,20 +22,23 @@ std::shared_ptr<TranslateItem> TranslateContext::find(const std::string &name) c
   std::shared_ptr<TranslateItem> ret = nullptr;
   auto tt = cache->typeCtx->find(name);
   if (tt && tt->isType() && tt->type->canRealize()) {
+    auto t = tt->getType();
+    if (name != t->realizedName()) // type prefix
+      t = TypecheckVisitor(cache->typeCtx).extractType(t);
+    auto n = t->getClass()->name;
+    if (!in(cache->classes, n) || !in(cache->classes[n].realizations, name))
+      return nullptr;
     ret = std::make_shared<TranslateItem>(TranslateItem::Type, bases[0]);
-    seqassertn(in(cache->classes, tt->type->getClass()->name) &&
-                   in(cache->classes[tt->type->getClass()->name].realizations, name),
-               "cannot find type realization {}", name);
-    ret->handle.type =
-        cache->classes[tt->type->getClass()->name].realizations[name]->ir;
+    ret->handle.type = cache->classes[n].realizations[name]->ir;
   } else if (tt && tt->type->getFunc() && tt->type->canRealize()) {
     ret = std::make_shared<TranslateItem>(TranslateItem::Func, bases[0]);
     seqassertn(
-        in(cache->functions, tt->type->getFunc()->ast->name) &&
-            in(cache->functions[tt->type->getFunc()->ast->name].realizations, name),
-        "cannot find type realization {}", name);
+        in(cache->functions, tt->type->getFunc()->ast->getName()) &&
+            in(cache->functions[tt->type->getFunc()->ast->getName()].realizations,
+               name),
+        "cannot find function realization {}", name);
     ret->handle.func =
-        cache->functions[tt->type->getFunc()->ast->name].realizations[name]->ir;
+        cache->functions[tt->type->getFunc()->ast->getName()].realizations[name]->ir;
   }
   return ret;
 }
@@ -50,11 +54,11 @@ std::shared_ptr<TranslateItem>
 TranslateContext::add(TranslateItem::Kind kind, const std::string &name, void *type) {
   auto it = std::make_shared<TranslateItem>(kind, getBase());
   if (kind == TranslateItem::Var)
-    it->handle.var = (ir::Var *)type;
+    it->handle.var = static_cast<ir::Var *>(type);
   else if (kind == TranslateItem::Func)
-    it->handle.func = (ir::Func *)type;
+    it->handle.func = static_cast<ir::Func *>(type);
   else
-    it->handle.type = (ir::types::Type *)type;
+    it->handle.type = static_cast<ir::types::Type *>(type);
   add(name, it);
   return it;
 }

@@ -513,7 +513,7 @@ def test_sum(a,
              axis=None,
              dtype: type = NoneType,
              out=None,
-             keepdims: Static[int] = False,
+             keepdims: Literal[bool] = False,
              initial=0,
              where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
@@ -562,7 +562,7 @@ def test_prod(a,
               axis=None,
               dtype: type = NoneType,
               out=None,
-              keepdims: Static[int] = False,
+              keepdims: Literal[bool] = False,
               initial=1,
               where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
@@ -609,7 +609,7 @@ def test_mean(a,
               axis=None,
               dtype: type = NoneType,
               out=None,
-              keepdims: Static[int] = False,
+              keepdims: Literal[bool] = False,
               where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float) or isinstance(
             expected, complex):
@@ -658,7 +658,7 @@ def test_nanmean(a,
                  axis=None,
                  dtype: type = NoneType,
                  out=None,
-                 keepdims: Static[int] = False,
+                 keepdims: Literal[bool] = False,
                  where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
         assert np.nanmean(a,
@@ -707,7 +707,7 @@ def test_var(a,
              axis=None,
              dtype: type = NoneType,
              out=None,
-             keepdims: Static[int] = False,
+             keepdims: Literal[bool] = False,
              where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float) or isinstance(
             expected, complex):
@@ -753,7 +753,7 @@ def test_nanvar(a,
                 axis=None,
                 dtype: type = NoneType,
                 out=None,
-                keepdims: Static[int] = False,
+                keepdims: Literal[bool] = False,
                 where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
         assert np.nanvar(a,
@@ -801,7 +801,7 @@ def test_std(a,
              axis=None,
              dtype: type = NoneType,
              out=None,
-             keepdims: Static[int] = False,
+             keepdims: Literal[bool] = False,
              where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float) or isinstance(
             expected, complex):
@@ -852,7 +852,7 @@ def test_nanstd(a,
                 axis=None,
                 dtype: type = NoneType,
                 out=None,
-                keepdims: Static[int] = False,
+                keepdims: Literal[bool] = False,
                 where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
         assert np.nanstd(a,
@@ -901,7 +901,7 @@ def test_min(a,
              expected,
              axis=None,
              out=None,
-             keepdims: Static[int] = False,
+             keepdims: Literal[bool] = False,
              initial=util._NoValue(),
              where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
@@ -947,7 +947,7 @@ def test_max(a,
              expected,
              axis=None,
              out=None,
-             keepdims: Static[int] = False,
+             keepdims: Literal[bool] = False,
              initial=util._NoValue(),
              where=util._NoValue()):
     if isinstance(expected, int) or isinstance(expected, float):
@@ -987,7 +987,7 @@ test_max(np.array([[1 + 2j, 3 + 4j, 5 + 6j], [7 + 8j, 9 + 10j, 11 + 12j]]),
          axis=1)
 
 @test
-def test_ptp(a, expected, axis=None, out=None, keepdims: Static[int] = False):
+def test_ptp(a, expected, axis=None, out=None, keepdims: Literal[bool] = False):
     if isinstance(expected, int) or isinstance(expected, float) or isinstance(
             expected, complex):
         assert np.ptp(a, axis=axis, out=out, keepdims=keepdims) == expected
@@ -1021,7 +1021,7 @@ def test_argmin(a,
                 expected,
                 axis=None,
                 out=None,
-                keepdims: Static[int] = False):
+                keepdims: Literal[bool] = False):
     if isinstance(expected, int):
         assert np.argmin(a, axis=axis, out=out, keepdims=keepdims) == expected
     else:
@@ -1048,7 +1048,7 @@ def test_argmax(a,
                 expected,
                 axis=None,
                 out=None,
-                keepdims: Static[int] = False):
+                keepdims: Literal[bool] = False):
     if isinstance(expected, int):
         assert np.argmax(a, axis=axis, out=out, keepdims=keepdims) == expected
     else:
@@ -1096,7 +1096,7 @@ def test_all():
 test_all()
 
 @test
-def test_count_nonzero(a, expected, axis=None, keepdims: Static[int] = False):
+def test_count_nonzero(a, expected, axis=None, keepdims: Literal[bool] = False):
     if isinstance(expected, int) or isinstance(expected, float):
         assert np.count_nonzero(a, axis=axis, keepdims=keepdims) == expected
     else:
@@ -1122,7 +1122,7 @@ def test_median(a,
                 axis=None,
                 out=None,
                 overwrite_input: bool = False,
-                keepdims: Static[int] = False):
+                keepdims: Literal[bool] = False):
     if isinstance(expected, int) or isinstance(expected, float) or isinstance(
             expected, complex):
         if np.isnan(expected):
@@ -1285,7 +1285,7 @@ def test_quantile(a,
                   out=None,
                   overwrite_input=False,
                   method: str = "linear",
-                  keepdims: Static[int] = False,
+                  keepdims: Literal[bool] = False,
                   interpolation=None):
     if isinstance(expected, float):
         assert np.quantile(a,
@@ -1344,7 +1344,7 @@ def test_percentile(a,
                     out=None,
                     overwrite_input=False,
                     method: str = "linear",
-                    keepdims: Static[int] = False,
+                    keepdims: Literal[bool] = False,
                     interpolation=None):
     if isinstance(expected, float):
         assert np.percentile(a,
@@ -1521,7 +1521,7 @@ def test_nanpercentile(a,
                        out=None,
                        overwrite_input=False,
                        method: str = "linear",
-                       keepdims: Static[int] = False,
+                       keepdims: Literal[bool] = False,
                        interpolation=None):
     if isinstance(expected, float):
         assert np.nanpercentile(a,

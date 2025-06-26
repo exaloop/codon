@@ -65,16 +65,24 @@ std::string makeOutputFilename(const std::string &filename,
 
 void display(const codon::error::ParserErrorInfo &e) {
   using codon::MessageGroupPos;
-  for (auto &group : e) {
+  std::unordered_set<std::string> seen;
+  for (auto &group : e.getErrors()) {
+    int i = 0;
     for (auto &msg : group) {
+      auto t = msg.toString();
+      if (seen.find(t) != seen.end()) {
+        continue;
+      }
+      seen.insert(t);
       MessageGroupPos pos = MessageGroupPos::NONE;
-      if (&msg == &group.front()) {
+      if (i == 0) {
         pos = MessageGroupPos::HEAD;
-      } else if (&msg == &group.back()) {
+      } else if (i == group.size() - 1) {
         pos = MessageGroupPos::LAST;
       } else {
         pos = MessageGroupPos::MID;
       }
+      i++;
       codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
                               msg.getColumn(), msg.getLength(), msg.getErrorCode(),
                               /*terminate=*/false, pos);
@@ -97,7 +105,7 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
   llvm::cl::opt<std::string> input(llvm::cl::Positional,
                                    llvm::cl::desc("<input directory or file>"),
                                    llvm::cl::init("-"));
-  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  llvm::cl::ParseCommandLineOptions(static_cast<int>(args.size()), args.data());
   std::vector<std::string> files;
   auto collectPaths = [&files](const std::string &path) {
     llvm::sys::fs::file_status status;
@@ -205,7 +213,7 @@ std::unique_ptr<codon::Compiler> processSource(
     llvm::handleAllErrors(
         compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
           codon::compilationError(e.getMessage(), /*file=*/"",
-                                  /*line=*/0, /*col=*/0, /*len*/ 0, /*errorCode*/ -1,
+                                  /*line=*/0, /*col=*/0, /*len=*/0, /*errorCode=*/-1,
                                   /*terminate=*/false);
           failed = true;
         });
@@ -301,7 +309,7 @@ int jitMode(const std::vector<const char *> &args) {
                           [&failed](const codon::error::PluginErrorInfo &e) {
                             codon::compilationError(e.getMessage(), /*file=*/"",
                                                     /*line=*/0, /*col=*/0, /*len=*/0,
-                                                    /*errorCode*/ -1,
+                                                    /*errorCode=*/-1,
                                                     /*terminate=*/false);
                             failed = true;
                           });

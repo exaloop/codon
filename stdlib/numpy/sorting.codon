@@ -2,7 +2,9 @@
 
 from .ndarray import ndarray
 from .routines import array, asarray, empty, zeros
+
 import util
+import internal.static as static
 
 ##########
 # Common #
@@ -128,10 +130,10 @@ def aheapsort(vv: Ptr[T], tosort: Ptr[int], n: int, T: type):
 # Merge #
 #########
 
-PYA_QS_STACK   : Static[int] = 100
-SMALL_QUICKSORT: Static[int] = 15
-SMALL_MERGESORT: Static[int] = 20
-SMALL_STRING   : Static[int] = 16
+PYA_QS_STACK   : Literal[int] = 100
+SMALL_QUICKSORT: Literal[int] = 15
+SMALL_MERGESORT: Literal[int] = 20
+SMALL_STRING   : Literal[int] = 16
 
 def _mergesort0(pl: Ptr[T], pr: Ptr[T], pw: Ptr[T], T: type):
     if pr - pl > SMALL_MERGESORT:
@@ -240,9 +242,9 @@ def amergesort(v: Ptr[T], tosort: Ptr[int], num: int, T: type):
 # Quick (PDQ) #
 ###############
 
-INSERTION_SORT_THRESHOLD    : Static[int] = 24
-NINTHER_THRESHOLD           : Static[int] = 128
-PARTIAL_INSERTION_SORT_LIMIT: Static[int] = 8
+INSERTION_SORT_THRESHOLD    : Literal[int] = 24
+NINTHER_THRESHOLD           : Literal[int] = 128
+PARTIAL_INSERTION_SORT_LIMIT: Literal[int] = 8
 
 def _floor_log2(n: int):
     log = 0
@@ -492,7 +494,6 @@ from C import cnp_sort_int32(cobj, int)
 from C import cnp_sort_uint32(cobj, int)
 from C import cnp_sort_int64(cobj, int)
 from C import cnp_sort_uint64(cobj, int)
-from C import cnp_sort_int16(cobj, int)
 from C import cnp_sort_uint128(cobj, int)
 from C import cnp_sort_float32(cobj, int)
 from C import cnp_sort_float64(cobj, int)
@@ -933,7 +934,7 @@ def aradixsort(start: Ptr[T], tosort: Ptr[int], num: int, T: type):
 # Tim #
 #######
 
-TIMSORT_STACK_SIZE: Static[int] = 128
+TIMSORT_STACK_SIZE: Literal[int] = 128
 
 def _compute_min_run(num: int):
     r = 0
@@ -1499,7 +1500,7 @@ def astablesort(start: Ptr[T], tosort: Ptr[int], num: int, T: type):
 # Selection #
 #############
 
-MAX_PIVOT_STACK: Static[int] = 50
+MAX_PIVOT_STACK: Literal[int] = 50
 
 @tuple
 class Sortee:
@@ -1550,7 +1551,7 @@ def _store_pivot(pivot: int, kth: int, pivots: Ptr[int], npiv: Ptr[int]):
         pivots[npiv[0]] = pivot
         npiv[0] += 1
 
-def _median3_swap(v: Ptr[T], tosort: Ptr[int], low: int, mid: int, high: int, arg: Static[int], T: type):
+def _median3_swap(v: Ptr[T], tosort: Ptr[int], low: int, mid: int, high: int, arg: Literal[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1569,7 +1570,7 @@ def _median3_swap(v: Ptr[T], tosort: Ptr[int], low: int, mid: int, high: int, ar
 
     sortee.swap(mid, low + 1)
 
-def _median5(v: Ptr[T], tosort: Ptr[int], arg: Static[int], T: type):
+def _median5(v: Ptr[T], tosort: Ptr[int], arg: Literal[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1600,7 +1601,7 @@ def _median5(v: Ptr[T], tosort: Ptr[int], arg: Static[int], T: type):
     else:
         return 2
 
-def _unguarded_partition(v: Ptr[T], tosort: Ptr[int], pivot: T, ll: int, hh: int, arg: Static[int], T: type):
+def _unguarded_partition(v: Ptr[T], tosort: Ptr[int], pivot: T, ll: int, hh: int, arg: Literal[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1626,7 +1627,7 @@ def _unguarded_partition(v: Ptr[T], tosort: Ptr[int], pivot: T, ll: int, hh: int
 
     return ll, hh
 
-def _median_of_median5(v: Ptr[T], tosort: Ptr[int], num: int, pivots: Ptr[int], npiv: Ptr[int], arg: Static[int], isel, T: type):
+def _median_of_median5(v: Ptr[T], tosort: Ptr[int], num: int, pivots: Ptr[int], npiv: Ptr[int], arg: Literal[bool], isel, T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1648,7 +1649,7 @@ def _median_of_median5(v: Ptr[T], tosort: Ptr[int], num: int, pivots: Ptr[int], 
 
     return nmed // 2
 
-def _dumb_select(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, arg: Static[int], T: type):
+def _dumb_select(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, arg: Literal[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1672,7 +1673,7 @@ def _msb(unum: u64):
         unum >>= u64(1)
     return depth_limit
 
-def _introselect(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, pivots: Ptr[int], npiv: Ptr[int], arg: Static[int], T: type):
+def _introselect(v: Ptr[T], tosort: Ptr[int], num: int, kth: int, pivots: Ptr[int], npiv: Ptr[int], arg: Literal[bool], T: type):
     if arg:
         idx = ArgIdx(tosort)
         sortee = ArgSortee(tosort)
@@ -1814,7 +1815,7 @@ def _fix_kth(kth, n: int):
 
     return pkth, nkth
 
-def _partition_helper(a: ndarray, kth, axis, kind: str, force_compact: Static[int] = False):
+def _partition_helper(a: ndarray, kth, axis, kind: str, force_compact: Literal[bool] = False):
     if axis is None:
         _partition_helper(a.flatten(), kth=kth, axis=-1, kind=kind, force_compact=force_compact)
         return
@@ -1914,7 +1915,7 @@ def argpartition(a: ndarray, kth, axis = -1, kind: str = 'introselect'):
 
 def _lexsort(sort_keys, n: int, axis: int):
     sort_keys0 = asarray(sort_keys[0])
-    nd: Static[int] = sort_keys0.ndim
+    nd: Literal[int] = sort_keys0.ndim
 
     if nd == 0 and (axis == 0 or axis == -1):
         pass
@@ -2000,7 +2001,7 @@ def lexsort(keys, axis: int = -1):
 
     if isinstance(keys, Tuple):
         sort_keys = tuple(asarray(key) for key in keys)
-        for i in staticrange(1, staticlen(sort_keys)):
+        for i in static.range(1, static.len(sort_keys)):
             if sort_keys[i].ndim != sort_keys[0].ndim:
                 compile_error("all keys need to be the same shape")
             if sort_keys[i].shape != sort_keys[0].shape:
@@ -2055,7 +2056,7 @@ def _sort_buffered(a: ndarray, axis: int, sorter):
 
     util.free(buf)
 
-def _sort_dispatch(a: ndarray, axis: int, sorter, force_compact: Static[int] = False):
+def _sort_dispatch(a: ndarray, axis: int, sorter, force_compact: Literal[bool] = False):
     axis = util.normalize_axis_index(axis, a.ndim)
 
     if force_compact:
@@ -2066,7 +2067,7 @@ def _sort_dispatch(a: ndarray, axis: int, sorter, force_compact: Static[int] = F
         else:
             _sort_buffered(a, axis, sorter)
 
-def _sort(a: ndarray, axis: int, kind: Optional[str], force_compact: Static[int] = False):
+def _sort(a: ndarray, axis: int, kind: Optional[str], force_compact: Literal[bool] = False):
     if kind is None or kind == 'quicksort' or kind == 'quick':
         _sort_dispatch(a, axis, quicksort, force_compact)
     elif kind == 'mergesort' or kind == 'merge' or kind == 'stable':

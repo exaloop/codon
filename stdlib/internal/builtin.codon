@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 class object:
     def __init__(self):
         pass
@@ -13,9 +15,7 @@ def id(x) -> int:
     else:
         return 0
 
-_stdout = _C.seq_stdout()
-
-def print(*args, sep: str = " ", end: str = "\n", file=_stdout, flush: bool = False):
+def print(*args, sep: str = " ", end: str = "\n", file=_C.seq_stdout(), flush: bool = False):
     """
     Print args to the text stream file.
     """
@@ -62,11 +62,11 @@ class __internal__:
         print(*args, flush=True, file=_C.seq_stdout())
 
 def min(*args, key=None, default=None):
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         compile_error("min() expected at least 1 argument, got 0")
-    elif staticlen(args) > 1 and default is not None:
+    elif static.len(args) > 1 and default is not None:
         compile_error("min() 'default' argument only allowed for iterables")
-    elif staticlen(args) == 1:
+    elif static.len(args) == 1:
         x = args[0].__iter__()
         if not x.done():
             s = x.next()
@@ -86,7 +86,7 @@ def min(*args, key=None, default=None):
             raise ValueError("min() arg is an empty sequence")
         else:
             return default
-    elif staticlen(args) == 2:
+    elif static.len(args) == 2:
         a, b = args
         if key is None:
             return a if a <= b else b
@@ -104,11 +104,11 @@ def min(*args, key=None, default=None):
         return m
 
 def max(*args, key=None, default=None):
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         compile_error("max() expected at least 1 argument, got 0")
-    elif staticlen(args) > 1 and default is not None:
+    elif static.len(args) > 1 and default is not None:
         compile_error("max() 'default' argument only allowed for iterables")
-    elif staticlen(args) == 1:
+    elif static.len(args) == 1:
         x = args[0].__iter__()
         if not x.done():
             s = x.next()
@@ -128,7 +128,7 @@ def max(*args, key=None, default=None):
             raise ValueError("max() arg is an empty sequence")
         else:
             return default
-    elif staticlen(args) == 2:
+    elif static.len(args) == 2:
         a, b = args
         if key is None:
             return a if a >= b else b
@@ -230,7 +230,7 @@ def zip(*args):
     Returns a zip object, which is an iterator of tuples
     that aggregates elements based on the iterables passed
     """
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         yield from List[int]()
     else:
         iters = tuple(iter(i) for i in args)
@@ -244,7 +244,7 @@ def zip(*args):
         for i in iters:
             i.destroy()
 
-def filter(f: Callable[[T], bool], x: Generator[T], T: type) -> Generator[T]:
+def filter(f: CallableTrait[[T], bool], x: Generator[T], T: type) -> Generator[T]:
     """
     Returns all a from the iterable x that are filtered by f
     """
@@ -256,9 +256,9 @@ def map(f, *args):
     """
     Applies a function on all a in x and returns map object
     """
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         compile_error("map() expects at least one iterator")
-    elif staticlen(args) == 1:
+    elif static.len(args) == 1:
         for a in args[0]:
             yield f(a)
     else:
@@ -274,11 +274,6 @@ def enumerate(x, start: int = 0):
     for a in x:
         yield (i, a)
         i += 1
-
-def staticenumerate(tup):
-    i = -1
-    return tuple(((i := i + 1), t) for t in tup)
-    i
 
 def echo(x):
     """
@@ -330,6 +325,8 @@ def sum(x, start=0):
 
 def repr(x):
     """Return the string representation of x"""
+    if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):
+        return x.__repr_default__()
     return x.__repr__()
 
 def _int_format(a: int, base: int, prefix: str = ""):
@@ -597,7 +594,7 @@ class complex64:
     def _from_str(s: str) -> complex64:
         return complex64(complex._from_str(s))
 
-def _jit_display(x, s: Static[str], bundle: Set[str] = Set[str]()):
+def _jit_display(x, s: Literal[str], bundle: Set[str] = Set[str]()):
     if isinstance(x, None):
         return
     if hasattr(x, "_repr_mimebundle_") and s == "jupyter":

@@ -7,7 +7,6 @@
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
 #include "codon/parser/visitors/format/format.h"
-#include "codon/parser/visitors/simplify/simplify.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
@@ -32,10 +31,11 @@ ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool is
 
 Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
                    const std::vector<std::string> &disabledPasses, bool isTest,
-                   bool pyNumerics, bool pyExtension)
+                   bool pyNumerics, bool pyExtension,
+                   const std::shared_ptr<ast::IFilesystem> &fs)
     : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics),
       pyExtension(pyExtension), input(), plm(std::make_unique<PluginManager>(argv0)),
-      cache(std::make_unique<ast::Cache>(argv0)),
+      cache(std::make_unique<ast::Cache>(argv0, fs)),
       module(std::make_unique<ir::Module>()),
       pm(std::make_unique<ir::transform::PassManager>(
           getPassManagerInit(mode, isTest), disabledPasses, pyNumerics, pyExtension)),
@@ -55,7 +55,7 @@ llvm::Error Compiler::load(const std::string &plugin) {
 
   auto *p = *result;
   if (!p->info.stdlibPath.empty()) {
-    cache->pluginImportPaths.push_back(p->info.stdlibPath);
+    cache->fs->add_search_path(p->info.stdlibPath);
   }
   for (auto &kw : p->dsl->getExprKeywords()) {
     cache->customExprStmts[kw.keyword] = kw.callback;
@@ -72,32 +72,23 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
-  std::string abspath = (file != "-") ? ast::getAbsolutePath(file) : file;
+  std::string abspath = (file != "-") ? std::string(cache->fs->canonical(file)) : file;
   try {
-    ast::StmtPtr codeStmt = isCode
-                                ? ast::parseCode(cache.get(), abspath, code, startLine)
-                                : ast::parseFile(cache.get(), abspath);
+    auto nodeOrErr = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
+                            : ast::parseFile(cache.get(), abspath);
+    if (!nodeOrErr)
+      throw exc::ParserException(nodeOrErr.takeError());
+    auto codeStmt = *nodeOrErr;
 
-    cache->module0 = file;
+    cache->fs->set_module0(file);
 
-    Timer t2("simplify");
+    Timer t2("typecheck");
     t2.logged = true;
-    auto transformed =
-        ast::SimplifyVisitor::apply(cache.get(), std::move(codeStmt), abspath, defines,
-                                    getEarlyDefines(), (testFlags > 1));
+    auto typechecked = ast::TypecheckVisitor::apply(
+        cache.get(), codeStmt, abspath, defines, getEarlyDefines(), (testFlags > 1));
     LOG_TIME("[T] parse = {:.1f}", totalPeg);
-    LOG_TIME("[T] simplify = {:.1f}", t2.elapsed() - totalPeg);
+    LOG_TIME("[T] typecheck = {:.1f}", t2.elapsed() - totalPeg);
 
-    if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
-      auto fo = fopen("_dump_simplify.sexp", "w");
-      fmt::print(fo, "{}\n", transformed->toString(0));
-      fclose(fo);
-    }
-
-    Timer t3("typecheck");
-    auto typechecked =
-        ast::TypecheckVisitor::apply(cache.get(), std::move(transformed));
-    t3.log();
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_typecheck.sexp", "w");
       fmt::print(fo, "{}\n", typechecked->toString(0));
@@ -106,30 +97,18 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
           fmt::print(fo, "{}\n", r.second->ast->toString(0));
         }
       fclose(fo);
+
+      fo = fopen("_dump_typecheck.htm", "w");
+      auto s = ast::FormatVisitor::apply(typechecked, cache.get(), true);
+      fmt::print(fo, "{}\n", s);
+      fclose(fo);
     }
 
     Timer t4("translate");
     ast::TranslateVisitor::apply(cache.get(), std::move(typechecked));
     t4.log();
   } catch (const exc::ParserException &exc) {
-    std::vector<error::Message> messages;
-    if (exc.messages.empty()) {
-      const int MAX_ERRORS = 5;
-      int ei = 0;
-      for (auto &e : cache->errors) {
-        for (unsigned i = 0; i < e.messages.size(); i++) {
-          if (!e.messages[i].empty())
-            messages.emplace_back(e.messages[i], e.locations[i].file,
-                                  e.locations[i].line, e.locations[i].col,
-                                  e.locations[i].len, e.errorCode);
-        }
-        if (ei++ > MAX_ERRORS)
-          break;
-      }
-      return llvm::make_error<error::ParserErrorInfo>(messages);
-    } else {
-      return llvm::make_error<error::ParserErrorInfo>(exc);
-    }
+    return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
   module->setSrcInfo({abspath, 0, 0, 0});
   if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
@@ -178,8 +157,8 @@ llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &fil
   try {
     auto j = ast::DocVisitor::apply(argv0, files);
     return j->toString();
-  } catch (exc::ParserException &e) {
-    return llvm::make_error<error::ParserErrorInfo>(e);
+  } catch (exc::ParserException &exc) {
+    return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
 }
 

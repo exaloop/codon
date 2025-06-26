@@ -7,6 +7,7 @@ class bool:
     def __new__() -> bool:
         return False
 
+    @overload
     def __new__(what) -> bool:
         return what.__bool__()
 

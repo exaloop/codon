@@ -7,15 +7,18 @@ class byte:
     def __new__() -> byte:
         ret i8 0
 
+    @overload
     def __new__(b: byte) -> byte:
         return b
 
+    @overload
     def __new__(s: str) -> byte:
         if s.__len__() != 1:
             raise ValueError("str length must be 1 in byte constructor")
         return s.ptr[0]
 
     @pure
+    @overload
     @llvm
     def __new__(i: int) -> byte:
         %0 = trunc i64 %i to i8
@@ -41,6 +44,7 @@ class byte:
         %1 = zext i1 %0 to i8
         ret i8 %1
 
+    @overload
     def __eq__(self, other: int) -> bool:
         return self == byte(other)
 

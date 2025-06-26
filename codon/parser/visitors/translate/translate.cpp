@@ -12,20 +12,20 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
+#include "codon/parser/visitors/typecheck/typecheck.h"
 
 using codon::ir::cast;
 using codon::ir::transform::parallel::OMPSched;
-using fmt::format;
 
 namespace codon::ast {
 
 TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
     : ctx(std::move(ctx)), result(nullptr) {}
 
-ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
+ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   ir::BodiedFunc *main = nullptr;
   if (cache->isJit) {
-    auto fnName = format("_jit_{}", cache->jitCell);
+    auto fnName = fmt::format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});
     main->setGlobal();
@@ -35,7 +35,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
     main->setJIT();
   } else {
     main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
-    auto path = getAbsolutePath(cache->module0);
+    auto path = cache->fs->get_module0();
     main->setSrcInfo({path, 0, 0, 0});
   }
 
@@ -47,99 +47,104 @@ ir::Func *TranslateVisitor::apply(Cache *cache, const StmtPtr &stmts) {
   cache->codegenCtx->bases = {main};
   cache->codegenCtx->series = {block};
 
-  for (auto &[name, p] : cache->globals)
-    if (p.first && !p.second) {
-      p.second = name == VAR_ARGV ? cache->codegenCtx->getModule()->getArgVar()
-                                  : cache->codegenCtx->getModule()->N<ir::Var>(
-                                        SrcInfo(), nullptr, true, false, name);
-      cache->codegenCtx->add(TranslateItem::Var, name, p.second);
-    }
-
-  auto tv = TranslateVisitor(cache->codegenCtx);
-  tv.transform(stmts);
-  for (auto &[fn, f] : cache->functions)
-    if (startswith(fn, TYPE_TUPLE)) {
-      tv.transformFunctionRealizations(fn, f.ast->attributes.has(Attr::LLVM));
-    }
+  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
   cache->populatePythonModule();
   return main;
 }
 
+void TranslateVisitor::translateStmts(Stmt *stmts) const {
+  for (auto &[name, g] : ctx->cache->globals)
+    if (/*g.first &&*/ !g.second) {
+      ir::types::Type *vt = nullptr;
+      if (auto t = ctx->cache->typeCtx->forceFind(name)->getType())
+        vt = getType(t);
+      g.second = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
+                                  : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
+                                        SrcInfo(), vt, true, false, name);
+      ctx->cache->codegenCtx->add(TranslateItem::Var, name, g.second);
+    }
+  TranslateVisitor(ctx->cache->codegenCtx).transform(stmts);
+  for (auto &f : ctx->cache->functions | std::views::values)
+    TranslateVisitor(ctx->cache->codegenCtx).transform(f.ast);
+}
+
 /************************************************************************************/
 
-ir::Value *TranslateVisitor::transform(const ExprPtr &expr) {
+ir::Value *TranslateVisitor::transform(Expr *expr) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(expr->getSrcInfo());
 
-  types::PartialType *p = nullptr;
-  if (expr->attributes) {
-    if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set) ||
-        expr->hasAttr(ExprAttr::Dict) || expr->hasAttr(ExprAttr::Partial)) {
-      ctx->seqItems.emplace_back();
-    }
-    if (expr->hasAttr(ExprAttr::Partial))
-      p = expr->type->getPartial().get();
+  types::ClassType *p = nullptr;
+  if (expr->hasAttribute(Attr::ExprList) || expr->hasAttribute(Attr::ExprSet) ||
+      expr->hasAttribute(Attr::ExprDict) || expr->hasAttribute(Attr::ExprPartial)) {
+    ctx->seqItems.emplace_back();
+  }
+  if (expr->hasAttribute(Attr::ExprPartial)) {
+    p = expr->getType()->getPartial();
   }
 
   expr->accept(v);
   ir::Value *ir = v.result;
 
-  if (expr->attributes) {
-    if (expr->hasAttr(ExprAttr::List) || expr->hasAttr(ExprAttr::Set)) {
-      std::vector<ir::LiteralElement> v;
-      for (auto &p : ctx->seqItems.back()) {
-        seqassert(p.first <= ExprAttr::StarSequenceItem, "invalid list/set element");
-        v.push_back(
-            ir::LiteralElement{p.second, p.first == ExprAttr::StarSequenceItem});
+  if (expr->hasAttribute(Attr::ExprList) || expr->hasAttribute(Attr::ExprSet)) {
+    std::vector<ir::LiteralElement> le;
+    for (auto &pl : ctx->seqItems.back()) {
+      seqassert(pl.first == Attr::ExprSequenceItem ||
+                    pl.first == Attr::ExprStarSequenceItem,
+                "invalid list/set element");
+      le.push_back(
+          ir::LiteralElement{pl.second, pl.first == Attr::ExprStarSequenceItem});
+    }
+    if (expr->hasAttribute(Attr::ExprList))
+      ir->setAttribute(std::make_unique<ir::ListLiteralAttribute>(le));
+    else
+      ir->setAttribute(std::make_unique<ir::SetLiteralAttribute>(le));
+    ctx->seqItems.pop_back();
+  }
+  if (expr->hasAttribute(Attr::ExprDict)) {
+    std::vector<ir::DictLiteralAttribute::KeyValuePair> dla;
+    for (int pi = 0; pi < ctx->seqItems.back().size(); pi++) {
+      auto &pl = ctx->seqItems.back()[pi];
+      if (pl.first == Attr::ExprStarSequenceItem) {
+        dla.push_back({pl.second, nullptr});
+      } else {
+        seqassert(pl.first == Attr::ExprSequenceItem &&
+                      pi + 1 < ctx->seqItems.back().size() &&
+                      ctx->seqItems.back()[pi + 1].first == Attr::ExprSequenceItem,
+                  "invalid dict element");
+        dla.push_back({pl.second, ctx->seqItems.back()[pi + 1].second});
+        pi++;
       }
-      if (expr->hasAttr(ExprAttr::List))
-        ir->setAttribute(std::make_unique<ir::ListLiteralAttribute>(v));
-      else
-        ir->setAttribute(std::make_unique<ir::SetLiteralAttribute>(v));
-      ctx->seqItems.pop_back();
     }
-    if (expr->hasAttr(ExprAttr::Dict)) {
-      std::vector<ir::DictLiteralAttribute::KeyValuePair> v;
-      for (int pi = 0; pi < ctx->seqItems.back().size(); pi++) {
-        auto &p = ctx->seqItems.back()[pi];
-        if (p.first == ExprAttr::StarSequenceItem) {
-          v.push_back({p.second, nullptr});
-        } else {
-          seqassert(p.first == ExprAttr::SequenceItem &&
-                        pi + 1 < ctx->seqItems.back().size() &&
-                        ctx->seqItems.back()[pi + 1].first == ExprAttr::SequenceItem,
-                    "invalid dict element");
-          v.push_back({p.second, ctx->seqItems.back()[pi + 1].second});
-          pi++;
-        }
+    ir->setAttribute(std::make_unique<ir::DictLiteralAttribute>(dla));
+    ctx->seqItems.pop_back();
+  }
+  if (expr->hasAttribute(Attr::ExprPartial)) {
+    std::vector<ir::Value *> vals;
+    seqassert(p, "invalid partial element");
+    int j = 0;
+    auto known = p->getPartialMask();
+    auto func = p->getPartialFunc();
+    for (int i = 0; i < known.size(); i++) {
+      if (known[i] == types::ClassType::PartialFlag::Included &&
+          (*func->ast)[i].isValue()) {
+        seqassert(j < ctx->seqItems.back().size() &&
+                      ctx->seqItems.back()[j].first == Attr::ExprSequenceItem,
+                  "invalid partial element");
+        vals.push_back(ctx->seqItems.back()[j++].second);
+      } else if ((*func->ast)[i].isValue()) {
+        vals.push_back({nullptr});
       }
-      ir->setAttribute(std::make_unique<ir::DictLiteralAttribute>(v));
-      ctx->seqItems.pop_back();
     }
-    if (expr->hasAttr(ExprAttr::Partial)) {
-      std::vector<ir::Value *> v;
-      seqassert(p, "invalid partial element");
-      int j = 0;
-      for (int i = 0; i < p->known.size(); i++) {
-        if (p->known[i] && p->func->ast->args[i].status == Param::Normal) {
-          seqassert(j < ctx->seqItems.back().size() &&
-                        ctx->seqItems.back()[j].first == ExprAttr::SequenceItem,
-                    "invalid partial element");
-          v.push_back(ctx->seqItems.back()[j++].second);
-        } else if (p->func->ast->args[i].status == Param::Normal) {
-          v.push_back({nullptr});
-        }
-      }
-      ir->setAttribute(
-          std::make_unique<ir::PartialFunctionAttribute>(p->func->ast->name, v));
-      ctx->seqItems.pop_back();
-    }
-    if (expr->hasAttr(ExprAttr::SequenceItem)) {
-      ctx->seqItems.back().push_back({ExprAttr::SequenceItem, ir});
-    }
-    if (expr->hasAttr(ExprAttr::StarSequenceItem)) {
-      ctx->seqItems.back().push_back({ExprAttr::StarSequenceItem, ir});
-    }
+    ir->setAttribute(
+        std::make_unique<ir::PartialFunctionAttribute>(func->ast->getName(), vals));
+    ctx->seqItems.pop_back();
+  }
+  if (expr->hasAttribute(Attr::ExprSequenceItem)) {
+    ctx->seqItems.back().emplace_back(Attr::ExprSequenceItem, ir);
+  }
+  if (expr->hasAttribute(Attr::ExprStarSequenceItem)) {
+    ctx->seqItems.back().emplace_back(Attr::ExprStarSequenceItem, ir);
   }
 
   return ir;
@@ -150,7 +155,8 @@ void TranslateVisitor::defaultVisit(Expr *n) {
 }
 
 void TranslateVisitor::visit(NoneExpr *expr) {
-  auto f = expr->type->realizedName() + ":Optional.__new__:0";
+  auto f = expr->getType()->realizedName() + ":" +
+           getMangledMethod("std.internal.core", TYPE_OPTIONAL, "__new__");
   auto val = ctx->find(f);
   seqassert(val, "cannot find '{}'", f);
   result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, val->getFunc()),
@@ -158,15 +164,15 @@ void TranslateVisitor::visit(NoneExpr *expr) {
 }
 
 void TranslateVisitor::visit(BoolExpr *expr) {
-  result = make<ir::BoolConst>(expr, expr->value, getType(expr->getType()));
+  result = make<ir::BoolConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(IntExpr *expr) {
-  result = make<ir::IntConst>(expr, *(expr->intValue), getType(expr->getType()));
+  result = make<ir::IntConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(FloatExpr *expr) {
-  result = make<ir::FloatConst>(expr, *(expr->floatValue), getType(expr->getType()));
+  result = make<ir::FloatConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(StringExpr *expr) {
@@ -174,9 +180,12 @@ void TranslateVisitor::visit(StringExpr *expr) {
 }
 
 void TranslateVisitor::visit(IdExpr *expr) {
-  auto val = ctx->find(expr->value);
-  seqassert(val, "cannot find '{}'", expr->value);
-  if (expr->value == "__vtable_size__") {
+  auto val = ctx->find(expr->getValue());
+  if (!val) {
+    // ctx->find(expr->getValue());
+    seqassert(val, "cannot find '{}'", expr->getValue());
+  }
+  if (expr->getValue() == getMangledVar("", "__vtable_size__")) {
     // LOG("[] __vtable_size__={}", ctx->cache->classRealizationCnt + 2);
     result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
                                 getType(expr->getType()));
@@ -184,78 +193,167 @@ void TranslateVisitor::visit(IdExpr *expr) {
     result = make<ir::VarValue>(expr, v);
   } else if (auto *f = val->getFunc()) {
     result = make<ir::VarValue>(expr, f);
+  } else {
+    // Just use NoneType which is {} (same as type)
+    auto ntval =
+        ctx->find(getMangledMethod("std.internal.core", "NoneType", "__new__"));
+    seqassert(ntval, "cannot find '{}'", "NoneType.__new__");
+    result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, ntval->getFunc()),
+                                 std::vector<ir::Value *>{});
   }
 }
 
 void TranslateVisitor::visit(IfExpr *expr) {
-  auto cond = transform(expr->cond);
-  auto ifexpr = transform(expr->ifexpr);
-  auto elsexpr = transform(expr->elsexpr);
+  auto cond = transform(expr->getCond());
+  auto ifexpr = transform(expr->getIf());
+  auto elsexpr = transform(expr->getElse());
   result = make<ir::TernaryInstr>(expr, cond, ifexpr, elsexpr);
 }
 
+// Search expression tree for an identifier
+class IdVisitor : public CallbackASTVisitor<bool, bool> {
+public:
+  std::unordered_set<std::string> ids;
+
+  bool transform(Expr *expr) override {
+    IdVisitor v;
+    if (expr)
+      expr->accept(v);
+    ids.insert(v.ids.begin(), v.ids.end());
+    return true;
+  }
+  bool transform(Stmt *stmt) override {
+    IdVisitor v;
+    if (stmt)
+      stmt->accept(v);
+    ids.insert(v.ids.begin(), v.ids.end());
+    return true;
+  }
+  void visit(IdExpr *expr) override { ids.insert(expr->getValue()); }
+};
+
+void TranslateVisitor::visit(GeneratorExpr *expr) {
+  auto name = ctx->cache->imports[MAIN_IMPORT].ctx->generateCanonicalName("_generator");
+  ir::Func *fn = ctx->cache->module->Nr<ir::BodiedFunc>(name);
+  fn->setGlobal();
+  fn->setGenerator();
+  std::vector<std::string> names;
+  std::vector<codon::ir::types::Type *> types;
+  std::vector<ir::Value *> items;
+
+  IdVisitor v;
+  expr->accept(v);
+  for (auto &i : v.ids) {
+    auto val = ctx->find(i);
+    if (val && !val->getFunc() && !val->getType() && !val->getVar()->isGlobal()) {
+      types.push_back(val->getVar()->getType());
+      names.push_back(i);
+      items.emplace_back(make<ir::VarValue>(expr, val->getVar()));
+    }
+  }
+  auto irType = ctx->cache->module->unsafeGetFuncType(
+      name, ctx->forceFind(expr->getType()->realizedName())->getType(), types, false);
+  fn->realize(irType, names);
+
+  ctx->addBlock();
+  for (auto &n : names)
+    ctx->add(TranslateItem::Var, n, fn->getArgVar(n));
+  auto body = make<ir::SeriesFlow>(expr, "body");
+  ctx->bases.push_back(cast<ir::BodiedFunc>(fn));
+  ctx->addSeries(body);
+
+  expr->setFinalStmt(ctx->cache->N<YieldStmt>(expr->getFinalExpr()));
+  auto e = expr->getFinalSuite();
+  transform(e);
+  ctx->popSeries();
+  ctx->bases.pop_back();
+  cast<ir::BodiedFunc>(fn)->setBody(body);
+  ctx->popBlock();
+  result = make<ir::CallInstr>(expr, make<ir::VarValue>(expr, fn), std::move(items));
+}
+
 void TranslateVisitor::visit(CallExpr *expr) {
-  if (expr->expr->isId("__ptr__")) {
-    seqassert(expr->args[0].value->getId(), "expected IdExpr, got {}",
-              expr->args[0].value);
-    auto val = ctx->find(expr->args[0].value->getId()->value);
-    seqassert(val && val->getVar(), "{} is not a variable",
-              expr->args[0].value->getId()->value);
-    result = make<ir::PointerValue>(expr, val->getVar());
+  auto ei = cast<IdExpr>(expr->getExpr());
+  if (ei && ei->getValue() == getMangledFunc("std.internal.core", "__ptr__")) {
+    auto head = expr->begin()->getExpr();
+    ir::FlowInstr *pre = cast<ir::FlowInstr>(transform(head));
+    while (auto sexp = cast<StmtExpr>(head))
+      head = sexp->getExpr();
+
+    std::vector<std::string> members;
+    while (auto id = cast<DotExpr>(head)) {
+      members.emplace_back(id->getMember());
+      head = id->getExpr();
+    }
+    std::ranges::reverse(members);
+    auto id = cast<IdExpr>(head);
+    seqassert(id, "expected IdExpr, got {}", *((*expr)[0].value));
+    auto key = id->getValue();
+    auto val = ctx->find(key);
+    seqassert(val && val->getVar(), "{} is not a variable", key);
+
+    auto pv = make<ir::PointerValue>(expr, val->getVar(), members);
+    if (pre) {
+      pre->setValue(pv);
+      result = pre;
+    } else {
+      result = pv;
+    }
     return;
-  } else if (expr->expr->isId("__array__.__new__:0")) {
-    auto fnt = expr->expr->type->getFunc();
-    auto szt = fnt->funcGenerics[0].type->getStatic();
-    auto sz = szt->evaluate().getInt();
-    auto typ = fnt->funcParent->getClass()->generics[0].type;
+  } else if (ei && ei->getValue() ==
+                       getMangledMethod("std.internal.core", "__array__", "__new__")) {
+    auto fnt = expr->getExpr()->getType()->getFunc();
+    auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
+    auto typ = fnt->funcParent->getClass()->generics[0].getType();
 
     auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
-    arrayType->setAstType(expr->getType());
+    arrayType->setAstType(expr->getType()->shared_from_this());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
-  } else if (expr->expr->getId() && startswith(expr->expr->getId()->value,
-                                               "__internal__.yield_in_no_suspend:0")) {
+  } else if (ei && startswith(ei->getValue(), "__internal__.yield_in_no_suspend")) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }
 
-  auto ft = expr->expr->type->getFunc();
-  seqassert(ft, "not calling function: {}", ft);
-  auto callee = transform(expr->expr);
-  bool isVariadic = ft->ast->hasAttr(Attr::CVarArg);
+  auto ft = expr->getExpr()->getType()->getFunc();
+  seqassert(ft, "not calling function");
+  auto callee = transform(expr->getExpr());
+  bool isVariadic = ft->ast->hasAttribute(Attr::CVarArg);
   std::vector<ir::Value *> items;
-  for (int i = 0; i < expr->args.size(); i++) {
-    seqassert(!expr->args[i].value->getEllipsis(), "ellipsis not elided");
-    if (i + 1 == expr->args.size() && isVariadic) {
-      auto call = expr->args[i].value->getCall();
-      seqassert(
-          call && call->expr->getId() &&
-              startswith(call->expr->getId()->value, std::string(TYPE_TUPLE) + "["),
-          "expected *args tuple: '{}'", call->toString());
-      for (auto &arg : call->args)
+  size_t i = 0;
+  for (auto &a : *expr) {
+    seqassert(!cast<EllipsisExpr>(a.value), "ellipsis not elided");
+    if (i + 1 == expr->size() && isVariadic) {
+      auto call = cast<CallExpr>(a.value);
+      seqassert(call, "expected *args tuple: '{}'", call->toString(0));
+      for (auto &arg : *call)
         items.emplace_back(transform(arg.value));
     } else {
-      items.emplace_back(transform(expr->args[i].value));
+      items.emplace_back(transform(a.value));
     }
+    i++;
   }
   result = make<ir::CallInstr>(expr, callee, std::move(items));
 }
 
 void TranslateVisitor::visit(DotExpr *expr) {
-  if (expr->member == "__atomic__" || expr->member == "__elemsize__" ||
-      expr->member == "__contents_atomic__") {
-    seqassert(expr->expr->getId(), "expected IdExpr, got {}", expr->expr);
-    auto type = ctx->find(expr->expr->getId()->value)->getType();
-    seqassert(type, "{} is not a type", expr->expr->getId()->value);
+  if (expr->getMember() == "__atomic__" || expr->getMember() == "__elemsize__" ||
+      expr->getMember() == "__contents_atomic__") {
+    auto ei = cast<IdExpr>(expr->getExpr());
+    seqassert(ei, "expected IdExpr, got {}", *(expr->getExpr()));
+    auto t = TypecheckVisitor(ctx->cache->typeCtx).extractType(ei->getType());
+    auto type = ctx->find(t->realizedName())->getType();
+    seqassert(type, "{} is not a type", ei->getValue());
     result = make<ir::TypePropertyInstr>(
         expr, type,
-        expr->member == "__atomic__"
+        expr->getMember() == "__atomic__"
             ? ir::TypePropertyInstr::Property::IS_ATOMIC
-            : (expr->member == "__contents_atomic__"
+            : (expr->getMember() == "__contents_atomic__"
                    ? ir::TypePropertyInstr::Property::IS_CONTENT_ATOMIC
                    : ir::TypePropertyInstr::Property::SIZEOF));
   } else {
-    result = make<ir::ExtractInstr>(expr, transform(expr->expr), expr->member);
+    result =
+        make<ir::ExtractInstr>(expr, transform(expr->getExpr()), expr->getMember());
   }
 }
 
@@ -275,24 +373,24 @@ void TranslateVisitor::visit(PipeExpr *expr) {
   };
 
   std::vector<ir::PipelineFlow::Stage> stages;
-  auto *firstStage = transform(expr->items[0].expr);
+  auto *firstStage = transform((*expr)[0].expr);
   auto firstIsGen = isGen(firstStage);
   stages.emplace_back(firstStage, std::vector<ir::Value *>(), firstIsGen, false);
 
   // Pipeline without generators (just function call sugar)
   auto simplePipeline = !firstIsGen;
-  for (auto i = 1; i < expr->items.size(); i++) {
-    auto call = expr->items[i].expr->getCall();
-    seqassert(call, "{} is not a call", expr->items[i].expr);
+  for (auto i = 1; i < expr->size(); i++) {
+    auto call = cast<CallExpr>((*expr)[i].expr);
+    seqassert(call, "{} is not a call", *((*expr)[i].expr));
 
-    auto fn = transform(call->expr);
-    if (i + 1 != expr->items.size())
+    auto fn = transform(call->getExpr());
+    if (i + 1 != expr->size())
       simplePipeline &= !isGen(fn);
 
     std::vector<ir::Value *> args;
-    args.reserve(call->args.size());
-    for (auto &a : call->args)
-      args.emplace_back(a.value->getEllipsis() ? nullptr : transform(a.value));
+    args.reserve(call->size());
+    for (auto &a : *call)
+      args.emplace_back(cast<EllipsisExpr>(a.value) ? nullptr : transform(a.value));
     stages.emplace_back(fn, args, isGen(fn), false);
   }
 
@@ -307,8 +405,8 @@ void TranslateVisitor::visit(PipeExpr *expr) {
       result = make<ir::CallInstr>(expr, cv.clone(stages[i].getCallee()), newArgs);
     }
   } else {
-    for (int i = 0; i < expr->items.size(); i++)
-      if (expr->items[i].op == "||>")
+    for (int i = 0; i < expr->size(); i++)
+      if ((*expr)[i].op == "||>")
         stages[i].setParallel();
     // This is a statement in IR.
     ctx->getSeries()->push_back(make<ir::PipelineFlow>(expr, stages));
@@ -318,15 +416,15 @@ void TranslateVisitor::visit(PipeExpr *expr) {
 void TranslateVisitor::visit(StmtExpr *expr) {
   auto *bodySeries = make<ir::SeriesFlow>(expr, "body");
   ctx->addSeries(bodySeries);
-  for (auto &s : expr->stmts)
+  for (auto &s : *expr)
     transform(s);
   ctx->popSeries();
-  result = make<ir::FlowInstr>(expr, bodySeries, transform(expr->expr));
+  result = make<ir::FlowInstr>(expr, bodySeries, transform(expr->getExpr()));
 }
 
 /************************************************************************************/
 
-ir::Value *TranslateVisitor::transform(const StmtPtr &stmt) {
+ir::Value *TranslateVisitor::transform(Stmt *stmt) {
   TranslateVisitor v(ctx);
   v.setSrcInfo(stmt->getSrcInfo());
   stmt->accept(v);
@@ -340,7 +438,7 @@ void TranslateVisitor::defaultVisit(Stmt *n) {
 }
 
 void TranslateVisitor::visit(SuiteStmt *stmt) {
-  for (auto &s : stmt->stmts)
+  for (auto *s : *stmt)
     transform(s);
 }
 
@@ -351,139 +449,155 @@ void TranslateVisitor::visit(ContinueStmt *stmt) {
 }
 
 void TranslateVisitor::visit(ExprStmt *stmt) {
-  if (stmt->expr->getCall() &&
-      stmt->expr->getCall()->expr->isId("__internal__.yield_final:0")) {
-    result = make<ir::YieldInstr>(stmt, transform(stmt->expr->getCall()->args[0].value),
-                                  true);
+  IdExpr *ei = nullptr;
+  auto ce = cast<CallExpr>(stmt->getExpr());
+  if (ce && ((ei = cast<IdExpr>(ce->getExpr()))) &&
+      ei->getValue() ==
+          getMangledMethod("std.internal.core", "__internal__", "yield_final")) {
+    result = make<ir::YieldInstr>(stmt, transform((*ce)[0].value), true);
     ctx->getBase()->setGenerator();
   } else {
-    result = transform(stmt->expr);
+    result = transform(stmt->getExpr());
   }
 }
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
-  if (stmt->lhs && stmt->lhs->isId(VAR_ARGV))
+  if (stmt->getLhs() && cast<IdExpr>(stmt->getLhs()) &&
+      cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGV)
     return;
 
+  auto lei = cast<IdExpr>(stmt->getLhs());
+  seqassert(lei, "expected IdExpr, got {}", *(stmt->getLhs()));
+  auto var = lei->getValue();
+
+  auto isGlobal = in(ctx->cache->globals, var);
+  ir::Var *v = nullptr;
+
   if (stmt->isUpdate()) {
-    seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
-    auto val = ctx->find(stmt->lhs->getId()->value);
-    seqassert(val && val->getVar(), "{} is not a variable", stmt->lhs->getId()->value);
-    result = make<ir::AssignInstr>(stmt, val->getVar(), transform(stmt->rhs));
+    auto val = ctx->find(lei->getValue());
+    seqassert(val && val->getVar(), "{} is not a variable", lei->getValue());
+    v = val->getVar();
+
+    if (!v->getType()) {
+      v->setSrcInfo(stmt->getSrcInfo());
+      v->setType(getType(stmt->getRhs()->getType()));
+    }
+    result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
     return;
   }
 
-  seqassert(stmt->lhs->getId(), "expected IdExpr, got {}", stmt->lhs);
-  auto var = stmt->lhs->getId()->value;
-  if (!stmt->rhs || (!stmt->rhs->isType() && stmt->rhs->type)) {
-    auto isGlobal = in(ctx->cache->globals, var);
-    ir::Var *v = nullptr;
-
-    // dead declaration due to static compilation
-    if (!stmt->rhs && !stmt->type && !stmt->lhs->type->getClass())
-      return;
-
-    if (isGlobal) {
-      seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
-                var);
-      v = ctx->find(var)->getVar();
-      v->setSrcInfo(stmt->getSrcInfo());
-      v->setType(getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()));
-    } else {
-      v = make<ir::Var>(stmt, getType((stmt->rhs ? stmt->rhs : stmt->lhs)->getType()),
-                        false, false, var);
-      ctx->getBase()->push_back(v);
-      ctx->add(TranslateItem::Var, var, v);
+  if (!stmt->getLhs()->getType()->isInstantiated() ||
+      (stmt->getLhs()->getType()->is(TYPE_TYPE)) ||
+      stmt->getLhs()->getType()->getFunc()) {
+    if (!cast<IdExpr>(stmt->getRhs())) {
+      // Side effect
+      result = transform(stmt->getRhs());
     }
-    // Check if it is a C variable
-    if (stmt->lhs->hasAttr(ExprAttr::ExternVar)) {
-      v->setExternal();
-      v->setName(ctx->cache->rev(var));
-      v->setGlobal();
-      return;
-    }
+    return; // type aliases/fn aliases etc
+  }
 
-    if (stmt->rhs)
-      result = make<ir::AssignInstr>(stmt, v, transform(stmt->rhs));
+  if (isGlobal) {
+    seqassert(ctx->find(var) && ctx->find(var)->getVar(), "cannot find global '{}'",
+              var);
+    v = ctx->find(var)->getVar();
+    v->setSrcInfo(stmt->getSrcInfo());
+    v->setType(getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()));
+  } else {
+    v = make<ir::Var>(
+        stmt, getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()),
+        false, false, var);
+    ctx->getBase()->push_back(v);
+    ctx->add(TranslateItem::Var, var, v);
+  }
+  // Check if it is a C variable
+  if (stmt->getLhs()->hasAttribute(Attr::ExprExternVar)) {
+    v->setExternal();
+    v->setName(ctx->cache->rev(var));
+    v->setGlobal();
+    return;
+  }
+
+  if (stmt->getRhs()) {
+    result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
   }
 }
 
 void TranslateVisitor::visit(AssignMemberStmt *stmt) {
-  result = make<ir::InsertInstr>(stmt, transform(stmt->lhs), stmt->member,
-                                 transform(stmt->rhs));
+  result = make<ir::InsertInstr>(stmt, transform(stmt->getLhs()), stmt->getMember(),
+                                 transform(stmt->getRhs()));
 }
 
 void TranslateVisitor::visit(ReturnStmt *stmt) {
-  result = make<ir::ReturnInstr>(stmt, stmt->expr ? transform(stmt->expr) : nullptr);
+  result = make<ir::ReturnInstr>(stmt, stmt->getExpr() ? transform(stmt->getExpr())
+                                                       : nullptr);
 }
 
 void TranslateVisitor::visit(YieldStmt *stmt) {
-  result = make<ir::YieldInstr>(stmt, stmt->expr ? transform(stmt->expr) : nullptr);
+  result = make<ir::YieldInstr>(stmt,
+                                stmt->getExpr() ? transform(stmt->getExpr()) : nullptr);
   ctx->getBase()->setGenerator();
 }
 
 void TranslateVisitor::visit(WhileStmt *stmt) {
-  auto loop = make<ir::WhileFlow>(stmt, transform(stmt->cond),
+  auto loop = make<ir::WhileFlow>(stmt, transform(stmt->getCond()),
                                   make<ir::SeriesFlow>(stmt, "body"));
   ctx->addSeries(cast<ir::SeriesFlow>(loop->getBody()));
-  transform(stmt->suite);
+  transform(stmt->getSuite());
   ctx->popSeries();
   result = loop;
 }
 
 void TranslateVisitor::visit(ForStmt *stmt) {
   std::unique_ptr<OMPSched> os = nullptr;
-  if (stmt->decorator) {
-    os = std::make_unique<OMPSched>();
-    auto c = stmt->decorator->getCall();
-    seqassert(c, "for par is not a call: {}", stmt->decorator);
-    auto fc = c->expr->getType()->getFunc();
-    seqassert(fc && fc->ast->name == "std.openmp.for_par:0",
+  if (stmt->getDecorator()) {
+    auto c = cast<CallExpr>(stmt->getDecorator());
+    seqassert(c, "for par is not a call: {}", *(stmt->getDecorator()));
+    auto fc = c->getExpr()->getType()->getFunc();
+    seqassert(fc && fc->ast->getName() == getMangledFunc("std.openmp", "for_par"),
               "for par is not a function");
-    auto schedule =
-        fc->funcGenerics[0].type->getStatic()->expr->staticValue.getString();
-    bool ordered = fc->funcGenerics[1].type->getStatic()->expr->staticValue.getInt();
-    auto threads = transform(c->args[0].value);
-    auto chunk = transform(c->args[1].value);
-    int64_t collapse =
-        fc->funcGenerics[2].type->getStatic()->expr->staticValue.getInt();
-    bool gpu = fc->funcGenerics[3].type->getStatic()->expr->staticValue.getInt();
+    auto schedule = fc->funcGenerics[0].type->getStrStatic()->value;
+    bool ordered = fc->funcGenerics[1].type->getBoolStatic()->value;
+    auto threads = transform((*c)[0].value);
+    auto chunk = transform((*c)[1].value);
+    auto collapse = fc->funcGenerics[2].type->getIntStatic()->value;
+    bool gpu = fc->funcGenerics[3].type->getBoolStatic()->value;
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
   }
 
-  seqassert(stmt->var->getId(), "expected IdExpr, got {}", stmt->var);
-  auto varName = stmt->var->getId()->value;
+  seqassert(cast<IdExpr>(stmt->getVar()), "expected IdExpr, got {}", *(stmt->getVar()));
+  auto varName = cast<IdExpr>(stmt->getVar())->getValue();
   ir::Var *var = nullptr;
-  if (!ctx->find(varName) || !stmt->var->hasAttr(ExprAttr::Dominated)) {
-    var = make<ir::Var>(stmt, getType(stmt->var->getType()), false, false, varName);
+  if (!ctx->find(varName) || !stmt->getVar()->hasAttribute(Attr::ExprDominated)) {
+    var =
+        make<ir::Var>(stmt, getType(stmt->getVar()->getType()), false, false, varName);
   } else {
     var = ctx->find(varName)->getVar();
   }
   ctx->getBase()->push_back(var);
   auto bodySeries = make<ir::SeriesFlow>(stmt, "body");
 
-  auto loop = make<ir::ForFlow>(stmt, transform(stmt->iter), bodySeries, var);
+  auto loop = make<ir::ForFlow>(stmt, transform(stmt->getIter()), bodySeries, var);
   if (os)
     loop->setSchedule(std::move(os));
   ctx->add(TranslateItem::Var, varName, var);
   ctx->addSeries(cast<ir::SeriesFlow>(loop->getBody()));
-  transform(stmt->suite);
+  transform(stmt->getSuite());
   ctx->popSeries();
   result = loop;
 }
 
 void TranslateVisitor::visit(IfStmt *stmt) {
-  auto cond = transform(stmt->cond);
+  auto cond = transform(stmt->getCond());
   auto trueSeries = make<ir::SeriesFlow>(stmt, "ifstmt_true");
   ctx->addSeries(trueSeries);
-  transform(stmt->ifSuite);
+  transform(stmt->getIf());
   ctx->popSeries();
 
   ir::SeriesFlow *falseSeries = nullptr;
-  if (stmt->elseSuite) {
+  if (stmt->getElse()) {
     falseSeries = make<ir::SeriesFlow>(stmt, "ifstmt_false");
     ctx->addSeries(falseSeries);
-    transform(stmt->elseSuite);
+    transform(stmt->getElse());
     ctx->popSeries();
   }
   result = make<ir::IfFlow>(stmt, cond, trueSeries, falseSeries);
@@ -492,32 +606,43 @@ void TranslateVisitor::visit(IfStmt *stmt) {
 void TranslateVisitor::visit(TryStmt *stmt) {
   auto *bodySeries = make<ir::SeriesFlow>(stmt, "body");
   ctx->addSeries(bodySeries);
-  transform(stmt->suite);
+  transform(stmt->getSuite());
   ctx->popSeries();
 
-  auto finallySeries = make<ir::SeriesFlow>(stmt, "finally");
-  if (stmt->finally) {
+  ir::SeriesFlow *finallySeries = make<ir::SeriesFlow>(stmt, "finally");
+  if (stmt->getFinally()) {
     ctx->addSeries(finallySeries);
-    transform(stmt->finally);
+    transform(stmt->getFinally());
     ctx->popSeries();
   }
 
-  auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries);
-  for (auto &c : stmt->catches) {
+  ir::SeriesFlow *elseSeries = nullptr;
+  if (stmt->getElse()) {
+    elseSeries = make<ir::SeriesFlow>(stmt, "else");
+    ctx->addSeries(elseSeries);
+    transform(stmt->getElse());
+    ctx->popSeries();
+  }
+
+  auto *tc = make<ir::TryCatchFlow>(stmt, bodySeries, finallySeries, elseSeries);
+  for (auto *c : *stmt) {
     auto *catchBody = make<ir::SeriesFlow>(stmt, "catch");
-    auto *excType = c.exc ? getType(c.exc->getType()) : nullptr;
+    auto *excType = c->getException()
+                        ? getType(TypecheckVisitor(ctx->cache->typeCtx)
+                                      .extractType(c->getException()->getType()))
+                        : nullptr;
     ir::Var *catchVar = nullptr;
-    if (!c.var.empty()) {
-      if (!ctx->find(c.var) || !c.exc->hasAttr(ExprAttr::Dominated)) {
-        catchVar = make<ir::Var>(stmt, excType, false, false, c.var);
+    if (!c->getVar().empty()) {
+      if (!ctx->find(c->getVar()) || !c->hasAttribute(Attr::ExprDominated)) {
+        catchVar = make<ir::Var>(stmt, excType, false, false, c->getVar());
       } else {
-        catchVar = ctx->find(c.var)->getVar();
+        catchVar = ctx->find(c->getVar())->getVar();
       }
-      ctx->add(TranslateItem::Var, c.var, catchVar);
+      ctx->add(TranslateItem::Var, c->getVar(), catchVar);
       ctx->getBase()->push_back(catchVar);
     }
     ctx->addSeries(catchBody);
-    transform(c.suite);
+    transform(c->getSuite());
     ctx->popSeries();
     tc->push_back(ir::TryCatchFlow::Catch(catchBody, excType, catchVar));
   }
@@ -525,12 +650,13 @@ void TranslateVisitor::visit(TryStmt *stmt) {
 }
 
 void TranslateVisitor::visit(ThrowStmt *stmt) {
-  result = make<ir::ThrowInstr>(stmt, stmt->expr ? transform(stmt->expr) : nullptr);
+  result = make<ir::ThrowInstr>(stmt,
+                                stmt->getExpr() ? transform(stmt->getExpr()) : nullptr);
 }
 
 void TranslateVisitor::visit(FunctionStmt *stmt) {
   // Process all realizations.
-  transformFunctionRealizations(stmt->name, stmt->attributes.has(Attr::LLVM));
+  transformFunctionRealizations(stmt->getName(), stmt->hasAttribute(Attr::LLVM));
 }
 
 void TranslateVisitor::visit(ClassStmt *stmt) {
@@ -540,11 +666,12 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 /************************************************************************************/
 
-codon::ir::types::Type *TranslateVisitor::getType(const types::TypePtr &t) {
-  seqassert(t && t->getClass(), "{} is not a class", t);
-  std::string name = t->getClass()->realizedTypeName();
+codon::ir::types::Type *TranslateVisitor::getType(types::Type *t) const {
+  seqassert(t && t->getClass(), "not a class: {}", t ? t->debugString(2) : "-");
+  std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
-  seqassert(i, "type {} not realized", t);
+  seqassert(i, "type {} not realized: {}", t->debugString(2), name);
+  seqassert(i->getType(), "type {} not IR-realized: {}", t->debugString(2), name);
   return i->getType();
 }
 
@@ -560,47 +687,46 @@ void TranslateVisitor::transformFunctionRealizations(const std::string &name,
     const auto &ast = real.second->ast;
     seqassert(ast, "AST not set for {}", real.first);
     if (!isLLVM)
-      transformFunction(real.second->type.get(), ast.get(), real.second->ir);
+      transformFunction(real.second->type.get(), ast, real.second->ir);
     else
-      transformLLVMFunction(real.second->type.get(), ast.get(), real.second->ir);
+      transformLLVMFunction(real.second->type.get(), ast, real.second->ir);
   }
 }
 
-void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *ast,
+void TranslateVisitor::transformFunction(const types::FuncType *type, FunctionStmt *ast,
                                          ir::Func *func) {
   std::vector<std::string> names;
   std::vector<int> indices;
-  for (int i = 0, j = 0; i < ast->args.size(); i++)
-    if (ast->args[i].status == Param::Normal) {
-      if (!type->getArgTypes()[j]->getFunc()) {
-        names.push_back(ctx->cache->reverseIdentifierLookup[ast->args[i].name]);
+  for (int i = 0, j = 0; i < ast->size(); i++)
+    if ((*ast)[i].isValue()) {
+      if (!(*type)[j]->getFunc()) {
+        names.push_back(ctx->cache->rev((*ast)[i].name));
         indices.push_back(i);
       }
       j++;
     }
-  if (ast->hasAttr(Attr::CVarArg)) {
+  if (ast->hasAttribute(Attr::CVarArg)) {
     names.pop_back();
     indices.pop_back();
   }
   // TODO: refactor IR attribute API
-  std::map<std::string, std::string> attr;
-  attr[".module"] = ast->attributes.module;
-  for (auto &a : ast->attributes.customAttr) {
-    attr[a] = "";
-  }
+  std::unordered_map<std::string, std::string> attr;
+  if (ast->hasAttribute(Attr::FunctionAttributes))
+    attr =
+        ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)->attributes;
+  attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
-    func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
+    func->getArgVar(names[i])->setSrcInfo((*ast)[indices[i]].getSrcInfo());
   // func->setUnmangledName(ctx->cache->reverseIdentifierLookup[type->ast->name]);
-  if (!ast->attributes.has(Attr::C) && !ast->attributes.has(Attr::Internal)) {
+  if (!ast->hasAttribute(Attr::C) && !ast->hasAttribute(Attr::Internal)) {
     ctx->addBlock();
     for (auto i = 0; i < names.size(); i++)
-      ctx->add(TranslateItem::Var, ast->args[indices[i]].name,
-               func->getArgVar(names[i]));
+      ctx->add(TranslateItem::Var, (*ast)[indices[i]].name, func->getArgVar(names[i]));
     auto body = make<ir::SeriesFlow>(ast, "body");
     ctx->bases.push_back(cast<ir::BodiedFunc>(func));
     ctx->addSeries(body);
-    transform(ast->suite);
+    transform(ast->getSuite());
     ctx->popSeries();
     ctx->bases.pop_back();
     cast<ir::BodiedFunc>(func)->setBody(body);
@@ -609,41 +735,48 @@ void TranslateVisitor::transformFunction(types::FuncType *type, FunctionStmt *as
 }
 
 void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,
-                                             ir::Func *func) {
+                                             ir::Func *func) const {
   std::vector<std::string> names;
   std::vector<int> indices;
-  for (int i = 0, j = 1; i < ast->args.size(); i++)
-    if (ast->args[i].status == Param::Normal) {
-      names.push_back(ctx->cache->reverseIdentifierLookup[ast->args[i].name]);
+  for (int i = 0, j = 1; i < ast->size(); i++)
+    if ((*ast)[i].isValue()) {
+      names.push_back(ctx->cache->reverseIdentifierLookup[(*ast)[i].name]);
       indices.push_back(i);
       j++;
     }
   auto f = cast<ir::LLVMFunc>(func);
-  // TODO: refactor IR attribute API
-  std::map<std::string, std::string> attr;
-  attr[".module"] = ast->attributes.module;
-  for (auto &a : ast->attributes.customAttr)
-    attr[a] = "";
+  seqassert(f, "not a function");
+  std::unordered_map<std::string, std::string> attr;
+  if (ast->hasAttribute(Attr::FunctionAttributes))
+    attr =
+        ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)->attributes;
+  attr[".module"] = ast->getAttribute<ir::StringValueAttribute>(Attr::Module)->value;
   func->setAttribute(std::make_unique<ir::KeyValueAttribute>(attr));
   for (int i = 0; i < names.size(); i++)
-    func->getArgVar(names[i])->setSrcInfo(ast->args[indices[i]].getSrcInfo());
+    func->getArgVar(names[i])->setSrcInfo((*ast)[indices[i]].getSrcInfo());
 
-  seqassert(ast->suite->firstInBlock() && ast->suite->firstInBlock()->getExpr() &&
-                ast->suite->firstInBlock()->getExpr()->expr->getString(),
-            "LLVM function does not begin with a string");
+  seqassert(
+      ast->getSuite()->firstInBlock() &&
+          cast<ExprStmt>(ast->getSuite()->firstInBlock()) &&
+          cast<StringExpr>(cast<ExprStmt>(ast->getSuite()->firstInBlock())->getExpr()),
+      "LLVM function does not begin with a string");
   std::istringstream sin(
-      ast->suite->firstInBlock()->getExpr()->expr->getString()->getValue());
+      cast<StringExpr>(cast<ExprStmt>(ast->getSuite()->firstInBlock())->getExpr())
+          ->getValue());
   std::vector<ir::types::Generic> literals;
-  auto &ss = ast->suite->getSuite()->stmts;
-  for (int i = 1; i < ss.size(); i++) {
-    if (auto *ei = ss[i]->getExpr()->expr->getInt()) { // static integer expression
-      literals.emplace_back(*(ei->intValue));
-    } else if (auto *es = ss[i]->getExpr()->expr->getString()) { // static string
-      literals.emplace_back(es->getValue());
+  auto ss = cast<SuiteStmt>(ast->getSuite());
+  for (int i = 1; i < ss->size(); i++) {
+    if (auto sti = cast<ExprStmt>((*ss)[i])->getExpr()->getType()->getIntStatic()) {
+      literals.emplace_back(sti->value);
+    } else if (auto sts =
+                   cast<ExprStmt>((*ss)[i])->getExpr()->getType()->getStrStatic()) {
+      literals.emplace_back(sts->value);
     } else {
-      seqassert(ss[i]->getExpr()->expr->getType(), "invalid LLVM type argument: {}",
-                ss[i]->getExpr()->toString());
-      literals.emplace_back(getType(ss[i]->getExpr()->expr->getType()));
+      seqassert(cast<ExprStmt>((*ss)[i])->getExpr()->getType(),
+                "invalid LLVM type argument: {}", (*ss)[i]->toString(0));
+      literals.emplace_back(
+          getType(TypecheckVisitor(ctx->cache->typeCtx)
+                      .extractType(cast<ExprStmt>((*ss)[i])->getExpr()->getType())));
     }
   }
   bool isDeclare = true;

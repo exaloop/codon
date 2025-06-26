@@ -7,20 +7,23 @@ class Ptr:
     def __new__() -> Ptr[T]:
         ret ptr null
 
+    @overload
     @__internal__
     def __new__(sz: int) -> Ptr[T]:
         pass
 
     @pure
     @derives
+    @overload
     @llvm
     def __new__(other: Ptr[T]) -> Ptr[T]:
         ret ptr %other
 
     @pure
     @derives
+    @overload
     @llvm
-    def __new__(other: Ptr[byte]) -> Ptr[T]:
+    def __new__(other: Ptr) -> Ptr[T]:
         ret ptr %other
 
     @pure
@@ -187,20 +190,12 @@ class Ptr:
     def __repr__(self) -> str:
         return self.__format__("")
 
+
 ptr = Ptr
 Jar = Ptr[byte]
 
-# Forward declarations
-class List:
-    len: int
-    arr: Array[T]
-    T: type
-
 @extend
 class NoneType:
-    def __new__() -> NoneType:
-        return ()
-
     def __eq__(self, other: NoneType):
         return True
 

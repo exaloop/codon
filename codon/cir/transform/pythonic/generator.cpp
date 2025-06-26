@@ -14,15 +14,18 @@ namespace transform {
 namespace pythonic {
 namespace {
 bool isSum(Func *f) {
-  return f && f->getName().rfind("std.internal.builtin.sum:", 0) == 0;
+  return f &&
+         f->getName().rfind(ast::getMangledFunc("std.internal.builtin", "sum"), 0) == 0;
 }
 
 bool isAny(Func *f) {
-  return f && f->getName().rfind("std.internal.builtin.any:", 0) == 0;
+  return f &&
+         f->getName().rfind(ast::getMangledFunc("std.internal.builtin", "any"), 0) == 0;
 }
 
 bool isAll(Func *f) {
-  return f && f->getName().rfind("std.internal.builtin.all:", 0) == 0;
+  return f &&
+         f->getName().rfind(ast::getMangledFunc("std.internal.builtin", "all"), 0) == 0;
 }
 
 // Replaces yields with updates to the accumulator variable.

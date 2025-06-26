@@ -1062,7 +1062,7 @@ def test_counter():
             assert exp == got
 
     assert repr(Counter('abcabc')) == "Counter({'a': 2, 'b': 2, 'c': 2})"
-test_counter()
+test_counter()  # this call doubles compile time!
 
 @test
 def test_defaultdict():

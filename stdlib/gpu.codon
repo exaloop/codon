@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import sizeof as _sizeof
+import internal.static as static
 
 @tuple
 class Device:
@@ -234,7 +235,7 @@ class AllocCache:
             Memory[byte](p)._free()
 
 def _tuple_from_gpu(args, gpu_args):
-    if staticlen(args) > 0:
+    if static.len(args) > 0:
         a = args[0]
         g = gpu_args[0]
         a.__from_gpu__(g)
@@ -261,17 +262,17 @@ def kernel(fn):
     def offsets(t):
         @pure
         @llvm
-        def offsetof(t: T, i: Static[int], T: type, S: type) -> int:
+        def offsetof(t: T, i: Literal[int], T: type, S: type) -> int:
             %p = getelementptr {=T}, ptr null, i64 0, i32 {=i}
             %s = ptrtoint ptr %p to i64
             ret i64 %s
 
-        if staticlen(t) == 0:
+        if static.len(t) == 0:
             return ()
         else:
             T = type(t)
             S = type(t[-1])
-            return (*offsets(t[:-1]), offsetof(t, staticlen(t) - 1, T, S))
+            return (*offsets(t[:-1]), offsetof(t, static.len(t) - 1, T, S))
 
     def wrapper(*args, grid, block):
         grid = canonical_dim(grid)
@@ -279,7 +280,7 @@ def kernel(fn):
         cache = AllocCache([])
         shared_mem = 0
         gpu_args = tuple(arg.__to_gpu__(cache) for arg in args)
-        kernel_ptr = seq_nvptx_function(__realized__(fn, gpu_args).__llvm_name__)
+        kernel_ptr = seq_nvptx_function(static.function.realized(fn, *gpu_args).__llvm_name__)
         p = __ptr__(gpu_args).as_byte()
         arg_ptrs = tuple((p + offset) for offset in offsets(gpu_args))
         seq_nvptx_invoke(kernel_ptr, u32(grid[0]), u32(grid[1]), u32(grid[2]), u32(block[0]),
@@ -708,7 +709,7 @@ def _gpu_block_dim_x() -> u32:
     %res = call i32 @llvm.nvvm.read.ptx.sreg.ntid.x()
     ret i32 %res
 
-def _gpu_loop_outline_template(start, stop, args, instance: Static[int]):
+def _gpu_loop_outline_template(start, stop, args, instance: Literal[int]):
     @nonpure
     def _loop_step():
         return 1

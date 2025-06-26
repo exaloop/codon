@@ -3,23 +3,23 @@ at compile time. For example, the bit width `N` of an
 integer type `Int[N]`, or the size `M` of a static array
 `__array__[int](M)` need to be compile time constants.
 
-To accomodate this, Codon uses *static values*, i.e.
+To accomodate this, Codon uses *literal values*, i.e.
 values that are known and can be operated on at compile
-time. `Static[T]` represents a static value of type `T`.
+time. `Literal[T]` represents a literal value of type `T`.
 Currently, `T` can only be `int` or `str`.
 
 For example, we can parameterize the bit width of an
 integer type as follows:
 
 ``` python
-N: Static[int] = 32
+N: Literal[int] = 32
 
 a = Int[N](10)      # 32-bit integer 10
 b = Int[2 * N](20)  # 64-bit integer 20
 ```
 
 All of the standard arithmetic operations can be applied
-to static integers to produce new static integers.
+to literal integers to produce new literal integers.
 
 Statics can also be passed to the `codon` compiler via the
 `-D` flag, as in `-DN=32`.
@@ -27,7 +27,7 @@ Statics can also be passed to the `codon` compiler via the
 Classes can also be parameterized by statics:
 
 ``` python
-class MyInt[N: Static[int]]:
+class MyInt[N: Literal[int]]:
     n: Int[N]
 
 x = MyInt[16](i16(42))

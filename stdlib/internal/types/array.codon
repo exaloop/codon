@@ -4,16 +4,22 @@ from internal.gc import sizeof
 
 @extend
 class Array:
+    @llvm
+    @pure
+    @derives
     def __new__(ptr: Ptr[T], sz: int) -> Array[T]:
-        return (sz, ptr)
+        %0 = insertvalue { i64, ptr } undef, i64 %sz, 0
+        %1 = insertvalue { i64, ptr } %0, ptr %ptr, 1
+        ret { i64, ptr } %1
 
+    @overload
     def __new__(sz: int) -> Array[T]:
-        return (sz, Ptr[T](sz))
+        return Array[T](Ptr[T](sz), sz)
 
     def __copy__(self) -> Array[T]:
         p = Ptr[T](self.len)
         str.memcpy(p.as_byte(), self.ptr.as_byte(), self.len * sizeof(T))
-        return (self.len, p)
+        return Array[T](p, self.len)
 
     def __deepcopy__(self) -> Array[T]:
         p = Ptr[T](self.len)
@@ -21,7 +27,7 @@ class Array:
         while i < self.len:
             p[i] = self.ptr[i].__deepcopy__()
             i += 1
-        return (self.len, p)
+        return Array[T](p, self.len)
 
     def __len__(self) -> int:
         return self.len
@@ -36,6 +42,13 @@ class Array:
         self.ptr[index] = what
 
     def slice(self, s: int, e: int) -> Array[T]:
-        return (e - s, self.ptr + s)
+        return Array[T](self.ptr + s, e - s)
 
 array = Array
+
+# Forward declarations
+@dataclass(init=False)
+class List:
+    len: int
+    arr: Array[T]
+    T: type = NoneType

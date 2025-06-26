@@ -1,0 +1,141 @@
+#%% python
+from python import os
+print os.name  #: posix
+
+from python import datetime
+z = datetime.datetime.utcfromtimestamp(0)
+print z  #: 1970-01-01 00:00:00
+
+#%% python_numpy
+from python import numpy as np
+a = np.arange(9).reshape(3, 3)
+print a
+#: [[0 1 2]
+#:  [3 4 5]
+#:  [6 7 8]]
+print a.dtype.name  #: int64
+print np.transpose(a)
+#: [[0 3 6]
+#:  [1 4 7]
+#:  [2 5 8]]
+n = np.array([[1, 2], [3, 4]])
+print n[0], n[0][0] + 1 #: [1 2] 2
+
+a = np.array([1,2,3])
+print(a + 1) #: [2 3 4]
+print(a - 1) #: [0 1 2]
+print(1 - a) #: [ 0 -1 -2]
+
+#%% python_import_fn
+from python import re.split(str, str) -> List[str] as rs
+print rs(r'\W+', 'Words, words, words.')  #: ['Words', 'words', 'words', '']
+
+#%% python_import_fn_2
+from python import os.system(str) -> int
+system("echo 'hello!'")  #: hello!
+
+#%% python_pydef
+@python
+def test_pydef(n) -> str:
+    return ''.join(map(str,range(n)))
+print test_pydef(5)  #: 01234
+
+#%% python_pydef_nested
+def foo():
+    @python
+    def pyfoo():
+        return 1
+    print pyfoo() #: 1
+    if True:
+        @python
+        def pyfoo2():
+            return 2
+        print pyfoo2() #: 2
+    pass
+    @python
+    def pyfoo3():
+        if 1:
+            return 3
+    return str(pyfoo3())
+print foo() #: 3
+
+#%% python_pyobj
+@python
+def foofn() -> Dict[pyobj, pyobj]:
+    return {"str": "hai", "int": 1}
+
+foo = foofn()
+print(sorted(foo.items(), key=lambda x: str(x)), foo.__class__.__name__)
+#: [('int', 1), ('str', 'hai')] Dict[pyobj,pyobj]
+foo["codon"] = 5.15
+print(sorted(foo.items(), key=lambda x: str(x)), foo["codon"].__class__.__name__, foo.__class__.__name__)
+#: [('codon', 5.15), ('int', 1), ('str', 'hai')] pyobj Dict[pyobj,pyobj]
+
+a = {1: "s", 2: "t"}
+a[3] = foo["str"]
+print(sorted(a.items()))  #: [(1, 's'), (2, 't'), (3, 'hai')]
+
+
+#%% python_isinstance
+import python
+
+@python
+def foo():
+    return 1
+
+z = foo()
+print(z.__class__.__name__)  #: pyobj
+
+print isinstance(z, pyobj)  #: True
+print isinstance(z, int)  #: False
+print isinstance(z, python.int)  #: True
+print isinstance(z, python.ValueError)  #: False
+
+print isinstance(z, (int, str, python.int))  #: True
+print isinstance(z, (int, str, python.AttributeError))  #: False
+
+try:
+    foo().x
+except python.ValueError:
+    pass
+except python.AttributeError as e:
+    print('caught', e, e.__class__.__name__) #: caught 'int' object has no attribute 'x' pyobj
+
+
+#%% python_exceptions
+import python
+
+@python
+def foo():
+    return 1
+
+try:
+    foo().x
+except python.AttributeError as f:
+    print 'py.Att', f  #: py.Att 'int' object has no attribute 'x'
+except ValueError:
+    print 'Val'
+except PyError as e:
+    print 'PyError', e
+try:
+    foo().x
+except python.ValueError as f:
+    print 'py.Att', f
+except ValueError:
+    print 'Val'
+except PyError as e:
+    print 'PyError', e  #: PyError 'int' object has no attribute 'x'
+try:
+    raise ValueError("ho")
+except python.ValueError as f:
+    print 'py.Att', f
+except ValueError:
+    print 'Val'  #: Val
+except PyError as e:
+    print 'PyError', e
+
+#%% python_directive
+## codon: auto_python=1
+import json
+s = json.dumps({'6': 7, '4': 5})
+print(s.__class__.__name__, s)  #: pyobj {"4": 5, "6": 7}

@@ -4,17 +4,18 @@
 
 #include <memory>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
+#include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/format/format.h"
 
-using fmt::format;
-
 namespace codon::ast {
+
+using namespace error;
+using namespace matcher;
 
 // clang-format off
 std::string json_escape(const std::string &str) {
@@ -95,25 +96,31 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->j = std::make_shared<json>();
 
-  auto stdlib = getImportFile(argv0, STDLIB_INTERNAL_MODULE, "", true, "");
-  auto ast = ast::parseFile(shared->cache, stdlib->path);
-  auto core =
+  auto stdlib = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
+  auto astOrErr = ast::parseFile(shared->cache, stdlib->path);
+  if (!astOrErr)
+    throw exc::ParserException(astOrErr.takeError());
+  auto coreOrErr =
       ast::parseCode(shared->cache, stdlib->path, "from internal.core import *");
+  if (!coreOrErr)
+    throw exc::ParserException(coreOrErr.takeError());
   shared->modules[""]->setFilename(stdlib->path);
   shared->modules[""]->add("__py_numerics__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
-  DocVisitor(shared->modules[""]).transformModule(std::move(core));
-  DocVisitor(shared->modules[""]).transformModule(std::move(ast));
+  DocVisitor(shared->modules[""]).transformModule(*coreOrErr);
+  DocVisitor(shared->modules[""]).transformModule(*astOrErr);
 
   auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
-    auto path = getAbsolutePath(f);
+    auto path = std::string(cache->fs->canonical(f));
     ctx->setFilename(path);
     LOG("-> parsing {}", path);
-    auto ast = ast::parseFile(shared->cache, path);
-    DocVisitor(ctx).transformModule(std::move(ast));
+    auto fAstOrErr = ast::parseFile(shared->cache, path);
+    if (!fAstOrErr)
+      throw exc::ParserException(fAstOrErr.takeError());
+    DocVisitor(ctx).transformModule(*fAstOrErr);
   }
 
   shared->cache = nullptr;
@@ -127,18 +134,18 @@ std::shared_ptr<int> DocContext::find(const std::string &s) const {
   return i;
 }
 
-std::string getDocstr(const StmtPtr &s) {
-  if (auto se = s->getExpr())
-    if (auto e = se->expr->getString())
+std::string getDocstr(Stmt *s) {
+  if (auto se = cast<ExprStmt>(s))
+    if (auto e = cast<StringExpr>(se->getExpr()))
       return e->getValue();
   return "";
 }
 
-std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool deep) {
-  std::vector<StmtPtr> stmts;
-  if (auto s = stmt->getSuite()) {
-    for (int i = 0; i < (deep ? s->stmts.size() : 1); i++) {
-      for (auto &x : flatten(std::move(s->stmts[i]), i ? nullptr : docstr, deep))
+std::vector<Stmt *> DocVisitor::flatten(Stmt *stmt, std::string *docstr, bool deep) {
+  std::vector<Stmt *> stmts;
+  if (auto s = cast<SuiteStmt>(stmt)) {
+    for (int i = 0; i < (deep ? s->size() : 1); i++) {
+      for (auto &x : flatten((*s)[i], i ? nullptr : docstr, deep))
         stmts.push_back(std::move(x));
     }
   } else {
@@ -149,7 +156,7 @@ std::vector<StmtPtr> DocVisitor::flatten(StmtPtr stmt, std::string *docstr, bool
   return stmts;
 }
 
-std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
+std::shared_ptr<json> DocVisitor::transform(Expr *expr) {
   if (!expr)
     return std::make_shared<json>();
   DocVisitor v(ctx);
@@ -159,7 +166,7 @@ std::shared_ptr<json> DocVisitor::transform(const ExprPtr &expr) {
   return v.resultExpr;
 }
 
-std::string DocVisitor::transform(const StmtPtr &stmt) {
+std::string DocVisitor::transform(Stmt *stmt) {
   if (!stmt)
     return "";
   DocVisitor v(ctx);
@@ -168,7 +175,7 @@ std::string DocVisitor::transform(const StmtPtr &stmt) {
   return v.resultStmt;
 }
 
-void DocVisitor::transformModule(StmtPtr stmt) {
+void DocVisitor::transformModule(Stmt *stmt) {
   std::vector<std::string> children;
   std::string docstr;
 
@@ -178,7 +185,7 @@ void DocVisitor::transformModule(StmtPtr stmt) {
     auto id = transform(s);
     if (id.empty())
       continue;
-    if (i < (flat.size() - 1) && CAST(s, AssignStmt)) {
+    if (i < (flat.size() - 1) && cast<AssignStmt>(s)) {
       auto ds = getDocstr(flat[i + 1]);
       if (!ds.empty())
         ctx->shared->j->get(id)->set("doc", ds);
@@ -196,29 +203,30 @@ void DocVisitor::transformModule(StmtPtr stmt) {
 }
 
 void DocVisitor::visit(IntExpr *expr) {
-  resultExpr = std::make_shared<json>(expr->value);
+  auto [value, _] = expr->getRawData();
+  resultExpr = std::make_shared<json>(value);
 }
 
 void DocVisitor::visit(IdExpr *expr) {
-  auto i = ctx->find(expr->value);
+  auto i = ctx->find(expr->getValue());
   if (!i)
-    error("unknown identifier {}", expr->value);
-  resultExpr = std::make_shared<json>(*i ? std::to_string(*i) : expr->value);
+    E(Error::CUSTOM, expr->getSrcInfo(), "unknown identifier {}", expr->getValue());
+  resultExpr = std::make_shared<json>(*i ? std::to_string(*i) : expr->getValue());
 }
 
 void DocVisitor::visit(IndexExpr *expr) {
   std::vector<std::shared_ptr<json>> v;
-  v.push_back(transform(expr->expr));
-  if (auto tp = CAST(expr->index, TupleExpr)) {
-    if (auto l = tp->items[0]->getList()) {
-      for (auto &e : l->items)
+  v.push_back(transform(expr->getExpr()));
+  if (auto tp = cast<TupleExpr>(expr->getIndex())) {
+    if (auto l = cast<ListExpr>((*tp)[0])) {
+      for (auto *e : *l)
         v.push_back(transform(e));
-      v.push_back(transform(tp->items[1]));
+      v.push_back(transform((*tp)[1]));
     } else
-      for (auto &e : tp->items)
+      for (auto *e : *tp)
         v.push_back(transform(e));
   } else {
-    v.push_back(transform(expr->index));
+    v.push_back(transform(expr->getIndex()));
   }
   resultExpr = std::make_shared<json>(v);
 }
@@ -233,42 +241,42 @@ bool isValidName(const std::string &s) {
 
 void DocVisitor::visit(FunctionStmt *stmt) {
   int id = ctx->shared->itemID++;
-  ctx->add(stmt->name, std::make_shared<int>(id));
+  ctx->add(stmt->getName(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-      {"kind", "function"}, {"name", stmt->name}});
+      {"kind", "function"}, {"name", stmt->getName()}});
   j->set("pos", jsonify(stmt->getSrcInfo()));
 
   std::vector<std::shared_ptr<json>> args;
   std::vector<std::string> generics;
-  for (auto &a : stmt->args)
-    if (a.status != Param::Normal) {
+  for (auto &a : *stmt)
+    if (!a.isValue()) {
       ctx->add(a.name, std::make_shared<int>(0));
       generics.push_back(a.name);
       a.status = Param::Generic;
     }
-  for (auto &a : stmt->args)
-    if (a.status == Param::Normal) {
-      auto j = std::make_shared<json>();
-      j->set("name", a.name);
+  for (auto &a : *stmt)
+    if (a.isValue()) {
+      auto jj = std::make_shared<json>();
+      jj->set("name", a.name);
       if (a.type)
-        j->set("type", transform(a.type));
+        jj->set("type", transform(a.type));
       if (a.defaultValue) {
-        j->set("default", FormatVisitor::apply(a.defaultValue));
+        jj->set("default", FormatVisitor::apply(a.defaultValue));
       }
-      args.push_back(j);
+      args.push_back(jj);
     }
   j->set("generics", std::make_shared<json>(generics));
   bool isLLVM = false;
-  for (auto &d : stmt->decorators)
-    if (auto e = d->getId()) {
-      j->set("attrs", std::make_shared<json>(e->value, ""));
-      isLLVM |= (e->value == "llvm");
+  for (auto &d : stmt->getDecorators())
+    if (auto e = cast<IdExpr>(d)) {
+      j->set("attrs", std::make_shared<json>(e->getValue(), ""));
+      isLLVM |= (e->getValue() == "llvm");
     }
-  if (stmt->ret)
-    j->set("return", transform(stmt->ret));
+  if (stmt->getReturn())
+    j->set("return", transform(stmt->getReturn()));
   j->set("args", std::make_shared<json>(args));
   std::string docstr;
-  flatten(std::move(stmt->suite), &docstr);
+  flatten(stmt->getSuite(), &docstr);
   for (auto &g : generics)
     ctx->remove(g);
   if (!docstr.empty() && !isLLVM)
@@ -280,36 +288,35 @@ void DocVisitor::visit(FunctionStmt *stmt) {
 void DocVisitor::visit(ClassStmt *stmt) {
   std::vector<std::string> generics;
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-      {"name", stmt->name},
+      {"name", stmt->getName()},
       {"kind", "class"},
       {"type", stmt->isRecord() ? "type" : "class"}});
   int id = ctx->shared->itemID++;
 
   bool isExtend = false;
-  for (auto &d : stmt->decorators)
-    if (auto e = d->getId())
-      isExtend |= (e->value == "extend");
+  for (auto &d : stmt->getDecorators())
+    if (auto e = cast<IdExpr>(d))
+      isExtend |= (e->getValue() == "extend");
 
   if (isExtend) {
     j->set("type", "extension");
-    auto i = ctx->find(stmt->name);
+    auto i = ctx->find(stmt->getName());
     j->set("parent", std::to_string(*i));
     generics = ctx->shared->generics[*i];
   } else {
-    ctx->add(stmt->name, std::make_shared<int>(id));
+    ctx->add(stmt->getName(), std::make_shared<int>(id));
   }
 
   std::vector<std::shared_ptr<json>> args;
-  for (auto &a : stmt->args)
-    if (a.status != Param::Normal) {
-      a.status = Param::Generic;
+  for (const auto &a : *stmt)
+    if (!a.isValue()) {
       generics.push_back(a.name);
     }
   ctx->shared->generics[id] = generics;
   for (auto &g : generics)
     ctx->add(g, std::make_shared<int>(0));
-  for (auto &a : stmt->args)
-    if (a.status == Param::Normal) {
+  for (const auto &a : *stmt)
+    if (a.isValue()) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
       if (a.type)
@@ -322,13 +329,13 @@ void DocVisitor::visit(ClassStmt *stmt) {
 
   std::string docstr;
   std::vector<std::string> members;
-  for (auto &f : flatten(std::move(stmt->suite), &docstr)) {
-    if (auto ff = CAST(f, FunctionStmt)) {
+  for (auto &f : flatten(stmt->getSuite(), &docstr)) {
+    if (auto ff = cast<FunctionStmt>(f)) {
       auto i = transform(f);
       if (i != "")
         members.push_back(i);
-      if (isValidName(ff->name))
-        ctx->remove(ff->name);
+      if (isValidName(ff->getName()))
+        ctx->remove(ff->getName());
     }
   }
   for (auto &g : generics)
@@ -346,25 +353,28 @@ std::shared_ptr<json> DocVisitor::jsonify(const codon::SrcInfo &s) {
 }
 
 void DocVisitor::visit(ImportStmt *stmt) {
-  if (stmt->from && (stmt->from->isId("C") || stmt->from->isId("python"))) {
+  if (match(stmt->getFrom(), M<IdExpr>(MOr("C", "python")))) {
     int id = ctx->shared->itemID++;
     std::string name, lib;
-    if (auto i = stmt->what->getId())
-      name = i->value;
-    else if (auto d = stmt->what->getDot())
-      name = d->member, lib = FormatVisitor::apply(d->expr);
+    if (auto i = cast<IdExpr>(stmt->getWhat()))
+      name = i->getValue();
+    else if (auto d = cast<DotExpr>(stmt->getWhat()))
+      name = d->getMember(), lib = FormatVisitor::apply(d->getExpr());
     else
       seqassert(false, "invalid C import statement");
     ctx->add(name, std::make_shared<int>(id));
-    name = stmt->as.empty() ? name : stmt->as;
+    name = stmt->getAs().empty() ? name : stmt->getAs();
 
-    auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-        {"name", name}, {"kind", "function"}, {"extern", stmt->from->getId()->value}});
+    auto dict = std::unordered_map<std::string, std::string>{{"name", name},
+                                                             {"kind", "function"}};
+    if (stmt->getFrom() && cast<IdExpr>(stmt->getFrom()))
+      dict["extern"] = cast<IdExpr>(stmt->getFrom())->getValue();
+    auto j = std::make_shared<json>(dict);
     j->set("pos", jsonify(stmt->getSrcInfo()));
     std::vector<std::shared_ptr<json>> args;
-    if (stmt->ret)
-      j->set("return", transform(stmt->ret));
-    for (auto &a : stmt->args) {
+    if (stmt->getReturnType())
+      j->set("return", transform(stmt->getReturnType()));
+    for (const auto &a : stmt->getArgs()) {
       auto ja = std::make_shared<json>();
       ja->set("name", a.name);
       ja->set("type", transform(a.type));
@@ -378,30 +388,36 @@ void DocVisitor::visit(ImportStmt *stmt) {
   }
 
   std::vector<std::string> dirs; // Path components
-  Expr *e = stmt->from.get();
-  if (e) {
-    while (auto d = e->getDot()) {
-      dirs.push_back(d->member);
-      e = d->expr.get();
+  Expr *e = stmt->getFrom();
+  while (cast<DotExpr>(e)) {
+    while (auto d = cast<DotExpr>(e)) {
+      dirs.push_back(d->getMember());
+      e = d->getExpr();
     }
-    if (!e->getId() || !stmt->args.empty() || stmt->ret ||
-        (stmt->what && !stmt->what->getId()))
-      error("invalid import statement");
+    if (!cast<IdExpr>(e) || !stmt->getArgs().empty() || stmt->getReturnType() ||
+        (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
+      E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
     // We have an empty stmt->from in "from .. import".
-    if (!e->getId()->value.empty())
-      dirs.push_back(e->getId()->value);
+    if (!cast<IdExpr>(e)->getValue().empty())
+      dirs.push_back(cast<IdExpr>(e)->getValue());
   }
+  auto ee = cast<IdExpr>(e);
+  if (!ee || !stmt->getArgs().empty() || stmt->getReturnType() ||
+      (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
+    E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
+  // We have an empty stmt->from in "from .. import".
+  if (!ee->getValue().empty())
+    dirs.push_back(ee->getValue());
   // Handle dots (e.g. .. in from ..m import x).
-  seqassert(stmt->dots >= 0, "negative dots in ImportStmt");
-  for (size_t i = 1; i < stmt->dots; i++)
+  for (size_t i = 1; i < stmt->getDots(); i++)
     dirs.emplace_back("..");
   std::string path;
-  for (int i = int(dirs.size()) - 1; i >= 0; i--)
+  for (int i = static_cast<int>(dirs.size()) - 1; i >= 0; i--)
     path += dirs[i] + (i ? "/" : "");
   // Fetch the import!
-  auto file = getImportFile(ctx->shared->argv0, path, ctx->getFilename());
+  auto file = getImportFile(ctx->shared->cache->fs.get(), path, ctx->getFilename());
   if (!file)
-    error(stmt, "cannot locate import '{}'", path);
+    E(Error::CUSTOM, stmt->getSrcInfo(), "cannot locate import '{}'", path);
 
   auto ictx = ctx;
   auto it = ctx->shared->modules.find(file->path);
@@ -409,37 +425,40 @@ void DocVisitor::visit(ImportStmt *stmt) {
     ctx->shared->modules[file->path] = ictx = std::make_shared<DocContext>(ctx->shared);
     ictx->setFilename(file->path);
     LOG("=> parsing {}", file->path);
-    auto tmp = parseFile(ctx->shared->cache, file->path);
-    DocVisitor(ictx).transformModule(std::move(tmp));
+    auto tmpOrErr = parseFile(ctx->shared->cache, file->path);
+    if (!tmpOrErr)
+      throw exc::ParserException(tmpOrErr.takeError());
+    DocVisitor(ictx).transformModule(*tmpOrErr);
   } else {
     ictx = it->second;
   }
 
-  if (!stmt->what) {
+  if (!stmt->getWhat()) {
     // TODO: implement this corner case
     for (auto &i : dirs)
       if (!ctx->find(i))
         ctx->add(i, std::make_shared<int>(ctx->shared->itemID++));
-  } else if (stmt->what->isId("*")) {
+  } else if (isId(stmt->getWhat(), "*")) {
     for (auto &i : *ictx)
       ctx->add(i.first, i.second.front());
   } else {
-    auto i = stmt->what->getId();
-    if (auto c = ictx->find(i->value))
-      ctx->add(stmt->as.empty() ? i->value : stmt->as, c);
+    auto i = cast<IdExpr>(stmt->getWhat());
+    if (auto c = ictx->find(i->getValue()))
+      ctx->add(stmt->getAs().empty() ? i->getValue() : stmt->getAs(), c);
     else
-      error(stmt, "symbol '{}' not found in {}", i->value, file->path);
+      E(Error::CUSTOM, stmt->getSrcInfo(), "symbol '{}' not found in {}", i->getValue(),
+        file->path);
   }
 }
 
 void DocVisitor::visit(AssignStmt *stmt) {
-  auto e = CAST(stmt->lhs, IdExpr);
+  auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
     return;
   int id = ctx->shared->itemID++;
-  ctx->add(e->value, std::make_shared<int>(id));
+  ctx->add(e->getValue(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
-      {"name", e->value}, {"kind", "variable"}});
+      {"name", e->getValue()}, {"kind", "variable"}});
   j->set("pos", jsonify(stmt->getSrcInfo()));
   ctx->shared->j->set(std::to_string(id), j);
   resultStmt = std::to_string(id);

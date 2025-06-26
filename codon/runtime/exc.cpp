@@ -14,11 +14,8 @@
 #include <string>
 #include <vector>
 
-#ifdef __APPLE__
-#include <TargetConditionals.h>
-#if TARGET_OS_MAC && __arm64__
+#if defined(__APPLE__) && (__arm64__ || __aarch64__)
 #define APPLE_SILICON
-#endif
 #endif
 
 #ifdef APPLE_SILICON
@@ -157,6 +154,7 @@ struct SeqExcHeader_t {
   seq_int_t line;
   seq_int_t col;
   void *python_type;
+  void *cause;
 };
 
 void seq_exc_init(int flags) {

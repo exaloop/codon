@@ -1,38 +1,39 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import util
+import internal.static as static
 
 newaxis = None
 
-_FLAG_C_CONTIGUOUS   : Static[int] = 0x0001
-_FLAG_F_CONTIGUOUS   : Static[int] = 0x0002
-_FLAG_OWNDATA        : Static[int] = 0x0004
-_FLAG_FORCECAST      : Static[int] = 0x0010
-_FLAG_ENSURECOPY     : Static[int] = 0x0020
-_FLAG_ENSUREARRAY    : Static[int] = 0x0040
-_FLAG_ELEMENTSTRIDES : Static[int] = 0x0080
-_FLAG_ALIGNED        : Static[int] = 0x0100
-_FLAG_NOTSWAPPED     : Static[int] = 0x0200
-_FLAG_WRITEABLE      : Static[int] = 0x0400
-_FLAG_WRITEBACKIFCOPY: Static[int] = 0x2000
-_FLAG_ENSURENOCOPY   : Static[int] = 0x4000
+_FLAG_C_CONTIGUOUS   : Literal[int] = 0x0001
+_FLAG_F_CONTIGUOUS   : Literal[int] = 0x0002
+_FLAG_OWNDATA        : Literal[int] = 0x0004
+_FLAG_FORCECAST      : Literal[int] = 0x0010
+_FLAG_ENSURECOPY     : Literal[int] = 0x0020
+_FLAG_ENSUREARRAY    : Literal[int] = 0x0040
+_FLAG_ELEMENTSTRIDES : Literal[int] = 0x0080
+_FLAG_ALIGNED        : Literal[int] = 0x0100
+_FLAG_NOTSWAPPED     : Literal[int] = 0x0200
+_FLAG_WRITEABLE      : Literal[int] = 0x0400
+_FLAG_WRITEBACKIFCOPY: Literal[int] = 0x2000
+_FLAG_ENSURENOCOPY   : Literal[int] = 0x4000
 
-_FLAG_BEHAVED      : Static[int] = (_FLAG_ALIGNED | _FLAG_WRITEABLE)
-_FLAG_BEHAVED_NS   : Static[int] = (_FLAG_ALIGNED | _FLAG_WRITEABLE | _FLAG_NOTSWAPPED)
-_FLAG_CARRAY       : Static[int] = (_FLAG_C_CONTIGUOUS | _FLAG_BEHAVED)
-_FLAG_CARRAY_RO    : Static[int] = (_FLAG_C_CONTIGUOUS | _FLAG_ALIGNED)
-_FLAG_FARRAY       : Static[int] = (_FLAG_F_CONTIGUOUS | _FLAG_BEHAVED)
-_FLAG_FARRAY_RO    : Static[int] = (_FLAG_F_CONTIGUOUS | _FLAG_ALIGNED)
-_FLAG_DEFAULT      : Static[int] = (_FLAG_CARRAY)
-_FLAG_IN_ARRAY     : Static[int] = (_FLAG_CARRAY_RO)
-_FLAG_OUT_ARRAY    : Static[int] = (_FLAG_CARRAY)
-_FLAG_INOUT_ARRAY  : Static[int] = (_FLAG_CARRAY)
-_FLAG_INOUT_ARRAY2 : Static[int] = (_FLAG_CARRAY | _FLAG_WRITEBACKIFCOPY)
-_FLAG_IN_FARRAY    : Static[int] = (_FLAG_FARRAY_RO)
-_FLAG_OUT_FARRAY   : Static[int] = (_FLAG_FARRAY)
-_FLAG_INOUT_FARRAY : Static[int] = (_FLAG_FARRAY)
-_FLAG_INOUT_FARRAY2: Static[int] = (_FLAG_FARRAY | _FLAG_WRITEBACKIFCOPY)
-_FLAG_UPDATE_ALL   : Static[int] = (_FLAG_C_CONTIGUOUS | _FLAG_F_CONTIGUOUS | _FLAG_ALIGNED)
+_FLAG_BEHAVED      : Literal[int] = (_FLAG_ALIGNED | _FLAG_WRITEABLE)
+_FLAG_BEHAVED_NS   : Literal[int] = (_FLAG_ALIGNED | _FLAG_WRITEABLE | _FLAG_NOTSWAPPED)
+_FLAG_CARRAY       : Literal[int] = (_FLAG_C_CONTIGUOUS | _FLAG_BEHAVED)
+_FLAG_CARRAY_RO    : Literal[int] = (_FLAG_C_CONTIGUOUS | _FLAG_ALIGNED)
+_FLAG_FARRAY       : Literal[int] = (_FLAG_F_CONTIGUOUS | _FLAG_BEHAVED)
+_FLAG_FARRAY_RO    : Literal[int] = (_FLAG_F_CONTIGUOUS | _FLAG_ALIGNED)
+_FLAG_DEFAULT      : Literal[int] = (_FLAG_CARRAY)
+_FLAG_IN_ARRAY     : Literal[int] = (_FLAG_CARRAY_RO)
+_FLAG_OUT_ARRAY    : Literal[int] = (_FLAG_CARRAY)
+_FLAG_INOUT_ARRAY  : Literal[int] = (_FLAG_CARRAY)
+_FLAG_INOUT_ARRAY2 : Literal[int] = (_FLAG_CARRAY | _FLAG_WRITEBACKIFCOPY)
+_FLAG_IN_FARRAY    : Literal[int] = (_FLAG_FARRAY_RO)
+_FLAG_OUT_FARRAY   : Literal[int] = (_FLAG_FARRAY)
+_FLAG_INOUT_FARRAY : Literal[int] = (_FLAG_FARRAY)
+_FLAG_INOUT_FARRAY2: Literal[int] = (_FLAG_FARRAY | _FLAG_WRITEBACKIFCOPY)
+_FLAG_UPDATE_ALL   : Literal[int] = (_FLAG_C_CONTIGUOUS | _FLAG_F_CONTIGUOUS | _FLAG_ALIGNED)
 
 @tuple
 class flagsobj:
@@ -113,18 +114,18 @@ class flatiter[A]:
     def coords(self):
         shape = self.base.shape
 
-        if staticlen(shape) == 0:
+        if static.len(shape) == 0:
             return ()
 
         if self.index >= self.base.size:
-            return (shape[0],) + (0,) * (staticlen(shape) - 1)
+            return (shape[0],) + (0,) * (static.len(shape) - 1)
         else:
             return self._index_to_coords(self.index)
 
     def __iter__(self):
         arr = self.base
         limits = arr.shape
-        N: Static[int] = staticlen(limits)
+        N: Literal[int] = static.len(limits)
         curr = self.coords
         s = Ptr[int](__ptr__(limits).as_byte())
         p = Ptr[int](__ptr__(curr).as_byte())
@@ -203,29 +204,29 @@ class flatiter[A]:
     def copy(self):
         return self.base.flatten()
 
-@tuple(init=False)
+@tuple
 class _UnaryFunctor:
     op: F
     F: type
 
     def __new__(op: F, F: type) -> _UnaryFunctor[F]:
-        return (op, )
+        return superf(op)
 
     def __call__(self, y, x):
         y[0] = self.op(x[0])
 
-@tuple(init=False)
+@tuple
 class _InplaceUnaryFunctor:
     op: F
     F: type
 
     def __new__(op: F, F: type) -> _InplaceUnaryFunctor[F]:
-        return (op, )
+        return superf(op)
 
     def __call__(self, x):
         x[0] = self.op(x[0])
 
-@tuple(init=False)
+@tuple
 class _BinaryFunctor:
     op: F
     F: type
@@ -233,23 +234,23 @@ class _BinaryFunctor:
     R2: type
 
     def __new__(op: F, R1: type, R2: type, F: type) -> _BinaryFunctor[F, R1, R2]:
-        return (op, )
+        return superf(op)
 
     def __call__(self, z, x, y):
         z[0] = self.op(util.cast(x[0], R1), util.cast(y[0], R2))
 
-@tuple(init=False)
+@tuple
 class _InplaceBinaryFunctor:
     op: F
     F: type
 
     def __new__(op: F, F: type) -> _InplaceBinaryFunctor[F]:
-        return (op, )
+        return superf(op)
 
     def __call__(self, x, y):
         x[0] = self.op(x[0], util.cast(y[0], type(x[0])))
 
-@tuple(init=False)
+@tuple
 class _RightBinaryFunctor:
     op: F
     F: type
@@ -257,12 +258,12 @@ class _RightBinaryFunctor:
     R2: type
 
     def __new__(op: F, R1: type, R2: type, F: type) -> _RightBinaryFunctor[F, R1, R2]:
-        return (op, )
+        return superf(op)
 
     def __call__(self, z, x, y):
         z[0] = self.op(util.cast(y[0], R2), util.cast(x[0], R1))
 
-@tuple(init=False)
+@tuple
 class _ScalarFunctor:
     op: F
     y: Y
@@ -272,12 +273,12 @@ class _ScalarFunctor:
     R2: type
 
     def __new__(op: F, y: Y, R1: type, R2: type, F: type, Y: type) -> _ScalarFunctor[F, Y, R1, R2]:
-        return (op, y)
+        return superf(op, y)
 
     def __call__(self, z, x):
         z[0] = self.op(util.cast(x[0], R1), util.cast(self.y, R2))
 
-@tuple(init=False)
+@tuple
 class _InplaceScalarFunctor:
     op: F
     y: Y
@@ -285,13 +286,13 @@ class _InplaceScalarFunctor:
     Y: type
 
     def __new__(op: F, y: Y, F: type, Y: type) -> _InplaceScalarFunctor[F, Y]:
-        return (op, y)
+        return superf(op, y)
 
     def __call__(self, x):
         x[0] = self.op(x[0], util.cast(self.y, type(x[0])))
 
 
-@tuple(init=False)
+@tuple
 class _RightScalarFunctor:
     op: F
     y: Y
@@ -301,13 +302,13 @@ class _RightScalarFunctor:
     R2: type
 
     def __new__(op: F, y: Y, R1: type, R2: type, F: type, Y: type) -> _RightScalarFunctor[F, Y, R1, R2]:
-        return (op, y)
+        return superf(op, y)
 
     def __call__(self, z, x):
         z[0] = self.op(util.cast(self.y, R2), util.cast(x[0], R1))
 
 @tuple(init=False)
-class ndarray[dtype, ndim: Static[int]]:
+class ndarray[dtype, ndim: Literal[int]]:
     _shape: Tuple[ndim, int]
     _strides: Tuple[ndim, int]
     _data: Ptr[dtype]
@@ -315,7 +316,7 @@ class ndarray[dtype, ndim: Static[int]]:
     def __new__(shape: Tuple[ndim, int],
                 strides: Tuple[ndim, int],
                 data: Ptr[dtype]) -> ndarray[dtype, ndim]:
-        return (shape, strides, data)
+        return __internal__.tuple_cast_unsafe((shape, strides, data), ndarray[dtype, ndim])
 
     def __new__(shape: Tuple[ndim, int], data: Ptr[dtype], fcontig: bool = False):
         strides = util.strides(shape, fcontig, dtype)
@@ -356,7 +357,7 @@ class ndarray[dtype, ndim: Static[int]]:
         return c or f
 
     def _contig_match(self, other):
-        if staticlen(self.shape) != staticlen(other.shape):
+        if static.len(self.shape) != static.len(other.shape):
             return False
 
         if self.shape != other.shape:
@@ -396,11 +397,11 @@ class ndarray[dtype, ndim: Static[int]]:
 
     def item(self, *args):
         n = self.size
-        if staticlen(args) == 0:
+        if static.len(args) == 0:
             if n != 1:
                 raise ValueError("can only convert an array of size 1 to a Python scalar")
             return self._data[0]
-        if staticlen(args) == 1:
+        if static.len(args) == 1:
             idx = args[0]
             if idx < -n or idx >= n:
                 raise IndexError(f"index {idx} is out of bounds for size {n}")
@@ -409,19 +410,19 @@ class ndarray[dtype, ndim: Static[int]]:
             coords = util.index_to_coords(idx, self.shape)
             return self._ptr(coords)[0]
         else:
-            if staticlen(args) != staticlen(self.shape):
+            if static.len(args) != static.len(self.shape):
                 compile_error("incorrect number of indices for array")
             return self[args]
 
     def transpose(self, *axes):
-        if staticlen(axes) == 0:
+        if static.len(axes) == 0:
             return ndarray(self.shape[::-1], self.strides[::-1], self._data)
-        elif staticlen(axes) == 1:
+        elif static.len(axes) == 1:
             if isinstance(axes[0], Tuple):
                 return self.transpose(*axes[0])
             elif axes[0] is None:
                 return self.transpose()
-        elif staticlen(axes) != staticlen(self.shape):
+        elif static.len(axes) != static.len(self.shape):
             compile_error("axes don't match array")
 
         axes = tuple(util.normalize_axis_index(ax, self.ndim) for ax in axes)
@@ -439,9 +440,9 @@ class ndarray[dtype, ndim: Static[int]]:
         if util.has_duplicate(axes):
             raise ValueError("repeated axis in transpose")
 
-        ndim: Static[int] = staticlen(self.shape)
-        new_shape = tuple(self.shape[axes[i]] for i in staticrange(ndim))
-        new_strides = tuple(self.strides[axes[i]] for i in staticrange(ndim))
+        ndim: Literal[int] = static.len(self.shape)
+        new_shape = tuple(self.shape[axes[i]] for i in static.range(ndim))
+        new_strides = tuple(self.strides[axes[i]] for i in static.range(ndim))
         return ndarray(new_shape, new_strides, self._data)
 
     def swapaxes(self, axis1: int, axis2: int):
@@ -465,11 +466,11 @@ class ndarray[dtype, ndim: Static[int]]:
 
         s_original = self.size
 
-        if staticlen(newshape) == 0:
+        if static.len(newshape) == 0:
             if s_original != 1:
                 raise_reshape_size_mismatch(newshape, self)
             return newshape
-        elif staticlen(newshape) == 1:
+        elif static.len(newshape) == 1:
             if newshape[0] < 0:
                 return (s_original,)
             elif newshape[0] != s_original:
@@ -507,7 +508,7 @@ class ndarray[dtype, ndim: Static[int]]:
         strides = self.strides
         oldims = shape
         oldstrides = shape
-        newstrides = (0,) * staticlen(newdims)
+        newstrides = (0,) * static.len(newdims)
 
         p_olddims = Ptr[int](__ptr__(oldims).as_byte())
         p_oldstrides = Ptr[int](__ptr__(oldstrides).as_byte())
@@ -516,7 +517,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
         oldnd = 0
 
-        for oi in staticrange(self.ndim):
+        for oi in static.range(self.ndim):
             if shape[oi] != 1:
                 p_olddims[oldnd] = shape[oi]
                 p_oldstrides[oldnd] = strides[oi]
@@ -587,13 +588,13 @@ class ndarray[dtype, ndim: Static[int]]:
     def reshape(self, *shape, order: str = 'C'):
         ndarray._check_order(order)
 
-        if staticlen(shape) == 0:
+        if static.len(shape) == 0:
             a = self.size
             if a != 1:
                 raise ValueError(f'cannot reshape array of size {a} into shape ()')
             return ndarray((), (), self.data)
 
-        if staticlen(shape) == 1 and isinstance(shape[0], Tuple):
+        if static.len(shape) == 1 and isinstance(shape[0], Tuple):
             return self.reshape(*shape[0])
 
         ccontig, fcontig = self._contig
@@ -603,7 +604,7 @@ class ndarray[dtype, ndim: Static[int]]:
         elif order == 'K':
             raise ValueError("order 'K' is not permitted for reshaping")
 
-        if staticlen(shape) == staticlen(self.shape):
+        if static.len(shape) == static.len(self.shape):
             if shape == self.shape:
                 return self
 
@@ -618,9 +619,9 @@ class ndarray[dtype, ndim: Static[int]]:
 
         return ndarray(shape, self._data, fcontig=(order == 'F'))
 
-    def _loop(arrays, func, broadcast: Static[str] = 'all',
-              check: Static[int] = True, alloc: type = type(()),
-              optimize_order: Static[int] = True, extra = None):
+    def _loop(arrays, func, broadcast: Literal[str] = 'all',
+              check: Literal[bool] = True, alloc: type = type(()),
+              optimize_order: Literal[bool] = True, extra = None):
         def call(func, args, extra):
             if extra is None:
                 return func(*args)
@@ -631,9 +632,9 @@ class ndarray[dtype, ndim: Static[int]]:
             def incr_ptr(p: Ptr[T], s: int, T: type):
                 return Ptr[T](p.as_byte() + s)
 
-            if staticlen(shape) == 0:
+            if static.len(shape) == 0:
                 call(func, ptrs, extra)
-            elif staticlen(shape) == 1:
+            elif static.len(shape) == 1:
                 n = shape[0]
 
                 # Common cases are:
@@ -642,7 +643,7 @@ class ndarray[dtype, ndim: Static[int]]:
                 #   - len(ptrs) == 3 ; i.e. binary operation
                 # We handle these specially so as to ensure auto-vectorization.
 
-                if staticlen(ptrs) == 2:
+                if static.len(ptrs) == 2:
                     s0 = strides[0][0]
                     s1 = strides[1][0]
                     e0 = util.sizeof(type(ptrs[0][0]))
@@ -661,7 +662,7 @@ class ndarray[dtype, ndim: Static[int]]:
                             p0 = incr_ptr(ptrs[0], i * s0)
                             p1 = incr_ptr(ptrs[1], i * s1)
                             call(func, (p0, p1), extra)
-                elif staticlen(ptrs) == 3:
+                elif static.len(ptrs) == 3:
                     s0 = strides[0][0]
                     s1 = strides[1][0]
                     s2 = strides[2][0]
@@ -693,7 +694,7 @@ class ndarray[dtype, ndim: Static[int]]:
                 else:
                     for i in range(shape[0]):
                         ptrs_i = tuple(incr_ptr(ptrs[j], i * strides[j][0])
-                                       for j in staticrange(staticlen(ptrs)))
+                                       for j in static.range(static.len(ptrs)))
                         call(func, ptrs_i, extra)
             else:
                 shape1 = shape[1:]
@@ -701,51 +702,51 @@ class ndarray[dtype, ndim: Static[int]]:
                 for _ in range(shape[0]):
                     loop(shape1, strides1, ptrs, func, extra)
                     ptrs = tuple(incr_ptr(ptrs[i], strides[i][0])
-                                 for i in staticrange(staticlen(ptrs)))
+                                 for i in static.range(static.len(ptrs)))
 
         def reorder_loops(strides):
-            if staticlen(strides) == 0:
+            if static.len(strides) == 0:
                 return ()
 
-            if staticlen(strides) == 1:
+            if static.len(strides) == 1:
                 return (0,)
 
-            if staticlen(strides) == 2:
+            if static.len(strides) == 2:
                 s0 = strides[0]
                 s1 = strides[1]
                 if s0 and abs(s0) < abs(s1):
                     return (1, 0)
                 return (0, 1)
 
-            perm = util.tuple_range(staticlen(strides))
+            perm = util.tuple_range(static.len(strides))
             perm, _ = util.sort_by_stride(perm, strides)
             return perm
 
-        def broadcast_shapes(args, check: Static[int]):
+        def broadcast_shapes(args, check: Literal[bool]):
             def largest(args):
-                if staticlen(args) == 1:
+                if static.len(args) == 1:
                     return args[0]
 
                 a = args[0]
                 b = largest(args[1:])
-                if staticlen(b) > staticlen(a):
+                if static.len(b) > static.len(a):
                     return b
                 else:
                     return a
 
-            if staticlen(args) == 0:
+            if static.len(args) == 0:
                 return ()
 
             t = largest(args)
-            N: Static[int] = staticlen(t)
+            N: Literal[int] = static.len(t)
             ans = (0,) * N
             p = Ptr[int](__ptr__(ans).as_byte())
 
-            for i in staticrange(N):
+            for i in static.range(N):
                 p[i] = t[i]
 
             for a in args:
-                for i in staticrange(staticlen(a)):
+                for i in static.range(static.len(a)):
                     x = a[len(a) - 1 - i]
                     q = p + (len(t) - 1 - i)
                     y = q[0]
@@ -757,13 +758,13 @@ class ndarray[dtype, ndim: Static[int]]:
 
             return ans
 
-        def broadcast_to(x, shape, check: Static[int]):
-            N: Static[int] = x.ndim
+        def broadcast_to(x, shape, check: Literal[bool]):
+            N: Literal[int] = x.ndim
             substrides = (0,) * N
             p = Ptr[int](__ptr__(substrides).as_byte())
             shape1, shape2 = shape[:-N], shape[-N:]
 
-            for i in staticrange(N):
+            for i in static.range(N):
                 a = x.shape[i]
                 b = shape2[i]
                 if a == b:
@@ -774,18 +775,18 @@ class ndarray[dtype, ndim: Static[int]]:
                             raise ValueError(f'cannot broadcast array of shape {x.shape} to shape {shape}')
                     p[i] = 0
 
-            z = (0,) * (staticlen(shape) - x.ndim)
+            z = (0,) * (static.len(shape) - x.ndim)
             new_strides = (*z, *substrides)
             return ndarray(shape, new_strides, x.data)
 
-        def broadcast_arrays(arrays, check: Static[int]):
+        def broadcast_arrays(arrays, check: Literal[bool]):
             shape = broadcast_shapes(tuple(arr.shape for arr in arrays), check=check)
             return tuple(broadcast_to(arr, shape, check=False) for arr in arrays)
 
         def min_dim(arrays):
-            if staticlen(arrays) == 0:
+            if static.len(arrays) == 0:
                 compile_error("[internal error] arrays empty")
-            elif staticlen(arrays) == 1:
+            elif static.len(arrays) == 1:
                 return arrays[0]
             else:
                 arrays0 = arrays[0]
@@ -796,9 +797,9 @@ class ndarray[dtype, ndim: Static[int]]:
                     return arrays0
 
         def max_dim(arrays):
-            if staticlen(arrays) == 0:
+            if static.len(arrays) == 0:
                 compile_error("[internal error] arrays empty")
-            elif staticlen(arrays) == 1:
+            elif static.len(arrays) == 1:
                 return arrays[0]
             else:
                 arrays0 = arrays[0]
@@ -816,7 +817,7 @@ class ndarray[dtype, ndim: Static[int]]:
                 cc = True
                 fc = True
 
-                for i in staticrange(staticlen(arrays)):
+                for i in static.range(static.len(arrays)):
                     arr = arrays[i]
                     if i > 0:
                         sh = sh and (arr.shape == arrays[0].shape)
@@ -833,7 +834,7 @@ class ndarray[dtype, ndim: Static[int]]:
             strides = ndarray(perm_shape, p).strides
             return (p, strides)
 
-        def broadcast_args(arrays, broadcast: Static[str], check: Static[int]):
+        def broadcast_args(arrays, broadcast: Literal[str], check: Literal[bool]):
             if broadcast == 'none':
                 shape = arrays[0].shape
                 strides = tuple(arr.strides for arr in arrays)
@@ -850,7 +851,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
             return shape, strides
 
-        if staticlen(arrays) == 0:
+        if static.len(arrays) == 0:
             return
 
         all_contig, ccontig = all_contiguous(arrays)
@@ -868,7 +869,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
         alloc_tuple = util.zero(alloc)
 
-        if staticlen(alloc_tuple) > 0:
+        if static.len(alloc_tuple) > 0:
             if optimize_order:
                 perm0 = reorder_loops(max_arr.strides)
             else:
@@ -877,7 +878,7 @@ class ndarray[dtype, ndim: Static[int]]:
             perm_shape = util.tuple_perm(shape, perm0)
             # `allocated` is a tuple of (ptr, strides) pairs
             allocated = tuple(alloc_array(count, perm_shape, type(alloc_tuple[i]))
-                              for i in staticrange(staticlen(alloc_tuple)))
+                              for i in static.range(static.len(alloc_tuple)))
         else:
             perm0 = None
             allocated = ()
@@ -907,9 +908,9 @@ class ndarray[dtype, ndim: Static[int]]:
              func,
              extra)
 
-        if perm is not None and staticlen(allocated) > 0 and staticlen(shape) >= 2:
+        if perm is not None and static.len(allocated) > 0 and static.len(shape) >= 2:
             # permute the strides
-            if staticlen(shape) == 2:
+            if static.len(shape) == 2:
                 rev = (perm[0] == 1)
                 return tuple(ndarray(shape0, tup[1][::-1] if rev else tup[1], tup[0]) for tup in allocated)
             else:
@@ -918,7 +919,7 @@ class ndarray[dtype, ndim: Static[int]]:
         else:
             return tuple(ndarray(shape0, tup[1], tup[0]) for tup in allocated)
 
-    def _contiguous(self, copy: Static[int] = False):
+    def _contiguous(self, copy: Literal[bool] = False):
         ccontig, _ = self._contig
         if ccontig:
             if copy:
@@ -938,7 +939,7 @@ class ndarray[dtype, ndim: Static[int]]:
                 i += 1
             return p
 
-    def _fcontiguous(self, copy: Static[int] = False):
+    def _fcontiguous(self, copy: Literal[bool] = False):
         _, fcontig = self._contig
         if fcontig:
             if copy:
@@ -1030,14 +1031,14 @@ class ndarray[dtype, ndim: Static[int]]:
         self.flat[:] = value
 
     def tolist(self):
-        if staticlen(self.shape) == 0:
+        if static.len(self.shape) == 0:
             return List[dtype]()
-        elif staticlen(self.shape) == 1:
+        elif static.len(self.shape) == 1:
             return [a for a in self]
         else:
             return [a.tolist() for a in self]
 
-    def _ptr_for_index(self, indexes, check: Static[int] = True, broadcast: Static[int] = False):
+    def _ptr_for_index(self, indexes, check: Literal[bool] = True, broadcast: Literal[bool] = False):
         s = self.shape
         strides = self.strides
         pshape = Ptr[int](__ptr__(s).as_byte())
@@ -1048,10 +1049,10 @@ class ndarray[dtype, ndim: Static[int]]:
         for i in range(len(indexes)):
             idx = pindex[i]
 
-            if staticlen(indexes) > staticlen(self.shape):
+            if static.len(indexes) > static.len(self.shape):
                 if not broadcast:
                     compile_error("[internal error] index tuple too long")
-                i -= staticlen(indexes) - staticlen(self.shape)
+                i -= static.len(indexes) - static.len(self.shape)
                 if i < 0:
                     continue
 
@@ -1065,11 +1066,11 @@ class ndarray[dtype, ndim: Static[int]]:
 
         return Ptr[dtype](self._data.as_byte() + offset)
 
-    def _ptr(self, indexes, broadcast: Static[int] = False):
+    def _ptr(self, indexes, broadcast: Literal[bool] = False):
         return self._ptr_for_index(indexes, check=False, broadcast=broadcast)
 
     def __len__(self):
-        if staticlen(self.shape) == 0:
+        if static.len(self.shape) == 0:
             compile_error("len() of unsized object")
         return self.shape[0]
 
@@ -1133,7 +1134,7 @@ class ndarray[dtype, ndim: Static[int]]:
     def __copy__(self):
         return self.copy()
 
-    def _should_transpose(self, other = None):
+    def _should_transpose(self, other = None) -> bool:
         if other is None:
             if self.ndim > 1:
                 s1 = self.strides[0]
@@ -1161,11 +1162,11 @@ class ndarray[dtype, ndim: Static[int]]:
 
     def _normalize(self, other: ndarray):
         if self.ndim > other.ndim:
-            diff: Static[int] = self.ndim - other.ndim
+            diff: Literal[int] = self.ndim - other.ndim
             A = self
             B = ndarray((1,) * diff + other.shape, (0,) * diff + other.strides, other.data)
         elif self.ndim < other.ndim:
-            diff: Static[int] = other.ndim - self.ndim
+            diff: Literal[int] = other.ndim - self.ndim
             A = ndarray((1,) * diff + self.shape, (0,) * diff + self.strides, self.data)
             B = other
         else:
@@ -1298,7 +1299,7 @@ class ndarray[dtype, ndim: Static[int]]:
 
         return m, M
 
-    def map(self, fn, inplace: Static[int] = False):
+    def map(self, fn, inplace: Literal[bool] = False):
         if inplace:
             return self._iop_unary(fn)
         else:
@@ -1394,7 +1395,7 @@ class ndarray[dtype, ndim: Static[int]]:
         else:
             return self.map(bswap, inplace=False)
 
-    def _ptr_flat(self, idx: int, check: Static[int]):
+    def _ptr_flat(self, idx: int, check: Literal[bool]):
         if check:
             n = self.size
             if idx < -n or idx >= n:
@@ -1403,8 +1404,8 @@ class ndarray[dtype, ndim: Static[int]]:
                 idx += n
         return self._ptr(util.index_to_coords(idx, self.shape))
 
-    def _get_flat(self, idx: int, check: Static[int]):
+    def _get_flat(self, idx: int, check: Literal[bool]):
         return self._ptr_flat(idx, check=check)[0]
 
-    def _set_flat(self, idx: int, val, check: Static[int]):
+    def _set_flat(self, idx: int, val, check: Literal[bool]):
         self._ptr_flat(idx, check=check)[0] = util.cast(val, dtype)

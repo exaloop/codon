@@ -68,7 +68,7 @@ test_sample(100, 0)
 from python import random as Rpy
 
 @test
-def test_vs_python(*args, seed, method: Static[str], T: type = float):
+def test_vs_python(*args, seed, method: Literal[str], T: type = float):
     print(seed, method, args)
     R1 = R.Random(seed)
     R2 = Rpy.Random(seed)

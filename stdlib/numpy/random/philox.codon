@@ -4,8 +4,8 @@ from .seed import SeedSequence
 from ..util import zext, itrunc
 
 u128 = UInt[128]
-PHILOX_BUFFER_SIZE: Static[int] = 4
-philox4x64_rounds: Static[int] = 10
+PHILOX_BUFFER_SIZE: Literal[int] = 4
+philox4x64_rounds: Literal[int] = 10
 
 def mulhilo64(a: u64, b: u64):
     product = zext(a, u128) * zext(b, u128)

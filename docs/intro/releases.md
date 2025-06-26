@@ -6,6 +6,31 @@ These release notes generally do not include small bug fixes. See the
 [closed issues](https://github.com/exaloop/codon/issues?q=is%3Aissue+is%3Aclosed)
 for more information.
 
+# v0.19
+
+## New type checking engine
+
+- New type checker implementation that improves Python coverage.
+- Class fields are now inferred automatically.
+- Functions and classes no longer need forward declarations.
+- Functions can be passed around and stored more freely (e.g. list of
+  lambda functions is now possible).
+- More informative and helpful error messages.
+
+## Backend updates
+
+- Upgraded to LLVM 20 (from 17).
+- Upgraded to LLVM 20's OpenMP.
+- Various improvements to backend codegen which result in better
+  performance across the board.
+
+## Quality-of-life and other updates
+
+- Added support for `else` on `try`-statements.
+- Updated semantics of `nonlocal` variables to match Python.
+- Added broader support for Python's format strings.
+- Improved compilation time.
+
 # v0.18
 
 ## License change

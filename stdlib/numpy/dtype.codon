@@ -318,7 +318,7 @@ class finfo:
 
     @property
     def tiny(self):
-        return self.smallest_normal()
+        return self.smallest_normal
 
     def _type_name(self):
         if dtype is float64:

@@ -10,7 +10,24 @@
 namespace codon {
 namespace ir {
 
-const std::string KeyValueAttribute::AttributeName = "kvAttribute";
+const int StringValueAttribute::AttributeID = 101;
+const int IntValueAttribute::AttributeID = 102;
+const int StringListAttribute::AttributeID = 103;
+const int KeyValueAttribute::AttributeID = 104;
+const int MemberAttribute::AttributeID = 105;
+const int PythonWrapperAttribute::AttributeID = 106;
+const int SrcInfoAttribute::AttributeID = 107;
+const int DocstringAttribute::AttributeID = 108;
+const int TupleLiteralAttribute::AttributeID = 109;
+const int ListLiteralAttribute::AttributeID = 111;
+const int SetLiteralAttribute::AttributeID = 111;
+const int DictLiteralAttribute::AttributeID = 112;
+const int PartialFunctionAttribute::AttributeID = 113;
+
+std::ostream &StringListAttribute::doFormat(std::ostream &os) const {
+  fmt::print(os, FMT_STRING("{}"), fmt::join(values.begin(), values.end(), ","));
+  return os;
+}
 
 bool KeyValueAttribute::has(const std::string &key) const {
   return attributes.find(key) != attributes.end();
@@ -29,8 +46,6 @@ std::ostream &KeyValueAttribute::doFormat(std::ostream &os) const {
   return os;
 }
 
-const std::string MemberAttribute::AttributeName = "memberAttribute";
-
 std::ostream &MemberAttribute::doFormat(std::ostream &os) const {
   std::vector<std::string> strings;
   for (auto &val : memberSrcInfo)
@@ -39,11 +54,19 @@ std::ostream &MemberAttribute::doFormat(std::ostream &os) const {
   return os;
 }
 
-const std::string SrcInfoAttribute::AttributeName = "srcInfoAttribute";
+std::unique_ptr<Attribute> PythonWrapperAttribute::clone(util::CloneVisitor &cv) const {
+  return std::make_unique<PythonWrapperAttribute>(cast<Func>(cv.clone(original)));
+}
 
-const std::string DocstringAttribute::AttributeName = "docstringAttribute";
+std::unique_ptr<Attribute>
+PythonWrapperAttribute::forceClone(util::CloneVisitor &cv) const {
+  return std::make_unique<PythonWrapperAttribute>(cv.forceClone(original));
+}
 
-const std::string TupleLiteralAttribute::AttributeName = "tupleLiteralAttribute";
+std::ostream &PythonWrapperAttribute::doFormat(std::ostream &os) const {
+  fmt::print(os, FMT_STRING("(pywrap {})"), original->referenceString());
+  return os;
+}
 
 std::unique_ptr<Attribute> TupleLiteralAttribute::clone(util::CloneVisitor &cv) const {
   std::vector<Value *> elementsCloned;
@@ -68,8 +91,6 @@ std::ostream &TupleLiteralAttribute::doFormat(std::ostream &os) const {
   return os;
 }
 
-const std::string ListLiteralAttribute::AttributeName = "listLiteralAttribute";
-
 std::unique_ptr<Attribute> ListLiteralAttribute::clone(util::CloneVisitor &cv) const {
   std::vector<LiteralElement> elementsCloned;
   for (auto &e : elements)
@@ -92,8 +113,6 @@ std::ostream &ListLiteralAttribute::doFormat(std::ostream &os) const {
   fmt::print(os, FMT_STRING("[{}]"), fmt::join(strings.begin(), strings.end(), ","));
   return os;
 }
-
-const std::string SetLiteralAttribute::AttributeName = "setLiteralAttribute";
 
 std::unique_ptr<Attribute> SetLiteralAttribute::clone(util::CloneVisitor &cv) const {
   std::vector<LiteralElement> elementsCloned;
@@ -118,8 +137,6 @@ std::ostream &SetLiteralAttribute::doFormat(std::ostream &os) const {
              fmt::join(strings.begin(), strings.end(), ","));
   return os;
 }
-
-const std::string DictLiteralAttribute::AttributeName = "dictLiteralAttribute";
 
 std::unique_ptr<Attribute> DictLiteralAttribute::clone(util::CloneVisitor &cv) const {
   std::vector<DictLiteralAttribute::KeyValuePair> elementsCloned;
@@ -152,8 +169,6 @@ std::ostream &DictLiteralAttribute::doFormat(std::ostream &os) const {
   return os;
 }
 
-const std::string PartialFunctionAttribute::AttributeName = "partialFunctionAttribute";
-
 std::unique_ptr<Attribute>
 PartialFunctionAttribute::clone(util::CloneVisitor &cv) const {
   std::vector<Value *> argsCloned;
@@ -180,4 +195,13 @@ std::ostream &PartialFunctionAttribute::doFormat(std::ostream &os) const {
 }
 
 } // namespace ir
+
+std::unordered_map<int, std::unique_ptr<ir::Attribute>>
+clone(const std::unordered_map<int, std::unique_ptr<ir::Attribute>> &t) {
+  std::unordered_map<int, std::unique_ptr<ir::Attribute>> r;
+  for (auto &[k, v] : t)
+    r[k] = v->clone();
+  return r;
+}
+
 } // namespace codon

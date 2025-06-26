@@ -3,22 +3,21 @@
 #pragma once
 
 #include <chrono>
-#include <iostream>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <set>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 #include "codon/util/common.h"
 
-#define CAST(s, T) dynamic_cast<T *>(s.get())
-
 namespace codon {
+namespace ir {
+struct Attribute;
+}
 
 namespace ast {
 
@@ -41,13 +40,23 @@ size_t endswith(const std::string &str, const std::string &suffix);
 void ltrim(std::string &str);
 /// Trims whitespace at the end of the string.
 void rtrim(std::string &str);
-/// Removes leading stars in front of the string and returns the number of such stars.
-int trimStars(std::string &str);
 /// True if a string only contains digits.
 bool isdigit(const std::string &str);
 /// Combine items separated by a delimiter into a string.
+/// Combine items separated by a delimiter into a string.
+template <typename T> std::string join(const T &items, const std::string &delim = " ") {
+  std::string s;
+  bool first = true;
+  for (const auto &i : items) {
+    if (!first)
+      s += delim;
+    s += i;
+    first = false;
+  }
+  return s;
+}
 template <typename T>
-std::string join(const T &items, const std::string &delim = " ", size_t start = 0,
+std::string join(const T &items, const std::string &delim, size_t start,
                  size_t end = (1ull << 31)) {
   std::string s;
   if (end > items.size())
@@ -58,11 +67,12 @@ std::string join(const T &items, const std::string &delim = " ", size_t start = 
 }
 /// Combine items separated by a delimiter into a string.
 template <typename T>
-std::string combine(const std::vector<T> &items, const std::string &delim = " ") {
+std::string combine(const std::vector<T> &items, const std::string &delim = " ",
+                    const int indent = -1) {
   std::string s;
   for (int i = 0; i < items.size(); i++)
     if (items[i])
-      s += (i ? delim : "") + items[i]->toString();
+      s += (i ? delim : "") + items[i]->toString(indent);
   return s;
 }
 template <typename T>
@@ -104,44 +114,39 @@ const V *in(const std::unordered_map<K, V> &m, const U &item) {
   auto f = m.find(item);
   return f != m.end() ? &(f->second) : nullptr;
 }
-/// @return vector c transformed by the function f.
-template <typename T, typename F> auto vmap(const std::vector<T> &c, F &&f) {
-  std::vector<typename std::result_of<F(const T &)>::type> ret;
-  std::transform(std::begin(c), std::end(c), std::inserter(ret, std::end(ret)), f);
-  return ret;
+/// @return True if an item is found in an unordered_map m.
+template <typename K, typename V, typename U>
+V *in(std::unordered_map<K, V> &m, const U &item) {
+  auto f = m.find(item);
+  return f != m.end() ? &(f->second) : nullptr;
 }
+/// @return True if an item is found in an string m.
+bool in(const std::string &m, const std::string &item);
+bool in(const std::string &m, char item);
 
 /// AST utilities
 
-/// Clones a pointer even if it is a nullptr.
-template <typename T> auto clone(const std::shared_ptr<T> &t) {
-  return t ? t->clone() : nullptr;
+template <typename T> T clone(const T &t, bool clean = false) { return t.clone(clean); }
+
+template <typename T> std::remove_const_t<T> *clone(T *t, bool clean = false) {
+  return t ? static_cast<std::remove_const_t<T> *>(t->clone(clean)) : nullptr;
+}
+
+template <typename T> std::remove_const_t<T> *clean_clone(T *t) {
+  return clone(t, true);
 }
 
 /// Clones a vector of cloneable pointer objects.
-template <typename T> std::vector<T> clone(const std::vector<T> &t) {
-  std::vector<T> v;
+template <typename T>
+std::vector<std::remove_const_t<T>> clone(const std::vector<T> &t, bool clean = false) {
+  std::vector<std::remove_const_t<T>> v;
   for (auto &i : t)
-    v.push_back(clone(i));
-  return v;
-}
-
-/// Clones a vector of cloneable objects.
-template <typename T> std::vector<T> clone_nop(const std::vector<T> &t) {
-  std::vector<T> v;
-  for (auto &i : t)
-    v.push_back(i.clone());
+    v.push_back(clone(i, clean));
   return v;
 }
 
 /// Path utilities
 
-/// @return The absolute canonical path of a given path.
-std::string getAbsolutePath(const std::string &path);
-
-/// Detect an absolute path of the current executable (whose argv0 is known).
-/// @return Absolute executable path or argv0 if one cannot be found.
-std::string executable_path(const char *argv0);
 /// Detect an absolute path of the current libcodonc.
 /// @return Absolute executable path or argv0 if one cannot be found.
 std::string library_path();
@@ -154,15 +159,92 @@ struct ImportFile {
   /// Module name (e.g. foo.bar.baz).
   std::string module;
 };
+
+class IFilesystem {
+public:
+  using path_t = std::filesystem::path;
+
+protected:
+  std::vector<path_t> search_paths;
+
+public:
+  virtual ~IFilesystem() {};
+
+  virtual std::vector<std::string> read_lines(const path_t &path) const = 0;
+  virtual bool exists(const path_t &path) const = 0;
+  virtual std::vector<path_t> get_stdlib_paths() const;
+  virtual path_t canonical(const path_t &path) const;
+  ImportFile get_root(const path_t &s) const;
+
+  virtual path_t get_module0() const { return ""; }
+  virtual void set_module0(const std::string &) {}
+  virtual void add_search_path(const std::string &p);
+};
+
+class Filesystem : public IFilesystem {
+public:
+  using IFilesystem::path_t;
+
+private:
+  path_t argv0, module0;
+  std::vector<path_t> extraPaths;
+
+public:
+  Filesystem(const std::string &argv0, const std::string &module0 = "");
+  std::vector<std::string> read_lines(const path_t &path) const override;
+  bool exists(const path_t &path) const override;
+
+  path_t get_module0() const override;
+  void set_module0(const std::string &s) override;
+
+public:
+  /// Detect an absolute path of the current executable (whose argv0 is known).
+  /// @return Absolute executable path or argv0 if one cannot be found.
+  static path_t executable_path(const char *argv0);
+
+  /// @return The absolute canonical path of a given path.
+  static std::string get_absolute_path(const std::string &path);
+};
+
+class ResourceFilesystem : public Filesystem {
+  bool allowExternal;
+
+public:
+  ResourceFilesystem(const std::string &argv0, const std::string &module0 = "",
+                     bool allowExternal = true);
+  std::vector<std::string> read_lines(const path_t &path) const override;
+  bool exists(const path_t &path) const override;
+};
+
 /// Find an import file what given an executable path (argv0) either in the standard
 /// library or relative to a file relativeTo. Set forceStdlib for searching only the
 /// standard library.
-std::shared_ptr<ImportFile> getImportFile(const std::string &argv0,
+std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
                                           const std::string &what,
                                           const std::string &relativeTo,
-                                          bool forceStdlib = false,
-                                          const std::string &module0 = "",
-                                          const std::vector<std::string> &plugins = {});
+                                          bool forceStdlib = false);
+
+template <typename T> class SetInScope {
+  T *t;
+  T origVal;
+
+public:
+  SetInScope(T *t, const T &val) : t(t), origVal(*t) { *t = val; }
+  ~SetInScope() { *t = origVal; }
+};
+
+std::string getMangledClass(const std::string &module, const std::string &cls,
+                            size_t id = 0);
+
+std::string getMangledFunc(const std::string &module, const std::string &fn,
+                           size_t overload = 0, size_t id = 0);
+
+std::string getMangledMethod(const std::string &module, const std::string &cls,
+                             const std::string &method, size_t overload = 0,
+                             size_t id = 0);
+
+std::string getMangledVar(const std::string &module, const std::string &var,
+                          size_t id = 0);
 
 } // namespace ast
 } // namespace codon

@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
-@tuple
+@tuple(init=False)
 class Slice:
     start: Optional[T]
     stop: Optional[U]
@@ -9,16 +9,18 @@ class Slice:
     U: type
     V: type
 
-    def __new__(stop: Optional[U], U: type = int):
+    def __new__(stop: Optional[U], U: type = int) -> Slice[int, U, int]:
         return Slice(None, stop, None)
 
+    @overload
     def __new__(
             start: Optional[T],
             stop: Optional[U],
             T: type = int,
-            U: type = int):
+            U: type = int) -> Slice[T, U, int]:
         return Slice(start, stop, None)
 
+    @overload
     def __new__(
             start: Optional[T],
             stop: Optional[U],
@@ -26,10 +28,10 @@ class Slice:
             T: type = int,
             U: type = int,
             V: type = int) -> Slice[T, U, V]:
-        return (start, stop, step)
+        return __internal__.tuple_cast_unsafe((start, stop, step), Slice[T, U, V])
 
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
-        if not (T is int and U is int and V is int):
+        if not (T is int or T is None) or not (U is int or U is None) or not (V is int or V is None):
             compile_error("slice indices must be integers or None")
 
         step: int = self.step if self.step is not None else 1
@@ -77,12 +79,15 @@ class Slice:
             raise ValueError("length should not be negative")
         return self.adjust_indices(length)[:-1]
 
+    @overload
     def __repr__(self):
         return f"slice({self.start}, {self.stop}, {self.step})"
 
+    @overload
     def __eq__(self, other: Slice):
         return self.start == other.start and self.step == other.step and self.stop == other.stop
 
+    @overload
     def __ne__(self, other: Slice):
         return not self.__eq__(other)
 

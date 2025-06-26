@@ -5,8 +5,8 @@ def test_average(a,
                  expected,
                  axis=None,
                  weights=None,
-                 returned: Static[int] = False,
-                 keepdims: Static[int] = False):
+                 returned: Literal[bool] = False,
+                 keepdims: Literal[bool] = False):
     if isinstance(expected, int) or isinstance(expected, float):
         assert np.average(a,
                           axis=axis,
@@ -200,7 +200,7 @@ test_corrcoef([[1e-100, 1e100], [1e100, 1e-100]],
               np.array([[1., -1.], [-1., 1.]]))
 
 @test
-def test_correlate(a, b, expected, mode: Static[str] = 'valid'):
+def test_correlate(a, b, expected, mode: Literal[str] = 'valid'):
     assert (np.round(np.correlate(a, b, mode=mode),
                      8) == np.round(expected, 8)).all()
 
@@ -542,7 +542,7 @@ def test_histogram(a,
                    expected_edges,
                    bins=10,
                    range=None,
-                   density: Static[int] = False,
+                   density: Literal[bool] = False,
                    weights=None):
     hist, bin_edges = np.histogram(a,
                                    bins=bins,

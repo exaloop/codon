@@ -156,7 +156,8 @@ public:
     fmt::print(os, FMT_STRING("'\"{}\""), v->getVar()->referenceString());
   }
   void visit(const PointerValue *v) override {
-    fmt::print(os, FMT_STRING("(ptr '\"{}\")"), v->getVar()->referenceString());
+    fmt::print(os, FMT_STRING("(ptr '\"{}\" \"{}\")"), v->getVar()->referenceString(),
+               fmt::join(v->getFields().begin(), v->getFields().end(), "."));
   }
 
   void visit(const SeriesFlow *v) override {
@@ -192,10 +193,10 @@ public:
                       makeFormatter(c.getVar()), makeFormatter(c.getHandler())));
     }
 
-    fmt::print(os, FMT_STRING("(try {}\n{}\n(finally\n{}\n)\n)"),
+    fmt::print(os, FMT_STRING("(try {}\n{}\n(else\n{}\n)\n(finally\n{})\n)"),
                makeFormatter(v->getBody()),
                fmt::join(catches.begin(), catches.end(), "\n"),
-               makeFormatter(v->getFinally()));
+               makeFormatter(v->getElse()), makeFormatter(v->getFinally()));
   }
   void visit(const PipelineFlow *v) override {
     std::vector<std::string> stages;
@@ -472,4 +473,4 @@ std::ostream &format(std::ostream &os, const Node *node) {
 } // namespace codon
 
 template <>
-struct fmt::formatter<codon::ir::util::NodeFormatter> : fmt::ostream_formatter {};
+struct fmt::formatter<codon::ir::util::NodeFormatter> : ostream_formatter {};

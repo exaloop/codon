@@ -1,6 +1,8 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import util
+import internal.static as static
+
 from .ndarray import ndarray
 from .npdatetime import datetime64, timedelta64
 from .dragon4 import format_float_positional, format_float_scientific
@@ -214,7 +216,7 @@ class ndarray:
     def __repr__(self):
         return f'array({repr(self.tolist())})'
 
-    def _str_2d(fmt, shape, front: ndarray[X,ndim], back: Optional[ndarray[X,ndim]] = None, ndim: Static[int], X: type):
+    def _str_2d(fmt, shape, front: ndarray[X,ndim], back: Optional[ndarray[X,ndim]] = None, ndim: Literal[int], X: type):
         BOX_VL = '│'
         BOX_HL = '─'
         BOX_TR = '╮'
@@ -233,7 +235,7 @@ class ndarray:
         LIMIT = 10
         TRUNC_LEN = 3
 
-        if staticlen(front.shape) != 2:
+        if static.len(front.shape) != 2:
             compile_error("[internal error] wrong array shape passed to str2d")
 
         x, y = front.shape
@@ -403,11 +405,11 @@ class ndarray:
 
     def __str__(self):
         fmt = get_formatter(self)
-        if staticlen(self.shape) == 0:
+        if static.len(self.shape) == 0:
             return f'array({repr(self.data[0])})'
-        elif staticlen(self.shape) == 1:
+        elif static.len(self.shape) == 1:
             return ndarray._str_2d(fmt, self.shape, self.reshape((1, self.size)))
-        elif staticlen(self.shape) == 2:
+        elif static.len(self.shape) == 2:
             return ndarray._str_2d(fmt, self.shape, self)
         else:
             if self.size == 0:

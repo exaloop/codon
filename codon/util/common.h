@@ -17,10 +17,10 @@
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu-zero-variadic-macro-arguments"
 
-#define DBG(c, ...)                                                                    \
+#define DBGI(c, ...)                                                                   \
   fmt::print(codon::getLogger().log, "{}" c "\n",                                      \
-             std::string(size_t(2) * size_t(codon::getLogger().level), ' '),           \
-             ##__VA_ARGS__)
+             std::string(2 * codon::getLogger().level, ' '), ##__VA_ARGS__)
+#define DBG(c, ...) fmt::print(codon::getLogger().log, c "\n", ##__VA_ARGS__)
 #define LOG(c, ...) DBG(c, ##__VA_ARGS__)
 #define LOG_TIME(c, ...)                                                               \
   {                                                                                    \
@@ -136,7 +136,10 @@ public:
 
   SrcInfo getSrcInfo() const { return info; }
 
-  void setSrcInfo(SrcInfo info) { this->info = std::move(info); }
+  SrcObject *setSrcInfo(SrcInfo info) {
+    this->info = std::move(info);
+    return this;
+  }
 };
 template <class... TA> void E(error::Error e, codon::SrcObject *o, const TA &...args) {
   E(e, o->getSrcInfo(), args...);

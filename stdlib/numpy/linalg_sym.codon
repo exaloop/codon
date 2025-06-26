@@ -18,7 +18,7 @@ def tensordot(a, b, axes):
     return _linalg_tensordot(a, b, axes=axes)
 
 @overload
-def tensordot(a, b, axes: Static[int] = 2):
+def tensordot(a, b, axes: Literal[int] = 2):
     return _linalg_tensordot(a, b, axes=axes)
 
 def inner(a, b):

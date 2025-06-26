@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 from pocketfft import _swap_direction, fft as raw_fft, ifft as raw_ifft, rfft as raw_rfft, irfft as raw_irfft
 from ..routines import _check_out, asarray, empty, arange, roll
 from ..ndarray import ndarray
@@ -251,8 +253,8 @@ def ihfft(a, n: Optional[int] = None,
     out.map(lambda x: x.conjugate(), inplace=True)
     return out
 
-def _cook_nd_args(a, s = None, axes = None, invreal: Static[int] = False):
-    shapeless: Static[int] = (s is None)
+def _cook_nd_args(a, s = None, axes = None, invreal: Literal[bool] = False):
+    shapeless: Literal[bool] = (s is None)
 
     if s is None:
         if axes is None:
@@ -265,24 +267,24 @@ def _cook_nd_args(a, s = None, axes = None, invreal: Static[int] = False):
     if axes is None:
         if not shapeless:
             pass  # warning
-        r = tuple_range(staticlen(s1))[::-1]
+        r = tuple_range(static.len(s1))[::-1]
         axes1 = tuple(-i - 1 for i in r)
     else:
         axes1 = axes
 
-    if staticlen(s1) != staticlen(axes1):
+    if static.len(s1) != static.len(axes1):
         compile_error("Shape and axes have different lengths.")
 
     if invreal and shapeless:
-        s1 = tuple_set(s1, staticlen(s1) - 1, (a.shape[axes1[-1]] - 1) * 2)
+        s1 = tuple_set(s1, static.len(s1) - 1, (a.shape[axes1[-1]] - 1) * 2)
 
-    s2 = tuple(a.shape[axes1[i]] if s1[i] == -1 else s1[i] for i in staticrange(staticlen(s1)))
+    s2 = tuple(a.shape[axes1[i]] if s1[i] == -1 else s1[i] for i in static.range(static.len(s1)))
     return s2, axes1
 
 def _raw_fftnd(a, s = None, axes = None, function = fft, norm: Optional[str] = None, out = None):
     a = asarray(a)
     s, axes = _cook_nd_args(a, s, axes)
-    if staticlen(axes) == 0:
+    if static.len(axes) == 0:
         return a
     i = len(axes) - 1
     a = function(a, n=s[i], axis=axes[i], norm=norm, out=out)
@@ -316,7 +318,7 @@ def rfft2(a, s=None, axes=(-2, -1), norm: Optional[str] = None, out = None):
 def irfftn(a, s=None, axes=None, norm: Optional[str] = None, out = None):
     a = asarray(a)
     s, axes = _cook_nd_args(a, s, axes, invreal=True)
-    if staticlen(axes) <= 1:
+    if static.len(axes) <= 1:
         return irfft(a, s[-1], axes[-1], norm, out=out)
     b = ifft(a, s[0], axes[0], norm)
     for i in range(1, len(axes) - 1):

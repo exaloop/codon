@@ -66,7 +66,7 @@ struct ReductionLocks {
   Var *critLock = nullptr; // lock used in reduction critical sections
 
   Var *createLock(Module *M) {
-    auto *lockType = M->getOrRealizeType("Lock", {}, ompModule);
+    auto *lockType = M->getOrRealizeType(ast::getMangledClass(ompModule, "Lock"));
     seqassertn(lockType, "openmp.Lock type not found");
     auto *var = M->Nr<Var>(lockType, /*global=*/true);
     static int counter = 1;
@@ -980,7 +980,8 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
     auto *init = ptrFromFunc(makeTaskRedInitFunc(reduction));
     auto *comb = ptrFromFunc(makeTaskRedCombFunc(reduction));
 
-    auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
+    auto *taskRedInputType =
+        M->getOrRealizeType(ast::getMangledClass(ompModule, "TaskReductionInput"));
     seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
     auto *result = taskRedInputType->construct({shar, orig, size, init, comb});
     seqassertn(result, "bad construction of 'TaskReductionInput' type");
@@ -990,6 +991,7 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
   void handle(VarValue *v) override {
     auto *M = v->getModule();
     auto *func = util::getFunc(v);
+
     if (func && func->getUnmangledName() == "_routine_stub") {
       std::vector<bool> reduceArgs;
       unsigned sharedsNext = 0;
@@ -1046,9 +1048,11 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
 
       // add task reduction inputs
       auto *taskRedInitSeries = M->Nr<SeriesFlow>();
-      auto *taskRedInputType = M->getOrRealizeType("TaskReductionInput", {}, ompModule);
+      auto *taskRedInputType =
+          M->getOrRealizeType(ast::getMangledClass(ompModule, "TaskReductionInput"));
       seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType = M->getOrRealizeType("TaskReductionInputArray", {}, ompModule);
+      auto *irArrayType = M->getOrRealizeType(
+          ast::getMangledClass(ompModule, "TaskReductionInputArray"));
       seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
@@ -1556,11 +1560,12 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   if (sched->gpu) {
     std::unordered_set<id_t> kernels;
-    const std::string gpuAttr = "std.gpu.kernel";
+    const std::string gpuAttr = ast::getMangledFunc("std.gpu", "kernel");
     for (auto *var : *M) {
       if (auto *func = cast<BodiedFunc>(var)) {
-        if (util::hasAttribute(func, gpuAttr))
+        if (util::hasAttribute(func, gpuAttr)) {
           kernels.insert(func->getId());
+        }
       }
     }
 

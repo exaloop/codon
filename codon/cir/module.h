@@ -109,6 +109,12 @@ public:
   static const std::string INIT_MAGIC_NAME;
 
 private:
+  struct Arena {
+    std::vector<id_t> values;
+    std::vector<id_t> vars;
+    std::vector<std::string> types;
+  };
+
   /// the module's "main" function
   std::unique_ptr<Func> mainFunc;
   /// the module's argv variable
@@ -126,6 +132,8 @@ private:
   /// the global types map
   std::unordered_map<std::string, std::list<std::unique_ptr<types::Type>>::iterator>
       typesMap;
+  /// the arena stack
+  std::vector<Arena> arenas;
 
   /// the type-checker cache
   ast::Cache *cache = nullptr;
@@ -328,8 +336,7 @@ public:
   /// @param module the module of the type
   /// @return the function or nullptr
   types::Type *getOrRealizeType(const std::string &typeName,
-                                std::vector<types::Generic> generics = {},
-                                const std::string &module = "");
+                                std::vector<types::Generic> generics = {});
 
   /// @return the void type
   types::Type *getVoidType();
@@ -466,18 +473,32 @@ public:
   /// @return a union type
   types::Type *unsafeGetUnionType(const std::vector<types::Type *> &types);
 
+  /// Push an arena on the arena stack that stores all nodes
+  /// that are created subsequently.
+  void pushArena();
+
+  /// Pop the top arena of the arena stack, deallocating all
+  /// the nodes stored therein.
+  void popArena();
+
 private:
   void store(types::Type *t) {
     types.emplace_back(t);
     typesMap[t->getName()] = std::prev(types.end());
+    if (!arenas.empty())
+      arenas.back().types.push_back(t->getName());
   }
   void store(Value *v) {
     values.emplace_back(v);
     valueMap[v->getId()] = std::prev(values.end());
+    if (!arenas.empty())
+      arenas.back().values.push_back(v->getId());
   }
   void store(Var *v) {
     vars.emplace_back(v);
     varMap[v->getId()] = std::prev(vars.end());
+    if (!arenas.empty())
+      arenas.back().vars.push_back(v->getId());
   }
 };
 

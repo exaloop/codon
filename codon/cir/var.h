@@ -142,15 +142,25 @@ class PointerValue : public AcceptorExtend<PointerValue, Value> {
 private:
   /// the referenced var
   Var *val;
+  /// sequence of fields indicating where pointer should point
+  std::vector<std::string> fields;
 
 public:
   static const char NodeId;
 
-  /// Constructs a variable value.
+  /// Constructs a pointer value.
+  /// @param val the referenced value
+  /// @param fields the sequence of fields, or empty to get var pointer
+  /// @param name the name
+  explicit PointerValue(Var *val, std::vector<std::string> fields,
+                        std::string name = "")
+      : AcceptorExtend(std::move(name)), val(val), fields(std::move(fields)) {}
+
+  /// Constructs a pointer value.
   /// @param val the referenced value
   /// @param name the name
   explicit PointerValue(Var *val, std::string name = "")
-      : AcceptorExtend(std::move(name)), val(val) {}
+      : PointerValue(val, {}, name) {}
 
   /// @return the variable
   Var *getVar() { return val; }
@@ -159,6 +169,12 @@ public:
   /// Sets the variable.
   /// @param v the new variable
   void setVar(Var *v) { val = v; }
+
+  /// @return the sequence of fields
+  const std::vector<std::string> &getFields() const { return fields; }
+  /// Sets the sequence of fields
+  /// @param f the new fields
+  void setFields(std::vector<std::string> f) { fields = std::move(f); }
 
 private:
   types::Type *doGetType() const override;

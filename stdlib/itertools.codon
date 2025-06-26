@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from internal.types.optional import unwrap
+import internal.static as static
 
 # Infinite iterators
 
@@ -99,7 +100,7 @@ def compress(
 
 @inline
 def dropwhile(
-    predicate: Callable[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
     """
     Drop items from the iterable while predicate(item) is true.
@@ -114,7 +115,7 @@ def dropwhile(
 
 @inline
 def filterfalse(
-    predicate: Callable[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
     """
     Return those items of iterable for which function(item) is false.
@@ -219,7 +220,7 @@ def starmap(function, iterable):
 
 @inline
 def takewhile(
-    predicate: Callable[[T], bool], iterable: Generator[T], T: type
+    predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
     """
     Return successive entries from an iterable as long as the predicate evaluates to true for each entry.
@@ -262,7 +263,7 @@ def zip_longest(*iterables, fillvalue):
     with fillvalue. Iteration continues until the longest iterable is
     exhausted.
     """
-    if staticlen(iterables) == 2:
+    if static.len(iterables) == 2:
         a = iter(iterables[0])
         b = iter(iterables[1])
         a_done = False
@@ -333,12 +334,6 @@ def zip_longest(*args):
 
 # Combinatoric iterators
 
-def _as_list(x):
-    if isinstance(x, list):
-        return x
-    else:
-        return list(x)
-
 def product(*iterables, repeat: int):
     if repeat < 0:
         raise ValueError("repeat must be non-negative")
@@ -355,7 +350,7 @@ def product(*iterables, repeat: int):
     i = 0
 
     while i < nargs:
-        p = _as_list(iterables[i])
+        p = List.as_list(iterables[i])
         if len(p) == 0:
             return
         pools.append(p)
@@ -393,24 +388,24 @@ def product(*iterables, repeat: int):
             break
 
 @overload
-def product(*iterables, repeat: Static[int] = 1):
+def product(*iterables, repeat: Literal[int] = 1):
     if repeat < 0:
         compile_error("repeat must be non-negative")
 
     # handle some common cases
     if repeat == 0:
         yield ()
-    elif repeat == 1 and staticlen(iterables) == 1:
+    elif repeat == 1 and static.len(iterables) == 1:
         it0 = iterables[0]
         for a in it0:
             yield (a,)
-    elif repeat == 1 and staticlen(iterables) == 2:
+    elif repeat == 1 and static.len(iterables) == 2:
         it0 = iterables[0]
         it1 = iterables[1]
         for a in it0:
             for b in it1:
                 yield (a, b)
-    elif repeat == 1 and staticlen(iterables) == 3:
+    elif repeat == 1 and static.len(iterables) == 3:
         it0 = iterables[0]
         it1 = iterables[1]
         it2 = iterables[2]
@@ -419,13 +414,13 @@ def product(*iterables, repeat: Static[int] = 1):
                 for c in it2:
                     yield (a, b, c)
     else:
-        nargs: Static[int] = staticlen(iterables)
-        npools: Static[int] = nargs * repeat
+        nargs: Literal[int] = static.len(iterables)
+        npools: Literal[int] = nargs * repeat
         indices_tuple = (0,) * npools
         indices = Ptr[int](__ptr__(indices_tuple).as_byte())
-        pools = tuple(_as_list(it) for it in iterables) * repeat
+        pools = tuple(List.as_list(it) for it in iterables) * repeat
 
-        for i in staticrange(nargs):
+        for i in static.range(nargs):
             if len(pools[i]) == 0:
                 return
 
@@ -449,13 +444,13 @@ def product(*iterables, repeat: Static[int] = 1):
             if i < 0:
                 break
 
-            result = tuple(pools[i][indices[i]] for i in staticrange(npools))
+            result = tuple(pools[i][indices[i]] for i in static.range(npools))
 
 def combinations(pool, r: int):
     if r < 0:
         raise ValueError("r must be non-negative")
 
-    pool_list = _as_list(pool)
+    pool_list = List.as_list(pool)
     n = len(pool)
 
     if r > n:
@@ -490,7 +485,7 @@ def combinations(pool, r: int):
             i += 1
 
 @overload
-def combinations(pool, r: Static[int]):
+def combinations(pool, r: Literal[int]):
     def empty(T: type) -> T:
         pass
 
@@ -540,7 +535,7 @@ def combinations_with_replacement(pool, r: int):
     if r < 0:
         raise ValueError("r must be non-negative")
 
-    pool_list = _as_list(pool)
+    pool_list = List.as_list(pool)
     n = len(pool)
 
     if n == 0:
@@ -576,7 +571,7 @@ def combinations_with_replacement(pool, r: int):
             i += 1
 
 @overload
-def combinations_with_replacement(pool, r: Static[int]):
+def combinations_with_replacement(pool, r: Literal[int]):
     def empty(T: type) -> T:
         pass
 
@@ -625,7 +620,7 @@ def combinations_with_replacement(pool, r: Static[int]):
             i += 1
 
 def _permutations_non_static(pool, r = None):
-    pool_list = _as_list(pool)
+    pool_list = List.as_list(pool)
     n = len(pool)
 
     if r is None:
@@ -686,11 +681,11 @@ def _permutations_non_static(pool, r = None):
         if i < 0:
             break
 
-def _permutations_static(pool, r: Static[int]):
+def _permutations_static(pool, r: Literal[int]):
     def empty(T: type) -> T:
         pass
 
-    pool_list = _as_list(pool)
+    pool_list = List.as_list(pool)
     n = len(pool)
 
     if r < 0:
@@ -747,12 +742,12 @@ def _permutations_static(pool, r: Static[int]):
         if i < 0:
             break
 
-def permutations(pool, r = None):
+def permutations(pool, r = None) -> Generator:
     if isinstance(pool, Tuple) and r is None:
-        return _permutations_static(pool, staticlen(pool))
+        return _permutations_static(pool, static.len(pool))
     else:
         return _permutations_non_static(pool, r)
 
 @overload
-def permutations(pool, r: Static[int]):
+def permutations(pool, r: Literal[int]) -> Generator:
     return _permutations_static(pool, r)

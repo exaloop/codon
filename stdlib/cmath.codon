@@ -91,7 +91,6 @@ def _acosh_special():
     N = nan
     U = -9.5426319407711027e33  # unlikely value, used as placeholder
     def C(a,b): return complex(a, b)
-    def C(a,b): return complex(a, b)
     v = (C(INF,-P34), C(INF,-P), C(INF,-P), C(INF,P), C(INF,P), C(INF,P34), C(INF,N),
          C(INF,-P12), C(U,U), C(U,U), C(U,U), C(U,U), C(INF,P12), C(N,N), C(INF,-P12),
          C(U,U), C(0.,-P12), C(0.,P12), C(U,U), C(INF,P12), C(N,N), C(INF,-P12), C(U,U),

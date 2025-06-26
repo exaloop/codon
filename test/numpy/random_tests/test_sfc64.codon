@@ -1,6 +1,7 @@
 import numpy.random as rnd
 from numpy import *
 import numpy as np
+import internal.static as static
 
 @test
 def test_SFC64_integers(seed, low, expected, high=None, size=None, e=False):
@@ -60,7 +61,7 @@ def test_SFC64_choice(seed,
     if size is None:
         if isinstance(a, int):
             assert gen.choice(a, size, r, p, axis, shuffle) == expected
-        elif staticlen(a.shape) == 1:
+        elif static.len(a.shape) == 1:
             assert gen.choice(a, size, r, p, axis, shuffle) == expected
         else:
             assert (round(gen.choice(a, size, r, p, axis, shuffle),
@@ -547,9 +548,9 @@ def test_SFC64_multivariate_normal(seed,
                                    cov,
                                    expected,
                                    size=None,
-                                   check_valid: Static[str] = 'warn',
+                                   check_valid: Literal[str] = 'warn',
                                    tol: float = 1e-8,
-                                   m: Static[str] = 'svd'):
+                                   m: Literal[str] = 'svd'):
     gen = rnd.Generator(rnd.SFC64(seed))
     assert (round(
         gen.multivariate_normal(mean,

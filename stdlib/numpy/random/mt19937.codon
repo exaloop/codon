@@ -2,20 +2,20 @@
 
 from .seed import SeedSequence
 
-N: Static[int] = 624
-M: Static[int] = 397
+N: Literal[int] = 624
+M: Literal[int] = 397
 
 MATRIX_A = u32(0x9908b0df)    # constant vector a
 UPPER_MASK = u32(0x80000000)  # most significant w-r bits
 LOWER_MASK = u32(0x7fffffff)  # least significant r bits
 
 # parameters for computing jump
-W_SIZE: Static[int] = 32  # size of unsigned long
-MEXP  : Static[int] = 19937
-P_SIZE: Static[int] = ((MEXP // W_SIZE) + 1)
-LSB   : Static[int] = 0x00000001
-QQ    : Static[int] = 7
-LL    : Static[int] = 128  # LL = 2^(QQ)
+W_SIZE: Literal[int] = 32  # size of unsigned long
+MEXP  : Literal[int] = 19937
+P_SIZE: Literal[int] = ((MEXP // W_SIZE) + 1)
+LSB   : Literal[int] = 0x00000001
+QQ    : Literal[int] = 7
+LL    : Literal[int] = 128  # LL = 2^(QQ)
 
 def get_coef(pf: Ptr[u64], deg: int):
     return bool(pf[deg >> 5] & u64(LSB << (deg & 0x1f)))
@@ -25,7 +25,7 @@ class MT19937:
     data: Ptr[u32]
     seed: SeedSequence
 
-    def __new__(seed, legacy: Static[int] = False):
+    def __new__(seed, legacy: Literal[bool] = False):
         if not isinstance(seed, SeedSequence):
             return MT19937(SeedSequence(seed))
         else:

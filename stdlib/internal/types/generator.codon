@@ -30,6 +30,10 @@ class Generator:
     def __new__(ptr: cobj) -> Generator[T]:
         ret ptr %ptr
 
+    @overload
+    def __new__() -> Generator[T]:
+        compile_error("invalid generator")
+
     @pure
     @llvm
     def __done__(self) -> bool:

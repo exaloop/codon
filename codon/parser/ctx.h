@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "codon/parser/ast.h"
-#include "codon/parser/common.h"
 
 namespace codon::ast {
 
@@ -43,7 +42,7 @@ private:
   /// The absolute path of the current module.
   std::string filename;
   /// SrcInfo stack used for obtaining source information of the current expression.
-  std::vector<SrcInfo> srcInfos;
+  std::vector<ASTNode *> nodeStack;
 
 public:
   explicit Context(std::string filename) : filename(std::move(filename)) {
@@ -62,7 +61,7 @@ public:
   void remove(const std::string &name) {
     removeFromMap(name);
     for (auto &s : stack) {
-      auto i = std::find(s.begin(), s.end(), name);
+      auto i = std::ranges::find(s, name);
       if (i != s.end()) {
         s.erase(i);
         return;
@@ -74,6 +73,11 @@ public:
     auto it = map.find(name);
     return it != map.end() ? it->second.front() : nullptr;
   }
+  /// Return all objects that share a common identifier or nullptr if it does not exist.
+  virtual std::list<Item> *find_all(const std::string &name) {
+    auto it = map.find(name);
+    return it != map.end() ? &(it->second) : nullptr;
+  }
   /// Add a new block (i.e. adds a stack level).
   virtual void addBlock() { stack.push_front(std::list<std::string>()); }
   /// Remove the top-most block and all variables it holds.
@@ -81,6 +85,12 @@ public:
     for (auto &name : stack.front())
       removeFromMap(name);
     stack.pop_front();
+  }
+
+  void removeFromTopStack(const std::string &name) {
+    auto it = std::ranges::find(stack.front(), name);
+    if (it != stack.front().end())
+      stack.front().erase(it);
   }
 
   /// The absolute path of a current module.
@@ -95,9 +105,9 @@ public:
   /// Pretty-prints the current context state.
   virtual void dump() {}
 
-private:
+protected:
   /// Remove an identifier from the map only.
-  void removeFromMap(const std::string &name) {
+  virtual void removeFromMap(const std::string &name) {
     auto i = map.find(name);
     if (i == map.end())
       return;
@@ -109,9 +119,15 @@ private:
 
 public:
   /* SrcInfo helpers */
-  void pushSrcInfo(SrcInfo s) { srcInfos.emplace_back(std::move(s)); }
-  void popSrcInfo() { srcInfos.pop_back(); }
-  SrcInfo getSrcInfo() const { return srcInfos.back(); }
+  void pushNode(ASTNode *n) { nodeStack.emplace_back(n); }
+  void popNode() { nodeStack.pop_back(); }
+  ASTNode *getLastNode() const { return nodeStack.back(); }
+  ASTNode *getParentNode() const {
+    assert(nodeStack.size() > 1);
+    return nodeStack[nodeStack.size() - 2];
+  }
+  SrcInfo getSrcInfo() const { return nodeStack.back()->getSrcInfo(); }
+  size_t getStackSize() const { return stack.size(); }
 };
 
 } // namespace codon::ast

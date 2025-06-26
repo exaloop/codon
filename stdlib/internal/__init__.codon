@@ -1,9 +1,10 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 # Core library
-
+# from internal.core import *  # done automatically by compiler
 from internal.attributes import *
-from internal.static import static_print as __static_print__
+import internal.static as static
+from internal.static import print as __print__
 from internal.types.ptr import *
 from internal.types.str import *
 from internal.types.int import *
@@ -15,10 +16,14 @@ from internal.types.float import *
 from internal.types.byte import *
 from internal.types.generator import *
 from internal.types.optional import *
+
+import internal.c_stubs as _C
+from internal.format import *
+from internal.internal import *
+
 from internal.types.slice import *
 from internal.types.range import *
 from internal.types.complex import *
-from internal.internal import *
 
 __argv__ = Array[str](0)
 
@@ -28,22 +33,19 @@ from internal.types.collections.set import *
 from internal.types.collections.dict import *
 from internal.types.collections.tuple import *
 
-# Extended core library
-
-import internal.c_stubs as _C
-from internal.format import *
 from internal.builtin import *
 from internal.builtin import _jit_display
 from internal.str import *
 
 from internal.sort import sorted
 
-from openmp import Ident as __OMPIdent, for_par
+from openmp import Ident as __OMPIdent, for_par, for_par as par
 from gpu import _gpu_loop_outline_template
 from internal.file import File, gzFile, open, gzopen
 from pickle import pickle, unpickle
 from internal.dlopen import dlsym as _dlsym
 import internal.python
+from internal.python import PyError
 
 if __py_numerics__:
     import internal.pynumerics

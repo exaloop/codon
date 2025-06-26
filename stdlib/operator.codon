@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 lt = lambda a, b: a < b
 le = lambda a, b: a <= b
 eq = lambda a, b: a == b
@@ -170,14 +172,13 @@ def length_hint(a, default=0):
     else:
         return default
 
-def attrgetter(attr: Static[str]):
+def attrgetter(attr: Literal[str]):
     def getter(obj):
         return getattr(obj, attr)
     return getter
 
-@overload
 def itemgetter(*items):
-    if staticlen(items) == 1:
+    if static.len(items) == 1:
         item = items[0]
 
         def g(obj):
@@ -192,10 +193,10 @@ def itemgetter(*items):
         return g
 
 @overload
-def itemgetter(item: Static[int]):
+def itemgetter(item: Literal[int]):
     return lambda o: o[item]
 
-def methodcaller(name: Static[str], *args, **kwargs):
+def methodcaller(name: Literal[str], *args, **kwargs):
     def caller(obj):
         return getattr(obj, name)(*args, **kwargs)
     return caller

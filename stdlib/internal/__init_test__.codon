@@ -2,8 +2,9 @@
 
 # Core library
 
-from internal.core import *
 from internal.attributes import *
+from internal.static import print as __print__
+
 from internal.types.ptr import *
 from internal.types.str import *
 from internal.types.int import *
@@ -15,10 +16,10 @@ from internal.types.float import *
 from internal.types.byte import *
 from internal.types.generator import *
 from internal.types.optional import *
+from internal.internal import *
 from internal.types.slice import *
 from internal.types.range import *
 from internal.types.complex import *
-from internal.internal import *
 from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
@@ -36,7 +37,7 @@ from C import seq_print_full(str, cobj)
 
 class Set:
     items: List[T]
-    T: type
+    T: type = NoneType
 
     def __init__(self):
         self.items = []
@@ -49,6 +50,8 @@ class Set:
             self.items.append(what)
 
     def __repr__(self) -> str:
+        if len(self.items) == 0:
+            return "set()"
         s = self.items.__repr__()
         s.ptr[0] = "{".ptr[0]
         s.ptr[s.len - 1] = "}".ptr[0]
@@ -57,8 +60,8 @@ class Set:
 class Dict:
     keys: List[K]
     values: List[V]
-    K: type
-    V: type
+    K: type = NoneType
+    V: type = NoneType
 
     def __init__(self):
         self.keys = []
@@ -144,10 +147,31 @@ class str:
 
         return str(self.ptr + i, j - i)
 
+    def join(self, l: Generator[str]) -> str:
+        buf = _strbuf()
+        if len(self) == 0:
+            for a in l:
+                buf.append(a)
+        else:
+            first = True
+            for a in l:
+                if first:
+                    first = False
+                else:
+                    buf.append(self)
+                buf.append(a)
+        return buf.__str__()
+
     def __repr__(self) -> str:
         return f"'{self}'"
 
+    def _isdigit(a: byte) -> bool:
+        return _C.isdigit(i32(int(a))) != i32(0)
+
+set = Set
+dict = Dict
+
 from internal.builtin import *
 
-from openmp import Ident as __OMPIdent, for_par
+# from openmp import Ident as __OMPIdent, for_par
 from internal.dlopen import dlsym as _dlsym

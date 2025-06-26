@@ -2,6 +2,8 @@
 # Adapted in part from Google's Python re2 wrapper
 # https://github.com/google/re2/blob/abseil/python/re2.py
 
+import internal.static as static
+
 A          = (1 << 0)
 ASCII      = (1 << 0)
 DEBUG      = (1 << 1)
@@ -168,15 +170,15 @@ class Match:
         return self._span_match(span)
 
     def _group_multi(self, n: int, *args):
-        if staticlen(args) == 1:
+        if static.len(args) == 1:
             return (self._get_match(args[0], n),)
         else:
             return (self._get_match(args[0], n), *self._group_multi(n, *args[1:]))
 
     def group(self, *args):
-        if staticlen(args) == 0:
+        if static.len(args) == 0:
             return self._get_match(0, 1).__val__()
-        elif staticlen(args) == 1:
+        elif static.len(args) == 1:
             return self._get_match(args[0], self.re.groups)
         else:
             return self._group_multi(self.re.groups, *args)

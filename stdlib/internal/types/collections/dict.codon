@@ -18,8 +18,8 @@ class Dict:
     _keys: Ptr[K]
     _vals: Ptr[V]
 
-    K: type
-    V: type
+    K: type = NoneType
+    V: type = NoneType
 
     # Magic methods
 
@@ -197,6 +197,10 @@ class Dict:
         else:
             for k, v in other:
                 self[k] = v
+
+    def update(self, other: Dict[K, V]):
+        for k, v in other.items():
+            self[k] = v
 
     def pop(self, key: K) -> V:
         x = self._kh_get(key)

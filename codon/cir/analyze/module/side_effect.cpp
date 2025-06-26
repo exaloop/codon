@@ -208,7 +208,8 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
   }
 
   void visit(const TryCatchFlow *v) override {
-    auto s = max(process(v->getBody()), process(v->getFinally()));
+    auto s =
+        max(process(v->getBody()), process(v->getElse()), process(v->getFinally()));
     auto callStatus = Status::PURE;
 
     for (auto &x : *v) {

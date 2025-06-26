@@ -36,7 +36,7 @@ def _floor_log2(n: int) -> int:
     return log
 
 def _partial_insertion_sort(
-    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ) -> bool:
     if begin == end:
         return True
@@ -68,7 +68,7 @@ def _partial_insertion_sort(
     return True
 
 def _partition_left(
-    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ) -> int:
     pivot = arr[begin]
     first = begin
@@ -109,7 +109,7 @@ def _partition_left(
     return pivot_pos
 
 def _partition_right(
-    arr: Array[T], begin: int, end: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ) -> Tuple[int, int]:
     pivot = arr[begin]
     first = begin
@@ -156,13 +156,13 @@ def _partition_right(
     return (pivot_pos, already_partitioned)
 
 def _sort2(
-    arr: Array[T], i: int, j: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], i: int, j: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     if keyf(arr[j]) < keyf(arr[i]):
         arr[i], arr[j] = arr[j], arr[i]
 
 def _sort3(
-    arr: Array[T], i: int, j: int, k: int, keyf: Callable[[T], S], T: type, S: type
+    arr: Array[T], i: int, j: int, k: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     _sort2(arr, i, j, keyf)
     _sort2(arr, j, k, keyf)
@@ -172,7 +172,7 @@ def _pdq_sort(
     arr: Array[T],
     begin: int,
     end: int,
-    keyf: Callable[[T], S],
+    keyf: CallableTrait[[T], S],
     bad_allowed: int,
     leftmost: bool,
     T: type,
@@ -283,7 +283,7 @@ def _pdq_sort(
         leftmost = False
 
 def pdq_sort_array(
-    collection: Array[T], size: int, keyf: Callable[[T], S], T: type, S: type
+    collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Pattern-defeating Quicksort
@@ -294,7 +294,7 @@ def pdq_sort_array(
     _pdq_sort(collection, 0, size, keyf, _floor_log2(size), True)
 
 def pdq_sort_inplace(
-    collection: List[T], keyf: Callable[[T], S], T: type, S: type
+    collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
     """
     Pattern-defeating Quicksort
@@ -304,7 +304,7 @@ def pdq_sort_inplace(
     """
     pdq_sort_array(collection.arr, collection.len, keyf)
 
-def pdq_sort(collection: List[T], keyf: Callable[[T], S], T: type, S: type) -> List[T]:
+def pdq_sort(collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type) -> List[T]:
     """
     Pattern-defeating Quicksort
     By Orson Peters, published at https://github.com/orlp/pdqsort

@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 from .npdatetime import datetime64, timedelta64, _promote as dt_promote, \
                         _parse_datetime_type as dt_parse
 
@@ -34,12 +36,12 @@ def tuple_get(tup, idx):
     return p[idx]
 
 def tuple_set(tup, idx, elm, init = 0):
-    tup2 = (init,) * staticlen(tup)
+    tup2 = (init,) * static.len(tup)
     p = Ptr[type(init)](__ptr__(tup).as_byte())
     q = Ptr[type(init)](__ptr__(tup2).as_byte())
 
     i = 0
-    while i < staticlen(tup):
+    while i < static.len(tup):
         if i == idx:
             q[i] = elm
         else:
@@ -49,12 +51,12 @@ def tuple_set(tup, idx, elm, init = 0):
     return tup2
 
 def tuple_add(tup, idx, inc, init = 0):
-    tup2 = (init,) * staticlen(tup)
+    tup2 = (init,) * static.len(tup)
     p = Ptr[type(init)](__ptr__(tup).as_byte())
     q = Ptr[type(init)](__ptr__(tup2).as_byte())
 
     i = 0
-    while i < staticlen(tup):
+    while i < static.len(tup):
         if i == idx:
             q[i] = p[i] + inc
         else:
@@ -64,13 +66,13 @@ def tuple_add(tup, idx, inc, init = 0):
     return tup2
 
 def tuple_delete(tup, idx, init = 0):
-    tup2 = (init,) * (staticlen(tup) - 1)
+    tup2 = (init,) * (static.len(tup) - 1)
     p = Ptr[type(init)](__ptr__(tup).as_byte())
     q = Ptr[type(init)](__ptr__(tup2).as_byte())
 
     i = 0
     j = 0
-    while i < staticlen(tup) - 1:
+    while i < static.len(tup) - 1:
         if j != idx:
             q[i] = p[j]
             i += 1
@@ -79,13 +81,13 @@ def tuple_delete(tup, idx, init = 0):
     return tup2
 
 def tuple_insert(tup, idx, elm, init = 0):
-    tup2 = (init,) * (staticlen(tup) + 1)
+    tup2 = (init,) * (static.len(tup) + 1)
     p = Ptr[type(init)](__ptr__(tup).as_byte())
     q = Ptr[type(init)](__ptr__(tup2).as_byte())
 
     i = 0
     j = 0
-    while i < staticlen(tup) + 1:
+    while i < static.len(tup) + 1:
         if i == idx:
             q[i] = elm
         else:
@@ -107,27 +109,27 @@ def tuple_perm(tup, perm):
     if perm is None:
         return tup
 
-    if staticlen(tup) != staticlen(perm):
+    if static.len(tup) != static.len(perm):
         compile_error("[internal error] tuple_perm got different tuple lengths")
 
-    if staticlen(tup) <= 1:
+    if static.len(tup) <= 1:
         return tup
 
     return tuple(tuple_get(tup, p) for p in perm)
 
 def tuple_perm_inv(perm):
-    iperm = (0,) * staticlen(perm)
+    iperm = (0,) * static.len(perm)
     p = Ptr[int](__ptr__(perm).as_byte())
     q = Ptr[int](__ptr__(iperm).as_byte())
-    for i in staticrange(staticlen(perm)):
+    for i in static.range(static.len(perm)):
         q[p[i]] = i
     return iperm
 
 def tuple_apply(fn, tup1, tup2):
-    if staticlen(tup1) != staticlen(tup2):
+    if static.len(tup1) != static.len(tup2):
         compile_error("[internal error] tuple_apply got different tuple lengths")
 
-    if staticlen(tup1) == 0:
+    if static.len(tup1) == 0:
         return ()
 
     T = type(tup1[0])
@@ -142,7 +144,7 @@ def tuple_apply(fn, tup1, tup2):
     return tup3
 
 def tuple_insert_tuple(tup, idx, ins, init = 0):
-    tup2 = (init,) * (staticlen(tup) + staticlen(ins))
+    tup2 = (init,) * (static.len(tup) + static.len(ins))
     p1 = Ptr[type(init)](__ptr__(tup).as_byte())
     p2 = Ptr[type(init)](__ptr__(ins).as_byte())
     q = Ptr[type(init)](__ptr__(tup2).as_byte())
@@ -164,43 +166,43 @@ def tuple_insert_tuple(tup, idx, ins, init = 0):
     return tup2
 
 def count(shape):
-    if staticlen(shape) == 0:
+    if static.len(shape) == 0:
         return 1
 
     total = 1
-    for i in range(staticlen(shape)):
+    for i in range(static.len(shape)):
         total *= shape[i]
     return total
 
-def tuple_range(n: Static[int]):
+def tuple_range(n: Literal[int]):
     if n <= 0:
         return ()
     return (*tuple_range(n - 1), n - 1)
 
 def tuple_equal(t1, t2):
-    if staticlen(t1) != staticlen(t2):
+    if static.len(t1) != static.len(t2):
         return False
     return t1 == t2
 
 def broadcast(shape1, shape2):
-    D1: Static[int] = staticlen(shape1)
-    D2: Static[int] = staticlen(shape2)
-    Dmin: Static[int] = D1 if D1 < D2 else D2
-    Dmax: Static[int] = D1 if D1 > D2 else D2
-    Diff: Static[int] = Dmax - Dmin
+    D1: Literal[int] = static.len(shape1)
+    D2: Literal[int] = static.len(shape2)
+    Dmin: Literal[int] = D1 if D1 < D2 else D2
+    Dmax: Literal[int] = D1 if D1 > D2 else D2
+    Diff: Literal[int] = Dmax - Dmin
     t1 = shape1[-Dmin:]
     t2 = shape2[-Dmin:]
 
     ans = (0,) * Dmax
     p = Ptr[int](__ptr__(ans).as_byte())
 
-    for i in staticrange(Diff):
+    for i in static.range(Diff):
         if D1 > D2:
             p[i] = shape1[i]
         else:
             p[i] = shape2[i]
 
-    for i in staticrange(Dmin):
+    for i in static.range(Dmin):
         a = t1[i]
         b = t2[i]
         dim = a
@@ -260,16 +262,16 @@ def normalize_axis_tuple(axis, ndim: int, argname: str = '', allow_duplicates: b
     return t
 
 def reconstruct_index(t1, t2, mask):
-    if staticlen(t1) + staticlen(t2) != staticlen(mask):
+    if static.len(t1) + static.len(t2) != static.len(mask):
         compile_error("[internal error] bad index reconstruction")
 
-    t = (0,) * staticlen(mask)
+    t = (0,) * static.len(mask)
     p1 = Ptr[int](__ptr__(t1).as_byte())
     p2 = Ptr[int](__ptr__(t2).as_byte())
     p = Ptr[int](__ptr__(t).as_byte())
     m = Ptr[bool](__ptr__(mask).as_byte())
     k1, k2 = 0, 0
-    for i in range(staticlen(mask)):
+    for i in range(static.len(mask)):
         if m[i]:
             p[i] = p1[k1]
             k1 += 1
@@ -279,13 +281,13 @@ def reconstruct_index(t1, t2, mask):
     return t
 
 def index_to_coords(index: int, limits):
-    if staticlen(limits) == 0:
+    if static.len(limits) == 0:
         return ()
 
-    coords = (0,) * staticlen(limits)
+    coords = (0,) * static.len(limits)
     pcoords = Ptr[int](__ptr__(coords).as_byte())
 
-    for i in range(staticlen(coords) - 1, -1, -1):
+    for i in range(static.len(coords) - 1, -1, -1):
         d, m = divmod(index, limits[i])
         pcoords[i] = m
         index = d
@@ -293,13 +295,13 @@ def index_to_coords(index: int, limits):
     return coords
 
 def index_to_fcoords(index: int, limits):
-    if staticlen(limits) == 0:
+    if static.len(limits) == 0:
         return ()
 
-    coords = (0,) * staticlen(limits)
+    coords = (0,) * static.len(limits)
     pcoords = Ptr[int](__ptr__(coords).as_byte())
 
-    for i in range(staticlen(coords)):
+    for i in range(static.len(coords)):
         d, m = divmod(index, limits[i])
         pcoords[i] = m
         index = d
@@ -310,7 +312,7 @@ def coords_to_index(coords: S, limits: S, S: type):
     s = 1
     idx = 0
 
-    for i in staticrange(staticlen(coords) - 1, -1, -1):
+    for i in static.range(static.len(coords) - 1, -1, -1):
         idx += coords[i] * s
         s *= limits[i]
 
@@ -320,7 +322,7 @@ def coords_to_findex(coords: S, limits: S, S: type):
     s = 1
     idx = 0
 
-    for i in staticrange(staticlen(coords)):
+    for i in static.range(static.len(coords)):
         idx += coords[i] * s
         s *= limits[i]
 
@@ -336,7 +338,7 @@ def sort(p: Ptr[T], n: int, key, T: type):
     pdq_sort_array(Array(p, n), n, key)
 
 def sort_by_stride(shape, strides):
-    if staticlen(strides) <= 1:
+    if static.len(strides) <= 1:
         return shape, strides
 
     strides_sorted = strides
@@ -434,31 +436,31 @@ def median(arr, n: int):
 #############
 
 def multirange(limits):
-    if staticlen(limits) == 0:
+    if static.len(limits) == 0:
         yield ()
-    elif staticlen(limits) == 1:
+    elif static.len(limits) == 1:
         x = limits[0]
         for i in range(x):
             yield (i,)
-    elif staticlen(limits) == 2:
+    elif static.len(limits) == 2:
         x, y = limits
         for i in range(x):
             for j in range(y):
                 yield (i, j)
-    elif staticlen(limits) == 3:
+    elif static.len(limits) == 3:
         x, y, z = limits
         for i in range(x):
             for j in range(y):
                 for k in range(z):
                     yield (i, j, k)
-    elif staticlen(limits) == 4:
+    elif static.len(limits) == 4:
         n0, n1, n2, n3 = limits
         for i0 in range(n0):
             for i1 in range(n1):
                 for i2 in range(n2):
                     for i3 in range(n3):
                         yield (i0, i1, i2, i3)
-    elif staticlen(limits) == 5:
+    elif static.len(limits) == 5:
         n0, n1, n2, n3, n4 = limits
         for i0 in range(n0):
             for i1 in range(n1):
@@ -466,7 +468,7 @@ def multirange(limits):
                     for i3 in range(n3):
                         for i4 in range(n4):
                             yield (i0, i1, i2, i3, i4)
-    elif staticlen(limits) == 6:
+    elif static.len(limits) == 6:
         n0, n1, n2, n3, n4, n5 = limits
         for i0 in range(n0):
             for i1 in range(n1):
@@ -482,31 +484,31 @@ def multirange(limits):
                 yield (i,) + idx
 
 def fmultirange(limits):
-    if staticlen(limits) == 0:
+    if static.len(limits) == 0:
         yield ()
-    elif staticlen(limits) == 1:
+    elif static.len(limits) == 1:
         x = limits[0]
         for i in range(x):
             yield (i,)
-    elif staticlen(limits) == 2:
+    elif static.len(limits) == 2:
         x, y = limits
         for j in range(y):
             for i in range(x):
                 yield (i, j)
-    elif staticlen(limits) == 3:
+    elif static.len(limits) == 3:
         x, y, z = limits
         for k in range(z):
             for j in range(y):
                 for i in range(x):
                     yield (i, j, k)
-    elif staticlen(limits) == 4:
+    elif static.len(limits) == 4:
         n0, n1, n2, n3 = limits
         for i3 in range(n3):
             for i2 in range(n2):
                 for i1 in range(n1):
                     for i0 in range(n0):
                         yield (i0, i1, i2, i3)
-    elif staticlen(limits) == 5:
+    elif static.len(limits) == 5:
         n0, n1, n2, n3, n4 = limits
         for i4 in range(n4):
             for i3 in range(n3):
@@ -514,7 +516,7 @@ def fmultirange(limits):
                     for i1 in range(n1):
                         for i0 in range(n0):
                             yield (i0, i1, i2, i3, i4)
-    elif staticlen(limits) == 6:
+    elif static.len(limits) == 6:
         n0, n1, n2, n3, n4, n5 = limits
         for i5 in range(n5):
             for i4 in range(n4):
@@ -1809,20 +1811,6 @@ def hypot(x, y):
     elif isinstance(x, float16) and isinstance(y, float16):
         return _fp16_op_via_fp32_2(x, y, hypot32)
 
-def atan2_64(x: float, y: float):
-    return _C.atan2(x, y)
-
-def atan2_32(x: float32, y: float32):
-    return _C.atan2f(x, y)
-
-def atan2(x, y):
-    if isinstance(x, float) and isinstance(y, float):
-        return atan2_64(x, y)
-    elif isinstance(x, float32) and isinstance(y, float32):
-        return atan2_32(x, y)
-    elif isinstance(x, float16) and isinstance(y, float16):
-        return _fp16_op_via_fp32_2(x, y, atan2_32)
-
 def modf64(x: float):
     i = float()
     a = _C.modf(x, __ptr__(i))
@@ -1885,7 +1873,7 @@ def nextafter(x, y):
 
 @pure
 @llvm
-def cdiv_int(x: Int[N], y: Int[N], N: Static[int]) -> Int[N]:
+def cdiv_int(x: Int[N], y: Int[N], N: Literal[int]) -> Int[N]:
     %z = sdiv i{=N} %x, %y
     ret i{=N} %z
 
@@ -1898,7 +1886,7 @@ def cdiv_int(x: int, y: int) -> int:
 
 @pure
 @llvm
-def cmod_int(x: Int[N], y: Int[N], N: Static[int]) -> Int[N]:
+def cmod_int(x: Int[N], y: Int[N], N: Literal[int]) -> Int[N]:
     %z = srem i{=N} %x, %y
     ret i{=N} %z
 
@@ -1909,7 +1897,7 @@ def cmod_int(x: int, y: int) -> int:
     %z = srem i64 %x, %y
     ret i64 %z
 
-def pydiv(x: Int[N], y: Int[N], N: Static[int]):
+def pydiv(x: Int[N], y: Int[N], N: Literal[int]):
     div = cdiv_int(x, y)
     mask = Int[N](1) << Int[N](N - 1)
 
@@ -1928,7 +1916,7 @@ def pydiv(x: int, y: int) -> int:
 
     return div
 
-def pymod(x: Int[N], y: Int[N], N: Static[int]):
+def pymod(x: Int[N], y: Int[N], N: Literal[int]):
     mod = cmod_int(x, y)
     mask = Int[N](1) << Int[N](N - 1)
 
@@ -2026,8 +2014,8 @@ def _i0B(idx: int) -> float:
     %x = load double, ptr %p, align 8
     ret double %x
 
-_NUM_I0A: Static[int] = 30
-_NUM_I0B: Static[int] = 25
+_NUM_I0A: Literal[int] = 30
+_NUM_I0B: Literal[int] = 25
 
 def _chbevl64(x: float, vals, nvals: int):
     b0 = vals(0)
@@ -2086,7 +2074,7 @@ def i0(x):
         return _fp16_op_via_fp32(x, i0_32)
 
 def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr[T],
-                         os: int, n: int, func: Static[str], T: type):
+                         os: int, n: int, func: Literal[str], T: type):
     from C import cnp_acos_float64(Ptr[float], int, Ptr[float], int, int)
     from C import cnp_acos_float32(Ptr[float32], int, Ptr[float32], int, int)
     from C import cnp_acosh_float64(Ptr[float], int, Ptr[float], int, int)
@@ -2228,10 +2216,10 @@ def realloc(p: Ptr[T], newsize: int, oldsize: int, T: type):
     return Ptr[T](re(p.as_byte(), newsize * sz, oldsize * sz))
 
 def strides(shape, forder: bool, X: type):
-    if staticlen(shape) == 0:
+    if static.len(shape) == 0:
         return ()
 
-    strides = (0,) * staticlen(shape)
+    strides = (0,) * static.len(shape)
     p = Ptr[int](__ptr__(strides).as_byte())
     n = len(shape)
     curr = sizeof(X)
@@ -2270,7 +2258,7 @@ def cast(x, T: type):
     elif T is bool:
         return bool(x)
     elif isinstance(T, datetime64) or isinstance(T, timedelta64):
-        _DATETIME_NAT: Static[int] = -9_223_372_036_854_775_808
+        _DATETIME_NAT: Literal[int] = -9_223_372_036_854_775_808
         if X is float or X is float32 or X is float16:
             return T(_DATETIME_NAT, T.base, T.num) if isnan(x) else T(cast(x, int), T.base, T.num)
         elif X is complex or X is complex64:
@@ -2874,7 +2862,7 @@ def to_float(x):
 
     return float(x)
 
-def str_to_dtype(s: Static[str]):
+def str_to_dtype(s: Literal[str]):
     if s[:1] == '>':
         compile_error("big-endian data types are not supported")
 

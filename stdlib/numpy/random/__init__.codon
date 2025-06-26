@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 from .. import *
 
 from .pcg64 import PCG64, PCG64DXSM
@@ -74,7 +76,7 @@ def logseries(p, size = None):
 def multinomial(n, pvals, size = None):
     return _global_rng.multinomial(n, pvals, size)
 
-def multivariate_normal(mean, cov, size = None, check_valid: Static[str] = 'warn',
+def multivariate_normal(mean, cov, size = None, check_valid: Literal[str] = 'warn',
                         tol: float = 1e-8):
     return _global_rng.multivariate_normal(mean, cov, size, check_valid, tol)
 
@@ -103,7 +105,7 @@ def power(a, size = None):
     return _global_rng.power(a, size)
 
 def rand(*d):
-    if staticlen(d) == 0:
+    if static.len(d) == 0:
         return _global_rng.random()
     else:
         return _global_rng.random(d)
@@ -112,7 +114,7 @@ def randint(low, high = None, size = None, dtype: type = int):
     return _global_rng.integers(low, high, size, dtype)
 
 def randn(*d):
-    if staticlen(d) == 0:
+    if static.len(d) == 0:
         return _global_rng.standard_normal()
     else:
         return _global_rng.standard_normal(d)

@@ -11,6 +11,7 @@ class BaseException:
     line: int
     col: int
     python_type: cobj
+    cause: Optional[BaseException]
 
     def __init__(self, typename: str, message: str = ""):
         self.typename = typename
@@ -20,6 +21,7 @@ class BaseException:
         self.line = 0
         self.col = 0
         self.python_type = BaseException._pytype
+        self.cause = __internal__.opt_ref_new(T=BaseException)
 
     def __str__(self):
         return self.message
@@ -27,11 +29,15 @@ class BaseException:
     def __repr__(self):
         return f'{self.typename}({self.message.__repr__()})'
 
+    @property
+    def __cause__(self):
+        return self.cause
+
 class Exception(Static[BaseException]):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, typename: str, msg: str = ""):
         super().__init__(typename, msg)
-        if (hasattr(self.__class__, "_pytype")):
+        if hasattr(self.__class__, "_pytype"):
             self.python_type = self.__class__._pytype
 
 class NameError(Static[Exception]):
@@ -84,13 +90,6 @@ class CError(Static[Exception]):
     def __init__(self, message: str = ""):
         super().__init__("CError", message)
         self.python_type = self.__class__._pytype
-
-class PyError(Static[Exception]):
-    pytype: pyobj
-
-    def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
-        super().__init__("PyError", message)
-        self.pytype = pytype
 
 class TypeError(Static[Exception]):
     _pytype: ClassVar[cobj] = cobj()

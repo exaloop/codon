@@ -418,7 +418,7 @@ class timedelta:
     _microseconds: int
 
     def _new(microseconds: int) -> timedelta:
-        return (microseconds,)
+        return __internal__.tuple_cast_unsafe((microseconds,), timedelta)
 
     @inline
     def _accum(sofar: int, leftover: float, num: int, factor: int) -> Tuple[int, float]:
@@ -441,10 +441,6 @@ class timedelta:
         fracpart, intpart = modf(dnum)
         y = s + int(intpart)
         return y, leftover + fracpart
-
-    # override default constructor
-    def __new__(days: int) -> timedelta:
-        return timedelta(days, 0)
 
     def __new__(
         days: float = 0,
@@ -475,7 +471,11 @@ class timedelta:
                 whole_us = 2.0 * ((leftover + is_odd) * 0.5).__round__() - is_odd
             us += int(whole_us)
 
-        return (us,)
+        return timedelta._new(us)
+
+    # override default constructor
+    def __new__(days: int) -> timedelta:
+        return timedelta(days, 0)
 
     @property
     def days(self) -> int:
@@ -772,7 +772,7 @@ class time:
     ) -> time:
         _check_time_args(hour, minute, second, microsecond)
         v = (hour << 40) | (minute << 32) | (second << 24) | microsecond
-        return (v,)
+        return superf(v)
 
     @property
     def hour(self) -> int:
@@ -836,7 +836,7 @@ class time:
             microsecond = self.microsecond
         return time(hour, minute, second, microsecond)
 
-    def isoformat(self, timespec: Static[str] = "auto") -> str:
+    def isoformat(self, timespec: Literal[str] = "auto") -> str:
         hh = str(self.hour).zfill(2)
         mm = str(self.minute).zfill(2)
         ss = str(self.second).zfill(2)
@@ -1093,7 +1093,7 @@ class datetime:
     def isocalendar(self) -> IsoCalendarDate:
         return self.date().isocalendar()
 
-    def isoformat(self, sep: str = "T", timespec: Static[str] = "auto") -> str:
+    def isoformat(self, sep: str = "T", timespec: Literal[str] = "auto") -> str:
         date_part = str(self.date())
         time_part = self.time().isoformat(timespec=timespec)
         return f"{date_part}{sep}{time_part}"

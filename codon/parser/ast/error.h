@@ -2,8 +2,10 @@
 
 #pragma once
 
+#include "llvm/Support/Error.h"
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 /**
@@ -23,17 +25,102 @@ struct SrcInfo {
   int len;
   int id; /// used to differentiate different instances
 
-  SrcInfo(std::string file, int line, int col, int len)
-      : file(std::move(file)), line(line), col(col), len(len), id(0) {
-    static int nextId = 0;
-    id = nextId++;
-  }
-
-  SrcInfo() : SrcInfo("", 0, 0, 0) {}
-
-  bool operator==(const SrcInfo &src) const { return id == src.id; }
+  SrcInfo();
+  SrcInfo(std::string file, int line, int col, int len);
+  bool operator==(const SrcInfo &src) const;
+  bool operator<(const SrcInfo &src) const;
+  bool operator<=(const SrcInfo &src) const;
 };
 
+class ErrorMessage {
+private:
+  std::string msg;
+  SrcInfo loc;
+  int errorCode = -1;
+
+public:
+  explicit ErrorMessage(std::string msg, SrcInfo loc = SrcInfo(), int errorCode = -1)
+      : msg(std::move(msg)), loc(std::move(loc)), errorCode(-1) {}
+  explicit ErrorMessage(std::string msg, const std::string &file = "", int line = 0,
+                        int col = 0, int len = 0, int errorCode = -1)
+      : msg(std::move(msg)), loc(file, line, col, len), errorCode(-1) {}
+
+  std::string getMessage() const { return msg; }
+  std::string getFile() const { return loc.file; }
+  int getLine() const { return loc.line; }
+  int getColumn() const { return loc.col; }
+  int getLength() const { return loc.len; }
+  int getErrorCode() const { return errorCode; }
+  SrcInfo getSrcInfo() const { return loc; }
+  void setSrcInfo(const SrcInfo &s) { loc = s; }
+  bool operator==(const ErrorMessage &t) const { return msg == t.msg && loc == t.loc; }
+
+  std::string toString() const;
+
+  void log(llvm::raw_ostream &out) const { out << toString(); }
+};
+
+struct ParserErrors {
+  struct Backtrace {
+    std::vector<ErrorMessage> trace;
+    const std::vector<ErrorMessage> &getMessages() const { return trace; }
+    auto begin() const { return trace.begin(); }
+    auto front() const { return trace.front(); }
+    auto front() { return trace.front(); }
+    auto end() const { return trace.end(); }
+    auto back() { return trace.back(); }
+    auto back() const { return trace.back(); }
+    auto size() const { return trace.size(); }
+    void addMessage(const std::string &msg, const SrcInfo &info = SrcInfo()) {
+      trace.emplace_back(msg, info);
+    }
+    bool operator==(const Backtrace &t) const { return trace == t.trace; }
+  };
+  std::vector<Backtrace> errors;
+
+  ParserErrors() = default;
+  explicit ParserErrors(const ErrorMessage &msg) : errors{Backtrace{{msg}}} {}
+  ParserErrors(const std::string &msg, const SrcInfo &info)
+      : ParserErrors(ErrorMessage{msg, info}) {}
+  explicit ParserErrors(const std::string &msg)
+      : ParserErrors(ErrorMessage{msg, SrcInfo{}}) {}
+  ParserErrors(const ParserErrors &e) = default;
+  explicit ParserErrors(const std::vector<ErrorMessage> &m) : ParserErrors() {
+    for (auto &msg : m)
+      errors.push_back(Backtrace{{msg}});
+  }
+
+  auto begin() { return errors.begin(); }
+  auto end() { return errors.end(); }
+  auto begin() const { return errors.begin(); }
+  auto end() const { return errors.end(); }
+  auto empty() const { return errors.empty(); }
+  auto size() const { return errors.size(); }
+  auto &back() { return errors.back(); }
+  const auto &back() const { return errors.back(); }
+  void append(const ParserErrors &e) {
+    for (auto &trace : e)
+      addError(trace);
+  }
+
+  Backtrace getLast() {
+    assert(!empty() && "empty error trace");
+    return errors.back();
+  }
+
+  /// Add an error message to the current backtrace
+  void addError(const Backtrace &trace) {
+    if (!errors.empty() && errors.back() == trace)
+      return;
+    errors.push_back({trace});
+  }
+  void addError(const std::vector<ErrorMessage> &trace) { addError(Backtrace{trace}); }
+  std::string getMessage() const {
+    if (empty())
+      return "";
+    return errors.front().trace.front().getMessage();
+  }
+};
 } // namespace codon
 
 namespace codon::exc {
@@ -43,38 +130,17 @@ namespace codon::exc {
  * Used for parsing, transformation and type-checking errors.
  */
 class ParserException : public std::runtime_error {
-public:
   /// These vectors (stacks) store an error stack-trace.
-  std::vector<SrcInfo> locations;
-  std::vector<std::string> messages;
-  int errorCode = -1;
+  ParserErrors errors;
 
 public:
-  ParserException(int errorCode, const std::string &msg, const SrcInfo &info) noexcept
-      : std::runtime_error(msg), errorCode(errorCode) {
-    messages.push_back(msg);
-    locations.push_back(info);
-  }
   ParserException() noexcept : std::runtime_error("") {}
-  ParserException(int errorCode, const std::string &msg) noexcept
-      : ParserException(errorCode, msg, {}) {}
-  explicit ParserException(const std::string &msg) noexcept
-      : ParserException(-1, msg, {}) {}
-  ParserException(const ParserException &e) noexcept
-      : std::runtime_error(e), locations(e.locations), messages(e.messages),
-        errorCode(e.errorCode) {}
+  explicit ParserException(const ParserErrors &errors) noexcept
+      : std::runtime_error(errors.getMessage()), errors(errors) {}
+  explicit ParserException(llvm::Error &&e) noexcept;
 
-  /// Add an error message to the current stack trace
-  void trackRealize(const std::string &msg, const SrcInfo &info) {
-    locations.push_back(info);
-    messages.push_back("during the realization of " + msg);
-  }
-
-  /// Add an error message to the current stack trace
-  void track(const std::string &msg, const SrcInfo &info) {
-    locations.push_back(info);
-    messages.push_back(msg);
-  }
+  const ParserErrors &getErrors() const { return errors; }
+  ParserErrors &getErrors() { return errors; }
 };
 
 } // namespace codon::exc

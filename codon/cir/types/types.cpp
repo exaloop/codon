@@ -35,21 +35,18 @@ std::vector<Generic> Type::doGetGenerics() const {
 
   std::vector<Generic> ret;
   for (auto &g : astType->getClass()->generics) {
-    if (auto cls = g.type->getClass())
+    if (auto ai = g.type->getIntStatic()) {
+      ret.emplace_back(ai->value);
+    } else if (auto ai = g.type->getBoolStatic()) {
+      ret.emplace_back(int(ai->value));
+    } else if (auto as = g.type->getStrStatic()) {
+      ret.emplace_back(as->value);
+    } else if (auto ac = g.type->getClass()) {
       ret.emplace_back(
-          getModule()->getCache()->realizeType(cls, extractTypes(cls->generics)));
-    else {
-      switch (g.type->getStatic()->expr->staticValue.type) {
-      case ast::StaticValue::INT:
-        ret.emplace_back(g.type->getStatic()->expr->staticValue.getInt());
-        break;
-      case ast::StaticValue::STRING:
-        ret.emplace_back(g.type->getStatic()->expr->staticValue.getString());
-        break;
-      default:
-        seqassertn(false, "IR only supports int or str statics [{}]",
-                   g.type->getSrcInfo());
-      }
+          getModule()->getCache()->realizeType(ac, extractTypes(ac->generics)));
+    } else {
+      seqassertn(false, "IR only supports int or str statics [{}]",
+                 g.type->getSrcInfo());
     }
   }
 
@@ -118,7 +115,7 @@ std::vector<Type *> RecordType::doGetUsedTypes() const {
 Type *RecordType::getMemberType(const std::string &n) const {
   auto it = std::find_if(fields.begin(), fields.end(),
                          [n](auto &x) { return x.getName() == n; });
-  return it->getType();
+  return (it != fields.end()) ? it->getType() : nullptr;
 }
 
 int RecordType::getMemberIndex(const std::string &n) const {
@@ -172,9 +169,9 @@ std::vector<Generic> FuncType::doGetGenerics() const {
       ret.emplace_back(
           getModule()->getCache()->realizeType(cls, extractTypes(cls->generics)));
     else {
-      seqassertn(g.type->getStatic()->expr->staticValue.type == ast::StaticValue::INT,
-                 "IR only supports int statics [{}]", getSrcInfo());
-      ret.emplace_back(g.type->getStatic()->expr->staticValue.getInt());
+      seqassertn(g.type->getIntStatic(), "IR only supports int statics [{}]",
+                 getSrcInfo());
+      ret.emplace_back(g.type->getIntStatic()->value);
     }
   }
 

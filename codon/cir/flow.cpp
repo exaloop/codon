@@ -163,6 +163,8 @@ const char TryCatchFlow::NodeId = 0;
 
 std::vector<Value *> TryCatchFlow::doGetUsedValues() const {
   std::vector<Value *> ret = {body};
+  if (else_)
+    ret.push_back(else_);
   if (finally)
     ret.push_back(finally);
 
@@ -178,6 +180,12 @@ int TryCatchFlow::doReplaceUsedValue(id_t id, Value *newValue) {
     auto *f = cast<Flow>(newValue);
     seqassert(f, "{} is not a flow", *newValue);
     body = f;
+    ++replacements;
+  }
+  if (else_ && else_->getId() == id) {
+    auto *f = cast<Flow>(newValue);
+    seqassert(f, "{} is not a flow", *newValue);
+    else_ = f;
     ++replacements;
   }
   if (finally && finally->getId() == id) {

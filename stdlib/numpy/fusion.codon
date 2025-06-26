@@ -2,6 +2,8 @@
 
 import util
 import zmath
+import internal.static as static
+
 from .ndarray import ndarray
 from .routines import asarray, broadcast_to, empty_like
 
@@ -19,7 +21,7 @@ def _count(shape):
 def _contig_match(arrs):
 
     def keep_arrays(arrs):
-        if staticlen(arrs) == 0:
+        if static.len(arrs) == 0:
             return ()
         else:
             if hasattr(arrs[0], "_contig"):
@@ -28,13 +30,13 @@ def _contig_match(arrs):
                 return keep_arrays(arrs[1:])
 
     arrs = keep_arrays(arrs)
-    if staticlen(arrs) == 0:
+    if static.len(arrs) == 0:
         return True
 
     all_cc = True
     all_fc = True
 
-    for i in staticrange(staticlen(arrs)):
+    for i in static.range(static.len(arrs)):
         a = arrs[i]
         cc, fc = a._contig
 
@@ -60,7 +62,7 @@ def _loop_basic(arrays, func, extra):
 
 def _broadcast(sh1, sh2):
 
-    def bc_one(sh1, sh2, i: Static[int]):
+    def bc_one(sh1, sh2, i: Literal[int]):
         a = sh1[i]
         b = sh2[i]
         if a == 1 or b == 1 or a == b:
@@ -69,10 +71,10 @@ def _broadcast(sh1, sh2):
             raise ValueError(f"operands could not be broadcast together with shapes {sh1} {sh2}")
 
     def bc_same(sh1, sh2):
-        return tuple(bc_one(sh1, sh2, i) for i in staticrange(staticlen(sh1)))
+        return tuple(bc_one(sh1, sh2, i) for i in static.range(static.len(sh1)))
 
-    N1: Static[int] = staticlen(sh1)
-    N2: Static[int] = staticlen(sh2)
+    N1: Literal[int] = static.len(sh1)
+    N2: Literal[int] = static.len(sh2)
 
     if N1 == 0:
         return sh2
@@ -86,8 +88,8 @@ def _broadcast(sh1, sh2):
         return bc_same(sh1, sh2)
 
 def _matmul_shape(x1, x2):
-    x1d: Static[int] = staticlen(x1)
-    x2d: Static[int] = staticlen(x2)
+    x1d: Literal[int] = static.len(x1)
+    x2d: Literal[int] = static.len(x2)
 
     if x1d == 0:
         return x2
@@ -105,8 +107,8 @@ def _matmul_shape(x1, x2):
     else:
         y2 = x2
 
-    y1d: Static[int] = staticlen(y1)
-    y2d: Static[int] = staticlen(y2)
+    y1d: Literal[int] = static.len(y1)
+    y2d: Literal[int] = static.len(y2)
 
     base1s = y1[:-2]
     base2s = y2[:-2]
@@ -143,7 +145,7 @@ def _shape(x):
 def _free(x):
     util.free(x.data)
 
-def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
+def _apply_vectorized_loop_unary(arr, out, func: Literal[str]):
     if arr.ndim == 0 or out.ndim == 0 or arr.ndim > out.ndim:
         compile_error("[internal error] bad array dims for vectorized loop")
 
@@ -168,7 +170,7 @@ def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
         so = 0
         loop_axis = -1
 
-        for i in staticrange(arr.ndim):
+        for i in static.range(arr.ndim):
             if shape[i] > 1 and (loop_axis == -1 or abs(arr_strides[i]) < abs(si)):
                 n = shape[i]
                 si = arr_strides[i]
@@ -188,7 +190,7 @@ def _apply_vectorized_loop_unary(arr, out, func: Static[str]):
             util.call_vectorized_loop(p, si, Ptr[arr.dtype](), 0, q, so, n,
                                       func)
 
-def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
+def _apply_vectorized_loop_binary(arr1, arr2, out, func: Literal[str]):
     if (arr1.ndim == 0 and arr2.ndim == 0) or out.ndim == 0 or arr1.ndim > out.ndim or arr2.ndim > out.ndim:
         compile_error("[internal error] bad array dims for vectorized loop")
 
@@ -226,7 +228,7 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Static[str]):
         so = 0
         loop_axis = -1
 
-        for i in staticrange(arr1.ndim):
+        for i in static.range(arr1.ndim):
             if shape[i] > 1 and (loop_axis == -1 or abs(arr1_strides[i]) < abs(si1)):
                 n = shape[i]
                 si1 = arr1_strides[i]

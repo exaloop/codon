@@ -3,15 +3,10 @@
 #pragma once
 
 #include <string>
-#include <tuple>
 #include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 #include "codon/cir/cir.h"
 #include "codon/parser/ast.h"
-#include "codon/parser/cache.h"
-#include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
 #include "codon/parser/visitors/visitor.h"
 
@@ -23,10 +18,11 @@ class TranslateVisitor : public CallbackASTVisitor<ir::Value *, ir::Value *> {
 
 public:
   explicit TranslateVisitor(std::shared_ptr<TranslateContext> ctx);
-  static codon::ir::Func *apply(Cache *cache, const StmtPtr &stmts);
+  static codon::ir::Func *apply(Cache *cache, Stmt *stmts);
+  void translateStmts(Stmt *stmts) const;
 
-  ir::Value *transform(const ExprPtr &expr) override;
-  ir::Value *transform(const StmtPtr &stmt) override;
+  ir::Value *transform(Expr *expr) override;
+  ir::Value *transform(Stmt *stmt) override;
 
 private:
   void defaultVisit(Expr *expr) override;
@@ -40,6 +36,7 @@ public:
   void visit(StringExpr *) override;
   void visit(IdExpr *) override;
   void visit(IfExpr *) override;
+  void visit(GeneratorExpr *) override;
   void visit(CallExpr *) override;
   void visit(DotExpr *) override;
   void visit(YieldExpr *) override;
@@ -62,13 +59,16 @@ public:
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
   void visit(CommentStmt *) override {}
+  void visit(DirectiveStmt *) override {}
 
 private:
-  ir::types::Type *getType(const types::TypePtr &t);
+  ir::types::Type *getType(types::Type *t) const;
 
   void transformFunctionRealizations(const std::string &name, bool isLLVM);
-  void transformFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);
-  void transformLLVMFunction(types::FuncType *type, FunctionStmt *ast, ir::Func *func);
+  void transformFunction(const types::FuncType *type, FunctionStmt *ast,
+                         ir::Func *func);
+  void transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,
+                             ir::Func *func) const;
 
   template <typename ValueType, typename... Args> ValueType *make(Args &&...args) {
     auto *ret = ctx->getModule()->N<ValueType>(std::forward<Args>(args)...);

@@ -43,7 +43,7 @@ class TimeInterval:
         print(self.report(self.msg), file=stderr)
 
     def report(self, msg="", memory=False) -> str:
-        msg = f"{'Block' if not self.msg else self.msg} took {self.elapsed()}s"
+        msg = f"{'Block' if not self.msg else self.msg} took {self.elapsed():.3f} s"
         # if memory:
         # msg = f'{msg} ({_C.memory()} MB)'
         return msg
@@ -94,15 +94,15 @@ class struct_time:
         return x
 
     def __new__(
-        year: int,
-        mon: int,
-        mday: int,
-        hour: int,
-        min: int,
-        sec: int,
-        wday: int,
-        yday: int,
-        isdst: int,
+        year: int = 0,
+        mon: int = 0,
+        mday: int = 0,
+        hour: int = 0,
+        min: int = 0,
+        sec: int = 0,
+        wday: int = 0,
+        yday: int = 0,
+        isdst: int = 0,
     ) -> struct_time:
         return struct_time(
             i16(year - 1900),

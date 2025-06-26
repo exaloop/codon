@@ -84,7 +84,7 @@ public:
   }
   VISIT(PointerValue);
   void handle(const PointerValue *x, const PointerValue *y) {
-    result = compareVars(x->getVar(), y->getVar());
+    result = compareVars(x->getVar(), y->getVar()) && x->getFields() == y->getFields();
   }
 
   VISIT(Flow);
@@ -118,7 +118,8 @@ public:
   }
   VISIT(TryCatchFlow);
   void handle(const TryCatchFlow *x, const TryCatchFlow *y) {
-    result = result && process(x->getFinally(), y->getFinally()) &&
+    result = result && process(x->getElse(), y->getElse()) &&
+             process(x->getFinally(), y->getFinally()) &&
              process(x->getBody(), y->getBody()) &&
              std::equal(x->begin(), x->end(), y->begin(), y->end(),
                         [this](auto &x, auto &y) {

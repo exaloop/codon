@@ -191,13 +191,6 @@ def test_py_numerics_float():
     assert n == 8
 
 
-import math
-
-NAN = math.nan
-INF = math.inf
-NINF = -math.inf
-
-
 def close(a: float, b: float, epsilon: float = 1e-7):
     return abs(a - b) <= epsilon
 

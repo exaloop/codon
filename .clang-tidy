@@ -1,7 +1,9 @@
 ---
-Checks: 'clang-diagnostic-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,bugprone-*,concurrency-*,performance-*,portability-*,-modernize-use-nodiscard,-modernize-use-trailing-return-type,-cppcoreguidelines-special-member-functions'
+Checks: 'clang-diagnostic-*,clang-analyzer-*,cppcoreguidelines-*,modernize-*,bugprone-*,concurrency-*,performance-*,portability-*,-modernize-use-nodiscard,-modernize-use-trailing-return-type,-cppcoreguidelines-special-member-functions,-bugprone-easily-swappable-parameters,-bugprone-assignment-in-if-condition,-modernize-use-nodiscard'
 WarningsAsErrors: false
 HeaderFilterRegex: '(build/.+)|(codon/util/.+)'
 AnalyzeTemporaryDtors: false
 FormatStyle: llvm
-...
+CheckOptions:
+  - key:             cppcoreguidelines-macro-usage.CheckCapsOnly
+    value:           '1'

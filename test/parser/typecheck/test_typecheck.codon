@@ -1,0 +1,172 @@
+#%% pass,barebones
+pass
+
+#%% print,barebones
+print 1,
+print 1, 2  #: 1 1 2
+
+print 1, 2  #: 1 2
+print(3, "4", sep="-", end=" !\n") #: 3-4 !
+
+print(1, 2) #: 1 2
+print (1, 2) #: (1, 2)
+
+def foo(i, j):
+    return i + j
+print 3 |> foo(1)  #: 4
+
+#%% typeof_definitions,barebones
+a = 10
+b: type(a) = 1
+print(b.__class__.__name__) #: int
+
+l = []
+c: type(l) = []
+l.append(1)
+print(l.__class__.__name__, c.__class__.__name__) #: List[int] List[int]
+
+#%% typeof_definitions_error,barebones
+a = 10
+def foo(a)->type(a): return a
+#! cannot use calls in type signatures
+
+#%% typeof_definitions_error_2,barebones
+def foo() -> type:
+    return int
+class Foo:
+    a: foo()
+#! cannot use calls in type signatures
+
+
+#%% multi_error,barebones
+a = 55
+print z  #! name 'z' is not defined
+# TODO in new parser!
+print(a, q, w)  # name 'q' is not defined
+print quit  # name 'quit' is not defined
+
+#%% static_unify,barebones
+def foo(x: CallableTrait[[1,2], 3]): pass  #! CallableTrait cannot take static types
+
+#%% static_unify_2,barebones
+def foo(x: List[1]): pass  #! expected type expression
+
+#%% expr,barebones
+a = 5; b = 3
+print a, b  #: 5 3
+
+#%% delayed_instantiation_correct_context,barebones
+# Test timing of the statements; ensure that delayed blocks still
+# use correct names.
+def foo():
+    l = []
+
+    s = 1  # CH1
+    if isinstance(l, List[int]):  # delay typechecking this block
+        print(s)  #: 1
+        # if this is done badly, this print will print 's'
+        # or result in assertion error
+    print(s)  #: 1
+
+    s = 's'  # CH2
+    print(s)  #: s
+
+    # instantiate l so that the block above
+    # is typechecked in the next iteration
+    l.append(1)
+foo()
+
+# check that this does not mess up comprehensions
+# (where variable names are used BEFORE their declaration)
+slice_prefixes = [(start, end)
+                    for start, end in [(1, 2), (3, 4)]]
+print(slice_prefixes)  #: [(1, 2), (3, 4)]
+
+def foo():
+    # fn itself must be delayed and unbound for this to reproduce
+    fn = (lambda _: lambda x: x)(None)
+
+    zizzer = 1
+    y = fn(zizzer)
+    print(y)  #: 1
+
+    zizzer = 's'
+    y = fn(zizzer)
+    print(y)  #: s
+foo()
+
+#%% do_not_resolve_default_generics_on_partial,barebones
+def coerce():
+    def foo(): pass
+    def bar(T1: type, I1: type = T1):
+        print(T1 is I1)  #: False
+        foo()
+    bar(int, I1=Int[64]) # creates bar=bar(foo,...) first
+coerce()
+
+#%% compile_error_realization,barebones
+def ctx():
+    def foo(): compile_error("bah!")
+    def bar(err: Literal[bool]):
+        if err: foo()
+        else: print("ok")
+    bar(False)
+ctx()  #: ok
+
+#%% ctx_time_resolver,barebones
+def bar(j):
+    # captures stdlib range, not foo's range
+    for i in range(*j): print(i)
+def foo(range):
+    bar(range)
+foo((1, 2))  #: 1
+
+# Test whether for loop variables respect ctx->add() time
+slopes = [1.0,2,3] if len("abc") <= 5 else None
+if slopes is not None:
+    for ixx in range(3):
+        slopes[ixx] = ixx
+for ixx in range(5):
+    ixx
+
+#%% capture_function_partial_proper_realize,barebones
+def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
+    def concat_inner(arrays, axis, out, dtype: type):
+        return 1
+
+    def concat_tuple(arrays, axis = 0, out = None, dtype: type = NoneType):
+        return concat_inner(arrays, axis, out=None, dtype=dtype)
+
+    return 1
+
+print concatenate((1, 2))  #: 1
+
+#%% first_order_type,barebones
+a = 1
+l: List[type(a)] = []
+print(l, l.__class__.__name__)  #: [] List[int]
+
+def foo(t: type) -> type:
+  return List[t]
+l = foo(int)()
+print(l, l.__class__.__name__)  #: [] List[int]
+l = foo(str)()
+print(l, l.__class__.__name__)  #: [] List[str]
+
+def bar() -> type:
+  print("side effect!")
+  class Foo:
+     a: int
+     def __init__(self, a=1):
+       print(f"Foo! {a}")
+       self.a = a
+     def bar(self, x: Foo):
+       return f'{self.a}-{x.a}'
+  return Foo
+f = bar()()
+#: side effect!
+#: Foo! 1
+print f.bar(bar()(2))
+#: side effect!
+#: Foo! 2
+#: 1-2

@@ -50,8 +50,12 @@ if [ "$UNAME" = "Darwin" ]; then
   install_name_tool -id "@rpath/${LIBGFORTRAN_BASE}" ${LIBGFORTRAN}
   install_name_tool -id "@rpath/${LIBQUADMATH_BASE}" ${LIBQUADMATH}
   install_name_tool -id "@rpath/${LIBGCC_BASE}" ${LIBGCC}
+  codesign -f -s - ${LIBGFORTRAN}
+  codesign -f -s - ${LIBQUADMATH}
+  codesign -f -s - ${LIBGCC}
 else
-  patchelf --set-rpath '$ORIGIN' ${LIBGFORTRAN}
-  patchelf --set-rpath '$ORIGIN' ${LIBQUADMATH}
-  patchelf --set-rpath '$ORIGIN' ${LIBGCC}
+  # HACK: add || true to ignore errors when the libraries are not there and not needed (e.g., aarch64)
+  patchelf --set-rpath '$ORIGIN' ${LIBGFORTRAN} || true;
+  patchelf --set-rpath '$ORIGIN' ${LIBQUADMATH} || true;
+  patchelf --set-rpath '$ORIGIN' ${LIBGCC} || true;
 fi

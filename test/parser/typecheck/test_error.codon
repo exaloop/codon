@@ -1,0 +1,119 @@
+#%% assert,barebones
+assert True
+assert True, "blah"
+
+try:
+    assert False
+except AssertionError as e:
+    print e.message[:15], e.message[-19:] #: Assert failed ( test_error.codon:6)
+
+try:
+    assert False, f"hehe {1}"
+except AssertionError as e:
+    print e.message[:23], e.message[-20:] #: Assert failed: hehe 1 ( test_error.codon:11)
+
+#%% try_throw,barebones
+class MyError(Static[Exception]):
+    def __init__(self, message: str):
+        super().__init__('MyError', message)
+try:
+    raise MyError("hello!")
+except MyError as e:
+    print str(e)  #: hello!
+try:
+    raise OSError("hello os!")
+# TODO: except (MyError, OSError) as e:
+#     print str(e)
+except MyError:
+    print "my"
+except OSError as o:
+    print "os", o.typename, len(o.message), o.file[-16:], o.line
+    #: os OSError 9 test_error.codon 24
+finally:
+    print "whoa"  #: whoa
+
+# Test function name
+def foo():
+    raise MyError("foo!")
+try:
+    foo()
+except MyError as e:
+    print e.typename, e.message #: MyError foo!
+
+#%% throw_error,barebones
+raise 'hello'
+#! exceptions must derive from BaseException
+
+#%% raise_from,barebones
+def foo(bar):
+    try:
+        bar()
+    except ValueError as e:
+        raise RuntimeError("oops") from e
+    raise RuntimeError("oops")
+
+def bar1():
+    raise ValueError("bar1")
+try:
+    foo(bar1)
+except RuntimeError as e:
+    print(e.message, e.__cause__)  #: oops bar1
+
+def bar2():
+    raise ValueError("bar2")
+try:
+    foo(bar2)
+except RuntimeError as e:
+    print(e.message, e.__cause__)  #: oops bar2
+
+def bar3():
+    pass
+try:
+    foo(bar3)
+except RuntimeError as e:
+    print(e.message, e.__cause__)  #: oops None
+
+#%% try_else,barebones
+def div(x, y):
+    if y == 0: raise ZeroDivisionError("oops!")
+    return x // y
+def divide(x: int, y: int):
+    try:
+        result = div(x, y)
+    except ZeroDivisionError:
+        print("ZeroDivisionError")
+    else:
+        print(result)
+    finally:
+        print('Done!')
+
+    try:
+        result = div(x, y)
+    except ZeroDivisionError:
+        print("ZeroDivisionError")
+    else:
+        print(result)
+
+divide(3, 2)
+#: 1
+#: Done!
+#: 1
+divide(3, 0)
+#: ZeroDivisionError
+#: Done!
+#: ZeroDivisionError
+
+try:
+    try:
+        div(5, 1)
+    except ZeroDivisionError:
+        print('Zero')
+    else:
+        print('else before')  #: else before
+        div(5, 0)
+        print('else after')
+    finally:
+        print("finally")  #: finally
+except:
+    print('caught') #: caught
+

@@ -110,6 +110,53 @@ def test_conversions():
 
     # float -> uintN
     assert u32(3.14) == u32(3)
+
+    # [u]intN -> [u]intN
+    a = Int[16]('42')
+    b = UInt[16](42.0)
+    c = 42
+    e = Int[64](42.0)
+
+    assert i32(a) == i32(42)
+    assert u32(a) == u32(42)
+    assert i8(a) == i8(42)
+    assert u8(a) == u8(42)
+    assert i16(a) == i16(42)
+    assert u16(a) == u16(42)
+
+    assert i32(b) == i32(42)
+    assert u32(b) == u32(42)
+    assert i8(b) == i8(42)
+    assert u8(b) == u8(42)
+    assert i16(b) == i16(42)
+    assert u16(b) == u16(42)
+
+    assert i32(c) == i32(42)
+    assert u32(c) == u32(42)
+    assert i8(c) == i8(42)
+    assert u8(c) == u8(42)
+    assert i16(c) == i16(42)
+    assert u16(c) == u16(42)
+
+    assert i32(e) == i32(42)
+    assert u32(e) == u32(42)
+    assert i8(e) == i8(42)
+    assert u8(e) == u8(42)
+    assert i16(e) == i16(42)
+    assert u16(e) == u16(42)
+    assert i128(e) == i128(42)
+    assert u128(e) == u128(42)
+
+    # ptr -> ptr
+    p1 = Ptr[int]()
+    p2 = Ptr[float]()
+    p3 = cobj()
+    assert Ptr[float](p1) == p2
+    assert Ptr[int](p2) == p1
+    assert Ptr[float](p3) == p2
+    assert Ptr[int](p3) == p1
+    assert cobj(p1) == p3
+    assert cobj(p2) == p3
 test_conversions()
 
 @test
@@ -206,6 +253,7 @@ def test_int_float_ops(F: type):
         return (exp == got) and (type(exp) is type(got))
 
     # standard
+    print(F(1.5) + 1, F(2.5), type(F(1.5)+1), type(F(2.5)))
     assert check(F(1.5) + 1, F(2.5))
     assert check(F(1.5) - 1, F(0.5))
     assert check(F(1.5) * 2, F(3.0))

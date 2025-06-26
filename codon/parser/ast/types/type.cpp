@@ -13,16 +13,18 @@ namespace codon::ast::types {
 /// Undo a destructive unification.
 void Type::Unification::undo() {
   for (size_t i = linked.size(); i-- > 0;) {
-    linked[i]->kind = LinkType::Unbound;
-    linked[i]->type = nullptr;
+    linked[i]->getLink()->kind = LinkType::Unbound;
+    linked[i]->getLink()->type = nullptr;
   }
   for (size_t i = leveled.size(); i-- > 0;) {
-    seqassertn(leveled[i].first->kind == LinkType::Unbound, "not unbound [{}]",
-               leveled[i].first->getSrcInfo());
-    leveled[i].first->level = leveled[i].second;
+    seqassertn(leveled[i].first->getLink()->kind == LinkType::Unbound,
+               "not unbound [{}]", leveled[i].first->getSrcInfo());
+    leveled[i].first->getLink()->level = leveled[i].second;
   }
   for (auto &t : traits)
-    t->trait = nullptr;
+    t->getLink()->trait = nullptr;
+  for (auto &t : statics)
+    t->getLink()->staticKind = LiteralKind::Runtime;
 }
 
 Type::Type(const std::shared_ptr<Type> &typ) : cache(typ->cache) {
@@ -31,36 +33,55 @@ Type::Type(const std::shared_ptr<Type> &typ) : cache(typ->cache) {
 
 Type::Type(Cache *cache, const SrcInfo &info) : cache(cache) { setSrcInfo(info); }
 
-TypePtr Type::follow() { return shared_from_this(); }
+Type *Type::follow() { return this; }
 
-std::vector<std::shared_ptr<Type>> Type::getUnbounds() const { return {}; }
+bool Type::hasUnbounds(bool) const { return false; }
 
-std::string Type::toString() const { return debugString(1); }
+std::vector<Type *> Type::getUnbounds(bool) const { return {}; }
+
+std::string Type::toString() const { return debugString(2); }
 
 std::string Type::prettyString() const { return debugString(0); }
 
 bool Type::is(const std::string &s) { return getClass() && getClass()->name == s; }
 
-char Type::isStaticType() {
-  auto t = follow();
-  if (auto s = t->getStatic())
-    return char(s->expr->staticValue.type);
-  if (auto l = t->getLink())
-    return l->isStatic;
-  return false;
+LiteralKind Type::getStaticKind() {
+  if (auto s = getStatic())
+    return s->getStaticKind();
+  if (auto l = follow()->getLink())
+    return l->staticKind;
+  return LiteralKind::Runtime;
 }
 
-TypePtr Type::makeType(Cache *cache, const std::string &name,
-                       const std::string &niceName, bool isRecord) {
-  if (name == "Union")
-    return std::make_shared<UnionType>(cache);
-  if (isRecord)
-    return std::make_shared<RecordType>(cache, name, niceName);
-  return std::make_shared<ClassType>(cache, name, niceName);
+LiteralKind Type::literalFromString(const std::string &s) {
+  if (s == "int")
+    return LiteralKind::Int;
+  if (s == "str")
+    return LiteralKind::String;
+  if (s == "bool")
+    return LiteralKind::Bool;
+  return LiteralKind::Runtime;
 }
 
-std::shared_ptr<StaticType> Type::makeStatic(Cache *cache, const ExprPtr &expr) {
-  return std::make_shared<StaticType>(cache, expr);
+std::string Type::stringFromLiteral(LiteralKind k) {
+  if (k == LiteralKind::Int)
+    return "int";
+  if (k == LiteralKind::String)
+    return "str";
+  if (k == LiteralKind::Bool)
+    return "bool";
+  return "";
+}
+
+Type *Type::operator<<(Type *t) {
+  seqassert(t, "rhs is nullptr");
+  types::Type::Unification undo;
+  if (unify(t, &undo) >= 0) {
+    return this;
+  } else {
+    undo.undo();
+    return nullptr;
+  }
 }
 
 } // namespace codon::ast::types

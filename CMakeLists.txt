@@ -1,18 +1,22 @@
 cmake_minimum_required(VERSION 3.14)
 project(
   Codon
-  VERSION "0.18.2"
+  VERSION "0.19.0"
   HOMEPAGE_URL "https://github.com/exaloop/codon"
   DESCRIPTION "high-performance, extensible Python compiler")
-set(CODON_JIT_PYTHON_VERSION "0.3.2")
+set(CODON_JIT_PYTHON_VERSION "0.4.0")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.h.in"
                "${PROJECT_SOURCE_DIR}/codon/config/config.h")
 configure_file("${PROJECT_SOURCE_DIR}/cmake/config.py.in"
                "${PROJECT_SOURCE_DIR}/jit/codon/version.py")
 
+if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
+  cmake_policy(SET CMP0135 NEW)
+endif()
+
 option(CODON_GPU "build Codon GPU backend" OFF)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
@@ -37,13 +41,10 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 find_package(LLVM REQUIRED)
 
-if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
-  cmake_policy(SET CMP0135 NEW)
-endif()
-
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
 if(APPLE)
@@ -181,210 +182,206 @@ add_custom_command(
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 set(CODON_HPPFILES
-    codon/compiler/compiler.h
-    codon/compiler/debug_listener.h
-    codon/compiler/engine.h
-    codon/compiler/error.h
-    codon/compiler/jit.h
-    codon/compiler/memory_manager.h
-    codon/dsl/dsl.h
-    codon/dsl/plugins.h
-    codon/parser/ast.h
-    codon/parser/ast/expr.h
-    codon/parser/ast/stmt.h
-    codon/parser/ast/types.h
-    codon/parser/ast/types/type.h
-    codon/parser/ast/types/link.h
-    codon/parser/ast/types/class.h
-    codon/parser/ast/types/function.h
-    codon/parser/ast/types/union.h
-    codon/parser/ast/types/static.h
-    codon/parser/ast/types/traits.h
-    codon/parser/cache.h
-    codon/parser/common.h
-    codon/parser/ctx.h
-    codon/parser/peg/peg.h
-    codon/parser/peg/rules.h
-    codon/parser/visitors/doc/doc.h
-    codon/parser/visitors/format/format.h
-    codon/parser/visitors/simplify/simplify.h
-    codon/parser/visitors/simplify/ctx.h
-    codon/parser/visitors/translate/translate.h
-    codon/parser/visitors/translate/translate_ctx.h
-    codon/parser/visitors/typecheck/typecheck.h
-    codon/parser/visitors/typecheck/ctx.h
-    codon/parser/visitors/visitor.h
-    codon/cir/analyze/analysis.h
-    codon/cir/analyze/dataflow/capture.h
-    codon/cir/analyze/dataflow/cfg.h
-    codon/cir/analyze/dataflow/dominator.h
-    codon/cir/analyze/dataflow/reaching.h
-    codon/cir/analyze/module/global_vars.h
-    codon/cir/analyze/module/side_effect.h
-    codon/cir/attribute.h
-    codon/cir/base.h
-    codon/cir/const.h
-    codon/cir/dsl/codegen.h
-    codon/cir/dsl/nodes.h
-    codon/cir/flow.h
-    codon/cir/func.h
-    codon/cir/instr.h
-    codon/cir/llvm/gpu.h
-    codon/cir/llvm/llvisitor.h
-    codon/cir/llvm/llvm.h
-    codon/cir/llvm/native/native.h
-    codon/cir/llvm/native/targets/aarch64.h
-    codon/cir/llvm/native/targets/target.h
-    codon/cir/llvm/native/targets/x86.h
-    codon/cir/llvm/optimize.h
-    codon/cir/module.h
-    codon/cir/pyextension.h
-    codon/cir/cir.h
-    codon/cir/transform/cleanup/canonical.h
-    codon/cir/transform/cleanup/dead_code.h
-    codon/cir/transform/cleanup/global_demote.h
-    codon/cir/transform/cleanup/replacer.h
-    codon/cir/transform/folding/const_fold.h
-    codon/cir/transform/folding/const_prop.h
-    codon/cir/transform/folding/folding.h
-    codon/cir/transform/folding/rule.h
-    codon/cir/transform/lowering/imperative.h
-    codon/cir/transform/lowering/pipeline.h
-    codon/cir/transform/numpy/numpy.h
-    codon/cir/transform/manager.h
-    codon/cir/transform/parallel/openmp.h
-    codon/cir/transform/parallel/schedule.h
-    codon/cir/transform/pass.h
-    codon/cir/transform/pythonic/dict.h
-    codon/cir/transform/pythonic/generator.h
-    codon/cir/transform/pythonic/io.h
-    codon/cir/transform/pythonic/list.h
-    codon/cir/transform/pythonic/str.h
-    codon/cir/transform/rewrite.h
-    codon/cir/types/types.h
-    codon/cir/util/cloning.h
-    codon/cir/util/context.h
-    codon/cir/util/format.h
-    codon/cir/util/inlining.h
-    codon/cir/util/irtools.h
-    codon/cir/util/iterators.h
-    codon/cir/util/matching.h
-    codon/cir/util/operator.h
-    codon/cir/util/outlining.h
-    codon/cir/util/packs.h
-    codon/cir/util/side_effect.h
-    codon/cir/util/visitor.h
-    codon/cir/value.h
-    codon/cir/var.h
-    codon/util/common.h
-    codon/compiler/jit_extern.h)
+  codon/compiler/compiler.h
+  codon/compiler/debug_listener.h
+  codon/compiler/engine.h
+  codon/compiler/error.h
+  codon/compiler/jit.h
+  codon/compiler/memory_manager.h
+  codon/dsl/dsl.h
+  codon/dsl/plugins.h
+  codon/parser/ast.h
+  codon/parser/match.h
+  codon/parser/ast/node.h
+  codon/parser/ast/expr.h
+  codon/parser/ast/stmt.h
+  codon/parser/ast/types.h
+  codon/parser/ast/attr.h
+  codon/parser/ast/types/type.h
+  codon/parser/ast/types/link.h
+  codon/parser/ast/types/class.h
+  codon/parser/ast/types/function.h
+  codon/parser/ast/types/union.h
+  codon/parser/ast/types/static.h
+  codon/parser/ast/types/traits.h
+  codon/parser/cache.h
+  codon/parser/common.h
+  codon/parser/ctx.h
+  codon/parser/peg/peg.h
+  codon/parser/peg/rules.h
+  codon/parser/visitors/doc/doc.h
+  codon/parser/visitors/format/format.h
+  codon/parser/visitors/scoping/scoping.h
+  codon/parser/visitors/translate/translate.h
+  codon/parser/visitors/translate/translate_ctx.h
+  codon/parser/visitors/typecheck/typecheck.h
+  codon/parser/visitors/typecheck/ctx.h
+  codon/parser/visitors/visitor.h
+  codon/cir/analyze/analysis.h
+  codon/cir/analyze/dataflow/capture.h
+  codon/cir/analyze/dataflow/cfg.h
+  codon/cir/analyze/dataflow/dominator.h
+  codon/cir/analyze/dataflow/reaching.h
+  codon/cir/analyze/module/global_vars.h
+  codon/cir/analyze/module/side_effect.h
+  codon/cir/attribute.h
+  codon/cir/base.h
+  codon/cir/const.h
+  codon/cir/dsl/codegen.h
+  codon/cir/dsl/nodes.h
+  codon/cir/flow.h
+  codon/cir/func.h
+  codon/cir/instr.h
+  codon/cir/llvm/gpu.h
+  codon/cir/llvm/llvisitor.h
+  codon/cir/llvm/llvm.h
+  codon/cir/llvm/optimize.h
+  codon/cir/module.h
+  codon/cir/pyextension.h
+  codon/cir/cir.h
+  codon/cir/transform/cleanup/canonical.h
+  codon/cir/transform/cleanup/dead_code.h
+  codon/cir/transform/cleanup/global_demote.h
+  codon/cir/transform/cleanup/replacer.h
+  codon/cir/transform/folding/const_fold.h
+  codon/cir/transform/folding/const_prop.h
+  codon/cir/transform/folding/folding.h
+  codon/cir/transform/folding/rule.h
+  codon/cir/transform/lowering/imperative.h
+  codon/cir/transform/lowering/pipeline.h
+  codon/cir/transform/manager.h
+  codon/cir/transform/parallel/openmp.h
+  codon/cir/transform/parallel/schedule.h
+  codon/cir/transform/pass.h
+  codon/cir/transform/pythonic/dict.h
+  codon/cir/transform/pythonic/generator.h
+  codon/cir/transform/pythonic/io.h
+  codon/cir/transform/pythonic/list.h
+  codon/cir/transform/pythonic/str.h
+  codon/cir/transform/rewrite.h
+  codon/cir/types/types.h
+  codon/cir/util/cloning.h
+  codon/cir/util/context.h
+  codon/cir/util/format.h
+  codon/cir/util/inlining.h
+  codon/cir/util/irtools.h
+  codon/cir/util/iterators.h
+  codon/cir/util/matching.h
+  codon/cir/util/operator.h
+  codon/cir/util/outlining.h
+  codon/cir/util/packs.h
+  codon/cir/util/side_effect.h
+  codon/cir/util/visitor.h
+  codon/cir/value.h
+  codon/cir/llvm/native/native.h
+  codon/cir/llvm/native/targets/aarch64.h
+  codon/cir/llvm/native/targets/arm.h
+  codon/cir/llvm/native/targets/target.h
+  codon/cir/llvm/native/targets/x86.h
+  codon/cir/transform/numpy/numpy.h
+  codon/cir/var.h
+  codon/util/common.h
+  codon/util/serialize.h
+  codon/compiler/jit_extern.h)
 set(CODON_CPPFILES
-    codon/compiler/compiler.cpp
-    codon/compiler/debug_listener.cpp
-    codon/compiler/engine.cpp
-    codon/compiler/error.cpp
-    codon/compiler/jit.cpp
-    codon/compiler/memory_manager.cpp
-    codon/dsl/plugins.cpp
-    codon/parser/ast/expr.cpp
-    codon/parser/ast/stmt.cpp
-    codon/parser/ast/types/type.cpp
-    codon/parser/ast/types/link.cpp
-    codon/parser/ast/types/class.cpp
-    codon/parser/ast/types/function.cpp
-    codon/parser/ast/types/union.cpp
-    codon/parser/ast/types/static.cpp
-    codon/parser/ast/types/traits.cpp
-    codon/parser/cache.cpp
-    codon/parser/common.cpp
-    codon/parser/peg/peg.cpp
-    codon/parser/visitors/doc/doc.cpp
-    codon/parser/visitors/format/format.cpp
-    codon/parser/visitors/simplify/simplify.cpp
-    codon/parser/visitors/simplify/ctx.cpp
-    codon/parser/visitors/simplify/assign.cpp
-    codon/parser/visitors/simplify/basic.cpp
-    codon/parser/visitors/simplify/call.cpp
-    codon/parser/visitors/simplify/class.cpp
-    codon/parser/visitors/simplify/collections.cpp
-    codon/parser/visitors/simplify/cond.cpp
-    codon/parser/visitors/simplify/function.cpp
-    codon/parser/visitors/simplify/access.cpp
-    codon/parser/visitors/simplify/import.cpp
-    codon/parser/visitors/simplify/loops.cpp
-    codon/parser/visitors/simplify/op.cpp
-    codon/parser/visitors/simplify/error.cpp
-    codon/parser/visitors/translate/translate.cpp
-    codon/parser/visitors/translate/translate_ctx.cpp
-    codon/parser/visitors/typecheck/typecheck.cpp
-    codon/parser/visitors/typecheck/infer.cpp
-    codon/parser/visitors/typecheck/ctx.cpp
-    codon/parser/visitors/typecheck/assign.cpp
-    codon/parser/visitors/typecheck/basic.cpp
-    codon/parser/visitors/typecheck/call.cpp
-    codon/parser/visitors/typecheck/class.cpp
-    codon/parser/visitors/typecheck/collections.cpp
-    codon/parser/visitors/typecheck/cond.cpp
-    codon/parser/visitors/typecheck/function.cpp
-    codon/parser/visitors/typecheck/access.cpp
-    codon/parser/visitors/typecheck/loops.cpp
-    codon/parser/visitors/typecheck/op.cpp
-    codon/parser/visitors/typecheck/error.cpp
-    codon/parser/visitors/visitor.cpp
-    codon/cir/attribute.cpp
-    codon/cir/analyze/analysis.cpp
-    codon/cir/analyze/dataflow/capture.cpp
-    codon/cir/analyze/dataflow/cfg.cpp
-    codon/cir/analyze/dataflow/dominator.cpp
-    codon/cir/analyze/dataflow/reaching.cpp
-    codon/cir/analyze/module/global_vars.cpp
-    codon/cir/analyze/module/side_effect.cpp
-    codon/cir/base.cpp
-    codon/cir/const.cpp
-    codon/cir/dsl/nodes.cpp
-    codon/cir/flow.cpp
-    codon/cir/func.cpp
-    codon/cir/instr.cpp
-    codon/cir/llvm/gpu.cpp
-    codon/cir/llvm/llvisitor.cpp
-    codon/cir/llvm/native/native.cpp
-    codon/cir/llvm/native/targets/aarch64.cpp
-    codon/cir/llvm/native/targets/x86.cpp
-    codon/cir/llvm/optimize.cpp
-    codon/cir/module.cpp
-    codon/cir/transform/cleanup/canonical.cpp
-    codon/cir/transform/cleanup/dead_code.cpp
-    codon/cir/transform/cleanup/global_demote.cpp
-    codon/cir/transform/cleanup/replacer.cpp
-    codon/cir/transform/folding/const_fold.cpp
-    codon/cir/transform/folding/const_prop.cpp
-    codon/cir/transform/folding/folding.cpp
-    codon/cir/transform/lowering/imperative.cpp
-    codon/cir/transform/lowering/pipeline.cpp
-    codon/cir/transform/numpy/expr.cpp
-    codon/cir/transform/numpy/forward.cpp
-    codon/cir/transform/numpy/numpy.cpp
-    codon/cir/transform/manager.cpp
-    codon/cir/transform/parallel/openmp.cpp
-    codon/cir/transform/parallel/schedule.cpp
-    codon/cir/transform/pass.cpp
-    codon/cir/transform/pythonic/dict.cpp
-    codon/cir/transform/pythonic/generator.cpp
-    codon/cir/transform/pythonic/io.cpp
-    codon/cir/transform/pythonic/list.cpp
-    codon/cir/transform/pythonic/str.cpp
-    codon/cir/types/types.cpp
-    codon/cir/util/cloning.cpp
-    codon/cir/util/format.cpp
-    codon/cir/util/inlining.cpp
-    codon/cir/util/irtools.cpp
-    codon/cir/util/matching.cpp
-    codon/cir/util/outlining.cpp
-    codon/cir/util/side_effect.cpp
-    codon/cir/util/visitor.cpp
-    codon/cir/value.cpp
-    codon/cir/var.cpp
-    codon/util/common.cpp)
+  codon/compiler/compiler.cpp
+  codon/compiler/debug_listener.cpp
+  codon/compiler/engine.cpp
+  codon/compiler/error.cpp
+  codon/compiler/jit.cpp
+  codon/compiler/memory_manager.cpp
+  codon/dsl/plugins.cpp
+  codon/parser/ast/expr.cpp
+  codon/parser/ast/attr.cpp
+  codon/parser/ast/stmt.cpp
+  codon/parser/ast/types/type.cpp
+  codon/parser/ast/types/link.cpp
+  codon/parser/ast/types/class.cpp
+  codon/parser/ast/types/function.cpp
+  codon/parser/ast/types/union.cpp
+  codon/parser/ast/types/static.cpp
+  codon/parser/ast/types/traits.cpp
+  codon/parser/cache.cpp
+  codon/parser/match.cpp
+  codon/parser/common.cpp
+  codon/parser/peg/peg.cpp
+  codon/parser/visitors/doc/doc.cpp
+  codon/parser/visitors/format/format.cpp
+  codon/parser/visitors/scoping/scoping.cpp
+  codon/parser/visitors/translate/translate.cpp
+  codon/parser/visitors/translate/translate_ctx.cpp
+  codon/parser/visitors/typecheck/typecheck.cpp
+  codon/parser/visitors/typecheck/infer.cpp
+  codon/parser/visitors/typecheck/ctx.cpp
+  codon/parser/visitors/typecheck/assign.cpp
+  codon/parser/visitors/typecheck/basic.cpp
+  codon/parser/visitors/typecheck/call.cpp
+  codon/parser/visitors/typecheck/class.cpp
+  codon/parser/visitors/typecheck/collections.cpp
+  codon/parser/visitors/typecheck/cond.cpp
+  codon/parser/visitors/typecheck/function.cpp
+  codon/parser/visitors/typecheck/access.cpp
+  codon/parser/visitors/typecheck/import.cpp
+  codon/parser/visitors/typecheck/loops.cpp
+  codon/parser/visitors/typecheck/op.cpp
+  codon/parser/visitors/typecheck/error.cpp
+  codon/parser/visitors/typecheck/special.cpp
+  codon/parser/visitors/visitor.cpp
+  codon/cir/attribute.cpp
+  codon/cir/analyze/analysis.cpp
+  codon/cir/analyze/dataflow/capture.cpp
+  codon/cir/analyze/dataflow/cfg.cpp
+  codon/cir/analyze/dataflow/dominator.cpp
+  codon/cir/analyze/dataflow/reaching.cpp
+  codon/cir/analyze/module/global_vars.cpp
+  codon/cir/analyze/module/side_effect.cpp
+  codon/cir/base.cpp
+  codon/cir/const.cpp
+  codon/cir/dsl/nodes.cpp
+  codon/cir/flow.cpp
+  codon/cir/func.cpp
+  codon/cir/instr.cpp
+  codon/cir/llvm/gpu.cpp
+  codon/cir/llvm/llvisitor.cpp
+  codon/cir/llvm/optimize.cpp
+  codon/cir/module.cpp
+  codon/cir/transform/cleanup/canonical.cpp
+  codon/cir/transform/cleanup/dead_code.cpp
+  codon/cir/transform/cleanup/global_demote.cpp
+  codon/cir/transform/cleanup/replacer.cpp
+  codon/cir/transform/folding/const_fold.cpp
+  codon/cir/transform/folding/const_prop.cpp
+  codon/cir/transform/folding/folding.cpp
+  codon/cir/transform/lowering/imperative.cpp
+  codon/cir/transform/lowering/pipeline.cpp
+  codon/cir/transform/manager.cpp
+  codon/cir/transform/parallel/openmp.cpp
+  codon/cir/transform/parallel/schedule.cpp
+  codon/cir/transform/pass.cpp
+  codon/cir/transform/pythonic/dict.cpp
+  codon/cir/transform/pythonic/generator.cpp
+  codon/cir/transform/pythonic/io.cpp
+  codon/cir/transform/pythonic/list.cpp
+  codon/cir/transform/pythonic/str.cpp
+  codon/cir/types/types.cpp
+  codon/cir/util/cloning.cpp
+  codon/cir/util/format.cpp
+  codon/cir/util/inlining.cpp
+  codon/cir/util/irtools.cpp
+  codon/cir/util/matching.cpp
+  codon/cir/util/outlining.cpp
+  codon/cir/util/side_effect.cpp
+  codon/cir/util/visitor.cpp
+  codon/cir/value.cpp
+  codon/cir/var.cpp
+  codon/cir/llvm/native/native.cpp
+  codon/cir/llvm/native/targets/aarch64.cpp
+  codon/cir/llvm/native/targets/arm.cpp
+  codon/cir/llvm/native/targets/x86.cpp
+  codon/cir/transform/numpy/expr.cpp
+  codon/cir/transform/numpy/forward.cpp
+  codon/cir/transform/numpy/numpy.cpp
+  codon/util/common.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR}
                                           ${toml_SOURCE_DIR}/include
@@ -432,7 +429,19 @@ llvm_map_components_to_libnames(
   TransformUtils
   Vectorize
   Passes)
-target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt)
+
+file(GLOB_RECURSE CODON_STDLIB_RESOURCES
+  CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/*.codon"
+)
+cmrc_add_resource_library(
+  codon-stdlib
+  NAMESPACE codon
+  ${CODON_STDLIB_RESOURCES}
+)
+set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
+
+target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt codon-stdlib)
 
 # Gather headers
 add_custom_target(
@@ -476,7 +485,7 @@ add_dependencies(libs codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
+target_link_libraries(codon PUBLIC fmt tser codonc codon_jupyter Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -506,9 +515,8 @@ set(CODON_TEST_CPPFILES
     test/cir/var.cpp
     test/types.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
-target_include_directories(codon_test PRIVATE test/cir
-                                              "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test fmt codonc codonrt gtest_main)
+target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
+target_link_libraries(codon_test fmt tser codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
@@ -519,6 +527,8 @@ install(FILES ${copied_libquadmath} DESTINATION lib/codon)
 install(FILES ${copied_libgcc} DESTINATION lib/codon)
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
+install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)
+install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)

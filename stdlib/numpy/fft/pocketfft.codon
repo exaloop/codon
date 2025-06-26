@@ -59,7 +59,7 @@ class arr:
     T: type
 
     def __new__(sz: int) -> arr[T]:
-        return (Ptr[T](sz), sz)
+        return arr(Ptr[T](sz), sz)
 
     def dealloc(self):
         free(self.p)
@@ -139,7 +139,7 @@ class sincos_2pibyn:
         for i in range(1, v2.size()):
             v2[i] = sincos_2pibyn.calc(i*(mask+1), n, ang)
 
-        return (n, mask, shift, v1, v2)
+        return sincos_2pibyn[T](n, mask, shift, v1, v2)
 
     def cmplx(self, re, im):
         if T is float:

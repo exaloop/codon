@@ -3,11 +3,100 @@
 def _format_error(ret: str):
 	raise ValueError(f"invalid format specifier: {ret}")
 
+def _python_to_fmt_format(s):
+    if not s:
+        return s
+
+    i = 0
+    fill, align = None, None
+    if (i + 1 < len(s) and
+        (s[i + 1] == '<' or
+         s[i + 1] == '>' or
+         s[i + 1] == '=' or
+         s[i + 1] == '^')):
+        fill = s[i]
+        align = s[i + 1]
+        i += 2
+    elif (i < len(s) and
+          (s[i] == '<' or
+           s[i] == '>' or
+           s[i] == '=' or
+           s[i] == '^')):
+        align = s[i]
+        i += 1
+    if align == '=':
+        raise NotImplementedError("'=' alignment not yet supported")
+
+    sign = None
+    if i < len(s) and (s[i] == '+' or s[i] == '-' or s[i] == ' '):
+        sign = s[i]
+        i += 1
+
+    coerce_negative_float = False
+    if i < len(s) and s[i] == 'z':
+        coerce_negative_float = True
+        i += 1
+    if coerce_negative_float:
+        raise NotImplementedError("'z' not yet supported")
+
+    alternate_form = False
+    if i < len(s) and s[i] == '#':
+        alternate_form = True
+        i += 1
+
+    width_pre_zero = False
+    if i < len(s) and s[i] == '#':
+        width_pre_zero = True
+        i += 1
+    width = 0
+    while i < len(s) and str._isdigit(s.ptr[i]):
+        width = 10 * width + ord(s[i]) - ord('0')
+        i += 1
+
+    grouping = None
+    if i < len(s) and (s[i] == '_' or s[i] == ','):
+        grouping = s[i]
+        i += 1
+    if grouping == '_':
+        raise NotImplementedError("'_' grouping not yet supported")
+
+    precision = None
+    if i < len(s) and s[i] == '.':
+        i += 1
+        precision = 0
+        while i < len(s) and str._isdigit(s.ptr[i]):
+            precision = 10 * precision + ord(s[i]) - ord('0')
+            i += 1
+
+    type = None
+    if i < len(s):
+        type = s[i]
+        i += 1
+
+    if i != len(s):
+        raise ValueError("bad format string")
+
+    # Construct fmt::format-compatible string
+    ns = _strbuf()
+    if align:
+        if fill: ns.append(fill)
+        ns.append(align)
+    if sign: ns.append(sign)
+    if alternate_form: ns.append("#")
+    if width_pre_zero: ns.append("0")
+    if width: ns.append(str(width))
+    if precision is not None:
+        ns.append(".")
+        ns.append(str(precision))
+    if grouping: ns.append("L")
+    if type: ns.append(type)
+    return str(ns)
+
 @extend
 class int:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_int(self, format_spec, __ptr__(err))
+        ret = _C.seq_str_int(self, _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -16,7 +105,7 @@ class int:
 class Int:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_int(self.__int__(), format_spec, __ptr__(err))
+        ret = _C.seq_str_int(self.__int__(), _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -25,7 +114,7 @@ class Int:
 class UInt:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_uint(self.__int__(), format_spec, __ptr__(err))
+        ret = _C.seq_str_uint(self.__int__(), _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -34,7 +123,7 @@ class UInt:
 class float:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_float(self, format_spec, __ptr__(err))
+        ret = _C.seq_str_float(self, _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret if ret != "-nan" else "nan"
@@ -43,7 +132,7 @@ class float:
 class str:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_str(self, format_spec, __ptr__(err))
+        ret = _C.seq_str_str(self, _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
@@ -52,12 +141,12 @@ class str:
 class Ptr:
     def __format__(self, format_spec: str) -> str:
         err = False
-        ret = _C.seq_str_ptr(self.as_byte(), format_spec, __ptr__(err))
+        ret = _C.seq_str_ptr(self.as_byte(), _python_to_fmt_format(format_spec), __ptr__(err))
         if format_spec and err:
             _format_error(ret)
         return ret
 
-def _divmod_10(dividend, N: Static[int]):
+def _divmod_10(dividend, N: Literal[int]):
     T = type(dividend)
     zero, one = T(0), T(1)
     neg = dividend < zero

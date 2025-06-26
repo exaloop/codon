@@ -143,8 +143,8 @@ def test_14(a):
     return g
 test_14([42])
 
-class A:
-    a: Optional[A]
+class OA:
+    a: Optional[OA]
 
 @test
 def test_15(a, b):
@@ -152,7 +152,7 @@ def test_15(a, b):
     b.a = a
     assert expect_capture(False, False, (1,))  # a
     assert expect_capture(False, False, (0,))  # b
-test_15(A(None), A(None))
+test_15(OA(None), OA(None))
 
 @test
 def test_16(a, b):
@@ -161,7 +161,7 @@ def test_16(a, b):
     assert expect_capture(True, False, (1,))  # a
     assert expect_capture(True, False, (0,))  # b
     return a
-test_16(A(None), A(None))
+test_16(OA(None), OA(None))
 
 @test
 def test_17(a):

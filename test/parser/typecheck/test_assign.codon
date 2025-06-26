@@ -1,0 +1,396 @@
+#%% __ignore__
+from typing import Optional, List, Dict, Generator
+from dataclasses import dataclass
+
+#%% basic,barebones
+a = 5
+b: float = 6.16
+c: Optional[str] = None
+print(a, b, c)  #: 5 6.16 None
+
+#%% walrus,barebones
+def foo(x):
+    return x * x
+if x := foo(3):
+    pass
+if (x := foo(4)) and False:
+    print('Nope')
+if False and (x := foo(5)):
+    print('Nope')
+print(x) #: 16
+
+a = [y := foo(1), y+1, y+2]
+print(a) #: [1, 2, 3]
+
+print({y: b for y in [1,2,3] if (b := (y - 1))}) #: {2: 1, 3: 2}
+print(list(b for y in [1,2,3] if (b := (y // 3)))) #: [1]
+
+#%% walrus_update,barebones
+def foo(x):
+    return x * x
+x = 5
+if x := foo(4):
+    pass
+print(x) #: 16
+
+#%% walrus_cond_1,barebones
+def foo(x):
+    return x * x
+if False or (x := foo(4)):
+    pass
+print(x) #: 16
+
+y = (z := foo(5)) if True else 0
+print(z) #: 25
+
+#%% walrus_err,barebones
+def foo(x):
+    return x * x
+if False and (x := foo(4)):
+    pass
+try:
+    print(x)
+except NameError:
+    print("Error") #: Error
+
+t = True
+y = 0 if t else (z := foo(4))
+try:
+    print(z)
+except NameError:
+    print("Error") #: Error
+
+#%% unpack_specials,barebones
+x, = 1,
+print(x)  #: 1
+
+a = (2, 3)
+b = (1, *a[1:])
+print(a, b)  #: (2, 3) (1, 3)
+
+#%% assign,barebones
+a = 1
+print(a) #: 1
+a = 2
+print(a) #: 2
+
+x, y = 1, 2
+print(x, y) #: 1 2
+(x, y) = (3, 4)
+print(x, y) #: 3 4
+x, y = (1, 2)
+print(x, y) #: 1 2
+(x, y) = 3, 4
+print(x, y) #: 3 4
+(x, y) = [3, 4]
+print(x, y) #: 3 4
+[x, y] = [1, 2]
+print(x, y) #: 1 2
+[x, y] = (4, 3)
+print(x, y) #: 4 3
+
+l = list(iter(range(10)))
+[a, b, *lx, c, d] = l
+print(a, b, lx, c, d) #: 0 1 [2, 3, 4, 5, 6, 7] 8 9
+a, b, *lx = l
+print(a, b, lx) #: 0 1 [2, 3, 4, 5, 6, 7, 8, 9]
+*lx, a, b = l
+print(lx, a, b) #: [0, 1, 2, 3, 4, 5, 6, 7] 8 9
+*xz, a, b = (1, 2, 3, 4, 5)
+print(xz, a, b) #: (1, 2, 3) 4 5
+(*ex,) = [1, 2, 3]
+print(ex) #: [1, 2, 3]
+
+#%% assign_str
+sa, sb = 'XY'
+print(sa, sb) #: X Y
+(sa, sb), sc = 'XY', 'Z'
+print(sa, sb, sc) #: X Y Z
+sa, *la = 'X'
+print(sa, la, 1) #: X [] 1
+sa, *la = 'XYZ'
+print(sa, la) #: X ['Y', 'Z']
+(xa,xb), *xc, xd = [1,2],'this'
+print(xa, xb, xc, xd) #: 1 2 () this
+(a, b), (sc, *sl) = [1,2], 'this'
+print(a, b, sc, sl) #: 1 2 t ['h', 'i', 's']
+
+#%% assign_index_dot,barebones
+class Foo:
+    a: int = 0
+    def __setitem__(self, i: int, t: int):
+        self.a += i * t
+f = Foo()
+f.a = 5
+print(f.a) #: 5
+f[3] = 5
+print(f.a) #: 20
+f[1] = -8
+print(f.a) #: 12
+
+def foo():
+    print('foo')
+    return 0
+v = [0]
+v[foo()] += 1
+#: foo
+print(v)
+#: [1]
+
+#%% assign_err_1,barebones
+a, *b, c, *d = 1,2,3,4,5 #! multiple starred expressions in assignment
+
+#%% assign_err_4,barebones
+*x = range(5) #! cannot assign to given expression
+
+#%% assign_err_5_NOPY,barebones
+# TODO in Python, this is a ValueError
+try:
+    (sa, sb), sc = 'XYZ'
+except IndexError:
+    print("assign failed") #: assign failed
+
+#%% assign_comprehension
+g = ((b, a, c) for a, *b, c in ['ABC','DEEEEF','FHGIJ'])
+x, *q, y = list(g)
+print(x, y, q) #: (['B'], 'A', 'C') (['H', 'G', 'I'], 'F', 'J') [(['E', 'E', 'E', 'E'], 'D', 'F')]
+
+#%% assign_shadow,barebones
+a = 5
+print(a) #: 5
+a : str = 's'
+print(a) #: s
+
+#%% assign_err_must_exist,barebones
+a = 1
+def foo():
+    a += 2 #! local variable 'a' referenced before assignment
+foo()
+
+#%% assign_rename,barebones
+y = int
+z = y(5)
+print(z) #: 5
+
+def foo(x): return x + 1
+x = foo
+print(x(1)) #: 2
+
+#%% assign_err_6,barebones
+x = bar #! name 'bar' is not defined
+
+#%% assign_err_7,barebones
+foo() += bar #! cannot assign to given expression
+
+#%% assign_update_eq,barebones
+a = 5
+a += 3
+print(a) #: 8
+a -= 1
+print(a) #: 7
+
+@dataclass
+class Foo:
+    a: int
+    def __add__(self, i: int):
+        print('add!')
+        return Foo(self.a + i)
+    def __iadd__(self, i: int):
+        print('iadd!')
+        self.a += i
+        return self
+    def __str__(self):
+        return str(self.a)
+f = Foo(3)
+print(f + 2) #: add!
+#: 5
+f += 6 #: iadd!
+print(f) #: 9
+
+#%% del,barebones
+a = 5
+del a
+print(a) #! name 'a' is not defined
+
+#%% del_index,barebones
+y = [1, 2]
+del y[0]
+print(y) #: [2]
+
+#%% del_error,barebones
+a = [1]
+del a.ptr #! cannot delete given expression
+
+#%% assign_underscore,barebones
+_ = 5
+_ = 's'
+
+#%% assign_optional_NOPY,barebones
+a = None
+print(a)  #: None
+a = 5
+print(a)  #: 5
+
+b: Optional[float] = Optional[float](6.5)
+c: Optional[float] = 5.5
+print(b, c) #: 6.5 5.5
+
+#%% assign_type_alias,barebones
+I = int
+print(I(5)) #: 5
+
+L = dict[int, str]
+l = L()
+print(l) #: {}
+l[5] = 'haha'
+print(l) #: {5: 'haha'}
+
+#%% assign_type_annotation,barebones
+a: List[int] = []
+print(a)  #: []
+
+#%% assign_type_err,barebones
+a = 5
+if 1:
+    a = 3.3  #! 'float' does not match expected type 'int'
+a
+
+#%% assign_atomic_NOPY,barebones
+i = 1
+f = 1.1
+
+@llvm
+def xchg(d: Ptr[int], b: int) -> None:
+    %tmp = atomicrmw xchg i64* %d, i64 %b seq_cst
+    ret {} {}
+@llvm
+def aadd(d: Ptr[int], b: int) -> int:
+    %tmp = atomicrmw add i64* %d, i64 %b seq_cst
+    ret i64 %tmp
+@llvm
+def amin(d: Ptr[int], b: int) -> int:
+    %tmp = atomicrmw min i64* %d, i64 %b seq_cst
+    ret i64 %tmp
+@llvm
+def amax(d: Ptr[int], b: int) -> int:
+    %tmp = atomicrmw max i64* %d, i64 %b seq_cst
+    ret i64 %tmp
+def min(a, b): return a if a < b else b
+def max(a, b): return a if a > b else b
+
+@extend
+class int:
+    def __atomic_xchg__(self: Ptr[int], i: int):
+        print('atomic:', self[0], '<-', i)
+        xchg(self, i)
+    def __atomic_add__(self: Ptr[int], i: int):
+        print('atomic:', self[0], '+=', i)
+        return aadd(self, i)
+    def __atomic_min__(self: Ptr[int], b: int):
+        print('atomic:', self[0], '<?=', b)
+        return amin(self, b)
+    def __atomic_max__(self: Ptr[int], b: int):
+        print('atomic:', self[0], '>?=', b)
+        return amax(self, b)
+
+@atomic
+def foo(x):
+    global i, f
+
+    i += 1 #: atomic: 1 += 1
+    print(i) #: 2
+    i //= 2 #: atomic: 2 <- 1
+    print(i) #: 1
+    i = 3 #: atomic: 1 <- 3
+    print(i) #: 3
+    i = min(i, 10) #: atomic: 3 <?= 10
+    print(i) #: 3
+    i = max(i, 10) #: atomic: 3 >?= 10
+    print(i) #: 10
+    i = max(20, i) #: atomic: 10 <- 20
+    print(i) #: 20
+
+    f += 1.1
+    f = 3.3
+    f = max(f, 5.5)
+foo(1)
+print(i, f) #: 20 5.5
+
+#%% assign_atomic_real_NOPY
+i = 1
+f = 1.1
+@atomic
+def foo(x):
+    global i, f
+
+    i += 1
+    print(i) #: 2
+    i //= 2
+    print(i) #: 1
+    i = 3
+    print(i) #: 3
+    i = min(i, 10)
+    print(i) #: 3
+    i = max(i, 10)
+    print(i) #: 10
+
+    f += 1.1
+    f = 3.3
+    f = max(f, 5.5)
+foo(1)
+print(i, f) #: 10 5.5
+
+#%% assign_member_NOPY,barebones
+class Foo:
+    x: Optional[int] = None
+f = Foo()
+print(f.x) #: None
+f.x = 5
+print(f.x) #: 5
+
+fo = Optional(Foo())
+fo.x = 6
+print(fo.x) #: 6
+
+#%% assign_member_err_1_NOPY,barebones
+class Foo:
+    x: Optional[int] = None
+Foo().y = 5 #! 'Foo' object has no attribute 'y'
+
+#%% assign_member_err_2_NOPY,barebones
+@tuple
+class Foo:
+    x: Optional[int] = None
+Foo().x = 5 #! cannot modify tuple attributes
+
+#%% assign_wrappers_NOPY,barebones
+a = 1.5
+print(a) #: 1.5
+if 1:
+    a = 1
+print(a, a.__class__.__name__) #: 1 float
+
+a: Optional[int] = None
+if 1:
+    a = 5
+print(a.__class__.__name__, a) #: Optional[int] 5
+
+b = 5
+c: Optional[int] = 6
+if 1:
+    b = c
+print(b.__class__.__name__, c.__class__.__name__, b, c) #: int Optional[int] 6 6
+
+z: Generator[int] = [1, 2]
+print(z.__class__.__name__) #: Generator[int]
+
+zx: float = 1
+print(zx.__class__.__name__, zx) #: float 1
+
+def test(v: Optional[int]):
+    v: int = v if v is not None else 3
+    print(v.__class__.__name__)
+test(5) #: int
+test(None) #: int
+
+# %%

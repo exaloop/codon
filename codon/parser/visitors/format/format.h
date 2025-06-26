@@ -23,30 +23,39 @@ class FormatVisitor : public CallbackASTVisitor<std::string, std::string> {
   std::string header, footer, nl;
   std::string typeStart, typeEnd;
   std::string nodeStart, nodeEnd;
+  std::string stmtStart, stmtEnd;
   std::string exprStart, exprEnd;
   std::string commentStart, commentEnd;
   std::string keywordStart, keywordEnd;
+  std::string literalStart, literalEnd;
 
   Cache *cache;
 
 private:
-  template <typename T, typename... Ts> std::string renderExpr(T &&t, Ts &&...args) {
-    std::string s;
-    return fmt::format("{}{}{}{}{}{}", exprStart, s, nodeStart, fmt::format(args...),
-                       nodeEnd, exprEnd);
+  template <typename T, typename... Ts>
+  std::string renderExpr(T &&t, const char *fmt, Ts &&...args) {
+    std::string s = t->getType()
+                        ? fmt::format("{}{}{}", typeStart,
+                                      anchor(t->getType()->realizedName()), typeEnd)
+                        : "";
+    return fmt::format("{}{}{}{}{}{}", exprStart, nodeStart,
+                       fmt::format(fmt::runtime(fmt), args...), nodeEnd, s, exprEnd);
   }
-  template <typename... Ts> std::string renderComment(Ts &&...args) {
-    return fmt::format("{}{}{}", commentStart, fmt::format(args...), commentEnd);
+  template <typename... Ts> std::string renderComment(const char *fmt, Ts &&...args) {
+    return fmt::format("{}{}{}", commentStart, fmt::format(fmt::runtime(fmt), args...),
+                       commentEnd);
   }
   std::string pad(int indent = 0) const;
   std::string newline() const;
   std::string keyword(const std::string &s) const;
+  std::string literal(const std::string &s) const;
+  static std::string anchor_root(const std::string &s);
+  static std::string anchor(const std::string &s);
 
 public:
   FormatVisitor(bool html, Cache *cache = nullptr);
-  std::string transform(const ExprPtr &e) override;
-  std::string transform(const Expr *expr);
-  std::string transform(const StmtPtr &stmt) override;
+  std::string transform(Expr *e) override;
+  std::string transform(Stmt *stmt) override;
   std::string transform(Stmt *stmt, int indent);
 
   template <typename T>
@@ -56,8 +65,8 @@ public:
     return fmt::format("{}{}{}", t.header, t.transform(stmt), t.footer);
   }
 
-  void defaultVisit(Expr *e) override { error("cannot format {}", *e); }
-  void defaultVisit(Stmt *e) override { error("cannot format {}", *e); }
+  void defaultVisit(Expr *e) override { seqassertn(false, "cannot format {}", *e); }
+  void defaultVisit(Stmt *e) override { seqassertn(false, "cannot format {}", *e); }
 
 public:
   void visit(NoneExpr *) override;
@@ -73,7 +82,6 @@ public:
   void visit(SetExpr *) override;
   void visit(DictExpr *) override;
   void visit(GeneratorExpr *) override;
-  void visit(DictGeneratorExpr *) override;
   void visit(InstantiateExpr *expr) override;
   void visit(IfExpr *) override;
   void visit(UnaryExpr *) override;
@@ -100,6 +108,7 @@ public:
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(AssertStmt *) override;
+  void visit(AwaitStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   void visit(IfStmt *) override;
@@ -112,6 +121,8 @@ public:
   void visit(ClassStmt *) override;
   void visit(YieldFromStmt *) override;
   void visit(WithStmt *) override;
+  void visit(CommentStmt *) override;
+  void visit(DirectiveStmt *) override;
 
 public:
   friend std::ostream &operator<<(std::ostream &out, const FormatVisitor &c) {
@@ -119,11 +130,11 @@ public:
   }
 
   using CallbackASTVisitor<std::string, std::string>::transform;
-  template <typename T> std::string transform(const std::vector<T> &ts) {
+  template <typename T> std::string transformItems(const T &ts) {
     std::vector<std::string> r;
     for (auto &e : ts)
       r.push_back(transform(e));
-    return fmt::format("{}", fmt::join(r, ", "));
+    return fmt::format("{}", join(r, ", "));
   }
 };
 

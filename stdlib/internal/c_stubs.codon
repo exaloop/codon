@@ -220,11 +220,6 @@ def log(a: float) -> float:
 
 @pure
 @C
-def log2(a: float) -> float:
-    pass
-
-@pure
-@C
 def log10(a: float) -> float:
     pass
 
@@ -531,11 +526,6 @@ def log1pf(a: float32) -> float32:
 @pure
 @C
 def truncf(a: float32) -> float32:
-    pass
-
-@pure
-@C
-def log2f(a: float32) -> float32:
     pass
 
 @pure

@@ -12,7 +12,7 @@ class EnvMap:
     _map: Dict[str, str]
 
     def __new__() -> EnvMap:
-        return (Dict[str, str](),)
+        return EnvMap(Dict[str, str]())
 
     def _init_if_needed(self):
         if len(self._map) == 0:

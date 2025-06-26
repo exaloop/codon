@@ -10,7 +10,7 @@ def sorted(
     v: Generator[T],
     key=Optional[int](),
     reverse: bool = False,
-    algorithm: Static[str] = "auto",
+    algorithm: Literal[str] = "auto",
     T: type,
 ) -> List[T]:
     """
@@ -41,7 +41,7 @@ def _is_pdq_compatible(x):
         return False
 
 def _sort_list(
-    self: List[T], key: Callable[[T], S], algorithm: Static[str], T: type, S: type
+    self: List[T], key: CallableTrait[[T], S], algorithm: Literal[str], T: type, S: type
 ):
     if algorithm == "tim" or algorithm == "auto":
         tim_sort_inplace(self, key)
@@ -62,7 +62,7 @@ class List:
         self,
         key=Optional[int](),
         reverse: bool = False,
-        algorithm: Static[str] = "auto",
+        algorithm: Literal[str] = "auto",
     ):
         if isinstance(key, Optional):
             if algorithm == "auto":

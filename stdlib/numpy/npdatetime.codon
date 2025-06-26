@@ -2,28 +2,29 @@
 
 import datetime
 import math
+import internal.static as static
 
-_DATETIME_NAT: Static[int] = -9_223_372_036_854_775_808
-_DATETIME_MAX_ISO8601_STRLEN: Static[int] = (21 + 3 * 5 + 1 + 3 * 6 + 6 + 1)
+_DATETIME_NAT: Literal[int] = -9_223_372_036_854_775_808
+_DATETIME_MAX_ISO8601_STRLEN: Literal[int] = (21 + 3 * 5 + 1 + 3 * 6 + 6 + 1)
 
-_FR_ERROR: Static[int] = -1  # error or undetermined
-_FR_Y: Static[int] = 0  # Years
-_FR_M: Static[int] = 1  # Months
-_FR_W: Static[int] = 2  # Weeks
-_FR_D: Static[int] = 4  # Days
-_FR_h: Static[int] = 5  # hours
-_FR_m: Static[int] = 6  # minutes
-_FR_s: Static[int] = 7  # seconds
-_FR_ms: Static[int] = 8  # milliseconds
-_FR_us: Static[int] = 9  # microseconds
-_FR_ns: Static[int] = 10  # nanoseconds
-_FR_ps: Static[int] = 11  # picoseconds
-_FR_fs: Static[int] = 12  # femtoseconds
-_FR_as: Static[int] = 13  # attoseconds
-_FR_GENERIC: Static[int] = 14  # unbound units, can convert to anything
+_FR_ERROR: Literal[int] = -1  # error or undetermined
+_FR_Y: Literal[int] = 0  # Years
+_FR_M: Literal[int] = 1  # Months
+_FR_W: Literal[int] = 2  # Weeks
+_FR_D: Literal[int] = 4  # Days
+_FR_h: Literal[int] = 5  # hours
+_FR_m: Literal[int] = 6  # minutes
+_FR_s: Literal[int] = 7  # seconds
+_FR_ms: Literal[int] = 8  # milliseconds
+_FR_us: Literal[int] = 9  # microseconds
+_FR_ns: Literal[int] = 10  # nanoseconds
+_FR_ps: Literal[int] = 11  # picoseconds
+_FR_fs: Literal[int] = 12  # femtoseconds
+_FR_as: Literal[int] = 13  # attoseconds
+_FR_GENERIC: Literal[int] = 14  # unbound units, can convert to anything
 
-_DATETIME_NUMUNITS: Static[int] = (_FR_GENERIC + 1)
-_DATETIME_DEFAULTUNIT: Static[int] = _FR_GENERIC
+_DATETIME_NUMUNITS: Literal[int] = (_FR_GENERIC + 1)
+_DATETIME_DEFAULTUNIT: Literal[int] = _FR_GENERIC
 
 @tuple
 class _time_t:
@@ -38,8 +39,9 @@ class _time_t:
     isdst: i8
 
     def __new__() -> _time_t:
-        return (i16(0), i16(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0),
-                i8(0))
+        return _time_t(
+            i16(0), i16(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0)
+        )
 
 @pure
 @llvm
@@ -90,7 +92,7 @@ def _is_leapyear(year: int):
     return year & 0x3 == 0 and (_cmod(year, 100) != 0 or _cmod(year, 400) == 0)
 
 def _days_to_yearsdays(days: int):
-    days_per_400years: Static[int] = 400 * 365 + 100 - 4 + 1
+    days_per_400years: Literal[int] = 400 * 365 + 100 - 4 + 1
     days = days - (365 * 30 + 7)
     div, days = _extract_unit_64(days, days_per_400years)
     year = 400 * div
@@ -161,22 +163,22 @@ def _get_localtime(ts: int = -1):
         raise OSError("Failed to get local time")
     return tm
 
-def _unit_error(base: Static[str]):
+def _unit_error(base: Literal[str]):
     compile_error("Invalid datetime unit in metadata string: \"[" + base +
                   "]\"")
 
-def _validate_base(base: Static[str]):
+def _validate_base(base: Literal[str]):
     if (base != "Y" and base != "M" and base != "W" and base != "D"
             and base != "h" and base != "m" and base != "s" and base != "ms"
             and base != "us" and base != "ns" and base != "ps" and base != "fs"
             and base != "as" and base != "generic"):
         _unit_error(base)
 
-def _validate_num(num: Static[int]):
+def _validate_num(num: Literal[int]):
     if num <= 0 or num > 0x7fffffff:
         compile_error("Invalid datetime number (out of range 1..0x7fffffff)")
 
-def _base_code(base: Static[str]):
+def _base_code(base: Literal[str]):
     if base == "Y":
         return _FR_Y
     elif base == "M":
@@ -241,7 +243,7 @@ def _base_code_nonstatic(base: str):
         raise ValueError(
             f"Invalid datetime unit in metadata string: \"[{base}]\"")
 
-def _base_str(base: Static[str]):
+def _base_str(base: Literal[str]):
     if base == "Y":
         return "years"
     elif base == "M":
@@ -274,16 +276,16 @@ def _base_str(base: Static[str]):
         _unit_error(base)
 
 class _Meta:
-    base: Static[str]
-    num: Static[int]
+    base: Literal[str]
+    num: Literal[int]
 
 class _StaticIntWrapper:
-    n: Static[int]
+    n: Literal[int]
 
 class _StaticStrWrapper:
-    s: Static[str]
+    s: Literal[str]
 
-def _num_digits(s: Static[str]):
+def _num_digits(s: Literal[str]):
     if s == "":
         return _StaticIntWrapper[0]()
 
@@ -292,16 +294,16 @@ def _num_digits(s: Static[str]):
         s[0] == "4" or s[0] == "5" or
         s[0] == "6" or s[0] == "7" or
         s[0] == "8" or s[0] == "9"):
-        rest: Static[int] = _num_digits(s[1:]).n
+        rest: Literal[int] = _num_digits(s[1:]).n
         return _StaticIntWrapper[rest + 1]()
 
     return _StaticIntWrapper[0]()
 
-def _parse_static_str(s: Static[str]):
+def _parse_static_str(s: Literal[str]):
     if s == "":
         return _StaticIntWrapper[0]()
     else:
-        rest: Static[int] = _parse_static_str(s[:-1]).n * 10
+        rest: Literal[int] = _parse_static_str(s[:-1]).n * 10
 
         if s[-1] == "0":
             return _StaticIntWrapper[rest + 0]()
@@ -326,16 +328,16 @@ def _parse_static_str(s: Static[str]):
         else:
             compile_error("invalid digit: " + s[-1])
 
-def _parse_datetime_helper(s: Static[str], tlen: Static[int]):
+def _parse_datetime_helper(s: Literal[str], tlen: Literal[int]):
     if s[-1] != "]":
         compile_error("data type '" + s + "' not understood")
 
-    num_digits: Static[int] = _num_digits(s[tlen:]).n
-    num: Static[int] = _parse_static_str(s[tlen:tlen + num_digits]).n if num_digits > 0 else 1
-    base: Static[str] = s[tlen + num_digits:-1]
+    num_digits: Literal[int] = _num_digits(s[tlen:]).n
+    num: Literal[int] = _parse_static_str(s[tlen:tlen + num_digits]).n if num_digits > 0 else 1
+    base: Literal[str] = s[tlen + num_digits:-1]
     return _Meta[base, num]()
 
-def _min_base(base1: Static[str], base2: Static[str]):
+def _min_base(base1: Literal[str], base2: Literal[str]):
     if base1 == base2:
         return _StaticStrWrapper[base1]()
     if base1 == "generic":
@@ -656,7 +658,7 @@ def _min_base(base1: Static[str], base2: Static[str]):
         return _StaticStrWrapper["as"]()
     compile_error("unknown units: " + base1 + " and/or " + base2)
 
-def _base_factor(base: Static[str]):
+def _base_factor(base: Literal[str]):
     if base == "Y":
         return _StaticIntWrapper[1]()
     if base == "M":
@@ -687,7 +689,7 @@ def _base_factor(base: Static[str]):
         return _StaticIntWrapper[0]()
     compile_error("[internal error] no factor for base: " + base)
 
-def _next_base(base: Static[str]):
+def _next_base(base: Literal[str]):
     if base == "Y":
         return _StaticStrWrapper["M"]()
     if base == "M":
@@ -718,12 +720,12 @@ def _next_base(base: Static[str]):
         return _StaticStrWrapper["<invalid>"]()
     compile_error("[internal error] no next base for: " + base)
 
-def _get_units_factor(bigbase: Static[str],
-                      littlebase: Static[str],
-                      factor: Static[int] = 1):
-    minbase: Static[str] = _min_base(bigbase, littlebase).s
+def _get_units_factor(bigbase: Literal[str],
+                      littlebase: Literal[str],
+                      factor: Literal[int] = 1):
+    minbase: Literal[str] = _min_base(bigbase, littlebase).s
     if bigbase != littlebase and minbase == littlebase:
-        next_factor: Static[int] = factor * _base_factor(bigbase).n
+        next_factor: Literal[int] = factor * _base_factor(bigbase).n
         if next_factor & 0xff00000000000000 != 0:
             compile_error("Integer overflow getting a common metadata divisor")
         return _get_units_factor(
@@ -731,16 +733,16 @@ def _get_units_factor(bigbase: Static[str],
     else:
         return _StaticIntWrapper[factor]()
 
-def _static_gcd(x: Static[int], y: Static[int]):
+def _static_gcd(x: Literal[int], y: Literal[int]):
     if y == 0:
         return _StaticIntWrapper[x]()
     else:
         return _static_gcd(y, x % y)
 
-def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Static[int],
-              strict2: Static[int]):
+def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Literal[bool],
+              strict2: Literal[bool]):
 
-    def incompatible_units(base1: Static[str], base2: Static[str]):
+    def incompatible_units(base1: Literal[str], base2: Literal[str]):
         compile_error(
             "Cannot get a common metadata divisor for Numpy datetime metadata ["
             + base1 + "] and [" + base2 +
@@ -749,9 +751,9 @@ def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Static[int],
     def overflow():
         compile_error("Integer overflow getting a common metadata divisor")
 
-    def make_meta(base: Static[str], num1: Static[int], num2: Static[int],
-                  f1: Static[int], f2: Static[int]):
-        num: Static[int] = _static_gcd(num1 * f1, num2 * f2).n
+    def make_meta(base: Literal[str], num1: Literal[int], num2: Literal[int],
+                  f1: Literal[int], f2: Literal[int]):
+        num: Literal[int] = _static_gcd(num1 * f1, num2 * f2).n
         if num <= 0 or num > 0x7fffffff:
             overflow()
         return _Meta[base, num]()
@@ -765,12 +767,12 @@ def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Static[int],
     if meta1.base == meta2.base:
         return make_meta(meta1.base, meta1.num, meta2.num, 1, 1)
 
-    f_12: Static[int] = _get_units_factor(meta1.base, meta2.base).n
-    f_21: Static[int] = _get_units_factor(meta2.base, meta1.base).n
-    f1: Static[int] = f_12 if (
+    f_12: Literal[int] = _get_units_factor(meta1.base, meta2.base).n
+    f_21: Literal[int] = _get_units_factor(meta2.base, meta1.base).n
+    f1: Literal[int] = f_12 if (
         _min_base(meta1.base, meta2.base).s == meta2.base
         and meta1.base != meta2.base) else 1
-    f2: Static[int] = f_21 if (
+    f2: Literal[int] = f_21 if (
         _min_base(meta1.base, meta2.base).s == meta1.base
         and meta1.base != meta2.base) else 1
 
@@ -804,7 +806,7 @@ def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Static[int],
 
 def _can_cast_units(src_unit: int,
                     dst_unit: int,
-                    casting: Static[str] = 'same_kind'):
+                    casting: Literal[str] = 'same_kind'):
     if casting == 'unsafe':
         return True
     elif casting == 'same_kind':
@@ -828,14 +830,14 @@ class DatetimeMetaData:
 @tuple
 class timedelta64:
     value: int
-    base: Static[str]
-    num: Static[int]
+    base: Literal[str]
+    num: Literal[int]
 
 @tuple
 class datetime64:
     value: int
-    base: Static[str]
-    num: Static[int]
+    base: Literal[str]
+    num: Literal[int]
 
 class datetimestruct:
     year: int
@@ -848,7 +850,7 @@ class datetimestruct:
     ps: i32
     as_: i32
 
-def _parse_datetime_type(s: Static[str]):
+def _parse_datetime_type(s: Literal[str]):
     if s[:11] == "datetime64[":
         meta = _parse_datetime_helper(s, 11)
         return datetime64[meta.base, meta.num]()
@@ -867,8 +869,8 @@ def _parse_datetime_type(s: Static[str]):
 def _promote(T1: type, T2: type):
     meta1 = _Meta[T1.base, T1.num]()
     meta2 = _Meta[T2.base, T2.num]()
-    strict1: Static[int] = isinstance(T1, timedelta64)
-    strict2: Static[int] = isinstance(T2, timedelta64)
+    strict1: Literal[bool] = isinstance(T1, timedelta64)
+    strict2: Literal[bool] = isinstance(T2, timedelta64)
     meta_out = _meta_gcd(meta1, meta2, strict1, strict2)
 
     if isinstance(T1, datetime64) or isinstance(T2, datetime64):
@@ -895,9 +897,9 @@ def _coerce(d1, d2):
 class DatetimeMetaData:
 
     def __new__(base: int, num: int = 1) -> DatetimeMetaData:
-        return (i32(base), i32(num))
+        return DatetimeMetaData(i32(base), i32(num))
 
-    def __new__(base: Static[str], num: int = 1) -> DatetimeMetaData:
+    def __new__(base: Literal[str], num: int = 1) -> DatetimeMetaData:
         return DatetimeMetaData(base=_base_code(base), num=num)
 
     def __new__(dt: datetime64):
@@ -1012,47 +1014,47 @@ class DatetimeMetaData:
 class timedelta64:
 
     def __new__() -> timedelta64[base, num]:
-        return (0, )
+        return timedelta64[base, num](0)
 
     def __new__(value: int,
-                base: Static[str],
-                num: Static[int]) -> timedelta64[base, num]:
+                base: Literal[str],
+                num: Literal[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        return (value, )
+        return superf(value)
 
     def __new__(td: timedelta64,
-                base: Static[str],
-                num: Static[int]) -> timedelta64[base, num]:
+                base: Literal[str],
+                num: Literal[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
         return td._cast(timedelta64[base, num])
 
     def __new__(s: str,
-                base: Static[str],
-                num: Static[int]) -> timedelta64[base, num]:
+                base: Literal[str],
+                num: Literal[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
         if (len(s) == 3 and (s.ptr[0] == byte(78) or s.ptr[0] == byte(110))
                 and (s.ptr[1] == byte(65) or s.ptr[1] == byte(97))
                 and (s.ptr[2] == byte(116) or s.ptr[2] == byte(84))):
-            return (_DATETIME_NAT, )
+            return timedelta64[base, num](_DATETIME_NAT)
         else:
-            return (int(s), )
+            return timedelta64[base, num](int(s))
 
-    def __new__(value: int, unit: Static[str]):
+    def __new__(value: int, unit: Literal[str]):
         TD = _parse_datetime_type("timedelta64[" + unit + "]")
         return timedelta64(value, TD.base, TD.num)
 
-    def __new__(td: timedelta64, unit: Static[str] = "generic"):
+    def __new__(td: timedelta64, unit: Literal[str] = "generic"):
         TD = _parse_datetime_type("timedelta64[" + unit + "]")
         return timedelta64(td, TD.base, TD.num)
 
-    def __new__(s: str, unit: Static[str] = "generic"):
+    def __new__(s: str, unit: Literal[str] = "generic"):
         TD = _parse_datetime_type("timedelta64[" + unit + "]")
         return timedelta64(s, TD.base, TD.num)
 
-    def __new__(td: datetime.timedelta, unit: Static[str] = "us"):
+    def __new__(td: datetime.timedelta, unit: Literal[str] = "us"):
         TD = _parse_datetime_type("timedelta64[" + unit + "]")
         return timedelta64(td._microseconds, "us", 1)._cast(type(TD))
 
@@ -1434,50 +1436,50 @@ class timedelta64:
 class datetime64:
 
     def __new__() -> datetime64[base, num]:
-        return (0, )
+        return datetime64[base, num](0)
 
     def __new__(value: int,
-                base: Static[str],
-                num: Static[int]) -> datetime64[base, num]:
+                base: Literal[str],
+                num: Literal[int]) -> datetime64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        return (value, )
+        return superf(value)
 
     def __new__(value: datetime64,
-                base: Static[str],
-                num: Static[int]) -> datetime64[base, num]:
+                base: Literal[str],
+                num: Literal[int]) -> datetime64[base, num]:
         _validate_base(base)
         _validate_num(num)
         return value._cast(datetime64[base, num])
 
     def __new__(s: str,
-                base: Static[str],
-                num: Static[int]) -> datetime64[base, num]:
+                base: Literal[str],
+                num: Literal[int]) -> datetime64[base, num]:
         _validate_base(base)
         _validate_num(num)
         meta = DatetimeMetaData(base=base, num=num)
         dts = datetimestruct(s)
-        return (dts.to_datetime64(meta), )
+        return datetime64[base, num](dts.to_datetime64(meta))
 
-    def __new__(value: int, unit: Static[str]):
+    def __new__(value: int, unit: Literal[str]):
         DT = _parse_datetime_type("datetime64[" + unit + "]")
         return datetime64(value, DT.base, DT.num)
 
-    def __new__(dt: datetime64, unit: Static[str]):
+    def __new__(dt: datetime64, unit: Literal[str]):
         DT = _parse_datetime_type("datetime64[" + unit + "]")
         return datetime64(dt, DT.base, DT.num)
 
-    def __new__(s: str, unit: Static[str] = "us"):
+    def __new__(s: str, unit: Literal[str] = "us"):
         DT = _parse_datetime_type("datetime64[" + unit + "]")
         return datetime64(s, DT.base, DT.num)
 
-    def __new__(dt: datetime.datetime, unit: Static[str] = "us"):
+    def __new__(dt: datetime.datetime, unit: Literal[str] = "us"):
         DT = _parse_datetime_type("datetime64[" + unit + "]")
         meta = DatetimeMetaData(base=DT.base, num=DT.num)
         dts = datetimestruct(dt)
         return datetime64(dts.to_datetime64(meta), DT.base, DT.num)
 
-    def __new__(dt: datetime.date, unit: Static[str] = "D"):
+    def __new__(dt: datetime.date, unit: Literal[str] = "D"):
         DT = _parse_datetime_type("datetime64[" + unit + "]")
         meta = DatetimeMetaData(base=DT.base, num=DT.num)
         dts = datetimestruct(datetime.datetime(year=dt.year, month=dt.month, day=dt.day))
@@ -2050,10 +2052,10 @@ class datetimestruct:
             return bool(_C.isdigit(i32(int(b))))
 
         def strcmp(str_: cobj, len_: int, vals):
-            if len_ != staticlen(vals):
+            if len_ != static.len(vals):
                 return False
 
-            for i in staticrange(staticlen(vals)):
+            for i in static.range(static.len(vals)):
                 if tolower(str_[i]) != byte(vals[i]):
                     return False
 
@@ -2618,14 +2620,14 @@ class datetimestruct:
 
 # Busday functionality
 
-_BUSDAY_FORWARD: Static[int] = 0
-_BUSDAY_FOLLOWING: Static[int] = _BUSDAY_FORWARD
-_BUSDAY_BACKWARD: Static[int] = 1
-_BUSDAY_PRECEDING: Static[int] = _BUSDAY_BACKWARD
-_BUSDAY_MODIFIEDFOLLOWING: Static[int] = 2
-_BUSDAY_MODIFIEDPRECEDING: Static[int] = 3
-_BUSDAY_NAT: Static[int] = 4
-_BUSDAY_RAISE: Static[int] = 5
+_BUSDAY_FORWARD: Literal[int] = 0
+_BUSDAY_FOLLOWING: Literal[int] = _BUSDAY_FORWARD
+_BUSDAY_BACKWARD: Literal[int] = 1
+_BUSDAY_PRECEDING: Literal[int] = _BUSDAY_BACKWARD
+_BUSDAY_MODIFIEDFOLLOWING: Literal[int] = 2
+_BUSDAY_MODIFIEDPRECEDING: Literal[int] = 3
+_BUSDAY_NAT: Literal[int] = 4
+_BUSDAY_RAISE: Literal[int] = 5
 
 @tuple
 class _weekmask:

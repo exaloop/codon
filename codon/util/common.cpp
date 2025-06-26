@@ -40,10 +40,13 @@ void compilationMessage(const std::string &header, const std::string &msg,
   }
   if (line > 0)
     fmt::print(out, ":{}", line);
-  if (col > 0)
-    fmt::print(out, ":{}", col);
-  if (len > 0)
-    fmt::print(out, "-{}", col + len);
+  if (col > 0) {
+    fmt::print(out, " ({}", col);
+    if (len > 0)
+      fmt::print(out, "-{})", col + len);
+    else
+      fmt::print(out, ")");
+  }
   if (!file.empty())
     fmt::print(out, ": ");
   fmt::print(out, "{}\033[1m {}\033[0m{}\n", header, msg,

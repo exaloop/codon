@@ -1,14 +1,16 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 import util
+import internal.static as static
+
 from .ndarray import *
 from .routines import *
 
 def _multiindex(indexes, shape, index: int = 0):
-    if staticlen(indexes) != staticlen(shape):
+    if static.len(indexes) != static.len(shape):
         compile_error("[internal error] bad multi-index")
 
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -22,7 +24,7 @@ def _multiindex(indexes, shape, index: int = 0):
         return (idx.adjust_indices(n), *rest)
 
 def _keep_axes(indexes, index: int = 0):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -35,7 +37,7 @@ def _keep_axes(indexes, index: int = 0):
 
 def _base_offset(mindices, strides):
     offset = 0
-    for i in staticrange(staticlen(mindices)):
+    for i in static.range(static.len(mindices)):
         offset += mindices[i][0] * strides[i]
     return offset
 
@@ -46,7 +48,7 @@ def _new_strides(mindex, strides, keep):
     return tuple(mindex[i][2] * strides[i] for i in keep)
 
 def _extract_special(indexes):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return (), ()
 
     idx = indexes[0]
@@ -59,11 +61,11 @@ def _extract_special(indexes):
     else:
         return rest_newaxis, rest_ellipsis
 
-def _expand_ellipsis(indexes, n: Static[int], k: Static[int] = 1):
+def _expand_ellipsis(indexes, n: Literal[int], k: Literal[int] = 1):
     if k == 0:
         return indexes
 
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -75,7 +77,7 @@ def _expand_ellipsis(indexes, n: Static[int], k: Static[int] = 1):
     else:
         return (idx,) + rest
 
-def _expand_remainder(indexes, n: Static[int]):
+def _expand_remainder(indexes, n: Literal[int]):
     if n > 0:
         s = slice(None, None, None)
         return indexes + ((s,) * n)
@@ -83,7 +85,7 @@ def _expand_remainder(indexes, n: Static[int]):
         return indexes
 
 def _expand_newaxis(indexes, shape, strides):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return (), (), ()
 
     idx = indexes[0]
@@ -95,7 +97,7 @@ def _expand_newaxis(indexes, shape, strides):
         return (idx, *rest_indexes), (shape[0], *rest_shape), (strides[0], *rest_strides)
 
 def _extract_sequences(indexes):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -120,7 +122,7 @@ def _adv_idx_convert(idx):
         compile_error("unsupported index type: " + type(idx).__name__)
 
 def _adv_idx_replace_bools(indexes):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -145,7 +147,7 @@ def _adv_idx_length(idx, dim: int):
         compile_error("[internal error]: bad input type")
 
 def _adv_idx_iter_non_arrays(indexes, shape):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         yield ()
     else:
         idx = indexes[0]
@@ -154,15 +156,15 @@ def _adv_idx_iter_non_arrays(indexes, shape):
 
         k = 0
         for i in range(start, stop, step):
-            if staticlen(indexes) == 1:
+            if static.len(indexes) == 1:
                 yield ((k, i),)
             else:
                 for rest in _adv_idx_iter_non_arrays(indexes[1:], shape[1:]):
                     yield ((k, i),) + rest
             k += 1
 
-def _adv_idx_gather_arrays(indexes, k: Static[int] = 0):
-    if staticlen(indexes) == 0:
+def _adv_idx_gather_arrays(indexes, k: Literal[int] = 0):
+    if static.len(indexes) == 0:
         return (), ()
 
     idx = indexes[0]
@@ -173,8 +175,8 @@ def _adv_idx_gather_arrays(indexes, k: Static[int] = 0):
     else:
         return rest, rest_where
 
-def _adv_idx_gather_non_arrays(indexes, k: Static[int] = 0):
-    if staticlen(indexes) == 0:
+def _adv_idx_gather_non_arrays(indexes, k: Literal[int] = 0):
+    if static.len(indexes) == 0:
         return (), ()
 
     idx = indexes[0]
@@ -192,7 +194,7 @@ def _adv_idx_replace_int(idx):
         return slice(None, None, None)
 
 def _adv_idx_prune_index(indexes):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -206,7 +208,7 @@ def _adv_idx_prune_index(indexes):
         return (idx,) + rest
 
 def _adv_idx_gather_none_and_int(indexes):
-    if staticlen(indexes) == 0:
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -218,7 +220,7 @@ def _adv_idx_gather_none_and_int(indexes):
         return rest
 
 def _adv_idx_eliminate_new_and_used(arr, indexes):
-    if staticlen(_adv_idx_gather_none_and_int(indexes)) == 0:
+    if static.len(_adv_idx_gather_none_and_int(indexes)) == 0:
         # nothing to do
         return arr, indexes
     else:
@@ -227,8 +229,8 @@ def _adv_idx_eliminate_new_and_used(arr, indexes):
         indexes = _adv_idx_prune_index(indexes)
         return arr, indexes
 
-def _adv_idx_build_for_contig_array(indexes, shape_from_non_arrays, arr_shape, saw_array: Static[int] = False):
-    if staticlen(indexes) == 0:
+def _adv_idx_build_for_contig_array(indexes, shape_from_non_arrays, arr_shape, saw_array: Literal[bool] = False):
+    if static.len(indexes) == 0:
         return ()
 
     idx = indexes[0]
@@ -270,29 +272,29 @@ def _bool_idx_num_true(indexes, sz: int):
 # adapted from routines
 def _broadcast_shapes(*args):
     def _largest(args):
-        if staticlen(args) == 1:
+        if static.len(args) == 1:
             return args[0]
 
         a = args[0]
         b = _largest(args[1:])
-        if staticlen(b) > staticlen(a):
+        if static.len(b) > static.len(a):
             return b
         else:
             return a
 
-    if staticlen(args) == 0:
+    if static.len(args) == 0:
         return ()
 
     t = _largest(args)
-    N: Static[int] = staticlen(t)
+    N: Literal[int] = static.len(t)
     ans = (0,) * N
     p = Ptr[int](__ptr__(ans).as_byte())
 
-    for i in staticrange(N):
+    for i in static.range(N):
         p[i] = t[i]
 
     for a in args:
-        for i in staticrange(staticlen(a)):
+        for i in static.range(static.len(a)):
             x = a[len(a) - 1 - i]
             q = p + (len(t) - 1 - i)
             y = q[0]
@@ -314,22 +316,22 @@ def _getset_advanced(arr, indexes, item, dtype: type):
     indexes = _adv_idx_replace_bools(indexes)
     newaxis_tuple, ellipsis_tuple = _extract_special(indexes)
 
-    if staticlen(ellipsis_tuple) > 1:
+    if static.len(ellipsis_tuple) > 1:
         compile_error("an index can only have a single ellipsis ('...')")
 
-    if staticlen(indexes) - staticlen(newaxis_tuple) - staticlen(ellipsis_tuple) > staticlen(arr.shape):
+    if static.len(indexes) - static.len(newaxis_tuple) - static.len(ellipsis_tuple) > static.len(arr.shape):
         compile_error("too many indices for array")
 
     indexes = _expand_ellipsis(indexes,
-                               staticlen(arr.shape)
-                                 - (staticlen(indexes)
-                                     - staticlen(newaxis_tuple)
-                                     - staticlen(ellipsis_tuple)),
-                               staticlen(ellipsis_tuple))
+                               static.len(arr.shape)
+                                 - (static.len(indexes)
+                                     - static.len(newaxis_tuple)
+                                     - static.len(ellipsis_tuple)),
+                               static.len(ellipsis_tuple))
     indexes = _expand_remainder(indexes,
-                                staticlen(arr.shape)
-                                  - staticlen(indexes)
-                                  + staticlen(newaxis_tuple))
+                                static.len(arr.shape)
+                                  - static.len(indexes)
+                                  + static.len(newaxis_tuple))
 
     # eliminate newaxis and used axes (i.e. integer indices)
     arr, indexes = _adv_idx_eliminate_new_and_used(arr, indexes)
@@ -339,19 +341,19 @@ def _getset_advanced(arr, indexes, item, dtype: type):
     index_arrays, arrays_where = _adv_idx_gather_arrays(indexes)
     arrays_bshape = _broadcast_shapes(*tuple(a.shape for a in index_arrays))
 
-    if staticlen(index_arrays) == 0:
+    if static.len(index_arrays) == 0:
         compile_error("[internal error] advanced indexing is not applicable to index")
 
     # which indices are not array-like?
     index_non_arrays, non_arrays_where = _adv_idx_gather_non_arrays(indexes)
 
     arrays_at_front = False
-    for i in staticrange(1, staticlen(arrays_where)):
+    for i in static.range(1, static.len(arrays_where)):
         if arrays_where[i] != arrays_where[i - 1] + 1:
             arrays_at_front = True
 
     shape_from_non_arrays = tuple(_adv_idx_length(index_non_arrays[i], shape[non_arrays_where[i]])
-                                  for i in staticrange(staticlen(index_non_arrays)))
+                                  for i in static.range(static.len(index_non_arrays)))
 
     if arrays_at_front:
         ans_shape = arrays_bshape + shape_from_non_arrays
@@ -379,13 +381,13 @@ def _getset_advanced(arr, indexes, item, dtype: type):
             else:
                 dst_idx = _adv_idx_build_for_contig_array(indexes, dst_idx_from_non_arrays, idx)
 
-            src_idx = (0,) * staticlen(arr.shape)
+            src_idx = (0,) * static.len(arr.shape)
             psrc_idx = Ptr[int](__ptr__(src_idx).as_byte())
 
-            for i in staticrange(staticlen(index_arrays)):
+            for i in static.range(static.len(index_arrays)):
                 psrc_idx[arrays_where[i]] = idx_from_arrays[i]
 
-            for i in staticrange(staticlen(index_non_arrays)):
+            for i in static.range(static.len(index_non_arrays)):
                 psrc_idx[non_arrays_where[i]] = src_idx_from_non_arrays[i]
 
             if item is None:
@@ -399,9 +401,9 @@ def _getset_advanced(arr, indexes, item, dtype: type):
 def _getset_bool(arr, indexes, item, dtype: type = NoneType):
     indexes = asarray(indexes)
 
-    if staticlen(indexes.shape) > staticlen(arr.shape):
+    if static.len(indexes.shape) > static.len(arr.shape):
         compile_error("too many indices for array")
-    elif staticlen(arr.shape) == 0:
+    elif static.len(arr.shape) == 0:
         if item is None:
             if indexes.item():
                 return atleast_1d(arr)
@@ -411,7 +413,7 @@ def _getset_bool(arr, indexes, item, dtype: type = NoneType):
             if indexes.item():
                 arr_item = asarray(item)
                 arr.data[0] = util.cast(arr_item.item(), arr.dtype)
-    elif staticlen(indexes.shape) == staticlen(arr.shape):
+    elif static.len(indexes.shape) == static.len(arr.shape):
         sz = 1
         for i in range(len(indexes.shape)):
             arr_dim = arr.shape[i]
@@ -431,14 +433,14 @@ def _getset_bool(arr, indexes, item, dtype: type = NoneType):
         else:
             arr_item = asarray(item)
 
-            if staticlen(arr_item.shape) == 1:
+            if static.len(arr_item.shape) == 1:
                 num_true = _bool_idx_num_true(indexes, sz)
                 if arr_item.size != 1 and arr_item.size != num_true:
                     raise ValueError(f"NumPy boolean array indexing assignment "
                                      f"cannot assign {arr_item.size} input values "
                                      f"to the {num_true} output values where the "
                                      f"mask is true")
-            elif staticlen(arr_item.shape) > 1:
+            elif static.len(arr_item.shape) > 1:
                 compile_error("NumPy boolean array indexing assignment requires a 0 or 1-dimensional input")
 
             ans = None
@@ -453,7 +455,7 @@ def _getset_bool(arr, indexes, item, dtype: type = NoneType):
                     if item is None:
                         ans.data[k] = arr.data[i]
                     else:
-                        if staticlen(arr_item.shape) == 0:
+                        if static.len(arr_item.shape) == 0:
                             arr.data[i] = util.cast(arr_item.item(), arr.dtype)
                         else:
                             elem = arr_item.data[0] if arr_item.size == 1 else arr_item.data[k]
@@ -465,7 +467,7 @@ def _getset_bool(arr, indexes, item, dtype: type = NoneType):
                     if item is None:
                         ans.data[k] = arr._ptr(idx)[0]
                     else:
-                        if staticlen(arr_item.shape) == 0:
+                        if static.len(arr_item.shape) == 0:
                             arr._ptr(idx)[0] = util.cast(arr_item.item(), arr.dtype)
                         else:
                             elem = arr_item.data[0] if arr_item.size == 1 else arr_item.data[k]
@@ -480,7 +482,7 @@ def _getset_bool(arr, indexes, item, dtype: type = NoneType):
 def _assign_one(arr, elem):
     elem = util.cast(elem, arr.dtype)
 
-    if staticlen(arr.shape) == 0:
+    if static.len(arr.shape) == 0:
         arr.data[0] = elem
     else:
         if arr._is_contig:
@@ -493,39 +495,39 @@ def _assign_one(arr, elem):
                 a[0] = elem
 
 def _getset(arr, indexes, item, dtype: type = NoneType):
-    if staticlen(_bool_idx_get_bool_index(indexes)) > 0:
+    if static.len(_bool_idx_get_bool_index(indexes)) > 0:
         return _getset_bool(arr, indexes, item, dtype)
 
     if not isinstance(indexes, Tuple):
         return _getset(arr, (indexes,), item, dtype)
 
-    if staticlen(_extract_sequences(indexes)) > 0:
+    if static.len(_extract_sequences(indexes)) > 0:
         return _getset_advanced(arr, indexes, item, dtype)
 
     newaxis_tuple, ellipsis_tuple = _extract_special(indexes)
 
-    if staticlen(ellipsis_tuple) > 1:
+    if static.len(ellipsis_tuple) > 1:
         compile_error("an index can only have a single ellipsis ('...')")
 
-    if staticlen(indexes) - staticlen(newaxis_tuple) - staticlen(ellipsis_tuple) > staticlen(arr.shape):
+    if static.len(indexes) - static.len(newaxis_tuple) - static.len(ellipsis_tuple) > static.len(arr.shape):
         compile_error("too many indices for array")
 
     indexes = _expand_ellipsis(indexes,
-                               staticlen(arr.shape)
-                                 - (staticlen(indexes)
-                                     - staticlen(newaxis_tuple)
-                                     - staticlen(ellipsis_tuple)),
-                              staticlen(ellipsis_tuple))
+                               static.len(arr.shape)
+                                 - (static.len(indexes)
+                                     - static.len(newaxis_tuple)
+                                     - static.len(ellipsis_tuple)),
+                              static.len(ellipsis_tuple))
     indexes = _expand_remainder(indexes,
-                                staticlen(arr.shape)
-                                  - staticlen(indexes)
-                                  + staticlen(newaxis_tuple))
+                                static.len(arr.shape)
+                                  - static.len(indexes)
+                                  + static.len(newaxis_tuple))
     indexes, shape, strides = _expand_newaxis(indexes, arr.shape, arr.strides)
     mindex = _multiindex(indexes, shape)
     keep = _keep_axes(indexes)
     p = Ptr[dtype](arr._data.as_byte() + _base_offset(mindex, strides))
 
-    if staticlen(keep) == 0:
+    if static.len(keep) == 0:
         if item is None:
             return p[0]
         else:
@@ -540,7 +542,7 @@ def _getset(arr, indexes, item, dtype: type = NoneType):
     elif isinstance(item, ndarray) or isinstance(item, List) or isinstance(item, Tuple):
         arr_item = asarray(item)
 
-        if staticlen(arr_item.shape) == 0:
+        if static.len(arr_item.shape) == 0:
             _assign_one(sub, arr_item.item())
         else:
             arr_bcast = broadcast_to(arr_item, sub.shape)

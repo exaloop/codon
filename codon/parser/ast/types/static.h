@@ -5,56 +5,77 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "codon/parser/ast/types/class.h"
 
-namespace codon::ast {
-struct StaticValue;
-}
-
 namespace codon::ast::types {
 
-/**
- * A static integer type (e.g. N in def foo[N: int]). Usually an integer, but can point
- * to a static expression.
- */
-struct StaticType : public Type {
-  /// List of static variables that a type depends on
-  /// (e.g. for A+B+2, generics are {A, B}).
-  std::vector<ClassType::Generic> generics;
-  /// A static expression that needs to be evaluated.
-  /// Can be nullptr if there is no expression.
-  std::shared_ptr<Expr> expr;
-
-  StaticType(Cache *cache, std::vector<ClassType::Generic> generics,
-             const std::shared_ptr<Expr> &expr);
-  /// Convenience function that parses expr and populates static type generics.
-  StaticType(Cache *cache, const std::shared_ptr<Expr> &expr);
-  /// Convenience function for static types whose evaluation is already known.
-  explicit StaticType(Cache *cache, int64_t i);
-  explicit StaticType(Cache *cache, const std::string &s);
+struct StaticType : public ClassType {
+  explicit StaticType(Cache *, const std::string &);
 
 public:
-  int unify(Type *typ, Unification *undo) override;
-  TypePtr generalize(int atLevel) override;
-  TypePtr instantiate(int atLevel, int *unboundCount,
-                      std::unordered_map<int, TypePtr> *cache) override;
-
-public:
-  std::vector<TypePtr> getUnbounds() const override;
   bool canRealize() const override;
   bool isInstantiated() const override;
-  std::string debugString(char mode) const override;
   std::string realizedName() const override;
-
-  StaticValue evaluate() const;
-  std::shared_ptr<StaticType> getStatic() override {
-    return std::static_pointer_cast<StaticType>(shared_from_this());
-  }
-
-private:
-  void parseExpr(const std::shared_ptr<Expr> &e, std::unordered_set<std::string> &seen);
+  virtual Expr *getStaticExpr() const = 0;
+  virtual LiteralKind getStaticKind() = 0;
+  virtual Type *getNonStaticType() const;
+  StaticType *getStatic() override { return this; }
 };
+
+struct IntStaticType : public StaticType {
+  int64_t value;
+
+  explicit IntStaticType(Cache *cache, int64_t);
+
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) const override;
+
+  std::string debugString(char mode) const override;
+  Expr *getStaticExpr() const override;
+  LiteralKind getStaticKind() override { return LiteralKind::Int; }
+
+  IntStaticType *getIntStatic() override { return this; }
+};
+
+struct StrStaticType : public StaticType {
+  std::string value;
+
+  explicit StrStaticType(Cache *cache, std::string);
+
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) const override;
+
+  std::string debugString(char mode) const override;
+  Expr *getStaticExpr() const override;
+  LiteralKind getStaticKind() override { return LiteralKind::String; }
+
+  StrStaticType *getStrStatic() override { return this; }
+};
+
+struct BoolStaticType : public StaticType {
+  bool value;
+
+  explicit BoolStaticType(Cache *cache, bool);
+
+  int unify(Type *typ, Unification *undo) override;
+  TypePtr generalize(int atLevel) const override;
+  TypePtr instantiate(int atLevel, int *unboundCount,
+                      std::unordered_map<int, TypePtr> *cache) const override;
+
+  std::string debugString(char mode) const override;
+  Expr *getStaticExpr() const override;
+  LiteralKind getStaticKind() override { return LiteralKind::Bool; }
+
+  BoolStaticType *getBoolStatic() override { return this; }
+};
+
+using StaticTypePtr = std::shared_ptr<StaticType>;
+using IntStaticTypePtr = std::shared_ptr<IntStaticType>;
+using StrStaticTypePtr = std::shared_ptr<StrStaticType>;
 
 } // namespace codon::ast::types

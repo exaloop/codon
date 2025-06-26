@@ -251,18 +251,8 @@ public:
   string getFilename(const string &basename) {
     return string(TEST_DIR) + "/" + basename;
   }
-  int runInChildProcess() {
-    assert(pipe(out_pipe) != -1);
-    pid = fork();
-    GC_atfork_prepare();
-    assert(pid != -1);
-
-    if (pid == 0) {
-      GC_atfork_child();
-      dup2(out_pipe[1], STDOUT_FILENO);
-      close(out_pipe[0]);
-      close(out_pipe[1]);
-
+  int runInChildProcess(bool avoidFork = false) {
+    auto fn = [this]() {
       auto file = getFilename(get<0>(GetParam()));
       bool debug = get<1>(GetParam());
       auto code = get<3>(GetParam());
@@ -273,13 +263,13 @@ public:
       auto compiler = std::make_unique<Compiler>(
           argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
           pyNumerics);
-      compiler->getLLVMVisitor()->setStandalone(
-          true); // make sure we abort() on runtime error
+      // make sure we abort() on runtime error
+      compiler->getLLVMVisitor()->setStandalone(true);
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
                             [](const error::ParserErrorInfo &e) {
-                              for (auto &group : e) {
+                              for (auto &group : e.getErrors()) {
                                 for (auto &msg : group) {
                                   getLogger().level = 0;
                                   printf("%s\n", msg.getMessage().c_str());
@@ -288,7 +278,6 @@ public:
                               fflush(stdout);
                               exit(EXIT_FAILURE);
                             });
-
       auto *pm = compiler->getPassManager();
       pm->registerPass(std::make_unique<TestOutliner>());
       pm->registerPass(std::make_unique<TestInliner>());
@@ -300,11 +289,22 @@ public:
                                 ir::analyze::dataflow::DominatorAnalysis::KEY});
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
-
       llvm::cantFail(compiler->compile());
-      seq_exc_init(0);
       compiler->getLLVMVisitor()->run({file});
       fflush(stdout);
+    };
+
+    assert(pipe(out_pipe) != -1);
+    pid = fork();
+    GC_atfork_prepare();
+    assert(pid != -1);
+
+    if (pid == 0) {
+      GC_atfork_child();
+      dup2(out_pipe[1], STDOUT_FILENO);
+      close(out_pipe[0]);
+      close(out_pipe[1]);
+      fn();
       exit(EXIT_SUCCESS);
     } else {
       GC_atfork_parent();
@@ -348,6 +348,8 @@ TEST_P(SeqTest, Run) {
     status = runInChildProcess();
   else
     status = runInChildProcess();
+  if (!WIFEXITED(status))
+    std::cerr << result() << std::endl;
   ASSERT_TRUE(WIFEXITED(status));
 
   string output = result();
@@ -365,7 +367,7 @@ TEST_P(SeqTest, Run) {
     vector<string> results = splitLines(output);
     for (unsigned i = 0; i < min(results.size(), expects.first.size()); i++)
       if (expects.second)
-        EXPECT_EQ(results[i], expects.first[i]);
+        EXPECT_EQ(results[i].substr(0, expects.first[i].size()), expects.first[i]);
       else
         EXPECT_EQ(results[i], expects.first[i]);
     EXPECT_EQ(results.size(), expects.first.size());
@@ -383,9 +385,10 @@ auto getTypeTests(const vector<string> &files) {
     int line = 0;
     while (getline(fin, l)) {
       if (l.substr(0, 3) == "#%%") {
-        if (line)
+        if (line && testName != "__ignore__") {
           cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
                                         codeLine, barebones, false));
+        }
         auto t = ast::split(l.substr(4), ',');
         barebones = (t.size() > 1 && t[1] == "barebones");
         testName = t[0];
@@ -397,9 +400,10 @@ auto getTypeTests(const vector<string> &files) {
       }
       line++;
     }
-    if (line)
+    if (line && testName != "__ignore__") {
       cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
                                     codeLine, barebones, false));
+    }
   }
   return cases;
 }
@@ -408,12 +412,23 @@ auto getTypeTests(const vector<string> &files) {
 INSTANTIATE_TEST_SUITE_P(
     TypeTests, SeqTest,
     testing::ValuesIn(getTypeTests({
-      "parser/simplify_expr.codon",
-      "parser/simplify_stmt.codon",
-      "parser/typecheck_expr.codon",
-      "parser/typecheck_stmt.codon",
-      "parser/types.codon",
-      "parser/llvm.codon"
+      "parser/typecheck/test_access.codon",
+      "parser/typecheck/test_assign.codon",
+      "parser/typecheck/test_basic.codon",
+      "parser/typecheck/test_call.codon",
+      "parser/typecheck/test_class.codon",
+      "parser/typecheck/test_collections.codon",
+      "parser/typecheck/test_cond.codon",
+      "parser/typecheck/test_ctx.codon",
+      "parser/typecheck/test_error.codon",
+      "parser/typecheck/test_function.codon",
+      "parser/typecheck/test_import.codon",
+      "parser/typecheck/test_infer.codon",
+      "parser/typecheck/test_loops.codon",
+      "parser/typecheck/test_op.codon",
+      "parser/typecheck/test_parser.codon",
+      "parser/typecheck/test_python.codon",
+      "parser/typecheck/test_typecheck.codon"
     })),
     getTypeTestNameFromParam);
 
@@ -465,6 +480,7 @@ INSTANTIATE_TEST_SUITE_P(
     StdlibTests, SeqTest,
     testing::Combine(
       testing::Values(
+        "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",
@@ -552,7 +568,7 @@ INSTANTIATE_TEST_SUITE_P(
 // clang-format on
 
 int main(int argc, char *argv[]) {
-  argv0 = ast::executable_path(argv[0]);
+  argv0 = ast::Filesystem::executable_path(argv[0]);
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

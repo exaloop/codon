@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+import internal.static as static
+
 from ..ndarray import ndarray
 from ..routines import asarray
 from ..util import strides as make_strides, tuple_range, normalize_axis_tuple
@@ -20,7 +22,7 @@ def as_strided(x, shape = None, strides = None, writeable: bool = True):
     if not isinstance(strides, Tuple):
         compile_error("strides must be a tuple of integers")
 
-    if staticlen(shape) != staticlen(strides):
+    if static.len(shape) != static.len(strides):
         compile_error("shape and strides have different lengths")
 
     return ndarray(shape, strides, x.data)
@@ -30,7 +32,7 @@ def sliding_window_view(x, window_shape, axis = None, writeable: bool = False):
         return sliding_window_view(x, window_shape=(window_shape,), axis=axis, writeable=writeable)
 
     x = asarray(x)
-    ndim: Static[int] = staticlen(x.shape)
+    ndim: Literal[int] = static.len(x.shape)
 
     for w in window_shape:
         if w < 0:
@@ -41,7 +43,7 @@ def sliding_window_view(x, window_shape, axis = None, writeable: bool = False):
     else:
         ax = normalize_axis_tuple(axis, ndim, allow_duplicates=True)
 
-    if staticlen(window_shape) != staticlen(ax):
+    if static.len(window_shape) != static.len(ax):
         compile_error("window_shape length does not match dimension of x")
 
     out_strides = x.strides + tuple(x.strides[a] for a in ax)

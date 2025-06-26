@@ -38,7 +38,7 @@ def _unary_emath_op(x, op, cond):
     if x.dtype is complex or x.dtype is complex64:
         return op(x)
 
-    ndim: Static[int] = x.ndim
+    ndim: Literal[int] = x.ndim
     C = type(_complex_type(x.dtype))
     F = type(util.to_float(util.zero(x.dtype)))
     O = Union[ndarray[F, ndim], ndarray[C, ndim]]

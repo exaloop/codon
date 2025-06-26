@@ -7,14 +7,14 @@
 
 @pure
 @llvm
-def cttz(n: UInt[N], N: Static[int]) -> UInt[N]:
+def cttz(n: UInt[N], N: Literal[int]) -> UInt[N]:
     declare i{=N} @llvm.cttz.i{=N}(i{=N}, i1)
     %0 = call i{=N} @llvm.cttz.i{=N}(i{=N} %n, i1 true)
     ret i{=N} %0
 
 @pure
 @llvm
-def ctlz(n: UInt[N], N: Static[int]) -> UInt[N]:
+def ctlz(n: UInt[N], N: Literal[int]) -> UInt[N]:
     declare i{=N} @llvm.ctlz.i{=N}(i{=N}, i1)
     %0 = call i{=N} @llvm.ctlz.i{=N}(i{=N} %n, i1 true)
     ret i{=N} %0

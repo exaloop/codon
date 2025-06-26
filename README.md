@@ -225,3 +225,34 @@ implementation works with its multithreading and GPU capabilities, and can even 
 # Documentation
 
 Please see [docs.exaloop.io](https://docs.exaloop.io) for in-depth documentation.
+
+# Acknowledgements
+
+This project would not be possible without:
+
+- **Funding**:
+  - National Science Foundation (NSF) 🇺🇸
+  - National Institutes of Health (NIH) 🇺🇸
+  - MIT 🇺🇸
+  - MIT E14 Fund 🇺🇸
+  - Natural Sciences and Engineering Research Council (NSERC) 🇨🇦
+  - Canada Research Chairs 🇨🇦
+  - Canada Foundation for Innovation 🇨🇦
+  - B.C. Knowledge Development Fund 🇨🇦
+  - University of Victoria 🇨🇦
+- **Libraries**:
+  [LLVM Compiler Infrastructure](https://llvm.org/),
+  [yhirose's peglib](https://github.com/yhirose/cpp-peglib),
+  [Boehm-Demers-Weiser Garbage Collector](https://github.com/ivmai/bdwgc),
+  [KonanM's tser](https://github.com/KonanM/tser),
+  [{fmt}](https://github.com/fmtlib/fmt),
+  [toml++](https://marzer.github.io/tomlplusplus/),
+  [semver](https://github.com/Neargye/semver),
+  [zlib-ng](https://github.com/zlib-ng/zlib-ng),
+  [xz](https://github.com/tukaani-project/xz),
+  [bz2](https://sourceware.org/bzip2/),
+  [Google RE2](https://github.com/google/re2),
+  [libbacktrace](https://github.com/ianlancetaylor/libbacktrace),
+  [fast_float](https://github.com/fastfloat/fast_float),
+  [Google Highway](https://github.com/google/highway),
+  [NumPy](https://numpy.org/)

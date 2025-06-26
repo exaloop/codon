@@ -1,15 +1,31 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+@tuple
+@__internal__
+class type[T]:
+    #  __new__ / __init__: always done internally
+    # __repr__
+    # __call__
+    # __name__
+    # __module__
+    # __doc__
+    pass
+
+@tuple
+@__internal__
+class unrealized_type[T]:
+    pass
+
+@tuple
+@__internal__
+class TypeWrap[T]:
+    pass
+
 @__internal__
 class __internal__:
     pass
 @__internal__
 class __magic__:
-    pass
-
-@tuple
-@__internal__
-class NoneType:
     pass
 
 @tuple
@@ -68,18 +84,18 @@ class float128:
 
 @tuple
 @__internal__
-class type:
-    pass
-
-@tuple
-@__internal__
 @__notuple__
 class Function[T, TR]:
     pass
 
 @tuple
 @__internal__
-class Callable[T, TR]:
+class CallableTrait[T, TR]:
+    pass
+
+@tuple
+@__internal__
+class NoneType:
     pass
 
 @tuple
@@ -88,6 +104,12 @@ class Callable[T, TR]:
 class Ptr[T]:
     pass
 cobj = Ptr[byte]
+
+@tuple
+@__internal__
+@__notuple__
+class Capsule[T]:
+    val: Ptr[T]
 
 @tuple
 @__internal__
@@ -104,13 +126,13 @@ class Optional:
 @tuple
 @__internal__
 @__notuple__
-class Int[N: Static[int]]:
+class Int[N: Literal[int]]:
     pass
 
 @tuple
 @__internal__
 @__notuple__
-class UInt[N: Static[int]]:
+class UInt[N: Literal[int]]:
     pass
 
 @__internal__
@@ -123,58 +145,78 @@ class str:
     ptr: Ptr[byte]
     len: int
 
-
 @tuple
 @__internal__
 class Tuple:
-    @__internal__
+    @llvm
     def __new__() -> Tuple:
-        pass
-    def __add__(self, obj):
+        ret {} {}
+    def __add__(self: __SELF__, obj, __SELF__: type):
         return __magic__.add(self, obj)
-    def __mul__(self, n: Static[int]):
+    def __mul__(self: __SELF__, n: Literal[int], __SELF__: type):
         return __magic__.mul(self, n)
-    def __contains__(self, obj) -> bool:
+    def __contains__(self: __SELF__, obj, __SELF__: type) -> bool:
         return __magic__.contains(self, obj)
-    def __getitem__(self, idx: int):
+    def __getitem__(self: __SELF__, idx: int, __SELF__: type):
         return __magic__.getitem(self, idx)
-    def __iter__(self):
+    def __iter__(self: __SELF__, __SELF__: type):
         yield from __magic__.iter(self)
-    def __hash__(self) -> int:
+    def __hash__(self: __SELF__, __SELF__: type) -> int:
         return __magic__.hash(self)
-    def __repr__(self) -> str:
+    def __repr__(self: __SELF__, __SELF__: type) -> str:
         return __magic__.repr(self)
-    def __len__(self) -> int:
+    def __len__(self: __SELF__, __SELF__: type) -> int:
         return __magic__.len(self)
-    def __eq__(self, obj: Tuple) -> bool:
+    def __eq__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.eq(self, obj)
-    def __ne__(self, obj: Tuple) -> bool:
+    def __ne__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.ne(self, obj)
-    def __gt__(self, obj: Tuple) -> bool:
+    def __gt__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.gt(self, obj)
-    def __ge__(self, obj: Tuple) -> bool:
+    def __ge__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.ge(self, obj)
-    def __lt__(self, obj: Tuple) -> bool:
+    def __lt__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.lt(self, obj)
-    def __le__(self, obj: Tuple) -> bool:
+    def __le__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.le(self, obj)
-    def __pickle__(self, dest: Ptr[byte]):
+    def __pickle__(self: __SELF__, dest: Ptr[byte], __SELF__: type):
         return __magic__.pickle(self, dest)
-    def __unpickle__(src: Ptr[byte]) -> Tuple:
+    def __unpickle__(src: Ptr[byte], __SELF__: type) -> __SELF__:
         return __magic__.unpickle(src)
-    def __to_py__(self) -> Ptr[byte]:
+    def __to_py__(self: __SELF__, __SELF__: type) -> Ptr[byte]:
         return __magic__.to_py(self)
-    def __from_py__(src: Ptr[byte]) -> Tuple:
+    def __from_py__(src: Ptr[byte], __SELF__: type) -> __SELF__:
         return __magic__.from_py(src)
-    def __to_gpu__(self, cache) -> Tuple:
+    def __to_gpu__(self: __SELF__, cache, __SELF__: type) -> __SELF__:
         return __magic__.to_gpu(self, cache)
-    def __from_gpu__(self, other: Tuple):
+    def __from_gpu__(self: __SELF__, other: __SELF__, __SELF__: type):
         return __magic__.from_gpu(self, other)
-    def __from_gpu_new__(other: Tuple) -> Tuple:
+    def __from_gpu_new__(other: __SELF__, __SELF__: type) -> __SELF__:
         return __magic__.from_gpu_new(other)
-    def __tuplesize__(self) -> int:
+    def __tuplesize__(self: __SELF__, __SELF__: type) -> int:
         return __magic__.tuplesize(self)
+tuple = Tuple
 
+@tuple
+@__internal__
+class __NTuple__[N: Literal[int], T]:
+    pass
+
+@__attribute__
+def pure():
+    pass
+
+@__attribute__
+def derives():
+    pass
+
+@extend
+class NoneType:
+    @pure
+    @derives
+    @llvm
+    def __new__() -> NoneType:
+        ret {} {}
 
 @tuple
 @__internal__
@@ -189,10 +231,6 @@ class type:
         pass
 function = Function
 
-@__internal__
-class Ref[T]:
-    pass
-
 @tuple
 @__internal__
 @__notuple__
@@ -203,9 +241,17 @@ class Union[TU]:
     def __call__(self, *args, **kwargs):
         return __internal__.union_call(self, args, kwargs)
 
+@extend
+class Function:
+    @pure
+    @derives
+    @llvm
+    def __new__() -> Function[T, TR]:
+        ret ptr null
+
 # dummy
 @__internal__
-class TypeVar[T]: pass
+class TypeTrait[T]: pass
 @__internal__
 class ByVal: pass
 @__internal__
@@ -221,22 +267,45 @@ class RTTI:
 
 @__internal__
 @tuple
-class ellipsis: pass
+class ellipsis:
+    @pure
+    @derives
+    @llvm
+    def __new__() -> ellipsis:
+        ret {} {}
+Ellipsis = ellipsis()
 
 @tuple
 @__internal__
 class __array__:
     T: type
-    def __new__(sz: Static[int]) -> Array[T]:
+    def __new__(sz: Literal[int]) -> Array[T]:
         pass
+
+@tuple
+@__internal__
+class Import:
+    loaded: bool
+    file: Literal[str]
+    name: Literal[str]
+
+    @pure
+    @derives
+    @llvm
+    def __new__(loaded: bool, file: Literal[str], name: Literal[str]) -> Import[file, name]:
+        %0 = insertvalue { {=bool} } undef, {=bool} %loaded, 0
+        ret { {=bool} } %0
+
+    def _set_loaded(i: Ptr[Import]):
+        Ptr[bool](i.as_byte())[0] = True
+
+    def __repr__(self) -> str:
+        return f"<module '{self.name}' from '{self.file}'>"
 
 def __ptr__(var):
     pass
 
-def staticlen(obj):
-    pass
-
-def compile_error(msg: Static[str]):
+def compile_error(msg: Literal[str]):
     pass
 
 def isinstance(obj, what):
@@ -246,17 +315,14 @@ def isinstance(obj, what):
 def overload():
     pass
 
-def hasattr(obj, attr: Static[str], *args, **kwargs):
+def hasattr(obj, attr: Literal[str], *args, **kwargs):
     """Special handling"""
     pass
 
-def getattr(obj, attr: Static[str]):
+def getattr(obj, attr: Literal[str]):
     pass
 
-def setattr(obj, attr: Static[str], what):
-    pass
-
-def tuple(iterable):
+def setattr(obj, attr: Literal[str], what):
     pass
 
 def super():
@@ -266,29 +332,78 @@ def superf(*args):
     """Special handling"""
     pass
 
-def __realized__(fn, args):
-    pass
-
-def statictuple(*args):
-    return args
-
-def __has_rtti__(T: type):
-    pass
-
-@dataclass(init=False)
+#(init=False, repr=False, eq=False, order=False, hash=False, pickle=False, python=False, gpu=False, container=False)
+@__internal__
 @tuple
-class Import:
-    loaded: bool
-    name: Static[str]
-    file: Static[str]
+class NamedTuple:
+    args: T
+    N: Literal[int]  # name cache ID
+    T: type
 
-    def __new__(name: Static[str],
-                file: Static[str],
-                loaded: bool) -> Import[name, file]:
-        return (loaded,)
+    @pure
+    @derives
+    @llvm
+    def __new__(args: T = (), N: Literal[int] = 0, T: type) -> NamedTuple[N, T]:
+        %0 = insertvalue { {=T} } undef, {=T} %args, 0
+        ret { {=T} } %0
 
-    def _set_loaded(i: Ptr[Import]):
-        Ptr[bool](i.as_byte())[0] = True
+    def __getitem__(self, key: Literal[str]):
+        return getattr(self, key)
 
-    def __repr__(self) -> str:
-        return f"<module '{self.name}' from '{self.file}'>"
+    def __contains__(self, key: Literal[str]):
+        return hasattr(self, key)
+
+    def get(self, key: Literal[str], default = NoneType()):
+        return __internal__.kwargs_get(self, key, default)
+
+    def __keys__(self):
+        return __internal__.namedkeys(N)
+
+    def __repr__(self):
+        keys = self.__keys__()
+        values = [v.__repr__() for v in self.args]
+        s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
+        return f"({s})"
+
+@__internal__
+@tuple
+class Partial:
+    args: T  # format: (arg1, arg2, ..., (star_args...))
+    kwargs: K
+
+    M: Literal[str] # mask
+    T: type # Tuple
+    K: type # NamedTuple
+    F: type # must be unrealized_type
+
+    @pure
+    @derives
+    @llvm
+    def __new__(args: T, kwargs: K, M: Literal[str], F: type, T: type, K: type) -> Partial[M, T, K, F]:
+        %0 = insertvalue { {=T}, {=K} } undef, {=T} %args, 0
+        %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
+        ret { {=T}, {=K} } %1
+
+    def __repr__(self):
+        return __magic__.repr_partial(self)
+
+    def __call__(self, *args, **kwargs):
+        return self(*args, **kwargs)
+
+    @property
+    def __fn_name__(self):
+        return F.__name__[16:-1]  # chop off unrealized_type
+
+    def __raw__(self):
+        # TODO: better error message
+        return F.T.__raw__()
+
+@__internal__
+@tuple
+class Callable:
+    fn: Function[[Ptr[byte], T], TR]
+    data: Ptr[byte]
+    T: type
+    TR: type
+
+__codon__: Literal[bool] = True

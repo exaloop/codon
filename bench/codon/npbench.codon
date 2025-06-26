@@ -1,0 +1,590 @@
+import numpy as np
+from numpy.random import default_rng
+import npbench_lib as bench
+import time
+
+
+def run(b, prep, **kwargs):
+    n = prep.__class__.__name__.split("(")[0]
+    with time.timing(f"{n}.prep"):
+        data = prep(**kwargs)
+    with time.timing(f"{n}.run"):
+        if isinstance(data, Tuple):
+            return b(*data)
+        else:
+            return b(data)
+
+
+def rng_complex(shape, rng):
+    return (rng.random(shape) + rng.random(shape) * 1j)
+
+
+def adi(N, TSTEPS, datatype=np.float64):
+    u = np.fromfunction(lambda i, j: (i + N - j) / N, (N, N), dtype=datatype)
+    return TSTEPS, N, u
+run(bench.adi, adi, N=500, TSTEPS=50)
+
+
+def arc_distance(N):
+    rng = default_rng(42)
+    t0, p0, t1, p1 = rng.random((N, )), rng.random((N, )), rng.random(
+        (N, )), rng.random((N, ))
+    return t0, p0, t1, p1
+run(bench.arc_distance, arc_distance, N=10000000)
+
+
+def azimint_naive(N, npt):
+    rng = default_rng(42)
+    data, radius = rng.random((N, )), rng.random((N, ))
+    return data, radius, npt
+run(bench.azimint_naive, azimint_naive, N=4000000, npt=1000)
+
+
+def azimint_hist(N, npt):
+    rng = default_rng(42)
+    data, radius = rng.random((N, )), rng.random((N, ))
+    return data, radius, npt
+run(bench.azimint_hist, azimint_hist, N=40000000, npt=1000)
+
+
+def atax(M, N, datatype=np.float64):
+    fn = datatype(N)
+    x = np.fromfunction(lambda i: 1 + (i / fn), (N, ), dtype=datatype)
+    A = np.fromfunction(lambda i, j: ((i + j) % N) / (5 * M), (M, N),
+                        dtype=datatype)
+    return A, x
+run(bench.atax, atax, M=20000, N=25000)
+
+
+def bicg(M, N, datatype=np.float64):
+    A = np.fromfunction(lambda i, j: (i * (j + 1) % N) / N, (N, M),
+                        dtype=datatype)
+    p = np.fromfunction(lambda i: (i % M) / M, (M, ), dtype=datatype)
+    r = np.fromfunction(lambda i: (i % N) / N, (N, ), dtype=datatype)
+    return A, p, r
+run(bench.bicg, bicg, M=20000, N=25000)
+
+
+def cavity_flow(ny, nx, nt, nit, rho, nu):
+    u = np.zeros((ny, nx), dtype=np.float64)
+    v = np.zeros((ny, nx), dtype=np.float64)
+    p = np.zeros((ny, nx), dtype=np.float64)
+    dx = 2 / (nx - 1)
+    dy = 2 / (ny - 1)
+    dt = .1 / ((nx - 1) * (ny - 1))
+
+    return nx, ny, nt, nit, u, v, dt, dx, dy, p, rho, nu
+run(bench.cavity_flow, cavity_flow, ny=101, nx=101, nt=700, nit=50, rho=1.0, nu=0.1)
+
+
+def channel_flow(ny, nx, nit, rho, nu, F):
+    u = np.zeros((ny, nx), dtype=np.float64)
+    v = np.zeros((ny, nx), dtype=np.float64)
+    p = np.ones((ny, nx), dtype=np.float64)
+    dx = 2 / (nx - 1)
+    dy = 2 / (ny - 1)
+    dt = .1 / ((nx - 1) * (ny - 1))
+    return nit, u, v, dt, dx, dy, p, rho, nu, F
+run(bench.channel_flow, channel_flow, ny=101, nx=101, nit=50, rho=1.0, nu=0.1, F=1.0)
+
+
+def cholesky(N, datatype=np.float64):
+    A = np.empty((N, N), dtype=datatype)
+    for i in range(N):
+        A[i, :i + 1] = np.fromfunction(lambda j: (-j % N) / N + 1, (i + 1, ),
+                                       dtype=datatype)
+        A[i, i + 1:] = 0.0
+        A[i, i] = 1.0
+    A[:] = A @ np.transpose(A)
+    return A
+run(bench.cholesky, cholesky, N=2000)
+
+
+def cholesky2(N, datatype=np.float64):
+    A = np.empty((N, N), dtype=datatype)
+    for i in range(N):
+        A[i, :i + 1] = np.fromfunction(lambda j: (-j % N) / N + 1, (i + 1, ),
+                                       dtype=datatype)
+        A[i, i + 1:] = 0.0
+        A[i, i] = 1.0
+    A[:] = A @ np.transpose(A)
+    return A
+run(bench.cholesky2, cholesky2, N=8000)
+
+
+def compute(M, N):
+    rng = default_rng(42)
+    array_1 = rng.uniform(0, 1000, size=(M, N)).astype(np.int64)
+    array_2 = rng.uniform(0, 1000, size=(M, N)).astype(np.int64)
+    a = np.int64(4)
+    b = np.int64(3)
+    c = np.int64(9)
+    return array_1, array_2, a, b, c
+run(bench.compute, compute, M=16000, N=16000)
+
+
+def contour_integral(NR, NM, slab_per_bc, num_int_pts):
+    rng = default_rng(42)
+    Ham = rng_complex((slab_per_bc + 1, NR, NR), rng)
+    int_pts = rng_complex((num_int_pts, ), rng)
+    Y = rng_complex((NR, NM), rng)
+    return NR, NM, slab_per_bc, Ham, int_pts, Y
+run(bench.contour_integral, contour_integral, NR=600, NM=1000, slab_per_bc=2, num_int_pts=32)
+
+
+def conv2d_bias(C_in, C_out, H, K, N, W):
+    rng = default_rng(42)
+    # NHWC data layout
+    input = rng.random((N, H, W, C_in), dtype=np.float32)
+    # Weights
+    weights = rng.random((K, K, C_in, C_out), dtype=np.float32)
+    bias = rng.random((C_out, ), dtype=np.float32)
+    return input, weights, bias
+run(bench.conv2d_bias, conv2d_bias, N=8, C_in=3, C_out=16, K=20, H=256, W=256)
+
+
+def correlation(M, N, datatype=np.float64):
+    float_n = datatype(N)
+    data = np.fromfunction(lambda i, j: (i * j) / M + i, (N, M),
+                           dtype=datatype)
+    return M, float_n, data
+run(bench.correlation, correlation, M=3200, N=4000)
+
+
+def covariance(M, N, datatype=np.float64):
+    float_n = datatype(N)
+    data = np.fromfunction(lambda i, j: (i * j) / M, (N, M), dtype=datatype)
+    return M, float_n, data
+run(bench.covariance, covariance, M=3200, N=4000)
+
+
+def crc16(N):
+    rng = default_rng(42)
+    data = rng.integers(0, 256, size=(N, ), dtype=np.uint8)
+    return data
+run(bench.crc16, crc16, N=1000000)
+
+
+def deriche(W, H, datatype=np.float64):
+    alpha = datatype(0.25)
+    imgIn = np.fromfunction(lambda i, j:
+                            ((313 * i + 991 * j) % 65536) / 65535.0, (W, H),
+                            dtype=datatype)
+    return alpha, imgIn
+run(bench.deriche, deriche, W=7680, H=4320)
+
+
+def doitgen(NR, NQ, NP, datatype=np.float64):
+    A = np.fromfunction(lambda i, j, k: ((i * j + k) % NP) / NP, (NR, NQ, NP),
+                        dtype=datatype)
+    C4 = np.fromfunction(lambda i, j: (i * j % NP) / NP, (NP, NP),
+                         dtype=datatype)
+    return NR, NQ, NP, A, C4
+run(bench.doitgen, doitgen, NR=220, NQ=250, NP=512)
+
+
+def durbin(N, datatype=np.float64):
+    r = np.fromfunction(lambda i: N + 1 - i, (N, ), dtype=datatype)
+    return r
+run(bench.durbin, durbin, N=20000)
+
+
+def fdtd_2d(TMAX, NX, NY, datatype=np.float64):
+    ex = np.fromfunction(lambda i, j: (i * (j + 1)) / NX, (NX, NY),
+                         dtype=datatype)
+    ey = np.fromfunction(lambda i, j: (i * (j + 2)) / NY, (NX, NY),
+                         dtype=datatype)
+    hz = np.fromfunction(lambda i, j: (i * (j + 3)) / NX, (NX, NY),
+                         dtype=datatype)
+    _fict_ = np.fromfunction(lambda i: i, (TMAX, ), dtype=datatype)
+    return TMAX, ex, ey, hz, _fict_
+run(bench.fdtd_2d, fdtd_2d, TMAX=500, NX=1000, NY=1200)
+
+
+def floyd_warshall(N, datatype=np.int32):
+    path = np.fromfunction(lambda i, j: i * j % 7i32 + 1i32, (N, N), dtype=datatype)
+    for i in range(N):
+        for j in range(N):
+            if (i + j) % 13 == 0 or (i + j) % 7 == 0 or (i + j) % 11 == 0:
+                path[i, j] = 999
+    return path
+run(bench.floyd_warshall, floyd_warshall, N=850)
+
+
+def gemm(NI, NJ, NK, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    C = np.fromfunction(lambda i, j: ((i * j + 1) % NI) / NI, (NI, NJ),
+                        dtype=datatype)
+    A = np.fromfunction(lambda i, k: (i * (k + 1) % NK) / NK, (NI, NK),
+                        dtype=datatype)
+    B = np.fromfunction(lambda k, j: (k * (j + 2) % NJ) / NJ, (NK, NJ),
+                        dtype=datatype)
+    return alpha, beta, C, A, B
+run(bench.gemm, gemm, NI=7000, NJ=7500, NK=8000)
+
+
+def gemver(N, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    fn = datatype(N)
+    A = np.fromfunction(lambda i, j: (i * j % N) / N, (N, N), dtype=datatype)
+    u1 = np.fromfunction(lambda i: i, (N, ), dtype=datatype)
+    u2 = np.fromfunction(lambda i: ((i + 1) / fn) / 2.0, (N, ), dtype=datatype)
+    v1 = np.fromfunction(lambda i: ((i + 1) / fn) / 4.0, (N, ), dtype=datatype)
+    v2 = np.fromfunction(lambda i: ((i + 1) / fn) / 6.0, (N, ), dtype=datatype)
+    w = np.zeros((N, ), dtype=datatype)
+    x = np.zeros((N, ), dtype=datatype)
+    y = np.fromfunction(lambda i: ((i + 1) / fn) / 8.0, (N, ), dtype=datatype)
+    z = np.fromfunction(lambda i: ((i + 1) / fn) / 9.0, (N, ), dtype=datatype)
+    return alpha, beta, A, u1, v1, u2, v2, w, x, y, z
+run(bench.gemver, gemver, N=10000)
+
+
+def gesummv(N, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    A = np.fromfunction(lambda i, j: ((i * j + 1) % N) / N, (N, N),
+                        dtype=datatype)
+    B = np.fromfunction(lambda i, j: ((i * j + 2) % N) / N, (N, N),
+                        dtype=datatype)
+    x = np.fromfunction(lambda i: (i % N) / N, (N, ), dtype=datatype)
+    return alpha, beta, A, B, x
+run(bench.gesummv, gesummv, N=14000)
+
+
+def go_fast(N):
+    rng = default_rng(42)
+    a = rng.random((N, N), dtype=np.float64)
+    return a
+run(bench.go_fast, go_fast, N=20000)
+
+
+def gramschmidt(M, N, datatype=np.float64):
+    rng = default_rng(42)
+
+    A = rng.random((M, N), dtype=datatype)
+    while np.linalg.matrix_rank(A) < N:
+        A = rng.random((M, N), dtype=datatype)
+    return A
+run(bench.gramschmidt, gramschmidt, M=600, N=500)
+
+
+def hdiff(I, J, K):
+    rng = default_rng(42)
+
+    # Define arrays
+    in_field = rng.random((I + 4, J + 4, K))
+    out_field = rng.random((I, J, K))
+    coeff = rng.random((I, J, K))
+    return in_field, out_field, coeff
+run(bench.hdiff, hdiff, I=384, J=384, K=160)
+
+
+def heat_3d(N, TSTEPS, datatype=np.float64):
+    A = np.fromfunction(lambda i, j, k: (i + j + (N - k)) * 10 / N, (N, N, N),
+                        dtype=datatype)
+    B = A.copy()  # TODO: np.copy(A)
+    return TSTEPS, A, B
+run(bench.heat_3d, heat_3d, N=70, TSTEPS=100)
+
+
+def jacobi_1d(N, TSTEPS, datatype=np.float64):
+    A = np.fromfunction(lambda i: (i + 2) / N, (N, ), dtype=datatype)
+    B = np.fromfunction(lambda i: (i + 3) / N, (N, ), dtype=datatype)
+    return TSTEPS, A, B
+run(bench.jacobi_1d, jacobi_1d, N=34000, TSTEPS=8500)
+
+
+def jacobi_2d(N, TSTEPS, datatype=np.float64):
+    A = np.fromfunction(lambda i, j: i * (j + 2) / N, (N, N), dtype=datatype)
+    B = np.fromfunction(lambda i, j: i * (j + 3) / N, (N, N), dtype=datatype)
+    return TSTEPS, A, B
+run(bench.jacobi_2d, jacobi_2d, N=700, TSTEPS=200)
+
+
+def k2mm(NI, NJ, NK, NL, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    A = np.fromfunction(lambda i, j: ((i * j + 1) % NI) / NI, (NI, NK),
+                        dtype=datatype)
+    B = np.fromfunction(lambda i, j: (i * (j + 1) % NJ) / NJ, (NK, NJ),
+                        dtype=datatype)
+    C = np.fromfunction(lambda i, j: ((i * (j + 3) + 1) % NL) / NL, (NJ, NL),
+                        dtype=datatype)
+    D = np.fromfunction(lambda i, j: (i * (j + 2) % NK) / NK, (NI, NL),
+                        dtype=datatype)
+    return alpha, beta, A, B, C, D
+run(bench.k2mm, k2mm, NI=6000, NJ=6500, NK=7000, NL=7500)
+
+
+def k3mm(NI, NJ, NK, NL, NM, datatype=np.float64):
+    A = np.fromfunction(lambda i, j: ((i * j + 1) % NI) / (5 * NI), (NI, NK),
+                        dtype=datatype)
+    B = np.fromfunction(lambda i, j: ((i * (j + 1) + 2) % NJ) / (5 * NJ),
+                        (NK, NJ),
+                        dtype=datatype)
+    C = np.fromfunction(lambda i, j: (i * (j + 3) % NL) / (5 * NL), (NJ, NM),
+                        dtype=datatype)
+    D = np.fromfunction(lambda i, j: ((i * (j + 2) + 2) % NK) / (5 * NK),
+                        (NM, NL),
+                        dtype=datatype)
+    return A, B, C, D
+run(bench.k3mm, k3mm, NI=5500, NJ=6000, NK=6500, NL=7000, NM=7500)
+
+
+def lenet(N, H, W):
+    rng = default_rng(42)
+
+    H_conv1 = H - 4
+    W_conv1 = W - 4
+    H_pool1 = H_conv1 // 2
+    W_pool1 = W_conv1 // 2
+    H_conv2 = H_pool1 - 4
+    W_conv2 = W_pool1 - 4
+    H_pool2 = H_conv2 // 2
+    W_pool2 = W_conv2 // 2
+    C_before_fc1 = 16 * H_pool2 * W_pool2
+
+    # NHWC data layout
+    input = rng.random((N, H, W, 1), dtype=np.float32)
+    # Weights
+    conv1 = rng.random((5, 5, 1, 6), dtype=np.float32)
+    conv1bias = rng.random((6, ), dtype=np.float32)
+    conv2 = rng.random((5, 5, 6, 16), dtype=np.float32)
+    conv2bias = rng.random((16, ), dtype=np.float32)
+    fc1w = rng.random((C_before_fc1, 120), dtype=np.float32)
+    fc1b = rng.random((120, ), dtype=np.float32)
+    fc2w = rng.random((120, 84), dtype=np.float32)
+    fc2b = rng.random((84, ), dtype=np.float32)
+    fc3w = rng.random((84, 10), dtype=np.float32)
+    fc3b = rng.random((10, ), dtype=np.float32)
+
+    return (
+        input, conv1, conv1bias, conv2, conv2bias, fc1w, fc1b, fc2w, fc2b,
+        fc3w, fc3b, N, C_before_fc1
+    )
+run(bench.lenet, lenet, N=16, H=256, W=256)
+
+
+def lu(N, datatype=np.float64):
+    A = np.empty((N, N), dtype=datatype)
+    for i in range(N):
+        A[i, :i + 1] = np.fromfunction(lambda j: (-j % N) / N + 1, (i + 1, ),
+                                       dtype=datatype)
+        A[i, i + 1:] = 0.0
+        A[i, i] = 1.0
+    A[:] = A @ np.transpose(A)
+    return A
+run(bench.lu, lu, N=2000)
+
+
+def ludcmp(N, datatype=np.float64):
+    A = np.empty((N, N), dtype=datatype)
+    for i in range(N):
+        A[i, :i + 1] = np.fromfunction(lambda j: (-j % N) / N + 1, (i + 1, ),
+                                       dtype=datatype)
+        A[i, i + 1:] = 0.0
+        A[i, i] = 1.0
+    A[:] = A @ np.transpose(A)
+    fn = datatype(N)
+    b = np.fromfunction(lambda i: (i + 1) / fn / 2.0 + 4.0, (N, ),
+                        dtype=datatype)
+    return A, b
+run(bench.ludcmp, ludcmp, N=2000)
+
+
+def mandelbrot1(xmin, xmax, ymin, ymax, xn, yn, maxiter, horizon):
+    return xmin, xmax, ymin, ymax, xn, yn, maxiter, horizon
+run(bench.mandelbrot1, mandelbrot1, xmin=-2.25, xmax=0.75, xn=1000, ymin=-1.25, ymax=1.25, yn=1000, maxiter=200, horizon=2.0)
+
+
+def mandelbrot2(xmin, xmax, ymin, ymax, xn, yn, maxiter, horizon):
+    return xmin, xmax, ymin, ymax, xn, yn, maxiter, horizon
+run(bench.mandelbrot2, mandelbrot2, xmin=-2.25, xmax=0.75, xn=1000, ymin=-1.25, ymax=1.25, yn=1000, maxiter=200, horizon=2.0)
+
+
+def mlp(C_in, N, S0, S1, S2):
+    rng = default_rng(42)
+
+    mlp_sizes = [S0, S1, S2]  # [300, 100, 10]
+    # Inputs
+    input = np.random.rand(N, C_in).astype(np.float32)
+    # Weights
+    w1 = rng.random((C_in, mlp_sizes[0]), dtype=np.float32)
+    b1 = rng.random((mlp_sizes[0], ), dtype=np.float32)
+    w2 = rng.random((mlp_sizes[0], mlp_sizes[1]), dtype=np.float32)
+    b2 = rng.random((mlp_sizes[1], ), dtype=np.float32)
+    w3 = rng.random((mlp_sizes[1], mlp_sizes[2]), dtype=np.float32)
+    b3 = rng.random((mlp_sizes[2], ), dtype=np.float32)
+    return input, w1, b1, w2, b2, w3, b3
+run(bench.mlp, mlp, C_in=3, N=8, S0=30000, S1=30000, S2=30000)
+
+
+def mvt(N, datatype=np.float64):
+    x1 = np.fromfunction(lambda i: (i % N) / N, (N, ), dtype=datatype)
+    x2 = np.fromfunction(lambda i: ((i + 1) % N) / N, (N, ), dtype=datatype)
+    y_1 = np.fromfunction(lambda i: ((i + 3) % N) / N, (N, ), dtype=datatype)
+    y_2 = np.fromfunction(lambda i: ((i + 4) % N) / N, (N, ), dtype=datatype)
+    A = np.fromfunction(lambda i, j: (i * j % N) / N, (N, N), dtype=datatype)
+    return x1, x2, y_1, y_2, A
+run(bench.mvt, mvt, N=22000)
+
+
+def nbody(N, tEnd, dt, softening, G):
+    rng = default_rng(42)
+    mass = 20.0 * np.ones((N, 1)) / N  # total mass of particles is 20
+    pos = rng.random((N, 3))  # randomly selected positions and velocities
+    vel = rng.random((N, 3))
+    Nt = int(np.ceil(tEnd / dt))
+    return mass, pos, vel, N, Nt, dt, G, softening
+run(bench.nbody, nbody, N=100, tEnd=10.0, dt=0.01, softening=0.1, G=1.0)
+
+
+def nussinov(N, datatype=np.int32):
+    seq = np.fromfunction(lambda i: (i + 1i32) % 4i32, (N, ), dtype=datatype)
+    return N, seq
+run(bench.nussinov, nussinov, N=500)
+
+
+def resnet(N, W, H, C1, C2):
+    rng = default_rng(42)
+
+    # Input
+    input = rng.random((N, H, W, C1), dtype=np.float32)
+    # Weights
+    conv1 = rng.random((1, 1, C1, C2), dtype=np.float32)
+    conv2 = rng.random((3, 3, C2, C2), dtype=np.float32)
+    conv3 = rng.random((1, 1, C2, C1), dtype=np.float32)
+    return input, conv1, conv2, conv3
+run(bench.resnet, resnet, N=8, W=56, H=56, C1=256, C2=64)
+
+
+def scattering_self_energies(Nkz, NE, Nqz, Nw, N3D, NA, NB, Norb):
+    rng = default_rng(42)
+
+    neigh_idx = np.empty((NA, NB), dtype=np.int32)
+    for i in range(NA):
+        neigh_idx[i] = np.positive(np.arange(i - NB / 2, i + NB / 2) % NA)
+    dH = rng_complex((NA, NB, N3D, Norb, Norb), rng)
+    G = rng_complex((Nkz, NE, NA, Norb, Norb), rng)
+    D = rng_complex((Nqz, Nw, NA, NB, N3D, N3D), rng)
+    Sigma = np.zeros((Nkz, NE, NA, Norb, Norb), dtype=np.complex128)
+    return neigh_idx, dH, G, D, Sigma
+run(bench.scattering_self_energies, scattering_self_energies, Nkz=4, NE=10, Nqz=4, Nw=3, N3D=3, NA=20, NB=4, Norb=4)
+
+
+def seidel_2d(N, TSTEPS, datatype=np.float64):
+    A = np.fromfunction(lambda i, j: (i * (j + 2) + 2) / N, (N, N),
+                        dtype=datatype)
+    return TSTEPS, N, A
+run(bench.seidel_2d, seidel_2d, N=400, TSTEPS=100)
+
+
+def softmax(N, H, SM):
+    rng = default_rng(42)
+    x = rng.random((N, H, SM, SM), dtype=np.float32)
+    return x
+run(bench.softmax, softmax, N=64, H=16, SM=512)
+
+
+def spmv(M, N, nnz):
+    from python import numpy as NP
+    from python import numpy.random as NR
+    from python import scipy.sparse as SS
+
+    rng = NR.default_rng(42)
+    x: np.ndarray[float,1] = rng.random((N, ))
+    matrix = SS.random(
+        M, N, density=nnz / (M * N), format='csr', dtype=NP.float64, random_state=rng
+    )
+    rows: np.ndarray[u32,1] = NP.uint32(matrix.indptr)
+    cols: np.ndarray[u32,1] = NP.uint32(matrix.indices)
+    vals: np.ndarray[float,1] = matrix.data
+    return rows, cols, vals, x
+run(bench.spmv, spmv, M=131072, N=131072, nnz=262144)
+
+
+def stockham_fft(R, K):
+    rng = default_rng(42)
+
+    N = R**K
+    X = rng_complex((N, ), rng)
+    Y = np.zeros_like(X, dtype=np.complex128)
+    return N, R, K, X, Y
+run(bench.stockham_fft, stockham_fft, R=2, K=21)
+
+
+def symm(M, N, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    C = np.fromfunction(lambda i, j: ((i + j) % 100) / M, (M, N),
+                        dtype=datatype)
+    B = np.fromfunction(lambda i, j: ((N + i - j) % 100) / M, (M, N),
+                        dtype=datatype)
+    A = np.empty((M, M), dtype=datatype)
+    for i in range(M):
+        A[i, :i + 1] = np.fromfunction(lambda j: ((i + j) % 100) / M,
+                                       (i + 1, ),
+                                       dtype=datatype)
+        A[i, i + 1:] = -999
+    return alpha, beta, C, A, B
+run(bench.symm, symm, M=1000, N=1200)
+
+
+def syr2k(M, N, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    C = np.fromfunction(lambda i, j: ((i * j + 3) % N) / M, (N, N),
+                        dtype=datatype)
+    A = np.fromfunction(lambda i, j: ((i * j + 1) % N) / N, (N, M),
+                        dtype=datatype)
+    B = np.fromfunction(lambda i, j: ((i * j + 2) % M) / M, (N, M),
+                        dtype=datatype)
+    return alpha, beta, C, A, B
+run(bench.syr2k, syr2k, M=350, N=400)
+
+
+def syrk(M, N, datatype=np.float64):
+    alpha = datatype(1.5)
+    beta = datatype(1.2)
+    C = np.fromfunction(lambda i, j: ((i * j + 2) % N) / M, (N, N),
+                        dtype=datatype)
+    A = np.fromfunction(lambda i, j: ((i * j + 1) % N) / N, (N, M),
+                        dtype=datatype)
+    return alpha, beta, C, A
+run(bench.syr2k, syr2k, M=1000, N=1200)
+
+
+def trisolv(N, datatype=np.float64):
+    L = np.fromfunction(lambda i, j: (i + N - j + 1) * 2 / N, (N, N),
+                        dtype=datatype)
+    x = np.full((N, ), -999, dtype=datatype)
+    b = np.fromfunction(lambda i: i, (N, ), dtype=datatype)
+    return L, x, b
+run(bench.trisolv, trisolv, N=16000)
+
+
+def trmm(M, N, datatype=np.float64):
+    alpha = datatype(1.5)
+    A = np.fromfunction(lambda i, j: ((i * j) % M) / M, (M, M), dtype=datatype)
+    for i in range(M):
+        A[i, i] = 1.0
+    B = np.fromfunction(lambda i, j: ((N + i - j) % N) / N, (M, N),
+                        dtype=datatype)
+    return alpha, A, B
+run(bench.trmm, trmm, M=1000, N=1200)
+
+
+def vadv(I, J, K):
+    rng = default_rng(42)
+    dtr_stage = 3. / 20.
+
+    # Define arrays
+    utens_stage = rng.random((I, J, K))
+    u_stage = rng.random((I, J, K))
+    wcon = rng.random((I + 1, J, K))
+    u_pos = rng.random((I, J, K))
+    utens = rng.random((I, J, K))
+    return utens_stage, u_stage, wcon, u_pos, utens, dtr_stage
+run(bench.vadv, vadv, I=256, J=256, K=160)

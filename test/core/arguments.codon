@@ -140,13 +140,13 @@ class C:
     b: tuple[int,int,int]
 
     def __new__(y: float) -> C:
-        return (y, (0, 0, 0))
+        return C(y, (0, 0, 0))
 
     def __new__(y: float, foo: int) -> C:
-        return (y, (foo, 1, 0))
+        return C(y, (foo, 1, 0))
 
     def __new__(x: list[float], a: int, b: int, c: int) -> C:
-        return (x[0], (a, b, c))
+        return C(x[0], (a, b, c))
 
     def __new__(a: int, b: int):
         return (a, b)

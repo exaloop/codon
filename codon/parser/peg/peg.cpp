@@ -3,7 +3,6 @@
 #include "peg.h"
 
 #include <any>
-#include <iostream>
 #include <memory>
 #include <peglib.h>
 #include <string>
@@ -13,6 +12,8 @@
 #include "codon/parser/common.h"
 #include "codon/parser/peg/rules.h"
 #include "codon/parser/visitors/format/format.h"
+
+#include <ranges>
 
 double totalPeg = 0.0;
 
@@ -32,9 +33,9 @@ std::shared_ptr<peg::Grammar> initParser() {
           e = 0;
         return e;
       });
-  for (auto &x : *g) {
-    auto v = peg::LinkReferences(*g, x.second.params);
-    x.second.accept(v);
+  for (auto &val : *g | std::views::values) {
+    auto v = peg::LinkReferences(*g, val.params);
+    val.accept(v);
   }
   (*g)["program"].enablePackratParsing = true;
   (*g)["fstring"].enablePackratParsing = true;
@@ -53,15 +54,16 @@ std::shared_ptr<peg::Grammar> initParser() {
 }
 
 template <typename T>
-T parseCode(Cache *cache, const std::string &file, const std::string &code,
-            int line_offset, int col_offset, const std::string &rule) {
+llvm::Expected<T> parseCode(Cache *cache, const std::string &file,
+                            const std::string &code, int line_offset, int col_offset,
+                            const std::string &rule) {
   Timer t("");
   t.logged = true;
   // Initialize
   if (!grammar)
     grammar = initParser();
 
-  std::vector<std::tuple<size_t, size_t, std::string>> errors;
+  std::vector<ErrorMessage> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
     size_t ed = msg.size();
     if (startswith(msg, "syntax error, unexpected")) {
@@ -69,7 +71,7 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
       if (i != std::string::npos)
         ed = i;
     }
-    errors.emplace_back(line, col, msg.substr(0, ed));
+    errors.emplace_back(msg.substr(0, ed), file, line, col);
   };
   T result;
   auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
@@ -79,55 +81,32 @@ T parseCode(Cache *cache, const std::string &file, const std::string &code,
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
   totalPeg += t.elapsed();
-  exc::ParserException ex;
-  if (!errors.empty()) {
-    for (auto &e : errors)
-      ex.track(fmt::format("{}", std::get<2>(e)),
-               SrcInfo(file, std::get<0>(e), std::get<1>(e), 0));
-    throw ex;
-    return T();
-  }
+
+  if (!errors.empty())
+    return llvm::make_error<error::ParserErrorInfo>(errors);
   return result;
 }
 
-StmtPtr parseCode(Cache *cache, const std::string &file, const std::string &code,
-                  int line_offset) {
-  return parseCode<StmtPtr>(cache, file, code + "\n", line_offset, 0, "program");
+llvm::Expected<Stmt *> parseCode(Cache *cache, const std::string &file,
+                                 const std::string &code, int line_offset) {
+  return parseCode<Stmt *>(cache, file, code + "\n", line_offset, 0, "program");
 }
 
-std::pair<ExprPtr, std::string> parseExpr(Cache *cache, const std::string &code,
-                                          const codon::SrcInfo &offset) {
+llvm::Expected<std::pair<Expr *, StringExpr::FormatSpec>>
+parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
   auto newCode = code;
   ltrim(newCode);
   rtrim(newCode);
-  auto e = parseCode<std::pair<ExprPtr, std::string>>(
+  return parseCode<std::pair<Expr *, StringExpr::FormatSpec>>(
       cache, offset.file, newCode, offset.line, offset.col, "fstring");
-  return e;
 }
 
-StmtPtr parseFile(Cache *cache, const std::string &file) {
-  std::vector<std::string> lines;
-  std::string code;
-  if (file == "-") {
-    for (std::string line; getline(std::cin, line);) {
-      lines.push_back(line);
-      code += line + "\n";
-    }
-  } else {
-    std::ifstream fin(file);
-    if (!fin)
-      E(error::Error::COMPILER_NO_FILE, SrcInfo(), file);
-    for (std::string line; getline(fin, line);) {
-      lines.push_back(line);
-      code += line + "\n";
-    }
-    fin.close();
-  }
-
+llvm::Expected<Stmt *> parseFile(Cache *cache, const std::string &file) {
+  auto lines = cache->fs->read_lines(file);
   cache->imports[file].content = lines;
+  std::string code = join(lines, "\n");
   auto result = parseCode(cache, file, code);
-  // For debugging purposes:
-  // LOG("peg/{} :=  {}", file, result);
+  // /* For debugging purposes: */ LOG("peg/{} :=  {}", file, result);
   return result;
 }
 
@@ -135,35 +114,32 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
   auto g = std::make_shared<peg::Grammar>();
   init_omp_rules(*g);
   init_omp_actions(*g);
-  for (auto &x : *g) {
-    auto v = peg::LinkReferences(*g, x.second.params);
-    x.second.accept(v);
+  for (auto &val : *g | std::views::values) {
+    auto v = peg::LinkReferences(*g, val.params);
+    val.accept(v);
   }
   (*g)["pragma"].enablePackratParsing = true;
   return g;
 }
 
-std::vector<CallExpr::Arg> parseOpenMP(Cache *cache, const std::string &code,
-                                       const codon::SrcInfo &loc) {
+llvm::Expected<std::vector<CallArg>> parseOpenMP(Cache *cache, const std::string &code,
+                                                 const codon::SrcInfo &loc) {
   if (!ompGrammar)
     ompGrammar = initOpenMPParser();
 
-  std::vector<std::tuple<size_t, size_t, std::string>> errors;
+  std::vector<ErrorMessage> errors;
   auto log = [&](size_t line, size_t col, const std::string &msg, const std::string &) {
-    errors.emplace_back(line, col, msg);
+    errors.emplace_back(fmt::format("openmp: {}", msg), loc.file, loc.line, loc.col);
   };
-  std::vector<CallExpr::Arg> result;
+  std::vector<CallArg> result;
   auto ctx = std::make_any<ParseContext>(cache, 0, 0, 0);
   auto r = (*ompGrammar)["pragma"].parse_and_get_value(code.c_str(), code.size(), ctx,
                                                        result, "", log);
   auto ret = r.ret && r.len == code.size();
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
-  exc::ParserException ex;
-  if (!errors.empty()) {
-    ex.track(fmt::format("openmp {}", std::get<2>(errors[0])), loc);
-    throw ex;
-  }
+  if (!errors.empty())
+    return llvm::make_error<error::ParserErrorInfo>(errors);
   return result;
 }
 
