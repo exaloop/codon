@@ -91,7 +91,6 @@ SEQ_FUNC void seq_print(seq_str_t str);
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo);
 
 SEQ_FUNC void *seq_lock_new();
-SEQ_FUNC void *seq_lock_new();
 SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_lock_release(void *lock);
 SEQ_FUNC void *seq_rlock_new();
