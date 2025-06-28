@@ -397,17 +397,15 @@ void DocVisitor::visit(ImportStmt *stmt) {
     if (!cast<IdExpr>(e) || !stmt->getArgs().empty() || stmt->getReturnType() ||
         (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
       E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
-    // We have an empty stmt->from in "from .. import".
-    if (!cast<IdExpr>(e)->getValue().empty())
-      dirs.push_back(cast<IdExpr>(e)->getValue());
   }
-  auto ee = cast<IdExpr>(e);
-  if (!ee || !stmt->getArgs().empty() || stmt->getReturnType() ||
-      (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
-    E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
-  // We have an empty stmt->from in "from .. import".
-  if (!ee->getValue().empty())
-    dirs.push_back(ee->getValue());
+  if (auto ee = cast<IdExpr>(e)) {
+    if (!stmt->getArgs().empty() || stmt->getReturnType() ||
+        (stmt->getWhat() && !cast<IdExpr>(stmt->getWhat())))
+      E(Error::CUSTOM, stmt->getSrcInfo(), "invalid import statement");
+    // We have an empty stmt->from in "from .. import".
+    if (!ee->getValue().empty())
+      dirs.push_back(ee->getValue());
+  }
   // Handle dots (e.g. .. in from ..m import x).
   for (size_t i = 1; i < stmt->getDots(); i++)
     dirs.emplace_back("..");

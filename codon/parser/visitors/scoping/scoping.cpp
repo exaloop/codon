@@ -452,9 +452,6 @@ void ScopingVisitor::visit(FunctionStmt *stmt) {
   std::vector<Expr *> newDecorators;
   for (auto &d : stmt->getDecorators()) {
     if (isId(d, "__attribute__")) {
-      if (stmt->getDecorators().size() != 1)
-        STOP_ERROR(Error::FN_SINGLE_DECORATOR, stmt->getDecorators()[1],
-                   "__attribute__");
       stmt->setAttribute(Attr::Attribute);
     } else if (isId(d, "llvm")) {
       stmt->setAttribute(Attr::LLVM);
