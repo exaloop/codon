@@ -187,6 +187,7 @@ set(CODON_HPPFILES
   codon/compiler/engine.h
   codon/compiler/error.h
   codon/compiler/jit.h
+  codon/compiler/jit_extern.h
   codon/compiler/memory_manager.h
   codon/dsl/dsl.h
   codon/dsl/plugins.h
@@ -282,7 +283,7 @@ set(CODON_HPPFILES
   codon/cir/var.h
   codon/util/common.h
   codon/util/serialize.h
-  codon/compiler/jit_extern.h)
+  codon/util/tser.h)
 set(CODON_CPPFILES
   codon/compiler/compiler.cpp
   codon/compiler/debug_listener.cpp
@@ -441,7 +442,7 @@ cmrc_add_resource_library(
 )
 set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
 
-target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt tser dl codonrt codon-stdlib)
+target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt codon-stdlib)
 
 # Gather headers
 add_custom_target(
@@ -485,7 +486,7 @@ add_dependencies(libs codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC fmt tser codonc codon_jupyter Threads::Threads)
+target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -516,7 +517,7 @@ set(CODON_TEST_CPPFILES
     test/types.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test fmt tser codonc codonrt gtest_main)
+target_link_libraries(codon_test fmt codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
@@ -530,5 +531,5 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)

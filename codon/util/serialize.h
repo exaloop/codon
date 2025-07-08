@@ -4,8 +4,9 @@
 
 #include <functional>
 #include <string>
-#include <tser/tser.hpp>
 #include <unordered_map>
+
+#include "codon/util/tser.h"
 
 namespace codon {
 
