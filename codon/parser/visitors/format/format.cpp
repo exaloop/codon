@@ -193,7 +193,7 @@ void FormatVisitor::visit(CallExpr *expr) {
 }
 
 void FormatVisitor::visit(DotExpr *expr) {
-  result = renderExpr(expr, "{}○{}", transform(expr->getExpr()), expr->getMember());
+  result = renderExpr(expr, "{}.{}", transform(expr->getExpr()), expr->getMember());
 }
 
 void FormatVisitor::visit(SliceExpr *expr) {
@@ -258,7 +258,7 @@ void FormatVisitor::visit(AssignStmt *stmt) {
 }
 
 void FormatVisitor::visit(AssignMemberStmt *stmt) {
-  result = fmt::format("{}○{} = {}", transform(stmt->getLhs()), stmt->getMember(),
+  result = fmt::format("{}.{} = {}", transform(stmt->getLhs()), stmt->getMember(),
                        transform(stmt->getRhs()));
 }
 
