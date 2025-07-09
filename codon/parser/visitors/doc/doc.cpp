@@ -109,6 +109,17 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
+
+  auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
+      {"name", "type"}, {"kind", "class"}, {"type", "type"}});
+  j->set("generics", std::make_shared<json>(std::vector<std::string>{"T"}));
+  shared->modules[""]->add("type", std::make_shared<int>(shared->itemID));
+  shared->j->set(std::to_string(shared->itemID++), j);
+  j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
+      {"name", "Literal"}, {"kind", "class"}, {"type", "type"}});
+  j->set("generics", std::make_shared<json>(std::vector<std::string>{"T"}));
+  shared->modules[""]->add("Literal", std::make_shared<int>(shared->itemID));
+  shared->j->set(std::to_string(shared->itemID++), j);
   DocVisitor(shared->modules[""]).transformModule(*coreOrErr);
   DocVisitor(shared->modules[""]).transformModule(*astOrErr);
 
@@ -254,17 +265,16 @@ void DocVisitor::visit(FunctionStmt *stmt) {
       generics.push_back(a.name);
       a.status = Param::Generic;
     }
-  for (auto &a : *stmt)
-    if (a.isValue()) {
-      auto jj = std::make_shared<json>();
-      jj->set("name", a.name);
-      if (a.type)
-        jj->set("type", transform(a.type));
-      if (a.defaultValue) {
-        jj->set("default", FormatVisitor::apply(a.defaultValue));
-      }
-      args.push_back(jj);
+  for (auto &a : *stmt) {
+    auto jj = std::make_shared<json>();
+    jj->set("name", a.name);
+    if (a.type)
+      jj->set("type", transform(a.type));
+    if (a.defaultValue) {
+      jj->set("default", FormatVisitor::apply(a.defaultValue));
     }
+    args.push_back(jj);
+  }
   j->set("generics", std::make_shared<json>(generics));
   bool isLLVM = false;
   for (auto &d : stmt->getDecorators())
@@ -315,14 +325,15 @@ void DocVisitor::visit(ClassStmt *stmt) {
   ctx->shared->generics[id] = generics;
   for (auto &g : generics)
     ctx->add(g, std::make_shared<int>(0));
-  for (const auto &a : *stmt)
-    if (a.isValue()) {
-      auto ja = std::make_shared<json>();
-      ja->set("name", a.name);
-      if (a.type)
-        ja->set("type", transform(a.type));
-      args.push_back(ja);
-    }
+  for (const auto &a : *stmt) {
+    auto ja = std::make_shared<json>();
+    ja->set("name", a.name);
+    if (a.type)
+      ja->set("type", transform(a.type));
+    if (a.defaultValue)
+      ja->set("default", FormatVisitor::apply(a.defaultValue));
+    args.push_back(ja);
+  }
   j->set("generics", std::make_shared<json>(generics));
   j->set("args", std::make_shared<json>(args));
   j->set("pos", jsonify(stmt->getSrcInfo()));
@@ -457,6 +468,10 @@ void DocVisitor::visit(AssignStmt *stmt) {
   ctx->add(e->getValue(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
       {"name", e->getValue()}, {"kind", "variable"}});
+  if (stmt->getTypeExpr())
+    j->set("type", transform(stmt->getTypeExpr()));
+  if (stmt->getRhs())
+    j->set("value", FormatVisitor::apply(stmt->getRhs()));
   j->set("pos", jsonify(stmt->getSrcInfo()));
   ctx->shared->j->set(std::to_string(id), j);
   resultStmt = std::to_string(id);
