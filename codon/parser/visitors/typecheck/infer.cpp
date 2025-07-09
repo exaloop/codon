@@ -91,6 +91,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
             (ast->hasAttribute(Attr::ForceRealize) || ast->hasAttribute(Attr::Export) ||
              (ast->hasAttribute(Attr::C) && !ast->hasAttribute(Attr::CVarArg)))) {
           seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
+          LOG_REALIZE("[force_realize] {}", f.second.getType()->debugString(2));
           realize(instantiateType(f.second.getType()));
           seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
         }

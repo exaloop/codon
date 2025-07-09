@@ -182,6 +182,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           stmt->setAttribute(Attr::Inline);
         if (attrFn->ast->hasAttribute(Attr::NoArgReorder))
           stmt->setAttribute(Attr::NoArgReorder);
+        if (attrFn->ast->hasAttribute(Attr::ForceRealize))
+          stmt->setAttribute(Attr::ForceRealize);
         if (attrFn->ast->hasAttribute(Attr::FunctionAttributes)) {
           for (const auto &key :
                attrFn->ast
