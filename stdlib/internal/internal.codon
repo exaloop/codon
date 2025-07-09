@@ -85,13 +85,6 @@ class __internal__:
         """
         pass
 
-    def class_get_rtti_vtable(obj) -> Ptr[cobj]:
-        if not static.has_rtti(type(obj)):
-            compile_error("class is not polymorphic")
-        rtti = __internal__.class_raw_rtti_rtti(obj)
-        id = __internal__.to_class_ptr(rtti, RTTI).id
-        return __vtables__[id]
-
     def class_set_rtti_vtable(id: int, sz: int, T: type):
         if not static.has_rtti(T):
             compile_error("class is not polymorphic")
@@ -103,6 +96,31 @@ class __internal__:
         if not static.has_rtti(T):
             compile_error("class is not polymorphic")
         __vtables__[id][fid] = f
+
+    def class_get_thunk_id(F: type, T: type) -> int:
+        """Compiler-generated"""
+        return 0
+
+    def class_thunk_debug(base, func, sig, *args):
+        # print("![thunk]!", base, func, sig, args[0].__raw__())
+        pass
+
+    @no_argument_wrap
+    def class_thunk_dispatch(slf, cls_id, *args, F: type):
+        if not static.has_rtti(type(slf)):
+            compile_error("class is not polymorphic")
+
+        FR = type(static.function.realized(F, slf, *args))
+        T = type(slf)
+        thunk_id = __internal__.class_get_thunk_id(FR, T)
+
+        # Get RTTI table
+        if cls_id == 0:
+            rtti = __internal__.class_raw_rtti_rtti(slf)
+            cls_id = __internal__.to_class_ptr(rtti, RTTI).id
+        fptr = __vtables__[cls_id][thunk_id]
+        f = FR(fptr)
+        return f(slf, *args)
 
     def class_set_typeinfo(p: Ptr[cobj], typeinfo: T, T: type) -> None:
         i = Ptr[T](1)
@@ -133,7 +151,7 @@ class __internal__:
         str.memcpy(p.__raw__(), obj.__raw__(), sizeof(tuple(T)))
         return p
 
-    def class_super(obj, B: type, change_rtti: Literal[int] = 0) -> B:
+    def class_super(obj, B: type, use_super_type: Literal[int] = 0):
         D = type(obj)
         if not static.has_rtti(D):  # static inheritance
             return __internal__.to_class_ptr(obj.__raw__(), B)
@@ -143,9 +161,18 @@ class __internal__:
             off = __internal__.class_base_derived_dist(B, D)
             ptr = __internal__.class_raw_rtti_ptr(obj) + off
             pr = __internal__.class_raw_rtti_rtti(obj)
-            if change_rtti:
-                pr = RTTI(B.__id__).__raw__()
-            return __internal__.to_class_ptr_rtti((ptr, pr), B)
+            res = __internal__.to_class_ptr_rtti((ptr, pr), B)
+            if use_super_type:
+                # This is explicit super()
+                return __internal__.tuple_cast_unsafe((res, ), Super[B])
+            else:
+                # Implicit super() just used for casting
+                return res
+
+    def class_super_change_rtti(obj: Super[B], B: type):
+        ptr = __internal__.class_raw_rtti_ptr(obj.__obj__)
+        pr = RTTI(B.__id__).__raw__()
+        return __internal__.to_class_ptr_rtti((ptr, pr), B)
 
     @pure
     @derives
@@ -809,6 +836,10 @@ class ellipsis:
 
 __internal__.class_init_vtables()
 
+@extend
+class Super:
+    def __repr__(self):
+        return f'<super: {__T__} {self.__obj__}>'
 
 class __cast__:
     def cast(obj: T, T: type) -> Generator[T]:

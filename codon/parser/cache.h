@@ -159,16 +159,12 @@ struct Cache {
       /// IR type pointer.
       codon::ir::types::Type *ir = nullptr;
 
-      /// Realization vtable.
-      struct VTable {
-        // Maps {base, thunk signature} to {thunk realization, thunk ID}
-        std::map<std::pair<std::string, std::string>,
-                 std::pair<std::shared_ptr<types::FuncType>, size_t>>
-            table;
-        codon::ir::Var *ir = nullptr;
-      };
-      /// All vtables (for each base class)
-      std::unordered_map<std::string, VTable> vtables;
+      /// Realization vtable (for each base class).
+      /// Maps {base, function signature} to {thunk realization, thunk ID}.
+      /// Base can be the realization itself.
+      /// Order is important so map is used instead of unordered_map.
+      std::map<std::pair<std::string, std::string>, std::shared_ptr<types::FuncType>>
+          vtable;
       /// Realization ID
       size_t id = 0;
 
@@ -196,6 +192,8 @@ struct Cache {
   size_t classRealizationCnt = 0;
 
   Class *getClass(const types::ClassType *);
+
+  std::map<std::pair<std::string, std::string>, size_t> thunkIds;
 
   struct Function {
     /// Module information

@@ -235,7 +235,6 @@ private:
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
   SuiteStmt *generateSpecialAst(types::FuncType *);
-  size_t getRealizationID(types::ClassType *, types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
@@ -394,6 +393,7 @@ public:
   SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
   FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,
                                  const types::ClassType *derived);
+  SuiteStmt *generateGetThunkIDAst(types::FuncType *);
   SuiteStmt *generateFunctionCallInternalAST(types::FuncType *);
   SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);

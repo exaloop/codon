@@ -168,22 +168,10 @@ void TypecheckVisitor::visit(CallExpr *expr) {
                                              : t.getExpr()->getType()->prettyString()));
       auto argsNice = fmt::format("({})", join(a, ", "));
       auto name = getUnmangledName(calleeFn->getFuncName());
-      if (calleeFn->getParentType() && calleeFn->getParentType()->getClass())
-        name = fmt::format(
-            "{}.{}", getUserFacingName(calleeFn->getParentType()->getClass()->name),
-            name);
+      if (auto a =
+              calleeFn->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass))
+        name = fmt::format("{}.{}", getUserFacingName(a->value), name);
       E(Error::FN_NO_ATTR_ARGS, expr, name, argsNice);
-    }
-  }
-
-  bool isVirtual = false;
-  if (auto dot = cast<DotExpr>(expr->getExpr()->getOrigExpr())) {
-    if (auto baseTyp = dot->getExpr()->getClassType()) {
-      auto cls = getClass(baseTyp);
-      isVirtual = static_cast<bool>(in(cls->virtuals, dot->getMember())) && cls->rtti &&
-                  !isTypeExpr(expr->getExpr()) && !isDispatch(calleeFn.get()) &&
-                  !calleeFn->ast->hasAttribute(Attr::StaticMethod) &&
-                  !calleeFn->ast->hasAttribute(Attr::Property);
     }
   }
 
@@ -234,31 +222,6 @@ void TypecheckVisitor::visit(CallExpr *expr) {
     }
     call->setAttribute(Attr::ExprPartial);
     resultExpr = transform(call);
-  } else if (isVirtual) {
-    if (!realize(calleeFn))
-      return;
-    auto vid = getRealizationID(calleeFn->getParentType()->getClass(), calleeFn.get());
-
-    // Function[Tuple[TArg1, TArg2, ...], TRet]
-    std::vector<Expr *> ids;
-    for (auto &t : *calleeFn)
-      ids.push_back(N<IdExpr>(t.getType()->realizedName()));
-    auto fnType = N<InstantiateExpr>(
-        N<IdExpr>("Function"),
-        std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
-                            N<IdExpr>(calleeFn->getRetType()->realizedName())});
-    // Function[Tuple[TArg1, TArg2, ...],TRet](
-    //    __internal__.class_get_rtti_vtable(expr)[T[VIRTUAL_ID]]
-    // )
-    auto e = N<CallExpr>(fnType,
-                         N<IndexExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"),
-                                                             "class_get_rtti_vtable"),
-                                                  expr->front().getExpr()),
-                                      N<IntExpr>(vid)));
-    std::vector<CallArg> args;
-    for (auto &a : *expr)
-      args.emplace_back(a.getExpr());
-    resultExpr = transform(N<CallExpr>(e, args));
   } else {
     // Case: normal function call
     unify(expr->getType(), calleeFn->getRetType());

@@ -876,6 +876,17 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
+  else if (exprClass && exprClass->is("Super") && expectedClass &&
+           !expectedClass->is("Super")) {
+    // Super[T] to T
+    type = extractClassGeneric(exprClass)->shared_from_this();
+    fn = [this](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
+                                                    "class_super_change_rtti")),
+                         expr);
+    };
+  }
+
   else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {
     // Cast derived classes to base classes
     const auto &mros = ctx->cache->getClass(exprClass)->mro;
@@ -1370,7 +1381,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       }
     }
   };
-  if (type->is("Capsule")) {
+  if (type->is("Capsule") || type->is("Super")) {
     type = extractClassGeneric(type)->getClass();
   }
   if (type && type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {

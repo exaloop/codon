@@ -943,17 +943,17 @@ def random_expr(depth) -> Expr:
             return Add(lhs,rhs)
 for i in range(11):
     print(random_expr(i).eval())
-#: 17
-#: 71
-#: 1760
-#: 118440
-#: 94442
-#: 8.02435e+15
-#: 1.07463e+13
-#: 1.43017e+19
-#: 2.40292e+34
-#: 6.1307e+28
-#: 5.16611e+49
+#: 3
+#: 697
+#: 109
+#: 73568
+#: 1.5469e+06
+#: 2892
+#: 1.51958e+11
+#: 7.94951e+15
+#: 3.70513e+20
+#: 3.09768e+28
+#: 1.3109e+40
 
 #%% polymorphism_3
 import operator
@@ -1063,19 +1063,18 @@ class BX(object):
         self.a = AX()
     def hai(self):
         return f"hai/BX: {self.a.value}"
+    def inc(self, y):
+        self.a.value += u64(y)
 
 class CX(BX):
     def __init__(self):
         print('init/CX')
         super().__init__()
-
     def getsuper(self):
         return super()
-
     def test(self):
         print('test/CX:', self.a.value)
         return self.a.get_value()
-
     def hai(self):
         return f"hai/CX: {self.a.value}"
 
@@ -1090,18 +1089,94 @@ print table.test()
 s = table.getsuper()
 print(s.hai())
 #: hai/BX: 15
-s.a.value += 1u64
+s.inc(1)
 print(s.hai())
 #: hai/BX: 16
-table.a.value += 1u64
+table.inc(1)
 print(s.hai())
 #: hai/BX: 17
 table.test()
 #: test/CX: 17
 
-c: List[BX] = [s, table]
-print(c[0].hai())  #: hai/BX: 17
-print(c[1].hai())  #: hai/CX: 17
+c: List[BX] = [BX(), s, table]
+#: init/BX
+#: init/AX
+print(c[0].hai())  #: hai/BX: 15
+print(c[1].hai())  #: hai/BX: 17
+print(c[2].hai())  #: hai/CX: 17
+
+
+#%% polymorphism_5_super
+class B:
+    def __init__(self): pass
+    def foo(self): return "B_" + self.bar()
+    def bar(self): return "bB"
+
+class X(B):
+    def __init__(self): super().__init__()
+    def foo(self): return "X_" + self.bar()
+    def bar(self): return "bX" + super().bar()
+
+class Y(X):
+    def __init__(self): super().__init__()
+    def foo(self): return "Y_" + self.bar()
+    def bar(self): return "bY" + super().bar()
+    def s(self): return super()
+
+l: list[B] = [B(), Y(), X()]
+for i in l:
+    print(type(i), i.foo(), i.bar())
+#: <class 'B'> B_bB bB
+#: <class 'B'> Y_bYbXbB bYbXbB
+#: <class 'B'> X_bXbB bXbB
+
+o = Y()
+print(o.foo())      #: Y_bYbXbB
+print(o.s().foo())  #: X_bYbXbB
+
+
+class Shape:
+    def area(self): return 0.0
+    def describe(self): return "This is a shape."
+
+class Circle(Shape):
+    radius: float
+
+    def __init__(self, radius): self.radius = radius
+    def area(self): return 3.1416 * self.radius**2
+    def describe(self): return f"A circle with radius {self.radius}"
+
+class Rectangle(Shape):
+    width: float
+    height: float
+
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+    def area(self): return self.width * self.height
+    def describe(self): return f"A rectangle with width {self.width} and height {self.height}"
+
+class Square(Rectangle):
+    def __init__(self, width): super().__init__(width, width)
+    def describe(self): return super().describe().replace('rectangle', 'square')
+
+def print_area(shape: Shape):
+    print(shape.describe())
+    print(shape.area())
+
+shapes: list[Shape] = []
+shapes.append(Circle(5))
+shapes.append(Rectangle(4, 6))
+shapes.append(Square(3))
+
+for s in shapes:
+    print_area(s)
+#: A circle with radius 5
+#: 78.54
+#: A rectangle with width 4 and height 6
+#: 24
+#: A square with width 3 and height 3
+#: 9
 
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):

@@ -25,23 +25,36 @@ using namespace types;
 /// TODO: add JIT compatibility.
 
 void TypecheckVisitor::prepareVTables() {
+  // def class_get_thunk_id(F, T):
+  //   return VID
   auto fn = getFunction(
+      getMangledMethod("std.internal.core", "__internal__", "class_get_thunk_id"));
+  auto oldAst = fn->ast;
+  for (const auto &real : fn->realizations | std::views::values) {
+    fn->ast->suite = generateGetThunkIDAst(real->getType());
+    real->type->ast = fn->ast;
+    // LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
+    realizeFunc(real->type.get(), true);
+  }
+  fn->ast = oldAst;
+
+  fn = getFunction(
       getMangledMethod("std.internal.core", "__internal__", "class_populate_vtables"));
   fn->ast->suite = generateClassPopulateVTablesAST();
   auto typ = fn->realizations.begin()->second->getType();
-  LOG_REALIZE("[poly] {} : {}", typ->debugString(2), fn->ast->suite->toString(2));
   typ->ast = fn->ast;
+  LOG_REALIZE("[poly] {} : {}", typ->debugString(2), fn->ast->toString(2));
   realizeFunc(typ, true);
 
   // def class_base_derived_dist(B, D):
   //   return Tuple[<types before B is reached in D>].__elemsize__
   fn = getFunction(
       getMangledMethod("std.internal.core", "__internal__", "class_base_derived_dist"));
-  auto oldAst = fn->ast;
+  oldAst = fn->ast;
   for (const auto &real : fn->realizations | std::views::values) {
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
-    LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), *fn->ast->suite);
     real->type->ast = fn->ast;
+    LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
     realizeFunc(real->type.get(), true);
   }
   fn->ast = oldAst;
@@ -51,42 +64,33 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
   auto suite = N<SuiteStmt>();
   for (const auto &cls : ctx->cache->classes | std::views::values) {
     for (const auto &[r, real] : cls.realizations) {
-      size_t vtSz = 0;
-      for (const auto &vtable : real->vtables | std::views::values) {
-        if (!vtable.ir)
-          vtSz += vtable.table.size();
-      }
-      if (!vtSz)
+      if (real->vtable.empty())
         continue;
       // __internal__.class_set_rtti_vtable(real.ID, size, real.type)
       suite->addStmt(N<ExprStmt>(
           N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable"),
-                      N<IntExpr>(real->id), N<IntExpr>(vtSz + 2), N<IdExpr>(r))));
-      // LOG("[poly] {} -> {}", r, real->id);
-      vtSz = 0;
-      for (const auto &vtable : real->vtables | std::views::values) {
-        if (!vtable.ir) {
-          for (const auto &v : vtable.table | std::views::values) {
-            auto &[fn, id] = v;
-            std::vector<Expr *> ids;
-            for (const auto &t : *fn)
-              ids.push_back(N<IdExpr>(t.getType()->realizedName()));
-            // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
-            LOG_REALIZE("[poly] vtable[{}][{}] = {}", real->id, vtSz + id,
-                        fn->debugString(2));
-            Expr *fnCall = N<CallExpr>(
-                N<InstantiateExpr>(
-                    N<IdExpr>("Function"),
-                    std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
-                                        N<IdExpr>(fn->getRetType()->realizedName())}),
-                N<IdExpr>(fn->realizedName()));
-            suite->addStmt(N<ExprStmt>(N<CallExpr>(
-                N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable_fn"),
-                N<IntExpr>(real->id), N<IntExpr>(vtSz + id),
-                N<CallExpr>(N<DotExpr>(fnCall, "__raw__")), N<IdExpr>(r))));
-          }
-          vtSz += vtable.table.size();
-        }
+                      N<IntExpr>(real->id), N<IntExpr>(ctx->cache->thunkIds.size() + 2),
+                      N<IdExpr>(r))));
+      LOG_REALIZE("[poly] {} -> {}", r, real->id);
+      for (const auto &[key, fn] : real->vtable) {
+        auto id = in(ctx->cache->thunkIds, key);
+        seqassert(id, "key {} not found in thunkIds", key);
+        std::vector<Expr *> ids;
+        for (const auto &t : *fn)
+          ids.push_back(N<IdExpr>(t.getType()->realizedName()));
+        // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
+        LOG_REALIZE("[poly] vtable[{}!!{}][{}] = {}", real->getType()->realizedName(),
+                    real->id, *id, fn->realizedName());
+        Expr *fnCall = N<CallExpr>(
+            N<InstantiateExpr>(
+                N<IdExpr>("Function"),
+                std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
+                                    N<IdExpr>(fn->getRetType()->realizedName())}),
+            N<IdExpr>(fn->realizedName()));
+        suite->addStmt(N<ExprStmt>(N<CallExpr>(
+            N<DotExpr>(N<IdExpr>("__internal__"), "class_set_rtti_vtable_fn"),
+            N<IntExpr>(real->id), N<IntExpr>(int64_t(*id)),
+            N<CallExpr>(N<DotExpr>(fnCall, "__raw__")), N<IdExpr>(r))));
       }
     }
   }
@@ -164,9 +168,20 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
       N<IdExpr>(base->realizedName()), N<IdExpr>(derived->realizedName())));
   for (size_t i = 1; i < args.size(); i++)
     callArgs.emplace_back(N<IdExpr>(getUnmangledName((*fp->ast)[i].getName())));
+
+  std::vector<Expr *> debugCallArgs{N<StringExpr>(base->name),
+                                    N<StringExpr>(fp->getFuncName()),
+                                    N<StringExpr>(join(ns, "."))};
+  debugCallArgs.insert(debugCallArgs.end(), callArgs.begin(), callArgs.end());
   auto thunkAst = N<FunctionStmt>(
       thunkName, nullptr, fnArgs,
-      N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->name), callArgs))));
+      N<SuiteStmt>(
+          // For debugging
+          N<ExprStmt>(N<CallExpr>(
+              N<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
+                                         "class_thunk_debug")),
+              debugCallArgs)),
+          N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->getName()), callArgs))));
   thunkAst->setAttribute(Attr::Inline);
   return cast<FunctionStmt>(transform(thunkAst));
 }
@@ -174,14 +189,18 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
 /// Generate thunks in all derived classes for a given virtual function (must be fully
 /// realizable) and the corresponding base class.
 /// @return unique thunk ID.
-size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType *fp) {
-  seqassert(cp->canRealize() && fp->canRealize() && fp->getRetType()->canRealize(),
-            "{} not realized", fp->debugString(2));
+SuiteStmt *TypecheckVisitor::generateGetThunkIDAst(types::FuncType *f) {
+  auto fp = extractType(extractFuncGeneric(f))->getFunc();
+  auto cp = extractType(extractFuncGeneric(f, 1))->getClass();
+
+  seqassert(cp && cp->canRealize() && fp && fp->canRealize() &&
+                fp->getRetType()->canRealize(),
+            "bad {}", f->debugString(2));
 
   // TODO: ugly, ugly; surely needs refactoring
 
   // Function signature for storing thunks
-  auto sig = [](const types::FuncType *ft) {
+  auto sig = [&](const types::FuncType *ft) -> std::string {
     std::vector<std::string> gs;
     for (const auto &a : *ft)
       gs.emplace_back(a.getType()->realizedName());
@@ -189,23 +208,23 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
     for (auto &a : ft->funcGenerics)
       if (!a.name.empty())
         gs.push_back(a.type->realizedName());
-    return join(gs, ",");
+    return fmt::format("{}:{}", getUnmangledName(ft->getFuncName()), join(gs, ","));
   };
 
   // Set up the base class information
   auto baseCls = cp->name;
-  auto fnName = getUnmangledName(fp->getFuncName());
-  auto key = make_pair(fnName, sig(fp));
-  auto &vt = getClassRealization(cp)->vtables[cp->realizedName()];
+  auto fnSig = sig(fp);
+  auto key = std::make_pair(baseCls, fnSig);
 
   // Add or extract thunk ID
-  size_t vid = 0;
-  if (auto i = in(vt.table, key)) {
-    vid = i->second;
-  } else {
-    vid = vt.table.size() + 1;
-    vt.table[key] = {std::static_pointer_cast<FuncType>(fp->shared_from_this()), vid};
-  }
+  auto baseRealization = getClassRealization(cp);
+  seqassert(!in(baseRealization->vtable, key), "thunk {}.{} already added", baseCls,
+            fnSig);
+  if (!in(ctx->cache->thunkIds, key))
+    ctx->cache->thunkIds[key] = 1 + ctx->cache->thunkIds.size();
+  auto vid = ctx->cache->thunkIds[key];
+  baseRealization->vtable[key] =
+      std::static_pointer_cast<FuncType>(fp->shared_from_this());
 
   // Iterate through all derived classes and instantiate the corresponding thunk
   for (const auto &[clsName, cls] : ctx->cache->classes) {
@@ -215,7 +234,7 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
         inMro = true;
         break;
       }
-    if (clsName != baseCls && inMro) {
+    if (inMro && clsName != baseCls) {
       for (const auto &real : cls.realizations | std::views::values) {
         if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
           auto thunkFn = getFunction(thunkAst->name);
@@ -223,13 +242,17 @@ size_t TypecheckVisitor::getRealizationID(types::ClassType *cp, types::FuncType 
               std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
           auto tm = realizeFunc(ti.get(), true);
           seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
-          real->vtables[baseCls].table[key] = {
-              std::static_pointer_cast<FuncType>(tm->shared_from_this()), vid};
+          seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
+                    fnSig, real->getType()->realizedName());
+          real->vtable[key] =
+              std::static_pointer_cast<FuncType>(tm->shared_from_this());
+          LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
+                      real->getType()->realizedName(), key, vid);
         }
       }
     }
   }
-  return vid;
+  return N<SuiteStmt>(N<ReturnStmt>(N<IntExpr>(vid)));
 }
 
 SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {
@@ -465,7 +488,6 @@ Expr *TypecheckVisitor::transformSuper() {
 
     auto typExpr = N<IdExpr>(superTyp->getClass()->name);
     typExpr->setType(instantiateTypeVar(superTyp->getClass()));
-    // LOG("-> {:c} : {:c} {:c}", typ, vCands[1], typExpr->type);
     return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
                                  self, typExpr, N<IntExpr>(1)));
   }
@@ -788,7 +810,7 @@ Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
 
 /// Transform static.realized function to a fully realized type identifier.
 Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
-  auto fn = (*expr)[0].getExpr()->getType()->shared_from_this();
+  auto fn = extractType((*expr)[0].getExpr()->getType())->shared_from_this();
   auto pt = (*expr)[0].getExpr()->getType()->getPartial();
   if (!fn->getFunc() && pt && pt->isPartialEmpty()) {
     auto pft = pt->getPartialFunc()->generalize(0);

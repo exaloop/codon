@@ -325,6 +325,12 @@ def getattr(obj, attr: Literal[str]):
 def setattr(obj, attr: Literal[str], what):
     pass
 
+@tuple
+@__internal__
+class Super:
+    __obj__: __T__
+    __T__: type
+
 def super():
     pass
 

@@ -299,7 +299,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   auto realization = getClass(realized)->realizations[rn] =
       std::make_shared<Cache::Class::ClassRealization>();
   realization->type = rt;
-  realization->id = ctx->cache->classRealizationCnt++;
+  realization->id = ++ctx->cache->classRealizationCnt;
 
   // Create LLVM stub
   auto lt = makeIRType(realized);
