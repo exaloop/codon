@@ -30,13 +30,22 @@ void TypecheckVisitor::prepareVTables() {
   auto fn = getFunction(
       getMangledMethod("std.internal.core", "__internal__", "class_get_thunk_id"));
   auto oldAst = fn->ast;
-  for (const auto &real : fn->realizations | std::views::values) {
-    fn->ast->suite = generateGetThunkIDAst(real->getType());
-    real->type->ast = fn->ast;
-    // LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
-    realizeFunc(real->type.get(), true);
+  // Keep iterating as thunks can generate more thunks.
+  std::unordered_set<std::string> cache;
+  for (bool added = true; added;) {
+    added = false;
+    for (const auto &[rn, real] : fn->realizations) {
+      if (in(cache, rn))
+        continue;
+      cache.insert(rn);
+      added = true;
+      fn->ast->suite = generateGetThunkIDAst(real->getType());
+      real->type->ast = fn->ast;
+      LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
+      realizeFunc(real->type.get(), true);
+      fn->ast = oldAst;
+    }
   }
-  fn->ast = oldAst;
 
   fn = getFunction(
       getMangledMethod("std.internal.core", "__internal__", "class_populate_vtables"));

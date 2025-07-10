@@ -534,6 +534,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   }
   this->ctx = oldCtx;
 
+  LOG_REALIZE("[func] {}", r->getType()->debugString(2));
+
   return r->getType();
 }
 

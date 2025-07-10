@@ -349,10 +349,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
     // Debug information
     LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
-    for (auto &m : cls.fields)
-      LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
-    for (auto &m : cls.methods)
-      LOG_REALIZE("       - method: {}: {}", m.first, m.second);
+    // for (auto &m : cls.fields)
+    //   LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
+    // for (auto &m : cls.methods)
+    //   LOG_REALIZE("       - method: {}: {}", m.first, m.second);
     for (auto &m : cls.mro)
       LOG_REALIZE("       - mro: {:c}", *m);
   } catch (const exc::ParserException &) {

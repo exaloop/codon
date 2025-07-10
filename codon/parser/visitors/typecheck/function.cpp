@@ -317,7 +317,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Handle default values
       auto defaultValue = a.getDefault();
       if (match(defaultValue, MOr(M<NoneExpr>(), M<IntExpr>(), M<BoolExpr>(),
-                                  M<FloatExpr>(), M<IdExpr>()))) {
+                                  M<FloatExpr>(), M<IdExpr>(), M<StringExpr>()))) {
         // Special case: all simple types and Nones are handled at call site
         // (as they are not mutable).
         if (match(defaultValue, M<NoneExpr>())) {
@@ -348,9 +348,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (isClassMember) {
             preamble->addStmt(
                 tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
-            registerGlobal(defName);
             as->setUpdate();
           }
+          registerGlobal(defName);
           auto das = tv.transform(as);
           prependStmts->push_back(das);
           // Default unbounds must be allowed to pass through
