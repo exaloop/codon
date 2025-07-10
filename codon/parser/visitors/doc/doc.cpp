@@ -127,7 +127,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   for (auto &f : files) {
     auto path = std::string(cache->fs->canonical(f));
     ctx->setFilename(path);
-    LOG("-> parsing {}", path);
+    // LOG("-> parsing {}", path);
     auto fAstOrErr = ast::parseFile(shared->cache, path);
     if (!fAstOrErr)
       throw exc::ParserException(fAstOrErr.takeError());
@@ -268,8 +268,16 @@ void DocVisitor::visit(FunctionStmt *stmt) {
   for (auto &a : *stmt) {
     auto jj = std::make_shared<json>();
     jj->set("name", a.name);
-    if (a.type)
-      jj->set("type", transform(a.type));
+    if (a.type) {
+      auto tt = transform(a.type);
+      if (tt->values.empty()) {
+        LOG("{}: warning: cannot resolve argument {}", a.type->getSrcInfo(),
+            FormatVisitor::apply(a.type));
+        jj->set("type", FormatVisitor::apply(a.type));
+      } else {
+        jj->set("type", tt);
+      }
+    }
     if (a.defaultValue) {
       jj->set("default", FormatVisitor::apply(a.defaultValue));
     }
@@ -328,8 +336,16 @@ void DocVisitor::visit(ClassStmt *stmt) {
   for (const auto &a : *stmt) {
     auto ja = std::make_shared<json>();
     ja->set("name", a.name);
-    if (a.type)
-      ja->set("type", transform(a.type));
+    if (a.type) {
+      auto tt = transform(a.type);
+      if (tt->values.empty()) {
+        LOG("{}: warning: cannot resolve argument {}", a.type->getSrcInfo(),
+            FormatVisitor::apply(a.type));
+        ja->set("type", FormatVisitor::apply(a.type));
+      } else {
+        ja->set("type", tt);
+      }
+    }
     if (a.defaultValue)
       ja->set("default", FormatVisitor::apply(a.defaultValue));
     args.push_back(ja);
@@ -433,7 +449,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
   if (it == ctx->shared->modules.end()) {
     ctx->shared->modules[file->path] = ictx = std::make_shared<DocContext>(ctx->shared);
     ictx->setFilename(file->path);
-    LOG("=> parsing {}", file->path);
+    // LOG("=> parsing {}", file->path);
     auto tmpOrErr = parseFile(ctx->shared->cache, file->path);
     if (!tmpOrErr)
       throw exc::ParserException(tmpOrErr.takeError());
