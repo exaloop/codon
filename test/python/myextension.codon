@@ -342,3 +342,11 @@ class Foo:
 
     def __index__(self):
         return 99
+
+import numpy as np
+import numpy.pybridge
+
+def numpy_test():
+    result = np.empty(2)
+    result[1:] = np.arange(1, 2)
+    return result

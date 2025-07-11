@@ -416,3 +416,5 @@ for _ in range(3000):
 assert saw_fun
 assert saw_set
 assert saw_foo
+
+assert str(m.numpy_test().round()) == "[0. 1.]"

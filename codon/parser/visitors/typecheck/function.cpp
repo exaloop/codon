@@ -300,6 +300,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   Expr *ret = nullptr;
   std::vector<ClassType::Generic> explicits;
   std::shared_ptr<types::ClassType> baseType = nullptr;
+  bool isGlobal = ctx->isGlobal();
   {
     // Set up the base
     TypeContext::BaseGuard br(ctx.get(), canonicalName);
@@ -348,9 +349,11 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (isClassMember) {
             preamble->addStmt(
                 tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
+            registerGlobal(defName);
             as->setUpdate();
+          } else if (isGlobal) {
+            registerGlobal(defName);
           }
-          registerGlobal(defName);
           auto das = tv.transform(as);
           prependStmts->push_back(das);
           // Default unbounds must be allowed to pass through

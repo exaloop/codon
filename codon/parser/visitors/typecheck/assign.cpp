@@ -305,7 +305,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
                   (canonical == VAR_ARGV);
   if (isGlobal && val->isVar()) {
-    registerGlobal(canonical, assign->getRhs());
+    registerGlobal(canonical);
   }
 
   return assign;

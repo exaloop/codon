@@ -1172,9 +1172,9 @@ types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
   return instantiateType(ctx->forceFind(TYPE_TYPE)->getType(), {t});
 }
 
-void TypecheckVisitor::registerGlobal(const std::string &name, bool initialized) const {
+void TypecheckVisitor::registerGlobal(const std::string &name) const {
   if (!in(ctx->cache->globals, name)) {
-    ctx->cache->globals[name] = {initialized, nullptr};
+    ctx->cache->globals[name] = nullptr;
   }
 }
 

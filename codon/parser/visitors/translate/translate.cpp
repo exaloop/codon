@@ -53,19 +53,26 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
 }
 
 void TranslateVisitor::translateStmts(Stmt *stmts) const {
-  for (auto &[name, g] : ctx->cache->globals)
-    if (/*g.first &&*/ !g.second) {
-      ir::types::Type *vt = nullptr;
-      if (auto t = ctx->cache->typeCtx->forceFind(name)->getType())
-        vt = getType(t);
-      g.second = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
-                                  : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                        SrcInfo(), vt, true, false, name);
-      ctx->cache->codegenCtx->add(TranslateItem::Var, name, g.second);
-    }
+  initializeGlobals();
   TranslateVisitor(ctx->cache->codegenCtx).transform(stmts);
   for (auto &f : ctx->cache->functions | std::views::values)
     TranslateVisitor(ctx->cache->codegenCtx).transform(f.ast);
+}
+
+void TranslateVisitor::initializeGlobals() const {
+  for (auto &[name, ir] : ctx->cache->globals)
+    if (!ir) {
+      ir::types::Type *vt = nullptr;
+      if (auto t = ctx->cache->typeCtx->forceFind(name)->getType()) {
+        if (!t->isInstantiated() || (t->is(TYPE_TYPE)) || t->getFunc())
+          continue;
+        vt = getType(t);
+      }
+      ir = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
+                            : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
+                                  SrcInfo(), vt, true, false, name);
+      ctx->cache->codegenCtx->add(TranslateItem::Var, name, ir);
+    }
 }
 
 /************************************************************************************/

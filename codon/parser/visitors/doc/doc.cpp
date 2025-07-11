@@ -11,6 +11,7 @@
 #include "codon/parser/match.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/format/format.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 
 namespace codon::ast {
 
@@ -187,6 +188,9 @@ std::string DocVisitor::transform(Stmt *stmt) {
 }
 
 void DocVisitor::transformModule(Stmt *stmt) {
+  if (auto err = ScopingVisitor::apply(ctx->shared->cache, stmt))
+    throw exc::ParserException(std::move(err));
+
   std::vector<std::string> children;
   std::string docstr;
 
@@ -226,18 +230,25 @@ void DocVisitor::visit(IdExpr *expr) {
 }
 
 void DocVisitor::visit(IndexExpr *expr) {
+  auto tr = [&](Expr *e) {
+    if (match(e, MOr(M<IntExpr>(), M<BoolExpr>(), M<StringExpr>())))
+      return std::make_shared<json>(FormatVisitor::apply(e));
+    else
+      return transform(e);
+  };
   std::vector<std::shared_ptr<json>> v;
   v.push_back(transform(expr->getExpr()));
   if (auto tp = cast<TupleExpr>(expr->getIndex())) {
     if (auto l = cast<ListExpr>((*tp)[0])) {
       for (auto *e : *l)
-        v.push_back(transform(e));
-      v.push_back(transform((*tp)[1]));
+        v.push_back(tr(e));
+      v.push_back(tr((*tp)[1]));
     } else
-      for (auto *e : *tp)
-        v.push_back(transform(e));
+      for (auto *e : *tp) {
+        v.push_back(tr(e));
+      }
   } else {
-    v.push_back(transform(expr->getIndex()));
+    v.push_back(tr(expr->getIndex()));
   }
   resultExpr = std::make_shared<json>(v);
 }
@@ -285,11 +296,14 @@ void DocVisitor::visit(FunctionStmt *stmt) {
   }
   j->set("generics", std::make_shared<json>(generics));
   bool isLLVM = false;
-  for (auto &d : stmt->getDecorators())
+  std::vector<std::string> attrs;
+  for (const auto &d : stmt->getDecorators())
     if (auto e = cast<IdExpr>(d)) {
-      j->set("attrs", std::make_shared<json>(e->getValue(), ""));
+      attrs.push_back(e->getValue());
       isLLVM |= (e->getValue() == "llvm");
     }
+  if (!attrs.empty())
+    j->set("attrs", std::make_shared<json>(attrs));
   if (stmt->getReturn())
     j->set("return", transform(stmt->getReturn()));
   j->set("args", std::make_shared<json>(args));
@@ -305,10 +319,12 @@ void DocVisitor::visit(FunctionStmt *stmt) {
 
 void DocVisitor::visit(ClassStmt *stmt) {
   std::vector<std::string> generics;
+
+  bool isRecord = stmt->isRecord();
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
       {"name", stmt->getName()},
       {"kind", "class"},
-      {"type", stmt->isRecord() ? "type" : "class"}});
+      {"type", isRecord ? "type" : "class"}});
   int id = ctx->shared->itemID++;
 
   bool isExtend = false;

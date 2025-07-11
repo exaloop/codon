@@ -24,6 +24,8 @@ public:
   ir::Value *transform(Expr *expr) override;
   ir::Value *transform(Stmt *stmt) override;
 
+  void initializeGlobals() const;
+
 private:
   void defaultVisit(Expr *expr) override;
   void defaultVisit(Stmt *expr) override;

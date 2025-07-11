@@ -183,13 +183,7 @@ void Cache::parseCode(const std::string &code) {
     throw exc::ParserException(nodeOrErr.takeError());
   auto sctx = imports[MAIN_IMPORT].ctx;
   auto node = ast::TypecheckVisitor::apply(sctx, *nodeOrErr);
-  for (auto &[name, p] : globals)
-    if (p.first && !p.second) {
-      p.second = name == VAR_ARGV ? codegenCtx->getModule()->getArgVar()
-                                  : codegenCtx->getModule()->N<ir::Var>(
-                                        SrcInfo(), nullptr, true, false, name);
-      codegenCtx->add(ast::TranslateItem::Var, name, p.second);
-    }
+  ast::TranslateVisitor(codegenCtx).initializeGlobals();
   ast::TranslateVisitor(codegenCtx).translateStmts(node);
 }
 
