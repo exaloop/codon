@@ -264,7 +264,7 @@ jobs:
           mv downloaded-artifact/* .
           tar -xvzf codon-linux-x86_64.tar.gz && rm codon-linux-x86_64.tar.gz
           codon-deploy/bin/codon doc codon-deploy/lib/codon/stdlib > docs.json
-          python scripts/docgen.py docs.json docs/libraries/api stdlib
+          python scripts/docgen.py docs.json docs/libraries/api $(pwd)/codon-deploy/lib/codon/stdlib
 
       - name: Build MkDocs site
         run: mkdocs build --strict
