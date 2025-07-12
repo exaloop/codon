@@ -302,6 +302,24 @@ void DocVisitor::visit(FunctionStmt *stmt) {
       attrs.push_back(e->getValue());
       isLLVM |= (e->getValue() == "llvm");
     }
+  if (stmt->hasAttribute(Attr::Property))
+    attrs.push_back("property");
+  if (stmt->hasAttribute(Attr::Attribute))
+    attrs.push_back("__attribute__");
+  if (stmt->hasAttribute(Attr::Python))
+    attrs.push_back("python");
+  if (stmt->hasAttribute(Attr::LLVM))
+    attrs.push_back("llvm");
+  if (stmt->hasAttribute(Attr::Internal))
+    attrs.push_back("__internal__");
+  if (stmt->hasAttribute(Attr::HiddenFromUser))
+    attrs.push_back("__hidden__");
+  if (stmt->hasAttribute(Attr::Atomic))
+    attrs.push_back("atomic");
+  if (stmt->hasAttribute(Attr::StaticMethod))
+    attrs.push_back("staticmethod");
+  if (stmt->hasAttribute(Attr::C))
+    attrs.push_back("C");
   if (!attrs.empty())
     j->set("attrs", std::make_shared<json>(attrs));
   if (stmt->getReturn())
