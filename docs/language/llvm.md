@@ -1,4 +1,5 @@
-Codon allows inline LLVM IR via the `@llvm` annotation:
+Codon supports inline [LLVM IR](https://llvm.org/docs/LangRef.html) via
+the `@llvm` annotation:
 
 ``` python
 @llvm
@@ -25,7 +26,7 @@ print(llvm_add(3, 4))          # 7
 print(llvm_add(i8(5), i8(6)))  # 11
 ```
 
-You can also access LLVM intrinsics with `declare`:
+LLVM intrinsics can be accessed with `declare`:
 
 ``` python
 @llvm
@@ -37,7 +38,7 @@ def popcnt(n: int) -> int:
 print(popcnt(42))  # 3
 ```
 
-# Annotations
+## Annotations
 
 Sometimes it can be helpful to annotate `@llvm` functions to give
 the compiler more information as to how they behave. Codon has
@@ -60,8 +61,9 @@ which also apply to external/C functions):
   the other arguments, an example being `List.__setitem__()`.
 
 These are mutually-exclusive annotations. Another complementary
-annotation `@derives` can be used to indicate that the return
-value of the function captures its arguments.
+annotation can be used to indicate that the return
+value of the function captures its arguments:
 
-These annotations are completely optional and do not affect
-program semantics.
+- `@derives`: Return value of the function captures its arguments.
+
+These annotations are optional and do not affect program semantics.

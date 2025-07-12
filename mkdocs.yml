@@ -1,0 +1,165 @@
+site_name: ""
+repo_url: https://github.com/exaloop/codon
+repo_name: exaloop/codon
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  logo: img/codon-white.svg
+  icon:
+    repo: fontawesome/brands/github
+  favicon: img/favicon.png
+  font:
+    text: Open Sans
+    code: Source Code Mono
+  palette:
+    # Palette toggle for light mode
+    - scheme: default
+      toggle:
+        icon: material/brightness-7 
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+    - navigation.tracking
+    - navigation.sections
+    - navigation.expand
+    - navigation.tabs
+    - navigation.top
+    - announce.dismiss
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/exaloop
+
+    - icon: fontawesome/brands/discord
+      link: https://discord.gg/HeWRhagCmP
+
+    - icon: fontawesome/brands/x-twitter
+      link: https://x.com/exaloop
+
+    - icon: fontawesome/brands/linkedin
+      link: https://linkedin.com/company/exaloop
+
+  generator: false
+
+copyright: Copyright &copy; 2025 Exaloop, Inc.
+
+extra_javascript:
+  - js/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+extra_css:
+  - css/extra.css
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - pymdownx.highlight:
+      use_pygments: true
+      line_spans: __span
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.extra
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - toc:
+      permalink: true
+  - admonition
+  - footnotes
+
+plugins:
+  - tags
+  - typeset
+  - optimize
+  - search
+  - macros
+  - redirects:
+      # redirects from old docs site
+      redirect_maps:
+        'codon/index.md': 'index.md'
+        'codon/general/intro.md': 'start/install.md'
+        'codon/general/faq.md': 'start/faq.md'
+        'codon/general/differences.md': 'language/overview.md#differences-with-python'
+        'codon/general/releases.md': 'start/changelog.md'
+        'codon/general/roadmap.md': 'developers/roadmap.md'
+        'codon/language-features/basics.md': 'language/overview.md'
+        'codon/language-features/collections.md': 'language/overview.md'
+        'codon/language-features/functions.md': 'language/overview.md'
+        'codon/language-features/classes.md': 'language/classes.md'
+        'codon/language-features/generators.md': 'language/overview.md'
+        'codon/language-features/statics.md': 'language/meta.md'
+        'codon/language-features/extra.md': 'language/lowlevel.md'
+        'codon/language-features/ffi.md': 'integrations/cpp/cpp-from-codon.md'
+        'codon/language-features/llvm.md': 'language/llvm.md'
+        'codon/interoperability/numpy.md': 'libraries/numpy.md'
+        'codon/interoperability/python.md': 'integrations/python/python-from-codon.md'
+        'codon/interoperability/decorator.md': 'integrations/python/codon-from-python.md'
+        'codon/interoperability/pyext.md': 'integrations/python/extensions.md'
+        'codon/interoperability/cpp.md': 'integrations/cpp/codon-from-cpp.md'
+        'codon/interoperability/jupyter.md': 'integrations/jupyter.md'
+        'codon/advanced/parallel.md': 'parallel/multithreading.md'
+        'codon/advanced/gpu.md': 'parallel/gpu.md'
+        'codon/advanced/ir.md': 'developers/ir.md'
+        'codon/advanced/build.md': 'developers/build.md'
+
+nav:
+  - Get Started:
+    - Installation: start/install.md
+    - Usage: start/usage.md
+    - FAQ: start/faq.md
+    - Changelog: start/changelog.md
+  - Language:
+    - Overview: language/overview.md
+    - Classes: language/classes.md
+    - Generics: language/generics.md
+    - Metaprogramming: language/meta.md
+    - Low-Level Programming: language/lowlevel.md
+    - Inline LLVM IR: language/llvm.md
+  - Libraries:
+    - Standard Library: libraries/stdlib.md
+    - NumPy: libraries/numpy.md
+    - API Reference: libraries/api/index.md
+  - Integrations:
+    - Python:
+      - Call Python from Codon: integrations/python/python-from-codon.md
+      - Call Codon from Python: integrations/python/codon-from-python.md
+      - Create Python Extensions: integrations/python/extensions.md
+    - C/C++:
+      - Call C/C++ from Codon: integrations/cpp/cpp-from-codon.md
+      - Call Codon from C/C++: integrations/cpp/codon-from-cpp.md
+      - Embed Codon JIT: integrations/cpp/jit.md
+    - Jupyter: integrations/jupyter.md
+  - Parallel Programming:
+    - Multithreading: parallel/multithreading.md
+    - GPU Programming: parallel/gpu.md
+  - Labs: labs/index.md
+  - Developers:
+    - Compilation Flow: developers/compilation.md
+    - Intermediate Representation: developers/ir.md
+    - Extend Codon: developers/extend.md
+    - Build from Source: developers/build.md
+    - Contribute: developers/contribute.md
+    - Roadmap: developers/roadmap.md
+  - Blog: https://exaloop.io/blog
