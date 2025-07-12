@@ -23,6 +23,10 @@ def sorted(
 def _is_pdq_compatible(x):
     if (isinstance(x, int) or
         isinstance(x, float) or
+        isinstance(x, bfloat16) or
+        isinstance(x, float16) or
+        isinstance(x, float32) or
+        isinstance(x, float128) or
         isinstance(x, bool) or
         isinstance(x, byte) or
         isinstance(x, str) or

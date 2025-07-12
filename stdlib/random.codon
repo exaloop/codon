@@ -138,44 +138,14 @@ class RandomGenerator:
         self.random_seed_time_pid()
 
 class Random:
-    """
-    Random number generator base class used by bound module functions.
-    Used to instantiate instances of Random to get generators that don't
-    share state.
-    Class Random can also be subclassed if you want to use a different basic
-    generator of your own devising: in that case, override the following
-    methods:  random(), seed(), getstate(), and setstate().
-    Optionally, implement a getrandbits() method so that randrange()
-    can cover arbitrarily large ranges.
-    """
-    gen: RandomGenerator  # comment for another error
+    gen: RandomGenerator
     gauss_next: Optional[float]
 
     def __init__(self, seed: Optional[int] = None):
-        """
-        Initialize an instance.
-
-        Optional argument x controls seeding, as for Random.seed().
-
-        For now x is set to its default None.
-        """
         self.gen = RandomGenerator()
         self.seed(seed)
 
     def seed(self, a: Optional[int]):
-        """
-        Initialize internal state from hashable object.
-
-        None or no argument seeds from current time or from an operating
-        system specific randomness source if available.
-
-        If *a* is an int, all bits are used.
-
-        For version 2 (the default), all of the bits are used if *a* is a str,
-        bytes, or bytearray.  For version 1 (provided for reproducing random
-        sequences from older versions of Python), the algorithm for str and
-        bytes generates a narrower range of seeds.
-        """
         if a is not None:
             self.gen.seed(abs(a))
         else:
@@ -191,10 +161,6 @@ class Random:
         self.gauss_next = gauss_next
 
     def getrandbits(self, k: int) -> int:
-        """
-        getrandbits(k) -> x
-        Generates an int with k random bits.
-        """
         if k == 0:
             return 0
 
@@ -217,7 +183,6 @@ class Random:
         return int((hi << u64(32)) | lo)
 
     def bit_length(self, n: int) -> int:
-        """ """
         len = 0
         while n:
             len += 1
@@ -225,9 +190,6 @@ class Random:
         return len
 
     def _randbelow_with_getrandbits(self, n: int) -> int:
-        """
-        Return a random int in the range [0,n).  Raises ValueError if n==0.
-        """
         getrandbits = self.getrandbits
         k = self.bit_length(n)  # don't use (n-1) here because n can be 1
         r = getrandbits(k)  # 0 <= r < 2**k
@@ -236,17 +198,6 @@ class Random:
         return r
 
     def randrange(self, start: int, stop: int, step: int = 1) -> int:
-        """
-        Choose a random item from range(start, stop[, step]).
-
-        Return a randomly selected element from range(start, stop, step).
-        This is equivalent to choice(range(start, stop, step)), but
-        doesn’t actually build a range object.
-
-        For now stop == 0 for randrange(stop) where start = stop in our parameter.
-        Defaults include: stop = None, step = 1
-        for now we will use default value for step.
-        """
         if stop == 0:
             if start > 0:
                 return self._randbelow_with_getrandbits(start)
@@ -274,41 +225,22 @@ class Random:
         return start + step * self._randbelow_with_getrandbits(int(n))
 
     def randint(self, a: int, b: int):
-        """
-        Return random integer in range [a, b], including both end points.
-        """
         return self.randrange(a, b + 1, 1)
 
     def random(self) -> float:
-        """
-        random(self) -> float
-
-        Return the next random floating point number in the range [0.0, 1.0).
-        """
         return self.gen.genrand_res53()
 
     def choice(self, sequence: Generator[T], T: type) -> T:
-        """
-        Choose a random element from a non-empty sequence.
-        """
-        i = 0
-        l = list(sequence)
-        try:
-            i = self._randbelow_with_getrandbits(len(l))
-        except ValueError:
+        return self.choice(list(sequence))
+
+    @overload
+    def choice(self, sequence: List[T], T: type) -> T:
+        if not sequence:
             raise IndexError("Cannot choose from an empty sequence")
-        return l[i]
+        i = self._randbelow_with_getrandbits(len(sequence))
+        return sequence._get(i)
 
     def shuffle(self, x):
-        """
-        Shuffle list x in place, and return None.
-
-        Optional argument random is a 0-argument function returning a
-        random float in [0.0, 1.0); if it is the default None, the
-        standard random.random will be used.
-
-        For now seq will use random = 0  (None = default)
-        """
         random = 0
         if random == 0:
             randbelow = self._randbelow_with_getrandbits
@@ -323,24 +255,9 @@ class Random:
                 x[i], x[j] = x[j], x[i]
 
     def uniform(self, a, b) -> float:
-        """
-        Get a random number in the range [a, b) or [a, b] depending on rounding.
-        """
         return a + (b - a) * self.random()
 
     def triangular(self, low: float, high: float, mode: float) -> float:
-        """
-        Triangular distribution.
-
-        Continuous distribution bounded by given lower and upper limits,
-        and having a given mode value in-between.
-
-        http://en.wikipedia.org/wiki/Triangular_distribution
-
-        For now we mode to default: mode = None
-        default for low and high : low = 0.0, high = 1.0
-        """
-        # mode = None
         if high == low:
             return low
         u = self.random()
@@ -352,19 +269,6 @@ class Random:
         return low + (high - low) * _sqrt(u * c)
 
     def gammavariate(self, alpha: float, beta: float) -> float:
-        """
-        Gamma distribution.  Not the gamma function!
-
-        Conditions on the parameters are alpha > 0 and beta > 0.
-
-        The probability distribution function is:
-
-        ::
-
-                    x ** (alpha - 1) * math.exp(-x / beta)
-          pdf(x) =  --------------------------------------
-                      math.gamma(alpha) * beta ** alpha
-        """
         # alpha > 0, beta > 0, mean is alpha*beta, variance is alpha*beta**2
 
         # Warning: a few older sources define the gamma distribution in terms
@@ -419,11 +323,6 @@ class Random:
             return x * beta
 
     def betavariate(self, alpha: float, beta: float) -> float:
-        """
-        Beta distribution.
-        Conditions on the parameters are alpha > 0 and beta > 0.
-        Returned values range between 0 and 1.
-        """
         # This version due to Janne Sinkkonen, and matches all the std
         # texts (e.g., Knuth Vol 2 Ed 3 pg 134 "the beta distribution").
         y = self.gammavariate(alpha, 1.0)
@@ -433,16 +332,6 @@ class Random:
             return y / (y + self.gammavariate(beta, 1.0))
 
     def expovariate(self, lambd: float) -> float:
-        """
-        Exponential distribution.
-
-        lambd is 1.0 divided by the desired mean.  It should be
-        nonzero.
-
-        Returned values range from 0 to
-        positive infinity if lambd is positive, and from negative
-        infinity to 0 if lambd is negative.
-        """
         if lambd == 0.0:
             raise ZeroDivisionError("Cannot divide by zero")
         # lambd: rate lambd = 1/mean
@@ -451,13 +340,6 @@ class Random:
         return -_log(1.0 - self.random()) / lambd
 
     def gauss(self, mu: float = 0.0, sigma: float = 1.0) -> float:
-        """
-        Gaussian distribution.
-
-        mu is the mean, and sigma is the standard deviation.  This is
-        slightly faster than the normalvariate() function.
-        Not thread-safe without a lock around calls.
-        """
         z = self.gauss_next
         self.gauss_next = None
         if z is None:
@@ -468,26 +350,14 @@ class Random:
         return mu + z * sigma
 
     def paretovariate(self, alpha: float) -> float:
-        """
-        Pareto distribution.  alpha is the shape parameter."""
         u = 1.0 - self.random()
         return 1.0 / u ** (1.0 / alpha)
 
     def weibullvariate(self, alpha: float, beta: float) -> float:
-        """
-        Weibull distribution.
-
-        alpha is the scale parameter and beta is the shape parameter.
-        """
         u = 1.0 - self.random()
         return alpha * (-_log(u)) ** (1.0 / beta)
 
     def normalvariate(self, mu: float = 0.0, sigma: float = 1.0) -> float:
-        """
-        Normal distribution.
-
-        mu is the mean, and sigma is the standard deviation.
-        """
         z = 0.0
         while 1:
             u1 = self.random()
@@ -499,24 +369,9 @@ class Random:
         return mu + z * sigma
 
     def lognormvariate(self, mu: float, sigma: float) -> float:
-        """
-        Log normal distribution.
-
-        If you take the natural logarithm of this distribution, you'll get a
-        normal distribution with mean mu and standard deviation sigma.
-        mu can have any value, and sigma must be greater than zero.
-        """
         return _exp(self.normalvariate(mu, sigma))
 
     def vonmisesvariate(self, mu: float, kappa: float) -> float:
-        """
-        Circular data distribution.
-
-        mu is the mean angle, expressed in radians between 0.0 and 2*pi, and
-        kappa is the concentration parameter, which must be greater than or
-        equal to zero.  If kappa is equal to zero, this distribution reduces
-        to a uniform random angle over the range 0.0 to 2*pi.
-        """
         def _mod(a: float, b: float):
             @pure
             @llvm
@@ -568,31 +423,12 @@ class Random:
 
         return theta
 
-    def sample(self, population: List[T], k: int, T: type):
-        """
-        Chooses k unique random elements from a population sequence or set.
-
-        Returns a new list containing elements from the population while
-        leaving the original population unchanged.  The resulting list is
-        in selection order so that all sub-slices will also be valid random
-        samples.  This allows raffle winners (the sample) to be partitioned
-        into grand prize and second place winners (the subslices).
-
-        Members of the population need not be hashable or unique.  If the
-        population contains repeats, then each occurrence is a possible
-        selection in the sample.
-
-        To choose a sample in a range of integers, use range as an argument.
-        This is especially fast and space efficient for sampling from a
-        large population:   sample(range(10000000), 60)
-
-        For now seq will deal with only lists.
-        """
+    def sample(self, population, k: int):
         randbelow = self._randbelow_with_getrandbits
         n = len(population)
         if not 0 <= k <= n:
             raise ValueError("Sample larger than population or is negative")
-        result = [T() for _ in range(k)]
+        result = [population[0] for _ in range(k)]
         setsize = 21.0  # size of a small set minus size of an empty list
         if k > 5:
             # Should be _log(k * 3, 4)
@@ -622,19 +458,8 @@ class Random:
         cum_weights: Optional[List[int]],
         k: int,
     ):
-        """
-        Return a k sized list of population elements chosen with replacement.
-
-        If the relative weights or cumulative weights are not specified,
-        the selections are made with equal probability.
-
-        Since weights and cum_weights is assumed to be positive, we will replace None with [-1].
-        """
 
         def accumulate(weights: List[int]) -> List[int]:
-            """
-            Calculate cum_weights
-            """
             n = len(weights)
             cum_weight = List[int](n)
             accum = 0
