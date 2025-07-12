@@ -7,9 +7,6 @@ import internal.static as static
 
 @inline
 def count(start: T = 0, step: T = 1, T: type) -> Generator[T]:
-    """
-    Return a count object whose ``__next__`` method returns consecutive values.
-    """
     n = start
     while True:
         yield n
@@ -17,9 +14,6 @@ def count(start: T = 0, step: T = 1, T: type) -> Generator[T]:
 
 @inline
 def cycle(iterable: Generator[T], T: type) -> Generator[T]:
-    """
-    Cycles repeatedly through an iterable.
-    """
     saved = []
     for element in iterable:
         yield element
@@ -30,9 +24,6 @@ def cycle(iterable: Generator[T], T: type) -> Generator[T]:
 
 @inline
 def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
-    """
-    Make an iterator that returns a given object over and over again.
-    """
     if times is None:
         while True:
             yield object
@@ -44,10 +35,6 @@ def repeat(object: T, times: Optional[int] = None, T: type) -> Generator[T]:
 
 @inline
 def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: type):
-    """
-    Make an iterator that returns accumulated sums, or accumulated results
-    of other binary functions (specified via the optional func argument).
-    """
     total = initial
     yield total
     for element in iterable:
@@ -57,10 +44,6 @@ def accumulate(iterable: Generator[T], func=lambda a, b: a + b, initial=0, T: ty
 @inline
 @overload
 def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
-    """
-    Make an iterator that returns accumulated sums, or accumulated results
-    of other binary functions (specified via the optional func argument).
-    """
     total: Optional[T] = None
     for element in iterable:
         total = element if total is None else func(unwrap(total), element)
@@ -68,10 +51,6 @@ def accumulate(iterable: Generator[T], func=lambda a, b: a + b, T: type):
 
 @tuple
 class chain:
-    """
-    Make an iterator that returns elements from the first iterable until it is exhausted,
-    then proceeds to the next iterable, until all of the iterables are exhausted.
-    """
 
     @inline
     def __new__(*iterables):
@@ -89,11 +68,6 @@ class chain:
 def compress(
     data: Generator[T], selectors: Generator[B], T: type, B: type
 ) -> Generator[T]:
-    """
-    Return data elements corresponding to true selector elements.
-    Forms a shorter iterator from selected data elements using the selectors to
-    choose the data elements.
-    """
     for d, s in zip(data, selectors):
         if s:
             yield d
@@ -102,10 +76,6 @@ def compress(
 def dropwhile(
     predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
-    """
-    Drop items from the iterable while predicate(item) is true.
-    Afterwards, return every element until the iterable is exhausted.
-    """
     b = False
     for x in iterable:
         if not b and not predicate(x):
@@ -117,19 +87,13 @@ def dropwhile(
 def filterfalse(
     predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
-    """
-    Return those items of iterable for which function(item) is false.
-    """
     for x in iterable:
         if not predicate(x):
             yield x
 
-# TODO: fix this once Optional[Callable] lands
+# TODO: fix key
 @inline
 def groupby(iterable, key=Optional[int]()):
-    """
-    Make an iterator that returns consecutive keys and groups from the iterable.
-    """
     currkey = None
     group = []
 
@@ -146,9 +110,6 @@ def groupby(iterable, key=Optional[int]()):
         yield unwrap(currkey), group
 
 def islice(iterable: Generator[T], stop: Optional[int], T: type) -> Generator[T]:
-    """
-    Make an iterator that returns selected elements from the iterable.
-    """
     if stop is not None and stop.__val__() < 0:
         raise ValueError(
             "Indices for islice() must be None or an integer: 0 <= x <= sys.maxsize."
@@ -168,9 +129,6 @@ def islice(
     step: Optional[int] = None,
     T: type,
 ) -> Generator[T]:
-    """
-    Make an iterator that returns selected elements from the iterable.
-    """
     from sys import maxsize
 
     start: int = 0 if start is None else start
@@ -211,10 +169,6 @@ def islice(
 
 @inline
 def starmap(function, iterable):
-    """
-    Return an iterator whose values are returned from the function
-    evaluated with an argument tuple taken from the given sequence.
-    """
     for args in iterable:
         yield function(*args)
 
@@ -222,9 +176,6 @@ def starmap(function, iterable):
 def takewhile(
     predicate: CallableTrait[[T], bool], iterable: Generator[T], T: type
 ) -> Generator[T]:
-    """
-    Return successive entries from an iterable as long as the predicate evaluates to true for each entry.
-    """
     for x in iterable:
         if predicate(x):
             yield x
@@ -232,9 +183,6 @@ def takewhile(
             break
 
 def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
-    """
-    Return n independent iterators from a single iterable.
-    """
     from collections import deque
 
     it = iter(iterable)
@@ -257,12 +205,6 @@ def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
 
 @inline
 def zip_longest(*iterables, fillvalue):
-    """
-    Make an iterator that aggregates elements from each of the iterables.
-    If the iterables are of uneven length, missing values are filled-in
-    with fillvalue. Iteration continues until the longest iterable is
-    exhausted.
-    """
     if static.len(iterables) == 2:
         a = iter(iterables[0])
         b = iter(iterables[1])
@@ -306,12 +248,6 @@ def zip_longest(*iterables, fillvalue):
 @inline
 @overload
 def zip_longest(*args):
-    """
-    Make an iterator that aggregates elements from each of the iterables.
-    If the iterables are of uneven length, missing values are filled-in
-    with fillvalue. Iteration continues until the longest iterable is
-    exhausted.
-    """
 
     def get_next(it):
         if it.__done__() or it.done():

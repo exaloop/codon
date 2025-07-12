@@ -47,11 +47,6 @@ def factorial(x: int) -> int:
     return _F[x]
 
 def isnan(x: float) -> bool:
-    """
-    isnan(float) -> bool
-
-    Return True if float arg is a NaN, else False.
-    """
     @pure
     @llvm
     def f(x: float) -> bool:
@@ -62,11 +57,6 @@ def isnan(x: float) -> bool:
     return f(x)
 
 def isinf(x: float) -> bool:
-    """
-    isinf(float) -> bool:
-
-    Return True if float arg is an INF, else False.
-    """
     @pure
     @llvm
     def f(x: float) -> bool:
@@ -79,12 +69,6 @@ def isinf(x: float) -> bool:
     return f(x)
 
 def isfinite(x: float) -> bool:
-    """
-    isfinite(float) -> bool
-
-    Return True if x is neither an infinity nor a NaN,
-    and False otherwise.
-    """
     return not (isnan(x) or isinf(x))
 
 def _check1(arg: float, r: float, can_overflow: bool = False):
@@ -114,12 +98,6 @@ def _check2(x: float, y: float, r: float, can_overflow: bool = False):
     return r
 
 def ceil(x: float) -> int:
-    """
-    ceil(float) -> int
-
-    Return the ceiling of x as an Integral.
-    This is the smallest integer >= x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -130,12 +108,6 @@ def ceil(x: float) -> int:
     return int(f(x))
 
 def floor(x: float) -> int:
-    """
-    floor(float) -> int
-
-    Return the floor of x as an Integral.
-    This is the largest integer <= x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -146,11 +118,6 @@ def floor(x: float) -> int:
     return int(f(x))
 
 def fabs(x: float) -> float:
-    """
-    fabs(float) -> float
-
-    Returns the absolute value of a floating point number.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -161,11 +128,6 @@ def fabs(x: float) -> float:
     return f(x)
 
 def fmod(x: float, y: float) -> float:
-    """
-    fmod(float, float) -> float
-
-    Returns the remainder of x divided by y.
-    """
     @pure
     @llvm
     def f(x: float, y: float) -> float:
@@ -175,11 +137,6 @@ def fmod(x: float, y: float) -> float:
     return f(x, y)
 
 def exp(x: float) -> float:
-    """
-    exp(float) -> float
-
-    Returns the value of e raised to the xth power.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -190,28 +147,12 @@ def exp(x: float) -> float:
     return _check1(x, f(x), True)
 
 def expm1(x: float) -> float:
-    """
-    expm1(float) -> float
-
-    Return e raised to the power x, minus 1. expm1 provides
-    a way to compute this quantity to full precision.
-    """
     return _check1(x, _C.expm1(x), True)
 
 def ldexp(x: float, i: int) -> float:
-    """
-    ldexp(float, int) -> float
-
-    Returns x multiplied by 2 raised to the power of exponent.
-    """
     return _check1(x, _C.ldexp(x, i32(i)), True)
 
 def log(x: float, base: float = e) -> float:
-    """
-    log(float) -> float
-
-    Returns the natural logarithm (base-e logarithm) of x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -225,11 +166,6 @@ def log(x: float, base: float = e) -> float:
         return _check1(x, f(x)) / _check1(base, f(base))
 
 def log2(x: float) -> float:
-    """
-    log2(float) -> float
-
-    Return the base-2 logarithm of x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -240,11 +176,6 @@ def log2(x: float) -> float:
     return _check1(x, f(x))
 
 def log10(x: float) -> float:
-    """
-    log10(float) -> float
-
-    Returns the common logarithm (base-10 logarithm) of x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -255,29 +186,14 @@ def log10(x: float) -> float:
     return _check1(x, f(x))
 
 def degrees(x: float) -> float:
-    """
-    degrees(float) -> float
-
-    Convert angle x from radians to degrees.
-    """
     radToDeg = 180.0 / pi
     return x * radToDeg
 
 def radians(x: float) -> float:
-    """
-    radians(float) -> float
-
-    Convert angle x from degrees to radians.
-    """
     degToRad = pi / 180.0
     return x * degToRad
 
 def sqrt(x: float) -> float:
-    """
-    sqrt(float) -> float
-
-    Returns the square root of x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -288,11 +204,6 @@ def sqrt(x: float) -> float:
     return _check1(x, f(x))
 
 def pow(x: float, y: float) -> float:
-    """
-    pow(float, float) -> float
-
-    Returns x raised to the power of y.
-    """
     @pure
     @llvm
     def f(x: float, y: float) -> float:
@@ -303,45 +214,18 @@ def pow(x: float, y: float) -> float:
     return _check2(x, y, f(x, y), True)
 
 def acos(x: float) -> float:
-    """
-    acos(float) -> float
-
-    Returns the arc cosine of x in radians.
-    """
     return _check1(x, _C.acos(x))
 
 def asin(x: float) -> float:
-    """
-    asin(float) -> float
-
-    Returns the arc sine of x in radians.
-    """
     return _check1(x, _C.asin(x))
 
 def atan(x: float) -> float:
-    """
-    atan(float) -> float
-
-    Returns the arc tangent of x in radians.
-    """
     return _check1(x, _C.atan(x))
 
 def atan2(y: float, x: float) -> float:
-    """
-    atan2(float, float) -> float
-
-    Returns the arc tangent in radians of y/x based
-    on the signs of both values to determine the
-    correct quadrant.
-    """
     return _check2(x, y, _C.atan2(y, x))
 
 def cos(x: float) -> float:
-    """
-    cos(float) -> float
-
-    Returns the cosine of a radian angle x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -352,11 +236,6 @@ def cos(x: float) -> float:
     return _check1(x, f(x))
 
 def sin(x: float) -> float:
-    """
-    sin(float) -> float
-
-    Returns the sine of a radian angle x.
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -367,78 +246,30 @@ def sin(x: float) -> float:
     return _check1(x, f(x))
 
 def hypot(x: float, y: float) -> float:
-    """
-    hypot(float, float) -> float
-
-    Return the Euclidean norm.
-    This is the length of the vector from the
-    origin to point (x, y).
-    """
     return _check2(x, y, _C.hypot(x, y), True)
 
 def tan(x: float) -> float:
-    """
-    tan(float) -> float
-
-    Return the tangent of a radian angle x.
-    """
     return _check1(x, _C.tan(x))
 
 def cosh(x: float) -> float:
-    """
-    cosh(float) -> float
-
-    Returns the hyperbolic cosine of x.
-    """
     return _check1(x, _C.cosh(x), True)
 
 def sinh(x: float) -> float:
-    """
-    sinh(float) -> float
-
-    Returns the hyperbolic sine of x.
-    """
     return _check1(x, _C.sinh(x), True)
 
 def tanh(x: float) -> float:
-    """
-    tanh(float) -> float
-
-    Returns the hyperbolic tangent of x.
-    """
     return _check1(x, _C.tanh(x))
 
 def acosh(x: float) -> float:
-    """
-    acosh(float) -> float
-
-    Return the inverse hyperbolic cosine of x.
-    """
     return _check1(x, _C.acosh(x))
 
 def asinh(x: float) -> float:
-    """
-    asinh(float) -> float
-
-    Return the inverse hyperbolic sine of x.
-    """
     return _check1(x, _C.asinh(x))
 
 def atanh(x: float) -> float:
-    """
-    atanh(float) -> float
-
-    Return the inverse hyperbolic tangent of x.
-    """
     return _check1(x, _C.atanh(x))
 
 def copysign(x: float, y: float) -> float:
-    """
-    copysign(float, float) -> float
-
-    Return a float with the magnitude (absolute value) of
-    x but the sign of y.
-    """
     @pure
     @llvm
     def f(x: float, y: float) -> float:
@@ -449,20 +280,9 @@ def copysign(x: float, y: float) -> float:
     return _check2(x, y, f(x, y))
 
 def log1p(x: float) -> float:
-    """
-    log1p(float) -> float
-
-    Return the natural logarithm of 1+x (base e).
-    """
     return _check1(x, _C.log1p(x))
 
 def trunc(x: float) -> int:
-    """
-    trunc(float) -> int
-
-    Return the Real value x truncated to an Integral
-    (usually an integer).
-    """
     @pure
     @llvm
     def f(x: float) -> float:
@@ -473,49 +293,18 @@ def trunc(x: float) -> int:
     return int(_check1(x, f(x)))
 
 def erf(x: float) -> float:
-    """
-    erf(float) -> float
-
-    Return the error function at x.
-    """
     return _check1(x, _C.erf(x))
 
 def erfc(x: float) -> float:
-    """
-    erfc(float) -> float
-
-    Return the complementary error function at x.
-    """
     return _check1(x, _C.erfc(x))
 
 def gamma(x: float) -> float:
-    """
-    gamma(float) -> float
-
-    Return the Gamma function at x.
-    """
     return _check1(x, _C.tgamma(x), True)
 
 def lgamma(x: float) -> float:
-    """
-    lgamma(float) -> float
-
-    Return the natural logarithm of
-    the absolute value of the Gamma function at x.
-    """
     return _check1(x, _C.lgamma(x), True)
 
 def remainder(x: float, y: float) -> float:
-    """
-    remainder(float, float) -> float
-
-    Return the IEEE 754-style remainder of x with respect to y.
-    For finite x and finite nonzero y, this is the difference
-    x - n*y, where n is the closest integer to the exact value
-    of the quotient x / y. If x / y is exactly halfway between
-    two consecutive integers, the nearest even integer is used
-    for n.
-    """
     return _check2(x, y, _C.remainder(x, y))
 
 def _gcd2(a, b):
@@ -526,11 +315,6 @@ def _gcd2(a, b):
     return b
 
 def gcd(*args):
-    """
-    gcd(*args)
-
-    returns greatest common divisor of arguments.
-    """
     if static.len(args) == 0:
         return 0
 
@@ -548,11 +332,6 @@ def gcd(*args):
     return res
 
 def lcm(*args):
-    """
-    lcm(*args)
-
-    returns least common multiple of arguments.
-    """
     def lcm2(a, b):
         return abs((a // _gcd2(a, b)) * b)
 
@@ -574,38 +353,17 @@ def lcm(*args):
 
 @pure
 def frexp(x: float) -> Tuple[float, int]:
-    """
-    frexp(float) -> Tuple[float, int]
-
-    The returned value is the mantissa and the integer pointed
-    to by exponent is the exponent. The resultant value is
-    x = mantissa * 2 ^ exponent.
-    """
     tmp = i32(0)
     res = _C.frexp(float(x), __ptr__(tmp))
     return (res, int(tmp))
 
 @pure
 def modf(x: float) -> Tuple[float, float]:
-    """
-    modf(float) -> Tuple[float, float]
-
-    The returned value is the fraction component (part after
-    the decimal), and sets integer to the integer component.
-    """
     tmp = 0.0
     res = _C.modf(float(x), __ptr__(tmp))
     return (res, tmp)
 
 def isclose(a: float, b: float, rel_tol: float = 1e-09, abs_tol: float = 0.0) -> bool:
-    """
-    isclose(float, float) -> bool
-
-    Return True if a is close in value to b, and False otherwise.
-    For the values to be considered close, the difference between them
-    must be smaller than at least one of the tolerances.
-    """
-
     # short circuit exact equality -- needed to catch two
     # infinities of the same sign. And perhaps speeds things
     # up a bit sometimes.
@@ -757,9 +515,7 @@ nan32 = float32(nan)
 @overload
 def isnan(x: float32) -> bool:
     """
-    isnan(float32) -> bool
-
-    Return True if float arg is a NaN, else False.
+    `float32` version of `math.isnan()`
     """
     @pure
     @llvm
@@ -773,9 +529,7 @@ def isnan(x: float32) -> bool:
 @overload
 def isinf(x: float32) -> bool:
     """
-    isinf(float32) -> bool:
-
-    Return True if float arg is an INF, else False.
+    `float32` version of `math.isinf()`
     """
     @pure
     @llvm
@@ -791,20 +545,14 @@ def isinf(x: float32) -> bool:
 @overload
 def isfinite(x: float32) -> bool:
     """
-    isfinite(float32) -> bool
-
-    Return True if x is neither an infinity nor a NaN,
-    and False otherwise.
+    `float32` version of `math.isfinite()`
     """
     return not (isnan(x) or isinf(x))
 
 @overload
 def ceil(x: float32) -> int:
     """
-    ceil(float32) -> int
-
-    Return the ceiling of x as an Integral.
-    This is the smallest integer >= x.
+    `float32` version of `math.ceil()`
     """
     @pure
     @llvm
@@ -818,10 +566,7 @@ def ceil(x: float32) -> int:
 @overload
 def floor(x: float32) -> int:
     """
-    floor(float32) -> int
-
-    Return the floor of x as an Integral.
-    This is the largest integer <= x.
+    `float32` version of `math.floor()`
     """
     @pure
     @llvm
@@ -835,9 +580,7 @@ def floor(x: float32) -> int:
 @overload
 def fabs(x: float32) -> float32:
     """
-    fabs(float32) -> float32
-
-    Returns the absolute value of a float32ing point number.
+    `float32` version of `math.fabs()`
     """
     @pure
     @llvm
@@ -851,9 +594,7 @@ def fabs(x: float32) -> float32:
 @overload
 def fmod(x: float32, y: float32) -> float32:
     """
-    fmod(float32, float32) -> float32
-
-    Returns the remainder of x divided by y.
+    `float32` version of `math.fmod()`
     """
     @pure
     @llvm
@@ -866,9 +607,7 @@ def fmod(x: float32, y: float32) -> float32:
 @overload
 def exp(x: float32) -> float32:
     """
-    exp(float32) -> float32
-
-    Returns the value of e raised to the xth power.
+    `float32` version of `math.exp()`
     """
     @pure
     @llvm
@@ -882,28 +621,21 @@ def exp(x: float32) -> float32:
 @overload
 def expm1(x: float32) -> float32:
     """
-    expm1(float32) -> float32
-
-    Return e raised to the power x, minus 1. expm1 provides
-    a way to compute this quantity to full precision.
+    `float32` version of `math.expm1()`
     """
     return _C.expm1f(x)
 
 @overload
 def ldexp(x: float32, i: int) -> float32:
     """
-    ldexp(float32, int) -> float32
-
-    Returns x multiplied by 2 raised to the power of exponent.
+    `float32` version of `math.ldexp()`
     """
     return _C.ldexpf(x, i32(i))
 
 @overload
 def log(x: float32, base: float32 = e32) -> float32:
     """
-    log(float32) -> float32
-
-    Returns the natural logarithm (base-e logarithm) of x.
+    `float32` version of `math.log()`
     """
     @pure
     @llvm
@@ -920,9 +652,7 @@ def log(x: float32, base: float32 = e32) -> float32:
 @overload
 def log2(x: float32) -> float32:
     """
-    log2(float32) -> float32
-
-    Return the base-2 logarithm of x.
+    `float32` version of `math.log2()`
     """
     @pure
     @llvm
@@ -936,9 +666,7 @@ def log2(x: float32) -> float32:
 @overload
 def log10(x: float32) -> float32:
     """
-    log10(float32) -> float32
-
-    Returns the common logarithm (base-10 logarithm) of x.
+    `float32` version of `math.log10()`
     """
     @pure
     @llvm
@@ -952,9 +680,7 @@ def log10(x: float32) -> float32:
 @overload
 def degrees(x: float32) -> float32:
     """
-    degrees(float32) -> float32
-
-    Convert angle x from radians to degrees.
+    `float32` version of `math.degrees()`
     """
     radToDeg = float32(180.0) / pi32
     return x * radToDeg
@@ -962,9 +688,7 @@ def degrees(x: float32) -> float32:
 @overload
 def radians(x: float32) -> float32:
     """
-    radians(float32) -> float32
-
-    Convert angle x from degrees to radians.
+    `float32` version of `math.radians()`
     """
     degToRad = pi32 / float32(180.0)
     return x * degToRad
@@ -972,9 +696,7 @@ def radians(x: float32) -> float32:
 @overload
 def sqrt(x: float32) -> float32:
     """
-    sqrt(float32) -> float32
-
-    Returns the square root of x.
+    `float32` version of `math.sqrt()`
     """
     @pure
     @llvm
@@ -988,9 +710,7 @@ def sqrt(x: float32) -> float32:
 @overload
 def pow(x: float32, y: float32) -> float32:
     """
-    pow(float32, float32) -> float32
-
-    Returns x raised to the power of y.
+    `float32` version of `math.pow()`
     """
     @pure
     @llvm
@@ -1004,47 +724,35 @@ def pow(x: float32, y: float32) -> float32:
 @overload
 def acos(x: float32) -> float32:
     """
-    acos(float32) -> float32
-
-    Returns the arc cosine of x in radians.
+    `float32` version of `math.acos()`
     """
     return _C.acosf(x)
 
 @overload
 def asin(x: float32) -> float32:
     """
-    asin(float32) -> float32
-
-    Returns the arc sine of x in radians.
+    `float32` version of `math.asin()`
     """
     return _C.asinf(x)
 
 @overload
 def atan(x: float32) -> float32:
     """
-    atan(float32) -> float32
-
-    Returns the arc tangent of x in radians.
+    `float32` version of `math.atan()`
     """
     return _C.atanf(x)
 
 @overload
 def atan2(y: float32, x: float32) -> float32:
     """
-    atan2(float32, float32) -> float32
-
-    Returns the arc tangent in radians of y/x based
-    on the signs of both values to determine the
-    correct quadrant.
+    `float32` version of `math.atan2()`
     """
     return _C.atan2f(y, x)
 
 @overload
 def cos(x: float32) -> float32:
     """
-    cos(float32) -> float32
-
-    Returns the cosine of a radian angle x.
+    `float32` version of `math.cos()`
     """
     @pure
     @llvm
@@ -1058,9 +766,7 @@ def cos(x: float32) -> float32:
 @overload
 def sin(x: float32) -> float32:
     """
-    sin(float32) -> float32
-
-    Returns the sine of a radian angle x.
+    `float32` version of `math.sin()`
     """
     @pure
     @llvm
@@ -1074,84 +780,63 @@ def sin(x: float32) -> float32:
 @overload
 def hypot(x: float32, y: float32) -> float32:
     """
-    hypot(float32, float32) -> float32
-
-    Return the Euclidean norm.
-    This is the length of the vector from the
-    origin to point (x, y).
+    `float32` version of `math.hypot()`
     """
     return _C.hypotf(x, y)
 
 @overload
 def tan(x: float32) -> float32:
     """
-    tan(float32) -> float32
-
-    Return the tangent of a radian angle x.
+    `float32` version of `math.tan()`
     """
     return _C.tanf(x)
 
 @overload
 def cosh(x: float32) -> float32:
     """
-    cosh(float32) -> float32
-
-    Returns the hyperbolic cosine of x.
+    `float32` version of `math.cosh()`
     """
     return _C.coshf(x)
 
 @overload
 def sinh(x: float32) -> float32:
     """
-    sinh(float32) -> float32
-
-    Returns the hyperbolic sine of x.
+    `float32` version of `math.sinh()`
     """
     return _C.sinhf(x)
 
 @overload
 def tanh(x: float32) -> float32:
     """
-    tanh(float32) -> float32
-
-    Returns the hyperbolic tangent of x.
+    `float32` version of `math.tanh()`
     """
     return _C.tanhf(x)
 
 @overload
 def acosh(x: float32) -> float32:
     """
-    acosh(float32) -> float32
-
-    Return the inverse hyperbolic cosine of x.
+    `float32` version of `math.acosh()`
     """
     return _C.acoshf(x)
 
 @overload
 def asinh(x: float32) -> float32:
     """
-    asinh(float32) -> float32
-
-    Return the inverse hyperbolic sine of x.
+    `float32` version of `math.asinh()`
     """
     return _C.asinhf(x)
 
 @overload
 def atanh(x: float32) -> float32:
     """
-    atanh(float32) -> float32
-
-    Return the inverse hyperbolic tangent of x.
+    `float32` version of `math.atanh()`
     """
     return _C.atanhf(x)
 
 @overload
 def copysign(x: float32, y: float32) -> float32:
     """
-    copysign(float32, float32) -> float32
-
-    Return a float32 with the magnitude (absolute value) of
-    x but the sign of y.
+    `float32` version of `math.copysign()`
     """
     @pure
     @llvm
@@ -1165,19 +850,14 @@ def copysign(x: float32, y: float32) -> float32:
 @overload
 def log1p(x: float32) -> float32:
     """
-    log1p(float32) -> float32
-
-    Return the natural logarithm of 1+x (base e).
+    `float32` version of `math.log1p()`
     """
     return _C.log1pf(x)
 
 @overload
 def trunc(x: float32) -> int:
     """
-    trunc(float32) -> int
-
-    Return the Real value x truncated to an Integral
-    (usually an integer).
+    `float32` version of `math.trunc()`
     """
     @pure
     @llvm
@@ -1191,51 +871,35 @@ def trunc(x: float32) -> int:
 @overload
 def erf(x: float32) -> float32:
     """
-    erf(float32) -> float32
-
-    Return the error function at x.
+    `float32` version of `math.erf()`
     """
     return _C.erff(x)
 
 @overload
 def erfc(x: float32) -> float32:
     """
-    erfc(float32) -> float32
-
-    Return the complementary error function at x.
+    `float32` version of `math.erfc()`
     """
     return _C.erfcf(x)
 
 @overload
 def gamma(x: float32) -> float32:
     """
-    gamma(float32) -> float32
-
-    Return the Gamma function at x.
+    `float32` version of `math.gamma()`
     """
     return _C.tgammaf(x)
 
 @overload
 def lgamma(x: float32) -> float32:
     """
-    lgamma(float32) -> float32
-
-    Return the natural logarithm of
-    the absolute value of the Gamma function at x.
+    `float32` version of `math.lgamma()`
     """
     return _C.lgammaf(x)
 
 @overload
 def remainder(x: float32, y: float32) -> float32:
     """
-    remainder(float32, float32) -> float32
-
-    Return the IEEE 754-style remainder of x with respect to y.
-    For finite x and finite nonzero y, this is the difference
-    x - n*y, where n is the closest integer to the exact value
-    of the quotient x / y. If x / y is exactly halfway between
-    two consecutive integers, the nearest even integer is used
-    for n.
+    `float32` version of `math.remainder()`
     """
     return _C.remainderf(x, y)
 
@@ -1243,11 +907,7 @@ def remainder(x: float32, y: float32) -> float32:
 @pure
 def frexp(x: float32) -> Tuple[float32, int]:
     """
-    frexp(float32) -> Tuple[float32, int]
-
-    The returned value is the mantissa and the integer pointed
-    to by exponent is the exponent. The resultant value is
-    x = mantissa * 2 ^ exponent.
+    `float32` version of `math.frexp()`
     """
     tmp = i32(0)
     res = _C.frexpf(float32(x), __ptr__(tmp))
@@ -1257,10 +917,7 @@ def frexp(x: float32) -> Tuple[float32, int]:
 @pure
 def modf(x: float32) -> Tuple[float32, float32]:
     """
-    modf(float32) -> Tuple[float32, float32]
-
-    The returned value is the fraction component (part after
-    the decimal), and sets integer to the integer component.
+    `float32` version of `math.modf()`
     """
     tmp = float32(0.0)
     res = _C.modff(float32(x), __ptr__(tmp))
@@ -1269,13 +926,8 @@ def modf(x: float32) -> Tuple[float32, float32]:
 @overload
 def isclose(a: float32, b: float32, rel_tol: float32 = float32(1e-09), abs_tol: float32 = float32(0.0)) -> bool:
     """
-    isclose(float32, float32) -> bool
-
-    Return True if a is close in value to b, and False otherwise.
-    For the values to be considered close, the difference between them
-    must be smaller than at least one of the tolerances.
+    `float32` version of `math.isclose()`
     """
-
     # short circuit exact equality -- needed to catch two
     # infinities of the same sign. And perhaps speeds things
     # up a bit sometimes.

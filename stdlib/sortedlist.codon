@@ -23,7 +23,7 @@ class SortedList:
     def clear(self):
         """
         Remove all values from sorted list.
-        Runtime complexity: `O(n)`
+        Runtime complexity: $O(n)$
         """
         self._len = 0
         self._lists.clear()
@@ -39,14 +39,16 @@ class SortedList:
     def add(self, value: T):
         """
         Add `value` to sorted list.
-        Runtime complexity: `O(log(n))` -- approximate.
+        Runtime complexity: $O(\\log(n))$ (approximate).
+
+        ``` python
         >>> sl = SortedList()
         >>> sl.add(3)
         >>> sl.add(1)
         >>> sl.add(2)
         >>> sl
         SortedList([1, 2, 3])
-        :param value: value to add to sorted list
+        ```
         """
         if self._maxes:
             pos = bisect_right(self._maxes, value)
@@ -88,9 +90,7 @@ class SortedList:
         Updates the index when the sublist length is more than half the load
         level. This requires decrementing the nodes in a traversal from the
         leaf node to the root. For an example traversal see
-        ``SortedList._loc``.
-        :param int pos: lists index
-        :param int idx: sublist index
+        `SortedList._loc`.
         """
         _lists_pos = self._lists[pos]
         del _lists_pos[idx]

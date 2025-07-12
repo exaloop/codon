@@ -25,7 +25,7 @@ def sleep(secs: float):
 
 class TimeInterval:
     """
-    Utility class for timing Seq code
+    Utility class for timing Codon code
     """
 
     start: int
@@ -59,11 +59,11 @@ def timing(msg: str = "") -> TimeInterval:
     """
     Example usage:
 
-    .. code-block:: python
-
-        from time import timing
-        with timing('foo function'):
-            foo()  # prints runtime of foo
+    ``` python
+    from time import timing
+    with timing('foo function'):
+        foo()  # prints runtime of foo
+    ```
     """
     return TimeInterval(0, msg)
 

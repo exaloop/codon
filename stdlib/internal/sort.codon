@@ -13,9 +13,6 @@ def sorted(
     algorithm: Literal[str] = "auto",
     T: type,
 ) -> List[T]:
-    """
-    Return a sorted list of the elements in v
-    """
     newlist = [a for a in v]
     if not isinstance(key, Optional):
         newlist.sort(key, reverse, algorithm)

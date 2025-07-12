@@ -212,12 +212,6 @@ class str:
         return str(p, n)
 
     def isdigit(self) -> bool:
-        """
-        str.isdigit() -> bool
-
-        Return True if all characters in str are digits
-        and there is at least one character in str, False otherwise.
-        """
         if len(self) == 0:
             return False
 
@@ -227,12 +221,6 @@ class str:
         return True
 
     def islower(self) -> bool:
-        """
-        str.islower() -> bool
-
-        Return True if all cased characters in str are lowercase and there is
-        at least one cased character in str, False otherwise.
-        """
         cased = False
 
         # For empty strings
@@ -251,12 +239,6 @@ class str:
         return cased
 
     def isupper(self) -> bool:
-        """
-        str.isupper() -> bool
-
-        Return True if all cased characters in str are uppercase and there is
-        at least one cased character in str, False otherwise.
-        """
         cased = False
 
         # For empty strings
@@ -275,12 +257,6 @@ class str:
         return cased
 
     def isalnum(self) -> bool:
-        """
-        str.isalnum() -> bool
-
-        Return True if all characters in str are alphanumeric
-        and there is at least one character in str, False otherwise.
-        """
         if len(self) == 0:
             return False
 
@@ -290,12 +266,6 @@ class str:
         return True
 
     def isalpha(self) -> bool:
-        """
-        str.isalpha() -> bool
-
-        Return True if all characters in str are alphabetic
-        and there is at least one character in str, False otherwise.
-        """
         if len(self) == 0:
             return False
 
@@ -305,12 +275,6 @@ class str:
         return True
 
     def isspace(self) -> bool:
-        """
-        str.isspace() -> bool
-
-        Return True if all characters in str are whitespace
-        and there is at least one character in str, False otherwise.
-        """
         if len(self) == 0:
             return False
 
@@ -320,14 +284,6 @@ class str:
         return True
 
     def istitle(self) -> bool:
-        """
-        str.istitle() -> bool
-
-        Return True if str is a titlecased string and there is at least one
-        character in str, i.e. uppercase characters may only follow uncased
-        characters and lowercase characters only cased ones. Return False
-        otherwise.
-        """
 
         # For empty strings
         if len(self) == 0:
@@ -355,12 +311,6 @@ class str:
         return cased
 
     def capitalize(self) -> str:
-        """
-        str.capitalize() -> copy of str
-
-        Return a copy of str with only its first character capitalized (ASCII)
-        and the rest lower-cased.
-        """
         n = len(self)
         if n > 0:
             p = Ptr[byte](n)
@@ -371,13 +321,6 @@ class str:
         return ""
 
     def isdecimal(self) -> bool:
-        """
-        str.isdecimal() -> bool
-
-        Return True if str is a decimal string, False otherwise.
-        str is a decimal string if all characters in str are decimal and
-        there is at least one character in str.
-        """
         if len(self) == 0:
             return False
 
@@ -388,11 +331,6 @@ class str:
         return True
 
     def lower(self) -> str:
-        """
-        str.lower() -> copy of str
-
-        Return a copy of str with all ASCII characters converted to lowercase.
-        """
         # Empty string
         n = len(self)
         if n == 0:
@@ -403,11 +341,6 @@ class str:
         return str(p, n)
 
     def upper(self) -> str:
-        """
-        str.upper() -> copy of str
-
-        Return a copy of str with all ASCII characters converted to uppercase.
-        """
         # Empty string
         n = len(self)
         if n == 0:
@@ -418,34 +351,15 @@ class str:
         return str(p, n)
 
     def isascii(self) -> bool:
-        """
-        str.isascii() -> bool
-
-        Return True if str is empty or all characters in str are ASCII,
-        False otherwise.
-        """
         for i in range(len(self)):
             if int(self.ptr[i]) >= 128:
                 return False
         return True
 
     def casefold(self) -> str:
-        """
-        str.casefold() -> copy of str
-
-        Return a version of the string suitable for caseless comparisons.
-
-        Unlike Python, casefold() deals with just ASCII characters.
-        """
         return self.lower()
 
     def swapcase(self) -> str:
-        """
-        str.swapcase() -> copy of str
-
-        Return a copy of str with uppercase ASCII characters converted
-        to lowercase ASCII and vice versa.
-        """
         # Empty string
         n = len(self)
         if n == 0:
@@ -461,12 +375,6 @@ class str:
         return str(p, n)
 
     def title(self) -> str:
-        """
-        str.title() -> copy of str
-
-        Return a titlecased version of str, i.e. ASCII words start with uppercase
-        characters, all remaining cased characters have lowercase.
-        """
         prev_is_cased = False
 
         n = len(self)
@@ -495,15 +403,6 @@ class str:
         return str(p, n)
 
     def isnumeric(self) -> bool:
-        """
-        str.isdecimal() -> bool
-
-        Return True if the string is a numeric string, False otherwise.
-        A string is numeric if all characters in the string are numeric
-        and there is at least one character in the string.
-
-        Unlike Python, isnumeric() deals with just ASCII characters.
-        """
         return self.isdecimal()
 
     def _build(*args):
@@ -529,13 +428,6 @@ class str:
         return str(p, total)
 
     def ljust(self, width: int, fillchar: str = " ") -> str:
-        """
-        ljust(width[, fillchar]) -> string
-
-        Return a left-justified string of length width.
-
-        Padding is done using the specified fill character (default is a space).
-        """
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
@@ -543,13 +435,6 @@ class str:
         return str._build(self, (fillchar, width - len(self)))
 
     def rjust(self, width: int, fillchar: str = " ") -> str:
-        """
-        rjust(width[, fillchar]) -> string
-
-        Return a right-justified string of length width.
-
-        Padding is done using the specified fill character (default is a space).
-        """
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
@@ -557,12 +442,6 @@ class str:
         return str._build((fillchar, width - len(self)), self)
 
     def center(self, width: int, fillchar: str = " ") -> str:
-        """
-        str.center(width[, fillchar]) -> string
-
-        Return str centered in a string of length width. Padding is
-        done using the specified fill character (default is a space)
-        """
         if len(fillchar) != 1:
             raise ValueError("The fill character must be exactly one character long")
         if width <= len(self):
@@ -574,12 +453,6 @@ class str:
         return str._build((fillchar, left_pad), self, (fillchar, right_pad))
 
     def zfill(self, width: int) -> str:
-        """
-        str.zfill(width) -> string
-
-        Pad a numeric string str with zeros on the left, to fill a field
-        of the specified width.  The string str is never truncated.
-        """
         if len(self) >= width:
             return self
 
@@ -598,13 +471,6 @@ class str:
         return zf
 
     def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        """
-        str.count(sub[, start[, end]]) -> int
-
-        Return the number of occurrences of subsection sub in
-        bytes str[start:end].  Optional arguments start and end are interpreted
-        as in slice notation.
-        """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -612,15 +478,6 @@ class str:
         return algorithms.count(self._slice(start, end), sub)
 
     def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        """
-        str.find(sub [,start [,end]]) -> int
-
-        Return the lowest index in str where substring sub is found,
-        such that sub is contained within str[start:end].  Optional
-        arguments start and end are interpreted as in slice notation.
-
-        Return -1 on failure.
-        """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -629,15 +486,6 @@ class str:
         return pos if pos < 0 else pos + start
 
     def rfind(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        """
-        str.rfind(sub [,start [,end]]) -> int
-
-        Return the highest index in str where substring sub is found,
-        such that sub is contained within str[start:end].  Optional
-        arguments start and end are interpreted as in slice notation.
-
-        Return -1 on failure.
-        """
         end: int = end if end is not None else len(self)
         start, end = self._correct_indices(start, end)
         if end - start < len(sub):
@@ -646,12 +494,6 @@ class str:
         return pos if pos < 0 else pos + start
 
     def isidentifier(self) -> bool:
-        """
-        str.isidentifier() -> bool
-
-        Return True if the string is a valid identifier, False otherwise.
-        Unlike Python, isidentifier() deals with just ASCII characters.
-        """
         # empty string
         if len(self) == 0:
             return False
@@ -673,12 +515,6 @@ class str:
         return True
 
     def isprintable(self) -> bool:
-        """
-        str.isprintable() -> bool
-
-        Return True if the string is printable or empty, False otherwise.
-        Unlike Python, isprintable() deals with just ASCII characters.
-        """
         for i in range(len(self)):
             if not (31 < int(self.ptr[i]) < 128):
                 return False
@@ -695,48 +531,21 @@ class str:
             return s.isspace()
 
     def lstrip(self, chars: str = "") -> str:
-        """
-        str.lstrip([chars]) -> string
-
-        Return a copy of the string str with leading whitespace removed.
-        If chars is given, remove characters in chars instead.
-        Unlike Python, lstrip() deals with just ASCII characters.
-        """
         i = 0
         while i < len(self) and self._at(i)._has_char(chars):
             i += 1
         return self._slice(i, len(self))
 
     def rstrip(self, chars: str = "") -> str:
-        """
-        str.rstrip([chars]) -> string
-
-        Return a copy of the string str with trailing whitespace removed.
-        If chars is given, remove characters in chars instead.
-        Unlike Python, rstrip() deals with just ASCII characters.
-        """
         i = len(self) - 1
         while i >= 0 and self._at(i)._has_char(chars):
             i -= 1
         return self._slice(0, i + 1)
 
     def strip(self, chars: str = "") -> str:
-        """
-        str.strip([chars]) -> string
-
-        Return a copy of the string str with leading and trailing
-        whitespace removed.
-        If chars is given, remove characters in chars instead.
-        Unlike Python, strip() deals with just ASCII characters.
-        """
         return self.lstrip(chars).rstrip(chars)
 
     def partition(self, sep: str) -> Tuple[str, str, str]:
-        """
-        Search for the separator sep in str, and return the part before it,
-        the separator itself, and the part after it.  If the separator is not
-        found, return str and two empty strings.
-        """
         if not sep:
             raise ValueError("empty separator")
         pos = algorithms.find(self, sep)
@@ -745,11 +554,6 @@ class str:
         return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
     def rpartition(self, sep: str) -> Tuple[str, str, str]: # XXX
-        """
-        Search for the separator sep in str, starting at the end of str, and return
-        the part before it, the separator itself, and the part after it.  If the
-        separator is not found, return two empty strings and str.
-        """
         if not sep:
             raise ValueError("empty separator")
         pos = algorithms.rfind(self, sep)
@@ -758,15 +562,6 @@ class str:
         return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
 
     def split(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
-        """
-        str.split([sep [,maxsplit]]) -> list of strings
-
-        Return a list of the words in the string str, using sep as the
-        delimiter string.  If maxsplit is given, at most maxsplit
-        splits are done. If sep is not specified, any
-        whitespace string is a separator and empty strings are removed
-        from the result.
-        """
         if sep is None:
             return self._split_whitespace(
                 maxsplit if maxsplit >= 0 else _MAX
@@ -801,15 +596,6 @@ class str:
         return v
 
     def rsplit(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
-        """
-        str.rsplit([sep [,maxsplit]]) -> list of strings
-
-        Return a list of the words in the string str, using sep as the
-        delimiter string, starting at the end of the string and working
-        to the front.  If maxsplit is given, at most maxsplit splits are
-        done. If sep is not specified, any whitespace string
-        is a separator.
-        """
         if sep is None:
             return self._rsplit_whitespace(
                 maxsplit if maxsplit >= 0 else _MAX
@@ -844,13 +630,6 @@ class str:
         return v
 
     def splitlines(self, keepends: bool = False) -> List[str]:
-        """
-        str.splitlines([keepends]) -> list of strings
-
-        Return a list of the lines in str, breaking at line boundaries.
-        Line breaks are not included in the resulting list unless keepends
-        is given and true.
-        """
         v = []
         i = 0
         j = 0
@@ -884,13 +663,6 @@ class str:
     def startswith(
         self, prefix: str, start: int = 0, end: Optional[int] = None
     ) -> bool:
-        """
-        str.startswith(prefix[, start[, end]]) -> bool
-
-        Return True if str starts with the specified prefix, False otherwise.
-        With optional start, test str beginning at that position.
-        With optional end, stop comparing str at that position.
-        """
         end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
@@ -912,13 +684,6 @@ class str:
         return prefix == self._slice(start, start + len(prefix))
 
     def endswith(self, suffix: str, start: int = 0, end: Optional[int] = None) -> bool:
-        """
-        str.endswith(prefix[, start[, end]]) -> bool
-
-        Return True if str ends with the specified suffix, False otherwise.
-        With optional start, test str beginning at that position.
-        With optional end, stop comparing str at that position.
-        """
         end: int = end if end is not None else len(self)
         if end < 0:
             end += len(self)
@@ -945,11 +710,6 @@ class str:
         return suffix == self._slice(start, start + len(suffix))
 
     def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        """
-        str.index(sub [,start [,end]]) -> int
-
-        Like str.find() but raise ValueError when the substring is not found.
-        """
         i = self.find(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
@@ -957,11 +717,6 @@ class str:
             return i
 
     def rindex(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        """
-        str.index(sub [,start [,end]]) -> int
-
-        Like str.find() but raise ValueError when the substring is not found.
-        """
         i = self.rfind(sub, start, end)
         if i == -1:
             raise ValueError("substring not found")
@@ -969,22 +724,9 @@ class str:
             return i
 
     def replace(self, old: str, new: str, maxcount: int = -1) -> str:
-        """
-        str.replace(old, new[, count]) -> string
-
-        Return a copy of string str with all occurrences of substring
-        old replaced by new.  If the optional argument maxcount is
-        given, only the first maxcount occurrences are replaced.
-        """
         return self._replace(old, new, maxcount)
 
     def expandtabs(self, tabsize: int = 8) -> str:
-        """
-        str.expandtabs([tabsize]) -> string
-
-        Return a copy of str where all tab characters are expanded using spaces.
-        If tabsize is not given, a tab size of 8 characters is assumed.
-        """
         i = 0
         j = 0
         p = self.ptr
@@ -1048,9 +790,6 @@ class str:
         return str(u, u_len)
 
     def translate(self, map) -> str:
-        """
-        Return a copy with each character mapped by the given translation table.
-        """
         n = len(self)
         m = 0
 

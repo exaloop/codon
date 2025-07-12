@@ -74,12 +74,10 @@ def _siftup_max(heap: List[T], pos: int, T: type):
     _siftdown_max(heap, startpos, pos)
 
 def heappush(heap: List[T], item: T, T: type):
-    """Push item onto heap, maintaining the heap invariant."""
     heap.append(item)
     _siftdown(heap, 0, len(heap) - 1)
 
 def heappop(heap: List[T], T: type) -> T:
-    """Pop the smallest item off the heap, maintaining the heap invariant."""
     lastelt = heap.pop()  # raises appropriate IndexError if heap is empty
     if heap:
         returnitem = heap[0]
@@ -89,28 +87,18 @@ def heappop(heap: List[T], T: type) -> T:
     return lastelt
 
 def heapreplace(heap: List[T], item: T, T: type) -> T:
-    """
-    Pop and return the current smallest value, and add the new item.
-    This is more efficient than heappop() followed by heappush(), and can be
-    more appropriate when using a fixed-size heap.  Note that the value
-    returned may be larger than item!  That constrains reasonable uses of
-    this routine unless written as part of a conditional replacement:
-    ``if item > heap[0]: item = heapreplace(heap, item)``.
-    """
     returnitem = heap[0]  # raises appropriate IndexError if heap is empty
     heap[0] = item
     _siftup(heap, 0)
     return returnitem
 
 def heappushpop(heap: List[T], item: T, T: type) -> T:
-    """Fast version of a heappush followed by a heappop."""
     if heap and heap[0] < item:
         item, heap[0] = heap[0], item
         _siftup(heap, 0)
     return item
 
 def heapify(x: List[T], T: type):
-    """Transform list into a heap, in-place, in $O(len(x))$ time."""
     n = len(x)
     # Transform bottom-up.  The largest index there's any point to looking at
     # is the largest with a child index in-range, so must have 2*i + 1 < n,
@@ -121,7 +109,6 @@ def heapify(x: List[T], T: type):
         _siftup(x, i)
 
 def _heappop_max(heap: List[T], T: type) -> T:
-    """Maxheap version of a heappop."""
     lastelt = heap.pop()  # raises appropriate IndexError if heap is empty
     if heap:
         returnitem = heap[0]
@@ -131,22 +118,17 @@ def _heappop_max(heap: List[T], T: type) -> T:
     return lastelt
 
 def _heapreplace_max(heap: List[T], item: T, T: type) -> T:
-    """Maxheap version of a heappop followed by a heappush."""
     returnitem = heap[0]  # raises appropriate IndexError if heap is empty
     heap[0] = item
     _siftup_max(heap, 0)
     return returnitem
 
 def _heapify_max(x: List[T], T: type):
-    """Transform list into a maxheap, in-place, in O(len(x)) time."""
     n = len(x)
     for i in reversed(range(n // 2)):
         _siftup_max(x, i)
 
 def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> List[T]:
-    """Find the n smallest elements in a dataset.
-    Equivalent to:  sorted(iterable, key=key)[:n]
-    """
     if n == 1:
         v = List(1)
         for a in iterable:
@@ -218,9 +200,6 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
         return [elem for k, order, elem in result]
 
 def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> List[T]:
-    """Find the n largest elements in a dataset.
-    Equivalent to:  sorted(iterable, key=key, reverse=True)[:n]
-    """
     if n == 1:
         v = List(1)
         for a in iterable:
