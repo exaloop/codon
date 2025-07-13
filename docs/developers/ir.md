@@ -386,6 +386,6 @@ These standard sets of passes are run in `release`-mode:
 - Constant propagation and folding. This also includes dead code elimination and (in non-JIT mode)
   global variable demotion.
 
-- Library-specific optimizations, such as operator fusion for [NumPy](/libraries/numpy).
+- Library-specific optimizations, such as operator fusion for [NumPy](../libraries/numpy.md).
 
-Codon [plugins](/developers/extend) can inject their own passes into the pipeline as well.
+Codon [plugins](extend.md) can inject their own passes into the pipeline as well.

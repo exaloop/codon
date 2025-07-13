@@ -2,10 +2,10 @@ This page describes the internal compilation flow from source code to native cod
 It is intended for Codon developers and contributors seeking to understand or extend
 the compiler.
 
-<figure markdown="span">
-  ![Codon compilation pipeline](/img/codon-pipeline.svg){ width="100%" }
-  <figcaption>Codon compilation pipeline</figcaption>
-</figure>
+![Codon compilation pipeline](../img/codon-pipeline.svg){ width="100%" }
+/// caption
+Codon compilation pipeline
+///
 
 ## Overview
 
@@ -80,7 +80,7 @@ detailed overview of Coodn's type checker.
 
 ## Codon IR generation
 
-After type checking, the typed AST is lowered to [Codon IR](/developers/ir). Codon IR utilizes
+After type checking, the typed AST is lowered to [Codon IR](ir.md). Codon IR utilizes
 a vastly reduced set of nodes as compared to the AST, making it more practical for optimizations
 and analyses.
 
@@ -92,7 +92,7 @@ Relevant code can be found in
 
 Codon IR performs a suite of analyses and optimizations, ranging from general-purpose compiler
 optimizations like constant folding and dead code elimination to more specialized optimizations
-like operator fusion for NumPy. Learn more in the [Codon IR docs](/developers/ir).
+like operator fusion for NumPy. Learn more in the [Codon IR docs](ir.md).
 
 Relevant code can be found in
 [`codon/cir/`](https://github.com/exaloop/codon/tree/develop/codon/cir).
@@ -144,7 +144,7 @@ other built-in types are implemented as named tuples, and so on.
 
 Codon IR has no concept of operators like `+`, `-`, etc. Instead, it represents these
 operations as magic method calls. Magic methods of primitive types like `int` are
-implemented in Codon using [inline LLVM](/language/llvm). For example:
+implemented in Codon using [inline LLVM](../language/llvm.md). For example:
 
 ``` python
 class int:
@@ -580,7 +580,7 @@ invoking LLVM's optimization pipeline when compiling in release mode (correspond
 
 ### GPU code generation
 
-If the program contains [GPU kernels](/parallel/gpu), those kernels are separated into a new
+If the program contains [GPU kernels](../parallel/gpu.md), those kernels are separated into a new
 LLVM module to be handled specially. In particular:
 
 - Certain functions are replaced with GPU-compatible alternatives. For instance, the `sqrt()`
@@ -595,8 +595,8 @@ LLVM module to be handled specially. In particular:
 
 Codon also includes a JIT based on LLVM's [ORC JIT](https://llvm.org/docs/ORCv2.html) and implemented
 with LLVM's [`LLJIT`](https://llvm.org/doxygen/classllvm_1_1orc_1_1LLJIT.html). This JIT
-is used to support the [`@codon.jit` Python decorator](/integrations/python/codon-from-python) as
-well as [Codon's Jupyter kernel](/integrations/jupyter).
+is used to support the [`@codon.jit` Python decorator](../integrations/python/codon-from-python.md) as
+well as [Codon's Jupyter kernel](../integrations/jupyter.md).
 
 Note that `codon run` also uses `LLJIT` to execute the generated LLVM code.
 
@@ -613,4 +613,4 @@ examined. This includes:
 - Both unoptimized and optimized Codon IR
 - LLVM IR
 
-See the [relevant docs](/start/usage#logging) for other debugging options.
+See the [relevant docs](../start/usage.md#logging) for other debugging options.

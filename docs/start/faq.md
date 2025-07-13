@@ -15,10 +15,10 @@ While Codon supports nearly all of Python's syntax, it is not a drop-in replacem
 codebases might require modifications to be run through the Codon compiler. For example, some
 of Python's modules are not yet implemented within Codon, and a few of Python's dynamic features
 are disallowed. The Codon compiler produces detailed error messages to help identify and resolve
-any incompatibilities. Codon supports seamless [Python interoperability](/integrations/python/python-from-codon) to
+any incompatibilities. Codon supports seamless [Python interoperability](../integrations/python/python-from-codon.md) to
 handle cases where specific Python libraries or dynamism are required, and also supports writing
-[Python extension modules](/integrations/python/extensions) that can be imported and used from larger Python
-codebases.
+[Python extension modules](../integrations/python/extensions.md) that can be imported and used
+from larger Python codebases.
 
 ### Why Codon?
 
@@ -48,7 +48,7 @@ performance drawbacks.
   Codon differs in a few places in order to eliminate any dynamic runtime or virtual
   machine, and thereby attain much better performance.
 
-- **Cython?** Like Cython, Codon has a [Python-extension build mode](/integrations/python/extensions) that
+- **Cython?** Like Cython, Codon has a [Python-extension build mode](../integrations/python/extensions.md) that
   compiles to Python extension modules, allowing Codon-compiled code to be imported and called
   from plain Python.
 
@@ -77,12 +77,12 @@ on bioinformatics-specific use cases (note that the name used in that paper is t
 
 ### I want to use Codon, but I have a large Python codebase I don't want to port.
 
-You can use Codon on a per-function basis via the [`@codon.jit` decorator](/integrations/python/codon-from-python),
+You can use Codon on a per-function basis via the [`@codon.jit` decorator](../integrations/python/codon-from-python.md),
 which can be used within Python codebases. This will compile only the annotated functions
 and automatically handle data conversions to and from Codon. It also allows for
 the use of any Codon-specific modules or extensions, such as multithreading.
 
-Codon can also [compile to Python extension modules](/integrations/python/extensions) that can be
+Codon can also [compile to Python extension modules](../integrations/python/extensions.md) that can be
 imported and used from Python.
 
 ### What about interoperability with other languages and frameworks?

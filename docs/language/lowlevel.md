@@ -154,7 +154,7 @@ mantissa = frexp(x, __ptr__(exponent))  # equivalent to 'frexp(x, &exponent)' in
 print(mantissa, exponent)  # 0.5125 5
 ```
 
-Refer to [C/C++ integration](integrations/cpp) for more information about
+Refer to [C/C++ integration](../integrations/cpp/cpp-from-codon.md) for more information about
 calling C/C++ functions from Codon.
 
 ### Pointers to fields
@@ -225,4 +225,4 @@ def f():
 ```
 
 Arrays created with `__array__` have two fields: `ptr` (pointer to array data) and `len`
-(length of array). The argument of `__array__` must be a [literal](/language/meta#literals) integer.
+(length of array). The argument of `__array__` must be a [literal](meta.md#literals) integer.

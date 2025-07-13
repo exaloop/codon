@@ -50,7 +50,7 @@ want to implement or explore.
 ## Libraries
 
 Currently, missing Python functionality can be easily accessed via a
-[`from python import` statement](/integrations/python/python-from-codon),
+[`from python import` statement](../integrations/python/python-from-codon.md),
 which is sufficient in most cases as many libraries are just thin wrappers
 around a C library and/or not performance-sensitive.
 

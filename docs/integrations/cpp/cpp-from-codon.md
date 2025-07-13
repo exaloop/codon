@@ -18,7 +18,7 @@ from C import puts(cobj) -> None as print_line
 print_line("hello".c_str())  # prints "hello"; c_str() converts Codon str to C string
 ```
 
-You can also add [annotations](/language/llvm#annotations) such as
+You can also add [annotations](../../language/llvm.md#annotations) such as
 `@pure` to C-imported functions by instead declaring them with the `@C`
 attribute:
 
@@ -82,7 +82,7 @@ struct ndarray {
 };
 ```
 
-Refer to the [NumPy documentation](/libraries/numpy#array-abi) for an explanation of these fields.
+Refer to the [NumPy documentation](../../libraries/numpy.md#array-abi) for an explanation of these fields.
 
 ## Dynamic loading
 

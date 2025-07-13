@@ -22,7 +22,7 @@ worth considering. Most of these design decisions were made
 with the trade-off between performance and Python compatibility
 in mind.
 
-Please see our [roadmap](/developers/roadmap) for more information
+Please see our [roadmap](../developers/roadmap.md) for more information
 about how we plan to close some of these gaps in the future.
 
 ### Data types
@@ -49,7 +49,7 @@ about how we plan to close some of these gaps in the future.
   this almost never affects NumPy code as these parameters are
   determined automatically at compile time. In some cases, such
   as when reading array data from disk, they must be provided
-  programmatically. Learn more in the [Codon-NumPy docs](/libraries/numpy).
+  programmatically. Learn more in the [Codon-NumPy docs](../libraries/numpy.md).
 
 ### Type checking
 
@@ -78,4 +78,4 @@ does *not* change `int`s from 64-bit.
 While most of the commonly used builtin modules have Codon-native
 implementations, a few are not yet implemented. However these can
 still be used within Codon
-[via `from python import`](/integrations/python/python-from-codon).
+[via `from python import`](../integrations/python/python-from-codon.md).

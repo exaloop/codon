@@ -46,7 +46,7 @@ for more information.
 - Interoperable with Codon's multithreading and GPU backends.
 - NumPy-specific compiler optimizations (e.g. operator fusion optimizations)
   added to Codon's standard optimization suite.
-- Learn more in the [Codon-NumPy docs](/libraries/numpy).
+- Learn more in the [Codon-NumPy docs](../libraries/numpy.md).
 
 ### New compiler options
 
@@ -88,7 +88,7 @@ Upgraded to LLVM 17 (from 15).
 A new build mode is added to `codon` called `pyext` which compiles
 to Python extension modules, allowing Codon code to be imported and
 called directly from Python (similar to Cython). Please see the
-[docs](/integrations/python/extensions) for more information and usage
+[docs](../integrations/python/extensions.md) for more information and usage
 examples.
 
 ### Standard library updates
@@ -160,7 +160,7 @@ functions written in Codon as well as LLVM IR output of
 
 GPU kernels can now be written and called in Codon. Existing
 loops can be parallelized on the GPU with the `@par(gpu=True)`
-annotation. Please see the [docs](/parallel/gpu) for
+annotation. Please see the [docs](../parallel/gpu.md) for
 more information and examples.
 
 ### Semantics
@@ -294,7 +294,7 @@ for a in some_arbitrary_generator():
 Included revamped `codon` module for Python, with `@codon.jit` decorator
 for compiling Python code in existing codebases. Further improved and
 optimized the Python bridge. Please see the
-[docs](/integrations/python/codon-from-python) for more information.
+[docs](../integrations/python/codon-from-python.md) for more information.
 
 ### Codon IR
 

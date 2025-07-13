@@ -121,7 +121,7 @@ Timings on an M1 MacBook Pro:
 - Without `@codon.jit`: 0.1645 seconds
 - With `@codon.jit`: 0.001485 seconds (*110x speedup*)
 
-For more information, see the [Codon JIT docs](/integrations/python/codon-from-python).
+For more information, see the [Codon JIT docs](../integrations/python/codon-from-python.md).
 
 #### Using Codon Python extensions
 Codon can compile directly to a Python extension module, similar to writing a C
@@ -145,7 +145,7 @@ the argument is a 3-dimensional array of type `float32`, which is expressed as
 `np.ndarray[np.float32, 3]` in Codon.
 
 Now we can use a setup script `setup.py` to create the extension module as described
-in the [Codon Python extension docs](/integrations/python/extensions):
+in the [Codon Python extension docs](../integrations/python/extensions.md):
 
 ``` bash
 python3 setup.py build_ext --inplace  # setup.py from docs linked above
@@ -463,7 +463,7 @@ foo(arr.data, arr.size)
 
 Of course, it's the caller's responsibility to make sure the array is contiguous
 as needed and/or pass additional shape or stride information. See the
-[C interoperability](/integrations/cpp/cpp-from-codon) docs for more information.
+[C interoperability](../integrations/cpp/cpp-from-codon.md) docs for more information.
 
 ### Array ABI
 

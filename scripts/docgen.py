@@ -57,7 +57,7 @@ for directory, modules in parsed_modules.items():
                 continue
             base = os.path.join('libraries', 'api', directory, m)
             is_dir = os.path.isdir(os.path.join(out_path, directory, m))
-            print(f"- [`{m}`](/{base}{'/' if is_dir else ''})", file=f)
+            print(f"- [`{m}`]({m}{'/index' if is_dir else ''}.md)", file=f)
 
 print(f" - Done with directory tree")
 

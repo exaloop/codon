@@ -1,7 +1,7 @@
 Codon implements much of Python's standard library natively.
 Some built-in modules and some methods of certain modules are
 not yet available natively in Codon; these
-[can still be called through Python](/integrations/python/python-from-codon),
+[can still be called through Python](../integrations/python/python-from-codon.md),
 however:
 
 ``` python
@@ -46,10 +46,10 @@ Alongside the standard modules above, Codon provides several additional
 modules that support various Codon-specific features.
 
 - `openmp`: Contains [OpenMP](https://openmp.org) API, which can be used when
-  writing multithreaded programs. See [multithreading](/parallel/multithreading) for
+  writing multithreaded programs. See [multithreading](../parallel/multithreading.md) for
   more information.
 - `gpu`: Contains GPU API (e.g. CUDA intrinsics), which can be used when writing
-  GPU code. See [GPU](/parallel/gpu) for more information.
+  GPU code. See [GPU](../parallel/gpu.md) for more information.
 - `python`: Contains internal machinery for interfacing with CPython. Most users will
   not need to interact with this module directly.
 - `experimental`: Contains experimental features that are available for use, but might

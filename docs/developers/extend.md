@@ -25,7 +25,7 @@ called `plugin.toml`. The following fields are supported:
   also builds a static library containing necessary runtime functions.
 
 Here is an example configuration file for the validate pass shown in the
-[Codon IR docs](/developers/ir#bidirectionality):
+[Codon IR docs](ir.md#bidirectionality):
 
 ``` toml
 [about]

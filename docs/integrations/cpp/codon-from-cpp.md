@@ -52,4 +52,4 @@ can either:
 - Add the library path to `LD_LIBRARY_PATH` (or `DYLD_LIBRARY_PATH` if
   using macOS): `export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/path/to/lib/dir`.
 
-Type conversions between Codon and C/C++ are detailed [here](/integrations/cpp/cpp-from-codon#type-conversions).
+Type conversions between Codon and C/C++ are detailed [here](cpp-from-codon.md#type-conversions).

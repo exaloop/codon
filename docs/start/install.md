@@ -21,7 +21,7 @@
     ```
 
     With this package installed, you can use the `@codon.jit` decorator.
-    [Learn more &#x2192;](/integrations/python/codon-from-python)
+    [Learn more &#x2192;](../integrations/python/codon-from-python.md)
 
 !!! info
 

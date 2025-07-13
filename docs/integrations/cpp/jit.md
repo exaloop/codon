@@ -71,7 +71,7 @@ llvm::Expected<ir::Func *> compile(const std::string &code,
                                    const std::string &file = "", int line = 0);
 ```
 
-Compiles the given code string to a [Codon IR](/developers/ir) function representing
+Compiles the given code string to a [Codon IR](../../developers/ir.md) function representing
 the JIT input. Optional file and line information can be passed through the `file` and
 `line` arguments, respectively. Does not invoke the LLVM backend.
 
