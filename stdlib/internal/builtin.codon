@@ -16,9 +16,6 @@ def id(x) -> int:
         return 0
 
 def print(*args, sep: str = " ", end: str = "\n", file=_C.seq_stdout(), flush: bool = False):
-    """
-    Print args to the text stream file.
-    """
     fp = cobj()
     if isinstance(file, cobj):
         fp = file
@@ -146,33 +143,18 @@ def max(*args, key=None, default=None):
         return m
 
 def len(x) -> int:
-    """
-    Return the length of x
-    """
     return x.__len__()
 
 def iter(x):
-    """
-    Return an iterator for the given object
-    """
     return x.__iter__()
 
 def abs(x):
-    """
-    Return the absolute value of x
-    """
     return x.__abs__()
 
 def hash(x) -> int:
-    """
-    Returns hashed value only for immutable objects
-    """
     return x.__hash__()
 
 def ord(s: str) -> int:
-    """
-    Return an integer representing the Unicode code point of s
-    """
     if len(s) != 1:
         raise TypeError(
             f"ord() expected a character, but string of length {len(s)} found"
@@ -186,18 +168,11 @@ def divmod(a, b):
         return (a // b, a % b)
 
 def chr(i: int) -> str:
-    """
-    Return a string representing a character whose Unicode
-    code point is an integer
-    """
     p = cobj(1)
     p[0] = byte(i)
     return str(p, 1)
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
-    """
-    Return the next item from g
-    """
     if g.done():
         if default is not None:
             return default.__val__()
@@ -206,30 +181,18 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     return g.next()
 
 def any(x: Generator[T], T: type) -> bool:
-    """
-    Returns True if any item in x is true,
-    False otherwise
-    """
     for a in x:
         if a:
             return True
     return False
 
 def all(x: Generator[T], T: type) -> bool:
-    """
-    Returns True when all elements in x are true,
-    False otherwise
-    """
     for a in x:
         if not a:
             return False
     return True
 
 def zip(*args):
-    """
-    Returns a zip object, which is an iterator of tuples
-    that aggregates elements based on the iterables passed
-    """
     if static.len(args) == 0:
         yield from List[int]()
     else:
@@ -245,17 +208,11 @@ def zip(*args):
             i.destroy()
 
 def filter(f: CallableTrait[[T], bool], x: Generator[T], T: type) -> Generator[T]:
-    """
-    Returns all a from the iterable x that are filtered by f
-    """
     for a in x:
         if f(a):
             yield a
 
 def map(f, *args):
-    """
-    Applies a function on all a in x and returns map object
-    """
     if static.len(args) == 0:
         compile_error("map() expects at least one iterator")
     elif static.len(args) == 1:
@@ -266,26 +223,16 @@ def map(f, *args):
             yield f(*a)
 
 def enumerate(x, start: int = 0):
-    """
-    Creates a tuple containing a count (from start which defaults
-    to 0) and the values obtained from iterating over x
-    """
     i = start
     for a in x:
         yield (i, a)
         i += 1
 
 def echo(x):
-    """
-    Print and return argument
-    """
     print x
     return x
 
 def reversed(x):
-    """
-    Return an iterator that accesses x in the reverse order
-    """
     if hasattr(x, "__reversed__"):
         return x.__reversed__()
     else:
@@ -295,10 +242,6 @@ def reversed(x):
             i -= 1
 
 def round(x, n=0):
-    """
-    Return the x rounded off to the given
-    n digits after the decimal point.
-    """
     nx = float.__pow__(10.0, n)
     return float.__round__(x * nx) / nx
 
@@ -309,9 +252,6 @@ def _sum_start(x, start):
         return start
 
 def sum(x, start=0):
-    """
-    Return the sum of the items added together from x
-    """
     s = _sum_start(x, start)
 
     for a in x:
@@ -324,7 +264,6 @@ def sum(x, start=0):
     return s
 
 def repr(x):
-    """Return the string representation of x"""
     if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):
         return x.__repr_default__()
     return x.__repr__()

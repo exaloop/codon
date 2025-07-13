@@ -111,32 +111,14 @@ def _qsort(
 def qsort_array(
     collection: Array[T], size: int, key: CallableTrait[[T], S], T: type, S: type
 ):
-    """
-    Pattern-defeating Quicksort
-    By Orson Peters, published at https://github.com/orlp/pdqsort
-
-    Sorts the array inplace.
-    """
     _qsort(collection, 0, size, key)
 
 def qsort_inplace(
     collection: List[T], key: CallableTrait[[T], S], T: type, S: type
 ):
-    """
-    Pattern-defeating Quicksort
-    By Orson Peters, published at https://github.com/orlp/pdqsort
-
-    Sorts the list inplace.
-    """
     qsort_array(collection.arr, collection.len, key)
 
 def qsort(collection: List[T], key: CallableTrait[[T], S], T: type, S: type) -> List[T]:
-    """
-    Pattern-defeating Quicksort
-    By Orson Peters, published at https://github.com/orlp/pdqsort
-
-    Returns a sorted list.
-    """
     collection = collection[:]
     qsort_inplace(collection, key)
     return collection

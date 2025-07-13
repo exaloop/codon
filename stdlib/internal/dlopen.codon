@@ -1,22 +1,17 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
-@pure
-@C
-def seq_is_macos() -> bool:
-    pass
-
 # <dlfcn.h>
 from C import dlerror() -> cobj as c_dlerror
 from C import dlopen(cobj, int) -> cobj as c_dlopen
 from C import dlsym(cobj, cobj) -> cobj as c_dlsym
 from C import dlclose(cobj) -> i32 as c_dlclose
 
-RTLD_NOW = 2
-RTLD_GLOBAL = 8 if seq_is_macos() else 256
-RTLD_LOCAL = 0 if seq_is_macos() else 256
+RTLD_NOW: Literal[int] = 2
+RTLD_GLOBAL: Literal[int] = 8 if __apple__ else 256
+RTLD_LOCAL: Literal[int] = 0 if __apple__ else 256
 
-def dlext() -> str:
-    if seq_is_macos():
+def dlext() -> Literal[str]:
+    if __apple__:
         return "dylib"
     else:
         return "so"

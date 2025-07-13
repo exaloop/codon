@@ -1194,12 +1194,11 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
         shape = arr0.shape
         pshape = Ptr[int](__ptr__(shape).as_byte())
 
-        for i in range(1, len(arrays)):
-            arr = arrays[i]
-            arr_shape = arr.shape
-
+        def loop_inner(arr, axis: int, pshape: Ptr[int], ndim: Literal[int]):
             if arr.ndim != ndim:
                 compile_error("all the input arrays must have same number of dimensions")
+
+            arr_shape = arr.shape
 
             for idim in static.range(ndim):
                 if idim == axis:
@@ -1207,6 +1206,13 @@ def concatenate(arrays, axis = 0, out = None, dtype: type = NoneType):
                 elif pshape[idim] != arr_shape[idim]:
                     raise ValueError("all the input array dimensions except for "
                                      "the concatenation axis must match exactly")
+
+        if isinstance(arrays, Tuple):
+            for i in static.range(1, static.len(arrays)):
+                loop_inner(arrays[i], axis, pshape, ndim)
+        else:
+            for i in range(1, len(arrays)):
+                loop_inner(arrays[i], axis, pshape, ndim)
 
         corder = True
         if out is not None:

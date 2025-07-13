@@ -600,16 +600,6 @@ def _conj(x):
         return x
 
 def _gcd(x, y):
-    '''  # fails with optionals
-    if not (
-        isinstance(x, int) or
-        isinstance(x, Int) or
-        isinstance(x, UInt) or
-        isinstance(x, byte)
-    ):
-        compile_error("gcd/lcm can only be used on integral types")
-    '''
-
     while x:
         z = x
         x = y % x

@@ -68,14 +68,6 @@ SEQ_FUNC void seq_init(int flags) {
   seq_flags = flags;
 }
 
-SEQ_FUNC bool seq_is_macos() {
-#ifdef __APPLE__
-  return true;
-#else
-  return false;
-#endif
-}
-
 SEQ_FUNC seq_int_t seq_pid() { return (seq_int_t)getpid(); }
 
 SEQ_FUNC seq_int_t seq_time() {

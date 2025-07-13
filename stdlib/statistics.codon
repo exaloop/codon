@@ -2,10 +2,14 @@
 
 import bisect
 import random
-from math import frexp as _frexp, floor as _floor, fabs as _fabs, erf as _erf
 from math import (
     gcd as _gcd,
+    erf as _erf,
     exp as _exp,
+    fabs as _fabs,
+    floor as _floor,
+    frexp as _frexp,
+    fsum as _fsum,
     log as _log,
     sqrt as _sqrt,
     tau as _tau,

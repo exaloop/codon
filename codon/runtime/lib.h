@@ -44,7 +44,6 @@ SEQ_FUNC int seq_flags;
 
 SEQ_FUNC void seq_init(int flags);
 
-SEQ_FUNC bool seq_is_macos();
 SEQ_FUNC seq_int_t seq_pid();
 SEQ_FUNC seq_int_t seq_time();
 SEQ_FUNC seq_int_t seq_time_monotonic();
@@ -90,7 +89,6 @@ SEQ_FUNC void *seq_stderr();
 SEQ_FUNC void seq_print(seq_str_t str);
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo);
 
-SEQ_FUNC void *seq_lock_new();
 SEQ_FUNC void *seq_lock_new();
 SEQ_FUNC bool seq_lock_acquire(void *lock, bool block, double timeout);
 SEQ_FUNC void seq_lock_release(void *lock);

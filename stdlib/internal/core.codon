@@ -316,7 +316,6 @@ def overload():
     pass
 
 def hasattr(obj, attr: Literal[str], *args, **kwargs):
-    """Special handling"""
     pass
 
 def getattr(obj, attr: Literal[str]):

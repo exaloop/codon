@@ -26,7 +26,6 @@ from algorithms.insertionsort import _insertion_sort
 from algorithms.heapsort import _heap_sort
 
 def _floor_log2(n: int) -> int:
-    """Returns floor(log2(n))"""
     log = 0
     while True:
         n >>= 1
@@ -285,32 +284,14 @@ def _pdq_sort(
 def pdq_sort_array(
     collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
-    """
-    Pattern-defeating Quicksort
-    By Orson Peters, published at https://github.com/orlp/pdqsort
-
-    Sorts the array inplace.
-    """
     _pdq_sort(collection, 0, size, keyf, _floor_log2(size), True)
 
 def pdq_sort_inplace(
     collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
-    """
-    Pattern-defeating Quicksort
-    By Orson Peters, published at https://github.com/orlp/pdqsort
-
-    Sorts the list inplace.
-    """
     pdq_sort_array(collection.arr, collection.len, keyf)
 
 def pdq_sort(collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type) -> List[T]:
-    """
-    Pattern-defeating Quicksort
-    By Orson Peters, published at https://github.com/orlp/pdqsort
-
-    Returns a sorted list.
-    """
     newlst = collection.__copy__()
     pdq_sort_inplace(newlst, keyf)
     return newlst

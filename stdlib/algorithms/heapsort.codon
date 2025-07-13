@@ -44,26 +44,14 @@ def _heap_sort(
 def heap_sort_array(
     collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
-    """
-    Heap Sort
-    Sorts the array inplace.
-    """
     _heap_sort(collection, 0, size, keyf)
 
 def heap_sort_inplace(
     collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
-    """
-    Heap Sort
-    Sorts the list inplace.
-    """
     heap_sort_array(collection.arr, collection.len, keyf)
 
 def heap_sort(collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type) -> List[T]:
-    """
-    Heap Sort
-    Returns a sorted list.
-    """
     newlst = collection.__copy__()
     heap_sort_inplace(newlst, keyf)
     return newlst

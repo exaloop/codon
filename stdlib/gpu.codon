@@ -356,8 +356,16 @@ class Pointer[T]:
     def __from_gpu_new__(other: Ptr[T]):
         return other
 
-def raw(v: List[T], T: type):
-    return Pointer(v.arr.ptr, len(v))
+def raw(v):
+    from numpy import ndarray
+    if isinstance(v, List):
+        return Pointer(v.arr.ptr, len(v))
+    elif isinstance(v, ndarray):
+        if not v._is_contig:
+            raise ValueError("gpu.raw() array argument must be contiguous")
+        return Pointer(v.data, v.size)
+    else:
+        compile_error("gpu.raw() argument must be an ndarray or a list")
 
 @extend
 class Ptr:
