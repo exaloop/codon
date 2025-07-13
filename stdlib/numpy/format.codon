@@ -80,8 +80,9 @@ class FloatingFormat:
 
                     abs_non_zero += 1
 
-        exp_format = (abs_non_zero != 0 and (max_val >= dtype(1.e8) or
-                      min_val < dtype(0.0001) or max_val/min_val > dtype(1000.)))
+        if max_val is not None and min_val is not None:
+            exp_format = (abs_non_zero != 0 and (max_val >= dtype(1.e8) or
+                          min_val < dtype(0.0001) or max_val/min_val > dtype(1000.)))
         precision = -1
         exp_size = -1
         pad_left = -1
