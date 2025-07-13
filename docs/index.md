@@ -21,10 +21,10 @@ higher still.
       <p>Learn how to install Codon and run your first program.</p>
     </a>
     <div class="card-img">
-      <img src="/img/card-start-dark.svg" class="card-icon-dark" height="90" width="100" />
+      <img src="img/card-start-dark.svg" class="card-icon-dark" height="90" width="100" />
     </div>
     <div class="card-img">
-      <img src="/img/card-start-light.svg" class="card-icon-light" height="90" width="100" />
+      <img src="img/card-start-light.svg" class="card-icon-light" height="90" width="100" />
     </div>
   </div>
 
@@ -34,10 +34,10 @@ higher still.
       <p>Step-by-step guides to learn Codon concepts and features.</p>
     </a>
     <div class="card-img">
-      <img src="/img/card-labs-dark.svg" class="card-icon-dark" height="90" width="100" />
+      <img src="img/card-labs-dark.svg" class="card-icon-dark" height="90" width="100" />
     </div>
     <div class="card-img">
-      <img src="/img/card-labs-light.svg" class="card-icon-light" height="90" width="100" />
+      <img src="img/card-labs-light.svg" class="card-icon-light" height="90" width="100" />
     </div>
   </div>
 
@@ -47,10 +47,10 @@ higher still.
       <p>Learn parallel programming in Codon.</p>
     </a>
     <div class="card-img">
-      <img src="/img/card-parallel-dark.svg" class="card-icon-dark" height="90" width="100" />
+      <img src="img/card-parallel-dark.svg" class="card-icon-dark" height="90" width="100" />
     </div>
     <div class="card-img">
-      <img src="/img/card-parallel-light.svg" class="card-icon-light" height="90" width="100" />
+      <img src="img/card-parallel-light.svg" class="card-icon-light" height="90" width="100" />
     </div>
   </div>
 
@@ -60,10 +60,10 @@ higher still.
       <p>Explore built-in types, functions, and modules available in Codon.</p>
     </a>
     <div class="card-img">
-      <img src="/img/card-api-dark.svg" class="card-icon-dark" height="90" width="100" />
+      <img src="img/card-api-dark.svg" class="card-icon-dark" height="90" width="100" />
     </div>
     <div class="card-img">
-      <img src="/img/card-api-light.svg" class="card-icon-light" height="90" width="100" />
+      <img src="img/card-api-light.svg" class="card-icon-light" height="90" width="100" />
     </div>
   </div>
 

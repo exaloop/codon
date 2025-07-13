@@ -3,8 +3,8 @@ title: Labs
 ---
 
 <h1 align="center">
-  <img src="/img/codon-labs-dark.svg" class="labs-logo-dark" width="70%" />
-  <img src="/img/codon-labs-light.svg" class="labs-logo-light" width="70%" />
+  <img src="../img/codon-labs-dark.svg" class="labs-logo-dark" width="70%" />
+  <img src="../img/codon-labs-light.svg" class="labs-logo-light" width="70%" />
 </h1>
 
 Labs are short, self-contained guides on various features and applications
@@ -32,7 +32,7 @@ cases and domain-specific applications. Check out the catalog of labs below!
       <p>Learn how to install Codon and run your first program.</p>
     </a>
     <div class="lab-img">
-      <img src="/img/card-labs-light.svg" class="lab-icon-dark" width="120" />
+      <img src="../img/card-labs-light.svg" class="lab-icon-dark" width="120" />
     </div>
   </div>
 
