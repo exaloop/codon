@@ -3,9 +3,6 @@ It is intended for Codon developers and contributors seeking to understand or ex
 the compiler.
 
 ![Codon compilation pipeline](../img/codon-pipeline.svg){ width="100%" }
-/// caption
-Codon compilation pipeline
-///
 
 ## Overview
 
