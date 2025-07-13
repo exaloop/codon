@@ -330,6 +330,14 @@ class __internal__:
         return idx
 
     def tuple_getitem(t: T, idx: int, T: type, E: type) -> E:
+        for i in static.range(1, static.len(t)):
+            if type(t[i]) is not type(t[0]):
+                compile_error(
+                    "cannot index non-homogeneous tuple " +
+                    type(t).__name__ +
+                    " with non-literal index"
+                )
+
         return __internal__._tuple_getitem_llvm(
             t, __internal__.tuple_fix_index(idx, static.len(t)), T, E
         )
