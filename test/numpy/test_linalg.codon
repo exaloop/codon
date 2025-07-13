@@ -1772,10 +1772,10 @@ TestInv_test_0_size()
 def TestEigvals_test_type():
 
     x = np.array([[1, 0.5], [0.5, 1]], dtype=np.single)
-    assert alg.eigvals(x)[0][0].__class__.__name__ == 'float32'
+    assert alg.eigvals(x)[0].real.__class__.__name__ == 'float32'
 
     x = np.array([[1, 0.5], [0.5, 1]], dtype=np.double)
-    assert alg.eigvals(x)[0][0].__class__.__name__ == 'float'
+    assert alg.eigvals(x)[0].real.__class__.__name__ == 'float'
 
     x = np.array([[1, 0.5], [0.5, 1]], dtype=np.csingle)
     assert alg.eigvals(x)[0].__class__.__name__ == 'complex64'

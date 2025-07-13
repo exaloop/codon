@@ -2948,11 +2948,18 @@ class busdaycalendar:
             lastdate = _DATETIME_NAT
             count = len(holidays)
             hlist = List[datetime64['D', 1]](capacity=count)
-            for i in range(count):
-                if isinstance(holidays[i], datetime64['D', 1]):
-                    hlist.append(holidays[i])
-                else:
-                    hlist.append(datetime64(holidays[i], 'D'))
+            if isinstance(holidays, Tuple):
+                for i in static.range(static.len(holidays)):
+                    if isinstance(holidays[i], datetime64['D', 1]):
+                        hlist.append(holidays[i])
+                    else:
+                        hlist.append(datetime64(holidays[i], 'D'))
+            else:
+                for i in range(count):
+                    if isinstance(holidays[i], datetime64['D', 1]):
+                        hlist.append(holidays[i])
+                    else:
+                        hlist.append(datetime64(holidays[i], 'D'))
             hlist.sort()
 
             hptr = hlist.arr.ptr
