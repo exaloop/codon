@@ -57,7 +57,7 @@ up with best possible performance in mind.*
 ## How it works
 
 <p align="center">
- <img src="docs/img/codon-figure.svg" width="90%" alt="Codon figure"/>
+ <img src="docs/img/codon-pipeline.svg" width="90%" alt="Codon figure"/>
 </p>
 
 # Quick start
