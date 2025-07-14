@@ -100,7 +100,7 @@
   left: 0;
   bottom: -2px;
   width: 0%;
-  height: 1px;
+  height: 0.075rem;
   background-color: var(--md-accent-fg-color);
   transition: width 0.25s ease-in-out;
 }
