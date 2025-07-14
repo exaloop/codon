@@ -232,6 +232,8 @@ jobs:
     name: Build and Publish Documentation
     runs-on: ubuntu-latest
     needs: manylinux
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
