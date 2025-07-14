@@ -69,7 +69,6 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.details
-  - pymdownx.superfences
   - pymdownx.extra
   - pymdownx.blocks.caption
   - pymdownx.emoji:
