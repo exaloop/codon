@@ -15,7 +15,7 @@ If the file is given as `-`, then the program is read from standard
 input:
 
 ``` bash
-echo 'print("hello")' | build/codon run -release -
+echo 'print("hello")' | codon run -release -
 # hello
 ```
 
@@ -28,7 +28,7 @@ codon run -release file.py arg1 arg2 arg3
 For example:
 
 ``` bash
-echo 'import sys; print(sys.argv)' | build/codon run -release - arg1 arg2 arg3
+echo 'import sys; print(sys.argv)' | codon run -release - arg1 arg2 arg3
 # ['-', 'arg1', 'arg2', 'arg3']
 ```
 
@@ -190,7 +190,7 @@ However, it is intended to be used as a debugging utility rather than as a gener
 For example:
 
 ```bash
-echo 'print("hello world")' | build/codon jit -
+echo 'print("hello world")' | codon jit -
 # >>> Codon JIT v0.19.0 <<<
 # hello world
 # [done]
@@ -258,7 +258,7 @@ The `-disable-opt <pass>` flag can be used to disable specific optimization pass
 
 ``` bash
 # compile & run with optimizations, but don't perform NumPy fusion optimization
-build/codon run -release -disable-opt core-numpy-fusion program.py
+codon run -release -disable-opt core-numpy-fusion program.py
 ```
 
 ## Compile-time definitions
