@@ -1,4 +1,4 @@
-site_url: https://docs.exaloop.io/codon
+site_url: https://docs.exaloop.io
 site_name: ""
 repo_url: https://github.com/exaloop/codon
 repo_name: exaloop/codon
@@ -100,30 +100,31 @@ plugins:
   - redirects:
       # redirects from old docs site
       redirect_maps:
-        'general/intro.md': 'start/install.md'
-        'general/faq.md': 'start/faq.md'
-        'general/differences.md': 'language/overview.md#differences-with-python'
-        'general/releases.md': 'start/changelog.md'
-        'general/roadmap.md': 'developers/roadmap.md'
-        'language-features/basics.md': 'language/overview.md'
-        'language-features/collections.md': 'language/overview.md'
-        'language-features/functions.md': 'language/overview.md'
-        'language-features/classes.md': 'language/classes.md'
-        'language-features/generators.md': 'language/overview.md'
-        'language-features/statics.md': 'language/meta.md'
-        'language-features/extra.md': 'language/lowlevel.md'
-        'language-features/ffi.md': 'integrations/cpp/cpp-from-codon.md'
-        'language-features/llvm.md': 'language/llvm.md'
-        'interoperability/numpy.md': 'libraries/numpy.md'
-        'interoperability/python.md': 'integrations/python/python-from-codon.md'
-        'interoperability/decorator.md': 'integrations/python/codon-from-python.md'
-        'interoperability/pyext.md': 'integrations/python/extensions.md'
-        'interoperability/cpp.md': 'integrations/cpp/codon-from-cpp.md'
-        'interoperability/jupyter.md': 'integrations/jupyter.md'
-        'advanced/parallel.md': 'parallel/multithreading.md'
-        'advanced/gpu.md': 'parallel/gpu.md'
-        'advanced/ir.md': 'developers/ir.md'
-        'advanced/build.md': 'developers/build.md'
+        'codon/index.md': 'index.md'
+        'codon/general/intro.md': 'start/install.md'
+        'codon/general/faq.md': 'start/faq.md'
+        'codon/general/differences.md': 'language/overview.md#differences-with-python'
+        'codon/general/releases.md': 'start/changelog.md'
+        'codon/general/roadmap.md': 'developers/roadmap.md'
+        'codon/language-features/basics.md': 'language/overview.md'
+        'codon/language-features/collections.md': 'language/overview.md'
+        'codon/language-features/functions.md': 'language/overview.md'
+        'codon/language-features/classes.md': 'language/classes.md'
+        'codon/language-features/generators.md': 'language/overview.md'
+        'codon/language-features/statics.md': 'language/meta.md'
+        'codon/language-features/extra.md': 'language/lowlevel.md'
+        'codon/language-features/ffi.md': 'integrations/cpp/cpp-from-codon.md'
+        'codon/language-features/llvm.md': 'language/llvm.md'
+        'codon/interoperability/numpy.md': 'libraries/numpy.md'
+        'codon/interoperability/python.md': 'integrations/python/python-from-codon.md'
+        'codon/interoperability/decorator.md': 'integrations/python/codon-from-python.md'
+        'codon/interoperability/pyext.md': 'integrations/python/extensions.md'
+        'codon/interoperability/cpp.md': 'integrations/cpp/codon-from-cpp.md'
+        'codon/interoperability/jupyter.md': 'integrations/jupyter.md'
+        'codon/advanced/parallel.md': 'parallel/multithreading.md'
+        'codon/advanced/gpu.md': 'parallel/gpu.md'
+        'codon/advanced/ir.md': 'developers/ir.md'
+        'codon/advanced/build.md': 'developers/build.md'
 
 nav:
   - Get Started:
