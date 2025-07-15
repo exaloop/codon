@@ -178,6 +178,98 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
           ${CMAKE_BINARY_DIR})
 
+# Codon static runtime library (for static linking)
+add_library(codonrt_static STATIC ${CODONRT_FILES})
+add_dependencies(codonrt_static zlibstatic gc backtrace bz2 liblzma
+                        re2 hwy hwy_contrib fast_float codonfloat)
+
+target_include_directories(codonrt_static PRIVATE ${backtrace_SOURCE_DIR}
+                                          ${re2_SOURCE_DIR}
+                                          ${highway_SOURCE_DIR}
+                                          "${gc_SOURCE_DIR}/include"
+                                          "${fast_float_SOURCE_DIR}/include" runtime)
+target_link_libraries(codonrt_static PRIVATE fmt omp backtrace LLVMSupport)
+
+# For static library, we link dependencies directly without force_load
+target_link_libraries(codonrt_static PRIVATE
+  zlibstatic gc bz2 liblzma re2 hwy hwy_contrib codonfloat)
+
+if(APPLE)
+  target_link_libraries(codonrt_static PUBLIC "-framework Accelerate")
+else()
+  add_dependencies(codonrt_static openblas)
+  target_link_libraries(codonrt_static PRIVATE openblas)
+endif()
+
+if(ASAN)
+  target_compile_options(
+    codonrt_static PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                    "-fsanitize-recover=address")
+  target_link_libraries(
+    codonrt_static PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                    "-fsanitize-recover=address")
+endif()
+
+if(CODON_GPU)
+  target_link_libraries(codonrt_static PRIVATE CUDA::cudart_static CUDA::cuda_driver)
+endif()
+
+# System libraries for codonrt_static
+if(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
+  target_link_libraries(codonrt_static PRIVATE libgfortran)
+endif()
+
+# Set OpenMP object files directory
+set(OMP_OBJ_DIR "${LLVM_DIR}/../../../projects/openmp/runtime/src/CMakeFiles/omp.dir")
+
+# Create a combined static library with all dependencies
+# This target automatically depends on codonrt_static and will be built after it
+add_custom_target(codonrt_static_combined ALL
+  COMMAND ${CMAKE_COMMAND} -E echo "Creating combined static library..."
+  DEPENDS codonrt_static zlibstatic gc backtrace bz2 liblzma re2 hwy hwy_contrib codonfloat fmt)
+
+if(APPLE)
+  # On macOS, use libtool to combine static libraries
+  add_custom_command(TARGET codonrt_static_combined POST_BUILD
+    COMMAND libtool -static -o ${CMAKE_BINARY_DIR}/libcodonrt_static_combined.a
+      $<TARGET_FILE:codonrt_static>
+      $<TARGET_FILE:zlibstatic>
+      $<TARGET_FILE:gc>
+      $<TARGET_FILE:backtrace>
+      $<TARGET_FILE:bz2>
+      $<TARGET_FILE:liblzma>
+      $<TARGET_FILE:re2>
+      $<TARGET_FILE:hwy>
+      $<TARGET_FILE:hwy_contrib>
+      $<TARGET_FILE:codonfloat>
+      $<TARGET_FILE:fmt>
+      ${OMP_OBJ_DIR}/*.o
+      ${OMP_OBJ_DIR}/thirdparty/ittnotify/*.o
+      ${LLVM_DIR}/../../../lib/libLLVMSupport.a
+    COMMENT "Combining static libraries into libcodonrt_static_combined.a")
+else()
+  # On Linux, use ar to combine static libraries
+  add_custom_command(TARGET codonrt_static_combined POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/temp_extract
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:codonrt_static>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:zlibstatic>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:gc>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:backtrace>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:bz2>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:liblzma>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:re2>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:hwy>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:hwy_contrib>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:codonfloat>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x $<TARGET_FILE:fmt>
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && find ${OMP_OBJ_DIR} -name "*.o" -exec cp {} . \\;
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && find ${OMP_OBJ_DIR}/thirdparty/ittnotify -name "*.o" -exec cp {} . \\; || true
+    COMMAND cd ${CMAKE_BINARY_DIR}/temp_extract && ${CMAKE_AR} x ${LLVM_DIR}/../../../lib/libLLVMSupport.a
+    COMMAND ${CMAKE_AR} rcs ${CMAKE_BINARY_DIR}/libcodonrt_static_combined.a ${CMAKE_BINARY_DIR}/temp_extract/*.o
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/temp_extract
+    COMMENT "Combining static libraries into libcodonrt_static_combined.a")
+endif()
+
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
@@ -522,6 +614,7 @@ target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
+install(FILES ${CMAKE_BINARY_DIR}/libcodonrt_static_combined.a DESTINATION lib/codon)
 install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
 install(FILES ${copied_libgfortran} DESTINATION lib/codon)
 install(FILES ${copied_libquadmath} DESTINATION lib/codon)
