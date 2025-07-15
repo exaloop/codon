@@ -28,41 +28,27 @@ c = [0 for _ in range(16)]
 @par(gpu=True)
 for i in range(16):
     c[i] = a[i] + b[i]
-
-print(c)
 ```
 
 NumPy arrays and operations also work seamlessly in GPU code:
 
 ``` python
+import numpy as np
+
 a = np.arange(16)
 b = np.arange(16) * 2
 c = np.empty(16, dtype=int)
 
-# All versions below do the same thing:
-
-# version 1:
 @par(gpu=True)
 for i in range(16):
-    for i in range(16):
-        c[i] = a[i] + b[i]
-
-# version 2:
-@par(gpu=True)
-for i in range(16):
-    c[:] = a + b
-
-# version 3:
-@par(gpu=True)
-for i in range(16):
-    np.add(a, b, out=c)
+    c[i] = a[i] + b[i]
 ```
 
 ## Writing GPU kernels
 
-Below is a more comprehensive example for computing the [Mandelbrot
-set](https://en.wikipedia.org/wiki/Mandelbrot_set), and plotting it
-using NumPy/Matplotlib:
+Below is a more comprehensive example for computing the
+[Mandelbrot set](https://en.wikipedia.org/wiki/Mandelbrot_set), and plotting it
+using Matplotlib:
 
 ``` python
 from python import matplotlib.pyplot as plt
