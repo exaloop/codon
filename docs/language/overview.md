@@ -1,81 +1,59 @@
-Codon strives to be as close to Python (specifically, CPython) as possible,
-outside of a few differences that stem from performance considerations or
-incompatibilities with Codon's static compilation paradigm.
+Codon strives to be as close as possible to both official Python and the
+[CPython](https://github.com/python/cpython/) implementation.
 
-As a result, if you know Python, you already know 99% of Codon!
-
-Codon also introduces several new elements to Python to facilitate low-level
-programming, parallel programming and compile-time metaprogramming, among
-other features. These elements are described in this section.
+Outside of a few differences due to performance considerations and Codon's
+static compilation paradigm, if you know Python, you already know 99% of Codon!
 
 ## Differences with Python
 
 !!! tip
 
-    Found something that works differently in Codon than Python which
-    isn't mentioned below? Let us know
-    [on GitHub](https://github.com/exaloop/codon/issues/new).
+    Have you found a difference between Codon and Python that isn't mentioned
+    below? Let us know [on GitHub](https://github.com/exaloop/codon/issues).
 
-While Codon's syntax and semantics are nearly identical
-to Python's, there are some notable differences that are
-worth considering. Most of these design decisions were made
-with the trade-off between performance and Python compatibility
-in mind.
+To facilitate low-level programming, parallel programming, compile-time
+metaprogramming, and other features, Codon introduces the following elements
+to Python.
 
-Please see our [roadmap](../developers/roadmap.md) for more information
-about how we plan to close some of these gaps in the future.
+!!! tip
+
+    The [roadmap](../developers/roadmap.md) describes our plan to close some
+    of these gaps.
 
 ### Data types
 
-- **Integers:** Codon's `int` is a 64-bit signed integer,
-  whereas Python's (after version 3) can be arbitrarily large.
-  However Codon does support larger integers via `Int[N]` where
-  `N` is the bit width.
-
-- **Strings:** Codon currently uses ASCII strings unlike
-  Python's unicode strings. Unicode strings are planned for
-  Codon 1.0.
-
-- **Dictionaries:** Codon's dictionary type does not preserve
-  insertion order, unlike Python's as of 3.6.
-
-- **Tuples**: Since tuples compile down to structs, tuple lengths
-  must be known at compile time, meaning you can't convert an
-  arbitrarily-sized list to a tuple, for instance.
-
-- **Arrays**: Codon includes a native NumPy implementation with
-  a corresponding `ndarray` type. Codon's `ndarray` is parameterized
-  by the data type (`dtype`) and dimension (`ndim`). In practice,
-  this almost never affects NumPy code as these parameters are
-  determined automatically at compile time. In some cases, such
-  as when reading array data from disk, they must be provided
-  programmatically. Learn more in the [Codon-NumPy docs](../libraries/numpy.md).
+| Data Type  | Python                     | Codon                            |
+|------------|----------------------------|----------------------------------|
+| Integer    | Arbitrarily large integers | 64-bit signed                    |
+| String     | Unicode                    | ASCII                            |
+| Dictionary | Preserves insertion order  | Doesn't preserve insertion order |
+| Tuple      | Arbitrary length           | Length fixed at compile time     |
 
 ### Type checking
 
-Since Codon performs static type checking ahead of time, a
-few of Python's dynamic features are disallowed. For example,
-monkey patching classes at runtime (although Codon supports a
-form of this at compile time) or adding objects of different
-types to a collection.
-
-These few restrictions are ultimately what allow Codon to
-compile to native code without any runtime performance overhead.
-Future versions of Codon will lift some of these restrictions
-by the introduction of e.g. implicit union types.
+Codon performs static type checking ahead of time, so some of Python's dynamic
+features are disallowed, such as monkey patching classes at runtime or adding
+objects of different types to a collection.
 
 ### Numerics
 
-For performance reasons, some numeric operations use C semantics
-rather than Python semantics. This includes, for example, raising
-an exception when dividing by zero, or other checks done by `math`
-functions. Strict adherence to Python semantics can be enforced by
-using the `-numerics=py` flag of the `codon` CLI. Note that this
-does *not* change `int`s from 64-bit.
+Some numeric operations use C semantics, including raising an exception when
+dividing by zero and other checks done by `math` functions.  Nevertheless,
+the `codon` CLI flag, `-numerics=py`, enforces Python semantics. 
 
 ### Modules
 
-While most of the commonly used builtin modules have Codon-native
-implementations, a few are not yet implemented. However these can
-still be used within Codon
-[via `from python import`](../integrations/python/python-from-codon.md).
+A few Python built-in modules are not yet implemented as Codon-native modules,
+however, the Python built-in modules can be used within Codon via
+[`from python import`](../integrations/python/python-from-codon.md).
+
+## Differences with NumPy
+
+Codon includes a native NumPy implementation with a corresponding `ndarray`
+type. Codon's `ndarray` is parameterized by data type (`dtype`) and dimension
+(`ndim`). This rarely affects NumPy code as Codon automatically determines
+these parameters at compile time, but if the compile-time parameters might
+differ from the run-time parameters, such as when reading an `ndarray` from
+disk, the code must include the parameters. Learn more in the
+[Codon-NumPy docs](../libraries/numpy.md).
+
