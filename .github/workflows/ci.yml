@@ -46,8 +46,13 @@ jobs:
           path: llvm
           key: manylinux-${{ matrix.arch }}-llvm
 
-      - name: Main
-        uses: ./.github/actions/build-manylinux-${{ matrix.arch }}
+      - name: Main x86_64
+        if: matrix.arch == 'x86_64'
+        uses: ./.github/actions/build-manylinux-x86_64
+
+      - name: Main aarch64
+        if: matrix.arch == 'aarch64'
+        uses: ./.github/actions/build-manylinux-aarch64
 
       - name: Upload Release Asset
         if: contains(github.ref, 'tags/v')
