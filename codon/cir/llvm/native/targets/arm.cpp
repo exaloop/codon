@@ -176,7 +176,7 @@ std::string ARM::getCPU(const llvm::Triple &triple) const {
 }
 
 std::string ARM::getFeatures(const llvm::Triple &triple) const {
-  std::vector<llvm::StringRef> features;
+  std::vector<std::string> features;
 
   auto abi = getARMFloatABI(triple);
   // uint64_t HWDivID = llvm::ARM::parseHWDiv(HWDiv);
