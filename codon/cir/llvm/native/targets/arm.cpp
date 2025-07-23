@@ -176,7 +176,7 @@ std::string ARM::getCPU(const llvm::Triple &triple) const {
 }
 
 std::string ARM::getFeatures(const llvm::Triple &triple) const {
-  std::vector<std::string> features;
+  std::vector<llvm::StringRef> features;
 
   auto abi = getARMFloatABI(triple);
   // uint64_t HWDivID = llvm::ARM::parseHWDiv(HWDiv);
@@ -189,8 +189,10 @@ std::string ARM::getFeatures(const llvm::Triple &triple) const {
   if (abi != FloatABI::Hard)
     features.push_back("+soft-float-abi");
 
+  std::vector<std::string> tmp; // make sure we don't delete string data
   for (auto &f : llvm::sys::getHostCPUFeatures()) {
-    features.push_back((f.second ? "+" : "-") + f.first().str());
+    tmp.push_back((f.second ? "+" : "-") + f.first().str());
+    features.push_back(tmp.back());
   }
 
   llvm::ARM::FPUKind fpu = llvm::ARM::FK_INVALID;
