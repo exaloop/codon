@@ -2,6 +2,10 @@
 
 #include "codon/runtime/lib.h"
 
+#if defined(__linux__) && (defined(__aarch64__) || defined(__arm64__))
+#define HWY_DISABLED_TARGETS HWY_ALL_SVE
+#endif
+
 // clang-format off
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE "codon/runtime/numpy/loops.cpp"

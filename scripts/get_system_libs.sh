@@ -30,32 +30,40 @@ LIBGFORTRAN="${LIBR_DIR}/${LIBGFORTRAN_BASE}"
 LIBQUADMATH="${LIBR_DIR}/${LIBQUADMATH_BASE}"
 LIBGCC="${LIBR_DIR}/${LIBGCC_BASE}"
 
-check_exists ${LIBGFORTRAN}
-check_exists ${LIBQUADMATH}
-check_exists ${LIBGCC}
+check_exists "${LIBGFORTRAN}"
+check_exists "${LIBGCC}"
 
-cp -v ${LIBGFORTRAN} ${DEST_DIR}
-cp -v ${LIBQUADMATH} ${DEST_DIR}
-cp -v ${LIBGCC} ${DEST_DIR}
+cp -v "${LIBGFORTRAN}" "${DEST_DIR}"
+cp -v "${LIBGCC}" "${DEST_DIR}"
+
+if [ -e "${LIBQUADMATH}" ]; then
+  cp -v "${LIBQUADMATH}" "${DEST_DIR}"
+  HAS_LIBQUADMATH=1
+else
+  HAS_LIBQUADMATH=0
+fi
 
 LIBGFORTRAN="${DEST_DIR}/${LIBGFORTRAN_BASE}"
 LIBQUADMATH="${DEST_DIR}/${LIBQUADMATH_BASE}"
 LIBGCC="${DEST_DIR}/${LIBGCC_BASE}"
 
-chmod 755 ${LIBGFORTRAN}
-chmod 755 ${LIBQUADMATH}
-chmod 755 ${LIBGCC}
+chmod 755 "${LIBGFORTRAN}"
+chmod 755 "${LIBGCC}"
+[ "$HAS_LIBQUADMATH" -eq 1 ] && chmod 755 "${LIBQUADMATH}"
 
 if [ "$UNAME" = "Darwin" ]; then
-  install_name_tool -id "@rpath/${LIBGFORTRAN_BASE}" ${LIBGFORTRAN}
-  install_name_tool -id "@rpath/${LIBQUADMATH_BASE}" ${LIBQUADMATH}
-  install_name_tool -id "@rpath/${LIBGCC_BASE}" ${LIBGCC}
-  codesign -f -s - ${LIBGFORTRAN}
-  codesign -f -s - ${LIBQUADMATH}
-  codesign -f -s - ${LIBGCC}
+  install_name_tool -id "@rpath/${LIBGFORTRAN_BASE}" "${LIBGFORTRAN}"
+  install_name_tool -id "@rpath/${LIBGCC_BASE}" "${LIBGCC}"
+  codesign -f -s - "${LIBGFORTRAN}"
+  codesign -f -s - "${LIBGCC}"
+  if [ "$HAS_LIBQUADMATH" -eq 1 ]; then
+    install_name_tool -id "@rpath/${LIBQUADMATH_BASE}" "${LIBQUADMATH}"
+    codesign -f -s - "${LIBQUADMATH}"
+  fi
 else
-  # HACK: add || true to ignore errors when the libraries are not there and not needed (e.g., aarch64)
-  patchelf --set-rpath '$ORIGIN' ${LIBGFORTRAN} || true;
-  patchelf --set-rpath '$ORIGIN' ${LIBQUADMATH} || true;
-  patchelf --set-rpath '$ORIGIN' ${LIBGCC} || true;
+  patchelf --set-rpath '$ORIGIN' "${LIBGFORTRAN}" || true
+  patchelf --set-rpath '$ORIGIN' "${LIBGCC}" || true
+  if [ "$HAS_LIBQUADMATH" -eq 1 ]; then
+    patchelf --set-rpath '$ORIGIN' "${LIBQUADMATH}" || true
+  fi
 fi

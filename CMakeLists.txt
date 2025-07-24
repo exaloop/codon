@@ -479,7 +479,7 @@ add_custom_target(
   COMMAND
     ${CMAKE_COMMAND} -E copy ${copied_libgfortran} "${CMAKE_BINARY_DIR}/lib/codon"
   COMMAND
-    ${CMAKE_COMMAND} -E copy ${copied_libquadmath} "${CMAKE_BINARY_DIR}/lib/codon"
+    /bin/sh -c "test -f '${copied_libquadmath}' && ${CMAKE_COMMAND} -E copy '${copied_libquadmath}' '${CMAKE_BINARY_DIR}/lib/codon' || true"
   COMMAND
     ${CMAKE_COMMAND} -E copy ${copied_libgcc} "${CMAKE_BINARY_DIR}/lib/codon")
 add_dependencies(libs codonrt codonc)
@@ -524,7 +524,13 @@ target_compile_definitions(codon_test
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
 install(FILES ${copied_libgfortran} DESTINATION lib/codon)
-install(FILES ${copied_libquadmath} DESTINATION lib/codon)
+# only install libquadmath if it exists at build time
+install(CODE "
+  file(GLOB _quadmath \"${copied_libquadmath}\")
+  if(EXISTS \"\${_quadmath}\")
+    file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/lib/codon\" TYPE FILE FILES \"\${_quadmath}\")
+  endif()
+")
 install(FILES ${copied_libgcc} DESTINATION lib/codon)
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)

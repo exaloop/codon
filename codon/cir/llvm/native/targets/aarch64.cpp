@@ -24,7 +24,7 @@ std::string Aarch64::getCPU(const llvm::Triple &triple) const {
 
 std::string Aarch64::getFeatures(const llvm::Triple &triple) const {
   llvm::AArch64::ExtensionSet extensions;
-  std::vector<llvm::StringRef> features;
+  std::vector<std::string> features;
 
   std::string cpu(llvm::sys::getHostCPUName());
   const std::optional<llvm::AArch64::CpuInfo> cpuInfo = llvm::AArch64::parseCpu(cpu);

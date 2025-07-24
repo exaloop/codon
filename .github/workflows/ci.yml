@@ -30,8 +30,8 @@ jobs:
       matrix:
         arch:
           - x86_64
-          # - aarch64
-    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-arm-latest' || 'ubuntu-latest' }}
+          - aarch64
+    runs-on: ${{ matrix.arch == 'aarch64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     name: Codon CI (manylinux)
     needs: create_release
     permissions:
@@ -61,15 +61,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ./codon-linux-x86_64.tar.gz
-          asset_name: codon-linux-x86_64.tar.gz
+          asset_path: ./codon-linux-${{ matrix.arch }}.tar.gz
+          asset_name: codon-linux-${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: manylinux-x86_64
-          path: codon-linux-x86_64.tar.gz
+          name: manylinux-${{ matrix.arch }}
+          path: codon-linux-${{ matrix.arch }}.tar.gz
 
   main:
     strategy:
@@ -77,7 +77,6 @@ jobs:
         os:
           - ubuntu-latest
           - macos-latest
-          # - ubuntu-arm-latest
     runs-on: ${{ matrix.os }}
     name: Codon CI
     needs: create_release
