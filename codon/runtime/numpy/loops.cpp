@@ -3,9 +3,7 @@
 #include "codon/runtime/lib.h"
 
 #if defined(__linux__) && (defined(__aarch64__) || defined(__arm64__))
-#define HWY_DISABLE_TARGETS
-#define HWY_COMPILE_ONLY_STATIC
-#define HWY_STATIC_TARGET HWY_NEON
+#define HWY_DISABLED_TARGETS HWY_ALL_SVE
 #endif
 
 // clang-format off
