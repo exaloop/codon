@@ -26,7 +26,7 @@ cases and domain-specific applications. Check out the catalog of labs below!
       <div class="lab-tags">
         <span class="lab-tag-new">✨ New</span>
         <span class="lab-tag-difficulty">🚀 Intro</span>
-        <span class="lab-tag-time">⌛ 5 mins</span>
+        <span class="lab-tag-time">⌛ 2 mins</span>
       </div>
       <hr />
       <p>Learn how to install Codon and run your first program.</p>
