@@ -282,9 +282,11 @@ void jitLoop(codon::jit::JIT *jit, std::istream &fp) {
     if (line != "#%%") {
       code += line + "\n";
     } else {
+      jit->getCompiler()->getModule()->pushArena();
       fmt::print("{}[done]\n", jitExec(jit, code));
       code = "";
       fflush(stdout);
+      jit->getCompiler()->getModule()->popArena();
     }
   }
   if (!code.empty())
@@ -317,7 +319,7 @@ int jitMode(const std::vector<const char *> &args) {
       return EXIT_FAILURE;
   }
 
-  llvm::cantFail(jit.init());
+  llvm::cantFail(jit.init(true));
   fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
   if (input == "-") {
     jitLoop(&jit, std::cin);

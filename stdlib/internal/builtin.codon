@@ -533,7 +533,7 @@ class complex64:
     def _from_str(s: str) -> complex64:
         return complex64(complex._from_str(s))
 
-def _jit_display(x, s: Literal[str], bundle: Set[str] = Set[str]()):
+def _jit_display(x, s: Literal[str], bundle: Optional[Set[str]] = None):
     if isinstance(x, None):
         return
     if hasattr(x, "_repr_mimebundle_") and s == "jupyter":
