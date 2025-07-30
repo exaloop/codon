@@ -229,6 +229,7 @@ private:
   void clearLLVMData();
 
 public:
+  static std::string getGlobalCtorName();
   static std::string getNameForFunction(const Func *x);
   static std::string getNameForVar(const Var *x);
 

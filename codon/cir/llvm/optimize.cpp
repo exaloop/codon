@@ -6,6 +6,7 @@
 #include <deque>
 
 #include "codon/cir/llvm/gpu.h"
+#include "codon/cir/llvm/llvisitor.h"
 #include "codon/cir/llvm/native/native.h"
 #include "codon/util/common.h"
 
@@ -63,10 +64,11 @@ getTargetMachine(llvm::Module *module, bool setFunctionAttributes, bool pic) {
 namespace {
 void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
   if (debug) {
+    auto ctor = LLVMVisitor::getGlobalCtorName();
     // remove tail calls and fix linkage for stack traces
     for (auto &f : *module) {
       // needed for debug symbols
-      if (!jit)
+      if (!jit && f.getName() != ctor)
         f.setLinkage(llvm::GlobalValue::ExternalLinkage);
       if (!f.hasFnAttribute(llvm::Attribute::AttrKind::AlwaysInline))
         f.addFnAttr(llvm::Attribute::AttrKind::NoInline);

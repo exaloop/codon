@@ -52,6 +52,7 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
   return builder->createFile(filename, directory);
 }
 
+std::string LLVMVisitor::getGlobalCtorName() { return MAIN_CTOR; }
 std::string LLVMVisitor::getNameForFunction(const Func *x) {
   if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
     return x->getUnmangledName();
