@@ -53,6 +53,7 @@ llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
 }
 
 std::string LLVMVisitor::getGlobalCtorName() { return MAIN_CTOR; }
+
 std::string LLVMVisitor::getNameForFunction(const Func *x) {
   if (isA<ExternalFunc>(x) || util::hasAttribute(x, EXPORT_ATTR)) {
     return x->getUnmangledName();
@@ -445,6 +446,7 @@ void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
     if (!main)
       return;
     main->setName(MAIN_UNCLASH); // avoid clash with other main
+    main->setLinkage(llvm::GlobalValue::PrivateLinkage);
   }
 
   auto *ctorFuncTy = llvm::FunctionType::get(B->getVoidTy(), {}, /*isVarArg=*/false);
@@ -454,7 +456,7 @@ void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
 
   auto *ctor =
       cast<llvm::Function>(M->getOrInsertFunction(MAIN_CTOR, ctorFuncTy).getCallee());
-  ctor->setLinkage(llvm::GlobalValue::InternalLinkage);
+  ctor->setLinkage(llvm::GlobalValue::PrivateLinkage);
   auto *entry = llvm::BasicBlock::Create(*context, "entry", ctor);
   B->SetInsertPoint(entry);
   B->CreateCall(
