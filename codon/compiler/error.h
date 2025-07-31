@@ -64,6 +64,7 @@ enum Error {
   CLASS_ID_NOT_FOUND,
   CLASS_INVALID_BIND,
   CLASS_NO_INHERIT,
+  CLASS_NO_EXTEND,
   CLASS_TUPLE_INHERIT,
   CLASS_BAD_MRO,
   CLASS_BAD_ATTR,
@@ -348,6 +349,8 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
     return fmt::format(fmt::runtime("cannot bind '{}' to class or function"), args...);
   case Error::CLASS_NO_INHERIT:
     return fmt::format(fmt::runtime("{} classes cannot inherit {} classes"), args...);
+  case Error::CLASS_NO_EXTEND:
+    return fmt::format(fmt::runtime("'{}' cannot be extended"), args...);
   case Error::CLASS_TUPLE_INHERIT:
     return fmt::format("reference classes cannot inherit tuple classes");
   case Error::CLASS_BAD_MRO:

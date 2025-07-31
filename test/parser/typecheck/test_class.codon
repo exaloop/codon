@@ -555,3 +555,17 @@ def foo(val: Optional[A]):
         print("None[A]")
 foo(A())   #: A
 foo(None)  #: None[A]
+
+
+#%% no_extend,barebones
+@extend
+class Tuple:
+    @inline
+    def inc_ref(self):
+        pass
+
+    @inline
+    def dec_ref(self):
+        pass
+("abc",).inc_ref()  # #683
+#! 'Tuple' cannot be extended

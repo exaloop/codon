@@ -117,7 +117,6 @@ public:
   virtual StrStaticType *getStrStatic() { return nullptr; }
   virtual BoolStaticType *getBoolStatic() { return nullptr; }
   virtual UnionType *getUnion() { return nullptr; }
-  virtual ClassType *getHeterogenousTuple() { return nullptr; }
 
   virtual bool is(const std::string &s);
 

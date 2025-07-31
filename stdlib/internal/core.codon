@@ -2,6 +2,7 @@
 
 @tuple
 @__internal__
+@__noextend__
 class type[T]:
     #  __new__ / __init__: always done internally
     # __repr__
@@ -13,6 +14,7 @@ class type[T]:
 
 @tuple
 @__internal__
+@__noextend__
 class unrealized_type[T]:
     pass
 
@@ -147,6 +149,7 @@ class str:
 
 @tuple
 @__internal__
+@__noextend__
 class Tuple:
     @llvm
     def __new__() -> Tuple:

@@ -617,6 +617,8 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
   for (auto &d : stmt->getDecorators()) {
     if (isId(d, "__notuple__")) {
       stmt->setAttribute(Attr::ClassNoTuple);
+    } else if (isId(d, "__noextend__")) {
+      stmt->setAttribute(Attr::NoExtend);
     } else if (isId(d, "dataclass")) {
       stmt->setAttribute(Attr::Dataclass);
     } else if (auto c = cast<CallExpr>(d)) {
