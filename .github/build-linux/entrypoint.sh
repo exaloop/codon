@@ -20,7 +20,7 @@ if [ "$(uname -s)" = "Linux" ]; then
   python --version
 else
   export CODON_SYSTEM_LIBRARIES=$(brew --prefix gcc)/lib/gcc/current
-  # clang 20 crashes with highway on OS X now...
+  # Clang 20 crashes with Highway on macOS so use system compiler for now...
   export COMPILER_PREFIX=""
   python --version
 fi
@@ -42,6 +42,7 @@ cmake --build build-${ARCH}
 cmake --install build-${ARCH} --prefix=${CODON_DIR}
 
 if [ "$(uname -s)" = "Darwin" ]; then
+  # macOS needs codesigned libraries
   codesign -f -s - ${CODON_DIR}/bin/codon ${CODON_DIR}/lib/codon/*.dylib
 fi
 
@@ -57,6 +58,7 @@ fi
 # Package
 export CODON_BUILD_ARCHIVE=codon-${ARCH}.tar.gz
 cp -rf ${CODON_DIR}/python/dist .
+# Clean-up useless install artefacts
 rm -rf ${CODON_DIR}/lib/libfmt.a ${CODON_DIR}/lib/pkgconfig ${CODON_DIR}/lib/cmake \
        ${CODON_DIR}/python/codon.egg-info ${CODON_DIR}/python/dist ${CODON_DIR}/python/build
 tar czf ${CODON_BUILD_ARCHIVE} -C ${WORKSPACE} codon-deploy-${ARCH}/
