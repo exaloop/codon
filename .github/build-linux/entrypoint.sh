@@ -16,9 +16,12 @@ if [ "$(uname -s)" = "Linux" ]; then
   ~/.pyenv/bin/pyenv global 3.11
   export PATH="/root/.pyenv/shims:${PATH}"
   export CODON_SYSTEM_LIBRARIES=/usr/lib64
+  export COMPILER_PREFIX="/opt/llvm-codon/bin/"
   python --version
 else
   export CODON_SYSTEM_LIBRARIES=$(brew --prefix gcc)/lib/gcc/current
+  # clang 20 crashes with highway on OS X now...
+  export COMPILER_PREFIX=""
   python --version
 fi
 export CODON_PYTHON=$(python ${WORKSPACE}/test/python/find-python-library.py)
@@ -28,12 +31,12 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install cython wheel astunparse
 python -m pip install --force-reinstall -v "numpy==2.0.2"
 
-# # Build Codon
+# Build Codon
 cmake -S . -B build-${ARCH} \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_C_COMPILER=/opt/llvm-codon/bin/clang \
-    -DCMAKE_CXX_COMPILER=/opt/llvm-codon/bin/clang++ \
+    -DCMAKE_C_COMPILER=${COMPILER_PREFIX}clang \
+    -DCMAKE_CXX_COMPILER=${COMPILER_PREFIX}clang++ \
     -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm
 cmake --build build-${ARCH}
 cmake --install build-${ARCH} --prefix=${CODON_DIR}
