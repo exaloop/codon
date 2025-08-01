@@ -25,46 +25,51 @@ jobs:
         id: create_release
         uses: ncipollo/release-action@v1
 
-  # manylinux:
-  #   strategy:
-  #     matrix:
-  #       include:
-  #         - os: ubuntu-latest
-  #           arch: linux-x86_64
-  #         - os: ubuntu-latest
-  #           arch: manylinux2014-x86_64
-  #         - os: ubuntu-24.04-arm
-  #           arch: linux-aarch64
-  #         - os: ubuntu-24.04-arm
-  #           arch: manylinux2014-aarch64
-  #         - os: macos-13
-  #           arch: darwin-x86_64
-  #         - os: macos-14
-  #           arch: darwin-arm64
-  #   runs-on: ${{ matrix.os }}
-  #   name: Codon CI (manylinux)
-  #   needs: create_release
-  #   permissions:
-  #     contents: write
-  #   steps:
-  #     - uses: actions/checkout@v4
+  manylinux:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: linux-x86_64
+          - os: ubuntu-latest
+            arch: manylinux2014-x86_64
+          - os: ubuntu-24.04-arm
+            arch: linux-aarch64
+          - os: ubuntu-24.04-arm
+            arch: manylinux2014-aarch64
+          - os: macos-13
+            arch: darwin-x86_64
+          - os: macos-14
+            arch: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    name: Codon CI (manylinux)
+    needs: create_release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - uses: actions/checkout@v4
+      - name: Build (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          (cd .github/build-linux && docker build -t local -f Dockerfile.${{ matrix.arch }} .)
+          docker run -v $(pwd):/github/workspace local /github/workspace ${{ matrix.arch }} yes
 
-  #     - name: Build (Ubuntu)
-  #       if: startsWith(matrix.os, 'ubuntu')
-  #       run: |
-  #         cd .github/build-linux
-  #         docker build -t local -f Dockerfile.${{ matrix.arch }} .
-  #         cd ../..
-  #         docker run -v $(pwd):/github/workspace local /github/workspace ${{ matrix.arch }}
+      - name: Build (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          sudo mkdir -p /opt/llvm-codon
+          sudo chown -R $(whoami) /opt/llvm-codon
+          curl -L https://github.com/exaloop/llvm-project/releases/download/codon-20.1.7/llvm-codon-20.1.7-${{ matrix.arch }}.tar.bz2 | tar jxf - -C /opt
+          brew install gcc
+          bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }} yes
 
-  #     - name: Build (macOS)
-  #       if: startsWith(matrix.os, 'macos')
-  #       run: |
-  #         sudo mkdir -p /opt/llvm-codon
-  #         sudo chown -R $(whoami) /opt/llvm-codon
-  #         bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }}
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: codon-${{ github.ref_name }}-${{ matrix.arch }}.tar.gz
+          path: codon-${{ matrix.arch }}.tar.gz
+
 
   #     - name: Upload Release Asset
   #       if: contains(github.ref, 'tags/v')
@@ -76,12 +81,6 @@ jobs:
   #         asset_path: ./codon-linux-${{ matrix.arch }}.tar.gz
   #         asset_name: codon-linux-${{ matrix.arch }}.tar.gz
   #         asset_content_type: application/gzip
-
-  #     - name: Upload Artifacts
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: manylinux-${{ matrix.arch }}
-  #         path: codon-linux-${{ matrix.arch }}.tar.gz
 
   # main:
   #   strategy:
@@ -135,7 +134,7 @@ jobs:
   #         brew install gcc
   #         echo "LIBEXT=dylib" >> $GITHUB_ENV
   #         echo "OS_NAME=osx" >> $GITHUB_ENV
-  #         echo "CODON_SYSTEM_LIBRARIES=$(brew --prefix gcc)/lib/gcc/current" >> $GITHUB_ENV
+  #         echo "CODON_SYSTEM_LIBRARIES=" >> $GITHUB_ENV
   #         echo "CC=clang" >> $GITHUB_ENV
   #         echo "CXX=clang++" >> $GITHUB_ENV
   #         echo "FC=gfortran-12" >> $GITHUB_ENV
