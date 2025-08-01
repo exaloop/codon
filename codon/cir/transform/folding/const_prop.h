@@ -28,6 +28,7 @@ public:
 
   std::string getKey() const override { return KEY; }
   void handle(VarValue *v) override;
+  void handle(ExtractInstr *v) override;
 };
 
 } // namespace folding

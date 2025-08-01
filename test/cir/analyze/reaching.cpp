@@ -5,6 +5,19 @@
 
 using namespace codon::ir;
 
+namespace {
+std::unordered_set<codon::ir::id_t> rdset(analyze::dataflow::RDInspector &rd, Var *var,
+                                          Value *loc) {
+  auto defs = rd.getReachingDefinitions(var, loc);
+  std::unordered_set<codon::ir::id_t> set;
+  for (auto &def : defs) {
+    if (def.known())
+      set.insert(def.assignee->getId());
+  }
+  return set;
+}
+} // namespace
+
 TEST_F(CIRCoreTest, RDAnalysisSimple) {
   auto *f = module->Nr<BodiedFunc>("test_f");
   auto *b = module->Nr<SeriesFlow>();
@@ -30,12 +43,12 @@ TEST_F(CIRCoreTest, RDAnalysisSimple) {
   analyze::dataflow::RDInspector rd(c.get());
   rd.analyze();
 
-  auto startRd = rd.getReachingDefinitions(v, start);
-  auto firstRd = rd.getReachingDefinitions(v, firstAssign);
-  auto secondRd = rd.getReachingDefinitions(v, secondAssign);
-  auto endRd = rd.getReachingDefinitions(v, end);
-  auto firstRhsRd = rd.getReachingDefinitions(v, first);
-  auto secondRhsRd = rd.getReachingDefinitions(v, second);
+  auto startRd = rdset(rd, v, start);
+  auto firstRd = rdset(rd, v, firstAssign);
+  auto secondRd = rdset(rd, v, secondAssign);
+  auto endRd = rdset(rd, v, end);
+  auto firstRhsRd = rdset(rd, v, first);
+  auto secondRhsRd = rdset(rd, v, second);
 
   ASSERT_EQ(0, startRd.size());
   ASSERT_EQ(1, firstRd.size());
@@ -79,8 +92,8 @@ TEST_F(CIRCoreTest, RDAnalysisIfConditional) {
   analyze::dataflow::RDInspector rd(c.get());
   rd.analyze();
 
-  auto startRd = rd.getReachingDefinitions(v, start);
-  auto endRd = rd.getReachingDefinitions(v, end);
+  auto startRd = rdset(rd, v, start);
+  auto endRd = rdset(rd, v, end);
 
   ASSERT_EQ(0, startRd.size());
   ASSERT_EQ(2, endRd.size());
@@ -128,9 +141,9 @@ TEST_F(CIRCoreTest, RDAnalysisTryCatch) {
   analyze::dataflow::RDInspector rd(c.get());
   rd.analyze();
 
-  auto startRd = rd.getReachingDefinitions(v, start);
-  auto middleRd = rd.getReachingDefinitions(v, middle);
-  auto endRd = rd.getReachingDefinitions(v, end);
+  auto startRd = rdset(rd, v, start);
+  auto middleRd = rdset(rd, v, middle);
+  auto endRd = rdset(rd, v, end);
 
   ASSERT_EQ(0, startRd.size());
   ASSERT_EQ(1, endRd.size());
@@ -169,8 +182,8 @@ TEST_F(CIRCoreTest, RDAnalysisWhileLoop) {
   analyze::dataflow::RDInspector rd(c.get());
   rd.analyze();
 
-  auto startRd = rd.getReachingDefinitions(v, start);
-  auto endRd = rd.getReachingDefinitions(v, end);
+  auto startRd = rdset(rd, v, start);
+  auto endRd = rdset(rd, v, end);
 
   ASSERT_EQ(0, startRd.size());
   ASSERT_EQ(2, endRd.size());

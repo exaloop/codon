@@ -5,13 +5,14 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/util/cloning.h"
+#include "codon/cir/util/irtools.h"
 
 namespace codon {
 namespace ir {
 namespace transform {
 namespace folding {
 namespace {
-bool okConst(Value *v) {
+bool okConst(const Value *v) {
   return v && (isA<IntConst>(v) || isA<FloatConst>(v) || isA<BoolConst>(v));
 }
 } // namespace
@@ -46,23 +47,16 @@ void ConstPropPass::handle(VarValue *v) {
     auto *c = r->cfgResult;
 
     auto it = r->results.find(getParentFunc()->getId());
-    auto it2 = c->graphs.find(getParentFunc()->getId());
-    if (it == r->results.end() || it2 == c->graphs.end())
+    if (it == r->results.end())
       return;
 
     auto *rd = it->second.get();
-    auto *cfg = it2->second.get();
-
     auto reaching = rd->getReachingDefinitions(var, v);
 
-    if (reaching.size() != 1)
+    if (reaching.size() != 1 || !reaching[0].known())
       return;
 
-    auto def = *reaching.begin();
-    if (def == -1)
-      return;
-
-    auto *constDef = cfg->getValue(def);
+    auto *constDef = reaching[0].assignee;
     if (!okConst(constDef))
       return;
 
@@ -70,6 +64,50 @@ void ConstPropPass::handle(VarValue *v) {
     replacement = cv.clone(constDef);
   }
 
+  v->replaceAll(replacement);
+}
+
+void ConstPropPass::handle(ExtractInstr *v) {
+  // Propagate constant tuples
+
+  if (!isA<VarValue>(v->getVal()) || !isA<types::RecordType>(v->getVal()->getType()))
+    return;
+
+  auto *var = cast<VarValue>(v->getVal())->getVar();
+  if (var->isGlobal())
+    return;
+
+  auto *r = getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey);
+  if (!r)
+    return;
+
+  auto *c = r->cfgResult;
+  auto it = r->results.find(getParentFunc()->getId());
+  if (it == r->results.end())
+    return;
+
+  auto *rd = it->second.get();
+  auto reaching = rd->getReachingDefinitions(var, v);
+  if (reaching.size() != 1 || !reaching[0].known())
+    return;
+
+  auto *call = cast<CallInstr>(reaching[0].assignee);
+  if (!call)
+    return;
+
+  auto *func = util::getFunc(call->getCallee());
+  if (!func || func->getUnmangledName() != Module::NEW_MAGIC_NAME ||
+      !isA<types::RecordType>(func->getParentType()))
+    return;
+
+  auto *tuple = cast<types::RecordType>(func->getParentType());
+  auto idx =
+      cast<types::RecordType>(v->getVal()->getType())->getMemberIndex(v->getField());
+  if (idx < 0 || idx >= call->numArgs() || !okConst(*(call->begin() + idx)))
+    return;
+
+  util::CloneVisitor cv(v->getModule());
+  auto *replacement = cv.clone(*(call->begin() + idx));
   v->replaceAll(replacement);
 }
 

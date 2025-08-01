@@ -7,7 +7,10 @@
 
 namespace codon {
 namespace ir {
+namespace analyze {
+namespace dataflow {
 namespace {
+
 id_t getKilled(const Value *val) {
   if (auto *assign = cast<AssignInstr>(val)) {
     return assign->getLhs()->getId();
@@ -17,16 +20,18 @@ id_t getKilled(const Value *val) {
   return -1;
 }
 
-std::pair<id_t, id_t> getGenerated(const Value *val) {
+std::pair<id_t, ReachingDef> getGenerated(const Value *val) {
   if (auto *assign = cast<AssignInstr>(val)) {
-    return {assign->getLhs()->getId(), assign->getRhs()->getId()};
+    return std::make_pair(assign->getLhs()->getId(),
+                          ReachingDef(assign, assign->getRhs()));
   } else if (auto *synthAssign = cast<analyze::dataflow::SyntheticAssignInstr>(val)) {
     if (synthAssign->getKind() == analyze::dataflow::SyntheticAssignInstr::KNOWN)
-      return {synthAssign->getLhs()->getId(), synthAssign->getArg()->getId()};
+      return std::make_pair(synthAssign->getLhs()->getId(),
+                            ReachingDef(synthAssign, synthAssign->getArg()));
     else
-      return {synthAssign->getLhs()->getId(), -1};
+      return std::make_pair(synthAssign->getLhs()->getId(), ReachingDef(synthAssign));
   }
-  return {-1, -1};
+  return std::make_pair(-1, ReachingDef(nullptr));
 }
 
 template <typename T> struct WorkList {
@@ -123,9 +128,6 @@ template <typename T> struct BlockBitSets {
         out(std::move(out)) {}
 };
 } // namespace
-
-namespace analyze {
-namespace dataflow {
 
 void RDInspector::analyze() {
   std::vector<const Value *> ordering;
@@ -226,7 +228,7 @@ void RDInspector::analyze() {
   }
 }
 
-std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
+std::vector<ReachingDef> RDInspector::getReachingDefinitions(const Var *var,
                                                              const Value *loc) {
   if (invalid.find(var->getId()) != invalid.end() || var->isGlobal())
     return {};
@@ -236,8 +238,9 @@ std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
     return {};
   auto &entry = sets[blk->getId()];
   auto defs = entry.in[var->getId()];
-  if (blk->getId() == cfg->getEntryBlock()->getId())
-    defs.insert(-1);
+
+  bool needClear = (blk->getId() == cfg->getEntryBlock()->getId());
+  bool didClear = false;
 
   auto done = false;
   for (auto *val : *blk) {
@@ -247,17 +250,19 @@ std::unordered_set<id_t> RDInspector::getReachingDefinitions(const Var *var,
       done = true;
 
     auto killed = getKilled(val);
-    if (killed == var->getId())
+    if (killed == var->getId()) {
       defs.clear();
+      didClear = true;
+    }
     auto gen = getGenerated(val);
     if (gen.first == var->getId())
       defs.insert(gen.second);
   }
 
-  if (defs.find(-1) != defs.end())
+  if (needClear && !didClear)
     return {};
 
-  return defs;
+  return std::vector<ReachingDef>(defs.begin(), defs.end());
 }
 
 const std::string RDAnalysis::KEY = "core-analyses-rd";

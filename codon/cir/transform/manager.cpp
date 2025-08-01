@@ -15,6 +15,7 @@
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
 #include "codon/cir/transform/manager.h"
+#include "codon/cir/transform/numpy/indexing.h"
 #include "codon/cir/transform/numpy/numpy.h"
 #include "codon/cir/transform/parallel/openmp.h"
 #include "codon/cir/transform/pass.h"
@@ -201,6 +202,9 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
                  /*insertBefore=*/"", {rdKey, seKey2},
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
+    registerPass(std::make_unique<numpy::NumPyBoundsCheckElisionPass>(rdKey),
+                 /*insertBefore=*/"", {rdKey},
+                 {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel
     registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},

@@ -110,9 +110,13 @@ struct RDManager {
     auto key = std::make_pair(var->getId(), loc->getId());
     auto it = cache.find(key);
     if (it == cache.end()) {
-      auto result = rd->getReachingDefinitions(var, loc);
-      cache.emplace(key, result);
-      return result;
+      auto defs = rd->getReachingDefinitions(var, loc);
+      std::unordered_set<id_t> dset;
+      for (auto &def : defs) {
+        dset.insert(def.assignment->getId());
+      }
+      cache.emplace(key, dset);
+      return dset;
     } else {
       return it->second;
     }
@@ -157,8 +161,6 @@ struct DerivedSet {
     auto mySet = rd.getReachingDefinitions(v, loc);
     for (auto *cause : it->second) {
       auto otherSet = rd.getReachingDefinitions(v, cause);
-      bool derived = false;
-
       for (auto &elem : mySet) {
         if (otherSet.count(elem))
           return true;
