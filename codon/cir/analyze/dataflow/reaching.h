@@ -99,9 +99,11 @@ public:
 } // namespace ir
 } // namespace codon
 
-template <> struct std::hash<codon::ir::analyze::dataflow::ReachingDef> {
-  std::size_t operator()(const codon::ir::analyze::dataflow::ReachingDef &d) const {
-    return d.known() ? std::hash<id_t>{}(d.assignee->getId())
-                     : std::hash<id_t>{}(d.assignment->getId());
+namespace std {
+template <> struct hash<codon::ir::analyze::dataflow::ReachingDef> {
+  size_t operator()(const codon::ir::analyze::dataflow::ReachingDef &d) const {
+    return d.known() ? hash<id_t>{}(d.assignee->getId())
+                     : hash<id_t>{}(d.assignment->getId());
   }
 };
+} // namespace std

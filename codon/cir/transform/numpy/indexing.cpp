@@ -212,6 +212,9 @@ struct IndexInfo {
   VarValue *arr;
   Value *idx;
   Value *item;
+
+  IndexInfo(CallInstr *orig, VarValue *arr, Value *idx, Value *item)
+      : orig(orig), arr(arr), idx(idx), item(item) {}
 };
 
 struct FindArrayIndex : public util::Operator {
