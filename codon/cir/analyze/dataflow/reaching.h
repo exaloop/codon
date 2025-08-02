@@ -39,6 +39,25 @@ struct ReachingDef {
   }
 };
 
+} // namespace dataflow
+} // namespace analyze
+} // namespace ir
+} // namespace codon
+
+namespace std {
+template <> struct hash<codon::ir::analyze::dataflow::ReachingDef> {
+  size_t operator()(const codon::ir::analyze::dataflow::ReachingDef &d) const {
+    return d.known() ? hash<id_t>{}(d.assignee->getId())
+                     : hash<id_t>{}(d.assignment->getId());
+  }
+};
+} // namespace std
+
+namespace codon {
+namespace ir {
+namespace analyze {
+namespace dataflow {
+
 /// Helper to query the reaching definitions of a particular function.
 class RDInspector {
 private:
@@ -98,12 +117,3 @@ public:
 } // namespace analyze
 } // namespace ir
 } // namespace codon
-
-namespace std {
-template <> struct hash<codon::ir::analyze::dataflow::ReachingDef> {
-  size_t operator()(const codon::ir::analyze::dataflow::ReachingDef &d) const {
-    return d.known() ? hash<id_t>{}(d.assignee->getId())
-                     : hash<id_t>{}(d.assignment->getId());
-  }
-};
-} // namespace std
