@@ -21,10 +21,9 @@ const std::string ConstPropPass::KEY = "core-folding-const-prop";
 
 void ConstPropPass::handle(VarValue *v) {
   auto *M = v->getModule();
-
   auto *var = v->getVar();
-
   Value *replacement;
+
   if (var->isGlobal()) {
     auto *r = getAnalysisResult<analyze::module::GlobalVarsResult>(globalVarsKey);
     if (!r)
@@ -96,11 +95,13 @@ void ConstPropPass::handle(ExtractInstr *v) {
     return;
 
   auto *func = util::getFunc(call->getCallee());
-  if (!func || func->getUnmangledName() != Module::NEW_MAGIC_NAME ||
-      !isA<types::RecordType>(func->getParentType()))
+  if (!func || func->getUnmangledName() != Module::NEW_MAGIC_NAME)
     return;
 
   auto *tuple = cast<types::RecordType>(func->getParentType());
+  if (!tuple || tuple->getName() != "Tuple")
+    return;
+
   auto idx =
       cast<types::RecordType>(v->getVal()->getType())->getMemberIndex(v->getField());
   if (idx < 0 || idx >= call->numArgs() || !okConst(*(call->begin() + idx)))
