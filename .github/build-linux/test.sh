@@ -1,5 +1,6 @@
 #!/bin/sh -l
 set -e
+set -x
 
 WORKSPACE="${1}"
 ARCH="$2"
@@ -22,7 +23,7 @@ export PYTHONPATH=${WORKSPACE}/test/python
 export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
 
 echo "=> Unit tests..."
-mkdir -p build  # needed for some tests
+mkdir -p build  # needed for some tests that write into this directory
 time build-${ARCH}/codon_test
 
 echo "=> Standalone test..."

@@ -1,10 +1,10 @@
 FROM quay.io/pypa/manylinux_2_28_x86_64
-# We need ninja >= 1.10
-# We also need Python 3.11 with shared libraries.
-# Since manylinux ships with static libraries, we need to build it via pyenv.
-# We also need to force our clang to use gcc-14 toolset for C++20 support.
-# Finally, we need to disable git security checks until all dependencies get
-# updated.
+
+# - Codon needs ninja >= 1.10.
+# - Codon needs Python 3 with shared libraries.
+#   Since manylinux ships with static libraries, pyenv is used to build shared libraries.
+# - Codon's clang must be forced to use the correct gcc-14 toolset for C++20 support via clang.cfg.
+# - The recent git security checks are disabled by marking everything "safe" until all dependencies get updated.
 RUN yum -y update && \
     yum -y install gcc gcc-c++ gcc-gfortran make wget openssl-devel \
                    patch bzip2 readline-devel sqlite sqlite-devel \
@@ -16,5 +16,6 @@ RUN yum -y update && \
     echo -ne "[safe]\ndirectory = *" > /root/.gitconfig && \
     echo "--gcc-install-dir=/opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14" > /opt/llvm-codon/bin/clang.cfg && \
     echo "--gcc-install-dir=/opt/rh/gcc-toolset-14/root/usr/lib/gcc/x86_64-redhat-linux/14" > /opt/llvm-codon/bin/clang++.cfg
+
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
