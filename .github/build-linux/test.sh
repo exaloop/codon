@@ -35,3 +35,10 @@ CODON_PATH=${CODON_DIR}/lib/codon/stdlib python test/python/cython_jit.py
 echo "=> pyext test..."
 (cd test/python && python setup.py build_ext --inplace && python pyext.py)
 
+# GPU test; only on select platforms
+if command -v nvcc &> /dev/null; then
+  echo "=> CUDA test..."
+  nvcc_version=$(nvcc --version | grep "release" | awk '{print $NF}')
+  echo "CUDA Version: $nvcc_version"
+  ${CODON_DIR}/bin/codon run -release test/transform/gpu.codon
+fi

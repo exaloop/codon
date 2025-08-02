@@ -13,7 +13,7 @@ on:
 
 jobs:
   create_release:
-    name: Create GitHub Release
+    name: GitHub Release
     runs-on: ubuntu-latest
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
@@ -37,12 +37,12 @@ jobs:
             arch: linux-aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-          - os: macos-13
+          - os: macos-14-large
             arch: darwin-x86_64
           - os: macos-14
             arch: darwin-arm64
     runs-on: ${{ matrix.os }}
-    name: Codon CI (manylinux)
+    name: Build Codon
     needs: create_release
     permissions:
       contents: write
