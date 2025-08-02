@@ -24,7 +24,13 @@ export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
 
 echo "=> Unit tests..."
 mkdir -p build  # needed for some tests that write into this directory
-time build-${ARCH}/codon_test
+if [ "${ARCH}" = "darwin-x86_64" ]; then
+  # Disable numpy tests on Intel macOS since it breaks on macOS 13
+  # (macOS 14 Intel runners are not free)
+  time build-${ARCH}/codon_test --gtest_filter="-*numpy*"
+else
+  time build-${ARCH}/codon_test
+fi
 
 echo "=> Standalone test..."
 CODON_PATH=${CODON_DIR}/lib/codon/stdlib test/app/test.sh build-${ARCH}
