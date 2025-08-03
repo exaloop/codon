@@ -146,10 +146,18 @@ std::vector<Term> replaceLoopVariable(const std::vector<Term> &terms, Var *loopV
   return ans;
 }
 
-bool isArrayType(types::Type *t) {
-  return t && isA<types::RecordType>(t) &&
-         t->getName().rfind(ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[",
-                            0) == 0;
+bool isArrayType(types::Type *t, bool dim1 = false) {
+  bool result = t && isA<types::RecordType>(t) &&
+                t->getName().rfind(
+                    ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[", 0) == 0;
+  if (result && dim1) {
+    auto generics = t->getGenerics();
+    seqassertn(generics.size() == 2 && generics[0].isType() && generics[1].isStatic(),
+               "unrecognized ndarray generics");
+    auto ndim = generics[1].getStaticValue();
+    result &= (ndim == 1);
+  }
+  return result;
 }
 
 bool isLen(Func *f) {
@@ -221,7 +229,7 @@ struct FindArrayIndex : public util::Operator {
   std::vector<IndexInfo> indexes;
 
   void handle(CallInstr *v) override {
-    if (v->numArgs() < 1 || !isArrayType(v->front()->getType()) ||
+    if (v->numArgs() < 1 || !isArrayType(v->front()->getType(), /*dim1=*/true) ||
         !isA<VarValue>(v->front()))
       return;
 
