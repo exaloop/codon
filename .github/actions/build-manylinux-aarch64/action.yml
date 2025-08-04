@@ -1,5 +1,0 @@
-name: manylinux build (aarch64)
-description: Builds Codon on manylinux (aarch64)
-runs:
-  using: docker
-  image: Dockerfile

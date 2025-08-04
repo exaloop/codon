@@ -633,7 +633,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     auto ret = forceFindIRType(extractClassGeneric(t, 1));
     handle = module->unsafeGetFuncType(realizedName, ret, types);
   } else if (t->name == getMangledClass("std.experimental.simd", "Vec")) {
-    seqassert(types.size() == 2 && !statics.empty(), "bad generics/statics");
+    seqassert(types.size() == 1 && !statics.empty(), "bad generics/statics");
     handle = module->unsafeGetVectorType(getIntLiteral(statics[0]), types[0]);
   } else {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive

@@ -1,0 +1,19 @@
+FROM quay.io/pypa/manylinux2014_x86_64
+
+# - Codon needs ninja >= 1.10.
+# - Codon needs Python 3 with shared libraries.
+#   Since manylinux ships with static libraries, pyenv is used to build shared libraries.
+# - Python needs OpenSSL >= 1.1.
+# - The recent git security checks are disabled by marking everything "safe" until all dependencies get updated.
+RUN yum -y update && \
+    yum -y install gcc gcc-c++ gcc-gfortran make wget openssl11-devel \
+                   patch bzip2 readline-devel sqlite sqlite-devel \
+                   bzip2-devel tk-devel libffi-devel xz-devel zlib-devel && \
+    yum -y install ninja-build && \
+    git clone https://github.com/pyenv/pyenv.git ~/.pyenv && \
+    CPPFLAGS="-I/usr/include/openssl11" LDFLAGS="-L/usr/lib64/openssl11 -lssl -lcrypto" ~/.pyenv/bin/pyenv install -s 3.11 && \
+    curl -L https://github.com/exaloop/llvm-project/releases/download/codon-20.1.7/llvm-codon-20.1.7-manylinux2014-x86_64.tar.bz2 | tar jxf - -C /opt && \
+    echo -ne "[safe]\ndirectory = *" > /root/.gitconfig
+
+COPY entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]

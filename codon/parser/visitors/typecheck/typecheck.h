@@ -333,6 +333,7 @@ public:
   static bool isDispatch(const std::string &s);
   static bool isDispatch(const FunctionStmt *ast);
   static bool isDispatch(types::Type *f);
+  bool isHeterogenous(types::Type *);
   void addClassGenerics(types::ClassType *typ, bool func = false,
                         bool onlyMangled = false, bool instantiate = false);
   template <typename F>

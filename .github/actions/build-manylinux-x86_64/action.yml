@@ -1,5 +1,0 @@
-name: manylinux build (x86_64)
-description: Builds Codon on manylinux (x86_64)
-runs:
-  using: docker
-  image: Dockerfile

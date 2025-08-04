@@ -1118,6 +1118,25 @@ bool TypecheckVisitor::isDispatch(types::Type *f) {
   return f->getFunc() && isDispatch(f->getFunc()->ast);
 }
 
+bool TypecheckVisitor::isHeterogenous(types::Type *type) {
+  if (!type->getClass() || !type->getClass()->isRecord())
+    return false;
+  std::vector<TypePtr> fs;
+  if (type->is(TYPE_TUPLE)) {
+    for (auto &g : type->getClass()->generics)
+      fs.push_back(g.getType()->shared_from_this());
+  } else {
+    fs = getClassFieldTypes(type->getClass());
+  }
+  if (fs.size() > 1) {
+    std::string first = fs[0]->realizedName();
+    for (int i = 1; i < fs.size(); i++)
+      if (fs[i]->realizedName() != first)
+        return true;
+  }
+  return false;
+}
+
 void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
                                         bool onlyMangled, bool instantiate) {
   auto addGen = [&](const types::ClassType::Generic &g) {
