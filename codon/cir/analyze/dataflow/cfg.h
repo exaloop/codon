@@ -122,7 +122,28 @@ private:
   void reg(const Value *v);
 };
 
-class SyntheticAssignInstr : public AcceptorExtend<SyntheticAssignInstr, Instr> {
+class SyntheticInstr : public AcceptorExtend<SyntheticInstr, Instr> {
+private:
+  const Node *source;
+
+public:
+  /// Constructs a synthetic instruction.
+  /// @param source the node that gave rise to this instruction
+  /// @param name the name of the instruction
+  SyntheticInstr(const Node *source, std::string name = "")
+      : AcceptorExtend(std::move(name)), source(source) {}
+
+  /// Gets the source of this synthetic instruction, i.e. the
+  /// node that gave rise to it when constructing the CFG.
+  /// @return the node that gave rise to this synthetic instruction
+  const Node *getSource() const { return source; }
+  /// Sets the source of this synthetic instruction
+  /// @param s the new source node
+  void setSource(const Node *s) { source = s; }
+};
+
+class SyntheticAssignInstr
+    : public AcceptorExtend<SyntheticAssignInstr, SyntheticInstr> {
 public:
   enum Kind { UNKNOWN, KNOWN, NEXT_VALUE, ADD };
 
@@ -140,23 +161,28 @@ public:
   static const char NodeId;
 
   /// Constructs a synthetic assignment.
+  /// @param source the node that gave rise to this instruction
   /// @param lhs the variable being assigned
   /// @param arg the argument
   /// @param k the kind of assignment
   /// @param name the name of the instruction
-  SyntheticAssignInstr(Var *lhs, Value *arg, Kind k = KNOWN, std::string name = "")
-      : AcceptorExtend(std::move(name)), lhs(lhs), kind(k), arg(arg) {}
+  SyntheticAssignInstr(const Node *source, Var *lhs, Value *arg, Kind k = KNOWN,
+                       std::string name = "")
+      : AcceptorExtend(source, std::move(name)), lhs(lhs), kind(k), arg(arg) {}
   /// Constructs an unknown synthetic assignment.
+  /// @param source the node that gave rise to this instruction
   /// @param lhs the variable being assigned
   /// @param name the name of the instruction
-  explicit SyntheticAssignInstr(Var *lhs, std::string name = "")
-      : SyntheticAssignInstr(lhs, nullptr, UNKNOWN, std::move(name)) {}
+  explicit SyntheticAssignInstr(const Node *source, Var *lhs, std::string name = "")
+      : SyntheticAssignInstr(source, lhs, nullptr, UNKNOWN, std::move(name)) {}
   /// Constructs an addition synthetic assignment.
+  /// @param source the node that gave rise to this instruction
   /// @param lhs the variable being assigned
   /// @param diff the difference
   /// @param name the name of the instruction
-  SyntheticAssignInstr(Var *lhs, int64_t diff, std::string name = "")
-      : AcceptorExtend(std::move(name)), lhs(lhs), kind(ADD), diff(diff) {}
+  SyntheticAssignInstr(const Node *source, Var *lhs, int64_t diff,
+                       std::string name = "")
+      : AcceptorExtend(source, std::move(name)), lhs(lhs), kind(ADD), diff(diff) {}
 
   /// @return the variable being assigned
   Var *getLhs() { return lhs; }
@@ -194,7 +220,7 @@ protected:
   int doReplaceUsedVariable(id_t id, Var *newVar) override;
 };
 
-class SyntheticPhiInstr : public AcceptorExtend<SyntheticPhiInstr, Instr> {
+class SyntheticPhiInstr : public AcceptorExtend<SyntheticPhiInstr, SyntheticInstr> {
 public:
   class Predecessor {
   private:
@@ -232,7 +258,11 @@ private:
 public:
   static const char NodeId;
 
-  explicit SyntheticPhiInstr(std::string name = "") : AcceptorExtend(std::move(name)) {}
+  /// Constructs a synthetic phi instruction.
+  /// @param source the node that gave rise to this instruction
+  /// @param name the name of the instruction
+  explicit SyntheticPhiInstr(const Node *source, std::string name = "")
+      : AcceptorExtend(source, std::move(name)) {}
 
   /// @return an iterator to the first instruction/flow
   auto begin() { return preds.begin(); }

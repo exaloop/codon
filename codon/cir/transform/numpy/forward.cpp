@@ -162,7 +162,7 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
 
   // Check 1: Only the given assignment should reach the destination.
   auto reaching = rd->getReachingDefinitions(var, destination);
-  if (reaching.size() != 1 && *reaching.begin() != assign->getRhs()->getId())
+  if (reaching.size() != 1 || reaching[0].assignment->getId() != assign->getId())
     return false;
 
   // Check 2: There should be no other uses of the variable that the given assignment
@@ -171,9 +171,13 @@ bool canForwardVariable(AssignInstr *assign, Value *destination, BodiedFunc *fun
   GetAllUses gu(var, uses);
   func->accept(gu);
   for (auto *use : uses) {
-    if (use != destination && use->getId() != assign->getId() &&
-        rd->getReachingDefinitions(var, use).count(assign->getRhs()->getId()))
-      return false;
+    if (use != destination && use->getId() != assign->getId()) {
+      auto defs = rd->getReachingDefinitions(var, use);
+      for (auto &def : defs) {
+        if (def.assignment->getId() == assign->getId())
+          return false;
+      }
+    }
   }
 
   return true;

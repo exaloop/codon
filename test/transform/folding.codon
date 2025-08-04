@@ -534,6 +534,31 @@ def test_int_simple_fold():
 test_int_simple_fold()
 
 @test
+def test_tuple_simple_fold():
+    op_count = OP_COUNT
+    x = (1,)
+    y = x[0] + 2
+    z = x[0] + 3
+    assert eq(foo(x[0] + 1), 2)
+    assert eq(foo(y * 2), 6)
+    assert eq(foo(z // 3), 1)
+    assert eq(foo(x[0] >> 2), 0)
+    assert eq(foo(x[0] << y), 8)
+    assert eq(foo(x[0] | y), 3)
+    assert eq(foo(z & z), 4)
+    assert not foo(x[0] > y)
+    assert foo(y < z)
+    assert not foo(x[0] >= z)
+    assert foo(x[0] <= 2)
+    assert foo(x[0] == 1)
+    assert foo(x[0] != 2)
+    assert eq(foo(y ** 3), 27)
+    assert eq(foo(y ** 0), 1)
+    assert eq(foo(y ** -1), 0)
+    assert eq(op_count, OP_COUNT)
+test_tuple_simple_fold()
+
+@test
 def test_ternary_fold():
     op_count = OP_COUNT
     x = 1

@@ -1,0 +1,214 @@
+from numpy import ndarray, array, zeros
+
+getitem_count = 0
+setitem_count = 0
+
+@extend
+class ndarray:
+    def __getitem__(self, idx):
+        global getitem_count
+        getitem_count += 1
+        return superf(self, idx)
+
+    def __setitem__(self, idx, item):
+        global setitem_count
+        setitem_count += 1
+        return superf(self, idx, item)
+
+def reset():
+    global getitem_count
+    global setitem_count
+    getitem_count = 0
+    setitem_count = 0
+
+@test
+def test_simple_for_loop():
+    reset()
+    x = array([1, 2, 3, 4])
+    s = 0
+
+    for i in range(len(x)):
+        s += x[i]
+
+    assert s == 10
+    assert getitem_count == 0
+
+    s = 0
+
+    for i in range(x.size):
+        s += x[i]
+
+    assert s == 10
+    assert getitem_count == 0
+
+@test
+def test_simple_for_loop_setitem():
+    reset()
+    x = zeros(4, dtype=int)
+
+    for i in range(len(x)):
+        x[i] = (i + 1)**2
+
+    assert (x == [1, 4, 9, 16]).all()
+    assert setitem_count == 0
+
+@test
+def test_simple_for_loop_getset():
+    reset()
+    x = zeros(4, dtype=int)
+    s = 0
+
+    for i in range(len(x)):
+        x[i] = (i + 1)**2
+        s += x[i]
+
+    assert s == 1 + 4 + 9 + 16
+    assert (x == [1, 4, 9, 16]).all()
+    assert getitem_count == 0
+    assert setitem_count == 0
+
+@test
+def test_simple_for_loop_getset_invalid():
+    reset()
+    x = zeros(4, dtype=int)
+    s = 0
+
+    try:
+        for i in range(len(x)):
+            x[i] = (i + 1)**2
+            i = len(x) + 1
+            s += x[i]
+        assert False
+    except IndexError:
+        pass
+
+    assert s == 0
+    assert (x == [1, 0, 0, 0]).all()
+    assert getitem_count == 1
+    assert setitem_count == 0
+
+@test
+def test_for_loop_with_offset():
+    reset()
+    x = array([1, 2, 3, 4, 5])
+    w = 2
+    s = 0
+
+    for i in range(len(x) - w):
+        s += x[i + w]
+
+    assert s == 12
+    assert getitem_count == 0
+
+@test
+def test_for_loop_with_offset_invalid():
+    @nonpure
+    @noinline
+    def zero():
+        return 0
+
+    @nonpure
+    @noinline
+    def two():
+        return 2
+
+    reset()
+    x = array([1, 2, 3, 4, 5])
+    w = two()
+    s = 0
+
+    for i in range(len(x) - w):
+        w = zero()  # reaching-def analysis should catch this
+        s += x[i + w]
+
+    assert s == 6
+    assert getitem_count == 3
+
+@test
+def test_varied_stride_access():
+    reset()
+    x = array([0, 1, 2, 3, 4, 5])
+    s = 0
+
+    for i in range(0, len(x), 2):
+        s += x[i]
+
+    assert s == 0 + 2 + 4
+    assert getitem_count == 0
+
+@test
+def test_out_of_bounds_in_loop():
+    reset()
+    x = array([1, 2, 3])
+
+    try:
+        for i in range(len(x)):
+            i = 3
+            x[i] = 42
+        assert False
+    except IndexError:
+        assert True
+
+@test
+def test_variable_bounds_failure():
+    reset()
+    x = array([10, 20, 30])
+    w = 3
+
+    try:
+        for i in range(len(x) - w + 1):
+            _ = x[i + w]  # This will fail if w == len(x)
+        assert False
+    except IndexError:
+        assert True
+
+@test
+def test_empty_array():
+    reset()
+    x = zeros((0,), dtype=int)
+    s = 0
+
+    for i in range(len(x)):
+        s += x[i]
+
+    assert s == 0
+    assert getitem_count == 0
+
+@test
+def test_single_element_array():
+    reset()
+    x = array([42])
+    s = 0
+
+    for i in range(len(x)):
+        s += x[i]
+
+    assert s == 42
+    assert getitem_count == 0
+
+@test
+def test_inplace_update():
+    reset()
+    x = array([1, 2, 3])
+
+    for i in range(len(x)):
+        x[i] += i + 1
+        x[i] *= 2
+
+    assert (x == [4, 8, 12]).all()
+    assert getitem_count == 0
+    assert setitem_count == 0
+
+if not __debug__:
+    test_simple_for_loop()
+    test_simple_for_loop_setitem()
+    test_simple_for_loop_getset()
+    test_simple_for_loop_getset_invalid()
+    test_for_loop_with_offset()
+    test_for_loop_with_offset_invalid()
+    test_varied_stride_access()
+    test_out_of_bounds_in_loop()
+    test_variable_bounds_failure()
+    test_empty_array()
+    test_single_element_array()
+    test_inplace_update()

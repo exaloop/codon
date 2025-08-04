@@ -152,7 +152,7 @@ void CFVisitor::visit(const BodiedFunc *f) {
   auto *blk = graph->getCurrentBlock();
   for (auto it = f->arg_begin(); it != f->arg_end(); it++) {
     blk->push_back(graph->N<analyze::dataflow::SyntheticAssignInstr>(
-        const_cast<Var *>(*it), const_cast<VarValue *>(graph->N<VarValue>(*it))));
+        f, const_cast<Var *>(*it), const_cast<VarValue *>(graph->N<VarValue>(*it))));
   }
   process(f->getBody());
 }
@@ -227,7 +227,7 @@ void CFVisitor::visit(const ForFlow *v) {
   auto *loopNext = graph->newBlock("forNext");
   loopCheck->successors_insert(loopNext);
   loopNext->push_back(graph->N<analyze::dataflow::SyntheticAssignInstr>(
-      const_cast<Var *>(v->getVar()), const_cast<Value *>(v->getIter()),
+      v, const_cast<Var *>(v->getVar()), const_cast<Value *>(v->getIter()),
       analyze::dataflow::SyntheticAssignInstr::NEXT_VALUE));
 
   loopStack.emplace_back(loopCheck, end, v->getId(), tryCatchStack.size() - 1);
@@ -252,7 +252,7 @@ void CFVisitor::visit(const ImperativeForFlow *v) {
   auto *loopBegin = graph->newBlock("forBegin", true);
   original->successors_insert(loopBegin);
   loopBegin->push_back(graph->N<analyze::dataflow::SyntheticAssignInstr>(
-      const_cast<Var *>(v->getVar()), const_cast<Value *>(v->getStart()),
+      v, const_cast<Var *>(v->getVar()), const_cast<Value *>(v->getStart()),
       analyze::dataflow::SyntheticAssignInstr::KNOWN));
   process(v->getStart());
   process(v->getEnd());
@@ -263,7 +263,7 @@ void CFVisitor::visit(const ImperativeForFlow *v) {
 
   auto *loopNext = graph->newBlock("forUpdate");
   loopNext->push_back(graph->N<analyze::dataflow::SyntheticAssignInstr>(
-      const_cast<Var *>(v->getVar()), v->getStep()));
+      v, const_cast<Var *>(v->getVar()), v->getStep()));
   loopNext->successors_insert(loopCheck);
 
   loopStack.emplace_back(loopCheck, end, v->getId(), tryCatchStack.size() - 1);
@@ -296,7 +296,7 @@ void CFVisitor::visit(const TryCatchFlow *v) {
     auto *cBlock = graph->newBlock("catch", true);
     if (c.getVar())
       cBlock->push_back(graph->N<analyze::dataflow::SyntheticAssignInstr>(
-          const_cast<Var *>(c.getVar())));
+          v, const_cast<Var *>(c.getVar())));
     process(c.getHandler());
     routeBlock->successors_insert(cBlock);
     graph->getCurrentBlock()->successors_insert(dst);
@@ -379,7 +379,7 @@ void CFVisitor::visit(const TernaryInstr *v) {
   process(v->getFalseValue());
   graph->getCurrentBlock()->successors_insert(end);
 
-  auto *phi = graph->N<analyze::dataflow::SyntheticPhiInstr>();
+  auto *phi = graph->N<analyze::dataflow::SyntheticPhiInstr>(v);
   phi->emplace_back(tBranch, const_cast<Value *>(v->getTrueValue()));
   phi->emplace_back(fBranch, const_cast<Value *>(v->getFalseValue()));
 

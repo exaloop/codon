@@ -280,6 +280,7 @@ set(CODON_HPPFILES
   codon/cir/llvm/native/targets/target.h
   codon/cir/llvm/native/targets/x86.h
   codon/cir/transform/numpy/numpy.h
+  codon/cir/transform/numpy/indexing.h
   codon/cir/var.h
   codon/util/common.h
   codon/util/serialize.h
@@ -381,6 +382,7 @@ set(CODON_CPPFILES
   codon/cir/llvm/native/targets/x86.cpp
   codon/cir/transform/numpy/expr.cpp
   codon/cir/transform/numpy/forward.cpp
+  codon/cir/transform/numpy/indexing.cpp
   codon/cir/transform/numpy/numpy.cpp
   codon/util/common.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
