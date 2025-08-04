@@ -33,6 +33,14 @@ const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.gpu", "kernel");
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
 
+enum GlobalCTORMode { No, Yes, Auto };
+llvm::cl::opt<GlobalCTORMode> GlobalCTOR(
+    "global-ctor", llvm::cl::desc("generate global constructor with main code"),
+    llvm::cl::values(clEnumValN(No, "no", "Keep main code in main() function"),
+                     clEnumValN(Yes, "yes", "Put main code in global constructor"),
+                     clEnumValN(Auto, "auto",
+                                "'yes' if shared library output, 'no' otherwise")),
+    llvm::cl::init(Auto));
 llvm::cl::opt<bool> DisableExceptions("disable-exceptions",
                                       llvm::cl::desc("Disable exception handling"),
                                       llvm::cl::init(false));
@@ -366,6 +374,9 @@ void LLVMVisitor::runLLVMPipeline() {
 }
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
+  if (GlobalCTOR == GlobalCTORMode::Yes)
+    setupGlobalCtor();
+
   runLLVMPipeline();
 
   std::error_code err;
@@ -401,6 +412,8 @@ void LLVMVisitor::writeToBitcodeFile(const std::string &filename) {
 }
 
 void LLVMVisitor::writeToLLFile(const std::string &filename, bool optimize) {
+  if (GlobalCTOR == GlobalCTORMode::Yes)
+    setupGlobalCtor();
   if (optimize)
     runLLVMPipeline();
   auto fo = fopen(filename.c_str(), "w");
@@ -435,7 +448,7 @@ void executeCommand(const std::vector<std::string> &args) {
 }
 } // namespace
 
-void LLVMVisitor::setupGlobalCtorForSharedLibrary() {
+void LLVMVisitor::setupGlobalCtor() {
   const std::string llvmCtor = "llvm.global_ctors";
   if (M->getNamedValue(llvmCtor))
     return;
@@ -478,8 +491,8 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::string &argv0, bool library,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
-  if (library)
-    setupGlobalCtorForSharedLibrary();
+  if (library && GlobalCTOR != GlobalCTORMode::No)
+    setupGlobalCtor();
 
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile, /*pic=*/library);

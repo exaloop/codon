@@ -209,8 +209,8 @@ private:
   TryCatchData *getInnermostTryCatch();
   TryCatchData *getInnermostTryCatchBeforeLoop();
 
-  // Shared library setup
-  void setupGlobalCtorForSharedLibrary();
+  // Global constructor setup
+  void setupGlobalCtor();
 
   // Python extension setup
   llvm::Function *createPyTryCatchWrapper(llvm::Function *func);
