@@ -17,9 +17,9 @@ namespace {
 struct Term {
   enum Kind { INT, VAR, LEN } kind;
   int64_t val;
-  VarValue *var;
+  const VarValue *var;
 
-  Term(Kind kind, int64_t val, VarValue *var) : kind(kind), val(val), var(var) {}
+  Term(Kind kind, int64_t val, const VarValue *var) : kind(kind), val(val), var(var) {}
 
   static Term valTerm(int64_t v) { return {Kind::INT, v, nullptr}; }
 
@@ -273,7 +273,7 @@ void elideBoundsCheck(IndexInfo &index) {
   }
 }
 
-bool isOriginalLoopVar(Value *loc, ImperativeForFlow *loop,
+bool isOriginalLoopVar(const Value *loc, ImperativeForFlow *loop,
                        analyze::dataflow::RDInspector *rd) {
   // The loop variable should have exactly two reaching definitions:
   //   - The initial assignment for the loop
@@ -309,8 +309,8 @@ bool isOriginalLoopVar(Value *loc, ImperativeForFlow *loop,
   return true;
 }
 
-VarValue *isAliasOfLoopVar(VarValue *v, ImperativeForFlow *loop,
-                           analyze::dataflow::RDInspector *rd) {
+const VarValue *isAliasOfLoopVar(const VarValue *v, ImperativeForFlow *loop,
+                                 analyze::dataflow::RDInspector *rd) {
   auto defs = rd->getReachingDefinitions(v->getVar(), v);
   auto *loopVar = loop->getVar();
 
@@ -319,7 +319,7 @@ VarValue *isAliasOfLoopVar(VarValue *v, ImperativeForFlow *loop,
       !isOriginalLoopVar(v, loop, rd))
     return nullptr;
 
-  return const_cast<VarValue *>(cast<VarValue>(defs[0].assignee));
+  return cast<VarValue>(defs[0].assignee);
 }
 
 bool canElideBoundsCheck(ImperativeForFlow *loop, IndexInfo &index,
@@ -335,7 +335,7 @@ bool canElideBoundsCheck(ImperativeForFlow *loop, IndexInfo &index,
   // value. We do this by making sure there is just one reaching def
   // for all VarValues referring to the same Var.
   std::unordered_map<id_t, id_t> reach; // "[var id] -> [reaching def id]" map
-  std::function<bool(VarValue *)> check = [&](VarValue *v) {
+  auto check = [&](const VarValue *v) {
     auto id = v->getVar()->getId();
     if (id == loopVar->getId()) {
       return isOriginalLoopVar(v, loop, rd);
