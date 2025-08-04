@@ -538,6 +538,7 @@ INSTANTIATE_TEST_SUITE_P(
             "numpy/random_tests/test_philox.codon",
             "numpy/random_tests/test_sfc64.codon",
             "numpy/test_dtype.codon",
+            "numpy/test_elision.codon",
             "numpy/test_fft.codon",
             "numpy/test_functional.codon",
             // "numpy/test_fusion.codon", // TODO: uses a lot of RAM

@@ -228,6 +228,8 @@ struct IndexInfo {
 struct FindArrayIndex : public util::Operator {
   std::vector<IndexInfo> indexes;
 
+  FindArrayIndex() : util::Operator(/*childrenFirst=*/true), indexes() {}
+
   void handle(CallInstr *v) override {
     if (v->numArgs() < 1 || !isArrayType(v->front()->getType(), /*dim1=*/true) ||
         !isA<VarValue>(v->front()))
@@ -271,6 +273,55 @@ void elideBoundsCheck(IndexInfo &index) {
   }
 }
 
+bool isOriginalLoopVar(Value *loc, ImperativeForFlow *loop,
+                       analyze::dataflow::RDInspector *rd) {
+  // The loop variable should have exactly two reaching definitions:
+  //   - The initial assignment for the loop
+  //   - The update assignment
+  // Both are represented as `SyntheticAssignInstr` in the CFG.
+  auto *loopVar = loop->getVar();
+  auto defs = rd->getReachingDefinitions(loopVar, loc);
+  if (defs.size() != 2)
+    return false;
+
+  using SAI = analyze::dataflow::SyntheticAssignInstr;
+  auto *s1 = cast<SAI>(defs[0].assignment);
+  auto *s2 = cast<SAI>(defs[1].assignment);
+
+  if (!s1 || !s2)
+    return false;
+
+  if (s1->getKind() == SAI::Kind::ADD && s2->getKind() == SAI::Kind::KNOWN) {
+    auto *tmp = s1;
+    s1 = s2;
+    s2 = tmp;
+  } else if (!(s1->getKind() == SAI::Kind::KNOWN && s2->getKind() == SAI::Kind::ADD)) {
+    return false;
+  }
+
+  auto *loop1 = cast<ImperativeForFlow>(s1->getSource());
+  auto *loop2 = cast<ImperativeForFlow>(s2->getSource());
+
+  if (!loop1 || !loop2 || loop1->getId() != loop->getId() ||
+      loop2->getId() != loop->getId())
+    return false;
+
+  return true;
+}
+
+VarValue *isAliasOfLoopVar(VarValue *v, ImperativeForFlow *loop,
+                           analyze::dataflow::RDInspector *rd) {
+  auto defs = rd->getReachingDefinitions(v->getVar(), v);
+  auto *loopVar = loop->getVar();
+
+  if (defs.size() != 1 || !defs[0].known() || !isA<VarValue>(defs[0].assignee) ||
+      cast<VarValue>(defs[0].assignee)->getVar()->getId() != loopVar->getId() ||
+      !isOriginalLoopVar(v, loop, rd))
+    return nullptr;
+
+  return const_cast<VarValue *>(cast<VarValue>(defs[0].assignee));
+}
+
 bool canElideBoundsCheck(ImperativeForFlow *loop, IndexInfo &index,
                          const std::vector<Term> &startTerms,
                          const std::vector<Term> &stopTerms,
@@ -284,45 +335,12 @@ bool canElideBoundsCheck(ImperativeForFlow *loop, IndexInfo &index,
   // value. We do this by making sure there is just one reaching def
   // for all VarValues referring to the same Var.
   std::unordered_map<id_t, id_t> reach; // "[var id] -> [reaching def id]" map
-  auto check = [&](VarValue *v) {
-    auto defs = rd->getReachingDefinitions(v->getVar(), v);
-    if (defs.empty())
-      return true;
-
+  std::function<bool(VarValue *)> check = [&](VarValue *v) {
     auto id = v->getVar()->getId();
     if (id == loopVar->getId()) {
-      // The loop variable should have exactly two reaching definitions:
-      //   - The initial assignment for the loop
-      //   - The update assignment
-      // Both are represented as `SyntheticAssignInstr` in the CFG.
-      if (defs.size() != 2)
-        return false;
-
-      using SAI = analyze::dataflow::SyntheticAssignInstr;
-      auto *s1 = cast<SAI>(defs[0].assignment);
-      auto *s2 = cast<SAI>(defs[1].assignment);
-
-      if (!s1 || !s2)
-        return false;
-
-      if (s1->getKind() == SAI::Kind::ADD && s2->getKind() == SAI::Kind::KNOWN) {
-        auto *tmp = s1;
-        s1 = s2;
-        s2 = tmp;
-      } else if (!(s1->getKind() == SAI::Kind::KNOWN &&
-                   s2->getKind() == SAI::Kind::ADD)) {
-        return false;
-      }
-
-      auto *loop1 = cast<ImperativeForFlow>(s1->getSource());
-      auto *loop2 = cast<ImperativeForFlow>(s2->getSource());
-
-      if (!loop1 || !loop2 || loop1->getId() != loop->getId() ||
-          loop2->getId() != loop->getId())
-        return false;
-
-      return true;
+      return isOriginalLoopVar(v, loop, rd);
     } else {
+      auto defs = rd->getReachingDefinitions(v->getVar(), v);
       if (defs.size() != 1)
         return false;
 
@@ -356,6 +374,16 @@ bool canElideBoundsCheck(ImperativeForFlow *loop, IndexInfo &index,
       return false;
   }
 
+  // Update vars that are aliases of the loop var. This can
+  // happen in e.g. compound assignments which need to create
+  // a temporary copy of the index.
+  for (auto &term : idxTerms) {
+    if (term.kind != Term::Kind::VAR)
+      continue;
+    if (auto *loopVarValue = isAliasOfLoopVar(term.var, loop, rd))
+      term.var = loopVarValue;
+  }
+
   // Next, see if we can prove that indexes are in range.
   std::vector<Term> limit = {Term::lenTerm(index.arr)};
   auto terms1 = replaceLoopVariable(idxTerms, loopVar, startTerms);
@@ -372,7 +400,7 @@ bool canElideBoundsCheck(ImperativeForFlow *loop, IndexInfo &index,
 } // namespace
 
 void NumPyBoundsCheckElisionPass::visit(ImperativeForFlow *f) {
-  if (f->getStep() == 0)
+  if (f->getStep() == 0 || f->getVar()->isGlobal())
     return;
 
   std::vector<Term> startTerms;
