@@ -1292,7 +1292,7 @@ class pyobj:
     def _main_module() -> pyobj:
         return pyobj._get_module("__main__")
 
-    def _repr_mimebundle_(self, bundle=Set[str]()) -> Dict[str, str]:
+    def _repr_mimebundle_(self, bundle: Optional[Set[str]] = None) -> Dict[str, str]:
         fn = pyobj._main_module()._getattr("__codon_repr__")
         assert fn.p != cobj(), "cannot find python.__codon_repr__"
         mime, txt = Tuple[str, str].__from_py__(fn.__call__(self).p)

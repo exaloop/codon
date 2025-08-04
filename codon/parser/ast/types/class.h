@@ -79,7 +79,6 @@ public:
 public:
   enum PartialFlag { Missing = '0', Included, Default };
 
-  ClassType *getHeterogenousTuple() override;
   FuncType *getPartialFunc() const;
   std::string getPartialMask() const;
   bool isPartialEmpty() const;

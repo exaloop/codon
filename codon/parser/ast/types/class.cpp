@@ -229,18 +229,6 @@ bool ClassType::isInstantiated() const {
          std::ranges::all_of(hiddenGenerics.begin(), hiddenGenerics.end(), pred);
 }
 
-ClassType *ClassType::getHeterogenousTuple() {
-  seqassert(canRealize(), "{} not realizable", debugString(2));
-  seqassert(name == TYPE_TUPLE, "{} not a tuple", debugString(2));
-  if (generics.size() > 1) {
-    std::string first = generics[0].type->realizedName();
-    for (int i = 1; i < generics.size(); i++)
-      if (generics[i].type->realizedName() != first)
-        return getClass();
-  }
-  return nullptr;
-}
-
 std::string ClassType::debugString(char mode) const {
   if (name == "NamedTuple") {
     if (auto ids = generics[0].type->getIntStatic()) {

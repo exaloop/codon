@@ -35,6 +35,18 @@ JIT::JIT(const std::string &argv0, const std::string &mode,
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
+void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
+  if (cast<ast::FunctionStmt>(s) || cast<ast::ClassStmt>(s) ||
+      cast<ast::CommentStmt>(s))
+    return;
+  if (auto ss = ast::cast<ast::SuiteStmt>(s)) {
+    for (auto &si : *ss)
+      collectExecutableStmts(si, final);
+  } else if (s) {
+    final->addStmt(ast::clean_clone(s));
+  }
+}
+
 llvm::Error JIT::init(bool forgetful) {
   if (forgetful) {
     this->forgetful = true;
@@ -129,15 +141,7 @@ void JITState::undoUnusedIR() {
 
 void JITState::cleanUpRealizations() {
   // Clean-up IR nodes after single JIT input
-  for (auto &f : cache->functions) {
-    if (f.first == ast::getMangledMethod("std.internal.core", "__internal__",
-                                         "class_populate_vtables"))
-      continue;
-    f.second.realizations.clear();
-  }
-  for (auto &c : cache->classes) {
-    c.second.realizations.clear();
-  }
+  // Nothing should be done here with a proper arena support.
 }
 
 llvm::Expected<ir::Func *> JIT::compile(const std::string &code,

@@ -42,6 +42,7 @@ struct Attr {
     Inline,
     NoArgReorder,
     FunctionAttributes,
+    NoExtend,
 
     ClassMagic,
     ExprSequenceItem,
