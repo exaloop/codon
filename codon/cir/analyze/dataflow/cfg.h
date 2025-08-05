@@ -330,6 +330,9 @@ public:
   /// Constructs a control-flow graph.
   explicit CFGraph(const BodiedFunc *f);
 
+  /// @return number of blocks in this CFG
+  auto size() const { return blocks.size(); }
+
   /// @return an iterator to the first block
   auto begin() { return util::raw_ptr_adaptor(blocks.begin()); }
   /// @return an iterator beyond the last block

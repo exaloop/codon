@@ -2,8 +2,8 @@
 
 #pragma once
 
-#include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 #include "codon/cir/analyze/analysis.h"
@@ -17,7 +17,7 @@ namespace dataflow {
 /// Helper to query the dominators of a particular function.
 class DominatorInspector {
 private:
-  std::unordered_map<id_t, std::set<id_t>> sets;
+  std::unordered_map<id_t, std::unordered_set<id_t>> sets;
   CFGraph *cfg;
 
 public:

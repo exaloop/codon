@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/SmallVector.h"
