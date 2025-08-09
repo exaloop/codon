@@ -99,9 +99,11 @@ a shared library.
 !!! info
 
     When compiling to a shared library, the program's main code will be
-    included and executed when the library is loaded as a *constructor*.
+    included and executed when the library is loaded as a *global constructor*.
     This allows you to include any necessary initialization code in the
-    main program.
+    main program. This behavior can be controlled via the `-global-ctor=<yes|no|auto>`
+    flag, which enables e.g. global constructor creation when compiling to other
+    output types like object files.
 
 !!! info
 
@@ -128,6 +130,25 @@ codon build -obj -o hello.o -release program.py
 # compile 'program.py' to object file 'hello.o' with optimizations
 # '-obj' is inferred from `-o` argument
 codon build -o hello.o -release program.py
+```
+
+### Compile to assembly code
+
+The `-asm` flag can be used to generate assembly code:
+
+``` bash
+# compile 'program.py' to assembly file 'program.s'
+codon build -asm program.py
+
+# compile 'program.py' to assembly file 'hello.o'
+codon build -asm -o hello.s program.py
+
+# compile 'program.py' to assembly file 'hello.s' with optimizations
+codon build -asm -o hello.s -release program.py
+
+# compile 'program.py' to assembly file 'hello.s' with optimizations
+# '-asm' is inferred from `-o` argument
+codon build -o hello.s -release program.py
 ```
 
 ### Compile to LLVM IR

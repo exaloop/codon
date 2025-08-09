@@ -96,7 +96,17 @@ void initLogFlags(const llvm::cl::opt<std::string> &log) {
     codon::getLogger().parse(std::string(d));
 }
 
-enum BuildKind { LLVM, Bitcode, Object, Executable, Library, PyExtension, Detect, CIR };
+enum BuildKind {
+  LLVM,
+  Bitcode,
+  Object,
+  Assembly,
+  Executable,
+  Library,
+  PyExtension,
+  Detect,
+  CIR
+};
 enum OptMode { Debug, Release };
 enum Numerics { C, Python };
 } // namespace
@@ -339,6 +349,7 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
           clEnumValN(LLVM, "llvm", "Generate LLVM IR"),
           clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
           clEnumValN(Object, "obj", "Generate native object file"),
+          clEnumValN(Assembly, "asm", "Generate assembly code"),
           clEnumValN(Executable, "exe", "Generate executable"),
           clEnumValN(Library, "lib", "Generate shared library"),
           clEnumValN(PyExtension, "pyext", "Generate Python extension module"),
@@ -375,6 +386,9 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
   case BuildKind::PyExtension:
     extension = ".o";
     break;
+  case BuildKind::Assembly:
+    extension = ".s";
+    break;
   case BuildKind::Library:
     extension = isMacOS() ? ".dylib" : ".so";
     break;
@@ -399,6 +413,10 @@ int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
     break;
   case BuildKind::Object:
     compiler->getLLVMVisitor()->writeToObjectFile(filename);
+    break;
+  case BuildKind::Assembly:
+    compiler->getLLVMVisitor()->writeToObjectFile(filename, /*pic=*/false,
+                                                  /*assembly=*/true);
     break;
   case BuildKind::Executable:
     compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, false, libsVec,

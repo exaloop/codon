@@ -343,7 +343,9 @@ public:
   /// Writes module as native object file.
   /// @param filename the .o file to write to
   /// @param pic true to write position-independent code
-  void writeToObjectFile(const std::string &filename, bool pic = false);
+  /// @param assembly true to write assembly instead of binary
+  void writeToObjectFile(const std::string &filename, bool pic = false,
+                         bool assembly = false);
   /// Writes module as LLVM bitcode file.
   /// @param filename the .bc file to write to
   void writeToBitcodeFile(const std::string &filename);

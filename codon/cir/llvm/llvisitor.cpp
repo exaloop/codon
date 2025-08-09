@@ -373,7 +373,8 @@ void LLVMVisitor::runLLVMPipeline() {
   optimize(M.get(), db.debug, db.jit, plugins);
 }
 
-void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
+void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic,
+                                    bool assembly) {
   if (GlobalCTOR == GlobalCTORMode::Yes)
     setupGlobalCtor();
 
@@ -392,7 +393,9 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic) {
 
   llvm::TargetLibraryInfoImpl tlii(llvm::Triple(M->getTargetTriple()));
   pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-  if (machine->addPassesToEmitFile(pm, *os, nullptr, llvm::CodeGenFileType::ObjectFile,
+  if (machine->addPassesToEmitFile(pm, *os, nullptr,
+                                   assembly ? llvm::CodeGenFileType::AssemblyFile
+                                            : llvm::CodeGenFileType::ObjectFile,
                                    /*DisableVerify=*/true, mmiwp))
     seqassertn(false, "could not add passes");
   const_cast<llvm::TargetLoweringObjectFile *>(machine->getObjFileLowering())
@@ -1228,6 +1231,8 @@ void LLVMVisitor::compile(const std::string &filename, const std::string &argv0,
     writeToBitcodeFile(filename);
   } else if (f.ends_with(".o") || f.ends_with(".obj")) {
     writeToObjectFile(filename);
+  } else if (f.ends_with(".s") || f.ends_with(".S") || f.ends_with(".asm")) {
+    writeToObjectFile(filename, /*pic=*/false, /*assembly=*/true);
   } else if (f.ends_with(".so") || f.ends_with(".dylib")) {
     writeToExecutable(filename, argv0, /*library=*/true, libs, lflags);
   } else {
