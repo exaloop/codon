@@ -4,24 +4,24 @@ fint = i32
 fintp = Ptr[fint]
 
 # Constants
-CBLAS_ROW_MAJOR = fint(101)
-CBLAS_COL_MAJOR = fint(102)
+CBLAS_ROW_MAJOR: Literal[int] = 101
+CBLAS_COL_MAJOR: Literal[int] = 102
 
-CBLAS_NO_TRANS   = fint(111)
-CBLAS_TRANS      = fint(112)
-CBLAS_CONJ_TRANS = fint(113)
+CBLAS_NO_TRANS: Literal[int]   = 111
+CBLAS_TRANS: Literal[int]      = 112
+CBLAS_CONJ_TRANS: Literal[int] = 113
 
-CBLAS_UPPER = fint(121)
-CBLAS_LOWER = fint(122)
+CBLAS_UPPER: Literal[int] = 121
+CBLAS_LOWER: Literal[int] = 122
 
-CBLAS_NON_UNIT = fint(131)
-CBLAS_UNIT     = fint(132)
+CBLAS_NON_UNIT: Literal[int] = 131
+CBLAS_UNIT: Literal[int]     = 132
 
-CBLAS_LEFT  = fint(141)
-CBLAS_RIGHT = fint(142)
+CBLAS_LEFT: Literal[int]  = 141
+CBLAS_RIGHT: Literal[int] = 142
 
-LAPACK_ROW_MAJOR = fint(101)
-LAPACK_COL_MAJOR = fint(102)
+LAPACK_ROW_MAJOR: Literal[int] = 101
+LAPACK_COL_MAJOR : Literal[int]= 102
 
 # Stubs
 # Note: D=float64, S=float32, Z=complex128, C=complex64

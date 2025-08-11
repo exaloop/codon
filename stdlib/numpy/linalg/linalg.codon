@@ -2508,10 +2508,10 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
           m: int, n: int, T: type):
     itemsize = sizeof(T)
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
-        order = CBLAS_COL_MAJOR
+        order = fint(CBLAS_COL_MAJOR)
         lda = is1_m // itemsize
     else:
-        order = CBLAS_ROW_MAJOR
+        order = fint(CBLAS_ROW_MAJOR)
         lda = is1_n // itemsize
 
     one_dtype = cast(1, T)
@@ -2524,7 +2524,7 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
         one = __ptr__(one_dtype).as_byte()
         zero = __ptr__(zero_dtype).as_byte()
 
-    args = (order, CBLAS_TRANS, fint(n), fint(m),
+    args = (order, fint(CBLAS_TRANS), fint(n), fint(m),
             one, ip1.as_byte(), fint(lda), ip2.as_byte(),
             fint(is2_n // itemsize), zero, op.as_byte(),
             fint(op_m // itemsize))
@@ -2544,22 +2544,22 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                          ip2: Ptr[T], is2_n: int, is2_p: int,
                          op: Ptr[T],  os_m: int, os_p: int,
                          m: int, n: int, p: int, T: type):
-    order = CBLAS_ROW_MAJOR
+    order = fint(CBLAS_ROW_MAJOR)
     itemsize = sizeof(T)
     ldc = os_m // itemsize
 
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
-        trans1 = CBLAS_NO_TRANS
+        trans1 = fint(CBLAS_NO_TRANS)
         lda = is1_m // itemsize
     else:
-        trans1 = CBLAS_TRANS
+        trans1 = fint(CBLAS_TRANS)
         lda = is1_n // itemsize
 
     if _is_blasable2d(is2_n, is2_p, n, p, itemsize):
-        trans2 = CBLAS_NO_TRANS
+        trans2 = fint(CBLAS_NO_TRANS)
         ldb = is2_n // itemsize
     else:
-        trans2 = CBLAS_TRANS
+        trans2 = fint(CBLAS_TRANS)
         ldb = is2_p // itemsize
 
     one_dtype = cast(1, T)
@@ -2578,8 +2578,8 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
         is1_n == is2_n and
         trans1 != trans2):
 
-        ld = lda if trans1 == CBLAS_NO_TRANS else ldb
-        args = (order, CBLAS_UPPER, trans1, fint(p),
+        ld = lda if trans1 == fint(CBLAS_NO_TRANS) else ldb
+        args = (order, fint(CBLAS_UPPER), trans1, fint(p),
                 fint(n), one, ip1, fint(ld),
                 zero, op, fint(ldc))
 
