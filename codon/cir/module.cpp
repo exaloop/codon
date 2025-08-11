@@ -318,7 +318,8 @@ types::Type *Module::getIntNType(unsigned int len, bool sign) {
 }
 
 types::Type *Module::getVectorType(unsigned count, types::Type *base) {
-  return getOrRealizeType("Vec", {base, count});
+  return getOrRealizeType(ast::getMangledClass("std.experimental.simd", "Vec"),
+                          {base, count});
 }
 
 types::Type *Module::getTupleType(std::vector<types::Type *> args) {
