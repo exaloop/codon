@@ -20,25 +20,24 @@ command -v otool             >/dev/null || { echo "otool not found"; exit 1; }
 echo "Patching dylibs/SOs in: $DIR"
 echo
 
-# Helper: does file F already have RPATH P?
+# Helper: check if file already has an RPATH
 has_rpath() {
   local f="$1" p="$2"
   otool -l "$f" | awk '/LC_RPATH/{show=1} show && /path/ {print $2; show=0}' | grep -qx "$p"
 }
 
-# Iterate all candidates in DIR
+# Iterate over all dylib/so files in DIR
 while IFS= read -r -d '' f; do
   base="$(basename "$f")"
   echo ">>> $base"
 
-  # 1) Set install name (id) to @loader_path/<name> when it's a dylib
-  if [[ "$f" == *.dylib ]]; then
+  # Skip changing install_name for libcodon* files themselves
+  if [[ "$f" == *.dylib && ! "$base" =~ ^libcodon ]]; then
     echo "    - set id -> @loader_path/$base"
     install_name_tool -id "@loader_path/$base" "$f"
   fi
 
-  # 2) For each dependency that is @rpath/<name> and exists locally, rewrite to @loader_path/<name>
-  #    (Skip system/Framework/other absolute deps.)
+  # Rewrite @rpath deps to @loader_path if they exist in the same DIR
   while IFS= read -r dep; do
     dep_name="$(basename "$dep")"
     if [[ "$dep" == @rpath/* && -e "$DIR/$dep_name" ]]; then
@@ -47,7 +46,7 @@ while IFS= read -r -d '' f; do
     fi
   done < <(otool -L "$f" | tail -n +2 | awk '{print $1}')
 
-  # 3) Ensure LC_RPATH contains @loader_path and @loader_path/../lib/codon
+  # Ensure LC_RPATH has @loader_path and @loader_path/../lib/codon
   for rp in "@loader_path" "@loader_path/../lib/codon"; do
     if ! has_rpath "$f" "$rp"; then
       echo "    - add rpath $rp"
@@ -55,7 +54,7 @@ while IFS= read -r -d '' f; do
     fi
   done
 
-  # 4) Ad-hoc sign to keep the loader happy after modifications
+  # Sign to avoid Gatekeeper complaints after modification
   if command -v codesign >/dev/null; then
     codesign --force --sign - "$f" >/dev/null 2>&1 || true
   fi
