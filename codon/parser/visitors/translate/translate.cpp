@@ -47,8 +47,8 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   cache->codegenCtx->bases = {main};
   cache->codegenCtx->series = {block};
 
-  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
   cache->populatePythonModule();
+  TranslateVisitor(cache->codegenCtx).translateStmts(stmts);
   return main;
 }
 
