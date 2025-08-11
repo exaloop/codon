@@ -541,3 +541,18 @@ install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)
+
+install(CODE [[
+  if(APPLE)
+    # Compute the real install root (supports DESTDIR)
+    set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+    message(STATUS "fix_loader_paths.sh on: ${_root}")
+    execute_process(
+      COMMAND /bin/bash "${CMAKE_SOURCE_DIR}/scripts/fix_loader_paths.sh" "${_root}"
+      RESULT_VARIABLE rc
+    )
+    if(NOT rc EQUAL 0)
+      message(FATAL_ERROR "fix_loader_paths.sh failed with code ${rc}")
+    endif()
+  endif()
+]])
