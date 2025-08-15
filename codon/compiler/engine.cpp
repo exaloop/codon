@@ -29,9 +29,6 @@ Engine::Engine() : jit(), debug(nullptr) {
         if (auto regOrErr = llvm::orc::createJITLoaderGDBRegistrar(es)) {
           L->addPlugin(std::make_unique<llvm::orc::DebugObjectManagerPlugin>(
               es, std::move(*regOrErr)));
-        } else {
-          llvm::logAllUnhandledErrors(regOrErr.takeError(), llvm::errs(),
-                                      "warning: could not create GDB registrar: ");
         }
         auto dbPlugin = std::make_unique<DebugPlugin>();
         this->debug = dbPlugin.get();
