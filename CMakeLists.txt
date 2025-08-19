@@ -112,28 +112,37 @@ add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
                          re2 hwy hwy_contrib fast_float codonfloat)
 
 if(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
-  if(APPLE)
-    set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran.5${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath.0${CMAKE_SHARED_LIBRARY_SUFFIX}")
-    set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s.1.1${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  if (WIN32)
+    target_link_libraries(codonrt PRIVATE libgfortran)
   else()
-    set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran${CMAKE_SHARED_LIBRARY_SUFFIX}.5")
-    set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath${CMAKE_SHARED_LIBRARY_SUFFIX}.0")
-    set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
+    if(APPLE)
+      set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran.5${CMAKE_SHARED_LIBRARY_SUFFIX}")
+      set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath.0${CMAKE_SHARED_LIBRARY_SUFFIX}")
+      set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s.1.1${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    # elseif(WIN32)
+    #   # C:\ProgramData\mingw64\mingw64\bin
+    #   set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran-5${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    #   set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath-0${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    #   set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s_seh-1${CMAKE_SHARED_LIBRARY_SUFFIX}")
+    else()
+      set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran${CMAKE_SHARED_LIBRARY_SUFFIX}.5")
+      set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath${CMAKE_SHARED_LIBRARY_SUFFIX}.0")
+      set(copied_libgcc      "${CMAKE_BINARY_DIR}/libgcc_s${CMAKE_SHARED_LIBRARY_SUFFIX}.1")
+    endif()
+
+    add_custom_command(
+      OUTPUT ${copied_libgfortran}
+      DEPENDS "${CMAKE_SOURCE_DIR}/scripts/get_system_libs.sh"
+      COMMAND ${CMAKE_SOURCE_DIR}/scripts/get_system_libs.sh "$ENV{CODON_SYSTEM_LIBRARIES}" ${CMAKE_BINARY_DIR}
+      COMMENT "Copying system libraries to build directory")
+
+    add_custom_target(copy_libraries ALL DEPENDS ${copied_libgfortran})
+    add_dependencies(codonrt copy_libraries)
+
+    add_library(libgfortran SHARED IMPORTED)
+    set_target_properties(libgfortran PROPERTIES IMPORTED_LOCATION ${copied_libgfortran})
+    target_link_libraries(codonrt PRIVATE libgfortran)
   endif()
-
-  add_custom_command(
-    OUTPUT ${copied_libgfortran}
-    DEPENDS "${CMAKE_SOURCE_DIR}/scripts/get_system_libs.sh"
-    COMMAND ${CMAKE_SOURCE_DIR}/scripts/get_system_libs.sh "$ENV{CODON_SYSTEM_LIBRARIES}" ${CMAKE_BINARY_DIR}
-    COMMENT "Copying system libraries to build directory")
-
-  add_custom_target(copy_libraries ALL DEPENDS ${copied_libgfortran})
-  add_dependencies(codonrt copy_libraries)
-
-  add_library(libgfortran SHARED IMPORTED)
-  set_target_properties(libgfortran PROPERTIES IMPORTED_LOCATION ${copied_libgfortran})
-  target_link_libraries(codonrt PRIVATE libgfortran)
 else()
   message(FATAL_ERROR "Set 'CODON_SYSTEM_LIBRARIES' to the directory containing system libraries.")
 endif()
@@ -143,7 +152,8 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${highway_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
-target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
+find_package(OpenMP REQUIRED)
+target_link_libraries(codonrt PRIVATE fmt OpenMP::OpenMP_CXX backtrace LLVMSupport)
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -466,31 +476,31 @@ add_custom_target(
 add_dependencies(headers codonrt codonc)
 
 # Prepare lib directory for plugin compilation
-add_custom_target(
-  libs ALL
-  COMMENT "Collecting libraries"
-  BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
-  VERBATIM
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy
-    "${CMAKE_BINARY_DIR}/libcodonc${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy
-    "${CMAKE_BINARY_DIR}/libcodonrt${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy
-    "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy ${copied_libgfortran} "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    /bin/sh -c "test -f '${copied_libquadmath}' && ${CMAKE_COMMAND} -E copy '${copied_libquadmath}' '${CMAKE_BINARY_DIR}/lib/codon' || true"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy ${copied_libgcc} "${CMAKE_BINARY_DIR}/lib/codon")
-add_dependencies(libs codonrt codonc)
+# add_custom_target(
+#   libs ALL
+#   COMMENT "Collecting libraries"
+#   BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
+#   VERBATIM
+#   COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
+#   COMMAND
+#     ${CMAKE_COMMAND} -E copy
+#     "${CMAKE_BINARY_DIR}/libcodonc${CMAKE_SHARED_LIBRARY_SUFFIX}"
+#     "${CMAKE_BINARY_DIR}/lib/codon"
+#   COMMAND
+#     ${CMAKE_COMMAND} -E copy
+#     "${CMAKE_BINARY_DIR}/libcodonrt${CMAKE_SHARED_LIBRARY_SUFFIX}"
+#     "${CMAKE_BINARY_DIR}/lib/codon"
+#   COMMAND
+#     ${CMAKE_COMMAND} -E copy
+#     "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
+#     "${CMAKE_BINARY_DIR}/lib/codon"
+#   COMMAND
+#     ${CMAKE_COMMAND} -E copy ${copied_libgfortran} "${CMAKE_BINARY_DIR}/lib/codon"
+#   COMMAND
+#     /bin/sh -c "test -f '${copied_libquadmath}' && ${CMAKE_COMMAND} -E copy '${copied_libquadmath}' '${CMAKE_BINARY_DIR}/lib/codon' || true"
+#   COMMAND
+#     ${CMAKE_COMMAND} -E copy ${copied_libgcc} "${CMAKE_BINARY_DIR}/lib/codon")
+# add_dependencies(libs codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
@@ -530,7 +540,7 @@ target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
-install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
+# install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
 install(FILES ${copied_libgfortran} DESTINATION lib/codon)
 # only install libquadmath if it exists at build time
 install(CODE "
