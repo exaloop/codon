@@ -37,6 +37,12 @@ if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
   set(APPLE_ARM ON)
 endif()
 
+if (WIN32 AND NOT CYGWIN)
+  # might have to check against msys as well?
+  # <sys/mman.h>
+  include_directories(${CMAKE_SOURCE_DIR}/windows/include)
+endif()
+
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 find_package(LLVM REQUIRED)
