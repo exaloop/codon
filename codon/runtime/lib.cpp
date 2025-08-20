@@ -23,7 +23,19 @@
 
 #define GC_THREADS
 #include "codon/runtime/lib.h"
+#ifdef WIN32
+// <dlfcn.h> seems to be missing in MinGW (13.2.0), and is likely missing in mvcc anyway
+#include <stdio.h>
+#include <time.h>
+inline struct tm *gmtime_r(const time_t *timep, struct tm *result) {
+  return gmtime_s(result, timep) == 0 ? result : nullptr;
+}
+inline struct tm *localtime_r(const time_t *timep, struct tm *result) {
+  return localtime_s(result, timep) == 0 ? result : nullptr;
+}
+#else
 #include <dlfcn.h>
+#endif
 #include <gc.h>
 
 #define FASTFLOAT_ALLOWS_LEADING_PLUS
