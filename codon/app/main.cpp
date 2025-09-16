@@ -144,6 +144,7 @@ int docMode(const std::vector<const char *> &args, const std::string &argv0) {
     collectPaths(args[1]);
   auto compiler = std::make_unique<codon::Compiler>(args[0]);
   bool failed = false;
+  std::sort(files.begin(), files.end());
   auto result = compiler->docgen(files);
   llvm::handleAllErrors(result.takeError(),
                         [&failed](const codon::error::ParserErrorInfo &e) {
