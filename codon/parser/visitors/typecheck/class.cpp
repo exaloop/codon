@@ -479,6 +479,64 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
   return asts;
 }
 
+Expr *TypecheckVisitor::inferMemberType(std::string member, FunctionStmt *f) {
+  if (f->items.empty())
+    return nullptr;
+  return inferMemberType(f->items[0].name, member, f->getSuite(), f);
+}
+Expr *TypecheckVisitor::inferMemberType(std::string self, std::string member, Stmt *stmt, FunctionStmt *f) {
+  Expr *rlt = nullptr;
+  if (auto suite = cast<SuiteStmt>(stmt)) {
+    for (auto *s : *suite)
+      if (auto typ = inferMemberType(self, member, s, f))
+        rlt = typ;
+  }
+  else if (auto whileLoop = cast<WhileStmt>(stmt)) {
+    if (auto typ = inferMemberType(self, member, whileLoop->getSuite(), f))
+      rlt = typ;
+    if (auto typ = inferMemberType(self, member, whileLoop->getElse(), f))
+      rlt = typ;
+  }
+  else if (auto forLoop = cast<ForStmt>(stmt)) {
+    if (auto typ = inferMemberType(self, member, forLoop->getSuite(), f))
+      rlt = typ;
+    if (auto typ = inferMemberType(self, member, forLoop->getElse(), f))
+      rlt = typ;
+  }
+  else if (auto ifStmt = cast<IfStmt>(stmt)) {
+    if (auto typ = inferMemberType(self, member, ifStmt->getIf(), f))
+      rlt = typ;
+    if (auto typ = inferMemberType(self, member, ifStmt->getElse(), f))
+      rlt = typ;
+  }
+  else if (auto matchStmt = cast<MatchStmt>(stmt)) {
+    for (auto &c : matchStmt->items)
+      if (auto typ = inferMemberType(self, member, c.getSuite(), f))
+        rlt = typ;
+  }
+  else if (auto tryStmt = cast<TryStmt>(stmt)) {
+    if (auto typ = inferMemberType(self, member, tryStmt->getSuite(), f))
+      rlt = typ;
+    if (auto typ = inferMemberType(self, member, tryStmt->getElse(), f))
+      rlt = typ;
+    if (auto typ = inferMemberType(self, member, tryStmt->getFinally(), f))
+      rlt = typ;
+  }
+  else if (auto assignStmt = cast<AssignStmt>(stmt)) {
+    if (auto lhs = cast<DotExpr>(assignStmt->getLhs())) {
+      if (auto idExpr = cast<IdExpr>(lhs->getExpr())) {
+        if (idExpr->getValue() == self && lhs->getMember() == member) {
+          AutoDeduceMembersTypecheckVisitor v(ctx, f->items);
+          auto rhs = clone(assignStmt->getRhs());
+          rhs->accept(v);
+          rlt = rhs->getTypeExpr();
+        }
+      }
+    }
+  }
+  return rlt;
+}
+
 /// Find the first __init__ with self parameter and use it to deduce class members.
 /// Each deduced member will be treated as generic.
 /// @example
@@ -493,13 +551,16 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 /// @return the transformed init and the pointer to the original function.
 bool TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &args) {
   std::set<std::string> members;
+  std::unordered_map<std::string, Expr *> member2type;
   for (const auto &sp : getClassMethods(stmt->suite))
     if (auto f = cast<FunctionStmt>(sp)) {
       if (f->name == "__init__")
         if (const auto b =
                 f->getAttribute<ir::StringListAttribute>(Attr::ClassDeduce)) {
-          for (const auto &m : b->values)
+          for (const auto &m : b->values) {
             members.insert(m);
+            member2type[m] = inferMemberType(m, f);
+          }
         }
     }
   if (!members.empty()) {
@@ -507,10 +568,15 @@ bool TypecheckVisitor::autoDeduceMembers(ClassStmt *stmt, std::vector<Param> &ar
     if (auto aa = stmt->getAttribute<ir::StringListAttribute>(Attr::ClassMagic))
       std::erase(aa->values, "init");
     for (auto m : members) {
-      auto genericName = fmt::format("T_{}", m);
-      args.emplace_back(genericName, N<IdExpr>(TYPE_TYPE), N<IdExpr>("NoneType"),
-                        Param::Generic);
-      args.emplace_back(m, N<IdExpr>(genericName));
+      if (auto typ = member2type[m]) {
+        args.emplace_back(m, typ);
+      }
+      else {
+        auto genericName = fmt::format("T_{}", m);
+        args.emplace_back(genericName, N<IdExpr>(TYPE_TYPE), N<IdExpr>("NoneType"),
+                          Param::Generic);
+        args.emplace_back(m, N<IdExpr>(genericName));
+      }
     }
     return true;
   }
