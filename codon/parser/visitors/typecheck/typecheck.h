@@ -16,6 +16,8 @@
 
 namespace codon::ast {
 
+class AutoDeduceMembersTypecheckVisitor;
+
 /**
  * Visitor that infers expression types and performs type-guided transformations.
  *
@@ -201,6 +203,8 @@ private:
                                                const std::string &, const Expr *,
                                                types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
+  Expr *inferMemberType(std::string, FunctionStmt *);
+  Expr *inferMemberType(std::string, std::string, Stmt *, AutoDeduceMembersTypecheckVisitor &);
   static std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(const ClassStmt *, std::vector<Stmt *> &,
                               std::vector<Stmt *> &, std::vector<Stmt *> &);
@@ -482,6 +486,37 @@ public:
   ir::Func *realizeIRFunc(types::FuncType *fn,
                           const std::vector<types::TypePtr> &generics = {});
   // types::Type *getType(const std::string &);
+};
+
+// A simpler typechecker to infer the member type in advance 
+// based on the initializing right-hand side values.
+// TODO: support method calls.
+class AutoDeduceMembersTypecheckVisitor : public ASTVisitor {
+public:
+  AutoDeduceMembersTypecheckVisitor(std::shared_ptr<TypeContext> ctx, std::vector<Param> &args) 
+    : ctx(ctx), args(args) {}
+  void addVar(std::string name, Expr *typ) { args.emplace_back(name, typ); }
+private:
+  template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {
+    Tn *t = ctx->cache->N<Tn>(std::forward<Ts>(args)...);
+    return t;
+  }
+  std::shared_ptr<TypeContext> ctx;
+  std::vector<Param> args;
+  void visit(BoolExpr *) override;
+  void visit(IntExpr *) override;
+  void visit(FloatExpr *) override;
+  void visit(StringExpr *) override;
+  void visit(IdExpr *) override;
+  void visit(TupleExpr *) override;
+  void visit(ListExpr *) override;
+  void visit(SetExpr *) override;
+  void visit(DictExpr *) override;
+  void visit(UnaryExpr *) override;
+  void visit(BinaryExpr *) override;
+  void visit(RangeExpr *) override;
+  void visit(GeneratorExpr *) override;
+  Expr *mergeTypeExpr(std::string, Expr *, Expr *);
 };
 
 } // namespace codon::ast

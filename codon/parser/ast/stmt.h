@@ -21,6 +21,7 @@ namespace codon::ast {
   void accept(VISITOR &visitor) override;                                              \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
+  friend class AutoDeduceMembersTypecheckVisitor;                                      \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
   friend struct ReplacingCallbackASTVisitor;                                           \
   inline decltype(auto) match_members() const { return std::tie(__VA_ARGS__); }        \

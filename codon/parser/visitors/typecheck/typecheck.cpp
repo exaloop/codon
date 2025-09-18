@@ -1924,4 +1924,140 @@ ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
   return {"", ""};
 }
 
+void AutoDeduceMembersTypecheckVisitor::visit(BoolExpr *exp) {
+  exp->setTypeExpr(N<IdExpr>("bool"));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(IntExpr *exp) {
+  exp->setTypeExpr(N<IdExpr>("int"));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(FloatExpr *exp) {
+  exp->setTypeExpr(N<IdExpr>("float"));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(StringExpr *exp) {
+  exp->setTypeExpr(N<IdExpr>("str"));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(IdExpr *exp) {
+  auto val = exp->getValue();
+  auto it = std::find_if(args.begin(), args.end(),
+                         [val](Param &arg) { return arg.name == val; });
+  if (it != args.end()) {
+    exp->setTypeExpr(it->getType());
+  }
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(TupleExpr *exp) {
+  std::vector<Expr *> items;
+  for (auto e : exp->items) {
+    e->accept(*this);
+    items.push_back(e->getTypeExpr());
+  }
+  auto tupleExpr = N<TupleExpr>(items);
+  auto idExpr = N<IdExpr>("Tuple");
+  exp->setTypeExpr(N<IndexExpr>(idExpr, tupleExpr));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(ListExpr *exp) {
+  if (exp->items.empty())
+    return;
+  exp->items[0]->accept(*this);
+  auto listExpr = N<IdExpr>("List");
+  exp->setTypeExpr(N<IndexExpr>(listExpr, exp->items[0]->getTypeExpr()));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(SetExpr *exp) {
+  if (exp->items.empty())
+    return;
+  exp->items[0]->accept(*this);
+  auto setExpr = N<IdExpr>("set");
+  exp->setTypeExpr(N<IndexExpr>(setExpr, exp->items[0]->getTypeExpr()));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(DictExpr *exp) {
+  std::vector<Expr *> items;
+  for (auto e : exp->items) {
+    e->accept(*this);
+    items.push_back(e->getTypeExpr());
+  }
+  auto tupleExpr = N<TupleExpr>(items);
+  auto dictExpr = N<IdExpr>("Dict");
+  exp->setTypeExpr(N<IndexExpr>(dictExpr, tupleExpr));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(UnaryExpr *exp) {
+  if (exp->op == "not") {
+    exp->setTypeExpr(N<IdExpr>("bool"));
+  } else if (exp->op == "+" || exp->op == "-" || exp->op == "~") {
+    exp->expr->accept(*this);
+    exp->setTypeExpr(exp->expr->getTypeExpr());
+  } else {
+    exp->setTypeExpr(N<IdExpr>(exp->op));
+  }
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(BinaryExpr *exp) {
+  exp->lexpr->accept(*this);
+  exp->rexpr->accept(*this);
+  exp->setTypeExpr(
+      mergeTypeExpr(exp->op, exp->lexpr->getTypeExpr(), exp->rexpr->getTypeExpr()));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(RangeExpr *exp) {
+  exp->setTypeExpr(N<IdExpr>("range"));
+}
+
+void AutoDeduceMembersTypecheckVisitor::visit(GeneratorExpr *exp) {
+  if (exp->kind == GeneratorExpr::ListGenerator ||
+      exp->kind == GeneratorExpr::SetGenerator) {
+    if (auto forExpr = cast<ForStmt>(exp->loops)) {
+      if (auto iter = cast<CallExpr>(forExpr->getIter())) {
+        if (auto idExpr = cast<IdExpr>(iter->expr)) {
+          if (idExpr->value == "range") {
+            if (forExpr->getSuite()->items.size() == 1) {
+              if (auto expStm = cast<ExprStmt>(forExpr->getSuite()->items[0])) {
+                if (auto varExpr = cast<IdExpr>(forExpr->getVar())) {
+                  addVar(varExpr->value, N<IdExpr>("int"));
+                  expStm->expr->accept(*this);
+                  auto typ = exp->kind == GeneratorExpr::ListGenerator
+                                 ? N<IdExpr>("List")
+                                 : N<IdExpr>("set");
+                  exp->setTypeExpr(N<IndexExpr>(typ, expStm->expr->getTypeExpr()));
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+Expr *AutoDeduceMembersTypecheckVisitor::mergeTypeExpr(std::string op, Expr *l,
+                                                       Expr *r) {
+  if (l == nullptr || r == nullptr) {
+    return nullptr;
+  } else if (op == "==" || op == "!=" || op == ">" || op == ">=" || op == "<" ||
+             op == "<=" || op == "is" || op == "is not" || op == "in" ||
+             op == "not in" || op == "and" || op == "or") {
+    return N<IdExpr>("bool");
+  } else if (op == "&" || op == "|" || op == "^" || op == "<<" || op == ">>" ||
+             op == "//") {
+    return N<IdExpr>("int");
+  } else if (op == "/") {
+    return N<IdExpr>("float");
+  } else if (op == "+" || op == "-" || op == "*" || op == "%" || op == "**") {
+    if (l->toString() == r->toString()) {
+      return l;
+    } else if (l->toString() == "'float" || r->toString() == "'float") {
+      return N<IdExpr>("float");
+    } else {
+      return N<IdExpr>("int");
+    }
+  }
+  return l;
+}
+
 } // namespace codon::ast
