@@ -1,12 +1,8 @@
 /* Announcement bar */
 .md-banner {
-  background: repeating-linear-gradient(
-    45deg,
-    #5A54AB,
-    #5A54AB 10px,
-    #5A54CB 10px,
-    #5A54CB 20px
-  );
+  background-color: #5865F2;
+  background-image: radial-gradient(#777D92 1px, transparent 0);
+  background-size: 10px 10px;
 }
 
 .md-banner__inner {
@@ -43,6 +39,13 @@
 .md-banner__inner a:hover:after {
   width: 100%;
   left: 0;
+}
+
+.discord-icon svg {
+  height: 0.9em;
+  vertical-align: middle;
+  display: inline;
+  fill: currentColor;
 }
 
 
