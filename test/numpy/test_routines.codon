@@ -2479,3 +2479,12 @@ def test_dragon4_interface():
         assert equal(fpos(f('1.001', tp), precision=1, trim='-'), "1")
 
 test_dragon4_interface()
+
+@test
+def test_fusion_coercion():
+    # more extensive tests in test_fusion.codon
+    a = np.array([1.0, 2.0])
+    b = np.multiply(a, np.float32(2)) + np.float32(0.5)
+    assert np.array_equal(b, [2.5, 4.5])
+
+test_fusion_coercion()

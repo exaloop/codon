@@ -63,6 +63,14 @@ types::Type *coerceScalarArray(NumPyType &scalar, NumPyType &array,
     return scalar.getIRBaseType(T);
 }
 
+bool isPythonScalar(NumPyType &t) {
+  if (t.isArray())
+    return false;
+  auto dt = t.dtype;
+  return (dt == NumPyType::NP_TYPE_BOOL || dt == NumPyType::NP_TYPE_I64 ||
+          dt == NumPyType::NP_TYPE_F64 || dt == NumPyType::NP_TYPE_C128);
+}
+
 template <typename E>
 types::Type *decideTypes(E *expr, NumPyType &lhs, NumPyType &rhs,
                          NumPyPrimitiveTypes &T) {
@@ -70,10 +78,10 @@ types::Type *decideTypes(E *expr, NumPyType &lhs, NumPyType &rhs,
   if (expr->op == E::NP_OP_COPYSIGN)
     return expr->type.getIRBaseType(T);
 
-  if (lhs.isArray() && !rhs.isArray())
+  if (lhs.isArray() && isPythonScalar(rhs))
     return coerceScalarArray(rhs, lhs, T);
 
-  if (!lhs.isArray() && rhs.isArray())
+  if (isPythonScalar(lhs) && rhs.isArray())
     return coerceScalarArray(lhs, rhs, T);
 
   auto *t1 = lhs.getIRBaseType(T);
