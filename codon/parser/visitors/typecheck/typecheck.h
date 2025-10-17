@@ -190,7 +190,7 @@ private: // Node typechecking rules
   Stmt *transformPythonDefinition(const std::string &, const std::vector<Param> &,
                                   Expr *, Stmt *);
   Stmt *transformLLVMDefinition(Stmt *);
-  std::pair<bool, std::string> getDecorator(Expr *);
+  std::tuple<bool, std::string, std::string> getDecorator(Expr *);
   std::shared_ptr<types::ClassType> getFuncTypeBase(size_t);
 
 private:

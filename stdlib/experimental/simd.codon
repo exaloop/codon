@@ -24,10 +24,22 @@ class Vec[T, N: Literal[int]]:
         ret <4 x i32> %1
 
     @llvm
+    def _mm64_set1_epi8(val: u8) -> Vec[u8, 8]:
+        %0 = insertelement <8 x i8> undef, i8 %val, i32 0
+        %1 = shufflevector <8 x i8> %0, <8 x i8> undef, <8 x i32> zeroinitializer
+        ret <8 x i8> %1
+
+    @llvm
     def _mm256_set1_epi8(val: u8) -> Vec[u8, 32]:
         %0 = insertelement <32 x i8> undef, i8 %val, i32 0
         %1 = shufflevector <32 x i8> %0, <32 x i8> undef, <32 x i32> zeroinitializer
         ret <32 x i8> %1
+
+    @llvm
+    def _mm512_set1_epi8(val: u8) -> Vec[u8, 64]:
+        %0 = insertelement <64 x i8> undef, i8 %val, i32 0
+        %1 = shufflevector <64 x i8> %0, <64 x i8> undef, <64 x i32> zeroinitializer
+        ret <64 x i8> %1
 
     @llvm
     def _mm256_set1_epi32(val: u32) -> Vec[u32, 8]:
@@ -60,10 +72,22 @@ class Vec[T, N: Literal[int]]:
         ret <16 x i8> %1
 
     @llvm
+    def _mm_loadu_si64(data) -> Vec[u8, 8]:
+        %0 = bitcast i8* %data to <8 x i8>*
+        %1 = load <8 x i8>, <8 x i8>* %0, align 1
+        ret <8 x i8> %1
+
+    @llvm
     def _mm256_loadu_si256(data) -> Vec[u8, 32]:
         %0 = bitcast i8* %data to <32 x i8>*
         %1 = load <32 x i8>, <32 x i8>* %0, align 1
         ret <32 x i8> %1
+
+    @llvm
+    def _mm512_loadu_si512(data) -> Vec[u8, 64]:
+        %0 = bitcast i8* %data to <64 x i8>*
+        %1 = load <64 x i8>, <64 x i8>* %0, align 1
+        ret <64 x i8> %1
 
     @llvm
     def _mm256_load_epi32(data) -> Vec[u32, 8]:
@@ -108,6 +132,42 @@ class Vec[T, N: Literal[int]]:
         ret <16 x float> %1
 
     @llvm
+    def _mm512_set1_epi32(val: i32) -> Vec[i32, 16]:
+        %0 = insertelement <16 x i32> undef, i32 %val, i32 0
+        %1 = shufflevector <16 x i32> %0, <16 x i32> undef, <16 x i32> zeroinitializer
+        ret <16 x i32> %1
+
+    @llvm
+    def _mm256_set1_epi16(val: i16) -> Vec[i16, 16]:
+        %0 = insertelement <16 x i16> undef, i16 %val, i16 0
+        %1 = shufflevector <16 x i16> %0, <16 x i16> undef, <16 x i32> zeroinitializer
+        ret <16 x i16> %1
+
+    @llvm
+    def _mm128_set1_epi16(val: i16) -> Vec[i16, 8]:
+        %0 = insertelement <8 x i16> undef, i16 %val, i16 0
+        %1 = shufflevector <8 x i16> %0, <8 x i16> undef, <8 x i32> zeroinitializer
+        ret <8 x i16> %1
+
+    @llvm
+    def _mm1024_set1_epi16(val: i16) -> Vec[i16, 64]:
+        %0 = insertelement <64 x i16> undef, i16 %val, i16 0
+        %1 = shufflevector <64 x i16> %0, <64 x i16> undef, <64 x i32> zeroinitializer
+        ret <64 x i16> %1
+
+    @llvm
+    def _mm512_set1_epi16(val: i16) -> Vec[i16, 32]:
+        %0 = insertelement <32 x i16> undef, i16 %val, i16 0
+        %1 = shufflevector <32 x i16> %0, <32 x i16> undef, <32 x i32> zeroinitializer
+        ret <32 x i16> %1
+
+    @llvm
+    def _mm128_set1_epi32(val: i32) -> Vec[i32, 4]:
+        %0 = insertelement <4 x i32> undef, i32 %val, i32 0
+        %1 = shufflevector <4 x i32> %0, <4 x i32> undef, <4 x i32> zeroinitializer
+        ret <4 x i32> %1
+
+    @llvm
     def _mm256_loadu_ps(data: Ptr[f32]) -> Vec[f32, 8]:
         %0 = bitcast float* %data to <8 x float>*
         %1 = load <8 x float>, <8 x float>* %0
@@ -130,6 +190,48 @@ class Vec[T, N: Literal[int]]:
         %0 = bitcast float* %data to <16 x float>*
         %1 = load <16 x float>, <16 x float>* %0
         ret <16 x float> %1
+
+    @llvm
+    def _mm512_loadu_epi32(data: Ptr[i32]) -> Vec[i32, 16]:
+        %0 = bitcast i32* %data to <16 x i32>*
+        %1 = load <16 x i32>, <16 x i32>* %0
+        ret <16 x i32> %1
+
+    @llvm
+    def _mm256_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 16]:
+        %0 = bitcast i16* %data to <16 x i16>*
+        %1 = load <16 x i16>, <16 x i16>* %0
+        ret <16 x i16> %1
+
+    @llvm
+    def _mm128_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 8]:
+        %0 = bitcast i16* %data to <8 x i16>*
+        %1 = load <8 x i16>, <8 x i16>* %0
+        ret <8 x i16> %1
+
+    @llvm
+    def _mm1024_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 64]:
+        %0 = bitcast i16* %data to <64 x i16>*
+        %1 = load <64 x i16>, <64 x i16>* %0
+        ret <64 x i16> %1
+
+    @llvm
+    def _mm512_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 32]:
+        %0 = bitcast i16* %data to <32 x i16>*
+        %1 = load <32 x i16>, <32 x i16>* %0
+        ret <32 x i16> %1
+
+    @llvm
+    def _mm256_loadu_epi32(data: Ptr[i32]) -> Vec[i32, 8]:
+        %0 = bitcast i32* %data to <8 x i32>*
+        %1 = load <8 x i32>, <8 x i32>* %0
+        ret <8 x i32> %1
+
+    @llvm
+    def _mm128_loadu_epi32(data: Ptr[i32]) -> Vec[i32, 4]:
+        %0 = bitcast i32* %data to <4 x i32>*
+        %1 = load <4 x i32>, <4 x i32>* %0
+        ret <4 x i32> %1
 
     @llvm
     def _mm256_cvtepi8_epi32(vec: Vec[u8, 16]) -> Vec[u32, 8]:
@@ -159,6 +261,15 @@ class Vec[T, N: Literal[int]]:
         ret <16 x float> %0
 
     def __new__(x, T: type, N: Literal[int]) -> Vec[T, N]:
+        if isinstance(T, u8) and N == 8:
+            if isinstance(x, u8) or isinstance(x, byte): # TODO: u8<->byte
+                return Vec._mm64_set1_epi8(x)
+            if isinstance(x, Ptr[u8]) or isinstance(x, Ptr[byte]):
+                return Vec._mm_loadu_si64(x)
+            if isinstance(x, str):
+                return Vec._mm_loadu_si64(x.ptr)
+            if isinstance(x, List[u8]):
+                return Vec._mm_loadu_si64(x.arr.ptr)
         if isinstance(T, u8) and N == 16:
             if isinstance(x, u8) or isinstance(x, byte): # TODO: u8<->byte
                 return Vec._mm_set1_epi8(x)
@@ -166,6 +277,8 @@ class Vec[T, N: Literal[int]]:
                 return Vec._mm_loadu_si128(x)
             if isinstance(x, str):
                 return Vec._mm_loadu_si128(x.ptr)
+            if isinstance(x, List[u8]):
+                return Vec._mm_loadu_si128(x.arr.ptr)
         if isinstance(T, u8) and N == 32:
             if isinstance(x, u8) or isinstance(x, byte): # TODO: u8<->byte
                 return Vec._mm256_set1_epi8(x)
@@ -173,6 +286,17 @@ class Vec[T, N: Literal[int]]:
                 return Vec._mm256_loadu_si256(x)
             if isinstance(x, str):
                 return Vec._mm256_loadu_si256(x.ptr)
+            if isinstance(x, List[u8]):
+                return Vec._mm256_loadu_si256(x.arr.ptr)
+            if isinstance(x, List[str]):
+                return Vec._mm256_loadu_si256(x.arr.ptr)
+        if isinstance(T, u8) and N == 64:
+            if isinstance(x, u8) or isinstance(x, byte): # TODO: u8<->byte
+                return Vec._mm512_set1_epi8(x)
+            if isinstance(x, Ptr[u8]) or isinstance(x, Ptr[byte]):
+                return Vec._mm512_loadu_si512(x)
+            if isinstance(x, str):
+                return Vec._mm512_loadu_si512(x.ptr)
         if isinstance(T, u32) and N == 4:
             if isinstance(x, int):
                 assert x >= 0, "SIMD: No support for negative int vectors added yet."
@@ -239,6 +363,55 @@ class Vec[T, N: Literal[int]]:
                 return Vec._mm512_loadu_ps(x.arr.ptr)
             if isinstance(x, Vec[u8, 32]):
                 return Vec._mm512_castsi512_ps(Vec._mm512_cvtepi8_epi64(x))
+        if isinstance(T, i32) and N == 16:
+            if isinstance(x, i32):
+                return Vec._mm512_set1_epi32(x)
+            if isinstance(x, Ptr[i32]):
+                return Vec._mm512_loadu_epi32(x)
+            if isinstance(x, List[i32]):
+                return Vec._mm512_loadu_epi32(x.arr.ptr)
+        if isinstance(T, i16) and N == 64:
+            if isinstance(x, i16):
+                return Vec._mm1024_set1_epi16(x)
+            if isinstance(x, Ptr[i16]):
+                return Vec._mm1024_loadu_epi16(x)
+            if isinstance(x, List[i16]):
+                return Vec._mm1024_loadu_epi16(x.arr.ptr)
+        if isinstance(T, i16) and N == 32:
+            if isinstance(x, i16):
+                return Vec._mm512_set1_epi16(x)
+            if isinstance(x, Ptr[i16]):
+                return Vec._mm512_loadu_epi16(x)
+            if isinstance(x, List[i16]):
+                return Vec._mm512_loadu_epi16(x.arr.ptr)
+        if isinstance(T, i16) and N == 16:
+            if isinstance(x, i16):
+                return Vec._mm256_set1_epi16(x)
+            if isinstance(x, Ptr[i16]):
+                return Vec._mm256_loadu_epi16(x)
+            if isinstance(x, List[i16]):
+                return Vec._mm256_loadu_epi16(x.arr.ptr)
+        if isinstance(T, i16) and N == 8:
+            if isinstance(x, i16):
+                return Vec._mm128_set1_epi16(x)
+            if isinstance(x, Ptr[i16]):
+                return Vec._mm128_loadu_epi16(x)
+            if isinstance(x, List[i16]):
+                return Vec._mm128_loadu_epi16(x.arr.ptr)
+        if isinstance(T, i32) and N == 8:
+            if isinstance(x, i32):
+                return Vec._mm256_set1_epi32(u32(x))
+            if isinstance(x, Ptr[i32]):
+                return Vec._mm256_loadu_epi32(x)
+            if isinstance(x, List[i32]):
+                return Vec._mm256_loadu_epi32(x.arr.ptr)
+        if isinstance(T, i32) and N == 4:
+            if isinstance(x, i32):
+                return Vec._mm128_set1_epi32(x)
+            if isinstance(x, Ptr[i32]):
+                return Vec._mm128_loadu_epi32(x)
+            if isinstance(x, List[i32]):
+                return Vec._mm128_loadu_epi32(x.arr.ptr)
         if isinstance(T, f64) and N == 4:
             if isinstance(x, f64):
                 return Vec._mm256_set1_pd(x)
@@ -265,18 +438,39 @@ class Vec[T, N: Literal[int]]:
         return Vec(x, T, N)
 
     @llvm
+    @pure
+    @inline
+    def __eq__(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = icmp eq <{=N} x {=T}> %self, %other
+        ret <{=N} x i1> %0
+
+    @pure
+    @inline
+    def __eq__(self: Vec[T, N], other: int) -> Vec[u1, N]:
+        return self == Vec[T, N](T(other))
+
+    @llvm
     def _mm_cmpeq_epi8(x: Vec[u8, 16], y: Vec[u8, 16]) -> Vec[u8, 16]:
         %0 = icmp eq <16 x i8> %x, %y
-        %1 = sext <16 x i1> %0 to <16 x i8>
+        %1 = zext <16 x i1> %0 to <16 x i8>
         ret <16 x i8> %1
 
     def __eq__(self: Vec[u8, 16], other: Vec[u8, 16]) -> Vec[u8, 16]:
         return Vec._mm_cmpeq_epi8(self, other)
 
     @llvm
+    def _mm512_cmpeq_epi8(x: Vec[u8, 64], y: Vec[u8, 64]) -> Vec[u8, 64]:
+        %0 = icmp eq <64 x i8> %x, %y
+        %1 = sext <64 x i1> %0 to <64 x i8>
+        ret <64 x i8> %1
+
+    def __eq__(self: Vec[u8, 64], other: Vec[u8, 64]) -> Vec[u8, 64]:
+        return Vec._mm512_cmpeq_epi8(self, other)
+
+    @llvm
     def _mm256_cmpeq_epi8(x: Vec[u8, 32], y: Vec[u8, 32]) -> Vec[u8, 32]:
         %0 = icmp eq <32 x i8> %x, %y
-        %1 = sext <32 x i1> %0 to <32 x i8>
+        %1 = zext <32 x i1> %0 to <32 x i8>
         ret <32 x i8> %1
 
     def __eq__(self: Vec[u8, 32], other: Vec[u8, 32]) -> Vec[u8, 32]:
@@ -321,6 +515,14 @@ class Vec[T, N: Literal[int]]:
         return Vec._mm_and_si128(self, other)
 
     @llvm
+    def _mm_and_si512(x: Vec[u8, 64], y: Vec[u8, 64]) -> Vec[u8, 64]:
+        %0 = and <64 x i8> %x, %y
+        ret <64 x i8> %0
+
+    def __and__(self: Vec[u8, 64], other: Vec[u8, 64]) -> Vec[u8, 64]:
+        return Vec._mm_and_si512(self, other)
+
+    @llvm
     def _mm_and_si256(x: Vec[u8, 32], y: Vec[u8, 32]) -> Vec[u8, 32]:
         %0 = and <32 x i8> %x, %y
         ret <32 x i8> %0
@@ -357,6 +559,13 @@ class Vec[T, N: Literal[int]]:
 
     def __and__(self: Vec[f32, 16], other: Vec[f32, 16]) -> Vec[f32, 16]:
         return Vec._mm512_and_ps(self, other)
+
+    @llvm
+    @pure
+    @inline
+    def __or__(self: Vec[u1, N], other: Vec[u1, N]) -> Vec[u1, N]:
+        %0 = or <{=N} x i1> %self, %other
+        ret <{=N} x i1> %0
 
     @llvm
     def _mm_or_si128(x: Vec[u8, 16], y: Vec[u8, 16]) -> Vec[u8, 16]:
@@ -406,6 +615,140 @@ class Vec[T, N: Literal[int]]:
         %0 = fadd <8 x float> %x, %y
         ret <8 x float> %0
 
+    def __add__(self: Vec[f32, 8], other: Vec[f32, 8]) -> Vec[f32, 8]:
+        return Vec._mm256_add_ps(self, other)
+
+    @llvm
+    def _mm512_add_epi32(x: Vec[i32, 16], y: Vec[i32, 16]) -> Vec[i32, 16]:
+        %0 = add <16 x i32> %x, %y
+        ret <16 x i32> %0
+
+    def __add__(self: Vec[i32, 16], other: Vec[i32, 16]) -> Vec[i32, 16]:
+        return Vec._mm512_add_epi32(self, other)
+
+    @llvm
+    def _mm256_add_epi16(x: Vec[i16, 16], y: Vec[i16, 16]) -> Vec[i16, 16]:
+        %0 = add <16 x i16> %x, %y
+        ret <16 x i16> %0
+
+    def __add__(self: Vec[i16, 16], other: Vec[i16, 16]) -> Vec[i16, 16]:
+        return Vec._mm256_add_epi16(self, other)
+
+    @llvm
+    def _mm128_add_epi16(x: Vec[i16, 8], y: Vec[i16, 8]) -> Vec[i16, 8]:
+        %0 = add <8 x i16> %x, %y
+        ret <8 x i16> %0
+
+    def __add__(self: Vec[i16, 8], other: Vec[i16, 8]) -> Vec[i16, 8]:
+        return Vec._mm128_add_epi16(self, other)
+
+    @llvm
+    def _mm1024_add_epi16(x: Vec[i16, 64], y: Vec[i16, 64]) -> Vec[i16, 64]:
+        %0 = add <64 x i16> %x, %y
+        ret <64 x i16> %0
+
+    def __add__(self: Vec[i16, 64], other: Vec[i16, 64]) -> Vec[i16, 64]:
+        return Vec._mm1024_add_epi16(self, other)
+
+    @llvm
+    def _mm512_add_epi16(x: Vec[i16, 32], y: Vec[i16, 32]) -> Vec[i16, 32]:
+        %0 = add <32 x i16> %x, %y
+        ret <32 x i16> %0
+
+    def __add__(self: Vec[i16, 32], other: Vec[i16, 32]) -> Vec[i16, 32]:
+        return Vec._mm512_add_epi16(self, other)
+
+    def __add__(self: Vec[i16, 32], other: List[Vec[i16, 32]]) -> List[Vec[i16, 32]]:
+        for i in range(len(other)):
+            other[i] = Vec._mm512_add_epi16(self, other[i])
+        return other
+
+    @llvm
+    def _mm512_add1_epi32(x: Vec[i32, 16], y: i32) -> Vec[i32, 16]:
+        %0 = insertelement <16 x i32> undef, i32 %y, i32 0
+        %1 = shufflevector <16 x i32> %0, <16 x i32> undef, <16 x i32> zeroinitializer
+        %2 = add <16 x i32> %x, %1
+        ret <16 x i32> %2
+
+    def __add__(self: Vec[i32, 16], other: i32) -> Vec[i32, 16]:
+        return Vec._mm512_add1_epi32(self, other)
+
+    @llvm
+    def _mm256_add1_epi16(x: Vec[i16, 16], y: i16) -> Vec[i16, 16]:
+        %0 = insertelement <16 x i16> undef, i16 %y, i16 0
+        %1 = shufflevector <16 x i16> %0, <16 x i16> undef, <16 x i32> zeroinitializer
+        %2 = add <16 x i16> %x, %1
+        ret <16 x i16> %2
+
+    def __add__(self: Vec[i16, 16], other: i16) -> Vec[i16, 16]:
+        return Vec._mm256_add1_epi16(self, other)
+
+    @llvm
+    def _mm512_add1_epi16(x: Vec[i16, 32], y: i16) -> Vec[i16, 32]:
+        %0 = insertelement <32 x i16> undef, i16 %y, i16 0
+        %1 = shufflevector <32 x i16> %0, <32 x i16> undef, <32 x i32> zeroinitializer
+        %2 = add <32 x i16> %x, %1
+        ret <32 x i16> %2
+
+    def __add__(self: Vec[i16, 32], other: i16) -> Vec[i16, 32]:
+        return Vec._mm512_add1_epi16(self, other)
+
+    @llvm
+    def _mm128_add_epi32(x: Vec[i32, 4], y: Vec[i32, 4]) -> Vec[i32, 4]:
+        %0 = add <4 x i32> %x, %y
+        ret <4 x i32> %0
+
+    def __add__(self: Vec[i32, 4], other: Vec[i32, 4]) -> Vec[i32, 4]:
+        return Vec._mm128_add_epi32(self, other)
+
+    @llvm
+    def _mm512_sub_epi32(x: Vec[i32, 16], y: Vec[i32, 16]) -> Vec[i32, 16]:
+        %0 = sub <16 x i32> %x, %y
+        ret <16 x i32> %0
+
+    def __sub__(self: Vec[i32, 16], other: Vec[i32, 16]) -> Vec[i32, 16]:
+        return Vec._mm512_sub_epi32(self, other)
+
+    @llvm
+    def _mm256_sub_epi16(x: Vec[i16, 16], y: Vec[i16, 16]) -> Vec[i16, 16]:
+        %0 = sub <16 x i16> %x, %y
+        ret <16 x i16> %0
+
+    def __sub__(self: Vec[i16, 16], other: Vec[i16, 16]) -> Vec[i16, 16]:
+        return Vec._mm256_sub_epi16(self, other)
+
+    @llvm
+    def _mm1024_sub_epi16(x: Vec[i16, 64], y: Vec[i16, 64]) -> Vec[i16, 64]:
+        %0 = sub <64 x i16> %x, %y
+        ret <64 x i16> %0
+
+    def __sub__(self: Vec[i16, 64], other: Vec[i16, 64]) -> Vec[i16, 64]:
+        return Vec._mm1024_sub_epi16(self, other)
+
+    @llvm
+    def _mm512_sub_epi16(x: Vec[i16, 32], y: Vec[i16, 32]) -> Vec[i16, 32]:
+        %0 = sub <32 x i16> %x, %y
+        ret <32 x i16> %0
+
+    def __sub__(self: Vec[i16, 32], other: Vec[i16, 32]) -> Vec[i16, 32]:
+        return Vec._mm512_sub_epi16(self, other)
+
+    @llvm
+    def _mm128_sub_epi32(x: Vec[i32, 4], y: Vec[i32, 4]) -> Vec[i32, 4]:
+        %0 = sub <4 x i32> %x, %y
+        ret <4 x i32> %0
+
+    def __sub__(self: Vec[i32, 4], other: Vec[i32, 4]) -> Vec[i32, 4]:
+        return Vec._mm128_sub_epi32(self, other)
+
+    @llvm
+    def _mm256_sub_ps(x: Vec[f32, 8], y: Vec[f32, 8]) -> Vec[f32, 8]:
+        %0 = fsub <8 x float> %x, %y
+        ret <8 x float> %0
+
+    def __sub__(self: Vec[f32, 8], other: Vec[f32, 8]) -> Vec[f32, 8]:
+        return Vec._mm256_sub_ps(self, other)
+
     def __rshift__(self: Vec[u8, 16], shift: Literal[int]) -> Vec[u8, 16]:
         if shift == 0:
             return self
@@ -413,6 +756,98 @@ class Vec[T, N: Literal[int]]:
             return Vec._mm_bsrli_si128_8(self)
         else:
             compile_error("invalid bitshift")
+
+    @llvm
+    def _mm512_cmpgt_epi32_mask(x: Vec[i32, 16], y: Vec[i32, 16]) -> Vec[i32, 16]:
+        %0 = icmp sgt <16 x i32> %x, %y
+        %1 = sext <16 x i1> %0 to <16 x i32>
+        ret <16 x i32> %1
+
+    def comparegt(self: Vec[i32, 16], other: Vec[i32, 16]) -> Vec[i32, 16]:
+        return Vec._mm512_cmpgt_epi32_mask(self, other)
+
+
+    @llvm
+    def _mm512_mul_epi32(x: Vec[i32, 16], y: Vec[i32, 16]) -> Vec[i32, 16]:
+        %0 = mul <16 x i32> %x, %y
+        ret <16 x i32> %0
+
+    def __mul__(self: Vec[i32, 16], other: Vec[i32, 16]) -> Vec[i32, 16]:
+        return Vec._mm512_mul_epi32(self, other)
+
+    @llvm
+    def _mm256_mul_epi16(x: Vec[i16, 16], y: Vec[i16, 16]) -> Vec[i16, 16]:
+        %0 = mul <16 x i16> %x, %y
+        ret <16 x i16> %0
+
+    def __mul__(self: Vec[i16, 16], other: Vec[i16, 16]) -> Vec[i16, 16]:
+        return Vec._mm256_mul_epi16(self, other)
+
+    @llvm
+    def _mm128_mul_epi16(x: Vec[i16, 8], y: Vec[i16, 8]) -> Vec[i16, 8]:
+        %0 = mul <8 x i16> %x, %y
+        ret <8 x i16> %0
+
+    def __mul__(self: Vec[i16, 8], other: Vec[i16, 8]) -> Vec[i16, 8]:
+        return Vec._mm128_mul_epi16(self, other)
+
+    @llvm
+    def _mm128_mul_epi16_scalar(x: Vec[i16, 8], y: i16) -> Vec[i16, 8]:
+        %0 = insertelement <8 x i16> undef, i16 %y, i16 0
+        %1 = shufflevector <8 x i16> %0, <8 x i16> undef, <8 x i32> zeroinitializer
+        %2 = mul <8 x i16> %x, %1
+        ret <8 x i16> %2
+
+    def __mul__(self: Vec[i16, 8], other: i16) -> Vec[i16, 8]:
+        return Vec._mm128_mul_epi16_scalar(self, other)
+
+
+    @llvm
+    def _mm1024_mul_epi16(x: Vec[i16, 64], y: Vec[i16, 64]) -> Vec[i16, 64]:
+        %0 = mul <64 x i16> %x, %y
+        ret <64 x i16> %0
+
+    def __mul__(self: Vec[i16, 64], other: Vec[i16, 64]) -> Vec[i16, 64]:
+        return Vec._mm1024_mul_epi16(self, other)
+
+    @llvm
+    def _mm512_mul_epi16(x: Vec[i16, 32], y: Vec[i16, 32]) -> Vec[i16, 32]:
+        %0 = mul <32 x i16> %x, %y
+        ret <32 x i16> %0
+
+    def __mul__(self: Vec[i16, 32], other: Vec[i16, 32]) -> Vec[i16, 32]:
+        return Vec._mm512_mul_epi16(self, other)
+
+    @llvm
+    def _mm512_mul_epi16_scalar(x: Vec[i16, 32], y: i16) -> Vec[i16, 32]:
+        %0 = insertelement <32 x i16> undef, i16 %y, i16 0
+        %1 = shufflevector <32 x i16> %0, <32 x i16> undef, <32 x i32> zeroinitializer
+        %2 = mul <32 x i16> %x, %1
+        ret <32 x i16> %2
+
+    def __mul__(self: Vec[i16, 32], other: i16) -> Vec[i16, 32]:
+        return Vec._mm512_mul_epi16_scalar(self, other)
+
+    @llvm
+    def _mm256_mul_epi16_scalar(x: Vec[i16, 16], y: i16) -> Vec[i16, 16]:
+        %0 = insertelement <16 x i16> undef, i16 %y, i16 0
+        %1 = shufflevector <16 x i16> %0, <16 x i16> undef, <16 x i32> zeroinitializer
+        %2 = mul <16 x i16> %x, %1
+        ret <16 x i16> %2
+
+    def __mul__(self: Vec[i16, 16], other: i16) -> Vec[i16, 16]:
+        return Vec._mm256_mul_epi16_scalar(self, other)
+
+    def __mul__(self: i16, other: Vec[i16, 16]) -> Vec[i16, 16]:
+        return Vec._mm256_mul_epi16_scalar(other, self)
+
+    @llvm
+    def _mm128_mul_epi32(x: Vec[i32, 4], y: Vec[i32, 4]) -> Vec[i32, 4]:
+        %0 = mul <4 x i32> %x, %y
+        ret <4 x i32> %0
+
+    def __mul__(self: Vec[i32, 4], other: Vec[i32, 4]) -> Vec[i32, 4]:
+        return Vec._mm128_mul_epi32(self, other)
 
     @llvm
     def _mm_bsrli_256(vec: Vec[u8, 32]) -> Vec[u8, 32]:
@@ -445,6 +880,11 @@ class Vec[T, N: Literal[int]]:
     def __repr__(self):
         return f"<{','.join(self.scatter())}>"
 
+    @llvm
+    def __getitem__(self, n: Static[int]) -> T:
+        %0 = extractelement <{=N} x {=T}> %self, i32 {=n}
+        ret {=T} %0
+
     # Methods below added ad-hoc. TODO: Add Intel intrinsics equivalents for them and integrate them neatly above.
 
     # Constructors
@@ -474,6 +914,8 @@ class Vec[T, N: Literal[int]]:
         ret <{=N} x {=T}> %2
 
     @llvm
+    @pure
+    @inline
     def __or__(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = or <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
@@ -591,11 +1033,15 @@ class Vec[T, N: Literal[int]]:
         ret <{=N} x i64> %2
 
     @llvm
+    @pure
+    @inline
     def add(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = add <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
     @llvm
+    @pure
+    @inline
     def add(self: Vec[T, N], other: T) -> Vec[T, N]:
         %0 = insertelement <{=N} x {=T}> undef, {=T} %other, i32 0
         %1 = shufflevector <{=N} x {=T}> %0, <{=N} x {=T}> undef, <{=N} x i32> zeroinitializer
@@ -615,18 +1061,24 @@ class Vec[T, N: Literal[int]]:
         ret <{=N} x {=T}> %2
 
     def __add__(self: Vec[T, N], other) -> Vec[T, N]:
-        if isinstance(T, u8) or isinstance(T, u64) or isinstance(T, u128):
-            return self.add(other)
         if isinstance(T, f32) or isinstance(T, f64):
             return self.fadd(other)
+        if isinstance(other, Vec):
+            return self.add(_other)
+        else:
+            return self.add(T(_other))
         compile_error("invalid SIMD vector addition")
 
     @llvm
+    @pure
+    @inline
     def sub(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = sub <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
     @llvm
+    @pure
+    @inline
     def sub(self: Vec[T, N], other: T) -> Vec[T, N]:
         %0 = insertelement <{=N} x {=T}> undef, {=T} %other, i32 0
         %1 = shufflevector <{=N} x {=T}> %0, <{=N} x {=T}> undef, <{=N} x i32> zeroinitializer
@@ -646,10 +1098,12 @@ class Vec[T, N: Literal[int]]:
         ret <{=N} x {=T}> %2
 
     def __sub__(self: Vec[T, N], other) -> Vec[T, N]:
-        if isinstance(T, u8) or isinstance(T, u64):
-            return self.sub(other)
         if isinstance(T, f32) or isinstance(T, f64):
             return self.fsub(other)
+        if isinstance(other, Vec):
+            return self.sub(other)
+        else:
+            return self.sub(T(other))
         compile_error("invalid SIMD vector subtraction")
 
     @llvm
@@ -861,10 +1315,22 @@ class Vec[T, N: Literal[int]]:
         return self
 
     @llvm
+    @pure
+    @inline
     def mask(self: Vec[T, N], mask: Vec[u1, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = select <{=N} x i1> %mask, <{=N} x {=T}> %self, <{=N} x {=T}> %other
         ret <{=N} x {=T}> %0
 
+    @llvm
+    @pure
+    @inline
+    def llvm_max(self: Vec[i16, N], other: Vec[i16, N]) -> Vec[i16, N]:
+        declare <{=N} x i16> @llvm.smax.v{=N}i16(<{=N} x i16>, <{=N} x i16>)
+        %0 = call <{=N} x i16> @llvm.smax.v{=N}i16(<{=N} x i16> %self, <{=N} x i16> %other)
+        ret <{=N} x i16> %0
+
+    @pure
+    @inline
     def scatter(self: Vec[T, N]) -> List[T]:
         return [self[i] for i in static.range(N)]
 
@@ -872,6 +1338,8 @@ class Vec[T, N: Literal[int]]:
 u8x16 = Vec[u8, 16]
 u8x32 = Vec[u8, 32]
 f32x8 = Vec[f32, 8]
+i32x16 = Vec[i32, 16]
+i32x4 = Vec[i32, 4]
 
 
 @llvm

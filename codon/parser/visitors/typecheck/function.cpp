@@ -155,7 +155,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (!stmt->decorators[i])
       continue;
-    auto [isAttr, attrName] = getDecorator(stmt->decorators[i]);
+    auto [isAttr, attrName, attrRealizedName] = getDecorator(stmt->decorators[i]);
     if (!attrName.empty()) {
       if (attrName == getMangledFunc("std.internal.attributes", "test"))
         stmt->setAttribute(Attr::Test);
@@ -171,8 +171,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       if (!stmt->hasAttribute(Attr::FunctionAttributes))
         stmt->setAttribute(Attr::FunctionAttributes,
                            std::make_unique<ir::KeyValueAttribute>());
+
+      std::string key = attrRealizedName;
       stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-          ->attributes[attrName] = "";
+          ->attributes[attrName] = key;
 
       const auto &attrFn = getFunction(attrName);
       if (attrFn && attrFn->ast) {
@@ -185,13 +187,12 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         if (attrFn->ast->hasAttribute(Attr::ForceRealize))
           stmt->setAttribute(Attr::ForceRealize);
         if (attrFn->ast->hasAttribute(Attr::FunctionAttributes)) {
-          for (const auto &key :
+          for (const auto &[k, v] :
                attrFn->ast
-                       ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-                       ->attributes |
-                   std::views::keys)
+                   ->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
+                   ->attributes)
             stmt->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)
-                ->attributes[key] = "";
+                ->attributes[k] = v;
         }
       }
       if (isAttr)
@@ -682,13 +683,13 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
 
 /// Fetch a decorator canonical name. The first pair member indicates if a decorator is
 /// actually an attribute (a function with `@__attribute__`).
-std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
+std::tuple<bool, std::string, std::string> TypecheckVisitor::getDecorator(Expr *e) {
   auto dt = transform(clone(e));
   dt = getHeadExpr(dt);
   if (auto id = cast<IdExpr>(cast<CallExpr>(dt) ? cast<CallExpr>(dt)->getExpr() : dt)) {
     auto ci = ctx->find(id->getValue(), getTime());
     if (ci && ci->isFunc()) {
-      auto fn = ci->getName();
+      auto fn = ci->getType()->getFunc()->ast->getName();
       auto f = getFunction(fn);
       if (!f) {
         if (auto o = in(ctx->cache->overloads, fn)) {
@@ -696,11 +697,15 @@ std::pair<bool, std::string> TypecheckVisitor::getDecorator(Expr *e) {
             f = getFunction(o->front());
         }
       }
+      // Special case: Id to Call
+      if (f->ast->hasAttribute(Attr::Attribute) && cast<IdExpr>(dt))
+        dt = transform(N<CallExpr>(dt));
       if (f)
-        return {f->ast->hasAttribute(Attr::Attribute), ci->getName()};
+        return {f->ast->hasAttribute(Attr::Attribute), fn,
+                dt->isDone() ? id->getValue() : ""};
     }
   }
-  return {false, ""};
+  return {false, "", ""};
 }
 
 /// Generate and return `Function[Tuple[args...], ret]` type
