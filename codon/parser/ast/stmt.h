@@ -512,6 +512,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
   bool isAsync() const { return async; }
   void setAsync() { async = true; }
+  void addParam(const Param &p) { items.push_back(p); }
 
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.

@@ -1064,9 +1064,9 @@ class Vec[T, N: Literal[int]]:
         if isinstance(T, f32) or isinstance(T, f64):
             return self.fadd(other)
         if isinstance(other, Vec):
-            return self.add(_other)
+            return self.add(other)
         else:
-            return self.add(T(_other))
+            return self.add(T(other))
         compile_error("invalid SIMD vector addition")
 
     @llvm

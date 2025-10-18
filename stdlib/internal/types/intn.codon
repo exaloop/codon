@@ -214,6 +214,9 @@ class Int:
         %1 = zext i1 %0 to i8
         ret i8 %1
 
+    def __eq__(self, other: int) -> bool:
+        return self == Int[N](other)
+
     @pure
     @llvm
     def __ne__(self, other: Int[N]) -> bool:
@@ -504,6 +507,9 @@ class UInt:
         %0 = icmp eq i{=N} %self, %other
         %1 = zext i1 %0 to i8
         ret i8 %1
+
+    def __eq__(self, other: int) -> bool:
+        return self == UInt[N](other)
 
     @pure
     @llvm
