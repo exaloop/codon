@@ -92,19 +92,19 @@ class Vec[T, N: Literal[int]]:
     @llvm
     def _mm256_load_epi32(data) -> Vec[u32, 8]:
         %0 = bitcast i32* %data to <8 x i32>*
-        %1 = load <8 x i32>, <8 x i32>* %0
+        %1 = load <8 x i32>, <8 x i32>* %0, align 1
         ret <8 x i32> %1
 
     @llvm
     def _mm256_load_epi64(data) -> Vec[u64, 4]:
         %0 = bitcast i64* %data to <4 x i64>*
-        %1 = load <4 x i64>, <4 x i64>* %0
+        %1 = load <4 x i64>, <4 x i64>* %0, align 1
         ret <4 x i64> %1
 
     @llvm
     def _mm512_load_epi64(data) -> Vec[u64, 8]:
         %0 = bitcast i64* %data to <8 x i64>*
-        %1 = load <8 x i64>, <8 x i64>* %0
+        %1 = load <8 x i64>, <8 x i64>* %0, align 1
         ret <8 x i64> %1
 
     @llvm
@@ -200,37 +200,37 @@ class Vec[T, N: Literal[int]]:
     @llvm
     def _mm256_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 16]:
         %0 = bitcast i16* %data to <16 x i16>*
-        %1 = load <16 x i16>, <16 x i16>* %0
+        %1 = load <16 x i16>, <16 x i16>* %0, align 1
         ret <16 x i16> %1
 
     @llvm
     def _mm128_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 8]:
         %0 = bitcast i16* %data to <8 x i16>*
-        %1 = load <8 x i16>, <8 x i16>* %0
+        %1 = load <8 x i16>, <8 x i16>* %0, align 1
         ret <8 x i16> %1
 
     @llvm
     def _mm1024_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 64]:
         %0 = bitcast i16* %data to <64 x i16>*
-        %1 = load <64 x i16>, <64 x i16>* %0
+        %1 = load <64 x i16>, <64 x i16>* %0, align 1
         ret <64 x i16> %1
 
     @llvm
     def _mm512_loadu_epi16(data: Ptr[i16]) -> Vec[i16, 32]:
         %0 = bitcast i16* %data to <32 x i16>*
-        %1 = load <32 x i16>, <32 x i16>* %0
+        %1 = load <32 x i16>, <32 x i16>* %0, align 1
         ret <32 x i16> %1
 
     @llvm
     def _mm256_loadu_epi32(data: Ptr[i32]) -> Vec[i32, 8]:
         %0 = bitcast i32* %data to <8 x i32>*
-        %1 = load <8 x i32>, <8 x i32>* %0
+        %1 = load <8 x i32>, <8 x i32>* %0, align 1
         ret <8 x i32> %1
 
     @llvm
     def _mm128_loadu_epi32(data: Ptr[i32]) -> Vec[i32, 4]:
         %0 = bitcast i32* %data to <4 x i32>*
-        %1 = load <4 x i32>, <4 x i32>* %0
+        %1 = load <4 x i32>, <4 x i32>* %0, align 1
         ret <4 x i32> %1
 
     @llvm
