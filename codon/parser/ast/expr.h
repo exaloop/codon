@@ -23,6 +23,7 @@ namespace codon::ast {
   void accept(VISITOR &visitor) override;                                              \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
+  friend class AutoDeduceMembersTypecheckVisitor;                                      \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \
   friend struct ReplacingCallbackASTVisitor;                                           \
   inline decltype(auto) match_members() const { return std::tie(__VA_ARGS__); }        \
@@ -51,6 +52,8 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   void setDone() { done = true; }
   Expr *getOrigExpr() const { return origExpr; }
   void setOrigExpr(Expr *orig) { origExpr = orig; }
+  Expr *getTypeExpr() const { return typeExpr; }
+  void setTypeExpr(Expr *type) { typeExpr = type; }
 
   static const char NodeId;
   SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
@@ -69,6 +72,8 @@ private:
   bool done;
   /// Original (pre-transformation) expression
   Expr *origExpr;
+  /// the expression of type
+  Expr *typeExpr{nullptr};
 };
 
 /// Function signature parameter helper node (name: type = defaultValue).
