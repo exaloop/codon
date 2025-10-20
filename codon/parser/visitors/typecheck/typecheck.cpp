@@ -92,7 +92,7 @@ void TypecheckVisitor::loadStdLibrary(
     const std::unordered_map<std::string, std::string> &earlyDefines, bool barebones) {
   // Load the internal.__init__
   auto stdlib = std::make_shared<TypeContext>(cache, STDLIB_IMPORT);
-  auto stdlibPath = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
+  auto stdlibPath = getImportFile(cache, STDLIB_INTERNAL_MODULE, "", true);
   const std::string initFile = "__init__.codon";
   if (!stdlibPath || !endswith(stdlibPath->path, initFile))
     E(Error::COMPILER_NO_STDLIB);

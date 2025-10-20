@@ -43,6 +43,7 @@ Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
   cache->module = module.get();
   cache->pythonExt = pyExtension;
   cache->pythonCompat = pyNumerics;
+  cache->compiler = this;
   module->setCache(cache.get());
   llvisitor->setDebug(debug);
   llvisitor->setPluginManager(plm.get());
@@ -64,7 +65,15 @@ llvm::Error Compiler::load(const std::string &plugin) {
     cache->customBlockStmts[kw.keyword] = {kw.hasExpr, kw.callback};
   }
   p->dsl->addIRPasses(pm.get(), debug);
+
+  loadedPlugins.insert(plugin);
+
   return llvm::Error::success();
+}
+
+/// Checks if a plugin is already loaded.
+bool Compiler::isPluginLoaded(const std::string &path) const {
+  return loadedPlugins.find(path) != loadedPlugins.end();
 }
 
 llvm::Error

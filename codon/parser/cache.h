@@ -43,6 +43,10 @@
 #define MAX_REALIZATION_DEPTH 200
 #define MAX_STATIC_ITER 1024
 
+namespace codon {
+class Compiler;
+}
+
 namespace codon::ast {
 
 extern const std::string VAR_ARGV;
@@ -102,6 +106,8 @@ struct Cache {
     }
   };
 
+  /// Compiler
+  Compiler *compiler = nullptr;
   /// IR module.
   ir::Module *module = nullptr;
 

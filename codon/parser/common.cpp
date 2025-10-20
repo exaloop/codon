@@ -8,6 +8,8 @@
 #include <string>
 #include <vector>
 
+#include "codon/parser/cache.h"
+#include "codon/compiler/compiler.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Path.h"
 #include <fmt/format.h>
@@ -340,13 +342,13 @@ std::string Filesystem::get_absolute_path(const std::string &path) {
   return result;
 }
 
-std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
-                                          const std::string &what,
+std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib) {
+  auto fs = cache->fs.get();
   std::vector<std::string> paths;
+  auto parentRelativeTo = IFilesystem::path_t(relativeTo).parent_path();
   if (what != "<jit>") {
-    auto parentRelativeTo = IFilesystem::path_t(relativeTo).parent_path();
     if (!forceStdlib) {
       auto path = parentRelativeTo / what;
       path.replace_extension("codon");
@@ -365,6 +367,28 @@ std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
       path = parentRelativeTo / what / "__init__.py";
       if (fs->exists(path))
         paths.emplace_back(fs->canonical(path));
+    }
+  }
+  if (paths.empty()) {
+    // Load a plugin maybe
+    auto path = parentRelativeTo / what;
+    if (fs->exists(path / "plugin.toml") &&
+        fs->exists(path / "stdlib" / "__init__.codon")) {
+      bool failed = false;
+      if (cache->compiler && !cache->compiler->isPluginLoaded(path)) {
+        LOG("Loading plugin {}", path);
+        llvm::handleAllErrors(cache->compiler->load(path),
+                              [&failed](const codon::error::PluginErrorInfo &e) {
+                                codon::compilationError(e.getMessage(), /*file=*/"",
+                                                        /*line=*/0, /*col=*/0,
+                                                        /*len=*/0,
+                                                        /*errorCode=*/-1,
+                                                        /*terminate=*/false);
+                                failed = true;
+                              });
+      }
+      if (!failed)
+        paths.emplace_back(fs->canonical(path / "stdlib" / "__init__.codon"));
     }
   }
   for (auto &p : fs->get_stdlib_paths()) {
