@@ -819,7 +819,7 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 void addInitCall(llvm::Module *M, const std::string &filename) {
   llvm::LLVMContext &context = M->getContext();
   llvm::IRBuilder<> B(context);
-  auto f = M->getOrInsertFunction("seq_nvptx_load_module", B.getVoidTy(), B.getPtrTy());
+  auto f = M->getOrInsertFunction("set_nvptx_module_name", B.getVoidTy(), B.getPtrTy());
   auto *g = llvm::cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
 

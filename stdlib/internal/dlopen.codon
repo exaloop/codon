@@ -1,12 +1,25 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 # <dlfcn.h>
+@tuple
+class DL_info:
+    dli_fname: cobj
+    dli_fbase: cobj
+    dli_sname: cobj
+    dli_saddr: cobj
+    dli_version: i32
+    dli_reserved1: i32
+    dli_reserved: Ptr[i32]
+
 from C import dlerror() -> cobj as c_dlerror
 from C import dlopen(cobj, int) -> cobj as c_dlopen
 from C import dlsym(cobj, cobj) -> cobj as c_dlsym
 from C import dlclose(cobj) -> i32 as c_dlclose
+from C import dladdr(cobj, Ptr[DL_info]) -> i32
 
+RTLD_LAZY: Literal[int] = 1
 RTLD_NOW: Literal[int] = 2
+
 RTLD_GLOBAL: Literal[int] = 8 if __apple__ else 256
 RTLD_LOCAL: Literal[int] = 0 if __apple__ else 256
 
@@ -39,4 +52,11 @@ def dlsym(lib, name: str, Fn: type) -> Fn:
 
 def dlclose(handle: cobj):
     if c_dlclose(handle) != i32(0):
+        raise CError(dlerror())
+
+def get_library_file_name(handle: cobj):
+    info: DL_info
+    if dladdr(handle, __ptr__(info)):
+        return str.from_ptr(info.dli_fname)
+    else:
         raise CError(dlerror())

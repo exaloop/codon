@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
-import gpu
+import internal.gpu as gpu
 import util
 from .ndarray import ndarray
 
