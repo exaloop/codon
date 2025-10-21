@@ -72,8 +72,11 @@ Additionally, a number of shared libraries are produced in `install/lib/codon`:
 
 ## GPU support
 
-Add `-DCODON_GPU=ON` to the first `cmake` command above to enable GPU support.
-This will require CUDA to be installed on your system.
+You will need to install NVIDIA's CUDA on your system for GPU to work.
+
+As long as `libcuda.so` (or `libcuda.dylib`) is available and accessible, you are
+good to go. If not, adjust `LD_LIBRARY_PATH` or set `CODON_CUDA` environment
+variable to point to the exact location of `libcuda.so` (or its equivalent).
 
 ## Jupyter support
 
