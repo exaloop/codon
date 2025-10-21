@@ -370,6 +370,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     val->scope = {0};
     val->baseName = "";
     val->moduleName = MODULE_MAIN;
+    val->time = 0;
     getImport(STDLIB_IMPORT)->ctx->addToplevel(importVar, val);
     registerGlobal(val->getName());
   }
