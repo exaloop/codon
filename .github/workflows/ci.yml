@@ -114,7 +114,7 @@ jobs:
           sudo apt-get install -y pngquant
 
       - name: Download Artifact
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           name: codon-linux-x86_64.tar.gz
           path: ./downloaded-artifact
