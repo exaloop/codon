@@ -66,7 +66,7 @@ jobs:
           bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }} yes
 
       - name: Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: codon-${{ matrix.arch }}.tar.gz
           path: codon-${{ matrix.arch }}.tar.gz
