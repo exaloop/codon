@@ -376,7 +376,7 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
         fs->exists(path / "stdlib" / "__init__.codon")) {
       bool failed = false;
       if (cache->compiler && !cache->compiler->isPluginLoaded(path)) {
-        LOG("Loading plugin {}", path);
+        LOG_REALIZE("Loading plugin {}", path);
         llvm::handleAllErrors(cache->compiler->load(path),
                               [&failed](const codon::error::PluginErrorInfo &e) {
                                 codon::compilationError(e.getMessage(), /*file=*/"",

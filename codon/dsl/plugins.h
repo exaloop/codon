@@ -34,8 +34,6 @@ private:
   std::string argv0;
   /// vector of loaded plugins
   std::vector<std::unique_ptr<Plugin>> plugins;
-  /// list of loaded plugins
-  std::unordered_set<std::string> loaded;
 
 public:
   /// Constructs a plugin manager

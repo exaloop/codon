@@ -1,0 +1,558 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+@tuple(container=False)  # disallow default __getitem__
+class Vec[T, N: Literal[int]]:
+    def _is_int(T: type) -> Literal[bool]:
+        return isinstance(T, int) or isinstance(T, Int) or isinstance(T, UInt)
+
+    def _is_sint(T: type) -> Literal[bool]:
+        return isinstance(T, int) or isinstance(T, Int)
+
+    def _is_uint(T: type) -> Literal[bool]:
+        return isinstance(T, UInt)
+
+    def _int_prefix(T: type) -> Literal[str]:
+        return 'u' if isinstance(T, UInt) else 's'
+
+    def _is_float(T: type) -> Literal[bool]:
+        return isinstance(T, float16) \
+            or isinstance(T, float32) \
+            or isinstance(T, float) \
+            or isinstance(T, float128)
+
+    def _is_valid(T: type) -> Literal[bool]:
+        return Vec._is_int(T) or Vec._is_float(T)
+
+    def _sizeof(T: type) -> Literal[int]:
+        if isinstance(T, Int):
+            return T.N
+        if isinstance(T, UInt):
+            return T.N
+        if isinstance(T, int):
+            return 64
+        if isinstance(T, float16):
+            return 16
+        if isinstance(T, float32):
+            return 32
+        if isinstance(T, float):
+            return 64
+        if isinstance(T, float128):
+            return 128
+        compile_error("invalid type")
+
+
+    @llvm
+    def _set(val: T) -> Vec[N, T]:
+        %0 = insertelement <{=N} x {=T}> undef, {=T} %val, i32 0
+        %1 = shufflevector <{=N} x {=T}> %0, <{=N} x {=T}> undef, <{=N} x i32> zeroinitializer
+        ret <{=N} x {=T}> %1
+
+    @llvm
+    def _load(data: Ptr[T]) -> Vec[N, T]:
+        %0 = bitcast {=T}* %data to <{=N} x {=T}>*
+        %1 = load <{=N} x {=T}>, <{=N} x {=T}>* %0, align 1
+        ret <{=N} x {=T}> %1
+
+    def __new__(x, T: type, N: Literal[int]) -> Vec[T, N]:
+        if N % 8 != 0:
+            compile_error("vector width must be divisible by 8")
+        if Vec._sizeof(T) % 8 != 0:
+            compile_error("integer width must be divisible by 8")
+        if Vec._is_valid(x):
+            return Vec[T, N]._set(x)
+        if isinstance(x, Ptr) and Vec._is_valid(x.T):
+            return Vec[T, N]._load(x)
+        if isinstance(x, str) and (isinstance(T, i8) or isinstance(T, u8)):
+            return Vec[T, N]._load(x.ptr)
+        if isinstance(x, List) and Vec._is_valid(x.T):
+            return Vec[T, N]._load(x.arr.ptr)
+        if isinstance(x, Vec) and N == x.N:
+            return x.cast(T)
+        compile_error("invalid SIMD vector constructor")
+
+    def __new__(x: str, offset: int = 0) -> Vec[u8, N]:
+        return Vec[u8, N](x.ptr + offset)
+
+    def __new__(x: List[T], offset: int = 0) -> Vec[T, N]:
+        return Vec[T, N](x.arr.ptr + offset)
+
+
+    @llvm
+    def _zext(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = zext <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _sext(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = sext <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _uitofp(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = uitofp <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _sitofp(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = sitofp <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _fpext(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = fpext <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _trunc(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = trunc <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _fptrunc(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = fptrunc <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _fptoui(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = fptoui <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _fptosi(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = fptosi <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    @llvm
+    def _bitcast(self: Vec[T, N], T2: type) -> Vec[T2, N]:
+        %0 = bitcast <{=N} x {=T}> %self to <{=N} x {=T2}>
+        ret <{=N} x {=T2}> %0
+
+    def cast(self, T2: type) -> Vec[T2, N]:
+        if not Vec._is_valid(T2):
+            compile_error("invalid cast")
+        if isinstance(T, T2):
+            return self
+        if Vec._is_sint(T) and Vec._is_sint(T2):
+            return self._sext(T2) if Vec._sizeof(T) < Vec._sizeof(T2) else self._trunc(T2)
+        if Vec._is_uint(T) and Vec._is_uint(T2):
+            return self._zext(T2) if Vec._sizeof(T) < Vec._sizeof(T2) else self._trunc(T2)
+        if Vec._is_float(T) and Vec._is_float(T2):
+            return self._fpext(T2) if Vec._sizeof(T) < Vec._sizeof(T2) else self._fptrunc(T2)
+        if Vec._is_float(T) and Vec._is_int(T2):
+            return self._fptoui(T2) if Vec._is_uint(T2) else self._fptoi(T2)
+        if Vec._is_int(T) and Vec._is_float(T2):
+            return self._uitofp(T2) if Vec._is_uint(T) else self._sitofp(T2)
+        return self._bitcast(T2)
+
+    @llvm
+    def cast_ptr(ptr: Ptr[T], T: type, T2: type) -> Ptr[T2]:
+        ret ptr %ptr
+
+
+    def __copy__(self) -> Vec[T, N]:
+        return self
+
+
+    def __neg__(self) -> Vec[T, N]:
+        return Vec[T, N](0) - self
+
+
+    @llvm
+    def __getitem__(self, n: Static[int]) -> T:
+        %0 = extractelement <{=N} x {=T}> %self, i32 {=n}
+        ret {=T} %0
+
+
+    def __repr__(self):
+        return f"<{','.join(self.scatter())}>"
+
+
+    @llvm
+    def _eq(self: Vec[T, N], other: Vec[T, N]) -> Vec[i1, N]:
+        %0 = icmp eq <{=N} x {=T}> %self, %other
+        ret <{=N} x i1> %0
+
+    def __eq__(self, other: Vec[T, N]) -> Vec[T, N]:
+        return self._eq(other).cast(T)
+
+    def __eq__(self, other: bool) -> Vec[T, N]:
+        return self._andnot(Vec[T, N](0 if other else 0xff))
+
+
+    @llvm
+    def _andnot(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = xor <{=N} x {=T}> %self, <{=loop 0 N "i8 -1"}>
+        %1 = and <{=N} x {=T}> %other, %0
+        ret <{=N} x {=T}> %1
+
+    def __ne__(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        return (self == other)._andnot(Vec[T, N](0xff))
+
+
+    @llvm
+    def _and(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = and <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __and__(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_float(T):
+            return Vec[T, N](self._as_int()._and(other._as_int()))
+        return self._and(other)
+
+
+    @llvm
+    def _or(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = or <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __or__(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_float(T):
+            return Vec[T, N](self._as_int()._or(other._as_int()))
+        return self._or(other)
+
+
+    @llvm
+    def _xor(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = xor <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __xor__(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_float(T):
+            return Vec[T, N](self._as_int()._xor(other._as_int()))
+        return self._xor(other)
+
+
+    @llvm
+    def _lsh(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = shl <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __lshift__(self, other: Vec[T, N]) -> Vec[T, N]:
+        return self._lsh(other)
+
+    def __lshift__(self, other: Literal[int]) -> Vec[T, N]:
+        if N == 0:
+            return self
+        return self._shuffle(other)
+
+
+    @llvm
+    def _rsh(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = lshr <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    @llvm
+    def _shuffle(self: Vec[T, N], X: Literal[int]) -> Vec[T, N]:
+        %0 = shufflevector <{=N} x {=T}}> %vec, <{=N} x {=T}}> zeroinitializer, <16 x i32> <{=loop X N "i32 %%" ","}>
+        ret <{=N} x {=T}}> %0
+
+    def __rshift__(self, other: Vec[T, N]) -> Vec[T, N]:
+        return self._rsh(other)
+
+    def __rshift__(self, other: Literal[int]) -> Vec[T, N]:
+        if N == 0:
+            return self
+        return self._shuffle(other)
+
+
+    @llvm
+    def _add(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = add <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    @llvm
+    def _fadd(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = fadd <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __add__(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_float(T):
+            return self._fadd(other)
+        return self._add(other)
+
+    def __add__(self, other: T) -> Vec[T, N]:
+        return self + Vec[T, N](other)
+
+
+    @llvm
+    def _sub(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = sub <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    @llvm
+    def _fsub(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = fsub <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __sub__(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_float(T):
+            return self._fsub(other)
+        return self._sub(other)
+
+    def __sub__(self, other: T) -> Vec[T, N]:
+        return self - Vec[T, N](other)
+
+
+    @llvm
+    def _mul(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = mul <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    @llvm
+    def _fmul(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = fmul <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __mul__(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_float(T):
+            return self._fmul(other)
+        return self._mul(other)
+
+    def __mul__(self, other: T) -> Vec[T, N]:
+        return self - Vec[T, N](other)
+
+
+    @llvm
+    def _div(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = div <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __truediv__(self, other: Vec[T, N]):
+        if is_int(T):
+            TO = Vec[int_to_float(T), N]
+            return Vec[TO, N](self)._div(Vec[TO, N](other))
+        return self._div(other)
+
+    def __truediv__(self, other: T) -> Vec[T, N]:
+        return self / Vec[T, N](other)
+
+
+    @llvm
+    def _mod(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = urem <{=N} x {=T}> %self, %other
+        ret <{=N} x {=T}> %0
+
+    def __mod__(self, other: Vec[T, N]) -> Vec[T, N]:
+        return self._mod(other)
+
+    def __mod__(self, other: T) -> Vec[T, N]:
+        return self._mod(Vec[T, N](other))
+
+
+    @llvm
+    def _lt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = icmp ult <{=N} x i64> %self, %other
+        ret <{=N} x i1> %0
+
+    @llvm
+    def _flt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = fcmp olt <{=N} x double> %self, %other
+        ret <{=N} x i1> %0
+
+    def __lt__(self, other: Vec[T, N]) -> Vec[u1, N]:
+        if is_float(T):
+            return self._flt(other)
+        return self._lt(other)
+
+    def __lt__(self, other: T) -> Vec[u1, N]:
+        return self < Vec[T, N](other)
+
+
+    @llvm
+    def _le(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = icmp ule <{=N} x i64> %self, %other
+        ret <{=N} x i1> %0
+
+    @llvm
+    def _fle(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = fcmp ole <{=N} x double> %self, %other
+        ret <{=N} x i1> %0
+
+    def __le__(self, other: Vec[T, N]) -> Vec[u1, N]:
+        if is_float(T):
+            return self._fle(other)
+        return self._le(other)
+
+    def __le__(self, other: T) -> Vec[u1, N]:
+        return self <= Vec[T, N](other)
+
+
+    @llvm
+    def _gt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = icmp ugt <{=N} x i64> %self, %other
+        ret <{=N} x i1> %0
+
+    @llvm
+    def _fgt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = fcmp ogt <{=N} x double> %self, %other
+        ret <{=N} x i1> %0
+
+    def __gt__(self, other: Vec[T, N]) -> Vec[u1, N]:
+        if is_float(T):
+            return self._fgt(other)
+        return self._gt(other)
+
+    def __gt__(self, other: T) -> Vec[u1, N]:
+        return self > Vec[T, N](other)
+
+
+    @llvm
+    def _ge(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = icmp uge <{=N} x i64> %self, %other
+        ret <{=N} x i1> %0
+
+    @llvm
+    def _fge(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
+        %0 = fcmp oge <{=N} x double> %self, %other
+        ret <{=N} x i1> %0
+
+    def __ge__(self, other: Vec[T, N]) -> Vec[u1, N]:
+        if is_float(T):
+            return self._fge(other)
+        return self._ge(other)
+
+    def __ge__(self, other: T) -> Vec[u1, N]:
+        return self >= Vec[T, N](other)
+
+
+    @llvm
+    def _sqrt(self: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.sqrt.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.sqrt.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret <{=N} x {=T}> %0
+
+    def sqrt(self):
+        if is_float(T):
+            return self._sqrt()
+        compile_error("vector type must be a float")
+
+    @llvm
+    def _log(self: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.log.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.log.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret <{=N} x {=T}> %0
+
+    def log(self):
+        if is_float(T):
+            return self._log()
+        compile_error("vector type must be a float")
+
+    @llvm
+    def _sin(self: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.sin.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.sin.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret <{=N} x {=T}> %0
+
+    def sin(self):
+        if is_float(T):
+            return self._sin()
+        compile_error("vector type must be a float")
+
+    @llvm
+    def _cos(self: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.cos.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.cos.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret <{=N} x {=T}> %0
+
+    def cos(self):
+        if is_float(T):
+            return self._cos()
+        compile_error("vector type must be a float")
+
+    @llvm
+    def _fabs(self: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.fabs.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.fabs.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret <{=N} x {=T}> %0
+
+    @llvm
+    def _abs(self: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.abs.v{=N}{=T}(<{=N} x {=T}>, i1)
+        %0 = call <{=N} x {=T}> @llvm.abs.v{=N}{=T}(<{=N} x {=T}> %self, i1 false)
+        ret <{=N} x {=T}> %0
+
+    def __abs__(self):
+        if is_float(T):
+            return self._fabs()
+        return self._abs()
+
+
+    @llvm
+    def _max(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
+        declare <{=N} x {=T}> @llvm.smax.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call <{=N} x {=T}> @llvm.smax.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+        ret <{=N} x {=T}> %0
+
+    def max(self, other: Vec[T, N]) -> Vec[T, N]:
+        if is_int(T):
+            return self._max(other)
+        compile_error("vector type must be an integer")
+
+
+    @llvm
+    def _mask(self: Vec[T, N], mask: Vec[u1, N], other: Vec[T, N]) -> Vec[T, N]:
+        %0 = select <{=N} x i1> %mask, <{=N} x {=T}> %self, <{=N} x {=T}> %other
+        ret <{=N} x {=T}> %0
+
+    def mask(self, other: Vec[T, N], mask: Vec[u1, N],) -> Vec[T, N]):
+        return self._mask(mask, other)
+
+
+    @llvm
+    def _add_overflow(self: Vec[T, N], other: Vec[T, N]) -> Tuple[Vec[T, N], Vec[u1, N]]:
+        declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.uadd.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call {<{=N} x {=T}>, <{=N} x i1>} @llvm.uadd.with.overflow.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+        ret {<{=N} x {=T}>, <{=N} x i1>} %0
+
+    def add(self, other: Vec[T, N], overflow: Literal[bool] = False):
+        if overflow:
+            return self._add_overflow(other)
+        else:
+            return self + other
+
+
+    @llvm
+    def _sub_overflow(self: Vec[T, N], other: Vec[T, N]) -> Tuple[Vec[T, N], Vec[u1, N]]:
+        declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.usub.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
+        %0 = call {<{=N} x {=T}>, <{=N} x i1>} @llvm.usub.with.overflow.v{=N}{=T}(<{=N} x {=T}> %self, <{=N} x {=T}> %other)
+        ret {<{=N} x {=T}>, <{=N} x i1>} %0
+
+    def sub(self, other: Vec[T, N], overflow: Literal[bool] = False):
+        if overflow:
+            return self._sub_overflow(other)
+        else:
+            return self - other
+
+
+    @llvm
+    def _sum(self: Vec[T, N]) -> T:
+        declare {=T} @llvm.vector.reduce.add.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call {=T} @llvm.vector.reduce.add.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret {=T} %0
+
+    @llvm
+    def _fsum(self: Vec[T, N]) -> T:
+        declare {=T} @llvm.vector.reduce.fsum.v{=N}{=T}(<{=N} x {=T}>)
+        %0 = call {=T} @llvm.vector.reduce.fsum.v{=N}{=T}(<{=N} x {=T}> %self)
+        ret {=T} %0
+
+    def sum(self) -> T:
+        if Vec._is_float(T):
+            return self._fsum()
+        return self._sum()
+
+
+    # Utilities
+    def scatter(self: Vec[T, N]) -> List[T]:
+        return [self[i] for i in static.range(N)]
+
+    def bitflip(self) -> Vec[T, N]:
+        return self ^ Vec[T, N](1)
+
+    def sub_if(self, other: Vec[T, N], mask: Vec[u1, N]) -> Vec[T, N]:
+        return (self - other).mask(mask)
+
+    def mul_hi(self: Vec[u64, N], other: Vec[u64, N]) -> Vec[u64, N]:
+        return ((self.cast(i128) * other.cast(i128)) >> Vec[i128, N](8)).cast(i64)
