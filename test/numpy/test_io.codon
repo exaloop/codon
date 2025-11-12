@@ -6,6 +6,7 @@ test_dir = "test/numpy/data"
 
 # TestSaveLoad
 
+@test
 def test_array():
     a = np.array(np.empty((1, )), dtype=float)
     f = test_dir + "/bin_0.npy"
@@ -15,6 +16,7 @@ def test_array():
 
 test_array()
 
+@test
 def test_save_load_int_1D():
     a = np.array([1, 2, 3, 4], dtype=int)
     f = test_dir + "/bin_1.npy"
@@ -24,6 +26,7 @@ def test_save_load_int_1D():
 
 test_save_load_int_1D()
 
+@test
 def test_save_load_float_1D():
     a = np.array([1.0, 2.0, 3.0, 4.0], dtype=float)
     f = test_dir + "/bin_2.npy"
@@ -33,6 +36,7 @@ def test_save_load_float_1D():
 
 test_save_load_float_1D()
 
+@test
 def test_save_load_complex_1D():
     a = np.array([1 + 2j, 2 + 7j, 3 - 6j, 4 + 12j], dtype=complex)
     f = test_dir + "/bin_3.npy"
@@ -42,6 +46,7 @@ def test_save_load_complex_1D():
 
 test_save_load_complex_1D()
 
+@test
 def test_save_load_int_2D():
     a = np.array([[1, 2], [3, 4]], dtype=int)
     f = test_dir + "/bin_4.npy"
@@ -51,6 +56,7 @@ def test_save_load_int_2D():
 
 test_save_load_int_2D()
 
+@test
 def test_save_load_float_2D():
     a = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=float)
     f = test_dir + "/bin_5.npy"
@@ -60,6 +66,7 @@ def test_save_load_float_2D():
 
 test_save_load_float_2D()
 
+@test
 def test_save_load_complex_2D():
     a = np.array([[1 + 2j, 2 + 7j], [3 - 6j, 4 + 12j]], complex)
     f = test_dir + "/bin_6.npy"
@@ -69,6 +76,7 @@ def test_save_load_complex_2D():
 
 test_save_load_complex_2D()
 
+@test
 def test_save_load_int_3D():
     a = np.array([[[1, 2, 3], [4, 5, 6]], [[7, 8, 9], [10, 11, 12]]],
                  dtype=int)
@@ -79,6 +87,7 @@ def test_save_load_int_3D():
 
 test_save_load_int_3D()
 
+@test
 def test_save_load_float_3D():
     a = np.array([[[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
                   [[7.0, 8.0, 9.0], [10.0, 11.0, 12.0]]],
@@ -90,6 +99,7 @@ def test_save_load_float_3D():
 
 test_save_load_float_3D()
 
+@test
 def test_save_load_complex_3D():
     a = np.array([[[1 + 2j, 2 + 7j, 3 + 4j], [4 - 5j, 5 + 6j, 6 - 7j]],
                   [[7 + 8j, 8 - 9j, 9 + 10j], [10 - 11j, 11 + 12j, 12 - 13j]]],
@@ -105,6 +115,7 @@ test_save_load_complex_3D()
 
 # def test_0D_3D(): TODO
 
+@test
 def test_txt_int_1D():
     a = np.array([1, 2, 3, 4], int)
     f = test_dir + "/text_1.txt"
@@ -116,6 +127,7 @@ def test_txt_int_1D():
 
 test_txt_int_1D()
 
+@test
 def test_txt_float_1D():
     a = np.array([1, 2, 3, 4], float)
     f = test_dir + "/text_2.txt"
@@ -127,6 +139,7 @@ def test_txt_float_1D():
 
 test_txt_float_1D()
 
+@test
 def test_txt_int_2D():
     a = np.array([[1, 2], [3, 4]], dtype=int)
     f = test_dir + "/text_3.txt"
@@ -138,6 +151,7 @@ def test_txt_int_2D():
 
 test_txt_int_2D()
 
+@test
 def test_txt_float_2D():
     a = np.array([[1, 2], [3, 4]], dtype=float)
     f = test_dir + "/text_4.txt"
@@ -153,6 +167,7 @@ test_txt_float_2D()
 # def test_structured_padded(): TODO
 # def test_multifield_view(): TODO
 
+@test
 def test_txt_delimiter_1D():
     a = np.array([1., 2., 3., 4.])
     f = test_dir + "/text_8.txt"
@@ -164,6 +179,7 @@ def test_txt_delimiter_1D():
 
 test_txt_delimiter_1D()
 
+@test
 def test_txt_delimiter_2D():
     a = np.array([[1., 2.], [3., 4.]])
     f = test_dir + "/text_9.txt"
@@ -177,6 +193,7 @@ test_txt_delimiter_2D()
 
 # def test_format(): Not yet implemented
 
+@test
 def test_header_footer():
     # Test the functionality of the header and footer keyword argument.
     f = test_dir + "/text_11.txt"
@@ -212,6 +229,7 @@ def test_header_footer():
 
 test_header_footer()
 
+@test
 def test_file_roundtrip():
     a = np.array([(1, 2), (3, 4)])
     f = test_dir + "/text_15.txt"
@@ -221,6 +239,7 @@ def test_file_roundtrip():
 
 test_file_roundtrip()
 
+@test
 def test_complex_arrays():
     ncols = 2
     nrows = 2
@@ -236,6 +255,7 @@ def test_complex_arrays():
 
 test_complex_arrays()
 
+@test
 def test_complex_negative_exponent():
     ncols = 2
     nrows = 2
@@ -250,18 +270,9 @@ def test_complex_negative_exponent():
 
 test_complex_negative_exponent()
 
-# def test_custom_writer(): TODO
-# def test_unicode(): TODO
-# def test_unicode_roundtrip(): TODO
-# def test_unicode_bytestream(): TODO
-# def test_unicode_stringstream(): TODO
-# def test_unicode_and_bytes_fmt(): Not yet implemented
-# def test_large_zip(self): Not yet implemeted
-
 # TestLoadtxt
 
-# def test_record(): TODO
-
+@test
 def test_loadtxt_array():
     data = test_dir + "/data_1.txt"
     TextIO = '1 2\n3 4'
@@ -277,6 +288,7 @@ def test_loadtxt_array():
 
 test_loadtxt_array()
 
+@test
 def test_loadtxt_1D():
     data = test_dir + "/data_2.txt"
     TextIO = '1\n2\n3\n4\n'
@@ -296,6 +308,7 @@ def test_loadtxt_1D():
 
 test_loadtxt_1D()
 
+@test
 def test_loadtxt_missing():
     data = test_dir + "/data_4.txt"
     TextIO = '1,2,3,,5\n'
@@ -310,6 +323,7 @@ def test_loadtxt_missing():
 
 test_loadtxt_missing()
 
+@test
 def test_loadtxt_converters_with_usecols():
     data = test_dir + "/data_5.txt"
     TextIO = '1,2,3,,5\n6,7,8,9,10\n'
@@ -328,6 +342,7 @@ def test_loadtxt_converters_with_usecols():
 
 test_loadtxt_converters_with_usecols()
 
+@test
 def test_loadtxt_comments_unicode():
     data = test_dir + "/data_6.txt"
     TextIO = '# comment\n1,2,3,5\n'
@@ -339,6 +354,7 @@ def test_loadtxt_comments_unicode():
 
 test_loadtxt_comments_unicode()
 
+@test
 def test_loadtxt_comments_byte():
     data = test_dir + "/data_7.txt"
     TextIO = '# comment\n1,2,3,5\n'
@@ -350,19 +366,7 @@ def test_loadtxt_comments_byte():
 
 test_loadtxt_comments_byte()
 
-# Testcase Fails
-def test_loadtxt_comments_multiple():
-    data = test_dir + "/data_8.txt"
-    TextIO = '# comment\n1,2,3\n@ comment2\n4,5,6 // comment3'
-    with open(data, "w") as fh:
-        fh.write(TextIO)
-    # x = np.loadtxt(data, dtype=int, delimiter=',',
-    #                 comments=['#', '@', '//'])
-    # a = np.array([[1, 2, 3], [4, 5, 6]], int)
-    # assert np.array_equal(x, a)
-
-# test_loadtxt_comments_multiple()
-
+@test
 def test_loadtxt_comments_multi_chars():
     data = test_dir + "/data_9.txt"
     TextIO = '/* comment\n1,2,3,5\n'
@@ -374,6 +378,7 @@ def test_loadtxt_comments_multi_chars():
 
 test_loadtxt_comments_multi_chars()
 
+@test
 def test_loadtxt_skiprows():
     data = test_dir + "/data_10.txt"
     TextIO = 'comment\n1,2,3,5\n'
@@ -393,6 +398,7 @@ def test_loadtxt_skiprows():
 
 test_loadtxt_skiprows()
 
+@test
 def test_loadtxt_usecols():
     a = np.array([[1, 2], [3, 4]], float)
     data = test_dir + "/data_12.txt"
@@ -432,6 +438,7 @@ test_loadtxt_usecols()
 # def test_none_as_string(self): TODO
 # def test_binary_load(self): TODO
 
+@test
 def test_loadtxt_max_rows():
     data = test_dir + "/data_36.txt"
     TextIO = '1,2,3,5\n4,5,7,8\n2,1,4,5'
@@ -443,6 +450,7 @@ def test_loadtxt_max_rows():
 
 test_loadtxt_max_rows()
 
+@test
 def test_loadtxt_max_rows_with_skiprows():
     data = test_dir + "/data_37.txt"
     TextIO = 'comments\n1,2,3,5\n4,5,7,8\n2,1,4,5'
@@ -464,6 +472,7 @@ test_loadtxt_max_rows_with_skiprows()
 
 # def test_max_rows_with_read_continuation(self): TODO
 
+@test
 def test_loadtxt_max_rows_larger():
     #test max_rows > num rows
     data = test_dir + "/data_40.txt"
@@ -476,12 +485,9 @@ def test_loadtxt_max_rows_larger():
 
 test_loadtxt_max_rows_larger()
 
-# def test_max_rows_empty_lines(self, skip, data): TODO
-
 # TestGenFromTxt, TestSaveTxt, TestLoadTxt
 
-#  def test_record(self): TODO
-
+@test
 def test_gft_array():
     # Test outputting a standard ndarray
     filename = test_dir + '/data_41.txt'
@@ -497,6 +503,7 @@ def test_gft_array():
 
 test_gft_array()
 
+@test
 def test_gft_1D():
     # Test squeezing to 1D
     filename = test_dir + '/data_42.txt'
@@ -511,6 +518,7 @@ def test_gft_1D():
 
 test_gft_1D()
 
+@test
 def test_gft_comments():
     # Test the stripping of comments
     filename = test_dir + '/data_43.txt'
@@ -529,6 +537,7 @@ def test_gft_comments():
 
 test_gft_comments()
 
+@test
 def test_gft_skiprows():
     # Test row skipping
     filename = test_dir + '/data_44.txt'
@@ -552,6 +561,7 @@ def test_gft_skiprows():
 
 test_gft_skiprows()
 
+@test
 def test_gft_skip_footer():
     filename = test_dir + '/data_46.txt'
     control = np.array([1, 2, 3, 5], dtype=int)
@@ -567,6 +577,7 @@ test_gft_skip_footer()
 # def test_header(self): TODO
 # def test_auto_dtype(self): TODO
 
+@test
 def test_auto_dtype_uniform():
     # Tests whether the output dtype can be uniformized
     data = test_dir + '/data_50.txt'
@@ -587,6 +598,7 @@ def test_auto_dtype_uniform():
 # def test_file_is_closed_on_error(self): TODO
 # def test_autonames_and_usecols(self): TODO
 
+@test
 def test_converters_with_usecols():
     # Test the combination user-defined converters and usecol
     data = test_dir + '/data_58.txt'
@@ -610,6 +622,7 @@ test_converters_with_usecols()
 # def test_converters_cornercases(self): TODO
 # def test_converters_cornercases2(self): TODO
 
+@test
 def test_unused_converter():
     TextIO = "1 21\n3 42\n"
     data = test_dir + '/data_62.txt'
@@ -633,6 +646,7 @@ test_unused_converter()
 # def test_userconverters_with_explicit_dtype(self): TODO
 # def test_utf8_userconverters_with_explicit_dtype(self): TODO
 
+@test
 def test_spacedelimiter():
     # Test space delimiter
     TextIO = "1  2  3  4   5\n6  7  8  9  10"
@@ -645,6 +659,7 @@ def test_spacedelimiter():
 
 test_spacedelimiter()
 
+@test
 def test_integer_delimiter():
     # Test using an integer for delimiter
     TextIO = "  1  2  3\n  4  5 67\n890123  4"
@@ -657,6 +672,7 @@ def test_integer_delimiter():
 
 test_integer_delimiter()
 
+@test
 def test_gft_missing():
     TextIO = '1,2,3,,5\n'
     data = test_dir + '/data_73.txt'
@@ -673,6 +689,7 @@ test_gft_missing()
 
 # def test_missing_with_tabs(self): TODO
 
+@test
 def test_gft_usecols():
     # Test the selection of columns
     # Select 1 column
@@ -693,6 +710,7 @@ test_gft_usecols()
 # def test_usecols_as_css(self): TODO
 # def test_usecols_with_structured_dtype(self): TODO
 
+@test
 def test_usecols_with_integer():
     # Test usecols with an integer
     TextIO = b"1 2 3\n4 5 6"
@@ -741,6 +759,7 @@ test_usecols_with_integer()
 
 # def test_names_with_usecols_bug1636(): TODO
 
+@test
 def test_filling_values():
     # Test missing values
     TextIO = b"1, 2, 3\n1, , 5\n0, 6, \n"
@@ -753,6 +772,7 @@ def test_filling_values():
 
 test_filling_values()
 
+@test
 def test_gft_max_rows():
     # Test the `max_rows` keyword argument.
     TextIO = '1 2\n3 4\n5 6\n7 8\n9 10\n'
@@ -795,6 +815,7 @@ def test_gft_max_rows():
 
 test_gft_max_rows()
 
+@test
 def test_gft_using_filename():
     # Test that we can load data from a filename as well as a file
     # object
@@ -812,6 +833,7 @@ def test_gft_using_filename():
 
 test_gft_using_filename()
 
+@test
 def test_gft_from_gzip():
     # Test that we can load data from a gzipped file
     wanted = np.arange(6).reshape((2, 3))
@@ -831,6 +853,7 @@ test_gft_from_gzip()
 
 # def test_auto_dtype_largeint(self):
 
+@test
 def test_unpack_float_data():
     TextIO = ("1,2,3\n4,5,6\n7,8,9\n0.0,1.0,2.0")
     data = test_dir + '/data_124.txt'
@@ -847,7 +870,6 @@ test_unpack_float_data()
 # def test_unpack_auto_dtype(): TODO
 # def test_unpack_single_name(): TODO
 # def test_squeeze_scalar(): TODO
-
 @test
 def test_ndmin_keyword(ndim: Literal[int]):
     """Test ndmin keyword consistency between genfromtxt and loadtxt."""
@@ -864,8 +886,11 @@ test_ndmin_keyword(0)
 test_ndmin_keyword(1)
 test_ndmin_keyword(2)
 
+## XXX
+
 # TestPathUsage
 
+@test
 def test_loadtxt():
     path = test_dir + '/data_125.txt'
     a = np.array([[1.1, 2.1], [3.1, 4.1]], dtype=float)
@@ -875,6 +900,7 @@ def test_loadtxt():
 
 test_loadtxt()
 
+@test
 def test_save_load():
     path = test_dir + '/data_126.npy'
     a = np.array([[1, 2], [3, 4]], int)
@@ -884,6 +910,7 @@ def test_save_load():
 
 test_save_load()
 
+@test
 def test_save_load_memmap():
     path = test_dir + '/data_127.npy'
     a = np.array([[1, 2], [3, 4]], int)
@@ -893,6 +920,7 @@ def test_save_load_memmap():
 
 test_save_load_memmap()
 
+@test
 def test_save_load_memmap_readwrite():
     path = test_dir + '/data_128.npy'
     a = np.array([[1, 2], [3, 4]], int)
@@ -907,6 +935,7 @@ def test_save_load_memmap_readwrite():
 
 # def test_savez_compressed_load(): Not yet implemented
 
+@test
 def test_genfromtxt():
     path = test_dir + '/data_129.txt'
     a = np.array([(1, 2), (3, 4)])
@@ -916,7 +945,274 @@ def test_genfromtxt():
 
 test_genfromtxt()
 
+def check(txt: str, expected, **kwargs):
+    gen = txt.splitlines()
+
+    out = np.genfromtxt(gen, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    out = np.genfromtxt(gen, delimiter=None, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    gen_n = [a + '\n' for a in gen]
+
+    out = np.genfromtxt(gen_n, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    out = np.genfromtxt(gen_n, delimiter=None, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    gen_rn = [a + '\r\n' for a in gen]
+
+    out = np.genfromtxt(gen_rn, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    out = np.genfromtxt(gen_rn, delimiter=None, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    filename = test_dir + '/data_empty_delim.txt'
+    with open(filename, 'w') as f:
+        f.write(txt)
+
+    out = np.genfromtxt(filename, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    out = np.loadtxt(filename, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    out = np.genfromtxt(filename, delimiter=None, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    out = np.loadtxt(filename, delimiter=None, **kwargs)
+    if not np.array_equal(out, expected):
+        return False
+
+    return True
+
+@test
+def test_empty_delimiter():
+    # Basic
+    txt = (
+        "\n"
+        "\n"
+        " 1\t2   3\n"
+        "\t  4   5\t6   \n"
+        "\n"
+        "7   8   9   \t\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    txt = (
+        "\n"
+        "\n"
+        " 1\t2   3   \n"
+        "\t  4   5\t6\n"
+        "\n"
+        "7   8   9   \t\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    txt = (
+        "\n"
+        "  # AA\n"
+        " 1\t2   3  # X \n"
+        "\t  4   5\t6\n"
+        "#\n"
+        "7   8   9   \t\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    txt = (
+        " 1\t2   3  # X \n"
+        "\t  4   5\t6\n"
+        "#\n"
+        "7   8   9   \t\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    txt = (
+        " 1\t2   3  # X \n"
+        "\t  4   5\t6\n"
+        "#\n"
+        " # # \n"
+        "   \n"
+        "#\n"
+        "7   8   9   \t\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    # Heavy leading indentation; trailing tabs/spaces on each line
+    txt = (
+        "            1   2   3   \t \n"
+        "\t\t\t4 5 6   \t\n"
+        "    7\t8\t9     \n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    # Tabs-only separators and mixed tabs/spaces; stray trailing tab after last token
+    txt = (
+        "\t\t10\t  11\t12\t\n"
+        "13\t14  \t15\n"
+        "16   \t17\t18\t\n"
+    )
+    exp = np.array([[10,11,12],[13,14,15],[16,17,18]], float)
+    assert check(txt, exp)
+
+    # Glued inline comments (no space), spaced comments, and comments after tab
+    txt = (
+        "1 2 3#nospace\n"
+        "4 5 6    # spaced\n"
+        "7 8 9\t#\twithtab\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp, comments="#")
+
+    # Whitespace-only lines and comment-only lines sprinkled throughout
+    txt = (
+        "   \t   # top\n"
+        "1  2  3\n"
+        "  \t   \n"
+        "4\t5 6 # mid\n"
+        "   \n"
+        "7 8 9\n"
+        "   # end\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp, comments="#")
+
+    # Scientific notation, signs, and mixed spacing
+    txt = (
+        " -1e0   +2E+1   3.5e-1\n"
+        "\t-4.0 5E0  -6.25e+00\n"
+        "7.0e+00\t  -8E-1   +9.00\n"
+    )
+    exp = np.array([[-1.0, 20.0, 0.35],
+                    [-4.0, 5.0, -6.25],
+                    [7.0, -0.8, 9.0]], float)
+    assert check(txt, exp)
+
+    # Single-column data with leading/trailing blanks
+    txt = (
+        "\n"
+        "   10\n"
+        "  20   \n"
+        "\t30\t\n"
+        "   \n"
+    )
+    exp = np.array([[10.0], [20.0], [30.0]], float)
+    assert check(txt, exp)
+
+    # Irregular spacing, extra spaces between tokens
+    txt = (
+        "1    2           3\n"
+        "   4    5      6\n"
+        "7 8 9\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    # Inline comments preceded by many spaces; comment-only lines with tabs
+    txt = (
+        "1 2 3            # c1\n"
+        "\t\t# only comment\n"
+        "4   5   6    # c2\n"
+        "7 8 9\n"
+        "\t  # end\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp, comments="#")
+
+    # usecols on rectangular data (column reorder check)
+    txt = (
+        "1 2 3\n"
+        "4 5 6\n"
+        "7 8 9\n"
+    )
+    exp = np.array([[3,1],[6,4],[9,7]], float)  # columns (2,0)
+    assert check(txt, exp, usecols=(2,0))
+
+    # Mixed tabs/spaces around signs and decimals
+    txt = (
+        "  -0.0\t+0.0  1.0\n"
+        "\t-2.5  \t  3.75  5.0\n"
+        " 4.125  -5.5  \t6.0\n"
+    )
+    exp = np.array([[-0.0, 0.0, 1.0],
+                    [-2.5, 3.75, 5.0],
+                    [4.125, -5.5, 6.0]], float)
+    assert check(txt, exp)
+
+    # Trailing whitespace-only lines after data
+    txt = (
+        "1 2 3\n"
+        "4 5 6\n"
+        "7 8 9\n"
+        "   \n"
+        "\t   \n"
+        "\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    # Many blank lines between data rows
+    txt = (
+        "1 2 3\n"
+        "\n"
+        "\n"
+        "4 5 6\n"
+        "\n"
+        "7 8 9\n"
+        "\n"
+        "\n"
+        "\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp)
+
+    # Single row, many spaces and tabs (ensures 2D vs 1D behavior aligns)
+    txt = " \t  1   2 \t 3   \n"
+    exp = np.array([[1.0, 2.0, 3.0]], float)
+    assert check(txt, exp)
+
+    # Large integers with leading pluses/minuses and mixed whitespace
+    txt = (
+        "+100   -200   300\n"
+        "   -400 +500\t -600\n"
+        "\t700 800   -900\n"
+    )
+    exp = np.array([[ 100, -200,  300],
+                    [-400,  500, -600],
+                    [ 700,  800, -900]], float)
+    assert check(txt, exp)
+
+    # Inline comments glued to last token without whitespace; ensure parsing stops correctly
+    txt = (
+        "1 2 3#c\n"
+        "4 5 6#d\n"
+        "7 8 9#e\n"
+    )
+    exp = np.array([[1,2,3],[4,5,6],[7,8,9]], float)
+    assert check(txt, exp, comments="#")
+
+test_empty_delimiter()
+
 # Testcase fails
+@test
 def test_gzip_load():
     values = np.array([1, 2, 3, 4, 5])
     a = np.array(values, dtype=float)
@@ -942,7 +1238,7 @@ def test_gzip_load():
 
 # Testcases related to bz2 files
 
-# Testcase fails
+@test
 def test_gft_from_bz2():
     # Test that we can load data from a bz2 compressed file
     wanted = np.arange(6).reshape((2, 3))
@@ -961,6 +1257,7 @@ def test_gft_from_bz2():
 test_gft_from_bz2()
 
 # Testcase fails
+@test
 def test_bz2_load():
     values = np.array([1, 2, 3, 4, 5])
     a = np.array(values, dtype=float)
@@ -975,6 +1272,7 @@ def test_bz2_load():
 
 # test_bz2_load()
 
+@test
 def test_save_load_int32_1d_v1():
     array = np.array([1, 2, 3], dtype=np.int32)
     filename = test_dir + "/binary_int32_1d_v1.npy"
@@ -984,6 +1282,7 @@ def test_save_load_int32_1d_v1():
 
 test_save_load_int32_1d_v1()
 
+@test
 def test_save_load_int64_1d_v1():
     array = np.array([1, 2, 3], dtype=np.int64)
     filename = test_dir + "/binary_int64_1d_v1.npy"
@@ -993,6 +1292,7 @@ def test_save_load_int64_1d_v1():
 
 test_save_load_int64_1d_v1()
 
+@test
 def test_save_load_float32_1d_v1():
     array = np.array([1.0, 2.5, 3.7], dtype=np.float32)
     filename = test_dir + "/binary_float32_1d_v1.npy"
@@ -1002,6 +1302,7 @@ def test_save_load_float32_1d_v1():
 
 test_save_load_float32_1d_v1()
 
+@test
 def test_save_load_float64_1d_v1():
     array = np.array([1.0, 2.5, 3.7], dtype=np.float64)
     filename = test_dir + "/binary_float64_1d_v1.npy"
@@ -1011,6 +1312,7 @@ def test_save_load_float64_1d_v1():
 
 test_save_load_float64_1d_v1()
 
+@test
 def test_save_load_complex64_1d_v1():
     array = np.array([1.0 + 2.0j, 3.5 - 1.2j], dtype=np.complex64)
     filename = test_dir + "/binary_complex64_1d_v1.npy"
@@ -1020,6 +1322,7 @@ def test_save_load_complex64_1d_v1():
 
 test_save_load_complex64_1d_v1()
 
+@test
 def test_save_load_complex128_1d_v1():
     array = np.array([1.0 + 2.0j, 3.5 - 1.2j], dtype=np.complex128)
     filename = test_dir + "/binary_complex128_1d_v1.npy"
@@ -1029,6 +1332,7 @@ def test_save_load_complex128_1d_v1():
 
 test_save_load_complex128_1d_v1()
 
+@test
 def test_save_load_bool_1d_v1():
     array = np.array([True, False, True], dtype=bool)
     filename = test_dir + "/binary_bool_1d_v1.npy"
@@ -1038,6 +1342,7 @@ def test_save_load_bool_1d_v1():
 
 test_save_load_bool_1d_v1()
 
+@test
 def test_save_load_int32_2d_3x3_v1():
     array = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.int32)
     filename = test_dir + "/binary_int32_2d_3x3_v1.npy"
@@ -1047,6 +1352,7 @@ def test_save_load_int32_2d_3x3_v1():
 
 test_save_load_int32_2d_3x3_v1()
 
+@test
 def test_save_load_int64_2d_3x3_v1():
     array = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.int64)
     filename = test_dir + "/binary_int64_2d_3x3_v1.npy"
@@ -1056,6 +1362,7 @@ def test_save_load_int64_2d_3x3_v1():
 
 test_save_load_int64_2d_3x3_v1()
 
+@test
 def test_save_load_float32_2d_3x3_v1():
     array = np.array([[1.0, 2.5, 3.7], [4.2, 5.3, 6.1], [7.0, 8.2, 9.5]],
                      dtype=np.float32)
@@ -1066,6 +1373,7 @@ def test_save_load_float32_2d_3x3_v1():
 
 test_save_load_float32_2d_3x3_v1()
 
+@test
 def test_save_load_float64_2d_3x3_v1():
     array = np.array([[1.0, 2.5, 3.7], [4.2, 5.3, 6.1], [7.0, 8.2, 9.5]],
                      dtype=np.float64)
@@ -1076,6 +1384,7 @@ def test_save_load_float64_2d_3x3_v1():
 
 test_save_load_float64_2d_3x3_v1()
 
+@test
 def test_save_load_complex64_2d_3x3_v1():
     array = np.array([[1.0 + 2.0j, 3.5 - 1.2j, 4.0 + 0.5j],
                       [5.0 - 2.1j, 6.7 + 1.2j, 7.3 - 0.8j],
@@ -1088,6 +1397,7 @@ def test_save_load_complex64_2d_3x3_v1():
 
 test_save_load_complex64_2d_3x3_v1()
 
+@test
 def test_save_load_complex128_2d_3x3_v1():
     array = np.array([[1.0 + 2.0j, 3.5 - 1.2j, 4.0 + 0.5j],
                       [5.0 - 2.1j, 6.7 + 1.2j, 7.3 - 0.8j],
@@ -1100,6 +1410,7 @@ def test_save_load_complex128_2d_3x3_v1():
 
 test_save_load_complex128_2d_3x3_v1()
 
+@test
 def test_save_load_bool_2d_3x3_v1():
     array = np.array(
         [[True, False, True], [False, True, False], [True, True, False]],
@@ -1111,6 +1422,7 @@ def test_save_load_bool_2d_3x3_v1():
 
 test_save_load_bool_2d_3x3_v1()
 
+@test
 def test_save_load_int32_3d_3x3x3_v1():
     array = np.array([[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
                       [[10, 11, 12], [13, 14, 15], [16, 17, 18]],
@@ -1123,6 +1435,7 @@ def test_save_load_int32_3d_3x3x3_v1():
 
 test_save_load_int32_3d_3x3x3_v1()
 
+@test
 def test_save_load_int64_3d_3x3x3_v1():
     array = np.array([[[1, 2, 3], [4, 5, 6], [7, 8, 9]],
                       [[10, 11, 12], [13, 14, 15], [16, 17, 18]],
@@ -1135,6 +1448,7 @@ def test_save_load_int64_3d_3x3x3_v1():
 
 test_save_load_int64_3d_3x3x3_v1()
 
+@test
 def test_save_load_float32_3d_3x3x3_v1():
     array = np.array(
         [[[1.0, 2.5, 3.7], [4.2, 5.3, 6.1], [7.0, 8.2, 9.5]],
@@ -1148,6 +1462,7 @@ def test_save_load_float32_3d_3x3x3_v1():
 
 test_save_load_float32_3d_3x3x3_v1()
 
+@test
 def test_save_load_float64_3d_3x3x3_v1():
     array = np.array(
         [[[1.0, 2.5, 3.7], [4.2, 5.3, 6.1], [7.0, 8.2, 9.5]],
@@ -1161,6 +1476,7 @@ def test_save_load_float64_3d_3x3x3_v1():
 
 test_save_load_float64_3d_3x3x3_v1()
 
+@test
 def test_save_load_complex64_3d_3x3x3_v1():
     array = np.array([[[1.0 + 2.0j, 3.5 - 1.2j, 4.0 + 0.5j],
                        [5.0 - 2.1j, 6.7 + 1.2j, 7.3 - 0.8j],
@@ -1179,6 +1495,7 @@ def test_save_load_complex64_3d_3x3x3_v1():
 
 test_save_load_complex64_3d_3x3x3_v1()
 
+@test
 def test_save_load_complex128_3d_3x3x3_v1():
     array = np.array([[[1.0 + 2.0j, 3.5 - 1.2j, 4.0 + 0.5j],
                        [5.0 - 2.1j, 6.7 + 1.2j, 7.3 - 0.8j],
@@ -1197,6 +1514,7 @@ def test_save_load_complex128_3d_3x3x3_v1():
 
 test_save_load_complex128_3d_3x3x3_v1()
 
+@test
 def test_save_load_bool_3d_3x3x3_v1():
     array = np.array(
         [[[True, False, True], [False, True, False], [True, True, False]],
@@ -1212,6 +1530,7 @@ test_save_load_bool_3d_3x3x3_v1()
 
 # Negative Testcases
 
+@test
 def test_load_invalid_path_v1():
     filename = test_dir + "/binary_invalid_path_v1.npy"
     try:
@@ -1222,6 +1541,7 @@ def test_load_invalid_path_v1():
 
 test_load_invalid_path_v1()
 
+@test
 def test_load_corrupted_file_v1():
     filename = test_dir + "/binary_corrupted_file_v1.npy"
     try:
@@ -1234,6 +1554,7 @@ def test_load_corrupted_file_v1():
 
 test_load_corrupted_file_v1()
 
+@test
 def test_load_version_mismatch_v1():
     array = np.array([1, 2, 3])
     filename = test_dir + "/binary_version_mismatch_v1.npy"
@@ -1249,6 +1570,7 @@ def test_load_version_mismatch_v1():
 
 test_load_version_mismatch_v1()
 
+@test
 def test_load_mismatched_dtype_v1():
     # Save with dtype int and load with other dtype
     array = np.array([1, 2, 3], dtype=int)
@@ -1258,6 +1580,7 @@ def test_load_mismatched_dtype_v1():
 
 test_load_mismatched_dtype_v1()
 
+@test
 def test_load_empty_array_v1():
     # Save an empty array and load
     array = np.array(np.empty((1, )), dtype=int)
@@ -1268,6 +1591,7 @@ def test_load_empty_array_v1():
 
 test_load_empty_array_v1()
 
+@test
 def test_load_incorrect_filename_v1():
     # Save using filename contains special character or too long
     array = np.array([1, 2, 3])
@@ -1277,6 +1601,7 @@ def test_load_incorrect_filename_v1():
 
 test_load_incorrect_filename_v1()
 
+@test
 def test_load_incorrect_save_v1():
     # Interrupt the saving process to create incomplete .npy file
     array = np.array([1, 2, 3])
@@ -1297,6 +1622,7 @@ def test_load_incorrect_save_v1():
 
 test_load_incorrect_save_v1()
 
+@test
 def test_incorrect_extension_v1():
     filename = test_dir + "/binary_incorrect_extension.npa"
     np.save(filename, np.array([1, 2, 3]))
