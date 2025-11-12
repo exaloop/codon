@@ -14,7 +14,6 @@ from .linalg_sym import *
 from .const import *
 from .window import *
 from .sorting import *
-from .ndgpu import *
 from .format import *
 from .misc import *
 from .lib.arraysetops import *

@@ -816,35 +816,6 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
   }
 }
 
-void addInitCall(llvm::Module *M, const std::string &filename) {
-  llvm::LLVMContext &context = M->getContext();
-  llvm::IRBuilder<> B(context);
-  auto f = M->getOrInsertFunction("set_nvptx_module_name", B.getVoidTy(), B.getPtrTy());
-  auto *g = llvm::cast<llvm::Function>(f.getCallee());
-  g->setDoesNotThrow();
-
-  auto *filenameVar = new llvm::GlobalVariable(
-      *M, llvm::ArrayType::get(llvm::Type::getInt8Ty(context), filename.length() + 1),
-      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-      llvm::ConstantDataArray::getString(context, filename), ".nvptx.filename");
-  filenameVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-
-  if (auto *init = M->getFunction("seq_init")) {
-    seqassertn(init->hasOneUse(), "seq_init used more than once");
-    auto *use = llvm::dyn_cast<llvm::CallBase>(init->use_begin()->getUser());
-    seqassertn(use, "seq_init use was not a call");
-    B.SetInsertPoint(use->getNextNode());
-    B.CreateCall(g, B.CreateBitCast(filenameVar, B.getPtrTy()));
-  }
-
-  for (auto &F : M->functions()) {
-    if (F.hasFnAttribute("jit")) {
-      B.SetInsertPoint(F.getEntryBlock().getFirstNonPHI());
-      B.CreateCall(g, B.CreateBitCast(filenameVar, B.getPtrTy()));
-    }
-  }
-}
-
 void cleanUpIntrinsics(llvm::Module *M) {
   llvm::LLVMContext &context = M->getContext();
   llvm::SmallVector<llvm::Function *, 16> remove;
@@ -903,7 +874,6 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
 
   moduleToPTX(clone.get(), filename, kernels);
   cleanUpIntrinsics(M);
-  addInitCall(M, filename);
 }
 
 } // namespace ir

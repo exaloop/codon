@@ -1,13 +1,15 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import sizeof as _sizeof
-import internal.static as static
+from numpy import ndarray
 from internal.dlopen import *
+
+import internal.static as static
+import numpy as np
 import os, sys
 
-
-CUDA_SUCCESS = 0i32
-CUDA_ERROR_NOT_FOUND = 500i32
+CUDA_SUCCESS: Literal[int] = 0
+CUDA_ERROR_NOT_FOUND: Literal[int] = 500
 
 CUresult = i32
 CUdevice = i32
@@ -17,7 +19,6 @@ CUcontext = cobj
 CUfunction = cobj
 
 modules: List[CUmodule] = []
-nvptx_name: cobj
 
 # We use 3020 (v2; 64-bit address space) CUDA API here
 cuCtxCreate = Function[[Ptr[cobj], u32, CUdevice], CUresult](cobj())
@@ -119,7 +120,7 @@ def cuda_init_handles(cuda_handle: cobj):
 
 
 def cuda_check(err):
-    if err != CUDA_SUCCESS:
+    if err != i32(CUDA_SUCCESS):
         msg = cobj()
         cuGetErrorName(err, __ptr__(msg))
         errname = str.from_ptr(msg)
@@ -137,16 +138,29 @@ def nvptx_init():
     return device, context
 
 
-@export
-def set_nvptx_module_name(name: cobj):
-    global nvptx_name
-    nvptx_name = name
-
-
 def nvptx_load_module(filename: cobj):
     module = CUmodule()
     cuda_check(cuModuleLoad(__ptr__(module), filename))
     modules.append(module)
+
+def _ptx_filename(path: Literal[str]) -> Literal[str]:
+    def contains_extension(path: Literal[str]) -> Literal[bool]:
+        if not path:
+            return False
+        else:
+            return path[0] == '.' or contains_extension(path[1:])
+
+    def find_extension(path: Literal[str]) -> Literal[int]:
+        for i in static.range(static.len(path) - 1, -1, -1):
+            if path[i] == '.':
+                return i
+
+    if not path or path[0] == '<':
+        return 'kernel.ptx'
+    elif contains_extension(path):
+        return path[:find_extension(path)] + '.ptx'
+    else:
+        return path + '.ptx'
 
 
 def cuda_init(debug: bool = False):
@@ -167,16 +181,15 @@ def cuda_init(debug: bool = False):
         cuCtxGetApiVersion(context, __ptr__(api_version))
         print(f"[CUDA] Loaded API version {api_version}", file=sys.stderr)
 
-    if nvptx_name == cobj():
-        raise CUDAError(-1, "Module filename not set")
-    nvptx_load_module(nvptx_name)
+    nvptx_name: Literal[str] = _ptx_filename(__file__)
+    nvptx_load_module(nvptx_name.ptr)
 
     if debug:
         d = Device(0)
         print(
             "[CUDA] Initialized: library=", get_library_file_name(cuModuleLoad.__raw__()),
             ", device=", d, ", capability=", d.compute_capability,
-            ", ptx=", str.from_ptr(nvptx_name),
+            ", ptx=", nvptx_name,
             sep='', file=sys.stderr
         )
 
@@ -421,9 +434,9 @@ def kernel(fn):
 
         for m in modules[::-1]:
             result = cuModuleGetFunction(__ptr__(function), m, clean_p)
-            if result == CUDA_SUCCESS:
+            if result == i32(CUDA_SUCCESS):
                 return function
-            elif result == CUDA_ERROR_NOT_FOUND:
+            elif result == i32(CUDA_ERROR_NOT_FOUND):
                 continue
             else:
                 break
@@ -953,3 +966,39 @@ def _gpu_loop_outline_template(start, stop, args, instance: Literal[int]):
         grid = (n // MAX_BLOCK) + (0 if n % MAX_BLOCK == 0 else 1)
 
     _kernel_stub(start, n, args, grid=grid, block=block)
+
+@extend
+class ndarray:
+    def __to_gpu__(self, cache: AllocCache):
+        if self._is_contig:
+            data_gpu = _ptr_to_gpu(self.data, self.size, cache)
+            return ndarray(self.shape, self.strides, data_gpu)
+        else:
+            n = self.size
+            p = Ptr[dtype](n)
+            i = 0
+            for idx in np.util.multirange(self.shape):
+                p[i] = self._ptr(idx)[0]
+                i += 1
+            data_gpu = _ptr_to_gpu(p, self.size, cache)
+            np.util.free(p)
+            return ndarray(self.shape, data_gpu)
+
+    def __from_gpu__(self, other: ndarray[dtype, ndim]):
+        if self._is_contig:
+            _ptr_from_gpu(self.data, other.data, self.size)
+        else:
+            for idx in np.util.multirange(self.shape):
+                _ptr_from_gpu(self._ptr(idx), other._ptr(idx), 1)
+
+    def __from_gpu_new__(other: ndarray[dtype, ndim]):
+        data = Ptr[dtype](other.size)
+        if other._is_contig:
+            _ptr_from_gpu(data, other.data, other.size)
+            return ndarray(other.shape, other.strides, data)
+        else:
+            i = 0
+            for idx in np.util.multirange(other.shape):
+                _ptr_from_gpu(data + i, other._ptr(idx), 1)
+                i += 1
+            return ndarray(other.shape, data)
