@@ -649,8 +649,11 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   // Parse LLVM code and look for expression blocks that start with `{=`
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < code.size(); i++) {
+    if (i < code.size() - 1 && code[i] == '\\' && code[i + 1] == '\n') {
+      code[i] = code[i + 1] = ' ';
+    }
     if (i < code.size() - 1 && code[i] == '{' && code[i + 1] == '=') {
-      if (braceStart < i)
+      if (braceStart <= i)
         finalCode += escapeFStringBraces(code, braceStart, i - braceStart) + '{';
       if (!braceCount) {
         braceStart = i + 2;
@@ -666,7 +669,7 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
       auto exprOrErr = parseExpr(ctx->cache, exprCode, offset);
       if (!exprOrErr)
         throw exc::ParserException(exprOrErr.takeError());
-      auto expr = transform(exprOrErr->first, true);
+      auto expr = exprOrErr->first;
       items.push_back(N<ExprStmt>(expr));
       braceStart = i + 1;
       finalCode += '}';

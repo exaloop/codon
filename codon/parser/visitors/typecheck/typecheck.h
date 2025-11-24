@@ -390,6 +390,8 @@ public:
   Expr *transformStaticFnWrapCallArgs(CallExpr *);
   Expr *transformStaticVars(CallExpr *);
   Expr *transformStaticTupleType(const CallExpr *);
+  Expr *transformStaticFormat(CallExpr *);
+  Expr *transformStaticIntToStr(CallExpr *);
   SuiteStmt *generateClassPopulateVTablesAST();
   SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
   FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,

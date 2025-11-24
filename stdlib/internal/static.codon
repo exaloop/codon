@@ -69,3 +69,23 @@ def vars_types(T: type, with_index: Literal[bool] = False):
 
 def tuple_type(T: type, N: Literal[int]):
     pass
+
+# Compile-time generated
+def format(fmt: Literal[str], arg: Literal[str]) -> Literal[str]:
+    """%% is used instead of {} for arguments."""
+    pass
+
+# Compile-time generated
+def int_to_string(val: Literal[int]) -> Literal[str]:
+    pass
+
+def loop_string(
+    start: Literal[int], stop: Literal[int],
+    val: Literal[str], delim: Literal[str]
+) -> Literal[str]:
+    if start >= stop:
+        return ""
+    elif start + 1 == stop:
+        return static.format(val, int_to_string(start))
+    else:
+        return static.format(val, int_to_string(start)) + delim + loop_string(start + 1, stop, val, delim)
