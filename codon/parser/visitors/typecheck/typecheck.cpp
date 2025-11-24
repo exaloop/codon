@@ -71,6 +71,7 @@ Stmt *TypecheckVisitor::apply(
   // Set up __name__
   stmts.push_back(
       tv.N<AssignStmt>(tv.N<IdExpr>("__name__"), tv.N<StringExpr>(MODULE_MAIN)));
+  stmts.push_back(tv.N<AssignStmt>(tv.N<IdExpr>("__file__"), tv.N<StringExpr>(file)));
   stmts.push_back(node);
 
   if (auto err = ScopingVisitor::apply(cache, suite, &ctx->globalShadows))
