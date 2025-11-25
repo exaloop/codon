@@ -684,10 +684,9 @@ getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
   return std::vector<llvm::GlobalValue *>(keep.begin(), keep.end());
 }
 
-void moduleToPTX(llvm::Module *M, const std::string &filename,
-                 std::vector<llvm::GlobalValue *> &kernels,
-                 const std::string &cpuStr = "sm_30",
-                 const std::string &featuresStr = "+ptx42") {
+std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels,
+                        const std::string &cpuStr = "sm_30",
+                        const std::string &featuresStr = "+ptx42") {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
 
@@ -794,25 +793,23 @@ void moduleToPTX(llvm::Module *M, const std::string &filename,
 
   // Generate PTX file.
   {
-    std::error_code errcode;
-    auto out = std::make_unique<llvm::ToolOutputFile>(filename, errcode,
-                                                      llvm::sys::fs::OF_Text);
-    if (errcode)
-      compilationError(errcode.message());
-    llvm::raw_pwrite_stream *os = &out->os();
+    llvm::SmallVector<char, 1024> ptx;
+    llvm::raw_svector_ostream os(ptx);
 
     auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(machine.get());
     llvm::legacy::PassManager pm;
 
     pm.add(new llvm::TargetLibraryInfoWrapperPass(tlii));
-    seqassertn(!machine->addPassesToEmitFile(pm, *os, nullptr,
+    bool fail = machine->addPassesToEmitFile(pm, os, nullptr,
                                              llvm::CodeGenFileType::AssemblyFile,
-                                             /*DisableVerify=*/false, mmiwp),
-               "could not add passes");
+                                             /*DisableVerify=*/false, mmiwp);
+    seqassertn(!fail, "could not add passes");
+
     const_cast<llvm::TargetLoweringObjectFile *>(machine->getObjFileLowering())
         ->Initialize(mmiwp->getMMI().getContext(), *machine);
+
     pm.run(*M);
-    out->keep();
+    return std::string(ptx.data(), ptx.size());
   }
 }
 
@@ -865,15 +862,48 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
   if (kernels.empty())
     return;
 
-  std::string filename = ptxFilename.empty() ? M->getSourceFileName() : ptxFilename;
-  if (filename.empty() || filename[0] == '<')
-    filename = "kernel";
-  llvm::SmallString<128> path(filename);
-  llvm::sys::path::replace_extension(path, "ptx");
-  filename = path.str();
-
-  moduleToPTX(clone.get(), filename, kernels);
+  auto ptx = moduleToPTX(clone.get(), kernels);
   cleanUpIntrinsics(M);
+
+  // Add ptx code as a global var
+  auto *ptxVar = new llvm::GlobalVariable(
+      *M, llvm::ArrayType::get(llvm::Type::getInt8Ty(context), ptx.length() + 1),
+      /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantDataArray::getString(context, ptx), ".ptx");
+
+  ptxVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  // Find and patch direct calls to cuModuleLoadData()
+  const std::string ptxTarget = "__codon_ptx__"; // must match gpu.codon name
+  llvm::SmallVector<llvm::Instruction *, 1> callsToReplace;
+  for (auto &F : *M) {
+    for (auto &BB : F) {
+      for (auto &I : BB) {
+        auto *call = llvm::dyn_cast<llvm::CallBase>(&I);
+        if (!call)
+          continue;
+
+        auto *callee = call->getCalledFunction();
+        if (!callee)
+          continue;
+
+        if (callee->getName() == ptxTarget && call->arg_size() == 0)
+          callsToReplace.push_back(call);
+      }
+    }
+  }
+
+  for (auto *call : callsToReplace) {
+    call->replaceAllUsesWith(ptxVar);
+    call->dropAllReferences();
+    call->eraseFromParent();
+  }
+
+  // Delete __codon_ptx__() stub
+  if (auto *F = M->getFunction(ptxTarget)) {
+    seqassertn(F->use_empty(), "some __codon_ptx__() calls not replaced in module");
+    F->eraseFromParent();
+  }
 }
 
 } // namespace ir

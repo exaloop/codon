@@ -34,7 +34,7 @@ cuGetErrorString = Function[[CUresult, Ptr[cobj]], CUresult](cobj())
 cuInit = Function[[u32], CUresult](cobj())
 cuLaunchKernel = Function[[CUfunction, u32, u32, u32, u32, u32, u32, u32, cobj, cobj, cobj], CUresult](cobj())
 cuModuleGetFunction = Function[[Ptr[CUfunction], CUmodule, cobj], CUresult](cobj())
-cuModuleLoad = Function[[Ptr[CUmodule], cobj], CUresult](cobj())
+cuModuleLoadData = Function[[Ptr[CUmodule], cobj], CUresult](cobj())
 
 
 class CUDAError(Static[Exception]):
@@ -97,7 +97,7 @@ def cuda_init_handles(cuda_handle: cobj):
     global cuMemcpyHtoD
     global cuMemFree
     global cuModuleGetFunction
-    global cuModuleLoad
+    global cuModuleLoadData
 
     cuCtxCreate = dlsym(cuda_handle, "cuCtxCreate_v2")
     cuMemAlloc = dlsym(cuda_handle, "cuMemAlloc_v2")
@@ -114,7 +114,7 @@ def cuda_init_handles(cuda_handle: cobj):
     cuInit = dlsym(cuda_handle, "cuInit")
     cuLaunchKernel = dlsym(cuda_handle, "cuLaunchKernel")
     cuModuleGetFunction = dlsym(cuda_handle, "cuModuleGetFunction")
-    cuModuleLoad = dlsym(cuda_handle, "cuModuleLoad")
+    cuModuleLoadData = dlsym(cuda_handle, "cuModuleLoadData")
 
 
 def cuda_check(err):
@@ -136,29 +136,13 @@ def nvptx_init():
     return device, context
 
 
-def nvptx_load_module(filename: cobj):
+def nvptx_load_module():
+    from C import __codon_ptx__() -> cobj
     module = CUmodule()
-    cuda_check(cuModuleLoad(__ptr__(module), filename))
+    # NOTE: 2nd argument to cuModuleLoadData() will
+    #       be replaced by Codon's GPU pass
+    cuda_check(cuModuleLoadData(__ptr__(module), __codon_ptx__()))
     modules.append(module)
-
-def _ptx_filename(path: Literal[str]) -> Literal[str]:
-    def contains_extension(path: Literal[str]) -> Literal[bool]:
-        if not path:
-            return False
-        else:
-            return path[0] == '.' or contains_extension(path[1:])
-
-    def find_extension(path: Literal[str]) -> Literal[int]:
-        for i in static.range(static.len(path) - 1, -1, -1):
-            if path[i] == '.':
-                return i
-
-    if not path or path[0] == '<':
-        return 'kernel.ptx'
-    elif contains_extension(path):
-        return path[:find_extension(path)] + '.ptx'
-    else:
-        return path + '.ptx'
 
 
 def cuda_init(debug: bool = False):
@@ -179,15 +163,13 @@ def cuda_init(debug: bool = False):
         cuCtxGetApiVersion(context, __ptr__(api_version))
         print(f"[CUDA] Loaded API version {api_version}", file=sys.stderr)
 
-    nvptx_name: Literal[str] = _ptx_filename(__file__)
-    nvptx_load_module(nvptx_name.ptr)
+    nvptx_load_module()
 
     if debug:
         d = Device(0)
         print(
-            "[CUDA] Initialized: library=", get_library_file_name(cuModuleLoad.__raw__()),
+            "[CUDA] Initialized: library=", get_library_file_name(cuModuleLoadData.__raw__()),
             ", device=", d, ", capability=", d.compute_capability,
-            ", ptx=", nvptx_name,
             sep='', file=sys.stderr
         )
 
