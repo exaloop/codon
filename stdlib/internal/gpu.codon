@@ -4,7 +4,6 @@ from internal.gc import sizeof as _sizeof
 from internal.dlopen import *
 
 import internal.static as static
-import os, sys
 
 CUDA_SUCCESS: Literal[int] = 0
 CUDA_ERROR_NOT_FOUND: Literal[int] = 500
@@ -165,6 +164,8 @@ def cuda_init(debug: bool = False):
     global _CUDA_INITIALIZED
     if _CUDA_INITIALIZED:
         return
+
+    import sys, os
 
     cuda_handle = cobj()
     LD = os.getenv("CODON_CUDA", default="libcuda." + dlext())
