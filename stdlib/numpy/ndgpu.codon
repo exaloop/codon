@@ -3,6 +3,7 @@
 import internal.gpu as gpu
 import util
 from .ndarray import ndarray
+from .ufunc import UnaryUFunc, UnaryUFunc2, BinaryUFunc
 
 @extend
 class ndarray:
@@ -39,3 +40,36 @@ class ndarray:
                 gpu._ptr_from_gpu(data + i, other._ptr(idx), 1)
                 i += 1
             return ndarray(other.shape, data)
+
+@extend
+class UnaryUFunc:
+    def __to_gpu__(self, cache: gpu.AllocCache):
+        return self
+
+    def __from_gpu__(self, other: UnaryUFunc):
+        pass
+
+    def __from_gpu_new__(other: UnaryUFunc):
+        return other
+
+@extend
+class UnaryUFunc2:
+    def __to_gpu__(self, cache: gpu.AllocCache):
+        return self
+
+    def __from_gpu__(self, other: UnaryUFunc2):
+        pass
+
+    def __from_gpu_new__(other: UnaryUFunc2):
+        return other
+
+@extend
+class BinaryUFunc:
+    def __to_gpu__(self, cache: gpu.AllocCache):
+        return self
+
+    def __from_gpu__(self, other: BinaryUFunc):
+        pass
+
+    def __from_gpu_new__(other: BinaryUFunc):
+        return other

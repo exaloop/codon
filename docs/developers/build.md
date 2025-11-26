@@ -70,14 +70,6 @@ Additionally, a number of shared libraries are produced in `install/lib/codon`:
     `-DLLVM_DIR=llvm-project/install/lib/cmake/llvm` on the first `cmake` command if you
     followed the instructions above for compiling LLVM.
 
-## GPU support
-
-You will need to install NVIDIA's CUDA on your system for GPU to work.
-
-As long as `libcuda.so` (or `libcuda.dylib`) is available and accessible, you are
-good to go. If not, adjust `LD_LIBRARY_PATH` or set `CODON_CUDA` environment
-variable to point to the exact location of `libcuda.so` (or its equivalent).
-
 ## Jupyter support
 
 To enable Jupyter support, you will need to build the Jupyter plugin:

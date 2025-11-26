@@ -19,6 +19,8 @@ const std::string GPU_DL =
 llvm::cl::opt<std::string>
     libdevice("libdevice", llvm::cl::desc("libdevice path for GPU kernels"),
               llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
+llvm::cl::opt<std::string> ptxOutput("ptx",
+                                     llvm::cl::desc("Output PTX to specified file"));
 
 // Adapted from LLVM's GVExtractorPass, which is not externally available
 // as a pass for the new pass manager.
@@ -791,7 +793,7 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
     }
   }
 
-  // Generate PTX file.
+  // Generate PTX code.
   {
     llvm::SmallVector<char, 1024> ptx;
     llvm::raw_svector_ostream os(ptx);
@@ -864,6 +866,16 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
 
   auto ptx = moduleToPTX(clone.get(), kernels);
   cleanUpIntrinsics(M);
+
+  if (ptxOutput.getNumOccurrences() > 0) {
+    std::error_code err;
+    llvm::ToolOutputFile out(ptxOutput, err, llvm::sys::fs::OF_Text);
+    seqassertn(!err, "Could not open file: {}", err.message());
+    llvm::raw_ostream &os = out.os();
+    os << ptx;
+    os.flush();
+    out.keep();
+  }
 
   // Add ptx code as a global var
   auto *ptxVar = new llvm::GlobalVariable(

@@ -1,5 +1,13 @@
 Codon supports GPU programming through a native GPU backend.
 Currently, only Nvidia devices are supported.
+
+!!! info
+
+    [CUDA](https://developer.nvidia.com/cuda-toolkit) is required for GPU programming.
+    Codon automatically loads the CUDA shared library `libcuda.so` (or `libcuda.dylib`).
+    If this library is not in a standard location, its path can be specified via the
+    `CODON_CUDA` environment variable.
+
 Here is a simple example:
 
 ``` python
@@ -249,6 +257,12 @@ for i in range(N):
 Note that the `gpu=True` option disallows shared variables (i.e. assigning out-of-loop
 variables in the loop body) as well as reductions. The other GPU-specific restrictions
 described here apply as well.
+
+## Inspecting the generated PTX code
+
+The generated PTX code can be saved to a file via the `-ptx <file>` flag. This code is
+embedded as constant data in the compiled output produced by Codon, and loaded at runtime
+via the CUDA Driver API.
 
 ## Troubleshooting
 
