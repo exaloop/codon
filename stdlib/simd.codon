@@ -180,7 +180,7 @@ class Vec[T, N: Literal[int]]:
 
     @pure
     @llvm
-    def __getitem__(self, n: Static[int]) -> T:
+    def __getitem__(self, n: Literal[int]) -> T:
         %0 = extractelement <{=N} x {=T}> %self, i32 {=n}
         ret {=T} %0
 

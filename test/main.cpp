@@ -454,7 +454,8 @@ INSTANTIATE_TEST_SUITE_P(
         "core/match.codon",
         "core/serialization.codon",
         "core/pipeline.codon",
-        "core/empty.codon"
+        "core/empty.codon",
+        "core/vec_simd.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
