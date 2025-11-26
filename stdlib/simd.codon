@@ -9,11 +9,10 @@ class Vec[T, N: Literal[int]]:
                isinstance(T, Int) or isinstance(T, UInt)
 
     def _is_sint(T: type) -> Literal[bool]:
-        return isinstance(T, int) or isinstance(T, byte) or \
-               isinstance(T, Int)
+        return isinstance(T, int) or isinstance(T, Int)
 
     def _is_uint(T: type) -> Literal[bool]:
-        return isinstance(T, UInt)
+        return isinstance(T, UInt) or isinstance(T, byte)
 
     def _int_prefix(T: type) -> Literal[str]:
         return 'u' if isinstance(T, UInt) else 's'
@@ -22,7 +21,8 @@ class Vec[T, N: Literal[int]]:
         return isinstance(T, float16) \
             or isinstance(T, float32) \
             or isinstance(T, float) \
-            or isinstance(T, float128)
+            or isinstance(T, float128) \
+            or isinstance(T, bfloat16)
 
     def _is_valid(T: type) -> Literal[bool]:
         return Vec._is_int(T) or Vec._is_float(T)
@@ -44,20 +44,19 @@ class Vec[T, N: Literal[int]]:
             return 64
         if isinstance(T, float128):
             return 128
+        if isinstance(T, bfloat16):
+            return 16
         compile_error("invalid type")
 
-
+    @pure
     @llvm
     def _set(val: T) -> Vec[T, N]:
         %0 = insertelement <{=N} x {=T}> undef, {=T} %val, i32 0
         %1 = shufflevector <{=N} x {=T}> %0, <{=N} x {=T}> undef, <{=N} x i32> zeroinitializer
         ret <{=N} x {=T}> %1
 
-    @llvm
     def _load(data) -> Vec[T, N]:
-        %0 = bitcast {=T}* %data to <{=N} x {=T}>*
-        %1 = load <{=N} x {=T}>, <{=N} x {=T}>* %0, align 1
-        ret <{=N} x {=T}> %1
+        return Ptr[Vec[T, N]](data)[0]
 
     def __new__(x) -> Vec[T, N]:
         if Vec._is_valid(x):
@@ -80,53 +79,61 @@ class Vec[T, N: Literal[int]]:
     def __new__(x: List[T], offset: int = 0) -> Vec[T, N]:
         return Vec[T, N](x.arr.ptr + offset)
 
-
-
+    @pure
     @llvm
     def _zext(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = zext <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _sext(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = sext <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _uitofp(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = uitofp <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _sitofp(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = sitofp <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _fpext(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = fpext <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _trunc(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = trunc <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _fptrunc(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = fptrunc <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _fptoui(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = fptoui <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _fptosi(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = fptosi <{=N} x {=T}> %self to <{=N} x {=T2}>
         ret <{=N} x {=T2}> %0
 
+    @pure
     @llvm
     def _bitcast(self: Vec[T, N], T2: type) -> Vec[T2, N]:
         %0 = bitcast <{=N} x {=T}> %self to <{=N} x {=T2}>
@@ -160,29 +167,27 @@ class Vec[T, N: Literal[int]]:
             return self._uitofp(T2) if Vec._is_uint(T) else self._sitofp(T2)
         compile_error("invalid cast")
 
+    @pure
     @llvm
     def cast_ptr(ptr: Ptr[T], T: type, T2: type) -> Ptr[T2]:
         ret ptr %ptr
 
-
     def __copy__(self) -> Vec[T, N]:
         return self
-
 
     def __neg__(self) -> Vec[T, N]:
         return Vec[T, N](T(0)) - self
 
-
+    @pure
     @llvm
     def __getitem__(self, n: Static[int]) -> T:
         %0 = extractelement <{=N} x {=T}> %self, i32 {=n}
         ret {=T} %0
 
-
     def __repr__(self):
         return f"<{','.join(repr(i) for i in self.scatter())}>"
 
-
+    @pure
     @llvm
     def _eq(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = icmp eq <{=N} x {=T}> %self, %other
@@ -200,7 +205,7 @@ class Vec[T, N: Literal[int]]:
     def __ne__(self, other: T) -> Vec[u1, N]:
         return self != Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _and(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = and <{=N} x {=T}> %self, %other
@@ -211,7 +216,7 @@ class Vec[T, N: Literal[int]]:
             return Vec[T, N](self._as_int()._and(other._as_int()))
         return self._and(other)
 
-
+    @pure
     @llvm
     def _or(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = or <{=N} x {=T}> %self, %other
@@ -222,7 +227,7 @@ class Vec[T, N: Literal[int]]:
             return Vec[T, N](self._as_int()._or(other._as_int()))
         return self._or(other)
 
-
+    @pure
     @llvm
     def _xor(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = xor <{=N} x {=T}> %self, %other
@@ -233,12 +238,13 @@ class Vec[T, N: Literal[int]]:
             return Vec[T, N](self._as_int()._xor(other._as_int()))
         return self._xor(other)
 
-
+    @pure
     @llvm
     def _lsh(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = shl <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _lshuffle(self: Vec[T, N], I: Literal[int]) -> Vec[T, N]:
         %0 = shufflevector <{=N} x {=T}> %self, <{=N} x {=T}> zeroinitializer, \
@@ -254,12 +260,13 @@ class Vec[T, N: Literal[int]]:
             return self
         return self._lshuffle(other)
 
-
+    @pure
     @llvm
     def _rsh(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = lshr <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _rshuffle(self: Vec[T, N], I: Literal[int]) -> Vec[T, N]:
         %0 = shufflevector <{=N} x {=T}> %self, <{=N} x {=T}> zeroinitializer, \
@@ -275,12 +282,13 @@ class Vec[T, N: Literal[int]]:
             return self
         return self._rshuffle(other)
 
-
+    @pure
     @llvm
     def _add(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = add <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _fadd(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = fadd <{=N} x {=T}> %self, %other
@@ -294,12 +302,13 @@ class Vec[T, N: Literal[int]]:
     def __add__(self, other: T) -> Vec[T, N]:
         return self + Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _sub(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = sub <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _fsub(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = fsub <{=N} x {=T}> %self, %other
@@ -313,12 +322,13 @@ class Vec[T, N: Literal[int]]:
     def __sub__(self, other: T) -> Vec[T, N]:
         return self - Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _mul(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = mul <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _fmul(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = fmul <{=N} x {=T}> %self, %other
@@ -332,17 +342,19 @@ class Vec[T, N: Literal[int]]:
     def __mul__(self, other: T) -> Vec[T, N]:
         return self - Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _sdiv(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = sdiv <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _udiv(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = udiv <{=N} x {=T}> %self, %other
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _fdiv(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = fdiv <{=N} x {=T}> %self, %other
@@ -366,7 +378,7 @@ class Vec[T, N: Literal[int]]:
     def __floordiv__(self, other: T) -> Vec[T, N]:
         return self // Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _mod(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = urem <{=N} x {=T}> %self, %other
@@ -378,12 +390,13 @@ class Vec[T, N: Literal[int]]:
     def __mod__(self, other: T) -> Vec[T, N]:
         return self._mod(Vec[T, N](other))
 
-
+    @pure
     @llvm
     def _lt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = icmp ult <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
+    @pure
     @llvm
     def _flt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = fcmp olt <{=N} x {=T}> %self, %other
@@ -397,12 +410,13 @@ class Vec[T, N: Literal[int]]:
     def __lt__(self, other: T) -> Vec[u1, N]:
         return self < Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _le(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = icmp ule <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
+    @pure
     @llvm
     def _fle(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = fcmp ole <{=N} x {=T}> %self, %other
@@ -416,12 +430,13 @@ class Vec[T, N: Literal[int]]:
     def __le__(self, other: T) -> Vec[u1, N]:
         return self <= Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _gt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = icmp ugt <{=N} x {=T}> %self, %other
         ret <{=N} x i1> %0
 
+    @pure
     @llvm
     def _fgt(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = fcmp ogt <{=N} x {=T}> %self, %other
@@ -435,7 +450,7 @@ class Vec[T, N: Literal[int]]:
     def __gt__(self, other: T) -> Vec[u1, N]:
         return self > Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _ge(self: Vec[T, N], other: Vec[T, N]) -> Vec[u1, N]:
         %0 = icmp uge <{=N} x {=T}> %self, %other
@@ -454,7 +469,7 @@ class Vec[T, N: Literal[int]]:
     def __ge__(self, other: T) -> Vec[u1, N]:
         return self >= Vec[T, N](other)
 
-
+    @pure
     @llvm
     def _sqrt(self: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.sqrt.v{=N}{=T}(<{=N} x {=T}>)
@@ -466,6 +481,7 @@ class Vec[T, N: Literal[int]]:
             return self._sqrt()
         compile_error("vector type must be a float")
 
+    @pure
     @llvm
     def _log(self: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.log.v{=N}{=T}(<{=N} x {=T}>)
@@ -477,6 +493,7 @@ class Vec[T, N: Literal[int]]:
             return self._log()
         compile_error("vector type must be a float")
 
+    @pure
     @llvm
     def _sin(self: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.sin.v{=N}{=T}(<{=N} x {=T}>)
@@ -488,6 +505,7 @@ class Vec[T, N: Literal[int]]:
             return self._sin()
         compile_error("vector type must be a float")
 
+    @pure
     @llvm
     def _cos(self: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.cos.v{=N}{=T}(<{=N} x {=T}>)
@@ -499,12 +517,14 @@ class Vec[T, N: Literal[int]]:
             return self._cos()
         compile_error("vector type must be a float")
 
+    @pure
     @llvm
     def _fabs(self: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.fabs.v{=N}{=T}(<{=N} x {=T}>)
         %0 = call <{=N} x {=T}> @llvm.fabs.v{=N}{=T}(<{=N} x {=T}> %self)
         ret <{=N} x {=T}> %0
 
+    @pure
     @llvm
     def _abs(self: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.abs.v{=N}{=T}(<{=N} x {=T}>, i1)
@@ -516,7 +536,7 @@ class Vec[T, N: Literal[int]]:
             return self._fabs()
         return self._abs()
 
-
+    @pure
     @llvm
     def _min(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.smin.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
@@ -528,6 +548,7 @@ class Vec[T, N: Literal[int]]:
             return self._min(other)
         compile_error("vector type must be an integer")
 
+    @pure
     @llvm
     def _max(self: Vec[T, N], other: Vec[T, N]) -> Vec[T, N]:
         declare <{=N} x {=T}> @llvm.smax.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
@@ -539,16 +560,16 @@ class Vec[T, N: Literal[int]]:
             return self._max(other)
         compile_error("vector type must be an integer")
 
-
+    @pure
     @llvm
     def _mask(self: Vec[T, N], mask: Vec[u1, N], other: Vec[T, N]) -> Vec[T, N]:
         %0 = select <{=N} x i1> %mask, <{=N} x {=T}> %self, <{=N} x {=T}> %other
         ret <{=N} x {=T}> %0
 
-    def mask(self, other: Vec[T, N], mask: Vec[T, N]) -> Vec[T, N]:
+    def mask(self, other: Vec[T, N], mask) -> Vec[T, N]:
         return self._mask(mask.cast(u1), other)
 
-
+    @pure
     @llvm
     def _add_overflow(self: Vec[T, N], other: Vec[T, N]) -> Tuple[Vec[T, N], Vec[u1, N]]:
         declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.uadd.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
@@ -561,7 +582,7 @@ class Vec[T, N: Literal[int]]:
         else:
             return self + other
 
-
+    @pure
     @llvm
     def _sub_overflow(self: Vec[T, N], other: Vec[T, N]) -> Tuple[Vec[T, N], Vec[u1, N]]:
         declare {<{=N} x {=T}>, <{=N} x i1>} @llvm.usub.with.overflow.v{=N}{=T}(<{=N} x {=T}>, <{=N} x {=T}>)
@@ -574,13 +595,14 @@ class Vec[T, N: Literal[int]]:
         else:
             return self - other
 
-
+    @pure
     @llvm
     def _sum(self: Vec[T, N]) -> T:
         declare {=T} @llvm.vector.reduce.add.v{=N}{=T}(<{=N} x {=T}>)
         %0 = call {=T} @llvm.vector.reduce.add.v{=N}{=T}(<{=N} x {=T}> %self)
         ret {=T} %0
 
+    @pure
     @llvm
     def _fsum(self: Vec[T, N], S: Literal[int]) -> T:
         declare {=T} @llvm.vector.reduce.fadd.v{=N}f{=S}({=T}, <{=N} x {=T}>)
@@ -591,7 +613,6 @@ class Vec[T, N: Literal[int]]:
         if Vec._is_float(T):
             return self._fsum(S=Vec._sizeof(T))
         return self._sum()
-
 
     # Utilities
     def scatter(self: Vec[T, N]) -> List[T]:

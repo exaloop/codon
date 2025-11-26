@@ -42,6 +42,7 @@ def test_op():
     T = Vec[u8, 8]
     a = T([u8(100 + i) for i in range(T.N)])
     b = T([u8(i) for i in range(T.N)])
+    b1 = T([u8(i + 1) for i in range(T.N)])
     af = Vec[float32, 4]([float32(100 + i) for i in range(4)])
     bf = Vec[float32, 4]([float32(i) for i in range(4)])
     c = T(1u8)
@@ -74,10 +75,10 @@ def test_op():
     assert (b - a).scatter() == [u8(i) - u8(100 + i) for i in range(T.N)]
     assert (a * b).scatter() == [u8(100 + i) * u8(i) for i in range(T.N)]
     assert (af / bf).scatter() == [float32(100 + i) / float32(i) for i in range(4)]
-    assert (a // b).scatter() == [u8((100 + i) // i) for i in range(T.N)]
+    assert (a // b1).scatter() == [u8((100 + i) // (i + 1)) for i in range(T.N)]
     assert (af / float32(2.0)).scatter() == [float32(100 + i) / float32(2) for i in range(4)]
     assert (a // 2u8).scatter() == [u8((100 + i) // 2) for i in range(T.N)]
-    assert (a % b).scatter() == [u8(100 + i) % u8(i) for i in range(T.N)]
+    assert (a % b1).scatter() == [u8(100 + i) % u8(i + 1) for i in range(T.N)]
 
     assert (a < b).scatter() == [u1(int(100 + i < i)) for i in range(T.N)]
     assert (a <= b).scatter() == [u1(int(100 + i <= i)) for i in range(T.N)]

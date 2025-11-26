@@ -155,6 +155,7 @@ nav:
   - Parallel Programming:
     - Multithreading: parallel/multithreading.md
     - GPU Programming: parallel/gpu.md
+    - SIMD Programming: parallel/simd.md
   - Labs: labs/index.md
   - Developers:
     - Compilation Flow: developers/compilation.md
