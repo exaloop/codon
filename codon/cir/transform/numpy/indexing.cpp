@@ -256,9 +256,6 @@ struct FindArrayIndex : public util::Operator {
 
 void elideBoundsCheck(IndexInfo &index) {
   auto *M = index.orig->getModule();
-  auto *data = M->Nr<ExtractInstr>(M->Nr<VarValue>(index.arr->getVar()), "_data");
-  auto *stride = util::tupleGet(
-      M->Nr<ExtractInstr>(M->Nr<VarValue>(index.arr->getVar()), "_strides"), 0);
   util::CloneVisitor cv(M);
 
   if (index.item) {
