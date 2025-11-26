@@ -800,3 +800,14 @@ def _spacing(x):
         return util.nextafter64(x, p) - x
     else:
         return _spacing(util.to_float(x))
+
+
+# Indexing optimization
+
+def _array1d_get_nocheck(arr: ndarray[T, 1], idx: int, T: type):
+    p = arr.data.as_byte() + (arr.strides[0] * idx)
+    return Ptr[T](p)[0]
+
+def _array1d_set_nocheck(arr: ndarray[T, 1], idx: int, elem: S, T: type, S: type):
+    p = arr.data.as_byte() + (arr.strides[0] * idx)
+    Ptr[T](p)[0] = util.cast(elem, T)
