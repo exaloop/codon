@@ -35,6 +35,7 @@ private:
   std::unique_ptr<ir::Module> module;
   std::unique_ptr<ir::transform::PassManager> pm;
   std::unique_ptr<ir::LLVMVisitor> llvisitor;
+  std::unordered_set<std::string> loadedPlugins;
 
   llvm::Error parse(bool isCode, const std::string &file, const std::string &code,
                     int startLine, int testFlags,
@@ -61,6 +62,7 @@ public:
   ir::Module *getModule() const { return module.get(); }
   ir::transform::PassManager *getPassManager() const { return pm.get(); }
   ir::LLVMVisitor *getLLVMVisitor() const { return llvisitor.get(); }
+  bool isPluginLoaded(const std::string &) const;
 
   llvm::Error load(const std::string &plugin);
   llvm::Error

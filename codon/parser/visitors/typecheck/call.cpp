@@ -913,6 +913,10 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformStaticVars(expr)};
   } else if (isF(ei, "std.internal.static", "tuple_type")) {
     return {true, transformStaticTupleType(expr)};
+  } else if (isF(ei, "std.internal.static", "format")) { // static
+    return {true, transformStaticFormat(expr)};
+  } else if (isF(ei, "std.internal.static", "int_to_string")) { // static
+    return {true, transformStaticIntToStr(expr)};
   } else {
     return {false, nullptr};
   }

@@ -70,11 +70,6 @@ Additionally, a number of shared libraries are produced in `install/lib/codon`:
     `-DLLVM_DIR=llvm-project/install/lib/cmake/llvm` on the first `cmake` command if you
     followed the instructions above for compiling LLVM.
 
-## GPU support
-
-Add `-DCODON_GPU=ON` to the first `cmake` command above to enable GPU support.
-This will require CUDA to be installed on your system.
-
 ## Jupyter support
 
 To enable Jupyter support, you will need to build the Jupyter plugin:

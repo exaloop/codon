@@ -28,7 +28,7 @@ const std::string INLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "inline");
 const std::string NOINLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "noinline");
-const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.gpu", "kernel");
+const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";

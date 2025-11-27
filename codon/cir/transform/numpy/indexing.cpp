@@ -13,6 +13,7 @@ namespace ir {
 namespace transform {
 namespace numpy {
 namespace {
+const std::string FUSION_MODULE = "std.numpy.fusion";
 
 struct Term {
   enum Kind { INT, VAR, LEN } kind;
@@ -255,21 +256,24 @@ struct FindArrayIndex : public util::Operator {
 
 void elideBoundsCheck(IndexInfo &index) {
   auto *M = index.orig->getModule();
-  auto *data = M->Nr<ExtractInstr>(M->Nr<VarValue>(index.arr->getVar()), "_data");
   util::CloneVisitor cv(M);
 
   if (index.item) {
-    auto *setitem = M->getOrRealizeMethod(
-        data->getType(), Module::SETITEM_MAGIC_NAME,
-        {data->getType(), M->getIntType(), index.item->getType()});
-    seqassertn(setitem, "setitem method not found");
+    auto *setitem = M->getOrRealizeFunc(
+        "_array1d_set_nocheck",
+        {index.arr->getType(), M->getIntType(), index.item->getType()}, {},
+        FUSION_MODULE);
+    seqassertn(setitem, "setitem function not found");
     index.orig->replaceAll(
-        util::call(setitem, {data, cv.clone(index.idx), cv.clone(index.item)}));
+        util::call(setitem, {M->Nr<VarValue>(index.arr->getVar()), cv.clone(index.idx),
+                             cv.clone(index.item)}));
   } else {
-    auto *getitem = M->getOrRealizeMethod(data->getType(), Module::GETITEM_MAGIC_NAME,
-                                          {data->getType(), M->getIntType()});
-    seqassertn(getitem, "getitem method not found");
-    index.orig->replaceAll(util::call(getitem, {data, cv.clone(index.idx)}));
+    auto *getitem =
+        M->getOrRealizeFunc("_array1d_get_nocheck",
+                            {index.arr->getType(), M->getIntType()}, {}, FUSION_MODULE);
+    seqassertn(getitem, "getitem function not found");
+    index.orig->replaceAll(util::call(
+        getitem, {M->Nr<VarValue>(index.arr->getVar()), cv.clone(index.idx)}));
   }
 }
 

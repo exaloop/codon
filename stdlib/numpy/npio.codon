@@ -21,7 +21,6 @@ _MAP_PRIVATE: Literal[int] = 2
 _MAGIC_PREFIX: Literal[str] = '\x93NUMPY'
 _ARRAY_ALIGN: Literal[int] = 64
 
-
 ##################
 # Memory Mapping #
 ##################
@@ -144,7 +143,6 @@ def memmap(filename,
     else:
         compile_error("filename must be a string or file handle")
 
-
 ###############
 # General I/O #
 ###############
@@ -218,7 +216,12 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
         binary_data = str_data.ptr
         got_bytes = len(str_data)
     else:
-        arr_data = _memmap(f, dtype=byte, mode=mmap_mode, offset=f.tell(), shape=None, forder=forder)
+        arr_data = _memmap(f,
+                           dtype=byte,
+                           mode=mmap_mode,
+                           offset=f.tell(),
+                           shape=None,
+                           forder=forder)
         binary_data = arr_data.data
         got_bytes = arr_data.size
 
@@ -237,7 +240,10 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
 
     return array
 
-def load(file, mmap_mode: Optional[str] = None, ndim: Literal[int] = 1, dtype: type = float):
+def load(file,
+         mmap_mode: Optional[str] = None,
+         ndim: Literal[int] = 1,
+         dtype: type = float):
     if mmap_mode is not None:
         mmap_mode = _fix_mmap_mode(mmap_mode)
         if mmap_mode == 'w+':
@@ -497,7 +503,6 @@ def _tofile(arr, f, sep: str):
 
 @extend
 class ndarray:
-
     def tofile(self, file, sep: str = ''):
         if hasattr(file, 'write'):
             _tofile(self, file, sep=sep)
@@ -595,6 +600,9 @@ def make_conv(converters, num_fields: int, usecols, dtype: type):
     else:
         return converters
 
+def _isspace(c: byte):
+    return bool(_C.isspace(i32(int(c))))
+
 class CSVReader:
     _path: str
     _delimiter: byte
@@ -632,7 +640,10 @@ class CSVReader:
             f.seek(0, 2)
             n = f.tell()
             if n > 0:
-                self._mmap_ptr = _mmap(f, length=n, access=_PROT_READ, flags=_MAP_SHARED)
+                self._mmap_ptr = _mmap(f,
+                                       length=n,
+                                       access=_PROT_READ,
+                                       flags=_MAP_SHARED)
             self._mmap_len = n
 
         if int(self._mmap_ptr) == -1:
@@ -649,7 +660,7 @@ class CSVReader:
         if delimiter:
             return c == delimiter
         else:
-            return bool(_C.isspace(i32(int(c))))
+            return _isspace(c)
 
     def is_comment(self, c: byte):
         comments = self._comments
@@ -657,6 +668,23 @@ class CSVReader:
             if comments.ptr[i] == c:
                 return True
         return False
+
+    def is_whitespace_delimiter(self):
+        return not self._delimiter
+
+    def skip_past_line(self, i: int):
+        p = self._mmap_ptr
+        n = self._mmap_len
+
+        while i < n:
+            c = p[i]
+            i += 1
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE):
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                break
+
+        return i
 
     def skip_delimiter(self, i: int):
         delimiter = self._delimiter
@@ -680,6 +708,20 @@ class CSVReader:
         return i
 
     def skip_comments(self, i: int):
+        if self.is_whitespace_delimiter():
+            p = self._mmap_ptr
+            n = self._mmap_len
+
+            while i < n:
+                if _isspace(p[i]):
+                    i += 1
+                elif self.is_comment(p[i]):
+                    i = self.skip_past_line(i + 1)
+                else:
+                    break
+
+            return i
+
         if not self._comments:
             return i
 
@@ -689,15 +731,7 @@ class CSVReader:
         while i < n:
             c = p[i]
             if self.is_comment(c):
-                i += 1
-                while i < n:
-                    c = p[i]
-                    i += 1
-                    if c == byte(_NEWLINE) or c == byte(_CARTRIDGE):
-                        if c == byte(_CARTRIDGE) and i < n and p[i] == byte(
-                                _NEWLINE):
-                            i += 1
-                        break
+                i = self.skip_past_line(i + 1)
             else:
                 break
 
@@ -755,8 +789,15 @@ class CSVReader:
                     i += 1
                 break
             elif self.is_delimiter(c) and not quote:
-                num_fields += 1
                 i = self.skip_delimiter(i)
+
+                # trailing whitespace case
+                if (self.is_whitespace_delimiter() and
+                    (i >= n or p[i] == byte(_NEWLINE)
+                     or p[i] == byte(_CARTRIDGE) or self.is_comment(p[i]))):
+                    continue
+
+                num_fields += 1
             elif self.is_comment(c) and not quote:
                 break
             else:
@@ -810,12 +851,19 @@ class CSVReader:
                     break
             elif self.is_delimiter(c) and not quote:
                 fields[field] = str(p + last_field_start, i - last_field_start)
-                field += 1
 
+                i = self.skip_delimiter(i)
+
+                # trailing whitespace case
+                if (self.is_whitespace_delimiter() and
+                    (i >= n or p[i] == byte(_NEWLINE)
+                     or p[i] == byte(_CARTRIDGE) or self.is_comment(p[i]))):
+                    continue
+
+                field += 1
                 if field >= num_fields:
                     malformed(row, num_fields)
 
-                i = self.skip_delimiter(i)
                 last_field_start = i
             elif self.is_comment(c) and not quote:
                 if field != num_fields - 1:
@@ -865,7 +913,6 @@ class ArrayUpdate:
             return arr.shape[0]
 
     def resize_arrays(self, new_cap: int):
-
         def resize_one(a, new_cap: int):
             if a.ndim == 1:
                 data_new = util.realloc(a.data, new_cap, a.size)
@@ -921,7 +968,6 @@ class ArrayUpdate:
             return r
 
     def __call__(self, fields: Ptr[str], num_fields: int, row: int):
-
         def get_new_size(size: int, min_grow: int = 512):
             new_size = size
             growth = size >> 2
@@ -1064,10 +1110,7 @@ def loadtxt(fname: str,
 
         converters = make_conv(converters, num_fields, cols, dtype)
         callback = ArrayUpdate(arr, cols, converters)
-        csv.parse(callback,
-                  num_fields=num_fields,
-                  maxrows=maxrows,
-                  i0=i0)
+        csv.parse(callback, num_fields=num_fields, maxrows=maxrows, i0=i0)
         callback.trim_arrays()
         arr = callback.arr
 
@@ -1111,7 +1154,10 @@ class CSVReaderGen:
             f.seek(0, 2)
             n = f.tell()
             if n > 0:
-                self._mmap_ptr = _mmap(f, length=n, access=_PROT_READ, flags=_MAP_SHARED)
+                self._mmap_ptr = _mmap(f,
+                                       length=n,
+                                       access=_PROT_READ,
+                                       flags=_MAP_SHARED)
             self._mmap_len = n
 
         if int(self._mmap_ptr) == -1:
@@ -1125,7 +1171,6 @@ class CSVReaderGen:
 
     def fix_names(self, excludelist: List[str], deletechars: str,
                   replace_space: str, upper: bool, lower: bool):
-
         def fix_name(name: str, excludelist: List[str], deletechars: str,
                      replace_space: str, upper: bool, lower: bool):
             s = _strbuf(capacity=len(name))
@@ -1160,7 +1205,10 @@ class CSVReaderGen:
         if delimiter:
             return c == delimiter
         else:
-            return bool(_C.isspace(i32(int(c))))
+            return _isspace(c)
+
+    def is_whitespace_delimiter(self):
+        return not self._delimiter
 
     def is_comment(self, c: byte):
         comments = self._comments
@@ -1226,9 +1274,24 @@ class CSVReaderGen:
 
         while i < n:
             c = p[i]
-            if not self.is_delimiter(c):
+            if (c == byte(_NEWLINE) or c == byte(_CARTRIDGE)
+                    or not self.is_delimiter(c)):
                 break
             i += 1
+
+        return i
+
+    def skip_past_line(self, i: int):
+        p = self._mmap_ptr
+        n = self._mmap_len
+
+        while i < n:
+            c = p[i]
+            i += 1
+            if c == byte(_NEWLINE) or c == byte(_CARTRIDGE):
+                if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
+                    i += 1
+                break
 
         return i
 
@@ -1252,29 +1315,57 @@ class CSVReaderGen:
 
         return i
 
-    def skip_comments(self, i: int):
+    def skip_comments_no_whitespace(self, i: int):
         if not self._comments:
             return i
 
         p = self._mmap_ptr
-        n = self._length
+        n = self._mmap_len
 
         while i < n:
             c = p[i]
             if self.is_comment(c):
-                i += 1
-                while i < n:
-                    c = p[i]
-                    i += 1
-                    if c == byte(_NEWLINE) or c == byte(_CARTRIDGE):
-                        if c == byte(_CARTRIDGE) and i < n and p[i] == byte(
-                                _NEWLINE):
-                            i += 1
-                        break
+                i = self.skip_past_line(i + 1)
             else:
                 break
 
         return i
+
+    def skip_comments(self, i: int):
+        if self.is_whitespace_delimiter():
+            p = self._mmap_ptr
+            n = self._mmap_len
+
+            while i < n:
+                if _isspace(p[i]):
+                    i += 1
+                elif self.is_comment(p[i]):
+                    i = self.skip_past_line(i + 1)
+                else:
+                    break
+
+            return i
+        else:
+            return self.skip_comments_no_whitespace(i)
+
+    def is_comment_or_blank_line(self, line: str):
+        if not line:
+            return True
+
+        if self.is_whitespace_delimiter():
+            p = line.ptr
+            n = len(line)
+            i = 0
+            while i < n:
+                c = p[i]
+                if self.is_comment(c):
+                    return True
+                elif not _isspace(c):
+                    return False
+                i += 1
+            return True
+        else:
+            return self.is_delimiter(line.ptr[0])
 
     def get_num_fields(self, i: int, get_names: bool):
         p = self._mmap_ptr
@@ -1287,8 +1378,18 @@ class CSVReaderGen:
 
         i0 = i
         num_fields = 1
-        if self.is_comment(p[0]):
-            i += 1
+
+        if get_names:
+            if self.is_whitespace_delimiter():
+                while i < n and (_isspace(p[i]) or self.is_comment(p[i])):
+                    i += 1
+            else:
+                if self.is_comment(p[i]):
+                    i += 1
+        else:
+            i = self.skip_comments(i)
+            i0 = i
+
         last_field_start = i
 
         while i < n:
@@ -1309,8 +1410,15 @@ class CSVReaderGen:
                     name = str(p + last_field_start, i - last_field_start)
                     names.append(name.strip())
 
-                num_fields += 1
                 i = self.skip_delimiter(i)
+
+                # trailing whitespace case
+                if (self.is_whitespace_delimiter() and
+                    (i >= n or p[i] == byte(_NEWLINE)
+                     or p[i] == byte(_CARTRIDGE) or self.is_comment(p[i]))):
+                    continue
+
+                num_fields += 1
                 last_field_start = i
             else:
                 i += 1
@@ -1411,8 +1519,17 @@ class CSVReaderGen:
         names = self._names
 
         i = 0
-        if n > 0 and self.is_comment(p[0]):
-            i += 1
+        if self.is_whitespace_delimiter():
+            if get_names:
+                while i < n and (_isspace(p[i]) or self.is_comment(p[i])):
+                    i += 1
+            else:
+                if n > 0 and _isspace(p[0]):
+                    i = self.skip_delimiter(i, line)
+        else:
+            if n > 0 and self.is_comment(p[0]):
+                i += 1
+
         last_field_start = i
         num_fields = 0
 
@@ -1431,11 +1548,21 @@ class CSVReaderGen:
                     name = str(p + last_field_start, i - last_field_start)
                     names.append(name.strip())
 
-                num_fields += 1
                 i = self.skip_delimiter(i, line)
+                num_fields += 1
+
+                # trailing whitespace case
+                if (self.is_whitespace_delimiter() and
+                    (i >= n or p[i] == byte(_NEWLINE)
+                     or p[i] == byte(_CARTRIDGE) or self.is_comment(p[i]))):
+                    break
+
                 last_field_start = i
             else:
                 i += 1
+                # handle case when there's no trailing newline
+                if i >= n:
+                    num_fields += 1
 
         return num_fields
 
@@ -1476,7 +1603,6 @@ class CSVReaderGen:
         return num_fields
 
     def translate_cols(self, usecols, num_fields: int):
-
         def translate_one(self, c, num_fields: int):
             if isinstance(c, int):
                 return normalize_col(c, num_fields)
@@ -1505,6 +1631,7 @@ class CSVReaderGen:
         field = 0
         fields = Ptr[str](num_fields)
         row = 0
+        i = self.skip_comments(i)
         last_field_start = i
 
         while i < n:
@@ -1536,6 +1663,15 @@ class CSVReaderGen:
                 if invalid_raise or field < num_fields:
                     fields[field] = str(p + last_field_start,
                                         i - last_field_start)
+
+                i = self.skip_delimiter(i)
+
+                # trailing whitespace case
+                if (self.is_whitespace_delimiter() and
+                    (i >= n or p[i] == byte(_NEWLINE)
+                     or p[i] == byte(_CARTRIDGE) or self.is_comment(p[i]))):
+                    continue
+
                 field += 1
 
                 ok = True
@@ -1545,7 +1681,6 @@ class CSVReaderGen:
                     else:
                         ok = False
 
-                i = self.skip_delimiter(i)
                 last_field_start = i
             elif self.is_comment(c):
                 ok = True
@@ -1612,7 +1747,7 @@ class CSVReaderGen:
                 if c == byte(_CARTRIDGE) and i < n and p[i] == byte(_NEWLINE):
                     i += 1
 
-                i = self.skip_comments(i)
+                i = self.skip_comments_no_whitespace(i)
                 last_line_start = i
                 row += 1
                 if maxrows >= 0 and row >= maxrows:
@@ -1629,7 +1764,7 @@ class CSVReaderGen:
                     k += 1
 
                 row_callback(fields, num_fields, row)
-                i = self.skip_comments(i)
+                i = self.skip_comments_no_whitespace(i)
                 last_line_start = i
                 row += 1
                 if maxrows >= 0 and row >= maxrows:
@@ -1663,6 +1798,11 @@ class CSVReaderGen:
 
         if n > 0 and self.is_comment(p[0]):
             return False
+
+        # skip leading whitespace if required
+        if self.is_whitespace_delimiter() and i < n and self.is_delimiter(
+                p[i]):
+            i = self.skip_delimiter(i, line)
 
         while i < n:
             c = p[i]
@@ -1768,7 +1908,6 @@ class ArrayUpdateGen:
             return arr.shape[0]
 
     def resize_arrays(self, new_cap: int):
-
         def resize_one(a, new_cap: int):
             if a.ndim == 1:
                 data_new = util.realloc(a.data, new_cap, a.size)
@@ -1888,7 +2027,6 @@ class ArrayUpdateGen:
             return r
 
     def __call__(self, fields: Ptr[str], num_fields: int, row: int):
-
         def get_new_size(size: int, min_grow: int = 512):
             new_size = size
             growth = size >> 2
@@ -1970,7 +2108,6 @@ def genfromtxt(fname,
                invalid_raise: bool = True,
                max_rows: Optional[int] = None,
                ndmin: Literal[int] = 0):
-
     def make_callback(csv,
                       cols,
                       converters,
@@ -2186,8 +2323,7 @@ def genfromtxt(fname,
         callback = None
 
         for line in fname:
-            if k < skip_header or (comments is not None
-                                   and line.startswith(comments)):
+            if k < skip_header or csv.is_comment_or_blank_line(line):
                 k += 1
                 continue
 
@@ -2317,14 +2453,12 @@ def genfromtxt(fname,
             else:
                 return arr
 
-
 ##########
 # Pickle #
 ##########
 
 @extend
 class ndarray:
-
     def __pickle__(self, jar: Jar):
         from pickle import _write_raw
         atomic = util.atomic(self.dtype)

@@ -1,4 +1,4 @@
-from numpy import ndarray, array, zeros
+from numpy import ndarray, array, zeros, sqrt
 
 getitem_count = 0
 setitem_count = 0
@@ -199,6 +199,30 @@ def test_inplace_update():
     assert getitem_count == 0
     assert setitem_count == 0
 
+@test
+def test_mixed_types():
+    reset()
+    x = array([1, 2, 3, 4])
+
+    for i in range(len(x)):
+        x[i] = x[i] + sqrt(x[i])
+
+    assert (x == [2, 3, 4, 6]).all()
+    assert getitem_count == 0
+    assert setitem_count == 0
+
+@test
+def test_strided():
+    x = array([1, 2, 3, 4])[::2]
+    reset()
+
+    for i in range(len(x)):
+        x[i] = 42
+
+    assert (x == [42, 42]).all()
+    assert getitem_count == 0
+    assert setitem_count == 0
+
 if not __debug__:
     test_simple_for_loop()
     test_simple_for_loop_setitem()
@@ -212,3 +236,5 @@ if not __debug__:
     test_empty_array()
     test_single_element_array()
     test_inplace_update()
+    test_mixed_types()
+    test_strided()

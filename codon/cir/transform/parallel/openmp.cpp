@@ -18,7 +18,7 @@ namespace transform {
 namespace parallel {
 namespace {
 const std::string ompModule = "std.openmp";
-const std::string gpuModule = "std.gpu";
+const std::string gpuModule = "std.internal.gpu";
 const std::string builtinModule = "std.internal.builtin";
 
 void warn(const std::string &msg, const Value *v) {
@@ -1560,7 +1560,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   if (sched->gpu) {
     std::unordered_set<id_t> kernels;
-    const std::string gpuAttr = ast::getMangledFunc("std.gpu", "kernel");
+    const std::string gpuAttr = ast::getMangledFunc("std.internal.gpu", "kernel");
     for (auto *var : *M) {
       if (auto *func = cast<BodiedFunc>(var)) {
         if (util::hasAttribute(func, gpuAttr)) {

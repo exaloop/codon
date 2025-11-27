@@ -32,19 +32,12 @@ python -m pip install cython wheel astunparse
 python -m pip install --force-reinstall -v "numpy==2.0.2"
 
 # Build Codon
-CODON_EXTRA=""
-if command -v nvcc &> /dev/null; then
-  # Enable GPU support if CUDA is detected
-  nvcc_version=$(nvcc --version | grep "release" | awk '{print $NF}')
-  echo "CUDA Version: $nvcc_version"
-  CODON_EXTRA="-DCODON_GPU=ON"
-fi
 cmake -S . -B build-${ARCH} \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=${COMPILER_PREFIX}clang \
     -DCMAKE_CXX_COMPILER=${COMPILER_PREFIX}clang++ \
-    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm ${CODON_EXTRA}
+    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm
 cmake --build build-${ARCH}
 cmake --install build-${ARCH} --prefix=${CODON_DIR}
 

@@ -127,6 +127,9 @@ struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
   Expr *getRhs() const { return rhs; }
   Expr *getTypeExpr() const { return type; }
 
+  void setLhs(Expr *expr) { lhs = expr; }
+  void setRhs(Expr *expr) { rhs = expr; }
+
   bool isAssignment() const { return update == Assign; }
   bool isUpdate() const { return update == Update; }
   bool isAtomicUpdate() const { return update == UpdateAtomic; }
@@ -501,6 +504,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   FunctionStmt(const FunctionStmt &, bool);
 
   std::string getName() const { return name; }
+  void setName(const std::string &n) { name = n; }
   Expr *getReturn() const { return ret; }
   SuiteStmt *getSuite() const { return suite; }
   void setSuite(SuiteStmt *s) { suite = s; }
@@ -508,6 +512,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
   bool isAsync() const { return async; }
   void setAsync() { async = true; }
+  void addParam(const Param &p) { items.push_back(p); }
 
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.

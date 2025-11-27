@@ -53,13 +53,25 @@ Stmt *TypecheckVisitor::apply(
   auto &stmts = suite->items;
   // Load compile-time defines (e.g., codon run -DFOO=1 ...)
   for (auto &d : defines) {
-    stmts.push_back(tv.N<AssignStmt>(
-        tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
-        tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int"))));
+    if (startswith(d.second, "str:")) {
+      stmts.push_back(tv.N<AssignStmt>(
+          tv.N<IdExpr>(d.first), tv.N<StringExpr>(d.second.substr(4)),
+          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("str"))));
+    } else if (startswith(d.second, "bool:")) {
+      stmts.push_back(tv.N<AssignStmt>(
+          tv.N<IdExpr>(d.first), tv.N<BoolExpr>(d.second == "bool:True" ? true : false),
+          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("bool"))));
+    } else {
+      stmts.push_back(tv.N<AssignStmt>(
+          tv.N<IdExpr>(d.first),
+          tv.N<IntExpr>(startswith(d.second, "int:") ? d.second.substr(4) : d.second),
+          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int"))));
+    }
   }
   // Set up __name__
   stmts.push_back(
       tv.N<AssignStmt>(tv.N<IdExpr>("__name__"), tv.N<StringExpr>(MODULE_MAIN)));
+  stmts.push_back(tv.N<AssignStmt>(tv.N<IdExpr>("__file__"), tv.N<StringExpr>(file)));
   stmts.push_back(node);
 
   if (auto err = ScopingVisitor::apply(cache, suite, &ctx->globalShadows))
@@ -92,7 +104,7 @@ void TypecheckVisitor::loadStdLibrary(
     const std::unordered_map<std::string, std::string> &earlyDefines, bool barebones) {
   // Load the internal.__init__
   auto stdlib = std::make_shared<TypeContext>(cache, STDLIB_IMPORT);
-  auto stdlibPath = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
+  auto stdlibPath = getImportFile(cache, STDLIB_INTERNAL_MODULE, "", true);
   const std::string initFile = "__init__.codon";
   if (!stdlibPath || !endswith(stdlibPath->path, initFile))
     E(Error::COMPILER_NO_STDLIB);
@@ -128,9 +140,21 @@ void TypecheckVisitor::loadStdLibrary(
 
   // 2. Load early compile-time defines (for standard library)
   for (auto &d : earlyDefines) {
-    auto s =
-        tv.N<AssignStmt>(tv.N<IdExpr>(d.first), tv.N<IntExpr>(d.second),
-                         tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int")));
+    AssignStmt *s = nullptr;
+    if (startswith(d.second, "str:")) {
+      s = tv.N<AssignStmt>(
+          tv.N<IdExpr>(d.first), tv.N<StringExpr>(d.second.substr(4)),
+          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("str")));
+    } else if (startswith(d.second, "bool:")) {
+      s = tv.N<AssignStmt>(
+          tv.N<IdExpr>(d.first), tv.N<BoolExpr>(d.second == "bool:True" ? true : false),
+          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("bool")));
+    } else {
+      s = tv.N<AssignStmt>(
+          tv.N<IdExpr>(d.first),
+          tv.N<IntExpr>(startswith(d.second, "int:") ? d.second.substr(4) : d.second),
+          tv.N<IndexExpr>(tv.N<IdExpr>("Literal"), tv.N<IdExpr>("int")));
+    }
     auto def = tv.transform(s);
     preamble->addStmt(def);
   }

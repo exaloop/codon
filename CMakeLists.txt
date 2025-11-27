@@ -14,8 +14,6 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-option(CODON_GPU "build Codon GPU backend" OFF)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -99,7 +97,7 @@ target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
 
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
-                  codon/runtime/gpu.cpp codon/runtime/numpy/sort.cpp
+                  codon/runtime/numpy/sort.cpp
                   codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
@@ -166,11 +164,6 @@ if(ASAN)
   target_link_libraries(
     codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
                     "-fsanitize-recover=address")
-endif()
-if(CODON_GPU)
-  add_compile_definitions(CODON_GPU)
-  find_package(CUDAToolkit REQUIRED)
-  target_link_libraries(codonrt PRIVATE CUDA::cudart_static CUDA::cuda_driver)
 endif()
 add_custom_command(
   TARGET codonrt

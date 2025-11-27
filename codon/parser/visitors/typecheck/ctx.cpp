@@ -111,7 +111,8 @@ TypeContext::Item TypeContext::find(const std::string &name, int64_t time,
       if (!isMangled && !startswith(base, i->getBaseName())) {
         continue; // avoid middle realizations
       }
-      if (isMangled || i->getBaseName() != base || !time) {
+      if (isMangled || i->getBaseName() != base || !time ||
+          i->getModule() != getModule()) {
         return i;
       } else {
         if (i->getTime() <= time)

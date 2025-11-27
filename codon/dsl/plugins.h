@@ -37,7 +37,7 @@ private:
 
 public:
   /// Constructs a plugin manager
-  PluginManager(const std::string &argv0) : argv0(argv0), plugins() {}
+  PluginManager(const std::string &argv0) : argv0(argv0) {}
 
   /// @return iterator to the first plugin
   auto begin() { return ir::util::raw_ptr_adaptor(plugins.begin()); }

@@ -238,10 +238,11 @@ static pair<vector<string>, bool> findExpects(const string &filename, bool isCod
 string argv0;
 void seq_exc_init(int flags);
 
-class SeqTest : public testing::TestWithParam<
-                    tuple<string /*filename*/, bool /*debug*/, string /* case name */,
-                          string /* case code */, int /* case line */,
-                          bool /* barebones stdlib */, bool /* Python numerics */>> {
+class SeqTest
+    : public testing::TestWithParam<tuple<
+          string /*filename*/, bool /*debug*/, string /* case name */,
+          string /* case code */, int /* case line */, bool /* barebones stdlib */,
+          bool /* Python numerics */, bool /* run */>> {
   vector<char> buf;
   int out_pipe[2];
   pid_t pid;
@@ -259,6 +260,7 @@ public:
       auto startLine = get<4>(GetParam());
       int testFlags = 1 + get<5>(GetParam());
       bool pyNumerics = get<6>(GetParam());
+      bool run = get<7>(GetParam());
 
       auto compiler = std::make_unique<Compiler>(
           argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
@@ -290,7 +292,9 @@ public:
       pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
                        {capKey});
       llvm::cantFail(compiler->compile());
-      compiler->getLLVMVisitor()->run({file});
+
+      if (run)
+        compiler->getLLVMVisitor()->run({file});
       fflush(stdout);
     };
 
@@ -374,7 +378,7 @@ TEST_P(SeqTest, Run) {
   }
 }
 auto getTypeTests(const vector<string> &files) {
-  vector<tuple<string, bool, string, string, int, bool, bool>> cases;
+  vector<tuple<string, bool, string, string, int, bool, bool, bool>> cases;
   for (auto &f : files) {
     bool barebones = false;
     string l;
@@ -387,7 +391,7 @@ auto getTypeTests(const vector<string> &files) {
       if (l.substr(0, 3) == "#%%") {
         if (line && testName != "__ignore__") {
           cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
-                                        codeLine, barebones, false));
+                                        codeLine, barebones, false, true));
         }
         auto t = ast::split(l.substr(4), ',');
         barebones = (t.size() > 1 && t[1] == "barebones");
@@ -402,7 +406,7 @@ auto getTypeTests(const vector<string> &files) {
     }
     if (line && testName != "__ignore__") {
       cases.emplace_back(make_tuple(f, true, to_string(line) + "_" + testName, code,
-                                    codeLine, barebones, false));
+                                    codeLine, barebones, false, true));
     }
   }
   return cases;
@@ -450,14 +454,16 @@ INSTANTIATE_TEST_SUITE_P(
         "core/match.codon",
         "core/serialization.codon",
         "core/pipeline.codon",
-        "core/empty.codon"
+        "core/empty.codon",
+        "core/vec_simd.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(false)
+      testing::Values(false),
+      testing::Values(true)
     ),
     getTestNameFromParam);
 
@@ -472,6 +478,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
+      testing::Values(true),
       testing::Values(true)
     ),
     getTestNameFromParam);
@@ -500,7 +507,8 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(false)
+      testing::Values(false),
+      testing::Values(true)
     ),
     getTestNameFromParam);
 
@@ -525,7 +533,24 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false)
+        testing::Values(false),
+        testing::Values(true)
+    ),
+    getTestNameFromParam);
+
+  INSTANTIATE_TEST_SUITE_P(
+    GpuTests, SeqTest,
+    testing::Combine(
+        testing::Values(
+            "transform/kernels.codon"
+        ),
+        testing::Values(true, false),
+        testing::Values(""),
+        testing::Values(""),
+        testing::Values(0),
+        testing::Values(false),
+        testing::Values(false),
+        testing::Values(false)  // do not run by default, just compile
     ),
     getTestNameFromParam);
 
@@ -562,7 +587,8 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false)
+        testing::Values(false),
+        testing::Values(true)
     ),
     getTestNameFromParam);
 

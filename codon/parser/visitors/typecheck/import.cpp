@@ -34,7 +34,7 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
-  auto file = getImportFile(ctx->cache->fs.get(), path, ctx->getFilename());
+  auto file = getImportFile(ctx->cache, path, ctx->getFilename());
   if (!file) {
     if (stmt->getDots() == 0 && ctx->autoPython) {
       auto newStr = FormatVisitor::apply(stmt->getFrom());
@@ -358,7 +358,9 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   Stmt *n = nullptr;
   if (file.module != "internal.core") {
     // str is not defined when loading internal.core; __name__ is not needed anyway
-    n = N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module));
+    n = N<SuiteStmt>(
+        N<AssignStmt>(N<IdExpr>("__name__"), N<StringExpr>(ictx->moduleName.module)),
+        N<AssignStmt>(N<IdExpr>("__file__"), N<StringExpr>(ictx->moduleName.path)));
     ctx->addBlock();
     preamble->addStmt(transform(
         N<AssignStmt>(N<IdExpr>(importVar),
@@ -370,6 +372,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     val->scope = {0};
     val->baseName = "";
     val->moduleName = MODULE_MAIN;
+    val->time = 0;
     getImport(STDLIB_IMPORT)->ctx->addToplevel(importVar, val);
     registerGlobal(val->getName());
   }

@@ -38,10 +38,7 @@ public:
   /// @param external true if the variable is external
   /// @param name the variable's name
   explicit Var(types::Type *type, bool global = false, bool external = false,
-               std::string name = "")
-      : ReplaceableNodeBase(std::move(name)), type(type), global(global),
-        external(external) {}
-
+               std::string name = "");
   virtual ~Var() noexcept = default;
 
   std::vector<Value *> getUsedValues() final { return getActual()->doGetUsedValues(); }

@@ -1,0 +1,125 @@
+from simd import Vec
+import math
+
+def close(x, y):
+    if isinstance(x, List):
+        return all(abs(i - j) < float32(1e-4) for i, j in zip(x, y))
+    else:
+        return abs(x - y) < float32(1e-4)
+
+@test
+def test_new():
+    assert Vec[u32, 4](1u32).scatter() == [1u32] * 4
+    assert Vec[i32, 4](-1i32).scatter() == [-1i32] * 4
+    assert Vec[float32, 4](float32(1.0)).scatter() == [float32(1.0)] * 4
+
+    data = [u8(i) for i in range(16)]
+    assert Vec[u8, 8](data.arr.ptr).scatter() == data[:8]
+    assert Vec[u8, 8](data).scatter() == data[:8]
+    assert Vec[u8, 8]("abcdefgh").scatter() == [u8(i) for i in range(ord('a'), ord('a') + 8)]
+
+    u = Vec[u8, 8](data)
+    assert Vec[i16, 8](u).scatter() == [i16(i) for i in range(8)], (u, Vec[i16, 8](u).scatter())
+
+    assert Vec[u8, 8]("abcdefghijkl", 4).scatter() == [u8(i) for i in range(ord('e'), ord('e') + 8)]
+    assert Vec[u8, 8](data, 4).scatter() == data[4:4 + 8]
+
+@test
+def test_cast():
+    assert Vec[u32, 4](1u32).cast(u32).scatter() == [1u32] * 4
+
+    assert Vec[u8, 8](1u8).cast(u16).scatter() == [1u16] * 8
+    assert Vec[u16, 8](257u16).cast(u8).scatter() == [1u8] * 8
+    assert Vec[i8, 8](1i8).cast(i16).scatter() == [1i16] * 8
+    assert Vec[u16, 8](257u16).cast(i8).scatter() == [1i8] * 8
+
+    assert Vec[u16, 8](129u16).cast(i16).scatter() == [129i16] * 8
+    assert Vec[u16, 8](129u16).cast(i8).scatter() == [-127i8] * 8
+    assert Vec[i16, 8](-1i16).cast(u16).scatter() == [65535u16] * 8
+    assert Vec[i16, 8](-1i16).cast(u8).scatter() == [255u8] * 8
+
+    assert Vec[float32, 4](float32(1.0)).cast(float).scatter() == [1.0] * 4
+    assert Vec[float32, 4](float32(1.0)).cast(float16).scatter() == [float16(1.0)] * 4
+    assert Vec[float32, 4](float32(1.0)).cast(i32).scatter() == [1i32] * 4
+    assert Vec[i32, 4](1i32).cast(float32).scatter() == [float32(1.0)] * 4
+
+@test
+def test_op():
+    T = Vec[u8, 8]
+    a = T([u8(100 + i) for i in range(T.N)])
+    b = T([u8(i) for i in range(T.N)])
+    b1 = T([u8(i + 1) for i in range(T.N)])
+    af = Vec[float32, 4]([float32(100 + i) for i in range(4)])
+    bf = Vec[float32, 4]([float32(i + 1) for i in range(4)])
+    c = T(1u8)
+
+    assert a[2] == 102u8
+    assert af[2] == float32(102)
+
+    assert (-a).scatter() == [u8(-(100 + i)) for i in range(T.N)]
+    assert (-af).scatter() == [float32(-(100 + i)) for i in range(4)]
+
+    assert (a == a).scatter() == [1u1 for _ in range(T.N)]
+    assert (a == 100u8).scatter() == [1u1] + [0u1 for _ in range(T.N - 1)]
+    assert (a == b).scatter() == [0u1 for _ in range(T.N)]
+    assert (a != a).scatter() == [0u1 for _ in range(T.N)]
+    assert (a != 100u8).scatter() == [0u1] + [1u1 for _ in range(T.N - 1)]
+    assert (a != b).scatter() == [1u1 for _ in range(T.N)]
+
+    assert (a & b).scatter() == [u8(100 + i) & u8(i) for i in range(T.N)]
+    assert (a | b).scatter() == [u8(100 + i) | u8(i) for i in range(T.N)]
+    assert (a ^ b).scatter() == [u8(100 + i) ^ u8(i) for i in range(T.N)]
+    assert (a << c).scatter() == [u8(100 + i) << 1u8 for i in range(T.N)]
+    assert (a >> c).scatter() == [u8(100 + i) >> 1u8 for i in range(T.N)]
+    assert a.lsh(2).scatter() == [u8(100 + i) for i in range(T.N)][2:] + [0u8] * 2
+    assert a.rsh(2).scatter() == [0u8] * 2 + [u8(100 + i) for i in range(T.N)][:-2]
+    assert a.lsh(5).scatter() == [u8(100 + i) for i in range(T.N)][5:] + [0u8] * 5
+    assert a.rsh(5).scatter() == [0u8] * 5 + [u8(100 + i) for i in range(T.N)][:-5]
+
+    assert (a + b).scatter() == [u8(100 + i) + u8(i) for i in range(T.N)]
+    assert (a - b).scatter() == [u8(100 + i) - u8(i) for i in range(T.N)]
+    assert (b - a).scatter() == [u8(i) - u8(100 + i) for i in range(T.N)]
+    assert (a * b).scatter() == [u8(100 + i) * u8(i) for i in range(T.N)]
+    assert close((af / bf).scatter(), [float32(100 + i) / float32(i + 1) for i in range(4)])
+    assert (a // b1).scatter() == [u8((100 + i) // (i + 1)) for i in range(T.N)]
+    assert close((af / float32(2.0)).scatter(), [float32(100 + i) / float32(2) for i in range(4)])
+    assert (a // 2u8).scatter() == [u8((100 + i) // 2) for i in range(T.N)]
+    assert (a % b1).scatter() == [u8(100 + i) % u8(i + 1) for i in range(T.N)]
+
+    assert (a < b).scatter() == [u1(int(100 + i < i)) for i in range(T.N)]
+    assert (a <= b).scatter() == [u1(int(100 + i <= i)) for i in range(T.N)]
+    assert (a > b).scatter() == [u1(int(100 + i > i)) for i in range(T.N)]
+    assert (a >= b).scatter() == [u1(int(100 + i >= i)) for i in range(T.N)]
+
+    assert close(af.sqrt().scatter(), [float32(math.sqrt(100+i)) for i in range(4)])
+    assert close(af.log().scatter(), [float32(math.log(100+i)) for i in range(4)])
+    assert close(af.sin().scatter(), [float32(math.sin(100+i)) for i in range(4)])
+    assert close(af.cos().scatter(), [float32(math.cos(100+i)) for i in range(4)])
+
+    f = Vec[float32, 4]([float32((-1 if i % 2 == 0 else 1) * (10.0+i)) for i in range(4)])
+    assert close(abs(f).scatter(), [float32(10+i) for i in range(4)])
+    k = Vec[i8, 8]([i8((-1 if i % 2 == 0 else 1) * (10+i)) for i in range(8)])
+    assert abs(k).scatter() == [i8(10+i) for i in range(8)]
+
+    assert a.min(b).scatter() == b.scatter()
+    assert a.max(b).scatter() == a.scatter()
+
+def test_utils():
+    # TODO: add.overflow / sub.overflow
+
+    a = Vec[u8, 8]([u8(100 + i) for i in range(8)])
+    b = Vec[u8, 8]([u8(i) for i in range(8)])
+    af = Vec[float32, 4]([float32(100 + i) for i in range(4)])
+
+    assert a.bitflip().scatter() == [~u8(100 + i) for i in range(8)]
+    mask = Vec[u8,8]([0u8 if i % 2 == 0 else 1u8 for i in range(8)])
+    assert a.mask(b, mask).scatter() == [u8(i) if i % 2 == 0 else u8(100 + i) for i in range(8)]
+
+    assert a.sum() == u8(sum(100 + i for i in range(8)))
+    assert close(af.sum(), float32(sum(100 + i for i in range(4))))
+
+test_new()
+test_cast()
+test_op()
+test_utils()
+

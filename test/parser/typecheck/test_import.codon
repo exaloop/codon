@@ -73,6 +73,10 @@ a.ha()  #: B
 
 print par  #: x
 
+#%% import_static_time,barebones
+from a.b import stt  #: a
+print(stt, stt.__is_static__)  #: 5 True
+
 #%% import_order,barebones
 def foo():
     import a

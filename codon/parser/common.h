@@ -21,6 +21,8 @@ struct Attribute;
 
 namespace ast {
 
+struct Cache;
+
 /// String and collection utilities
 
 /// Split a delimiter-separated string into a vector of strings.
@@ -219,8 +221,7 @@ public:
 /// Find an import file what given an executable path (argv0) either in the standard
 /// library or relative to a file relativeTo. Set forceStdlib for searching only the
 /// standard library.
-std::shared_ptr<ImportFile> getImportFile(const IFilesystem *fs,
-                                          const std::string &what,
+std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
                                           const std::string &relativeTo,
                                           bool forceStdlib = false);
 

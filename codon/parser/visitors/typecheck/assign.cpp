@@ -302,8 +302,10 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
 
   // Register all toplevel variables as global in JIT mode
+  //   OR if they are in imported module (not toplevel)
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
-                  (canonical == VAR_ARGV);
+                  (canonical == VAR_ARGV) ||
+                  (val->isGlobal() && val->getModule() != "");
   if (isGlobal && val->isVar()) {
     registerGlobal(canonical);
   }

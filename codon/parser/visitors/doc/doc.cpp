@@ -97,7 +97,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->j = std::make_shared<json>();
 
-  auto stdlib = getImportFile(cache->fs.get(), STDLIB_INTERNAL_MODULE, "", true);
+  auto stdlib = getImportFile(cache.get(), STDLIB_INTERNAL_MODULE, "", true);
   auto astOrErr = ast::parseFile(shared->cache, stdlib->path);
   if (!astOrErr)
     throw exc::ParserException(astOrErr.takeError());
@@ -474,7 +474,7 @@ void DocVisitor::visit(ImportStmt *stmt) {
   for (int i = static_cast<int>(dirs.size()) - 1; i >= 0; i--)
     path += dirs[i] + (i ? "/" : "");
   // Fetch the import!
-  auto file = getImportFile(ctx->shared->cache->fs.get(), path, ctx->getFilename());
+  auto file = getImportFile(ctx->shared->cache, path, ctx->getFilename());
   if (!file)
     E(Error::CUSTOM, stmt->getSrcInfo(), "cannot locate import '{}'", path);
 

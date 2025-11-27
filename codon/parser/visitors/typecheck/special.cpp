@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+#include <fmt/args.h>
 #include <limits>
 #include <map>
 #include <memory>
@@ -1039,6 +1040,36 @@ Expr *TypecheckVisitor::transformStaticTupleType(const CallExpr *expr) {
     E(Error::CUSTOM, getSrcInfo(), "invalid index");
   auto rt = realize(instantiateType(f[n].getType(), t));
   return transform(N<IdExpr>(rt->realizedName()));
+}
+
+/// Transform staticlen method to a static integer expression. This method supports only
+/// static strings and tuple types.
+Expr *TypecheckVisitor::transformStaticFormat(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->staticKind = LiteralKind::String;
+
+  auto funcTyp = expr->getExpr()->getType()->getFunc();
+  auto fmt = getStrLiteral(extractFuncGeneric(funcTyp, 0));
+  auto arg = getStrLiteral(extractFuncGeneric(funcTyp, 1));
+  size_t start = 0;
+  fmt::dynamic_format_arg_store<fmt::format_context> store;
+  while ((start = fmt.find("%%", start)) != std::string::npos) {
+    fmt.replace(start, 2, "{}");
+    store.push_back(arg);
+    start += 2;
+  }
+  return transform(N<StringExpr>(fmt::vformat(fmt, store)));
+}
+
+/// Transform staticlen method to a static integer expression. This method supports only
+/// static strings and tuple types.
+Expr *TypecheckVisitor::transformStaticIntToStr(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->staticKind = LiteralKind::String;
+
+  auto funcTyp = expr->getExpr()->getType()->getFunc();
+  auto val = getIntLiteral(extractFuncGeneric(funcTyp, 0));
+  return transform(N<StringExpr>(std::to_string(val)));
 }
 
 std::vector<Stmt *>

@@ -37,7 +37,7 @@ jobs:
             arch: linux-aarch64
           - os: ubuntu-24.04-arm
             arch: manylinux2014-aarch64
-          - os: macos-13
+          - os: macos-15-intel
             arch: darwin-x86_64
           - os: macos-14
             arch: darwin-arm64
@@ -49,6 +49,11 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Build (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')

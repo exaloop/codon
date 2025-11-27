@@ -16,8 +16,7 @@ RUN scl enable devtoolset-7 -- cmake3 -S /github/codon -B /github/codon/build \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_C_COMPILER=/opt/llvm-codon/bin/clang \
     -DCMAKE_CXX_COMPILER=/opt/llvm-codon/bin/clang++ \
-    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm \
-    -DCODON_GPU=ON
+    -DLLVM_DIR=/opt/llvm-codon/lib/cmake/llvm
 RUN LD_LIBRARY_PATH=/usr/local/cuda-12.4/compat:${LD_LIBRARY_PATH} scl enable devtoolset-7 -- cmake3 --build /github/codon/build
 RUN scl enable devtoolset-7 -- cmake3 --install /github/codon/build --prefix /opt/codon
 
