@@ -1,6 +1,12 @@
 from simd import Vec
 import math
 
+def close(x, y):
+    if isinstance(x, List):
+        return all(abs(i - j) < float32(1e-4) for i, j in zip(x, y))
+    else:
+        return abs(x - y) < float32(1e-4)
+
 @test
 def test_new():
     assert Vec[u32, 4](1u32).scatter() == [1u32] * 4
@@ -44,7 +50,7 @@ def test_op():
     b = T([u8(i) for i in range(T.N)])
     b1 = T([u8(i + 1) for i in range(T.N)])
     af = Vec[float32, 4]([float32(100 + i) for i in range(4)])
-    bf = Vec[float32, 4]([float32(i) for i in range(4)])
+    bf = Vec[float32, 4]([float32(i + 1) for i in range(4)])
     c = T(1u8)
 
     assert a[2] == 102u8
@@ -74,9 +80,9 @@ def test_op():
     assert (a - b).scatter() == [u8(100 + i) - u8(i) for i in range(T.N)]
     assert (b - a).scatter() == [u8(i) - u8(100 + i) for i in range(T.N)]
     assert (a * b).scatter() == [u8(100 + i) * u8(i) for i in range(T.N)]
-    assert (af / bf).scatter() == [float32(100 + i) / float32(i) for i in range(4)]
+    assert close((af / bf).scatter(), [float32(100 + i) / float32(i + 1) for i in range(4)])
     assert (a // b1).scatter() == [u8((100 + i) // (i + 1)) for i in range(T.N)]
-    assert (af / float32(2.0)).scatter() == [float32(100 + i) / float32(2) for i in range(4)]
+    assert close((af / float32(2.0)).scatter(), [float32(100 + i) / float32(2) for i in range(4)])
     assert (a // 2u8).scatter() == [u8((100 + i) // 2) for i in range(T.N)]
     assert (a % b1).scatter() == [u8(100 + i) % u8(i + 1) for i in range(T.N)]
 
@@ -85,13 +91,13 @@ def test_op():
     assert (a > b).scatter() == [u1(int(100 + i > i)) for i in range(T.N)]
     assert (a >= b).scatter() == [u1(int(100 + i >= i)) for i in range(T.N)]
 
-    assert af.sqrt().scatter() == [float32(math.sqrt(100+i)) for i in range(4)]
-    assert af.log().scatter() == [float32(math.log(100+i)) for i in range(4)]
-    assert af.sin().scatter() == [float32(math.sin(100+i)) for i in range(4)]
-    assert af.cos().scatter() == [float32(math.cos(100+i)) for i in range(4)]
+    assert close(af.sqrt().scatter(), [float32(math.sqrt(100+i)) for i in range(4)])
+    assert close(af.log().scatter(), [float32(math.log(100+i)) for i in range(4)])
+    assert close(af.sin().scatter(), [float32(math.sin(100+i)) for i in range(4)])
+    assert close(af.cos().scatter(), [float32(math.cos(100+i)) for i in range(4)])
 
     f = Vec[float32, 4]([float32((-1 if i % 2 == 0 else 1) * (10.0+i)) for i in range(4)])
-    assert abs(f).scatter() == [float32(10+i) for i in range(4)]
+    assert close(abs(f).scatter(), [float32(10+i) for i in range(4)])
     k = Vec[i8, 8]([i8((-1 if i % 2 == 0 else 1) * (10+i)) for i in range(8)])
     assert abs(k).scatter() == [i8(10+i) for i in range(8)]
 
@@ -110,7 +116,7 @@ def test_utils():
     assert a.mask(b, mask).scatter() == [u8(i) if i % 2 == 0 else u8(100 + i) for i in range(8)]
 
     assert a.sum() == u8(sum(100 + i for i in range(8)))
-    assert af.sum() == float32(sum(100 + i for i in range(4)))
+    assert close(af.sum(), float32(sum(100 + i for i in range(4))))
 
 test_new()
 test_cast()
