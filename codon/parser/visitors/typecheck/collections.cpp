@@ -140,6 +140,13 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
   } else {
     expr->loops =
         transform(expr->getFinalSuite()); // assume: internal data will be changed
+    if (!expr->getFinalExpr()) {
+      // Case such as (0 for _ in static.range(2))
+      // TODO: make this better.
+      E(Error::CUSTOM, expr,
+        "generator cannot be compiled. If using static tuple generator, use tuple(...) "
+        "instead.");
+    }
     unify(expr->getType(), instantiateType(getStdLibType("Generator"),
                                            {expr->getFinalExpr()->getType()}));
     if (realize(expr->getType()))

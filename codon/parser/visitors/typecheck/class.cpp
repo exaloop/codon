@@ -436,6 +436,16 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       typ->hiddenGenerics.push_back(g);
     for (auto &g : clsTyp->hiddenGenerics)
       typ->hiddenGenerics.push_back(g);
+
+    // Add class variables
+    for (auto &[varName, varCanonicalName] : cachedCls->classVars) {
+      // Handle class variables. Transform them later to allow self-references
+      auto newName = fmt::format("{}.{}", canonicalName, varName);
+      auto newCanonicalName = ctx->generateCanonicalName(newName);
+      getClass(typ)->classVars[varName] = varCanonicalName;
+      ctx->add(newName, ctx->forceFind(varCanonicalName));
+      ctx->add(newCanonicalName, ctx->forceFind(varCanonicalName));
+    }
   }
   // Add normal fields
   auto cls = getClass(canonicalName);

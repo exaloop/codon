@@ -602,6 +602,32 @@ Base.test(a)
 #: a.test
 #: base.test
 
+class A:
+    n: int
+    def __init__(self, n: int):
+        print(f"A init, set {n}")
+        self.n = n
+
+class B(A):
+    def __init__(self, n: int):
+        print(f"B init, set {n}")
+        super().__init__(n)
+
+class C(B):
+    def __init__(self, n: int):
+        print(f"C init, set {n}")
+        super().__init__(n)
+
+print(B(42).n)
+#: B init, set 42
+#: A init, set 42
+#: 42
+print(C(42).n)
+#: C init, set 42
+#: B init, set 42
+#: A init, set 42
+#: 42
+
 #%% super_tuple,barebones
 @tuple
 class A[T]:

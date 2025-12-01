@@ -116,12 +116,16 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
     }
   }
 
+  std::unordered_set<std::string> alreadyDerived;
+  for (auto &m: getClass(baseTyp)->mro)
+    alreadyDerived.insert(m->name);
+
   auto derivedTyp = extractFuncGeneric(f, 1)->getClass();
   auto fields = getClassFields(derivedTyp);
   auto types = std::vector<Expr *>{};
   auto found = false;
   for (auto &fld : fields) {
-    if (fld.baseClass == baseTyp->name) {
+    if (in(alreadyDerived, fld.baseClass)) {
       found = true;
       break;
     } else {
