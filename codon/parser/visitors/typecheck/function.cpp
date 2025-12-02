@@ -576,16 +576,45 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Parse remaining decorators
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (stmt->decorators[i]) {
-      if (isClassMember)
-        E(Error::FN_NO_DECORATORS, stmt->decorators[i]);
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
                               finalExpr ? finalExpr : N<IdExpr>(canonicalName));
     }
   }
   if (finalExpr) {
-    resultStmt = N<SuiteStmt>(
-        f, transform(N<AssignStmt>(N<IdExpr>(stmt->getName()), finalExpr)));
+    auto a = N<AssignStmt>(N<IdExpr>(stmt->getName()), finalExpr);
+    if (isClassMember) { // class method decorator
+      auto nctx = std::make_shared<TypeContext>(ctx->cache);
+      *nctx = *ctx;
+      nctx->bases.pop_back();
+      nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end()); // global context
+      auto tv = TypecheckVisitor(nctx);
+
+      auto defName = ctx->generateCanonicalName(stmt->getName());
+      preamble->addStmt(
+          tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
+      registerGlobal(defName);
+      a->setUpdate();
+
+      cast<IdExpr>(a->getLhs())->value = defName;
+      std::vector<CallArg> args;
+      for (auto arg : *stmt) {
+        if (startswith(arg.name, "**"))
+          args.push_back(N<KeywordStarExpr>(N<IdExpr>(arg.name)));
+        else if (startswith(arg.name, "*"))
+          args.push_back(N<StarExpr>(N<IdExpr>(arg.name)));
+        else
+          args.push_back(N<IdExpr>(arg.name));
+      }
+      Stmt *newFunc = N<FunctionStmt>(
+          stmt->getName(), clone(stmt->getReturn()), clone(stmt->items),
+          N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(defName), args))),
+          std::vector<Expr *>{}, stmt->isAsync());
+      newFunc = transform(newFunc);
+      resultStmt = N<SuiteStmt>(f, N<SuiteStmt>(transform(a), newFunc));
+    } else {
+      resultStmt = N<SuiteStmt>(f, transform(a));
+    }
   } else {
     resultStmt = f;
   }

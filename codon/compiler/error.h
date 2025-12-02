@@ -72,7 +72,6 @@ enum Error {
   FN_OUTSIDE_ERROR,
   FN_GLOBAL_ASSIGNED,
   FN_GLOBAL_NOT_FOUND,
-  FN_NO_DECORATORS,
   FN_BAD_LLVM,
   FN_REALIZE_BUILTIN,
   EXPECTED_LOOP,
@@ -366,8 +365,6 @@ template <class... TA> std::string Emsg(Error e, const TA &...args) {
         fmt::runtime("name '{}' is assigned to before global declaration"), args...);
   case Error::FN_GLOBAL_NOT_FOUND:
     return fmt::format(fmt::runtime("no binding for {} '{}' found"), args...);
-  case Error::FN_NO_DECORATORS:
-    return fmt::format(fmt::runtime("class methods cannot be decorated"), args...);
   case Error::FN_BAD_LLVM:
     return fmt::format("invalid LLVM code");
   case Error::FN_REALIZE_BUILTIN:
