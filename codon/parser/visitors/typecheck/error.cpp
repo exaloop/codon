@@ -175,7 +175,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
 /// Transform `raise` statements.
 /// @example
-///   `raise exc` -> ```raise __internal__.set_header(exc, "fn", "file", line, col)```
+///   `raise exc` -> ```raise BaseException.set_header(exc, "fn", "file", line, col)```
 void TypecheckVisitor::visit(ThrowStmt *stmt) {
   if (!stmt->expr) {
     stmt->setDone();
@@ -184,17 +184,17 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 
   stmt->expr = transform(stmt->getExpr());
   if (!match(stmt->getExpr(),
-             M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
-                                                    "set_header")),
+             M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.types.error",
+                                                    "BaseException", "_set_header")),
                          M_))) {
     stmt->expr = transform(N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "set_header")),
+        N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
+                                   "_set_header")),
         stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
         N<IntExpr>(stmt->getSrcInfo().col),
         stmt->getFrom()
-            ? N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
-                          stmt->getFrom(),
+            ? N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), stmt->getFrom(),
                           N<IdExpr>(getMangledClass("std.internal.types.error",
                                                     "BaseException")))
             : N<CallExpr>(N<IdExpr>("NoneType"))));

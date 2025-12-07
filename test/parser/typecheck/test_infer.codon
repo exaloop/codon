@@ -679,7 +679,7 @@ def foo_int(x: int):
 def foo_str(x: str):
     print(f'{x} {x.__class__.__name__}')
 def foo(x):
-    print(f'{x} {int(__internal__.union_get_tag(x))} {x.__class__.__name__}')
+    print(f'{x} {int(Union._get_tag(x))} {x.__class__.__name__}')
 
 a: Union[int, str] = 5
 foo_int(a)  #: 5 int

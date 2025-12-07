@@ -848,8 +848,8 @@ class Optional:
             return Optional[T](T.__from_gpu_new__(other.__val__()))
 
 @extend
-class __internal__:
-    def class_to_gpu(obj, cache: AllocCache):
+class type:
+    def _to_gpu(obj, cache: AllocCache):
         if isinstance(obj, Tuple):
             return tuple(a.__to_gpu__(cache) for a in obj)
         elif isinstance(obj, ByVal):
@@ -862,7 +862,7 @@ class __internal__:
             Ptr[S](mem.__raw__())[0] = tuple(obj).__to_gpu__(cache)
             return _object_to_gpu(mem, cache)
 
-    def class_from_gpu(obj, other):
+    def _from_gpu(obj, other):
         if isinstance(obj, Tuple):
             _tuple_from_gpu(obj, other)
         elif isinstance(obj, ByVal):
@@ -871,7 +871,7 @@ class __internal__:
             S = type(tuple(obj))
             Ptr[S](obj.__raw__())[0] = S.__from_gpu_new__(tuple(_object_from_gpu(other)))
 
-    def class_from_gpu_new(other):
+    def _from_gpu_new(other):
         if isinstance(other, Tuple):
             return tuple(type(a).__from_gpu_new__(a) for a in other)
         elif isinstance(other, ByVal):

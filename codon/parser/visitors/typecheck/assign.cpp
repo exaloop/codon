@@ -427,8 +427,7 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
   if (stmt->getLhs()->getType()->is("Capsule")) {
     return {true,
             transform(N<AssignStmt>(
-                N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.capsule_get_ptr"),
-                                         stmt->getLhs()),
+                N<IndexExpr>(N<CallExpr>(N<IdExpr>("Capsule._ptr"), stmt->getLhs()),
                              N<IntExpr>(0)),
                 stmt->getRhs()))};
   }

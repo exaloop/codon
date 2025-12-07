@@ -14,13 +14,20 @@ from internal.types.error import *
 from internal.types.intn import *
 from internal.types.float import *
 from internal.types.byte import *
+from internal.types.type import *
+from internal.types.tuple import *
+from internal.types.rtti import *
+from internal.types.function import *
+from internal.types.union import *
+from internal.types.any import *
+from internal.types.ellipsis import *
+from internal.types.import_ import *
+from internal.types.ptr import *
 from internal.types.generator import *
 from internal.types.optional import *
-
 import internal.c_stubs as _C
 from internal.format import *
 from internal.internal import *
-
 from internal.types.slice import *
 from internal.types.range import *
 from internal.types.complex import *

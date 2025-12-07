@@ -418,7 +418,7 @@ class timedelta:
     _microseconds: int
 
     def _new(microseconds: int) -> timedelta:
-        return __internal__.tuple_cast_unsafe((microseconds,), timedelta)
+        return type._force_value_cast((microseconds,), timedelta)
 
     @inline
     def _accum(sofar: int, leftover: float, num: int, factor: int) -> Tuple[int, float]:

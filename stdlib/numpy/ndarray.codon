@@ -316,7 +316,7 @@ class ndarray[dtype, ndim: Literal[int]]:
     def __new__(shape: Tuple[ndim, int],
                 strides: Tuple[ndim, int],
                 data: Ptr[dtype]) -> ndarray[dtype, ndim]:
-        return __internal__.tuple_cast_unsafe((shape, strides, data), ndarray[dtype, ndim])
+        return type._force_value_cast((shape, strides, data), ndarray[dtype, ndim])
 
     def __new__(shape: Tuple[ndim, int], data: Ptr[dtype], fcontig: bool = False):
         strides = util.strides(shape, fcontig, dtype)

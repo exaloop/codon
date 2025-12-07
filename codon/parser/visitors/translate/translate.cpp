@@ -317,7 +317,9 @@ void TranslateVisitor::visit(CallExpr *expr) {
     arrayType->setAstType(expr->getType()->shared_from_this());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
-  } else if (ei && startswith(ei->getValue(), "__internal__.yield_in_no_suspend")) {
+  } else if (ei && startswith(ei->getValue(),
+                              getMangledMethod("std.internal.core", "Generator",
+                                               "_yield_in_no_suspend"))) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }
@@ -460,7 +462,7 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
   auto ce = cast<CallExpr>(stmt->getExpr());
   if (ce && ((ei = cast<IdExpr>(ce->getExpr()))) &&
       ei->getValue() ==
-          getMangledMethod("std.internal.core", "__internal__", "yield_final")) {
+          getMangledMethod("std.internal.core", "Generator", "_yield_final")) {
     result = make<ir::YieldInstr>(stmt, transform((*ce)[0].value), true);
     ctx->getBase()->setGenerator();
   } else {

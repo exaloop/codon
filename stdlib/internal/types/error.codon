@@ -21,7 +21,7 @@ class BaseException:
         self.line = 0
         self.col = 0
         self.python_type = BaseException._pytype
-        self.cause = __internal__.opt_ref_new(T=BaseException)
+        self.cause = Optional._ref_new(T=BaseException)
 
     def __str__(self):
         return self.message
@@ -32,6 +32,20 @@ class BaseException:
     @property
     def __cause__(self):
         return self.cause
+
+    @__hidden__
+    def _set_header(e, func, file, line, col, cause):
+        if not isinstance(e, BaseException):
+            compile_error("exceptions must derive from BaseException")
+
+        e.func = func
+        e.file = file
+        e.line = line
+        e.col = col
+        if cause is not None:
+            e.cause = cause
+        return e
+
 
 class Exception(Static[BaseException]):
     _pytype: ClassVar[cobj] = cobj()

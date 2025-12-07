@@ -1,47 +1,81 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 @extend
-class __internal__:
+class Optional:
     @pure
     @llvm
-    def opt_tuple_new(T: type) -> Optional[T]:
+    def _tuple_new(T: type) -> Optional[T]:
         ret { i1, {=T} } { i1 false, {=T} undef }
 
+    @pure
+    @llvm
+    def _ref_new(T: type) -> Optional[T]:
+        ret ptr null
 
-@extend
-class Optional:
     def __new__() -> Optional[T]:
         if isinstance(T, ByVal):
-            return __internal__.opt_tuple_new(T)
-        elif static.has_rtti(T):
-            return __internal__.opt_ref_new_rtti(T)
+            return Optional._tuple_new(T)
         else:
-            return __internal__.opt_ref_new(T)
+            return Optional._ref_new(T)
+
+    @pure
+    @derives
+    @llvm
+    def _tuple_new_arg(what: T, T: type) -> Optional[T]:
+        %0 = insertvalue { i1, {=T} } { i1 true, {=T} undef }, {=T} %what, 1
+        ret { i1, {=T} } %0
+
+    @pure
+    @derives
+    @llvm
+    def _ref_new_arg(what: T, T: type) -> Optional[T]:
+        ret ptr %what
 
     @overload
     def __new__(what: T) -> Optional[T]:
         if isinstance(T, ByVal):
-            return __internal__.opt_tuple_new_arg(what, T)
-        elif static.has_rtti(T):
-            return __internal__.opt_ref_new_arg_rtti(what, T)
+            return Optional._tuple_new_arg(what, T)
         else:
-            return __internal__.opt_ref_new_arg(what, T)
+            return Optional._ref_new_arg(what, T)
+
+    @pure
+    @llvm
+    def _tuple_bool(what: Optional[T], T: type) -> bool:
+        %0 = extractvalue { i1, {=T} } %what, 0
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def _ref_bool(what: Optional[T], T: type) -> bool:
+        %0 = icmp ne ptr %what, null
+        %1 = zext i1 %0 to i8
+        ret i8 %1
 
     def __has__(self) -> bool:
         if isinstance(T, ByVal):
-            return __internal__.opt_tuple_bool(self, T)
-        elif static.has_rtti(T):
-            return __internal__.opt_ref_bool_rtti(self, T)
+            return Optional._tuple_bool(self, T)
         else:
-            return __internal__.opt_ref_bool(self, T)
+            return Optional._ref_bool(self, T)
+
+    @pure
+    @derives
+    @llvm
+    def _tuple_invert(what: Optional[T], T: type) -> T:
+        %0 = extractvalue { i1, {=T} } %what, 1
+        ret {=T} %0
+
+    @pure
+    @derives
+    @llvm
+    def _ref_invert(what: Optional[T], T: type) -> T:
+        ret ptr %what
 
     def __val__(self) -> T:
         if isinstance(T, ByVal):
-            return __internal__.opt_tuple_invert(self, T)
-        elif static.has_rtti(T):
-            return __internal__.opt_ref_invert_rtti(self, T)
+            return Optional._tuple_invert(self, T)
         else:
-            return __internal__.opt_ref_invert(self, T)
+            return Optional._ref_invert(self, T)
 
     def __val_or__(self, default: T):
         if self.__has__():

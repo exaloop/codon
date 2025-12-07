@@ -5,11 +5,6 @@
 @__noextend__
 class type[T]:
     #  __new__ / __init__: always done internally
-    # __repr__
-    # __call__
-    # __name__
-    # __module__
-    # __doc__
     pass
 
 @tuple
@@ -26,6 +21,7 @@ class TypeWrap[T]:
 @__internal__
 class __internal__:
     pass
+
 @__internal__
 class __magic__:
     pass
@@ -241,8 +237,6 @@ class Union[TU]:
     # compiler-generated
     def __new__(val):
         TU
-    def __call__(self, *args, **kwargs):
-        return __internal__.union_call(self, args, kwargs)
 
 @extend
 class Function:
@@ -254,19 +248,35 @@ class Function:
 
 # dummy
 @__internal__
-class TypeTrait[T]: pass
+class TypeTrait[T]:
+    pass
+
 @__internal__
-class ByVal: pass
+class ByVal:
+    pass
+
 @__internal__
-class ByRef: pass
+class ByRef:
+    pass
 
 @__internal__
 class ClassVar[T]:
     pass
 
 @__internal__
-class RTTI:
+@tuple
+class TypeInfo:
     id: int
+    raw_name: str
+    nice_name: str
+    _repr: Function[[Ptr[byte]], str]
+
+
+@__internal__
+class RTTIType:
+    data: Ptr[byte]  # pointer to the data
+    typeinfo: TypeInfo  # type information
+
 
 @__internal__
 @tuple
@@ -299,11 +309,6 @@ class Import:
         %0 = insertvalue { {=bool} } undef, {=bool} %loaded, 0
         ret { {=bool} } %0
 
-    def _set_loaded(i: Ptr[Import]):
-        Ptr[bool](i.as_byte())[0] = True
-
-    def __repr__(self) -> str:
-        return f"<module '{self.name}' from '{self.file}'>"
 
 def __ptr__(var):
     pass
@@ -355,23 +360,6 @@ class NamedTuple:
         %0 = insertvalue { {=T} } undef, {=T} %args, 0
         ret { {=T} } %0
 
-    def __getitem__(self, key: Literal[str]):
-        return getattr(self, key)
-
-    def __contains__(self, key: Literal[str]):
-        return hasattr(self, key)
-
-    def get(self, key: Literal[str], default = NoneType()):
-        return __internal__.kwargs_get(self, key, default)
-
-    def __keys__(self):
-        return __internal__.namedkeys(N)
-
-    def __repr__(self):
-        keys = self.__keys__()
-        values = [v.__repr__() for v in self.args]
-        s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
-        return f"({s})"
 
 @__internal__
 @tuple
@@ -392,19 +380,6 @@ class Partial:
         %1 = insertvalue { {=T}, {=K} } %0, {=K} %kwargs, 1
         ret { {=T}, {=K} } %1
 
-    def __repr__(self):
-        return __magic__.repr_partial(self)
-
-    def __call__(self, *args, **kwargs):
-        return self(*args, **kwargs)
-
-    @property
-    def __fn_name__(self):
-        return F.__name__[16:-1]  # chop off unrealized_type
-
-    def __raw__(self):
-        # TODO: better error message
-        return F.T.__raw__()
 
 @__internal__
 @tuple
@@ -413,5 +388,11 @@ class Callable:
     data: Ptr[byte]
     T: type
     TR: type
+
+
+@__internal__
+class Any:
+    _data: Ptr[byte]
+    _typeinfo: TypeInfo
 
 __codon__: Literal[bool] = True

@@ -751,18 +751,18 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__")),
                                  N<BoolExpr>(false)));
     } else {
-      return transform(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "and_union")),
-          expr->getLhs(), expr->getRhs()));
+      return transform(
+          N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "Union", "_and")),
+                      expr->getLhs(), expr->getRhs()));
     }
   } else if (expr->getOp() == "||") {
     if (ctx->expectedType && ctx->expectedType->is("bool")) {
       return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
     } else {
-      return transform(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "or_union")),
-          expr->getLhs(), expr->getRhs()));
+      return transform(
+          N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "Union", "_or")),
+                      expr->getLhs(), expr->getRhs()));
     }
   } else if (expr->getOp() == "not in") {
     return transform(N<CallExpr>(N<DotExpr>(

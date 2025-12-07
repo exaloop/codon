@@ -1,0 +1,133 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+
+__vtables__ = Ptr[Ptr[cobj]]()
+__vtable_size__ = 0
+
+
+@extend
+class RTTIType:
+    def _new(data: Ptr[byte], typeinfo: TypeInfo, T: type) -> T:
+        """
+        Creates a new RTTIType wrapper for data and casts it to T.
+
+        Internal use only. No type checks are performed.
+        """
+
+        p = type._ref_new(RTTIType)
+        p.data = data
+        p.typeinfo = typeinfo
+        return type._force_cast(p, T)
+
+    @inline
+    def _dist(B: type, D: type) -> int:
+        """Calculates the byte distance of base class B and derived class D. Compiler generated."""
+        return 0
+
+    @inline
+    def _to_derived(b: B, B: type, D: type) -> D:
+        if not (static.has_rtti(D) and static.has_rtti(B)):
+            compile_error("classes are not polymorphic")
+        off = RTTIType._dist(B, D)
+        rtti = type._force_cast(b, RTTIType)
+        return RTTIType._new(rtti.data - off, rtti.typeinfo, D)
+
+
+    ### vTable & thunk setup. Mostly compiler-generated.
+
+    def _init_vtables():
+        """
+        Create a global vtable.
+        """
+
+        from internal.gc import alloc_atomic_uncollectable, sizeof
+
+        global __vtables__
+        sz = __vtable_size__ + 1
+        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[Ptr[byte]]))
+        __vtables__ = Ptr[Ptr[Ptr[byte]]](p)
+        RTTIType._populate_vtables()
+
+    def _populate_vtables():
+        """
+        Populate content of vtables. Compiler generated.
+        Corresponds to:
+            for each realized class C:
+                _init_vtable(<C's realization ID>, <C's vtable size> + 1, T=C)
+                for each fn F in C's vtable:
+                    _set_vtable_fn(
+                        <C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__(), T=C
+                    )
+        """
+        pass
+
+    def _init_vtable(sz: int, T: type):
+        from internal.gc import alloc_atomic_uncollectable, sizeof
+
+        if not static.has_rtti(T):
+            compile_error("class is not polymorphic")
+        p = alloc_atomic_uncollectable((sz + 1) * sizeof(Ptr[byte]))
+        id = T.__id__
+        __vtables__[id] = Ptr[Ptr[byte]](p)
+        # Set typeinfo
+        p = Ptr[TypeInfo](1)
+        p[0] = TypeInfo(T)
+        __vtables__[id][0] = p.as_byte()
+
+    def _set_vtable_fn(id: int, fid: int, f: Ptr[byte], T: type):
+        if not static.has_rtti(T):
+            compile_error("class is not polymorphic")
+        __vtables__[id][fid] = f
+
+    def _get_thunk_id(F: type, T: type) -> int:
+        """Compiler-generated"""
+        return 0
+
+    def _thunk_debug(base, func, sig, *args):
+        # print("![thunk]!", base, func, sig, args[0].__raw__())
+        pass
+
+    @no_argument_wrap
+    def _thunk_dispatch(slf, cls_id, *args, F: type):
+        if not static.has_rtti(type(slf)):
+            compile_error("class is not polymorphic")
+
+        FR = type(static.function.realized(F, slf, *args))
+        T = type(slf)
+        thunk_id = RTTIType._get_thunk_id(FR, T)
+
+        # Get RTTI table
+        if cls_id == 0:
+            cls_id = type._force_cast(slf, RTTIType).typeinfo.id
+        fptr = __vtables__[cls_id][thunk_id]
+        f = FR(fptr)
+        return f(slf, *args)
+
+
+@extend
+class Super:
+    def __repr__(self):
+        return f'<super: {__T__} {self.__obj__}>'
+
+    def _super(obj, B: type, use_super_type: Literal[int] = 0):
+        D = type(obj)
+        if not static.has_rtti(D):  # static inheritance
+            return type._force_cast(obj, B)
+        else:
+            if not static.has_rtti(B):
+                compile_error("classes are not polymorphic")
+            off = RTTIType._dist(B, D)
+            rtti = type._force_cast(obj, RTTIType)
+            res = RTTIType._new(rtti.data + off, rtti.typeinfo, B)
+            if use_super_type:
+                # This is explicit super()
+                return type._force_value_cast((res, ), Super[B])
+            else:
+                # Implicit super() just used for casting
+                return res
+
+    def _unwrap(obj: Super[B], B: type) -> B:
+        rtti = type._force_cast(obj.__obj__, RTTIType)
+        return RTTIType._new(rtti.data, TypeInfo(B), B)

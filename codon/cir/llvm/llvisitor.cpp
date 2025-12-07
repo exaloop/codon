@@ -2251,12 +2251,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   }
 
   if (auto *x = cast<types::RefType>(t)) {
-    auto *p = B->getPtrTy();
-    if (x->isPolymorphic()) {
-      return llvm::StructType::get(*context, {p, p});
-    } else {
-      return p;
-    }
+    return B->getPtrTy();
   }
 
   if (auto *x = cast<types::FuncType>(t)) {
@@ -2425,37 +2420,37 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::RefType>(t)) {
     auto *ref = db.builder->createReferenceType(
         llvm::dwarf::DW_TAG_reference_type, getDITypeHelper(x->getContents(), cache));
-    if (x->isPolymorphic()) {
-      auto *p = B->getPtrTy();
-      auto pointerSizeInBits = layout.getTypeAllocSizeInBits(p);
-      auto *rtti = db.builder->createBasicType("rtti", pointerSizeInBits,
-                                               llvm::dwarf::DW_ATE_address);
-      auto *structType = llvm::StructType::get(p, p);
-      auto *structLayout = layout.getStructLayout(structType);
-      auto *srcInfo = getSrcInfo(x);
-      llvm::DIFile *file = db.getFile(srcInfo->file);
-      std::vector<llvm::Metadata *> members;
+    // if (x->isPolymorphic()) {
+    //   auto *p = B->getPtrTy();
+    //   auto pointerSizeInBits = layout.getTypeAllocSizeInBits(p);
+    //   auto *rtti = db.builder->createBasicType("rtti", pointerSizeInBits,
+    //                                            llvm::dwarf::DW_ATE_address);
+    //   auto *structType = llvm::StructType::get(p, p);
+    //   auto *structLayout = layout.getStructLayout(structType);
+    //   auto *srcInfo = getSrcInfo(x);
+    //   llvm::DIFile *file = db.getFile(srcInfo->file);
+    //   std::vector<llvm::Metadata *> members;
 
-      llvm::DICompositeType *diType = db.builder->createStructType(
-          file, x->getName(), file, srcInfo->line, structLayout->getSizeInBits(),
-          /*AlignInBits=*/0, llvm::DINode::FlagZero, /*DerivedFrom=*/nullptr,
-          db.builder->getOrCreateArray(members));
+    //   llvm::DICompositeType *diType = db.builder->createStructType(
+    //       file, x->getName(), file, srcInfo->line, structLayout->getSizeInBits(),
+    //       /*AlignInBits=*/0, llvm::DINode::FlagZero, /*DerivedFrom=*/nullptr,
+    //       db.builder->getOrCreateArray(members));
 
-      members.push_back(db.builder->createMemberType(
-          diType, "data", file, srcInfo->line, pointerSizeInBits,
-          /*AlignInBits=*/0, structLayout->getElementOffsetInBits(0),
-          llvm::DINode::FlagZero, ref));
+    //   members.push_back(db.builder->createMemberType(
+    //       diType, "data", file, srcInfo->line, pointerSizeInBits,
+    //       /*AlignInBits=*/0, structLayout->getElementOffsetInBits(0),
+    //       llvm::DINode::FlagZero, ref));
 
-      members.push_back(db.builder->createMemberType(
-          diType, "rtti", file, srcInfo->line, pointerSizeInBits,
-          /*AlignInBits=*/0, structLayout->getElementOffsetInBits(1),
-          llvm::DINode::FlagZero, rtti));
+    //   members.push_back(db.builder->createMemberType(
+    //       diType, "rtti", file, srcInfo->line, pointerSizeInBits,
+    //       /*AlignInBits=*/0, structLayout->getElementOffsetInBits(1),
+    //       llvm::DINode::FlagZero, rtti));
 
-      db.builder->replaceArrays(diType, db.builder->getOrCreateArray(members));
-      return diType;
-    } else {
-      return ref;
-    }
+    //   db.builder->replaceArrays(diType, db.builder->getOrCreateArray(members));
+    //   return diType;
+    // } else {
+    return ref;
+    // }
   }
 
   if (auto *x = cast<types::FuncType>(t)) {
@@ -3284,9 +3279,10 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
   process(x->getVal());
   B->SetInsertPoint(block);
   if (auto *refType = cast<types::RefType>(memberedType)) {
-    if (refType->isPolymorphic())
-      value =
-          B->CreateExtractValue(value, 0); // polymorphic ref type is tuple (data, rtti)
+    if (refType->isPolymorphic()) {
+      // polymorphic ref type is ref to (data, rtti)
+      value = B->CreateExtractValue(B->CreateLoad(B->getPtrTy(), value), 0);
+    }
     value = B->CreateLoad(getLLVMType(refType->getContents()), value);
   }
   value = B->CreateExtractValue(value, index);
@@ -3304,8 +3300,10 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   llvm::Value *rhs = value;
 
   B->SetInsertPoint(block);
-  if (refType->isPolymorphic())
-    lhs = B->CreateExtractValue(lhs, 0); // polymorphic ref type is tuple (data, rtti)
+  if (refType->isPolymorphic()) {
+    // polymorphic ref type is ref to (data, rtti)
+    lhs = B->CreateExtractValue(B->CreateLoad(B->getPtrTy(), value), 0);
+  }
   llvm::Value *load = B->CreateLoad(getLLVMType(refType->getContents()), lhs);
   load = B->CreateInsertValue(load, rhs, index);
   B->CreateStore(load, lhs);

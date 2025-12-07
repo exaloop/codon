@@ -670,6 +670,25 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   auto m = match(codeStmt, M<ExprStmt>(MVar<StringExpr>(codeExpr)));
   seqassert(m, "invalid LLVM definition");
   auto code = codeExpr->getValue();
+  /// Remove docstring (if any)
+  size_t start = 0;
+  while (start < code.size() && std::isspace(code[start]))
+    start++;
+  if (startswith(code.substr(start), "\"\"\"")) {
+    start += 3;
+    bool found = false;
+    while (start < code.size() - 2) {
+      if (code[start] == '"' && code[start + 1] == '"' && code[start + 2] == '"') {
+        found = true;
+        start += 3;
+        break;
+      }
+      start++;
+    }
+    if (found) {
+      code = code.substr(start);
+    }
+  }
 
   std::vector<Stmt *> items;
   std::string finalCode;

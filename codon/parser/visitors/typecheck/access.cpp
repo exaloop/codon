@@ -176,10 +176,20 @@ void TypecheckVisitor::visit(DotExpr *expr) {
           wrapSide(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
     return;
   }
+  // Special case: cls.__mro__
+  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__mro__") {
+    std::vector<Expr *> items;
+    if (auto c = getClass(extractType(expr->getExpr()))) {
+      for (auto &m : c->mro)
+        items.push_back(N<StringExpr>(m->getClass()->name));
+    }
+    resultExpr = wrapSide(N<TupleExpr>(items));
+    return;
+  }
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
-    resultExpr = transform(
-        N<CallExpr>(N<IdExpr>(getMangledFunc("std.internal.internal", "__type_repr__")),
-                    expr->getExpr(), N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+    resultExpr = transform(N<CallExpr>(
+        N<IdExpr>(getMangledFunc("std.internal.types.type", "__type_repr__")),
+        expr->getExpr(), N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
     return;
   }
   // Special case: expr.__is_static__
@@ -261,13 +271,13 @@ void TypecheckVisitor::visit(DotExpr *expr) {
             id = N<IntExpr>(0);
             slf = expr->getExpr();
           }
-          resultExpr = transform(N<CallExpr>(
-              N<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
-                                         "class_thunk_dispatch")),
-              std::vector<CallArg>{
-                  CallArg{"slf", slf}, CallArg{"cls_id", id},
-                  CallArg{"F", N<IdExpr>(bestMethod->ast->name)},
-                  CallArg{"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
+          resultExpr = transform(
+              N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType",
+                                                     "_thunk_dispatch")),
+                          std::vector<CallArg>{
+                              CallArg{"slf", slf}, CallArg{"cls_id", id},
+                              CallArg{"F", N<IdExpr>(bestMethod->ast->name)},
+                              CallArg{"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
           return;
         }
 
@@ -586,12 +596,12 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
                                  N<StringExpr>(expr->getMember())));
   }
 
-  // Case: transform `union.m` to `__internal__.get_union_method(union, "m", ...)`
+  // Case: transform `union.m` to `Union._member(union, "m", ...)`
   if (typ->getUnion()) {
     if (!typ->canRealize())
       return nullptr; // delay!
     return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("__internal__"), "union_member"),
+        N<DotExpr>(N<IdExpr>("Union"), "_member"),
         std::vector<CallArg>{CallArg{"union", expr->getExpr()},
                              CallArg{"member", N<StringExpr>(expr->getMember())}}));
   }

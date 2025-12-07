@@ -1,0 +1,117 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+@extend
+class Tuple:
+    def _fix_index(idx: int, len: int) -> int:
+        if idx < 0:
+            idx += len
+        if idx < 0 or idx >= len:
+            raise IndexError("tuple index out of range")
+        return idx
+
+    def _getitem(t: T, idx: int, T: type, E: type) -> E:
+        @pure
+        @derives
+        @llvm
+        def llvm_helper(t: T, idx: int, T: type, E: type) -> E:
+            %x = alloca {=T}
+            store {=T} %t, ptr %x
+            %p = getelementptr {=E}, ptr %x, i64 %idx
+            %v = load {=E}, ptr %p
+            ret {=E} %v
+
+        return llvm_helper(t, Tuple._fix_index(idx, static.len(t)), T, E)
+
+    def _offsetof(x, field: Literal[int]) -> int:
+        @pure
+        @llvm
+        def llvm_helper(T: type, idx: Literal[int], TE: type) -> int:
+            %a = alloca {=T}
+            %b = getelementptr inbounds {=T}, ptr %a, i64 0, i32 {=idx}
+            %base = ptrtoint ptr %a to i64
+            %elem = ptrtoint ptr %b to i64
+            %offset = sub i64 %elem, %base
+            ret i64 %offset
+
+        return llvm_helper(type(x), field, type(x[field]))
+
+    def _str(strs: Ptr[str], names: Ptr[str], n: int) -> str:
+        # special case of 1-element plain tuple: format as "(x,)"
+        if n == 1 and names[0].len == 0:
+            total = strs[0].len + 3
+            buf = Ptr[byte](total)
+            buf[0] = byte(40)  # '('
+            str.memcpy(buf + 1, strs[0].ptr, strs[0].len)
+            buf[total - 2] = byte(44)  # ','
+            buf[total - 1] = byte(41)  # ')'
+            return str(buf, total)
+
+        total = 2  # one for each of '(' and ')'
+        i = 0
+        while i < n:
+            total += strs[i].len
+            if names[i].len:
+                total += names[i].len + 2  # extra : and space
+            if i < n - 1:
+                total += 2  # ", "
+            i += 1
+        buf = Ptr[byte](total)
+        where = 0
+        buf[where] = byte(40)  # '('
+        where += 1
+        i = 0
+        while i < n:
+            s = names[i]
+            l = s.len
+            if l:
+                str.memcpy(buf + where, s.ptr, l)
+                where += l
+                buf[where] = byte(58)  # ':'
+                where += 1
+                buf[where] = byte(32)  # ' '
+                where += 1
+            s = strs[i]
+            l = s.len
+            str.memcpy(buf + where, s.ptr, l)
+            where += l
+            if i < n - 1:
+                buf[where] = byte(44)  # ','
+                where += 1
+                buf[where] = byte(32)  # ' '
+                where += 1
+            i += 1
+        buf[where] = byte(41)  # ')'
+        return str(buf, total)
+
+
+@extend
+class NamedTuple:
+    def __getitem__(self, key: Literal[str]):
+        return getattr(self, key)
+
+    def __contains__(self, key: Literal[str]):
+        return hasattr(self, key)
+
+    def _get(kw, key: Literal[str], default):
+        if hasattr(kw, key):
+            return getattr(kw, key)
+        else:
+            return default
+
+    def get(self, key: Literal[str], default = NoneType()):
+        return NamedTuple.kwargs_get(self, key, default)
+
+    def _namedkeys(N: Literal[int]):
+        # Compiler generated
+        pass
+
+    def __keys__(self):
+        return NamedTuple._namedkeys(N)
+
+    def __repr__(self):
+        keys = self.__keys__()
+        values = [v.__repr__() for v in self.args]
+        s = ', '.join(f"{keys[i]}: {values[i]}" for i in range(len(keys)))
+        return f"({s})"

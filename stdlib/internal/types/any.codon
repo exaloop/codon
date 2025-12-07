@@ -1,0 +1,68 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+
+@extend
+class Any:
+    def __str__(self):
+        if self._typeinfo._repr.__raw__() != cobj():
+            return f"Any({self._typeinfo._repr(self._data)}, {self._typeinfo})"
+        return f"Any({self._typeinfo})"
+
+    def __new__() -> Any:
+        return __magic__.new(Any)
+
+    def __init__(self, obj):
+        T = type(obj)
+        self._typeinfo = TypeInfo(T)
+        if isinstance(T, ByVal):
+            p = Ptr[T](1)
+            p[0] = obj
+            self._data = p.as_byte()
+        else:
+            self._data = obj.__raw__().as_byte()
+
+    def unwrap(self, T: type) -> T:
+        if TypeInfo(T) != self._typeinfo:
+            raise TypeError(f"Any.unwrap failed: requested {T}, but got {self._typeinfo.nice_name} instead")
+        if isinstance(T, ByVal):
+            p = type._force_cast(self._data, Ptr[T])
+            return p[0]
+        else:
+            return type._force_cast(self._data, T)
+
+
+@extend
+class Capsule:
+    @pure
+    @derives
+    @llvm
+    def _make(val: Ptr[T], T: type) -> Capsule[T]:
+        %0 = insertvalue { ptr } undef, ptr %val, 0
+        ret { ptr } %0
+
+    def make(val: T, T: type) -> Capsule[T]:
+        p = Ptr[T](1)
+        p[0] = val
+        return Capsule._make(p)
+
+    @pure
+    @derives
+    @llvm
+    def _ptr(ref: Capsule[T], T: type) -> Ptr[T]:
+        %0 = extractvalue { ptr } %ref, 0
+        %1 = getelementptr {=T}, ptr %0, i64 0
+        ret ptr %1
+
+    @pure
+    @derives
+    @llvm
+    def _get(ref: Capsule[T], T: type) -> T:
+        %0 = extractvalue { ptr } %ref, 0
+        %1 = getelementptr {=T}, ptr %0, i64 0
+        %2 = load {=T}, ptr %1
+        ret {=T} %2
+
+    def __init__(self, val: T):
+        self.val[0] = val

@@ -28,7 +28,7 @@ class Slice:
             T: type = int,
             U: type = int,
             V: type = int) -> Slice[T, U, V]:
-        return __internal__.tuple_cast_unsafe((start, stop, step), Slice[T, U, V])
+        return type._force_value_cast((start, stop, step), Slice[T, U, V])
 
     def adjust_indices(self, length: int) -> Tuple[int, int, int, int]:
         if not (T is int or T is None) or not (U is int or U is None) or not (V is int or V is None):

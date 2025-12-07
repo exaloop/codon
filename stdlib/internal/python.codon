@@ -969,10 +969,10 @@ class PyError(Static[Exception]):
 @extend
 class pyobj:
     def __new__() -> pyobj:
-        return __internal__.class_alloc(pyobj)
+        return type._ref_new(pyobj)
 
     def __raw__(self) -> Ptr[byte]:
-        return __internal__.class_raw(self)
+        return type._ref_raw(self)
 
     def __init__(self, p: Ptr[byte], steal: bool = False):
         self.p = p
