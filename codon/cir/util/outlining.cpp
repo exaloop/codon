@@ -176,6 +176,11 @@ struct Outliner : public Operator {
       invalid = true;
   }
 
+  void handle(AwaitInstr *v) override {
+    if (inRegion)
+      invalid = true;
+  }
+
   void handle(YieldInInstr *v) override {
     if (inRegion)
       invalid = true;

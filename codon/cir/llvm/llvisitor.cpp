@@ -3509,6 +3509,11 @@ void LLVMVisitor::visit(const YieldInstr *x) {
   }
 }
 
+void LLVMVisitor::visit(const AwaitInstr *x) {
+  // TODO
+  seqassertn(false, "not yet implemented");
+}
+
 void LLVMVisitor::visit(const ThrowInstr *x) {
   if (DisableExceptions) {
     B->SetInsertPoint(block);

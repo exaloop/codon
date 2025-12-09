@@ -1,0 +1,308 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+from threading import Lock
+from time import time, sleep
+import internal.gc as gc
+
+@tuple
+class Timer:
+    coro: cobj
+    when: float
+
+class LoopCallback:
+    coro: cobj
+    next: Optional[LoopCallback]
+
+class EventLoop:
+    lock: Lock
+    ready_head: Optional[LoopCallback]
+    ready_tail: Optional[LoopCallback]
+    timers: Ptr[Timer]
+    timers_len: int
+    timers_cap: int
+    running: bool
+    stop_flag: bool
+
+_FUTURE_STATE_PENDING:   Literal[int] = 0
+_FUTURE_STATE_FINISHED:  Literal[int] = 1
+_FUTURE_STATE_EXCEPTION: Literal[int] = 2
+_FUTURE_STATE_CANCELLED: Literal[int] = 3
+
+class Future:
+    _result: R
+    _lock: Lock
+    _loop: EventLoop
+    _cancel_msg: str
+    _done_callbacks: Ptr[cobj]
+    _done_callbacks_len: int
+    _done_callbacks_cap: int
+    _state: int
+    R: type
+
+class InvalidStateError(Static[Exception]):
+    def __init__(self, message: str = ''):
+        super().__init__("asyncio.InvalidStateError", message)
+
+class CancelledError(Static[Exception]):
+    def __init__(self, message: str = ''):
+        super().__init__("asyncio.CancelledError", message)
+
+@extend
+class EventLoop:
+    def __init__(self):
+        TIMERS_CAP_INIT: Literal[int] = 8  # must be power of 2
+        self.lock = Lock()
+        self.timers = Ptr[Timer](TIMERS_CAP_INIT)
+        self.timers_len = 0
+        self.timers_cap = TIMERS_CAP_INIT
+        self.running = False
+        self.stop_flag = False
+
+    def now(self):
+        return time()
+
+    def stop(self):
+        with self.lock:
+            self.stop_flag = True
+
+    def call_soon(self, coro: cobj):
+        cb = LoopCallback(coro, None)
+        with self.lock:
+            if self.ready_tail:
+                self.ready_tail.next = cb
+                self.ready_tail = cb
+            else:
+                self.ready_head = cb
+                self.ready_tail = cb
+
+    def call_later(self, coro: cobj, delay: float):
+        t = Timer(coro, self.now() + delay)
+        with self.lock:
+            self.timers_push(t)
+
+    def run_forever(self):
+        self.running = True
+        cb: Optional[LoopCallback] = None
+
+        while True:
+            now = self.now()
+            stop = False
+
+            with self.lock:
+                while self.timers_len > 0 and self.timers[0].when <= now:
+                    t = self.timers_pop()
+                    if t is None:
+                        break
+
+                    node = LoopCallback(t.coro, None)
+                    if self.ready_tail is not None:
+                        self.ready_tail.next = node
+                        self.ready_tail = node
+                    else:
+                        self.ready_head = node
+                        self.ready_tail = node
+
+                cb = self.ready_head
+                if cb is not None:
+                    self.ready_head = cb.next
+                    if self.ready_head is None:
+                        self.ready_tail = None
+
+                stop = self.stop_flag
+
+            if stop:
+                break
+
+            if cb is not None:
+                g = Generator[int](cb.coro)
+                g.__resume__()
+                if g.__done__():
+                    gc.free(g.__raw__())
+            else:
+                sleep_time = 0.01  # 10ms default
+                with self.lock:
+                    if self.timers_len > 0:
+                        dt = self.timers[0].when - now
+                        if dt > 0 and dt < sleep_time:
+                            sleep_time = dt
+
+                if sleep_time > 0:
+                    sleep(sleep_time)
+
+        self.running = False
+
+    def timers_reserve(self, new_cap: int):
+        old_cap = self.timers_cap
+        if new_cap <= old_cap:
+            return
+
+        sz = gc.sizeof(Timer)
+        self.timers = gc.realloc(
+                        self.timers.as_byte(),
+                        new_cap * sz, old_cap * sz)
+        self.timers_cap = new_cap
+
+    def timers_swap(self, i: int, j: int):
+        timers = self.timers
+        tmp = timers[i]
+        timers[i] = timers[j]
+        timers[j] = tmp
+
+    def timers_push(self, t: Timer):
+        if self.timers_len == self.timers_cap:
+            self.timers_reserve(self.timers_cap * 2)
+
+        i = self.timers_len
+        self.timers_len += 1
+        timers = self.timers
+
+        # Sift up
+        while i > 0:
+            parent = (i - 1) >> 1
+            if timers[parent].when <= timers[i].when:
+                break
+            self.timers_swap(parent, i)
+            i = parent
+
+    def timers_pop(self):
+        if self.timers_len == 0:
+            return None
+
+        timers = self.timers
+        out = timers[0]
+        self.timers_len -= 1
+        timers_len = self.timers_len
+
+        if timers_len > 0:
+            timers[0] = timers[timers_len]
+            i = 0
+            while True:
+                left = 2*i + 1
+                right = 2*i + 2
+                smallest = i
+
+                if (left < timers_len and timers[left].when < timers[smallest].when):
+                    smallest = left
+                if (right < timers_len and timers[right].when < timers[smallest].when):
+                    smallest = right
+                if smallest == i:
+                    break
+
+                self.timers_swap(i, smallest)
+                i = smallest
+
+        return out
+
+
+_running_loop = EventLoop()
+
+@extend
+class Future:
+    def __init__(self, loop: Optional[EventLoop] = None):
+        self._lock = Lock()
+        if loop is None:
+            self._loop = _running_loop
+        else:
+            self._loop = loop
+        self._cancel_msg = ''
+        self._done_callbacks = Ptr[cobj]()
+        self._done_callbacks_len = 0
+        self._done_callbacks_cap = 0
+        self._state = _FUTURE_STATE_PENDING
+
+    def _reset_callbacks(self):
+        if self._done_callbacks_cap > 0:
+            gc.free(self._done_callbacks.as_byte())
+        self._done_callbacks = Ptr[cobj]()
+        self._done_callbacks_len = 0
+        self._done_callbacks_cap = 0
+
+    def _add_done_callback(self, coro: cobj):
+        lock = self._lock
+        lock.acquire()
+
+        if self.done():
+            lock.release()
+            self._loop.call_soon(coro)
+            return
+
+        n = self._done_callbacks_len
+        m = self._done_callbacks_cap
+
+        if m == 0:
+            self._done_callbacks = Ptr[cobj](1)
+            self._done_callbacks_cap = 1
+        elif n >= m:
+            new_m = m * 2
+            sz = gc.sizeof(cobj)
+            self._done_callbacks = gc.realloc(
+                                     self._done_callbacks.as_byte(),
+                                     new_m * sz, m * sz)
+            self._done_callbacks_cap = new_m
+
+        self._done_callbacks[n] = coro
+        self._done_callbacks_len += 1
+        lock.release()
+
+    def _schedule_callbacks(self, callbacks: Ptr[cobj], num_callbacks: int):
+        for i in range(num_callbacks):
+            self._loop.call_soon(callbacks[i])
+
+    def result(self):
+        with self._lock:
+            state = self._state
+            if state == _FUTURE_STATE_CANCELLED:
+                raise CancelledError(self._cancel_msg)
+            elif state == _FUTURE_STATE_EXCEPTION:
+                pass  # TODO
+            elif state == _FUTURE_STATE_PENDING:
+                raise InvalidStateError("Result is not set.")
+            else:
+                return self._result
+
+    def set_result(self, result: R):
+        callbacks = Ptr[cobj]()
+        num_callbacks = 0
+
+        with self._lock:
+            if self.done():
+                raise InvalidStateError("Invalid state")
+
+            self._result = result
+            self._state = _FUTURE_STATE_FINISHED
+
+            callbacks = self._done_callbacks
+            num_callbacks = self._done_callbacks_len
+            self._reset_callbacks()
+
+        self._schedule_callbacks(callbacks, num_callbacks)
+
+    def cancelled(self):
+        return self._state == _FUTURE_STATE_CANCELLED
+
+    def done(self):
+        return self._state != _FUTURE_STATE_PENDING
+
+    def cancel(self, msg: Optional[str] = None):
+        callbacks = Ptr[cobj]()
+        num_callbacks = 0
+
+        with self._lock:
+            if self.done():
+                return False
+
+            self._state = _FUTURE_STATE_CANCELLED
+            if msg is not None:
+                self._cancel_msg = msg
+
+            callbacks = self._done_callbacks
+            num_callbacks = self._done_callbacks_len
+            self._reset_callbacks()
+
+        self._schedule_callbacks(callbacks, num_callbacks)
+        return True
+
+    def get_loop(self):
+        return self._loop
+
+    # TODO: def exception(self)

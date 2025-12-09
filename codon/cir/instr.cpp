@@ -142,6 +142,24 @@ int YieldInInstr::doReplaceUsedType(const std::string &name, types::Type *newTyp
   return 0;
 }
 
+const char AwaitInstr::NodeId = 0;
+
+int AwaitInstr::doReplaceUsedValue(id_t id, Value *newValue) {
+  if (value->getId() == id) {
+    value = newValue;
+    return 1;
+  }
+  return 0;
+}
+
+int AwaitInstr::doReplaceUsedType(const std::string &name, types::Type *newType) {
+  if (type->getName() == name) {
+    type = newType;
+    return 1;
+  }
+  return 0;
+}
+
 const char TernaryInstr::NodeId = 0;
 
 int TernaryInstr::doReplaceUsedValue(id_t id, Value *newValue) {

@@ -278,6 +278,10 @@ public:
   void visit(const YieldInstr *v) override {
     fmt::print(os, FMT_STRING("(yield {})"), makeFormatter(v->getValue()));
   }
+  void visit(const AwaitInstr *v) override {
+    fmt::print(os, FMT_STRING("(await {} {})"), makeFormatter(v->getType()),
+               makeFormatter(v->getValue()));
+  }
   void visit(const ThrowInstr *v) override {
     fmt::print(os, FMT_STRING("(throw {})"), makeFormatter(v->getValue()));
   }

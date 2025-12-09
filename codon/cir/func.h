@@ -16,6 +16,8 @@ private:
   std::string unmangledName;
   /// whether the function is a generator
   bool generator;
+  /// whether the function is an async function
+  bool async;
   /// Parent type if func is a method, or null if not
   types::Type *parentType;
 
@@ -36,7 +38,7 @@ public:
   /// @param name the function's name
   explicit Func(std::string name = "")
       : AcceptorExtend(nullptr, true, false, std::move(name)), generator(false),
-        parentType(nullptr) {}
+        async(false), parentType(nullptr) {}
 
   /// Re-initializes the function with a new type and names.
   /// @param newType the function's new type
@@ -72,6 +74,12 @@ public:
   /// Sets the function's generator flag.
   /// @param v the new value
   void setGenerator(bool v = true) { generator = v; }
+
+  /// @return true if the function is an async function
+  bool isAsync() const { return async; }
+  /// Sets the function's async flag.
+  /// @param v the new value
+  void setAsync(bool v = true) { async = v; }
 
   /// @return the variable corresponding to the given argument name
   /// @param n the argument name

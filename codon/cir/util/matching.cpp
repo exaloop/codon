@@ -218,6 +218,11 @@ public:
   void handle(const YieldInstr *x, const YieldInstr *y) {
     result = process(x->getValue(), y->getValue());
   }
+  VISIT(AwaitInstr);
+  void handle(const AwaitInstr *x, const AwaitInstr *y) {
+    result =
+        process(x->getType(), y->getType()) && process(x->getValue(), y->getValue());
+  }
   VISIT(ThrowInstr);
   void handle(const ThrowInstr *x, const ThrowInstr *y) {
     result = process(x->getValue(), y->getValue());

@@ -445,6 +445,7 @@ public:
   void visit(const ContinueInstr *) override;
   void visit(const ReturnInstr *) override;
   void visit(const YieldInstr *) override;
+  void visit(const AwaitInstr *) override;
   void visit(const ThrowInstr *) override;
   void visit(const FlowInstr *) override;
   void visit(const dsl::CustomInstr *) override;

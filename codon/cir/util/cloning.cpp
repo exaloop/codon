@@ -88,6 +88,7 @@ void CloneVisitor::visit(const BodiedFunc *v) {
   }
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -114,6 +115,7 @@ void CloneVisitor::visit(const ExternalFunc *v) {
     argNames.push_back((*it)->getName());
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -134,6 +136,7 @@ void CloneVisitor::visit(const InternalFunc *v) {
     argNames.push_back((*it)->getName());
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -155,6 +158,7 @@ void CloneVisitor::visit(const LLVMFunc *v) {
     argNames.push_back((*it)->getName());
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -318,6 +322,10 @@ void CloneVisitor::visit(const ReturnInstr *v) { result = Nt(v, clone(v->getValu
 
 void CloneVisitor::visit(const YieldInstr *v) {
   result = Nt(v, clone(v->getValue()), v->isFinal());
+}
+
+void CloneVisitor::visit(const AwaitInstr *v) {
+  result = Nt(v, clone(v->getValue()), v->getType());
 }
 
 void CloneVisitor::visit(const ThrowInstr *v) { result = Nt(v, clone(v->getValue())); }
