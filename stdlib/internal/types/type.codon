@@ -69,18 +69,16 @@ class type:
 
 @extend
 class TypeInfo:
-    def __new__(T: type) -> TypeInfo:
-        id = T.__id__
-        raw_name = f"{T}"
-        nice_name = f"{T}"
+    def __init__(self, T: type):
+        self.id = T.__id__
+        self.raw_name = f"{T}"
+        self.nice_name = f"{T}"
 
-        _repr = Function[[Ptr[byte]], str](cobj())
+        self._repr = Function[[Ptr[byte]], str](cobj())
         if hasattr(T, "__repr__") or hasattr(T, "__str__"):
             fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
             if isinstance(fn.TR, str):
-                _repr = fn
-
-        return type._force_value_cast((id, raw_name, nice_name, _repr), TypeInfo)
+                self._repr = fn
 
     def wrap(arg: Ptr[byte], T: type) -> str:
         if isinstance(T, ByVal):

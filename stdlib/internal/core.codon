@@ -264,7 +264,6 @@ class ClassVar[T]:
     pass
 
 @__internal__
-@tuple
 class TypeInfo:
     id: int
     raw_name: str

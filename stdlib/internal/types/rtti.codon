@@ -72,9 +72,8 @@ class RTTIType:
         id = T.__id__
         __vtables__[id] = Ptr[Ptr[byte]](p)
         # Set typeinfo
-        p = Ptr[TypeInfo](1)
-        p[0] = TypeInfo(T)
-        __vtables__[id][0] = p.as_byte()
+        p = TypeInfo(T)
+        __vtables__[id][0] = p.__raw__().as_byte()
 
     def _set_vtable_fn(id: int, fid: int, f: Ptr[byte], T: type):
         if not static.has_rtti(T):
