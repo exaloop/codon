@@ -72,8 +72,8 @@ class TypeInfo:
     def __new__() -> TypeInfo:
         return __magic__.new(TypeInfo)
 
-    def __raw__() -> Ptr[byte]:
-        return __magic__.raw(TypeInfo)
+    def __raw__(self) -> Ptr[byte]:
+        return __magic__.raw(self)
 
     def __init__(self, T: type):
         self.id = T.__id__
