@@ -9,7 +9,7 @@ __vtable_size__ = 0
 
 @extend
 class RTTIType:
-    def _new(data: Ptr[byte], typeinfo: TypeInfo, T: type) -> T:
+    def _new(data: Ptr[byte], typeinfo: Ptr[byte], T: type) -> T:
         """
         Creates a new RTTIType wrapper for data and casts it to T.
 
@@ -99,7 +99,7 @@ class RTTIType:
 
         # Get RTTI table
         if cls_id == 0:
-            cls_id = type._force_cast(slf, RTTIType).typeinfo.id
+            cls_id = type._force_cast(type._force_cast(slf, RTTIType).typeinfo, TypeInfo).id
         fptr = __vtables__[cls_id][thunk_id]
         f = FR(fptr)
         return f(slf, *args)
@@ -129,4 +129,4 @@ class Super:
 
     def _unwrap(obj: Super[B], B: type) -> B:
         rtti = type._force_cast(obj.__obj__, RTTIType)
-        return RTTIType._new(rtti.data, TypeInfo(B), B)
+        return RTTIType._new(rtti.data, TypeInfo(B).__raw__(), B)

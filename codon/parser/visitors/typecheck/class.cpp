@@ -694,7 +694,7 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     ret = I("str");
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "repr_default") {
-    // def __repr__(self: T) -> str
+    // def __repr_default__(self: T) -> str
     fargs.emplace_back("self", clone(typExpr));
     ret = I("str");
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));

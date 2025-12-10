@@ -264,17 +264,9 @@ class ClassVar[T]:
     pass
 
 @__internal__
-class TypeInfo:
-    id: int
-    raw_name: str
-    nice_name: str
-    _repr: Function[[Ptr[byte]], str]
-
-
-@__internal__
 class RTTIType:
     data: Ptr[byte]  # pointer to the data
-    typeinfo: TypeInfo  # type information
+    typeinfo: Ptr[byte]  # TypeInfo type information
 
 
 @__internal__
@@ -387,11 +379,5 @@ class Callable:
     data: Ptr[byte]
     T: type
     TR: type
-
-
-@__internal__
-class Any:
-    _data: Ptr[byte]
-    _typeinfo: TypeInfo
 
 __codon__: Literal[bool] = True

@@ -56,7 +56,7 @@ class type:
         obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         register_finalizer(obj)
         if static.has_rtti(T):
-            obj = RTTIType._new(obj, TypeInfo(T), Ptr[byte])
+            obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[byte])
         return type._force_cast(obj, T)
 
     def _construct(T: type, *args, **kwargs) -> T:
@@ -67,8 +67,14 @@ class type:
         return T(*args, **kwargs)
 
 
-@extend
+@__internal__
 class TypeInfo:
+    id: int
+    raw_name: str
+    nice_name: str
+    repr: Function[[Ptr[byte]], str]
+    mro: List[TypeInfo]
+
     def __new__() -> TypeInfo:
         return __magic__.new(TypeInfo)
 
@@ -76,15 +82,21 @@ class TypeInfo:
         return __magic__.raw(self)
 
     def __init__(self, T: type):
+        if isinstance(T, TypeWrap):
+            self.__init__(T.T)
+            return
+
         self.id = T.__id__
         self.raw_name = f"{T}"
         self.nice_name = f"{T}"
 
-        self._repr = Function[[Ptr[byte]], str](cobj())
+        self.repr = Function[[Ptr[byte]], str](cobj())
         if hasattr(T, "__repr__") or hasattr(T, "__str__"):
             fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
             if isinstance(fn.TR, str):
-                self._repr = fn
+                self.repr = fn
+
+        self.mro = [TypeInfo(t) for t in T.__mro__]
 
     def wrap(arg: Ptr[byte], T: type) -> str:
         if isinstance(T, ByVal):
@@ -96,6 +108,9 @@ class TypeInfo:
 
     def __str__(self):
         return self.nice_name
+
+    def __repr__(self):
+        return self.__str__()
 
     def __eq__(self, other: TypeInfo):
         return self.id == other.id

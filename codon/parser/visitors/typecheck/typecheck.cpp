@@ -387,7 +387,9 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
 }
 
 void TypecheckVisitor::visit(AwaitStmt *stmt) {
-  E(Error::CUSTOM, stmt, "await not yet supported");
+  stmt->expr = transform(stmt->getExpr());
+  if (stmt->getExpr()->isDone())
+    stmt->setDone();
 }
 
 void TypecheckVisitor::visit(CustomStmt *stmt) {

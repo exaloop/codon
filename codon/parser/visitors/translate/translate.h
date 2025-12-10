@@ -58,6 +58,7 @@ public:
   void visit(IfStmt *) override;
   void visit(TryStmt *) override;
   void visit(ThrowStmt *) override;
+  void visit(AwaitStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
   void visit(CommentStmt *) override {}

@@ -137,9 +137,6 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
 void TypecheckVisitor::visit(FunctionStmt *stmt) {
-  if (stmt->isAsync())
-    E(Error::CUSTOM, stmt, "async not yet supported");
-
   if (stmt->hasAttribute(Attr::Python)) {
     // Handle Python block
     resultStmt =

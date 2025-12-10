@@ -3,11 +3,14 @@
 import internal.static as static
 
 
-@extend
+@__internal__
 class Any:
+    _data: Ptr[byte]
+    _typeinfo: TypeInfo
+
     def __str__(self):
-        if self._typeinfo._repr.__raw__() != cobj():
-            return f"Any({self._typeinfo._repr(self._data)}, {self._typeinfo})"
+        if self._typeinfo.repr.__raw__() != cobj():
+            return f"Any({self._typeinfo.repr(self._data)}, {self._typeinfo})"
         return f"Any({self._typeinfo})"
 
     def __new__() -> Any:

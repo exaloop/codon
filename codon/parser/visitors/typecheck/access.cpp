@@ -178,12 +178,19 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   }
   // Special case: cls.__mro__
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__mro__") {
-    std::vector<Expr *> items;
-    if (auto c = getClass(extractType(expr->getExpr()))) {
-      for (auto &m : c->mro)
-        items.push_back(N<StringExpr>(m->getClass()->name));
+    if (realize(expr->getExpr()->getType())) {
+      auto t = extractType(expr->getExpr())->getClass();
+      std::vector<Expr *> items;
+      if (auto c = getClass(t)) {
+        const auto &mros = c->mro;
+        for (size_t i = 1; i < mros.size(); i++) {
+          auto mt = instantiateType(mros[i].get(), t);
+          seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
+          items.push_back(N<IdExpr>(mt->realizedName()));
+        }
+      }
+      resultExpr = wrapSide(N<TupleExpr>(items));
     }
-    resultExpr = wrapSide(N<TupleExpr>(items));
     return;
   }
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {

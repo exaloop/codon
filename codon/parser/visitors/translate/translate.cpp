@@ -663,6 +663,11 @@ void TranslateVisitor::visit(ThrowStmt *stmt) {
                                 stmt->getExpr() ? transform(stmt->getExpr()) : nullptr);
 }
 
+void TranslateVisitor::visit(AwaitStmt *stmt) {
+  auto type = getType(stmt->getExpr()->getType());
+  result = make<ir::AwaitInstr>(stmt, transform(stmt->getExpr()), type);
+}
+
 void TranslateVisitor::visit(FunctionStmt *stmt) {
   // Process all realizations.
   transformFunctionRealizations(stmt->getName(), stmt->hasAttribute(Attr::LLVM));
@@ -741,6 +746,8 @@ void TranslateVisitor::transformFunction(const types::FuncType *type, FunctionSt
     cast<ir::BodiedFunc>(func)->setBody(body);
     ctx->popBlock();
   }
+  if (ast->isAsync())
+    func->setAsync();
 }
 
 void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,
