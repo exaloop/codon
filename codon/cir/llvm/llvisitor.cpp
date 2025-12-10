@@ -3281,7 +3281,7 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
   if (auto *refType = cast<types::RefType>(memberedType)) {
     if (refType->isPolymorphic()) {
       // polymorphic ref type is ref to (data, rtti)
-      value = B->CreateExtractValue(B->CreateLoad(B->getPtrTy(), value), 0);
+      value = B->CreateLoad(B->getPtrTy(), value);
     }
     value = B->CreateLoad(getLLVMType(refType->getContents()), value);
   }
@@ -3302,7 +3302,7 @@ void LLVMVisitor::visit(const InsertInstr *x) {
   B->SetInsertPoint(block);
   if (refType->isPolymorphic()) {
     // polymorphic ref type is ref to (data, rtti)
-    lhs = B->CreateExtractValue(B->CreateLoad(B->getPtrTy(), value), 0);
+    lhs = B->CreateLoad(B->getPtrTy(), lhs);
   }
   llvm::Value *load = B->CreateLoad(getLLVMType(refType->getContents()), lhs);
   load = B->CreateInsertValue(load, rhs, index);
