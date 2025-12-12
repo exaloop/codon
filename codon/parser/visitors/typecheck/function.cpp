@@ -501,7 +501,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   stmt->setAttribute(Attr::Module, ctx->moduleName.path);
 
   // Make function AST and cache it for later realization
-  auto f = N<FunctionStmt>(canonicalName, ret, args, suite);
+  auto f = N<FunctionStmt>(canonicalName, ret, args, suite, std::vector<Expr *>{},
+                           stmt->isAsync());
   f->cloneAttributesFrom(stmt);
   auto &fn = ctx->cache->functions[canonicalName] =
       Cache::Function{ctx->getModulePath(),

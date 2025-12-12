@@ -507,7 +507,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     args.emplace_back(varName, nullptr, nullptr, i.status);
   }
   r->ast =
-      N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite);
+      N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite,
+                      std::vector<Expr *>{}, ast->isAsync());
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->cloneAttributesFrom(ast);
 
