@@ -66,6 +66,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
+  auto isAsync = ctx->getBase()->func->isAsync();
 
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
@@ -96,7 +97,13 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
                                    ->getStatic()
                                    ->getNonStaticType()
                                    ->shared_from_this());
-    unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
+
+    if (isAsync) {
+      unify(ctx->getBase()->returnType.get(),
+            instantiateType(getStdLibType("Coroutine"), {stmt->getExpr()->getType()}));
+    } else {
+      unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
+    }
   }
 
   // If we are not within conditional block, ignore later statements in this function.
@@ -112,11 +119,27 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 void TypecheckVisitor::visit(YieldStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "yield");
+  auto isAsync = ctx->getBase()->func->isAsync();
 
   stmt->expr =
       transform(stmt->getExpr() ? stmt->getExpr() : N<CallExpr>(N<IdExpr>("NoneType")));
   unify(ctx->getBase()->returnType.get(),
-        instantiateType(getStdLibType("Generator"), {stmt->getExpr()->getType()}));
+        instantiateType(getStdLibType(!isAsync ? "Generator" : "AsyncGenerator"),
+                        {stmt->getExpr()->getType()}));
+
+  if (stmt->getExpr()->isDone())
+    stmt->setDone();
+}
+
+/// Typecheck await statements.
+void TypecheckVisitor::visit(AwaitStmt *stmt) {
+  if (!ctx->inFunction())
+    E(Error::FN_OUTSIDE_ERROR, stmt, "await");
+  auto isAsync = ctx->getBase()->func->isAsync();
+  if (!isAsync)
+    E(Error::FN_OUTSIDE_ERROR, stmt, "await");
+
+  stmt->expr = transform(stmt->getExpr());
 
   if (stmt->getExpr()->isDone())
     stmt->setDone();

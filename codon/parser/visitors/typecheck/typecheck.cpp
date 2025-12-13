@@ -386,12 +386,6 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
     stmt->setDone();
 }
 
-void TypecheckVisitor::visit(AwaitStmt *stmt) {
-  stmt->expr = transform(stmt->getExpr());
-  if (stmt->getExpr()->isDone())
-    stmt->setDone();
-}
-
 void TypecheckVisitor::visit(CustomStmt *stmt) {
   if (stmt->getSuite()) {
     auto fn = in(ctx->cache->customBlockStmts, stmt->getKeyword());

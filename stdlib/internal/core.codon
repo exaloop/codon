@@ -380,4 +380,15 @@ class Callable:
     T: type
     TR: type
 
+
+@tuple
+@__internal__
+class Coroutine[T]:
+    pass
+
+@tuple
+@__internal__
+class AsyncGenerator[T]:
+    pass
+
 __codon__: Literal[bool] = True
