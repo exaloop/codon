@@ -375,6 +375,7 @@ struct BinaryExpr : public AcceptorExtend<BinaryExpr, Expr> {
   BinaryExpr(const BinaryExpr &, bool);
 
   std::string getOp() const { return op; }
+  void setOp(const std::string &o) { op = o; }
   Expr *getLhs() const { return lexpr; }
   Expr *getRhs() const { return rexpr; }
   bool isInPlace() const { return inPlace; }

@@ -69,6 +69,9 @@ Filesystem::Filesystem(const std::string &argv0, const std::string &module0)
     for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
       add_search_path(root / loci);
     }
+    for (auto loci : {"../lib/codon/plugins", "../plugins"}) {
+      add_search_path(root / loci);
+    }
   }
 }
 
@@ -369,15 +372,15 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
         paths.emplace_back(fs->canonical(path));
     }
   }
-  if (paths.empty()) {
-    // Load a plugin maybe
-    auto path = parentRelativeTo / what;
-    if (fs->exists(path / "plugin.toml") &&
-        fs->exists(path / "stdlib" / "__init__.codon")) {
+
+  auto checkPlugin = [&paths, &fs, &cache](const std::filesystem::path &path,
+                                           const std::string &what) {
+    if (fs->exists(path / what / "plugin.toml") &&
+        fs->exists(path / what / "stdlib" / what / "__init__.codon")) {
       bool failed = false;
-      if (cache->compiler && !cache->compiler->isPluginLoaded(path)) {
-        LOG_REALIZE("Loading plugin {}", path);
-        llvm::handleAllErrors(cache->compiler->load(path),
+      if (cache->compiler && !cache->compiler->isPluginLoaded(path / what)) {
+        LOG_REALIZE("Loading plugin {}", path / what);
+        llvm::handleAllErrors(cache->compiler->load(path / what),
                               [&failed](const codon::error::PluginErrorInfo &e) {
                                 codon::compilationError(e.getMessage(), /*file=*/"",
                                                         /*line=*/0, /*col=*/0,
@@ -388,8 +391,14 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
                               });
       }
       if (!failed)
-        paths.emplace_back(fs->canonical(path / "stdlib" / "__init__.codon"));
+        paths.emplace_back(
+            fs->canonical(path / what / "stdlib" / what / "__init__.codon"));
     }
+  };
+
+  if (paths.empty()) {
+    // Load a plugin maybe
+    checkPlugin(parentRelativeTo, what);
   }
   for (auto &p : fs->get_stdlib_paths()) {
     auto path = p / what;
@@ -400,6 +409,9 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
     path = p / what / "__init__.codon";
     if (fs->exists(path))
       paths.emplace_back(fs->canonical(path));
+
+    // Load a plugin maybe
+    checkPlugin(p, what);
   }
 
   if (paths.empty())
