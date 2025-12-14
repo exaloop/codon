@@ -402,75 +402,81 @@ def _tuple_from_gpu(args, gpu_args):
         a.__from_gpu__(g)
         _tuple_from_gpu(args[1:], gpu_args[1:])
 
+
+def nvptx_function(name: str) -> CUfunction:
+    function = CUfunction()
+    result = CUresult()
+
+    clean = ''.join(c if c.isalnum() else '_' for c in name)
+    clean_p = Ptr[byte](len(clean) + 1)
+    str.memcpy(clean_p, clean.ptr, len(clean))
+    clean_p[len(clean)] = byte(0)
+    if not clean[0].isalpha(): clean_p[0] = byte('_')
+
+    for m in modules[::-1]:
+        result = cuModuleGetFunction(__ptr__(function), m, clean_p)
+        if result == i32(CUDA_SUCCESS):
+            return function
+        elif result == i32(CUDA_ERROR_NOT_FOUND):
+            continue
+        else:
+            break
+    cuda_check(result)  # this will raise an error
+    return CUfunction()
+
+
+def canonical_dim(dim):
+    if isinstance(dim, NoneType):
+        return (1, 1, 1)
+    elif isinstance(dim, int):
+        return (dim, 1, 1)
+    elif isinstance(dim, Tuple[int,int]):
+        return (dim[0], dim[1], 1)
+    elif isinstance(dim, Tuple[int,int,int]):
+        return dim
+    elif isinstance(dim, Dim3):
+        return (dim.x, dim.y, dim.z)
+    else:
+        compile_error("bad dimension argument")
+
+
+def offsets(t):
+    @pure
+    @llvm
+    def offsetof(t: T, i: Literal[int], T: type, S: type) -> int:
+        %p = getelementptr {=T}, ptr null, i64 0, i32 {=i}
+        %s = ptrtoint ptr %p to i64
+        ret i64 %s
+
+    if static.len(t) == 0:
+        return ()
+    else:
+        T = type(t)
+        S = type(t[-1])
+        return (*offsets(t[:-1]), offsetof(t, static.len(t) - 1, T, S))
+
+
+def kernel_wrapper(*args, grid, block, fn):
+    grid = canonical_dim(grid)
+    block = canonical_dim(block)
+    cache = AllocCache([])
+    shared_mem = 0
+    gpu_args = tuple(arg.__to_gpu__(cache) for arg in args)
+    kernel_ptr = nvptx_function(static.function.realized(fn, *gpu_args).__llvm_name__)
+    p = __ptr__(gpu_args).as_byte()
+    arg_ptrs = tuple((p + offset) for offset in offsets(gpu_args))
+    cuda_check(cuLaunchKernel(kernel_ptr,
+                                u32(grid[0]), u32(grid[1]), u32(grid[2]),
+                                u32(block[0]), u32(block[1]), u32(block[2]),
+                                u32(shared_mem), cobj(),
+                                __ptr__(arg_ptrs).as_byte(), cobj()))
+    _tuple_from_gpu(args, gpu_args)
+    cache.free()
+
+
 def kernel(fn):
-    def nvptx_function(name: str) -> CUfunction:
-        function = CUfunction()
-        result = CUresult()
+    return kernel_wrapper(fn=fn, ...)
 
-        clean = ''.join(c if c.isalnum() else '_' for c in name)
-        clean_p = Ptr[byte](len(clean) + 1)
-        str.memcpy(clean_p, clean.ptr, len(clean))
-        clean_p[len(clean)] = byte(0)
-        if not clean[0].isalpha(): clean_p[0] = byte('_')
-
-        for m in modules[::-1]:
-            result = cuModuleGetFunction(__ptr__(function), m, clean_p)
-            if result == i32(CUDA_SUCCESS):
-                return function
-            elif result == i32(CUDA_ERROR_NOT_FOUND):
-                continue
-            else:
-                break
-        cuda_check(result)  # this will raise an error
-        return CUfunction()
-
-    def canonical_dim(dim):
-        if isinstance(dim, NoneType):
-            return (1, 1, 1)
-        elif isinstance(dim, int):
-            return (dim, 1, 1)
-        elif isinstance(dim, Tuple[int,int]):
-            return (dim[0], dim[1], 1)
-        elif isinstance(dim, Tuple[int,int,int]):
-            return dim
-        elif isinstance(dim, Dim3):
-            return (dim.x, dim.y, dim.z)
-        else:
-            compile_error("bad dimension argument")
-
-    def offsets(t):
-        @pure
-        @llvm
-        def offsetof(t: T, i: Literal[int], T: type, S: type) -> int:
-            %p = getelementptr {=T}, ptr null, i64 0, i32 {=i}
-            %s = ptrtoint ptr %p to i64
-            ret i64 %s
-
-        if static.len(t) == 0:
-            return ()
-        else:
-            T = type(t)
-            S = type(t[-1])
-            return (*offsets(t[:-1]), offsetof(t, static.len(t) - 1, T, S))
-
-    def wrapper(*args, grid, block):
-        grid = canonical_dim(grid)
-        block = canonical_dim(block)
-        cache = AllocCache([])
-        shared_mem = 0
-        gpu_args = tuple(arg.__to_gpu__(cache) for arg in args)
-        kernel_ptr = nvptx_function(static.function.realized(fn, *gpu_args).__llvm_name__)
-        p = __ptr__(gpu_args).as_byte()
-        arg_ptrs = tuple((p + offset) for offset in offsets(gpu_args))
-        cuda_check(cuLaunchKernel(kernel_ptr,
-                                  u32(grid[0]), u32(grid[1]), u32(grid[2]),
-                                  u32(block[0]), u32(block[1]), u32(block[2]),
-                                  u32(shared_mem), cobj(),
-                                  __ptr__(arg_ptrs).as_byte(), cobj()))
-        _tuple_from_gpu(args, gpu_args)
-        cache.free()
-
-    return wrapper
 
 def _ptr_to_gpu(p: Ptr[T], n: int, cache: AllocCache, index_filter = lambda i: True, T: type):
     from internal.gc import atomic
