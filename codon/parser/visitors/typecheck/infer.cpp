@@ -485,7 +485,10 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
     if (!ast->getReturn() && isUnbound(type->getRetType())) {
-      unify(type->getRetType(), getStdLibType("NoneType"));
+      auto rt = getStdLibType("NoneType")->shared_from_this();
+      if (ast->isAsync())
+        rt = instantiateType(getStdLibType("Coroutine"), {rt.get()});
+      unify(type->getRetType(), rt.get());
     }
   }
   // Realize the return type
@@ -608,6 +611,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
   } else if (t->name == "Generator") {
+    seqassert(types.size() == 1, "bad generics/statics");
+    handle = module->unsafeGetGeneratorType(types[0]);
+  } else if (t->name == "Coroutine") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
   } else if (t->name == TYPE_OPTIONAL) {
