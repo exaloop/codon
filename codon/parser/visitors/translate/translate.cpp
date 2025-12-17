@@ -664,8 +664,9 @@ void TranslateVisitor::visit(ThrowStmt *stmt) {
 }
 
 void TranslateVisitor::visit(AwaitStmt *stmt) {
-  auto type = getType(stmt->getExpr()->getType());
-  result = make<ir::AwaitInstr>(stmt, transform(stmt->getExpr()), type);
+  auto type = TypecheckVisitor(ctx->cache->typeCtx)
+                  .extractClassGeneric(stmt->getExpr()->getType());
+  result = make<ir::AwaitInstr>(stmt, transform(stmt->getExpr()), getType(type));
 }
 
 void TranslateVisitor::visit(FunctionStmt *stmt) {

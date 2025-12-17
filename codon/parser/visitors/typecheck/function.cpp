@@ -141,6 +141,14 @@ void TypecheckVisitor::visit(AwaitStmt *stmt) {
 
   stmt->expr = transform(stmt->getExpr());
 
+  if (auto c = stmt->getExpr()->getType()->getClass()) {
+    if (!c->is(getMangledClass("std.internal.core", "Coroutine")) &&
+        !c->is(getMangledClass("std.asyncio", "Future")) &&
+        !c->is(getMangledClass("std.asyncio", "Task"))) {
+      E(Error::EXPECTED_TYPE, stmt, "awaitable");
+    }
+  }
+
   if (stmt->getExpr()->isDone())
     stmt->setDone();
 }
