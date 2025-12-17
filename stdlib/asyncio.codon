@@ -39,6 +39,11 @@ class Future:
     _state: int
     R: type
 
+class Task(Future[R]):
+    _name: str
+    _coro: cobj
+    R: type
+
 class InvalidStateError(Static[Exception]):
     def __init__(self, message: str = ''):
         super().__init__("asyncio.InvalidStateError", message)
@@ -65,7 +70,7 @@ class EventLoop:
         with self.lock:
             self.stop_flag = True
 
-    def call_soon(self, coro: cobj):
+    def _call_soon(self, coro: cobj):
         cb = LoopCallback(coro, None)
         with self.lock:
             if self.ready_tail:
@@ -75,10 +80,16 @@ class EventLoop:
                 self.ready_head = cb
                 self.ready_tail = cb
 
-    def call_later(self, coro: cobj, delay: float):
+    def call_soon(self, coro: Coroutine):
+        self._call_soon(coro.__raw__())
+
+    def _call_later(self, coro: cobj, delay: float):
         t = Timer(coro, self.now() + delay)
         with self.lock:
             self.timers_push(t)
+
+    def call_later(self, coro: Coroutine, delay: float):
+        self._call_later(coro.__raw__(), delay)
 
     def run_forever(self):
         self.running = True
@@ -196,6 +207,17 @@ class EventLoop:
 
 _running_loop = EventLoop()
 
+def get_running_loop():
+    if not _running_loop.running:
+        raise RuntimeError("no running event loop")
+    return _running_loop
+
+def create_task(coro, name: Optional[str] = None):
+    loop = get_running_loop()
+    task = Task(coro, loop=loop, name=name)
+    loop.call_soon(coro)
+    return task
+
 @extend
 class Future:
     def __init__(self, loop: Optional[EventLoop] = None):
@@ -223,7 +245,7 @@ class Future:
 
         if self.done():
             lock.release()
-            self._loop.call_soon(coro)
+            self._loop._call_soon(coro)
             return
 
         n = self._done_callbacks_len
@@ -247,7 +269,7 @@ class Future:
 
     def _schedule_callbacks(self, callbacks: Ptr[cobj], num_callbacks: int):
         for i in range(num_callbacks):
-            self._loop.call_soon(callbacks[i])
+            self._loop._call_soon(callbacks[i])
 
     def result(self):
         with self._lock:
@@ -307,3 +329,30 @@ class Future:
         return self._loop
 
     # TODO: def exception(self)
+
+
+_default_task_name_counter = 1
+def _default_task_name():
+    global _default_task_name_counter
+    n = _default_task_name_counter
+    _default_task_name_counter += 1
+    return f'Task-{n}'
+
+@extend
+class Task:
+    def __init__(self, coro, loop: Optional[EventLoop] = None, name: Optional[str] = None):
+        super().__init__(loop)
+        if name is None:
+            self._name = _default_task_name()
+        else:
+            self._name = name
+        self._coro = coro.__raw__()
+
+    def get_name(self):
+        return self._name
+
+    def set_name(self, value: str):
+        self._name = value
+
+    def get_coro(self, T: type = NoneType) -> Coroutine[T]:
+        return Coroutine[T](self._coro)

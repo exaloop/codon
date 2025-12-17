@@ -28,6 +28,7 @@ class Generator:
         return self
 
     @pure
+    @derives
     @llvm
     def __raw__(self) -> Ptr[byte]:
         ret ptr %self

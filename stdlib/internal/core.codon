@@ -384,11 +384,19 @@ class Callable:
 @tuple
 @__internal__
 class Coroutine[T]:
-    pass
+    @pure
+    @derives
+    @llvm
+    def __raw__(self) -> Ptr[byte]:
+        ret ptr %self
 
 @tuple
 @__internal__
 class AsyncGenerator[T]:
-    pass
+    @pure
+    @derives
+    @llvm
+    def __raw__(self) -> Ptr[byte]:
+        ret ptr %self
 
 __codon__: Literal[bool] = True
