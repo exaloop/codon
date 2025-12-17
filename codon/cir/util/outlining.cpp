@@ -191,6 +191,11 @@ struct Outliner : public Operator {
       invalid = true;
   }
 
+  void handle(CoroHandleInstr *v) override {
+    if (inRegion)
+      invalid = true;
+  }
+
   void handle(AssignInstr *v) override {
     if (inRegion) {
       auto *var = v->getLhs();

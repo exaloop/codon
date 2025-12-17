@@ -2051,8 +2051,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   }
 
   auto *startBlock = llvm::BasicBlock::Create(*context, "start", func);
+  const bool generator = x->isGenerator() || x->isAsync();
 
-  if (x->isGenerator()) {
+  if (generator) {
     func->setPresplitCoroutine();
     auto *generatorType = cast<types::GeneratorType>(returnType);
     seqassertn(generatorType, "{} is not a generator type", *returnType);
@@ -2140,7 +2141,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   process(x->getBody());
   B->SetInsertPoint(block);
 
-  if (x->isGenerator()) {
+  if (generator) {
     B->CreateBr(coro.exit);
   } else {
     if (cast<types::VoidType>(returnType)) {
@@ -3510,8 +3511,7 @@ void LLVMVisitor::visit(const YieldInstr *x) {
 }
 
 void LLVMVisitor::visit(const AwaitInstr *x) {
-  // TODO
-  seqassertn(false, "not yet implemented");
+  seqassertn(false, "await instruction not lowered");
 }
 
 void LLVMVisitor::visit(const ThrowInstr *x) {
@@ -3546,6 +3546,11 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
 void LLVMVisitor::visit(const FlowInstr *x) {
   process(x->getFlow());
   process(x->getValue());
+}
+
+void LLVMVisitor::visit(const CoroHandleInstr *x) {
+  seqassertn(coro.handle, "no coroutine handle");
+  value = coro.handle;
 }
 
 void LLVMVisitor::visit(const dsl::CustomInstr *x) {

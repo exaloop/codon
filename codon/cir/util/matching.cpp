@@ -232,6 +232,8 @@ public:
     result =
         process(x->getFlow(), y->getFlow()) && process(x->getValue(), y->getValue());
   }
+  VISIT(CoroHandleInstr);
+  void handle(const CoroHandleInstr *x, const CoroHandleInstr *y) { result = true; }
   VISIT(dsl::CustomInstr);
   void handle(const dsl::CustomInstr *x, const dsl::CustomInstr *y) {
     result = x->match(y);

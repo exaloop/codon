@@ -120,6 +120,7 @@ public:
   LAMBDA_VISIT(AwaitInstr);
   LAMBDA_VISIT(ThrowInstr);
   LAMBDA_VISIT(FlowInstr);
+  LAMBDA_VISIT(CoroHandleInstr);
   LAMBDA_VISIT(dsl::CustomInstr);
 
   template <typename Node> void process(Node *v) { v->accept(*this); }

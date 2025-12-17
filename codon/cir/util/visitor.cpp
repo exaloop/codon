@@ -49,6 +49,7 @@ void Visitor::visit(YieldInstr *x) { defaultVisit(x); }
 void Visitor::visit(AwaitInstr *x) { defaultVisit(x); }
 void Visitor::visit(ThrowInstr *x) { defaultVisit(x); }
 void Visitor::visit(FlowInstr *x) { defaultVisit(x); }
+void Visitor::visit(CoroHandleInstr *x) { defaultVisit(x); }
 void Visitor::visit(dsl::CustomInstr *x) { defaultVisit(x); }
 void Visitor::visit(types::Type *x) { defaultVisit(x); }
 void Visitor::visit(types::PrimitiveType *x) { defaultVisit(x); }
@@ -113,6 +114,7 @@ void ConstVisitor::visit(const YieldInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const AwaitInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const ThrowInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const FlowInstr *x) { defaultVisit(x); }
+void ConstVisitor::visit(const CoroHandleInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const dsl::CustomInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::PrimitiveType *x) { defaultVisit(x); }

@@ -431,6 +431,8 @@ void CFVisitor::visit(const FlowInstr *v) {
   defaultInsert(v);
 }
 
+void CFVisitor::visit(const CoroHandleInstr *v) { defaultInsert(v); }
+
 void CFVisitor::visit(const dsl::CustomInstr *v) {
   v->getCFBuilder()->buildCFNodes(this);
 }

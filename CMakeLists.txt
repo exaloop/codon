@@ -241,6 +241,7 @@ set(CODON_HPPFILES
   codon/cir/transform/folding/const_prop.h
   codon/cir/transform/folding/folding.h
   codon/cir/transform/folding/rule.h
+  codon/cir/transform/lowering/await.h
   codon/cir/transform/lowering/imperative.h
   codon/cir/transform/lowering/pipeline.h
   codon/cir/transform/manager.h
@@ -347,6 +348,7 @@ set(CODON_CPPFILES
   codon/cir/transform/folding/const_fold.cpp
   codon/cir/transform/folding/const_prop.cpp
   codon/cir/transform/folding/folding.cpp
+  codon/cir/transform/lowering/await.cpp
   codon/cir/transform/lowering/imperative.cpp
   codon/cir/transform/lowering/pipeline.cpp
   codon/cir/transform/manager.cpp

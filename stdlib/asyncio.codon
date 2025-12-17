@@ -235,9 +235,10 @@ class Future:
         elif n >= m:
             new_m = m * 2
             sz = gc.sizeof(cobj)
-            self._done_callbacks = gc.realloc(
-                                     self._done_callbacks.as_byte(),
-                                     new_m * sz, m * sz)
+            self._done_callbacks = Ptr[cobj](
+                                     gc.realloc(
+                                       self._done_callbacks.as_byte(),
+                                       new_m * sz, m * sz))
             self._done_callbacks_cap = new_m
 
         self._done_callbacks[n] = coro

@@ -477,6 +477,7 @@ protected:
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };
 
+/// Instr representing a yield statement.
 class YieldInstr : public AcceptorExtend<YieldInstr, Instr> {
 private:
   /// the value
@@ -509,6 +510,7 @@ protected:
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };
 
+/// Instr representing an await statement.
 class AwaitInstr : public AcceptorExtend<AwaitInstr, Instr> {
 private:
   /// the value
@@ -604,6 +606,20 @@ protected:
   types::Type *doGetType() const override { return val->getType(); }
   std::vector<Value *> doGetUsedValues() const override { return {flow, val}; }
   int doReplaceUsedValue(id_t id, Value *newValue) override;
+};
+
+/// Instr for obtaining the coroutine handle of the enclosing function.
+/// Not emitted by any front-end; instead used internally in IR lowering.
+class CoroHandleInstr : public AcceptorExtend<CoroHandleInstr, Instr> {
+public:
+  static const char NodeId;
+
+  /// Constructs a coroutine handle instruction.
+  /// @param name the name
+  explicit CoroHandleInstr(std::string name = "") : AcceptorExtend(std::move(name)) {}
+
+protected:
+  types::Type *doGetType() const override;
 };
 
 } // namespace ir

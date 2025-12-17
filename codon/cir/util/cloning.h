@@ -71,6 +71,7 @@ public:
   void visit(const AwaitInstr *v) override;
   void visit(const ThrowInstr *v) override;
   void visit(const FlowInstr *v) override;
+  void visit(const CoroHandleInstr *v) override;
   void visit(const dsl::CustomInstr *v) override;
 
   /// Clones a value, returning the previous value if other has already been cloned.

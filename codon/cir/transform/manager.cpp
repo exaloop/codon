@@ -12,6 +12,7 @@
 #include "codon/cir/analyze/module/global_vars.h"
 #include "codon/cir/analyze/module/side_effect.h"
 #include "codon/cir/transform/folding/folding.h"
+#include "codon/cir/transform/lowering/await.h"
 #include "codon/cir/transform/lowering/imperative.h"
 #include "codon/cir/transform/lowering/pipeline.h"
 #include "codon/cir/transform/manager.h"
@@ -156,6 +157,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
   case Init::DEBUG: {
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
+    registerPass(std::make_unique<lowering::AwaitLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
     break;
   }
@@ -207,6 +209,7 @@ void PassManager::registerStandardPasses(PassManager::Init init) {
                  {seKey1, rdKey, cfgKey, globalKey, capKey});
 
     // parallel
+    registerPass(std::make_unique<lowering::AwaitLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>(), /*insertBefore=*/"", {},
                  {cfgKey, globalKey});
 
