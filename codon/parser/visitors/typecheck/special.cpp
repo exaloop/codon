@@ -1217,22 +1217,40 @@ TypecheckVisitor::populateStaticVarsLoop(Expr *iter,
   std::vector<Stmt *> block;
   auto typ = extractFuncArgType(fn->getType())->getClass();
   size_t idx = 0;
-  for (auto &f : getClassFields(typ)) {
-    std::vector<Stmt *> stmts;
-    if (withIdx) {
+  if (typ->is("TypeWrap")) { // type passed!
+    for (auto &f : getClass(extractClassGeneric(typ))->classVars) {
+      std::vector<Stmt *> stmts;
+      if (withIdx) {
+        stmts.push_back(
+            N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
+                          N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
+      }
       stmts.push_back(
-          N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
-                        N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
+          N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.first),
+                        N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
+      stmts.push_back(N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]), N<IdExpr>(f.second)));
+      auto b = N<SuiteStmt>(stmts);
+      block.push_back(b);
+      idx++;
     }
-    stmts.push_back(
-        N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
-                      N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
-    stmts.push_back(
-        N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
-                      N<DotExpr>(clone((*cast<CallExpr>(iter))[0].value), f.name)));
-    auto b = N<SuiteStmt>(stmts);
-    block.push_back(b);
-    idx++;
+  } else {
+    for (auto &f : getClassFields(typ)) {
+      std::vector<Stmt *> stmts;
+      if (withIdx) {
+        stmts.push_back(
+            N<AssignStmt>(N<IdExpr>(vars[0]), N<IntExpr>(idx),
+                          N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("int"))));
+      }
+      stmts.push_back(
+          N<AssignStmt>(N<IdExpr>(vars[withIdx]), N<StringExpr>(f.name),
+                        N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
+      stmts.push_back(
+          N<AssignStmt>(N<IdExpr>(vars[withIdx + 1]),
+                        N<DotExpr>(clone((*cast<CallExpr>(iter))[0].value), f.name)));
+      auto b = N<SuiteStmt>(stmts);
+      block.push_back(b);
+      idx++;
+    }
   }
   return block;
 }

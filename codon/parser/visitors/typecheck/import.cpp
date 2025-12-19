@@ -352,7 +352,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
       (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.size() == 1));
   auto importVar = import.importVar =
       getTemporaryVar(fmt::format("import_{}", moduleID));
-  LOG_TYPECHECK("[import] initializing {} ({})", importVar, import.loadedAtToplevel);
+  LOG_REALIZE("[import] initializing {} (location: {}, toplevel: {})", importVar,
+              file.path, import.loadedAtToplevel);
 
   // __name__ = [import name]
   Stmt *n = nullptr;

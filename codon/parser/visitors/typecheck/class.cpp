@@ -187,11 +187,12 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           val->scope = {0};
           registerGlobal(val->canonicalName);
           auto assign = N<AssignStmt>(
-              N<IdExpr>(varName), a.getDefault(),
+              N<IdExpr>(varName), transform(a.getDefault()),
               a.getType() ? cast<IndexExpr>(a.getType())->getIndex() : nullptr);
           assign->setUpdate();
           varStmts.push_back(assign);
           cls.classVars[a.getName()] = varName;
+          ctx->add(a.getName(), val);
         } else if (!stmt->hasAttribute(Attr::Extend)) {
           std::string varName = a.getName();
           args.emplace_back(varName, transformType(clean_clone(a.getType()), true),
