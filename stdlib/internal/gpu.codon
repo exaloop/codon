@@ -36,7 +36,7 @@ cuModuleGetFunction = Function[[Ptr[CUfunction], CUmodule, cobj], CUresult](cobj
 cuModuleLoadData = Function[[Ptr[CUmodule], cobj], CUresult](cobj())
 
 
-class CUDAError(Static[Exception]):
+class CUDAError(Exception):
     result: int
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, result: int, message: str = ""):

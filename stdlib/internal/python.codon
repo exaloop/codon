@@ -954,7 +954,7 @@ class _PyArg_Parser:
         return _PyArg_Parser(z, format, keywords, fname, o, z, z, z, o, o)
 
 @dataclass(init=False)
-class PyError(Static[Exception]):
+class PyError(Exception):
     pytype: pyobj
 
     def __init__(self, message: str):
@@ -1536,7 +1536,7 @@ def _____(): __pyenv__  # make it global!
 import internal.static as _S
 
 
-class _PyWrapError(Static[PyError]):
+class _PyWrapError(PyError):
     def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
         super().__init__("_PyWrapError", message)
         self.pytype = pytype

@@ -16,7 +16,7 @@ from math import (
     hypot as _hypot,
 )
 
-class StatisticsError(Static[Exception]):
+class StatisticsError(Exception):
     def __init__(self, message: str = ""):
         super().__init__("StatisticsError", message)
 

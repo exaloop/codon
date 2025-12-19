@@ -35,8 +35,8 @@ class BaseException:
 
     @__hidden__
     def _set_header(e, func, file, line, col, cause):
-        if not isinstance(e, BaseException):
-            compile_error("exceptions must derive from BaseException")
+        # if not isinstance(e, BaseException):
+        #     compile_error("exceptions must derive from BaseException")
 
         e.func = func
         e.file = file
@@ -47,38 +47,38 @@ class BaseException:
         return e
 
 
-class Exception(Static[BaseException]):
+class Exception(BaseException):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, typename: str, msg: str = ""):
         super().__init__(typename, msg)
         if hasattr(self.__class__, "_pytype"):
             self.python_type = self.__class__._pytype
 
-class NameError(Static[Exception]):
+class NameError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("NameError", message)
         self.python_type = self.__class__._pytype
 
-class OSError(Static[Exception]):
+class OSError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("OSError", message)
         self.python_type = self.__class__._pytype
 
-class IOError(Static[Exception]):
+class IOError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("IOError", message)
         self.python_type = self.__class__._pytype
 
-class ValueError(Static[Exception]):
+class ValueError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("ValueError", message)
         self.python_type = self.__class__._pytype
 
-class LookupError(Static[Exception]):
+class LookupError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, typename: str, message: str = ""):
         super().__init__(typename, message)
@@ -87,37 +87,37 @@ class LookupError(Static[Exception]):
         super().__init__("LookupError", msg)
         self.python_type = self.__class__._pytype
 
-class IndexError(Static[LookupError]):
+class IndexError(LookupError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("IndexError", message)
         self.python_type = self.__class__._pytype
 
-class KeyError(Static[LookupError]):
+class KeyError(LookupError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("KeyError", message)
         self.python_type = self.__class__._pytype
 
-class CError(Static[Exception]):
+class CError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("CError", message)
         self.python_type = self.__class__._pytype
 
-class TypeError(Static[Exception]):
+class TypeError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("TypeError", message)
         self.python_type = self.__class__._pytype
 
-class ArithmeticError(Static[Exception]):
+class ArithmeticError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, msg: str = ""):
         super().__init__("ArithmeticError", msg)
         self.python_type = self.__class__._pytype
 
-class ZeroDivisionError(Static[ArithmeticError]):
+class ZeroDivisionError(ArithmeticError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, typename: str, message: str = ""):
         super().__init__(typename, message)
@@ -126,19 +126,19 @@ class ZeroDivisionError(Static[ArithmeticError]):
         super().__init__("ZeroDivisionError", message)
         self.python_type = self.__class__._pytype
 
-class OverflowError(Static[ArithmeticError]):
+class OverflowError(ArithmeticError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("OverflowError", message)
         self.python_type = self.__class__._pytype
 
-class AttributeError(Static[Exception]):
+class AttributeError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("AttributeError", message)
         self.python_type = self.__class__._pytype
 
-class RuntimeError(Static[Exception]):
+class RuntimeError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, typename: str, message: str = ""):
         super().__init__(typename, message)
@@ -147,31 +147,31 @@ class RuntimeError(Static[Exception]):
         super().__init__("RuntimeError", message)
         self.python_type = self.__class__._pytype
 
-class NotImplementedError(Static[RuntimeError]):
+class NotImplementedError(RuntimeError):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("NotImplementedError", message)
         self.python_type = self.__class__._pytype
 
-class StopIteration(Static[Exception]):
+class StopIteration(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("StopIteration", message)
         self.python_type = self.__class__._pytype
 
-class AssertionError(Static[Exception]):
+class AssertionError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("AssertionError", message)
         self.python_type = self.__class__._pytype
 
-class EOFError(Static[Exception]):
+class EOFError(Exception):
     _pytype: ClassVar[cobj] = cobj()
     def __init__(self, message: str = ""):
         super().__init__("EOFError", message)
         self.python_type = self.__class__._pytype
 
-class SystemExit(Static[BaseException]):
+class SystemExit(BaseException):
     _pytype: ClassVar[cobj] = cobj()
     _status: int
 
@@ -187,6 +187,6 @@ class SystemExit(Static[BaseException]):
     def status(self):
         return self._status
 
-class StaticCompileError(Static[Exception]):
+class StaticCompileError(Exception):
     def __init__(self, message: str = ""):
         super().__init__("StaticCompileError", message)

@@ -286,12 +286,12 @@ bar.hello()          # Bar
 
 ### Exceptions
 
-Subclasses of exception classes like `Exception`, `ValueError`, etc. must use static inheritance
+Subclasses of exception classes like `Exception`, `ValueError`, etc. must inherit from `Exception`
 in order to be thrown and caught. Furthermore, when calling their parent class's constructor, exception
 subclasses must supply their type name as the first argument. Here is an example:
 
 ``` python
-class MyException(Static[Exception]):
+class MyException(Exception):
     x: int
 
     def __init__(self, x: int):

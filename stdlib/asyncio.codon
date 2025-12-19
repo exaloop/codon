@@ -44,11 +44,11 @@ class Task(Future[R]):
     _coro: cobj
     R: type
 
-class InvalidStateError(Static[Exception]):
+class InvalidStateError(Exception):
     def __init__(self, message: str = ''):
         super().__init__("asyncio.InvalidStateError", message)
 
-class CancelledError(Static[Exception]):
+class CancelledError(Exception):
     def __init__(self, message: str = ''):
         super().__init__("asyncio.CancelledError", message)
 

@@ -2180,8 +2180,7 @@ def genfromtxt(fname,
 
             upper = False
             lower = False
-            BAD_CASE_SENSITIVE: Static[
-                str] = "'case_sensitive' must be True, False, 'upper' or 'lower'"
+            BAD_CASE_SENSITIVE: Literal[str] = "'case_sensitive' must be True, False, 'upper' or 'lower'"
 
             if isinstance(case_sensitive, bool):
                 if not case_sensitive:

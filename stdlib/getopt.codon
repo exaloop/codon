@@ -45,7 +45,7 @@
 
 import os
 
-class GetoptError(Static[Exception]):
+class GetoptError(Exception):
     def __init__(self, message: str = ""):
         super().__init__("GetoptError", message)
 

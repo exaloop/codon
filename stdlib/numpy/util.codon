@@ -9,11 +9,11 @@ from .npdatetime import datetime64, timedelta64, _promote as dt_promote, \
 # Exceptions #
 ##############
 
-class AxisError(Static[Exception]):
+class AxisError(Exception):
     def __init__(self, message: str = ''):
         super().__init__("numpy.AxisError", message)
 
-class TooHardError(Static[Exception]):
+class TooHardError(Exception):
     def __init__(self, message: str = ''):
         super().__init__("numpy.TooHardError", message)
 

@@ -91,10 +91,10 @@ class TypeInfo:
         self.nice_name = f"{T}"
 
         self.repr = Function[[Ptr[byte]], str](cobj())
-        if hasattr(T, "__repr__") or hasattr(T, "__str__"):
-            fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
-            if isinstance(fn.TR, str):
-                self.repr = fn
+        # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
+        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
+        #     if isinstance(fn.TR, str):
+        #         self.repr = fn
 
         self.mro = [TypeInfo(t) for t in T.__mro__]
 
