@@ -301,6 +301,13 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   realization->type = rt;
   realization->id = ++ctx->cache->classRealizationCnt;
 
+  const auto &mros = getClass(realized)->mro;
+  for (size_t i = 1; i < mros.size(); i++) {
+    auto mt = instantiateType(mros[i].get(), realized);
+    seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
+    realization->bases.push_back(mt);
+  }
+
   // Create LLVM stub
   auto lt = makeIRType(realized);
 
