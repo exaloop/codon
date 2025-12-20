@@ -125,8 +125,8 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
             exceptionOK = true;
             break;
           }
-        if (!exceptionOK)
-          E(Error::CATCH_EXCEPTION_TYPE, c->getException(), t->prettyString());
+        // if (!exceptionOK)
+        //   E(Error::CATCH_EXCEPTION_TYPE, c->getException(), t->prettyString());
         if (val)
           unify(val->getType(), extractType(c->getException()));
       }
