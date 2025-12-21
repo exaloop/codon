@@ -184,7 +184,6 @@ private:
   llvm::StructType *getTypeInfoType();
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
-  llvm::GlobalVariable *getTypeIdxVar(const std::string &name);
   llvm::GlobalVariable *getTypeIdxVar(types::Type *catchType);
   int getTypeIdx(types::Type *catchType = nullptr);
 

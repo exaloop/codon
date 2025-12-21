@@ -1362,8 +1362,7 @@ llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
 }
 
 llvm::FunctionCallee LLVMVisitor::makeExcAllocFunc() {
-  auto f = M->getOrInsertFunction("seq_alloc_exc", B->getPtrTy(), B->getInt32Ty(),
-                                  B->getPtrTy());
+  auto f = M->getOrInsertFunction("seq_alloc_exc", B->getPtrTy(), B->getPtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
   g->setDoesNotThrow();
   return f;
@@ -1396,27 +1395,20 @@ llvm::StructType *LLVMVisitor::getExceptionType() {
 }
 
 namespace {
-int typeIdxLookup(const std::string &name) {
-  static std::unordered_map<std::string, int> cache;
-  static int next = 1000;
-  if (name.empty())
+int typeIdxLookup(types::Type *type) {
+  if (!type)
     return 0;
-  auto it = cache.find(name);
-  if (it != cache.end()) {
-    return it->second;
-  } else {
-    const int myID = next++;
-    cache[name] = myID;
-    return myID;
-  }
+  auto *M = type->getModule();
+  return M->getCache()->getRealizationId(type->getAstType()->getClass());
 }
 } // namespace
 
-llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(const std::string &name) {
+llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(types::Type *type) {
   auto *typeInfoType = getTypeInfoType();
-  const std::string typeVarName = "codon.typeidx." + (name.empty() ? "<all>" : name);
+  const std::string name = type ? type->getName() : "";
+  const std::string typeVarName = "codon.typeidx." + (type ? name : "<all>");
   llvm::GlobalVariable *tidx = M->getGlobalVariable(typeVarName);
-  int idx = typeIdxLookup(name);
+  int idx = typeIdxLookup(type);
   if (!tidx) {
     tidx = new llvm::GlobalVariable(
         *M, typeInfoType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
@@ -1426,13 +1418,7 @@ llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(const std::string &name) {
   return tidx;
 }
 
-llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(types::Type *catchType) {
-  return getTypeIdxVar(catchType ? catchType->getName() : "");
-}
-
-int LLVMVisitor::getTypeIdx(types::Type *catchType) {
-  return typeIdxLookup(catchType ? catchType->getName() : "");
-}
+int LLVMVisitor::getTypeIdx(types::Type *catchType) { return typeIdxLookup(catchType); }
 
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
@@ -3539,7 +3525,7 @@ void LLVMVisitor::visit(const ThrowInstr *x) {
   }
 
   B->SetInsertPoint(block);
-  llvm::Value *exc = B->CreateCall(excAllocFunc, {typ, obj});
+  llvm::Value *exc = B->CreateCall(excAllocFunc, {obj});
   call(throwFunc, exc);
 }
 

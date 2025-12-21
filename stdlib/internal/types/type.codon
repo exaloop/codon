@@ -70,10 +70,10 @@ class type:
 @__internal__
 class TypeInfo:
     id: int
+    _parent_ids: Ptr[int]
     raw_name: str
     nice_name: str
     repr: Function[[Ptr[byte]], str]
-    mro: List[TypeInfo]
 
     def __new__() -> TypeInfo:
         return __magic__.new(TypeInfo)
@@ -96,7 +96,16 @@ class TypeInfo:
         #     if isinstance(fn.TR, str):
         #         self.repr = fn
 
-        self.mro = [TypeInfo(t) for t in T.__mro__]
+        mro = T.__mro__
+        num_mro: Literal[int] = static.len(mro)
+
+        if num_mro > 0:
+            self._parent_ids = Ptr[int](num_mro + 1)
+            for i in static.range(num_mro):
+                self._parent_ids[i] = mro[i].T.__id__
+            self._parent_ids[num_mro] = 0
+        else:
+            self._parent_ids = Ptr[int]()
 
     def wrap(arg: Ptr[byte], T: type) -> str:
         if isinstance(T, ByVal):

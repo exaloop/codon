@@ -68,7 +68,7 @@ SEQ_FUNC void seq_gc_remove_roots(void *start, void *end);
 SEQ_FUNC void seq_gc_clear_roots();
 SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end);
 
-SEQ_FUNC void *seq_alloc_exc(int type, void *obj);
+SEQ_FUNC void *seq_alloc_exc(void *obj);
 SEQ_FUNC void seq_throw(void *exc);
 SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions,
                                              uint64_t exceptionClass,
