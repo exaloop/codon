@@ -150,7 +150,6 @@ struct CodonBaseExceptionType {
 };
 
 struct CodonBaseException {
-  CodonBaseExceptionType type; // XXX: remove this somehow?
   void *obj;
   Backtrace bt;
   _Unwind_Exception unwindException;
@@ -201,7 +200,6 @@ SEQ_FUNC void *seq_alloc_exc(void *obj) {
   const size_t size = sizeof(CodonBaseException);
   auto *e = (CodonBaseException *)memset(seq_alloc(size), 0, size);
   assert(e);
-  e->type.type = ((RTTIObject *)obj)->type->id;
   e->obj = obj;
   e->unwindException.exception_class = SEQ_EXCEPTION_CLASS;
   e->unwindException.exception_cleanup = seq_delete_unwind_exc;
@@ -503,10 +501,10 @@ static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
       const uint8_t *EntryP = ClassInfo - typeOffset * EncSize;
       uintptr_t P = readEncodedPointer(&EntryP, TTypeEncoding);
       auto *ThisClassInfo = reinterpret_cast<CodonBaseExceptionType *>(P);
+      auto ThisClassType = ThisClassInfo->type;
       // type=0 means catch-all
-      if (ThisClassInfo->type == 0 || isinstance(excp->obj, ThisClassInfo->type)) {
-        excp->type.type = ThisClassInfo->type; // XXX: why do we need this?
-        *resultAction = i + 1;
+      if (ThisClassType == 0 || isinstance(excp->obj, ThisClassType)) {
+        *resultAction = ThisClassType;
         ret = true;
         break;
       }

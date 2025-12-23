@@ -647,16 +647,11 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
   auto *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
   auto *unwindException = B->CreateExtractValue(caughtResult, 0);
   auto *unwindExceptionClass = B->CreateLoad(
-      B->getInt64Ty(),
-      B->CreateStructGEP(
-          unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
-          0));
+      B->getInt64Ty(), B->CreateStructGEP(unwindType, unwindException, 0));
   unwindException = B->CreateExtractValue(caughtResult, 0);
-  auto *excType = llvm::StructType::get(getTypeInfoType(), B->getPtrTy());
-  auto *excVal =
-      B->CreatePointerCast(B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
-                                                 (uint64_t)seq_exc_offset()),
-                           excType->getPointerTo());
+  auto *excType = B->getPtrTy();
+  auto *excVal = B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
+                                       (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(excType, excVal);
   auto *objPtr = B->CreateExtractValue(loadedExc, 1);
 
@@ -1390,10 +1385,6 @@ llvm::StructType *LLVMVisitor::getPadType() {
   return llvm::StructType::get(B->getPtrTy(), B->getInt32Ty());
 }
 
-llvm::StructType *LLVMVisitor::getExceptionType() {
-  return llvm::StructType::get(getTypeInfoType(), B->getPtrTy());
-}
-
 namespace {
 int typeIdxLookup(types::Type *type) {
   if (!type)
@@ -1564,7 +1555,6 @@ void LLVMVisitor::visit(const Module *x) {
   llvm::Value *elemSize = B->getInt64(M->getDataLayout().getTypeAllocSize(strType));
   llvm::Value *allocSize = B->CreateMul(len, elemSize);
   llvm::Value *ptr = B->CreateCall(allocFunc, allocSize);
-  ptr = B->CreateBitCast(ptr, strType->getPointerTo());
   llvm::Value *arr = llvm::UndefValue::get(arrType);
   arr = B->CreateInsertValue(arr, len, 0);
   arr = B->CreateInsertValue(arr, ptr, 1);
@@ -1791,7 +1781,6 @@ void LLVMVisitor::visit(const InternalFunc *x) {
         B->getInt64(M->getDataLayout().getTypeAllocSize(llvmBaseType));
     llvm::Value *allocSize = B->CreateMul(elemSize, args[0]);
     result = B->CreateCall(allocFunc, allocSize);
-    result = B->CreateBitCast(result, llvmBaseType->getPointerTo());
   }
 
   else if (internalFuncMatches<IntType, IntNType>("__new__", x)) {
@@ -1824,7 +1813,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
           B->getInt32(M->getDataLayout().getPrefTypeAlign(baseType).value());
       llvm::Value *from = B->getFalse();
       llvm::Value *ptr = B->CreateCall(coroPromise, {args[0], aln, from});
-      result = B->CreateBitCast(ptr, baseType->getPointerTo());
+      result = ptr;
     }
   }
 
@@ -2069,8 +2058,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     if (!cast<types::VoidType>(generatorType->getBase())) {
       coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
       coro.promise->setName("coro.promise");
-      llvm::Value *promiseRaw = B->CreateBitCast(coro.promise, B->getPtrTy());
-      id = B->CreateCall(coroId, {B->getInt32(0), promiseRaw, nullPtr, nullPtr});
+      id = B->CreateCall(coroId, {B->getInt32(0), coro.promise, nullPtr, nullPtr});
     } else {
       id = B->CreateCall(coroId, {B->getInt32(0), nullPtr, nullPtr, nullPtr});
     }
@@ -2792,9 +2780,9 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   auto *excStateContinue = B->getInt8(TryCatchData::State::CONTINUE);
   auto *excStateRethrow = B->getInt8(TryCatchData::State::RETHROW);
 
-  llvm::StructType *padType = getPadType();
-  llvm::StructType *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
-  llvm::StructType *excType = llvm::StructType::get(getTypeInfoType(), B->getPtrTy());
+  auto *padType = getPadType();
+  auto *unwindType = llvm::StructType::get(B->getInt64Ty()); // header only
+  auto *excType = B->getPtrTy();
 
   if (isRoot) {
     tc.excFlag = B->CreateAlloca(B->getInt8Ty());
@@ -3043,10 +3031,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   B->CreateStore(depthMax, tc.delegateDepth);
 
   llvm::Value *unwindExceptionClass = B->CreateLoad(
-      B->getInt64Ty(),
-      B->CreateStructGEP(
-          unwindType, B->CreatePointerCast(unwindException, unwindType->getPointerTo()),
-          0));
+      B->getInt64Ty(), B->CreateStructGEP(unwindType, unwindException, 0));
 
   // check for foreign exceptions
   B->CreateCondBr(
@@ -3060,15 +3045,9 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   // reroute Codon exceptions
   B->SetInsertPoint(tc.exceptionRouteBlock);
   unwindException = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
-  llvm::Value *excVal =
-      B->CreatePointerCast(B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
-                                                 (uint64_t)seq_exc_offset()),
-                           excType->getPointerTo());
-
+  llvm::Value *excVal = B->CreateConstGEP1_64(B->getInt8Ty(), unwindException,
+                                              (uint64_t)seq_exc_offset());
   llvm::Value *loadedExc = B->CreateLoad(excType, excVal);
-  llvm::Value *objType = B->CreateExtractValue(loadedExc, 0);
-  objType = B->CreateExtractValue(objType, 0);
-  llvm::Value *objPtr = B->CreateExtractValue(loadedExc, 1);
 
   // set depth when catch-all entered
   auto *defaultRouteBlock = llvm::BasicBlock::Create(*context, "trycatch.fdepth", func);
@@ -3079,6 +3058,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
                        : tc.finallyBlock);
 
   B->SetInsertPoint(tc.exceptionRouteBlock);
+  auto *objType = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 1);
   llvm::SwitchInst *switchToCatchBlock =
       B->CreateSwitch(objType, defaultRouteBlock, (unsigned)handlersFull.size());
   for (unsigned i = 0; i < handlersFull.size(); i++) {
@@ -3100,15 +3080,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
       const Var *var = catches[i]->getVar();
 
       if (var) {
-        llvm::Value *obj = B->CreateBitCast(objPtr, getLLVMType(catches[i]->getType()));
         llvm::Value *varPtr = getVar(var);
         seqassertn(varPtr, "could not get catch var");
-        B->CreateStore(obj, varPtr);
+        B->CreateStore(loadedExc, varPtr);
       }
 
       B->CreateStore(excStateCaught, tc.excFlag);
       CatchData cd;
-      cd.exception = objPtr;
+      cd.exception = loadedExc;
       cd.typeId = objType;
       enterCatch(cd);
       process(catches[i]->getHandler());
@@ -3209,7 +3188,6 @@ void LLVMVisitor::codegenPipeline(
         B->getInt32(M->getDataLayout().getPrefTypeAlign(baseType).value());
     llvm::Value *from = B->getFalse();
     llvm::Value *promise = B->CreateCall(coroPromise, {iter, alignment, from});
-    promise = B->CreateBitCast(promise, baseType->getPointerTo());
     value = B->CreateLoad(baseType, promise);
 
     block = bodyBlock;
