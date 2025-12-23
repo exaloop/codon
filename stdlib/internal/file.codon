@@ -6,21 +6,37 @@ class File:
     sz: int
     buf: Ptr[byte]
     fp: cobj
+    is_pipe: bool
 
     def __init__(self, fp: cobj):
         self.fp = fp
+        self.is_pipe = False
         self._reset()
 
     def __init__(self, path: str, mode: str):
         self.fp = _C.fopen(path.c_str(), mode.c_str())
         if not self.fp:
             raise IOError(f"file {path} could not be opened")
+        self.is_pipe = False
         self._reset()
 
     def __init__(self, fd: int, mode: str):
         self.fp = _C.fdopen(fd, mode.c_str())
         if not self.fp:
             raise IOError(f"file descriptor {fd} could not be opened")
+        self.is_pipe = False
+        self._reset()
+
+    def __init__(self, cmd: str, mode: str, is_pipe: bool):
+        if not is_pipe:
+            self.__init__(cmd, mode)
+            return None
+        # Add "FD_CLOEXEC" flag to mode.
+        mode = mode + "e" if "e" not in mode else mode
+        self.fp = _C.popen(cmd.c_str(), mode.c_str())
+        if not self.fp:
+            raise IOError(f"shell for executing {cmd} could not be opened")
+        self.is_pipe = True
         self._reset()
 
     def _errcheck(self, msg: str):
@@ -66,12 +82,16 @@ class File:
 
     def tell(self) -> int:
         self._ensure_open()
+        if self.is_pipe:
+            raise IOError("\"tell\" cannot be used on a pipe")
         ret = _C.ftell(self.fp)
         self._errcheck("error in tell")
         return ret
 
     def seek(self, offset: int, whence: int):
         self._ensure_open()
+        if self.is_pipe:
+            raise IOError("\"seek\" cannot be used on a pipe")
         _C.fseek(self.fp, offset, i32(whence))
         self._errcheck("error in seek")
 
@@ -81,11 +101,26 @@ class File:
 
     def close(self):
         if self.fp:
-            _C.fclose(self.fp)
+            if self.is_pipe:
+                exit_code = int((_C.pclose(self.fp) & 0xff00) >> 8)
+            else:
+                _C.fclose(self.fp)
             self.fp = cobj()
         if self.buf:
             _C.free(self.buf)
             self._reset()
+        if self.is_pipe:
+            if exit_code == 127:
+                raise IOError("command not found")
+            elif exit_code == 126:
+                raise IOError("command not executable")
+            elif exit_code == -1:
+                raise IOError("failed to close pipe")
+            elif exit_code == 141:
+                # Ignore broken pipe exit code.
+                pass
+            elif exit_code != 0:
+                raise IOError(f"command failed with exit code: {exit_code}")
 
     def _ensure_open(self):
         if not self.fp:
@@ -400,6 +435,9 @@ class bzFile:
 
 def open(path, mode: str = "r") -> File:
     return File(path, mode)
+
+def pipe(path, mode: str = "r") -> File:
+    return File(path, mode, True)
 
 def gzopen(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)
