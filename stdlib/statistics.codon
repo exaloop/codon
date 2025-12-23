@@ -18,7 +18,7 @@ from math import (
 
 class StatisticsError(Exception):
     def __init__(self, message: str = ""):
-        super().__init__("StatisticsError", message)
+        super().__init__(message)
 
 def median(data: List[T], T: type) -> float:
     """

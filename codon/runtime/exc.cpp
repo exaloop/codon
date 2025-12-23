@@ -137,6 +137,7 @@ template <typename Type_> static uintptr_t ReadType(const uint8_t *&p) {
 struct TypeInfo {
   seq_int_t id;
   seq_int_t *parent_ids;
+  seq_str_t raw_name;
   // other fields do not need to be included
 };
 
@@ -156,7 +157,6 @@ struct CodonBaseException {
 };
 
 struct CodonExceptionHeader {
-  seq_str_t type;
   seq_str_t msg;
   seq_str_t func;
   seq_str_t file;
@@ -247,8 +247,9 @@ SEQ_FUNC void seq_terminate(void *exc) {
   auto *base = (CodonBaseException *)((char *)exc + seq_exc_offset());
   void *obj = base->obj;
   auto *hdr = *(CodonExceptionHeader **)obj;
+  auto tname = ((RTTIObject *)obj)->type->raw_name;
 
-  if (std::string(hdr->type.str, hdr->type.len) == "SystemExit") {
+  if (std::string(tname.str, tname.len) == "SystemExit") {
     seq_int_t status = *(seq_int_t *)(hdr + 1);
     exit((int)status);
   }
@@ -258,7 +259,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
     buf << codon::runtime::getCapturedOutput();
 
   buf << "\033[1m";
-  print_from_last_dot(hdr->type, buf);
+  print_from_last_dot(tname, buf);
   if (hdr->msg.len > 0) {
     buf << ": \033[0m";
     buf.write(hdr->msg.str, hdr->msg.len);
@@ -300,7 +301,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
     auto *bt = &base->bt;
     std::string msg(hdr->msg.str, hdr->msg.len);
     std::string file(hdr->file.str, hdr->file.len);
-    std::string type(hdr->type.str, hdr->type.len);
+    std::string type(tname.str, tname.len);
 
     std::vector<uintptr_t> backtrace;
     if (seq_flags & SEQ_FLAG_DEBUG) {

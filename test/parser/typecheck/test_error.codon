@@ -15,7 +15,7 @@ except AssertionError as e:
 #%% try_throw,barebones
 class MyError(Exception):
     def __init__(self, message: str):
-        super().__init__('MyError', message)
+        super().__init__(message)
 try:
     raise MyError("hello!")
 except MyError as e:

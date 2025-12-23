@@ -87,7 +87,7 @@ class TypeInfo:
             return
 
         self.id = T.__id__
-        self.raw_name = f"{T}"
+        self.raw_name = T.__name__
         self.nice_name = f"{T}"
 
         self.repr = Function[[Ptr[byte]], str](cobj())

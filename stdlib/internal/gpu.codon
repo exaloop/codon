@@ -38,11 +38,9 @@ cuModuleLoadData = Function[[Ptr[CUmodule], cobj], CUresult](cobj())
 
 class CUDAError(Exception):
     result: int
-    _pytype: ClassVar[cobj] = cobj()
     def __init__(self, result: int, message: str = ""):
-        super().__init__("CUDAError", message)
+        super().__init__(message)
         self.result = result
-        self.python_type = self.__class__._pytype
 
 
 @tuple

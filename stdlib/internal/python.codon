@@ -958,12 +958,12 @@ class PyError(Exception):
     pytype: pyobj
 
     def __init__(self, message: str):
-        super().__init__("PyError", message)
+        super().__init__(message)
         self.pytype = pyobj(cobj(), steal=True)
 
     @overload
     def __init__(self, message: str, pytype: pyobj):
-        super().__init__("PyError", message)
+        super().__init__(message)
         self.pytype = pytype
 
 @extend

@@ -1,36 +1,36 @@
 class Exc1(Exception):
     def __init__(self, msg: str):
-        super().__init__('Exc1', msg)
+        super().__init__(msg)
 
     def show(self):
         print self.message
 
 class Exc2(Exception):
     def __init__(self, msg: str):
-        super().__init__('Exc2', msg)
+        super().__init__(msg)
 
     def show(self):
         print self.message
 
 class A(Exception):
     def __init__(self, msg: str):
-        super().__init__('A', msg)
+        super().__init__(msg)
 
 class B(Exception):
     def __init__(self, msg: str):
-        super().__init__('B', msg)
+        super().__init__(msg)
 
 class C(Exception):
     def __init__(self, msg: str):
-        super().__init__('C', msg)
+        super().__init__(msg)
 
 class D(Exception):
     def __init__(self, msg: str):
-        super().__init__('D', msg)
+        super().__init__(msg)
 
 class E(Exception):
     def __init__(self, msg: str):
-        super().__init__('E', msg)
+        super().__init__(msg)
 
 def foo1(x):
     if x:
