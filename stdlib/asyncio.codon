@@ -4,6 +4,127 @@ from threading import Lock
 from time import time, sleep
 import internal.gc as gc
 
+class _deque:
+    info: int
+    count: int
+    mask: int
+    a: Ptr[T]
+    T: type
+
+    def __init__(self):
+        bits = 2
+        self.info = bits
+        self.count = 0
+        self.mask = (1 << bits) - 1
+        self.a = Ptr[T](1 << bits)
+
+    def __len__(self):
+        return self.count
+
+    def __str__(self):
+        front = self.front
+        count = self.count
+        mask = self.mask
+        s = ', '.join([repr(self.a[(front + i) & mask]) for i in range(count)])
+        return f'deque([{s}])'
+
+    @property
+    def bits(self):
+        return self.info & 0x3F
+
+    @bits.setter
+    def bits(self, value: int):
+        self.info &= ~0b111111
+        self.info |= value
+
+    @property
+    def front(self):
+        return self.info >> 6
+
+    @front.setter
+    def front(self, value: int):
+        self.info &= 0b111111
+        self.info |= (value << 6)
+
+    def resize(self, new_bits: int):
+        q = self
+        old_bits = q.bits
+        front = q.front
+        count = q.count
+        old_size = 1 << old_bits
+        new_size = 1 << new_bits
+
+        if new_size < q.count:
+            i = 0
+            while i < 64:
+                if (1 << i) > q.count:
+                    break
+                i += 1
+            new_bits = i
+            new_size = 1 << new_bits
+
+        if new_bits == old_bits:
+            return old_bits
+
+        a = q.a
+        if new_bits > old_bits:
+            a = Ptr[T](gc.realloc(a.as_byte(),
+                                  (1 << new_bits) * gc.sizeof(T),
+                                  (1 << old_bits) * gc.sizeof(T)))
+
+        if front + count <= old_size:
+            if front + count > new_size:
+                str.memmove(a.as_byte(),
+                            (a + new_size).as_byte(),
+                            (front + count - new_size) * gc.sizeof(T))
+        else:
+            str.memmove((a + (new_size - (old_size - front))).as_byte(),
+                        (a + front).as_byte(),
+                        (old_size - front) * gc.sizeof(T))
+            front = new_size - (old_size - front)
+
+        bits = new_bits
+        mask = (1 << bits) - 1
+        if new_bits < old_bits:
+            a = Ptr[T](gc.realloc(a.as_byte(),
+                                  (1 << new_bits) * gc.sizeof(T),
+                                  (1 << old_bits) * gc.sizeof(T)))
+
+        q.front = front
+        q.bits = new_bits
+        q.mask = mask
+        q.a = a
+
+    def push(self, v: T):
+        bits = self.bits
+        if self.count == (1 << bits):
+            self.resize(bits + 1)
+        count = self.count
+        self.count += 1
+        self.a[(count + self.front) & self.mask] = v
+
+    def unshift(self, v: T):
+        bits = self.bits
+        if self.count == (1 << bits):
+            self.resize(bits + 1)
+
+        count = self.count
+        self.count += 1
+        front = self.front
+        new_front = front - 1 if front else (1 << self.bits) - 1
+        self.front = new_front
+        self.a[new_front] = v
+
+    def pop(self):
+        self.count -= 1
+        return self.a[(self.count + self.front) & self.mask]
+
+    def shift(self):
+        d = self.a[self.front]
+        self.front = (self.front + 1) & self.mask
+        self.count -= 1
+        return d
+
 @tuple
 class Timer:
     coro: cobj
@@ -30,6 +151,7 @@ _FUTURE_STATE_CANCELLED: Literal[int] = 3
 
 class Future:
     _result: R
+    _exception: Optional[BaseException]
     _lock: Lock
     _loop: EventLoop
     _cancel_msg: str
@@ -39,18 +161,38 @@ class Future:
     _state: int
     R: type
 
-class Task(Future[R]):
+class Task(Static[Future[R]]):
     _name: str
     _coro: cobj
     R: type
 
+@tuple
+class WorkItem:
+    data: cobj        # Task or Future
+    coro: cobj        # Coroutine handle
+    result_size: int  # Size in bytes of enclosed Future/Task result
+    is_task: bool     # True if `data` is a Task; False if Future
+
+    def __new__(coro: Coroutine, future: Future):
+        data = future.__raw__()
+        result_size = gc.sizeof(future.R)
+        is_task = False
+        return WorkItem(data, coro, result_size, is_task)
+
+    def __new__(task: Task):
+        data = task.__raw__()
+        coro = task._coro
+        result_size = gc.sizeof(task.R)
+        is_task = True
+        return WorkItem(data, coro, result_size, is_task)
+
 class InvalidStateError(Exception):
     def __init__(self, message: str = ''):
-        super().__init__("asyncio.InvalidStateError", message)
+        super().__init__(message)
 
 class CancelledError(Exception):
     def __init__(self, message: str = ''):
-        super().__init__("asyncio.CancelledError", message)
+        super().__init__(message)
 
 @extend
 class EventLoop:
@@ -86,7 +228,7 @@ class EventLoop:
     def _call_later(self, coro: cobj, delay: float):
         t = Timer(coro, self.now() + delay)
         with self.lock:
-            self.timers_push(t)
+            self._timers_push(t)
 
     def call_later(self, coro: Coroutine, delay: float):
         self._call_later(coro.__raw__(), delay)
@@ -101,7 +243,7 @@ class EventLoop:
 
             with self.lock:
                 while self.timers_len > 0 and self.timers[0].when <= now:
-                    t = self.timers_pop()
+                    t = self._timers_pop()
                     if t is None:
                         break
 
@@ -142,7 +284,7 @@ class EventLoop:
 
         self.running = False
 
-    def timers_reserve(self, new_cap: int):
+    def _timers_reserve(self, new_cap: int):
         old_cap = self.timers_cap
         if new_cap <= old_cap:
             return
@@ -153,15 +295,15 @@ class EventLoop:
                         new_cap * sz, old_cap * sz)
         self.timers_cap = new_cap
 
-    def timers_swap(self, i: int, j: int):
+    def _timers_swap(self, i: int, j: int):
         timers = self.timers
         tmp = timers[i]
         timers[i] = timers[j]
         timers[j] = tmp
 
-    def timers_push(self, t: Timer):
+    def _timers_push(self, t: Timer):
         if self.timers_len == self.timers_cap:
-            self.timers_reserve(self.timers_cap * 2)
+            self._timers_reserve(self.timers_cap * 2)
 
         i = self.timers_len
         self.timers_len += 1
@@ -172,10 +314,10 @@ class EventLoop:
             parent = (i - 1) >> 1
             if timers[parent].when <= timers[i].when:
                 break
-            self.timers_swap(parent, i)
+            self._timers_swap(parent, i)
             i = parent
 
-    def timers_pop(self):
+    def _timers_pop(self):
         if self.timers_len == 0:
             return None
 
@@ -199,7 +341,7 @@ class EventLoop:
                 if smallest == i:
                     break
 
-                self.timers_swap(i, smallest)
+                self._timers_swap(i, smallest)
                 i = smallest
 
         return out
@@ -221,6 +363,7 @@ def create_task(coro, name: Optional[str] = None):
 @extend
 class Future:
     def __init__(self, loop: Optional[EventLoop] = None):
+        self._exception = None
         self._lock = Lock()
         if loop is None:
             self._loop = _running_loop
@@ -231,6 +374,9 @@ class Future:
         self._done_callbacks_len = 0
         self._done_callbacks_cap = 0
         self._state = _FUTURE_STATE_PENDING
+
+    def _result_size(self):
+        return gc.sizeof(R)
 
     def _reset_callbacks(self):
         if self._done_callbacks_cap > 0:
@@ -277,7 +423,7 @@ class Future:
             if state == _FUTURE_STATE_CANCELLED:
                 raise CancelledError(self._cancel_msg)
             elif state == _FUTURE_STATE_EXCEPTION:
-                pass  # TODO
+                raise self._exception.__val__()
             elif state == _FUTURE_STATE_PENDING:
                 raise InvalidStateError("Result is not set.")
             else:
@@ -328,8 +474,17 @@ class Future:
     def get_loop(self):
         return self._loop
 
-    # TODO: def exception(self)
-
+    def exception(self) -> Optional[BaseException]:
+        with self._lock:
+            state = self._state
+            if state == _FUTURE_STATE_CANCELLED:
+                raise CancelledError(self._cancel_msg)
+            elif state == _FUTURE_STATE_EXCEPTION:
+                return self._exception.__val__()
+            elif state == _FUTURE_STATE_PENDING:
+                raise InvalidStateError("Exception is not set.")
+            else:
+                return None
 
 _default_task_name_counter = 1
 def _default_task_name():
