@@ -103,7 +103,7 @@ class _deque:
         self.count += 1
         self.a[(count + self.front) & self.mask] = v
 
-    def unshift(self, v: T):
+    def push_front(self, v: T):
         bits = self.bits
         if self.count == (1 << bits):
             self.resize(bits + 1)
@@ -119,15 +119,27 @@ class _deque:
         self.count -= 1
         return self.a[(self.count + self.front) & self.mask]
 
-    def shift(self):
+    def pop_front(self):
         d = self.a[self.front]
         self.front = (self.front + 1) & self.mask
         self.count -= 1
         return d
 
+_FUTURE_STATE_PENDING:   Literal[int] = 0
+_FUTURE_STATE_FINISHED:  Literal[int] = 1
+_FUTURE_STATE_EXCEPTION: Literal[int] = 2
+_FUTURE_STATE_CANCELLED: Literal[int] = 3
+
+@tuple
+class WorkItem:
+    data: cobj        # Task or Future
+    coro: cobj        # Coroutine handle
+    result_size: int  # Size in bytes of enclosed Future/Task result
+    is_task: bool     # True if `data` is a Task; False if Future
+
 @tuple
 class Timer:
-    coro: cobj
+    work: WorkItem
     when: float
 
 class LoopCallback:
@@ -136,18 +148,12 @@ class LoopCallback:
 
 class EventLoop:
     lock: Lock
-    ready_head: Optional[LoopCallback]
-    ready_tail: Optional[LoopCallback]
+    worklist: _deque[WorkItem]
     timers: Ptr[Timer]
     timers_len: int
     timers_cap: int
     running: bool
     stop_flag: bool
-
-_FUTURE_STATE_PENDING:   Literal[int] = 0
-_FUTURE_STATE_FINISHED:  Literal[int] = 1
-_FUTURE_STATE_EXCEPTION: Literal[int] = 2
-_FUTURE_STATE_CANCELLED: Literal[int] = 3
 
 class Future:
     _result: R
@@ -166,14 +172,15 @@ class Task(Static[Future[R]]):
     _coro: cobj
     R: type
 
-@tuple
+@extend
 class WorkItem:
-    data: cobj        # Task or Future
-    coro: cobj        # Coroutine handle
-    result_size: int  # Size in bytes of enclosed Future/Task result
-    is_task: bool     # True if `data` is a Task; False if Future
+    def __new__(coro: Coroutine, loop: EventLoop):
+        return WorkItem(coro, Future[coro.T](loop))
 
     def __new__(coro: Coroutine, future: Future):
+        return WorkItem(coro.__raw__(), future)
+
+    def __new__(coro: cobj, future: Future):
         data = future.__raw__()
         result_size = gc.sizeof(future.R)
         is_task = False
@@ -184,7 +191,7 @@ class WorkItem:
         coro = task._coro
         result_size = gc.sizeof(task.R)
         is_task = True
-        return WorkItem(data, coro, result_size, is_task)
+        return WorkItem(data, coro.__raw__(), result_size, is_task)
 
 class InvalidStateError(Exception):
     def __init__(self, message: str = ''):
@@ -199,6 +206,7 @@ class EventLoop:
     def __init__(self):
         TIMERS_CAP_INIT: Literal[int] = 8  # must be power of 2
         self.lock = Lock()
+        self.worklist = _deque[WorkItem]()
         self.timers = Ptr[Timer](TIMERS_CAP_INIT)
         self.timers_len = 0
         self.timers_cap = TIMERS_CAP_INIT
@@ -212,65 +220,46 @@ class EventLoop:
         with self.lock:
             self.stop_flag = True
 
-    def _call_soon(self, coro: cobj):
-        cb = LoopCallback(coro, None)
+    def _call_soon(self, work: WorkItem):
         with self.lock:
-            if self.ready_tail:
-                self.ready_tail.next = cb
-                self.ready_tail = cb
-            else:
-                self.ready_head = cb
-                self.ready_tail = cb
+            self.worklist.push(work)
 
     def call_soon(self, coro: Coroutine):
-        self._call_soon(coro.__raw__())
+        self._call_soon(WorkItem(coro, loop=self))
 
-    def _call_later(self, coro: cobj, delay: float):
-        t = Timer(coro, self.now() + delay)
+    def _call_later(self, work: WorkItem, delay: float):
+        t = Timer(work, self.now() + delay)
         with self.lock:
             self._timers_push(t)
 
     def call_later(self, coro: Coroutine, delay: float):
-        self._call_later(coro.__raw__(), delay)
+        self._call_later(WorkItem(coro, loop=self), delay)
 
     def run_forever(self):
         self.running = True
-        cb: Optional[LoopCallback] = None
 
         while True:
+            work: Optional[WorkItem] = None
             now = self.now()
             stop = False
 
             with self.lock:
                 while self.timers_len > 0 and self.timers[0].when <= now:
-                    t = self._timers_pop()
-                    if t is None:
-                        break
+                    self.worklist.push(self._timers_pop().work)
 
-                    node = LoopCallback(t.coro, None)
-                    if self.ready_tail is not None:
-                        self.ready_tail.next = node
-                        self.ready_tail = node
-                    else:
-                        self.ready_head = node
-                        self.ready_tail = node
-
-                cb = self.ready_head
-                if cb is not None:
-                    self.ready_head = cb.next
-                    if self.ready_head is None:
-                        self.ready_tail = None
+                if len(self.worklist) > 0:
+                    work = self.worklist.pop_front()
 
                 stop = self.stop_flag
 
             if stop:
                 break
 
-            if cb is not None:
-                g = Generator[int](cb.coro)
+            if work is not None:
+                g = Generator[None](work.coro)
                 g.__resume__()
-                if g.__done__():
-                    gc.free(g.__raw__())
+                # if g.__done__():
+                #     gc.free(g.__raw__())
             else:
                 sleep_time = 0.01  # 10ms default
                 with self.lock:
@@ -391,7 +380,7 @@ class Future:
 
         if self.done():
             lock.release()
-            self._loop._call_soon(coro)
+            self._loop._call_soon(WorkItem(coro, future=self))
             return
 
         n = self._done_callbacks_len

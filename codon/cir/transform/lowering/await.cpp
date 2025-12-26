@@ -12,34 +12,54 @@ namespace codon {
 namespace ir {
 namespace transform {
 namespace lowering {
+namespace {
+
+bool isFuture(const types::Type *type) {
+  return type->getName().rfind("std.asyncio.Future.", 0) == 0;
+}
+
+bool isTask(const types::Type *type) {
+  return type->getName().rfind("std.asyncio.Task.", 0) == 0;
+}
+
+bool isCoroutine(const types::Type *type) { return isA<types::GeneratorType>(type); }
+
+} // namespace
 
 const std::string AwaitLowering::KEY = "core-await-lowering";
 
 void AwaitLowering::handle(AwaitInstr *v) {
   auto *M = v->getModule();
   auto *value = v->getValue();
-  auto *type = v->getType();
-  auto *futureType = type; // M->getOrRealizeType(ast::getMangledClass("std.asyncio",
-                           // "Future"), {type});
-  seqassertn(futureType, "future type not found");
+  auto *resultType = v->getType();
+  auto *valueType = value->getType();
 
-  auto *coro = M->Nr<CoroHandleInstr>();
-  auto *addCallback = M->getOrRealizeMethod(futureType, "_add_done_callback",
-                                            {futureType, coro->getType()});
-  seqassertn(addCallback, "add-callback method not found");
-  auto *getResult = M->getOrRealizeMethod(futureType, "result", {futureType});
-  seqassertn(getResult, "get-result method not found");
+  if (isFuture(valueType)) {
+    auto *coro = M->Nr<CoroHandleInstr>();
+    auto *addCallback = M->getOrRealizeMethod(valueType, "_add_done_callback",
+                                              {valueType, coro->getType()});
+    seqassertn(addCallback, "add-callback method not found");
+    auto *getResult = M->getOrRealizeMethod(valueType, "result", {valueType});
+    seqassertn(getResult, "get-result method not found");
 
-  util::CloneVisitor cv(M);
-  auto *series = M->Nr<SeriesFlow>();
-  auto *futureVar =
-      util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
-  series->push_back(util::call(addCallback, {M->Nr<VarValue>(futureVar), coro}));
-  series->push_back(M->Nr<YieldInstr>());
+    util::CloneVisitor cv(M);
+    auto *series = M->Nr<SeriesFlow>();
+    auto *futureVar =
+        util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
+    series->push_back(util::call(addCallback, {M->Nr<VarValue>(futureVar), coro}));
+    series->push_back(M->Nr<YieldInstr>());
 
-  auto *replacement =
-      M->Nr<FlowInstr>(series, util::call(getResult, {M->Nr<VarValue>(futureVar)}));
-  v->replaceAll(replacement);
+    auto *replacement =
+        M->Nr<FlowInstr>(series, util::call(getResult, {M->Nr<VarValue>(futureVar)}));
+    v->replaceAll(replacement);
+  } else if (isTask(valueType)) {
+    seqassertn(false, "TODO");
+  } else if (isCoroutine(valueType)) {
+    seqassertn(false, "TODO");
+  } else {
+    seqassertn(false, "unexpected value type '{}' in await instruction",
+               valueType->getName());
+  }
 }
 
 } // namespace lowering
