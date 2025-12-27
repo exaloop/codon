@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
 from threading import Lock
-from time import time, sleep
+from time import time as _time, sleep as _sleep
 import internal.gc as gc
 
 class _deque:
@@ -125,6 +125,7 @@ class _deque:
         self.count -= 1
         return d
 
+
 _FUTURE_STATE_PENDING:   Literal[int] = 0
 _FUTURE_STATE_FINISHED:  Literal[int] = 1
 _FUTURE_STATE_EXCEPTION: Literal[int] = 2
@@ -213,8 +214,8 @@ class EventLoop:
         self.running = False
         self.stop_flag = False
 
-    def now(self):
-        return time()
+    def time(self):
+        return _time()
 
     def stop(self):
         with self.lock:
@@ -228,7 +229,7 @@ class EventLoop:
         self._call_soon(WorkItem(coro, loop=self))
 
     def _call_later(self, work: WorkItem, delay: float):
-        t = Timer(work, self.now() + delay)
+        t = Timer(work, self.time() + delay)
         with self.lock:
             self._timers_push(t)
 
@@ -240,7 +241,7 @@ class EventLoop:
 
         while True:
             work: Optional[WorkItem] = None
-            now = self.now()
+            now = self.time()
             stop = False
 
             with self.lock:
@@ -269,7 +270,7 @@ class EventLoop:
                             sleep_time = dt
 
                 if sleep_time > 0:
-                    sleep(sleep_time)
+                    _sleep(sleep_time)
 
         self.running = False
 
@@ -500,3 +501,9 @@ class Task:
 
     def get_coro(self, T: type = NoneType) -> Coroutine[T]:
         return Coroutine[T](self._coro)
+
+    def _add_done_callback(self, coro: cobj):
+        super()._add_done_callback(coro)
+
+    def result(self):
+        return super().result()

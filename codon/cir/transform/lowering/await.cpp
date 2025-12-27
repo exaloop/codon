@@ -22,7 +22,9 @@ bool isTask(const types::Type *type) {
   return type->getName().rfind("std.asyncio.Task.", 0) == 0;
 }
 
-bool isCoroutine(const types::Type *type) { return isA<types::GeneratorType>(type); }
+const types::GeneratorType *isCoroutine(const types::Type *type) {
+  return cast<types::GeneratorType>(type);
+}
 
 } // namespace
 
@@ -33,8 +35,9 @@ void AwaitLowering::handle(AwaitInstr *v) {
   auto *value = v->getValue();
   auto *resultType = v->getType();
   auto *valueType = value->getType();
+  util::CloneVisitor cv(M);
 
-  if (isFuture(valueType)) {
+  if (isFuture(valueType) || isTask(valueType)) {
     auto *coro = M->Nr<CoroHandleInstr>();
     auto *addCallback = M->getOrRealizeMethod(valueType, "_add_done_callback",
                                               {valueType, coro->getType()});
@@ -42,7 +45,6 @@ void AwaitLowering::handle(AwaitInstr *v) {
     auto *getResult = M->getOrRealizeMethod(valueType, "result", {valueType});
     seqassertn(getResult, "get-result method not found");
 
-    util::CloneVisitor cv(M);
     auto *series = M->Nr<SeriesFlow>();
     auto *futureVar =
         util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
@@ -52,10 +54,11 @@ void AwaitLowering::handle(AwaitInstr *v) {
     auto *replacement =
         M->Nr<FlowInstr>(series, util::call(getResult, {M->Nr<VarValue>(futureVar)}));
     v->replaceAll(replacement);
-  } else if (isTask(valueType)) {
-    seqassertn(false, "TODO");
-  } else if (isCoroutine(valueType)) {
-    seqassertn(false, "TODO");
+  } else if (auto *genType = isCoroutine(valueType)) {
+    auto *var = M->Nr<Var>(genType->getBase(), /*global=*/false);
+    cast<BodiedFunc>(getParentFunc())->push_back(var);
+    auto *replacement = M->Nr<ForFlow>(cv.clone(value), M->Nr<SeriesFlow>(), var);
+    v->replaceAll(replacement);
   } else {
     seqassertn(false, "unexpected value type '{}' in await instruction",
                valueType->getName());
