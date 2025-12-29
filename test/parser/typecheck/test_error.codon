@@ -39,6 +39,10 @@ try:
     foo()
 except MyError as e:
     print e.typename, e.message #: MyError foo!
+try:
+    foo()
+except Exception as e:
+    print e.typename, e.message #: MyError foo!
 
 #%% throw_error,barebones
 raise 'hello'

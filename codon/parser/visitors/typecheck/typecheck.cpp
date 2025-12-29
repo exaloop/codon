@@ -639,13 +639,15 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
            exprClass->is("Capsule")) {
     type = extractClassGeneric(exprClass)->shared_from_this();
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("Capsule._get"), expr);
+      return N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "_get")), expr);
     };
   } else if (expectedClass && expectedClass->is("Capsule") && exprClass &&
              !exprClass->is("Capsule")) {
     type = instantiateType(getStdLibType("Capsule"), std::vector<Type *>{exprClass});
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("Capsule._make"), expr);
+      return N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "make")), expr);
     };
   }
 

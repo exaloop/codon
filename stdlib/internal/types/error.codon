@@ -28,13 +28,18 @@ class BaseException:
         return f'{self.typename}({self.message.__repr__()})'
 
     @property
+    def typename(self):
+        p = Ptr[Tuple[cobj, TypeInfo]](self.__raw__())
+        return p[0][1].nice_name
+
+    @property
     def __cause__(self):
         return self.cause
 
     @__hidden__
     def _set_header(e, func, file, line, col, cause):
-        # if not isinstance(e, BaseException):
-        #     compile_error("exceptions must derive from BaseException")
+        if not isinstance(e, BaseException):
+            compile_error("exceptions must derive from BaseException")
 
         e.func = func
         e.file = file

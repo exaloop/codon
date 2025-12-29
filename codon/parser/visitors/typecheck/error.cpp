@@ -120,13 +120,13 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (c->getException()) {
         auto t = extractClassType(c->getException());
         bool exceptionOK = false;
-        for (auto &p : getSuperTypes(t))
+        for (auto &p : getRTTISuperTypes(t))
           if (p->is(getMangledClass("std.internal.types.error", "BaseException"))) {
             exceptionOK = true;
             break;
           }
-        // if (!exceptionOK)
-        //   E(Error::CATCH_EXCEPTION_TYPE, c->getException(), t->prettyString());
+        if (!exceptionOK)
+          E(Error::CATCH_EXCEPTION_TYPE, c->getException(), t->prettyString());
         if (val)
           unify(val->getType(), extractType(c->getException()));
       }

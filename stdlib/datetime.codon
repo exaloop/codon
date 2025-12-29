@@ -411,9 +411,9 @@ def _round_half_even(x: float) -> float:
 
 @tuple
 class timedelta:
-    min: ClassVar[timedelta] = timedelta._new(-9223372036854775808)
-    max: ClassVar[timedelta] = timedelta._new(9223372036854775807)
-    resolution: ClassVar[timedelta] = timedelta(microseconds=1)
+    min: ClassVar[timedelta]
+    max: ClassVar[timedelta]
+    resolution: ClassVar[timedelta]
 
     _microseconds: int
 
@@ -596,6 +596,11 @@ class timedelta:
     def total_seconds(self) -> float:
         return self._microseconds / 1e6
 
+
+timedelta.min = timedelta._new(-9223372036854775808)
+timedelta.max = timedelta._new(9223372036854775807)
+timedelta.resolution = timedelta(microseconds=1)
+
 @tuple
 class IsoCalendarDate:
     year: int
@@ -607,8 +612,8 @@ class IsoCalendarDate:
 
 @tuple
 class date:
-    min: ClassVar[date] = date(MINYEAR, 1, 1)
-    max: ClassVar[date] = date(MAXYEAR, 12, 31)
+    min: ClassVar[date]
+    max: ClassVar[date]
     resolution: ClassVar[timedelta] = timedelta(days=1)
 
     _value: UInt[32]
@@ -759,10 +764,15 @@ class date:
 
     # strftime() / __format__() not supported
 
+
+date.min = date(MINYEAR, 1, 1)
+date.max = date(MAXYEAR, 12, 31)
+
+
 @tuple
 class time:
-    min: ClassVar[time] = time(0, 0, 0, 0)
-    max: ClassVar[time] = time(23, 59, 59, 999999)
+    min: ClassVar[time]
+    max: ClassVar[time]
     resolution: ClassVar[timedelta] = timedelta(microseconds=1)
 
     _value: int
@@ -863,10 +873,13 @@ class time:
                 "invalid timespec; valid ones are 'auto', 'hours', 'minutes', 'seconds', 'milliseconds' and 'microseconds'"
             )
 
+
+time.min = time(0, 0, 0, 0)
+time.max = time(23, 59, 59, 999999)
 @tuple
 class datetime:
-    min: ClassVar[datetime] = datetime(MINYEAR, 1, 1)
-    max: ClassVar[datetime] = datetime(MAXYEAR, 12, 31, 23, 59, 59, 999999)
+    min: ClassVar[datetime]
+    max: ClassVar[datetime]
     resolution: ClassVar[timedelta] = timedelta(microseconds=1)
 
     _time: time
@@ -1105,6 +1118,8 @@ class datetime:
             date.year, date.month, date.day, time.hour, time.minute, time.second
         )
 
+datetime.min = datetime(MINYEAR, 1, 1)
+datetime.max = datetime(MAXYEAR, 12, 31, 23, 59, 59, 999999)
 @extend
 class timedelta:
     def __add__(self, other: date) -> date:

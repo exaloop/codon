@@ -503,8 +503,6 @@ std::string ClassStmt::toString(int indent) const {
 }
 bool ClassStmt::isRecord() const { return hasAttribute(Attr::Tuple); }
 bool ClassStmt::isClassVar(const Param &p) {
-  if (!p.defaultValue)
-    return false;
   if (!p.type)
     return true;
   if (auto i = cast<IndexExpr>(p.type))

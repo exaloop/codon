@@ -637,8 +637,16 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
 
   typExpr = transformType(typExpr);
   auto targetType = extractType(typExpr);
-  // Check super types (i.e., statically inherited) as well
-  for (auto &tx : getSuperTypes(typ->getClass())) {
+  // Check static super types (i.e., statically inherited) as well
+  for (auto &tx : getStaticSuperTypes(typ->getClass())) {
+    types::Type::Unification us;
+    auto s = tx->unify(targetType, &us);
+    us.undo();
+    if (s >= 0)
+      return transform(N<BoolExpr>(true));
+  }
+  // Check RTTI super types as well
+  for (auto &tx : getRTTISuperTypes(typ->getClass())) {
     types::Type::Unification us;
     auto s = tx->unify(targetType, &us);
     us.undo();

@@ -452,11 +452,12 @@ print(Foo.cx)  #: 10
 def x():
     class Foo:
         i = 0
-        f = Foo()
+        f = None
         def __init__(self):
             Foo.i += 1
         def __repr__(self):
             return 'heh-cls'
+    Foo.f = Foo()
     Foo(), Foo(), Foo()
     print Foo.f, Foo.i  #: heh-cls 4
     return Foo()
@@ -465,9 +466,10 @@ print f.f, f.i  #: heh-cls 5
 
 @tuple
 class Fot:
-    f = Fot()
+    f = None
     def __repr__(self):
         return 'heh-tup'
+Fot.f = Fot()
 print Fot.f  #: heh-tup
 
 #%% extend,barebones

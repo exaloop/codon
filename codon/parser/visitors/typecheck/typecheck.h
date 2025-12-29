@@ -140,7 +140,8 @@ private: // Node typechecking rules
   bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &,
                          const PartialCallData &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
-  std::vector<types::TypePtr> getSuperTypes(types::ClassType *);
+  std::vector<types::TypePtr> getStaticSuperTypes(types::ClassType *);
+  std::vector<types::TypePtr> getRTTISuperTypes(types::ClassType *);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;

@@ -186,11 +186,13 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           val->baseName = "";
           val->scope = {0};
           registerGlobal(val->canonicalName);
-          auto assign = N<AssignStmt>(
-              N<IdExpr>(varName), transform(a.getDefault()),
-              a.getType() ? cast<IndexExpr>(a.getType())->getIndex() : nullptr);
-          assign->setUpdate();
-          varStmts.push_back(assign);
+          if (a.getDefault()) {
+            auto assign = N<AssignStmt>(
+                N<IdExpr>(varName), transform(a.getDefault()),
+                a.getType() ? cast<IndexExpr>(a.getType())->getIndex() : nullptr);
+            assign->setUpdate();
+            varStmts.push_back(assign);
+          }
           cls.classVars[a.getName()] = varName;
           ctx->add(a.getName(), val);
         } else if (!stmt->hasAttribute(Attr::Extend)) {

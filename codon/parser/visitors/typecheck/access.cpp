@@ -180,15 +180,10 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__mro__") {
     if (realize(expr->getExpr()->getType())) {
       auto t = extractType(expr->getExpr())->getClass();
+      auto bases = getRTTISuperTypes(t);
       std::vector<Expr *> items;
-      if (auto c = getClass(t)) {
-        const auto &mros = c->mro;
-        for (size_t i = 1; i < mros.size(); i++) {
-          auto mt = instantiateType(mros[i].get(), t);
-          seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
-          items.push_back(N<IdExpr>(mt->realizedName()));
-        }
-      }
+      for (size_t i = 1; i < bases.size(); i++)
+        items.push_back(N<IdExpr>(bases[i]->realizedName()));
       resultExpr = wrapSide(N<TupleExpr>(items));
     }
     return;
