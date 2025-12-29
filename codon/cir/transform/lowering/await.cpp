@@ -38,21 +38,15 @@ void AwaitLowering::handle(AwaitInstr *v) {
   util::CloneVisitor cv(M);
 
   if (isFuture(valueType) || isTask(valueType)) {
-    auto *coro = M->Nr<CoroHandleInstr>();
-    auto *addCallback = M->getOrRealizeMethod(valueType, "_add_done_callback",
-                                              {valueType, coro->getType()});
-    seqassertn(addCallback, "add-callback method not found");
     auto *getResult = M->getOrRealizeMethod(valueType, "result", {valueType});
     seqassertn(getResult, "get-result method not found");
-    auto *waitOnTask =
-        M->getOrRealizeFunc("_wait_on_task", {valueType}, {}, "std.asyncio");
-    seqassertn(waitOnTask, "wait-on-task function not found");
+    auto *waitOn = M->getOrRealizeFunc("_wait_on", {valueType}, {}, "std.asyncio");
+    seqassertn(waitOn, "wait-on function not found");
 
     auto *series = M->Nr<SeriesFlow>();
     auto *futureVar =
         util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
-    series->push_back(util::call(addCallback, {M->Nr<VarValue>(futureVar), coro}));
-    series->push_back(util::call(waitOnTask, {M->Nr<VarValue>(futureVar)}));
+    series->push_back(util::call(waitOn, {M->Nr<VarValue>(futureVar)}));
     series->push_back(M->Nr<YieldInstr>());
 
     auto *replacement =

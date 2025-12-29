@@ -52,7 +52,7 @@ class Future:
     _lock: Lock
     _loop: EventLoop
     _cancel_msg: str
-    _done_callbacks: Ptr[cobj]
+    _done_callbacks: Ptr[WorkItem]
     _done_callbacks_len: int
     _done_callbacks_cap: int
     _state: int
@@ -103,6 +103,9 @@ class CancelledError(Exception):
 
 async def _callback_wrapper(callback, *args):
     callback(*args)
+
+async def _future_callback_wrapper(callback, future):
+    callback(future)
 
 # TODO: make thread-local
 _current_loop: Optional[EventLoop] = None
@@ -216,21 +219,27 @@ class EventLoop:
 
         if work is not None:
             g = Generator[None](work.coro)
-            g.__resume__()
+            exception: Optional[BaseException] = None
+
+            try:
+                g.__resume__()
+            except BaseException as e:
+                exception = e
 
             if work.task:
-                if g.__done__():
-                    task = work.raw_task()
-                    callbacks = Ptr[cobj]()
+                task = work.raw_task()
+
+                if exception is not None:
+                    pass  # TODO
+                elif g.__done__():
+                    callbacks = Ptr[WorkItem]()
                     num_callbacks = 0
                     with task._lock:
                         str.memcpy(work.task,
                                    g.__promise__().as_byte(),
-                                   int(work.result_size))
+                                   work.result_size)
                         callbacks, num_callbacks = task._finish()
                     task._schedule_callbacks(callbacks, num_callbacks)
-                else:
-                    self._work_enqueue(work)
 
             self.work_curr = None
         else:
@@ -371,11 +380,14 @@ class Future:
         self._exception = None
         self._lock = Lock()
         if loop is None:
-            self._loop = _running_loop
+            if _running_loop is not None:
+                self._loop = _running_loop
+            else:
+                self._loop = get_event_loop()
         else:
             self._loop = loop
         self._cancel_msg = ''
-        self._done_callbacks = Ptr[cobj]()
+        self._done_callbacks = Ptr[WorkItem]()
         self._done_callbacks_len = 0
         self._done_callbacks_cap = 0
         self._state = _FUTURE_STATE_PENDING
@@ -384,43 +396,45 @@ class Future:
         return gc.sizeof(R)
 
     def _reset_callbacks(self):
-        if self._done_callbacks_cap > 0:
-            gc.free(self._done_callbacks.as_byte())
-        self._done_callbacks = Ptr[cobj]()
+        self._done_callbacks = Ptr[WorkItem]()
         self._done_callbacks_len = 0
         self._done_callbacks_cap = 0
 
-    def _add_done_callback(self, coro: cobj):
+    def add_done_callback(self, callback):
+        self._add_done_callback(
+          WorkItem(_future_callback_wrapper(callback, self)))
+
+    def _add_done_callback(self, work: WorkItem):
         lock = self._lock
         lock.acquire()
 
         if self.done():
             lock.release()
-            self._loop._call_soon(WorkItem(coro))
+            self._loop._call_soon(work)
             return
 
         n = self._done_callbacks_len
         m = self._done_callbacks_cap
 
         if m == 0:
-            self._done_callbacks = Ptr[cobj](1)
+            self._done_callbacks = Ptr[WorkItem](1)
             self._done_callbacks_cap = 1
         elif n >= m:
             new_m = m * 2
-            sz = gc.sizeof(cobj)
-            self._done_callbacks = Ptr[cobj](
+            sz = gc.sizeof(WorkItem)
+            self._done_callbacks = Ptr[WorkItem](
                                      gc.realloc(
                                        self._done_callbacks.as_byte(),
                                        new_m * sz, m * sz))
             self._done_callbacks_cap = new_m
 
-        self._done_callbacks[n] = coro
+        self._done_callbacks[n] = work
         self._done_callbacks_len += 1
         lock.release()
 
-    def _schedule_callbacks(self, callbacks: Ptr[cobj], num_callbacks: int):
+    def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         for i in range(num_callbacks):
-            self._loop._call_soon(WorkItem(callbacks[i]))
+            self._loop._call_soon(callbacks[i])
 
     def result(self):
         with self._lock:
@@ -445,7 +459,7 @@ class Future:
         return callbacks, num_callbacks
 
     def set_result(self, result: R):
-        callbacks = Ptr[cobj]()
+        callbacks = Ptr[WorkItem]()
         num_callbacks = 0
 
         with self._lock:
@@ -530,10 +544,13 @@ class Task:
     def get_coro(self, T: type = NoneType) -> Coroutine[T]:
         return Coroutine[T](self._coro)
 
-    def _add_done_callback(self, coro: cobj):
-        pass
+    def add_done_callback(self, callback):
+        super().add_done_callback(callback)
 
-    def _schedule_callbacks(self, callbacks: Ptr[cobj], num_callbacks: int):
+    def _add_done_callback(self, work: WorkItem):
+        super()._add_done_callback(work)
+
+    def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         super()._schedule_callbacks(callbacks, num_callbacks)
 
     def get_loop(self):
@@ -558,17 +575,17 @@ class Task:
                 waiting_on.cancel(msg)
                 self._waiting_on = None
 
-def _wait_on_task(task):
-    if not isinstance(task, Task):
-        return
-
+def _wait_on(future):
     loop = get_running_loop()
-    if loop is not task.get_loop():
+    if loop is not future.get_loop():
         raise RuntimeError("running loop is not the same as task loop")
 
     work_curr = loop.work_curr
-    if work_curr is not None:
-        task._waiting_on = work_curr.raw_task()
+    future._add_done_callback(work_curr)
+
+    if isinstance(future, Task):
+        if work_curr is not None:
+            future._waiting_on = work_curr.raw_task()
 
 def new_event_loop():
     return EventLoop()
