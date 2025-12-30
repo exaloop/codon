@@ -86,13 +86,9 @@ class WorkItem:
         result_size = gc.sizeof(task.R)
         return WorkItem(coro, data, result_size)
 
-    def raw_task(self):
-        task = self.task
-        if not task:
-            return None
-
+    def raw_task(self) -> Task[None]:
         # Skip over `result` field
-        return _bitcast(task + self.result_size, Task[None])
+        return _bitcast(self.task + self.result_size, Task[None])
 
 class InvalidStateError(Exception):
     def __init__(self, message: str = ''):
@@ -319,9 +315,9 @@ class EventLoop:
             return
 
         sz = gc.sizeof(Timer)
-        self.timers = gc.realloc(
+        self.timers = Ptr[Timer](gc.realloc(
                         self.timers.as_byte(),
-                        new_cap * sz, old_cap * sz)
+                        new_cap * sz, old_cap * sz))
         self.timers_cap = new_cap
 
     def _timers_swap(self, i: int, j: int):
@@ -337,6 +333,7 @@ class EventLoop:
         i = self.timers_len
         self.timers_len += 1
         timers = self.timers
+        timers[i] = t
 
         # Sift up
         while i > 0:
@@ -347,9 +344,7 @@ class EventLoop:
             i = parent
 
     def _timers_pop(self):
-        if self.timers_len == 0:
-            return None
-
+        # caller must ensure non-empty
         timers = self.timers
         out = timers[0]
         self.timers_len -= 1
@@ -446,7 +441,7 @@ class Future:
         for i in range(num_callbacks):
             self._loop._call_soon(callbacks[i])
         if callbacks:
-            gc.free(callbacks)
+            gc.free(callbacks.as_byte())
 
     def result(self):
         with self._lock:
@@ -610,7 +605,7 @@ def _wait_on(future):
     future._add_done_callback(work_curr)
 
     if isinstance(future, Task):
-        if work_curr is not None:
+        if work_curr is not None and work_curr.task:
             future._waiting_on = work_curr.raw_task()
 
 def new_event_loop():
@@ -644,3 +639,14 @@ def run(coro, debug=None, loop_factory=None):
         loop = get_event_loop()
     task = loop.create_task(coro)
     return loop.run_until_complete(task)
+
+def sleep(delay: float, result=None):
+    loop = get_running_loop()
+    future = loop.create_future(type(result))
+
+    if delay <= 0.0:
+        loop.call_soon(future.set_result, result)
+    else:
+        loop.call_later(delay, future.set_result, result)
+
+    return future
