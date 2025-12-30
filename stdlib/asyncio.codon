@@ -2,12 +2,20 @@
 
 from threading import Lock
 from time import time as _time, sleep as _sleep
+from sys import stderr as _stderr
 import internal.gc as gc
 
 _FUTURE_STATE_PENDING:   Literal[int] = 0
 _FUTURE_STATE_FINISHED:  Literal[int] = 1
 _FUTURE_STATE_EXCEPTION: Literal[int] = 2
 _FUTURE_STATE_CANCELLED: Literal[int] = 3
+
+@pure
+@derives
+@llvm
+def _bitcast(x: T, D: type, T: type) -> D:
+    %y = bitcast {=T} %x to {=D}
+    ret {=D} %y
 
 @tuple
 class WorkItem:
@@ -79,13 +87,6 @@ class WorkItem:
         return WorkItem(coro, data, result_size)
 
     def raw_task(self):
-        @pure
-        @derives
-        @llvm
-        def _bitcast(x: T, D: type, T: type) -> D:
-            %y = bitcast {=T} %x to {=D}
-            ret {=D} %y
-
         task = self.task
         if not task:
             return None
@@ -199,6 +200,10 @@ class EventLoop:
     def call_at(self, delay: float, callback, *args):
         return self.call_later(delay, callback, *args)
 
+    def _handle_exception(self, exc: BaseException):
+        rtti = _bitcast(Ptr[cobj](exc.__raw__())[1], TypeInfo)
+        _stderr.write(f'{rtti.nice_name}: {exc}\n')
+
     def _step(self):
         work: Optional[WorkItem] = None
         now = self.time()
@@ -228,18 +233,23 @@ class EventLoop:
 
             if work.task:
                 task = work.raw_task()
+                callbacks = Ptr[WorkItem]()
+                num_callbacks = 0
 
                 if exception is not None:
-                    pass  # TODO
+                    with task._lock:
+                        callbacks, num_callbacks = \
+                            task._finish_with_exception(exception)
                 elif g.__done__():
-                    callbacks = Ptr[WorkItem]()
-                    num_callbacks = 0
                     with task._lock:
                         str.memcpy(work.task,
                                    g.__promise__().as_byte(),
                                    work.result_size)
                         callbacks, num_callbacks = task._finish()
-                    task._schedule_callbacks(callbacks, num_callbacks)
+
+                task._schedule_callbacks(callbacks, num_callbacks)
+            elif exception is not None:
+                self._handle_exception(exception)
 
             self.work_curr = None
         else:
@@ -435,6 +445,8 @@ class Future:
     def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         for i in range(num_callbacks):
             self._loop._call_soon(callbacks[i])
+        if callbacks:
+            gc.free(callbacks)
 
     def result(self):
         with self._lock:
@@ -453,6 +465,17 @@ class Future:
             raise InvalidStateError("Invalid state")
 
         self._state = _FUTURE_STATE_FINISHED
+        callbacks = self._done_callbacks
+        num_callbacks = self._done_callbacks_len
+        self._reset_callbacks()
+        return callbacks, num_callbacks
+
+    def _finish_with_exception(self, exception: BaseException):
+        if self.done():
+            raise InvalidStateError("Invalid state")
+
+        self._state = _FUTURE_STATE_EXCEPTION
+        self._exception = exception
         callbacks = self._done_callbacks
         num_callbacks = self._done_callbacks_len
         self._reset_callbacks()
@@ -564,6 +587,9 @@ class Task:
 
     def _finish(self):
         return super()._finish()
+
+    def _finish_with_exception(self, exception: BaseException):
+        return super()._finish_with_exception(exception)
 
     def cancel(self, msg: Optional[str] = None):
         if not super().cancel(msg):

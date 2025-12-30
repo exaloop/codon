@@ -47,13 +47,13 @@ from internal.str import *
 from internal.sort import sorted
 
 from openmp import Ident as __OMPIdent, for_par, for_par as par
-from asyncio import Future as _Future
 from internal.file import File, gzFile, open, gzopen
 from internal.gpu import _gpu_loop_outline_template
 from pickle import pickle, unpickle
 from internal.dlopen import dlsym as _dlsym
 import internal.python
 from internal.python import PyError
+from asyncio import Future as _Future
 
 if __py_numerics__:
     import internal.pynumerics
