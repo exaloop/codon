@@ -40,7 +40,7 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
             return unwrap(default)
         else:
             raise StopIteration()
-    return g.next()
+    return g.__next__()
 
 from C import seq_print_full(str, cobj)
 

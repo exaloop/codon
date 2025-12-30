@@ -198,7 +198,7 @@ print y.__done__() #: False
 print y.__promise__()[0] #: 0
 y.__resume__()
 print y.__repr__()[:16] #: <generator at 0x
-print y.next() #: 1
+print y.__next__() #: 1
 print y.done() #: False
 y.send(1)
 y.destroy()

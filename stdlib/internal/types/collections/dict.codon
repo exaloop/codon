@@ -158,10 +158,13 @@ class Dict:
 
     # Helper methods
 
+    def __bool__(self):
+        return self.__len__() > 0
+
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def get(self, key: K, s: V) -> V:
+    def get(self, key: K, s: V = None) -> V:
         x = self._kh_get(key)
         return self._vals[x] if x != self._kh_end() else s
 

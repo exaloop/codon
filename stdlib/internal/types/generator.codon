@@ -18,7 +18,7 @@ class Generator:
         self.__resume__()
         return self.__done__()
 
-    def next(self: Generator[T]) -> T:
+    def __next__(self: Generator[T]) -> T:
         if isinstance(T, None):
             pass
         else:

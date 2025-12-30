@@ -100,8 +100,8 @@ class NamedTuple:
         else:
             return default
 
-    def get(self, key: Literal[str], default = NoneType()):
-        return NamedTuple.kwargs_get(self, key, default)
+    def get(self, key: Literal[str], default = None):
+        return NamedTuple._get(self, key, default)
 
     def _namedkeys(N: Literal[int]):
         # Compiler generated

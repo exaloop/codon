@@ -490,7 +490,7 @@ def tee(iterable, n=2):
             if not mydeque:             # when the local deque is empty
                 if it.done():
                     return
-                newval = it.next()
+                newval = it.__next__()
                 for d in deques:        # load it to all the deques
                     d.append(newval)
             yield mydeque.popleft()

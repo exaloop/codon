@@ -1962,7 +1962,7 @@ class _PyWrap:
                 pt._gen = cobj()
                 return cobj()
             else:
-                return gt.next().__to_py__()
+                return gt.__next__().__to_py__()
 
         def __to_py__(self):
             return _PyWrap.wrap_to_py(self)
