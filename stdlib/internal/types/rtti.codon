@@ -104,6 +104,17 @@ class RTTIType:
         f = FR(fptr)
         return f(slf, *args)
 
+    def _get_typeinfo(obj: T, T: type) -> TypeInfo:
+        if static.has_rtti(T):
+            ti = type._force_cast(obj, RTTIType).typeinfo
+            return type._force_cast(ti, TypeInfo)
+        else:
+            compile_error("classes are not polymorphic")
+
+    def _isinstance(obj, TW: type) -> bool:
+        obj_info = RTTIType._get_typeinfo(obj)
+        return obj_info.id == TW.__id__ or obj_info.is_parent(TW)
+
 
 @extend
 class Super:

@@ -898,6 +898,24 @@ moo(Vehicle())
 #: I'm driving a car
 #: I'm driving a vehicle
 
+class YugoSUV(SUV):
+    def drive(self):
+        return "I'm driving a Yugo SUV"
+
+l: List[Vehicle] = [Car(), Truck(), suv, Vehicle(), YugoSUV()]
+for i in l:
+    print(i.drive(),
+          isinstance(i, Vehicle),
+          isinstance(i, Car),
+          isinstance(i, Truck),
+          isinstance(i, SUV),
+          isinstance(i, YugoSUV))
+#: I'm driving a car True True False False False
+#: I'm driving a truck True False True False False
+#: I'm driving an SUV True True True True False
+#: I'm driving a vehicle True False False False False
+#: I'm driving a Yugo SUV True True True True True
+
 
 #%% polymorphism_error_1,barebones
 class M[T]:

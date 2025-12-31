@@ -645,7 +645,8 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     if (s >= 0)
       return transform(N<BoolExpr>(true));
   }
-  // Check RTTI super types as well
+
+  // Check RTTI super types
   for (auto &tx : getRTTISuperTypes(typ->getClass())) {
     types::Type::Unification us;
     auto s = tx->unify(targetType, &us);
@@ -653,6 +654,20 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     if (s >= 0)
       return transform(N<BoolExpr>(true));
   }
+
+  // Check runtime RTTI info if needed
+  for (auto &tx : getRTTISuperTypes(targetType->getClass())) {
+    types::Type::Unification us;
+    auto s = tx->unify(typ, &us);
+    us.undo();
+    if (s >= 0) {
+      // check RTTI match
+      return transform(N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_isinstance")),
+          expr->begin()->getExpr(), (*expr)[1].getExpr()));
+    }
+  }
+
   return transform(N<BoolExpr>(false));
 }
 

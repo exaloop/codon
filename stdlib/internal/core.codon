@@ -309,6 +309,17 @@ def compile_error(msg: Literal[str]):
     pass
 
 def isinstance(obj, what):
+    # isinstance(obj, type) -> Literal[bool]: true if obj is type[T]
+    # isinstance(obj, Tuple) -> Literal[bool]: true if obj is Tuple
+    # isinstance(obj, ByVal) -> Literal[bool]: true if obj is @tuple
+    # isinstance(obj, ByRef) -> Literal[bool]: true if obj is ref. type (class)
+    # isinstance(obj, Union) -> Literal[bool]: true if obj is union
+    # isinstance(union, T) -> bool: true if union's current content is T (runtime)
+    # isinstance(pyobj, pyobj_T) -> bool: true if pyobj's type is pyobj_T (runtime)
+    # isinstance(non_pyobj, pyobj) -> Literal[bool]: always false
+    # isinstance(obj, T) -> Literal[bool]: true if T is base type (static or RTTI) of type(obj)
+    # isinstance(obj, T) -> bool: true if type(obj) is base type (static or RTTI) of T and RTTI info matches
+    # otherwise: static[False]
     pass
 
 @__attribute__

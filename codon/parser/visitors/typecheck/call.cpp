@@ -960,7 +960,6 @@ std::vector<TypePtr> TypecheckVisitor::getRTTISuperTypes(ClassType *cls) {
   const auto &mro = c->mro;
   for (const auto &umt : c->mro) {
     auto mt = instantiateType(umt.get(), cls);
-    seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
     realize(mt.get()); // ensure that parent types are realized
     result.push_back(mt);
   }

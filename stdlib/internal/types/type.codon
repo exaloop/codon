@@ -71,6 +71,7 @@ class type:
 class TypeInfo:
     id: int
     _parent_ids: Ptr[int]
+    _n_parent_ids: int
     raw_name: str
     nice_name: str
     repr: Function[[Ptr[byte]], str]
@@ -98,6 +99,7 @@ class TypeInfo:
 
         mro = T.__mro__
         num_mro: Literal[int] = static.len(mro)
+        self._n_parent_ids = num_mro
 
         if num_mro > 0:
             self._parent_ids = Ptr[int](num_mro + 1)
@@ -106,6 +108,12 @@ class TypeInfo:
             self._parent_ids[num_mro] = 0
         else:
             self._parent_ids = Ptr[int]()
+
+    def is_parent(self, T: type) -> bool:
+        for i in range(self._n_parent_ids):
+            if self._parent_ids[i] == T.__id__:
+                return True
+        return False
 
     def wrap(arg: Ptr[byte], T: type) -> str:
         if isinstance(T, ByVal):
