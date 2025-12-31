@@ -137,6 +137,7 @@ template <typename Type_> static uintptr_t ReadType(const uint8_t *&p) {
 struct TypeInfo {
   seq_int_t id;
   seq_int_t *parent_ids;
+  seq_int_t n_parent_ids;
   seq_str_t raw_name;
   // other fields do not need to be included
 };
