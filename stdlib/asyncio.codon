@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
-from threading import Lock
+from threading import Lock, ThreadLocal
 from time import time as _time, sleep as _sleep
 from sys import stderr as _stderr
 import internal.gc as gc
@@ -105,9 +105,8 @@ async def _callback_wrapper(callback, *args):
 async def _future_callback_wrapper(callback, future):
     callback(future)
 
-# TODO: make thread-local
-_current_loop: Optional[EventLoop] = None
-_running_loop: Optional[EventLoop] = None
+_current_loop: ThreadLocal[Optional[EventLoop]] = None
+_running_loop: ThreadLocal[Optional[EventLoop]] = None
 
 @tuple
 class _EnterLoop:
