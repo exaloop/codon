@@ -94,6 +94,7 @@ public:
   void visit(EllipsisExpr *) override;
   void visit(LambdaExpr *) override;
   void visit(YieldExpr *) override;
+  void visit(AwaitExpr *) override;
   void visit(StmtExpr *expr) override;
   void visit(AssignExpr *expr) override;
 
@@ -108,7 +109,6 @@ public:
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(AssertStmt *) override;
-  void visit(AwaitStmt *) override;
   void visit(WhileStmt *) override;
   void visit(ForStmt *) override;
   void visit(IfStmt *) override;

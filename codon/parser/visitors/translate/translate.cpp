@@ -422,6 +422,12 @@ void TranslateVisitor::visit(PipeExpr *expr) {
   }
 }
 
+void TranslateVisitor::visit(AwaitExpr *expr) {
+  auto type = TypecheckVisitor(ctx->cache->typeCtx)
+                  .extractClassGeneric(expr->getExpr()->getType());
+  result = make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(type));
+}
+
 void TranslateVisitor::visit(StmtExpr *expr) {
   auto *bodySeries = make<ir::SeriesFlow>(expr, "body");
   ctx->addSeries(bodySeries);
@@ -661,12 +667,6 @@ void TranslateVisitor::visit(TryStmt *stmt) {
 void TranslateVisitor::visit(ThrowStmt *stmt) {
   result = make<ir::ThrowInstr>(stmt,
                                 stmt->getExpr() ? transform(stmt->getExpr()) : nullptr);
-}
-
-void TranslateVisitor::visit(AwaitStmt *stmt) {
-  auto type = TypecheckVisitor(ctx->cache->typeCtx)
-                  .extractClassGeneric(stmt->getExpr()->getType());
-  result = make<ir::AwaitInstr>(stmt, transform(stmt->getExpr()), getType(type));
 }
 
 void TranslateVisitor::visit(FunctionStmt *stmt) {

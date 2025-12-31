@@ -223,20 +223,6 @@ private:
   Expr *message;
 };
 
-/// Await statement (await expr).
-/// @li await a
-struct AwaitStmt : public AcceptorExtend<AwaitStmt, Stmt> {
-  explicit AwaitStmt(Expr *expr);
-  AwaitStmt(const AwaitStmt &, bool);
-
-  Expr *getExpr() const { return expr; }
-
-  ACCEPT(AwaitStmt, ASTVisitor, expr);
-
-private:
-  Expr *expr;
-};
-
 /// While loop statement (while cond: suite; else: elseSuite).
 /// @li while True: print
 /// @li while True: break

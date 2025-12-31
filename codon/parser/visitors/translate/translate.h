@@ -44,6 +44,7 @@ public:
   void visit(YieldExpr *) override;
   void visit(StmtExpr *) override;
   void visit(PipeExpr *) override;
+  void visit(AwaitExpr *) override;
 
   void visit(SuiteStmt *) override;
   void visit(BreakStmt *) override;
@@ -58,7 +59,6 @@ public:
   void visit(IfStmt *) override;
   void visit(TryStmt *) override;
   void visit(ThrowStmt *) override;
-  void visit(AwaitStmt *) override;
   void visit(FunctionStmt *) override;
   void visit(ClassStmt *) override;
   void visit(CommentStmt *) override {}

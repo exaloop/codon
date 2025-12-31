@@ -34,6 +34,7 @@ void ASTVisitor::visit(SliceExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(EllipsisExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(LambdaExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(YieldExpr *expr) { defaultVisit(expr); }
+void ASTVisitor::visit(AwaitExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(AssignExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(RangeExpr *expr) { defaultVisit(expr); }
 void ASTVisitor::visit(InstantiateExpr *expr) { defaultVisit(expr); }
@@ -50,7 +51,6 @@ void ASTVisitor::visit(PrintStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ReturnStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(YieldStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(AssertStmt *stmt) { defaultVisit(stmt); }
-void ASTVisitor::visit(AwaitStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(WhileStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(ForStmt *stmt) { defaultVisit(stmt); }
 void ASTVisitor::visit(IfStmt *stmt) { defaultVisit(stmt); }

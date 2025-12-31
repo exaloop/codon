@@ -216,6 +216,7 @@ class NoneType:
     @llvm
     def __new__() -> NoneType:
         ret {} {}
+NoneType.__new__()  # always have this realization around
 
 @tuple
 @__internal__

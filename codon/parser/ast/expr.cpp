@@ -489,6 +489,13 @@ YieldExpr::YieldExpr() : AcceptorExtend() {}
 YieldExpr::YieldExpr(const YieldExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string YieldExpr::toString(int) const { return "yield-expr"; }
 
+AwaitExpr::AwaitExpr(Expr *expr) : AcceptorExtend(), expr(expr) {}
+AwaitExpr::AwaitExpr(const AwaitExpr &stmt, bool clean)
+    : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
+std::string AwaitExpr::toString(int indent) const {
+  return wrapType(fmt::format("await {}", expr->toString(indent)));
+}
+
 AssignExpr::AssignExpr(Expr *var, Expr *expr)
     : AcceptorExtend(), var(var), expr(expr) {}
 AssignExpr::AssignExpr(const AssignExpr &expr, bool clean)
@@ -584,6 +591,7 @@ ACCEPT_IMPL(SliceExpr, ASTVisitor);
 ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
 ACCEPT_IMPL(LambdaExpr, ASTVisitor);
 ACCEPT_IMPL(YieldExpr, ASTVisitor);
+ACCEPT_IMPL(AwaitExpr, ASTVisitor);
 ACCEPT_IMPL(AssignExpr, ASTVisitor);
 ACCEPT_IMPL(RangeExpr, ASTVisitor);
 ACCEPT_IMPL(StmtExpr, ASTVisitor);

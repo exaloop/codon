@@ -144,13 +144,6 @@ std::string AssertStmt::toString(int indent) const {
                               message ? message->toString(indent) : ""));
 }
 
-AwaitStmt::AwaitStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
-AwaitStmt::AwaitStmt(const AwaitStmt &stmt, bool clean)
-    : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
-std::string AwaitStmt::toString(int indent) const {
-  return wrapStmt(fmt::format("(await {})", expr->toString(indent)));
-}
-
 WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
     : AcceptorExtend(), cond(cond), suite(SuiteStmt::wrap(suite)),
       elseSuite(SuiteStmt::wrap(elseSuite)) {}
@@ -615,7 +608,6 @@ ACCEPT_IMPL(PrintStmt, ASTVisitor);
 ACCEPT_IMPL(ReturnStmt, ASTVisitor);
 ACCEPT_IMPL(YieldStmt, ASTVisitor);
 ACCEPT_IMPL(AssertStmt, ASTVisitor);
-ACCEPT_IMPL(AwaitStmt, ASTVisitor);
 ACCEPT_IMPL(WhileStmt, ASTVisitor);
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 ACCEPT_IMPL(IfStmt, ASTVisitor);

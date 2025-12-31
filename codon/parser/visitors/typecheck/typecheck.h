@@ -182,6 +182,7 @@ private: // Node typechecking rules
 
   /* Functions (function.cpp) */
   void visit(YieldExpr *) override;
+  void visit(AwaitExpr *) override;
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(YieldFromStmt *) override;
@@ -216,7 +217,6 @@ private:
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
   void visit(StmtExpr *) override;
-  void visit(AwaitStmt *) override;
   void visit(CommentStmt *stmt) override;
   void visit(CustomStmt *) override;
   void visit(DirectiveStmt *) override;

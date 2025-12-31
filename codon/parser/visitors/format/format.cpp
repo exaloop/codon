@@ -223,6 +223,10 @@ void FormatVisitor::visit(YieldExpr *expr) {
   result = renderExpr(expr, "{}", "(" + keyword("yield") + ")");
 }
 
+void FormatVisitor::visit(AwaitExpr *expr) {
+  result = fmt::format("{} {}", keyword("await"), transform(expr->getExpr()));
+}
+
 void FormatVisitor::visit(StmtExpr *expr) {
   std::string s;
   for (auto *i : *expr)
@@ -282,10 +286,6 @@ void FormatVisitor::visit(YieldStmt *stmt) {
 
 void FormatVisitor::visit(AssertStmt *stmt) {
   result = fmt::format("{} {}", keyword("assert"), transform(stmt->getExpr()));
-}
-
-void FormatVisitor::visit(AwaitStmt *stmt) {
-  result = fmt::format("{} {}", keyword("await"), transform(stmt->getExpr()));
 }
 
 void FormatVisitor::visit(WhileStmt *stmt) {

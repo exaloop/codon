@@ -105,7 +105,6 @@ small_stmt <-
   / nonlocal_stmt
   / yield_stmt &(SPACE / ';' / EOL)
   / assert_stmt
-  / await_stmt
   / del_stmt
   / return_stmt &(SPACE / ';' / EOL)
   / raise_stmt &(SPACE / ';' / EOL)
@@ -161,9 +160,6 @@ yield_stmt <-
   }
 assert_stmt <- 'assert' SPACE expression (_ ',' _ expression)? {
   return asts(Assert, LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
-}
-await_stmt <- 'await' SPACE expression {
-  return asts(Await, LOC, ac_expr(V0));
 }
 
 # TODO: do targets as in Python
@@ -588,9 +584,12 @@ factor <-
   }
   / power { return ac_expr(V0); }
 power <-
-  / primary _ <'**'> _ factor {
+  / await_primary _ <'**'> _ factor {
     return aste(Binary, LOC, ac_expr(V0), "**", ac_expr(V1));
   }
+  / await_primary { return ac_expr(V0); }
+await_primary <-
+  / 'await' SPACE primary { return aste(Await, LOC, ac_expr(V0)); }
   / primary { return ac_expr(V0); }
 primary <- atom (_ primary_tail)* {
   auto e = ac<Expr*>(V0);

@@ -564,6 +564,20 @@ struct YieldExpr : public AcceptorExtend<YieldExpr, Expr> {
   ACCEPT(YieldExpr, ASTVisitor);
 };
 
+/// Await expression (await expr).
+/// @li await a
+struct AwaitExpr : public AcceptorExtend<AwaitExpr, Expr> {
+  explicit AwaitExpr(Expr *expr);
+  AwaitExpr(const AwaitExpr &, bool);
+
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(AwaitExpr, ASTVisitor, expr);
+
+private:
+  Expr *expr;
+};
+
 /// Assignment (walrus) expression (var := expr).
 /// @li a := 5 + 3
 struct AssignExpr : public AcceptorExtend<AssignExpr, Expr> {

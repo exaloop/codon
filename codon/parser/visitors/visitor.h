@@ -49,6 +49,7 @@ public:
   virtual void visit(EllipsisExpr *);
   virtual void visit(LambdaExpr *);
   virtual void visit(YieldExpr *);
+  virtual void visit(AwaitExpr *);
   virtual void visit(AssignExpr *);
   virtual void visit(RangeExpr *);
   virtual void visit(InstantiateExpr *);
@@ -65,7 +66,6 @@ public:
   virtual void visit(ReturnStmt *);
   virtual void visit(YieldStmt *);
   virtual void visit(AssertStmt *);
-  virtual void visit(AwaitStmt *);
   virtual void visit(WhileStmt *);
   virtual void visit(ForStmt *);
   virtual void visit(IfStmt *);
@@ -172,6 +172,7 @@ public:
     transform(expr->expr);
   }
   void visit(YieldExpr *expr) override {}
+  void visit(AwaitExpr *expr) override { transform(expr->expr); }
   void visit(AssignExpr *expr) override {
     transform(expr->var);
     transform(expr->expr);
@@ -218,7 +219,6 @@ public:
     transform(stmt->expr);
     transform(stmt->message);
   }
-  void visit(AwaitStmt *stmt) override { transform(stmt->expr); }
   void visit(WhileStmt *stmt) override {
     transform(stmt->cond);
     transform(stmt->suite);
@@ -376,6 +376,7 @@ public:
     expr->expr = transform(expr->expr);
   }
   void visit(YieldExpr *expr) override {}
+  void visit(AwaitExpr *expr) override { expr->expr = transform(expr->expr); }
   void visit(AssignExpr *expr) override {
     expr->var = transform(expr->var);
     expr->expr = transform(expr->expr);
@@ -420,7 +421,6 @@ public:
     stmt->expr = transform(stmt->expr);
     stmt->message = transform(stmt->message);
   }
-  void visit(AwaitStmt *stmt) override { stmt->expr = transform(stmt->expr); }
   void visit(WhileStmt *stmt) override {
     stmt->cond = transform(stmt->cond);
     stmt->suite = SuiteStmt::wrap(transform(stmt->suite));

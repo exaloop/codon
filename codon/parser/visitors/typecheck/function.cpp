@@ -132,25 +132,25 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
 }
 
 /// Typecheck await statements.
-void TypecheckVisitor::visit(AwaitStmt *stmt) {
+void TypecheckVisitor::visit(AwaitExpr *expr) {
   if (!ctx->inFunction())
-    E(Error::FN_OUTSIDE_ERROR, stmt, "await");
+    E(Error::FN_OUTSIDE_ERROR, expr, "await");
   auto isAsync = ctx->getBase()->func->isAsync();
   if (!isAsync)
-    E(Error::FN_OUTSIDE_ERROR, stmt, "await");
+    E(Error::FN_OUTSIDE_ERROR, expr, "await");
 
-  stmt->expr = transform(stmt->getExpr());
+  expr->expr = transform(expr->getExpr());
 
-  if (auto c = stmt->getExpr()->getType()->getClass()) {
+  if (auto c = expr->getExpr()->getType()->getClass()) {
     if (!c->is(getMangledClass("std.internal.core", "Coroutine")) &&
         !c->is(getMangledClass("std.asyncio", "Future")) &&
         !c->is(getMangledClass("std.asyncio", "Task"))) {
-      E(Error::EXPECTED_TYPE, stmt, "awaitable");
+      E(Error::EXPECTED_TYPE, expr, "awaitable");
     }
   }
 
-  if (stmt->getExpr()->isDone())
-    stmt->setDone();
+  if (expr->getExpr()->isDone())
+    expr->setDone();
 }
 
 /// Transform `yield from` statements.
