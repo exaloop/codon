@@ -521,6 +521,10 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     v = make<ir::Var>(
         stmt, getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()),
         false, false, var);
+    if (stmt->isThreadLocal()) {
+      LOG("-> variable {} is thread-local", var);
+      // v->setThreadLocal();
+    }
     ctx->getBase()->push_back(v);
     ctx->add(TranslateItem::Var, var, v);
   }

@@ -115,7 +115,7 @@ private:
 /// @li a: Optional[int] = 5
 /// @li a, b, c = 5, *z
 struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
-  enum UpdateMode { Assign, Update, UpdateAtomic };
+  enum UpdateMode { Assign, Update, UpdateAtomic, ThreadLocalAssign };
 
   AssignStmt()
       : lhs(nullptr), rhs(nullptr), type(nullptr), update(UpdateMode::Assign) {}
@@ -133,8 +133,10 @@ struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
   bool isAssignment() const { return update == Assign; }
   bool isUpdate() const { return update == Update; }
   bool isAtomicUpdate() const { return update == UpdateAtomic; }
+  bool isThreadLocal() { return update == ThreadLocalAssign; }
   void setUpdate() { update = Update; }
   void setAtomicUpdate() { update = UpdateAtomic; }
+  void setThreadLocal() { update = ThreadLocalAssign; }
 
   ACCEPT(AssignStmt, ASTVisitor, lhs, rhs, type, update);
 

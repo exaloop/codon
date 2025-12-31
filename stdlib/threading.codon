@@ -1,5 +1,12 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+# Thread-local variable indicator. Used internally by the compiler to mark ThreadLocal variables.
+# Semantically identical to T.
+@tuple
+class ThreadLocal[T]:
+    def __new__(T: type) -> ThreadLocal[T]:
+        compile_error("this type cannot be instantiated")
+
 @tuple
 class Lock:
     p: cobj
