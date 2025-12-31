@@ -33,8 +33,8 @@ Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo,
       if (it != remaps.end()) {
         forceRemap(v, it->second);
       } else {
-        auto *clonedVar =
-            M->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
+        auto *clonedVar = M->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(),
+                                    v->isThreadLocal(), v->getName());
         cloneTo->push_back(clonedVar);
         forceRemap(v, clonedVar);
       }
@@ -72,8 +72,8 @@ Var *CloneVisitor::clone(const Var *other) {
 }
 
 void CloneVisitor::visit(const Var *v) {
-  result =
-      module->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
+  result = module->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(),
+                          v->isThreadLocal(), v->getName());
 }
 
 void CloneVisitor::visit(const BodiedFunc *v) {

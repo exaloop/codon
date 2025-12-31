@@ -37,7 +37,7 @@ public:
   /// Constructs an unrealized CIR function.
   /// @param name the function's name
   explicit Func(std::string name = "")
-      : AcceptorExtend(nullptr, true, false, std::move(name)), generator(false),
+      : AcceptorExtend(nullptr, true, false, false, std::move(name)), generator(false),
         async(false), parentType(nullptr) {}
 
   /// Re-initializes the function with a new type and names.

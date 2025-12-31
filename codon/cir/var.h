@@ -28,6 +28,8 @@ private:
   bool global;
   /// true if the variable is external
   bool external;
+  /// true if the variable is thread-local
+  bool tls;
 
 public:
   static const char NodeId;
@@ -36,9 +38,10 @@ public:
   /// @param type the variable's type
   /// @param global true if the variable is global
   /// @param external true if the variable is external
+  /// @param tls true if the variable is thread-local
   /// @param name the variable's name
   explicit Var(types::Type *type, bool global = false, bool external = false,
-               std::string name = "");
+               bool tls = false, std::string name = "");
   virtual ~Var() noexcept = default;
 
   std::vector<Value *> getUsedValues() final { return getActual()->doGetUsedValues(); }
@@ -86,6 +89,12 @@ public:
   /// Sets the external flag.
   /// @param v the new value
   void setExternal(bool v = true) { getActual()->external = v; }
+
+  /// @return true if the variable is thread-local
+  bool isThreadLocal() const { return getActual()->tls; }
+  /// Sets the thread-local flag.
+  /// @param v the new value
+  void setThreadLocal(bool v = true) { getActual()->tls = v; }
 
   std::string referenceString() const final {
     return fmt::format(FMT_STRING("{}.{}"), getName(), getId());

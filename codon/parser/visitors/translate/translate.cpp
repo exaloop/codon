@@ -70,7 +70,7 @@ void TranslateVisitor::initializeGlobals() const {
       }
       ir = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
                             : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                  SrcInfo(), vt, true, false, name);
+                                  SrcInfo(), vt, true, false, false, name);
       ctx->cache->codegenCtx->add(TranslateItem::Var, name, ir);
     }
 }
@@ -520,13 +520,14 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   } else {
     v = make<ir::Var>(
         stmt, getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()),
-        false, false, var);
-    if (stmt->isThreadLocal()) {
-      LOG("-> variable {} is thread-local", var);
-      // v->setThreadLocal();
-    }
+        false, false, false, var);
     ctx->getBase()->push_back(v);
     ctx->add(TranslateItem::Var, var, v);
+  }
+  // Check if it is thread-local
+  if (stmt->isThreadLocal()) {
+    v->setThreadLocal();
+    v->setGlobal();
   }
   // Check if it is a C variable
   if (stmt->getLhs()->hasAttribute(Attr::ExprExternVar)) {
@@ -587,8 +588,8 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   auto varName = cast<IdExpr>(stmt->getVar())->getValue();
   ir::Var *var = nullptr;
   if (!ctx->find(varName) || !stmt->getVar()->hasAttribute(Attr::ExprDominated)) {
-    var =
-        make<ir::Var>(stmt, getType(stmt->getVar()->getType()), false, false, varName);
+    var = make<ir::Var>(stmt, getType(stmt->getVar()->getType()), false, false, false,
+                        varName);
   } else {
     var = ctx->find(varName)->getVar();
   }
@@ -653,7 +654,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     ir::Var *catchVar = nullptr;
     if (!c->getVar().empty()) {
       if (!ctx->find(c->getVar()) || !c->hasAttribute(Attr::ExprDominated)) {
-        catchVar = make<ir::Var>(stmt, excType, false, false, c->getVar());
+        catchVar = make<ir::Var>(stmt, excType, false, false, false, c->getVar());
       } else {
         catchVar = ctx->find(c->getVar())->getVar();
       }

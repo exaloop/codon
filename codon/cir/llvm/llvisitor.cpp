@@ -144,6 +144,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
       insertVar(var, getDummyVoidValue());
     } else {
       bool external = var->isExternal();
+      bool tls = var->isThreadLocal();
       auto linkage = (db.jit || external) ? llvm::GlobalValue::ExternalLinkage
                                           : llvm::GlobalValue::PrivateLinkage;
       auto *storage = new llvm::GlobalVariable(
@@ -169,6 +170,9 @@ void LLVMVisitor::registerGlobal(const Var *var) {
                 srcInfo->line, getDIType(var->getType()), !var->isExternal());
         storage->addDebugInfo(debugVar);
       }
+
+      if (tls)
+        storage->setThreadLocal(true);
     }
   }
 }
@@ -2136,6 +2140,8 @@ void LLVMVisitor::visit(const VarValue *x) {
     llvm::Value *varPtr = getVar(x->getVar());
     seqassertn(varPtr, "{} value not found", *x);
     B->SetInsertPoint(block);
+    if (x->getVar()->isThreadLocal())
+      varPtr = B->CreateThreadLocalAddress(varPtr);
     value = B->CreateLoad(getLLVMType(x->getType()), varPtr);
   }
 }
@@ -2144,6 +2150,10 @@ void LLVMVisitor::visit(const PointerValue *x) {
   const auto &fields = x->getFields();
   llvm::Value *var = getVar(x->getVar());
   seqassertn(var, "{} variable not found", *x);
+  B->SetInsertPoint(block);
+
+  if (x->getVar()->isThreadLocal())
+    var = B->CreateThreadLocalAddress(var);
 
   if (fields.empty()) {
     value = var; // note: we don't load the pointer
@@ -3231,6 +3241,8 @@ void LLVMVisitor::visit(const AssignInstr *x) {
   process(x->getRhs());
   if (var != getDummyVoidValue()) {
     B->SetInsertPoint(block);
+    if (x->getLhs()->isThreadLocal())
+      var = B->CreateThreadLocalAddress(var);
     B->CreateStore(value, var);
   }
 }

@@ -22,6 +22,8 @@ const std::string ConstPropPass::KEY = "core-folding-const-prop";
 void ConstPropPass::handle(VarValue *v) {
   auto *M = v->getModule();
   auto *var = v->getVar();
+  if (var->isThreadLocal())
+    return;
   Value *replacement;
 
   if (var->isGlobal()) {

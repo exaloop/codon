@@ -106,9 +106,10 @@ public:
   void defaultVisit(const Node *) override { os << "(unknown_node)"; }
 
   void visit(const Var *v) override {
-    fmt::print(os, FMT_STRING("(var '\"{}\" {} (global {}) (external {}))"),
-               v->referenceString(), makeFormatter(v->getType()), v->isGlobal(),
-               v->isExternal());
+    fmt::print(
+        os, FMT_STRING("(var '\"{}\" {} (global {}) (external {}) (thread-local {}))"),
+        v->referenceString(), makeFormatter(v->getType()), v->isGlobal(),
+        v->isExternal(), v->isThreadLocal());
   }
 
   void visit(const BodiedFunc *v) override {

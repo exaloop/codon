@@ -149,7 +149,7 @@ Module::Module(const std::string &name) : AcceptorExtend(name) {
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
   argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
-                                 /*external=*/false, ".argv");
+                                 /*external=*/false, /*tls=*/false, ".argv");
   argVar->setModule(this);
   argVar->setReplaceable(false);
 }

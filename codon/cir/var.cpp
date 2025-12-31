@@ -9,9 +9,9 @@ namespace ir {
 
 const char Var::NodeId = 0;
 
-Var::Var(types::Type *type, bool global, bool external, std::string name)
+Var::Var(types::Type *type, bool global, bool external, bool tls, std::string name)
     : ReplaceableNodeBase(std::move(name)), type(type), global(global),
-      external(external) {}
+      external(external), tls(tls) {}
 
 int Var::doReplaceUsedType(const std::string &name, types::Type *newType) {
   if (type->getName() == name) {
