@@ -55,7 +55,8 @@ void AwaitLowering::handle(AwaitInstr *v) {
   } else if (auto *genType = isCoroutine(valueType)) {
     auto *var = M->Nr<Var>(genType->getBase(), /*global=*/false);
     cast<BodiedFunc>(getParentFunc())->push_back(var);
-    auto *replacement = M->Nr<ForFlow>(cv.clone(value), M->Nr<SeriesFlow>(), var);
+    auto *replacement =
+        M->Nr<ForFlow>(cv.clone(value), util::series(M->Nr<YieldInstr>()), var);
     v->replaceAll(replacement);
   } else {
     seqassertn(false, "unexpected value type '{}' in await instruction",

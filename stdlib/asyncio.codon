@@ -4,6 +4,7 @@ from threading import Lock
 from time import time as _time, sleep as _sleep
 from sys import stderr as _stderr
 import internal.gc as gc
+import internal.static as static
 
 _FUTURE_STATE_PENDING:   Literal[int] = 0
 _FUTURE_STATE_FINISHED:  Literal[int] = 1
@@ -94,7 +95,7 @@ class InvalidStateError(Exception):
     def __init__(self, message: str = ''):
         super().__init__(message)
 
-class CancelledError(Exception):
+class CancelledError(BaseException):
     def __init__(self, message: str = ''):
         super().__init__(message)
 
@@ -493,6 +494,23 @@ class Future:
 
         self._schedule_callbacks(callbacks, num_callbacks)
 
+    def set_exception(self, exception: BaseException):
+        callbacks = Ptr[WorkItem]()
+        num_callbacks = 0
+
+        with self._lock:
+            if self.done():
+                raise InvalidStateError("Invalid state")
+
+            self._exception = exception
+            self._state = _FUTURE_STATE_EXCEPTION
+
+            callbacks = self._done_callbacks
+            num_callbacks = self._done_callbacks_len
+            self._reset_callbacks()
+
+        self._schedule_callbacks(callbacks, num_callbacks)
+
     def cancelled(self):
         return self._state == _FUTURE_STATE_CANCELLED
 
@@ -500,7 +518,7 @@ class Future:
         return self._state != _FUTURE_STATE_PENDING
 
     def cancel(self, msg: Optional[str] = None):
-        callbacks = Ptr[cobj]()
+        callbacks = Ptr[WorkItem]()
         num_callbacks = 0
 
         with self._lock:
@@ -590,11 +608,11 @@ class Task:
         if not super().cancel(msg):
             return False
 
-        with self._lock:
-            waiting_on = self._waiting_on
-            if waiting_on is not None:
-                waiting_on.cancel(msg)
-                self._waiting_on = None
+        # with self._lock:
+        #     waiting_on = self._waiting_on
+        #     if waiting_on is not None:
+        #         waiting_on.cancel(msg)
+        #         self._waiting_on = None
 
 def _wait_on(future):
     loop = get_running_loop()
@@ -604,9 +622,9 @@ def _wait_on(future):
     work_curr = loop.work_curr
     future._add_done_callback(work_curr)
 
-    if isinstance(future, Task):
-        if work_curr is not None and work_curr.task:
-            future._waiting_on = work_curr.raw_task()
+    # if isinstance(future, Task):
+    #     if work_curr is not None and work_curr.task:
+    #         future._waiting_on = work_curr.raw_task()
 
 def new_event_loop():
     return EventLoop()
@@ -632,6 +650,21 @@ def get_running_loop() -> EventLoop:
 def create_task(coro, name: Optional[str] = None):
     return get_running_loop().create_task(coro, name=name)
 
+def isfuture(obj) -> Literal[bool]:
+    return isinstance(obj, Future)
+
+def iscoroutine(obj) -> Literal[bool]:
+    return isinstance(obj, Coroutine)
+
+def ensure_future(obj, loop: Optional[EventLoop] = None):
+    if isfuture(obj):
+        return obj
+
+    if iscoroutine(obj):
+        return (loop if loop is not None else get_event_loop()).create_task(obj)
+
+    compile_error("An asyncio.Future, a coroutine or an awaitable is required")
+
 def run(coro, debug=None, loop_factory=None):
     if loop_factory is not None:
         loop = loop_factory()
@@ -640,7 +673,7 @@ def run(coro, debug=None, loop_factory=None):
     task = loop.create_task(coro)
     return loop.run_until_complete(task)
 
-def sleep(delay: float, result=None):
+async def sleep(delay: float, result=None):
     loop = get_running_loop()
     future = loop.create_future(type(result))
 
@@ -649,4 +682,4 @@ def sleep(delay: float, result=None):
     else:
         loop.call_later(delay, future.set_result, result)
 
-    return future
+    await future
