@@ -73,6 +73,10 @@ class Task(Static[Future[R]]):
     _waiting_on: Optional[Task[None]]
     R: type
 
+def _raw_task(task: Task) -> Task[None]:
+    # Skip over `result` field
+    return _bitcast(task.__raw__() + gc.sizeof(task.R), Task[None])
+
 @extend
 class WorkItem:
     def __new__(coro: cobj):
@@ -643,11 +647,11 @@ class Task:
         if not super().cancel(msg):
             return False
 
-        # with self._lock:
-        #     waiting_on = self._waiting_on
-        #     if waiting_on is not None:
-        #         waiting_on.cancel(msg)
-        #         self._waiting_on = None
+        with self._lock:
+            waiting_on = self._waiting_on
+            if waiting_on is not None:
+                waiting_on.cancel(msg)
+                self._waiting_on = None
 
 def _wait_on(future):
     loop = get_running_loop()
@@ -657,9 +661,9 @@ def _wait_on(future):
     work_curr = loop.work_curr
     future._add_done_callback(work_curr)
 
-    # if isinstance(future, Task):
-    #     if work_curr is not None and work_curr.task:
-    #         future._waiting_on = work_curr.raw_task()
+    if isinstance(future, Task):
+        if work_curr is not None and work_curr.task:
+            work_curr.raw_task()._waiting_on = _raw_task(future)
 
 def new_event_loop():
     return EventLoop()
