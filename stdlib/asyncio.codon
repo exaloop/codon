@@ -493,6 +493,24 @@ class Future:
 
         self._schedule_callbacks(callbacks, num_callbacks)
 
+    def _set_result_if_not_done(self, result: R):
+        callbacks = Ptr[WorkItem]()
+        num_callbacks = 0
+
+        with self._lock:
+            if self.done():
+                return False
+
+            self._result = result
+            self._state = _FUTURE_STATE_FINISHED
+
+            callbacks = self._done_callbacks
+            num_callbacks = self._done_callbacks_len
+            self._reset_callbacks()
+
+        self._schedule_callbacks(callbacks, num_callbacks)
+        return True
+
     def set_exception(self, exception: BaseException):
         callbacks = Ptr[WorkItem]()
         num_callbacks = 0
@@ -509,6 +527,24 @@ class Future:
             self._reset_callbacks()
 
         self._schedule_callbacks(callbacks, num_callbacks)
+
+    def _set_exception_if_not_done(self, exception: BaseException):
+        callbacks = Ptr[WorkItem]()
+        num_callbacks = 0
+
+        with self._lock:
+            if self.done():
+                return False
+
+            self._exception = exception
+            self._state = _FUTURE_STATE_EXCEPTION
+
+            callbacks = self._done_callbacks
+            num_callbacks = self._done_callbacks_len
+            self._reset_callbacks()
+
+        self._schedule_callbacks(callbacks, num_callbacks)
+        return True
 
     def cancelled(self):
         return self._state == _FUTURE_STATE_CANCELLED
@@ -675,10 +711,79 @@ def run(coro, debug=None, loop_factory=None):
 async def sleep(delay: float, result=None):
     loop = get_running_loop()
     future = loop.create_future(type(result))
-
     if delay <= 0.0:
         loop.call_soon(future.set_result, result)
     else:
         loop.call_later(delay, future.set_result, result)
-
     await future
+
+def gather(*aws):
+    @pure
+    @llvm
+    def zero(T: type) -> T:
+        ret {=T} zeroinitializer
+
+    @pure
+    @derives
+    @llvm
+    def gep(p: Ptr[T], idx: Literal[int], R: type, T: type) -> Ptr[R]:
+        %q = getelementptr {=T}, ptr %p, i32 {=idx}
+        ret ptr %q
+
+    @nocapture
+    @llvm
+    def atomic_decrement(i: Ptr[int]) -> int:
+        %j = atomicrmw sub ptr %i, i64 1 seq_cst
+        ret i64 %j
+
+    @tuple
+    class GatherCallback[T]:
+        payload: T
+
+        def __call__(self, future):
+            outer, results, my_result, remaining, futures = self.payload
+
+            with future._lock:
+                if future._state == _FUTURE_STATE_FINISHED:
+                    my_result[0] = future._result
+                elif future._state == _FUTURE_STATE_EXCEPTION:
+                    outer._set_exception_if_not_done(future._exception)
+                    for f in futures:
+                        if f is not future:
+                            f.cancel()
+                    return
+
+            if atomic_decrement(remaining) == 1:
+                outer._set_result_if_not_done(results[0])
+
+    @tuple
+    class CancelCallback[T]:
+        futures: T
+
+        def __call__(self, future):
+            if future.cancelled():
+                for f in self.futures:
+                    f.cancel()
+
+    loop = get_running_loop()
+    futures = tuple(ensure_future(a, loop=loop) for a in aws)
+    ret_type = type(tuple(zero(f.R) for f in futures))
+    outer = loop.create_future(ret_type)
+    n: Literal[int] = static.len(futures)
+
+    if n == 0:
+        outer.set_result(())
+        return outer
+
+    results = Ptr[ret_type](1)
+    remaining = Ptr[int](1)
+    remaining[0] = n
+
+    for i in static.range(n):
+        my_future = futures[i]
+        my_result = gep(results, i, my_future.R)
+        payload = (outer, results, my_result, remaining, futures)
+        my_future.add_done_callback(GatherCallback(payload))
+
+    outer.add_done_callback(CancelCallback(futures))
+    return outer
