@@ -1205,9 +1205,9 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
       } else {
         // Add parent class generics
         seqassert(parent->getClass(), "not a class: {}", *parent);
-        for (auto &g : parent->getClass()->generics)
-          addGen(g);
         for (auto &g : parent->getClass()->hiddenGenerics)
+          addGen(g);
+        for (auto &g : parent->getClass()->generics)
           addGen(g);
         break;
       }
@@ -1357,6 +1357,11 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
+    for (auto &g : generics->hiddenGenerics)
+      if (g.type &&
+          !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
+        genericCache[g.id] = g.type;
+      }
     for (auto &g : generics->generics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {

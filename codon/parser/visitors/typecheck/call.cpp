@@ -933,7 +933,7 @@ std::vector<TypePtr> TypecheckVisitor::getStaticSuperTypes(ClassType *cls) {
   auto c = getClass(cls);
   auto fields = getClassFields(cls);
   for (auto &name : c->staticParentClasses) {
-    auto parentTyp = instantiateType(extractClassType(name));
+    auto parentTyp = instantiateType(extractClassType(name), cls);
     auto parentFields = getClassFields(parentTyp->getClass());
     for (auto &field : fields) {
       for (auto &parentField : parentFields)

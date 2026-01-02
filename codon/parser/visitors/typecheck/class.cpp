@@ -197,8 +197,8 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           ctx->add(a.getName(), val);
         } else if (!stmt->hasAttribute(Attr::Extend)) {
           std::string varName = a.getName();
-          args.emplace_back(varName, transformType(clean_clone(a.getType()), true),
-                            transform(clone(a.getDefault()), true));
+          auto ta = transformType(clean_clone(a.getType()), true);
+          args.emplace_back(varName, ta, transform(clone(a.getDefault()), true));
           cls.fields.emplace_back(varName, nullptr, canonicalName);
         }
       }
@@ -359,13 +359,15 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
 
     // Debug information
-    LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
-    // for (auto &m : cls.fields)
-    //   LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
-    // for (auto &m : cls.methods)
-    //   LOG_REALIZE("       - method: {}: {}", m.first, m.second);
-    for (auto &m : cls.mro)
-      LOG_REALIZE("       - mro: {:c}", *m);
+    if (!startswith(canonicalName, "Tuple") && false) {
+      LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
+      for (auto &m : cls.fields)
+        LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
+      for (auto &m : cls.methods)
+        LOG_REALIZE("       - method: {}: {}", m.first, m.second);
+      for (auto &m : cls.mro)
+        LOG_REALIZE("       - mro: {:c}", *m);
+    }
   } catch (const exc::ParserException &) {
     if (!stmt->hasAttribute(Attr::Tuple))
       ctx->remove(name);
@@ -436,10 +438,14 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 
     // Add hidden generics
     addClassGenerics(clsTyp);
-    for (auto &g : clsTyp->generics)
+    for (auto &g : clsTyp->generics) {
+      g.type = g.getType()->generalize(ctx->typecheckLevel);
       typ->hiddenGenerics.push_back(g);
-    for (auto &g : clsTyp->hiddenGenerics)
+    }
+    for (auto &g : clsTyp->hiddenGenerics) {
+      g.type = g.getType()->generalize(ctx->typecheckLevel);
       typ->hiddenGenerics.push_back(g);
+    }
 
     // Add class variables
     for (auto &[varName, varCanonicalName] : cachedCls->classVars) {

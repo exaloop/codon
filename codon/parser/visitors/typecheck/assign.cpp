@@ -227,7 +227,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   if (typeExpr &&
       extractType(typeExpr)->is(getMangledClass("std.threading", "ThreadLocal"))) {
     isThreadLocal = true;
-    if (auto ti = cast<IndexExpr>(typeExpr)) {
+    if (auto ti = cast<IndexExpr>(stmt->getTypeExpr())) {
       typeExpr = transformType(ti->getIndex());
     } else {
       typeExpr = nullptr;

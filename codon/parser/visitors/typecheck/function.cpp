@@ -53,6 +53,29 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
     expr->setDone();
 }
 
+/// Typecheck await statements.
+void TypecheckVisitor::visit(AwaitExpr *expr) {
+  if (!ctx->inFunction())
+    E(Error::FN_OUTSIDE_ERROR, expr, "await");
+  auto isAsync = ctx->getBase()->func->isAsync();
+  if (!isAsync)
+    E(Error::FN_OUTSIDE_ERROR, expr, "await");
+
+  expr->expr = transform(expr->getExpr());
+  unify(expr->getType(), expr->getExpr()->getType());
+
+  if (auto c = expr->getExpr()->getType()->getClass()) {
+    if (!c->is(getMangledClass("std.internal.core", "Coroutine")) &&
+        !c->is(getMangledClass("std.asyncio", "Future")) &&
+        !c->is(getMangledClass("std.asyncio", "Task"))) {
+      E(Error::EXPECTED_TYPE, expr, "awaitable");
+    }
+  }
+
+  if (expr->getExpr()->isDone())
+    expr->setDone();
+}
+
 /// Typecheck return statements. Empty return is transformed to `return NoneType()`.
 /// Also partialize functions if they are being returned.
 /// See @c wrapExpr for more details.
@@ -129,28 +152,6 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
 
   if (stmt->getExpr()->isDone())
     stmt->setDone();
-}
-
-/// Typecheck await statements.
-void TypecheckVisitor::visit(AwaitExpr *expr) {
-  if (!ctx->inFunction())
-    E(Error::FN_OUTSIDE_ERROR, expr, "await");
-  auto isAsync = ctx->getBase()->func->isAsync();
-  if (!isAsync)
-    E(Error::FN_OUTSIDE_ERROR, expr, "await");
-
-  expr->expr = transform(expr->getExpr());
-
-  if (auto c = expr->getExpr()->getType()->getClass()) {
-    if (!c->is(getMangledClass("std.internal.core", "Coroutine")) &&
-        !c->is(getMangledClass("std.asyncio", "Future")) &&
-        !c->is(getMangledClass("std.asyncio", "Task"))) {
-      E(Error::EXPECTED_TYPE, expr, "awaitable");
-    }
-  }
-
-  if (expr->getExpr()->isDone())
-    expr->setDone();
 }
 
 /// Transform `yield from` statements.
