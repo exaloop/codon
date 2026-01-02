@@ -43,12 +43,15 @@ void AwaitLowering::handle(AwaitInstr *v) {
     auto *waitOn = M->getOrRealizeFunc("_wait_on", {valueType}, {}, "std.asyncio");
     seqassertn(waitOn, "wait-on function not found");
 
+    // Construct the following:
+    //   if _wait_on(value, future):
+    //      yield
+    //   future.result()
     auto *series = M->Nr<SeriesFlow>();
     auto *futureVar =
         util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
-    series->push_back(util::call(waitOn, {M->Nr<VarValue>(futureVar)}));
-    series->push_back(M->Nr<YieldInstr>());
-
+    series->push_back(M->Nr<IfFlow>(util::call(waitOn, {M->Nr<VarValue>(futureVar)}),
+                                    util::series(M->Nr<YieldInstr>())));
     auto *replacement =
         M->Nr<FlowInstr>(series, util::call(getResult, {M->Nr<VarValue>(futureVar)}));
     v->replaceAll(replacement);
