@@ -24,6 +24,12 @@ class WorkItem:
     task: cobj        # Raw Task pointer, or null
     result_size: int  # Size in bytes of enclosed Future/Task result
 
+    def __new__():
+        return WorkItem(cobj(), cobj(), 0)
+
+    def cancelled(self):
+        return not bool(self.coro)
+
 class WorkNode:
     work: WorkItem
     prev: Optional[WorkNode]
@@ -34,14 +40,15 @@ class WorkNode:
         self.prev = None
         self.next = None
 
-@tuple
+    def cancelled(self):
+        return self.work.cancelled()
+
 class Timer:
     work: WorkItem
     when: float
 
-class LoopCallback:
-    coro: cobj
-    next: Optional[LoopCallback]
+    def cancelled(self):
+        return self.work.cancelled()
 
 class EventLoop:
     lock: Lock
@@ -54,6 +61,37 @@ class EventLoop:
     running: bool
     closed: bool
     stop_flag: bool
+
+@tuple
+class Handle:
+    _node: WorkNode
+    _loop: EventLoop
+
+    def cancel(self):
+        loop = self._loop
+        with loop.lock:
+            if not self.cancelled():
+                loop._cancel(self._node)
+
+    def cancelled(self):
+        return self._node.cancelled()
+
+@tuple
+class TimerHandle:
+    _timer: Timer
+    _loop: EventLoop
+
+    def cancel(self):
+        loop = self._loop
+        with loop.lock:
+            if not self.cancelled():
+                loop._cancel(self._timer)
+
+    def cancelled(self):
+        return self._timer.cancelled()
+
+    def when(self):
+        return self._timer.when
 
 class Future:
     _result: R
@@ -176,26 +214,30 @@ class EventLoop:
     def is_closed(self):
         return self.closed
 
-    def _call_soon(self, work: WorkItem):
+    def _call_soon(self, work: WorkItem, return_handle: Literal[bool] = False):
         with self.lock:
-            self._work_enqueue(work)
+            node = self._work_enqueue(work)
+        if return_handle:
+            return Handle(node, self)
 
     def call_soon(self, callback, *args):
-        self._call_soon(WorkItem(_callback_wrapper(callback, *args)))
-        # TODO: return Handle
+        item = WorkItem(_callback_wrapper(callback, *args))
+        return self._call_soon(item, return_handle=True)
 
     def call_soon_threadsafe(self, callback, *args):
         with self.lock:
             return self.call_soon(callback, *args)
 
-    def _call_later(self, work: WorkItem, delay: float):
-        t = Timer(work, self.time() + delay)
+    def _call_later(self, work: WorkItem, delay: float, return_handle: Literal[bool] = False):
+        timer = Timer(work, self.time() + delay)
         with self.lock:
-            self._timers_push(t)
+            self._timers_push(timer)
+        if return_handle:
+            return TimerHandle(timer, self)
 
     def call_later(self, delay: float, callback, *args):
-        self._call_later(WorkItem(_callback_wrapper(callback, *args)), delay)
-        # TODO: return TimerHandle
+        item = WorkItem(_callback_wrapper(callback, *args))
+        return self._call_later(item, delay, return_handle=True)
 
     def call_at(self, delay: float, callback, *args):
         return self.call_later(delay, callback, *args)
@@ -204,14 +246,19 @@ class EventLoop:
         rtti = _bitcast(Ptr[cobj](exc.__raw__())[1], TypeInfo)
         _stderr.write(f'{rtti.nice_name}: {exc}\n')
 
+    def _enqueue_timers(self, now: float):
+        while self.timers_len > 0 and self.timers[0].when <= now:
+            timer = self._timers_pop()
+            if not timer.cancelled():
+                self._work_enqueue(timer.work)
+
     def _step(self):
         work: Optional[WorkItem] = None
         now = self.time()
         stop = False
 
         with self.lock:
-            while self.timers_len > 0 and self.timers[0].when <= now:
-                self._work_enqueue(self._timers_pop().work)
+            self._enqueue_timers(now)
 
             if not self._work_empty():
                 work = self._work_dequeue()
@@ -292,15 +339,14 @@ class EventLoop:
     def _work_enqueue(self, work: WorkItem):
         node = WorkNode(work)
         tail = self.work_tail
-
         if tail is None:
             self.work_head = node
             self.work_tail = node
-            return
-
-        node.prev = tail
-        tail.next = node
-        self.work_tail = node
+        else:
+            node.prev = tail
+            tail.next = node
+            self.work_tail = node
+        return node
 
     def _work_dequeue(self):
         # caller must ensure non-empty
@@ -312,6 +358,36 @@ class EventLoop:
             head.next.prev = None
             head.next = None
         return head.work
+
+    def _cancel(self, node: WorkNode):
+        node.work = WorkItem()
+
+        if self.work_head is None or self.work_tail is None:
+            return
+
+        head: WorkNode = self.work_head
+        tail: WorkNode = self.work_tail
+
+        if node is head:
+            self.work_head = head.next
+            if head.next is None:
+                self.work_tail = None
+            else:
+                head.next.prev = None
+                head.next = None
+        elif node is tail:
+            self.work_tail = tail.prev
+            if tail.prev is None:
+                self.work_head = None
+            else:
+                tail.prev.next = None
+                tail.prev = None
+        else:
+            node.prev.next = node.next
+            node.next.prev = node.prev
+
+    def _cancel(self, timer: Timer):
+        timer.work = WorkItem()
 
     def _timers_reserve(self, new_cap: int):
         old_cap = self.timers_cap
