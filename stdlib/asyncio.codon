@@ -24,12 +24,6 @@ class WorkItem:
     task: cobj        # Raw Task pointer, or null
     result_size: int  # Size in bytes of enclosed Future/Task result
 
-    def __new__():
-        return WorkItem(cobj(), cobj(), 0)
-
-    def cancelled(self):
-        return not bool(self.coro)
-
 class WorkNode:
     work: WorkItem
     prev: Optional[WorkNode]
@@ -51,16 +45,16 @@ class Timer:
         return self.work.cancelled()
 
 class EventLoop:
-    lock: Lock
-    work_head: Optional[WorkNode]
-    work_tail: Optional[WorkNode]
-    work_curr: Optional[WorkItem]
-    timers: Ptr[Timer]
-    timers_len: int
-    timers_cap: int
-    running: bool
-    closed: bool
-    stop_flag: bool
+    _lock: Lock
+    _work_head: Optional[WorkNode]
+    _work_tail: Optional[WorkNode]
+    _work_curr: Optional[WorkItem]
+    _timers: Ptr[Timer]
+    _timers_len: int
+    _timers_cap: int
+    _running: bool
+    _closed: bool
+    _stop_flag: bool
 
 @tuple
 class Handle:
@@ -69,7 +63,7 @@ class Handle:
 
     def cancel(self):
         loop = self._loop
-        with loop.lock:
+        with loop._lock:
             if not self.cancelled():
                 loop._cancel(self._node)
 
@@ -83,7 +77,7 @@ class TimerHandle:
 
     def cancel(self):
         loop = self._loop
-        with loop.lock:
+        with loop._lock:
             if not self.cancelled():
                 loop._cancel(self._timer)
 
@@ -129,9 +123,15 @@ class WorkItem:
         result_size = gc.sizeof(task.R)
         return WorkItem(coro, data, result_size)
 
+    def __new__():
+        return WorkItem(cobj())
+
     def raw_task(self) -> Task[None]:
         # Skip over `result` field
         return _bitcast(self.task + self.result_size, Task[None])
+
+    def cancelled(self):
+        return not bool(self.coro)
 
 class InvalidStateError(Exception):
     def __init__(self, message: str = ''):
@@ -175,47 +175,50 @@ class _EnterLoop:
 class EventLoop:
     def __init__(self):
         TIMERS_CAP_INIT: Literal[int] = 8  # must be power of 2
-        self.lock = Lock()
-        self.work_head = None
-        self.work_tail = None
-        self.work_curr = None
-        self.timers = Ptr[Timer](TIMERS_CAP_INIT)
-        self.timers_len = 0
-        self.timers_cap = TIMERS_CAP_INIT
-        self.running = False
-        self.stop_flag = False
+        self._lock = Lock()
+        self._work_head = None
+        self._work_tail = None
+        self._work_curr = None
+        self._timers = Ptr[Timer](TIMERS_CAP_INIT)
+        self._timers_len = 0
+        self._timers_cap = TIMERS_CAP_INIT
+        self._running = False
+        self._closed = False
+        self._stop_flag = False
 
     def _ensure_open(self):
-        if self.closed:
+        if self._closed:
             raise RuntimeError("Event loop is closed")
 
     def close(self):
-        if self.closed:
-            return
-        self.stop()
         with self._lock:
-            self.work_head = None
-            self.work_tail = None
-            self.timers = Ptr[Timer]()
-            self.timers_len = 0
-            self.timers_cap = 0
-            self.closed = True
+            if not self._closed:
+                self._work_head = None
+                self._work_tail = None
+                self._work_curr = None
+                self._timers = Ptr[Timer]()
+                self._timers_len = 0
+                self._timers_cap = 0
+                self._running = False
+                self._closed = True
+                self._stop_flag = True
 
     def time(self):
         return _time()
 
     def stop(self):
-        with self.lock:
-            self.stop_flag = True
+        with self._lock:
+            self._stop_flag = True
 
     def is_running(self):
-        return self.running
+        return self._running
 
     def is_closed(self):
-        return self.closed
+        return self._closed
 
     def _call_soon(self, work: WorkItem, return_handle: Literal[bool] = False):
-        with self.lock:
+        with self._lock:
+            self._ensure_open()
             node = self._work_enqueue(work)
         if return_handle:
             return Handle(node, self)
@@ -225,12 +228,13 @@ class EventLoop:
         return self._call_soon(item, return_handle=True)
 
     def call_soon_threadsafe(self, callback, *args):
-        with self.lock:
+        with self._lock:
             return self.call_soon(callback, *args)
 
     def _call_later(self, work: WorkItem, delay: float, return_handle: Literal[bool] = False):
         timer = Timer(work, self.time() + delay)
-        with self.lock:
+        with self._lock:
+            self._ensure_open()
             self._timers_push(timer)
         if return_handle:
             return TimerHandle(timer, self)
@@ -247,7 +251,7 @@ class EventLoop:
         _stderr.write(f'{rtti.nice_name}: {exc}\n')
 
     def _enqueue_timers(self, now: float):
-        while self.timers_len > 0 and self.timers[0].when <= now:
+        while self._timers_len > 0 and self._timers[0].when <= now:
             timer = self._timers_pop()
             if not timer.cancelled():
                 self._work_enqueue(timer.work)
@@ -257,14 +261,14 @@ class EventLoop:
         now = self.time()
         stop = False
 
-        with self.lock:
+        with self._lock:
             self._enqueue_timers(now)
 
             if not self._work_empty():
                 work = self._work_dequeue()
-                self.work_curr = work
+                self._work_curr = work
 
-            stop = self.stop_flag
+            stop = self._stop_flag
 
         if stop:
             return True
@@ -275,6 +279,10 @@ class EventLoop:
 
             try:
                 g.__resume__()
+            except CancelledError:
+                pass
+            except SystemExit:
+                raise
             except BaseException as e:
                 exception = e
 
@@ -298,12 +306,12 @@ class EventLoop:
             elif exception is not None:
                 self._handle_exception(exception)
 
-            self.work_curr = None
+            self._work_curr = None
         else:
             sleep_time = 0.01  # 10ms default
-            with self.lock:
-                if self.timers_len > 0:
-                    dt = self.timers[0].when - now
+            with self._lock:
+                if self._timers_len > 0:
+                    dt = self._timers[0].when - now
                     if dt > 0 and dt < sleep_time:
                         sleep_time = dt
 
@@ -313,47 +321,49 @@ class EventLoop:
         return False
 
     def run_forever(self):
-        self.running = True
-        self.stop_flag = False
+        self._ensure_open()
+        self._running = True
+        self._stop_flag = False
         with _EnterLoop(self):
             while True:
                 stop = self._step()
                 if stop:
                     break
-            self.running = False
+            self._running = False
 
     def run_until_complete(self, future):
-        self.running = True
-        self.stop_flag = False
+        self._ensure_open()
+        self._running = True
+        self._stop_flag = False
         with _EnterLoop(self):
             while not future.done():
                 stop = self._step()
                 if stop:
                     break
-            self.running = False
+            self._running = False
         return future.result()
 
     def _work_empty(self):
-        return self.work_tail is None
+        return self._work_tail is None
 
     def _work_enqueue(self, work: WorkItem):
         node = WorkNode(work)
-        tail = self.work_tail
+        tail = self._work_tail
         if tail is None:
-            self.work_head = node
-            self.work_tail = node
+            self._work_head = node
+            self._work_tail = node
         else:
             node.prev = tail
             tail.next = node
-            self.work_tail = node
+            self._work_tail = node
         return node
 
     def _work_dequeue(self):
         # caller must ensure non-empty
-        head = self.work_head
-        self.work_head = head.next
+        head = self._work_head
+        self._work_head = head.next
         if head.next is None:
-            self.work_tail = None
+            self._work_tail = None
         else:
             head.next.prev = None
             head.next = None
@@ -362,23 +372,23 @@ class EventLoop:
     def _cancel(self, node: WorkNode):
         node.work = WorkItem()
 
-        if self.work_head is None or self.work_tail is None:
+        if self._work_head is None or self._work_tail is None:
             return
 
-        head: WorkNode = self.work_head
-        tail: WorkNode = self.work_tail
+        head: WorkNode = self._work_head
+        tail: WorkNode = self._work_tail
 
         if node is head:
-            self.work_head = head.next
+            self._work_head = head.next
             if head.next is None:
-                self.work_tail = None
+                self._work_tail = None
             else:
                 head.next.prev = None
                 head.next = None
         elif node is tail:
-            self.work_tail = tail.prev
+            self._work_tail = tail.prev
             if tail.prev is None:
-                self.work_head = None
+                self._work_head = None
             else:
                 tail.prev.next = None
                 tail.prev = None
@@ -390,29 +400,29 @@ class EventLoop:
         timer.work = WorkItem()
 
     def _timers_reserve(self, new_cap: int):
-        old_cap = self.timers_cap
+        old_cap = self._timers_cap
         if new_cap <= old_cap:
             return
 
         sz = gc.sizeof(Timer)
-        self.timers = Ptr[Timer](gc.realloc(
-                        self.timers.as_byte(),
+        self._timers = Ptr[Timer](gc.realloc(
+                        self._timers.as_byte(),
                         new_cap * sz, old_cap * sz))
-        self.timers_cap = new_cap
+        self._timers_cap = new_cap
 
     def _timers_swap(self, i: int, j: int):
-        timers = self.timers
+        timers = self._timers
         tmp = timers[i]
         timers[i] = timers[j]
         timers[j] = tmp
 
     def _timers_push(self, t: Timer):
-        if self.timers_len == self.timers_cap:
-            self._timers_reserve(self.timers_cap * 2)
+        if self._timers_len == self._timers_cap:
+            self._timers_reserve(self._timers_cap * 2)
 
-        i = self.timers_len
-        self.timers_len += 1
-        timers = self.timers
+        i = self._timers_len
+        self._timers_len += 1
+        timers = self._timers
         timers[i] = t
 
         # Sift up
@@ -425,10 +435,10 @@ class EventLoop:
 
     def _timers_pop(self):
         # caller must ensure non-empty
-        timers = self.timers
+        timers = self._timers
         out = timers[0]
-        self.timers_len -= 1
-        timers_len = self.timers_len
+        self._timers_len -= 1
+        timers_len = self._timers_len
 
         if timers_len > 0:
             timers[0] = timers[timers_len]
@@ -454,6 +464,7 @@ class EventLoop:
         return Future[T](loop=self)
 
     def create_task(self, coro: Coroutine, name: Optional[str] = None):
+        self._ensure_open()
         task = Task(coro, loop=self, name=name)
         work = WorkItem(task)
         self._call_soon(work)
@@ -738,7 +749,7 @@ def _wait_on(future):
     if loop is not future.get_loop():
         raise RuntimeError("running loop is not the same as task loop")
 
-    work_curr = loop.work_curr
+    work_curr = loop._work_curr
     added = future._add_done_callback(work_curr)
 
     if added:
@@ -750,7 +761,7 @@ def _wait_on(future):
 
 def _cancel_checkpoint():
     loop = get_running_loop()
-    work_curr = loop.work_curr
+    work_curr = loop._work_curr
     if work_curr is not None and work_curr.task:
         task = work_curr.raw_task()
         if task.cancelled():
