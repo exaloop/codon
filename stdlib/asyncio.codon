@@ -420,7 +420,7 @@ class Future:
         if self.done():
             lock.release()
             self._loop._call_soon(work)
-            return
+            return False
 
         n = self._done_callbacks_len
         m = self._done_callbacks_cap
@@ -440,6 +440,7 @@ class Future:
         self._done_callbacks[n] = work
         self._done_callbacks_len += 1
         lock.release()
+        return True
 
     def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         for i in range(num_callbacks):
@@ -659,11 +660,14 @@ def _wait_on(future):
         raise RuntimeError("running loop is not the same as task loop")
 
     work_curr = loop.work_curr
-    future._add_done_callback(work_curr)
+    added = future._add_done_callback(work_curr)
 
-    if isinstance(future, Task):
-        if work_curr is not None and work_curr.task:
-            work_curr.raw_task()._waiting_on = _raw_task(future)
+    if added:
+        if isinstance(future, Task):
+            if work_curr is not None and work_curr.task:
+                work_curr.raw_task()._waiting_on = _raw_task(future)
+
+    return added
 
 def new_event_loop():
     return EventLoop()
