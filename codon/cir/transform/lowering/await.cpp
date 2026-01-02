@@ -42,16 +42,23 @@ void AwaitLowering::handle(AwaitInstr *v) {
     seqassertn(getResult, "get-result method not found");
     auto *waitOn = M->getOrRealizeFunc("_wait_on", {valueType}, {}, "std.asyncio");
     seqassertn(waitOn, "wait-on function not found");
+    auto *cancelCheck =
+        M->getOrRealizeFunc("_cancel_checkpoint", {}, {}, "std.asyncio");
+    seqassertn(cancelCheck, "cancel-checkpoint function not found");
 
     // Construct the following:
+    //   cancel_checkpoint()
     //   if _wait_on(value, future):
     //      yield
+    //      cancel_checkpoint()
     //   future.result()
     auto *series = M->Nr<SeriesFlow>();
     auto *futureVar =
         util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
-    series->push_back(M->Nr<IfFlow>(util::call(waitOn, {M->Nr<VarValue>(futureVar)}),
-                                    util::series(M->Nr<YieldInstr>())));
+    series->push_back(util::call(cancelCheck, {}));
+    series->push_back(
+        M->Nr<IfFlow>(util::call(waitOn, {M->Nr<VarValue>(futureVar)}),
+                      util::series(M->Nr<YieldInstr>(), util::call(cancelCheck, {}))));
     auto *replacement =
         M->Nr<FlowInstr>(series, util::call(getResult, {M->Nr<VarValue>(futureVar)}));
     v->replaceAll(replacement);

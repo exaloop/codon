@@ -711,6 +711,9 @@ class Task:
     def done(self):
         return super().done()
 
+    def cancelled(self):
+        return super().cancelled()
+
     def result(self):
         return super().result()
 
@@ -744,6 +747,14 @@ def _wait_on(future):
                 work_curr.raw_task()._waiting_on = _raw_task(future)
 
     return added
+
+def _cancel_checkpoint():
+    loop = get_running_loop()
+    work_curr = loop.work_curr
+    if work_curr is not None and work_curr.task:
+        task = work_curr.raw_task()
+        if task.cancelled():
+            raise CancelledError(task._cancel_msg)
 
 def new_event_loop():
     return EventLoop()
