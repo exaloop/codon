@@ -62,8 +62,6 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
     E(Error::FN_OUTSIDE_ERROR, expr, "await");
 
   expr->expr = transform(expr->getExpr());
-  unify(expr->getType(), expr->getExpr()->getType());
-
   if (auto c = expr->getExpr()->getType()->getClass()) {
     if (!c->is(getMangledClass("std.internal.core", "Coroutine")) &&
         !c->is(getMangledClass("std.asyncio", "Future")) &&
@@ -71,6 +69,8 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
       E(Error::EXPECTED_TYPE, expr, "awaitable");
     }
   }
+
+  unify(expr->getType(), extractClassGeneric(expr->getExpr()->getType()));
 
   if (expr->getExpr()->isDone())
     expr->setDone();

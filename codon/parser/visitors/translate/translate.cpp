@@ -423,9 +423,8 @@ void TranslateVisitor::visit(PipeExpr *expr) {
 }
 
 void TranslateVisitor::visit(AwaitExpr *expr) {
-  auto type = TypecheckVisitor(ctx->cache->typeCtx)
-                  .extractClassGeneric(expr->getExpr()->getType());
-  result = make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(type));
+  result =
+      make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(StmtExpr *expr) {
