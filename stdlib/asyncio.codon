@@ -876,7 +876,7 @@ def gather(*aws):
     @derives
     @llvm
     def gep(p: Ptr[T], idx: Literal[int], R: type, T: type) -> Ptr[R]:
-        %q = getelementptr {=T}, ptr %p, i32 {=idx}
+        %q = getelementptr {=T}, ptr %p, i32 0, i32 {=idx}
         ret ptr %q
 
     @nocapture
@@ -890,16 +890,13 @@ def gather(*aws):
         payload: T
 
         def __call__(self, future):
-            outer, results, my_result, remaining, futures = self.payload
+            outer, results, my_result, remaining = self.payload
 
             with future._lock:
                 if future._state == _FUTURE_STATE_FINISHED:
                     my_result[0] = future._result
                 elif future._state == _FUTURE_STATE_EXCEPTION:
                     outer._set_exception_if_not_done(future._exception)
-                    for f in futures:
-                        if f is not future:
-                            f.cancel()
                     return
 
             if atomic_decrement(remaining) == 1:
@@ -931,7 +928,7 @@ def gather(*aws):
     for i in static.range(n):
         my_future = futures[i]
         my_result = gep(results, i, my_future.R)
-        payload = (outer, results, my_result, remaining, futures)
+        payload = (outer, results, my_result, remaining)
         my_future.add_done_callback(GatherCallback(payload))
 
     outer.add_done_callback(CancelCallback(futures))
