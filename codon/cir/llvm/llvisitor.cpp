@@ -2053,6 +2053,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     coro.cleanup = llvm::BasicBlock::Create(*context, "coro.cleanup", func);
     coro.suspend = llvm::BasicBlock::Create(*context, "coro.suspend", func);
     coro.exit = llvm::BasicBlock::Create(*context, "coro.exit", func);
+    coro.async = x->isAsync();
     auto *allocBlock = llvm::BasicBlock::Create(*context, "coro.alloc", func);
     auto *freeBlock = llvm::BasicBlock::Create(*context, "coro.free", func);
 
@@ -3432,6 +3433,9 @@ void LLVMVisitor::visit(const ReturnInstr *x) {
   }
   B->SetInsertPoint(block);
   if (coro.exit) {
+    if (coro.async)
+      B->CreateStore(value, coro.promise);
+
     if (auto *tc = getInnermostTryCatch()) {
       auto *excStateReturn = B->getInt8(TryCatchData::State::RETURN);
       B->CreateStore(excStateReturn, tc->excFlag);

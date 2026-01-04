@@ -102,7 +102,8 @@ class Future:
 class Task(Static[Future[R]]):
     _name: str
     _coro: cobj
-    _waiting_on: Optional[Task[None]]
+    _waiting_on_task: Optional[Task[None]]
+    _waiting_on_lock: cobj
     R: type
 
 def _raw_task(task: Task) -> Task[None]:
@@ -223,6 +224,17 @@ class EventLoop:
         if return_handle:
             return Handle(node, self)
 
+    def _call_soon_no_duplicate(self, work: WorkItem):
+        with self._lock:
+            self._ensure_open()
+            node = self._work_head
+            while node is not None:
+                if node.work.coro == work.coro:
+                    return False
+                node = node.next
+            self._work_enqueue(work)
+            return True
+
     def call_soon(self, callback, *args):
         item = WorkItem(_callback_wrapper(callback, *args))
         return self._call_soon(item, return_handle=True)
@@ -282,6 +294,10 @@ class EventLoop:
             except CancelledError:
                 pass
             except SystemExit:
+                self._work_curr = None
+                raise
+            except AssertionError:
+                self._work_curr = None
                 raise
             except BaseException as e:
                 exception = e
@@ -531,7 +547,15 @@ class Future:
 
     def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         for i in range(num_callbacks):
-            self._loop._call_soon(callbacks[i])
+            item = callbacks[i]
+            if item.task:
+                task = item.raw_task()
+                waiting_on_lock = task._waiting_on_lock
+                if waiting_on_lock != self._lock.p:
+                    continue
+                task._waiting_on_task = None
+                task._waiting_on_lock = cobj()
+            self._loop._call_soon(item)
         if callbacks:
             gc.free(callbacks.as_byte())
 
@@ -697,6 +721,8 @@ class Task:
         else:
             self._name = name
         self._coro = coro.__raw__()
+        self._waiting_on_task = None
+        self._waiting_on_lock = cobj()
 
     def get_name(self):
         return self._name
@@ -711,7 +737,7 @@ class Task:
         super().add_done_callback(callback)
 
     def _add_done_callback(self, work: WorkItem):
-        super()._add_done_callback(work)
+        return super()._add_done_callback(work)
 
     def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         super()._schedule_callbacks(callbacks, num_callbacks)
@@ -739,10 +765,14 @@ class Task:
             return False
 
         with self._lock:
-            waiting_on = self._waiting_on
-            if waiting_on is not None:
-                waiting_on.cancel(msg)
-                self._waiting_on = None
+            waiting_on_task = self._waiting_on_task
+            if waiting_on_task is not None:
+                waiting_on_task.cancel(msg)
+                self._waiting_on_task = None
+                self._waiting_on_lock = cobj()
+            self._loop._call_soon_no_duplicate(WorkItem(self))
+
+        return True
 
 def _wait_on(future):
     loop = get_running_loop()
@@ -752,12 +782,17 @@ def _wait_on(future):
     work_curr = loop._work_curr
     added = future._add_done_callback(work_curr)
 
-    if added:
+    if added and work_curr is not None and work_curr.task:
+        task = work_curr.raw_task()
+        task._waiting_on_lock = future._lock.p
         if isinstance(future, Task):
-            if work_curr is not None and work_curr.task:
-                work_curr.raw_task()._waiting_on = _raw_task(future)
+            task._waiting_on_task = _raw_task(future)
 
     return added
+
+def _promise(coro):
+    g = Generator[coro.T](coro.__raw__())
+    return g.__promise__()[0]
 
 def _cancel_checkpoint():
     loop = get_running_loop()
@@ -805,6 +840,14 @@ def ensure_future(obj, loop: Optional[EventLoop] = None):
         return (loop if loop is not None else get_event_loop()).create_task(obj)
 
     compile_error("An asyncio.Future, a coroutine or an awaitable is required")
+
+def current_task() -> Optional[Task[None]]:
+    loop = get_running_loop()
+    work_curr = loop._work_curr
+    if work_curr is not None and work_curr.task:
+        return work_curr.raw_task()
+    else:
+        return None
 
 def run(coro, debug=None, loop_factory=None):
     if loop_factory is not None:

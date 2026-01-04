@@ -63,10 +63,24 @@ void AwaitLowering::handle(AwaitInstr *v) {
         M->Nr<FlowInstr>(series, util::call(getResult, {M->Nr<VarValue>(futureVar)}));
     v->replaceAll(replacement);
   } else if (auto *genType = isCoroutine(valueType)) {
+    auto *promise = M->getOrRealizeFunc("_promise", {valueType}, {}, "std.asyncio");
+    seqassertn(promise, "promise function not found");
+
+    // Construct the following:
+    //   for _ in coro:
+    //       yield
+    //   coro.__promise__()
+    auto *series = M->Nr<SeriesFlow>();
+    auto *coroVar =
+        util::makeVar(cv.clone(value), series, cast<BodiedFunc>(getParentFunc()));
+
     auto *var = M->Nr<Var>(genType->getBase(), /*global=*/false);
     cast<BodiedFunc>(getParentFunc())->push_back(var);
+
+    series->push_back(M->Nr<ForFlow>(M->Nr<VarValue>(coroVar),
+                                     util::series(M->Nr<YieldInstr>()), var));
     auto *replacement =
-        M->Nr<ForFlow>(cv.clone(value), util::series(M->Nr<YieldInstr>()), var);
+        M->Nr<FlowInstr>(series, util::call(promise, {M->Nr<VarValue>(coroVar)}));
     v->replaceAll(replacement);
   } else {
     seqassertn(false, "unexpected value type '{}' in await instruction",

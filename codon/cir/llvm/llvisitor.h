@@ -29,8 +29,13 @@ private:
     llvm::BasicBlock *suspend;
     /// Coroutine exit block
     llvm::BasicBlock *exit;
+    /// True if coroutine represents 'async' function
+    bool async;
 
-    void reset() { promise = handle = cleanup = suspend = exit = nullptr; }
+    void reset() {
+      promise = handle = cleanup = suspend = exit = nullptr;
+      async = false;
+    }
   };
 
   struct NestableData {
