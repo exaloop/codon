@@ -307,16 +307,16 @@ class EventLoop:
                 callbacks = Ptr[WorkItem]()
                 num_callbacks = 0
 
-                if exception is not None:
-                    with task._lock:
-                        callbacks, num_callbacks = \
-                            task._finish_with_exception(exception)
-                elif g.__done__():
-                    with task._lock:
-                        str.memcpy(work.task,
-                                   g.__promise__().as_byte(),
-                                   work.result_size)
-                        callbacks, num_callbacks = task._finish()
+                with task._lock:
+                    if not task.done():
+                        if exception is not None:
+                                callbacks, num_callbacks = \
+                                    task._finish_with_exception(exception)
+                        elif g.__done__():
+                                str.memcpy(work.task,
+                                           g.__promise__().as_byte(),
+                                           work.result_size)
+                                callbacks, num_callbacks = task._finish()
 
                 task._schedule_callbacks(callbacks, num_callbacks)
             elif exception is not None:
