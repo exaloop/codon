@@ -191,6 +191,10 @@ class EventLoop:
         if self._closed:
             raise RuntimeError("Event loop is closed")
 
+    def _ensure_not_running(self):
+        if self._running:
+            raise RuntimeError("This event loop is already running")
+
     def close(self):
         with self._lock:
             if not self._closed:
@@ -338,8 +342,10 @@ class EventLoop:
 
     def run_forever(self):
         self._ensure_open()
+        self._ensure_not_running()
         self._running = True
         self._stop_flag = False
+
         with _EnterLoop(self):
             while True:
                 stop = self._step()
@@ -349,14 +355,17 @@ class EventLoop:
 
     def run_until_complete(self, future):
         self._ensure_open()
+        self._ensure_not_running()
         self._running = True
         self._stop_flag = False
+
         with _EnterLoop(self):
             while not future.done():
                 stop = self._step()
                 if stop:
                     break
             self._running = False
+
         return future.result()
 
     def _work_empty(self):
