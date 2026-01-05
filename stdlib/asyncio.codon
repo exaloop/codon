@@ -516,13 +516,14 @@ class Future:
         self._add_done_callback(
           WorkItem(_future_callback_wrapper(callback, self)))
 
-    def _add_done_callback(self, work: WorkItem):
+    def _add_done_callback(self, work: WorkItem, add_if_done: Literal[bool] = True):
         lock = self._lock
         lock.acquire()
 
         if self.done():
             lock.release()
-            self._loop._call_soon(work)
+            if add_if_done:
+                self._loop._call_soon(work)
             return False
 
         n = self._done_callbacks_len
@@ -736,8 +737,8 @@ class Task:
     def add_done_callback(self, callback):
         super().add_done_callback(callback)
 
-    def _add_done_callback(self, work: WorkItem):
-        return super()._add_done_callback(work)
+    def _add_done_callback(self, work: WorkItem, add_if_done: Literal[bool] = True):
+        return super()._add_done_callback(work, add_if_done)
 
     def _schedule_callbacks(self, callbacks: Ptr[WorkItem], num_callbacks: int):
         super()._schedule_callbacks(callbacks, num_callbacks)
@@ -780,9 +781,12 @@ def _wait_on(future):
         raise RuntimeError("running loop is not the same as task loop")
 
     work_curr = loop._work_curr
-    added = future._add_done_callback(work_curr)
+    if work_curr is None:
+        return False
 
-    if added and work_curr is not None and work_curr.task:
+    added = future._add_done_callback(work_curr, add_if_done=False)
+
+    if added and work_curr.task:
         task = work_curr.raw_task()
         task._waiting_on_lock = future._lock.p
         if isinstance(future, Task):
