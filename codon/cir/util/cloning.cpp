@@ -216,6 +216,7 @@ void CloneVisitor::visit(const ForFlow *v) {
     }
     loop->setSchedule(std::move(schedCloned));
   }
+  loop->setAsync(v->isAsync());
 
   result = loop;
 }

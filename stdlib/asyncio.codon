@@ -807,6 +807,20 @@ def _promise(coro):
     g = Generator[coro.T](coro.__raw__())
     return g.__promise__()[0]
 
+def _done(coro):
+    g = Generator[coro.T](coro.__raw__())
+    return g.__done__()
+
+def _resume(coro):
+    g = Generator[coro.T](coro.__raw__())
+    g.__resume__()
+
+def _curr_task():
+    return get_running_loop()._work_curr.raw_task()
+
+def _is_waiting(task):
+    return bool(task._waiting_on_lock)
+
 def _cancel_checkpoint():
     loop = get_running_loop()
     work_curr = loop._work_curr

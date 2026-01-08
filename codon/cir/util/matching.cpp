@@ -107,7 +107,7 @@ public:
   }
   VISIT(ForFlow);
   void handle(const ForFlow *x, const ForFlow *y) {
-    result = process(x->getIter(), y->getIter()) &&
+    result = (x->isAsync() == y->isAsync()) && process(x->getIter(), y->getIter()) &&
              process(x->getBody(), y->getBody()) && process(x->getVar(), y->getVar());
   }
   VISIT(ImperativeForFlow);

@@ -175,9 +175,9 @@ public:
                makeFormatter(v->getBody()));
   }
   void visit(const ForFlow *v) override {
-    fmt::print(os, FMT_STRING("({}for {}\n{}\n{}\n)"), v->isParallel() ? "par_" : "",
-               makeFormatter(v->getIter()), makeFormatter(v->getVar()),
-               makeFormatter(v->getBody()));
+    fmt::print(os, FMT_STRING("({}{}for {}\n{}\n{}\n)"), v->isParallel() ? "par_" : "",
+               v->isAsync() ? "async_" : "", makeFormatter(v->getIter()),
+               makeFormatter(v->getVar()), makeFormatter(v->getBody()));
   }
   void visit(const ImperativeForFlow *v) override {
     fmt::print(os, FMT_STRING("({}imp_for {}\n{}\n{}\n{}\n{}\n)"),
