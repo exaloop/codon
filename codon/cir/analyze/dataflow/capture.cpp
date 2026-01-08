@@ -363,8 +363,6 @@ struct ExtractVars : public util::ConstVisitor {
 
   void visit(const FlowInstr *v) override { process(v->getValue()); }
 
-  void visit(const CoroHandleInstr *v) override {}
-
   void visit(const dsl::CustomInstr *v) override {
     // TODO
   }

@@ -523,7 +523,6 @@ public:
   void visit(const AwaitInstr *v) override;
   void visit(const ThrowInstr *v) override;
   void visit(const FlowInstr *v) override;
-  void visit(const CoroHandleInstr *v) override;
   void visit(const dsl::CustomInstr *v) override;
 
   template <typename NodeType> void process(const NodeType *v) {

@@ -90,7 +90,6 @@ class YieldInstr;
 class AwaitInstr;
 class ThrowInstr;
 class FlowInstr;
-class CoroHandleInstr;
 
 namespace util {
 
@@ -151,7 +150,6 @@ public:
   VISIT(AwaitInstr);
   VISIT(ThrowInstr);
   VISIT(FlowInstr);
-  VISIT(CoroHandleInstr);
   VISIT(dsl::CustomInstr);
 
   VISIT(types::Type);
@@ -233,7 +231,6 @@ public:
   CONST_VISIT(AwaitInstr);
   CONST_VISIT(ThrowInstr);
   CONST_VISIT(FlowInstr);
-  CONST_VISIT(CoroHandleInstr);
   CONST_VISIT(dsl::CustomInstr);
 
   CONST_VISIT(types::Type);

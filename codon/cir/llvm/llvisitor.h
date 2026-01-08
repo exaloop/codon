@@ -452,7 +452,6 @@ public:
   void visit(const AwaitInstr *) override;
   void visit(const ThrowInstr *) override;
   void visit(const FlowInstr *) override;
-  void visit(const CoroHandleInstr *) override;
   void visit(const dsl::CustomInstr *) override;
 };
 

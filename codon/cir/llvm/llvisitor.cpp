@@ -3528,11 +3528,6 @@ void LLVMVisitor::visit(const FlowInstr *x) {
   process(x->getValue());
 }
 
-void LLVMVisitor::visit(const CoroHandleInstr *x) {
-  seqassertn(coro.handle, "no coroutine handle");
-  value = coro.handle;
-}
-
 void LLVMVisitor::visit(const dsl::CustomInstr *x) {
   B->SetInsertPoint(block);
   value = x->getBuilder()->buildValue(this);

@@ -334,8 +334,6 @@ void CloneVisitor::visit(const FlowInstr *v) {
   result = Nt(v, clone(v->getFlow()), clone(v->getValue()));
 }
 
-void CloneVisitor::visit(const CoroHandleInstr *v) { result = Nt(v); }
-
 void CloneVisitor::visit(const dsl::CustomInstr *v) { result = v->doClone(*this); }
 
 } // namespace util

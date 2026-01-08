@@ -345,8 +345,6 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     set(v, max(process(v->getFlow()), process(v->getValue())));
   }
 
-  void visit(const CoroHandleInstr *v) override { set(v, Status::PURE); }
-
   void visit(const dsl::CustomInstr *v) override {
     set(v, v->getSideEffectStatus(/*local=*/true),
         v->getSideEffectStatus(/*local=*/false));

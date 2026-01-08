@@ -290,7 +290,6 @@ public:
     fmt::print(os, FMT_STRING("(flow {} {})"), makeFormatter(v->getFlow()),
                makeFormatter(v->getValue()));
   }
-  void visit(const CoroHandleInstr *v) override { os << "(coro_handle)"; }
   void visit(const dsl::CustomInstr *v) override { v->doFormat(os); }
 
   void visit(const types::IntType *v) override {

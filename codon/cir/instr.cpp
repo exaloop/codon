@@ -283,12 +283,5 @@ int FlowInstr::doReplaceUsedValue(id_t id, Value *newValue) {
   return replacements;
 }
 
-const char CoroHandleInstr::NodeId = 0;
-
-types::Type *CoroHandleInstr::doGetType() const {
-  auto *M = getModule();
-  return M->getPointerType(M->getByteType());
-}
-
 } // namespace ir
 } // namespace codon
