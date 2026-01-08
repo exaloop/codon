@@ -617,7 +617,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "Ptr") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
-  } else if (t->name == "Generator") {
+  } else if (t->name == "Generator" || t->name == "AsyncGenerator") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
   } else if (t->name == "Coroutine") {
