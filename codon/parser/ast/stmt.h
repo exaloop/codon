@@ -579,12 +579,15 @@ private:
 /// @li: with foo(), bar() as b: pass
 struct WithStmt : public AcceptorExtend<WithStmt, Stmt>, Items<Expr *> {
   WithStmt(std::vector<Expr *> items = {}, std::vector<std::string> vars = {},
-           Stmt *suite = nullptr);
-  WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite);
+           Stmt *suite = nullptr, bool isAsync = false);
+  WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite, bool isAsync);
   WithStmt(const WithStmt &, bool);
 
   const std::vector<std::string> &getVars() const { return vars; }
   SuiteStmt *getSuite() const { return suite; }
+
+  bool isAsync() const { return async; }
+  void setAsync() { async = true; }
 
   ACCEPT(WithStmt, ASTVisitor, items, vars, suite);
 
@@ -592,6 +595,7 @@ private:
   /// empty string if a corresponding item is unnamed
   std::vector<std::string> vars;
   SuiteStmt *suite;
+  bool async;
 };
 
 /// Custom block statement (foo: ...).

@@ -252,7 +252,7 @@ compound_stmt <-
   / function
   / if_stmt
   / class
-  / with_stmt
+  / with_stmt_async
   / for
   / try_stmt
   / while_stmt
@@ -296,9 +296,16 @@ for_stmt <- ('for' SPACE star_targets)
     ac_expr(V0), ac_expr(V1), ac_stmt(V2), VS.size() > 3 ? ac_stmt(VS[3]) : nullptr
   );
 }
+with_stmt_async <-
+  / 'async' SPACE with_stmt {
+    auto s = (WithStmt*)(ac_stmt(V0));
+    s->setAsync();
+    return make_any<Stmt*>(s);
+  }
+  / with_stmt { return V0; }
 with_stmt <- 'with' SPACE (with_parens_item / with_item) _ ':' _ suite {
   return asts(With, LOC,
-    ac<SemVals>(V0).transform<pair<Expr*, Expr*>>(), ac_stmt(V1)
+    ac<SemVals>(V0).transform<pair<Expr*, Expr*>>(), ac_stmt(V1), false
   );
 }
 with_parens_item <- '(' _ tlist(',', as_item) _ ')' { return VS; }

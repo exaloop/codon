@@ -520,13 +520,14 @@ std::string YieldFromStmt::toString(int indent) const {
 }
 
 WithStmt::WithStmt(std::vector<Expr *> items, std::vector<std::string> vars,
-                   Stmt *suite)
+                   Stmt *suite, bool isAsync)
     : AcceptorExtend(), Items(std::move(items)), vars(std::move(vars)),
-      suite(SuiteStmt::wrap(suite)) {
+      suite(SuiteStmt::wrap(suite)), async(isAsync) {
   seqassert(this->items.size() == this->vars.size(), "vector size mismatch");
 }
-WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *suite)
-    : AcceptorExtend(), Items({}), suite(SuiteStmt::wrap(suite)) {
+WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *suite,
+                   bool isAsync)
+    : AcceptorExtend(), Items({}), suite(SuiteStmt::wrap(suite)), async(isAsync) {
   for (auto [i, j] : itemVarPairs) {
     items.push_back(i);
     if (auto je = cast<IdExpr>(j)) {
@@ -538,7 +539,7 @@ WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *su
 }
 WithStmt::WithStmt(const WithStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
-      vars(stmt.vars), suite(ast::clone(stmt.suite, clean)) {}
+      vars(stmt.vars), suite(ast::clone(stmt.suite, clean)), async(stmt.async) {}
 std::string WithStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> as;

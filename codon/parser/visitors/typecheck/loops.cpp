@@ -100,9 +100,6 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 /// Typecheck for statements. Wrap the iterator expression with `__iter__` if needed.
 /// See @c transformHeterogenousTupleFor for iterating heterogenous tuples.
 void TypecheckVisitor::visit(ForStmt *stmt) {
-  if (stmt->isAsync())
-    E(Error::CUSTOM, stmt, "async not yet supported");
-
   stmt->decorator = transformForDecorator(stmt->getDecorator());
 
   std::string breakVar;

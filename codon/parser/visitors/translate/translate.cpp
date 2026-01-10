@@ -596,6 +596,8 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   auto bodySeries = make<ir::SeriesFlow>(stmt, "body");
 
   auto loop = make<ir::ForFlow>(stmt, transform(stmt->getIter()), bodySeries, var);
+  if (stmt->isAsync())
+    loop->setAsync();
   if (os)
     loop->setSchedule(std::move(os));
   ctx->add(TranslateItem::Var, varName, var);

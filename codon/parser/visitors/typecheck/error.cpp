@@ -219,6 +219,9 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 ///        tmp.__exit__()```
 void TypecheckVisitor::visit(WithStmt *stmt) {
   seqassert(!stmt->empty(), "stmt->items is empty");
+
+  bool isAsync = stmt->isAsync();
+
   std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
     std::string var = stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
@@ -226,12 +229,20 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
                             (*stmt)[i]->hasAttribute(Attr::ExprDominated)
                                 ? AssignStmt::UpdateMode::Update
                                 : AssignStmt::UpdateMode::Assign);
+
+    Expr *enter =
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aenter__" : "__enter__"));
+    Expr *exit =
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aexit__" : "__exit__"));
+    if (isAsync) {
+      enter = N<AwaitExpr>(enter);
+      exit = N<AwaitExpr>(exit);
+    }
     content = std::vector<Stmt *>{
-        as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__enter__"))),
+        as, N<ExprStmt>(enter),
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite()),
                    std::vector<ExceptStmt *>{}, nullptr,
-                   N<SuiteStmt>(N<ExprStmt>(
-                       N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__exit__")))))};
+                   N<SuiteStmt>(N<ExprStmt>(exit)))};
   }
   resultStmt = transform(N<SuiteStmt>(content));
 }

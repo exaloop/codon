@@ -70,7 +70,8 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
     }
   }
 
-  unify(expr->getType(), extractClassGeneric(expr->getExpr()->getType()));
+  if (expr->getExpr()->getType()->getClass())
+    unify(expr->getType(), extractClassGeneric(expr->getExpr()->getType()));
 
   if (expr->getExpr()->isDone())
     expr->setDone();
