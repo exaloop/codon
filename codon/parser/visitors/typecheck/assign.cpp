@@ -393,6 +393,21 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
           stmt->getRhs()));
       return;
     }
+    // Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
+    if (!member) {
+      auto u = instantiateUnbound(), v = instantiateUnbound();
+      u->staticKind = LiteralKind::String;
+      if (auto m =
+              findBestMethod(lhsClass, "__setattr__", {lhsClass, u.get(), v.get()})) {
+        if (m->funcGenerics.size() >= 1 &&
+            extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
+          resultStmt = transform(N<ExprStmt>(
+              N<CallExpr>(N<DotExpr>(stmt->getLhs(), "__setattr__"),
+                          N<StringExpr>(stmt->getMember()), stmt->getRhs())));
+          return;
+        }
+      }
+    }
 
     if (!member) {
       E(Error::DOT_NO_ATTR, stmt->getLhs(), lhsClass->prettyString(),

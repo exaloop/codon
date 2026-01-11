@@ -739,3 +739,48 @@ class Foo:
 Foo().goo()
 #! 'Foo' object has no attribute '__name__'
 #! during the realization of goo
+
+
+#%% getattr_setattr
+class A:
+    def __getattr__(self, attr: Literal[str]):
+        if attr == "abc":
+            return 1
+        elif attr == "dxf":
+            return attr + '!'
+        elif attr == "foo":
+            def foo(x: str):
+                return x + "_foo"
+
+            return foo
+        else:
+            return None
+
+    def __setattr__(self, attr: Literal[str], x):
+        print(attr, '<-', x)
+
+a = A()
+print(a.abc)  #: 1
+print(a.dxf)  #: dxf!
+print(a.foo("lala"))  #: lala_foo
+
+a.xyz = 'hello'  #: xyz <- hello
+print(a.xyz)  #: None
+
+class dotdict[V](Static[Dict[str, V]]):
+    def __getattr__(self, attr: Literal[str]) -> Optional[V]:
+        return self.get(attr, None)
+    def __setattr__(self, attr: Literal[str], v: V):
+        print("update!")
+        self[attr] = v
+
+mydict = dotdict({'a': 1})
+mydict.val = 3  #: update!
+print(mydict.val)  #: 3
+print(mydict)  #: {'a': 1, 'val': 3}
+mydict.x = 5  #: update!
+print(mydict.x)  #: 5
+mydict.x = 4  #: update!
+print(mydict.x)  #: 4
+print(mydict)  #: {'x': 4, 'a': 1, 'val': 3}
+print(mydict.foo)  #: None

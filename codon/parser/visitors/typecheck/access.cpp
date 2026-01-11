@@ -608,6 +608,17 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
                              CallArg{"member", N<StringExpr>(expr->getMember())}}));
   }
 
+  // Case: __getattr__ support. Ensure that only Literal[str] arguments are accepted.
+  auto u = instantiateUnbound();
+  u->staticKind = LiteralKind::String;
+  if (auto m = findBestMethod(typ, "__getattr__", {typ, u.get()})) {
+    if (m->funcGenerics.size() == 1 &&
+        extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
+      return transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__getattr__"),
+                                   N<StringExpr>(expr->getMember())));
+    }
+  }
+
   // For debugging purposes:
   findMethod(typ, expr->getMember());
   E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->getMember());

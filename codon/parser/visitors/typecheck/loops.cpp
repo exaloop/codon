@@ -138,9 +138,12 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 
   // Case: iterating a non-generator. Wrap with `__iter__`
-  if (iterType->name != "Generator" && !stmt->isWrapped()) {
+  bool isGenerator =
+      iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
+  if (!isGenerator && !stmt->isWrapped()) {
     stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->getIter(), "__iter__")));
     iterType = extractClassType(stmt->getIter());
+    isGenerator = iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
     stmt->wrapped = true;
   }
 
@@ -166,7 +169,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   stmt->var = transform(stmt->getVar());
 
   // Unify iterator variable and the iterator type
-  if (iterType && iterType->name != "Generator")
+  if (iterType && !isGenerator)
     E(Error::EXPECTED_GENERATOR, stmt->getIter());
   if (iterType)
     unify(stmt->getVar()->getType(), extractClassGeneric(iterType));
