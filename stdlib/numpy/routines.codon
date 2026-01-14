@@ -701,7 +701,7 @@ def fromiter(iterable, dtype: type, count: int = -1):
 
 def frombuffer(buffer: str, dtype: type = float, count: int = -1, offset: int = 0):
     if count < 0:
-        count = len(buffer) // util.sizeof(dtype)
+        count = (len(buffer) - offset) // util.sizeof(dtype)
 
     p = Ptr[dtype](buffer.ptr + offset)
     return ndarray((count,), p)
