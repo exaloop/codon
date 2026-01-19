@@ -671,24 +671,6 @@ private:
 } // namespace codon::ast
 
 namespace tser {
-static void operator<<(codon::ast::Stmt *t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Stmt>;
-  a.save(t != nullptr);
-  if (t) {
-    auto typ = t->dynamicNodeId();
-    auto key = S::_serializers[const_cast<void *>(typ)];
-    a.save(key);
-    S::save(key, t, a);
-  }
-}
-static void operator>>(codon::ast::Stmt *&t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Stmt>;
-  bool empty = a.load<bool>();
-  if (!empty) {
-    std::string key = a.load<std::string>();
-    S::load(key, t, a);
-  } else {
-    t = nullptr;
-  }
-}
+void operator<<(codon::ast::Stmt *t, BinaryArchive &a);
+void operator>>(codon::ast::Stmt *&t, BinaryArchive &a);
 } // namespace tser

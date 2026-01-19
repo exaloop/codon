@@ -628,3 +628,26 @@ ACCEPT_IMPL(AssignMemberStmt, ASTVisitor);
 ACCEPT_IMPL(CommentStmt, ASTVisitor);
 
 } // namespace codon::ast
+
+namespace tser {
+void operator<<(codon::ast::Stmt *t, BinaryArchive &a) {
+  using S = codon::PolymorphicSerializer<BinaryArchive, codon::ast::Stmt>;
+  a.save(t != nullptr);
+  if (t) {
+    auto typ = t->dynamicNodeId();
+    auto key = S::_serializers[const_cast<void *>(typ)];
+    a.save(key);
+    S::save(key, t, a);
+  }
+}
+void operator>>(codon::ast::Stmt *&t, BinaryArchive &a) {
+  using S = codon::PolymorphicSerializer<BinaryArchive, codon::ast::Stmt>;
+  bool empty = a.load<bool>();
+  if (!empty) {
+    std::string key = a.load<std::string>();
+    S::load(key, t, a);
+  } else {
+    t = nullptr;
+  }
+}
+} // namespace tser

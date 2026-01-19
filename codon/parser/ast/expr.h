@@ -673,25 +673,6 @@ struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
 };
 
 namespace tser {
-using Archive = BinaryArchive;
-static void operator<<(codon::ast::Expr *t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
-  a.save(t != nullptr);
-  if (t) {
-    void *typ = const_cast<void *>(t->dynamicNodeId());
-    auto key = S::_serializers[typ];
-    a.save(key);
-    S::save(key, t, a);
-  }
-}
-static void operator>>(codon::ast::Expr *&t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
-  bool empty = a.load<bool>();
-  if (!empty) {
-    const auto key = a.load<std::string>();
-    S::load(key, t, a);
-  } else {
-    t = nullptr;
-  }
-}
+void operator<<(codon::ast::Expr *t, BinaryArchive &a);
+void operator>>(codon::ast::Expr *&t, BinaryArchive &a);
 } // namespace tser

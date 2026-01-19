@@ -41,8 +41,9 @@ struct ASTNode : public ir::Node {
   virtual ASTNode *clone(bool clean) const = 0;
   ASTNode *clone() const { return clone(false); }
 
+  using ir::Node::accept;
   /// Accept an AST visitor.
-  virtual void accept(ASTVisitor &visitor) = 0;
+  virtual void accept(ASTVisitor &visitor) {}
 
   /// Allow pretty-printing to C++ streams.
   friend std::ostream &operator<<(std::ostream &out, const ASTNode &expr) {
