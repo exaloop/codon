@@ -375,6 +375,9 @@ class int:
     def popcnt(self) -> int:
         return Int[64](self).popcnt()
 
+    def bit_length(self) -> int:
+        return Int[64](self).bit_length()
+
     @nocapture
     @llvm
     def __atomic_xchg__(d: Ptr[int], b: int) -> None:

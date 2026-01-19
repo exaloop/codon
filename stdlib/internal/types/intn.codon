@@ -320,6 +320,19 @@ class Int:
     def popcnt(self) -> int:
         return int(self._popcnt())
 
+    @pure
+    @llvm
+    def _ctlz(self) -> Int[N]:
+        declare i{=N} @llvm.ctlz.i{=N}(i{=N}, i1)
+        %0 = call i{=N} @llvm.ctlz.i{=N}(i{=N} %self, i1 true)
+        ret i{=N} %0
+
+    def bit_length(self) -> int:
+        if not self:
+            return 0
+        else:
+            return N - int(self.__abs__()._ctlz())
+
     def len() -> int:
         return N
 
@@ -603,6 +616,19 @@ class UInt:
 
     def popcnt(self) -> int:
         return int(Int[N](self)._popcnt())
+
+    @pure
+    @llvm
+    def _ctlz(self) -> UInt[N]:
+        declare i{=N} @llvm.ctlz.i{=N}(i{=N}, i1)
+        %0 = call i{=N} @llvm.ctlz.i{=N}(i{=N} %self, i1 true)
+        ret i{=N} %0
+
+    def bit_length(self) -> int:
+        if not self:
+            return 0
+        else:
+            return N - int(self._ctlz())
 
     def len() -> int:
         return N
