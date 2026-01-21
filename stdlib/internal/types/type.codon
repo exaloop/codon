@@ -54,7 +54,7 @@ class type:
 
         sz = sizeof(tuple(T))
         obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
-        register_finalizer(obj)
+        register_finalizer(type._force_cast(obj, T))
         if static.has_rtti(T):
             obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[byte])
         return type._force_cast(obj, T)

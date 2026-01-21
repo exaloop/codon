@@ -90,7 +90,9 @@ class int:
             raise ZeroDivisionError("float floor division by zero")
         return _divmod_float_float(float(self), other)[0]
 
-    def __floordiv__(self, other: int):
+    def __floordiv__(self, other: int) -> int:
+        # Need a return type signature here because ZeroDivisionError
+        # realizes the same __floordiv__ later on
         if other == 0:
             raise ZeroDivisionError("integer division or modulo by zero")
         return _divmod_int_int(self, other)[0]

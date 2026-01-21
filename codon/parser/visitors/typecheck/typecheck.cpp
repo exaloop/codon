@@ -1195,7 +1195,6 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
 
   if (func && typ->getFunc()) {
     auto tf = typ->getFunc();
-    // LOG("// adding {}", tf->debugString(2));
     for (auto parent = tf->funcParent; parent;) {
       if (auto f = parent->getFunc()) {
         // Add parent function generics

@@ -143,8 +143,10 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   if (!isGenerator && !stmt->isWrapped()) {
     stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->getIter(), "__iter__")));
     iterType = extractClassType(stmt->getIter());
-    isGenerator = iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
     stmt->wrapped = true;
+    if (!iterType)
+      return;
+    isGenerator = iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
   }
 
   ctx->getBase()->loops.emplace_back(breakVar);
