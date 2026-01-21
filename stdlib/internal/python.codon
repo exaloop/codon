@@ -1533,19 +1533,6 @@ __pyenv__: Optional[pyobj] = None
 def _____(): __pyenv__  # make it global!
 
 
-import internal.static as _S
-
-
-class _PyWrapError(PyError):
-    def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
-        super().__init__("_PyWrapError", message)
-        self.pytype = pytype
-
-    @overload
-    def __init__(self, e: PyError):
-        self.__init__("_PyWrapError", e.message, e.pytype)
-
-
 class _PyWrap:
     def _dispatch_error(F: Literal[str], args):
         if isinstance(args, cobj):
