@@ -192,6 +192,8 @@ struct Cache {
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
 
+    int jitCell = 0;
+
     bool hasRTTI() const { return rtti; }
   };
   /// Class lookup table that maps a canonical class identifier to the corresponding

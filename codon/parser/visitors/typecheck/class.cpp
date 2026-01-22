@@ -161,11 +161,10 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     // Collect classes (and their fields) that are to be statically inherited
     std::vector<TypePtr> staticBaseASTs;
     if (!stmt->hasAttribute(Attr::Extend)) {
+      // Handle static inheritance
       staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt,
                                         canonicalName, nullptr, typ);
-      if (ctx->cache->isJit && !stmt->baseClasses.empty())
-        E(Error::CUSTOM, stmt->baseClasses[0],
-          "inheritance is not yet supported in JIT mode");
+      // Handle RTTI inheritance
       parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, transformedTypeAst,
                        typ);
     }
@@ -256,6 +255,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       for (auto &b : staticBaseASTs)
         cls.staticParentClasses.emplace_back(b->getClass()->name);
       cls.module = ctx->moduleName.path;
+      cls.jitCell = ctx->cache->jitCell;
 
       // Codegen default magic methods
       // __new__ must be the first
@@ -433,8 +433,14 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "internal", "other");
 
     // Mark parent classes as polymorphic as well.
-    if (typeAst)
+    if (typeAst && !cachedCls->hasRTTI()) {
+      if (ctx->cache->isJit && cachedCls->jitCell != ctx->cache->jitCell)
+        E(Error::CUSTOM, cls,
+          "cannot inherit from a non-RTTI class defined in previous cell '{}' "
+          "in JIT mode",
+          getUnmangledName(clsTyp->name));
       cachedCls->rtti = true;
+    }
 
     // Add hidden generics
     addClassGenerics(clsTyp);
