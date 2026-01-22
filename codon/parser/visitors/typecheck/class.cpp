@@ -493,7 +493,8 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     });
   }
   if (typeAst) {
-    if (!asts.empty()) {
+    if (!asts.empty() ||
+        typ->name == getMangledClass("std.internal.builtin", "object")) {
       mro.push_back(asts);
       cls->rtti = true;
     }

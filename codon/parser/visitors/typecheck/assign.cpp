@@ -324,6 +324,9 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
                   (val->isGlobal() && val->getModule() != "");
   if (isGlobal && val->isVar()) {
     registerGlobal(canonical);
+    if (ctx->cache->isJit) {
+      getImport(STDLIB_IMPORT)->ctx->addToplevel(getUnmangledName(val->getName()), val);
+    }
   }
 
   return assign;
