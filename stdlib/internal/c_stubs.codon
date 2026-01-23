@@ -629,6 +629,16 @@ def fflush(a: cobj) -> None:
 def getline(a: Ptr[cobj], b: Ptr[int], c: cobj) -> int:
     pass
 
+@nocapture
+@C
+def popen(a: cobj, b: cobj) -> cobj:
+    pass
+
+@nocapture
+@C
+def pclose(a: cobj) -> int:
+    pass
+
 # <stdlib.h>
 from C import exit(int)
 
