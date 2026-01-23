@@ -404,7 +404,7 @@ def open(path, mode: str = "r") -> File:
 def gzopen(path: str, mode: str = "r") -> gzFile:
     return gzFile(path, mode)
 
-def bzopen(path: str, mode: str = "r") -> gzFile:
+def bzopen(path: str, mode: str = "r") -> bzFile:
     return bzFile(path, mode)
 
 def is_binary(path: str) -> bool:
