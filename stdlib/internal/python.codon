@@ -1992,6 +1992,8 @@ class _PyWrap:
         return cobj()
 
     def wrap_to_py(o) -> cobj:
+        from internal.gc import alloc_atomic_uncollectable
+
         O = type(o)
         P = PyWrapper[O]
         sz = sizeof(P)
