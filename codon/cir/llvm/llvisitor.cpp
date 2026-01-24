@@ -657,13 +657,13 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
 
   auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
   auto *excHeader =
-      llvm::StructType::get(strType, strType, strType, strType, B->getInt64Ty(),
-                            B->getInt64Ty(), B->getPtrTy());
+      llvm::StructType::get(strType, strType, strType, B->getInt64Ty(), B->getInt64Ty(),
+                            B->getPtrTy(), B->getPtrTy());
   auto *header = B->CreateLoad(excHeader, B->CreateLoad(B->getPtrTy(), loadedExc));
-  auto *msg = B->CreateExtractValue(header, 1);
+  auto *msg = B->CreateExtractValue(header, 0);
   auto *msgLen = B->CreateExtractValue(msg, 0);
   auto *msgPtr = B->CreateExtractValue(msg, 1);
-  auto *pyType = B->CreateExtractValue(header, 6);
+  auto *pyType = B->CreateExtractValue(header, 5);
 
   // copy msg into new null-terminated buffer
   auto alloc = makeAllocFunc(/*atomic=*/true);
