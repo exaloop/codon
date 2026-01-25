@@ -996,7 +996,11 @@ def _apply3(func, obj: cobj, other1, other2, *args):
         other1_py = other1.__to_py__()
         other2_py = other2.__to_py__()
         try:
-            return pyobj(pyobj.exc_wrap(func(obj, other1_py, other2_py, *args)), steal=True)
+            ret = pyobj.exc_wrap(func(obj, other1_py, other2_py, *args))
+            if isinstance(ret, int):
+                return
+            else:
+                return pyobj(ret, steal=True)
         finally:
             pyobj.decref(other1_py)
             pyobj.decref(other2_py)
@@ -1089,13 +1093,13 @@ class pyobj:
         return _rapply2(PyNumber_Power, self.p, other, Py_None)
 
     def __neg__(self):
-        return _rapply1(PyNumber_Negative, self.p)
+        return _apply1(PyNumber_Negative, self.p)
 
     def __pos__(self):
-        return _rapply1(PyNumber_Positive, self.p)
+        return _apply1(PyNumber_Positive, self.p)
 
     def __invert__(self):
-        return _rapply1(PyNumber_Invert, self.p)
+        return _apply1(PyNumber_Invert, self.p)
 
     def __lshift__(self, other):
         return _apply2(PyNumber_Lshift, self.p, other)
