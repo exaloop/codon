@@ -51,6 +51,10 @@ class EnvMap:
         self._init_if_needed()
         return self._map.items()
 
+    def setdefault(self, key: str, default: str = "") -> str:
+        self._init_if_needed()
+        return self._map.setdefault(key, default)
+
 environ = EnvMap()
 
 def getenv(key: str, default: str = "") -> str:
