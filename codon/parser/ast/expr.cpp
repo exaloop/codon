@@ -489,9 +489,10 @@ YieldExpr::YieldExpr() : AcceptorExtend() {}
 YieldExpr::YieldExpr(const YieldExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string YieldExpr::toString(int) const { return "yield-expr"; }
 
-AwaitExpr::AwaitExpr(Expr *expr) : AcceptorExtend(), expr(expr) {}
-AwaitExpr::AwaitExpr(const AwaitExpr &stmt, bool clean)
-    : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
+AwaitExpr::AwaitExpr(Expr *expr) : AcceptorExtend(), expr(expr), transformed(false) {}
+AwaitExpr::AwaitExpr(const AwaitExpr &expr, bool clean)
+    : AcceptorExtend(expr, clean), expr(ast::clone(expr.expr, clean)),
+      transformed(expr.transformed) {}
 std::string AwaitExpr::toString(int indent) const {
   return wrapType(fmt::format("await {}", expr->toString(indent)));
 }

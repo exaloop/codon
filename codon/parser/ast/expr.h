@@ -576,6 +576,10 @@ struct AwaitExpr : public AcceptorExtend<AwaitExpr, Expr> {
 
 private:
   Expr *expr;
+
+  // True if a statement was transformed during type-checking stage
+  // (to avoid setting up __await__ multiple times).
+  bool transformed;
 };
 
 /// Assignment (walrus) expression (var := expr).

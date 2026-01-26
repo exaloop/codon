@@ -62,11 +62,24 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
     E(Error::FN_OUTSIDE_ERROR, expr, "await");
 
   expr->expr = transform(expr->getExpr());
-  if (auto c = expr->getExpr()->getType()->getClass()) {
-    if (!c->is(getMangledClass("std.internal.core", "Coroutine")) &&
-        !c->is(getMangledClass("std.asyncio", "Future")) &&
-        !c->is(getMangledClass("std.asyncio", "Task"))) {
-      E(Error::EXPECTED_TYPE, expr, "awaitable");
+  if (!expr->transformed) {
+    if (auto c = expr->getExpr()->getType()->getClass()) {
+      bool isCoroutine = c->is(getMangledClass("std.internal.core", "Coroutine")) ||
+                         c->is(getMangledClass("std.asyncio", "Future")) ||
+                         c->is(getMangledClass("std.asyncio", "Task"));
+      if (!isCoroutine) {
+        if (!findMethod(c, "__await__").empty()) {
+          auto e = transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__await__")));
+          if (!e->getType()->is(getMangledClass("std.internal.core", "Generator"))) {
+            E(Error::EXPECTED_TYPE, expr, "awaitable");
+          } else {
+            expr->expr = e;
+            expr->transformed = true;
+          }
+        } else {
+          E(Error::EXPECTED_TYPE, expr, "awaitable");
+        }
+      }
     }
   }
 
@@ -95,6 +108,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
   } else {
+    if (ctx->getBase()->func->hasAttribute(Attr::IsGenerator))
+      E(Error::CUSTOM, stmt, "returning values from generators not yet supported");
     if (!stmt->expr)
       stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
     stmt->expr = transform(stmt->getExpr());
