@@ -92,6 +92,8 @@ PyNumber_Index = Function[[cobj], cobj](cobj())
 
 # object
 PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_CallNoArgs = Function[[cobj], cobj](cobj())
+PyObject_CallOneArg = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetIter = Function[[cobj], cobj](cobj())
@@ -279,6 +281,8 @@ def init_handles_dlopen(py_handle: cobj):
     global PyNumber_Float
     global PyNumber_Index
     global PyObject_Call
+    global PyObject_CallNoArgs
+    global PyObject_CallOneArg
     global PyObject_GetAttr
     global PyObject_GetAttrString
     global PyObject_GetIter
@@ -415,6 +419,8 @@ def init_handles_dlopen(py_handle: cobj):
     PyNumber_Float = dlsym(py_handle, "PyNumber_Float")
     PyNumber_Index = dlsym(py_handle, "PyNumber_Index")
     PyObject_Call = dlsym(py_handle, "PyObject_Call")
+    PyObject_CallNoArgs = dlsym(py_handle, "PyObject_CallNoArgs")
+    PyObject_CallOneArg = dlsym(py_handle, "PyObject_CallOneArg")
     PyObject_GetAttr = dlsym(py_handle, "PyObject_GetAttr")
     PyObject_GetAttrString = dlsym(py_handle, "PyObject_GetAttrString")
     PyObject_GetIter = dlsym(py_handle, "PyObject_GetIter")
@@ -552,6 +558,8 @@ def init_handles_static():
     from C import PyNumber_Float(cobj) -> cobj as _PyNumber_Float
     from C import PyNumber_Index(cobj) -> cobj as _PyNumber_Index
     from C import PyObject_Call(cobj, cobj, cobj) -> cobj as _PyObject_Call
+    from C import PyObject_CallNoArgs(cobj) -> cobj as _PyObject_CallNoArgs
+    from C import PyObject_CallOneArg(cobj, cobj) -> cobj as _PyObject_CallOneArg
     from C import PyObject_GetAttr(cobj, cobj) -> cobj as _PyObject_GetAttr
     from C import PyObject_GetAttrString(cobj, cobj) -> cobj as _PyObject_GetAttrString
     from C import PyObject_GetIter(cobj) -> cobj as _PyObject_GetIter
@@ -688,6 +696,8 @@ def init_handles_static():
     global PyNumber_Float
     global PyNumber_Index
     global PyObject_Call
+    global PyObject_CallNoArgs
+    global PyObject_CallOneArg
     global PyObject_GetAttr
     global PyObject_GetAttrString
     global PyObject_GetIter
@@ -824,6 +834,8 @@ def init_handles_static():
     PyNumber_Float = _PyNumber_Float
     PyNumber_Index = _PyNumber_Index
     PyObject_Call = _PyObject_Call
+    PyObject_CallNoArgs = _PyObject_CallNoArgs
+    PyObject_CallOneArg = _PyObject_CallOneArg
     PyObject_GetAttr = _PyObject_GetAttr
     PyObject_GetAttrString = _PyObject_GetAttrString
     PyObject_GetIter = _PyObject_GetIter
@@ -1291,18 +1303,29 @@ class pyobj:
         Py_DecRef(ptr)
 
     def __call__(self, *args, **kwargs):
-        args_py = args.__to_py__()
-        kws_py = cobj()
-        if static.len(kwargs.args) > 0:
-            keys = kwargs.__keys__()
-            values = [pyobj(v.__to_py__(), steal=True) for v in kwargs.args]
-            kws_py = {keys[i]: values[i] for i in range(len(keys))}.__to_py__()
-        try:
-            return pyobj(pyobj.exc_wrap(PyObject_Call(self.p, args_py, kws_py)), steal=True)
-        finally:
-            pyobj.decref(args_py)
+        if static.len(args) == 0 and static.len(kwargs.args) == 0:
+            return pyobj(pyobj.exc_wrap(PyObject_CallNoArgs(self.p)), steal=True)
+        elif static.len(args) == 1 and static.len(kwargs.args) == 0:
+            arg_py = args[0].__to_py__()
+            try:
+                return pyobj(pyobj.exc_wrap(PyObject_CallOneArg(self.p, arg_py)), steal=True)
+            finally:
+                pyobj.decref(arg_py)
+        else:
+            args_py = args.__to_py__()
+            kws_py = cobj()
+
             if static.len(kwargs.args) > 0:
-                pyobj.decref(kws_py)
+                keys = kwargs.__keys__()
+                values = [pyobj(v.__to_py__(), steal=True) for v in kwargs.args]
+                kws_py = {keys[i]: values[i] for i in range(len(keys))}.__to_py__()
+
+            try:
+                return pyobj(pyobj.exc_wrap(PyObject_Call(self.p, args_py, kws_py)), steal=True)
+            finally:
+                pyobj.decref(args_py)
+                if static.len(kwargs.args) > 0:
+                    pyobj.decref(kws_py)
 
     def _tuple_new(length: int):
         return pyobj.exc_wrap(PyTuple_New(length))

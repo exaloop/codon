@@ -13,3 +13,9 @@ def print_args_var(a,b,c=1,*args,**kwargs):
 def throw_exc():
     raise ValueError('foo')
     return 0
+
+def test_call_no_args():
+    return 42
+
+def test_call_one_arg(x):
+    return x**2

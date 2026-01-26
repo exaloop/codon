@@ -198,3 +198,11 @@ def test_ops():
     assert bool(a[0] - 1) == False
 
 test_ops()
+
+@test
+def test_calls():
+    from python import mymodule
+    assert mymodule.test_call_no_args() == 42
+    assert mymodule.test_call_one_arg(-2) == 4
+
+test_calls()
