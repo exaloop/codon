@@ -712,6 +712,11 @@ class Future:
             else:
                 return None
 
+    def __await__(self):
+        async def wait_on(x):
+            await x
+        return wait_on(self).__await__()
+
 _default_task_name_counter = 1
 def _default_task_name():
     global _default_task_name_counter
@@ -783,6 +788,11 @@ class Task:
             self._loop._call_soon_no_duplicate(WorkItem(self))
 
         return True
+
+    def __await__(self):
+        async def wait_on(x):
+            await x
+        return wait_on(self).__await__()
 
 def _wait_on(future):
     loop = get_running_loop()

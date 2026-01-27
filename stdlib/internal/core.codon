@@ -402,6 +402,12 @@ class Coroutine[T]:
     def __raw__(self) -> Ptr[byte]:
         ret ptr %self
 
+    @pure
+    @derives
+    @llvm
+    def __await__(self) -> Generator[T]:
+        ret ptr %self
+
 @tuple
 @__internal__
 class AsyncGenerator[T]:
