@@ -71,12 +71,14 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
         if (!findMethod(c, "__await__").empty()) {
           auto e = transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__await__")));
           if (!e->getType()->is(getMangledClass("std.internal.core", "Generator"))) {
+            LOG("bad type: {}", e->getType()->debugString(2));
             E(Error::EXPECTED_TYPE, expr, "awaitable");
           } else {
             expr->expr = e;
             expr->transformed = true;
           }
         } else {
+          LOG("no method");
           E(Error::EXPECTED_TYPE, expr, "awaitable");
         }
       }
