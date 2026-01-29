@@ -517,11 +517,14 @@ private:
   Value *value;
   /// the type of the result
   types::Type *type;
+  /// true if argument is a generator (e.g. custom __await__)
+  bool generator;
 
 public:
   static const char NodeId;
 
-  explicit AwaitInstr(Value *value, types::Type *type, std::string name = "")
+  explicit AwaitInstr(Value *value, types::Type *type, bool generator = false,
+                      std::string name = "")
       : AcceptorExtend(std::move(name)), value(value), type(type) {}
 
   /// @return the value
@@ -535,6 +538,12 @@ public:
   /// Sets the type.
   /// @param t the new type
   void setType(types::Type *t) { type = t; }
+
+  /// @return whether argument is a generator
+  bool isGenerator() const { return generator; }
+  /// Sets generator status
+  /// @param g the new value
+  void setGenerator(bool g = true) { generator = g; }
 
 protected:
   types::Type *doGetType() const override { return type; }

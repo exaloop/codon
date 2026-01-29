@@ -220,8 +220,9 @@ public:
   }
   VISIT(AwaitInstr);
   void handle(const AwaitInstr *x, const AwaitInstr *y) {
-    result =
-        process(x->getType(), y->getType()) && process(x->getValue(), y->getValue());
+    result = process(x->getType(), y->getType()) &&
+             process(x->getValue(), y->getValue()) &&
+             (x->isGenerator() == y->isGenerator());
   }
   VISIT(ThrowInstr);
   void handle(const ThrowInstr *x, const ThrowInstr *y) {

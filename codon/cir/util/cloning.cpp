@@ -326,7 +326,7 @@ void CloneVisitor::visit(const YieldInstr *v) {
 }
 
 void CloneVisitor::visit(const AwaitInstr *v) {
-  result = Nt(v, clone(v->getValue()), v->getType());
+  result = Nt(v, clone(v->getValue()), v->getType(), v->isGenerator());
 }
 
 void CloneVisitor::visit(const ThrowInstr *v) { result = Nt(v, clone(v->getValue())); }
