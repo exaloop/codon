@@ -424,7 +424,9 @@ void TranslateVisitor::visit(PipeExpr *expr) {
 
 void TranslateVisitor::visit(AwaitExpr *expr) {
   result =
-      make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(expr->getType()));
+      make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(expr->getType()),
+                           expr->getExpr()->getType()->is(
+                               getMangledClass("std.internal.core", "Generator")));
 }
 
 void TranslateVisitor::visit(StmtExpr *expr) {
