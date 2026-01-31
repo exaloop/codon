@@ -232,11 +232,11 @@ class Dict:
             i += 1
 
     def keys(self) -> Generator[K]:
-        for k, v in self.items():
+        for k, _ in self.items():
             yield k
 
     def values(self) -> Generator[V]:
-        for k, v in self.items():
+        for _, v in self.items():
             yield v
 
     def copy(self):

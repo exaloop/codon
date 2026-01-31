@@ -234,7 +234,7 @@ def echo(x):
 
 def reversed(x):
     if hasattr(x, "__reversed__"):
-        return x.__reversed__()
+        yield from x.__reversed__()
     else:
         i = x.__len__() - 1
         while i >= 0:
