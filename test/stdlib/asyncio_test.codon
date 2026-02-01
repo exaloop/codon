@@ -561,6 +561,38 @@ def test_no_missed_wakeup_when_future_completes_race():
     loop.create_task(setter())
     loop.run_forever()
 
+@test
+def test_custom_await():
+
+    class MyFuture:
+        fut: asyncio.Future[int]
+        res: int
+
+        def __init__(self, res: int):
+            self.fut = asyncio.get_running_loop().create_future(int)
+            self.res = res
+
+        def __await__(self):
+            return self.fut.__await__()
+
+        def resolve(self):
+            self.fut.set_result(self.res)
+
+    class MyAwaitable:
+        def __await__(self):
+            yield
+            yield
+
+    @test
+    async def main():
+        fut = MyFuture(42)
+        loop = asyncio.get_running_loop()
+        loop.call_later(1, fut.resolve)
+        assert await fut == 42
+        await MyAwaitable()
+
+    asyncio.run(main())
+
 
 test_call_soon_fifo_order()
 test_loop_stop_from_callback()
@@ -587,3 +619,4 @@ test_gather_cancel_outer_cancels_children()
 test_await_task_is_scheduled()
 test_await_future_does_not_schedule_producer()
 test_no_missed_wakeup_when_future_completes_race()
+test_custom_await()

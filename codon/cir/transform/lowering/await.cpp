@@ -76,9 +76,16 @@ void AwaitLowering::handle(AwaitInstr *v) {
 
     auto *var = M->Nr<Var>(genType->getBase(), /*global=*/false);
     cast<BodiedFunc>(getParentFunc())->push_back(var);
+    SeriesFlow *body;
+    if (v->isGenerator()) {
+      auto *requeue = M->getOrRealizeFunc("_requeue", {}, {}, "std.asyncio");
+      seqassertn(requeue, "requeue function not found");
+      body = util::series(util::call(requeue, {}), M->Nr<YieldInstr>());
+    } else {
+      body = util::series(M->Nr<YieldInstr>());
+    }
 
-    series->push_back(M->Nr<ForFlow>(M->Nr<VarValue>(coroVar),
-                                     util::series(M->Nr<YieldInstr>()), var));
+    series->push_back(M->Nr<ForFlow>(M->Nr<VarValue>(coroVar), body, var));
     auto *replacement =
         M->Nr<FlowInstr>(series, util::call(promise, {M->Nr<VarValue>(coroVar)}));
     v->replaceAll(replacement);

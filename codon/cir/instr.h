@@ -525,7 +525,8 @@ public:
 
   explicit AwaitInstr(Value *value, types::Type *type, bool generator = false,
                       std::string name = "")
-      : AcceptorExtend(std::move(name)), value(value), type(type) {}
+      : AcceptorExtend(std::move(name)), value(value), type(type),
+        generator(generator) {}
 
   /// @return the value
   Value *getValue() { return value; }

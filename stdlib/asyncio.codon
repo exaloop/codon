@@ -712,10 +712,8 @@ class Future:
             else:
                 return None
 
-    def __await__(self):
-        async def wait_on(x):
-            await x
-        return wait_on(self).__await__()
+    async def __await__(self):
+        return await self
 
 _default_task_name_counter = 1
 def _default_task_name():
@@ -789,10 +787,8 @@ class Task:
 
         return True
 
-    def __await__(self):
-        async def wait_on(x):
-            await x
-        return wait_on(self).__await__()
+    async def __await__(self):
+        return await self
 
 def _wait_on(future):
     loop = get_running_loop()
@@ -812,6 +808,10 @@ def _wait_on(future):
             task._waiting_on_task = _raw_task(future)
 
     return added
+
+def _requeue():
+    loop = get_running_loop()
+    loop._call_soon(loop._work_curr)
 
 def _promise(coro):
     g = Generator[coro.T](coro.__raw__())
@@ -901,7 +901,7 @@ async def sleep(delay: float, result=None):
         loop.call_soon(future.set_result, result)
     else:
         loop.call_later(delay, future.set_result, result)
-    await future
+    return await future
 
 def gather(*aws):
     @pure
