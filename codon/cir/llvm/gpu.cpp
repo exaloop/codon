@@ -830,6 +830,45 @@ void cleanUpIntrinsics(llvm::Module *M) {
     F->eraseFromParent();
   }
 }
+
+void patchPTXVar(llvm::Module *M, llvm::GlobalValue *ptxVar,
+                 const std::string &ptxTarget = "__codon_ptx__") {
+  // Find and patch direct calls to cuModuleLoadData()
+  llvm::SmallVector<llvm::Instruction *, 1> callsToReplace;
+  for (auto &F : *M) {
+    for (auto &BB : F) {
+      for (auto &I : BB) {
+        auto *call = llvm::dyn_cast<llvm::CallBase>(&I);
+        if (!call)
+          continue;
+
+        auto *callee = call->getCalledFunction();
+        if (!callee)
+          continue;
+
+        if (callee->getName() == ptxTarget && call->arg_size() == 0)
+          callsToReplace.push_back(call);
+      }
+    }
+  }
+
+  for (auto *call : callsToReplace) {
+    if (ptxVar) {
+      call->replaceAllUsesWith(ptxVar);
+    } else {
+      call->replaceAllUsesWith(
+          llvm::ConstantPointerNull::get(llvm::PointerType::get(M->getContext(), 0)));
+    }
+    call->dropAllReferences();
+    call->eraseFromParent();
+  }
+
+  // Delete __codon_ptx__() stub
+  if (auto *F = M->getFunction(ptxTarget)) {
+    seqassertn(F->use_empty(), "some __codon_ptx__() calls not replaced in module");
+    F->eraseFromParent();
+  }
+}
 } // namespace
 
 void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
@@ -861,8 +900,10 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
     kernels.push_back(&F);
   }
 
-  if (kernels.empty())
+  if (kernels.empty()) {
+    patchPTXVar(M, nullptr);
     return;
+  }
 
   auto ptx = moduleToPTX(clone.get(), kernels);
   cleanUpIntrinsics(M);
@@ -884,38 +925,7 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
       llvm::ConstantDataArray::getString(context, ptx), ".ptx");
 
   ptxVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-
-  // Find and patch direct calls to cuModuleLoadData()
-  const std::string ptxTarget = "__codon_ptx__"; // must match gpu.codon name
-  llvm::SmallVector<llvm::Instruction *, 1> callsToReplace;
-  for (auto &F : *M) {
-    for (auto &BB : F) {
-      for (auto &I : BB) {
-        auto *call = llvm::dyn_cast<llvm::CallBase>(&I);
-        if (!call)
-          continue;
-
-        auto *callee = call->getCalledFunction();
-        if (!callee)
-          continue;
-
-        if (callee->getName() == ptxTarget && call->arg_size() == 0)
-          callsToReplace.push_back(call);
-      }
-    }
-  }
-
-  for (auto *call : callsToReplace) {
-    call->replaceAllUsesWith(ptxVar);
-    call->dropAllReferences();
-    call->eraseFromParent();
-  }
-
-  // Delete __codon_ptx__() stub
-  if (auto *F = M->getFunction(ptxTarget)) {
-    seqassertn(F->use_empty(), "some __codon_ptx__() calls not replaced in module");
-    F->eraseFromParent();
-  }
+  patchPTXVar(M, ptxVar);
 }
 
 } // namespace ir
