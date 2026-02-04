@@ -1705,6 +1705,7 @@ void LLVMVisitor::makeYield(llvm::Value *value, bool finalYield) {
 
   block = llvm::BasicBlock::Create(*context, "yield.new", func);
 
+  seqassertn(coro.suspend && coro.cleanup, "suspend and/or cleanup is null");
   auto *inst = B->CreateSwitch(suspendResult, coro.suspend, 2);
   inst->addCase(B->getInt8(0), block);
   inst->addCase(B->getInt8(1), coro.cleanup);
