@@ -21,6 +21,15 @@ llvm::cl::opt<std::string>
               llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
 llvm::cl::opt<std::string> ptxOutput("ptx",
                                      llvm::cl::desc("Output PTX to specified file"));
+llvm::cl::opt<std::string> gpuName(
+    "gpu-name",
+    llvm::cl::desc(
+        "Target GPU architecture or compute capability (e.g. sm_70, sm_80, etc.)"),
+    llvm::cl::init("sm_30"));
+llvm::cl::opt<std::string> gpuFeatures(
+    "gpu-features",
+    llvm::cl::desc("GPU feature flags passed (e.g. +ptx42 to enable PTX 4.2 features)"),
+    llvm::cl::init("+ptx42"));
 
 // Adapted from LLVM's GVExtractorPass, which is not externally available
 // as a pass for the new pass manager.
@@ -686,9 +695,7 @@ getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
   return std::vector<llvm::GlobalValue *>(keep.begin(), keep.end());
 }
 
-std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels,
-                        const std::string &cpuStr = "sm_30",
-                        const std::string &featuresStr = "+ptx42") {
+std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
 
@@ -701,7 +708,7 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      triple.getTriple(), cpuStr, featuresStr, options,
+      triple.getTriple(), gpuName, gpuFeatures, options,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOptLevel::Aggressive));
 
