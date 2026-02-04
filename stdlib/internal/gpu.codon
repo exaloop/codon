@@ -402,40 +402,10 @@ def _tuple_from_gpu(args, gpu_args):
         _tuple_from_gpu(args[1:], gpu_args[1:])
 
 
-def _alnum(c: Literal[str]) -> Literal[bool]:
-    return (
-        c == 'a' or c == 'b' or c == 'c' or c == 'd' or c == 'e' or
-        c == 'f' or c == 'g' or c == 'h' or c == 'i' or c == 'j' or
-        c == 'k' or c == 'l' or c == 'm' or c == 'n' or c == 'o' or
-        c == 'p' or c == 'q' or c == 'r' or c == 's' or c == 't' or
-        c == 'u' or c == 'v' or c == 'w' or c == 'x' or c == 'y' or
-        c == 'z' or
-
-        c == 'A' or c == 'B' or c == 'C' or c == 'D' or c == 'E' or
-        c == 'F' or c == 'G' or c == 'H' or c == 'I' or c == 'J' or
-        c == 'K' or c == 'L' or c == 'M' or c == 'N' or c == 'O' or
-        c == 'P' or c == 'Q' or c == 'R' or c == 'S' or c == 'T' or
-        c == 'U' or c == 'V' or c == 'W' or c == 'X' or c == 'Y' or
-        c == 'Z' or
-
-        c == '0' or c == '1' or c == '2' or c == '3' or c == '4' or
-        c == '5' or c == '6' or c == '7' or c == '8' or c == '9' or
-
-        c == '_'
-    )
-
-def _clean_name(name: Literal[str]) -> Literal[str]:
-    if static.len(name) == 0:
-        return ''
-    elif _alnum(name[0]):
-        return name[0] + _clean_name(name[1:])
-    else:
-        return '_' + _clean_name(name[1:])
-
 def nvptx_function(name: Literal[str]) -> CUfunction:
     function = CUfunction()
     result = CUresult()
-    name_clean: Literal[str] = _clean_name(name)
+    name_clean = ''.join(c if c.isalnum() else '_' for c in name)
 
     for i in range(len(modules) - 1, -1, -1):
         m = modules[i]

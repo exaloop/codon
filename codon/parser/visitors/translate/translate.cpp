@@ -483,7 +483,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
 
   auto lei = cast<IdExpr>(stmt->getLhs());
-  seqassert(lei, "expected IdExpr, got {}", *(stmt->getLhs()));
+  seqassert(lei, "expected IdExpr, got {}", *stmt);
   auto var = lei->getValue();
 
   auto isGlobal = in(ctx->cache->globals, var);

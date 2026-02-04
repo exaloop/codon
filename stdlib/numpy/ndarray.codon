@@ -1139,7 +1139,7 @@ class ndarray[dtype, ndim: Literal[int]]:
             if self.ndim > 1:
                 s1 = self.strides[0]
                 s2 = self.strides[-1]
-                return s1 and abs(s1) < abs(s2)
+                return s1 > 0 and abs(s1) < abs(s2)
             else:
                 return False
         else:
@@ -1148,15 +1148,15 @@ class ndarray[dtype, ndim: Literal[int]]:
                 sa2 = self.strides[-1]
                 sb1 = other.strides[0]
                 sb2 = other.strides[-1]
-                return sa1 and sb1 and abs(sa1) < abs(sa2) and abs(sb1) < abs(sb2)
+                return sa1 > 0 and sb1 > 0 and abs(sa1) < abs(sa2) and abs(sb1) < abs(sb2)
             elif self.ndim > 1:
                 s1 = self.strides[0]
                 s2 = self.strides[-1]
-                return s1 and abs(s1) < abs(s2)
+                return s1 > 0 and abs(s1) < abs(s2)
             elif other.ndim > 1:
                 s1 = other.strides[0]
                 s2 = other.strides[-1]
-                return s1 and abs(s1) < abs(s2)
+                return s1 > 0 and abs(s1) < abs(s2)
             else:
                 return False
 

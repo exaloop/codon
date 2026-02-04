@@ -560,7 +560,8 @@ def _permutations_non_static(pool, r = None):
     n = len(pool)
 
     if r is None:
-        return _permutations_non_static(pool_list, n)
+        yield from _permutations_non_static(pool_list, n)
+        return
     elif not isinstance(r, int):
         compile_error("Expected int as r")
 
