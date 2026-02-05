@@ -164,12 +164,13 @@ class Dict:
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def get(self, key: K, s = None):
+    def get(self, key: K, s: V) -> V:
         x = self._kh_get(key)
-        if s is None:
-            return self._vals[x] if x != self._kh_end() else None
-        else:
-            return self._vals[x] if x != self._kh_end() else s
+        return self._vals[x] if x != self._kh_end() else s
+
+    def get(self, key: K) -> Optional[V]:
+        x = self._kh_get(key)
+        return self._vals[x] if x != self._kh_end() else None
 
     def setdefault(self, key: K, val: V) -> V:
         ret, x = self._kh_put(key)
