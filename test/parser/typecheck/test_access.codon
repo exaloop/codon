@@ -769,7 +769,7 @@ print(a.xyz)  #: None
 
 class dotdict[V](Static[Dict[str, V]]):
     def __getattr__(self, attr: Literal[str]) -> Optional[V]:
-        return self.get(attr, None)
+        return self.get(attr)
     def __setattr__(self, attr: Literal[str], v: V):
         print("update!")
         self[attr] = v
