@@ -204,7 +204,7 @@ void CloneVisitor::visit(const WhileFlow *v) {
 
 void CloneVisitor::visit(const ForFlow *v) {
   auto *loop = Nt(v, nullptr, nullptr, nullptr,
-                  std::unique_ptr<transform::parallel::OMPSched>());
+                  std::unique_ptr<transform::parallel::OMPSched>(), false);
   forceRemap(v, loop);
   loop->setIter(clone(v->getIter()));
   loop->setBody(clone(v->getBody()));
