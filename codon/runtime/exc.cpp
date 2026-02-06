@@ -133,21 +133,31 @@ template <typename Type_> static uintptr_t ReadType(const uint8_t *&p) {
 }
 } // namespace
 
-struct OurExceptionType_t {
+// Note: this should match Codon definition
+struct TypeInfo {
+  seq_int_t id;
+  seq_int_t *parent_ids;
+  seq_int_t n_parent_ids;
+  seq_str_t raw_name;
+  // other fields do not need to be included
+};
+
+struct RTTIObject {
+  void *data;
+  TypeInfo *type;
+};
+
+struct CodonBaseExceptionType {
   int type;
 };
 
-struct OurBaseException_t {
-  OurExceptionType_t type; // Seq exception type
-  void *obj;               // Seq exception instance
+struct CodonBaseException {
+  void *obj;
   Backtrace bt;
   _Unwind_Exception unwindException;
 };
 
-typedef struct OurBaseException_t OurException;
-
-struct SeqExcHeader_t {
-  seq_str_t type;
+struct CodonExceptionHeader {
   seq_str_t msg;
   seq_str_t func;
   seq_str_t file;
@@ -172,7 +182,7 @@ void seq_exc_init(int flags) {
 static void seq_delete_exc(_Unwind_Exception *expToDelete) {
   if (!expToDelete || expToDelete->exception_class != SEQ_EXCEPTION_CLASS)
     return;
-  auto *exc = (OurException *)((char *)expToDelete + seq_exc_offset());
+  auto *exc = (CodonBaseException *)((char *)expToDelete + seq_exc_offset());
   if (seq_flags & SEQ_FLAG_DEBUG) {
     exc->bt.free();
   }
@@ -187,11 +197,10 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
 static struct backtrace_state *state = nullptr;
 static std::mutex stateLock;
 
-SEQ_FUNC void *seq_alloc_exc(int type, void *obj) {
-  const size_t size = sizeof(OurException);
-  auto *e = (OurException *)memset(seq_alloc(size), 0, size);
+SEQ_FUNC void *seq_alloc_exc(void *obj) {
+  const size_t size = sizeof(CodonBaseException);
+  auto *e = (CodonBaseException *)memset(seq_alloc(size), 0, size);
   assert(e);
-  e->type.type = type;
   e->obj = obj;
   e->unwindException.exception_class = SEQ_EXCEPTION_CLASS;
   e->unwindException.exception_cleanup = seq_delete_unwind_exc;
@@ -236,11 +245,12 @@ static void print_from_last_dot(seq_str_t s, std::ostringstream &buf) {
 static std::function<void(const codon::runtime::JITError &)> jitErrorCallback;
 
 SEQ_FUNC void seq_terminate(void *exc) {
-  auto *base = (OurBaseException_t *)((char *)exc + seq_exc_offset());
+  auto *base = (CodonBaseException *)((char *)exc + seq_exc_offset());
   void *obj = base->obj;
-  auto *hdr = (SeqExcHeader_t *)obj;
+  auto *hdr = *(CodonExceptionHeader **)obj;
+  auto tname = ((RTTIObject *)obj)->type->raw_name;
 
-  if (std::string(hdr->type.str, hdr->type.len) == "SystemExit") {
+  if (std::string(tname.str, tname.len) == "SystemExit") {
     seq_int_t status = *(seq_int_t *)(hdr + 1);
     exit((int)status);
   }
@@ -250,7 +260,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
     buf << codon::runtime::getCapturedOutput();
 
   buf << "\033[1m";
-  print_from_last_dot(hdr->type, buf);
+  print_from_last_dot(tname, buf);
   if (hdr->msg.len > 0) {
     buf << ": \033[0m";
     buf.write(hdr->msg.str, hdr->msg.len);
@@ -292,7 +302,7 @@ SEQ_FUNC void seq_terminate(void *exc) {
     auto *bt = &base->bt;
     std::string msg(hdr->msg.str, hdr->msg.len);
     std::string file(hdr->file.str, hdr->file.len);
-    std::string type(hdr->type.str, hdr->type.len);
+    std::string type(tname.str, tname.len);
 
     std::vector<uintptr_t> backtrace;
     if (seq_flags & SEQ_FLAG_DEBUG) {
@@ -447,6 +457,21 @@ static uintptr_t readEncodedPointer(const uint8_t **data, uint8_t encoding) {
   return result;
 }
 
+static bool isinstance(void *obj, seq_int_t type) {
+  auto *info = ((RTTIObject *)obj)->type;
+  if (info->id == type)
+    return true;
+  if (info->parent_ids) {
+    auto *p = info->parent_ids;
+    while (*p) {
+      if (*p++ == type) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
                               const uint8_t *ClassInfo, uintptr_t actionEntry,
                               uint64_t exceptionClass,
@@ -457,10 +482,7 @@ static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
     return ret;
 
   auto *excp =
-      (struct OurBaseException_t *)(((char *)exceptionObject) + seq_exc_offset());
-  OurExceptionType_t *excpType = &(excp->type);
-  seq_int_t type = excpType->type;
-
+      (struct CodonBaseException *)(((char *)exceptionObject) + seq_exc_offset());
   const uint8_t *actionPos = (uint8_t *)actionEntry, *tempActionPos;
   int64_t typeOffset = 0, actionOffset;
 
@@ -480,10 +502,11 @@ static bool handleActionValue(int64_t *resultAction, uint8_t TTypeEncoding,
       unsigned EncSize = getEncodingSize(TTypeEncoding);
       const uint8_t *EntryP = ClassInfo - typeOffset * EncSize;
       uintptr_t P = readEncodedPointer(&EntryP, TTypeEncoding);
-      auto *ThisClassInfo = reinterpret_cast<OurExceptionType_t *>(P);
+      auto *ThisClassInfo = reinterpret_cast<CodonBaseExceptionType *>(P);
+      auto ThisClassType = ThisClassInfo->type;
       // type=0 means catch-all
-      if (ThisClassInfo->type == 0 || ThisClassInfo->type == type) {
-        *resultAction = i + 1;
+      if (ThisClassType == 0 || isinstance(excp->obj, ThisClassType)) {
+        *resultAction = ThisClassType;
         ret = true;
         break;
       }
@@ -625,7 +648,7 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
 }
 
 SEQ_FUNC int64_t seq_exc_offset() {
-  static OurBaseException_t dummy = {};
+  static CodonBaseException dummy = {};
   return (int64_t)((uintptr_t)&dummy - (uintptr_t)&(dummy.unwindException));
 }
 

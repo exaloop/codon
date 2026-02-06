@@ -29,8 +29,13 @@ private:
     llvm::BasicBlock *suspend;
     /// Coroutine exit block
     llvm::BasicBlock *exit;
+    /// True if coroutine represents 'async' function
+    bool async;
 
-    void reset() { promise = handle = cleanup = suspend = exit = nullptr; }
+    void reset() {
+      promise = handle = cleanup = suspend = exit = nullptr;
+      async = false;
+    }
   };
 
   struct NestableData {
@@ -184,7 +189,6 @@ private:
   llvm::StructType *getTypeInfoType();
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
-  llvm::GlobalVariable *getTypeIdxVar(const std::string &name);
   llvm::GlobalVariable *getTypeIdxVar(types::Type *catchType);
   int getTypeIdx(types::Type *catchType = nullptr);
 
@@ -445,6 +449,7 @@ public:
   void visit(const ContinueInstr *) override;
   void visit(const ReturnInstr *) override;
   void visit(const YieldInstr *) override;
+  void visit(const AwaitInstr *) override;
   void visit(const ThrowInstr *) override;
   void visit(const FlowInstr *) override;
   void visit(const dsl::CustomInstr *) override;

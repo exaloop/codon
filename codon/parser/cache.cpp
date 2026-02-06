@@ -177,6 +177,37 @@ ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   return realizeType(tv.getStdLibType("Union")->getClass(), {argType});
 }
 
+size_t Cache::getRealizationId(types::ClassType *type) {
+  auto cv = TypecheckVisitor(typeCtx).getClassRealization(type);
+  return cv->id;
+}
+
+std::vector<size_t> Cache::getBaseRealizationIds(types::ClassType *type) {
+  auto r = TypecheckVisitor(typeCtx).getClassRealization(type);
+  std::vector<size_t> baseIds;
+  for (const auto &t : r->bases) {
+    baseIds.push_back(getRealizationId(t.get()));
+  }
+  return baseIds;
+}
+
+std::vector<size_t> Cache::getChildRealizationIds(types::ClassType *type) {
+  auto cv = TypecheckVisitor(typeCtx).getClassRealization(type);
+  auto parentId = cv->id;
+  std::vector<size_t> childIds;
+  for (const auto &[_, c] : classes) {
+    for (const auto &[_, r] : c.realizations) {
+      for (const auto &t : r->bases) {
+        if (getRealizationId(t.get()) == parentId) {
+          childIds.push_back(r->id);
+          break;
+        }
+      }
+    }
+  }
+  return childIds;
+}
+
 void Cache::parseCode(const std::string &code) {
   auto nodeOrErr = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
   if (nodeOrErr)

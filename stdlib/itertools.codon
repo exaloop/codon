@@ -196,7 +196,7 @@ def tee(iterable: Generator[T], n: int = 2, T: type) -> List[Generator[T]]:
                 it.__resume__()
                 if it.__done__():
                     return
-                newval = it.next()
+                newval = it.__next__()
                 for d in deques:  # load it to all the deques
                     d.append(newval)
             yield mydeque.popleft()
@@ -212,17 +212,17 @@ def zip_longest(*iterables, fillvalue):
         b_done = False
 
         while not a.done():
-            a_val = a.next()
+            a_val = a.__next__()
             b_val = fillvalue
             if not b_done:
                 b_done = b.done()
             if not b_done:
-                b_val = b.next()
+                b_val = b.__next__()
             yield a_val, b_val
 
         if not b_done:
             while not b.done():
-                yield fillvalue, b.next()
+                yield fillvalue, b.__next__()
 
         a.destroy()
         b.destroy()
@@ -242,7 +242,7 @@ def zip_longest(*iterables, fillvalue):
                         return
                     values.append(fillvalue)
                 else:
-                    values.append(it.next())
+                    values.append(it.__next__())
             yield values
 
 @inline
@@ -252,7 +252,7 @@ def zip_longest(*args):
     def get_next(it):
         if it.__done__() or it.done():
             return None
-        return it.next()
+        return it.__next__()
 
     iters = tuple(iter(arg) for arg in args)
     while True:
@@ -560,7 +560,8 @@ def _permutations_non_static(pool, r = None):
     n = len(pool)
 
     if r is None:
-        return _permutations_non_static(pool_list, n)
+        yield from _permutations_non_static(pool_list, n)
+        return
     elif not isinstance(r, int):
         compile_error("Expected int as r")
 

@@ -33,8 +33,8 @@ Value *CloneVisitor::clone(const Value *other, BodiedFunc *cloneTo,
       if (it != remaps.end()) {
         forceRemap(v, it->second);
       } else {
-        auto *clonedVar =
-            M->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
+        auto *clonedVar = M->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(),
+                                    v->isThreadLocal(), v->getName());
         cloneTo->push_back(clonedVar);
         forceRemap(v, clonedVar);
       }
@@ -72,8 +72,8 @@ Var *CloneVisitor::clone(const Var *other) {
 }
 
 void CloneVisitor::visit(const Var *v) {
-  result =
-      module->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(), v->getName());
+  result = module->N<Var>(v, v->getType(), v->isGlobal(), v->isExternal(),
+                          v->isThreadLocal(), v->getName());
 }
 
 void CloneVisitor::visit(const BodiedFunc *v) {
@@ -88,6 +88,7 @@ void CloneVisitor::visit(const BodiedFunc *v) {
   }
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -114,6 +115,7 @@ void CloneVisitor::visit(const ExternalFunc *v) {
     argNames.push_back((*it)->getName());
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -134,6 +136,7 @@ void CloneVisitor::visit(const InternalFunc *v) {
     argNames.push_back((*it)->getName());
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -155,6 +158,7 @@ void CloneVisitor::visit(const LLVMFunc *v) {
     argNames.push_back((*it)->getName());
   res->setUnmangledName(v->getUnmangledName());
   res->setGenerator(v->isGenerator());
+  res->setAsync(v->isAsync());
   res->realize(cast<types::FuncType>(v->getType()), argNames);
 
   auto argIt1 = v->arg_begin();
@@ -200,7 +204,7 @@ void CloneVisitor::visit(const WhileFlow *v) {
 
 void CloneVisitor::visit(const ForFlow *v) {
   auto *loop = Nt(v, nullptr, nullptr, nullptr,
-                  std::unique_ptr<transform::parallel::OMPSched>());
+                  std::unique_ptr<transform::parallel::OMPSched>(), false);
   forceRemap(v, loop);
   loop->setIter(clone(v->getIter()));
   loop->setBody(clone(v->getBody()));
@@ -212,6 +216,7 @@ void CloneVisitor::visit(const ForFlow *v) {
     }
     loop->setSchedule(std::move(schedCloned));
   }
+  loop->setAsync(v->isAsync());
 
   result = loop;
 }
@@ -318,6 +323,10 @@ void CloneVisitor::visit(const ReturnInstr *v) { result = Nt(v, clone(v->getValu
 
 void CloneVisitor::visit(const YieldInstr *v) {
   result = Nt(v, clone(v->getValue()), v->isFinal());
+}
+
+void CloneVisitor::visit(const AwaitInstr *v) {
+  result = Nt(v, clone(v->getValue()), v->getType(), v->isGenerator());
 }
 
 void CloneVisitor::visit(const ThrowInstr *v) { result = Nt(v, clone(v->getValue())); }

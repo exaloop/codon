@@ -153,7 +153,7 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
             if it.done():
                 done = True
                 break
-            result.append((it.next(), i))
+            result.append((it.__next__(), i))
         if not result:
             it.destroy()
             return []
@@ -179,7 +179,7 @@ def nsmallest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> L
             if it.done():
                 done = True
                 break
-            elem = it.next()
+            elem = it.__next__()
             result.append((key(elem), i, elem))
         if not result:
             it.destroy()
@@ -222,7 +222,7 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
             if it.done():
                 done = True
                 break
-            result.append((it.next(), i))
+            result.append((it.__next__(), i))
         if not result:
             it.destroy()
             return []
@@ -248,7 +248,7 @@ def nlargest(n: int, iterable: Generator[T], key=Optional[int](), T: type) -> Li
             if it.done():
                 done = True
                 break
-            elem = it.next()
+            elem = it.__next__()
             result.append((key(elem), i, elem))
         if not result:
             return []
@@ -305,7 +305,7 @@ def merge(*iterables, key=Optional[int](), reverse: bool = False):
     for it in iterables:
         gen = iter(it)
         if not gen.done():
-            items.append(_MergeItem(gen.next(), order * direction, gen, key))
+            items.append(_MergeItem(gen.__next__(), order * direction, gen, key))
         order += 1
     _heapify(items)
     while len(items) > 1:
@@ -316,7 +316,7 @@ def merge(*iterables, key=Optional[int](), reverse: bool = False):
             if gen.done():
                 _heappop(items)
                 break
-            _heapreplace(items, _MergeItem(gen.next(), order, gen, key))
+            _heapreplace(items, _MergeItem(gen.__next__(), order, gen, key))
     if items:
         # fast case when only a single iterator remains
         value, order, gen = items[0].value, items[0].order, items[0].gen

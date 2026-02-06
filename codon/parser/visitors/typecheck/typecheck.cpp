@@ -386,10 +386,6 @@ void TypecheckVisitor::visit(ExprStmt *stmt) {
     stmt->setDone();
 }
 
-void TypecheckVisitor::visit(AwaitStmt *stmt) {
-  E(Error::CUSTOM, stmt, "await not yet supported");
-}
-
 void TypecheckVisitor::visit(CustomStmt *stmt) {
   if (stmt->getSuite()) {
     auto fn = in(ctx->cache->customBlockStmts, stmt->getKeyword());
@@ -581,9 +577,9 @@ std::vector<types::FuncType *> TypecheckVisitor::findMatchingMethods(
 ///   expected `Optional[T]`, got `T`     -> `Optional(expr)`
 ///   expected `T`, got `Optional[T]`     -> `unwrap(expr)`
 ///   expected `Function`, got a function -> partialize function
-///   expected `T`, got `Union[T...]`     -> `__internal__.get_union(expr, T)`
-///   expected `Union[T...]`, got `T`     -> `__internal__.new_union(expr,
-///   Union[T...])` expected base class, got derived    -> downcast to base class
+///   expected `T`, got `Union[T...]`     -> `Union._get(expr, T)`
+///   expected `Union[T...]`, got `T`     -> `Union._new(expr, Union[T...])`
+///   expected base class, got derived    -> downcast to base class
 /// @param allowUnwrap allow optional unwrapping.
 bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *callee,
                                 bool allowUnwrap) {
@@ -643,14 +639,30 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
            exprClass->is("Capsule")) {
     type = extractClassGeneric(exprClass)->shared_from_this();
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("__internal__.capsule_get"), expr);
+      return N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "_get")), expr);
     };
   } else if (expectedClass && expectedClass->is("Capsule") && exprClass &&
              !exprClass->is("Capsule")) {
     type = instantiateType(getStdLibType("Capsule"), std::vector<Type *>{exprClass});
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("__internal__.capsule_make"), expr);
+      return N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "make")), expr);
     };
+  }
+
+  else if (expectedClass && !expectedClass->is("Any") && exprClass &&
+           exprClass->is("Any")) {
+    type = expectedClass->shared_from_this();
+    fn = [this, type](Expr *expr) -> Expr * {
+      auto r = realize(type.get());
+      seqassert(r, "not realizable");
+      return N<CallExpr>(N<IdExpr>("Any.unwrap"), expr, N<IdExpr>(r->realizedName()));
+    };
+  } else if (expectedClass && expectedClass->is("Any") && exprClass &&
+             !exprClass->is("Any")) {
+    type = expectedClass->shared_from_this();
+    fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("Any"), expr); };
   }
 
   else if (expectedClass && expectedClass->is("Generator") &&
@@ -846,7 +858,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   else if (allowUnwrap && exprClass && exprType->getUnion() && expectedClass &&
            !expectedClass->getUnion()) {
-    // Extract union types via __internal__.get_union
+    // Extract union types via Union._get
     if (auto t = realize(expectedClass)) {
       auto e = realize(exprType);
       if (!e)
@@ -861,9 +873,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       if (ok) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
-                                                        "__internal__", "get_union")),
-                             expr, N<IdExpr>(type->realizedName()));
+          return N<CallExpr>(
+              N<IdExpr>(getMangledMethod("std.internal.core", "Union", "_get")), expr,
+              N<IdExpr>(type->realizedName()));
         };
       }
     } else {
@@ -872,7 +884,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   }
 
   else if (exprClass && expectedClass && expectedClass->getUnion()) {
-    // Make union types via __internal__.new_union
+    // Make union types via Union._new
     if (!expectedClass->getUnion()->isSealed()) {
       if (!expectedClass->getUnion()->addType(exprClass))
         E(error::Error::UNION_TOO_BIG, expectedClass->getSrcInfo(),
@@ -882,7 +894,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       if (expectedClass->unify(exprClass, nullptr) == -1) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "new_union"), expr,
+          return N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "_new"), expr,
                              N<IdExpr>(type->realizedName()));
         };
       }
@@ -905,9 +917,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     // Super[T] to T
     type = extractClassGeneric(exprClass)->shared_from_this();
     fn = [this](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
-                                                    "class_super_change_rtti")),
-                         expr);
+      return N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "Super", "_unwrap")), expr);
     };
   }
 
@@ -943,7 +954,7 @@ Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassType *superTyp,
   realize(superTyp);
   auto typExpr = N<IdExpr>(superTyp->realizedName());
   return transform(
-      N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"), expr, typExpr));
+      N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), expr, typExpr));
 }
 
 /// Unpack a Tuple or KwTuple expression into (name, type) vector.
@@ -1184,7 +1195,6 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
 
   if (func && typ->getFunc()) {
     auto tf = typ->getFunc();
-    // LOG("// adding {}", tf->debugString(2));
     for (auto parent = tf->funcParent; parent;) {
       if (auto f = parent->getFunc()) {
         // Add parent function generics
@@ -1194,9 +1204,9 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
       } else {
         // Add parent class generics
         seqassert(parent->getClass(), "not a class: {}", *parent);
-        for (auto &g : parent->getClass()->generics)
-          addGen(g);
         for (auto &g : parent->getClass()->hiddenGenerics)
+          addGen(g);
+        for (auto &g : parent->getClass()->generics)
           addGen(g);
         break;
       }
@@ -1346,6 +1356,11 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
+    for (auto &g : generics->hiddenGenerics)
+      if (g.type &&
+          !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {
+        genericCache[g.id] = g.type;
+      }
     for (auto &g : generics->generics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {

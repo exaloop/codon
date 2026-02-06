@@ -144,13 +144,6 @@ std::string AssertStmt::toString(int indent) const {
                               message ? message->toString(indent) : ""));
 }
 
-AwaitStmt::AwaitStmt(Expr *expr) : AcceptorExtend(), expr(expr) {}
-AwaitStmt::AwaitStmt(const AwaitStmt &stmt, bool clean)
-    : AcceptorExtend(stmt, clean), expr(ast::clone(stmt.expr, clean)) {}
-std::string AwaitStmt::toString(int indent) const {
-  return wrapStmt(fmt::format("(await {})", expr->toString(indent)));
-}
-
 WhileStmt::WhileStmt(Expr *cond, Stmt *suite, Stmt *elseSuite)
     : AcceptorExtend(), cond(cond), suite(SuiteStmt::wrap(suite)),
       elseSuite(SuiteStmt::wrap(elseSuite)) {}
@@ -503,8 +496,6 @@ std::string ClassStmt::toString(int indent) const {
 }
 bool ClassStmt::isRecord() const { return hasAttribute(Attr::Tuple); }
 bool ClassStmt::isClassVar(const Param &p) {
-  if (!p.defaultValue)
-    return false;
   if (!p.type)
     return true;
   if (auto i = cast<IndexExpr>(p.type))
@@ -529,13 +520,14 @@ std::string YieldFromStmt::toString(int indent) const {
 }
 
 WithStmt::WithStmt(std::vector<Expr *> items, std::vector<std::string> vars,
-                   Stmt *suite)
+                   Stmt *suite, bool isAsync)
     : AcceptorExtend(), Items(std::move(items)), vars(std::move(vars)),
-      suite(SuiteStmt::wrap(suite)) {
+      suite(SuiteStmt::wrap(suite)), async(isAsync) {
   seqassert(this->items.size() == this->vars.size(), "vector size mismatch");
 }
-WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *suite)
-    : AcceptorExtend(), Items({}), suite(SuiteStmt::wrap(suite)) {
+WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *suite,
+                   bool isAsync)
+    : AcceptorExtend(), Items({}), suite(SuiteStmt::wrap(suite)), async(isAsync) {
   for (auto [i, j] : itemVarPairs) {
     items.push_back(i);
     if (auto je = cast<IdExpr>(j)) {
@@ -547,7 +539,7 @@ WithStmt::WithStmt(std::vector<std::pair<Expr *, Expr *>> itemVarPairs, Stmt *su
 }
 WithStmt::WithStmt(const WithStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
-      vars(stmt.vars), suite(ast::clone(stmt.suite, clean)) {}
+      vars(stmt.vars), suite(ast::clone(stmt.suite, clean)), async(stmt.async) {}
 std::string WithStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> as;
@@ -617,7 +609,6 @@ ACCEPT_IMPL(PrintStmt, ASTVisitor);
 ACCEPT_IMPL(ReturnStmt, ASTVisitor);
 ACCEPT_IMPL(YieldStmt, ASTVisitor);
 ACCEPT_IMPL(AssertStmt, ASTVisitor);
-ACCEPT_IMPL(AwaitStmt, ASTVisitor);
 ACCEPT_IMPL(WhileStmt, ASTVisitor);
 ACCEPT_IMPL(ForStmt, ASTVisitor);
 ACCEPT_IMPL(IfStmt, ASTVisitor);
@@ -637,3 +628,26 @@ ACCEPT_IMPL(AssignMemberStmt, ASTVisitor);
 ACCEPT_IMPL(CommentStmt, ASTVisitor);
 
 } // namespace codon::ast
+
+namespace tser {
+void operator<<(codon::ast::Stmt *t, BinaryArchive &a) {
+  using S = codon::PolymorphicSerializer<BinaryArchive, codon::ast::Stmt>;
+  a.save(t != nullptr);
+  if (t) {
+    auto typ = t->dynamicNodeId();
+    auto key = S::_serializers[const_cast<void *>(typ)];
+    a.save(key);
+    S::save(key, t, a);
+  }
+}
+void operator>>(codon::ast::Stmt *&t, BinaryArchive &a) {
+  using S = codon::PolymorphicSerializer<BinaryArchive, codon::ast::Stmt>;
+  bool empty = a.load<bool>();
+  if (!empty) {
+    std::string key = a.load<std::string>();
+    S::load(key, t, a);
+  } else {
+    t = nullptr;
+  }
+}
+} // namespace tser

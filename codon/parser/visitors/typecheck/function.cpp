@@ -53,6 +53,48 @@ void TypecheckVisitor::visit(YieldExpr *expr) {
     expr->setDone();
 }
 
+/// Typecheck await statements.
+void TypecheckVisitor::visit(AwaitExpr *expr) {
+  if (!ctx->inFunction())
+    E(Error::FN_OUTSIDE_ERROR, expr, "await");
+  auto isAsync = ctx->getBase()->func->isAsync();
+  if (!isAsync)
+    E(Error::FN_OUTSIDE_ERROR, expr, "await");
+
+  expr->expr = transform(expr->getExpr());
+  if (!expr->transformed) {
+    if (auto c = expr->getExpr()->getType()->getClass()) {
+      bool isCoroutine = c->is(getMangledClass("std.internal.core", "Coroutine")) ||
+                         c->is(getMangledClass("std.asyncio", "Future")) ||
+                         c->is(getMangledClass("std.asyncio", "Task"));
+      if (!isCoroutine) {
+        if (!findMethod(c, "__await__").empty()) {
+          auto e = transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__await__")));
+          isCoroutine =
+              e->getType()->is(getMangledClass("std.internal.core", "Coroutine")) ||
+              e->getType()->is(getMangledClass("std.asyncio", "Future")) ||
+              e->getType()->is(getMangledClass("std.asyncio", "Task")) ||
+              e->getType()->is(getMangledClass("std.internal.core", "Generator"));
+          if (!isCoroutine) {
+            E(Error::EXPECTED_TYPE, expr, "awaitable");
+          } else {
+            expr->expr = e;
+            expr->transformed = true;
+          }
+        } else {
+          E(Error::EXPECTED_TYPE, expr, "awaitable");
+        }
+      }
+    }
+  }
+
+  if (expr->getExpr()->getType()->getClass())
+    unify(expr->getType(), extractClassGeneric(expr->getExpr()->getType()));
+
+  if (expr->getExpr()->isDone())
+    expr->setDone();
+}
+
 /// Typecheck return statements. Empty return is transformed to `return NoneType()`.
 /// Also partialize functions if they are being returned.
 /// See @c wrapExpr for more details.
@@ -66,10 +108,13 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "return");
+  auto isAsync = ctx->getBase()->func->isAsync();
 
   if (!stmt->expr && ctx->getBase()->func->hasAttribute(Attr::IsGenerator)) {
     stmt->setDone();
   } else {
+    if (ctx->getBase()->func->hasAttribute(Attr::IsGenerator))
+      E(Error::CUSTOM, stmt, "returning values from generators not yet supported");
     if (!stmt->expr)
       stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
     stmt->expr = transform(stmt->getExpr());
@@ -96,7 +141,13 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
                                    ->getStatic()
                                    ->getNonStaticType()
                                    ->shared_from_this());
-    unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
+
+    if (isAsync) {
+      unify(ctx->getBase()->returnType.get(),
+            instantiateType(getStdLibType("Coroutine"), {stmt->getExpr()->getType()}));
+    } else {
+      unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
+    }
   }
 
   // If we are not within conditional block, ignore later statements in this function.
@@ -112,11 +163,13 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 void TypecheckVisitor::visit(YieldStmt *stmt) {
   if (!ctx->inFunction())
     E(Error::FN_OUTSIDE_ERROR, stmt, "yield");
+  auto isAsync = ctx->getBase()->func->isAsync();
 
   stmt->expr =
       transform(stmt->getExpr() ? stmt->getExpr() : N<CallExpr>(N<IdExpr>("NoneType")));
   unify(ctx->getBase()->returnType.get(),
-        instantiateType(getStdLibType("Generator"), {stmt->getExpr()->getType()}));
+        instantiateType(getStdLibType(!isAsync ? "Generator" : "AsyncGenerator"),
+                        {stmt->getExpr()->getType()}));
 
   if (stmt->getExpr()->isDone())
     stmt->setDone();
@@ -137,9 +190,6 @@ void TypecheckVisitor::visit(GlobalStmt *stmt) { resultStmt = N<SuiteStmt>(); }
 /// Parse a function stub and create a corresponding generic function type.
 /// Also realize built-ins and extern C functions.
 void TypecheckVisitor::visit(FunctionStmt *stmt) {
-  if (stmt->isAsync())
-    E(Error::CUSTOM, stmt, "async not yet supported");
-
   if (stmt->hasAttribute(Attr::Python)) {
     // Handle Python block
     resultStmt =
@@ -504,7 +554,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   stmt->setAttribute(Attr::Module, ctx->moduleName.path);
 
   // Make function AST and cache it for later realization
-  auto f = N<FunctionStmt>(canonicalName, ret, args, suite);
+  auto f = N<FunctionStmt>(canonicalName, ret, args, suite, std::vector<Expr *>{},
+                           stmt->isAsync());
   f->cloneAttributesFrom(stmt);
   auto &fn = ctx->cache->functions[canonicalName] =
       Cache::Function{ctx->getModulePath(),
@@ -576,16 +627,45 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   // Parse remaining decorators
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (stmt->decorators[i]) {
-      if (isClassMember)
-        E(Error::FN_NO_DECORATORS, stmt->decorators[i]);
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
       finalExpr = N<CallExpr>(stmt->decorators[i],
                               finalExpr ? finalExpr : N<IdExpr>(canonicalName));
     }
   }
   if (finalExpr) {
-    resultStmt = N<SuiteStmt>(
-        f, transform(N<AssignStmt>(N<IdExpr>(stmt->getName()), finalExpr)));
+    auto a = N<AssignStmt>(N<IdExpr>(stmt->getName()), finalExpr);
+    if (isClassMember) { // class method decorator
+      auto nctx = std::make_shared<TypeContext>(ctx->cache);
+      *nctx = *ctx;
+      nctx->bases.pop_back();
+      nctx->bases.erase(nctx->bases.begin() + 1, nctx->bases.end()); // global context
+      auto tv = TypecheckVisitor(nctx);
+
+      auto defName = ctx->generateCanonicalName(stmt->getName());
+      preamble->addStmt(
+          tv.transform(N<AssignStmt>(N<IdExpr>(defName), nullptr, nullptr)));
+      registerGlobal(defName);
+      a->setUpdate();
+
+      cast<IdExpr>(a->getLhs())->value = defName;
+      std::vector<CallArg> args;
+      for (auto arg : *stmt) {
+        if (startswith(arg.name, "**"))
+          args.push_back(N<KeywordStarExpr>(N<IdExpr>(arg.name)));
+        else if (startswith(arg.name, "*"))
+          args.push_back(N<StarExpr>(N<IdExpr>(arg.name)));
+        else
+          args.push_back(N<IdExpr>(arg.name));
+      }
+      Stmt *newFunc = N<FunctionStmt>(
+          stmt->getName(), clone(stmt->getReturn()), clone(stmt->items),
+          N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(N<IdExpr>(defName), args))),
+          std::vector<Expr *>{}, stmt->isAsync());
+      newFunc = transform(newFunc);
+      resultStmt = N<SuiteStmt>(f, N<SuiteStmt>(transform(a), newFunc));
+    } else {
+      resultStmt = N<SuiteStmt>(f, transform(a));
+    }
   } else {
     resultStmt = f;
   }
@@ -641,6 +721,25 @@ Stmt *TypecheckVisitor::transformLLVMDefinition(Stmt *codeStmt) {
   auto m = match(codeStmt, M<ExprStmt>(MVar<StringExpr>(codeExpr)));
   seqassert(m, "invalid LLVM definition");
   auto code = codeExpr->getValue();
+  /// Remove docstring (if any)
+  size_t start = 0;
+  while (start < code.size() && std::isspace(code[start]))
+    start++;
+  if (startswith(code.substr(start), "\"\"\"")) {
+    start += 3;
+    bool found = false;
+    while (start < code.size() - 2) {
+      if (code[start] == '"' && code[start + 1] == '"' && code[start + 2] == '"') {
+        found = true;
+        start += 3;
+        break;
+      }
+      start++;
+    }
+    if (found) {
+      code = code.substr(start);
+    }
+  }
 
   std::vector<Stmt *> items;
   std::string finalCode;

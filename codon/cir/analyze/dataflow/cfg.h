@@ -520,6 +520,7 @@ public:
   void visit(const ContinueInstr *v) override;
   void visit(const ReturnInstr *v) override;
   void visit(const YieldInstr *v) override;
+  void visit(const AwaitInstr *v) override;
   void visit(const ThrowInstr *v) override;
   void visit(const FlowInstr *v) override;
   void visit(const dsl::CustomInstr *v) override;

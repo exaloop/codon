@@ -331,7 +331,7 @@ public:
   /// @param v the new value
   void setSuspending(bool v = true) { suspend = v; }
 
-  /// Sets the type being inspected
+  /// Sets the type.
   /// @param t the new type
   void setType(types::Type *t) { type = t; }
 
@@ -477,6 +477,7 @@ protected:
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };
 
+/// Instr representing a yield statement.
 class YieldInstr : public AcceptorExtend<YieldInstr, Instr> {
 private:
   /// the value
@@ -507,6 +508,50 @@ public:
 protected:
   std::vector<Value *> doGetUsedValues() const override;
   int doReplaceUsedValue(id_t id, Value *newValue) override;
+};
+
+/// Instr representing an await statement.
+class AwaitInstr : public AcceptorExtend<AwaitInstr, Instr> {
+private:
+  /// the value
+  Value *value;
+  /// the type of the result
+  types::Type *type;
+  /// true if argument is a generator (e.g. custom __await__)
+  bool generator;
+
+public:
+  static const char NodeId;
+
+  explicit AwaitInstr(Value *value, types::Type *type, bool generator = false,
+                      std::string name = "")
+      : AcceptorExtend(std::move(name)), value(value), type(type),
+        generator(generator) {}
+
+  /// @return the value
+  Value *getValue() { return value; }
+  /// @return the value
+  const Value *getValue() const { return value; }
+  /// Sets the value.
+  /// @param v the new value
+  void setValue(Value *v) { value = v; }
+
+  /// Sets the type.
+  /// @param t the new type
+  void setType(types::Type *t) { type = t; }
+
+  /// @return whether argument is a generator
+  bool isGenerator() const { return generator; }
+  /// Sets generator status
+  /// @param g the new value
+  void setGenerator(bool g = true) { generator = g; }
+
+protected:
+  types::Type *doGetType() const override { return type; }
+  std::vector<Value *> doGetUsedValues() const override { return {value}; }
+  std::vector<types::Type *> doGetUsedTypes() const override { return {type}; }
+  int doReplaceUsedValue(id_t id, Value *newValue) override;
+  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
 };
 
 class ThrowInstr : public AcceptorExtend<ThrowInstr, Instr> {

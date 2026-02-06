@@ -375,6 +375,7 @@ struct BinaryExpr : public AcceptorExtend<BinaryExpr, Expr> {
   BinaryExpr(const BinaryExpr &, bool);
 
   std::string getOp() const { return op; }
+  void setOp(const std::string &o) { op = o; }
   Expr *getLhs() const { return lexpr; }
   Expr *getRhs() const { return rexpr; }
   bool isInPlace() const { return inPlace; }
@@ -563,6 +564,24 @@ struct YieldExpr : public AcceptorExtend<YieldExpr, Expr> {
   ACCEPT(YieldExpr, ASTVisitor);
 };
 
+/// Await expression (await expr).
+/// @li await a
+struct AwaitExpr : public AcceptorExtend<AwaitExpr, Expr> {
+  explicit AwaitExpr(Expr *expr);
+  AwaitExpr(const AwaitExpr &, bool);
+
+  Expr *getExpr() const { return expr; }
+
+  ACCEPT(AwaitExpr, ASTVisitor, expr);
+
+private:
+  Expr *expr;
+
+  // True if a statement was transformed during type-checking stage
+  // (to avoid setting up __await__ multiple times).
+  bool transformed;
+};
+
 /// Assignment (walrus) expression (var := expr).
 /// @li a := 5 + 3
 struct AssignExpr : public AcceptorExtend<AssignExpr, Expr> {
@@ -658,25 +677,6 @@ struct fmt::formatter<codon::ast::Param> : fmt::formatter<std::string_view> {
 };
 
 namespace tser {
-using Archive = BinaryArchive;
-static void operator<<(codon::ast::Expr *t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
-  a.save(t != nullptr);
-  if (t) {
-    void *typ = const_cast<void *>(t->dynamicNodeId());
-    auto key = S::_serializers[typ];
-    a.save(key);
-    S::save(key, t, a);
-  }
-}
-static void operator>>(codon::ast::Expr *&t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Expr>;
-  bool empty = a.load<bool>();
-  if (!empty) {
-    const auto key = a.load<std::string>();
-    S::load(key, t, a);
-  } else {
-    t = nullptr;
-  }
-}
+void operator<<(codon::ast::Expr *t, BinaryArchive &a);
+void operator>>(codon::ast::Expr *&t, BinaryArchive &a);
 } // namespace tser

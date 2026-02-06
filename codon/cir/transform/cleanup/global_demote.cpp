@@ -11,7 +11,7 @@ struct GetUsedGlobals : public util::Operator {
   std::vector<Var *> vars;
   void preHook(Node *v) override {
     for (auto *var : v->getUsedVariables()) {
-      if (!isA<Func>(var) && var->isGlobal())
+      if (!isA<Func>(var) && var->isGlobal() && !var->isThreadLocal())
         vars.push_back(var);
     }
   }

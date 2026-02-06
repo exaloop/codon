@@ -140,7 +140,8 @@ private: // Node typechecking rules
   bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &,
                          const PartialCallData &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
-  std::vector<types::TypePtr> getSuperTypes(types::ClassType *);
+  std::vector<types::TypePtr> getStaticSuperTypes(types::ClassType *);
+  std::vector<types::TypePtr> getRTTISuperTypes(types::ClassType *);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
@@ -181,6 +182,7 @@ private: // Node typechecking rules
 
   /* Functions (function.cpp) */
   void visit(YieldExpr *) override;
+  void visit(AwaitExpr *) override;
   void visit(ReturnStmt *) override;
   void visit(YieldStmt *) override;
   void visit(YieldFromStmt *) override;
@@ -215,7 +217,6 @@ private:
   void visit(SuiteStmt *) override;
   void visit(ExprStmt *) override;
   void visit(StmtExpr *) override;
-  void visit(AwaitStmt *) override;
   void visit(CommentStmt *stmt) override;
   void visit(CustomStmt *) override;
   void visit(DirectiveStmt *) override;

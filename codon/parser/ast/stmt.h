@@ -115,7 +115,7 @@ private:
 /// @li a: Optional[int] = 5
 /// @li a, b, c = 5, *z
 struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
-  enum UpdateMode { Assign, Update, UpdateAtomic };
+  enum UpdateMode { Assign, Update, UpdateAtomic, ThreadLocalAssign };
 
   AssignStmt()
       : lhs(nullptr), rhs(nullptr), type(nullptr), update(UpdateMode::Assign) {}
@@ -133,8 +133,10 @@ struct AssignStmt : public AcceptorExtend<AssignStmt, Stmt> {
   bool isAssignment() const { return update == Assign; }
   bool isUpdate() const { return update == Update; }
   bool isAtomicUpdate() const { return update == UpdateAtomic; }
+  bool isThreadLocal() { return update == ThreadLocalAssign; }
   void setUpdate() { update = Update; }
   void setAtomicUpdate() { update = UpdateAtomic; }
+  void setThreadLocal() { update = ThreadLocalAssign; }
 
   ACCEPT(AssignStmt, ASTVisitor, lhs, rhs, type, update);
 
@@ -221,20 +223,6 @@ private:
   Expr *expr;
   /// nullptr if there is no message.
   Expr *message;
-};
-
-/// Await statement (await expr).
-/// @li await a
-struct AwaitStmt : public AcceptorExtend<AwaitStmt, Stmt> {
-  explicit AwaitStmt(Expr *expr);
-  AwaitStmt(const AwaitStmt &, bool);
-
-  Expr *getExpr() const { return expr; }
-
-  ACCEPT(AwaitStmt, ASTVisitor, expr);
-
-private:
-  Expr *expr;
 };
 
 /// While loop statement (while cond: suite; else: elseSuite).
@@ -591,12 +579,15 @@ private:
 /// @li: with foo(), bar() as b: pass
 struct WithStmt : public AcceptorExtend<WithStmt, Stmt>, Items<Expr *> {
   WithStmt(std::vector<Expr *> items = {}, std::vector<std::string> vars = {},
-           Stmt *suite = nullptr);
-  WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite);
+           Stmt *suite = nullptr, bool isAsync = false);
+  WithStmt(std::vector<std::pair<Expr *, Expr *>> items, Stmt *suite, bool isAsync);
   WithStmt(const WithStmt &, bool);
 
   const std::vector<std::string> &getVars() const { return vars; }
   SuiteStmt *getSuite() const { return suite; }
+
+  bool isAsync() const { return async; }
+  void setAsync() { async = true; }
 
   ACCEPT(WithStmt, ASTVisitor, items, vars, suite);
 
@@ -604,6 +595,7 @@ private:
   /// empty string if a corresponding item is unnamed
   std::vector<std::string> vars;
   SuiteStmt *suite;
+  bool async;
 };
 
 /// Custom block statement (foo: ...).
@@ -679,24 +671,6 @@ private:
 } // namespace codon::ast
 
 namespace tser {
-static void operator<<(codon::ast::Stmt *t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Stmt>;
-  a.save(t != nullptr);
-  if (t) {
-    auto typ = t->dynamicNodeId();
-    auto key = S::_serializers[const_cast<void *>(typ)];
-    a.save(key);
-    S::save(key, t, a);
-  }
-}
-static void operator>>(codon::ast::Stmt *&t, Archive &a) {
-  using S = codon::PolymorphicSerializer<Archive, codon::ast::Stmt>;
-  bool empty = a.load<bool>();
-  if (!empty) {
-    std::string key = a.load<std::string>();
-    S::load(key, t, a);
-  } else {
-    t = nullptr;
-  }
-}
+void operator<<(codon::ast::Stmt *t, BinaryArchive &a);
+void operator>>(codon::ast::Stmt *&t, BinaryArchive &a);
 } // namespace tser

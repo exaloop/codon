@@ -41,7 +41,7 @@ PySet_New = Function[[cobj], cobj](cobj())
 PyTuple_New = Function[[int], cobj](cobj())
 PyTuple_Size = Function[[cobj], int](cobj())
 PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
-PyTuple_SetItem = Function[[cobj, int, cobj], NoneType](cobj())
+PyTuple_SetItem = Function[[cobj, int, cobj], i32](cobj())
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
 PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
 PyUnicode_FromString = Function[[cobj], cobj](cobj())
@@ -92,11 +92,13 @@ PyNumber_Index = Function[[cobj], cobj](cobj())
 
 # object
 PyObject_Call = Function[[cobj, cobj, cobj], cobj](cobj())
+PyObject_CallNoArgs = Function[[cobj], cobj](cobj())
+PyObject_CallOneArg = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetAttr = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetAttrString = Function[[cobj, cobj], cobj](cobj())
 PyObject_GetIter = Function[[cobj], cobj](cobj())
 PyObject_HasAttrString = Function[[cobj, cobj], int](cobj())
-PyObject_IsTrue = Function[[cobj], int](cobj())
+PyObject_IsTrue = Function[[cobj], i32](cobj())
 PyObject_Length = Function[[cobj], int](cobj())
 PyObject_LengthHint = Function[[cobj, int], int](cobj())
 PyObject_SetAttrString = Function[[cobj, cobj, cobj], cobj](cobj())
@@ -279,6 +281,8 @@ def init_handles_dlopen(py_handle: cobj):
     global PyNumber_Float
     global PyNumber_Index
     global PyObject_Call
+    global PyObject_CallNoArgs
+    global PyObject_CallOneArg
     global PyObject_GetAttr
     global PyObject_GetAttrString
     global PyObject_GetIter
@@ -415,6 +419,8 @@ def init_handles_dlopen(py_handle: cobj):
     PyNumber_Float = dlsym(py_handle, "PyNumber_Float")
     PyNumber_Index = dlsym(py_handle, "PyNumber_Index")
     PyObject_Call = dlsym(py_handle, "PyObject_Call")
+    PyObject_CallNoArgs = dlsym(py_handle, "PyObject_CallNoArgs")
+    PyObject_CallOneArg = dlsym(py_handle, "PyObject_CallOneArg")
     PyObject_GetAttr = dlsym(py_handle, "PyObject_GetAttr")
     PyObject_GetAttrString = dlsym(py_handle, "PyObject_GetAttrString")
     PyObject_GetIter = dlsym(py_handle, "PyObject_GetIter")
@@ -505,7 +511,7 @@ def init_handles_static():
     from C import PyTuple_New(int) -> cobj as _PyTuple_New
     from C import PyTuple_Size(cobj) -> int as _PyTuple_Size
     from C import PyTuple_GetItem(cobj, int) -> cobj as _PyTuple_GetItem
-    from C import PyTuple_SetItem(cobj, int, cobj) as _PyTuple_SetItem
+    from C import PyTuple_SetItem(cobj, int, cobj) -> i32 as _PyTuple_SetItem
     from C import PyUnicode_AsEncodedString(cobj, cobj, cobj) -> cobj as _PyUnicode_AsEncodedString
     from C import PyUnicode_DecodeFSDefaultAndSize(cobj, int) -> cobj as _PyUnicode_DecodeFSDefaultAndSize
     from C import PyUnicode_FromString(cobj) -> cobj as _PyUnicode_FromString
@@ -552,11 +558,13 @@ def init_handles_static():
     from C import PyNumber_Float(cobj) -> cobj as _PyNumber_Float
     from C import PyNumber_Index(cobj) -> cobj as _PyNumber_Index
     from C import PyObject_Call(cobj, cobj, cobj) -> cobj as _PyObject_Call
+    from C import PyObject_CallNoArgs(cobj) -> cobj as _PyObject_CallNoArgs
+    from C import PyObject_CallOneArg(cobj, cobj) -> cobj as _PyObject_CallOneArg
     from C import PyObject_GetAttr(cobj, cobj) -> cobj as _PyObject_GetAttr
     from C import PyObject_GetAttrString(cobj, cobj) -> cobj as _PyObject_GetAttrString
     from C import PyObject_GetIter(cobj) -> cobj as _PyObject_GetIter
     from C import PyObject_HasAttrString(cobj, cobj) -> int as _PyObject_HasAttrString
-    from C import PyObject_IsTrue(cobj) -> int as _PyObject_IsTrue
+    from C import PyObject_IsTrue(cobj) -> i32 as _PyObject_IsTrue
     from C import PyObject_Length(cobj) -> int as _PyObject_Length
     from C import PyObject_LengthHint(cobj, int) -> int as _PyObject_LengthHint
     from C import PyObject_SetAttrString(cobj, cobj, cobj) -> cobj as _PyObject_SetAttrString
@@ -688,6 +696,8 @@ def init_handles_static():
     global PyNumber_Float
     global PyNumber_Index
     global PyObject_Call
+    global PyObject_CallNoArgs
+    global PyObject_CallOneArg
     global PyObject_GetAttr
     global PyObject_GetAttrString
     global PyObject_GetIter
@@ -824,6 +834,8 @@ def init_handles_static():
     PyNumber_Float = _PyNumber_Float
     PyNumber_Index = _PyNumber_Index
     PyObject_Call = _PyObject_Call
+    PyObject_CallNoArgs = _PyObject_CallNoArgs
+    PyObject_CallOneArg = _PyObject_CallOneArg
     PyObject_GetAttr = _PyObject_GetAttr
     PyObject_GetAttrString = _PyObject_GetAttrString
     PyObject_GetIter = _PyObject_GetIter
@@ -954,25 +966,64 @@ class _PyArg_Parser:
         return _PyArg_Parser(z, format, keywords, fname, o, z, z, z, o, o)
 
 @dataclass(init=False)
-class PyError(Static[Exception]):
+class PyError(Exception):
     pytype: pyobj
 
     def __init__(self, message: str):
-        super().__init__("PyError", message)
+        super().__init__(message)
         self.pytype = pyobj(cobj(), steal=True)
 
     @overload
     def __init__(self, message: str, pytype: pyobj):
-        super().__init__("PyError", message)
+        super().__init__(message)
         self.pytype = pytype
+
+def _apply1(func, obj: cobj, *args):
+    return pyobj(pyobj.exc_wrap(func(obj, *args)), steal=True)
+
+def _apply2(func, obj: cobj, other, *args):
+    if isinstance(other, pyobj):
+        return pyobj(pyobj.exc_wrap(func(obj, other.p, *args)), steal=True)
+    else:
+        other_py = other.__to_py__()
+        try:
+            return pyobj(pyobj.exc_wrap(func(obj, other_py, *args)), steal=True)
+        finally:
+            pyobj.decref(other_py)
+
+def _rapply2(func, obj: cobj, other, *args):
+    if isinstance(other, pyobj):
+        return pyobj(pyobj.exc_wrap(func(other.p, obj, *args)), steal=True)
+    else:
+        other_py = other.__to_py__()
+        try:
+            return pyobj(pyobj.exc_wrap(func(other_py, obj, *args)), steal=True)
+        finally:
+            pyobj.decref(other_py)
+
+def _apply3(func, obj: cobj, other1, other2, *args):
+    if isinstance(other1, pyobj) and isinstance(other2):
+        return pyobj(pyobj.exc_wrap(func(obj, other1.p, other2.p, *args)), steal=True)
+    else:
+        other1_py = other1.__to_py__()
+        other2_py = other2.__to_py__()
+        try:
+            ret = pyobj.exc_wrap(func(obj, other1_py, other2_py, *args))
+            if isinstance(ret, int):
+                return
+            else:
+                return pyobj(ret, steal=True)
+        finally:
+            pyobj.decref(other1_py)
+            pyobj.decref(other2_py)
 
 @extend
 class pyobj:
     def __new__() -> pyobj:
-        return __internal__.class_alloc(pyobj)
+        return type._ref_new(pyobj)
 
     def __raw__(self) -> Ptr[byte]:
-        return __internal__.class_raw(self)
+        return type._ref_raw(self)
 
     def __init__(self, p: Ptr[byte], steal: bool = False):
         self.p = p
@@ -985,141 +1036,151 @@ class pyobj:
     def _getattr(self, name: str) -> pyobj:
         return pyobj(pyobj.exc_wrap(PyObject_GetAttrString(self.p, name.c_str())), steal=True)
 
-    def exc_wrap(_retval: T, T: type) -> T:
-        pyobj.exc_check()
-        return _retval
+    def exc_wrap(retval: T, T: type) -> T:
+        if T is cobj:
+            if not retval:
+                pyobj.exc_check()
+        elif T is int:
+            if retval < 0:
+                pyobj.exc_check()
+        elif T is i32:
+            if retval < i32(0):
+                pyobj.exc_check()
+        else:
+            pyobj.exc_check()
+        return retval
 
     def __add__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Add(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Add, self.p, other)
 
     def __radd__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Add(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Add, self.p, other)
 
     def __sub__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Subtract(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Subtract, self.p, other)
 
     def __rsub__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Subtract(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Subtract, self.p, other)
 
     def __mul__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Multiply(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Multiply, self.p, other)
 
     def __rmul__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Multiply(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Multiply, self.p, other)
 
     def __matmul__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_MatrixMultiply(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_MatrixMultiply, self.p, other)
 
     def __rmatmul__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_MatrixMultiply(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_MatrixMultiply, self.p, other)
 
     def __floordiv__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_FloorDivide(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_FloorDivide, self.p, other)
 
     def __rfloordiv__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_FloorDivide(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_FloorDivide, self.p, other)
 
     def __truediv__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_TrueDivide(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_TrueDivide, self.p, other)
 
     def __rtruediv__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_TrueDivide(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_TrueDivide, self.p, other)
 
     def __mod__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Remainder(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Remainder, self.p, other)
 
     def __rmod__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Remainder(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Remainder, self.p, other)
 
     def __divmod__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Divmod(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Divmod, self.p, other)
 
     def __rdivmod__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Divmod(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Divmod, self.p, other)
 
     def __pow__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Power(self.p, other.__to_py__(), Py_None)), steal=True)
+        return _apply2(PyNumber_Power, self.p, other, Py_None)
 
     def __rpow__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Power(other.__to_py__(), self.p, Py_None)), steal=True)
+        return _rapply2(PyNumber_Power, self.p, other, Py_None)
 
     def __neg__(self):
-        return pyobj(pyobj.exc_wrap(PyNumber_Negative(self.p)), steal=True)
+        return _apply1(PyNumber_Negative, self.p)
 
     def __pos__(self):
-        return pyobj(pyobj.exc_wrap(PyNumber_Positive(self.p)), steal=True)
+        return _apply1(PyNumber_Positive, self.p)
 
     def __invert__(self):
-        return pyobj(pyobj.exc_wrap(PyNumber_Invert(self.p)), steal=True)
+        return _apply1(PyNumber_Invert, self.p)
 
     def __lshift__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Lshift(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Lshift, self.p, other)
 
     def __rlshift__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Lshift(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Lshift, self.p, other)
 
     def __rshift__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Rshift(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Rshift, self.p, other)
 
     def __rrshift__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Rshift(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Rshift, self.p, other)
 
     def __and__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_And(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_And, self.p, other)
 
     def __rand__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_And(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_And, self.p, other)
 
     def __xor__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Xor(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Xor, self.p, other)
 
     def __rxor__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Xor(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Xor, self.p, other)
 
     def __or__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Or(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_Or, self.p, other)
 
     def __ror__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_Or(other.__to_py__(), self.p)), steal=True)
+        return _rapply2(PyNumber_Or, self.p, other)
 
     def __iadd__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceAdd(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceAdd, self.p, other)
 
     def __isub__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceSubtract(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceSubtract, self.p, other)
 
     def __imul__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceMultiply(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceMultiply, self.p, other)
 
     def __imatmul__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceMatrixMultiply(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceMatrixMultiply, self.p, other)
 
     def __ifloordiv__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceFloorDivide(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceFloorDivide, self.p, other)
 
     def __itruediv__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceTrueDivide(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceTrueDivide, self.p, other)
 
     def __imod__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceRemainder(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceRemainder, self.p, other)
 
     def __ipow__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlacePower(self.p, other.__to_py__(), Py_None)), steal=True)
+        return _apply2(PyNumber_InPlacePower, self.p, other, Py_None)
 
     def __ilshift__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceLshift(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceLshift, self.p, other)
 
     def __irshift__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceRshift(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceRshift, self.p, other)
 
     def __iand__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceAnd(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceAnd, self.p, other)
 
     def __ixor__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceXor(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceXor, self.p, other)
 
     def __ior__(self, other):
-        return pyobj(pyobj.exc_wrap(PyNumber_InPlaceOr(self.p, other.__to_py__())), steal=True)
+        return _apply2(PyNumber_InPlaceOr, self.p, other)
 
     def __int__(self):
         o = pyobj.exc_wrap(PyNumber_Long(self.p))
@@ -1146,33 +1207,34 @@ class pyobj:
         return pyobj.exc_wrap(PyObject_LengthHint(self.p))
 
     def __getitem__(self, key):
-        return pyobj(pyobj.exc_wrap(PyObject_GetItem(self.p, key.__to_py__())), steal=True)
+        return _apply2(PyObject_GetItem, self.p, key)
 
     def __setitem__(self, key, v):
-        pyobj.exc_wrap(PyObject_SetItem(self.p, key.__to_py__(), v.__to_py__()))
+        return _apply3(PyObject_SetItem, self.p, key, v)
 
     def __delitem__(self, key):
-        return pyobj.exc_wrap(PyObject_DelItem(self.p, key.__to_py__()))
+        return _apply2(PyObject_DelItem, self.p, key)
 
     def __lt__(self, other):
-        return pyobj(pyobj.exc_wrap(PyObject_RichCompare(self.p, other.__to_py__(), i32(Py_LT))), steal=True)
+        return _apply2(PyObject_RichCompare, self.p, other, i32(Py_LT))
 
     def __le__(self, other):
-        return pyobj(pyobj.exc_wrap(PyObject_RichCompare(self.p, other.__to_py__(), i32(Py_LE))), steal=True)
+        return _apply2(PyObject_RichCompare, self.p, other, i32(Py_LE))
 
     def __eq__(self, other):
-        return pyobj(pyobj.exc_wrap(PyObject_RichCompare(self.p, other.__to_py__(), i32(Py_EQ))), steal=True)
+        return _apply2(PyObject_RichCompare, self.p, other, i32(Py_EQ))
 
     def __ne__(self, other):
-        return pyobj(pyobj.exc_wrap(PyObject_RichCompare(self.p, other.__to_py__(), i32(Py_NE))), steal=True)
+        return _apply2(PyObject_RichCompare, self.p, other, i32(Py_NE))
 
     def __gt__(self, other):
-        return pyobj(pyobj.exc_wrap(PyObject_RichCompare(self.p, other.__to_py__(), i32(Py_GT))), steal=True)
+        return _apply2(PyObject_RichCompare, self.p, other, i32(Py_GT))
 
     def __ge__(self, other):
-        return pyobj(pyobj.exc_wrap(PyObject_RichCompare(self.p, other.__to_py__(), i32(Py_GE))), steal=True)
+        return _apply2(PyObject_RichCompare, self.p, other, i32(Py_GE))
 
     def __to_py__(self) -> cobj:
+        self.incref()
         return self.p
 
     def __from_py__(p: cobj) -> pyobj:
@@ -1180,11 +1242,11 @@ class pyobj:
 
     def __str__(self) -> str:
         o = pyobj.exc_wrap(PyObject_Str(self.p))
-        return pyobj.exc_wrap(str.__from_py__(o))
+        return str.__from_py__(o)
 
     def __repr__(self) -> str:
         o = pyobj.exc_wrap(PyObject_Repr(self.p))
-        return pyobj.exc_wrap(str.__from_py__(o))
+        return str.__from_py__(o)
 
     def __hash__(self) -> int:
         return pyobj.exc_wrap(PyObject_Hash(self.p))
@@ -1224,7 +1286,6 @@ class pyobj:
             pyobj.decref(ptraceback)
             pyobj.decref(py_msg)
 
-            # pyobj.decref(pvalue)
             raise PyError(msg, pyobj(pvalue))
 
     def incref(self):
@@ -1242,13 +1303,29 @@ class pyobj:
         Py_DecRef(ptr)
 
     def __call__(self, *args, **kwargs):
-        args_py = args.__to_py__()
-        kws_py = cobj()
-        if static.len(kwargs.args) > 0:
-            keys = kwargs.__keys__()
-            values = [pyobj(v.__to_py__(), steal=True) for v in kwargs.args]
-            kws_py = {keys[i]: values[i] for i in range(len(keys))}.__to_py__()
-        return pyobj(pyobj.exc_wrap(PyObject_Call(self.p, args_py, kws_py)), steal=True)
+        if static.len(args) == 0 and static.len(kwargs.args) == 0:
+            return pyobj(pyobj.exc_wrap(PyObject_CallNoArgs(self.p)), steal=True)
+        elif static.len(args) == 1 and static.len(kwargs.args) == 0:
+            arg_py = args[0].__to_py__()
+            try:
+                return pyobj(pyobj.exc_wrap(PyObject_CallOneArg(self.p, arg_py)), steal=True)
+            finally:
+                pyobj.decref(arg_py)
+        else:
+            args_py = args.__to_py__()
+            kws_py = cobj()
+
+            if static.len(kwargs.args) > 0:
+                keys = kwargs.__keys__()
+                values = [pyobj(v.__to_py__(), steal=True) for v in kwargs.args]
+                kws_py = {keys[i]: values[i] for i in range(len(keys))}.__to_py__()
+
+            try:
+                return pyobj(pyobj.exc_wrap(PyObject_Call(self.p, args_py, kws_py)), steal=True)
+            finally:
+                pyobj.decref(args_py)
+                if static.len(kwargs.args) > 0:
+                    pyobj.decref(kws_py)
 
     def _tuple_new(length: int):
         return pyobj.exc_wrap(PyTuple_New(length))
@@ -1257,8 +1334,7 @@ class pyobj:
         return pyobj.exc_wrap(PyTuple_Size(p))
 
     def _tuple_set(p: cobj, idx: int, val: cobj):
-        PyTuple_SetItem(p, idx, val)
-        pyobj.exc_check()
+        pyobj.exc_wrap(PyTuple_SetItem(p, idx, val))
 
     def _tuple_get(p: cobj, idx: int) -> cobj:
         return pyobj.exc_wrap(PyTuple_GetItem(p, idx))
@@ -1286,8 +1362,7 @@ class pyobj:
         return pyobj(PyEval_GetBuiltins())
 
     def _get_module(name: str) -> pyobj:
-        p = pyobj(pyobj.exc_wrap(PyImport_AddModule(name.c_str())))
-        return p
+        return pyobj(pyobj.exc_wrap(PyImport_AddModule(name.c_str())))
 
     def _main_module() -> pyobj:
         return pyobj._get_module("__main__")
@@ -1299,7 +1374,7 @@ class pyobj:
         return {mime: txt}
 
     def __bool__(self):
-        return bool(pyobj.exc_wrap(PyObject_IsTrue(self.p) == 1))
+        return bool(pyobj.exc_wrap(PyObject_IsTrue(self.p) == i32(1)))
 
 def _get_identifier(typ: str) -> pyobj:
     t = pyobj._builtins()[typ]
@@ -1363,7 +1438,7 @@ class bool:
 
     def __from_py__(b: cobj) -> bool:
         _ensure_type(b, PyBool_Type, "bool")
-        return PyObject_IsTrue(b) != 0
+        return PyObject_IsTrue(b) != i32(0)
 
 @extend
 class byte:
@@ -1531,19 +1606,6 @@ class ellipsis:
 
 __pyenv__: Optional[pyobj] = None
 def _____(): __pyenv__  # make it global!
-
-
-import internal.static as _S
-
-
-class _PyWrapError(Static[PyError]):
-    def __init__(self, message: str, pytype: pyobj = pyobj(cobj(), steal=True)):
-        super().__init__("_PyWrapError", message)
-        self.pytype = pytype
-
-    @overload
-    def __init__(self, e: PyError):
-        self.__init__("_PyWrapError", e.message, e.pytype)
 
 
 class _PyWrap:
@@ -1962,7 +2024,7 @@ class _PyWrap:
                 pt._gen = cobj()
                 return cobj()
             else:
-                return gt.next().__to_py__()
+                return gt.__next__().__to_py__()
 
         def __to_py__(self):
             return _PyWrap.wrap_to_py(self)
@@ -2005,6 +2067,8 @@ class _PyWrap:
         return cobj()
 
     def wrap_to_py(o) -> cobj:
+        from internal.gc import alloc_atomic_uncollectable
+
         O = type(o)
         P = PyWrapper[O]
         sz = sizeof(P)

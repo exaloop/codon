@@ -15,16 +15,21 @@ z: Optional[int] = None
 print z is None, None is z, None is not z, None is None #: True True False True
 
 #%% binary_and_or,barebones
+s = 'hehe'
 a = 'hehe' or 5.2
 print(a, a.__class__.__name__)  #: hehe str
 a = 'hehe' and 5.2
+print(a, a.__class__.__name__)  #: 5.2 float
+a = s and 5.2
 print(a, a.__class__.__name__)  #: 5.2 Union[float | str]
 
+e = ''
 a = '' or 5.1
+print(a, a.__class__.__name__)  #: 5.1 float
+a = e or 5.1
 print(a, a.__class__.__name__)  #: 5.1 Union[float | str]
 a = '' and 5.1
 print(a, a.__class__.__name__)  #:  str
-
 
 s = 'hehe'
 a = s or 'aaa'
@@ -49,6 +54,29 @@ a = s or 1
 print(a, a.__class__.__name__)  #: 1 Union[int | str]
 a = s and 1
 print(a, a.__class__.__name__)  #:  Union[int | str]
+
+def foo():
+    print('foo')
+    return True
+
+def bar():
+    print('bar')
+    return False
+
+print(foo() or bar())
+#: foo
+#: True
+print(bar() or foo())
+#: bar
+#: foo
+#: True
+print(foo() and bar())
+#: foo
+#: bar
+#: False
+print(bar() and foo())
+#: bar
+#: False
 
 #%% chain_binary,barebones
 def foo():

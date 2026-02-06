@@ -24,7 +24,7 @@ class str:
     @overload
     def __new__(what) -> str:
         if isinstance(what, Union):
-            return __internal__.union_str(what)
+            return Union._str(what)
         elif isinstance(what, type):
             return what.__repr__()
         elif hasattr(what, "__str__"):

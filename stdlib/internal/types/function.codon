@@ -1,0 +1,77 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+@extend
+class Function:
+    @pure
+    @overload
+    @llvm
+    def __new__(what: Ptr[byte]) -> Function[T, TR]:
+        ret ptr %what
+
+    @overload
+    def __new__(what: Function[T, TR]) -> Function[T, TR]:
+       return what
+
+    @pure
+    @llvm
+    def __raw__(self) -> Ptr[byte]:
+        ret ptr %self
+
+    def __repr__(self) -> str:
+       return Ptr._ptr_to_str(self.__raw__(), "function")
+
+    @llvm
+    def __call_internal__(self: Function[T, TR], args: T) -> TR:
+        noop  # compiler will populate this one
+
+    def __call__(self, *args) -> TR:
+        return Function.__call_internal__(self, args)
+
+
+@extend
+class Callable:
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Ptr[byte]) -> Callable[T, TR]:
+        return type._force_value_cast((fn, data), Callable[T, TR])
+
+    @overload
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Partial[M,PT,K,F],
+                T: type, TR: type,
+                M: Literal[str], PT: type, F: type, K: type) -> Callable[T, TR]:
+        p = Ptr[Partial[M,PT,K,F]](1)
+        p[0] = data
+        return Callable(fn, p.as_byte())
+
+    @overload
+    def __new__(fn: Function[[Ptr[byte], T], TR], data: Function[T, TR]) -> Callable[T, TR]:
+        return Callable(fn, data.__raw__())
+
+    @overload
+    def __new__(fn: Function[T, TR]) -> Callable[T, TR]:
+        def _wrap(data: Ptr[byte], args, f: type):
+            return f(data)(*args)
+        return Callable(
+            static.function.realized(_wrap(f=Function[T, TR], ...), Ptr[byte], T),
+            fn.__raw__()
+        )
+
+    def __call__(self, *args):
+        return self.fn.__call__(self.data, args)
+
+
+@extend
+class Partial:
+    def __repr__(self):
+        return __magic__.repr_partial(self)
+
+    def __call__(self, *args, **kwargs):
+        return self(*args, **kwargs)
+
+    @property
+    def __fn_name__(self):
+        return F.__name__[16:-1]  # chop off unrealized_type
+
+    def __raw__(self):
+        # TODO: better error message
+        return F.T.__raw__()

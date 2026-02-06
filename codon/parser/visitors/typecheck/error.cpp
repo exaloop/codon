@@ -120,7 +120,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (c->getException()) {
         auto t = extractClassType(c->getException());
         bool exceptionOK = false;
-        for (auto &p : getSuperTypes(t))
+        for (auto &p : getRTTISuperTypes(t))
           if (p->is(getMangledClass("std.internal.types.error", "BaseException"))) {
             exceptionOK = true;
             break;
@@ -175,7 +175,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
 
 /// Transform `raise` statements.
 /// @example
-///   `raise exc` -> ```raise __internal__.set_header(exc, "fn", "file", line, col)```
+///   `raise exc` -> ```raise BaseException.set_header(exc, "fn", "file", line, col)```
 void TypecheckVisitor::visit(ThrowStmt *stmt) {
   if (!stmt->expr) {
     stmt->setDone();
@@ -184,17 +184,17 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 
   stmt->expr = transform(stmt->getExpr());
   if (!match(stmt->getExpr(),
-             M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.core", "__internal__",
-                                                    "set_header")),
+             M<CallExpr>(M<IdExpr>(getMangledMethod("std.internal.types.error",
+                                                    "BaseException", "_set_header")),
                          M_))) {
     stmt->expr = transform(N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "set_header")),
+        N<IdExpr>(getMangledMethod("std.internal.types.error", "BaseException",
+                                   "_set_header")),
         stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
         N<IntExpr>(stmt->getSrcInfo().col),
         stmt->getFrom()
-            ? N<CallExpr>(N<DotExpr>(N<IdExpr>("__internal__"), "class_super"),
-                          stmt->getFrom(),
+            ? N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), stmt->getFrom(),
                           N<IdExpr>(getMangledClass("std.internal.types.error",
                                                     "BaseException")))
             : N<CallExpr>(N<IdExpr>("NoneType"))));
@@ -219,6 +219,9 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
 ///        tmp.__exit__()```
 void TypecheckVisitor::visit(WithStmt *stmt) {
   seqassert(!stmt->empty(), "stmt->items is empty");
+
+  bool isAsync = stmt->isAsync();
+
   std::vector<Stmt *> content;
   for (auto i = stmt->items.size(); i-- > 0;) {
     std::string var = stmt->vars[i].empty() ? getTemporaryVar("with") : stmt->vars[i];
@@ -226,12 +229,20 @@ void TypecheckVisitor::visit(WithStmt *stmt) {
                             (*stmt)[i]->hasAttribute(Attr::ExprDominated)
                                 ? AssignStmt::UpdateMode::Update
                                 : AssignStmt::UpdateMode::Assign);
+
+    Expr *enter =
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aenter__" : "__enter__"));
+    Expr *exit =
+        N<CallExpr>(N<DotExpr>(N<IdExpr>(var), isAsync ? "__aexit__" : "__exit__"));
+    if (isAsync) {
+      enter = N<AwaitExpr>(enter);
+      exit = N<AwaitExpr>(exit);
+    }
     content = std::vector<Stmt *>{
-        as, N<ExprStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__enter__"))),
+        as, N<ExprStmt>(enter),
         N<TryStmt>(!content.empty() ? N<SuiteStmt>(content) : clone(stmt->getSuite()),
                    std::vector<ExceptStmt *>{}, nullptr,
-                   N<SuiteStmt>(N<ExprStmt>(
-                       N<CallExpr>(N<DotExpr>(N<IdExpr>(var), "__exit__")))))};
+                   N<SuiteStmt>(N<ExprStmt>(exit)))};
   }
   resultStmt = transform(N<SuiteStmt>(content));
 }

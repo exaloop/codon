@@ -124,6 +124,8 @@ private:
   Var *var;
   /// parallel loop schedule, or null if none
   std::unique_ptr<transform::parallel::OMPSched> schedule;
+  /// true if loop is async
+  bool async;
 
 public:
   static const char NodeId;
@@ -132,11 +134,13 @@ public:
   /// @param iter the iterator
   /// @param body the body
   /// @param var the variable
+  /// @param schedule the parallel schedule
+  /// @param async true if loop is async
   /// @param name the flow's name
   ForFlow(Value *iter, Flow *body, Var *var,
           std::unique_ptr<transform::parallel::OMPSched> schedule = {},
-          std::string name = "")
-      : AcceptorExtend(std::move(name)), iter(iter), body(body), var(var),
+          bool async = false, std::string name = "")
+      : AcceptorExtend(std::move(name)), iter(iter), body(body), var(var), async(async),
         schedule(std::move(schedule)) {}
 
   /// @return the iter
@@ -183,6 +187,12 @@ public:
   void setSchedule(std::unique_ptr<transform::parallel::OMPSched> s) {
     schedule = std::move(s);
   }
+
+  /// @return true if async
+  bool isAsync() const { return async; }
+  /// Sets async status.
+  /// @param a true if async
+  void setAsync(bool a = true) { async = a; }
 
 protected:
   std::vector<Value *> doGetUsedValues() const override;

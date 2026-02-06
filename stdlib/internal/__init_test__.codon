@@ -14,6 +14,15 @@ from internal.types.error import *
 from internal.types.intn import *
 from internal.types.float import *
 from internal.types.byte import *
+from internal.types.type import *
+from internal.types.tuple import *
+from internal.types.rtti import *
+from internal.types.function import *
+from internal.types.union import *
+from internal.types.any import *
+from internal.types.ellipsis import *
+from internal.types.import_ import *
+from internal.types.ptr import *
 from internal.types.generator import *
 from internal.types.optional import *
 from internal.internal import *
@@ -31,7 +40,7 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
             return unwrap(default)
         else:
             raise StopIteration()
-    return g.next()
+    return g.__next__()
 
 from C import seq_print_full(str, cobj)
 

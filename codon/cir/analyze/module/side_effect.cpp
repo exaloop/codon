@@ -332,6 +332,10 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
     set(v, max(Status::NO_CAPTURE, process(v->getValue())));
   }
 
+  void visit(const AwaitInstr *v) override {
+    set(v, max(Status::NO_CAPTURE, process(v->getValue())));
+  }
+
   void visit(const ThrowInstr *v) override {
     process(v->getValue());
     set(v, Status::UNKNOWN, Status::NO_CAPTURE);

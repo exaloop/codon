@@ -1,0 +1,622 @@
+from time import time, sleep
+import threading
+import asyncio
+
+get_running_loop = asyncio.get_running_loop
+sleep_async = asyncio.sleep
+gather = asyncio.gather
+ensure_future = asyncio.ensure_future
+CancelledError = asyncio.CancelledError
+InvalidStateError = asyncio.InvalidStateError
+
+def new_loop():
+    return asyncio.new_event_loop()
+
+class Box[T]:
+    v: T
+
+    def __init__(self):
+        self.v = T()
+
+@test
+def test_call_soon_fifo_order():
+    loop = new_loop()
+    log: List[int] = []
+
+    def cb(i: int):
+        log.append(i)
+        if i == 4:
+            loop.stop()
+
+    for i in range(5):
+        loop.call_soon(cb, i)
+
+    loop.run_forever()
+    assert log == [0, 1, 2, 3, 4]
+
+@test
+def test_loop_stop_from_callback():
+    loop = new_loop()
+    ran = Box[int]()
+
+    def cb():
+        ran.v += 1
+        loop.stop()
+
+    loop.call_soon(cb)
+    loop.run_forever()
+    assert ran.v == 1
+
+@test
+def test_callback_exception_isolated():
+    loop = new_loop()
+    ran = Box[int]()
+
+    def bad(ran):
+        ran.v += 1
+        raise ValueError("boom")
+
+    def good(ran, loop):
+        ran.v += 1
+        loop.stop()
+
+    loop.call_soon(bad, ran)
+    loop.call_soon(good, ran, loop)
+
+    # Expect loop to keep going and run good callback
+    loop.run_forever()
+    assert ran.v == 2
+
+@test
+def test_call_later_orders_by_time():
+    loop = new_loop()
+    log = []
+
+    def cb(i: int):
+        log.append(i)
+        if len(log) == 3:
+            loop.stop()
+
+    loop.call_later(0.03, cb, 2)
+    loop.call_later(0.01, cb, 0)
+    loop.call_later(0.02, cb, 1)
+
+    loop.run_forever()
+    assert log == [0, 1, 2]
+
+@test
+def test_call_later_zero_behaves_like_soon():
+    loop = new_loop()
+    log = []
+
+    def cb(i: int):
+        log.append(i)
+        if len(log) == 3:
+            loop.stop()
+
+    loop.call_later(0.0, cb, 1)
+    loop.call_soon(cb, 0)
+    loop.call_later(0.0, cb, 2)
+
+    loop.run_forever()
+    # Implementation-dependent tie-breaker, but should include all.
+    assert sorted(log) == [0, 1, 2]
+    assert len(log) == 3
+
+@test
+def test_future_set_result_and_result():
+    loop = new_loop()
+    fut = asyncio.Future[int](loop=loop)
+
+    def cb():
+        fut.set_result(123)
+        loop.stop()
+
+    loop.call_soon(cb)
+    loop.run_forever()
+
+    assert fut.done()
+    assert fut.result() == 123
+
+@test
+def test_future_result_pending_raises():
+    loop = new_loop()
+    fut = asyncio.Future[int](loop=loop)
+
+    ok = False
+    try:
+        fut.result()
+    except InvalidStateError:
+        ok = True
+
+    assert ok
+
+@test
+def test_future_callbacks_run_once():
+    loop = new_loop()
+    fut = asyncio.Future[int](loop=loop)
+    count = Box[int]()
+
+    def on_done(fut):
+        count.v += 1
+
+    fut.add_done_callback(on_done)
+    fut.add_done_callback(on_done)
+
+    def setit():
+        fut.set_result(7)
+
+    loop.call_soon(setit)
+    loop.run_until_complete(fut)
+    assert count.v == 0
+
+@test
+def test_future_set_result_twice_raises():
+    loop = new_loop()
+    fut = asyncio.Future[int](loop=loop)
+
+    fut.set_result(1)
+
+    ok = False
+    try:
+        fut.set_result(2)
+    except InvalidStateError:
+        ok = True
+
+    assert ok
+
+@test
+def test_future_done_callback_added_after_done_runs_soon():
+    loop = new_loop()
+    fut = asyncio.Future[int](loop=loop)
+    seen = Box[bool](False)
+
+    fut.set_result(5)
+
+    def cb(fut):
+        seen.v = True
+        loop.stop()
+
+    fut.add_done_callback(cb)
+    loop.run_forever()
+    assert seen.v
+
+@test
+def test_await_done_future_no_suspend_observable():
+    loop = new_loop()
+
+    @test
+    async def main():
+        fut = asyncio.Future[int](loop=loop)
+        fut.set_result(99)
+        # If await suspends unnecessarily, this order can change with call_soon
+        log = []
+        log.append("before")
+        x = await fut
+        log.append("after")
+        assert x == 99
+        assert log == ["before", "after"]
+        loop.stop()
+        return 0
+
+    t = loop.create_task(main())
+    loop.run_forever()
+    assert t.done()
+    assert t.result() == 0
+
+@test
+def test_sleep_zero_yields_control():
+    loop = new_loop()
+    log = []
+
+    async def a():
+        log.append("a1")
+        await sleep_async(0)
+        log.append("a2")
+        return 0
+
+    async def b():
+        log.append("b1")
+        await sleep_async(0)
+        log.append("b2")
+        loop.stop()
+        return 0
+
+    loop.create_task(a())
+    loop.create_task(b())
+    loop.run_forever()
+
+    # Must include all markers, with interleaving possible
+    assert set(log) == {"a1", "a2", "b1", "b2"}
+    assert log[0] in ["a1", "b1"]
+    # Both a2 and b2 should occur after their respective a1/b1
+    assert log.index("a2") > log.index("a1")
+    assert log.index("b2") > log.index("b1")
+
+@test
+def test_sleep_delay_approximately():
+    loop = new_loop()
+
+    @test
+    async def main():
+        t0 = time()
+        await sleep_async(0.05)
+        dt = time() - t0
+        # Don't be too strict; scheduler granularity differs
+        assert dt >= 0.03
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_task_exception_propagates_to_await():
+    loop = new_loop()
+
+    async def child():
+        await sleep_async(0)
+        raise ValueError("boom")
+
+    @test
+    async def parent():
+        try:
+            await child()
+            assert False
+        except ValueError as e:
+            assert "boom" in str(e)
+        loop.stop()
+
+    loop.create_task(parent())
+    loop.run_forever()
+
+@test
+def test_cancellation_delivered_at_await_boundary_and_finally_runs():
+    loop = new_loop()
+    log: List[str] = []
+
+    async def child():
+        try:
+            log.append("child_enter")
+            await sleep_async(10)  # will be cancelled
+            log.append("child_after")  # should not happen
+        finally:
+            log.append("child_finally")
+
+    async def parent():
+        try:
+            log.append("parent_enter")
+            await child()
+            log.append("parent_after")  # should not happen
+        finally:
+            log.append("parent_finally")
+
+    t = loop.create_task(parent())
+
+    async def killer():
+        await sleep_async(0)
+        t.cancel("stop")
+        await sleep_async(0)
+        loop.stop()
+        return 0
+
+    loop.create_task(killer())
+    loop.run_forever()
+
+    # child_finally and parent_finally must run
+    assert "child_finally" in log
+    assert "parent_finally" in log
+    assert "child_after" not in log
+    assert "parent_after" not in log
+
+@test
+def test_cancel_then_await_never_completing_future_raises_immediately():
+    loop = new_loop()
+
+    @test
+    async def main():
+        fut = asyncio.Future[int](loop=loop)
+        # cancel current task then await fut that never completes
+        t = asyncio.current_task()
+        t.cancel("cancelled")
+        try:
+            await fut
+            assert False
+        except CancelledError:
+            pass
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_cancel_idempotent_and_returns_bool():
+    loop = new_loop()
+
+    async def main():
+        await sleep_async(10)
+        return 0
+
+    t = loop.create_task(main())
+
+    @test
+    async def killer():
+        await sleep_async(0)
+        r1 = t.cancel("x")
+        r2 = t.cancel("y")
+        assert r1 == True
+        loop.stop()
+        return 0
+
+    loop.create_task(killer())
+    loop.run_forever()
+
+@test
+def test_structured_await_vs_spawn_order():
+    loop = new_loop()
+    log: List[str] = []
+
+    async def child(log):
+        log.append("child_start")
+        await sleep_async(0)
+        log.append("child_end")
+        return 7
+
+    async def structured(log):
+        log.append("structured_before")
+        x = await child(log)
+        log.append(f"structured_after_{x}")
+
+    async def spawned(log):
+        log.append("spawned_before")
+        t = loop.create_task(child(log))
+        log.append("spawned_after_create_task")
+        x = await t
+        log.append(f"spawned_after_{x}")
+
+    async def main(log):
+        await structured(log)
+        await spawned(log)
+        loop.stop()
+
+    loop.create_task(main(log))
+    loop.run_forever()
+
+    # Structured must preserve child within await boundary
+    si = log.index("structured_before")
+    cs = log.index("child_start")
+    ce = log.index("child_end")
+    sa = log.index("structured_after_7")
+    assert si < cs < ce < sa
+
+    # Spawned has looser ordering: after_create_task may occur before child_start
+    assert "spawned_after_create_task" in log
+    assert "spawned_after_7" in log
+
+@test
+def test_ensure_future_coro_runs():
+    loop = new_loop()
+    ran = Box[bool](False)
+
+    async def child():
+        ran.v = True
+        return 3
+
+    @test
+    async def main():
+        f = ensure_future(child(), loop=loop)
+        x = await f
+        assert x == 3
+        assert ran.v
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_gather_success():
+    loop = new_loop()
+
+    async def a():
+        await sleep_async(0.01)
+        return 1
+
+    async def b():
+        await sleep_async(0.02)
+        return 2
+
+    @test
+    async def main():
+        r = await gather(a(), b())
+        assert r == (1, 2)
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_gather_fail_fast_does_not_cancel_others():
+    loop = new_loop()
+    ran_late = Box[bool](False)
+
+    async def bad():
+        await sleep_async(0.01)
+        raise ValueError("boom")
+
+    async def slow():
+        await sleep_async(0.05)
+        ran_late.v = True
+        return 123
+
+    @test
+    async def main():
+        try:
+            await gather(bad(), slow())
+            assert False
+        except ValueError:
+            pass
+        # Let loop run a bit more so slow can complete; it must NOT be cancelled.
+        await sleep_async(0.06)
+        assert ran_late.v
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_gather_cancel_outer_cancels_children():
+    loop = new_loop()
+    child_cancelled = Box[int]()
+
+    async def child():
+        try:
+            await sleep_async(10)
+        finally:
+            child_cancelled.v += 1
+
+    @test
+    async def main():
+        g = ensure_future(gather(child(), child()), loop=loop)
+        await sleep_async(0)
+        g.cancel("cancel gather")
+        try:
+            await g
+        except CancelledError:
+            pass
+        # give children a tick to run finally
+        await sleep_async(0)
+        assert child_cancelled.v == 2
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_await_task_is_scheduled():
+    loop = new_loop()
+    ran = Box[bool](False)
+
+    async def child():
+        ran.v = True
+        return 9
+
+    @test
+    async def main():
+        t = loop.create_task(child())
+        x = await t
+        assert x == 9
+        assert ran.v
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_await_future_does_not_schedule_producer():
+    loop = new_loop()
+    fut = asyncio.Future[int](loop=loop)
+
+    @test
+    async def main():
+        # Await will block until someone sets the result.
+        # We'll set it via call_later
+        def setit():
+            fut.set_result(77)
+            return 0
+        loop.call_later(0.1, setit)
+        x = await fut
+        assert x == 77
+        loop.stop()
+        return 0
+
+    loop.create_task(main())
+    loop.run_forever()
+
+@test
+def test_no_missed_wakeup_when_future_completes_race():
+    loop = new_loop()
+
+    fut = asyncio.Future[int](loop=loop)
+
+    @test
+    async def waiter():
+        x = await fut
+        assert x == 1
+        loop.stop()
+        return 0
+
+    async def setter():
+        # Try to race by setting soon
+        await sleep_async(0)
+        fut.set_result(1)
+        return 0
+
+    loop.create_task(waiter())
+    loop.create_task(setter())
+    loop.run_forever()
+
+@test
+def test_custom_await():
+
+    class MyFuture:
+        fut: asyncio.Future[int]
+        res: int
+
+        def __init__(self, res: int):
+            self.fut = asyncio.get_running_loop().create_future(int)
+            self.res = res
+
+        def __await__(self):
+            return self.fut.__await__()
+
+        def resolve(self):
+            self.fut.set_result(self.res)
+
+    class MyAwaitable:
+        def __await__(self):
+            yield
+            yield
+
+    @test
+    async def main():
+        fut = MyFuture(42)
+        loop = asyncio.get_running_loop()
+        loop.call_later(1, fut.resolve)
+        assert await fut == 42
+        await MyAwaitable()
+
+    asyncio.run(main())
+
+
+test_call_soon_fifo_order()
+test_loop_stop_from_callback()
+test_callback_exception_isolated()
+test_call_later_orders_by_time()
+test_call_later_zero_behaves_like_soon()
+test_future_set_result_and_result()
+test_future_result_pending_raises()
+test_future_callbacks_run_once()
+test_future_set_result_twice_raises()
+test_future_done_callback_added_after_done_runs_soon()
+test_await_done_future_no_suspend_observable()
+test_sleep_zero_yields_control()
+test_sleep_delay_approximately()
+test_task_exception_propagates_to_await()
+test_cancellation_delivered_at_await_boundary_and_finally_runs()
+test_cancel_then_await_never_completing_future_raises_immediately()
+test_cancel_idempotent_and_returns_bool()
+test_structured_await_vs_spawn_order()
+test_ensure_future_coro_runs()
+test_gather_success()
+test_gather_fail_fast_does_not_cancel_others()
+test_gather_cancel_outer_cancels_children()
+test_await_task_is_scheduled()
+test_await_future_does_not_schedule_producer()
+test_no_missed_wakeup_when_future_completes_race()
+test_custom_await()

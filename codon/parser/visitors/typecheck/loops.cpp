@@ -100,9 +100,6 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 /// Typecheck for statements. Wrap the iterator expression with `__iter__` if needed.
 /// See @c transformHeterogenousTupleFor for iterating heterogenous tuples.
 void TypecheckVisitor::visit(ForStmt *stmt) {
-  if (stmt->isAsync())
-    E(Error::CUSTOM, stmt, "async not yet supported");
-
   stmt->decorator = transformForDecorator(stmt->getDecorator());
 
   std::string breakVar;
@@ -141,10 +138,15 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   }
 
   // Case: iterating a non-generator. Wrap with `__iter__`
-  if (iterType->name != "Generator" && !stmt->isWrapped()) {
+  bool isGenerator =
+      iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
+  if (!isGenerator && !stmt->isWrapped()) {
     stmt->iter = transform(N<CallExpr>(N<DotExpr>(stmt->getIter(), "__iter__")));
     iterType = extractClassType(stmt->getIter());
     stmt->wrapped = true;
+    if (!iterType)
+      return;
+    isGenerator = iterType->name == (stmt->isAsync() ? "AsyncGenerator" : "Generator");
   }
 
   ctx->getBase()->loops.emplace_back(breakVar);
@@ -169,7 +171,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   stmt->var = transform(stmt->getVar());
 
   // Unify iterator variable and the iterator type
-  if (iterType && iterType->name != "Generator")
+  if (iterType && !isGenerator)
     E(Error::EXPECTED_GENERATOR, stmt->getIter());
   if (iterType)
     unify(stmt->getVar()->getType(), extractClassGeneric(iterType));

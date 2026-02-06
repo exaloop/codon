@@ -1,0 +1,194 @@
+# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+
+import internal.static as static
+
+
+def __type_repr__(T: type):
+    return f"<class '{T.__name__}'>"
+
+
+@extend
+class type:
+    @pure
+    @derives
+    @llvm
+    def _force_cast(p, T: type) -> T:
+        """
+        Casts p of any reference type to the reference type T.
+
+        This method is intented for the internal typechecking usage and is completely unsafe.
+        No checks are performed; T is assumed to be a reference type.
+        Any violations will result in LLVM errors.
+        """
+        ret ptr %p
+
+    @pure
+    @derives
+    @llvm
+    def _force_value_cast(t, U: type) -> U:
+        """
+        Casts t of any type to U. Used for casting tuples into named tuple types.
+
+        This method is intented for the internal typechecking usage and is completely unsafe.
+        No checks are performed; t is assumed to be byte-compatible with U.
+        Any violations will result in LLVM errors.
+        """
+        ret {=U} %t
+
+    @pure
+    @derives
+    @llvm
+    def _ref_raw(obj) -> Ptr[byte]:
+        """
+        Casts the reference type to a pointer.
+        """
+
+        ret ptr %obj
+
+    def _ref_new(T: type) -> T:
+        """
+        Allocates a new reference (class) object.
+        """
+
+        from internal.gc import alloc, alloc_atomic, sizeof, register_finalizer
+
+        sz = sizeof(tuple(T))
+        obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
+        register_finalizer(type._force_cast(obj, T))
+        if static.has_rtti(T):
+            obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[byte])
+        return type._force_cast(obj, T)
+
+    def _construct(T: type, *args, **kwargs) -> T:
+        """
+        Shorthand for `t = T.__new__(); t.__init__(*args, **kwargs); t`
+        """
+
+        return T(*args, **kwargs)
+
+
+@__internal__
+class TypeInfo:
+    id: int
+    _parent_ids: Ptr[int]
+    _n_parent_ids: int
+    raw_name: str
+    nice_name: str
+    repr: Function[[Ptr[byte]], str]
+
+    def __new__() -> TypeInfo:
+        return __magic__.new(TypeInfo)
+
+    def __raw__(self) -> Ptr[byte]:
+        return __magic__.raw(self)
+
+    def __init__(self, T: type):
+        if isinstance(T, TypeWrap):
+            self.__init__(T.T)
+            return
+
+        self.id = T.__id__
+        self.raw_name = T.__name__
+        self.nice_name = f"{T}"[8:-2]
+
+        self.repr = Function[[Ptr[byte]], str](cobj())
+        # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
+        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
+        #     if isinstance(fn.TR, str):
+        #         self.repr = fn
+
+        mro = T.__mro__
+        num_mro: Literal[int] = static.len(mro)
+        self._n_parent_ids = num_mro
+
+        if num_mro > 0:
+            self._parent_ids = Ptr[int](num_mro + 1)
+            for i in static.range(num_mro):
+                self._parent_ids[i] = mro[i].T.__id__
+            self._parent_ids[num_mro] = 0
+        else:
+            self._parent_ids = Ptr[int]()
+
+    def is_parent(self, T: type) -> bool:
+        for i in range(self._n_parent_ids):
+            if self._parent_ids[i] == T.__id__:
+                return True
+        return False
+
+    def wrap(arg: Ptr[byte], T: type) -> str:
+        if isinstance(T, ByVal):
+            p = type._force_cast(arg, Ptr[T])
+            return repr(p[0])
+        else:
+            obj = type._force_cast(arg, T)
+            return repr(obj)
+
+    def __str__(self):
+        return self.nice_name
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, other: TypeInfo):
+        return self.id == other.id
+
+    def __ne__(self, other: TypeInfo):
+        return self.id != other.id
+
+
+@extend
+class TypeWrap:
+    def __new__(T: type) -> TypeWrap[T]:
+        return type._force_value_cast((), TypeWrap[T])
+
+    def __call_no_self__(*args, **kwargs) -> T:
+        return T(*args, **kwargs)
+
+    def __call__(self, *args, **kwargs) -> T:
+        return T(*args, **kwargs)
+
+    def __repr__(self):
+        return __type_repr__(T)
+
+    @property
+    def __name__(self):
+        return T.__name__
+
+
+class __cast__:
+    def cast(obj: T, T: type) -> Generator[T]:
+        return obj.__iter__()
+
+    @overload
+    def cast(obj: int) -> float:
+        return float(obj)
+
+    @overload
+    def cast(obj: T, T: type) -> Optional[T]:
+        return Optional[T](obj)
+
+    @overload
+    def cast(obj: Optional[T], T: type) -> T:
+        return obj.unwrap()
+
+    @overload
+    def cast(obj: T, T: type) -> pyobj:
+        return obj.__to_py__()
+
+    @overload
+    def cast(obj: pyobj, T: type) -> T:
+        return T.__from_py__(obj)
+
+    # Function[[T...], R]
+        # ExternFunction[[T...], R]
+        # CodonFunction[[T...], R]
+        # Partial[foo, [T...], R]
+
+    # function into partial (if not Function) / fn(foo) -> fn(foo(...))
+    # empty partial (!!) into Function[]
+    # union extract
+    # any into Union[]
+    # derived to base
+
+    def conv_float(obj: float) -> int:
+        return int(obj)

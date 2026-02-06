@@ -258,6 +258,23 @@ Note that the `gpu=True` option disallows shared variables (i.e. assigning out-o
 variables in the loop body) as well as reductions. The other GPU-specific restrictions
 described here apply as well.
 
+## GPU target selection
+
+The following compiler flags can be used to control GPU code generation and to specify
+the target GPU architecture and feature set:
+
+- `--gpu-name <name>`:
+  Specifies the target GPU architecture or compute capability.
+  This value is passed directly to LLVM and determines the instruction set and hardware
+  features that the generated code targets.
+  Defaults to `sm_30`.
+
+- `--gpu-features <features>`:
+  Specifies a comma-separated list of LLVM-style GPU feature flags to enable or disable.
+  These flags control optional ISA and hardware features exposed to the compiler (for
+  example, enabling a specific PTX version with `+ptx42`).
+  Defaults to `+ptx42`.
+
 ## Inspecting the generated PTX code
 
 The generated PTX code can be saved to a file via the `-ptx <file>` flag. This code is

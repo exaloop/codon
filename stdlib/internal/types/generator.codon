@@ -2,6 +2,14 @@
 
 @extend
 class Generator:
+    def _yield_final(val):
+        """Compiler-generated."""
+        pass
+
+    def _yield_in_no_suspend(T: type) -> T:
+        """Compiler-generated."""
+        pass
+
     @__internal__
     def __promise__(self) -> Ptr[T]:
         pass
@@ -10,7 +18,7 @@ class Generator:
         self.__resume__()
         return self.__done__()
 
-    def next(self: Generator[T]) -> T:
+    def __next__(self: Generator[T]) -> T:
         if isinstance(T, None):
             pass
         else:
@@ -20,6 +28,7 @@ class Generator:
         return self
 
     @pure
+    @derives
     @llvm
     def __raw__(self) -> Ptr[byte]:
         ret ptr %self
@@ -50,7 +59,7 @@ class Generator:
         ret {} {}
 
     def __repr__(self) -> str:
-        return __internal__.raw_type_str(self.__raw__(), "generator")
+        return Ptr._ptr_to_str(self.__raw__(), "generator")
 
     def send(self, what: T) -> T:
         p = self.__promise__()

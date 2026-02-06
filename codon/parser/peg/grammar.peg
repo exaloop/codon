@@ -105,7 +105,6 @@ small_stmt <-
   / nonlocal_stmt
   / yield_stmt &(SPACE / ';' / EOL)
   / assert_stmt
-  / await_stmt
   / del_stmt
   / return_stmt &(SPACE / ';' / EOL)
   / raise_stmt &(SPACE / ';' / EOL)
@@ -161,9 +160,6 @@ yield_stmt <-
   }
 assert_stmt <- 'assert' SPACE expression (_ ',' _ expression)? {
   return asts(Assert, LOC, ac_expr(V0), VS.size() > 1 ? ac_expr(V1) : nullptr);
-}
-await_stmt <- 'await' SPACE expression {
-  return asts(Await, LOC, ac_expr(V0));
 }
 
 # TODO: do targets as in Python
@@ -256,7 +252,7 @@ compound_stmt <-
   / function
   / if_stmt
   / class
-  / with_stmt
+  / with_stmt_async
   / for
   / try_stmt
   / while_stmt
@@ -300,9 +296,16 @@ for_stmt <- ('for' SPACE star_targets)
     ac_expr(V0), ac_expr(V1), ac_stmt(V2), VS.size() > 3 ? ac_stmt(VS[3]) : nullptr
   );
 }
+with_stmt_async <-
+  / 'async' SPACE with_stmt {
+    auto s = (WithStmt*)(ac_stmt(V0));
+    s->setAsync();
+    return make_any<Stmt*>(s);
+  }
+  / with_stmt { return V0; }
 with_stmt <- 'with' SPACE (with_parens_item / with_item) _ ':' _ suite {
   return asts(With, LOC,
-    ac<SemVals>(V0).transform<pair<Expr*, Expr*>>(), ac_stmt(V1)
+    ac<SemVals>(V0).transform<pair<Expr*, Expr*>>(), ac_stmt(V1), false
   );
 }
 with_parens_item <- '(' _ tlist(',', as_item) _ ')' { return VS; }
@@ -588,9 +591,12 @@ factor <-
   }
   / power { return ac_expr(V0); }
 power <-
-  / primary _ <'**'> _ factor {
+  / await_primary _ <'**'> _ factor {
     return aste(Binary, LOC, ac_expr(V0), "**", ac_expr(V1));
   }
+  / await_primary { return ac_expr(V0); }
+await_primary <-
+  / 'await' SPACE primary { return aste(Await, LOC, ac_expr(V0)); }
   / primary { return ac_expr(V0); }
 primary <- atom (_ primary_tail)* {
   auto e = ac<Expr*>(V0);

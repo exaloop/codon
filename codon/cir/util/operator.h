@@ -117,6 +117,7 @@ public:
   LAMBDA_VISIT(ContinueInstr);
   LAMBDA_VISIT(ReturnInstr);
   LAMBDA_VISIT(YieldInstr);
+  LAMBDA_VISIT(AwaitInstr);
   LAMBDA_VISIT(ThrowInstr);
   LAMBDA_VISIT(FlowInstr);
   LAMBDA_VISIT(dsl::CustomInstr);

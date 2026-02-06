@@ -452,11 +452,12 @@ print(Foo.cx)  #: 10
 def x():
     class Foo:
         i = 0
-        f = Foo()
+        f = None
         def __init__(self):
             Foo.i += 1
         def __repr__(self):
             return 'heh-cls'
+    Foo.f = Foo()
     Foo(), Foo(), Foo()
     print Foo.f, Foo.i  #: heh-cls 4
     return Foo()
@@ -465,9 +466,10 @@ print f.f, f.i  #: heh-cls 5
 
 @tuple
 class Fot:
-    f = Fot()
+    f = None
     def __repr__(self):
         return 'heh-tup'
+Fot.f = Fot()
 print Fot.f  #: heh-tup
 
 #%% extend,barebones
@@ -569,3 +571,37 @@ class Tuple:
         pass
 ("abc",).inc_ref()  # #683
 #! 'Tuple' cannot be extended
+
+
+#%% class_var_poly,barebones
+class A:
+    apple = {"a": 1, "b": 2, "c": 3}
+    pear = 3
+class B(A):
+    pass
+class C(B):
+    pass
+
+print(A.apple)
+#: {'a': 1, 'b': 2, 'c': 3}
+print(A.pear)
+#: 3
+print(B.apple)
+#: {'a': 1, 'b': 2, 'c': 3}
+print(B.pear)
+#: 3
+print(C.apple)
+#: {'a': 1, 'b': 2, 'c': 3}
+print(C.pear)
+#: 3
+A.pear += 1
+print(A.pear)
+#: 4
+print(B.pear)
+#: 4
+print(C.pear)
+#: 4
+B.apple["d"] = 4
+print(C.apple)
+#: {'a': 1, 'b': 2, 'c': 3, 'd': 4}
+

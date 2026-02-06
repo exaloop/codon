@@ -82,7 +82,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
           resultExpr = transform(N<BoolExpr>(false));
         else
           resultExpr = expr->getLhs();
-        return;
+      } else {
+        resultExpr =
+            transform(N<StmtExpr>(N<ExprStmt>(expr->getLhs()), expr->getRhs()));
       }
     } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
       if (ts->value.empty()) {
@@ -90,7 +92,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
           resultExpr = transform(N<BoolExpr>(false));
         else
           resultExpr = expr->getLhs();
-        return;
+      } else {
+        resultExpr =
+            transform(N<StmtExpr>(N<ExprStmt>(expr->getLhs()), expr->getRhs()));
       }
     } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
       if (!ti->value) {
@@ -98,12 +102,14 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
           resultExpr = transform(N<BoolExpr>(false));
         else
           resultExpr = expr->getLhs();
-        return;
+      } else {
+        resultExpr =
+            transform(N<StmtExpr>(N<ExprStmt>(expr->getLhs()), expr->getRhs()));
       }
     } else {
       expr->getType()->getUnbound()->staticKind = LiteralKind::Bool;
-      return;
     }
+    return;
   } else if (expr->getLhs()->getType()->getStaticKind() && expr->op == "||") {
     if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
       if (tb->value) {
@@ -111,7 +117,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
           resultExpr = transform(N<BoolExpr>(true));
         else
           resultExpr = expr->getLhs();
-        return;
+      } else {
+        resultExpr =
+            transform(N<StmtExpr>(N<ExprStmt>(expr->getLhs()), expr->getRhs()));
       }
     } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
       if (!ts->value.empty()) {
@@ -119,7 +127,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
           resultExpr = transform(N<BoolExpr>(true));
         else
           resultExpr = expr->getLhs();
-        return;
+      } else {
+        resultExpr =
+            transform(N<StmtExpr>(N<ExprStmt>(expr->getLhs()), expr->getRhs()));
       }
     } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
       if (ti->value) {
@@ -127,12 +137,14 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
           resultExpr = transform(N<BoolExpr>(true));
         else
           resultExpr = expr->getLhs();
-        return;
+      } else {
+        resultExpr =
+            transform(N<StmtExpr>(N<ExprStmt>(expr->getLhs()), expr->getRhs()));
       }
     } else {
       expr->getType()->getUnbound()->staticKind = LiteralKind::Bool;
-      return;
     }
+    return;
   }
 
   expr->rexpr = transform(expr->getRhs(), true);
@@ -751,18 +763,47 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__")),
                                  N<BoolExpr>(false)));
     } else {
-      return transform(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "and_union")),
-          expr->getLhs(), expr->getRhs()));
+      auto lt = realize(expr->getLhs()->getType());
+      auto rt = realize(expr->getRhs()->getType());
+      if (!lt || !rt) {
+        return const_cast<BinaryExpr *>(expr); // delay
+      } else {
+        auto vn = getTemporaryVar("cond");
+        auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
+        if (lt->realizedName() == rt->realizedName()) {
+          return N<IfExpr>(ve, expr->getRhs(), N<IdExpr>(vn));
+        } else {
+          auto T = N<InstantiateExpr>(
+              N<IdExpr>("Union"), std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
+                                                      N<IdExpr>(rt->realizedName())});
+          return N<IfExpr>(ve, N<CallExpr>(T, expr->getRhs()),
+                           N<CallExpr>(clone(T), N<IdExpr>(vn)));
+        }
+      }
     }
   } else if (expr->getOp() == "||") {
     if (ctx->expectedType && ctx->expectedType->is("bool")) {
       return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
     } else {
-      return transform(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "__internal__", "or_union")),
-          expr->getLhs(), expr->getRhs()));
+      auto lt = realize(expr->getLhs()->getType());
+      auto rt = realize(expr->getRhs()->getType());
+      if (!lt || !rt) {
+        return const_cast<BinaryExpr *>(expr); // delay
+      } else {
+        auto vn = getTemporaryVar("cond");
+        auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
+        if (lt->realizedName() == rt->realizedName()) {
+          return N<IfExpr>(ve, N<IdExpr>(vn), expr->getRhs());
+        } else {
+          auto T = N<InstantiateExpr>(
+              N<IdExpr>(getMangledClass("std.internal.core", "Union")),
+              std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
+                                  N<IdExpr>(rt->realizedName())});
+          return N<IfExpr>(ve, N<CallExpr>(T, N<IdExpr>(vn)),
+                           N<CallExpr>(clone(T), expr->getRhs()));
+        }
+      }
     }
   } else if (expr->getOp() == "not in") {
     return transform(N<CallExpr>(N<DotExpr>(

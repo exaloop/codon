@@ -107,7 +107,7 @@ public:
   }
   VISIT(ForFlow);
   void handle(const ForFlow *x, const ForFlow *y) {
-    result = process(x->getIter(), y->getIter()) &&
+    result = (x->isAsync() == y->isAsync()) && process(x->getIter(), y->getIter()) &&
              process(x->getBody(), y->getBody()) && process(x->getVar(), y->getVar());
   }
   VISIT(ImperativeForFlow);
@@ -217,6 +217,12 @@ public:
   VISIT(YieldInstr);
   void handle(const YieldInstr *x, const YieldInstr *y) {
     result = process(x->getValue(), y->getValue());
+  }
+  VISIT(AwaitInstr);
+  void handle(const AwaitInstr *x, const AwaitInstr *y) {
+    result = process(x->getType(), y->getType()) &&
+             process(x->getValue(), y->getValue()) &&
+             (x->isGenerator() == y->isGenerator());
   }
   VISIT(ThrowInstr);
   void handle(const ThrowInstr *x, const ThrowInstr *y) {

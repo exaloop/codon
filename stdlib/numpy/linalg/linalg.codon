@@ -17,9 +17,9 @@ from ..util import cast, cdiv_int, coerce, eps, exp, free, inf, log, multirange,
 # Utilities #
 #############
 
-class LinAlgError(Static[Exception]):
+class LinAlgError(Exception):
     def __init__(self, message: str = ''):
-        super().__init__("numpy.linalg.LinAlgError", message)
+        super().__init__(message)
 
 def _square_rows(a):
     s = a.shape

@@ -66,9 +66,9 @@ def min(*args, key=None, default=None):
     elif static.len(args) == 1:
         x = args[0].__iter__()
         if not x.done():
-            s = x.next()
+            s = x.__next__()
             while not x.done():
-                i = x.next()
+                i = x.__next__()
                 if key is None:
                     if i < s:
                         s = i
@@ -108,9 +108,9 @@ def max(*args, key=None, default=None):
     elif static.len(args) == 1:
         x = args[0].__iter__()
         if not x.done():
-            s = x.next()
+            s = x.__next__()
             while not x.done():
-                i = x.next()
+                i = x.__next__()
                 if key is None:
                     if i > s:
                         s = i
@@ -178,7 +178,7 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
             return default.__val__()
         else:
             raise StopIteration()
-    return g.next()
+    return g.__next__()
 
 def any(x: Generator[T], T: type) -> bool:
     for a in x:
@@ -203,7 +203,7 @@ def zip(*args):
                 if i.done():
                     done = True
             if not done:
-                yield tuple(i.next() for i in iters)
+                yield tuple(i.__next__() for i in iters)
         for i in iters:
             i.destroy()
 
@@ -235,11 +235,15 @@ def echo(x):
 def reversed(x):
     if hasattr(x, "__reversed__"):
         return x.__reversed__()
-    else:
+
+
+    def _rev(x):
         i = x.__len__() - 1
         while i >= 0:
             yield x[i]
             i -= 1
+
+    return _rev(x)
 
 def round(x, n=0):
     nx = float.__pow__(10.0, n)

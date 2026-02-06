@@ -70,7 +70,7 @@ void TranslateVisitor::initializeGlobals() const {
       }
       ir = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
                             : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                  SrcInfo(), vt, true, false, name);
+                                  SrcInfo(), vt, true, false, false, name);
       ctx->cache->codegenCtx->add(TranslateItem::Var, name, ir);
     }
 }
@@ -317,7 +317,9 @@ void TranslateVisitor::visit(CallExpr *expr) {
     arrayType->setAstType(expr->getType()->shared_from_this());
     result = make<ir::StackAllocInstr>(expr, arrayType, sz);
     return;
-  } else if (ei && startswith(ei->getValue(), "__internal__.yield_in_no_suspend")) {
+  } else if (ei && startswith(ei->getValue(),
+                              getMangledMethod("std.internal.core", "Generator",
+                                               "_yield_in_no_suspend"))) {
     result = make<ir::YieldInInstr>(expr, getType(expr->getType()), false);
     return;
   }
@@ -420,6 +422,13 @@ void TranslateVisitor::visit(PipeExpr *expr) {
   }
 }
 
+void TranslateVisitor::visit(AwaitExpr *expr) {
+  result =
+      make<ir::AwaitInstr>(expr, transform(expr->getExpr()), getType(expr->getType()),
+                           expr->getExpr()->getType()->is(
+                               getMangledClass("std.internal.core", "Generator")));
+}
+
 void TranslateVisitor::visit(StmtExpr *expr) {
   auto *bodySeries = make<ir::SeriesFlow>(expr, "body");
   ctx->addSeries(bodySeries);
@@ -460,7 +469,7 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
   auto ce = cast<CallExpr>(stmt->getExpr());
   if (ce && ((ei = cast<IdExpr>(ce->getExpr()))) &&
       ei->getValue() ==
-          getMangledMethod("std.internal.core", "__internal__", "yield_final")) {
+          getMangledMethod("std.internal.core", "Generator", "_yield_final")) {
     result = make<ir::YieldInstr>(stmt, transform((*ce)[0].value), true);
     ctx->getBase()->setGenerator();
   } else {
@@ -474,7 +483,7 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
     return;
 
   auto lei = cast<IdExpr>(stmt->getLhs());
-  seqassert(lei, "expected IdExpr, got {}", *(stmt->getLhs()));
+  seqassert(lei, "expected IdExpr, got {}", *stmt);
   auto var = lei->getValue();
 
   auto isGlobal = in(ctx->cache->globals, var);
@@ -512,9 +521,14 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   } else {
     v = make<ir::Var>(
         stmt, getType((stmt->getRhs() ? stmt->getRhs() : stmt->getLhs())->getType()),
-        false, false, var);
+        false, false, false, var);
     ctx->getBase()->push_back(v);
     ctx->add(TranslateItem::Var, var, v);
+  }
+  // Check if it is thread-local
+  if (stmt->isThreadLocal()) {
+    v->setThreadLocal();
+    v->setGlobal();
   }
   // Check if it is a C variable
   if (stmt->getLhs()->hasAttribute(Attr::ExprExternVar)) {
@@ -575,8 +589,8 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   auto varName = cast<IdExpr>(stmt->getVar())->getValue();
   ir::Var *var = nullptr;
   if (!ctx->find(varName) || !stmt->getVar()->hasAttribute(Attr::ExprDominated)) {
-    var =
-        make<ir::Var>(stmt, getType(stmt->getVar()->getType()), false, false, varName);
+    var = make<ir::Var>(stmt, getType(stmt->getVar()->getType()), false, false, false,
+                        varName);
   } else {
     var = ctx->find(varName)->getVar();
   }
@@ -584,6 +598,8 @@ void TranslateVisitor::visit(ForStmt *stmt) {
   auto bodySeries = make<ir::SeriesFlow>(stmt, "body");
 
   auto loop = make<ir::ForFlow>(stmt, transform(stmt->getIter()), bodySeries, var);
+  if (stmt->isAsync())
+    loop->setAsync();
   if (os)
     loop->setSchedule(std::move(os));
   ctx->add(TranslateItem::Var, varName, var);
@@ -641,7 +657,7 @@ void TranslateVisitor::visit(TryStmt *stmt) {
     ir::Var *catchVar = nullptr;
     if (!c->getVar().empty()) {
       if (!ctx->find(c->getVar()) || !c->hasAttribute(Attr::ExprDominated)) {
-        catchVar = make<ir::Var>(stmt, excType, false, false, c->getVar());
+        catchVar = make<ir::Var>(stmt, excType, false, false, false, c->getVar());
       } else {
         catchVar = ctx->find(c->getVar())->getVar();
       }
@@ -739,6 +755,8 @@ void TranslateVisitor::transformFunction(const types::FuncType *type, FunctionSt
     cast<ir::BodiedFunc>(func)->setBody(body);
     ctx->popBlock();
   }
+  if (ast->isAsync())
+    func->setAsync();
 }
 
 void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt *ast,

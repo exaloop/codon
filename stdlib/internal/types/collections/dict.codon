@@ -158,12 +158,19 @@ class Dict:
 
     # Helper methods
 
+    def __bool__(self):
+        return self.__len__() > 0
+
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
     def get(self, key: K, s: V) -> V:
         x = self._kh_get(key)
         return self._vals[x] if x != self._kh_end() else s
+
+    def get(self, key: K) -> Optional[V]:
+        x = self._kh_get(key)
+        return self._vals[x] if x != self._kh_end() else None
 
     def setdefault(self, key: K, val: V) -> V:
         ret, x = self._kh_put(key)
@@ -226,11 +233,11 @@ class Dict:
             i += 1
 
     def keys(self) -> Generator[K]:
-        for k, v in self.items():
+        for k, _ in self.items():
             yield k
 
     def values(self) -> Generator[V]:
-        for k, v in self.items():
+        for _, v in self.items():
             yield v
 
     def copy(self):

@@ -413,6 +413,11 @@ void CFVisitor::visit(const YieldInstr *v) {
   defaultInsert(v);
 }
 
+void CFVisitor::visit(const AwaitInstr *v) {
+  process(v->getValue());
+  defaultInsert(v);
+}
+
 void CFVisitor::visit(const ThrowInstr *v) {
   if (v->getValue())
     process(v->getValue());

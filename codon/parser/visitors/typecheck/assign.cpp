@@ -7,10 +7,12 @@
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
+#include "codon/parser/match.h"
 #include "codon/parser/visitors/scoping/scoping.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
 
 using namespace codon::error;
+using namespace codon::matcher;
 
 namespace codon::ast {
 
@@ -220,6 +222,18 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     }
   }
 
+  bool isThreadLocal = false;
+  auto typeExpr = transformType(stmt->getTypeExpr());
+  if (typeExpr &&
+      extractType(typeExpr)->is(getMangledClass("std.threading", "ThreadLocal"))) {
+    isThreadLocal = true;
+    if (auto ti = cast<IndexExpr>(stmt->getTypeExpr())) {
+      typeExpr = transformType(ti->getIndex());
+    } else {
+      typeExpr = nullptr;
+    }
+  }
+
   // Make sure that existing values that cannot be shadowed are only updated
   // mustExist |= val && !ctx->isOuter(val);
   if (mustExist) {
@@ -227,7 +241,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     if (!val)
       E(Error::ASSIGN_LOCAL_REFERENCE, e, e->getValue(), e->getSrcInfo());
 
-    auto s = N<AssignStmt>(stmt->getLhs(), stmt->getRhs(), stmt->getTypeExpr());
+    auto s = N<AssignStmt>(stmt->getLhs(), stmt->getRhs(), typeExpr);
     if (!ctx->getBase()->isType() && ctx->getBase()->func->hasAttribute(Attr::Atomic))
       s->setAtomicUpdate();
     else
@@ -239,7 +253,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
 
   stmt->rhs = transform(stmt->getRhs(), true);
-  stmt->type = transformType(stmt->getTypeExpr());
+  stmt->type = typeExpr;
 
   // Generate new canonical variable name for this assignment and add it to the context
   auto canonical = ctx->generateCanonicalName(e->getValue());
@@ -249,6 +263,8 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   assign->getLhs()->setType(stmt->getLhs()->getType()
                                 ? stmt->getLhs()->getType()->shared_from_this()
                                 : instantiateUnbound(assign->getLhs()->getSrcInfo()));
+  if (isThreadLocal)
+    assign->setThreadLocal();
   if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find("NoneType")) {
     // All declarations that are not handled are to be marked with NoneType later on
     // (useful for dangling declarations that are not initialized afterwards due to
@@ -259,9 +275,9 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
         assign->getLhs()->getType()->shared_from_this());
   }
   if (stmt->getTypeExpr()) {
+    auto t = extractType(stmt->getTypeExpr());
     unify(assign->getLhs()->getType(),
-          instantiateType(stmt->getTypeExpr()->getSrcInfo(),
-                          extractType(stmt->getTypeExpr())));
+          instantiateType(stmt->getTypeExpr()->getSrcInfo(), t));
   }
   auto val = std::make_shared<TypecheckItem>(
       canonical, ctx->getBaseName(), ctx->getModule(),
@@ -308,6 +324,9 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
                   (val->isGlobal() && val->getModule() != "");
   if (isGlobal && val->isVar()) {
     registerGlobal(canonical);
+    if (ctx->cache->isJit) {
+      getImport(STDLIB_IMPORT)->ctx->addToplevel(getUnmangledName(val->getName()), val);
+    }
   }
 
   return assign;
@@ -377,6 +396,21 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
           stmt->getRhs()));
       return;
     }
+    // Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
+    if (!member) {
+      auto u = instantiateUnbound(), v = instantiateUnbound();
+      u->staticKind = LiteralKind::String;
+      if (auto m =
+              findBestMethod(lhsClass, "__setattr__", {lhsClass, u.get(), v.get()})) {
+        if (m->funcGenerics.size() >= 1 &&
+            extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
+          resultStmt = transform(N<ExprStmt>(
+              N<CallExpr>(N<DotExpr>(stmt->getLhs(), "__setattr__"),
+                          N<StringExpr>(stmt->getMember()), stmt->getRhs())));
+          return;
+        }
+      }
+    }
 
     if (!member) {
       E(Error::DOT_NO_ATTR, stmt->getLhs(), lhsClass->prettyString(),
@@ -427,7 +461,8 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
   if (stmt->getLhs()->getType()->is("Capsule")) {
     return {true,
             transform(N<AssignStmt>(
-                N<IndexExpr>(N<CallExpr>(N<IdExpr>("__internal__.capsule_get_ptr"),
+                N<IndexExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
+                                                                    "Capsule", "_ptr")),
                                          stmt->getLhs()),
                              N<IntExpr>(0)),
                 stmt->getRhs()))};
@@ -451,7 +486,7 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
         return {false, nullptr};
       }
     } else { // Delay
-      unify(stmt->lhs->getType(),
+      unify(stmt->getLhs()->getType(),
             unify(stmt->getRhs()->getType(), instantiateUnbound()));
       return {true, nullptr};
     }

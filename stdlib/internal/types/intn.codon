@@ -9,6 +9,24 @@ def _check_bitwidth(N: Literal[int]):
 
 @extend
 class Int:
+    @pure
+    @llvm
+    def _sext(what, F: Literal[int], T: Literal[int]) -> Int[T]:
+        %0 = sext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _zext(what, F: Literal[int], T: Literal[int]) -> Int[T]:
+        %0 = zext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _trunc(what, F: Literal[int], T: Literal[int]) -> Int[T]:
+        %0 = trunc i{=F} %what to i{=T}
+        ret i{=T} %0
+
     def __new__() -> Int[N]:
         _check_bitwidth(N)
         return Int[N](0)
@@ -28,21 +46,21 @@ class Int:
     def __new__(what: Int[M], M: Literal[int]) -> Int[N]:
         _check_bitwidth(N)
         if N < M:
-            return __internal__.int_trunc(what, M, N)
+            return Int._trunc(what, M, N)
         elif N == M:
             return what
         else:
-            return __internal__.int_sext(what, M, N)
+            return Int._sext(what, M, N)
 
     @overload
     def __new__(what: UInt[M], M: Literal[int]) -> Int[N]:
         _check_bitwidth(N)
         if N < M:
-            return __internal__.int_trunc(what, M, N)
+            return Int._trunc(what, M, N)
         elif N == M:
             return Int[N](what)
         else:
-            return __internal__.int_sext(what, M, N)
+            return Int._sext(what, M, N)
 
     @overload
     def __new__(what: UInt[N]) -> Int[N]:
@@ -58,11 +76,11 @@ class Int:
     def __new__(what: int) -> Int[N]:
         _check_bitwidth(N)
         if N < 64:
-            return __internal__.int_trunc(what, 64, N)
+            return Int._trunc(what, 64, N)
         elif N == 64:
             return what
         else:
-            return __internal__.int_sext(what, 64, N)
+            return Int._sext(what, 64, N)
 
     @overload
     def __new__(what: str) -> Int[N]:
@@ -82,11 +100,11 @@ class Int:
 
     def __int__(self) -> int:
         if N > 64:
-            return __internal__.int_trunc(self, N, 64)
+            return Int._trunc(self, N, 64)
         elif N == 64:
             return self
         else:
-            return __internal__.int_sext(self, N, 64)
+            return Int._sext(self, N, 64)
 
     def __index__(self) -> int:
         return int(self)
@@ -302,6 +320,19 @@ class Int:
     def popcnt(self) -> int:
         return int(self._popcnt())
 
+    @pure
+    @llvm
+    def _ctlz(self) -> Int[N]:
+        declare i{=N} @llvm.ctlz.i{=N}(i{=N}, i1)
+        %0 = call i{=N} @llvm.ctlz.i{=N}(i{=N} %self, i1 true)
+        ret i{=N} %0
+
+    def bit_length(self) -> int:
+        if not self:
+            return 0
+        else:
+            return N - int(self.__abs__()._ctlz())
+
     def len() -> int:
         return N
 
@@ -332,21 +363,21 @@ class UInt:
     def __new__(what: UInt[M], M: Literal[int]) -> UInt[N]:
         _check_bitwidth(N)
         if N < M:
-            return UInt[N](__internal__.int_trunc(what, M, N))
+            return UInt[N](Int._trunc(what, M, N))
         elif N == M:
             return what
         else:
-            return UInt[N](__internal__.int_zext(what, M, N))
+            return UInt[N](Int._zext(what, M, N))
 
     @overload
     def __new__(what: Int[M], M: Literal[int]) -> UInt[N]:
         _check_bitwidth(N)
         if N < M:
-            return UInt[N](__internal__.int_trunc(what, M, N))
+            return UInt[N](Int._trunc(what, M, N))
         elif N == M:
             return UInt[N](what)
         else:
-            return UInt[N](__internal__.int_sext(what, M, N))
+            return UInt[N](Int._sext(what, M, N))
 
     @overload
     def __new__(what: Int[N]) -> UInt[N]:
@@ -371,11 +402,11 @@ class UInt:
 
         _check_bitwidth(N)
         if N < 64:
-            return UInt[N](__internal__.int_trunc(what, 64, N))
+            return UInt[N](Int._trunc(what, 64, N))
         elif N == 64:
             return convert(what)
         else:
-            return UInt[N](__internal__.int_sext(what, 64, N))
+            return UInt[N](Int._sext(what, 64, N))
 
     def __new__(what: str) -> UInt[N]:
         _check_bitwidth(N)
@@ -383,11 +414,11 @@ class UInt:
 
     def __int__(self) -> int:
         if N > 64:
-            return __internal__.int_trunc(self, N, 64)
+            return Int._trunc(self, N, 64)
         elif N == 64:
             return Int[64](self)
         else:
-            return __internal__.int_zext(self, N, 64)
+            return Int._zext(self, N, 64)
 
     def __index__(self) -> int:
         return int(self)
@@ -585,6 +616,19 @@ class UInt:
 
     def popcnt(self) -> int:
         return int(Int[N](self)._popcnt())
+
+    @pure
+    @llvm
+    def _ctlz(self) -> UInt[N]:
+        declare i{=N} @llvm.ctlz.i{=N}(i{=N}, i1)
+        %0 = call i{=N} @llvm.ctlz.i{=N}(i{=N} %self, i1 true)
+        ret i{=N} %0
+
+    def bit_length(self) -> int:
+        if not self:
+            return 0
+        else:
+            return N - int(self._ctlz())
 
     def len() -> int:
         return N

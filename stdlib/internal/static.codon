@@ -13,13 +13,17 @@ def print(*args):
 def range(start: Literal[int], stop: Literal[int], step: Literal[int] = 1):
     import internal.types.range
 
-    return internal.types.range.range(start, stop, step)
+    if step == 0:
+        compile_error("range() step argument must not be zero")
+    # Avoid exception raising method here as exception raising depends on this method
+    return type._force_value_cast((start, stop, step), internal.types.range.range)
 
 @overload
 def range(stop: Literal[int]):
     import internal.types.range
 
-    return internal.types.range.range(0, stop, 1)
+    # Avoid exception raising method here as exception raising depends on this method
+    return type._force_value_cast((0, stop, 1), internal.types.range.range)
 
 def enumerate(tup):
     i = -1

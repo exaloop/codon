@@ -176,6 +176,11 @@ struct Outliner : public Operator {
       invalid = true;
   }
 
+  void handle(AwaitInstr *v) override {
+    if (inRegion)
+      invalid = true;
+  }
+
   void handle(YieldInInstr *v) override {
     if (inRegion)
       invalid = true;
@@ -190,7 +195,7 @@ struct Outliner : public Operator {
     if (inRegion) {
       auto *var = v->getLhs();
       modifiedInVars.insert(var->getId());
-      if (outlineGlobals && var->isGlobal())
+      if (outlineGlobals && var->isGlobal() && !var->isThreadLocal())
         globalsToOutline.insert(var->getId());
     }
   }
@@ -199,7 +204,7 @@ struct Outliner : public Operator {
     if (inRegion) {
       auto *var = v->getVar();
       modifiedInVars.insert(var->getId());
-      if (outlineGlobals && var->isGlobal())
+      if (outlineGlobals && var->isGlobal() && !var->isThreadLocal())
         globalsToOutline.insert(var->getId());
     }
   }
@@ -329,7 +334,7 @@ struct Outliner : public Operator {
       Var *var = M->getVar(id);
       seqassertn(var, "unknown var id [{}]", var->getSrcInfo());
       Var *newVar = M->N<Var>(var->getSrcInfo(), var->getType(), /*global=*/false,
-                              /*external=*/false, var->getName());
+                              /*external=*/false, /*tls=*/false, var->getName());
       remap.emplace_back(var, newVar);
       outlinedFunc->push_back(newVar);
     }

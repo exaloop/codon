@@ -602,6 +602,32 @@ Base.test(a)
 #: a.test
 #: base.test
 
+class A:
+    n: int
+    def __init__(self, n: int):
+        print(f"A init, set {n}")
+        self.n = n
+
+class B(A):
+    def __init__(self, n: int):
+        print(f"B init, set {n}")
+        super().__init__(n)
+
+class C(B):
+    def __init__(self, n: int):
+        print(f"C init, set {n}")
+        super().__init__(n)
+
+print(B(42).n)
+#: B init, set 42
+#: A init, set 42
+#: 42
+print(C(42).n)
+#: C init, set 42
+#: B init, set 42
+#: A init, set 42
+#: 42
+
 #%% super_tuple,barebones
 @tuple
 class A[T]:
@@ -871,6 +897,24 @@ moo(Vehicle())
 #: I'm driving a truck
 #: I'm driving a car
 #: I'm driving a vehicle
+
+class YugoSUV(SUV):
+    def drive(self):
+        return "I'm driving a Yugo SUV"
+
+l: List[Vehicle] = [Car(), Truck(), suv, Vehicle(), YugoSUV()]
+for i in l:
+    print(i.drive(),
+          isinstance(i, Vehicle),
+          isinstance(i, Car),
+          isinstance(i, Truck),
+          isinstance(i, SUV),
+          isinstance(i, YugoSUV))
+#: I'm driving a car True True False False False
+#: I'm driving a truck True False True False False
+#: I'm driving an SUV True True True True False
+#: I'm driving a vehicle True False False False False
+#: I'm driving a Yugo SUV True True True True True
 
 
 #%% polymorphism_error_1,barebones

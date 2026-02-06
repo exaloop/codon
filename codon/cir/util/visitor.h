@@ -87,6 +87,7 @@ class BreakInstr;
 class ContinueInstr;
 class ReturnInstr;
 class YieldInstr;
+class AwaitInstr;
 class ThrowInstr;
 class FlowInstr;
 
@@ -146,6 +147,7 @@ public:
   VISIT(ContinueInstr);
   VISIT(ReturnInstr);
   VISIT(YieldInstr);
+  VISIT(AwaitInstr);
   VISIT(ThrowInstr);
   VISIT(FlowInstr);
   VISIT(dsl::CustomInstr);
@@ -226,6 +228,7 @@ public:
   CONST_VISIT(ContinueInstr);
   CONST_VISIT(ReturnInstr);
   CONST_VISIT(YieldInstr);
+  CONST_VISIT(AwaitInstr);
   CONST_VISIT(ThrowInstr);
   CONST_VISIT(FlowInstr);
   CONST_VISIT(dsl::CustomInstr);

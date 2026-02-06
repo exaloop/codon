@@ -81,7 +81,7 @@ def foo():
     print 1
 y = foo()
 print y.done()  #: False
-y.next()  #: 1
+y.__next__()  #: 1
 # TODO: next() should work here!
 print y.done()  #: True
 

@@ -21,6 +21,15 @@ llvm::cl::opt<std::string>
               llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
 llvm::cl::opt<std::string> ptxOutput("ptx",
                                      llvm::cl::desc("Output PTX to specified file"));
+llvm::cl::opt<std::string> gpuName(
+    "gpu-name",
+    llvm::cl::desc(
+        "Target GPU architecture or compute capability (e.g. sm_70, sm_80, etc.)"),
+    llvm::cl::init("sm_30"));
+llvm::cl::opt<std::string> gpuFeatures(
+    "gpu-features",
+    llvm::cl::desc("GPU feature flags passed (e.g. +ptx42 to enable PTX 4.2 features)"),
+    llvm::cl::init("+ptx42"));
 
 // Adapted from LLVM's GVExtractorPass, which is not externally available
 // as a pass for the new pass manager.
@@ -686,9 +695,7 @@ getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
   return std::vector<llvm::GlobalValue *>(keep.begin(), keep.end());
 }
 
-std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels,
-                        const std::string &cpuStr = "sm_30",
-                        const std::string &featuresStr = "+ptx42") {
+std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
 
@@ -701,7 +708,7 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      triple.getTriple(), cpuStr, featuresStr, options,
+      triple.getTriple(), gpuName, gpuFeatures, options,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOptLevel::Aggressive));
 
@@ -830,6 +837,45 @@ void cleanUpIntrinsics(llvm::Module *M) {
     F->eraseFromParent();
   }
 }
+
+void patchPTXVar(llvm::Module *M, llvm::GlobalValue *ptxVar,
+                 const std::string &ptxTarget = "__codon_ptx__") {
+  // Find and patch direct calls to cuModuleLoadData()
+  llvm::SmallVector<llvm::Instruction *, 1> callsToReplace;
+  for (auto &F : *M) {
+    for (auto &BB : F) {
+      for (auto &I : BB) {
+        auto *call = llvm::dyn_cast<llvm::CallBase>(&I);
+        if (!call)
+          continue;
+
+        auto *callee = call->getCalledFunction();
+        if (!callee)
+          continue;
+
+        if (callee->getName() == ptxTarget && call->arg_size() == 0)
+          callsToReplace.push_back(call);
+      }
+    }
+  }
+
+  for (auto *call : callsToReplace) {
+    if (ptxVar) {
+      call->replaceAllUsesWith(ptxVar);
+    } else {
+      call->replaceAllUsesWith(
+          llvm::ConstantPointerNull::get(llvm::PointerType::get(M->getContext(), 0)));
+    }
+    call->dropAllReferences();
+    call->eraseFromParent();
+  }
+
+  // Delete __codon_ptx__() stub
+  if (auto *F = M->getFunction(ptxTarget)) {
+    seqassertn(F->use_empty(), "some __codon_ptx__() calls not replaced in module");
+    F->eraseFromParent();
+  }
+}
 } // namespace
 
 void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
@@ -861,8 +907,10 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
     kernels.push_back(&F);
   }
 
-  if (kernels.empty())
+  if (kernels.empty()) {
+    patchPTXVar(M, nullptr);
     return;
+  }
 
   auto ptx = moduleToPTX(clone.get(), kernels);
   cleanUpIntrinsics(M);
@@ -884,38 +932,7 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
       llvm::ConstantDataArray::getString(context, ptx), ".ptx");
 
   ptxVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-
-  // Find and patch direct calls to cuModuleLoadData()
-  const std::string ptxTarget = "__codon_ptx__"; // must match gpu.codon name
-  llvm::SmallVector<llvm::Instruction *, 1> callsToReplace;
-  for (auto &F : *M) {
-    for (auto &BB : F) {
-      for (auto &I : BB) {
-        auto *call = llvm::dyn_cast<llvm::CallBase>(&I);
-        if (!call)
-          continue;
-
-        auto *callee = call->getCalledFunction();
-        if (!callee)
-          continue;
-
-        if (callee->getName() == ptxTarget && call->arg_size() == 0)
-          callsToReplace.push_back(call);
-      }
-    }
-  }
-
-  for (auto *call : callsToReplace) {
-    call->replaceAllUsesWith(ptxVar);
-    call->dropAllReferences();
-    call->eraseFromParent();
-  }
-
-  // Delete __codon_ptx__() stub
-  if (auto *F = M->getFunction(ptxTarget)) {
-    seqassertn(F->use_empty(), "some __codon_ptx__() calls not replaced in module");
-    F->eraseFromParent();
-  }
+  patchPTXVar(M, ptxVar);
 }
 
 } // namespace ir

@@ -164,6 +164,8 @@ struct Cache {
       std::vector<std::pair<std::string, types::TypePtr>> fields;
       /// IR type pointer.
       codon::ir::types::Type *ir = nullptr;
+      // Bases (in MRO order)
+      std::vector<std::shared_ptr<types::ClassType>> bases;
 
       /// Realization vtable (for each base class).
       /// Maps {base, function signature} to {thunk realization, thunk ID}.
@@ -189,6 +191,8 @@ struct Cache {
 
     /// List of statically inherited classes.
     std::vector<std::string> staticParentClasses;
+
+    int jitCell = 0;
 
     bool hasRTTI() const { return rtti; }
   };
@@ -322,6 +326,10 @@ public:
   ir::types::Type *makeTuple(const std::vector<types::TypePtr> &types);
   ir::types::Type *makeFunction(const std::vector<types::TypePtr> &types);
   ir::types::Type *makeUnion(const std::vector<types::TypePtr> &types);
+
+  size_t getRealizationId(types::ClassType *type);
+  std::vector<size_t> getBaseRealizationIds(types::ClassType *type);
+  std::vector<size_t> getChildRealizationIds(types::ClassType *type);
 
   void parseCode(const std::string &code);
 

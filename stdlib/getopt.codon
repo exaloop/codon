@@ -45,9 +45,9 @@
 
 import os
 
-class GetoptError(Static[Exception]):
+class GetoptError(Exception):
     def __init__(self, message: str = ""):
-        super().__init__("GetoptError", message)
+        super().__init__(message)
 
 def long_has_args(opt: str, longopts: List[str]) -> Tuple[bool, str]:
     possibilities = [o for o in longopts if o.startswith(opt)]

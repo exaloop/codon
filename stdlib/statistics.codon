@@ -16,9 +16,9 @@ from math import (
     hypot as _hypot,
 )
 
-class StatisticsError(Static[Exception]):
+class StatisticsError(Exception):
     def __init__(self, message: str = ""):
-        super().__init__("StatisticsError", message)
+        super().__init__(message)
 
 def median(data: List[T], T: type) -> float:
     """

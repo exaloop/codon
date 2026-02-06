@@ -301,6 +301,13 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   realization->type = rt;
   realization->id = ++ctx->cache->classRealizationCnt;
 
+  const auto &mros = getClass(realized)->mro;
+  for (size_t i = 1; i < mros.size(); i++) {
+    auto mt = instantiateType(mros[i].get(), realized);
+    seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
+    realization->bases.push_back(mt);
+  }
+
   // Create LLVM stub
   auto lt = makeIRType(realized);
 
@@ -485,7 +492,10 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     // Use NoneType as the return type when the return type is not specified and
     // function has no return statement
     if (!ast->getReturn() && isUnbound(type->getRetType())) {
-      unify(type->getRetType(), getStdLibType("NoneType"));
+      auto rt = getStdLibType("NoneType")->shared_from_this();
+      if (ast->isAsync())
+        rt = instantiateType(getStdLibType("Coroutine"), {rt.get()});
+      unify(type->getRetType(), rt.get());
     }
   }
   // Realize the return type
@@ -507,7 +517,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     args.emplace_back(varName, nullptr, nullptr, i.status);
   }
   r->ast =
-      N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite);
+      N<FunctionStmt>(r->type->realizedName(), nullptr, args, ctx->getBase()->suite,
+                      std::vector<Expr *>{}, ast->isAsync());
   r->ast->setSrcInfo(ast->getSrcInfo());
   r->ast->cloneAttributesFrom(ast);
 
@@ -606,7 +617,10 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "Ptr") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);
-  } else if (t->name == "Generator") {
+  } else if (t->name == "Generator" || t->name == "AsyncGenerator") {
+    seqassert(types.size() == 1, "bad generics/statics");
+    handle = module->unsafeGetGeneratorType(types[0]);
+  } else if (t->name == "Coroutine") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetGeneratorType(types[0]);
   } else if (t->name == TYPE_OPTIONAL) {

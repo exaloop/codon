@@ -106,9 +106,10 @@ public:
   void defaultVisit(const Node *) override { os << "(unknown_node)"; }
 
   void visit(const Var *v) override {
-    fmt::print(os, FMT_STRING("(var '\"{}\" {} (global {}) (external {}))"),
-               v->referenceString(), makeFormatter(v->getType()), v->isGlobal(),
-               v->isExternal());
+    fmt::print(
+        os, FMT_STRING("(var '\"{}\" {} (global {}) (external {}) (thread-local {}))"),
+        v->referenceString(), makeFormatter(v->getType()), v->isGlobal(),
+        v->isExternal(), v->isThreadLocal());
   }
 
   void visit(const BodiedFunc *v) override {
@@ -174,9 +175,9 @@ public:
                makeFormatter(v->getBody()));
   }
   void visit(const ForFlow *v) override {
-    fmt::print(os, FMT_STRING("({}for {}\n{}\n{}\n)"), v->isParallel() ? "par_" : "",
-               makeFormatter(v->getIter()), makeFormatter(v->getVar()),
-               makeFormatter(v->getBody()));
+    fmt::print(os, FMT_STRING("({}{}for {}\n{}\n{}\n)"), v->isParallel() ? "par_" : "",
+               v->isAsync() ? "async_" : "", makeFormatter(v->getIter()),
+               makeFormatter(v->getVar()), makeFormatter(v->getBody()));
   }
   void visit(const ImperativeForFlow *v) override {
     fmt::print(os, FMT_STRING("({}imp_for {}\n{}\n{}\n{}\n{}\n)"),
@@ -277,6 +278,10 @@ public:
   }
   void visit(const YieldInstr *v) override {
     fmt::print(os, FMT_STRING("(yield {})"), makeFormatter(v->getValue()));
+  }
+  void visit(const AwaitInstr *v) override {
+    fmt::print(os, FMT_STRING("(await {} {} {})"), makeFormatter(v->getType()),
+               makeFormatter(v->getValue()), v->isGenerator());
   }
   void visit(const ThrowInstr *v) override {
     fmt::print(os, FMT_STRING("(throw {})"), makeFormatter(v->getValue()));

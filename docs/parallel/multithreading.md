@@ -184,3 +184,32 @@ for i in range(100):
     with lock:
         print('only one thread at a time allowed here')
 ```
+
+## Thread-local variables
+
+Variables can be marked as *thread-local* via `threading.ThreadLocal`:
+
+``` python
+import threading as thr
+x: thr.ThreadLocal[int] = 0
+```
+
+A `ThreadLocal[T]` variable is treated as if it had type `T`, but reads
+or writes of the variable are local to each thread. For example:
+
+``` python
+import threading as thr
+
+x: thr.ThreadLocal[int] = 0
+lock = thr.Lock()
+
+@par
+for i in range(4):
+    x = i  # each thread writes its own thread-local 'x'
+
+@par
+for i in range(4):
+    with lock:
+        # Will print "Thread i: x = i" for i in 0..3
+        print(f'Thread {thr.get_native_id()}: x = {x}')
+```

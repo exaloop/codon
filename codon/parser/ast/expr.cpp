@@ -489,6 +489,14 @@ YieldExpr::YieldExpr() : AcceptorExtend() {}
 YieldExpr::YieldExpr(const YieldExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string YieldExpr::toString(int) const { return "yield-expr"; }
 
+AwaitExpr::AwaitExpr(Expr *expr) : AcceptorExtend(), expr(expr), transformed(false) {}
+AwaitExpr::AwaitExpr(const AwaitExpr &expr, bool clean)
+    : AcceptorExtend(expr, clean), expr(ast::clone(expr.expr, clean)),
+      transformed(expr.transformed) {}
+std::string AwaitExpr::toString(int indent) const {
+  return wrapType(fmt::format("await {}", expr->toString(indent)));
+}
+
 AssignExpr::AssignExpr(Expr *var, Expr *expr)
     : AcceptorExtend(), var(var), expr(expr) {}
 AssignExpr::AssignExpr(const AssignExpr &expr, bool clean)
@@ -584,9 +592,34 @@ ACCEPT_IMPL(SliceExpr, ASTVisitor);
 ACCEPT_IMPL(EllipsisExpr, ASTVisitor);
 ACCEPT_IMPL(LambdaExpr, ASTVisitor);
 ACCEPT_IMPL(YieldExpr, ASTVisitor);
+ACCEPT_IMPL(AwaitExpr, ASTVisitor);
 ACCEPT_IMPL(AssignExpr, ASTVisitor);
 ACCEPT_IMPL(RangeExpr, ASTVisitor);
 ACCEPT_IMPL(StmtExpr, ASTVisitor);
 ACCEPT_IMPL(InstantiateExpr, ASTVisitor);
 
 } // namespace codon::ast
+
+namespace tser {
+void operator<<(codon::ast::Expr *t, BinaryArchive &a) {
+  using S = codon::PolymorphicSerializer<BinaryArchive, codon::ast::Expr>;
+  a.save(t != nullptr);
+  if (t) {
+    void *typ = const_cast<void *>(t->dynamicNodeId());
+    auto key = S::_serializers[typ];
+    a.save(key);
+    S::save(key, t, a);
+  }
+}
+
+void operator>>(codon::ast::Expr *&t, BinaryArchive &a) {
+  using S = codon::PolymorphicSerializer<BinaryArchive, codon::ast::Expr>;
+  bool empty = a.load<bool>();
+  if (!empty) {
+    const auto key = a.load<std::string>();
+    S::load(key, t, a);
+  } else {
+    t = nullptr;
+  }
+}
+} // namespace tser

@@ -190,6 +190,30 @@ class Ptr:
     def __repr__(self) -> str:
         return self.__format__("")
 
+    def _ptr_to_str(p: Ptr[byte], name: str) -> str:
+        pstr = p.__repr__()
+        # '<[name] at [pstr]>'
+        total = 1 + name.len + 4 + pstr.len + 1
+        buf = Ptr[byte](total)
+        where = 0
+        buf[where] = byte(60)  # '<'
+        where += 1
+        str.memcpy(buf + where, name.ptr, name.len)
+        where += name.len
+        buf[where] = byte(32)  # ' '
+        where += 1
+        buf[where] = byte(97)  # 'a'
+        where += 1
+        buf[where] = byte(116)  # 't'
+        where += 1
+        buf[where] = byte(32)  # ' '
+        where += 1
+        str.memcpy(buf + where, pstr.ptr, pstr.len)
+        where += pstr.len
+        buf[where] = byte(62)  # '>'
+        free(pstr.ptr)
+        return str(buf, total)
+
 
 ptr = Ptr
 Jar = Ptr[byte]

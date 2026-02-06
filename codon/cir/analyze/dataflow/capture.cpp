@@ -649,6 +649,11 @@ struct CaptureTracker : public util::Operator {
                   [&](DerivedSet &dset) { dset.result.returnCaptures = true; });
   }
 
+  void handle(AwaitInstr *v) override {
+    forEachDSetOf(v->getValue(),
+                  [&](DerivedSet &dset) { dset.result.returnCaptures = true; });
+  }
+
   void handle(ThrowInstr *v) override {
     forEachDSetOf(v->getValue(), [&](DerivedSet &dset) { dset.setExternCaptured(); });
   }

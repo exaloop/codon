@@ -927,6 +927,18 @@ def test_omp_ordered(N: int = 1000):
 
     assert A == list(range(N))
 
+@test
+def test_threadlocal():
+    x: thr.ThreadLocal[int] = 42
+
+    @par
+    for i in range(omp.get_num_threads()):
+        x = i**2
+
+    @par
+    for i in range(omp.get_num_threads()):
+        assert x == i**2
+
 test_omp_api()
 test_omp_schedules()
 test_omp_ranges()
@@ -940,3 +952,4 @@ test_omp_nested()
 test_omp_corner_cases()
 test_omp_collapse()
 test_omp_ordered()
+test_threadlocal()

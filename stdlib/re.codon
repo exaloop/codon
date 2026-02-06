@@ -82,11 +82,11 @@ def seq_re_purge() -> None:
 def seq_re_compile(pattern: str, flags: int) -> cobj:
     pass
 
-class error(Static[Exception]):
+class error(Exception):
     pattern: str
 
     def __init__(self, message: str = "", pattern: str = ""):
-        super().__init__("re.error", message)
+        super().__init__(message)
         self.pattern = pattern
 
     @property

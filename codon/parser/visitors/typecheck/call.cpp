@@ -924,7 +924,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
 
 /// Get the list that describes the inheritance hierarchy of a given type.
 /// The first type in the list is the most recently inherited type.
-std::vector<TypePtr> TypecheckVisitor::getSuperTypes(ClassType *cls) {
+std::vector<TypePtr> TypecheckVisitor::getStaticSuperTypes(ClassType *cls) {
   std::vector<TypePtr> result;
   if (!cls)
     return result;
@@ -933,7 +933,7 @@ std::vector<TypePtr> TypecheckVisitor::getSuperTypes(ClassType *cls) {
   auto c = getClass(cls);
   auto fields = getClassFields(cls);
   for (auto &name : c->staticParentClasses) {
-    auto parentTyp = instantiateType(extractClassType(name));
+    auto parentTyp = instantiateType(extractClassType(name), cls);
     auto parentFields = getClassFields(parentTyp->getClass());
     for (auto &field : fields) {
       for (auto &parentField : parentFields)
@@ -943,8 +943,25 @@ std::vector<TypePtr> TypecheckVisitor::getSuperTypes(ClassType *cls) {
           break;
         }
     }
-    for (auto &t : getSuperTypes(parentTyp->getClass()))
+    for (auto &t : getStaticSuperTypes(parentTyp->getClass()))
       result.push_back(t);
+  }
+  return result;
+}
+
+/// Get the list that describes the inheritance hierarchy of a given type.
+/// The first type in the list is the most recently inherited type.
+std::vector<TypePtr> TypecheckVisitor::getRTTISuperTypes(ClassType *cls) {
+  std::vector<TypePtr> result;
+  if (!cls)
+    return result;
+
+  auto c = getClass(cls);
+  const auto &mro = c->mro;
+  for (const auto &umt : c->mro) {
+    auto mt = instantiateType(umt.get(), cls);
+    realize(mt.get()); // ensure that parent types are realized
+    result.push_back(mt);
   }
   return result;
 }
