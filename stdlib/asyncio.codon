@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from threading import Lock, ThreadLocal
 from time import time as _time, sleep as _sleep

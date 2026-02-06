@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from ..ndarray import ndarray
 from ..routines import empty, zeros, ones, asarray, broadcast_to, moveaxis, ascontiguousarray, rot90, atleast_1d

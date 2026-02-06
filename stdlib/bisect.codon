@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 def bisect_left(
     a: List[T], x: S, lo: int = 0, hi: Optional[int] = None, T: type, S: type

@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from .dragon4 import format_float_positional, format_float_scientific
 from .npdatetime import *

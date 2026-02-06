@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 __all__ = [
     "jit", "convert", "JITError", "JITWrapper", "_jit_register_fn", "_jit"

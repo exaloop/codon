@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 # Thread-local variable indicator. Used internally by the compiler to mark ThreadLocal variables.
 # Semantically identical to T.

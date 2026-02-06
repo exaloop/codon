@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from .linalg import _matmul_ufunc, _linalg_dot, _linalg_vdot, \
                     _linalg_tensordot, _linalg_inner, _linalg_outer, \

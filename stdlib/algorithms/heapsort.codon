@@ -1,4 +1,4 @@
-# Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 def _heapify(
     arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
