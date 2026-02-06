@@ -187,9 +187,12 @@ void linkLibdevice(llvm::Module *M, const std::string &path) {
   seqassertn(!fail, "linking libdevice failed");
 }
 
-llvm::Function *copyPrototype(llvm::Function *F, const std::string &name) {
+llvm::Function *copyPrototype(llvm::Function *F, const std::string &name,
+                              bool external = false) {
   auto *M = F->getParent();
-  return llvm::Function::Create(F->getFunctionType(), llvm::GlobalValue::PrivateLinkage,
+  return llvm::Function::Create(F->getFunctionType(),
+                                external ? llvm::GlobalValue::ExternalLinkage
+                                         : llvm::GlobalValue::PrivateLinkage,
                                 name.empty() ? F->getName() : name, *M);
 }
 
@@ -651,7 +654,7 @@ void remapFunctions(llvm::Module *M) {
       } else {
         G = M->getFunction(pair.second);
         if (!G)
-          G = copyPrototype(F, pair.second);
+          G = copyPrototype(F, pair.second, /*external=*/true);
       }
 
       G->setWillReturn();
@@ -711,6 +714,10 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
       triple.getTriple(), gpuName, gpuFeatures, options,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOptLevel::Aggressive));
+
+  // Remove personality functions
+  for (auto &F : *M)
+    F.setPersonalityFn(nullptr);
 
   M->setDataLayout(machine->createDataLayout());
   auto keep = getRequiredGVs(kernels);

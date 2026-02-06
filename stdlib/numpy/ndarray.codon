@@ -1080,7 +1080,7 @@ class ndarray[dtype, ndim: Literal[int]]:
 
     def _check_order(order: str):
         if order not in ('C', 'F', 'A', 'K'):
-            raise ValueError(f"order must be one of 'C', 'F', 'A', or 'K' (got {repr(order)})")
+            raise ValueError(f"order must be one of 'C', 'F', 'A', or 'K' (got '{order}')")
 
     def astype(self, dtype: type, order: str = 'K', copy: bool = True):
         ndarray._check_order(order)

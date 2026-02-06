@@ -144,16 +144,17 @@ class str:
                 n += s.len
             return str(p, n)
         else:
-            total = 0
-            for i in args:
-                if not isinstance(i, str):
+            for i in static.range(static.len(args)):
+                s = args[i]
+                if not isinstance(s, str):
                     compile_error("not a string")
-                total += i.len
+                total += s.len
             p = cobj(total)
             n = 0
-            for i in args:
-                str.memcpy(p + n, i.ptr, i.len)
-                n += i.len
+            for i in static.range(static.len(args)):
+                s = args[i]
+                str.memcpy(p + n, s.ptr, s.len)
+                n += s.len
             return str(p, total)
 
     def __prefix_b__(s: str, N: Literal[int]):

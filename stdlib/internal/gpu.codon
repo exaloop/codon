@@ -138,8 +138,10 @@ def nvptx_load_module():
     module = CUmodule()
     # NOTE: 2nd argument to cuModuleLoadData() will
     #       be replaced by Codon's GPU pass
-    cuda_check(cuModuleLoadData(__ptr__(module), __codon_ptx__()))
-    modules.append(module)
+    ptx = __codon_ptx__()
+    if ptx:
+        cuda_check(cuModuleLoadData(__ptr__(module), ptx))
+        modules.append(module)
 
 
 def cuda_init(debug: bool = False):
