@@ -102,6 +102,20 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
 void TypecheckVisitor::visit(ForStmt *stmt) {
   stmt->decorator = transformForDecorator(stmt->getDecorator());
 
+  if (auto fc = cast<CallExpr>(stmt->getDecorator())) {
+    if (auto fi = cast<IdExpr>(fc->getExpr());
+        fi && fi->getType()->getFunc() &&
+        fi->getType()->getFunc()->getFuncName() ==
+            getMangledFunc("std.openmp", "for_par")) {
+      if (auto n = extractFuncGeneric(fi->getType(), 3)->getBoolStatic();
+          n && n->value) {
+        prependStmts->push_back(
+            transform(N<ImportStmt>(N<IdExpr>("gpu"), nullptr, std::vector<Param>{},
+                                    nullptr, getTemporaryVar("_"))));
+      }
+    }
+  }
+
   std::string breakVar;
   // Needs in-advance transformation to prevent name clashes with the iterator variable
   stmt->getIter()->setAttribute(
