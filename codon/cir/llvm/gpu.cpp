@@ -716,8 +716,10 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
       llvm::CodeGenOptLevel::Aggressive));
 
   // Remove personality functions
-  for (auto &F : *M)
+  for (auto &F : *M) {
+    F.setDoesNotThrow();
     F.setPersonalityFn(nullptr);
+  }
 
   M->setDataLayout(machine->createDataLayout());
   auto keep = getRequiredGVs(kernels);
