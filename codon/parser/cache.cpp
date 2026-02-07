@@ -210,7 +210,7 @@ std::vector<size_t> Cache::getChildRealizationIds(types::ClassType *type) {
 
 void Cache::parseCode(const std::string &code) {
   auto nodeOrErr = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
-  if (nodeOrErr)
+  if (!nodeOrErr)
     throw exc::ParserException(nodeOrErr.takeError());
   auto sctx = imports[MAIN_IMPORT].ctx;
   auto node = ast::TypecheckVisitor::apply(sctx, *nodeOrErr);
