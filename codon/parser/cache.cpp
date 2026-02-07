@@ -208,14 +208,18 @@ std::vector<size_t> Cache::getChildRealizationIds(types::ClassType *type) {
   return childIds;
 }
 
-void Cache::parseCode(const std::string &code) {
+std::vector<ir::SeriesFlow *> Cache::parseCode(const std::string &code) {
   auto nodeOrErr = ast::parseCode(this, "<internal>", code, /*startLine=*/0);
-  if (nodeOrErr)
+  if (!nodeOrErr)
     throw exc::ParserException(nodeOrErr.takeError());
   auto sctx = imports[MAIN_IMPORT].ctx;
   auto node = ast::TypecheckVisitor::apply(sctx, *nodeOrErr);
+  auto old = codegenCtx->series;
+  codegenCtx->series.clear();
   ast::TranslateVisitor(codegenCtx).initializeGlobals();
   ast::TranslateVisitor(codegenCtx).translateStmts(node);
+  std::swap(old, codegenCtx->series);
+  return old;
 }
 
 std::vector<std::shared_ptr<types::ClassType>>

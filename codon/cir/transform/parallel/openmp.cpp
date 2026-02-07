@@ -1560,7 +1560,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   if (sched->gpu) {
     std::unordered_set<id_t> kernels;
-    const std::string gpuAttr = ast::getMangledFunc("std.internal.gpu", "kernel");
+    const std::string gpuAttr = ast::getMangledFunc(gpuModule, "kernel");
     for (auto *var : *M) {
       if (auto *func = cast<BodiedFunc>(var)) {
         if (util::hasAttribute(func, gpuAttr)) {

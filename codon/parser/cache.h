@@ -331,7 +331,7 @@ public:
   std::vector<size_t> getBaseRealizationIds(types::ClassType *type);
   std::vector<size_t> getChildRealizationIds(types::ClassType *type);
 
-  void parseCode(const std::string &code);
+  std::vector<ir::SeriesFlow *> parseCode(const std::string &code);
 
   static std::vector<std::shared_ptr<types::ClassType>>
   mergeC3(std::vector<std::vector<types::TypePtr>> &);
