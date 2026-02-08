@@ -1,0 +1,3015 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://docs.exaloop.io/developers/compilation/">
+      
+      
+        <link rel="prev" href="../../labs/">
+      
+      
+        <link rel="next" href="../ir/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../img/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+    
+    
+  
+    <title>Compilation Flow | Codon</title>
+  
+
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,300i,400,400i,700,700i%7CSource+Code+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Open Sans";--md-code-font:"Source Code Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../css/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#overview" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+        <aside class="md-banner">
+          <div class="md-banner__inner md-grid md-typeset">
+            
+              <button class="md-banner__button md-icon" aria-label="Don't show this again">
+                
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+              </button>
+            
+            
+  <a href="https://discord.gg/HeWRhagCmP">
+    <strong>
+      🎉 Join our community on Discord
+      <span class="discord-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+      </span>
+    </strong> — Ask questions, share ideas, and get support!
+  </a>
+
+          </div>
+          
+            <script>var el=document.querySelector("[data-md-component=announce]");if(el){var content=el.querySelector(".md-typeset");__md_hash(content.innerHTML)===__md_get("__announce")&&(el.hidden=!0)}</script>
+          
+        </aside>
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="" class="md-header__button md-logo" aria-label="" data-md-component="logo">
+      
+  <img src="../../img/codon-white.svg" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Compilation Flow
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/exaloop/codon" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    exaloop/codon
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../start/install/" class="md-tabs__link">
+          
+  
+  
+  Get Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../language/overview/" class="md-tabs__link">
+          
+  
+  
+  Language
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../libraries/stdlib/" class="md-tabs__link">
+          
+  
+  
+  Libraries
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../integrations/python/python-from-codon/" class="md-tabs__link">
+          
+  
+  
+  Integrations
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../parallel/multithreading/" class="md-tabs__link">
+          
+  
+  
+  Parallel Programming
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../labs/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Labs
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="./" class="md-tabs__link">
+          
+  
+  
+  Developers
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="https://exaloop.io/blog" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Blog
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="" class="md-nav__button md-logo" aria-label="" data-md-component="logo">
+      
+  <img src="../../img/codon-white.svg" alt="logo">
+
+    </a>
+    
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/exaloop/codon" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    exaloop/codon
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_1" id="__nav_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/usage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Usage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/faq/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FAQ
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../start/changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Language
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Language
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/classes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Classes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/generics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Generics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/meta/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Metaprogramming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/lowlevel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Low-Level Programming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../language/llvm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Inline LLVM IR
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Libraries
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Libraries
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../libraries/stdlib/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Standard Library
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../libraries/numpy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NumPy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../libraries/api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Integrations
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Integrations
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_1" id="__nav_4_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Python
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Python
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/python/python-from-codon/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Python from Codon
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/python/codon-from-python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Codon from Python
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/python/extensions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Create Python Extensions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_2" id="__nav_4_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C/C++
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    C/C++
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/cpp/cpp-from-codon/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call C/C++ from Codon
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/cpp/codon-from-cpp/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Call Codon from C/C++
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/cpp/jit/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Embed Codon JIT
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../integrations/jupyter/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Jupyter
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Parallel Programming
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Parallel Programming
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../parallel/multithreading/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multithreading
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../parallel/gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Programming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../parallel/simd/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SIMD Programming
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../labs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Labs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developers
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compilation Flow
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compilation Flow
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Overview
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Parsing
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#type-checking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Type checking
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#codon-ir-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Codon IR generation
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#codon-ir-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Codon IR optimization
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#llvm-lowering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          LLVM lowering
+        </span>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LLVM lowering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python-types-to-llvm-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Python types to LLVM types
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Operators
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#control-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Control flow
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#try-except-finally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          <code>try</code>-<code>except</code>-<code>finally</code>
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Variables
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Functions
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#generators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Generators
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#program-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Program structure
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Code generation
+        </span>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code generation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gpu-code-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          GPU code generation
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jit-compilation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          JIT compilation
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debugging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Debugging
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ir/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Intermediate Representation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../extend/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extend Codon
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../build/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Build from Source
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contribute/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contribute
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../roadmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Roadmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://exaloop.io/blog" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Blog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Overview
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#parsing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Parsing
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#type-checking" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Type checking
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#codon-ir-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Codon IR generation
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#codon-ir-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Codon IR optimization
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#llvm-lowering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          LLVM lowering
+        </span>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="LLVM lowering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#python-types-to-llvm-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Python types to LLVM types
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#operators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Operators
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#control-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Control flow
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#try-except-finally" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          <code>try</code>-<code>except</code>-<code>finally</code>
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Variables
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#functions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Functions
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#generators" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Generators
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#program-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Program structure
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Code generation
+        </span>
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Code generation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#gpu-code-generation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          GPU code generation
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#jit-compilation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          JIT compilation
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#debugging" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <span class="md-typeset">
+          Debugging
+        </span>
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>Compilation Flow</h1>
+
+<p>This page describes the internal compilation flow from source code to native code.
+It is intended for Codon developers and contributors seeking to understand or extend
+the compiler.</p>
+<p><img alt="Codon compilation pipeline" src="../../img/codon-pipeline.svg" width="100%" /></p>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Codon compiles Python code to native machine code using a custom frontend (parser and type
+checker), an intermediate representation (IR), and LLVM as the backend. The compilation
+process is ahead-of-time (AOT) by default, though a just-in-time (JIT) mode is available
+as well.</p>
+<p>The major compilation stages are:</p>
+<ol>
+<li><a href="#parsing">Parsing</a></li>
+<li><a href="#type-checking">Type checking</a></li>
+<li><a href="#codon-ir-generation">Codon IR generation</a></li>
+<li><a href="#codon-ir-optimization">Codon IR optimization</a></li>
+<li><a href="#llvm-lowering">LLVM lowering</a></li>
+<li><a href="#code-generation">Code generation</a></li>
+</ol>
+<h2 id="parsing">Parsing<a class="headerlink" href="#parsing" title="Permanent link">&para;</a></h2>
+<p>The parser converts source code into an <a href="https://en.wikipedia.org/wiki/Abstract_syntax_tree">abstract syntax tree</a>
+(AST) using Python's grammar.
+Codon uses a custom <a href="https://en.wikipedia.org/wiki/Parsing_expression_grammar">PEG</a> parser.</p>
+<p>For example, this code:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-0-1"><span class="n">x</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">3</span>
+</span></code></pre></div>
+<p>would create the following AST after parsing:</p>
+<pre class="mermaid"><code>graph TD
+  A(=) --&gt; B(x);
+  A --&gt; C(&amp;plus;);
+  C --&gt; D(2);
+  C --&gt; E(3);</code></pre>
+<p>Relevant code and grammars can be found in
+<a href="https://github.com/exaloop/codon/tree/develop/codon/parser/peg"><code>codon/parser/peg/</code></a>.</p>
+<h2 id="type-checking">Type checking<a class="headerlink" href="#type-checking" title="Permanent link">&para;</a></h2>
+<p>Unlike CPython, Codon performs type checking to determine data types ahead of time.
+Type checking is applied on the AST, and attaches a type to every applicable AST node.
+For example, the AST above would be typed as follows:</p>
+<pre class="mermaid"><code>graph TD
+  A("= : int") --&gt; B("x : int");
+  A --&gt; C("&amp;plus; : int");
+  C --&gt; D("2 : int");
+  C --&gt; E("3 : int");</code></pre>
+<p>In practice, numerous translation steps are applied to the AST as well. For example, operators like
+<code>+</code>, <code>-</code>, etc. are replaced by magic method calls like <code>int.__add__</code>, <code>float.__sub__</code>, etc. Similarly,
+functions without explicit type annotations are specialized when called for the given argument types,
+a technique known as <a href="https://en.wikipedia.org/wiki/Monomorphization"><em>monomorphization</em></a>.</p>
+<p>Internally, Coodn's type checker uses a modified
+<a href="https://en.wikipedia.org/wiki/Hindley–Milner_type_system">Hindley-Milner</a> type system, adapted to handle
+various special cases relevant to Python code and semantics.</p>
+<p>Relevant code can be found in
+<a href="https://github.com/exaloop/codon/tree/develop/codon/parser/visitors/typecheck"><code>codon/parser/visitors/typecheck/</code></a>.
+See also the <a href="https://dl.acm.org/doi/abs/10.1145/3578360.3580275"><em>CC 2023</em> Codon paper</a> for a
+detailed overview of Coodn's type checker.</p>
+<h2 id="codon-ir-generation">Codon IR generation<a class="headerlink" href="#codon-ir-generation" title="Permanent link">&para;</a></h2>
+<p>After type checking, the typed AST is lowered to <a href="../ir/">Codon IR</a>. Codon IR utilizes
+a vastly reduced set of nodes as compared to the AST, making it more practical for optimizations
+and analyses.</p>
+<p>Relevant code can be found in
+<a href="https://github.com/exaloop/codon/tree/develop/codon/parser/visitors/translate"><code>codon/parser/visitors/translate/</code></a>.</p>
+<h2 id="codon-ir-optimization">Codon IR optimization<a class="headerlink" href="#codon-ir-optimization" title="Permanent link">&para;</a></h2>
+<p>Codon IR performs a suite of analyses and optimizations, ranging from general-purpose compiler
+optimizations like constant folding and dead code elimination to more specialized optimizations
+like operator fusion for NumPy. Learn more in the <a href="../ir/">Codon IR docs</a>.</p>
+<p>Relevant code can be found in
+<a href="https://github.com/exaloop/codon/tree/develop/codon/cir"><code>codon/cir/</code></a>.</p>
+<h2 id="llvm-lowering">LLVM lowering<a class="headerlink" href="#llvm-lowering" title="Permanent link">&para;</a></h2>
+<p>Next, Codon IR is lowered to <a href="https://llvm.org/docs/LangRef.html">LLVM IR</a>. Below,
+we describe this process in detail.</p>
+<h3 id="python-types-to-llvm-types">Python types to LLVM types<a class="headerlink" href="#python-types-to-llvm-types" title="Permanent link">&para;</a></h3>
+<p>Python types need to be mapped to LLVM types. Some of the conversions are quite straightforward:</p>
+<ul>
+<li><code>int</code> becomes an LLVM <code>i64</code> (note that this deviates from Python's arbitrary-
+  width integers)</li>
+<li><code>float</code> becomes an LLVM <code>double</code></li>
+<li><code>bool</code> becomes an LLVM <code>i8</code> (we could use <code>i1</code> in theory, but <code>i8</code> is
+  compatible with C/C++)</li>
+</ul>
+<p>Tuple types are converted to <code>struct</code>s containing the tuple's element types.
+For example, the type of <code>(42, 3.14, True)</code> becomes the LLVM structure
+type <code>{i64, double, i8}</code>. Since tuples are immutable, these structs are passed by
+value, and in many cases tuples are completely optimized out by LLVM's optimization
+passes.</p>
+<p>User-defined classes are similar, except instead of passing by value, they are dynamically
+allocated and passed by pointer, which allows mutations to be handled correctly.
+For example, consider:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-1-1"><span class="k">class</span><span class="w"> </span><span class="nc">C</span><span class="p">:</span>
+</span><span id="__span-1-2">    <span class="n">a</span><span class="p">:</span> <span class="nb">int</span>
+</span><span id="__span-1-3">    <span class="n">b</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="__span-1-4">    <span class="n">c</span><span class="p">:</span> <span class="nb">bool</span>
+</span></code></pre></div>
+<p>When creating an instance <code>C()</code>, under the hood a dynamic memory allocation occurs to store
+the contents of the same <code>{i64, double, i8}</code>, and return a pointer to that memory as
+the result of instantiation (after calling <code>C.__init__()</code>).</p>
+<p>There are several other LLVM types that Codon exposes, like <code>Ptr[T]</code> to
+represent a pointer to an object of type <code>T</code>. Other Python types, however,
+are constructed from these building blocks. For example, the built-in collection
+types like <code>list</code>, <code>dict</code> and <code>set</code> are all implemented within Codon as classes; some
+other built-in types are implemented as named tuples, and so on.</p>
+<h3 id="operators">Operators<a class="headerlink" href="#operators" title="Permanent link">&para;</a></h3>
+<p>Codon IR has no concept of operators like <code>+</code>, <code>-</code>, etc. Instead, it represents these
+operations as magic method calls. Magic methods of primitive types like <code>int</code> are
+implemented in Codon using <a href="../../language/llvm/">inline LLVM</a>. For example:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-2-1"><span class="k">class</span><span class="w"> </span><span class="nc">int</span><span class="p">:</span>
+</span><span id="__span-2-2">    <span class="o">...</span>
+</span><span id="__span-2-3">
+</span><span id="__span-2-4">    <span class="nd">@llvm</span>
+</span><span id="__span-2-5">    <span class="k">def</span><span class="w"> </span><span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+</span><span id="__span-2-6">        <span class="o">%</span><span class="n">tmp</span> <span class="o">=</span> <span class="n">add</span> <span class="n">i64</span> <span class="o">%</span><span class="bp">self</span><span class="p">,</span> <span class="o">%</span><span class="n">other</span>
+</span><span id="__span-2-7">        <span class="n">ret</span> <span class="n">i64</span> <span class="o">%</span><span class="n">tmp</span>
+</span><span id="__span-2-8">
+</span><span id="__span-2-9">    <span class="nd">@llvm</span>
+</span><span id="__span-2-10">    <span class="k">def</span><span class="w"> </span><span class="fm">__add__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">other</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-2-11">        <span class="o">%</span><span class="n">tmp1</span> <span class="o">=</span> <span class="n">sitofp</span> <span class="n">i64</span> <span class="o">%</span><span class="bp">self</span> <span class="n">to</span> <span class="n">double</span>
+</span><span id="__span-2-12">        <span class="o">%</span><span class="n">tmp2</span> <span class="o">=</span> <span class="n">fadd</span> <span class="n">double</span> <span class="o">%</span><span class="n">tmp1</span><span class="p">,</span> <span class="o">%</span><span class="n">other</span>
+</span><span id="__span-2-13">        <span class="n">ret</span> <span class="n">double</span> <span class="o">%</span><span class="n">tmp2</span>
+</span></code></pre></div>
+<p>Note that Codon supports method overloading: the compiler will choose the correct
+<code>__add__</code> based on the right-hand side's type during the parsing and type checking
+stages.</p>
+<h3 id="control-flow">Control flow<a class="headerlink" href="#control-flow" title="Permanent link">&para;</a></h3>
+<p>Control flow constructs require the creation of multiple LLVM
+<a href="https://en.wikipedia.org/wiki/Basic_block"><em>basic blocks</em></a>.
+For example, consider the following pseudocode:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-3-1"><span class="k">if</span> <span class="n">condition</span><span class="p">:</span>
+</span><span id="__span-3-2">    <span class="n">true_branch</span>
+</span><span id="__span-3-3"><span class="k">else</span><span class="p">:</span>
+</span><span id="__span-3-4">    <span class="n">false_branch</span>
+</span></code></pre></div>
+<p>Compilation would roughly proceed as follows, where <span class="arithmatex">\(B\)</span> denotes the <em>current</em> basic block
+as maintained by the LLVM lowering pass, and is where all new instructions are inserted:</p>
+<ol>
+<li>
+<p>Create four new basic blocks: <span class="arithmatex">\(B_\mathrm{cond}\)</span>, <span class="arithmatex">\(B_\mathrm{true}\)</span>,
+   <span class="arithmatex">\(B_\mathrm{false}\)</span> and <span class="arithmatex">\(B_\mathrm{exit}\)</span>.</p>
+</li>
+<li>
+<p>Generate a branch to <span class="arithmatex">\(B_\mathrm{cond}\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{cond}\)</span> and generate code <span class="arithmatex">\(C\)</span> for <code>condition</code>, then generate
+   a conditional branch to <span class="arithmatex">\(B_\mathrm{true}\)</span> and <span class="arithmatex">\(B_\mathrm{false}\)</span> based on <span class="arithmatex">\(C\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{true}\)</span> and generate code for <code>true_branch</code>, then add a
+   branch to <span class="arithmatex">\(B_\mathrm{exit}\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{false}\)</span> and generate code for <code>false_branch</code>, then add a
+   branch to <span class="arithmatex">\(B_\mathrm{exit}\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{exit}\)</span>.</p>
+</li>
+</ol>
+<p>As a diagram...</p>
+<pre class="mermaid"><code>graph TD
+    B_0(B&lt;sub&gt;0&lt;/sub&gt;) ---&gt; B_cond
+    B_cond(B&lt;sub&gt;cond&lt;/sub&gt;) -- C is true --&gt; B_true
+    B_cond -- C is false --&gt; B_false
+    B_true(B&lt;sub&gt;true&lt;/sub&gt;) ---&gt; B_exit(B&lt;sub&gt;exit&lt;/sub&gt;)
+    B_false(B&lt;sub&gt;false&lt;/sub&gt;) ---&gt; B_exit</code></pre>
+<p>Here is another example involving a loop:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-4-1"><span class="k">while</span> <span class="n">condition</span><span class="p">:</span>
+</span><span id="__span-4-2">    <span class="n">body</span>
+</span></code></pre></div>
+<p>Compilation would proceed as follows:</p>
+<ol>
+<li>
+<p>Create three new basic blocks: <span class="arithmatex">\(B_\mathrm{cond}\)</span>, <span class="arithmatex">\(B_\mathrm{body}\)</span> and
+   <span class="arithmatex">\(B_\mathrm{exit}\)</span></p>
+</li>
+<li>
+<p>Generate a branch to <span class="arithmatex">\(B_\mathrm{cond}\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{cond}\)</span> and generate code <span class="arithmatex">\(C\)</span> for <code>condition</code>, then
+   generate a conditional branch to <span class="arithmatex">\(B_\mathrm{body}\)</span> and <span class="arithmatex">\(B_\mathrm{exit}\)</span>
+   based on <span class="arithmatex">\(C\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{body}\)</span> and generate code for <code>body</code>, then add a
+   branch to <span class="arithmatex">\(B_\mathrm{cond}\)</span>.</p>
+</li>
+<li>
+<p>Set <span class="arithmatex">\(B \gets B_\mathrm{exit}\)</span>.</p>
+</li>
+</ol>
+<p>Again as a diagram...</p>
+<pre class="mermaid"><code>graph TD
+    B_0(B&lt;sub&gt;0&lt;/sub&gt;) ---&gt; B_cond
+    B_cond(B&lt;sub&gt;cond&lt;/sub&gt;) -- C is true --&gt; B_body
+    B_cond -- C is false --&gt; B_exit(B&lt;sub&gt;exit&lt;/sub&gt;)
+    B_body(B&lt;sub&gt;body&lt;/sub&gt;) ----&gt; B_cond</code></pre>
+<p><code>break</code> and <code>continue</code> are supported as follows: <code>break</code> simply becomes a branch to
+<span class="arithmatex">\(B_\mathrm{exit}\)</span> and <code>continue</code> becomes a branch to <span class="arithmatex">\(B_\mathrm{cond}\)</span>. One notable
+exception to this pertains to <code>finally</code> blocks, which is discussed below.</p>
+<p>Other control flow constructs (like <code>elif</code>) work in an analogous way, and
+in fact can be constructed using just <code>if</code>-<code>else</code> and <code>while</code>.</p>
+<h3 id="try-except-finally"><code>try</code>-<code>except</code>-<code>finally</code><a class="headerlink" href="#try-except-finally" title="Permanent link">&para;</a></h3>
+<p><code>try</code>-<code>except</code>-<code>finally</code> is much more complex than other control flow constructs in terms
+or how it maps to LLVM IR. Exception handling itself is implemented in Codon using the
+<a href="https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html">Itanium C++ ABI</a>
+for zero-cost exceptions, along with LLVM's exception handling instructions:
+(<code>landingpad</code>, <code>resume</code>, <code>invoke</code>) and specialized
+<a href="https://itanium-cxx-abi.github.io/cxx-abi/abi-eh.html#base-personality"><em>personality function</em></a>.
+There is additional bookkeeping required for knowing when we're compiling inside
+a <code>try</code> block, which requires functions to be called with the LLVM <code>invoke</code> instruction
+(rather than the usual <code>call</code>) and to specify a basic block to branch to if an exception
+occurs (i.e. the basic block corresponding to <code>except</code>).</p>
+<p><code>try</code>-<code>except</code>-<code>finally</code> becomes complex in cases where <code>finally</code> changes control flow
+in non-trivial ways, such as:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-5-1"><span class="k">def</span><span class="w"> </span><span class="nf">foo</span><span class="p">():</span>
+</span><span id="__span-5-2">    <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-5-3">        <span class="k">return</span> <span class="mi">1</span>
+</span><span id="__span-5-4">    <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-5-5">        <span class="k">return</span> <span class="mi">2</span>
+</span></code></pre></div>
+<p>What does <code>foo()</code> return? If you're not familiar with <code>finally</code> semantics, you might be
+inclined to say <code>1</code>, but the correct answer is <code>2</code>: <code>finally</code> blocks are <em>always</em> executed.</p>
+<p>This has important implications for compilation: namely, <em>branches always need to be
+aware of enclosing <code>try</code>-<code>finally</code> blocks</em>. Here is another example:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-6-1"><span class="k">def</span><span class="w"> </span><span class="nf">bar</span><span class="p">():</span>
+</span><span id="__span-6-2">    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+</span><span id="__span-6-3">        <span class="nb">print</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+</span><span id="__span-6-4">        <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-6-5">            <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">5</span><span class="p">:</span>
+</span><span id="__span-6-6">                <span class="k">break</span>
+</span><span id="__span-6-7">        <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-6-8">            <span class="k">continue</span>
+</span></code></pre></div>
+<p>When <code>i == 5</code>, we'll reach the <code>break</code> statement, <em>but
+the <code>break</code> needs to actually branch to the <code>finally</code> block</em>, otherwise the <code>finally</code>
+block would we skipped over. Now, the <code>finally</code> itself has a <code>continue</code>, which overrides
+the previous <code>break</code> and resumes the loop. So, in the end, all the integers <code>0</code>...<code>9</code>
+are printed.</p>
+<p>To generate correct code for <code>try</code>-<code>except</code>-<code>finally</code>, Codon does the following:</p>
+<ul>
+<li>
+<p>Firstly, the LLVM lowering pass maintains a stack of enclosing <code>try</code>-<code>except</code>-<code>finally</code> blocks,
+  since if we reach a <code>return</code>, <code>break</code> or <code>continue</code>, we need to know whether
+  we really need to branch to some <code>finally</code> block.</p>
+</li>
+<li>
+<p>Next, it constructs a state machine for each series of nested <code>try</code>-<code>except</code>-<code>finally</code>
+  blocks, since once we <em>do</em> reach the <code>finally</code>, we need to know how we got there in order to
+  determine what action needs to be taken next. For instance, if we got there via a <code>return</code>,
+  we need to actually execute that return statement at the end of the block; or perhaps we got
+  there by catching an exception that needs to be delegated to a parent <code>try</code>-<code>except</code>-<code>finally</code>.</p>
+</li>
+</ul>
+<p>The aforementioned state machine has the following states:</p>
+<ul>
+<li>
+<p><code>NORMAL</code>: The <code>finally</code> was reached through normal execution of the code. Nothing special
+  needs to be done; just branch to the next block normally.</p>
+</li>
+<li>
+<p><code>THROWN</code>: An exception was thrown and we are executing the <code>finally</code> before propagating
+  the exception out of the function. The exception object itself will be stored in a pre-defined
+  place that we can access from the <code>finally</code> block.</p>
+</li>
+<li>
+<p><code>CAUGHT</code>: An exception was caught and we are reaching the <code>finally</code> through some <code>except</code> block.
+  Again nothing special needs to be done here; just branch to the next block normally.</p>
+</li>
+<li>
+<p><code>RETHROW</code>: The <code>finally</code> is being executed while unwinding and the exception must be re-thrown.</p>
+</li>
+<li>
+<p><code>RETURN</code>: The <code>finally</code> was reached after encountering an enclosed <code>return</code> statement. After
+  executing the <code>finally</code>, we need to execute the <code>return</code>. The return value itself will be
+  stored in a pre-defined place that we can access from the <code>finally</code> block.</p>
+</li>
+<li>
+<p><code>BREAK</code>: The <code>finally</code> was reached after encountering a <code>break</code>. We need to actually execute
+  the <code>break</code> after executing the <code>finally</code> block.</p>
+</li>
+<li>
+<p><code>CONTINUE</code>: The <code>finally</code> was reached after encountering a <code>continue</code>. We need to actually
+  execute the <code>continue</code> after executing the <code>finally</code> block.</p>
+</li>
+</ul>
+<p>Importantly, these actions are <em>recursive</em>, so when we say <em>"execute the <code>return</code> after
+executing the <code>finally</code> block"</em>, that may entail branching to <em>another</em> enclosing <code>finally</code> block
+and repeating the same action.</p>
+<p>Here is a real example of what this state machine looks like. Consider:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-7-1"><span class="k">def</span><span class="w"> </span><span class="nf">baz</span><span class="p">():</span>
+</span><span id="__span-7-2">    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
+</span><span id="__span-7-3">        <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-7-4">            <span class="k">try</span><span class="p">:</span>
+</span><span id="__span-7-5">                <span class="k">if</span> <span class="n">i</span> <span class="o">==</span> <span class="mi">3</span><span class="p">:</span>
+</span><span id="__span-7-6">                    <span class="k">return</span> <span class="n">i</span>
+</span><span id="__span-7-7">            <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-7-8">                <span class="k">if</span> <span class="n">i</span> <span class="o">&gt;</span> <span class="mi">2</span><span class="p">:</span>
+</span><span id="__span-7-9">                    <span class="k">break</span>
+</span><span id="__span-7-10">        <span class="k">finally</span><span class="p">:</span>
+</span><span id="__span-7-11">            <span class="k">if</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="mi">4</span><span class="p">:</span>
+</span><span id="__span-7-12">                <span class="k">continue</span>
+</span><span id="__span-7-13">    <span class="k">return</span> <span class="n">i</span>
+</span></code></pre></div>
+<p>Here are the various transitions between the states for different conditions throughout the
+loop:</p>
+<pre class="mermaid"><code>stateDiagram-v2
+    [*] --&gt; NORMAL
+
+    NORMAL --&gt; RETURN: i = 3
+    NORMAL --&gt; BREAK: i &gt; 3
+    NORMAL --&gt; CONTINUE: i ≤ 2
+
+    RETURN --&gt; BREAK: i &gt; 2
+    RETURN --&gt; CONTINUE: i ≤ 2
+    RETURN --&gt; [*]: otherwise
+
+    BREAK --&gt; CONTINUE: i &lt; 4
+    BREAK --&gt; [*]: otherwise
+
+    CONTINUE --&gt; NORMAL</code></pre>
+<p>The internal state machine will transition between the states based on these conditions until the
+loop terminates, signified by reaching the end state.</p>
+<h3 id="variables">Variables<a class="headerlink" href="#variables" title="Permanent link">&para;</a></h3>
+<p>LLVM IR uses <a href="https://en.wikipedia.org/wiki/Static_single-assignment_form"><em>static single assignment form</em></a>,
+or SSA, which effectively means LLVM IR variables must be assigned <em>exactly</em> once. As a result, we
+can't map Python variables directly to LLVM IR variables. Instead, we map each Python variable to
+a stack-allocated piece of memory:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-8-1"><span class="n">x</span> <span class="o">=</span> <span class="mi">42</span>
+</span></code></pre></div>
+<p>becomes:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-9-1"><span class="nv">%x</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">alloca</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-9-2"><span class="k">store</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="m">42</span><span class="p">,</span><span class="w"> </span><span class="kt">i64</span><span class="p">*</span><span class="w"> </span><span class="nv">%x</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span></code></pre></div>
+<p><code>alloca</code> is an LLVM IR instruction that allocates space on the current stack frame; <code>alloca i64</code> allocates
+space for a 64-bit integer. Treating variables this way is standard practice when compiling to LLVM IR,
+and C/C++ compilers will do the same (e.g. <code>long x = 42</code> produces this exact code with Clang).</p>
+<p>Many variables are implicitly introduced by the parser and/or type checker. For example:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-10-1"><span class="n">a</span><span class="p">,</span> <span class="n">b</span> <span class="o">=</span> <span class="n">b</span><span class="p">,</span> <span class="n">a</span>
+</span></code></pre></div>
+<p>... a common Python idiom for swapping the values of two variables, will implicitly be transformed into</p>
+<div class="highlight"><pre><span></span><code><span id="__span-11-1"><span class="n">tmp</span> <span class="o">=</span> <span class="p">(</span><span class="n">b</span><span class="p">,</span> <span class="n">a</span><span class="p">)</span>
+</span><span id="__span-11-2"><span class="n">a</span> <span class="o">=</span> <span class="n">tmp</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+</span><span id="__span-11-3"><span class="n">b</span> <span class="o">=</span> <span class="n">tmp</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+</span></code></pre></div>
+<p>thus introducing the new variable <code>tmp</code>.</p>
+<h3 id="functions">Functions<a class="headerlink" href="#functions" title="Permanent link">&para;</a></h3>
+<p>Python functions map directly to LLVM functions:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-12-1"><span class="k">def</span><span class="w"> </span><span class="nf">foo</span><span class="p">(</span><span class="n">a</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">b</span><span class="p">:</span> <span class="nb">int</span><span class="p">):</span>
+</span><span id="__span-12-2">    <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
+</span></code></pre></div>
+<p>becomes:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-13-1"><span class="k">define</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="vg">@foo</span><span class="p">(</span><span class="kt">i64</span><span class="w"> </span><span class="nv nv-Anonymous">%0</span><span class="p">,</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="nv nv-Anonymous">%1</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-13-2"><span class="w">  </span><span class="nv">%a</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">alloca</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-13-3"><span class="w">  </span><span class="nv">%b</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">alloca</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-13-4"><span class="w">  </span><span class="k">store</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="nv nv-Anonymous">%0</span><span class="p">,</span><span class="w"> </span><span class="kt">i64</span><span class="p">*</span><span class="w"> </span><span class="nv">%a</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-13-5"><span class="w">  </span><span class="k">store</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="nv nv-Anonymous">%1</span><span class="p">,</span><span class="w"> </span><span class="kt">i64</span><span class="p">*</span><span class="w"> </span><span class="nv">%b</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-13-6"><span class="w">  </span><span class="nv">%a0</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">load</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="kt">i64</span><span class="p">*</span><span class="w"> </span><span class="nv">%a</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-13-7"><span class="w">  </span><span class="nv">%b0</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">load</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="kt">i64</span><span class="p">*</span><span class="w"> </span><span class="nv">%b</span><span class="p">,</span><span class="w"> </span><span class="k">align</span><span class="w"> </span><span class="m">8</span>
+</span><span id="__span-13-8"><span class="w">  </span><span class="nv">%ans</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">add</span><span class="w"> </span><span class="k">nsw</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="nv">%a0</span><span class="p">,</span><span class="w"> </span><span class="nv">%b0</span>
+</span><span id="__span-13-9"><span class="w">  </span><span class="k">ret</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="nv">%ans</span>
+</span><span id="__span-13-10"><span class="p">}</span>
+</span></code></pre></div>
+<p>Notice that space is allocated for the arguments via <code>alloca</code>, since they should be treated like normal
+variables inside the function.</p>
+<h3 id="generators">Generators<a class="headerlink" href="#generators" title="Permanent link">&para;</a></h3>
+<p>Generators are implemented using <a href="https://llvm.org/docs/Coroutines.html">LLVM coroutines</a>.
+Coroutines are like functions that allow suspension and resumption (much like what
+happens with Python's <code>yield</code>). Coroutines maintain their state (i.e. local variables, position in the
+function, yielded value) in a <em>coroutine frame</em>. Coroutines in LLVM are indeed also like
+normal functions, but delineate their resume/suspend points with special intrinsics and "return" a handle
+to their coroutine frames. Here are some of the important LLVM intrinsics that Codon uses when generating
+code for coroutines:</p>
+<ul>
+<li><code>@llvm.coro.id</code>: Returns a token that can identify the coroutine, which can be passed to many of the
+  other intrinsics.</li>
+<li><code>@llvm.coro.size.i64</code>: Returns the size of the coroutine frame for dynamic allocation.</li>
+<li><code>@llvm.coro.begin</code>: Returns a "handle" to the coroutine frame.</li>
+<li><code>@llvm.coro.suspend</code>: Marks a suspension point.</li>
+<li><code>@llvm.coro.end</code>: Marks the end of the coroutine and destroys the coroutine frame.</li>
+<li><code>@llvm.coro.resume</code>: Resumes a coroutine given a coroutine handle.</li>
+<li><code>@llvm.coro.done</code>: Checks if a coroutine is at its final suspend point.</li>
+<li><code>@llvm.coro.promise</code>: Returns a pointer to the <em>coroutine promise</em>: a region of memory that stores
+  values "yielded" from the coroutine.</li>
+<li><code>@llvm.coro.destroy</code>: Destroys a finished coroutine.</li>
+</ul>
+<p>With these primitives, generators are implemented roughly as follows:</p>
+<ul>
+<li>Functions with <code>yield</code> are converted to LLVM coroutines.</li>
+<li>Code is generated for <code>yield</code> statements by storing the yielded value in the coroutine promise,
+  then calling <code>@llvm.coro.suspend</code>.</li>
+<li>Python's <code>next()</code> built-in is implemented by calling <code>@llvm.coro.done</code> to see if the given generator
+  is finished, then calling <code>@llvm.coro.resume</code> to resume it and finally <code>@llvm.coro.promise</code> to obtain
+  the generated value.</li>
+<li><code>for x in generator</code> is implemented by repeatedly calling <code>@llvm.coro.resume</code>/<code>@llvm.coro.promise</code>
+  until <code>@llvm.coro.done</code> indicates that we should stop.</li>
+</ul>
+<p>Here is an example:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-14-1"><span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">3</span><span class="p">):</span>
+</span><span id="__span-14-2">    <span class="nb">print</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+</span></code></pre></div>
+<p>Here is the (simplified) LLVM IR generated for this snippet:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-15-1"><span class="nl">entry:</span>
+</span><span id="__span-15-2"><span class="w">  </span><span class="nv">%g</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">call</span><span class="w"> </span><span class="kt">ptr</span><span class="w"> </span><span class="vg">@range</span><span class="p">(</span><span class="kt">i64</span><span class="w"> </span><span class="m">3</span><span class="p">)</span>
+</span><span id="__span-15-3"><span class="w">  </span><span class="k">br</span><span class="w"> </span><span class="kt">label</span><span class="w"> </span><span class="nv">%for</span>
+</span><span id="__span-15-4">
+</span><span id="__span-15-5"><span class="nl">for:</span>
+</span><span id="__span-15-6"><span class="w">  </span><span class="k">call</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="vg">@llvm.coro.resume</span><span class="p">(</span><span class="kt">ptr</span><span class="w"> </span><span class="nv">%g</span><span class="p">)</span>
+</span><span id="__span-15-7"><span class="w">  </span><span class="nv">%done</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">call</span><span class="w"> </span><span class="kt">i1</span><span class="w"> </span><span class="vg">@llvm.coro.done</span><span class="p">(</span><span class="kt">ptr</span><span class="w"> </span><span class="nv">%g</span><span class="p">)</span>
+</span><span id="__span-15-8"><span class="w">  </span><span class="k">br</span><span class="w"> </span><span class="kt">i1</span><span class="w"> </span><span class="nv">%done</span><span class="p">,</span><span class="w"> </span><span class="kt">label</span><span class="w"> </span><span class="nv">%exit</span><span class="p">,</span><span class="w"> </span><span class="kt">label</span><span class="w"> </span><span class="nv">%body</span>
+</span><span id="__span-15-9">
+</span><span id="__span-15-10"><span class="nl">body:</span>
+</span><span id="__span-15-11"><span class="w">  </span><span class="nv">%p</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">call</span><span class="w"> </span><span class="kt">ptr</span><span class="w"> </span><span class="vg">@llvm.coro.promise</span><span class="p">(</span><span class="kt">ptr</span><span class="w"> </span><span class="nv">%g</span><span class="p">,</span><span class="w"> </span><span class="kt">i32</span><span class="w"> </span><span class="m">8</span><span class="p">,</span><span class="w"> </span><span class="kt">i1</span><span class="w"> </span><span class="k">false</span><span class="p">)</span>
+</span><span id="__span-15-12"><span class="w">  </span><span class="nv">%i</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="k">load</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="kt">ptr</span><span class="w"> </span><span class="nv">%p</span>
+</span><span id="__span-15-13"><span class="w">  </span><span class="k">call</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="vg">@print</span><span class="p">(</span><span class="kt">i64</span><span class="w"> </span><span class="nv">%i</span><span class="p">)</span>
+</span><span id="__span-15-14"><span class="w">  </span><span class="k">br</span><span class="w"> </span><span class="kt">label</span><span class="w"> </span><span class="nv">%for</span>
+</span><span id="__span-15-15">
+</span><span id="__span-15-16"><span class="nl">exit:</span>
+</span><span id="__span-15-17"><span class="w">  </span><span class="k">call</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="vg">@llvm.coro.destroy</span><span class="p">(</span><span class="kt">ptr</span><span class="w"> </span><span class="nv">%g</span><span class="p">)</span>
+</span></code></pre></div>
+<p>In summary:</p>
+<ul>
+<li>The call to <code>@range</code> returns a <em>handle</em> (with type <code>ptr</code>) to the range generator.</li>
+<li>The generator is resumed with <code>@llvm.coro.resume</code> (note that all coroutines will be initially suspended to
+  match Python's generator semantics).</li>
+<li>If <code>@llvm.coro.done</code> indicates that the generator is done, the loop is exited and <code>@llvm.coro.destroy</code> is
+  called to destroy the generator.</li>
+<li>Otherwise, in the body of the loop, the next value for <code>i</code> is obtained by calling <code>@llvm.coro.promise</code>
+  (the other arguments are simply the alignment of the promise (<code>i32 8</code>) and whether we want to obtain a
+  promise given a handle or vice versa (<code>i1 false</code>)).</li>
+</ul>
+<p>Coroutines are heavily optimized by LLVM. The code above, after optimizations are applied, becomes simply:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-16-1"><span class="w">  </span><span class="k">call</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="vg">@print</span><span class="p">(</span><span class="kt">i64</span><span class="w"> </span><span class="m">0</span><span class="p">)</span>
+</span><span id="__span-16-2"><span class="w">  </span><span class="k">call</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="vg">@print</span><span class="p">(</span><span class="kt">i64</span><span class="w"> </span><span class="m">1</span><span class="p">)</span>
+</span><span id="__span-16-3"><span class="w">  </span><span class="k">call</span><span class="w"> </span><span class="k">void</span><span class="w"> </span><span class="vg">@print</span><span class="p">(</span><span class="kt">i64</span><span class="w"> </span><span class="m">2</span><span class="p">)</span>
+</span></code></pre></div>
+<div class="admonition info">
+<p class="admonition-title">Info</p>
+</div>
+<p>Codon's LLVM fork implements coroutine elision analysis through escape analysis of the coroutine
+   handle, as opposed to the standard analysis that relies on examining <code>@llvm.coro.destroy</code> calls.
+   This was found to be much better at determining which coroutines can be optimized away.</p>
+<h3 id="program-structure">Program structure<a class="headerlink" href="#program-structure" title="Permanent link">&para;</a></h3>
+<p>Python doesn't have an explicit <code>main()</code> function as an entry point like C does.
+However, we need to generate a <code>main()</code> function in LLVM IR to be able to execute the generated code..</p>
+<p>Codon handles this by putting everything at the top level into its own implicit function:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-17-1"><span class="n">a</span> <span class="o">=</span> <span class="mi">42</span>
+</span><span id="__span-17-2"><span class="nb">print</span><span class="p">(</span><span class="n">a</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+</span></code></pre></div>
+<p>becomes:</p>
+<div class="highlight"><pre><span></span><code><span id="__span-18-1"><span class="n">a</span> <span class="o">=</span> <span class="mi">0</span>
+</span><span id="__span-18-2"><span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+</span><span id="__span-18-3">    <span class="k">global</span> <span class="n">a</span>
+</span><span id="__span-18-4">    <span class="n">a</span> <span class="o">=</span> <span class="mi">42</span>
+</span><span id="__span-18-5">    <span class="nb">print</span><span class="p">(</span><span class="n">a</span> <span class="o">*</span> <span class="mi">2</span><span class="p">)</span>
+</span></code></pre></div>
+<p>If compiling to a shared object, a <a href="https://en.wikipedia.org/wiki/Crt0">global constructor</a>
+is added to call the implicit <code>main()</code>, which ensures initialization is still performed.</p>
+<p>Relevant code can be found in
+<a href="https://github.com/exaloop/codon/tree/develop/codon/cir/llvm"><code>codon/cir/llvm</code></a>.</p>
+<h2 id="code-generation">Code generation<a class="headerlink" href="#code-generation" title="Permanent link">&para;</a></h2>
+<p>Codon invokes LLVM’s code generation infrastructure to emit native code. This also includes
+invoking LLVM's optimization pipeline when compiling in release mode (corresponding to Clang's
+<code>-O3</code>). Codon also has several of its own LLVM optimization passes:</p>
+<ul>
+<li>Allocation removal pass: Lowers dynamic allocation of known, small size to stack allocations.
+  This is useful when e.g. instantiating classes that don't escape the enclosing function.</li>
+<li>Allocation hoist pass: Hoists dynamic allocations outside of loops when possible. This allows
+  the same memory to be reused across loop iterations which improves cache performance.</li>
+<li>Allocation free pass: Automatically frees dynamic allocations when they are no longer being
+  used. Improves cache performance. This pass is off by default but can be enabled with the
+  hidden <code>-auto-free</code> compiler flag.</li>
+<li>Coroutine branch simplification pass: Some of LLVM's standard coroutine passes can result
+  in complex branches that are difficult to reason about. This pass simplifies those branches.</li>
+<li>Architecture-specific passes: Enables vectorization and other features specific to the host
+  architecture. Similar to <code>-march=native</code> in Clang. Can be disabled with the <code>-disable-native</code>
+  compiler flag.</li>
+</ul>
+<h3 id="gpu-code-generation">GPU code generation<a class="headerlink" href="#gpu-code-generation" title="Permanent link">&para;</a></h3>
+<p>If the program contains <a href="../../parallel/gpu/">GPU kernels</a>, those kernels are separated into a new
+LLVM module to be handled specially. In particular:</p>
+<ul>
+<li>Certain functions are replaced with GPU-compatible alternatives. For instance, the <code>sqrt()</code>
+  function might be replaced with <code>__nv_sqrt</code> from CUDA's libdevice library.</li>
+<li>Exceptions are disabled and replaced with unreachable directives, which enables additional
+  optimizations.</li>
+<li>The module is compiled to <a href="https://en.wikipedia.org/wiki/Parallel_Thread_Execution">PTX</a> code
+  and written to disk. The PTX code is then loaded at runtime to invoke the kernel.</li>
+</ul>
+<h2 id="jit-compilation">JIT compilation<a class="headerlink" href="#jit-compilation" title="Permanent link">&para;</a></h2>
+<p>Codon also includes a JIT based on LLVM's <a href="https://llvm.org/docs/ORCv2.html">ORC JIT</a> and implemented
+with LLVM's <a href="https://llvm.org/doxygen/classllvm_1_1orc_1_1LLJIT.html"><code>LLJIT</code></a>. This JIT
+is used to support the <a href="../../integrations/python/codon-from-python/"><code>@codon.jit</code> Python decorator</a> as
+well as <a href="../../integrations/jupyter/">Codon's Jupyter kernel</a>.</p>
+<p>Note that <code>codon run</code> also uses <code>LLJIT</code> to execute the generated LLVM code.</p>
+<p>Relevant code can be found in
+<a href="https://github.com/exaloop/codon/tree/develop/codon/compiler"><code>codon/compiler/</code></a>.</p>
+<h2 id="debugging">Debugging<a class="headerlink" href="#debugging" title="Permanent link">&para;</a></h2>
+<p>The <code>-log l</code> flag will dump the outputs of the various compilation stages to files that can be
+examined. This includes:</p>
+<ul>
+<li>AST with type information</li>
+<li>Both unoptimized and optimized Codon IR</li>
+<li>LLVM IR</li>
+</ul>
+<p>See the <a href="../../start/usage/#logging">relevant docs</a> for other debugging options.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2025 Exaloop, Inc.
+    </div>
+  
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/exaloop" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://discord.gg/HeWRhagCmP" target="_blank" rel="noopener" title="discord.gg" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M492.5 69.8c-.2-.3-.4-.6-.8-.7-38.1-17.5-78.4-30-119.7-37.1-.4-.1-.8 0-1.1.1s-.6.4-.8.8c-5.5 9.9-10.5 20.2-14.9 30.6-44.6-6.8-89.9-6.8-134.4 0-4.5-10.5-9.5-20.7-15.1-30.6-.2-.3-.5-.6-.8-.8s-.7-.2-1.1-.2C162.5 39 122.2 51.5 84.1 69c-.3.1-.6.4-.8.7C7.1 183.5-13.8 294.6-3.6 404.2c0 .3.1.5.2.8s.3.4.5.6c44.4 32.9 94 58 146.8 74.2.4.1.8.1 1.1 0s.7-.4.9-.7c11.3-15.4 21.4-31.8 30-48.8.1-.2.2-.5.2-.8s0-.5-.1-.8-.2-.5-.4-.6-.4-.3-.7-.4c-15.8-6.1-31.2-13.4-45.9-21.9-.3-.2-.5-.4-.7-.6s-.3-.6-.3-.9 0-.6.2-.9.3-.5.6-.7c3.1-2.3 6.2-4.7 9.1-7.1.3-.2.6-.4.9-.4s.7 0 1 .1c96.2 43.9 200.4 43.9 295.5 0 .3-.1.7-.2 1-.2s.7.2.9.4c2.9 2.4 6 4.9 9.1 7.2.2.2.4.4.6.7s.2.6.2.9-.1.6-.3.9-.4.5-.6.6c-14.7 8.6-30 15.9-45.9 21.8-.2.1-.5.2-.7.4s-.3.4-.4.7-.1.5-.1.8.1.5.2.8c8.8 17 18.8 33.3 30 48.8.2.3.6.6.9.7s.8.1 1.1 0c52.9-16.2 102.6-41.3 147.1-74.2.2-.2.4-.4.5-.6s.2-.5.2-.8c12.3-126.8-20.5-236.9-86.9-334.5zm-302 267.7c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.4 59.2-52.8 59.2m195.4 0c-29 0-52.8-26.6-52.8-59.2s23.4-59.2 52.8-59.2c29.7 0 53.3 26.8 52.8 59.2 0 32.7-23.2 59.2-52.8 59.2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://x.com/exaloop" target="_blank" rel="noopener" title="x.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M357.2 48h70.6L273.6 224.2 455 464H313L201.7 318.6 74.5 464H3.8l164.9-188.5L-5.2 48h145.6l100.5 132.9zm-24.8 373.8h39.1L119.1 88h-42z"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://linkedin.com/company/exaloop" target="_blank" rel="noopener" title="linkedin.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M416 32H31.9C14.3 32 0 46.5 0 64.3v383.4C0 465.5 14.3 480 31.9 480H416c17.6 0 32-14.5 32-32.3V64.3c0-17.8-14.4-32.3-32-32.3M135.4 416H69V202.2h66.5V416zM102.2 96a38.5 38.5 0 1 1 0 77 38.5 38.5 0 1 1 0-77m282.1 320h-66.4V312c0-24.8-.5-56.7-34.5-56.7-34.6 0-39.9 27-39.9 54.9V416h-66.4V202.2h63.7v29.2h.9c8.9-16.8 30.6-34.5 62.9-34.5 67.2 0 79.7 44.3 79.7 101.9z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "search.suggest", "search.highlight", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.tabs", "navigation.top", "announce.dismiss"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+        <script src="../../js/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
