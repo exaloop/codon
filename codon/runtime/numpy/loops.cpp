@@ -152,7 +152,7 @@ struct CosFunctor {
   static inline auto vector(const hn::ScalableTag<T> d, const V &v) {
     // Values outside of [-LIMIT, LIMIT] are not valid for SIMD version.
     const T LIMIT = limit<T>();
-    constexpr size_t L = hn::Lanes(d);
+    HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
     T tmp[L];
     Store(v, d, tmp);
 
@@ -330,7 +330,7 @@ struct SinFunctor {
   static inline auto vector(const hn::ScalableTag<T> d, const V &v) {
     // Values outside of [-LIMIT, LIMIT] are not valid for SIMD version.
     const T LIMIT = limit<T>();
-    constexpr size_t L = hn::Lanes(d);
+    HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
     T tmp[L];
     Store(v, d, tmp);
 
@@ -367,7 +367,7 @@ struct SinhFunctor {
   static inline auto vector(const hn::ScalableTag<T> d, const V &v) {
     // Values outside of [-LIMIT, LIMIT] are not valid for SIMD version.
     const T LIMIT = limit<T>();
-    constexpr size_t L = hn::Lanes(d);
+    HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
     T tmp[L];
     Store(v, d, tmp);
 
@@ -414,7 +414,7 @@ struct HypotFunctor {
 template <typename T, typename F>
 void UnaryLoop(const T *in, size_t is, T *out, size_t os, size_t n) {
   const hn::ScalableTag<T> d;
-  constexpr size_t L = Lanes(d);
+  HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
   T tmp[L];
   size_t i;
 
@@ -449,7 +449,7 @@ template <typename T, typename F>
 void BinaryLoop(const T *in1, size_t is1, const T *in2, size_t is2, T *out, size_t os,
                 size_t n) {
   const hn::ScalableTag<T> d;
-  constexpr size_t L = Lanes(d);
+  HWY_LANES_CONSTEXPR size_t L = hn::Lanes(d);
   T tmp1[L];
   T tmp2[L];
   size_t i;
