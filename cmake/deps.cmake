@@ -172,7 +172,7 @@ endif()
 CPMAddPackage(
     NAME highway
     GITHUB_REPOSITORY "google/highway"
-    GIT_TAG 1.2.0
+    GIT_TAG 1.3.0
     EXCLUDE_FROM_ALL YES
     OPTIONS "HWY_ENABLE_CONTRIB ON"
             "HWY_ENABLE_EXAMPLES OFF"
