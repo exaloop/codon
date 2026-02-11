@@ -2,7 +2,7 @@
 
 #include "codon/runtime/lib.h"
 
-#if defined(__linux__) && (defined(__aarch64__) || defined(__arm64__))
+#if (defined(__aarch64__) || defined(__arm64__)) && !defined(__ARM_FEATURE_SVE)
 #define HWY_DISABLED_TARGETS HWY_ALL_SVE
 #endif
 
