@@ -575,10 +575,28 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     }
   }
 
-  std::vector<std::string> extraArgs = {
-      "-lcodonrt", "-lomp", "-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
+  // Find the static codonrt library
+  std::string codonrtStatic = "";
+  for (const auto &searchPath : rpaths) {
+      auto libPath = llvm::SmallString<256>(searchPath);
+      llvm::sys::path::append(libPath, "libcodonrt_static_combined.a");
+      if (llvm::sys::fs::exists(libPath)) {
+        codonrtStatic = std::string(libPath);
+        break;
+      }
+  }
 
-  for (const auto &arg : extraArgs) {
+  // Build command arguments
+  if (!codonrtStatic.empty()) {
+    command.push_back(codonrtStatic);
+  } else {
+    command.push_back("-lcodonrt"); // fallback to dynamic
+    command.push_back("-lomp");
+  }
+
+  // Add remaining system libraries
+  std::vector<std::string> systemLibs = {"-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
+  for (const auto &arg : systemLibs) {
     command.push_back(arg);
   }
 
