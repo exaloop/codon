@@ -140,8 +140,8 @@ public:
   ForFlow(Value *iter, Flow *body, Var *var,
           std::unique_ptr<transform::parallel::OMPSched> schedule = {},
           bool async = false, std::string name = "")
-      : AcceptorExtend(std::move(name)), iter(iter), body(body), var(var), async(async),
-        schedule(std::move(schedule)) {}
+      : AcceptorExtend(std::move(name)), iter(iter), body(body), var(var),
+        schedule(std::move(schedule)), async(async) {}
 
   /// @return the iter
   Value *getIter() { return iter; }
