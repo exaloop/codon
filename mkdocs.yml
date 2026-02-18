@@ -51,7 +51,7 @@ extra:
 
   generator: false
 
-copyright: Copyright &copy; 2025 Exaloop, Inc.
+copyright: Copyright &copy; 2026 Exaloop, Inc.
 
 extra_javascript:
   - js/mathjax.js
