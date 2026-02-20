@@ -91,12 +91,11 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
 
     cache->fs->set_module0(file);
 
+    LOG_TIME("[T] parse = {:.1f}", totalPeg);
     Timer t2("typecheck");
-    t2.logged = true;
     auto typechecked = ast::TypecheckVisitor::apply(
         cache.get(), codeStmt, abspath, defines, getEarlyDefines(), (testFlags > 1));
-    LOG_TIME("[T] parse = {:.1f}", totalPeg);
-    LOG_TIME("[T] typecheck = {:.1f}", t2.elapsed() - totalPeg);
+    t2.log();
 
     if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
       auto fo = fopen("_dump_typecheck.sexp", "w");
