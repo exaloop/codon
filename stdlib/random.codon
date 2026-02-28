@@ -454,15 +454,16 @@ class Random:
     def choices(
         self,
         population,
-        weights: Optional[List[int]],
-        cum_weights: Optional[List[int]],
+        weights: Optional[List[T]],
+        cum_weights: Optional[List[T]],
         k: int,
+        T: type
     ):
 
-        def accumulate(weights: List[int]) -> List[int]:
+        def accumulate(weights: list[T], T: type) -> list[T]:
             n = len(weights)
-            cum_weight = List[int](n)
-            accum = 0
+            cum_weight = list[T](n)
+            accum = T(0)
             if n > 0:
                 for i in range(n):
                     accum += weights[i]
@@ -506,9 +507,10 @@ def choice(s):
 
 def choices(
     population,
-    weights: Optional[List[int]] = None,
-    cum_weights: Optional[List[int]] = None,
+    weights: Optional[List[T]] = None,
+    cum_weights: Optional[List[T]] = None,
     k: int = 1,
+    T: type
 ):
     return _rnd.choices(population, weights, cum_weights, k)
 

@@ -249,23 +249,23 @@ def round(x, n=0):
     nx = float.__pow__(10.0, n)
     return float.__round__(x * nx) / nx
 
-def _sum_start(x, start):
-    if isinstance(x.__iter__(), Generator[float]) and isinstance(start, int):
-        return float(start)
-    else:
-        return start
-
 def sum(x, start=0):
-    s = _sum_start(x, start)
+    def _sum(x, start):
+        s = start
+        for a in x:
+            # don't use += to avoid calling iadd
+            if isinstance(a, bool):
+                s = s + (1 if a else 0)
+            else:
+                s = s + a
+        return s
 
-    for a in x:
-        # don't use += to avoid calling iadd
-        if isinstance(a, bool):
-            s = s + (1 if a else 0)
-        else:
-            s = s + a
-
-    return s
+    it = iter(x)
+    if not it.done():
+        s = start + it.__next__()
+        return _sum(it, s)
+    else:
+        return it.T(start)
 
 def repr(x):
     if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):
