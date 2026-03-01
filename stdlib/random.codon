@@ -484,7 +484,7 @@ class Random:
         total = float(cum_weights[-1])  # convert to float
         hi = n - 1
         return [
-            population[_bisect(cum_weights, int(self.random() * total), 0, hi)]
+            population[_bisect(cum_weights, self.random() * total, 0, hi)]
             for i in range(k)
         ]
 
