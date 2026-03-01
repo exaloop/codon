@@ -952,12 +952,14 @@ class BinaryUFunc:
             return self.at(a, indices, routines.asarray(b))
 
         fn = self._op
+        i = 0
 
         for idx in indices:
             if static.len(b.shape) == 0:
                 a[idx] = fn(a[idx], b.data[0])
             else:
-                a[idx] = fn(a[idx], b[idx])
+                a[idx] = fn(a[idx], b[i])
+            i += 1
 
     def outer(self, A, B, dtype: type = NoneType):
         if not isinstance(A, ndarray):

@@ -1,0 +1,88 @@
+import numpy as np
+
+@test
+def test_add_at_repeated_indices_scalar_b():
+    a = np.zeros((5,), dtype=float)
+    idx = np.array([2, 2, 2, 4], dtype=int)
+    np.add.at(a, idx, 3.0)
+    # a[2] += 3 three times, a[4] += 3 once
+    assert np.allclose(a, np.array([0, 0, 9, 0, 3], dtype=float))
+
+@test
+def test_add_at_repeated_indices_vector_b_aligned_by_iteration_not_idx():
+    a = np.zeros((6,), dtype=float)
+    idx = np.array([4, 4, 1, 4], dtype=int)
+    b = np.array([10.0, 1.5, -2.0, 0.5], dtype=float)
+    np.add.at(a, idx, b)
+    # iteration-aligned:
+    # a[4]+=10 ; a[4]+=1.5 ; a[1]+=-2 ; a[4]+=0.5  => a[4]=12.0, a[1]=-2
+    assert np.allclose(a, np.array([0, -2, 0, 0, 12.0, 0], dtype=float))
+
+@test
+def test_add_at_rowwise():
+    A = np.arange((27 * 16), dtype=float).reshape(27, 16)
+    B = np.ones((7,), dtype=int) * 26
+    C = np.zeros((7 * 16), dtype=float).reshape(7, 16)
+
+    # Make C non-trivial so we can validate accumulation
+    for i in range(7):
+        C[i, :] = i + 1  # rows: all 1s, all 2s, ..., all 7s
+
+    A_ref = A.copy()
+    np.add.at(A, B, C)
+
+    # Expected: only row 26 changes; it gets sum of all C rows
+    A_ref[26, :] += C.sum(axis=0)
+    assert np.allclose(A, A_ref)
+
+@test
+def test_add_at_preserves_other_rows():
+    rng = np.random.default_rng(seed=0)
+    A = rng.standard_normal((10, 4))
+    B = np.array([3, 3, 3], dtype=int)
+    C = np.ones((3, 4), dtype=float)
+    A0 = A.copy()
+
+    np.add.at(A, B, C)
+
+    # rows != 3 unchanged
+    mask = np.ones((10,), dtype=bool)
+    mask[3] = False
+    assert np.allclose(A[mask], A0[mask])
+
+@test
+def test_add_at_negative_indices():
+    a = np.zeros((5,), dtype=float)
+    idx = np.array([-1, -1, 0], dtype=int)
+    b = np.array([1.0, 2.0, 3.0], dtype=float)
+    np.add.at(a, idx, b)
+    # a[-1]+=1 ; a[-1]+=2 ; a[0]+=3  => a[4]=3, a[0]=3
+    assert np.allclose(a, np.array([3, 0, 0, 0, 3], dtype=float))
+
+@test
+def test_mul_at_repeated_indices_vector_b():
+    a = np.ones((4,), dtype=float)
+    idx = np.array([2, 2, 2], dtype=int)
+    b = np.array([2.0, 3.0, 4.0], dtype=float)
+    np.multiply.at(a, idx, b)
+    # sequential: a[2] = 1*2*3*4 = 24
+    assert np.allclose(a, np.array([1, 1, 24, 1], dtype=float))
+
+@test
+def test_at_sequential_semantics_noncommutative_like_true_divide():
+    # This catches buffering bugs: if you accidentally buffer reads/writes,
+    # repeated indices won’t behave like sequential application.
+    a = np.array([100.0], dtype=float)
+    idx = np.array([0, 0, 0], dtype=int)
+    b = np.array([2.0, 5.0, 2.0], dtype=float)
+    np.true_divide.at(a, idx, b)
+    # sequential: ((100 / 2) / 5) / 2 = 5
+    assert np.allclose(a, np.array([5.0], dtype=float))
+
+test_add_at_repeated_indices_scalar_b()
+test_add_at_repeated_indices_vector_b_aligned_by_iteration_not_idx()
+test_add_at_rowwise()
+test_add_at_preserves_other_rows()
+test_add_at_negative_indices()
+test_mul_at_repeated_indices_vector_b()
+test_at_sequential_semantics_noncommutative_like_true_divide()

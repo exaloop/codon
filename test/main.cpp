@@ -581,6 +581,7 @@ INSTANTIATE_TEST_SUITE_P(
             "numpy/test_routines.codon",
             "numpy/test_sorting.codon",
             "numpy/test_statistics.codon",
+            "numpy/test_ufunc.codon",
             "numpy/test_window.codon"
         ),
         testing::Values(true, false),
