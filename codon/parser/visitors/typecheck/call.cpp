@@ -267,10 +267,18 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       if (!typ->isRecord())
         E(Error::CALL_BAD_UNPACK, (*expr)[ai], typ->prettyString());
       auto fields = getClassFields(typ);
+
+      Expr *head = star->getExpr(), *lead = nullptr;
+      if (hasSideEffect(head)) {
+        auto var = getTemporaryVar("star");
+        lead = N<AssignExpr>(N<IdExpr>(var), head);
+        head = N<IdExpr>(var);
+      }
       for (size_t i = 0; i < fields.size(); i++, ai++) {
         expr->items.insert(
             expr->items.begin() + ai,
-            CallArg{"", transform(N<DotExpr>(clone(star->getExpr()), fields[i].name))});
+            CallArg{"", transform(N<DotExpr>(clone(lead && i == 0 ? lead : head),
+                                             fields[i].name))});
       }
       expr->items.erase(expr->items.begin() + ai);
     } else if (const auto kwstar = cast<KeywordStarExpr>((*expr)[ai].getExpr())) {
@@ -284,6 +292,12 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
       }
       if (!typ)
         return false;
+      Expr *head = kwstar->getExpr(), *lead = nullptr;
+      if (hasSideEffect(head)) {
+        auto var = getTemporaryVar("star");
+        lead = N<AssignExpr>(N<IdExpr>(var), head);
+        head = N<IdExpr>(var);
+      }
       if (typ->is("NamedTuple")) {
         auto id = getIntLiteral(typ);
         seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}",
@@ -293,8 +307,9 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
           expr->items.insert(
               expr->items.begin() + ai,
               CallArg{names[i],
-                      transform(N<DotExpr>(N<DotExpr>(kwstar->getExpr(), "args"),
-                                           fmt::format("item{}", i + 1)))});
+                      transform(N<DotExpr>(
+                          N<DotExpr>(clone(lead && i == 0 ? lead : head), "args"),
+                          fmt::format("item{}", i + 1)))});
         }
         expr->items.erase(expr->items.begin() + ai);
       } else if (typ->isRecord()) {
@@ -303,7 +318,8 @@ bool TypecheckVisitor::transformCallArgs(CallExpr *expr) {
           expr->items.insert(
               expr->items.begin() + ai,
               CallArg{fields[i].name,
-                      transform(N<DotExpr>(kwstar->expr, fields[i].name))});
+                      transform(N<DotExpr>(clone(lead && i == 0 ? lead : head),
+                                           fields[i].name))});
         }
         expr->items.erase(expr->items.begin() + ai);
       } else {
@@ -583,7 +599,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                     args.emplace_back(realName, getPartialArg(pi));
                     pi++;
                   } else {
-                    // TODO: check if the value is toplevel and avoid capturing it if so
+                    // TODO: check if the value is toplevel to avoid capturing it
                     auto e = transform(N<IdExpr>(ai->getValue()));
                     seqassert(e->getType()->getLink(), "not a link type");
                     args.emplace_back(realName, e);

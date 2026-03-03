@@ -298,10 +298,21 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     } else {
       it->setAttribute(Attr::ExprSequenceItem);
       if (isDict) {
+        Expr *head = it, *lead = nullptr;
+        if (hasSideEffect(head)) {
+          auto var = getTemporaryVar("star");
+          lead = N<AssignExpr>(N<IdExpr>(var), head);
+          head = N<IdExpr>(var);
+        } else {
+          lead = clone(head);
+        }
+        lead->setAttribute(Attr::ExprSequenceItem);
+        head->setAttribute(Attr::ExprSequenceItem);
         stmts.push_back(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn),
-                                                N<IndexExpr>(it, N<IntExpr>(0)),
-                                                N<IndexExpr>(it, N<IntExpr>(1)))));
+                                                N<IndexExpr>(lead, N<IntExpr>(0)),
+                                                N<IndexExpr>(head, N<IntExpr>(1)))));
       } else {
+        it->setAttribute(Attr::ExprSequenceItem);
         stmts.push_back(N<ExprStmt>(N<CallExpr>(N<DotExpr>(clone(var), fn), it)));
       }
     }

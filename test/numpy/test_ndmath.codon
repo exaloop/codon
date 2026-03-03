@@ -11,7 +11,7 @@ def test_sin():
     assert np.isclose(np.sin(2.5 + 2j),
                       (2.2515693217814876 - 2.905636060226587j))
     assert np.isclose(np.sin(10**9), 0.5458434494486996)
-    assert np.sin(10**(-5)) == 0
+    assert np.isclose(np.sin(10**(-5)), 1e-5)
 
 test_sin()
 
@@ -23,7 +23,7 @@ def test_cos():
                       (-3.0140590583498352 - 2.170574924649956j))
     assert np.cos(-1.5 + 1j) == (0.10915320605445292 + 1.1722572989107924j)
     assert np.cos(-1.5 - 1j) == (0.10915320605445292 - 1.1722572989107924j)
-    assert np.cos(10**(-5)) == 1
+    assert np.isclose(np.cos(10**(-5)), 1)
     assert np.isclose(np.cos(10**(9)), 0.8378871813639024)
 
 test_cos()
@@ -35,7 +35,7 @@ def test_tan():
     assert np.isclose(np.tan(-1.5 + 1j),
                       (-0.050905362327228636 + 1.3082952992279357j))
     assert np.isclose(np.tan(10**(9)), 0.6514522021451413)
-    assert np.tan(10**(-9)) == 0
+    assert np.tan(10**(-9)) == 1e-9
 
 test_tan()
 

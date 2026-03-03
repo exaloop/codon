@@ -358,8 +358,7 @@ class int:
     def __pow__(self, exp: float) -> float:
         return float(self) ** exp
 
-    @overload
-    def __pow__(self, exp: int) -> int:
+    def _ipow(self, exp: int) -> int:
         if exp < 0:
             return 0
         result = 1
@@ -371,6 +370,18 @@ class int:
                 break
             self *= self
         return result
+
+    @overload
+    def __pow__(self, exp: int) -> int:
+        return self._ipow(exp)
+
+    def __pow__(self, exp: Literal[int]):
+        if exp == 0:
+            return 1
+        elif exp > 0:
+            return self._ipow(exp)
+        else:
+            return self ** float(exp)
 
     def popcnt(self) -> int:
         return Int[64](self).popcnt()

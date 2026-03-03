@@ -419,6 +419,11 @@ class float:
     def __add__(self: float, b: int) -> float:
         return self + float(b)
 
+    @commutative
+    @overload
+    def __add__(self: float, b: bool) -> float:
+        return self + float(b)
+
     @overload
     def __sub__(self: float, b: int) -> float:
         return self - float(b)

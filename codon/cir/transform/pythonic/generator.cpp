@@ -119,11 +119,11 @@ Func *genToSum(BodiedFunc *gen, types::Type *startType, types::Type *outType) {
     return nullptr;
 
   auto *M = gen->getModule();
-  auto *fn = M->Nr<BodiedFunc>("__sum_wrapper");
   auto *genType = cast<types::FuncType>(gen->getType());
   if (!genType)
     return nullptr;
 
+  auto *fn = M->Nr<BodiedFunc>("__sum_wrapper");
   std::vector<types::Type *> argTypes(genType->begin(), genType->end());
   argTypes.push_back(startType);
 
@@ -150,16 +150,20 @@ Func *genToSum(BodiedFunc *gen, types::Type *startType, types::Type *outType) {
   if (startType->is(M->getIntType()) && outType->is(M->getFloatType()))
     init = (*M->getFloatType())(*init);
 
-  if (!init || !init->getType()->is(outType))
+  if (!init || !init->getType()->is(outType)) {
+    M->remove(fn);
     return nullptr;
+  }
 
   auto *accumulator = util::makeVar(init, body, fn, /*prepend=*/true);
   GeneratorSumTransformer xgen(accumulator);
   fn->accept(xgen);
   body->push_back(M->Nr<ReturnInstr>(M->Nr<VarValue>(accumulator)));
 
-  if (!xgen.valid)
+  if (!xgen.valid) {
+    M->remove(fn);
     return nullptr;
+  }
 
   return fn;
 }
@@ -195,8 +199,10 @@ Func *genToAnyAll(BodiedFunc *gen, bool any) {
   fn->accept(xgen);
   body->push_back(M->Nr<ReturnInstr>(M->getBool(!any)));
 
-  if (!xgen.valid)
+  if (!xgen.valid) {
+    M->remove(fn);
     return nullptr;
+  }
 
   return fn;
 }

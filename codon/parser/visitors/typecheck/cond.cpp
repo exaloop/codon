@@ -53,7 +53,7 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         [&]() -> Expr * { return nullptr; });
     if (resultExpr)
       unify(expr->getType(), resultExpr->getType());
-    else
+    else if (expr->getType()->getUnbound())
       expr->getType()->getUnbound()->staticKind = LiteralKind::Int; // determine later!
     return;
   }

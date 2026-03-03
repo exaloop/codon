@@ -387,3 +387,38 @@ def test_bit_length():
         assert (x >> k) == 0
 
 test_bit_length()
+
+@test
+def test_int_pow():
+    @noinline
+    def five(): return 5
+    @noinline
+    def two(): return 2
+    @noinline
+    def zero(): return 0
+
+    assert five() ** two() == 25
+    assert type(five() ** two()) is int
+
+    assert five() ** 3 == 125
+    assert type(five() ** 3) is int
+
+    assert 5 ** two() == 25
+    assert type(5 ** two()) is int
+
+    assert 5 ** 3 == 125
+    assert type(5 ** 3) is int
+
+    assert five() ** -1 == 0.2
+    assert type(five() ** -1) is float
+
+    assert 5 ** -1 == 0.2
+    assert type(5 ** -1) is float
+
+    assert (-five()) ** zero() == 1
+    assert type(five() ** zero()) is int
+
+    assert (-five()) ** 0 == 1
+    assert type(five() ** 0) is int
+
+test_int_pow()
