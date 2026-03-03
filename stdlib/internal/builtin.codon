@@ -249,23 +249,56 @@ def round(x, n=0):
     nx = float.__pow__(10.0, n)
     return float.__round__(x * nx) / nx
 
-def _sum_start(x, start):
-    if isinstance(x.__iter__(), Generator[float]) and isinstance(start, int):
-        return float(start)
-    else:
-        return start
-
 def sum(x, start=0):
-    s = _sum_start(x, start)
-
-    for a in x:
-        # don't use += to avoid calling iadd
-        if isinstance(a, bool):
-            s = s + (1 if a else 0)
+    if ((isinstance(x, List[int]) and isinstance(start, int)) or
+        (isinstance(x, List[int]) and isinstance(start, float)) or
+        (isinstance(x, List[float]) and isinstance(start, float))):
+        p = x.arr.ptr
+        s = start
+        for i in range(len(x)):
+            s += p[i]
+        return s
+    elif isinstance(x, List[float]) and isinstance(start, int):
+        p = x.arr.ptr
+        s = float(start)
+        for i in range(len(x)):
+            s += p[i]
+        return s
+    elif isinstance(x, List[bool]) and isinstance(start, int):
+        p = x.arr.ptr
+        s = start
+        for i in range(len(x)):
+            s += 1 if p[i] else 0
+        return s
+    if ((isinstance(x, Generator[int]) and isinstance(start, int)) or
+        (isinstance(x, Generator[int]) and isinstance(start, float)) or
+        (isinstance(x, Generator[float]) and isinstance(start, float))):
+        s = start
+        for a in x:
+            s += a
+        return s
+    elif isinstance(x, Generator[float]) and isinstance(start, int):
+        s = float(start)
+        for a in x:
+            s += a
+        return s
+    elif isinstance(x, Generator[bool]) and isinstance(start, int):
+        s = start
+        for a in x:
+            s += 1 if a else 0
+        return s
+    else:
+        itr = x.__iter__()
+        S = type(start + itr.__promise__()[0])
+        if isinstance(start, S):
+            s = start
         else:
+            s = S(start)
+
+        for a in x:
             s = s + a
 
-    return s
+        return s
 
 def repr(x):
     if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):

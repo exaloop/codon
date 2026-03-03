@@ -1170,3 +1170,170 @@ def test_ptr_fields():
     assert x1.n3 == -3
 
 test_ptr_fields()
+
+@test
+def test_sum_types():
+    class A:
+        n: int
+        def __init__(self, n: int):
+            self.n = n
+        def __add__(self, other):
+            return A(self.n + other.n)
+        def __eq__(self, other):
+            return self.n == other.n
+        def __ne__(self, other):
+            return self.n != other.n
+        def __hash__(self):
+            return self.n
+
+    # lists
+    s = sum([i/2 for i in range(6)])
+    assert type(s) is float
+    assert s == 7.5
+
+    s = sum([i*i for i in range(6)])
+    assert type(s) is int
+    assert s == 55
+
+    s = sum([i*i for i in range(6)], start=1.5)
+    assert type(s) is float
+    assert s == 56.5
+
+    s = sum([i%2 == 0 for i in range(6)])
+    assert type(s) is int
+    assert s == 3
+
+    s = sum([i%2 == 0 for i in range(6)], start=1.5)
+    assert type(s) is float
+    assert s == 4.5
+
+    s = sum([A(i) for i in range(6)], start=A(0))
+    assert type(s) is A
+    assert s.n == 15
+
+    # empty lists
+    s = sum([i/2 for i in range(0)])
+    assert type(s) is float
+    assert s == 0.0
+
+    s = sum([i*i for i in range(0)])
+    assert type(s) is int
+    assert s == 0
+
+    s = sum([i*i for i in range(0)], start=1.5)
+    assert type(s) is float
+    assert s == 1.5
+
+    s = sum([i%2 == 0 for i in range(0)])
+    assert type(s) is int
+    assert s == 0
+
+    s = sum([i%2 == 0 for i in range(0)], start=1.5)
+    assert type(s) is float
+    assert s == 1.5
+
+    s = sum([A(i) for i in range(0)], start=A(0))
+    assert type(s) is A
+    assert s.n == 0
+
+    # generators
+    s = sum(i/2 for i in range(6))
+    assert type(s) is float
+    assert s == 7.5
+
+    s = sum(i*i for i in range(6))
+    assert type(s) is int
+    assert s == 55
+
+    s = sum((i*i for i in range(6)), start=1.5)
+    assert type(s) is float
+    assert s == 56.5
+
+    s = sum(i%2 == 0 for i in range(6))
+    assert type(s) is int
+    assert s == 3
+
+    s = sum((i%2 == 0 for i in range(6)), start=1.5)
+    assert type(s) is float
+    assert s == 4.5
+
+    s = sum((A(i) for i in range(6)), start=A(0))
+    assert type(s) is A
+    assert s.n == 15
+
+    # empty generators
+    s = sum(i/2 for i in range(0))
+    assert type(s) is float
+    assert s == 0.0
+
+    s = sum(i*i for i in range(0))
+    assert type(s) is int
+    assert s == 0
+
+    s = sum((i*i for i in range(0)), start=1.5)
+    assert type(s) is float
+    assert s == 1.5
+
+    s = sum(i%2 == 0 for i in range(0))
+    assert type(s) is int
+    assert s == 0
+
+    s = sum((i%2 == 0 for i in range(0)), start=1.5)
+    assert type(s) is float
+    assert s == 1.5
+
+    s = sum((A(i) for i in range(0)), start=A(0))
+    assert type(s) is A
+    assert s.n == 0
+
+    # sets
+    s = sum({i/2 for i in range(6)})
+    assert type(s) is float
+    assert s == 7.5
+
+    s = sum({i*i for i in range(6)})
+    assert type(s) is int
+    assert s == 55
+
+    s = sum({i*i for i in range(6)}, start=1.5)
+    assert type(s) is float
+    assert s == 56.5
+
+    s = sum({i%2 == 0 for i in range(6)})
+    assert type(s) is int
+    assert s == 1
+
+    s = sum({i%2 == 0 for i in range(6)}, start=1.5)
+    assert type(s) is float
+    assert s == 2.5
+
+    s = sum({A(i) for i in range(6)}, start=A(0))
+    assert type(s) is A
+    assert s.n == 15
+
+    # empty sets
+    s = sum({i/2 for i in range(0)})
+    assert type(s) is float
+    assert s == 0.0
+
+    s = sum({i*i for i in range(0)})
+    assert type(s) is int
+    assert s == 0
+
+    s = sum({i*i for i in range(0)}, start=1.5)
+    assert type(s) is float
+    assert s == 1.5
+
+    s = sum({i%2 == 0 for i in range(0)})
+    assert type(s) is int
+    assert s == 0
+
+    s = sum({i%2 == 0 for i in range(0)}, start=1.5)
+    assert type(s) is float
+    assert s == 1.5
+
+    s = sum({A(i) for i in range(0)}, start=A(0))
+    assert type(s) is A
+    assert s.n == 0
+
+test_sum_types()

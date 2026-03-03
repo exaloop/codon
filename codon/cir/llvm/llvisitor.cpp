@@ -1904,12 +1904,9 @@ void LLVMVisitor::visit(const LLVMFunc *x) {
   std::unique_ptr<llvm::Module> sub =
       llvm::parseIR(buf->getMemBufferRef(), err, *context);
   if (!sub) {
-    // LOG("-> {}", code);
     std::string bufStr;
     llvm::raw_string_ostream buf(bufStr);
     err.print("LLVM", buf);
-    // LOG("-> ERR {}", x->referenceString());
-    // LOG("       {}", code);
     compilationError(fmt::format("{} ({})", buf.str(), x->getName()));
   }
   sub->setDataLayout(M->getDataLayout());
