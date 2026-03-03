@@ -510,7 +510,7 @@ def choices(
     weights: Optional[List[T]] = None,
     cum_weights: Optional[List[T]] = None,
     k: int = 1,
-    T: type
+    T: type = int
 ):
     return _rnd.choices(population, weights, cum_weights, k)
 
