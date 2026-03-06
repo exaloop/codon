@@ -422,3 +422,67 @@ def test_int_pow():
     assert type(five() ** 0) is int
 
 test_int_pow()
+
+@test
+def test_int_match():
+    n = 0
+    match 42:
+        case 0:
+            n = 1
+        case 42:
+            n = 2
+        case 100:
+            n = 3
+        case _:
+            n = 4
+    assert n == 2
+
+    n = 0
+    match u32(42):
+        case u32(0):
+            n = 1
+        case u32(42):
+            n = 2
+        case u32(100):
+            n = 3
+        case _:
+            n = 4
+    assert n == 2
+
+    n = 0
+    match u32(99):
+        case u32(0):
+            n = 1
+        case u32(42):
+            n = 2
+        case u32(100):
+            n = 3
+        case _:
+            n = 4
+    assert n == 4
+
+    n = 0
+    match i32(42):
+        case i32(0):
+            n = 1
+        case i32(42):
+            n = 2
+        case i32(100):
+            n = 3
+        case _:
+            n = 4
+    assert n == 2
+
+    n = 0
+    match i32(99):
+        case i32(0):
+            n = 1
+        case i32(42):
+            n = 2
+        case i32(100):
+            n = 3
+        case _:
+            n = 4
+    assert n == 4
+
+test_int_match()
