@@ -336,6 +336,9 @@ class Int:
     def len() -> int:
         return N
 
+    def __match__(self, obj: Int[N]) -> bool:
+        return self == obj
+
 
 @extend
 class UInt:
@@ -632,6 +635,9 @@ class UInt:
 
     def len() -> int:
         return N
+
+    def __match__(self, obj: UInt[N]) -> bool:
+        return self == obj
 
 i1 = Int[1]
 i8 = Int[8]
