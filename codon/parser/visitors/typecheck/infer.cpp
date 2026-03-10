@@ -23,10 +23,6 @@ namespace codon::ast {
 
 using namespace types;
 
-namespace {
-const std::string GPU_KERNEL_ATTR = getMangledFunc("std.internal.gpu", "kernel");
-}
-
 /// Unify types a (passed by reference) and b.
 /// Destructive operation as it modifies both a and b. If types cannot be unified, raise
 /// an error.
@@ -744,17 +740,8 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     types.pop_back();
     names.pop_back();
   }
-
-  auto *fnAttrs = r->ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes);
-  const bool isGpuKernel = fnAttrs && fnAttrs->has(GPU_KERNEL_ATTR);
-
-  auto *retType = makeIRType(r->type->getRetType()->getClass());
-  if (isGpuKernel && extractClassType(r->type->getRetType())->is("NoneType")) {
-    retType = irm->getVoidType();
-  }
-
   auto irType = irm->unsafeGetFuncType(r->type->realizedName(),
-                                       retType,
+                                       makeIRType(r->type->getRetType()->getClass()),
                                        types, r->ast->hasAttribute(Attr::CVarArg));
   irType->setAstType(r->type->shared_from_this());
   fn->realize(irType, names);

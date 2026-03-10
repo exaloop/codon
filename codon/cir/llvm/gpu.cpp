@@ -698,6 +698,69 @@ getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
   return std::vector<llvm::GlobalValue *>(keep.begin(), keep.end());
 }
 
+static bool isEmptyStructType(llvm::Type *ty) {
+  auto *st = llvm::dyn_cast<llvm::StructType>(ty);
+  return st && st->getNumElements() == 0;
+}
+
+static llvm::Function *normalizeKernelReturnToVoid(llvm::Function *F) {
+  if (!F || F->isDeclaration())
+    return F;
+  if (!F->hasFnAttribute("kernel"))
+    return F;
+  if (F->getReturnType()->isVoidTy()) {
+    return F;
+  }
+  if (!isEmptyStructType(F->getReturnType())) {
+    return F;
+  }
+
+  auto *M = F->getParent();
+  auto &C = M->getContext();
+  auto *oldTy = F->getFunctionType();
+
+  std::vector<llvm::Type *> argTys;
+  argTys.reserve(oldTy->getNumParams());
+  for (auto *argTy : oldTy->params())
+    argTys.push_back(argTy);
+
+  auto *newTy = llvm::FunctionType::get(llvm::Type::getVoidTy(C), argTys,
+                                        oldTy->isVarArg());
+  auto *G = llvm::Function::Create(newTy, F->getLinkage(), F->getAddressSpace(), "");
+  M->getFunctionList().insert(F->getIterator(), G);
+  G->takeName(F);
+  G->copyAttributesFrom(F);
+  G->setCallingConv(F->getCallingConv());
+  G->setVisibility(F->getVisibility());
+  G->setDLLStorageClass(F->getDLLStorageClass());
+  G->setUnnamedAddr(F->getUnnamedAddr());
+
+  G->splice(G->begin(), F);
+
+  auto newArg = G->arg_begin();
+  for (auto &oldArg : F->args()) {
+    newArg->setName(oldArg.getName());
+    oldArg.replaceAllUsesWith(&*newArg);
+    ++newArg;
+  }
+
+  llvm::SmallVector<llvm::ReturnInst *, 8> returns;
+  for (auto &BB : *G) {
+    if (auto *RI = llvm::dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
+      returns.push_back(RI);
+  }
+
+  for (auto *RI : returns) {
+    llvm::IRBuilder<> B(RI);
+    B.CreateRetVoid();
+    RI->eraseFromParent();
+  }
+
+  seqassertn(F->use_empty(), "kernel still has uses after ABI normalization");
+  F->eraseFromParent();
+  return G;
+}
+
 std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
@@ -892,28 +955,32 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
   clone->setDataLayout(GPU_DL);
-
   if (isFastMathOn()) {
     clone->addModuleFlag(llvm::Module::ModFlagBehavior::Override, "nvvm-reflect-ftz",
                          1);
   }
 
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
+  std::vector<llvm::Function *> kernelCandidates;
   std::vector<llvm::GlobalValue *> kernels;
-
+  
   for (auto &F : *clone) {
     if (!F.hasFnAttribute("kernel"))
       continue;
+    kernelCandidates.push_back(&F);
+  }
 
+  for (auto *F : kernelCandidates) {
+    auto *kernel = normalizeKernelReturnToVoid(F);
     llvm::Metadata *nvvmElem[] = {
-        llvm::ConstantAsMetadata::get(&F),
+        llvm::ConstantAsMetadata::get(kernel),
         llvm::MDString::get(context, "kernel"),
         llvm::ConstantAsMetadata::get(
             llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 1)),
     };
 
     nvvmAnno->addOperand(llvm::MDNode::get(context, nvvmElem));
-    kernels.push_back(&F);
+    kernels.push_back(kernel);
   }
 
   if (kernels.empty()) {
