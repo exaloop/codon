@@ -96,30 +96,12 @@ class float:
         ret double %tmp
 
     @pure
-    @llvm
     def __mod__(a: float, b: float) -> float:
-        %tmp = frem double %a, %b
-        ret double %tmp
+        return a - (a // b) * b
 
     def __divmod__(self, other: float) -> Tuple[float, float]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < 0.0) != (mod < 0.0):
-                mod += other
-                div -= 1.0
-        else:
-            mod = (0.0).copysign(other)
-
-        floordiv = 0.0
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > 0.5:
-                floordiv += 1.0
-        else:
-            floordiv = (0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        div = self // other
+        return (div, self - div * other)
 
     @pure
     @llvm
@@ -567,30 +549,12 @@ class float32:
         ret float %tmp
 
     @pure
-    @llvm
     def __mod__(a: float32, b: float32) -> float32:
-        %tmp = frem float %a, %b
-        ret float %tmp
+        return a - (a // b) * b
 
     def __divmod__(self, other: float32) -> Tuple[float32, float32]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < float32(0.0)) != (mod < float32(0.0)):
-                mod += other
-                div -= float32(1.0)
-        else:
-            mod = float32(0.0).copysign(other)
-
-        floordiv = float32(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > float32(0.5):
-                floordiv += float32(1.0)
-        else:
-            floordiv = float32(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        div = self // other
+        return (div, self - div * other)
 
     @pure
     @llvm
@@ -982,30 +946,12 @@ class float16:
         ret half %tmp
 
     @pure
-    @llvm
     def __mod__(a: float16, b: float16) -> float16:
-        %tmp = frem half %a, %b
-        ret half %tmp
+        return a - (a // b) * b
 
     def __divmod__(self, other: float16) -> Tuple[float16, float16]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < float16(0.0)) != (mod < float16(0.0)):
-                mod += other
-                div -= float16(1.0)
-        else:
-            mod = float16(0.0).copysign(other)
-
-        floordiv = float16(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > float16(0.5):
-                floordiv += float16(1.0)
-        else:
-            floordiv = float16(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        div = self // other
+        return (div, self - div * other)
 
     @pure
     @llvm
@@ -1343,30 +1289,12 @@ class bfloat16:
         ret bfloat %tmp
 
     @pure
-    @llvm
     def __mod__(a: bfloat16, b: bfloat16) -> bfloat16:
-        %tmp = frem bfloat %a, %b
-        ret bfloat %tmp
+        return a - (a // b) * b
 
     def __divmod__(self, other: bfloat16) -> Tuple[bfloat16, bfloat16]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < bfloat16(0.0)) != (mod < bfloat16(0.0)):
-                mod += other
-                div -= bfloat16(1.0)
-        else:
-            mod = bfloat16(0.0).copysign(other)
-
-        floordiv = bfloat16(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > bfloat16(0.5):
-                floordiv += bfloat16(1.0)
-        else:
-            floordiv = bfloat16(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        div = self // other
+        return (div, self - div * other)
 
     @pure
     @llvm
@@ -1700,30 +1628,12 @@ class float128:
         ret fp128 %tmp
 
     @pure
-    @llvm
     def __mod__(a: float128, b: float128) -> float128:
-        %tmp = frem fp128 %a, %b
-        ret fp128 %tmp
+        return a - (a // b) * b
 
     def __divmod__(self, other: float128) -> Tuple[float128, float128]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < float128(0.0)) != (mod < float128(0)):
-                mod += other
-                div -= float128(1.0)
-        else:
-            mod = float128(0.0).copysign(other)
-
-        floordiv = float128(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > float128(0.5):
-                floordiv += float128(1.0)
-        else:
-            floordiv = float128(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        div = self // other
+        return (div, self - div * other)
 
     @pure
     @llvm
