@@ -137,13 +137,8 @@ class int:
         ret i64 %tmp
 
     @pure
-    @llvm
     def __floordiv__(self, other: float) -> float:
-        declare double @llvm.floor.f64(double)
-        %0 = sitofp i64 %self to double
-        %1 = fdiv double %0, %other
-        %2 = call double @llvm.floor.f64(double %1)
-        ret double %2
+        return float(self) // other
 
     @pure
     @overload
@@ -169,11 +164,8 @@ class int:
         ret double %2
 
     @pure
-    @llvm
     def __mod__(self, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = frem double %0, %other
-        ret double %1
+        return float(self) % other
 
     @pure
     @overload
