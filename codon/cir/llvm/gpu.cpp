@@ -698,22 +698,15 @@ getRequiredGVs(const std::vector<llvm::GlobalValue *> &kernels) {
   return std::vector<llvm::GlobalValue *>(keep.begin(), keep.end());
 }
 
-static bool isEmptyStructType(llvm::Type *ty) {
+bool isEmptyStructType(llvm::Type *ty) {
   auto *st = llvm::dyn_cast<llvm::StructType>(ty);
-  return st && st->getNumElements() == 0;
+  return st && !st->hasName() && st->getNumElements() == 0;
 }
 
-static llvm::Function *normalizeKernelReturnToVoid(llvm::Function *F) {
-  if (!F || F->isDeclaration())
+llvm::Function *normalizeKernelReturnToVoid(llvm::Function *F) {
+  if (!F || F->isDeclaration() || !F->hasFnAttribute("kernel") ||
+      F->getReturnType()->isVoidTy() || !isEmptyStructType(F->getReturnType()))
     return F;
-  if (!F->hasFnAttribute("kernel"))
-    return F;
-  if (F->getReturnType()->isVoidTy()) {
-    return F;
-  }
-  if (!isEmptyStructType(F->getReturnType())) {
-    return F;
-  }
 
   auto *M = F->getParent();
   auto &C = M->getContext();
@@ -724,8 +717,8 @@ static llvm::Function *normalizeKernelReturnToVoid(llvm::Function *F) {
   for (auto *argTy : oldTy->params())
     argTys.push_back(argTy);
 
-  auto *newTy = llvm::FunctionType::get(llvm::Type::getVoidTy(C), argTys,
-                                        oldTy->isVarArg());
+  auto *newTy =
+      llvm::FunctionType::get(llvm::Type::getVoidTy(C), argTys, oldTy->isVarArg());
   auto *G = llvm::Function::Create(newTy, F->getLinkage(), F->getAddressSpace(), "");
   M->getFunctionList().insert(F->getIterator(), G);
   G->takeName(F);
@@ -963,7 +956,7 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
   std::vector<llvm::Function *> kernelCandidates;
   std::vector<llvm::GlobalValue *> kernels;
-  
+
   for (auto &F : *clone) {
     if (!F.hasFnAttribute("kernel"))
       continue;
