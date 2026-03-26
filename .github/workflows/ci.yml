@@ -23,7 +23,7 @@ jobs:
       - name: Create Release
         if: contains(github.ref, 'tags/v')
         id: create_release
-        uses: ncipollo/release-action@v1
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
 
   build:
     strategy:
@@ -89,7 +89,7 @@ jobs:
 
       - name: Publish PyPI Package
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && matrix.arch == 'linux-x86_64'
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e # release/v1
 
   build_documentation:
     name: Build Docs
@@ -136,7 +136,7 @@ jobs:
 
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/master'
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
