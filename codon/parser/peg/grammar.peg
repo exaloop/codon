@@ -783,8 +783,9 @@ kwarg_or_double_starred <-
     return CallArg(aste(KeywordStar, LOC, ac_expr(V0)));
   }
 id <- NAME { return aste(Id, LOC, ac<string>(V0)); }
-INT <- (BININT / HEXINT / DECINT) { return string(VS.sv()); }
+INT <- (BININT / HEXINT / OCTINT / DECINT) { return string(VS.sv()); }
 BININT <- <'0' [bB] [0-1] ('_'* [0-1])*>
+OCTINT <- <'0' [oO] [0-7] ('_'* [0-7])*>
 HEXINT <- <'0' [xX] [0-9a-fA-F] ('_'? [0-9a-fA-F])*>
 DECINT <- <[0-9] ('_'? [0-9])*>
 FLOAT <- (EXPFLOAT / PTFLOAT) { return string(VS.sv()); }

@@ -102,6 +102,10 @@ IntExpr::IntExpr(const std::string &value, std::string suffix)
   try {
     if (startswith(this->value, "0b") || startswith(this->value, "0B"))
       intValue = std::stoull(this->value.substr(2), nullptr, 2);
+    else if (startswith(this->value, "0o") || startswith(this->value, "0O"))
+      intValue = std::stoull(this->value.substr(2), nullptr, 8);
+    else if (startswith(this->value, "0x") || startswith(this->value, "0X"))
+      intValue = std::stoull(this->value.substr(2), nullptr, 16);
     else
       intValue = std::stoull(this->value, nullptr, 0);
   } catch (std::out_of_range &) {
