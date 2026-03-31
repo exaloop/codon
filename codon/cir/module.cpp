@@ -195,8 +195,8 @@ Func *Module::getOrRealizeFunc(const std::string &funcName,
   } catch (const exc::ParserException &e) {
     for (auto &trace : e.getErrors())
       for (auto &msg : trace)
-        LOG("getOrRealizeFunc parser error at {}: {}", msg.getSrcInfo(),
-            msg.getMessage());
+        LOG_IR("getOrRealizeFunc parser error at {}: {}", msg.getSrcInfo(),
+               msg.getMessage());
     return nullptr;
   }
 }
