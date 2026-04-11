@@ -897,6 +897,56 @@ def test_num_from_str():
     except ValueError as e:
         assert str(e) == "could not convert string to float: ''"
 
+    # new tests for PR #786
+    
+    assert int("0b0", 0) == 0
+    assert int("0b1", 0) == 1
+    assert int("0b1101", 0) == 13
+    assert int("+0b1101", 0) == 13
+    assert int("-0b1101", 0) == -13
+
+    assert int("7", 0) == 7
+    assert int("42", 0) == 42
+    assert int("12345", 0) == 12345
+    assert int("+67890", 0) == 67890
+    assert int("-24680", 0) == -24680
+
+    assert int("0o7", 0) == 7
+    assert int("0o123", 0) == 83
+    assert int("0o707", 0) == 455
+    assert int("+0o710", 0) == 456
+    assert int("-0o765", 0) == -501
+
+    assert int("0xA", 0) == 10
+    assert int("0xABCD", 0) == 43981
+    assert int("0xFFF", 0) == 4095
+    assert int("+0x1234", 0) == 4660
+    assert int("-0xFF", 0) == -255
+
+    assert int("1_0", 2) == 2
+    assert int("10_01", 2) == 9
+    assert int("101_101", 2) == 45
+    assert int("0b1_101", 0) == 13
+    assert int("-0b101_011", 0) == -43
+
+    assert int("1_2", 8) == 10
+    assert int("12_3", 8) == 83
+    assert int("7_07", 8) == 455
+    assert int("0o1_23", 0) == 83
+    assert int("-0o7_10", 0) == -456
+
+    assert int("1_A", 16) == 26
+    assert int("AB_CD", 16) == 43981
+    assert int("F_FF", 16) == 4095
+    assert int("0x1_A", 0) == 26
+    assert int("-0xF_F", 0) == -255
+
+    assert int("1_2") == 12
+    assert int("12_34") == 1234
+    assert int("123_456") == 123456
+    assert int("+1_000_001") == 1000001
+    assert int("-9_87_65") == -98765
+
 @test
 def test_files(open_fn, append_allowed: bool = True):
     path = 'build/testfile.txt'

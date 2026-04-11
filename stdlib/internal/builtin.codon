@@ -445,9 +445,24 @@ class int:
             elif (n >= 3 and
                   s.ptr[0] == byte(48) and
                   (s.ptr[1] == C_LOWER or s.ptr[1] == C_UPPER)):  # '0b' etc.
-                if not check_digit(s.ptr[3], base):
+                if not check_digit(s.ptr[2], base):
                     parse_error(s0, base0)
                 s = str(s.ptr + 2, n - 2)
+        
+        n = len(s)
+        underscore_count = 0
+        for i in range(n):
+            if s.ptr[i] == byte(95):    # '_'
+                underscore_count += 1
+        
+        if underscore_count:
+            p = Ptr[byte](n - underscore_count)
+            j = 0
+            for i in range(n):
+                if s.ptr[i] != byte(95):    # '_'
+                    p[j] = s.ptr[i]
+                    j += 1
+            s = str(p, n - underscore_count)
 
         end = cobj()
         result = _C.seq_int_from_str(s, __ptr__(end), i32(base))
