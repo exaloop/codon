@@ -247,10 +247,15 @@ Stmt *TypecheckVisitor::transformPattern(Expr *var, Expr *pattern, Stmt *suite) 
   if (cast<EllipsisExpr>(pattern))
     pattern = N<CallExpr>(N<IdExpr>("ellipsis"));
   // Fallback (`__match__`) pattern
-  auto p =
-      N<IfStmt>(N<CallExpr>(N<IdExpr>("hasattr"), clone(var),
-                            N<StringExpr>("__match__"), clone(pattern)),
-                N<IfStmt>(N<CallExpr>(N<DotExpr>(var, "__match__"), pattern), suite));
+  auto p = N<IfStmt>(
+      N<CallExpr>(N<IdExpr>("hasattr"), clone(var), N<StringExpr>("__match__"),
+                  clone(pattern)),
+      N<IfStmt>(N<CallExpr>(N<DotExpr>(clone(var), "__match__"), clone(pattern)),
+                clone(suite)),
+      N<IfStmt>(N<CallExpr>(N<IdExpr>("isinstance"),
+                            N<CallExpr>(N<IdExpr>("type"), clone(var)),
+                            N<CallExpr>(N<IdExpr>("type"), clone(pattern))),
+                N<IfStmt>(N<BinaryExpr>(var, "==", pattern), suite)));
   return p;
 }
 

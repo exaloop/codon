@@ -85,15 +85,19 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
 
     if (ctx->getBase()->iteration == 1 && isToplevel) {
       // Realize all @force_realize functions
-      for (auto &f : ctx->cache->functions) {
-        auto ast = f.second.ast;
-        if (f.second.type && f.second.realizations.empty() &&
+      // Copy keys to avoid modifications during the iteration (#768)
+      std::vector<std::string> fns{std::views::keys(ctx->cache->functions).begin(),
+                                   std::views::keys(ctx->cache->functions).end()};
+      for (const auto &fn : fns) {
+        auto &f = ctx->cache->functions[fn];
+        auto ast = f.ast;
+        if (f.type && f.realizations.empty() &&
             (ast->hasAttribute(Attr::ForceRealize) || ast->hasAttribute(Attr::Export) ||
              (ast->hasAttribute(Attr::C) && !ast->hasAttribute(Attr::CVarArg)))) {
-          seqassert(f.second.type->canRealize(), "cannot realize {}", f.first);
-          LOG_REALIZE("[force_realize] {}", f.second.getType()->debugString(2));
-          realize(instantiateType(f.second.getType()));
-          seqassert(!f.second.realizations.empty(), "cannot realize {}", f.first);
+          seqassert(f.type->canRealize(), "cannot realize {}", fn);
+          LOG_REALIZE("[force_realize] {}", f.getType()->debugString(2));
+          realize(instantiateType(f.getType()));
+          seqassert(!f.realizations.empty(), "cannot realize {}", fn);
         }
       }
     }

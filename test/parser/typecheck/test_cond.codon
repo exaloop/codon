@@ -69,6 +69,34 @@ for op in 'MI=DXSN':
 #: case 2
 #: case 3
 
+v = i32(10)
+match v:
+    case i32(10): print("ok")  #: ok
+    case _: print("nope")
+
+@dataclass(eq=True)
+class Foo:
+    i: int
+f = Foo(5)
+match f:
+    case 5: print("ok")
+    case _: print("nope")  #: nope
+match f:
+    case 5: print("ok")
+    case Foo(5): print("okish")  #: okish
+    case _: print("nope")
+
+class FooX:
+    i: int
+    def __match__(self, x):
+        print("in match")
+        return str(self.i) == x
+f = FooX(5)
+#: in match
+match f:
+    case "5": print("ok")  #: ok
+    case _: print("nope")
+
 #%% match_err_1,barebones
 match [1, 2]:
     case [1, ..., 2, ..., 3]: pass
