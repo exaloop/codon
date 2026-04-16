@@ -314,8 +314,16 @@ public:
       GC_atfork_parent();
       int status = -1;
       close(out_pipe[1]);
+
+      buf.clear();
+      char temp_buf[4096];
+      ssize_t n;
+      while ((n = read(out_pipe[0], temp_buf, sizeof(temp_buf))) > 0) {
+        buf.insert(buf.end(), temp_buf, temp_buf + n);
+      }
+      buf.push_back('\0');
+
       assert(waitpid(pid, &status, 0) == pid);
-      read(out_pipe[0], buf.data(), buf.size() - 1);
       close(out_pipe[0]);
       return status;
     }
