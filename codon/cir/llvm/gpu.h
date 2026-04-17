@@ -15,7 +15,9 @@ namespace ir {
 /// annotation)
 /// @param ptxFilename Filename for output PTX code; empty to use filename based on
 /// module
-void applyGPUTransformations(llvm::Module *module, const std::string &ptxFilename = "");
+
+std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *module);
+void applyGPUTransformations(llvm::Module *module, std::unique_ptr<llvm::Module> clone, const std::string &ptxFilename = "");
 
 } // namespace ir
 } // namespace codon

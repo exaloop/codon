@@ -945,8 +945,7 @@ void patchPTXVar(llvm::Module *M, llvm::GlobalValue *ptxVar,
 }
 } // namespace
 
-void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
-  llvm::LLVMContext &context = M->getContext();
+std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M){
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
   clone->setDataLayout(GPU_DL);
@@ -954,7 +953,11 @@ void applyGPUTransformations(llvm::Module *M, const std::string &ptxFilename) {
     clone->addModuleFlag(llvm::Module::ModFlagBehavior::Override, "nvvm-reflect-ftz",
                          1);
   }
+  return clone;
+}
 
+void applyGPUTransformations(llvm::Module *M, std::unique_ptr<llvm::Module> clone, const std::string &ptxFilename) {
+    llvm::LLVMContext &context = M->getContext();
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
   std::vector<llvm::Function *> kernelCandidates;
   std::vector<llvm::GlobalValue *> kernels;

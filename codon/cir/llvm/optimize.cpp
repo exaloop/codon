@@ -1074,6 +1074,11 @@ void verify(llvm::Module *module) {
 
 void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
   verify(module);
+  std::unique_ptr<llvm::Module> GPUmodule;
+  {
+    TIME("preparing/gpu");
+    GPUmodule = prepareGPUmodule(module);
+  }
   {
     TIME("llvm/opt1");
     runLLVMOptimizationPasses(module, debug, jit, plugins);
@@ -1084,7 +1089,7 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
   }
   {
     TIME("llvm/gpu");
-    applyGPUTransformations(module);
+    applyGPUTransformations(module, std::move(GPUmodule));
   }
   verify(module);
 }
