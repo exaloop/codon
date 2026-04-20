@@ -1098,7 +1098,13 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
     runLLVMOptimizationPasses(module, debug, jit, plugins, true, true);
   }
   {
-    TIME("llvm/gpuopt");
+    TIME("llvm/gpuopt1");
+    runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
+                              /*includeNative=*/false,
+                              /*includePlugins=*/false);
+  }
+  {
+    TIME("llvm/gpuopt2");
     runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
                               /*includeNative=*/false,
                               /*includePlugins=*/false);
