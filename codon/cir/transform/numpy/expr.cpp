@@ -601,6 +601,12 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   auto &vars = C.vars;
   auto &T = C.T;
 
+  auto freeArray = [&](Var *arr) {
+    auto *freeFunc = M->getOrRealizeFunc("_free", {arr->getType()}, {}, FUSION_MODULE);
+    seqassertn(freeFunc, "free func not found");
+    return util::call(freeFunc, {M->Nr<VarValue>(arr)});
+  };
+
   if (isLeaf()) {
     auto it = vars.find(this);
     seqassertn(it != vars.end(),
@@ -613,13 +619,23 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
   Var *like = nullptr;
   Value *outShapeVal = nullptr;
 
+  bool lfreeable = lhs && lhs->type.isArray() && (lhs->freeable || !lhs->isLeaf());
+  bool rfreeable = rhs && rhs->type.isArray() && (rhs->freeable || !rhs->isLeaf());
+  bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
+  bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
+
   if (rv) {
     // Can't do anything special with matmul here...
     if (op == NP_OP_MATMUL) {
       auto *matmul = M->getOrRealizeFunc("_matmul", {lv->getType(), rv->getType()}, {},
                                          FUSION_MODULE);
-      return util::makeVar(
+      auto *ret = util::makeVar(
           util::call(matmul, {M->Nr<VarValue>(lv), M->Nr<VarValue>(rv)}), series, func);
+      if (lfreeable)
+        series->push_back(freeArray(lv));
+      if (rfreeable)
+        series->push_back(freeArray(rv));
+      return ret;
     }
 
     auto *lshape = M->getOrRealizeFunc("_shape", {lv->getType()}, {}, FUSION_MODULE);
@@ -642,11 +658,6 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
 
   auto *outShape = util::makeVar(outShapeVal, series, func);
   Var *result = nullptr;
-
-  bool lfreeable = lhs && lhs->type.isArray() && (lhs->freeable || !lhs->isLeaf());
-  bool rfreeable = rhs && rhs->type.isArray() && (rhs->freeable || !rhs->isLeaf());
-  bool ltmp = lfreeable && lhs->type.dtype == type.dtype && lhs->type.ndim == type.ndim;
-  bool rtmp = rfreeable && rhs->type.dtype == type.dtype && rhs->type.ndim == type.ndim;
 
   auto *t = type.getIRBaseType(T);
   auto newArray = [&]() {
@@ -866,12 +877,6 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
     series->push_back(
         util::call(loopFunc, {arraysTuple, M->Nr<VarValue>(scalarFunc), extraTuple}));
   }
-
-  auto freeArray = [&](Var *arr) {
-    auto *freeFunc = M->getOrRealizeFunc("_free", {arr->getType()}, {}, FUSION_MODULE);
-    seqassertn(freeFunc, "free func not found");
-    return util::call(freeFunc, {M->Nr<VarValue>(arr)});
-  };
 
   seqassertn(!(freeLeftStatic && lcond), "unexpected free conditions for left arg");
   seqassertn(!(freeRightStatic && rcond), "unexpected free conditions for right arg");

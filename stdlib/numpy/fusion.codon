@@ -54,9 +54,11 @@ def _contig_match(arrs):
 def _ptrset(p: Ptr[T], x: T, T: type):
     p[0] = x
 
+@inline
 def _loop_alloc(arrays, func, extra, dtype: type):
     return ndarray._loop(arrays, func, alloc=Tuple[dtype], extra=extra)[0]
 
+@inline
 def _loop_basic(arrays, func, extra):
     ndarray._loop(arrays, func, extra=extra)
 

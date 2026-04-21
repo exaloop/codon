@@ -700,6 +700,12 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
   auto *M = unit.value->getModule();
   auto *series = C.series;
 
+  auto freeArray = [&](Var *arr) {
+    auto *freeFunc = M->getOrRealizeFunc("_free", {arr->getType()}, {}, FUSION_MODULE);
+    seqassertn(freeFunc, "free func not found");
+    return util::call(freeFunc, {M->Nr<VarValue>(arr)});
+  };
+
   // Remove some operations that cannot be done element-wise easily by optimizing them
   // separately, recursively.
   expr->apply([&](NumPyExpr &e) {
@@ -728,6 +734,15 @@ Var *optimizeHelper(NumPyOptimizationUnit &unit, NumPyExpr *expr, CodegenContext
       auto *var = util::makeVar(
           util::call(matmulFunc, {M->Nr<VarValue>(lv), M->Nr<VarValue>(rv)}), C.series,
           C.func);
+
+      bool lfreeable = e.lhs->type.isArray() && (e.lhs->freeable || !e.lhs->isLeaf());
+      bool rfreeable = e.rhs->type.isArray() && (e.rhs->freeable || !e.rhs->isLeaf());
+
+      if (lfreeable)
+        series->push_back(freeArray(lv));
+      if (rfreeable)
+        series->push_back(freeArray(rv));
+
       C.vars[&e] = var;
       NumPyExpr replacement(e.type, M->Nr<VarValue>(var));
       replacement.freeable = true;
