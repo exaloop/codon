@@ -1,7 +1,15 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-fint = i32
-fintp = Ptr[fint]
+import sys
+
+if sys.platform == "darwin":
+    fint = i64
+    fintp = Ptr[fint]
+    suffix: Literal[str] = "$NEWLAPACK$ILP64"
+else:
+    fint = i32
+    fintp = Ptr[fint]
+    suffix: Literal[str] = ""
 
 # Constants
 CBLAS_ROW_MAJOR: Literal[int] = 101
@@ -25,87 +33,317 @@ LAPACK_COL_MAJOR : Literal[int]= 102
 
 # Stubs
 # Note: D=float64, S=float32, Z=complex128, C=complex64
-from C import cblas_dcopy(fint, Ptr[float], fint, Ptr[float], fint)
-from C import cblas_scopy(fint, Ptr[float32], fint, Ptr[float32], fint)
-from C import cblas_zcopy(fint, Ptr[complex], fint, Ptr[complex], fint)
-from C import cblas_ccopy(fint, Ptr[complex64], fint, Ptr[complex64], fint)
+@C
+@_C.linkname("cblas_dcopy" + suffix)
+def cblas_dcopy(n: fint, x: Ptr[float], incx: fint, y: Ptr[float], incy: fint) -> None:
+    pass
 
-from C import cblas_dgemm(fint, fint, fint, fint, fint, fint, float,
-                          Ptr[float], fint, Ptr[float], fint,
-                          float, Ptr[float], fint)
-from C import cblas_sgemm(fint, fint, fint, fint, fint, fint, float32,
-                          Ptr[float32], fint, Ptr[float32], fint,
-                          float32, Ptr[float32], fint)
-from C import cblas_zgemm(fint, fint, fint, fint, fint, fint, cobj,
-                          Ptr[complex], fint, Ptr[complex], fint,
-                          cobj, Ptr[complex], fint)
-from C import cblas_cgemm(fint, fint, fint, fint, fint, fint, cobj,
-                          Ptr[complex64], fint, Ptr[complex64], fint,
-                          cobj, Ptr[complex64], fint)
+@C
+@_C.linkname("cblas_scopy" + suffix)
+def cblas_scopy(n: fint, x: Ptr[float32], incx: fint, y: Ptr[float32], incy: fint) -> None:
+    pass
 
-from C import cblas_dsyrk(fint, fint, fint, fint, fint, float, Ptr[float],
-                          fint, float, Ptr[float], fint)
-from C import cblas_ssyrk(fint, fint, fint, fint, fint, float32, Ptr[float32],
-                          fint, float32, Ptr[float32], fint)
-from C import cblas_zsyrk(fint, fint, fint, fint, fint, cobj, Ptr[complex],
-                          fint, cobj, Ptr[complex], fint)
-from C import cblas_csyrk(fint, fint, fint, fint, fint, cobj, Ptr[complex64],
-                          fint, cobj, Ptr[complex64], fint)
+@C
+@_C.linkname("cblas_zcopy" + suffix)
+def cblas_zcopy(n: fint, x: Ptr[complex], incx: fint, y: Ptr[complex], incy: fint) -> None:
+    pass
 
-from C import cblas_ddot(fint, cobj, fint, cobj, fint) -> float
-from C import cblas_sdot(fint, cobj, fint, cobj, fint) -> float32
-from C import cblas_zdotu_sub(fint, cobj, fint, cobj, fint, Ptr[complex])
-from C import cblas_cdotu_sub(fint, cobj, fint, cobj, fint, Ptr[complex64])
+@C
+@_C.linkname("cblas_ccopy" + suffix)
+def cblas_ccopy(n: fint, x: Ptr[complex64], incx: fint, y: Ptr[complex64], incy: fint) -> None:
+    pass
 
-from C import cblas_zdotc_sub(fint, cobj, fint, cobj, fint, cobj)
-from C import cblas_cdotc_sub(fint, cobj, fint, cobj, fint, cobj)
 
-from C import cblas_dgemv(fint, fint, fint, fint, float, cobj, fint, cobj, fint, float, cobj, fint)
-from C import cblas_sgemv(fint, fint, fint, fint, float32, cobj, fint, cobj, fint, float32, cobj, fint)
-from C import cblas_zgemv(fint, fint, fint, fint, cobj, cobj, fint, cobj, fint, cobj, cobj, fint)
-from C import cblas_cgemv(fint, fint, fint, fint, cobj, cobj, fint, cobj, fint, cobj, cobj, fint)
+@C
+@_C.linkname("cblas_dgemm" + suffix)
+def cblas_dgemm(order: fint, transA: fint, transB: fint, M: fint, N: fint, K: fint, alpha: float,
+                          A: Ptr[float], lda: fint, B: Ptr[float], ldb: fint,
+                          beta: float, C: Ptr[float], ldc: fint) -> None:
+    pass
 
-from C import dpotrf_(cobj, fintp, cobj, fintp, fintp)
-from C import spotrf_(cobj, fintp, cobj, fintp, fintp)
-from C import zpotrf_(cobj, fintp, cobj, fintp, fintp)
-from C import cpotrf_(cobj, fintp, cobj, fintp, fintp)
+@C
+@_C.linkname("cblas_sgemm" + suffix)
+def cblas_sgemm(order: fint, transA: fint, transB: fint, M: fint, N: fint, K: fint, alpha: float32,
+                          A: Ptr[float32], lda: fint, B: Ptr[float32], ldb: fint,
+                          beta: float32, C: Ptr[float32], ldc: fint) -> None:
+    pass
 
-from C import dgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
-from C import sgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
-from C import zgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
-from C import cgetrf_(fintp, fintp, cobj, fintp, fintp, fintp)
+@C
+@_C.linkname("cblas_zgemm" + suffix)
+def cblas_zgemm(order: fint, transA: fint, transB: fint, M: fint, N: fint, K: fint, alpha: cobj,
+                          A: Ptr[complex], lda: fint, B: Ptr[complex], ldb: fint,
+                          beta: cobj, C: Ptr[complex], ldc: fint) -> None:
+    pass
 
-from C import dgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
-from C import sgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
-from C import zgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
-from C import cgeqrf_(fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+@C
+@_C.linkname("cblas_cgemm" + suffix)
+def cblas_cgemm(order: fint, transA: fint, transB: fint, M: fint, N: fint, K: fint, alpha: cobj,
+                          A: Ptr[complex64], lda: fint, B: Ptr[complex64], ldb: fint,
+                          beta: cobj, C: Ptr[complex64], ldc: fint) -> None:
+    pass
 
-from C import dorgqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
-from C import sorgqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
-from C import zungqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
-from C import cungqr_(fintp, fintp, fintp, cobj, fintp, cobj, cobj, fintp, fintp)
+@C
+@_C.linkname("cblas_dsyrk" + suffix)
+def cblas_dsyrk(order: fint, uplo: fint, trans: fint, N: fint, K: fint, alpha: float, A: Ptr[float],
+                          lda: fint, beta: float, C: Ptr[float], ldc: fint) -> None:
+    pass
 
-from C import dgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
-from C import sgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
-from C import zgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp)
-from C import cgeev_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp)
+@C
+@_C.linkname("cblas_ssyrk" + suffix)
+def cblas_ssyrk(order: fint, uplo: fint, trans: fint, N: fint, K: fint, alpha: float32, A: Ptr[float32],
+                          lda: fint, beta: float32, C: Ptr[float32], ldc: fint) -> None:
+    pass
 
-from C import dsyevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, fintp, fintp, fintp)
-from C import ssyevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, fintp, fintp, fintp)
-from C import zheevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp, fintp)
-from C import cheevd_(cobj, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp, fintp)
+@C
+@_C.linkname("cblas_zsyrk" + suffix)
+def cblas_zsyrk(order: fint, uplo: fint, trans: fint, N: fint, K: fint, alpha: cobj, A: Ptr[complex],
+                          lda: fint, beta: cobj, C: Ptr[complex], ldc: fint) -> None:
+    pass
 
-from C import dgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
-from C import sgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
-from C import zgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
-from C import cgesv_(fintp, fintp, cobj, fintp, fintp, cobj, fintp, fintp)
+@C
+@_C.linkname("cblas_csyrk" + suffix)
+def cblas_csyrk(order: fint, uplo: fint, trans: fint, N: fint, K: fint, alpha: cobj, A: Ptr[complex64],
+                          lda: fint, beta: cobj, C: Ptr[complex64], ldc: fint) -> None:
+    pass
 
-from C import dgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp)
-from C import sgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, fintp, fintp)
-from C import zgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
-from C import cgelsd_(fintp, fintp, fintp, cobj, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
 
-from C import dgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp, fintp)
-from C import sgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, fintp, fintp)
-from C import zgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
-from C import cgesdd_(cobj, fintp, fintp, cobj, fintp, cobj, cobj, fintp, cobj, fintp, cobj, fintp, cobj, fintp, fintp)
+@C
+@_C.linkname("cblas_ddot" + suffix)
+def cblas_ddot(n: fint, x: cobj, incx: fint, y: cobj, incy: fint) -> float:
+    pass
+
+@C
+@_C.linkname("cblas_sdot" + suffix)
+def cblas_sdot(n: fint, x: cobj, incx: fint, y: cobj, incy: fint) -> float32:
+    pass
+
+@C
+@_C.linkname("cblas_zdotu_sub" + suffix)
+def cblas_zdotu_sub(n: fint, x: cobj, incx: fint, y: cobj, incy: fint, dotu: Ptr[complex]) -> None:
+    pass
+
+@C
+@_C.linkname("cblas_cdotu_sub" + suffix)
+def cblas_cdotu_sub(n: fint, x: cobj, incx: fint, y: cobj, incy: fint, dotu: Ptr[complex64]) -> None:
+    pass
+
+
+@C
+@_C.linkname("cblas_zdotc_sub" + suffix)
+def cblas_zdotc_sub(n: fint, x: cobj, incx: fint, y: cobj, incy: fint, dotc: cobj) -> None:
+    pass
+
+@C
+@_C.linkname("cblas_cdotc_sub" + suffix)
+def cblas_cdotc_sub(n: fint, x: cobj, incx: fint, y: cobj, incy: fint, dotc: cobj) -> None:
+    pass
+
+
+@C
+@_C.linkname("cblas_dgemv" + suffix)
+def cblas_dgemv(order: fint, trans: fint, M: fint, N: fint, alpha: float, A: cobj, lda: fint, x: cobj, incx: fint, beta: float, y: cobj, incy: fint) -> None:
+    pass
+
+@C
+@_C.linkname("cblas_sgemv" + suffix)
+def cblas_sgemv(order: fint, trans: fint, M: fint, N: fint, alpha: float32, A: cobj, lda: fint, x: cobj, incx: fint, beta: float32, y: cobj, incy: fint) -> None:
+    pass
+
+@C
+@_C.linkname("cblas_zgemv" + suffix)
+def cblas_zgemv(order: fint, trans: fint, M: fint, N: fint, alpha: cobj, A: cobj, lda: fint, x: cobj, incx: fint, beta: cobj, y: cobj, incy: fint) -> None:
+    pass
+
+@C
+@_C.linkname("cblas_cgemv" + suffix)
+def cblas_cgemv(order: fint, trans: fint, M: fint, N: fint, alpha: cobj, A: cobj, lda: fint, x: cobj, incx: fint, beta: cobj, y: cobj, incy: fint) -> None:
+    pass
+
+
+@C
+@_C.linkname("dpotrf_" + suffix)
+def dpotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("spotrf_" + suffix)
+def spotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zpotrf_" + suffix)
+def zpotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cpotrf_" + suffix)
+def cpotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dgetrf_" + suffix)
+def dgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sgetrf_" + suffix)
+def sgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zgetrf_" + suffix)
+def zgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cgetrf_" + suffix)
+def cgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dgeqrf_" + suffix)
+def dgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sgeqrf_" + suffix)
+def sgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zgeqrf_" + suffix)
+def zgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cgeqrf_" + suffix)
+def cgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dorgqr_" + suffix)
+def dorgqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sorgqr_" + suffix)
+def sorgqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zungqr_" + suffix)
+def zungqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cungqr_" + suffix)
+def cungqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dgeev_" + suffix)
+def dgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, wr: cobj, wi: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sgeev_" + suffix)
+def sgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, wr: cobj, wi: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zgeev_" + suffix)
+def zgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, rwork: cobj, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cgeev_" + suffix)
+def cgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, rwork: cobj, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dsyevd_" + suffix)
+def dsyevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("ssyevd_" + suffix)
+def ssyevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zheevd_" + suffix)
+def zheevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cheevd_" + suffix)
+def cheevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dgesv_" + suffix)
+def dgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sgesv_" + suffix)
+def sgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zgesv_" + suffix)
+def zgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cgesv_" + suffix)
+def cgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dgelsd_" + suffix)
+def dgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sgelsd_" + suffix)
+def sgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zgelsd_" + suffix)
+def zgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cgelsd_" + suffix)
+def cgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, info: fintp) -> None:
+    pass
+
+
+@C
+@_C.linkname("dgesdd_" + suffix)
+def dgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("sgesdd_" + suffix)
+def sgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("zgesdd_" + suffix)
+def zgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, rwork: cobj, iwork: fintp, info: fintp) -> None:
+    pass
+
+@C
+@_C.linkname("cgesdd_" + suffix)
+def cgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, rwork: cobj, iwork: fintp, info: fintp) -> None:
+    pass

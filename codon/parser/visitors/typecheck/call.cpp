@@ -933,6 +933,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformStaticFormat(expr)};
   } else if (isF(ei, "std.internal.static", "int_to_string")) { // static
     return {true, transformStaticIntToStr(expr)};
+  } else if (isF(ei, "std.internal.static", "platform")) { // static
+    return {true, transformStaticPlatform(expr)};
   } else {
     return {false, nullptr};
   }

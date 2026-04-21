@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+platform: Static[str] = static.platform()
+
 argv = list(__argv__, len(__argv__))
 
 stdin = File(_C.seq_stdin())
