@@ -161,189 +161,153 @@ def cblas_cgemv(order: fint, trans: fint, M: fint, N: fint, alpha: cobj, A: cobj
 
 
 @C
-@_C.linkname("dpotrf_" + suffix)
 def dpotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("spotrf_" + suffix)
 def spotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zpotrf_" + suffix)
 def zpotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cpotrf_" + suffix)
 def cpotrf_(uplo: cobj, n: fintp, a: cobj, lda: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dgetrf_" + suffix)
 def dgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sgetrf_" + suffix)
 def sgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zgetrf_" + suffix)
 def zgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cgetrf_" + suffix)
 def cgetrf_(m: fintp, n: fintp, a: cobj, lda: fintp, ipiv: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dgeqrf_" + suffix)
 def dgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sgeqrf_" + suffix)
 def sgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zgeqrf_" + suffix)
 def zgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cgeqrf_" + suffix)
 def cgeqrf_(m: fintp, n: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dorgqr_" + suffix)
 def dorgqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sorgqr_" + suffix)
 def sorgqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zungqr_" + suffix)
 def zungqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cungqr_" + suffix)
 def cungqr_(m: fintp, n: fintp, k: fintp, a: cobj, lda: fintp, tau: cobj, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dgeev_" + suffix)
 def dgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, wr: cobj, wi: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sgeev_" + suffix)
 def sgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, wr: cobj, wi: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zgeev_" + suffix)
 def zgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, rwork: cobj, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cgeev_" + suffix)
 def cgeev_(jobvl: cobj, jobvr: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, vl: cobj, ldvl: fintp, vr: cobj, ldvr: fintp, work: cobj, lwork: fintp, rwork: cobj, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dsyevd_" + suffix)
 def dsyevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("ssyevd_" + suffix)
 def ssyevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zheevd_" + suffix)
 def zheevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cheevd_" + suffix)
 def cheevd_(jobz: cobj, uplo: cobj, n: fintp, a: cobj, lda: fintp, w: cobj, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, iwork: fintp, liwork: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dgesv_" + suffix)
 def dgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sgesv_" + suffix)
 def sgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zgesv_" + suffix)
 def zgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cgesv_" + suffix)
 def cgesv_(n: fintp, nrhs: fintp, a: cobj, lda: fintp, ipiv: fintp, b: cobj, ldb: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dgelsd_" + suffix)
 def dgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sgelsd_" + suffix)
 def sgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zgelsd_" + suffix)
 def zgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cgelsd_" + suffix)
 def cgelsd_(m: fintp, n: fintp, nrhs: fintp, a: cobj, lda: fintp, b: cobj, ldb: fintp, s: cobj, rcond: cobj, rank: fintp, work: cobj, lwork: fintp, rwork: cobj, lrwork: fintp, info: fintp) -> None:
     pass
 
 
 @C
-@_C.linkname("dgesdd_" + suffix)
 def dgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("sgesdd_" + suffix)
 def sgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, iwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("zgesdd_" + suffix)
 def zgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, rwork: cobj, iwork: fintp, info: fintp) -> None:
     pass
 
 @C
-@_C.linkname("cgesdd_" + suffix)
 def cgesdd_(jobz: cobj, m: fintp, n: fintp, a: cobj, lda: fintp, s: cobj, u: cobj, ldu: fintp, vt: cobj, ldvt: fintp, work: cobj, lwork: fintp, rwork: cobj, iwork: fintp, info: fintp) -> None:
     pass
