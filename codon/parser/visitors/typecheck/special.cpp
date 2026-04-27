@@ -71,15 +71,14 @@ void TypecheckVisitor::prepareVTables() {
 
 SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
   auto suite = N<SuiteStmt>();
-  for (const auto &cls : ctx->cache->classes | std::views::values) {
+  for (const auto &[cls_name, cls] : ctx->cache->classes) {
     for (const auto &[r, real] : cls.realizations) {
       if (real->vtable.empty())
         continue;
-      // RTTIType._init_vtable(size, real.type)
-      suite->addStmt(N<ExprStmt>(
-          N<CallExpr>(N<DotExpr>(N<IdExpr>("RTTIType"), "_init_vtable"),
-                      N<IntExpr>(ctx->cache->thunkIds.size() + 2), N<IdExpr>(r))));
       LOG_REALIZE("[poly] {} -> {}", r, real->id);
+      suite->addStmt(N<ExprStmt>(N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.types", "TypeInfo", "__init__")),
+          N<IdExpr>(real->getType()->realizedName()))));
       for (const auto &[key, fn] : real->vtable) {
         auto id = in(ctx->cache->thunkIds, key);
         seqassert(id, "key {} not found in thunkIds", key);
@@ -95,10 +94,9 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
                 std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
                                     N<IdExpr>(fn->getRetType()->realizedName())}),
             N<IdExpr>(fn->realizedName()));
-        suite->addStmt(N<ExprStmt>(
-            N<CallExpr>(N<DotExpr>(N<IdExpr>("RTTIType"), "_set_vtable_fn"),
-                        N<IntExpr>(real->id), N<IntExpr>(int64_t(*id)),
-                        N<CallExpr>(N<DotExpr>(fnCall, "__raw__")), N<IdExpr>(r))));
+        suite->addStmt(N<ExprStmt>(N<CallExpr>(
+            N<DotExpr>(N<IdExpr>("vtable"), "set_thunk"), N<IntExpr>(real->id),
+            N<IntExpr>(int64_t(*id)), N<CallExpr>(N<DotExpr>(fnCall, "__raw__")))));
       }
     }
   }
@@ -368,6 +366,9 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
   } else if (startswith(ast->name,
                         getMangledMethod("std.internal.core", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
+  } else if (startswith(ast->name,
+                        getMangledMethod("std.internal.core", "TypeInfo", "_init"))) {
+    return generateTypeInfoInitAst(type);
   }
   return nullptr;
 }
@@ -1084,8 +1085,7 @@ Expr *TypecheckVisitor::transformStaticFormat(CallExpr *expr) {
   return transform(N<StringExpr>(fmt::vformat(fmt, store)));
 }
 
-/// Transform staticlen method to a static integer expression. This method supports only
-/// static strings and tuple types.
+/// Transform int() method to a static string expression.
 Expr *TypecheckVisitor::transformStaticIntToStr(CallExpr *expr) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::String;
@@ -1093,6 +1093,44 @@ Expr *TypecheckVisitor::transformStaticIntToStr(CallExpr *expr) {
   auto funcTyp = expr->getExpr()->getType()->getFunc();
   auto val = getIntLiteral(extractFuncGeneric(funcTyp, 0));
   return transform(N<StringExpr>(std::to_string(val)));
+}
+
+SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
+  auto t = extractFuncGeneric(type)->getClass();
+  if (!t || !t->canRealize())
+    return nullptr;
+
+  auto suite = N<SuiteStmt>();
+  // Add extra initialization here!
+  suite->addStmt(N<AssignStmt>(N<DotExpr>(N<IdExpr>("self"), "_base_name"),
+                               N<StringExpr>(t->name)));
+  for (auto &g : t->generics) {
+    auto tp = g.getType();
+    if (tp->getStatic())
+      tp = tp->getStatic()->getNonStaticType();
+    suite->addStmt(N<ExprStmt>(N<CallExpr>(
+        N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
+        std::vector<CallArg>{CallArg{"T", N<IdExpr>(tp->realizedName())}})));
+    suite->addStmt(N<ExprStmt>(
+        N<CallExpr>(N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_params"), "append"),
+                    N<IntExpr>(getClassRealization(tp)->id))));
+  }
+  for (auto &[fn, ft] : getClassRealization(t)->fields) {
+    auto tp = ft.get();
+    auto stat = tp->getStatic();
+    if (stat)
+      tp = stat->getNonStaticType();
+    suite->addStmt(N<ExprStmt>(N<CallExpr>(
+        N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
+        std::vector<CallArg>{CallArg{"T", N<IdExpr>(tp->realizedName())}})));
+    suite->addStmt(N<ExprStmt>(N<CallExpr>(
+        N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_fields"), "append"),
+        N<TupleExpr>(std::vector<Expr *>{
+            N<StringExpr>(fn), N<IntExpr>(getClassRealization(tp)->id),
+            !stat ? (Expr *)N<DotExpr>(N<IdExpr>(tp->realizedName()), "__elemsize__")
+                  : (Expr *)N<IntExpr>(0)}))));
+  }
+  return suite;
 }
 
 std::vector<Stmt *>

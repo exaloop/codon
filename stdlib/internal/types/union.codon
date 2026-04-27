@@ -5,6 +5,7 @@ import internal.static as static
 
 @extend
 class Union:
+    @__generated__
     def _tag(u, tag: Literal[int]):  # compiler-generated
         pass
 

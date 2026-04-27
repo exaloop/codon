@@ -56,7 +56,7 @@ class type:
         obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         register_finalizer(type._force_cast(obj, T))
         if static.has_rtti(T):
-            obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[byte])
+            obj = RTTIType._new(obj, TypeInfo.cache(T).__raw__(), Ptr[byte])
         return type._force_cast(obj, T)
 
     def _construct(T: type, *args, **kwargs) -> T:
@@ -65,6 +65,18 @@ class type:
         """
 
         return T(*args, **kwargs)
+
+    @pure
+    @derives
+    @inline
+    @llvm
+    def _get_element_offset(T: type, i: Literal[int]) -> int:
+        """
+        Gets offset of i-th element in a Tuple. Respects aliasing rules.
+        """
+        %1 = getelementptr {=T}, ptr null, i32 0, i32 {=i}
+        %2 = ptrtoint ptr %1 to i64
+        ret i64 %2
 
 
 @__internal__
@@ -76,11 +88,30 @@ class TypeInfo:
     nice_name: str
     repr: Function[[Ptr[byte]], str]
 
+    _base_name: str
+    _parent_offsets: List[int]
+    _params: List[int]  # generics
+    _fields: List[Tuple[str, int, int]]
+    _size: int
+    _ref: bool
+
     def __new__() -> TypeInfo:
         return __magic__.new(TypeInfo)
 
     def __raw__(self) -> Ptr[byte]:
         return __magic__.raw(self)
+
+    def _init(self, T: type):
+        # compiler-generated!
+        pass
+
+    def cache_id(id: int) -> TypeInfo:
+        return __vtables__.data[id].typeinfo
+
+    def cache(T: type) -> TypeInfo:
+        if T.__id__ not in __vtables__.data:
+            TypeInfo(T)
+        return __vtables__.data[T.__id__].typeinfo
 
     def __init__(self, T: type):
         if isinstance(T, TypeWrap):
@@ -91,7 +122,7 @@ class TypeInfo:
         self.raw_name = T.__name__
         self.nice_name = f"{T}"[8:-2]
 
-        self.repr = Function[[Ptr[byte]], str](cobj())
+        # self.repr = Function[[Ptr[byte]], str](cobj())
         # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
         #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
         #     if isinstance(fn.TR, str):
@@ -103,11 +134,27 @@ class TypeInfo:
 
         if num_mro > 0:
             self._parent_ids = Ptr[int](num_mro + 1)
+            self._parent_offsets = [0] * num_mro
             for i in static.range(num_mro):
                 self._parent_ids[i] = mro[i].T.__id__
+                self._parent_offsets[i] = RTTIType._dist(mro[i].T, T)
             self._parent_ids[num_mro] = 0
         else:
             self._parent_ids = Ptr[int]()
+            self._parent_offsets = []
+
+        self._params = []
+        self._fields = []
+        self._size = T.__elemsize__
+        self._base_name = T.__generic_name__
+        self._ref = not isinstance(T, ByVal)
+        self._init(T)
+        if isinstance(T, Optional) and isinstance(T.T, ByVal):
+            self._fields.append(("flag", TypeInfo.cache(i1).id, type._get_element_offset(T, 1)))
+            self._fields.append(("data", TypeInfo.cache(T.T).id, T.T.__elemsize__))
+
+        if self.id not in __vtables__.data:
+            __vtables__.data[self.id] = VTable.Item(self, {})
 
     def is_parent(self, T: type) -> bool:
         for i in range(self._n_parent_ids):

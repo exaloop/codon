@@ -40,6 +40,8 @@ from internal.types.collections.set import *
 from internal.types.collections.dict import *
 from internal.types.collections.tuple import *
 
+__vtables__ = RTTIType._init_vtables()
+
 from internal.builtin import *
 from internal.builtin import _jit_display
 from internal.str import *

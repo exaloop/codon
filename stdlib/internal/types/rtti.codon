@@ -3,8 +3,30 @@
 import internal.static as static
 
 
-__vtables__ = Ptr[Ptr[cobj]]()
-__vtable_size__ = 0
+class VTable:
+    class Item:
+        typeinfo: TypeInfo
+        thunks: Dict[int, cobj]
+
+    data: Dict[int, Item]
+
+    def __init__(self):
+        self.data = {}
+
+    def __getitem__(self, i: int):
+        return self.dict[i]
+
+    def get_thunk(self, cls: int, thunk: int):
+        return self.data[cls].thunks[thunk]
+
+    def set_type(self, ti: TypeInfo):
+        self.data[ti.id] = VTable.Item(ti, {})
+
+    def set_thunk(self, cls: int, thunk: int, fn: cobj):
+        self.data[cls].thunks[thunk] = fn
+
+    def __len__(self):
+        return len(self.data)
 
 
 @extend
@@ -21,6 +43,7 @@ class RTTIType:
         p.typeinfo = typeinfo
         return type._force_cast(p, T)
 
+    @__generated__
     @inline
     def _dist(B: type, D: type) -> int:
         """Calculates the byte distance of base class B and derived class D. Compiler generated."""
@@ -42,44 +65,23 @@ class RTTIType:
         Create a global vtable.
         """
 
-        from internal.gc import alloc_atomic_uncollectable, sizeof
+        vtable = VTable()
+        RTTIType._populate_vtables(vtable)
+        return vtable
 
-        global __vtables__
-        sz = __vtable_size__ + 1
-        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[Ptr[byte]]))
-        __vtables__ = Ptr[Ptr[Ptr[byte]]](p)
-        RTTIType._populate_vtables()
-
-    def _populate_vtables():
+    @__generated__
+    def _populate_vtables(vtable):
         """
         Populate content of vtables. Compiler generated.
         Corresponds to:
             for each realized class C:
-                _init_vtable(<C's realization ID>, <C's vtable size> + 1, T=C)
+                vtable.set_type(C.__id__, TypeInfo(C))
                 for each fn F in C's vtable:
-                    _set_vtable_fn(
-                        <C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__(), T=C
-                    )
+                    vtable.set_thunk(<C's realization ID>, <F's vtable ID>, Function(<instantiated F>).__raw__())
         """
         pass
 
-    def _init_vtable(sz: int, T: type):
-        from internal.gc import alloc_atomic_uncollectable, sizeof
-
-        if not static.has_rtti(T):
-            compile_error("class is not polymorphic")
-        p = alloc_atomic_uncollectable((sz + 1) * sizeof(Ptr[byte]))
-        id = T.__id__
-        __vtables__[id] = Ptr[Ptr[byte]](p)
-        # Set typeinfo
-        p = TypeInfo(T)
-        __vtables__[id][0] = p.__raw__().as_byte()
-
-    def _set_vtable_fn(id: int, fid: int, f: Ptr[byte], T: type):
-        if not static.has_rtti(T):
-            compile_error("class is not polymorphic")
-        __vtables__[id][fid] = f
-
+    @__generated__
     def _get_thunk_id(F: type, T: type) -> int:
         """Compiler-generated"""
         return 0
@@ -100,7 +102,7 @@ class RTTIType:
         # Get RTTI table
         if cls_id == 0:
             cls_id = type._force_cast(type._force_cast(slf, RTTIType).typeinfo, TypeInfo).id
-        fptr = __vtables__[cls_id][thunk_id]
+        fptr = __vtables__.get_thunk(cls_id, thunk_id)
         f = FR(fptr)
         return f(slf, *args)
 
@@ -140,4 +142,4 @@ class Super:
 
     def _unwrap(obj: Super[B], B: type) -> B:
         rtti = type._force_cast(obj.__obj__, RTTIType)
-        return RTTIType._new(rtti.data, TypeInfo(B).__raw__(), B)
+        return RTTIType._new(rtti.data, TypeInfo.cache(B).__raw__(), B)

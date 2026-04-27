@@ -169,6 +169,13 @@ void TypecheckVisitor::visit(DotExpr *expr) {
       resultExpr = wrapSide(N<StringExpr>(expr->getExpr()->getType()->realizedName()));
     return;
   }
+  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__generic_name__") {
+    auto t = extractType(expr->getExpr()->getType());
+    // No side effects here, otherwise will not typecheck
+    if (auto c = t->getClass())
+      resultExpr = N<StringExpr>(c->name);
+    return;
+  }
   // Special case: cls.__name__
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__name__") {
     if (realize(expr->getExpr()->getType()))

@@ -1121,7 +1121,7 @@ Cache::Class::ClassRealization *
 TypecheckVisitor::getClassRealization(types::Type *t) const {
   seqassert(t->canRealize(), "bad class");
   auto i = in(getClass(t)->realizations, t->getClass()->realizedName());
-  seqassert(i, "bad class realization");
+  seqassert(i, "bad class realization: {}", t->debugString(2));
   return i->get();
 }
 

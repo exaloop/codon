@@ -7,6 +7,7 @@ class type[T]:
     #  __new__ / __init__: always done internally
     pass
 
+
 @tuple
 @__internal__
 @__noextend__
@@ -209,6 +210,11 @@ def pure():
 def derives():
     pass
 
+@__attribute__
+def __generated__():
+    pass
+
+
 @extend
 class NoneType:
     @pure
@@ -227,6 +233,7 @@ class Array:
 
 @extend
 class type:
+    @__generated__
     def __new__(obj):
         pass
 function = Function
@@ -235,7 +242,7 @@ function = Function
 @__internal__
 @__notuple__
 class Union[TU]:
-    # compiler-generated
+    @__generated__
     def __new__(val):
         TU
 
@@ -284,6 +291,7 @@ Ellipsis = ellipsis()
 @__internal__
 class __array__:
     T: type
+    @__generated__
     def __new__(sz: Literal[int]) -> Array[T]:
         pass
 
@@ -302,12 +310,15 @@ class Import:
         ret { {=bool} } %0
 
 
+@__generated__
 def __ptr__(var):
     pass
 
+@__generated__
 def compile_error(msg: Literal[str]):
     pass
 
+@__generated__
 def isinstance(obj, what):
     # isinstance(obj, type) -> Literal[bool]: true if obj is type[T]
     # isinstance(obj, Tuple) -> Literal[bool]: true if obj is Tuple
@@ -326,12 +337,15 @@ def isinstance(obj, what):
 def overload():
     pass
 
+@__generated__
 def hasattr(obj, attr: Literal[str], *args, **kwargs):
     pass
 
+@__generated__
 def getattr(obj, attr: Literal[str]):
     pass
 
+@__generated__
 def setattr(obj, attr: Literal[str], what):
     pass
 
@@ -341,9 +355,11 @@ class Super:
     __obj__: __T__
     __T__: type
 
+@__generated__
 def super():
     pass
 
+@__generated__
 def superf(*args):
     """Special handling"""
     pass

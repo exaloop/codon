@@ -103,6 +103,7 @@ class NamedTuple:
     def get(self, key: Literal[str], default = None):
         return NamedTuple._get(self, key, default)
 
+    @__generated__
     def _namedkeys(N: Literal[int]):
         # Compiler generated
         pass

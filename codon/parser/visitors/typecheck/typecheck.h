@@ -403,6 +403,7 @@ public:
   SuiteStmt *generateUnionTagAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
+  SuiteStmt *generateTypeInfoInitAst(types::FuncType *);
   std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
   std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
                                                     const std::vector<std::string> &);

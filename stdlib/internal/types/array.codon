@@ -52,3 +52,17 @@ class List:
     len: int
     arr: Array[T]
     T: type = NoneType
+
+@dataclass(init=False)
+class Dict:
+    _n_buckets: int
+    _size: int
+    _n_occupied: int
+    _upper_bound: int
+
+    _flags: Ptr[UInt[32]]
+    _keys: Ptr[K]
+    _vals: Ptr[V]
+
+    K: type = NoneType
+    V: type = NoneType

@@ -195,10 +195,14 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     } else if (collectionCls->name != ti->name) {
       // Rule: subclass derives from superclass
       const auto &mros = getClass(collectionCls)->mro;
-      for (size_t i = 1; i < mros.size(); i++) {
+      const auto &tMros = getClass(ti)->mro;
+      for (size_t i = 0; i < mros.size(); i++) {
         auto t = instantiateType(mros[i].get(), collectionCls);
-        if (t->unify(ti, nullptr) >= 0) {
-          return ti->shared_from_this();
+        for (size_t j = 0; j < tMros.size(); j++) {
+          auto tj = instantiateType(tMros[j].get(), ti);
+          if (t->unify(tj.get(), nullptr) >= 0) {
+            return t->shared_from_this();
+          }
         }
       }
     }
@@ -231,8 +235,9 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     if (!collectionTyp->getClass()) {
       unify(collectionTyp.get(), typ);
     } else if (!isDict) {
-      if (auto t = superTyp(collectionTyp->getClass(), typ))
+      if (auto t = superTyp(collectionTyp->getClass(), typ)) {
         collectionTyp = t;
+      }
     } else {
       auto tt = unify(typ, instantiateType(generateTuple(2)))->getClass();
       seqassert(collectionTyp->getClass() &&

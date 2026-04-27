@@ -8,19 +8,8 @@ def _dict_hash(key) -> int:
     k = key.__hash__()
     return (k >> 33) ^ k ^ (k << 11)
 
+@extend
 class Dict:
-    _n_buckets: int
-    _size: int
-    _n_occupied: int
-    _upper_bound: int
-
-    _flags: Ptr[u32]
-    _keys: Ptr[K]
-    _vals: Ptr[V]
-
-    K: type = NoneType
-    V: type = NoneType
-
     # Magic methods
 
     def _init(self):

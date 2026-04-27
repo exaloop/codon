@@ -13,12 +13,29 @@ class Any:
             return f"Any({self._typeinfo.repr(self._data)}, {self._typeinfo})"
         return f"Any({self._typeinfo})"
 
+    def __repr__(self):
+        return self.__str__()
+
     def __new__() -> Any:
         return __magic__.new(Any)
 
+    def __init__(self, ti: TypeInfo, data: Ptr[byte]):
+        if ti.isinstance(Any):
+            obj = type._force_cast(data, Any)
+            self._typeinfo = obj._typeinfo
+            self._data = obj._data
+        else:
+            self._typeinfo = ti
+            self._data = data
+
     def __init__(self, obj):
+        if isinstance(obj, Any):
+            self._typeinfo = obj._typeinfo
+            self._data = obj._data
+            return
+
         T = type(obj)
-        self._typeinfo = TypeInfo(T)
+        self._typeinfo = TypeInfo.cache(T)
         if isinstance(T, ByVal):
             p = Ptr[T](1)
             p[0] = obj
@@ -27,7 +44,7 @@ class Any:
             self._data = obj.__raw__().as_byte()
 
     def unwrap(self, T: type) -> T:
-        if TypeInfo(T) != self._typeinfo:
+        if TypeInfo.cache(T) != self._typeinfo:
             raise TypeError(f"Any.unwrap failed: requested {T}, but got {self._typeinfo.nice_name} instead")
         if isinstance(T, ByVal):
             p = type._force_cast(self._data, Ptr[T])

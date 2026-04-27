@@ -404,10 +404,12 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
   }
   auto origIndex = clone(expr->getIndex());
   for (auto &i : items) {
-    if (cast<ListExpr>(i) && isTypeExpr(expr->getExpr())) {
-      // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
-      // `Function[...]`)
-      i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), cast<ListExpr>(i)->items);
+    if (isTypeExpr(expr->getExpr())) {
+      if (auto li = cast<ListExpr>(i)) {
+        // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
+        // `Function[...]`)
+        i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), li->items);
+      }
     }
     i = transform(i, true);
   }
@@ -786,22 +788,30 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
       return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
     } else {
-      auto lt = realize(expr->getLhs()->getType());
-      auto rt = realize(expr->getRhs()->getType());
+      auto lt = expr->getLhs()->getType();
+      auto rt = expr->getRhs()->getType();
+      auto rhs = expr->getRhs();
+      if (auto [canWrap, _, __] = canWrapExpr(rt, lt, nullptr); canWrap) {
+        if (wrapExpr(&rhs, lt)) {
+          unify(rhs->getType(), lt);
+        }
+      }
+      lt = realize(lt);
+      rt = realize(rt);
       if (!lt || !rt) {
         return const_cast<BinaryExpr *>(expr); // delay
       } else {
         auto vn = getTemporaryVar("cond");
         auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
         if (lt->realizedName() == rt->realizedName()) {
-          return N<IfExpr>(ve, N<IdExpr>(vn), expr->getRhs());
+          return N<IfExpr>(ve, N<IdExpr>(vn), rhs);
         } else {
           auto T = N<InstantiateExpr>(
               N<IdExpr>(getMangledClass("std.internal.core", "Union")),
               std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
                                   N<IdExpr>(rt->realizedName())});
           return N<IfExpr>(ve, N<CallExpr>(T, N<IdExpr>(vn)),
-                           N<CallExpr>(clone(T), expr->getRhs()));
+                           N<CallExpr>(clone(T), rhs));
         }
       }
     }
