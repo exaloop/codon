@@ -117,6 +117,16 @@ class RTTIType:
         obj_info = RTTIType._get_typeinfo(obj)
         return obj_info.id == TW.__id__ or obj_info.is_parent(TW)
 
+    def _cast(obj, D: type) -> D:
+        T = type(obj)
+        if not static.has_rtti(T) or not static.has_rtti(D):
+            compile_error("classes are not polymorphic")
+
+        # assert T D
+        ti = RTTIType._get_typeinfo(obj)
+        raw = type._force_cast(obj, RTTIType).data
+        adjusted = raw - ti._dist_to(T) + ti._dist_to(D)
+        return RTTIType._new(adjusted, ti.__raw__(), D)
 
 @extend
 class Super:

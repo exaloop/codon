@@ -435,6 +435,27 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
               return transform(clean_clone(member->typeExpr));
             })));
     }
+
+    if (member->baseClass != ftyp->getClass()->name &&
+        getClass(ftyp->getClass())->hasRTTI()) {
+      TypePtr baseType = nullptr;
+      for (auto &m : getBaseClasses(ftyp->getClass())) {
+        if (m->getClass()->name == member->baseClass) {
+          baseType = m;
+          break;
+        }
+      }
+      seqassert(baseType, "cannot find base type of {}", ftyp->debugString(2));
+      if (!baseType->canRealize())
+        return; // delay!
+      resultStmt = transform(N<AssignMemberStmt>(
+          N<CallExpr>(
+              N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
+              stmt->getLhs(), N<IdExpr>(baseType->realizedName())),
+          stmt->getMember(), stmt->getRhs(), stmt->getTypeExpr()));
+      return;
+    }
+
     if (!wrapExpr(&stmt->rhs, ftyp.get()))
       return;
     unify(stmt->getRhs()->getType(), ftyp.get());

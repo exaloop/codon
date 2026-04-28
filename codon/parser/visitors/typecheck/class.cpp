@@ -158,17 +158,6 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
     }
 
-    // Collect classes (and their fields) that are to be statically inherited
-    std::vector<TypePtr> staticBaseASTs;
-    if (!stmt->hasAttribute(Attr::Extend)) {
-      // Handle static inheritance
-      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt,
-                                        canonicalName, nullptr, typ);
-      // Handle RTTI inheritance
-      parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, transformedTypeAst,
-                       typ);
-    }
-
     // A ClassStmt will be separated into class variable assignments, method-free
     // ClassStmts (that include nested classes) and method FunctionStmts
     transformNestedClasses(stmt, clsStmts, varStmts, fnStmts);
@@ -201,6 +190,20 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           cls.fields.emplace_back(varName, nullptr, canonicalName);
         }
       }
+    }
+
+    // Collect classes (and their fields) that are to be statically inherited
+    std::vector<std::shared_ptr<ClassType>> staticBaseASTs;
+    if (!stmt->hasAttribute(Attr::Extend)) {
+      // Handle static inheritance
+      if (stmt->staticBaseClasses.size() > 1) {
+        E(Error::CUSTOM, getSrcInfo(), "cannot have more than one static base classes");
+      }
+      staticBaseASTs = parseBaseClasses(stmt->staticBaseClasses, args, stmt,
+                                        canonicalName, nullptr, typ);
+      // Handle RTTI inheritance
+      parseBaseClasses(stmt->baseClasses, args, stmt, canonicalName, transformedTypeAst,
+                       typ);
     }
 
     // ASTs for member arguments to be used for populating magic methods
@@ -359,7 +362,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
       }
 
     // Debug information
-    if (!startswith(canonicalName, "Tuple") && false) {
+    if (!startswith(canonicalName, "Tuple")) {
       LOG_REALIZE("[class] {} -> {:c} / {}", canonicalName, *typ, cls.fields.size());
       for (auto &m : cls.fields)
         LOG_REALIZE("       - member: {}: {:c}", m.name, *(m.type));
@@ -398,12 +401,11 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 /// @param args Class fields that are to be updated with base classes' fields.
 /// @param typeAst Transformed AST for base class type (e.g., `A[T]`).
 ///                Only set when dealing with dynamic polymorphism.
-std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
+std::vector<std::shared_ptr<ClassType>> TypecheckVisitor::parseBaseClasses(
     std::vector<Expr *> &baseClasses, std::vector<Param> &args, const Stmt *attr,
     const std::string &canonicalName, const Expr *typeAst, types::ClassType *typ) {
-  std::vector<TypePtr> asts;
 
-  // TODO)) fix MRO it to work with generic classes (maybe replacements? IDK...)
+  std::vector<std::shared_ptr<ClassType>> asts;
   std::vector<std::vector<TypePtr>> mro{{typ->shared_from_this()}};
   for (auto &cls : baseClasses) {
     std::vector<Expr *> subs;
@@ -415,7 +417,6 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       E(Error::CLASS_ID_NOT_FOUND, getSrcInfo(), FormatVisitor::apply(cls));
 
     auto clsTyp = extractClassType(cls);
-    asts.push_back(clsTyp->shared_from_this());
     auto cachedCls = getClass(clsTyp);
     if (!cachedCls->ast)
       E(Error::CLASS_NO_INHERIT, getSrcInfo(), "nested", "surrounding");
@@ -423,6 +424,7 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
     for (auto &t : cachedCls->mro)
       rootMro.push_back(instantiateType(t.get(), clsTyp));
     mro.push_back(rootMro);
+    asts.push_back(std::static_pointer_cast<ClassType>(clsTyp->shared_from_this()));
 
     // Sanity checks
     if (attr->hasAttribute(Attr::Tuple) && typeAst)
@@ -463,45 +465,52 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
       ctx->add(newCanonicalName, ctx->forceFind(varCanonicalName));
     }
   }
-  // Add normal fields
+
   auto cls = getClass(canonicalName);
-  for (auto &clsTyp : asts) {
-    withClassGenerics(clsTyp->getClass(), [&]() {
-      int ai = 0;
-      auto ast = getClass(clsTyp->getClass())->ast;
-      for (auto &a : *ast) {
-        auto acls = getClass(ast->name);
-        if (a.isValue() && !ClassStmt::isClassVar(a)) {
-          auto name = a.getName();
-          int i = 0;
-          for (auto &aa : args)
-            i += aa.getName() == a.getName() ||
-                 startswith(aa.getName(), a.getName() + "#");
-          if (i)
-            name = fmt::format("{}#{}", name, i);
-          seqassert(acls->fields[ai].name == a.getName(), "bad class fields: {} vs {}",
-                    acls->fields[ai].name, a.getName());
-          args.emplace_back(name, transformType(clean_clone(a.getType()), true),
-                            transform(clean_clone(a.getDefault())));
-          cls->fields.emplace_back(
-              name, extractType(args.back().getType())->shared_from_this(),
-              acls->fields[ai].baseClass);
-          ai++;
-        }
-      }
-      return true;
-    });
-  }
   if (typeAst) {
     if (!asts.empty() ||
         typ->name == getMangledClass("std.internal.builtin", "object")) {
-      mro.push_back(asts);
+      mro.push_back({});
+      for (auto &i : asts)
+        mro.back().emplace_back(i);
       cls->rtti = true;
     }
     cls->mro = Cache::mergeC3(mro);
     if (cls->mro.empty()) {
       E(Error::CLASS_BAD_MRO, getSrcInfo());
     }
+    asts = cls->mro; // use MRO order
+  }
+
+  // Add normal fields
+  for (auto &clsTyp : asts) {
+    if (clsTyp->is(typ->name))
+      continue;
+
+    withClassGenerics(clsTyp->getClass(), [&]() {
+      int ai = 0;
+      auto ast = getClass(clsTyp->getClass())->ast;
+      for (auto &a : *ast) {
+        auto acls = getClass(ast->name);
+        if (a.isValue() && !ClassStmt::isClassVar(a)) {
+          if (acls->fields[ai].baseClass == acls->ast->getName()) {
+            auto name = a.getName();
+            for (auto &aa : args) {
+              if (aa.getName() == name)
+                E(Error::CUSTOM, getSrcInfo(), "field '{}' already defined in {}",
+                  getUnmangledName(a.getName()), getUnmangledName(clsTyp->name));
+            }
+            args.emplace_back(name, transformType(clean_clone(a.getType()), true),
+                              transform(clean_clone(a.getDefault())));
+            cls->fields.emplace_back(
+                name, extractType(args.back().getType())->shared_from_this(),
+                acls->fields[ai].baseClass);
+          }
+          ai++;
+        }
+      }
+      return true;
+    });
   }
   return asts;
 }

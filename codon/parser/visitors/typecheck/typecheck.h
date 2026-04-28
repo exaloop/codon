@@ -198,10 +198,9 @@ private: // Node typechecking rules
 private:
   /* Classes (class.cpp) */
   void visit(ClassStmt *) override;
-  std::vector<types::TypePtr> parseBaseClasses(std::vector<Expr *> &,
-                                               std::vector<Param> &, const Stmt *,
-                                               const std::string &, const Expr *,
-                                               types::ClassType *);
+  std::vector<std::shared_ptr<types::ClassType>>
+  parseBaseClasses(std::vector<Expr *> &, std::vector<Param> &, const Stmt *,
+                   const std::string &, const Expr *, types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
   static std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(const ClassStmt *, std::vector<Stmt *> &,
@@ -462,6 +461,8 @@ public:
   /// Returns the generic type of typeName.member, if it exists (nullptr otherwise).
   /// Special cases: __elemsize__ and __atomic__.
   Cache::Class::ClassField *findMember(types::ClassType *, const std::string &) const;
+  /// Return list of instantiated base classes for a given type.
+  std::vector<types::TypePtr> getBaseClasses(types::ClassType *type);
 
   using ReorderDoneFn =
       std::function<int(int, int, const std::vector<std::vector<int>> &, bool)>;

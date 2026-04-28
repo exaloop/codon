@@ -104,35 +104,31 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
 }
 
 SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
+  // Dist from Base to Derived. Assumes Derived is indeed a derived class of base.
+  // Rules:
+  // - Base is within Derived.
+  // - Use MRO order.
   auto baseTyp = extractFuncGeneric(f, 0)->getClass();
-  size_t baseTypFields = 0;
-  for (auto &fld : getClassFields(baseTyp)) {
-    if (fld.baseClass == baseTyp->name) {
-      baseTypFields++;
-    }
-  }
-
-  std::unordered_set<std::string> alreadyDerived;
-  for (auto &m : getClass(baseTyp)->mro)
-    alreadyDerived.insert(m->name);
-
   auto derivedTyp = extractFuncGeneric(f, 1)->getClass();
+
+  auto derivedBases = getBaseClasses(derivedTyp);
   auto fields = getClassFields(derivedTyp);
-  auto types = std::vector<Expr *>{};
-  auto found = false;
-  for (auto &fld : fields) {
-    if (in(alreadyDerived, fld.baseClass)) {
-      found = true;
+  size_t di = 0, fi = 0;
+  for (; di < derivedBases.size(); di++) {
+    if (derivedBases[di]->getClass()->realizedName() == baseTyp->realizedName())
       break;
-    } else {
-      auto ft = realize(instantiateType(fld.getType(), derivedTyp));
-      types.push_back(N<IdExpr>(ft->realizedName()));
-    }
+    while (fi < fields.size() &&
+           fields[fi].baseClass == derivedBases[di]->getClass()->name)
+      fi++;
   }
-  seqassert(found || !baseTypFields, "cannot find distance between {} and {}",
-            derivedTyp->name, baseTyp->name);
-  Stmt *suite = N<ReturnStmt>(
-      N<DotExpr>(N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), types), "__elemsize__"));
+  seqassert(di < derivedBases.size(), "class {} is not a base class of {}",
+            baseTyp->debugString(2), derivedTyp->debugString(2));
+
+  if (fi == 0)
+    return SuiteStmt::wrap(N<ReturnStmt>(N<IntExpr>(0)));
+  Stmt *suite = N<ReturnStmt>(N<CallExpr>(
+      N<IdExpr>(getMangledMethod("std.internal.core", "type", "_get_class_offset")),
+      N<IdExpr>(derivedTyp->realizedName()), N<IntExpr>(fi)));
   return SuiteStmt::wrap(suite);
 }
 

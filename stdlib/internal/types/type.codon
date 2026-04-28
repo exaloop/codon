@@ -78,6 +78,20 @@ class type:
         %2 = ptrtoint ptr %1 to i64
         ret i64 %2
 
+    @pure
+    @derives
+    @inline
+    def _get_class_offset(T: type, i: Literal[int]) -> int:
+        """
+        Gets offset of i-th element in a class. Respects aliasing rules.
+        Returns the size of class if i is >= the number of fields.
+        """
+        TT: type = tuple(T)
+        if i >= static.len(TT):
+            return TT.__elemsize__
+        else:
+            return type._get_element_offset(TT, i)
+
 
 @__internal__
 class TypeInfo:
@@ -169,6 +183,15 @@ class TypeInfo:
         else:
             obj = type._force_cast(arg, T)
             return repr(obj)
+
+    def _dist_to(self, B: type):
+        """Assumes B is a supertype"""
+        if self.id == B.__id__:
+            return 0
+        for i in range(0, self._n_parent_ids):
+            if self._parent_ids[i] == B.__id__:
+                return self._parent_offsets[i]
+        return 0
 
     def __str__(self):
         return self.nice_name

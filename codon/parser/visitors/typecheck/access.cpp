@@ -532,6 +532,26 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   if (!isTypeExpr(expr->getExpr())) {
     if (auto member = findMember(typ, expr->getMember())) {
       unify(expr->getType(), instantiateType(member->getType(), typ));
+      if (member->baseClass != typ->name && getClass(typ)->hasRTTI()) {
+        TypePtr baseType = nullptr;
+        for (auto &m : getBaseClasses(typ)) {
+          if (m->getClass()->name == member->baseClass) {
+            baseType = m;
+            break;
+          }
+        }
+        seqassert(baseType, "cannot find base type of {}", typ->debugString(2));
+        if (!baseType->canRealize())
+          return nullptr; // delay!
+        log("{} . {} -> {}", typ->debugString(2), member->name,
+            baseType->debugString(2));
+        // Route, route...
+        return transform(N<DotExpr>(
+            N<CallExpr>(
+                N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
+                expr->getExpr(), N<IdExpr>(realize(baseType.get())->realizedName())),
+            expr->getMember()));
+      }
       if (!expr->getType()->canRealize() && member->typeExpr) {
         unify(expr->getType(), extractType(withClassGenerics(typ, [&]() {
                 return transform(clean_clone(member->typeExpr));

@@ -1479,6 +1479,16 @@ TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) 
   return nullptr;
 }
 
+std::vector<types::TypePtr> TypecheckVisitor::getBaseClasses(types::ClassType *type) {
+  const auto &mros = getClass(type)->mro;
+  std::vector<TypePtr> bases;
+  for (auto &mro : getClass(type)->mro) {
+    auto t = instantiateType(mro.get(), type);
+    bases.push_back(t);
+  }
+  return bases;
+}
+
 int TypecheckVisitor::reorderNamedArgs(const types::FuncType *func,
                                        const std::vector<CallArg> &args,
                                        const ReorderDoneFn &onDone,
