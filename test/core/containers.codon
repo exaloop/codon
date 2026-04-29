@@ -233,11 +233,11 @@ def test_list():
     assert l3 == [1, 3]
     assert list[int]().remove(0) == False
 
-    # l4 = [5, 1, 4, 2, 1, -10, 10, 100, -100]
-    # assert sorted(l4) == [-100, -10, 1, 1, 2, 4, 5, 10, 100]
-    #l4.sort()
-    #assert l4 == [-100, -10, 1, 1, 2, 4, 5, 10, 100]
-    #assert str(sorted(list[int]())) == "[]"
+    l4 = [5, 1, 4, 2, 1, -10, 10, 100, -100]
+    assert sorted(l4) == [-100, -10, 1, 1, 2, 4, 5, 10, 100]
+    l4.sort()
+    assert l4 == [-100, -10, 1, 1, 2, 4, 5, 10, 100]
+    assert str(sorted(list[int]())) == "[]"
 
     l5 = [11, 22, 33, 44]
     del l5[-1]
@@ -329,6 +329,116 @@ def test_list():
     assert b2 == ['a']
     assert b3 == [4.2]
     assert b4 == [2.4]
+
+    # item deletion on list of non-atomic type
+    # --- basic deletes ---
+    l9 = ["a", "b", "c", "d", "e"]
+    del l9[0]
+    assert l9 == ["b", "c", "d", "e"]
+
+    del l9[-1]
+    assert l9 == ["b", "c", "d"]
+
+    del l9[1]
+    assert l9 == ["b", "d"]
+
+    # delete entire list via slice
+    del l9[:]
+    assert l9 == []
+
+    # --- slice deletes ---
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    del l9[1:4]
+    assert l9 == ["a", "e", "f"]
+
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    del l9[::2]  # delete even indices
+    assert l9 == ["b", "d", "f"]
+
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    del l9[1::2]  # delete odd indices
+    assert l9 == ["a", "c", "e"]
+
+    # negative step delete
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    del l9[::-2]
+    assert l9 == ["a", "c", "e"]
+
+    # --- slice assignment (same length) ---
+    l9 = ["a", "b", "c", "d"]
+    l9[1:3] = ["x", "y"]
+    assert l9 == ["a", "x", "y", "d"]
+
+    # --- slice assignment (shrink) ---
+    l9 = ["a", "b", "c", "d", "e"]
+    l9[1:4] = ["x"]
+    assert l9 == ["a", "x", "e"]
+
+    # --- slice assignment (grow) ---
+    l9 = ["a", "b", "c"]
+    l9[1:2] = ["x", "y", "z"]
+    assert l9 == ["a", "x", "y", "z", "c"]
+
+    # --- extended slice assignment (step != 1, must match length) ---
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    l9[::2] = ["x", "y", "z"]
+    assert l9 == ["x", "b", "y", "d", "z", "f"]
+
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    l9[1::2] = ["u", "v", "w"]
+    assert l9 == ["a", "u", "c", "v", "e", "w"]
+
+    # --- extended slice assignment with negative step ---
+    l9 = ["a", "b", "c", "d", "e", "f"]
+    l9[::-2] = ["x", "y", "z"]
+    assert l9 == ["a", "z", "c", "y", "e", "x"]
+
+    # --- replace entire list via slice ---
+    l9 = ["a", "b", "c"]
+    l9[:] = ["x", "y"]
+    assert l9 == ["x", "y"]
+
+    # --- insert via empty slice ---
+    l9 = ["a", "b", "c"]
+    l9[1:1] = ["x", "y"]
+    assert l9 == ["a", "x", "y", "b", "c"]
+
+    # --- delete via assigning empty list ---
+    l9 = ["a", "b", "c", "d"]
+    l9[1:3] = []
+    assert l9 == ["a", "d"]
+
+    # --- clear() ---
+    l9 = ["a", "b", "c"]
+    l9.clear()
+    assert l9 == []
+
+    # --- interactions after clear ---
+    l9 = ["a", "b"]
+    l9.clear()
+    l9.append("x")
+    assert l9 == ["x"]
+
+    # --- edge cases ---
+    # deleting single-element slice
+    l9 = ["a", "b", "c"]
+    del l9[1:2]
+    assert l9 == ["a", "c"]
+
+    # assigning to empty list
+    l9 = []
+    l9[:] = ["a", "b"]
+    assert l9 == ["a", "b"]
+
+    # deleting with out-of-bounds slice (should be safe)
+    l9 = ["a", "b"]
+    del l9[5:10]
+    assert l9 == ["a", "b"]
+
+    # assigning empty extended slice (no-op but valid)
+    l9 = ["a", "b", "c"]
+    l9[5:10] = []
+    assert l9 == ["a", "b", "c"]
 test_list()
 
 @test
@@ -555,6 +665,35 @@ def test_set():
     except ValueError:
         pass
 
+    s1 = {'1', '2', '3', '999999'}
+    s2 = {'1', '2', '3', '999999'}
+    v = s1.pop()
+    assert v in s2
+    s2.remove(v)
+
+    v = s1.pop()
+    assert v in s2
+    s2.remove(v)
+
+    v = s1.pop()
+    assert v in s2
+    s2.remove(v)
+
+    v = s1.pop()
+    assert v in s2
+    s2.remove(v)
+
+    try:
+        s1.pop()
+        assert False
+    except ValueError:
+        pass
+
+    s1 = {'1', '2', '3', '999999'}
+    s1.clear()
+    s1.add('42')
+    assert repr(s1) == "{'42'}"
+
     assert repr({(1,2)}) == '{(1, 2)}'
     assert repr(Set[int]()) == 'set()'
 test_set()
@@ -599,6 +738,13 @@ def test_dict():
 
     assert repr({1: ['x']}) == "{1: ['x']}"
     assert repr(Dict[int,int]()) == '{}'
+
+    d5 = {'1': 'one', '2': 'two', '3': 'three'}
+    assert d5.pop('2') == 'two'
+    assert len(d5) == 2 and d5['1'] == 'one' and d5['3'] == 'three'
+    d5.clear()
+    d5['4'] = 'four'
+    assert repr(d5) == "{'4': 'four'}"
 test_dict()
 
 def slice_indices(slice, length):
@@ -842,6 +988,46 @@ def test_deque():
     for i in range(5):
         dq.append(i)
     assert str(dq) == 'deque([0, 1, 2, 3, 4])'
+
+    dq = deque[str]()
+    dq.append('1')
+    dq.append('2')
+    dq.append('3')
+    dq.appendleft('11')
+    dq.appendleft('22')
+    assert str(dq) == "deque(['22', '11', '1', '2', '3'])"
+    assert bool(dq) == True
+
+    # test cap increase:
+    dq.clear()
+    assert bool(dq) == False
+    for i in range(20):
+        dq.append(str(i))
+        dq.appendleft(str(i))
+    assert str(dq) == "deque(['19', '18', '17', '16', '15', '14', '13', '12', '11', '10', '9', '8', '7', '6', '5', '4', '3', '2', '1', '0', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19'])"
+    assert len(dq) == 40
+
+    for i in range(19):
+        dq.pop()
+        dq.popleft()
+    assert str(dq) == "deque(['0', '0'])"
+    for a in dq:
+        assert a == '0'
+
+    assert ('0' in dq) == True
+    assert ('1' in dq) == False
+    assert str(copy(dq)) == "deque(['0', '0'])"
+
+    # test maxlen:
+    dq = deque[str](5)
+    for i in range(100):
+        dq.append(str(i))
+    assert str(dq) == "deque(['95', '96', '97', '98', '99'])"
+
+    for i in range(5):
+        dq.append(str(i))
+    assert str(dq) == "deque(['0', '1', '2', '3', '4'])"
+
 test_deque()
 
 @test
