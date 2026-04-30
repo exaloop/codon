@@ -63,14 +63,19 @@ class List:
         self._idx_check(idx, "list assignment index out of range")
         self._set(idx, val)
 
-    def __delitem__(self, idx: int):
-        if idx < 0:
-            idx += self.__len__()
-        self._idx_check(idx, "list assignment index out of range")
+    def _delete(self, idx: int):
         while idx < self.len - 1:
             self._set(idx, self._get(idx + 1))
             idx += 1
         self.len -= 1
+        if not T.__atomic__:
+            str.memset((self.arr.ptr + self.len).as_byte(), byte(0), gc.sizeof(T))
+
+    def __delitem__(self, idx: int):
+        if idx < 0:
+            idx += self.__len__()
+        self._idx_check(idx, "list assignment index out of range")
+        self._delete(idx)
 
     def __eq__(self, other: List[T]) -> bool:
         if self.__len__() != other.__len__():
@@ -115,12 +120,7 @@ class List:
             if (step < 0 and start < stop) or (step > 0 and start > stop):
                 stop = start
 
-            seq: Optional[List[T]] = None
-            if other.__raw__() == self.__raw__():
-                seq = other.__copy__()
-            else:
-                seq = other
-
+            seq = other.__copy__() if (other is self) else other
             seq_len = seq.__len__()
             if seq_len != length:
                 raise ValueError(
@@ -176,7 +176,9 @@ class List:
                     )
 
                 self.len -= length
-                # self._resize(self.__len__())
+                if not T.__atomic__:
+                    str.memset((self.arr.ptr + self.len).as_byte(),
+                               byte(0), length * gc.sizeof(T))
 
     def __contains__(self, x: T) -> bool:
         for a in self:
@@ -322,19 +324,21 @@ class List:
             idx += self.__len__()
         self._idx_check(idx, "pop index out of range")
         x = self._get(idx)
-        del self[idx]
+        self._delete(idx)
         return x
 
     def remove(self, x: T) -> bool:
-        i = 0
-        for a in self:
-            if a == x:
-                del self[i]
+        p = self.arr.ptr
+        for i in range(self.len):
+            if p[i] == x:
+                self._delete(i)
                 return True
-            i += 1
         return False
 
     def clear(self):
+        if not T.__atomic__:
+            str.memset(self.arr.ptr.as_byte(),
+                       byte(0), self.len * gc.sizeof(T))
         self.len = 0
 
     def index(self, x: T) -> int:
@@ -413,7 +417,6 @@ class List:
             ihigh = L
 
         norig = ihigh - ilow
-        assert norig >= 0
         d = n - norig
         if L + d == 0:
             a.clear()

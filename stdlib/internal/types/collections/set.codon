@@ -263,6 +263,8 @@ class Set:
             while i < n:
                 self._flags[i] = u32(0xAAAAAAAA)
                 i += 1
+            if not K.__atomic__:
+                str.memset(self._keys.as_byte(), byte(0), self._n_buckets * gc.sizeof(K))
             self._size = 0
             self._n_occupied = 0
 
@@ -412,6 +414,8 @@ class Set:
     def _kh_del(self, x: int):
         if x != self._n_buckets and not khash.__ac_iseither(self._flags, x):
             khash.__ac_set_isdel_true(self._flags, x)
+            if not K.__atomic__:
+                str.memset((self._keys + x).as_byte(), byte(0), gc.sizeof(K))
             self._size -= 1
 
     def _kh_begin(self) -> int:

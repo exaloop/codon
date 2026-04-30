@@ -86,17 +86,24 @@ class deque:
     def popleft(self) -> T:
         self._check_not_empty()
         res = self._arr[self._head]
+        if not T.__atomic__:
+            str.memset((self._arr.ptr + self._head).as_byte(), byte(0), T.__elemsize__)
         self._head = (self._head + 1) & (len(self._arr) - 1)
         return res
 
     def pop(self) -> T:
         self._check_not_empty()
         self._tail = (self._tail - 1) & (len(self._arr) - 1)
-        return self._arr[self._tail]
+        res = self._arr[self._tail]
+        if not T.__atomic__:
+            str.memset((self._arr.ptr + self._tail).as_byte(), byte(0), T.__elemsize__)
+        return res
 
     def clear(self):
         self._head = 0
         self._tail = 0
+        if not T.__atomic__:
+            str.memset(self._arr.ptr.as_byte(), byte(0), len(self._arr) * T.__elemsize__)
 
     def __iter__(self) -> Generator[T]:
         i = self._head
