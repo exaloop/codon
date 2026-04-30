@@ -549,7 +549,6 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         acc = acc * U(base) + U(d)
         p += 1
 
-
     if (not saw_digit) or prev_underscore:
         invalid(s, base)
 
