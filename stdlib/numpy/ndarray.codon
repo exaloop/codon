@@ -619,6 +619,7 @@ class ndarray[dtype, ndim: Literal[int]]:
 
         return ndarray(shape, self._data, fcontig=(order == 'F'))
 
+    @inline
     def _loop(arrays, func, broadcast: Literal[str] = 'all',
               check: Literal[bool] = True, alloc: type = type(()),
               optimize_order: Literal[bool] = True, extra = None):
