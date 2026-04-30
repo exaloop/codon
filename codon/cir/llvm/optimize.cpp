@@ -1036,9 +1036,9 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   llvm::FunctionAnalysisManager fam;
   llvm::CGSCCAnalysisManager cgam;
   llvm::ModuleAnalysisManager mam;
-  auto machine =
-      includeNative ? getTargetMachine(module, /*setFunctionAttributes=*/true)
-                    : std::unique_ptr<llvm::TargetMachine>();
+  auto machine = includeNative
+                     ? getTargetMachine(module, /*setFunctionAttributes=*/true)
+                     : std::unique_ptr<llvm::TargetMachine>();
   llvm::PassBuilder pb(machine.get());
 
   llvm::Triple moduleTriple(module->getTargetTriple());
@@ -1091,11 +1091,15 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
   }
   {
     TIME("llvm/opt1");
-    runLLVMOptimizationPasses(module, debug, jit, plugins, true, true);
+    runLLVMOptimizationPasses(module, debug, jit, plugins,
+                              /*includeNative=*/true,
+                              /*includePlugins=*/true);
   }
   if (!debug) {
     TIME("llvm/opt2");
-    runLLVMOptimizationPasses(module, debug, jit, plugins, true, true);
+    runLLVMOptimizationPasses(module, debug, jit, plugins,
+                              /*includeNative=*/true,
+                              /*includePlugins=*/true);
   }
   {
     TIME("llvm/gpuopt1");
