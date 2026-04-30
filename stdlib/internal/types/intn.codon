@@ -83,20 +83,9 @@ class Int:
             return Int._sext(what, 64, N)
 
     @overload
-    def __new__(what: str) -> Int[N]:
+    def __new__(what: str, base: int = 10) -> Int[N]:
         _check_bitwidth(N)
-        ret = Int[N]()
-        i = 0
-        sign = Int[N](1)
-        if i < what.len and what.ptr[0] == byte(45):
-            sign = Int[N](-1)
-            i += 1
-        while i < what.len:
-            if what.ptr[i] < byte(48) or what.ptr[i] >= byte(58):
-                raise ValueError("Invalid integer string")
-            ret = ret * Int[N](10) + Int[N](int(what.ptr[i]) - 48)
-            i += 1
-        return sign * ret
+        return Int[N]._from_str(what, base)
 
     def __int__(self) -> int:
         if N > 64:
@@ -181,9 +170,8 @@ class Int:
     def _floordiv(self, other: Int[N]) -> Int[N]:
         %0 = sdiv i{=N} %self, %other
         ret i{=N} %0
+
     def __floordiv__(self, other: Int[N]) -> Int[N]:
-        if N > 128:
-            compile_error("division is not supported on Int[N] when N > 128")
         return self._floordiv(other)
 
     @pure
@@ -411,9 +399,9 @@ class UInt:
         else:
             return UInt[N](Int._sext(what, 64, N))
 
-    def __new__(what: str) -> UInt[N]:
+    def __new__(what: str, base: int = 10) -> UInt[N]:
         _check_bitwidth(N)
-        return UInt[N](Int[N](what))
+        return UInt[N]._from_str(what, base)
 
     def __int__(self) -> int:
         if N > 64:
@@ -494,9 +482,8 @@ class UInt:
     def _floordiv(self, other: UInt[N]) -> UInt[N]:
         %0 = udiv i{=N} %self, %other
         ret i{=N} %0
+
     def __floordiv__(self, other: UInt[N]) -> UInt[N]:
-        if N > 128:
-            compile_error("division is not supported on UInt[N] when N > 128")
         return self._floordiv(other)
 
     @pure
