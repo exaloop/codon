@@ -995,28 +995,9 @@ llvm::cl::opt<bool>
                   llvm::cl::desc("Disable architecture-specific optimizations"),
                   llvm::cl::init(false));
 
-void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
-                               PluginManager *plugins) {
-  applyDebugTransformations(module, debug, jit);
-  applyFastMathTransformations(module);
-
-  llvm::LoopAnalysisManager lam;
-  llvm::FunctionAnalysisManager fam;
-  llvm::CGSCCAnalysisManager cgam;
-  llvm::ModuleAnalysisManager mam;
-  auto machine = getTargetMachine(module, /*setFunctionAttributes=*/true);
-  llvm::PassBuilder pb(machine.get());
-
-  llvm::Triple moduleTriple(module->getTargetTriple());
-  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
-  fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
-
-  pb.registerModuleAnalyses(mam);
-  pb.registerCGSCCAnalyses(cgam);
-  pb.registerFunctionAnalyses(fam);
-  pb.registerLoopAnalyses(lam);
-  pb.crossRegisterProxies(lam, fam, cgam, mam);
-
+void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, bool debug,
+                                         PluginManager *plugins, bool includeNative,
+                                         bool includePlugins) {
   pb.registerLateLoopOptimizationsEPCallback(
       [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed())
@@ -1035,14 +1016,43 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
         }
       });
 
-  if (!DisableNative)
+  if (!DisableNative && includeNative)
     addNativeLLVMPasses(&pb);
 
-  if (plugins) {
+  if (includePlugins && plugins) {
     for (auto *plugin : *plugins) {
       plugin->dsl->addLLVMPasses(&pb, debug);
     }
   }
+}
+
+void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
+                               PluginManager *plugins, bool includeNative,
+                               bool includePlugins) {
+  applyDebugTransformations(module, debug, jit);
+  applyFastMathTransformations(module);
+
+  llvm::LoopAnalysisManager lam;
+  llvm::FunctionAnalysisManager fam;
+  llvm::CGSCCAnalysisManager cgam;
+  llvm::ModuleAnalysisManager mam;
+  auto machine = includeNative
+                     ? getTargetMachine(module, /*setFunctionAttributes=*/true)
+                     : std::unique_ptr<llvm::TargetMachine>();
+  llvm::PassBuilder pb(machine.get());
+
+  llvm::Triple moduleTriple(module->getTargetTriple());
+  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
+  fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
+
+  pb.registerModuleAnalyses(mam);
+  pb.registerCGSCCAnalyses(cgam);
+  pb.registerFunctionAnalyses(fam);
+  pb.registerLoopAnalyses(lam);
+  pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+  registerCodonLLVMOptimizationPasses(pb, debug, plugins, includeNative,
+                                      includePlugins);
 
   if (debug) {
     llvm::ModulePassManager mpm =
@@ -1074,17 +1084,38 @@ void verify(llvm::Module *module) {
 
 void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
   verify(module);
+  std::unique_ptr<llvm::Module> GPUmodule;
+  {
+    TIME("preparing/gpu");
+    GPUmodule = prepareGPUmodule(module);
+  }
   {
     TIME("llvm/opt1");
-    runLLVMOptimizationPasses(module, debug, jit, plugins);
+    runLLVMOptimizationPasses(module, debug, jit, plugins,
+                              /*includeNative=*/true,
+                              /*includePlugins=*/true);
   }
   if (!debug) {
     TIME("llvm/opt2");
-    runLLVMOptimizationPasses(module, debug, jit, plugins);
+    runLLVMOptimizationPasses(module, debug, jit, plugins,
+                              /*includeNative=*/true,
+                              /*includePlugins=*/true);
+  }
+  {
+    TIME("llvm/gpuopt1");
+    runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
+                              /*includeNative=*/false,
+                              /*includePlugins=*/false);
+  }
+  {
+    TIME("llvm/gpuopt2");
+    runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
+                              /*includeNative=*/false,
+                              /*includePlugins=*/false);
   }
   {
     TIME("llvm/gpu");
-    applyGPUTransformations(module);
+    applyGPUTransformations(module, std::move(GPUmodule));
   }
   verify(module);
 }
