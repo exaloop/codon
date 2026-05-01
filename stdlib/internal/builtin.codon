@@ -461,13 +461,12 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         neg = (p[0] == _CHAR_NEG)
         p += 1
 
-    if T is byte or isinstance(T, UInt):
+    if not _signed(T):
         if neg:
-            raise OverflowError("type '" + T.__name__ + "' does not support negative values")
-
-    base0_leading_zero = False
+            raise OverflowError("type " + T.__name__ + " does not support negative values")
 
     # base detection / prefix handling
+    base0_leading_zero = False
     if base == 0:
         base = 10
         if (end - p) >= 2 and p[0] == _CHAR_0:
@@ -507,6 +506,8 @@ def _parse_int(s: str, base: int = 10, T: type = int):
 
     limit = _limit(neg, T)
     U = type(limit)
+    cutoff = limit // U(base)
+    cutlim = limit % U(base)
     acc = U()
 
     saw_digit = False
@@ -514,9 +515,6 @@ def _parse_int(s: str, base: int = 10, T: type = int):
 
     def invalid(s: str, base: int):
         raise ValueError(f"invalid literal for int() with base {base}: {s.__repr__()}")
-
-    def overflow(T: type):
-        raise OverflowError("value too large to fit into type: " + T.__name__)
 
     while p < end:
         c = p[0]
@@ -538,13 +536,10 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         saw_digit = True
         prev_underscore = False
 
-        # handle very small int's for which single digit may overflow
-        if _width(T) <= 5:
-            if d > int(limit):
-                overflow(T)
-
-        if acc > (limit - U(d)) // U(base):
-            overflow(T)
+        if ((acc > cutoff) or
+            (acc == cutoff and d > int(cutlim)) or
+            (_width(T) <= 5 and d > int(limit))):
+            raise OverflowError("value does not fit into type: " + T.__name__)
 
         acc = acc * U(base) + U(d)
         p += 1

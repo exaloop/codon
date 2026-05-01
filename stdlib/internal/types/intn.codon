@@ -189,8 +189,6 @@ class Int:
         ret i{=N} %0
 
     def __mod__(self, other: Int[N]) -> Int[N]:
-        if N > 128:
-            compile_error("modulus is not supported on Int[N] when N > 128")
         return self._mod(other)
 
     def __divmod__(self, other: Int[N]) -> Tuple[Int[N], Int[N]]:
@@ -499,9 +497,8 @@ class UInt:
     def _mod(self, other: UInt[N]) -> UInt[N]:
         %0 = urem i{=N} %self, %other
         ret i{=N} %0
+
     def __mod__(self, other: UInt[N]) -> UInt[N]:
-        if N > 128:
-            compile_error("modulus is not supported on UInt[N] when N > 128")
         return self._mod(other)
 
     def __divmod__(self, other: UInt[N]) -> Tuple[UInt[N], UInt[N]]:
