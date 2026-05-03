@@ -27,6 +27,11 @@ ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool is
     return PassManager::Init::EMPTY;
   }
 }
+
+llvm::cl::opt<bool>
+    UnorderedDict("unordered-dict",
+                  llvm::cl::desc("Use unordered dictionary implementation"),
+                  llvm::cl::init(false));
 } // namespace
 
 Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
@@ -176,6 +181,7 @@ std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
   earlyDefines.emplace("__debug__", debug ? "1" : "0");
   earlyDefines.emplace("__py_numerics__", pyNumerics ? "1" : "0");
   earlyDefines.emplace("__py_extension__", pyExtension ? "1" : "0");
+  earlyDefines.emplace("__dict_unordered__", UnorderedDict ? "1" : "0");
   earlyDefines.emplace("__apple__",
 #if __APPLE__
                        "1"
