@@ -490,22 +490,24 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   ir::Var *v = nullptr;
 
   if (stmt->isUpdate()) {
-    auto val = ctx->find(lei->getValue());
-    seqassert(val && val->getVar(), "{} is not a variable", lei->getValue());
-    v = val->getVar();
-
-    if (!v->getType()) {
-      v->setSrcInfo(stmt->getSrcInfo());
-      v->setType(getType(stmt->getRhs()->getType()));
+    // This thing might not exist if static if-else was combined with types.
+    // This is not dangerous because TC would raise an error if types did not match.
+    if (auto val = ctx->find(lei->getValue())) {
+      if ((v = val->getVar())) {
+        if (!v->getType()) {
+          v->setSrcInfo(stmt->getSrcInfo());
+          v->setType(getType(stmt->getRhs()->getType()));
+        }
+        result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+      }
     }
-    result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
     return;
   }
 
   if (!stmt->getLhs()->getType()->isInstantiated() ||
       (stmt->getLhs()->getType()->is(TYPE_TYPE)) ||
       stmt->getLhs()->getType()->getFunc()) {
-    if (!cast<IdExpr>(stmt->getRhs())) {
+    if (stmt->getRhs() && !cast<IdExpr>(stmt->getRhs())) {
       // Side effect
       result = transform(stmt->getRhs());
     }
