@@ -277,13 +277,6 @@ SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
   return fmt_conv(t, format, error);
 }
 
-SEQ_FUNC seq_int_t seq_int_from_str(seq_str_t s, const char **e, int base) {
-  seq_int_t result;
-  auto r = fast_float::from_chars(s.str, s.str + s.len, result, base);
-  *e = (r.ec == std::errc()) ? r.ptr : s.str;
-  return result;
-}
-
 SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
   double result;
   auto r = fast_float::from_chars(s.str, s.str + s.len, result);
