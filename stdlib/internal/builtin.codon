@@ -506,12 +506,20 @@ def _parse_int(s: str, base: int = 10, T: type = int):
 
     limit = _limit(neg, T)
     U = type(limit)
-    cutoff = limit // U(base)
-    cutlim = limit % U(base)
-    acc = U()
 
+    cutoff = U()
+    cutlim = U()
+    have_cutoff = False
+
+    if U(base) <= limit:
+        cutoff = limit // U(base)
+        cutlim = limit % U(base)
+        have_cutoff = True
+
+    acc = U()
     saw_digit = False
     prev_underscore = False
+    overflow = False
 
     def invalid(s: str, base: int):
         raise ValueError(f"invalid literal for int() with base {base}: {s.__repr__()}")
@@ -531,17 +539,22 @@ def _parse_int(s: str, base: int = 10, T: type = int):
             break
 
         if base0_leading_zero and d != 0:
-            invalid(s, base);
+            invalid(s, base)
 
-        saw_digit = True
-        prev_underscore = False
+        if _width(T) <= 5 and d > int(limit):
+            overflow = True
 
-        if ((acc > cutoff) or
-            (acc == cutoff and d > int(cutlim)) or
-            (_width(T) <= 5 and d > int(limit))):
-            raise OverflowError("value does not fit into type: " + T.__name__)
+        if have_cutoff:
+            if ((acc > cutoff) or
+                (acc == cutoff and d > int(cutlim))):
+                overflow = True
+        else:
+            if acc:
+                overflow = True
 
         acc = acc * U(base) + U(d)
+        saw_digit = True
+        prev_underscore = False
         p += 1
 
     if (not saw_digit) or prev_underscore:
@@ -553,6 +566,9 @@ def _parse_int(s: str, base: int = 10, T: type = int):
 
     if p != end:
         invalid(s, base)
+
+    if overflow:
+        raise OverflowError(f"value does not fit into type {T.__name__}: {s.__repr__()}")
 
     if _signed(T):
         if neg:

@@ -1678,6 +1678,20 @@ def test_num_from_str_extended():
     assert int("+1_000_001") == 1000001
     assert int("-9_87_65") == -98765
 
+    # If it's both an overflow and invalid value, make
+    # sure the invalid value exception gets priority
+    try:
+        UInt[16]('9999999999999999xxxx')
+        assert False
+    except ValueError:  # not OverflowError
+        pass
+
+    try:
+        UInt[16]('9999999999999999')
+        assert False
+    except OverflowError:
+        pass
+
 @test
 def test_files(open_fn, append_allowed: bool = True):
     path = 'build/testfile.txt'
