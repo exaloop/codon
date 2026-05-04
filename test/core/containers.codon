@@ -747,6 +747,188 @@ def test_dict():
     assert repr(d5) == "{'4': 'four'}"
 test_dict()
 
+@test
+def test_dict_ordering():
+    # test_order_basic_insert
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+    assert list(d.keys()) == ["a", "b", "c"]
+    assert list(d.values()) == [1, 2, 3]
+    assert list(d.items()) == [("a", 1), ("b", 2), ("c", 3)]
+
+
+    # test_order_update_does_not_move
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+    d["b"] = 22
+    assert list(d.items()) == [("a", 1), ("b", 22), ("c", 3)]
+
+
+    # test_order_delete_removes_only_that_key
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+    del d["b"]
+    assert list(d.items()) == [("a", 1), ("c", 3)]
+
+
+    # test_order_reinsert_deleted_key_moves_to_end
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+    del d["b"]
+    d["b"] = 22
+    assert list(d.items()) == [("a", 1), ("c", 3), ("b", 22)]
+
+
+    # test_order_delete_insert_many
+    d = OrderedDict()
+    for i in range(10):
+        d[i] = i
+
+    del d[2]
+    del d[5]
+    del d[7]
+
+    d[5] = 50
+    d[2] = 20
+    d[11] = 11
+
+    assert list(d.keys()) == [0, 1, 3, 4, 6, 8, 9, 5, 2, 11]
+
+
+    # test_order_pop_preserves_remaining_order
+    d = OrderedDict()
+    for c in ["a", "b", "c", "d"]:
+        d[c] = ord(c)
+
+    v = d.pop("b")
+    assert v == ord("b")
+    assert list(d.keys()) == ["a", "c", "d"]
+
+    d["e"] = ord("e")
+    assert list(d.keys()) == ["a", "c", "d", "e"]
+
+
+    # test_order_popitem_lifo
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    assert d.popitem() == ("c", 3)
+    assert list(d.items()) == [("a", 1), ("b", 2)]
+
+    d["d"] = 4
+    assert d.popitem() == ("d", 4)
+    assert list(d.items()) == [("a", 1), ("b", 2)]
+
+
+    # test_order_popitem_skips_deleted_tail
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    del d["c"]
+    assert d.popitem() == ("b", 2)
+    assert list(d.items()) == [("a", 1)]
+
+
+    # test_order_clear_resets_order
+    d = OrderedDict()
+    d["a"] = 1
+    d["b"] = 2
+    d.clear()
+
+    assert list(d.items()) == []
+
+    d["c"] = 3
+    d["a"] = 10
+    assert list(d.items()) == [("c", 3), ("a", 10)]
+
+
+    # test_order_resize_preserves_order
+    d = OrderedDict()
+    expected = []
+
+    for i in range(1000):
+        d[i] = i
+        expected.append(i)
+
+    assert list(d.keys()) == expected
+
+    for i in range(0, 1000, 3):
+        del d[i]
+        expected.remove(i)
+
+    assert list(d.keys()) == expected
+
+    for i in range(1000, 1300):
+        d[i] = i
+        expected.append(i)
+
+    assert list(d.keys()) == expected
+
+
+    # test_order_comprehension
+    d = OrderedDict({i: i * i for i in range(10)})
+    assert list(d.keys()) == list(range(10))
+    assert list(d.values()) == [i * i for i in range(10)]
+
+
+    # test_order_constructor_from_pairs
+    pairs = [("a", 1), ("b", 2), ("a", 3), ("c", 4)]
+    d = dict(pairs)
+
+    # Updating existing "a" does not move it.
+    assert list(d.items()) == [("a", 3), ("b", 2), ("c", 4)]
+
+
+    # test_order_update_method_existing_and_new
+    d = OrderedDict({"a": 1, "b": 2})
+    d.update(OrderedDict({"b": 20, "c": 3, "d": 4}))
+
+    assert list(d.items()) == [("a", 1), ("b", 20), ("c", 3), ("d", 4)]
+
+
+    # test_order_setdefault_existing_does_not_move
+    d = OrderedDict({"a": 1, "b": 2, "c": 3})
+
+    v = d.setdefault("b", 200)
+    assert v == 2
+    assert list(d.items()) == [("a", 1), ("b", 2), ("c", 3)]
+
+
+    # test_order_setdefault_new_appends
+    d = OrderedDict({"a": 1, "b": 2})
+
+    v = d.setdefault("c", 3)
+    assert v == 3
+    assert list(d.items()) == [("a", 1), ("b", 2), ("c", 3)]
+
+
+    # test_order_reversed_keys
+    d = OrderedDict()
+    for i in range(10):
+        d[i] = i
+
+    assert list(reversed(d)) == list(range(9, -1, -1))
+
+    del d[7]
+    del d[3]
+    d[7] = 70
+
+    assert list(d.keys()) == [0, 1, 2, 4, 5, 6, 8, 9, 7]
+    assert list(reversed(d)) == [7, 9, 8, 6, 5, 4, 2, 1, 0]
+test_dict_ordering()
+
 def slice_indices(slice, length):
     """
     Reference implementation for the slice.indices method.
@@ -1027,7 +1209,6 @@ def test_deque():
     for i in range(5):
         dq.append(str(i))
     assert str(dq) == "deque(['0', '1', '2', '3', '4'])"
-
 test_deque()
 
 @test

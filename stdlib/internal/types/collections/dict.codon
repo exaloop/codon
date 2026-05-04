@@ -406,6 +406,12 @@ class OrderedDict:
                 e = self._entries[i]
                 yield (e.key, e.value)
 
+    def __reversed__(self):
+        for i in range(self._nentries - 1, -1, -1):
+            if self._is_active(i):
+                e = self._entries[i]
+                yield e.key
+
     def update(self, other):
         if isinstance(other, OrderedDict[K, V]):
             for k, v in other.items():
@@ -787,6 +793,13 @@ class UnorderedDict:
             if self._kh_exist(i):
                 yield self._vals[i]
             i += 1
+
+    def __reversed__(self):
+        i = self._kh_end() - 1
+        while i >= self._kh_begin():
+            if self._kh_exist(i):
+                yield self._keys[i]
+            i -= 1
 
     def copy(self):
         return self.__copy__()
