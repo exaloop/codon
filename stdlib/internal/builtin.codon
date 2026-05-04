@@ -511,7 +511,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     cutlim = U()
     have_cutoff = False
 
-    if U(base) <= limit:
+    if _width(T) > 5 or int(base) <= int(limit):
         cutoff = limit // U(base)
         cutlim = limit % U(base)
         have_cutoff = True
