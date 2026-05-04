@@ -373,93 +373,229 @@ def pow(base: int, exp: int, mod: Optional[int] = None):
         exp >>= 1
     return result % mod if mod is not None else result
 
+_CHAR_0: Literal[int] = 48
+_CHAR_9: Literal[int] = 57
+_CHAR_A: Literal[int] = 65
+_CHAR_a: Literal[int] = 97
+_CHAR_Z: Literal[int] = 90
+_CHAR_z: Literal[int] = 122
+_CHAR_X: Literal[int] = 88
+_CHAR_x: Literal[int] = 120
+_CHAR_B: Literal[int] = 66
+_CHAR_b: Literal[int] = 98
+_CHAR_O: Literal[int] = 79
+_CHAR_o: Literal[int] = 111
+
+_CHAR_UNDERSCORE: Literal[int] = 95
+_CHAR_POS: Literal[int] = 43
+_CHAR_NEG: Literal[int] = 45
+
+def _parse_int(s: str, base: int = 10, T: type = int):
+
+    def _digit_value(c: byte):
+        if byte(_CHAR_0) <= c and c <= byte(_CHAR_9):
+            return int(c) - _CHAR_0
+        if byte(_CHAR_A) <= c and c <= byte(_CHAR_Z):
+            return int(c) - _CHAR_A + 10
+        if byte(_CHAR_a) <= c and c <= byte(_CHAR_z):
+            return int(c) - _CHAR_a + 10
+        return -1
+
+    def _isspace(c: byte):
+        '''
+        space (0x20, ' ')
+        form feed (0x0c, '\f')
+        line feed (0x0a, '\n')
+        carriage return (0x0d, '\r')
+        horizontal tab (0x09, '\t')
+        vertical tab (0x0b, '\v')
+        '''
+        return (c == byte(0x20) or c == byte(0x0c) or
+                c == byte(0x0a) or c == byte(0x0d) or
+                c == byte(0x09) or c == byte(0x0b))
+
+    def _limit(neg: bool, T: type):
+        if T is int:
+            if neg:
+                return UInt[64](0x8000000000000000)
+            else:
+                return UInt[64](0x7FFFFFFFFFFFFFFF)
+        elif T is byte:
+            return byte(0xFF)
+        elif isinstance(T, Int):
+            U = UInt[T.N]
+            n = U(1) << (U(T.N) - U(1))
+            return n if neg else n - U(1)
+        elif isinstance(T, UInt):
+            return ~T(0)
+        else:
+            compile_error("invalid integer type: " + T.__name__)
+
+    def _signed(T: type) -> Literal[bool]:
+        return T is int or isinstance(T, Int)
+
+    def _width(T: type) -> Literal[int]:
+        if T is int:
+            return 64
+        elif T is byte:
+            return 8
+        elif isinstance(T, Int) or isinstance(T, UInt):
+            return T.N
+        else:
+            compile_error("invalid integer type: " + T.__name__)
+
+    # argument check
+    if base != 0 and (base < 2 or base > 36):
+        raise ValueError("int() base must be >= 2 and <= 36, or 0")
+
+    p = s.ptr
+    end = p + s.__len__()
+
+    # skip leading whitespace
+    while p < end and _isspace(p[0]):
+        p += 1
+
+    # sign
+    neg = False
+    if p < end and (p[0] == _CHAR_POS or p[0] == _CHAR_NEG):
+        neg = (p[0] == _CHAR_NEG)
+        p += 1
+
+    if not _signed(T):
+        if neg:
+            raise OverflowError("type " + T.__name__ + " does not support negative values")
+
+    # base detection / prefix handling
+    base0_leading_zero = False
+    if base == 0:
+        base = 10
+        if (end - p) >= 2 and p[0] == _CHAR_0:
+            if p[1] == _CHAR_x or p[1] == _CHAR_X:
+                base = 16
+                p += 2
+                if p < end and p[0] == _CHAR_UNDERSCORE:
+                    p += 1
+            elif p[1] == _CHAR_b or p[1] == _CHAR_B:
+                base = 2
+                p += 2
+                if p < end and p[0] == _CHAR_UNDERSCORE:
+                    p += 1
+            elif p[1] == _CHAR_o or p[1] == _CHAR_O:
+                base = 8
+                p += 2
+                if p < end and p[0] == _CHAR_UNDERSCORE:
+                    p += 1
+            else:
+                base0_leading_zero = True
+    else:
+        if (base == 16 and (end - p) >= 2 and
+            p[0] == _CHAR_0 and (p[1] == _CHAR_x or p[1] == _CHAR_X)):
+            p += 2
+            if p < end and p[0] == _CHAR_UNDERSCORE:
+                p += 1
+        elif (base == 8 and (end - p) >= 2 and
+              p[0] == _CHAR_0 and (p[1] == _CHAR_o or p[1] == _CHAR_O)):
+            p += 2
+            if p < end and p[0] == _CHAR_UNDERSCORE:
+                p += 1
+        elif (base == 2 and (end - p) >= 2 and
+              p[0] == _CHAR_0 and (p[1] == _CHAR_b or p[1] == _CHAR_B)):
+            p += 2
+            if p < end and p[0] == _CHAR_UNDERSCORE:
+                p += 1
+
+    limit = _limit(neg, T)
+    U = type(limit)
+
+    cutoff = U()
+    cutlim = U()
+    have_cutoff = False
+
+    if _width(T) > 5 or int(base) <= int(limit):
+        cutoff = limit // U(base)
+        cutlim = limit % U(base)
+        have_cutoff = True
+
+    acc = U()
+    saw_digit = False
+    prev_underscore = False
+    overflow = False
+
+    def invalid(s: str, base: int):
+        raise ValueError(f"invalid literal for int() with base {base}: {s.__repr__()}")
+
+    while p < end:
+        c = p[0]
+
+        if c == _CHAR_UNDERSCORE:
+            if (not saw_digit) or prev_underscore:
+                invalid(s, base)
+            prev_underscore = True
+            p += 1
+            continue
+
+        d = _digit_value(c)
+        if d < 0 or d >= base:
+            break
+
+        if base0_leading_zero and d != 0:
+            invalid(s, base)
+
+        if _width(T) <= 5 and d > int(limit):
+            overflow = True
+
+        if have_cutoff:
+            if ((acc > cutoff) or
+                (acc == cutoff and d > int(cutlim))):
+                overflow = True
+        else:
+            if acc:
+                overflow = True
+
+        acc = acc * U(base) + U(d)
+        saw_digit = True
+        prev_underscore = False
+        p += 1
+
+    if (not saw_digit) or prev_underscore:
+        invalid(s, base)
+
+    # skip trailing whitespace
+    while p < end and _isspace(p[0]):
+        p += 1
+
+    if p != end:
+        invalid(s, base)
+
+    if overflow:
+        raise OverflowError(f"value does not fit into type {T.__name__}: {s.__repr__()}")
+
+    if _signed(T):
+        if neg:
+            abs_min = limit + U(1)
+            if acc == abs_min:
+                return T(_limit(True, T))
+            else:
+                return -T(acc)
+        else:
+            return T(acc)
+    else:
+        return acc
+
 @extend
 class int:
     def _from_str(s: str, base: int):
-        def parse_error(s: str, base: int):
-            raise ValueError(
-                f"invalid literal for int() with base {base}: {s.__repr__()}"
-            )
+        return _parse_int(s, base)
 
-        if base < 0 or base > 36 or base == 1:
-            raise ValueError("int() base must be >= 2 and <= 36, or 0")
+@extend
+class Int:
+    def _from_str(s: str, base: int):
+        return _parse_int(s, base, Int[N])
 
-        s0 = s
-        base0 = base
-        s = s.strip()
-        n = len(s)
-        negate = False
-
-        if base == 0:
-            # skip leading sign
-            o = 0
-            if n >= 1 and (s.ptr[0] == byte(43) or s.ptr[0] == byte(45)):
-                o = 1
-
-            # detect base from prefix
-            if n >= o + 1 and s.ptr[o] == byte(48):  # '0'
-                if n < o + 2:
-                    parse_error(s0, base)
-
-                if s.ptr[o + 1] == byte(98) or s.ptr[o + 1] == byte(66):  # 'b'/'B'
-                    base = 2
-                elif s.ptr[o + 1] == byte(111) or s.ptr[o + 1] == byte(79):  # 'o'/'O'
-                    base = 8
-                elif s.ptr[o + 1] == byte(120) or s.ptr[o + 1] == byte(88):  # 'x'/'X'
-                    base = 16
-                else:
-                    parse_error(s0, base)
-            else:
-                base = 10
-
-        if base == 2 or base == 8 or base == 16:
-            if base == 2:
-                C_LOWER = byte(98)  # 'b'
-                C_UPPER = byte(66)  # 'B'
-            elif base == 8:
-                C_LOWER = byte(111)  # 'o'
-                C_UPPER = byte(79)   # 'O'
-            else:
-                C_LOWER = byte(120)  # 'x'
-                C_UPPER = byte(88)   # 'X'
-
-            def check_digit(d: byte, base: int):
-                if base == 2:
-                    return d == byte(48) or d == byte(49)
-                elif base == 8:
-                    return byte(48) <= d <= byte(55)
-                elif base == 16:
-                    return ((byte(48) <= d <= byte(57)) or
-                            (byte(97) <= d <= byte(102)) or
-                            (byte(65) <= d <= byte(70)))
-                return False
-
-            if (n >= 4 and
-                (s.ptr[0] == byte(43) or s.ptr[0] == byte(45)) and
-                s.ptr[1] == byte(48) and
-                (s.ptr[2] == C_LOWER or s.ptr[2] == C_UPPER)):  # '+0b' etc.
-                if not check_digit(s.ptr[3], base):
-                    parse_error(s0, base0)
-                negate = (s.ptr[0] == byte(45))
-                s = str(s.ptr + 3, n - 3)
-            elif (n >= 3 and
-                  s.ptr[0] == byte(48) and
-                  (s.ptr[1] == C_LOWER or s.ptr[1] == C_UPPER)):  # '0b' etc.
-                if not check_digit(s.ptr[3], base):
-                    parse_error(s0, base0)
-                s = str(s.ptr + 2, n - 2)
-
-        end = cobj()
-        result = _C.seq_int_from_str(s, __ptr__(end), i32(base))
-        n = len(s)
-
-        if n == 0 or end != s.ptr + n:
-            parse_error(s0, base0)
-
-        if negate:
-            result = -result
-
-        return result
+@extend
+class UInt:
+    def _from_str(s: str, base: int):
+        return _parse_int(s, base, UInt[N])
 
 @extend
 class float:

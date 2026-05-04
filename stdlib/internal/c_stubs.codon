@@ -31,11 +31,6 @@ def seq_str_ptr(a: cobj, fmt: str, error: Ptr[bool]) -> str:
 
 @nocapture
 @C
-def seq_int_from_str(a: str, b: Ptr[cobj], c: i32) -> int:
-    pass
-
-@nocapture
-@C
 def seq_float_from_str(a: str, b: Ptr[cobj]) -> float:
     pass
 

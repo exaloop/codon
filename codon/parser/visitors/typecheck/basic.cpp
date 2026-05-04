@@ -101,7 +101,7 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
   if (!expr->hasStoredValue()) {
     holder = N<StringExpr>(value);
     if (suffix.empty())
-      suffix = "i64";
+      E(Error::INT_RANGE, expr, value);
   } else {
     holder = N<IntExpr>(expr->getValue());
   }
