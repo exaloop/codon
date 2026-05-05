@@ -782,5 +782,5 @@ mydict.x = 5  #: update!
 print(mydict.x)  #: 5
 mydict.x = 4  #: update!
 print(mydict.x)  #: 4
-print(sorted(d.items()))  #: [('a', 1), ('val', 3), ('x', 4)]
+print(sorted(mydict.items()))  #: [('a', 1), ('val', 3), ('x', 4)]
 print(mydict.foo)  #: None
