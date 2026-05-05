@@ -86,6 +86,14 @@ class OrderedDict:
     def _index_bytes(self):
         return 1 << self._log_index_bytes
 
+    @property
+    def _capacity(self):
+        return (self._size << 1) // 3
+
+    @property
+    def _active_bytes(self):
+        return (self._capacity + 7) >> 3
+
     def _is_active(self, i: int):
         return bool(self._active[i >> 3] & (u8(1) << u8(i & 7)))
 
@@ -114,23 +122,22 @@ class OrderedDict:
 
         self._log2_size = u8(3 if minsize <= 8 else (minsize - 1).bit_length())
         self._log2_index_bytes = log2_index_bytes(self._log2_size)
-        size = 1 << int(self._log2_size)
-        self._usable = (size << 1) // 3
+        size = self._size
+        self._usable = self._capacity
         self._nentries = 0
 
-        self._indices = cobj(size * (1 << int(self._log2_index_bytes)))
+        self._indices = cobj(size * self._index_bytes)
         for i in range(size):
             _set_index(self._indices, self._log2_index_bytes, i, _DKIX_EMPTY)
 
+        active_bytes = self._active_bytes
         self._entries = Ptr[DictEntry[K, V]](self._usable)
-
-        active_bytes = (self._usable + 7) // 8
         self._active = Ptr[u8](active_bytes)
         str.memset(self._active.as_byte(), byte(0), active_bytes)
 
-    def __init__(self, minsize: int = 8):
+    def __init__(self, capacity: int = 8):
         self._used = 0
-        self._init(minsize)
+        self._init(capacity)
 
     def __init__(self, items: Generator[Tuple[K, V]]):
         self.__init__()
@@ -140,24 +147,22 @@ class OrderedDict:
     def _init_from(self, other):
         self._used = other._used
         self._usable = other._usable
+        self._nentries = other._nentries
+        self._log2_size = other._log2_size
+        self._log2_index_bytes = other._log2_index_bytes
 
-        size = 1 << int(other._log2_size)
-        indices_size = size * (1 << int(other._log2_index_bytes))
+        indices_size = other._size * other._index_bytes
         self._indices = cobj(indices_size)
         str.memcpy(self._indices, other._indices, indices_size)
 
-        self._nentries = other._nentries
-        capacity = other._used + other._usable
+        capacity = self._capacity
         self._entries = Ptr[DictEntry[K, V]](capacity)
         str.memcpy(self._entries.as_byte(), other._entries.as_byte(),
                    capacity * gc.sizeof(DictEntry[K, V]))
 
-        active_bytes = (capacity + 7) // 8
+        active_bytes = other._active_bytes
         self._active = Ptr[u8](active_bytes)
         str.memcpy(self._active.as_byte(), other._active.as_byte(), active_bytes)
-
-        self._log2_size = other._log2_size
-        self._log2_index_bytes = other._log2_index_bytes
 
     def __init__(self, other: OrderedDict[K, V]):
         self._init_from(other)
@@ -448,6 +453,9 @@ class OrderedDict:
         return self
 
     def __repr__(self):
+        if self.__len__() == 0:
+            return '{}'
+
         s = _strbuf()
         s.append('{')
         n = 0
@@ -592,6 +600,10 @@ class UnorderedDict:
 
     def __init__(self):
         self._init()
+
+    def __init__(self, capacity: int):
+        self.__init__()
+        self._resize(capacity)
 
     def __init__(self, g: Generator[Tuple[K, V]]):
         self._init()
