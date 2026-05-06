@@ -63,7 +63,6 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
 
 const std::string Module::VOID_NAME = "void";
 const std::string Module::BOOL_NAME = "bool";
-const std::string Module::BYTE_NAME = "byte";
 const std::string Module::INT_NAME = "int";
 const std::string Module::FLOAT_NAME = "float";
 const std::string Module::FLOAT32_NAME = "float32";
@@ -229,8 +228,6 @@ types::Type *Module::getBoolType() {
   return Nr<types::BoolType>();
 }
 
-}
-
 types::Type *Module::getIntType() {
   if (auto *rVal = getType(INT_NAME))
     return rVal;
@@ -272,11 +269,13 @@ types::Type *Module::getStringType() {
     return rVal;
   return Nr<types::RecordType>(
       STRING_NAME,
-      std::vector<types::Type *>{getIntType(), unsafeGetPointerType(getByteType())},
+      std::vector<types::Type *>{getIntType(), unsafeGetPointerType()},
       std::vector<std::string>{"len", "ptr"});
 }
 
 types::Type *Module::getPointerType(types::Type *base) {
+  if (!base)
+    base = getIntNType(8, /*sign=*/false);
   return getOrRealizeType("Ptr", {base});
 }
 
@@ -352,6 +351,8 @@ types::Type *Module::unsafeGetDummyFuncType() {
 }
 
 types::Type *Module::unsafeGetPointerType(types::Type *base) {
+  if (!base)
+    base = getIntNType(8, /*sign=*/false);
   auto name = types::PointerType::getInstanceName(base);
   if (auto *rVal = getType(name))
     return rVal;
