@@ -2210,10 +2210,6 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getInt8Ty();
   }
 
-  if (auto *x = cast<types::ByteType>(t)) {
-    return B->getInt8Ty();
-  }
-
   if (auto *x = cast<types::VoidType>(t)) {
     return B->getVoidTy();
   }
@@ -2337,12 +2333,6 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::BoolType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_boolean);
-  }
-
-  if (auto *x = cast<types::ByteType>(t)) {
-    return db.builder->createBasicType(x->getName(),
-                                       layout.getTypeAllocSizeInBits(type),
-                                       llvm::dwarf::DW_ATE_signed_char);
   }
 
   if (auto *x = cast<types::VoidType>(t)) {

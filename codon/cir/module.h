@@ -30,7 +30,6 @@ class Module : public AcceptorExtend<Module, Node> {
 public:
   static const std::string VOID_NAME;
   static const std::string BOOL_NAME;
-  static const std::string BYTE_NAME;
   static const std::string INT_NAME;
   static const std::string FLOAT_NAME;
   static const std::string FLOAT32_NAME;
@@ -342,8 +341,6 @@ public:
   types::Type *getVoidType();
   /// @return the bool type
   types::Type *getBoolType();
-  /// @return the byte type
-  types::Type *getByteType();
   /// @return the int type
   types::Type *getIntType();
   /// @return the float type
@@ -359,9 +356,9 @@ public:
   /// @return the string type
   types::Type *getStringType();
   /// Gets a pointer type.
-  /// @param base the base type
+  /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
-  types::Type *getPointerType(types::Type *base);
+  types::Type *getPointerType(types::Type *base = nullptr);
   /// Gets an array type.
   /// @param base the base type
   /// @return an array type that contains the base
@@ -422,9 +419,9 @@ public:
   types::Type *unsafeGetDummyFuncType();
   /// Gets a pointer type. Should generally not be used as no type-checker
   /// information is generated.
-  /// @param base the base type
+  /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
-  types::Type *unsafeGetPointerType(types::Type *base);
+  types::Type *unsafeGetPointerType(types::Type *base = nullptr);
   /// Gets an array type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type

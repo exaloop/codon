@@ -636,3 +636,5 @@ u16 = UInt[16]
 u32 = UInt[32]
 u64 = UInt[64]
 u128 = UInt[128]
+
+byte = u8

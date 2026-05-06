@@ -23,7 +23,6 @@ class Float16Type;
 class BFloat16Type;
 class Float128Type;
 class BoolType;
-class ByteType;
 class VoidType;
 class RecordType;
 class RefType;
@@ -161,7 +160,6 @@ public:
   VISIT(types::BFloat16Type);
   VISIT(types::Float128Type);
   VISIT(types::BoolType);
-  VISIT(types::ByteType);
   VISIT(types::VoidType);
   VISIT(types::RecordType);
   VISIT(types::RefType);
@@ -242,7 +240,6 @@ public:
   CONST_VISIT(types::BFloat16Type);
   CONST_VISIT(types::Float128Type);
   CONST_VISIT(types::BoolType);
-  CONST_VISIT(types::ByteType);
   CONST_VISIT(types::VoidType);
   CONST_VISIT(types::RecordType);
   CONST_VISIT(types::RefType);

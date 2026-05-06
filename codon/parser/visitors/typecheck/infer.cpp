@@ -599,8 +599,6 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
 
   if (t->name == "bool") {
     handle = module->getBoolType();
-  } else if (t->name == "byte") {
-    handle = module->getByteType();
   } else if (t->name == "int") {
     handle = module->getIntType();
   } else if (t->name == "float") {

@@ -35,7 +35,7 @@ struct OMPTypes {
   explicit OMPTypes(Module *M) {
     i64 = M->getIntType();
     i32 = M->getIntNType(32, /*sign=*/true);
-    i8ptr = M->getPointerType(M->getByteType());
+    i8ptr = M->getPointerType();
     i32ptr = M->getPointerType(i32);
   }
 };

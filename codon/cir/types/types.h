@@ -205,15 +205,6 @@ public:
   BoolType() : AcceptorExtend("bool") {}
 };
 
-/// Byte type (8-bit unsigned integer)
-class ByteType : public AcceptorExtend<ByteType, PrimitiveType> {
-public:
-  static const char NodeId;
-
-  /// Constructs a byte type.
-  ByteType() : AcceptorExtend("byte") {}
-};
-
 /// Void type
 class VoidType : public AcceptorExtend<VoidType, PrimitiveType> {
 public:

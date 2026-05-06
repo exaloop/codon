@@ -313,9 +313,6 @@ public:
   void visit(const types::BoolType *v) override {
     fmt::print(os, FMT_STRING("(bool '\"{}\")"), v->referenceString());
   }
-  void visit(const types::ByteType *v) override {
-    fmt::print(os, FMT_STRING("(byte '\"{}\")"), v->referenceString());
-  }
   void visit(const types::VoidType *v) override {
     fmt::print(os, FMT_STRING("(void '\"{}\")"), v->referenceString());
   }

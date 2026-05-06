@@ -311,7 +311,7 @@ JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
 ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   if (cobj)
     return cobj;
-  cobj = M->getPointerType(M->getByteType());
+  cobj = M->getPointerType();
   return cobj;
 }
 

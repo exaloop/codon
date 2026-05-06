@@ -229,10 +229,6 @@ types::Type *Module::getBoolType() {
   return Nr<types::BoolType>();
 }
 
-types::Type *Module::getByteType() {
-  if (auto *rVal = getType(BYTE_NAME))
-    return rVal;
-  return Nr<types::ByteType>();
 }
 
 types::Type *Module::getIntType() {

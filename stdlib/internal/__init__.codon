@@ -5,15 +5,15 @@
 from internal.attributes import *
 import internal.static as static
 from internal.static import print as __print__
+
+from internal.types.intn import *
 from internal.types.ptr import *
 from internal.types.str import *
 from internal.types.int import *
 from internal.types.bool import *
 from internal.types.array import *
 from internal.types.error import *
-from internal.types.intn import *
 from internal.types.float import *
-from internal.types.byte import *
 from internal.types.type import *
 from internal.types.tuple import *
 from internal.types.rtti import *
@@ -22,7 +22,6 @@ from internal.types.union import *
 from internal.types.any import *
 from internal.types.ellipsis import *
 from internal.types.import_ import *
-from internal.types.ptr import *
 from internal.types.generator import *
 from internal.types.optional import *
 import internal.c_stubs as _C
