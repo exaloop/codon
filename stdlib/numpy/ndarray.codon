@@ -1364,7 +1364,7 @@ class ndarray[dtype, ndim: Literal[int]]:
 
     def byteswap(self, inplace: bool = False):
         def bswap(x: T, T: type):
-            if T is int or T is byte or isinstance(T, Int) or isinstance(T, UInt):
+            if T is int or isinstance(T, Int) or isinstance(T, UInt):
                 return util.bswap(x)
 
             if T is float:

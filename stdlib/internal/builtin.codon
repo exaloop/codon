@@ -42,9 +42,9 @@ def input(prompt: str = ""):
     n = 0
     s = _C.getline(__ptr__(buf), __ptr__(n), stdin)
     if s > 0:
-        if buf[s - 1] == byte(10):
+        if buf[s - 1] == u8(10):
             s -= 1  # skip trailing '\n'
-        if s != 0 and buf[s - 1] == byte(13):
+        if s != 0 and buf[s - 1] == u8(13):
             s -= 1  # skip trailing '\r'
         ans = str(buf, s).__ptrcopy__()
         _C.free(buf)
@@ -169,7 +169,7 @@ def divmod(a, b):
 
 def chr(i: int) -> str:
     p = cobj(1)
-    p[0] = byte(i)
+    p[0] = u8(i)
     return str(p, 1)
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
@@ -316,7 +316,7 @@ def _int_format(a: int, base: int, prefix: str = ""):
         b //= base
 
     sz = digits + (1 if a <= 0 else 0) + len(prefix)
-    p = Ptr[byte](sz)
+    p = Ptr[u8](sz)
     q = p
 
     if a < 0:
@@ -392,16 +392,16 @@ _CHAR_NEG: Literal[int] = 45
 
 def _parse_int(s: str, base: int = 10, T: type = int):
 
-    def _digit_value(c: byte):
-        if byte(_CHAR_0) <= c and c <= byte(_CHAR_9):
+    def _digit_value(c: u8):
+        if u8(_CHAR_0) <= c and c <= u8(_CHAR_9):
             return int(c) - _CHAR_0
-        if byte(_CHAR_A) <= c and c <= byte(_CHAR_Z):
+        if u8(_CHAR_A) <= c and c <= u8(_CHAR_Z):
             return int(c) - _CHAR_A + 10
-        if byte(_CHAR_a) <= c and c <= byte(_CHAR_z):
+        if u8(_CHAR_a) <= c and c <= u8(_CHAR_z):
             return int(c) - _CHAR_a + 10
         return -1
 
-    def _isspace(c: byte):
+    def _isspace(c: u8):
         '''
         space (0x20, ' ')
         form feed (0x0c, '\f')
@@ -410,9 +410,9 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         horizontal tab (0x09, '\t')
         vertical tab (0x0b, '\v')
         '''
-        return (c == byte(0x20) or c == byte(0x0c) or
-                c == byte(0x0a) or c == byte(0x0d) or
-                c == byte(0x09) or c == byte(0x0b))
+        return (c == u8(0x20) or c == u8(0x0c) or
+                c == u8(0x0a) or c == u8(0x0d) or
+                c == u8(0x09) or c == u8(0x0b))
 
     def _limit(neg: bool, T: type):
         if T is int:
@@ -420,8 +420,6 @@ def _parse_int(s: str, base: int = 10, T: type = int):
                 return UInt[64](0x8000000000000000)
             else:
                 return UInt[64](0x7FFFFFFFFFFFFFFF)
-        elif T is byte:
-            return byte(0xFF)
         elif isinstance(T, Int):
             U = UInt[T.N]
             n = U(1) << (U(T.N) - U(1))
@@ -437,8 +435,6 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     def _width(T: type) -> Literal[int]:
         if T is int:
             return 64
-        elif T is byte:
-            return 8
         elif isinstance(T, Int) or isinstance(T, UInt):
             return T.N
         else:
@@ -629,7 +625,7 @@ class complex:
         while i < n and str._isspace(s[i]):
             i += 1
 
-        if i < n and s[i] == byte(40):  # '('
+        if i < n and s[i] == u8(40):  # '('
             got_bracket = True
             i += 1
             while i < n and str._isspace(s[i]):
@@ -640,33 +636,33 @@ class complex:
         if end != s + i:
             i = end - s
 
-            if i < n and (s[i] == byte(43) or s[i] == byte(45)):  # '+' '-'
+            if i < n and (s[i] == u8(43) or s[i] == u8(45)):  # '+' '-'
                 x = z
                 y = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
 
                 if end != s + i:
                     i = end - s
                 else:
-                    y = 1.0 if s[i] == byte(43) else -1.0
+                    y = 1.0 if s[i] == u8(43) else -1.0
                     i += 1
 
-                if not (i < n and (s[i] == byte(106) or s[i] == byte(74))):  # 'j' 'J'
+                if not (i < n and (s[i] == u8(106) or s[i] == u8(74))):  # 'j' 'J'
                     parse_error()
 
                 i += 1
-            elif i < n and (s[i] == byte(106) or s[i] == byte(74)):  # 'j' 'J'
+            elif i < n and (s[i] == u8(106) or s[i] == u8(74)):  # 'j' 'J'
                 i += 1
                 y = z
             else:
                 x = z
         else:
-            if i < n and (s[i] == byte(43) or s[i] == byte(45)):  # '+' '-'
-                y = 1.0 if s[i] == byte(43) else -1.0
+            if i < n and (s[i] == u8(43) or s[i] == u8(45)):  # '+' '-'
+                y = 1.0 if s[i] == u8(43) else -1.0
                 i += 1
             else:
                 y = 1.0
 
-            if not (i < n and (s[i] == byte(106) or s[i] == byte(74))):  # 'j' 'J'
+            if not (i < n and (s[i] == u8(106) or s[i] == u8(74))):  # 'j' 'J'
                 parse_error()
 
             i += 1
@@ -675,7 +671,7 @@ class complex:
             i += 1
 
         if got_bracket:
-            if i < n and s[i] != byte(41):  # ')'
+            if i < n and s[i] != u8(41):  # ')'
                 parse_error()
             i += 1
             while i < n and str._isspace(s[i]):

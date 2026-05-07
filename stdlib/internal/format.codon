@@ -186,14 +186,14 @@ class Int:
         if d >= Int[N](0):
             while True:
                 d, m = _divmod_10(d, N)
-                b = byte(48 + m)  # 48 == ord('0')
+                b = u8(48 + m)  # 48 == ord('0')
                 s.append(str(__ptr__(b), 1))
                 if not d:
                     break
         else:
             while True:
                 d, m = _divmod_10(d, N)
-                b = byte(48 - m)  # 48 == ord('0')
+                b = u8(48 - m)  # 48 == ord('0')
                 s.append(str(__ptr__(b), 1))
 
                 if not d:
@@ -214,7 +214,7 @@ class UInt:
 
         while True:
             d, m = _divmod_10(d, N)
-            b = byte(48 + int(m))  # 48 == ord('0')
+            b = u8(48 + int(m))  # 48 == ord('0')
             s.append(str(__ptr__(b), 1))
             if not d:
                 break

@@ -173,7 +173,7 @@ class LinearizeData:
             dst += cdiv_int(self.row_strides, sizeof(T))
 
     def identity_matrix(dst: Ptr[T], n: int, T: type):
-        str.memset(dst.as_byte(), byte(0), n * n * sizeof(T))
+        str.memset(dst.as_byte(), u8(0), n * n * sizeof(T))
         for i in range(n):
             dst[0] = T(1)
             dst += n + 1
@@ -337,13 +337,13 @@ class EighParams:
     LWORK: fint
     LRWORK: fint
     LIWORK: fint
-    JOBZ: byte
-    UPLO: byte
+    JOBZ: u8
+    UPLO: u8
     LDA: fint
     T: type
     B: type
 
-    def _init_real(self, JOBZ: byte, UPLO: byte, N: fint):
+    def _init_real(self, JOBZ: u8, UPLO: u8, N: fint):
         safe_N = int(N)
         alloc_size = safe_N * (safe_N + 1) * sizeof(T)
         lda = N if N else fint(1)
@@ -386,7 +386,7 @@ class EighParams:
         self.LIWORK = fint(liwork)
         self.IWORK = Ptr[fint](iwork)
 
-    def _init_complex(self, JOBZ: byte, UPLO: byte, N: fint):
+    def _init_complex(self, JOBZ: u8, UPLO: u8, N: fint):
         safe_N = int(N)
         lda = N if N else fint(1)
         mem_buff = cobj(safe_N * safe_N * sizeof(T) + safe_N * sizeof(B))
@@ -433,7 +433,7 @@ class EighParams:
         self.LRWORK = fint(lrwork)
         self.LIWORK = fint(liwork)
 
-    def __init__(self, JOBZ: byte, UPLO: byte, N: fint):
+    def __init__(self, JOBZ: u8, UPLO: u8, N: fint):
         if T is complex or T is complex64:
             self._init_complex(JOBZ, UPLO, N)
         else:
@@ -510,7 +510,7 @@ class EighResult[A, B]:
         else:
             compile_error("tuple ('EighResult') index out of range")
 
-def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Literal[bool]):
+def _eigh(a, JOBZ: u8, UPLO: u8, compute_eigenvectors: Literal[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
 
@@ -563,27 +563,27 @@ def _eigh(a, JOBZ: byte, UPLO: byte, compute_eigenvectors: Literal[bool]):
         return eigenvalues
 
 def eigh(a, UPLO: str = 'L'):
-    uplo_code = byte()
+    uplo_code = u8()
     if UPLO == 'L' or UPLO == 'l':
-        uplo_code = byte(76)
+        uplo_code = u8(76)
     elif UPLO == 'U' or UPLO == 'u':
-        uplo_code = byte(85)
+        uplo_code = u8(85)
     else:
         raise ValueError("UPLO argument must be 'L' or 'U'")
 
-    jobz_code = byte(86)
+    jobz_code = u8(86)
     return _eigh(a, JOBZ=jobz_code, UPLO=uplo_code, compute_eigenvectors=True)
 
 def eigvalsh(a, UPLO: str = 'L'):
-    uplo_code = byte()
+    uplo_code = u8()
     if UPLO == 'L' or UPLO == 'l':
-        uplo_code = byte(76)
+        uplo_code = u8(76)
     elif UPLO == 'U' or UPLO == 'u':
-        uplo_code = byte(85)
+        uplo_code = u8(85)
     else:
         raise ValueError("UPLO argument must be 'L' or 'U'")
 
-    jobz_code = byte(78)
+    jobz_code = u8(78)
     return _eigh(a, JOBZ=jobz_code, UPLO=uplo_code, compute_eigenvectors=False)
 
 
@@ -803,10 +803,10 @@ class PotrfParams:
     A: Ptr[T]
     N: fint
     LDA: fint
-    UPLO: byte
+    UPLO: u8
     T: type
 
-    def __init__(self, UPLO: byte, N: fint):
+    def __init__(self, UPLO: u8, N: fint):
         safe_N = int(N)
         lda = N if N else fint(1)
         mem_buff = cobj(safe_N * safe_N * sizeof(T))
@@ -865,7 +865,7 @@ class PotrfParams:
 
 def cholesky(a, upper: bool = False):
     a = _asarray(a)
-    uplo = byte(85 if upper else 76)  # 'U' / 'L'
+    uplo = u8(85 if upper else 76)  # 'U' / 'L'
     n = _square_rows(a)
 
     params = PotrfParams[a.dtype](uplo, fint(n))
@@ -947,18 +947,18 @@ class GeevParams:
     LDVL: fint
     LDVR: fint
     LWORK: fint
-    JOBVL: byte
-    JOBVR: byte
+    JOBVL: u8
+    JOBVR: u8
     T: type
     B: type
 
-    def _init_real(self, jobvl: byte, jobvr: byte, n: fint):
+    def _init_real(self, jobvl: u8, jobvr: u8, n: fint):
         safe_n = int(n)
         a_size = safe_n * safe_n * sizeof(T)
         wr_size = safe_n * sizeof(T)
         wi_size = safe_n * sizeof(T)
-        vlr_size = safe_n * safe_n * sizeof(T) if jobvl == byte(86) else 0
-        vrr_size = safe_n * safe_n * sizeof(T) if jobvr == byte(86) else 0
+        vlr_size = safe_n * safe_n * sizeof(T) if jobvl == u8(86) else 0
+        vrr_size = safe_n * safe_n * sizeof(T) if jobvr == u8(86) else 0
         w_size = wr_size * 2
         vl_size = vlr_size * 2
         vr_size = vrr_size * 2
@@ -1008,12 +1008,12 @@ class GeevParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def _init_complex(self, jobvl: byte, jobvr: byte, n: fint):
+    def _init_complex(self, jobvl: u8, jobvr: u8, n: fint):
         safe_n = int(n)
         a_size = safe_n * safe_n * sizeof(T)
         w_size = safe_n * sizeof(T)
-        vl_size = safe_n * safe_n * sizeof(T) if jobvl == byte(86) else 0
-        vr_size = safe_n * safe_n * sizeof(T) if jobvr == byte(86) else 0
+        vl_size = safe_n * safe_n * sizeof(T) if jobvl == u8(86) else 0
+        vr_size = safe_n * safe_n * sizeof(T) if jobvr == u8(86) else 0
         rwork_size = 2 * safe_n * sizeof(B)
         total_size = a_size + w_size + vl_size + vr_size + rwork_size
         ld = n if n else fint(1)
@@ -1059,7 +1059,7 @@ class GeevParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def __init__(self, jobvl: byte, jobvr: byte, n: fint):
+    def __init__(self, jobvl: u8, jobvr: u8, n: fint):
         if T is complex or T is complex64:
             self._init_complex(jobvl, jobvr, n)
         else:
@@ -1139,10 +1139,10 @@ class GeevParams:
 
         _mk_complex_array(Ptr[C](self.W.as_byte()), self.WR, self.WI, int(self.N))
 
-        if self.JOBVL == byte(86):
+        if self.JOBVL == u8(86):
             _mk_geev_complex_eigenvectors(Ptr[C](self.VL.as_byte()), self.VLR, self.WI, int(self.N))
 
-        if self.JOBVR == byte(86):
+        if self.JOBVR == u8(86):
             _mk_geev_complex_eigenvectors(Ptr[C](self.VR.as_byte()), self.VRR, self.WI, int(self.N))
 
 @tuple
@@ -1158,7 +1158,7 @@ class EigResult[A, B]:
         else:
             compile_error("tuple ('EigResult') index out of range")
 
-def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Literal[bool]):
+def _eig(a, JOBVL: u8, JOBVR: u8, compute_eigenvectors: Literal[bool]):
     a = _asarray(a)
     B = type(_basetype(a.dtype))
     C = type(_complextype(a.dtype))
@@ -1213,13 +1213,13 @@ def _eig(a, JOBVL: byte, JOBVR: byte, compute_eigenvectors: Literal[bool]):
         return eigenvalues
 
 def eig(a):
-    jobvl_code = byte(78)  # 'N'
-    jobvr_code = byte(86)  # 'V'
+    jobvl_code = u8(78)  # 'N'
+    jobvr_code = u8(86)  # 'V'
     return _eig(a, jobvl_code, jobvr_code, compute_eigenvectors=True)
 
 def eigvals(a):
-    jobvl_code = byte(78)  # 'N'
-    jobvr_code = byte(78)  # 'N'
+    jobvl_code = u8(78)  # 'N'
+    jobvr_code = u8(78)  # 'N'
     return _eig(a, jobvl_code, jobvr_code, compute_eigenvectors=False)
 
 
@@ -1227,10 +1227,10 @@ def eigvals(a):
 # SVD #
 #######
 
-def _compute_urows_vtcolumns(jobz: byte, m: fint, n: fint):
-    if jobz == byte(78):  # 'N'
+def _compute_urows_vtcolumns(jobz: u8, m: fint, n: fint):
+    if jobz == u8(78):  # 'N'
         return (fint(0), fint(0))
-    elif jobz == byte(65):  # 'A'
+    elif jobz == u8(65):  # 'A'
         return (m, n)
     else:  # 'S'
         min_m_n = m if m < n else n
@@ -1250,11 +1250,11 @@ class GesddParams:
     LDU: fint
     LDVT: fint
     LWORK: fint
-    JOBZ: byte
+    JOBZ: u8
     T: type
     B: type
 
-    def _init_real(self, jobz: byte, m: fint, n: fint):
+    def _init_real(self, jobz: u8, m: fint, n: fint):
         safe_m = int(m)
         safe_n = int(n)
         a_size = safe_m * safe_n * sizeof(T)
@@ -1312,7 +1312,7 @@ class GesddParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def _init_complex(self, jobz: byte, m: fint, n: fint):
+    def _init_complex(self, jobz: u8, m: fint, n: fint):
         safe_m = int(m)
         safe_n = int(n)
         min_m_n = m if m < n else n
@@ -1327,7 +1327,7 @@ class GesddParams:
         s_size = safe_min_m_n * sizeof(B)
         u_size = safe_u_row_count * safe_m * sizeof(T)
         vt_size = safe_n * safe_vt_column_count * sizeof(T)
-        rwork_size = (7 * safe_min_m_n if jobz == byte(78) else
+        rwork_size = (7 * safe_min_m_n if jobz == u8(78) else
                       5*safe_min_m_n * safe_min_m_n + 5*safe_min_m_n)
         rwork_size *= sizeof(T)
         iwork_size = 8 * safe_min_m_n * sizeof(fint)
@@ -1380,7 +1380,7 @@ class GesddParams:
         self.LWORK = fint(work_count)
         self.WORK = Ptr[T](work)
 
-    def __init__(self, jobz: byte, m: fint, n: fint):
+    def __init__(self, jobz: u8, m: fint, n: fint):
         if T is complex or T is complex64:
             self._init_complex(jobz, m, n)
         else:
@@ -1467,7 +1467,7 @@ class SVDResult[A1, A2]:
         else:
             compile_error("tuple ('SVDResult') index out of range")
 
-def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
+def _svd(a, JOBZ: u8, compute_uv: Literal[bool]):
     B = type(_basetype(a.dtype))
     m, n = _rows_cols(a)
     min_m_n = min(m, n)
@@ -1478,7 +1478,7 @@ def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
     s_out = LinearizeData(1, min_m_n, 0, S.strides[-1])
 
     if compute_uv:
-        if JOBZ == byte(83):  # 'S'
+        if JOBZ == u8(83):  # 'S'
             u_columns = min_m_n
             v_rows = min_m_n
         else:
@@ -1512,7 +1512,7 @@ def _svd(a, JOBZ: byte, compute_uv: Literal[bool]):
 
         if not not_ok:
             if compute_uv:
-                if JOBZ == byte(65) and min_m_n == 0:
+                if JOBZ == u8(65) and min_m_n == 0:
                     LinearizeData.identity_matrix(params.U, m)
                     LinearizeData.identity_matrix(params.VT, n)
 
@@ -1639,10 +1639,10 @@ def svd(a,
             return evh
 
     if compute_uv:
-        jobz_code = byte(65 if full_matrices else 83)  # 'A' / 'S'
+        jobz_code = u8(65 if full_matrices else 83)  # 'A' / 'S'
         return _svd(a, jobz_code, compute_uv=True)
     else:
-        jobz_code = byte(78)  # 'N'
+        jobz_code = u8(78)  # 'N'
         return _svd(a, jobz_code, compute_uv=False)
 
 def svdvals(x):
@@ -1676,7 +1676,7 @@ class GeqrfParams:
         mem_buff = cobj(a_size + tau_size)
         a = mem_buff
         tau = a + a_size
-        str.memset(tau.as_byte(), byte(0), tau_size)
+        str.memset(tau.as_byte(), u8(0), tau_size)
 
         self.M = m
         self.N = n
@@ -1719,7 +1719,7 @@ class GeqrfParams:
         mem_buff = cobj(a_size + tau_size)
         a = mem_buff
         tau = a + a_size
-        str.memset(tau.as_byte(), byte(0), tau_size)
+        str.memset(tau.as_byte(), u8(0), tau_size)
 
         self.M = m
         self.N = n
@@ -2363,7 +2363,7 @@ def lstsq(a, b, rcond = None):
 
     if nrhs == 0:
         b2 = ndarray((m, 1), Ptr[b2.dtype](m))
-        str.memset(b2.data.as_byte(), byte(0), b2.nbytes)
+        str.memset(b2.data.as_byte(), u8(0), b2.nbytes)
         safe_nrhs = 1
     else:
         safe_nrhs = nrhs
@@ -2418,7 +2418,7 @@ def lstsq(a, b, rcond = None):
         raise LinAlgError("SVD did not converge in Linear Least Squares")
 
     if m == 0:
-        str.memset(x.data.as_byte(), byte(0), x.nbytes)
+        str.memset(x.data.as_byte(), u8(0), x.nbytes)
 
     if nrhs == 0:
         free(x.data)

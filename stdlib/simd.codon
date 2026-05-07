@@ -5,14 +5,14 @@ import internal.static as static
 @tuple(container=False)  # disallow default __getitem__
 class Vec[T, N: Literal[int]]:
     def _is_int(T: type) -> Literal[bool]:
-        return isinstance(T, int) or isinstance(T, byte) or \
+        return isinstance(T, int) or \
                isinstance(T, Int) or isinstance(T, UInt)
 
     def _is_sint(T: type) -> Literal[bool]:
         return isinstance(T, int) or isinstance(T, Int)
 
     def _is_uint(T: type) -> Literal[bool]:
-        return isinstance(T, UInt) or isinstance(T, byte)
+        return isinstance(T, UInt)
 
     def _int_prefix(T: type) -> Literal[str]:
         return 'u' if isinstance(T, UInt) else 's'
@@ -32,8 +32,6 @@ class Vec[T, N: Literal[int]]:
             return T.N
         if isinstance(T, UInt):
             return T.N
-        if isinstance(T, byte):
-            return 8
         if isinstance(T, int):
             return 64
         if isinstance(T, float16):
@@ -64,7 +62,7 @@ class Vec[T, N: Literal[int]]:
         if isinstance(x, Ptr) and Vec._is_valid(x.T):
             return Vec[T, N]._load(x)
         if isinstance(x, str) and (
-            isinstance(T, i8) or isinstance(T, u8) or isinstance(T, byte)
+            isinstance(T, i8) or isinstance(T, u8)
         ):
             return Vec[T, N]._load(x.ptr)
         if isinstance(x, List) and Vec._is_valid(x.T):

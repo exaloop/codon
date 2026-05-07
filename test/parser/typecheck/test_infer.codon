@@ -406,14 +406,14 @@ a.foo(1)
 def fun[T, R](x, y: T) -> R:
    	def ffi[T, R, Z](x: T, y: R, z: Z):
    		return (x, y, z)
-   	yy = ffi(False, byte(2), 's', T=bool, Z=str, R=R)
-   	yz = ffi(1, byte(2), 's', T=int, Z=str, R=R)
-   	return byte(1)
-print fun(2, 1.1, float, byte).__class__.__name__ #: byte
+   	yy = ffi(False, u8(2), 's', T=bool, Z=str, R=R)
+   	yz = ffi(1, u8(2), 's', T=int, Z=str, R=R)
+   	return u8(1)
+print fun(2, 1.1, float, u8).__class__.__name__ #: UInt[8]
 
 #%% return_auto_deduction_err,barebones
 def fun[T, R](x, y: T) -> R:
-   	return byte(1)
+   	return u8(1)
 print fun(2, 1.1).__class__.__name__ #! cannot typecheck
 
 #%% random

@@ -69,7 +69,7 @@ class List:
             idx += 1
         self.len -= 1
         if not T.__atomic__:
-            str.memset((self.arr.ptr + self.len).as_byte(), byte(0), gc.sizeof(T))
+            str.memset((self.arr.ptr + self.len).as_byte(), u8(0), gc.sizeof(T))
 
     def __delitem__(self, idx: int):
         if idx < 0:
@@ -178,7 +178,7 @@ class List:
                 self.len -= length
                 if not T.__atomic__:
                     str.memset((self.arr.ptr + self.len).as_byte(),
-                               byte(0), length * gc.sizeof(T))
+                               u8(0), length * gc.sizeof(T))
 
     def __contains__(self, x: T) -> bool:
         for a in self:
@@ -338,7 +338,7 @@ class List:
     def clear(self):
         if not T.__atomic__:
             str.memset(self.arr.ptr.as_byte(),
-                       byte(0), self.len * gc.sizeof(T))
+                       u8(0), self.len * gc.sizeof(T))
         self.len = 0
 
     def index(self, x: T) -> int:

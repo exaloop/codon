@@ -45,7 +45,7 @@ def _type_code(dtype: type):
     if dtype is i8:
         return NPY_BYTE
 
-    if dtype is byte or dtype is u8:
+    if dtype is u8:
         return NPY_UBYTE
 
     if dtype is i16:

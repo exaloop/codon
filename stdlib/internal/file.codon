@@ -4,7 +4,7 @@ from internal.gc import realloc, free
 
 class File:
     sz: int
-    buf: Ptr[byte]
+    buf: Ptr[u8]
     fp: cobj
 
     def __init__(self, fp: cobj):
@@ -59,7 +59,7 @@ class File:
             _C.fseek(self.fp, 0, i32(SEEK_END))
             sz = _C.ftell(self.fp) - cur
             _C.fseek(self.fp, cur, i32(SEEK_SET))
-        buf = Ptr[byte](sz)
+        buf = Ptr[u8](sz)
         ret = _C.fread(buf, 1, sz, self.fp)
         self._errcheck("error in read")
         return str(buf, ret)
@@ -92,14 +92,14 @@ class File:
             raise IOError("I/O operation on closed file")
 
     def _reset(self):
-        self.buf = Ptr[byte]()
+        self.buf = Ptr[u8]()
         self.sz = 0
 
     def _iter(self) -> Generator[str]:
         self._ensure_open()
         while True:
             rd = _C.getline(
-                Ptr[Ptr[byte]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
             )
             if rd != -1:
                 yield str(self.buf, rd)
@@ -110,10 +110,10 @@ class File:
         self._ensure_open()
         while True:
             rd = _C.getline(
-                Ptr[Ptr[byte]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
             )
             if rd != -1:
-                if self.buf[rd - 1] == byte(10):
+                if self.buf[rd - 1] == u8(10):
                     rd -= 1
                 yield str(self.buf, rd)
             else:
@@ -127,7 +127,7 @@ def _gz_errcheck(stream: cobj):
 
 class gzFile:
     sz: int
-    buf: Ptr[byte]
+    buf: Ptr[u8]
     fp: cobj
 
     def __init__(self, fp: cobj):
@@ -143,7 +143,7 @@ class gzFile:
     def _getline(self) -> int:
         if not self.buf:
             self.sz = 128
-            self.buf = Ptr[byte](self.sz)
+            self.buf = Ptr[u8](self.sz)
 
         offset = 0
         while True:
@@ -155,7 +155,7 @@ class gzFile:
 
             offset += _C.strlen(self.buf + offset)
 
-            if self.buf[offset - 1] == byte(10):  # '\n'
+            if self.buf[offset - 1] == u8(10):  # '\n'
                 break
 
             oldsz = self.sz
@@ -201,7 +201,7 @@ class gzFile:
             for a in self._iter():
                 buf.append(a)
             return buf.__str__()
-        buf = Ptr[byte](sz)
+        buf = Ptr[u8](sz)
         ret = _C.gzread(self.fp, buf, u32(sz))
         _gz_errcheck(self.fp)
         return str(buf, int(ret))
@@ -237,7 +237,7 @@ class gzFile:
         while True:
             rd = self._getline()
             if rd != -1:
-                if self.buf[rd - 1] == byte(10):
+                if self.buf[rd - 1] == u8(10):
                     rd -= 1
                 yield str(self.buf, rd)
             else:
@@ -259,7 +259,7 @@ def _bz_errcheck(stream: cobj):
 
 class bzFile:
     sz: int
-    buf: Ptr[byte]
+    buf: Ptr[u8]
     fp: cobj
 
     def __init__(self, fp: cobj):
@@ -275,7 +275,7 @@ class bzFile:
     def _getline(self) -> int:
         if not self.buf:
             self.sz = 128
-            self.buf = Ptr[byte](self.sz)
+            self.buf = Ptr[u8](self.sz)
 
         offset = 0
         while True:
@@ -292,7 +292,7 @@ class bzFile:
 
             offset += m
 
-            if self.buf[offset - 1] == byte(10):  # '\n'
+            if self.buf[offset - 1] == u8(10):  # '\n'
                 break
 
             oldsz = self.sz
@@ -338,7 +338,7 @@ class bzFile:
             for a in self._iter():
                 buf.append(a)
             return buf.__str__()
-        buf = Ptr[byte](sz)
+        buf = Ptr[u8](sz)
         ret = _C.BZ2_bzread(self.fp, buf, i32(sz))
         _bz_errcheck(self.fp)
         return str(buf, int(ret))
@@ -362,7 +362,7 @@ class bzFile:
         while True:
             rd = self._getline()
             if rd != -1:
-                if self.buf[rd - 1] == byte(10):
+                if self.buf[rd - 1] == u8(10):
                     rd -= 1
                 yield str(self.buf, rd)
             else:
@@ -381,7 +381,7 @@ class bzFile:
             return 0
 
         fp = self.fp
-        b = byte(0)
+        b = u8(0)
         i = 0
 
         while i < sz - 1:
@@ -393,7 +393,7 @@ class bzFile:
 
             buf[i] = b
             i += 1
-            if b == byte(10):
+            if b == u8(10):
                 break
 
         return i

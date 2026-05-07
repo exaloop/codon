@@ -692,8 +692,7 @@ def _get_bin_edges(a, bins, range, weights, histogram):
     def get_bin_type(first_edge, last_edge, a):
         T1 = type(util.coerce(type(first_edge), type(last_edge)))
         T2 = type(util.coerce(T1, a.dtype))
-        if T2 is int or T2 is byte or isinstance(T2, Int) or isinstance(
-                T2, UInt):
+        if T2 is int or isinstance(T2, Int) or isinstance(T2, UInt):
             return float()
         else:
             return T2()

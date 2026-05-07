@@ -1035,9 +1035,9 @@ class timedelta64:
                 num: Literal[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        if (len(s) == 3 and (s.ptr[0] == byte(78) or s.ptr[0] == byte(110))
-                and (s.ptr[1] == byte(65) or s.ptr[1] == byte(97))
-                and (s.ptr[2] == byte(116) or s.ptr[2] == byte(84))):
+        if (len(s) == 3 and (s.ptr[0] == u8(78) or s.ptr[0] == u8(110))
+                and (s.ptr[1] == u8(65) or s.ptr[1] == u8(97))
+                and (s.ptr[2] == u8(116) or s.ptr[2] == u8(84))):
             return timedelta64[base, num](_DATETIME_NAT)
         else:
             return timedelta64[base, num](int(s))
@@ -1178,7 +1178,6 @@ class timedelta64:
     def __add__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self + int(other)
@@ -1188,7 +1187,6 @@ class timedelta64:
     def __radd__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) + self
@@ -1218,7 +1216,6 @@ class timedelta64:
     def __sub__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self - int(other)
@@ -1228,7 +1225,6 @@ class timedelta64:
     def __rsub__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) - self
@@ -1251,7 +1247,6 @@ class timedelta64:
     def __mul__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self * int(other)
@@ -1265,7 +1260,6 @@ class timedelta64:
     def __rmul__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) * self
@@ -1311,7 +1305,6 @@ class timedelta64:
     def __floordiv__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self // int(other)
@@ -1353,7 +1346,6 @@ class timedelta64:
     def __truediv__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self / int(other)
@@ -1560,7 +1552,6 @@ class datetime64:
     def __add__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self + int(other)
@@ -1570,7 +1561,6 @@ class datetime64:
     def __radd__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) + self
@@ -1593,7 +1583,6 @@ class datetime64:
     def __sub__(self, other):
         if (isinstance(other, int) or
             isinstance(other, bool) or
-            isinstance(other, byte) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self - int(other)
@@ -2043,7 +2032,7 @@ class datetimestruct:
     def parse_iso8601(self, s: str):
 
         def tolower(b):
-            return byte(int(_C.tolower(i32(int(b)))))
+            return u8(int(_C.tolower(i32(int(b)))))
 
         def isspace(b):
             return bool(_C.isspace(i32(int(b))))
@@ -2056,7 +2045,7 @@ class datetimestruct:
                 return False
 
             for i in static.range(static.len(vals)):
-                if tolower(str_[i]) != byte(vals[i]):
+                if tolower(str_[i]) != u8(vals[i]):
                     return False
 
             return True
@@ -2071,18 +2060,18 @@ class datetimestruct:
             if sublen == 0:
                 return
 
-            if substr[0] == byte(90):
+            if substr[0] == u8(90):
                 if sublen == 1:
                     return
                 else:
                     substr += 1
                     sublen -= 1
-            elif substr[0] == byte(45) or substr[0] == byte(43):
+            elif substr[0] == u8(45) or substr[0] == u8(43):
                 offset_neg = False
                 offset_hour = i32(0)
                 offset_minute = i32(0)
 
-                if substr[0] == byte(45):
+                if substr[0] == u8(45):
                     offset_neg = True
 
                 substr += 1
@@ -2103,7 +2092,7 @@ class datetimestruct:
                     parse_error(s, substr)
 
                 if sublen > 0:
-                    if substr[0] == byte(58):
+                    if substr[0] == u8(58):
                         substr += 1
                         sublen -= 1
 
@@ -2176,7 +2165,7 @@ class datetimestruct:
             substr += 1
             sublen -= 1
 
-        if substr[0] == byte(45) or substr[0] == byte(43):
+        if substr[0] == u8(45) or substr[0] == u8(43):
             substr += 1
             sublen -= 1
 
@@ -2190,7 +2179,7 @@ class datetimestruct:
             substr += 1
             sublen -= 1
 
-        if str_[0] == byte(45):
+        if str_[0] == u8(45):
             self.year = -self.year
 
         year_leap = _is_leapyear(self.year)
@@ -2198,7 +2187,7 @@ class datetimestruct:
         if sublen == 0:
             bestunit = _FR_Y
             return bestunit
-        elif substr[0] == byte(45):
+        elif substr[0] == u8(45):
             substr += 1
             sublen -= 1
         else:
@@ -2224,7 +2213,7 @@ class datetimestruct:
         if sublen == 0:
             bestunit = _FR_M
             return bestunit
-        elif substr[0] == byte(45):
+        elif substr[0] == u8(45):
             substr += 1
             sublen -= 1
         else:
@@ -2252,7 +2241,7 @@ class datetimestruct:
         if sublen == 0:
             bestunit = _FR_D
             return bestunit
-        elif substr[0] != byte(84) and substr[0] != byte(32):
+        elif substr[0] != u8(84) and substr[0] != u8(32):
             parse_error(s, substr)
         else:
             substr += 1
@@ -2271,7 +2260,7 @@ class datetimestruct:
         else:
             parse_error(s, substr)
 
-        if sublen > 0 and substr[0] == byte(58):
+        if sublen > 0 and substr[0] == u8(58):
             substr += 1
             sublen -= 1
         else:
@@ -2295,7 +2284,7 @@ class datetimestruct:
         else:
             parse_error(s, substr)
 
-        if sublen > 0 and substr[0] == byte(58):
+        if sublen > 0 and substr[0] == u8(58):
             substr += 1
             sublen -= 1
         else:
@@ -2319,7 +2308,7 @@ class datetimestruct:
         else:
             parse_error(s, substr)
 
-        if sublen > 0 and substr[0] == byte(46):
+        if sublen > 0 and substr[0] == u8(46):
             substr += 1
             sublen -= 1
         else:
@@ -2460,7 +2449,7 @@ class datetimestruct:
             i1 = buf.n
             while n != 0:
                 digit = n % 10
-                b = byte(48 + digit)
+                b = u8(48 + digit)
                 buf.append(str(__ptr__(b), 1))
                 n //= 10
 
@@ -2483,11 +2472,11 @@ class datetimestruct:
                 else:
                     buf.append('+')
 
-                c0 = byte(_cmod(_cdiv(timezone_offset, 10 * 60), 10) + 48)
-                c1 = byte(_cmod(_cdiv(timezone_offset, 60), 10) + 48)
-                c2 = byte(
+                c0 = u8(_cmod(_cdiv(timezone_offset, 10 * 60), 10) + 48)
+                c1 = u8(_cmod(_cdiv(timezone_offset, 60), 10) + 48)
+                c2 = u8(
                     _cmod(_cdiv(_cmod(timezone_offset, 60), 10), 10) + 48)
-                c3 = byte(_cmod(_cmod(timezone_offset, 60), 10) + 48)
+                c3 = u8(_cmod(_cmod(timezone_offset, 60), 10) + 48)
 
                 buf.append(str(__ptr__(c0), 1))
                 buf.append(str(__ptr__(c1), 1))

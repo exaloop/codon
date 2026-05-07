@@ -51,7 +51,7 @@ class Int[N: Literal[int]]:
 class UInt[N: Literal[int]]:
     pass
 
-byte = UInt[8]
+u8 = UInt[8]
 
 @tuple
 @__internal__
@@ -109,7 +109,7 @@ class NoneType:
 @__notuple__
 class Ptr[T]:
     pass
-cobj = Ptr[byte]
+cobj = Ptr[u8]
 
 @tuple
 @__internal__
@@ -131,12 +131,12 @@ class Optional:
 
 @__internal__
 class pyobj:
-    p: Ptr[byte]
+    p: Ptr[u8]
 
 @tuple
 @__internal__
 class str:
-    ptr: Ptr[byte]
+    ptr: Ptr[u8]
     len: int
 
 @tuple
@@ -174,13 +174,13 @@ class Tuple:
         return __magic__.lt(self, obj)
     def __le__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.le(self, obj)
-    def __pickle__(self: __SELF__, dest: Ptr[byte], __SELF__: type):
+    def __pickle__(self: __SELF__, dest: Ptr[u8], __SELF__: type):
         return __magic__.pickle(self, dest)
-    def __unpickle__(src: Ptr[byte], __SELF__: type) -> __SELF__:
+    def __unpickle__(src: Ptr[u8], __SELF__: type) -> __SELF__:
         return __magic__.unpickle(src)
-    def __to_py__(self: __SELF__, __SELF__: type) -> Ptr[byte]:
+    def __to_py__(self: __SELF__, __SELF__: type) -> Ptr[u8]:
         return __magic__.to_py(self)
-    def __from_py__(src: Ptr[byte], __SELF__: type) -> __SELF__:
+    def __from_py__(src: Ptr[u8], __SELF__: type) -> __SELF__:
         return __magic__.from_py(src)
     def __to_gpu__(self: __SELF__, cache, __SELF__: type) -> __SELF__:
         return __magic__.to_gpu(self, cache)
@@ -262,8 +262,8 @@ class ClassVar[T]:
 
 @__internal__
 class RTTIType:
-    data: Ptr[byte]  # pointer to the data
-    typeinfo: Ptr[byte]  # TypeInfo type information
+    data: Ptr[u8]  # pointer to the data
+    typeinfo: Ptr[u8]  # TypeInfo type information
 
 
 @__internal__
@@ -383,8 +383,8 @@ class Partial:
 @__internal__
 @tuple
 class Callable:
-    fn: Function[[Ptr[byte], T], TR]
-    data: Ptr[byte]
+    fn: Function[[Ptr[u8], T], TR]
+    data: Ptr[u8]
     T: type
     TR: type
 
@@ -395,7 +395,7 @@ class Coroutine[T]:
     @pure
     @derives
     @llvm
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         ret ptr %self
 
     @pure
@@ -410,7 +410,7 @@ class AsyncGenerator[T]:
     @pure
     @derives
     @llvm
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         ret ptr %self
 
 __codon__: Literal[bool] = True

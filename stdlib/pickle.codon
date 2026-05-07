@@ -98,14 +98,6 @@ class bool:
         return _read(jar, bool)
 
 @extend
-class byte:
-    def __pickle__(self, jar: Jar):
-        _write(jar, self)
-
-    def __unpickle__(jar: Jar) -> byte:
-        return _read(jar, byte)
-
-@extend
 class str:
     def __pickle__(self, jar: Jar):
         _write(jar, self.len)
@@ -113,7 +105,7 @@ class str:
 
     def __unpickle__(jar: Jar) -> str:
         n = _read(jar, int)
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         _read_raw(jar, p, n)
         return str(p, n)
 

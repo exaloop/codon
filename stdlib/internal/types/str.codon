@@ -10,16 +10,16 @@ def strlen(a: cobj) -> int:
 @extend
 class str:
     @__internal__
-    def __new__(l: int, p: Ptr[byte]) -> str:
+    def __new__(l: int, p: Ptr[u8]) -> str:
         pass
 
     @overload
-    def __new__(p: Ptr[byte], l: int) -> str:
+    def __new__(p: Ptr[u8], l: int) -> str:
         return str(l, p)
 
     @overload
     def __new__() -> str:
-        return str(Ptr[byte](), 0)
+        return str(Ptr[u8](), 0)
 
     @overload
     def __new__(what) -> str:
@@ -56,19 +56,19 @@ class str:
         return str(p, n)
 
     @llvm
-    def memcpy(dest: Ptr[byte], src: Ptr[byte], len: int) -> None:
+    def memcpy(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
         declare void @llvm.memcpy.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 %align, i1 %isvolatile)
         call void @llvm.memcpy.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 0, i1 false)
         ret {} {}
 
     @llvm
-    def memmove(dest: Ptr[byte], src: Ptr[byte], len: int) -> None:
+    def memmove(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
         declare void @llvm.memmove.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 %align, i1 %isvolatile)
         call void @llvm.memmove.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 0, i1 false)
         ret {} {}
 
     @llvm
-    def memset(dest: Ptr[byte], val: byte, len: int) -> None:
+    def memset(dest: Ptr[u8], val: u8, len: int) -> None:
         declare void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
         call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
         ret {} {}
@@ -77,7 +77,7 @@ class str:
         len1 = self.len
         len2 = other.len
         len3 = len1 + len2
-        p = Ptr[byte](len3)
+        p = Ptr[u8](len3)
         str.memcpy(p, self.ptr, len1)
         str.memcpy(p + len1, other.ptr, len2)
         return str(p, len3)
@@ -86,12 +86,12 @@ class str:
         n = self.__len__()
         p = cobj(n + 1)
         str.memcpy(p, self.ptr, n)
-        p[n] = byte(0)
+        p[n] = u8(0)
         return p
 
     def from_ptr(t: cobj) -> str:
         n = strlen(t)
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         str.memcpy(p, t, n)
         return str(p, n)
 

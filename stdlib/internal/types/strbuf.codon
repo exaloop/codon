@@ -1,12 +1,12 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 class strbuf:
-    data: Ptr[byte]
+    data: Ptr[u8]
     n: int
     m: int
 
     def __init__(self, capacity: int = 16):
-        self.data = Ptr[byte](capacity)
+        self.data = Ptr[u8](capacity)
         self.n = 0
         self.m = capacity
 

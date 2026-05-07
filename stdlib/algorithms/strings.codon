@@ -21,7 +21,7 @@ def ctlz(n: UInt[N], N: Literal[int]) -> UInt[N]:
 
 @pure
 @llvm
-def forward_mask(s: Ptr[byte], n: int, needle: Ptr[byte], k: int, i: int, firstb: byte, lastb: byte) -> u16:
+def forward_mask(s: Ptr[u8], n: int, needle: Ptr[u8], k: int, i: int, firstb: u8, lastb: u8) -> u16:
     %first0 = insertelement <16 x i8> undef, i8 %firstb, i64 0
     %first = shufflevector <16 x i8> %first0, <16 x i8> poison, <16 x i32> zeroinitializer
     %last0 = insertelement <16 x i8> undef, i8 %lastb, i64 0
@@ -40,7 +40,7 @@ def forward_mask(s: Ptr[byte], n: int, needle: Ptr[byte], k: int, i: int, firstb
 
 @pure
 @llvm
-def backward_mask(s: Ptr[byte], n: int, needle: Ptr[byte], k: int, i: int, firstb: byte, lastb: byte) -> u16:
+def backward_mask(s: Ptr[u8], n: int, needle: Ptr[u8], k: int, i: int, firstb: u8, lastb: u8) -> u16:
     %j0 = sub i64 %i, 16
     %j = add i64 %j0, 1
     %first0 = insertelement <16 x i8> undef, i8 %firstb, i64 0
@@ -59,7 +59,7 @@ def backward_mask(s: Ptr[byte], n: int, needle: Ptr[byte], k: int, i: int, first
     %mask = bitcast <16 x i1> %mask0 to i16
     ret i16 %mask
 
-def forward_find(s: Ptr[byte], n: int, needle: Ptr[byte], k: int):
+def forward_find(s: Ptr[u8], n: int, needle: Ptr[u8], k: int):
     if k == 0:
         return 0
 
@@ -201,7 +201,7 @@ def forward_find(s: Ptr[byte], n: int, needle: Ptr[byte], k: int):
 
     return -1
 
-def backward_find(s: Ptr[byte], n: int, needle: Ptr[byte], k: int):
+def backward_find(s: Ptr[u8], n: int, needle: Ptr[u8], k: int):
     if k == 0:
         return n
 

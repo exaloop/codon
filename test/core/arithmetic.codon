@@ -56,12 +56,11 @@ def test_conversions():
     assert str(False) == 'False'
     assert str(True) == 'True'
 
-    # byte -> int, float, bool, str
-    assert int(byte(42)) == 42
-    assert float(byte(42)) == 42.0
-    assert bool(byte(0)) == False
-    assert bool(byte(42)) == True
-    assert str(byte(42)) == '*'
+    # u8 -> int, float, bool, str
+    assert int(u8(42)) == 42
+    assert float(u8(42)) == 42.0
+    assert bool(u8(0)) == False
+    assert bool(u8(42)) == True
 
     # intN -> int, float, bool, str | N < 64
     assert int(i32(-42)) == -42

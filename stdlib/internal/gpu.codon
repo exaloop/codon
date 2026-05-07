@@ -27,7 +27,7 @@ cuMemFree = Function[[CUdeviceptr], CUresult](cobj())
 cuDeviceComputeCapability = Function[[Ptr[i32], Ptr[i32], CUdevice], CUresult](cobj())
 cuDeviceGet = Function[[Ptr[CUdevice], i32], CUresult](cobj())
 cuDeviceGetCount = Function[[Ptr[i32]], CUresult](cobj())
-cuDeviceGetName = Function[[Ptr[byte], i32, CUdevice], CUresult](cobj())
+cuDeviceGetName = Function[[Ptr[u8], i32, CUdevice], CUresult](cobj())
 cuGetErrorName = Function[[CUresult, Ptr[cobj]], CUresult](cobj())
 cuGetErrorString = Function[[CUresult, Ptr[cobj]], CUresult](cobj())
 cuInit = Function[[u32], CUresult](cobj())
@@ -59,7 +59,7 @@ class Device:
         return int(count)
 
     def __str__(self):
-        name = Ptr[byte](128)
+        name = Ptr[u8](128)
         cuda_check(cuDeviceGetName(name, 127i32, self._device))
         return str.from_ptr(name)
 
@@ -386,14 +386,14 @@ _catch()
 
 @tuple
 class AllocCache:
-    v: List[Ptr[byte]]
+    v: List[Ptr[u8]]
 
-    def add(self, p: Ptr[byte]):
+    def add(self, p: Ptr[u8]):
         self.v.append(p)
 
     def free(self):
         for p in self.v:
-            Memory[byte](p)._free()
+            Memory[u8](p)._free()
 
 
 def _tuple_from_gpu(args, gpu_args):
@@ -412,11 +412,11 @@ def nvptx_function(name: Literal[str]) -> CUfunction:
         name_clean = name.ptr
     else:
         name_len = len(name)
-        name_clean = Ptr[byte](name_len + 1)
+        name_clean = Ptr[u8](name_len + 1)
         for i in range(name_len):
             c = name[i]
-            name_clean[i] = c.ptr[0] if c.isalnum() else byte(95)  # '_'
-        name_clean[name_len] = byte(0)
+            name_clean[i] = c.ptr[0] if c.isalnum() else u8(95)  # '_'
+        name_clean[name_len] = u8(0)
 
     for i in range(len(modules) - 1, -1, -1):
         m = modules[i]
@@ -636,17 +636,6 @@ class bool:
         return other
 
 @extend
-class byte:
-    def __to_gpu__(self, cache: AllocCache):
-        return self
-
-    def __from_gpu__(self, other: byte):
-        pass
-
-    def __from_gpu_new__(other: byte):
-        return other
-
-@extend
 class Int:
     def __to_gpu__(self, cache: AllocCache):
         return self
@@ -679,7 +668,7 @@ class str:
 
     def __from_gpu_new__(other: str):
         n = other.len
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         _ptr_from_gpu(p, other.ptr, n)
         return str(p, n)
 

@@ -1022,10 +1022,10 @@ class pyobj:
     def __new__() -> pyobj:
         return type._ref_new(pyobj)
 
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         return type._ref_raw(self)
 
-    def __init__(self, p: Ptr[byte], steal: bool = False):
+    def __init__(self, p: Ptr[u8], steal: bool = False):
         self.p = p
         if not steal:
             self.incref()
@@ -1292,14 +1292,14 @@ class pyobj:
         Py_IncRef(self.p)
         return self
 
-    def incref(ptr: Ptr[byte]):
+    def incref(ptr: Ptr[u8]):
         Py_IncRef(ptr)
 
     def decref(self):
         Py_DecRef(self.p)
         return self
 
-    def decref(ptr: Ptr[byte]):
+    def decref(ptr: Ptr[u8]):
         Py_DecRef(ptr)
 
     def __call__(self, *args, **kwargs):
@@ -1439,14 +1439,6 @@ class bool:
     def __from_py__(b: cobj) -> bool:
         _ensure_type(b, PyBool_Type, "bool")
         return PyObject_IsTrue(b) != i32(0)
-
-@extend
-class byte:
-    def __to_py__(self) -> cobj:
-        return str.__to_py__(str(__ptr__(self), 1))
-
-    def __from_py__(c: cobj) -> byte:
-        return str.__from_py__(c).ptr[0]
 
 @extend
 class str:

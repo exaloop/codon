@@ -352,8 +352,7 @@ def _gradient_helper_linear(f, dx, dtype: type, axis: int, edge_order: int):
 def gradient(f, *varargs, axis=None, edge_order: int = 1):
 
     def gradient_dtype(dtype: type):
-        if (dtype is int or dtype is byte or isinstance(dtype, Int)
-                or isinstance(dtype, UInt)):
+        if (dtype is int or isinstance(dtype, Int) or isinstance(dtype, UInt)):
             return float()
         else:
             return dtype()
@@ -800,8 +799,7 @@ def trapz(y, x=None, dx=1.0, axis: int = -1):
         return result
 
     def trapz_dtype(dtype: type):
-        if (dtype is int or dtype is byte or isinstance(dtype, Int)
-                or isinstance(dtype, UInt)):
+        if (dtype is int or isinstance(dtype, Int) or isinstance(dtype, UInt)):
             return float()
         else:
             return dtype()
@@ -1157,8 +1155,7 @@ def _reciprocal(x: T, T: type):
     if (
         isinstance(x, int) or
         isinstance(x, Int) or
-        isinstance(x, UInt) or
-        isinstance(x, byte)
+        isinstance(x, UInt)
     ):
         return T(1) // x
     else:

@@ -674,19 +674,19 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     ret = I("int");
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "pickle") {
-    // def __pickle__(self: T, dest: Ptr[byte])
+    // def __pickle__(self: T, dest: Ptr[u8])
     fargs.emplace_back("self", clone(typExpr));
-    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("byte")));
+    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("u8")));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("dest"))));
   } else if (op == "unpickle" || op == "from_py") {
-    // def __unpickle__(src: Ptr[byte]) -> T
-    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("byte")));
+    // def __unpickle__(src: Ptr[u8]) -> T
+    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("u8")));
     ret = clone(typExpr);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("src"), clone(typExpr))));
   } else if (op == "to_py") {
-    // def __to_py__(self: T) -> Ptr[byte]
+    // def __to_py__(self: T) -> Ptr[u8]
     fargs.emplace_back("self", clone(typExpr));
-    ret = N<IndexExpr>(I("Ptr"), I("byte"));
+    ret = N<IndexExpr>(I("Ptr"), I("u8"));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "to_gpu") {
     // def __to_gpu__(self: T, cache) -> T

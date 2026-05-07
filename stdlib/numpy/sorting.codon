@@ -777,7 +777,7 @@ def _radixsort0(start: Ptr[UT], aux: Ptr[UT], num: int, T: type, UT: type):
     n = (1 << 8)
     ncnt = m * n
     cnt = Ptr[int](ncnt)  # note: compiler should put this on the stack
-    str.memset(cnt.as_byte(), byte(0), ncnt * util.sizeof(int))
+    str.memset(cnt.as_byte(), u8(0), ncnt * util.sizeof(int))
     key0 = key_of(start[0], T=T, UT=UT)
 
     for i in range(num):
@@ -846,8 +846,6 @@ def radixsort(start: Ptr[T], num: int, T: type):
         wrap(start, num, T, UInt[T.N])
     elif isinstance(T, UInt):
         wrap(start, num, T, T)
-    elif isinstance(T, byte):
-        wrap(start, num, i8, u8)
     else:
         raise ValueError("cannot radixsort type '" + T.__name__ + "'")
 
@@ -856,7 +854,7 @@ def _aradixsort0(start: Ptr[UT], aux: Ptr[int], tosort: Ptr[int], num: int, T: t
     n = (1 << 8)
     ncnt = m * n
     cnt = Ptr[int](ncnt)  # note: compiler should put this on the stack
-    str.memset(cnt.as_byte(), byte(0), ncnt * util.sizeof(int))
+    str.memset(cnt.as_byte(), u8(0), ncnt * util.sizeof(int))
     key0 = key_of(start[0], T=T, UT=UT)
 
     for i in range(num):
@@ -925,8 +923,6 @@ def aradixsort(start: Ptr[T], tosort: Ptr[int], num: int, T: type):
         wrap(start, tosort, num, T, UInt[T.N])
     elif isinstance(T, UInt):
         wrap(start, tosort, num, T, T)
-    elif isinstance(T, byte):
-        wrap(start, tosort, num, i8, u8)
     else:
         raise ValueError("cannot radixsort type '" + T.__name__ + "'")
 
@@ -1485,13 +1481,13 @@ def atimsort(start: Ptr[T], tosort: Ptr[int], num: int, T: type):
 ##########
 
 def stablesort(start: Ptr[T], num: int, T: type):
-    if T is int or T is byte or isinstance(T, Int) or isinstance(T, UInt):
+    if T is int or isinstance(T, Int) or isinstance(T, UInt):
         return radixsort(start, num)
     else:
         return timsort(start, num)
 
 def astablesort(start: Ptr[T], tosort: Ptr[int], num: int, T: type):
-    if T is int or T is byte or isinstance(T, Int) or isinstance(T, UInt):
+    if T is int or isinstance(T, Int) or isinstance(T, UInt):
         return aradixsort(start, tosort, num)
     else:
         return atimsort(start, tosort, num)
@@ -2160,7 +2156,7 @@ def sort_complex(a):
     b = array(a, copy=True)
     b.sort()
     if not (b.dtype is complex or b.dtype is complex64):
-        if b.dtype is byte or b.dtype is i8 or b.dtype is u8 or b.dtype is i16 or b.dtype is u16:
+        if b.dtype is i8 or b.dtype is u8 or b.dtype is i16 or b.dtype is u16:
             return b.astype(complex64)
         else:
             return b.astype(complex)

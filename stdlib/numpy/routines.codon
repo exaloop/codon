@@ -214,12 +214,12 @@ def empty_like(prototype, dtype: type = NoneType, order: str = 'K', shape = None
 
 def zeros(shape, dtype: type = float, order: str = 'C'):
     result = empty(shape, dtype, order)
-    str.memset(result.data.as_byte(), byte(0), result.nbytes)
+    str.memset(result.data.as_byte(), u8(0), result.nbytes)
     return result
 
 def zeros_like(prototype, dtype: type = NoneType, order: str = 'K'):
     result = empty_like(prototype, dtype, order)
-    str.memset(result.data.as_byte(), byte(0), result.nbytes)
+    str.memset(result.data.as_byte(), u8(0), result.nbytes)
     return result
 
 def ones(shape, dtype: type = float, order: str = 'C'):
@@ -4269,7 +4269,6 @@ def _round(x: T, decimals: int, T: type):
     if (isinstance(x, int) or
         isinstance(x, Int) or
         isinstance(x, UInt) or
-        isinstance(x, byte) or
         isinstance(x, bool)):
         return _round_int(x, decimals)
 
@@ -4460,7 +4459,6 @@ def packbits(a, axis = None, bitorder: str = 'big'):
 
     if (a.dtype is not bool and
         a.dtype is not int and
-        a.dtype is not byte and
         not isinstance(a.dtype, Int) and
         not isinstance(a.dtype, UInt)):
         compile_error("Expected an input array of integer or boolean data type")
@@ -4715,7 +4713,6 @@ def isscalar(element):
             T is complex or
             T is complex64 or
             T is bool or
-            T is byte or
             isinstance(T, Int) or
             isinstance(T, UInt) or
             T is str or
@@ -4734,7 +4731,7 @@ def _array_get_part(arr: ndarray, imag: Literal[bool]):
         if imag:
             n = arr.size
             data = Ptr[arr.dtype](n)
-            str.memset(data.as_byte(), byte(0), n * arr.itemsize)
+            str.memset(data.as_byte(), u8(0), n * arr.itemsize)
             return ndarray(arr.shape, data)
         else:
             return arr

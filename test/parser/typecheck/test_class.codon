@@ -272,7 +272,7 @@ Foo(1).__eq__(Foo(1)) #! 'Foo' object has no attribute '__eq__'
 @tuple(pickle=False)
 class Foo:
     x: int
-p = Ptr[byte]()
+p = Ptr[u8]()
 Foo(1).__pickle__(p) #! 'Foo' object has no attribute '__pickle__'
 
 #%% magic_err_6,barebones
@@ -285,7 +285,7 @@ Foo(1).__getitem__(0) #! 'Foo' object has no attribute '__getitem__'
 @tuple(python=False)
 class Foo:
     x: int
-p = Ptr[byte]()
+p = Ptr[u8]()
 Foo(1).__to_py__(p) #! 'Foo' object has no attribute '__to_py__'
 
 #%% inherit_class_4,barebones

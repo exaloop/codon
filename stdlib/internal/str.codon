@@ -86,7 +86,7 @@ class str:
             return self._make_from_range(start, stop, step, length)
 
     def _make_from_range(self, start: int, stop: int, step: int, length: int) -> str:
-        p = Ptr[byte](length)
+        p = Ptr[u8](length)
         j = 0
         for i in range(start, stop, step):
             p[j] = self.ptr[i]
@@ -108,7 +108,7 @@ class str:
 
     def __mul__(self, x: int) -> str:
         total = x * self.len
-        p = Ptr[byte](total)
+        p = Ptr[u8](total)
         n = 0
         for _ in range(x):
             str.memcpy(p + n, self.ptr, self.len)
@@ -135,29 +135,29 @@ class str:
 
     # Helper methods
 
-    def _isdigit(a: byte) -> bool:
+    def _isdigit(a: u8) -> bool:
         return _C.isdigit(i32(int(a))) != i32(0)
 
-    def _isspace(a: byte) -> bool:
+    def _isspace(a: u8) -> bool:
         return _C.isspace(i32(int(a))) != i32(0)
 
-    def _isupper(a: byte) -> bool:
+    def _isupper(a: u8) -> bool:
         return _C.isupper(i32(int(a))) != i32(0)
 
-    def _islower(a: byte) -> bool:
+    def _islower(a: u8) -> bool:
         return _C.islower(i32(int(a))) != i32(0)
 
-    def _isalpha(a: byte) -> bool:
+    def _isalpha(a: u8) -> bool:
         return _C.isalpha(i32(int(a))) != i32(0)
 
-    def _isalnum(a: byte) -> bool:
+    def _isalnum(a: u8) -> bool:
         return _C.isalnum(i32(int(a))) != i32(0)
 
-    def _toupper(a: byte) -> byte:
-        return byte(int(_C.toupper(i32(int(a)))))
+    def _toupper(a: u8) -> u8:
+        return u8(int(_C.toupper(i32(int(a)))))
 
-    def _tolower(a: byte) -> byte:
-        return byte(int(_C.tolower(i32(int(a)))))
+    def _tolower(a: u8) -> u8:
+        return u8(int(_C.tolower(i32(int(a)))))
 
     def _slice(self, i: int, j: int) -> str:
         return str(self.ptr + i, j - i)
@@ -198,7 +198,7 @@ class str:
             i += 1
 
         # copy to new buffer
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         r = 0
         i = 0
         while i < len(l):
@@ -313,7 +313,7 @@ class str:
     def capitalize(self) -> str:
         n = len(self)
         if n > 0:
-            p = Ptr[byte](n)
+            p = Ptr[u8](n)
             p[0] = str._toupper(self.ptr[0])
             for i in range(1, n):
                 p[i] = str._tolower(self.ptr[i])
@@ -335,7 +335,7 @@ class str:
         n = len(self)
         if n == 0:
             return ""
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         for i in range(n):
             p[i] = str._tolower(self.ptr[i])
         return str(p, n)
@@ -345,7 +345,7 @@ class str:
         n = len(self)
         if n == 0:
             return ""
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         for i in range(n):
             p[i] = str._toupper(self.ptr[i])
         return str(p, n)
@@ -364,7 +364,7 @@ class str:
         n = len(self)
         if n == 0:
             return ""
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         for i in range(n):
             if str._islower(self.ptr[i]):
                 p[i] = str._toupper(self.ptr[i])
@@ -381,7 +381,7 @@ class str:
         if n == 0:
             return ""
 
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         for i in range(n):
             if str._islower(self.ptr[i]):
                 # lowercase to uppercase
@@ -412,7 +412,7 @@ class str:
                 total += len(t)
             else:
                 total += len(t[0]) * t[1]
-        p = Ptr[byte](total)
+        p = Ptr[u8](total)
         i = 0
 
         for t in args:
@@ -456,9 +456,9 @@ class str:
         if len(self) >= width:
             return self
 
-        plus = byte(43)   # +
-        minus = byte(45)  # -
-        zero = byte(48)   # 0
+        plus = u8(43)   # +
+        minus = u8(45)  # -
+        zero = u8(48)   # 0
 
         zf = self.rjust(width, '0')
         fill = width - len(self)
@@ -635,8 +635,8 @@ class str:
         j = 0
         n = len(self)
 
-        break_r = byte(13)  # \r
-        break_n = byte(10)  # \n
+        break_r = u8(13)  # \r
+        break_n = u8(10)  # \n
 
         while i < n:
             while i < n and not (self.ptr[i] == break_r or self.ptr[i] == break_n):
@@ -732,10 +732,10 @@ class str:
         p = self.ptr
         e = p + len(self)
 
-        break_r = byte(13)  # \r
-        break_n = byte(10)  # \n
-        tab = byte(9)       # \t
-        space = byte(32)    # ' '
+        break_r = u8(13)  # \r
+        break_n = u8(10)  # \n
+        tab = u8(9)       # \t
+        space = u8(32)    # ' '
 
         def overflow():
             raise OverflowError("result too long")
@@ -762,7 +762,7 @@ class str:
             overflow()
 
         u_len = i + j
-        u = Ptr[byte](u_len)
+        u = Ptr[u8](u_len)
         j = 0
         q = u
         p = self.ptr
@@ -802,7 +802,7 @@ class str:
             else:
                 m += 1
 
-        p = Ptr[byte](m)
+        p = Ptr[u8](m)
         q = p
 
         for i in range(n):
@@ -893,7 +893,7 @@ class str:
         l.reverse()
         return l
 
-    def _split_char(self, char: byte, maxcount: int) -> List[str]:
+    def _split_char(self, char: u8, maxcount: int) -> List[str]:
         PREALLOC_MAX = 12
         l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
@@ -911,7 +911,7 @@ class str:
         l.append(self._slice(j, str_len))
         return l
 
-    def _rsplit_char(self, char: byte, maxcount: int) -> List[str]:
+    def _rsplit_char(self, char: u8, maxcount: int) -> List[str]:
         PREALLOC_MAX = 12
         l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
 
@@ -930,10 +930,10 @@ class str:
         l.reverse()
         return l
 
-    def _findchar(self, c: byte):
+    def _findchar(self, c: u8):
         return _C.memchr(self.ptr, i32(int(c)), len(self))
 
-    def _countchar(self, c: byte, maxcount: int):
+    def _countchar(self, c: u8, maxcount: int):
         count = 0
         start = self.ptr
         end = start + len(self)
@@ -966,7 +966,7 @@ class str:
             raise OverflowError("replace bytes is too long")
 
         result_len = count * to_len + self_len
-        result_s = Ptr[byte](result_len)
+        result_s = Ptr[u8](result_len)
         result_s0 = result_s
 
         if to_len > 1:
@@ -997,7 +997,7 @@ class str:
         str.memcpy(result_s, self_s, self_len - i)
         return str(result_s0, result_len)
 
-    def _replace_delete_single_character(self, from_c: byte, maxcount: int):
+    def _replace_delete_single_character(self, from_c: u8, maxcount: int):
         self_len = len(self)
         self_s = self.ptr
 
@@ -1007,7 +1007,7 @@ class str:
 
         result_len = self_len - count
         # assert result_len >= 0
-        result_s = Ptr[byte](result_len)
+        result_s = Ptr[u8](result_len)
         result_s0 = result_s
 
         start = self_s
@@ -1035,7 +1035,7 @@ class str:
 
         result_len = self_len - (count * from_len)
         # assert result_len >= 0
-        result_s = Ptr[byte](result_len)
+        result_s = Ptr[u8](result_len)
         result_s0 = result_s
 
         start = self_s
@@ -1053,7 +1053,7 @@ class str:
         str.memcpy(result_s, start, end - start)
         return str(result_s0, result_len)
 
-    def _replace_single_character_in_place(self, from_c: byte, to_c: byte, maxcount: int):
+    def _replace_single_character_in_place(self, from_c: u8, to_c: u8, maxcount: int):
         self_s = self.ptr
         self_len = len(self)
 
@@ -1061,7 +1061,7 @@ class str:
         if not nxt:
             return self
 
-        result_s = Ptr[byte](self_len)
+        result_s = Ptr[u8](self_len)
         str.memcpy(result_s, self_s, self_len)
 
         start = result_s + (nxt - self_s)
@@ -1090,7 +1090,7 @@ class str:
         if offset == -1:
             return self
 
-        result_s = Ptr[byte](self_len)
+        result_s = Ptr[u8](self_len)
         str.memcpy(result_s, self_s, self_len)
 
         start = result_s + offset
@@ -1109,7 +1109,7 @@ class str:
 
         return str(result_s, self_len)
 
-    def _replace_single_character(self, from_c: byte, to_s: str, maxcount: int):
+    def _replace_single_character(self, from_c: u8, to_s: str, maxcount: int):
         self_s = self.ptr
         self_len = len(self)
         to_len = len(to_s)
@@ -1123,7 +1123,7 @@ class str:
             raise OverflowError("replace bytes is too long")
 
         result_len = self_len + count * (to_len - 1)
-        result_s = Ptr[byte](result_len)
+        result_s = Ptr[u8](result_len)
         result_s0 = result_s
 
         start = self_s
@@ -1163,7 +1163,7 @@ class str:
             raise OverflowError("replace bytes is too long")
 
         result_len = self_len + count * (to_len - from_len)
-        result_s = Ptr[byte](result_len)
+        result_s = Ptr[u8](result_len)
         result_s0 = result_s
 
         start = self_s

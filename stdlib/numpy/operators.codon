@@ -22,7 +22,7 @@ class _OpWrap:
 def _fix_scalar(x, A: type):
     X = type(x)
 
-    a_is_int: Literal[bool] = (A is int or A is byte or isinstance(A, Int)
+    a_is_int: Literal[bool] = (A is int or isinstance(A, Int)
                                or isinstance(A, UInt))
     x_is_int: Literal[bool] = X is int
 

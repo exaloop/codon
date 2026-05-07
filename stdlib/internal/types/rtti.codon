@@ -9,7 +9,7 @@ __vtable_size__ = 0
 
 @extend
 class RTTIType:
-    def _new(data: Ptr[byte], typeinfo: Ptr[byte], T: type) -> T:
+    def _new(data: Ptr[u8], typeinfo: Ptr[u8], T: type) -> T:
         """
         Creates a new RTTIType wrapper for data and casts it to T.
 
@@ -46,8 +46,8 @@ class RTTIType:
 
         global __vtables__
         sz = __vtable_size__ + 1
-        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[Ptr[byte]]))
-        __vtables__ = Ptr[Ptr[Ptr[byte]]](p)
+        p = alloc_atomic_uncollectable(sz * sizeof(Ptr[Ptr[u8]]))
+        __vtables__ = Ptr[Ptr[Ptr[u8]]](p)
         RTTIType._populate_vtables()
 
     def _populate_vtables():
@@ -68,14 +68,14 @@ class RTTIType:
 
         if not static.has_rtti(T):
             compile_error("class is not polymorphic")
-        p = alloc_atomic_uncollectable((sz + 1) * sizeof(Ptr[byte]))
+        p = alloc_atomic_uncollectable((sz + 1) * sizeof(Ptr[u8]))
         id = T.__id__
-        __vtables__[id] = Ptr[Ptr[byte]](p)
+        __vtables__[id] = Ptr[Ptr[u8]](p)
         # Set typeinfo
         p = TypeInfo(T)
         __vtables__[id][0] = p.__raw__().as_byte()
 
-    def _set_vtable_fn(id: int, fid: int, f: Ptr[byte], T: type):
+    def _set_vtable_fn(id: int, fid: int, f: Ptr[u8], T: type):
         if not static.has_rtti(T):
             compile_error("class is not polymorphic")
         __vtables__[id][fid] = f

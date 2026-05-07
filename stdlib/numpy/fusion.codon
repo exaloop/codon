@@ -616,8 +616,7 @@ def _reciprocal(x: T, T: type):
     if (
         isinstance(x, int) or
         isinstance(x, Int) or
-        isinstance(x, UInt) or
-        isinstance(x, byte)
+        isinstance(x, UInt)
     ):
         return T(1) // x
     else:

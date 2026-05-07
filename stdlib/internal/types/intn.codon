@@ -631,7 +631,7 @@ i64 = Int[64]
 i128 = Int[128]
 
 u1 = UInt[1]
-u8 = UInt[8]
+# `u8` already defined
 u16 = UInt[16]
 u32 = UInt[32]
 u64 = UInt[64]
