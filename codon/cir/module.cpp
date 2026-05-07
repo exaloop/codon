@@ -268,8 +268,7 @@ types::Type *Module::getStringType() {
   if (auto *rVal = getType(STRING_NAME))
     return rVal;
   return Nr<types::RecordType>(
-      STRING_NAME,
-      std::vector<types::Type *>{getIntType(), unsafeGetPointerType()},
+      STRING_NAME, std::vector<types::Type *>{getIntType(), unsafeGetPointerType()},
       std::vector<std::string>{"len", "ptr"});
 }
 
