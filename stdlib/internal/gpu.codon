@@ -736,58 +736,113 @@ class DynamicTuple:
 @extend
 class Dict:
     def __to_gpu__(self, cache: AllocCache):
-        from internal.khash import __ac_fsize
         mem = Dict[K,V].__new__()
-        n = self._n_buckets
-        f = __ac_fsize(n) if n else 0
 
-        mem._n_buckets = n
-        mem._size = self._size
-        mem._n_occupied = self._n_occupied
-        mem._upper_bound = self._upper_bound
-        mem._flags = _ptr_to_gpu(self._flags, f, cache)
-        mem._keys = _ptr_to_gpu(self._keys, n, cache, lambda i: self._kh_exist(i))
-        mem._vals = _ptr_to_gpu(self._vals, n, cache, lambda i: self._kh_exist(i))
+        if __dict_unordered__:
+            from internal.khash import __ac_fsize
+            n = self._n_buckets
+            f = __ac_fsize(n) if n else 0
+
+            mem._n_buckets = n
+            mem._size = self._size
+            mem._n_occupied = self._n_occupied
+            mem._upper_bound = self._upper_bound
+            mem._flags = _ptr_to_gpu(self._flags, f, cache)
+            mem._keys = _ptr_to_gpu(self._keys, n, cache, lambda i: self._kh_exist(i))
+            mem._vals = _ptr_to_gpu(self._vals, n, cache, lambda i: self._kh_exist(i))
+        else:
+            mem._used = self._used
+            mem._usable = self._usable
+            mem._nentries = self._nentries
+            mem._log2_size = self._log2_size
+            mem._log2_index_bytes = self._log2_index_bytes
+            mem._indices = _ptr_to_gpu(self._indices,
+                                       mem._size * mem._index_bytes, cache)
+            mem._entries = _ptr_to_gpu(self._entries, mem._capacity, cache, self._is_active)
+            mem._active = _ptr_to_gpu(self._active, mem._active_bytes, cache)
 
         return _object_to_gpu(mem, cache)
 
     def __from_gpu__(self, other: Dict[K,V]):
-        from internal.khash import __ac_fsize
         mem = _object_from_gpu(other)
-        my_n = self._n_buckets
-        n = mem._n_buckets
-        f = __ac_fsize(n) if n else 0
 
-        if my_n != n:
-            self._flags = Ptr[u32](f)
-            self._keys = Ptr[K](n)
-            self._vals = Ptr[V](n)
+        if __dict_unordered__:
+            from internal.khash import __ac_fsize
+            my_n = self._n_buckets
+            n = mem._n_buckets
+            f = __ac_fsize(n) if n else 0
 
-        _ptr_from_gpu(self._flags, mem._flags, f)
-        _ptr_from_gpu(self._keys, mem._keys, n, lambda i: self._kh_exist(i))
-        _ptr_from_gpu(self._vals, mem._vals, n, lambda i: self._kh_exist(i))
+            if my_n != n:
+                self._flags = Ptr[u32](f)
+                self._keys = Ptr[K](n)
+                self._vals = Ptr[V](n)
 
-        self._n_buckets = n
-        self._size = mem._size
-        self._n_occupied = mem._n_occupied
-        self._upper_bound = mem._upper_bound
+            _ptr_from_gpu(self._flags, mem._flags, f)
+            _ptr_from_gpu(self._keys, mem._keys, n, lambda i: self._kh_exist(i))
+            _ptr_from_gpu(self._vals, mem._vals, n, lambda i: self._kh_exist(i))
+
+            self._n_buckets = n
+            self._size = mem._size
+            self._n_occupied = mem._n_occupied
+            self._upper_bound = mem._upper_bound
+        else:
+            my_n = self._capacity
+            n = mem._capacity
+            size = mem._size
+            indices_size = size * mem._index_bytes
+            active_bytes = mem._active_bytes
+            capacity = mem._capacity
+
+            if my_n != n:
+                self._indices = cobj(indices_size)
+                self._active = Ptr[u8](active_bytes)
+                self._entries = Ptr[DictEntry[K, V]](capacity)
+
+            self._used = mem._used
+            self._usable = mem._usable
+            self._nentries = mem._nentries
+            self._log2_size = mem._log2_size
+            self._log2_index_bytes = mem._log2_index_bytes
+
+            _ptr_from_gpu(self._indices, mem._indices, indices_size)
+            _ptr_from_gpu(self._active, mem._active, active_bytes)
+            _ptr_from_gpu(self._entries, mem._entries, capacity, mem._is_active)
 
     def __from_gpu_new__(other: Dict[K,V]):
-        from internal.khash import __ac_fsize
         mem = _object_from_gpu(other)
 
-        n = mem._n_buckets
-        f = __ac_fsize(n) if n else 0
-        flags = Ptr[u32](f)
-        keys = Ptr[K](n)
-        vals = Ptr[V](n)
+        if __dict_unordered__:
+            from internal.khash import __ac_fsize
 
-        _ptr_from_gpu(flags, mem._flags, f)
-        mem._flags = flags
-        _ptr_from_gpu(keys, mem._keys, n, lambda i: mem._kh_exist(i))
-        mem._keys = keys
-        _ptr_from_gpu(vals, mem._vals, n, lambda i: mem._kh_exist(i))
-        mem._vals = vals
+            n = mem._n_buckets
+            f = __ac_fsize(n) if n else 0
+            flags = Ptr[u32](f)
+            keys = Ptr[K](n)
+            vals = Ptr[V](n)
+
+            _ptr_from_gpu(flags, mem._flags, f)
+            mem._flags = flags
+            _ptr_from_gpu(keys, mem._keys, n, lambda i: mem._kh_exist(i))
+            mem._keys = keys
+            _ptr_from_gpu(vals, mem._vals, n, lambda i: mem._kh_exist(i))
+            mem._vals = vals
+        else:
+            size = mem._size
+            indices_size = size * mem._index_bytes
+            active_bytes = mem._active_bytes
+            capacity = mem._capacity
+
+            indices = cobj(indices_size)
+            active = Ptr[u8](active_bytes)
+            entries = Ptr[DictEntry[K, V]](capacity)
+
+            _ptr_from_gpu(indices, mem._indices, indices_size)
+            mem._indices = indices
+            _ptr_from_gpu(active, mem._active, active_bytes)
+            mem._active = active
+            _ptr_from_gpu(entries, mem._entries, capacity, mem._is_active)
+            mem._entries = entries
+
         return mem
 
 @extend

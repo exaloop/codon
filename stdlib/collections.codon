@@ -269,9 +269,7 @@ class Counter(Static[Dict[T, int]]):
         return self.get(key, 0)
 
     def __delitem__(self, key: T):
-        x = self._kh_get(key)
-        if x != self._kh_end():
-            self._kh_del(x)
+        self._delete(key)
 
     def __eq__(self, other: Counter[T]) -> bool:
         if self.__len__() != other.__len__():
@@ -314,7 +312,6 @@ class Counter(Static[Dict[T, int]]):
 
     def __pos__(self) -> Counter[T]:
         result = Counter[T]()
-        result.resize(self._n_buckets)
         for k, v in self.items():
             if v > 0:
                 result[k] = v
@@ -322,7 +319,6 @@ class Counter(Static[Dict[T, int]]):
 
     def __neg__(self) -> Counter[T]:
         result = Counter[T]()
-        result.resize(self._n_buckets)
         for k, v in self.items():
             if v < 0:
                 result[k] = -v
@@ -397,11 +393,7 @@ class defaultdict(Static[Dict[K,V]]):
         return super().__getitem__(key)
 
     def __dict_do_op_throws__(self, key: K, other: Z, op: F, F: type, Z: type):
-        x = self._kh_get(key)
-        if x == self._kh_end():
-            self.__missing__(key)
-            x = self._kh_get(key)
-        self._vals[x] = op(self._vals[x], other)
+        Dict[K, V].__dict_do_op_throws__(self, key, other, op)
 
     def copy(self):
         d = defaultdict[K,V,S](self.default_factory)

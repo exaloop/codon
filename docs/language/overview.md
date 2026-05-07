@@ -36,8 +36,11 @@ about how we plan to close some of these gaps in the future.
   Python's unicode strings. Unicode strings are planned for
   Codon 1.0.
 
-- **Dictionaries:** Codon's dictionary type does not preserve
-  insertion order, unlike Python's as of 3.6.
+- <strike>**Dictionaries:** Codon's dictionary type does not preserve
+  insertion order, unlike Python's as of 3.6.</strike> Codon now uses
+  ordered dictionaries by default. The original unordered
+  implementation is still available via the `-unordered-dict`
+  compiler flag, and generally performs better.
 
 - **Tuples**: Since tuples compile down to structs, tuple lengths
   must be known at compile time, meaning you can't convert an
