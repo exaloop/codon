@@ -352,7 +352,7 @@ types::Type *Module::unsafeGetDummyFuncType() {
 
 types::Type *Module::unsafeGetPointerType(types::Type *base) {
   if (!base)
-    base = getIntNType(8, /*sign=*/false);
+    base = unsafeGetIntNType(8, /*sign=*/false);
   auto name = types::PointerType::getInstanceName(base);
   if (auto *rVal = getType(name))
     return rVal;
