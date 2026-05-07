@@ -516,6 +516,16 @@ void DocVisitor::visit(AssignStmt *stmt) {
   auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
     return;
+
+  if (auto ei = cast<IdExpr>(stmt->getRhs())) {
+    auto i = ctx->find(ei->getValue());
+    auto k = ctx->shared->j->get(std::to_string(*i))->get("kind");
+    if (k != nullptr && k->values.begin()->first == "class") {
+      ctx->add(e->getValue(), i);
+      return;
+    }
+  }
+
   int id = ctx->shared->itemID++;
   ctx->add(e->getValue(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
