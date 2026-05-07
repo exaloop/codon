@@ -619,9 +619,11 @@ class dd(Static[Dict[K,V]]):
     S: TypeTrait[CallableTrait[[], V]]
 
     def __init__(self: dd[K, VV, Function[[], V]], VV: TypeTrait[V]):
+        super().__init__()
         self.fn = lambda: VV()
 
     def __init__(self, f: S):
+        super().__init__()
         self.fn = f
 
     def __getitem__(self, key: K) -> V:
@@ -634,8 +636,8 @@ x = dd(list)
 x[1] = [1, 2]
 print(x[2])
 #: []
-print(x)
-#: {1: [1, 2], 2: []}
+print(sorted(x.items()))
+#: [(1, [1, 2]), (2, [])]
 
 z = 5
 y = dd(lambda: z+1)
@@ -646,15 +648,15 @@ z = 6
 print(y['c'])
 #: 6
 # TODO: should be 7 once by-ref capture lands
-print(y)
-#: {'a': 5, 'b': 6, 'c': 6}
+print(sorted(y.items()))
+#: [('a', 5), ('b', 6), ('c', 6)]
 
 xx = dd(lambda: 'empty')
 xx.update({1: 's', 2: 'b'})
 print(xx[1], xx[44])
 #: s empty
-print(xx)
-#: {44: 'empty', 1: 's', 2: 'b'}
+print(sorted(xx.items()))
+#: [(1, 's'), (2, 'b'), (44, 'empty')]
 
 s = 'mississippi'
 d = dd(int)
