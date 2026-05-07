@@ -35,15 +35,23 @@ class bool:
 @tuple
 @__internal__
 @__notuple__
-class byte:
+class int:
+    MAX = 9223372036854775807
     pass
 
 @tuple
 @__internal__
 @__notuple__
-class int:
-    MAX = 9223372036854775807
+class Int[N: Literal[int]]:
     pass
+
+@tuple
+@__internal__
+@__notuple__
+class UInt[N: Literal[int]]:
+    pass
+
+byte = UInt[8]
 
 @tuple
 @__internal__
@@ -120,18 +128,6 @@ class Generator[T]:
 @__notuple__
 class Optional:
     T: type = NoneType
-
-@tuple
-@__internal__
-@__notuple__
-class Int[N: Literal[int]]:
-    pass
-
-@tuple
-@__internal__
-@__notuple__
-class UInt[N: Literal[int]]:
-    pass
 
 @__internal__
 class pyobj:
