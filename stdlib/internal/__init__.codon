@@ -6,10 +6,9 @@ from internal.attributes import *
 import internal.static as static
 from internal.static import print as __print__
 
-from internal.types.intn import *
+from internal.types.int import *
 from internal.types.ptr import *
 from internal.types.str import *
-from internal.types.int import *
 from internal.types.bool import *
 from internal.types.array import *
 from internal.types.error import *

@@ -30,7 +30,6 @@ class Module : public AcceptorExtend<Module, Node> {
 public:
   static const std::string VOID_NAME;
   static const std::string BOOL_NAME;
-  static const std::string INT_NAME;
   static const std::string FLOAT_NAME;
   static const std::string FLOAT32_NAME;
   static const std::string FLOAT16_NAME;

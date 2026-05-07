@@ -63,7 +63,6 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
 
 const std::string Module::VOID_NAME = "void";
 const std::string Module::BOOL_NAME = "bool";
-const std::string Module::INT_NAME = "int";
 const std::string Module::FLOAT_NAME = "float";
 const std::string Module::FLOAT32_NAME = "float32";
 const std::string Module::FLOAT16_NAME = "float16";
@@ -229,9 +228,7 @@ types::Type *Module::getBoolType() {
 }
 
 types::Type *Module::getIntType() {
-  if (auto *rVal = getType(INT_NAME))
-    return rVal;
-  return Nr<types::IntType>();
+  return unsafeGetIntNType(64, /*sign=*/true);
 }
 
 types::Type *Module::getFloatType() {

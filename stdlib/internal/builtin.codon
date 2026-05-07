@@ -579,11 +579,6 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         return acc
 
 @extend
-class int:
-    def _from_str(s: str, base: int):
-        return _parse_int(s, base)
-
-@extend
 class Int:
     def _from_str(s: str, base: int):
         return _parse_int(s, base, Int[N])

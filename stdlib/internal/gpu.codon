@@ -592,17 +592,6 @@ class NoneType:
         return other
 
 @extend
-class int:
-    def __to_gpu__(self, cache: AllocCache):
-        return self
-
-    def __from_gpu__(self, other: int):
-        pass
-
-    def __from_gpu_new__(other: int):
-        return other
-
-@extend
 class float:
     def __to_gpu__(self, cache: AllocCache):
         return self
