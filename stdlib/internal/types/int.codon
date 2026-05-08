@@ -797,18 +797,3 @@ class UInt:
     def __atomic_max__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
         %tmp = atomicrmw umax ptr %d, i{=N} %b seq_cst
         ret i{=N} %tmp
-
-
-i1 = Int[1]
-i8 = Int[8]
-i16 = Int[16]
-i32 = Int[32]
-i64 = Int[64]
-i128 = Int[128]
-
-u1 = UInt[1]
-# `u8` already defined
-u16 = UInt[16]
-u32 = UInt[32]
-u64 = UInt[64]
-u128 = UInt[128]
