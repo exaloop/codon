@@ -52,12 +52,6 @@ ClassType::ClassType(const ClassType *base)
 
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
-    if (name == "int" && tc->name == "Int")
-      return tc->unify(this, us);
-    if (tc->name == "int" && name == "Int") {
-      auto t64 = std::make_shared<IntStaticType>(cache, 64);
-      return generics[0].type->unify(t64.get(), us);
-    }
     if (name == "unrealized_type" && tc->name == name) {
       // instantiate + unify!
       std::unordered_map<int, types::TypePtr> genericCache;
@@ -230,6 +224,8 @@ bool ClassType::isInstantiated() const {
 }
 
 std::string ClassType::debugString(char mode) const {
+  if (_rn == "Int[64]")
+    return "int";
   if (name == "NamedTuple") {
     if (auto ids = generics[0].type->getIntStatic()) {
       auto id = ids->value;
@@ -326,7 +322,6 @@ std::string ClassType::realizedName() const {
     s = join(gs, ",");
     s = name + (s.empty() ? "" : ("[" + s + "]"));
   }
-
   if (canRealize())
     const_cast<ClassType *>(this)->_rn = s;
 

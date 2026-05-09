@@ -676,7 +676,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is("float") && exprClass->is("int")) {
+  else if (expectedClass && expectedClass->is("float") && exprClass->is("Int")) {
     type = instantiateType(expectedClass);
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
@@ -1099,12 +1099,13 @@ Cache::Class *TypecheckVisitor::getClass(const std::string &t) const {
 }
 
 Cache::Class *TypecheckVisitor::getClass(types::Type *t) const {
+  Cache::Class *cp = nullptr;
   if (t) {
     if (auto c = t->getClass())
-      return getClass(c->name);
+      cp = getClass(c->name);
   }
-  seqassert(false, "bad class");
-  return nullptr;
+  seqassert(cp, "bad class");
+  return cp;
 }
 
 Cache::Function *TypecheckVisitor::getFunction(const std::string &n) const {

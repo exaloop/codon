@@ -383,6 +383,24 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     c->setDone();
     clsStmts.push_back(c);
+
+    if (canonicalName == "Int") {
+      // Auto-realize int64
+      auto rt = instantiateType(typ);
+      auto rn = "Int[64]";
+      auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
+      val->type = instantiateTypeVar(rt.get());
+      ctx->addAlwaysVisible(val, true);
+      ctx->cache->typeCtx->add("int", val);
+
+      unify(extractClassGeneric(rt.get()), instantiateStatic(int64_t(64)));
+
+      auto realization = getClass(canonicalName)->realizations[rn] =
+          std::make_shared<Cache::Class::ClassRealization>();
+      realization->type = rt;
+      realization->id = ++ctx->cache->classRealizationCnt;
+      makeIRType(rt.get());
+    }
   }
 
   clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
