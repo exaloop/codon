@@ -17,6 +17,7 @@ from internal.types.byte import *
 from internal.types.type import *
 from internal.types.tuple import *
 from internal.types.rtti import *
+from internal.types.rtti import *
 from internal.types.function import *
 from internal.types.union import *
 from internal.types.any import *
@@ -33,6 +34,8 @@ from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
 import internal.c_stubs as _C
 from internal.format import *
+
+__vtables__ = RTTIType._init_vtables()
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
@@ -66,7 +69,7 @@ class Set:
         s.ptr[s.len - 1] = "}".ptr[0]
         return s
 
-class Dict:
+class Dict(object):
     keys: List[K]
     values: List[V]
     K: type = NoneType
@@ -122,6 +125,15 @@ class Dict:
 
 @extend
 class str:
+    def __hash__(self) -> int:
+        h = 0
+        p, n = self.ptr, self.len
+        i = 0
+        while i < n:
+            h = 31 * h + int(p[i])
+            i += 1
+        return h
+
     def __getitem__(self, idx: int) -> str:
         if idx < 0:
             idx += self.len

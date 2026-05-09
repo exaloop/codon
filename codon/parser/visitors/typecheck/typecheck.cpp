@@ -79,6 +79,7 @@ Stmt *TypecheckVisitor::apply(
   auto n = tv.inferTypes(suite, true);
   if (!n) {
     auto errors = tv.findTypecheckErrors(suite);
+    // LOG("-> {}", suite->toString(2));
     throw exc::ParserException(errors);
   }
 
@@ -912,25 +913,31 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (exprClass && exprClass->is("Super") && expectedClass &&
-           !expectedClass->is("Super")) {
-    // Super[T] to T
-    type = extractClassGeneric(exprClass)->shared_from_this();
-    fn = [this](Expr *expr) -> Expr * {
-      return N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "Super", "_unwrap")), expr);
-    };
-  }
+  // else if (exprClass && exprClass->is("Super") && expectedClass &&
+  //          !expectedClass->is("Super")) {
+  //   // Super[T] to T
+  //   type = extractClassGeneric(exprClass)->shared_from_this();
+  //   if (type->unify(expectedClass, nullptr) >= 0)
+  //     fn = [this](Expr *expr) -> Expr * { return N<DotExpr>(expr, "_obj"); };
+  //   else
+  //     type = nullptr;
+  // }
 
   else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {
     // Cast derived classes to base classes
     const auto &mros = ctx->cache->getClass(exprClass)->mro;
     for (size_t i = 1; i < mros.size(); i++) {
-      auto t = instantiateType(mros[i].get(), exprClass);
-      if (t->unify(expectedClass, nullptr) >= 0) {
+      auto base = instantiateType(mros[i].get(), exprClass);
+      if (base->unify(expectedClass, nullptr) >= 0) {
+        unify(base.get(), expectedClass);
         type = expectedClass->shared_from_this();
-        fn = [this, type](Expr *expr) -> Expr * {
-          return castToSuperClass(expr, type->getClass(), true);
+        fn = [this, base](Expr *expr) -> Expr * {
+          ClassType *typ = expr->getClassType();
+          auto typExpr = N<IdExpr>(base->getClass()->name);
+          typExpr->setType(instantiateTypeVar(base->getClass()));
+          return transform(N<CallExpr>(
+              N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
+              expr, typExpr));
         };
         break;
       }
@@ -938,23 +945,6 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   }
 
   return {true, type, fn};
-}
-
-/// Cast derived class to a base class.
-Expr *TypecheckVisitor::castToSuperClass(Expr *expr, ClassType *superTyp,
-                                         bool isVirtual) {
-  ClassType *typ = expr->getClassType();
-  for (auto &field : getClassFields(typ)) {
-    for (auto &parentField : getClassFields(superTyp))
-      if (field.name == parentField.name) {
-        auto t = instantiateType(field.getType(), typ);
-        unify(t.get(), instantiateType(parentField.getType(), superTyp));
-      }
-  }
-  realize(superTyp);
-  auto typExpr = N<IdExpr>(superTyp->realizedName());
-  return transform(
-      N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), expr, typExpr));
 }
 
 /// Unpack a Tuple or KwTuple expression into (name, type) vector.
@@ -1439,7 +1429,9 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       }
     }
   };
-  if (type->is("Capsule") || type->is("Super")) {
+  if (type->is("Capsule")
+      //  || type->is("Super")
+  ) {
     type = extractClassGeneric(type)->getClass();
   }
   if (type && type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
@@ -1651,11 +1643,13 @@ ParserErrors TypecheckVisitor::findTypecheckErrors(Stmt *n) const {
   std::vector<ErrorMessage> errors;
   for (auto e : v.result) {
     auto code = ctx->cache->getContent(e->getSrcInfo());
-    if (!code.empty())
+    if (!code.empty()) {
       errors.emplace_back(fmt::format("cannot typecheck '{}'", code), e->getSrcInfo());
-    else
+      // LOG("-> {}", e->toString(2));
+    } else {
       errors.emplace_back(fmt::format("cannot typecheck the expression"),
                           e->getSrcInfo());
+    }
   }
   return ParserErrors(errors);
 }

@@ -26,7 +26,7 @@ class str:
         if isinstance(what, Union):
             return Union._str(what)
         elif isinstance(what, type):
-            return what.__repr__()
+            return __type_repr__(what)
         elif hasattr(what, "__str__"):
             return what.__str__()
         else:

@@ -168,7 +168,7 @@ class _CounterItem:
     def __ge__(self, other: _CounterItem[T]) -> bool:
         return self.count >= other.count
 
-class Counter(Static[Dict[T, int]]):
+class Counter(Dict[T, int]):
     T: type
 
     def __init__(self, elements: Generator[T]):
@@ -357,7 +357,7 @@ class Dict:
     def __init__(self: Dict[K, int], other: Counter[K]):
         self._init_from(other)
 
-class defaultdict(Static[Dict[K,V]]):
+class defaultdict(Dict[K,V]):
     default_factory: S
     K: type
     V: type

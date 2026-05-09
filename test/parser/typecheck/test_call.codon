@@ -468,12 +468,12 @@ class AX[T]:
 class Side:
     def __init__(self):
         pass
-class BX[T,U](Static[AX[T]], Static[Side]):
+class BX[T,U](AX[T], Side):
     b: U
     def __init__(self, a: T, b: U):
         super().__init__(a)
         self.b = b
-class CX[T,U](Static[BX[T,U]]):
+class CX[T,U](BX[T,U]):
     c: int
     def __init__(self, a: T, b: U):
         super().__init__(a, b)
@@ -540,7 +540,7 @@ class A[T]:
         self.a = t
     def foo(self):
         return f'A:{self.a}'
-class B(Static[A[str]]):
+class B(A[str]):
     b: int
     def __init__(self):
         super().__init__('s')
@@ -554,10 +554,11 @@ print b.baz() #: A:s::6
 class AX[T]:
     a: T
     def __init__(self, a: T):
+        print super().__class__.__name__
         self.a = a
     def foo(self):
         return f'[AX:{self.a}]'
-class BX[T,U](Static[AX[T]]):
+class BX[T,U](AX[T]):
     b: U
     def __init__(self, a: T, b: U):
         print super().__class__.__name__
@@ -565,7 +566,7 @@ class BX[T,U](Static[AX[T]]):
         self.b = b
     def foo(self):
         return f'[BX:{super().foo()}:{self.b}]'
-class CX[T,U](Static[BX[T,U]]):
+class CX[T,U](BX[T,U]):
     c: int
     def __init__(self, a: T, b: U):
         print super().__class__.__name__
@@ -575,8 +576,9 @@ class CX[T,U](Static[BX[T,U]]):
         return f'CX:{super().foo()}:{self.c}'
 c = CX('a', False)
 print c.__class__.__name__, c.foo()
-#: BX[str,bool]
-#: AX[str]
+#: Super[CX[str,bool]]
+#: Super[BX[str,bool]]
+#: Super[AX[str]]
 #: CX[str,bool] CX:[BX:[AX:a]:False]:1
 
 #%% super_vtable_2
@@ -628,35 +630,14 @@ print(C(42).n)
 #: A init, set 42
 #: 42
 
-#%% super_tuple,barebones
-@tuple
-class A[T]:
-    a: T
-    x: int
-    def __new__(a: T) -> A[T]:
-        return A[T](a, 1)
-    def foo(self):
-        return f'A:{self.a}'
-@tuple
-class B(Static[A[str]]):
-    b: int
-    def __new__() -> B:
-        return B(*(A('s')), 6)
-    def baz(self):
-        return f'{super().foo()}::{self.b}'
-
-b = B()
-print b.foo() #: A:s
-print b.baz() #: A:s::6
-
-
 #%% super_error,barebones
 class A:
     def __init__(self):
         super().__init__()
 a = A()
-#! no super methods found
-#! during the realization of __init__(self: A)
+#! classes are not polymorphic
+#! during the realization
+#! during the realization
 
 #%% super_error_2,barebones
 super().foo(1) #! no super methods found
@@ -689,12 +670,6 @@ class Bear:
         return superf(x) + f' bear w--f {x}'
 print Bear.woof('!')
 #: bear woof ! bear w--f !
-
-class PolarBear(Static[Bear]):
-    def woof():
-        return 'polar ' + superf('@')
-print PolarBear.woof()
-#: polar bear woof @ bear w--f @
 
 #%% superf_error,barebones
 class Foo:
@@ -843,8 +818,8 @@ a = A(1)
 l = [a, B(2,3), X(2,3,-1)]
 for i in l: foo(i)
 #: A(1) 1 A.bar A.aaz
-#: B(2,3) 4 B.bar A.aaz
-#: X(2,3,-1) 3 X.bar A.aaz
+#: B(3,2) 3 B.bar A.aaz
+#: X(3,2,-1) 2 X.bar A.aaz
 
 def moo(m: M):
     print(m.moo())
@@ -917,13 +892,13 @@ for i in l:
 #: I'm driving a Yugo SUV True True True True True
 
 
-#%% polymorphism_error_1,barebones
+#%% polymorphism_object,barebones
 class M[T]:
     m: T
 class X(M[int]):
     pass
 l = [M[float](1.1), X(2)]
-#! 'X' does not match expected type 'M[float]'
+print(l.__class__.__name__)  #: List[object]
 
 #%% polymorphism_2
 class Expr:
@@ -1142,11 +1117,12 @@ print(s.hai())
 table.test()
 #: test/CX: 17
 
-c: List[BX] = [BX(), s, table]
+c: List[BX] = [BX(), s._obj, table]
 #: init/BX
 #: init/AX
 print(c[0].hai())  #: hai/BX: 15
-print(c[1].hai())  #: hai/BX: 17
+print(c[1].hai())  #: hai/CX: 17
+print(s.hai())     #: hai/BX: 17
 print(c[2].hai())  #: hai/CX: 17
 
 

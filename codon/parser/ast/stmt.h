@@ -533,8 +533,7 @@ private:
 struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   ClassStmt(std::string name = "", std::vector<Param> args = {}, Stmt *suite = nullptr,
             std::vector<Expr *> decorators = {},
-            const std::vector<Expr *> &baseClasses = {},
-            std::vector<Expr *> staticBaseClasses = {});
+            const std::vector<Expr *> &baseClasses = {});
   ClassStmt(const ClassStmt &, bool);
 
   std::string getName() const { return name; }
@@ -542,7 +541,6 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
   const std::vector<Expr *> &getDecorators() const { return decorators; }
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
   const std::vector<Expr *> &getBaseClasses() const { return baseClasses; }
-  const std::vector<Expr *> &getStaticBaseClasses() const { return staticBaseClasses; }
 
   /// @return true if a class is a tuple-like record (e.g. has a "@tuple" attribute)
   bool isRecord() const;
@@ -550,15 +548,13 @@ struct ClassStmt : public AcceptorExtend<ClassStmt, Stmt>, Items<Param> {
 
   static bool isClassVar(const Param &p);
 
-  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses,
-         staticBaseClasses);
+  ACCEPT(ClassStmt, ASTVisitor, name, suite, items, decorators, baseClasses);
 
 private:
   std::string name;
   SuiteStmt *suite;
   std::vector<Expr *> decorators;
   std::vector<Expr *> baseClasses;
-  std::vector<Expr *> staticBaseClasses;
 };
 
 /// Yield-from statement (yield from expr).

@@ -187,7 +187,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__mro__") {
     if (realize(expr->getExpr()->getType())) {
       auto t = extractType(expr->getExpr())->getClass();
-      auto bases = getRTTISuperTypes(t);
+      auto bases = getMRO(t);
       std::vector<Expr *> items;
       for (size_t i = 1; i < bases.size(); i++)
         items.push_back(N<IdExpr>(bases[i]->realizedName()));
@@ -195,12 +195,13 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     }
     return;
   }
-  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
-    resultExpr = transform(N<CallExpr>(
-        N<IdExpr>(getMangledFunc("std.internal.types.type", "__type_repr__")),
-        expr->getExpr(), N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
-    return;
-  }
+  // if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
+  //   log("getting type_repr for {}", expr->getExpr()->getType()->debugString(2));
+  //   resultExpr = transform(N<CallExpr>(
+  //       N<IdExpr>(getMangledFunc("std.internal.types.type", "__type_repr__")),
+  //       expr->getExpr(), N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
+  //   return;
+  // }
   // Special case: expr.__is_static__
   if (expr->getMember() == "__is_static__") {
     if (expr->getExpr()->isDone())
@@ -251,8 +252,6 @@ void TypecheckVisitor::visit(DotExpr *expr) {
       }
 
       auto vt = expr->getExpr()->getType();
-      if (vt->is("Super"))
-        vt = extractClassGeneric(vt);
       auto cls = getClass(vt);
       bool isVirtual =
           cls && cls->rtti &&
@@ -261,9 +260,13 @@ void TypecheckVisitor::visit(DotExpr *expr) {
           !isDispatch(bestMethod) &&
           !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
           !bestMethod->ast->hasAttribute(Attr::Property);
-
+      if (isVirtual) {
+        bestMethod = getThunk(bestMethod);
+        e = N<IdExpr>(bestMethod->getFuncName());
+        e->setType(instantiateType(bestMethod, typ));
+      }
       if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-          !bestMethod->ast->hasAttribute(Attr::Property) && !isVirtual) {
+          !bestMethod->ast->hasAttribute(Attr::Property)) {
         // Instance access: `obj.method` from the call
         // Modify the call to push `self` to the front of the argument list.
         // Avoids creating partial functions.
@@ -271,25 +274,6 @@ void TypecheckVisitor::visit(DotExpr *expr) {
         unify(expr->getType(), e->getType());
         resultExpr = transform(e);
       } else {
-        if (isVirtual) {
-          Expr *id = nullptr, *slf = nullptr;
-          if (expr->getExpr()->getType()->is("Super")) {
-            id = N<DotExpr>(N<DotExpr>(expr->getExpr(), "__T__"), "__id__");
-            slf = N<DotExpr>(expr->getExpr(), "__obj__");
-          } else {
-            id = N<IntExpr>(0);
-            slf = expr->getExpr();
-          }
-          resultExpr = transform(
-              N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType",
-                                                     "_thunk_dispatch")),
-                          std::vector<CallArg>{
-                              CallArg{"slf", slf}, CallArg{"cls_id", id},
-                              CallArg{"F", N<IdExpr>(bestMethod->ast->name)},
-                              CallArg{"", N<EllipsisExpr>(EllipsisExpr::PARTIAL)}}));
-          return;
-        }
-
         // Instance access: `obj.method`
         // Transform y.method to a partial call `type(y).method(y, ...)`
         std::vector<Expr *> methodArgs;
@@ -519,6 +503,50 @@ types::FuncType *TypecheckVisitor::getDispatch(const std::string &fn) {
   return typ.get(); // stored in Cache::Function, hence not destroyed
 }
 
+/// Find or generate a thunk function for a given method.
+/// @example
+/// This is how dispatch looks like:
+///   ```def foo:thunk(*args, **kwargs):
+///        return foo(*args, **kwargs)```
+types::FuncType *TypecheckVisitor::getThunk(types::FuncType *ft) {
+  auto fn = ft->ast->getName();
+  auto name = ft->ast->getName() + ":thunk";
+
+  if (auto f = ctx->cache->findFunction(name))
+    return f;
+
+  auto ast = clone(ft->ast);
+  ast->name = name;
+  std::vector<CallArg> args;
+  args.emplace_back(N<IdExpr>(fn));
+  for (auto &a : *ast)
+    args.emplace_back(N<IdExpr>(a.getName()));
+  auto s = N<SuiteStmt>();
+  s->addStmt(N<AssignStmt>(
+      N<IdExpr>("F"), N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.static",
+                                                             "function", "realized")),
+                                  args)));
+  s->addStmt(N<ReturnStmt>(N<CallExpr>(
+      N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), N<IdExpr>("F")),
+                  N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
+                                                         "RTTIType", "_find_thunk")),
+                              std::vector<CallArg>{N<IdExpr>("self"), N<IdExpr>("F")})),
+      std::vector<CallArg>(args.begin() + 1, args.end()))));
+  ast->suite = s;
+  ast->setAttribute(Attr::Inline);
+  ast->setAttribute(Attr::AutoGenerated);
+
+  ctx->cache->reverseIdentifierLookup[name] = getUnmangledName(fn);
+  auto typ =
+      std::static_pointer_cast<FuncType>(ft->generalize(ctx->typecheckLevel - 1));
+  typ->ast = ast;
+  ctx->addFunc(name, name, typ);
+  ctx->cache->functions[name] = Cache::Function{"", fn, ast, typ};
+  ast->setDone();
+
+  return typ.get(); // stored in Cache::Function, hence not destroyed
+}
+
 /// Find a class member.
 /// @example
 ///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
@@ -543,9 +571,6 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
         seqassert(baseType, "cannot find base type of {}", typ->debugString(2));
         if (!baseType->canRealize())
           return nullptr; // delay!
-        log("{} . {} -> {}", typ->debugString(2), member->name,
-            baseType->debugString(2));
-        // Route, route...
         return transform(N<DotExpr>(
             N<CallExpr>(
                 N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),

@@ -452,33 +452,20 @@ std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() const {
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,
                      std::vector<Expr *> decorators,
-                     const std::vector<Expr *> &baseClasses,
-                     std::vector<Expr *> staticBaseClasses)
+                     const std::vector<Expr *> &baseClasses)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)),
       suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)),
-      staticBaseClasses(std::move(staticBaseClasses)) {
-  for (auto &b : baseClasses) {
-    Expr *e = nullptr;
-    if (match(b, M<IndexExpr>(M<IdExpr>("Static"), MVar<Expr>(e)))) {
-      this->staticBaseClasses.push_back(e);
-    } else {
-      this->baseClasses.push_back(b);
-    }
-  }
-}
+      baseClasses(std::move(baseClasses)) {}
 ClassStmt::ClassStmt(const ClassStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       name(stmt.name), suite(ast::clone(stmt.suite, clean)),
       decorators(ast::clone(stmt.decorators, clean)),
-      baseClasses(ast::clone(stmt.baseClasses, clean)),
-      staticBaseClasses(ast::clone(stmt.staticBaseClasses, clean)) {}
+      baseClasses(ast::clone(stmt.baseClasses, clean)) {}
 std::string ClassStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> bases;
   for (auto &b : baseClasses)
     bases.push_back(b->toString(indent));
-  for (auto &b : staticBaseClasses)
-    bases.push_back(fmt::format("(static {})", b->toString(indent)));
   std::string as;
   for (int i = 0; i < items.size(); i++)
     as += (i ? pad : "") + items[i].toString(indent);

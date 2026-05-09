@@ -83,6 +83,7 @@ private: // Node typechecking rules
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
   Expr *getClassMember(DotExpr *);
   types::FuncType *getDispatch(const std::string &);
+  types::FuncType *getThunk(types::FuncType *fn);
 
   /* Collection and comprehension expressions (collections.cpp) */
   void visit(TupleExpr *) override;
@@ -140,8 +141,7 @@ private: // Node typechecking rules
   bool typecheckCallArgs(types::FuncType *, std::vector<CallArg> &,
                          const PartialCallData &);
   std::pair<bool, Expr *> transformSpecialCall(CallExpr *);
-  std::vector<types::TypePtr> getStaticSuperTypes(types::ClassType *);
-  std::vector<types::TypePtr> getRTTISuperTypes(types::ClassType *);
+  std::vector<types::TypePtr> getMRO(types::ClassType *);
 
   /* Assignments (assign.cpp) */
   void visit(AssignExpr *) override;
@@ -200,7 +200,7 @@ private:
   void visit(ClassStmt *) override;
   std::vector<std::shared_ptr<types::ClassType>>
   parseBaseClasses(std::vector<Expr *> &, std::vector<Param> &, const Stmt *,
-                   const std::string &, const Expr *, types::ClassType *);
+                   const std::string &, types::ClassType *);
   bool autoDeduceMembers(ClassStmt *, std::vector<Param> &);
   static std::vector<Stmt *> getClassMethods(Stmt *s);
   void transformNestedClasses(const ClassStmt *, std::vector<Stmt *> &,
@@ -252,7 +252,6 @@ private:
   std::vector<types::FuncType *> findMatchingMethods(
       types::ClassType *typ, const std::vector<types::FuncType *> &methods,
       const std::vector<CallArg> &args, types::ClassType *part = nullptr);
-  Expr *castToSuperClass(Expr *expr, types::ClassType *superTyp, bool = false);
   void prepareVTables();
   std::vector<std::pair<std::string, Expr *>> extractNamedTuple(Expr *);
   std::vector<types::TypePtr> getClassFieldTypes(types::ClassType *);
@@ -403,6 +402,7 @@ public:
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
   SuiteStmt *generateTypeInfoInitAst(types::FuncType *);
+  SuiteStmt *generateSuperDispatchAst(types::FuncType *);
   std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
   std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
                                                     const std::vector<std::string> &);
@@ -487,6 +487,13 @@ public:
   ir::Func *realizeIRFunc(types::FuncType *fn,
                           const std::vector<types::TypePtr> &generics = {});
   // types::Type *getType(const std::string &);
+
+public:
+  template <class... TA>
+  void W(codon::error::Error e, const codon::SrcInfo &o = codon::SrcInfo(),
+         const TA &...args) {
+    codon::compilationWarning(codon::error::Emsg(e, args...), o.file, o.line, o.col);
+  }
 };
 
 } // namespace codon::ast

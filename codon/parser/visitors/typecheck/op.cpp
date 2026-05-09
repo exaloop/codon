@@ -791,11 +791,11 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
       auto lt = expr->getLhs()->getType();
       auto rt = expr->getRhs()->getType();
       auto rhs = expr->getRhs();
-      if (auto [canWrap, _, __] = canWrapExpr(rt, lt, nullptr); canWrap) {
-        if (wrapExpr(&rhs, lt)) {
-          unify(rhs->getType(), lt);
-        }
-      }
+      // if (auto [canWrap, _, __] = canWrapExpr(rt, lt, nullptr); canWrap) {
+      //   if (wrapExpr(&rhs, lt)) {
+      //     unify(rhs->getType(), lt);
+      //   }
+      // }
       lt = realize(lt);
       rt = realize(rt);
       if (!lt || !rt) {

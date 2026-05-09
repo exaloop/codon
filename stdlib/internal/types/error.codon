@@ -46,7 +46,8 @@ class BaseException:
         e.line = line
         e.col = col
         if cause is not None:
-            e.cause = cause
+            c: BaseException = cause
+            e.cause = c
         return e
 
 

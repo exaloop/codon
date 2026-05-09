@@ -77,17 +77,25 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
         continue;
       LOG_REALIZE("[poly] {} -> {}", r, real->id);
       suite->addStmt(N<ExprStmt>(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.types", "TypeInfo", "__init__")),
-          N<IdExpr>(real->getType()->realizedName()))));
-      for (const auto &[key, fn] : real->vtable) {
+          N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
+          N<IdExpr>("vtable"), N<IdExpr>(real->getType()->realizedName()))));
+
+      std::vector<std::pair<std::pair<std::string, std::string>, size_t>> thunks;
+      for (const auto &key : real->vtable | std::views::keys) {
         auto id = in(ctx->cache->thunkIds, key);
         seqassert(id, "key {} not found in thunkIds", key);
+        thunks.emplace_back(key, *id);
+      }
+      std::sort(thunks.begin(), thunks.end(),
+                [](const auto &a, const auto &b) { return a.second < b.second; });
+      for (const auto &[key, id] : thunks) {
+        auto fn = real->vtable[key];
         std::vector<Expr *> ids;
         for (const auto &t : *fn)
           ids.push_back(N<IdExpr>(t.getType()->realizedName()));
         // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
         LOG_REALIZE("[poly] vtable[{}!!{}][{}] = {}", real->getType()->realizedName(),
-                    real->id, *id, fn->realizedName());
+                    real->id, id, fn->realizedName());
         Expr *fnCall = N<CallExpr>(
             N<InstantiateExpr>(
                 N<IdExpr>("Function"),
@@ -96,7 +104,7 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
             N<IdExpr>(fn->realizedName()));
         suite->addStmt(N<ExprStmt>(N<CallExpr>(
             N<DotExpr>(N<IdExpr>("vtable"), "set_thunk"), N<IntExpr>(real->id),
-            N<IntExpr>(int64_t(*id)), N<CallExpr>(N<DotExpr>(fnCall, "__raw__")))));
+            N<IntExpr>(int64_t(id)), N<CallExpr>(N<DotExpr>(fnCall, "__raw__")))));
       }
     }
   }
@@ -160,17 +168,15 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
 
   // Thunk contents:
   // def _thunk.<BASE>.<FN>.<ARGS>(self, <ARGS...>):
-  //   return <FN>(
-  //     RTTIType._to_derived(self, <BASE>, <DERIVED>),
-  //     <ARGS...>)
+  //   return <FN>(RTTIType._cast(self, <DERIVED>), <ARGS...>)
   std::vector<Param> fnArgs;
   fnArgs.emplace_back("self", N<IdExpr>(base->realizedName()), nullptr);
   for (size_t i = 1; i < args.size(); i++)
     fnArgs.emplace_back(getUnmangledName((*fp->ast)[i].getName()),
                         N<IdExpr>(args[i]->realizedName()), nullptr);
   std::vector<Expr *> callArgs;
-  callArgs.emplace_back(N<CallExpr>(N<DotExpr>(N<IdExpr>("RTTIType"), "_to_derived"),
-                                    N<IdExpr>("self"), N<IdExpr>(base->realizedName()),
+  callArgs.emplace_back(N<CallExpr>(N<DotExpr>(N<IdExpr>("RTTIType"), "_cast"),
+                                    N<IdExpr>("self"),
                                     N<IdExpr>(derived->realizedName())));
   for (size_t i = 1; i < args.size(); i++)
     callArgs.emplace_back(N<IdExpr>(getUnmangledName((*fp->ast)[i].getName())));
@@ -202,9 +208,9 @@ SuiteStmt *TypecheckVisitor::generateGetThunkIDAst(types::FuncType *f) {
                 fp->getRetType()->canRealize(),
             "bad {}", f->debugString(2));
 
-  // TODO: ugly, ugly; surely needs refactoring
-
-  // Function signature for storing thunks
+  // Function signature for storing thunks.
+  // Needs to append function generics to realized name.
+  // TODO: refactor / remove (why is this needed)?
   auto sig = [&](const types::FuncType *ft) -> std::string {
     std::vector<std::string> gs;
     for (const auto &a : *ft)
@@ -233,27 +239,38 @@ SuiteStmt *TypecheckVisitor::generateGetThunkIDAst(types::FuncType *f) {
 
   // Iterate through all derived classes and instantiate the corresponding thunk
   for (const auto &[clsName, cls] : ctx->cache->classes) {
+    // First check if our class descends from our base class
+    // (ignore generics for now; this is just a speed-up).
+    // TODO: use hashmap
     bool inMro = false;
     for (auto &m : cls.mro)
       if (m && m->is(baseCls)) {
         inMro = true;
         break;
       }
-    if (inMro && clsName != baseCls) {
-      for (const auto &real : cls.realizations | std::views::values) {
-        if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
-          auto thunkFn = getFunction(thunkAst->name);
-          auto ti =
-              std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
-          auto tm = realizeFunc(ti.get(), true);
-          seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
-          seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
-                    fnSig, real->getType()->realizedName());
-          real->vtable[key] =
-              std::static_pointer_cast<FuncType>(tm->shared_from_this());
-          LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
-                      real->getType()->realizedName(), key, vid);
+    if (!inMro || clsName == baseCls)
+      continue;
+    for (const auto &real : cls.realizations | std::views::values) {
+      // Now check if generics match!
+      inMro = false;
+      for (auto &mro : real->bases) // now check realizations!
+        if (mro->realizedName() == cp->realizedName()) {
+          inMro = true;
+          break;
         }
+      if (!inMro)
+        continue;
+      if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
+        auto thunkFn = getFunction(thunkAst->name);
+        auto ti =
+            std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
+        auto tm = realizeFunc(ti.get(), true);
+        seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
+        seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
+                  fnSig, real->getType()->realizedName());
+        real->vtable[key] = std::static_pointer_cast<FuncType>(tm->shared_from_this());
+        LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
+                    real->getType()->realizedName(), key, vid);
       }
     }
   }
@@ -362,9 +379,12 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
   } else if (startswith(ast->name,
                         getMangledMethod("std.internal.core", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
-  } else if (startswith(ast->name,
-                        getMangledMethod("std.internal.core", "TypeInfo", "_init"))) {
+  } else if (startswith(ast->name, getMangledMethod("std.internal.core", "TypeInfo",
+                                                    "_init_params"))) {
     return generateTypeInfoInitAst(type);
+  } else if (startswith(ast->name,
+                        getMangledMethod("std.internal.core", "Super", "_dispatch"))) {
+    return generateSuperDispatchAst(type);
   }
   return nullptr;
 }
@@ -480,45 +500,13 @@ Expr *TypecheckVisitor::transformSuper() {
     E(Error::CALL_SUPER_PARENT, getSrcInfo());
 
   ClassType *typ = extractFuncArgType(funcTyp)->getClass();
-  auto cls = getClass(typ);
-  auto cands = cls->staticParentClasses;
-  if (cands.empty()) {
-    // Dynamic inheritance: use MRO
-    // TODO: maybe super() should be split into two separate functions...
-    const auto &vCands = cls->mro;
-    if (vCands.size() < 2)
-      E(Error::CALL_SUPER_PARENT, getSrcInfo());
-
-    auto superTyp = instantiateType(vCands[1].get(), typ);
-    auto self = N<IdExpr>(funcTyp->ast->begin()->name);
-    self->setType(typ->shared_from_this());
-
-    auto typExpr = N<IdExpr>(superTyp->getClass()->name);
-    typExpr->setType(instantiateTypeVar(superTyp->getClass()));
-    return transform(N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), self,
-                                 typExpr, N<IntExpr>(1)));
-  }
-
-  const auto &name = cands.front(); // the first inherited type
-  auto superTyp = instantiateType(extractClassType(name), typ);
-  if (typ->isRecord()) {
-    // Case: tuple types. Return `tuple(obj.args...)`
-    std::vector<Expr *> members;
-    for (auto &field : getClassFields(superTyp->getClass()))
-      members.push_back(
-          N<DotExpr>(N<IdExpr>(funcTyp->ast->begin()->getName()), field.name));
-    Expr *e = transform(N<TupleExpr>(members));
-    auto ft = getClassFieldTypes(superTyp->getClass());
-    for (size_t i = 0; i < ft.size(); i++)
-      unify(ft[i].get(), extractClassGeneric(e->getType(), i)); // see super_tuple test
-    e->setType(superTyp->shared_from_this());
-    return e;
-  } else {
-    // Case: reference types. Return `Super._super(self, T)`
-    auto self = N<IdExpr>(funcTyp->ast->begin()->name);
-    self->setType(typ->shared_from_this());
-    return castToSuperClass(self, superTyp->getClass());
-  }
+  auto self = N<IdExpr>(funcTyp->ast->begin()->name);
+  self->setType(typ->shared_from_this());
+  auto typExpr = N<IdExpr>(typ->getClass()->name);
+  typExpr->setType(instantiateTypeVar(typ->getClass()));
+  return transform(
+      N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "Super", "__new__")),
+                  typExpr, self));
 }
 
 /// Typecheck __ptr__ method. This method creates a pointer to an object. Ensure that
@@ -634,17 +622,16 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
 
   typExpr = transformType(typExpr);
   auto targetType = extractType(typExpr);
-  // Check static super types (i.e., statically inherited) as well
-  for (auto &tx : getStaticSuperTypes(typ->getClass())) {
-    types::Type::Unification us;
-    auto s = tx->unify(targetType, &us);
-    us.undo();
-    if (s >= 0)
-      return transform(N<BoolExpr>(true));
-  }
+
+  // Check type match
+  types::Type::Unification us;
+  auto s = typ->unify(targetType, &us);
+  us.undo();
+  if (s >= 0)
+    return transform(N<BoolExpr>(true));
 
   // Check RTTI super types
-  for (auto &tx : getRTTISuperTypes(typ->getClass())) {
+  for (auto &tx : getMRO(typ->getClass())) {
     types::Type::Unification us;
     auto s = tx->unify(targetType, &us);
     us.undo();
@@ -653,7 +640,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   }
 
   // Check runtime RTTI info if needed
-  for (auto &tx : getRTTISuperTypes(targetType->getClass())) {
+  for (auto &tx : getMRO(targetType->getClass())) {
     types::Type::Unification us;
     auto s = tx->unify(typ, &us);
     us.undo();
@@ -841,10 +828,17 @@ Expr *TypecheckVisitor::transformTypeFn(CallExpr *expr) {
 /// Transform static.realized function to a fully realized type identifier.
 Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
   auto fn = extractType((*expr)[0].getExpr()->getType())->shared_from_this();
-  auto pt = (*expr)[0].getExpr()->getType()->getPartial();
-  if (!fn->getFunc() && pt && pt->isPartialEmpty()) {
-    auto pft = pt->getPartialFunc()->generalize(0);
-    fn = instantiateType(pft.get());
+  if (auto fns = fn->getStrStatic()) {
+    // First argument can just be a literal string of function canonical name
+    auto val = ctx->find(fns->value);
+    if (val && val->isFunc())
+      fn = instantiateType(val->getType());
+  } else {
+    auto pt = (*expr)[0].getExpr()->getType()->getPartial();
+    if (!fn->getFunc() && pt && pt->isPartialEmpty()) {
+      auto pft = pt->getPartialFunc()->generalize(0);
+      fn = instantiateType(pft.get());
+    }
   }
   if (!fn->getFunc())
     E(Error::CALL_REALIZED_FN, (*expr)[0].getExpr());
@@ -910,6 +904,7 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
     callArgs.back().getExpr()->setType(t->shared_from_this());
   }
   if (auto fn = typ->getFunc()) {
+    // log("=> {} / {} / {}", fn->debugString(2), callArgs, canCall(fn, callArgs));
     return transform(N<BoolExpr>(canCall(fn, callArgs) >= 0));
   } else if (auto pt = typ->getPartial()) {
     return transform(N<BoolExpr>(canCall(pt->getPartialFunc(), callArgs, pt) >= 0));
@@ -1100,16 +1095,22 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
   // Add extra initialization here!
   suite->addStmt(N<AssignStmt>(N<DotExpr>(N<IdExpr>("self"), "_base_name"),
                                N<StringExpr>(t->name)));
-  for (auto &g : t->generics) {
-    auto tp = g.getType();
-    if (tp->getStatic())
-      tp = tp->getStatic()->getNonStaticType();
-    suite->addStmt(N<ExprStmt>(N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
-        std::vector<CallArg>{CallArg{"T", N<IdExpr>(tp->realizedName())}})));
-    suite->addStmt(N<ExprStmt>(
-        N<CallExpr>(N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_params"), "append"),
-                    N<IntExpr>(getClassRealization(tp)->id))));
+  if (!t->is("unrealized_type")) {
+    for (auto &g : t->generics) {
+      auto tp = g.getType()->shared_from_this();
+      if (tp->getStatic())
+        tp = tp->getStatic()->getNonStaticType()->shared_from_this();
+      if (tp->getFunc()) {
+        tp = std::make_shared<ClassType>(realize(tp.get())->getClass());
+      }
+      suite->addStmt(N<ExprStmt>(N<CallExpr>(
+          N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
+          std::vector<CallArg>{CallArg{"", N<IdExpr>("vt")},
+                               CallArg{"T", N<IdExpr>(tp->realizedName())}})));
+      suite->addStmt(N<ExprStmt>(
+          N<CallExpr>(N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_params"), "append"),
+                      N<IntExpr>(getClassRealization(tp.get())->id))));
+    }
   }
   for (auto &[fn, ft] : getClassRealization(t)->fields) {
     auto tp = ft.get();
@@ -1118,13 +1119,87 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
       tp = stat->getNonStaticType();
     suite->addStmt(N<ExprStmt>(N<CallExpr>(
         N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
-        std::vector<CallArg>{CallArg{"T", N<IdExpr>(tp->realizedName())}})));
+        std::vector<CallArg>{CallArg{"", N<IdExpr>("vt")},
+                             CallArg{"T", N<IdExpr>(tp->realizedName())}})));
     suite->addStmt(N<ExprStmt>(N<CallExpr>(
         N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_fields"), "append"),
         N<TupleExpr>(std::vector<Expr *>{
             N<StringExpr>(fn), N<IntExpr>(getClassRealization(tp)->id),
             !stat ? (Expr *)N<DotExpr>(N<IdExpr>(tp->realizedName()), "__elemsize__")
                   : (Expr *)N<IntExpr>(0)}))));
+  }
+  return suite;
+}
+
+SuiteStmt *TypecheckVisitor::generateSuperDispatchAst(FuncType *type) {
+  auto attr = extractFuncGeneric(type)->getStrStatic();
+  if (!attr)
+    return nullptr;
+
+  auto superTyp = extractFuncArgType(type)->getClass();
+  auto typ = extractClassGeneric(superTyp)->getClass();
+  auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
+
+  seqassert(extractFuncArgType(type, 1)->is("Tuple") &&
+                extractFuncArgType(type, 2)->is("NamedTuple"),
+            "invalid arguments");
+  std::vector<CallArg> callArgs;
+  callArgs.emplace_back("", N<NoneExpr>());
+  for (auto &g : extractFuncArgType(type, 1)->getClass()->generics) {
+    callArgs.emplace_back("", N<NoneExpr>());
+    callArgs.back().getExpr()->setType(g.getType()->shared_from_this());
+  }
+  auto id = getIntLiteral(extractFuncArgType(type, 2));
+  const auto &names = ctx->cache->generatedTupleNames[id];
+  auto kwt = extractClassGeneric(extractFuncArgType(type, 2), 1)->getClass();
+  for (size_t gi = 0; gi < kwt->generics.size(); gi++) {
+    callArgs.emplace_back(names[gi], N<NoneExpr>());
+    callArgs.back().getExpr()->setType(kwt->generics[gi].getType()->shared_from_this());
+  }
+
+  std::unordered_map<std::string, TypePtr> nextMro;
+  for (auto &n : getClass(typ)->descendants) {
+    auto nc = getClass(n);
+    size_t i = 0;
+    for (; i < nc->mro.size() - 1; i++) {
+      if (nc->mro[i]->name == typ->name) {
+        break;
+      }
+    }
+    i++;
+    if (i < nc->mro.size()) {
+      auto tb = instantiateType(nc->mro[i].get(), typ);
+      if (!tb->canRealize()) {
+        W(Error::CUSTOM, getSrcInfo(),
+          "cannot realize superclass {} of {}; ignoring its super",
+          nc->mro[i]->prettyString(), typ->prettyString());
+        continue;
+      }
+      realize(tb);
+      auto methods = findMethod(tb->getClass(), attr->value, false);
+      callArgs[0].getExpr()->setType(tb);
+      for (auto &bm : findMatchingMethods(tb->getClass(), methods, callArgs)) {
+        auto a = bm->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass);
+        if (a && a->value == tb->getClass()->name) {
+          nextMro[nc->mro[i]->getClass()->name] = tb;
+          break;
+        }
+      }
+    }
+  }
+  for (auto &tb : nextMro | std::views::values) {
+    Stmt *ret = N<ReturnStmt>(N<CallExpr>(
+        N<DotExpr>(N<IdExpr>(tb->getClass()->name), attr->value),
+        N<CallExpr>(
+            N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
+            N<DotExpr>(N<IdExpr>("self"), "_obj"), N<IdExpr>(tb->realizedName())),
+        N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs"))));
+    suite->addStmt(
+        nextMro.size() == 1
+            ? ret
+            : N<IfStmt>(N<BinaryExpr>(N<IdExpr>("base"), "==",
+                                      N<IntExpr>(getClassRealization(tb.get())->id)),
+                        ret));
   }
   return suite;
 }

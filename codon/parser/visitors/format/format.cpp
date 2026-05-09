@@ -9,11 +9,11 @@ namespace codon {
 namespace ast {
 
 std::string FormatVisitor::anchor_root(const std::string &s) {
-  return fmt::format("<a class=\".root\" name=\"{}\">{}</a>", s, s);
+  return renderHTML ? fmt::format("<a class=\".root\" name=\"{}\">{}</a>", s, s) : s;
 }
 
 std::string FormatVisitor::anchor(const std::string &s) {
-  return fmt::format("<a class=\".anchor\" href=\"#{}\">{}</a>", s, s);
+  return renderHTML ? fmt::format("<a class=\".anchor\" href=\"#{}\">{}</a>", s, s) : s;
 }
 
 FormatVisitor::FormatVisitor(bool html, Cache *cache)

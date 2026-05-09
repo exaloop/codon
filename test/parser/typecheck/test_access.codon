@@ -767,7 +767,7 @@ print(a.foo("lala"))  #: lala_foo
 a.xyz = 'hello'  #: xyz <- hello
 print(a.xyz)  #: None
 
-class dotdict[V](Static[Dict[str, V]]):
+class dotdict[V](Dict[str, V]):
     def __getattr__(self, attr: Literal[str]) -> Optional[V]:
         return self.get(attr)
     def __setattr__(self, attr: Literal[str], v: V):

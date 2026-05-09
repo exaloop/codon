@@ -173,11 +173,11 @@ void TypecheckVisitor::visit(GeneratorExpr *expr) {
 Expr *TypecheckVisitor::transformComprehension(const std::string &type,
                                                const std::string &fn,
                                                std::vector<Expr *> &items) {
-  // Deduce the super type of the collection--- in other words, the least common
-  // ancestor of all types in the collection. For example, `type([1, 1.2]) == type([1.2,
-  // 1]) == float` because float is an "ancestor" of int.
+  // Deduce the lowest common type of the collection--- in other words, the lowest
+  // common ancestor of all types in the collection. For example, `type([1, 1.2]) ==
+  // type([1.2, 1]) == float` because float is an "ancestor" of int.
   // TODO: use wrapExpr...
-  auto superTyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
+  auto lctyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
     if (!collectionCls)
       return ti->shared_from_this();
     if (collectionCls->is("int") && ti->is("float")) {
@@ -193,7 +193,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
       // Rule: anything derives from pyobj
       return ti->shared_from_this();
     } else if (collectionCls->name != ti->name) {
-      // Rule: subclass derives from superclass
+      // Rule: subclass derives from its base class
       const auto &mros = getClass(collectionCls)->mro;
       const auto &tMros = getClass(ti)->mro;
       for (size_t i = 0; i < mros.size(); i++) {
@@ -235,7 +235,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
     if (!collectionTyp->getClass()) {
       unify(collectionTyp.get(), typ);
     } else if (!isDict) {
-      if (auto t = superTyp(collectionTyp->getClass(), typ)) {
+      if (auto t = lctyp(collectionTyp->getClass(), typ)) {
         collectionTyp = t;
       }
     } else {
@@ -249,8 +249,8 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
         nt.push_back(extractClassGeneric(collectionTyp.get(), di)->shared_from_this());
         if (!nt[di]->getClass())
           unify(nt[di].get(), extractClassGeneric(tt, di));
-        else if (auto dt = superTyp(nt[di]->getClass(),
-                                    extractClassGeneric(tt, di)->getClass()))
+        else if (auto dt =
+                     lctyp(nt[di]->getClass(), extractClassGeneric(tt, di)->getClass()))
           nt[di] = dt;
       }
       collectionTyp =

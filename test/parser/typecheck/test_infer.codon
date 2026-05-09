@@ -612,7 +612,7 @@ print t(6, Optional(1)) #! 'Optional[int]' does not match expected type 'Optiona
 z: CallableTrait[[int],int] = 4 #! 'CallableTrait[[int],int]' does not match expected type 'int'
 
 #%% trait_defdict
-class dd(Static[Dict[K,V]]):
+class dd(Dict[K,V]):
     fn: S
     K: type
     V: type
@@ -936,14 +936,15 @@ foo(type(list[int]))
 #: List[int] <class 'List[int]'>
 #: List[int] []
 
-# TODO: print(list)
+print(list)
+#: <class 'List[NoneType]'>
 
 def typtest(a, b):
     print isinstance(a, b)
     print isinstance(a, int)
     print(a)
     print(b)
-    print(a.__repr__())
+    print(repr(a))
 
 typtest(int, int)
 #: True
@@ -959,9 +960,8 @@ typtest(int, float)
 #: <class 'int'>
 
 print(List[int])
-print(List[int].__repr__())
-# print(int.__repr__())  # this catches int.__repr__ as it should...
-print(type(int).__repr__())
+print(repr(List[int]))
+print(repr(type(int)))
 #: <class 'List[int]'>
 #: <class 'List[int]'>
 #: <class 'int'>

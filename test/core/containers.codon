@@ -100,7 +100,6 @@ def test_tuple():
     assert repr((11, 2, 333)) == '(11, 2, 333)'
     assert repr(()) == '()'
     assert repr((42,)) == '(42,)'
-test_tuple()
 
 @test
 def test_dyn_tuple():
@@ -208,7 +207,6 @@ def test_dyn_tuple():
     assert (1, 2) * 0 == ()
     assert (1, 2) * (-1) == ()
     assert () * -1 == ()
-test_dyn_tuple()
 
 @test
 def test_list():
@@ -269,8 +267,8 @@ def test_list():
     l6.extend('')
     assert l6 == ['a', 'b', 'c', 'xyz']
 
-    assert List[int]().copy() == List[int]()
-    assert [1,2,3].copy() == [1,2,3]
+    assert List[int]().__copy__() == List[int]()
+    assert [1,2,3].__copy__() == [1,2,3]
 
     def test_cmp[T](a: T, b: T):
         yield 'EQ', a == b
@@ -329,7 +327,6 @@ def test_list():
     assert b2 == ['a']
     assert b3 == [4.2]
     assert b4 == [2.4]
-test_list()
 
 @test
 def test_setslice():
@@ -390,7 +387,6 @@ def test_setslice():
 
     a[2:10:3] = [1,2,3]
     assert a == [0, 1, 1, 3, 4, 2, 6, 7, 3, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
-test_setslice()
 
 @test
 def test_delslice():
@@ -433,7 +429,6 @@ def test_delslice():
     a = [0,1]
     del a[:]
     assert a == list[int]()
-test_delslice()
 
 @test
 def test_extendedslicing():
@@ -480,7 +475,6 @@ def test_extendedslicing():
 
     assert repr(['x', 'y', 'z']) == "['x', 'y', 'z']"
     assert repr(List[int]()) == '[]'
-test_extendedslicing()
 
 @test
 def test_set():
@@ -557,7 +551,6 @@ def test_set():
 
     assert repr({(1,2)}) == '{(1, 2)}'
     assert repr(Set[int]()) == 'set()'
-test_set()
 
 @test
 def test_dict():
@@ -599,7 +592,6 @@ def test_dict():
 
     assert repr({1: ['x']}) == "{1: ['x']}"
     assert repr(Dict[int,int]()) == '{}'
-test_dict()
 
 def slice_indices(slice, length):
     """
@@ -798,7 +790,6 @@ def test_slice():
     assert slice(1, None, 3) != slice(0, None, 3)
     assert slice(1) == slice(1)
     assert slice(1) != slice(2)
-test_slice()
 
 @test
 def test_deque():
@@ -842,7 +833,6 @@ def test_deque():
     for i in range(5):
         dq.append(i)
     assert str(dq) == 'deque([0, 1, 2, 3, 4])'
-test_deque()
 
 @test
 def test_counter():
@@ -977,28 +967,28 @@ def test_counter():
         q = Counter(dict((elem, randrange(-2,4)) for elem in elements))
         q.update({'h':1, 'i':-1, 'j':0})
 
-        c = p.copy()
+        c = p.__copy__()
         c_id = id(c)
         regular_result = c + q
         inplace_result = c.__iadd__(q)
         assert inplace_result == regular_result
         assert id(inplace_result) == c_id
 
-        c = p.copy()
+        c = p.__copy__()
         c_id = id(c)
         regular_result = c - q
         inplace_result = c.__isub__(q)
         assert inplace_result == regular_result
         assert id(inplace_result) == c_id
 
-        c = p.copy()
+        c = p.__copy__()
         c_id = id(c)
         regular_result = c | q
         inplace_result = c.__ior__(q)
         assert inplace_result == regular_result
         assert id(inplace_result) == c_id
 
-        c = p.copy()
+        c = p.__copy__()
         c_id = id(c)
         regular_result = c & q
         inplace_result = c.__iand__(q)
@@ -1062,7 +1052,6 @@ def test_counter():
             assert exp == got
 
     assert repr(Counter('abcabc')) == "Counter({'a': 2, 'b': 2, 'c': 2})"
-test_counter()  # this call doubles compile time!
 
 @test
 def test_defaultdict():
@@ -1132,17 +1121,17 @@ def test_defaultdict():
 
     # copy
     d1 = defaultdict(list)
-    d2 = d1.copy()
+    d2 = d1.__copy__()
     #self.assertEqual(type(d2), defaultdict)
     #self.assertEqual(d2.default_factory, None)
     assert d2 == {}
     #d1.default_factory = list
-    #d3 = d1.copy()
+    #d3 = d1.__copy__()
     #self.assertEqual(type(d3), defaultdict)
     #self.assertEqual(d3.default_factory, list)
     #self.assertEqual(d3, {})
     d1[42].append(0)
-    #d4 = d1.copy()
+    #d4 = d1.__copy__()
     #assert d4 == {42: [0]}
     #d4[12]
     #assert d4 == {42: [], 12: []}
@@ -1150,7 +1139,7 @@ def test_defaultdict():
     # Issue 6637: Copy fails for empty default dict
     #d = defaultdict()
     #d['a'] = 42
-    #e = d.copy()
+    #e = d.__copy__()
     #assert e['a'] == 42
 
 
@@ -1249,4 +1238,16 @@ def test_defaultdict():
 
     d = defaultdict(constant_factory('<missing>'))
     assert d[10] == '<missing>'
+
+test_tuple()
+test_dyn_tuple()
+test_list()
+test_setslice()
+test_delslice()
+test_extendedslicing()
+test_set()
+test_dict()
+test_slice()
+test_deque()
+test_counter()  # this call doubles compile time!
 test_defaultdict()

@@ -87,8 +87,7 @@ class TimerHandle:
     def when(self):
         return self._timer.when
 
-class Future:
-    _result: R
+class Future[R]:
     _exception: Optional[BaseException]
     _lock: Lock
     _loop: EventLoop
@@ -97,18 +96,18 @@ class Future:
     _done_callbacks_len: int
     _done_callbacks_cap: int
     _state: int
-    R: type
+    _result: R
 
-class Task(Static[Future[R]]):
+class Task[R](Future[R]):
     _name: str
     _coro: cobj
     _waiting_on_task: Optional[Task[None]]
     _waiting_on_lock: cobj
-    R: type
 
 def _raw_task(task: Task) -> Task[None]:
-    # Skip over `result` field
-    return _bitcast(task.__raw__() + gc.sizeof(task.R), Task[None])
+    # Skip over `result` field (done automatically because _result
+    # is at the very end)
+    return _bitcast(task.__raw__(), Task[None])
 
 @extend
 class WorkItem:

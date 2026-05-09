@@ -402,8 +402,10 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       // Case: calling partial object `p`. Transform roughly to
       // `part = callee; partial_fn(*part.args, args...)`
       Expr *var = N<IdExpr>(part.var = getTemporaryVar("partcall"));
-      expr->expr = transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()),
-                                         N<IdExpr>(calleeFn->getFuncName())));
+      auto id = N<IdExpr>(calleeFn->getFuncName());
+      id->setType(calleeFn);
+      expr->expr =
+          transform(N<StmtExpr>(N<AssignStmt>(clone(var), expr->getExpr()), id));
       part.known = mask;
     } else {
       expr->expr = transform(N<IdExpr>(calleeFn->getFuncName()));
@@ -881,7 +883,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
   };
   if (isF(ei, "std.internal.core", "superf")) {
     return {true, transformSuperF(expr)};
-  } else if (isF(ei, "std.internal.core", "super")) {
+  } else if (isF(ei, "std.internal.core", "super") && expr->empty()) {
     return {true, transformSuper()};
   } else if (isF(ei, "std.internal.core", "__ptr__")) {
     return {true, transformPtr(expr)};
@@ -940,34 +942,7 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
 
 /// Get the list that describes the inheritance hierarchy of a given type.
 /// The first type in the list is the most recently inherited type.
-std::vector<TypePtr> TypecheckVisitor::getStaticSuperTypes(ClassType *cls) {
-  std::vector<TypePtr> result;
-  if (!cls)
-    return result;
-
-  result.push_back(cls->shared_from_this());
-  auto c = getClass(cls);
-  auto fields = getClassFields(cls);
-  for (auto &name : c->staticParentClasses) {
-    auto parentTyp = instantiateType(extractClassType(name), cls);
-    auto parentFields = getClassFields(parentTyp->getClass());
-    for (auto &field : fields) {
-      for (auto &parentField : parentFields)
-        if (field.name == parentField.name) {
-          auto t = instantiateType(field.getType(), cls);
-          unify(t.get(), instantiateType(parentField.getType(), parentTyp->getClass()));
-          break;
-        }
-    }
-    for (auto &t : getStaticSuperTypes(parentTyp->getClass()))
-      result.push_back(t);
-  }
-  return result;
-}
-
-/// Get the list that describes the inheritance hierarchy of a given type.
-/// The first type in the list is the most recently inherited type.
-std::vector<TypePtr> TypecheckVisitor::getRTTISuperTypes(ClassType *cls) {
+std::vector<TypePtr> TypecheckVisitor::getMRO(ClassType *cls) {
   std::vector<TypePtr> result;
   if (!cls)
     return result;

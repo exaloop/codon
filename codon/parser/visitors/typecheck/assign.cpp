@@ -246,10 +246,11 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
       s->setAtomicUpdate();
     else
       s->setUpdate();
-    if (auto u = transformUpdate(s))
+    if (auto u = transformUpdate(s)) {
       return u;
-    else
+    } else {
       return s; // delay
+    }
   }
 
   stmt->rhs = transform(stmt->getRhs(), true);
@@ -436,16 +437,15 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
             })));
     }
 
-    if (member->baseClass != ftyp->getClass()->name &&
-        getClass(ftyp->getClass())->hasRTTI()) {
+    if (member->baseClass != lhsClass->name && getClass(lhsClass)->hasRTTI()) {
       TypePtr baseType = nullptr;
-      for (auto &m : getBaseClasses(ftyp->getClass())) {
+      for (auto &m : getBaseClasses(lhsClass)) {
         if (m->getClass()->name == member->baseClass) {
           baseType = m;
           break;
         }
       }
-      seqassert(baseType, "cannot find base type of {}", ftyp->debugString(2));
+      seqassert(baseType, "cannot find base type of {}", lhsClass->debugString(2));
       if (!baseType->canRealize())
         return; // delay!
       resultStmt = transform(N<AssignMemberStmt>(

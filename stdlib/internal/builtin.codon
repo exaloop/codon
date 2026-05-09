@@ -2,13 +2,6 @@
 
 import internal.static as static
 
-class object:
-    def __init__(self):
-        pass
-
-    def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} object at {self.__raw__()}>"
-
 def id(x) -> int:
     if isinstance(x, ByRef):
         return int(x.__raw__())
@@ -301,6 +294,10 @@ def sum(x, start=0):
         return s
 
 def repr(x):
+    if isinstance(x, type):
+        return __type_repr__(x)
+    if isinstance(x, Super):
+        return f'<super: {x.T}>'
     if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):
         return x.__repr_default__()
     return x.__repr__()

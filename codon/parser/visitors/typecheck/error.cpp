@@ -120,7 +120,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
       if (c->getException()) {
         auto t = extractClassType(c->getException());
         bool exceptionOK = false;
-        for (auto &p : getRTTISuperTypes(t))
+        for (auto &p : getMRO(t))
           if (p->is(getMangledClass("std.internal.types.error", "BaseException"))) {
             exceptionOK = true;
             break;
@@ -193,11 +193,7 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
         stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
         N<IntExpr>(stmt->getSrcInfo().col),
-        stmt->getFrom()
-            ? N<CallExpr>(N<DotExpr>(N<IdExpr>("Super"), "_super"), stmt->getFrom(),
-                          N<IdExpr>(getMangledClass("std.internal.types.error",
-                                                    "BaseException")))
-            : N<CallExpr>(N<IdExpr>("NoneType"))));
+        stmt->getFrom() ? stmt->getFrom() : N<CallExpr>(N<IdExpr>("NoneType"))));
   }
   if (stmt->getExpr()->isDone())
     stmt->setDone();

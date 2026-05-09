@@ -557,6 +557,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   auto f = N<FunctionStmt>(canonicalName, ret, args, suite, std::vector<Expr *>{},
                            stmt->isAsync());
   f->cloneAttributesFrom(stmt);
+  if (in(canonicalName, "_thunk_dispatch"))
+    stmt->setAttribute(Attr::AllowPassThrough);
   auto &fn = ctx->cache->functions[canonicalName] =
       Cache::Function{ctx->getModulePath(),
                       rootName,

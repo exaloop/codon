@@ -289,18 +289,16 @@ p = Ptr[byte]()
 Foo(1).__to_py__(p) #! 'Foo' object has no attribute '__to_py__'
 
 #%% inherit_class_4,barebones
-class defdict[K,V](Static[Dict[K,V]]):
+class defdict[K,V](Dict[K,V]):
     fx: Function[[],V]
     def __init__(self, d: Dict[K,V], fx: Function[[], V]):
-        self.__init__()
+        super().__init__()
         for k,v in d.items(): self[k] = v
         self.fx = fx
     def __getitem__(self, key: K) -> V:
-        if key in self:
-            return self.values[self.keys.index(key)]
-        else:
+        if key not in self:
             self[key] = self.fx()
-            return self[key]
+        return super().__getitem__(key)
 z = defdict({'ha':1}, lambda: -1)
 print z
 print z['he']
@@ -317,45 +315,31 @@ class Bar[T]:
     y: Optional[T] = None
     def bar(self):
         return f'bar {self.y}/{self.y.__class__.__name__}'
-class FooBarBaz[T](Static[Foo], Static[Bar[T]]):
+class FooBarBaz[T](Foo, Bar[T]):
     def baz(self):
         return f'baz! {self.foo()} {self.bar()}'
+# warning: cannot realize superclass Bar[T] of Foo; ignoring its super
 print FooBarBaz[str]().foo() #: foo 0
 print FooBarBaz[float]().bar() #: bar None/Optional[float]
 print FooBarBaz[str]().baz() #: baz! foo 0 bar None/Optional[str]
 
 #%% inherit_class_err_5,barebones
-class defdict(Static[Dict[str,float]]):
+class defdict(Dict[str,float]):
     def __init__(self, d: Dict[str, float]):
         self.__init__(d.items())
 z = defdict()
 z[1.1] #! 'float' does not match expected type 'str'
 
-#%% inherit_tuple,barebones
-class Foo:
-    a: int
-    b: str
-    def __init__(self, a: int):
-        self.a, self.b = a, 'yoo'
-@tuple
-class FooTup(Static[Foo]): pass
-
-f = Foo(5)
-print f.a, f.b #: 5 yoo
-fp = FooTup(6, 's')
-print fp #: (a: 6, b: 's')
-
 #%% inherit_class_err_1,barebones
-class defdict(Static[Array[int]]):
+class defdict(Array[int]):
     pass #! reference classes cannot inherit tuple classes
 
 #%% inherit_class_err_2,barebones
-@tuple
-class defdict(Static[int]):
+class defdict(TypeInfo):
     pass #! internal classes cannot inherit other classes
 
 #%% inherit_class_err_3,barebones
-class defdict(Static[Dict[int, float, float]]):
+class defdict(Dict[int, float, float]):
     pass #! Dict takes 2 generics (3 given)
 
 #%% inherit_class_err_4,barebones
@@ -363,9 +347,9 @@ class Foo:
     x: int
 class Bar:
     x: float
-class FooBar(Static[Foo], Static[Bar]):
+class FooBar(Foo, Bar):
     pass
-# right now works as we rename other fields
+#! field 'x' already defined
 
 
 #%% class_deduce,barebones

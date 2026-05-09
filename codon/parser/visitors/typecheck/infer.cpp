@@ -34,7 +34,7 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
   if (!((*a) << b)) {
     types::Type::Unification undo;
     a->unify(b, &undo);
-    // log("[unify] {} {}", a->debugString(2), b->debugString(2));
+    LOG("[unify] {} {}", a->debugString(2), b->debugString(2));
     // log("[unify] {} {}", a->debugString(1), b->debugString(1));
     E(Error::TYPE_UNIFY, getSrcInfo(), a->prettyString(), b->prettyString());
     return nullptr;
@@ -307,7 +307,9 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
 
   const auto &mros = getClass(realized)->mro;
   for (size_t i = 1; i < mros.size(); i++) {
-    auto mt = instantiateType(mros[i].get(), realized);
+    auto g = mros[i]->generalize(0); // need to generalize it first because generics are
+                                     // not yet generalized when parsing methods
+    auto mt = instantiateType(g->getClass(), realized);
     seqassert(mt->canRealize(), "cannot realize {}", mt->debugString(2));
     realization->bases.push_back(mt);
   }

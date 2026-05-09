@@ -330,7 +330,7 @@ def isinstance(obj, what):
     # isinstance(non_pyobj, pyobj) -> Literal[bool]: always false
     # isinstance(obj, T) -> Literal[bool]: true if T is base type (static or RTTI) of type(obj)
     # isinstance(obj, T) -> bool: true if type(obj) is base type (static or RTTI) of T and RTTI info matches
-    # otherwise: static[False]
+    # otherwise: Literal[False]
     pass
 
 @__attribute__
@@ -349,11 +349,20 @@ def getattr(obj, attr: Literal[str]):
 def setattr(obj, attr: Literal[str], what):
     pass
 
+class object:
+    def __init__(self, *args, **kwargs):
+        pass
+
+    # def __repr__(self) -> str:
+    #     return f"<{self.__class__.__name__} object at {self.__raw__()}>"
+
 @tuple
 @__internal__
 class Super:
-    __obj__: __T__
-    __T__: type
+    _obj: T
+    _idx: int
+    T: type
+
 
 @__generated__
 def super():

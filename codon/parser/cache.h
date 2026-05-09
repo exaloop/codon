@@ -188,9 +188,8 @@ struct Cache {
     std::unordered_set<std::string> virtuals;
     /// MRO
     std::vector<std::shared_ptr<types::ClassType>> mro;
-
-    /// List of statically inherited classes.
-    std::vector<std::string> staticParentClasses;
+    /// Classes whose base is this class
+    std::unordered_set<std::string> descendants;
 
     int jitCell = 0;
 

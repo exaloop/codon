@@ -35,7 +35,7 @@ class Any:
             return
 
         T = type(obj)
-        self._typeinfo = TypeInfo.cache(T)
+        self._typeinfo = TypeInfo.cache(__vtables__, T)
         if isinstance(T, ByVal):
             p = Ptr[T](1)
             p[0] = obj
@@ -44,7 +44,7 @@ class Any:
             self._data = obj.__raw__().as_byte()
 
     def unwrap(self, T: type) -> T:
-        if TypeInfo.cache(T) != self._typeinfo:
+        if TypeInfo.cache(__vtables__, T) != self._typeinfo:
             raise TypeError(f"Any.unwrap failed: requested {T}, but got {self._typeinfo.nice_name} instead")
         if isinstance(T, ByVal):
             p = type._force_cast(self._data, Ptr[T])

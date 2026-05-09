@@ -682,8 +682,7 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     }
   }
   if (!stmt->hasAttribute(Attr::Tuple) && !stmt->hasAttribute(Attr::Internal) &&
-      !stmt->hasAttribute(Attr::Dataclass) && stmt->getStaticBaseClasses().empty() &&
-      stmt->size() == 0) {
+      !stmt->hasAttribute(Attr::Dataclass) && stmt->size() == 0) {
     stmt->setAttribute(Attr::ClassDeduce);
   }
   if (!stmt->hasAttribute(Attr::Tuple)) {
@@ -709,12 +708,8 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
   std::unordered_set<std::string> seen;
   if (stmt->hasAttribute(Attr::Extend) && !stmt->empty())
     STOP_ERROR(Error::CLASS_EXTENSION, stmt->front().getSrcInfo());
-  if (stmt->hasAttribute(Attr::Extend) &&
-      !(stmt->getBaseClasses().empty() && stmt->getStaticBaseClasses().empty())) {
-    STOP_ERROR(Error::CLASS_EXTENSION, stmt->getBaseClasses().empty()
-                                           ? stmt->getStaticBaseClasses().front()
-                                           : stmt->getBaseClasses().front());
-  }
+  if (stmt->hasAttribute(Attr::Extend) && !stmt->getBaseClasses().empty())
+    STOP_ERROR(Error::CLASS_EXTENSION, stmt->getBaseClasses().front());
   for (auto &a : *stmt) {
     if (!a.getType() && !a.getDefault())
       STOP_ERROR(Error::CLASS_MISSING_TYPE, a.getSrcInfo(), a.getName());
@@ -747,8 +742,6 @@ void ScopingVisitor::visit(ClassStmt *stmt) {
     return;
 
   for (auto &d : stmt->getBaseClasses())
-    CHECK(transform(d));
-  for (auto &d : stmt->getStaticBaseClasses())
     CHECK(transform(d));
 }
 

@@ -54,7 +54,7 @@ class List:
     T: type = NoneType
 
 @dataclass(init=False)
-class Dict:
+class Dict(object):
     _n_buckets: int
     _size: int
     _n_occupied: int
