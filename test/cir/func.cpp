@@ -8,7 +8,8 @@ using namespace codon::ir;
 
 TEST_F(CIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
   auto *fn = module->Nr<BodiedFunc>();
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
 
   auto *fnType = module->unsafeGetFuncType("**test_type**", module->getIntType(),
                                            {module->getIntType()});
@@ -31,7 +32,8 @@ TEST_F(CIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
 
 TEST_F(CIRCoreTest, BodiedFuncQueryAndReplace) {
   auto *fn = module->Nr<BodiedFunc>();
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
   fn->setJIT();
   ASSERT_TRUE(fn->isJIT());
 
@@ -55,13 +57,15 @@ TEST_F(CIRCoreTest, BodiedFuncQueryAndReplace) {
 TEST_F(CIRCoreTest, BodiedFuncUnmangledName) {
   auto *fn = module->Nr<BodiedFunc>("Int.foo");
   fn->setUnmangledName("foo");
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
   ASSERT_EQ("foo", fn->getUnmangledName());
 }
 
 TEST_F(CIRCoreTest, BodiedFuncCloning) {
   auto *fn = module->Nr<BodiedFunc>("fn");
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
 
   fn->setJIT();
   fn->setBody(module->Nr<SeriesFlow>());
@@ -70,7 +74,8 @@ TEST_F(CIRCoreTest, BodiedFuncCloning) {
 
 TEST_F(CIRCoreTest, ExternalFuncUnmangledNameAndCloning) {
   auto *fn = module->Nr<ExternalFunc>("fn");
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
 
   fn->setUnmangledName("foo");
   ASSERT_EQ("foo", fn->getUnmangledName());
@@ -80,7 +85,8 @@ TEST_F(CIRCoreTest, ExternalFuncUnmangledNameAndCloning) {
 TEST_F(CIRCoreTest, InternalFuncParentTypeUnmangledNameAndCloning) {
   auto *fn = module->Nr<InternalFunc>("fn.1");
   fn->setUnmangledName("fn");
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
 
   fn->setParentType(module->getIntType());
   ASSERT_EQ("fn", fn->getUnmangledName());
@@ -90,7 +96,8 @@ TEST_F(CIRCoreTest, InternalFuncParentTypeUnmangledNameAndCloning) {
 
 TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
   auto *fn = module->Nr<LLVMFunc>("fn");
-  fn->realize(module->unsafeGetDummyFuncType(), {});
+  fn->realize(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}), {});
 
   fn->setLLVMBody("body");
   fn->setLLVMDeclarations("decl");

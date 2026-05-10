@@ -82,8 +82,6 @@ const char Float128Type::NodeId = 0;
 
 const char BoolType::NodeId = 0;
 
-const char VoidType::NodeId = 0;
-
 const char MemberedType::NodeId = 0;
 
 const char RecordType::NodeId = 0;

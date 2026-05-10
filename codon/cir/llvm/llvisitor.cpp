@@ -2050,13 +2050,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     // coro ID and promise
     llvm::Value *id = nullptr;
     auto *nullPtr = llvm::ConstantPointerNull::get(B->getPtrTy());
-    if (!cast<types::VoidType>(generatorType->getBase())) {
-      coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
-      coro.promise->setName("coro.promise");
-      id = B->CreateCall(coroId, {B->getInt32(0), coro.promise, nullPtr, nullPtr});
-    } else {
-      id = B->CreateCall(coroId, {B->getInt32(0), nullPtr, nullPtr, nullPtr});
-    }
+    coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
+    coro.promise->setName("coro.promise");
+    id = B->CreateCall(coroId, {B->getInt32(0), coro.promise, nullPtr, nullPtr});
     id->setName("coro.id");
     auto *needAlloc = B->CreateCall(coroAlloc, id);
     B->CreateCondBr(needAlloc, allocBlock, startBlock);
@@ -2113,11 +2109,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   if (generator) {
     B->CreateBr(coro.exit);
   } else {
-    if (cast<types::VoidType>(returnType)) {
-      B->CreateRetVoid();
-    } else {
-      B->CreateRet(llvm::Constant::getNullValue(getLLVMType(returnType)));
-    }
+    B->CreateRet(llvm::Constant::getNullValue(getLLVMType(returnType)));
   }
 }
 
@@ -2208,10 +2200,6 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
 
   if (auto *x = cast<types::BoolType>(t)) {
     return B->getInt8Ty();
-  }
-
-  if (auto *x = cast<types::VoidType>(t)) {
-    return B->getVoidTy();
   }
 
   if (auto *x = cast<types::RecordType>(t)) {
@@ -2333,10 +2321,6 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::BoolType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_boolean);
-  }
-
-  if (auto *x = cast<types::VoidType>(t)) {
-    return nullptr;
   }
 
   if (auto *x = cast<types::RecordType>(t)) {

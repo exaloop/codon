@@ -205,15 +205,6 @@ public:
   BoolType() : AcceptorExtend("bool") {}
 };
 
-/// Void type
-class VoidType : public AcceptorExtend<VoidType, PrimitiveType> {
-public:
-  static const char NodeId;
-
-  /// Constructs a void type.
-  VoidType() : AcceptorExtend("void") {}
-};
-
 /// Type from which membered types derive.
 class MemberedType : public AcceptorExtend<MemberedType, Type> {
 public:

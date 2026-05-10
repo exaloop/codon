@@ -38,7 +38,6 @@ TEST_F(CIRCoreTest, ModuleMainFunctionAndArgVar) {
   ASSERT_TRUE(main);
   auto *mainType = cast<types::FuncType>(main->getType());
   ASSERT_TRUE(mainType);
-  ASSERT_TRUE(util::match(mainType->getReturnType(), module->getVoidType()));
   ASSERT_EQ(0, std::distance(mainType->begin(), mainType->end()));
   ASSERT_FALSE(main->isReplaceable());
 

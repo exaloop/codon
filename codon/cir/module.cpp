@@ -61,7 +61,6 @@ translateArgs(codon::ast::Cache *cache, std::vector<types::Type *> &types) {
 }
 } // namespace
 
-const std::string Module::VOID_NAME = "void";
 const std::string Module::BOOL_NAME = "bool";
 const std::string Module::FLOAT_NAME = "float";
 const std::string Module::FLOAT32_NAME = "float32";
@@ -143,7 +142,9 @@ const char Module::NodeId = 0;
 
 Module::Module(const std::string &name) : AcceptorExtend(name) {
   mainFunc = std::make_unique<BodiedFunc>("main");
-  mainFunc->realize(cast<types::FuncType>(unsafeGetDummyFuncType()), {});
+  mainFunc->realize(cast<types::FuncType>(
+                        unsafeGetFuncType("<internal_func_type>", getIntType(), {})),
+                    {});
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
   argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
@@ -215,21 +216,13 @@ types::Type *Module::getOrRealizeType(const std::string &typeName,
   }
 }
 
-types::Type *Module::getVoidType() {
-  if (auto *rVal = getType(VOID_NAME))
-    return rVal;
-  return Nr<types::VoidType>();
-}
-
 types::Type *Module::getBoolType() {
   if (auto *rVal = getType(BOOL_NAME))
     return rVal;
   return Nr<types::BoolType>();
 }
 
-types::Type *Module::getIntType() {
-  return unsafeGetIntNType(64, /*sign=*/true);
-}
+types::Type *Module::getIntType() { return unsafeGetIntNType(64, /*sign=*/true); }
 
 types::Type *Module::getFloatType() {
   if (auto *rVal = getType(FLOAT_NAME))
@@ -340,10 +333,6 @@ Value *Module::getBool(bool v) { return Nr<BoolConst>(v, getBoolType()); }
 
 Value *Module::getString(std::string v) {
   return Nr<StringConst>(std::move(v), getStringType());
-}
-
-types::Type *Module::unsafeGetDummyFuncType() {
-  return unsafeGetFuncType("<internal_func_type>", getVoidType(), {});
 }
 
 types::Type *Module::unsafeGetPointerType(types::Type *base) {

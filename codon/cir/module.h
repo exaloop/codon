@@ -28,7 +28,6 @@ namespace ir {
 /// CIR object representing a program.
 class Module : public AcceptorExtend<Module, Node> {
 public:
-  static const std::string VOID_NAME;
   static const std::string BOOL_NAME;
   static const std::string FLOAT_NAME;
   static const std::string FLOAT32_NAME;
@@ -336,8 +335,6 @@ public:
   types::Type *getOrRealizeType(const std::string &typeName,
                                 std::vector<types::Generic> generics = {});
 
-  /// @return the void type
-  types::Type *getVoidType();
   /// @return the bool type
   types::Type *getBoolType();
   /// @return the int type
@@ -412,10 +409,6 @@ public:
   /// @return a string constant
   Value *getString(std::string v);
 
-  /// Gets a dummy function type. Should generally not be used as no type-checker
-  /// information is generated.
-  /// @return a func type with no args and void return type.
-  types::Type *unsafeGetDummyFuncType();
   /// Gets a pointer type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type, null for `u8*`

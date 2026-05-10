@@ -59,7 +59,6 @@ void Visitor::visit(types::Float16Type *x) { defaultVisit(x); }
 void Visitor::visit(types::BFloat16Type *x) { defaultVisit(x); }
 void Visitor::visit(types::Float128Type *x) { defaultVisit(x); }
 void Visitor::visit(types::BoolType *x) { defaultVisit(x); }
-void Visitor::visit(types::VoidType *x) { defaultVisit(x); }
 void Visitor::visit(types::RecordType *x) { defaultVisit(x); }
 void Visitor::visit(types::RefType *x) { defaultVisit(x); }
 void Visitor::visit(types::FuncType *x) { defaultVisit(x); }
@@ -122,7 +121,6 @@ void ConstVisitor::visit(const types::Float16Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::BFloat16Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::Float128Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::BoolType *x) { defaultVisit(x); }
-void ConstVisitor::visit(const types::VoidType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::RecordType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::RefType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::FuncType *x) { defaultVisit(x); }

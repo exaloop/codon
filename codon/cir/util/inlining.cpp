@@ -92,8 +92,7 @@ InlineResult inlineFunction(Func *func, std::vector<Value *> args, bool aggressi
     newVars.push_back(cv.forceClone(v));
   }
   Var *retVal = nullptr;
-  if (!fType->getReturnType()->is(M->getVoidType()) &&
-      !fType->getReturnType()->is(M->getNoneType())) {
+  if (!fType->getReturnType()->is(M->getNoneType())) {
     retVal = M->N<Var>(info, fType->getReturnType());
     newVars.push_back(retVal);
   }

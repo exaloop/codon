@@ -97,7 +97,8 @@ TEST_F(CIRCoreTest, InsertInstrCloning) {
 }
 
 TEST_F(CIRCoreTest, CallInstrQueryAndReplace) {
-  auto *type = cast<types::FuncType>(module->unsafeGetDummyFuncType());
+  auto *type = cast<types::FuncType>(
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}));
   auto *func = module->Nr<BodiedFunc>();
   func->realize(type, {});
   auto *funcVal = module->Nr<VarValue>(func);
@@ -112,7 +113,8 @@ TEST_F(CIRCoreTest, CallInstrQueryAndReplace) {
 }
 
 TEST_F(CIRCoreTest, CallInstrCloning) {
-  auto *type = module->unsafeGetDummyFuncType();
+  auto *type =
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {});
   auto *func = module->Nr<BodiedFunc>();
   func->realize(type, {});
   auto *funcVal = module->Nr<VarValue>(func);

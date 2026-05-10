@@ -21,9 +21,13 @@ TEST_F(CIRCoreTest, MatchingNonEquivalentVar) {
 TEST_F(CIRCoreTest, MatchingEquivalentFunc) {
   {
     auto *first = module->Nr<BodiedFunc>();
-    first->realize(module->unsafeGetDummyFuncType(), {});
+    first->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
     auto *second = module->Nr<BodiedFunc>();
-    second->realize(module->unsafeGetDummyFuncType(), {});
+    second->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
 
     first->setJIT();
     second->setJIT();
@@ -32,9 +36,13 @@ TEST_F(CIRCoreTest, MatchingEquivalentFunc) {
   }
   {
     auto *first = module->Nr<ExternalFunc>();
-    first->realize(module->unsafeGetDummyFuncType(), {});
+    first->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
     auto *second = module->Nr<ExternalFunc>();
-    second->realize(module->unsafeGetDummyFuncType(), {});
+    second->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
 
     first->setUnmangledName("baz");
     second->setUnmangledName("baz");
@@ -43,9 +51,13 @@ TEST_F(CIRCoreTest, MatchingEquivalentFunc) {
   }
   {
     auto *first = module->Nr<LLVMFunc>();
-    first->realize(module->unsafeGetDummyFuncType(), {});
+    first->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
     auto *second = module->Nr<LLVMFunc>();
-    second->realize(module->unsafeGetDummyFuncType(), {});
+    second->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
 
     ASSERT_TRUE(util::match(first, second));
   }
@@ -54,9 +66,13 @@ TEST_F(CIRCoreTest, MatchingEquivalentFunc) {
 TEST_F(CIRCoreTest, MatchingNonEquivalentFunc) {
   {
     auto *first = module->Nr<BodiedFunc>();
-    first->realize(module->unsafeGetDummyFuncType(), {});
+    first->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
     auto *second = module->Nr<BodiedFunc>();
-    second->realize(module->unsafeGetDummyFuncType(), {});
+    second->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
 
     first->setJIT();
 
@@ -64,9 +80,13 @@ TEST_F(CIRCoreTest, MatchingNonEquivalentFunc) {
   }
   {
     auto *first = module->Nr<ExternalFunc>();
-    first->realize(module->unsafeGetDummyFuncType(), {});
+    first->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
     auto *second = module->Nr<ExternalFunc>();
-    second->realize(module->unsafeGetDummyFuncType(), {});
+    second->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
 
     first->setUnmangledName("baz");
     second->setUnmangledName("bar");
@@ -75,9 +95,13 @@ TEST_F(CIRCoreTest, MatchingNonEquivalentFunc) {
   }
   {
     auto *first = module->Nr<LLVMFunc>();
-    first->realize(module->unsafeGetDummyFuncType(), {});
+    first->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
     auto *second = module->Nr<LLVMFunc>();
-    second->realize(module->unsafeGetDummyFuncType(), {});
+    second->realize(
+        module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
+        {});
 
     first->setLLVMLiterals({types::Generic(1)});
 
@@ -214,7 +238,8 @@ TEST_F(CIRCoreTest, MatchingInsertInstr) {
 }
 
 TEST_F(CIRCoreTest, MatchingCallInstr) {
-  auto *type = module->unsafeGetDummyFuncType();
+  auto *type =
+      module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {});
   auto *func = module->Nr<BodiedFunc>();
   func->realize(type, {});
   auto *func2 = module->Nr<BodiedFunc>();

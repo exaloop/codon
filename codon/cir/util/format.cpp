@@ -313,9 +313,6 @@ public:
   void visit(const types::BoolType *v) override {
     fmt::print(os, FMT_STRING("(bool '\"{}\")"), v->referenceString());
   }
-  void visit(const types::VoidType *v) override {
-    fmt::print(os, FMT_STRING("(void '\"{}\")"), v->referenceString());
-  }
   void visit(const types::RecordType *v) override {
     std::vector<std::string> fields;
     std::vector<NodeFormatter> formatters;
