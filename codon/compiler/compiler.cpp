@@ -124,7 +124,6 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
   module->setSrcInfo({abspath, 0, 0, 0});
-  module->setupArgVar();
   if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
     auto fo = fopen("_dump_ir.sexp", "w");
     fmt::print(fo, "{}\n", *module);

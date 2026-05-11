@@ -141,16 +141,14 @@ const std::string Module::INIT_MAGIC_NAME = "__init__";
 const char Module::NodeId = 0;
 
 Module::Module(ast::Cache *cache, const std::string &name) : AcceptorExtend(name) {
+  this->cache = cache;
   mainFunc = std::make_unique<BodiedFunc>("main");
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
-}
 
-void Module::setupArgVar() {
-  if (argVar)
-    return;
-  argVar = std::make_unique<Var>(getArrayType(getStringType()), /*global=*/true,
-                                 /*external=*/false, /*tls=*/false, ".argv");
+  argVar =
+      std::make_unique<Var>(unsafeGetArrayType(unsafeGetStringType()), /*global=*/true,
+                            /*external=*/false, /*tls=*/false, ".argv");
   argVar->setModule(this);
   argVar->setReplaceable(false);
 }
@@ -255,9 +253,7 @@ types::Type *Module::getFloat128Type() {
   return Nr<types::Float128Type>();
 }
 
-types::Type *Module::getStringType() {
-  return getOrRealizeType("str");
-}
+types::Type *Module::getStringType() { return getOrRealizeType("str"); }
 
 types::Type *Module::getPointerType(types::Type *base) {
   if (!base)
@@ -355,7 +351,8 @@ types::Type *Module::unsafeGetArrayType(types::Type *base) {
   auto name = fmt::format(FMT_STRING(".Array[{}]"), base->referenceString());
   if (auto *rVal = getType(name))
     return rVal;
-  std::vector<types::Type *> members = {getIntType(), unsafeGetPointerType(base)};
+  std::vector<types::Type *> members = {unsafeGetIntNType(64, /*sign=*/true),
+                                        unsafeGetPointerType(base)};
   std::vector<std::string> names = {"len", "ptr"};
   return Nr<types::RecordType>(name, members, names);
 }

@@ -144,9 +144,6 @@ public:
 
   virtual ~Module() noexcept = default;
 
-  /// Initialize argument variable
-  void setupArgVar();
-
   /// @return the main function
   Func *getMainFunc() { return mainFunc.get(); }
   /// @return the main function
