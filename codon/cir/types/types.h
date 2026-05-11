@@ -142,13 +142,34 @@ private:
   bool doIsAtomic() const final { return true; }
 };
 
-/// Int type (64-bit signed integer)
-class IntType : public AcceptorExtend<IntType, PrimitiveType> {
+/// Type of a variably sized integer
+class IntNType : public AcceptorExtend<IntNType, PrimitiveType> {
+private:
+  /// length of the integer
+  unsigned len;
+  /// whether the variable is signed
+  bool sign;
+
 public:
   static const char NodeId;
 
-  /// Constructs an int type.
-  IntType() : AcceptorExtend("int") {}
+  static const unsigned MAX_LEN = 2048;
+
+  /// Constructs a variably sized integer type.
+  /// @param len the length of the integer
+  /// @param sign true if signed, false otherwise
+  IntNType(unsigned len, bool sign)
+      : AcceptorExtend(getInstanceName(len, sign)), len(len), sign(sign) {}
+
+  /// @return the length of the integer
+  unsigned getLen() const { return len; }
+  /// @return true if signed
+  bool isSigned() const { return sign; }
+
+  /// @return the name of the opposite signed corresponding type
+  std::string oppositeSignName() const { return getInstanceName(len, !sign); }
+
+  static std::string getInstanceName(unsigned len, bool sign);
 };
 
 /// Float type (64-bit double)
@@ -472,36 +493,6 @@ public:
 
 private:
   bool doIsAtomic() const override { return false; }
-};
-
-/// Type of a variably sized integer
-class IntNType : public AcceptorExtend<IntNType, PrimitiveType> {
-private:
-  /// length of the integer
-  unsigned len;
-  /// whether the variable is signed
-  bool sign;
-
-public:
-  static const char NodeId;
-
-  static const unsigned MAX_LEN = 2048;
-
-  /// Constructs a variably sized integer type.
-  /// @param len the length of the integer
-  /// @param sign true if signed, false otherwise
-  IntNType(unsigned len, bool sign)
-      : AcceptorExtend(getInstanceName(len, sign)), len(len), sign(sign) {}
-
-  /// @return the length of the integer
-  unsigned getLen() const { return len; }
-  /// @return true if signed
-  bool isSigned() const { return sign; }
-
-  /// @return the name of the opposite signed corresponding type
-  std::string oppositeSignName() const { return getInstanceName(len, !sign); }
-
-  static std::string getInstanceName(unsigned len, bool sign);
 };
 
 /// Type of a vector of primitives

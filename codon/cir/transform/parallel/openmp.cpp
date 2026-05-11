@@ -121,7 +121,7 @@ struct Reduction {
     auto *M = shared->getModule();
     auto *type = getType();
 
-    if (isA<types::IntType>(type)) {
+    if (util::isInt(type)) {
       switch (kind) {
       case Kind::ADD:
         return M->getInt(0);
@@ -227,7 +227,7 @@ struct Reduction {
     auto *type = getType();
     std::string func = "";
 
-    if (isA<types::IntType>(type)) {
+    if (util::isInt(type)) {
       switch (kind) {
       case Kind::ADD:
         func = "_atomic_int_add";

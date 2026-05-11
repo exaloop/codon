@@ -23,6 +23,13 @@ bool hasAttribute(const Func *func, const std::string &attribute);
 ///         the given module
 bool isStdlibFunc(const Func *func, const std::string &submodule = "");
 
+/// Checks whether a type represents an int type with given length and sign.
+/// @param type the type
+/// @param len bit length to check for
+/// @param sign true if type is signed, false otherwise
+/// @return true if type represents int type with given parameters
+bool isInt(const types::Type *type, unsigned len = 64, bool sign = true);
+
 /// Calls a function.
 /// @param func the function
 /// @param args vector of call arguments

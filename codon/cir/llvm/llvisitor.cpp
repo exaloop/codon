@@ -2146,8 +2146,8 @@ void LLVMVisitor::visit(const PointerValue *x) {
  */
 
 llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
-  if (auto *x = cast<types::IntType>(t)) {
-    return B->getInt64Ty();
+  if (auto *x = cast<types::IntNType>(t)) {
+    return B->getIntNTy(x->getLen());
   }
 
   if (auto *x = cast<types::FloatType>(t)) {
@@ -2206,10 +2206,6 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return B->getPtrTy();
   }
 
-  if (auto *x = cast<types::IntNType>(t)) {
-    return B->getIntNTy(x->getLen());
-  }
-
   if (auto *x = cast<types::VectorType>(t)) {
     return llvm::VectorType::get(getLLVMType(x->getBase()), x->getCount(),
                                  /*Scalable=*/false);
@@ -2259,9 +2255,10 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   auto *type = getLLVMType(t);
   auto &layout = M->getDataLayout();
 
-  if (auto *x = cast<types::IntType>(t)) {
+  if (auto *x = cast<types::IntNType>(t)) {
     return db.builder->createBasicType(
-        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_signed);
+        x->getName(), layout.getTypeAllocSizeInBits(type),
+        x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
   }
 
   if (auto *x = cast<types::FloatType>(t)) {
@@ -2398,12 +2395,6 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   if (auto *x = cast<types::GeneratorType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_address);
-  }
-
-  if (auto *x = cast<types::IntNType>(t)) {
-    return db.builder->createBasicType(
-        x->getName(), layout.getTypeAllocSizeInBits(type),
-        x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
   }
 
   if (auto *x = cast<types::VectorType>(t)) {

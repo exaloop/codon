@@ -292,8 +292,9 @@ public:
   }
   void visit(const dsl::CustomInstr *v) override { v->doFormat(os); }
 
-  void visit(const types::IntType *v) override {
-    fmt::print(os, FMT_STRING("(int '\"{}\")"), v->referenceString());
+  void visit(const types::IntNType *v) override {
+    fmt::print(os, FMT_STRING("(int '\"{}\" {} (signed {}))"), v->referenceString(),
+               v->getLen(), v->isSigned());
   }
   void visit(const types::FloatType *v) override {
     fmt::print(os, FMT_STRING("(float '\"{}\")"), v->referenceString());
@@ -345,10 +346,6 @@ public:
   void visit(const types::GeneratorType *v) override {
     fmt::print(os, FMT_STRING("(generator '\"{}\" {})"), v->referenceString(),
                makeFormatter(v->getBase()));
-  }
-  void visit(const types::IntNType *v) override {
-    fmt::print(os, FMT_STRING("(intn '\"{}\" {} (signed {}))"), v->referenceString(),
-               v->getLen(), v->isSigned());
   }
   void visit(const types::VectorType *v) override {
     fmt::print(os, FMT_STRING("(vector '\"{}\" {} (count {}))"), v->referenceString(),

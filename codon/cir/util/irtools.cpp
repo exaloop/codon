@@ -23,6 +23,12 @@ bool isStdlibFunc(const Func *func, const std::string &submodule) {
   return false;
 }
 
+bool isInt(const types::Type *type, unsigned len, bool sign) {
+  if (auto *itype = cast<types::IntNType>(type))
+    return itype->getLen() == len && itype->isSigned() == sign;
+  return false;
+}
+
 CallInstr *call(Func *func, const std::vector<Value *> &args) {
   auto *M = func->getModule();
   return M->Nr<CallInstr>(M->Nr<VarValue>(func), args);

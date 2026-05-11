@@ -68,7 +68,11 @@ Value *Type::doConstruct(std::vector<Value *> args) {
 
 const char PrimitiveType::NodeId = 0;
 
-const char IntType::NodeId = 0;
+const char IntNType::NodeId = 0;
+
+std::string IntNType::getInstanceName(unsigned int len, bool sign) {
+  return fmt::format(FMT_STRING("{}Int{}"), sign ? "" : "U", len);
+}
 
 const char FloatType::NodeId = 0;
 
@@ -204,12 +208,6 @@ const char GeneratorType::NodeId = 0;
 
 std::string GeneratorType::getInstanceName(Type *base) {
   return fmt::format(FMT_STRING("Generator[{}]"), base->referenceString());
-}
-
-const char IntNType::NodeId = 0;
-
-std::string IntNType::getInstanceName(unsigned int len, bool sign) {
-  return fmt::format(FMT_STRING("{}Int{}"), sign ? "" : "U", len);
 }
 
 const char VectorType::NodeId = 0;

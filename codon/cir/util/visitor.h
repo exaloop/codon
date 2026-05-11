@@ -16,7 +16,6 @@ class Node;
 namespace types {
 class Type;
 class PrimitiveType;
-class IntType;
 class FloatType;
 class Float32Type;
 class Float16Type;
@@ -152,7 +151,7 @@ public:
 
   VISIT(types::Type);
   VISIT(types::PrimitiveType);
-  VISIT(types::IntType);
+  VISIT(types::IntNType);
   VISIT(types::FloatType);
   VISIT(types::Float32Type);
   VISIT(types::Float16Type);
@@ -165,7 +164,6 @@ public:
   VISIT(types::OptionalType);
   VISIT(types::PointerType);
   VISIT(types::GeneratorType);
-  VISIT(types::IntNType);
   VISIT(types::VectorType);
   VISIT(types::UnionType);
   VISIT(dsl::types::CustomType);
@@ -231,7 +229,7 @@ public:
 
   CONST_VISIT(types::Type);
   CONST_VISIT(types::PrimitiveType);
-  CONST_VISIT(types::IntType);
+  CONST_VISIT(types::IntNType);
   CONST_VISIT(types::FloatType);
   CONST_VISIT(types::Float32Type);
   CONST_VISIT(types::Float16Type);
@@ -244,7 +242,6 @@ public:
   CONST_VISIT(types::OptionalType);
   CONST_VISIT(types::PointerType);
   CONST_VISIT(types::GeneratorType);
-  CONST_VISIT(types::IntNType);
   CONST_VISIT(types::VectorType);
   CONST_VISIT(types::UnionType);
   CONST_VISIT(dsl::types::CustomType);
