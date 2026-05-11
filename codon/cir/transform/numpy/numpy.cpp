@@ -61,12 +61,11 @@ const std::string FUSION_MODULE = "std.numpy.fusion";
 
 NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
     : none(M->getNoneType()), optnone(M->getOptionalType(none)),
-      bool_(M->getBoolType()), i8(M->getIntNType(8, true)),
-      u8(M->getIntNType(8, false)), i16(M->getIntNType(16, true)),
-      u16(M->getIntNType(16, false)), i32(M->getIntNType(32, true)),
-      u32(M->getIntNType(32, false)), i64(M->getIntType()),
-      u64(M->getIntNType(64, false)), f16(M->getFloat16Type()),
-      f32(M->getFloat32Type()), f64(M->getFloatType()),
+      bool_(M->getBoolType()), i8(M->getIntType(8, true)), u8(M->getIntType(8, false)),
+      i16(M->getIntType(16, true)), u16(M->getIntType(16, false)),
+      i32(M->getIntType(32, true)), u32(M->getIntType(32, false)),
+      i64(M->getIntType(64, true)), u64(M->getIntType(64, false)),
+      f16(M->getFloat16Type()), f32(M->getFloat32Type()), f64(M->getFloatType()),
       c64(M->getType(ast::getMangledClass("std.internal.types.complex", "complex64"))),
       c128(M->getType(ast::getMangledClass("std.internal.types.complex", "complex"))) {}
 

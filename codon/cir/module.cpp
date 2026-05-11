@@ -146,9 +146,8 @@ Module::Module(ast::Cache *cache, const std::string &name) : AcceptorExtend(name
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
 
-  argVar =
-      std::make_unique<Var>(unsafeGetArrayType(unsafeGetStringType()), /*global=*/true,
-                            /*external=*/false, /*tls=*/false, ".argv");
+  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
+                                 /*external=*/false, /*tls=*/false, ".argv");
   argVar->setModule(this);
   argVar->setReplaceable(false);
 }
@@ -221,8 +220,6 @@ types::Type *Module::getBoolType() {
   return Nr<types::BoolType>();
 }
 
-types::Type *Module::getIntType() { return getIntNType(64, /*sign=*/true); }
-
 types::Type *Module::getFloatType() {
   if (auto *rVal = getType(FLOAT_NAME))
     return rVal;
@@ -253,11 +250,18 @@ types::Type *Module::getFloat128Type() {
   return Nr<types::Float128Type>();
 }
 
-types::Type *Module::getStringType() { return getOrRealizeType("str"); }
+types::Type *Module::getStringType() {
+  if (auto *rVal = getType(STRING_NAME))
+    return rVal;
+  return Nr<types::RecordType>(
+      STRING_NAME,
+      std::vector<types::Type *>{unsafeGetIntType(), unsafeGetPointerType()},
+      std::vector<std::string>{"len", "ptr"});
+}
 
 types::Type *Module::getPointerType(types::Type *base) {
   if (!base)
-    base = getIntNType(8, /*sign=*/false);
+    base = getIntType(8, /*sign=*/false);
   return getOrRealizeType("Ptr", {base});
 }
 
@@ -290,7 +294,10 @@ types::Type *Module::getFuncType(types::Type *rType,
   return result;
 }
 
-types::Type *Module::getIntNType(unsigned int len, bool sign) {
+types::Type *Module::getIntType(unsigned int len, bool sign) {
+  // Check for core 'int' type
+  if (len == 64 && sign)
+    return unsafeGetIntType(len, sign);
   return getOrRealizeType(sign ? "Int" : "UInt", {len});
 }
 
@@ -330,29 +337,18 @@ Value *Module::getString(std::string v) {
 
 types::Type *Module::unsafeGetPointerType(types::Type *base) {
   if (!base)
-    base = unsafeGetIntNType(8, /*sign=*/false);
+    base = unsafeGetIntType(8, /*sign=*/false);
   auto name = types::PointerType::getInstanceName(base);
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<types::PointerType>(base);
 }
 
-types::Type *Module::unsafeGetStringType() {
-  if (auto *rVal = getType(STRING_NAME))
-    return rVal;
-  return Nr<types::RecordType>(
-      STRING_NAME,
-      std::vector<types::Type *>{unsafeGetIntNType(64, /*sign=*/true),
-                                 unsafeGetPointerType()},
-      std::vector<std::string>{"len", "ptr"});
-}
-
 types::Type *Module::unsafeGetArrayType(types::Type *base) {
   auto name = fmt::format(FMT_STRING(".Array[{}]"), base->referenceString());
   if (auto *rVal = getType(name))
     return rVal;
-  std::vector<types::Type *> members = {unsafeGetIntNType(64, /*sign=*/true),
-                                        unsafeGetPointerType(base)};
+  std::vector<types::Type *> members = {unsafeGetIntType(), unsafeGetPointerType(base)};
   std::vector<std::string> names = {"len", "ptr"};
   return Nr<types::RecordType>(name, members, names);
 }
@@ -398,7 +394,7 @@ types::Type *Module::unsafeGetMemberedType(const std::string &name, bool ref) {
   return rVal;
 }
 
-types::Type *Module::unsafeGetIntNType(unsigned int len, bool sign) {
+types::Type *Module::unsafeGetIntType(unsigned int len, bool sign) {
   auto name = types::IntNType::getInstanceName(len, sign);
   if (auto *rVal = getType(name))
     return rVal;

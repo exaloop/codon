@@ -36,6 +36,8 @@ TEST_F(CIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
 TEST_F(CIRCoreTest, ModuleMainFunctionAndArgVar) {
   auto *main = module->getMainFunc();
   ASSERT_TRUE(main);
+  main->realize(
+      module->unsafeGetFuncType("my_func_type", module->getIntType(), {}, false), {});
   auto *mainType = cast<types::FuncType>(main->getType());
   ASSERT_TRUE(mainType);
   ASSERT_EQ(0, std::distance(mainType->begin(), mainType->end()));

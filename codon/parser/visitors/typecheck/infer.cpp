@@ -610,9 +610,9 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "float128") {
     handle = module->getFloat128Type();
   } else if (t->name == "str") {
-    handle = module->unsafeGetStringType();
+    handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
-    handle = module->unsafeGetIntNType(getIntLiteral(statics[0]), t->name == "Int");
+    handle = module->unsafeGetIntType(getIntLiteral(statics[0]), t->name == "Int");
   } else if (t->name == "Ptr") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);

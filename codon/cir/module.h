@@ -337,8 +337,11 @@ public:
 
   /// @return the bool type
   types::Type *getBoolType();
-  /// @return the int type
-  types::Type *getIntType();
+  /// Gets a variable length integer type.
+  /// @param len the length
+  /// @param sign true if signed
+  /// @return a variable length integer type
+  types::Type *getIntType(unsigned len = 64, bool sign = true);
   /// @return the float type
   types::Type *getFloatType();
   /// @return the float32 type
@@ -374,11 +377,6 @@ public:
   /// @return the void type
   types::Type *getFuncType(types::Type *rType, std::vector<types::Type *> argTypes,
                            bool variadic = false);
-  /// Gets a variable length integer type.
-  /// @param len the length
-  /// @param sign true if signed
-  /// @return a variable length integer type
-  types::Type *getIntNType(unsigned len, bool sign);
   /// Gets a vector type.
   /// @param count the vector size
   /// @param base the vector base type (MUST be a primitive type)
@@ -414,10 +412,6 @@ public:
   /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
   types::Type *unsafeGetPointerType(types::Type *base = nullptr);
-  /// Gets the string type. Should generally not be used as no type-checker
-  /// information is generated.
-  /// @return the str type
-  types::Type *unsafeGetStringType();
   /// Gets an array type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type
@@ -453,7 +447,7 @@ public:
   /// @param len the length
   /// @param sign true if signed
   /// @return a variable length integer type
-  types::Type *unsafeGetIntNType(unsigned len, bool sign);
+  types::Type *unsafeGetIntType(unsigned len = 64, bool sign = true);
   /// Gets a vector type. Should generally not be used as no
   /// type-checker information is generated.
   /// @param count the vector size
