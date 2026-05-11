@@ -140,7 +140,11 @@ const std::string Module::INIT_MAGIC_NAME = "__init__";
 
 const char Module::NodeId = 0;
 
-Module::Module(const std::string &name) : AcceptorExtend(name) {
+Module::Module(ast::Cache *cache, const std::string &name) : AcceptorExtend(name) {}
+
+void Module::setup() {
+  if (mainFunc)
+    return;
   mainFunc = std::make_unique<BodiedFunc>("main");
   mainFunc->realize(cast<types::FuncType>(
                         unsafeGetFuncType("<internal_func_type>", getIntType(), {})),
@@ -158,7 +162,6 @@ void Module::parseCode(const std::string &code) { cache->parseCode(code); }
 Func *Module::getOrRealizeMethod(types::Type *parent, const std::string &methodName,
                                  std::vector<types::Type *> args,
                                  std::vector<types::Generic> generics) {
-
   auto cls =
       std::const_pointer_cast<ast::types::Type>(parent->getAstType())->getClass();
   auto method = cache->findMethod(cls, methodName, generateDummyNames(args));
@@ -222,7 +225,7 @@ types::Type *Module::getBoolType() {
   return Nr<types::BoolType>();
 }
 
-types::Type *Module::getIntType() { return unsafeGetIntNType(64, /*sign=*/true); }
+types::Type *Module::getIntType() { return getIntNType(64, /*sign=*/true); }
 
 types::Type *Module::getFloatType() {
   if (auto *rVal = getType(FLOAT_NAME))
@@ -258,7 +261,9 @@ types::Type *Module::getStringType() {
   if (auto *rVal = getType(STRING_NAME))
     return rVal;
   return Nr<types::RecordType>(
-      STRING_NAME, std::vector<types::Type *>{getIntType(), unsafeGetPointerType()},
+      STRING_NAME,
+      std::vector<types::Type *>{unsafeGetIntNType(64, /*sign=*/true),
+                                 unsafeGetPointerType()},
       std::vector<std::string>{"len", "ptr"});
 }
 

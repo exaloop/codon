@@ -8,9 +8,21 @@ class Ptr:
         ret ptr null
 
     @overload
-    @__internal__
     def __new__(sz: int) -> Ptr[T]:
-        pass
+        if T.__atomic__:
+            @pure
+            @C
+            def seq_alloc_atomic(a: int) -> Ptr[u8]:
+                pass
+
+            return Ptr[T](seq_alloc_atomic(sz * T.__elemsize__))
+        else:
+            @pure
+            @C
+            def seq_alloc(a: int) -> Ptr[u8]:
+                pass
+
+            return Ptr[T](seq_alloc(sz * T.__elemsize__))
 
     @pure
     @derives

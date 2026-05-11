@@ -1771,35 +1771,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   B->SetInsertPoint(block);
   llvm::Value *result = nullptr;
 
-  if (internalFuncMatches<PointerType, IntType>("__new__", x)) {
-    auto *pointerType = cast<PointerType>(parentType);
-    Type *baseType = pointerType->getBase();
-    auto *llvmBaseType = getLLVMType(baseType);
-    auto allocFunc = makeAllocFunc(baseType->isAtomic());
-    auto *elemSize = B->getInt64(M->getDataLayout().getTypeAllocSize(llvmBaseType));
-    auto *allocSize = B->CreateMul(elemSize, args[0]);
-    result = B->CreateCall(allocFunc, allocSize);
-  }
-
-  else if (internalFuncMatches<IntType, IntNType>("__new__", x)) {
-    auto *intNType = cast<IntNType>(argTypes[0]);
-    if (intNType->isSigned()) {
-      result = B->CreateSExtOrTrunc(args[0], B->getInt64Ty());
-    } else {
-      result = B->CreateZExtOrTrunc(args[0], B->getInt64Ty());
-    }
-  }
-
-  else if (internalFuncMatches<IntNType, IntType>("__new__", x)) {
-    auto *intNType = cast<IntNType>(parentType);
-    if (intNType->isSigned()) {
-      result = B->CreateSExtOrTrunc(args[0], getLLVMType(intNType));
-    } else {
-      result = B->CreateZExtOrTrunc(args[0], getLLVMType(intNType));
-    }
-  }
-
-  else if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
+  if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
     auto *generatorType = cast<GeneratorType>(parentType);
     auto *baseType = getLLVMType(generatorType->getBase());
     if (baseType->isVoidTy()) {

@@ -140,9 +140,12 @@ public:
 
   /// Constructs an CIR module.
   /// @param name the module name
-  explicit Module(const std::string &name = "");
+  explicit Module(ast::Cache *cache, const std::string &name = "");
 
   virtual ~Module() noexcept = default;
+
+  /// Initialize various fields like main function etc.
+  void setup();
 
   /// @return the main function
   Func *getMainFunc() { return mainFunc.get(); }

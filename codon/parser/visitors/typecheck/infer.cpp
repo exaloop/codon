@@ -612,8 +612,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "str") {
     handle = module->getStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
-    handle =
-        module->Nr<ir::types::IntNType>(getIntLiteral(statics[0]), t->name == "Int");
+    handle = module->unsafeGetIntNType(getIntLiteral(statics[0]), t->name == "Int");
   } else if (t->name == "Ptr") {
     seqassert(types.size() == 1, "bad generics/statics");
     handle = module->unsafeGetPointerType(types[0]);

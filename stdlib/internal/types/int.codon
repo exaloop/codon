@@ -74,16 +74,6 @@ class Int:
         return convert(what)
 
     @overload
-    def __new__(what: int) -> Int[N]:
-        _check_bitwidth(N)
-        if N < 64:
-            return Int._trunc(what, 64, N)
-        elif N == 64:
-            return what
-        else:
-            return Int._sext(what, 64, N)
-
-    @overload
     def __new__(what: str, base: int = 10) -> Int[N]:
         _check_bitwidth(N)
         return Int[N]._from_str(what, base)

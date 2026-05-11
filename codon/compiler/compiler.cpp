@@ -41,7 +41,7 @@ Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
     : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics),
       pyExtension(pyExtension), input(), plm(std::make_unique<PluginManager>(argv0)),
       cache(std::make_unique<ast::Cache>(argv0, fs)),
-      module(std::make_unique<ir::Module>()),
+      module(std::make_unique<ir::Module>(cache.get())),
       pm(std::make_unique<ir::transform::PassManager>(
           getPassManagerInit(mode, isTest), disabledPasses, pyNumerics, pyExtension)),
       llvisitor(std::make_unique<ir::LLVMVisitor>()) {
@@ -49,7 +49,6 @@ Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
   cache->pythonExt = pyExtension;
   cache->pythonCompat = pyNumerics;
   cache->compiler = this;
-  module->setCache(cache.get());
   llvisitor->setDebug(debug);
   llvisitor->setPluginManager(plm.get());
 }
@@ -125,6 +124,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
     return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
   }
   module->setSrcInfo({abspath, 0, 0, 0});
+  module->setup();
   if (codon::getLogger().flags & codon::Logger::FLAG_USER) {
     auto fo = fopen("_dump_ir.sexp", "w");
     fmt::print(fo, "{}\n", *module);
