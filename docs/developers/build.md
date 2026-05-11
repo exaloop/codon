@@ -15,15 +15,11 @@ cmake -S llvm-project/llvm -B llvm-project/build \
     -DLLVM_ENABLE_RTTI=ON \
     -DLLVM_ENABLE_ZLIB=OFF \
     -DLLVM_ENABLE_ZSTD=OFF \
-    -DLLVM_ENABLE_PROJECTS="openmp" \
+    -DLLVM_ENABLE_PROJECTS="clang;openmp" \
     -DLLVM_TARGETS_TO_BUILD=all
 cmake --build llvm-project/build
 cmake --install llvm-project/build --prefix=llvm-project/install
 ```
-
-You can use `-DLLVM_ENABLE_PROJECTS="clang;openmp"` if you do not have `clang`
-installed on your system. We also recommend setting a local prefix during
-installation to avoid clashes with the system LLVM.
 
 ## Build
 
