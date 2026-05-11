@@ -8,7 +8,7 @@
 namespace codon {
 namespace jit {
 
-Engine::Engine() : jit(), debug(nullptr) {
+Engine::Engine() : jit(), debug(nullptr), globalPrefix('\0') {
   auto eb = llvm::EngineBuilder();
   eb.setMArch(llvm::codegen::getMArch());
   eb.setMCPU(llvm::codegen::getCPUStr());
@@ -39,10 +39,10 @@ Engine::Engine() : jit(), debug(nullptr) {
   builder.setJITTargetMachineBuilder(
       llvm::orc::JITTargetMachineBuilder(target->getTargetTriple()));
   jit = llvm::cantFail(builder.create());
+  globalPrefix = layout.getGlobalPrefix();
 
-  jit->getMainJITDylib().addGenerator(
-      llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
-          layout.getGlobalPrefix())));
+  jit->getMainJITDylib().addGenerator(llvm::cantFail(
+      llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(globalPrefix)));
 
   jit->getIRTransformLayer().setTransform(
       [&](llvm::orc::ThreadSafeModule module,
@@ -64,6 +64,14 @@ llvm::Error Engine::addModule(llvm::orc::ThreadSafeModule module,
 
 llvm::Expected<llvm::orc::ExecutorAddr> Engine::lookup(llvm::StringRef name) {
   return jit->lookup(name);
+}
+
+llvm::Error Engine::addDynamicLibrary(const std::string &path) {
+  auto gen = llvm::orc::DynamicLibrarySearchGenerator::Load(path.c_str(), globalPrefix);
+  if (!gen)
+    return gen.takeError();
+  jit->getMainJITDylib().addGenerator(std::move(*gen));
+  return llvm::Error::success();
 }
 
 } // namespace jit
