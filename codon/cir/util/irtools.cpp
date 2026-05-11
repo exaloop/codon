@@ -24,7 +24,7 @@ bool isStdlibFunc(const Func *func, const std::string &submodule) {
 }
 
 bool isInt(const types::Type *type, unsigned len, bool sign) {
-  if (auto *itype = cast<types::IntNType>(type))
+  if (auto *itype = cast<types::IntType>(type))
     return itype->getLen() == len && itype->isSigned() == sign;
   return false;
 }

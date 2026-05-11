@@ -52,7 +52,7 @@ void Visitor::visit(FlowInstr *x) { defaultVisit(x); }
 void Visitor::visit(dsl::CustomInstr *x) { defaultVisit(x); }
 void Visitor::visit(types::Type *x) { defaultVisit(x); }
 void Visitor::visit(types::PrimitiveType *x) { defaultVisit(x); }
-void Visitor::visit(types::IntNType *x) { defaultVisit(x); }
+void Visitor::visit(types::IntType *x) { defaultVisit(x); }
 void Visitor::visit(types::FloatType *x) { defaultVisit(x); }
 void Visitor::visit(types::Float32Type *x) { defaultVisit(x); }
 void Visitor::visit(types::Float16Type *x) { defaultVisit(x); }
@@ -113,7 +113,7 @@ void ConstVisitor::visit(const FlowInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const dsl::CustomInstr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::PrimitiveType *x) { defaultVisit(x); }
-void ConstVisitor::visit(const types::IntNType *x) { defaultVisit(x); }
+void ConstVisitor::visit(const types::IntType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::FloatType *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::Float32Type *x) { defaultVisit(x); }
 void ConstVisitor::visit(const types::Float16Type *x) { defaultVisit(x); }

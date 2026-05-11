@@ -395,10 +395,10 @@ types::Type *Module::unsafeGetMemberedType(const std::string &name, bool ref) {
 }
 
 types::Type *Module::unsafeGetIntType(unsigned int len, bool sign) {
-  auto name = types::IntNType::getInstanceName(len, sign);
+  auto name = types::IntType::getInstanceName(len, sign);
   if (auto *rVal = getType(name))
     return rVal;
-  return Nr<types::IntNType>(len, sign);
+  return Nr<types::IntType>(len, sign);
 }
 
 types::Type *Module::unsafeGetVectorType(unsigned int count, types::Type *base) {

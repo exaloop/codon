@@ -2146,7 +2146,7 @@ void LLVMVisitor::visit(const PointerValue *x) {
  */
 
 llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
-  if (auto *x = cast<types::IntNType>(t)) {
+  if (auto *x = cast<types::IntType>(t)) {
     return B->getIntNTy(x->getLen());
   }
 
@@ -2255,7 +2255,7 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   auto *type = getLLVMType(t);
   auto &layout = M->getDataLayout();
 
-  if (auto *x = cast<types::IntNType>(t)) {
+  if (auto *x = cast<types::IntType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type),
         x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);

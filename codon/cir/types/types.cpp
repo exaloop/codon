@@ -68,9 +68,9 @@ Value *Type::doConstruct(std::vector<Value *> args) {
 
 const char PrimitiveType::NodeId = 0;
 
-const char IntNType::NodeId = 0;
+const char IntType::NodeId = 0;
 
-std::string IntNType::getInstanceName(unsigned int len, bool sign) {
+std::string IntType::getInstanceName(unsigned int len, bool sign) {
   return fmt::format(FMT_STRING("{}Int{}"), sign ? "" : "U", len);
 }
 

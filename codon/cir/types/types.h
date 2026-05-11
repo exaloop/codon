@@ -143,7 +143,7 @@ private:
 };
 
 /// Type of a variably sized integer
-class IntNType : public AcceptorExtend<IntNType, PrimitiveType> {
+class IntType : public AcceptorExtend<IntType, PrimitiveType> {
 private:
   /// length of the integer
   unsigned len;
@@ -158,7 +158,7 @@ public:
   /// Constructs a variably sized integer type.
   /// @param len the length of the integer
   /// @param sign true if signed, false otherwise
-  IntNType(unsigned len, bool sign)
+  IntType(unsigned len, bool sign)
       : AcceptorExtend(getInstanceName(len, sign)), len(len), sign(sign) {}
 
   /// @return the length of the integer

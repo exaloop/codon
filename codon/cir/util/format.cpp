@@ -292,7 +292,7 @@ public:
   }
   void visit(const dsl::CustomInstr *v) override { v->doFormat(os); }
 
-  void visit(const types::IntNType *v) override {
+  void visit(const types::IntType *v) override {
     fmt::print(os, FMT_STRING("(int '\"{}\" {} (signed {}))"), v->referenceString(),
                v->getLen(), v->isSigned());
   }
