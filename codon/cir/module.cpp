@@ -140,18 +140,16 @@ const std::string Module::INIT_MAGIC_NAME = "__init__";
 
 const char Module::NodeId = 0;
 
-Module::Module(ast::Cache *cache, const std::string &name) : AcceptorExtend(name) {}
-
-void Module::setup() {
-  if (mainFunc)
-    return;
+Module::Module(ast::Cache *cache, const std::string &name) : AcceptorExtend(name) {
   mainFunc = std::make_unique<BodiedFunc>("main");
-  mainFunc->realize(cast<types::FuncType>(
-                        unsafeGetFuncType("<internal_func_type>", getIntType(), {})),
-                    {});
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
-  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
+}
+
+void Module::setupArgVar() {
+  if (argVar)
+    return;
+  argVar = std::make_unique<Var>(getArrayType(getStringType()), /*global=*/true,
                                  /*external=*/false, /*tls=*/false, ".argv");
   argVar->setModule(this);
   argVar->setReplaceable(false);
@@ -258,13 +256,7 @@ types::Type *Module::getFloat128Type() {
 }
 
 types::Type *Module::getStringType() {
-  if (auto *rVal = getType(STRING_NAME))
-    return rVal;
-  return Nr<types::RecordType>(
-      STRING_NAME,
-      std::vector<types::Type *>{unsafeGetIntNType(64, /*sign=*/true),
-                                 unsafeGetPointerType()},
-      std::vector<std::string>{"len", "ptr"});
+  return getOrRealizeType("str");
 }
 
 types::Type *Module::getPointerType(types::Type *base) {
@@ -347,6 +339,16 @@ types::Type *Module::unsafeGetPointerType(types::Type *base) {
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<types::PointerType>(base);
+}
+
+types::Type *Module::unsafeGetStringType() {
+  if (auto *rVal = getType(STRING_NAME))
+    return rVal;
+  return Nr<types::RecordType>(
+      STRING_NAME,
+      std::vector<types::Type *>{unsafeGetIntNType(64, /*sign=*/true),
+                                 unsafeGetPointerType()},
+      std::vector<std::string>{"len", "ptr"});
 }
 
 types::Type *Module::unsafeGetArrayType(types::Type *base) {

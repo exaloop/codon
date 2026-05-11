@@ -24,17 +24,21 @@ TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
 
 ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   ir::BodiedFunc *main = nullptr;
+  auto none = cache->classes["NoneType"].realizations["NoneType"]->ir;
+
   if (cache->isJit) {
     auto fnName = fmt::format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});
     main->setGlobal();
-    auto irType = cache->module->unsafeGetFuncType(
-        fnName, cache->classes["NoneType"].realizations["NoneType"]->ir, {}, false);
+    auto irType = cache->module->unsafeGetFuncType(fnName, none, {}, false);
     main->realize(irType, {});
     main->setJIT();
   } else {
-    main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
+    main = ir::cast<ir::BodiedFunc>(cache->module->getMainFunc());
+    auto irType =
+        cache->module->unsafeGetFuncType("<internal_func_type>", none, {}, false);
+    main->realize(irType, {});
     auto path = cache->fs->get_module0();
     main->setSrcInfo({path, 0, 0, 0});
   }

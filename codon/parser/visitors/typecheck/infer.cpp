@@ -610,7 +610,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   } else if (t->name == "float128") {
     handle = module->getFloat128Type();
   } else if (t->name == "str") {
-    handle = module->getStringType();
+    handle = module->unsafeGetStringType();
   } else if (t->name == "Int" || t->name == "UInt") {
     handle = module->unsafeGetIntNType(getIntLiteral(statics[0]), t->name == "Int");
   } else if (t->name == "Ptr") {

@@ -12,7 +12,7 @@ protected:
   void SetUp() override {
     codon::ir::IdMixin::resetId();
     module = std::make_unique<codon::ir::Module>(/*cache=*/nullptr, "test");
-    module->setup();
+    module->setupArgVar();
     cv = std::make_unique<codon::ir::util::CloneVisitor>(module.get());
   }
 };

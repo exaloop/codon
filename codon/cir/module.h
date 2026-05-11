@@ -144,8 +144,8 @@ public:
 
   virtual ~Module() noexcept = default;
 
-  /// Initialize various fields like main function etc.
-  void setup();
+  /// Initialize argument variable
+  void setupArgVar();
 
   /// @return the main function
   Func *getMainFunc() { return mainFunc.get(); }
@@ -417,6 +417,10 @@ public:
   /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
   types::Type *unsafeGetPointerType(types::Type *base = nullptr);
+  /// Gets the string type. Should generally not be used as no type-checker
+  /// information is generated.
+  /// @return the str type
+  types::Type *unsafeGetStringType();
   /// Gets an array type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type
