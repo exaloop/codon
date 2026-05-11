@@ -1,7 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from argparse import ArgumentError
-import ctypes
 import inspect
 import sys
 import os
@@ -12,8 +11,6 @@ import textwrap
 import astunparse
 import numpy as np
 from pathlib import Path
-
-sys.setdlopenflags(sys.getdlopenflags() | ctypes.RTLD_GLOBAL)
 
 from .codon_jit import JITWrapper, JITError, codon_library
 
