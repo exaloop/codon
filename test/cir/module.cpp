@@ -43,11 +43,16 @@ TEST_F(CIRCoreTest, ModuleMainFunctionAndArgVar) {
   ASSERT_EQ(0, std::distance(mainType->begin(), mainType->end()));
   ASSERT_FALSE(main->isReplaceable());
 
-  auto *argVar = module->getArgVar();
-  ASSERT_TRUE(argVar);
-  ASSERT_TRUE(util::match(argVar->getType(),
-                          module->unsafeGetArrayType(module->getStringType())));
-  ASSERT_FALSE(argVar->isReplaceable());
+  auto *argvVar = module->getArgvVar();
+  ASSERT_TRUE(argvVar);
+  ASSERT_TRUE(util::match(argvVar->getType(),
+                          module->unsafeGetPointerType(module->getStringType())));
+  ASSERT_FALSE(argvVar->isReplaceable());
+
+  auto *argcVar = module->getArgcVar();
+  ASSERT_TRUE(argcVar);
+  ASSERT_TRUE(util::match(argcVar->getType(), module->getIntType()));
+  ASSERT_FALSE(argcVar->isReplaceable());
 }
 
 TEST_F(CIRCoreTest, ModuleTypeGetAndLookup) {

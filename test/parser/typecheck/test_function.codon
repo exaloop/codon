@@ -303,7 +303,7 @@ def foo():
         x = __array__[T](N)
         print(x.__class__.__name__)
     return bar
-foo()()  #: Array[Int[15]]
+foo()()  #: Ptr[Int[15]]
 
 #%% nested_generic_error,barebones
 def f[T]():

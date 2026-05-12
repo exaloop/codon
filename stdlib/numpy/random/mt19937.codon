@@ -215,8 +215,8 @@ class MT19937:
         from internal.gc import sizeof
         i = MEXP - 1
         temp_data = __array__[u32](N + 1)
-        str.memset(temp_data.ptr.as_byte(), u8(0), (N + 1) * sizeof(u32))
-        temp = MT19937(temp_data.ptr)
+        str.memset(temp_data.as_byte(), u8(0), (N + 1) * sizeof(u32))
+        temp = MT19937(temp_data)
 
         while not get_coef(pf, i):
             i -= 1

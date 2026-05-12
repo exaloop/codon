@@ -18,6 +18,7 @@
 namespace codon::ast {
 
 const std::string VAR_ARGV = getMangledVar("", "__argv__");
+const std::string VAR_ARGC = getMangledVar("", "__argc__");
 const std::string FN_OPTIONAL_UNWRAP =
     getMangledFunc("std.internal.types.optional", "unwrap");
 

@@ -295,7 +295,7 @@ void CloneVisitor::visit(const CallInstr *v) {
 }
 
 void CloneVisitor::visit(const StackAllocInstr *v) {
-  result = Nt(v, v->getArrayType(), v->getCount());
+  result = Nt(v, v->getPtrType(), v->getCount());
 }
 
 void CloneVisitor::visit(const TypePropertyInstr *v) {

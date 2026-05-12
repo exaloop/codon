@@ -2,10 +2,17 @@
 
 import internal.gc as gc
 
-@extend
+_DEFAULT_LIST_CAPACITY: Literal[int] = 10
+
+@dataclass(init=False)
 class List:
+    _ptr: Ptr[T]
+    _len: int
+    _cap: int
+    T: type = NoneType
+
     @staticmethod
-    def as_list(x):
+    def _as_list(x):
         if isinstance(x, List):
             return x
         elif isinstance(x, Tuple):
@@ -14,39 +21,46 @@ class List:
             return List(x)
 
     def __init__(self):
-        self.arr = Array[T](10)
-        self.len = 0
+        self._ptr = Ptr[T](_DEFAULT_LIST_CAPACITY)
+        self._len = 0
+        self._cap = _DEFAULT_LIST_CAPACITY
 
     def __init__(self, capacity: int):
-        if capacity < 0:
-            capacity = 0
-        self.arr = Array[T](capacity)
-        self.len = 0
-
-    def __init__(self, other: List[T]):
-        self.arr = Array[T](other.len)
-        self.len = 0
-        for i in other:
-            self.append(i)
+        if capacity > 0:
+            self._ptr = Ptr[T](capacity)
+            self._len = 0
+            self._cap = capacity
+        else:
+            self._ptr = Ptr[T]()
+            self._len = 0
+            self._cap = 0
 
     def __init__(self, it: Generator[T]):
-        self.arr = Array[T](10)
-        self.len = 0
+        self.__init__()
         for i in it:
             self.append(i)
 
-    def __init__(self, arr: Array[T], len: int):
-        self.arr = arr
-        self.len = len
+    def __init__(self, other: List[T]):
+        n = other._len
+        self._ptr = Ptr[T](n)
+        self._len = n
+        self._cap = n
+        str.memcpy(self._ptr.as_byte(), other._ptr.as_byte(),
+                   n * gc.sizeof(T))
+
+    def __init__(self, p: Ptr[T], n: int):
+        self._ptr = p
+        self._len = n
+        self._cap = n
 
     def _get(self, idx: int):
-        return self.arr.ptr[idx]
+        return self._ptr[idx]
 
     def _set(self, idx: int, val: T):
-        self.arr.ptr[idx] = val
+        self._ptr[idx] = val
 
     def __len__(self) -> int:
-        return self.len
+        return self._len
 
     def __bool__(self) -> bool:
         return self.__len__() > 0
@@ -64,12 +78,12 @@ class List:
         self._set(idx, val)
 
     def _delete(self, idx: int):
-        while idx < self.len - 1:
+        while idx < self._len - 1:
             self._set(idx, self._get(idx + 1))
             idx += 1
-        self.len -= 1
+        self._len -= 1
         if not T.__atomic__:
-            str.memset((self.arr.ptr + self.len).as_byte(), u8(0), gc.sizeof(T))
+            str.memset((self._ptr + self._len).as_byte(), u8(0), gc.sizeof(T))
 
     def __delitem__(self, idx: int):
         if idx < 0:
@@ -115,7 +129,7 @@ class List:
         if s.step is None or step == 1:
             if other.__raw__() == self.__raw__():
                 other = other.__copy__()
-            self._assign_slice(start, stop, other.arr.ptr, other.__len__())
+            self._assign_slice(start, stop, other._ptr, other.__len__())
         else:
             if (step < 0 and start < stop) or (step > 0 and start > stop):
                 stop = start
@@ -160,8 +174,8 @@ class List:
                     if cur + step > self.__len__():
                         lim = self.__len__() - cur - 1
                     str.memmove(
-                        (self.arr.ptr + (cur - i)).as_byte(),
-                        (self.arr.ptr + (cur + 1)).as_byte(),
+                        (self._ptr + (cur - i)).as_byte(),
+                        (self._ptr + (cur + 1)).as_byte(),
                         lim * gc.sizeof(T),
                     )
                     cur += step
@@ -170,14 +184,14 @@ class List:
                 cur = start + length * step
                 if cur < self.__len__():
                     str.memmove(
-                        (self.arr.ptr + (cur - length)).as_byte(),
-                        (self.arr.ptr + cur).as_byte(),
+                        (self._ptr + (cur - length)).as_byte(),
+                        (self._ptr + cur).as_byte(),
                         (self.__len__() - cur) * gc.sizeof(T),
                     )
 
-                self.len -= length
+                self._len -= length
                 if not T.__atomic__:
-                    str.memset((self.arr.ptr + self.len).as_byte(),
+                    str.memset((self._ptr + self._len).as_byte(),
                                u8(0), length * gc.sizeof(T))
 
     def __contains__(self, x: T) -> bool:
@@ -187,58 +201,58 @@ class List:
         return False
 
     def __copy__(self) -> List[T]:
-        return List[T](self.arr.__copy__(), self.len)
+        return List[T](self)
 
     def __deepcopy__(self) -> List[T]:
         return [l.__deepcopy__() for l in self]
 
     def __iter__(self) -> Generator[T]:
         i = 0
-        N = self.len
-        p = self.arr.ptr
+        N = self._len
+        p = self._ptr
         while i < N:
             yield p[i]
             i += 1
 
     def __reversed__(self) -> Generator[T]:
-        i = self.len - 1
+        i = self._len - 1
         while i >= 0:
             yield self._get(i)
             i -= 1
 
     def __add__(self, other: List[T]) -> List[T]:
-        n = self.len + other.len
+        n = self._len + other._len
         v = List[T](n)
-        v.len = n
-        p = v.arr.ptr
+        v._len = n
+        p = v._ptr
         str.memcpy(p.as_byte(),
-                   self.arr.ptr.as_byte(),
-                   self.len * gc.sizeof(T))
-        str.memcpy((p + self.len).as_byte(),
-                   other.arr.ptr.as_byte(),
-                   other.len * gc.sizeof(T))
+                   self._ptr.as_byte(),
+                   self._len * gc.sizeof(T))
+        str.memcpy((p + self._len).as_byte(),
+                   other._ptr.as_byte(),
+                   other._len * gc.sizeof(T))
         return v
 
     def __iadd__(self, other: List[T]) -> List[T]:
-        n = self.len + other.len
-        if self.arr.len < n:
+        n = self._len + other._len
+        if self._len < n:
             self._resize(n)
-        str.memcpy((self.arr.ptr + self.len).as_byte(),
-                   other.arr.ptr.as_byte(),
-                   other.len * gc.sizeof(T))
-        self.len = n
+        str.memcpy((self._ptr + self._len).as_byte(),
+                   other._ptr.as_byte(),
+                   other._len * gc.sizeof(T))
+        self._len = n
         return self
 
     def __mul__(self, n: int) -> List[T]:
         if n <= 0:
             return List[T]()
 
-        new_len = self.len * n
+        new_len = self._len * n
         v = List[T](new_len)
         i = 0
         while i < n:
             j = 0
-            while j < self.len:
+            while j < self._len:
                 v.append(self._get(j))
                 j += 1
             i += 1
@@ -257,11 +271,12 @@ class List:
 
         len0 = self.__len__()
         new_cap = n * len0
-        if self.arr.len < new_cap:
-            p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(),
+        if self._cap < new_cap:
+            p = Ptr[T](gc.realloc(self._ptr.as_byte(),
                                   new_cap * gc.sizeof(T),
-                                  self.arr.len * gc.sizeof(T)))
-            self.arr = Array[T](p, new_cap)
+                                  self._len * gc.sizeof(T)))
+            self._ptr = p
+            self._cap = new_cap
 
         idx = len0
         i = 0
@@ -273,7 +288,7 @@ class List:
                 j += 1
             i += 1
 
-        self.len = new_cap
+        self._len = new_cap
         return self
 
     def __repr__(self) -> str:
@@ -294,8 +309,8 @@ class List:
 
     def append(self, x: T):
         self._resize_if_full()
-        self._set(self.len, x)
-        self.len += 1
+        self._set(self._len, x)
+        self._len += 1
 
     def extend(self, itr: Generator[T]):
         for a in itr:
@@ -315,7 +330,7 @@ class List:
             self._set(i, self._get(i - 1))
             i -= 1
         self._set(idx, x)
-        self.len += 1
+        self._len += 1
 
     def pop(self, idx: int = -1) -> T:
         if self.__len__() == 0:
@@ -328,8 +343,8 @@ class List:
         return x
 
     def remove(self, x: T) -> bool:
-        p = self.arr.ptr
-        for i in range(self.len):
+        p = self._ptr
+        for i in range(self._len):
             if p[i] == x:
                 self._delete(i)
                 return True
@@ -337,9 +352,9 @@ class List:
 
     def clear(self):
         if not T.__atomic__:
-            str.memset(self.arr.ptr.as_byte(),
-                       u8(0), self.len * gc.sizeof(T))
-        self.len = 0
+            str.memset(self._ptr.as_byte(),
+                       u8(0), self._len * gc.sizeof(T))
+        self._len = 0
 
     def index(self, x: T) -> int:
         i = 0
@@ -366,8 +381,8 @@ class List:
 
     def reverse(self):
         i = 0
-        while i < self.len // 2:
-            j = self.len - i - 1
+        while i < (self._len >> 1):
+            j = self._len - i - 1
             x = self._get(i)
             self._set(i, self._get(j))
             self._set(j, x)
@@ -379,18 +394,19 @@ class List:
     # Internal helpers
 
     def _idx_check(self, idx: int, msg: str):
-        if idx >= self.len or idx < 0:
+        if idx >= self._len or idx < 0:
             raise IndexError(msg)
 
     def _resize(self, new_cap: int):
-        p = Ptr[T](gc.realloc(self.arr.ptr.as_byte(),
+        p = Ptr[T](gc.realloc(self._ptr.as_byte(),
                               new_cap * gc.sizeof(T),
-                              self.arr.len * gc.sizeof(T)))
-        self.arr = Array[T](p, new_cap)
+                              self._cap * gc.sizeof(T)))
+        self._ptr = Ptr[T](p)
+        self._cap = new_cap
 
     def _resize_if_full(self):
-        if self.len == self.arr.len:
-            new_cap = (1 + 3 * self.len) // 2
+        if self._len == self._cap:
+            new_cap = (1 + 3 * self._len) >> 1
             if new_cap <= 0:
                 new_cap = 1
             self._resize(new_cap)
@@ -404,7 +420,7 @@ class List:
 
     def _assign_slice(self, ilow: int, ihigh: int, v: Ptr[T], n: int):
         a = self
-        L = a.len
+        L = a._len
 
         if ilow < 0:
             ilow = 0
@@ -425,8 +441,8 @@ class List:
         if d < 0:
             tail = L - ihigh
             str.memmove(
-                (a.arr.ptr + (ihigh + d)).as_byte(),
-                (a.arr.ptr + ihigh).as_byte(),
+                (a._ptr + (ihigh + d)).as_byte(),
+                (a._ptr + ihigh).as_byte(),
                 tail * gc.sizeof(T),
             )
             a._resize(L + d)
@@ -434,8 +450,8 @@ class List:
             k = L
             a._resize(k + d)
             str.memmove(
-                (a.arr.ptr + (ihigh + d)).as_byte(),
-                (a.arr.ptr + ihigh).as_byte(),
+                (a._ptr + (ihigh + d)).as_byte(),
+                (a._ptr + ihigh).as_byte(),
                 (k - ihigh) * gc.sizeof(T),
             )
 
@@ -444,12 +460,15 @@ class List:
             a._set(ilow, v[k])
             k += 1
             ilow += 1
-        a.len += d
+        a._len += d
 
-    def _copy_arr(self, start: int, stop: int, length: int) -> Array[T]:
+    def _copy_arr(self, start: int, stop: int, length: int) -> Ptr[T]:
         if length <= 0:
-            return Array[T](Ptr[T](), 0)
-        return self.arr.slice(start, stop).__copy__()
+            return Ptr[T]()
+        p = Ptr[T](length)
+        str.memcpy(p.as_byte(), (self._ptr + start).as_byte(),
+                   length * gc.sizeof(T))
+        return p
 
     def _cmp(self, other: List[T]):
         n1 = self.__len__()
@@ -492,8 +511,8 @@ class List:
     def _list_add_opt_default_append(ans: List[T], v: List[T]):
         from internal.gc import sizeof
         n = v.__len__()
-        str.memcpy((ans.arr.ptr + ans.len).as_byte(), v.arr.ptr.as_byte(), n * sizeof(T))
-        ans.len += n
+        str.memcpy((ans._ptr + ans._len).as_byte(), v._ptr.as_byte(), n * sizeof(T))
+        ans._len += n
 
     def _list_add_opt_slice_len(v: List[T], s: Slice):
         if s.start is None and s.stop is None and s.step is None:
@@ -505,22 +524,22 @@ class List:
         from internal.gc import sizeof
         if s.start is None and s.stop is None and s.step is None:
             n = v.__len__()
-            str.memcpy((ans.arr.ptr + ans.len).as_byte(), v.arr.ptr.as_byte(), n * sizeof(T))
-            ans.len += n
+            str.memcpy((ans._ptr + ans._len).as_byte(), v._ptr.as_byte(), n * sizeof(T))
+            ans._len += n
         elif s.step is None:
             start, stop, step, length = s.adjust_indices(v.__len__())
             n = stop - start
-            str.memcpy((ans.arr.ptr + ans.len).as_byte(), (v.arr.ptr + start).as_byte(), n * sizeof(T))
-            ans.len += n
+            str.memcpy((ans._ptr + ans._len).as_byte(), (v._ptr + start).as_byte(), n * sizeof(T))
+            ans._len += n
         else:
             start, stop, step, length = s.adjust_indices(v.__len__())
             for i in range(start, stop, step):
-                ans.arr.ptr[ans.len] = v._get(i)
-                ans.len += 1
+                ans._ptr[ans._len] = v._get(i)
+                ans._len += 1
 
     def _list_add_opt_literal_append(ans: List[T], elem: T):
-        ans.arr.ptr[ans.len] = elem
-        ans.len += 1
+        ans._ptr[ans._len] = elem
+        ans._len += 1
 
     def _list_add_opt_opt_new(capacity: int):
         return List[T](capacity=capacity)

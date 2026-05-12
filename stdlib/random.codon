@@ -121,15 +121,16 @@ class RandomGenerator:
         self.init_array(Ptr[u32](__ptr__(init_key).as_byte()), 2 if init_key[1] else 1)
 
     def random_seed_time_pid(self):
+        KEY_LEN: Literal[int] = 5
         now = _C.seq_time() * 1000
-        key = __array__[u32](5)
+        key = __array__[u32](KEY_LEN)
         key[0] = u32(now & 0xFFFFFFFF)
         key[1] = u32(now >> 32)
         key[2] = u32(_C.seq_pid())
         now = _C.seq_time_monotonic()
         key[3] = u32(now & 0xFFFFFFFF)
         key[4] = u32(now >> 32)
-        self.init_array(key.ptr, len(key))
+        self.init_array(key, KEY_LEN)
 
     def seed(self, s: int):
         self.init_int(s)

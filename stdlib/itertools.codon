@@ -392,7 +392,7 @@ def combinations(pool, r: int):
     if r > n:
         return
 
-    pool = pool_list.arr.ptr
+    pool = pool_list._ptr
     indices = Ptr[int](r)
     result = list(capacity=r)
 
@@ -438,7 +438,7 @@ def combinations(pool, r: Literal[int]):
     if r > n:
         return
 
-    pool = pool_list.arr.ptr
+    pool = pool_list._ptr
     indices_tuple = (0,) * r
     indices = Ptr[int](__ptr__(indices_tuple).as_byte())
     result_tuple = (empty(pool.T),) * r
@@ -479,7 +479,7 @@ def combinations_with_replacement(pool, r: int):
             yield List[pool_list.T](capacity=0)
         return
 
-    pool = pool_list.arr.ptr
+    pool = pool_list._ptr
     indices = Ptr[int](r)
     result = list(capacity=r)
 
@@ -528,7 +528,7 @@ def combinations_with_replacement(pool, r: Literal[int]):
     if n == 0:
         return
 
-    pool = pool_list.arr.ptr
+    pool = pool_list._ptr
     indices_tuple = (0,) * r
     indices = Ptr[int](__ptr__(indices_tuple).as_byte())
     result_tuple = (empty(pool.T),) * r
@@ -580,7 +580,7 @@ def _permutations_non_static(pool, r = None):
     for i in range(r):
         cycles[i] = n - i
 
-    pool = pool_list.arr.ptr
+    pool = pool_list._ptr
     result = list(capacity=r)
 
     for i in range(r):
@@ -641,7 +641,7 @@ def _permutations_static(pool, r: Literal[int]):
     for i in range(r):
         cycles[i] = n - i
 
-    pool = pool_list.arr.ptr
+    pool = pool_list._ptr
     result_tuple = (empty(pool.T),) * r
     result = Ptr[pool.T](__ptr__(result_tuple).as_byte())
 

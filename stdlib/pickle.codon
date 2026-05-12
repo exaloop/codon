@@ -115,16 +115,16 @@ class List:
         n = len(self)
         pickle(n, jar)
         if atomic(T):
-            _write_raw(jar, (self.arr.ptr).as_byte(), n * sizeof(T))
+            _write_raw(jar, (self._ptr).as_byte(), n * sizeof(T))
         else:
             for i in range(n):
-                pickle(self.arr[i], jar)
+                pickle(self._ptr[i], jar)
 
     def __unpickle__(jar: Jar) -> List[T]:
         n = unpickle(jar, int)
-        arr = Array[T](n)
+        arr = Ptr[T](n)
         if atomic(T):
-            _read_raw(jar, (arr.ptr).as_byte(), n * sizeof(T))
+            _read_raw(jar, arr.as_byte(), n * sizeof(T))
         else:
             for i in range(n):
                 arr[i] = unpickle(jar, T)

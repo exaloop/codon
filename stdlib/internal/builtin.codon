@@ -253,19 +253,19 @@ def sum(x, start=0):
     if ((isinstance(x, List[int]) and isinstance(start, int)) or
         (isinstance(x, List[int]) and isinstance(start, float)) or
         (isinstance(x, List[float]) and isinstance(start, float))):
-        p = x.arr.ptr
+        p = x._ptr
         s = start
         for i in range(len(x)):
             s += p[i]
         return s
     elif isinstance(x, List[float]) and isinstance(start, int):
-        p = x.arr.ptr
+        p = x._ptr
         s = float(start)
         for i in range(len(x)):
             s += p[i]
         return s
     elif isinstance(x, List[bool]) and isinstance(start, int):
-        p = x.arr.ptr
+        p = x._ptr
         s = start
         for i in range(len(x)):
             s += 1 if p[i] else 0

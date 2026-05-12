@@ -212,7 +212,7 @@ class __magic__:
                 n[i] = ""
             else:
                 n[i] = k
-        return Tuple._str(a.ptr, n.ptr, l)
+        return Tuple._str(a, n, l)
 
     # @dataclass parameter: repr=False
     def repr_default(slf) -> str:

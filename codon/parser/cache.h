@@ -50,6 +50,7 @@ class Compiler;
 namespace codon::ast {
 
 extern const std::string VAR_ARGV;
+extern const std::string VAR_ARGC;
 extern const std::string FN_OPTIONAL_UNWRAP;
 
 /// Forward declarations

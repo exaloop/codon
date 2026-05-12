@@ -13,7 +13,8 @@ namespace transform {
 namespace pythonic {
 namespace {
 
-const std::string LIST = ast::getMangledClass("std.internal.types.array", "List");
+const std::string LIST =
+    ast::getMangledClass("std.internal.types.collections.list", "List");
 const std::string SLICE =
     ast::getMangledClass("std.internal.types.slice", "Slice") + "[int,int,int]";
 

@@ -1215,10 +1215,10 @@ def timsort(start: Ptr[T], num: int, T: type):
         n = _count_run(start, l, num, minrun)
         stack[stack_ptr] = (l, n)
         stack_ptr += 1
-        _try_collapse(start, stack.ptr, __ptr__(stack_ptr), buffer)
+        _try_collapse(start, stack, __ptr__(stack_ptr), buffer)
         l += n
 
-    _force_collapse(start, stack.ptr, __ptr__(stack_ptr), buffer)
+    _force_collapse(start, stack, __ptr__(stack_ptr), buffer)
     buffer.free()
 
 def _acount_run(arr: Ptr[T], tosort: Ptr[int], l: int, num: int, minrun: int, T: type):

@@ -66,7 +66,7 @@ class Vec[T, N: Literal[int]]:
         ):
             return Vec[T, N]._load(x.ptr)
         if isinstance(x, List) and Vec._is_valid(x.T):
-            return Vec[T, N]._load(x.arr.ptr)
+            return Vec[T, N]._load(x._ptr)
         if isinstance(x, Vec) and N == x.N:
             return x.cast(T)
         compile_error("invalid SIMD vector constructor")
@@ -75,7 +75,7 @@ class Vec[T, N: Literal[int]]:
         return Vec[u8, N](x.ptr + offset)
 
     def __new__(x: List[T], offset: int = 0) -> Vec[T, N]:
-        return Vec[T, N](x.arr.ptr + offset)
+        return Vec[T, N](x._ptr + offset)
 
     @pure
     @llvm

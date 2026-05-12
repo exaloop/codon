@@ -346,7 +346,7 @@ fp = FooTup(6, 's')
 print fp #: (a: 6, b: 's')
 
 #%% inherit_class_err_1,barebones
-class defdict(Static[Array[int]]):
+class defdict(Static[str]):
     pass #! reference classes cannot inherit tuple classes
 
 #%% inherit_class_err_2,barebones

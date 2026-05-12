@@ -215,13 +215,6 @@ class NoneType:
         ret {} {}
 NoneType.__new__()  # always have this realization around
 
-@tuple
-@__internal__
-class Array:
-    len: int
-    ptr: Ptr[T]
-    T: type
-
 @extend
 class type:
     def __new__(obj):
@@ -281,7 +274,7 @@ Ellipsis = ellipsis()
 @__internal__
 class __array__:
     T: type
-    def __new__(sz: Literal[int]) -> Array[T]:
+    def __new__(sz: Literal[int]) -> Ptr[T]:
         pass
 
 @tuple

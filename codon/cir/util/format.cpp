@@ -96,11 +96,12 @@ public:
   void visit(const Module *v) override {
     auto types = makeFormatters(v->types_begin(), v->types_end(), true);
     auto vars = makeFormatters(v->begin(), v->end(), true);
-    fmt::print(os, FMT_STRING("(module\n(argv {})\n(types {})\n(vars {})\n{})"),
-               makeFormatter(v->getArgVar(), true),
-               fmt::join(types.begin(), types.end(), "\n"),
-               fmt::join(vars.begin(), vars.end(), "\n"),
-               makeFormatter(v->getMainFunc(), true));
+    fmt::print(
+        os, FMT_STRING("(module\n(argv {})\n(argc {})\n(types {})\n(vars {})\n{})"),
+        makeFormatter(v->getArgvVar(), true), makeFormatter(v->getArgcVar(), true),
+        fmt::join(types.begin(), types.end(), "\n"),
+        fmt::join(vars.begin(), vars.end(), "\n"),
+        makeFormatter(v->getMainFunc(), true));
   }
 
   void defaultVisit(const Node *) override { os << "(unknown_node)"; }
@@ -245,7 +246,7 @@ public:
                fmt::join(args.begin(), args.end(), "\n"));
   }
   void visit(const StackAllocInstr *v) override {
-    fmt::print(os, FMT_STRING("(stack_alloc {} {})"), makeFormatter(v->getArrayType()),
+    fmt::print(os, FMT_STRING("(stack_alloc {} {})"), makeFormatter(v->getPtrType()),
                v->getCount());
   }
   void visit(const TypePropertyInstr *v) override {

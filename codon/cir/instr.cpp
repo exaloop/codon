@@ -101,8 +101,8 @@ int CallInstr::doReplaceUsedValue(id_t id, Value *newValue) {
 const char StackAllocInstr::NodeId = 0;
 
 int StackAllocInstr::doReplaceUsedType(const std::string &name, types::Type *newType) {
-  if (arrayType->getName() == name) {
-    arrayType = newType;
+  if (ptrType->getName() == name) {
+    ptrType = newType;
     return 1;
   }
   return 0;

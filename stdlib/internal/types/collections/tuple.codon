@@ -12,7 +12,7 @@ class DynamicTuple:
         from internal.gc import sizeof
         n = x.__len__()
         p = Ptr[T](n)
-        str.memcpy(p.as_byte(), x.arr.ptr.as_byte(), n * sizeof(T))
+        str.memcpy(p.as_byte(), x._ptr.as_byte(), n * sizeof(T))
         return DynamicTuple(p, n)
 
     def __new__(x: Generator[T]):

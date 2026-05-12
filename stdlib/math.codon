@@ -403,8 +403,7 @@ def fsum(seq):
         return v, m
 
     _NUM_PARTIALS: Literal[int] = 32
-    ps_arr = __array__[float](_NUM_PARTIALS)
-    ps = ps_arr.ptr
+    ps = __array__[float](_NUM_PARTIALS)
     p = ps
     n, m = 0, _NUM_PARTIALS
     xsave, special_sum, inf_sum = 0.0, 0.0, 0.0

@@ -146,10 +146,16 @@ Module::Module(ast::Cache *cache, const std::string &name) : AcceptorExtend(name
   mainFunc->setModule(this);
   mainFunc->setReplaceable(false);
 
-  argVar = std::make_unique<Var>(unsafeGetArrayType(getStringType()), /*global=*/true,
-                                 /*external=*/false, /*tls=*/false, ".argv");
-  argVar->setModule(this);
-  argVar->setReplaceable(false);
+  argvVar =
+      std::make_unique<Var>(unsafeGetPointerType(getStringType()), /*global=*/true,
+                            /*external=*/false, /*tls=*/false, ".argv");
+  argvVar->setModule(this);
+  argvVar->setReplaceable(false);
+
+  argcVar = std::make_unique<Var>(getIntType(), /*global=*/true,
+                                  /*external=*/false, /*tls=*/false, ".argc");
+  argcVar->setModule(this);
+  argcVar->setReplaceable(false);
 }
 
 void Module::parseCode(const std::string &code) { cache->parseCode(code); }
@@ -265,10 +271,6 @@ types::Type *Module::getPointerType(types::Type *base) {
   return getOrRealizeType("Ptr", {base});
 }
 
-types::Type *Module::getArrayType(types::Type *base) {
-  return getOrRealizeType("Array", {base});
-}
-
 types::Type *Module::getGeneratorType(types::Type *base) {
   return getOrRealizeType("Generator", {base});
 }
@@ -342,15 +344,6 @@ types::Type *Module::unsafeGetPointerType(types::Type *base) {
   if (auto *rVal = getType(name))
     return rVal;
   return Nr<types::PointerType>(base);
-}
-
-types::Type *Module::unsafeGetArrayType(types::Type *base) {
-  auto name = fmt::format(FMT_STRING(".Array[{}]"), base->referenceString());
-  if (auto *rVal = getType(name))
-    return rVal;
-  std::vector<types::Type *> members = {unsafeGetIntType(), unsafeGetPointerType(base)};
-  std::vector<std::string> names = {"len", "ptr"};
-  return Nr<types::RecordType>(name, members, names);
 }
 
 types::Type *Module::unsafeGetGeneratorType(types::Type *base) {

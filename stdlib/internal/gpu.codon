@@ -561,7 +561,7 @@ class Pointer[T]:
 def raw(v):
     from numpy import ndarray
     if isinstance(v, List):
-        return Pointer(v.arr.ptr, len(v))
+        return Pointer(v._ptr, len(v))
     elif isinstance(v, ndarray):
         if not v._is_contig:
             raise ValueError("gpu.raw() array argument must be contiguous")
@@ -666,30 +666,32 @@ class List:
     @inline
     def __to_gpu__(self, cache: AllocCache):
         mem = List[T].__new__()
-        n = self.len
-        gpu_ptr = _ptr_to_gpu(self.arr.ptr, n, cache)
-        mem.arr = Array[T](gpu_ptr, n)
-        mem.len = n
+        n = self._len
+        gpu_ptr = _ptr_to_gpu(self._ptr, n, cache)
+        mem._ptr = Ptr[T](gpu_ptr, n)
+        mem._len = n
+        mem._cap = n
         return _object_to_gpu(mem, cache)
 
     @inline
     def __from_gpu__(self, other: List[T]):
         mem = _object_from_gpu(other)
-        my_cap = self.arr.len
-        other_cap = mem.arr.len
+        my_cap = self._cap
+        other_cap = mem._cap
 
         if other_cap > my_cap:
             self._resize(other_cap)
 
-        _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
-        self.len = mem.len
+        _ptr_from_gpu(self._ptr, mem._ptr, mem._len)
+        self._len = mem._len
 
     @inline
     def __from_gpu_new__(other: List[T]):
         mem = _object_from_gpu(other)
-        arr = Array[T](mem.arr.len)
-        _ptr_from_gpu(arr.ptr, mem.arr.ptr, arr.len)
-        mem.arr = arr
+        arr = Ptr[T](mem._len)
+        _ptr_from_gpu(arr, mem._ptr, mem._len)
+        mem._ptr = arr
+        mem._cap = mem._len
         return mem
 
 @extend

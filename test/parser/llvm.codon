@@ -164,19 +164,6 @@ print z.__gt__(u8(5)) #: True
 print z.__le__(u8(5)) #: False
 print z.__ge__(u8(5)) #: True
 
-#%% array,barebones
-a = Array[float](5)
-pa = Ptr[float](3)
-z = Array[float](pa, 3)
-z.__copy__()
-print z.__len__() #: 3
-print z.__bool__() #: True
-z.__setitem__(0, 1.0)
-z.__setitem__(1, 2.0)
-z.__setitem__(2, 3.0)
-print z.__getitem__(1) #: 2
-print z.slice(0, 2).len #: 2
-
 #%% optional,barebones
 a = Optional[float]()
 print bool(a) #: False

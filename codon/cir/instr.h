@@ -231,8 +231,8 @@ protected:
 /// Instr representing allocating an array on the stack.
 class StackAllocInstr : public AcceptorExtend<StackAllocInstr, Instr> {
 private:
-  /// the array type
-  types::Type *arrayType;
+  /// the array pointer type
+  types::Type *ptrType;
   /// number of elements to allocate
   int64_t count;
 
@@ -240,11 +240,11 @@ public:
   static const char NodeId;
 
   /// Constructs a stack allocation instruction.
-  /// @param arrayType the type of the array
+  /// @param ptrType the type of the array pointer
   /// @param count the number of elements
   /// @param name the name
-  StackAllocInstr(types::Type *arrayType, int64_t count, std::string name = "")
-      : AcceptorExtend(std::move(name)), arrayType(arrayType), count(count) {}
+  StackAllocInstr(types::Type *ptrType, int64_t count, std::string name = "")
+      : AcceptorExtend(std::move(name)), ptrType(ptrType), count(count) {}
 
   /// @return the count
   int64_t getCount() const { return count; }
@@ -252,17 +252,17 @@ public:
   /// @param c the new value
   void setCount(int64_t c) { count = c; }
 
-  /// @return the array type
-  types::Type *getArrayType() { return arrayType; }
-  /// @return the array type
-  types::Type *getArrayType() const { return arrayType; }
+  /// @return the pointer type
+  types::Type *getPtrType() { return ptrType; }
+  /// @return the pointer type
+  types::Type *getPtrType() const { return ptrType; }
   /// Sets the array type.
   /// @param t the new type
-  void setArrayType(types::Type *t) { arrayType = t; }
+  void setPtrType(types::Type *t) { ptrType = t; }
 
 protected:
-  types::Type *doGetType() const override { return arrayType; }
-  std::vector<types::Type *> doGetUsedTypes() const override { return {arrayType}; }
+  types::Type *doGetType() const override { return ptrType; }
+  std::vector<types::Type *> doGetUsedTypes() const override { return {ptrType}; }
   int doReplaceUsedType(const std::string &name, types::Type *newType) override;
 };
 

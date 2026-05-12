@@ -1496,8 +1496,10 @@ void LLVMVisitor::visit(const Module *x) {
   M = makeModule(*context, getSrcInfo(x));
 
   // args variable
-  seqassertn(x->getArgVar()->isGlobal(), "arg var is not global");
-  registerGlobal(x->getArgVar());
+  seqassertn(x->getArgvVar()->isGlobal(), "argv var is not global");
+  seqassertn(x->getArgcVar()->isGlobal(), "argc var is not global");
+  registerGlobal(x->getArgvVar());
+  registerGlobal(x->getArgcVar());
 
   // set up global variables and initialize functions
   for (auto *var : *x) {
@@ -1518,9 +1520,6 @@ void LLVMVisitor::visit(const Module *x) {
 
   // build canonical main function
   auto *strType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
-  auto *arrType =
-      llvm::StructType::get(*context, {B->getInt64Ty(), strType->getPointerTo()});
-
   auto *initFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("seq_init", B->getVoidTy(), B->getInt32Ty()).getCallee());
   auto *strlenFunc = llvm::cast<llvm::Function>(
@@ -1555,9 +1554,6 @@ void LLVMVisitor::visit(const Module *x) {
   auto *elemSize = B->getInt64(M->getDataLayout().getTypeAllocSize(strType));
   auto *allocSize = B->CreateMul(len, elemSize);
   auto *ptr = B->CreateCall(allocFunc, allocSize);
-  llvm::Value *arr = llvm::UndefValue::get(arrType);
-  arr = B->CreateInsertValue(arr, len, 0);
-  arr = B->CreateInsertValue(arr, ptr, 1);
   B->CreateBr(loopBlock);
 
   B->SetInsertPoint(loopBlock);
@@ -1578,9 +1574,14 @@ void LLVMVisitor::visit(const Module *x) {
   B->CreateBr(loopBlock);
 
   B->SetInsertPoint(exitBlock);
-  auto *argStorage = getVar(x->getArgVar());
-  seqassertn(argStorage, "argument storage missing");
-  B->CreateStore(arr, argStorage);
+  auto *argvStorage = getVar(x->getArgvVar());
+  seqassertn(argvStorage, "argv storage missing");
+  B->CreateStore(ptr, argvStorage);
+
+  auto *argcStorage = getVar(x->getArgcVar());
+  seqassertn(argcStorage, "argc storage missing");
+  B->CreateStore(len, argcStorage);
+
   const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) |
                     (db.capture ? SEQ_FLAG_CAPTURE_OUTPUT : 0) |
                     (db.standalone ? SEQ_FLAG_STANDALONE : 0);
@@ -3235,19 +3236,10 @@ void LLVMVisitor::visit(const YieldInInstr *x) {
 }
 
 void LLVMVisitor::visit(const StackAllocInstr *x) {
-  auto *recordType = cast<types::RecordType>(x->getType());
-  seqassertn(recordType, "stack alloc does not have record type");
-  auto *ptrType = cast<types::PointerType>(recordType->back().getType());
-  seqassertn(ptrType, "array did not have ptr type");
-
-  auto *arrayType = llvm::cast<llvm::StructType>(getLLVMType(x->getType()));
+  auto *ptrType = cast<types::PointerType>(x->getType());
+  seqassertn(ptrType, "stack alloc did not have ptr type");
   B->SetInsertPoint(func->getEntryBlock().getTerminator());
-  auto *len = B->getInt64(x->getCount());
-  auto *ptr = B->CreateAlloca(getLLVMType(ptrType->getBase()), len);
-  llvm::Value *arr = llvm::UndefValue::get(arrayType);
-  arr = B->CreateInsertValue(arr, len, 0);
-  arr = B->CreateInsertValue(arr, ptr, 1);
-  value = arr;
+  value = B->CreateAlloca(getLLVMType(ptrType->getBase()), x->getCount());
 }
 
 void LLVMVisitor::visit(const TernaryInstr *x) {

@@ -115,7 +115,9 @@ private:
   /// the module's "main" function
   std::unique_ptr<Func> mainFunc;
   /// the module's argv variable
-  std::unique_ptr<Var> argVar;
+  std::unique_ptr<Var> argvVar;
+  /// the module's argc variable
+  std::unique_ptr<Var> argcVar;
   /// the global variables list
   std::list<std::unique_ptr<Var>> vars;
   /// the global variables map
@@ -149,10 +151,14 @@ public:
   /// @return the main function
   const Func *getMainFunc() const { return mainFunc.get(); }
 
-  /// @return the arg var
-  Var *getArgVar() { return argVar.get(); }
-  /// @return the arg var
-  const Var *getArgVar() const { return argVar.get(); }
+  /// @return the argv var
+  Var *getArgvVar() { return argvVar.get(); }
+  /// @return the argv var
+  const Var *getArgvVar() const { return argvVar.get(); }
+  /// @return the argc var
+  Var *getArgcVar() { return argcVar.get(); }
+  /// @return the argc var
+  const Var *getArgcVar() const { return argcVar.get(); }
 
   /// @return iterator to the first symbol
   auto begin() { return util::raw_ptr_adaptor(vars.begin()); }
@@ -358,10 +364,6 @@ public:
   /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
   types::Type *getPointerType(types::Type *base = nullptr);
-  /// Gets an array type.
-  /// @param base the base type
-  /// @return an array type that contains the base
-  types::Type *getArrayType(types::Type *base);
   /// Gets a generator type.
   /// @param base the base type
   /// @return a generator type that yields the base
@@ -412,11 +414,6 @@ public:
   /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
   types::Type *unsafeGetPointerType(types::Type *base = nullptr);
-  /// Gets an array type. Should generally not be used as no type-checker
-  /// information is generated.
-  /// @param base the base type
-  /// @return an array type that contains the base
-  types::Type *unsafeGetArrayType(types::Type *base);
   /// Gets a generator type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type

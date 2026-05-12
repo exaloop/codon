@@ -142,7 +142,8 @@ Stmt *TypecheckVisitor::unpackAssignment(Expr *lhs, Expr *rhs) {
     // StarExpr becomes SliceExpr (e.g., `b` in `(a, *b, c) = d` becomes
     // `list(d[1:-2])`)
     Expr *rightSide = N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.types.array", "List", "as_list")),
+        N<IdExpr>(getMangledMethod("std.internal.types.collections.list", "List",
+                                   "_as_list")),
         N<IndexExpr>(
             ast::clone(rhs),
             N<SliceExpr>(N<IntExpr>(st),
@@ -320,7 +321,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   // Register all toplevel variables as global in JIT mode
   //   OR if they are in imported module (not toplevel)
   bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
-                  (canonical == VAR_ARGV) ||
+                  (canonical == VAR_ARGV) || (canonical == VAR_ARGC) ||
                   (val->isGlobal() && val->getModule() != "");
   if (isGlobal && val->isVar()) {
     registerGlobal(canonical);

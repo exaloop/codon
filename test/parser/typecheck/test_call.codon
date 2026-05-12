@@ -492,7 +492,7 @@ compile_error("woo-hoo") #! woo-hoo
 
 #%% stack_alloc,barebones
 a = __array__[int](2)
-print a.__class__.__name__ #: Array[int]
+print a.__class__.__name__ #: Ptr[int]
 
 #%% typeof,barebones
 a = 5

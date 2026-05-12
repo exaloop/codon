@@ -1035,7 +1035,7 @@ def moveaxis(a, source, destination):
     for dest, src in sorted(zip(destination, source)):
         order.insert(dest, src)
 
-    order = Ptr[type(a.shape)](order.arr.ptr.as_byte())[0]
+    order = Ptr[type(a.shape)](order._ptr.as_byte())[0]
     return a.transpose(order)
 
 def swapaxes(a, axis1: int, axis2: int):

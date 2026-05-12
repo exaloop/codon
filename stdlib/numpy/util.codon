@@ -335,7 +335,7 @@ def coords_to_findex(coords: S, limits: S, S: type):
 
 def sort(p: Ptr[T], n: int, key, T: type):
     from algorithms.pdqsort import pdq_sort_array
-    pdq_sort_array(Array(p, n), n, key)
+    pdq_sort_array(p, n, key)
 
 def sort_by_stride(shape, strides):
     if static.len(strides) <= 1:

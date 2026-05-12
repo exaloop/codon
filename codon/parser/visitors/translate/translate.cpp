@@ -72,9 +72,14 @@ void TranslateVisitor::initializeGlobals() const {
           continue;
         vt = getType(t);
       }
-      ir = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
-                            : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                  SrcInfo(), vt, true, false, false, name);
+      if (name == VAR_ARGV) {
+        ir = ctx->cache->codegenCtx->getModule()->getArgvVar();
+      } else if (name == VAR_ARGC) {
+        ir = ctx->cache->codegenCtx->getModule()->getArgcVar();
+      } else {
+        ir = ctx->cache->codegenCtx->getModule()->N<ir::Var>(SrcInfo(), vt, true, false,
+                                                             false, name);
+      }
       ctx->cache->codegenCtx->add(TranslateItem::Var, name, ir);
     }
 }
@@ -317,9 +322,9 @@ void TranslateVisitor::visit(CallExpr *expr) {
     auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
     auto typ = fnt->funcParent->getClass()->generics[0].getType();
 
-    auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
-    arrayType->setAstType(expr->getType()->shared_from_this());
-    result = make<ir::StackAllocInstr>(expr, arrayType, sz);
+    auto *ptrType = ctx->getModule()->unsafeGetPointerType(getType(typ));
+    ptrType->setAstType(expr->getType()->shared_from_this());
+    result = make<ir::StackAllocInstr>(expr, ptrType, sz);
     return;
   } else if (ei && startswith(ei->getValue(),
                               getMangledMethod("std.internal.core", "Generator",
@@ -483,7 +488,8 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
   if (stmt->getLhs() && cast<IdExpr>(stmt->getLhs()) &&
-      cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGV)
+      (cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGV ||
+       cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGC))
     return;
 
   auto lei = cast<IdExpr>(stmt->getLhs());

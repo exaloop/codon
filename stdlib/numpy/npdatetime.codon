@@ -2951,7 +2951,7 @@ class busdaycalendar:
                         hlist.append(datetime64(holidays[i], 'D'))
             hlist.sort()
 
-            hptr = hlist.arr.ptr
+            hptr = hlist._ptr
             trimcount = 0
             for i in range(count):
                 date = hptr[i]

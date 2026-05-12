@@ -43,23 +43,25 @@ void ReplaceCleanupPass::run(Module *module) {
   }
 
   {
-    auto *v = module->getArgVar();
-    for (auto *c : v->getUsedValues()) {
-      if (c->hasReplacement()) {
-        v->replaceUsedValue(c, c->getActual());
-        valuesToDelete.insert(c);
+    const std::vector<Var *> vs = {module->getArgvVar(), module->getArgcVar()};
+    for (auto *v : vs) {
+      for (auto *c : v->getUsedValues()) {
+        if (c->hasReplacement()) {
+          v->replaceUsedValue(c, c->getActual());
+          valuesToDelete.insert(c);
+        }
       }
-    }
-    for (auto *t : v->getUsedTypes()) {
-      if (t->hasReplacement()) {
-        v->replaceUsedType(t, t->getActual());
-        typesToDelete.insert(t);
+      for (auto *t : v->getUsedTypes()) {
+        if (t->hasReplacement()) {
+          v->replaceUsedType(t, t->getActual());
+          typesToDelete.insert(t);
+        }
       }
-    }
-    for (auto *v2 : v->getUsedVariables()) {
-      if (v2->hasReplacement()) {
-        v->replaceUsedVariable(v2, v2->getActual());
-        varsToDelete.insert(v2);
+      for (auto *v2 : v->getUsedVariables()) {
+        if (v2->hasReplacement()) {
+          v->replaceUsedVariable(v2, v2->getActual());
+          varsToDelete.insert(v2);
+        }
       }
     }
   }
