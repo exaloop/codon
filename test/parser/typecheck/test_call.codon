@@ -710,7 +710,7 @@ print Int[static.len("ee")].__class__.__name__ #: Int[2]
 
 y = [1, 2]
 print getattr(y, "len") #: 2
-print y.len #: 2
+print y._len #: 2
 getattr(y, 'append')(1)
 print y #: [1, 2, 1]
 

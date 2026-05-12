@@ -343,7 +343,7 @@ print(a.__add__(1)) #: 1
 
 #%% dot_case_4_NOPY,barebones
 a = [5]
-print(a.len) #: 1
+print(a._len) #: 1
 
 #%% dot_case_4_err,barebones
 a = [5]

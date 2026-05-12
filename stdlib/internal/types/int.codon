@@ -162,6 +162,9 @@ class Int:
         %0 = sdiv i{=N} %self, %other
         ret i{=N} %0
 
+    def cdiv(self, other: Int[N]) -> Int[N]:
+        return self._floordiv(other)
+
     def __floordiv__(self, other: Int[N]) -> Int[N]:
         return self._floordiv(other)
 
@@ -178,6 +181,9 @@ class Int:
     def _mod(self, other: Int[N]) -> Int[N]:
         %0 = srem i{=N} %self, %other
         ret i{=N} %0
+
+    def cmod(self, other: Int[N]) -> Int[N]:
+        return self._mod(other)
 
     def __mod__(self, other: Int[N]) -> Int[N]:
         return self._mod(other)
@@ -285,7 +291,10 @@ class Int:
         return result
 
     def __repr__(self) -> str:
-        return f"Int[{N}]({self.__str__()})"
+        if N == 64:
+            return self.__str__()
+        else:
+            return f"Int[{N}]({self.__str__()})"
 
     @pure
     @llvm
@@ -559,6 +568,9 @@ class UInt:
         %0 = udiv i{=N} %self, %other
         ret i{=N} %0
 
+    def cdiv(self, other: UInt[N]) -> UInt[N]:
+        return self._floordiv(other)
+
     def __floordiv__(self, other: UInt[N]) -> UInt[N]:
         return self._floordiv(other)
 
@@ -575,6 +587,9 @@ class UInt:
     def _mod(self, other: UInt[N]) -> UInt[N]:
         %0 = urem i{=N} %self, %other
         ret i{=N} %0
+
+    def cmod(self, other: UInt[N]) -> UInt[N]:
+        return self._mod(other)
 
     def __mod__(self, other: UInt[N]) -> UInt[N]:
         return self._mod(other)

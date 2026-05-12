@@ -562,7 +562,7 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
 Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
   auto arrTyp = expr->expr->getType()->getFunc();
   unify(expr->getType(),
-        instantiateType(getStdLibType("Array"),
+        instantiateType(getStdLibType("Ptr"),
                         {extractClassGeneric(arrTyp->getParentType())}));
   if (realize(expr->getType()))
     expr->setDone();

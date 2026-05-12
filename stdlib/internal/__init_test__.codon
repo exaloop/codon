@@ -80,7 +80,7 @@ class Dict:
         yield from self.keys
 
     def items(self) -> Generator[Tuple[K, V]]:
-        for i in range(self.keys.len):
+        for i in range(self.keys._len):
             yield (self.keys[i], self.values[i])
 
     def __contains__(self, key: K) -> bool:
@@ -99,7 +99,7 @@ class Dict:
             self.values.append(val)
 
     def __len__(self) -> int:
-        return self.keys.len
+        return self.keys._len
 
     def __repr__(self) -> str:
         n = self.__len__()
