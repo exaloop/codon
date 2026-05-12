@@ -3239,7 +3239,7 @@ void LLVMVisitor::visit(const StackAllocInstr *x) {
   auto *ptrType = cast<types::PointerType>(x->getType());
   seqassertn(ptrType, "stack alloc did not have ptr type");
   B->SetInsertPoint(func->getEntryBlock().getTerminator());
-  value = B->CreateAlloca(getLLVMType(ptrType->getBase()), x->getCount());
+  value = B->CreateAlloca(getLLVMType(ptrType->getBase()), B->getInt64(x->getCount()));
 }
 
 void LLVMVisitor::visit(const TernaryInstr *x) {
