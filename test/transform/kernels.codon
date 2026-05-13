@@ -277,36 +277,29 @@ def test_scalar_types():
     def kernel_i8(x: i8, out):
         out[0] = (x + i8(3)) * i8(2)
 
-
     @gpu.kernel
     def kernel_i16(x: i16, out):
         out[0] = (x + i16(5)) * i16(3)
-
 
     @gpu.kernel
     def kernel_i32(x: i32, out):
         out[0] = (x + i32(7)) * i32(4)
 
-
     @gpu.kernel
     def kernel_i64(x: i64, out):
         out[0] = (x + i64(9)) * i64(5)
-
 
     @gpu.kernel
     def kernel_u8(x: u8, out):
         out[0] = (x + u8(3)) * u8(2)
 
-
     @gpu.kernel
     def kernel_u16(x: u16, out):
         out[0] = (x + u16(5)) * u16(3)
 
-
     @gpu.kernel
     def kernel_u32(x: u32, out):
         out[0] = (x + u32(7)) * u32(4)
-
 
     @gpu.kernel
     def kernel_u64(x: u64, out):
@@ -319,7 +312,6 @@ def test_scalar_types():
     @gpu.kernel
     def kernel_f32(x: float32, out):
         out[0] = (x + float32(1.0)) * float32(2.0)
-
 
     @gpu.kernel
     def kernel_f64(x: float, out):
