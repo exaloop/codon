@@ -5,6 +5,7 @@
 from internal.attributes import *
 from internal.static import print as __print__
 
+from internal.ops import *
 from internal.types.int import *
 from internal.types.ptr import *
 from internal.types.str import *

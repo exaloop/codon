@@ -185,9 +185,11 @@ def _merge_with_gallop(
 ):
     min_gallop = MIN_GALLOP
 
-    combined = Ptr[T](a[1] + b[1])
-    a_copy = combined.slice(0, a[1])
-    b_copy = combined.slice(a[1], len(combined))
+    len_a_copy = a[1]
+    len_b_copy = b[1]
+    combined = Ptr[T](len_a_copy + len_b_copy)
+    a_copy = combined
+    b_copy = combined + len_a_copy
 
     j = 0
     for i in range(a[0], a[0] + a[1]):
@@ -199,10 +201,10 @@ def _merge_with_gallop(
 
     i, j, k = 0, 0, a[0]
 
-    while i < len(a_copy) and j < len(b_copy):
+    while i < len_a_copy and j < len_b_copy:
         acount, bcount = 0, 0
 
-        while i < len(a_copy) and j < len(b_copy):
+        while i < len_a_copy and j < len_b_copy:
             if keyf(b_copy[j]) < keyf(a_copy[i]):
                 arr[k] = b_copy[j]
                 acount = 0
@@ -220,17 +222,17 @@ def _merge_with_gallop(
                 if acount >= min_gallop:
                     break
 
-        if i == len(a_copy) or j == len(b_copy):
+        if i == len_a_copy or j == len_b_copy:
             break
 
         min_gallop += 1
 
-        while i < len(a_copy) and j < len(b_copy):
+        while i < len_a_copy and j < len_b_copy:
             if min_gallop > 1:
                 min_gallop -= 1
 
             acount = _gallop(
-                combined, (0, len(a_copy)), (len(a_copy), len(b_copy)), keyf, i, False
+                combined, (0, len_a_copy), (len_a_copy, len_b_copy), keyf, i, False
             )
             if acount:
                 while i < acount:
@@ -241,13 +243,13 @@ def _merge_with_gallop(
                 j += 1
                 k += 1
 
-            if i == len(a_copy) or j == len(b_copy):
+            if i == len_a_copy or j == len_b_copy:
                 break
 
             b_end = _gallop(
-                combined, (len(a_copy), len(b_copy)), (0, len(a_copy)), keyf, j, True
+                combined, (len_a_copy, len_b_copy), (0, len_a_copy), keyf, j, True
             )
-            bcount = len(b_copy) - b_end
+            bcount = len_b_copy - b_end
             if bcount:
                 while j < b_end:
                     arr[k] = b_copy[j]
@@ -262,12 +264,12 @@ def _merge_with_gallop(
 
         min_gallop += 1
 
-    while i < len(a_copy):
+    while i < len_a_copy:
         arr[k] = a_copy[i]
         i += 1
         k += 1
 
-    while j < len(b_copy):
+    while j < len_b_copy:
         arr[k] = b_copy[j]
         j += 1
         k += 1
