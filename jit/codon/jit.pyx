@@ -6,9 +6,10 @@
 # cython: c_string_encoding=utf8
 
 cimport codon.jit
+from libc.stddef cimport size_t
 from libc.stdlib cimport malloc, calloc, free
 from libc.string cimport strcpy
-from libc.stdint cimport int32_t, uint8_t
+from libc.stdint cimport int32_t, uint8_t, uint64_t
 
 
 class JITError(Exception):
@@ -43,7 +44,8 @@ cdef class JITWrapper:
             msg = get_free_str(result.error)
             raise JITError(msg)
 
-    def run_wrapper(self, name: str, types: list[str], module: str, pyvars: list[str], args, debug) -> object:
+    def run_wrapper(self, name: str, types: list[str], module: str,
+                    pyvars: list[str], args, debug) -> object:
         cdef char** c_types = <char**>calloc(len(types), sizeof(char*))
         cdef char** c_pyvars = <char**>calloc(len(pyvars), sizeof(char*))
         if not c_types or not c_pyvars:
@@ -75,6 +77,68 @@ cdef class JITWrapper:
             for i in range(len(pyvars)):
                 free(c_pyvars[i])
             free(c_pyvars)
+
+    def jitclass_new(self, class_name: str, native_class_name: str,
+                     types: list[str], args, debug) -> int:
+        cdef size_t types_size = len(types)
+        cdef size_t alloc_size = types_size if types_size > 0 else 1
+        cdef char** c_types = <char**>calloc(alloc_size, sizeof(char*))
+        if not c_types:
+            raise JITError("Cython allocation failed")
+        try:
+            for i, s in enumerate(types):
+                bytes = s.encode('utf-8')
+                c_types[i] = <char*>malloc(len(bytes) + 1)
+                strcpy(c_types[i], bytes)
+            result = codon.jit.c_jitclass_new(
+                self.jit, class_name.encode('utf-8'),
+                native_class_name.encode('utf-8'),
+                c_types, types_size, <void *>args, <uint8_t>debug
+            )
+            if result.error is NULL:
+                return <uint64_t>result.result
+            else:
+                msg = get_free_str(result.error)
+                raise JITError(msg)
+        finally:
+            for i in range(len(types)):
+                free(c_types[i])
+            free(c_types)
+
+    def jitclass_call(self, class_name: str, handle: int, method_name: str,
+                      types: list[str], args, debug) -> object:
+        cdef size_t types_size = len(types)
+        cdef size_t alloc_size = types_size if types_size > 0 else 1
+        cdef char** c_types = <char**>calloc(alloc_size, sizeof(char*))
+        if not c_types:
+            raise JITError("Cython allocation failed")
+        try:
+            for i, s in enumerate(types):
+                bytes = s.encode('utf-8')
+                c_types[i] = <char*>malloc(len(bytes) + 1)
+                strcpy(c_types[i], bytes)
+            result = codon.jit.c_jitclass_call(
+                self.jit, class_name.encode('utf-8'), <uint64_t>handle,
+                method_name.encode('utf-8'), c_types, types_size,
+                <void *>args, <uint8_t>debug
+            )
+            if result.error is NULL:
+                return <object>result.result
+            else:
+                msg = get_free_str(result.error)
+                raise JITError(msg)
+        finally:
+            for i in range(len(types)):
+                free(c_types[i])
+            free(c_types)
+
+    def jitclass_release(self, class_name: str, handle: int, debug) -> None:
+        result = codon.jit.c_jitclass_release(
+            self.jit, class_name.encode('utf-8'), <uint64_t>handle, <uint8_t>debug
+        )
+        if result.error is not NULL:
+            msg = get_free_str(result.error)
+            raise JITError(msg)
 
 
 def codon_library():

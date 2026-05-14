@@ -24,6 +24,17 @@ struct CJITResult jit_execute_python(void *jit, char *name, char **types,
 struct CJITResult jit_execute_safe(void *jit, char *code, char *file, int32_t line,
                                    uint8_t debug);
 
+struct CJITResult jitclass_new(void *jit, char *class_name, char *native_class_name,
+                               char **types, size_t types_size, void *args,
+                               uint8_t debug);
+
+struct CJITResult jitclass_call(void *jit, char *class_name, uint64_t handle,
+                                char *method_name, char **types, size_t types_size,
+                                void *args, uint8_t debug);
+
+struct CJITResult jitclass_release(void *jit, char *class_name, uint64_t handle,
+                                   uint8_t debug);
+
 char *get_jit_library();
 
 #ifdef __cplusplus

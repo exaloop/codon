@@ -51,6 +51,42 @@ public:
     ir::types::Type *getCObjType(ir::Module *M);
   };
 
+  struct JITClassData {
+    ir::types::Type *cobj;
+    std::unordered_map<std::string, ir::Func *> constructorWrappers;
+    std::unordered_map<std::string, ir::Func *> methodWrappers;
+
+    JITClassData();
+    ir::types::Type *getCObjType(ir::Module *M);
+  };
+
+  struct JITClassRoot {
+    std::unique_ptr<void *> slot;
+
+    explicit JITClassRoot(void *ptr);
+    ~JITClassRoot();
+
+    JITClassRoot(JITClassRoot &&) noexcept = default;
+    JITClassRoot &operator=(JITClassRoot &&) noexcept;
+    JITClassRoot(const JITClassRoot &) = delete;
+    JITClassRoot &operator=(const JITClassRoot &) = delete;
+  };
+
+  struct JITClassObject {
+    std::string className;
+    std::string nativeClassName;
+    void *nativePtr;
+
+    JITClassRoot root;
+
+    JITClassObject(std::string className, std::string nativeClassName, void *nativePtr);
+
+    JITClassObject(JITClassObject &&) noexcept = default;
+    JITClassObject &operator=(JITClassObject &&) noexcept = default;
+    JITClassObject(const JITClassObject &) = delete;
+    JITClassObject &operator=(const JITClassObject &) = delete;
+  };
+
   struct JITResult {
     void *result;
     std::string message;
@@ -64,6 +100,9 @@ private:
   std::unique_ptr<Compiler> compiler;
   std::unique_ptr<Engine> engine;
   std::unique_ptr<PythonData> pydata;
+  std::unique_ptr<JITClassData> jitClassData;
+  std::unordered_map<uint64_t, JITClassObject> jitClassObjects;
+  uint64_t nextJITClassHandle = 1;
   std::string mode;
   bool forgetful = false;
 
@@ -99,6 +138,13 @@ public:
                           bool debug);
   JITResult executeSafe(const std::string &code, const std::string &file, int line,
                         bool debug);
+  JITResult jitClassNew(const std::string &className,
+                        const std::string &nativeClassName,
+                        const std::vector<std::string> &types, void *args, bool debug);
+  JITResult jitClassCall(const std::string &className, uint64_t handle,
+                         const std::string &methodName,
+                         const std::vector<std::string> &types, void *args, bool debug);
+  JITResult jitClassRelease(const std::string &className, uint64_t handle, bool debug);
 
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
