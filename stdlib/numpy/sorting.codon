@@ -1470,10 +1470,10 @@ def atimsort(start: Ptr[T], tosort: Ptr[int], num: int, T: type):
         n = _acount_run(start, tosort, l, num, minrun)
         stack[stack_ptr] = (l, n)
         stack_ptr += 1
-        _atry_collapse(start, tosort, stack.ptr, __ptr__(stack_ptr), buffer)
+        _atry_collapse(start, tosort, stack, __ptr__(stack_ptr), buffer)
         l += n
 
-    _aforce_collapse(start, tosort, stack.ptr, __ptr__(stack_ptr), buffer)
+    _aforce_collapse(start, tosort, stack, __ptr__(stack_ptr), buffer)
     buffer.free()
 
 ##########
@@ -1759,7 +1759,7 @@ def _partition_compact(a: ndarray, kth: Ptr[int], nkth: int, axis: int):
         npiv = 0
 
         for i in range(nkth):
-            _partition(p, n, kth[i], pivots.ptr, __ptr__(npiv))
+            _partition(p, n, kth[i], pivots, __ptr__(npiv))
 
 def _partition_buffered(a: ndarray, kth: Ptr[int], nkth: int, axis: int):
     n = a.shape[axis]
@@ -1778,7 +1778,7 @@ def _partition_buffered(a: ndarray, kth: Ptr[int], nkth: int, axis: int):
             p += st
 
         for i in range(nkth):
-            _partition(buf, n, kth[i], pivots.ptr, __ptr__(npiv))
+            _partition(buf, n, kth[i], pivots, __ptr__(npiv))
 
         p = p0
         for i in range(n):
@@ -1883,7 +1883,7 @@ def argpartition(a: ndarray, kth, axis = -1, kind: str = 'introselect'):
         tosort = pb if b_compact else b_buf
 
         for i in range(nkth):
-            _argpartition(start, tosort, n, pkth[i], pivots.ptr, __ptr__(npiv))
+            _argpartition(start, tosort, n, pkth[i], pivots, __ptr__(npiv))
 
         if not a_compact:
             qa = pa.as_byte()

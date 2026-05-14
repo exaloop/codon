@@ -8,7 +8,7 @@ class str:
 
     def __hash__(self) -> int:
         h = 0
-        p, n = self.ptr, self.len
+        p, n = self._ptr, self._len
         i = 0
         while i < n:
             h = 31 * h + int(p[i])
@@ -56,7 +56,7 @@ class str:
             elif c == q:
                 d = qe
             else:
-                b = int(c.ptr[0])
+                b = int(c._ptr[0])
                 if not (32 <= b <= 126):
                     h = "0123456789abcdef"
                     v.append("\\x")
@@ -73,14 +73,14 @@ class str:
             idx += len(self)
         if not (0 <= idx < len(self)):
             raise IndexError("string index out of range")
-        return str(self.ptr + idx, 1)
+        return str(self._ptr + idx, 1)
 
     def __getitem__(self, s: Slice) -> str:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         elif s.step is None:
             start, stop, step, length = s.adjust_indices(len(self))
-            return str(self.ptr + start, length)
+            return str(self._ptr + start, length)
         else:
             start, stop, step, length = s.adjust_indices(len(self))
             return self._make_from_range(start, stop, step, length)
@@ -89,7 +89,7 @@ class str:
         p = Ptr[u8](length)
         j = 0
         for i in range(start, stop, step):
-            p[j] = self.ptr[i]
+            p[j] = self._ptr[i]
             j += 1
         return str(p, length)
 
@@ -97,34 +97,34 @@ class str:
         i = 0
         n = len(self)
         while i < n:
-            yield str(self.ptr + i, 1)
+            yield str(self._ptr + i, 1)
             i += 1
 
     def __reversed__(self) -> Generator[str]:
         i = len(self) - 1
         while i >= 0:
-            yield str(self.ptr + i, 1)
+            yield str(self._ptr + i, 1)
             i -= 1
 
     def __mul__(self, x: int) -> str:
-        total = x * self.len
+        total = x * self._len
         p = Ptr[u8](total)
         n = 0
         for _ in range(x):
-            str.memcpy(p + n, self.ptr, self.len)
-            n += self.len
+            str.memcpy(p + n, self._ptr, self._len)
+            n += self._len
         return str(p, total)
 
     def _cmp(self, other: str) -> int:
-        n = min(self.len, other.len)
+        n = min(self._len, other._len)
         i = 0
         while i < n:
-            c1 = self.ptr[i]
-            c2 = other.ptr[i]
+            c1 = self._ptr[i]
+            c2 = other._ptr[i]
             if c1 != c2:
                 return int(c1) - int(c2)
             i += 1
-        return self.len - other.len
+        return self._len - other._len
 
 import algorithms.strings as algorithms
 
@@ -160,10 +160,10 @@ class str:
         return u8(int(_C.tolower(i32(int(a)))))
 
     def _slice(self, i: int, j: int) -> str:
-        return str(self.ptr + i, j - i)
+        return str(self._ptr + i, j - i)
 
     def _at(self, i: int) -> str:
-        return str(self.ptr + i, 1)
+        return str(self._ptr + i, 1)
 
     def join(self, l: Generator[str]) -> str:
         buf = _strbuf()
@@ -202,10 +202,10 @@ class str:
         r = 0
         i = 0
         while i < len(l):
-            str.memcpy(p + r, l[i].ptr, len(l[i]))
+            str.memcpy(p + r, l[i]._ptr, len(l[i]))
             r += len(l[i])
             if i < len(l) - 1:
-                str.memcpy(p + r, self.ptr, len(self))
+                str.memcpy(p + r, self._ptr, len(self))
                 r += len(self)
             i += 1
 
@@ -216,7 +216,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isdigit(self.ptr[i]):
+            if not str._isdigit(self._ptr[i]):
                 return False
         return True
 
@@ -229,12 +229,12 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return str._islower(self.ptr[0])
+            return str._islower(self._ptr[0])
 
         for i in range(len(self)):
-            if str._isupper(self.ptr[i]):
+            if str._isupper(self._ptr[i]):
                 return False
-            elif not cased and str._islower(self.ptr[i]):
+            elif not cased and str._islower(self._ptr[i]):
                 cased = True
         return cased
 
@@ -247,12 +247,12 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return str._isupper(self.ptr[0])
+            return str._isupper(self._ptr[0])
 
         for i in range(len(self)):
-            if str._islower(self.ptr[i]):
+            if str._islower(self._ptr[i]):
                 return False
-            elif not cased and str._isupper(self.ptr[i]):
+            elif not cased and str._isupper(self._ptr[i]):
                 cased = True
         return cased
 
@@ -261,7 +261,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isalnum(self.ptr[i]):
+            if not str._isalnum(self._ptr[i]):
                 return False
         return True
 
@@ -270,7 +270,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isalpha(self.ptr[i]):
+            if not str._isalpha(self._ptr[i]):
                 return False
         return True
 
@@ -279,7 +279,7 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isspace(self.ptr[i]):
+            if not str._isspace(self._ptr[i]):
                 return False
         return True
 
@@ -291,17 +291,17 @@ class str:
 
         # For single character strings
         if len(self) == 1:
-            return str._isupper(self.ptr[0])
+            return str._isupper(self._ptr[0])
 
         cased = False
         prev_is_cased = False
         for i in range(len(self)):
-            if str._isupper(self.ptr[i]):
+            if str._isupper(self._ptr[i]):
                 if prev_is_cased:
                     return False
                 prev_is_cased = True
                 cased = True
-            elif str._islower(self.ptr[i]):
+            elif str._islower(self._ptr[i]):
                 if not prev_is_cased:
                     return False
                 prev_is_cased = True
@@ -314,9 +314,9 @@ class str:
         n = len(self)
         if n > 0:
             p = Ptr[u8](n)
-            p[0] = str._toupper(self.ptr[0])
+            p[0] = str._toupper(self._ptr[0])
             for i in range(1, n):
-                p[i] = str._tolower(self.ptr[i])
+                p[i] = str._tolower(self._ptr[i])
             return str(p, n)
         return ""
 
@@ -326,7 +326,7 @@ class str:
 
         for i in range(len(self)):
             # test ascii values 48-57 == 0-9
-            if not (48 <= int(self.ptr[i]) <= 57):
+            if not (48 <= int(self._ptr[i]) <= 57):
                 return False
         return True
 
@@ -337,7 +337,7 @@ class str:
             return ""
         p = Ptr[u8](n)
         for i in range(n):
-            p[i] = str._tolower(self.ptr[i])
+            p[i] = str._tolower(self._ptr[i])
         return str(p, n)
 
     def upper(self) -> str:
@@ -347,12 +347,12 @@ class str:
             return ""
         p = Ptr[u8](n)
         for i in range(n):
-            p[i] = str._toupper(self.ptr[i])
+            p[i] = str._toupper(self._ptr[i])
         return str(p, n)
 
     def isascii(self) -> bool:
         for i in range(len(self)):
-            if int(self.ptr[i]) >= 128:
+            if int(self._ptr[i]) >= 128:
                 return False
         return True
 
@@ -366,12 +366,12 @@ class str:
             return ""
         p = Ptr[u8](n)
         for i in range(n):
-            if str._islower(self.ptr[i]):
-                p[i] = str._toupper(self.ptr[i])
-            elif str._isupper(self.ptr[i]):
-                p[i] = str._tolower(self.ptr[i])
+            if str._islower(self._ptr[i]):
+                p[i] = str._toupper(self._ptr[i])
+            elif str._isupper(self._ptr[i]):
+                p[i] = str._tolower(self._ptr[i])
             else:
-                p[i] = self.ptr[i]
+                p[i] = self._ptr[i]
         return str(p, n)
 
     def title(self) -> str:
@@ -383,22 +383,22 @@ class str:
 
         p = Ptr[u8](n)
         for i in range(n):
-            if str._islower(self.ptr[i]):
+            if str._islower(self._ptr[i]):
                 # lowercase to uppercase
                 if not prev_is_cased:
-                    p[i] = str._toupper(self.ptr[i])
+                    p[i] = str._toupper(self._ptr[i])
                 else:
-                    p[i] = self.ptr[i]
+                    p[i] = self._ptr[i]
                 prev_is_cased = True
-            elif str._isupper(self.ptr[i]):
+            elif str._isupper(self._ptr[i]):
                 # uppercase to lowercase
                 if prev_is_cased:
-                    p[i] = str._tolower(self.ptr[i])
+                    p[i] = str._tolower(self._ptr[i])
                 else:
-                    p[i] = self.ptr[i]
+                    p[i] = self._ptr[i]
                 prev_is_cased = True
             else:
-                p[i] = self.ptr[i]
+                p[i] = self._ptr[i]
                 prev_is_cased = False
         return str(p, n)
 
@@ -417,13 +417,13 @@ class str:
 
         for t in args:
             if isinstance(t, str):
-                str.memcpy(p + i, t.ptr, t.len)
-                i += t.len
+                str.memcpy(p + i, t._ptr, t._len)
+                i += t._len
             else:
                 s, n = t
                 for _ in range(n):
-                    str.memcpy(p + i, s.ptr, s.len)
-                    i += s.len
+                    str.memcpy(p + i, s._ptr, s._len)
+                    i += s._len
 
         return str(p, total)
 
@@ -462,7 +462,7 @@ class str:
 
         zf = self.rjust(width, '0')
         fill = width - len(self)
-        p = zf.ptr
+        p = zf._ptr
 
         if len(self) > 0 and (p[fill] == plus or p[fill] == minus):
             p[0] = p[fill]
@@ -516,7 +516,7 @@ class str:
 
     def isprintable(self) -> bool:
         for i in range(len(self)):
-            if not (31 < int(self.ptr[i]) < 128):
+            if not (31 < int(self._ptr[i]) < 128):
                 return False
         return True
 
@@ -573,7 +573,7 @@ class str:
 
         # special case for length-1 pattern
         if len(sep) == 1:
-            return self._split_char(sep.ptr[0], maxsplit if maxsplit >= 0 else _MAX)
+            return self._split_char(sep._ptr[0], maxsplit if maxsplit >= 0 else _MAX)
 
         MAX_PREALLOC = 12
         maxsplit = maxsplit if maxsplit >= 0 else _MAX
@@ -607,7 +607,7 @@ class str:
 
         # special case for length-1 pattern
         if len(sep) == 1:
-            return self._rsplit_char(sep.ptr[0], maxsplit if maxsplit >= 0 else _MAX)
+            return self._rsplit_char(sep._ptr[0], maxsplit if maxsplit >= 0 else _MAX)
 
         MAX_PREALLOC = 12
         maxsplit = maxsplit if maxsplit >= 0 else _MAX
@@ -639,12 +639,12 @@ class str:
         break_n = u8(10)  # \n
 
         while i < n:
-            while i < n and not (self.ptr[i] == break_r or self.ptr[i] == break_n):
+            while i < n and not (self._ptr[i] == break_r or self._ptr[i] == break_n):
                 i += 1
 
             eol = i
             if i < n:
-                if self.ptr[i] == break_r and i + 1 < n and self.ptr[i + 1] == break_n:
+                if self._ptr[i] == break_r and i + 1 < n and self._ptr[i + 1] == break_n:
                     i += 2
                 else:
                     i += 1
@@ -729,7 +729,7 @@ class str:
     def expandtabs(self, tabsize: int = 8) -> str:
         i = 0
         j = 0
-        p = self.ptr
+        p = self._ptr
         e = p + len(self)
 
         break_r = u8(13)  # \r
@@ -765,7 +765,7 @@ class str:
         u = Ptr[u8](u_len)
         j = 0
         q = u
-        p = self.ptr
+        p = self._ptr
 
         while p < e:
             if p[0] == tab:
@@ -794,7 +794,7 @@ class str:
         m = 0
 
         for i in range(n):
-            key = int(self.ptr[i])
+            key = int(self._ptr[i])
             if key in map:
                 val = map[key]
                 if val is not None:
@@ -806,14 +806,14 @@ class str:
         q = p
 
         for i in range(n):
-            key = int(self.ptr[i])
+            key = int(self._ptr[i])
             if key in map:
                 val = map[key]
                 if val is not None:
-                    str.memcpy(q, val.ptr, len(val))
+                    str.memcpy(q, val._ptr, len(val))
                     q += len(val)
             else:
-                q[0] = self.ptr[i]
+                q[0] = self._ptr[i]
                 q += 1
 
         return str(p, m)
@@ -847,18 +847,18 @@ class str:
         j = 0
         while maxcount > 0:
             maxcount -= 1
-            while i < str_len and str._isspace(self.ptr[i]):
+            while i < str_len and str._isspace(self._ptr[i]):
                 i += 1
             if i == str_len:
                 break
             j = i
             i += 1
-            while i < str_len and not str._isspace(self.ptr[i]):
+            while i < str_len and not str._isspace(self._ptr[i]):
                 i += 1
             l.append(self._slice(j, i))
 
         if i < str_len:
-            while i < str_len and str._isspace(self.ptr[i]):
+            while i < str_len and str._isspace(self._ptr[i]):
                 i += 1
             if i != str_len:
                 l.append(self._slice(i, str_len))
@@ -874,18 +874,18 @@ class str:
         j = str_len - 1
         while maxcount > 0:
             maxcount -= 1
-            while i >= 0 and str._isspace(self.ptr[i]):
+            while i >= 0 and str._isspace(self._ptr[i]):
                 i -= 1
             if i < 0:
                 break
             j = i
             i -= 1
-            while i >= 0 and not str._isspace(self.ptr[i]):
+            while i >= 0 and not str._isspace(self._ptr[i]):
                 i -= 1
             l.append(self._slice(i + 1, j + 1))
 
         if i >= 0:
-            while i >= 0 and str._isspace(self.ptr[i]):
+            while i >= 0 and str._isspace(self._ptr[i]):
                 i -= 1
             if i >= 0:
                 l.append(self._slice(0, i + 1))
@@ -902,7 +902,7 @@ class str:
         j = 0
 
         while i < str_len and maxcount > 0:
-            if self.ptr[i] == char:
+            if self._ptr[i] == char:
                 l.append(self._slice(j, i))
                 j = i + 1
                 maxcount -= 1
@@ -920,7 +920,7 @@ class str:
         j = str_len - 1
 
         while i >= 0 and maxcount > 0:
-            if self.ptr[i] == char:
+            if self._ptr[i] == char:
                 l.append(self._slice(i + 1, j + 1))
                 j = i - 1
                 maxcount -= 1
@@ -931,11 +931,11 @@ class str:
         return l
 
     def _findchar(self, c: u8):
-        return _C.memchr(self.ptr, i32(int(c)), len(self))
+        return _C.memchr(self._ptr, i32(int(c)), len(self))
 
     def _countchar(self, c: u8, maxcount: int):
         count = 0
-        start = self.ptr
+        start = self._ptr
         end = start + len(self)
 
         while True:
@@ -949,10 +949,10 @@ class str:
         return count
 
     def _replace_interleave(self, to: str, maxcount: int):
-        self_s = self.ptr
+        self_s = self._ptr
         self_len = len(self)
         to_len = len(to)
-        to_s = to.ptr
+        to_s = to._ptr
         count = 0
         i = 0
 
@@ -999,7 +999,7 @@ class str:
 
     def _replace_delete_single_character(self, from_c: u8, maxcount: int):
         self_len = len(self)
-        self_s = self.ptr
+        self_s = self._ptr
 
         count = self._countchar(from_c, maxcount)
         if count == 0:
@@ -1026,7 +1026,7 @@ class str:
 
     def _replace_delete_substring(self, from_s: str, maxcount: int):
         self_len = len(self)
-        self_s = self.ptr
+        self_s = self._ptr
         from_len = len(from_s)
 
         count = algorithms.count_with_max(self, from_s, maxcount)
@@ -1054,7 +1054,7 @@ class str:
         return str(result_s0, result_len)
 
     def _replace_single_character_in_place(self, from_c: u8, to_c: u8, maxcount: int):
-        self_s = self.ptr
+        self_s = self._ptr
         self_len = len(self)
 
         nxt = self._findchar(from_c)
@@ -1081,10 +1081,10 @@ class str:
         return str(result_s, self_len)
 
     def _replace_substring_in_place(self, from_s: str, to: str, maxcount: int):
-        self_s = self.ptr
+        self_s = self._ptr
         self_len = len(self)
         from_len = len(from_s)
-        to_s = to.ptr
+        to_s = to._ptr
 
         offset = algorithms.find(self, from_s)
         if offset == -1:
@@ -1110,7 +1110,7 @@ class str:
         return str(result_s, self_len)
 
     def _replace_single_character(self, from_c: u8, to_s: str, maxcount: int):
-        self_s = self.ptr
+        self_s = self._ptr
         self_len = len(self)
         to_len = len(to_s)
 
@@ -1135,13 +1135,13 @@ class str:
                 break
 
             if nxt == start:
-                str.memcpy(result_s, to_s.ptr, to_len)
+                str.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start += 1
             else:
                 str.memcpy(result_s, start, nxt - start)
                 result_s += (nxt - start)
-                str.memcpy(result_s, to_s.ptr, to_len)
+                str.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start = nxt + 1
 
@@ -1149,7 +1149,7 @@ class str:
         return str(result_s0, result_len)
 
     def _replace_substring(self, from_s: str, to_s: str, maxcount: int):
-        self_s = self.ptr
+        self_s = self._ptr
         self_len = len(self)
         from_len = len(from_s)
         to_len = len(to_s)
@@ -1176,13 +1176,13 @@ class str:
 
             nxt = start + offset
             if nxt == start:
-                str.memcpy(result_s, to_s.ptr, to_len)
+                str.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start += from_len
             else:
                 str.memcpy(result_s, start, nxt - start)
                 result_s += (nxt - start)
-                str.memcpy(result_s, to_s.ptr, to_len)
+                str.memcpy(result_s, to_s._ptr, to_len)
                 result_s += to_len
                 start = nxt + from_len
 
@@ -1209,15 +1209,15 @@ class str:
 
         if to_len == 0:
             if from_len == 1:
-                return self._replace_delete_single_character(from_s.ptr[0], maxcount)
+                return self._replace_delete_single_character(from_s._ptr[0], maxcount)
             return self._replace_delete_substring(from_s, maxcount)
 
         if from_len == to_len:
             if from_len == 1:
-                return self._replace_single_character_in_place(from_s.ptr[0], to_s.ptr[0], maxcount)
+                return self._replace_single_character_in_place(from_s._ptr[0], to_s._ptr[0], maxcount)
             return self._replace_substring_in_place(from_s, to_s, maxcount)
 
         if from_len == 1:
-            return self._replace_single_character(from_s.ptr[0], to_s, maxcount)
+            return self._replace_single_character(from_s._ptr[0], to_s, maxcount)
         else:
             return self._replace_substring(from_s, to_s, maxcount)

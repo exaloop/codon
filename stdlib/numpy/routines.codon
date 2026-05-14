@@ -703,7 +703,7 @@ def frombuffer(buffer: str, dtype: type = float, count: int = -1, offset: int = 
     if count < 0:
         count = (len(buffer) - offset) // util.sizeof(dtype)
 
-    p = Ptr[dtype](buffer.ptr + offset)
+    p = Ptr[dtype](buffer._ptr + offset)
     return ndarray((count,), p)
 
 ################

@@ -137,8 +137,8 @@ class pyobj:
 @tuple
 @__internal__
 class str:
-    ptr: Ptr[u8]
-    len: int
+    _ptr: Ptr[u8]
+    _len: int
 
 @tuple
 @__internal__

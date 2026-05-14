@@ -205,13 +205,13 @@ class Ptr:
     def _ptr_to_str(p: Ptr[u8], name: str) -> str:
         pstr = p.__repr__()
         # '<[name] at [pstr]>'
-        total = 1 + name.len + 4 + pstr.len + 1
+        total = 1 + name._len + 4 + pstr._len + 1
         buf = Ptr[u8](total)
         where = 0
         buf[where] = u8(60)  # '<'
         where += 1
-        str.memcpy(buf + where, name.ptr, name.len)
-        where += name.len
+        str.memcpy(buf + where, name._ptr, name._len)
+        where += name._len
         buf[where] = u8(32)  # ' '
         where += 1
         buf[where] = u8(97)  # 'a'
@@ -220,10 +220,10 @@ class Ptr:
         where += 1
         buf[where] = u8(32)  # ' '
         where += 1
-        str.memcpy(buf + where, pstr.ptr, pstr.len)
-        where += pstr.len
+        str.memcpy(buf + where, pstr._ptr, pstr._len)
+        where += pstr._len
         buf[where] = u8(62)  # '>'
-        free(pstr.ptr)
+        free(pstr._ptr)
         return str(buf, total)
 
 

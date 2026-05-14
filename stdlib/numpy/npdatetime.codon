@@ -1035,9 +1035,9 @@ class timedelta64:
                 num: Literal[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        if (len(s) == 3 and (s.ptr[0] == u8(78) or s.ptr[0] == u8(110))
-                and (s.ptr[1] == u8(65) or s.ptr[1] == u8(97))
-                and (s.ptr[2] == u8(116) or s.ptr[2] == u8(84))):
+        if (len(s) == 3 and (s._ptr[0] == u8(78) or s._ptr[0] == u8(110))
+                and (s._ptr[1] == u8(65) or s._ptr[1] == u8(97))
+                and (s._ptr[2] == u8(116) or s._ptr[2] == u8(84))):
             return timedelta64[base, num](_DATETIME_NAT)
         else:
             return timedelta64[base, num](int(s))
@@ -2052,7 +2052,7 @@ class datetimestruct:
 
         def parse_error(s: str, substr: cobj):
             raise ValueError(
-                f"Error parsing datetime string \"{s}\" at position {substr - s.ptr}"
+                f"Error parsing datetime string \"{s}\" at position {substr - s._ptr}"
             )
 
         def parse_timezone(self, s: str, substr: cobj, sublen: int):
@@ -2129,7 +2129,7 @@ class datetimestruct:
         self.day = i32(1)
 
         bestunit = 0
-        str_ = s.ptr
+        str_ = s._ptr
         len_ = len(s)
 
         if len_ <= 0 or strcmp(str_, len_, (110, 97, 116)):  # 'nat'

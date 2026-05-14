@@ -159,7 +159,7 @@ def ord(s: str) -> int:
         raise TypeError(
             f"ord() expected a character, but string of length {len(s)} found"
         )
-    return int(s.ptr[0])
+    return int(s._ptr[0])
 
 def divmod(a, b):
     if hasattr(a, "__divmod__"):
@@ -320,11 +320,11 @@ def _int_format(a: int, base: int, prefix: str = ""):
     q = p
 
     if a < 0:
-        q[0] = chars[-1].ptr[0]
+        q[0] = chars[-1]._ptr[0]
         q += 1
 
     if prefix:
-        str.memcpy(q, prefix.ptr, len(prefix))
+        str.memcpy(q, prefix._ptr, len(prefix))
         q += len(prefix)
 
     if digits != 0:
@@ -333,11 +333,11 @@ def _int_format(a: int, base: int, prefix: str = ""):
         i = 1
         while b != 0:
             i += 1
-            q[0] = chars.ptr[abs(b % base)]
+            q[0] = chars._ptr[abs(b % base)]
             q += -1
             b //= base
     else:
-        q[0] = chars.ptr[0]
+        q[0] = chars._ptr[0]
 
     return str(p, sz)
 
@@ -444,7 +444,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     if base != 0 and (base < 2 or base > 36):
         raise ValueError("int() base must be >= 2 and <= 36, or 0")
 
-    p = s.ptr
+    p = s._ptr
     end = p + s.__len__()
 
     # skip leading whitespace
@@ -597,7 +597,7 @@ class float:
         end = cobj()
         result = _C.seq_float_from_str(s, __ptr__(end))
 
-        if n == 0 or end != s.ptr + n:
+        if n == 0 or end != s._ptr + n:
             raise ValueError(f"could not convert string to float: {s0.__repr__()}")
 
         return result
@@ -609,7 +609,7 @@ class complex:
             raise ValueError("complex() arg is a malformed string")
 
         n = len(v)
-        s = v.ptr
+        s = v._ptr
         x = 0.0
         y = 0.0
         z = 0.0

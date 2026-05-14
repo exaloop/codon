@@ -655,14 +655,14 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
                                        (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(B->getPtrTy(), excVal);
 
-  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
+  auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *excHeader =
       llvm::StructType::get(strType, strType, strType, B->getInt64Ty(), B->getInt64Ty(),
                             B->getPtrTy(), B->getPtrTy());
   auto *header = B->CreateLoad(excHeader, B->CreateLoad(B->getPtrTy(), loadedExc));
   auto *msg = B->CreateExtractValue(header, 0);
-  auto *msgLen = B->CreateExtractValue(msg, 0);
-  auto *msgPtr = B->CreateExtractValue(msg, 1);
+  auto *msgPtr = B->CreateExtractValue(msg, 0);
+  auto *msgLen = B->CreateExtractValue(msg, 1);
   auto *pyType = B->CreateExtractValue(header, 5);
 
   // copy msg into new null-terminated buffer
@@ -1519,7 +1519,7 @@ void LLVMVisitor::visit(const Module *x) {
   setDebugInfoForNode(nullptr);
 
   // build canonical main function
-  auto *strType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
+  auto *strType = llvm::StructType::get(*context, {B->getPtrTy(), B->getInt64Ty()});
   auto *initFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("seq_init", B->getVoidTy(), B->getInt32Ty()).getCallee());
   auto *strlenFunc = llvm::cast<llvm::Function>(
@@ -1568,8 +1568,8 @@ void LLVMVisitor::visit(const Module *x) {
   auto *arg = B->CreateLoad(B->getPtrTy(), B->CreateGEP(B->getPtrTy(), argv, control));
   auto *argLen = B->CreateZExtOrTrunc(B->CreateCall(strlenFunc, arg), B->getInt64Ty());
   llvm::Value *str = llvm::UndefValue::get(strType);
-  str = B->CreateInsertValue(str, argLen, 0);
-  str = B->CreateInsertValue(str, arg, 1);
+  str = B->CreateInsertValue(str, arg, 0);
+  str = B->CreateInsertValue(str, argLen, 1);
   B->CreateStore(str, B->CreateGEP(strType, ptr, control));
   B->CreateBr(loopBlock);
 
@@ -2458,12 +2458,12 @@ void LLVMVisitor::visit(const StringConst *x) {
                                /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
                                llvm::ConstantDataArray::getString(*context, s), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
+  auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
   auto *len = B->getInt64(s.length());
   llvm::Value *str = llvm::UndefValue::get(strType);
-  str = B->CreateInsertValue(str, len, 0);
-  str = B->CreateInsertValue(str, ptr, 1);
+  str = B->CreateInsertValue(str, ptr, 0);
+  str = B->CreateInsertValue(str, len, 1);
   value = str;
 }
 

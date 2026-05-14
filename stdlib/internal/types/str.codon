@@ -10,12 +10,8 @@ def strlen(a: cobj) -> int:
 @extend
 class str:
     @__internal__
-    def __new__(l: int, p: Ptr[u8]) -> str:
-        pass
-
-    @overload
     def __new__(p: Ptr[u8], l: int) -> str:
-        return str(l, p)
+        pass
 
     @overload
     def __new__() -> str:
@@ -38,10 +34,10 @@ class str:
         return what
 
     def __len__(self) -> int:
-        return self.len
+        return self._len
 
     def __bool__(self) -> bool:
-        return self.len != 0
+        return self._len != 0
 
     def __copy__(self) -> str:
         return self
@@ -50,9 +46,9 @@ class str:
         return self
 
     def __ptrcopy__(self) -> str:
-        n = self.len
+        n = self._len
         p = cobj(n)
-        str.memcpy(p, self.ptr, n)
+        str.memcpy(p, self._ptr, n)
         return str(p, n)
 
     @llvm
@@ -74,18 +70,18 @@ class str:
         ret {} {}
 
     def __add__(self, other: str) -> str:
-        len1 = self.len
-        len2 = other.len
+        len1 = self._len
+        len2 = other._len
         len3 = len1 + len2
         p = Ptr[u8](len3)
-        str.memcpy(p, self.ptr, len1)
-        str.memcpy(p + len1, other.ptr, len2)
+        str.memcpy(p, self._ptr, len1)
+        str.memcpy(p + len1, other._ptr, len2)
         return str(p, len3)
 
     def c_str(self) -> cobj:
         n = self.__len__()
         p = cobj(n + 1)
-        str.memcpy(p, self.ptr, n)
+        str.memcpy(p, self._ptr, n)
         p[n] = u8(0)
         return p
 
@@ -96,11 +92,11 @@ class str:
         return str(p, n)
 
     def __eq__(self, other: str) -> bool:
-        if self.len != other.len:
+        if self._len != other._len:
             return False
         i = 0
-        while i < self.len:
-            if self.ptr[i] != other.ptr[i]:
+        while i < self._len:
+            if self._ptr[i] != other._ptr[i]:
                 return False
             i += 1
         return True
@@ -121,12 +117,12 @@ class str:
             for s in args[0]:
                 if not isinstance(s, str):
                     compile_error("not a string")
-                total += s.len
+                total += s._len
             p = cobj(total)
             n = 0
             for s in args[0]:
-                str.memcpy(p + n, s.ptr, s.len)
-                n += s.len
+                str.memcpy(p + n, s._ptr, s._len)
+                n += s._len
             return str(p, total)
         elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
             sz = 10
@@ -135,26 +131,26 @@ class str:
             for s in args[0]:
                 if not isinstance(s, str):
                     compile_error("not a string")
-                if n + s.len > sz:
-                    sz = 1 + 3 * (n + s.len) // 2
+                if n + s._len > sz:
+                    sz = 1 + 3 * (n + s._len) // 2
                     pp = cobj(sz)
                     str.memcpy(pp, p, n)
                     p = pp
-                str.memcpy(p + n, s.ptr, s.len)
-                n += s.len
+                str.memcpy(p + n, s._ptr, s._len)
+                n += s._len
             return str(p, n)
         else:
             for i in static.range(static.len(args)):
                 s = args[i]
                 if not isinstance(s, str):
                     compile_error("not a string")
-                total += s.len
+                total += s._len
             p = cobj(total)
             n = 0
             for i in static.range(static.len(args)):
                 s = args[i]
-                str.memcpy(p + n, s.ptr, s.len)
-                n += s.len
+                str.memcpy(p + n, s._ptr, s._len)
+                n += s._len
             return str(p, total)
 
     def __prefix_b__(s: str, N: Literal[int]):

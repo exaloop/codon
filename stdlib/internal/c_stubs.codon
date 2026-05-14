@@ -723,3 +723,14 @@ def BZ2_bzclose(a: cobj) -> None:
 @C
 def BZ2_bzerror(a: cobj, b: Ptr[i32]) -> cobj:
     pass
+
+# <string.h>
+@pure
+@C
+def memcmp(lhs: Ptr[u8], rhs: Ptr[u8], count: int) -> i32:
+    pass
+
+@pure
+@C
+def memchr(p: Ptr[u8], ch: i32, count: int) -> Ptr[u8]:
+    pass

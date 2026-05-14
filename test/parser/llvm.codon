@@ -25,7 +25,7 @@ print y.__add__(1)[0] #: 3
 print (y + 3).__sub__(y + 1) #: 2
 print y.__eq__(z) #: True
 print y.__eq__(zz) #: True
-print y.as_byte().__eq__('abc'.ptr) #: False
+print y.as_byte().__eq__('abc'._ptr) #: False
 print y.__ne__(z) #: False
 print y.__lt__(y+1) #: True
 print y.__gt__(y+1) #: False

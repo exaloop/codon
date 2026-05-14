@@ -43,7 +43,7 @@ class File:
 
     def write(self, s: str):
         self._ensure_open()
-        _C.fwrite(s.ptr, 1, len(s), self.fp)
+        _C.fwrite(s._ptr, 1, len(s), self.fp)
         self._errcheck("error in write")
 
     def __file_write_gen__(self, g: Generator[T], T: type):
@@ -187,7 +187,7 @@ class gzFile:
 
     def write(self, s: str):
         self._ensure_open()
-        _C.gzwrite(self.fp, s.ptr, u32(len(s)))
+        _C.gzwrite(self.fp, s._ptr, u32(len(s)))
         _gz_errcheck(self.fp)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
@@ -324,7 +324,7 @@ class bzFile:
 
     def write(self, s: str):
         self._ensure_open()
-        _C.BZ2_bzwrite(self.fp, s.ptr, i32(len(s)))
+        _C.BZ2_bzwrite(self.fp, s._ptr, i32(len(s)))
         _bz_errcheck(self.fp)
 
     def __file_write_gen__(self, g: Generator[T], T: type):

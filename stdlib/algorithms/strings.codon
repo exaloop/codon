@@ -348,22 +348,22 @@ def backward_find(s: Ptr[u8], n: int, needle: Ptr[u8], k: int):
     return -1
 
 def find(haystack: str, needle: str):
-    return forward_find(haystack.ptr, haystack.len, needle.ptr, needle.len)
+    return forward_find(haystack._ptr, haystack._len, needle._ptr, needle._len)
 
 def rfind(haystack: str, needle: str):
-    return backward_find(haystack.ptr, haystack.len, needle.ptr, needle.len)
+    return backward_find(haystack._ptr, haystack._len, needle._ptr, needle._len)
 
 def count(haystack: str, needle: str):
     occ = 0
-    tmp = haystack.ptr
-    n = haystack.len
-    k = needle.len
+    tmp = haystack._ptr
+    n = haystack._len
+    k = needle._len
 
     if k == 0:
         return n + 1
 
     while True:
-        pos = forward_find(tmp, n - (tmp - haystack.ptr), needle.ptr, k)
+        pos = forward_find(tmp, n - (tmp - haystack._ptr), needle._ptr, k)
         if pos == -1:
             break
         tmp += pos + k
@@ -372,9 +372,9 @@ def count(haystack: str, needle: str):
 
 def count_with_max(haystack: str, needle: str, maxcount: int):
     occ = 0
-    tmp = haystack.ptr
-    n = haystack.len
-    k = needle.len
+    tmp = haystack._ptr
+    n = haystack._len
+    k = needle._len
 
     if maxcount == 0:
         return 0
@@ -383,7 +383,7 @@ def count_with_max(haystack: str, needle: str, maxcount: int):
         return n + 1 if n + 1 < maxcount else maxcount
 
     while True:
-        pos = forward_find(tmp, n - (tmp - haystack.ptr), needle.ptr, k)
+        pos = forward_find(tmp, n - (tmp - haystack._ptr), needle._ptr, k)
         if pos == -1:
             break
         tmp += pos + k

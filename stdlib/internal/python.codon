@@ -1266,7 +1266,7 @@ class pyobj:
         return pyobj.to_str(self.p, errors, empty)
 
     def to_str(p: cobj, errors: str, empty: str = "") -> str:
-        obj = PyUnicode_AsEncodedString(p, "utf-8".ptr, errors.c_str() if errors else "".ptr)
+        obj = PyUnicode_AsEncodedString(p, "utf-8"._ptr, errors.c_str() if errors else ""._ptr)
         if obj == cobj():
             return empty
         bts = PyBytes_AsString(obj)
@@ -1443,7 +1443,7 @@ class bool:
 @extend
 class str:
     def __to_py__(self) -> cobj:
-        return pyobj.exc_wrap(PyUnicode_DecodeFSDefaultAndSize(self.ptr, self.len))
+        return pyobj.exc_wrap(PyUnicode_DecodeFSDefaultAndSize(self._ptr, self._len))
 
     def __from_py__(s: cobj) -> str:
         if _get_type(s) == PyBytes_Type:
@@ -1673,7 +1673,7 @@ class _PyWrap:
             if i < nargs + M:
                 continue
 
-            p = PyDict_GetItemString(kwargs, k.ptr) if nkwargs else cobj()
+            p = PyDict_GetItemString(kwargs, k._ptr) if nkwargs else cobj()
             if p != cobj():
                 pargs[i] = p
                 kwused += 1

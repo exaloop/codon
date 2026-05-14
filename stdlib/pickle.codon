@@ -100,8 +100,8 @@ class bool:
 @extend
 class str:
     def __pickle__(self, jar: Jar):
-        _write(jar, self.len)
-        _write_raw(jar, self.ptr, self.len)
+        _write(jar, self._len)
+        _write_raw(jar, self._ptr, self._len)
 
     def __unpickle__(jar: Jar) -> str:
         n = _read(jar, int)

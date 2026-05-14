@@ -228,7 +228,7 @@ static seq_str_t string_conv(const std::string &s) {
   auto n = s.size();
   auto *p = (char *)seq_alloc_atomic(n);
   memcpy(p, s.data(), n);
-  return {(seq_int_t)n, p};
+  return {p, (seq_int_t)n};
 }
 
 template <typename T> std::string default_format(T n) {
@@ -293,9 +293,9 @@ SEQ_FUNC seq_str_t seq_check_errno() {
     std::string msg = strerror(errno);
     auto *buf = (char *)seq_alloc_atomic(msg.size());
     memcpy(buf, msg.data(), msg.size());
-    return {(seq_int_t)msg.size(), buf};
+    return {buf, (seq_int_t)msg.size()};
   }
-  return {0, nullptr};
+  return {nullptr, 0};
 }
 
 SEQ_FUNC void seq_print(seq_str_t str) { seq_print_full(str, stdout); }

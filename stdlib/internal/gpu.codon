@@ -409,13 +409,13 @@ def nvptx_function(name: Literal[str]) -> CUfunction:
     result = CUresult()
 
     if name.isalnum():
-        name_clean = name.ptr
+        name_clean = name._ptr
     else:
         name_len = len(name)
         name_clean = Ptr[u8](name_len + 1)
         for i in range(name_len):
             c = name[i]
-            name_clean[i] = c.ptr[0] if c.isalnum() else u8(95)  # '_'
+            name_clean[i] = c._ptr[0] if c.isalnum() else u8(95)  # '_'
         name_clean[name_len] = u8(0)
 
     for i in range(len(modules) - 1, -1, -1):
@@ -649,16 +649,16 @@ class UInt:
 @extend
 class str:
     def __to_gpu__(self, cache: AllocCache):
-        n = self.len
-        return str(_ptr_to_gpu(self.ptr, n, cache), n)
+        n = self._len
+        return str(_ptr_to_gpu(self._ptr, n, cache), n)
 
     def __from_gpu__(self, other: str):
         pass
 
     def __from_gpu_new__(other: str):
-        n = other.len
+        n = other._len
         p = Ptr[u8](n)
-        _ptr_from_gpu(p, other.ptr, n)
+        _ptr_from_gpu(p, other._ptr, n)
         return str(p, n)
 
 @extend

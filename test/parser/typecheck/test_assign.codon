@@ -219,7 +219,7 @@ print(y) #: [2]
 
 #%% del_error,barebones
 a = [1]
-del a.ptr #! cannot delete given expression
+del a._ptr #! cannot delete given expression
 
 #%% assign_underscore,barebones
 _ = 5

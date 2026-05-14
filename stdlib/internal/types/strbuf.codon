@@ -20,7 +20,7 @@ class strbuf:
                 m *= 2
             self.data = realloc(self.data, m, self.m)
             self.m = m
-        str.memcpy(self.data + self.n, s.ptr, adding)
+        str.memcpy(self.data + self.n, s._ptr, adding)
         self.n = needed
 
     def reverse(self):

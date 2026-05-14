@@ -342,9 +342,6 @@ class int:
 
 @extend
 class float:
-    def __complex__(self) -> complex:
-        return complex(self, 0.0)
-
     def __suffix_j__(x: float) -> complex:
         return complex(0, x)
 
@@ -769,6 +766,36 @@ class complex64:
         ret float %y
 
 @extend
-class int:
+class Int:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)
+
+@extend
+class UInt:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)
+
+@extend
+class float:
+    def __complex__(self) -> complex:
+        return complex(self, 0.0)
+
+@extend
+class float128:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)
+
+@extend
+class float32:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)
+
+@extend
+class float16:
+    def __complex__(self) -> complex:
+        return complex(float(self), 0.0)
+
+@extend
+class bfloat16:
     def __complex__(self) -> complex:
         return complex(float(self), 0.0)

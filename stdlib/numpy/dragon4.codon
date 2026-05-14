@@ -1130,12 +1130,12 @@ def print_inf_nan(buffer: cobj,
                 pos += 1
 
         print_len = 3 if 3 < max_print_len - pos else max_print_len - pos
-        str.memcpy(buffer + pos, "inf".ptr, print_len)
+        str.memcpy(buffer + pos, "inf"._ptr, print_len)
         # buffer[pos + print_len] = u8(0)
         return pos + print_len
     else:
         print_len = 3 if 3 < max_print_len - pos else max_print_len - pos
-        str.memcpy(buffer + pos, "nan".ptr, print_len)
+        str.memcpy(buffer + pos, "nan"._ptr, print_len)
         # buffer[pos + print_len] = u8(0)
         return pos + print_len
 

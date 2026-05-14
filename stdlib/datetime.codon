@@ -261,7 +261,7 @@ def _normalize_datetime(
 def _parse_digits(digits: str, num_digits: int) -> Tuple[str, int]:
     if len(digits) < num_digits:
         return "", -1
-    p = digits.ptr
+    p = digits._ptr
     var = 0
     for i in range(num_digits):
         tmp = int(p[0]) - 48  # 48 == '0'

@@ -51,7 +51,7 @@ class Ident:
     psource: cobj
 
     def __new__(flags: int = 0, source: str = ";unknown;unknown;0;0;;") -> Ident:
-        return Ident(i32(0), i32(flags | _KMP_IDENT_KMPC), i32(0), i32(0), source.ptr)
+        return Ident(i32(0), i32(flags | _KMP_IDENT_KMPC), i32(0), i32(0), source._ptr)
 
 @tuple
 class LRData:

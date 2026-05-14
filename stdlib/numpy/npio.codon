@@ -184,14 +184,14 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
     # Extract the header length as a little-endian unsigned int
     if major == '\x01':
         header_len_enc = f.read(2)
-        header_len = (int(header_len_enc.ptr[1]) << 8) | int(
-            header_len_enc.ptr[0])
+        header_len = (int(header_len_enc._ptr[1]) << 8) | int(
+            header_len_enc._ptr[0])
     else:
         header_len_enc = f.read(4)
-        header_len = ((int(header_len_enc.ptr[3]) << 24) |
-                      (int(header_len_enc.ptr[2]) << 16) |
-                      (int(header_len_enc.ptr[1]) << 8)
-                      | int(header_len_enc.ptr[0]))
+        header_len = ((int(header_len_enc._ptr[3]) << 24) |
+                      (int(header_len_enc._ptr[2]) << 16) |
+                      (int(header_len_enc._ptr[1]) << 8)
+                      | int(header_len_enc._ptr[0]))
 
     # Read the header data
     header_data = f.read(header_len)
@@ -213,7 +213,7 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
     # Read the binary data
     if mmap_mode is None:
         str_data = f.read()
-        binary_data = str_data.ptr
+        binary_data = str_data._ptr
         got_bytes = len(str_data)
     else:
         arr_data = _memmap(f,
@@ -424,7 +424,7 @@ def _fromfile(f, dtype: type, count: int, sep: str, offset: int):
         else:
             binary_data = f.read(count * util.sizeof(dtype))
 
-        p = Ptr[dtype](binary_data.ptr)
+        p = Ptr[dtype](binary_data._ptr)
         n = len(binary_data) // util.sizeof(dtype)
 
     return ndarray((n, ), p)
@@ -478,7 +478,7 @@ def fromstring(string: str,
                 raise ValueError("string is smaller than requested size")
 
         n = count if count >= 0 else (len(string) // util.sizeof(dtype))
-        return ndarray((n, ), Ptr[dtype](string.ptr))
+        return ndarray((n, ), Ptr[dtype](string._ptr))
 
 def _tofile(arr, f, sep: str):
     if sep:
@@ -618,13 +618,13 @@ class CSVReader:
                  comments: str = ''):
         dm = u8(0)
         if len(delimiter) == 1:
-            dm = delimiter.ptr[0]
+            dm = delimiter._ptr[0]
         elif len(delimiter) != 0:
             raise ValueError("'delimiter' must be a length-1 string")
 
         qc = u8(0)
         if len(quotechar) == 1:
-            qc = quotechar.ptr[0]
+            qc = quotechar._ptr[0]
         elif len(quotechar) != 0:
             raise ValueError("'quotechar' must be a length-1 string")
 
@@ -665,7 +665,7 @@ class CSVReader:
     def is_comment(self, c: u8):
         comments = self._comments
         for i in range(len(comments)):
-            if comments.ptr[i] == c:
+            if comments._ptr[i] == c:
                 return True
         return False
 
@@ -1134,7 +1134,7 @@ class CSVReaderGen:
     def __init__(self, path: str, delimiter: str = ',', comments: str = ''):
         dm = u8(0)
         if len(delimiter) == 1:
-            dm = delimiter.ptr[0]
+            dm = delimiter._ptr[0]
         elif len(delimiter) != 0:
             raise ValueError("'delimiter' must be a length-1 string")
 
@@ -1213,7 +1213,7 @@ class CSVReaderGen:
     def is_comment(self, c: u8):
         comments = self._comments
         for i in range(len(comments)):
-            if comments.ptr[i] == c:
+            if comments._ptr[i] == c:
                 return True
         return False
 
@@ -1304,7 +1304,7 @@ class CSVReaderGen:
             return i
 
         # Whitespace case
-        p = line.ptr
+        p = line._ptr
         n = len(line)
 
         while i < n:
@@ -1353,7 +1353,7 @@ class CSVReaderGen:
             return True
 
         if self.is_whitespace_delimiter():
-            p = line.ptr
+            p = line._ptr
             n = len(line)
             i = 0
             while i < n:
@@ -1365,7 +1365,7 @@ class CSVReaderGen:
                 i += 1
             return True
         else:
-            return self.is_delimiter(line.ptr[0])
+            return self.is_delimiter(line._ptr[0])
 
     def get_num_fields(self, i: int, get_names: bool):
         p = self._mmap_ptr
@@ -1514,7 +1514,7 @@ class CSVReaderGen:
         return num_fields, i if get_names else i0
 
     def get_num_fields_single(self, line: str, get_names: bool):
-        p = line.ptr
+        p = line._ptr
         n = len(line)
         names = self._names
 
@@ -1568,7 +1568,7 @@ class CSVReaderGen:
 
     def get_num_fields_single_spaced(self, line: str, get_names: bool,
                                      delimiter):
-        p = line.ptr
+        p = line._ptr
         n = len(line)
         names = self._names
 
@@ -1790,7 +1790,7 @@ class CSVReaderGen:
         if not line:
             return False
 
-        p = line.ptr
+        p = line._ptr
         n = len(line)
         i = 0
         last_field_start = 0
@@ -1848,7 +1848,7 @@ class CSVReaderGen:
         if not line:
             return False
 
-        p = line.ptr
+        p = line._ptr
         n = len(line)
         i = 0
 
