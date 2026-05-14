@@ -27,7 +27,7 @@ JIT::JIT(const std::string &argv0, const std::string &mode,
     : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT,
                                           /*disabledPasses=*/std::vector<std::string>{},
                                           /*isTest=*/false,
-                                          /*pyNumerics=*/false, /*pyExtension=*/false)),
+                                          /*pyNumerics=*/true, /*pyExtension=*/false)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
       mode(mode), forgetful(false) {
   if (!stdlibRoot.empty())

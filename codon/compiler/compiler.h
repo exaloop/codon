@@ -44,12 +44,12 @@ private:
 public:
   Compiler(const std::string &argv0, Mode mode,
            const std::vector<std::string> &disabledPasses = {}, bool isTest = false,
-           bool pyNumerics = false, bool pyExtension = false,
+           bool pyNumerics = true, bool pyExtension = false,
            const std::shared_ptr<ast::IFilesystem> &fs = nullptr);
 
   explicit Compiler(const std::string &argv0, bool debug = false,
                     const std::vector<std::string> &disabledPasses = {},
-                    bool isTest = false, bool pyNumerics = false,
+                    bool isTest = false, bool pyNumerics = true,
                     bool pyExtension = false,
                     const std::shared_ptr<ast::IFilesystem> &fs = nullptr)
       : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest,

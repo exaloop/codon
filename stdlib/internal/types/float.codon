@@ -19,6 +19,32 @@ def _float_int_pow(a: F, b: int, F: type) -> F:
 
     return result
 
+def _divmod(a: F, b: F, F: type) -> Tuple[F, F]:
+    if __py_numerics__:
+        if not b:
+            raise ZeroDivisionError("division by zero")
+
+        mod = a.cmod(b)
+        div = (a - mod).cdiv(b)
+        if mod:
+            if (b < F(0)) != (mod < F(0)):
+                mod += b
+                div -= F(1)
+        else:
+            mod = F(0).copysign(b)
+
+        floordiv = F(0)
+        if div:
+            floordiv = div.__floor__()
+            if div - floordiv > F(0.5):
+                floordiv += F(1)
+        else:
+            floordiv = F(0).copysign(a.cdiv(b))
+
+        return (floordiv, mod)
+    else:
+        return (a.cdiv(b), a.cmod(b))
+
 @extend
 class float:
     def __new__() -> float:
@@ -87,39 +113,43 @@ class float:
         ret double %tmp
 
     def __floordiv__(self, other: float) -> float:
-        return self.__truediv__(other).__floor__()
+        if __py_numerics__:
+            return _divmod(self, other)[0]
+        else:
+            return self.cdiv(other).__floor__()
 
     @pure
     @llvm
-    def __truediv__(a: float, b: float) -> float:
+    def _div(a: float, b: float) -> float:
         %tmp = fdiv double %a, %b
         ret double %tmp
 
+    def cdiv(self, other: float) -> float:
+        return self._div(other)
+
+    def __truediv__(self, other: float) -> float:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
+
     @pure
     @llvm
-    def __mod__(a: float, b: float) -> float:
+    def _mod(a: float, b: float) -> float:
         %tmp = frem double %a, %b
         ret double %tmp
 
+    def cmod(self, other: float) -> float:
+        return self._mod(other)
+
+    def __mod__(self, other: float) -> float:
+        if __py_numerics__:
+            return _divmod(self, other)[1]
+        else:
+            return self.cmod(other)
+
     def __divmod__(self, other: float) -> Tuple[float, float]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < 0.0) != (mod < 0.0):
-                mod += other
-                div -= 1.0
-        else:
-            mod = (0.0).copysign(other)
-
-        floordiv = 0.0
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > 0.5:
-                floordiv += 1.0
-        else:
-            floordiv = (0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        return _divmod(self, other)
 
     @pure
     @llvm
@@ -414,69 +444,6 @@ class float:
     def imag(self) -> float:
         return 0.0
 
-    @commutative
-    @overload
-    def __add__(self: float, b: int) -> float:
-        return self + float(b)
-
-    @commutative
-    @overload
-    def __add__(self: float, b: bool) -> float:
-        return self + float(b)
-
-    @overload
-    def __sub__(self: float, b: int) -> float:
-        return self - float(b)
-
-    @commutative
-    @overload
-    def __mul__(self: float, b: int) -> float:
-        return self * float(b)
-
-    @overload
-    def __floordiv__(self, b: int) -> float:
-        return self // float(b)
-
-    @overload
-    def __truediv__(self: float, b: int) -> float:
-        return self / float(b)
-
-    @overload
-    def __mod__(self: float, b: int) -> float:
-        return self % float(b)
-
-    @overload
-    def __divmod__(self, b: int):
-        return self.__divmod__(float(b))
-
-    @overload
-    def __eq__(self: float, b: int) -> bool:
-        return self == float(b)
-
-    @overload
-    def __ne__(self: float, b: int) -> bool:
-        return self != float(b)
-
-    @overload
-    def __lt__(self: float, b: int) -> bool:
-        return self < float(b)
-
-    @overload
-    def __gt__(self: float, b: int) -> bool:
-        return self > float(b)
-
-    @overload
-    def __le__(self: float, b: int) -> bool:
-        return self <= float(b)
-
-    @overload
-    def __ge__(self: float, b: int) -> bool:
-        return self >= float(b)
-
-    @overload
-    def __pow__(self: float, b: int) -> float:
-        return _float_int_pow(self, b)
-
 @extend
 class float32:
     @pure
@@ -558,39 +525,43 @@ class float32:
         ret float %tmp
 
     def __floordiv__(self, other: float32) -> float32:
-        return self.__truediv__(other).__floor__()
+        if __py_numerics__:
+            return _divmod(self, other)[0]
+        else:
+            return self.cdiv(other).__floor__()
 
     @pure
     @llvm
-    def __truediv__(a: float32, b: float32) -> float32:
+    def _div(a: float32, b: float32) -> float32:
         %tmp = fdiv float %a, %b
         ret float %tmp
 
+    def cdiv(self, other: float32) -> float32:
+        return self._div(other)
+
+    def __truediv__(self, other: float32) -> float32:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
+
     @pure
     @llvm
-    def __mod__(a: float32, b: float32) -> float32:
+    def _mod(a: float32, b: float32) -> float32:
         %tmp = frem float %a, %b
         ret float %tmp
 
+    def cmod(self, other: float32) -> float32:
+        return self._mod(other)
+
+    def __mod__(self, other: float32) -> float32:
+        if __py_numerics__:
+            return _divmod(self, other)[1]
+        else:
+            return self.cmod(other)
+
     def __divmod__(self, other: float32) -> Tuple[float32, float32]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < float32(0.0)) != (mod < float32(0.0)):
-                mod += other
-                div -= float32(1.0)
-        else:
-            mod = float32(0.0).copysign(other)
-
-        floordiv = float32(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > float32(0.5):
-                floordiv += float32(1.0)
-        else:
-            floordiv = float32(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        return _divmod(self, other)
 
     @pure
     @llvm
@@ -834,64 +805,6 @@ class float32:
     def __match__(self, obj: float32) -> bool:
         return self == obj
 
-    @commutative
-    @overload
-    def __add__(self: float32, b: int) -> float32:
-        return self + float32(b)
-
-    @overload
-    def __sub__(self: float32, b: int) -> float32:
-        return self - float32(b)
-
-    @commutative
-    @overload
-    def __mul__(self: float32, b: int) -> float32:
-        return self * float32(b)
-
-    @overload
-    def __floordiv__(self, b: int) -> float32:
-        return self // float32(b)
-
-    @overload
-    def __truediv__(self: float32, b: int) -> float32:
-        return self / float32(b)
-
-    @overload
-    def __mod__(self: float32, b: int) -> float32:
-        return self % float32(b)
-
-    @overload
-    def __divmod__(self, b: int):
-        return self.__divmod__(float32(b))
-
-    @overload
-    def __eq__(self: float32, b: int) -> bool:
-        return self == float32(b)
-
-    @overload
-    def __ne__(self: float32, b: int) -> bool:
-        return self != float32(b)
-
-    @overload
-    def __lt__(self: float32, b: int) -> bool:
-        return self < float32(b)
-
-    @overload
-    def __gt__(self: float32, b: int) -> bool:
-        return self > float32(b)
-
-    @overload
-    def __le__(self: float32, b: int) -> bool:
-        return self <= float32(b)
-
-    @overload
-    def __ge__(self: float32, b: int) -> bool:
-        return self >= float32(b)
-
-    @overload
-    def __pow__(self: float32, b: int) -> float32:
-        return _float_int_pow(self, b)
-
 @extend
 class float16:
     @pure
@@ -972,40 +885,44 @@ class float16:
         %tmp = fmul half %a, %b
         ret half %tmp
 
-    def __floordiv__(self, other: float16) -> float16:
-        return self.__truediv__(other).__floor__()
+    def __floordiv__(self, other: float32) -> float32:
+        if __py_numerics__:
+            return _divmod(self, other)[0]
+        else:
+            return self.cdiv(other).__floor__()
 
     @pure
     @llvm
-    def __truediv__(a: float16, b: float16) -> float16:
+    def _div(a: float16, b: float16) -> float16:
         %tmp = fdiv half %a, %b
         ret half %tmp
 
+    def cdiv(self, other: float16) -> float16:
+        return self._div(other)
+
+    def __truediv__(self, other: float16) -> float16:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
+
     @pure
     @llvm
-    def __mod__(a: float16, b: float16) -> float16:
+    def _mod(a: float16, b: float16) -> float16:
         %tmp = frem half %a, %b
         ret half %tmp
 
+    def cmod(self, other: float16) -> float16:
+        return self._mod(other)
+
+    def __mod__(self, other: float16) -> float16:
+        if __py_numerics__:
+            return _divmod(self, other)[1]
+        else:
+            return self.cmod(other)
+
     def __divmod__(self, other: float16) -> Tuple[float16, float16]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < float16(0.0)) != (mod < float16(0.0)):
-                mod += other
-                div -= float16(1.0)
-        else:
-            mod = float16(0.0).copysign(other)
-
-        floordiv = float16(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > float16(0.5):
-                floordiv += float16(1.0)
-        else:
-            floordiv = float16(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        return _divmod(self, other)
 
     @pure
     @llvm
@@ -1195,64 +1112,6 @@ class float16:
     def __match__(self, obj: float16) -> bool:
         return self == obj
 
-    @commutative
-    @overload
-    def __add__(self: float16, b: int) -> float16:
-        return self + float16(b)
-
-    @overload
-    def __sub__(self: float16, b: int) -> float16:
-        return self - float16(b)
-
-    @commutative
-    @overload
-    def __mul__(self: float16, b: int) -> float16:
-        return self * float16(b)
-
-    @overload
-    def __floordiv__(self, b: int) -> float16:
-        return self // float16(b)
-
-    @overload
-    def __truediv__(self: float16, b: int) -> float16:
-        return self / float16(b)
-
-    @overload
-    def __mod__(self: float16, b: int) -> float16:
-        return self % float16(b)
-
-    @overload
-    def __divmod__(self, b: int):
-        return self.__divmod__(float16(b))
-
-    @overload
-    def __eq__(self: float16, b: int) -> bool:
-        return self == float16(b)
-
-    @overload
-    def __ne__(self: float16, b: int) -> bool:
-        return self != float16(b)
-
-    @overload
-    def __lt__(self: float16, b: int) -> bool:
-        return self < float16(b)
-
-    @overload
-    def __gt__(self: float16, b: int) -> bool:
-        return self > float16(b)
-
-    @overload
-    def __le__(self: float16, b: int) -> bool:
-        return self <= float16(b)
-
-    @overload
-    def __ge__(self: float16, b: int) -> bool:
-        return self >= float16(b)
-
-    @overload
-    def __pow__(self: float16, b: int) -> float16:
-        return _float_int_pow(self, b)
-
 @extend
 class bfloat16:
     @pure
@@ -1334,39 +1193,43 @@ class bfloat16:
         ret bfloat %tmp
 
     def __floordiv__(self, other: bfloat16) -> bfloat16:
-        return self.__truediv__(other).__floor__()
+        if __py_numerics__:
+            return _divmod(self, other)[0]
+        else:
+            return self.cdiv(other).__floor__()
 
     @pure
     @llvm
-    def __truediv__(a: bfloat16, b: bfloat16) -> bfloat16:
+    def _div(a: bfloat16, b: bfloat16) -> bfloat16:
         %tmp = fdiv bfloat %a, %b
         ret bfloat %tmp
 
+    def cdiv(self, other: bfloat16) -> bfloat16:
+        return self._div(other)
+
+    def __truediv__(self, other: bfloat16) -> bfloat16:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
+
     @pure
     @llvm
-    def __mod__(a: bfloat16, b: bfloat16) -> bfloat16:
+    def _mod(a: bfloat16, b: bfloat16) -> bfloat16:
         %tmp = frem bfloat %a, %b
         ret bfloat %tmp
 
+    def cmod(self, other: bfloat16) -> bfloat16:
+        return self._mod(other)
+
+    def __mod__(self, other: bfloat16) -> bfloat16:
+        if __py_numerics__:
+            return _divmod(self, other)[1]
+        else:
+            return self.cmod(other)
+
     def __divmod__(self, other: bfloat16) -> Tuple[bfloat16, bfloat16]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < bfloat16(0.0)) != (mod < bfloat16(0.0)):
-                mod += other
-                div -= bfloat16(1.0)
-        else:
-            mod = bfloat16(0.0).copysign(other)
-
-        floordiv = bfloat16(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > bfloat16(0.5):
-                floordiv += bfloat16(1.0)
-        else:
-            floordiv = bfloat16(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        return _divmod(self, other)
 
     @pure
     @llvm
@@ -1556,64 +1419,6 @@ class bfloat16:
     def __match__(self, obj: bfloat16) -> bool:
         return self == obj
 
-    @commutative
-    @overload
-    def __add__(self: bfloat16, b: int) -> bfloat16:
-        return self + bfloat16(b)
-
-    @overload
-    def __sub__(self: bfloat16, b: int) -> bfloat16:
-        return self - bfloat16(b)
-
-    @commutative
-    @overload
-    def __mul__(self: bfloat16, b: int) -> bfloat16:
-        return self * bfloat16(b)
-
-    @overload
-    def __floordiv__(self, b: int) -> bfloat16:
-        return self // bfloat16(b)
-
-    @overload
-    def __truediv__(self: bfloat16, b: int) -> bfloat16:
-        return self / bfloat16(b)
-
-    @overload
-    def __mod__(self: bfloat16, b: int) -> bfloat16:
-        return self % bfloat16(b)
-
-    @overload
-    def __divmod__(self, b: int):
-        return self.__divmod__(bfloat16(b))
-
-    @overload
-    def __eq__(self: bfloat16, b: int) -> bool:
-        return self == bfloat16(b)
-
-    @overload
-    def __ne__(self: bfloat16, b: int) -> bool:
-        return self != bfloat16(b)
-
-    @overload
-    def __lt__(self: bfloat16, b: int) -> bool:
-        return self < bfloat16(b)
-
-    @overload
-    def __gt__(self: bfloat16, b: int) -> bool:
-        return self > bfloat16(b)
-
-    @overload
-    def __le__(self: bfloat16, b: int) -> bool:
-        return self <= bfloat16(b)
-
-    @overload
-    def __ge__(self: bfloat16, b: int) -> bool:
-        return self >= bfloat16(b)
-
-    @overload
-    def __pow__(self: bfloat16, b: int) -> bfloat16:
-        return _float_int_pow(self, b)
-
 @extend
 class float128:
     @pure
@@ -1691,39 +1496,43 @@ class float128:
         ret fp128 %tmp
 
     def __floordiv__(self, other: float128) -> float128:
-        return self.__truediv__(other).__floor__()
+        if __py_numerics__:
+            return _divmod(self, other)[0]
+        else:
+            return self.cdiv(other).__floor__()
 
     @pure
     @llvm
-    def __truediv__(a: float128, b: float128) -> float128:
+    def _div(a: float128, b: float128) -> float128:
         %tmp = fdiv fp128 %a, %b
         ret fp128 %tmp
 
+    def cdiv(self, other: float128) -> float128:
+        return self._div(other)
+
+    def __truediv__(self, other: float128) -> float128:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
+
     @pure
     @llvm
-    def __mod__(a: float128, b: float128) -> float128:
+    def _mod(a: float128, b: float128) -> float128:
         %tmp = frem fp128 %a, %b
         ret fp128 %tmp
 
+    def cmod(self, other: float128) -> float128:
+        return self._mod(other)
+
+    def __mod__(self, other: float128) -> float128:
+        if __py_numerics__:
+            return _divmod(self, other)[1]
+        else:
+            return self.cmod(other)
+
     def __divmod__(self, other: float128) -> Tuple[float128, float128]:
-        mod = self % other
-        div = (self - mod) / other
-        if mod:
-            if (other < float128(0.0)) != (mod < float128(0)):
-                mod += other
-                div -= float128(1.0)
-        else:
-            mod = float128(0.0).copysign(other)
-
-        floordiv = float128(0.0)
-        if div:
-            floordiv = div.__floor__()
-            if div - floordiv > float128(0.5):
-                floordiv += float128(1.0)
-        else:
-            floordiv = float128(0.0).copysign(self / other)
-
-        return (floordiv, mod)
+        return _divmod(self, other)
 
     @pure
     @llvm
@@ -1912,64 +1721,6 @@ class float128:
 
     def __match__(self, obj: float128) -> bool:
         return self == obj
-
-    @commutative
-    @overload
-    def __add__(self: float128, b: int) -> float128:
-        return self + float128(b)
-
-    @overload
-    def __sub__(self: float128, b: int) -> float128:
-        return self - float128(b)
-
-    @commutative
-    @overload
-    def __mul__(self: float128, b: int) -> float128:
-        return self * float128(b)
-
-    @overload
-    def __floordiv__(self, b: int) -> float128:
-        return self // float128(b)
-
-    @overload
-    def __truediv__(self: float128, b: int) -> float128:
-        return self / float128(b)
-
-    @overload
-    def __mod__(self: float128, b: int) -> float128:
-        return self % float128(b)
-
-    @overload
-    def __divmod__(self, b: int):
-        return self.__divmod__(float128(b))
-
-    @overload
-    def __eq__(self: float128, b: int) -> bool:
-        return self == float128(b)
-
-    @overload
-    def __ne__(self: float128, b: int) -> bool:
-        return self != float128(b)
-
-    @overload
-    def __lt__(self: float128, b: int) -> bool:
-        return self < float128(b)
-
-    @overload
-    def __gt__(self: float128, b: int) -> bool:
-        return self > float128(b)
-
-    @overload
-    def __le__(self: float128, b: int) -> bool:
-        return self <= float128(b)
-
-    @overload
-    def __ge__(self: float128, b: int) -> bool:
-        return self >= float128(b)
-
-    @overload
-    def __pow__(self: float128, b: int) -> float128:
-        return _float_int_pow(self, b)
 
 @extend
 class float:

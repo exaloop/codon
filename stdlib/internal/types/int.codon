@@ -166,15 +166,16 @@ class Int:
         return self._floordiv(other)
 
     def __floordiv__(self, other: Int[N]) -> Int[N]:
-        return self._floordiv(other)
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            return (self.cdiv(other) if (self ^ other >= Int[N]()) else
+                    Int[N](-1) - (self - Int[N](1)).cdiv(other))
+        else:
+            return self.cdiv(other)
 
-    @pure
-    @llvm
     def __truediv__(self, other: Int[N]) -> float:
-        %0 = sitofp i{=N} %self to double
-        %1 = sitofp i{=N} %other to double
-        %2 = fdiv double %0, %1
-        ret double %2
+        return self.__float__() / other.__float__()
 
     @pure
     @llvm
@@ -186,15 +187,28 @@ class Int:
         return self._mod(other)
 
     def __mod__(self, other: Int[N]) -> Int[N]:
-        return self._mod(other)
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            m = self.cmod(other)
+            if m and ((self ^ other) < Int[N](0)):
+                m += other
+            return m
+        else:
+            return self.cmod(other)
 
     def __divmod__(self, other: Int[N]) -> Tuple[Int[N], Int[N]]:
-        d = self // other
-        m = self - d * other
-        if m and ((other ^ m) < Int[N](0)):
-            m += other
-            d -= Int[N](1)
-        return (d, m)
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            d = self.cdiv(other)
+            m = self - d * other
+            if m and ((other ^ m) < Int[N](0)):
+                m += other
+                d -= Int[N](1)
+            return (d, m)
+        else:
+            return (self.cdiv(other), self.cmod(other))
 
     @pure
     @llvm
@@ -572,15 +586,15 @@ class UInt:
         return self._floordiv(other)
 
     def __floordiv__(self, other: UInt[N]) -> UInt[N]:
-        return self._floordiv(other)
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
 
     @pure
     @llvm
     def __truediv__(self, other: UInt[N]) -> float:
-        %0 = uitofp i{=N} %self to double
-        %1 = uitofp i{=N} %other to double
-        %2 = fdiv double %0, %1
-        ret double %2
+        return self.__float__() / other.__float__()
 
     @pure
     @llvm
@@ -592,6 +606,9 @@ class UInt:
         return self._mod(other)
 
     def __mod__(self, other: UInt[N]) -> UInt[N]:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
         return self._mod(other)
 
     def __divmod__(self, other: UInt[N]) -> Tuple[UInt[N], UInt[N]]:

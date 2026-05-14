@@ -56,7 +56,5 @@ import internal.python
 from internal.python import PyError
 from asyncio import Future as _Future
 
-if __py_numerics__:
-    import internal.pynumerics
 if __py_extension__:
     internal.python.ensure_initialized()

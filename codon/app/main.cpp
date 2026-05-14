@@ -187,7 +187,7 @@ std::unique_ptr<codon::Compiler> processSource(
           clEnumValN(Python, "py",
                      "Python semantics: mirrors Python but might disable optimizations "
                      "like vectorization")),
-      llvm::cl::init(C));
+      llvm::cl::init(Python));
 
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   initLogFlags(log);
