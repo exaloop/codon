@@ -4,6 +4,23 @@
 #   - Int, UInt
 #   - float, float128, float32, float16, bfloat16
 
+def _float_int_pow(a: F, b: I, F: type, I: type) -> F:
+    abs_exp = b.__abs__()
+    result = F(1)
+    factor = a
+
+    while abs_exp:
+        if abs_exp & I(1):
+            result *= factor
+        factor *= factor
+        abs_exp >>= I(1)
+
+    if not isinstance(b, UInt):
+        if b < I(0):
+            result = F(1) / result
+
+    return result
+
 @extend
 class float128:
 
@@ -1128,8 +1145,7 @@ class float:
         return x.__divmod__(y)
 
     def __pow__(self, b: Int):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: Int):
         x, y = _unify(self, b)
@@ -1186,8 +1202,7 @@ class float:
         return x.__divmod__(y)
 
     def __pow__(self, b: UInt):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: UInt):
         x, y = _unify(self, b)
@@ -1479,8 +1494,7 @@ class float128:
         return x.__divmod__(y)
 
     def __pow__(self, b: Int):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: Int):
         x, y = _unify(self, b)
@@ -1537,8 +1551,7 @@ class float128:
         return x.__divmod__(y)
 
     def __pow__(self, b: UInt):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: UInt):
         x, y = _unify(self, b)
@@ -1830,8 +1843,7 @@ class float32:
         return x.__divmod__(y)
 
     def __pow__(self, b: Int):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: Int):
         x, y = _unify(self, b)
@@ -1888,8 +1900,7 @@ class float32:
         return x.__divmod__(y)
 
     def __pow__(self, b: UInt):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: UInt):
         x, y = _unify(self, b)
@@ -2181,8 +2192,7 @@ class float16:
         return x.__divmod__(y)
 
     def __pow__(self, b: Int):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: Int):
         x, y = _unify(self, b)
@@ -2239,8 +2249,7 @@ class float16:
         return x.__divmod__(y)
 
     def __pow__(self, b: UInt):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: UInt):
         x, y = _unify(self, b)
@@ -2532,8 +2541,7 @@ class bfloat16:
         return x.__divmod__(y)
 
     def __pow__(self, b: Int):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: Int):
         x, y = _unify(self, b)
@@ -2590,8 +2598,7 @@ class bfloat16:
         return x.__divmod__(y)
 
     def __pow__(self, b: UInt):
-        x, y = _unify(self, b)
-        return x ** y
+        return _float_int_pow(self, b)
 
     def __eq__(self, b: UInt):
         x, y = _unify(self, b)
