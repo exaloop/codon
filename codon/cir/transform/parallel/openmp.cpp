@@ -1051,17 +1051,14 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
       auto *taskRedInputType =
           M->getOrRealizeType(ast::getMangledClass(ompModule, "TaskReductionInput"));
       seqassertn(taskRedInputType, "could not find 'TaskReductionInput' type");
-      auto *irArrayType = M->getOrRealizeType(
-          ast::getMangledClass(ompModule, "TaskReductionInputArray"));
-      seqassertn(irArrayType, "could not find 'TaskReductionInputArray' type");
+      auto *irArrayType = M->getPointerType(taskRedInputType);
       auto *taskRedInputsArray = util::makeVar(
           M->Nr<StackAllocInstr>(irArrayType, numRed), taskRedInitSeries, parent);
       array = taskRedInputsArray;
-      auto *taskRedInputsArrayType = taskRedInputsArray->getType();
 
-      auto *taskRedSetItem = M->getOrRealizeMethod(
-          taskRedInputsArrayType, Module::SETITEM_MAGIC_NAME,
-          {taskRedInputsArrayType, M->getIntType(), taskRedInputType});
+      auto *taskRedSetItem =
+          M->getOrRealizeMethod(irArrayType, Module::SETITEM_MAGIC_NAME,
+                                {irArrayType, M->getIntType(), taskRedInputType});
       seqassertn(taskRedSetItem,
                  "could not find 'TaskReductionInputArray.__setitem__' method");
       int i = 0;
@@ -1075,18 +1072,17 @@ struct TaskLoopRoutineStubReplacer : public ParallelLoopTemplateReplacer {
         }
       }
 
-      auto *arrayPtr = M->Nr<ExtractInstr>(M->Nr<VarValue>(array), "ptr");
       auto *taskRedInitFunc =
           M->getOrRealizeFunc("_taskred_init",
                               {reductionLocRef->getType(), gtid->getType(),
-                               M->getIntType(), arrayPtr->getType()},
+                               M->getIntType(), array->getType()},
                               {}, ompModule);
       seqassertn(taskRedInitFunc, "task red init function not found");
-      auto *taskRedInitResult =
-          util::makeVar(util::call(taskRedInitFunc, {M->Nr<VarValue>(reductionLocRef),
-                                                     M->Nr<VarValue>(gtid),
-                                                     M->getInt(numRed), arrayPtr}),
-                        taskRedInitSeries, parent);
+      auto *taskRedInitResult = util::makeVar(
+          util::call(taskRedInitFunc,
+                     {M->Nr<VarValue>(reductionLocRef), M->Nr<VarValue>(gtid),
+                      M->getInt(numRed), M->Nr<VarValue>(array)}),
+          taskRedInitSeries, parent);
       tskgrp = taskRedInitResult;
       v->replaceAll(taskRedInitSeries);
     }

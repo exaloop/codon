@@ -86,14 +86,6 @@ class TaskReductionInput:
         return TaskReductionInput(reduce_shar.as_byte(), reduce_orig.as_byte(), reduce_size,
                                   reduce_init, cobj(), reduce_comb, u32(0))
 
-@tuple
-class TaskReductionInputArray:
-    len: int
-    ptr: Ptr[TaskReductionInput]
-
-    def __setitem__(self, idx: int, x: TaskReductionInput):
-        self.ptr[idx] = x
-
 _DEFAULT_IDENT = Ident()
 _STATIC_LOOP_IDENT = Ident(_KMP_IDENT_WORK_LOOP)
 _REDUCTION_IDENT = Ident(_KMP_IDENT_ATOMIC_REDUCE)
