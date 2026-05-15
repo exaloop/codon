@@ -238,7 +238,7 @@ std::string getMangledClass(const std::string &module, const std::string &cls,
                             size_t id = 0);
 
 std::string getMangledFunc(const std::string &module, const std::string &fn,
-                           size_t overload = 0, size_t id = 0);
+                           size_t overload = 0, size_t id = 0, bool noCore = false);
 
 std::string getMangledMethod(const std::string &module, const std::string &cls,
                              const std::string &method, size_t overload = 0,

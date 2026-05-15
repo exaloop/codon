@@ -73,8 +73,8 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     // Assign `a` to `type(a)()` to mark it for deletion
     resultStmt = transform(N<AssignStmt>(
         stmt->getExpr(),
-        N<CallExpr>(N<CallExpr>(N<IdExpr>(TYPE_TYPE), clone(stmt->getExpr()))), nullptr,
-        AssignStmt::Update));
+        N<CallExpr>(N<CallExpr>(N<IdExpr>(StdlibTypes::Type), clone(stmt->getExpr()))),
+        nullptr, AssignStmt::Update));
 
     // Allow deletion *only* if the binding is dominated
     auto val = ctx->find(ei->getValue());
@@ -215,17 +215,17 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
       const auto &bd = b->bindings[e->getValue()];
       if (bd.isNonlocal) {
         if (stmt->getTypeExpr())
-          stmt->type = N<IndexExpr>(N<IdExpr>("Capsule"), stmt->getTypeExpr());
+          stmt->type =
+              N<IndexExpr>(N<IdExpr>(StdlibTypes::Capsule), stmt->getTypeExpr());
         else
-          stmt->type = N<IdExpr>("Capsule");
+          stmt->type = N<IdExpr>(StdlibTypes::Capsule);
       }
     }
   }
 
   bool isThreadLocal = false;
   auto typeExpr = transformType(stmt->getTypeExpr());
-  if (typeExpr &&
-      extractType(typeExpr)->is(getMangledClass("std.threading", "ThreadLocal"))) {
+  if (typeExpr && extractType(typeExpr)->is(StdlibTypes::ThreadLocal)) {
     isThreadLocal = true;
     if (auto ti = cast<IndexExpr>(stmt->getTypeExpr())) {
       typeExpr = transformType(ti->getIndex());
@@ -266,12 +266,12 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
                                 : instantiateUnbound(assign->getLhs()->getSrcInfo()));
   if (isThreadLocal)
     assign->setThreadLocal();
-  if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find("NoneType")) {
+  if (!stmt->getRhs() && !stmt->getTypeExpr() && ctx->find(StdlibTypes::NoneType)) {
     // All declarations that are not handled are to be marked with NoneType later on
     // (useful for dangling declarations that are not initialized afterwards due to
     //  static check)
     assign->getLhs()->getType()->getLink()->defaultType =
-        getStdLibType("NoneType")->shared_from_this();
+        getStdLibType(StdlibTypes::NoneType)->shared_from_this();
     ctx->getBase()->pendingDefaults[1].insert(
         assign->getLhs()->getType()->shared_from_this());
   }
@@ -390,7 +390,7 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
           return;
         }
     }
-    if (!member && lhsClass->is(TYPE_OPTIONAL)) {
+    if (!member && lhsClass->is(StdlibTypes::Optional)) {
       // Unwrap optional and look up there
       resultStmt = transform(N<AssignMemberStmt>(
           N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), stmt->getLhs()), stmt->getMember(),
@@ -449,9 +449,8 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
       if (!baseType->canRealize())
         return; // delay!
       resultStmt = transform(N<AssignMemberStmt>(
-          N<CallExpr>(
-              N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
-              stmt->getLhs(), N<IdExpr>(baseType->realizedName())),
+          N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
+                      stmt->getLhs(), N<IdExpr>(baseType->realizedName())),
           stmt->getMember(), stmt->getRhs(), stmt->getTypeExpr()));
       return;
     }
@@ -479,14 +478,14 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 ///         expression, and (2) the replacement expression.
 std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
   // Case: capsule operations
-  if (stmt->getLhs()->getType()->is("Capsule")) {
-    return {true,
-            transform(N<AssignStmt>(
-                N<IndexExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
-                                                                    "Capsule", "_ptr")),
-                                         stmt->getLhs()),
-                             N<IntExpr>(0)),
-                stmt->getRhs()))};
+  if (stmt->getLhs()->getType()->is(StdlibTypes::Capsule)) {
+    return {
+        true,
+        transform(N<AssignStmt>(
+            N<IndexExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_ptr")),
+                                     stmt->getLhs()),
+                         N<IntExpr>(0)),
+            stmt->getRhs()))};
   }
 
   // Case: in-place updates (e.g., `a += b`).
@@ -525,8 +524,9 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     if (cast<IdExpr>(call->front()) &&
         cast<IdExpr>(call->front())->getValue() == lei->getValue()) {
       // `type(a).__atomic_min__(__ptr__(a), b)`
-      auto ptrTyp = instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType("Ptr"),
-                                    std::vector<types::Type *>{lhsClass});
+      auto ptrTyp =
+          instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType(StdlibTypes::Ptr),
+                          std::vector<types::Type *>{lhsClass});
       (*call)[1].value = transform((*call)[1]);
       auto rhsTyp = extractClassType((*call)[1].value);
       if (auto method =
@@ -545,8 +545,9 @@ std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stm
     // `type(a).__atomic_xchg__(__ptr__(a), b)`
     stmt->rhs = transform(stmt->getRhs());
     if (auto rhsClass = stmt->getRhs()->getClassType()) {
-      auto ptrType = instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType("Ptr"),
-                                     std::vector<types::Type *>{lhsClass});
+      auto ptrType =
+          instantiateType(stmt->getLhs()->getSrcInfo(), getStdLibType(StdlibTypes::Ptr),
+                          std::vector<types::Type *>{lhsClass});
       if (auto m =
               findBestMethod(lhsClass, "__atomic_xchg__", {ptrType.get(), rhsClass})) {
         return {true, transform(N<ExprStmt>(

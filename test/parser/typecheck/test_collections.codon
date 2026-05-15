@@ -27,7 +27,7 @@ print gs #: {1.12}
 fs = {1, 2, 3, 1, 2, 3}
 gs.add(1.12)
 gs.add(1.13)
-print fs, gs #: {1, 2, 3} {1.12, 1.13}
+print fs, gs #: {1, 2, 3} {1.13, 1.12}
 print {*fs, 5, *fs} #: {1, 2, 3, 5}
 
 #%% dict,barebones

@@ -49,7 +49,7 @@ struct TypecheckItem : public SrcObject {
   std::string getModule() const { return moduleName; }
   bool isVar() const { return !generic && !isFunc() && !isType(); }
   bool isFunc() const { return type->getFunc() != nullptr; }
-  bool isType() const { return type->is(TYPE_TYPE); }
+  bool isType() const { return type->is(StdlibTypes::Type); }
 
   bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
   /// True if an identifier is within a conditional block

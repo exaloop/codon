@@ -78,7 +78,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   if (expr->getLhs()->getType()->getStaticKind() && expr->op == "&&") {
     if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
       if (!tb->value) {
-        if (ctx->expectedType && ctx->expectedType->is("bool"))
+        if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool))
           resultExpr = transform(N<BoolExpr>(false));
         else
           resultExpr = expr->getLhs();
@@ -88,7 +88,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
       }
     } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
       if (ts->value.empty()) {
-        if (ctx->expectedType && ctx->expectedType->is("bool"))
+        if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool))
           resultExpr = transform(N<BoolExpr>(false));
         else
           resultExpr = expr->getLhs();
@@ -98,7 +98,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
       }
     } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
       if (!ti->value) {
-        if (ctx->expectedType && ctx->expectedType->is("bool"))
+        if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool))
           resultExpr = transform(N<BoolExpr>(false));
         else
           resultExpr = expr->getLhs();
@@ -113,7 +113,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   } else if (expr->getLhs()->getType()->getStaticKind() && expr->op == "||") {
     if (auto tb = expr->getLhs()->getType()->getBoolStatic()) {
       if (tb->value) {
-        if (ctx->expectedType && ctx->expectedType->is("bool"))
+        if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool))
           resultExpr = transform(N<BoolExpr>(true));
         else
           resultExpr = expr->getLhs();
@@ -123,7 +123,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
       }
     } else if (auto ts = expr->getLhs()->getType()->getStrStatic()) {
       if (!ts->value.empty()) {
-        if (ctx->expectedType && ctx->expectedType->is("bool"))
+        if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool))
           resultExpr = transform(N<BoolExpr>(true));
         else
           resultExpr = expr->getLhs();
@@ -133,7 +133,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
       }
     } else if (auto ti = expr->getLhs()->getType()->getIntStatic()) {
       if (ti->value) {
-        if (ctx->expectedType && ctx->expectedType->is("bool"))
+        if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool))
           resultExpr = transform(N<BoolExpr>(true));
         else
           resultExpr = expr->getLhs();
@@ -176,8 +176,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
   if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs()) &&
       expr->getOp() == "|") {
     // Case: unions
-    resultExpr = transform(N<InstantiateExpr>(
-        N<IdExpr>("Union"), std::vector<Expr *>{expr->getLhs(), expr->getRhs()}));
+    resultExpr = transform(
+        N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union),
+                           std::vector<Expr *>{expr->getLhs(), expr->getRhs()}));
   } else if (auto e = transformBinarySimple(expr)) {
     // Case: simple binary expressions
     resultExpr = e;
@@ -195,7 +196,7 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
     } else if (auto em = transformBinaryMagic(expr)) {
       // Case: normal magic methods
       resultExpr = em;
-    } else if (expr->getLhs()->getType()->is(TYPE_OPTIONAL)) {
+    } else if (expr->getLhs()->getType()->is(StdlibTypes::Optional)) {
       // Special case: handle optionals if everything else fails.
       // Assumes that optionals have no relevant magics (except for __eq__)
       resultExpr = transform(
@@ -236,7 +237,7 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
   for (auto i = items.size() - 1; i-- > 0;)
     final = N<BinaryExpr>(items[i], "&&", final);
 
-  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
+  auto oldExpectedType = getStdLibType(StdlibTypes::Bool)->shared_from_this();
   std::swap(ctx->expectedType, oldExpectedType);
   resultExpr = transform(final);
   std::swap(ctx->expectedType, oldExpectedType);
@@ -365,7 +366,8 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
     if (pi + 1 < expr->items.size())
       inType = getIterableType(inType);
   }
-  unify(expr->getType(), (hasGenerator ? getStdLibType("NoneType") : inType));
+  unify(expr->getType(),
+        (hasGenerator ? getStdLibType(StdlibTypes::NoneType) : inType));
   if (done)
     expr->setDone();
 }
@@ -389,7 +391,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
     E(Error::BAD_STATIC_TYPE, expr->getIndex());
   }
   if (match(expr->expr, M<IdExpr>("tuple")))
-    cast<IdExpr>(expr->expr)->setValue(TYPE_TUPLE);
+    cast<IdExpr>(expr->expr)->setValue(StdlibTypes::Tuple);
   expr->expr = transform(expr->expr, true);
 
   // IndexExpr[i1, ..., iN] is internally represented as
@@ -408,7 +410,7 @@ void TypecheckVisitor::visit(IndexExpr *expr) {
       if (auto li = cast<ListExpr>(i)) {
         // Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in
         // `Function[...]`)
-        i = N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), li->items);
+        i = N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Tuple), li->items);
       }
     }
     i = transform(i, true);
@@ -447,12 +449,12 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 
   TypePtr typ = nullptr;
   size_t typeParamsSize = expr->size();
-  if (extractType(expr->expr)->is(TYPE_TUPLE)) {
+  if (extractType(expr->expr)->is(StdlibTypes::Tuple)) {
     if (!expr->empty()) {
       expr->items.front() = transform(expr->front());
       if (expr->front()->getType()->getStaticKind() == LiteralKind::Int) {
         auto et = N<InstantiateExpr>(
-            N<IdExpr>("Tuple"),
+            N<IdExpr>(StdlibTypes::Tuple),
             std::vector<Expr *>(expr->items.begin() + 1, expr->items.end()));
         resultExpr = transform(N<InstantiateExpr>(N<IdExpr>("__NTuple__"),
                                                   std::vector<Expr *>{(*expr)[0], et}));
@@ -472,7 +474,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     E(Error::GENERICS_MISMATCH, expr, getUserFacingName(typ->getClass()->name),
       generics.size(), typeParamsSize);
 
-  if (isId(expr->getExpr(), TRAIT_CALLABLE)) {
+  if (isId(expr->getExpr(), StdlibTypes::CallableTrait)) {
     // Case: CallableTrait[...] trait instantiation
 
     // CallableTrait error checking.
@@ -487,7 +489,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
     // Set up the CallableTrait
     ub->getLink()->trait = std::make_shared<CallableTrait>(ctx->cache, types);
     unify(expr->getType(), instantiateTypeVar(ub.get()));
-  } else if (isId(expr->getExpr(), TRAIT_TYPE)) {
+  } else if (isId(expr->getExpr(), StdlibTypes::TypeTrait)) {
     // Case: TypeTrait[...] trait instantiation
     (*expr)[0] = transformType((*expr)[0]);
     auto ub = instantiateUnbound();
@@ -551,8 +553,8 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 /// @example
 ///   `start::step` -> `Slice(start, Optional.__new__(), step)`
 void TypecheckVisitor::visit(SliceExpr *expr) {
-  Expr *none = N<CallExpr>(N<DotExpr>(N<IdExpr>(TYPE_OPTIONAL), "__new__"));
-  resultExpr = transform(N<CallExpr>(N<IdExpr>(getStdLibType("Slice")->name),
+  Expr *none = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Optional", "__new__")));
+  resultExpr = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::Slice),
                                      expr->getStart() ? expr->getStart() : clone(none),
                                      expr->getStop() ? expr->getStop() : clone(none),
                                      expr->getStep() ? expr->getStep() : clone(none)));
@@ -760,7 +762,7 @@ Expr *TypecheckVisitor::evaluateStaticBinary(const BinaryExpr *expr) {
 Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
   // Case: simple transformations
   if (expr->getOp() == "&&") {
-    if (ctx->expectedType && ctx->expectedType->is("bool")) {
+    if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool)) {
       return transform(N<IfExpr>(expr->getLhs(),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__")),
                                  N<BoolExpr>(false)));
@@ -775,16 +777,17 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
         if (lt->realizedName() == rt->realizedName()) {
           return N<IfExpr>(ve, expr->getRhs(), N<IdExpr>(vn));
         } else {
-          auto T = N<InstantiateExpr>(
-              N<IdExpr>("Union"), std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
-                                                      N<IdExpr>(rt->realizedName())});
+          auto T =
+              N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union),
+                                 std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
+                                                     N<IdExpr>(rt->realizedName())});
           return N<IfExpr>(ve, N<CallExpr>(T, expr->getRhs()),
                            N<CallExpr>(clone(T), N<IdExpr>(vn)));
         }
       }
     }
   } else if (expr->getOp() == "||") {
-    if (ctx->expectedType && ctx->expectedType->is("bool")) {
+    if (ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool)) {
       return transform(N<IfExpr>(expr->getLhs(), N<BoolExpr>(true),
                                  N<CallExpr>(N<DotExpr>(expr->getRhs(), "__bool__"))));
     } else {
@@ -806,10 +809,10 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
         if (lt->realizedName() == rt->realizedName()) {
           return N<IfExpr>(ve, N<IdExpr>(vn), rhs);
         } else {
-          auto T = N<InstantiateExpr>(
-              N<IdExpr>(getMangledClass("std.internal.core", "Union")),
-              std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
-                                  N<IdExpr>(rt->realizedName())});
+          auto T =
+              N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Union),
+                                 std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
+                                                     N<IdExpr>(rt->realizedName())});
           return N<IfExpr>(ve, N<CallExpr>(T, N<IdExpr>(vn)),
                            N<CallExpr>(clone(T), rhs));
         }
@@ -841,15 +844,15 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
 
   // Case: `is None` expressions
   if (cast<NoneExpr>(expr->getRhs())) {
-    if (extractClassType(expr->getLhs())->is("NoneType"))
+    if (extractClassType(expr->getLhs())->is(StdlibTypes::NoneType))
       return transform(N<BoolExpr>(true));
-    if (!extractClassType(expr->getLhs())->is(TYPE_OPTIONAL)) {
+    if (!extractClassType(expr->getLhs())->is(StdlibTypes::Optional)) {
       // lhs is not optional: `return False`
       return transform(N<BoolExpr>(false));
     } else {
       // Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
       auto g = extractClassType(expr->getLhs());
-      for (; extractClassGeneric(g)->is("Optional");
+      for (; extractClassGeneric(g)->is(StdlibTypes::Optional);
            g = extractClassGeneric(g)->getClass())
         ;
       if (!extractClassGeneric(g)->getClass()) {
@@ -858,7 +861,7 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
         unify(expr->getType(), typ);
         return nullptr;
       }
-      if (extractClassGeneric(g)->is("NoneType"))
+      if (extractClassGeneric(g)->is(StdlibTypes::NoneType))
         return transform(N<BoolExpr>(true));
 
       // lhs is optional: `return lhs.__has__().__invert__()`
@@ -874,7 +877,7 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
   auto rc = realize(expr->getRhs()->getType());
   if (!lc || !rc) {
     // Types not known: return early
-    unify(expr->getType(), getStdLibType("bool"));
+    unify(expr->getType(), getStdLibType(StdlibTypes::Bool));
     return nullptr;
   }
   if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs()))
@@ -885,12 +888,12 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
         N<BinaryExpr>(N<CallExpr>(N<DotExpr>(expr->getLhs(), "__raw__")),
                       "==", N<CallExpr>(N<DotExpr>(expr->getRhs(), "__raw__"))));
   }
-  if (lc->is(TYPE_OPTIONAL)) {
+  if (lc->is(StdlibTypes::Optional)) {
     // lhs is optional: `return lhs.__is_optional__(rhs)`
     return transform(
         N<CallExpr>(N<DotExpr>(expr->getLhs(), "__is_optional__"), expr->getRhs()));
   }
-  if (rc->is(TYPE_OPTIONAL)) {
+  if (rc->is(StdlibTypes::Optional)) {
     // rhs is optional: `return rhs.__is_optional__(lhs)`
     return transform(
         N<CallExpr>(N<DotExpr>(expr->getRhs(), "__is_optional__"), expr->getLhs()));
@@ -938,7 +941,8 @@ Expr *TypecheckVisitor::transformBinaryInplaceMagic(BinaryExpr *expr, bool isAto
 
   // Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
   if (isAtomic) {
-    auto ptr = instantiateType(getStdLibType("Ptr"), std::vector<types::Type *>{lt});
+    auto ptr = instantiateType(getStdLibType(StdlibTypes::Ptr),
+                               std::vector<types::Type *>{lt});
     if ((method = findBestMethod(lt, fmt::format("__atomic_{}__", magic),
                                  {ptr.get(), expr->getRhs()->getType()}))) {
       expr->lexpr = N<CallExpr>(N<IdExpr>("__ptr__"), expr->getLhs());
@@ -1018,8 +1022,8 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
   } else if (!isStaticString) {
     if (!tuple->isRecord())
       return {false, nullptr};
-    if (!tuple->is(TYPE_TUPLE)) {
-      if (tuple->is(TYPE_OPTIONAL)) {
+    if (!tuple->is(StdlibTypes::Tuple)) {
+      if (tuple->is(StdlibTypes::Optional)) {
         if (auto newTuple = extractClassGeneric(tuple)->getClass()) {
           return transformStaticTupleIndex(
               newTuple, transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr)),
@@ -1097,7 +1101,7 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
       }
       generateTuple(te.size());
       Expr *e = transform(N<StmtExpr>(std::vector<Stmt *>{ass},
-                                      N<CallExpr>(N<IdExpr>(TYPE_TUPLE), te)));
+                                      N<CallExpr>(N<IdExpr>(StdlibTypes::Tuple), te)));
       return {true, e};
     }
   }

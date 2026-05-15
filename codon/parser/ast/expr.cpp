@@ -50,9 +50,11 @@ std::string Expr::wrapType(const std::string &sexpr) const {
 
 Param::Param(std::string name, Expr *type, Expr *defaultValue, int status)
     : name(std::move(name)), type(type), defaultValue(defaultValue) {
-  if (status == 0 && (match(getType(), MOr(M<IdExpr>(TYPE_TYPE), M<IdExpr>(TRAIT_TYPE),
-                                           M<IndexExpr>(M<IdExpr>(TRAIT_TYPE), M_))) ||
-                      getStaticGeneric(getType()))) {
+  if (status == 0 &&
+      (match(getType(),
+             MOr(M<IdExpr>(StdlibTypes::Type), M<IdExpr>(StdlibTypes::TypeTrait),
+                 M<IndexExpr>(M<IdExpr>(StdlibTypes::TypeTrait), M_))) ||
+       getStaticGeneric(getType()))) {
     this->status = Generic;
   } else {
     this->status = (status == 0 ? Value : (status == 1 ? Generic : HiddenGeneric));

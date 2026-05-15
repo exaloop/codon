@@ -27,16 +27,16 @@ int CallableTrait::unify(Type *typ, Unification *us) {
   /// TODO: one day merge with the CallExpr's logic...
   if (auto tr = typ->getClass()) {
     TypePtr ft = nullptr;
-    if (typ->is("TypeWrap")) {
+    if (typ->is(StdlibTypes::TypeWrap)) {
       TypecheckVisitor tv(cache->typeCtx);
       ft = tv.instantiateType(
           tv.findMethod(typ->getClass(), "__call_no_self__").front(), typ->getClass());
       tr = ft->getClass();
     }
 
-    if (tr->name == "NoneType")
+    if (tr->name == StdlibTypes::NoneType)
       return 1;
-    if (tr->name != "Function" && !tr->getPartial())
+    if (tr->name != StdlibTypes::Function && !tr->getPartial())
       return -1;
     if (!tr->isRecord())
       return -1;
@@ -148,12 +148,14 @@ int CallableTrait::unify(Type *typ, Unification *us) {
         size_t id = 0;
         if (auto tp = tr->getPartial()) {
           auto ts = tp->generics[2].type->getClass();
-          seqassert(ts && ts->is("NamedTuple"), "bad partial *args/**kwargs");
+          seqassert(ts && ts->is(StdlibTypes::NamedTuple),
+                    "bad partial *args/**kwargs");
           id = ts->generics[0].type->getIntStatic()->value;
           tt = ts->generics[1].getType()->getClass();
         }
         auto tid = std::make_shared<IntStaticType>(cache, id);
-        auto kt = tv.instantiateType(tv.getStdLibType("NamedTuple"), {tid.get(), tt});
+        auto kt = tv.instantiateType(tv.getStdLibType(StdlibTypes::NamedTuple),
+                                     {tid.get(), tt});
         if (kt->unify(trInArgs->generics[kwStar].type.get(), us) == -1)
           return -1;
       }

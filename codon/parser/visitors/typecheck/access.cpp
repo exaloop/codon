@@ -138,7 +138,7 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // Special case: obj.__class__
   if (expr->getMember() == "__class__") {
     /// TODO: prevent cls.__class__ and type(cls)
-    resultExpr = transform(N<CallExpr>(N<IdExpr>(TYPE_TYPE), expr->getExpr()));
+    resultExpr = transform(N<CallExpr>(N<IdExpr>(StdlibTypes::Type), expr->getExpr()));
     return;
   }
   expr->expr = transform(expr->getExpr());
@@ -527,10 +527,10 @@ types::FuncType *TypecheckVisitor::getThunk(types::FuncType *ft) {
                                                              "function", "realized")),
                                   args)));
   s->addStmt(N<ReturnStmt>(N<CallExpr>(
-      N<CallExpr>(N<CallExpr>(N<IdExpr>("type"), N<IdExpr>("F")),
-                  N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core",
-                                                         "RTTIType", "_find_thunk")),
-                              std::vector<CallArg>{N<IdExpr>("self"), N<IdExpr>("F")})),
+      N<CallExpr>(
+          N<CallExpr>(N<IdExpr>(StdlibTypes::Type), N<IdExpr>("F")),
+          N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_find_thunk")),
+                      std::vector<CallArg>{N<IdExpr>("self"), N<IdExpr>("F")})),
       std::vector<CallArg>(args.begin() + 1, args.end()))));
   ast->suite = s;
   ast->setAttribute(Attr::Inline);
@@ -571,11 +571,11 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
         seqassert(baseType, "cannot find base type of {}", typ->debugString(2));
         if (!baseType->canRealize())
           return nullptr; // delay!
-        return transform(N<DotExpr>(
-            N<CallExpr>(
-                N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
-                expr->getExpr(), N<IdExpr>(realize(baseType.get())->realizedName())),
-            expr->getMember()));
+        return transform(
+            N<DotExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
+                                   expr->getExpr(),
+                                   N<IdExpr>(realize(baseType.get())->realizedName())),
+                       expr->getMember()));
       }
       if (!expr->getType()->canRealize() && member->typeExpr) {
         unify(expr->getType(), extractType(withClassGenerics(typ, [&]() {
@@ -611,7 +611,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
     return nullptr;
   }
   if (expr->getMember() == "__name__" && isTypeExpr(expr->getExpr())) {
-    unify(expr->getType(), getStdLibType("str"));
+    unify(expr->getType(), getStdLibType(StdlibTypes::String));
     if (expr->getExpr()->isDone() && realize(expr->getType()))
       expr->setDone();
     return nullptr;
@@ -639,7 +639,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   }
 
   // Case: transform `optional.member` to `unwrap(optional).member`
-  if (typ->is(TYPE_OPTIONAL)) {
+  if (typ->is(StdlibTypes::Optional)) {
     expr->expr = transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr->getExpr()));
     return nullptr;
   }
@@ -655,7 +655,7 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
     if (!typ->canRealize())
       return nullptr; // delay!
     return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("Union"), "_member"),
+        N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_member"),
         std::vector<CallArg>{CallArg{"union", expr->getExpr()},
                              CallArg{"member", N<StringExpr>(expr->getMember())}}));
   }

@@ -100,8 +100,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
           N<SuiteStmt>(c->getSuite(), N<BreakStmt>()), nullptr));
       cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(c->getSuite());
     } else if (c->getException() &&
-               extractClassType(c->getException())
-                   ->is(getMangledClass("std.internal.python", "PyError"))) {
+               extractClassType(c->getException())->is(StdlibTypes::PyError)) {
       // Transform PyExc exceptions
       if (!stmt->hasAttribute(Attr::TryPyVar))
         stmt->setAttribute(Attr::TryPyVar, getTemporaryVar("pyexc"));
@@ -121,7 +120,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
         auto t = extractClassType(c->getException());
         bool exceptionOK = false;
         for (auto &p : getMRO(t))
-          if (p->is(getMangledClass("std.internal.types.error", "BaseException"))) {
+          if (p->is(StdlibTypes::BaseException)) {
             exceptionOK = true;
             break;
           }
@@ -141,7 +140,7 @@ void TypecheckVisitor::visit(TryStmt *stmt) {
   if (!cast<SuiteStmt>(pyCatchStmt->getSuite())->empty()) {
     // Process PyError catches
     auto pyVar = stmt->getAttribute<ir::StringValueAttribute>(Attr::TryPyVar)->value;
-    auto exc = N<IdExpr>(getMangledClass("std.internal.python", "PyError"));
+    auto exc = N<IdExpr>(StdlibTypes::PyError);
     cast<SuiteStmt>(pyCatchStmt->getSuite())->addStmt(N<ThrowStmt>(nullptr));
     auto c = N<ExceptStmt>(pyVar, transformType(exc), pyCatchStmt);
 
@@ -193,7 +192,8 @@ void TypecheckVisitor::visit(ThrowStmt *stmt) {
         stmt->getExpr(), N<StringExpr>(ctx->getBase()->name),
         N<StringExpr>(stmt->getSrcInfo().file), N<IntExpr>(stmt->getSrcInfo().line),
         N<IntExpr>(stmt->getSrcInfo().col),
-        stmt->getFrom() ? stmt->getFrom() : N<CallExpr>(N<IdExpr>("NoneType"))));
+        stmt->getFrom() ? stmt->getFrom()
+                        : N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType))));
   }
   if (stmt->getExpr()->isDone())
     stmt->setDone();

@@ -281,19 +281,19 @@ types::Type *Module::getStringType() {
 }
 
 types::Type *Module::getPointerType(types::Type *base) {
-  return getOrRealizeType("Ptr", {base});
+  return getOrRealizeType(ast::StdlibTypes::Ptr, {base});
 }
 
 types::Type *Module::getArrayType(types::Type *base) {
-  return getOrRealizeType("Array", {base});
+  return getOrRealizeType(ast::StdlibTypes::Array, {base});
 }
 
 types::Type *Module::getGeneratorType(types::Type *base) {
-  return getOrRealizeType("Generator", {base});
+  return getOrRealizeType(ast::StdlibTypes::Generator, {base});
 }
 
 types::Type *Module::getOptionalType(types::Type *base) {
-  return getOrRealizeType("Optional", {base});
+  return getOrRealizeType(ast::StdlibTypes::Optional, {base});
 }
 
 types::Type *Module::getFuncType(types::Type *rType,
@@ -314,11 +314,11 @@ types::Type *Module::getFuncType(types::Type *rType,
 }
 
 types::Type *Module::getIntNType(unsigned int len, bool sign) {
-  return getOrRealizeType(sign ? "Int" : "UInt", {len});
+  return getOrRealizeType(sign ? ast::StdlibTypes::Int : ast::StdlibTypes::UInt, {len});
 }
 
 types::Type *Module::getVectorType(unsigned count, types::Type *base) {
-  return getOrRealizeType(ast::getMangledClass("std.simd", "Vec"), {base, count});
+  return getOrRealizeType(ast::StdlibTypes::Vec, {base, count});
 }
 
 types::Type *Module::getTupleType(std::vector<types::Type *> args) {
@@ -339,7 +339,9 @@ types::Type *Module::getUnionType(std::vector<types::Type *> types) {
   return cache->makeUnion(argTypes);
 }
 
-types::Type *Module::getNoneType() { return getOrRealizeType("NoneType"); }
+types::Type *Module::getNoneType() {
+  return getOrRealizeType(ast::StdlibTypes::NoneType);
+}
 
 Value *Module::getInt(int64_t v) { return Nr<IntConst>(v, getIntType()); }
 

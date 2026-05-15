@@ -7,6 +7,7 @@
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
 #include "codon/cir/util/matching.h"
+#include "codon/parser/cache.h"
 
 namespace codon {
 namespace ir {
@@ -32,8 +33,7 @@ CallInstr *getRangeIter(Value *iter) {
   if (!newRangeFunc || newRangeFunc->getUnmangledName() != Module::NEW_MAGIC_NAME)
     return nullptr;
   auto *parentType = newRangeFunc->getParentType();
-  auto *rangeType =
-      M->getOrRealizeType(ast::getMangledClass("std.internal.types.range", "range"));
+  auto *rangeType = M->getOrRealizeType(ast::StdlibTypes::Range);
 
   if (!parentType || !rangeType || parentType->getName() != rangeType->getName())
     return nullptr;
@@ -51,8 +51,7 @@ Value *getListIter(Value *iter) {
     return nullptr;
 
   auto *list = iterCall->front();
-  if (list->getType()->getName().rfind(
-          ast::getMangledClass("std.internal.types.array", "List") + "[", 0) != 0)
+  if (list->getType()->getName().rfind(ast::StdlibTypes::List + "[", 0) != 0)
     return nullptr;
 
   return list;

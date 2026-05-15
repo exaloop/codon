@@ -410,7 +410,7 @@ void FormatVisitor::visit(ClassStmt *stmt) {
                         stmt->hasAttribute(Attr::Extend) ? " +@extend" : ""));
         for (auto &real : cls->realizations) {
           std::vector<std::string> args;
-          auto l = real.second->type->is(TYPE_TUPLE)
+          auto l = real.second->type->is(StdlibTypes::Tuple)
                        ? real.second->type->generics.size()
                        : real.second->fields.size();
           for (size_t i = 0; i < l; i++) {

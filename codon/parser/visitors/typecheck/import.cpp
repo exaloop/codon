@@ -91,8 +91,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // imports are "clean" and do not need guards). Note that the importVar is empty if
   // the import has been loaded during the standard library loading.
   if (!handled) {
-    resultStmt = N<ExprStmt>(
-        N<CallExpr>(N<IdExpr>(getMangledFunc("", fmt::format("{}_call", importVar)))));
+    resultStmt = N<ExprStmt>(N<CallExpr>(N<IdExpr>(getMangledFunc(
+        "", fmt::format("{}_call", importVar), 0, 0, /* noCore */ true))));
     LOG_TYPECHECK("[import] loading {}", importVar);
   }
 
@@ -210,8 +210,8 @@ Stmt *TypecheckVisitor::transformCImport(const std::string &name,
     }
   }
   auto _ = ctx->generateCanonicalName(name); // avoid canonicalName == name
-  Stmt *f =
-      N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>("NoneType"), fnArgs, nullptr);
+  Stmt *f = N<FunctionStmt>(name, ret ? clone(ret) : N<IdExpr>(StdlibTypes::NoneType),
+                            fnArgs, nullptr);
   f->setAttribute(Attr::C);
   if (hasVarArgs)
     f->setAttribute(Attr::CVarArg);
@@ -256,14 +256,15 @@ Stmt *TypecheckVisitor::transformCDLLImport(Expr *dylib, const std::string &name
                                             bool isFunction) {
   Expr *type = nullptr;
   if (isFunction) {
-    std::vector<Expr *> fnArgs{N<ListExpr>(), ret ? clone(ret) : N<IdExpr>("NoneType")};
+    std::vector<Expr *> fnArgs{N<ListExpr>(),
+                               ret ? clone(ret) : N<IdExpr>(StdlibTypes::NoneType)};
     for (const auto &a : args) {
       seqassert(a.getName().empty(), "unexpected argument name");
       seqassert(!a.getDefault(), "unexpected default argument");
       seqassert(a.getType(), "missing type");
       cast<ListExpr>(fnArgs[0])->items.emplace_back(clone(a.getType()));
     }
-    type = N<IndexExpr>(N<IdExpr>("Function"), N<TupleExpr>(fnArgs));
+    type = N<IndexExpr>(N<IdExpr>(StdlibTypes::Function), N<TupleExpr>(fnArgs));
   } else {
     type = clone(ret);
   }
@@ -321,7 +322,8 @@ Stmt *TypecheckVisitor::transformPythonImport(Expr *what,
     callArgs.emplace_back(N<IdExpr>(fmt::format("a{}", i)));
   }
   // `return ret.__from_py__(f(a1, ...))`
-  auto retType = (ret && !cast<NoneExpr>(ret)) ? clone(ret) : N<IdExpr>("NoneType");
+  auto retType =
+      (ret && !cast<NoneExpr>(ret)) ? clone(ret) : N<IdExpr>(StdlibTypes::NoneType);
   auto retExpr = N<CallExpr>(N<DotExpr>(clone(retType), "__from_py__"),
                              N<DotExpr>(N<CallExpr>(N<IdExpr>("f"), callArgs), "p"));
   auto retStmt = N<ReturnStmt>(retExpr);
@@ -410,8 +412,8 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
 
     // Wrap all imported top-level statements into a function.
     auto fnName = fmt::format("{}_call", importVar);
-    Stmt *fn =
-        N<FunctionStmt>(fnName, N<IdExpr>("NoneType"), std::vector<Param>{}, stmts);
+    Stmt *fn = N<FunctionStmt>(fnName, N<IdExpr>(StdlibTypes::NoneType),
+                               std::vector<Param>{}, stmts);
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(fnName)->getType());
     preamble->addStmt(fn);

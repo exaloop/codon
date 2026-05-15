@@ -421,7 +421,7 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
 
 std::string getMangledClass(const std::string &module, const std::string &cls,
                             size_t id) {
-  if (module == "std.internal.core")
+  if (module.empty() || module == "std.internal.core")
     return cls;
   std::string num;
   if (!in(cls, '.'))
@@ -430,8 +430,8 @@ std::string getMangledClass(const std::string &module, const std::string &cls,
 }
 
 std::string getMangledFunc(const std::string &module, const std::string &fn,
-                           size_t overload, size_t id) {
-  if (module == "std.internal.core")
+                           size_t overload, size_t id, bool noCore) {
+  if (!noCore && (module.empty() || module == "std.internal.core"))
     return fn + ":" + std::to_string(overload);
   std::string num;
   if (!in(fn, '.'))
@@ -442,7 +442,7 @@ std::string getMangledFunc(const std::string &module, const std::string &fn,
 
 std::string getMangledMethod(const std::string &module, const std::string &cls,
                              const std::string &method, size_t overload, size_t id) {
-  if (module == "std.internal.core")
+  if (module.empty() || module == "std.internal.core")
     return cls + "." + method + ":" + std::to_string(overload);
   std::string num;
   if (!in(cls, '.'))

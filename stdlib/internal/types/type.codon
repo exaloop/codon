@@ -108,6 +108,7 @@ class TypeInfo:
     _fields: List[Tuple[str, int, int]]
     _size: int
     _ref: bool
+    _rtti: bool
 
     def __new__() -> TypeInfo:
         return __magic__.new(TypeInfo)
@@ -122,9 +123,6 @@ class TypeInfo:
     def _init_optional(self, vt, T: type):
         self._fields.append(("flag", TypeInfo.cache(vt, i1).id, type._get_element_offset(T, 1)))
         self._fields.append(("data", TypeInfo.cache(vt, T.T).id, T.T.__elemsize__))
-
-    def cache_id(vtable, id: int) -> TypeInfo:
-        return vtable[id].typeinfo
 
     def cache(vtable, T: type) -> TypeInfo:
         if isinstance(T, TypeWrap):
@@ -170,6 +168,7 @@ class TypeInfo:
         self._size = T.__elemsize__
         self._base_name = T.__generic_name__
         self._ref = not isinstance(T, ByVal)
+        self._rtti = static.has_rtti(T)
 
     @property
     def mro(self):

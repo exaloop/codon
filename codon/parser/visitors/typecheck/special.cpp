@@ -28,8 +28,7 @@ using namespace types;
 void TypecheckVisitor::prepareVTables() {
   // def RTTIType._get_thunk_id(F, T):
   //   return VID
-  auto fn =
-      getFunction(getMangledMethod("std.internal.core", "RTTIType", "_get_thunk_id"));
+  auto fn = getFunction(getMangledMethod("", "RTTIType", "_get_thunk_id"));
   auto oldAst = fn->ast;
   // Keep iterating as thunks can generate more thunks.
   std::unordered_set<std::string> cache;
@@ -48,8 +47,7 @@ void TypecheckVisitor::prepareVTables() {
     }
   }
 
-  fn = getFunction(
-      getMangledMethod("std.internal.core", "RTTIType", "_populate_vtables"));
+  fn = getFunction(getMangledMethod("", "RTTIType", "_populate_vtables"));
   fn->ast->suite = generateClassPopulateVTablesAST();
   auto typ = fn->realizations.begin()->second->getType();
   typ->ast = fn->ast;
@@ -58,7 +56,7 @@ void TypecheckVisitor::prepareVTables() {
 
   // def RTTIType._dist(B, D):
   //   return Tuple[<types before B is reached in D>].__elemsize__
-  fn = getFunction(getMangledMethod("std.internal.core", "RTTIType", "_dist"));
+  fn = getFunction(getMangledMethod("", "RTTIType", "_dist"));
   oldAst = fn->ast;
   for (const auto &real : fn->realizations | std::views::values) {
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
@@ -77,8 +75,8 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
         continue;
       LOG_REALIZE("[poly] {} -> {}", r, real->id);
       suite->addStmt(N<ExprStmt>(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
-          N<IdExpr>("vtable"), N<IdExpr>(real->getType()->realizedName()))));
+          N<IdExpr>(getMangledMethod("", "TypeInfo", "cache")), N<IdExpr>("vtable"),
+          N<IdExpr>(real->getType()->realizedName()))));
 
       std::vector<std::pair<std::pair<std::string, std::string>, size_t>> thunks;
       for (const auto &key : real->vtable | std::views::keys) {
@@ -96,12 +94,13 @@ SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
         // p[real.ID].__setitem__(f.ID, Function[<TYPE_F>](f).__raw__())
         LOG_REALIZE("[poly] vtable[{}!!{}][{}] = {}", real->getType()->realizedName(),
                     real->id, id, fn->realizedName());
-        Expr *fnCall = N<CallExpr>(
-            N<InstantiateExpr>(
-                N<IdExpr>("Function"),
-                std::vector<Expr *>{N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), ids),
-                                    N<IdExpr>(fn->getRetType()->realizedName())}),
-            N<IdExpr>(fn->realizedName()));
+        Expr *fnCall =
+            N<CallExpr>(N<InstantiateExpr>(
+                            N<IdExpr>(StdlibTypes::Function),
+                            std::vector<Expr *>{
+                                N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Tuple), ids),
+                                N<IdExpr>(fn->getRetType()->realizedName())}),
+                        N<IdExpr>(fn->realizedName()));
         suite->addStmt(N<ExprStmt>(N<CallExpr>(
             N<DotExpr>(N<IdExpr>("vtable"), "set_thunk"), N<IntExpr>(real->id),
             N<IntExpr>(int64_t(id)), N<CallExpr>(N<DotExpr>(fnCall, "__raw__")))));
@@ -134,9 +133,9 @@ SuiteStmt *TypecheckVisitor::generateBaseDerivedDistAST(FuncType *f) {
 
   if (fi == 0)
     return SuiteStmt::wrap(N<ReturnStmt>(N<IntExpr>(0)));
-  Stmt *suite = N<ReturnStmt>(N<CallExpr>(
-      N<IdExpr>(getMangledMethod("std.internal.core", "type", "_get_class_offset")),
-      N<IdExpr>(derivedTyp->realizedName()), N<IntExpr>(fi)));
+  Stmt *suite = N<ReturnStmt>(
+      N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_get_class_offset")),
+                  N<IdExpr>(derivedTyp->realizedName()), N<IntExpr>(fi)));
   return SuiteStmt::wrap(suite);
 }
 
@@ -163,7 +162,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
     ns.push_back(a->realizedName());
   auto thunkName =
       fmt::format("_thunk.{}.{}.{}", base->name, fp->getFuncName(), join(ns, "."));
-  if (getFunction(getMangledFunc("", thunkName)))
+  if (getFunction(getMangledFunc("", thunkName, 0, 0, /* noCore */ true)))
     return nullptr;
 
   // Thunk contents:
@@ -189,9 +188,9 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
       thunkName, nullptr, fnArgs,
       N<SuiteStmt>(
           // For debugging
-          N<ExprStmt>(N<CallExpr>(N<IdExpr>(getMangledMethod(
-                                      "std.internal.core", "RTTIType", "_thunk_debug")),
-                                  debugCallArgs)),
+          N<ExprStmt>(
+              N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_thunk_debug")),
+                          debugCallArgs)),
           N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->getName()), callArgs))));
   thunkAst->setAttribute(Attr::Inline);
   return cast<FunctionStmt>(transform(thunkAst));
@@ -284,8 +283,8 @@ SuiteStmt *TypecheckVisitor::generateFunctionCallInternalAST(FuncType *type) {
   items.push_back(nullptr);
   std::vector<std::string> ll;
   std::vector<std::string> lla;
-  seqassert(extractFuncArgType(type, 1)->is(TYPE_TUPLE), "bad function base: {}",
-            extractFuncArgType(type, 1)->debugString(2));
+  seqassert(extractFuncArgType(type, 1)->is(StdlibTypes::Tuple),
+            "bad function base: {}", extractFuncArgType(type, 1)->debugString(2));
   auto as = extractFuncArgType(type, 1)->getClass()->generics.size();
   auto [_, ag] = (*type->ast)[1].getNameWithStars();
   for (int i = 0; i < as; i++) {
@@ -308,9 +307,9 @@ SuiteStmt *TypecheckVisitor::generateUnionNewAST(const FuncType *type) {
   auto unionType = type->funcParent->getUnion();
   seqassert(unionType, "expected union, got {}", *(type->funcParent));
 
-  Stmt *suite = N<ReturnStmt>(N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "_new"),
-                                          N<IdExpr>(type->ast->begin()->name),
-                                          N<IdExpr>(unionType->realizedName())));
+  Stmt *suite = N<ReturnStmt>(N<CallExpr>(
+      N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_new"),
+      N<IdExpr>(type->ast->begin()->name), N<IdExpr>(unionType->realizedName())));
   return SuiteStmt::wrap(suite);
 }
 
@@ -322,9 +321,9 @@ SuiteStmt *TypecheckVisitor::generateUnionTagAST(FuncType *type) {
   if (tag < 0 || tag >= unionTypes.size())
     E(Error::CUSTOM, getSrcInfo(), "bad union tag");
   auto selfVar = type->ast->begin()->name;
-  auto suite = N<SuiteStmt>(N<ReturnStmt>(N<CallExpr>(
-      N<IdExpr>(getMangledMethod("std.internal.core", "Union", "_get_data")),
-      N<IdExpr>(selfVar), N<IdExpr>(unionTypes[tag]->realizedName()))));
+  auto suite = N<SuiteStmt>(N<ReturnStmt>(
+      N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
+                  N<IdExpr>(selfVar), N<IdExpr>(unionTypes[tag]->realizedName()))));
   return suite;
 }
 
@@ -342,7 +341,7 @@ SuiteStmt *TypecheckVisitor::generateNamedKeysAST(FuncType *type) {
 SuiteStmt *TypecheckVisitor::generateTupleMulAST(FuncType *type) {
   auto n = std::max(static_cast<int64_t>(0), getIntLiteral(extractFuncGeneric(type)));
   auto t = extractFuncArgType(type)->getClass();
-  if (!t || !t->is(TYPE_TUPLE))
+  if (!t || !t->is(StdlibTypes::Tuple))
     return nullptr;
   std::vector<Expr *> exprs;
   for (size_t i = 0; i < n; i++)
@@ -370,20 +369,15 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateFunctionCallInternalAST(type);
   } else if (startswith(ast->name, "Union.__new__")) {
     return generateUnionNewAST(type);
-  } else if (startswith(ast->name,
-                        getMangledMethod("std.internal.core", "Union", "_tag"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "Union", "_tag"))) {
     return generateUnionTagAST(type);
-  } else if (startswith(ast->name, getMangledMethod("std.internal.core", "NamedTuple",
-                                                    "_namedkeys"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
     return generateNamedKeysAST(type);
-  } else if (startswith(ast->name,
-                        getMangledMethod("std.internal.core", "__magic__", "mul"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
-  } else if (startswith(ast->name, getMangledMethod("std.internal.core", "TypeInfo",
-                                                    "_init_params"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "TypeInfo", "_init_params"))) {
     return generateTypeInfoInitAst(type);
-  } else if (startswith(ast->name,
-                        getMangledMethod("std.internal.core", "Super", "_dispatch"))) {
+  } else if (startswith(ast->name, getMangledMethod("", "Super", "_dispatch"))) {
     return generateSuperDispatchAst(type);
   }
   return nullptr;
@@ -407,8 +401,8 @@ Expr *TypecheckVisitor::transformNamedTuple(CallExpr *expr) {
   size_t ti = 1;
   for (auto *i : *orig) {
     if (auto s = cast<StringExpr>(i)) {
-      generics.emplace_back(fmt::format("T{}", ti), N<IdExpr>(TYPE_TYPE), nullptr,
-                            true);
+      generics.emplace_back(fmt::format("T{}", ti), N<IdExpr>(StdlibTypes::Type),
+                            nullptr, true);
       params.emplace_back(s->getValue(), N<IdExpr>(fmt::format("T{}", ti++)), nullptr);
       continue;
     }
@@ -505,8 +499,7 @@ Expr *TypecheckVisitor::transformSuper() {
   auto typExpr = N<IdExpr>(typ->getClass()->name);
   typExpr->setType(instantiateTypeVar(typ->getClass()));
   return transform(
-      N<CallExpr>(N<IdExpr>(getMangledMethod("std.internal.core", "Super", "__new__")),
-                  typExpr, self));
+      N<CallExpr>(N<IdExpr>(getMangledMethod("", "Super", "__new__")), typExpr, self));
 }
 
 /// Typecheck __ptr__ method. This method creates a pointer to an object. Ensure that
@@ -536,8 +529,8 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
     }
   }
 
-  unify(expr->getType(),
-        instantiateType(getStdLibType("Ptr"), {expr->begin()->getExpr()->getType()}));
+  unify(expr->getType(), instantiateType(getStdLibType(StdlibTypes::Ptr),
+                                         {expr->begin()->getExpr()->getType()}));
   if (expr->begin()->getExpr()->isDone())
     expr->setDone();
   return nullptr;
@@ -547,7 +540,7 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
 Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
   auto arrTyp = expr->expr->getType()->getFunc();
   unify(expr->getType(),
-        instantiateType(getStdLibType("Array"),
+        instantiateType(getStdLibType(StdlibTypes::Array),
                         {extractClassGeneric(arrTyp->getParentType())}));
   if (realize(expr->getType()))
     expr->setDone();
@@ -588,7 +581,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   if (tei && tei->getValue() == "type") {
     return transform(N<BoolExpr>(isTypeExpr(expr->begin()->value)));
   } else if (tei && tei->getValue() == "type[Tuple]") {
-    return transform(N<BoolExpr>(typ->is(TYPE_TUPLE)));
+    return transform(N<BoolExpr>(typ->is(StdlibTypes::Tuple)));
   } else if (tei && tei->getValue() == "type[ByVal]") {
     return transform(N<BoolExpr>(typ->isRecord()));
   } else if (tei && tei->getValue() == "type[ByRef]") {
@@ -607,7 +600,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     if (tag == -1)
       return transform(N<BoolExpr>(false));
     return transform(
-        N<BinaryExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "_get_tag"),
+        N<BinaryExpr>(N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_get_tag"),
                                   expr->begin()->getExpr()),
                       "==", N<IntExpr>(tag)));
   } else if (typExpr->getType()->is("pyobj")) {
@@ -646,9 +639,9 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     us.undo();
     if (s >= 0) {
       // check RTTI match
-      return transform(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_isinstance")),
-          expr->begin()->getExpr(), (*expr)[1].getExpr()));
+      return transform(
+          N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_isinstance")),
+                      expr->begin()->getExpr(), (*expr)[1].getExpr()));
     }
   }
 
@@ -700,13 +693,13 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
       if (!a.getExpr()->getClassType())
         return nullptr;
       auto t = extractType(a);
-      args.emplace_back("", t->is("TypeWrap") ? extractClassGeneric(t) : t);
+      args.emplace_back("", t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
     }
   }
   for (auto &[n, ne] : extractNamedTuple((*expr)[2].getExpr())) {
     ne = transform(ne);
     auto t = extractType(ne);
-    args.emplace_back(n, t->is("TypeWrap") ? extractClassGeneric(t) : t);
+    args.emplace_back(n, t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
   }
 
   if (typ->getUnion()) {
@@ -725,7 +718,7 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     if (!cond)
       return transform(N<BoolExpr>(false));
     return transform(cond);
-  } else if (typ->is("NamedTuple")) {
+  } else if (typ->is(StdlibTypes::NamedTuple)) {
     if (!typ->canRealize())
       return nullptr;
     auto id = getIntLiteral(typ);
@@ -748,7 +741,7 @@ Expr *TypecheckVisitor::transformGetAttr(CallExpr *expr) {
 
   // special handling for NamedTuple
   if (expr->begin()->getExpr()->getType() &&
-      expr->begin()->getExpr()->getType()->is("NamedTuple")) {
+      expr->begin()->getExpr()->getType()->is(StdlibTypes::NamedTuple)) {
     auto val = expr->begin()->getExpr()->getClassType();
     auto id = getIntLiteral(val);
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
@@ -768,7 +761,7 @@ Expr *TypecheckVisitor::transformSetAttr(CallExpr *expr) {
   auto attr = getStrLiteral(extractFuncGeneric(expr->expr->getType()));
   return transform(
       N<StmtExpr>(N<AssignMemberStmt>((*expr)[0].getExpr(), attr, (*expr)[1].getExpr()),
-                  N<CallExpr>(N<IdExpr>("NoneType"))));
+                  N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType))));
 }
 
 /// Raise a compiler error.
@@ -799,7 +792,7 @@ Expr *TypecheckVisitor::transformTupleFn(CallExpr *expr) {
                 cls->debugString(2));
       items.push_back(N<IdExpr>(rt->realizedName()));
     }
-    auto e = transform(N<InstantiateExpr>(N<IdExpr>(TYPE_TUPLE), items));
+    auto e = transform(N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Tuple), items));
     return e;
   }
 
@@ -845,9 +838,10 @@ Expr *TypecheckVisitor::transformRealizedFn(CallExpr *expr) {
   auto argt = (*expr)[1].getExpr()->getType()->getClass();
   if (!argt)
     return nullptr;
-  seqassert(argt->name == TYPE_TUPLE, "not a tuple");
+  seqassert(argt->name == StdlibTypes::Tuple, "not a tuple");
   for (size_t i = 0; i < std::min(argt->size(), fn->getFunc()->size()); i++) {
-    auto at = (*argt)[i]->is("TypeWrap") ? extractClassGeneric((*argt)[i]) : (*argt)[i];
+    auto at = (*argt)[i]->is(StdlibTypes::TypeWrap) ? extractClassGeneric((*argt)[i])
+                                                    : (*argt)[i];
     unify((*fn->getFunc())[i], at);
   }
   if (auto f = realize(fn.get())) {
@@ -1095,7 +1089,7 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
   // Add extra initialization here!
   suite->addStmt(N<AssignStmt>(N<DotExpr>(N<IdExpr>("self"), "_base_name"),
                                N<StringExpr>(t->name)));
-  if (!t->is("unrealized_type")) {
+  if (!t->is(StdlibTypes::UnrealizedType)) {
     for (auto &g : t->generics) {
       auto tp = g.getType()->shared_from_this();
       if (tp->getStatic())
@@ -1104,7 +1098,7 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
         tp = std::make_shared<ClassType>(realize(tp.get())->getClass());
       }
       suite->addStmt(N<ExprStmt>(N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
+          N<IdExpr>(getMangledMethod("", "TypeInfo", "cache")),
           std::vector<CallArg>{CallArg{"", N<IdExpr>("vt")},
                                CallArg{"T", N<IdExpr>(tp->realizedName())}})));
       suite->addStmt(N<ExprStmt>(
@@ -1112,21 +1106,22 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
                       N<IntExpr>(getClassRealization(tp.get())->id))));
     }
   }
+  size_t fi = 0;
   for (auto &[fn, ft] : getClassRealization(t)->fields) {
     auto tp = ft.get();
     auto stat = tp->getStatic();
     if (stat)
       tp = stat->getNonStaticType();
     suite->addStmt(N<ExprStmt>(N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.core", "TypeInfo", "cache")),
+        N<IdExpr>(getMangledMethod("", "TypeInfo", "cache")),
         std::vector<CallArg>{CallArg{"", N<IdExpr>("vt")},
                              CallArg{"T", N<IdExpr>(tp->realizedName())}})));
     suite->addStmt(N<ExprStmt>(N<CallExpr>(
         N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_fields"), "append"),
         N<TupleExpr>(std::vector<Expr *>{
             N<StringExpr>(fn), N<IntExpr>(getClassRealization(tp)->id),
-            !stat ? (Expr *)N<DotExpr>(N<IdExpr>(tp->realizedName()), "__elemsize__")
-                  : (Expr *)N<IntExpr>(0)}))));
+            N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_get_class_offset")),
+                        N<IdExpr>(t->realizedName()), N<IntExpr>(fi++))}))));
   }
   return suite;
 }
@@ -1140,8 +1135,8 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAst(FuncType *type) {
   auto typ = extractClassGeneric(superTyp)->getClass();
   auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
 
-  seqassert(extractFuncArgType(type, 1)->is("Tuple") &&
-                extractFuncArgType(type, 2)->is("NamedTuple"),
+  seqassert(extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
+                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple),
             "invalid arguments");
   std::vector<CallArg> callArgs;
   callArgs.emplace_back("", N<NoneExpr>());
@@ -1190,9 +1185,9 @@ SuiteStmt *TypecheckVisitor::generateSuperDispatchAst(FuncType *type) {
   for (auto &tb : nextMro | std::views::values) {
     Stmt *ret = N<ReturnStmt>(N<CallExpr>(
         N<DotExpr>(N<IdExpr>(tb->getClass()->name), attr->value),
-        N<CallExpr>(
-            N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
-            N<DotExpr>(N<IdExpr>("self"), "_obj"), N<IdExpr>(tb->realizedName())),
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
+                    N<DotExpr>(N<IdExpr>("self"), "_obj"),
+                    N<IdExpr>(tb->realizedName())),
         N<StarExpr>(N<IdExpr>("args")), N<KeywordStarExpr>(N<IdExpr>("kwargs"))));
     suite->addStmt(
         nextMro.size() == 1
@@ -1281,7 +1276,7 @@ TypecheckVisitor::populateStaticFnOverloadsLoop(Expr *iter,
   auto name = getStrLiteral(extractFuncGeneric(fn->getType(), 1));
 
   std::vector<std::string> overloads;
-  if (typ->is("NoneType")) {
+  if (typ->is(StdlibTypes::NoneType)) {
     if (auto func = ctx->cache->typeCtx->find(name)) {
       auto root = getRootName(func->getType()->getFunc());
       overloads = getOverloads(root);
@@ -1349,7 +1344,7 @@ TypecheckVisitor::populateStaticVarsLoop(Expr *iter,
   std::vector<Stmt *> block;
   auto typ = extractFuncArgType(fn->getType())->getClass();
   size_t idx = 0;
-  if (typ->is("TypeWrap")) { // type passed!
+  if (typ->is(StdlibTypes::TypeWrap)) { // type passed!
     for (auto &f : getClass(extractClassGeneric(typ))->classVars) {
       std::vector<Stmt *> stmts;
       if (withIdx) {

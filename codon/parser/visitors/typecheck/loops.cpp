@@ -74,11 +74,11 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   ctx->getBase()->loops.emplace_back(breakVar);
 
-  auto oldExpectedType = getStdLibType("bool")->shared_from_this();
+  auto oldExpectedType = getStdLibType(StdlibTypes::Bool)->shared_from_this();
   std::swap(ctx->expectedType, oldExpectedType);
   stmt->cond = transform(stmt->getCond());
   std::swap(ctx->expectedType, oldExpectedType);
-  wrapExpr(&stmt->cond, getStdLibType("bool"));
+  wrapExpr(&stmt->cond, getStdLibType(StdlibTypes::Bool));
 
   ctx->blockLevel++;
   stmt->suite = SuiteStmt::wrap(transform(stmt->getSuite()));
@@ -364,7 +364,7 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
                               getMangledFunc("std.internal.static", "vars_types"))) {
     block = populateStaticVarTypesLoop(iter, vars);
   } else {
-    if (iter->getType()->is(TYPE_TUPLE)) {
+    if (iter->getType()->is(StdlibTypes::Tuple)) {
       // Maybe heterogenous?
       if (!iter->getType()->canRealize())
         return {true, true, nullptr, {}}; // wait until the tuple is fully realizable

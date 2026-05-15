@@ -254,7 +254,7 @@ Expr *TypecheckVisitor::transform(Expr *expr, bool allowTypes) {
 /// @throw @c ParserException if a node is not a type (use @c transform instead).
 Expr *TypecheckVisitor::transformType(Expr *expr, bool simple) {
   if (cast<NoneExpr>(expr)) {
-    auto ne = N<IdExpr>("NoneType");
+    auto ne = N<IdExpr>(StdlibTypes::NoneType);
     ne->setSrcInfo(expr->getSrcInfo());
     expr = ne;
   }
@@ -609,21 +609,22 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   TypePtr type = nullptr;
   std::function<Expr *(Expr *)> fn = nullptr;
 
-  if (callee && exprType->is(TYPE_TYPE)) {
+  if (callee && exprType->is(StdlibTypes::Type)) {
     auto c = extractClassType(exprType);
     if (!c)
       return {false, nullptr, nullptr};
-    if (!(expectedType && (expectedType->is(TYPE_TYPE)))) {
-      type = instantiateType(getStdLibType("TypeWrap"), std::vector<types::Type *>{c});
+    if (!(expectedType && (expectedType->is(StdlibTypes::Type)))) {
+      type = instantiateType(getStdLibType(StdlibTypes::TypeWrap),
+                             std::vector<types::Type *>{c});
       fn = [&](Expr *expr) -> Expr * {
-        return N<CallExpr>(N<IdExpr>("TypeWrap"), expr);
+        return N<CallExpr>(N<IdExpr>(StdlibTypes::TypeWrap), expr);
       };
     }
     return {true, type, fn};
   }
 
-  std::unordered_set<std::string> hints = {"Generator", "float", TYPE_OPTIONAL,
-                                           "pyobj"};
+  std::unordered_set<std::string> hints = {StdlibTypes::Generator, "float",
+                                           StdlibTypes::Optional, "pyobj"};
   if (!expectedType || !expectedType->getStaticKind()) {
     if (exprType->getStaticKind()) {
       exprType = getUnderlyingStaticType(exprType);
@@ -636,19 +637,18 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
 
-  else if (expectedClass && !expectedClass->is("Capsule") && exprClass &&
-           exprClass->is("Capsule")) {
+  else if (expectedClass && !expectedClass->is(StdlibTypes::Capsule) && exprClass &&
+           exprClass->is(StdlibTypes::Capsule)) {
     type = extractClassGeneric(exprClass)->shared_from_this();
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "_get")), expr);
+      return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_get")), expr);
     };
-  } else if (expectedClass && expectedClass->is("Capsule") && exprClass &&
-             !exprClass->is("Capsule")) {
-    type = instantiateType(getStdLibType("Capsule"), std::vector<Type *>{exprClass});
+  } else if (expectedClass && expectedClass->is(StdlibTypes::Capsule) && exprClass &&
+             !exprClass->is(StdlibTypes::Capsule)) {
+    type = instantiateType(getStdLibType(StdlibTypes::Capsule),
+                           std::vector<Type *>{exprClass});
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(
-          N<IdExpr>(getMangledMethod("std.internal.core", "Capsule", "make")), expr);
+      return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "make")), expr);
     };
   }
 
@@ -682,8 +682,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
 
-  else if (!callee && expectedClass && expectedClass->is("bool") && exprClass &&
-           !exprClass->is("bool")) {
+  else if (!callee && expectedClass && expectedClass->is(StdlibTypes::Bool) &&
+           exprClass && !exprClass->is(StdlibTypes::Bool)) {
     // Do not do this in function calls---only use for if-else wrapping
     type = instantiateType(expectedClass);
     fn = [&](Expr *expr) -> Expr * {
@@ -691,15 +691,15 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is(TYPE_OPTIONAL) && exprClass &&
+  else if (expectedClass && expectedClass->is(StdlibTypes::Optional) && exprClass &&
            !exprClass->is(expectedClass->name)) {
-    type =
-        instantiateType(getStdLibType(TYPE_OPTIONAL), std::vector<Type *>{exprClass});
+    type = instantiateType(getStdLibType(StdlibTypes::Optional),
+                           std::vector<Type *>{exprClass});
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(TYPE_OPTIONAL), expr);
+      return N<CallExpr>(N<IdExpr>(StdlibTypes::Optional), expr);
     };
   } else if (allowUnwrap && expectedClass && exprClass &&
-             exprClass->is(TYPE_OPTIONAL) &&
+             exprClass->is(StdlibTypes::Optional) &&
              !exprClass->is(expectedClass->name)) { // unwrap optional
     type = instantiateType(extractClassGeneric(exprClass));
     fn = [&](Expr *expr) -> Expr * {
@@ -730,9 +730,9 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is(TYPE_CALLABLE) && exprClass &&
+  else if (expectedClass && expectedClass->is(StdlibTypes::Callable) && exprClass &&
            (exprClass->getPartial() || exprClass->getFunc() ||
-            exprClass->is(TYPE_FUNCTION))) {
+            exprClass->is(StdlibTypes::Function))) {
     // Get list of arguments
     std::vector<Type *> argTypes;
     Type *retType;
@@ -796,25 +796,26 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         auto rf = realize(exprClass);
         fname = rf->realizedName();
         seqassert(rf, "not realizable");
-        retFn = N<IndexExpr>(
-            N<CallExpr>(N<IndexExpr>(N<IdExpr>("Ptr"), N<IdExpr>(rf->realizedName())),
-                        N<IdExpr>("data")),
-            N<IntExpr>(0));
-        dataType = N<IdExpr>("cobj");
+        retFn = N<IndexExpr>(N<CallExpr>(N<IndexExpr>(N<IdExpr>(StdlibTypes::Ptr),
+                                                      N<IdExpr>(rf->realizedName())),
+                                         N<IdExpr>("data")),
+                             N<IntExpr>(0));
+        dataType = N<IdExpr>(StdlibTypes::CObj);
       } else if (exprClass->getFunc()) {
         auto rf = realize(exprClass);
         seqassert(rf, "not realizable");
         fname = rf->realizedName();
         retFn = N<IdExpr>(rf->getFunc()->realizedName());
-        dataArg = N<CallExpr>(N<IdExpr>("cobj"));
-        dataType = N<IdExpr>("cobj");
+        dataArg = N<CallExpr>(N<IdExpr>(StdlibTypes::CObj));
+        dataType = N<IdExpr>(StdlibTypes::CObj);
       } else {
-        seqassert(exprClass->is("Function"), "bad type: {}", exprClass->debugString(2));
+        seqassert(exprClass->is(StdlibTypes::Function), "bad type: {}",
+                  exprClass->debugString(2));
         auto rf = realize(exprClass);
         seqassert(rf, "not realizable");
         fname = rf->realizedName();
         retFn = N<CallExpr>(N<IdExpr>(rf->realizedName()), N<IdExpr>("data"));
-        dataType = N<IdExpr>("cobj");
+        dataType = N<IdExpr>(StdlibTypes::CObj);
       }
       fname = fmt::format(".proxy.{}", fname);
 
@@ -829,12 +830,12 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
                 N<ReturnStmt>(N<CallExpr>(retFn, N<StarExpr>(N<IdExpr>("args"))))));
         f = cast<FunctionStmt>(transform(f));
       }
-      auto e = N<CallExpr>(N<IdExpr>(TYPE_CALLABLE), N<IdExpr>(fname),
+      auto e = N<CallExpr>(N<IdExpr>(StdlibTypes::Callable), N<IdExpr>(fname),
                            dataArg ? dataArg : expr);
       return e;
     };
   } else if (callee && exprClass && exprType->getFunc() &&
-             !(expectedClass && expectedClass->is("Function"))) {
+             !(expectedClass && expectedClass->is(StdlibTypes::Function))) {
     // Wrap raw Seq functions into Partial(...) call for easy realization.
     // Special case: Seq functions are embedded (via lambda!)
     if (expectedClass)
@@ -846,7 +847,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
         return N<StmtExpr>(se->items, p);
       return p;
     };
-  } else if (expectedClass && expectedClass->is("Function") && exprClass &&
+  } else if (expectedClass && expectedClass->is(StdlibTypes::Function) && exprClass &&
              exprClass->getPartial() && exprClass->getPartial()->isPartialEmpty()) {
     type = instantiateType(expectedClass);
     auto fnName = exprClass->getPartial()->getPartialFunc()->ast->name;
@@ -874,9 +875,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       if (ok) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(
-              N<IdExpr>(getMangledMethod("std.internal.core", "Union", "_get")), expr,
-              N<IdExpr>(type->realizedName()));
+          return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get")), expr,
+                             N<IdExpr>(type->realizedName()));
         };
       }
     } else {
@@ -895,7 +895,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       if (expectedClass->unify(exprClass, nullptr) == -1) {
         type = t->shared_from_this();
         fn = [this, type](Expr *expr) -> Expr * {
-          return N<CallExpr>(N<DotExpr>(N<IdExpr>("Union"), "_new"), expr,
+          return N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_new"), expr,
                              N<IdExpr>(type->realizedName()));
         };
       }
@@ -904,12 +904,12 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     }
   }
 
-  else if (exprClass && exprClass->is(TYPE_TYPE) && expectedClass &&
-           (expectedClass->is("TypeWrap"))) {
-    type = instantiateType(getStdLibType("TypeWrap"),
+  else if (exprClass && exprClass->is(StdlibTypes::Type) && expectedClass &&
+           (expectedClass->is(StdlibTypes::TypeWrap))) {
+    type = instantiateType(getStdLibType(StdlibTypes::TypeWrap),
                            std::vector<types::Type *>{exprClass});
     fn = [this](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>("TypeWrap"), expr);
+      return N<CallExpr>(N<IdExpr>(StdlibTypes::TypeWrap), expr);
     };
   }
 
@@ -936,8 +936,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
           auto typExpr = N<IdExpr>(base->getClass()->name);
           typExpr->setType(instantiateTypeVar(base->getClass()));
           return transform(N<CallExpr>(
-              N<IdExpr>(getMangledMethod("std.internal.core", "RTTIType", "_cast")),
-              expr, typExpr));
+              N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")), expr, typExpr));
         };
         break;
       }
@@ -961,7 +960,8 @@ TypecheckVisitor::unpackTupleTypes(const Expr *expr) {
     }
   } else if (cast<CallExpr>(expr->getOrigExpr())) {
     auto val = extractClassType(expr->getType());
-    if (!val || !val->is("NamedTuple") || !extractClassGeneric(val, 1)->getClass() ||
+    if (!val || !val->is(StdlibTypes::NamedTuple) ||
+        !extractClassGeneric(val, 1)->getClass() ||
         !extractClassGeneric(val)->canRealize())
       return nullptr;
     auto id = getIntLiteral(val);
@@ -984,7 +984,7 @@ std::vector<std::pair<std::string, Expr *>>
 TypecheckVisitor::extractNamedTuple(Expr *expr) {
   std::vector<std::pair<std::string, Expr *>> ret;
 
-  seqassert(expr->getType()->is("NamedTuple") &&
+  seqassert(expr->getType()->is(StdlibTypes::NamedTuple) &&
                 extractClassGeneric(expr->getClassType())->canRealize(),
             "bad named tuple: {}", *expr);
   auto id = getIntLiteral(expr->getClassType());
@@ -999,7 +999,7 @@ TypecheckVisitor::extractNamedTuple(Expr *expr) {
 std::vector<Cache::Class::ClassField>
 TypecheckVisitor::getClassFields(types::ClassType *t) const {
   auto f = getClass(t->name)->fields;
-  if (t->is(TYPE_TUPLE))
+  if (t->is(StdlibTypes::Tuple))
     f = std::vector<Cache::Class::ClassField>(f.begin(),
                                               f.begin() + t->generics.size());
   return f;
@@ -1022,24 +1022,24 @@ TypecheckVisitor::getClassFieldTypes(types::ClassType *cls) {
 }
 
 types::Type *TypecheckVisitor::extractType(types::Type *t) const {
-  while (t && t->is(TYPE_TYPE))
+  while (t && t->is(StdlibTypes::Type))
     t = extractClassGeneric(t);
   return t;
 }
 
 types::Type *TypecheckVisitor::extractType(Expr *e) const {
-  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == TYPE_TYPE)
+  if (cast<IdExpr>(e) && cast<IdExpr>(e)->getValue() == StdlibTypes::Type)
     return e->getType();
   if (auto i = cast<InstantiateExpr>(e))
     if (cast<IdExpr>(i->getExpr()) &&
-        cast<IdExpr>(i->getExpr())->getValue() == TYPE_TYPE)
+        cast<IdExpr>(i->getExpr())->getValue() == StdlibTypes::Type)
       return e->getType();
   return extractType(e->getType());
 }
 
 types::Type *TypecheckVisitor::extractType(const std::string &s) const {
   auto c = ctx->forceFind(s);
-  return s == TYPE_TYPE ? c->getType() : extractType(c->getType());
+  return s == StdlibTypes::Type ? c->getType() : extractType(c->getType());
 }
 
 types::ClassType *TypecheckVisitor::extractClassType(Expr *e) const {
@@ -1122,7 +1122,7 @@ std::string TypecheckVisitor::getRootName(const types::FuncType *t) const {
 }
 
 bool TypecheckVisitor::isTypeExpr(const Expr *e) {
-  return e && e->getType() && e->getType()->is(TYPE_TYPE);
+  return e && e->getType() && e->getType()->is(StdlibTypes::Type);
 }
 
 Cache::Module *TypecheckVisitor::getImport(const std::string &s) const {
@@ -1147,7 +1147,7 @@ bool TypecheckVisitor::isHeterogenous(types::Type *type) {
   if (!type->getClass() || !type->getClass()->isRecord())
     return false;
   std::vector<TypePtr> fs;
-  if (type->is(TYPE_TUPLE)) {
+  if (type->is(StdlibTypes::Tuple)) {
     for (auto &g : type->getClass()->generics)
       fs.push_back(g.getType()->shared_from_this());
   } else {
@@ -1176,7 +1176,7 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
     }
     seqassert(!g.staticKind || t->getStaticKind(), "{} not a static: {}", g.name,
               *(g.type));
-    if (!g.staticKind && !t->is(TYPE_TYPE))
+    if (!g.staticKind && !t->is(StdlibTypes::Type))
       t = instantiateTypeVar(t.get());
     auto n = onlyMangled ? g.name : getUnmangledName(g.name);
     auto v = ctx->addType(n, g.name, t);
@@ -1212,7 +1212,7 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
 }
 
 types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
-  return instantiateType(ctx->forceFind(TYPE_TYPE)->getType(), {t});
+  return instantiateType(ctx->forceFind(StdlibTypes::Type)->getType(), {t});
 }
 
 void TypecheckVisitor::registerGlobal(const std::string &name) const {
@@ -1223,7 +1223,7 @@ void TypecheckVisitor::registerGlobal(const std::string &name) const {
 
 types::ClassType *TypecheckVisitor::getStdLibType(const std::string &type) const {
   auto t = getImport(STDLIB_IMPORT)->ctx->forceFind(type)->getType();
-  if (type == TYPE_TYPE)
+  if (type == StdlibTypes::Type)
     return t->getClass();
   return extractClassType(t);
 }
@@ -1287,8 +1287,8 @@ bool TypecheckVisitor::getBoolLiteral(types::Type *t, size_t pos) const {
 Expr *TypecheckVisitor::getParamType(Type *t) {
   if (!t)
     return nullptr;
-  if (t->is(TYPE_TYPE)) {
-    return N<IdExpr>(TYPE_TYPE);
+  if (t->is(StdlibTypes::Type)) {
+    return N<IdExpr>(StdlibTypes::Type);
   } else if (auto st = t->getStaticKind()) {
     return N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>(Type::stringFromLiteral(st)));
   } else {
@@ -1429,14 +1429,13 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       }
     }
   };
-  if (type->is("Capsule")
-      //  || type->is("Super")
-  ) {
+  if (type->is(StdlibTypes::Capsule)) {
     type = extractClassGeneric(type)->getClass();
   }
-  if (type && type->is(TYPE_TUPLE) && method == "__new__" && !type->generics.empty()) {
+  if (type && type->is(StdlibTypes::Tuple) && method == "__new__" &&
+      !type->generics.empty()) {
     generateTuple(type->generics.size());
-    auto mc = getClass(TYPE_TUPLE);
+    auto mc = getClass(StdlibTypes::Tuple);
     populate(*mc);
     for (auto f : vv)
       if (f->size() == type->generics.size())
@@ -1445,7 +1444,7 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
   }
   if (auto cls = getClass(type)) {
     for (const auto &pc : cls->mro) {
-      auto mc = getClass(pc->name == "__NTuple__" ? TYPE_TUPLE : pc->name);
+      auto mc = getClass(pc->name == "__NTuple__" ? StdlibTypes::Tuple : pc->name);
       populate(*mc);
     }
   }
@@ -1454,14 +1453,15 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
 
 Cache::Class::ClassField *
 TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) const {
-  if (type->is("Capsule")) {
+  if (type->is(StdlibTypes::Capsule)) {
     type = extractClassGeneric(type)->getClass();
   }
   if (auto cls = getClass(type)) {
     for (const auto &pc : cls->mro) {
       auto mc = getClass(pc.get());
       for (auto &mm : mc->fields) {
-        if (pc->is(TYPE_TUPLE) && (&mm - &(mc->fields[0])) >= type->generics.size())
+        if (pc->is(StdlibTypes::Tuple) &&
+            (&mm - &(mc->fields[0])) >= type->generics.size())
           break;
         if (mm.name == member)
           return &mm;
@@ -1880,7 +1880,7 @@ ir::PyType TypecheckVisitor::cythonizeClass(const std::string &name) {
     E(Error::CUSTOM, c->ast, "cannot pythonize generic class '{}'", name);
   auto r = c->realizations.begin()->second;
   py.type = r->ir;
-  seqassertn(!r->type->is(TYPE_TUPLE), "tuples not yet done");
+  seqassertn(!r->type->is(StdlibTypes::Tuple), "tuples not yet done");
   for (auto &mn : r->fields | std::views::keys) {
     /// TODO: handle PyMember for tuples
     // Generate getters & setters
@@ -1950,10 +1950,10 @@ ir::PyType TypecheckVisitor::cythonizeIterator(const std::string &name) {
 ir::PyFunction TypecheckVisitor::cythonizeFunction(const std::string &name) {
   if (auto f = getFunction(name); f->isToplevel) {
     auto fnName = getMangledMethod(CYTHON_MODULE, CYTHON_WRAP, "wrap_multiple");
-    auto generics =
-        std::vector<types::TypePtr>{getStdLibType("NoneType")->shared_from_this(),
-                                    instantiateStatic(f->ast->getName()),
-                                    instantiateStatic(static_cast<int64_t>(0))};
+    auto generics = std::vector<types::TypePtr>{
+        getStdLibType(StdlibTypes::NoneType)->shared_from_this(),
+        instantiateStatic(f->ast->getName()),
+        instantiateStatic(static_cast<int64_t>(0))};
     if (auto ir = realizeIRFunc(getFunction(fnName)->getType(), generics)) {
       LOG_USER("[py] toplevel -> {} ({}): ({})", getUserFacingName(name), name,
                f->getType()->debugString(2));

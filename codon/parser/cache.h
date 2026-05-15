@@ -22,15 +22,6 @@
 #define MAIN_IMPORT ""
 #define STDLIB_IMPORT ":stdlib:"
 
-#define TYPE_CALLABLE "Callable"
-#define TYPE_FUNCTION "Function"
-#define TYPE_OPTIONAL "Optional"
-#define TYPE_TUPLE "Tuple"
-#define TYPE_TYPE "type"
-
-#define TRAIT_TYPE "TypeTrait"
-#define TRAIT_CALLABLE "CallableTrait"
-
 #define FN_DISPATCH_SUFFIX ":dispatch"
 #define FN_SETTER_SUFFIX ":set_"
 
@@ -379,5 +370,46 @@ public:
     return r;
   }
 };
+
+namespace StdlibTypes {
+extern const std::string Array;
+extern const std::string BaseException;
+extern const std::string Bool;
+extern const std::string Callable;
+extern const std::string Capsule;
+extern const std::string CObj;
+extern const std::string Complex;
+extern const std::string Complex64;
+extern const std::string Coroutine;
+extern const std::string Dict;
+extern const std::string Float;
+extern const std::string Float16;
+extern const std::string Function;
+extern const std::string Generator;
+extern const std::string Int;
+extern const std::string List;
+extern const std::string NamedTuple;
+extern const std::string NDArray;
+extern const std::string NoneType;
+extern const std::string Object;
+extern const std::string Optional;
+extern const std::string Ptr;
+extern const std::string PyError;
+extern const std::string Range;
+extern const std::string Set;
+extern const std::string Slice;
+extern const std::string String;
+extern const std::string ThreadLocal;
+extern const std::string Tuple;
+extern const std::string Type;
+extern const std::string TypeWrap;
+extern const std::string UInt;
+extern const std::string Union;
+extern const std::string UnrealizedType;
+extern const std::string Vec;
+
+extern const std::string CallableTrait;
+extern const std::string TypeTrait;
+}; // namespace StdlibTypes
 
 } // namespace codon::ast

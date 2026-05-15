@@ -174,7 +174,7 @@ ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto argType =
       tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));
-  return realizeType(tv.getStdLibType("Union")->getClass(), {argType});
+  return realizeType(tv.getStdLibType(StdlibTypes::Union)->getClass(), {argType});
 }
 
 size_t Cache::getRealizationId(types::ClassType *type) {
@@ -304,5 +304,48 @@ void Cache::populatePythonModule() {
   for (const auto &key : pr | std::views::keys)
     TranslateVisitor(codegenCtx).translateStmts(clone(functions[key].ast));
 }
+
+namespace StdlibTypes {
+const std::string Array = getMangledClass("", "Array");
+const std::string BaseException =
+    getMangledClass("std.internal.types.error", "BaseException");
+const std::string Bool = getMangledClass("", "bool");
+const std::string Callable = getMangledClass("", "Callable");
+const std::string Capsule = getMangledClass("", "Capsule");
+const std::string CObj = getMangledClass("", "cobj");
+const std::string Complex = getMangledClass("std.internal.types.complex", "complex");
+const std::string Complex64 =
+    getMangledClass("std.internal.types.complex", "complex64");
+const std::string Coroutine = getMangledClass("", "Coroutine");
+const std::string Dict = getMangledClass("std.internal.types.array", "Dict");
+const std::string Float = getMangledClass("", "float");
+const std::string Float16 = getMangledClass("", "float16");
+const std::string Function = getMangledClass("", "Function");
+const std::string Generator = getMangledClass("", "Generator");
+const std::string Int = getMangledClass("", "Int");
+const std::string List = getMangledClass("std.internal.types.array", "List");
+const std::string NamedTuple = getMangledClass("", "NamedTuple");
+const std::string NDArray = getMangledClass("std.numpy.ndarray", "ndarray");
+const std::string NoneType = getMangledClass("", "NoneType");
+const std::string Object = getMangledClass("", "object");
+const std::string Optional = getMangledClass("", "Optional");
+const std::string Ptr = getMangledClass("", "Ptr");
+const std::string PyError = getMangledClass("std.internal.python", "PyError");
+const std::string Range = getMangledClass("std.internal.types.range", "range");
+const std::string Set = getMangledClass("std.internal.types.collections.set", "Set");
+const std::string Slice = getMangledClass("std.internal.types.slice", "Slice");
+const std::string String = getMangledClass("", "str");
+const std::string ThreadLocal = getMangledClass("std.threading", "ThreadLocal");
+const std::string Tuple = getMangledClass("", "Tuple");
+const std::string Type = getMangledClass("", "type");
+const std::string TypeWrap = getMangledClass("", "TypeWrap");
+const std::string UInt = getMangledClass("", "UInt");
+const std::string Union = getMangledClass("", "Union");
+const std::string UnrealizedType = getMangledClass("", "unrealized_type");
+const std::string Vec = getMangledClass("std.simd", "Vec");
+
+const std::string CallableTrait = "CallableTrait";
+const std::string TypeTrait = "TypeTrait";
+}; // namespace StdlibTypes
 
 } // namespace codon::ast

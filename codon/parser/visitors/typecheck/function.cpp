@@ -64,17 +64,16 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
   expr->expr = transform(expr->getExpr());
   if (!expr->transformed) {
     if (auto c = expr->getExpr()->getType()->getClass()) {
-      bool isCoroutine = c->is(getMangledClass("std.internal.core", "Coroutine")) ||
+      bool isCoroutine = c->is(StdlibTypes::Coroutine) ||
                          c->is(getMangledClass("std.asyncio", "Future")) ||
                          c->is(getMangledClass("std.asyncio", "Task"));
       if (!isCoroutine) {
         if (!findMethod(c, "__await__").empty()) {
           auto e = transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__await__")));
-          isCoroutine =
-              e->getType()->is(getMangledClass("std.internal.core", "Coroutine")) ||
-              e->getType()->is(getMangledClass("std.asyncio", "Future")) ||
-              e->getType()->is(getMangledClass("std.asyncio", "Task")) ||
-              e->getType()->is(getMangledClass("std.internal.core", "Generator"));
+          isCoroutine = e->getType()->is(StdlibTypes::Coroutine) ||
+                        e->getType()->is(getMangledClass("std.asyncio", "Future")) ||
+                        e->getType()->is(getMangledClass("std.asyncio", "Task")) ||
+                        e->getType()->is(StdlibTypes::Generator);
           if (!isCoroutine) {
             E(Error::EXPECTED_TYPE, expr, "awaitable");
           } else {
@@ -100,8 +99,8 @@ void TypecheckVisitor::visit(AwaitExpr *expr) {
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(ReturnStmt *stmt) {
   if (stmt->hasAttribute(Attr::Internal)) {
-    stmt->expr = transform(N<CallExpr>(
-        N<IdExpr>(getMangledMethod("std.internal.core", "NoneType", "__new__"))));
+    stmt->expr =
+        transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "NoneType", "__new__"))));
     stmt->setDone();
     return;
   }
@@ -116,7 +115,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     if (ctx->getBase()->func->hasAttribute(Attr::IsGenerator))
       E(Error::CUSTOM, stmt, "returning values from generators not yet supported");
     if (!stmt->expr)
-      stmt->expr = N<CallExpr>(N<IdExpr>("NoneType"));
+      stmt->expr = N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType));
     stmt->expr = transform(stmt->getExpr());
 
     // Wrap expression to match the return type
@@ -128,7 +127,7 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
     // Special case: partialize functions if we are returning them
     if (stmt->getExpr()->getType()->getFunc() &&
         !(ctx->getBase()->returnType->getClass() &&
-          ctx->getBase()->returnType->is("Function"))) {
+          ctx->getBase()->returnType->is(StdlibTypes::Function))) {
       stmt->expr = transform(
           N<CallExpr>(N<IdExpr>(stmt->getExpr()->getType()->getFunc()->ast->getName()),
                       N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
@@ -144,7 +143,8 @@ void TypecheckVisitor::visit(ReturnStmt *stmt) {
 
     if (isAsync) {
       unify(ctx->getBase()->returnType.get(),
-            instantiateType(getStdLibType("Coroutine"), {stmt->getExpr()->getType()}));
+            instantiateType(getStdLibType(StdlibTypes::Coroutine),
+                            {stmt->getExpr()->getType()}));
     } else {
       unify(ctx->getBase()->returnType.get(), stmt->getExpr()->getType());
     }
@@ -166,7 +166,8 @@ void TypecheckVisitor::visit(YieldStmt *stmt) {
   auto isAsync = ctx->getBase()->func->isAsync();
 
   stmt->expr =
-      transform(stmt->getExpr() ? stmt->getExpr() : N<CallExpr>(N<IdExpr>("NoneType")));
+      transform(stmt->getExpr() ? stmt->getExpr()
+                                : N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType)));
   unify(ctx->getBase()->returnType.get(),
         instantiateType(getStdLibType(!isAsync ? "Generator" : "AsyncGenerator"),
                         {stmt->getExpr()->getType()}));
@@ -215,7 +216,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         stmt->setAttribute(Attr::Inline);
       else if (attrName == getMangledFunc("std.internal.attributes", "no_arg_reorder"))
         stmt->setAttribute(Attr::NoArgReorder);
-      else if (attrName == getMangledFunc("std.internal.core", "overload"))
+      else if (attrName == getMangledFunc("", "overload"))
         stmt->setAttribute(Attr::Overload);
 
       if (!stmt->hasAttribute(Attr::FunctionAttributes))
@@ -320,7 +321,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
             if (!v->isFunc()) {
               if (v->isType()) {
                 stmt->items.insert(stmt->items.begin() + insertSize++,
-                                   Param(cc, N<IdExpr>(TYPE_TYPE)));
+                                   Param(cc, N<IdExpr>(StdlibTypes::Type)));
               } else if (auto si = v->getStaticKind()) {
                 stmt->items.insert(
                     stmt->items.begin() + insertSize++,
@@ -373,9 +374,10 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
         // Special case: all simple types and Nones are handled at call site
         // (as they are not mutable).
         if (match(defaultValue, M<NoneExpr>())) {
-          if (match(a.getType(), M<IdExpr>(MOr(TYPE_TYPE, TRAIT_TYPE)))) {
-            // Special case: `arg: type = None` -> `arg: type = NoneType`
-            defaultValue = N<IdExpr>("NoneType");
+          if (match(a.getType(),
+                    M<IdExpr>(MOr(StdlibTypes::Type, StdlibTypes::TypeTrait)))) {
+            // Special case: `arg: type = None` -> `arg: type = NoneType
+            defaultValue = N<IdExpr>(StdlibTypes::NoneType);
           } else {
             ; // Do nothing. NoneExpr will be handled later (we don't want it
               // to be converted to Optional call yet.)
@@ -435,7 +437,8 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
           if (defType)
             generic->defaultType = extractType(defType)->shared_from_this();
         } else {
-          if (match(a.getType(), M<InstantiateExpr>(M<IdExpr>(TRAIT_TYPE), M_))) {
+          if (match(a.getType(),
+                    M<InstantiateExpr>(M<IdExpr>(StdlibTypes::TypeTrait), M_))) {
             // Parse TraitVar
             auto l = transformType(cast<InstantiateExpr>(a.getType())->front(), true)
                          ->getType();
@@ -814,7 +817,7 @@ std::tuple<bool, std::string, std::string> TypecheckVisitor::getDecorator(Expr *
 
 /// Generate and return `Function[Tuple[args...], ret]` type
 std::shared_ptr<ClassType> TypecheckVisitor::getFuncTypeBase(size_t nargs) {
-  auto baseType = instantiateType(getStdLibType("Function"));
+  auto baseType = instantiateType(getStdLibType(StdlibTypes::Function));
   unify(extractClassGeneric(baseType->getClass()),
         instantiateType(generateTuple(nargs, false)));
   return std::static_pointer_cast<types::ClassType>(baseType);

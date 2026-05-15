@@ -5,6 +5,7 @@
 #include "codon/cir/analyze/dataflow/reaching.h"
 #include "codon/cir/util/cloning.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/parser/cache.h"
 
 #include <algorithm>
 
@@ -149,8 +150,7 @@ std::vector<Term> replaceLoopVariable(const std::vector<Term> &terms, Var *loopV
 
 bool isArrayType(types::Type *t, bool dim1 = false) {
   bool result = t && isA<types::RecordType>(t) &&
-                t->getName().rfind(
-                    ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[", 0) == 0;
+                t->getName().rfind(ast::StdlibTypes::NDArray + "[", 0) == 0;
   if (result && dim1) {
     auto generics = t->getGenerics();
     seqassertn(generics.size() == 2 && generics[0].isType() && generics[1].isStatic(),

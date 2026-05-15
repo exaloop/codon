@@ -900,6 +900,64 @@ class X(M[int]):
 l = [M[float](1.1), X(2)]
 print(l.__class__.__name__)  #: List[object]
 
+
+
+'''
+Root1   Root2
+|    \    /
+P1    \  /
+|      P3
+P2    /
+|    /
+Middle
+|     \
+P4    P5
+|     |
+End---+
+'''
+
+class Root1:
+    r1: int
+
+class Root2:
+    r2: int
+
+class P1(Root1):
+    p1: int
+
+class P2(P1):
+    p2: int
+
+class P3(Root1, Root2):
+    p3: int
+
+class Middle(P2, P3):
+    middle: int
+
+m = Middle(1, 2, 3, 4, 5, 6)
+print(Middle.__mro__)
+print(tuple(m))
+#: (<class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
+#: (1, 2, 3, 4, 5, 6)
+
+
+class P4(Middle):
+    p4: int
+
+class P5(Middle):
+    p5: int
+
+class End(P4, P5):
+    end: int
+
+e = End(1, 2, 3, 4, 5, 6, 7, 8, 9)
+print(End.__mro__)
+print(tuple(e))
+#: (<class 'P4'>, <class 'P5'>, <class 'Middle'>, <class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
+#: (1, 2, 3, 4, 5, 6, 7, 8, 9)
+
+
+
 #%% polymorphism_2
 class Expr:
     def __init__(self):

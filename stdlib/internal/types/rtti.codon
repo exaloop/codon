@@ -143,10 +143,6 @@ class RTTIType:
         ti = type._force_cast(obj, RTTIType).typeinfo
         return type._force_cast(ti, TypeInfo)
 
-
-
-
-
     def _isinstance(obj, TW: type) -> bool:
         obj_info = RTTIType._typeinfo(obj)
         return obj_info.id == TW.__id__ or obj_info.is_parent(TW)

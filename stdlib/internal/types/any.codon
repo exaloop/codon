@@ -20,7 +20,7 @@ class Any:
         return __magic__.new(Any)
 
     def __init__(self, ti: TypeInfo, data: Ptr[byte]):
-        if ti.isinstance(Any):
+        if ti.isinstance(Any):  # Disallow Any[Any]
             obj = type._force_cast(data, Any)
             self._typeinfo = obj._typeinfo
             self._data = obj._data
@@ -29,7 +29,7 @@ class Any:
             self._data = data
 
     def __init__(self, obj):
-        if isinstance(obj, Any):
+        if isinstance(obj, Any):  # Disallow Any[Any]
             self._typeinfo = obj._typeinfo
             self._data = obj._data
             return
@@ -40,6 +40,10 @@ class Any:
             p = Ptr[T](1)
             p[0] = obj
             self._data = p.as_byte()
+        # elif static.has_rtti(T):
+        #     self._typeinfo = RTTIType._typeinfo(obj)
+        #     _, (off, _) = RTTIType._find_offsets(obj, T, T)
+        #     self._data = type._force_cast(obj, RTTIType).data - off
         else:
             self._data = obj.__raw__().as_byte()
 
@@ -49,6 +53,15 @@ class Any:
         if isinstance(T, ByVal):
             p = type._force_cast(self._data, Ptr[T])
             return p[0]
+        # elif static.has_rtti(T):
+        #     toff = -1
+        #     for pos, (mro, off) in enumerate(self._typeinfo.mro):
+        #         if T.__id__ == mro:
+        #             toff = off
+        #             break
+        #     if toff:
+        #         raise TypeError(f"Any.unwrap failed: cannot find {T} in {self._typeinfo.nice_name}")
+        #     return RTTIType._new(self._data + toff, self._typeinfo, T)
         else:
             return type._force_cast(self._data, T)
 

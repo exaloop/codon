@@ -32,6 +32,8 @@ from internal.types.range import *
 from internal.types.complex import *
 from internal.types.strbuf import strbuf as _strbuf
 from internal.types.collections.list import *
+from internal.types.collections.set import *
+from internal.types.collections.dict import *
 import internal.c_stubs as _C
 from internal.format import *
 
@@ -46,82 +48,6 @@ def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     return g.__next__()
 
 from C import seq_print_full(str, cobj)
-
-class Set:
-    items: List[T]
-    T: type = NoneType
-
-    def __init__(self):
-        self.items = []
-
-    def __iter__(self) -> Generator[T]:
-        yield from self.items
-
-    def add(self, what: T):
-        if what not in self.items:
-            self.items.append(what)
-
-    def __repr__(self) -> str:
-        if len(self.items) == 0:
-            return "set()"
-        s = self.items.__repr__()
-        s.ptr[0] = "{".ptr[0]
-        s.ptr[s.len - 1] = "}".ptr[0]
-        return s
-
-class Dict(object):
-    keys: List[K]
-    values: List[V]
-    K: type = NoneType
-    V: type = NoneType
-
-    def __init__(self):
-        self.keys = []
-        self.values = []
-
-    def __iter__(self) -> Generator[K]:
-        yield from self.keys
-
-    def items(self) -> Generator[Tuple[K, V]]:
-        for i in range(self.keys.len):
-            yield (self.keys[i], self.values[i])
-
-    def __contains__(self, key: K) -> bool:
-        return self.keys.find(key) != -1
-
-    def __getitem__(self, key: K) -> V:
-        i = self.keys.find(key)
-        return self.values[i]
-
-    def __setitem__(self, key: K, val: V):
-        i = self.keys.find(key)
-        if i != -1:
-            self.values[i] = val
-        else:
-            self.keys.append(key)
-            self.values.append(val)
-
-    def __len__(self) -> int:
-        return self.keys.len
-
-    def __repr__(self) -> str:
-        n = self.__len__()
-        if n == 0:
-            return "{}"
-        else:
-            lst = []
-            lst.append("{")
-            first = True
-            for k, v in self.items():
-                if not first:
-                    lst.append(", ")
-                else:
-                    first = False
-                lst.append(k.__repr__())
-                lst.append(": ")
-                lst.append(v.__repr__())
-            lst.append("}")
-            return str.cat(lst)
 
 @extend
 class str:
