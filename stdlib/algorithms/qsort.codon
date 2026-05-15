@@ -55,12 +55,12 @@ def _qsort(
             i += 1
         return
 
-    mid = cnt // 2
+    mid = cnt.cdiv(2)
     lo = frm
     hi = frm + cnt - 1
 
     if cnt > 40:
-        s = cnt // 8
+        s = cnt.cdiv(8)
         lo = _med3(lo, lo + s, lo + 2 * s, arr, key)
         mid = _med3(mid - s, mid, mid + s, arr, key)
         hi = _med3(hi - 2 * s, hi - s, hi, arr, key)

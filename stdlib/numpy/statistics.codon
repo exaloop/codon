@@ -289,9 +289,9 @@ def _correlate(a, b, mode: str):
         if dtype is not ktype:
             return False
 
-        dstride //= util.sizeof(dtype)
-        kstride //= util.sizeof(dtype)
-        ostride //= util.sizeof(dtype)
+        dstride = dstride.cdiv(util.sizeof(dtype))
+        kstride = kstride.cdiv(util.sizeof(dtype))
+        ostride = ostride.cdiv(util.sizeof(dtype))
 
         if nk == 1:
             kernel(d=d, dstride=dstride, nd=nd, dtype=dtype,

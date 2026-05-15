@@ -300,6 +300,8 @@ def _floor_div(x, y):
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pydiv(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cdiv(y)
     else:
         return x // y
 
@@ -613,11 +615,7 @@ def _lcm(x, y):
     return x // gcd * y if gcd else 0
 
 def _reciprocal(x: T, T: type):
-    if (
-        isinstance(x, int) or
-        isinstance(x, Int) or
-        isinstance(x, UInt)
-    ):
+    if isinstance(x, Int) or isinstance(x, UInt):
         return T(1) // x
     else:
         return T(1) / x

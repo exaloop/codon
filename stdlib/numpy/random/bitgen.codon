@@ -1085,7 +1085,7 @@ class BitGenerator[G]:
         leftover = itrunc(m & u128(0xFFFFFFFFFFFFFFFF), u64)
 
         if leftover < rng_excl:
-            threshold = (u64(0xFFFFFFFFFFFFFFFF) - rng) % rng_excl
+            threshold = (u64(0xFFFFFFFFFFFFFFFF) - rng).cmod(rng_excl)
 
             while leftover < threshold:
                 m = zext(self.next64(), u128) * zext(rng_excl, u128)
@@ -1100,7 +1100,7 @@ class BitGenerator[G]:
         leftover = itrunc(m & u64(0xFFFFFFFF), u32)
 
         if leftover < rng_excl:
-            threshold = (u32(0xFFFFFFFF) - rng) % rng_excl
+            threshold = (u32(0xFFFFFFFF) - rng).cmod(rng_excl)
 
             while leftover < threshold:
                 m = zext(self.next32(), u64) * zext(rng_excl, u64)
@@ -1116,7 +1116,7 @@ class BitGenerator[G]:
         leftover = itrunc(m & u32(0xFFFF), u16)
 
         if leftover < rng_excl:
-            threshold = (u16(0xFFFF) - rng) % rng_excl
+            threshold = (u16(0xFFFF) - rng).cmod(rng_excl)
 
             while leftover < threshold:
                 val, bcnt, buf = self.buffered_uint16(bcnt, buf)
@@ -1133,7 +1133,7 @@ class BitGenerator[G]:
         leftover = itrunc(m & u16(0xFF), u8)
 
         if leftover < rng_excl:
-            threshold = (u8(0xFF) - rng) % rng_excl
+            threshold = (u8(0xFF) - rng).cmod(rng_excl)
 
             while leftover < threshold:
                 val, bcnt, buf = self.buffered_uint8(bcnt, buf)
@@ -1336,7 +1336,7 @@ class BitGenerator[G]:
         computed_sample = 0
         total = good + bad
 
-        if sample > total // 2:
+        if sample > total.cdiv(2):
             computed_sample = total - sample
         else:
             computed_sample = sample
@@ -1356,7 +1356,7 @@ class BitGenerator[G]:
             remaining_good -= computed_sample
 
         result = 0
-        if sample > total // 2:
+        if sample > total.cdiv(2):
             result = remaining_good
         else:
             result = good - remaining_good
@@ -1450,7 +1450,7 @@ class BitGenerator[G]:
                 choices[k] = i
                 k += 1
 
-        more_than_half = nsample > (total // 2)
+        more_than_half = (nsample > total.cdiv(2))
         if more_than_half:
             nsample = total - nsample
 
@@ -1476,7 +1476,7 @@ class BitGenerator[G]:
         if total == 0 or nsample == 0 or num_variates == 0:
             return
 
-        more_than_half = nsample > total // 2
+        more_than_half = (nsample > total.cdiv(2))
         if more_than_half:
             nsample = total - nsample
 
@@ -1694,8 +1694,8 @@ CONS_GT_1            : Literal[int] = 7
 CONS_GTE_1           : Literal[int] = 8
 CONS_POISSON         : Literal[int] = 9
 
-MAX_INT = 0x7FFFFFFFFFFFFFFF
-MAXSIZE = MAX_INT
+MAX_INT: Literal[int] = 0x7FFFFFFFFFFFFFFF
+MAXSIZE: Literal[int] = MAX_INT
 POISSON_LAM_MAX = MAX_INT - sqrt(float(MAX_INT))*10
 
 def _signbit(x: T, T: type):
@@ -2053,7 +2053,7 @@ class Generator[G]:
     def bytes(self, length: int):
         if length < 0:
             raise ValueError("length must be non-negative")
-        n_uint32 = ((length - 1) // 4 + 1)
+        n_uint32 = ((length - 1).cdiv(4) + 1)
         arr = self.integers(0, 4294967296, size=n_uint32, dtype=u32)
         return str(arr.data.as_byte(), length)
 
@@ -2068,7 +2068,7 @@ class Generator[G]:
             lo = 0
             hi = n
             while lo < hi:
-                mid = (lo + hi) // 2
+                mid = (lo + hi).cdiv(2)
                 if x < a[mid]:
                     hi = mid
                 else:
@@ -2214,7 +2214,7 @@ class Generator[G]:
                 else:
                     cutoff = 20
 
-                if pop_size_i > 10000 and (size_i > (pop_size_i // cutoff)):
+                if pop_size_i > 10000 and (size_i > pop_size_i.cdiv(cutoff)):
                     idx1a = arange(0, pop_size_i, 1, int)
                     idx_data = idx1a.data
                     with self.lock:
@@ -2718,7 +2718,7 @@ class Generator[G]:
         check_array_constraint(ni, 'n', CONS_NON_NEGATIVE)
         offset = 0
         with self.lock:
-            for i in range(sz // d):
+            for i in range(sz.cdiv(d)):
                 self.bit_generator.random_multinomial(ni, mnix + offset, pix, d)
                 offset += d
 
@@ -2766,7 +2766,7 @@ class Generator[G]:
                 raise ValueError('When method is "marginals", sum(colors) must '
                                  'be less than 1000000000.')
 
-        max_index = MAXSIZE // util.sizeof(int)
+        max_index = MAXSIZE.cdiv(util.sizeof(int))
         if method == 'count' and total > max_index:
             raise ValueError(f"When method is 'count', sum(colors) must not "
                              f"exceed {max_index}")
@@ -2783,7 +2783,7 @@ class Generator[G]:
         if num_colors == 0:
             return variates
 
-        num_variates = variates.size // num_colors
+        num_variates = variates.size.cdiv(num_colors)
         variates_ptr = variates.data
 
         if method == 'count':

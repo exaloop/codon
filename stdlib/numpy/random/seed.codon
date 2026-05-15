@@ -142,7 +142,7 @@ class SeedSequence:
         npool = len(self.pool)
 
         for i_dst in range(n_words):
-            data_val = pool[i_dst % npool]
+            data_val = pool[i_dst.cmod(npool)]
             data_val ^= hash_const
             hash_const *= MULT_B
             data_val *= hash_const
@@ -150,7 +150,7 @@ class SeedSequence:
             state[i_dst] = data_val
 
         if dtype is u64:
-            return ndarray((n_words // 2,), Ptr[u64](state.data.as_byte()))
+            return ndarray((n_words.cdiv(2),), Ptr[u64](state.data.as_byte()))
         else:
             return state
 

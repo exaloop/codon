@@ -311,7 +311,7 @@ def _gcd2(a, b):
     a = abs(a)
     b = abs(b)
     while a:
-        a, b = b % a, a
+        a, b = b.cmod(a), a
     return b
 
 def gcd(*args):
@@ -333,7 +333,7 @@ def gcd(*args):
 
 def lcm(*args):
     def lcm2(a, b):
-        return abs((a // _gcd2(a, b)) * b)
+        return abs((a.cdiv(_gcd2(a, b))) * b)
 
     if static.len(args) == 0:
         return 1

@@ -32,10 +32,10 @@ def median(data: List[T], T: type) -> float:
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    if n % 2 == 1:
-        return float(data[n // 2])
+    if n.cmod(2) == 1:
+        return float(data[n.cdiv(2)])
     else:
-        i = n // 2
+        i = n.cdiv(2)
         return (data[i - 1] + data[i]) / 2
 
 def median_low(data: List[T], T: type) -> float:
@@ -49,10 +49,10 @@ def median_low(data: List[T], T: type) -> float:
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    if n % 2 == 1:
-        return float(data[n // 2])
+    if n.cmod(2) == 1:
+        return float(data[n.cdiv(2)])
     else:
-        return float(data[n // 2 - 1])
+        return float(data[n.cdiv(2) - 1])
 
 def median_high(data: List[T], T: type) -> float:
     """
@@ -65,7 +65,7 @@ def median_high(data: List[T], T: type) -> float:
     n = len(data)
     if n == 0:
         raise StatisticsError("no median for empty data")
-    return float(data[n // 2])
+    return float(data[n.cdiv(2)])
 
 def _find_lteq(a: List[T], x: float, T: type):
     """
@@ -97,7 +97,7 @@ def median_grouped(data: List[T], interval: S = 1, T: type, S: type = int) -> fl
         return float(data[0])
 
     # Find the value at the midpoint.
-    x = float(data[n // 2])
+    x = float(data[n.cdiv(2)])
     L = x - float(interval) / 2  # The lower limit of the median interval.
 
     # Find the position of leftmost occurrence of x in data
@@ -175,7 +175,7 @@ def quantiles(
         m = ld - 1
         result = []
         for i in range(1, n):
-            j = i * m // n
+            j = i * m.cdiv(n)
             delta = (i * m) - (j * n)
             interpolated = (data[j] * (n - delta) + data[j + 1] * delta) / n
             result.append(interpolated)
@@ -184,7 +184,7 @@ def quantiles(
         m = ld + 1
         result = []
         for i in range(1, n):
-            j = i * m // n  # rescale i to m/n
+            j = i * m.cdiv(n)  # rescale i to m/n
             j = 1 if j < 1 else ld - 1 if j > ld - 1 else j  # clamp to 1 .. ld-1
             delta = (i * m) - (j * n)  # exact integer math
             interpolated = (data[j - 1] * (n - delta) + data[j] * delta) / n
@@ -203,7 +203,7 @@ def _lcm(x: int, y: int):
         greater = y
 
     while True:
-        if greater % x == 0 and greater % y == 0:
+        if greater.cmod(x) == 0 and greater.cmod(y) == 0:
             lcm = greater
             return lcm
         greater += 1

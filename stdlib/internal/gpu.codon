@@ -992,7 +992,7 @@ def _gpu_loop_outline_template(start, stop, args, instance: Literal[int]):
     grid = 1
     if n > MAX_BLOCK:
         block = MAX_BLOCK
-        grid = (n // MAX_BLOCK) + (0 if n % MAX_BLOCK == 0 else 1)
+        grid = n.cdiv(MAX_BLOCK) + (0 if n.cmod(MAX_BLOCK) == 0 else 1)
 
     _kernel_stub(start, n, args, grid=grid, block=block)
 

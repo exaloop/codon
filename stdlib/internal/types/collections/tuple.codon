@@ -28,7 +28,7 @@ class DynamicTuple:
         p = Ptr[T](m)
         for a in x:
             if n == m:
-                new_m = (1 + 3*m) // 2
+                new_m = (1 + 3*m).cdiv(2)
                 p = Ptr[T](realloc(p.as_byte(), new_m * sizeof(T), m * sizeof(T)))
                 m = new_m
             p[n] = a

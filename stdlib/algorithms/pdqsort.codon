@@ -183,7 +183,7 @@ def _pdq_sort(
             _insertion_sort(arr, begin, end, keyf)
             return
 
-        size_2 = size // 2
+        size_2 = size.cdiv(2)
         if size > NINTHER_THRESHOLD:
             _sort3(arr, begin, begin + size_2, end - 1, keyf)
             _sort3(arr, begin + 1, begin + (size_2 - 1), end - 2, keyf)
@@ -205,7 +205,7 @@ def _pdq_sort(
 
         l_size = pivot_pos - begin
         r_size = end - (pivot_pos + 1)
-        highly_unbalanced = (l_size < (size // 8)) or (r_size < (size // 8))
+        highly_unbalanced = (l_size < size.cdiv(8)) or (r_size < size.cdiv(8))
 
         if highly_unbalanced:
             bad_allowed -= 1
@@ -214,58 +214,58 @@ def _pdq_sort(
                 return
 
             if l_size >= INSERTION_SORT_THRESHOLD:
-                arr[begin], arr[begin + l_size // 4] = (
-                    arr[begin + l_size // 4],
+                arr[begin], arr[begin + l_size.cdiv(4)] = (
+                    arr[begin + l_size.cdiv(4)],
                     arr[begin],
                 )
-                arr[pivot_pos - 1], arr[pivot_pos - l_size // 4] = (
-                    arr[pivot_pos - l_size // 4],
+                arr[pivot_pos - 1], arr[pivot_pos - l_size.cdiv(4)] = (
+                    arr[pivot_pos - l_size.cdiv(4)],
                     arr[pivot_pos - 1],
                 )
 
                 if l_size > NINTHER_THRESHOLD:
-                    arr[begin + 1], arr[begin + (l_size // 4 + 1)] = (
-                        arr[begin + (l_size // 4 + 1)],
+                    arr[begin + 1], arr[begin + (l_size.cdiv(4) + 1)] = (
+                        arr[begin + (l_size.cdiv(4) + 1)],
                         arr[begin + 1],
                     )
-                    arr[begin + 2], arr[begin + (l_size // 4 + 2)] = (
-                        arr[begin + (l_size // 4 + 2)],
+                    arr[begin + 2], arr[begin + (l_size.cdiv(4) + 2)] = (
+                        arr[begin + (l_size.cdiv(4) + 2)],
                         arr[begin + 2],
                     )
-                    arr[pivot_pos - 2], arr[pivot_pos - (l_size // 4 + 1)] = (
-                        arr[pivot_pos - (l_size // 4 + 1)],
+                    arr[pivot_pos - 2], arr[pivot_pos - (l_size.cdiv(4) + 1)] = (
+                        arr[pivot_pos - (l_size.cdiv(4) + 1)],
                         arr[pivot_pos - 2],
                     )
-                    arr[pivot_pos - 3], arr[pivot_pos - (l_size // 4 + 2)] = (
-                        arr[pivot_pos - (l_size // 4 + 2)],
+                    arr[pivot_pos - 3], arr[pivot_pos - (l_size.cdiv(4) + 2)] = (
+                        arr[pivot_pos - (l_size.cdiv(4) + 2)],
                         arr[pivot_pos - 3],
                     )
 
             if r_size >= INSERTION_SORT_THRESHOLD:
-                arr[pivot_pos + 1], arr[pivot_pos + (1 + r_size // 4)] = (
-                    arr[pivot_pos + (1 + r_size // 4)],
+                arr[pivot_pos + 1], arr[pivot_pos + (1 + r_size.cdiv(4))] = (
+                    arr[pivot_pos + (1 + r_size.cdiv(4))],
                     arr[pivot_pos + 1],
                 )
-                arr[end - 1], arr[end - r_size // 4] = (
-                    arr[end - r_size // 4],
+                arr[end - 1], arr[end - r_size.cdiv(4)] = (
+                    arr[end - r_size.cdiv(4)],
                     arr[end - 1],
                 )
 
                 if r_size > NINTHER_THRESHOLD:
-                    arr[pivot_pos + 2], arr[pivot_pos + (2 + r_size // 4)] = (
-                        arr[pivot_pos + (2 + r_size // 4)],
+                    arr[pivot_pos + 2], arr[pivot_pos + (2 + r_size.cdiv(4))] = (
+                        arr[pivot_pos + (2 + r_size.cdiv(4))],
                         arr[pivot_pos + 2],
                     )
-                    arr[pivot_pos + 3], arr[pivot_pos + (3 + r_size // 4)] = (
-                        arr[pivot_pos + (3 + r_size // 4)],
+                    arr[pivot_pos + 3], arr[pivot_pos + (3 + r_size.cdiv(4))] = (
+                        arr[pivot_pos + (3 + r_size.cdiv(4))],
                         arr[pivot_pos + 3],
                     )
-                    arr[end - 2], arr[end - (1 + r_size // 4)] = (
-                        arr[end - (1 + r_size // 4)],
+                    arr[end - 2], arr[end - (1 + r_size.cdiv(4))] = (
+                        arr[end - (1 + r_size.cdiv(4))],
                         arr[end - 2],
                     )
-                    arr[end - 3], arr[end - (2 + r_size // 4)] = (
-                        arr[end - (2 + r_size // 4)],
+                    arr[end - 3], arr[end - (2 + r_size.cdiv(4))] = (
+                        arr[end - (2 + r_size.cdiv(4))],
                         arr[end - 3],
                     )
 

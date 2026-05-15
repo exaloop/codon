@@ -853,12 +853,12 @@ def convolve(v, a, mode: str = "full"):
     if mode == "valid":
         reslen = length - n + 1
     elif mode == "same":
-        if n % 2 == 1:
-            n_left = n // 2
-            n_right = n // 2
+        if n.cmod(2) == 1:
+            n_left = n.cdiv(2)
+            n_right = n.cdiv(2)
             desc = n - n_left - 1
         else:
-            n_left = n // 2
+            n_left = n.cdiv(2)
             n_right = n - n_left - 1
             desc = n - n_left
         reslen = length
@@ -1152,11 +1152,7 @@ def _lcm(x, y):
     return x // gcd * y if gcd else 0
 
 def _reciprocal(x: T, T: type):
-    if (
-        isinstance(x, int) or
-        isinstance(x, Int) or
-        isinstance(x, UInt)
-    ):
+    if isinstance(x, Int) or isinstance(x, UInt):
         return T(1) // x
     else:
         return T(1) / x
@@ -1352,6 +1348,8 @@ def _floor_divide(x, y):
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pydiv(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cdiv(y)
     else:
         return x // y
 

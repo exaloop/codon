@@ -879,9 +879,9 @@ def _atomic_float32_max(a: Ptr[float32], b: float32) -> None:
 
 def _range_len(start: int, stop: int, step: int):
     if step > 0 and start < stop:
-        return 1 + (stop - 1 - start) // step
+        return 1 + (stop - 1 - start).cdiv(step)
     elif step < 0 and start > stop:
-        return 1 + (start - 1 - stop) // (-step)
+        return 1 + (start - 1 - stop).cdiv(-step)
     else:
         return 0
 

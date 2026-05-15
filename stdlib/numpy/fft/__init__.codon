@@ -335,13 +335,13 @@ def fftshift(x, axes=None):
     x = asarray(x)
     if axes is None:
         axes1 = tuple_range(x.ndim)
-        shift = tuple(dim // 2 for dim in x.shape)
+        shift = tuple(dim.cdiv(2) for dim in x.shape)
     elif isinstance(axes, int):
         axes1 = axes
-        shift = x.shape[axes] // 2
+        shift = x.shape[axes].cdiv(2)
     else:
         axes1 = axes
-        shift = tuple(x.shape[ax] // 2 for ax in axes)
+        shift = tuple(x.shape[ax].cdiv(2) for ax in axes)
 
     return roll(x, shift, axes1)
 
@@ -349,28 +349,28 @@ def ifftshift(x, axes=None):
     x = asarray(x)
     if axes is None:
         axes1 = tuple_range(x.ndim)
-        shift = tuple(-(dim // 2) for dim in x.shape)
+        shift = tuple(-(dim.cdiv(2)) for dim in x.shape)
     elif isinstance(axes, int):
         axes1 = axes
-        shift = -(x.shape[axes] // 2)
+        shift = -(x.shape[axes].cdiv(2))
     else:
         axes1 = axes
-        shift = tuple(-(x.shape[ax] // 2) for ax in axes)
+        shift = tuple(-(x.shape[ax].cdiv(2)) for ax in axes)
 
     return roll(x, shift, axes1)
 
 def fftfreq(n: int, d: float = 1.0):
-    val = 1.0 / (n * d)
+    val = (1.0).cdiv(n * d)
     results = empty(n, int)
-    N = (n-1)//2 + 1
+    N = (n-1).cdiv(2) + 1
     p1 = arange(0, N, dtype=int)
     results[:N] = p1
-    p2 = arange(-(n//2), 0, dtype=int)
+    p2 = arange(-(n.cdiv(2)), 0, dtype=int)
     results[N:] = p2
     return results * val
 
 def rfftfreq(n: int, d: float = 1.0):
-    val = 1.0/(n*d)
-    N = n//2 + 1
+    val = (1.0).cdiv(n*d)
+    N = n.cdiv(2) + 1
     results = arange(0, N, dtype=int)
     return results * val

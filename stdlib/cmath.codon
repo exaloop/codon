@@ -27,14 +27,14 @@ def _min_float() -> float:
 
 _DBL_MAX = _max_float()
 _DBL_MIN = _min_float()
-_DBL_MANT_DIG = 53
+_DBL_MANT_DIG: Literal[int] = 53
 
 _CM_LARGE_DOUBLE = _DBL_MAX/4.
 _CM_SQRT_LARGE_DOUBLE = math.sqrt(_CM_LARGE_DOUBLE)
 _CM_LOG_LARGE_DOUBLE = math.log(_CM_LARGE_DOUBLE)
 _CM_SQRT_DBL_MIN = math.sqrt(_DBL_MIN)
-_CM_SCALE_UP = (2*(_DBL_MANT_DIG // 2) + 1)
-_CM_SCALE_DOWN = (-(_CM_SCALE_UP+1)//2)
+_CM_SCALE_UP: Literal[int] = (2*(_DBL_MANT_DIG // 2) + 1)
+_CM_SCALE_DOWN: Literal[int] = (-(_CM_SCALE_UP+1)//2)
 
 # special types
 _ST_NINF  = 0  # negative infinity

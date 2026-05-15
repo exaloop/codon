@@ -305,15 +305,17 @@ def repr(x):
         return x.__repr_default__()
     return x.__repr__()
 
-def _int_format(a: int, base: int, prefix: str = ""):
-    assert base == 2 or base == 8 or base == 10 or base == 16
+def _int_format(a: int, base: Literal[int], prefix: str = ""):
+    if not (base == 2 or base == 8 or base == 10 or base == 16):
+        compile_error("invalid base for int_format()")
+
     chars = "0123456789abcdef-"
 
     b = a
     digits = 0
     while b != 0:
         digits += 1
-        b //= base
+        b = b.cdiv(base)
 
     sz = digits + (1 if a <= 0 else 0) + len(prefix)
     p = Ptr[u8](sz)
@@ -333,9 +335,9 @@ def _int_format(a: int, base: int, prefix: str = ""):
         i = 1
         while b != 0:
             i += 1
-            q[0] = chars._ptr[abs(b % base)]
+            q[0] = chars._ptr[abs(b.cmod(base))]
             q += -1
-            b //= base
+            b = b.cdiv(base)
     else:
         q[0] = chars._ptr[0]
 
@@ -361,17 +363,17 @@ def pow(base: int, exp: int, mod: Optional[int] = None):
     if mod is not None:
         if mod == 0:
             raise ValueError("pow() 3rd argument cannot be 0")
-        base %= mod
+        base = base.cmod(mod)
 
     result = 1
     while exp > 0:
         if exp & 1:
             x = result * base
-            result = x % mod if mod is not None else x
+            result = x.cmod(mod) if mod is not None else x
         y = base * base
-        base = y % mod if mod is not None else y
+        base = y.cmod(mod) if mod is not None else y
         exp >>= 1
-    return result % mod if mod is not None else result
+    return result.cmod(mod) if mod is not None else result
 
 _CHAR_0: Literal[int] = 48
 _CHAR_9: Literal[int] = 57
@@ -508,8 +510,8 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     have_cutoff = False
 
     if _width(T) > 5 or int(base) <= int(limit):
-        cutoff = limit // U(base)
-        cutlim = limit % U(base)
+        cutoff = limit.cdiv(U(base))
+        cutlim = limit.cmod(U(base))
         have_cutoff = True
 
     acc = U()

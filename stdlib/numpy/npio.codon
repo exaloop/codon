@@ -67,10 +67,10 @@ def _memmap(fid, dtype: type, mode: str, offset: int, shape, forder: bool):
 
     if shape is None:
         nbytes = flen - offset
-        if nbytes % dbytes:
+        if nbytes.cmod(dbytes):
             raise ValueError("Size of available data is not a "
                              "multiple of the data-type size.")
-        size = nbytes // dbytes
+        size = nbytes.cdiv(dbytes)
         sh = (size, )
     else:
         if isinstance(shape, int):
@@ -96,7 +96,7 @@ def _memmap(fid, dtype: type, mode: str, offset: int, shape, forder: bool):
         flags = _MAP_SHARED
         acc = _PROT_READ | _PROT_WRITE
 
-    start = offset - offset % _ALLOCATIONGRANULARITY
+    start = offset - offset.cmod(_ALLOCATIONGRANULARITY)
     nbytes -= start
     array_offset = offset - start
     mm = _mmap(fid, length=nbytes, access=acc, flags=flags, offset=start)
@@ -283,7 +283,7 @@ def _save(f, arr):
     f.write('\x02\x00' if long_header else '\x01\x00')
 
     m = len(_MAGIC_PREFIX) + 2 + (4 if long_header else 2) + header_len
-    rem = m % _ARRAY_ALIGN
+    rem = m.cmod(_ARRAY_ALIGN)
     spaces = (_ARRAY_ALIGN - rem) if rem else 0
     header_len += spaces
 
@@ -425,7 +425,7 @@ def _fromfile(f, dtype: type, count: int, sep: str, offset: int):
             binary_data = f.read(count * util.sizeof(dtype))
 
         p = Ptr[dtype](binary_data._ptr)
-        n = len(binary_data) // util.sizeof(dtype)
+        n = len(binary_data).cdiv(util.sizeof(dtype))
 
     return ndarray((n, ), p)
 
@@ -470,14 +470,14 @@ def fromstring(string: str,
             if len(string) < util.sizeof(dtype):
                 raise ValueError("string is smaller than requested size")
 
-            if len(string) % util.sizeof(dtype) != 0:
+            if len(string).cmod(util.sizeof(dtype)) != 0:
                 raise ValueError(
                     "string size must be a multiple of element size")
         else:
             if len(string) < count * util.sizeof(dtype):
                 raise ValueError("string is smaller than requested size")
 
-        n = count if count >= 0 else (len(string) // util.sizeof(dtype))
+        n = count if count >= 0 else len(string).cdiv(util.sizeof(dtype))
         return ndarray((n, ), Ptr[dtype](string._ptr))
 
 def _tofile(arr, f, sep: str):
@@ -1498,8 +1498,8 @@ class CSVReaderGen:
 
         num_fields = 0
         if isinstance(delimiter, int):
-            num_fields = len(line) // delimiter + (1 if len(line) %
-                                                   delimiter else 0)
+            num_fields = (len(line).cdiv(delimiter) +
+                          (1 if len(line).cmod(delimiter) else 0))
         else:
             num_fields = len(delimiter)
 
@@ -1587,8 +1587,8 @@ class CSVReaderGen:
                 i += 1
 
         if isinstance(delimiter, int):
-            num_fields = len(line) // delimiter + (1 if len(line) %
-                                                   delimiter else 0)
+            num_fields = (len(line).cdiv(delimiter) +
+                          (1 if len(line).cmod(delimiter) else 0))
         else:
             num_fields = len(delimiter)
 

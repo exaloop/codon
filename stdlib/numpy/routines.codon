@@ -701,7 +701,7 @@ def fromiter(iterable, dtype: type, count: int = -1):
 
 def frombuffer(buffer: str, dtype: type = float, count: int = -1, offset: int = 0):
     if count < 0:
-        count = (len(buffer) - offset) // util.sizeof(dtype)
+        count = (len(buffer) - offset).cdiv(util.sizeof(dtype))
 
     p = Ptr[dtype](buffer._ptr + offset)
     return ndarray((count,), p)
@@ -2026,7 +2026,7 @@ def split(ary, indices_or_sections, axis: int = 0):
         sections = indices_or_sections
         axis = util.normalize_axis_index(axis, ary.ndim)
         N = ary.shape[axis]
-        if N % sections:
+        if N.cmod(sections):
             raise ValueError("array split does not result in an equal division")
     return array_split(ary, indices_or_sections, axis)
 
@@ -2130,7 +2130,7 @@ def rot90(m, k: int = 1, axes: Tuple[int,int] = (0, 1)):
         or axes[1] >= ndim or axes[1] < -ndim):
         raise ValueError(f"Axes={axes} out of range for array of ndim={m.ndim}.")
 
-    k %= 4
+    k = k.cmod(4)
 
     if k == 0:
         return m[:]

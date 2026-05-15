@@ -239,7 +239,7 @@ class BigInt:
 
     @property
     def even(self):
-        return len(self) == 0 or (self[0] % u32(2) == u32(0))
+        return len(self) == 0 or (self[0].cmod(u32(2)) == u32(0))
 
     def compare(self, rhs: BigInt):
         lhs = self
@@ -505,7 +505,7 @@ class BigInt:
 
         final_divisor_block = divisor.blocks + (length - 1)
         final_dividend_block = dividend.blocks + (length - 1)
-        quotient = final_dividend_block[0] // (final_divisor_block[0] + u32(1))
+        quotient = final_dividend_block[0].cdiv(final_divisor_block[0] + u32(1))
 
         if quotient:
             divisor_cur = divisor.blocks
@@ -559,8 +559,8 @@ class BigInt:
 
     def lshift(self, shift: u32):
         result = self
-        shift_blocks = int(shift // u32(32))
-        shift_bits = int(shift % u32(32))
+        shift_blocks = int(shift.cdiv(u32(32)))
+        shift_bits = int(shift.cmod(u32(32)))
 
         p_in_blocks = result.blocks
         in_length = len(result)
@@ -721,7 +721,7 @@ def dragon4(bigints,
     hi_block = scale[len(scale) - 1]
     if hi_block < u32(8) or hi_block > u32(429496729):
         hi_block_log2 = _log_base2_32(hi_block)
-        shift = (u32(32) + u32(27) - hi_block_log2) % u32(32)
+        shift = (u32(32) + u32(27) - hi_block_log2).cmod(u32(32))
 
         scale.lshift(shift)
         scaled_value.lshift(shift)
@@ -1088,8 +1088,8 @@ def format_scientific(buffer: cobj,
             print_exponent = -print_exponent
 
         for i in range(5):
-            digits[i] = print_exponent % i32(10)
-            print_exponent //= i32(10)
+            digits[i] = print_exponent.cmod(i32(10))
+            print_exponent = print_exponent.cdiv(i32(10))
 
         i = 5
         while i > exp_digits and digits[i - 1] == i32(0):

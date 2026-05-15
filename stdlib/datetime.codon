@@ -77,7 +77,7 @@ def _signed_add_overflowed(result: int, i: int, j: int) -> bool:
 
 def _divmod(x: int, y: int) -> Tuple[int, int]:
     # assert y > 0
-    quo = x // y
+    quo = x.cdiv(y)
     r = x - quo * y
     if r < 0:
         quo -= 1
@@ -86,7 +86,7 @@ def _divmod(x: int, y: int) -> Tuple[int, int]:
     return quo, r
 
 def _divide_nearest(m: int, n: int) -> int:
-    return m // n  # TODO
+    return m.cdiv(n)  # TODO
 
 def _days_in_monthx(i: int) -> int:
     return (0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)[i]
@@ -95,7 +95,7 @@ def _days_before_monthx(i: int) -> int:
     return (0, 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)[i]
 
 def _is_leap(year: int) -> bool:
-    return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
+    return year.cmod(4) == 0 and (year.cmod(100) != 0 or year.cmod(400) == 0)
 
 def _days_in_month(year: int, month: int) -> int:
     # assert 1 <= month <= 12
@@ -114,22 +114,22 @@ def _days_before_month(year: int, month: int) -> int:
 def _days_before_year(year: int) -> int:
     y = year - 1
     # assert year >= 1
-    return y * 365 + y // 4 - y // 100 + y // 400
+    return y * 365 + y.cdiv(4) - y.cdiv(100) + y.cdiv(400)
 
 def _ord_to_ymd(ordinal: int) -> Tuple[int, int, int]:
     ordinal -= 1
-    n400 = ordinal // _DI400Y
-    n = ordinal % _DI400Y
+    n400 = ordinal.cdiv(_DI400Y)
+    n = ordinal.cmod(_DI400Y)
     year = n400 * 400 + 1
 
-    n100 = n // _DI100Y
-    n = n % _DI100Y
+    n100 = n.cdiv(_DI100Y)
+    n = n.cmod(_DI100Y)
 
-    n4 = n // _DI4Y
-    n = n % _DI4Y
+    n4 = n.cdiv(_DI4Y)
+    n = n.cmod(_DI4Y)
 
-    n1 = n // 365
-    n = n % 365
+    n1 = n.cdiv(365)
+    n = n.cmod(365)
 
     year += n100 * 100 + n4 * 4 + n1
     if n1 == 4 or n100 == 4:
@@ -154,11 +154,11 @@ def _ymd_to_ord(year: int, month: int, day: int) -> int:
     return _days_before_year(year) + _days_before_month(year, month) + day
 
 def _weekday(year: int, month: int, day: int) -> int:
-    return (_ymd_to_ord(year, month, day) + 6) % 7
+    return (_ymd_to_ord(year, month, day) + 6).cmod(7)
 
 def _iso_week1_monday(year: int) -> int:
     first_day = _ymd_to_ord(year, 1, 1)
-    first_weekday = (first_day + 6) % 7
+    first_weekday = (first_day + 6).cmod(7)
     week1_monday = first_day - first_weekday
     if first_weekday > 3:
         week1_monday += 7
@@ -552,13 +552,13 @@ class timedelta:
         return int((self._microseconds / other._microseconds).__floor__())
 
     def __floordiv__(self, other: int) -> timedelta:
-        return timedelta._new(self._microseconds // other)
+        return timedelta._new(self._microseconds.cdiv(other))
 
     def __mod__(self, other: timedelta) -> timedelta:
         n = self._microseconds
         M = other._microseconds
-        m = self._microseconds % other._microseconds
-        return timedelta._new(((n % M) + M) % M)
+        m = self._microseconds.cmod(other._microseconds)
+        return timedelta._new((n.cmod(M) + M).cmod(M))
 
     def __divmod__(self, other: timedelta) -> Tuple[int, timedelta]:
         return self // other, self % other
@@ -851,7 +851,7 @@ class time:
         mm = str(self.minute).zfill(2)
         ss = str(self.second).zfill(2)
         us = str(self.microsecond).zfill(6)
-        ms = str(self.microsecond // 1000).zfill(3)
+        ms = str(self.microsecond.cdiv(1000)).zfill(3)
 
         if timespec == "auto":
             if self.microsecond:

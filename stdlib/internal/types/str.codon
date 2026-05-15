@@ -132,7 +132,7 @@ class str:
                 if not isinstance(s, str):
                     compile_error("not a string")
                 if n + s._len > sz:
-                    sz = 1 + 3 * (n + s._len) // 2
+                    sz = 1 + 3 * (n + s._len).cdiv(2)
                     pp = cobj(sz)
                     str.memcpy(pp, p, n)
                     p = pp

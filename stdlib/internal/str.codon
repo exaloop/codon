@@ -60,8 +60,8 @@ class str:
                 if not (32 <= b <= 126):
                     h = "0123456789abcdef"
                     v.append("\\x")
-                    v.append(h[b // 16])
-                    v.append(h[b % 16])
+                    v.append(h[b.cdiv(16)])
+                    v.append(h[b.cmod(16)])
                     d = ""
             if d:
                 v.append(d)
@@ -448,7 +448,7 @@ class str:
             return self
 
         pad = width - len(self)
-        left_pad = pad // 2
+        left_pad = pad.cdiv(2)
         right_pad = width - len(self) - left_pad
         return str._build((fillchar, left_pad), self, (fillchar, right_pad))
 
@@ -743,7 +743,7 @@ class str:
         while p < e:
             if p[0] == tab:
                 if tabsize > 0:
-                    incr = tabsize - (j % tabsize)
+                    incr = tabsize - j.cmod(tabsize)
                     if j > _MAX - incr:
                         overflow()
                     j += incr
@@ -770,7 +770,7 @@ class str:
         while p < e:
             if p[0] == tab:
                 if tabsize > 0:
-                    i = tabsize - (j % tabsize)
+                    i = tabsize - j.cmod(tabsize)
                     j += i
                     while True:
                         k = i
@@ -962,7 +962,7 @@ class str:
             count = self_len + 1
 
         # assert count > 0
-        if to_len > (_MAX - self_len) // count:
+        if to_len > (_MAX - self_len).cdiv(count):
             raise OverflowError("replace bytes is too long")
 
         result_len = count * to_len + self_len
@@ -1119,7 +1119,7 @@ class str:
             return self
 
         # assert count > 0
-        if to_len - 1 > (_MAX - self_len) // count:
+        if to_len - 1 > (_MAX - self_len).cdiv(count):
             raise OverflowError("replace bytes is too long")
 
         result_len = self_len + count * (to_len - 1)
@@ -1159,7 +1159,7 @@ class str:
             return self
 
         # assert count > 0
-        if to_len - from_len > (_MAX - self_len) // count:
+        if to_len - from_len > (_MAX - self_len).cdiv(count):
             raise OverflowError("replace bytes is too long")
 
         result_len = self_len + count * (to_len - from_len)

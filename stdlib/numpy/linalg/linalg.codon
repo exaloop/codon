@@ -2460,8 +2460,8 @@ def _dot_noblas(_ip1: Ptr[T1], is1: int, _ip2: Ptr[T2], is2: int, op: Ptr[T3], n
 _CBLAS_INT_MAX: Literal[int] = 0x7fffffff
 
 def _blas_stride(stride: int, itemsize: int):
-    if stride > 0 and stride % itemsize == 0:
-        stride //= itemsize
+    if stride > 0 and stride.cmod(itemsize) == 0:
+        stride = stride.cdiv(itemsize)
         if stride <= _CBLAS_INT_MAX:
             return stride
     return 0
@@ -2493,10 +2493,10 @@ def _is_blasable2d(byte_stride1: int,
                    d1: int,
                    d2: int,
                    itemsize: int):
-    unit_stride1 = byte_stride1 // itemsize
+    unit_stride1 = byte_stride1.cdiv(itemsize)
     if byte_stride2 != itemsize:
         return False
-    if (byte_stride1 % itemsize == 0 and
+    if (byte_stride1.cmod(itemsize) == 0 and
         unit_stride1 >= d2 and
         unit_stride1 <= BLAS_MAXSIZE):
         return True
@@ -2509,10 +2509,10 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
     itemsize = sizeof(T)
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
         order = fint(CBLAS_COL_MAJOR)
-        lda = is1_m // itemsize
+        lda = is1_m.cdiv(itemsize)
     else:
         order = fint(CBLAS_ROW_MAJOR)
-        lda = is1_n // itemsize
+        lda = is1_n.cdiv(itemsize)
 
     one_dtype = cast(1, T)
     zero_dtype = cast(0, T)
@@ -2526,8 +2526,8 @@ def _gemv(ip1: Ptr[T], is1_m: int, is1_n: int,
 
     args = (order, fint(CBLAS_TRANS), fint(n), fint(m),
             one, ip1.as_byte(), fint(lda), ip2.as_byte(),
-            fint(is2_n // itemsize), zero, op.as_byte(),
-            fint(op_m // itemsize))
+            fint(is2_n.cdiv(itemsize)), zero, op.as_byte(),
+            fint(op_m.cdiv(itemsize)))
 
     if T is float:
         cblas_dgemv(*args)
@@ -2546,21 +2546,21 @@ def _matmul_matrixmatrix(ip1: Ptr[T], is1_m: int, is1_n: int,
                          m: int, n: int, p: int, T: type):
     order = fint(CBLAS_ROW_MAJOR)
     itemsize = sizeof(T)
-    ldc = os_m // itemsize
+    ldc = os_m.cdiv(itemsize)
 
     if _is_blasable2d(is1_m, is1_n, m, n, itemsize):
         trans1 = fint(CBLAS_NO_TRANS)
-        lda = is1_m // itemsize
+        lda = is1_m.cdiv(itemsize)
     else:
         trans1 = fint(CBLAS_TRANS)
-        lda = is1_n // itemsize
+        lda = is1_n.cdiv(itemsize)
 
     if _is_blasable2d(is2_n, is2_p, n, p, itemsize):
         trans2 = fint(CBLAS_NO_TRANS)
-        ldb = is2_n // itemsize
+        ldb = is2_n.cdiv(itemsize)
     else:
         trans2 = fint(CBLAS_TRANS)
-        ldb = is2_p // itemsize
+        ldb = is2_p.cdiv(itemsize)
 
     one_dtype = cast(1, T)
     zero_dtype = cast(0, T)
@@ -3130,8 +3130,8 @@ def vdot(a, b):
         mismatch()
 
     if static.len(a.shape) == 1 and static.len(b.shape) == 1:
-        inca = a.strides[0] // a.itemsize
-        incb = b.strides[0] // b.itemsize
+        inca = a.strides[0].cdiv(a.itemsize)
+        incb = b.strides[0].cdiv(b.itemsize)
         return _vdot_ptr(a.data, b.data, n, inca, incb)
 
     if a._contig_match(b):

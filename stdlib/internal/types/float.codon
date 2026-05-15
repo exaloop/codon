@@ -425,7 +425,7 @@ class float:
             if x >= HASH_MODULUS:
                 x -= HASH_MODULUS
 
-        e = e % HASH_BITS if e >= 0 else HASH_BITS - 1 - ((-1 - e) % HASH_BITS)
+        e = e.cmod(HASH_BITS) if e >= 0 else HASH_BITS - 1 - ((-1 - e).cmod(HASH_BITS))
         x = ((x << e) & HASH_MODULUS) | x >> (HASH_BITS - e)
 
         x = x * sign

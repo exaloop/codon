@@ -661,39 +661,43 @@ def eps(T: type):
     elif T is float16:
         return eps16()
 
-def mantdig64():
+def mantdig64() -> Literal[int]:
     return 53
 
-def mantdig32():
+def mantdig32() -> Literal[int]:
     return 24
 
-def mantdig16():
+def mantdig16() -> Literal[int]:
     return 11
 
-def mantdig(T: type):
+def mantdig(T: type) -> Literal[int]:
     if T is float:
         return mantdig64()
     elif T is float32:
         return mantdig32()
     elif T is float16:
         return mantdig16()
+    else:
+        return 0
 
-def maxexp64():
+def maxexp64() -> Literal[int]:
     return 1024
 
-def maxexp32():
+def maxexp32() -> Literal[int]:
     return 128
 
-def maxexp16():
+def maxexp16() -> Literal[int]:
     return 16
 
-def maxexp(T: type):
+def maxexp(T: type) -> Literal[int]:
     if T is float:
         return maxexp64()
     elif T is float32:
         return maxexp32()
     elif T is float16:
         return maxexp16()
+    else:
+        return 0
 
 @pure
 @llvm

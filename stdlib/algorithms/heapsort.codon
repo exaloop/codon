@@ -30,7 +30,7 @@ def _heap_sort(
     end -= begin
     begin = 0
 
-    i = end // 2 - 1
+    i = end.cdiv(2) - 1
     while i >= 0:
         _heapify(arr, i, end, keyf)
         i -= 1
