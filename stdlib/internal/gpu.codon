@@ -668,7 +668,7 @@ class List:
         mem = List[T].__new__()
         n = self._len
         gpu_ptr = _ptr_to_gpu(self._ptr, n, cache)
-        mem._ptr = Ptr[T](gpu_ptr, n)
+        mem._ptr = gpu_ptr
         mem._len = n
         mem._cap = n
         return _object_to_gpu(mem, cache)
