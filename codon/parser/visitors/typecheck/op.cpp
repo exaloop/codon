@@ -378,7 +378,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
   if (match(expr, M<IndexExpr>(M<IdExpr>(MOr("Literal", "Static")),
-                               M<IdExpr>(MOr("int", "str", "bool"))))) {
+                               M<IdExpr>(MOr("int", "Int", "str", "bool"))))) {
     // Special case: static types.
     auto typ = instantiateUnbound();
     typ->staticKind = getStaticGeneric(expr);

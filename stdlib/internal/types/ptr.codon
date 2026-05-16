@@ -223,7 +223,6 @@ class Ptr:
         str.memcpy(buf + where, pstr._ptr, pstr._len)
         where += pstr._len
         buf[where] = u8(62)  # '>'
-        free(pstr._ptr)
         return str(buf, total)
 
 

@@ -1357,6 +1357,8 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
+    if (generics->getIntStatic())
+      generics = getStdLibType("Int[64]");
     for (auto &g : generics->hiddenGenerics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {

@@ -82,7 +82,7 @@ class A[TA,TB,TC]:
         A.dump(x.a, x.b, x.c)
 
     # deeply nested generic type:
-    def m6[T](v: array[array[array[T]]]):
+    def m6[T](v: list[list[list[T]]]):
         return v[0][0][0]
 a1 = A(42, 3.14, "hello")
 a2 = A(1, 2, 3)
@@ -98,12 +98,12 @@ a2.m4("x")                          #: 1 2 3 x x
 a1.m5()                             #: 42 3.14 hello
 a2.m5()                             #: 1 2 3
 
-v1 = array[array[array[str]]](1)
-v2 = array[array[str]](1)
-v3 = array[str](1)
-v1[0] = v2
-v2[0] = v3
-v3[0] = "world"
+v1 = list[list[list[str]]]()
+v2 = list[list[str]]()
+v3 = list[str]()
+v1.append(v2)
+v2.append(v3)
+v3.append("world")
 print A.m6(v1)                      #: world
 
 f = a2.m0

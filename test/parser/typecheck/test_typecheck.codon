@@ -101,7 +101,7 @@ def coerce():
     def bar(T1: type, I1: type = T1):
         print(T1 is I1)  #: False
         foo()
-    bar(int, I1=Int[64]) # creates bar=bar(foo,...) first
+    bar(float, I1=Int[64]) # creates bar=bar(foo,...) first
 coerce()
 
 #%% compile_error_realization,barebones

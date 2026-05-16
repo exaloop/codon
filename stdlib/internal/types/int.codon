@@ -33,6 +33,10 @@ class Int:
         return Int[N](0)
 
     @overload
+    def __new__(what: bool) -> Int[N]:
+        return Int[N](1 if what else 0)
+
+    @overload
     def __new__(what: float) -> Int[N]:
         @pure
         @llvm
@@ -140,6 +144,12 @@ class Int:
     def __add__(self, other: Int[N]) -> Int[N]:
         %0 = add i{=N} %self, %other
         ret i{=N} %0
+
+    @pure
+    @commutative
+    @associative
+    def __add__(self, other: bool) -> Int[N]:
+        return self + Int[N](other)
 
     @pure
     @llvm

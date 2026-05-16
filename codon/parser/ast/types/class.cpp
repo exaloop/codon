@@ -224,8 +224,6 @@ bool ClassType::isInstantiated() const {
 }
 
 std::string ClassType::debugString(char mode) const {
-  if (_rn == "Int[64]")
-    return "int";
   if (name == "NamedTuple") {
     if (auto ids = generics[0].type->getIntStatic()) {
       auto id = ids->value;
@@ -297,7 +295,10 @@ std::string ClassType::debugString(char mode) const {
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? cache->rev(name) : name;
-  return n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
+  auto s = n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
+  if (s == "Int[64]")
+    return "int";
+  return s;
 }
 
 std::string ClassType::realizedName() const {
