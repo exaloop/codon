@@ -9,9 +9,9 @@ class Any:
     _typeinfo: TypeInfo
 
     def __str__(self):
-        if self._typeinfo.repr.__raw__() != cobj():
-            return f"Any({self._typeinfo.repr(self._data)}, {self._typeinfo})"
-        return f"Any({self._typeinfo})"
+        # if self._typeinfo.repr.__raw__() != cobj():
+        #     return f"Any({self._typeinfo.repr(self._data)}, {self._typeinfo})"
+        return f"Any({self._typeinfo.nice_name})"
 
     def __repr__(self):
         return self.__str__()
@@ -20,7 +20,7 @@ class Any:
         return __magic__.new(Any)
 
     def __init__(self, ti: TypeInfo, data: Ptr[byte]):
-        if ti.isinstance(Any):  # Disallow Any[Any]
+        if ti._isinstance(Any):  # Disallow Any[Any]
             obj = type._force_cast(data, Any)
             self._typeinfo = obj._typeinfo
             self._data = obj._data
@@ -40,30 +40,116 @@ class Any:
             p = Ptr[T](1)
             p[0] = obj
             self._data = p.as_byte()
-        # elif static.has_rtti(T):
-        #     self._typeinfo = RTTIType._typeinfo(obj)
-        #     _, (off, _) = RTTIType._find_offsets(obj, T, T)
-        #     self._data = type._force_cast(obj, RTTIType).data - off
         else:
             self._data = obj.__raw__().as_byte()
 
-    def unwrap(self, T: type) -> T:
+    def __unwrap__(self, T: type) -> T:
+        if T is Any:
+            return self
         if TypeInfo.cache(__vtables__, T) != self._typeinfo:
             raise TypeError(f"Any.unwrap failed: requested {T}, but got {self._typeinfo.nice_name} instead")
         if isinstance(T, ByVal):
             p = type._force_cast(self._data, Ptr[T])
             return p[0]
-        # elif static.has_rtti(T):
-        #     toff = -1
-        #     for pos, (mro, off) in enumerate(self._typeinfo.mro):
-        #         if T.__id__ == mro:
-        #             toff = off
-        #             break
-        #     if toff:
-        #         raise TypeError(f"Any.unwrap failed: cannot find {T} in {self._typeinfo.nice_name}")
-        #     return RTTIType._new(self._data + toff, self._typeinfo, T)
         else:
             return type._force_cast(self._data, T)
+
+    def __cast__(self, T: type):
+        if T is Ptr[Any]:
+            if not self._typeinfo._isinstance(unrealized_type[Ptr]):
+                raise ValueError("expected ptr")
+            ti = TypeInfo.cache(self._typeinfo._params[0])
+            ptr = Ptr[Ptr[byte]](self._data)
+            p = Ptr[Any](1)
+            p[0] = Any(ti, ptr[0])
+            return p
+        elif T is Optional[Any]:
+            if not self._typeinfo._isinstance(unrealized_type[Optional]):
+                raise ValueError("expected optional")
+
+            ti = TypeInfo.cache(self._typeinfo._params[0])
+            # jump to optional
+            if ti._ref:
+                data = Ptr[Ptr[byte]](self._data)[0]
+                return Optional(Any(ti, data)) if data else None
+            else:
+                data = Ptr[i1](self._data)
+                return Optional(Any(ti, (data + self._typeinfo._fields[0][2]).as_byte())) if data[0] else None
+        elif T is List[Any]:
+            if not self._typeinfo._isinstance(unrealized_type[list]):
+                raise ValueError("expected list")
+
+            ti = TypeInfo.cache(self._typeinfo._params[0])
+            len = Ptr[int](self._data)[0]
+            data = self._data + int.__elemsize__ * 2
+            data = Ptr[Ptr[byte]](data)[0]
+            lst = List[Any](len)
+            for i in range(len):
+                ptr = data + ti._size * i
+                if ti._ref:
+                    ptr = Ptr[Ptr[byte]](ptr)[0]
+                lst.append(Any(ti, ptr))
+            return lst
+        else:
+            return self.__unwrap__(T)
+
+    def _real_typeinfo(self):
+        if self._typeinfo._rtti:
+            return type._force_cast(type._force_cast(self._data, RTTIType).typeinfo, TypeInfo)
+        return self._typeinfo
+
+    def _real_contents(self):
+        ptr = self._data
+        ti = self._typeinfo
+        if ti._rtti:
+            # Get the original!
+            rtti = type._force_cast(self._data, RTTIType)
+            current = ti.id
+            off = 0
+            ti = type._force_cast(rtti.typeinfo, TypeInfo)
+            for mro, offset in ti.mro:
+                if mro == current:
+                    off = offset
+                    break
+            else:
+                raise TypeError(f"cannot find {ti.nice_name} in {self._typeinfo.nice_name}")
+            ptr = rtti.data - off
+        return ti, ptr
+
+    def _isinstance(self, T: type):
+        return self._real_typeinfo()._isinstance(T)
+
+    def __getattr__(self, attr: Literal[str], T: type = Any) -> T:
+        for name, value in self.members:
+            if name == attr:
+                return value.__unwrap__(T)
+        raise AttributeError(f"{attr} not found")
+
+    def __setattr__(self, attr: Literal[str], value: T, T: type):
+        for name, any in self.members:
+            if name == attr:
+                if any._typeinfo.id != TypeInfo.cache(T).id:
+                    raise TypeError(f"{attr} type does not match {T}")
+                ptr = Ptr[T](any._data)
+                ptr[0] = value
+                return
+        raise AttributeError(f"{attr} not found")
+
+    def _hasattr(self, attr: Literal[str]):
+        return any(name == attr for name, _ in self.members)
+
+    @property
+    def __name__(self) -> str:
+        return self._real_typeinfo().nice_name
+
+    @property
+    def members(self):
+        ti, ptr = self._real_contents()
+        for name, fti, offset in ti:
+            data = ptr + offset
+            if fti._ref:
+                data = Ptr[Ptr[byte]](data)[0]
+            yield name, Any(fti, data)
 
 
 @extend

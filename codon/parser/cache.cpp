@@ -306,6 +306,7 @@ void Cache::populatePythonModule() {
 }
 
 namespace StdlibTypes {
+const std::string Any = getMangledClass("", "Any");
 const std::string Array = getMangledClass("", "Array");
 const std::string BaseException =
     getMangledClass("std.internal.types.error", "BaseException");

@@ -372,6 +372,7 @@ public:
 };
 
 namespace StdlibTypes {
+extern const std::string Any;
 extern const std::string Array;
 extern const std::string BaseException;
 extern const std::string Bool;

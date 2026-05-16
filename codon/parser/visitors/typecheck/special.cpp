@@ -586,8 +586,6 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     return transform(N<BoolExpr>(typ->isRecord()));
   } else if (tei && tei->getValue() == "type[ByRef]") {
     return transform(N<BoolExpr>(!typ->isRecord()));
-  } else if (tei && tei->getValue() == "type[Union]") {
-    return transform(N<BoolExpr>(typ->getUnion() != nullptr));
   } else if (!extractType(typExpr)->getUnion() && typ->getUnion()) {
     auto unionTypes = typ->getUnion()->getRealizationTypes();
     int tag = -1;
@@ -623,26 +621,26 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   if (s >= 0)
     return transform(N<BoolExpr>(true));
 
-  // Check RTTI super types
-  for (auto &tx : getMRO(typ->getClass())) {
-    types::Type::Unification us;
-    auto s = tx->unify(targetType, &us);
-    us.undo();
-    if (s >= 0)
-      return transform(N<BoolExpr>(true));
+  if (typ->is(StdlibTypes::Any) && !isTypeExpr(expr->begin()->value)) {
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Any", "_isinstance")),
+                                 expr->begin()->getExpr(), (*expr)[1].getExpr()));
   }
 
-  // Check runtime RTTI info if needed
-  for (auto &tx : getMRO(targetType->getClass())) {
-    types::Type::Unification us;
-    auto s = tx->unify(typ, &us);
-    us.undo();
-    if (s >= 0) {
-      // check RTTI match
-      return transform(
-          N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_isinstance")),
-                      expr->begin()->getExpr(), (*expr)[1].getExpr()));
+  if (getClass(targetType->getClass())->hasRTTI() &&
+      getClass(typ->getClass())->hasRTTI()) {
+    // Check RTTI super types
+    for (auto &tx : getMRO(typ->getClass())) {
+      types::Type::Unification us;
+      auto s = tx->unify(targetType, &us);
+      us.undo();
+      if (s >= 0)
+        return transform(N<BoolExpr>(true));
     }
+
+    // TODO: disallow all impossible cases that are not related to any MRO!
+    return transform(
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_isinstance")),
+                    expr->begin()->getExpr(), (*expr)[1].getExpr()));
   }
 
   return transform(N<BoolExpr>(false));
@@ -1099,7 +1097,7 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
       }
       suite->addStmt(N<ExprStmt>(N<CallExpr>(
           N<IdExpr>(getMangledMethod("", "TypeInfo", "cache")),
-          std::vector<CallArg>{CallArg{"", N<IdExpr>("vt")},
+          std::vector<CallArg>{CallArg{"vtable", N<IdExpr>("vt")},
                                CallArg{"T", N<IdExpr>(tp->realizedName())}})));
       suite->addStmt(N<ExprStmt>(
           N<CallExpr>(N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_params"), "append"),
@@ -1114,7 +1112,7 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
       tp = stat->getNonStaticType();
     suite->addStmt(N<ExprStmt>(N<CallExpr>(
         N<IdExpr>(getMangledMethod("", "TypeInfo", "cache")),
-        std::vector<CallArg>{CallArg{"", N<IdExpr>("vt")},
+        std::vector<CallArg>{CallArg{"vtable", N<IdExpr>("vt")},
                              CallArg{"T", N<IdExpr>(tp->realizedName())}})));
     suite->addStmt(N<ExprStmt>(N<CallExpr>(
         N<DotExpr>(N<DotExpr>(N<IdExpr>("self"), "_fields"), "append"),

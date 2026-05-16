@@ -125,9 +125,17 @@ class Optional:
             return (not self_has) and (not other_has)
         return self.__val__() is other.__val__()
 
+    def __unwrap__(self) -> T:
+        if self.__has__():
+            return self.__val__()
+        raise ValueError(f"optional unpack failed: expected {T.__class__.__name__}, got None")
+
 optional = Optional
 
-def unwrap(opt: Optional[T], T: type) -> T:
-    if opt.__has__():
-        return opt.__val__()
-    raise ValueError(f"optional unpack failed: expected {T.__class__.__name__}, got None")
+def unwrap(opt, T: type = NoneType):
+    if isinstance(opt, Any):
+        return opt.__unwrap__(T)
+    elif isinstance(opt, Optional):
+        return opt.__unwrap__()
+    else:
+        return T(opt)

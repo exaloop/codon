@@ -873,6 +873,10 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
   }
 
   // Check the type equality (operand types and __raw__ pointers must match).
+  if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs())) {
+    return transform(N<BoolExpr>(
+        expr->getLhs()->getType()->unify(expr->getRhs()->getType(), nullptr) >= 0));
+  }
   auto lc = realize(expr->getLhs()->getType());
   auto rc = realize(expr->getRhs()->getType());
   if (!lc || !rc) {
@@ -880,8 +884,6 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
     unify(expr->getType(), getStdLibType(StdlibTypes::Bool));
     return nullptr;
   }
-  if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs()))
-    return transform(N<BoolExpr>(lc->realizedName() == rc->realizedName()));
   if (!lc->getClass()->isRecord() && !rc->getClass()->isRecord()) {
     // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
     return transform(

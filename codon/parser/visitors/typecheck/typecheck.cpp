@@ -913,16 +913,6 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  // else if (exprClass && exprClass->is("Super") && expectedClass &&
-  //          !expectedClass->is("Super")) {
-  //   // Super[T] to T
-  //   type = extractClassGeneric(exprClass)->shared_from_this();
-  //   if (type->unify(expectedClass, nullptr) >= 0)
-  //     fn = [this](Expr *expr) -> Expr * { return N<DotExpr>(expr, "_obj"); };
-  //   else
-  //     type = nullptr;
-  // }
-
   else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {
     // Cast derived classes to base classes
     const auto &mros = ctx->cache->getClass(exprClass)->mro;

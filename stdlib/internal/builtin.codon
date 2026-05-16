@@ -579,3 +579,52 @@ def _jit_display(x, s: Literal[str], bundle: Optional[Set[str]] = None):
         print(x.__repr__(), end='')
     elif hasattr(x, "__str__"):
         print(x.__str__(), end='')
+
+
+def cast(U: type, obj) -> U:
+    T = type(obj)
+
+    if T is Capsule[U]:
+        return Capsule._get(obj)
+    elif U is Capsule[T]:
+        return Capsule.make(obj)
+
+    if T is Any:
+        return obj.__cast__(U)
+    elif U is Any:
+        return Any(obj)
+
+    if T is int and U is float:
+        return float(obj)
+    if U is bool:
+        return obj.__bool__() if hasattr(obj, "__bool__") else bool(obj)
+
+    if T is Optional[U]:
+        return unwrap(obj)
+    elif U is Optional[T]:
+        return U(obj)
+
+    if U is pyobj:
+        return obj.__to_py__()
+    elif T is pyobj:
+        return U.__from_py__(obj.p)
+
+    def _cast(obj, UU: type) -> UU:
+        if static.has_rtti(type(obj)):
+            return RTTIType._cast(obj, UU)
+        else:
+            o: UU = obj
+            return o
+
+    # Optional[X] to Optional[Y] while preserving RTTI
+    if T is Optional and U is not Optional:  # Optional[T] -> U
+        if obj is None:
+            raise TypeError(f"cannot cast a None to non-optional {U}")
+        return _cast(unwrap(obj), U)
+    if T is Optional and U is Optional:  # Optional[T] -> Optional[U]
+        return None if obj is None else U(_cast(unwrap(obj), U.T))
+    elif U is Optional: # T -> Optional[U]
+        return Optional(_cast(obj, U.T))
+    else: # T -> U
+        return _cast(obj, U)
+

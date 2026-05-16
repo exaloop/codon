@@ -100,7 +100,6 @@ class TypeInfo:
     _n_parent_ids: int
     raw_name: str
     nice_name: str
-    repr: Function[[Ptr[byte]], str]
 
     _base_name: str
     _parent_offsets: List[int]
@@ -110,12 +109,31 @@ class TypeInfo:
     _ref: bool
     _rtti: bool
 
-    def __new__() -> TypeInfo:
-        return __magic__.new(TypeInfo)
+    # No __new__/__init__: not supposed to be instantiated at all except via .cache()
 
     def __raw__(self) -> Ptr[byte]:
         return __magic__.raw(self)
 
+    def cache(vtable, T: type) -> TypeInfo:
+        if T is TypeWrap:
+            return TypeInfo.cache(vtable, T=T.T)
+
+        if T.__id__ not in vtable:
+            ti = __magic__.new(TypeInfo)
+            ti._init(T)
+            vtable.set_type(ti)
+            ti._init_params(vtable, T)  # populate other stuff recursively
+            if isinstance(T, Optional) and isinstance(T.T, ByVal):
+                ti._init_optional(vtable, T)
+        return vtable[T.__id__].typeinfo
+
+    def cache(id: int) -> TypeInfo:
+        return __vtables__[id].typeinfo
+
+    def cache(T: type) -> TypeInfo:
+        return TypeInfo.cache(__vtables__, T)
+
+    @__generated__
     def _init_params(self, vt, T: type):
         # compiler-generated!
         pass
@@ -123,19 +141,6 @@ class TypeInfo:
     def _init_optional(self, vt, T: type):
         self._fields.append(("flag", TypeInfo.cache(vt, i1).id, type._get_element_offset(T, 1)))
         self._fields.append(("data", TypeInfo.cache(vt, T.T).id, T.T.__elemsize__))
-
-    def cache(vtable, T: type) -> TypeInfo:
-        if isinstance(T, TypeWrap):
-            return TypeInfo.cache(vtable, T=T.T)
-
-        if T.__id__ not in vtable:
-            ti = TypeInfo.__new__()
-            ti._init(T)
-            vtable.set_type(ti)
-            ti._init_params(vtable, T)  # populate other stuff recursively
-            if isinstance(T, Optional) and isinstance(T.T, ByVal):
-                ti._init_optional(vtable, T)
-        return vtable[T.__id__].typeinfo
 
     def _init(self, T: type):
         self.id = T.__id__
@@ -176,6 +181,10 @@ class TypeInfo:
         for i in range(self._n_parent_ids):
             yield self._parent_ids[i], self._parent_offsets[i]
 
+    def __iter__(self):
+        for name, id, offset in self._fields:
+            yield name, TypeInfo.cache(id), offset
+
     def is_parent(self, T: type) -> bool:
         for i in range(self._n_parent_ids):
             if self._parent_ids[i] == T.__id__:
@@ -210,6 +219,15 @@ class TypeInfo:
 
     def __ne__(self, other: TypeInfo):
         return self.id != other.id
+
+    def _isinstance(self, ti: TypeInfo):
+        return any(id == ti.id for id, _ in self.mro)
+
+    def _isinstance(self, T: type):
+        # Ugly hack for isinstance(x, list) and similar...
+        if T is unrealized_type:
+            return self._base_name == T.T.__generic_name__
+        return self._isinstance(TypeInfo.cache(__vtables__, T))
 
 
 @extend

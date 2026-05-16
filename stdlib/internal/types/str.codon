@@ -23,7 +23,7 @@ class str:
 
     @overload
     def __new__(what) -> str:
-        if isinstance(what, Union):
+        if type(what) is Union:
             return Union._str(what)
         elif isinstance(what, type):
             return __type_repr__(what)
