@@ -379,8 +379,8 @@ def _atanh_impl(z):
             r_imag = z.imag
             # errno = EDOM
         else:
-            r_real = -math.log(math.sqrt(ay)/math.sqrt(math.hypot(ay, 2.)))
-            r_imag = math.copysign(math.atan2(2., -ay)/2, z.imag)
+            r_real = -math.log(math.sqrt(ay).cdiv(math.sqrt(math.hypot(ay, 2.))))
+            r_imag = math.copysign(math.atan2(2., -ay).cdiv(2.), z.imag)
             # errno = 0
     else:
         r_real = math.log1p(4.*z.real/((1-z.real)*(1-z.real) + ay*ay))/4.
@@ -603,11 +603,11 @@ def _tanh_impl(z):
     else:
         tx = math.tanh(z.real)
         ty = math.tan(z.imag)
-        cx = 1./math.cosh(z.real)
+        cx = (1.).cdiv(math.cosh(z.real))
         txty = tx*ty
         denom = 1. + txty*txty
-        r_real = tx*(1. + ty*ty)/denom
-        r_imag = ((ty/denom)*cx)*cx
+        r_real = (tx*(1. + ty*ty)).cdiv(denom)
+        r_imag = ((ty.cdiv(denom))*cx)*cx
     # errno = 0
     return complex(r_real, r_imag)
 

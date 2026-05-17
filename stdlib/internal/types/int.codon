@@ -2,13 +2,12 @@
 
 from internal.attributes import commutative, associative, distributive
 
-def _check_bitwidth(N: Literal[int]):
-    if N <= 0:
-        compile_error("integer bit-width must be greater than 0")
-    pass
-
 @extend
 class Int:
+
+    def _check_bitwidth(N: Literal[int]):
+        if N <= 0:
+            compile_error("integer bit-width must be greater than 0")
 
     @pure
     @llvm
@@ -29,27 +28,12 @@ class Int:
         ret i{=T} %0
 
     def __new__() -> Int[N]:
-        _check_bitwidth(N)
+        Int._check_bitwidth(N)
         return Int[N](0)
 
     @overload
-    def __new__(what: bool) -> Int[N]:
-        return Int[N](1 if what else 0)
-
-    @overload
-    def __new__(what: float) -> Int[N]:
-        @pure
-        @llvm
-        def convert(what: float, N: Literal[int]) -> Int[N]:
-            %n = fptosi double %what to i{=N}
-            ret i{=N} %n
-
-        _check_bitwidth(N)
-        return convert(what)
-
-    @overload
     def __new__(what: Int[M], M: Literal[int]) -> Int[N]:
-        _check_bitwidth(N)
+        Int._check_bitwidth(N)
         if N < M:
             return Int._trunc(what, M, N)
         elif N == M:
@@ -59,36 +43,26 @@ class Int:
 
     @overload
     def __new__(what: UInt[M], M: Literal[int]) -> Int[N]:
-        _check_bitwidth(N)
-        if N < M:
-            return Int._trunc(what, M, N)
-        elif N == M:
-            return Int[N](what)
-        else:
-            return Int._sext(what, M, N)
-
-    @overload
-    def __new__(what: UInt[N]) -> Int[N]:
         @pure
         @llvm
         def convert(what: UInt[N], N: Literal[int]) -> Int[N]:
             ret i{=N} %what
 
-        _check_bitwidth(N)
-        return convert(what)
+        Int._check_bitwidth(N)
+        if N < M:
+            return Int._trunc(what, M, N)
+        elif N == M:
+            return convert(what, N)
+        else:
+            return Int._zext(what, M, N)
 
     @overload
     def __new__(what: str, base: int = 10) -> Int[N]:
-        _check_bitwidth(N)
+        Int._check_bitwidth(N)
         return Int[N]._from_str(what, base)
 
     def __int__(self) -> int:
-        if N > 64:
-            return Int._trunc(self, N, 64)
-        elif N == 64:
-            return self
-        else:
-            return Int._sext(self, N, 64)
+        return int(self)
 
     def __index__(self) -> int:
         return int(self)
@@ -144,12 +118,6 @@ class Int:
     def __add__(self, other: Int[N]) -> Int[N]:
         %0 = add i{=N} %self, %other
         ret i{=N} %0
-
-    @pure
-    @commutative
-    @associative
-    def __add__(self, other: bool) -> Int[N]:
-        return self + Int[N](other)
 
     @pure
     @llvm
@@ -440,28 +408,31 @@ class Int:
 @extend
 class UInt:
 
+    @pure
+    @llvm
+    def _sext(what, F: Literal[int], T: Literal[int]) -> UInt[T]:
+        %0 = sext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _zext(what, F: Literal[int], T: Literal[int]) -> UInt[T]:
+        %0 = zext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _trunc(what, F: Literal[int], T: Literal[int]) -> UInt[T]:
+        %0 = trunc i{=F} %what to i{=T}
+        ret i{=T} %0
+
     def __new__() -> UInt[N]:
-        _check_bitwidth(N)
+        Int._check_bitwidth(N)
         return UInt[N](0)
 
     @overload
-    def __new__(what: UInt[N]) -> UInt[N]:
-        _check_bitwidth(N)
-        return what
-
-    @overload
-    def __new__(what: float) -> UInt[N]:
-        @pure
-        @llvm
-        def convert(what: float, N: Literal[int]) -> UInt[N]:
-            %n = fptoui double %what to i{=N}
-            ret i{=N} %n
-
-        return convert(what)
-
-    @overload
     def __new__(what: UInt[M], M: Literal[int]) -> UInt[N]:
-        _check_bitwidth(N)
+        Int._check_bitwidth(N)
         if N < M:
             return UInt[N](Int._trunc(what, M, N))
         elif N == M:
@@ -471,54 +442,25 @@ class UInt:
 
     @overload
     def __new__(what: Int[M], M: Literal[int]) -> UInt[N]:
-        _check_bitwidth(N)
-        if N < M:
-            return UInt[N](Int._trunc(what, M, N))
-        elif N == M:
-            return UInt[N](what)
-        else:
-            return UInt[N](Int._sext(what, M, N))
-
-    @overload
-    def __new__(what: Int[N]) -> UInt[N]:
         @pure
         @llvm
         def convert(what: Int[N], N: Literal[int]) -> UInt[N]:
             ret i{=N} %what
 
-        _check_bitwidth(N)
-        return convert(what)
-
-    @pure
-    @llvm
-    def __new__(what: Int[N]) -> UInt[N]:
-        ret i{=N} %what
-
-    def __new__(what: int) -> UInt[N]:
-        @pure
-        @llvm
-        def convert(what: int) -> UInt[64]:
-            ret i64 %what
-
-        _check_bitwidth(N)
-        if N < 64:
-            return UInt[N](Int._trunc(what, 64, N))
-        elif N == 64:
+        Int._check_bitwidth(N)
+        if N < M:
+            return convert(Int._trunc(what, M, N))
+        elif N == M:
             return convert(what)
         else:
-            return UInt[N](Int._sext(what, 64, N))
+            return convert(Int._sext(what, M, N))
 
     def __new__(what: str, base: int = 10) -> UInt[N]:
-        _check_bitwidth(N)
+        Int._check_bitwidth(N)
         return UInt[N]._from_str(what, base)
 
     def __int__(self) -> int:
-        if N > 64:
-            return Int._trunc(self, N, 64)
-        elif N == 64:
-            return Int[64](self)
-        else:
-            return Int._zext(self, N, 64)
+        return int(self)
 
     def __index__(self) -> int:
         return int(self)

@@ -2044,16 +2044,16 @@ def _chbevl32(x: float32, vals, nvals: int):
     return float32(0.5)*(b0 - b2)
 
 def _i0_1_64(x: float):
-    return exp64(x) * _chbevl64(x/2.0-2, _i0A, _NUM_I0A)
+    return exp64(x) * _chbevl64(x.cdiv(2.0) - 2.0, _i0A, _NUM_I0A)
 
 def _i0_2_64(x: float):
-    return exp64(x) * _chbevl64(32.0/x - 2.0, _i0B, _NUM_I0B) / sqrt64(x)
+    return (exp64(x) * _chbevl64((32.0).cdiv(x) - 2.0, _i0B, _NUM_I0B)).cdiv(sqrt64(x))
 
 def _i0_1_32(x: float32):
-    return exp32(x) * _chbevl32(x/float32(2.0)-float32(2), _i0A, _NUM_I0A)
+    return exp32(x) * _chbevl32(x.cdiv(float32(2.0)) - float32(2.0), _i0A, _NUM_I0A)
 
 def _i0_2_32(x: float32):
-    return exp32(x) * _chbevl32(float32(32.0)/x - float32(2.0), _i0B, _NUM_I0B) / sqrt32(x)
+    return (exp32(x) * _chbevl32(float32(32.0).cdiv(x) - float32(2.0), _i0B, _NUM_I0B)).cdiv(sqrt32(x))
 
 def i0_64(x: float):
     x = fabs64(x)

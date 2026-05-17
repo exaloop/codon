@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 # Handle pairwise operators between primitive types:
+#   - bool
 #   - Int, UInt
 #   - float, float128, float32, float16, bfloat16
 
@@ -22,7 +23,184 @@ def _float_int_pow(a: F, b: I, F: type, I: type) -> F:
     return result
 
 @extend
+class Int:
+
+    def __new__(what: bool) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: bool, N: Literal[int]) -> Int[N]:
+            %n = zext i8 %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what, N)
+
+    def __new__(what: float) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: float, N: Literal[int]) -> Int[N]:
+            %n = fptosi double %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: float128) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: float128, N: Literal[int]) -> Int[N]:
+            %n = fptosi fp128 %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: float32) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: float32, N: Literal[int]) -> Int[N]:
+            %n = fptosi float %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: float16) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: float16, N: Literal[int]) -> Int[N]:
+            %n = fptosi half %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: bfloat16) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: bfloat16, N: Literal[int]) -> Int[N]:
+            %n = fptosi bfloat %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+@extend
+class UInt:
+
+    def __new__(what: bool) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: bool, N: Literal[int]) -> UInt[N]:
+            %n = zext i8 %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what, N)
+
+    def __new__(what: float) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: float, N: Literal[int]) -> UInt[N]:
+            %n = fptoui double %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: float128) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: float128, N: Literal[int]) -> UInt[N]:
+            %n = fptoui fp128 %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: float32) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: float32, N: Literal[int]) -> UInt[N]:
+            %n = fptoui float %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: float16) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: float16, N: Literal[int]) -> UInt[N]:
+            %n = fptoui half %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+    def __new__(what: bfloat16) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: bfloat16, N: Literal[int]) -> UInt[N]:
+            %n = fptoui bfloat %what to i{=N}
+            ret i{=N} %n
+
+        Int._check_bitwidth(N)
+        return convert(what)
+
+@extend
+class float:
+
+    def __new__(what: bool) -> float:
+        return 1.0 if what else 0.0
+
+    @pure
+    @llvm
+    def __new__(what: Int[N], N: Literal[int]) -> float:
+        %0 = sitofp i{=N} %what to double
+        ret double %0
+
+    @pure
+    @llvm
+    def __new__(what: UInt[N], N: Literal[int]) -> float:
+        %0 = uitofp i{=N} %what to double
+        ret double %0
+
+    @pure
+    @llvm
+    def __new__(what: float32) -> float:
+        %0 = fpext float %what to double
+        ret double %0
+
+    @pure
+    @llvm
+    def __new__(what: float16) -> float:
+        %0 = fpext half %what to double
+        ret double %0
+
+    @pure
+    @llvm
+    def __new__(what: bfloat16) -> float:
+        %0 = fpext bfloat %what to double
+        ret double %0
+
+@extend
 class float128:
+
+    def __new__(what: bool) -> float128:
+        return float128(1.0) if what else float128(0.0)
+
+    @pure
+    @llvm
+    def __new__(what: Int[N], N: Literal[int]) -> float128:
+        %0 = sitofp i{=N} %what to fp128
+        ret fp128 %0
+
+    @pure
+    @llvm
+    def __new__(what: UInt[N], N: Literal[int]) -> float128:
+        %0 = uitofp i{=N} %what to fp128
+        ret fp128 %0
 
     @pure
     @llvm
@@ -45,6 +223,21 @@ class float128:
 @extend
 class float32:
 
+    def __new__(what: bool) -> float32:
+        return float32(1.0) if what else float32(0.0)
+
+    @pure
+    @llvm
+    def __new__(what: Int[N], N: Literal[int]) -> float32:
+        %0 = sitofp i{=N} %what to float
+        ret float %0
+
+    @pure
+    @llvm
+    def __new__(what: UInt[N], N: Literal[int]) -> float32:
+        %0 = uitofp i{=N} %what to float
+        ret float %0
+
     @pure
     @llvm
     def __new__(what: float128) -> float32:
@@ -65,6 +258,21 @@ class float32:
 
 @extend
 class float16:
+
+    def __new__(what: bool) -> float16:
+        return float16(1.0) if what else float16(0.0)
+
+    @pure
+    @llvm
+    def __new__(what: Int[N], N: Literal[int]) -> float16:
+        %0 = sitofp i{=N} %what to half
+        ret half %0
+
+    @pure
+    @llvm
+    def __new__(what: UInt[N], N: Literal[int]) -> float16:
+        %0 = uitofp i{=N} %what to half
+        ret half %0
 
     @pure
     @llvm
@@ -88,6 +296,21 @@ class float16:
 @extend
 class bfloat16:
 
+    def __new__(what: bool) -> bfloat16:
+        return bfloat16(1.0) if what else bfloat16(0.0)
+
+    @pure
+    @llvm
+    def __new__(what: Int[N], N: Literal[int]) -> bfloat16:
+        %0 = sitofp i{=N} %what to bfloat
+        ret bfloat %0
+
+    @pure
+    @llvm
+    def __new__(what: UInt[N], N: Literal[int]) -> bfloat16:
+        %0 = uitofp i{=N} %what to bfloat
+        ret bfloat %0
+
     @pure
     @llvm
     def __new__(what: float128) -> bfloat16:
@@ -107,33 +330,26 @@ class bfloat16:
         %1 = fptrunc float %0 to bfloat
         ret bfloat %1
 
-@pure
-@llvm
-def _sitofp(a: Int[N], F: type, N: Literal[int]) -> F:
-    %b = sitofp i{=N} %a to {=F}
-    ret {=F} %b
 
-@pure
-@llvm
-def _uitofp(a: UInt[N], F: type, N: Literal[int]) -> F:
-    %b = uitofp i{=N} %a to {=F}
-    ret {=F} %b
-
-def _unify(a, b):
+def _unify(a, b, promote_bools: Literal[bool] = False):
     A = type(a)
     B = type(b)
 
+    a_is_bool: Literal[bool] = (A is bool)
     a_is_int: Literal[bool] = isinstance(A, Int)
     a_is_uint: Literal[bool] = isinstance(A, UInt)
     a_is_float: Literal[bool] = (A is float or A is float128 or A is float32 or
                                  A is float16 or A is bfloat16)
 
+    b_is_bool: Literal[bool] = (B is bool)
     b_is_int: Literal[bool] = isinstance(B, Int)
     b_is_uint: Literal[bool] = isinstance(B, UInt)
     b_is_float: Literal[bool] = (B is float or B is float128 or B is float32 or
                                  B is float16 or B is bfloat16)
 
-    if A is B:
+    if promote_bools and a_is_bool and b_is_bool:
+        return (int(a), int(b))
+    elif A is B:
         return (a, b)
     elif (a_is_int and b_is_int) or (a_is_uint and b_is_uint):
         if A.N > B.N:
@@ -164,13 +380,17 @@ def _unify(a, b):
         else:
             return (bfloat16(a), bfloat16(b))
     elif a_is_float and b_is_int:
-        return (a, _sitofp(b, A))
+        return (a, A(b))
     elif a_is_float and b_is_uint:
-        return (a, _uitofp(b, A))
+        return (a, A(b))
     elif a_is_int and b_is_float:
-        return (_sitofp(a, B), b)
+        return (B(a), b)
     elif a_is_uint and b_is_float:
-        return (_uitofp(a, B), b)
+        return (B(a), b)
+    elif (a_is_int or a_is_uint or a_is_float) and b_is_bool:
+        return (a, A(b))
+    elif a_is_bool and (b_is_int or b_is_uint or b_is_float):
+        return (B(a), b)
     else:
         compile_error("cannot operate on types '" + A.__name__ + "' and '" + B.__name__ + "'")
 
@@ -528,6 +748,64 @@ class Int:
         x, y = _unify(self, b)
         return x >= y
 
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
+        x, y = _unify(self, b)
+        return x >= y
+
 @extend
 class UInt:
 
@@ -876,6 +1154,64 @@ class UInt:
         return x <= y
 
     def __ge__(self, b: Int):
+        x, y = _unify(self, b)
+        return x >= y
+
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
         x, y = _unify(self, b)
         return x >= y
 
@@ -1228,6 +1564,64 @@ class float:
         x, y = _unify(self, b)
         return x >= y
 
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
+        x, y = _unify(self, b)
+        return x >= y
+
 @extend
 class float128:
 
@@ -1574,6 +1968,64 @@ class float128:
         return x <= y
 
     def __ge__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x >= y
+
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
         x, y = _unify(self, b)
         return x >= y
 
@@ -1926,6 +2378,64 @@ class float32:
         x, y = _unify(self, b)
         return x >= y
 
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
+        x, y = _unify(self, b)
+        return x >= y
+
 @extend
 class float16:
 
@@ -2275,6 +2785,64 @@ class float16:
         x, y = _unify(self, b)
         return x >= y
 
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
+        x, y = _unify(self, b)
+        return x >= y
+
 @extend
 class bfloat16:
 
@@ -2621,5 +3189,63 @@ class bfloat16:
         return x <= y
 
     def __ge__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x >= y
+
+    @commutative
+    def __add__(self, b: bool):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: bool):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: bool):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: bool):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: bool):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: bool):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: bool):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: bool):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: bool):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: bool):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: bool):
         x, y = _unify(self, b)
         return x >= y
