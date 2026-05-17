@@ -22,6 +22,7 @@ def test_datetime_nat_argsort_stability():
 
 test_datetime_nat_argsort_stability()
 
+@test
 def test_datetime_maximum_reduce():
     a = np.array(['2010-01-02', '1999-03-14', '1833-03'], np.datetime64['D',
                                                                         1])

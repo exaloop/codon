@@ -77,7 +77,7 @@ _datetime_factors = (1, 1, 7, 1, 24, 60, 60, 1000, 1000, 1000, 1000, 1000,
                      1000, 1, 0)
 
 def _is_leapyear(year: int):
-    return year & 0x3 == 0 and (yea.cmod(100) != 0 or year.cmod(400) == 0)
+    return year & 0x3 == 0 and (year.cmod(100) != 0 or year.cmod(400) == 0)
 
 def _days_to_yearsdays(days: int):
     days_per_400years: Literal[int] = 400 * 365 + 100 - 4 + 1
@@ -725,7 +725,7 @@ def _static_gcd(x: Literal[int], y: Literal[int]):
     if y == 0:
         return _StaticIntWrapper[x]()
     else:
-        return _static_gcd(y, x.cmod(y))
+        return _static_gcd(y, x % y)
 
 def _meta_gcd(meta1: _Meta, meta2: _Meta, strict1: Literal[bool],
               strict2: Literal[bool]):
@@ -1164,8 +1164,7 @@ class timedelta64:
         return timedelta64(1 if v > 0 else (-1 if v < 0 else 0), base, num)
 
     def __add__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self + int(other)
@@ -1173,8 +1172,7 @@ class timedelta64:
             compile_error("cannot add timedelta64 and non-int type")
 
     def __radd__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) + self
@@ -1202,8 +1200,7 @@ class timedelta64:
         return self + timedelta64(other, base, num)
 
     def __sub__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self - int(other)
@@ -1211,8 +1208,7 @@ class timedelta64:
             compile_error("cannot subtract timedelta64 and non-int type")
 
     def __rsub__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) - self
@@ -1233,8 +1229,7 @@ class timedelta64:
         return (-self) + other
 
     def __mul__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self * int(other)
@@ -1246,8 +1241,7 @@ class timedelta64:
             compile_error("cannot multiply timedelta64 and non-int, non-float type")
 
     def __rmul__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) * self
@@ -1331,8 +1325,7 @@ class timedelta64:
             return timedelta64(self.value.cdiv(other), base, num)
 
     def __truediv__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self / int(other)
@@ -1537,8 +1530,7 @@ class datetime64:
         return bool(self.value)
 
     def __add__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self + int(other)
@@ -1546,8 +1538,7 @@ class datetime64:
             compile_error("cannot add datetime64 and non-int type")
 
     def __radd__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) + self
@@ -1568,8 +1559,7 @@ class datetime64:
         return self + timedelta64(other, base, num)
 
     def __sub__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self - int(other)
@@ -2438,7 +2428,7 @@ class datetimestruct:
                 digit = n.cmod(10)
                 b = u8(48 + digit)
                 buf.append(str(__ptr__(b), 1))
-                m = m.cdiv(10)
+                n = n.cdiv(10)
 
             # reverse added digits
             i2 = buf.n - 1

@@ -292,7 +292,15 @@ def _matmul(x, y):
 
 @inline
 def _true_div(x, y):
-    return x / y
+    if ((isinstance(x, float) and isinstance(y, float)) or
+        (isinstance(x, float32) and isinstance(y, float32)) or
+        (isinstance(x, float16) and isinstance(y, float16))):
+        return x.cdiv(y)
+    elif ((isinstance(x, Int) and isinstance(y, Int)) or
+          (isinstance(x, UInt) and isinstance(y, UInt))):
+        return float(x).cdiv(float(y))
+    else:
+        return x / y
 
 @inline
 def _floor_div(x, y):
@@ -475,13 +483,13 @@ def _arctanh(x):
     return _apply(x, util.atanh, zmath.atanh)
 
 def _rad2deg(x):
-    r2d = 180.0 / util.PI
+    r2d = (180.0).cdiv(util.PI)
     x = util.to_float(x)
     F = type(x)
     return x * F(r2d)
 
 def _deg2rad(x):
-    d2r = util.PI / 180.0
+    d2r = (util.PI).cdiv(180.0)
     x = util.to_float(x)
     F = type(x)
     return x * F(d2r)
@@ -612,11 +620,15 @@ def _gcd(x, y):
 
 def _lcm(x, y):
     gcd = _gcd(x, y)
-    return x // gcd * y if gcd else 0
+    return x.cdiv(gcd) * y if gcd else 0
 
 def _reciprocal(x: T, T: type):
-    if isinstance(x, Int) or isinstance(x, UInt):
-        return T(1) // x
+    if isinstance(x, Int):
+        return x if (x == T(1) or x == T(-1)) else T(0)
+    elif isinstance(x, UInt):
+        return T(1) if x == T(1) else T(0)
+    elif T is float or T is float32 or T is float16:
+        return T(1).cdiv(x)
     else:
         return T(1) / x
 
@@ -747,6 +759,12 @@ def _divmod(x, y):
 
     if isinstance(x, float) or isinstance(y, float):
         return _divmod_float(util.cast(x, float), util.cast(y, float))
+
+    if isinstance(x, Int) and isinstance(y, Int):
+        return (x.cdiv(y), x.cmod(y))
+
+    if isinstance(x, UInt) and isinstance(y, UInt):
+        return (x.cdiv(y), x.cmod(y))
 
     return (x // y, x % y)
 
