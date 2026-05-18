@@ -468,7 +468,7 @@ INSTANTIATE_TEST_SUITE_P(
     getTestNameFromParam);
 
 INSTANTIATE_TEST_SUITE_P(
-    NumericsTests, SeqTest,
+    CNumericsTests, SeqTest,
     testing::Combine(
       testing::Values(
         "core/numerics.codon"
@@ -478,7 +478,23 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(false, true),
+      testing::Values(false),
+      testing::Values(true)
+    ),
+    getTestNameFromParam);
+
+INSTANTIATE_TEST_SUITE_P(
+    PyNumericsTests, SeqTest,
+    testing::Combine(
+      testing::Values(
+        "core/numerics.codon"
+      ),
+      testing::Values(true, false),
+      testing::Values(""),
+      testing::Values(""),
+      testing::Values(0),
+      testing::Values(false),
+      testing::Values(true),
       testing::Values(true)
     ),
     getTestNameFromParam);
