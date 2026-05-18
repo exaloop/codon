@@ -12,10 +12,10 @@ import astunparse
 
 from typing import Any
 
+from . import decorator as _decorator
 from .decorator import (
     JITCallable,
     JITError,
-    _jit,
     _reset_jit,
     debug_override,
 )
@@ -26,6 +26,8 @@ def _jitclass_default_init(self):
 
 
 class JITClassMeta:
+    """Static metadata extracted from the original Python class."""
+
     def __init__(self, py_cls, native_class_name):
         self.py_cls = py_cls
         self.class_name = py_cls.__name__
@@ -52,6 +54,8 @@ class JITClassMeta:
 
 
 class JITClassASTTransformer(ast.NodeTransformer):
+    """Validate a jitclass and rewrite it into the native Codon class body."""
+
     def __init__(self, meta: JITClassMeta):
         self.meta = meta
         self.has_fields = False
@@ -74,6 +78,7 @@ class JITClassASTTransformer(ast.NodeTransformer):
         node.decorator_list = []
         node.name = self.meta.native_class_name
         node.body = [self._visit_class_stmt(stmt) for stmt in node.body]
+        # Field descriptors dispatch through generated native getter/setter methods.
         node.body.extend(self._make_field_accessors())
         return node
 
@@ -179,33 +184,25 @@ class JITClassASTTransformer(ast.NodeTransformer):
 
 
 class JITClassProxy:
+    """Holds the native handle for one Python-visible jitclass instance."""
+
     def __init__(self, meta: JITClassMeta, native_cls, handle, debug=0):
         self.meta = meta
         self.native_cls = native_cls
         self.handle = handle
         self.debug = debug
-        self.closed = False
 
-    def ensure_alive(self):
-        if self.closed:
-            raise JITError("jitclass object has been released")
+    @property
+    def closed(self):
+        return self.handle is None or self.handle.closed
 
     def close(self):
-        if self.closed:
-            return
-
-        handle = self.handle
-        self.closed = True
-        self.handle = 0
-
-        _jit.jitclass_release(
-            self.meta.class_name,
-            handle,
-            int(self.debug > 0),
-        )
+        if self.handle is not None:
+            self.handle.close()
 
 
 def _close_jitclass_proxy(proxy, suppress=False):
+    """Close a proxy from weakref finalization without relying on __del__."""
     try:
         proxy.close()
     except Exception:
@@ -214,10 +211,12 @@ def _close_jitclass_proxy(proxy, suppress=False):
 
 
 class JITNativeClass:
+    """Base class for Python objects backed by native jitclass instances."""
+
     def __init__(self, *args, **kwargs):
         proxy = type(self).__codon_constructor__(self, *args, **kwargs)
         object.__setattr__(self, "__codon_jitclass_proxy__", proxy)
-        object.__setattr__(self, "__codon_handle__", proxy.handle)
+        # weakref.finalize avoids __del__ cycles while ensuring native cleanup.
         object.__setattr__(
             self,
             "__codon_finalizer__",
@@ -228,17 +227,10 @@ class JITNativeClass:
         proxy = getattr(self, "__codon_jitclass_proxy__", None)
         if proxy is not None:
             proxy.close()
-            object.__setattr__(self, "__codon_handle__", proxy.handle)
 
         finalizer = getattr(self, "__codon_finalizer__", None)
         if finalizer is not None:
             finalizer.detach()
-
-    def __del__(self):
-        try:
-            self.close()
-        except Exception:
-            pass
 
     def __enter__(self):
         return self
@@ -262,6 +254,8 @@ class JITNativeClass:
 
 
 class JITClassCtor(JITCallable):
+    """Descriptor-like constructor that materializes the native instance."""
+
     def __init__(self, meta: JITClassMeta, init: Any, debug=0, sample_size=5):
         super().__init__(init, init.__name__, init.__module__, debug, sample_size)
         self.meta = meta
@@ -276,7 +270,7 @@ class JITClassCtor(JITCallable):
                     f"[python] {self.meta.class_name}.{self.py_func.__name__}({bound_args})",
                     file=sys.stderr,
                 )
-            handle = _jit.jitclass_new(
+            handle = _decorator._jit.jitclass_new(
                 self.meta.class_name,
                 self.meta.native_class_name,
                 list(arg_types),
@@ -289,6 +283,8 @@ class JITClassCtor(JITCallable):
 
 
 class JITMethod(JITCallable):
+    """Method descriptor that dispatches calls to the native jitclass object."""
+
     def __init__(self, meta: JITClassMeta, method: Any, debug=0, sample_size=5):
         super().__init__(method, method.__name__, method.__module__, debug, sample_size)
         self.meta = meta
@@ -306,7 +302,6 @@ class JITMethod(JITCallable):
     def __call__(self, obj, *args, **kwargs):
         def run():
             proxy = obj.__codon_jitclass_proxy__
-            proxy.ensure_alive()
             bound_args = self.bind_args((obj,) + args, kwargs, drop_self=True)
             arg_types = self.codon_types(bound_args)
 
@@ -315,9 +310,9 @@ class JITMethod(JITCallable):
                     f"[python] {self.meta.class_name}.{self.py_func.__name__}({bound_args})",
                     file=sys.stderr,
                 )
-            return _jit.jitclass_call(
+            return proxy.handle.call_with_jit(
+                _decorator._jit,
                 self.meta.class_name,
-                proxy.handle,
                 self.py_func.__name__,
                 list(arg_types),
                 bound_args,
@@ -328,6 +323,8 @@ class JITMethod(JITCallable):
 
 
 class JITField(JITCallable):
+    """Field descriptor backed by generated native getter and setter wrappers."""
+
     def __init__(self, meta: JITClassMeta, field_name: str, debug=0, sample_size=5):
         super().__init__(None, field_name, meta.py_cls.__module__, debug, sample_size)
         self.meta = meta
@@ -339,15 +336,14 @@ class JITField(JITCallable):
 
         def run():
             proxy = obj.__codon_jitclass_proxy__
-            proxy.ensure_alive()
             if self.debug == 2:
                 print(
                     f"[python] {self.meta.class_name}.{self.field_name}",
                     file=sys.stderr,
                 )
-            return _jit.jitclass_call(
+            return proxy.handle.call_with_jit(
+                _decorator._jit,
                 self.meta.class_name,
-                proxy.handle,
                 _field_getter_name(self.field_name),
                 [],
                 (),
@@ -359,7 +355,6 @@ class JITField(JITCallable):
     def __set__(self, obj, value):
         def run():
             proxy = obj.__codon_jitclass_proxy__
-            proxy.ensure_alive()
             bound_args = (value,)
             arg_types = self.codon_types(bound_args)
             if self.debug == 2:
@@ -367,9 +362,9 @@ class JITField(JITCallable):
                     f"[python] {self.meta.class_name}.{self.field_name} = {value!r}",
                     file=sys.stderr,
                 )
-            _jit.jitclass_call(
+            proxy.handle.call_with_jit(
+                _decorator._jit,
                 self.meta.class_name,
-                proxy.handle,
                 _field_setter_name(self.field_name),
                 list(arg_types),
                 bound_args,
@@ -380,6 +375,8 @@ class JITField(JITCallable):
 
 
 class JITClassCreator:
+    """Compiles the native class and builds the Python proxy type."""
+
     def __init__(self, py_cls, debug=0, sample_size=5):
         if not inspect.isclass(py_cls):
             raise TypeError("jitclass expects a class, got " + type(py_cls).__name__)
@@ -422,7 +419,7 @@ class JITClassCreator:
         if self.debug == 2:
             print(f"[jit_debug] execute:\n{class_code}", file=sys.stderr)
         try:
-            _jit.execute(
+            _decorator._jit.execute(
                 class_code, self.meta.source_file, 1, int(self.debug > 0)
             )
         except JITError:

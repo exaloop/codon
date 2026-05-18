@@ -32,17 +32,25 @@ JIT::JIT(const std::string &argv0, const std::string &mode,
                                           /*isTest=*/false,
                                           /*pyNumerics=*/false, /*pyExtension=*/false)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      jitClassData(std::make_unique<JITClassData>()), mode(mode), forgetful(false) {
+      jitClassData(std::make_unique<JITClassData>()),
+      contextState(std::make_shared<JITContextState>()), mode(mode), forgetful(false) {
   if (!stdlibRoot.empty())
     compiler->getCache()->fs->add_search_path(stdlibRoot);
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
+JIT::~JIT() {
+  // Existing jitclass instances may outlive this engine; mark them stale.
+  contextState->alive.store(false);
+}
+
 JIT::JITClassRoot::JITClassRoot(void *ptr) : slot(std::make_unique<void *>(ptr)) {
+  // The slot stores the GC pointer value; the root range points at the slot itself.
   seq_gc_add_roots(slot.get(), slot.get() + 1);
 }
 
 JIT::JITClassRoot::~JITClassRoot() {
+  // Moving clears the source slot, so removal is only needed for active roots.
   if (slot)
     seq_gc_remove_roots(slot.get(), slot.get() + 1);
 }
@@ -56,14 +64,17 @@ JIT::JITClassRoot &JIT::JITClassRoot::operator=(JITClassRoot &&other) noexcept {
   return *this;
 }
 
-JIT::JITClassObject::JITClassObject(std::string className, std::string nativeClassName,
-                                    void *nativePtr)
-    : className(std::move(className)), nativeClassName(std::move(nativeClassName)),
-      nativePtr(nativePtr), root(nativePtr) {}
+JIT::JITClassInstance::JITClassInstance(std::shared_ptr<JITContextState> contextState,
+                                        std::string className,
+                                        std::string nativeClassName, void *nativePtr)
+    : contextState(std::move(contextState)), className(std::move(className)),
+      nativeClassName(std::move(nativeClassName)), nativePtr(nativePtr),
+      // Root construction pins the Codon object for the lifetime of this block.
+      root(nativePtr) {}
 
 void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
-  if (cast<ast::FunctionStmt>(s) || cast<ast::ClassStmt>(s) ||
-      cast<ast::CommentStmt>(s))
+  if (ast::cast<ast::FunctionStmt>(s) || ast::cast<ast::ClassStmt>(s) ||
+      ast::cast<ast::CommentStmt>(s))
     return;
   if (auto ss = ast::cast<ast::SuiteStmt>(s)) {
     for (auto &si : *ss)
@@ -507,10 +518,9 @@ JIT::JITResult JIT::jitClassNew(const std::string &className,
 
   try {
     auto *nativePtr = (*wrap)(args);
-    auto handle = nextJITClassHandle++;
-    jitClassObjects.emplace(handle,
-                            JITClassObject{className, nativeClassName, nativePtr});
-    return JITResult::success(reinterpret_cast<void *>(handle));
+    auto *instance =
+        new JITClassInstance(contextState, className, nativeClassName, nativePtr);
+    return JITResult::success(instance);
   } catch (const runtime::JITError &e) {
     auto err = handleJITError(e);
     auto errorInfo = llvm::toString(std::move(err));
@@ -518,19 +528,22 @@ JIT::JITResult JIT::jitClassNew(const std::string &className,
   }
 }
 
-JIT::JITResult JIT::jitClassCall(const std::string &className, uint64_t handle,
+JIT::JITResult JIT::jitClassCall(const std::string &className,
+                                 JITClassInstance *instance,
                                  const std::string &methodName,
                                  const std::vector<std::string> &types, void *args,
                                  bool debug) {
-  auto obj = jitClassObjects.find(handle);
-  if (obj == jitClassObjects.end())
-    return JITResult::error(fmt::format("invalid jitclass handle {}", handle));
-  if (obj->second.className != className)
+  if (!instance)
+    return JITResult::error("jitclass object has been released");
+  if (instance->className != className)
     return JITResult::error(
-        fmt::format("jitclass handle {} has type '{}', expected '{}'", handle,
-                    obj->second.className, className));
+        fmt::format("jitclass instance has type '{}', expected '{}'",
+                    instance->className, className));
+  // Reject calls after reset/destruction before looking up code in this engine.
+  if (!instance->contextState->alive.load() || instance->contextState != contextState)
+    return JITResult::error("jitclass object belongs to a stale JIT context");
 
-  auto key = buildJITClassKey("method", obj->second.nativeClassName, types, methodName);
+  auto key = buildJITClassKey("method", instance->nativeClassName, types, methodName);
   auto &cache = jitClassData->methodWrappers;
   auto it = cache.find(key);
   JITClassMethodFunc *wrap;
@@ -542,9 +555,8 @@ JIT::JITResult JIT::jitClassCall(const std::string &className, uint64_t handle,
   } else {
     auto idx = cache.size();
     auto wrapname = "__codon_jitclass_method_" + std::to_string(idx);
-    auto wrapper = buildJITClassMethodWrapper(obj->second.nativeClassName, methodName,
+    auto wrapper = buildJITClassMethodWrapper(instance->nativeClassName, methodName,
                                               wrapname, types);
-
     if (debug)
       fmt::print(stderr, "[codon::jit::jitClassCall] wrapper:\n{}-----\n", wrapper);
     if (auto err = compile(wrapper).takeError()) {
@@ -567,7 +579,7 @@ JIT::JITResult JIT::jitClassCall(const std::string &className, uint64_t handle,
   }
 
   try {
-    auto *ans = (*wrap)(obj->second.nativePtr, args);
+    auto *ans = (*wrap)(instance->nativePtr, args);
     return JITResult::success(ans);
   } catch (const runtime::JITError &e) {
     auto err = handleJITError(e);
@@ -576,22 +588,9 @@ JIT::JITResult JIT::jitClassCall(const std::string &className, uint64_t handle,
   }
 }
 
-JIT::JITResult JIT::jitClassRelease(const std::string &className, uint64_t handle,
-                                    bool debug) {
-  auto obj = jitClassObjects.find(handle);
-  if (obj == jitClassObjects.end())
-    return JITResult::success();
-
-  if (obj->second.className != className)
-    return JITResult::error(
-        fmt::format("jitclass handle {} has type '{}', expected '{}'", handle,
-                    obj->second.className, className));
-
-  if (debug)
-    fmt::print(stderr, "[codon::jit::jitClassRelease] release {} handle {}\n",
-               className, handle);
-
-  jitClassObjects.erase(obj);
+JIT::JITResult JIT::jitClassRelease(JITClassInstance *instance) {
+  // Deleting the control block also removes the RAII GC root.
+  delete instance;
   return JITResult::success();
 }
 
@@ -651,26 +650,26 @@ CJITResult jitclass_new(void *jit, char *class_name, char *native_class_name,
   return {result, message};
 }
 
-CJITResult jitclass_call(void *jit, char *class_name, uint64_t handle,
-                         char *method_name, char **types, size_t types_size, void *args,
-                         uint8_t debug) {
+CJITResult jitclass_call(void *jit, char *class_name, void *instance, char *method_name,
+                         char **types, size_t types_size, void *args, uint8_t debug) {
   std::vector<std::string> cppTypes;
   cppTypes.reserve(types_size);
   for (size_t i = 0; i < types_size; i++)
     cppTypes.emplace_back(types[i]);
-  auto t = ((codon::jit::JIT *)jit)
-               ->jitClassCall(std::string(class_name), handle, std::string(method_name),
-                              cppTypes, args, bool(debug));
+  auto t =
+      ((codon::jit::JIT *)jit)
+          ->jitClassCall(std::string(class_name),
+                         static_cast<codon::jit::JIT::JITClassInstance *>(instance),
+                         std::string(method_name), cppTypes, args, bool(debug));
   void *result = t.result;
   char *message =
       t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
   return {result, message};
 }
 
-CJITResult jitclass_release(void *jit, char *class_name, uint64_t handle,
-                            uint8_t debug) {
-  auto t = ((codon::jit::JIT *)jit)
-               ->jitClassRelease(std::string(class_name), handle, bool(debug));
+CJITResult jitclass_release(void *instance) {
+  auto t = codon::jit::JIT::jitClassRelease(
+      static_cast<codon::jit::JIT::JITClassInstance *>(instance));
   void *result = t.result;
   char *message =
       t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());

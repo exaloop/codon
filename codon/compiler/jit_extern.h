@@ -28,12 +28,11 @@ struct CJITResult jitclass_new(void *jit, char *class_name, char *native_class_n
                                char **types, size_t types_size, void *args,
                                uint8_t debug);
 
-struct CJITResult jitclass_call(void *jit, char *class_name, uint64_t handle,
+struct CJITResult jitclass_call(void *jit, char *class_name, void *instance,
                                 char *method_name, char **types, size_t types_size,
                                 void *args, uint8_t debug);
 
-struct CJITResult jitclass_release(void *jit, char *class_name, uint64_t handle,
-                                   uint8_t debug);
+struct CJITResult jitclass_release(void *instance);
 
 char *get_jit_library();
 

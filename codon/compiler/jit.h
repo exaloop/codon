@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -53,6 +54,7 @@ public:
 
   struct JITClassData {
     ir::types::Type *cobj;
+    // Cache generated wrappers by native class, method name, and argument types.
     std::unordered_map<std::string, ir::Func *> constructorWrappers;
     std::unordered_map<std::string, ir::Func *> methodWrappers;
 
@@ -60,6 +62,14 @@ public:
     ir::types::Type *getCObjType(ir::Module *M);
   };
 
+  // Shared liveness token used by native instances to detect stale JIT contexts.
+  struct JITContextState {
+    std::atomic<bool> alive;
+
+    JITContextState() : alive(true) {}
+  };
+
+  // RAII root for Codon GC-managed objects exposed through Python-owned instances.
   struct JITClassRoot {
     std::unique_ptr<void *> slot;
 
@@ -72,19 +82,24 @@ public:
     JITClassRoot &operator=(const JITClassRoot &) = delete;
   };
 
-  struct JITClassObject {
+  // Opaque native control block owned by the Cython extension type.
+  struct JITClassInstance {
+    std::shared_ptr<JITContextState> contextState;
     std::string className;
     std::string nativeClassName;
     void *nativePtr;
 
+    // Keeps the underlying Codon object alive while Python can still reach it.
     JITClassRoot root;
 
-    JITClassObject(std::string className, std::string nativeClassName, void *nativePtr);
+    JITClassInstance(std::shared_ptr<JITContextState> contextState,
+                     std::string className, std::string nativeClassName,
+                     void *nativePtr);
 
-    JITClassObject(JITClassObject &&) noexcept = default;
-    JITClassObject &operator=(JITClassObject &&) noexcept = default;
-    JITClassObject(const JITClassObject &) = delete;
-    JITClassObject &operator=(const JITClassObject &) = delete;
+    JITClassInstance(JITClassInstance &&) noexcept = default;
+    JITClassInstance &operator=(JITClassInstance &&) noexcept = default;
+    JITClassInstance(const JITClassInstance &) = delete;
+    JITClassInstance &operator=(const JITClassInstance &) = delete;
   };
 
   struct JITResult {
@@ -101,14 +116,14 @@ private:
   std::unique_ptr<Engine> engine;
   std::unique_ptr<PythonData> pydata;
   std::unique_ptr<JITClassData> jitClassData;
-  std::unordered_map<uint64_t, JITClassObject> jitClassObjects;
-  uint64_t nextJITClassHandle = 1;
+  std::shared_ptr<JITContextState> contextState;
   std::string mode;
   bool forgetful = false;
 
 public:
   explicit JIT(const std::string &argv0, const std::string &mode = "",
                const std::string &stdlibRoot = "");
+  ~JIT();
 
   Compiler *getCompiler() const { return compiler.get(); }
   Engine *getEngine() const { return engine.get(); }
@@ -138,13 +153,16 @@ public:
                           bool debug);
   JITResult executeSafe(const std::string &code, const std::string &file, int line,
                         bool debug);
+  // Create a native jitclass object and return its opaque control block.
   JITResult jitClassNew(const std::string &className,
                         const std::string &nativeClassName,
                         const std::vector<std::string> &types, void *args, bool debug);
-  JITResult jitClassCall(const std::string &className, uint64_t handle,
+  // Dispatch a method or generated field accessor on an existing native instance.
+  JITResult jitClassCall(const std::string &className, JITClassInstance *instance,
                          const std::string &methodName,
                          const std::vector<std::string> &types, void *args, bool debug);
-  JITResult jitClassRelease(const std::string &className, uint64_t handle, bool debug);
+  // Release an opaque jitclass control block; safe to call without a live JIT.
+  static JITResult jitClassRelease(JITClassInstance *instance);
 
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
