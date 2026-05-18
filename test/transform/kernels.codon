@@ -266,6 +266,74 @@ def test_auto_par():
     for i in range(1):
         pass
 
+@test
+def test_scalar_types():
+    
+    def check_exact(name, kernel, x, out, expected):
+        kernel(x, out, grid=1, block=1)
+        assert out[0] == expected
+    
+    @gpu.kernel
+    def kernel_i8(x: i8, out):
+        out[0] = (x + i8(3)) * i8(2)
+
+    @gpu.kernel
+    def kernel_i16(x: i16, out):
+        out[0] = (x + i16(5)) * i16(3)
+
+    @gpu.kernel
+    def kernel_i32(x: i32, out):
+        out[0] = (x + i32(7)) * i32(4)
+
+    @gpu.kernel
+    def kernel_i64(x: i64, out):
+        out[0] = (x + i64(9)) * i64(5)
+
+    @gpu.kernel
+    def kernel_u8(x: u8, out):
+        out[0] = (x + u8(3)) * u8(2)
+
+    @gpu.kernel
+    def kernel_u16(x: u16, out):
+        out[0] = (x + u16(5)) * u16(3)
+
+    @gpu.kernel
+    def kernel_u32(x: u32, out):
+        out[0] = (x + u32(7)) * u32(4)
+
+    @gpu.kernel
+    def kernel_u64(x: u64, out):
+        out[0] = (x + u64(9)) * u64(5)
+
+    @gpu.kernel
+    def kernel_bf16(x: bfloat16, out):
+        out[0] = (x + bfloat16(3.0)) * bfloat16(3.0)
+
+    @gpu.kernel
+    def kernel_f16(x: float16, out):
+        out[0] = (x + float16(2.0)) * float16(2.0)
+
+    @gpu.kernel
+    def kernel_f32(x: float32, out):
+        out[0] = (x + float32(1.0)) * float32(2.0)
+
+    @gpu.kernel
+    def kernel_f64(x: float, out):
+        out[0] = (x + 1.0) * 2.0
+
+    check_exact("i8", kernel_i8, i8(10), [i8(0)], i8(26))
+    check_exact("i16", kernel_i16, i16(10), [i16(0)], i16(45))
+    check_exact("i32", kernel_i32, i32(10), [i32(0)], i32(68))
+    check_exact("i64", kernel_i64, i64(10), [i64(0)], i64(95))
+    check_exact("u8", kernel_u8, u8(10), [u8(0)], u8(26))
+    check_exact("u16", kernel_u16, u16(10), [u16(0)], u16(45))
+    check_exact("u32", kernel_u32, u32(10), [u32(0)], u32(68))
+    check_exact("u64", kernel_u64, u64(10), [u64(0)], u64(95))
+    check_exact("bf16", kernel_bf16, bfloat16(5.0), [bfloat16(0.0)], bfloat16(24.0))
+    check_exact("f16", kernel_f16, float16(1.5), [float16(0.0)], float16(7.0))
+    check_exact("f32", kernel_f32, float32(1.5), [float32(0.0)], float32(5.0))
+    check_exact("f64", kernel_f64, 1.5, [0.0], 5.0)
+
 test_hello_world()
 test_raw()
 test_conversions()
@@ -275,3 +343,4 @@ test_matmul()
 test_mandelbrot()
 test_kitchen_sink()
 test_auto_par()
+test_scalar_types()

@@ -625,6 +625,28 @@ class float32:
         return other
 
 @extend
+class float16:
+    def __to_gpu__(self, cache: AllocCache):
+        return self
+
+    def __from_gpu__(self, other: float16):
+        pass
+
+    def __from_gpu_new__(other: float16):
+        return other
+
+@extend
+class bfloat16:
+    def __to_gpu__(self, cache: AllocCache):
+        return self
+
+    def __from_gpu__(self, other: bfloat16):
+        pass
+
+    def __from_gpu_new__(other: bfloat16):
+        return other
+
+@extend
 class bool:
     def __to_gpu__(self, cache: AllocCache):
         return self

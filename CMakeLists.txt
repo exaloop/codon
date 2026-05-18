@@ -79,7 +79,7 @@ add_library(codonfloat STATIC
             codon/runtime/floatlib/truncdfsf2.c
             codon/runtime/floatlib/extendhftf2.c
             codon/runtime/floatlib/int_lib.h
-#            codon/runtime/floatlib/truncsfbf2.c
+            codon/runtime/floatlib/truncsfbf2.c
             codon/runtime/floatlib/extendsfdf2.c
             codon/runtime/floatlib/int_math.h
             codon/runtime/floatlib/truncsfhf2.c
@@ -90,7 +90,7 @@ add_library(codonfloat STATIC
             codon/runtime/floatlib/int_util.h
             codon/runtime/floatlib/trunctfhf2.c
             codon/runtime/floatlib/fp_lib.h
-#            codon/runtime/floatlib/truncdfbf2.c
+            codon/runtime/floatlib/truncdfbf2.c
             codon/runtime/floatlib/trunctfsf2.c)
 target_compile_options(codonfloat PRIVATE -O3)
 target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
