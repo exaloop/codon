@@ -286,7 +286,7 @@ def product(*iterables, repeat: int):
     i = 0
 
     while i < nargs:
-        p = List.as_list(iterables[i])
+        p = List._as_list(iterables[i])
         if len(p) == 0:
             return
         pools.append(p)
@@ -354,7 +354,7 @@ def product(*iterables, repeat: Literal[int] = 1):
         npools: Literal[int] = nargs * repeat
         indices_tuple = (0,) * npools
         indices = Ptr[int](__ptr__(indices_tuple).as_byte())
-        pools = tuple(List.as_list(it) for it in iterables) * repeat
+        pools = tuple(List._as_list(it) for it in iterables) * repeat
 
         for i in static.range(nargs):
             if len(pools[i]) == 0:
@@ -386,7 +386,7 @@ def combinations(pool, r: int):
     if r < 0:
         raise ValueError("r must be non-negative")
 
-    pool_list = List.as_list(pool)
+    pool_list = List._as_list(pool)
     n = len(pool)
 
     if r > n:
@@ -471,7 +471,7 @@ def combinations_with_replacement(pool, r: int):
     if r < 0:
         raise ValueError("r must be non-negative")
 
-    pool_list = List.as_list(pool)
+    pool_list = List._as_list(pool)
     n = len(pool)
 
     if n == 0:
@@ -556,7 +556,7 @@ def combinations_with_replacement(pool, r: Literal[int]):
             i += 1
 
 def _permutations_non_static(pool, r = None):
-    pool_list = List.as_list(pool)
+    pool_list = List._as_list(pool)
     n = len(pool)
 
     if r is None:
@@ -622,7 +622,7 @@ def _permutations_static(pool, r: Literal[int]):
     def empty(T: type) -> T:
         pass
 
-    pool_list = List.as_list(pool)
+    pool_list = List._as_list(pool)
     n = len(pool)
 
     if r < 0:

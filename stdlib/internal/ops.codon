@@ -25,6 +25,9 @@ def _float_int_pow(a: F, b: I, F: type, I: type) -> F:
 @extend
 class Int:
 
+    def __new__(what) -> Int[N]:
+        return Int[N](what.__int__())
+
     def __new__(what: bool) -> Int[N]:
         @pure
         @llvm
@@ -87,6 +90,9 @@ class Int:
 
 @extend
 class UInt:
+
+    def __new__(what) -> UInt[N]:
+        return UInt[N](what.__int__())
 
     def __new__(what: bool) -> UInt[N]:
         @pure
@@ -151,6 +157,9 @@ class UInt:
 @extend
 class float:
 
+    def __new__(what) -> float:
+        return what.__float__()
+
     def __new__(what: bool) -> float:
         return 1.0 if what else 0.0
 
@@ -186,6 +195,9 @@ class float:
 
 @extend
 class float128:
+
+    def __new__(what) -> float128:
+        return float128(what.__float__())
 
     def __new__(what: bool) -> float128:
         return float128(1.0) if what else float128(0.0)
@@ -223,6 +235,9 @@ class float128:
 @extend
 class float32:
 
+    def __new__(what) -> float32:
+        return float32(what.__float__())
+
     def __new__(what: bool) -> float32:
         return float32(1.0) if what else float32(0.0)
 
@@ -258,6 +273,9 @@ class float32:
 
 @extend
 class float16:
+
+    def __new__(what) -> float16:
+        return float16(what.__float__())
 
     def __new__(what: bool) -> float16:
         return float16(1.0) if what else float16(0.0)
@@ -295,6 +313,9 @@ class float16:
 
 @extend
 class bfloat16:
+
+    def __new__(what) -> bfloat16:
+        return bfloat16(what.__float__())
 
     def __new__(what: bool) -> bfloat16:
         return bfloat16(1.0) if what else bfloat16(0.0)

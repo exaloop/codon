@@ -462,7 +462,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(false),
+      testing::Values(true),
       testing::Values(true)
     ),
     getTestNameFromParam);
@@ -478,7 +478,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(true),
+      testing::Values(false, true),
       testing::Values(true)
     ),
     getTestNameFromParam);
@@ -508,7 +508,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
-      testing::Values(false),
+      testing::Values(true),
       testing::Values(true)
     ),
     getTestNameFromParam);
@@ -534,7 +534,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(true)
     ),
     getTestNameFromParam);
@@ -550,7 +550,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(false)  // do not run by default, just compile
     ),
     getTestNameFromParam);
@@ -589,7 +589,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(true)
     ),
     getTestNameFromParam);

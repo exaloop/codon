@@ -379,8 +379,8 @@ class float:
         HASH_MODULUS = (1 << HASH_BITS) - 1
         HASH_INF = 314159
         HASH_NAN = 0
-        INF = 1.0 / 0.0
-        NAN = 0.0 / 0.0
+        INF = (1.0).cdiv(0.0)
+        NAN = (0.0).cdiv(0.0)
         v = self
 
         if v == INF or v == -INF:
@@ -868,7 +868,7 @@ class float16:
         %tmp = fmul half %a, %b
         ret half %tmp
 
-    def __floordiv__(self, other: float32) -> float32:
+    def __floordiv__(self, other: float16) -> float16:
         if __py_numerics__:
             return _divmod(self, other)[0]
         else:

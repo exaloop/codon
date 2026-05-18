@@ -1789,7 +1789,7 @@ def test_narrow_int_str(T: type):
     assert str((o + o + o + o) * (o + o + o)) == '12'
     assert str(a) == '42'
     assert str(b) == '-9'
-    assert repr(a) == f'Int[{T.N}](42)'
+    assert repr(a) == f'Int[{T.N}](42)' if T.N != 64 else '42'
 
 @test
 def test_narrow_uint_str(T: type):

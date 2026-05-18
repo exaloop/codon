@@ -175,7 +175,7 @@ def quantiles(
         m = ld - 1
         result = []
         for i in range(1, n):
-            j = i * m.cdiv(n)
+            j = (i * m).cdiv(n)
             delta = (i * m) - (j * n)
             interpolated = (data[j] * (n - delta) + data[j + 1] * delta) / n
             result.append(interpolated)
@@ -184,7 +184,7 @@ def quantiles(
         m = ld + 1
         result = []
         for i in range(1, n):
-            j = i * m.cdiv(n)  # rescale i to m/n
+            j = (i * m).cdiv(n)  # rescale i to m/n
             j = 1 if j < 1 else ld - 1 if j > ld - 1 else j  # clamp to 1 .. ld-1
             delta = (i * m) - (j * n)  # exact integer math
             interpolated = (data[j - 1] * (n - delta) + data[j] * delta) / n
@@ -498,7 +498,7 @@ class NormalDist:
                     6.8718700749205790830e+2) * r +
                     4.2313330701600911252e+1) * r +
                     1.0)
-            x = num / den
+            x = num.cdiv(den)
             return mu + (x * sigma)
         r = p if q <= 0.0 else 1.0 - p
         r = _sqrt(-_log(r))
@@ -540,7 +540,7 @@ class NormalDist:
                     1.36929880922735805310e-1) * r +
                     5.99832206555887937690e-1) * r +
                     1.0)
-        x = num / den
+        x = num.cdiv(den)
         if q < 0.0:
             x = -x
         return mu + (x * sigma)
@@ -569,7 +569,7 @@ class NormalDist:
         Set *n* to 100 for percentiles which gives the 99 cuts points that
         separate the normal distribution into 100 equal sized groups.
         """
-        return [self.inv_cdf(float(i) / float(n)) for i in range(1, n)]
+        return [self.inv_cdf(float(i).cdiv(float(n))) for i in range(1, n)]
 
     def overlap(self, other: NormalDist) -> float:
         """

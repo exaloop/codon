@@ -147,8 +147,12 @@ class Int:
         if __py_numerics__:
             if not other:
                 raise ZeroDivisionError("division by zero")
-            return (self.cdiv(other) if (self ^ other >= Int[N]()) else
-                    Int[N](-1) - (self - Int[N](1)).cdiv(other))
+
+            q = self.cdiv(other)
+            r = self.cmod(other)
+            if r != Int[N](0) and (self ^ other) < Int[N](0):
+                q -= Int[N](1)
+            return q
         else:
             return self.cdiv(other)
 
@@ -169,7 +173,7 @@ class Int:
             if not other:
                 raise ZeroDivisionError("division by zero")
             m = self.cmod(other)
-            if m and ((self ^ other) < Int[N](0)):
+            if m != Int[N](0) and ((self ^ other) < Int[N](0)):
                 m += other
             return m
         else:
@@ -543,8 +547,6 @@ class UInt:
                 raise ZeroDivisionError("division by zero")
         return self.cdiv(other)
 
-    @pure
-    @llvm
     def __truediv__(self, other: UInt[N]) -> float:
         return self.__float__() / other.__float__()
 
