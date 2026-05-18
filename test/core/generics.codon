@@ -34,7 +34,7 @@ class A[TA,TB,TC]:
         A.dump(x.a, x.b, x.c)
 
     # deeply nested generic type:
-    def m6[T](v: array[array[array[T]]]):
+    def m6[T](v: List[List[List[T]]]):
         return v[0][0][0]
 
 # explicit realization:
@@ -56,12 +56,12 @@ a2 = A(1, 2, 3)
 b1 = B1[bool](True).foo()
 b2 = B2[str]("x").foo()
 
-v1 = array[array[array[str]]](1)
-v2 = array[array[str]](1)
-v3 = array[str](1)
-v1[0] = v2
-v2[0] = v3
-v3[0] = "world"
+v1 = List[List[List[str]]](1)
+v2 = List[List[str]](1)
+v3 = List[str](1)
+v1.append(v2)
+v2.append(v3)
+v3.append("world")
 f = a2.m0
 
 a1.m1(a2)                           # EXPECT: 1 2 3

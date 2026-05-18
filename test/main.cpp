@@ -442,6 +442,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "core/helloworld.codon",
         "core/arithmetic.codon",
+        "core/numerics.codon",
         "core/parser.codon",
         "core/generics.codon",
         "core/generators.codon",
@@ -456,38 +457,6 @@ INSTANTIATE_TEST_SUITE_P(
         "core/pipeline.codon",
         "core/empty.codon",
         "core/vec_simd.codon"
-      ),
-      testing::Values(true, false),
-      testing::Values(""),
-      testing::Values(""),
-      testing::Values(0),
-      testing::Values(false),
-      testing::Values(true),
-      testing::Values(true)
-    ),
-    getTestNameFromParam);
-
-INSTANTIATE_TEST_SUITE_P(
-    CNumericsTests, SeqTest,
-    testing::Combine(
-      testing::Values(
-        "core/numerics.codon"
-      ),
-      testing::Values(true, false),
-      testing::Values(""),
-      testing::Values(""),
-      testing::Values(0),
-      testing::Values(false),
-      testing::Values(false),
-      testing::Values(true)
-    ),
-    getTestNameFromParam);
-
-INSTANTIATE_TEST_SUITE_P(
-    PyNumericsTests, SeqTest,
-    testing::Combine(
-      testing::Values(
-        "core/numerics.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
@@ -525,6 +494,23 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(0),
       testing::Values(false),
       testing::Values(true),
+      testing::Values(true)
+    ),
+    getTestNameFromParam);
+
+INSTANTIATE_TEST_SUITE_P(
+    CNumericsTests, SeqTest,
+    testing::Combine(
+      testing::Values(
+        "core/numerics.codon",
+        "stdlib/math_test.codon"
+      ),
+      testing::Values(true, false),
+      testing::Values(""),
+      testing::Values(""),
+      testing::Values(0),
+      testing::Values(false),
+      testing::Values(false),
       testing::Values(true)
     ),
     getTestNameFromParam);

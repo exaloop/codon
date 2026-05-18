@@ -270,7 +270,7 @@ class Int:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
-    def __pow__(self, exp: Int[N]) -> Int[N]:
+    def _ipow(self, exp: Int[N]) -> Int[N]:
         zero = Int[N](0)
         one = Int[N](1)
 
@@ -285,6 +285,17 @@ class Int:
                 break
             self *= self
         return result
+
+    def __pow__(self, exp: Int[N]) -> Int[N]:
+        return self._ipow(exp)
+
+    def __pow__(self, exp: Literal[int]):
+        if exp == 0:
+            return 1
+        elif exp > 0:
+            return self._ipow(Int[N](exp))
+        else:
+            return self ** float(exp)
 
     def __repr__(self) -> str:
         if N == 64:
@@ -646,7 +657,7 @@ class UInt:
         %0 = xor i{=N} %self, %other
         ret i{=N} %0
 
-    def __pow__(self, exp: UInt[N]) -> UInt[N]:
+    def _ipow(self, exp: UInt[N]) -> UInt[N]:
         zero = UInt[N](0)
         one = UInt[N](1)
 
@@ -661,6 +672,17 @@ class UInt:
                 break
             self *= self
         return result
+
+    def __pow__(self, exp: UInt[N]) -> UInt[N]:
+        return self._ipow(exp)
+
+    def __pow__(self, exp: Literal[int]):
+        if exp == 0:
+            return 1
+        elif exp > 0:
+            return self._ipow(UInt[N](exp))
+        else:
+            return self ** float(exp)
 
     def __repr__(self) -> str:
         return f"UInt[{N}]({self.__str__()})"

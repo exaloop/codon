@@ -116,9 +116,10 @@ def test_log2():
     assert math.log2(2.0) == 1.0
     assert math.log2(4.0) == 2.0
     assert math.log2(2.0 ** 1023) == 1023.0
-    assert math.isnan(math.log2(-1.5)) == True
-    assert math.isnan(math.log2(NINF)) == True
     assert math.isnan(math.log2(NAN)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.log2(-1.5)) == True
+        assert math.isnan(math.log2(NINF)) == True
 
 
 @test
@@ -150,7 +151,8 @@ def test_sqrt():
     assert math.sqrt(4.0) == 2
     assert math.sqrt(0.0) == 0
     assert math.sqrt(1.0) == 1
-    assert math.isnan(math.sqrt(-1.0)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.sqrt(-1.0)) == True
 
 
 @test
@@ -223,19 +225,20 @@ def test_cos():
     assert close(math.cos(math.pi / 2), 6.123233995736766e-17)
     assert close(math.cos(-math.pi / 2), 6.123233995736766e-17)
     assert math.cos(math.pi) == -1
-    assert math.isnan(math.cos(INF)) == True
-    assert math.isnan(math.cos(NINF)) == True
     assert math.isnan(math.cos(NAN)) == True
-
+    if not __py_numerics__:
+        assert math.isnan(math.cos(INF)) == True
+        assert math.isnan(math.cos(NINF)) == True
 
 @test
 def test_sin():
     assert math.sin(0.0) == 0
     assert math.sin(math.pi / 2) == 1
     assert math.sin(-math.pi / 2) == -1
-    assert math.isnan(math.sin(INF)) == True
-    assert math.isnan(math.sin(NINF)) == True
     assert math.isnan(math.sin(NAN)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.sin(INF)) == True
+        assert math.isnan(math.sin(NINF)) == True
 
 
 @test
@@ -252,9 +255,10 @@ def test_tan():
     assert math.tan(0.0) == 0
     assert close(math.tan(math.pi / 4), 0.9999999999999999)
     assert close(math.tan(-math.pi / 4), -0.9999999999999999)
-    assert math.isnan(math.tan(INF)) == True
-    assert math.isnan(math.tan(NINF)) == True
     assert math.isnan(math.tan(NAN)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.tan(INF)) == True
+        assert math.isnan(math.tan(NINF)) == True
 
 
 @test
@@ -290,7 +294,8 @@ def test_acosh():
     assert close(math.acosh(2.0), 1.3169578969248166)
     assert math.acosh(INF) == INF
     assert math.isnan(math.acosh(NAN)) == True
-    assert math.isnan(math.acosh(-1.0)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.acosh(-1.0)) == True
 
 
 @test
@@ -308,9 +313,10 @@ def test_atanh():
     assert math.atanh(0.0) == 0
     assert close(math.atanh(0.5), 0.5493061443340549)
     assert close(math.atanh(-0.5), -0.5493061443340549)
-    assert math.isnan(math.atanh(INF)) == True
     assert math.isnan(math.atanh(NAN)) == True
-    assert math.isnan(math.atanh(NINF)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.atanh(INF)) == True
+        assert math.isnan(math.atanh(NINF)) == True
 
 
 @test
@@ -341,7 +347,8 @@ def test_log1p():
     assert close(math.log1p(2.0 ** 90), 62.383246250395075)
     assert close(math.log1p(2.0 ** 300), 207.94415416798358)
     assert math.log1p(INF) == INF
-    assert math.log1p(-1.0) == NINF
+    if not __py_numerics__:
+        assert math.log1p(-1.0) == NINF
 
 
 @test
@@ -385,20 +392,22 @@ def test_gamma():
     assert close(math.gamma(1.0), 1.0)
     assert close(math.gamma(2.0), 1.0)
     assert close(math.gamma(3.0), 2.0)
-    assert math.isnan(math.gamma(-1.0)) == True
     assert math.gamma(INF) == INF
-    assert math.isnan(math.gamma(NINF)) == True
     assert math.isnan(math.gamma(NAN)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.gamma(-1.0)) == True
+        assert math.isnan(math.gamma(NINF)) == True
 
 
 @test
 def test_lgamma():
     assert math.lgamma(1.0) == 0.0
     assert math.lgamma(2.0) == 0.0
-    assert math.lgamma(-1.0) == INF
     assert math.lgamma(INF) == INF
-    assert math.lgamma(NINF) == INF
     assert math.isnan(math.lgamma(NAN)) == True
+    if not __py_numerics__:
+        assert math.lgamma(NINF) == INF
+        assert math.lgamma(-1.0) == INF
 
 
 @test
@@ -407,9 +416,10 @@ def test_remainder():
     assert math.remainder(-4.0, 1.0) == -0.0
     assert close(math.remainder(-3.8, 1.0), 0.20000000000000018)
     assert close(math.remainder(3.8, 1.0), -0.20000000000000018)
-    assert math.isnan(math.remainder(INF, 1.0)) == True
-    assert math.isnan(math.remainder(NINF, 1.0)) == True
     assert math.isnan(math.remainder(NAN, 1.0)) == True
+    if not __py_numerics__:
+        assert math.isnan(math.remainder(INF, 1.0)) == True
+        assert math.isnan(math.remainder(NINF, 1.0)) == True
 
 
 @test

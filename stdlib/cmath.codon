@@ -15,6 +15,102 @@ _FLT_RADIX = 2
 _M_LN2 = 0.6931471805599453094  # ln(2)
 _M_LN10 = 2.302585092994045684  # ln(10)
 
+# math functions
+@pure
+@llvm
+def _fabs(x: float) -> float:
+    declare double @llvm.fabs.f64(double)
+    %y = call double @llvm.fabs.f64(double %x)
+    ret double %y
+
+@pure
+@llvm
+def _sqrt(x: float) -> float:
+    declare double @llvm.sqrt.f64(double)
+    %y = call double @llvm.sqrt.f64(double %x)
+    ret double %y
+
+@pure
+@llvm
+def _exp(x: float) -> float:
+    declare double @llvm.exp.f64(double)
+    %y = call double @llvm.exp.f64(double %x)
+    ret double %y
+
+@pure
+@llvm
+def _log(x: float) -> float:
+    declare double @llvm.log.f64(double)
+    %y = call double @llvm.log.f64(double %x)
+    ret double %y
+
+@pure
+@llvm
+def _cos(x: float) -> float:
+    declare double @llvm.cos.f64(double)
+    %y = call double @llvm.cos.f64(double %x)
+    ret double %y
+
+@pure
+@llvm
+def _sin(x: float) -> float:
+    declare double @llvm.sin.f64(double)
+    %y = call double @llvm.sin.f64(double %x)
+    ret double %y
+
+@pure
+@llvm
+def _isnan(x: float) -> bool:
+    %y = fcmp uno double %x, 0.000000e+00
+    %z = zext i1 %y to i8
+    ret i8 %z
+
+@pure
+@llvm
+def _isinf(x: float) -> bool:
+    declare double @llvm.fabs.f64(double)
+    %a = call double @llvm.fabs.f64(double %x)
+    %b = fcmp oeq double %a, 0x7FF0000000000000
+    %c = zext i1 %b to i8
+    ret i8 %c
+
+@pure
+@llvm
+def _copysign(x: float, y: float) -> float:
+    declare double @llvm.copysign.f64(double, double)
+    %z = call double @llvm.copysign.f64(double %x, double %y)
+    ret double %z
+
+def _isfinite(x: float) -> bool:
+    return not (isnan(x) or isinf(x))
+
+def _tan(x: float) -> float:
+    return _C.tan(x)
+
+def _tanh(x: float) -> float:
+    return _C.tanh(x)
+
+def _cosh(x: float) -> float:
+    return _C.cosh(x)
+
+def _sinh(x: float) -> float:
+    return _C.sinh(x)
+
+def _asinh(x: float) -> float:
+    return _C.asinh(x)
+
+def _atan2(y: float, x: float) -> float:
+    return _C.atan2(y, x)
+
+def _hypot(x: float, y: float) -> float:
+    return _C.hypot(x, y)
+
+def _log1p(x: float) -> float:
+    return _C.log1p(x)
+
+def _ldexp(x: float, i: int) -> float:
+    return _C.ldexp(x, i32(i))
+
 @pure
 @llvm
 def _max_float() -> float:
@@ -30,9 +126,9 @@ _DBL_MIN = _min_float()
 _DBL_MANT_DIG: Literal[int] = 53
 
 _CM_LARGE_DOUBLE = _DBL_MAX/4.
-_CM_SQRT_LARGE_DOUBLE = math.sqrt(_CM_LARGE_DOUBLE)
-_CM_LOG_LARGE_DOUBLE = math.log(_CM_LARGE_DOUBLE)
-_CM_SQRT_DBL_MIN = math.sqrt(_DBL_MIN)
+_CM_SQRT_LARGE_DOUBLE = _sqrt(_CM_LARGE_DOUBLE)
+_CM_LOG_LARGE_DOUBLE = _log(_CM_LARGE_DOUBLE)
+_CM_SQRT_DBL_MIN = _sqrt(_DBL_MIN)
 _CM_SCALE_UP: Literal[int] = (2*(_DBL_MANT_DIG // 2) + 1)
 _CM_SCALE_DOWN: Literal[int] = (-(_CM_SCALE_UP+1)//2)
 
@@ -46,20 +142,20 @@ _ST_PINF  = 5  # positive infinity
 _ST_NAN   = 6  # Not a Number
 
 def _special_type(d: float):
-    if math.isfinite(d):
+    if _isfinite(d):
         if d != 0:
-            if math.copysign(1., d) == 1.:
+            if _copysign(1., d) == 1.:
                 return _ST_POS
             else:
                 return _ST_NEG
         else:
-            if math.copysign(1., d) == 1.:
+            if _copysign(1., d) == 1.:
                 return _ST_PZERO
             else:
                 return _ST_NZERO
-    if math.isnan(d):
+    if _isnan(d):
         return _ST_NAN
-    if math.copysign(1., d) == 1.:
+    if _copysign(1., d) == 1.:
         return _ST_PINF
     else:
         return _ST_NINF
@@ -246,7 +342,7 @@ def _rect_special():
     return v
 
 def _is_special(z):
-    return (not math.isfinite(z.real)) or (not math.isfinite(z.imag))
+    return (not _isfinite(z.real)) or (not _isfinite(z.imag))
 
 def _special_get(z, table):
     t1 = _special_type(z.real)
@@ -264,24 +360,24 @@ def _sqrt_impl(z):
         r_imag = z.imag
         return complex(r_real, r_imag)
 
-    ax = math.fabs(z.real)
-    ay = math.fabs(z.imag)
+    ax = _fabs(z.real)
+    ay = _fabs(z.imag)
     s = 0.
     if ax < _DBL_MIN and ay < _DBL_MIN and (ax > 0. or ay > 0.):
         # here we catch cases where hypot(ax, ay) is subnormal
-        ax = math.ldexp(ax, _CM_SCALE_UP)
-        s = math.ldexp(math.sqrt(ax + math.hypot(ax, math.ldexp(ay, _CM_SCALE_UP))), _CM_SCALE_DOWN)
+        ax = _ldexp(ax, _CM_SCALE_UP)
+        s = _ldexp(_sqrt(ax + _hypot(ax, _ldexp(ay, _CM_SCALE_UP))), _CM_SCALE_DOWN)
     else:
         ax /= 8.
-        s = 2.*math.sqrt(ax + math.hypot(ax, ay/8.))
-    d = ay/(2.*s)
+        s = 2.*_sqrt(ax + _hypot(ax, ay/8.))
+    d = ay.cdiv(2.*s)
 
     if z.real >= 0.:
         r_real = s
-        r_imag = math.copysign(d, z.imag)
+        r_imag = _copysign(d, z.imag)
     else:
         r_real = d
-        r_imag = math.copysign(s, z.imag)
+        r_imag = _copysign(s, z.imag)
     # errno = 0
     return complex(r_real, r_imag)
 
@@ -291,20 +387,20 @@ def _acos_impl(z):
 
     r_real = 0.
     r_imag = 0.
-    if math.fabs(z.real) > _CM_LARGE_DOUBLE or math.fabs(z.imag) > _CM_LARGE_DOUBLE:
+    if _fabs(z.real) > _CM_LARGE_DOUBLE or _fabs(z.imag) > _CM_LARGE_DOUBLE:
         # avoid unnecessary overflow for large arguments
-        r_real = math.atan2(math.fabs(z.imag), z.real)
+        r_real = _atan2(_fabs(z.imag), z.real)
         # split into cases to make sure that the branch cut has the
         # correct continuity on systems with unsigned zeros
         if z.real < 0.:
-            r_imag = -math.copysign(math.log(math.hypot(z.real/2., z.imag/2.)) + _M_LN2*2, z.imag)
+            r_imag = -_copysign(_log(_hypot(z.real/2., z.imag/2.)) + _M_LN2*2, z.imag)
         else:
-            r_imag = math.copysign(math.log(math.hypot(z.real/2., z.imag/2.)) + _M_LN2*2, -z.imag)
+            r_imag = _copysign(_log(_hypot(z.real/2., z.imag/2.)) + _M_LN2*2, -z.imag)
     else:
         s1 = _sqrt_impl(complex(1. - z.real, -z.imag))
         s2 = _sqrt_impl(complex(1. + z.real, z.imag))
-        r_real = 2.*math.atan2(s1.real, s2.real)
-        r_imag = math.asinh(s2.real*s1.imag - s2.imag*s1.real)
+        r_real = 2.*_atan2(s1.real, s2.real)
+        r_imag = _asinh(s2.real*s1.imag - s2.imag*s1.real)
     return complex(r_real, r_imag)
 
 def _acosh_impl(z):
@@ -313,15 +409,15 @@ def _acosh_impl(z):
 
     r_real = 0.
     r_imag = 0.
-    if math.fabs(z.real) > _CM_LARGE_DOUBLE or math.fabs(z.imag) > _CM_LARGE_DOUBLE:
+    if _fabs(z.real) > _CM_LARGE_DOUBLE or _fabs(z.imag) > _CM_LARGE_DOUBLE:
         # avoid unnecessary overflow for large arguments
-        r_real = math.log(math.hypot(z.real/2., z.imag/2.)) + _M_LN2*2.
-        r_imag = math.atan2(z.imag, z.real)
+        r_real = _log(_hypot(z.real/2., z.imag/2.)) + _M_LN2*2.
+        r_imag = _atan2(z.imag, z.real)
     else:
         s1 = _sqrt_impl(complex(z.real - 1., z.imag))
         s2 = _sqrt_impl(complex(z.real + 1., z.imag))
-        r_real = math.asinh(s1.real*s2.real + s1.imag*s2.imag)
-        r_imag = 2.*math.atan2(s1.imag, s2.real)
+        r_real = _asinh(s1.real*s2.real + s1.imag*s2.imag)
+        r_imag = 2.*_atan2(s1.imag, s2.real)
     return complex(r_real, r_imag)
 
 def _asinh_impl(z):
@@ -330,17 +426,17 @@ def _asinh_impl(z):
 
     r_real = 0.
     r_imag = 0.
-    if math.fabs(z.real) > _CM_LARGE_DOUBLE or math.fabs(z.imag) > _CM_LARGE_DOUBLE:
+    if _fabs(z.real) > _CM_LARGE_DOUBLE or _fabs(z.imag) > _CM_LARGE_DOUBLE:
         if z.imag >= 0.:
-            r_real = math.copysign(math.log(math.hypot(z.real/2., z.imag/2.)) + _M_LN2*2, z.real)
+            r_real = _copysign(_log(_hypot(z.real/2., z.imag/2.)) + _M_LN2*2, z.real)
         else:
-            r_real = -math.copysign(math.log(math.hypot(z.real/2., z.imag/2.)) + _M_LN2*2, -z.real)
-        r_imag = math.atan2(z.imag, math.fabs(z.real))
+            r_real = -_copysign(_log(_hypot(z.real/2., z.imag/2.)) + _M_LN2*2, -z.real)
+        r_imag = _atan2(z.imag, _fabs(z.real))
     else:
         s1 = _sqrt_impl(complex(1. + z.imag, -z.real))
         s2 = _sqrt_impl(complex(1. - z.imag, z.real))
-        r_real = math.asinh(s1.real*s2.imag - s2.real*s1.imag)
-        r_imag = math.atan2(z.imag, s1.real*s2.real - s1.imag*s2.imag)
+        r_real = _asinh(s1.real*s2.imag - s2.real*s1.imag)
+        r_imag = _atan2(z.imag, s1.real*s2.real - s1.imag*s2.imag)
     return complex(r_real, r_imag)
 
 def _asin_impl(z):
@@ -359,18 +455,18 @@ def _atanh_impl(z):
 
     r_real = 0.
     r_imag = 0.
-    ay = math.fabs(z.imag)
+    ay = _fabs(z.imag)
     if z.real > _CM_SQRT_LARGE_DOUBLE or ay > _CM_SQRT_LARGE_DOUBLE:
         # if abs(z) is large then we use the approximation
         # atanh(z) ~ 1/z +/- i*pi/2 (+/- depending on the sign
         # of z.imag)
-        h = math.hypot(z.real/2., z.imag/2.)  # safe from overflow
-        r_real = z.real/4./h/h
+        h = _hypot(z.real/2., z.imag/2.)  # safe from overflow
+        r_real = z.real.cdiv(4.).cdiv(h).cdiv(h)
         # the two negations in the next line cancel each other out
         # except when working with unsigned zeros: they're there to
         # ensure that the branch cut has the correct continuity on
         # systems that don't support signed zeros
-        r_imag = -math.copysign(pi/2., -z.imag)
+        r_imag = -_copysign(pi/2., -z.imag)
         # errno = 0
     elif z.real == 1. and ay < _CM_SQRT_DBL_MIN:
         # C99 standard says:  atanh(1+/-0.) should be inf +/- 0i
@@ -379,12 +475,12 @@ def _atanh_impl(z):
             r_imag = z.imag
             # errno = EDOM
         else:
-            r_real = -math.log(math.sqrt(ay).cdiv(math.sqrt(math.hypot(ay, 2.))))
-            r_imag = math.copysign(math.atan2(2., -ay).cdiv(2.), z.imag)
+            r_real = -_log(_sqrt(ay).cdiv(_sqrt(_hypot(ay, 2.))))
+            r_imag = _copysign(_atan2(2., -ay).cdiv(2.), z.imag)
             # errno = 0
     else:
-        r_real = math.log1p(4.*z.real/((1-z.real)*(1-z.real) + ay*ay))/4.
-        r_imag = -math.atan2(-2.*z.imag, (1-z.real)*(1+z.real) - ay*ay)/2.
+        r_real = _log1p(4.*z.real.cdiv((1-z.real)*(1-z.real) + ay*ay))/4.
+        r_imag = -_atan2(-2.*z.imag, (1-z.real)*(1+z.real) - ay*ay)/2.
         # errno = 0
     return complex(r_real, r_imag)
 
@@ -398,14 +494,14 @@ def _cosh_impl(z):
     r_real = 0.
     r_imag = 0.
     # special treatment for cosh(+/-inf + iy) if y is not a NaN
-    if (not math.isfinite(z.real)) or (not math.isfinite(z.imag)):
-        if math.isinf(z.real) and math.isfinite(z.imag) and z.imag != 0.:
+    if (not _isfinite(z.real)) or (not _isfinite(z.imag)):
+        if _isinf(z.real) and _isfinite(z.imag) and z.imag != 0.:
             if z.real > 0:
-                r_real = math.copysign(inf, math.cos(z.imag))
-                r_imag = math.copysign(inf, math.sin(z.imag))
+                r_real = _copysign(inf, _cos(z.imag))
+                r_imag = _copysign(inf, _sin(z.imag))
             else:
-                r_real = math.copysign(inf, math.cos(z.imag))
-                r_imag = -math.copysign(inf, math.sin(z.imag))
+                r_real = _copysign(inf, _cos(z.imag))
+                r_imag = -_copysign(inf, _sin(z.imag))
         else:
             r = _special_get(z, _cosh_special())
             r_real = r.real
@@ -420,15 +516,15 @@ def _cosh_impl(z):
         '''
         return complex(r_real, r_imag)
 
-    if math.fabs(z.real) > _CM_LOG_LARGE_DOUBLE:
+    if _fabs(z.real) > _CM_LOG_LARGE_DOUBLE:
         # deal correctly with cases where cosh(z.real) overflows but
         # cosh(z) does not.
-        x_minus_one = z.real - math.copysign(1., z.real)
-        r_real = math.cos(z.imag) * math.cosh(x_minus_one) * e
-        r_imag = math.sin(z.imag) * math.sinh(x_minus_one) * e
+        x_minus_one = z.real - _copysign(1., z.real)
+        r_real = _cos(z.imag) * _cosh(x_minus_one) * e
+        r_imag = _sin(z.imag) * _sinh(x_minus_one) * e
     else:
-        r_real = math.cos(z.imag) * math.cosh(z.real)
-        r_imag = math.sin(z.imag) * math.sinh(z.real)
+        r_real = _cos(z.imag) * _cosh(z.real)
+        r_imag = _sin(z.imag) * _sinh(z.real)
     '''
     /* detect overflow, and set errno accordingly */
     if (Py_IS_INFINITY(r.real) || Py_IS_INFINITY(r.imag))
@@ -445,14 +541,14 @@ def _cos_impl(z):
 def _exp_impl(z):
     r_real = 0.
     r_imag = 0.
-    if (not math.isfinite(z.real)) or (not math.isfinite(z.imag)):
-        if math.isinf(z.real) and math.isfinite(z.imag) and z.imag != 0.:
+    if (not _isfinite(z.real)) or (not _isfinite(z.imag)):
+        if _isinf(z.real) and _isfinite(z.imag) and z.imag != 0.:
             if z.real > 0:
-                r_real = math.copysign(inf, math.cos(z.imag))
-                r_imag = math.copysign(inf, math.sin(z.imag))
+                r_real = _copysign(inf, _cos(z.imag))
+                r_imag = _copysign(inf, _sin(z.imag))
             else:
-                r_real = math.copysign(0., math.cos(z.imag))
-                r_imag = math.copysign(0., math.sin(z.imag))
+                r_real = _copysign(0., _cos(z.imag))
+                r_imag = _copysign(0., _sin(z.imag))
         else:
             r = _special_get(z, _exp_special())
             r_real = r.real
@@ -470,13 +566,13 @@ def _exp_impl(z):
         return complex(r_real, r_imag)
 
     if z.real > _CM_LOG_LARGE_DOUBLE:
-        l = math.exp(z.real - 1.)
-        r_real = l*math.cos(z.imag)*e
-        r_imag = l*math.sin(z.imag)*e
+        l = _exp(z.real - 1.)
+        r_real = l*_cos(z.imag)*e
+        r_imag = l*_sin(z.imag)*e
     else:
-        l = math.exp(z.real)
-        r_real = l*math.cos(z.imag)
-        r_imag = l*math.sin(z.imag)
+        l = _exp(z.real)
+        r_real = l*_cos(z.imag)
+        r_imag = l*_sin(z.imag)
     '''
     /* detect overflow, and set errno accordingly */
     if (Py_IS_INFINITY(r.real) || Py_IS_INFINITY(r.imag))
@@ -490,50 +586,50 @@ def _c_log(z):
     if _is_special(z):
         return _special_get(z, _log_special())
 
-    ax = math.fabs(z.real)
-    ay = math.fabs(z.imag)
+    ax = _fabs(z.real)
+    ay = _fabs(z.imag)
 
     r_real = 0.
     r_imag = 0.
     if ax > _CM_LARGE_DOUBLE or ay > _CM_LARGE_DOUBLE:
-        r_real = math.log(math.hypot(ax/2., ay/2.)) + _M_LN2
+        r_real = _log(_hypot(ax/2., ay/2.)) + _M_LN2
     elif ax < _DBL_MIN and ay < _DBL_MIN:
         if ax > 0. or ay > 0.:
             # catch cases where hypot(ax, ay) is subnormal
-            r_real = math.log(math.hypot(math.ldexp(ax, _DBL_MANT_DIG), math.ldexp(ay, _DBL_MANT_DIG))) - _DBL_MANT_DIG*_M_LN2
+            r_real = _log(_hypot(_ldexp(ax, _DBL_MANT_DIG), _ldexp(ay, _DBL_MANT_DIG))) - _DBL_MANT_DIG*_M_LN2
         else:
             # log(+/-0. +/- 0i)
             r_real = -inf
-            r_imag = math.atan2(z.imag, z.real)
+            r_imag = _atan2(z.imag, z.real)
             # errno = EDOM
             return complex(r_real, r_imag)
     else:
-        h = math.hypot(ax, ay)
+        h = _hypot(ax, ay)
         if 0.71 <= h <= 1.73:
             am = max(ax, ay)
             an = min(ax, ay)
-            r_real = math.log1p((am-1)*(am+1) + an*an)/2.
+            r_real = _log1p((am-1)*(am+1) + an*an)/2.
         else:
-            r_real = math.log(h)
-    r_imag = math.atan2(z.imag, z.real)
+            r_real = _log(h)
+    r_imag = _atan2(z.imag, z.real)
     # errno = 0
     return complex(r_real, r_imag)
 
 def _log10_impl(z):
     s = _c_log(z)
-    return complex(s.real / _M_LN10, s.imag / _M_LN10)
+    return complex(s.real.cdiv(_M_LN10), s.imag.cdiv(_M_LN10))
 
 def _sinh_impl(z):
     r_real = 0.
     r_imag = 0.
-    if (not math.isfinite(z.real)) or (not math.isfinite(z.imag)):
-        if math.isinf(z.real) and math.isfinite(z.imag) and z.imag != 0.:
+    if (not _isfinite(z.real)) or (not _isfinite(z.imag)):
+        if _isinf(z.real) and _isfinite(z.imag) and z.imag != 0.:
             if z.real > 0:
-                r_real = math.copysign(inf, math.cos(z.imag))
-                r_imag = math.copysign(inf, math.sin(z.imag))
+                r_real = _copysign(inf, _cos(z.imag))
+                r_imag = _copysign(inf, _sin(z.imag))
             else:
-                r_real = -math.copysign(inf, math.cos(z.imag))
-                r_imag = math.copysign(inf, math.sin(z.imag))
+                r_real = -_copysign(inf, _cos(z.imag))
+                r_imag = _copysign(inf, _sin(z.imag))
         else:
             r = _special_get(z, _sinh_special())
             r_real = r.real
@@ -548,13 +644,13 @@ def _sinh_impl(z):
         '''
         return complex(r_real, r_imag)
 
-    if math.fabs(z.real) > _CM_LOG_LARGE_DOUBLE:
-        x_minus_one = z.real - math.copysign(1., z.real)
-        r_real = math.cos(z.imag) * math.sinh(x_minus_one) * e
-        r_imag = math.sin(z.imag) * math.cosh(x_minus_one) * e
+    if _fabs(z.real) > _CM_LOG_LARGE_DOUBLE:
+        x_minus_one = z.real - _copysign(1., z.real)
+        r_real = _cos(z.imag) * _sinh(x_minus_one) * e
+        r_imag = _sin(z.imag) * _cosh(x_minus_one) * e
     else:
-        r_real = math.cos(z.imag) * math.sinh(z.real)
-        r_imag = math.sin(z.imag) * math.cosh(z.real)
+        r_real = _cos(z.imag) * _sinh(z.real)
+        r_imag = _sin(z.imag) * _cosh(z.real)
     '''
     /* detect overflow, and set errno accordingly */
     if (Py_IS_INFINITY(r.real) || Py_IS_INFINITY(r.imag))
@@ -574,14 +670,14 @@ def _tanh_impl(z):
     r_imag = 0.
     # special treatment for tanh(+/-inf + iy) if y is finite and
     # nonzero
-    if (not math.isfinite(z.real)) or (not math.isfinite(z.imag)):
-        if math.isinf(z.real) and math.isfinite(z.imag) and z.imag != 0.:
+    if (not _isfinite(z.real)) or (not _isfinite(z.imag)):
+        if _isinf(z.real) and _isfinite(z.imag) and z.imag != 0.:
             if z.real > 0:
                 r_real = 1.0
-                r_imag = math.copysign(0., 2.*math.sin(z.imag)*math.cos(z.imag))
+                r_imag = _copysign(0., 2.*_sin(z.imag)*_cos(z.imag))
             else:
                 r_real = -1.0
-                r_imag = math.copysign(0., 2.*math.sin(z.imag)*math.cos(z.imag))
+                r_imag = _copysign(0., 2.*_sin(z.imag)*_cos(z.imag))
         else:
             r = _special_get(z, _tanh_special())
             r_real = r.real
@@ -597,13 +693,13 @@ def _tanh_impl(z):
         return complex(r_real, r_imag)
 
     # danger of overflow in 2.*z.imag !
-    if math.fabs(z.real) > _CM_LOG_LARGE_DOUBLE:
-        r_real = math.copysign(1., z.real)
-        r_imag = 4.*math.sin(z.imag)*math.cos(z.imag)*math.exp(-2.*math.fabs(z.real))
+    if _fabs(z.real) > _CM_LOG_LARGE_DOUBLE:
+        r_real = _copysign(1., z.real)
+        r_imag = 4.*_sin(z.imag)*_cos(z.imag)*_exp(-2.*_fabs(z.real))
     else:
-        tx = math.tanh(z.real)
-        ty = math.tan(z.imag)
-        cx = (1.).cdiv(math.cosh(z.real))
+        tx = _tanh(z.real)
+        ty = _tan(z.imag)
+        cx = (1.).cdiv(_cosh(z.real))
         txty = tx*ty
         denom = 1. + txty*txty
         r_real = (tx*(1. + ty*ty)).cdiv(denom)
@@ -627,17 +723,17 @@ def polar(x):
 def rect(r, phi):
     z_real = 0.
     z_imag = 0.
-    if (not math.isfinite(r)) or (not math.isfinite(phi)):
+    if (not _isfinite(r)) or (not _isfinite(phi)):
         # if r is +/-infinity and phi is finite but nonzero then
         # result is (+-INF +-INF i), but we need to compute cos(phi)
         # and sin(phi) to figure out the signs.
-        if math.isinf(r) and (math.isfinite(phi) and phi != 0.):
+        if _isinf(r) and (_isfinite(phi) and phi != 0.):
             if r > 0:
-                z_real = math.copysign(inf, math.cos(phi))
-                z_imag = math.copysign(inf, math.sin(phi))
+                z_real = _copysign(inf, _cos(phi))
+                z_imag = _copysign(inf, _sin(phi))
             else:
-                z_real = -math.copysign(inf, math.cos(phi))
-                z_imag = -math.copysign(inf, math.sin(phi))
+                z_real = -_copysign(inf, _cos(phi))
+                z_imag = -_copysign(inf, _sin(phi))
         else:
             z = _special_get(complex(r, phi), _rect_special())
             z_real = z.real
@@ -657,8 +753,8 @@ def rect(r, phi):
         z_imag = r * phi
         # errno = 0
     else:
-        z_real = r * math.cos(phi)
-        z_imag = r * math.sin(phi)
+        z_real = r * _cos(phi)
+        z_imag = r * _sin(phi)
         # errno = 0
     return complex(z_real, z_imag)
 
@@ -733,15 +829,15 @@ def tanh(x):
 
 def isfinite(x):
     z = complex(x)
-    return math.isfinite(z.real) and math.isfinite(z.imag)
+    return _isfinite(z.real) and _isfinite(z.imag)
 
 def isinf(x):
     z = complex(x)
-    return math.isinf(z.real) or math.isinf(z.imag)
+    return _isinf(z.real) or _isinf(z.imag)
 
 def isnan(x):
     z = complex(x)
-    return math.isnan(z.real) or math.isnan(z.imag)
+    return _isnan(z.real) or _isnan(z.imag)
 
 def isclose(a, b, rel_tol: float = 1e-09, abs_tol: float = 0.0):
     if rel_tol < 0. or abs_tol < 0.:
@@ -753,8 +849,8 @@ def isclose(a, b, rel_tol: float = 1e-09, abs_tol: float = 0.0):
     if x.real == y.real and x.imag == y.imag:
         return True
 
-    if (math.isinf(x.real) or math.isinf(x.imag) or
-        math.isinf(y.real) or math.isinf(y.imag)):
+    if (_isinf(x.real) or _isinf(x.imag) or
+        _isinf(y.real) or _isinf(y.imag)):
         return False
 
     diff = abs(x - y)

@@ -3692,7 +3692,7 @@ def _vector_norm_g(x: ndarray, axis: int, g, R: type):
             elem = _norm_cast((Ptr[dtype](data.as_byte() + (st * i)))[0])
             curr += abs(elem) ** R(g)
 
-        return curr ** (R(1) / R(g))
+        return curr ** (R(1).cdiv(R(g)))
     else:
         s = x.shape
         n = s[axis]
@@ -3709,7 +3709,7 @@ def _vector_norm_g(x: ndarray, axis: int, g, R: type):
                 elem = _norm_cast(x._ptr(idx1)[0])
                 curr += abs(elem) ** R(g)
 
-            q[0] = curr ** (R(1) / R(g))
+            q[0] = curr ** (R(1).cdiv(R(g)))
 
         return ans
 
@@ -4266,10 +4266,24 @@ def matrix_rank(A, tol = None, hermitian: bool = False):
 def cond(x, p = None):
     def cond_r_1(x, p: int):
         s = svd(x, compute_uv=False)
-        if p == -2:
-            return s[..., -1] / s[..., 0]
+        s0 = s[..., 0]
+        s1 = s[..., -1]
+
+        if isinstance(s0, Int) or isinstance(s0, UInt):
+            if p == -2:
+                return float(s1).cdiv(float(s0))
+            else:
+                return float(s0).cdiv(float(s1))
+        elif isinstance(s0, float) or isinstance(s0, float32) or isinstance(s0, float16):
+            if p == -2:
+                return s1.cdiv(s0)
+            else:
+                return s0.cdiv(s1)
         else:
-            return s[..., 0] / s[..., -1]
+            if p == -2:
+                return s1 / s0
+            else:
+                return s0 / s1
 
     def cond_r_2(x, p):
         invx = _inv(x, ignore_errors=True)

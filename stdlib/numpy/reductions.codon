@@ -1815,6 +1815,14 @@ def nanmean(
         conv_to_float=True,
     )
 
+def _divide(a: T, b: T, T: type):
+    if (isinstance(a, Int) or isinstance(a, UInt) or
+        isinstance(a, float) or isinstance(a, float32) or
+        isinstance(a, float16)):
+        return a.cdiv(b)
+    else:
+        return a / b
+
 def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
     if dtype is NoneType:
         zero = _cast_elem(util.zero(T), dtype, conv_to_float=True)
@@ -1825,7 +1833,7 @@ def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
     u = zero
     q = p
     u = _pairwise_sum(p, n, s, dtype=Z)
-    u /= util.cast(n, Z)
+    u = _divide(u, util.cast(n, Z))
 
     if Z is complex:
         v = 0.0
@@ -1844,7 +1852,7 @@ def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
             v += t * t
         q = _increment_ptr(q, s)
 
-    v /= util.cast(n - kwargs['ddof'], type(v))
+    v = _divide(v, util.cast(n - kwargs['ddof'], type(v)))
     return v
 
 def var(
@@ -1885,7 +1893,7 @@ def _nanvar_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
         else:
             u += e
         q = _increment_ptr(q, s)
-    u /= util.cast(n - nans, Z)
+    u = _divide(u, util.cast(n - nans, Z))
 
     if Z is complex:
         v = 0.0
@@ -1906,7 +1914,7 @@ def _nanvar_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
                 v += t * t
         q = _increment_ptr(q, s)
 
-    v /= util.cast(n - nans - kwargs['ddof'], type(v))
+    v = _divide(v, util.cast(n - nans - kwargs['ddof'], type(v)))
     return v
 
 def nanvar(

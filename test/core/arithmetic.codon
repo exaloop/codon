@@ -3,8 +3,8 @@ def t1():
     assert 2 + 2 == 4
     assert 3.14 * 2 == 6.28
     assert 2 + 3*2 == 8
-    assert 1.0/0 == float('inf')
-    assert str(0.0/0) == 'nan'
+    assert (1.0).cdiv(0.0) == float('inf')
+    assert str((0.0).cdiv(0.0)) == 'nan'
 
     assert 5 // 2 == 2
     assert 5 / 2 == 2.5
