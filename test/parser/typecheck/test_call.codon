@@ -937,7 +937,7 @@ class Middle(P2, P3):
 m = Middle(1, 2, 3, 4, 5, 6)
 print(Middle.__mro__)
 print(tuple(m))
-#: (<class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
+#: (<class 'Middle'>, <class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
 #: (1, 2, 3, 4, 5, 6)
 
 
@@ -953,7 +953,7 @@ class End(P4, P5):
 e = End(1, 2, 3, 4, 5, 6, 7, 8, 9)
 print(End.__mro__)
 print(tuple(e))
-#: (<class 'P4'>, <class 'P5'>, <class 'Middle'>, <class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
+#: (<class 'End'>, <class 'P4'>, <class 'P5'>, <class 'Middle'>, <class 'P2'>, <class 'P1'>, <class 'P3'>, <class 'Root1'>, <class 'Root2'>, <class 'object'>)
 #: (1, 2, 3, 4, 5, 6, 7, 8, 9)
 
 
@@ -1255,6 +1255,38 @@ for s in shapes:
 #: 24
 #: A square with width 3 and height 3
 #: 9
+
+#%% polymorphism_6_isinstance_cast
+class Vehicle(object):
+    def drive(self): return "vehicle"
+class Car(Vehicle):
+    make: str
+    def drive(self): return "car"
+class Truck(Vehicle):
+    def drive(self): return "truck"
+class SUV(Car, Truck):
+    color: int
+    def drive(self): return "SUV"
+    def suv(self): return True
+class YugoSUV(SUV):
+    def drive(self): return "YugoSUV"
+y = YugoSUV(5, "niva")
+t = Truck("ford")
+v: Vehicle = y
+l = [v, t]
+
+for i, o in enumerate(l):
+    if isinstance(o, SUV): print(i, "suv", o.drive(), o.make, o.color, o.suv())
+    else: print(i, o.drive())
+#: 0 suv YugoSUV niva 5 True
+#: 1 truck
+
+la = [Any(v), Any(t)]
+for i, o in enumerate(la):
+    if isinstance(o, SUV): print(i, "suv", o, cast(Vehicle, o).drive(), o.make, o.color, o.suv())
+    else: print(i, cast(Vehicle, o).drive())
+#: 0 suv Any(Vehicle) YugoSUV niva 5 True
+#: 1 truck
 
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):

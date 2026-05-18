@@ -361,6 +361,9 @@ TypecheckVisitor::transformStaticLoopCall(Expr *varExpr, SuiteStmt **varSuite,
                               getMangledFunc("std.internal.static", "vars"))) {
     block = populateStaticVarsLoop(iter, vars);
   } else if (fn && startswith(fn->getValue(),
+                              getMangledFunc("std.internal.static", "methods"))) {
+    block = populateStaticMethodsLoop(iter, vars);
+  } else if (fn && startswith(fn->getValue(),
                               getMangledFunc("std.internal.static", "vars_types"))) {
     block = populateStaticVarTypesLoop(iter, vars);
   } else {

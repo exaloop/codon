@@ -142,11 +142,24 @@ void TypecheckVisitor::visit(DotExpr *expr) {
     return;
   }
   expr->expr = transform(expr->getExpr());
+  auto [newExpr, found] =
+      getAttr(expr->getExpr(), expr->getMember(), expr->getType(), parentCall);
+  if (!found)
+    E(Error::DOT_NO_ATTR, expr, extractType(expr->getExpr())->prettyString(),
+      expr->getMember());
+  if (newExpr)
+    resultExpr = newExpr;
+  else if (expr->getExpr()->isDone() && realize(expr->getType()))
+    expr->setDone();
+}
 
-  bool hasSide = hasSideEffect(expr->getExpr());
+std::pair<Expr *, bool> TypecheckVisitor::getAttr(Expr *expr, const std::string &member,
+                                                  types::Type *type,
+                                                  CallExpr *parentCall) {
+  bool hasSide = hasSideEffect(expr);
   auto wrapSide = [&](Expr *e) -> Expr * {
     if (hasSide) {
-      return transform(N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e));
+      return transform(N<StmtExpr>(N<ExprStmt>(expr), e));
     }
     return transform(e);
   };
@@ -154,141 +167,111 @@ void TypecheckVisitor::visit(DotExpr *expr) {
   // Special case: fn.__name__
   // Should go before cls.__name__ to allow printing generic functions
   // NOTE: NO SIDE EFFECTS! (because of generic function support!)
-  if (extractType(expr->getExpr())->getFunc() && expr->getMember() == "__name__") {
-    resultExpr = N<StringExpr>(extractType(expr->getExpr())->prettyString());
-    return;
+  if (extractType(expr)->getFunc() && member == "__name__") {
+    return {N<StringExpr>(extractType(expr)->prettyString()), true};
   }
-  if (expr->getExpr()->getType()->getPartial() && expr->getMember() == "__name__") {
-    resultExpr = wrapSide(
-        N<StringExpr>(expr->getExpr()->getType()->getPartial()->prettyString()));
-    return;
+  if (expr->getType()->getPartial() && member == "__name__") {
+    return {wrapSide(N<StringExpr>(expr->getType()->getPartial()->prettyString())),
+            true};
   }
   // Special case: fn.__llvm_name__ or obj.__llvm_name__
-  if (expr->getMember() == "__llvm_name__") {
-    if (realize(expr->getExpr()->getType()))
-      resultExpr = wrapSide(N<StringExpr>(expr->getExpr()->getType()->realizedName()));
-    return;
+  if (member == "__llvm_name__") {
+    if (realize(expr->getType()))
+      return {wrapSide(N<StringExpr>(expr->getType()->realizedName())), true};
+    return {nullptr, true};
   }
-  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__generic_name__") {
-    auto t = extractType(expr->getExpr()->getType());
+  if (isTypeExpr(expr) && member == "__generic_name__") {
+    auto t = extractType(expr->getType());
     // No side effects here, otherwise will not typecheck
     if (auto c = t->getClass())
-      resultExpr = N<StringExpr>(c->name);
-    return;
+      return {N<StringExpr>(c->name), true};
+    return {nullptr, true};
   }
   // Special case: cls.__name__
-  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__name__") {
-    if (realize(expr->getExpr()->getType()))
-      resultExpr =
-          wrapSide(N<StringExpr>(extractType(expr->getExpr())->prettyString()));
-    return;
+  if (isTypeExpr(expr) && member == "__name__") {
+    if (realize(expr->getType()))
+      return {wrapSide(N<StringExpr>(extractType(expr)->prettyString())), true};
+    return {nullptr, true};
   }
   // Special case: cls.__mro__
-  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__mro__") {
-    if (realize(expr->getExpr()->getType())) {
-      auto t = extractType(expr->getExpr())->getClass();
+  if (isTypeExpr(expr) && member == "__mro__") {
+    if (realize(expr->getType())) {
+      auto t = extractType(expr)->getClass();
       auto bases = getMRO(t);
       std::vector<Expr *> items;
-      for (size_t i = 1; i < bases.size(); i++)
+      for (size_t i = 0; i < bases.size(); i++)
         items.push_back(N<IdExpr>(bases[i]->realizedName()));
-      resultExpr = wrapSide(N<TupleExpr>(items));
+      return {wrapSide(N<TupleExpr>(items)), true};
     }
-    return;
+    return {nullptr, true};
   }
-  // if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__repr__") {
-  //   log("getting type_repr for {}", expr->getExpr()->getType()->debugString(2));
-  //   resultExpr = transform(N<CallExpr>(
-  //       N<IdExpr>(getMangledFunc("std.internal.types.type", "__type_repr__")),
-  //       expr->getExpr(), N<EllipsisExpr>(EllipsisExpr::PARTIAL)));
-  //   return;
-  // }
   // Special case: expr.__is_static__
-  if (expr->getMember() == "__is_static__") {
-    if (expr->getExpr()->isDone())
-      resultExpr = wrapSide(
-          N<BoolExpr>(static_cast<bool>(expr->getExpr()->getType()->getStatic())));
-    return;
+  if (member == "__is_static__") {
+    if (expr->isDone())
+      return {wrapSide(N<BoolExpr>(static_cast<bool>(expr->getType()->getStatic()))),
+              true};
+    return {nullptr, true};
   }
   // Special case: cls.__id__
-  if (isTypeExpr(expr->getExpr()) && expr->getMember() == "__id__") {
-    if (auto c = realize(extractType(expr->getExpr())))
-      resultExpr = wrapSide(N<IntExpr>(getClassRealization(c)->id));
-    return;
+  if (isTypeExpr(expr) && member == "__id__") {
+    if (auto c = realize(extractType(expr)))
+      return {wrapSide(N<IntExpr>(getClassRealization(c)->id)), true};
+    return {nullptr, true};
   }
 
   // Ensure that the type is known (otherwise wait until it becomes known)
-  auto typ = extractClassType(expr->getExpr());
+  auto typ = extractClassType(expr);
   if (!typ)
-    return;
+    return {nullptr, true};
 
   // Check if this is a method or member access
-  while (true) {
-    auto methods = findMethod(typ, expr->getMember());
-    if (methods.empty())
-      resultExpr = getClassMember(expr);
+  auto methods = findMethod(typ, member);
+  if (methods.empty()) {
+    return getClassMember(expr, member, type);
+  }
 
-    // If the expression changed during the @c getClassMember (e.g., optional unwrap),
-    // keep going further to be able to select the appropriate method or member
-    auto oldExpr = expr->getExpr();
-    if (!resultExpr && expr->getExpr() != oldExpr) {
-      typ = extractClassType(expr->getExpr());
-      if (!typ)
-        return; // delay typechecking
-      continue;
-    }
+  // If a method is ambiguous use dispatch
+  auto bestMethod =
+      methods.size() > 1 ? getDispatch(getRootName(methods.front())) : methods.front();
+  Expr *e = N<IdExpr>(bestMethod->getFuncName());
+  e->setType(instantiateType(bestMethod, typ));
 
-    if (!methods.empty()) {
-      // If a method is ambiguous use dispatch
-      auto bestMethod = methods.size() > 1 ? getDispatch(getRootName(methods.front()))
-                                           : methods.front();
-      Expr *e = N<IdExpr>(bestMethod->getFuncName());
-      e->setType(instantiateType(bestMethod, typ));
+  if (isTypeExpr(expr)) {
+    // Static access: `cls.method`
+    return {wrapSide(e), true};
+  }
 
-      if (isTypeExpr(expr->getExpr())) {
-        // Static access: `cls.method`
-        unify(expr->getType(), e->getType());
-        resultExpr = wrapSide(e);
-        return;
-      }
-
-      auto vt = expr->getExpr()->getType();
-      auto cls = getClass(vt);
-      bool isVirtual =
-          cls && cls->rtti &&
-          static_cast<bool>(
-              in(cls->virtuals, getUnmangledName(bestMethod->ast->getName()))) &&
-          !isDispatch(bestMethod) &&
-          !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-          !bestMethod->ast->hasAttribute(Attr::Property);
-      if (isVirtual) {
-        bestMethod = getThunk(bestMethod);
-        e = N<IdExpr>(bestMethod->getFuncName());
-        e->setType(instantiateType(bestMethod, typ));
-      }
-      if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
-          !bestMethod->ast->hasAttribute(Attr::Property)) {
-        // Instance access: `obj.method` from the call
-        // Modify the call to push `self` to the front of the argument list.
-        // Avoids creating partial functions.
-        parentCall->items.insert(parentCall->items.begin(), expr->getExpr());
-        unify(expr->getType(), e->getType());
-        resultExpr = transform(e);
-      } else {
-        // Instance access: `obj.method`
-        // Transform y.method to a partial call `type(y).method(y, ...)`
-        std::vector<Expr *> methodArgs;
-        // Do not add self if a method is marked with @staticmethod
-        if (!bestMethod->ast->hasAttribute(Attr::StaticMethod)) {
-          methodArgs.emplace_back(expr->getExpr());
-        }
-        // If a method is marked with @property, just call it directly
-        if (!bestMethod->ast->hasAttribute(Attr::Property)) {
-          methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
-        }
-        resultExpr = transform(N<CallExpr>(e, methodArgs));
-      }
-    }
-    break;
+  auto vt = expr->getType();
+  auto cls = getClass(vt);
+  bool isVirtual =
+      cls && cls->rtti &&
+      static_cast<bool>(
+          in(cls->virtuals, getUnmangledName(bestMethod->ast->getName()))) &&
+      !isDispatch(bestMethod) && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
+      !bestMethod->ast->hasAttribute(Attr::Property);
+  if (isVirtual) {
+    bestMethod = getThunk(bestMethod);
+    e = N<IdExpr>(bestMethod->getFuncName());
+    e->setType(instantiateType(bestMethod, typ));
+  }
+  if (parentCall && !bestMethod->ast->hasAttribute(Attr::StaticMethod) &&
+      !bestMethod->ast->hasAttribute(Attr::Property)) {
+    // Instance access: `obj.method` from the call
+    // Modify the call to push `self` to the front of the argument list.
+    // Avoids creating partial functions.
+    parentCall->items.insert(parentCall->items.begin(), expr);
+    return {transform(e), true};
+  } else {
+    // Instance access: `obj.method`
+    // Transform y.method to a partial call `type(y).method(y, ...)`
+    std::vector<Expr *> methodArgs;
+    // Do not add self if a method is marked with @staticmethod
+    if (!bestMethod->ast->hasAttribute(Attr::StaticMethod))
+      methodArgs.emplace_back(expr);
+    // If a method is marked with @property, just call it directly
+    if (!bestMethod->ast->hasAttribute(Attr::Property))
+      methodArgs.emplace_back(N<EllipsisExpr>(EllipsisExpr::PARTIAL));
+    return {transform(N<CallExpr>(e, methodArgs)), true};
   }
 }
 
@@ -552,112 +535,115 @@ types::FuncType *TypecheckVisitor::getThunk(types::FuncType *ft) {
 ///   `obj.GENERIC`     -> `GENERIC` (IdExpr with generic/static value)
 ///   `optional.member` -> `unwrap(optional).member`
 ///   `pyobj.member`    -> `pyobj._getattr("member")`
-Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
-  auto typ = extractClassType(expr->getExpr());
+std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
+                                                         const std::string &member,
+                                                         types::Type *type) {
+  auto typ = extractClassType(expr);
   seqassert(typ, "not a class");
 
   // Case: object member access (`obj.member`)
-  if (!isTypeExpr(expr->getExpr())) {
-    if (auto member = findMember(typ, expr->getMember())) {
-      unify(expr->getType(), instantiateType(member->getType(), typ));
-      if (member->baseClass != typ->name && getClass(typ)->hasRTTI()) {
+  if (!isTypeExpr(expr)) {
+    if (auto m = findMember(typ, member)) {
+      if (type)
+        unify(type, instantiateType(m->getType(), typ));
+      if (m->baseClass != typ->name && getClass(typ)->hasRTTI()) {
         TypePtr baseType = nullptr;
-        for (auto &m : getBaseClasses(typ)) {
-          if (m->getClass()->name == member->baseClass) {
-            baseType = m;
+        for (auto &b : getBaseClasses(typ)) {
+          if (b->getClass()->name == m->baseClass) {
+            baseType = b;
             break;
           }
         }
         seqassert(baseType, "cannot find base type of {}", typ->debugString(2));
         if (!baseType->canRealize())
-          return nullptr; // delay!
-        return transform(
-            N<DotExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")),
-                                   expr->getExpr(),
-                                   N<IdExpr>(realize(baseType.get())->realizedName())),
-                       expr->getMember()));
+          return {nullptr, true}; // delay!
+        return {
+            transform(N<DotExpr>(
+                N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")), expr,
+                            N<IdExpr>(realize(baseType.get())->realizedName())),
+                member)),
+            true};
       }
-      if (!expr->getType()->canRealize() && member->typeExpr) {
-        unify(expr->getType(), extractType(withClassGenerics(typ, [&]() {
-                return transform(clean_clone(member->typeExpr));
-              })));
+      if (type && !type->canRealize() && m->typeExpr) {
+        unify(type, extractType(withClassGenerics(
+                        typ, [&]() { return transform(clean_clone(m->typeExpr)); })));
       }
-      if (expr->getExpr()->isDone() && realize(expr->getType()))
-        expr->setDone();
-      return nullptr;
+      return {nullptr, true};
     }
   }
 
-  bool hasSide = hasSideEffect(expr->getExpr());
+  bool hasSide = hasSideEffect(expr);
   auto wrapSide = [&](Expr *e) -> Expr * {
     if (hasSide)
-      return transform(N<StmtExpr>(N<ExprStmt>(expr->getExpr()), e));
+      return transform(N<StmtExpr>(N<ExprStmt>(expr), e));
     return transform(e);
   };
 
   // Case: class variable (`Cls.var`)
   if (auto cls = getClass(typ))
-    if (auto var = in(cls->classVars, expr->getMember())) {
-      return wrapSide(N<IdExpr>(*var));
+    if (auto var = in(cls->classVars, member)) {
+      return {wrapSide(N<IdExpr>(*var)), true};
     }
 
   // Case: special members
   std::unordered_map<std::string, std::string> specialMembers{
       {"__elemsize__", "int"}, {"__atomic__", "bool"}, {"__contents_atomic__", "bool"}};
-  if (auto mtyp = in(specialMembers, expr->getMember())) {
-    unify(expr->getType(), getStdLibType(*mtyp));
-    if (expr->getExpr()->isDone() && realize(expr->getType()))
-      expr->setDone();
-    return nullptr;
+  if (auto mtyp = in(specialMembers, member)) {
+    if (type)
+      unify(type, getStdLibType(*mtyp));
+    return {nullptr, true};
   }
-  if (expr->getMember() == "__name__" && isTypeExpr(expr->getExpr())) {
-    unify(expr->getType(), getStdLibType(StdlibTypes::String));
-    if (expr->getExpr()->isDone() && realize(expr->getType()))
-      expr->setDone();
-    return nullptr;
+  if (member == "__name__" && isTypeExpr(expr)) {
+    if (type)
+      unify(type, getStdLibType(StdlibTypes::String));
+    return {nullptr, true};
   }
 
   // Case: object generic access (`obj.T`)
   ClassType::Generic *generic = nullptr;
   for (auto &g : typ->generics)
-    if (expr->getMember() == getUnmangledName(g.name)) {
+    if (member == getUnmangledName(g.name)) {
       generic = &g;
       break;
     }
   if (generic) {
     if (generic->staticKind) {
-      unify(expr->getType(), generic->getType());
-      if (realize(expr->getType())) {
-        return wrapSide(generic->type->getStatic()->getStaticExpr());
-      }
+      if (type)
+        unify(type, generic->getType());
+      if (realize(generic->getType()))
+        return {wrapSide(generic->type->getStatic()->getStaticExpr()), true};
     } else {
-      unify(expr->getType(), instantiateTypeVar(generic->getType()));
-      if (realize(expr->getType()))
-        return wrapSide(N<IdExpr>(generic->getType()->realizedName()));
+      auto t = instantiateTypeVar(generic->getType());
+      if (type)
+        unify(type, t.get());
+      if (realize(t.get()))
+        return {wrapSide(N<IdExpr>(generic->getType()->realizedName())), true};
     }
-    return nullptr;
+    return {nullptr, true};
   }
 
   // Case: transform `optional.member` to `unwrap(optional).member`
   if (typ->is(StdlibTypes::Optional)) {
-    expr->expr = transform(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr->getExpr()));
-    return nullptr;
+    return {
+        transform(N<DotExpr>(N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr), member)),
+        true};
   }
 
   // Case: transform `pyobj.member` to `pyobj._getattr("member")`
   if (typ->is("pyobj")) {
-    return transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "_getattr"),
-                                 N<StringExpr>(expr->getMember())));
+    return {transform(N<CallExpr>(N<DotExpr>(expr, "_getattr"), N<StringExpr>(member))),
+            true};
   }
 
   // Case: transform `union.m` to `Union._member(union, "m", ...)`
   if (typ->getUnion()) {
     if (!typ->canRealize())
-      return nullptr; // delay!
-    return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_member"),
-        std::vector<CallArg>{CallArg{"union", expr->getExpr()},
-                             CallArg{"member", N<StringExpr>(expr->getMember())}}));
+      return {nullptr, true}; // delay!
+    return {transform(N<CallExpr>(
+                N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_member"),
+                std::vector<CallArg>{CallArg{"union", expr},
+                                     CallArg{"member", N<StringExpr>(member)}})),
+            true};
   }
 
   // Case: __getattr__ support. Ensure that only Literal[str] arguments are accepted.
@@ -666,15 +652,23 @@ Expr *TypecheckVisitor::getClassMember(DotExpr *expr) {
   if (auto m = findBestMethod(typ, "__getattr__", {typ, u.get()})) {
     if (m->funcGenerics.size() == 1 &&
         extractFuncGeneric(m)->getStaticKind() == LiteralKind::String) {
-      return transform(N<CallExpr>(N<DotExpr>(expr->getExpr(), "__getattr__"),
-                                   N<StringExpr>(expr->getMember())));
+      return {transform(
+                  N<CallExpr>(N<DotExpr>(expr, "__getattr__"), N<StringExpr>(member))),
+              true};
+    }
+  }
+
+  // Case: name has an alternative identifier with more precise type. Use it.
+  if (auto ei = cast<IdExpr>(expr)) {
+    auto val = ctx->find(ei->getValue());
+    if (val && val->alternative) {
+      return {transform(N<DotExpr>(N<IdExpr>(val->alternative->canonicalName), member)),
+              true};
     }
   }
 
   // For debugging purposes:
-  findMethod(typ, expr->getMember());
-  E(Error::DOT_NO_ATTR, expr, typ->prettyString(), expr->getMember());
-  return nullptr;
+  return {nullptr, false};
 }
 
 } // namespace codon::ast

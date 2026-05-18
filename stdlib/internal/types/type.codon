@@ -92,6 +92,16 @@ class type:
         else:
             return type._get_element_offset(TT, i)
 
+    @inline
+    def _cls_ptr(obj: T, T: type):
+        if static.has_rtti(T):
+            return type._force_cast(obj, RTTIType).data - RTTIType._find_offset(obj, T)[1]
+        else:
+            return obj.__raw__()
+
+    @inline
+    def _is(obj: T, other: U, T: type, U: type) -> bool:
+        return type._cls_ptr(obj) == type._cls_ptr(other)
 
 @__internal__
 class TypeInfo:
@@ -154,15 +164,15 @@ class TypeInfo:
         #         self.repr = fn
 
         mro = T.__mro__
-        num_mro: Literal[int] = static.len(mro)
+        num_mro: Literal[int] = static.len(mro) - 1
         self._n_parent_ids = num_mro
 
         if num_mro > 0:
             self._parent_ids = Ptr[int](num_mro + 1)
             self._parent_offsets = [0] * num_mro
             for i in static.range(num_mro):
-                self._parent_ids[i] = mro[i].T.__id__
-                self._parent_offsets[i] = RTTIType._dist(mro[i].T, T)  # Assumes T's MRO as its final position!
+                self._parent_ids[i] = mro[i + 1].T.__id__
+                self._parent_offsets[i] = RTTIType._dist(mro[i + 1].T, T)  # Assumes T's MRO as its final position!
             self._parent_ids[num_mro] = 0
         else:
             self._parent_ids = Ptr[int]()

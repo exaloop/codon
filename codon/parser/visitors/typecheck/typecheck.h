@@ -81,7 +81,10 @@ private: // Node typechecking rules
   void checkCapture(const TypeContext::Item &) const;
   void visit(DotExpr *) override;
   std::pair<size_t, TypeContext::Item> getImport(const std::vector<std::string> &);
-  Expr *getClassMember(DotExpr *);
+  std::pair<Expr *, bool> getAttr(Expr *, const std::string &, types::Type * = nullptr,
+                                  CallExpr * = nullptr);
+  std::pair<Expr *, bool> getClassMember(Expr *, const std::string &,
+                                         types::Type * = nullptr);
   types::FuncType *getDispatch(const std::string &);
   types::FuncType *getThunk(types::FuncType *fn);
 
@@ -388,6 +391,7 @@ public:
   Expr *transformStaticFnGetDefault(CallExpr *);
   Expr *transformStaticFnWrapCallArgs(CallExpr *);
   Expr *transformStaticVars(CallExpr *);
+  Expr *transformStaticChildren(CallExpr *);
   Expr *transformStaticTupleType(const CallExpr *);
   Expr *transformStaticFormat(CallExpr *);
   Expr *transformStaticIntToStr(CallExpr *);
@@ -412,6 +416,8 @@ public:
   std::vector<Stmt *> populateStaticEnumerateLoop(Expr *,
                                                   const std::vector<std::string> &);
   std::vector<Stmt *> populateStaticVarsLoop(Expr *, const std::vector<std::string> &);
+  std::vector<Stmt *> populateStaticMethodsLoop(Expr *,
+                                                const std::vector<std::string> &);
   std::vector<Stmt *> populateStaticVarTypesLoop(Expr *,
                                                  const std::vector<std::string> &);
   std::vector<Stmt *>

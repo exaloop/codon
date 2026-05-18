@@ -203,7 +203,7 @@ def foo(x: optional[int], y: int):
 foo(y, 6)  #: foo 5 6
 foo(5, 6)  #: foo 5 6
 foo(5, y)  #: foo 5 5
-y = None
+y: Optional[int] = None
 try:
     foo(5, y)
 except ValueError:

@@ -41,6 +41,10 @@ struct TypecheckItem : public SrcObject {
   /// Set if an identifier is a class or a function generic
   bool generic = false;
 
+  /// Points to another type in case this type is not useful
+  /// [used within isinstance blocks].
+  std::shared_ptr<TypecheckItem> alternative = nullptr;
+
   TypecheckItem(std::string, std::string, std::string, types::TypePtr,
                 std::vector<int> = {0});
 

@@ -304,10 +304,9 @@ try:
     None |> foo2
 except ValueError:
     print 'exception' #: exception
+#! 'int' does not match expected type 'NoneType'
 # Explanation: None can also be Optional[Generator[int]]
-# We cannot decide if this is a generator to be unrolled in a pipe,
-# or just an argument to be passed to a function.
-# So this will default to NoneType at the end.
+# It should, however, default to None as function argp
 
 #%% instantiate_err,barebones
 def foo[N]():

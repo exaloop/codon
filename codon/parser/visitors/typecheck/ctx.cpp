@@ -20,8 +20,8 @@ TypecheckItem::TypecheckItem(std::string canonicalName, std::string baseName,
                              std::string moduleName, types::TypePtr type,
                              std::vector<int> scope)
     : canonicalName(std::move(canonicalName)), baseName(std::move(baseName)),
-      moduleName(std::move(moduleName)), type(std::move(type)),
-      scope(std::move(scope)) {}
+      moduleName(std::move(moduleName)), type(std::move(type)), scope(std::move(scope)),
+      alternative(nullptr) {}
 
 TypeContext::TypeContext(Cache *cache, std::string filename)
     : Context<TypecheckItem>(std::move(filename)), cache(cache) {

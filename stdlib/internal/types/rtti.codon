@@ -74,32 +74,6 @@ class RTTIType:
         """
         return 0
 
-    @inline
-    def _find_offsets(obj, B: type, D: type):
-        ti = RTTIType._typeinfo(obj)
-        bi, di = -1, -1
-        boff, doff = 0, 0
-        for pos, (mro, off) in enumerate(ti.mro):
-            if B.__id__ == mro:
-                bi = pos
-                boff = off
-            if D.__id__ == mro:
-                di = pos
-                doff = off
-        if bi == -1 or di == -1:
-            raise ValueError(f"cannot cast between {B} and {D}")
-        return (bi, di), (boff, doff)
-
-    @inline
-    def _cast(obj, D: type) -> D:
-        B = type(obj)
-        if not (static.has_rtti(D) and static.has_rtti(B)):
-            compile_error("classes are not polymorphic")
-
-        rtti = type._force_cast(obj, RTTIType)
-        _, (boff, doff) = RTTIType._find_offsets(obj, B, D)
-        return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
-
     ### vTable & thunk setup. Mostly compiler-generated.
 
     def _init_vtables():
@@ -137,15 +111,56 @@ class RTTIType:
         cls_id = RTTIType._typeinfo(slf).id
         return __vtables__.get_thunk(cls_id, thunk_id)
 
+    # Casting
+
     def _typeinfo(obj: T, T: type) -> TypeInfo:
         if not static.has_rtti(T):
             compile_error("classes are not polymorphic")
         ti = type._force_cast(obj, RTTIType).typeinfo
         return type._force_cast(ti, TypeInfo)
 
-    def _isinstance(obj, TW: type) -> bool:
+    @inline
+    def _find_offset(obj, B: type):
+        for pos, (mro, off) in enumerate(RTTIType._typeinfo(obj).mro):
+            if B.__id__ == mro:
+                return pos, off
+        return -1, 0
+
+    @inline
+    def _find_offsets(obj, B: type, D: type):
+        bi, di = -1, -1
+        boff, doff = 0, 0
+        for pos, (mro, off) in enumerate(RTTIType._typeinfo(obj).mro):
+            if B.__id__ == mro:
+                bi, boff = pos, off
+            if D.__id__ == mro:
+                di, doff = pos, off
+        return (bi, di), (boff, doff)
+
+    @inline
+    def _cast(obj, D: type) -> D:
+        B = type(obj)
+        if not (static.has_rtti(D) and static.has_rtti(B)):
+            compile_error("classes are not polymorphic")
+
+        rtti = type._force_cast(obj, RTTIType)
+        (bi, di), (boff, doff) = RTTIType._find_offsets(obj, B, D)
+        if bi == -1 or di == -1:
+            raise TypeError(f"cannot cast {type(obj)} to {D}")
+        return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
+
+    def _getinstance(obj, T: type) -> Optional[T]:
+        rtti = type._force_cast(obj, RTTIType)
         obj_info = RTTIType._typeinfo(obj)
-        return obj_info.id == TW.__id__ or obj_info.is_parent(TW)
+
+        (_, ti), (ooff, toff) = RTTIType._find_offsets(obj, type(obj), T)
+        if ti == -1:
+            return None
+        else:
+            return RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T)
+
+    def _isinstance(obj, T: type) -> bool:
+        return RTTIType._getinstance(obj, T) is not None
 
 @extend
 class Super:
@@ -155,10 +170,10 @@ class Super:
             compile_error("classes are not polymorphic")
 
         rtti = type._force_cast(obj, RTTIType)
-        (_, bi), (doff, boff) = RTTIType._find_offsets(obj, D, B)
+        (di, bi), (doff, boff) = RTTIType._find_offsets(obj, D, B)
+        if bi == -1 or di == -1:
+            raise TypeError(f"{B} has no super class")
         new_obj = RTTIType._new(rtti.data - doff + boff, rtti.typeinfo, B)
-        if bi >= RTTIType._typeinfo(obj)._n_parent_ids:
-            raise ValueError(f"{B} has no super class")
         return type._force_value_cast((new_obj, bi), Super[B])
 
     def __getattr__(self, attr: Literal[str]):

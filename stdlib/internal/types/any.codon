@@ -46,13 +46,20 @@ class Any:
     def __unwrap__(self, T: type) -> T:
         if T is Any:
             return self
-        if TypeInfo.cache(__vtables__, T) != self._typeinfo:
+        if not self._isinstance(T):
             raise TypeError(f"Any.unwrap failed: requested {T}, but got {self._typeinfo.nice_name} instead")
         if isinstance(T, ByVal):
             p = type._force_cast(self._data, Ptr[T])
             return p[0]
         else:
-            return type._force_cast(self._data, T)
+            ti, data = self._real_contents()
+            if ti._rtti:
+                for mro, off in ti.mro:
+                    if T.__id__ == mro:
+                        return RTTIType._new(data + off, ti.__raw__(), T)
+                assert False, "cannot happen"
+            else:
+                return type._force_cast(data, T)
 
     def __cast__(self, T: type):
         if T is Ptr[Any]:
@@ -116,8 +123,14 @@ class Any:
             ptr = rtti.data - off
         return ti, ptr
 
-    def _isinstance(self, T: type):
+    def _isinstance(self, T: type) -> bool:
         return self._real_typeinfo()._isinstance(T)
+
+    def _getinstance(self, T: type) -> Optional[T]:
+        if self._isinstance(T):
+            return self.__unwrap__(T)
+        else:
+            return None
 
     def __getattr__(self, attr: Literal[str], T: type = Any) -> T:
         for name, value in self.members:

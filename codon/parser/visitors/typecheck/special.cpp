@@ -621,8 +621,11 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   if (s >= 0)
     return transform(N<BoolExpr>(true));
 
+  std::string instCall = ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool)
+                             ? "_getinstance"
+                             : "_isinstance";
   if (typ->is(StdlibTypes::Any) && !isTypeExpr(expr->begin()->value)) {
-    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Any", "_isinstance")),
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Any", instCall)),
                                  expr->begin()->getExpr(), (*expr)[1].getExpr()));
   }
 
@@ -638,9 +641,8 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
     }
 
     // TODO: disallow all impossible cases that are not related to any MRO!
-    return transform(
-        N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_isinstance")),
-                    expr->begin()->getExpr(), (*expr)[1].getExpr()));
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", instCall)),
+                                 expr->begin()->getExpr(), (*expr)[1].getExpr()));
   }
 
   return transform(N<BoolExpr>(false));
@@ -1031,6 +1033,28 @@ Expr *TypecheckVisitor::transformStaticVars(CallExpr *expr) {
       tupleItems.push_back(N<TupleExpr>(std::vector<Expr *>{k, v}));
     }
     idx++;
+  }
+  return transform(N<TupleExpr>(tupleItems));
+}
+
+Expr *TypecheckVisitor::transformStaticChildren(CallExpr *expr) {
+  auto t = extractFuncGeneric(expr->getExpr()->getType());
+  if (!t || !t->getClass())
+    return nullptr;
+
+  std::vector<Expr *> tupleItems;
+  auto typ = t->getClass();
+  for (auto &n : getClass(typ)->descendants) {
+    if (n == typ->name)
+      continue;
+    for (auto &[cn, cr] : getClass(n)->realizations) {
+      for (auto &b : cr->bases) {
+        if (b->realizedName() == typ->realizedName()) {
+          tupleItems.push_back(N<IdExpr>(cr->type->realizedName()));
+          break;
+        }
+      }
+    }
   }
   return transform(N<TupleExpr>(tupleItems));
 }
@@ -1426,6 +1450,27 @@ TypecheckVisitor::populateStaticVarTypesLoop(Expr *iter,
       block.push_back(b);
       idx++;
     }
+  }
+  return block;
+}
+
+std::vector<Stmt *>
+TypecheckVisitor::populateStaticMethodsLoop(Expr *iter,
+                                            const std::vector<std::string> &vars) {
+  auto fn =
+      cast<CallExpr>(iter) ? cast<IdExpr>(cast<CallExpr>(iter)->getExpr()) : nullptr;
+  auto typ = realize(extractFuncGeneric(fn->getType(), 0)->getClass());
+  seqassert(typ, "methods expects a realizable type, got '{}' instead",
+            *(extractFuncGeneric(fn->getType(), 0)));
+  if (typ->is(StdlibTypes::TypeWrap))
+    typ = extractClassGeneric(typ)->getClass();
+  std::vector<Stmt *> block;
+  size_t idx = 0;
+  for (auto &m : getClass(typ->getClass())->methods | std::views::keys) {
+    auto b = N<SuiteStmt>(
+        N<AssignStmt>(N<IdExpr>(vars[0]), N<StringExpr>(m),
+                      N<IndexExpr>(N<IdExpr>("Literal"), N<IdExpr>("str"))));
+    block.push_back(b);
   }
   return block;
 }

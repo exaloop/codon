@@ -87,6 +87,14 @@ def vars_types(T: type, with_index: Literal[bool] = False):
     pass
 
 @__generated__
+def methods(T: type):
+    pass
+
+@__generated__
+def children(T: type):
+    pass
+
+@__generated__
 def tuple_type(T: type, N: Literal[int]):
     pass
 

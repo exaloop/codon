@@ -138,4 +138,4 @@ def unwrap(opt, T: type = NoneType):
     elif isinstance(opt, Optional):
         return opt.__unwrap__()
     else:
-        return T(opt)
+        return opt

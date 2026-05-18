@@ -89,6 +89,23 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   stmt->cond = transform(stmt->getCond());
   std::swap(ctx->expectedType, oldExpectedType);
 
+  std::shared_ptr<TypecheckItem> blockVar = nullptr, altVar = nullptr;
+  if (auto ci = cast<CallExpr>(stmt->getCond())) {
+    if (auto ei = cast<IdExpr>(ci->getExpr());
+        ei && ei->getType() && ei->getType()->getFunc() &&
+        (startswith(ei->getType()->getFunc()->getFuncName(),
+                    getMangledMethod("", "RTTIType", "_getinstance")) ||
+         startswith(ei->getType()->getFunc()->getFuncName(),
+                    getMangledMethod("", "Any", "_getinstance")))) {
+      if (auto arg = cast<IdExpr>((*ci)[0])) {
+        blockVar = ctx->forceFind(arg->getValue());
+        std::string tmpName = getTemporaryVar("inst");
+        stmt->cond = transform(N<AssignExpr>(N<IdExpr>(tmpName), stmt->getCond()));
+        altVar = ctx->forceFind(tmpName);
+      }
+    }
+  }
+
   // Static if evaluation
   if (stmt->getCond()->getType()->getStaticKind()) {
     resultStmt = evaluateStaticCondition(
@@ -104,7 +121,11 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
 
   wrapExpr(&stmt->cond, getStdLibType(StdlibTypes::Bool));
   ctx->blockLevel++;
+  if (blockVar)
+    std::swap(blockVar->alternative, altVar);
   stmt->ifSuite = SuiteStmt::wrap(transform(stmt->getIf()));
+  if (blockVar)
+    std::swap(blockVar->alternative, altVar);
   stmt->elseSuite = SuiteStmt::wrap(transform(stmt->getElse()));
   ctx->blockLevel--;
 

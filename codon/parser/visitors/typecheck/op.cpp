@@ -885,10 +885,9 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
     return nullptr;
   }
   if (!lc->getClass()->isRecord() && !rc->getClass()->isRecord()) {
-    // Both reference types: `return lhs.__raw__() == rhs.__raw__()`
-    return transform(
-        N<BinaryExpr>(N<CallExpr>(N<DotExpr>(expr->getLhs(), "__raw__")),
-                      "==", N<CallExpr>(N<DotExpr>(expr->getRhs(), "__raw__"))));
+    // Both reference types: `return type._is(lhs, rhs)`
+    return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "type", "_is")),
+                                 expr->getLhs(), expr->getRhs()));
   }
   if (lc->is(StdlibTypes::Optional)) {
     // lhs is optional: `return lhs.__is_optional__(rhs)`

@@ -621,7 +621,7 @@ def cast(U: type, obj) -> U:
         if obj is None:
             raise TypeError(f"cannot cast a None to non-optional {U}")
         return _cast(unwrap(obj), U)
-    if T is Optional and U is Optional:  # Optional[T] -> Optional[U]
+    elif T is Optional and U is Optional:  # Optional[T] -> Optional[U]
         return None if obj is None else U(_cast(unwrap(obj), U.T))
     elif U is Optional: # T -> Optional[U]
         return Optional(_cast(obj, U.T))

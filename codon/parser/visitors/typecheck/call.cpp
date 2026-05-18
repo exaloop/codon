@@ -931,6 +931,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformStaticFnWrapCallArgs(expr)};
   } else if (isF(ei, "std.internal.static", "vars")) {
     return {true, transformStaticVars(expr)};
+  } else if (isF(ei, "std.internal.static", "children")) {
+    return {true, transformStaticChildren(expr)};
   } else if (isF(ei, "std.internal.static", "tuple_type")) {
     return {true, transformStaticTupleType(expr)};
   } else if (isF(ei, "std.internal.static", "format")) { // static
