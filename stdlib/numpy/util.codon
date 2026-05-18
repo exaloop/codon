@@ -2270,32 +2270,9 @@ def cast(x, T: type):
             return T(x, T.base, T.num)
         else:
             return T(cast(x, int), T.base, T.num)
-    elif T is int:
-        if X is bool:
-            return 1 if x else 0
-        elif X is int:
-            return x
-        elif isinstance(X, Int):
-            return int(x)
-        elif isinstance(X, UInt):
-            return int(x)
-        elif X is float:
-            return int(x)
-        elif X is float16:
-            return int(float(x))
-        elif X is float32:
-            return int(float(x))
-        elif X is complex:
-            return int(x.real)
-        elif X is complex64:
-            return int(float(x.real))
-        else:
-            return T(x)
     elif isinstance(T, Int):
         if X is bool:
             return T(1 if x else 0)
-        elif X is int:
-            return T(x)
         elif isinstance(X, Int):
             if T.N > X.N:
                 return sext(x, T)
@@ -2325,8 +2302,6 @@ def cast(x, T: type):
     elif isinstance(T, UInt):
         if X is bool:
             return T(1 if x else 0)
-        elif X is int:
-            return T(x)
         elif isinstance(X, Int):
             if T.N > X.N:
                 return sext(x, T)
@@ -2356,8 +2331,6 @@ def cast(x, T: type):
     elif T is float:
         if X is bool:
             return 1. if x else 0.
-        elif X is int:
-            return sitofp(x, T)
         elif isinstance(X, Int):
             return sitofp(x, T)
         elif isinstance(X, UInt):
@@ -2377,8 +2350,6 @@ def cast(x, T: type):
     elif T is float16:
         if X is bool:
             return float16(1. if x else 0.)
-        elif X is int:
-            return sitofp(x, T)
         elif isinstance(X, Int):
             return sitofp(x, T)
         elif isinstance(X, UInt):
@@ -2398,8 +2369,6 @@ def cast(x, T: type):
     elif T is float32:
         if X is bool:
             return float32(1. if x else 0.)
-        elif X is int:
-            return sitofp(x, T)
         elif isinstance(X, Int):
             return sitofp(x, T)
         elif isinstance(X, UInt):
@@ -2511,8 +2480,6 @@ def coerce(T1: type, T2: type):
     if T1 is bool:
         if T2 is bool:
             return coerce(T2, T1)
-        elif T2 is int:
-            return int()
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return T2()
         elif T2 is float:
@@ -2701,8 +2668,6 @@ def coerce(T1: type, T2: type):
     elif T1 is complex64:
         if T2 is bool:
             return coerce(T2, T1)
-        elif T2 is int:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
         elif T2 is float:
@@ -2722,8 +2687,6 @@ def coerce(T1: type, T2: type):
     elif isinstance(T1, datetime64):
         if T2 is bool:
             return coerce(T2, T1)
-        elif T2 is int:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
         elif T2 is float:
@@ -2738,8 +2701,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
     elif isinstance(T1, timedelta64):
         if T2 is bool:
-            return coerce(T2, T1)
-        elif T2 is int:
             return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
@@ -2773,8 +2734,7 @@ def to_float(x):
     if isinstance(x, float128):
         return fptrunc(x, float)
 
-    if (isinstance(x, int) or
-        isinstance(x, i64) or
+    if (isinstance(x, i64) or
         isinstance(x, u64) or
         isinstance(x, i32) or
         isinstance(x, u32)):
@@ -2888,7 +2848,7 @@ def dtype_to_str(dtype: type, include_byteorder: bool = True):
     if dtype is u32:
         return '<u4' if include_byteorder else 'u4'
 
-    if dtype is i64 or dtype is int:
+    if dtype is i64:
         return '<i8' if include_byteorder else 'i8'
 
     if dtype is u64:

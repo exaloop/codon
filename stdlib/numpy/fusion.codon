@@ -333,8 +333,8 @@ def _fmod(x, y):
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.cmod_int(x, y)
     elif ((X is float and Y is float) or
-        (X is float32 and Y is float32) or
-        (X is float16 and Y is float16)):
+          (X is float32 and Y is float32) or
+          (X is float16 and Y is float16)):
         return util.cmod(x, y)
     else:
         return x % y

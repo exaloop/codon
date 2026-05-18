@@ -5,11 +5,10 @@ import internal.static as static
 @tuple(container=False)  # disallow default __getitem__
 class Vec[T, N: Literal[int]]:
     def _is_int(T: type) -> Literal[bool]:
-        return isinstance(T, int) or \
-               isinstance(T, Int) or isinstance(T, UInt)
+        return isinstance(T, Int) or isinstance(T, UInt)
 
     def _is_sint(T: type) -> Literal[bool]:
-        return isinstance(T, int) or isinstance(T, Int)
+        return isinstance(T, Int)
 
     def _is_uint(T: type) -> Literal[bool]:
         return isinstance(T, UInt)
@@ -32,8 +31,6 @@ class Vec[T, N: Literal[int]]:
             return T.N
         if isinstance(T, UInt):
             return T.N
-        if isinstance(T, int):
-            return 64
         if isinstance(T, float16):
             return 16
         if isinstance(T, float32):

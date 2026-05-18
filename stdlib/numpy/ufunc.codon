@@ -127,8 +127,7 @@ def _apply_vectorized_loop_binary(arr1, arr2, out, func: Literal[str]):
 def _fix_scalar(x, A: type):
     X = type(x)
 
-    a_is_int: Literal[bool] = (A is int or isinstance(A, Int)
-                               or isinstance(A, UInt))
+    a_is_int: Literal[bool] = (isinstance(A, Int) or isinstance(A, UInt))
     x_is_int: Literal[bool] = X is bool or X is int
 
     a_is_float: Literal[bool] = (A is float or A is float32 or A is float16
@@ -214,7 +213,7 @@ def decide_types_ldexp(x, y, dtype: type):
     XF = type(util.to_float(util.zero(X)))
     YF = type(util.to_float(util.zero(Y)))
 
-    if not (Y is int or isinstance(Y, Int) or isinstance(Y, UInt)):
+    if not (isinstance(Y, Int) or isinstance(Y, UInt)):
         compile_error("ldexp 2nd argument must be of integral type")
 
     x_scalar: Literal[bool] = (isinstance(x, bool) or isinstance(x, int)
