@@ -676,15 +676,16 @@ Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
 /// Transform hasattr method to a static boolean expression.
 /// This method also supports additional argument types that are used to check
 /// for a matching overload (not available in Python).
-Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
+Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr, bool allow_dynamic) {
   if (auto u = expr->getType()->getUnbound())
     u->staticKind = LiteralKind::Bool;
 
   auto typ = extractClassType((*expr)[0].getExpr());
+  typ = typ->is(StdlibTypes::TypeWrap) ? extractClassGeneric(typ)->getClass() : typ;
   if (!typ)
     return nullptr;
 
-  auto member = getStrLiteral(extractFuncGeneric(expr->getExpr()->getType()));
+  auto attr = getStrLiteral(extractFuncGeneric(expr->getExpr()->getType()));
   std::vector<std::pair<std::string, types::Type *>> args{{"", typ}};
 
   if (auto tup = cast<CallExpr>((*expr)[1].getExpr())) {
@@ -702,7 +703,7 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     args.emplace_back(n, t->is(StdlibTypes::TypeWrap) ? extractClassGeneric(t) : t);
   }
 
-  if (typ->getUnion()) {
+  if (typ->getUnion() && allow_dynamic) {
     Expr *cond = nullptr;
     auto unionTypes = typ->getUnion()->getRealizationTypes();
     for (auto &unionType : unionTypes) {
@@ -712,7 +713,7 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
       auto te = N<IdExpr>(tu->getClass()->realizedName());
       auto e = N<BinaryExpr>(
           N<CallExpr>(N<IdExpr>("isinstance"), (*expr)[0].getExpr(), te), "&&",
-          N<CallExpr>(N<IdExpr>("hasattr"), te, N<StringExpr>(member)));
+          N<CallExpr>(N<IdExpr>("hasattr"), te, N<StringExpr>(attr)));
       cond = !cond ? e : N<BinaryExpr>(cond, "||", e);
     }
     if (!cond)
@@ -724,41 +725,70 @@ Expr *TypecheckVisitor::transformHasAttr(CallExpr *expr) {
     auto id = getIntLiteral(typ);
     seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
     const auto &names = ctx->cache->generatedTupleNames[id];
-    return transform(N<BoolExpr>(in(names, member)));
+    return transform(N<BoolExpr>(in(names, attr)));
   }
 
-  bool exists = !findMethod(typ->getClass(), member).empty() ||
-                findMember(typ->getClass(), member);
+  bool exists =
+      !findMethod(typ->getClass(), attr).empty() || findMember(typ->getClass(), attr);
   if (exists && args.size() > 1) {
-    exists &= findBestMethod(typ, member, args) != nullptr;
+    exists &= findBestMethod(typ, attr, args) != nullptr;
+  }
+
+  if (!exists && allow_dynamic && getClass(typ)->hasRTTI()) {
+    return transform(
+        N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_hasattr")),
+                    expr->begin()->getExpr(), N<StringExpr>(attr)));
   }
   return transform(N<BoolExpr>(exists));
 }
 
 /// Transform getattr method to a DotExpr.
 Expr *TypecheckVisitor::transformGetAttr(CallExpr *expr) {
-  auto name = getStrLiteral(extractFuncGeneric(expr->expr->getType()));
+  auto attr = getStrLiteral(extractFuncGeneric(expr->expr->getType()));
+  auto attrType = extractType(extractFuncGeneric(expr->expr->getType(), 1));
+  auto [newExpr, found] = getAttr(expr->begin()->getExpr(), attr);
 
-  // special handling for NamedTuple
-  if (expr->begin()->getExpr()->getType() &&
-      expr->begin()->getExpr()->getType()->is(StdlibTypes::NamedTuple)) {
-    auto val = expr->begin()->getExpr()->getClassType();
-    auto id = getIntLiteral(val);
-    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
-    auto names = ctx->cache->generatedTupleNames[id];
-    for (size_t i = 0; i < names.size(); i++)
-      if (names[i] == name) {
-        return transform(
-            N<IndexExpr>(N<DotExpr>(expr->begin()->getExpr(), "args"), N<IntExpr>(i)));
-      }
-    E(Error::DOT_NO_ATTR, expr, val->prettyString(), name);
+  auto typ = extractClassType((*expr)[0].getExpr());
+  typ = typ->is(StdlibTypes::TypeWrap) ? extractClassGeneric(typ)->getClass() : typ;
+  if (!found) {
+    if (!typ)
+      return nullptr;
+    if (getClass(typ)->hasRTTI()) {
+      return transform(
+          N<CallExpr>(N<IdExpr>(getMangledMethod("", "RTTIType", "_getattr")),
+                      expr->begin()->getExpr(), N<StringExpr>(attr),
+                      N<IdExpr>(attrType->realizedName())));
+    } else {
+      E(Error::DOT_NO_ATTR, expr, extractType(expr->begin()->getExpr())->prettyString(),
+        attr);
+    }
+  } else {
+    if (!newExpr)
+      newExpr = transform(N<DotExpr>(expr->begin()->getExpr(), attr));
+    if (!attrType->is(StdlibTypes::NoneType)) {
+      if (wrapExpr(&newExpr, attrType))
+        unify(newExpr->getType(), attrType);
+    }
+    return newExpr;
   }
-  return transform(N<DotExpr>(expr->begin()->getExpr(), name));
+  return nullptr;
 }
 
 /// Transform setattr method to a AssignMemberStmt.
 Expr *TypecheckVisitor::transformSetAttr(CallExpr *expr) {
   auto attr = getStrLiteral(extractFuncGeneric(expr->expr->getType()));
+  auto typ = extractClassType((*expr)[0].getExpr());
+  typ = typ->is(StdlibTypes::TypeWrap) ? extractClassGeneric(typ)->getClass() : typ;
+  if (!typ)
+    return nullptr;
+  if (getClass(typ)->hasRTTI()) {
+    auto [_, found] = getAttr(expr->begin()->getExpr(), attr);
+    if (!found) {
+      return transform(N<CallExpr>(
+          N<IdExpr>(getMangledMethod("", "RTTIType", "_setattr")),
+          expr->begin()->getExpr(), N<StringExpr>(attr), (*expr)[1].getExpr()));
+    }
+  }
   return transform(
       N<StmtExpr>(N<AssignMemberStmt>((*expr)[0].getExpr(), attr, (*expr)[1].getExpr()),
                   N<CallExpr>(N<IdExpr>(StdlibTypes::NoneType))));

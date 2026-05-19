@@ -646,6 +646,17 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
             true};
   }
 
+  // Case: NamedTuple support
+  if (typ->is(StdlibTypes::NamedTuple)) {
+    auto id = getIntLiteral(typ);
+    seqassert(id >= 0 && id < ctx->cache->generatedTupleNames.size(), "bad id: {}", id);
+    auto names = ctx->cache->generatedTupleNames[id];
+    for (size_t i = 0; i < names.size(); i++)
+      if (names[i] == member) {
+        return {transform(N<IndexExpr>(N<DotExpr>(expr, "args"), N<IntExpr>(i))), true};
+      }
+  }
+
   // Case: __getattr__ support. Ensure that only Literal[str] arguments are accepted.
   auto u = instantiateUnbound();
   u->staticKind = LiteralKind::String;

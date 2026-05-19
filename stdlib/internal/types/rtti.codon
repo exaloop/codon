@@ -149,18 +149,51 @@ class RTTIType:
             raise TypeError(f"cannot cast {type(obj)} to {D}")
         return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
 
-    def _getinstance(obj, T: type) -> Optional[T]:
-        rtti = type._force_cast(obj, RTTIType)
-        obj_info = RTTIType._typeinfo(obj)
-
-        (_, ti), (ooff, toff) = RTTIType._find_offsets(obj, type(obj), T)
-        if ti == -1:
-            return None
+    def _getinstance(obj, T: type):
+        if isinstance(T, TypeWrap):
+            return RTTIType._getinstance(obj, T.T)
         else:
-            return RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T)
+            rtti = type._force_cast(obj, RTTIType)
+            obj_info = RTTIType._typeinfo(obj)
+
+            (_, ti), (ooff, toff) = RTTIType._find_offsets(obj, type(obj), T)
+            if ti == -1:
+                return None
+            else:
+                return RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T)
 
     def _isinstance(obj, T: type) -> bool:
         return RTTIType._getinstance(obj, T) is not None
+
+    def _hasattr(obj, attr: Literal[str]):
+        children = static.children(type(obj))
+        for cls in children:
+            if hasattr(cls, attr) and RTTIType._isinstance(obj, cls):
+                return True
+        return False
+
+    def _getattr(obj, attr: Literal[str], attr_type: type):
+        children = static.children(type(obj))
+        for cls in children:
+            if hasattr(cls, attr):
+                if (cls_obj := RTTIType._getinstance(obj, cls)):
+                    if attr_type is NoneType:
+                        return _getattr(cls_obj, attr)
+                    else:
+                        x: attr_type = _getattr(cls_obj, attr)
+                        return x
+        raise AttributeError(f"cannot find {obj}")
+        return attr_type()
+
+    def _setattr(obj, attr: Literal[str], value):
+        children = static.children(type(obj))
+        for cls in children:
+            if hasattr(cls, attr):
+                if (cls_obj := RTTIType._getinstance(obj, cls)):
+                    setattr(cls_obj, attr, value)
+                    return
+        raise AttributeError(f"cannot find {attr} in {obj}")
+
 
 @extend
 class Super:

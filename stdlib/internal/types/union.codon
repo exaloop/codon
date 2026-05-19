@@ -52,7 +52,7 @@ class Union:
         for tag, T in static.vars_types(union, with_index=True):
             if hasattr(T, member):
                 if Union._get_tag(union) == tag:
-                    return getattr(Union._get_data(union, T), member)
+                    return _getattr(Union._get_data(union, T), member)
         raise TypeError(f"invalid union call '{member}'")
 
     def _member(union, member: Literal[str]):

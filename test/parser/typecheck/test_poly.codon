@@ -1,0 +1,419 @@
+#%% test_poly
+class Animal:
+    name: str
+    legs: int
+    def __init__(self, name: str, legs: int):
+        self.name = name
+        self.legs = legs
+    def speak(self) -> str: return "..."
+    def describe(self) -> str: return f"{self.name} has {self.legs} legs"
+class Dog(Animal):
+    tricks: list[str]
+    def __init__(self, name: str):
+        super().__init__(name, 4)
+        self.tricks: list[str] = []
+    def speak(self) -> str: return "Woof"
+    def learn(self, trick: str): self.tricks.append(trick)
+class Cat(Animal):
+    indoor: bool
+    def __init__(self, name: str):
+        super().__init__(name, 4)
+        self.indoor = True
+    def speak(self) -> str: return "Meow"
+class Poodle(Dog):
+    size: str
+    def __init__(self, name: str, size: str = "standard"):
+        super().__init__(name)
+        self.size = size
+    def speak(self) -> str: return "Yip"
+    def groom(self) -> str: return f"{self.name} is being groomed"
+class Labrador(Dog):
+    color: str
+    def __init__(self, name: str, color: str = "yellow"):
+        super().__init__(name)
+        self.color = color
+    def speak(self) -> str: return "Bark"
+    def fetch(self) -> str: return f"{self.name} fetches the ball"
+
+@test
+def test_simple_hierarchy():
+    animal = Animal("Generic", 0)
+    dog    = Dog("Rex")
+    cat    = Cat("Whiskers")
+    poodle = Poodle("Fifi")
+    lab    = Labrador("Buddy")
+
+    assert isinstance(animal, Animal)
+    assert isinstance(dog,    Dog)
+    assert isinstance(cat,    Cat)
+    assert isinstance(poodle, Poodle)
+    assert isinstance(lab,    Labrador)
+    assert not isinstance(animal, Dog)
+    assert not isinstance(animal, Cat)
+    assert not isinstance(dog,    Cat)
+    assert not isinstance(cat,    Dog)
+    assert not isinstance(poodle, Cat)
+    assert not isinstance(lab,    Poodle)
+    assert not isinstance(poodle, Labrador)
+    assert isinstance(poodle, (Cat, Poodle))
+    assert isinstance(cat,    (Cat, Dog))
+    assert not isinstance(animal, (Dog, Cat, Poodle, Labrador))
+    # upcast
+    assert isinstance(dog,    Animal)
+    assert isinstance(cat,    Animal)
+    assert isinstance(poodle, Dog)
+    assert isinstance(poodle, Animal)
+    assert isinstance(lab,    Dog)
+    assert isinstance(lab,    Animal)
+    # downcast
+    animals: list[Animal] = [dog, cat, poodle, lab]
+    dog_count = sum(1 for a in animals if isinstance(a, Dog))
+    assert dog_count == 3
+    cat_count = sum(1 for a in animals if isinstance(a, Cat))
+    assert cat_count == 1
+
+    # is
+    d1 = Dog("Rex")
+    d2 = d1
+    d3 = Dog("Rex")    # same name, different object
+    assert d1 is d2
+    assert d1 is not d3
+    a: Animal = d1
+    assert a is d1
+    animals = [d1, d3]
+    assert animals[0] is d1
+    assert animals[0] is not d3
+
+    # hasattr
+    animal = Animal("Generic", 0)
+    dog    = Dog("Rex")
+    poodle = Poodle("Fifi", "toy")
+
+    assert hasattr(animal, "name")
+    assert hasattr(animal, "legs")
+    assert hasattr(animal, "speak")
+    assert hasattr(animal, "describe")
+    # subclass has parent attrs
+    assert hasattr(dog, "name")
+    assert hasattr(dog, "legs")
+    assert hasattr(dog, "speak")
+    assert hasattr(dog, "tricks")
+    assert hasattr(dog, "learn")
+    # subclass has no sibling attrs
+    assert not hasattr(dog, "indoor")   # Cat-only
+    assert not hasattr(dog, "size")     # Poodle-only
+    assert not hasattr(dog, "color")    # Labrador-only
+    # leaf has ancestor attrs
+    assert hasattr(poodle, "name")
+    assert hasattr(poodle, "legs")
+    assert hasattr(poodle, "tricks")
+    assert hasattr(poodle, "size")
+    assert hasattr(poodle, "groom")
+    # non-existent
+    assert not hasattr(animal, "wings")
+    assert not hasattr(poodle, "wings")
+
+    d: Dog = poodle
+    assert hasattr(d, "name")
+    assert hasattr(d, "legs")
+    assert hasattr(d, "tricks")
+    assert not hasattr(d, "size")
+    assert not hasattr(d, "groom")
+    assert hasattr_dynamic(d, "tricks")
+    assert hasattr_dynamic(d, "size")
+    assert hasattr_dynamic(d, "groom")
+
+    # getattr/setattr
+    assert getattr(dog, "name") == "Rex"
+    assert getattr(dog, "legs") == 4
+    assert getattr(poodle, "size") == "toy"
+
+    assert getattr(dog, "wings", default=None) is None
+    assert getattr(dog, "wings", default="absent") == "absent"
+
+    try:
+        getattr(dog, "wings")  # no default argument
+        assert False
+    except AttributeError:
+        assert True
+
+    speak_fn = getattr(dog, "speak")
+    assert speak_fn() == "Woof"
+
+    assert getattr(poodle, "legs") == 4
+    assert getattr(poodle, "name") == "Fifi"
+    d: Dog = poodle
+    assert getattr(d, "legs") == 4
+    assert getattr(d, "name") == "Fifi"
+
+    setattr(dog, "name", "Max")
+    assert dog.name == "Max"
+
+    setattr(poodle, "legs", 3)
+    assert poodle.legs == 3
+    assert getattr(poodle, "legs") == 3
+
+    other = Dog("Charlie")
+    setattr(dog, "name", "Max")
+    assert other.name == "Charlie"
+
+    p: Dog = poodle
+    setattr(p, "size", "Fufu")
+    assert getattr(p, "size", str) == "Fufu"
+    assert getattr(poodle, "size") == "Fufu"
+    assert poodle.size == "Fufu"
+
+    animals: list[Animal] = [
+        Animal("Generic", 0),
+        Dog("Rex"),
+        Cat("Whiskers"),
+        Poodle("Fifi"),
+        Labrador("Buddy"),
+    ]
+
+    expected = ["...", "Woof", "Meow", "Yip", "Bark"]
+    result = [a.speak() for a in animals]
+    assert result == expected
+
+    # describe() is only on Animal, all subclasses share it
+    for a in animals[1:]:
+        assert "has 4 legs" in a.describe()
+
+    results = []
+    for a in animals:
+        if isinstance(a, Poodle):
+            results.append(("poodle", a.groom()))
+        elif isinstance(a, Labrador):
+            results.append(("lab", a.fetch()))
+        elif isinstance(a, Dog):
+            results.append(("dog", a.speak()))
+        elif isinstance(a, Cat):
+            results.append(("cat", a.speak()))
+        else:
+            results.append(("animal", a.speak()))
+    kinds = [r[0] for r in results]
+    assert kinds == ["animal", "dog", "cat", "poodle", "lab"]
+
+    dog = Dog("Rex")
+    # describe() not overridden in Dog
+    assert dog.describe() == "Rex has 4 legs"
+    poodle = Poodle("Fifi")
+    assert poodle.describe() == "Fifi has 4 legs"
+
+    p = Poodle("Fifi", "toy")
+    assert p.name == "Fifi"
+    assert p.legs == 4
+    assert p.size == "toy"
+    assert isinstance(p.tricks, list[str])
+
+test_simple_hierarchy()
+
+# Diamond hierarchy
+class Base:
+    value: int
+    base_flag: bool
+    def __init__(self, value: int):
+        self.value = value
+        self.base_flag = True
+    def compute(self) -> int: return self.value
+    def label(self) -> str: return "Base"
+class Left(Base):
+    left_data: int
+    def __init__(self, value: int):
+        super().__init__(value)
+        self.left_data = value * 2
+    def compute(self) -> int: return super().compute() + 10
+    def label(self) -> str: return "Left"
+    def left_only(self) -> str: return f"left_only:{self.left_data}"
+class Right(Base):
+    right_data: int
+    def __init__(self, value: int):
+        super().__init__(value)
+        self.right_data = value * 3
+    def compute(self) -> int: return super().compute() + 100
+    def label(self) -> str: return "Right"
+    def right_only(self) -> str: return f"right_only:{self.right_data}"
+class Bottom(Left, Right):
+    bottom_extra: int
+    def __init__(self, value: int):
+        super().__init__(value)
+        self.bottom_extra = value + 1
+    def compute(self) -> int: return super().compute() + 1000
+    def label(self) -> str: return "Bottom"
+
+@test
+def test_diamond():
+    base   = Base(1)
+    left   = Left(2)
+    right  = Right(3)
+    bottom = Bottom(4)
+
+    assert isinstance(base,   Base)
+    assert isinstance(left,   Left)
+    assert isinstance(right,  Right)
+    assert isinstance(bottom, Bottom)
+
+    assert isinstance(bottom, Base)
+    assert isinstance(bottom, Left)
+    assert isinstance(bottom, Right)
+
+    assert isinstance(left,  Base)
+    assert isinstance(right, Base)
+    assert not isinstance(left,  Right)
+    assert not isinstance(right, Left)
+
+    assert not isinstance(base, Left)
+    assert not isinstance(base, Right)
+    assert not isinstance(base, Bottom)
+
+    assert isinstance(bottom, (Left, Right))
+    assert isinstance(left,   (Left, Right))
+    assert not isinstance(base,  (Left, Right, Bottom))
+
+    b1 = Bottom(5)
+    b2 = b1
+    b3 = Bottom(5)
+
+    assert b1 is b2
+    assert b1 is not b3
+
+    as_left:  Left  = b1
+    as_right: Right = b1
+    as_base:  Base  = b1
+    assert as_left is b1
+    assert as_right is b1
+    assert as_base is b1
+
+    items = [b1, b3]
+    assert items[0] is b1
+    assert items[1] is not b1
+
+    bottom = Bottom(7)
+
+    assert hasattr(bottom, "value")
+    assert hasattr(bottom, "base_flag")
+    assert hasattr(bottom, "compute")
+    assert hasattr(bottom, "label")
+    assert hasattr(bottom, "left_data")
+    assert hasattr(bottom, "left_only")
+    assert hasattr(bottom, "right_data")
+    assert hasattr(bottom, "right_only")
+    assert hasattr(bottom, "bottom_extra")
+    assert not hasattr(bottom, "nonexistent")
+
+    assert hasattr(as_base, "value")
+    assert hasattr(as_base, "base_flag")
+    assert hasattr(as_base, "compute")
+    assert hasattr(as_base, "label")
+    assert not hasattr(as_base, "left_data")
+    assert not hasattr(as_base, "left_only")
+    assert not hasattr(as_base, "right_data")
+    assert not hasattr(as_base, "right_only")
+    assert not hasattr(as_base, "bottom_extra")
+    assert hasattr_dynamic(as_base, "left_data")
+    assert hasattr_dynamic(as_base, "left_only")
+    assert hasattr_dynamic(as_base, "right_data")
+    assert hasattr_dynamic(as_base, "right_only")
+    assert hasattr_dynamic(as_base, "bottom_extra")
+
+    left = Left(2)
+    assert not hasattr(left, "right_data")
+    assert not hasattr(left, "right_only")
+    assert not hasattr(left, "bottom_extra")
+
+    right = Right(3)
+    assert not hasattr(right, "left_data")
+    assert not hasattr(right, "left_only")
+    assert not hasattr(right, "bottom_extra")
+
+    bottom = Bottom(10)
+
+    assert getattr(bottom, "bottom_extra") == 11
+    assert getattr(bottom, "value") == 10
+
+    assert getattr(bottom, "left_data") == 20
+    assert getattr(bottom, "right_data") == 30
+    assert getattr(bottom, "base_flag")
+    assert getattr(bottom, "ghost", 42) == 42
+    try:
+        getattr(bottom, "ghost")
+        assert False
+    except AttributeError:
+        assert True
+
+    label_fn = getattr(bottom, "label")
+    assert label_fn() == "Bottom"
+
+    setattr(bottom, "value", 99)
+    assert bottom.value == 99
+    setattr(bottom, "left_data", 777)
+    assert bottom.left_data == 777
+
+    other = Bottom(10)
+    setattr(bottom, "value", 0)
+    assert other.value == 10
+
+    b: Base = other
+    setattr(b, "bottom_extra", 100)
+    assert getattr(b, "bottom_extra", Int[64]) == 100  # TODO: int fails, no idea why
+    assert getattr(other, "bottom_extra") == 100
+    assert other.bottom_extra == 100
+
+    objects: list[Base] = [
+        Base(1),
+        Left(2),
+        Right(3),
+        Bottom(4),
+    ]
+
+    # Python MRO for diamond: Bottom -> Left -> Right -> Base
+    mro = [c.__name__ for c in Bottom.__mro__]
+    assert mro == ["Bottom", "Left", "Right", "Base", "object"]
+
+    labels = [o.label() for o in objects]
+    assert labels == ["Base", "Left", "Right", "Bottom"]
+
+    # Bottom.compute:  1000 + Left.compute
+    # Left.compute:      10 + Base.compute
+    # Base.compute:   value
+    # With MRO cooperative super: Bottom(4).compute() = 1000+10+100+4 = 1114
+    b = Bottom(4)
+    assert b.compute() == 1114
+    assert Base(4).compute() == 4
+    assert Left(4).compute() == 14
+    assert Right(4).compute() == 104
+
+    results = []
+    for obj in objects:
+        if isinstance(obj, Bottom):
+            results.append("bottom")
+        elif isinstance(obj, Left):
+            results.append("left")
+        elif isinstance(obj, Right):
+            results.append("right")
+        else:
+            results.append("base")
+    assert results == ["base", "left", "right", "bottom"]
+
+    b = Bottom(5)
+    # left_only inherited from Left
+    assert b.left_only() == "left_only:10"
+
+    b = Bottom(5)
+    # right_only inherited from Right
+    assert b.right_only() == "right_only:15"
+
+    b = Bottom(7)
+    assert b.value == 7
+    assert b.base_flag
+    assert b.left_data == 14
+    assert b.right_data == 21
+    assert b.bottom_extra == 8
+
+    # MRO cooperative __init__ ensures Base.__init__ runs exactly once
+    b = Bottom(3)
+    assert b.base_flag
+    b.base_flag = False
+    assert not b.base_flag
+
+test_diamond()

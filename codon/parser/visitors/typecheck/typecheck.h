@@ -374,7 +374,7 @@ public:
   Expr *transformArray(CallExpr *);
   Expr *transformIsInstance(CallExpr *);
   Expr *transformStaticLen(CallExpr *);
-  Expr *transformHasAttr(CallExpr *);
+  Expr *transformHasAttr(CallExpr *, bool = false);
   Expr *transformGetAttr(CallExpr *);
   Expr *transformSetAttr(CallExpr *);
   Expr *transformCompileError(CallExpr *) const;

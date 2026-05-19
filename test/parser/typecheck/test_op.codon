@@ -303,8 +303,9 @@ def foo2(a: int):
 try:
     None |> foo2
 except ValueError:
-    print 'exception' #: exception
+    print 'exception'
 #! 'int' does not match expected type 'NoneType'
+#! during the realization
 # Explanation: None can also be Optional[Generator[int]]
 # It should, however, default to None as function argp
 

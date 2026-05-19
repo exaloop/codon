@@ -2,6 +2,19 @@
 
 import internal.static as static
 
+def getattr(obj, attr: Literal[str], default, typ: type=NoneType):
+    try:
+        return _getattr(obj, attr, type(default) if typ is None else typ)
+    except AttributeError:
+        if default is None:
+            return None
+        else:
+            return default
+
+@overload
+def getattr(obj, attr: Literal[str], type: type=NoneType):
+    return _getattr(obj, attr, type)
+
 def id(x) -> int:
     if isinstance(x, ByRef):
         return int(x.__raw__())

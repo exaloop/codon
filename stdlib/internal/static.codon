@@ -95,6 +95,10 @@ def children(T: type):
     pass
 
 @__generated__
+def related(T: type):
+    pass
+
+@__generated__
 def tuple_type(T: type, N: Literal[int]):
     pass
 

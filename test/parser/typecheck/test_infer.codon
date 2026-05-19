@@ -876,18 +876,18 @@ class B:
         print('baz')
 
 a = A()
-print(hasattr(a, 'foo'), hasattr(a, 'bar'), hasattr(a, 'baz'))
+print(hasattr_dynamic(a, 'foo'), hasattr_dynamic(a, 'bar'), hasattr_dynamic(a, 'baz'))
 #: True True False
 b = B()
-print(hasattr(b, 'foo'), hasattr(b, 'bar'), hasattr(b, 'baz'))
+print(hasattr_dynamic(b, 'foo'), hasattr_dynamic(b, 'bar'), hasattr_dynamic(b, 'baz'))
 #: True False True
 
 c: Union[A, B] = A()
-print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
+print(hasattr_dynamic(c, 'foo'), hasattr_dynamic(c, 'bar'), hasattr_dynamic(c, 'baz'))
 #: True True False
 
 c = B()
-print(hasattr(c, 'foo'), hasattr(c, 'bar'), hasattr(c, 'baz'))
+print(hasattr_dynamic(c, 'foo'), hasattr_dynamic(c, 'bar'), hasattr_dynamic(c, 'baz'))
 #: True False True
 
 

@@ -342,7 +342,11 @@ def hasattr(obj, attr: Literal[str], *args, **kwargs):
     pass
 
 @__generated__
-def getattr(obj, attr: Literal[str]):
+def hasattr_dynamic(obj, attr: Literal[str], *args, **kwargs):
+    pass
+
+@__generated__
+def _getattr(obj, attr: Literal[str], attr_type: type=NoneType):
     pass
 
 @__generated__

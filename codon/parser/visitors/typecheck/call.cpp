@@ -895,9 +895,11 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformIsInstance(expr)};
   } else if (isF(ei, "std.internal.static", "len")) { // static
     return {true, transformStaticLen(expr)};
-  } else if (isF(ei, "", "hasattr")) { // static
+  } else if (isF(ei, "", "hasattr")) {
     return {true, transformHasAttr(expr)};
-  } else if (isF(ei, "", "getattr")) {
+  } else if (isF(ei, "", "hasattr_dynamic")) { // static
+    return {true, transformHasAttr(expr, true)};
+  } else if (isF(ei, "", "_getattr")) {
     return {true, transformGetAttr(expr)};
   } else if (isF(ei, "", "setattr")) {
     return {true, transformSetAttr(expr)};
