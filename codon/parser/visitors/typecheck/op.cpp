@@ -874,8 +874,11 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
 
   // Check the type equality (operand types and __raw__ pointers must match).
   if (isTypeExpr(expr->getLhs()) && isTypeExpr(expr->getRhs())) {
-    return transform(N<BoolExpr>(
-        expr->getLhs()->getType()->unify(expr->getRhs()->getType(), nullptr) >= 0));
+    auto lt = extractClassType(expr->getLhs());
+    auto rt = extractClassType(expr->getRhs());
+    if (!lt || !rt)
+      return nullptr;
+    return transform(N<BoolExpr>(lt->name == rt->name && lt->unify(rt, nullptr) >= 0));
   }
   auto lc = realize(expr->getLhs()->getType());
   auto rc = realize(expr->getRhs()->getType());

@@ -615,11 +615,13 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
   auto targetType = extractType(typExpr);
 
   // Check type match
-  types::Type::Unification us;
-  auto s = typ->unify(targetType, &us);
-  us.undo();
-  if (s >= 0)
-    return transform(N<BoolExpr>(true));
+  if (targetType->getClass()->name == typ->name) {
+    types::Type::Unification us;
+    auto s = typ->unify(targetType, &us);
+    us.undo();
+    if (s >= 0)
+      return transform(N<BoolExpr>(true));
+  }
 
   std::string instCall = ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool)
                              ? "_getinstance"
