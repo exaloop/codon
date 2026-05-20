@@ -327,6 +327,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
                     stmt->items.begin() + insertSize++,
                     Param(cc, N<IndexExpr>(N<IdExpr>("Literal"),
                                            N<IdExpr>(Type::stringFromLiteral(si)))));
+              } else if (t == BindingsAttribute::CaptureType::Nonlocal) {
+                stmt->items.insert(stmt->items.begin() + insertSize++,
+                                   Param(cc, N<IdExpr>(StdlibTypes::Capsule)));
               } else {
                 stmt->items.insert(stmt->items.begin() + insertSize++, Param(cc));
               }

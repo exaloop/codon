@@ -168,9 +168,9 @@ def foo():
     f4()  #: f4 8
     f5()  #: f5 8 5
     f6()  #: f6 5
-          #: f6 10 Capsule[int]
+          #: f6 10 int
     print(a)  #: 10
-    f7()  #: f7_11 2 Capsule[int]
+    f7()  #: f7_11 2 int
           #: f7 2
     print(a)  #: 10
 
@@ -185,24 +185,24 @@ def foo():
     f4()  #: f4 8
     f5()  #: f5 8 s
     f6()  #: f6 s
-          #: f6 ss Capsule[str]
+          #: f6 ss str
     print(a)  #: ss
-    f7()  #: f7_11 2 Capsule[int]
+    f7()  #: f7_11 2 int
           #: f7 2
     print(a)  #: ss
 
     # if len("abc") < 5:
     a = 1.1
     f6()  #: f6 1.1
-          #: f6 2.2 Capsule[float]
+          #: f6 2.2 float
     print(a)  #: 2.2
 
     return fp
 
 fp = foo()
 a = fp()  #: f6 10
-          #: f6 20 Capsule[int]
-print(a, a.__class__.__name__)  #: 20 Capsule[int]
+          #: f6 20 int
+print(a, a.__class__.__name__)  #: 20 int
 print(g, g.__class__.__name__)  #: 20 int
 
 # Lambda capture test

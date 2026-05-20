@@ -209,6 +209,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     return nullptr;
   }
 
+  // Ensure that captured values are in a Capsule
   if (ctx->inFunction() && stmt->getRhs() && !mustExist) {
     if (auto b =
             ctx->getBase()->func->getAttribute<BindingsAttribute>(Attr::Bindings)) {
@@ -478,12 +479,13 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
 ///         expression, and (2) the replacement expression.
 std::pair<bool, Stmt *> TypecheckVisitor::transformInplaceUpdate(AssignStmt *stmt) {
   // Case: capsule operations
-  if (stmt->getLhs()->getType()->is(StdlibTypes::Capsule)) {
+  if (auto c = cast<CallExpr>(stmt->getLhs());
+      c && isFunctionExpr(c->getExpr(), getMangledMethod("", "Capsule", "_get"))) {
     return {
         true,
         transform(N<AssignStmt>(
             N<IndexExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_ptr")),
-                                     stmt->getLhs()),
+                                     c->begin()->getExpr()),
                          N<IntExpr>(0)),
             stmt->getRhs()))};
   }

@@ -169,15 +169,20 @@ class Any:
 class Capsule:
     @pure
     @derives
-    @llvm
-    def _make(val: Ptr[T], T: type) -> Capsule[T]:
-        %0 = insertvalue { ptr } undef, ptr %val, 0
-        ret { ptr } %0
+    @inline
+    def _make(val: T, T: type) -> Capsule[T]:
 
-    def make(val: T, T: type) -> Capsule[T]:
+        @pure
+        @derives
+        @inline
+        @llvm
+        def ctr(val: Ptr[T], T: type) -> Capsule[T]:
+            %0 = insertvalue { ptr } undef, ptr %val, 0
+            ret { ptr } %0
+
         p = Ptr[T](1)
         p[0] = val
-        return Capsule._make(p)
+        return ctr(p)
 
     @pure
     @derives
@@ -195,6 +200,3 @@ class Capsule:
         %1 = getelementptr {=T}, ptr %0, i64 0
         %2 = load {=T}, ptr %1
         ret {=T} %2
-
-    def __init__(self, val: T):
-        self.val[0] = val

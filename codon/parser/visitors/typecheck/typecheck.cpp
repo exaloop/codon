@@ -637,18 +637,19 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     return {false, nullptr, nullptr}; // argument type not yet known.
   }
 
-  else if (expectedClass && !expectedClass->is(StdlibTypes::Capsule) && exprClass &&
-           exprClass->is(StdlibTypes::Capsule)) {
-    type = extractClassGeneric(exprClass)->shared_from_this();
-    fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_get")), expr);
-    };
-  } else if (expectedClass && expectedClass->is(StdlibTypes::Capsule) && exprClass &&
-             !exprClass->is(StdlibTypes::Capsule)) {
+  // Use Capsule ONLY if the type signature explicitly asks for it!
+  if (allowUnwrap && expectedClass && expectedClass->is(StdlibTypes::Capsule) &&
+      exprClass && !exprClass->is(StdlibTypes::Capsule)) {
     type = instantiateType(getStdLibType(StdlibTypes::Capsule),
                            std::vector<Type *>{exprClass});
     fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "make")), expr);
+      if (auto c = cast<CallExpr>(expr);
+          c && isFunctionExpr(c->getExpr(), getMangledMethod("", "Capsule", "_get"))) {
+        // Do not wrap already wrapped vars
+        return c->begin()->getExpr();
+      } else {
+        return N<CallExpr>(N<IdExpr>(getMangledMethod("", "Capsule", "_make")), expr);
+      }
     };
   }
 
@@ -1115,6 +1116,13 @@ bool TypecheckVisitor::isTypeExpr(const Expr *e) {
   return e && e->getType() && e->getType()->is(StdlibTypes::Type);
 }
 
+bool TypecheckVisitor::isFunctionExpr(const Expr *e, const std::string &fnName) {
+  bool isF = e && e->getType() && e->getType()->getFunc();
+  if (!fnName.empty())
+    return e->getType()->getFunc()->getFuncName() == fnName;
+  return isF;
+}
+
 Cache::Module *TypecheckVisitor::getImport(const std::string &s) const {
   auto i = in(ctx->cache->imports, s);
   seqassert(i, "bad import");
@@ -1419,9 +1427,6 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
       }
     }
   };
-  if (type->is(StdlibTypes::Capsule)) {
-    type = extractClassGeneric(type)->getClass();
-  }
   if (type && type->is(StdlibTypes::Tuple) && method == "__new__" &&
       !type->generics.empty()) {
     generateTuple(type->generics.size());
@@ -1443,9 +1448,6 @@ std::vector<types::FuncType *> TypecheckVisitor::findMethod(types::ClassType *ty
 
 Cache::Class::ClassField *
 TypecheckVisitor::findMember(types::ClassType *type, const std::string &member) const {
-  if (type->is(StdlibTypes::Capsule)) {
-    type = extractClassGeneric(type)->getClass();
-  }
   if (auto cls = getClass(type)) {
     for (const auto &pc : cls->mro) {
       auto mc = getClass(pc.get());

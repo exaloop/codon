@@ -597,10 +597,10 @@ def _jit_display(x, s: Literal[str], bundle: Optional[Set[str]] = None):
 def cast(U: type, obj) -> U:
     T = type(obj)
 
-    if T is Capsule[U]:
-        return Capsule._get(obj)
-    elif U is Capsule[T]:
-        return Capsule.make(obj)
+    # if T is Capsule[U]:
+    #     return Capsule._get(obj)
+    # elif U is Capsule[T]:
+    #     return Capsule.make(obj)
 
     if T is Any:
         return obj.__cast__(U)

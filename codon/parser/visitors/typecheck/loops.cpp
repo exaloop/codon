@@ -120,7 +120,7 @@ void TypecheckVisitor::visit(ForStmt *stmt) {
   // Needs in-advance transformation to prevent name clashes with the iterator variable
   stmt->getIter()->setAttribute(
       Attr::ExprNoSpecial); // do not expand special calls here,
-                            // might be needed for statis loops!
+                            // might be needed for static loops!
   stmt->iter = transform(stmt->getIter());
 
   // Check for for-else clause

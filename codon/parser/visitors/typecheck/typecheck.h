@@ -331,6 +331,7 @@ public:
   Cache::Class::ClassRealization *getClassRealization(types::Type *t) const;
   std::string getRootName(const types::FuncType *t) const;
   static bool isTypeExpr(const Expr *e);
+  static bool isFunctionExpr(const Expr *e, const std::string & = "");
   Cache::Module *getImport(const std::string &s) const;
   static bool isDispatch(const std::string &s);
   static bool isDispatch(const FunctionStmt *ast);
