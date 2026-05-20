@@ -439,15 +439,16 @@ std::string findCodonRuntime() {
 void *jit_init(char *name) {
   auto jit = new codon::jit::JIT(std::string(name));
 
-  // Register libcodonrt so the JIT can resolve runtime symbols
-  // (seq_*, GC_*, ...) without requiring RTLD_GLOBAL on the Python
-  // extension. Failure here is fatal: without the runtime the JIT cannot
-  // link any compiled code.
+  // Register Codon runtime symbols with ORC using the runtime-provided symbol map.
+  // The runtime is loaded locally so its symbols do not leak into the
+  // process-global symbol table. Failure here is fatal: without the runtime the JIT
+  // cannot link any compiled code.
   const std::string rt = codon::jit::findCodonRuntime();
-  if (auto err = jit->getEngine()->addDynamicLibrary(rt)) {
+  if (auto err = jit->getEngine()->addRuntimeSymbolMap(rt)) {
     auto info = llvm::toString(std::move(err));
     llvm::report_fatal_error(
-        llvm::StringRef("cannot load codon runtime '" + rt + "': " + info),
+        llvm::StringRef("cannot register codon runtime symbols from '" + rt +
+                        "': " + info),
         /*gen_crash_diag=*/false);
   }
   if (std::getenv("CODON_JIT_DEBUG"))

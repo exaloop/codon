@@ -375,3 +375,133 @@ SEQ_FUNC void seq_rlock_release(void *lock) {
   auto *m = (std::recursive_timed_mutex *)lock;
   m->unlock();
 }
+
+#define CODON_JIT_SYMBOL(name) addSymbol(ctx, #name, reinterpret_cast<void *>(&name))
+
+SEQ_FUNC void __codon_jit_runtime_init(CodonJITAddSymbolFunc addSymbol, void *ctx) {
+  if (!addSymbol)
+    return;
+
+  CODON_JIT_SYMBOL(seq_alloc_exc);
+  CODON_JIT_SYMBOL(seq_terminate);
+  CODON_JIT_SYMBOL(seq_throw);
+  CODON_JIT_SYMBOL(seq_personality);
+  CODON_JIT_SYMBOL(seq_exc_offset);
+  CODON_JIT_SYMBOL(seq_init);
+  CODON_JIT_SYMBOL(seq_pid);
+  CODON_JIT_SYMBOL(seq_time);
+  CODON_JIT_SYMBOL(seq_time_monotonic);
+  CODON_JIT_SYMBOL(seq_time_highres);
+  CODON_JIT_SYMBOL(seq_localtime);
+  CODON_JIT_SYMBOL(seq_gmtime);
+  CODON_JIT_SYMBOL(seq_mktime);
+  CODON_JIT_SYMBOL(seq_sleep);
+  CODON_JIT_SYMBOL(seq_env);
+  CODON_JIT_SYMBOL(seq_alloc);
+  CODON_JIT_SYMBOL(seq_alloc_atomic);
+  CODON_JIT_SYMBOL(seq_alloc_uncollectable);
+  CODON_JIT_SYMBOL(seq_alloc_atomic_uncollectable);
+  CODON_JIT_SYMBOL(seq_realloc);
+  CODON_JIT_SYMBOL(seq_free);
+  CODON_JIT_SYMBOL(seq_register_finalizer);
+  CODON_JIT_SYMBOL(seq_gc_add_roots);
+  CODON_JIT_SYMBOL(seq_gc_remove_roots);
+  CODON_JIT_SYMBOL(seq_gc_clear_roots);
+  CODON_JIT_SYMBOL(seq_gc_exclude_static_roots);
+  CODON_JIT_SYMBOL(seq_str_int);
+  CODON_JIT_SYMBOL(seq_str_uint);
+  CODON_JIT_SYMBOL(seq_str_float);
+  CODON_JIT_SYMBOL(seq_str_ptr);
+  CODON_JIT_SYMBOL(seq_str_str);
+  CODON_JIT_SYMBOL(seq_float_from_str);
+  CODON_JIT_SYMBOL(seq_check_errno);
+  CODON_JIT_SYMBOL(seq_print);
+  CODON_JIT_SYMBOL(seq_print_full);
+  CODON_JIT_SYMBOL(seq_stdin);
+  CODON_JIT_SYMBOL(seq_stdout);
+  CODON_JIT_SYMBOL(seq_stderr);
+  CODON_JIT_SYMBOL(seq_lock_new);
+  CODON_JIT_SYMBOL(seq_lock_acquire);
+  CODON_JIT_SYMBOL(seq_lock_release);
+  CODON_JIT_SYMBOL(seq_rlock_new);
+  CODON_JIT_SYMBOL(seq_rlock_acquire);
+  CODON_JIT_SYMBOL(seq_rlock_release);
+
+  CODON_JIT_SYMBOL(cnp_acos_float32);
+  CODON_JIT_SYMBOL(cnp_acos_float64);
+  CODON_JIT_SYMBOL(cnp_acosh_float32);
+  CODON_JIT_SYMBOL(cnp_acosh_float64);
+  CODON_JIT_SYMBOL(cnp_asin_float32);
+  CODON_JIT_SYMBOL(cnp_asin_float64);
+  CODON_JIT_SYMBOL(cnp_asinh_float32);
+  CODON_JIT_SYMBOL(cnp_asinh_float64);
+  CODON_JIT_SYMBOL(cnp_atan_float32);
+  CODON_JIT_SYMBOL(cnp_atan_float64);
+  CODON_JIT_SYMBOL(cnp_atanh_float32);
+  CODON_JIT_SYMBOL(cnp_atanh_float64);
+  CODON_JIT_SYMBOL(cnp_atan2_float32);
+  CODON_JIT_SYMBOL(cnp_atan2_float64);
+  CODON_JIT_SYMBOL(cnp_cos_float32);
+  CODON_JIT_SYMBOL(cnp_cos_float64);
+  CODON_JIT_SYMBOL(cnp_exp_float32);
+  CODON_JIT_SYMBOL(cnp_exp_float64);
+  CODON_JIT_SYMBOL(cnp_exp2_float32);
+  CODON_JIT_SYMBOL(cnp_exp2_float64);
+  CODON_JIT_SYMBOL(cnp_expm1_float32);
+  CODON_JIT_SYMBOL(cnp_expm1_float64);
+  CODON_JIT_SYMBOL(cnp_log_float32);
+  CODON_JIT_SYMBOL(cnp_log_float64);
+  CODON_JIT_SYMBOL(cnp_log10_float32);
+  CODON_JIT_SYMBOL(cnp_log10_float64);
+  CODON_JIT_SYMBOL(cnp_log1p_float32);
+  CODON_JIT_SYMBOL(cnp_log1p_float64);
+  CODON_JIT_SYMBOL(cnp_log2_float32);
+  CODON_JIT_SYMBOL(cnp_log2_float64);
+  CODON_JIT_SYMBOL(cnp_sin_float32);
+  CODON_JIT_SYMBOL(cnp_sin_float64);
+  CODON_JIT_SYMBOL(cnp_sinh_float32);
+  CODON_JIT_SYMBOL(cnp_sinh_float64);
+  CODON_JIT_SYMBOL(cnp_tanh_float32);
+  CODON_JIT_SYMBOL(cnp_tanh_float64);
+  CODON_JIT_SYMBOL(cnp_hypot_float32);
+  CODON_JIT_SYMBOL(cnp_hypot_float64);
+
+  CODON_JIT_SYMBOL(cnp_sort_int16);
+  CODON_JIT_SYMBOL(cnp_sort_uint16);
+  CODON_JIT_SYMBOL(cnp_sort_int32);
+  CODON_JIT_SYMBOL(cnp_sort_uint32);
+  CODON_JIT_SYMBOL(cnp_sort_int64);
+  CODON_JIT_SYMBOL(cnp_sort_uint64);
+  CODON_JIT_SYMBOL(cnp_sort_uint128);
+  CODON_JIT_SYMBOL(cnp_sort_float32);
+  CODON_JIT_SYMBOL(cnp_sort_float64);
+
+  CODON_JIT_SYMBOL(cnp_cexpf);
+  CODON_JIT_SYMBOL(cnp_clogf);
+  CODON_JIT_SYMBOL(cnp_csqrtf);
+  CODON_JIT_SYMBOL(cnp_ccoshf);
+  CODON_JIT_SYMBOL(cnp_csinhf);
+  CODON_JIT_SYMBOL(cnp_ctanhf);
+  CODON_JIT_SYMBOL(cnp_cacoshf);
+  CODON_JIT_SYMBOL(cnp_casinhf);
+  CODON_JIT_SYMBOL(cnp_catanhf);
+  CODON_JIT_SYMBOL(cnp_ccosf);
+  CODON_JIT_SYMBOL(cnp_csinf);
+  CODON_JIT_SYMBOL(cnp_ctanf);
+  CODON_JIT_SYMBOL(cnp_cacosf);
+  CODON_JIT_SYMBOL(cnp_casinf);
+  CODON_JIT_SYMBOL(cnp_catanf);
+
+  CODON_JIT_SYMBOL(seq_re_match);
+  CODON_JIT_SYMBOL(seq_re_match_one);
+  CODON_JIT_SYMBOL(seq_re_escape);
+  CODON_JIT_SYMBOL(seq_re_compile);
+  CODON_JIT_SYMBOL(seq_re_purge);
+  CODON_JIT_SYMBOL(seq_re_pattern_groups);
+  CODON_JIT_SYMBOL(seq_re_group_name_to_index);
+  CODON_JIT_SYMBOL(seq_re_group_index_to_name);
+  CODON_JIT_SYMBOL(seq_re_check_rewrite_string);
+  CODON_JIT_SYMBOL(seq_re_pattern_error);
+}
+
+#undef CODON_JIT_SYMBOL
