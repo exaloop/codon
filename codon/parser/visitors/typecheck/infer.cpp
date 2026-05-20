@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "codon/cir/attribute.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/scoping/scoping.h"
@@ -316,7 +316,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
   auto lt = makeIRType(realized);
 
   // Realize fields
-  std::vector<ir::types::Type *> typeArgs;   // needed for IR
+  std::vector<ir::Type *> typeArgs;          // needed for IR
   std::vector<std::string> names;            // needed for IR
   std::map<std::string, SrcInfo> memberInfo; // needed for IR
   for (size_t i = 0; i < fTypes.size(); i++) {
@@ -334,7 +334,7 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
 
   // Set IR attributes
   if (!names.empty()) {
-    if (auto *ir = cast<ir::types::RefType>(lt)) {
+    if (auto *ir = cast<ir::RefType>(lt)) {
       ir->getContents()->realize(typeArgs, names);
       ir->setAttribute(std::make_unique<ir::MemberAttribute>(memberInfo));
       ir->getContents()->setAttribute(
@@ -555,7 +555,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 }
 
 /// Make IR node for a realized type.
-ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
+ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   // Realize if not, and return cached value if it exists
   auto realizedName = t->ClassType::realizedName();
   auto cls = ctx->cache->getClass(t);
@@ -566,7 +566,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   }
   if (auto l = cls->realizations[realizedName]->ir) {
     if (cls->rtti)
-      cast<ir::types::RefType>(l)->setPolymorphic();
+      cast<ir::RefType>(l)->setPolymorphic();
     return l;
   }
 
@@ -581,7 +581,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
   };
 
   // Prepare generics and statics
-  std::vector<ir::types::Type *> types;
+  std::vector<ir::Type *> types;
   std::vector<types::StaticType *> statics;
   if (t->is("unrealized_type"))
     types.push_back(nullptr);
@@ -595,7 +595,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
 
   // Get the IR type
   auto *module = ctx->cache->module;
-  ir::types::Type *handle = nullptr;
+  ir::Type *handle = nullptr;
 
   if (t->name == "bool") {
     handle = module->getBoolType();
@@ -627,14 +627,13 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->unsafeGetOptionalType(types[0]);
   } else if (t->name == "NoneType") {
     seqassert(types.empty() && statics.empty(), "bad generics/statics");
-    auto record =
-        cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
+    auto record = cast<ir::RecordType>(module->unsafeGetMemberedType(realizedName));
     record->realize({}, {});
     handle = record;
   } else if (t->name == "Union") {
     seqassert(!types.empty(), "bad union");
     auto unionTypes = t->getUnion()->getRealizationTypes();
-    std::vector<ir::types::Type *> unionVec;
+    std::vector<ir::Type *> unionVec;
     unionVec.reserve(unionTypes.size());
     for (auto &u : unionTypes)
       unionVec.emplace_back(forceFindIRType(u));
@@ -652,7 +651,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     // Type arguments will be populated afterwards to avoid infinite loop with recursive
     // reference types (e.g., `class X: x: Optional[X]`)
     if (t->isRecord()) {
-      std::vector<ir::types::Type *> typeArgs;   // needed for IR
+      std::vector<ir::Type *> typeArgs;          // needed for IR
       std::vector<std::string> names;            // needed for IR
       std::map<std::string, SrcInfo> memberInfo; // needed for IR
 
@@ -668,8 +667,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
         typeArgs.emplace_back(makeIRType(ft[i]->getClass()));
         memberInfo[fields[i].name] = ft[i]->getSrcInfo();
       }
-      auto record =
-          cast<ir::types::RecordType>(module->unsafeGetMemberedType(realizedName));
+      auto record = cast<ir::RecordType>(module->unsafeGetMemberedType(realizedName));
       record->realize(typeArgs, names);
       handle = record;
       handle->setAttribute(
@@ -677,7 +675,7 @@ ir::types::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     } else {
       handle = module->unsafeGetMemberedType(realizedName, !t->isRecord());
       if (cls->rtti)
-        cast<ir::types::RefType>(handle)->setPolymorphic();
+        cast<ir::RefType>(handle)->setPolymorphic();
     }
   }
   handle->setSrcInfo(t->getSrcInfo());
@@ -725,7 +723,7 @@ ir::Func *TypecheckVisitor::makeIRFunction(
 
   // Populate the IR node
   std::vector<std::string> names;
-  std::vector<codon::ir::types::Type *> types;
+  std::vector<codon::ir::Type *> types;
   for (size_t i = 0, j = 0; i < r->ast->size(); i++) {
     if ((*r->ast)[i].isValue()) {
       if (!extractFuncArgType(r->getType(), j)->getFunc()) {

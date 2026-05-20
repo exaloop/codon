@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-#include "types.h"
+#include "type.h"
 
 #include <algorithm>
 #include <memory>
@@ -16,7 +16,6 @@
 
 namespace codon {
 namespace ir {
-namespace types {
 namespace {
 std::vector<codon::ast::types::TypePtr>
 extractTypes(const std::vector<codon::ast::types::ClassType::Generic> &gens) {
@@ -218,7 +217,7 @@ std::string VectorType::getInstanceName(unsigned int count, PrimitiveType *base)
 
 const char UnionType::NodeId = 0;
 
-std::string UnionType::getInstanceName(const std::vector<types::Type *> &types) {
+std::string UnionType::getInstanceName(const std::vector<Type *> &types) {
   std::vector<std::string> names;
   for (auto *type : types) {
     names.push_back(type->referenceString());
@@ -227,6 +226,5 @@ std::string UnionType::getInstanceName(const std::vector<types::Type *> &types) 
                      fmt::join(names.begin(), names.end(), ", "));
 }
 
-} // namespace types
 } // namespace ir
 } // namespace codon

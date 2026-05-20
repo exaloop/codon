@@ -44,11 +44,11 @@ public:
 class JIT {
 public:
   struct PythonData {
-    ir::types::Type *cobj;
+    ir::Type *cobj;
     std::unordered_map<std::string, ir::Func *> cache;
 
     PythonData();
-    ir::types::Type *getCObjType(ir::Module *M);
+    ir::Type *getCObjType(ir::Module *M);
   };
 
   struct JITResult {

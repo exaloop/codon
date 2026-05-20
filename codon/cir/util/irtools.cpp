@@ -23,8 +23,8 @@ bool isStdlibFunc(const Func *func, const std::string &submodule) {
   return false;
 }
 
-bool isInt(const types::Type *type, unsigned len, bool sign) {
-  if (auto *itype = cast<types::IntType>(type))
+bool isInt(const Type *type, unsigned len, bool sign) {
+  if (auto *itype = cast<IntType>(type))
     return itype->getLen() == len && itype->isSigned() == sign;
   return false;
 }
@@ -35,8 +35,7 @@ CallInstr *call(Func *func, const std::vector<Value *> &args) {
 }
 
 bool isCallOf(const Value *value, const std::string &name,
-              const std::vector<types::Type *> &inputs, types::Type *output,
-              bool method) {
+              const std::vector<Type *> &inputs, Type *output, bool method) {
   if (auto *call = cast<CallInstr>(value)) {
     auto *fn = getFunc(call->getCallee());
     if (!fn || fn->getUnmangledName() != name || call->numArgs() != inputs.size())
@@ -66,8 +65,8 @@ bool isCallOf(const Value *value, const std::string &name,
   return false;
 }
 
-bool isCallOf(const Value *value, const std::string &name, int numArgs,
-              types::Type *output, bool method) {
+bool isCallOf(const Value *value, const std::string &name, int numArgs, Type *output,
+              bool method) {
   if (auto *call = cast<CallInstr>(value)) {
     auto *fn = getFunc(call->getCallee());
     if (!fn || fn->getUnmangledName() != name ||
@@ -112,7 +111,7 @@ Value *makeTuple(const std::vector<Value *> &args, Module *M) {
     M = args[0]->getModule();
   }
 
-  std::vector<types::Type *> types;
+  std::vector<Type *> types;
   for (auto *arg : args) {
     types.push_back(arg->getType());
   }
@@ -142,13 +141,13 @@ Var *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend) {
   return v;
 }
 
-Value *alloc(types::Type *type, Value *count) {
+Value *alloc(Type *type, Value *count) {
   auto *M = type->getModule();
   auto *ptrType = M->getPointerType(type);
   return (*ptrType)(*count);
 }
 
-Value *alloc(types::Type *type, int64_t count) {
+Value *alloc(Type *type, int64_t count) {
   auto *M = type->getModule();
   return alloc(type, M->getInt(count));
 }
@@ -216,7 +215,7 @@ Value *tupleGet(Value *tuple, unsigned index) {
 
 Value *tupleStore(Value *tuple, unsigned index, Value *val) {
   auto *M = tuple->getModule();
-  auto *type = cast<types::RecordType>(tuple->getType());
+  auto *type = cast<RecordType>(tuple->getType());
   seqassertn(type, "argument is not a tuple [{}]", tuple->getSrcInfo());
   std::vector<Value *> newElements;
   for (unsigned i = 0; i < std::distance(type->begin(), type->end()); i++) {
@@ -249,15 +248,15 @@ const BodiedFunc *getStdlibFunc(const Value *x, const std::string &name,
   return nullptr;
 }
 
-types::Type *getReturnType(const Func *func) {
-  return cast<types::FuncType>(func->getType())->getReturnType();
+Type *getReturnType(const Func *func) {
+  return cast<FuncType>(func->getType())->getReturnType();
 }
 
-void setReturnType(Func *func, types::Type *rType) {
+void setReturnType(Func *func, Type *rType) {
   auto *M = func->getModule();
-  auto *t = cast<types::FuncType>(func->getType());
+  auto *t = cast<FuncType>(func->getType());
   seqassertn(t, "{} is not a function type [{}]", *func->getType(), func->getSrcInfo());
-  std::vector<types::Type *> argTypes(t->begin(), t->end());
+  std::vector<Type *> argTypes(t->begin(), t->end());
   func->setType(M->getFuncType(rType, argTypes));
 }
 

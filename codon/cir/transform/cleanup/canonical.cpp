@@ -84,8 +84,7 @@ bool isInequalityOp(Func *fn) {
 
 // c + b + a --> a + b + c
 struct CanonOpChain : public RewriteRule {
-  static void extractAssociativeOpChain(Value *v, const std::string &op,
-                                        types::Type *type,
+  static void extractAssociativeOpChain(Value *v, const std::string &op, Type *type,
                                         std::vector<Value *> &result) {
     if (util::isCallOf(v, op, {type, type}, type, /*method=*/true)) {
       auto *call = cast<CallInstr>(v);
@@ -115,7 +114,7 @@ struct CanonOpChain : public RewriteRule {
       return;
 
     std::string op = fn->getUnmangledName();
-    types::Type *type = v->getType();
+    Type *type = v->getType();
     const bool isAssociative = isAssociativeOp(fn);
     const bool isCommutative = isCommutativeOp(fn);
 
@@ -151,7 +150,7 @@ struct CanonInequality : public RewriteRule {
       return;
 
     std::string op = fn->getUnmangledName();
-    types::Type *type = v->getType();
+    Type *type = v->getType();
 
     // canonicalize inequalities
     if (v->numArgs() == 2 && isInequalityOp(fn)) {

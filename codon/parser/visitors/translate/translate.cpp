@@ -66,7 +66,7 @@ void TranslateVisitor::translateStmts(Stmt *stmts) const {
 void TranslateVisitor::initializeGlobals() const {
   for (auto &[name, ir] : ctx->cache->globals)
     if (!ir) {
-      ir::types::Type *vt = nullptr;
+      ir::Type *vt = nullptr;
       if (auto t = ctx->cache->typeCtx->forceFind(name)->getType()) {
         if (!t->isInstantiated() || (t->is(TYPE_TYPE)) || t->getFunc())
           continue;
@@ -254,7 +254,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
   fn->setGlobal();
   fn->setGenerator();
   std::vector<std::string> names;
-  std::vector<codon::ir::types::Type *> types;
+  std::vector<codon::ir::Type *> types;
   std::vector<ir::Value *> items;
 
   IdVisitor v;
@@ -382,10 +382,10 @@ void TranslateVisitor::visit(YieldExpr *expr) {
 void TranslateVisitor::visit(PipeExpr *expr) {
   auto isGen = [](const ir::Value *v) -> bool {
     auto *type = v->getType();
-    if (ir::isA<ir::types::GeneratorType>(type))
+    if (ir::isA<ir::GeneratorType>(type))
       return true;
-    else if (auto *fn = cast<ir::types::FuncType>(type)) {
-      return ir::isA<ir::types::GeneratorType>(fn->getReturnType());
+    else if (auto *fn = cast<ir::FuncType>(type)) {
+      return ir::isA<ir::GeneratorType>(fn->getReturnType());
     }
     return false;
   };
@@ -701,7 +701,7 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 /************************************************************************************/
 
-codon::ir::types::Type *TranslateVisitor::getType(types::Type *t) const {
+codon::ir::Type *TranslateVisitor::getType(types::Type *t) const {
   seqassert(t && t->getClass(), "not a class: {}", t ? t->debugString(2) : "-");
   std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
@@ -800,7 +800,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   std::istringstream sin(
       cast<StringExpr>(cast<ExprStmt>(ast->getSuite()->firstInBlock())->getExpr())
           ->getValue());
-  std::vector<ir::types::Generic> literals;
+  std::vector<ir::Generic> literals;
   auto ss = cast<SuiteStmt>(ast->getSuite());
   for (int i = 1; i < ss->size(); i++) {
     if (auto sti = cast<ExprStmt>((*ss)[i])->getExpr()->getType()->getIntStatic()) {

@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/value.h"
 #include "codon/util/common.h"
 #include <fmt/format.h>
@@ -23,7 +23,7 @@ class Var;
 class Var : public ReplaceableNodeBase<Var>, public IdMixin {
 private:
   /// the variable's type
-  types::Type *type;
+  Type *type;
   /// true if the variable is global
   bool global;
   /// true if the variable is external
@@ -40,8 +40,8 @@ public:
   /// @param external true if the variable is external
   /// @param tls true if the variable is thread-local
   /// @param name the variable's name
-  explicit Var(types::Type *type, bool global = false, bool external = false,
-               bool tls = false, std::string name = "");
+  explicit Var(Type *type, bool global = false, bool external = false, bool tls = false,
+               std::string name = "");
   virtual ~Var() noexcept = default;
 
   std::vector<Value *> getUsedValues() final { return getActual()->doGetUsedValues(); }
@@ -54,10 +54,10 @@ public:
   }
   using Node::replaceUsedValue;
 
-  std::vector<types::Type *> getUsedTypes() const final {
+  std::vector<Type *> getUsedTypes() const final {
     return getActual()->doGetUsedTypes();
   }
-  int replaceUsedType(const std::string &name, types::Type *newType) final {
+  int replaceUsedType(const std::string &name, Type *newType) final {
     return getActual()->doReplaceUsedType(name, newType);
   }
   using Node::replaceUsedType;
@@ -73,10 +73,10 @@ public:
   using Node::replaceUsedVariable;
 
   /// @return the type
-  types::Type *getType() const { return getActual()->type; }
+  Type *getType() const { return getActual()->type; }
   /// Sets the type.
   /// @param t the new type
-  void setType(types::Type *t) { getActual()->type = t; }
+  void setType(Type *t) { getActual()->type = t; }
 
   /// @return true if the variable is global
   bool isGlobal() const { return getActual()->global; }
@@ -106,8 +106,8 @@ protected:
   virtual std::vector<Value *> doGetUsedValues() const { return {}; }
   virtual int doReplaceUsedValue(id_t id, Value *newValue) { return 0; }
 
-  virtual std::vector<types::Type *> doGetUsedTypes() const { return {type}; }
-  virtual int doReplaceUsedType(const std::string &name, types::Type *newType);
+  virtual std::vector<Type *> doGetUsedTypes() const { return {type}; }
+  virtual int doReplaceUsedType(const std::string &name, Type *newType);
 
   virtual std::vector<Var *> doGetUsedVariables() const { return {}; }
   virtual int doReplaceUsedVariable(id_t id, Var *newVar) { return 0; }
@@ -137,7 +137,7 @@ public:
   void setVar(Var *v) { val = v; }
 
 private:
-  types::Type *doGetType() const override { return val->getType(); }
+  Type *doGetType() const override { return val->getType(); }
 
   std::vector<Var *> doGetUsedVariables() const override { return {val}; }
   int doReplaceUsedVariable(id_t id, Var *newVar) override;
@@ -183,7 +183,7 @@ public:
   void setFields(std::vector<std::string> f) { fields = std::move(f); }
 
 private:
-  types::Type *doGetType() const override;
+  Type *doGetType() const override;
 
   std::vector<Var *> doGetUsedVariables() const override { return {val}; }
   int doReplaceUsedVariable(id_t id, Var *newVar) override;

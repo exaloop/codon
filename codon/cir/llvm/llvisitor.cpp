@@ -224,7 +224,7 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
         if (auto *g = M->getFunction(name))
           return g;
 
-        auto *funcType = cast<types::FuncType>(func->getType());
+        auto *funcType = cast<FuncType>(func->getType());
         auto *returnType = getLLVMType(funcType->getReturnType());
         std::vector<llvm::Type *> argTypes;
         for (const auto &argType : *funcType) {
@@ -894,7 +894,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
                                /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
                                pyModuleDef, ".pyext_module");
 
-  std::unordered_map<types::Type *, llvm::GlobalVariable *> typeVars;
+  std::unordered_map<Type *, llvm::GlobalVariable *> typeVars;
   for (auto &pytype : pymod.types) {
     std::vector<llvm::Constant *> numberSlots = {
         pyFunc(pytype.add),       // nb_add
@@ -995,7 +995,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       mappingSlotsConst = pyMappingSlotsVar;
     }
 
-    auto *refType = cast<types::RefType>(pytype.type);
+    auto *refType = cast<RefType>(pytype.type);
     if (refType) {
       seqassertn(!refType->isPolymorphic(),
                  "Python extension types cannot be polymorphic");
@@ -1386,7 +1386,7 @@ llvm::StructType *LLVMVisitor::getPadType() {
 }
 
 namespace {
-int typeIdxLookup(types::Type *type) {
+int typeIdxLookup(Type *type) {
   if (!type)
     return 0;
   auto *M = type->getModule();
@@ -1394,7 +1394,7 @@ int typeIdxLookup(types::Type *type) {
 }
 } // namespace
 
-llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(types::Type *type) {
+llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(Type *type) {
   auto *typeInfoType = getTypeInfoType();
   const std::string name = type ? type->getName() : "";
   const std::string typeVarName = "codon.typeidx." + (type ? name : "<all>");
@@ -1409,7 +1409,7 @@ llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(types::Type *type) {
   return tidx;
 }
 
-int LLVMVisitor::getTypeIdx(types::Type *catchType) { return typeIdxLookup(catchType); }
+int LLVMVisitor::getTypeIdx(Type *catchType) { return typeIdxLookup(catchType); }
 
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
@@ -1675,7 +1675,7 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
     return newFunc;
   }
 
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   auto *returnType = getLLVMType(funcType->getReturnType());
   std::vector<llvm::Type *> argTypes;
   for (const auto &argType : *funcType) {
@@ -1733,11 +1733,11 @@ bool internalFuncMatchesIgnoreArgs(const std::string &name, const InternalFunc *
 template <typename ParentType, typename... ArgTypes, std::size_t... Index>
 bool internalFuncMatches(const std::string &name, const InternalFunc *x,
                          std::index_sequence<Index...>) {
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   if (name != x->getUnmangledName() ||
       std::distance(funcType->begin(), funcType->end()) != sizeof...(ArgTypes))
     return false;
-  std::vector<types::Type *> argTypes(funcType->begin(), funcType->end());
+  std::vector<Type *> argTypes(funcType->begin(), funcType->end());
   std::vector<bool> m = {bool(cast<ParentType>(x->getParentType())),
                          bool(cast<ArgTypes>(argTypes[Index]))...};
   const bool match = std::all_of(m.begin(), m.end(), [](bool b) { return b; });
@@ -1752,7 +1752,6 @@ bool internalFuncMatches(const std::string &name, const InternalFunc *x) {
 } // namespace
 
 void LLVMVisitor::visit(const InternalFunc *x) {
-  using namespace types;
   func = M->getFunction(getNameForFunction(x));
   coro = {};
   seqassertn(func, "{} not inserted", *x);
@@ -1803,7 +1802,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
 }
 
 std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   seqassertn(funcType, "{} is not a function type", *x->getType());
   std::string bufStr;
   llvm::raw_string_ostream buf(bufStr);
@@ -1936,7 +1935,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     func->setPersonalityFn(
         llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   seqassertn(funcType, "{} is not a function type", *x->getType());
   auto *returnType = funcType->getReturnType();
   auto *entryBlock = llvm::BasicBlock::Create(*context, "entry", func);
@@ -1997,7 +1996,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
   if (generator) {
     func->setPresplitCoroutine();
-    auto *generatorType = cast<types::GeneratorType>(returnType);
+    auto *generatorType = cast<GeneratorType>(returnType);
     seqassertn(generatorType, "{} is not a generator type", *returnType);
 
     llvm::FunctionCallee coroId =
@@ -2119,7 +2118,7 @@ void LLVMVisitor::visit(const PointerValue *x) {
   auto *type = x->getVar()->getType();
   std::vector<llvm::Value *> gepIndices = {B->getInt32(0)};
   for (auto &field : x->getFields()) {
-    if (auto *ref = cast<types::RefType>(type)) {
+    if (auto *ref = cast<RefType>(type)) {
       auto membIndex = ref->getMemberIndex(field);
       auto membType = ref->getMemberType(field);
       seqassertn(membIndex >= 0 && membType, "field {} not found in referecne type",
@@ -2127,7 +2126,7 @@ void LLVMVisitor::visit(const PointerValue *x) {
       gepIndices.push_back(B->getInt32(0));
       gepIndices.push_back(B->getInt32(membIndex));
       type = membType;
-    } else if (auto *rec = cast<types::RecordType>(type)) {
+    } else if (auto *rec = cast<RecordType>(type)) {
       auto membIndex = rec->getMemberIndex(field);
       auto membType = rec->getMemberType(field);
       seqassertn(membIndex >= 0 && membType, "field {} not found in record type",
@@ -2146,36 +2145,36 @@ void LLVMVisitor::visit(const PointerValue *x) {
  * Types
  */
 
-llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
-  if (auto *x = cast<types::IntType>(t)) {
+llvm::Type *LLVMVisitor::getLLVMType(Type *t) {
+  if (auto *x = cast<IntType>(t)) {
     return B->getIntNTy(x->getLen());
   }
 
-  if (auto *x = cast<types::FloatType>(t)) {
+  if (auto *x = cast<FloatType>(t)) {
     return B->getDoubleTy();
   }
 
-  if (auto *x = cast<types::Float32Type>(t)) {
+  if (auto *x = cast<Float32Type>(t)) {
     return B->getFloatTy();
   }
 
-  if (auto *x = cast<types::Float16Type>(t)) {
+  if (auto *x = cast<Float16Type>(t)) {
     return B->getHalfTy();
   }
 
-  if (auto *x = cast<types::BFloat16Type>(t)) {
+  if (auto *x = cast<BFloat16Type>(t)) {
     return B->getBFloatTy();
   }
 
-  if (auto *x = cast<types::Float128Type>(t)) {
+  if (auto *x = cast<Float128Type>(t)) {
     return llvm::Type::getFP128Ty(*context);
   }
 
-  if (auto *x = cast<types::BoolType>(t)) {
+  if (auto *x = cast<BoolType>(t)) {
     return B->getInt8Ty();
   }
 
-  if (auto *x = cast<types::RecordType>(t)) {
+  if (auto *x = cast<RecordType>(t)) {
     std::vector<llvm::Type *> body;
     for (const auto &field : *x) {
       body.push_back(getLLVMType(field.getType()));
@@ -2183,36 +2182,36 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return llvm::StructType::get(*context, body);
   }
 
-  if (auto *x = cast<types::RefType>(t)) {
+  if (auto *x = cast<RefType>(t)) {
     return B->getPtrTy();
   }
 
-  if (auto *x = cast<types::FuncType>(t)) {
+  if (auto *x = cast<FuncType>(t)) {
     return getLLVMFuncType(x)->getPointerTo();
   }
 
-  if (auto *x = cast<types::OptionalType>(t)) {
-    if (cast<types::RefType>(x->getBase())) {
+  if (auto *x = cast<OptionalType>(t)) {
+    if (cast<RefType>(x->getBase())) {
       return getLLVMType(x->getBase());
     } else {
       return llvm::StructType::get(B->getInt1Ty(), getLLVMType(x->getBase()));
     }
   }
 
-  if (auto *x = cast<types::PointerType>(t)) {
+  if (auto *x = cast<PointerType>(t)) {
     return getLLVMType(x->getBase())->getPointerTo();
   }
 
-  if (auto *x = cast<types::GeneratorType>(t)) {
+  if (auto *x = cast<GeneratorType>(t)) {
     return B->getPtrTy();
   }
 
-  if (auto *x = cast<types::VectorType>(t)) {
+  if (auto *x = cast<VectorType>(t)) {
     return llvm::VectorType::get(getLLVMType(x->getBase()), x->getCount(),
                                  /*Scalable=*/false);
   }
 
-  if (auto *x = cast<types::UnionType>(t)) {
+  if (auto *x = cast<UnionType>(t)) {
     auto &layout = M->getDataLayout();
     llvm::Type *largest = nullptr;
     size_t maxSize = 0;
@@ -2232,7 +2231,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return llvm::StructType::get(*context, {B->getInt8Ty(), largest});
   }
 
-  if (auto *x = cast<dsl::types::CustomType>(t)) {
+  if (auto *x = cast<dsl::CustomType>(t)) {
     return x->getBuilder()->buildType(this);
   }
 
@@ -2240,8 +2239,8 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   return nullptr;
 }
 
-llvm::FunctionType *LLVMVisitor::getLLVMFuncType(types::Type *t) {
-  auto *x = cast<types::FuncType>(t);
+llvm::FunctionType *LLVMVisitor::getLLVMFuncType(Type *t) {
+  auto *x = cast<FuncType>(t);
   seqassertn(x, "input type was not a func type");
   auto *returnType = getLLVMType(x->getReturnType());
   std::vector<llvm::Type *> argTypes;
@@ -2252,48 +2251,48 @@ llvm::FunctionType *LLVMVisitor::getLLVMFuncType(types::Type *t) {
 }
 
 llvm::DIType *LLVMVisitor::getDITypeHelper(
-    types::Type *t, std::unordered_map<std::string, llvm::DICompositeType *> &cache) {
+    Type *t, std::unordered_map<std::string, llvm::DICompositeType *> &cache) {
   auto *type = getLLVMType(t);
   auto &layout = M->getDataLayout();
 
-  if (auto *x = cast<types::IntType>(t)) {
+  if (auto *x = cast<IntType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type),
         x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
   }
 
-  if (auto *x = cast<types::FloatType>(t)) {
+  if (auto *x = cast<FloatType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::Float32Type>(t)) {
+  if (auto *x = cast<Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::Float16Type>(t)) {
+  if (auto *x = cast<Float16Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::BFloat16Type>(t)) {
+  if (auto *x = cast<BFloat16Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::Float128Type>(t)) {
+  if (auto *x = cast<Float128Type>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_HP_float128);
   }
 
-  if (auto *x = cast<types::BoolType>(t)) {
+  if (auto *x = cast<BoolType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_boolean);
   }
 
-  if (auto *x = cast<types::RecordType>(t)) {
+  if (auto *x = cast<RecordType>(t)) {
     auto it = cache.find(x->getName());
     if (it != cache.end()) {
       return it->second;
@@ -2337,13 +2336,13 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     }
   }
 
-  if (auto *x = cast<types::RefType>(t)) {
+  if (auto *x = cast<RefType>(t)) {
     auto *ref = db.builder->createReferenceType(
         llvm::dwarf::DW_TAG_reference_type, getDITypeHelper(x->getContents(), cache));
     return ref;
   }
 
-  if (auto *x = cast<types::FuncType>(t)) {
+  if (auto *x = cast<FuncType>(t)) {
     std::vector<llvm::Metadata *> argTypes = {
         getDITypeHelper(x->getReturnType(), cache)};
     for (auto *argType : *x) {
@@ -2354,8 +2353,8 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
         layout.getTypeAllocSizeInBits(type));
   }
 
-  if (auto *x = cast<types::OptionalType>(t)) {
-    if (cast<types::RefType>(x->getBase())) {
+  if (auto *x = cast<OptionalType>(t)) {
+    if (cast<RefType>(x->getBase())) {
       return getDITypeHelper(x->getBase(), cache);
     } else {
       auto *baseType = getLLVMType(x->getBase());
@@ -2388,29 +2387,29 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     }
   }
 
-  if (auto *x = cast<types::PointerType>(t)) {
+  if (auto *x = cast<PointerType>(t)) {
     return db.builder->createPointerType(getDITypeHelper(x->getBase(), cache),
                                          layout.getTypeAllocSizeInBits(type));
   }
 
-  if (auto *x = cast<types::GeneratorType>(t)) {
+  if (auto *x = cast<GeneratorType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_address);
   }
 
-  if (auto *x = cast<types::VectorType>(t)) {
+  if (auto *x = cast<VectorType>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_unsigned);
   }
 
-  if (auto *x = cast<types::UnionType>(t)) {
+  if (auto *x = cast<UnionType>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_unsigned);
   }
 
-  if (auto *x = cast<dsl::types::CustomType>(t)) {
+  if (auto *x = cast<dsl::CustomType>(t)) {
     return x->getBuilder()->buildDebugType(this);
   }
 
@@ -2418,7 +2417,7 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   return nullptr;
 }
 
-llvm::DIType *LLVMVisitor::getDIType(types::Type *t) {
+llvm::DIType *LLVMVisitor::getDIType(Type *t) {
   std::unordered_map<std::string, llvm::DICompositeType *> cache;
   return getDITypeHelper(t, cache);
 }
@@ -2640,7 +2639,7 @@ void LLVMVisitor::visit(const ImperativeForFlow *x) {
 }
 
 namespace {
-bool anyMatch(types::Type *type, std::vector<types::Type *> types) {
+bool anyMatch(Type *type, std::vector<Type *> types) {
   if (type) {
     for (auto *t : types) {
       if (t && t->getName() == type->getName())
@@ -2877,7 +2876,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   }
 
   // make sure we delegate to parent try-catch if necessary
-  std::vector<types::Type *> catchTypesFull(tc.catchTypes);
+  std::vector<Type *> catchTypesFull(tc.catchTypes);
   std::vector<llvm::BasicBlock *> handlersFull(tc.handlers);
   std::vector<unsigned> depths(tc.catchTypes.size(), 0);
   unsigned depth = 1;
@@ -2920,7 +2919,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   std::vector<llvm::Value *> typeIndices;
 
   for (auto *catchType : catchTypesFull) {
-    seqassertn(!catchType || cast<types::RefType>(catchType), "invalid catch type");
+    seqassertn(!catchType || cast<RefType>(catchType), "invalid catch type");
     const std::string typeVarName =
         "codon.typeidx." + (catchType ? catchType->getName() : "<all>");
     auto *tidx = getTypeIdxVar(catchType);
@@ -3059,7 +3058,7 @@ void LLVMVisitor::codegenPipeline(
   const bool generator = prevStage->isGenerator();
 
   if (generator) {
-    auto *generatorType = cast<types::GeneratorType>(prevStage->getOutputType());
+    auto *generatorType = cast<GeneratorType>(prevStage->getOutputType());
     seqassertn(generatorType, "{} is not a generator type",
                *prevStage->getOutputType());
     auto *baseType = getLLVMType(generatorType->getBase());
@@ -3145,14 +3144,14 @@ void LLVMVisitor::visit(const AssignInstr *x) {
 }
 
 void LLVMVisitor::visit(const ExtractInstr *x) {
-  auto *memberedType = cast<types::MemberedType>(x->getVal()->getType());
+  auto *memberedType = cast<MemberedType>(x->getVal()->getType());
   seqassertn(memberedType, "{} is not a membered type", *x->getVal()->getType());
   const int index = memberedType->getMemberIndex(x->getField());
   seqassertn(index >= 0, "invalid index");
 
   process(x->getVal());
   B->SetInsertPoint(block);
-  if (auto *refType = cast<types::RefType>(memberedType)) {
+  if (auto *refType = cast<RefType>(memberedType)) {
     if (refType->isPolymorphic()) {
       // polymorphic ref type is ref to (data, rtti)
       value = B->CreateLoad(B->getPtrTy(), value);
@@ -3163,7 +3162,7 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
 }
 
 void LLVMVisitor::visit(const InsertInstr *x) {
-  auto *refType = cast<types::RefType>(x->getLhs()->getType());
+  auto *refType = cast<RefType>(x->getLhs()->getType());
   seqassertn(refType, "{} is not a reference type", *x->getLhs()->getType());
   const int index = refType->getMemberIndex(x->getField());
   seqassertn(index >= 0, "invalid index");
@@ -3236,7 +3235,7 @@ void LLVMVisitor::visit(const YieldInInstr *x) {
 }
 
 void LLVMVisitor::visit(const StackAllocInstr *x) {
-  auto *ptrType = cast<types::PointerType>(x->getType());
+  auto *ptrType = cast<PointerType>(x->getType());
   seqassertn(ptrType, "stack alloc did not have ptr type");
   B->SetInsertPoint(func->getEntryBlock().getTerminator());
   value = B->CreateAlloca(getLLVMType(ptrType->getBase()), B->getInt64(x->getCount()));

@@ -14,7 +14,7 @@ TEST_F(CIRCoreTest, FuncRealizationAndVarInsertionEraseAndIterators) {
   auto *fnType = module->unsafeGetFuncType("**test_type**", module->getIntType(),
                                            {module->getIntType()});
   std::vector<std::string> names = {"foo"};
-  fn->realize(cast<types::FuncType>(fnType), names);
+  fn->realize(cast<FuncType>(fnType), names);
   ASSERT_TRUE(fn->isGlobal());
 
   ASSERT_EQ(1, std::distance(fn->arg_begin(), fn->arg_end()));
@@ -102,8 +102,7 @@ TEST_F(CIRCoreTest, LLVMFuncUnmangledNameQueryAndReplace) {
   fn->setLLVMBody("body");
   fn->setLLVMDeclarations("decl");
 
-  std::vector<types::Generic> literals = {types::Generic(1),
-                                          types::Generic(module->getIntType())};
+  std::vector<Generic> literals = {Generic(1), Generic(module->getIntType())};
   fn->setLLVMLiterals(literals);
 
   ASSERT_EQ("body", fn->getLLVMBody());

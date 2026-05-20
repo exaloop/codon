@@ -27,10 +27,10 @@ void warn(const std::string &msg, const Value *v) {
 }
 
 struct OMPTypes {
-  types::Type *i64 = nullptr;
-  types::Type *i32 = nullptr;
-  types::Type *i8ptr = nullptr;
-  types::Type *i32ptr = nullptr;
+  Type *i64 = nullptr;
+  Type *i32 = nullptr;
+  Type *i8ptr = nullptr;
+  Type *i32ptr = nullptr;
 
   explicit OMPTypes(Module *M) {
     i64 = M->getIntType();
@@ -109,8 +109,8 @@ struct Reduction {
   Kind kind = Kind::NONE;
   Var *shared = nullptr;
 
-  types::Type *getType() {
-    auto *ptrType = cast<types::PointerType>(shared->getType());
+  Type *getType() {
+    auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     return ptrType->getBase();
   }
@@ -140,7 +140,7 @@ struct Reduction {
       default:
         return nullptr;
       }
-    } else if (isA<types::FloatType>(type)) {
+    } else if (isA<FloatType>(type)) {
       switch (kind) {
       case Kind::ADD:
         return M->getFloat(0.);
@@ -153,7 +153,7 @@ struct Reduction {
       default:
         return nullptr;
       }
-    } else if (isA<types::Float32Type>(type)) {
+    } else if (isA<Float32Type>(type)) {
       auto *f32 = M->getOrRealizeType("float32");
       float value = 0.0;
 
@@ -253,7 +253,7 @@ struct Reduction {
       default:
         break;
       }
-    } else if (isA<types::FloatType>(type)) {
+    } else if (isA<FloatType>(type)) {
       switch (kind) {
       case Kind::ADD:
         func = "_atomic_float_add";
@@ -270,7 +270,7 @@ struct Reduction {
       default:
         break;
       }
-    } else if (isA<types::Float32Type>(type)) {
+    } else if (isA<Float32Type>(type)) {
       switch (kind) {
       case Kind::ADD:
         func = "_atomic_float32_add";
@@ -384,7 +384,7 @@ struct ReductionIdentifier : public util::Operator {
 
   bool isSharedDeref(Var *shared, Value *v) {
     auto *M = v->getModule();
-    auto *ptrType = cast<types::PointerType>(shared->getType());
+    auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
 
@@ -399,8 +399,7 @@ struct ReductionIdentifier : public util::Operator {
     return false;
   }
 
-  static void extractAssociativeOpChain(Value *v, const std::string &op,
-                                        types::Type *type,
+  static void extractAssociativeOpChain(Value *v, const std::string &op, Type *type,
                                         std::vector<Value *> &result) {
     if (util::isCallOf(v, op, {type, nullptr}, type, /*method=*/true) ||
         util::isCallOf(v, op, {nullptr, type}, type, /*method=*/true)) {
@@ -428,7 +427,7 @@ struct ReductionIdentifier : public util::Operator {
     if (!shared || !isShared(shared) || !util::isConst<int64_t>(idx, 0))
       return {};
 
-    auto *ptrType = cast<types::PointerType>(shared->getType());
+    auto *ptrType = cast<PointerType>(shared->getType());
     seqassertn(ptrType, "expected shared var to be of pointer type");
     auto *type = ptrType->getBase();
     auto *noneType = M->getOptionalType(M->getNoneType());
@@ -728,7 +727,7 @@ struct ImperativeLoopTemplateReplacer : public ParallelLoopTemplateReplacer {
 
           // shared vars will be stored in a new var
           if (isA<PointerValue>(arg)) {
-            types::Type *base = cast<types::PointerType>(arg->getType())->getBase();
+            Type *base = cast<PointerType>(arg->getType())->getBase();
 
             // get extras again since we'll be inserting the new var before extras local
             Var *lastArg = parent->arg_back(); // ptr to {chunk, start, stop, extras}
@@ -1280,7 +1279,7 @@ ForkCallData createForkCall(Module *M, OMPTypes &types, Value *rawTemplateFunc,
                             transform::parallel::OMPSched *sched) {
   ForkCallData result;
   auto *forkExtra = util::makeTuple(forkExtraArgs, M);
-  std::vector<types::Type *> forkArgTypes = {types.i8ptr, forkExtra->getType()};
+  std::vector<Type *> forkArgTypes = {types.i8ptr, forkExtra->getType()};
   auto *forkFunc = M->getOrRealizeFunc("_fork_call", forkArgTypes, {}, ompModule);
   seqassertn(forkFunc, "fork call function not found");
   result.fork = util::call(forkFunc, {rawTemplateFunc, forkExtra});
@@ -1436,9 +1435,8 @@ void OpenMPPass::handle(ForFlow *v) {
     auto *nullPtr = types.i8ptr->construct({});
     privates.push_back(nullPtr);
 
-    auto *outlinedFuncType = cast<types::FuncType>(outline.func->getType());
-    std::vector<types::Type *> argTypes(outlinedFuncType->begin(),
-                                        outlinedFuncType->end());
+    auto *outlinedFuncType = cast<FuncType>(outline.func->getType());
+    std::vector<Type *> argTypes(outlinedFuncType->begin(), outlinedFuncType->end());
     argTypes.push_back(M->getIntType());
     auto *retType = outlinedFuncType->getReturnType();
 
@@ -1475,7 +1473,7 @@ void OpenMPPass::handle(ForFlow *v) {
   auto *sharedsTuple = util::makeTuple(shareds, M);
 
   // template call
-  std::vector<types::Type *> templateFuncArgs = {
+  std::vector<Type *> templateFuncArgs = {
       types.i32ptr, types.i32ptr,
       M->getPointerType(
           M->getTupleType({v->getIter()->getType(), privatesTuple->getType(),
@@ -1534,7 +1532,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
 
   // gather extra arguments
   std::vector<Value *> extraArgs;
-  std::vector<types::Type *> extraArgTypes;
+  std::vector<Type *> extraArgTypes;
   for (auto *arg : *outline.call) {
     if (getVarFromOutlinedArg(arg)->getId() != loopVar->getId()) {
       extraArgs.push_back(arg);
@@ -1565,8 +1563,8 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
       }
     }
 
-    std::vector<types::Type *> templateFuncArgs = {types.i64, types.i64,
-                                                   M->getTupleType(extraArgTypes)};
+    std::vector<Type *> templateFuncArgs = {types.i64, types.i64,
+                                            M->getTupleType(extraArgTypes)};
     static int64_t instance = 0;
     auto *templateFunc = M->getOrRealizeFunc(templateFuncName, templateFuncArgs,
                                              {instance++}, gpuModule);
@@ -1598,7 +1596,7 @@ void OpenMPPass::handle(ImperativeForFlow *v) {
     v->replaceAll(util::call(
         templateFunc, {v->getStart(), v->getEnd(), util::makeTuple(extraArgs, M)}));
   } else {
-    std::vector<types::Type *> templateFuncArgs = {
+    std::vector<Type *> templateFuncArgs = {
         types.i32ptr, types.i32ptr,
         M->getPointerType(M->getTupleType(
             {types.i64, types.i64, types.i64, M->getTupleType(extraArgTypes)}))};

@@ -4,7 +4,7 @@
 
 #include <unordered_set>
 
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/value.h"
 #include "codon/cir/var.h"
 
@@ -17,7 +17,7 @@ const std::string ReplaceCleanupPass::KEY = "core-cleanup-physical-replace";
 
 void ReplaceCleanupPass::run(Module *module) {
   std::unordered_set<Value *> valuesToDelete;
-  std::unordered_set<types::Type *> typesToDelete;
+  std::unordered_set<Type *> typesToDelete;
   std::unordered_set<Var *> varsToDelete;
 
   {

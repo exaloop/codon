@@ -6,9 +6,7 @@ namespace codon {
 namespace ir {
 namespace dsl {
 
-namespace types {
 const char CustomType::NodeId = 0;
-}
 
 const char CustomConst::NodeId = 0;
 

@@ -13,7 +13,6 @@ namespace codon {
 namespace ir {
 class Node;
 
-namespace types {
 class Type;
 class PrimitiveType;
 class IntType;
@@ -31,14 +30,9 @@ class PointerType;
 class GeneratorType;
 class VectorType;
 class UnionType;
-} // namespace types
 
 namespace dsl {
-
-namespace types {
 class CustomType;
-}
-
 class CustomConst;
 class CustomFlow;
 class CustomInstr;
@@ -149,24 +143,24 @@ public:
   VISIT(FlowInstr);
   VISIT(dsl::CustomInstr);
 
-  VISIT(types::Type);
-  VISIT(types::PrimitiveType);
-  VISIT(types::IntType);
-  VISIT(types::FloatType);
-  VISIT(types::Float32Type);
-  VISIT(types::Float16Type);
-  VISIT(types::BFloat16Type);
-  VISIT(types::Float128Type);
-  VISIT(types::BoolType);
-  VISIT(types::RecordType);
-  VISIT(types::RefType);
-  VISIT(types::FuncType);
-  VISIT(types::OptionalType);
-  VISIT(types::PointerType);
-  VISIT(types::GeneratorType);
-  VISIT(types::VectorType);
-  VISIT(types::UnionType);
-  VISIT(dsl::types::CustomType);
+  VISIT(Type);
+  VISIT(PrimitiveType);
+  VISIT(IntType);
+  VISIT(FloatType);
+  VISIT(Float32Type);
+  VISIT(Float16Type);
+  VISIT(BFloat16Type);
+  VISIT(Float128Type);
+  VISIT(BoolType);
+  VISIT(RecordType);
+  VISIT(RefType);
+  VISIT(FuncType);
+  VISIT(OptionalType);
+  VISIT(PointerType);
+  VISIT(GeneratorType);
+  VISIT(VectorType);
+  VISIT(UnionType);
+  VISIT(dsl::CustomType);
 };
 
 class ConstVisitor {
@@ -227,24 +221,24 @@ public:
   CONST_VISIT(FlowInstr);
   CONST_VISIT(dsl::CustomInstr);
 
-  CONST_VISIT(types::Type);
-  CONST_VISIT(types::PrimitiveType);
-  CONST_VISIT(types::IntType);
-  CONST_VISIT(types::FloatType);
-  CONST_VISIT(types::Float32Type);
-  CONST_VISIT(types::Float16Type);
-  CONST_VISIT(types::BFloat16Type);
-  CONST_VISIT(types::Float128Type);
-  CONST_VISIT(types::BoolType);
-  CONST_VISIT(types::RecordType);
-  CONST_VISIT(types::RefType);
-  CONST_VISIT(types::FuncType);
-  CONST_VISIT(types::OptionalType);
-  CONST_VISIT(types::PointerType);
-  CONST_VISIT(types::GeneratorType);
-  CONST_VISIT(types::VectorType);
-  CONST_VISIT(types::UnionType);
-  CONST_VISIT(dsl::types::CustomType);
+  CONST_VISIT(Type);
+  CONST_VISIT(PrimitiveType);
+  CONST_VISIT(IntType);
+  CONST_VISIT(FloatType);
+  CONST_VISIT(Float32Type);
+  CONST_VISIT(Float16Type);
+  CONST_VISIT(BFloat16Type);
+  CONST_VISIT(Float128Type);
+  CONST_VISIT(BoolType);
+  CONST_VISIT(RecordType);
+  CONST_VISIT(RefType);
+  CONST_VISIT(FuncType);
+  CONST_VISIT(OptionalType);
+  CONST_VISIT(PointerType);
+  CONST_VISIT(GeneratorType);
+  CONST_VISIT(VectorType);
+  CONST_VISIT(UnionType);
+  CONST_VISIT(dsl::CustomType);
 };
 
 } // namespace util

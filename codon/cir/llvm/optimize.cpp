@@ -600,8 +600,9 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 
         Instruction *instr = cast<Instruction>(&*users[i]);
         if (ICmpInst *cmp = dyn_cast<ICmpInst>(instr)) {
-          replace.emplace_back(cmp, ConstantInt::get(Type::getInt1Ty(cmp->getContext()),
-                                                     cmp->isFalseWhenEqual()));
+          replace.emplace_back(
+              cmp, ConstantInt::get(llvm::Type::getInt1Ty(cmp->getContext()),
+                                    cmp->isFalseWhenEqual()));
         } else if (!isa<StoreInst>(instr)) {
           // Casts, GEP, or anything else: we're about to delete this instruction,
           // so it can not have any valid uses.
@@ -617,8 +618,8 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 
     if (info.isAllocSiteDemotable(&mi, size, users)) {
       auto *replacement = new AllocaInst(
-          Type::getInt8Ty(mi.getContext()), 0,
-          ConstantInt::get(Type::getInt64Ty(mi.getContext()), size), Align());
+          llvm::Type::getInt8Ty(mi.getContext()), 0,
+          ConstantInt::get(llvm::Type::getInt64Ty(mi.getContext()), size), Align());
       alloca.push_back(replacement);
       replace.emplace_back(&mi, replacement);
       erase.insert(&mi);

@@ -100,8 +100,8 @@ types::FuncType *Cache::findMethod(types::ClassType *typ, const std::string &mem
   return f;
 }
 
-ir::types::Type *Cache::realizeType(types::ClassType *type,
-                                    const std::vector<types::TypePtr> &generics) {
+ir::Type *Cache::realizeType(types::ClassType *type,
+                             const std::vector<types::TypePtr> &generics) {
   auto tv = TypecheckVisitor(typeCtx);
   if (auto rtv = tv.realize(tv.instantiateType(type, castVectorPtr(generics)))) {
     return classes[rtv->getClass()->name]
@@ -152,13 +152,13 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   return f;
 }
 
-ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
+ir::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto t = tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));
   return realizeType(t->getClass(), types);
 }
 
-ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
+ir::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
 
@@ -171,7 +171,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   return ft;
 }
 
-ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
+ir::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto argType =
       tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));

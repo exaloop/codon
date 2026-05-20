@@ -21,7 +21,7 @@ public:
   using AcceptorExtend::AcceptorExtend;
 
 protected:
-  types::Type *doGetType() const final;
+  Type *doGetType() const final;
 };
 
 /// Flow that contains a series of flows or instructions.
@@ -358,12 +358,12 @@ public:
     /// the handler
     Value *handler;
     /// the catch type, may be nullptr
-    types::Type *type;
+    Type *type;
     /// the catch variable, may be nullptr
     Var *catchVar;
 
   public:
-    explicit Catch(Flow *handler, types::Type *type = nullptr, Var *catchVar = nullptr)
+    explicit Catch(Flow *handler, Type *type = nullptr, Var *catchVar = nullptr)
         : handler(handler), type(type), catchVar(catchVar) {}
 
     /// @return the handler
@@ -375,10 +375,10 @@ public:
     void setHandler(Flow *h) { handler = h; }
 
     /// @return the catch type, may be nullptr
-    types::Type *getType() const { return type; }
+    Type *getType() const { return type; }
     /// Sets the catch type.
     /// @param t the new type, nullptr for catch all
-    void setType(types::Type *t) { type = t; }
+    void setType(Type *t) { type = t; }
 
     /// @return the variable, may be nullptr
     Var *getVar() { return catchVar; }
@@ -478,8 +478,8 @@ protected:
   std::vector<Value *> doGetUsedValues() const override;
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 
-  std::vector<types::Type *> doGetUsedTypes() const override;
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  std::vector<Type *> doGetUsedTypes() const override;
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 
   std::vector<Var *> doGetUsedVariables() const override;
   int doReplaceUsedVariable(id_t id, Var *newVar) override;
@@ -567,9 +567,9 @@ public:
     /// @return whether this stage is parallel
     bool isParallel() const { return parallel; }
     /// @return the output type of this stage
-    types::Type *getOutputType() const;
+    Type *getOutputType() const;
     /// @return the output element type of this stage
-    types::Type *getOutputElementType() const;
+    Type *getOutputElementType() const;
 
     friend class PipelineFlow;
   };

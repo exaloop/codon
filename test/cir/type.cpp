@@ -6,8 +6,7 @@ using namespace codon::ir;
 
 TEST_F(CIRCoreTest, RecordTypeQuery) {
   auto MEMBER_NAME = "1";
-  auto *type = module->Nr<types::RecordType>(
-      "foo", std::vector<types::Type *>{module->getIntType()});
+  auto *type = module->Nr<RecordType>("foo", std::vector<Type *>{module->getIntType()});
 
   ASSERT_EQ(module->getIntType(), type->getMemberType(MEMBER_NAME));
   ASSERT_EQ(0, type->getMemberIndex(MEMBER_NAME));
@@ -26,9 +25,9 @@ TEST_F(CIRCoreTest, RecordTypeQuery) {
 
 TEST_F(CIRCoreTest, RefTypeQuery) {
   auto MEMBER_NAME = "1";
-  auto *contents = module->Nr<types::RecordType>(
-      "foo", std::vector<types::Type *>{module->getIntType()});
-  auto *type = module->Nr<types::RefType>("baz", contents);
+  auto *contents =
+      module->Nr<RecordType>("foo", std::vector<Type *>{module->getIntType()});
+  auto *type = module->Nr<RefType>("baz", contents);
 
   ASSERT_EQ(module->getIntType(), type->getMemberType(MEMBER_NAME));
   ASSERT_EQ(0, type->getMemberIndex(MEMBER_NAME));
@@ -46,8 +45,8 @@ TEST_F(CIRCoreTest, RefTypeQuery) {
 }
 
 TEST_F(CIRCoreTest, FuncTypeQuery) {
-  auto *type = module->Nr<types::FuncType>(
-      "foo", module->getIntType(), std::vector<types::Type *>{module->getFloatType()});
+  auto *type = module->Nr<FuncType>("foo", module->getIntType(),
+                                    std::vector<Type *>{module->getFloatType()});
 
   ASSERT_EQ(1, std::distance(type->begin(), type->end()));
   ASSERT_EQ(module->getFloatType(), type->front());

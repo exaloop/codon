@@ -74,7 +74,7 @@ InlineResult inlineFunction(Func *func, std::vector<Value *> args, bool aggressi
   auto *bodied = cast<BodiedFunc>(func);
   if (!bodied)
     return {nullptr, {}};
-  auto *fType = cast<types::FuncType>(bodied->getType());
+  auto *fType = cast<FuncType>(bodied->getType());
   if (!fType || args.size() != std::distance(bodied->arg_begin(), bodied->arg_end()))
     return {nullptr, {}};
   auto *M = bodied->getModule();

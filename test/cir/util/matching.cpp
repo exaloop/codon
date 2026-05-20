@@ -103,7 +103,7 @@ TEST_F(CIRCoreTest, MatchingNonEquivalentFunc) {
         module->unsafeGetFuncType("<internal_func_type>", module->getIntType(), {}),
         {});
 
-    first->setLLVMLiterals({types::Generic(1)});
+    first->setLLVMLiterals({Generic(1)});
 
     ASSERT_FALSE(util::match(first, second));
   }
@@ -210,7 +210,7 @@ TEST_F(CIRCoreTest, MatchingAssignInstr) {
 
 TEST_F(CIRCoreTest, MatchingExtractInstr) {
   auto FIELD = "foo";
-  auto *type = cast<types::RecordType>(module->unsafeGetMemberedType("**internal**"));
+  auto *type = cast<RecordType>(module->unsafeGetMemberedType("**internal**"));
   type->realize({module->getIntType()}, {FIELD});
   auto *var = module->Nr<Var>(type);
   auto *val = module->Nr<VarValue>(var);
@@ -224,7 +224,7 @@ TEST_F(CIRCoreTest, MatchingExtractInstr) {
 
 TEST_F(CIRCoreTest, MatchingInsertInstr) {
   auto FIELD = "foo";
-  auto *type = cast<types::RecordType>(module->unsafeGetMemberedType("**internal**"));
+  auto *type = cast<RecordType>(module->unsafeGetMemberedType("**internal**"));
   type->realize({module->getIntType()}, {FIELD});
   auto *var = module->Nr<Var>(type);
   auto *val = module->Nr<VarValue>(var);

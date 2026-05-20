@@ -30,12 +30,11 @@ template <typename Func, typename Out> class IntFloatBinaryRule : public Rewrite
 private:
   Func f;
   std::string magic;
-  types::Type *out;
+  Type *out;
   bool excludeRHSZero;
 
 public:
-  IntFloatBinaryRule(Func f, std::string magic, types::Type *out,
-                     bool excludeRHSZero = false)
+  IntFloatBinaryRule(Func f, std::string magic, Type *out, bool excludeRHSZero = false)
       : f(std::move(f)), magic(std::move(magic)), out(out),
         excludeRHSZero(excludeRHSZero) {}
 
@@ -75,9 +74,8 @@ template <typename ConstantType, typename Func, typename OutputType = ConstantTy
 class DoubleConstantBinaryRuleExcludeRHSZero
     : public DoubleConstantBinaryRule<ConstantType, Func, OutputType> {
 public:
-  DoubleConstantBinaryRuleExcludeRHSZero(Func f, std::string magic,
-                                         types::Type *inputType,
-                                         types::Type *resultType)
+  DoubleConstantBinaryRuleExcludeRHSZero(Func f, std::string magic, Type *inputType,
+                                         Type *resultType)
       : DoubleConstantBinaryRule<ConstantType, Func, OutputType>(f, magic, inputType,
                                                                  resultType) {}
 
@@ -197,14 +195,13 @@ template <typename Func> auto boolToBoolUnary(Module *m, Func f, std::string mag
       std::move(f), std::move(magic), m->getBoolType(), m->getBoolType());
 }
 
-auto identityConvert(Module *m, std::string magic, types::Type *type) {
+auto identityConvert(Module *m, std::string magic, Type *type) {
   return std::make_unique<UnaryRule<decltype(id_val(m))>>(id_val(m), std::move(magic),
                                                           type);
 }
 
 template <typename From, typename To>
-auto typeConvert(Module *m, std::string magic, types::Type *fromType,
-                 types::Type *toType) {
+auto typeConvert(Module *m, std::string magic, Type *fromType, Type *toType) {
   return std::make_unique<
       SingleConstantUnaryRule<From, std::function<decltype(convert<From, To>)>>>(
       convert<From, To>, std::move(magic), fromType, toType);

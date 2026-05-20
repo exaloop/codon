@@ -37,7 +37,7 @@ void optimizePrint(CallInstr *v) {
 
   util::CloneVisitor cv(M);
   std::vector<Value *> args;
-  std::vector<types::Type *> types;
+  std::vector<Type *> types;
   for (auto *printArg : *v) {
     args.push_back(cv.clone(printArg));
     types.push_back(printArg->getType());

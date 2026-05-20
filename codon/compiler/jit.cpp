@@ -308,7 +308,7 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
 
 JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
 
-ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
+ir::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   if (cobj)
     return cobj;
   cobj = M->getPointerType();

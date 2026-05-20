@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "codon/cir/attribute.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/scoping/scoping.h"
