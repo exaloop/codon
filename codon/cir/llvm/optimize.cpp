@@ -1102,21 +1102,23 @@ void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins
                               /*includeNative=*/true,
                               /*includePlugins=*/true);
   }
-  {
-    TIME("llvm/gpuopt1");
-    runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
-                              /*includeNative=*/false,
-                              /*includePlugins=*/false);
-  }
-  {
-    TIME("llvm/gpuopt2");
-    runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
-                              /*includeNative=*/false,
-                              /*includePlugins=*/false);
-  }
-  {
-    TIME("llvm/gpu");
-    applyGPUTransformations(module, std::move(GPUmodule));
+  if (GPUmodule) {
+    {
+      TIME("llvm/gpuopt1");
+      runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
+                                /*includeNative=*/false,
+                                /*includePlugins=*/false);
+    }
+    {
+      TIME("llvm/gpuopt2");
+      runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
+                                /*includeNative=*/false,
+                                /*includePlugins=*/false);
+    }
+    {
+      TIME("llvm/gpu");
+      applyGPUTransformations(module, std::move(GPUmodule));
+    }
   }
   verify(module);
 }

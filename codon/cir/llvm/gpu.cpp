@@ -946,6 +946,17 @@ void patchPTXVar(llvm::Module *M, llvm::GlobalValue *ptxVar,
 } // namespace
 
 std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M) {
+  bool hasKernels = false;
+  for (auto &F : *M) {
+    if (F.hasFnAttribute("kernel")) {
+      hasKernels = true;
+      break;
+    }
+  }
+
+  if (!hasKernels)
+    return {};
+
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
   clone->setDataLayout(GPU_DL);
