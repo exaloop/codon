@@ -595,6 +595,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   return canWrap;
 }
 
+/// TODO: Fix return true/false logic
 std::tuple<bool, TypePtr, std::function<Expr *(Expr *)>>
 TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *callee,
                               bool allowUnwrap, bool isEllipsis) {

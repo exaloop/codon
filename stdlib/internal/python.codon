@@ -1002,7 +1002,7 @@ def _rapply2(func, obj: cobj, other, *args):
             pyobj.decref(other_py)
 
 def _apply3(func, obj: cobj, other1, other2, *args):
-    if isinstance(other1, pyobj) and isinstance(other2):
+    if isinstance(other1, pyobj) and isinstance(other2, pyobj):
         return pyobj(pyobj.exc_wrap(func(obj, other1.p, other2.p, *args)), steal=True)
     else:
         other1_py = other1.__to_py__()

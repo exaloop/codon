@@ -57,9 +57,19 @@ class Int:
             return Int._zext(what, M, N)
 
     @overload
-    def __new__(what: str, base: int = 10) -> Int[N]:
+    def __new__(what: str, base: int) -> Int[N]:
         Int._check_bitwidth(N)
         return Int[N]._from_str(what, base)
+
+    @overload
+    def __new__(what) -> Int[N]:
+        # do not overload! (needed to avoid pyobj conversion)
+        if isinstance(what, str) or isinstance(what, Optional[str]):
+            return Int[N](what, 10)
+        elif isinstance(what, Int) or isinstance(what, UInt):
+            return superf(what)
+        else:
+            return Int[N](what.__int__())
 
     def __int__(self) -> int:
         return int(self)

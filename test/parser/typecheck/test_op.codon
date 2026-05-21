@@ -78,6 +78,13 @@ print(bar() and foo())
 #: bar
 #: False
 
+v: Optional[str] = None
+result = v or "default"
+print(result)  #: default
+v: Optional[str] = "hoo"
+result = v or "default"
+print(result)  #: hoo
+
 #%% chain_binary,barebones
 def foo():
     print 'foo'

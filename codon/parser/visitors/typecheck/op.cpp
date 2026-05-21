@@ -790,12 +790,24 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
       auto rt = realize(expr->getRhs()->getType());
       if (!lt || !rt) {
         return const_cast<BinaryExpr *>(expr); // delay
-      } else {
+      } else if (lt->realizedName() == rt->realizedName()) {
         auto vn = getTemporaryVar("cond");
         auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
-        if (lt->realizedName() == rt->realizedName()) {
-          return N<IfExpr>(ve, N<IdExpr>(vn), expr->getRhs());
+        return N<IfExpr>(ve, N<IdExpr>(vn), const_cast<BinaryExpr *>(expr)->getRhs());
+      } else {
+        auto e = clone(expr);
+        if (auto [c, _, f] = canWrapExpr(rt, lt); c && f) {
+          wrapExpr(&e->rexpr, lt);
+          unify(e->getRhs()->getType(), e->getLhs()->getType());
+          return e;
+        } else if (auto [c, _, f] = canWrapExpr(lt, rt); c && f) {
+          wrapExpr(&e->lexpr, rt);
+          unify(e->getRhs()->getType(), e->getLhs()->getType());
+          return e;
         } else {
+          log("unionizing ... {} / {}", lt->realizedName(), rt->realizedName());
+          auto vn = getTemporaryVar("cond");
+          auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
           auto T = N<InstantiateExpr>(
               N<IdExpr>(getMangledClass("std.internal.core", "Union")),
               std::vector<Expr *>{N<IdExpr>(lt->realizedName()),
