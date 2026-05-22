@@ -805,7 +805,6 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
           unify(e->getRhs()->getType(), e->getLhs()->getType());
           return e;
         } else {
-          log("unionizing ... {} / {}", lt->realizedName(), rt->realizedName());
           auto vn = getTemporaryVar("cond");
           auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
           auto T = N<InstantiateExpr>(
