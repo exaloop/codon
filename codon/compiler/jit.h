@@ -51,6 +51,45 @@ public:
     ir::types::Type *getCObjType(ir::Module *M);
   };
 
+  struct JITClassData {
+    ir::types::Type *cobj;
+    std::unordered_map<std::string, ir::Func *> ctorWrappers;
+    std::unordered_map<std::string, ir::Func *> methodWrappers;
+
+    JITClassData();
+    ir::types::Type *getCObjType(ir::Module *M);
+  };
+
+  // RAII root for Codon GC-managed objects exposed through Python-owned instances.
+  struct JITClassRoot {
+    std::unique_ptr<void *> slot;
+
+    explicit JITClassRoot(void *ptr);
+    ~JITClassRoot();
+
+    JITClassRoot(JITClassRoot &&) noexcept = default;
+    JITClassRoot &operator=(JITClassRoot &&) noexcept;
+    JITClassRoot(const JITClassRoot &) = delete;
+    JITClassRoot &operator=(const JITClassRoot &) = delete;
+  };
+
+  struct JITClassInstance {
+    std::string className;
+    std::string nativeClassName;
+    void *nativePtr;
+
+    // Keeps the underlying Codon object alive while Python can still reach it.
+    JITClassRoot root;
+
+    JITClassInstance(std::string className, std::string nativeClassName,
+                     void *nativePtr);
+
+    JITClassInstance(JITClassInstance &&) noexcept = default;
+    JITClassInstance &operator=(JITClassInstance &&) noexcept = default;
+    JITClassInstance(const JITClassInstance &) = delete;
+    JITClassInstance &operator=(const JITClassInstance &) = delete;
+  };
+
   struct JITResult {
     void *result;
     std::string message;
@@ -64,6 +103,7 @@ private:
   std::unique_ptr<Compiler> compiler;
   std::unique_ptr<Engine> engine;
   std::unique_ptr<PythonData> pydata;
+  std::unique_ptr<JITClassData> jitClassData;
   std::string mode;
   bool forgetful = false;
 
@@ -99,6 +139,15 @@ public:
                           bool debug);
   JITResult executeSafe(const std::string &code, const std::string &file, int line,
                         bool debug);
+
+  // JITClass
+  JITResult jitClassNew(const std::string &className,
+                        const std::string &nativeClassName,
+                        const std::vector<std::string> &types, void *args, bool debug);
+  JITResult jitClassCall(const std::string &className, JITClassInstance *instance,
+                         const std::string &methodName,
+                         const std::vector<std::string> &types, void *args, bool debug);
+  static JITResult jitClassRelease(JITClassInstance *instance);
 
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
