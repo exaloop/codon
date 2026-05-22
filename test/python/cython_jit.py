@@ -125,7 +125,15 @@ def test_jitclass():
     assert p.__codon_jitclass_proxy__ is not None
     assert not p.__codon_jitclass_proxy__.closed
     assert p.total() == 5
+    assert p.x == 2
+    assert p.y == 3
     stale = Point(1, 2)
+
+    p.x = 10
+    p.y = 20
+    assert p.x == 10
+    assert p.y == 20
+    assert p.total() == 30
 
     @codon.jit
     def allocate_pressure(n: int) -> int:
@@ -166,6 +174,12 @@ def test_jitclass():
     p.close()
     assert p.__codon_jitclass_proxy__.closed
     p.close()
+    try:
+        p.x
+    except codon.JITError:
+        pass
+    else:
+        assert False
 
     _reset_jit()
     try:

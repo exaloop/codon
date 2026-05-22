@@ -35,6 +35,7 @@ class JITClassMeta:
         self.source_file = inspect.getsourcefile(py_cls) or "<internal>"
         self.init = None
         self.methods = {}
+        self.fields = {}
         self.has_fields = False
 
     def bind_init(self, allow_default=False):
@@ -48,6 +49,9 @@ class JITClassMeta:
     def bind_methods(self, method_names):
         self.methods = {name: self.py_cls.__dict__[name] for name in method_names}
 
+    def bind_fields(self, fields):
+        self.fields = dict(fields)
+
 
 class JITClassASTTransformer(ast.NodeTransformer):
     """Validate a jitclass and rewrite it into the native Codon class body."""
@@ -56,6 +60,7 @@ class JITClassASTTransformer(ast.NodeTransformer):
         self.meta = meta
         self.has_fields = False
         self.has_init = False
+        self.fields = []
         self.method_names = []
 
     def visit_Module(self, node):
@@ -73,6 +78,8 @@ class JITClassASTTransformer(ast.NodeTransformer):
         node.decorator_list = []
         node.name = self.meta.native_class_name
         node.body = [self._visit_class_stmt(stmt) for stmt in node.body]
+        # Field descriptors dispatch through generated native getter/setter methods.
+        node.body.extend(self._make_field_accessors())
         return node
 
     def _visit_class_stmt(self, stmt):
@@ -81,6 +88,7 @@ class JITClassASTTransformer(ast.NodeTransformer):
                 raise JITError("jitclass fields must be simple names")
             if stmt.value is not None:
                 raise JITError("jitclass fields cannot have default values")
+            self.fields.append((stmt.target.id, stmt.annotation))
             self.has_fields = True
             return stmt
 
@@ -106,6 +114,72 @@ class JITClassASTTransformer(ast.NodeTransformer):
 
         raise JITError(
             "unsupported statement in jitclass '{}'".format(self.meta.class_name)
+        )
+
+    def _make_field_accessors(self):
+        accessors = []
+        for field_name, annotation in self.fields:
+            accessors.append(self._make_field_getter(field_name, annotation))
+            accessors.append(self._make_field_setter(field_name, annotation))
+        return accessors
+
+    def _make_field_getter(self, field_name, annotation):
+        return ast.FunctionDef(
+            name=_field_getter_name(field_name),
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[ast.arg(arg="self", annotation=None)],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=[
+                ast.Return(
+                    value=ast.Attribute(
+                        value=ast.Name(id="self", ctx=ast.Load()),
+                        attr=field_name,
+                        ctx=ast.Load(),
+                    )
+                )
+            ],
+            decorator_list=[],
+            returns=annotation,
+            type_comment=None,
+        )
+
+    def _make_field_setter(self, field_name, annotation):
+        return ast.FunctionDef(
+            name=_field_setter_name(field_name),
+            args=ast.arguments(
+                posonlyargs=[],
+                args=[
+                    ast.arg(arg="self", annotation=None),
+                    ast.arg(arg="value", annotation=annotation),
+                ],
+                vararg=None,
+                kwonlyargs=[],
+                kw_defaults=[],
+                kwarg=None,
+                defaults=[],
+            ),
+            body=[
+                ast.Assign(
+                    targets=[
+                        ast.Attribute(
+                            value=ast.Name(id="self", ctx=ast.Load()),
+                            attr=field_name,
+                            ctx=ast.Store(),
+                        )
+                    ],
+                    value=ast.Name(id="value", ctx=ast.Load()),
+                ),
+                ast.Return(value=ast.Name(id="value", ctx=ast.Load())),
+            ],
+            decorator_list=[],
+            returns=annotation,
+            type_comment=None,
         )
 
 
@@ -163,6 +237,20 @@ class JITNativeClass:
 
     def __exit__(self, exc_type, exc, tb):
         self.close()
+
+    def __setattr__(self, name, value):
+        if name.startswith("__codon_"):
+            object.__setattr__(self, name, value)
+            return
+
+        field = getattr(type(self), name, None)
+        if isinstance(field, JITField):
+            field.__set__(self, value)
+            return
+
+        raise AttributeError(
+            "jitclass '{}' has no field '{}'".format(type(self).__name__, name)
+        )
 
 
 class JITClassCtor(JITCallable):
@@ -234,6 +322,58 @@ class JITMethod(JITCallable):
         return self.reset_on_jit_error(run)
 
 
+class JITField(JITCallable):
+    """Field descriptor backed by generated native getter and setter wrappers."""
+
+    def __init__(self, meta: JITClassMeta, field_name: str, debug=0, sample_size=5):
+        super().__init__(None, field_name, meta.py_cls.__module__, debug, sample_size)
+        self.meta = meta
+        self.field_name = field_name
+
+    def __get__(self, obj, owner):
+        if obj is None:
+            return self
+
+        def run():
+            proxy = obj.__codon_jitclass_proxy__
+            if self.debug == 2:
+                print(
+                    f"[python] {self.meta.class_name}.{self.field_name}",
+                    file=sys.stderr,
+                )
+            return proxy.handle.call_with_jit(
+                _decorator._jit,
+                self.meta.class_name,
+                _field_getter_name(self.field_name),
+                [],
+                (),
+                int(self.debug > 0),
+            )
+
+        return self.reset_on_jit_error(run)
+
+    def __set__(self, obj, value):
+        def run():
+            proxy = obj.__codon_jitclass_proxy__
+            bound_args = (value,)
+            arg_types = self.codon_types(bound_args)
+            if self.debug == 2:
+                print(
+                    f"[python] {self.meta.class_name}.{self.field_name} = {value!r}",
+                    file=sys.stderr,
+                )
+            proxy.handle.call_with_jit(
+                _decorator._jit,
+                self.meta.class_name,
+                _field_setter_name(self.field_name),
+                list(arg_types),
+                bound_args,
+                int(self.debug > 0),
+            )
+
+        return self.reset_on_jit_error(run)
+
+
 class JITClassCreator:
     """Compiles the native class and builds the Python proxy type."""
 
@@ -266,6 +406,11 @@ class JITClassCreator:
                 meta, method, self.debug, self.sample_size
             )
 
+        for field_name in meta.fields:
+            namespace[field_name] = JITField(
+                meta, field_name, self.debug, self.sample_size
+            )
+
         return type(meta.py_cls.__name__, (JITNativeClass,), namespace)
 
     def compile(self):
@@ -291,6 +436,7 @@ class JITClassCreator:
         meta.has_fields = transformer.has_fields
         meta.bind_init(allow_default=not transformer.has_init and not meta.has_fields)
         meta.bind_methods(transformer.method_names)
+        meta.bind_fields(transformer.fields)
 
         if transformer.has_init and not meta.has_fields:
             raise JITError("jitclass requires explicit field annotations")
@@ -317,6 +463,14 @@ def _validate_method_args(args, method_name):
         raise JITError("jitclass does not support keyword-only arguments")
     if not args.args or args.args[0].arg != "self":
         raise JITError("jitclass method '{}' must take self".format(method_name))
+
+
+def _field_getter_name(field_name):
+    return "_codon_jitclass_get_{}".format(field_name)
+
+
+def _field_setter_name(field_name):
+    return "_codon_jitclass_set_{}".format(field_name)
 
 
 def _make_native_class_name(py_cls):
