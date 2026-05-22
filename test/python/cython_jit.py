@@ -3,6 +3,7 @@ import gc
 import weakref
 import numpy as np
 import codon
+from codon.decorator import _reset_jit
 
 @codon.convert
 class Foo:
@@ -124,6 +125,7 @@ def test_jitclass():
     assert p.__codon_jitclass_proxy__ is not None
     assert not p.__codon_jitclass_proxy__.closed
     assert p.total() == 5
+    stale = Point(1, 2)
 
     @codon.jit
     def allocate_pressure(n: int) -> int:
@@ -164,6 +166,14 @@ def test_jitclass():
     p.close()
     assert p.__codon_jitclass_proxy__.closed
     p.close()
+
+    _reset_jit()
+    try:
+        stale.total()
+    except codon.JITError as e:
+        assert "stale JIT context" in str(e)
+    else:
+        assert False
 
     @codon.jitclass
     class Empty:

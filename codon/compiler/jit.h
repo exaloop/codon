@@ -60,6 +60,12 @@ public:
     ir::types::Type *getCObjType(ir::Module *M);
   };
 
+  struct JITContextState {
+    std::atomic<bool> alive;
+
+    JITContextState() : alive(true) {}
+  };
+
   // RAII root for Codon GC-managed objects exposed through Python-owned instances.
   struct JITClassRoot {
     std::unique_ptr<void *> slot;
@@ -74,6 +80,7 @@ public:
   };
 
   struct JITClassInstance {
+    std::shared_ptr<JITContextState> contextState;
     std::string className;
     std::string nativeClassName;
     void *nativePtr;
@@ -81,7 +88,8 @@ public:
     // Keeps the underlying Codon object alive while Python can still reach it.
     JITClassRoot root;
 
-    JITClassInstance(std::string className, std::string nativeClassName,
+    JITClassInstance(std::shared_ptr<JITContextState> contextState,
+                     std::string className, std::string nativeClassName,
                      void *nativePtr);
 
     JITClassInstance(JITClassInstance &&) noexcept = default;
@@ -104,12 +112,14 @@ private:
   std::unique_ptr<Engine> engine;
   std::unique_ptr<PythonData> pydata;
   std::unique_ptr<JITClassData> jitClassData;
+  std::shared_ptr<JITContextState> contextState;
   std::string mode;
   bool forgetful = false;
 
 public:
   explicit JIT(const std::string &argv0, const std::string &mode = "",
                const std::string &stdlibRoot = "");
+  ~JIT();
 
   Compiler *getCompiler() const { return compiler.get(); }
   Engine *getEngine() const { return engine.get(); }

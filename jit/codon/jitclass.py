@@ -12,10 +12,10 @@ import astunparse
 
 from typing import Any
 
+from . import decorator as _decorator
 from .decorator import (
     JITCallable,
     JITError,
-    _jit,
     _reset_jit,
     debug_override,
 )
@@ -182,7 +182,7 @@ class JITClassCtor(JITCallable):
                     f"[python] {self.meta.class_name}.{self.py_func.__name__}({bound_args})",
                     file=sys.stderr,
                 )
-            handle = _jit.jitclass_new(
+            handle = _decorator._jit.jitclass_new(
                 self.meta.class_name,
                 self.meta.native_class_name,
                 list(arg_types),
@@ -223,7 +223,7 @@ class JITMethod(JITCallable):
                     file=sys.stderr,
                 )
             return proxy.handle.call_with_jit(
-                _jit,
+                _decorator._jit,
                 self.meta.class_name,
                 self.py_func.__name__,
                 list(arg_types),
@@ -274,7 +274,7 @@ class JITClassCreator:
         if self.debug == 2:
             print(f"[jit_debug] execute:\n{class_code}", file=sys.stderr)
         try:
-            _jit.execute(
+            _decorator._jit.execute(
                 class_code, self.meta.source_file, 1, int(self.debug > 0)
             )
         except JITError:

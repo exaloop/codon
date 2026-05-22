@@ -31,10 +31,16 @@ JIT::JIT(const std::string &argv0, const std::string &mode,
                                           /*isTest=*/false,
                                           /*pyNumerics=*/false, /*pyExtension=*/false)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      jitClassData(std::make_unique<JITClassData>()), mode(mode), forgetful(false) {
+      jitClassData(std::make_unique<JITClassData>()),
+      contextState(std::make_shared<JITContextState>()), mode(mode), forgetful(false) {
   if (!stdlibRoot.empty())
     compiler->getCache()->fs->add_search_path(stdlibRoot);
   compiler->getLLVMVisitor()->setJIT(true);
+}
+
+JIT::~JIT() {
+  // Existing jitclass instances may outlive this engine; mark them stale.
+  contextState->alive.store(false);
 }
 
 JIT::JITClassRoot::JITClassRoot(void *ptr) : slot(std::make_unique<void *>(ptr)) {
@@ -55,10 +61,12 @@ JIT::JITClassRoot &JIT::JITClassRoot::operator=(JITClassRoot &&other) noexcept {
   return *this;
 }
 
-JIT::JITClassInstance::JITClassInstance(std::string className,
+JIT::JITClassInstance::JITClassInstance(std::shared_ptr<JITContextState> contextState,
+                                        std::string className,
                                         std::string nativeClassName, void *nativePtr)
-    : className(std::move(className)), nativeClassName(std::move(nativeClassName)),
-      nativePtr(nativePtr), root(nativePtr) {}
+    : contextState(std::move(contextState)), className(std::move(className)),
+      nativeClassName(std::move(nativeClassName)), nativePtr(nativePtr),
+      root(nativePtr) {}
 
 void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
   if (ast::cast<ast::FunctionStmt>(s) || ast::cast<ast::ClassStmt>(s) ||
@@ -504,7 +512,8 @@ JIT::JITResult JIT::jitClassNew(const std::string &className,
 
   try {
     auto *nativePtr = (*wrap)(args);
-    auto *instance = new JITClassInstance(className, nativeClassName, nativePtr);
+    auto *instance =
+        new JITClassInstance(contextState, className, nativeClassName, nativePtr);
     return JITResult::success(instance);
   } catch (const runtime::JITError &e) {
     auto err = handleJITError(e);
@@ -524,6 +533,9 @@ JIT::JITResult JIT::jitClassCall(const std::string &className,
     return JITResult::error(
         fmt::format("jitclass instance has type '{}', expected '{}'",
                     instance->className, className));
+  // Reject calls after reset/destruction before looking up code in this engine.
+  if (!instance->contextState->alive.load() || instance->contextState != contextState)
+    return JITResult::error("jitclass object belongs to a stale JIT context");
 
   auto key = buildJITClassKey("method", instance->nativeClassName, types, methodName);
   auto &cache = jitClassData->methodWrappers;
