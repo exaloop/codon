@@ -14,16 +14,6 @@ static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
 namespace ir {
-namespace {
-llvm::cl::opt<bool>
-    AutoFree("auto-free",
-             llvm::cl::desc("Insert free() calls on allocated memory automatically"),
-             llvm::cl::init(false), llvm::cl::Hidden);
-
-llvm::cl::opt<bool> FastMath("fast-math",
-                             llvm::cl::desc("Apply fastmath optimizations"),
-                             llvm::cl::init(false));
-} // namespace
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
@@ -91,9 +81,6 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
 }
 
 void applyFastMathTransformations(llvm::Module *module) {
-  if (!FastMath)
-    return;
-
   for (auto &f : *module) {
     for (auto &block : f) {
       for (auto &inst : block) {
@@ -991,14 +978,8 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   }
 };
 
-llvm::cl::opt<bool>
-    DisableNative("disable-native",
-                  llvm::cl::desc("Disable architecture-specific optimizations"),
-                  llvm::cl::init(false));
-
-void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, bool debug,
-                                         PluginManager *plugins, bool includeNative,
-                                         bool includePlugins) {
+void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
+                                         Options *options) {
   pb.registerLateLoopOptimizationsEPCallback(
       [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed())
@@ -1012,32 +993,32 @@ void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, bool debug,
           pm.addPass(llvm::LoopSimplifyPass());
           pm.addPass(llvm::LCSSAPass());
           pm.addPass(AllocationHoister());
-          if (AutoFree)
+          if (options->autofree)
             pm.addPass(AllocationAutoFree());
         }
       });
 
-  if (!DisableNative && includeNative)
+  if (options->native)
     addNativeLLVMPasses(&pb);
 
-  if (includePlugins && plugins) {
+  if (plugins) {
     for (auto *plugin : *plugins) {
-      plugin->dsl->addLLVMPasses(&pb, debug);
+      plugin->dsl->addLLVMPasses(&pb, options->debug);
     }
   }
 }
 
-void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
-                               PluginManager *plugins, bool includeNative,
-                               bool includePlugins) {
-  applyDebugTransformations(module, debug, jit);
-  applyFastMathTransformations(module);
+void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
+                               Options *options) {
+  applyDebugTransformations(module, options->debug, options->jit);
+  if (options->fastmath)
+    applyFastMathTransformations(module);
 
   llvm::LoopAnalysisManager lam;
   llvm::FunctionAnalysisManager fam;
   llvm::CGSCCAnalysisManager cgam;
   llvm::ModuleAnalysisManager mam;
-  auto machine = includeNative
+  auto machine = options->native
                      ? getTargetMachine(module, /*setFunctionAttributes=*/true)
                      : std::unique_ptr<llvm::TargetMachine>();
   llvm::PassBuilder pb(machine.get());
@@ -1052,10 +1033,9 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
   pb.registerLoopAnalyses(lam);
   pb.crossRegisterProxies(lam, fam, cgam, mam);
 
-  registerCodonLLVMOptimizationPasses(pb, debug, plugins, includeNative,
-                                      includePlugins);
+  registerCodonLLVMOptimizationPasses(pb, plugins, options);
 
-  if (debug) {
+  if (options->debug) {
     llvm::ModulePassManager mpm =
         pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
     mpm.run(*module, mam);
@@ -1065,7 +1045,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
     mpm.run(*module, mam);
   }
 
-  applyDebugTransformations(module, debug, jit);
+  applyDebugTransformations(module, options->debug, options->jit);
 }
 
 void verify(llvm::Module *module) {
@@ -1083,47 +1063,42 @@ void verify(llvm::Module *module) {
 
 } // namespace
 
-void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
+void optimize(llvm::Module *module, Options *options, PluginManager *plugins) {
+  bool debug = options->debug;
+  bool jit = options->jit;
+
   verify(module);
   std::unique_ptr<llvm::Module> GPUmodule;
   {
     TIME("preparing/gpu");
-    GPUmodule = prepareGPUmodule(module);
+    GPUmodule = prepareGPUmodule(module, options);
   }
   {
     TIME("llvm/opt1");
-    runLLVMOptimizationPasses(module, debug, jit, plugins,
-                              /*includeNative=*/true,
-                              /*includePlugins=*/true);
+    runLLVMOptimizationPasses(module, plugins, options);
   }
   if (!debug) {
     TIME("llvm/opt2");
-    runLLVMOptimizationPasses(module, debug, jit, plugins,
-                              /*includeNative=*/true,
-                              /*includePlugins=*/true);
+    runLLVMOptimizationPasses(module, plugins, options);
   }
   if (GPUmodule) {
+    auto gpuOptions = *options;
+    gpuOptions.native = false;
     {
       TIME("llvm/gpuopt1");
-      runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
-                                /*includeNative=*/false,
-                                /*includePlugins=*/false);
+      runLLVMOptimizationPasses(module, /*plugins=*/nullptr, &gpuOptions);
     }
     {
       TIME("llvm/gpuopt2");
-      runLLVMOptimizationPasses(GPUmodule.get(), debug, jit, plugins,
-                                /*includeNative=*/false,
-                                /*includePlugins=*/false);
+      runLLVMOptimizationPasses(module, /*plugins=*/nullptr, &gpuOptions);
     }
     {
       TIME("llvm/gpu");
-      applyGPUTransformations(module, std::move(GPUmodule));
+      applyGPUTransformations(module, std::move(GPUmodule), options);
     }
   }
   verify(module);
 }
-
-bool isFastMathOn() { return FastMath; }
 
 } // namespace ir
 } // namespace codon

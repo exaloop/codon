@@ -32,18 +32,6 @@ const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "ker
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
-
-enum GlobalCTORMode { No, Yes, Auto };
-llvm::cl::opt<GlobalCTORMode> GlobalCTOR(
-    "global-ctor", llvm::cl::desc("generate global constructor with main code"),
-    llvm::cl::values(clEnumValN(No, "no", "Keep main code in main() function"),
-                     clEnumValN(Yes, "yes", "Put main code in global constructor"),
-                     clEnumValN(Auto, "auto",
-                                "'yes' if shared library output, 'no' otherwise")),
-    llvm::cl::init(Auto));
-llvm::cl::opt<bool> DisableExceptions("disable-exceptions",
-                                      llvm::cl::desc("Disable exception handling"),
-                                      llvm::cl::init(false));
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -85,8 +73,9 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
   }
 }
 
-LLVMVisitor::LLVMVisitor()
-    : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
+LLVMVisitor::LLVMVisitor(Options *options)
+    : util::ConstVisitor(), options(options),
+      context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
       value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), finally(),
       catches(), db(), plugins(nullptr) {
@@ -145,8 +134,8 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     } else {
       bool external = var->isExternal();
       bool tls = var->isThreadLocal();
-      auto linkage = (db.jit || external) ? llvm::GlobalValue::ExternalLinkage
-                                          : llvm::GlobalValue::PrivateLinkage;
+      auto linkage = (options->jit || external) ? llvm::GlobalValue::ExternalLinkage
+                                                : llvm::GlobalValue::PrivateLinkage;
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
           external ? nullptr : llvm::Constant::getNullValue(llvmType),
@@ -154,7 +143,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
       insertVar(var, storage);
 
       if (external) {
-        if (db.jit) {
+        if (options->jit) {
           storage->setDSOLocal(true);
         } else {
           storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
@@ -178,7 +167,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
 
 llvm::Value *LLVMVisitor::getVar(const Var *var) {
   auto it = vars.find(var->getId());
-  if (db.jit && var->isGlobal()) {
+  if (options->jit && var->isGlobal()) {
     if (it != vars.end()) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
@@ -216,7 +205,7 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
 
 llvm::Function *LLVMVisitor::getFunc(const Func *func) {
   auto it = funcs.find(func->getId());
-  if (db.jit) {
+  if (options->jit) {
     if (it != funcs.end()) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
@@ -266,8 +255,8 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   db.builder = std::make_unique<llvm::DIBuilder>(*M);
   auto *file = db.getFile(srcInfo->file);
   db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
-                                          ("codon version " CODON_VERSION), !db.debug,
-                                          db.flags,
+                                          ("codon version " CODON_VERSION),
+                                          !options->debug, "",
                                           /*RV=*/0);
   M->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                    llvm::DEBUG_METADATA_VERSION);
@@ -372,12 +361,12 @@ void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, fa
 
 void LLVMVisitor::runLLVMPipeline() {
   db.builder->finalize();
-  optimize(M.get(), db.debug, db.jit, plugins);
+  optimize(M.get(), options, plugins);
 }
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic,
                                     bool assembly) {
-  if (GlobalCTOR == GlobalCTORMode::Yes)
+  if (options->ctor == Options::GlobalCTORMode::Yes)
     setupGlobalCtor();
 
   runLLVMPipeline();
@@ -417,7 +406,7 @@ void LLVMVisitor::writeToBitcodeFile(const std::string &filename) {
 }
 
 void LLVMVisitor::writeToLLFile(const std::string &filename, bool optimize) {
-  if (GlobalCTOR == GlobalCTORMode::Yes)
+  if (options->ctor == Options::GlobalCTORMode::Yes)
     setupGlobalCtor();
   if (optimize)
     runLLVMPipeline();
@@ -496,7 +485,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::string &argv0, bool library,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
-  if (library && GlobalCTOR != GlobalCTORMode::No)
+  if (library && options->ctor != Options::GlobalCTORMode::No)
     setupGlobalCtor();
 
   const std::string objFile = filename + ".o";
@@ -598,7 +587,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   executeCommand(command);
 
 #if __APPLE__
-  if (db.debug)
+  if (options->debug)
     executeCommand({"dsymutil", filename});
 #endif
 
@@ -1277,7 +1266,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   clearLLVMData();
   auto mainAddr = llvm::cantFail(jit->lookup("main"));
 
-  if (db.debug) {
+  if (options->debug) {
     runtime::setJITErrorCallback([dbp](const runtime::JITError &e) {
       fmt::print(stderr, "{}\n{}", e.getOutput(),
                  dbp->getPrettyBacktrace(e.getBacktrace()));
@@ -1414,7 +1403,7 @@ int LLVMVisitor::getTypeIdx(Type *catchType) { return typeIdxLookup(catchType); 
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
-  if ((trycatch.empty() && finally.empty()) || DisableExceptions) {
+  if ((trycatch.empty() && finally.empty()) || options->noexc) {
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
@@ -1582,9 +1571,9 @@ void LLVMVisitor::visit(const Module *x) {
   seqassertn(argcStorage, "argc storage missing");
   B->CreateStore(len, argcStorage);
 
-  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) |
-                    (db.capture ? SEQ_FLAG_CAPTURE_OUTPUT : 0) |
-                    (db.standalone ? SEQ_FLAG_STANDALONE : 0);
+  const int flags = (options->debug ? SEQ_FLAG_DEBUG : 0) |
+                    (options->capture ? SEQ_FLAG_CAPTURE_OUTPUT : 0) |
+                    (options->standalone ? SEQ_FLAG_STANDALONE : 0);
   B->CreateCall(initFunc, B->getInt32(flags));
 
   // Put the entire program in a new function
@@ -1660,7 +1649,8 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
       file, baseName, getNameForFunction(x), file, srcInfo->line, subroutineType,
       /*ScopeLine=*/0, llvm::DINode::FlagZero,
       llvm::DISubprogram::toSPFlags(/*IsLocalToUnit=*/true,
-                                    /*IsDefinition=*/true, /*IsOptimized=*/!db.debug));
+                                    /*IsDefinition=*/true,
+                                    /*IsOptimized=*/!options->debug));
   return subprogram;
 }
 
@@ -1931,7 +1921,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   }
-  if (!DisableExceptions)
+  if (!options->noexc)
     func->setPersonalityFn(
         llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
@@ -1959,7 +1949,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     auto *scope = func->getSubprogram();
     auto *debugVar = db.builder->createParameterVariable(
         scope, getDebugNameForVariable(var), argIdx, file, srcInfo->line,
-        getDIType(var->getType()), db.debug);
+        getDIType(var->getType()), options->debug);
     db.builder->insertDeclare(
         storage, debugVar, db.builder->createExpression(),
         llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
@@ -1983,7 +1973,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
       auto *scope = func->getSubprogram();
       auto *debugVar = db.builder->createAutoVariable(
           scope, getDebugNameForVariable(var), file, srcInfo->line,
-          getDIType(var->getType()), db.debug);
+          getDIType(var->getType()), options->debug);
       db.builder->insertDeclare(
           storage, debugVar, db.builder->createExpression(),
           llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
@@ -2740,7 +2730,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // handle exceptions that must route through 'finally'
   B->SetInsertPoint(tc.finallyExceptionBlock);
-  if (!DisableExceptions) {
+  if (!options->noexc) {
     auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
     finallyCaughtResult->setCleanup(true);
     finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
@@ -2869,7 +2859,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // resume if uncaught
   B->SetInsertPoint(unwindResumeBlock);
-  if (DisableExceptions) {
+  if (options->noexc) {
     B->CreateUnreachable();
   } else {
     B->CreateResume(B->CreateLoad(padType, tc.catchStore));
@@ -2912,7 +2902,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   // exception handling
   B->SetInsertPoint(tc.exceptionBlock);
   llvm::LandingPadInst *caughtResult = nullptr;
-  if (!DisableExceptions) {
+  if (!options->noexc) {
     caughtResult = B->CreateLandingPad(padType, catches.size());
     caughtResult->setCleanup(true);
   }
@@ -3008,7 +2998,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // rethrow if handling 'finally' after exception raised from 'except'/'else'
   B->SetInsertPoint(rethrowBlock);
-  if (!haveFinally || DisableExceptions) {
+  if (!haveFinally || options->noexc) {
     B->CreateUnreachable();
   } else {
     auto throwFunc = makeThrowFunc();
@@ -3381,7 +3371,7 @@ void LLVMVisitor::visit(const AwaitInstr *x) {
 }
 
 void LLVMVisitor::visit(const ThrowInstr *x) {
-  if (DisableExceptions) {
+  if (options->noexc) {
     B->SetInsertPoint(block);
     B->CreateUnreachable();
     block = llvm::BasicBlock::Create(*context, "throw_unreachable.new", func);

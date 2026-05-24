@@ -5,6 +5,7 @@
 #include <string>
 
 #include "codon/cir/llvm/llvm.h"
+#include "codon/compiler/options.h"
 
 namespace codon {
 namespace ir {
@@ -14,16 +15,17 @@ namespace ir {
 /// @param module Original LLVM module to patch with generated GPU artifacts.
 /// @param clone GPU-targeted module produced by prepareGPUmodule(); ownership is
 /// consumed.
+/// @param options Compiler options
 /// @param ptxFilename Filename for output PTX code; empty to derive it from the module.
-
 void applyGPUTransformations(llvm::Module *module, std::unique_ptr<llvm::Module> clone,
-                             const std::string &ptxFilename = "");
+                             Options *options, const std::string &ptxFilename = "");
 
 /// Creates a GPU-targeted clone of the given LLVM module.
 /// The cloned module is configured with the GPU target triple and data layout
 /// so it can go through the GPU-specific optimization pipeline.
 /// @param module LLVM module containing both host code and GPU kernel functions.
+/// @param options The compiler options
 /// @return A cloned module configured for GPU lowering.
-std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *module);
+std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *module, Options *options);
 } // namespace ir
 } // namespace codon

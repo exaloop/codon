@@ -182,6 +182,7 @@ set(CODON_HPPFILES
   codon/compiler/jit.h
   codon/compiler/jit_extern.h
   codon/compiler/memory_manager.h
+  codon/compiler/options.h
   codon/dsl/dsl.h
   codon/dsl/plugins.h
   codon/parser/ast.h
@@ -287,6 +288,7 @@ set(CODON_CPPFILES
   codon/compiler/error.cpp
   codon/compiler/jit.cpp
   codon/compiler/memory_manager.cpp
+  codon/compiler/options.cpp
   codon/dsl/plugins.cpp
   codon/parser/ast/expr.cpp
   codon/parser/ast/attr.cpp

@@ -262,11 +262,14 @@ public:
       bool pyNumerics = get<6>(GetParam());
       bool run = get<7>(GetParam());
 
-      auto compiler = std::make_unique<Compiler>(
-          argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
-          pyNumerics);
+      auto options = Options::getDefault(argv0);
+      options->test = true;
+      options->standalone = true;
+      options->debug = debug;
+      options->pynum = pyNumerics;
+
+      auto compiler = std::make_unique<Compiler>(*options);
       // make sure we abort() on runtime error
-      compiler->getLLVMVisitor()->setStandalone(true);
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),

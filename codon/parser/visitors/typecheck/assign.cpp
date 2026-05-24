@@ -4,6 +4,7 @@
 #include <tuple>
 
 #include "codon/cir/attribute.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
@@ -320,12 +321,13 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
 
   // Register all toplevel variables as global in JIT mode
   //   OR if they are in imported module (not toplevel)
-  bool isGlobal = (ctx->cache->isJit && val->isGlobal() && !val->isGeneric()) ||
+  bool isGlobal = (ctx->cache->compiler->getOptions()->jit && val->isGlobal() &&
+                   !val->isGeneric()) ||
                   (canonical == VAR_ARGV) || (canonical == VAR_ARGC) ||
                   (val->isGlobal() && val->getModule() != "");
   if (isGlobal && val->isVar()) {
     registerGlobal(canonical);
-    if (ctx->cache->isJit) {
+    if (ctx->cache->compiler->getOptions()->jit) {
       getImport(STDLIB_IMPORT)->ctx->addToplevel(getUnmangledName(val->getName()), val);
     }
   }

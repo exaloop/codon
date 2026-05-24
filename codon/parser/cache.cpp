@@ -9,6 +9,7 @@
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/translate/translate.h"
@@ -273,7 +274,7 @@ void Cache::populatePythonModule() {
 
   const std::string CYTHON_ITER = "_PyWrap.IterWrap";
 
-  if (!pythonExt)
+  if (!compiler->getOptions()->pyext)
     return;
   if (!pyModule)
     pyModule = std::make_shared<ir::PyModule>();

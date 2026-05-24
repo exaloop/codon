@@ -16,20 +16,6 @@ const std::string GPU_TRIPLE = "nvptx64-nvidia-cuda";
 const std::string GPU_DL =
     "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-"
     "f64:64:64-v16:16:16-v32:32:32-v64:64:64-v128:128:128-n16:32:64";
-llvm::cl::opt<std::string>
-    libdevice("libdevice", llvm::cl::desc("libdevice path for GPU kernels"),
-              llvm::cl::init("/usr/local/cuda/nvvm/libdevice/libdevice.10.bc"));
-llvm::cl::opt<std::string> ptxOutput("ptx",
-                                     llvm::cl::desc("Output PTX to specified file"));
-llvm::cl::opt<std::string> gpuName(
-    "gpu-name",
-    llvm::cl::desc(
-        "Target GPU architecture or compute capability (e.g. sm_70, sm_80, etc.)"),
-    llvm::cl::init("sm_30"));
-llvm::cl::opt<std::string> gpuFeatures(
-    "gpu-features",
-    llvm::cl::desc("GPU feature flags passed (e.g. +ptx42 to enable PTX 4.2 features)"),
-    llvm::cl::init("+ptx42"));
 
 // Adapted from LLVM's GVExtractorPass, which is not externally available
 // as a pass for the new pass manager.
@@ -756,7 +742,8 @@ llvm::Function *normalizeKernelReturnToVoid(llvm::Function *F) {
   return G;
 }
 
-std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels) {
+std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kernels,
+                        Options *options) {
   llvm::Triple triple(llvm::Triple::normalize(GPU_TRIPLE));
   llvm::TargetLibraryInfoImpl tlii(triple);
 
@@ -765,11 +752,11 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
       llvm::TargetRegistry::lookupTarget("nvptx64", triple, err);
   seqassertn(target, "couldn't lookup target: {}", err);
 
-  const llvm::TargetOptions options =
+  const llvm::TargetOptions topt =
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(triple);
 
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
-      triple.getTriple(), gpuName, gpuFeatures, options,
+      triple.getTriple(), options->gpuName, options->gpuFeat, topt,
       llvm::codegen::getExplicitRelocModel(), llvm::codegen::getExplicitCodeModel(),
       llvm::CodeGenOptLevel::Aggressive));
 
@@ -807,7 +794,7 @@ std::string moduleToPTX(llvm::Module *M, std::vector<llvm::GlobalValue *> &kerne
   prune(keep);
 
   // Link libdevice and other cleanup.
-  linkLibdevice(M, libdevice);
+  linkLibdevice(M, options->libdevice);
   remapFunctions(M);
 
   // Strip debug info and remove noinline from functions (added in debug mode).
@@ -945,7 +932,7 @@ void patchPTXVar(llvm::Module *M, llvm::GlobalValue *ptxVar,
 }
 } // namespace
 
-std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M) {
+std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M, Options *options) {
   bool hasKernels = false;
   for (auto &F : *M) {
     if (F.hasFnAttribute("kernel")) {
@@ -960,7 +947,7 @@ std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M) {
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
   clone->setDataLayout(GPU_DL);
-  if (isFastMathOn()) {
+  if (options->fastmath) {
     clone->addModuleFlag(llvm::Module::ModFlagBehavior::Override, "nvvm-reflect-ftz",
                          1);
   }
@@ -968,7 +955,7 @@ std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M) {
 }
 
 void applyGPUTransformations(llvm::Module *M, std::unique_ptr<llvm::Module> clone,
-                             const std::string &ptxFilename) {
+                             Options *options, const std::string &ptxFilename) {
   llvm::LLVMContext &context = M->getContext();
   llvm::NamedMDNode *nvvmAnno = clone->getOrInsertNamedMetadata("nvvm.annotations");
   std::vector<llvm::Function *> kernelCandidates;
@@ -998,12 +985,12 @@ void applyGPUTransformations(llvm::Module *M, std::unique_ptr<llvm::Module> clon
     return;
   }
 
-  auto ptx = moduleToPTX(clone.get(), kernels);
+  auto ptx = moduleToPTX(clone.get(), kernels, options);
   cleanUpIntrinsics(M);
 
-  if (ptxOutput.getNumOccurrences() > 0) {
+  if (!options->gpuOutput.empty()) {
     std::error_code err;
-    llvm::ToolOutputFile out(ptxOutput, err, llvm::sys::fs::OF_Text);
+    llvm::ToolOutputFile out(options->gpuOutput, err, llvm::sys::fs::OF_Text);
     seqassertn(!err, "Could not open file: {}", err.message());
     llvm::raw_ostream &os = out.os();
     os << ptx;

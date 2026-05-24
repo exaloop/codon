@@ -13,43 +13,16 @@
 extern double totalPeg;
 
 namespace codon {
-namespace {
-ir::transform::PassManager::Init getPassManagerInit(Compiler::Mode mode, bool isTest) {
-  using ir::transform::PassManager;
-  switch (mode) {
-  case Compiler::Mode::DEBUG:
-    return isTest ? PassManager::Init::RELEASE : PassManager::Init::DEBUG;
-  case Compiler::Mode::RELEASE:
-    return PassManager::Init::RELEASE;
-  case Compiler::Mode::JIT:
-    return PassManager::Init::JIT;
-  default:
-    return PassManager::Init::EMPTY;
-  }
-}
 
-llvm::cl::opt<bool>
-    UnorderedDict("unordered-dict",
-                  llvm::cl::desc("Use unordered dictionary implementation"),
-                  llvm::cl::init(false));
-} // namespace
-
-Compiler::Compiler(const std::string &argv0, Compiler::Mode mode,
-                   const std::vector<std::string> &disabledPasses, bool isTest,
-                   bool pyNumerics, bool pyExtension,
-                   const std::shared_ptr<ast::IFilesystem> &fs)
-    : argv0(argv0), debug(mode == Mode::DEBUG), pyNumerics(pyNumerics),
-      pyExtension(pyExtension), input(), plm(std::make_unique<PluginManager>(argv0)),
-      cache(std::make_unique<ast::Cache>(argv0, fs)),
+Compiler::Compiler(const Options &options, const std::shared_ptr<ast::IFilesystem> &fs)
+    : input(), options(std::make_unique<Options>(options)),
+      plm(std::make_unique<PluginManager>(options.argv0)),
+      cache(std::make_unique<ast::Cache>(options.argv0, fs)),
       module(std::make_unique<ir::Module>(cache.get())),
-      pm(std::make_unique<ir::transform::PassManager>(
-          getPassManagerInit(mode, isTest), disabledPasses, pyNumerics, pyExtension)),
-      llvisitor(std::make_unique<ir::LLVMVisitor>()) {
+      pm(std::make_unique<ir::transform::PassManager>(getOptions())),
+      llvisitor(std::make_unique<ir::LLVMVisitor>(getOptions())) {
   cache->module = module.get();
-  cache->pythonExt = pyExtension;
-  cache->pythonCompat = pyNumerics;
   cache->compiler = this;
-  llvisitor->setDebug(debug);
   llvisitor->setPluginManager(plm.get());
 }
 
@@ -68,7 +41,7 @@ llvm::Error Compiler::load(const std::string &plugin) {
   for (auto &kw : p->dsl->getBlockKeywords()) {
     cache->customBlockStmts[kw.keyword] = {kw.hasExpr, kw.callback};
   }
-  p->dsl->addIRPasses(pm.get(), debug);
+  p->dsl->addIRPasses(pm.get(), options->debug);
 
   loadedPlugins.insert(plugin);
 
@@ -168,7 +141,7 @@ llvm::Error Compiler::compile() {
 
 llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &files) {
   try {
-    auto j = ast::DocVisitor::apply(argv0, files);
+    auto j = ast::DocVisitor::apply(options->argv0, files);
     return j->toString();
   } catch (exc::ParserException &exc) {
     return llvm::make_error<error::ParserErrorInfo>(exc.getErrors());
@@ -177,10 +150,10 @@ llvm::Expected<std::string> Compiler::docgen(const std::vector<std::string> &fil
 
 std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
   std::unordered_map<std::string, std::string> earlyDefines;
-  earlyDefines.emplace("__debug__", debug ? "1" : "0");
-  earlyDefines.emplace("__py_numerics__", pyNumerics ? "1" : "0");
-  earlyDefines.emplace("__py_extension__", pyExtension ? "1" : "0");
-  earlyDefines.emplace("__dict_unordered__", UnorderedDict ? "1" : "0");
+  earlyDefines.emplace("__debug__", options->debug ? "1" : "0");
+  earlyDefines.emplace("__py_numerics__", options->pynum ? "1" : "0");
+  earlyDefines.emplace("__py_extension__", options->pyext ? "1" : "0");
+  earlyDefines.emplace("__dict_unordered__", options->unordereddict ? "1" : "0");
   earlyDefines.emplace("__apple__",
 #if __APPLE__
                        "1"

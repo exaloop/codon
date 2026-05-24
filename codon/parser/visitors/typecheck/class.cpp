@@ -4,6 +4,7 @@
 #include <tuple>
 
 #include "codon/cir/attribute.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
@@ -452,7 +453,8 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 
     // Mark parent classes as polymorphic as well.
     if (typeAst && !cachedCls->hasRTTI()) {
-      if (ctx->cache->isJit && cachedCls->jitCell != ctx->cache->jitCell)
+      if (ctx->cache->compiler->getOptions()->jit &&
+          cachedCls->jitCell != ctx->cache->jitCell)
         E(Error::CUSTOM, cls,
           "cannot inherit from a non-RTTI class defined in previous cell '{}' "
           "in JIT mode",

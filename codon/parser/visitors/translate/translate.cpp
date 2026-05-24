@@ -9,6 +9,7 @@
 
 #include "codon/cir/transform/parallel/schedule.h"
 #include "codon/cir/util/cloning.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
@@ -26,7 +27,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   ir::BodiedFunc *main = nullptr;
   auto none = cache->classes["NoneType"].realizations["NoneType"]->ir;
 
-  if (cache->isJit) {
+  if (cache->compiler->getOptions()->jit) {
     auto fnName = fmt::format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});

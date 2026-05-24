@@ -3,6 +3,7 @@
 #include <string>
 #include <tuple>
 
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
@@ -624,7 +625,7 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
   if (!b) {
     E(Error::STATIC_DIV_ZERO, ctx->getSrcInfo());
     return {0, 0};
-  } else if (ctx->cache->pythonCompat) {
+  } else if (ctx->cache->compiler->getOptions()->pynum) {
     // Use Python implementation.
     int64_t d = a / b;
     int64_t m = a - d * b;

@@ -244,7 +244,7 @@ void FoldingPass::registerStandardRules(Module *m) {
                intToIntBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("int-constant-subtraction",
                intToIntBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  if (pyNumerics) {
+  if (getOptions()->pynum) {
     registerRule("int-constant-floor-div",
                  intToIntBinaryNoZeroRHS(
                      m, [](auto x, auto y) -> auto { return pyDivmod(x, y).first; },
@@ -262,7 +262,7 @@ void FoldingPass::registerStandardRules(Module *m) {
   registerRule("int-constant-xor", intToIntBinary(m, BINOP(^), Module::XOR_MAGIC_NAME));
   registerRule("int-constant-or", intToIntBinary(m, BINOP(|), Module::OR_MAGIC_NAME));
   registerRule("int-constant-and", intToIntBinary(m, BINOP(&), Module::AND_MAGIC_NAME));
-  if (pyNumerics) {
+  if (getOptions()->pynum) {
     registerRule("int-constant-mod",
                  intToIntBinaryNoZeroRHS(
                      m, [](auto x, auto y) -> auto { return pyDivmod(x, y).second; },
@@ -309,7 +309,7 @@ void FoldingPass::registerStandardRules(Module *m) {
                floatToFloatBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("float-constant-subtraction",
                floatToFloatBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  if (pyNumerics) {
+  if (getOptions()->pynum) {
     registerRule("float-constant-floor-div",
                  floatToFloatBinaryNoZeroRHS(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME));
   } else {
@@ -342,9 +342,9 @@ void FoldingPass::registerStandardRules(Module *m) {
                intFloatToFloatBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("int-float-constant-subtraction",
                intFloatToFloatBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  registerRule(
-      "int-float-constant-floor-div",
-      intFloatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME, pyNumerics));
+  registerRule("int-float-constant-floor-div",
+               intFloatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME,
+                                     getOptions()->pynum));
   registerRule("int-float-constant-mul",
                intFloatToFloatBinary(m, BINOP(*), Module::MUL_MAGIC_NAME));
 

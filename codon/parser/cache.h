@@ -264,19 +264,12 @@ struct Cache {
                      std::function<Stmt *(ast::TypecheckVisitor *, ast::CustomStmt *)>>
       customExprStmts;
 
-  /// Set if the Codon is running in JIT mode.
-  bool isJit = false;
   int jitCell = 0;
 
   std::unordered_set<size_t> generatedTuples;
   std::unordered_map<std::string, int> generatedKwTuples;
   std::vector<std::vector<std::string>> generatedTupleNames = {{}};
   ParserErrors errors;
-
-  /// Set if Codon operates in Python compatibility mode (e.g., with Python numerics)
-  bool pythonCompat = false;
-  /// Set if Codon operates in Python extension mode
-  bool pythonExt = false;
 
 public:
   explicit Cache(std::string argv0 = "",
