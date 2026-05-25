@@ -154,7 +154,7 @@ void PassManager::invalidate(const std::string &key) {
 void PassManager::registerStandardPasses() {
   if (options->pmempty) {
     /* do nothing */
-  } else if (options->debug) {
+  } else if (options->debug && !options->test) {
     registerPass(std::make_unique<lowering::PipelineLowering>());
     registerPass(std::make_unique<lowering::ImperativeForFlowLowering>());
     registerPass(std::make_unique<lowering::AsyncForLowering>());
