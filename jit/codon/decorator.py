@@ -225,7 +225,7 @@ def convert(t):
     # PyObject_GetAttrString
     code += "    def __from_py__(p: cobj):\n"
     for i, slot in enumerate(slots):
-        code += "        a{} = T{}.__from_py__(PyObject_GetAttrString(p, '{}'.ptr))\n".format(
+        code += "        a{} = T{}.__from_py__(PyObject_GetAttrString(p, '{}'._ptr))\n".format(
             i, i, slot)
     code += "        return {}({})\n".format(
         name, ", ".join("a{}".format(i) for i in range(len(slots))))
