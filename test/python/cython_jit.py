@@ -1,6 +1,9 @@
 from typing import Dict, List, Tuple
+import gc
+import weakref
 import numpy as np
 import codon
+from codon.decorator import _reset_jit
 
 @codon.convert
 class Foo:
@@ -105,12 +108,101 @@ def test_error_handling():
     else:
         assert False
 
+def test_jitclass():
+    @codon.jitclass
+    class Point:
+        x: int
+        y: int
+
+        def __init__(self, x: int, y: int):
+            self.x = x
+            self.y = y
+
+        def total(self) -> int:
+            return self.x + self.y
+
+    p = Point(2, 3)
+    assert p.__codon_jitclass_proxy__ is not None
+    assert not p.__codon_jitclass_proxy__.closed
+    assert p.total() == 5
+    assert p.x == 2
+    assert p.y == 3
+    stale = Point(1, 2)
+
+    p.x = 10
+    p.y = 20
+    assert p.x == 10
+    assert p.y == 20
+    assert p.total() == 30
+
+    @codon.jit
+    def allocate_pressure(n: int) -> int:
+        acc = 0
+        for i in range(n):
+            values = [i, i + 1, i + 2, i + 3]
+            acc += values[0]
+        return acc
+
+    rooted = Point(7, 11)
+    assert allocate_pressure(4096) == sum(range(4096))
+    gc.collect()
+    assert rooted.total() == 18
+    rooted.close()
+
+    items = [Point(i, i + 1) for i in range(32)]
+    gc.collect()
+    assert sum(item.total() for item in items) == sum(2 * i + 1 for i in range(32))
+
+    temp = Point(13, 14)
+    temp_proxy = temp.__codon_jitclass_proxy__
+    temp_ref = weakref.ref(temp)
+    del temp
+    gc.collect()
+    assert temp_ref() is None
+    assert temp_proxy.closed
+
+    with Point(4, 5) as q:
+        assert q.total() == 9
+    assert q.__codon_jitclass_proxy__.closed
+    try:
+        q.total()
+    except codon.JITError:
+        pass
+    else:
+        assert False
+
+    p.close()
+    assert p.__codon_jitclass_proxy__.closed
+    p.close()
+    try:
+        p.x
+    except codon.JITError:
+        pass
+    else:
+        assert False
+
+    _reset_jit()
+    try:
+        stale.total()
+    except codon.JITError as e:
+        assert "stale JIT context" in str(e)
+    else:
+        assert False
+
+    @codon.jitclass
+    class Empty:
+        pass
+
+    e = Empty()
+    e.close()
+
 test_convertible()
 test_many()
 test_roundtrip()
 test_return_type()
 test_param_types()
 test_error_handling()
+test_jitclass()
 
 
 @codon.jit

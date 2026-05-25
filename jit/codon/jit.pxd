@@ -1,5 +1,6 @@
 # Copyright (C) 2022-2025 Exaloop Inc. <https://exaloop.io>
 
+from libc.stddef cimport size_t
 from libc.stdint cimport int32_t, uint8_t
 
 cdef extern from "codon/compiler/jit_extern.h":
@@ -19,4 +20,15 @@ cdef extern from "codon/compiler/jit_extern.h":
         void *jit, char *name, char **types, size_t types_size,
         char *pyModule, char **py_vars, size_t py_vars_size,
         void *arg, uint8_t debug
+    )
+    cdef CJITResult c_jitclass_new "jitclass_new"(
+        void *jit, char *class_name, char *native_class_name,
+        char **types, size_t types_size, void *args, uint8_t debug
+    )
+    cdef CJITResult c_jitclass_call "jitclass_call"(
+        void *jit, char *class_name, void *instance, char *method_name,
+        char **types, size_t types_size, void *args, uint8_t debug
+    )
+    cdef CJITResult c_jitclass_release "jitclass_release"(
+        void *instance
     )
