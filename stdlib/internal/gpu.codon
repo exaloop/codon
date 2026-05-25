@@ -808,7 +808,7 @@ class Dict:
 
             _ptr_from_gpu(self._indices, mem._indices, indices_size)
             _ptr_from_gpu(self._active, mem._active, active_bytes)
-            _ptr_from_gpu(self._entries, mem._entries, capacity, mem._is_active)
+            _ptr_from_gpu(self._entries, mem._entries, capacity, self._is_active)
 
     def __from_gpu_new__(other: Dict[K,V]):
         mem = _object_from_gpu(other)
