@@ -18,6 +18,8 @@ namespace {
 typedef int MainFunc(int, char **);
 typedef void InputFunc();
 typedef void *PyWrapperFunc(void *);
+typedef void *JITClassNewFunc(void *);
+typedef void *JITClassMethodFunc(void *, void *);
 
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
@@ -29,15 +31,38 @@ JIT::JIT(const std::string &argv0, const std::string &mode,
                                           /*isTest=*/false,
                                           /*pyNumerics=*/false, /*pyExtension=*/false)),
       engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      mode(mode), forgetful(false) {
+      jitClassData(std::make_unique<JITClassData>()), mode(mode), forgetful(false) {
   if (!stdlibRoot.empty())
     compiler->getCache()->fs->add_search_path(stdlibRoot);
   compiler->getLLVMVisitor()->setJIT(true);
 }
 
+JIT::JITClassRoot::JITClassRoot(void *ptr) : slot(std::make_unique<void *>(ptr)) {
+  seq_gc_add_roots(slot.get(), slot.get() + 1);
+}
+
+JIT::JITClassRoot::~JITClassRoot() {
+  if (slot)
+    seq_gc_remove_roots(slot.get(), slot.get() + 1);
+}
+
+JIT::JITClassRoot &JIT::JITClassRoot::operator=(JITClassRoot &&other) noexcept {
+  if (this != &other) {
+    if (slot)
+      seq_gc_remove_roots(slot.get(), slot.get() + 1);
+    slot = std::move(other.slot);
+  }
+  return *this;
+}
+
+JIT::JITClassInstance::JITClassInstance(std::string className,
+                                        std::string nativeClassName, void *nativePtr)
+    : className(std::move(className)), nativeClassName(std::move(nativeClassName)),
+      nativePtr(nativePtr), root(nativePtr) {}
+
 void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
-  if (cast<ast::FunctionStmt>(s) || cast<ast::ClassStmt>(s) ||
-      cast<ast::CommentStmt>(s))
+  if (ast::cast<ast::FunctionStmt>(s) || ast::cast<ast::ClassStmt>(s) ||
+      ast::cast<ast::CommentStmt>(s))
     return;
   if (auto ss = ast::cast<ast::SuiteStmt>(s)) {
     for (auto &si : *ss)
@@ -304,11 +329,77 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
 
   return wrap.str();
 }
+std::string buildJITClassKey(const std::string &kind,
+                             const std::string &nativeClassName,
+                             const std::vector<std::string> &types,
+                             const std::string &methodName = "") {
+  std::stringstream key;
+  key << kind << "|" << nativeClassName;
+  if (!methodName.empty())
+    key << "|" << methodName;
+  for (const auto &t : types)
+    key << "|" << t;
+  return key.str();
+}
+
+std::string buildJITClassNewWrapper(const std::string &nativeClassName,
+                                    const std::string &wrapname,
+                                    const std::vector<std::string> &types) {
+  std::stringstream wrap;
+  wrap << "from internal.python import PyTuple_GetItem\n";
+  wrap << "@export\n";
+  wrap << "def " << wrapname << "(args: cobj) -> cobj:\n";
+  for (unsigned i = 0; i < types.size(); i++) {
+    wrap << "    a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, "
+         << i << "))\n";
+  }
+  wrap << "    obj = " << nativeClassName << "(";
+  for (unsigned i = 0; i < types.size(); i++) {
+    if (i > 0)
+      wrap << ", ";
+    wrap << "a" << i;
+  }
+  wrap << ")\n";
+  wrap << "    return obj.__raw__()\n";
+  return wrap.str();
+}
+
+std::string buildJITClassMethodWrapper(const std::string &nativeClassName,
+                                       const std::string &methodName,
+                                       const std::string &wrapname,
+                                       const std::vector<std::string> &types) {
+  std::stringstream wrap;
+  wrap << "from internal.python import PyTuple_GetItem\n";
+  wrap << "@export\n";
+  wrap << "def " << wrapname << "(self_obj: cobj, args: cobj) -> cobj:\n";
+  wrap << "    self = type._force_cast(self_obj, " << nativeClassName << ")\n";
+  for (unsigned i = 0; i < types.size(); i++) {
+    wrap << "    a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, "
+         << i << "))\n";
+  }
+  wrap << "    return self." << methodName << "(";
+  for (unsigned i = 0; i < types.size(); i++) {
+    if (i > 0)
+      wrap << ", ";
+    wrap << "a" << i;
+  }
+  wrap << ").__to_py__()\n";
+  return wrap.str();
+}
 } // namespace
 
 JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
 
 ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
+  if (cobj)
+    return cobj;
+  cobj = M->getPointerType(M->getByteType());
+  return cobj;
+}
+
+JIT::JITClassData::JITClassData() : cobj(nullptr), ctorWrappers(), methodWrappers() {}
+
+ir::types::Type *JIT::JITClassData::getCObjType(ir::Module *M) {
   if (cobj)
     return cobj;
   cobj = M->getPointerType(M->getByteType());
@@ -374,6 +465,117 @@ JIT::JITResult JIT::executePython(const std::string &name,
   }
 }
 
+JIT::JITResult JIT::jitClassNew(const std::string &className,
+                                const std::string &nativeClassName,
+                                const std::vector<std::string> &types, void *args,
+                                bool debug) {
+  auto key = buildJITClassKey("new", nativeClassName, types);
+  auto &cache = jitClassData->ctorWrappers;
+  auto it = cache.find(key);
+  JITClassNewFunc *wrap;
+
+  if (it != cache.end()) {
+    const std::string name = ir::LLVMVisitor::getNameForFunction(it->second);
+    auto func = llvm::cantFail(engine->lookup(name));
+    wrap = func.toPtr<JITClassNewFunc>();
+  } else {
+    auto idx = cache.size();
+    auto wrapname = "__codon_jitclass_new_" + std::to_string(idx);
+    auto wrapper = buildJITClassNewWrapper(nativeClassName, wrapname, types);
+    if (debug)
+      fmt::print(stderr, "[codon::jit::jitClassNew] wrapper:\n{}-----\n", wrapper);
+    if (auto err = compile(wrapper).takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+
+    auto *M = compiler->getModule();
+    auto *func = M->getOrRealizeFunc(wrapname, {jitClassData->getCObjType(M)});
+    seqassertn(func, "could not access jitclass constructor wrapper '{}'", wrapname);
+    cache.emplace(key, func);
+
+    auto result = address(func);
+    if (auto err = result.takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+    wrap = (JITClassNewFunc *)result.get();
+  }
+
+  try {
+    auto *nativePtr = (*wrap)(args);
+    auto *instance = new JITClassInstance(className, nativeClassName, nativePtr);
+    return JITResult::success(instance);
+  } catch (const runtime::JITError &e) {
+    auto err = handleJITError(e);
+    auto errorInfo = llvm::toString(std::move(err));
+    return JITResult::error(errorInfo);
+  }
+}
+
+JIT::JITResult JIT::jitClassCall(const std::string &className,
+                                 JITClassInstance *instance,
+                                 const std::string &methodName,
+                                 const std::vector<std::string> &types, void *args,
+                                 bool debug) {
+  if (!instance)
+    return JITResult::error("jitclass object has been released");
+  if (instance->className != className)
+    return JITResult::error(
+        fmt::format("jitclass instance has type '{}', expected '{}'",
+                    instance->className, className));
+
+  auto key = buildJITClassKey("method", instance->nativeClassName, types, methodName);
+  auto &cache = jitClassData->methodWrappers;
+  auto it = cache.find(key);
+  JITClassMethodFunc *wrap;
+
+  if (it != cache.end()) {
+    const std::string name = ir::LLVMVisitor::getNameForFunction(it->second);
+    auto func = llvm::cantFail(engine->lookup(name));
+    wrap = func.toPtr<JITClassMethodFunc>();
+  } else {
+    auto idx = cache.size();
+    auto wrapname = "__codon_jitclass_method_" + std::to_string(idx);
+    auto wrapper = buildJITClassMethodWrapper(instance->nativeClassName, methodName,
+                                              wrapname, types);
+    if (debug)
+      fmt::print(stderr, "[codon::jit::jitClassCall] wrapper:\n{}-----\n", wrapper);
+    if (auto err = compile(wrapper).takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+
+    auto *M = compiler->getModule();
+    auto *cobj = jitClassData->getCObjType(M);
+    auto *func = M->getOrRealizeFunc(wrapname, {cobj, cobj});
+    seqassertn(func, "could not access jitclass method wrapper '{}'", wrapname);
+    cache.emplace(key, func);
+
+    auto result = address(func);
+    if (auto err = result.takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+    wrap = (JITClassMethodFunc *)result.get();
+  }
+
+  try {
+    auto *ans = (*wrap)(instance->nativePtr, args);
+    return JITResult::success(ans);
+  } catch (const runtime::JITError &e) {
+    auto err = handleJITError(e);
+    auto errorInfo = llvm::toString(std::move(err));
+    return JITResult::error(errorInfo);
+  }
+}
+
+JIT::JITResult JIT::jitClassRelease(JITClassInstance *instance) {
+  // Deleting the control block also removes the RAII GC root.
+  delete instance;
+  return JITResult::success();
+}
+
 } // namespace jit
 } // namespace codon
 
@@ -409,6 +611,47 @@ CJITResult jit_execute_safe(void *jit, char *code, char *file, int32_t line,
                             uint8_t debug) {
   auto t = ((codon::jit::JIT *)jit)
                ->executeSafe(std::string(code), std::string(file), line, bool(debug));
+  void *result = t.result;
+  char *message =
+      t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
+  return {result, message};
+}
+
+CJITResult jitclass_new(void *jit, char *class_name, char *native_class_name,
+                        char **types, size_t types_size, void *args, uint8_t debug) {
+  std::vector<std::string> cppTypes;
+  cppTypes.reserve(types_size);
+  for (size_t i = 0; i < types_size; i++)
+    cppTypes.emplace_back(types[i]);
+  auto t = ((codon::jit::JIT *)jit)
+               ->jitClassNew(std::string(class_name), std::string(native_class_name),
+                             cppTypes, args, bool(debug));
+  void *result = t.result;
+  char *message =
+      t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
+  return {result, message};
+}
+
+CJITResult jitclass_call(void *jit, char *class_name, void *instance, char *method_name,
+                         char **types, size_t types_size, void *args, uint8_t debug) {
+  std::vector<std::string> cppTypes;
+  cppTypes.reserve(types_size);
+  for (size_t i = 0; i < types_size; i++)
+    cppTypes.emplace_back(types[i]);
+  auto t =
+      ((codon::jit::JIT *)jit)
+          ->jitClassCall(std::string(class_name),
+                         static_cast<codon::jit::JIT::JITClassInstance *>(instance),
+                         std::string(method_name), cppTypes, args, bool(debug));
+  void *result = t.result;
+  char *message =
+      t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
+  return {result, message};
+}
+
+CJITResult jitclass_release(void *instance) {
+  auto t = codon::jit::JIT::jitClassRelease(
+      static_cast<codon::jit::JIT::JITClassInstance *>(instance));
   void *result = t.result;
   char *message =
       t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
