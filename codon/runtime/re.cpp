@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-using Regex = re2::RE2;
 using re2::StringPiece;
 
 /*
@@ -63,11 +62,6 @@ static inline Regex::Options flags2opt(seq_int_t flags) {
 /*
  * Internal helpers & utilities
  */
-
-struct Span {
-  seq_int_t start;
-  seq_int_t end;
-};
 
 template <typename KV> struct GCMapAllocator : public std::allocator<KV> {
   GCMapAllocator() = default;
