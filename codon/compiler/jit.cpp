@@ -4,6 +4,9 @@
 
 #include <sstream>
 
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
+
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -374,11 +377,82 @@ JIT::JITResult JIT::executePython(const std::string &name,
   }
 }
 
+namespace {
+
+#ifdef __APPLE__
+constexpr const char *kCodonRTBaseName = "libcodonrt.dylib";
+#else
+constexpr const char *kCodonRTBaseName = "libcodonrt.so";
+#endif
+
+} // namespace
+
+// Locate the absolute path of the Codon runtime shared library
+// (libcodonrt.so / .dylib). Tries, in order:
+//   1. <library_path()>/../<RT>     (libcodonrt sits next to libcodonc)
+//   2. <library_path()>/<RT>
+//   3. $CODON_DIR/lib/codon/<RT>
+//   4. bare soname (let the dynamic linker resolve it)
+// Returns canonicalized path on success; bare soname on failure.
+std::string findCodonRuntime() {
+  std::vector<std::string> candidates;
+
+  const std::string libcodonc = codon::ast::library_path();
+  if (!libcodonc.empty()) {
+    auto dir = llvm::sys::path::parent_path(libcodonc);
+    if (!dir.empty()) {
+      llvm::SmallString<256> p1(dir);
+      llvm::sys::path::append(p1, kCodonRTBaseName);
+      candidates.emplace_back(p1.str());
+
+      llvm::SmallString<256> p2(dir);
+      llvm::sys::path::append(p2, "..", "lib", "codon", kCodonRTBaseName);
+      candidates.emplace_back(p2.str());
+    }
+  }
+
+  if (const char *codonDir = std::getenv("CODON_DIR")) {
+    llvm::SmallString<256> p(codonDir);
+    llvm::sys::path::append(p, "lib", "codon", kCodonRTBaseName);
+    candidates.emplace_back(p.str());
+  }
+
+  for (const auto &c : candidates) {
+    if (!llvm::sys::fs::exists(c))
+      continue;
+    // Canonicalize to prevent the dynamic linker from treating two different
+    // paths to the same physical file as distinct shared objects (which would
+    // otherwise cause the runtime / Boehm GC to be loaded twice).
+    llvm::SmallString<256> real;
+    if (!llvm::sys::fs::real_path(c, real))
+      return std::string(real.str());
+    return c;
+  }
+
+  // Last resort: bare soname; rely on RUNPATH / LD_LIBRARY_PATH / ldconfig.
+  return std::string(kCodonRTBaseName);
+}
+
 } // namespace jit
 } // namespace codon
 
 void *jit_init(char *name) {
   auto jit = new codon::jit::JIT(std::string(name));
+
+  // Register libcodonrt so the JIT can resolve runtime symbols
+  // (seq_*, GC_*, ...) without requiring RTLD_GLOBAL on the Python
+  // extension. Failure here is fatal: without the runtime the JIT cannot
+  // link any compiled code.
+  const std::string rt = codon::jit::findCodonRuntime();
+  if (auto err = jit->getEngine()->addDynamicLibrary(rt)) {
+    auto info = llvm::toString(std::move(err));
+    llvm::report_fatal_error(
+        llvm::StringRef("cannot load codon runtime '" + rt + "': " + info),
+        /*gen_crash_diag=*/false);
+  }
+  if (std::getenv("CODON_JIT_DEBUG"))
+    fmt::print(stderr, "[codon::jit] loaded runtime: {}\n", rt);
+
   llvm::cantFail(jit->init());
   return jit;
 }
