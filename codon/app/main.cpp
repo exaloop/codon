@@ -168,6 +168,7 @@ std::unique_ptr<codon::Compiler> processSource(
   llvm::cl::ParseCommandLineOptions(args.size(), args.data());
   auto options = codon::Options::getFromCommandLine(args[0]);
   options->standalone = standalone;
+  options->pyext = pyExtension();
   initLogFlags(options->log);
 
   std::unordered_map<std::string, std::string> defmap;
