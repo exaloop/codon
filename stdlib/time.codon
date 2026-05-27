@@ -220,9 +220,9 @@ def _muldiv(ticks: int, mul: int, div: int) -> int:
 def _round_half_even(x: float) -> float:
     from math import fabs
 
-    rounded = x.__round__()
+    rounded = x._round()
     if fabs(x - rounded) == 0.5:
-        rounded = 2.0 * (x / 2.0).__round__()
+        rounded = 2.0 * (x / 2.0)._round()
     return rounded
 
 def _round(x: float, mode: int) -> float:

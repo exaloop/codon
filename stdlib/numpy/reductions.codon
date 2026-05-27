@@ -1293,7 +1293,7 @@ class MeanRedux:
         self.total += item
 
     def result(self, count: int):
-        return self.total / T(count) if count else _nan(T)
+        return _divide(self.total, T(count)) if count else _nan(T)
 
     def empty(**kwargs):
         pass
@@ -1308,7 +1308,7 @@ class MeanRedux:
         return curr + util.cast(item, T)
 
     def gradual_result(self, curr, count: int):
-        return curr / T(count) if count else _nan(T)
+        return _divide(curr, T(count)) if count else _nan(T)
 
     def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         self.total += SumRedux[T]._loop(a, n, stride, S)
@@ -1333,7 +1333,7 @@ class NanMeanRedux:
 
     def result(self, count: int):
         count -= self.nan_count
-        return self.total / T(count) if count else _nan(T)
+        return _divide(self.total, T(count)) if count else _nan(T)
 
     def empty(**kwargs):
         pass
@@ -1816,9 +1816,9 @@ def nanmean(
     )
 
 def _divide(a: T, b: T, T: type):
-    if (isinstance(a, Int) or isinstance(a, UInt) or
-        isinstance(a, float) or isinstance(a, float32) or
-        isinstance(a, float16)):
+    if util.isint(T):
+        return float(a).cdiv(float(b))
+    elif util.isinexact(T):
         return a.cdiv(b)
     else:
         return a / b
@@ -2132,7 +2132,7 @@ def _median_reducer_no_nan(v: Ptr[T], s: int, n: int, dtype: type, T: type,
         elif T is complex64:
             return (m1 + m2) / float32(2.0)
         else:
-            return (util.cast(m1, float) + util.cast(m2, float)) / 2.0
+            return (util.cast(m1, float) + util.cast(m2, float)).cdiv(2.)
     else:
         if T is complex or T is complex64:
             return m1

@@ -245,9 +245,16 @@ def reversed(x):
 
     return _rev(x)
 
-def round(x, n=0):
-    nx = float.__pow__(10.0, n)
-    return float.__round__(x * nx) / nx
+def round(x, ndigits=None):
+    if not hasattr(x, "__round__"):
+        compile_error("type " + type(x).__name__ + " doesn't define __round__ method")
+
+    if ndigits is None:
+        return x.__round__()
+    else:
+        if not isinstance(ndigits, int):
+            compile_error("'ndigits' argument must be an int or None")
+        return x.__round__(ndigits)
 
 def sum(x, start=0):
     if ((isinstance(x, List[int]) and isinstance(start, int)) or

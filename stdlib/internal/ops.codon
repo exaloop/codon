@@ -710,6 +710,7 @@ class Int:
         return x >= y
 
     @commutative
+    @commutative
     def __add__(self, b: UInt):
         x, y = _unify(self, b)
         return x + y

@@ -400,9 +400,9 @@ def _utc_to_seconds(
 def _round_half_even(x: float) -> float:
     from math import fabs
 
-    rounded = x.__round__()
+    rounded = x._round()
     if fabs(x - rounded) == 0.5:
-        rounded = 2.0 * (x / 2.0).__round__()
+        rounded = 2.0 * (x / 2.0)._round()
     return rounded
 
 ################
@@ -465,10 +465,10 @@ class timedelta:
         if leftover:
             from math import fabs
 
-            whole_us = leftover.__round__()
+            whole_us = leftover._round()
             if fabs(whole_us - leftover) == 0.5:
                 is_odd = us & 1
-                whole_us = 2.0 * ((leftover + is_odd) * 0.5).__round__() - is_odd
+                whole_us = 2.0 * ((leftover + is_odd) * 0.5)._round() - is_odd
             us += int(whole_us)
 
         return timedelta._new(us)

@@ -73,10 +73,10 @@ class BitGenerator[G]:
             return self.state.next_double()
         else:
             r = self.next64()
-            return uitofp(r >> u64(11), float) * (1.0 / 9007199254740992.0)
+            return uitofp(r >> u64(11), float) * ((1.0).cdiv(9007199254740992.0))
 
     def next_float(self):
-        return uitofp(self.next32() >> u32(8), float32) * (float32(1.0) / float32(16777216.0))
+        return uitofp(self.next32() >> u32(8), float32) * (float32(1.0).cdiv(float32(16777216.0)))
 
     def jumped(self, jumps: int):
         if not hasattr(self.state, "jump_inplace"):
@@ -219,17 +219,17 @@ class BitGenerator[G]:
                 U = self.next_double()
                 V = self.random_standard_exponential()
                 if U < 1.0 - shape:
-                    X = pow(U, 1. / shape)
+                    X = pow(U, (1.).cdiv(shape))
                     if X <= V:
                         return X
                 else:
-                    Y = -log((1. - U) / shape)
-                    X = pow(1.0 - shape + shape * Y, 1. / shape)
+                    Y = -log((1. - U).cdiv(shape))
+                    X = pow(1.0 - shape + shape * Y, (1.).cdiv(shape))
                     if X <= V + Y:
                         return X
         else:
-            b = shape - 1. / 3.
-            c = 1. / sqrt(9 * b)
+            b = shape - ((1.).cdiv(3.))
+            c = (1.).cdiv(sqrt(9 * b))
             while True:
                 while True:
                     X = self.random_standard_normal()
@@ -254,17 +254,17 @@ class BitGenerator[G]:
                 U = self.next_float()
                 V = self.random_standard_exponential_f()
                 if U < f32(1.0) - shape:
-                    X = pow(U, f32(1.) / shape)
+                    X = pow(U, f32(1.).cdiv(shape))
                     if X <= V:
                         return X
                 else:
-                    Y = -log((f32(1.) - U) / shape)
-                    X = pow(f32(1.0) - shape + shape * Y, f32(1.) / shape)
+                    Y = -log((f32(1.) - U).cdiv(shape))
+                    X = pow(f32(1.0) - shape + shape * Y, f32(1.).cdiv(shape))
                     if X <= V + Y:
                         return X
         else:
-            b = shape - f32(1.) / f32(3.)
-            c = f32(1.) / sqrt(f32(9.) * b)
+            b = shape - f32(1.).cdiv(f32(3.))
+            c = f32(1.).cdiv(sqrt(f32(9.) * b))
             while True:
                 while True:
                     X = self.random_standard_normal_f()
@@ -308,7 +308,7 @@ class BitGenerator[G]:
         else:
             n = 0
         x0 = x + n
-        x2 = (1.0 / x0) * (1.0 / x0)
+        x2 = ((1.).cdiv(x0)) * ((1.).cdiv(x0))
         lg2pi = 1.8378770664093453e+00
         gl0 = a(9)
         k = 8
@@ -316,7 +316,7 @@ class BitGenerator[G]:
             gl0 *= x2
             gl0 += a(k)
             k -= 1
-        gl = gl0 / x0 + 0.5 * lg2pi + (x0 - 0.5) * log(x0) - x0
+        gl = gl0.cdiv(x0) + 0.5 * lg2pi + (x0 - 0.5) * log(x0) - x0
         if x < 7.0:
             k = 1
             while k <= n:
@@ -345,16 +345,16 @@ class BitGenerator[G]:
             while True:
                 U = self.next_double()
                 V = self.next_double()
-                X = pow(U, 1.0 / a)
-                Y = pow(V, 1.0 / b)
+                X = pow(U, (1.).cdiv(a))
+                Y = pow(V, (1.).cdiv(b))
                 XpY = X + Y
 
                 if XpY <= 1.0 and XpY > 0.0:
                     if X + Y > 0:
-                        return X / XpY
+                        return X.cdiv(XpY)
                     else:
-                        logX = log(U) / a
-                        logY = log(V) / b
+                        logX = log(U).cdiv(a)
+                        logY = log(V).cdiv(b)
                         logM = logX if logX > logY else logY
                         logX -= logM
                         logY -= logM
@@ -363,27 +363,27 @@ class BitGenerator[G]:
         else:
             Ga = self.random_standard_gamma(a)
             Gb = self.random_standard_gamma(b)
-            return Ga / (Ga + Gb)
+            return Ga.cdiv(Ga + Gb)
 
     def random_chisquare(self, df: float):
-        return 2.0 * self.random_standard_gamma(df / 2.0)
+        return 2.0 * self.random_standard_gamma(df.cdiv(2.))
 
     def random_f(self, dfnum: float, dfden: float):
-        return (self.random_chisquare(dfnum) * dfden) / (self.random_chisquare(dfden) * dfnum)
+        return (self.random_chisquare(dfnum) * dfden).cdiv(self.random_chisquare(dfden) * dfnum)
 
     def random_standard_cauchy(self):
-        return self.random_standard_normal() / self.random_standard_normal()
+        return (self.random_standard_normal()).cdiv(self.random_standard_normal())
 
     def random_pareto(self, a: float):
-        return expm1(self.random_standard_exponential() / a)
+        return expm1(self.random_standard_exponential().cdiv(a))
 
     def random_weibull(self, a: float):
         if a == 0.0:
             return 0.0
-        return pow(self.random_standard_exponential(), 1. / a)
+        return pow(self.random_standard_exponential(), (1.).cdiv(a))
 
     def random_power(self, a: float):
-        return pow(-expm1(-self.random_standard_exponential()), 1. / a)
+        return pow(-expm1(-self.random_standard_exponential()), (1.).cdiv(a))
 
     def random_laplace(self, loc: float, scale: float):
         U = self.next_double()
@@ -404,7 +404,7 @@ class BitGenerator[G]:
     def random_logistic(self, loc: float, scale: float):
         U = self.next_double()
         if U > 0.0:
-            return loc + scale * log(U / (1.0 - U))
+            return loc + scale * log(U.cdiv(1.0 - U))
         return self.random_logistic(loc, scale)
 
     def random_lognormal(self, mean: float, sigma: float):
@@ -415,8 +415,8 @@ class BitGenerator[G]:
 
     def random_standard_t(self, df: float):
         num = self.random_standard_normal()
-        denom = self.random_standard_gamma(df / 2)
-        return sqrt(df / 2) * num / sqrt(denom)
+        denom = self.random_standard_gamma(df.cdiv(2.))
+        return (sqrt(df.cdiv(2.)) * num).cdiv(sqrt(denom))
 
     def random_poisson_mult(self, lam: float):
         enlam = exp(-lam)
@@ -438,19 +438,19 @@ class BitGenerator[G]:
         loglam = log(lam)
         b = 0.931 + 2.53 * slam
         a = -0.059 + 0.02483 * b
-        invalpha = 1.1239 + 1.1328 / (b - 3.4)
-        vr = 0.9277 - 3.6224 / (b - 2)
+        invalpha = 1.1239 + (1.1328).cdiv(b - 3.4)
+        vr = 0.9277 - (3.6224).cdiv(b - 2)
 
         while True:
             U = self.next_double() - 0.5
             V = self.next_double()
             us = 0.5 - fabs(U)
-            k = int(floor((2 * a / us + b) * U + lam + 0.43))
+            k = int(floor(((2 * a).cdiv(us) + b) * U + lam + 0.43))
             if us >= 0.07 and V <= vr:
                 return k
             if k < 0 or (us < 0.013 and V > us):
                 continue
-            if ((log(V) + log(invalpha) - log(a / (us * us) + b)) <=
+            if ((log(V) + log(invalpha) - log(a.cdiv(us * us) + b)) <=
                 (-lam + k * loglam - BitGenerator.random_loggam(k + 1))):
                 return k
 
@@ -463,7 +463,7 @@ class BitGenerator[G]:
             return self.random_poisson_mult(lam)
 
     def random_negative_binomial(self, n: float, p: float):
-        Y = self.random_gamma(n, (1 - p) / p)
+        Y = self.random_gamma(n, (1 - p).cdiv(p))
         return self.random_poisson(Y)
 
     def random_binomial_btpe(self, n: int, p: float):
@@ -497,7 +497,7 @@ class BitGenerator[G]:
             xm = m + 0.5
             xl = xm - p1
             xr = xm + p1
-            c = 0.134 + 20.5 / (15.3 + m)
+            c = 0.134 + (20.5).cdiv(15.3 + m)
 
             b.r = r
             b.q = q
@@ -509,16 +509,16 @@ class BitGenerator[G]:
             b.xr = xr
             b.c = c
 
-            a = (fm - xl) / (fm - xl * r)
-            laml = a * (1.0 + a / 2.0)
+            a = (fm - xl).cdiv(fm - xl * r)
+            laml = a * (1.0 + a.cdiv(2.))
             b.laml = laml
-            a = (xr - fm) / (xr * q)
-            lamr = a * (1.0 + a / 2.0)
+            a = (xr - fm).cdiv(xr * q)
+            lamr = a * (1.0 + a.cdiv(2.))
             b.lamr = lamr
 
             p2 = p1 * (1.0 + 2.0 * c)
-            p3 = p2 + c / laml
-            p4 = p3 + c / lamr
+            p3 = p2 + c.cdiv(laml)
+            p4 = p3 + c.cdiv(lamr)
 
             b.p2 = p2
             b.p3 = p3
@@ -600,8 +600,8 @@ class BitGenerator[G]:
             if u > p2:
                 return step30(step10, step20, step30, step40,
                               step50, step52, step60, args, self, n, p)
-            x = xl + (u - p1) / c
-            v = v * c + 1.0 - fabs(m - x + 0.5) / p1
+            x = xl + (u - p1).cdiv(c)
+            v = v * c + 1.0 - fabs(m - x + 0.5).cdiv(p1)
             if v > 1.0:
                 args = (r, q, fm, p1, xm, xl, xr, c, laml,
                         lamr, p2, p3, p4, m, a, u, v, s, F,
@@ -627,7 +627,7 @@ class BitGenerator[G]:
             if u > p3:
                 return step40(step10, step20, step30, step40,
                               step50, step52, step60, args, self, n, p)
-            y = int(floor(xl + log(v) / laml))
+            y = int(floor(xl + log(v).cdiv(laml)))
             if y < 0 or v == 0.0:
                 args = (r, q, fm, p1, xm, xl, xr, c, laml,
                         lamr, p2, p3, p4, m, a, u, v, s, F,
@@ -650,7 +650,7 @@ class BitGenerator[G]:
             rho, t, A, nrq, x1, x2, f1, f2, z, \
             z2, w, w2, x, y, k, i = args
 
-            y = int(floor(xr - log(v) / lamr))
+            y = int(floor(xr - log(v).cdiv(lamr)))
             if y > n or v == 0.0:
                 args = (r, q, fm, p1, xm, xl, xr, c, laml,
                         lamr, p2, p3, p4, m, a, u, v, s, F,
@@ -674,7 +674,7 @@ class BitGenerator[G]:
             z2, w, w2, x, y, k, i = args
 
             k = abs(y - m)
-            if k > 20 and k < (nrq / 2.0 - 1):
+            if k > 20 and k < (nrq.cdiv(2.) - 1):
                 args = (r, q, fm, p1, xm, xl, xr, c, laml,
                         lamr, p2, p3, p4, m, a, u, v, s, F,
                         rho, t, A, nrq, x1, x2, f1, f2, z,
@@ -682,15 +682,15 @@ class BitGenerator[G]:
                 return step52(step10, step20, step30, step40,
                               step50, step52, step60, args, self, n, p)
 
-            s = r / q
+            s = r.cdiv(q)
             a = s * (n + 1)
             F = 1.0
             if m < y:
                 for i in range(m + 1, y + 1):
-                    F *= (a / i - s)
+                    F *= (a.cdiv(float(i)) - s)
             elif m > y:
                 for i in range(y + 1, m + 1):
-                    F /= (a / i - s)
+                    F = F.cdiv(a.cdiv(float(i)) - s)
 
             args = (r, q, fm, p1, xm, xl, xr, c, laml,
                     lamr, p2, p3, p4, m, a, u, v, s, F,
@@ -710,8 +710,8 @@ class BitGenerator[G]:
             z2, w, w2, x, y, k, i = args
 
             rho = \
-                  (k / (nrq)) * ((k * (k / 3.0 + 0.625) + 0.16666666666666666) / nrq + 0.5)
-            t = -k * k / (2 * nrq)
+                  float(k).cdiv(nrq) * ((k * (float(k).cdiv(3.) + 0.625) + 0.16666666666666666).cdiv(nrq) + 0.5)
+            t = float(-k * k).cdiv(2 * nrq)
             A = log(v)
             if A < t - rho:
                 args = (r, q, fm, p1, xm, xl, xr, c, laml,
@@ -740,16 +740,41 @@ class BitGenerator[G]:
                     lamr, p2, p3, p4, m, a, u, v, s, F,
                     rho, t, A, nrq, x1, x2, f1, f2, z,
                     z2, w, w2, x, y, k, i)
-            if (A > (xm * log(f1 / x1) + (n - m + 0.5) * log(z / w) +
-                    (y - m) * log(w * r / (x1 * q)) +
-                    (13680. - (462. - (132. - (99. - 140. / f2) / f2) / f2) / f2) / f1 /
-                        166320. +
-                    (13680. - (462. - (132. - (99. - 140. / z2) / z2) / z2) / z2) / z /
-                        166320. +
-                    (13680. - (462. - (132. - (99. - 140. / x2) / x2) / x2) / x2) / x1 /
-                        166320. +
-                    (13680. - (462. - (132. - (99. - 140. / w2) / w2) / w2) / w2) / w /
-                        166320.)):
+
+            if (A > (
+                    float(xm) * log(float(f1).cdiv(float(x1))) +
+                    (float(n) - float(m) + 0.5) * log(float(z).cdiv(float(w))) +
+                    (float(y) - float(m)) *
+                        log((float(w) * float(r)).cdiv(float(x1) * float(q))) +
+                    (13680. -
+                     (462. -
+                      (132. -
+                       (99. - (140.).cdiv(float(f2))).cdiv(float(f2))
+                      ).cdiv(float(f2))
+                     ).cdiv(float(f2))
+                    ).cdiv(float(f1)).cdiv(166320.) +
+                    (13680. -
+                     (462. -
+                      (132. -
+                       (99. - (140.).cdiv(float(z2))).cdiv(float(z2))
+                      ).cdiv(float(z2))
+                     ).cdiv(float(z2))
+                    ).cdiv(float(z)).cdiv(166320.) +
+                    (13680. -
+                     (462. -
+                      (132. -
+                       (99. - (140.).cdiv(float(x2))).cdiv(float(x2))
+                      ).cdiv(float(x2))
+                     ).cdiv(float(x2))
+                    ).cdiv(float(x1)).cdiv(166320.) +
+                    (13680. -
+                     (462. -
+                      (132. -
+                       (99. - (140.).cdiv(float(w2))).cdiv(float(w2))
+                      ).cdiv(float(w2))
+                     ).cdiv(float(w2))
+                    ).cdiv(float(w)).cdiv(166320.)
+            )):
                 return step10(step10, step20, step30, step40,
                               step50, step52, step60, args, self, n, p)
             return step60(step10, step20, step30, step40,
@@ -811,7 +836,7 @@ class BitGenerator[G]:
                 U = self.next_double()
             else:
                 U -= px
-                px = ((n - X + 1) * p * px) / (X * q)
+                px = ((n - X + 1) * p * px).cdiv(X * q)
         return X
 
     def random_binomial(self, p: float, n: int):
@@ -840,23 +865,23 @@ class BitGenerator[G]:
             n = self.random_standard_normal() + sqrt(nonc)
             return Chi2 + n * n
         else:
-            i = self.random_poisson(nonc / 2.0)
+            i = self.random_poisson(nonc.cdiv(2.))
             return self.random_chisquare(df + 2 * i)
 
     def random_noncentral_f(self, dfnum: float, dfden: float, nonc: float):
         t = self.random_noncentral_chisquare(dfnum, nonc) * dfden
-        return t / (self.random_chisquare(dfden) * dfnum)
+        return t.cdiv(self.random_chisquare(dfden) * dfnum)
 
     def random_wald(self, mean: float, scale: float):
-        mu_2l = mean / (2 * scale)
+        mu_2l = mean.cdiv(2 * scale)
         Y = self.random_standard_normal()
         Y = mean * Y * Y
         X = mean + mu_2l * (Y - sqrt(4 * scale * Y + Y * Y))
         U = self.next_double()
-        if U <= mean / (mean + X):
+        if U <= mean.cdiv(mean + X):
             return X
         else:
-            return mean * mean / X
+            return (mean * mean).cdiv(X)
 
     def random_vonmises(self, mu: float, kappa: float):
         if isnan(kappa):
@@ -867,14 +892,14 @@ class BitGenerator[G]:
             return PI * (2 * self.next_double() - 1)
         else:
             if kappa < 1e-5:
-                s = 1. / kappa + kappa
+                s = (1.).cdiv(kappa) + kappa
             else:
                 if kappa < 1e6:
                     r = 1 + sqrt(1 + 4 * kappa * kappa)
-                    rho = (r - sqrt(2 * r)) / (2 * kappa)
-                    s = (1 + rho * rho) / (2 * rho)
+                    rho = (r - sqrt(2 * r)).cdiv(2 * kappa)
+                    s = (1 + rho * rho).cdiv(2 * rho)
                 else:
-                    result = mu + sqrt(1. / kappa) + self.random_standard_normal()
+                    result = mu + sqrt((1.).cdiv(kappa)) + self.random_standard_normal()
                     if result < -PI:
                         result += 2*PI
                     if result > PI:
@@ -884,11 +909,11 @@ class BitGenerator[G]:
             while True:
                 U = self.next_double()
                 Z = cos(PI * U)
-                W = (1 + s * Z) / (s + Z)
+                W = (1 + s * Z).cdiv(s + Z)
                 Y = kappa * (s - W)
                 V = self.next_double()
 
-                if (Y * (2 - Y) - V >= 0) or (log(Y / V) + 1 - Y >= 0):
+                if (Y * (2 - Y) - V >= 0) or (log(Y.cdiv(V)) + 1 - Y >= 0):
                     break
 
             U = self.next_double()
@@ -915,7 +940,7 @@ class BitGenerator[G]:
             U = self.next_double()
             q = -expm1(r * U)
             if V <= q * q:
-                result = int(floor(1 + log(V) / log(q)))
+                result = int(floor(1 + log(V).cdiv(log(q))))
                 if result < 1 or V == 0.0:
                     continue
                 else:
@@ -937,7 +962,7 @@ class BitGenerator[G]:
         return X
 
     def random_geometric_inversion(self, p: float):
-        z = ceil(-self.random_standard_exponential() / log1p(-p))
+        z = ceil(-self.random_standard_exponential().cdiv(log1p(-p)))
         if z >= 9.223372036854776e+18:
             return 0x7FFFFFFFFFFFFFFF
         return int(z)
@@ -954,19 +979,19 @@ class BitGenerator[G]:
         while True:
             U = 1.0 - self.next_double()
             V = self.next_double()
-            X = floor(pow(U, -1.0 / am1))
+            X = floor(pow(U, (-1.0).cdiv(am1)))
 
             if X > 0x7FFFFFFFFFFFFFFF or X < 1.0:
                 continue
 
-            T = pow(1.0 + 1.0 / X, am1)
-            if V * X * (T - 1.0) / (b - 1.0) <= T / b:
+            T = pow(1.0 + (1.).cdiv(X), am1)
+            if (V * X * (T - 1.0)).cdiv(b - 1.0) <= T.cdiv(b):
                 return int(X)
 
     def random_triangular(self, left: float, mode: float, right: float):
         base = right - left
         leftbase = mode - left
-        ratio = leftbase / base
+        ratio = leftbase.cdiv(base)
         leftprod = leftbase * base
         rightprod = (right - mode) * base
 
@@ -1323,7 +1348,7 @@ class BitGenerator[G]:
         dn = n
 
         for j in range(d - 1):
-            mnix[j] = self.random_binomial(pix[j] / remaining_p, dn)
+            mnix[j] = self.random_binomial(pix[j].cdiv(remaining_p), dn)
             dn = dn - mnix[j]
             if dn <= 0:
                 break
@@ -1372,20 +1397,24 @@ class BitGenerator[G]:
         mingoodbad = min(good, bad)
         maxgoodbad = max(good, bad)
 
-        p = mingoodbad / popsize
-        q = maxgoodbad / popsize
+        p = float(mingoodbad).cdiv(popsize)
+        q = float(maxgoodbad).cdiv(popsize)
 
         mu = computed_sample * p
 
         a = mu + 0.5
 
-        var = float(popsize - computed_sample) * computed_sample * p * q / (popsize - 1)
+        var = (float(popsize - computed_sample) * computed_sample * p * q).cdiv(float(popsize - 1))
 
         c = sqrt(var + 0.5)
 
         h = D1*c + D2
 
-        m = int(floor(float(computed_sample + 1) * (mingoodbad + 1) / (popsize + 2)))
+        m = int(
+              floor(
+                (float(computed_sample + 1) * (mingoodbad + 1)).cdiv(float(popsize + 2))
+              )
+            )
 
         g = (logfactorial(m) +
              logfactorial(mingoodbad - m) +
@@ -1398,7 +1427,7 @@ class BitGenerator[G]:
         while True:
             U = self.next_double()
             V = self.next_double()
-            X = a + h*(V - 0.5) / U
+            X = a + (h*(V - 0.5)).cdiv(U)
 
             if X < 0.0 or X >= b:
                 continue
@@ -2135,7 +2164,7 @@ class Generator[G]:
                     s += pix[i]
                     cdf[i] = s
                 for i in range(pop_size):
-                    cdf[i] /= cdf[pop_size - 1]
+                    cdf[i] = cdf[i].cdiv(cdf[pop_size - 1])
                 uniform_samples = atleast_1d(self.random(shape))
                 nu = len(uniform_samples)
                 idx1 = empty(shape, dtype=int)
@@ -2181,7 +2210,7 @@ class Generator[G]:
                         s += pix[i]
                         cdf[i] = s
                     for i in range(pop_size):
-                        cdf[i] /= cdf[pop_size - 1]
+                        cdf[i] = cdf[i].cdiv(cdf[pop_size - 1])
 
                     new = Ptr[int](m)
                     for i in range(m):
@@ -2505,13 +2534,13 @@ class Generator[G]:
             for idx in util.multirange(broadcast_shapes(an.shape, ap.shape)):
                 e_n = an._ptr(idx, broadcast=True)[0]
                 e_p = ap._ptr(idx, broadcast=True)[0]
-                if (1 - e_p) / e_p * (e_n + 10 * util.sqrt(util.cast(e_n, float))) > POISSON_LAM_MAX:
+                if float(1 - e_p).cdiv(float(e_p)) * (e_n + 10 * util.sqrt(util.cast(e_n, float))) > POISSON_LAM_MAX:
                     raise ValueError("n too large or p too small, see Generator.negative_binomial Notes")
         else:
             check_array_constraint(n, 'n', CONS_POSITIVE_NOT_NAN)
             check_array_constraint(p, 'p', CONS_BOUNDED_GT_0_1)
 
-            dmax_lam = (1 - p) / p * (n + 10 * util.sqrt(util.cast(n, float)))
+            dmax_lam = float(1 - p).cdiv(float(p)) * (n + 10 * util.sqrt(util.cast(n, float)))
             if dmax_lam > POISSON_LAM_MAX:
                 raise ValueError("n too large or p too small, see Generator.negative_binomial Notes")
 
@@ -2850,7 +2879,7 @@ class Generator[G]:
                     for j in range(k):
                         val_data[i + j] = self.bit_generator.random_standard_gamma(alpha_data[j])
                         acc = acc + val_data[i + j]
-                    invacc = 1. / acc
+                    invacc = (1.).cdiv(acc)
                     for j in range(k):
                         val_data[i + j] = val_data[i + j] * invacc
                     i = i + k

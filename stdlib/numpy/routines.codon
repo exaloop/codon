@@ -453,7 +453,7 @@ def arange(start: float, stop: float, step: float, dtype: type = float):
         raise ValueError('step cannot be zero')
 
     delta = stop - start
-    tmp_len = delta / step
+    tmp_len = delta.cdiv(step)
 
     length = 0
     if tmp_len == 0.0 and delta != 0.0:
@@ -558,7 +558,7 @@ def linspace(start: float, stop: float, num: int = 50,
 
     delta = stop - start
     div = (num - 1) if endpoint else num
-    step = delta / div
+    step = delta.cdiv(float(div))
 
     result = empty(num, dtype=dtype)
     p = result.data
@@ -566,7 +566,7 @@ def linspace(start: float, stop: float, num: int = 50,
     if div > 0:
         if step == 0:
             for i in range(num):
-                p[i] = util.cast(((i / div) * delta) + start, dtype)
+                p[i] = util.cast((float(i).cdiv(float(div)) * delta) + start, dtype)
         else:
             for i in range(num):
                 p[i] = util.cast((i * step) + start, dtype)
@@ -592,7 +592,7 @@ def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
 
     delta = stop - start
     div = (num - 1) if endpoint else num
-    step = delta / div
+    step = delta.cdiv(float(div))
 
     result = empty(num, dtype=dtype)
     p = result.data
@@ -600,7 +600,7 @@ def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
     if div > 0:
         if step == 0:
             for i in range(num):
-                y = ((i / div) * delta) + start
+                y = (float(i).cdiv(float(div)) * delta) + start
                 if log:
                     y = util.pow64(base, y)
                 y *= out_sign
@@ -2900,12 +2900,12 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
 
             dtype = vec.dtype
             delta = stop - start
-            step = delta / num
+            step = delta.cdiv(float(num))
 
             for i in range(num):
                 j = num - 1 - i if rev else i
                 p = vec._ptr((j + offset,))
-                e = ((i / num) * delta) + start if not step else (i * step) + start
+                e = (float(i).cdiv(float(num)) * delta) + start if not step else (i * step) + start
                 p[0] = round_if_needed(e, dtype)
 
         p1, p2 = iaxis_pad_width
@@ -4260,14 +4260,13 @@ def _round_int(x: T, decimals: int, T: type):
     else:
         f = _power_of_ten(-decimals)
         y = util.cast(x, float)
-        return T(int(util.rint(y / f) * f))
+        return T(int(util.rint(y.cdiv(f)) * f))
 
 def _round(x: T, decimals: int, T: type):
     if isinstance(x, complex) or isinstance(x, complex64):
         return T(_round(x.real, decimals), _round(x.imag, decimals))
 
-    if (isinstance(x, int) or
-        isinstance(x, Int) or
+    if (isinstance(x, Int) or
         isinstance(x, UInt) or
         isinstance(x, bool)):
         return _round_int(x, decimals)
@@ -4279,10 +4278,10 @@ def _round(x: T, decimals: int, T: type):
         return util.rint(x)
     elif decimals > 0:
         f = T(_power_of_ten(decimals))
-        return util.rint(x * f) / f
+        return util.rint(x * f).cdiv(f)
     else:
         f = T(_power_of_ten(-decimals))
-        return util.rint(x / f) * f
+        return util.rint(x.cdiv(f)) * f
 
 def round(a, decimals: int = 0, out = None):
     a = asarray(a)

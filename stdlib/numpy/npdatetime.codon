@@ -1316,7 +1316,7 @@ class timedelta64:
         if self._nat or other == 0.0 or math.isnan(other):
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(int(float(self.value) / other), base, num)
+            return timedelta64(int(float(self.value).cdiv(other)), base, num)
 
     def __floordiv__(self, other: int):
         if self._nat or other == 0:
@@ -1341,19 +1341,22 @@ class timedelta64:
         if self._nat or other._nat:
             return math.nan
         else:
-            return self.value / other.value
+            return float(self.value).cdiv(float(other.value))
 
     def __truediv__(self, other: float):
         if self._nat or other == 0.0 or math.isnan(other):
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(int(float(self.value) / other), base, num)
+            return timedelta64(int(float(self.value).cdiv(other)), base, num)
 
     def __truediv__(self, other: int):
         if self._nat or other == 0:
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(int(float(self.value) / other), base, num)
+            return timedelta64(int(float(self.value).cdiv(float(other))), base, num)
+
+    def cdiv(self, other: timedelta64):
+        return self.__truediv__(other)
 
     def __mod__(self, other: timedelta64):
         self, other = _coerce(self, other)
@@ -1371,6 +1374,9 @@ class timedelta64:
                     return timedelta64(rem, self.base)
                 else:
                     return timedelta64(rem + in2, self.base, self.num)
+
+    def cmod(self, other: timedelta64):
+        return self.__mod__(other)
 
     def __divmod__(self, other: timedelta64):
         self, other = _coerce(self, other)

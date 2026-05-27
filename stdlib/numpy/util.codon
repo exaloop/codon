@@ -2202,6 +2202,19 @@ def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr[
 # Types #
 #########
 
+def isint(X: type) -> Literal[bool]:
+    return isinstance(X, Int) or isinstance(X, UInt)
+
+def isfloat(X: type) -> Literal[bool]:
+    return (X is float or X is float128 or X is float32 or
+            X is float16 or X is bfloat16)
+
+def iscomplex(X: type) -> Literal[bool]:
+    return X is complex or X is complex64
+
+def isinexact(X: type) -> Literal[bool]:
+    return isfloat(X) or iscomplex(X)
+
 def sizeof(X: type):
     from internal.gc import sizeof as sz
     return sz(X)

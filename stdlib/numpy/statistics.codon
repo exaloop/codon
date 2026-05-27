@@ -29,7 +29,7 @@ def average(a,
         avg = a.mean(axis, keepdims=keepdims)
         if returned:
             if isinstance(avg, ndarray):
-                scl = a.size / avg.size
+                scl = float(a.size).cdiv(float(avg.size))
                 return avg, full(avg.shape, scl, dtype=avg.dtype)
             else:
                 scl = a.size
@@ -231,7 +231,7 @@ def cov(m,
     elif aweights is None:
         fact = util.cast(w_sum - ddof2, dtype2)
     else:
-        fact = util.cast(w_sum - ddof2 * sum(w * aweights2) / w_sum, dtype2)
+        fact = util.cast(w_sum - ddof2 * (w * aweights2).sum() / w_sum, dtype2)
 
     if util.cast(fact, float) <= 0.0:
         # warn "Degrees of freedom <= 0 for slice"
@@ -568,9 +568,7 @@ def _unsigned_subtract(a, b):
         a = util.cast(a, dt)
         b = util.cast(b, dt)
 
-        if dt is int:
-            return u64(a) - u64(b)
-        elif isinstance(dt, Int):
+        if isinstance(dt, Int):
             return UInt[dt.N](a) - UInt[dt.N](b)
         else:
             return a - b
@@ -613,16 +611,16 @@ def _ptp(x):
     return _unsigned_subtract(xmax, xmin)
 
 def _hist_bin_sqrt(x):
-    return float(_ptp(x)) / util.sqrt(float(x.size))
+    return float(_ptp(x)).cdiv(util.sqrt(float(x.size)))
 
 def _hist_bin_sturges(x, range):
-    return float(_ptp(x)) / (util.log2(float(x.size)) + 1.0)
+    return float(_ptp(x)).cdiv(util.log2(float(x.size)) + 1.0)
 
 def _hist_bin_rice(x):
-    return float(_ptp(x)) / (2.0 * x.size**(1.0 / 3))
+    return float(_ptp(x)).cdiv(2.0 * x.size**((1.).cdiv(3.)))
 
 def _hist_bin_scott(x):
-    return (24.0 * util.PI**0.5 / x.size)**(1.0 / 3.0) * std(x)
+    return ((24.0 * util.PI**0.5).cdiv(float(x.size)))**((1.).cdiv(3.)) * std(x)
 
 def _hist_bin_stone(x, range, histogram):
     n = x.size
@@ -631,9 +629,9 @@ def _hist_bin_stone(x, range, histogram):
         return 0.0
 
     def jhat(nbins):
-        hh = ptp_x / nbins
+        hh = ptp_x.cdiv(float(nbins))
         p_k = histogram(x, bins=nbins, range=range)[0] / n
-        return (2 - (n + 1) * p_k.dot(p_k)) / hh
+        return (2 - (n + 1) * p_k.dot(p_k)).cdiv(hh)
 
     nbins_upper_bound = max(100, int(util.sqrt(float(n))))
     min_nbins = 1.
@@ -648,25 +646,25 @@ def _hist_bin_stone(x, range, histogram):
     nbins = min_nbins
     # if nbins == nbins_upper_bound:
     #     warn "The number of bins estimated may be suboptimal."
-    return ptp_x / nbins
+    return ptp_x.cdiv(float(nbins))
 
 def _hist_bin_doane(x):
     if x.size > 2:
-        sg1 = util.sqrt(6.0 * (x.size - 2) / ((x.size + 1.0) * (x.size + 3)))
+        sg1 = util.sqrt((6.0 * (x.size - 2)).cdiv((x.size + 1.0) * (x.size + 3)))
         sigma = std(x)
         if sigma > 0.0:
             temp = x - mean(x)
             true_divide(temp, sigma, temp)
             power(temp, 3, temp)
             g1 = mean(temp)
-            return float(_ptp(x)) / (float(1.0) + util.log2(float(x.size)) +
-                                     util.log2(1.0 + abs(g1) / sg1))
+            return float(_ptp(x)).cdiv(float(1.0) + util.log2(float(x.size)) +
+                                       util.log2(1.0 + abs(g1).cdiv(sg1)))
     return 0.0
 
 def _hist_bin_fd(x, range):
     percentiles = percentile(x, [75, 25])
     iqr = subtract(percentiles[0], percentiles[1])
-    return 2.0 * iqr * x.size**(-1.0 / 3.0)
+    return 2.0 * iqr * x.size**((-1.).cdiv(3.))
 
 def _hist_bin_auto(x, range):
     fd_bw = _hist_bin_fd(x, range)
@@ -762,7 +760,7 @@ def _get_bin_edges(a, bins, range, weights, histogram):
 
             if width:
                 n_equal_bins = int(
-                    ceil(_unsigned_subtract(last_edge, first_edge) / width))
+                    ceil(float(_unsigned_subtract(last_edge, first_edge)).cdiv(float(width))))
             else:
                 # Width can be zero for some estimators, e.g. FD when the IQR of the data is zero.
                 n_equal_bins = 1
@@ -858,7 +856,7 @@ def _histogram_fast(a, bins=10, range=None):
             bin_min -= T(0.5)
             bin_max += T(0.5)
 
-        bin_ratio = util.cast(bins, T) / (bin_max - bin_min)
+        bin_ratio = util.cast(bins, T).cdiv(bin_max - bin_min)
         for idx in util.multirange(a.shape):
             v = util.cast(a._ptr(idx)[0], T)
             b = int(util.floor((v - bin_min) * bin_ratio))

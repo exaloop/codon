@@ -206,6 +206,9 @@ auto typeConvert(Module *m, std::string magic, Type *fromType, Type *toType) {
       SingleConstantUnaryRule<From, std::function<decltype(convert<From, To>)>>>(
       convert<From, To>, std::move(magic), fromType, toType);
 }
+
+const std::string CDIV_METHOD_NAME = "cdiv";
+const std::string CMOD_METHOD_NAME = "cmod";
 } // namespace
 
 const std::string FoldingPass::KEY = "core-folding-const-fold";
@@ -235,6 +238,10 @@ void FoldingPass::registerStandardRules(Module *m) {
       intSingleRule(m, 1, id_val(m), Module::FLOOR_DIV_MAGIC_NAME, Kind::RIGHT));
   registerRule("int-zero-floor-div",
                intSingleRule(m, 0, 0, Module::FLOOR_DIV_MAGIC_NAME, Kind::LEFT));
+  registerRule("int-floor-cdiv-by-one",
+               intSingleRule(m, 1, id_val(m), CDIV_METHOD_NAME, Kind::RIGHT));
+  registerRule("int-zero-floor-cdiv",
+               intSingleRule(m, 0, 0, CDIV_METHOD_NAME, Kind::LEFT));
   registerRule("int-pos", intNoOp(m, Module::POS_MAGIC_NAME));
   registerRule("int-double-neg", intDoubleApplyNoOp(m, Module::NEG_MAGIC_NAME));
   registerRule("int-double-inv", intDoubleApplyNoOp(m, Module::INVERT_MAGIC_NAME));
@@ -253,6 +260,8 @@ void FoldingPass::registerStandardRules(Module *m) {
     registerRule("int-constant-floor-div",
                  intToIntBinaryNoZeroRHS(m, BINOP(/), Module::FLOOR_DIV_MAGIC_NAME));
   }
+  registerRule("int-constant-floor-cdiv",
+               intToIntBinaryNoZeroRHS(m, BINOP(/), CDIV_METHOD_NAME));
   registerRule("int-constant-mul", intToIntBinary(m, BINOP(*), Module::MUL_MAGIC_NAME));
   registerRule("int-constant-lshift",
                intToIntBinary(m, BINOP(<<), Module::LSHIFT_MAGIC_NAME));
@@ -271,6 +280,8 @@ void FoldingPass::registerStandardRules(Module *m) {
     registerRule("int-constant-mod",
                  intToIntBinaryNoZeroRHS(m, BINOP(%), Module::MOD_MAGIC_NAME));
   }
+  registerRule("int-constant-cmod",
+               intToIntBinaryNoZeroRHS(m, BINOP(%), CMOD_METHOD_NAME));
 
   // binary, double constant, int->bool
   registerRule("int-constant-eq", intToBoolBinary(m, BINOP(==), Module::EQ_MAGIC_NAME));
@@ -316,6 +327,8 @@ void FoldingPass::registerStandardRules(Module *m) {
     registerRule("float-constant-floor-div",
                  floatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME));
   }
+  registerRule("float-constant-cdiv",
+               floatToFloatBinary(m, BINOP(/), CDIV_METHOD_NAME));
   registerRule("float-constant-mul",
                floatToFloatBinary(m, BINOP(*), Module::MUL_MAGIC_NAME));
   registerRule(
@@ -342,7 +355,7 @@ void FoldingPass::registerStandardRules(Module *m) {
                intFloatToFloatBinary(m, BINOP(+), Module::ADD_MAGIC_NAME));
   registerRule("int-float-constant-subtraction",
                intFloatToFloatBinary(m, BINOP(-), Module::SUB_MAGIC_NAME));
-  registerRule("int-float-constant-floor-div",
+  registerRule("int-float-constant-true-div",
                intFloatToFloatBinary(m, BINOP(/), Module::TRUE_DIV_MAGIC_NAME,
                                      getOptions()->pynum));
   registerRule("int-float-constant-mul",

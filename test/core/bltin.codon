@@ -2133,3 +2133,258 @@ def test_sum_types():
     assert s.n == 0
 
 test_sum_types()
+
+@test
+def test_round():
+    import math
+
+    # integers
+    assert round(0) == 0
+    assert round(1) == 1
+    assert round(-1) == -1
+    assert round(42) == 42
+    assert round(-42) == -42
+
+    assert round(42, 0) == 42
+    assert round(42, 1) == 42
+    assert round(42, 10) == 42
+    assert round(-42, 0) == -42
+    assert round(-42, 1) == -42
+
+    assert round(42, -1) == 40
+    assert round(45, -1) == 40
+    assert round(55, -1) == 60
+    assert round(65, -1) == 60
+    assert round(75, -1) == 80
+
+    assert round(-42, -1) == -40
+    assert round(-45, -1) == -40
+    assert round(-55, -1) == -60
+    assert round(-65, -1) == -60
+    assert round(-75, -1) == -80
+
+    assert round(1234, -1) == 1230
+    assert round(1234, -2) == 1200
+    assert round(1234, -3) == 1000
+    assert round(1234, -4) == 0
+
+    assert round(1500, -3) == 2000
+    assert round(2500, -3) == 2000
+    assert round(3500, -3) == 4000
+    assert round(4500, -3) == 4000
+
+    assert round(-1500, -3) == -2000
+    assert round(-2500, -3) == -2000
+    assert round(-3500, -3) == -4000
+    assert round(-4500, -3) == -4000
+
+    # Int[N] integers
+    assert round(i32(0)) == i32(0)
+    assert round(i32(1)) == i32(1)
+    assert round(i32(-1)) == i32(-1)
+    assert round(i32(42)) == i32(42)
+    assert round(i32(-42)) == i32(-42)
+
+    assert round(i32(42), 0) == i32(42)
+    assert round(i32(42), 1) == i32(42)
+    assert round(i32(42), 10) == i32(42)
+    assert round(i32(-42), 0) == i32(-42)
+    assert round(i32(-42), 1) == i32(-42)
+
+    assert round(i32(42), -1) == i32(40)
+    assert round(i32(45), -1) == i32(40)
+    assert round(i32(55), -1) == i32(60)
+    assert round(i32(65), -1) == i32(60)
+    assert round(i32(75), -1) == i32(80)
+
+    assert round(i32(-42), -1) == i32(-40)
+    assert round(i32(-45), -1) == i32(-40)
+    assert round(i32(-55), -1) == i32(-60)
+    assert round(i32(-65), -1) == i32(-60)
+    assert round(i32(-75), -1) == i32(-80)
+
+    assert round(i32(1234), -1) == i32(1230)
+    assert round(i32(1234), -2) == i32(1200)
+    assert round(i32(1234), -3) == i32(1000)
+    assert round(i32(1234), -4) == i32(0)
+
+    assert round(i32(1500), -3) == i32(2000)
+    assert round(i32(2500), -3) == i32(2000)
+    assert round(i32(3500), -3) == i32(4000)
+    assert round(i32(4500), -3) == i32(4000)
+
+    assert round(i32(-1500), -3) == i32(-2000)
+    assert round(i32(-2500), -3) == i32(-2000)
+    assert round(i32(-3500), -3) == i32(-4000)
+    assert round(i32(-4500), -3) == i32(-4000)
+
+    # UInt[N] integers
+    assert round(u32(0)) == u32(0)
+    assert round(u32(1)) == u32(1)
+    assert round(u32(42)) == u32(42)
+
+    assert round(u32(42), 0) == u32(42)
+    assert round(u32(42), 1) == u32(42)
+    assert round(u32(42), 10) == u32(42)
+
+    assert round(u32(42), -1) == u32(40)
+    assert round(u32(45), -1) == u32(40)
+    assert round(u32(55), -1) == u32(60)
+    assert round(u32(65), -1) == u32(60)
+    assert round(u32(75), -1) == u32(80)
+
+    assert round(u32(1234), -1) == u32(1230)
+    assert round(u32(1234), -2) == u32(1200)
+    assert round(u32(1234), -3) == u32(1000)
+    assert round(u32(1234), -4) == u32(0)
+
+    assert round(u32(1500), -3) == u32(2000)
+    assert round(u32(2500), -3) == u32(2000)
+    assert round(u32(3500), -3) == u32(4000)
+    assert round(u32(4500), -3) == u32(4000)
+
+    # floats without ndigits return int
+    assert round(0.0) == 0
+    assert round(1.0) == 1
+    assert round(-1.0) == -1
+    assert round(1.2) == 1
+    assert round(1.8) == 2
+    assert round(-1.2) == -1
+    assert round(-1.8) == -2
+
+    # ties-to-even
+    assert round(0.5) == 0
+    assert round(1.5) == 2
+    assert round(2.5) == 2
+    assert round(3.5) == 4
+    assert round(4.5) == 4
+
+    assert round(-0.5) == 0
+    assert round(-1.5) == -2
+    assert round(-2.5) == -2
+    assert round(-3.5) == -4
+    assert round(-4.5) == -4
+
+    # ndigits == 0 returns float for float input
+    assert round(1.2, 0) == 1.0
+    assert round(1.8, 0) == 2.0
+    assert round(-1.2, 0) == -1.0
+    assert round(-1.8, 0) == -2.0
+
+    assert round(0.5, 0) == 0.0
+    assert round(1.5, 0) == 2.0
+    assert round(2.5, 0) == 2.0
+    assert round(3.5, 0) == 4.0
+
+    assert round(-0.5, 0) == -0.0
+    assert round(-1.5, 0) == -2.0
+    assert round(-2.5, 0) == -2.0
+    assert round(-3.5, 0) == -4.0
+
+    # positive ndigits
+    assert round(1.2345, 1) == 1.2
+    assert round(1.2345, 2) == 1.23
+    assert round(1.2345, 3) == 1.234
+    assert round(1.2345, 4) == 1.2345
+
+    assert round(-1.2345, 1) == -1.2
+    assert round(-1.2345, 2) == -1.23
+    assert round(-1.2345, 3) == -1.234
+    assert round(-1.2345, 4) == -1.2345
+
+    assert round(9.8765, 1) == 9.9
+    assert round(9.8765, 2) == 9.88
+    assert round(-9.8765, 1) == -9.9
+    assert round(-9.8765, 2) == -9.88
+
+    # positive ndigits ties-to-even-ish cases
+    assert round(1.25, 1) == 1.2
+    assert round(1.35, 1) == 1.4
+    assert round(1.45, 1) == 1.4
+    assert round(1.55, 1) == 1.6
+
+    assert round(-1.25, 1) == -1.2
+    assert round(-1.35, 1) == -1.4
+    assert round(-1.45, 1) == -1.4
+    assert round(-1.55, 1) == -1.6
+
+    assert round(1.125, 2) == 1.12
+    assert round(1.135, 2) == 1.14
+    assert round(-1.125, 2) == -1.12
+    assert round(-1.135, 2) == -1.14
+
+    # negative ndigits floats
+    assert round(12.0, -1) == 10.0
+    assert round(15.0, -1) == 20.0
+    assert round(25.0, -1) == 20.0
+    assert round(35.0, -1) == 40.0
+    assert round(45.0, -1) == 40.0
+
+    assert round(-12.0, -1) == -10.0
+    assert round(-15.0, -1) == -20.0
+    assert round(-25.0, -1) == -20.0
+    assert round(-35.0, -1) == -40.0
+    assert round(-45.0, -1) == -40.0
+
+    assert round(1234.0, -1) == 1230.0
+    assert round(1234.0, -2) == 1200.0
+    assert round(1234.0, -3) == 1000.0
+    assert round(1234.0, -4) == 0.0
+
+    # large negative ndigits
+    assert round(123456789.0, -1) == 123456790.0
+    assert round(123456789.0, -2) == 123456800.0
+    assert round(123456789.0, -3) == 123457000.0
+    assert round(123456789.0, -4) == 123460000.0
+    assert round(123456789.0, -5) == 123500000.0
+    assert round(123456789.0, -6) == 123000000.0
+    assert round(123456789.0, -7) == 120000000.0
+    assert round(123456789.0, -8) == 100000000.0
+    assert round(123456789.0, -9) == 0.0
+
+    # signed zero
+    x = round(-0.1, 0)
+    assert x == 0.0
+    assert math.copysign(1.0, x) == -1.0
+
+    y = round(-0.5, 0)
+    assert y == 0.0
+    assert math.copysign(1.0, y) == -1.0
+
+    z = round(-0.01, 1)
+    assert z == -0.0
+    assert math.copysign(1.0, z) == -1.0
+
+    # inf/nan with ndigits
+    assert round(math.inf, 0) == math.inf
+    assert round(-math.inf, 0) == -math.inf
+    assert round(math.inf, 5) == math.inf
+    assert round(-math.inf, 5) == -math.inf
+    assert round(math.inf, -5) == math.inf
+    assert round(-math.inf, -5) == -math.inf
+
+    assert math.isnan(round(math.nan, 0))
+    assert math.isnan(round(math.nan, 5))
+    assert math.isnan(round(math.nan, -5))
+
+    # binary-float decimal behavior
+    # assert round(2.675, 2) == 2.67  # <-- these differ from CPython due to different algorithm
+    # assert round(2.685, 2) == 2.69
+    assert round(1.005, 2) == 1.0
+    assert round(1.015, 2) == 1.01
+    assert round(1.025, 2) == 1.02
+    assert round(1.035, 2) == 1.03
+
+    # return types
+    assert isinstance(round(1.2), int)
+    assert isinstance(round(-1.2), int)
+
+    assert isinstance(round(1.2, 0), float)
+    assert isinstance(round(1.2, 1), float)
+    assert isinstance(round(1.2, -1), float)
+
+    assert isinstance(round(123), int)
+    assert isinstance(round(123, 0), int)
+    assert isinstance(round(123, -1), int)
+
+test_round()

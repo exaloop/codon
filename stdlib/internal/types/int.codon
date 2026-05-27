@@ -367,6 +367,28 @@ class Int:
     def __match__(self, obj: Int[N]) -> bool:
         return self == obj
 
+    def __round__(self, ndigits=None) -> Int[N]:
+        if ndigits is None:
+            return self
+
+        if ndigits >= 0:
+            return self
+
+        scale = Int[N](10) ** Int[N](-ndigits)
+        a = self.__abs__()
+        q = a.cdiv(scale)
+        r = a.cmod(scale)
+        twice_r = r * Int[N](2)
+
+        if twice_r > scale:
+            q += Int[N](1)
+        elif twice_r == scale:
+            if q.cmod(Int[N](2)):
+                q += Int[N](1)
+
+        result = q * scale
+        return -result if self < Int[N](0) else result
+
     @property
     def real(self) -> Int[N]:
         return self
@@ -743,6 +765,28 @@ class UInt:
 
     def __match__(self, obj: UInt[N]) -> bool:
         return self == obj
+
+    def __round__(self, ndigits=None) -> UInt[N]:
+        if ndigits is None:
+            return self
+
+        if ndigits >= 0:
+            return self
+
+        scale = UInt[N](10) ** UInt[N](-ndigits)
+        a = self.__abs__()
+        q = a.cdiv(scale)
+        r = a.cmod(scale)
+        twice_r = r * UInt[N](2)
+
+        if twice_r > scale:
+            q += UInt[N](1)
+        elif twice_r == scale:
+            if q.cmod(UInt[N](2)):
+                q += UInt[N](1)
+
+        result = q * scale
+        return result
 
     @property
     def real(self) -> UInt[N]:

@@ -122,7 +122,7 @@ class sincos_2pibyn:
                     return complex(-cos(y), -sin(y))
 
     def __new__(n: int) -> sincos_2pibyn[T]:
-        ang = 0.25 * PI / n
+        ang = (0.25 * PI).cdiv(float(n))
         nval = (n + 2) >> 1
         shift = 1
         while (1 << shift) * (1 << shift) < nval:
@@ -2011,7 +2011,7 @@ class fftblue:
             bk[m] = tmp[coeff]
 
         tbkf = arr[T](n2)
-        xn2 = cast(1, T0) / cast(n2, T0)
+        xn2 = cast(1, T0).cdiv(cast(n2, T0))
         tbkf[0] = bk[0]*xn2
 
         for m in range(1, n):
@@ -2167,9 +2167,9 @@ def _fft(v: Ptr[T], n: int, is_forward: bool, norm: Optional[str], T: type):
     if norm is None or norm == "backward":
         fct = cast(1, real_dtype)
     elif norm == "ortho":
-        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+        fct = cast(1, real_dtype).cdiv(sqrt(cast(n, real_dtype)))
     elif norm == "forward":
-        fct = cast(1, real_dtype) / cast(n, real_dtype)
+        fct = cast(1, real_dtype).cdiv(cast(n, real_dtype))
     else:
         _bad_norm(norm)
 
@@ -2192,9 +2192,9 @@ def rfft(v: Ptr[T0], n: int, is_forward: bool, norm: Optional[str], o: Ptr[T], T
     if norm is None or norm == "backward":
         fct = cast(1, real_dtype)
     elif norm == "ortho":
-        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+        fct = cast(1, real_dtype).cdiv(sqrt(cast(n, real_dtype)))
     elif norm == "forward":
-        fct = cast(1, real_dtype) / cast(n, real_dtype)
+        fct = cast(1, real_dtype).cdiv(cast(n, real_dtype))
     else:
         _bad_norm(norm)
 
@@ -2230,9 +2230,9 @@ def irfft(v: Ptr[T], n: int, norm: Optional[str], o: Ptr[T0], T: type, T0: type)
     if norm is None or norm == "backward":
         fct = cast(1, real_dtype)
     elif norm == "ortho":
-        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+        fct = cast(1, real_dtype).cdiv(sqrt(cast(n, real_dtype)))
     elif norm == "forward":
-        fct = cast(1, real_dtype) / cast(n, real_dtype)
+        fct = cast(1, real_dtype).cdiv(cast(n, real_dtype))
     else:
         _bad_norm(norm)
 

@@ -14,7 +14,7 @@ def _divmod(a: F, b: F, F: type) -> Tuple[F, F]:
                 mod += b
                 div -= F(1)
         else:
-            mod = F(0).copysign(b)
+            mod = F(0)._copysign(b)
 
         floordiv = F(0)
         if div:
@@ -22,7 +22,7 @@ def _divmod(a: F, b: F, F: type) -> Tuple[F, F]:
             if div - floordiv > F(0.5):
                 floordiv += F(1)
         else:
-            floordiv = F(0).copysign(a.cdiv(b))
+            floordiv = F(0)._copysign(a.cdiv(b))
 
         return (floordiv, mod)
     else:
@@ -178,56 +178,56 @@ class float:
 
     @pure
     @llvm
-    def sqrt(a: float) -> float:
+    def _sqrt(a: float) -> float:
         declare double @llvm.sqrt.f64(double %a)
         %tmp = call double @llvm.sqrt.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def sin(a: float) -> float:
+    def _sin(a: float) -> float:
         declare double @llvm.sin.f64(double %a)
         %tmp = call double @llvm.sin.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def cos(a: float) -> float:
+    def _cos(a: float) -> float:
         declare double @llvm.cos.f64(double %a)
         %tmp = call double @llvm.cos.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def exp(a: float) -> float:
+    def _exp(a: float) -> float:
         declare double @llvm.exp.f64(double %a)
         %tmp = call double @llvm.exp.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def exp2(a: float) -> float:
+    def _exp2(a: float) -> float:
         declare double @llvm.exp2.f64(double %a)
         %tmp = call double @llvm.exp2.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def log(a: float) -> float:
+    def _log(a: float) -> float:
         declare double @llvm.log.f64(double %a)
         %tmp = call double @llvm.log.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def log10(a: float) -> float:
+    def _log10(a: float) -> float:
         declare double @llvm.log10.f64(double %a)
         %tmp = call double @llvm.log10.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def log2(a: float) -> float:
+    def _log2(a: float) -> float:
         declare double @llvm.log2.f64(double %a)
         %tmp = call double @llvm.log2.f64(double %a)
         ret double %tmp
@@ -262,21 +262,21 @@ class float:
 
     @pure
     @llvm
-    def rint(a: float) -> float:
+    def _rint(a: float) -> float:
         declare double @llvm.rint.f64(double %a)
         %tmp = call double @llvm.rint.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def nearbyint(a: float) -> float:
+    def _nearbyint(a: float) -> float:
         declare double @llvm.nearbyint.f64(double %a)
         %tmp = call double @llvm.nearbyint.f64(double %a)
         ret double %tmp
 
     @pure
     @llvm
-    def __round__(a: float) -> float:
+    def _round(a: float) -> float:
         declare double @llvm.round.f64(double %a)
         %tmp = call double @llvm.round.f64(double %a)
         ret double %tmp
@@ -290,31 +290,58 @@ class float:
 
     @pure
     @llvm
-    def min(a: float, b: float) -> float:
+    def _min(a: float, b: float) -> float:
         declare double @llvm.minnum.f64(double %a, double %b)
         %tmp = call double @llvm.minnum.f64(double %a, double %b)
         ret double %tmp
 
     @pure
     @llvm
-    def max(a: float, b: float) -> float:
+    def _max(a: float, b: float) -> float:
         declare double @llvm.maxnum.f64(double %a, double %b)
         %tmp = call double @llvm.maxnum.f64(double %a, double %b)
         ret double %tmp
 
     @pure
     @llvm
-    def copysign(a: float, b: float) -> float:
+    def _copysign(a: float, b: float) -> float:
         declare double @llvm.copysign.f64(double %a, double %b)
         %tmp = call double @llvm.copysign.f64(double %a, double %b)
         ret double %tmp
 
     @pure
     @llvm
-    def fma(a: float, b: float, c: float) -> float:
+    def _fma(a: float, b: float, c: float) -> float:
         declare double @llvm.fma.f64(double %a, double %b, double %c)
         %tmp = call double @llvm.fma.f64(double %a, double %b, double %c)
         ret double %tmp
+
+    def __round__(self, ndigits=None):
+        @pure
+        @llvm
+        def inf() -> float:
+            ret double 0x7FF0000000000000
+
+        @pure
+        @llvm
+        def ordered_not_equal(x: float, y: float) -> bool:
+            %tmp = fcmp one double %x, %y
+            %res = zext i1 %tmp to i8
+            ret i8 %res
+
+        def isfinite(x: float):
+            return ordered_not_equal(x.__abs__(), inf())
+
+        if ndigits is None:
+            return self._rint().__int__()
+        else:
+            if not isfinite(self):
+                return self
+            scale = (10.0) ** ndigits.__abs__()
+            y = self*scale if ndigits >= 0 else self.cdiv(scale)
+            z = y._rint()
+            r = z.cdiv(scale) if ndigits >= 0 else z*scale
+            return (0.0)._copysign(self) if r == 0 else r
 
     @nocapture
     @llvm
@@ -590,56 +617,56 @@ class float32:
 
     @pure
     @llvm
-    def sqrt(a: float32) -> float32:
+    def _sqrt(a: float32) -> float32:
         declare float @llvm.sqrt.f32(float %a)
         %tmp = call float @llvm.sqrt.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def sin(a: float32) -> float32:
+    def _sin(a: float32) -> float32:
         declare float @llvm.sin.f32(float %a)
         %tmp = call float @llvm.sin.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def cos(a: float32) -> float32:
+    def _cos(a: float32) -> float32:
         declare float @llvm.cos.f32(float %a)
         %tmp = call float @llvm.cos.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def exp(a: float32) -> float32:
+    def _exp(a: float32) -> float32:
         declare float @llvm.exp.f32(float %a)
         %tmp = call float @llvm.exp.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def exp2(a: float32) -> float32:
+    def _exp2(a: float32) -> float32:
         declare float @llvm.exp2.f32(float %a)
         %tmp = call float @llvm.exp2.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def log(a: float32) -> float32:
+    def _log(a: float32) -> float32:
         declare float @llvm.log.f32(float %a)
         %tmp = call float @llvm.log.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def log10(a: float32) -> float32:
+    def _log10(a: float32) -> float32:
         declare float @llvm.log10.f32(float %a)
         %tmp = call float @llvm.log10.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def log2(a: float32) -> float32:
+    def _log2(a: float32) -> float32:
         declare float @llvm.log2.f32(float %a)
         %tmp = call float @llvm.log2.f32(float %a)
         ret float %tmp
@@ -674,21 +701,21 @@ class float32:
 
     @pure
     @llvm
-    def rint(a: float32) -> float32:
+    def _rint(a: float32) -> float32:
         declare float @llvm.rint.f32(float %a)
         %tmp = call float @llvm.rint.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def nearbyint(a: float32) -> float32:
+    def _nearbyint(a: float32) -> float32:
         declare float @llvm.nearbyint.f32(float %a)
         %tmp = call float @llvm.nearbyint.f32(float %a)
         ret float %tmp
 
     @pure
     @llvm
-    def __round__(a: float32) -> float32:
+    def _round(a: float32) -> float32:
         declare float @llvm.round.f32(float %a)
         %tmp = call float @llvm.round.f32(float %a)
         ret float %tmp
@@ -702,28 +729,28 @@ class float32:
 
     @pure
     @llvm
-    def min(a: float32, b: float32) -> float32:
+    def _min(a: float32, b: float32) -> float32:
         declare float @llvm.minnum.f32(float %a, float %b)
         %tmp = call float @llvm.minnum.f32(float %a, float %b)
         ret float %tmp
 
     @pure
     @llvm
-    def max(a: float32, b: float32) -> float32:
+    def _max(a: float32, b: float32) -> float32:
         declare float @llvm.maxnum.f32(float %a, float %b)
         %tmp = call float @llvm.maxnum.f32(float %a, float %b)
         ret float %tmp
 
     @pure
     @llvm
-    def copysign(a: float32, b: float32) -> float32:
+    def _copysign(a: float32, b: float32) -> float32:
         declare float @llvm.copysign.f32(float %a, float %b)
         %tmp = call float @llvm.copysign.f32(float %a, float %b)
         ret float %tmp
 
     @pure
     @llvm
-    def fma(a: float32, b: float32, c: float32) -> float32:
+    def _fma(a: float32, b: float32, c: float32) -> float32:
         declare float @llvm.fma.f32(float %a, float %b, float %c)
         %tmp = call float @llvm.fma.f32(float %a, float %b, float %c)
         ret float %tmp
@@ -951,56 +978,56 @@ class float16:
 
     @pure
     @llvm
-    def sqrt(a: float16) -> float16:
+    def _sqrt(a: float16) -> float16:
         declare half @llvm.sqrt.f16(half %a)
         %tmp = call half @llvm.sqrt.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def sin(a: float16) -> float16:
+    def _sin(a: float16) -> float16:
         declare half @llvm.sin.f16(half %a)
         %tmp = call half @llvm.sin.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def cos(a: float16) -> float16:
+    def _cos(a: float16) -> float16:
         declare half @llvm.cos.f16(half %a)
         %tmp = call half @llvm.cos.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def exp(a: float16) -> float16:
+    def _exp(a: float16) -> float16:
         declare half @llvm.exp.f16(half %a)
         %tmp = call half @llvm.exp.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def exp2(a: float16) -> float16:
+    def _exp2(a: float16) -> float16:
         declare half @llvm.exp2.f16(half %a)
         %tmp = call half @llvm.exp2.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def log(a: float16) -> float16:
+    def _log(a: float16) -> float16:
         declare half @llvm.log.f16(half %a)
         %tmp = call half @llvm.log.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def log10(a: float16) -> float16:
+    def _log10(a: float16) -> float16:
         declare half @llvm.log10.f16(half %a)
         %tmp = call half @llvm.log10.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def log2(a: float16) -> float16:
+    def _log2(a: float16) -> float16:
         declare half @llvm.log2.f16(half %a)
         %tmp = call half @llvm.log2.f16(half %a)
         ret half %tmp
@@ -1035,21 +1062,21 @@ class float16:
 
     @pure
     @llvm
-    def rint(a: float16) -> float16:
+    def _rint(a: float16) -> float16:
         declare half @llvm.rint.f16(half %a)
         %tmp = call half @llvm.rint.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def nearbyint(a: float16) -> float16:
+    def _nearbyint(a: float16) -> float16:
         declare half @llvm.nearbyint.f16(half %a)
         %tmp = call half @llvm.nearbyint.f16(half %a)
         ret half %tmp
 
     @pure
     @llvm
-    def __round__(a: float16) -> float16:
+    def _round(a: float16) -> float16:
         declare half @llvm.round.f16(half %a)
         %tmp = call half @llvm.round.f16(half %a)
         ret half %tmp
@@ -1063,28 +1090,28 @@ class float16:
 
     @pure
     @llvm
-    def min(a: float16, b: float16) -> float16:
+    def _min(a: float16, b: float16) -> float16:
         declare half @llvm.minnum.f16(half %a, half %b)
         %tmp = call half @llvm.minnum.f16(half %a, half %b)
         ret half %tmp
 
     @pure
     @llvm
-    def max(a: float16, b: float16) -> float16:
+    def _max(a: float16, b: float16) -> float16:
         declare half @llvm.maxnum.f16(half %a, half %b)
         %tmp = call half @llvm.maxnum.f16(half %a, half %b)
         ret half %tmp
 
     @pure
     @llvm
-    def copysign(a: float16, b: float16) -> float16:
+    def _copysign(a: float16, b: float16) -> float16:
         declare half @llvm.copysign.f16(half %a, half %b)
         %tmp = call half @llvm.copysign.f16(half %a, half %b)
         ret half %tmp
 
     @pure
     @llvm
-    def fma(a: float16, b: float16, c: float16) -> float16:
+    def _fma(a: float16, b: float16, c: float16) -> float16:
         declare half @llvm.fma.f16(half %a, half %b, half %c)
         %tmp = call half @llvm.fma.f16(half %a, half %b, half %c)
         ret half %tmp
@@ -1258,56 +1285,56 @@ class bfloat16:
 
     @pure
     @llvm
-    def sqrt(a: bfloat16) -> bfloat16:
+    def _sqrt(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.sqrt.bf16(bfloat %a)
         %tmp = call bfloat @llvm.sqrt.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def sin(a: bfloat16) -> bfloat16:
+    def _sin(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.sin.bf16(bfloat %a)
         %tmp = call bfloat @llvm.sin.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def cos(a: bfloat16) -> bfloat16:
+    def _cos(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.cos.bf16(bfloat %a)
         %tmp = call bfloat @llvm.cos.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def exp(a: bfloat16) -> bfloat16:
+    def _exp(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.exp.bf16(bfloat %a)
         %tmp = call bfloat @llvm.exp.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def exp2(a: bfloat16) -> bfloat16:
+    def _exp2(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.exp2.bf16(bfloat %a)
         %tmp = call bfloat @llvm.exp2.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def log(a: bfloat16) -> bfloat16:
+    def _log(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.log.bf16(bfloat %a)
         %tmp = call bfloat @llvm.log.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def log10(a: bfloat16) -> bfloat16:
+    def _log10(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.log10.bf16(bfloat %a)
         %tmp = call bfloat @llvm.log10.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def log2(a: bfloat16) -> bfloat16:
+    def _log2(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.log2.bf16(bfloat %a)
         %tmp = call bfloat @llvm.log2.bf16(bfloat %a)
         ret bfloat %tmp
@@ -1342,21 +1369,21 @@ class bfloat16:
 
     @pure
     @llvm
-    def rint(a: bfloat16) -> bfloat16:
+    def _rint(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.rint.bf16(bfloat %a)
         %tmp = call bfloat @llvm.rint.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def nearbyint(a: bfloat16) -> bfloat16:
+    def _nearbyint(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.nearbyint.bf16(bfloat %a)
         %tmp = call bfloat @llvm.nearbyint.bf16(bfloat %a)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def __round__(a: bfloat16) -> bfloat16:
+    def _round(a: bfloat16) -> bfloat16:
         declare bfloat @llvm.round.bf16(bfloat %a)
         %tmp = call bfloat @llvm.round.bf16(bfloat %a)
         ret bfloat %tmp
@@ -1370,28 +1397,28 @@ class bfloat16:
 
     @pure
     @llvm
-    def min(a: bfloat16, b: bfloat16) -> bfloat16:
+    def _min(a: bfloat16, b: bfloat16) -> bfloat16:
         declare bfloat @llvm.minnum.bf16(bfloat %a, bfloat %b)
         %tmp = call bfloat @llvm.minnum.bf16(bfloat %a, bfloat %b)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def max(a: bfloat16, b: bfloat16) -> bfloat16:
+    def _max(a: bfloat16, b: bfloat16) -> bfloat16:
         declare bfloat @llvm.maxnum.bf16(bfloat %a, bfloat %b)
         %tmp = call bfloat @llvm.maxnum.bf16(bfloat %a, bfloat %b)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def copysign(a: bfloat16, b: bfloat16) -> bfloat16:
+    def _copysign(a: bfloat16, b: bfloat16) -> bfloat16:
         declare bfloat @llvm.copysign.bf16(bfloat %a, bfloat %b)
         %tmp = call bfloat @llvm.copysign.bf16(bfloat %a, bfloat %b)
         ret bfloat %tmp
 
     @pure
     @llvm
-    def fma(a: bfloat16, b: bfloat16, c: bfloat16) -> bfloat16:
+    def _fma(a: bfloat16, b: bfloat16, c: bfloat16) -> bfloat16:
         declare bfloat @llvm.fma.bf16(bfloat %a, bfloat %b, bfloat %c)
         %tmp = call bfloat @llvm.fma.bf16(bfloat %a, bfloat %b, bfloat %c)
         ret bfloat %tmp
@@ -1561,56 +1588,56 @@ class float128:
 
     @pure
     @llvm
-    def sqrt(a: float128) -> float128:
+    def _sqrt(a: float128) -> float128:
         declare fp128 @llvm.sqrt.f128(fp128 %a)
         %tmp = call fp128 @llvm.sqrt.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def sin(a: float128) -> float128:
+    def _sin(a: float128) -> float128:
         declare fp128 @llvm.sin.f128(fp128 %a)
         %tmp = call fp128 @llvm.sin.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def cos(a: float128) -> float128:
+    def _cos(a: float128) -> float128:
         declare fp128 @llvm.cos.f128(fp128 %a)
         %tmp = call fp128 @llvm.cos.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def exp(a: float128) -> float128:
+    def _exp(a: float128) -> float128:
         declare fp128 @llvm.exp.f128(fp128 %a)
         %tmp = call fp128 @llvm.exp.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def exp2(a: float128) -> float128:
+    def _exp2(a: float128) -> float128:
         declare fp128 @llvm.exp2.f128(fp128 %a)
         %tmp = call fp128 @llvm.exp2.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def log(a: float128) -> float128:
+    def _log(a: float128) -> float128:
         declare fp128 @llvm.log.f128(fp128 %a)
         %tmp = call fp128 @llvm.log.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def log10(a: float128) -> float128:
+    def _log10(a: float128) -> float128:
         declare fp128 @llvm.log10.f128(fp128 %a)
         %tmp = call fp128 @llvm.log10.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def log2(a: float128) -> float128:
+    def _log2(a: float128) -> float128:
         declare fp128 @llvm.log2.f128(fp128 %a)
         %tmp = call fp128 @llvm.log2.f128(fp128 %a)
         ret fp128 %tmp
@@ -1645,21 +1672,21 @@ class float128:
 
     @pure
     @llvm
-    def rint(a: float128) -> float128:
+    def _rint(a: float128) -> float128:
         declare fp128 @llvm.rint.f128(fp128 %a)
         %tmp = call fp128 @llvm.rint.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def nearbyint(a: float128) -> float128:
+    def _nearbyint(a: float128) -> float128:
         declare fp128 @llvm.nearbyint.f128(fp128 %a)
         %tmp = call fp128 @llvm.nearbyint.f128(fp128 %a)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def __round__(a: float128) -> float128:
+    def _round(a: float128) -> float128:
         declare fp128 @llvm.round.f128(fp128 %a)
         %tmp = call fp128 @llvm.round.f128(fp128 %a)
         ret fp128 %tmp
@@ -1673,28 +1700,28 @@ class float128:
 
     @pure
     @llvm
-    def min(a: float128, b: float128) -> float128:
+    def _min(a: float128, b: float128) -> float128:
         declare fp128 @llvm.minnum.f128(fp128 %a, fp128 %b)
         %tmp = call fp128 @llvm.minnum.f128(fp128 %a, fp128 %b)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def max(a: float128, b: float128) -> float128:
+    def _max(a: float128, b: float128) -> float128:
         declare fp128 @llvm.maxnum.f128(fp128 %a, fp128 %b)
         %tmp = call fp128 @llvm.maxnum.f128(fp128 %a, fp128 %b)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def copysign(a: float128, b: float128) -> float128:
+    def _copysign(a: float128, b: float128) -> float128:
         declare fp128 @llvm.copysign.f128(fp128 %a, fp128 %b)
         %tmp = call fp128 @llvm.copysign.f128(fp128 %a, fp128 %b)
         ret fp128 %tmp
 
     @pure
     @llvm
-    def fma(a: float128, b: float128, c: float128) -> float128:
+    def _fma(a: float128, b: float128, c: float128) -> float128:
         declare fp128 @llvm.fma.f128(fp128 %a, fp128 %b, fp128 %c)
         %tmp = call fp128 @llvm.fma.f128(fp128 %a, fp128 %b, fp128 %c)
         ret fp128 %tmp

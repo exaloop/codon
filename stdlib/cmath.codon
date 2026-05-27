@@ -125,7 +125,7 @@ _DBL_MAX = _max_float()
 _DBL_MIN = _min_float()
 _DBL_MANT_DIG: Literal[int] = 53
 
-_CM_LARGE_DOUBLE = _DBL_MAX/4.
+_CM_LARGE_DOUBLE = _DBL_MAX.cdiv(4.)
 _CM_SQRT_LARGE_DOUBLE = _sqrt(_CM_LARGE_DOUBLE)
 _CM_LOG_LARGE_DOUBLE = _log(_CM_LARGE_DOUBLE)
 _CM_SQRT_DBL_MIN = _sqrt(_DBL_MIN)

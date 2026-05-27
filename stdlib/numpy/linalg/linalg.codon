@@ -10,7 +10,7 @@ from ..routines import atleast_2d, asarray, broadcast_shapes, broadcast_to, empt
                        zeros, array
 from ..util import cast, cdiv_int, coerce, eps, exp, free, inf, log, multirange, \
                    nan, normalize_axis_index, sizeof, sort, sqrt as util_sqrt, \
-                   tuple_delete, tuple_insert, tuple_range, tuple_set, zero
+                   tuple_delete, tuple_insert, tuple_range, tuple_set, zero, isfloat
 
 
 #############
@@ -4274,7 +4274,7 @@ def cond(x, p = None):
                 return float(s1).cdiv(float(s0))
             else:
                 return float(s0).cdiv(float(s1))
-        elif isinstance(s0, float) or isinstance(s0, float32) or isinstance(s0, float16):
+        elif isfloat(type(s0)):
             if p == -2:
                 return s1.cdiv(s0)
             else:

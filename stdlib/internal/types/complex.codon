@@ -134,31 +134,29 @@ class complex:
     def __truediv__(self, other: complex) -> complex:
         a = self
         b = other
-        abs_breal = (-b.real) if b.real < 0 else b.real
-        abs_bimag = (-b.imag) if b.imag < 0 else b.imag
 
-        if abs_breal >= abs_bimag:
-            # divide tops and bottom by b.real
-            if abs_breal == 0.0:
-                # errno = EDOM
-                return complex(0.0, 0.0)
+        ar = a.real
+        ai = a.imag
+        br = b.real
+        bi = b.imag
+
+        abs_br = br.__abs__()
+        abs_bi = bi.__abs__()
+
+        if abs_br >= abs_bi:
+            if abs_br == 0.0 and abs_bi == 0.0:
+                return complex(ar.cdiv(abs_br), ai.cdiv(abs_bi))
             else:
-                ratio = b.imag.cdiv(b.real)
-                denom = b.real + b.imag * ratio
-                return complex(
-                    (a.real + a.imag * ratio).cdiv(denom), (a.imag - a.real * ratio).cdiv(denom)
-                )
-        elif abs_bimag >= abs_breal:
-            # divide tops and bottom by b.imag
-            ratio = b.real.cdiv(b.imag)
-            denom = b.real * ratio + b.imag
-            # assert b.imag != 0.0
-            return complex(
-                (a.real * ratio + a.imag).cdiv(denom), (a.imag * ratio - a.real).cdiv(denom)
-            )
+                rat = bi.cdiv(br)
+                scl = (1.0).cdiv(br + bi*rat)
+                return complex((ar + ai*rat)*scl, (ai - ar*rat)*scl)
         else:
-            nan = (0.0).cdiv(0.0)
-            return complex(nan, nan)
+            rat = br.cdiv(bi)
+            scl = (1.0).cdiv(bi + br*rat)
+            return complex((ar*rat + ai)*scl, (ai*rat - ar)*scl)
+
+    def cdiv(self, other: complex) -> complex:
+        return self.__truediv__(other)
 
     def __eq__(self, other: complex) -> bool:
         return self.real == other.real and self.imag == other.imag
@@ -548,31 +546,29 @@ class complex64:
     def __truediv__(self, other: complex64) -> complex64:
         a = self
         b = other
-        abs_breal = (-b.real) if b.real < f32(0) else b.real
-        abs_bimag = (-b.imag) if b.imag < f32(0) else b.imag
 
-        if abs_breal >= abs_bimag:
-            # divide tops and bottom by b.real
-            if abs_breal == f32(0.0):
-                # errno = EDOM
-                return complex64(0.0, 0.0)
+        ar = a.real
+        ai = a.imag
+        br = b.real
+        bi = b.imag
+
+        abs_br = br.__abs__()
+        abs_bi = bi.__abs__()
+
+        if abs_br >= abs_bi:
+            if abs_br == float32(0.0) and abs_bi == float32(0.0):
+                return complex64(ar.cdiv(abs_br), ai.cdiv(abs_bi))
             else:
-                ratio = b.imag.cdiv(b.real)
-                denom = b.real + b.imag * ratio
-                return complex64(
-                    (a.real + a.imag * ratio).cdiv(denom), (a.imag - a.real * ratio).cdiv(denom)
-                )
-        elif abs_bimag >= abs_breal:
-            # divide tops and bottom by b.imag
-            ratio = b.real.cdiv(b.imag)
-            denom = b.real * ratio + b.imag
-            # assert b.imag != 0.0
-            return complex64(
-                (a.real * ratio + a.imag).cdiv(denom), (a.imag * ratio - a.real).cdiv(denom)
-            )
+                rat = bi.cdiv(br)
+                scl = float32(1.0).cdiv(br + bi*rat)
+                return complex64((ar + ai*rat)*scl, (ai - ar*rat)*scl)
         else:
-            nan = (0.0).cdiv(0.0)
-            return complex64(nan, nan)
+            rat = br.cdiv(bi)
+            scl = float32(1.0).cdiv(bi + br*rat)
+            return complex64((ar*rat + ai)*scl, (ai*rat - ar)*scl)
+
+    def cdiv(self, other: complex64) -> complex64:
+        return self.__truediv__(other)
 
     def __eq__(self, other: complex64) -> bool:
         return self.real == other.real and self.imag == other.imag
