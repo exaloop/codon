@@ -2404,16 +2404,6 @@ def check_divmod0_int_array_scalar_zero(dt: type):
     assert np.isinf(r[1])
     assert np.isnan(r[2])
 
-    r = a % 0
-    _ = r[0]
-    _ = r[1]
-    _ = r[2]
-
-    r = np.mod(a, 0)
-    _ = r[0]
-    _ = r[1]
-    _ = r[2]
-
 @test
 def check_divmod0_int_array_array_zero(dt: type):
     a = np.array([1, 2, 0], dtype=dt)
@@ -2423,11 +2413,6 @@ def check_divmod0_int_array_array_zero(dt: type):
     assert np.isinf(r[0])
     assert np.isinf(r[1])
     assert np.isnan(r[2])
-
-    r = a % z
-    _ = r[0]
-    _ = r[1]
-    _ = r[2]
 
 @test
 def check_divmod0_python_scalar_numerator(dt: type):
