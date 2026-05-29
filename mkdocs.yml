@@ -129,6 +129,7 @@ nav:
   - Get Started:
     - Installation: start/install.md
     - Usage: start/usage.md
+    - Options: start/options.md
     - FAQ: start/faq.md
     - Changelog: start/changelog.md
   - Language:
