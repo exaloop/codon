@@ -106,6 +106,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   if (!coreOrErr)
     throw exc::ParserException(coreOrErr.takeError());
   shared->modules[""]->setFilename(stdlib->path);
+  shared->modules[""]->add("int", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_numerics__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
