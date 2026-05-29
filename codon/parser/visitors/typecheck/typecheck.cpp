@@ -609,11 +609,12 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
   TypePtr type = nullptr;
   std::function<Expr *(Expr *)> fn = nullptr;
 
+  // Case: types are wrapped in TypeWrap when type is not expected
   if (callee && exprType->is(StdlibTypes::Type)) {
     auto c = extractClassType(exprType);
     if (!c)
       return {false, nullptr, nullptr};
-    if (!(expectedType && (expectedType->is(StdlibTypes::Type)))) {
+    if (!expectedType || !expectedType->is(StdlibTypes::Type)) {
       type = instantiateType(getStdLibType(StdlibTypes::TypeWrap),
                              std::vector<types::Type *>{c});
       fn = [&](Expr *expr) -> Expr * {
@@ -717,10 +718,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
       return N<CallExpr>(N<IdExpr>("pyobj"),
                          N<CallExpr>(N<DotExpr>(expr, "__to_py__")));
     };
-  }
-
-  else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
-           !exprClass->is(expectedClass->name)) { // unwrap pyobj
+  } else if (allowUnwrap && expectedClass && exprClass && exprClass->is("pyobj") &&
+             !exprClass->is(expectedClass->name)) { // unwrap pyobj
     if (findMethod(expectedClass, "__from_py__").empty())
       return {false, nullptr, nullptr};
     type = instantiateType(expectedClass);
@@ -883,9 +882,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     } else {
       return {false, nullptr, nullptr};
     }
-  }
-
-  else if (exprClass && expectedClass && expectedClass->getUnion()) {
+  } else if (exprClass && expectedClass && expectedClass->getUnion()) {
     // Make union types via Union._new
     if (!expectedClass->getUnion()->isSealed()) {
       if (!expectedClass->getUnion()->addType(exprClass))
@@ -914,22 +911,33 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (exprClass && expectedClass && !exprClass->is(expectedClass->name)) {
-    // Cast derived classes to base classes
-    const auto &mros = ctx->cache->getClass(exprClass)->mro;
-    for (size_t i = 1; i < mros.size(); i++) {
-      auto base = instantiateType(mros[i].get(), exprClass);
-      if (base->unify(expectedClass, nullptr) >= 0) {
-        unify(base.get(), expectedClass);
-        type = expectedClass->shared_from_this();
-        fn = [this, base](Expr *expr) -> Expr * {
-          ClassType *typ = expr->getClassType();
-          auto typExpr = N<IdExpr>(base->getClass()->name);
-          typExpr->setType(instantiateTypeVar(base->getClass()));
-          return transform(N<CallExpr>(
-              N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")), expr, typExpr));
-        };
-        break;
+  else if (exprClass && expectedClass) {
+    auto src = exprClass, dest = expectedClass;
+    bool optional = src->is(StdlibTypes::Optional) && dest->is(StdlibTypes::Optional);
+    if (optional) {
+      src = extractClassGeneric(src)->getClass();
+      dest = extractClassGeneric(dest)->getClass();
+    }
+    if (src && dest && !src->is(dest->name)) {
+      // Cast derived classes to base classes
+      const auto &mros = ctx->cache->getClass(src)->mro;
+      for (size_t i = 1; i < mros.size(); i++) {
+        auto base = instantiateType(mros[i].get(), src);
+        if (base->unify(dest, nullptr) >= 0) {
+          unify(base.get(), dest);
+          type = expectedClass->shared_from_this();
+          fn = [this, base, optional](Expr *expr) -> Expr * {
+            ClassType *typ = expr->getClassType();
+            Expr *typExpr = N<IdExpr>(base->getClass()->name);
+            typExpr->setType(instantiateTypeVar(base->getClass()));
+            if (optional)
+              typExpr = N<InstantiateExpr>(N<IdExpr>(StdlibTypes::Optional),
+                                           std::vector<Expr *>{typExpr});
+            return transform(N<CallExpr>(
+                N<IdExpr>(getMangledMethod("", "RTTIType", "_cast")), expr, typExpr));
+          };
+          break;
+        }
       }
     }
   }

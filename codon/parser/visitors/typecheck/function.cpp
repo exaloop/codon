@@ -636,8 +636,13 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
   for (auto i = stmt->decorators.size(); i-- > 0;) {
     if (stmt->decorators[i]) {
       // Replace each decorator with `decorator(finalExpr)` in the reverse order
-      finalExpr = N<CallExpr>(stmt->decorators[i],
-                              finalExpr ? finalExpr : N<IdExpr>(canonicalName));
+      if (finalExpr) {
+        finalExpr = N<CallExpr>(stmt->decorators[i], finalExpr);
+      } else {
+        auto id = N<IdExpr>(canonicalName);
+        id->setAttribute(Attr::ExprDoNotRealize);
+        finalExpr = N<CallExpr>(stmt->decorators[i], id);
+      }
     }
   }
   if (finalExpr) {

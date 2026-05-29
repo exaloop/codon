@@ -139,15 +139,19 @@ class RTTIType:
 
     @inline
     def _cast(obj, D: type) -> D:
-        B = type(obj)
-        if not (static.has_rtti(D) and static.has_rtti(B)):
-            compile_error("classes are not polymorphic")
+        if isinstance(obj, Optional) and isinstance(D, Optional):
+            if obj is None: return None
+            else: return D(RTTIType._cast(unwrap(obj), D.T))
+        else:
+            B = type(obj)
+            if not (static.has_rtti(D) and static.has_rtti(B)):
+                compile_error("classes are not polymorphic")
 
-        rtti = type._force_cast(obj, RTTIType)
-        (bi, di), (boff, doff) = RTTIType._find_offsets(obj, B, D)
-        if bi == -1 or di == -1:
-            raise TypeError(f"cannot cast {type(obj)} to {D}")
-        return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
+            rtti = type._force_cast(obj, RTTIType)
+            (bi, di), (boff, doff) = RTTIType._find_offsets(obj, B, D)
+            if bi == -1 or di == -1:
+                raise TypeError(f"cannot cast {type(obj)} to {D}")
+            return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
 
     def _getinstance(obj, T: type):
         if isinstance(T, TypeWrap):

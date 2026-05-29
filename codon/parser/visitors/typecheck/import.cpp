@@ -34,6 +34,13 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   // Fetch the import
   auto components = getImportPath(stmt->getFrom(), stmt->getDots());
   auto path = combine2(components, "/");
+  if (stmt->getDots() == 1 && path.empty()) { // from "." case
+    auto w = cast<IdExpr>(stmt->getWhat());
+    seqassert(w, "not an identifier: {}", FormatVisitor::apply(stmt->getWhat()));
+    resultStmt = transform(
+        N<ImportStmt>(stmt->getWhat(), nullptr, std::vector<Param>{}, nullptr, "", 1));
+    return;
+  }
   auto file = getImportFile(ctx->cache, path, ctx->getFilename());
   if (!file) {
     if (stmt->getDots() == 0 && ctx->autoPython) {
