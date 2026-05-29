@@ -695,17 +695,23 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
 
   else if (expectedClass && expectedClass->is(StdlibTypes::Optional) && exprClass &&
            !exprClass->is(expectedClass->name)) {
+    auto expectedUnwrap = extractClassGeneric(expectedClass);
+    auto [_, tp, fnp] =
+        canWrapExpr(exprClass, expectedUnwrap, callee, allowUnwrap, isEllipsis);
     type = instantiateType(getStdLibType(StdlibTypes::Optional),
-                           std::vector<Type *>{exprClass});
-    fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(StdlibTypes::Optional), expr);
+                           std::vector<Type *>{tp ? tp.get() : exprClass});
+    fn = [this, fnp](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(StdlibTypes::Optional), fnp ? fnp(expr) : expr);
     };
   } else if (allowUnwrap && expectedClass && exprClass &&
              exprClass->is(StdlibTypes::Optional) &&
              !exprClass->is(expectedClass->name)) { // unwrap optional
-    type = instantiateType(extractClassGeneric(exprClass));
-    fn = [&](Expr *expr) -> Expr * {
-      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr);
+    auto exprUnwrap = extractClassGeneric(exprClass);
+    auto [_, tp, fnp] =
+        canWrapExpr(exprUnwrap, expectedClass, callee, allowUnwrap, isEllipsis);
+    type = instantiateType(tp ? tp.get() : extractClassGeneric(exprClass));
+    fn = [this, fnp](Expr *expr) -> Expr * {
+      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), fnp ? fnp(expr) : expr);
     };
   }
 
