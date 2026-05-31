@@ -485,3 +485,17 @@ def test_int_match():
     assert n == 4
 
 test_int_match()
+
+@test
+def test_int_int_ops():
+    assert type(u32(1) + u32(1)) is u32
+    assert type(u32(1) + u64(1)) is u64
+    assert u32(1) + u64(1) == u64(2)
+    assert u32(1) + u64(1) == u32(2)
+
+    assert type(i32(1) + i32(1)) is i32
+    assert type(i32(1) + 1) is int
+    assert i32(1) + 1 == u64(2)
+    assert i32(1) + 1 == i32(2)
+
+test_int_int_ops()

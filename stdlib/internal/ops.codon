@@ -710,6 +710,63 @@ class Int:
         return x >= y
 
     @commutative
+    def __add__(self, b: Int):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: Int):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: Int):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: Int):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: Int):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: Int):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: Int):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: Int):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: Int):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: Int):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: Int):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: Int):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: Int):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: Int):
+        x, y = _unify(self, b)
+        return x >= y
+
     @commutative
     def __add__(self, b: UInt):
         x, y = _unify(self, b)
@@ -1174,6 +1231,64 @@ class UInt:
         return x <= y
 
     def __ge__(self, b: Int):
+        x, y = _unify(self, b)
+        return x >= y
+
+    @commutative
+    def __add__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x + y
+
+    def __sub__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x - y
+
+    @commutative
+    def __mul__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x * y
+
+    def __floordiv__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x // y
+
+    def __truediv__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x / y
+
+    def __mod__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x % y
+
+    def __divmod__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x.__divmod__(y)
+
+    def __pow__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x ** y
+
+    def __eq__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x == y
+
+    def __ne__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x != y
+
+    def __lt__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x < y
+
+    def __gt__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x > y
+
+    def __le__(self, b: UInt):
+        x, y = _unify(self, b)
+        return x <= y
+
+    def __ge__(self, b: UInt):
         x, y = _unify(self, b)
         return x >= y
 
