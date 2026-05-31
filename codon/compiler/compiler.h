@@ -11,6 +11,7 @@
 #include "codon/cir/module.h"
 #include "codon/cir/transform/manager.h"
 #include "codon/compiler/error.h"
+#include "codon/compiler/options.h"
 #include "codon/dsl/plugins.h"
 #include "codon/parser/cache.h"
 
@@ -25,11 +26,8 @@ public:
   };
 
 private:
-  std::string argv0;
-  bool debug;
-  bool pyNumerics;
-  bool pyExtension;
   std::string input;
+  std::unique_ptr<Options> options;
   std::unique_ptr<PluginManager> plm;
   std::unique_ptr<ast::Cache> cache;
   std::unique_ptr<ir::Module> module;
@@ -42,20 +40,10 @@ private:
                     const std::unordered_map<std::string, std::string> &defines);
 
 public:
-  Compiler(const std::string &argv0, Mode mode,
-           const std::vector<std::string> &disabledPasses = {}, bool isTest = false,
-           bool pyNumerics = false, bool pyExtension = false,
-           const std::shared_ptr<ast::IFilesystem> &fs = nullptr);
+  explicit Compiler(const Options &options,
+                    const std::shared_ptr<ast::IFilesystem> &fs = nullptr);
 
-  explicit Compiler(const std::string &argv0, bool debug = false,
-                    const std::vector<std::string> &disabledPasses = {},
-                    bool isTest = false, bool pyNumerics = false,
-                    bool pyExtension = false,
-                    const std::shared_ptr<ast::IFilesystem> &fs = nullptr)
-      : Compiler(argv0, debug ? Mode::DEBUG : Mode::RELEASE, disabledPasses, isTest,
-                 pyNumerics, pyExtension, fs) {}
-
-  std::string getArgv0() const { return argv0; }
+  Options *getOptions() const { return options.get(); }
   std::string getInput() const { return input; }
   PluginManager *getPluginManager() const { return plm.get(); }
   ast::Cache *getCache() const { return cache.get(); }

@@ -13,7 +13,8 @@ namespace transform {
 namespace pythonic {
 namespace {
 
-const std::string LIST = ast::getMangledClass("std.internal.types.array", "List");
+const std::string LIST =
+    ast::getMangledClass("std.internal.types.collections.list", "List");
 const std::string SLICE =
     ast::getMangledClass("std.internal.types.slice", "Slice") + "[int,int,int]";
 
@@ -50,7 +51,7 @@ struct ElementHandler {
     }
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty);
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty);
 };
 
 struct DefaultHandler : public ElementHandler {
@@ -79,7 +80,7 @@ struct DefaultHandler : public ElementHandler {
     return util::call(fn, {result, e});
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty) {
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty) {
     if (!v->getType()->is(ty))
       return {};
     return std::make_unique<DefaultHandler>(v);
@@ -118,7 +119,7 @@ struct SliceHandler : public ElementHandler {
     return util::call(fn, {result, e, s});
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty) {
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty) {
     if (!v->getType()->is(ty))
       return {};
 
@@ -162,7 +163,7 @@ struct LiteralHandler : public ElementHandler {
     return block;
   }
 
-  static std::unique_ptr<ElementHandler> get(Value *v, types::Type *ty) {
+  static std::unique_ptr<ElementHandler> get(Value *v, Type *ty) {
     if (!v->getType()->is(ty))
       return {};
 
@@ -180,7 +181,7 @@ struct LiteralHandler : public ElementHandler {
   }
 };
 
-std::unique_ptr<ElementHandler> ElementHandler::get(Value *v, types::Type *ty) {
+std::unique_ptr<ElementHandler> ElementHandler::get(Value *v, Type *ty) {
   if (auto h = SliceHandler::get(v, ty))
     return std::move(h);
 

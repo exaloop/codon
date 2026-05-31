@@ -214,12 +214,12 @@ def empty_like(prototype, dtype: type = NoneType, order: str = 'K', shape = None
 
 def zeros(shape, dtype: type = float, order: str = 'C'):
     result = empty(shape, dtype, order)
-    str.memset(result.data.as_byte(), byte(0), result.nbytes)
+    str.memset(result.data.as_byte(), u8(0), result.nbytes)
     return result
 
 def zeros_like(prototype, dtype: type = NoneType, order: str = 'K'):
     result = empty_like(prototype, dtype, order)
-    str.memset(result.data.as_byte(), byte(0), result.nbytes)
+    str.memset(result.data.as_byte(), u8(0), result.nbytes)
     return result
 
 def ones(shape, dtype: type = float, order: str = 'C'):
@@ -453,7 +453,7 @@ def arange(start: float, stop: float, step: float, dtype: type = float):
         raise ValueError('step cannot be zero')
 
     delta = stop - start
-    tmp_len = delta / step
+    tmp_len = delta.cdiv(step)
 
     length = 0
     if tmp_len == 0.0 and delta != 0.0:
@@ -558,7 +558,7 @@ def linspace(start: float, stop: float, num: int = 50,
 
     delta = stop - start
     div = (num - 1) if endpoint else num
-    step = delta / div
+    step = delta.cdiv(float(div))
 
     result = empty(num, dtype=dtype)
     p = result.data
@@ -566,7 +566,7 @@ def linspace(start: float, stop: float, num: int = 50,
     if div > 0:
         if step == 0:
             for i in range(num):
-                p[i] = util.cast(((i / div) * delta) + start, dtype)
+                p[i] = util.cast((float(i).cdiv(float(div)) * delta) + start, dtype)
         else:
             for i in range(num):
                 p[i] = util.cast((i * step) + start, dtype)
@@ -592,7 +592,7 @@ def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
 
     delta = stop - start
     div = (num - 1) if endpoint else num
-    step = delta / div
+    step = delta.cdiv(float(div))
 
     result = empty(num, dtype=dtype)
     p = result.data
@@ -600,7 +600,7 @@ def _linlogspace(start: float, stop: float, num: int = 50, base: float = 10.0,
     if div > 0:
         if step == 0:
             for i in range(num):
-                y = ((i / div) * delta) + start
+                y = (float(i).cdiv(float(div)) * delta) + start
                 if log:
                     y = util.pow64(base, y)
                 y *= out_sign
@@ -701,9 +701,9 @@ def fromiter(iterable, dtype: type, count: int = -1):
 
 def frombuffer(buffer: str, dtype: type = float, count: int = -1, offset: int = 0):
     if count < 0:
-        count = (len(buffer) - offset) // util.sizeof(dtype)
+        count = (len(buffer) - offset).cdiv(util.sizeof(dtype))
 
-    p = Ptr[dtype](buffer.ptr + offset)
+    p = Ptr[dtype](buffer._ptr + offset)
     return ndarray((count,), p)
 
 ################
@@ -1035,7 +1035,7 @@ def moveaxis(a, source, destination):
     for dest, src in sorted(zip(destination, source)):
         order.insert(dest, src)
 
-    order = Ptr[type(a.shape)](order.arr.ptr.as_byte())[0]
+    order = Ptr[type(a.shape)](order._ptr.as_byte())[0]
     return a.transpose(order)
 
 def swapaxes(a, axis1: int, axis2: int):
@@ -2026,7 +2026,7 @@ def split(ary, indices_or_sections, axis: int = 0):
         sections = indices_or_sections
         axis = util.normalize_axis_index(axis, ary.ndim)
         N = ary.shape[axis]
-        if N % sections:
+        if N.cmod(sections):
             raise ValueError("array split does not result in an equal division")
     return array_split(ary, indices_or_sections, axis)
 
@@ -2130,7 +2130,7 @@ def rot90(m, k: int = 1, axes: Tuple[int,int] = (0, 1)):
         or axes[1] >= ndim or axes[1] < -ndim):
         raise ValueError(f"Axes={axes} out of range for array of ndim={m.ndim}.")
 
-    k %= 4
+    k = k.cmod(4)
 
     if k == 0:
         return m[:]
@@ -2900,12 +2900,12 @@ def pad(array, pad_width, mode = 'constant', **kwargs):
 
             dtype = vec.dtype
             delta = stop - start
-            step = delta / num
+            step = delta.cdiv(float(num))
 
             for i in range(num):
                 j = num - 1 - i if rev else i
                 p = vec._ptr((j + offset,))
-                e = ((i / num) * delta) + start if not step else (i * step) + start
+                e = (float(i).cdiv(float(num)) * delta) + start if not step else (i * step) + start
                 p[0] = round_if_needed(e, dtype)
 
         p1, p2 = iaxis_pad_width
@@ -4260,16 +4260,14 @@ def _round_int(x: T, decimals: int, T: type):
     else:
         f = _power_of_ten(-decimals)
         y = util.cast(x, float)
-        return T(int(util.rint(y / f) * f))
+        return T(int(util.rint(y.cdiv(f)) * f))
 
 def _round(x: T, decimals: int, T: type):
     if isinstance(x, complex) or isinstance(x, complex64):
         return T(_round(x.real, decimals), _round(x.imag, decimals))
 
-    if (isinstance(x, int) or
-        isinstance(x, Int) or
+    if (isinstance(x, Int) or
         isinstance(x, UInt) or
-        isinstance(x, byte) or
         isinstance(x, bool)):
         return _round_int(x, decimals)
 
@@ -4280,10 +4278,10 @@ def _round(x: T, decimals: int, T: type):
         return util.rint(x)
     elif decimals > 0:
         f = T(_power_of_ten(decimals))
-        return util.rint(x * f) / f
+        return util.rint(x * f).cdiv(f)
     else:
         f = T(_power_of_ten(-decimals))
-        return util.rint(x / f) * f
+        return util.rint(x.cdiv(f)) * f
 
 def round(a, decimals: int = 0, out = None):
     a = asarray(a)
@@ -4460,7 +4458,6 @@ def packbits(a, axis = None, bitorder: str = 'big'):
 
     if (a.dtype is not bool and
         a.dtype is not int and
-        a.dtype is not byte and
         not isinstance(a.dtype, Int) and
         not isinstance(a.dtype, UInt)):
         compile_error("Expected an input array of integer or boolean data type")
@@ -4715,7 +4712,6 @@ def isscalar(element):
             T is complex or
             T is complex64 or
             T is bool or
-            T is byte or
             isinstance(T, Int) or
             isinstance(T, UInt) or
             T is str or
@@ -4734,7 +4730,7 @@ def _array_get_part(arr: ndarray, imag: Literal[bool]):
         if imag:
             n = arr.size
             data = Ptr[arr.dtype](n)
-            str.memset(data.as_byte(), byte(0), n * arr.itemsize)
+            str.memset(data.as_byte(), u8(0), n * arr.itemsize)
             return ndarray(arr.shape, data)
         else:
             return arr

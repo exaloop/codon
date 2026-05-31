@@ -24,8 +24,8 @@
 typedef int64_t seq_int_t;
 
 struct seq_str_t {
-  seq_int_t len;
   char *str;
+  seq_int_t len;
 };
 
 struct seq_time_t {

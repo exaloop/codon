@@ -2,22 +2,20 @@
 
 from internal.types.optional import unwrap
 
+_DEFAULT_DEQUE_CAPACITY: Literal[int] = 16
+
 @dataclass(init=False)
 class deque:
-    _arr: Array[T]
+    _arr: Ptr[T]
+    _cap: int
     _head: int
     _tail: int
     _maxlen: int
     T: type
 
-    def __init__(self, arr: Array[T], head: int, tail: int, maxlen: int):
-        self._arr = arr
-        self._head = head
-        self._tail = tail
-        self._maxlen = maxlen
-
     def __init__(self):
-        self._arr = Array[T](16)
+        self._arr = Ptr[T](_DEFAULT_DEQUE_CAPACITY)
+        self._cap = _DEFAULT_DEQUE_CAPACITY
         self._head = 0
         self._tail = 0
         self._maxlen = -1
@@ -26,18 +24,25 @@ class deque:
         cap = 1
         while cap < maxlen:
             cap *= 2
-        self._arr = Array[T](cap)
+        self._arr = Ptr[T](cap)
+        self._cap = cap
         self._head = 0
         self._tail = 0
         self._maxlen = maxlen
 
     def __init__(self, it: Generator[T]):
-        self._arr = Array[T](16)
-        self._head = 0
-        self._tail = 0
-        self._maxlen = -1
+        self.__init__()
         for i in it:
             self.append(i)
+
+    def __init__(self, other: deque[T]):
+        self._arr = Ptr[T](other._cap)
+        self._cap = other._cap
+        self._head = other._head
+        self._tail = other._tail
+        self._maxlen = other._maxlen
+        str.memcpy(self._arr.as_byte(), other._arr.as_byte(),
+                   self._cap * T.__elemsize__)
 
     @property
     def maxlen(self) -> int:
@@ -45,15 +50,16 @@ class deque:
 
     def _double_cap(self):
         p = self._head
-        n = len(self._arr)
+        n = self._cap
         r = n - p
         new_cap = n * 2
-        new_arr = Array[T](new_cap)
+        new_arr = Ptr[T](new_cap)
         for i in range(r):
             new_arr[i] = self._arr[p + i]
         for i in range(p):
             new_arr[i + r] = self._arr[i]
         self._arr = new_arr
+        self._cap = new_cap
         self._head = 0
         self._tail = n
 
@@ -65,10 +71,10 @@ class deque:
         return self._head != self._tail
 
     def __len__(self) -> int:
-        return (self._tail - self._head) & (len(self._arr) - 1)
+        return (self._tail - self._head) & (self._cap - 1)
 
     def appendleft(self, x: T):
-        self._head = (self._head - 1) & (len(self._arr) - 1)
+        self._head = (self._head - 1) & (self._cap - 1)
         self._arr[self._head] = x
         if self._maxlen >= 0 and len(self) > self._maxlen:
             self.pop()
@@ -77,7 +83,7 @@ class deque:
 
     def append(self, x: T):
         self._arr[self._tail] = x
-        self._tail = (self._tail + 1) & (len(self._arr) - 1)
+        self._tail = (self._tail + 1) & (self._cap - 1)
         if self._maxlen >= 0 and len(self) > self._maxlen:
             self.popleft()
         if self._head == self._tail:
@@ -87,29 +93,29 @@ class deque:
         self._check_not_empty()
         res = self._arr[self._head]
         if not T.__atomic__:
-            str.memset((self._arr.ptr + self._head).as_byte(), byte(0), T.__elemsize__)
-        self._head = (self._head + 1) & (len(self._arr) - 1)
+            str.memset((self._arr + self._head).as_byte(), u8(0), T.__elemsize__)
+        self._head = (self._head + 1) & (self._cap - 1)
         return res
 
     def pop(self) -> T:
         self._check_not_empty()
-        self._tail = (self._tail - 1) & (len(self._arr) - 1)
+        self._tail = (self._tail - 1) & (self._cap - 1)
         res = self._arr[self._tail]
         if not T.__atomic__:
-            str.memset((self._arr.ptr + self._tail).as_byte(), byte(0), T.__elemsize__)
+            str.memset((self._arr + self._tail).as_byte(), u8(0), T.__elemsize__)
         return res
 
     def clear(self):
         self._head = 0
         self._tail = 0
         if not T.__atomic__:
-            str.memset(self._arr.ptr.as_byte(), byte(0), len(self._arr) * T.__elemsize__)
+            str.memset(self._arr.as_byte(), u8(0), self._cap * T.__elemsize__)
 
     def __iter__(self) -> Generator[T]:
         i = self._head
         while i != self._tail:
             yield self._arr[i]
-            i = (i + 1) & (len(self._arr) - 1)
+            i = (i + 1) & (self._cap - 1)
 
     def __contains__(self, x: T) -> bool:
         for i in self:
@@ -121,7 +127,7 @@ class deque:
         return deque(i.__deepcopy__() for i in self)
 
     def __copy__(self) -> deque[T]:
-        return deque[T](self._arr.__copy__(), self._head, self._tail, self._maxlen)
+        return deque[T](self)
 
     def copy(self) -> deque[T]:
         return self.__copy__()
@@ -144,10 +150,10 @@ class deque:
         self._idx_check(idx, "list index out of range")
         if self._head <= self._tail:
             return self._arr[self._head + idx]
-        elif self._head + idx < len(self._arr):
+        elif self._head + idx < self._cap:
             return self._arr[self._head + idx]
         else:
-            idx -= len(self._arr) - self._head
+            idx -= self._cap - self._head
             assert 0 <= idx < self._tail
             return self._arr[idx]
 

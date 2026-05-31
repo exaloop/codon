@@ -43,29 +43,17 @@ class _time_t:
             i16(0), i16(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0), i8(0)
         )
 
-@pure
-@llvm
-def _cdiv(a: T, b: T, T: type) -> T:
-    %c = sdiv {=T} %a, %b
-    ret {=T} %c
-
-@pure
-@llvm
-def _cmod(a: T, b: T, T: type) -> T:
-    %c = srem {=T} %a, %b
-    ret {=T} %c
-
 def _extract_unit_64(d: int, unit: int):
-    div = _cdiv(d, unit)
-    mod = _cmod(d, unit)
+    div = d.cdiv(unit)
+    mod = d.cmod(unit)
     if mod < 0:
         mod += unit
         div -= 1
     return div, mod
 
 def _extract_unit_32(d: i32, unit: i32):
-    div = _cdiv(d, unit)
-    mod = _cmod(d, unit)
+    div = d.cdiv(unit)
+    mod = d.cmod(unit)
     if mod < i32(0):
         mod += unit
         div -= i32(1)
@@ -89,7 +77,7 @@ _datetime_factors = (1, 1, 7, 1, 24, 60, 60, 1000, 1000, 1000, 1000, 1000,
                      1000, 1, 0)
 
 def _is_leapyear(year: int):
-    return year & 0x3 == 0 and (_cmod(year, 100) != 0 or _cmod(year, 400) == 0)
+    return year & 0x3 == 0 and (year.cmod(100) != 0 or year.cmod(400) == 0)
 
 def _days_to_yearsdays(days: int):
     days_per_400years: Literal[int] = 400 * 365 + 100 - 4 + 1
@@ -98,14 +86,14 @@ def _days_to_yearsdays(days: int):
     year = 400 * div
 
     if days >= 366:
-        year += 100 * ((days - 1) // (100 * 365 + 25 - 1))
-        days = (days - 1) % (100 * 365 + 25 - 1)
+        year += 100 * ((days - 1).cdiv(100 * 365 + 25 - 1))
+        days = (days - 1).cmod(100 * 365 + 25 - 1)
         if days >= 365:
-            year += 4 * ((days + 1) // (4 * 365 + 1))
-            days = (days + 1) % (4 * 365 + 1)
+            year += 4 * ((days + 1).cdiv(4 * 365 + 1))
+            days = (days + 1).cmod(4 * 365 + 1)
             if days >= 366:
-                year += (days - 1) // 365
-                days = (days - 1) % 365
+                year += (days - 1).cdiv(365)
+                days = (days - 1).cmod(365)
 
     return days, year + 2000
 
@@ -143,7 +131,7 @@ def _uint64_euclidean_gcd(x: u64, y: u64):
         y = tmp
 
     while x != y and y:
-        tmp = x % y
+        tmp = x.cmod(y)
         x = y
         y = tmp
 
@@ -940,8 +928,8 @@ class DatetimeMetaData:
         r = i32(0)
 
         for i in range(num):
-            q = totry[i] // den
-            r = totry[i] % den
+            q = totry[i].cdiv(den)
+            r = totry[i].cmod(den)
             if r == i32(0):
                 break
 
@@ -1008,7 +996,7 @@ class DatetimeMetaData:
         num *= u64(int(self.num))
         denom *= u64(int(dst.num))
         gcd = _uint64_euclidean_gcd(num, denom)
-        return int(num // gcd), int(denom // gcd)
+        return int(num.cdiv(gcd)), int(denom.cdiv(gcd))
 
 @extend
 class timedelta64:
@@ -1035,9 +1023,9 @@ class timedelta64:
                 num: Literal[int]) -> timedelta64[base, num]:
         _validate_base(base)
         _validate_num(num)
-        if (len(s) == 3 and (s.ptr[0] == byte(78) or s.ptr[0] == byte(110))
-                and (s.ptr[1] == byte(65) or s.ptr[1] == byte(97))
-                and (s.ptr[2] == byte(116) or s.ptr[2] == byte(84))):
+        if (len(s) == 3 and (s._ptr[0] == u8(78) or s._ptr[0] == u8(110))
+                and (s._ptr[1] == u8(65) or s._ptr[1] == u8(97))
+                and (s._ptr[2] == u8(116) or s._ptr[2] == u8(84))):
             return timedelta64[base, num](_DATETIME_NAT)
         else:
             return timedelta64[base, num](int(s))
@@ -1074,10 +1062,10 @@ class timedelta64:
         if self._nat:
             return timedelta64(_DATETIME_NAT, TD.base, TD.num)
         elif self.value < 0:
-            return timedelta64(_cdiv(self.value * num - (denom - 1), denom),
+            return timedelta64((self.value * num - (denom - 1)).cdiv(denom),
                                TD.base, TD.num)
         else:
-            return timedelta64(_cdiv(self.value * num, denom), TD.base, TD.num)
+            return timedelta64((self.value * num).cdiv(denom), TD.base, TD.num)
 
     def _code():
         return _base_code(base)
@@ -1176,9 +1164,7 @@ class timedelta64:
         return timedelta64(1 if v > 0 else (-1 if v < 0 else 0), base, num)
 
     def __add__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self + int(other)
@@ -1186,9 +1172,7 @@ class timedelta64:
             compile_error("cannot add timedelta64 and non-int type")
 
     def __radd__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) + self
@@ -1216,9 +1200,7 @@ class timedelta64:
         return self + timedelta64(other, base, num)
 
     def __sub__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self - int(other)
@@ -1226,9 +1208,7 @@ class timedelta64:
             compile_error("cannot subtract timedelta64 and non-int type")
 
     def __rsub__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) - self
@@ -1249,9 +1229,7 @@ class timedelta64:
         return (-self) + other
 
     def __mul__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self * int(other)
@@ -1263,9 +1241,7 @@ class timedelta64:
             compile_error("cannot multiply timedelta64 and non-int, non-float type")
 
     def __rmul__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) * self
@@ -1309,9 +1285,7 @@ class timedelta64:
             return timedelta64(self.value * other, base, num)
 
     def __floordiv__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self // int(other)
@@ -1333,7 +1307,7 @@ class timedelta64:
             if in2 == 0:
                 return 0
             else:
-                x = _cdiv(in1, in2)
+                x = in1.cdiv(in2)
                 if (in1 > 0) != (in2 > 0) and x * in2 != in1:
                     x -= 1
                 return x
@@ -1342,18 +1316,16 @@ class timedelta64:
         if self._nat or other == 0.0 or math.isnan(other):
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(int(float(self.value) / other), base, num)
+            return timedelta64(int(float(self.value).cdiv(other)), base, num)
 
     def __floordiv__(self, other: int):
         if self._nat or other == 0:
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(_cdiv(self.value, other), base, num)
+            return timedelta64(self.value.cdiv(other), base, num)
 
     def __truediv__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self / int(other)
@@ -1369,19 +1341,22 @@ class timedelta64:
         if self._nat or other._nat:
             return math.nan
         else:
-            return self.value / other.value
+            return float(self.value).cdiv(float(other.value))
 
     def __truediv__(self, other: float):
         if self._nat or other == 0.0 or math.isnan(other):
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(int(float(self.value) / other), base, num)
+            return timedelta64(int(float(self.value).cdiv(other)), base, num)
 
     def __truediv__(self, other: int):
         if self._nat or other == 0:
             return timedelta64(_DATETIME_NAT, base, num)
         else:
-            return timedelta64(int(float(self.value) / other), base, num)
+            return timedelta64(int(float(self.value).cdiv(float(other))), base, num)
+
+    def cdiv(self, other: timedelta64):
+        return self.__truediv__(other)
 
     def __mod__(self, other: timedelta64):
         self, other = _coerce(self, other)
@@ -1394,11 +1369,14 @@ class timedelta64:
             if in2 == 0:
                 return timedelta64(_DATETIME_NAT, self.base, self.num)
             else:
-                rem = _cmod(in1, in2)
+                rem = in1.cmod(in2)
                 if (in1 > 0) == (in2 > 0) or rem == 0:
                     return timedelta64(rem, self.base)
                 else:
                     return timedelta64(rem + in2, self.base, self.num)
+
+    def cmod(self, other: timedelta64):
+        return self.__mod__(other)
 
     def __divmod__(self, other: timedelta64):
         self, other = _coerce(self, other)
@@ -1411,8 +1389,8 @@ class timedelta64:
             if in2 == 0:
                 return (0, timedelta64(_DATETIME_NAT, self.base, self.num))
             else:
-                quo = _cdiv(in1, in2)
-                rem = _cmod(in1, in2)
+                quo = in1.cdiv(in2)
+                rem = in1.cmod(in2)
                 if (in1 > 0) == (in2 > 0) or rem == 0:
                     return (quo, timedelta64(rem, self.base, self.num))
                 else:
@@ -1558,9 +1536,7 @@ class datetime64:
         return bool(self.value)
 
     def __add__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self + int(other)
@@ -1568,9 +1544,7 @@ class datetime64:
             compile_error("cannot add datetime64 and non-int type")
 
     def __radd__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return int(other) + self
@@ -1591,9 +1565,7 @@ class datetime64:
         return self + timedelta64(other, base, num)
 
     def __sub__(self, other):
-        if (isinstance(other, int) or
-            isinstance(other, bool) or
-            isinstance(other, byte) or
+        if (isinstance(other, bool) or
             isinstance(other, Int) or
             isinstance(other, UInt)):
             return self - int(other)
@@ -1712,17 +1684,17 @@ class datetimestruct:
 
         if days >= 0:
             year += 1
-            days += year // 4
+            days += year.cdiv(4)
             year += 68
-            days -= year // 100
+            days -= year.cdiv(100)
             year += 300
-            days += year // 400
+            days += year.cdiv(400)
         else:
             year -= 2
-            days += year // 4
+            days += year.cdiv(4)
             year -= 28
-            days -= year // 100
-            days += year // 400
+            days -= year.cdiv(100)
+            days += year.cdiv(400)
 
         month_lengths = _days_per_month_table[int(_is_leapyear(self.year))]
         month = int(self.month) - 1
@@ -1801,9 +1773,9 @@ class datetimestruct:
 
             if base == i32(_FR_W):
                 if days >= 0:
-                    ret = days // 7
+                    ret = days.cdiv(7)
                 else:
-                    ret = (days - 6) // 7
+                    ret = (days - 6).cdiv(7)
             elif base == i32(_FR_D):
                 ret = days
             elif base == i32(_FR_h):
@@ -1816,7 +1788,7 @@ class datetimestruct:
             elif base == i32(_FR_ms):
                 ret = ((
                     (days * 24 + int(self.hour)) * 60 + int(self.min)) * 60 +
-                       int(self.sec)) * 1000 + int(self.us) // 1000
+                       int(self.sec)) * 1000 + int(self.us).cdiv(1000)
             elif base == i32(_FR_us):
                 ret = ((
                     (days * 24 + int(self.hour)) * 60 + int(self.min)) * 60 +
@@ -1825,7 +1797,7 @@ class datetimestruct:
                 ret = (((
                     (days * 24 + int(self.hour)) * 60 + int(self.min)) * 60 +
                         int(self.sec)) * 1000000 + int(self.us)) * 1000 + int(
-                            self.ps) // 1000
+                            self.ps).cdiv(1000)
             elif base == i32(_FR_ps):
                 ret = (
                     (((days * 24 + int(self.hour)) * 60 + int(self.min)) * 60 +
@@ -1835,7 +1807,7 @@ class datetimestruct:
                 ret = ((((
                     (days * 24 + int(self.hour)) * 60 + int(self.min)) * 60 +
                          int(self.sec)) * 1000000 + int(self.us)) * 1000000 +
-                       int(self.ps)) * 1000 + int(self.as_) // 1000
+                       int(self.ps)) * 1000 + int(self.as_).cdiv(1000)
             elif base == i32(_FR_as):
                 ret = ((((
                     (days * 24 + int(self.hour)) * 60 + int(self.min)) * 60 +
@@ -1848,9 +1820,9 @@ class datetimestruct:
         num = int(meta.num)
         if num > 1:
             if ret >= 0:
-                ret //= num
+                ret = ret.cdiv(num)
             else:
-                ret = (ret - num + 1) // num
+                ret = (ret - num + 1).cdiv(num)
 
         return ret
 
@@ -2005,7 +1977,7 @@ class datetimestruct:
         out.month = i32(int(tm.mon) + 1)
         out.year = int(tm.year) + 1900
 
-        rawtime = _cdiv(rawtime, 60)
+        rawtime = rawtime.cdiv(60)
         localrawtime = out.days * 24 * 60
         localrawtime += int(out.hour) * 60
         localrawtime += int(out.min)
@@ -2015,15 +1987,15 @@ class datetimestruct:
         return timezone_offset
 
     def lossless_unit(self):
-        if _cmod(self.as_, i32(1000)):
+        if self.as_.cmod(i32(1000)):
             return _FR_as
         elif self.as_:
             return _FR_fs
-        elif _cmod(self.ps, i32(1000)):
+        elif self.ps.cmod(i32(1000)):
             return _FR_ps
         elif self.ps:
             return _FR_ns
-        elif _cmod(self.us, i32(1000)):
+        elif self.us.cmod(i32(1000)):
             return _FR_us
         elif self.us:
             return _FR_ms
@@ -2043,7 +2015,7 @@ class datetimestruct:
     def parse_iso8601(self, s: str):
 
         def tolower(b):
-            return byte(int(_C.tolower(i32(int(b)))))
+            return u8(int(_C.tolower(i32(int(b)))))
 
         def isspace(b):
             return bool(_C.isspace(i32(int(b))))
@@ -2056,14 +2028,14 @@ class datetimestruct:
                 return False
 
             for i in static.range(static.len(vals)):
-                if tolower(str_[i]) != byte(vals[i]):
+                if tolower(str_[i]) != u8(vals[i]):
                     return False
 
             return True
 
         def parse_error(s: str, substr: cobj):
             raise ValueError(
-                f"Error parsing datetime string \"{s}\" at position {substr - s.ptr}"
+                f"Error parsing datetime string \"{s}\" at position {substr - s._ptr}"
             )
 
         def parse_timezone(self, s: str, substr: cobj, sublen: int):
@@ -2071,18 +2043,18 @@ class datetimestruct:
             if sublen == 0:
                 return
 
-            if substr[0] == byte(90):
+            if substr[0] == u8(90):
                 if sublen == 1:
                     return
                 else:
                     substr += 1
                     sublen -= 1
-            elif substr[0] == byte(45) or substr[0] == byte(43):
+            elif substr[0] == u8(45) or substr[0] == u8(43):
                 offset_neg = False
                 offset_hour = i32(0)
                 offset_minute = i32(0)
 
-                if substr[0] == byte(45):
+                if substr[0] == u8(45):
                     offset_neg = True
 
                 substr += 1
@@ -2103,7 +2075,7 @@ class datetimestruct:
                     parse_error(s, substr)
 
                 if sublen > 0:
-                    if substr[0] == byte(58):
+                    if substr[0] == u8(58):
                         substr += 1
                         sublen -= 1
 
@@ -2140,7 +2112,7 @@ class datetimestruct:
         self.day = i32(1)
 
         bestunit = 0
-        str_ = s.ptr
+        str_ = s._ptr
         len_ = len(s)
 
         if len_ <= 0 or strcmp(str_, len_, (110, 97, 116)):  # 'nat'
@@ -2176,7 +2148,7 @@ class datetimestruct:
             substr += 1
             sublen -= 1
 
-        if substr[0] == byte(45) or substr[0] == byte(43):
+        if substr[0] == u8(45) or substr[0] == u8(43):
             substr += 1
             sublen -= 1
 
@@ -2190,7 +2162,7 @@ class datetimestruct:
             substr += 1
             sublen -= 1
 
-        if str_[0] == byte(45):
+        if str_[0] == u8(45):
             self.year = -self.year
 
         year_leap = _is_leapyear(self.year)
@@ -2198,7 +2170,7 @@ class datetimestruct:
         if sublen == 0:
             bestunit = _FR_Y
             return bestunit
-        elif substr[0] == byte(45):
+        elif substr[0] == u8(45):
             substr += 1
             sublen -= 1
         else:
@@ -2224,7 +2196,7 @@ class datetimestruct:
         if sublen == 0:
             bestunit = _FR_M
             return bestunit
-        elif substr[0] == byte(45):
+        elif substr[0] == u8(45):
             substr += 1
             sublen -= 1
         else:
@@ -2252,7 +2224,7 @@ class datetimestruct:
         if sublen == 0:
             bestunit = _FR_D
             return bestunit
-        elif substr[0] != byte(84) and substr[0] != byte(32):
+        elif substr[0] != u8(84) and substr[0] != u8(32):
             parse_error(s, substr)
         else:
             substr += 1
@@ -2271,7 +2243,7 @@ class datetimestruct:
         else:
             parse_error(s, substr)
 
-        if sublen > 0 and substr[0] == byte(58):
+        if sublen > 0 and substr[0] == u8(58):
             substr += 1
             sublen -= 1
         else:
@@ -2295,7 +2267,7 @@ class datetimestruct:
         else:
             parse_error(s, substr)
 
-        if sublen > 0 and substr[0] == byte(58):
+        if sublen > 0 and substr[0] == u8(58):
             substr += 1
             sublen -= 1
         else:
@@ -2319,7 +2291,7 @@ class datetimestruct:
         else:
             parse_error(s, substr)
 
-        if sublen > 0 and substr[0] == byte(46):
+        if sublen > 0 and substr[0] == u8(46):
             substr += 1
             sublen -= 1
         else:
@@ -2451,7 +2423,7 @@ class datetimestruct:
             digits = 0
             while m != 0:
                 digits += 1
-                m //= 10
+                m = m.cdiv(10)
 
             for i in range(width - digits):
                 buf.append('0')
@@ -2459,10 +2431,10 @@ class datetimestruct:
             # append digits
             i1 = buf.n
             while n != 0:
-                digit = n % 10
-                b = byte(48 + digit)
+                digit = n.cmod(10)
+                b = u8(48 + digit)
                 buf.append(str(__ptr__(b), 1))
-                n //= 10
+                n = n.cdiv(10)
 
             # reverse added digits
             i2 = buf.n - 1
@@ -2483,11 +2455,10 @@ class datetimestruct:
                 else:
                     buf.append('+')
 
-                c0 = byte(_cmod(_cdiv(timezone_offset, 10 * 60), 10) + 48)
-                c1 = byte(_cmod(_cdiv(timezone_offset, 60), 10) + 48)
-                c2 = byte(
-                    _cmod(_cdiv(_cmod(timezone_offset, 60), 10), 10) + 48)
-                c3 = byte(_cmod(_cmod(timezone_offset, 60), 10) + 48)
+                c0 = u8(timezone_offset.cdiv(10 * 60).cmod(10) + 48)
+                c1 = u8(timezone_offset.cdiv(60).cmod(10) + 48)
+                c2 = u8(timezone_offset.cmod(60).cdiv(10).cmod(10) + 48)
+                c3 = u8(timezone_offset.cmod(60).cmod(10) + 48)
 
                 buf.append(str(__ptr__(c0), 1))
                 buf.append(str(__ptr__(c1), 1))
@@ -2568,7 +2539,7 @@ class datetimestruct:
             return buf.__str__()
 
         buf.append('.')
-        write_int(buf, self.us // i32(1000), 3)
+        write_int(buf, self.us.cdiv(i32(1000)), 3)
         if unit == _FR_ms:
             add_timezone(buf,
                          local=local,
@@ -2576,7 +2547,7 @@ class datetimestruct:
                          timezone_offset=timezone_offset)
             return buf.__str__()
 
-        write_int(buf, self.us % i32(1000), 3)
+        write_int(buf, self.us.cmod(i32(1000)), 3)
         if unit == _FR_us:
             add_timezone(buf,
                          local=local,
@@ -2584,7 +2555,7 @@ class datetimestruct:
                          timezone_offset=timezone_offset)
             return buf.__str__()
 
-        write_int(buf, self.ps // i32(1000), 3)
+        write_int(buf, self.ps.cdiv(i32(1000)), 3)
         if unit == _FR_ns:
             add_timezone(buf,
                          local=local,
@@ -2592,7 +2563,7 @@ class datetimestruct:
                          timezone_offset=timezone_offset)
             return buf.__str__()
 
-        write_int(buf, self.ps % i32(1000), 3)
+        write_int(buf, self.ps.cmod(i32(1000)), 3)
         if unit == _FR_ps:
             add_timezone(buf,
                          local=local,
@@ -2600,7 +2571,7 @@ class datetimestruct:
                          timezone_offset=timezone_offset)
             return buf.__str__()
 
-        write_int(buf, self.as_ // i32(1000), 3)
+        write_int(buf, self.as_.cdiv(i32(1000)), 3)
         if unit == _FR_fs:
             add_timezone(buf,
                          local=local,
@@ -2608,7 +2579,7 @@ class datetimestruct:
                          timezone_offset=timezone_offset)
             return buf.__str__()
 
-        write_int(buf, self.as_ % i32(1000), 3)
+        write_int(buf, self.as_.cmod(i32(1000)), 3)
         add_timezone(buf,
                      local=local,
                      utc=utc,
@@ -2641,7 +2612,7 @@ class _weekmask:
         return self.mask.popcnt()
 
 def _get_day_of_week(date: datetime64['D', 1]):
-    day_of_week = _cmod(date.value - 4, 7)
+    day_of_week = (date.value - 4).cmod(7)
     if day_of_week < 0:
         day_of_week += 7
     return day_of_week
@@ -2650,7 +2621,7 @@ def _is_holiday(date: datetime64['D', 1], holidays_begin: Ptr[datetime64['D',
                                                                          1]],
                 holidays_end: Ptr[datetime64['D', 1]]):
     while holidays_begin < holidays_end:
-        trial = holidays_begin + (holidays_end - holidays_begin) // 2
+        trial = holidays_begin + (holidays_end - holidays_begin).cdiv(2)
         if date.value < trial[0].value:
             holidays_end = trial
         elif date.value > trial[0].value:
@@ -2663,7 +2634,7 @@ def _find_earliest_holiday_on_or_after(date: datetime64['D', 1],
                                        holidays_begin: Ptr[datetime64['D', 1]],
                                        holidays_end: Ptr[datetime64['D', 1]]):
     while holidays_begin < holidays_end:
-        trial = holidays_begin + (holidays_end - holidays_begin) // 2
+        trial = holidays_begin + (holidays_end - holidays_begin).cdiv(2)
         if date.value < trial[0].value:
             holidays_end = trial
         elif date.value > trial[0].value:
@@ -2676,7 +2647,7 @@ def _find_earliest_holiday_after(date: datetime64['D', 1],
                                  holidays_begin: Ptr[datetime64['D', 1]],
                                  holidays_end: Ptr[datetime64['D', 1]]):
     while holidays_begin < holidays_end:
-        trial = holidays_begin + (holidays_end - holidays_begin) // 2
+        trial = holidays_begin + (holidays_end - holidays_begin).cdiv(2)
         if date.value < trial[0].value:
             holidays_end = trial
         elif date.value > trial[0].value:
@@ -2770,8 +2741,8 @@ def _apply_busines_day_offset(date: datetime64['D', 1], offset: int, roll: int,
     if offset > 0:
         holidays_begin = _find_earliest_holiday_on_or_after(
             date, holidays_begin, holidays_end)
-        date += _cdiv(offset, busdays_in_weekmask) * 7
-        offset = _cmod(offset, busdays_in_weekmask)
+        date += offset.cdiv(busdays_in_weekmask) * 7
+        offset = offset.cmod(busdays_in_weekmask)
 
         holidays_temp = _find_earliest_holiday_after(date, holidays_begin,
                                                      holidays_end)
@@ -2789,8 +2760,8 @@ def _apply_busines_day_offset(date: datetime64['D', 1], offset: int, roll: int,
     elif offset < 0:
         holidays_end = _find_earliest_holiday_after(date, holidays_begin,
                                                     holidays_end)
-        date += _cdiv(offset, busdays_in_weekmask) * 7
-        offset = _cmod(offset, busdays_in_weekmask)
+        date += offset.cdiv(busdays_in_weekmask) * 7
+        offset = offset.cmod(busdays_in_weekmask)
 
         holidays_temp = _find_earliest_holiday_on_or_after(
             date, holidays_begin, holidays_end)
@@ -2835,7 +2806,7 @@ def _apply_busines_day_count(date_begin: datetime64['D', 1],
                                                       holidays_end)
     count = -(holidays_end - holidays_begin)
 
-    whole_weeks = _cdiv(date_end.value - date_begin.value, 7)
+    whole_weeks = (date_end.value - date_begin.value).cdiv(7)
     count += whole_weeks * busdays_in_weekmask
     date_begin += whole_weeks * 7
 
@@ -2962,13 +2933,13 @@ class busdaycalendar:
                         hlist.append(datetime64(holidays[i], 'D'))
             hlist.sort()
 
-            hptr = hlist.arr.ptr
+            hptr = hlist._ptr
             trimcount = 0
             for i in range(count):
                 date = hptr[i]
 
                 if not date._nat and date.value != lastdate:
-                    day_of_week = _cmod(date.value - 4, 7)
+                    day_of_week = (date.value - 4).cmod(7)
                     if day_of_week < 0:
                         day_of_week += 7
 

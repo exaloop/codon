@@ -22,8 +22,7 @@ class _OpWrap:
 def _fix_scalar(x, A: type):
     X = type(x)
 
-    a_is_int: Literal[bool] = (A is int or A is byte or isinstance(A, Int)
-                               or isinstance(A, UInt))
+    a_is_int: Literal[bool] = (isinstance(A, Int) or isinstance(A, UInt))
     x_is_int: Literal[bool] = X is int
 
     a_is_float: Literal[bool] = (A is float or A is float32 or A is float16
@@ -84,11 +83,23 @@ def _rbinop_impl(arr: ndarray, other, op):
 
     return arr._rop_elemwise(asarray(other), op)
 
+def _true_divide(x, y):
+    X = type(x)
+    Y = type(y)
+    if X is Y and util.isfloat(X):
+        return x.cdiv(y)
+    elif X is Y and util.isint(X):
+        return float(x).cdiv(float(y))
+    else:
+        return x / y
+
 def _floor_divide(x, y):
     X = type(x)
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pydiv(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cdiv(y)
     else:
         return x // y
 
@@ -97,6 +108,8 @@ def _remainder(x, y):
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pymod(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cmod(y)
     elif ((X is float and Y is float) or
           (X is float32 and Y is float32) or
           (X is float16 and Y is float16)):
@@ -169,15 +182,15 @@ class ndarray:
 
     @inline
     def __truediv__(self, other):
-        return _binop_impl(self, other, operator.truediv)
+        return _binop_impl(self, other, _true_divide)
 
     @inline
     def __rtruediv__(self, other):
-        return _rbinop_impl(self, other, operator.truediv)
+        return _rbinop_impl(self, other, _true_divide)
 
     @inline
     def __itruediv__(self, other):
-        return _ibinop_impl(self, other, operator.truediv)
+        return _ibinop_impl(self, other, _true_divide)
 
     @inline
     def __floordiv__(self, other):

@@ -30,7 +30,7 @@ class Generator:
     @pure
     @derives
     @llvm
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         ret ptr %self
 
     @pure

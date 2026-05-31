@@ -13,6 +13,7 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/engine.h"
 #include "codon/compiler/error.h"
+#include "codon/compiler/options.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/visitors/translate/translate.h"
 #include "codon/parser/visitors/typecheck/typecheck.h"
@@ -44,11 +45,11 @@ public:
 class JIT {
 public:
   struct PythonData {
-    ir::types::Type *cobj;
+    ir::Type *cobj;
     std::unordered_map<std::string, ir::Func *> cache;
 
     PythonData();
-    ir::types::Type *getCObjType(ir::Module *M);
+    ir::Type *getCObjType(ir::Module *M);
   };
 
   struct JITResult {
@@ -68,7 +69,7 @@ private:
   bool forgetful = false;
 
 public:
-  explicit JIT(const std::string &argv0, const std::string &mode = "",
+  explicit JIT(const Options &options, const std::string &mode = "",
                const std::string &stdlibRoot = "");
 
   Compiler *getCompiler() const { return compiler.get(); }

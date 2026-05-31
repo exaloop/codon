@@ -109,7 +109,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install mkdocs \
+          python -m pip install properdocs \
                                 mkdocs-autorefs \
                                 mkdocs-macros-plugin \
                                 mkdocs-material \
@@ -132,7 +132,7 @@ jobs:
           python scripts/docgen.py docs.json docs/libraries/api $(pwd)/codon-deploy-linux-x86_64/lib/codon/stdlib
 
       - name: Build MkDocs site
-        run: mkdocs build --strict
+        run: properdocs build --strict
 
       - name: Deploy to GitHub Pages
         if: github.ref == 'refs/heads/master'

@@ -55,7 +55,7 @@ def test_conversions():
     assert check(42)
     assert check(3.14)
     assert check(f32(2.718))
-    assert check(byte(99))
+    assert check(u8(99))
     assert check(Int[128](123123))
     assert check(UInt[128](321321))
     assert check(Optional[int]())

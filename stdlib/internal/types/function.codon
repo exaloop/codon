@@ -7,7 +7,7 @@ class Function:
     @pure
     @overload
     @llvm
-    def __new__(what: Ptr[byte]) -> Function[T, TR]:
+    def __new__(what: Ptr[u8]) -> Function[T, TR]:
         ret ptr %what
 
     @overload
@@ -16,7 +16,7 @@ class Function:
 
     @pure
     @llvm
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         ret ptr %self
 
     def __repr__(self) -> str:
@@ -32,11 +32,11 @@ class Function:
 
 @extend
 class Callable:
-    def __new__(fn: Function[[Ptr[byte], T], TR], data: Ptr[byte]) -> Callable[T, TR]:
+    def __new__(fn: Function[[Ptr[u8], T], TR], data: Ptr[u8]) -> Callable[T, TR]:
         return type._force_value_cast((fn, data), Callable[T, TR])
 
     @overload
-    def __new__(fn: Function[[Ptr[byte], T], TR], data: Partial[M,PT,K,F],
+    def __new__(fn: Function[[Ptr[u8], T], TR], data: Partial[M,PT,K,F],
                 T: type, TR: type,
                 M: Literal[str], PT: type, F: type, K: type) -> Callable[T, TR]:
         p = Ptr[Partial[M,PT,K,F]](1)
@@ -44,15 +44,15 @@ class Callable:
         return Callable(fn, p.as_byte())
 
     @overload
-    def __new__(fn: Function[[Ptr[byte], T], TR], data: Function[T, TR]) -> Callable[T, TR]:
+    def __new__(fn: Function[[Ptr[u8], T], TR], data: Function[T, TR]) -> Callable[T, TR]:
         return Callable(fn, data.__raw__())
 
     @overload
     def __new__(fn: Function[T, TR]) -> Callable[T, TR]:
-        def _wrap(data: Ptr[byte], args, f: type):
+        def _wrap(data: Ptr[u8], args, f: type):
             return f(data)(*args)
         return Callable(
-            static.function.realized(_wrap(f=Function[T, TR], ...), Ptr[byte], T),
+            static.function.realized(_wrap(f=Function[T, TR], ...), Ptr[u8], T),
             fn.__raw__()
         )
 

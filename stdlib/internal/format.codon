@@ -49,7 +49,7 @@ def _python_to_fmt_format(s):
         width_pre_zero = True
         i += 1
     width = 0
-    while i < len(s) and str._isdigit(s.ptr[i]):
+    while i < len(s) and str._isdigit(s._ptr[i]):
         width = 10 * width + ord(s[i]) - ord('0')
         i += 1
 
@@ -64,7 +64,7 @@ def _python_to_fmt_format(s):
     if i < len(s) and s[i] == '.':
         i += 1
         precision = 0
-        while i < len(s) and str._isdigit(s.ptr[i]):
+        while i < len(s) and str._isdigit(s._ptr[i]):
             precision = 10 * precision + ord(s[i]) - ord('0')
             i += 1
 
@@ -91,15 +91,6 @@ def _python_to_fmt_format(s):
     if grouping: ns.append("L")
     if type: ns.append(type)
     return str(ns)
-
-@extend
-class int:
-    def __format__(self, format_spec: str) -> str:
-        err = False
-        ret = _C.seq_str_int(self, _python_to_fmt_format(format_spec), __ptr__(err))
-        if format_spec and err:
-            _format_error(ret)
-        return ret
 
 @extend
 class Int:
@@ -174,30 +165,51 @@ def _divmod_10(dividend, N: Literal[int]):
 @extend
 class Int:
     def __str__(self) -> str:
-        if N <= 64:
+        if N < 64:
+            n = int(self)
             return str(int(self))
+
+        if N == 64:
+            if not self:
+                return '0'
+
+            s = __array__[u8](20)  # max length of 64-bit string
+            d = self
+            n = 0
+            neg = (d < 0)
+
+            while True:
+                m = d.cmod(10)
+                d = d.cdiv(10)
+                s[n] = u8(48 + abs(m))  # 48 == ord('0')
+                n += 1
+                if not d:
+                    break
+
+            if neg:
+                s[n] = u8(45)  # 45 == ord('-')
+                n += 1
+
+            p = Ptr[u8](n)
+            for i in range(n):
+                p[i] = s[n - i - 1]
+            return str(p, n)
 
         if not self:
             return '0'
 
         s = _strbuf()
         d = self
+        pos = (d >= Int[N](0))
 
-        if d >= Int[N](0):
-            while True:
-                d, m = _divmod_10(d, N)
-                b = byte(48 + m)  # 48 == ord('0')
-                s.append(str(__ptr__(b), 1))
-                if not d:
-                    break
-        else:
-            while True:
-                d, m = _divmod_10(d, N)
-                b = byte(48 - m)  # 48 == ord('0')
-                s.append(str(__ptr__(b), 1))
+        while True:
+            d, m = _divmod_10(d, N)
+            b = u8(48 + abs(m))  # 48 == ord('0')
+            s.append(str(__ptr__(b), 1))
+            if not d:
+                break
 
-                if not d:
-                    break
+        if not pos:
             s.append('-')
 
         s.reverse()
@@ -214,7 +226,7 @@ class UInt:
 
         while True:
             d, m = _divmod_10(d, N)
-            b = byte(48 + int(m))  # 48 == ord('0')
+            b = u8(48 + int(m))  # 48 == ord('0')
             s.append(str(__ptr__(b), 1))
             if not d:
                 break

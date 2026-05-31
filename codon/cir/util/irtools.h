@@ -23,6 +23,13 @@ bool hasAttribute(const Func *func, const std::string &attribute);
 ///         the given module
 bool isStdlibFunc(const Func *func, const std::string &submodule = "");
 
+/// Checks whether a type represents an int type with given length and sign.
+/// @param type the type
+/// @param len bit length to check for
+/// @param sign true if type is signed, false otherwise
+/// @return true if type represents int type with given parameters
+bool isInt(const Type *type, unsigned len = 64, bool sign = true);
+
 /// Calls a function.
 /// @param func the function
 /// @param args vector of call arguments
@@ -37,7 +44,7 @@ CallInstr *call(Func *func, const std::vector<Value *> &args);
 /// @param method true to ensure this call is a method call
 /// @return true if value is a call matching all parameters above
 bool isCallOf(const Value *value, const std::string &name,
-              const std::vector<types::Type *> &inputs, types::Type *output = nullptr,
+              const std::vector<Type *> &inputs, Type *output = nullptr,
               bool method = false);
 
 /// Checks if a value represents a call of a particular function.
@@ -48,7 +55,7 @@ bool isCallOf(const Value *value, const std::string &name,
 /// @param method true to ensure this call is a method call
 /// @return true if value is a call matching all parameters above
 bool isCallOf(const Value *value, const std::string &name, int numArgs = -1,
-              types::Type *output = nullptr, bool method = false);
+              Type *output = nullptr, bool method = false);
 
 /// Checks if a value represents a call to a magic method.
 /// Magic method names start and end in "__" (two underscores).
@@ -75,14 +82,14 @@ Var *makeVar(Value *x, SeriesFlow *flow, BodiedFunc *parent, bool prepend = fals
 /// @param type the type
 /// @param count integer value representing the number of elements
 /// @return value representing a pointer to the allocated memory
-Value *alloc(types::Type *type, Value *count);
+Value *alloc(Type *type, Value *count);
 
 /// Dynamically allocates memory for the given type with the given
 /// number of elements.
 /// @param type the type
 /// @param count the number of elements
 /// @return value representing a pointer to the allocated memory
-Value *alloc(types::Type *type, int64_t count);
+Value *alloc(Type *type, int64_t count);
 
 /// Builds a new series flow with the given contents. Returns
 /// null if no contents are provided.
@@ -196,12 +203,12 @@ const BodiedFunc *getStdlibFunc(const Value *x, const std::string &name,
 /// Gets the return type of a function.
 /// @param func the function
 /// @return the return type of the given function
-types::Type *getReturnType(const Func *func);
+Type *getReturnType(const Func *func);
 
 /// Sets the return type of a function. Argument types remain unchanged.
 /// @param func the function
 /// @param rType the new return type
-void setReturnType(Func *func, types::Type *rType);
+void setReturnType(Func *func, Type *rType);
 
 } // namespace util
 } // namespace ir

@@ -14,17 +14,15 @@ namespace transform {
 namespace lowering {
 namespace {
 
-bool isFuture(const types::Type *type) {
+bool isFuture(const Type *type) {
   return type->getName().rfind("std.asyncio.Future.", 0) == 0;
 }
 
-bool isTask(const types::Type *type) {
+bool isTask(const Type *type) {
   return type->getName().rfind("std.asyncio.Task.", 0) == 0;
 }
 
-const types::GeneratorType *isCoroutine(const types::Type *type) {
-  return cast<types::GeneratorType>(type);
-}
+const GeneratorType *isCoroutine(const Type *type) { return cast<GeneratorType>(type); }
 
 } // namespace
 

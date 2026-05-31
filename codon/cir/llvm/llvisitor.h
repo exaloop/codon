@@ -5,6 +5,7 @@
 #include "codon/cir/cir.h"
 #include "codon/cir/llvm/llvm.h"
 #include "codon/cir/pyextension.h"
+#include "codon/compiler/options.h"
 #include "codon/dsl/plugins.h"
 #include "codon/util/common.h"
 
@@ -71,7 +72,7 @@ private:
     /// Block to support exceptions raised from 'except' and 'else' blocks
     llvm::BasicBlock *finallyExceptionBlock;
     /// Try-catch catch types
-    std::vector<types::Type *> catchTypes;
+    std::vector<Type *> catchTypes;
     /// Try-catch handlers, corresponding to catch types
     std::vector<llvm::BasicBlock *> handlers;
     /// Exception state flag (see "State")
@@ -112,20 +113,10 @@ private:
     std::unique_ptr<llvm::DIBuilder> builder;
     /// Current compilation unit
     llvm::DICompileUnit *unit;
-    /// Whether we are compiling in debug mode
-    bool debug;
-    /// Whether we are compiling in JIT mode
-    bool jit;
-    /// Whether we are compiling a standalone object/executable
-    bool standalone;
-    /// Whether to capture writes to stdout/stderr
-    bool capture;
     /// Program command-line flags
     std::string flags;
 
-    DebugInfo()
-        : builder(), unit(nullptr), debug(false), jit(false), standalone(false),
-          capture(false), flags() {}
+    DebugInfo() : builder(), unit(nullptr), flags() {}
 
     llvm::DIFile *getFile(const std::string &path);
 
@@ -135,6 +126,8 @@ private:
     }
   };
 
+  /// Compiler options
+  Options *options;
   /// LLVM context used for compilation
   std::unique_ptr<llvm::LLVMContext> context;
   /// Module we are compiling
@@ -167,7 +160,7 @@ private:
   PluginManager *plugins;
 
   llvm::DIType *
-  getDITypeHelper(types::Type *t,
+  getDITypeHelper(Type *t,
                   std::unordered_map<std::string, llvm::DICompositeType *> &cache);
 
   /// GC allocation functions
@@ -189,8 +182,8 @@ private:
   llvm::StructType *getTypeInfoType();
   llvm::StructType *getPadType();
   llvm::StructType *getExceptionType();
-  llvm::GlobalVariable *getTypeIdxVar(types::Type *catchType);
-  int getTypeIdx(types::Type *catchType = nullptr);
+  llvm::GlobalVariable *getTypeIdxVar(Type *catchType);
+  int getTypeIdx(Type *catchType = nullptr);
 
   // General function helpers
   llvm::Value *call(llvm::FunctionCallee callee, llvm::ArrayRef<llvm::Value *> args);
@@ -261,37 +254,7 @@ public:
   }
 
   /// Constructs an LLVM visitor.
-  LLVMVisitor();
-
-  /// @return true if in debug mode, false otherwise
-  bool getDebug() const { return db.debug; }
-  /// Sets debug status.
-  /// @param d true if debug mode
-  void setDebug(bool d = true) { db.debug = d; }
-
-  /// @return true if in JIT mode, false otherwise
-  bool getJIT() const { return db.jit; }
-  /// Sets JIT status.
-  /// @param j true if JIT mode
-  void setJIT(bool j = true) { db.jit = j; }
-
-  /// @return true if in standalone mode, false otherwise
-  bool getStandalone() const { return db.standalone; }
-  /// Sets standalone status.
-  /// @param s true if standalone
-  void setStandalone(bool s = true) { db.standalone = s; }
-
-  /// @return true if capturing outputs, false otherwise
-  bool getCapture() const { return db.capture; }
-  /// Sets capture status.
-  /// @param c true to capture
-  void setCapture(bool c = true) { db.capture = c; }
-
-  /// @return program flags
-  std::string getFlags() const { return db.flags; }
-  /// Sets program flags.
-  /// @param f flags
-  void setFlags(const std::string &f) { db.flags = f; }
+  explicit LLVMVisitor(Options *options);
 
   llvm::LLVMContext &getContext() { return *context; }
   llvm::IRBuilder<> &getBuilder() { return *B; }
@@ -393,15 +356,15 @@ public:
   /// Gets LLVM type from IR type
   /// @param t the IR type
   /// @return corresponding LLVM type
-  llvm::Type *getLLVMType(types::Type *t);
+  llvm::Type *getLLVMType(Type *t);
   /// Gets LLVM function type from IR function type
   /// @param t the IR type (must be FuncType)
   /// @return corresponding LLVM function type
-  llvm::FunctionType *getLLVMFuncType(types::Type *t);
+  llvm::FunctionType *getLLVMFuncType(Type *t);
   /// Gets the LLVM debug info type from the IR type
   /// @param t the IR type
   /// @return corresponding LLVM DI type
-  llvm::DIType *getDIType(types::Type *t);
+  llvm::DIType *getDIType(Type *t);
   /// Gets loop data for a given loop id
   /// @param loopId the IR id of the loop
   /// @return the loop's datas

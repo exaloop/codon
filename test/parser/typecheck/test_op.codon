@@ -78,6 +78,13 @@ print(bar() and foo())
 #: bar
 #: False
 
+v: Optional[str] = None
+result = v or "default"
+print(result)  #: default
+v: Optional[str] = "hoo"
+result = v or "default"
+print(result)  #: hoo
+
 #%% chain_binary,barebones
 def foo():
     print 'foo'
@@ -380,9 +387,8 @@ l.append(('str', 1, True, 5.15))
 print l, l.__class__.__name__ #: [('str', 1, True, 5.15)] List[Tuple[str,int,bool,float]]
 
 #%% nested_generic,barebones
-x = Array[Array[int]](0)
 f = Optional[Optional[Optional[int]]](Optional[Optional[int]](Optional[int](5)))
-print x.len, f  #: 0 5
+print f  #: 5
 
 #%% static,barebones
 class Num[N_: Literal[int]]:

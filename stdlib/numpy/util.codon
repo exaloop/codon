@@ -335,7 +335,7 @@ def coords_to_findex(coords: S, limits: S, S: type):
 
 def sort(p: Ptr[T], n: int, key, T: type):
     from algorithms.pdqsort import pdq_sort_array
-    pdq_sort_array(Array(p, n), n, key)
+    pdq_sort_array(p, n, key)
 
 def sort_by_stride(shape, strides):
     if static.len(strides) <= 1:
@@ -661,39 +661,43 @@ def eps(T: type):
     elif T is float16:
         return eps16()
 
-def mantdig64():
+def mantdig64() -> Literal[int]:
     return 53
 
-def mantdig32():
+def mantdig32() -> Literal[int]:
     return 24
 
-def mantdig16():
+def mantdig16() -> Literal[int]:
     return 11
 
-def mantdig(T: type):
+def mantdig(T: type) -> Literal[int]:
     if T is float:
         return mantdig64()
     elif T is float32:
         return mantdig32()
     elif T is float16:
         return mantdig16()
+    else:
+        return 0
 
-def maxexp64():
+def maxexp64() -> Literal[int]:
     return 1024
 
-def maxexp32():
+def maxexp32() -> Literal[int]:
     return 128
 
-def maxexp16():
+def maxexp16() -> Literal[int]:
     return 16
 
-def maxexp(T: type):
+def maxexp(T: type) -> Literal[int]:
     if T is float:
         return maxexp64()
     elif T is float32:
         return maxexp32()
     elif T is float16:
         return maxexp16()
+    else:
+        return 0
 
 @pure
 @llvm
@@ -2040,16 +2044,16 @@ def _chbevl32(x: float32, vals, nvals: int):
     return float32(0.5)*(b0 - b2)
 
 def _i0_1_64(x: float):
-    return exp64(x) * _chbevl64(x/2.0-2, _i0A, _NUM_I0A)
+    return exp64(x) * _chbevl64(x.cdiv(2.0) - 2.0, _i0A, _NUM_I0A)
 
 def _i0_2_64(x: float):
-    return exp64(x) * _chbevl64(32.0/x - 2.0, _i0B, _NUM_I0B) / sqrt64(x)
+    return (exp64(x) * _chbevl64((32.0).cdiv(x) - 2.0, _i0B, _NUM_I0B)).cdiv(sqrt64(x))
 
 def _i0_1_32(x: float32):
-    return exp32(x) * _chbevl32(x/float32(2.0)-float32(2), _i0A, _NUM_I0A)
+    return exp32(x) * _chbevl32(x.cdiv(float32(2.0)) - float32(2.0), _i0A, _NUM_I0A)
 
 def _i0_2_32(x: float32):
-    return exp32(x) * _chbevl32(float32(32.0)/x - float32(2.0), _i0B, _NUM_I0B) / sqrt32(x)
+    return (exp32(x) * _chbevl32(float32(32.0).cdiv(x) - float32(2.0), _i0B, _NUM_I0B)).cdiv(sqrt32(x))
 
 def i0_64(x: float):
     x = fabs64(x)
@@ -2198,6 +2202,19 @@ def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr[
 # Types #
 #########
 
+def isint(X: type) -> Literal[bool]:
+    return isinstance(X, Int) or isinstance(X, UInt)
+
+def isfloat(X: type) -> Literal[bool]:
+    return (X is float or X is float128 or X is float32 or
+            X is float16 or X is bfloat16)
+
+def iscomplex(X: type) -> Literal[bool]:
+    return X is complex or X is complex64
+
+def isinexact(X: type) -> Literal[bool]:
+    return isfloat(X) or iscomplex(X)
+
 def sizeof(X: type):
     from internal.gc import sizeof as sz
     return sz(X)
@@ -2237,7 +2254,6 @@ def cast(x, T: type):
     # Need to support specially:
     #   - bool
     #   - int
-    #   - byte
     #   - Int[N]
     #   - UInt[N]
     #   - float
@@ -2267,43 +2283,9 @@ def cast(x, T: type):
             return T(x, T.base, T.num)
         else:
             return T(cast(x, int), T.base, T.num)
-    elif T is int:
-        if X is bool:
-            return 1 if x else 0
-        elif X is int:
-            return x
-        elif X is byte:
-            return int(x)
-        elif isinstance(X, Int):
-            return int(x)
-        elif isinstance(X, UInt):
-            return int(x)
-        elif X is float:
-            return int(x)
-        elif X is float16:
-            return int(float(x))
-        elif X is float32:
-            return int(float(x))
-        elif X is complex:
-            return int(x.real)
-        elif X is complex64:
-            return int(float(x.real))
-        else:
-            return T(x)
-    elif T is byte:
-        return byte(int(x))
     elif isinstance(T, Int):
         if X is bool:
             return T(1 if x else 0)
-        elif X is int:
-            return T(x)
-        elif X is byte:
-            if T.N > 8:
-                return zext(x, T)
-            elif T.N < 8:
-                return itrunc(x, T)
-            else:
-                return noop(x, T)
         elif isinstance(X, Int):
             if T.N > X.N:
                 return sext(x, T)
@@ -2333,15 +2315,6 @@ def cast(x, T: type):
     elif isinstance(T, UInt):
         if X is bool:
             return T(1 if x else 0)
-        elif X is int:
-            return T(x)
-        elif X is byte:
-            if T.N > 8:
-                return zext(x, T)
-            elif T.N < 8:
-                return itrunc(x, T)
-            else:
-                return noop(x, T)
         elif isinstance(X, Int):
             if T.N > X.N:
                 return sext(x, T)
@@ -2371,10 +2344,6 @@ def cast(x, T: type):
     elif T is float:
         if X is bool:
             return 1. if x else 0.
-        elif X is int:
-            return sitofp(x, T)
-        elif X is byte:
-            return uitofp(x, T)
         elif isinstance(X, Int):
             return sitofp(x, T)
         elif isinstance(X, UInt):
@@ -2394,10 +2363,6 @@ def cast(x, T: type):
     elif T is float16:
         if X is bool:
             return float16(1. if x else 0.)
-        elif X is int:
-            return sitofp(x, T)
-        elif X is byte:
-            return uitofp(x, T)
         elif isinstance(X, Int):
             return sitofp(x, T)
         elif isinstance(X, UInt):
@@ -2417,10 +2382,6 @@ def cast(x, T: type):
     elif T is float32:
         if X is bool:
             return float32(1. if x else 0.)
-        elif X is int:
-            return sitofp(x, T)
-        elif X is byte:
-            return uitofp(x, T)
         elif isinstance(X, Int):
             return sitofp(x, T)
         elif isinstance(X, UInt):
@@ -2510,7 +2471,6 @@ def coerce(T1: type, T2: type):
     # Need to support specially:
     #   - bool
     #   - int
-    #   - byte
     #   - Int[N]
     #   - UInt[N]
     #   - float
@@ -2533,10 +2493,6 @@ def coerce(T1: type, T2: type):
     if T1 is bool:
         if T2 is bool:
             return coerce(T2, T1)
-        elif T2 is int:
-            return int()
-        elif T2 is byte:
-            return byte()
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return T2()
         elif T2 is float:
@@ -2558,8 +2514,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
         elif T2 is int:
             return coerce(T2, T1)
-        elif T2 is byte:
-            return int()
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce_ints(int, T2, I1=Int[64])
         elif T2 is float:
@@ -2576,35 +2530,10 @@ def coerce(T1: type, T2: type):
             return T2()
         elif isinstance(T2, timedelta64):
             return T2()
-    elif T1 is byte:
-        if T2 is bool:
-            return coerce(T2, T1)
-        elif T2 is int:
-            return coerce(T2, T1)
-        elif T2 is byte:
-            return coerce(T2, T1)
-        elif isinstance(T2, Int) or isinstance(T2, UInt):
-            return coerce_ints(int, T2, I1=UInt[8])
-        elif T2 is float:
-            return float()
-        elif T2 is float16:
-            return float16()
-        elif T2 is float32:
-            return float32()
-        elif T2 is complex:
-            return complex()
-        elif T2 is complex64:
-            return complex64()
-        elif isinstance(T2, datetime64):
-            return T2()
-        elif isinstance(T2, timedelta64):
-            return T2()
     elif isinstance(T1, Int):
         if T2 is bool:
             return coerce(T2, T1)
         elif T2 is int:
-            return coerce(T2, T1)
-        elif T2 is byte:
             return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce_ints(T1, T2)
@@ -2638,8 +2567,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
         elif T2 is int:
             return coerce(T2, T1)
-        elif T2 is byte:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce_ints(T1, T2)
         elif T2 is float:
@@ -2672,8 +2599,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
         elif T2 is int:
             return coerce(T2, T1)
-        elif T2 is byte:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
         elif T2 is float:
@@ -2694,8 +2619,6 @@ def coerce(T1: type, T2: type):
         if T2 is bool:
             return coerce(T2, T1)
         elif T2 is int:
-            return coerce(T2, T1)
-        elif T2 is byte:
             return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
@@ -2718,8 +2641,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
         elif T2 is int:
             return coerce(T2, T1)
-        elif T2 is byte:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
         elif T2 is float:
@@ -2741,8 +2662,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
         elif T2 is int:
             return coerce(T2, T1)
-        elif T2 is byte:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
         elif T2 is float:
@@ -2761,10 +2680,6 @@ def coerce(T1: type, T2: type):
             return T2()
     elif T1 is complex64:
         if T2 is bool:
-            return coerce(T2, T1)
-        elif T2 is int:
-            return coerce(T2, T1)
-        elif T2 is byte:
             return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
@@ -2785,10 +2700,6 @@ def coerce(T1: type, T2: type):
     elif isinstance(T1, datetime64):
         if T2 is bool:
             return coerce(T2, T1)
-        elif T2 is int:
-            return coerce(T2, T1)
-        elif T2 is byte:
-            return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
         elif T2 is float:
@@ -2803,10 +2714,6 @@ def coerce(T1: type, T2: type):
             return coerce(T2, T1)
     elif isinstance(T1, timedelta64):
         if T2 is bool:
-            return coerce(T2, T1)
-        elif T2 is int:
-            return coerce(T2, T1)
-        elif T2 is byte:
             return coerce(T2, T1)
         elif isinstance(T2, Int) or isinstance(T2, UInt):
             return coerce(T2, T1)
@@ -2840,8 +2747,7 @@ def to_float(x):
     if isinstance(x, float128):
         return fptrunc(x, float)
 
-    if (isinstance(x, int) or
-        isinstance(x, i64) or
+    if (isinstance(x, i64) or
         isinstance(x, u64) or
         isinstance(x, i32) or
         isinstance(x, u32)):
@@ -2852,8 +2758,7 @@ def to_float(x):
         return cast(x, float32)
 
     if (isinstance(x, i8) or
-        isinstance(x, u8) or
-        isinstance(x, byte)):
+        isinstance(x, u8)):
         return cast(x, float16)
 
     if (isinstance(x, datetime64) or
@@ -2938,9 +2843,6 @@ def dtype_to_str(dtype: type, include_byteorder: bool = True):
     if dtype is bool:
         return '|b1' if include_byteorder else 'b1'
 
-    if dtype is byte:
-        return '|u1' if include_byteorder else 'u1'
-
     if dtype is i8:
         return '|i1' if include_byteorder else 'i1'
 
@@ -2959,7 +2861,7 @@ def dtype_to_str(dtype: type, include_byteorder: bool = True):
     if dtype is u32:
         return '<u4' if include_byteorder else 'u4'
 
-    if dtype is i64 or dtype is int:
+    if dtype is i64:
         return '<i8' if include_byteorder else 'i8'
 
     if dtype is u64:

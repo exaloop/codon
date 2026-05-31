@@ -61,8 +61,9 @@ print(t)  #: s
 class List:
     def __init__(self, cap: int):
         print 'optimize', cap
-        self.arr = Array[T](cap)
-        self.len = 0
+        self._ptr = Ptr[T](cap)
+        self._len = 0
+        self._cap = cap
 def foo():
     yield 0
     yield 1

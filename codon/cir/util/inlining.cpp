@@ -74,7 +74,7 @@ InlineResult inlineFunction(Func *func, std::vector<Value *> args, bool aggressi
   auto *bodied = cast<BodiedFunc>(func);
   if (!bodied)
     return {nullptr, {}};
-  auto *fType = cast<types::FuncType>(bodied->getType());
+  auto *fType = cast<FuncType>(bodied->getType());
   if (!fType || args.size() != std::distance(bodied->arg_begin(), bodied->arg_end()))
     return {nullptr, {}};
   auto *M = bodied->getModule();
@@ -92,8 +92,7 @@ InlineResult inlineFunction(Func *func, std::vector<Value *> args, bool aggressi
     newVars.push_back(cv.forceClone(v));
   }
   Var *retVal = nullptr;
-  if (!fType->getReturnType()->is(M->getVoidType()) &&
-      !fType->getReturnType()->is(M->getNoneType())) {
+  if (!fType->getReturnType()->is(M->getNoneType())) {
     retVal = M->N<Var>(info, fType->getReturnType());
     newVars.push_back(retVal);
   }

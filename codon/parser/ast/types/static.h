@@ -37,6 +37,7 @@ struct IntStaticType : public StaticType {
   Expr *getStaticExpr() const override;
   LiteralKind getStaticKind() override { return LiteralKind::Int; }
 
+  Type *getNonStaticType() const override;
   IntStaticType *getIntStatic() override { return this; }
 };
 

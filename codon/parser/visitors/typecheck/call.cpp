@@ -164,7 +164,11 @@ void TypecheckVisitor::visit(CallExpr *expr) {
       std::vector<std::string> a;
       for (auto &t : *expr)
         a.emplace_back(fmt::format("{}", t.getExpr()->getType()->getStatic()
-                                             ? t.getExpr()->getClassType()->name
+                                             ? t.getExpr()
+                                                   ->getType()
+                                                   ->getStatic()
+                                                   ->getNonStaticType()
+                                                   ->prettyString()
                                              : t.getExpr()->getType()->prettyString()));
       auto argsNice = fmt::format("({})", join(a, ", "));
       auto name = getUnmangledName(calleeFn->getFuncName());

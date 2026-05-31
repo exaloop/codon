@@ -138,7 +138,7 @@ Expr *TypecheckVisitor::transformInt(IntExpr *expr) {
   } else {
     // Custom suffix: call `int.__suffix_[suffix]__(value)`
     return transform(N<CallExpr>(
-        N<DotExpr>(N<IdExpr>("int"), fmt::format("__suffix_{}__", suffix)), holder));
+        N<DotExpr>(N<IdExpr>("Int"), fmt::format("__suffix_{}__", suffix)), holder));
   }
 }
 

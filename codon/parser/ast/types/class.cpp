@@ -52,12 +52,6 @@ ClassType::ClassType(const ClassType *base)
 
 int ClassType::unify(Type *typ, Unification *us) {
   if (auto tc = typ->getClass()) {
-    if (name == "int" && tc->name == "Int")
-      return tc->unify(this, us);
-    if (tc->name == "int" && name == "Int") {
-      auto t64 = std::make_shared<IntStaticType>(cache, 64);
-      return generics[0].type->unify(t64.get(), us);
-    }
     if (name == "unrealized_type" && tc->name == name) {
       // instantiate + unify!
       std::unordered_map<int, types::TypePtr> genericCache;
@@ -301,7 +295,10 @@ std::string ClassType::debugString(char mode) const {
   }
   // Special formatting for Functions and Tuples
   auto n = mode == 0 ? cache->rev(name) : name;
-  return n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
+  auto s = n + (gs.empty() ? "" : ("[" + join(gs, ",") + "]"));
+  if (s == "Int[64]")
+    return "int";
+  return s;
 }
 
 std::string ClassType::realizedName() const {
@@ -326,7 +323,6 @@ std::string ClassType::realizedName() const {
     s = join(gs, ",");
     s = name + (s.empty() ? "" : ("[" + s + "]"));
   }
-
   if (canRealize())
     const_cast<ClassType *>(this)->_rn = s;
 

@@ -29,8 +29,8 @@ int findAndReplace(id_t id, codon::ir::Var *newVal,
 
 const char Func::NodeId = 0;
 
-void Func::realize(types::Type *newType, const std::vector<std::string> &names) {
-  auto *funcType = cast<types::FuncType>(newType);
+void Func::realize(Type *newType, const std::vector<std::string> &names) {
+  auto *funcType = cast<FuncType>(newType);
   seqassert(funcType, "{} is not a function type", *newType);
 
   setType(funcType);
@@ -58,11 +58,11 @@ int Func::doReplaceUsedVariable(id_t id, Var *newVar) {
   return findAndReplace(id, newVar, args);
 }
 
-std::vector<types::Type *> Func::doGetUsedTypes() const {
-  std::vector<types::Type *> ret;
+std::vector<Type *> Func::doGetUsedTypes() const {
+  std::vector<Type *> ret;
 
   for (auto *t : Var::getUsedTypes())
-    ret.push_back(const_cast<types::Type *>(t));
+    ret.push_back(const_cast<Type *>(t));
 
   if (parentType)
     ret.push_back(parentType);
@@ -70,7 +70,7 @@ std::vector<types::Type *> Func::doGetUsedTypes() const {
   return ret;
 }
 
-int Func::doReplaceUsedType(const std::string &name, types::Type *newType) {
+int Func::doReplaceUsedType(const std::string &name, Type *newType) {
   auto count = Var::replaceUsedType(name, newType);
   if (parentType && parentType->getName() == name) {
     parentType = newType;
@@ -107,20 +107,20 @@ const char InternalFunc::NodeId = 0;
 
 const char LLVMFunc::NodeId = 0;
 
-std::vector<types::Type *> LLVMFunc::doGetUsedTypes() const {
-  std::vector<types::Type *> ret;
+std::vector<Type *> LLVMFunc::doGetUsedTypes() const {
+  std::vector<Type *> ret;
 
   for (auto *t : Func::getUsedTypes())
-    ret.push_back(const_cast<types::Type *>(t));
+    ret.push_back(const_cast<Type *>(t));
 
   for (auto &l : llvmLiterals)
     if (l.isType())
-      ret.push_back(const_cast<types::Type *>(l.getTypeValue()));
+      ret.push_back(const_cast<Type *>(l.getTypeValue()));
 
   return ret;
 }
 
-int LLVMFunc::doReplaceUsedType(const std::string &name, types::Type *newType) {
+int LLVMFunc::doReplaceUsedType(const std::string &name, Type *newType) {
   auto count = Var::doReplaceUsedType(name, newType);
   for (auto &l : llvmLiterals)
     if (l.isType() && l.getTypeValue()->getName() == name) {

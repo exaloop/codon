@@ -2,7 +2,7 @@
 
 #include "base.h"
 
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/util/format.h"
 #include "codon/cir/value.h"
 #include "codon/cir/var.h"
@@ -28,7 +28,7 @@ int Node::replaceUsedValue(Value *old, Value *newValue) {
   return replaceUsedValue(old->getId(), newValue);
 }
 
-int Node::replaceUsedType(types::Type *old, types::Type *newType) {
+int Node::replaceUsedType(Type *old, Type *newType) {
   return replaceUsedType(old->getName(), newType);
 }
 

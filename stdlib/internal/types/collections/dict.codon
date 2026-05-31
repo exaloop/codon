@@ -88,7 +88,7 @@ class OrderedDict:
 
     @property
     def _capacity(self):
-        return (self._size << 1) // 3
+        return (self._size << 1).cdiv(3)
 
     @property
     def _active_bytes(self):
@@ -829,9 +829,9 @@ class UnorderedDict:
                 self._flags[i] = u32(0xAAAAAAAA)
                 i += 1
             if not K.__atomic__:
-                str.memset(self._keys.as_byte(), byte(0), self._n_buckets * gc.sizeof(K))
+                str.memset(self._keys.as_byte(), u8(0), self._n_buckets * gc.sizeof(K))
             if not V.__atomic__:
-                str.memset(self._vals.as_byte(), byte(0), self._n_buckets * gc.sizeof(V))
+                str.memset(self._vals.as_byte(), u8(0), self._n_buckets * gc.sizeof(V))
             self._size = 0
             self._n_occupied = 0
 
@@ -995,9 +995,9 @@ class UnorderedDict:
         if x != self._n_buckets and not khash.__ac_iseither(self._flags, x):
             khash.__ac_set_isdel_true(self._flags, x)
             if not K.__atomic__:
-                str.memset((self._keys + x).as_byte(), byte(0), gc.sizeof(K))
+                str.memset((self._keys + x).as_byte(), u8(0), gc.sizeof(K))
             if not V.__atomic__:
-                str.memset((self._vals + x).as_byte(), byte(0), gc.sizeof(V))
+                str.memset((self._vals + x).as_byte(), u8(0), gc.sizeof(V))
             self._size -= 1
 
     def _kh_begin(self) -> int:

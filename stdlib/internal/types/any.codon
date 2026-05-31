@@ -5,7 +5,7 @@ import internal.static as static
 
 @__internal__
 class Any:
-    _data: Ptr[byte]
+    _data: Ptr[u8]
     _typeinfo: TypeInfo
 
     def __str__(self):

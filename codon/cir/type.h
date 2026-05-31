@@ -19,9 +19,6 @@ namespace codon {
 namespace ir {
 
 class Value;
-
-namespace types {
-
 class Type;
 
 class Generic {
@@ -29,7 +26,7 @@ private:
   union {
     int64_t staticValue;
     char *staticStringValue;
-    types::Type *typeValue;
+    Type *typeValue;
   } value;
   enum { STATIC, STATIC_STR, TYPE } tag;
 
@@ -42,8 +39,8 @@ public:
     strncpy(value.staticStringValue, staticValue.data(), staticValue.size());
     value.staticStringValue[staticValue.size()] = 0;
   }
-  Generic(types::Type *typeValue) : value(), tag(TYPE) { value.typeValue = typeValue; }
-  Generic(const types::Generic &) = default;
+  Generic(Type *typeValue) : value(), tag(TYPE) { value.typeValue = typeValue; }
+  Generic(const Generic &) = default;
   ~Generic() {
     // if (tag == STATIC_STR)
     //   delete[] value.staticStringValue;
@@ -61,7 +58,7 @@ public:
   /// @return the static string value
   std::string getStaticStringValue() const { return value.staticStringValue; }
   /// @return the type value
-  types::Type *getTypeValue() const { return value.typeValue; }
+  Type *getTypeValue() const { return value.typeValue; }
 };
 
 /// Type from which other CIR types derive. Generally types are immutable.
@@ -87,7 +84,7 @@ public:
 
   /// @param other another type
   /// @return true if this type is equal to the argument type
-  bool is(types::Type *other) const { return getName() == other->getName(); }
+  bool is(Type *other) const { return getName() == other->getName(); }
 
   /// A type is "atomic" iff it contains no pointers to dynamically
   /// allocated memory. Atomic types do not need to be scanned during
@@ -142,13 +139,34 @@ private:
   bool doIsAtomic() const final { return true; }
 };
 
-/// Int type (64-bit signed integer)
+/// Type of a variably sized integer
 class IntType : public AcceptorExtend<IntType, PrimitiveType> {
+private:
+  /// length of the integer
+  unsigned len;
+  /// whether the variable is signed
+  bool sign;
+
 public:
   static const char NodeId;
 
-  /// Constructs an int type.
-  IntType() : AcceptorExtend("int") {}
+  static const unsigned MAX_LEN = 2048;
+
+  /// Constructs a variably sized integer type.
+  /// @param len the length of the integer
+  /// @param sign true if signed, false otherwise
+  IntType(unsigned len, bool sign)
+      : AcceptorExtend(getInstanceName(len, sign)), len(len), sign(sign) {}
+
+  /// @return the length of the integer
+  unsigned getLen() const { return len; }
+  /// @return true if signed
+  bool isSigned() const { return sign; }
+
+  /// @return the name of the opposite signed corresponding type
+  std::string oppositeSignName() const { return getInstanceName(len, !sign); }
+
+  static std::string getInstanceName(unsigned len, bool sign);
 };
 
 /// Float type (64-bit double)
@@ -203,24 +221,6 @@ public:
 
   /// Constructs a bool type.
   BoolType() : AcceptorExtend("bool") {}
-};
-
-/// Byte type (8-bit unsigned integer)
-class ByteType : public AcceptorExtend<ByteType, PrimitiveType> {
-public:
-  static const char NodeId;
-
-  /// Constructs a byte type.
-  ByteType() : AcceptorExtend("byte") {}
-};
-
-/// Void type
-class VoidType : public AcceptorExtend<VoidType, PrimitiveType> {
-public:
-  static const char NodeId;
-
-  /// Constructs a void type.
-  VoidType() : AcceptorExtend("void") {}
 };
 
 /// Type from which membered types derive.
@@ -492,36 +492,6 @@ private:
   bool doIsAtomic() const override { return false; }
 };
 
-/// Type of a variably sized integer
-class IntNType : public AcceptorExtend<IntNType, PrimitiveType> {
-private:
-  /// length of the integer
-  unsigned len;
-  /// whether the variable is signed
-  bool sign;
-
-public:
-  static const char NodeId;
-
-  static const unsigned MAX_LEN = 2048;
-
-  /// Constructs a variably sized integer type.
-  /// @param len the length of the integer
-  /// @param sign true if signed, false otherwise
-  IntNType(unsigned len, bool sign)
-      : AcceptorExtend(getInstanceName(len, sign)), len(len), sign(sign) {}
-
-  /// @return the length of the integer
-  unsigned getLen() const { return len; }
-  /// @return true if signed
-  bool isSigned() const { return sign; }
-
-  /// @return the name of the opposite signed corresponding type
-  std::string oppositeSignName() const { return getInstanceName(len, !sign); }
-
-  static std::string getInstanceName(unsigned len, bool sign);
-};
-
 /// Type of a vector of primitives
 class VectorType : public AcceptorExtend<VectorType, PrimitiveType> {
 private:
@@ -550,17 +520,17 @@ public:
 class UnionType : public AcceptorExtend<UnionType, Type> {
 private:
   /// alternative types
-  std::vector<types::Type *> types;
+  std::vector<Type *> types;
 
 public:
   static const char NodeId;
 
-  using const_iterator = std::vector<types::Type *>::const_iterator;
-  using const_reference = std::vector<types::Type *>::const_reference;
+  using const_iterator = std::vector<Type *>::const_iterator;
+  using const_reference = std::vector<Type *>::const_reference;
 
   /// Constructs a UnionType.
   /// @param types the alternative types (must be sorted by caller)
-  explicit UnionType(std::vector<types::Type *> types)
+  explicit UnionType(std::vector<Type *> types)
       : AcceptorExtend(), types(std::move(types)) {}
 
   const_iterator begin() const { return types.begin(); }
@@ -568,10 +538,10 @@ public:
   const_reference front() const { return types.front(); }
   const_reference back() const { return types.back(); }
 
-  static std::string getInstanceName(const std::vector<types::Type *> &types);
+  static std::string getInstanceName(const std::vector<Type *> &types);
 
 private:
-  std::vector<types::Type *> doGetUsedTypes() const override { return types; }
+  std::vector<Type *> doGetUsedTypes() const override { return types; }
 
   bool doIsAtomic() const override {
     return !std::any_of(types.begin(), types.end(),
@@ -579,8 +549,7 @@ private:
   }
 };
 
-} // namespace types
 } // namespace ir
 } // namespace codon
 
-template <> struct fmt::formatter<codon::ir::types::Type> : fmt::ostream_formatter {};
+template <> struct fmt::formatter<codon::ir::Type> : fmt::ostream_formatter {};

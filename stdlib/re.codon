@@ -226,7 +226,7 @@ class Match:
         return pieces
 
     def _unescape(s: str):
-        r = []
+        r = _strbuf()
         n = len(s)
         i = 0
         while i < n:
@@ -263,14 +263,12 @@ class Match:
                     r.append('\\')
                     i += 1
                 elif '0' <= c <= '7':
-                        k = i + 2
-                        while k < n and k - i <= 4 and '0' <= s[k] <= '7':
-                            k += 1
-                        code = int(s[i+1:k], 8)
-                        p = Ptr[byte](1)
-                        p[0] = byte(code)
-                        r.append(str(p, 1))
-                        i = k - 1
+                    k = i + 2
+                    while k < n and k - i <= 4 and '0' <= s[k] <= '7':
+                        k += 1
+                    code = u8(int(s[i+1:k], 8))
+                    r.append(str(__ptr__(code), 1))
+                    i = k - 1
                 elif c.isalpha():
                     raise error(f"bad escape \\{c} at position {i}")
                 else:
@@ -279,7 +277,7 @@ class Match:
                 r.append(s[i])
             i += 1
 
-        return str.cat(r)
+        return r.__str__()
 
     def expand(self, template: str):
         def get_or_empty(s: Optional[str]):
@@ -289,7 +287,7 @@ class Match:
         INT = compile(r'[+-]?\d+')
 
         for index, piece in enumerate(pieces):
-            if not (index % 2):
+            if not index.cmod(2):
                 pieces[index] = Match._unescape(piece)
             else:
                 if len(piece) <= 3:

@@ -23,7 +23,7 @@ int findAndReplace(id_t id, codon::ir::Value *newVal,
 
 const char Instr::NodeId = 0;
 
-types::Type *Instr::doGetType() const { return getModule()->getNoneType(); }
+Type *Instr::doGetType() const { return getModule()->getNoneType(); }
 
 const char AssignInstr::NodeId = 0;
 
@@ -45,8 +45,8 @@ int AssignInstr::doReplaceUsedVariable(id_t id, Var *newVar) {
 
 const char ExtractInstr::NodeId = 0;
 
-types::Type *ExtractInstr::doGetType() const {
-  auto *memberedType = cast<types::MemberedType>(val->getType());
+Type *ExtractInstr::doGetType() const {
+  auto *memberedType = cast<MemberedType>(val->getType());
   seqassert(memberedType, "{} is not a membered type", *val->getType());
   return memberedType->getMemberType(field);
 }
@@ -76,8 +76,8 @@ int InsertInstr::doReplaceUsedValue(id_t id, Value *newValue) {
 
 const char CallInstr::NodeId = 0;
 
-types::Type *CallInstr::doGetType() const {
-  auto *funcType = cast<types::FuncType>(callee->getType());
+Type *CallInstr::doGetType() const {
+  auto *funcType = cast<FuncType>(callee->getType());
   seqassert(funcType, "{} is not a function type", *callee->getType());
   return funcType->getReturnType();
 }
@@ -100,9 +100,9 @@ int CallInstr::doReplaceUsedValue(id_t id, Value *newValue) {
 
 const char StackAllocInstr::NodeId = 0;
 
-int StackAllocInstr::doReplaceUsedType(const std::string &name, types::Type *newType) {
-  if (arrayType->getName() == name) {
-    arrayType = newType;
+int StackAllocInstr::doReplaceUsedType(const std::string &name, Type *newType) {
+  if (ptrType->getName() == name) {
+    ptrType = newType;
     return 1;
   }
   return 0;
@@ -110,7 +110,7 @@ int StackAllocInstr::doReplaceUsedType(const std::string &name, types::Type *new
 
 const char TypePropertyInstr::NodeId = 0;
 
-types::Type *TypePropertyInstr::doGetType() const {
+Type *TypePropertyInstr::doGetType() const {
   switch (property) {
   case Property::IS_ATOMIC:
     return getModule()->getBoolType();
@@ -123,8 +123,7 @@ types::Type *TypePropertyInstr::doGetType() const {
   }
 }
 
-int TypePropertyInstr::doReplaceUsedType(const std::string &name,
-                                         types::Type *newType) {
+int TypePropertyInstr::doReplaceUsedType(const std::string &name, Type *newType) {
   if (inspectType->getName() == name) {
     inspectType = newType;
     return 1;
@@ -134,7 +133,7 @@ int TypePropertyInstr::doReplaceUsedType(const std::string &name,
 
 const char YieldInInstr::NodeId = 0;
 
-int YieldInInstr::doReplaceUsedType(const std::string &name, types::Type *newType) {
+int YieldInInstr::doReplaceUsedType(const std::string &name, Type *newType) {
   if (type->getName() == name) {
     type = newType;
     return 1;
@@ -152,7 +151,7 @@ int AwaitInstr::doReplaceUsedValue(id_t id, Value *newValue) {
   return 0;
 }
 
-int AwaitInstr::doReplaceUsedType(const std::string &name, types::Type *newType) {
+int AwaitInstr::doReplaceUsedType(const std::string &name, Type *newType) {
   if (type->getName() == name) {
     type = newType;
     return 1;

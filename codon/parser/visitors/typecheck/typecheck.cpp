@@ -595,6 +595,7 @@ bool TypecheckVisitor::wrapExpr(Expr **expr, Type *expectedType, FuncType *calle
   return canWrap;
 }
 
+/// TODO: Fix return true/false logic
 std::tuple<bool, TypePtr, std::function<Expr *(Expr *)>>
 TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *callee,
                               bool allowUnwrap, bool isEllipsis) {
@@ -676,7 +677,7 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     };
   }
 
-  else if (expectedClass && expectedClass->is("float") && exprClass->is("int")) {
+  else if (expectedClass && expectedClass->is("float") && exprClass->is("Int")) {
     type = instantiateType(expectedClass);
     fn = [&](Expr *expr) -> Expr * { return N<CallExpr>(N<IdExpr>("float"), expr); };
   }
@@ -1099,12 +1100,13 @@ Cache::Class *TypecheckVisitor::getClass(const std::string &t) const {
 }
 
 Cache::Class *TypecheckVisitor::getClass(types::Type *t) const {
+  Cache::Class *cp = nullptr;
   if (t) {
     if (auto c = t->getClass())
-      return getClass(c->name);
+      cp = getClass(c->name);
   }
-  seqassert(false, "bad class");
-  return nullptr;
+  seqassert(cp, "bad class");
+  return cp;
 }
 
 Cache::Function *TypecheckVisitor::getFunction(const std::string &n) const {
@@ -1356,6 +1358,8 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
   seqassert(type, "type is null");
   std::unordered_map<int, types::TypePtr> genericCache;
   if (generics) {
+    if (generics->getIntStatic())
+      generics = getStdLibType("Int[64]");
     for (auto &g : generics->hiddenGenerics)
       if (g.type &&
           !(g.type->getLink() && g.type->getLink()->kind == types::LinkType::Generic)) {

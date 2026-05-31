@@ -43,7 +43,7 @@ class __magic__:
     # def init(self, a1, ..., aN): ...
 
     # always present for reference types only
-    def raw(obj) -> Ptr[byte]:
+    def raw(obj) -> Ptr[u8]:
         return type._ref_raw(obj)
 
     # always present for reference types only
@@ -153,12 +153,12 @@ class __magic__:
         return seed
 
     # @dataclass parameter: pickle=True
-    def pickle(slf, dest: Ptr[byte]) -> None:
+    def pickle(slf, dest: Ptr[u8]) -> None:
         for _, v in static.vars(slf):
             v.__pickle__(dest)
 
     # @dataclass parameter: pickle=True
-    def unpickle(src: Ptr[byte], T: type) -> T:
+    def unpickle(src: Ptr[u8], T: type) -> T:
         if isinstance(T, ByVal):
             return type._force_value_cast(tuple(type(t).__unpickle__(src) for t in static.vars_types(T)), T)
         else:
@@ -168,14 +168,14 @@ class __magic__:
             return obj
 
     # @dataclass parameter: python=True
-    def to_py(slf) -> Ptr[byte]:
+    def to_py(slf) -> Ptr[u8]:
         o = pyobj._tuple_new(static.len(tuple(slf)))
         for i, _, v in static.vars(slf, with_index=True):
             pyobj._tuple_set(o, i, v.__to_py__())
         return o
 
     # @dataclass parameter: python=True
-    def from_py(src: Ptr[byte], T: type) -> T:
+    def from_py(src: Ptr[u8], T: type) -> T:
         if isinstance(T, ByVal):
             return type._force_value_cast(tuple(
                 type(t).__from_py__(pyobj._tuple_get(src, i))
@@ -212,7 +212,7 @@ class __magic__:
                 n[i] = ""
             else:
                 n[i] = k
-        return Tuple._str(a.ptr, n.ptr, l)
+        return Tuple._str(a, n, l)
 
     # @dataclass parameter: repr=False
     def repr_default(slf) -> str:
@@ -227,7 +227,7 @@ class __magic__:
 @tuple
 class PyObject:
     refcnt: int
-    pytype: Ptr[byte]
+    pytype: Ptr[u8]
 
 @tuple
 class PyWrapper[T]:

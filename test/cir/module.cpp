@@ -6,7 +6,7 @@ using namespace codon::ir;
 
 TEST_F(CIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
   {
-    auto n1 = module->Nr<types::OptionalType>(module->getIntType());
+    auto n1 = module->Nr<OptionalType>(module->getIntType());
     ASSERT_EQ(n1->getModule(), module.get());
     auto numTypes = std::distance(module->types_begin(), module->types_end());
     ASSERT_TRUE(std::find(module->types_begin(), module->types_end(), n1) !=
@@ -36,27 +36,33 @@ TEST_F(CIRCoreTest, ModuleNodeBuildingRemovalAndIterators) {
 TEST_F(CIRCoreTest, ModuleMainFunctionAndArgVar) {
   auto *main = module->getMainFunc();
   ASSERT_TRUE(main);
-  auto *mainType = cast<types::FuncType>(main->getType());
+  main->realize(
+      module->unsafeGetFuncType("my_func_type", module->getIntType(), {}, false), {});
+  auto *mainType = cast<FuncType>(main->getType());
   ASSERT_TRUE(mainType);
-  ASSERT_TRUE(util::match(mainType->getReturnType(), module->getVoidType()));
   ASSERT_EQ(0, std::distance(mainType->begin(), mainType->end()));
   ASSERT_FALSE(main->isReplaceable());
 
-  auto *argVar = module->getArgVar();
-  ASSERT_TRUE(argVar);
-  ASSERT_TRUE(util::match(argVar->getType(),
-                          module->unsafeGetArrayType(module->getStringType())));
-  ASSERT_FALSE(argVar->isReplaceable());
+  auto *argvVar = module->getArgvVar();
+  ASSERT_TRUE(argvVar);
+  ASSERT_TRUE(util::match(argvVar->getType(),
+                          module->unsafeGetPointerType(module->getStringType())));
+  ASSERT_FALSE(argvVar->isReplaceable());
+
+  auto *argcVar = module->getArgcVar();
+  ASSERT_TRUE(argcVar);
+  ASSERT_TRUE(util::match(argcVar->getType(), module->getIntType()));
+  ASSERT_FALSE(argcVar->isReplaceable());
 }
 
 TEST_F(CIRCoreTest, ModuleTypeGetAndLookup) {
   auto TYPE_NAME = "**test_type**";
   auto *newType = module->unsafeGetMemberedType(TYPE_NAME);
-  ASSERT_TRUE(isA<types::RecordType>(newType));
+  ASSERT_TRUE(isA<RecordType>(newType));
   ASSERT_EQ(newType, module->getType(TYPE_NAME));
   module->remove(newType);
 
   newType = module->unsafeGetMemberedType(TYPE_NAME, true);
-  ASSERT_TRUE(isA<types::RefType>(newType));
+  ASSERT_TRUE(isA<RefType>(newType));
   ASSERT_EQ(newType, module->getType(TYPE_NAME));
 }

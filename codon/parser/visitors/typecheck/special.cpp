@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "codon/cir/attribute.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/scoping/scoping.h"
@@ -562,7 +562,7 @@ Expr *TypecheckVisitor::transformPtr(CallExpr *expr) {
 Expr *TypecheckVisitor::transformArray(CallExpr *expr) {
   auto arrTyp = expr->expr->getType()->getFunc();
   unify(expr->getType(),
-        instantiateType(getStdLibType("Array"),
+        instantiateType(getStdLibType("Ptr"),
                         {extractClassGeneric(arrTyp->getParentType())}));
   if (realize(expr->getType()))
     expr->setDone();

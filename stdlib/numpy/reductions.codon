@@ -128,7 +128,7 @@ def _pairwise_sum_complex(a: Ptr[C], n: int, stride: int, C: type):
 
         i = 8
         while i < n - (n & 7):
-            (p + (i + 512//sz)*stride).__prefetch_r3__()
+            (p + (i + (512).cdiv(sz))*stride).__prefetch_r3__()
             r0 += Ptr[T](p + (i + 0) * stride)[0]
             r1 += Ptr[T](p + (i + 0) * stride + sz)[0]
             r2 += Ptr[T](p + (i + 2) * stride)[0]
@@ -181,7 +181,7 @@ def _pairwise_sum(a: Ptr[T], n: int, stride: int, T: type, dtype: type = NoneTyp
 
         i = 8
         while i < n - (n & 7):
-            (p + (i + 512//T.__elemsize__)*stride).__prefetch_r3__()
+            (p + (i + (512).cdiv(T.__elemsize__))*stride).__prefetch_r3__()
             r0 += util.cast(Ptr[T](p + (i + 0) * stride)[0], dtype)
             r1 += util.cast(Ptr[T](p + (i + 1) * stride)[0], dtype)
             r2 += util.cast(Ptr[T](p + (i + 2) * stride)[0], dtype)
@@ -1293,7 +1293,7 @@ class MeanRedux:
         self.total += item
 
     def result(self, count: int):
-        return self.total / T(count) if count else _nan(T)
+        return _divide(self.total, T(count)) if count else _nan(T)
 
     def empty(**kwargs):
         pass
@@ -1308,7 +1308,7 @@ class MeanRedux:
         return curr + util.cast(item, T)
 
     def gradual_result(self, curr, count: int):
-        return curr / T(count) if count else _nan(T)
+        return _divide(curr, T(count)) if count else _nan(T)
 
     def loop(self, a: Ptr[S], n: int, stride: int, partial: Literal[bool], S: type):
         self.total += SumRedux[T]._loop(a, n, stride, S)
@@ -1333,7 +1333,7 @@ class NanMeanRedux:
 
     def result(self, count: int):
         count -= self.nan_count
-        return self.total / T(count) if count else _nan(T)
+        return _divide(self.total, T(count)) if count else _nan(T)
 
     def empty(**kwargs):
         pass
@@ -1815,6 +1815,14 @@ def nanmean(
         conv_to_float=True,
     )
 
+def _divide(a: T, b: T, T: type):
+    if util.isint(T):
+        return float(a).cdiv(float(b))
+    elif util.isinexact(T):
+        return a.cdiv(b)
+    else:
+        return a / b
+
 def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
     if dtype is NoneType:
         zero = _cast_elem(util.zero(T), dtype, conv_to_float=True)
@@ -1825,7 +1833,7 @@ def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
     u = zero
     q = p
     u = _pairwise_sum(p, n, s, dtype=Z)
-    u /= util.cast(n, Z)
+    u = _divide(u, util.cast(n, Z))
 
     if Z is complex:
         v = 0.0
@@ -1844,7 +1852,7 @@ def _var_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
             v += t * t
         q = _increment_ptr(q, s)
 
-    v /= util.cast(n - kwargs['ddof'], type(v))
+    v = _divide(v, util.cast(n - kwargs['ddof'], type(v)))
     return v
 
 def var(
@@ -1885,7 +1893,7 @@ def _nanvar_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
         else:
             u += e
         q = _increment_ptr(q, s)
-    u /= util.cast(n - nans, Z)
+    u = _divide(u, util.cast(n - nans, Z))
 
     if Z is complex:
         v = 0.0
@@ -1906,7 +1914,7 @@ def _nanvar_reducer(p: Ptr[T], s: int, n: int, dtype: type, T: type, **kwargs):
                 v += t * t
         q = _increment_ptr(q, s)
 
-    v /= util.cast(n - nans - kwargs['ddof'], type(v))
+    v = _divide(v, util.cast(n - nans - kwargs['ddof'], type(v)))
     return v
 
 def nanvar(
@@ -2124,7 +2132,7 @@ def _median_reducer_no_nan(v: Ptr[T], s: int, n: int, dtype: type, T: type,
         elif T is complex64:
             return (m1 + m2) / float32(2.0)
         else:
-            return (util.cast(m1, float) + util.cast(m2, float)) / 2.0
+            return (util.cast(m1, float) + util.cast(m2, float)).cdiv(2.)
     else:
         if T is complex or T is complex64:
             return m1

@@ -38,13 +38,13 @@ llvm::cl::opt<bool> Verbose("npfuse-verbose",
                             llvm::cl::desc("Print information about fused expressions"),
                             llvm::cl::init(false));
 
-bool isArrayType(types::Type *t) {
-  return t && isA<types::RecordType>(t) &&
+bool isArrayType(Type *t) {
+  return t && isA<RecordType>(t) &&
          t->getName().rfind(ast::getMangledClass("std.numpy.ndarray", "ndarray") + "[",
                             0) == 0;
 }
 
-bool isUFuncType(types::Type *t) {
+bool isUFuncType(Type *t) {
   return t &&
          (t->getName().rfind(
               ast::getMangledClass("std.numpy.ufunc", "UnaryUFunc") + "[", 0) == 0 ||
@@ -52,7 +52,7 @@ bool isUFuncType(types::Type *t) {
               ast::getMangledClass("std.numpy.ufunc", "BinaryUFunc") + "[", 0) == 0);
 }
 
-bool isNoneType(types::Type *t, NumPyPrimitiveTypes &T) {
+bool isNoneType(Type *t, NumPyPrimitiveTypes &T) {
   return t && (t->is(T.none) || t->is(T.optnone));
 }
 } // namespace
@@ -61,22 +61,21 @@ const std::string FUSION_MODULE = "std.numpy.fusion";
 
 NumPyPrimitiveTypes::NumPyPrimitiveTypes(Module *M)
     : none(M->getNoneType()), optnone(M->getOptionalType(none)),
-      bool_(M->getBoolType()), i8(M->getIntNType(8, true)),
-      u8(M->getIntNType(8, false)), i16(M->getIntNType(16, true)),
-      u16(M->getIntNType(16, false)), i32(M->getIntNType(32, true)),
-      u32(M->getIntNType(32, false)), i64(M->getIntType()),
-      u64(M->getIntNType(64, false)), f16(M->getFloat16Type()),
-      f32(M->getFloat32Type()), f64(M->getFloatType()),
+      bool_(M->getBoolType()), i8(M->getIntType(8, true)), u8(M->getIntType(8, false)),
+      i16(M->getIntType(16, true)), u16(M->getIntType(16, false)),
+      i32(M->getIntType(32, true)), u32(M->getIntType(32, false)),
+      i64(M->getIntType(64, true)), u64(M->getIntType(64, false)),
+      f16(M->getFloat16Type()), f32(M->getFloat32Type()), f64(M->getFloatType()),
       c64(M->getType(ast::getMangledClass("std.internal.types.complex", "complex64"))),
       c128(M->getType(ast::getMangledClass("std.internal.types.complex", "complex"))) {}
 
-NumPyType::NumPyType(Type dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {
+NumPyType::NumPyType(TypeCode dtype, int64_t ndim) : dtype(dtype), ndim(ndim) {
   seqassertn(ndim >= 0, "ndim must be non-negative");
 }
 
 NumPyType::NumPyType() : NumPyType(NP_TYPE_NONE) {}
 
-NumPyType NumPyType::get(types::Type *t, NumPyPrimitiveTypes &T) {
+NumPyType NumPyType::get(Type *t, NumPyPrimitiveTypes &T) {
   if (t->is(T.bool_))
     return {NumPyType::NP_TYPE_BOOL};
   if (t->is(T.i8))
@@ -143,7 +142,7 @@ NumPyType NumPyType::get(types::Type *t, NumPyPrimitiveTypes &T) {
   return {};
 }
 
-types::Type *NumPyType::getIRBaseType(NumPyPrimitiveTypes &T) const {
+Type *NumPyType::getIRBaseType(NumPyPrimitiveTypes &T) const {
   switch (dtype) {
   case NP_TYPE_NONE:
     seqassertn(false, "unexpected type code (NONE)");
@@ -214,7 +213,7 @@ types::Type *NumPyType::getIRBaseType(NumPyPrimitiveTypes &T) const {
 }
 
 std::ostream &operator<<(std::ostream &os, NumPyType const &type) {
-  static const std::unordered_map<NumPyType::Type, std::string> typestrings = {
+  static const std::unordered_map<NumPyType::TypeCode, std::string> typestrings = {
       {NumPyType::NP_TYPE_NONE, "none"},     {NumPyType::NP_TYPE_BOOL, "bool"},
       {NumPyType::NP_TYPE_I8, "i8"},         {NumPyType::NP_TYPE_U8, "u8"},
       {NumPyType::NP_TYPE_I16, "i16"},       {NumPyType::NP_TYPE_U16, "u16"},
@@ -389,7 +388,7 @@ std::unique_ptr<NumPyExpr> parse(Value *v,
       {"heaviside", NumPyExpr::NP_OP_HEAVISIDE, 2},
   };
 
-  auto getNumPyExprType = [](types::Type *t, NumPyPrimitiveTypes &T) -> NumPyType {
+  auto getNumPyExprType = [](Type *t, NumPyPrimitiveTypes &T) -> NumPyType {
     if (t->is(T.bool_))
       return {NumPyType::NP_TYPE_BOOL};
     if (t->is(T.i8))

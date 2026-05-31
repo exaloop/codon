@@ -52,7 +52,8 @@ Value *getListIter(Value *iter) {
 
   auto *list = iterCall->front();
   if (list->getType()->getName().rfind(
-          ast::getMangledClass("std.internal.types.array", "List") + "[", 0) != 0)
+          ast::getMangledClass("std.internal.types.collections.list", "List") + "[",
+          0) != 0)
     return nullptr;
 
   return list;
@@ -112,18 +113,17 @@ void ImperativeForFlowLowering::handle(ForFlow *v) {
     //     body
     // into:
     //   v = list
-    //   n = v.len
-    //   p = v.arr.ptr
+    //   n = v._len
+    //   p = v._ptr
     //   imp_for i in range(0, n, 1):
     //     a = p[i]
     //     body
     auto *parent = cast<BodiedFunc>(getParentFunc());
     auto *series = M->N<SeriesFlow>(v->getSrcInfo());
     auto *listVar = util::makeVar(list, series, parent);
-    auto *lenVal = M->Nr<ExtractInstr>(M->Nr<VarValue>(listVar), "len");
+    auto *lenVal = M->Nr<ExtractInstr>(M->Nr<VarValue>(listVar), "_len");
     auto *lenVar = util::makeVar(lenVal, series, parent);
-    auto *ptrVal = M->Nr<ExtractInstr>(
-        M->Nr<ExtractInstr>(M->Nr<VarValue>(listVar), "arr"), "ptr");
+    auto *ptrVal = M->Nr<ExtractInstr>(M->Nr<VarValue>(listVar), "_ptr");
     auto *ptrVar = util::makeVar(ptrVal, series, parent);
 
     auto *body = cast<SeriesFlow>(v->getBody());

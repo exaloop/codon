@@ -9,8 +9,7 @@ namespace ir {
 namespace transform {
 namespace numpy {
 namespace {
-types::Type *coerceScalarArray(NumPyType &scalar, NumPyType &array,
-                               NumPyPrimitiveTypes &T) {
+Type *coerceScalarArray(NumPyType &scalar, NumPyType &array, NumPyPrimitiveTypes &T) {
   auto xtype = scalar.dtype;
   auto atype = array.dtype;
   bool aIsInt = false;
@@ -72,8 +71,7 @@ bool isPythonScalar(NumPyType &t) {
 }
 
 template <typename E>
-types::Type *decideTypes(E *expr, NumPyType &lhs, NumPyType &rhs,
-                         NumPyPrimitiveTypes &T) {
+Type *decideTypes(E *expr, NumPyType &lhs, NumPyType &rhs, NumPyPrimitiveTypes &T) {
   // Special case(s)
   if (expr->op == E::NP_OP_COPYSIGN)
     return expr->type.getIRBaseType(T);
@@ -520,7 +518,7 @@ Var *NumPyExpr::codegenFusedEval(CodegenContext &C) {
   // Arrays for scalar expression function
   std::vector<Value *> arrays;
   std::vector<std::string> scalarFuncArgNames;
-  std::vector<types::Type *> scalarFuncArgTypes;
+  std::vector<Type *> scalarFuncArgTypes;
   std::unordered_map<NumPyExpr *, Var *> scalarFuncArgMap;
 
   // Scalars passed through 'extra' arg of ndarray._loop()
@@ -754,7 +752,7 @@ Var *NumPyExpr::codegenSequentialEval(CodegenContext &C) {
     // Arrays for scalar expression function
     std::vector<Value *> arrays = {M->Nr<VarValue>(result)};
     std::vector<std::string> scalarFuncArgNames;
-    std::vector<types::Type *> scalarFuncArgTypes;
+    std::vector<Type *> scalarFuncArgTypes;
     std::unordered_map<NumPyExpr *, Var *> scalarFuncArgMap;
 
     // Scalars passed through 'extra' arg of ndarray._loop()

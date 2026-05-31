@@ -87,7 +87,7 @@ class PCG64:
                acc_plus = acc_plus * cur_mult + cur_plus
             cur_plus = (cur_mult + u128(1)) * cur_plus
             cur_mult *= cur_mult
-            delta //= u128(2)
+            delta = delta.cdiv(u128(2))
 
         self.state = acc_mult * self.state + acc_plus
 
@@ -208,7 +208,7 @@ class PCG64DXSM:
                acc_plus = acc_plus * cur_mult + cur_plus
             cur_plus = (cur_mult + u128(1)) * cur_plus
             cur_mult *= cur_mult
-            delta //= u128(2)
+            delta = delta.cdiv(u128(2))
 
         self.state = acc_mult * self.state + acc_plus
 

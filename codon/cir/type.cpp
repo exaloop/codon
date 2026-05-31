@@ -1,6 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-#include "types.h"
+#include "type.h"
 
 #include <algorithm>
 #include <memory>
@@ -16,7 +16,6 @@
 
 namespace codon {
 namespace ir {
-namespace types {
 namespace {
 std::vector<codon::ast::types::TypePtr>
 extractTypes(const std::vector<codon::ast::types::ClassType::Generic> &gens) {
@@ -70,6 +69,10 @@ const char PrimitiveType::NodeId = 0;
 
 const char IntType::NodeId = 0;
 
+std::string IntType::getInstanceName(unsigned int len, bool sign) {
+  return fmt::format(FMT_STRING("{}Int{}"), sign ? "" : "U", len);
+}
+
 const char FloatType::NodeId = 0;
 
 const char Float32Type::NodeId = 0;
@@ -81,10 +84,6 @@ const char BFloat16Type::NodeId = 0;
 const char Float128Type::NodeId = 0;
 
 const char BoolType::NodeId = 0;
-
-const char ByteType::NodeId = 0;
-
-const char VoidType::NodeId = 0;
 
 const char MemberedType::NodeId = 0;
 
@@ -210,12 +209,6 @@ std::string GeneratorType::getInstanceName(Type *base) {
   return fmt::format(FMT_STRING("Generator[{}]"), base->referenceString());
 }
 
-const char IntNType::NodeId = 0;
-
-std::string IntNType::getInstanceName(unsigned int len, bool sign) {
-  return fmt::format(FMT_STRING("{}Int{}"), sign ? "" : "U", len);
-}
-
 const char VectorType::NodeId = 0;
 
 std::string VectorType::getInstanceName(unsigned int count, PrimitiveType *base) {
@@ -224,7 +217,7 @@ std::string VectorType::getInstanceName(unsigned int count, PrimitiveType *base)
 
 const char UnionType::NodeId = 0;
 
-std::string UnionType::getInstanceName(const std::vector<types::Type *> &types) {
+std::string UnionType::getInstanceName(const std::vector<Type *> &types) {
   std::vector<std::string> names;
   for (auto *type : types) {
     names.push_back(type->referenceString());
@@ -233,6 +226,5 @@ std::string UnionType::getInstanceName(const std::vector<types::Type *> &types) 
                      fmt::join(names.begin(), names.end(), ", "));
 }
 
-} // namespace types
 } // namespace ir
 } // namespace codon

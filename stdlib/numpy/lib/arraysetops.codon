@@ -596,7 +596,7 @@ def isin(element,
          kind: Optional[str] = None):
 
     def table_method_ok(dtype: type):
-        if dtype is int or dtype is byte or dtype is bool:
+        if dtype is int or dtype is bool:
             return True
 
         if isinstance(dtype, Int) or isinstance(dtype, UInt):

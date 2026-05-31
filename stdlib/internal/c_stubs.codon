@@ -727,10 +727,10 @@ def BZ2_bzerror(a: cobj, b: Ptr[i32]) -> cobj:
 # <string.h>
 @pure
 @C
-def memcmp(lhs: Ptr[byte], rhs: Ptr[byte], count: int) -> i32:
+def memcmp(lhs: Ptr[u8], rhs: Ptr[u8], count: int) -> i32:
     pass
 
 @pure
 @C
-def memchr(p: Ptr[byte], ch: i32, count: int) -> Ptr[byte]:
+def memchr(p: Ptr[u8], ch: i32, count: int) -> Ptr[u8]:
     pass

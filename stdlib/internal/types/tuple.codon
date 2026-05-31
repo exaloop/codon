@@ -39,50 +39,50 @@ class Tuple:
 
     def _str(strs: Ptr[str], names: Ptr[str], n: int) -> str:
         # special case of 1-element plain tuple: format as "(x,)"
-        if n == 1 and names[0].len == 0:
-            total = strs[0].len + 3
-            buf = Ptr[byte](total)
-            buf[0] = byte(40)  # '('
-            str.memcpy(buf + 1, strs[0].ptr, strs[0].len)
-            buf[total - 2] = byte(44)  # ','
-            buf[total - 1] = byte(41)  # ')'
+        if n == 1 and names[0]._len == 0:
+            total = strs[0]._len + 3
+            buf = Ptr[u8](total)
+            buf[0] = u8(40)  # '('
+            str.memcpy(buf + 1, strs[0]._ptr, strs[0]._len)
+            buf[total - 2] = u8(44)  # ','
+            buf[total - 1] = u8(41)  # ')'
             return str(buf, total)
 
         total = 2  # one for each of '(' and ')'
         i = 0
         while i < n:
-            total += strs[i].len
-            if names[i].len:
-                total += names[i].len + 2  # extra : and space
+            total += strs[i]._len
+            if names[i]._len:
+                total += names[i]._len + 2  # extra : and space
             if i < n - 1:
                 total += 2  # ", "
             i += 1
-        buf = Ptr[byte](total)
+        buf = Ptr[u8](total)
         where = 0
-        buf[where] = byte(40)  # '('
+        buf[where] = u8(40)  # '('
         where += 1
         i = 0
         while i < n:
             s = names[i]
-            l = s.len
+            l = s._len
             if l:
-                str.memcpy(buf + where, s.ptr, l)
+                str.memcpy(buf + where, s._ptr, l)
                 where += l
-                buf[where] = byte(58)  # ':'
+                buf[where] = u8(58)  # ':'
                 where += 1
-                buf[where] = byte(32)  # ' '
+                buf[where] = u8(32)  # ' '
                 where += 1
             s = strs[i]
-            l = s.len
-            str.memcpy(buf + where, s.ptr, l)
+            l = s._len
+            str.memcpy(buf + where, s._ptr, l)
             where += l
             if i < n - 1:
-                buf[where] = byte(44)  # ','
+                buf[where] = u8(44)  # ','
                 where += 1
-                buf[where] = byte(32)  # ' '
+                buf[where] = u8(32)  # ' '
                 where += 1
             i += 1
-        buf[where] = byte(41)  # ')'
+        buf[where] = u8(41)  # ')'
         return str(buf, total)
 
 

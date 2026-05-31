@@ -239,7 +239,7 @@ class BigInt:
 
     @property
     def even(self):
-        return len(self) == 0 or (self[0] % u32(2) == u32(0))
+        return len(self) == 0 or (self[0].cmod(u32(2)) == u32(0))
 
     def compare(self, rhs: BigInt):
         lhs = self
@@ -505,7 +505,7 @@ class BigInt:
 
         final_divisor_block = divisor.blocks + (length - 1)
         final_dividend_block = dividend.blocks + (length - 1)
-        quotient = final_dividend_block[0] // (final_divisor_block[0] + u32(1))
+        quotient = final_dividend_block[0].cdiv(final_divisor_block[0] + u32(1))
 
         if quotient:
             divisor_cur = divisor.blocks
@@ -559,8 +559,8 @@ class BigInt:
 
     def lshift(self, shift: u32):
         result = self
-        shift_blocks = int(shift // u32(32))
-        shift_bits = int(shift % u32(32))
+        shift_blocks = int(shift.cdiv(u32(32)))
+        shift_bits = int(shift.cmod(u32(32)))
 
         p_in_blocks = result.blocks
         in_length = len(result)
@@ -630,7 +630,7 @@ def dragon4(bigints,
     is_even = mantissa.even
 
     if not mantissa:
-        cur_digit[0] = byte(48)
+        cur_digit[0] = u8(48)
         out_exponent[0] = i32(0)
         return 1
 
@@ -721,7 +721,7 @@ def dragon4(bigints,
     hi_block = scale[len(scale) - 1]
     if hi_block < u32(8) or hi_block > u32(429496729):
         hi_block_log2 = _log_base2_32(hi_block)
-        shift = (u32(32) + u32(27) - hi_block_log2) % u32(32)
+        shift = (u32(32) + u32(27) - hi_block_log2).cmod(u32(32))
 
         scale.lshift(shift)
         scaled_value.lshift(shift)
@@ -745,7 +745,7 @@ def dragon4(bigints,
                 digit_exponent == cutoff_max_exponent):
                 break
 
-            cur_digit[0] = byte(48 + int(output_digit))
+            cur_digit[0] = u8(48 + int(output_digit))
             cur_digit += 1
 
             scaled_value.mul10()
@@ -760,7 +760,7 @@ def dragon4(bigints,
             if len(scaled_value) == 0 or digit_exponent == cutoff_max_exponent:
                 break
 
-            cur_digit[0] = byte(48 + int(output_digit))
+            cur_digit[0] = u8(48 + int(output_digit))
             cur_digit += 1
 
             scaled_value.mul10()
@@ -775,24 +775,24 @@ def dragon4(bigints,
             round_down = (output_digit & u32(1) == u32(0))
 
     if round_down:
-        cur_digit[0] = byte(48 + int(output_digit))
+        cur_digit[0] = u8(48 + int(output_digit))
         cur_digit += 1
     else:
         if output_digit == u32(9):
             while True:
                 if cur_digit == out_buffer:
-                    cur_digit[0] = byte(48 + 1)
+                    cur_digit[0] = u8(48 + 1)
                     cur_digit += 1
                     out_exponent[0] += i32(1)
                     break
 
                 cur_digit -= 1
-                if cur_digit[0] != byte(48 + 9):
-                    cur_digit[0] = byte(int(cur_digit[0]) + 1)
+                if cur_digit[0] != u8(48 + 9):
+                    cur_digit[0] = u8(int(cur_digit[0]) + 1)
                     cur_digit += 1
                     break
         else:
-            cur_digit[0] = byte(48 + int(output_digit) + 1)
+            cur_digit[0] = u8(48 + int(output_digit) + 1)
             cur_digit += 1
 
     output_len = cur_digit - out_buffer
@@ -802,7 +802,7 @@ def format_positional(buffer: cobj,
                       buffer_size: int,
                       mantissa,
                       exponent: i32,
-                      signbit: byte,
+                      signbit: u8,
                       mantissa_bit: u32,
                       has_unequal_margins: bool,
                       digit_mode: int,
@@ -819,12 +819,12 @@ def format_positional(buffer: cobj,
     num_fraction_digits = 0
     print_exponent = i32(0)
 
-    if signbit == byte(43) and pos < max_print_len:  # '+'
-        buffer[pos] = byte(43)
+    if signbit == u8(43) and pos < max_print_len:  # '+'
+        buffer[pos] = u8(43)
         pos += 1
         has_sign = 1
-    elif signbit == byte(45) and pos < max_print_len:  # '-'
-        buffer[pos] = byte(45)
+    elif signbit == u8(45) and pos < max_print_len:  # '-'
+        buffer[pos] = u8(45)
         pos += 1
         has_sign = 1
 
@@ -845,7 +845,7 @@ def format_positional(buffer: cobj,
 
             num_digits += count
             while count > 0:
-                buffer[pos] = byte(48)
+                buffer[pos] = u8(48)
                 pos += 1
                 count -= 1
         elif num_digits > num_whole_digits:
@@ -858,7 +858,7 @@ def format_positional(buffer: cobj,
                         buffer + pos + num_whole_digits,
                         num_fraction_digits)
             pos += num_whole_digits
-            buffer[pos] = byte(46)  # '.'
+            buffer[pos] = u8(46)  # '.'
             num_digits = num_whole_digits + 1 + num_fraction_digits
             pos += 1 + num_fraction_digits
     else:
@@ -880,16 +880,16 @@ def format_positional(buffer: cobj,
                         num_fraction_digits)
 
             for i in range(2, digits_start_idx):
-                buffer[pos + i] = byte(48)
+                buffer[pos + i] = u8(48)
 
             num_fraction_digits += num_fraction_zeros
             num_digits = num_fraction_digits
 
         if pos + 1 < max_print_len:
-            buffer[pos + 1] = byte(46)  # '.'
+            buffer[pos + 1] = u8(46)  # '.'
 
         if pos < max_print_len:
-            buffer[pos] = byte(48)
+            buffer[pos] = u8(48)
             num_digits += 1
 
         num_whole_digits = 1
@@ -897,7 +897,7 @@ def format_positional(buffer: cobj,
 
     if (trim_mode != _TRIM_MODE_DPT_ZEROS and
         num_fraction_digits == 0 and pos < max_print_len):
-        buffer[pos] = byte(46)  # '.'
+        buffer[pos] = u8(46)  # '.'
         pos += 1
 
     add_digits = int(min_digits if digit_mode == _DIGIT_MODE_UNIQUE else precision)
@@ -907,7 +907,7 @@ def format_positional(buffer: cobj,
 
     if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO:
         if num_fraction_digits == 0 and pos < max_print_len:
-            buffer[pos] = byte(48)
+            buffer[pos] = u8(48)
             pos += 1
             num_fraction_digits += 1
     elif (trim_mode == _TRIM_MODE_NONE and
@@ -919,18 +919,18 @@ def format_positional(buffer: cobj,
         num_fraction_digits += count
 
         while count > 0:
-            buffer[pos] = byte(48)
+            buffer[pos] = u8(48)
             pos += 1
             count -= 1
 
     if trim_mode != _TRIM_MODE_NONE and num_fraction_digits > 0:
-        while buffer[pos - 1] == byte(48):
+        while buffer[pos - 1] == u8(48):
             pos -= 1
             num_fraction_digits -= 1
 
-        if buffer[pos - 1] == byte(46):  # '.'
+        if buffer[pos - 1] == u8(46):  # '.'
             if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO:
-                buffer[pos] = byte(48)
+                buffer[pos] = u8(48)
                 pos += 1
                 num_fraction_digits += 1
             elif trim_mode == _TRIM_MODE_DPT_ZEROS:
@@ -942,14 +942,14 @@ def format_positional(buffer: cobj,
         if (trim_mode == _TRIM_MODE_DPT_ZEROS and
             num_fraction_digits == 0 and
             pos < max_print_len):
-            buffer[pos] = byte(32)  # ' '
+            buffer[pos] = u8(32)  # ' '
             pos += 1
 
         if pos + count > max_print_len:
             count = max_print_len - pos
 
         while count > 0:
-            buffer[pos] = byte(32)  # ' '
+            buffer[pos] = u8(32)  # ' '
             pos += 1
             count -= 1
 
@@ -965,17 +965,17 @@ def format_positional(buffer: cobj,
 
         pos = shift + count
         while shift > 0:
-            buffer[shift - 1] = byte(32)  # ' '
+            buffer[shift - 1] = u8(32)  # ' '
             shift -= 1
 
-    # buffer[pos] = byte(0)
+    # buffer[pos] = u8(0)
     return pos
 
 def format_scientific(buffer: cobj,
                       buffer_size: int,
                       mantissa,
                       exponent: i32,
-                      signbit: byte,
+                      signbit: u8,
                       mantissa_bit: u32,
                       has_unequal_margins: bool,
                       digit_mode: int,
@@ -985,23 +985,23 @@ def format_scientific(buffer: cobj,
                       digits_left: int,
                       exp_digits: int):
     cur_out = buffer
-    leftchars = 1 + int(signbit == byte(43) or signbit == byte(45))  # '+'/'-'
+    leftchars = 1 + int(signbit == u8(43) or signbit == u8(45))  # '+'/'-'
     print_exponent = i32(0)
 
     if digits_left > leftchars:
         i = 0
         while i < digits_left - leftchars and buffer_size > 1:
-            cur_out[0] = byte(32)  # ' '
+            cur_out[0] = u8(32)  # ' '
             cur_out += 1
             buffer_size -= 1
             i += 1
 
-    if signbit == byte(43) and buffer_size > 1:  # '+'
-        cur_out[0] = byte(43)
+    if signbit == u8(43) and buffer_size > 1:  # '+'
+        cur_out[0] = u8(43)
         cur_out += 1
         buffer_size -= 1
-    elif signbit == byte(45) and buffer_size > 1:  # '-'
-        cur_out[0] = byte(45)
+    elif signbit == u8(45) and buffer_size > 1:  # '-'
+        cur_out[0] = u8(45)
         cur_out += 1
         buffer_size -= 1
 
@@ -1022,14 +1022,14 @@ def format_scientific(buffer: cobj,
             num_fraction_digits = max_fraction_digits
 
         str.memmove(cur_out + 1, cur_out, num_fraction_digits)
-        cur_out[0] = byte(46)  # '.'
+        cur_out[0] = u8(46)  # '.'
         cur_out += 1 + num_fraction_digits
         buffer_size -= 1 + num_fraction_digits
 
     if (trim_mode != _TRIM_MODE_DPT_ZEROS and
         num_fraction_digits == 0 and
         buffer_size > 1):
-        cur_out[0] = byte(46)  # '.'
+        cur_out[0] = u8(46)  # '.'
         cur_out += 1
         buffer_size -= 1
 
@@ -1037,7 +1037,7 @@ def format_scientific(buffer: cobj,
     add_digits = 0 if add_digits < 0 else add_digits
     if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO:
         if num_fraction_digits == 0 and buffer_size > 1:
-            cur_out[0] = byte(48)
+            cur_out[0] = u8(48)
             cur_out += 1
             buffer_size -= 1
             num_fraction_digits += 1
@@ -1050,27 +1050,27 @@ def format_scientific(buffer: cobj,
 
             end = cur_out + num_zeros
             while cur_out < end:
-                cur_out[0] = byte(48)
+                cur_out[0] = u8(48)
                 num_fraction_digits += 1
                 cur_out += 1
 
     if trim_mode != _TRIM_MODE_NONE and num_fraction_digits > 0:
         cur_out -= 1
-        while cur_out[0] == byte(48):
+        while cur_out[0] == u8(48):
             cur_out -= 1
             buffer_size += 1
             num_fraction_digits -= 1
 
-        if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO and cur_out[0] == byte(46):
+        if trim_mode == _TRIM_MODE_LEAVE_ONE_ZERO and cur_out[0] == u8(46):
             cur_out += 1
-            cur_out[0] = byte(48)
+            cur_out[0] = u8(48)
             buffer_size -= 1
             num_fraction_digits += 1
 
         cur_out += 1
 
     if buffer_size > 1:
-        exponent_buffer_t = (byte(0),) * 7
+        exponent_buffer_t = (u8(0),) * 7
         digits_t = (i32(0),) * 5
         exponent_buffer = __ptr__(exponent_buffer_t).as_byte()
         digits = Ptr[i32](__ptr__(digits_t).as_byte())
@@ -1080,16 +1080,16 @@ def format_scientific(buffer: cobj,
         if exp_digits < 0:
             exp_digits = 2
 
-        exponent_buffer[0] = byte(101)  # 'e'
+        exponent_buffer[0] = u8(101)  # 'e'
         if print_exponent >= i32(0):
-            exponent_buffer[1] = byte(43)  # '+'
+            exponent_buffer[1] = u8(43)  # '+'
         else:
-            exponent_buffer[1] = byte(45)  # '-'
+            exponent_buffer[1] = u8(45)  # '-'
             print_exponent = -print_exponent
 
         for i in range(5):
-            digits[i] = print_exponent % i32(10)
-            print_exponent //= i32(10)
+            digits[i] = print_exponent.cmod(i32(10))
+            print_exponent = print_exponent.cdiv(i32(10))
 
         i = 5
         while i > exp_digits and digits[i - 1] == i32(0):
@@ -1097,7 +1097,7 @@ def format_scientific(buffer: cobj,
         exp_size = i
 
         while i > 0:
-            exponent_buffer[2 + (exp_size - i)] = byte(48 + int(digits[i - 1]))
+            exponent_buffer[2 + (exp_size - i)] = u8(48 + int(digits[i - 1]))
             i -= 1
 
         count = exp_size + 2
@@ -1108,42 +1108,42 @@ def format_scientific(buffer: cobj,
         cur_out += count
         buffer_size -= count
 
-    # cur_out[0] = byte(0)
+    # cur_out[0] = u8(0)
     return cur_out - buffer
 
 def print_inf_nan(buffer: cobj,
                   buffer_size: int,
                   mantissa: u64,
                   mantissa_hex_width: int,
-                  signbit: byte):
+                  signbit: u8):
     max_print_len = buffer_size - 1
     pos = 0
 
     if mantissa == u64(0):
-        if signbit == byte(43):  # '+'
+        if signbit == u8(43):  # '+'
             if pos < max_print_len - 1:
-                buffer[pos] = byte(43)
+                buffer[pos] = u8(43)
                 pos += 1
-        elif signbit == byte(45):  # '-'
+        elif signbit == u8(45):  # '-'
             if pos < max_print_len - 1:
-                buffer[pos] = byte(45)
+                buffer[pos] = u8(45)
                 pos += 1
 
         print_len = 3 if 3 < max_print_len - pos else max_print_len - pos
-        str.memcpy(buffer + pos, "inf".ptr, print_len)
-        # buffer[pos + print_len] = byte(0)
+        str.memcpy(buffer + pos, "inf"._ptr, print_len)
+        # buffer[pos + print_len] = u8(0)
         return pos + print_len
     else:
         print_len = 3 if 3 < max_print_len - pos else max_print_len - pos
-        str.memcpy(buffer + pos, "nan".ptr, print_len)
-        # buffer[pos + print_len] = byte(0)
+        str.memcpy(buffer + pos, "nan"._ptr, print_len)
+        # buffer[pos + print_len] = u8(0)
         return pos + print_len
 
 def format_float_bits(buffer: cobj,
                       buffer_size: int,
                       mantissa,
                       exponent: i32,
-                      signbit: byte,
+                      signbit: u8,
                       mantissa_bit: u32,
                       has_unequal_margins: bool,
                       scientific: bool,
@@ -1199,14 +1199,12 @@ def format_ieee16(value: float16,
                   digits_left: int = -1,
                   digits_right: int = -1,
                   exp_digits: int = -1):
-    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
-    scratch = __array__[byte](_BUFFER_SIZE)
-    buffer = scratch.ptr
-    blocks = bigint_data.ptr
+    blocks = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
+    buffer = __array__[u8](_BUFFER_SIZE)
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
                     for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
-    signbit = byte(0)
+    signbit = u8(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
     cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
 
@@ -1216,9 +1214,9 @@ def format_ieee16(value: float16,
     float_sign = integer >> u32(15)
 
     if float_sign:
-        signbit = byte(45)  # '-'
+        signbit = u8(45)  # '-'
     elif sign:
-        signbit = byte(43)  # '+'
+        signbit = u8(43)  # '+'
 
     if float_exponent == _bitmask_u32(5):
         n = print_inf_nan(buffer, _BUFFER_SIZE, util.zext(float_mantissa, u64), 3, signbit)
@@ -1271,14 +1269,12 @@ def format_ieee32(value: float32,
                   digits_left: int = -1,
                   digits_right: int = -1,
                   exp_digits: int = -1):
-    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
-    scratch = __array__[byte](_BUFFER_SIZE)
-    buffer = scratch.ptr
-    blocks = bigint_data.ptr
+    buffer = __array__[u8](_BUFFER_SIZE)
+    blocks = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
                     for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
-    signbit = byte(0)
+    signbit = u8(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
     cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
 
@@ -1288,9 +1284,9 @@ def format_ieee32(value: float32,
     float_sign = integer >> u32(31)
 
     if float_sign:
-        signbit = byte(45)  # '-'
+        signbit = u8(45)  # '-'
     elif sign:
-        signbit = byte(43)  # '+'
+        signbit = u8(43)  # '+'
 
     if float_exponent == _bitmask_u32(8):
         n = print_inf_nan(buffer, _BUFFER_SIZE, util.zext(float_mantissa, u64), 6, signbit)
@@ -1343,14 +1339,12 @@ def format_ieee64(value: float,
                   digits_left: int = -1,
                   digits_right: int = -1,
                   exp_digits: int = -1):
-    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
-    scratch = __array__[byte](_BUFFER_SIZE)
-    buffer = scratch.ptr
-    blocks = bigint_data.ptr
+    buffer = __array__[u8](_BUFFER_SIZE)
+    blocks = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
                     for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
-    signbit = byte(0)
+    signbit = u8(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
     cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
 
@@ -1360,9 +1354,9 @@ def format_ieee64(value: float,
     float_sign = integer >> u64(63)
 
     if float_sign:
-        signbit = byte(45)  # '-'
+        signbit = u8(45)  # '-'
     elif sign:
-        signbit = byte(43)  # '+'
+        signbit = u8(43)  # '+'
 
     if float_exponent == _bitmask_u32(11):
         n = print_inf_nan(buffer, _BUFFER_SIZE, float_mantissa, 13, signbit)
@@ -1415,14 +1409,12 @@ def format_ieee128(value: float128,
                    digits_left: int = -1,
                    digits_right: int = -1,
                    exp_digits: int = -1):
-    bigint_data = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
-    scratch = __array__[byte](_BUFFER_SIZE)
-    buffer = scratch.ptr
-    blocks = bigint_data.ptr
+    buffer = __array__[u8](_BUFFER_SIZE)
+    blocks = __array__[u32](_BIGINT_DRAGON4_GROUPSIZE * _BIGINT_MAX_BLOCKS)
     bigints = tuple(BigInt(0, blocks + (i * _BIGINT_MAX_BLOCKS))
                     for i in static.range(_BIGINT_DRAGON4_GROUPSIZE))
 
-    signbit = byte(0)
+    signbit = u8(0)
     digit_mode = _DIGIT_MODE_UNIQUE if unique else _DIGIT_MODE_EXACT
     cutoff_mode = _CUTOFF_MODE_FRACTION_LENGTH if fractional else _CUTOFF_MODE_TOTAL_LENGTH
 
@@ -1436,9 +1428,9 @@ def format_ieee128(value: float128,
     float_sign = util.itrunc(val_hi >> u64(63), u32)
 
     if float_sign:
-        signbit = byte(45)  # '-'
+        signbit = u8(45)  # '-'
     elif sign:
-        signbit = byte(43)  # '+'
+        signbit = u8(43)  # '+'
 
     if float_exponent == _bitmask_u32(15):
         mantissa_zero = u64(1 if mantissa_hi or mantissa_lo else 0)

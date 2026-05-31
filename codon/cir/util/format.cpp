@@ -14,7 +14,7 @@ namespace ir {
 namespace util {
 
 struct NodeFormatter {
-  const types::Type *type = nullptr;
+  const Type *type = nullptr;
   const Value *value = nullptr;
   const Var *var = nullptr;
   bool canShowFull = false;
@@ -22,7 +22,7 @@ struct NodeFormatter {
   std::unordered_set<id_t> &seenNodes;
   std::unordered_set<std::string> &seenTypes;
 
-  NodeFormatter(const types::Type *type, std::unordered_set<id_t> &seenNodes,
+  NodeFormatter(const Type *type, std::unordered_set<id_t> &seenNodes,
                 std::unordered_set<std::string> &seenTypes)
       : type(type), seenNodes(seenNodes), seenTypes(seenTypes) {}
 
@@ -96,11 +96,12 @@ public:
   void visit(const Module *v) override {
     auto types = makeFormatters(v->types_begin(), v->types_end(), true);
     auto vars = makeFormatters(v->begin(), v->end(), true);
-    fmt::print(os, FMT_STRING("(module\n(argv {})\n(types {})\n(vars {})\n{})"),
-               makeFormatter(v->getArgVar(), true),
-               fmt::join(types.begin(), types.end(), "\n"),
-               fmt::join(vars.begin(), vars.end(), "\n"),
-               makeFormatter(v->getMainFunc(), true));
+    fmt::print(
+        os, FMT_STRING("(module\n(argv {})\n(argc {})\n(types {})\n(vars {})\n{})"),
+        makeFormatter(v->getArgvVar(), true), makeFormatter(v->getArgcVar(), true),
+        fmt::join(types.begin(), types.end(), "\n"),
+        fmt::join(vars.begin(), vars.end(), "\n"),
+        makeFormatter(v->getMainFunc(), true));
   }
 
   void defaultVisit(const Node *) override { os << "(unknown_node)"; }
@@ -245,7 +246,7 @@ public:
                fmt::join(args.begin(), args.end(), "\n"));
   }
   void visit(const StackAllocInstr *v) override {
-    fmt::print(os, FMT_STRING("(stack_alloc {} {})"), makeFormatter(v->getArrayType()),
+    fmt::print(os, FMT_STRING("(stack_alloc {} {})"), makeFormatter(v->getPtrType()),
                v->getCount());
   }
   void visit(const TypePropertyInstr *v) override {
@@ -292,34 +293,29 @@ public:
   }
   void visit(const dsl::CustomInstr *v) override { v->doFormat(os); }
 
-  void visit(const types::IntType *v) override {
-    fmt::print(os, FMT_STRING("(int '\"{}\")"), v->referenceString());
+  void visit(const IntType *v) override {
+    fmt::print(os, FMT_STRING("(int '\"{}\" {} (signed {}))"), v->referenceString(),
+               v->getLen(), v->isSigned());
   }
-  void visit(const types::FloatType *v) override {
+  void visit(const FloatType *v) override {
     fmt::print(os, FMT_STRING("(float '\"{}\")"), v->referenceString());
   }
-  void visit(const types::Float32Type *v) override {
+  void visit(const Float32Type *v) override {
     fmt::print(os, FMT_STRING("(float32 '\"{}\")"), v->referenceString());
   }
-  void visit(const types::Float16Type *v) override {
+  void visit(const Float16Type *v) override {
     fmt::print(os, FMT_STRING("(float16 '\"{}\")"), v->referenceString());
   }
-  void visit(const types::BFloat16Type *v) override {
+  void visit(const BFloat16Type *v) override {
     fmt::print(os, FMT_STRING("(bfloat16 '\"{}\")"), v->referenceString());
   }
-  void visit(const types::Float128Type *v) override {
+  void visit(const Float128Type *v) override {
     fmt::print(os, FMT_STRING("(float128 '\"{}\")"), v->referenceString());
   }
-  void visit(const types::BoolType *v) override {
+  void visit(const BoolType *v) override {
     fmt::print(os, FMT_STRING("(bool '\"{}\")"), v->referenceString());
   }
-  void visit(const types::ByteType *v) override {
-    fmt::print(os, FMT_STRING("(byte '\"{}\")"), v->referenceString());
-  }
-  void visit(const types::VoidType *v) override {
-    fmt::print(os, FMT_STRING("(void '\"{}\")"), v->referenceString());
-  }
-  void visit(const types::RecordType *v) override {
+  void visit(const RecordType *v) override {
     std::vector<std::string> fields;
     std::vector<NodeFormatter> formatters;
     for (const auto &m : *v) {
@@ -330,42 +326,38 @@ public:
     fmt::print(os, FMT_STRING("(record '\"{}\" {})"), v->referenceString(),
                fmt::join(fields.begin(), fields.end(), " "));
   }
-  void visit(const types::RefType *v) override {
+  void visit(const RefType *v) override {
     fmt::print(os, FMT_STRING("(ref '\"{}\" {})"), v->referenceString(),
                makeFormatter(v->getContents()));
   }
-  void visit(const types::FuncType *v) override {
+  void visit(const FuncType *v) override {
     auto args = makeFormatters(v->begin(), v->end());
     fmt::print(os, FMT_STRING("(func '\"{}\" {}{} {})"), v->referenceString(),
                fmt::join(args.begin(), args.end(), " "),
                (v->isVariadic() ? " ..." : ""), makeFormatter(v->getReturnType()));
   }
-  void visit(const types::OptionalType *v) override {
+  void visit(const OptionalType *v) override {
     fmt::print(os, FMT_STRING("(optional '\"{}\" {})"), v->referenceString(),
                makeFormatter(v->getBase()));
   }
-  void visit(const types::PointerType *v) override {
+  void visit(const PointerType *v) override {
     fmt::print(os, FMT_STRING("(pointer '\"{}\" {})"), v->referenceString(),
                makeFormatter(v->getBase()));
   }
-  void visit(const types::GeneratorType *v) override {
+  void visit(const GeneratorType *v) override {
     fmt::print(os, FMT_STRING("(generator '\"{}\" {})"), v->referenceString(),
                makeFormatter(v->getBase()));
   }
-  void visit(const types::IntNType *v) override {
-    fmt::print(os, FMT_STRING("(intn '\"{}\" {} (signed {}))"), v->referenceString(),
-               v->getLen(), v->isSigned());
-  }
-  void visit(const types::VectorType *v) override {
+  void visit(const VectorType *v) override {
     fmt::print(os, FMT_STRING("(vector '\"{}\" {} (count {}))"), v->referenceString(),
                makeFormatter(v->getBase()), v->getCount());
   }
-  void visit(const types::UnionType *v) override {
+  void visit(const UnionType *v) override {
     auto types = makeFormatters(v->begin(), v->end());
     fmt::print(os, FMT_STRING("(union '\"{}\" {})"), v->referenceString(),
                fmt::join(types.begin(), types.end(), " "));
   }
-  void visit(const dsl::types::CustomType *v) override { v->doFormat(os); }
+  void visit(const dsl::CustomType *v) override { v->doFormat(os); }
 
   void format(const Node *n) {
     if (n)
@@ -374,7 +366,7 @@ public:
       os << "(null)";
   }
 
-  void format(const types::Type *t, bool canShowFull = false) {
+  void format(const Type *t, bool canShowFull = false) {
     if (t) {
       if (seenTypes.find(t->getName()) != seenTypes.end() || !canShowFull)
         fmt::print(os, FMT_STRING("(type '\"{}\")"), t->referenceString());
@@ -412,7 +404,7 @@ public:
   }
 
 private:
-  NodeFormatter makeFormatter(const types::Type *node, bool canShowFull = false) {
+  NodeFormatter makeFormatter(const Type *node, bool canShowFull = false) {
     auto ret = NodeFormatter(node, seenNodes, seenTypes);
     ret.canShowFull = canShowFull;
     return ret;

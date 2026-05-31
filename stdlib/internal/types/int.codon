@@ -3,453 +3,849 @@
 from internal.attributes import commutative, associative, distributive
 
 @extend
-class int:
+class Int:
+
+    def _check_bitwidth(N: Literal[int]):
+        if N <= 0:
+            compile_error("integer bit-width must be greater than 0")
+
     @pure
     @llvm
-    def __new__() -> int:
-        ret i64 0
+    def _sext(what, F: Literal[int], T: Literal[int]) -> Int[T]:
+        %0 = sext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _zext(what, F: Literal[int], T: Literal[int]) -> Int[T]:
+        %0 = zext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _trunc(what, F: Literal[int], T: Literal[int]) -> Int[T]:
+        %0 = trunc i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    def __new__() -> Int[N]:
+        Int._check_bitwidth(N)
+        return Int[N](0)
 
     @overload
-    def __new__(s: str, base: int) -> int:
-        return int._from_str(s, base)
+    def __new__(what: Int[M], M: Literal[int]) -> Int[N]:
+        Int._check_bitwidth(N)
+        if N < M:
+            return Int._trunc(what, M, N)
+        elif N == M:
+            return what
+        else:
+            return Int._sext(what, M, N)
 
     @overload
-    def __new__(what) -> int:
+    def __new__(what: UInt[M], M: Literal[int]) -> Int[N]:
+        @pure
+        @llvm
+        def convert(what: UInt[N], N: Literal[int]) -> Int[N]:
+            ret i{=N} %what
+
+        Int._check_bitwidth(N)
+        if N < M:
+            return Int._trunc(what, M, N)
+        elif N == M:
+            return convert(what, N)
+        else:
+            return Int._zext(what, M, N)
+
+    @overload
+    def __new__(what: str, base: int) -> Int[N]:
+        Int._check_bitwidth(N)
+        return Int[N]._from_str(what, base)
+
+    @overload
+    def __new__(what) -> Int[N]:
         # do not overload! (needed to avoid pyobj conversion)
         if isinstance(what, str) or isinstance(what, Optional[str]):
-            return int._from_str(what, 10)
+            return Int[N](what, 10)
+        elif isinstance(what, Int) or isinstance(what, UInt):
+            return superf(what)
         else:
-            return what.__int__()
+            return Int[N](what.__int__())
 
     def __int__(self) -> int:
+        return int(self)
+
+    def __index__(self) -> int:
+        return int(self)
+
+    def __copy__(self) -> Int[N]:
         return self
+
+    def __deepcopy__(self) -> Int[N]:
+        return self
+
+    def __hash__(self) -> int:
+        return int(self)
 
     @pure
     @llvm
     def __float__(self) -> float:
-        %tmp = sitofp i64 %self to double
-        ret double %tmp
-
-    def __index__(self) -> int:
-        return self
-
-    def __repr__(self) -> str:
-        return self.__format__("")
-
-    def __copy__(self) -> int:
-        return self
-
-    def __deepcopy__(self) -> int:
-        return self
-
-    def __hash__(self) -> int:
-        return self
+        %0 = sitofp i{=N} %self to double
+        ret double %0
 
     @pure
     @llvm
     def __bool__(self) -> bool:
-        %0 = icmp ne i64 %self, 0
+        %0 = icmp ne i{=N} %self, 0
         %1 = zext i1 %0 to i8
         ret i8 %1
 
-    def __pos__(self) -> int:
+    def __pos__(self) -> Int[N]:
         return self
 
-    def __neg__(self) -> int:
-        return 0 - self
+    @pure
+    @llvm
+    def __neg__(self) -> Int[N]:
+        %0 = sub i{=N} 0, %self
+        ret i{=N} %0
 
     @pure
     @llvm
-    def __abs__(self) -> int:
-        declare i64 @llvm.abs.i64(i64, i1)
-        %0 = call i64 @llvm.abs.i64(i64 %self, i1 false)
-        ret i64 %0
+    def __invert__(self) -> Int[N]:
+        %0 = xor i{=N} %self, -1
+        ret i{=N} %0
 
     @pure
     @llvm
-    def __lshift__(self, other: int) -> int:
-        %0 = shl i64 %self, %other
-        ret i64 %0
-
-    @pure
-    @llvm
-    def __rshift__(self, other: int) -> int:
-        %0 = ashr i64 %self, %other
-        ret i64 %0
+    def __abs__(self) -> Int[N]:
+        declare i{=N} @llvm.abs.i{=N}(i{=N}, i1)
+        %0 = call i{=N} @llvm.abs.i{=N}(i{=N} %self, i1 false)
+        ret i{=N} %0
 
     @pure
     @commutative
     @associative
     @llvm
-    def __add__(self, b: bool) -> int:
-        %0 = sext {=bool} %b to i64
-        %1 = add i64 %self, %0
-        ret i64 %1
-
-    @pure
-    @commutative
-    @overload
-    @llvm
-    def __add__(self, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = fadd double %0, %other
-        ret double %1
-
-    @pure
-    @commutative
-    @associative
-    @overload
-    @llvm
-    def __add__(self, b: int) -> int:
-        %tmp = add i64 %self, %b
-        ret i64 %tmp
+    def __add__(self, other: Int[N]) -> Int[N]:
+        %0 = add i{=N} %self, %other
+        ret i{=N} %0
 
     @pure
     @llvm
-    def __sub__(self, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = fsub double %0, %other
-        ret double %1
-
-    @pure
-    @overload
-    @llvm
-    def __sub__(self, b: int) -> int:
-        %tmp = sub i64 %self, %b
-        ret i64 %tmp
-
-    @pure
-    @commutative
-    @llvm
-    def __mul__(self, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = fmul double %0, %other
-        ret double %1
+    def __sub__(self, other: Int[N]) -> Int[N]:
+        %0 = sub i{=N} %self, %other
+        ret i{=N} %0
 
     @pure
     @commutative
     @associative
     @distributive
-    @overload
     @llvm
-    def __mul__(self, b: int) -> int:
-        %tmp = mul i64 %self, %b
-        ret i64 %tmp
+    def __mul__(self, other: Int[N]) -> Int[N]:
+        %0 = mul i{=N} %self, %other
+        ret i{=N} %0
 
     @pure
     @llvm
-    def __floordiv__(self, other: float) -> float:
-        declare double @llvm.floor.f64(double)
-        %0 = sitofp i64 %self to double
-        %1 = fdiv double %0, %other
-        %2 = call double @llvm.floor.f64(double %1)
-        ret double %2
+    def _floordiv(self, other: Int[N]) -> Int[N]:
+        %0 = sdiv i{=N} %self, %other
+        ret i{=N} %0
 
-    @pure
-    @overload
-    @llvm
-    def __floordiv__(self, b: int) -> int:
-        %tmp = sdiv i64 %self, %b
-        ret i64 %tmp
+    def cdiv(self, other: Int[N]) -> Int[N]:
+        return self._floordiv(other)
 
-    @pure
-    @llvm
-    def __truediv__(self, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = fdiv double %0, %other
-        ret double %1
+    def __floordiv__(self, other: Int[N]) -> Int[N]:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
 
-    @pure
-    @overload
-    @llvm
-    def __truediv__(self, other: int) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = sitofp i64 %other to double
-        %2 = fdiv double %0, %1
-        ret double %2
+            q = self.cdiv(other)
+            r = self.cmod(other)
+            if r != Int[N](0) and (self ^ other) < Int[N](0):
+                q -= Int[N](1)
+            return q
+        else:
+            return self.cdiv(other)
+
+    def __truediv__(self, other: Int[N]) -> float:
+        return self.__float__() / other.__float__()
 
     @pure
     @llvm
-    def __mod__(self, other: float) -> float:
-        %0 = sitofp i64 %self to double
-        %1 = frem double %0, %other
-        ret double %1
+    def _mod(self, other: Int[N]) -> Int[N]:
+        %0 = srem i{=N} %self, %other
+        ret i{=N} %0
+
+    def cmod(self, other: Int[N]) -> Int[N]:
+        return self._mod(other)
+
+    def __mod__(self, other: Int[N]) -> Int[N]:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            m = self.cmod(other)
+            if m != Int[N](0) and ((self ^ other) < Int[N](0)):
+                m += other
+            return m
+        else:
+            return self.cmod(other)
+
+    def __divmod__(self, other: Int[N]) -> Tuple[Int[N], Int[N]]:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+            d = self.cdiv(other)
+            m = self - d * other
+            if m and ((other ^ m) < Int[N](0)):
+                m += other
+                d -= Int[N](1)
+            return (d, m)
+        else:
+            return (self.cdiv(other), self.cmod(other))
 
     @pure
-    @overload
     @llvm
-    def __mod__(a: int, b: int) -> int:
-        %tmp = srem i64 %a, %b
-        ret i64 %tmp
-
-    def __divmod__(self, other: float) -> Tuple[float, float]:
-        return float(self).__divmod__(other)
-
-    @overload
-    def __divmod__(self, other: int) -> Tuple[int, int]:
-        d = self // other
-        m = self - d * other
-        if m and ((other ^ m) < 0):
-            m += other
-            d -= 1
-        return (d, m)
+    def __lshift__(self, other: Int[N]) -> Int[N]:
+        %0 = shl i{=N} %self, %other
+        ret i{=N} %0
 
     @pure
     @llvm
-    def __invert__(a: int) -> int:
-        %tmp = xor i64 %a, -1
-        ret i64 %tmp
+    def __rshift__(self, other: Int[N]) -> Int[N]:
+        %0 = ashr i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @llvm
+    def __eq__(self, other: Int[N]) -> bool:
+        %0 = icmp eq i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __ne__(self, other: Int[N]) -> bool:
+        %0 = icmp ne i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __lt__(self, other: Int[N]) -> bool:
+        %0 = icmp slt i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __gt__(self, other: Int[N]) -> bool:
+        %0 = icmp sgt i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __le__(self, other: Int[N]) -> bool:
+        %0 = icmp sle i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __ge__(self, other: Int[N]) -> bool:
+        %0 = icmp sge i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
 
     @pure
     @commutative
     @associative
     @llvm
-    def __and__(a: int, b: int) -> int:
-        %tmp = and i64 %a, %b
-        ret i64 %tmp
+    def __and__(self, other: Int[N]) -> Int[N]:
+        %0 = and i{=N} %self, %other
+        ret i{=N} %0
 
     @pure
     @commutative
     @associative
     @llvm
-    def __or__(a: int, b: int) -> int:
-        %tmp = or i64 %a, %b
-        ret i64 %tmp
+    def __or__(self, other: Int[N]) -> Int[N]:
+        %0 = or i{=N} %self, %other
+        ret i{=N} %0
 
     @pure
     @commutative
     @associative
     @llvm
-    def __xor__(a: int, b: int) -> int:
-        %tmp = xor i64 %a, %b
-        ret i64 %tmp
+    def __xor__(self, other: Int[N]) -> Int[N]:
+        %0 = xor i{=N} %self, %other
+        ret i{=N} %0
 
-    @pure
-    @llvm
-    def __bitreverse__(a: int) -> int:
-        declare i64 @llvm.bitreverse.i64(i64 %a)
-        %tmp = call i64 @llvm.bitreverse.i64(i64 %a)
-        ret i64 %tmp
+    def _ipow(self, exp: Int[N]) -> Int[N]:
+        zero = Int[N](0)
+        one = Int[N](1)
 
-    @pure
-    @llvm
-    def __bswap__(a: int) -> int:
-        declare i64 @llvm.bswap.i64(i64 %a)
-        %tmp = call i64 @llvm.bswap.i64(i64 %a)
-        ret i64 %tmp
-
-    @pure
-    @llvm
-    def __ctpop__(a: int) -> int:
-        declare i64 @llvm.ctpop.i64(i64 %a)
-        %tmp = call i64 @llvm.ctpop.i64(i64 %a)
-        ret i64 %tmp
-
-    @pure
-    @llvm
-    def __ctlz__(a: int) -> int:
-        declare i64 @llvm.ctlz.i64(i64 %a, i1 %is_zero_undef)
-        %tmp = call i64 @llvm.ctlz.i64(i64 %a, i1 false)
-        ret i64 %tmp
-
-    @pure
-    @llvm
-    def __cttz__(a: int) -> int:
-        declare i64 @llvm.cttz.i64(i64 %a, i1 %is_zero_undef)
-        %tmp = call i64 @llvm.cttz.i64(i64 %a, i1 false)
-        ret i64 %tmp
-
-    @pure
-    @llvm
-    def __eq__(self, b: float) -> bool:
-        %0 = sitofp i64 %self to double
-        %1 = fcmp oeq double %0, %b
-        %2 = zext i1 %1 to i8
-        ret i8 %2
-
-    @pure
-    @overload
-    @llvm
-    def __eq__(a: int, b: int) -> bool:
-        %tmp = icmp eq i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
-
-    @pure
-    @llvm
-    def __ne__(self, b: float) -> bool:
-        %0 = sitofp i64 %self to double
-        %1 = fcmp one double %0, %b
-        %2 = zext i1 %1 to i8
-        ret i8 %2
-
-    @pure
-    @overload
-    @llvm
-    def __ne__(a: int, b: int) -> bool:
-        %tmp = icmp ne i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
-
-    @pure
-    @llvm
-    def __lt__(self, b: float) -> bool:
-        %0 = sitofp i64 %self to double
-        %1 = fcmp olt double %0, %b
-        %2 = zext i1 %1 to i8
-        ret i8 %2
-
-    @pure
-    @overload
-    @llvm
-    def __lt__(a: int, b: int) -> bool:
-        %tmp = icmp slt i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
-
-    @pure
-    @llvm
-    def __gt__(self, b: float) -> bool:
-        %0 = sitofp i64 %self to double
-        %1 = fcmp ogt double %0, %b
-        %2 = zext i1 %1 to i8
-        ret i8 %2
-
-    @pure
-    @overload
-    @llvm
-    def __gt__(a: int, b: int) -> bool:
-        %tmp = icmp sgt i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
-
-    @pure
-    @llvm
-    def __le__(self, b: float) -> bool:
-        %0 = sitofp i64 %self to double
-        %1 = fcmp ole double %0, %b
-        %2 = zext i1 %1 to i8
-        ret i8 %2
-
-    @pure
-    @overload
-    @llvm
-    def __le__(a: int, b: int) -> bool:
-        %tmp = icmp sle i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
-
-    @pure
-    @llvm
-    def __ge__(self, b: float) -> bool:
-        %0 = sitofp i64 %self to double
-        %1 = fcmp oge double %0, %b
-        %2 = zext i1 %1 to i8
-        ret i8 %2
-
-    @pure
-    @overload
-    @llvm
-    def __ge__(a: int, b: int) -> bool:
-        %tmp = icmp sge i64 %a, %b
-        %res = zext i1 %tmp to i8
-        ret i8 %res
-
-    def __pow__(self, exp: float) -> float:
-        return float(self) ** exp
-
-    def _ipow(self, exp: int) -> int:
-        if exp < 0:
-            return 0
-        result = 1
+        if exp < zero:
+            return zero
+        result = one
         while True:
-            if exp & 1:
+            if exp & one:
                 result *= self
-            exp >>= 1
+            exp >>= one
             if not exp:
                 break
             self *= self
         return result
 
-    @overload
-    def __pow__(self, exp: int) -> int:
+    def __pow__(self, exp: Int[N]) -> Int[N]:
         return self._ipow(exp)
 
     def __pow__(self, exp: Literal[int]):
         if exp == 0:
             return 1
         elif exp > 0:
-            return self._ipow(exp)
+            return self._ipow(Int[N](exp))
         else:
             return self ** float(exp)
 
+    def __repr__(self) -> str:
+        if N == 64:
+            return self.__str__()
+        else:
+            return f"Int[{N}]({self.__str__()})"
+
+    @pure
+    @llvm
+    def _popcnt(self) -> Int[N]:
+        declare i{=N} @llvm.ctpop.i{=N}(i{=N})
+        %0 = call i{=N} @llvm.ctpop.i{=N}(i{=N} %self)
+        ret i{=N} %0
+
     def popcnt(self) -> int:
-        return Int[64](self).popcnt()
+        return int(self._popcnt())
+
+    @pure
+    @llvm
+    def _bitreverse(self) -> Int[N]:
+        declare i{=N} @llvm.bitreverse.i{=N}(i{=N} %a)
+        %tmp = call i{=N} @llvm.bitreverse.i{=N}(i{=N} %self)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _bswap(self) -> Int[N]:
+        declare i{=N} @llvm.bswap.i{=N}(i{=N} %a)
+        %tmp = call i{=N} @llvm.bswap.i{=N}(i{=N} %self)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _ctpop(self) -> Int[N]:
+        declare i{=N} @llvm.ctpop.i{=N}(i{=N} %a)
+        %tmp = call i{=N} @llvm.ctpop.i{=N}(i{=N} %self)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _ctlz(self) -> Int[N]:
+        declare i{=N} @llvm.ctlz.i{=N}(i{=N} %a, i1 %is_zero_undef)
+        %tmp = call i{=N} @llvm.ctlz.i{=N}(i{=N} %self, i1 false)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _cttz(self) -> Int[N]:
+        declare i{=N} @llvm.cttz.i{=N}(i{=N} %a, i1 %is_zero_undef)
+        %tmp = call i{=N} @llvm.cttz.i{=N}(i{=N} %self, i1 false)
+        ret i{=N} %tmp
 
     def bit_length(self) -> int:
-        return Int[64](self).bit_length()
+        if not self:
+            return 0
+        else:
+            return N - int(self.__abs__()._ctlz())
 
-    @nocapture
-    @llvm
-    def __atomic_xchg__(d: Ptr[int], b: int) -> None:
-        %tmp = atomicrmw xchg ptr %d, i64 %b seq_cst
-        ret {} {}
-
-    @nocapture
-    @llvm
-    def __atomic_add__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw add ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_sub__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw sub ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_and__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw and ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_nand__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw nand ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_or__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw or ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_xor__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw xor ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_min__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw min ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    @nocapture
-    @llvm
-    def __atomic_max__(d: Ptr[int], b: int) -> int:
-        %tmp = atomicrmw max ptr %d, i64 %b seq_cst
-        ret i64 %tmp
-
-    def __match__(self, obj: int) -> bool:
+    def __match__(self, obj: Int[N]) -> bool:
         return self == obj
 
+    def __round__(self, ndigits=None) -> Int[N]:
+        if ndigits is None:
+            return self
+
+        if ndigits >= 0:
+            return self
+
+        scale = Int[N](10) ** Int[N](-ndigits)
+        a = self.__abs__()
+        q = a.cdiv(scale)
+        r = a.cmod(scale)
+        twice_r = r * Int[N](2)
+
+        if twice_r > scale:
+            q += Int[N](1)
+        elif twice_r == scale:
+            if q.cmod(Int[N](2)):
+                q += Int[N](1)
+
+        result = q * scale
+        return -result if self < Int[N](0) else result
+
     @property
-    def real(self) -> int:
+    def real(self) -> Int[N]:
         return self
 
     @property
-    def imag(self) -> int:
-        return 0
+    def imag(self) -> Int[N]:
+        return Int[N]()
+
+    @nocapture
+    @llvm
+    def __atomic_xchg__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw xchg ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_add__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw add ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_sub__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw sub ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_and__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw and ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_nand__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw nand ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_or__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw or ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_xor__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw xor ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_min__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw min ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_max__(d: Ptr[Int[N]], b: Int[N]) -> Int[N]:
+        %tmp = atomicrmw max ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+
+@extend
+class UInt:
+
+    @pure
+    @llvm
+    def _sext(what, F: Literal[int], T: Literal[int]) -> UInt[T]:
+        %0 = sext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _zext(what, F: Literal[int], T: Literal[int]) -> UInt[T]:
+        %0 = zext i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    @pure
+    @llvm
+    def _trunc(what, F: Literal[int], T: Literal[int]) -> UInt[T]:
+        %0 = trunc i{=F} %what to i{=T}
+        ret i{=T} %0
+
+    def __new__() -> UInt[N]:
+        Int._check_bitwidth(N)
+        return UInt[N](0)
+
+    @overload
+    def __new__(what: UInt[M], M: Literal[int]) -> UInt[N]:
+        Int._check_bitwidth(N)
+        if N < M:
+            return UInt[N](Int._trunc(what, M, N))
+        elif N == M:
+            return what
+        else:
+            return UInt[N](Int._zext(what, M, N))
+
+    @overload
+    def __new__(what: Int[M], M: Literal[int]) -> UInt[N]:
+        @pure
+        @llvm
+        def convert(what: Int[N], N: Literal[int]) -> UInt[N]:
+            ret i{=N} %what
+
+        Int._check_bitwidth(N)
+        if N < M:
+            return convert(Int._trunc(what, M, N))
+        elif N == M:
+            return convert(what)
+        else:
+            return convert(Int._sext(what, M, N))
+
+    def __new__(what: str, base: int = 10) -> UInt[N]:
+        Int._check_bitwidth(N)
+        return UInt[N]._from_str(what, base)
+
+    def __int__(self) -> int:
+        return int(self)
+
+    def __index__(self) -> int:
+        return int(self)
+
+    def __copy__(self) -> UInt[N]:
+        return self
+
+    def __deepcopy__(self) -> UInt[N]:
+        return self
+
+    def __hash__(self) -> int:
+        return int(self)
+
+    @pure
+    @llvm
+    def __float__(self) -> float:
+        %0 = uitofp i{=N} %self to double
+        ret double %0
+
+    @pure
+    @llvm
+    def __bool__(self) -> bool:
+        %0 = icmp ne i{=N} %self, 0
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    def __pos__(self) -> UInt[N]:
+        return self
+
+    @pure
+    @llvm
+    def __neg__(self) -> UInt[N]:
+        %0 = sub i{=N} 0, %self
+        ret i{=N} %0
+
+    @pure
+    @llvm
+    def __invert__(self) -> UInt[N]:
+        %0 = xor i{=N} %self, -1
+        ret i{=N} %0
+
+    def __abs__(self) -> UInt[N]:
+        return self
+
+    @pure
+    @commutative
+    @associative
+    @llvm
+    def __add__(self, other: UInt[N]) -> UInt[N]:
+        %0 = add i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @llvm
+    def __sub__(self, other: UInt[N]) -> UInt[N]:
+        %0 = sub i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @commutative
+    @associative
+    @distributive
+    @llvm
+    def __mul__(self, other: UInt[N]) -> UInt[N]:
+        %0 = mul i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @llvm
+    def _floordiv(self, other: UInt[N]) -> UInt[N]:
+        %0 = udiv i{=N} %self, %other
+        ret i{=N} %0
+
+    def cdiv(self, other: UInt[N]) -> UInt[N]:
+        return self._floordiv(other)
+
+    def __floordiv__(self, other: UInt[N]) -> UInt[N]:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self.cdiv(other)
+
+    def __truediv__(self, other: UInt[N]) -> float:
+        return self.__float__() / other.__float__()
+
+    @pure
+    @llvm
+    def _mod(self, other: UInt[N]) -> UInt[N]:
+        %0 = urem i{=N} %self, %other
+        ret i{=N} %0
+
+    def cmod(self, other: UInt[N]) -> UInt[N]:
+        return self._mod(other)
+
+    def __mod__(self, other: UInt[N]) -> UInt[N]:
+        if __py_numerics__:
+            if not other:
+                raise ZeroDivisionError("division by zero")
+        return self._mod(other)
+
+    def __divmod__(self, other: UInt[N]) -> Tuple[UInt[N], UInt[N]]:
+        return (self // other, self % other)
+
+    @pure
+    @llvm
+    def __lshift__(self, other: UInt[N]) -> UInt[N]:
+        %0 = shl i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @llvm
+    def __rshift__(self, other: UInt[N]) -> UInt[N]:
+        %0 = lshr i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @llvm
+    def __eq__(self, other: UInt[N]) -> bool:
+        %0 = icmp eq i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __ne__(self, other: UInt[N]) -> bool:
+        %0 = icmp ne i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __lt__(self, other: UInt[N]) -> bool:
+        %0 = icmp ult i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __gt__(self, other: UInt[N]) -> bool:
+        %0 = icmp ugt i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __le__(self, other: UInt[N]) -> bool:
+        %0 = icmp ule i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @llvm
+    def __ge__(self, other: UInt[N]) -> bool:
+        %0 = icmp uge i{=N} %self, %other
+        %1 = zext i1 %0 to i8
+        ret i8 %1
+
+    @pure
+    @commutative
+    @associative
+    @llvm
+    def __and__(self, other: UInt[N]) -> UInt[N]:
+        %0 = and i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @commutative
+    @associative
+    @llvm
+    def __or__(self, other: UInt[N]) -> UInt[N]:
+        %0 = or i{=N} %self, %other
+        ret i{=N} %0
+
+    @pure
+    @commutative
+    @associative
+    @llvm
+    def __xor__(self, other: UInt[N]) -> UInt[N]:
+        %0 = xor i{=N} %self, %other
+        ret i{=N} %0
+
+    def _ipow(self, exp: UInt[N]) -> UInt[N]:
+        zero = UInt[N](0)
+        one = UInt[N](1)
+
+        if exp < zero:
+            return zero
+        result = one
+        while True:
+            if exp & one:
+                result *= self
+            exp >>= one
+            if not exp:
+                break
+            self *= self
+        return result
+
+    def __pow__(self, exp: UInt[N]) -> UInt[N]:
+        return self._ipow(exp)
+
+    def __pow__(self, exp: Literal[int]):
+        if exp == 0:
+            return 1
+        elif exp > 0:
+            return self._ipow(UInt[N](exp))
+        else:
+            return self ** float(exp)
+
+    def __repr__(self) -> str:
+        return f"UInt[{N}]({self.__str__()})"
+
+    def popcnt(self) -> int:
+        return int(Int[N](self)._popcnt())
+
+    @pure
+    @llvm
+    def _bitreverse(self) -> UInt[N]:
+        declare i{=N} @llvm.bitreverse.i{=N}(i{=N} %a)
+        %tmp = call i{=N} @llvm.bitreverse.i{=N}(i{=N} %self)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _bswap(self) -> UInt[N]:
+        declare i{=N} @llvm.bswap.i{=N}(i{=N} %a)
+        %tmp = call i{=N} @llvm.bswap.i{=N}(i{=N} %self)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _ctpop(self) -> UInt[N]:
+        declare i{=N} @llvm.ctpop.i{=N}(i{=N} %a)
+        %tmp = call i{=N} @llvm.ctpop.i{=N}(i{=N} %self)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _ctlz(self) -> UInt[N]:
+        declare i{=N} @llvm.ctlz.i{=N}(i{=N} %a, i1 %is_zero_undef)
+        %tmp = call i{=N} @llvm.ctlz.i{=N}(i{=N} %self, i1 false)
+        ret i{=N} %tmp
+
+    @pure
+    @llvm
+    def _cttz(self) -> UInt[N]:
+        declare i{=N} @llvm.cttz.i{=N}(i{=N} %a, i1 %is_zero_undef)
+        %tmp = call i{=N} @llvm.cttz.i{=N}(i{=N} %self, i1 false)
+        ret i{=N} %tmp
+
+    def bit_length(self) -> int:
+        if not self:
+            return 0
+        else:
+            return N - int(self._ctlz())
+
+    def __match__(self, obj: UInt[N]) -> bool:
+        return self == obj
+
+    def __round__(self, ndigits=None) -> UInt[N]:
+        if ndigits is None:
+            return self
+
+        if ndigits >= 0:
+            return self
+
+        scale = UInt[N](10) ** UInt[N](-ndigits)
+        a = self.__abs__()
+        q = a.cdiv(scale)
+        r = a.cmod(scale)
+        twice_r = r * UInt[N](2)
+
+        if twice_r > scale:
+            q += UInt[N](1)
+        elif twice_r == scale:
+            if q.cmod(UInt[N](2)):
+                q += UInt[N](1)
+
+        result = q * scale
+        return result
+
+    @property
+    def real(self) -> UInt[N]:
+        return self
+
+    @property
+    def imag(self) -> UInt[N]:
+        return UInt[N]()
+
+    @nocapture
+    @llvm
+    def __atomic_xchg__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw xchg ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_add__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw add ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_sub__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw sub ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_and__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw and ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_nand__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw nand ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_or__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw or ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_xor__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw xor ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_min__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw umin ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
+
+    @nocapture
+    @llvm
+    def __atomic_max__(d: Ptr[UInt[N]], b: UInt[N]) -> UInt[N]:
+        %tmp = atomicrmw umax ptr %d, i{=N} %b seq_cst
+        ret i{=N} %tmp
