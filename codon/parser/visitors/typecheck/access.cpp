@@ -323,7 +323,7 @@ void TypecheckVisitor::checkCapture(const TypeContext::Item &val) const {
     return;
 
   // Case: a global variable that has not been marked with `global` statement
-  if (val->isVar() && val->getBaseName().empty() && val->scope.size() == 1) {
+  if (val->isVar() && val->isGlobal()) {
     registerGlobal(val->getName());
     return;
   }

@@ -85,10 +85,6 @@ Stmt *TypecheckVisitor::apply(
 
   suite = tv.N<SuiteStmt>();
   suite->items.push_back(preamble);
-
-  // Add dominated assignment declarations
-  suite->items.insert(suite->items.end(), ctx->scope.back().stmts.begin(),
-                      ctx->scope.back().stmts.end());
   suite->items.push_back(n);
 
   if (cast<SuiteStmt>(n))
@@ -660,7 +656,8 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     fn = [this, type](Expr *expr) -> Expr * {
       auto r = realize(type.get());
       seqassert(r, "not realizable");
-      return N<CallExpr>(N<IdExpr>("Any.unwrap"), expr, N<IdExpr>(r->realizedName()));
+      return N<CallExpr>(N<IdExpr>(FN_OPTIONAL_UNWRAP), expr,
+                         N<IdExpr>(r->realizedName()));
     };
   } else if (expectedClass && expectedClass->is("Any") && exprClass &&
              !exprClass->is("Any")) {

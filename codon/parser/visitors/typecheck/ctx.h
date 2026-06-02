@@ -31,8 +31,8 @@ struct TypecheckItem : public SrcObject {
   /// Type
   types::TypePtr type = nullptr;
 
-  /// Full base scope information
-  std::vector<int> scope = {0};
+  /// Information about number of nested conditionals (blocks).
+  int blockLevel = 0;
   /// Specifies at which time the name was added to the context.
   /// Used to prevent using later definitions early (can happen in
   /// advanced type checking iterations).
@@ -45,8 +45,7 @@ struct TypecheckItem : public SrcObject {
   /// [used within isinstance blocks].
   std::shared_ptr<TypecheckItem> alternative = nullptr;
 
-  TypecheckItem(std::string, std::string, std::string, types::TypePtr,
-                std::vector<int> = {0});
+  TypecheckItem(std::string, std::string, std::string, types::TypePtr, int = 0);
 
   /* Convenience getters */
   std::string getBaseName() const { return baseName; }
@@ -55,10 +54,10 @@ struct TypecheckItem : public SrcObject {
   bool isFunc() const { return type->getFunc() != nullptr; }
   bool isType() const { return type->is(StdlibTypes::Type); }
 
-  bool isGlobal() const { return scope.size() == 1 && baseName.empty(); }
+  bool isGlobal() const { return blockLevel == 0 && baseName.empty(); }
   /// True if an identifier is within a conditional block
   /// (i.e., a block that might not be executed during the runtime)
-  bool isConditional() const { return scope.size() > 1; }
+  bool isConditional() const { return blockLevel > 0; }
   bool isGeneric() const { return generic; }
   types::LiteralKind getStaticKind() const { return type->getStaticKind(); }
 
@@ -72,28 +71,6 @@ struct TypecheckItem : public SrcObject {
 struct TypeContext : public Context<TypecheckItem> {
   /// A pointer to the shared cache.
   Cache *cache;
-
-  /// Holds the information about current scope.
-  /// A scope is defined as a stack of conditional blocks
-  /// (i.e., blocks that might not get executed during the runtime).
-  /// Used mainly to support Python's variable scoping rules.
-  struct ScopeBlock {
-    int id;
-    std::unordered_map<std::string, std::pair<std::string, bool>> replacements;
-    /// List of statements that are to be prepended to a block
-    /// after its transformation.
-    std::vector<Stmt *> stmts;
-    ScopeBlock(int id) : id(id) {}
-  };
-  /// Current hierarchy of conditional blocks.
-  std::vector<ScopeBlock> scope;
-  std::vector<int> getScope() const {
-    std::vector<int> result;
-    result.reserve(scope.size());
-    for (const auto &b : scope)
-      result.emplace_back(b.id);
-    return result;
-  }
 
   /// Holds the information about current base.
   /// A base is defined as a function or a class block.
@@ -130,9 +107,6 @@ struct TypeContext : public Context<TypecheckItem> {
 
     /// Map of identifiers that are to be fetched from Python.
     std::unordered_set<std::string> *pyCaptures = nullptr;
-
-    // /// Scope that defines the base.
-    // std::vector<int> scope;
 
     /// A stack of nested loops enclosing the current statement used for transforming
     /// "break" statement in loop-else constructs. Each loop is defined by a "break"

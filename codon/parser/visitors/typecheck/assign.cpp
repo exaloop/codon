@@ -80,8 +80,8 @@ void TypecheckVisitor::visit(DelStmt *stmt) {
     auto val = ctx->find(ei->getValue());
     if (!val)
       E(Error::ID_NOT_FOUND, ei, ei->getValue());
-    if (ctx->getScope() != val->scope)
-      E(Error::DEL_NOT_ALLOWED, ei, ei->getValue());
+    // TODO: check if variable can be deleted (e.g., can you delete a variable in
+    // outside scope?!)
     ctx->remove(ei->getValue());
     ctx->remove(getUnmangledName(ei->getValue()));
   } else {
@@ -283,7 +283,7 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   }
   auto val = std::make_shared<TypecheckItem>(
       canonical, ctx->getBaseName(), ctx->getModule(),
-      assign->getLhs()->getType()->shared_from_this(), ctx->getScope());
+      assign->getLhs()->getType()->shared_from_this(), ctx->blockLevel);
   val->time = getTime();
   val->setSrcInfo(getSrcInfo());
   ctx->add(e->getValue(), val);

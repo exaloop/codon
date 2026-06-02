@@ -315,6 +315,16 @@ while l < 10:
     i += 1
 print("hi")  #: hi
 
+# Check if conditional assignments in conditionals are propagated
+def foo(x): return x
+a = 3
+while ( a and (elem := foo(100)) != 0 ):
+    print(elem)
+    a -= 1
+#: 100
+#: 100
+#: 100
+
 #%% dot_access_error_NOPY,barebones
 class Foo:
     x: int = 1

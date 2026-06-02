@@ -321,12 +321,18 @@ void ScopingVisitor::visit(WhileStmt *stmt) {
     ConditionalBlock c(ctx.get(), stmt->getSuite());
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
     CHECK(transform(stmt->getCond()));
-    CHECK(transform(stmt->getSuite()));
-    seen = *(ctx->scope.back().seenVars);
+    seen.insert(ctx->scope.back().seenVars->begin(), ctx->scope.back().seenVars->end());
   }
-  for (auto &var : seen) {
+  for (auto &var : seen)
     findDominatingBinding(var);
+  {
+    ConditionalBlock c(ctx.get(), stmt->getSuite());
+    ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
+    CHECK(transform(stmt->getSuite()));
+    seen.insert(ctx->scope.back().seenVars->begin(), ctx->scope.back().seenVars->end());
   }
+  for (auto &var : seen)
+    findDominatingBinding(var);
 
   CHECK(transformScope(stmt->getElse()));
 }

@@ -358,7 +358,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
   import.update(file.module, file.path, ictx);
   import.loadedAtToplevel =
       getImport(ctx->moduleName.path)->loadedAtToplevel &&
-      (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->scope.size() == 1));
+      (ctx->isStdlibLoading || (ctx->isGlobal() && ctx->blockLevel == 0));
   auto importVar = import.importVar =
       getTemporaryVar(fmt::format("import_{}", moduleID));
   LOG_REALIZE("[import] initializing {} (location: {}, toplevel: {})", importVar,
@@ -379,7 +379,7 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
                       N<IdExpr>("Import"))));
     auto val = ctx->forceFind(importVar);
     ctx->popBlock();
-    val->scope = {0};
+    val->blockLevel = 0;
     val->baseName = "";
     val->moduleName = MODULE_MAIN;
     val->time = 0;

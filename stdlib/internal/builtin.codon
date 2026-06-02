@@ -309,7 +309,7 @@ def sum(x, start=0):
 def repr(x):
     if isinstance(x, type):
         return __type_repr__(x)
-    if isinstance(x, Super):
+    if type(x) is Super:
         return f'<super: {x.T}>'
     if not hasattr(x, "__repr__") and hasattr(x, "__repr_default__"):
         return x.__repr_default__()

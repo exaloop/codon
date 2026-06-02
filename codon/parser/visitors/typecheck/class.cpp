@@ -29,7 +29,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
 
   // classItem will be added later when the scope is different
   auto classItem = std::make_shared<TypecheckItem>("", "", ctx->getModule(), nullptr,
-                                                   ctx->getScope());
+                                                   ctx->blockLevel);
   classItem->setSrcInfo(stmt->getSrcInfo());
   std::shared_ptr<TypecheckItem> timedItem = nullptr;
   types::ClassType *typ = nullptr;
@@ -172,7 +172,7 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
           preamble->addStmt(h);
           auto val = ctx->forceFind(varName);
           val->baseName = "";
-          val->scope = {0};
+          val->blockLevel = 0;
           registerGlobal(val->canonicalName);
           if (a.getDefault()) {
             auto assign = N<AssignStmt>(
@@ -788,7 +788,10 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
     auto oldBases = rctx->bases;
     rctx->bases.clear();
     rctx->bases.push_back(oldBases[0]);
+    auto oldBlockLevel = 0;
+    std::swap(oldBlockLevel, rctx->blockLevel);
     ext = TypecheckVisitor::apply(rctx, ext);
+    std::swap(oldBlockLevel, rctx->blockLevel);
     rctx->bases = oldBases;
     preamble->addStmt(ext);
   }

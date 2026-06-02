@@ -18,22 +18,20 @@ namespace codon::ast {
 
 TypecheckItem::TypecheckItem(std::string canonicalName, std::string baseName,
                              std::string moduleName, types::TypePtr type,
-                             std::vector<int> scope)
+                             int blockLevel)
     : canonicalName(std::move(canonicalName)), baseName(std::move(baseName)),
-      moduleName(std::move(moduleName)), type(std::move(type)), scope(std::move(scope)),
+      moduleName(std::move(moduleName)), type(std::move(type)), blockLevel(blockLevel),
       alternative(nullptr) {}
 
 TypeContext::TypeContext(Cache *cache, std::string filename)
     : Context<TypecheckItem>(std::move(filename)), cache(cache) {
   bases.emplace_back();
-  scope.emplace_back(0);
   auto e = cache->N<NoneExpr>();
   e->setSrcInfo(cache->generateSrcInfo());
   pushNode(e); // Always have srcInfo() around
 }
 
 void TypeContext::add(const std::string &name, const TypeContext::Item &var) {
-  seqassert(!var->scope.empty(), "bad scope for '{}'", name);
   Context<TypecheckItem>::add(name, var);
 }
 
@@ -48,7 +46,7 @@ TypeContext::Item TypeContext::addVar(const std::string &name,
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   // seqassert(type->getLink(), "bad var");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
-                                           type, getScope());
+                                           type, blockLevel);
   t->setSrcInfo(srcInfo);
   t->time = time;
   add(name, t);
@@ -63,7 +61,7 @@ TypeContext::Item TypeContext::addType(const std::string &name,
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   // seqassert(type->getClass(), "bad type");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
-                                           type, getScope());
+                                           type, blockLevel);
   t->setSrcInfo(srcInfo);
   add(name, t);
   addAlwaysVisible(t);
@@ -77,7 +75,7 @@ TypeContext::Item TypeContext::addFunc(const std::string &name,
   seqassert(!canonicalName.empty(), "empty canonical name for '{}'", name);
   seqassert(type->getFunc(), "bad func");
   auto t = std::make_shared<TypecheckItem>(canonicalName, getBaseName(), getModule(),
-                                           type, getScope());
+                                           type, blockLevel);
   t->setSrcInfo(srcInfo);
   add(name, t);
   addAlwaysVisible(t);
@@ -184,7 +182,7 @@ std::string TypeContext::generateCanonicalName(const std::string &name,
 
 bool TypeContext::isGlobal() const { return bases.size() == 1; }
 
-bool TypeContext::isConditional() const { return scope.size() > 1; }
+bool TypeContext::isConditional() const { return blockLevel > 0; }
 
 TypeContext::Base *TypeContext::getBase() {
   return bases.empty() ? nullptr : &(bases.back());
@@ -230,7 +228,6 @@ void TypeContext::dump(int pad) {
     LOG("   ... base:      {}", t->baseName);
     LOG("   ... module:    {}", t->moduleName);
     LOG("   ... type:      {}", t->type ? t->type->debugString(2) : "<null>");
-    LOG("   ... scope:     {}", t->scope);
     LOG("   ... gnrc/sttc: {} / {}", t->generic, static_cast<int>(t->getStaticKind()));
   }
 }

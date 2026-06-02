@@ -195,6 +195,8 @@ class Tuple:
         return __magic__.from_gpu_new(other)
     def __tuplesize__(self: __SELF__, __SELF__: type) -> int:
         return __magic__.tuplesize(self)
+    def __bool__(self: __SELF__, __SELF__: type) -> bool:
+        return self.__len__() > 0
 tuple = Tuple
 
 @tuple
