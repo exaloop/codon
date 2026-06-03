@@ -337,15 +337,25 @@ public:
   static bool isDispatch(const FunctionStmt *ast);
   static bool isDispatch(types::Type *f);
   bool isHeterogenous(types::Type *);
-  void addClassGenerics(types::ClassType *typ, bool func = false,
-                        bool onlyMangled = false, bool instantiate = false);
+  std::unordered_set<std::string> addClassGenerics(types::ClassType *typ,
+                                                   bool func = false,
+                                                   bool onlyMangled = false,
+                                                   bool instantiate = false);
   template <typename F>
   auto withClassGenerics(types::ClassType *typ, F fn, bool func = false,
                          bool onlyMangled = false, bool instantiate = false) {
     ctx->addBlock();
-    addClassGenerics(typ, func, onlyMangled, instantiate);
+    auto added = addClassGenerics(typ, func, onlyMangled, instantiate);
     auto t = fn();
+    // do not remove stuff that was added in the meantime, potentially by AssignExpr
+    std::vector<std::pair<std::string, std::shared_ptr<TypecheckItem>>> addLater;
+    for (auto &i : ctx->getBlock())
+      if (!in(added, i)) {
+        addLater.emplace_back(i, ctx->forceFind(i));
+      }
     ctx->popBlock();
+    for (auto &[n, v] : addLater)
+      ctx->add(n, v);
     return t;
   }
   types::TypePtr instantiateTypeVar(types::Type *t);

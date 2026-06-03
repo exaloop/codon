@@ -1171,8 +1171,10 @@ bool TypecheckVisitor::isHeterogenous(types::Type *type) {
   return false;
 }
 
-void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
-                                        bool onlyMangled, bool instantiate) {
+std::unordered_set<std::string>
+TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func, bool onlyMangled,
+                                   bool instantiate) {
+  std::unordered_set<std::string> added;
   auto addGen = [&](const types::ClassType::Generic &g) {
     auto t = g.type;
     if (instantiate) {
@@ -1189,6 +1191,9 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
       t = instantiateTypeVar(t.get());
     auto n = onlyMangled ? g.name : getUnmangledName(g.name);
     auto v = ctx->addType(n, g.name, t);
+    added.insert(n);
+    if (n != g.name)
+      added.insert(g.name);
     v->generic = true;
   };
 
@@ -1218,6 +1223,7 @@ void TypecheckVisitor::addClassGenerics(types::ClassType *typ, bool func,
     for (auto &g : typ->generics)
       addGen(g);
   }
+  return added;
 }
 
 types::TypePtr TypecheckVisitor::instantiateTypeVar(types::Type *t) {
