@@ -195,11 +195,12 @@ void CFVisitor::visit(const WhileFlow *v) {
   auto *loopBegin = graph->newBlock("whileBegin", true);
   original->successors_insert(loopBegin);
   process(v->getCond());
-  graph->getCurrentBlock()->successors_insert(end);
+  auto *condEnd = graph->getCurrentBlock();
+  condEnd->successors_insert(end);
 
   loopStack.emplace_back(loopBegin, end, v->getId(), tryCatchStack.size() - 1);
   auto *body = graph->newBlock("whileBody", true);
-  loopBegin->successors_insert(body);
+  condEnd->successors_insert(body);
   process(v->getBody());
   loopStack.pop_back();
   graph->getCurrentBlock()->successors_insert(loopBegin);

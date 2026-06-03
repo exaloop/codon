@@ -45,7 +45,6 @@ void ConstPropPass::handle(VarValue *v) {
     auto *r = getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey);
     if (!r)
       return;
-    auto *c = r->cfgResult;
 
     auto it = r->results.find(getParentFunc()->getId());
     if (it == r->results.end())

@@ -734,3 +734,16 @@ def test_side_effect_analysis():
     fab()
     assert some_global == 46
 test_side_effect_analysis()
+
+@test
+def test_while_loop_cfg():
+    # Tests for former bug where while-loop CFG
+    # construction would not construct blocks for
+    # condition in correct order, if condition
+    # generated multiple blocks.
+    def foo(x): return x
+    a = -1
+    while foo(1) and (a := foo(100)):
+        assert a == 100
+        break
+test_while_loop_cfg()
