@@ -162,7 +162,8 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
 if(WIN32)
-  target_link_libraries(codonrt PRIVATE fmt LLVMSupport)
+  # dbghelp: native Windows backtrace (replaces libbacktrace on Windows)
+  target_link_libraries(codonrt PRIVATE fmt LLVMSupport dbghelp)
 else()
   target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
 endif()

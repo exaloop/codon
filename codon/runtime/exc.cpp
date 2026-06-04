@@ -22,6 +22,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <dbghelp.h>
 #ifndef CODON_SEH_CODE
 #define CODON_SEH_CODE 0xE0C0D047
 #endif
@@ -209,19 +210,62 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
 }
 
 #ifdef _WIN32
-// libbacktrace is not built on Windows yet (deferred); provide no-op stubs so
-// codonrt links. Re-enabled with a real Windows backtrace later (R4b).
+// Native Windows backtrace via dbghelp, exposing libbacktrace's API contract so
+// the rest of the runtime is unchanged. dbghelp reads CodeView/PDB info, matching
+// MSVC/clang-link output (vs libbacktrace's DWARF-on-ELF assumptions).
+static std::mutex dbghelpLock;
+static bool dbghelpInited = false;
+
 extern "C" {
 struct backtrace_state *backtrace_create_state(const char *, int,
                                                backtrace_error_callback, void *) {
-  return nullptr;
+  std::lock_guard<std::mutex> lock(dbghelpLock);
+  if (!dbghelpInited) {
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_DEFERRED_LOADS | SYMOPT_UNDNAME);
+    SymInitialize(GetCurrentProcess(), nullptr, TRUE);
+    dbghelpInited = true;
+  }
+  return reinterpret_cast<struct backtrace_state *>(1); // non-null sentinel
 }
-int backtrace_full(struct backtrace_state *, int, backtrace_full_callback,
-                   backtrace_error_callback, void *) {
+
+int backtrace_simple(struct backtrace_state *, int skip,
+                     backtrace_simple_callback callback, backtrace_error_callback,
+                     void *data) {
+  void *frames[128];
+  USHORT n = CaptureStackBackTrace((DWORD)(skip + 1), 128, frames, nullptr);
+  for (USHORT i = 0; i < n; i++)
+    if (callback(data, (uintptr_t)frames[i]) != 0)
+      break;
   return 0;
 }
-int backtrace_simple(struct backtrace_state *, int, backtrace_simple_callback,
-                     backtrace_error_callback, void *) {
+
+int backtrace_full(struct backtrace_state *, int skip,
+                   backtrace_full_callback callback, backtrace_error_callback,
+                   void *data) {
+  void *frames[128];
+  USHORT n = CaptureStackBackTrace((DWORD)(skip + 1), 128, frames, nullptr);
+  HANDLE proc = GetCurrentProcess();
+  std::lock_guard<std::mutex> lock(dbghelpLock); // dbghelp Sym* are not thread-safe
+  alignas(SYMBOL_INFO) char symBuf[sizeof(SYMBOL_INFO) + 512];
+  for (USHORT i = 0; i < n; i++) {
+    auto addr = (DWORD64)frames[i];
+    const char *function = nullptr, *filename = nullptr;
+    int lineno = 0;
+    auto *sym = reinterpret_cast<SYMBOL_INFO *>(symBuf);
+    sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+    sym->MaxNameLen = 511;
+    if (SymFromAddr(proc, addr, nullptr, sym))
+      function = sym->Name;
+    IMAGEHLP_LINE64 li;
+    li.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+    DWORD disp = 0;
+    if (SymGetLineFromAddr64(proc, addr, &disp, &li)) {
+      filename = li.FileName;
+      lineno = (int)li.LineNumber;
+    }
+    if (callback(data, (uintptr_t)frames[i], filename, lineno, function) != 0)
+      break;
+  }
   return 0;
 }
 }
