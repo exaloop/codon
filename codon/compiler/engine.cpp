@@ -5,6 +5,13 @@
 #include "codon/cir/llvm/optimize.h"
 #include "codon/compiler/memory_manager.h"
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace codon {
 namespace jit {
 
@@ -34,11 +41,17 @@ Engine::Engine(Options *options) : jit(), debug(nullptr), options(options) {
         this->debug = dbPlugin.get();
         L->addPlugin(std::move(dbPlugin));
         L->setAutoClaimResponsibilityForObjectSymbols(true);
+#ifdef _WIN32
+        addWin64SEHRegistration(*L);
+#endif
         return L;
       });
   builder.setJITTargetMachineBuilder(
       llvm::orc::JITTargetMachineBuilder(target->getTargetTriple()));
   jit = llvm::cantFail(builder.create());
+#ifdef _WIN32
+  defineImageBase();
+#endif
 
   jit->getMainJITDylib().addGenerator(
       llvm::cantFail(llvm::orc::DynamicLibrarySearchGenerator::GetForCurrentProcess(
@@ -52,6 +65,26 @@ Engine::Engine(Options *options) : jit(), debug(nullptr), options(options) {
         return std::move(module);
       });
 }
+
+#ifdef _WIN32
+void Engine::defineImageBase() {
+  uintptr_t handler = 0;
+  if (HMODULE crt = ::GetModuleHandleW(L"vcruntime140.dll"))
+    handler =
+        reinterpret_cast<uintptr_t>(::GetProcAddress(crt, "__C_specific_handler"));
+  uintptr_t imageBase = handler
+                            ? (handler & ~0xFFFFFFFFull)
+                            : reinterpret_cast<uintptr_t>(::GetModuleHandleW(nullptr));
+  auto &jd = jit->getMainJITDylib();
+  llvm::orc::MangleAndInterner mangle(jit->getExecutionSession(),
+                                      jit->getDataLayout());
+  llvm::orc::SymbolMap symbols;
+  symbols[mangle("__ImageBase")] = {
+      llvm::orc::ExecutorAddr(imageBase),
+      llvm::JITSymbolFlags::Exported | llvm::JITSymbolFlags::Absolute};
+  llvm::cantFail(jd.define(llvm::orc::absoluteSymbols(std::move(symbols))));
+}
+#endif
 
 llvm::Error Engine::addModule(llvm::orc::ThreadSafeModule module,
                               llvm::orc::ResourceTrackerSP rt) {

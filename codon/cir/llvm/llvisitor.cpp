@@ -6,9 +6,21 @@
 #include <cctype>
 #include <cstdlib>
 #include <fmt/args.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <utility>
+
+#ifdef _WIN32
+#include <process.h>
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 
 #include "codon/cir/dsl/codegen.h"
 #include "codon/cir/llvm/optimize.h"
@@ -425,6 +437,16 @@ void executeCommand(const std::vector<std::string> &args) {
   LOG_USER("Executing '{}'", fmt::join(cArgs, " "));
   cArgs.push_back(nullptr);
 
+#ifdef _WIN32
+  intptr_t status = _spawnvp(_P_WAIT, cArgs[0], cArgs.data());
+  if (status < 0) {
+    compilationError("process for '" + args[0] + "' could not be started");
+  }
+  if (status != 0) {
+    compilationError("process for '" + args[0] + "' exited with status " +
+                     std::to_string(status));
+  }
+#else
   if (fork() == 0) {
     int status = execvp(cArgs[0], (char *const *)&cArgs[0]);
     exit(status);
@@ -439,6 +461,7 @@ void executeCommand(const std::vector<std::string> &args) {
                        std::to_string(WEXITSTATUS(status)));
     }
   }
+#endif
 }
 } // namespace
 
@@ -491,7 +514,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   const std::string objFile = filename + ".o";
   writeToObjectFile(objFile, /*pic=*/library);
 
-  const std::string base = ast::Filesystem::executable_path(argv0.c_str());
+  const std::string base = ast::Filesystem::executable_path(argv0.c_str()).string();
   auto path = llvm::SmallString<128>(llvm::sys::path::parent_path(base));
 
   std::vector<std::string> relatives = {"../lib", "../lib/codon"};

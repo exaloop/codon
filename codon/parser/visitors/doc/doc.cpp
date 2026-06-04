@@ -129,7 +129,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
 
   auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
-    auto path = std::string(cache->fs->canonical(f));
+    auto path = cache->fs->canonical(f).string();
     ctx->setFilename(path);
     // LOG("-> parsing {}", path);
     auto fAstOrErr = ast::parseFile(shared->cache, path);

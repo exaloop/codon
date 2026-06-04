@@ -2,7 +2,24 @@
 
 #include "jit.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <sstream>
+
+#ifdef _WIN32
+// POSIX strndup is unavailable on Windows; provide a minimal equivalent.
+static char *strndup(const char *s, size_t n) {
+  size_t len = 0;
+  while (len < n && s[len])
+    ++len;
+  char *p = static_cast<char *>(std::malloc(len + 1));
+  if (p) {
+    std::memcpy(p, s, len);
+    p[len] = '\0';
+  }
+  return p;
+}
+#endif
 
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
