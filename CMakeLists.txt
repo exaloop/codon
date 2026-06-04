@@ -79,7 +79,7 @@ add_library(codonfloat STATIC
             codon/runtime/floatlib/truncdfsf2.c
             codon/runtime/floatlib/extendhftf2.c
             codon/runtime/floatlib/int_lib.h
-#            codon/runtime/floatlib/truncsfbf2.c
+            codon/runtime/floatlib/truncsfbf2.c
             codon/runtime/floatlib/extendsfdf2.c
             codon/runtime/floatlib/int_math.h
             codon/runtime/floatlib/truncsfhf2.c
@@ -90,7 +90,7 @@ add_library(codonfloat STATIC
             codon/runtime/floatlib/int_util.h
             codon/runtime/floatlib/trunctfhf2.c
             codon/runtime/floatlib/fp_lib.h
-#            codon/runtime/floatlib/truncdfbf2.c
+            codon/runtime/floatlib/truncdfbf2.c
             codon/runtime/floatlib/trunctfsf2.c)
 target_compile_options(codonfloat PRIVATE -O3)
 target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
@@ -182,6 +182,7 @@ set(CODON_HPPFILES
   codon/compiler/jit.h
   codon/compiler/jit_extern.h
   codon/compiler/memory_manager.h
+  codon/compiler/options.h
   codon/dsl/dsl.h
   codon/dsl/plugins.h
   codon/parser/ast.h
@@ -255,7 +256,7 @@ set(CODON_HPPFILES
   codon/cir/transform/pythonic/list.h
   codon/cir/transform/pythonic/str.h
   codon/cir/transform/rewrite.h
-  codon/cir/types/types.h
+  codon/cir/type.h
   codon/cir/util/cloning.h
   codon/cir/util/context.h
   codon/cir/util/format.h
@@ -287,6 +288,7 @@ set(CODON_CPPFILES
   codon/compiler/error.cpp
   codon/compiler/jit.cpp
   codon/compiler/memory_manager.cpp
+  codon/compiler/options.cpp
   codon/dsl/plugins.cpp
   codon/parser/ast/expr.cpp
   codon/parser/ast/attr.cpp
@@ -362,7 +364,7 @@ set(CODON_CPPFILES
   codon/cir/transform/pythonic/io.cpp
   codon/cir/transform/pythonic/list.cpp
   codon/cir/transform/pythonic/str.cpp
-  codon/cir/types/types.cpp
+  codon/cir/type.cpp
   codon/cir/util/cloning.cpp
   codon/cir/util/format.cpp
   codon/cir/util/inlining.cpp
@@ -509,7 +511,7 @@ set(CODON_TEST_CPPFILES
     test/cir/instr.cpp
     test/cir/module.cpp
     test/cir/transform/manager.cpp
-    test/cir/types/types.cpp
+    test/cir/type.cpp
     test/cir/util/matching.cpp
     test/cir/value.cpp
     test/cir/var.cpp

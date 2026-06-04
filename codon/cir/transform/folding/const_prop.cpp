@@ -45,7 +45,6 @@ void ConstPropPass::handle(VarValue *v) {
     auto *r = getAnalysisResult<analyze::dataflow::RDResult>(reachingDefKey);
     if (!r)
       return;
-    auto *c = r->cfgResult;
 
     auto it = r->results.find(getParentFunc()->getId());
     if (it == r->results.end())
@@ -71,7 +70,7 @@ void ConstPropPass::handle(VarValue *v) {
 void ConstPropPass::handle(ExtractInstr *v) {
   // Propagate constant tuples
 
-  if (!isA<VarValue>(v->getVal()) || !isA<types::RecordType>(v->getVal()->getType()))
+  if (!isA<VarValue>(v->getVal()) || !isA<RecordType>(v->getVal()->getType()))
     return;
 
   auto *var = cast<VarValue>(v->getVal())->getVar();
@@ -100,12 +99,11 @@ void ConstPropPass::handle(ExtractInstr *v) {
   if (!func || func->getUnmangledName() != Module::NEW_MAGIC_NAME)
     return;
 
-  auto *tuple = cast<types::RecordType>(func->getParentType());
+  auto *tuple = cast<RecordType>(func->getParentType());
   if (!tuple || tuple->getName() != "Tuple")
     return;
 
-  auto idx =
-      cast<types::RecordType>(v->getVal()->getType())->getMemberIndex(v->getField());
+  auto idx = cast<RecordType>(v->getVal()->getType())->getMemberIndex(v->getField());
   if (idx < 0 || idx >= call->numArgs() || !okConst(*(call->begin() + idx)))
     return;
 

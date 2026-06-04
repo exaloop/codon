@@ -24,10 +24,8 @@ struct TypeBuilder;
 struct ValueBuilder;
 } // namespace codegen
 
-namespace types {
-
 /// DSL type.
-class CustomType : public AcceptorExtend<CustomType, ir::types::Type> {
+class CustomType : public AcceptorExtend<CustomType, ir::Type> {
 public:
   static const char NodeId;
 
@@ -45,8 +43,6 @@ public:
   /// @param os the output stream
   virtual std::ostream &doFormat(std::ostream &os) const = 0;
 };
-
-} // namespace types
 
 /// DSL constant.
 class CustomConst : public AcceptorExtend<CustomConst, Const> {

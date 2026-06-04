@@ -244,10 +244,10 @@ public:
     else if ((!x && y) || (x && !y))
       return false;
 
-    auto *tx = cast<types::Type>(x);
-    auto *ty = cast<types::Type>(y);
+    auto *tx = cast<Type>(x);
+    auto *ty = cast<Type>(y);
     if (tx || ty)
-      return tx && ty && tx->is(const_cast<types::Type *>(ty));
+      return tx && ty && tx->is(const_cast<Type *>(ty));
 
     MatchVisitor v(checkName);
     x->accept(v);

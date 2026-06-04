@@ -236,7 +236,7 @@ private:
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
   SuiteStmt *generateSpecialAst(types::FuncType *);
-  codon::ir::types::Type *makeIRType(types::ClassType *);
+  codon::ir::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
 

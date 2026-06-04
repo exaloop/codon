@@ -2,7 +2,7 @@
 
 platform: Static[str] = static.platform()
 
-argv = list(__argv__, len(__argv__))
+argv = list(__argv__, __argc__)
 
 stdin = File(_C.seq_stdin())
 stdout = File(_C.seq_stdout())

@@ -220,19 +220,17 @@ public:
   int replaceUsedValue(Value *old, Value *newValue);
 
   /// @return a vector of all the node's used types
-  virtual std::vector<types::Type *> getUsedTypes() const { return {}; }
+  virtual std::vector<Type *> getUsedTypes() const { return {}; }
   /// Physically replaces all instances of a used type.
   /// @param name the name of the type being replaced
   /// @param newType the new type
   /// @return number of replacements
-  virtual int replaceUsedType(const std::string &name, types::Type *newType) {
-    return 0;
-  }
+  virtual int replaceUsedType(const std::string &name, Type *newType) { return 0; }
   /// Physically replaces all instances of a used type.
   /// @param old the old type
   /// @param newType the new type
   /// @return number of replacements
-  int replaceUsedType(types::Type *old, types::Type *newType);
+  int replaceUsedType(Type *old, Type *newType);
 
   /// @return a vector of all the node's used variables
   virtual std::vector<Var *> getUsedVariables() { return {}; }

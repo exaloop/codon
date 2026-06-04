@@ -106,10 +106,13 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   if (!coreOrErr)
     throw exc::ParserException(coreOrErr.takeError());
   shared->modules[""]->setFilename(stdlib->path);
+  shared->modules[""]->add("int", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_numerics__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__dict_unordered__",
+                           std::make_shared<int>(shared->itemID++));
 
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{
       {"name", "type"}, {"kind", "class"}, {"type", "type"}});
@@ -514,6 +517,16 @@ void DocVisitor::visit(AssignStmt *stmt) {
   auto e = cast<IdExpr>(stmt->getLhs());
   if (!e)
     return;
+
+  if (auto ei = cast<IdExpr>(stmt->getRhs())) {
+    auto i = ctx->find(ei->getValue());
+    auto k = ctx->shared->j->get(std::to_string(*i))->get("kind");
+    if (k != nullptr && k->values.begin()->first == "class") {
+      ctx->add(e->getValue(), i);
+      return;
+    }
+  }
+
   int id = ctx->shared->itemID++;
   ctx->add(e->getValue(), std::make_shared<int>(id));
   auto j = std::make_shared<json>(std::unordered_map<std::string, std::string>{

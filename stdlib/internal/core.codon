@@ -35,49 +35,58 @@ class bool:
 @tuple
 @__internal__
 @__notuple__
-class byte:
+class Int[N: Literal[int]]:
     pass
 
 @tuple
 @__internal__
 @__notuple__
-class int:
-    MAX = 9223372036854775807
+class UInt[N: Literal[int]]:
     pass
+
+int  = Int[64]
+i1   = Int[1]
+i8   = Int[8]
+i16  = Int[16]
+i32  = Int[32]
+i64  = Int[64]
+i128 = Int[128]
+u1   = UInt[1]
+u8   = UInt[8]
+u16  = UInt[16]
+u32  = UInt[32]
+u64  = UInt[64]
+u128 = UInt[128]
+byte = UInt[8]
 
 @tuple
 @__internal__
 @__notuple__
 class float:
-    MIN_10_EXP = -307
     pass
 
 @tuple
 @__internal__
 @__notuple__
 class float32:
-    MIN_10_EXP = -37
     pass
 
 @tuple
 @__internal__
 @__notuple__
 class float16:
-    MIN_10_EXP = -4
     pass
 
 @tuple
 @__internal__
 @__notuple__
 class bfloat16:
-    MIN_10_EXP = -37
     pass
 
 @tuple
 @__internal__
 @__notuple__
 class float128:
-    MIN_10_EXP = -4931
     pass
 
 @tuple
@@ -101,7 +110,7 @@ class NoneType:
 @__notuple__
 class Ptr[T]:
     pass
-cobj = Ptr[byte]
+cobj = Ptr[u8]
 
 @tuple
 @__internal__
@@ -121,27 +130,15 @@ class Generator[T]:
 class Optional:
     T: type = NoneType
 
-@tuple
-@__internal__
-@__notuple__
-class Int[N: Literal[int]]:
-    pass
-
-@tuple
-@__internal__
-@__notuple__
-class UInt[N: Literal[int]]:
-    pass
-
 @__internal__
 class pyobj:
-    p: Ptr[byte]
+    p: Ptr[u8]
 
 @tuple
 @__internal__
 class str:
-    ptr: Ptr[byte]
-    len: int
+    _ptr: Ptr[u8]
+    _len: int
 
 @tuple
 @__internal__
@@ -178,13 +175,13 @@ class Tuple:
         return __magic__.lt(self, obj)
     def __le__(self: __SELF__, obj: __SELF__, __SELF__: type) -> bool:
         return __magic__.le(self, obj)
-    def __pickle__(self: __SELF__, dest: Ptr[byte], __SELF__: type):
+    def __pickle__(self: __SELF__, dest: Ptr[u8], __SELF__: type):
         return __magic__.pickle(self, dest)
-    def __unpickle__(src: Ptr[byte], __SELF__: type) -> __SELF__:
+    def __unpickle__(src: Ptr[u8], __SELF__: type) -> __SELF__:
         return __magic__.unpickle(src)
-    def __to_py__(self: __SELF__, __SELF__: type) -> Ptr[byte]:
+    def __to_py__(self: __SELF__, __SELF__: type) -> Ptr[u8]:
         return __magic__.to_py(self)
-    def __from_py__(src: Ptr[byte], __SELF__: type) -> __SELF__:
+    def __from_py__(src: Ptr[u8], __SELF__: type) -> __SELF__:
         return __magic__.from_py(src)
     def __to_gpu__(self: __SELF__, cache, __SELF__: type) -> __SELF__:
         return __magic__.to_gpu(self, cache)
@@ -217,13 +214,6 @@ class NoneType:
     def __new__() -> NoneType:
         ret {} {}
 NoneType.__new__()  # always have this realization around
-
-@tuple
-@__internal__
-class Array:
-    len: int
-    ptr: Ptr[T]
-    T: type
 
 @extend
 class type:
@@ -266,8 +256,8 @@ class ClassVar[T]:
 
 @__internal__
 class RTTIType:
-    data: Ptr[byte]  # pointer to the data
-    typeinfo: Ptr[byte]  # TypeInfo type information
+    data: Ptr[u8]  # pointer to the data
+    typeinfo: Ptr[u8]  # TypeInfo type information
 
 
 @__internal__
@@ -284,7 +274,7 @@ Ellipsis = ellipsis()
 @__internal__
 class __array__:
     T: type
-    def __new__(sz: Literal[int]) -> Array[T]:
+    def __new__(sz: Literal[int]) -> Ptr[T]:
         pass
 
 @tuple
@@ -387,8 +377,8 @@ class Partial:
 @__internal__
 @tuple
 class Callable:
-    fn: Function[[Ptr[byte], T], TR]
-    data: Ptr[byte]
+    fn: Function[[Ptr[u8], T], TR]
+    data: Ptr[u8]
     T: type
     TR: type
 
@@ -399,7 +389,7 @@ class Coroutine[T]:
     @pure
     @derives
     @llvm
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         ret ptr %self
 
     @pure
@@ -414,7 +404,7 @@ class AsyncGenerator[T]:
     @pure
     @derives
     @llvm
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         ret ptr %self
 
 __codon__: Literal[bool] = True

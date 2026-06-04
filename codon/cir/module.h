@@ -28,10 +28,7 @@ namespace ir {
 /// CIR object representing a program.
 class Module : public AcceptorExtend<Module, Node> {
 public:
-  static const std::string VOID_NAME;
   static const std::string BOOL_NAME;
-  static const std::string BYTE_NAME;
-  static const std::string INT_NAME;
   static const std::string FLOAT_NAME;
   static const std::string FLOAT32_NAME;
   static const std::string FLOAT16_NAME;
@@ -118,7 +115,9 @@ private:
   /// the module's "main" function
   std::unique_ptr<Func> mainFunc;
   /// the module's argv variable
-  std::unique_ptr<Var> argVar;
+  std::unique_ptr<Var> argvVar;
+  /// the module's argc variable
+  std::unique_ptr<Var> argcVar;
   /// the global variables list
   std::list<std::unique_ptr<Var>> vars;
   /// the global variables map
@@ -128,10 +127,9 @@ private:
   /// the global value map
   std::unordered_map<id_t, std::list<std::unique_ptr<Value>>::iterator> valueMap;
   /// the global types list
-  std::list<std::unique_ptr<types::Type>> types;
+  std::list<std::unique_ptr<Type>> types;
   /// the global types map
-  std::unordered_map<std::string, std::list<std::unique_ptr<types::Type>>::iterator>
-      typesMap;
+  std::unordered_map<std::string, std::list<std::unique_ptr<Type>>::iterator> typesMap;
   /// the arena stack
   std::vector<Arena> arenas;
 
@@ -143,7 +141,7 @@ public:
 
   /// Constructs an CIR module.
   /// @param name the module name
-  explicit Module(const std::string &name = "");
+  explicit Module(ast::Cache *cache, const std::string &name = "");
 
   virtual ~Module() noexcept = default;
 
@@ -152,10 +150,14 @@ public:
   /// @return the main function
   const Func *getMainFunc() const { return mainFunc.get(); }
 
-  /// @return the arg var
-  Var *getArgVar() { return argVar.get(); }
-  /// @return the arg var
-  const Var *getArgVar() const { return argVar.get(); }
+  /// @return the argv var
+  Var *getArgvVar() { return argvVar.get(); }
+  /// @return the argv var
+  const Var *getArgvVar() const { return argvVar.get(); }
+  /// @return the argc var
+  Var *getArgcVar() { return argcVar.get(); }
+  /// @return the argc var
+  const Var *getArgcVar() const { return argcVar.get(); }
 
   /// @return iterator to the first symbol
   auto begin() { return util::raw_ptr_adaptor(vars.begin()); }
@@ -242,24 +244,24 @@ public:
   /// @return iterator beyond the last type
   auto types_end() const { return util::const_raw_ptr_adaptor(types.end()); }
   /// @return a pointer to the first type
-  types::Type *types_front() const { return types.front().get(); }
+  Type *types_front() const { return types.front().get(); }
   /// @return a pointer to the last type
-  types::Type *types_back() const { return types.back().get(); }
+  Type *types_back() const { return types.back().get(); }
   /// @param name the type's name
   /// @return the type with the given name
-  types::Type *getType(const std::string &name) {
+  Type *getType(const std::string &name) {
     auto it = typesMap.find(name);
     return it == typesMap.end() ? nullptr : it->second->get();
   }
   /// @param name the type's name
   /// @return the type with the given name
-  types::Type *getType(const std::string &name) const {
+  Type *getType(const std::string &name) const {
     auto it = typesMap.find(name);
     return it == typesMap.end() ? nullptr : it->second->get();
   }
   /// Removes a given type.
   /// @param t the type
-  void remove(types::Type *t) {
+  void remove(Type *t) {
     auto it = typesMap.find(t->getName());
     types.erase(it->second);
     typesMap.erase(it);
@@ -316,9 +318,9 @@ public:
   /// @param args the argument types
   /// @param generics the generics
   /// @return the method or nullptr
-  Func *getOrRealizeMethod(types::Type *parent, const std::string &methodName,
-                           std::vector<types::Type *> args,
-                           std::vector<types::Generic> generics = {});
+  Func *getOrRealizeMethod(Type *parent, const std::string &methodName,
+                           std::vector<Type *> args,
+                           std::vector<Generic> generics = {});
 
   /// Gets or realizes a function.
   /// @param funcName the function name
@@ -326,8 +328,8 @@ public:
   /// @param generics the generics
   /// @param module the module of the function
   /// @return the function or nullptr
-  Func *getOrRealizeFunc(const std::string &funcName, std::vector<types::Type *> args,
-                         std::vector<types::Generic> generics = {},
+  Func *getOrRealizeFunc(const std::string &funcName, std::vector<Type *> args,
+                         std::vector<Generic> generics = {},
                          const std::string &module = "");
 
   /// Gets or realizes a type.
@@ -335,73 +337,62 @@ public:
   /// @param generics the generics
   /// @param module the module of the type
   /// @return the function or nullptr
-  types::Type *getOrRealizeType(const std::string &typeName,
-                                std::vector<types::Generic> generics = {});
+  Type *getOrRealizeType(const std::string &typeName,
+                         std::vector<Generic> generics = {});
 
-  /// @return the void type
-  types::Type *getVoidType();
   /// @return the bool type
-  types::Type *getBoolType();
-  /// @return the byte type
-  types::Type *getByteType();
-  /// @return the int type
-  types::Type *getIntType();
+  Type *getBoolType();
+  /// Gets a variable length integer type.
+  /// @param len the length
+  /// @param sign true if signed
+  /// @return a variable length integer type
+  Type *getIntType(unsigned len = 64, bool sign = true);
   /// @return the float type
-  types::Type *getFloatType();
+  Type *getFloatType();
   /// @return the float32 type
-  types::Type *getFloat32Type();
+  Type *getFloat32Type();
   /// @return the float16 type
-  types::Type *getFloat16Type();
+  Type *getFloat16Type();
   /// @return the bfloat16 type
-  types::Type *getBFloat16Type();
+  Type *getBFloat16Type();
   /// @return the float128 type
-  types::Type *getFloat128Type();
+  Type *getFloat128Type();
   /// @return the string type
-  types::Type *getStringType();
+  Type *getStringType();
   /// Gets a pointer type.
-  /// @param base the base type
+  /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
-  types::Type *getPointerType(types::Type *base);
-  /// Gets an array type.
-  /// @param base the base type
-  /// @return an array type that contains the base
-  types::Type *getArrayType(types::Type *base);
+  Type *getPointerType(Type *base = nullptr);
   /// Gets a generator type.
   /// @param base the base type
   /// @return a generator type that yields the base
-  types::Type *getGeneratorType(types::Type *base);
+  Type *getGeneratorType(Type *base);
   /// Gets an optional type.
   /// @param base the base type
   /// @return an optional type that contains the base
-  types::Type *getOptionalType(types::Type *base);
+  Type *getOptionalType(Type *base);
   /// Gets a function type.
   /// @param rType the return type
   /// @param argTypes the argument types
   /// @param variadic true if variadic (e.g. "printf" in C)
   /// @return the void type
-  types::Type *getFuncType(types::Type *rType, std::vector<types::Type *> argTypes,
-                           bool variadic = false);
-  /// Gets a variable length integer type.
-  /// @param len the length
-  /// @param sign true if signed
-  /// @return a variable length integer type
-  types::Type *getIntNType(unsigned len, bool sign);
+  Type *getFuncType(Type *rType, std::vector<Type *> argTypes, bool variadic = false);
   /// Gets a vector type.
   /// @param count the vector size
   /// @param base the vector base type (MUST be a primitive type)
   /// @return a vector type
-  types::Type *getVectorType(unsigned count, types::Type *base);
+  Type *getVectorType(unsigned count, Type *base);
   /// Gets a tuple type.
   /// @param args the arg types
   /// @return the tuple type
-  types::Type *getTupleType(std::vector<types::Type *> args);
+  Type *getTupleType(std::vector<Type *> args);
   /// Gets a union type.
   /// @param types the alternative types
   /// @return the union type
-  types::Type *getUnionType(std::vector<types::Type *> types);
+  Type *getUnionType(std::vector<Type *> types);
   /// Gets the "none" type (i.e. empty tuple).
   /// @return none type
-  types::Type *getNoneType();
+  Type *getNoneType();
 
   /// @param v the value
   /// @return an int constant
@@ -416,62 +407,52 @@ public:
   /// @return a string constant
   Value *getString(std::string v);
 
-  /// Gets a dummy function type. Should generally not be used as no type-checker
-  /// information is generated.
-  /// @return a func type with no args and void return type.
-  types::Type *unsafeGetDummyFuncType();
   /// Gets a pointer type. Should generally not be used as no type-checker
   /// information is generated.
-  /// @param base the base type
+  /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
-  types::Type *unsafeGetPointerType(types::Type *base);
-  /// Gets an array type. Should generally not be used as no type-checker
-  /// information is generated.
-  /// @param base the base type
-  /// @return an array type that contains the base
-  types::Type *unsafeGetArrayType(types::Type *base);
+  Type *unsafeGetPointerType(Type *base = nullptr);
   /// Gets a generator type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type
   /// @return a generator type that yields the base
-  types::Type *unsafeGetGeneratorType(types::Type *base);
+  Type *unsafeGetGeneratorType(Type *base);
   /// Gets an optional type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param base the base type
   /// @return an optional type that contains the base
-  types::Type *unsafeGetOptionalType(types::Type *base);
+  Type *unsafeGetOptionalType(Type *base);
   /// Gets a function type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param rType the return type
   /// @param argTypes the argument types
   /// @param variadic true if variadic (e.g. "printf" in C)
   /// @return the void type
-  types::Type *unsafeGetFuncType(const std::string &name, types::Type *rType,
-                                 std::vector<types::Type *> argTypes,
-                                 bool variadic = false);
+  Type *unsafeGetFuncType(const std::string &name, Type *rType,
+                          std::vector<Type *> argTypes, bool variadic = false);
   /// Gets a membered type. Should generally not be used as no type-checker
   /// information is generated.
   /// @param name the type's name
   /// @param ref whether the type should be a ref
   /// @return an empty membered/ref type
-  types::Type *unsafeGetMemberedType(const std::string &name, bool ref = false);
+  Type *unsafeGetMemberedType(const std::string &name, bool ref = false);
   /// Gets a variable length integer type. Should generally not be used as no
   /// type-checker information is generated.
   /// @param len the length
   /// @param sign true if signed
   /// @return a variable length integer type
-  types::Type *unsafeGetIntNType(unsigned len, bool sign);
+  Type *unsafeGetIntType(unsigned len = 64, bool sign = true);
   /// Gets a vector type. Should generally not be used as no
   /// type-checker information is generated.
   /// @param count the vector size
   /// @param base the vector base type (MUST be a primitive type)
   /// @return a vector type
-  types::Type *unsafeGetVectorType(unsigned count, types::Type *base);
+  Type *unsafeGetVectorType(unsigned count, Type *base);
   /// Gets a union type. Should generally not be used as no
   /// type-checker information is generated.
   /// @param types the alternative types
   /// @return a union type
-  types::Type *unsafeGetUnionType(const std::vector<types::Type *> &types);
+  Type *unsafeGetUnionType(const std::vector<Type *> &types);
 
   /// Push an arena on the arena stack that stores all nodes
   /// that are created subsequently.
@@ -482,7 +463,7 @@ public:
   void popArena();
 
 private:
-  void store(types::Type *t) {
+  void store(Type *t) {
     types.emplace_back(t);
     typesMap[t->getName()] = std::prev(types.end());
     if (!arenas.empty())

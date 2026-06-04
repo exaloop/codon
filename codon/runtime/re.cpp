@@ -88,7 +88,7 @@ static inline seq_str_t convert(const std::string &p) {
   seq_int_t n = p.size();
   auto *s = (char *)seq_alloc_atomic(n);
   std::memcpy(s, p.data(), n);
-  return {n, s};
+  return {s, n};
 }
 
 static inline StringPiece str2sp(const seq_str_t &s) {
@@ -197,7 +197,7 @@ SEQ_FUNC seq_int_t seq_re_group_name_to_index(Regex *pattern, seq_str_t name) {
 SEQ_FUNC seq_str_t seq_re_group_index_to_name(Regex *pattern, seq_int_t index) {
   const auto &mapping = pattern->CapturingGroupNames();
   auto it = mapping.find(index);
-  seq_str_t empty = {0, nullptr};
+  seq_str_t empty = {nullptr, 0};
   return (it != mapping.end()) ? convert(it->second) : empty;
 }
 
@@ -212,6 +212,6 @@ SEQ_FUNC bool seq_re_check_rewrite_string(Regex *pattern, seq_str_t rewrite,
 
 SEQ_FUNC seq_str_t seq_re_pattern_error(Regex *pattern) {
   if (pattern->ok())
-    return {0, nullptr};
+    return {nullptr, 0};
   return convert(pattern->error());
 }

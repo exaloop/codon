@@ -180,7 +180,7 @@ Expr *TypecheckVisitor::transformComprehension(const std::string &type,
   auto superTyp = [&](ClassType *collectionCls, ClassType *ti) -> TypePtr {
     if (!collectionCls)
       return ti->shared_from_this();
-    if (collectionCls->is("int") && ti->is("float")) {
+    if (collectionCls->is("Int") && ti->is("float")) {
       // Rule: int derives from float
       return ti->shared_from_this();
     } else if (collectionCls->name != TYPE_OPTIONAL && ti->name == TYPE_OPTIONAL) {

@@ -6,7 +6,7 @@
 #include <string>
 
 #include "codon/cir/flow.h"
-#include "codon/cir/types/types.h"
+#include "codon/cir/type.h"
 #include "codon/cir/util/iterators.h"
 #include "codon/cir/value.h"
 #include "codon/cir/var.h"
@@ -23,7 +23,7 @@ public:
   using AcceptorExtend::AcceptorExtend;
 
 private:
-  types::Type *doGetType() const override;
+  Type *doGetType() const override;
 };
 
 /// Instr representing setting a memory location.
@@ -102,7 +102,7 @@ public:
   void setField(std::string f) { field = std::move(f); }
 
 protected:
-  types::Type *doGetType() const override;
+  Type *doGetType() const override;
   std::vector<Value *> doGetUsedValues() const override { return {val}; }
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };
@@ -151,7 +151,7 @@ public:
   void setField(std::string f) { field = std::move(f); }
 
 protected:
-  types::Type *doGetType() const override { return lhs->getType(); }
+  Type *doGetType() const override { return lhs->getType(); }
   std::vector<Value *> doGetUsedValues() const override { return {lhs, rhs}; }
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };
@@ -223,7 +223,7 @@ public:
   int numArgs() const { return args.size(); }
 
 protected:
-  types::Type *doGetType() const override;
+  Type *doGetType() const override;
   std::vector<Value *> doGetUsedValues() const override;
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };
@@ -231,8 +231,8 @@ protected:
 /// Instr representing allocating an array on the stack.
 class StackAllocInstr : public AcceptorExtend<StackAllocInstr, Instr> {
 private:
-  /// the array type
-  types::Type *arrayType;
+  /// the array pointer type
+  Type *ptrType;
   /// number of elements to allocate
   int64_t count;
 
@@ -240,11 +240,11 @@ public:
   static const char NodeId;
 
   /// Constructs a stack allocation instruction.
-  /// @param arrayType the type of the array
+  /// @param ptrType the type of the array pointer
   /// @param count the number of elements
   /// @param name the name
-  StackAllocInstr(types::Type *arrayType, int64_t count, std::string name = "")
-      : AcceptorExtend(std::move(name)), arrayType(arrayType), count(count) {}
+  StackAllocInstr(Type *ptrType, int64_t count, std::string name = "")
+      : AcceptorExtend(std::move(name)), ptrType(ptrType), count(count) {}
 
   /// @return the count
   int64_t getCount() const { return count; }
@@ -252,18 +252,18 @@ public:
   /// @param c the new value
   void setCount(int64_t c) { count = c; }
 
-  /// @return the array type
-  types::Type *getArrayType() { return arrayType; }
-  /// @return the array type
-  types::Type *getArrayType() const { return arrayType; }
+  /// @return the pointer type
+  Type *getPtrType() { return ptrType; }
+  /// @return the pointer type
+  Type *getPtrType() const { return ptrType; }
   /// Sets the array type.
   /// @param t the new type
-  void setArrayType(types::Type *t) { arrayType = t; }
+  void setPtrType(Type *t) { ptrType = t; }
 
 protected:
-  types::Type *doGetType() const override { return arrayType; }
-  std::vector<types::Type *> doGetUsedTypes() const override { return {arrayType}; }
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  Type *doGetType() const override { return ptrType; }
+  std::vector<Type *> doGetUsedTypes() const override { return {ptrType}; }
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
 /// Instr representing getting information about a type.
@@ -273,7 +273,7 @@ public:
 
 private:
   /// the type being inspected
-  types::Type *inspectType;
+  Type *inspectType;
   /// the property being checked
   Property property;
 
@@ -283,17 +283,16 @@ public:
   /// Constructs a type property instruction.
   /// @param type the type being inspected
   /// @param name the name
-  explicit TypePropertyInstr(types::Type *type, Property property,
-                             std::string name = "")
+  explicit TypePropertyInstr(Type *type, Property property, std::string name = "")
       : AcceptorExtend(std::move(name)), inspectType(type), property(property) {}
 
   /// @return the type being inspected
-  types::Type *getInspectType() { return inspectType; }
+  Type *getInspectType() { return inspectType; }
   /// @return the type being inspected
-  types::Type *getInspectType() const { return inspectType; }
+  Type *getInspectType() const { return inspectType; }
   /// Sets the type being inspected
   /// @param t the new type
-  void setInspectType(types::Type *t) { inspectType = t; }
+  void setInspectType(Type *t) { inspectType = t; }
 
   /// @return the property being inspected
   Property getProperty() const { return property; }
@@ -302,16 +301,16 @@ public:
   void setProperty(Property p) { property = p; }
 
 protected:
-  types::Type *doGetType() const override;
-  std::vector<types::Type *> doGetUsedTypes() const override { return {inspectType}; }
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  Type *doGetType() const override;
+  std::vector<Type *> doGetUsedTypes() const override { return {inspectType}; }
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
 /// Instr representing a Python yield expression.
 class YieldInInstr : public AcceptorExtend<YieldInInstr, Instr> {
 private:
   /// the type of the value being yielded in.
-  types::Type *type;
+  Type *type;
   /// whether or not to suspend
   bool suspend;
 
@@ -322,7 +321,7 @@ public:
   /// @param type the type of the value being yielded in
   /// @param suspend whether to suspend
   /// @param name the instruction's name
-  explicit YieldInInstr(types::Type *type, bool suspend = true, std::string name = "")
+  explicit YieldInInstr(Type *type, bool suspend = true, std::string name = "")
       : AcceptorExtend(std::move(name)), type(type), suspend(suspend) {}
 
   /// @return true if the instruction suspends
@@ -333,12 +332,12 @@ public:
 
   /// Sets the type.
   /// @param t the new type
-  void setType(types::Type *t) { type = t; }
+  void setType(Type *t) { type = t; }
 
 protected:
-  types::Type *doGetType() const override { return type; }
-  std::vector<types::Type *> doGetUsedTypes() const override { return {type}; }
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  Type *doGetType() const override { return type; }
+  std::vector<Type *> doGetUsedTypes() const override { return {type}; }
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
 /// Instr representing a ternary operator.
@@ -388,7 +387,7 @@ public:
   void setFalseValue(Value *v) { falseValue = v; }
 
 protected:
-  types::Type *doGetType() const override { return trueValue->getType(); }
+  Type *doGetType() const override { return trueValue->getType(); }
   std::vector<Value *> doGetUsedValues() const override {
     return {cond, trueValue, falseValue};
   }
@@ -516,14 +515,14 @@ private:
   /// the value
   Value *value;
   /// the type of the result
-  types::Type *type;
+  Type *type;
   /// true if argument is a generator (e.g. custom __await__)
   bool generator;
 
 public:
   static const char NodeId;
 
-  explicit AwaitInstr(Value *value, types::Type *type, bool generator = false,
+  explicit AwaitInstr(Value *value, Type *type, bool generator = false,
                       std::string name = "")
       : AcceptorExtend(std::move(name)), value(value), type(type),
         generator(generator) {}
@@ -538,7 +537,7 @@ public:
 
   /// Sets the type.
   /// @param t the new type
-  void setType(types::Type *t) { type = t; }
+  void setType(Type *t) { type = t; }
 
   /// @return whether argument is a generator
   bool isGenerator() const { return generator; }
@@ -547,11 +546,11 @@ public:
   void setGenerator(bool g = true) { generator = g; }
 
 protected:
-  types::Type *doGetType() const override { return type; }
+  Type *doGetType() const override { return type; }
   std::vector<Value *> doGetUsedValues() const override { return {value}; }
-  std::vector<types::Type *> doGetUsedTypes() const override { return {type}; }
+  std::vector<Type *> doGetUsedTypes() const override { return {type}; }
   int doReplaceUsedValue(id_t id, Value *newValue) override;
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
 class ThrowInstr : public AcceptorExtend<ThrowInstr, Instr> {
@@ -613,7 +612,7 @@ public:
   void setValue(Value *v) { val = v; }
 
 protected:
-  types::Type *doGetType() const override { return val->getType(); }
+  Type *doGetType() const override { return val->getType(); }
   std::vector<Value *> doGetUsedValues() const override { return {flow, val}; }
   int doReplaceUsedValue(id_t id, Value *newValue) override;
 };

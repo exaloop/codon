@@ -7,6 +7,7 @@
 
 #include "codon/cir/llvm/llvm.h"
 #include "codon/compiler/debug_listener.h"
+#include "codon/compiler/options.h"
 
 namespace codon {
 namespace jit {
@@ -15,9 +16,10 @@ class Engine {
 private:
   std::unique_ptr<llvm::orc::LLJIT> jit;
   DebugPlugin *debug;
+  Options *options;
 
 public:
-  Engine();
+  explicit Engine(Options *options);
 
   const llvm::DataLayout &getDataLayout() const { return jit->getDataLayout(); }
 

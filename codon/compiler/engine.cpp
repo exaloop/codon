@@ -8,7 +8,7 @@
 namespace codon {
 namespace jit {
 
-Engine::Engine() : jit(), debug(nullptr) {
+Engine::Engine(Options *options) : jit(), debug(nullptr), options(options) {
   auto eb = llvm::EngineBuilder();
   eb.setMArch(llvm::codegen::getMArch());
   eb.setMCPU(llvm::codegen::getCPUStr());
@@ -47,9 +47,8 @@ Engine::Engine() : jit(), debug(nullptr) {
   jit->getIRTransformLayer().setTransform(
       [&](llvm::orc::ThreadSafeModule module,
           const llvm::orc::MaterializationResponsibility &R) {
-        module.withModuleDo([](llvm::Module &module) {
-          ir::optimize(&module, /*debug=*/false, /*jit=*/true);
-        });
+        module.withModuleDo(
+            [this](llvm::Module &module) { ir::optimize(&module, this->options); });
         return std::move(module);
       });
 }

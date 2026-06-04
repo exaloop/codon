@@ -2,6 +2,7 @@
 
 #include "codon/cir/transform/manager.h"
 #include "codon/cir/transform/pass.h"
+#include "codon/compiler/options.h"
 
 using namespace codon::ir;
 
@@ -52,9 +53,9 @@ int DummyPass::runCounter = 0;
 
 TEST_F(CIRCoreTest, PassManagerNoInvalidations) {
   int counter = 0;
-
-  auto manager =
-      std::make_unique<transform::PassManager>(transform::PassManager::Init::EMPTY);
+  auto options = codon::Options::getDefault("");
+  options->pmempty = true;
+  auto manager = std::make_unique<transform::PassManager>(options.get());
   manager->registerAnalysis(std::make_unique<DummyAnalysis>(counter));
   manager->registerPass(std::make_unique<DummyPass>(counter, ANALYSIS_KEY), "",
                         {ANALYSIS_KEY});
@@ -66,9 +67,9 @@ TEST_F(CIRCoreTest, PassManagerNoInvalidations) {
 
 TEST_F(CIRCoreTest, PassManagerInvalidations) {
   int counter = 0;
-
-  auto manager =
-      std::make_unique<transform::PassManager>(transform::PassManager::Init::EMPTY);
+  auto options = codon::Options::getDefault("");
+  options->pmempty = true;
+  auto manager = std::make_unique<transform::PassManager>(options.get());
   manager->registerAnalysis(std::make_unique<DummyAnalysis>(counter));
   manager->registerPass(std::make_unique<DummyPass>(counter, ANALYSIS_KEY), "",
                         {ANALYSIS_KEY}, {ANALYSIS_KEY});

@@ -38,7 +38,7 @@ class type:
     @pure
     @derives
     @llvm
-    def _ref_raw(obj) -> Ptr[byte]:
+    def _ref_raw(obj) -> Ptr[u8]:
         """
         Casts the reference type to a pointer.
         """
@@ -56,7 +56,7 @@ class type:
         obj = alloc_atomic(sz) if T.__contents_atomic__ else alloc(sz)
         register_finalizer(type._force_cast(obj, T))
         if static.has_rtti(T):
-            obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[byte])
+            obj = RTTIType._new(obj, TypeInfo(T).__raw__(), Ptr[u8])
         return type._force_cast(obj, T)
 
     def _construct(T: type, *args, **kwargs) -> T:
@@ -74,12 +74,12 @@ class TypeInfo:
     _n_parent_ids: int
     raw_name: str
     nice_name: str
-    repr: Function[[Ptr[byte]], str]
+    repr: Function[[Ptr[u8]], str]
 
     def __new__() -> TypeInfo:
         return __magic__.new(TypeInfo)
 
-    def __raw__(self) -> Ptr[byte]:
+    def __raw__(self) -> Ptr[u8]:
         return __magic__.raw(self)
 
     def __init__(self, T: type):
@@ -91,9 +91,9 @@ class TypeInfo:
         self.raw_name = T.__name__
         self.nice_name = f"{T}"[8:-2]
 
-        self.repr = Function[[Ptr[byte]], str](cobj())
+        self.repr = Function[[Ptr[u8]], str](cobj())
         # if hasattr(T, "__repr__") or hasattr(T, "__str__"):
-        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[byte])
+        #     fn = static.function.realized(TypeInfo.wrap(T=T, ...), Ptr[u8])
         #     if isinstance(fn.TR, str):
         #         self.repr = fn
 
@@ -115,7 +115,7 @@ class TypeInfo:
                 return True
         return False
 
-    def wrap(arg: Ptr[byte], T: type) -> str:
+    def wrap(arg: Ptr[u8], T: type) -> str:
         if isinstance(T, ByVal):
             p = type._force_cast(arg, Ptr[T])
             return repr(p[0])

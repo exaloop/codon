@@ -32,18 +32,6 @@ const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "ker
 
 const std::string MAIN_UNCLASH = ".main.unclash";
 const std::string MAIN_CTOR = ".main.ctor";
-
-enum GlobalCTORMode { No, Yes, Auto };
-llvm::cl::opt<GlobalCTORMode> GlobalCTOR(
-    "global-ctor", llvm::cl::desc("generate global constructor with main code"),
-    llvm::cl::values(clEnumValN(No, "no", "Keep main code in main() function"),
-                     clEnumValN(Yes, "yes", "Put main code in global constructor"),
-                     clEnumValN(Auto, "auto",
-                                "'yes' if shared library output, 'no' otherwise")),
-    llvm::cl::init(Auto));
-llvm::cl::opt<bool> DisableExceptions("disable-exceptions",
-                                      llvm::cl::desc("Disable exception handling"),
-                                      llvm::cl::init(false));
 } // namespace
 
 llvm::DIFile *LLVMVisitor::DebugInfo::getFile(const std::string &path) {
@@ -85,8 +73,9 @@ std::string LLVMVisitor::getNameForVar(const Var *x) {
   }
 }
 
-LLVMVisitor::LLVMVisitor()
-    : util::ConstVisitor(), context(std::make_unique<llvm::LLVMContext>()), M(),
+LLVMVisitor::LLVMVisitor(Options *options)
+    : util::ConstVisitor(), options(options),
+      context(std::make_unique<llvm::LLVMContext>()), M(),
       B(std::make_unique<llvm::IRBuilder<>>(*context)), func(nullptr), block(nullptr),
       value(nullptr), vars(), funcs(), coro(), loops(), trycatch(), finally(),
       catches(), db(), plugins(nullptr) {
@@ -145,8 +134,8 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     } else {
       bool external = var->isExternal();
       bool tls = var->isThreadLocal();
-      auto linkage = (db.jit || external) ? llvm::GlobalValue::ExternalLinkage
-                                          : llvm::GlobalValue::PrivateLinkage;
+      auto linkage = (options->jit || external) ? llvm::GlobalValue::ExternalLinkage
+                                                : llvm::GlobalValue::PrivateLinkage;
       auto *storage = new llvm::GlobalVariable(
           *M, llvmType, /*isConstant=*/false, linkage,
           external ? nullptr : llvm::Constant::getNullValue(llvmType),
@@ -154,7 +143,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
       insertVar(var, storage);
 
       if (external) {
-        if (db.jit) {
+        if (options->jit) {
           storage->setDSOLocal(true);
         } else {
           storage->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Local);
@@ -178,7 +167,7 @@ void LLVMVisitor::registerGlobal(const Var *var) {
 
 llvm::Value *LLVMVisitor::getVar(const Var *var) {
   auto it = vars.find(var->getId());
-  if (db.jit && var->isGlobal()) {
+  if (options->jit && var->isGlobal()) {
     if (it != vars.end()) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
@@ -216,7 +205,7 @@ llvm::Value *LLVMVisitor::getVar(const Var *var) {
 
 llvm::Function *LLVMVisitor::getFunc(const Func *func) {
   auto it = funcs.find(func->getId());
-  if (db.jit) {
+  if (options->jit) {
     if (it != funcs.end()) {
       if (!it->second) { // if value is null, it's from another module
         // see if it's in the module already
@@ -224,7 +213,7 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
         if (auto *g = M->getFunction(name))
           return g;
 
-        auto *funcType = cast<types::FuncType>(func->getType());
+        auto *funcType = cast<FuncType>(func->getType());
         auto *returnType = getLLVMType(funcType->getReturnType());
         std::vector<llvm::Type *> argTypes;
         for (const auto &argType : *funcType) {
@@ -266,8 +255,8 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   db.builder = std::make_unique<llvm::DIBuilder>(*M);
   auto *file = db.getFile(srcInfo->file);
   db.unit = db.builder->createCompileUnit(llvm::dwarf::DW_LANG_C, file,
-                                          ("codon version " CODON_VERSION), !db.debug,
-                                          db.flags,
+                                          ("codon version " CODON_VERSION),
+                                          !options->debug, "",
                                           /*RV=*/0);
   M->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
                    llvm::DEBUG_METADATA_VERSION);
@@ -372,12 +361,12 @@ void LLVMVisitor::dump(const std::string &filename) { writeToLLFile(filename, fa
 
 void LLVMVisitor::runLLVMPipeline() {
   db.builder->finalize();
-  optimize(M.get(), db.debug, db.jit, plugins);
+  optimize(M.get(), options, plugins);
 }
 
 void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic,
                                     bool assembly) {
-  if (GlobalCTOR == GlobalCTORMode::Yes)
+  if (options->ctor == Options::GlobalCTORMode::Yes)
     setupGlobalCtor();
 
   runLLVMPipeline();
@@ -417,7 +406,7 @@ void LLVMVisitor::writeToBitcodeFile(const std::string &filename) {
 }
 
 void LLVMVisitor::writeToLLFile(const std::string &filename, bool optimize) {
-  if (GlobalCTOR == GlobalCTORMode::Yes)
+  if (options->ctor == Options::GlobalCTORMode::Yes)
     setupGlobalCtor();
   if (optimize)
     runLLVMPipeline();
@@ -496,7 +485,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
                                     const std::string &argv0, bool library,
                                     const std::vector<std::string> &libs,
                                     const std::string &lflags) {
-  if (library && GlobalCTOR != GlobalCTORMode::No)
+  if (library && options->ctor != Options::GlobalCTORMode::No)
     setupGlobalCtor();
 
   const std::string objFile = filename + ".o";
@@ -598,7 +587,7 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   executeCommand(command);
 
 #if __APPLE__
-  if (db.debug)
+  if (options->debug)
     executeCommand({"dsymutil", filename});
 #endif
 
@@ -655,14 +644,14 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
                                        (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(B->getPtrTy(), excVal);
 
-  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
+  auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *excHeader =
       llvm::StructType::get(strType, strType, strType, B->getInt64Ty(), B->getInt64Ty(),
                             B->getPtrTy(), B->getPtrTy());
   auto *header = B->CreateLoad(excHeader, B->CreateLoad(B->getPtrTy(), loadedExc));
   auto *msg = B->CreateExtractValue(header, 0);
-  auto *msgLen = B->CreateExtractValue(msg, 0);
-  auto *msgPtr = B->CreateExtractValue(msg, 1);
+  auto *msgPtr = B->CreateExtractValue(msg, 0);
+  auto *msgLen = B->CreateExtractValue(msg, 1);
   auto *pyType = B->CreateExtractValue(header, 5);
 
   // copy msg into new null-terminated buffer
@@ -894,7 +883,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
                                /*isConstant=*/false, llvm::GlobalValue::PrivateLinkage,
                                pyModuleDef, ".pyext_module");
 
-  std::unordered_map<types::Type *, llvm::GlobalVariable *> typeVars;
+  std::unordered_map<Type *, llvm::GlobalVariable *> typeVars;
   for (auto &pytype : pymod.types) {
     std::vector<llvm::Constant *> numberSlots = {
         pyFunc(pytype.add),       // nb_add
@@ -995,7 +984,7 @@ void LLVMVisitor::writeToPythonExtension(const PyModule &pymod,
       mappingSlotsConst = pyMappingSlotsVar;
     }
 
-    auto *refType = cast<types::RefType>(pytype.type);
+    auto *refType = cast<RefType>(pytype.type);
     if (refType) {
       seqassertn(!refType->isPolymorphic(),
                  "Python extension types cannot be polymorphic");
@@ -1277,7 +1266,7 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
   clearLLVMData();
   auto mainAddr = llvm::cantFail(jit->lookup("main"));
 
-  if (db.debug) {
+  if (options->debug) {
     runtime::setJITErrorCallback([dbp](const runtime::JITError &e) {
       fmt::print(stderr, "{}\n{}", e.getOutput(),
                  dbp->getPrettyBacktrace(e.getBacktrace()));
@@ -1386,7 +1375,7 @@ llvm::StructType *LLVMVisitor::getPadType() {
 }
 
 namespace {
-int typeIdxLookup(types::Type *type) {
+int typeIdxLookup(Type *type) {
   if (!type)
     return 0;
   auto *M = type->getModule();
@@ -1394,7 +1383,7 @@ int typeIdxLookup(types::Type *type) {
 }
 } // namespace
 
-llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(types::Type *type) {
+llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(Type *type) {
   auto *typeInfoType = getTypeInfoType();
   const std::string name = type ? type->getName() : "";
   const std::string typeVarName = "codon.typeidx." + (type ? name : "<all>");
@@ -1409,12 +1398,12 @@ llvm::GlobalVariable *LLVMVisitor::getTypeIdxVar(types::Type *type) {
   return tidx;
 }
 
-int LLVMVisitor::getTypeIdx(types::Type *catchType) { return typeIdxLookup(catchType); }
+int LLVMVisitor::getTypeIdx(Type *catchType) { return typeIdxLookup(catchType); }
 
 llvm::Value *LLVMVisitor::call(llvm::FunctionCallee callee,
                                llvm::ArrayRef<llvm::Value *> args) {
   B->SetInsertPoint(block);
-  if ((trycatch.empty() && finally.empty()) || DisableExceptions) {
+  if ((trycatch.empty() && finally.empty()) || options->noexc) {
     return B->CreateCall(callee, args);
   } else {
     auto *normalBlock = llvm::BasicBlock::Create(*context, "invoke.normal", func);
@@ -1496,8 +1485,10 @@ void LLVMVisitor::visit(const Module *x) {
   M = makeModule(*context, getSrcInfo(x));
 
   // args variable
-  seqassertn(x->getArgVar()->isGlobal(), "arg var is not global");
-  registerGlobal(x->getArgVar());
+  seqassertn(x->getArgvVar()->isGlobal(), "argv var is not global");
+  seqassertn(x->getArgcVar()->isGlobal(), "argc var is not global");
+  registerGlobal(x->getArgvVar());
+  registerGlobal(x->getArgcVar());
 
   // set up global variables and initialize functions
   for (auto *var : *x) {
@@ -1517,10 +1508,7 @@ void LLVMVisitor::visit(const Module *x) {
   setDebugInfoForNode(nullptr);
 
   // build canonical main function
-  auto *strType = llvm::StructType::get(*context, {B->getInt64Ty(), B->getPtrTy()});
-  auto *arrType =
-      llvm::StructType::get(*context, {B->getInt64Ty(), strType->getPointerTo()});
-
+  auto *strType = llvm::StructType::get(*context, {B->getPtrTy(), B->getInt64Ty()});
   auto *initFunc = llvm::cast<llvm::Function>(
       M->getOrInsertFunction("seq_init", B->getVoidTy(), B->getInt32Ty()).getCallee());
   auto *strlenFunc = llvm::cast<llvm::Function>(
@@ -1555,9 +1543,6 @@ void LLVMVisitor::visit(const Module *x) {
   auto *elemSize = B->getInt64(M->getDataLayout().getTypeAllocSize(strType));
   auto *allocSize = B->CreateMul(len, elemSize);
   auto *ptr = B->CreateCall(allocFunc, allocSize);
-  llvm::Value *arr = llvm::UndefValue::get(arrType);
-  arr = B->CreateInsertValue(arr, len, 0);
-  arr = B->CreateInsertValue(arr, ptr, 1);
   B->CreateBr(loopBlock);
 
   B->SetInsertPoint(loopBlock);
@@ -1572,18 +1557,23 @@ void LLVMVisitor::visit(const Module *x) {
   auto *arg = B->CreateLoad(B->getPtrTy(), B->CreateGEP(B->getPtrTy(), argv, control));
   auto *argLen = B->CreateZExtOrTrunc(B->CreateCall(strlenFunc, arg), B->getInt64Ty());
   llvm::Value *str = llvm::UndefValue::get(strType);
-  str = B->CreateInsertValue(str, argLen, 0);
-  str = B->CreateInsertValue(str, arg, 1);
+  str = B->CreateInsertValue(str, arg, 0);
+  str = B->CreateInsertValue(str, argLen, 1);
   B->CreateStore(str, B->CreateGEP(strType, ptr, control));
   B->CreateBr(loopBlock);
 
   B->SetInsertPoint(exitBlock);
-  auto *argStorage = getVar(x->getArgVar());
-  seqassertn(argStorage, "argument storage missing");
-  B->CreateStore(arr, argStorage);
-  const int flags = (db.debug ? SEQ_FLAG_DEBUG : 0) |
-                    (db.capture ? SEQ_FLAG_CAPTURE_OUTPUT : 0) |
-                    (db.standalone ? SEQ_FLAG_STANDALONE : 0);
+  auto *argvStorage = getVar(x->getArgvVar());
+  seqassertn(argvStorage, "argv storage missing");
+  B->CreateStore(ptr, argvStorage);
+
+  auto *argcStorage = getVar(x->getArgcVar());
+  seqassertn(argcStorage, "argc storage missing");
+  B->CreateStore(len, argcStorage);
+
+  const int flags = (options->debug ? SEQ_FLAG_DEBUG : 0) |
+                    (options->capture ? SEQ_FLAG_CAPTURE_OUTPUT : 0) |
+                    (options->standalone ? SEQ_FLAG_STANDALONE : 0);
   B->CreateCall(initFunc, B->getInt32(flags));
 
   // Put the entire program in a new function
@@ -1659,7 +1649,8 @@ llvm::DISubprogram *LLVMVisitor::getDISubprogramForFunc(const Func *x) {
       file, baseName, getNameForFunction(x), file, srcInfo->line, subroutineType,
       /*ScopeLine=*/0, llvm::DINode::FlagZero,
       llvm::DISubprogram::toSPFlags(/*IsLocalToUnit=*/true,
-                                    /*IsDefinition=*/true, /*IsOptimized=*/!db.debug));
+                                    /*IsDefinition=*/true,
+                                    /*IsOptimized=*/!options->debug));
   return subprogram;
 }
 
@@ -1674,7 +1665,7 @@ llvm::Function *LLVMVisitor::makeLLVMFunction(const Func *x) {
     return newFunc;
   }
 
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   auto *returnType = getLLVMType(funcType->getReturnType());
   std::vector<llvm::Type *> argTypes;
   for (const auto &argType : *funcType) {
@@ -1732,11 +1723,11 @@ bool internalFuncMatchesIgnoreArgs(const std::string &name, const InternalFunc *
 template <typename ParentType, typename... ArgTypes, std::size_t... Index>
 bool internalFuncMatches(const std::string &name, const InternalFunc *x,
                          std::index_sequence<Index...>) {
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   if (name != x->getUnmangledName() ||
       std::distance(funcType->begin(), funcType->end()) != sizeof...(ArgTypes))
     return false;
-  std::vector<types::Type *> argTypes(funcType->begin(), funcType->end());
+  std::vector<Type *> argTypes(funcType->begin(), funcType->end());
   std::vector<bool> m = {bool(cast<ParentType>(x->getParentType())),
                          bool(cast<ArgTypes>(argTypes[Index]))...};
   const bool match = std::all_of(m.begin(), m.end(), [](bool b) { return b; });
@@ -1751,7 +1742,6 @@ bool internalFuncMatches(const std::string &name, const InternalFunc *x) {
 } // namespace
 
 void LLVMVisitor::visit(const InternalFunc *x) {
-  using namespace types;
   func = M->getFunction(getNameForFunction(x));
   coro = {};
   seqassertn(func, "{} not inserted", *x);
@@ -1771,35 +1761,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   B->SetInsertPoint(block);
   llvm::Value *result = nullptr;
 
-  if (internalFuncMatches<PointerType, IntType>("__new__", x)) {
-    auto *pointerType = cast<PointerType>(parentType);
-    Type *baseType = pointerType->getBase();
-    auto *llvmBaseType = getLLVMType(baseType);
-    auto allocFunc = makeAllocFunc(baseType->isAtomic());
-    auto *elemSize = B->getInt64(M->getDataLayout().getTypeAllocSize(llvmBaseType));
-    auto *allocSize = B->CreateMul(elemSize, args[0]);
-    result = B->CreateCall(allocFunc, allocSize);
-  }
-
-  else if (internalFuncMatches<IntType, IntNType>("__new__", x)) {
-    auto *intNType = cast<IntNType>(argTypes[0]);
-    if (intNType->isSigned()) {
-      result = B->CreateSExtOrTrunc(args[0], B->getInt64Ty());
-    } else {
-      result = B->CreateZExtOrTrunc(args[0], B->getInt64Ty());
-    }
-  }
-
-  else if (internalFuncMatches<IntNType, IntType>("__new__", x)) {
-    auto *intNType = cast<IntNType>(parentType);
-    if (intNType->isSigned()) {
-      result = B->CreateSExtOrTrunc(args[0], getLLVMType(intNType));
-    } else {
-      result = B->CreateZExtOrTrunc(args[0], getLLVMType(intNType));
-    }
-  }
-
-  else if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
+  if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
     auto *generatorType = cast<GeneratorType>(parentType);
     auto *baseType = getLLVMType(generatorType->getBase());
     if (baseType->isVoidTy()) {
@@ -1830,7 +1792,7 @@ void LLVMVisitor::visit(const InternalFunc *x) {
 }
 
 std::string LLVMVisitor::buildLLVMCodeString(const LLVMFunc *x) {
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   seqassertn(funcType, "{} is not a function type", *x->getType());
   std::string bufStr;
   llvm::raw_string_ostream buf(bufStr);
@@ -1959,11 +1921,11 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     func->addFnAttr(llvm::Attribute::get(*context, "kernel"));
     func->setLinkage(llvm::GlobalValue::ExternalLinkage);
   }
-  if (!DisableExceptions)
+  if (!options->noexc)
     func->setPersonalityFn(
         llvm::cast<llvm::Constant>(makePersonalityFunc().getCallee()));
 
-  auto *funcType = cast<types::FuncType>(x->getType());
+  auto *funcType = cast<FuncType>(x->getType());
   seqassertn(funcType, "{} is not a function type", *x->getType());
   auto *returnType = funcType->getReturnType();
   auto *entryBlock = llvm::BasicBlock::Create(*context, "entry", func);
@@ -1987,7 +1949,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     auto *scope = func->getSubprogram();
     auto *debugVar = db.builder->createParameterVariable(
         scope, getDebugNameForVariable(var), argIdx, file, srcInfo->line,
-        getDIType(var->getType()), db.debug);
+        getDIType(var->getType()), options->debug);
     db.builder->insertDeclare(
         storage, debugVar, db.builder->createExpression(),
         llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
@@ -2011,7 +1973,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
       auto *scope = func->getSubprogram();
       auto *debugVar = db.builder->createAutoVariable(
           scope, getDebugNameForVariable(var), file, srcInfo->line,
-          getDIType(var->getType()), db.debug);
+          getDIType(var->getType()), options->debug);
       db.builder->insertDeclare(
           storage, debugVar, db.builder->createExpression(),
           llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
@@ -2024,7 +1986,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
   if (generator) {
     func->setPresplitCoroutine();
-    auto *generatorType = cast<types::GeneratorType>(returnType);
+    auto *generatorType = cast<GeneratorType>(returnType);
     seqassertn(generatorType, "{} is not a generator type", *returnType);
 
     llvm::FunctionCallee coroId =
@@ -2050,13 +2012,9 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     // coro ID and promise
     llvm::Value *id = nullptr;
     auto *nullPtr = llvm::ConstantPointerNull::get(B->getPtrTy());
-    if (!cast<types::VoidType>(generatorType->getBase())) {
-      coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
-      coro.promise->setName("coro.promise");
-      id = B->CreateCall(coroId, {B->getInt32(0), coro.promise, nullPtr, nullPtr});
-    } else {
-      id = B->CreateCall(coroId, {B->getInt32(0), nullPtr, nullPtr, nullPtr});
-    }
+    coro.promise = B->CreateAlloca(getLLVMType(generatorType->getBase()));
+    coro.promise->setName("coro.promise");
+    id = B->CreateCall(coroId, {B->getInt32(0), coro.promise, nullPtr, nullPtr});
     id->setName("coro.id");
     auto *needAlloc = B->CreateCall(coroAlloc, id);
     B->CreateCondBr(needAlloc, allocBlock, startBlock);
@@ -2113,11 +2071,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   if (generator) {
     B->CreateBr(coro.exit);
   } else {
-    if (cast<types::VoidType>(returnType)) {
-      B->CreateRetVoid();
-    } else {
-      B->CreateRet(llvm::Constant::getNullValue(getLLVMType(returnType)));
-    }
+    B->CreateRet(llvm::Constant::getNullValue(getLLVMType(returnType)));
   }
 }
 
@@ -2154,7 +2108,7 @@ void LLVMVisitor::visit(const PointerValue *x) {
   auto *type = x->getVar()->getType();
   std::vector<llvm::Value *> gepIndices = {B->getInt32(0)};
   for (auto &field : x->getFields()) {
-    if (auto *ref = cast<types::RefType>(type)) {
+    if (auto *ref = cast<RefType>(type)) {
       auto membIndex = ref->getMemberIndex(field);
       auto membType = ref->getMemberType(field);
       seqassertn(membIndex >= 0 && membType, "field {} not found in referecne type",
@@ -2162,7 +2116,7 @@ void LLVMVisitor::visit(const PointerValue *x) {
       gepIndices.push_back(B->getInt32(0));
       gepIndices.push_back(B->getInt32(membIndex));
       type = membType;
-    } else if (auto *rec = cast<types::RecordType>(type)) {
+    } else if (auto *rec = cast<RecordType>(type)) {
       auto membIndex = rec->getMemberIndex(field);
       auto membType = rec->getMemberType(field);
       seqassertn(membIndex >= 0 && membType, "field {} not found in record type",
@@ -2181,44 +2135,36 @@ void LLVMVisitor::visit(const PointerValue *x) {
  * Types
  */
 
-llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
-  if (auto *x = cast<types::IntType>(t)) {
-    return B->getInt64Ty();
+llvm::Type *LLVMVisitor::getLLVMType(Type *t) {
+  if (auto *x = cast<IntType>(t)) {
+    return B->getIntNTy(x->getLen());
   }
 
-  if (auto *x = cast<types::FloatType>(t)) {
+  if (auto *x = cast<FloatType>(t)) {
     return B->getDoubleTy();
   }
 
-  if (auto *x = cast<types::Float32Type>(t)) {
+  if (auto *x = cast<Float32Type>(t)) {
     return B->getFloatTy();
   }
 
-  if (auto *x = cast<types::Float16Type>(t)) {
+  if (auto *x = cast<Float16Type>(t)) {
     return B->getHalfTy();
   }
 
-  if (auto *x = cast<types::BFloat16Type>(t)) {
+  if (auto *x = cast<BFloat16Type>(t)) {
     return B->getBFloatTy();
   }
 
-  if (auto *x = cast<types::Float128Type>(t)) {
+  if (auto *x = cast<Float128Type>(t)) {
     return llvm::Type::getFP128Ty(*context);
   }
 
-  if (auto *x = cast<types::BoolType>(t)) {
+  if (auto *x = cast<BoolType>(t)) {
     return B->getInt8Ty();
   }
 
-  if (auto *x = cast<types::ByteType>(t)) {
-    return B->getInt8Ty();
-  }
-
-  if (auto *x = cast<types::VoidType>(t)) {
-    return B->getVoidTy();
-  }
-
-  if (auto *x = cast<types::RecordType>(t)) {
+  if (auto *x = cast<RecordType>(t)) {
     std::vector<llvm::Type *> body;
     for (const auto &field : *x) {
       body.push_back(getLLVMType(field.getType()));
@@ -2226,40 +2172,36 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return llvm::StructType::get(*context, body);
   }
 
-  if (auto *x = cast<types::RefType>(t)) {
+  if (auto *x = cast<RefType>(t)) {
     return B->getPtrTy();
   }
 
-  if (auto *x = cast<types::FuncType>(t)) {
+  if (auto *x = cast<FuncType>(t)) {
     return getLLVMFuncType(x)->getPointerTo();
   }
 
-  if (auto *x = cast<types::OptionalType>(t)) {
-    if (cast<types::RefType>(x->getBase())) {
+  if (auto *x = cast<OptionalType>(t)) {
+    if (cast<RefType>(x->getBase())) {
       return getLLVMType(x->getBase());
     } else {
       return llvm::StructType::get(B->getInt1Ty(), getLLVMType(x->getBase()));
     }
   }
 
-  if (auto *x = cast<types::PointerType>(t)) {
+  if (auto *x = cast<PointerType>(t)) {
     return getLLVMType(x->getBase())->getPointerTo();
   }
 
-  if (auto *x = cast<types::GeneratorType>(t)) {
+  if (auto *x = cast<GeneratorType>(t)) {
     return B->getPtrTy();
   }
 
-  if (auto *x = cast<types::IntNType>(t)) {
-    return B->getIntNTy(x->getLen());
-  }
-
-  if (auto *x = cast<types::VectorType>(t)) {
+  if (auto *x = cast<VectorType>(t)) {
     return llvm::VectorType::get(getLLVMType(x->getBase()), x->getCount(),
                                  /*Scalable=*/false);
   }
 
-  if (auto *x = cast<types::UnionType>(t)) {
+  if (auto *x = cast<UnionType>(t)) {
     auto &layout = M->getDataLayout();
     llvm::Type *largest = nullptr;
     size_t maxSize = 0;
@@ -2279,7 +2221,7 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
     return llvm::StructType::get(*context, {B->getInt8Ty(), largest});
   }
 
-  if (auto *x = cast<dsl::types::CustomType>(t)) {
+  if (auto *x = cast<dsl::CustomType>(t)) {
     return x->getBuilder()->buildType(this);
   }
 
@@ -2287,8 +2229,8 @@ llvm::Type *LLVMVisitor::getLLVMType(types::Type *t) {
   return nullptr;
 }
 
-llvm::FunctionType *LLVMVisitor::getLLVMFuncType(types::Type *t) {
-  auto *x = cast<types::FuncType>(t);
+llvm::FunctionType *LLVMVisitor::getLLVMFuncType(Type *t) {
+  auto *x = cast<FuncType>(t);
   seqassertn(x, "input type was not a func type");
   auto *returnType = getLLVMType(x->getReturnType());
   std::vector<llvm::Type *> argTypes;
@@ -2299,57 +2241,48 @@ llvm::FunctionType *LLVMVisitor::getLLVMFuncType(types::Type *t) {
 }
 
 llvm::DIType *LLVMVisitor::getDITypeHelper(
-    types::Type *t, std::unordered_map<std::string, llvm::DICompositeType *> &cache) {
+    Type *t, std::unordered_map<std::string, llvm::DICompositeType *> &cache) {
   auto *type = getLLVMType(t);
   auto &layout = M->getDataLayout();
 
-  if (auto *x = cast<types::IntType>(t)) {
+  if (auto *x = cast<IntType>(t)) {
     return db.builder->createBasicType(
-        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_signed);
+        x->getName(), layout.getTypeAllocSizeInBits(type),
+        x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
   }
 
-  if (auto *x = cast<types::FloatType>(t)) {
-    return db.builder->createBasicType(
-        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
-  }
-
-  if (auto *x = cast<types::Float32Type>(t)) {
+  if (auto *x = cast<FloatType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::Float16Type>(t)) {
+  if (auto *x = cast<Float32Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::BFloat16Type>(t)) {
+  if (auto *x = cast<Float16Type>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
   }
 
-  if (auto *x = cast<types::Float128Type>(t)) {
+  if (auto *x = cast<BFloat16Type>(t)) {
+    return db.builder->createBasicType(
+        x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_float);
+  }
+
+  if (auto *x = cast<Float128Type>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_HP_float128);
   }
 
-  if (auto *x = cast<types::BoolType>(t)) {
+  if (auto *x = cast<BoolType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_boolean);
   }
 
-  if (auto *x = cast<types::ByteType>(t)) {
-    return db.builder->createBasicType(x->getName(),
-                                       layout.getTypeAllocSizeInBits(type),
-                                       llvm::dwarf::DW_ATE_signed_char);
-  }
-
-  if (auto *x = cast<types::VoidType>(t)) {
-    return nullptr;
-  }
-
-  if (auto *x = cast<types::RecordType>(t)) {
+  if (auto *x = cast<RecordType>(t)) {
     auto it = cache.find(x->getName());
     if (it != cache.end()) {
       return it->second;
@@ -2393,13 +2326,13 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     }
   }
 
-  if (auto *x = cast<types::RefType>(t)) {
+  if (auto *x = cast<RefType>(t)) {
     auto *ref = db.builder->createReferenceType(
         llvm::dwarf::DW_TAG_reference_type, getDITypeHelper(x->getContents(), cache));
     return ref;
   }
 
-  if (auto *x = cast<types::FuncType>(t)) {
+  if (auto *x = cast<FuncType>(t)) {
     std::vector<llvm::Metadata *> argTypes = {
         getDITypeHelper(x->getReturnType(), cache)};
     for (auto *argType : *x) {
@@ -2410,8 +2343,8 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
         layout.getTypeAllocSizeInBits(type));
   }
 
-  if (auto *x = cast<types::OptionalType>(t)) {
-    if (cast<types::RefType>(x->getBase())) {
+  if (auto *x = cast<OptionalType>(t)) {
+    if (cast<RefType>(x->getBase())) {
       return getDITypeHelper(x->getBase(), cache);
     } else {
       auto *baseType = getLLVMType(x->getBase());
@@ -2444,35 +2377,29 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
     }
   }
 
-  if (auto *x = cast<types::PointerType>(t)) {
+  if (auto *x = cast<PointerType>(t)) {
     return db.builder->createPointerType(getDITypeHelper(x->getBase(), cache),
                                          layout.getTypeAllocSizeInBits(type));
   }
 
-  if (auto *x = cast<types::GeneratorType>(t)) {
+  if (auto *x = cast<GeneratorType>(t)) {
     return db.builder->createBasicType(
         x->getName(), layout.getTypeAllocSizeInBits(type), llvm::dwarf::DW_ATE_address);
   }
 
-  if (auto *x = cast<types::IntNType>(t)) {
-    return db.builder->createBasicType(
-        x->getName(), layout.getTypeAllocSizeInBits(type),
-        x->isSigned() ? llvm::dwarf::DW_ATE_signed : llvm::dwarf::DW_ATE_unsigned);
-  }
-
-  if (auto *x = cast<types::VectorType>(t)) {
+  if (auto *x = cast<VectorType>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_unsigned);
   }
 
-  if (auto *x = cast<types::UnionType>(t)) {
+  if (auto *x = cast<UnionType>(t)) {
     return db.builder->createBasicType(x->getName(),
                                        layout.getTypeAllocSizeInBits(type),
                                        llvm::dwarf::DW_ATE_unsigned);
   }
 
-  if (auto *x = cast<dsl::types::CustomType>(t)) {
+  if (auto *x = cast<dsl::CustomType>(t)) {
     return x->getBuilder()->buildDebugType(this);
   }
 
@@ -2480,7 +2407,7 @@ llvm::DIType *LLVMVisitor::getDITypeHelper(
   return nullptr;
 }
 
-llvm::DIType *LLVMVisitor::getDIType(types::Type *t) {
+llvm::DIType *LLVMVisitor::getDIType(Type *t) {
   std::unordered_map<std::string, llvm::DICompositeType *> cache;
   return getDITypeHelper(t, cache);
 }
@@ -2520,12 +2447,12 @@ void LLVMVisitor::visit(const StringConst *x) {
                                /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
                                llvm::ConstantDataArray::getString(*context, s), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-  auto *strType = llvm::StructType::get(B->getInt64Ty(), B->getPtrTy());
+  auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
   auto *len = B->getInt64(s.length());
   llvm::Value *str = llvm::UndefValue::get(strType);
-  str = B->CreateInsertValue(str, len, 0);
-  str = B->CreateInsertValue(str, ptr, 1);
+  str = B->CreateInsertValue(str, ptr, 0);
+  str = B->CreateInsertValue(str, len, 1);
   value = str;
 }
 
@@ -2702,7 +2629,7 @@ void LLVMVisitor::visit(const ImperativeForFlow *x) {
 }
 
 namespace {
-bool anyMatch(types::Type *type, std::vector<types::Type *> types) {
+bool anyMatch(Type *type, std::vector<Type *> types) {
   if (type) {
     for (auto *t : types) {
       if (t && t->getName() == type->getName())
@@ -2803,7 +2730,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // handle exceptions that must route through 'finally'
   B->SetInsertPoint(tc.finallyExceptionBlock);
-  if (!DisableExceptions) {
+  if (!options->noexc) {
     auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
     finallyCaughtResult->setCleanup(true);
     finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
@@ -2932,14 +2859,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // resume if uncaught
   B->SetInsertPoint(unwindResumeBlock);
-  if (DisableExceptions) {
+  if (options->noexc) {
     B->CreateUnreachable();
   } else {
     B->CreateResume(B->CreateLoad(padType, tc.catchStore));
   }
 
   // make sure we delegate to parent try-catch if necessary
-  std::vector<types::Type *> catchTypesFull(tc.catchTypes);
+  std::vector<Type *> catchTypesFull(tc.catchTypes);
   std::vector<llvm::BasicBlock *> handlersFull(tc.handlers);
   std::vector<unsigned> depths(tc.catchTypes.size(), 0);
   unsigned depth = 1;
@@ -2975,14 +2902,14 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   // exception handling
   B->SetInsertPoint(tc.exceptionBlock);
   llvm::LandingPadInst *caughtResult = nullptr;
-  if (!DisableExceptions) {
+  if (!options->noexc) {
     caughtResult = B->CreateLandingPad(padType, catches.size());
     caughtResult->setCleanup(true);
   }
   std::vector<llvm::Value *> typeIndices;
 
   for (auto *catchType : catchTypesFull) {
-    seqassertn(!catchType || cast<types::RefType>(catchType), "invalid catch type");
+    seqassertn(!catchType || cast<RefType>(catchType), "invalid catch type");
     const std::string typeVarName =
         "codon.typeidx." + (catchType ? catchType->getName() : "<all>");
     auto *tidx = getTypeIdxVar(catchType);
@@ -3071,7 +2998,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
 
   // rethrow if handling 'finally' after exception raised from 'except'/'else'
   B->SetInsertPoint(rethrowBlock);
-  if (!haveFinally || DisableExceptions) {
+  if (!haveFinally || options->noexc) {
     B->CreateUnreachable();
   } else {
     auto throwFunc = makeThrowFunc();
@@ -3121,7 +3048,7 @@ void LLVMVisitor::codegenPipeline(
   const bool generator = prevStage->isGenerator();
 
   if (generator) {
-    auto *generatorType = cast<types::GeneratorType>(prevStage->getOutputType());
+    auto *generatorType = cast<GeneratorType>(prevStage->getOutputType());
     seqassertn(generatorType, "{} is not a generator type",
                *prevStage->getOutputType());
     auto *baseType = getLLVMType(generatorType->getBase());
@@ -3207,14 +3134,14 @@ void LLVMVisitor::visit(const AssignInstr *x) {
 }
 
 void LLVMVisitor::visit(const ExtractInstr *x) {
-  auto *memberedType = cast<types::MemberedType>(x->getVal()->getType());
+  auto *memberedType = cast<MemberedType>(x->getVal()->getType());
   seqassertn(memberedType, "{} is not a membered type", *x->getVal()->getType());
   const int index = memberedType->getMemberIndex(x->getField());
   seqassertn(index >= 0, "invalid index");
 
   process(x->getVal());
   B->SetInsertPoint(block);
-  if (auto *refType = cast<types::RefType>(memberedType)) {
+  if (auto *refType = cast<RefType>(memberedType)) {
     if (refType->isPolymorphic()) {
       // polymorphic ref type is ref to (data, rtti)
       value = B->CreateLoad(B->getPtrTy(), value);
@@ -3225,7 +3152,7 @@ void LLVMVisitor::visit(const ExtractInstr *x) {
 }
 
 void LLVMVisitor::visit(const InsertInstr *x) {
-  auto *refType = cast<types::RefType>(x->getLhs()->getType());
+  auto *refType = cast<RefType>(x->getLhs()->getType());
   seqassertn(refType, "{} is not a reference type", *x->getLhs()->getType());
   const int index = refType->getMemberIndex(x->getField());
   seqassertn(index >= 0, "invalid index");
@@ -3298,19 +3225,10 @@ void LLVMVisitor::visit(const YieldInInstr *x) {
 }
 
 void LLVMVisitor::visit(const StackAllocInstr *x) {
-  auto *recordType = cast<types::RecordType>(x->getType());
-  seqassertn(recordType, "stack alloc does not have record type");
-  auto *ptrType = cast<types::PointerType>(recordType->back().getType());
-  seqassertn(ptrType, "array did not have ptr type");
-
-  auto *arrayType = llvm::cast<llvm::StructType>(getLLVMType(x->getType()));
+  auto *ptrType = cast<PointerType>(x->getType());
+  seqassertn(ptrType, "stack alloc did not have ptr type");
   B->SetInsertPoint(func->getEntryBlock().getTerminator());
-  auto *len = B->getInt64(x->getCount());
-  auto *ptr = B->CreateAlloca(getLLVMType(ptrType->getBase()), len);
-  llvm::Value *arr = llvm::UndefValue::get(arrayType);
-  arr = B->CreateInsertValue(arr, len, 0);
-  arr = B->CreateInsertValue(arr, ptr, 1);
-  value = arr;
+  value = B->CreateAlloca(getLLVMType(ptrType->getBase()), B->getInt64(x->getCount()));
 }
 
 void LLVMVisitor::visit(const TernaryInstr *x) {
@@ -3453,7 +3371,7 @@ void LLVMVisitor::visit(const AwaitInstr *x) {
 }
 
 void LLVMVisitor::visit(const ThrowInstr *x) {
-  if (DisableExceptions) {
+  if (options->noexc) {
     B->SetInsertPoint(block);
     B->CreateUnreachable();
     block = llvm::BasicBlock::Create(*context, "throw_unreachable.new", func);

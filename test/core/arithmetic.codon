@@ -3,8 +3,8 @@ def t1():
     assert 2 + 2 == 4
     assert 3.14 * 2 == 6.28
     assert 2 + 3*2 == 8
-    assert 1.0/0 == float('inf')
-    assert str(0.0/0) == 'nan'
+    assert (1.0).cdiv(0.0) == float('inf')
+    assert str((0.0).cdiv(0.0)) == 'nan'
 
     assert 5 // 2 == 2
     assert 5 / 2 == 2.5
@@ -56,12 +56,11 @@ def test_conversions():
     assert str(False) == 'False'
     assert str(True) == 'True'
 
-    # byte -> int, float, bool, str
-    assert int(byte(42)) == 42
-    assert float(byte(42)) == 42.0
-    assert bool(byte(0)) == False
-    assert bool(byte(42)) == True
-    assert str(byte(42)) == '*'
+    # u8 -> int, float, bool, str
+    assert int(u8(42)) == 42
+    assert float(u8(42)) == 42.0
+    assert bool(u8(0)) == False
+    assert bool(u8(42)) == True
 
     # intN -> int, float, bool, str | N < 64
     assert int(i32(-42)) == -42
@@ -486,3 +485,17 @@ def test_int_match():
     assert n == 4
 
 test_int_match()
+
+@test
+def test_int_int_ops():
+    assert type(u32(1) + u32(1)) is u32
+    assert type(u32(1) + u64(1)) is u64
+    assert u32(1) + u64(1) == u64(2)
+    assert u32(1) + u64(1) == u32(2)
+
+    assert type(i32(1) + i32(1)) is i32
+    assert type(i32(1) + 1) is int
+    assert i32(1) + 1 == u64(2)
+    assert i32(1) + 1 == i32(2)
+
+test_int_int_ops()

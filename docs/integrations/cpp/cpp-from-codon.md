@@ -46,7 +46,7 @@ The following table shows the conversions between Codon and C/C++ types:
 | `float`       | `double`                             |
 | `bool`        | `bool`                               |
 | `complex`     | `{double, double}` (real and imag.)  |
-| `str`         | `{int64_t, char*}` (length and data) |
+| `str`         | `{char*, int64_t}` (data and length) |
 | `tuple`       | Struct of fields                     |
 | `class`       | Pointer to corresponding tuple       |
 | `Ptr[T]`      | `T*`                                 |

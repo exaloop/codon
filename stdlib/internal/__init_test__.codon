@@ -5,15 +5,17 @@
 from internal.attributes import *
 from internal.static import print as __print__
 
+from internal.ops import *
+from internal.types.int import *
 from internal.types.ptr import *
 from internal.types.str import *
-from internal.types.int import *
 from internal.types.bool import *
-from internal.types.array import *
 from internal.types.error import *
-from internal.types.intn import *
 from internal.types.float import *
-from internal.types.byte import *
+
+from internal.types.slice import *
+from internal.types.collections.list import *
+
 from internal.types.type import *
 from internal.types.tuple import *
 from internal.types.rtti import *
@@ -22,7 +24,6 @@ from internal.types.union import *
 from internal.types.any import *
 from internal.types.ellipsis import *
 from internal.types.import_ import *
-from internal.types.ptr import *
 from internal.types.generator import *
 from internal.types.optional import *
 from internal.internal import *
@@ -30,7 +31,7 @@ from internal.types.slice import *
 from internal.types.range import *
 from internal.types.complex import *
 from internal.types.strbuf import strbuf as _strbuf
-from internal.types.collections.list import *
+
 import internal.c_stubs as _C
 from internal.format import *
 
@@ -62,8 +63,8 @@ class Set:
         if len(self.items) == 0:
             return "set()"
         s = self.items.__repr__()
-        s.ptr[0] = "{".ptr[0]
-        s.ptr[s.len - 1] = "}".ptr[0]
+        s._ptr[0] = "{"._ptr[0]
+        s._ptr[s._len - 1] = "}"._ptr[0]
         return s
 
 class Dict:
@@ -80,7 +81,7 @@ class Dict:
         yield from self.keys
 
     def items(self) -> Generator[Tuple[K, V]]:
-        for i in range(self.keys.len):
+        for i in range(self.keys._len):
             yield (self.keys[i], self.values[i])
 
     def __contains__(self, key: K) -> bool:
@@ -99,7 +100,7 @@ class Dict:
             self.values.append(val)
 
     def __len__(self) -> int:
-        return self.keys.len
+        return self.keys._len
 
     def __repr__(self) -> str:
         n = self.__len__()
@@ -124,17 +125,17 @@ class Dict:
 class str:
     def __getitem__(self, idx: int) -> str:
         if idx < 0:
-            idx += self.len
-        if not (0 <= idx < self.len):
+            idx += self._len
+        if not (0 <= idx < self._len):
             raise IndexError("string index out of range")
-        return str(self.ptr + idx, 1)
+        return str(self._ptr + idx, 1)
 
     def __getitem__(self, s: Slice) -> str:
         if s.start is None and s.stop is None and s.step is None:
             return self.__copy__()
         elif s.step is None:
-            start, stop, step, length = s.adjust_indices(self.len)
-            return str(self.ptr + start, length)
+            start, stop, step, length = s.adjust_indices(self._len)
+            return str(self._ptr + start, length)
         else:
             raise ValueError("nope")
 
@@ -143,18 +144,18 @@ class str:
             return ""
 
         i = 0
-        while i < self.__len__() and _C.isspace(i32(int(self.ptr[i]))):
+        while i < self.__len__() and _C.isspace(i32(int(self._ptr[i]))):
             i += 1
 
         j = self.__len__() - 1
-        while j >= 0 and _C.isspace(i32(int(self.ptr[j]))):
+        while j >= 0 and _C.isspace(i32(int(self._ptr[j]))):
             j -= 1
         j += 1
 
         if j <= i:
             return ""
 
-        return str(self.ptr + i, j - i)
+        return str(self._ptr + i, j - i)
 
     def join(self, l: Generator[str]) -> str:
         buf = _strbuf()
@@ -174,7 +175,7 @@ class str:
     def __repr__(self) -> str:
         return f"'{self}'"
 
-    def _isdigit(a: byte) -> bool:
+    def _isdigit(a: u8) -> bool:
         return _C.isdigit(i32(int(a))) != i32(0)
 
 set = Set

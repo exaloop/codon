@@ -51,7 +51,7 @@ class Ident:
     psource: cobj
 
     def __new__(flags: int = 0, source: str = ";unknown;unknown;0;0;;") -> Ident:
-        return Ident(i32(0), i32(flags | _KMP_IDENT_KMPC), i32(0), i32(0), source.ptr)
+        return Ident(i32(0), i32(flags | _KMP_IDENT_KMPC), i32(0), i32(0), source._ptr)
 
 @tuple
 class LRData:
@@ -85,14 +85,6 @@ class TaskReductionInput:
                 reduce_init: cobj, reduce_comb: cobj):
         return TaskReductionInput(reduce_shar.as_byte(), reduce_orig.as_byte(), reduce_size,
                                   reduce_init, cobj(), reduce_comb, u32(0))
-
-@tuple
-class TaskReductionInputArray:
-    len: int
-    ptr: Ptr[TaskReductionInput]
-
-    def __setitem__(self, idx: int, x: TaskReductionInput):
-        self.ptr[idx] = x
 
 _DEFAULT_IDENT = Ident()
 _STATIC_LOOP_IDENT = Ident(_KMP_IDENT_WORK_LOOP)
@@ -879,9 +871,9 @@ def _atomic_float32_max(a: Ptr[float32], b: float32) -> None:
 
 def _range_len(start: int, stop: int, step: int):
     if step > 0 and start < stop:
-        return 1 + (stop - 1 - start) // step
+        return 1 + (stop - 1 - start).cdiv(step)
     elif step < 0 and start > stop:
-        return 1 + (start - 1 - stop) // (-step)
+        return 1 + (start - 1 - stop).cdiv(-step)
     else:
         return 0
 

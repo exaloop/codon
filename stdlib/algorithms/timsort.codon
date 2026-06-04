@@ -52,7 +52,7 @@ MIN_GALLOP = 7
 from algorithms.insertionsort import _insertion_sort
 
 def _count_run(
-    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
+    arr: Ptr[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ) -> Tuple[int, int]:
     """
     Returns the # of elements in the next run and if the run is "inorder" or "reversed"
@@ -93,7 +93,7 @@ def _merge_compute_minrun(n: int) -> int:
         n >>= 1
     return n + r
 
-def _reverse_sortslice(arr: Array[T], begin: int, end: int, T: type):
+def _reverse_sortslice(arr: Ptr[T], begin: int, end: int, T: type):
     if end - begin < 2:
         return
     arr[begin], arr[end - 1] = arr[end - 1], arr[begin]
@@ -111,7 +111,7 @@ def _modified_comp(
         return keyf(a) < keyf(b)
 
 def _gallop(
-    arr: Array[T],
+    arr: Ptr[T],
     a: Tuple[int, int],
     b: Tuple[int, int],
     keyf: CallableTrait[[T], S],
@@ -176,7 +176,7 @@ def _gallop(
     return ofs
 
 def _merge_with_gallop(
-    arr: Array[T],
+    arr: Ptr[T],
     a: Tuple[int, int],
     b: Tuple[int, int],
     keyf: CallableTrait[[T], S],
@@ -185,9 +185,11 @@ def _merge_with_gallop(
 ):
     min_gallop = MIN_GALLOP
 
-    combined = Array[T](a[1] + b[1])
-    a_copy = combined.slice(0, a[1])
-    b_copy = combined.slice(a[1], len(combined))
+    len_a_copy = a[1]
+    len_b_copy = b[1]
+    combined = Ptr[T](len_a_copy + len_b_copy)
+    a_copy = combined
+    b_copy = combined + len_a_copy
 
     j = 0
     for i in range(a[0], a[0] + a[1]):
@@ -199,10 +201,10 @@ def _merge_with_gallop(
 
     i, j, k = 0, 0, a[0]
 
-    while i < len(a_copy) and j < len(b_copy):
+    while i < len_a_copy and j < len_b_copy:
         acount, bcount = 0, 0
 
-        while i < len(a_copy) and j < len(b_copy):
+        while i < len_a_copy and j < len_b_copy:
             if keyf(b_copy[j]) < keyf(a_copy[i]):
                 arr[k] = b_copy[j]
                 acount = 0
@@ -220,17 +222,17 @@ def _merge_with_gallop(
                 if acount >= min_gallop:
                     break
 
-        if i == len(a_copy) or j == len(b_copy):
+        if i == len_a_copy or j == len_b_copy:
             break
 
         min_gallop += 1
 
-        while i < len(a_copy) and j < len(b_copy):
+        while i < len_a_copy and j < len_b_copy:
             if min_gallop > 1:
                 min_gallop -= 1
 
             acount = _gallop(
-                combined, (0, len(a_copy)), (len(a_copy), len(b_copy)), keyf, i, False
+                combined, (0, len_a_copy), (len_a_copy, len_b_copy), keyf, i, False
             )
             if acount:
                 while i < acount:
@@ -241,13 +243,13 @@ def _merge_with_gallop(
                 j += 1
                 k += 1
 
-            if i == len(a_copy) or j == len(b_copy):
+            if i == len_a_copy or j == len_b_copy:
                 break
 
             b_end = _gallop(
-                combined, (len(a_copy), len(b_copy)), (0, len(a_copy)), keyf, j, True
+                combined, (len_a_copy, len_b_copy), (0, len_a_copy), keyf, j, True
             )
-            bcount = len(b_copy) - b_end
+            bcount = len_b_copy - b_end
             if bcount:
                 while j < b_end:
                     arr[k] = b_copy[j]
@@ -262,18 +264,18 @@ def _merge_with_gallop(
 
         min_gallop += 1
 
-    while i < len(a_copy):
+    while i < len_a_copy:
         arr[k] = a_copy[i]
         i += 1
         k += 1
 
-    while j < len(b_copy):
+    while j < len_b_copy:
         arr[k] = b_copy[j]
         j += 1
         k += 1
 
 def _merge_at(
-    arr: Array[T],
+    arr: Ptr[T],
     a: Tuple[int, int],
     b: Tuple[int, int],
     keyf: CallableTrait[[T], S],
@@ -297,7 +299,7 @@ def _merge_at(
     _merge_with_gallop(arr, (start_a, len_a), (start_b, len_b), keyf)
 
 def _merge_collapse(
-    arr: Array[T],
+    arr: Ptr[T],
     stack: List[Tuple[int, int]],
     keyf: CallableTrait[[T], S],
     T: type,
@@ -345,7 +347,7 @@ def _merge_collapse(
             return
 
 def _final_merge(
-    arr: Array[T],
+    arr: Ptr[T],
     stack: List[Tuple[int, int]],
     keyf: CallableTrait[[T], S],
     T: type,
@@ -358,7 +360,7 @@ def _final_merge(
         stack.append((B[0], B[1] + C[1]))
 
 def _tim_sort(
-    arr: Array[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
+    arr: Ptr[T], begin: int, end: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     if end - begin < 2:
         return
@@ -383,14 +385,14 @@ def _tim_sort(
     _final_merge(arr, merge_pending, keyf)
 
 def tim_sort_array(
-    collection: Array[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
+    collection: Ptr[T], size: int, keyf: CallableTrait[[T], S], T: type, S: type
 ):
     _tim_sort(collection, 0, size, keyf)
 
 def tim_sort_inplace(
     collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type
 ):
-    tim_sort_array(collection.arr, collection.len, keyf)
+    tim_sort_array(collection._ptr, collection._len, keyf)
 
 def tim_sort(collection: List[T], keyf: CallableTrait[[T], S], T: type, S: type) -> List[T]:
     newlst = list(collection)

@@ -228,6 +228,9 @@ Learn more in the [Python JIT docs](../integrations/python/codon-from-python.md)
 
 ## Additional options
 
+See [Options](options.md) for a full list of compiler options. Several notable options are described
+in more detail below.
+
 ### Disabling exceptions
 
 By default, Codon does exception handling to match Python's semantics and behavior. If you
@@ -244,28 +247,28 @@ GPU execution.
 
 ### Numerical semantics
 
-For performance reasons, certain numerical operations in Codon follow C semantics by default.
-For example, integer division rounds towards zero in Codon whereas it rounds down in Python:
+While Codon follows Python semantics by default, C semantics differ and can yield better
+performance. The `-numerics=<mode>` flag can be used to control this behavior:
+
+- `-numerics=py`: Python semantics; matches Python behavior at the cost of performance
+- `-numerics=c`: C semantics; differs from Python but best performance
+
+For example, integer division rounds towards zero in C whereas it rounds down in Python:
 
 ``` python
 print((-3) // 2)
-# Codon: -1
+# Codon: -1 (with `-numerics=c` flag)
 # Python: -2
 ```
 
-Similarly, floating-point division by zero returns `inf` in Codon whereas it raises an exception
-in Python:
+Similarly, floating-point division by zero returns `inf` in Codon with C semantics enabled,
+whereas it raises an exception in Python:
 
 ``` python
 print(1.0 / 0.0)
-# Codon: inf
-# Python: 'ZeroDivisionError: float division by zero'
+# Codon: inf (with `-numerics=c` flag)
+# Python: 'ZeroDivisionError: division by zero'
 ```
-
-The `-numerics=<mode>` flag can be used to control this behavior:
-
-- `-numerics=c` (default): C semantics, as above
-- `-numerics=py`: Python semantics, matching Python behavior at the cost of performance
 
 ### Fast-math
 
@@ -282,7 +285,7 @@ The `-disable-opt <pass>` flag can be used to disable specific optimization pass
 codon run -release -disable-opt core-numpy-fusion program.py
 ```
 
-## Compile-time definitions
+### Compile-time definitions
 
 Literal variables can be passed on the command-line via the `-D` flag. These variables are
 treated as compile-time constants and can be used for [compile-time metaprogramming](../language/meta.md).
@@ -302,7 +305,7 @@ codon run -DN=16 program.py
 
 to use a 16-bit integer as the type of variable `n`.
 
-## Logging
+### Logging
 
 Codon can display logging information and also output intermediate compilation results via the
 `-log <streams>` command. The argument to `-log` can contain any of the following characters:

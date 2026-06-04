@@ -31,11 +31,9 @@ public:
   /// @param globalVarPass the key of the global variables pass
   /// @param repeat default number of times to repeat the pass
   /// @param runGlobalDemotion whether to demote globals if possible
-  /// @param pyNumerics whether to use Python (vs. C) semantics when folding
   FoldingPassGroup(const std::string &sideEffectsPass,
                    const std::string &reachingDefPass, const std::string &globalVarPass,
-                   int repeat = 5, bool runGlobalDemotion = true,
-                   bool pyNumerics = false);
+                   int repeat = 5, bool runGlobalDemotion = true);
 
   bool shouldRepeat(int num) const override;
 };

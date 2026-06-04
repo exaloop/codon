@@ -4,6 +4,7 @@
 
 #include "codon/cir/module.h"
 #include "codon/cir/util/operator.h"
+#include "codon/compiler/options.h"
 
 namespace codon {
 namespace ir {
@@ -46,6 +47,10 @@ public:
   AnalysisType *getAnalysisResult(const std::string &key) {
     return static_cast<AnalysisType *>(doGetAnalysis(key));
   }
+
+  /// Returns the compiler options.
+  /// @return the compiler options
+  Options *getOptions() const;
 
 private:
   analyze::Result *doGetAnalysis(const std::string &key);

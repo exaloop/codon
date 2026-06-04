@@ -122,7 +122,7 @@ class sincos_2pibyn:
                     return complex(-cos(y), -sin(y))
 
     def __new__(n: int) -> sincos_2pibyn[T]:
-        ang = 0.25 * PI / n
+        ang = (0.25 * PI).cdiv(float(n))
         nval = (n + 2) >> 1
         shift = 1
         while (1 << shift) * (1 << shift) < nval:
@@ -134,7 +134,7 @@ class sincos_2pibyn:
         for i in range(1, v1.size()):
             v1[i] = sincos_2pibyn.calc(i, n, ang)
 
-        v2 = arr[complex]((nval + mask) // (mask + 1))
+        v2 = arr[complex]((nval + mask).cdiv(mask + 1))
         v2[0] = complex(1, 0)
         for i in range(1, v2.size()):
             v2[i] = sincos_2pibyn.calc(i*(mask+1), n, ang)
@@ -174,9 +174,9 @@ def _largest_prime_factor(n: int):
 
     x = 3
     while x * x <= n:
-        while n % x == 0:
+        while n.cmod(x) == 0:
             res = x
-            n //= x
+            n = n.cdiv(x)
         x += 2
 
     if n > 1:
@@ -194,9 +194,9 @@ def _cost_guess(n: int):
 
     x = 3
     while x * x <= n:
-        while n % x == 0:
+        while n.cmod(x) == 0:
             result += float(x) if x <= 5 else lfp*float(x)
-            n //= x
+            n = n.cdiv(x)
         x += 2
 
     if n > 1:
@@ -273,8 +273,8 @@ def _prev_good_size_cmplx(n: int):
                 while True:
                     if x * 3 <= n:
                         x *= 3
-                    elif x % 2 == 0:
-                        x //= 2
+                    elif x.cmod(2) == 0:
+                        x = x.cdiv(2)
                     else:
                         break
 
@@ -299,8 +299,8 @@ def _prev_good_size_real(n: int):
         while True:
             if x * 3 <= n:
                 x *= 3
-            elif x % 2 == 0:
-                x //= 2
+            elif x.cmod(2) == 0:
+                x = x.cdiv(2)
             else:
                 break
 
@@ -866,7 +866,7 @@ class cfftp:
 
     def passg(ido: int, ip: int, l1: int, cc: Ptr[T], ch: Ptr[T], wa: Ptr[T], csarr: Ptr[T], fwd: bool):
         cdim = ip
-        ipph = (ip + 1) // 2
+        ipph = (ip + 1).cdiv(2)
         idl1 = ido * l1
 
         @inline
@@ -992,7 +992,7 @@ class cfftp:
         for k1 in range(len(fact)):
             ip = fact[k1].fct
             l2 = ip*l1
-            ido = length // l2
+            ido = length.cdiv(l2)
 
             if ip == 4:
                 type(self).pass4(ido, l1, p1, p2, fact[k1].tw, fwd)
@@ -1053,9 +1053,9 @@ class cfftp:
 
         divisor = 3
         while divisor * divisor <= n:
-            while n % divisor == 0:
+            while n.cmod(divisor) == 0:
                 self.add_factor(divisor)
-                n //= divisor
+                n = n.cdiv(divisor)
             divisor += 2
 
         if n > 1:
@@ -1066,7 +1066,7 @@ class cfftp:
         l1 = 1
         for k in range(len(self.fact)):
             ip = self.fact[k].fct
-            ido = self.length // (l1*ip)
+            ido = self.length.cdiv(l1*ip)
             twsize += (ip-1)*(ido-1)
             if ip > 11:
                 twsize += ip
@@ -1081,7 +1081,7 @@ class cfftp:
 
         for k in range(len(self.fact)):
             ip = fact[k].fct
-            ido = self.length // (l1*ip)
+            ido = self.length.cdiv(l1*ip)
             fact[k] = fact[k].with_tw(self.mem.data() + memofs)
             memofs += (ip-1)*(ido-1)
 
@@ -1295,7 +1295,7 @@ class rfftp:
 
     def radfg(ido: int, ip: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0], csarr: Ptr[T0]):
         cdim = ip
-        ipph = (ip + 1) // 2
+        ipph = (ip + 1).cdiv(2)
         idl1 = ido * l1
 
         @inline
@@ -1632,7 +1632,7 @@ class rfftp:
 
     def radbg(ido: int, ip: int, l1: int, cc: Ptr[T0], ch: Ptr[T0], wa: Ptr[T0], csarr: Ptr[T0]):
         cdim = ip
-        ipph = (ip + 1) // 2
+        ipph = (ip + 1).cdiv(2)
         idl1 = ido * l1
 
         @inline
@@ -1813,8 +1813,8 @@ class rfftp:
             for k1 in range(nf):
                 k = nf-k1-1
                 ip = fact[k].fct
-                ido = length // l1
-                l1 //= ip
+                ido = length.cdiv(l1)
+                l1 = l1.cdiv(ip)
                 if ip == 4:
                     type(self).radf4(ido, l1, p1, p2, fact[k].tw)
                 elif ip == 2:
@@ -1831,7 +1831,7 @@ class rfftp:
             l1 = 1
             for k in range(nf):
                 ip = fact[k].fct
-                ido = length // (ip * l1)
+                ido = length.cdiv(ip * l1)
                 if ip == 4:
                     type(self).radb4(ido, l1, p1, p2, fact[k].tw)
                 elif ip == 2:
@@ -1852,11 +1852,11 @@ class rfftp:
         n = self.length
         fact = self.fact
 
-        while n % 4 == 0:
+        while n.cmod(4) == 0:
             self.add_factor(4)
             n >>= 2
 
-        if n % 2 == 0:
+        if n.cmod(2) == 0:
             n >>= 1
             self.add_factor(2)
             fct_front = fact[0].fct
@@ -1866,9 +1866,9 @@ class rfftp:
 
         divisor = 3
         while divisor * divisor <= n:
-            while n % divisor == 0:
+            while n.cmod(divisor) == 0:
                 self.add_factor(divisor)
-                n //= divisor
+                n = n.cdiv(divisor)
             divisor += 2
 
         if n > 1:
@@ -1881,7 +1881,7 @@ class rfftp:
         l1 = 1
         for k in range(len(fact)):
             ip = fact[k].fct
-            ido = length // (l1*ip)
+            ido = length.cdiv(l1*ip)
             twsz += (ip-1)*(ido-1)
             if ip > 5:
                 twsz += 2*ip
@@ -1897,7 +1897,7 @@ class rfftp:
 
         for k in range(len(fact)):
             ip = fact[k].fct
-            ido = length // (l1*ip)
+            ido = length.cdiv(l1*ip)
 
             if k < len(fact) - 1:
                 fact[k] = fact[k].with_tw(p)
@@ -1905,7 +1905,7 @@ class rfftp:
 
                 for j in range(1, ip):
                     i = 1
-                    while i <= (ido-1)//2:
+                    while i <= (ido-1).cdiv(2):
                         fact[k].tw[(j-1)*(ido-1)+2*i-2] = twid[j*l1*i].real
                         fact[k].tw[(j-1)*(ido-1)+2*i-1] = twid[j*l1*i].imag
                         i += 1
@@ -1918,10 +1918,10 @@ class rfftp:
                 i = 2
                 ic = 2*ip-2
                 while i <= ic:
-                    fact[k].tws[i  ] = twid[i//2*(length//ip)].real
-                    fact[k].tws[i+1] = twid[i//2*(length//ip)].imag
-                    fact[k].tws[ic]   = twid[i//2*(length//ip)].real
-                    fact[k].tws[ic+1] = -twid[i//2*(length//ip)].imag
+                    fact[k].tws[i  ] = twid[i.cdiv(2)*(length.cdiv(ip))].real
+                    fact[k].tws[i+1] = twid[i.cdiv(2)*(length.cdiv(ip))].imag
+                    fact[k].tws[ic]   = twid[i.cdiv(2)*(length.cdiv(ip))].real
+                    fact[k].tws[ic+1] = -twid[i.cdiv(2)*(length.cdiv(ip))].imag
                     i += 2
                     ic -= 2
 
@@ -1971,12 +1971,12 @@ class fftblue:
         plan.exec(akf.data(), cast(1, T0), True)
 
         akf[0] = _special_mul(akf[0], bkf[0], not fwd)
-        for m in range(1, (n2 + 1) // 2):
+        for m in range(1, (n2 + 1).cdiv(2)):
             akf[m] = _special_mul(akf[m], bkf[m], not fwd)
             akf[n2-m] = _special_mul(akf[n2-m], bkf[m], not fwd)
 
         if n2 & 1 == 0:
-            akf[n2//2] = _special_mul(akf[n2//2], bkf[n2//2], not fwd)
+            akf[n2.cdiv(2)] = _special_mul(akf[n2.cdiv(2)], bkf[n2.cdiv(2)], not fwd)
 
         plan.exec(akf.data(), cast(1, T0), False)
 
@@ -1991,7 +1991,7 @@ class fftblue:
         self.n2 = _good_size_cmplx(n*2-1)
         n2 = self.n2
         self.plan = cfftp[T,T0](n2)
-        self.mem = arr[T](n+n2//2+1)
+        self.mem = arr[T](n+n2.cdiv(2)+1)
         self.bk = self.mem.data()
         self.bkf = self.mem.data() + n
 
@@ -2011,7 +2011,7 @@ class fftblue:
             bk[m] = tmp[coeff]
 
         tbkf = arr[T](n2)
-        xn2 = cast(1, T0) / cast(n2, T0)
+        xn2 = cast(1, T0).cdiv(cast(n2, T0))
         tbkf[0] = bk[0]*xn2
 
         for m in range(1, n):
@@ -2026,7 +2026,7 @@ class fftblue:
 
         plan.exec(tbkf.data(), cast(1, T0), True)
 
-        for i in range(n2//2 + 1):
+        for i in range(n2.cdiv(2) + 1):
             bkf[i] = tbkf[i]
 
         tbkf.dealloc()
@@ -2049,7 +2049,7 @@ class fftblue:
             tmp[0] = T(c[0], c[0] * cast(0, T0))
             str.memcpy((tmp.data() + 1).as_byte(), (c + 1).as_byte(), (n-1) * sizeof(T0))
             if n & 1 == 0:
-                tmp[n//2] = T(tmp[n//2].real, cast(0, T0) * c[0])
+                tmp[n.cdiv(2)] = T(tmp[n.cdiv(2)].real, cast(0, T0) * c[0])
             m = 1
             while 2*m < n:
                 tmp[n-m] = T(tmp[m].real, -tmp[m].imag)
@@ -2167,9 +2167,9 @@ def _fft(v: Ptr[T], n: int, is_forward: bool, norm: Optional[str], T: type):
     if norm is None or norm == "backward":
         fct = cast(1, real_dtype)
     elif norm == "ortho":
-        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+        fct = cast(1, real_dtype).cdiv(sqrt(cast(n, real_dtype)))
     elif norm == "forward":
-        fct = cast(1, real_dtype) / cast(n, real_dtype)
+        fct = cast(1, real_dtype).cdiv(cast(n, real_dtype))
     else:
         _bad_norm(norm)
 
@@ -2192,9 +2192,9 @@ def rfft(v: Ptr[T0], n: int, is_forward: bool, norm: Optional[str], o: Ptr[T], T
     if norm is None or norm == "backward":
         fct = cast(1, real_dtype)
     elif norm == "ortho":
-        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+        fct = cast(1, real_dtype).cdiv(sqrt(cast(n, real_dtype)))
     elif norm == "forward":
-        fct = cast(1, real_dtype) / cast(n, real_dtype)
+        fct = cast(1, real_dtype).cdiv(cast(n, real_dtype))
     else:
         _bad_norm(norm)
 
@@ -2230,9 +2230,9 @@ def irfft(v: Ptr[T], n: int, norm: Optional[str], o: Ptr[T0], T: type, T0: type)
     if norm is None or norm == "backward":
         fct = cast(1, real_dtype)
     elif norm == "ortho":
-        fct = cast(1, real_dtype) / sqrt(cast(n, real_dtype))
+        fct = cast(1, real_dtype).cdiv(sqrt(cast(n, real_dtype)))
     elif norm == "forward":
-        fct = cast(1, real_dtype) / cast(n, real_dtype)
+        fct = cast(1, real_dtype).cdiv(cast(n, real_dtype))
     else:
         _bad_norm(norm)
 

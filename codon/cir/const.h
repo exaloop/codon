@@ -12,7 +12,7 @@ namespace ir {
 class Const : public AcceptorExtend<Const, Value> {
 private:
   /// the type
-  types::Type *type;
+  Type *type;
 
 public:
   static const char NodeId;
@@ -20,14 +20,14 @@ public:
   /// Constructs a constant.
   /// @param type the type
   /// @param name the name
-  explicit Const(types::Type *type, std::string name = "")
+  explicit Const(Type *type, std::string name = "")
       : AcceptorExtend(std::move(name)), type(type) {}
 
 private:
-  types::Type *doGetType() const override { return type; }
+  Type *doGetType() const override { return type; }
 
-  std::vector<types::Type *> doGetUsedTypes() const override { return {type}; }
-  int doReplaceUsedType(const std::string &name, types::Type *newType) override;
+  std::vector<Type *> doGetUsedTypes() const override { return {type}; }
+  int doReplaceUsedType(const std::string &name, Type *newType) override;
 };
 
 template <typename ValueType>
@@ -42,7 +42,7 @@ public:
   using AcceptorExtend<TemplatedConst<ValueType>, Const>::getSrcInfo;
   using AcceptorExtend<TemplatedConst<ValueType>, Const>::getType;
 
-  TemplatedConst(ValueType v, types::Type *type, std::string name = "")
+  TemplatedConst(ValueType v, Type *type, std::string name = "")
       : AcceptorExtend<TemplatedConst<ValueType>, Const>(type, std::move(name)),
         val(v) {}
 
@@ -69,7 +69,7 @@ private:
 public:
   static const char NodeId;
 
-  TemplatedConst(std::string v, types::Type *type, std::string name = "")
+  TemplatedConst(std::string v, Type *type, std::string name = "")
       : AcceptorExtend(type, std::move(name)), val(std::move(v)) {}
 
   /// @return the internal value.

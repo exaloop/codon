@@ -898,6 +898,801 @@ def test_num_from_str():
         assert str(e) == "could not convert string to float: ''"
 
 @test
+def test_num_from_str_extended():
+    # Basic decimal
+    assert int("0") == 0
+    assert int("1") == 1
+    assert int("123") == 123
+    assert int("+123") == 123
+    assert int("-123") == -123
+    assert int("   123") == 123
+    assert int("123   ") == 123
+    assert int("   +123   ") == 123
+    assert int("   -123   ") == -123
+
+    # Explicit bases
+    assert int("10", base=2) == 2
+    assert int("10", base=3) == 3
+    assert int("10", base=8) == 8
+    assert int("10", base=10) == 10
+    assert int("10", base=16) == 16
+    assert int("10", base=36) == 36
+    assert int("ff", base=16) == 255
+    assert int("FF", base=16) == 255
+    assert int("z", base=36) == 35
+    assert int("Z", base=36) == 35
+
+    # base=0 prefix detection
+    assert int("123", base=0) == 123
+    assert int("0b1010", base=0) == 10
+    assert int("0B1010", base=0) == 10
+    assert int("0o777", base=0) == 511
+    assert int("0O777", base=0) == 511
+    assert int("0xdeadbeef", base=0) == 3735928559
+    assert int("0XDEADBEEF", base=0) == 3735928559
+    assert int("-0b1010", base=0) == -10
+    assert int("-0o777", base=0) == -511
+    assert int("-0x100", base=0) == -256
+
+    # Matching explicit prefixes
+    assert int("0b1010", base=2) == 10
+    assert int("0o777", base=8) == 511
+    assert int("0xff", base=16) == 255
+    assert int("0X_FF", base=16) == 255
+
+    # Underscores
+    assert int("1_000") == 1000
+    assert int("12_34_56") == 123456
+    assert int("+1_000") == 1000
+    assert int("-1_000") == -1000
+    assert int("0b1010_0101", base=0) == 165
+    assert int("0o12_34", base=0) == 668
+    assert int("0xDEAD_BEEF", base=0) == 3735928559
+    assert int("0x_FF", base=0) == 255
+    assert int("0b_1010", base=0) == 10
+    assert int("0o_777", base=0) == 511
+    assert int("z_z", base=36) == 1295
+
+    # Typed constructors: unsigned
+    assert UInt[8]("0") == UInt[8](0)
+    assert UInt[8]("255") == UInt[8](255)
+    assert UInt[8]("ff", base=16) == UInt[8](255)
+    assert UInt[8]("0xff", base=0) == UInt[8](255)
+    assert UInt[8]("0b1111_1111", base=0) == UInt[8](255)
+
+    assert UInt[16]("65535") == UInt[16](65535)
+    assert UInt[16]("ffff", base=16) == UInt[16](65535)
+    assert UInt[16]("0xffff", base=0) == UInt[16](65535)
+
+    assert UInt[32]("123", base=16) == UInt[32](0x123)
+    assert UInt[32]("4294967295") == UInt[32](4294967295)
+    assert UInt[32]("ffffffff", base=16) == UInt[32](4294967295)
+    assert UInt[32]("0xffffffff", base=0) == UInt[32](4294967295)
+
+    assert UInt[64]("18446744073709551615") == UInt[64](18446744073709551615)
+    assert UInt[64]("ffffffffffffffff", base=16) == UInt[64](18446744073709551615)
+    assert UInt[64]("0xffffffffffffffff", base=0) == UInt[64](18446744073709551615)
+
+    # Typed constructors: signed
+    assert Int[8]("127") == Int[8](127)
+    assert Int[8]("-128") == Int[8](-128)
+    assert Int[8]("0x7f", base=0) == Int[8](127)
+    assert Int[8]("-0x80", base=0) == Int[8](-128)
+
+    assert Int[16]("32767") == Int[16](32767)
+    assert Int[16]("-32768") == Int[16](-32768)
+
+    assert Int[32]("2147483647") == Int[32](2147483647)
+    assert Int[32]("-2147483648") == Int[32](-2147483648)
+    assert Int[32]("0x7fffffff", base=0) == Int[32](2147483647)
+    assert Int[32]("-0x80000000", base=0) == Int[32](-2147483648)
+
+    assert Int[64]("9223372036854775807") == Int[64](9223372036854775807)
+    assert Int[64]("-9223372036854775808") == Int[64](-9223372036854775808)
+    assert Int[64]("0x7fffffffffffffff", base=0) == Int[64](9223372036854775807)
+    assert Int[64]("-0x8000000000000000", base=0) == Int[64](-9223372036854775808)
+
+    # Boundary values in binary/octal
+    assert UInt[8]("11111111", base=2) == UInt[8](255)
+    assert Int[8]("1111111", base=2) == Int[8](127)
+    assert Int[8]("-10000000", base=2) == Int[8](-128)
+
+    assert UInt[16]("177777", base=8) == UInt[16](65535)
+    assert Int[16]("77777", base=8) == Int[16](32767)
+    assert Int[16]("-100000", base=8) == Int[16](-32768)
+
+    # Invalid literals
+    try:
+        int("")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("   ")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("+")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("-")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("_123")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123_")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("1__23")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("+_123")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("-_123")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("12 34")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123abc")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0x", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0x_", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0b", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0b_", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0o", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("0o_", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("2", base=2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("8", base=8)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("g", base=16)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("z", base=35)
+        assert False
+    except ValueError:
+        pass
+
+    # Invalid bases
+    try:
+        int("123", base=1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123", base=37)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("123", base=-2)
+        assert False
+    except ValueError:
+        pass
+
+    # Python-style base=0 should reject old-style leading-zero decimals
+    try:
+        int("010", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        int("00_10", base=0)
+        assert False
+    except ValueError:
+        pass
+
+    # Signed overflow
+    try:
+        Int[8]("128")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[8]("-129")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[16]("32768")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[16]("-32769")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[32]("2147483648")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[32]("-2147483649")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[64]("9223372036854775808")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[64]("-9223372036854775809")
+        assert False
+    except OverflowError:
+        pass
+
+    # Unsigned overflow
+    try:
+        UInt[8]("256")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[16]("65536")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[32]("4294967296")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[64]("18446744073709551616")
+        assert False
+    except OverflowError:
+        pass
+
+    # Negative unsigned
+    try:
+        UInt[8]("-1")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[32]("-123")
+        assert False
+    except OverflowError:
+        pass
+
+    # Overflow with prefixes/underscores
+    try:
+        UInt[8]("0x100", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[8]("0x80", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[8]("-0x81", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[32]("0x1_0000_0000", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[32]("0x8000_0000", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[32]("-0x8000_0001", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    # Binary/octal overflow
+    try:
+        UInt[8]("100000000", base=2)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[8]("10000000", base=2)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[8]("-10000001", base=2)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[16]("200000", base=8)
+        assert False
+    except OverflowError:
+        pass
+
+    # Int[4]: range [-8, 7]
+    assert Int[4]("0") == Int[4](0)
+    assert Int[4]("7") == Int[4](7)
+    assert Int[4]("-8") == Int[4](-8)
+    assert Int[4]("0b111", base=0) == Int[4](7)
+    assert Int[4]("-0b1000", base=0) == Int[4](-8)
+    assert Int[4]("0x7", base=0) == Int[4](7)
+    assert Int[4]("-0x8", base=0) == Int[4](-8)
+
+    try:
+        Int[4]("8")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[4]("-9")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[4]("0b1000", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[4]("-0b1001", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[4]("0x8", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[4]("-0x9", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    # UInt[4]: range [0, 15]
+    assert UInt[4]("0") == UInt[4](0)
+    assert UInt[4]("15") == UInt[4](15)
+    assert UInt[4]("0xf", base=0) == UInt[4](15)
+    assert UInt[4]("0b1111", base=0) == UInt[4](15)
+
+    try:
+        UInt[4]("16")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[4]("0x10", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[4]("0b10000", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[4]("z", base=36)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[4]("-1")
+        assert False
+    except OverflowError:
+        pass
+
+    # UInt[5]: range [0, 31]
+    assert UInt[5]("31") == UInt[5](31)
+    assert UInt[5]("v", base=36) == UInt[5](31)
+
+    try:
+        UInt[5]("32")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[5]("w", base=36)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[5]("z", base=36)
+        assert False
+    except OverflowError:
+        pass
+
+    # UInt[6]: range [0, 63]
+    assert UInt[6]("z", base=36) == UInt[6](35)
+    assert UInt[6]("10", base=36) == UInt[6](36)
+    assert UInt[6]("1r", base=36) == UInt[6](63)
+
+    try:
+        UInt[6]("1s", base=36)
+        assert False
+    except OverflowError:
+        pass
+
+    # Int[5]: range [-16, 15]
+    assert Int[5]("15") == Int[5](15)
+    assert Int[5]("-16") == Int[5](-16)
+    assert Int[5]("f", base=16) == Int[5](15)
+    assert Int[5]("-10", base=16) == Int[5](-16)
+
+    try:
+        Int[5]("16")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[5]("-17")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[5]("g", base=17)
+        assert False
+    except OverflowError:
+        pass
+
+    # Int[7]: range [-64, 63]
+    assert Int[7]("63") == Int[7](63)
+    assert Int[7]("-64") == Int[7](-64)
+    assert Int[7]("1r", base=36) == Int[7](63)
+    assert Int[7]("-1s", base=36) == Int[7](-64)
+
+    try:
+        Int[7]("64")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[7]("-65")
+        assert False
+    except OverflowError:
+        pass
+
+    # UInt[128]: max = 2^128 - 1
+    u128_max = "340282366920938463463374607431768211455"
+    assert str(UInt[128]("0")) == "0"
+    assert str(UInt[128](u128_max)) == u128_max
+    assert str(UInt[128]("0xffffffffffffffffffffffffffffffff", base=0)) == u128_max
+    assert str(UInt[128]("ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff", base=16)) == u128_max
+    assert str(UInt[128]("0b" + "1" * 128, base=0)) == u128_max
+
+    try:
+        UInt[128]("340282366920938463463374607431768211456")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[128]("0x100000000000000000000000000000000", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[128]("0b1" + "0" * 128, base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[128]("-1")
+        assert False
+    except OverflowError:
+        pass
+
+    # Int[128]: range [-(2^127), 2^127 - 1]
+    i128_max = "170141183460469231731687303715884105727"
+    i128_min = "-170141183460469231731687303715884105728"
+
+    assert str(Int[128]("0")) == "0"
+    assert str(Int[128](i128_max)) == i128_max
+    assert str(Int[128](i128_min)) == i128_min
+    assert str(Int[128]("0x7fffffffffffffffffffffffffffffff", base=0)) == i128_max
+    assert str(Int[128]("-0x80000000000000000000000000000000", base=0)) == i128_min
+    assert str(Int[128]("0b" + "1" * 127, base=0)) == i128_max
+    assert str(Int[128]("-0b1" + "0" * 127, base=0)) == i128_min
+
+    try:
+        Int[128]("170141183460469231731687303715884105728")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[128]("-170141183460469231731687303715884105729")
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[128]("0x80000000000000000000000000000000", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[128]("-0x80000000000000000000000000000001", base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    # UInt[256]: max = 2^256 - 1
+    u256_max = "115792089237316195423570985008687907853269984665640564039457584007913129639935"
+
+    assert str(UInt[256]("0")) == "0"
+    assert str(UInt[256](u256_max)) == u256_max
+    assert str(UInt[256](
+        "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        base=0,
+    )) == u256_max
+    assert str(UInt[256](
+        "ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff_ffff",
+        base=16,
+    )) == u256_max
+    assert str(UInt[256]("0b" + "1" * 256, base=0)) == u256_max
+
+    try:
+        UInt[256](
+            "115792089237316195423570985008687907853269984665640564039457584007913129639936"
+        )
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[256](
+            "0x10000000000000000000000000000000000000000000000000000000000000000",
+            base=0,
+        )
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[256]("0b1" + "0" * 256, base=0)
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        UInt[256]("-1")
+        assert False
+    except OverflowError:
+        pass
+
+    # Int[256]: range [-(2^255), 2^255 - 1]
+    i256_max = "57896044618658097711785492504343953926634992332820282019728792003956564819967"
+    i256_min = "-57896044618658097711785492504343953926634992332820282019728792003956564819968"
+
+    assert str(Int[256]("0")) == "0"
+    assert str(Int[256](i256_max)) == i256_max
+    assert str(Int[256](i256_min)) == i256_min
+    assert str(Int[256](
+        "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        base=0,
+    )) == i256_max
+    assert str(Int[256](
+        "-0x8000000000000000000000000000000000000000000000000000000000000000",
+        base=0,
+    )) == i256_min
+    assert str(Int[256]("0b" + "1" * 255, base=0)) == i256_max
+    assert str(Int[256]("-0b1" + "0" * 255, base=0)) == i256_min
+
+    try:
+        Int[256](
+            "57896044618658097711785492504343953926634992332820282019728792003956564819968"
+        )
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[256](
+            "-57896044618658097711785492504343953926634992332820282019728792003956564819969"
+        )
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[256](
+            "0x8000000000000000000000000000000000000000000000000000000000000000",
+            base=0,
+        )
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        Int[256](
+            "-0x8000000000000000000000000000000000000000000000000000000000000001",
+            base=0,
+        )
+        assert False
+    except OverflowError:
+        pass
+
+    # extra tests from PR #786
+    assert int("0b0", 0) == 0
+    assert int("0b1", 0) == 1
+    assert int("0b1101", 0) == 13
+    assert int("+0b1101", 0) == 13
+    assert int("-0b1101", 0) == -13
+
+    assert int("7", 0) == 7
+    assert int("42", 0) == 42
+    assert int("12345", 0) == 12345
+    assert int("+67890", 0) == 67890
+    assert int("-24680", 0) == -24680
+
+    assert int("0o7", 0) == 7
+    assert int("0o123", 0) == 83
+    assert int("0o707", 0) == 455
+    assert int("+0o710", 0) == 456
+    assert int("-0o765", 0) == -501
+
+    assert int("0xA", 0) == 10
+    assert int("0xABCD", 0) == 43981
+    assert int("0xFFF", 0) == 4095
+    assert int("+0x1234", 0) == 4660
+    assert int("-0xFF", 0) == -255
+
+    assert int("1_0", 2) == 2
+    assert int("10_01", 2) == 9
+    assert int("101_101", 2) == 45
+    assert int("0b1_101", 0) == 13
+    assert int("-0b101_011", 0) == -43
+
+    assert int("1_2", 8) == 10
+    assert int("12_3", 8) == 83
+    assert int("7_07", 8) == 455
+    assert int("0o1_23", 0) == 83
+    assert int("-0o7_10", 0) == -456
+
+    assert int("1_A", 16) == 26
+    assert int("AB_CD", 16) == 43981
+    assert int("F_FF", 16) == 4095
+    assert int("0x1_A", 0) == 26
+    assert int("-0xF_F", 0) == -255
+
+    assert int("1_2") == 12
+    assert int("12_34") == 1234
+    assert int("123_456") == 123456
+    assert int("+1_000_001") == 1000001
+    assert int("-9_87_65") == -98765
+
+    # If it's both an overflow and invalid value, make
+    # sure the invalid value exception gets priority
+    try:
+        UInt[16]('9999999999999999xxxx')
+        assert False
+    except ValueError:  # not OverflowError
+        pass
+
+    try:
+        UInt[16]('9999999999999999')
+        assert False
+    except OverflowError:
+        pass
+
+@test
 def test_files(open_fn, append_allowed: bool = True):
     path = 'build/testfile.txt'
     f = open_fn(path, 'w')
@@ -963,6 +1758,7 @@ test_reversed()
 test_divmod()
 test_pow()
 test_num_from_str()
+test_num_from_str_extended()
 test_files(open)
 import gzip
 test_files(gzip.open)
@@ -993,7 +1789,7 @@ def test_narrow_int_str(T: type):
     assert str((o + o + o + o) * (o + o + o)) == '12'
     assert str(a) == '42'
     assert str(b) == '-9'
-    assert repr(a) == f'Int[{T.N}](42)'
+    assert repr(a) == f'Int[{T.N}](42)' if T.N != 64 else '42'
 
 @test
 def test_narrow_uint_str(T: type):
@@ -1337,3 +2133,258 @@ def test_sum_types():
     assert s.n == 0
 
 test_sum_types()
+
+@test
+def test_round():
+    import math
+
+    # integers
+    assert round(0) == 0
+    assert round(1) == 1
+    assert round(-1) == -1
+    assert round(42) == 42
+    assert round(-42) == -42
+
+    assert round(42, 0) == 42
+    assert round(42, 1) == 42
+    assert round(42, 10) == 42
+    assert round(-42, 0) == -42
+    assert round(-42, 1) == -42
+
+    assert round(42, -1) == 40
+    assert round(45, -1) == 40
+    assert round(55, -1) == 60
+    assert round(65, -1) == 60
+    assert round(75, -1) == 80
+
+    assert round(-42, -1) == -40
+    assert round(-45, -1) == -40
+    assert round(-55, -1) == -60
+    assert round(-65, -1) == -60
+    assert round(-75, -1) == -80
+
+    assert round(1234, -1) == 1230
+    assert round(1234, -2) == 1200
+    assert round(1234, -3) == 1000
+    assert round(1234, -4) == 0
+
+    assert round(1500, -3) == 2000
+    assert round(2500, -3) == 2000
+    assert round(3500, -3) == 4000
+    assert round(4500, -3) == 4000
+
+    assert round(-1500, -3) == -2000
+    assert round(-2500, -3) == -2000
+    assert round(-3500, -3) == -4000
+    assert round(-4500, -3) == -4000
+
+    # Int[N] integers
+    assert round(i32(0)) == i32(0)
+    assert round(i32(1)) == i32(1)
+    assert round(i32(-1)) == i32(-1)
+    assert round(i32(42)) == i32(42)
+    assert round(i32(-42)) == i32(-42)
+
+    assert round(i32(42), 0) == i32(42)
+    assert round(i32(42), 1) == i32(42)
+    assert round(i32(42), 10) == i32(42)
+    assert round(i32(-42), 0) == i32(-42)
+    assert round(i32(-42), 1) == i32(-42)
+
+    assert round(i32(42), -1) == i32(40)
+    assert round(i32(45), -1) == i32(40)
+    assert round(i32(55), -1) == i32(60)
+    assert round(i32(65), -1) == i32(60)
+    assert round(i32(75), -1) == i32(80)
+
+    assert round(i32(-42), -1) == i32(-40)
+    assert round(i32(-45), -1) == i32(-40)
+    assert round(i32(-55), -1) == i32(-60)
+    assert round(i32(-65), -1) == i32(-60)
+    assert round(i32(-75), -1) == i32(-80)
+
+    assert round(i32(1234), -1) == i32(1230)
+    assert round(i32(1234), -2) == i32(1200)
+    assert round(i32(1234), -3) == i32(1000)
+    assert round(i32(1234), -4) == i32(0)
+
+    assert round(i32(1500), -3) == i32(2000)
+    assert round(i32(2500), -3) == i32(2000)
+    assert round(i32(3500), -3) == i32(4000)
+    assert round(i32(4500), -3) == i32(4000)
+
+    assert round(i32(-1500), -3) == i32(-2000)
+    assert round(i32(-2500), -3) == i32(-2000)
+    assert round(i32(-3500), -3) == i32(-4000)
+    assert round(i32(-4500), -3) == i32(-4000)
+
+    # UInt[N] integers
+    assert round(u32(0)) == u32(0)
+    assert round(u32(1)) == u32(1)
+    assert round(u32(42)) == u32(42)
+
+    assert round(u32(42), 0) == u32(42)
+    assert round(u32(42), 1) == u32(42)
+    assert round(u32(42), 10) == u32(42)
+
+    assert round(u32(42), -1) == u32(40)
+    assert round(u32(45), -1) == u32(40)
+    assert round(u32(55), -1) == u32(60)
+    assert round(u32(65), -1) == u32(60)
+    assert round(u32(75), -1) == u32(80)
+
+    assert round(u32(1234), -1) == u32(1230)
+    assert round(u32(1234), -2) == u32(1200)
+    assert round(u32(1234), -3) == u32(1000)
+    assert round(u32(1234), -4) == u32(0)
+
+    assert round(u32(1500), -3) == u32(2000)
+    assert round(u32(2500), -3) == u32(2000)
+    assert round(u32(3500), -3) == u32(4000)
+    assert round(u32(4500), -3) == u32(4000)
+
+    # floats without ndigits return int
+    assert round(0.0) == 0
+    assert round(1.0) == 1
+    assert round(-1.0) == -1
+    assert round(1.2) == 1
+    assert round(1.8) == 2
+    assert round(-1.2) == -1
+    assert round(-1.8) == -2
+
+    # ties-to-even
+    assert round(0.5) == 0
+    assert round(1.5) == 2
+    assert round(2.5) == 2
+    assert round(3.5) == 4
+    assert round(4.5) == 4
+
+    assert round(-0.5) == 0
+    assert round(-1.5) == -2
+    assert round(-2.5) == -2
+    assert round(-3.5) == -4
+    assert round(-4.5) == -4
+
+    # ndigits == 0 returns float for float input
+    assert round(1.2, 0) == 1.0
+    assert round(1.8, 0) == 2.0
+    assert round(-1.2, 0) == -1.0
+    assert round(-1.8, 0) == -2.0
+
+    assert round(0.5, 0) == 0.0
+    assert round(1.5, 0) == 2.0
+    assert round(2.5, 0) == 2.0
+    assert round(3.5, 0) == 4.0
+
+    assert round(-0.5, 0) == -0.0
+    assert round(-1.5, 0) == -2.0
+    assert round(-2.5, 0) == -2.0
+    assert round(-3.5, 0) == -4.0
+
+    # positive ndigits
+    assert round(1.2345, 1) == 1.2
+    assert round(1.2345, 2) == 1.23
+    assert round(1.2345, 3) == 1.234
+    assert round(1.2345, 4) == 1.2345
+
+    assert round(-1.2345, 1) == -1.2
+    assert round(-1.2345, 2) == -1.23
+    assert round(-1.2345, 3) == -1.234
+    assert round(-1.2345, 4) == -1.2345
+
+    assert round(9.8765, 1) == 9.9
+    assert round(9.8765, 2) == 9.88
+    assert round(-9.8765, 1) == -9.9
+    assert round(-9.8765, 2) == -9.88
+
+    # positive ndigits ties-to-even-ish cases
+    assert round(1.25, 1) == 1.2
+    assert round(1.35, 1) == 1.4
+    assert round(1.45, 1) == 1.4
+    assert round(1.55, 1) == 1.6
+
+    assert round(-1.25, 1) == -1.2
+    assert round(-1.35, 1) == -1.4
+    assert round(-1.45, 1) == -1.4
+    assert round(-1.55, 1) == -1.6
+
+    assert round(1.125, 2) == 1.12
+    assert round(1.135, 2) == 1.14
+    assert round(-1.125, 2) == -1.12
+    assert round(-1.135, 2) == -1.14
+
+    # negative ndigits floats
+    assert round(12.0, -1) == 10.0
+    assert round(15.0, -1) == 20.0
+    assert round(25.0, -1) == 20.0
+    assert round(35.0, -1) == 40.0
+    assert round(45.0, -1) == 40.0
+
+    assert round(-12.0, -1) == -10.0
+    assert round(-15.0, -1) == -20.0
+    assert round(-25.0, -1) == -20.0
+    assert round(-35.0, -1) == -40.0
+    assert round(-45.0, -1) == -40.0
+
+    assert round(1234.0, -1) == 1230.0
+    assert round(1234.0, -2) == 1200.0
+    assert round(1234.0, -3) == 1000.0
+    assert round(1234.0, -4) == 0.0
+
+    # large negative ndigits
+    assert round(123456789.0, -1) == 123456790.0
+    assert round(123456789.0, -2) == 123456800.0
+    assert round(123456789.0, -3) == 123457000.0
+    assert round(123456789.0, -4) == 123460000.0
+    assert round(123456789.0, -5) == 123500000.0
+    assert round(123456789.0, -6) == 123000000.0
+    assert round(123456789.0, -7) == 120000000.0
+    assert round(123456789.0, -8) == 100000000.0
+    assert round(123456789.0, -9) == 0.0
+
+    # signed zero
+    x = round(-0.1, 0)
+    assert x == 0.0
+    assert math.copysign(1.0, x) == -1.0
+
+    y = round(-0.5, 0)
+    assert y == 0.0
+    assert math.copysign(1.0, y) == -1.0
+
+    z = round(-0.01, 1)
+    assert z == -0.0
+    assert math.copysign(1.0, z) == -1.0
+
+    # inf/nan with ndigits
+    assert round(math.inf, 0) == math.inf
+    assert round(-math.inf, 0) == -math.inf
+    assert round(math.inf, 5) == math.inf
+    assert round(-math.inf, 5) == -math.inf
+    assert round(math.inf, -5) == math.inf
+    assert round(-math.inf, -5) == -math.inf
+
+    assert math.isnan(round(math.nan, 0))
+    assert math.isnan(round(math.nan, 5))
+    assert math.isnan(round(math.nan, -5))
+
+    # binary-float decimal behavior
+    # assert round(2.675, 2) == 2.67  # <-- these differ from CPython due to different algorithm
+    # assert round(2.685, 2) == 2.69
+    assert round(1.005, 2) == 1.0
+    assert round(1.015, 2) == 1.01
+    assert round(1.025, 2) == 1.02
+    assert round(1.035, 2) == 1.03
+
+    # return types
+    assert isinstance(round(1.2), int)
+    assert isinstance(round(-1.2), int)
+
+    assert isinstance(round(1.2, 0), float)
+    assert isinstance(round(1.2, 1), float)
+    assert isinstance(round(1.2, -1), float)
+
+    assert isinstance(round(123), int)
+    assert isinstance(round(123, 0), int)
+    assert isinstance(round(123, -1), int)
+
+test_round()

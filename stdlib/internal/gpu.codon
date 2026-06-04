@@ -27,7 +27,7 @@ cuMemFree = Function[[CUdeviceptr], CUresult](cobj())
 cuDeviceComputeCapability = Function[[Ptr[i32], Ptr[i32], CUdevice], CUresult](cobj())
 cuDeviceGet = Function[[Ptr[CUdevice], i32], CUresult](cobj())
 cuDeviceGetCount = Function[[Ptr[i32]], CUresult](cobj())
-cuDeviceGetName = Function[[Ptr[byte], i32, CUdevice], CUresult](cobj())
+cuDeviceGetName = Function[[Ptr[u8], i32, CUdevice], CUresult](cobj())
 cuGetErrorName = Function[[CUresult, Ptr[cobj]], CUresult](cobj())
 cuGetErrorString = Function[[CUresult, Ptr[cobj]], CUresult](cobj())
 cuInit = Function[[u32], CUresult](cobj())
@@ -59,7 +59,7 @@ class Device:
         return int(count)
 
     def __str__(self):
-        name = Ptr[byte](128)
+        name = Ptr[u8](128)
         cuda_check(cuDeviceGetName(name, 127i32, self._device))
         return str.from_ptr(name)
 
@@ -386,14 +386,14 @@ _catch()
 
 @tuple
 class AllocCache:
-    v: List[Ptr[byte]]
+    v: List[Ptr[u8]]
 
-    def add(self, p: Ptr[byte]):
+    def add(self, p: Ptr[u8]):
         self.v.append(p)
 
     def free(self):
         for p in self.v:
-            Memory[byte](p)._free()
+            Memory[u8](p)._free()
 
 
 def _tuple_from_gpu(args, gpu_args):
@@ -409,14 +409,14 @@ def nvptx_function(name: Literal[str]) -> CUfunction:
     result = CUresult()
 
     if name.isalnum():
-        name_clean = name.ptr
+        name_clean = name._ptr
     else:
         name_len = len(name)
-        name_clean = Ptr[byte](name_len + 1)
+        name_clean = Ptr[u8](name_len + 1)
         for i in range(name_len):
             c = name[i]
-            name_clean[i] = c.ptr[0] if c.isalnum() else byte(95)  # '_'
-        name_clean[name_len] = byte(0)
+            name_clean[i] = c._ptr[0] if c.isalnum() else u8(95)  # '_'
+        name_clean[name_len] = u8(0)
 
     for i in range(len(modules) - 1, -1, -1):
         m = modules[i]
@@ -561,7 +561,7 @@ class Pointer[T]:
 def raw(v):
     from numpy import ndarray
     if isinstance(v, List):
-        return Pointer(v.arr.ptr, len(v))
+        return Pointer(v._ptr, len(v))
     elif isinstance(v, ndarray):
         if not v._is_contig:
             raise ValueError("gpu.raw() array argument must be contiguous")
@@ -592,17 +592,6 @@ class NoneType:
         return other
 
 @extend
-class int:
-    def __to_gpu__(self, cache: AllocCache):
-        return self
-
-    def __from_gpu__(self, other: int):
-        pass
-
-    def __from_gpu_new__(other: int):
-        return other
-
-@extend
 class float:
     def __to_gpu__(self, cache: AllocCache):
         return self
@@ -625,6 +614,28 @@ class float32:
         return other
 
 @extend
+class float16:
+    def __to_gpu__(self, cache: AllocCache):
+        return self
+
+    def __from_gpu__(self, other: float16):
+        pass
+
+    def __from_gpu_new__(other: float16):
+        return other
+
+@extend
+class bfloat16:
+    def __to_gpu__(self, cache: AllocCache):
+        return self
+
+    def __from_gpu__(self, other: bfloat16):
+        pass
+
+    def __from_gpu_new__(other: bfloat16):
+        return other
+
+@extend
 class bool:
     def __to_gpu__(self, cache: AllocCache):
         return self
@@ -633,17 +644,6 @@ class bool:
         pass
 
     def __from_gpu_new__(other: bool):
-        return other
-
-@extend
-class byte:
-    def __to_gpu__(self, cache: AllocCache):
-        return self
-
-    def __from_gpu__(self, other: byte):
-        pass
-
-    def __from_gpu_new__(other: byte):
         return other
 
 @extend
@@ -671,16 +671,16 @@ class UInt:
 @extend
 class str:
     def __to_gpu__(self, cache: AllocCache):
-        n = self.len
-        return str(_ptr_to_gpu(self.ptr, n, cache), n)
+        n = self._len
+        return str(_ptr_to_gpu(self._ptr, n, cache), n)
 
     def __from_gpu__(self, other: str):
         pass
 
     def __from_gpu_new__(other: str):
-        n = other.len
-        p = Ptr[byte](n)
-        _ptr_from_gpu(p, other.ptr, n)
+        n = other._len
+        p = Ptr[u8](n)
+        _ptr_from_gpu(p, other._ptr, n)
         return str(p, n)
 
 @extend
@@ -688,30 +688,32 @@ class List:
     @inline
     def __to_gpu__(self, cache: AllocCache):
         mem = List[T].__new__()
-        n = self.len
-        gpu_ptr = _ptr_to_gpu(self.arr.ptr, n, cache)
-        mem.arr = Array[T](gpu_ptr, n)
-        mem.len = n
+        n = self._len
+        gpu_ptr = _ptr_to_gpu(self._ptr, n, cache)
+        mem._ptr = gpu_ptr
+        mem._len = n
+        mem._cap = n
         return _object_to_gpu(mem, cache)
 
     @inline
     def __from_gpu__(self, other: List[T]):
         mem = _object_from_gpu(other)
-        my_cap = self.arr.len
-        other_cap = mem.arr.len
+        my_cap = self._cap
+        other_cap = mem._cap
 
         if other_cap > my_cap:
             self._resize(other_cap)
 
-        _ptr_from_gpu(self.arr.ptr, mem.arr.ptr, mem.len)
-        self.len = mem.len
+        _ptr_from_gpu(self._ptr, mem._ptr, mem._len)
+        self._len = mem._len
 
     @inline
     def __from_gpu_new__(other: List[T]):
         mem = _object_from_gpu(other)
-        arr = Array[T](mem.arr.len)
-        _ptr_from_gpu(arr.ptr, mem.arr.ptr, arr.len)
-        mem.arr = arr
+        arr = Ptr[T](mem._len)
+        _ptr_from_gpu(arr, mem._ptr, mem._len)
+        mem._ptr = arr
+        mem._cap = mem._len
         return mem
 
 @extend
@@ -736,58 +738,113 @@ class DynamicTuple:
 @extend
 class Dict:
     def __to_gpu__(self, cache: AllocCache):
-        from internal.khash import __ac_fsize
         mem = Dict[K,V].__new__()
-        n = self._n_buckets
-        f = __ac_fsize(n) if n else 0
 
-        mem._n_buckets = n
-        mem._size = self._size
-        mem._n_occupied = self._n_occupied
-        mem._upper_bound = self._upper_bound
-        mem._flags = _ptr_to_gpu(self._flags, f, cache)
-        mem._keys = _ptr_to_gpu(self._keys, n, cache, lambda i: self._kh_exist(i))
-        mem._vals = _ptr_to_gpu(self._vals, n, cache, lambda i: self._kh_exist(i))
+        if __dict_unordered__:
+            from internal.khash import __ac_fsize
+            n = self._n_buckets
+            f = __ac_fsize(n) if n else 0
+
+            mem._n_buckets = n
+            mem._size = self._size
+            mem._n_occupied = self._n_occupied
+            mem._upper_bound = self._upper_bound
+            mem._flags = _ptr_to_gpu(self._flags, f, cache)
+            mem._keys = _ptr_to_gpu(self._keys, n, cache, lambda i: self._kh_exist(i))
+            mem._vals = _ptr_to_gpu(self._vals, n, cache, lambda i: self._kh_exist(i))
+        else:
+            mem._used = self._used
+            mem._usable = self._usable
+            mem._nentries = self._nentries
+            mem._log2_size = self._log2_size
+            mem._log2_index_bytes = self._log2_index_bytes
+            mem._indices = _ptr_to_gpu(self._indices,
+                                       mem._size * mem._index_bytes, cache)
+            mem._entries = _ptr_to_gpu(self._entries, mem._capacity, cache, self._is_active)
+            mem._active = _ptr_to_gpu(self._active, mem._active_bytes, cache)
 
         return _object_to_gpu(mem, cache)
 
     def __from_gpu__(self, other: Dict[K,V]):
-        from internal.khash import __ac_fsize
         mem = _object_from_gpu(other)
-        my_n = self._n_buckets
-        n = mem._n_buckets
-        f = __ac_fsize(n) if n else 0
 
-        if my_n != n:
-            self._flags = Ptr[u32](f)
-            self._keys = Ptr[K](n)
-            self._vals = Ptr[V](n)
+        if __dict_unordered__:
+            from internal.khash import __ac_fsize
+            my_n = self._n_buckets
+            n = mem._n_buckets
+            f = __ac_fsize(n) if n else 0
 
-        _ptr_from_gpu(self._flags, mem._flags, f)
-        _ptr_from_gpu(self._keys, mem._keys, n, lambda i: self._kh_exist(i))
-        _ptr_from_gpu(self._vals, mem._vals, n, lambda i: self._kh_exist(i))
+            if my_n != n:
+                self._flags = Ptr[u32](f)
+                self._keys = Ptr[K](n)
+                self._vals = Ptr[V](n)
 
-        self._n_buckets = n
-        self._size = mem._size
-        self._n_occupied = mem._n_occupied
-        self._upper_bound = mem._upper_bound
+            _ptr_from_gpu(self._flags, mem._flags, f)
+            _ptr_from_gpu(self._keys, mem._keys, n, lambda i: self._kh_exist(i))
+            _ptr_from_gpu(self._vals, mem._vals, n, lambda i: self._kh_exist(i))
+
+            self._n_buckets = n
+            self._size = mem._size
+            self._n_occupied = mem._n_occupied
+            self._upper_bound = mem._upper_bound
+        else:
+            my_n = self._capacity
+            n = mem._capacity
+            size = mem._size
+            indices_size = size * mem._index_bytes
+            active_bytes = mem._active_bytes
+            capacity = mem._capacity
+
+            if my_n != n:
+                self._indices = cobj(indices_size)
+                self._active = Ptr[u8](active_bytes)
+                self._entries = Ptr[DictEntry[K, V]](capacity)
+
+            self._used = mem._used
+            self._usable = mem._usable
+            self._nentries = mem._nentries
+            self._log2_size = mem._log2_size
+            self._log2_index_bytes = mem._log2_index_bytes
+
+            _ptr_from_gpu(self._indices, mem._indices, indices_size)
+            _ptr_from_gpu(self._active, mem._active, active_bytes)
+            _ptr_from_gpu(self._entries, mem._entries, capacity, self._is_active)
 
     def __from_gpu_new__(other: Dict[K,V]):
-        from internal.khash import __ac_fsize
         mem = _object_from_gpu(other)
 
-        n = mem._n_buckets
-        f = __ac_fsize(n) if n else 0
-        flags = Ptr[u32](f)
-        keys = Ptr[K](n)
-        vals = Ptr[V](n)
+        if __dict_unordered__:
+            from internal.khash import __ac_fsize
 
-        _ptr_from_gpu(flags, mem._flags, f)
-        mem._flags = flags
-        _ptr_from_gpu(keys, mem._keys, n, lambda i: mem._kh_exist(i))
-        mem._keys = keys
-        _ptr_from_gpu(vals, mem._vals, n, lambda i: mem._kh_exist(i))
-        mem._vals = vals
+            n = mem._n_buckets
+            f = __ac_fsize(n) if n else 0
+            flags = Ptr[u32](f)
+            keys = Ptr[K](n)
+            vals = Ptr[V](n)
+
+            _ptr_from_gpu(flags, mem._flags, f)
+            mem._flags = flags
+            _ptr_from_gpu(keys, mem._keys, n, lambda i: mem._kh_exist(i))
+            mem._keys = keys
+            _ptr_from_gpu(vals, mem._vals, n, lambda i: mem._kh_exist(i))
+            mem._vals = vals
+        else:
+            size = mem._size
+            indices_size = size * mem._index_bytes
+            active_bytes = mem._active_bytes
+            capacity = mem._capacity
+
+            indices = cobj(indices_size)
+            active = Ptr[u8](active_bytes)
+            entries = Ptr[DictEntry[K, V]](capacity)
+
+            _ptr_from_gpu(indices, mem._indices, indices_size)
+            mem._indices = indices
+            _ptr_from_gpu(active, mem._active, active_bytes)
+            mem._active = active
+            _ptr_from_gpu(entries, mem._entries, capacity, mem._is_active)
+            mem._entries = entries
+
         return mem
 
 @extend
@@ -957,7 +1014,7 @@ def _gpu_loop_outline_template(start, stop, args, instance: Literal[int]):
     grid = 1
     if n > MAX_BLOCK:
         block = MAX_BLOCK
-        grid = (n // MAX_BLOCK) + (0 if n % MAX_BLOCK == 0 else 1)
+        grid = n.cdiv(MAX_BLOCK) + (0 if n.cmod(MAX_BLOCK) == 0 else 1)
 
     _kernel_stub(start, n, args, grid=grid, block=block)
 

@@ -4,6 +4,7 @@
 #include <tuple>
 
 #include "codon/cir/attribute.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
@@ -383,6 +384,24 @@ void TypecheckVisitor::visit(ClassStmt *stmt) {
     seqassert(c, "not a class AST for {}", canonicalName);
     c->setDone();
     clsStmts.push_back(c);
+
+    if (canonicalName == "Int") {
+      // Auto-realize int64
+      auto rt = instantiateType(typ);
+      auto rn = "Int[64]";
+      auto val = std::make_shared<TypecheckItem>(rn, "", ctx->getModule(), rt);
+      val->type = instantiateTypeVar(rt.get());
+      ctx->addAlwaysVisible(val, true);
+      ctx->cache->typeCtx->add("int", val);
+
+      unify(extractClassGeneric(rt.get()), instantiateStatic(int64_t(64)));
+
+      auto realization = getClass(canonicalName)->realizations[rn] =
+          std::make_shared<Cache::Class::ClassRealization>();
+      realization->type = rt;
+      realization->id = ++ctx->cache->classRealizationCnt;
+      makeIRType(rt.get());
+    }
   }
 
   clsStmts.insert(clsStmts.end(), fnStmts.begin(), fnStmts.end());
@@ -434,7 +453,8 @@ std::vector<TypePtr> TypecheckVisitor::parseBaseClasses(
 
     // Mark parent classes as polymorphic as well.
     if (typeAst && !cachedCls->hasRTTI()) {
-      if (ctx->cache->isJit && cachedCls->jitCell != ctx->cache->jitCell)
+      if (ctx->cache->compiler->getOptions()->jit &&
+          cachedCls->jitCell != ctx->cache->jitCell)
         E(Error::CUSTOM, cls,
           "cannot inherit from a non-RTTI class defined in previous cell '{}' "
           "in JIT mode",
@@ -674,19 +694,19 @@ Stmt *TypecheckVisitor::codegenMagic(const std::string &op, Expr *typExpr,
     ret = I("int");
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "pickle") {
-    // def __pickle__(self: T, dest: Ptr[byte])
+    // def __pickle__(self: T, dest: Ptr[u8])
     fargs.emplace_back("self", clone(typExpr));
-    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("byte")));
+    fargs.emplace_back("dest", N<IndexExpr>(I("Ptr"), I("u8")));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"), I("dest"))));
   } else if (op == "unpickle" || op == "from_py") {
-    // def __unpickle__(src: Ptr[byte]) -> T
-    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("byte")));
+    // def __unpickle__(src: Ptr[u8]) -> T
+    fargs.emplace_back("src", N<IndexExpr>(I("Ptr"), I("u8")));
     ret = clone(typExpr);
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("src"), clone(typExpr))));
   } else if (op == "to_py") {
-    // def __to_py__(self: T) -> Ptr[byte]
+    // def __to_py__(self: T) -> Ptr[u8]
     fargs.emplace_back("self", clone(typExpr));
-    ret = N<IndexExpr>(I("Ptr"), I("byte"));
+    ret = N<IndexExpr>(I("Ptr"), I("u8"));
     stmts.emplace_back(N<ReturnStmt>(N<CallExpr>(NS(op), I("self"))));
   } else if (op == "to_gpu") {
     // def __to_gpu__(self: T, cache) -> T

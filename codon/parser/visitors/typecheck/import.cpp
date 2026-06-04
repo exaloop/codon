@@ -5,6 +5,7 @@
 #include <tuple>
 #include <vector>
 
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
@@ -36,7 +37,8 @@ void TypecheckVisitor::visit(ImportStmt *stmt) {
   auto path = combine2(components, "/");
   auto file = getImportFile(ctx->cache, path, ctx->getFilename());
   if (!file) {
-    if (stmt->getDots() == 0 && ctx->autoPython) {
+    if (stmt->getDots() == 0 &&
+        (ctx->autoPython || ctx->cache->compiler->getOptions()->autopy)) {
       auto newStr = FormatVisitor::apply(stmt->getFrom());
       if (stmt->getWhat())
         newStr += "." + FormatVisitor::apply(stmt->getWhat());

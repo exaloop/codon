@@ -194,7 +194,7 @@ class flatiter[A]:
         for i in range(start, stop, step):
             coord = self._index_to_coords(i)
             if hasattr(value, "__getitem__"):
-                base._ptr(coord)[0] = util.cast(value[off % len(value)], dtype)
+                base._ptr(coord)[0] = util.cast(value[off.cmod(len(value))], dtype)
             else:
                 base._ptr(coord)[0] = util.cast(value, dtype)
             off += 1
@@ -494,9 +494,9 @@ class ndarray[dtype, ndim: Literal[int]]:
                     s_known *= dim
 
             if i_unknown >= 0:
-                if s_known == 0 or s_original % s_known != 0:
+                if s_known == 0 or s_original.cmod(s_known) != 0:
                     raise_reshape_size_mismatch(newshape, self)
-                dimensions[i_unknown] = s_original // s_known
+                dimensions[i_unknown] = s_original.cdiv(s_known)
             else:
                 if s_original != s_known:
                     raise_reshape_size_mismatch(newshape, self)
@@ -1346,25 +1346,25 @@ class ndarray[dtype, ndim: Literal[int]]:
             elif self.shape[-1] != 1 and self.size != 0 and self.strides[-1] != self.itemsize:
                 raise ValueError("To change to a dtype of a different size, the last axis must be contiguous")
             elif my_size > dt_size:
-                if dt_size == 0 or my_size % dt_size != 0:
+                if dt_size == 0 or my_size.cmod(dt_size) != 0:
                     raise ValueError("When changing to a smaller dtype, its size must be a divisor of the size of original dtype")
-                newdim = my_size // dt_size
+                newdim = my_size.cdiv(dt_size)
                 new_shape = new_shape[:-1] + (new_shape[-1] * newdim,)
                 new_strides = new_strides[:-1] + (dt_size,)
             elif my_size < dt_size:
                 newdim = self.shape[-1] * my_size
-                if newdim % dt_size != 0:
+                if newdim.cmod(dt_size) != 0:
                     raise ValueError("When changing to a larger dtype, its size must be a "
                                      "divisor of the total size in bytes of the last axis "
                                      "of the array.")
-                new_shape = new_shape[:-1] + (newdim // dt_size,)
+                new_shape = new_shape[:-1] + (newdim.cdiv(dt_size),)
                 new_strides = new_strides[:-1] + (dt_size,)
 
         return ndarray(new_shape, new_strides, new_data)
 
     def byteswap(self, inplace: bool = False):
         def bswap(x: T, T: type):
-            if T is int or T is byte or isinstance(T, Int) or isinstance(T, UInt):
+            if isinstance(T, Int) or isinstance(T, UInt):
                 return util.bswap(x)
 
             if T is float:

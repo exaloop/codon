@@ -98,22 +98,14 @@ class bool:
         return _read(jar, bool)
 
 @extend
-class byte:
-    def __pickle__(self, jar: Jar):
-        _write(jar, self)
-
-    def __unpickle__(jar: Jar) -> byte:
-        return _read(jar, byte)
-
-@extend
 class str:
     def __pickle__(self, jar: Jar):
-        _write(jar, self.len)
-        _write_raw(jar, self.ptr, self.len)
+        _write(jar, self._len)
+        _write_raw(jar, self._ptr, self._len)
 
     def __unpickle__(jar: Jar) -> str:
         n = _read(jar, int)
-        p = Ptr[byte](n)
+        p = Ptr[u8](n)
         _read_raw(jar, p, n)
         return str(p, n)
 
@@ -123,16 +115,16 @@ class List:
         n = len(self)
         pickle(n, jar)
         if atomic(T):
-            _write_raw(jar, (self.arr.ptr).as_byte(), n * sizeof(T))
+            _write_raw(jar, (self._ptr).as_byte(), n * sizeof(T))
         else:
             for i in range(n):
-                pickle(self.arr[i], jar)
+                pickle(self._ptr[i], jar)
 
     def __unpickle__(jar: Jar) -> List[T]:
         n = unpickle(jar, int)
-        arr = Array[T](n)
+        arr = Ptr[T](n)
         if atomic(T):
-            _read_raw(jar, (arr.ptr).as_byte(), n * sizeof(T))
+            _read_raw(jar, arr.as_byte(), n * sizeof(T))
         else:
             for i in range(n):
                 arr[i] = unpickle(jar, T)
@@ -162,60 +154,18 @@ class DynamicTuple:
 @extend
 class Dict:
     def __pickle__(self, jar: Jar):
-        import internal.khash as khash
-
-        if atomic(K) and atomic(V):
-            pickle(self._n_buckets, jar)
-            pickle(self._size, jar)
-            pickle(self._n_occupied, jar)
-            pickle(self._upper_bound, jar)
-            fsize = khash.__ac_fsize(self._n_buckets) if self._n_buckets > 0 else 0
-            _write_raw(jar, self._flags.as_byte(), fsize * sizeof(u32))
-            _write_raw(jar, self._keys.as_byte(), self._n_buckets * sizeof(K))
-            _write_raw(jar, self._vals.as_byte(), self._n_buckets * sizeof(V))
-        else:
-            pickle(self._n_buckets, jar)
-            size = len(self)
-            pickle(size, jar)
-
-            for k, v in self.items():
-                pickle(k, jar)
-                pickle(v, jar)
+        pickle(len(self), jar)
+        for k, v in self.items():
+            pickle(k, jar)
+            pickle(v, jar)
 
     def __unpickle__(jar: Jar) -> Dict[K, V]:
-        import internal.khash as khash
-
-        d = {}
-        if atomic(K) and atomic(V):
-            n_buckets = unpickle(jar, int)
-            size = unpickle(jar, int)
-            n_occupied = unpickle(jar, int)
-            upper_bound = unpickle(jar, int)
-            fsize = khash.__ac_fsize(n_buckets) if n_buckets > 0 else 0
-            flags = Ptr[u32](fsize)
-            keys = Ptr[K](n_buckets)
-            vals = Ptr[V](n_buckets)
-            _read_raw(jar, flags.as_byte(), fsize * sizeof(u32))
-            _read_raw(jar, keys.as_byte(), n_buckets * sizeof(K))
-            _read_raw(jar, vals.as_byte(), n_buckets * sizeof(V))
-
-            d._n_buckets = n_buckets
-            d._size = size
-            d._n_occupied = n_occupied
-            d._upper_bound = upper_bound
-            d._flags = flags
-            d._keys = keys
-            d._vals = vals
-        else:
-            n_buckets = unpickle(jar, int)
-            size = unpickle(jar, int)
-            d.resize(n_buckets)
-            i = 0
-            while i < size:
-                k = unpickle(jar, K)
-                v = unpickle(jar, V)
-                d[k] = v
-                i += 1
+        n = unpickle(jar, int)
+        d = Dict[K, V](capacity=n)
+        for i in range(n):
+            k = unpickle(jar, K)
+            v = unpickle(jar, V)
+            d[k] = v
         return d
 
 @extend

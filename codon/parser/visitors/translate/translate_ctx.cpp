@@ -58,7 +58,7 @@ TranslateContext::add(TranslateItem::Kind kind, const std::string &name, void *t
   else if (kind == TranslateItem::Func)
     it->handle.func = static_cast<ir::Func *>(type);
   else
-    it->handle.type = static_cast<ir::types::Type *>(type);
+    it->handle.type = static_cast<ir::Type *>(type);
   add(name, it);
   return it;
 }

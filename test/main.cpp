@@ -262,11 +262,14 @@ public:
       bool pyNumerics = get<6>(GetParam());
       bool run = get<7>(GetParam());
 
-      auto compiler = std::make_unique<Compiler>(
-          argv0, debug, /*disabledPasses=*/std::vector<std::string>{}, /*isTest=*/true,
-          pyNumerics);
+      auto options = Options::getDefault(argv0);
+      options->test = true;
+      options->standalone = true;
+      options->debug = debug;
+      options->pynum = pyNumerics;
+
+      auto compiler = std::make_unique<Compiler>(*options);
       // make sure we abort() on runtime error
-      compiler->getLLVMVisitor()->setStandalone(true);
       llvm::handleAllErrors(code.empty()
                                 ? compiler->parseFile(file, testFlags)
                                 : compiler->parseCode(file, code, startLine, testFlags),
@@ -442,6 +445,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "core/helloworld.codon",
         "core/arithmetic.codon",
+        "core/numerics.codon",
         "core/parser.codon",
         "core/generics.codon",
         "core/generators.codon",
@@ -456,22 +460,6 @@ INSTANTIATE_TEST_SUITE_P(
         "core/pipeline.codon",
         "core/empty.codon",
         "core/vec_simd.codon"
-      ),
-      testing::Values(true, false),
-      testing::Values(""),
-      testing::Values(""),
-      testing::Values(0),
-      testing::Values(false),
-      testing::Values(false),
-      testing::Values(true)
-    ),
-    getTestNameFromParam);
-
-INSTANTIATE_TEST_SUITE_P(
-    NumericsTests, SeqTest,
-    testing::Combine(
-      testing::Values(
-        "core/numerics.codon"
       ),
       testing::Values(true, false),
       testing::Values(""),
@@ -508,6 +496,23 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(""),
       testing::Values(0),
       testing::Values(false),
+      testing::Values(true),
+      testing::Values(true)
+    ),
+    getTestNameFromParam);
+
+INSTANTIATE_TEST_SUITE_P(
+    CNumericsTests, SeqTest,
+    testing::Combine(
+      testing::Values(
+        "core/numerics.codon",
+        "stdlib/math_test.codon"
+      ),
+      testing::Values(true, false),
+      testing::Values(""),
+      testing::Values(""),
+      testing::Values(0),
+      testing::Values(false),
       testing::Values(false),
       testing::Values(true)
     ),
@@ -534,7 +539,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(true)
     ),
     getTestNameFromParam);
@@ -550,7 +555,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(false)  // do not run by default, just compile
     ),
     getTestNameFromParam);
@@ -589,7 +594,7 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(""),
         testing::Values(0),
         testing::Values(false),
-        testing::Values(false),
+        testing::Values(true),
         testing::Values(true)
     ),
     getTestNameFromParam);

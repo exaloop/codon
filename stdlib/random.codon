@@ -9,7 +9,7 @@ from time import time as _time
 N = 624
 M = 397
 LOG4 = _log(4.0)
-NV_MAGICCONST = 4 * _exp(-0.5) / _sqrt(2.0)
+NV_MAGICCONST = (4 * _exp(-0.5)).cdiv(_sqrt(2.0))
 SG_MAGICCONST = 1.0 + _log(4.5)
 TWOPI = 2.0 * _pi
 
@@ -75,7 +75,7 @@ class RandomGenerator:
     def genrand_res53(self) -> float:
         a = self.genrand_int32() >> u32(5)
         b = self.genrand_int32() >> u32(6)
-        return (int(a) * 67108864.0 + int(b)) * (1.0 / 9007199254740992.0)
+        return (int(a) * 67108864.0 + int(b)) * ((1.0).cdiv(9007199254740992.0))
 
     def random(self):
         return self.genrand_res53()
@@ -121,15 +121,16 @@ class RandomGenerator:
         self.init_array(Ptr[u32](__ptr__(init_key).as_byte()), 2 if init_key[1] else 1)
 
     def random_seed_time_pid(self):
+        KEY_LEN: Literal[int] = 5
         now = _C.seq_time() * 1000
-        key = __array__[u32](5)
+        key = __array__[u32](KEY_LEN)
         key[0] = u32(now & 0xFFFFFFFF)
         key[1] = u32(now >> 32)
         key[2] = u32(_C.seq_pid())
         now = _C.seq_time_monotonic()
         key[3] = u32(now & 0xFFFFFFFF)
         key[4] = u32(now >> 32)
-        self.init_array(key.ptr, len(key))
+        self.init_array(key, KEY_LEN)
 
     def seed(self, s: int):
         self.init_int(s)
@@ -213,9 +214,9 @@ class Random:
         # Non-unit step argument supplied.
         n = INF
         if step > 0:
-            n = float((width + step - 1) // step)
+            n = float((width + step - 1).cdiv(step))
         elif step < 0:
-            n = float((width + step + 1) // step)
+            n = float((width + step + 1).cdiv(step))
         else:
             raise ValueError("zero step for randrange()")
 
@@ -261,7 +262,7 @@ class Random:
         if high == low:
             return low
         u = self.random()
-        c = (mode - low) / (high - low)
+        c = (mode - low).cdiv(high - low)
         if u > c:
             u = 1.0 - u
             c = 1.0 - c
@@ -291,7 +292,7 @@ class Random:
                 if not 1e-7 < u1 < 0.9999999:
                     continue
                 u2 = 1.0 - self.random()
-                v = _log(u1 / (1.0 - u1)) / ainv
+                v = _log(u1.cdiv(1.0 - u1)).cdiv(ainv)
                 x = alpha * _exp(v)
                 z = u1 * u1 * u2
                 r = bbb + ccc * v - x
@@ -308,12 +309,12 @@ class Random:
             x = 0.0
             while 1:
                 u = self.random()
-                b = (_e + alpha) / _e
+                b = (_e + alpha).cdiv(_e)
                 p = b * u
                 if p <= 1.0:
-                    x = p ** (1.0 / alpha)
+                    x = p ** ((1.0).cdiv(alpha))
                 else:
-                    x = -_log((b - p) / alpha)
+                    x = -_log((b - p).cdiv(alpha))
                 u1 = self.random()
                 if p > 1.0:
                     if u1 <= x ** (alpha - 1.0):
@@ -329,7 +330,7 @@ class Random:
         if y == 0:
             return 0.0
         else:
-            return y / (y + self.gammavariate(beta, 1.0))
+            return y.cdiv(y + self.gammavariate(beta, 1.0))
 
     def expovariate(self, lambd: float) -> float:
         if lambd == 0.0:
@@ -337,7 +338,7 @@ class Random:
         # lambd: rate lambd = 1/mean
         # we use 1-random() instead of random() to preclude the
         # possibility of taking the log of zero.
-        return -_log(1.0 - self.random()) / lambd
+        return -_log(1.0 - self.random()).cdiv(lambd)
 
     def gauss(self, mu: float = 0.0, sigma: float = 1.0) -> float:
         z = self.gauss_next
@@ -351,19 +352,19 @@ class Random:
 
     def paretovariate(self, alpha: float) -> float:
         u = 1.0 - self.random()
-        return 1.0 / u ** (1.0 / alpha)
+        return (1.0).cdiv(u ** ((1.0).cdiv(alpha)))
 
     def weibullvariate(self, alpha: float, beta: float) -> float:
         u = 1.0 - self.random()
-        return alpha * (-_log(u)) ** (1.0 / beta)
+        return alpha * (-_log(u)) ** ((1.0).cdiv(beta))
 
     def normalvariate(self, mu: float = 0.0, sigma: float = 1.0) -> float:
         z = 0.0
         while 1:
             u1 = self.random()
             u2 = 1.0 - self.random()
-            z = NV_MAGICCONST * (u1 - 0.5) / u2
-            zz = z * z / 4.0
+            z = (NV_MAGICCONST * (u1 - 0.5)).cdiv(u2)
+            zz = (z * z).cdiv(4.0)
             if zz <= -_log(u2):
                 break
         return mu + z * sigma
@@ -373,26 +374,14 @@ class Random:
 
     def vonmisesvariate(self, mu: float, kappa: float) -> float:
         def _mod(a: float, b: float):
-            @pure
-            @llvm
-            def _truediv_float_float(self: float, other: float) -> float:
-                %0 = fdiv double %self, %other
-                ret double %0
-
-            @pure
-            @llvm
-            def _mod_float_float(self: float, other: float) -> float:
-                %0 = frem double %self, %other
-                ret double %0
-
-            mod = _mod_float_float(a, b)
-            div = _truediv_float_float(a - mod, b)
+            mod = a.cmod(b)
+            div = (a - mod).cdiv(b)
             if mod:
                 if (b < 0) != (mod < 0):
                     mod += b
                     div -= 1.0
             else:
-                mod = (0.0).copysign(b)
+                mod = (0.0)._copysign(b)
             return mod
 
         z = 0.0
@@ -401,20 +390,20 @@ class Random:
         if kappa <= 1e-6:
             return TWOPI * self.random()
 
-        s = 0.5 / kappa
+        s = (0.5).cdiv(kappa)
         r = s + _sqrt(1.0 + s * s)
 
         while 1:
             u1 = self.random()
             z = _cos(_pi * u1)
 
-            d = z / (r + z)
+            d = z.cdiv(r + z)
             u2 = self.random()
             if u2 < 1.0 - d * d or u2 <= (1.0 - d) * _exp(d):
                 break
 
-        q = 1.0 / r
-        f = (q + z) / (1.0 + q * z)
+        q = (1.0).cdiv(r)
+        f = (q + z).cdiv(1.0 + q * z)
         u3 = self.random()
         if u3 > 0.5:
             theta = _mod(mu + _acos(f), TWOPI)
@@ -527,7 +516,7 @@ def uniform(a, b):
     return _rnd.uniform(a, b)
 
 def triangular(low: float = 0.0, high: float = 1.0, mode: Optional[float] = None):
-    return _rnd.triangular(low, high, mode if mode is not None else (low + high) / 2)
+    return _rnd.triangular(low, high, mode if mode is not None else (low + high).cdiv(2.))
 
 def betavariate(alpha: float, beta: float):
     return _rnd.betavariate(alpha, beta)

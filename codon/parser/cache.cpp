@@ -9,6 +9,7 @@
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/common.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/translate/translate.h"
@@ -18,6 +19,7 @@
 namespace codon::ast {
 
 const std::string VAR_ARGV = getMangledVar("", "__argv__");
+const std::string VAR_ARGC = getMangledVar("", "__argc__");
 const std::string FN_OPTIONAL_UNWRAP =
     getMangledFunc("std.internal.types.optional", "unwrap");
 
@@ -99,8 +101,8 @@ types::FuncType *Cache::findMethod(types::ClassType *typ, const std::string &mem
   return f;
 }
 
-ir::types::Type *Cache::realizeType(types::ClassType *type,
-                                    const std::vector<types::TypePtr> &generics) {
+ir::Type *Cache::realizeType(types::ClassType *type,
+                             const std::vector<types::TypePtr> &generics) {
   auto tv = TypecheckVisitor(typeCtx);
   if (auto rtv = tv.realize(tv.instantiateType(type, castVectorPtr(generics)))) {
     return classes[rtv->getClass()->name]
@@ -151,13 +153,13 @@ ir::Func *Cache::realizeFunction(types::FuncType *type,
   return f;
 }
 
-ir::types::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
+ir::Type *Cache::makeTuple(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto t = tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));
   return realizeType(t->getClass(), types);
 }
 
-ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
+ir::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   seqassertn(!types.empty(), "types must have at least one argument");
 
@@ -170,7 +172,7 @@ ir::types::Type *Cache::makeFunction(const std::vector<types::TypePtr> &types) {
   return ft;
 }
 
-ir::types::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
+ir::Type *Cache::makeUnion(const std::vector<types::TypePtr> &types) {
   auto tv = TypecheckVisitor(typeCtx);
   auto argType =
       tv.instantiateType(tv.generateTuple(types.size()), castVectorPtr(types));
@@ -272,7 +274,7 @@ void Cache::populatePythonModule() {
 
   const std::string CYTHON_ITER = "_PyWrap.IterWrap";
 
-  if (!pythonExt)
+  if (!compiler->getOptions()->pyext)
     return;
   if (!pyModule)
     pyModule = std::make_shared<ir::PyModule>();

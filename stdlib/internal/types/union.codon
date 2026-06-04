@@ -9,7 +9,7 @@ class Union:
         pass
 
     @llvm
-    def _set_tag(tag: byte, U: type) -> U:
+    def _set_tag(tag: u8, U: type) -> U:
         %0 = insertvalue {=U} undef, i8 %tag, 0
         ret {=U} %0
 
@@ -19,7 +19,7 @@ class Union:
         ret ptr %0
 
     @llvm
-    def _get_tag(u: U, U: type) -> byte:
+    def _get_tag(u: U, U: type) -> u8:
         %0 = extractvalue {=U} %u, 0
         ret i8 %0
 
@@ -27,7 +27,7 @@ class Union:
         return Union._get_data_ptr(__ptr__(u), T=T)[0]
 
     def _make(tag: int, value, U: type) -> U:
-        u = Union._set_tag(byte(tag), U)
+        u = Union._set_tag(u8(tag), U)
         Union._get_data_ptr(__ptr__(u), T=type(value))[0] = value
         return u
 

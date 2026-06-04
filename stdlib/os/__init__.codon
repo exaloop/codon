@@ -59,6 +59,6 @@ def getenv(key: str, default: str = "") -> str:
 def mkdir(name: str, mode: int = 0x1FF) -> int:
     # TODO: use errno
     from C import mkdir(cobj, int) -> int
-    ret = mkdir(name.ptr, mode)
+    ret = mkdir(name._ptr, mode)
     if ret != 0:
         raise OSError("mkdir failed")

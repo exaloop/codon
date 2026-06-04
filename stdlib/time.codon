@@ -200,7 +200,7 @@ def _add(t1: int, t2: int) -> int:
 def _mul_check_overflow(a: int, b: int) -> bool:
     if b != 0:
         # assert b > 0
-        return (a < _MIN // b) or (_MAX // b < a)
+        return (a < _MIN.cdiv(b)) or (_MAX.cdiv(b) < a)
     else:
         return False
 
@@ -212,17 +212,17 @@ def _mul(t: int, k: int) -> int:
         return t * k
 
 def _muldiv(ticks: int, mul: int, div: int) -> int:
-    intpart = ticks / div
-    ticks %= div
-    remaining = _mul(ticks, mul) // div
+    intpart = float(ticks).cdiv(float(div))
+    ticks = ticks.cmod(div)
+    remaining = _mul(ticks, mul).cdiv(div)
     return _add(_mul(intpart, mul), remaining)
 
 def _round_half_even(x: float) -> float:
     from math import fabs
 
-    rounded = x.__round__()
+    rounded = x._round()
     if fabs(x - rounded) == 0.5:
-        rounded = 2.0 * (x / 2.0).__round__()
+        rounded = 2.0 * (x / 2.0)._round()
     return rounded
 
 def _round(x: float, mode: int) -> float:

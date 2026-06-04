@@ -352,8 +352,7 @@ def _gradient_helper_linear(f, dx, dtype: type, axis: int, edge_order: int):
 def gradient(f, *varargs, axis=None, edge_order: int = 1):
 
     def gradient_dtype(dtype: type):
-        if (dtype is int or dtype is byte or isinstance(dtype, Int)
-                or isinstance(dtype, UInt)):
+        if (dtype is int or isinstance(dtype, Int) or isinstance(dtype, UInt)):
             return float()
         else:
             return dtype()
@@ -800,8 +799,7 @@ def trapz(y, x=None, dx=1.0, axis: int = -1):
         return result
 
     def trapz_dtype(dtype: type):
-        if (dtype is int or dtype is byte or isinstance(dtype, Int)
-                or isinstance(dtype, UInt)):
+        if (dtype is int or isinstance(dtype, Int) or isinstance(dtype, UInt)):
             return float()
         else:
             return dtype()
@@ -855,12 +853,12 @@ def convolve(v, a, mode: str = "full"):
     if mode == "valid":
         reslen = length - n + 1
     elif mode == "same":
-        if n % 2 == 1:
-            n_left = n // 2
-            n_right = n // 2
+        if n.cmod(2) == 1:
+            n_left = n.cdiv(2)
+            n_right = n.cdiv(2)
             desc = n - n_left - 1
         else:
-            n_left = n // 2
+            n_left = n.cdiv(2)
             n_right = n - n_left - 1
             desc = n - n_left
         reslen = length
@@ -1001,13 +999,13 @@ def _arctanh(x):
     return _apply(x, util.atanh, zmath.atanh)
 
 def _rad2deg(x):
-    r2d = 180.0 / util.PI
+    r2d = (180.0).cdiv(util.PI)
     x = util.to_float(x)
     F = type(x)
     return x * F(r2d)
 
 def _deg2rad(x):
-    d2r = util.PI / 180.0
+    d2r = (util.PI).cdiv(180.0)
     x = util.to_float(x)
     F = type(x)
     return x * F(d2r)
@@ -1151,16 +1149,15 @@ def _gcd(x, y):
 
 def _lcm(x, y):
     gcd = _gcd(x, y)
-    return x // gcd * y if gcd else 0
+    return x.cdiv(gcd) * y if gcd else 0
 
 def _reciprocal(x: T, T: type):
-    if (
-        isinstance(x, int) or
-        isinstance(x, Int) or
-        isinstance(x, UInt) or
-        isinstance(x, byte)
-    ):
-        return T(1) // x
+    if isinstance(x, Int):
+        return x if (x == T(1) or x == T(-1)) else T(0)
+    elif isinstance(x, UInt):
+        return T(1) if x == T(1) else T(0)
+    elif util.isfloat(T):
+        return T(1).cdiv(x)
     else:
         return T(1) / x
 
@@ -1292,6 +1289,12 @@ def _divmod(x, y):
     if isinstance(x, float) or isinstance(y, float):
         return _divmod_float(util.cast(x, float), util.cast(y, float))
 
+    if isinstance(x, Int) and isinstance(y, Int):
+        return (x.cdiv(y), x.cmod(y))
+
+    if isinstance(x, UInt) and isinstance(y, UInt):
+        return (x.cdiv(y), x.cmod(y))
+
     return (x // y, x % y)
 
 def _modf(x):
@@ -1350,11 +1353,23 @@ def _isnat(x):
     else:
         compile_error("ufunc 'isnat' is only defined for np.datetime64 and np.timedelta64.")
 
+def _true_divide(x, y):
+    X = type(x)
+    Y = type(y)
+    if X is Y and util.isfloat(X):
+        return x.cdiv(y)
+    elif X is Y and util.isint(X):
+        return float(x).cdiv(float(y))
+    else:
+        return x / y
+
 def _floor_divide(x, y):
     X = type(x)
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pydiv(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cdiv(y)
     else:
         return x // y
 
@@ -1363,6 +1378,8 @@ def _remainder(x, y):
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.pymod(x, y)
+    elif isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cmod(y)
     elif ((X is float and Y is float) or
           (X is float32 and Y is float32) or
           (X is float16 and Y is float16)):
@@ -1375,6 +1392,8 @@ def _fmod(x, y):
     Y = type(y)
     if isinstance(X, Int) and isinstance(Y, Int):
         return util.cmod_int(x, y)
+    if isinstance(X, UInt) and isinstance(Y, UInt):
+        return x.cmod(y)
     elif ((X is float and Y is float) or
           (X is float32 and Y is float32) or
           (X is float16 and Y is float16)):
@@ -1385,7 +1404,7 @@ def _fmod(x, y):
 add = BinaryUFunc(operator.add, 'add', 0)
 subtract = BinaryUFunc(operator.sub, 'subtract')
 multiply = BinaryUFunc(operator.mul, 'multiply', 1)
-divide = BinaryUFunc(operator.truediv, 'divide')
+divide = BinaryUFunc(_true_divide, 'divide')
 true_divide = divide
 logaddexp = BinaryUFunc(_logaddexp, 'logaddexp')
 logaddexp2 = BinaryUFunc(_logaddexp2, 'logaddexp2')
@@ -1495,28 +1514,28 @@ def sinc(x):
             if not x:
                 x = float32(1e-20)
             x *= float32(pi)
-            return util.sin32(x) / x
+            return util.sin32(x).cdiv(x)
         elif isinstance(x, float16):
             if not x:
                 x = float16(1e-7)
             x *= float16(pi)
-            return util.sin16(x) / x
+            return util.sin16(x).cdiv(x)
         elif isinstance(x, complex):
             if not x:
                 x = complex(1e-20)
             x *= pi
-            return zmath.sin(x) / x
+            return zmath.sin(x).cdiv(x)
         elif isinstance(x, complex64):
             if not x:
                 x = complex64(1e-20)
             x *= float32(pi)
-            return zmath.sin(x) / x
+            return zmath.sin(x).cdiv(x)
         else:
             x = util.cast(x, float)
             if not x:
                 x = 1e-20
             x *= pi
-            return util.sin64(x) / x
+            return util.sin64(x).cdiv(x)
 
     ans = asarray(x).map(sinc_helper)
     if ans.ndim == 0:

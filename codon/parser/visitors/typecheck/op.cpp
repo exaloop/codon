@@ -3,6 +3,7 @@
 #include <string>
 #include <tuple>
 
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/common.h"
@@ -378,7 +379,7 @@ void TypecheckVisitor::visit(PipeExpr *expr) {
 ///   expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
 void TypecheckVisitor::visit(IndexExpr *expr) {
   if (match(expr, M<IndexExpr>(M<IdExpr>(MOr("Literal", "Static")),
-                               M<IdExpr>(MOr("int", "str", "bool"))))) {
+                               M<IdExpr>(MOr("int", "Int", "str", "bool"))))) {
     // Special case: static types.
     auto typ = instantiateUnbound();
     typ->staticKind = getStaticGeneric(expr);
@@ -517,7 +518,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
 
     unify(expr->getType(), instantiateTypeVar(typ.get()));
     // If the type is realizable, use the realized name instead of instantiation
-    // (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
+    // (e.g. use Id("Ptr[u8]") instead of Instantiate(Ptr, {u8}))
     if (auto rt = realize(expr->getType())) {
       auto t = extractType(rt);
       resultExpr = N<IdExpr>(t->realizedName());
@@ -624,7 +625,7 @@ std::pair<int64_t, int64_t> divMod(const std::shared_ptr<TypeContext> &ctx, int6
   if (!b) {
     E(Error::STATIC_DIV_ZERO, ctx->getSrcInfo());
     return {0, 0};
-  } else if (ctx->cache->pythonCompat) {
+  } else if (ctx->cache->compiler->getOptions()->pynum) {
     // Use Python implementation.
     int64_t d = a / b;
     int64_t m = a - d * b;
@@ -790,12 +791,23 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
       auto rt = realize(expr->getRhs()->getType());
       if (!lt || !rt) {
         return const_cast<BinaryExpr *>(expr); // delay
-      } else {
+      } else if (lt->realizedName() == rt->realizedName()) {
         auto vn = getTemporaryVar("cond");
         auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
-        if (lt->realizedName() == rt->realizedName()) {
-          return N<IfExpr>(ve, N<IdExpr>(vn), expr->getRhs());
+        return N<IfExpr>(ve, N<IdExpr>(vn), const_cast<BinaryExpr *>(expr)->getRhs());
+      } else {
+        auto e = clone(expr);
+        if (auto [c, _, f] = canWrapExpr(rt, lt); c && f) {
+          wrapExpr(&e->rexpr, lt);
+          unify(e->getRhs()->getType(), e->getLhs()->getType());
+          return e;
+        } else if (auto [c, _, f] = canWrapExpr(lt, rt); c && f) {
+          wrapExpr(&e->lexpr, rt);
+          unify(e->getRhs()->getType(), e->getLhs()->getType());
+          return e;
         } else {
+          auto vn = getTemporaryVar("cond");
+          auto ve = N<AssignExpr>(N<IdExpr>(vn), expr->getLhs());
           auto T = N<InstantiateExpr>(
               N<IdExpr>(getMangledClass("std.internal.core", "Union")),
               std::vector<Expr *>{N<IdExpr>(lt->realizedName()),

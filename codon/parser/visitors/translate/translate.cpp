@@ -9,6 +9,7 @@
 
 #include "codon/cir/transform/parallel/schedule.h"
 #include "codon/cir/util/cloning.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/visitors/translate/translate_ctx.h"
@@ -24,17 +25,21 @@ TranslateVisitor::TranslateVisitor(std::shared_ptr<TranslateContext> ctx)
 
 ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
   ir::BodiedFunc *main = nullptr;
-  if (cache->isJit) {
+  auto none = cache->classes["NoneType"].realizations["NoneType"]->ir;
+
+  if (cache->compiler->getOptions()->jit) {
     auto fnName = fmt::format("_jit_{}", cache->jitCell);
     main = cache->module->Nr<ir::BodiedFunc>(fnName);
     main->setSrcInfo({"<jit>", 0, 0, 0});
     main->setGlobal();
-    auto irType = cache->module->unsafeGetFuncType(
-        fnName, cache->classes["NoneType"].realizations["NoneType"]->ir, {}, false);
+    auto irType = cache->module->unsafeGetFuncType(fnName, none, {}, false);
     main->realize(irType, {});
     main->setJIT();
   } else {
-    main = cast<ir::BodiedFunc>(cache->module->getMainFunc());
+    main = ir::cast<ir::BodiedFunc>(cache->module->getMainFunc());
+    auto irType =
+        cache->module->unsafeGetFuncType("<internal_func_type>", none, {}, false);
+    main->realize(irType, {});
     auto path = cache->fs->get_module0();
     main->setSrcInfo({path, 0, 0, 0});
   }
@@ -62,15 +67,20 @@ void TranslateVisitor::translateStmts(Stmt *stmts) const {
 void TranslateVisitor::initializeGlobals() const {
   for (auto &[name, ir] : ctx->cache->globals)
     if (!ir) {
-      ir::types::Type *vt = nullptr;
+      ir::Type *vt = nullptr;
       if (auto t = ctx->cache->typeCtx->forceFind(name)->getType()) {
         if (!t->isInstantiated() || (t->is(TYPE_TYPE)) || t->getFunc())
           continue;
         vt = getType(t);
       }
-      ir = name == VAR_ARGV ? ctx->cache->codegenCtx->getModule()->getArgVar()
-                            : ctx->cache->codegenCtx->getModule()->N<ir::Var>(
-                                  SrcInfo(), vt, true, false, false, name);
+      if (name == VAR_ARGV) {
+        ir = ctx->cache->codegenCtx->getModule()->getArgvVar();
+      } else if (name == VAR_ARGC) {
+        ir = ctx->cache->codegenCtx->getModule()->getArgcVar();
+      } else {
+        ir = ctx->cache->codegenCtx->getModule()->N<ir::Var>(SrcInfo(), vt, true, false,
+                                                             false, name);
+      }
       ctx->cache->codegenCtx->add(TranslateItem::Var, name, ir);
     }
 }
@@ -245,7 +255,7 @@ void TranslateVisitor::visit(GeneratorExpr *expr) {
   fn->setGlobal();
   fn->setGenerator();
   std::vector<std::string> names;
-  std::vector<codon::ir::types::Type *> types;
+  std::vector<codon::ir::Type *> types;
   std::vector<ir::Value *> items;
 
   IdVisitor v;
@@ -313,9 +323,9 @@ void TranslateVisitor::visit(CallExpr *expr) {
     auto sz = fnt->funcGenerics[0].type->getIntStatic()->value;
     auto typ = fnt->funcParent->getClass()->generics[0].getType();
 
-    auto *arrayType = ctx->getModule()->unsafeGetArrayType(getType(typ));
-    arrayType->setAstType(expr->getType()->shared_from_this());
-    result = make<ir::StackAllocInstr>(expr, arrayType, sz);
+    auto *ptrType = ctx->getModule()->unsafeGetPointerType(getType(typ));
+    ptrType->setAstType(expr->getType()->shared_from_this());
+    result = make<ir::StackAllocInstr>(expr, ptrType, sz);
     return;
   } else if (ei && startswith(ei->getValue(),
                               getMangledMethod("std.internal.core", "Generator",
@@ -373,10 +383,10 @@ void TranslateVisitor::visit(YieldExpr *expr) {
 void TranslateVisitor::visit(PipeExpr *expr) {
   auto isGen = [](const ir::Value *v) -> bool {
     auto *type = v->getType();
-    if (ir::isA<ir::types::GeneratorType>(type))
+    if (ir::isA<ir::GeneratorType>(type))
       return true;
-    else if (auto *fn = cast<ir::types::FuncType>(type)) {
-      return ir::isA<ir::types::GeneratorType>(fn->getReturnType());
+    else if (auto *fn = cast<ir::FuncType>(type)) {
+      return ir::isA<ir::GeneratorType>(fn->getReturnType());
     }
     return false;
   };
@@ -479,7 +489,8 @@ void TranslateVisitor::visit(ExprStmt *stmt) {
 
 void TranslateVisitor::visit(AssignStmt *stmt) {
   if (stmt->getLhs() && cast<IdExpr>(stmt->getLhs()) &&
-      cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGV)
+      (cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGV ||
+       cast<IdExpr>(stmt->getLhs())->getValue() == VAR_ARGC))
     return;
 
   auto lei = cast<IdExpr>(stmt->getLhs());
@@ -490,22 +501,24 @@ void TranslateVisitor::visit(AssignStmt *stmt) {
   ir::Var *v = nullptr;
 
   if (stmt->isUpdate()) {
-    auto val = ctx->find(lei->getValue());
-    seqassert(val && val->getVar(), "{} is not a variable", lei->getValue());
-    v = val->getVar();
-
-    if (!v->getType()) {
-      v->setSrcInfo(stmt->getSrcInfo());
-      v->setType(getType(stmt->getRhs()->getType()));
+    // This thing might not exist if static if-else was combined with types.
+    // This is not dangerous because TC would raise an error if types did not match.
+    if (auto val = ctx->find(lei->getValue())) {
+      if ((v = val->getVar())) {
+        if (!v->getType()) {
+          v->setSrcInfo(stmt->getSrcInfo());
+          v->setType(getType(stmt->getRhs()->getType()));
+        }
+        result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
+      }
     }
-    result = make<ir::AssignInstr>(stmt, v, transform(stmt->getRhs()));
     return;
   }
 
   if (!stmt->getLhs()->getType()->isInstantiated() ||
       (stmt->getLhs()->getType()->is(TYPE_TYPE)) ||
       stmt->getLhs()->getType()->getFunc()) {
-    if (!cast<IdExpr>(stmt->getRhs())) {
+    if (stmt->getRhs() && !cast<IdExpr>(stmt->getRhs())) {
       // Side effect
       result = transform(stmt->getRhs());
     }
@@ -689,7 +702,7 @@ void TranslateVisitor::visit(ClassStmt *stmt) {
 
 /************************************************************************************/
 
-codon::ir::types::Type *TranslateVisitor::getType(types::Type *t) const {
+codon::ir::Type *TranslateVisitor::getType(types::Type *t) const {
   seqassert(t && t->getClass(), "not a class: {}", t ? t->debugString(2) : "-");
   std::string name = t->getClass()->ClassType::realizedName();
   auto i = ctx->find(name);
@@ -788,7 +801,7 @@ void TranslateVisitor::transformLLVMFunction(types::FuncType *type, FunctionStmt
   std::istringstream sin(
       cast<StringExpr>(cast<ExprStmt>(ast->getSuite()->firstInBlock())->getExpr())
           ->getValue());
-  std::vector<ir::types::Generic> literals;
+  std::vector<ir::Generic> literals;
   auto ss = cast<SuiteStmt>(ast->getSuite());
   for (int i = 1; i < ss->size(); i++) {
     if (auto sti = cast<ExprStmt>((*ss)[i])->getExpr()->getType()->getIntStatic()) {

@@ -3,10 +3,10 @@ from C import sqrt(float) -> float
 print sqrt(4.0) #: 2
 
 from C import puts(cobj)
-puts("hello".ptr) #: hello
+puts("hello"._ptr) #: hello
 
 from C import atoi(cobj) -> int as s2i
-print s2i("11".ptr) #: 11
+print s2i("11"._ptr) #: 11
 
 @C
 def log(x: float) -> float:

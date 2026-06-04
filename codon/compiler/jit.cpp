@@ -22,17 +22,12 @@ typedef void *PyWrapperFunc(void *);
 const std::string JIT_FILENAME = "<jit>";
 } // namespace
 
-JIT::JIT(const std::string &argv0, const std::string &mode,
-         const std::string &stdlibRoot)
-    : compiler(std::make_unique<Compiler>(argv0, Compiler::Mode::JIT,
-                                          /*disabledPasses=*/std::vector<std::string>{},
-                                          /*isTest=*/false,
-                                          /*pyNumerics=*/false, /*pyExtension=*/false)),
-      engine(std::make_unique<Engine>()), pydata(std::make_unique<PythonData>()),
-      mode(mode), forgetful(false) {
+JIT::JIT(const Options &options, const std::string &mode, const std::string &stdlibRoot)
+    : compiler(std::make_unique<Compiler>(options)),
+      engine(std::make_unique<Engine>(compiler->getOptions())),
+      pydata(std::make_unique<PythonData>()), mode(mode), forgetful(false) {
   if (!stdlibRoot.empty())
     compiler->getCache()->fs->add_search_path(stdlibRoot);
-  compiler->getLLVMVisitor()->setJIT(true);
 }
 
 void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
@@ -50,8 +45,9 @@ void collectExecutableStmts(ast::Stmt *s, ast::SuiteStmt *final) {
 llvm::Error JIT::init(bool forgetful) {
   if (forgetful) {
     this->forgetful = true;
-    auto fs = std::make_shared<ast::ResourceFilesystem>(compiler->getArgv0(), "",
-                                                        /*allowExternal=*/false);
+    auto fs =
+        std::make_shared<ast::ResourceFilesystem>(compiler->getOptions()->argv0, "",
+                                                  /*allowExternal=*/false);
     compiler->getCache()->fs = fs;
   }
 
@@ -60,13 +56,13 @@ llvm::Error JIT::init(bool forgetful) {
   auto *pm = compiler->getPassManager();
   auto *llvisitor = compiler->getLLVMVisitor();
 
-  cache->isJit = true;
+  compiler->getOptions()->jit = true;
   auto typechecked = ast::TypecheckVisitor::apply(
       cache, cache->N<ast::SuiteStmt>(), JIT_FILENAME, {}, compiler->getEarlyDefines());
-  cache->isJit =
-      false; // we still need main(), so pause isJit first time during translation
+  compiler->getOptions()->jit =
+      false; // we still need main(), so pause jit first time during translation
   ast::TranslateVisitor::apply(cache, std::move(typechecked));
-  cache->isJit = true;
+  compiler->getOptions()->jit = true;
   module->setSrcInfo({JIT_FILENAME, 0, 0, 0});
 
   pm->run(module);
@@ -308,10 +304,10 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
 
 JIT::PythonData::PythonData() : cobj(nullptr), cache() {}
 
-ir::types::Type *JIT::PythonData::getCObjType(ir::Module *M) {
+ir::Type *JIT::PythonData::getCObjType(ir::Module *M) {
   if (cobj)
     return cobj;
-  cobj = M->getPointerType(M->getByteType());
+  cobj = M->getPointerType();
   return cobj;
 }
 
@@ -378,7 +374,11 @@ JIT::JITResult JIT::executePython(const std::string &name,
 } // namespace codon
 
 void *jit_init(char *name) {
-  auto jit = new codon::jit::JIT(std::string(name));
+  auto options = codon::Options::getDefault(std::string(name));
+  options->jit = true;
+  options->debug = false;
+
+  auto jit = new codon::jit::JIT(*options);
   llvm::cantFail(jit->init());
   return jit;
 }

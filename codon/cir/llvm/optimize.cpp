@@ -14,16 +14,6 @@ static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
 namespace ir {
-namespace {
-llvm::cl::opt<bool>
-    AutoFree("auto-free",
-             llvm::cl::desc("Insert free() calls on allocated memory automatically"),
-             llvm::cl::init(false), llvm::cl::Hidden);
-
-llvm::cl::opt<bool> FastMath("fast-math",
-                             llvm::cl::desc("Apply fastmath optimizations"),
-                             llvm::cl::init(false));
-} // namespace
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
@@ -91,9 +81,6 @@ void applyDebugTransformations(llvm::Module *module, bool debug, bool jit) {
 }
 
 void applyFastMathTransformations(llvm::Module *module) {
-  if (!FastMath)
-    return;
-
   for (auto &f : *module) {
     for (auto &block : f) {
       for (auto &inst : block) {
@@ -600,8 +587,9 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 
         Instruction *instr = cast<Instruction>(&*users[i]);
         if (ICmpInst *cmp = dyn_cast<ICmpInst>(instr)) {
-          replace.emplace_back(cmp, ConstantInt::get(Type::getInt1Ty(cmp->getContext()),
-                                                     cmp->isFalseWhenEqual()));
+          replace.emplace_back(
+              cmp, ConstantInt::get(llvm::Type::getInt1Ty(cmp->getContext()),
+                                    cmp->isFalseWhenEqual()));
         } else if (!isa<StoreInst>(instr)) {
           // Casts, GEP, or anything else: we're about to delete this instruction,
           // so it can not have any valid uses.
@@ -617,8 +605,8 @@ struct AllocationRemover : public llvm::PassInfoMixin<AllocationRemover> {
 
     if (info.isAllocSiteDemotable(&mi, size, users)) {
       auto *replacement = new AllocaInst(
-          Type::getInt8Ty(mi.getContext()), 0,
-          ConstantInt::get(Type::getInt64Ty(mi.getContext()), size), Align());
+          llvm::Type::getInt8Ty(mi.getContext()), 0,
+          ConstantInt::get(llvm::Type::getInt64Ty(mi.getContext()), size), Align());
       alloca.push_back(replacement);
       replace.emplace_back(&mi, replacement);
       erase.insert(&mi);
@@ -990,33 +978,8 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   }
 };
 
-llvm::cl::opt<bool>
-    DisableNative("disable-native",
-                  llvm::cl::desc("Disable architecture-specific optimizations"),
-                  llvm::cl::init(false));
-
-void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
-                               PluginManager *plugins) {
-  applyDebugTransformations(module, debug, jit);
-  applyFastMathTransformations(module);
-
-  llvm::LoopAnalysisManager lam;
-  llvm::FunctionAnalysisManager fam;
-  llvm::CGSCCAnalysisManager cgam;
-  llvm::ModuleAnalysisManager mam;
-  auto machine = getTargetMachine(module, /*setFunctionAttributes=*/true);
-  llvm::PassBuilder pb(machine.get());
-
-  llvm::Triple moduleTriple(module->getTargetTriple());
-  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
-  fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
-
-  pb.registerModuleAnalyses(mam);
-  pb.registerCGSCCAnalyses(cgam);
-  pb.registerFunctionAnalyses(fam);
-  pb.registerLoopAnalyses(lam);
-  pb.crossRegisterProxies(lam, fam, cgam, mam);
-
+void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
+                                         Options *options) {
   pb.registerLateLoopOptimizationsEPCallback(
       [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed())
@@ -1030,21 +993,49 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
           pm.addPass(llvm::LoopSimplifyPass());
           pm.addPass(llvm::LCSSAPass());
           pm.addPass(AllocationHoister());
-          if (AutoFree)
+          if (options->autofree)
             pm.addPass(AllocationAutoFree());
         }
       });
 
-  if (!DisableNative)
+  if (options->native)
     addNativeLLVMPasses(&pb);
 
   if (plugins) {
     for (auto *plugin : *plugins) {
-      plugin->dsl->addLLVMPasses(&pb, debug);
+      plugin->dsl->addLLVMPasses(&pb, options->debug);
     }
   }
+}
 
-  if (debug) {
+void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
+                               Options *options) {
+  applyDebugTransformations(module, options->debug, options->jit);
+  if (options->fastmath)
+    applyFastMathTransformations(module);
+
+  llvm::LoopAnalysisManager lam;
+  llvm::FunctionAnalysisManager fam;
+  llvm::CGSCCAnalysisManager cgam;
+  llvm::ModuleAnalysisManager mam;
+  auto machine = options->native
+                     ? getTargetMachine(module, /*setFunctionAttributes=*/true)
+                     : std::unique_ptr<llvm::TargetMachine>();
+  llvm::PassBuilder pb(machine.get());
+
+  llvm::Triple moduleTriple(module->getTargetTriple());
+  llvm::TargetLibraryInfoImpl tlii(moduleTriple);
+  fam.registerPass([&] { return llvm::TargetLibraryAnalysis(tlii); });
+
+  pb.registerModuleAnalyses(mam);
+  pb.registerCGSCCAnalyses(cgam);
+  pb.registerFunctionAnalyses(fam);
+  pb.registerLoopAnalyses(lam);
+  pb.crossRegisterProxies(lam, fam, cgam, mam);
+
+  registerCodonLLVMOptimizationPasses(pb, plugins, options);
+
+  if (options->debug) {
     llvm::ModulePassManager mpm =
         pb.buildO0DefaultPipeline(llvm::OptimizationLevel::O0);
     mpm.run(*module, mam);
@@ -1054,7 +1045,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, bool debug, bool jit,
     mpm.run(*module, mam);
   }
 
-  applyDebugTransformations(module, debug, jit);
+  applyDebugTransformations(module, options->debug, options->jit);
 }
 
 void verify(llvm::Module *module) {
@@ -1072,24 +1063,42 @@ void verify(llvm::Module *module) {
 
 } // namespace
 
-void optimize(llvm::Module *module, bool debug, bool jit, PluginManager *plugins) {
+void optimize(llvm::Module *module, Options *options, PluginManager *plugins) {
+  bool debug = options->debug;
+  bool jit = options->jit;
+
   verify(module);
+  std::unique_ptr<llvm::Module> GPUmodule;
+  {
+    TIME("preparing/gpu");
+    GPUmodule = prepareGPUmodule(module, options);
+  }
   {
     TIME("llvm/opt1");
-    runLLVMOptimizationPasses(module, debug, jit, plugins);
+    runLLVMOptimizationPasses(module, plugins, options);
   }
   if (!debug) {
     TIME("llvm/opt2");
-    runLLVMOptimizationPasses(module, debug, jit, plugins);
+    runLLVMOptimizationPasses(module, plugins, options);
   }
-  {
-    TIME("llvm/gpu");
-    applyGPUTransformations(module);
+  if (GPUmodule) {
+    auto gpuOptions = *options;
+    gpuOptions.native = false;
+    {
+      TIME("llvm/gpuopt1");
+      runLLVMOptimizationPasses(module, /*plugins=*/nullptr, &gpuOptions);
+    }
+    {
+      TIME("llvm/gpuopt2");
+      runLLVMOptimizationPasses(module, /*plugins=*/nullptr, &gpuOptions);
+    }
+    {
+      TIME("llvm/gpu");
+      applyGPUTransformations(module, std::move(GPUmodule), options);
+    }
   }
   verify(module);
 }
-
-bool isFastMathOn() { return FastMath; }
 
 } // namespace ir
 } // namespace codon
