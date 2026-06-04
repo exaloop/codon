@@ -532,7 +532,11 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     rpaths.push_back(std::string(path));
   }
 
+#ifdef _WIN32
+  std::vector<std::string> command = {"clang", "-fuse-ld=lld"};
+#else
   std::vector<std::string> command = {"g++"};
+#endif
   // Avoid "argument unused during compilation" warning
   command.push_back("-Wno-unused-command-line-argument");
   // MUST go before -llib to compile on Linux
@@ -544,7 +548,9 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   for (const auto &rpath : rpaths) {
     if (!rpath.empty()) {
       command.push_back("-L" + rpath);
+#ifndef _WIN32
       command.push_back("-Wl,-rpath," + rpath);
+#endif
     }
   }
 
@@ -559,7 +565,9 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
       llvm::StringRef rpath = rpath0.str();
       if (!rpath.empty()) {
         command.push_back("-L" + rpath.str());
+#ifndef _WIN32
         command.push_back("-Wl,-rpath," + rpath.str());
+#endif
       }
     }
   }
@@ -587,8 +595,12 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     }
   }
 
+#ifdef _WIN32
+  std::vector<std::string> extraArgs = {"-lcodonrt", "-o", filename};
+#else
   std::vector<std::string> extraArgs = {
       "-lcodonrt", "-lomp", "-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
+#endif
 
   for (const auto &arg : extraArgs) {
     command.push_back(arg);
@@ -604,8 +616,10 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
 
   // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
   // object" complaints by gcc when it is built with --enable-default-pie
+#ifndef _WIN32
   if (!library)
     command.push_back("-no-pie");
+#endif
 
   executeCommand(command);
 
