@@ -2878,15 +2878,50 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   // handle exceptions that must route through 'finally'
   B->SetInsertPoint(tc.finallyExceptionBlock);
   if (!options->noexc) {
-    auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
-    finallyCaughtResult->setCleanup(true);
-    finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
+    if (isWinMSVC(&*M)) {
+      // Win64 funclet form of the finally-routing pad (mirrors the main catch pad
+      // above): every invoke unwind target must be an EH pad under WinEH, so this
+      // cleanup-routing block is a catchpad too. Recover the exc, mark rethrow, and
+      // catchret into the (normal-code) finally block.
+      auto *cs =
+          B->CreateCatchSwitch(llvm::ConstantTokenNone::get(*context), nullptr, 1);
+      auto *catchBlock =
+          llvm::BasicBlock::Create(*context, "trycatch.finally.catchpad", func);
+      cs->addHandler(catchBlock);
+      B->SetInsertPoint(catchBlock);
+      auto *filter =
+          M->getOrInsertFunction(
+               "seq_exc_filter",
+               llvm::FunctionType::get(B->getInt32Ty(),
+                                       {B->getPtrTy(), B->getPtrTy()}, false))
+              .getCallee();
+      auto *cp = B->CreateCatchPad(cs, {filter});
+      llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
+      auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
+      auto *exc = B->CreateCall(excCurrent, {}, {bundle});
+      llvm::Value *padVal = llvm::UndefValue::get(padType);
+      padVal = B->CreateInsertValue(padVal, exc, 0);
+      padVal = B->CreateInsertValue(padVal, B->getInt32(0), 1);
+      B->CreateStore(padVal, tc.catchStore);
+      B->CreateStore(excStateRethrow, tc.excFlag);
+      auto *depthMax = B->getInt64(trycatch.size());
+      B->CreateStore(depthMax, tc.delegateDepth);
+      auto *cont =
+          llvm::BasicBlock::Create(*context, "trycatch.finally.catchret", func);
+      B->CreateCatchRet(llvm::cast<llvm::CatchPadInst>(cp), cont);
+      B->SetInsertPoint(cont);
+      B->CreateBr(tc.finallyBlock);
+    } else {
+      auto *finallyCaughtResult = B->CreateLandingPad(padType, 1);
+      finallyCaughtResult->setCleanup(true);
+      finallyCaughtResult->addClause(getTypeIdxVar(nullptr));
 
-    B->CreateStore(finallyCaughtResult, tc.catchStore);
-    B->CreateStore(excStateRethrow, tc.excFlag);
-    auto *depthMax = B->getInt64(trycatch.size());
-    B->CreateStore(depthMax, tc.delegateDepth);
-    B->CreateBr(tc.finallyBlock);
+      B->CreateStore(finallyCaughtResult, tc.catchStore);
+      B->CreateStore(excStateRethrow, tc.excFlag);
+      auto *depthMax = B->getInt64(trycatch.size());
+      B->CreateStore(depthMax, tc.delegateDepth);
+      B->CreateBr(tc.finallyBlock);
+    }
   } else {
     B->CreateUnreachable();
   }
