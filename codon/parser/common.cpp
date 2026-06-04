@@ -48,17 +48,17 @@ std::vector<IFilesystem::path_t> IFilesystem::get_stdlib_paths() const {
 
 ImportFile IFilesystem::get_root(const path_t &sp) const {
   bool isStdLib = false;
-  std::string s = sp.string();
+  std::string s = sp.generic_string();
   std::string root;
   for (auto &p : get_stdlib_paths())
-    if (startswith(s, p.string())) {
-      root = p.string();
+    if (startswith(s, p.generic_string())) {
+      root = p.generic_string();
       isStdLib = true;
       break;
     }
   auto module0 = get_module0().parent_path();
-  if (!isStdLib && !module0.empty() && startswith(s, module0.string()))
-    root = module0.string();
+  if (!isStdLib && !module0.empty() && startswith(s, module0.generic_string()))
+    root = module0.generic_string();
   std::string ext = ".codon";
   if (!((root.empty() || startswith(s, root)) && endswith(s, ext)))
     ext = ".py";
@@ -378,20 +378,20 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
       auto path = parentRelativeTo / what;
       path.replace_extension("codon");
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path).string());
+        paths.emplace_back(fs->canonical(path).generic_string());
 
       path = parentRelativeTo / what / "__init__.codon";
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path).string());
+        paths.emplace_back(fs->canonical(path).generic_string());
 
       path = parentRelativeTo / what;
       path.replace_extension("py");
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path).string());
+        paths.emplace_back(fs->canonical(path).generic_string());
 
       path = parentRelativeTo / what / "__init__.py";
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path).string());
+        paths.emplace_back(fs->canonical(path).generic_string());
     }
   }
 
@@ -414,7 +414,7 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
       }
       if (!failed)
         paths.emplace_back(
-            fs->canonical(path / what / "stdlib" / what / "__init__.codon").string());
+            fs->canonical(path / what / "stdlib" / what / "__init__.codon").generic_string());
     }
   };
 
@@ -426,11 +426,11 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
     auto path = p / what;
     path.replace_extension("codon");
     if (fs->exists(path))
-      paths.emplace_back(fs->canonical(path).string());
+      paths.emplace_back(fs->canonical(path).generic_string());
 
     path = p / what / "__init__.codon";
     if (fs->exists(path))
-      paths.emplace_back(fs->canonical(path).string());
+      paths.emplace_back(fs->canonical(path).generic_string());
 
     // Load a plugin maybe
     checkPlugin(p, what);

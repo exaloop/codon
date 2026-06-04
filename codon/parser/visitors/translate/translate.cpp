@@ -40,7 +40,7 @@ ir::Func *TranslateVisitor::apply(Cache *cache, Stmt *stmts) {
     auto irType =
         cache->module->unsafeGetFuncType("<internal_func_type>", none, {}, false);
     main->realize(irType, {});
-    auto path = cache->fs->get_module0().string();
+    auto path = cache->fs->get_module0().generic_string();
     main->setSrcInfo({path, 0, 0, 0});
   }
 
