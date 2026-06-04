@@ -28,6 +28,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-limit-debug-info")
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+if(WIN32)
+  # clang must use the DLL MSVC runtime; CMake's clang-GNU link rule otherwise omits
+  # the CRT import libs, so link them explicitly. GC_NOT_DLL: bdwgc linked statically.
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fms-runtime-lib=dll")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fms-runtime-lib=dll")
+  add_compile_definitions(GC_NOT_DLL)
+  set(_codon_win_crt "-lmsvcrt -lvcruntime -lucrt -lmsvcprt -loldnames -llegacy_stdio_definitions")
+  set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES} ${_codon_win_crt}")
+  set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES} ${_codon_win_crt}")
+endif()
 include_directories(.)
 
 set(APPLE_ARM OFF)
@@ -68,6 +78,9 @@ add_custom_command(
 # Codon Jupyter library
 set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
+if(WIN32)
+  set_target_properties(codon_jupyter PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
 
 # Codon runtime library
 add_library(codonfloat STATIC
@@ -95,15 +108,28 @@ add_library(codonfloat STATIC
 target_compile_options(codonfloat PRIVATE -O3)
 target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
 
-set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                  codon/runtime/re.cpp codon/runtime/exc.cpp
-                  codon/runtime/numpy/sort.cpp
-                  codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
+if(WIN32)
+  # numpy runtime (Highway/OpenBLAS) deferred on Windows
+  set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
+                    codon/runtime/re.cpp codon/runtime/exc.cpp)
+else()
+  set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
+                    codon/runtime/re.cpp codon/runtime/exc.cpp
+                    codon/runtime/numpy/sort.cpp
+                    codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
+endif()
 add_library(codonrt SHARED ${CODONRT_FILES})
-add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
-                         re2 hwy hwy_contrib fast_float codonfloat)
+if(WIN32)
+  set_target_properties(codonrt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+  add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 codonfloat)
+else()
+  add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
+                           re2 hwy hwy_contrib fast_float codonfloat)
+endif()
 
-if(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
+if(WIN32)
+  # system libraries (libgfortran/libquadmath/libgcc) deferred on Windows (numpy/BLAS off)
+elseif(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
   if(APPLE)
     set(copied_libgfortran "${CMAKE_BINARY_DIR}/libgfortran.5${CMAKE_SHARED_LIBRARY_SUFFIX}")
     set(copied_libquadmath "${CMAKE_BINARY_DIR}/libquadmath.0${CMAKE_SHARED_LIBRARY_SUFFIX}")
@@ -135,7 +161,11 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            ${highway_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
-target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
+if(WIN32)
+  target_link_libraries(codonrt PRIVATE fmt LLVMSupport)
+else()
+  target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
+endif()
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -148,6 +178,15 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
             -Wl,-force_load,$<TARGET_FILE:codonfloat>)
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
+elseif(WIN32)
+  target_link_libraries(
+    codonrt
+    PRIVATE $<TARGET_FILE:gc>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:zlibstatic>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:bz2>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:liblzma>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:re2>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:codonfloat>)
 else()
   add_dependencies(codonrt openblas)
   target_link_libraries(
@@ -165,11 +204,13 @@ if(ASAN)
     codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
                     "-fsanitize-recover=address")
 endif()
-add_custom_command(
-  TARGET codonrt
-  POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
-          ${CMAKE_BINARY_DIR})
+if(NOT WIN32)
+  add_custom_command(
+    TARGET codonrt
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
+            ${CMAKE_BINARY_DIR})
+endif()
 
 # Codon compiler library
 include_directories(${LLVM_INCLUDE_DIRS})
@@ -385,6 +426,10 @@ set(CODON_CPPFILES
   codon/cir/transform/numpy/numpy.cpp
   codon/util/common.cpp)
 add_library(codonc SHARED ${CODON_HPPFILES})
+if(WIN32)
+  set_target_properties(codonc PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+  target_compile_definitions(codonc PRIVATE CODON_COMPILER_BUILD)
+endif()
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR}
                                           ${toml_SOURCE_DIR}/include
                                           ${semver_SOURCE_DIR}/include
@@ -443,51 +488,81 @@ cmrc_add_resource_library(
 )
 set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
 
-target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt codon-stdlib)
+if(WIN32)
+  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt codonrt codon-stdlib)
+else()
+  target_link_libraries(codonc PRIVATE ${LLVM_LIBS} fmt dl codonrt codon-stdlib)
+endif()
 
 # Gather headers
-add_custom_target(
-  headers ALL
-  COMMENT "Collecting headers"
-  BYPRODUCTS "${CMAKE_BINARY_DIR}/include"
-  VERBATIM
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/include/codon"
-  COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/codon"
-          "${CMAKE_BINARY_DIR}/include/codon"
-  COMMAND find "${CMAKE_BINARY_DIR}/include" -type f ! -name "*.h" -exec rm {}
-          \\;)
+if(WIN32)
+  add_custom_target(
+    headers ALL
+    COMMENT "Collecting headers"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/include"
+    VERBATIM
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/include/codon"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/codon"
+            "${CMAKE_BINARY_DIR}/include/codon")
+else()
+  add_custom_target(
+    headers ALL
+    COMMENT "Collecting headers"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/include"
+    VERBATIM
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/include/codon"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/codon"
+            "${CMAKE_BINARY_DIR}/include/codon"
+    COMMAND find "${CMAKE_BINARY_DIR}/include" -type f ! -name "*.h" -exec rm {}
+            \\;)
+endif()
 add_dependencies(headers codonrt codonc)
 
 # Prepare lib directory for plugin compilation
-add_custom_target(
-  libs ALL
-  COMMENT "Collecting libraries"
-  BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
-  VERBATIM
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy
-    "${CMAKE_BINARY_DIR}/libcodonc${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy
-    "${CMAKE_BINARY_DIR}/libcodonrt${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy
-    "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
-    "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy ${copied_libgfortran} "${CMAKE_BINARY_DIR}/lib/codon"
-  COMMAND
-    /bin/sh -c "test -f '${copied_libquadmath}' && ${CMAKE_COMMAND} -E copy '${copied_libquadmath}' '${CMAKE_BINARY_DIR}/lib/codon' || true"
-  COMMAND
-    ${CMAKE_COMMAND} -E copy ${copied_libgcc} "${CMAKE_BINARY_DIR}/lib/codon")
+if(WIN32)
+  add_custom_target(
+    libs ALL
+    COMMENT "Collecting libraries"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
+    VERBATIM
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:codonc>" "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:codonrt>" "${CMAKE_BINARY_DIR}/lib/codon")
+else()
+  add_custom_target(
+    libs ALL
+    COMMENT "Collecting libraries"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/lib"
+    VERBATIM
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy
+      "${CMAKE_BINARY_DIR}/libcodonc${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy
+      "${CMAKE_BINARY_DIR}/libcodonrt${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy
+      "${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX}"
+      "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy ${copied_libgfortran} "${CMAKE_BINARY_DIR}/lib/codon"
+    COMMAND
+      /bin/sh -c "test -f '${copied_libquadmath}' && ${CMAKE_COMMAND} -E copy '${copied_libquadmath}' '${CMAKE_BINARY_DIR}/lib/codon' || true"
+    COMMAND
+      ${CMAKE_COMMAND} -E copy ${copied_libgcc} "${CMAKE_BINARY_DIR}/lib/codon")
+endif()
 add_dependencies(libs codonrt codonc)
 
 # Codon command-line tool
 add_executable(codon codon/app/main.cpp)
-target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
+if(WIN32)
+  target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads ${LLVM_LIBS})
+else()
+  target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
+endif()
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -517,22 +592,27 @@ set(CODON_TEST_CPPFILES
     test/cir/var.cpp
     test/types.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
+if(WIN32)
+  set_target_properties(codon_test PROPERTIES EXCLUDE_FROM_ALL ON)
+endif()
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
 target_link_libraries(codon_test fmt codonc codonrt gtest_main)
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
-install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
-install(FILES ${copied_libgfortran} DESTINATION lib/codon)
-# only install libquadmath if it exists at build time
-install(CODE "
-  file(GLOB _quadmath \"${copied_libquadmath}\")
-  if(EXISTS \"\${_quadmath}\")
-    file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/lib/codon\" TYPE FILE FILES \"\${_quadmath}\")
-  endif()
-")
-install(FILES ${copied_libgcc} DESTINATION lib/codon)
+if(NOT WIN32)
+  install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
+  install(FILES ${copied_libgfortran} DESTINATION lib/codon)
+  # only install libquadmath if it exists at build time
+  install(CODE "
+    file(GLOB _quadmath \"${copied_libquadmath}\")
+    if(EXISTS \"\${_quadmath}\")
+      file(INSTALL DESTINATION \"\${CMAKE_INSTALL_PREFIX}/lib/codon\" TYPE FILE FILES \"\${_quadmath}\")
+    endif()
+  ")
+  install(FILES ${copied_libgcc} DESTINATION lib/codon)
+endif()
 install(TARGETS codon DESTINATION bin)
 install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)

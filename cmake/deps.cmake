@@ -29,13 +29,18 @@ CPMAddPackage(
     GITHUB_REPOSITORY "Neargye/semver"
     GIT_TAG v0.3.0)
 
+if(WIN32)
+    set(_zlib_off64 "HAVE_OFF64_T OFF")
+else()
+    set(_zlib_off64 "HAVE_OFF64_T ON")
+endif()
 CPMAddPackage(
     NAME zlibng
     GITHUB_REPOSITORY "zlib-ng/zlib-ng"
     VERSION 2.0.5
     GIT_TAG 2.0.5
     EXCLUDE_FROM_ALL YES
-    OPTIONS "HAVE_OFF64_T ON"
+    OPTIONS "${_zlib_off64}"
             "ZLIB_COMPAT ON"
             "ZLIB_ENABLE_TESTS OFF"
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
@@ -52,8 +57,12 @@ CPMAddPackage(
     OPTIONS "BUILD_SHARED_LIBS OFF"
             "CMAKE_POSITION_INDEPENDENT_CODE ON")
 if(xz_ADDED)
-    set_target_properties(xz PROPERTIES EXCLUDE_FROM_ALL ON)
-    set_target_properties(xzdec PROPERTIES EXCLUDE_FROM_ALL ON)
+    if(TARGET xz)
+        set_target_properties(xz PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
+    if(TARGET xzdec)
+        set_target_properties(xzdec PROPERTIES EXCLUDE_FROM_ALL ON)
+    endif()
 endif()
 
 CPMAddPackage(
@@ -75,20 +84,44 @@ if(bz2_ADDED)
         POSITION_INDEPENDENT_CODE ON)
 endif()
 
-CPMAddPackage(
-    NAME bdwgc
-    GITHUB_REPOSITORY "exaloop/bdwgc"
-    VERSION 8.0.5
-    GIT_TAG e16c67244aff26802203060422545d38305e0160
-    EXCLUDE_FROM_ALL YES
-    OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
-            "BUILD_SHARED_LIBS OFF"
-            "enable_threads ON"
-            "enable_large_config ON"
-            "enable_thread_local_alloc ON"
-            "enable_handle_fork ON")
+if(WIN32)
+    # parallel_mark OFF: bdwgc parallel-mark spawns marker threads that deadlock
+    #   against the loader lock during codonrt.dll init (see codon-windows-build notes).
+    # disable_handle_fork: no fork() on Windows.
+    # single_obj_compilation: avoids MSVC/clang multi-obj issues for the GC.
+    CPMAddPackage(
+        NAME bdwgc
+        GITHUB_REPOSITORY "exaloop/bdwgc"
+        VERSION 8.0.5
+        GIT_TAG e16c67244aff26802203060422545d38305e0160
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
+                "BUILD_SHARED_LIBS OFF"
+                "enable_threads ON"
+                "enable_large_config ON"
+                "enable_thread_local_alloc ON"
+                "enable_parallel_mark OFF"
+                "disable_handle_fork ON"
+                "enable_single_obj_compilation ON")
+else()
+    CPMAddPackage(
+        NAME bdwgc
+        GITHUB_REPOSITORY "exaloop/bdwgc"
+        VERSION 8.0.5
+        GIT_TAG e16c67244aff26802203060422545d38305e0160
+        EXCLUDE_FROM_ALL YES
+        OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
+                "BUILD_SHARED_LIBS OFF"
+                "enable_threads ON"
+                "enable_large_config ON"
+                "enable_thread_local_alloc ON"
+                "enable_handle_fork ON")
+endif()
 if(bdwgc_ADDED)
     set_target_properties(cord PROPERTIES EXCLUDE_FROM_ALL ON)
+    if(WIN32 AND TARGET gc)
+        target_compile_definitions(gc PRIVATE GC_BUILTIN_ATOMIC)
+    endif()
 endif()
 
 CPMAddPackage(
@@ -96,7 +129,7 @@ CPMAddPackage(
     GITHUB_REPOSITORY "ianlancetaylor/libbacktrace"
     GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
     DOWNLOAD_ONLY YES)
-if(backtrace_ADDED)
+if(backtrace_ADDED AND NOT WIN32)
     set(backtrace_SOURCES
         "${backtrace_SOURCE_DIR}/atomic.c"
         "${backtrace_SOURCE_DIR}/backtrace.c"
@@ -155,7 +188,8 @@ CPMAddPackage(
     GIT_TAG v6.1.1
     EXCLUDE_FROM_ALL YES)
 
-if(NOT APPLE)
+if(NOT APPLE AND NOT WIN32)
+    # numpy/BLAS stack deferred on Windows (no native Fortran/gfortran on MSVC).
     enable_language(Fortran)
     CPMAddPackage(
         NAME openblas
