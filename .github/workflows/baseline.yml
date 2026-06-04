@@ -11,6 +11,9 @@ name: Baseline develop
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - windows-next
 
 jobs:
   build:
