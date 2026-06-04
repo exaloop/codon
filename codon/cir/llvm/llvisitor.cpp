@@ -3126,6 +3126,29 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     B->SetInsertPoint(routeContinue);
     // funclet-local SSA can't escape the funclet; reload from catchStore.
     unwindException = B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+    // Compute the type selector the Itanium personality would set: the type-id of
+    // the first catch clause the thrown exception is-an-instance-of. Stored into
+    // catchStore's index-1 field so the type-id dispatch switch below matches.
+    std::vector<llvm::Constant *> idConsts;
+    for (auto *ct : catchTypesFull)
+      if (ct)
+        idConsts.push_back(B->getInt32((uint64_t)getTypeIdx(ct)));
+    llvm::Value *selector = B->getInt32(0);
+    if (!idConsts.empty()) {
+      auto *arrTy = llvm::ArrayType::get(B->getInt32Ty(), idConsts.size());
+      auto *gv = new llvm::GlobalVariable(*M, arrTy, /*isConstant=*/true,
+                                          llvm::GlobalValue::PrivateLinkage,
+                                          llvm::ConstantArray::get(arrTy, idConsts),
+                                          "codon.win.catchids");
+      auto matchFn = M->getOrInsertFunction("seq_exc_match", B->getInt32Ty(),
+                                            B->getPtrTy(), B->getPtrTy(),
+                                            B->getInt32Ty());
+      selector = B->CreateCall(
+          matchFn, {unwindException, gv, B->getInt32((uint64_t)idConsts.size())});
+    }
+    llvm::Value *pad2 = B->CreateLoad(padType, tc.catchStore);
+    pad2 = B->CreateInsertValue(pad2, selector, 1);
+    B->CreateStore(pad2, tc.catchStore);
   } else {
     llvm::LandingPadInst *caughtResult = nullptr;
     if (!options->noexc) {

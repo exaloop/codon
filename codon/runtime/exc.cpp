@@ -699,6 +699,31 @@ SEQ_FUNC int32_t seq_exc_filter(void *info, void *frame) {
     return 1; // EXCEPTION_EXECUTE_HANDLER
   return 0;   // EXCEPTION_CONTINUE_SEARCH
 }
+
+// Reproduce the Itanium personality's type selection for the WinEH funclet path:
+// given the unwind-exception pointer and the catch clauses' type-ids (in clause
+// order), return the first clause whose type the thrown object is an instance of
+// (0 = no match). The catch funclet stores this as the pad's type-index field so
+// Codon's existing type-id dispatch switch matches the right `except` clause.
+SEQ_FUNC int32_t seq_exc_match(void *unwindExc, int32_t *ids, int32_t n) {
+  if (!unwindExc)
+    return 0;
+  auto *base = (CodonBaseException *)((char *)unwindExc + seq_exc_offset());
+  auto *type = ((RTTIObject *)base->obj)->type;
+  for (int32_t i = 0; i < n; i++) {
+    seq_int_t t = (seq_int_t)ids[i];
+    if (type->id == t)
+      return ids[i];
+    if (type->parent_ids) {
+      auto *p = type->parent_ids;
+      while (*p) {
+        if (*p++ == t)
+          return ids[i];
+      }
+    }
+  }
+  return 0;
+}
 #endif // _WIN32
 
 SEQ_FUNC int64_t seq_exc_offset() {
