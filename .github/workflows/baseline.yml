@@ -1,0 +1,56 @@
+name: Baseline develop
+
+# R0 of the Windows-rebase plan: prove UNMODIFIED upstream `develop`
+# (Codon 0.19.6 / LLVM 20.1.7) builds green for us on Linux + macOS
+# (arm64 AND x86_64) BEFORE any Windows changes are added. This isolates
+# "did the rebase break it" from "was it already broken upstream".
+#
+# Uses upstream's own build mechanism verbatim (Docker for Linux + prebuilt
+# LLVM 20.1.7 tarball for macOS). Kept separate from ci.yml so the real
+# upstream workflow stays pristine until R6 (Windows-job integration).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: linux-x86_64
+          - os: macos-15-intel
+            arch: darwin-x86_64
+          - os: macos-14
+            arch: darwin-arm64
+    runs-on: ${{ matrix.os }}
+    name: Baseline ${{ matrix.arch }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Build (Ubuntu)
+        if: startsWith(matrix.os, 'ubuntu')
+        run: |
+          (cd .github/build-linux && docker build -t local -f Dockerfile.${{ matrix.arch }} .)
+          docker run -v $(pwd):/github/workspace local /github/workspace ${{ matrix.arch }} yes
+
+      - name: Build (macOS)
+        if: startsWith(matrix.os, 'macos')
+        run: |
+          sudo mkdir -p /opt/llvm-codon
+          sudo chown -R $(whoami) /opt/llvm-codon
+          curl -L https://github.com/exaloop/llvm-project/releases/download/codon-20.1.7/llvm-codon-20.1.7-${{ matrix.arch }}.tar.bz2 | tar jxf - -C /opt
+          brew install gcc
+          bash .github/build-linux/entrypoint.sh ${{ github.workspace }} ${{ matrix.arch }} yes
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-${{ matrix.arch }}.tar.gz
+          path: codon-${{ matrix.arch }}.tar.gz
