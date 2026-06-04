@@ -17,13 +17,25 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <unwind.h>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX // gc.h pulls in windows.h; keep min/max macros from breaking fast_float
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
 #define GC_THREADS
 #include "codon/runtime/lib.h"
+#ifndef _WIN32
 #include <dlfcn.h>
+#endif
 #include <gc.h>
 
 #define FASTFLOAT_ALLOWS_LEADING_PLUS
@@ -39,10 +51,16 @@
 // OpenMP patch with GC callbacks
 typedef int (*gc_setup_callback)(GC_stack_base *);
 typedef void (*gc_roots_callback)(void *, void *);
+#ifdef _WIN32
+// OpenMP is stubbed on Windows (no libomp linked); provide an empty callback hook.
+extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback, gc_setup_callback,
+                                        gc_roots_callback, gc_roots_callback) {}
+#else
 extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
                                         gc_setup_callback register_thread,
                                         gc_roots_callback add_roots,
                                         gc_roots_callback del_roots);
+#endif
 
 void seq_exc_init(int flags);
 
@@ -53,8 +71,15 @@ SEQ_FUNC void seq_init(int flags) {
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
   GC_allow_register_threads();
+#ifdef _WIN32
+  // GC_remove_roots does not exist on Win32 (bdwgc manages regions itself); OpenMP
+  // is stubbed here anyway, so pass nullptr instead of referencing a missing symbol.
+  __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
+                          GC_add_roots, nullptr);
+#else
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
+#endif
 #endif
 
   seq_exc_init(flags);
@@ -111,8 +136,13 @@ static void copy_time_seq_to_c(seq_time_t *x, struct tm *output) {
 SEQ_FUNC bool seq_localtime(seq_int_t secs, seq_time_t *output) {
   struct tm result;
   time_t now = (secs >= 0 ? secs : time(nullptr));
+#ifdef _WIN32
+  if (now == (time_t)-1 || localtime_s(&result, &now) != 0)
+    return false;
+#else
   if (now == (time_t)-1 || !localtime_r(&now, &result))
     return false;
+#endif
   copy_time_c_to_seq(&result, output);
   return true;
 }
@@ -120,8 +150,13 @@ SEQ_FUNC bool seq_localtime(seq_int_t secs, seq_time_t *output) {
 SEQ_FUNC bool seq_gmtime(seq_int_t secs, seq_time_t *output) {
   struct tm result;
   time_t now = (secs >= 0 ? secs : time(nullptr));
+#ifdef _WIN32
+  if (now == (time_t)-1 || gmtime_s(&result, &now) != 0)
+    return false;
+#else
   if (now == (time_t)-1 || !gmtime_r(&now, &result))
     return false;
+#endif
   copy_time_c_to_seq(&result, output);
   return true;
 }
@@ -136,8 +171,12 @@ SEQ_FUNC void seq_sleep(double secs) {
   std::this_thread::sleep_for(std::chrono::duration<double, std::ratio<1>>(secs));
 }
 
+#ifdef _WIN32
+SEQ_FUNC char **seq_env() { return _environ; }
+#else
 extern char **environ;
 SEQ_FUNC char **seq_env() { return environ; }
+#endif
 
 /*
  * GC
@@ -204,9 +243,10 @@ SEQ_FUNC void seq_gc_add_roots(void *start, void *end) {
 }
 
 SEQ_FUNC void seq_gc_remove_roots(void *start, void *end) {
-#if !USE_STANDARD_MALLOC
+#if !USE_STANDARD_MALLOC && !defined(_WIN32)
   GC_remove_roots(start, end);
 #endif
+  // Win32 bdwgc does not support dynamic root removal; roots remain registered.
 }
 
 SEQ_FUNC void seq_gc_clear_roots() {

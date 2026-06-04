@@ -14,6 +14,20 @@
 #include <string>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#ifndef CODON_SEH_CODE
+#define CODON_SEH_CODE 0xE0C0D047
+#endif
+static thread_local void *seq_current_exc = nullptr;
+#endif
+
 #if defined(__APPLE__) && (__arm64__ || __aarch64__)
 #define APPLE_SILICON
 #endif
@@ -194,6 +208,25 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
   seq_delete_exc(expToDelete);
 }
 
+#ifdef _WIN32
+// libbacktrace is not built on Windows yet (deferred); provide no-op stubs so
+// codonrt links. Re-enabled with a real Windows backtrace later (R4b).
+extern "C" {
+struct backtrace_state *backtrace_create_state(const char *, int,
+                                               backtrace_error_callback, void *) {
+  return nullptr;
+}
+int backtrace_full(struct backtrace_state *, int, backtrace_full_callback,
+                   backtrace_error_callback, void *) {
+  return 0;
+}
+int backtrace_simple(struct backtrace_state *, int, backtrace_simple_callback,
+                     backtrace_error_callback, void *) {
+  return 0;
+}
+}
+#endif
+
 static struct backtrace_state *state = nullptr;
 static std::mutex stateLock;
 
@@ -320,11 +353,18 @@ SEQ_FUNC void seq_terminate(void *exc) {
 }
 
 SEQ_FUNC void seq_throw(void *exc) {
+#ifdef _WIN32
+  seq_current_exc = exc;
+  RaiseException(CODON_SEH_CODE, EXCEPTION_NONCONTINUABLE, 0, nullptr);
+  seq_terminate(exc);
+#else
   _Unwind_Reason_Code code = _Unwind_RaiseException((_Unwind_Exception *)exc);
   (void)code;
   seq_terminate(exc);
+#endif
 }
 
+#ifndef _WIN32
 static uintptr_t readULEB128(const uint8_t **data) {
   uintptr_t result = 0;
   uintptr_t shift = 0;
@@ -646,6 +686,20 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
   // The real work of the personality function is captured here
   return handleLsda(version, lsda, actions, exceptionClass, exceptionObject, context);
 }
+#else  // _WIN32
+// Windows SEH path: the funclet catch pulls the stashed Codon exception from TLS,
+// and the SEH filter matches our private exception code.
+SEQ_FUNC void *seq_exc_current() { return seq_current_exc; }
+
+SEQ_FUNC int32_t seq_exc_filter(void *info, void *frame) {
+  auto *ep = (EXCEPTION_POINTERS *)info;
+  (void)frame;
+  if (ep && ep->ExceptionRecord &&
+      ep->ExceptionRecord->ExceptionCode == CODON_SEH_CODE)
+    return 1; // EXCEPTION_EXECUTE_HANDLER
+  return 0;   // EXCEPTION_CONTINUE_SEARCH
+}
+#endif // _WIN32
 
 SEQ_FUNC int64_t seq_exc_offset() {
   static CodonBaseException dummy = {};

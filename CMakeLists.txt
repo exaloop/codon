@@ -179,10 +179,12 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:codonfloat>)
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 elseif(WIN32)
+  # zlibstatic linked normally (NOT whole-archived): zlib-ng embeds a Windows
+  # version resource (.res) in its static lib that lld-link's /WHOLEARCHIVE rejects.
   target_link_libraries(
     codonrt
     PRIVATE $<TARGET_FILE:gc>
-            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:zlibstatic>
+            $<TARGET_FILE:zlibstatic>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:bz2>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:liblzma>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:re2>

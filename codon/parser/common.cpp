@@ -4,6 +4,7 @@
 
 #include <cinttypes>
 #include <climits>
+#include <limits.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -16,6 +17,10 @@
 
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(codon);
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 namespace codon::ast {
 
@@ -54,6 +59,7 @@ ImportFile IFilesystem::get_root(const path_t &sp) const {
              "bad path substitution: {}, {}", s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::ranges::replace(module, '/', '.');
+  std::ranges::replace(module, '\\', '.'); // Windows path separator -> module dot
   return ImportFile{(!isStdLib && root == module0) ? ImportFile::PACKAGE
                                                    : ImportFile::STDLIB,
                     s, module};
