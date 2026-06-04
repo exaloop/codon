@@ -1,13 +1,13 @@
 name: Baseline develop
 
-# R0 of the Windows-rebase plan: prove UNMODIFIED upstream `develop`
-# (Codon 0.19.6 / LLVM 20.1.7) builds green for us on Linux + macOS
-# (arm64 AND x86_64) BEFORE any Windows changes are added. This isolates
-# "did the rebase break it" from "was it already broken upstream".
-#
-# Uses upstream's own build mechanism verbatim (Docker for Linux + prebuilt
-# LLVM 20.1.7 tarball for macOS). Kept separate from ci.yml so the real
-# upstream workflow stays pristine until R6 (Windows-job integration).
+# R0 proved UNMODIFIED develop builds on Linux + macOS (x2). With the native-Windows
+# port now on this branch, this workflow doubles as the R6 multi-platform check:
+#   - Linux + macOS jobs re-build via upstream's own Docker/prebuilt-LLVM path. Since
+#     every Windows change is _WIN32/isWinMSVC-guarded, these MUST stay green (regression
+#     guard that the port didn't touch the other platforms).
+#   - The Windows job builds the exaloop LLVM fork 20.1.7 from source (no Windows prebuilt
+#     exists upstream), then builds codon with MSVC/clang+lld and smoke-tests codon.exe.
+# Kept separate from ci.yml so the upstream workflow stays pristine until the PR.
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
           - os: macos-14
             arch: darwin-arm64
     runs-on: ${{ matrix.os }}
-    name: Baseline ${{ matrix.arch }}
+    name: Build ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v6
 
@@ -57,3 +57,98 @@ jobs:
         with:
           name: codon-${{ matrix.arch }}.tar.gz
           path: codon-${{ matrix.arch }}.tar.gz
+
+  windows:
+    name: Build windows-x86_64 (MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Set up toolchain on PATH
+        shell: pwsh
+        run: |
+          echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install ninja -y --no-progress
+          clang --version
+          ninja --version
+
+      - name: Cache LLVM fork (MSVC, 20.1.7)
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: llvm
+          key: windows-msvc-llvm-20-1-7
+
+      - name: Build LLVM 20.1.7 fork (MSVC) if not cached
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          git clone --depth 1 -b codon-20.1.7 https://github.com/exaloop/llvm-project llvm-project
+          cmake -S llvm-project/llvm -B llvm-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_HOST_TRIPLE=x86_64-pc-windows-msvc `
+            -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-pc-windows-msvc `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++ `
+            -DLLVM_INCLUDE_TESTS=OFF `
+            -DLLVM_INCLUDE_BENCHMARKS=OFF `
+            -DLLVM_INCLUDE_EXAMPLES=OFF `
+            -DLLVM_ENABLE_WERROR=OFF `
+            -DLLVM_ENABLE_RTTI=ON `
+            -DLLVM_ENABLE_ZLIB=OFF `
+            -DLLVM_ENABLE_ZSTD=OFF `
+            -DLLVM_ENABLE_TERMINFO=OFF `
+            -DLLVM_TARGETS_TO_BUILD=X86 `
+            -DLLVM_BUILD_TOOLS=OFF `
+            -DLLVM_ENABLE_PROJECTS=""
+          cmake --build llvm-build --config Release
+          cmake --install llvm-build --prefix llvm
+
+      - name: Build Codon (Windows/MSVC)
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
+            -DLLVM_DIR="llvm/lib/cmake/llvm" `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++ `
+            -DCODON_GPU=OFF
+          cmake --build build --config Release
+          cmake --install build --prefix codon-deploy
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Copy-Item codon-deploy/lib/codon/codonc.dll codon-deploy/bin/
+          Copy-Item codon-deploy/lib/codon/codonrt.dll codon-deploy/bin/
+          if (Test-Path codon-deploy/lib/codon/codon_jupyter.dll) {
+            Copy-Item codon-deploy/lib/codon/codon_jupyter.dll codon-deploy/bin/
+          }
+          Compress-Archive -Path codon-deploy -DestinationPath codon-windows-x86_64.zip -Force
+
+      - name: Smoke test (codon run + build)
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD\codon-deploy\bin;$env:PATH"
+          'print("hello from CI windows codon")' | Out-File -Encoding ascii smoke.py
+          "def f(n):`n    return n if n < 2 else f(n-1)+f(n-2)`ntry:`n    raise ValueError('x')`nexcept ValueError as e:`n    print('caught', e)`nfinally:`n    print('fin')`nprint(f(10))" | Out-File -Encoding ascii smoke2.py
+          & codon-deploy/bin/codon.exe run smoke.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run smoke.py failed" }
+          & codon-deploy/bin/codon.exe run smoke2.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run smoke2.py (try/except) failed" }
+          & codon-deploy/bin/codon.exe build smoke2.py -o smoke2.exe
+          if ($LASTEXITCODE -ne 0) { throw "codon build smoke2.py failed" }
+          & ./smoke2.exe
+          if ($LASTEXITCODE -ne 0) { throw "AOT smoke2.exe failed" }
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-windows-x86_64
+          path: codon-windows-x86_64.zip
