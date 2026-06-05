@@ -125,8 +125,40 @@ set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 if(WIN32)
+  # MSVC's CRT lacks the compiler-rt builtins clang emits for float16/bf16 and 128-bit
+  # ints (Int[128]/UInt[128] div/mod, int<->fp). On Linux/macOS these come from
+  # libgcc/compiler-rt; on Windows we vendor them. They must be codonrt's OWN sources
+  # (NOT whole-archived codonfloat, whose symbols WINDOWS_EXPORT_ALL_SYMBOLS does not
+  # export) so the JIT resolves them via the process symbol table and AOT via codonrt's
+  # import lib. So on Windows codonrt compiles floatlib directly and does not link
+  # codonfloat (clang supports __int128 even on windows-msvc).
+  target_sources(codonrt PRIVATE
+                 # float16/bf16 conversions (same set as codonfloat)
+                 codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/truncdfhf2.c
+                 codon/runtime/floatlib/extendhfsf2.c codon/runtime/floatlib/truncdfsf2.c
+                 codon/runtime/floatlib/extendhftf2.c codon/runtime/floatlib/truncsfbf2.c
+                 codon/runtime/floatlib/extendsfdf2.c codon/runtime/floatlib/truncsfhf2.c
+                 codon/runtime/floatlib/extendsftf2.c codon/runtime/floatlib/trunctfdf2.c
+                 codon/runtime/floatlib/trunctfhf2.c codon/runtime/floatlib/truncdfbf2.c
+                 codon/runtime/floatlib/trunctfsf2.c
+                 # 128-bit int div/mod and int<->fp conversions
+                 codon/runtime/floatlib/divti3.c codon/runtime/floatlib/modti3.c
+                 codon/runtime/floatlib/udivti3.c codon/runtime/floatlib/umodti3.c
+                 codon/runtime/floatlib/udivmodti4.c codon/runtime/floatlib/clzti2.c
+                 codon/runtime/floatlib/floattidf.c codon/runtime/floatlib/floatuntidf.c
+                 codon/runtime/floatlib/floattisf.c codon/runtime/floatlib/floatuntisf.c
+                 codon/runtime/floatlib/fixdfti.c codon/runtime/floatlib/fixunsdfti.c)
+  set_source_files_properties(
+    codon/runtime/floatlib/extenddftf2.c codon/runtime/floatlib/truncdfhf2.c
+    codon/runtime/floatlib/extendhfsf2.c codon/runtime/floatlib/truncdfsf2.c
+    codon/runtime/floatlib/extendhftf2.c codon/runtime/floatlib/truncsfbf2.c
+    codon/runtime/floatlib/extendsfdf2.c codon/runtime/floatlib/truncsfhf2.c
+    codon/runtime/floatlib/extendsftf2.c codon/runtime/floatlib/trunctfdf2.c
+    codon/runtime/floatlib/trunctfhf2.c codon/runtime/floatlib/truncdfbf2.c
+    codon/runtime/floatlib/trunctfsf2.c
+    PROPERTIES COMPILE_DEFINITIONS COMPILER_RT_HAS_FLOAT16)
   set_target_properties(codonrt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib codonfloat openblas)
+  add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib openblas)
 else()
   add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
                            re2 hwy hwy_contrib fast_float codonfloat)
@@ -197,7 +229,6 @@ elseif(WIN32)
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:re2>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:hwy>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:hwy_contrib>
-            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:codonfloat>
             # OpenBLAS lives in libopenblas.dll; codon's numpy.linalg calls cblas_*/LAPACK
             # from JIT/AOT code, not from codonrt itself. Link its import lib and force a
             # reference so libopenblas.dll is a load-time dependency (and thus loaded for
