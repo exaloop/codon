@@ -161,6 +161,13 @@ std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
                        "0"
 #endif
   );
+  earlyDefines.emplace("__windows__",
+#ifdef _WIN32
+                       "1"
+#else
+                       "0"
+#endif
+  );
   return earlyDefines;
 }
 

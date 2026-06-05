@@ -111,6 +111,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__windows__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__dict_unordered__",
                            std::make_shared<int>(shared->itemID++));
 
