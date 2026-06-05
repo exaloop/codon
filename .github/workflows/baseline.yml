@@ -137,6 +137,19 @@ jobs:
           cmake --build build --config Release
           cmake --install build --prefix codon-deploy
 
+      - name: CIR unit tests (codon_test)
+        shell: pwsh
+        run: |
+          # codon_test is EXCLUDE_FROM_ALL on Windows (it statically links the compiler),
+          # so build it explicitly and run the fast in-process IR suite as a regression
+          # gate. The SeqTests (compile+run .codon programs) are left out: they're slow
+          # and currently surface separate Windows runtime gaps.
+          cmake --build build --config Release --target codon_test
+          $env:PATH = "$PWD\build;$env:PATH"
+          $env:CODON_PATH = "$PWD\stdlib"
+          & build/codon_test.exe --gtest_filter=CIRCoreTest.*
+          if ($LASTEXITCODE -ne 0) { throw "CIRCoreTest failed" }
+
       - name: Package
         shell: pwsh
         run: |
