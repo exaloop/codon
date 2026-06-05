@@ -189,7 +189,6 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES)
 
 if(NOT APPLE AND NOT WIN32)
-    # numpy/BLAS stack deferred on Windows (no native Fortran/gfortran on MSVC).
     enable_language(Fortran)
     CPMAddPackage(
         NAME openblas
@@ -201,6 +200,20 @@ if(NOT APPLE AND NOT WIN32)
                 "BUILD_BENCHMARKS OFF"
                 "NUM_THREADS 64"
                 "CCOMMON_OPT -O3")
+elseif(WIN32)
+    # No native Fortran on MSVC, so use the OpenBLAS project's official prebuilt Windows
+    # binary (BLAS + LAPACK + CBLAS, built with MinGW). It is self-contained: the Fortran
+    # runtime (libgfortran/libquadmath/libgcc) is statically baked into libopenblas.dll,
+    # which only imports KERNEL32 + msvcrt. Mirrors the upstream "prebuilt OpenBLAS" model.
+    CPMAddPackage(
+        NAME openblas_win
+        URL https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.29/OpenBLAS-0.3.29_x64.zip
+        DOWNLOAD_ONLY YES)
+    add_library(openblas SHARED IMPORTED GLOBAL)
+    set_target_properties(openblas PROPERTIES
+        IMPORTED_IMPLIB "${openblas_win_SOURCE_DIR}/lib/libopenblas.lib"
+        IMPORTED_LOCATION "${openblas_win_SOURCE_DIR}/bin/libopenblas.dll")
+    set(OPENBLAS_WIN_DIR "${openblas_win_SOURCE_DIR}" CACHE INTERNAL "")
 endif()
 
 CPMAddPackage(

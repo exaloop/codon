@@ -51,6 +51,15 @@ find_package(LLVM REQUIRED)
 
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
+if(WIN32)
+  # GC-patched libomp built from the exaloop LLVM fork's openmp/ with clang-cl and
+  # installed alongside LLVM (lib/libomp.lib, bin/libomp.dll). This imported `omp`
+  # target mirrors the one the prebuilt LLVM provides on Linux/macOS.
+  add_library(omp SHARED IMPORTED)
+  set_target_properties(omp PROPERTIES
+    IMPORTED_IMPLIB "${LLVM_LIBRARY_DIR}/libomp.lib"
+    IMPORTED_LOCATION "${LLVM_TOOLS_BINARY_DIR}/libomp.dll")
+endif()
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
@@ -108,20 +117,16 @@ add_library(codonfloat STATIC
 target_compile_options(codonfloat PRIVATE -O3)
 target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
 
-if(WIN32)
-  # numpy runtime (Highway/OpenBLAS) deferred on Windows
-  set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                    codon/runtime/re.cpp codon/runtime/exc.cpp)
-else()
-  set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
-                    codon/runtime/re.cpp codon/runtime/exc.cpp
-                    codon/runtime/numpy/sort.cpp
-                    codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
-endif()
+# The numpy *core* runtime (Highway-based sort/loops + complex zmath) has no Fortran
+# dependency, so it builds on all platforms. Only OpenBLAS/LAPACK (linalg) is Fortran.
+set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
+                  codon/runtime/re.cpp codon/runtime/exc.cpp
+                  codon/runtime/numpy/sort.cpp
+                  codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 if(WIN32)
   set_target_properties(codonrt PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 codonfloat)
+  add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib codonfloat openblas)
 else()
   add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
                            re2 hwy hwy_contrib fast_float codonfloat)
@@ -162,8 +167,9 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
 if(WIN32)
-  # dbghelp: native Windows backtrace (replaces libbacktrace on Windows)
-  target_link_libraries(codonrt PRIVATE fmt LLVMSupport dbghelp)
+  # dbghelp: native Windows backtrace (replaces libbacktrace on Windows).
+  # omp: GC-patched libomp (enables @par); brings in __kmpc_set_gc_callbacks.
+  target_link_libraries(codonrt PRIVATE fmt LLVMSupport dbghelp omp)
 else()
   target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
 endif()
@@ -189,7 +195,15 @@ elseif(WIN32)
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:bz2>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:liblzma>
             -Wl,/WHOLEARCHIVE:$<TARGET_FILE:re2>
-            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:codonfloat>)
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:hwy>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:hwy_contrib>
+            -Wl,/WHOLEARCHIVE:$<TARGET_FILE:codonfloat>
+            # OpenBLAS lives in libopenblas.dll; codon's numpy.linalg calls cblas_*/LAPACK
+            # from JIT/AOT code, not from codonrt itself. Link its import lib and force a
+            # reference so libopenblas.dll is a load-time dependency (and thus loaded for
+            # the JIT symbol resolver).
+            openblas
+            -Wl,/INCLUDE:cblas_dgemm)
 else()
   add_dependencies(codonrt openblas)
   target_link_libraries(
@@ -207,11 +221,19 @@ if(ASAN)
     codonrt PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
                     "-fsanitize-recover=address")
 endif()
-if(NOT WIN32)
+# Copy libomp next to codonrt so JIT (codon run) and the build tree can load it.
+add_custom_command(
+  TARGET codonrt
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
+          ${CMAKE_BINARY_DIR})
+
+if(WIN32)
+  # Same for libopenblas.dll (numpy.linalg).
   add_custom_command(
     TARGET codonrt
     POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:omp>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:openblas>
             ${CMAKE_BINARY_DIR})
 endif()
 
@@ -596,14 +618,43 @@ set(CODON_TEST_CPPFILES
     test/types.cpp)
 add_executable(codon_test ${CODON_TEST_CPPFILES})
 if(WIN32)
+  # On Windows codon_test statically links the whole compiler (see below), so keep it
+  # out of the default build to avoid compiling the compiler twice. Build on demand
+  # with: cmake --build <dir> --target codon_test
   set_target_properties(codon_test PROPERTIES EXCLUDE_FROM_ALL ON)
 endif()
 target_include_directories(codon_test PRIVATE test/cir "${gc_SOURCE_DIR}/include")
-target_link_libraries(codon_test fmt codonc codonrt gtest_main)
+if(WIN32)
+  # The unit tests ODR-use the compiler's static data members (NodeId, KEY,
+  # NEG_MAGIC_NAME, IdMixin::currentId, ...). On MSVC those can't be referenced across
+  # the codonc.dll boundary without __declspec(dllimport) on each (235 of them, unlike
+  # ELF where it's transparent). So build the compiler sources straight into the test
+  # binary and link the LLVM libs directly, instead of going through codonc.dll.
+  target_sources(codon_test PRIVATE ${CODON_HPPFILES} ${CODON_CPPFILES}
+                                    codon_rules.cpp omp_rules.cpp)
+  target_include_directories(codon_test PRIVATE ${peglib_SOURCE_DIR}
+                                                ${toml_SOURCE_DIR}/include
+                                                ${semver_SOURCE_DIR}/include
+                                                ${fast_float_SOURCE_DIR}/include)
+  target_compile_definitions(codon_test PRIVATE CODON_COMPILER_BUILD)
+  target_link_libraries(codon_test fmt codonrt codon-stdlib gtest_main ${LLVM_LIBS})
+else()
+  target_link_libraries(codon_test fmt codonc codonrt gtest_main)
+endif()
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
+if(WIN32)
+  # libomp.dll for runtime (JIT + AOT exes), libomp.lib so AOT `codon build` of @par
+  # programs can link the __kmpc_* import lib via -L../lib/codon.
+  install(FILES "${LLVM_TOOLS_BINARY_DIR}/libomp.dll" DESTINATION lib/codon)
+  install(FILES "${LLVM_LIBRARY_DIR}/libomp.lib" DESTINATION lib/codon)
+  # OpenBLAS: libopenblas.dll for runtime (JIT + AOT), libopenblas.lib so AOT
+  # `codon build` of numpy.linalg programs can link cblas_*/LAPACK via -L../lib/codon.
+  install(FILES "${OPENBLAS_WIN_DIR}/bin/libopenblas.dll" DESTINATION lib/codon)
+  install(FILES "${OPENBLAS_WIN_DIR}/lib/libopenblas.lib" DESTINATION lib/codon)
+endif()
 if(NOT WIN32)
   install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)
   install(FILES ${copied_libgfortran} DESTINATION lib/codon)
