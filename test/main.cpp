@@ -2,18 +2,30 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <dirent.h>
-#include <fcntl.h>
+#include <cstring>
 #include <fstream>
 #include <gc.h>
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <tuple>
+#include <vector>
+
+#ifdef _WIN32
+#include <io.h>
+// No fork()/wait() on Windows. runInChildProcess() re-execs the test binary once
+// per case, so the child's exit code maps directly onto these wait-status macros.
+// (<windows.h> itself is included below, after the LLVM/Codon headers, so its
+// macros can't clobber LLVM identifiers like min/max or GDI's PASSTHROUGH.)
+#define WIFEXITED(s) (true)
+#define WEXITSTATUS(s) (s)
+#else
+#include <dirent.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <tuple>
 #include <unistd.h>
-#include <vector>
+#endif
 
 #include "codon/cir/analyze/dataflow/capture.h"
 #include "codon/cir/analyze/dataflow/reaching.h"
@@ -27,6 +39,15 @@
 #include "codon/util/common.h"
 
 #include "gtest/gtest.h"
+
+#ifdef _WIN32
+// Pull in the Win32 API only after the LLVM/Codon headers so windows.h's macros
+// (min/max, GDI's PASSTHROUGH, ...) can't clobber LLVM's identifiers.
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define NOGDI
+#include <windows.h>
+#endif
 
 using namespace codon;
 using namespace std;
@@ -187,13 +208,22 @@ vector<string> splitLines(const string &output) {
   istringstream stream(output);
   const char delim = '\n';
 
-  while (getline(stream, line, delim))
+  while (getline(stream, line, delim)) {
+    // Windows text-mode stdout writes \r\n; drop the trailing \r so captured
+    // output compares equal to the (LF) expectations.
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
     result.push_back(line);
+  }
 
   return result;
 }
 
-static pair<bool, string> findExpectOnLine(const string &line) {
+static pair<bool, string> findExpectOnLine(const string &rawLine) {
+  // Drop a trailing \r so CRLF-checked-out test files match LF program output.
+  string line = rawLine;
+  if (!line.empty() && line.back() == '\r')
+    line.pop_back();
   for (auto EXPECT_STR : vector<pair<bool, string>>{
            {false, "# EXPECT: "}, {false, "#: "}, {true, "#! "}}) {
     size_t pos = line.find(EXPECT_STR.second);
@@ -238,67 +268,142 @@ static pair<vector<string>, bool> findExpects(const string &filename, bool isCod
 string argv0;
 void seq_exc_init(int flags);
 
+// Compile (and optionally run) a single test case. Extracted so the same logic
+// serves both the POSIX forked child and the Windows re-exec'd child process.
+static void runCompileAndRun(const string &file, bool debug, const string &code,
+                             int startLine, int testFlags, bool pyNumerics,
+                             bool run) {
+  auto options = Options::getDefault(argv0);
+  options->test = true;
+  options->standalone = true;
+  options->debug = debug;
+  options->pynum = pyNumerics;
+
+  auto compiler = std::make_unique<Compiler>(*options);
+  // make sure we abort() on runtime error
+  llvm::handleAllErrors(code.empty()
+                            ? compiler->parseFile(file, testFlags)
+                            : compiler->parseCode(file, code, startLine, testFlags),
+                        [](const error::ParserErrorInfo &e) {
+                          for (auto &group : e.getErrors()) {
+                            for (auto &msg : group) {
+                              getLogger().level = 0;
+                              printf("%s\n", msg.getMessage().c_str());
+                            }
+                          }
+                          fflush(stdout);
+                          exit(EXIT_FAILURE);
+                        });
+  auto *pm = compiler->getPassManager();
+  pm->registerPass(std::make_unique<TestOutliner>());
+  pm->registerPass(std::make_unique<TestInliner>());
+  auto capKey =
+      pm->registerAnalysis(std::make_unique<ir::analyze::dataflow::CaptureAnalysis>(
+                               ir::analyze::dataflow::RDAnalysis::KEY,
+                               ir::analyze::dataflow::DominatorAnalysis::KEY),
+                           {ir::analyze::dataflow::RDAnalysis::KEY,
+                            ir::analyze::dataflow::DominatorAnalysis::KEY});
+  pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
+                   {capKey});
+  llvm::cantFail(compiler->compile());
+
+  if (run)
+    compiler->getLLVMVisitor()->run({file});
+  fflush(stdout);
+}
+
 class SeqTest
     : public testing::TestWithParam<tuple<
           string /*filename*/, bool /*debug*/, string /* case name */,
           string /* case code */, int /* case line */, bool /* barebones stdlib */,
           bool /* Python numerics */, bool /* run */>> {
   vector<char> buf;
+#ifndef _WIN32
   int out_pipe[2];
   pid_t pid;
+#endif
 
 public:
+#ifdef _WIN32
+  SeqTest() : buf(65536) {}
+#else
   SeqTest() : buf(65536), out_pipe(), pid() {}
+#endif
   string getFilename(const string &basename) {
     return string(TEST_DIR) + "/" + basename;
   }
   int runInChildProcess(bool avoidFork = false) {
-    auto fn = [this]() {
-      auto file = getFilename(get<0>(GetParam()));
-      bool debug = get<1>(GetParam());
-      auto code = get<3>(GetParam());
-      auto startLine = get<4>(GetParam());
-      int testFlags = 1 + get<5>(GetParam());
-      bool pyNumerics = get<6>(GetParam());
-      bool run = get<7>(GetParam());
+    (void)avoidFork;
+    auto file = getFilename(get<0>(GetParam()));
+    bool debug = get<1>(GetParam());
+    auto code = get<3>(GetParam());
+    int startLine = get<4>(GetParam());
+    int testFlags = 1 + get<5>(GetParam());
+    bool pyNumerics = get<6>(GetParam());
+    bool run = get<7>(GetParam());
 
-      auto options = Options::getDefault(argv0);
-      options->test = true;
-      options->standalone = true;
-      options->debug = debug;
-      options->pynum = pyNumerics;
+#ifdef _WIN32
+    // No fork() on Windows: serialize this case's parameters to a temp file, then
+    // re-exec the test binary in "--run-case" mode with its stdout wired to a pipe.
+    // A fresh process per case mirrors the isolation fork() gave us (the JIT/runtime
+    // is set up once per process) and contains any abort() inside the child.
+    char tmpDir[MAX_PATH], tmpFile[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmpDir);
+    GetTempFileNameA(tmpDir, "cdt", 0, tmpFile);
+    {
+      std::ofstream pf(tmpFile, std::ios::binary);
+      pf << debug << ' ' << startLine << ' ' << testFlags << ' ' << pyNumerics << ' '
+         << run << '\n';
+      auto writeStr = [&](const string &s) {
+        pf << s.size() << '\n';
+        pf.write(s.data(), s.size());
+        pf << '\n';
+      };
+      writeStr(file);
+      writeStr(code);
+    }
 
-      auto compiler = std::make_unique<Compiler>(*options);
-      // make sure we abort() on runtime error
-      llvm::handleAllErrors(code.empty()
-                                ? compiler->parseFile(file, testFlags)
-                                : compiler->parseCode(file, code, startLine, testFlags),
-                            [](const error::ParserErrorInfo &e) {
-                              for (auto &group : e.getErrors()) {
-                                for (auto &msg : group) {
-                                  getLogger().level = 0;
-                                  printf("%s\n", msg.getMessage().c_str());
-                                }
-                              }
-                              fflush(stdout);
-                              exit(EXIT_FAILURE);
-                            });
-      auto *pm = compiler->getPassManager();
-      pm->registerPass(std::make_unique<TestOutliner>());
-      pm->registerPass(std::make_unique<TestInliner>());
-      auto capKey =
-          pm->registerAnalysis(std::make_unique<ir::analyze::dataflow::CaptureAnalysis>(
-                                   ir::analyze::dataflow::RDAnalysis::KEY,
-                                   ir::analyze::dataflow::DominatorAnalysis::KEY),
-                               {ir::analyze::dataflow::RDAnalysis::KEY,
-                                ir::analyze::dataflow::DominatorAnalysis::KEY});
-      pm->registerPass(std::make_unique<EscapeValidator>(capKey), /*insertBefore=*/"",
-                       {capKey});
-      llvm::cantFail(compiler->compile());
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+    HANDLE rd = nullptr, wr = nullptr;
+    assert(CreatePipe(&rd, &wr, &sa, 0));
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
-      if (run)
-        compiler->getLLVMVisitor()->run({file});
-      fflush(stdout);
+    string cmd = "\"" + argv0 + "\" --run-case \"" + string(tmpFile) + "\"";
+    vector<char> cmdv(cmd.begin(), cmd.end());
+    cmdv.push_back('\0');
+
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = wr;
+    si.hStdError = wr;
+    PROCESS_INFORMATION pi{};
+    BOOL ok = CreateProcessA(nullptr, cmdv.data(), nullptr, nullptr, TRUE, 0, nullptr,
+                             nullptr, &si, &pi);
+    CloseHandle(wr);
+    assert(ok);
+
+    string out;
+    char rbuf[4096];
+    DWORD n = 0;
+    while (ReadFile(rd, rbuf, sizeof(rbuf), &n, nullptr) && n > 0)
+      out.append(rbuf, n);
+    CloseHandle(rd);
+
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD ec = 0;
+    GetExitCodeProcess(pi.hProcess, &ec);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    DeleteFileA(tmpFile);
+
+    std::fill(buf.begin(), buf.end(), '\0');
+    memcpy(buf.data(), out.data(), std::min(out.size(), buf.size() - 1));
+    return static_cast<int>(ec);
+#else
+    auto fn = [&]() {
+      runCompileAndRun(file, debug, code, startLine, testFlags, pyNumerics, run);
     };
 
     assert(pipe(out_pipe) != -1);
@@ -323,6 +428,7 @@ public:
       return status;
     }
     return -1;
+#endif
   }
   string result() { return string(buf.data()); }
 };
@@ -544,6 +650,9 @@ INSTANTIATE_TEST_SUITE_P(
     ),
     getTestNameFromParam);
 
+// GPU (CODON_GPU=OFF) and numpy (carved out: no native Fortran/BLAS on MSVC) are
+// unsupported on Windows — skip their suites so the runner reflects what's built.
+#ifndef _WIN32
   INSTANTIATE_TEST_SUITE_P(
     GpuTests, SeqTest,
     testing::Combine(
@@ -598,11 +707,38 @@ INSTANTIATE_TEST_SUITE_P(
         testing::Values(true)
     ),
     getTestNameFromParam);
+#endif // !_WIN32
 
 // clang-format on
 
 int main(int argc, char *argv[]) {
-  argv0 = ast::Filesystem::executable_path(argv[0]);
+  argv0 = ast::Filesystem::executable_path(argv[0]).string();
+#ifdef _WIN32
+  // Child mode: a single case re-exec'd by runInChildProcess(). Read the
+  // serialized parameters, compile/run the case, and let stdout + the exit code
+  // flow back to the parent over the inherited pipe.
+  if (argc >= 3 && string(argv[1]) == "--run-case") {
+    std::ifstream pf(argv[2], std::ios::binary);
+    bool debug = false, pyNumerics = false, run = false;
+    int startLine = 0, testFlags = 0;
+    pf >> debug >> startLine >> testFlags >> pyNumerics >> run;
+    pf.get(); // consume newline
+    auto readStr = [&]() {
+      size_t len = 0;
+      pf >> len;
+      pf.get(); // consume newline
+      string s(len, '\0');
+      pf.read(&s[0], len);
+      pf.get(); // consume trailing newline
+      return s;
+    };
+    string file = readStr();
+    string code = readStr();
+    runCompileAndRun(file, debug, code, startLine, testFlags, pyNumerics, run);
+    fflush(stdout);
+    return EXIT_SUCCESS;
+  }
+#endif
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
