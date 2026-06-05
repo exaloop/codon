@@ -42,6 +42,43 @@
 #define FASTFLOAT_SKIP_WHITE_SPACE
 #include "fast_float/fast_float.h"
 
+#ifdef _WIN32
+// POSIX getline(3) is absent from the MSVC CRT, but codon's stdlib (file.codon,
+// builtin.input) calls it via `_C.getline`. Provide it here as an exported codonrt
+// symbol so both AOT and the JIT's process symbol resolver can find it. Standard
+// semantics: grows *lineptr (malloc/realloc), stores capacity in *n, returns bytes
+// read incl. the '\n' (NUL-terminated), or -1 at EOF/error.
+extern "C" long long getline(char **lineptr, size_t *n, FILE *stream) {
+  if (!lineptr || !n || !stream)
+    return -1;
+  if (*lineptr == nullptr || *n == 0) {
+    *n = 128;
+    *lineptr = (char *)std::malloc(*n);
+    if (!*lineptr)
+      return -1;
+  }
+  size_t pos = 0;
+  int c;
+  while ((c = std::fgetc(stream)) != EOF) {
+    if (pos + 1 >= *n) {
+      size_t newn = *n * 2;
+      char *p = (char *)std::realloc(*lineptr, newn);
+      if (!p)
+        return -1;
+      *lineptr = p;
+      *n = newn;
+    }
+    (*lineptr)[pos++] = (char)c;
+    if (c == '\n')
+      break;
+  }
+  if (pos == 0 && c == EOF)
+    return -1;
+  (*lineptr)[pos] = '\0';
+  return (long long)pos;
+}
+#endif
+
 /*
  * General
  */

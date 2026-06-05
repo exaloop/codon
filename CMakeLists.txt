@@ -234,7 +234,20 @@ elseif(WIN32)
             # reference so libopenblas.dll is a load-time dependency (and thus loaded for
             # the JIT symbol resolver).
             openblas
-            -Wl,/INCLUDE:cblas_dgemm)
+            -Wl,/INCLUDE:cblas_dgemm
+            # zlib (gz*) and bzip2 (BZ2_*) come from static libs whose symbols
+            # WINDOWS_EXPORT_ALL_SYMBOLS does NOT re-export (it only scans codonrt's own
+            # objects). codon's gzip/bz2 stdlib calls them from JIT/AOT code, so the JIT's
+            # process symbol resolver needs them in codonrt.dll's export table. Force a
+            # reference (/INCLUDE, so the archive member is pulled in) + export each.
+            -Wl,/INCLUDE:gzopen
+            -Wl,/EXPORT:gzopen -Wl,/EXPORT:gzclose -Wl,/EXPORT:gzread
+            -Wl,/EXPORT:gzwrite -Wl,/EXPORT:gzgetc -Wl,/EXPORT:gzgets
+            -Wl,/EXPORT:gzseek -Wl,/EXPORT:gztell -Wl,/EXPORT:gzflush
+            -Wl,/EXPORT:gzerror
+            -Wl,/INCLUDE:BZ2_bzopen
+            -Wl,/EXPORT:BZ2_bzopen -Wl,/EXPORT:BZ2_bzclose -Wl,/EXPORT:BZ2_bzread
+            -Wl,/EXPORT:BZ2_bzwrite -Wl,/EXPORT:BZ2_bzflush -Wl,/EXPORT:BZ2_bzerror)
 else()
   add_dependencies(codonrt openblas)
   target_link_libraries(
