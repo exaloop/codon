@@ -392,6 +392,7 @@ set(CODON_HPPFILES
   codon/util/serialize.h
   codon/util/tser.h)
 set(CODON_CPPFILES
+  codon/app/cli.cpp
   codon/compiler/compiler.cpp
   codon/compiler/debug_listener.cpp
   codon/compiler/engine.cpp
