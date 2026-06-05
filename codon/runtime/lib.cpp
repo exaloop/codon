@@ -51,16 +51,13 @@
 // OpenMP patch with GC callbacks
 typedef int (*gc_setup_callback)(GC_stack_base *);
 typedef void (*gc_roots_callback)(void *, void *);
-#ifdef _WIN32
-// OpenMP is stubbed on Windows (no libomp linked); provide an empty callback hook.
-extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback, gc_setup_callback,
-                                        gc_roots_callback, gc_roots_callback) {}
-#else
+// Provided by the GC-patched libomp (linked on all platforms, incl. the Windows
+// clang-cl build). Registers bdwgc thread/roots callbacks so @par worker threads
+// allocate safely.
 extern "C" void __kmpc_set_gc_callbacks(gc_setup_callback get_stack_base,
                                         gc_setup_callback register_thread,
                                         gc_roots_callback add_roots,
                                         gc_roots_callback del_roots);
-#endif
 
 void seq_exc_init(int flags);
 
