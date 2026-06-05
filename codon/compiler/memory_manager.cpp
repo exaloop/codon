@@ -114,24 +114,31 @@ allocateNearImage(size_t size, llvm::sys::Memory::ProtectionFlags prot,
   if (HMODULE crt = GetModuleHandleW(L"vcruntime140.dll"))
     handler = reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
 
-  if (handler) {
-    uintptr_t floor = handler & ~0xFFFFFFFFull;
+  // Anchor __ImageBase 3.5GB BELOW the handler (not at its 4GB-aligned floor). The
+  // [floor, handler] region is congested with system DLLs (and libomp), so a slab
+  // often won't fit there and the old code fell back to an unconstrained mapping below
+  // the floor whose .xdata Pointer32NB relocs then underflow. A 3.5GB-below anchor
+  // keeps the handler in-window (offset 0xE0000000 < 4GB) while exposing the large
+  // free region below the DLL cluster for the slab. The 0xE0000000 offset MUST match
+  // engine.cpp, llvisitor.cpp, and Win64SEHRegistrationPlugin below.
+  if (handler && size <= 0xE0000000ull) {
+    const uintptr_t anchor = handler - 0xE0000000ull;
     const uintptr_t step = 16ull * 1024 * 1024;
     uintptr_t top = handler - size;
-    for (uintptr_t cand = top & ~(step - 1); cand >= floor; cand -= step) {
+    for (uintptr_t cand = top & ~(step - 1); cand >= anchor; cand -= step) {
       llvm::sys::MemoryBlock hint(reinterpret_cast<void *>(cand), size);
       std::error_code localEC;
       auto block =
           llvm::sys::Memory::allocateMappedMemory(size, &hint, prot, localEC);
       if (!localEC && block.base()) {
         auto b = reinterpret_cast<uintptr_t>(block.base());
-        if (b >= floor && (b + size) <= (floor + 0x100000000ull)) {
+        if (b >= anchor && (b + size) <= (anchor + 0x100000000ull)) {
           ec = std::error_code();
           return block;
         }
         llvm::sys::Memory::releaseMappedMemory(block);
       }
-      if (cand < floor + step)
+      if (cand < anchor + step)
         break;
     }
   }
@@ -298,7 +305,8 @@ public:
     if (HMODULE crt = GetModuleHandleW(L"vcruntime140.dll"))
       handler =
           reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
-    imageBase = handler ? (handler & ~0xFFFFFFFFull)
+    // 3.5GB below the handler — MUST match allocateNearImage / engine.cpp / llvisitor.
+    imageBase = handler ? (handler - 0xE0000000ull)
                         : reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   }
 

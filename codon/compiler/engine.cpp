@@ -72,8 +72,10 @@ void Engine::defineImageBase() {
   if (HMODULE crt = ::GetModuleHandleW(L"vcruntime140.dll"))
     handler =
         reinterpret_cast<uintptr_t>(::GetProcAddress(crt, "__C_specific_handler"));
+  // 3.5GB below the handler — MUST match memory_manager.cpp (allocateNearImage /
+  // Win64SEHRegistrationPlugin) and llvisitor.cpp, so .xdata Pointer32NB relocs fit.
   uintptr_t imageBase = handler
-                            ? (handler & ~0xFFFFFFFFull)
+                            ? (handler - 0xE0000000ull)
                             : reinterpret_cast<uintptr_t>(::GetModuleHandleW(nullptr));
   auto &jd = jit->getMainJITDylib();
   llvm::orc::MangleAndInterner mangle(jit->getExecutionSession(),

@@ -276,6 +276,12 @@ std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context
   if (llvm::Triple(M->getTargetTriple()).isOSDarwin()) {
     M->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 2);
   }
+  // Windows debuggers/PDBs use CodeView, not DWARF. Emitting CodeView lets the AOT
+  // link step produce a PDB that the dbghelp-based runtime backtrace can read for
+  // symbolized C-level frames (see writeToExecutable + runtime/exc.cpp).
+  if (llvm::Triple(M->getTargetTriple()).isOSWindows()) {
+    M->addModuleFlag(llvm::Module::Warning, "CodeView", 1);
+  }
 
   return M;
 }
@@ -596,7 +602,11 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
   }
 
 #ifdef _WIN32
-  std::vector<std::string> extraArgs = {"-lcodonrt", "-o", filename};
+  // -llibomp -> libomp.lib (clang maps -l<name> to <name>.lib on MSVC), resolved via
+  // the -L../lib/codon search path; needed for @par programs' __kmpc_* calls.
+  // -llibopenblas -> libopenblas.lib for numpy.linalg (cblas_*/LAPACK).
+  std::vector<std::string> extraArgs = {"-lcodonrt", "-llibomp", "-llibopenblas",
+                                        "-o", filename};
 #else
   std::vector<std::string> extraArgs = {
       "-lcodonrt", "-lomp", "-lpthread", "-ldl", "-lz", "-lm", "-lc", "-o", filename};
@@ -613,6 +623,19 @@ void LLVMVisitor::writeToExecutable(const std::string &filename,
     if (!uflag.empty())
       command.push_back(uflag.str());
   }
+
+#ifdef _WIN32
+  // With -g, have lld emit a PDB so the runtime's dbghelp backtrace can symbolize
+  // C-level frames (function names + file:line). The object file carries CodeView
+  // debug info because of the "CodeView" module flag set in makeModule().
+  if (options->debug && !library) {
+    command.push_back("-g");
+    command.push_back("-Wl,/debug");
+    llvm::SmallString<128> pdbFile(filename);
+    llvm::sys::path::replace_extension(pdbFile, "pdb");
+    command.push_back("-Wl,/pdb:" + std::string(pdbFile));
+  }
+#endif
 
   // Avoid "relocation R_X86_64_32 against `.bss' can not be used when making a PIE
   // object" complaints by gcc when it is built with --enable-default-pie
@@ -1315,7 +1338,9 @@ void LLVMVisitor::run(const std::vector<std::string> &args,
     if (HMODULE crt = ::GetModuleHandleW(L"vcruntime140.dll"))
       handler = reinterpret_cast<uintptr_t>(
           ::GetProcAddress(crt, "__C_specific_handler"));
-    uintptr_t imageBase = handler ? (handler & ~0xFFFFFFFFull)
+    // 3.5GB below the handler — MUST match memory_manager.cpp + engine.cpp so the
+    // JIT slab and __C_specific_handler share a 4GB window (.xdata Pointer32NB fits).
+    uintptr_t imageBase = handler ? (handler - 0xE0000000ull)
                                   : reinterpret_cast<uintptr_t>(
                                         ::GetModuleHandleW(nullptr));
     auto base = llvm::orc::ExecutorAddr(imageBase);
