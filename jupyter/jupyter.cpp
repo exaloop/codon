@@ -2,12 +2,14 @@
 
 #include "jupyter.h"
 
-#include <dirent.h>
-#include <fcntl.h>
 #include <iostream>
 #include <locale>
 #include <nlohmann/json.hpp>
+#ifndef _WIN32
+#include <dirent.h>
+#include <fcntl.h>
 #include <unistd.h>
+#endif
 #include <xeus-zmq/xserver_zmq.hpp>
 #include <xeus/xhelper.hpp>
 #include <xeus/xkernel.hpp>
@@ -41,7 +43,7 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
       result.takeError(),
       [&](const codon::error::ParserErrorInfo &e) {
         std::vector<string> backtrace;
-        for (auto &msg : e)
+        for (auto &msg : e.getErrors())
           for (auto &s : msg)
             backtrace.push_back(s.getMessage());
         string err = backtrace[0];
@@ -87,8 +89,12 @@ nl::json CodonJupyter::execute_request_impl(int execution_counter, const string 
 }
 
 void CodonJupyter::configure_impl() {
-  jit = std::make_unique<codon::jit::JIT>(argv0, "jupyter");
-  jit->getCompiler()->getLLVMVisitor()->setCapture();
+  // JIT now takes Options (not argv0); the old getLLVMVisitor()->setCapture() is
+  // replaced by Options::capture, which makes execute() return the cell's stdout
+  // (runtime::getCapturedOutput()) for publishing back to the frontend.
+  auto options = codon::Options::getDefault(argv0);
+  options->capture = true;
+  jit = std::make_unique<codon::jit::JIT>(*options, "jupyter");
 
   for (const auto &plugin : plugins) {
     // TODO: error handling on plugin init

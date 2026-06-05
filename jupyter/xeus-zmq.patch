@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 912a3fd..4df6e1f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -169,7 +169,7 @@ include(CheckCXXCompilerFlag)
+ 
+ string(TOUPPER "${CMAKE_BUILD_TYPE}" U_CMAKE_BUILD_TYPE)
+ 
+-if (XEUS_ZMQ_STATIC_DEPENDENCIES AND NOT MSVC AND NOT APPLE)
++if (XEUS_ZMQ_STATIC_DEPENDENCIES AND NOT MSVC AND NOT APPLE AND NOT WIN32)
+ 	# Explicitly finds and links with libsodium.a
+ 	# because it is not exported as a dependency by
+ 	# the static build of libzmq. Remove this when
