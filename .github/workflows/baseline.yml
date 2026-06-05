@@ -82,7 +82,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: llvm
-          key: windows-msvc-llvm-20-1-7
+          # bumped to -omp: the cached tree now also holds the GC-patched libomp
+          key: windows-msvc-llvm-20-1-7-omp
 
       - name: Build LLVM 20.1.7 fork (MSVC) if not cached
         if: steps.cache-llvm.outputs.cache-hit != 'true'
@@ -108,6 +109,20 @@ jobs:
             -DLLVM_ENABLE_PROJECTS=""
           cmake --build llvm-build --config Release
           cmake --install llvm-build --prefix llvm
+          # GC-patched libomp (enables @par). Built standalone with clang-cl so CMake sets
+          # MSVC=TRUE -> KMP_MSVC_COMPAT=1 (the pid_t shim etc.); a plain clang build fails.
+          # Installed into the LLVM tree so it's part of the cached `llvm` artifact.
+          cmake -S llvm-project/openmp -B libomp-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=clang-cl `
+            -DCMAKE_CXX_COMPILER=clang-cl `
+            -DOPENMP_STANDALONE_BUILD=ON `
+            -DLIBOMP_ENABLE_SHARED=ON `
+            -DOPENMP_ENABLE_LIBOMPTARGET=OFF
+          cmake --build libomp-build --target omp
+          Copy-Item libomp-build/runtime/src/libomp.dll llvm/bin/
+          Copy-Item libomp-build/runtime/src/libomp.lib llvm/lib/
+          Copy-Item libomp-build/runtime/src/omp.h llvm/include/
 
       - name: Build Codon (Windows/MSVC)
         shell: pwsh
@@ -127,6 +142,8 @@ jobs:
         run: |
           Copy-Item codon-deploy/lib/codon/codonc.dll codon-deploy/bin/
           Copy-Item codon-deploy/lib/codon/codonrt.dll codon-deploy/bin/
+          Copy-Item codon-deploy/lib/codon/libomp.dll codon-deploy/bin/        # @par
+          Copy-Item codon-deploy/lib/codon/libopenblas.dll codon-deploy/bin/   # numpy.linalg
           if (Test-Path codon-deploy/lib/codon/codon_jupyter.dll) {
             Copy-Item codon-deploy/lib/codon/codon_jupyter.dll codon-deploy/bin/
           }
@@ -146,6 +163,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "codon build smoke2.py failed" }
           & ./smoke2.exe
           if ($LASTEXITCODE -ne 0) { throw "AOT smoke2.exe failed" }
+          # OpenMP @par (JIT + AOT)
+          "import openmp as omp`nomp.set_num_threads(4)`ns = 0`n@par`nfor i in range(1000):`n    s += i`nprint('parsum', s)" | Out-File -Encoding ascii smoke_omp.py
+          & codon-deploy/bin/codon.exe run smoke_omp.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run @par failed" }
+          & codon-deploy/bin/codon.exe build smoke_omp.py -o smoke_omp.exe
+          if ($LASTEXITCODE -ne 0) { throw "codon build @par failed" }
+          & ./smoke_omp.exe
+          if ($LASTEXITCODE -ne 0) { throw "AOT @par failed" }
+          # numpy core (Highway) + linalg (OpenBLAS), JIT + AOT
+          "import numpy as np`nprint('npsum', np.arange(10).sum())`nprint('npdet', np.linalg.det(np.array([[3.0,1.0],[1.0,2.0]])))" | Out-File -Encoding ascii smoke_np.py
+          & codon-deploy/bin/codon.exe run smoke_np.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run numpy failed" }
+          & codon-deploy/bin/codon.exe build smoke_np.py -o smoke_np.exe
+          if ($LASTEXITCODE -ne 0) { throw "codon build numpy failed" }
+          & ./smoke_np.exe
+          if ($LASTEXITCODE -ne 0) { throw "AOT numpy failed" }
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
