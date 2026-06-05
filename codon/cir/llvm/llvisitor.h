@@ -171,6 +171,12 @@ private:
   llvm::FunctionCallee makeFreeFunc();
   /// Personality function for exception handling
   llvm::FunctionCallee makePersonalityFunc();
+  /// Win64 SEH filter referenced by JIT'd catchpad scope tables. Returns an
+  /// in-module thunk (compiled into the JIT slab, hence within the __ImageBase
+  /// window) that forwards to the real `seq_exc_filter` in codonrt via a 64-bit
+  /// pointer — avoids an out-of-range `.xdata` IMGREL when codonrt is loaded far
+  /// from the anchor. AOT and non-Windows callers use `seq_exc_filter` directly.
+  llvm::FunctionCallee makeWinEHFilter();
   /// Exception allocation function
   llvm::FunctionCallee makeExcAllocFunc();
   /// Exception throw function

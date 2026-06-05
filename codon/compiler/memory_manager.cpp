@@ -114,35 +114,55 @@ allocateNearImage(size_t size, llvm::sys::Memory::ProtectionFlags prot,
   if (HMODULE crt = GetModuleHandleW(L"vcruntime140.dll"))
     handler = reinterpret_cast<uintptr_t>(GetProcAddress(crt, "__C_specific_handler"));
 
-  // Anchor __ImageBase 3.5GB BELOW the handler (not at its 4GB-aligned floor). The
-  // [floor, handler] region is congested with system DLLs (and libomp), so a slab
-  // often won't fit there and the old code fell back to an unconstrained mapping below
-  // the floor whose .xdata Pointer32NB relocs then underflow. A 3.5GB-below anchor
-  // keeps the handler in-window (offset 0xE0000000 < 4GB) while exposing the large
-  // free region below the DLL cluster for the slab. The 0xE0000000 offset MUST match
-  // engine.cpp, llvisitor.cpp, and Win64SEHRegistrationPlugin below.
+  // Anchor __ImageBase 3.5GB BELOW the handler (== engine.cpp / llvisitor.cpp /
+  // Win64SEHRegistrationPlugin's `handler - 0xE0000000`). All JIT code must live in the
+  // 4GB window [anchor, anchor+4GB) so the COFF .xdata/.pdata image-relative (ADDR32NB)
+  // relocations — value = target - __ImageBase=anchor — stay within uint32 for both the
+  // runtime handler symbols (seq_exc_filter et al., near the top of the window) and the
+  // slab's own internal references. The window's usable tail is capped by the user-mode
+  // ceiling (~0x7fff'ffff'ffff), so effectively [anchor, handler].
+  //
+  // We place the slab with direct VirtualAlloc rather than llvm::sys::Memory's hint:
+  // that API interprets a NearBlock hint as "allocate AFTER base+size" and, on failure,
+  // silently returns an UNCONSTRAINED mapping — which for a large/late module lands many
+  // GB outside the window, overflowing the ADDR32NB fixup and aborting materialization
+  // (the `seq_exc_filter ... out of range of Pointer32 fixup` JIT crash). Scanning the
+  // window's free regions with VirtualQuery and committing an exact in-window base is
+  // deterministic and reuses slots freed by deallocate().
   if (handler && size <= 0xE0000000ull) {
     const uintptr_t anchor = handler - 0xE0000000ull;
-    const uintptr_t step = 16ull * 1024 * 1024;
-    uintptr_t top = handler - size;
-    for (uintptr_t cand = top & ~(step - 1); cand >= anchor; cand -= step) {
-      llvm::sys::MemoryBlock hint(reinterpret_cast<void *>(cand), size);
-      std::error_code localEC;
-      auto block =
-          llvm::sys::Memory::allocateMappedMemory(size, &hint, prot, localEC);
-      if (!localEC && block.base()) {
-        auto b = reinterpret_cast<uintptr_t>(block.base());
-        if (b >= anchor && (b + size) <= (anchor + 0x100000000ull)) {
-          ec = std::error_code();
-          return block;
-        }
-        llvm::sys::Memory::releaseMappedMemory(block);
-      }
-      if (cand < anchor + step)
+    const uintptr_t windowEnd = anchor + 0x100000000ull; // anchor + 4GB
+    const uintptr_t gran = 64ull * 1024;                 // allocation granularity
+    const uintptr_t alignedSize = (size + gran - 1) & ~(gran - 1);
+
+    uintptr_t addr = (anchor + gran - 1) & ~(gran - 1);
+    while (addr + alignedSize <= windowEnd) {
+      MEMORY_BASIC_INFORMATION mbi;
+      if (VirtualQuery(reinterpret_cast<void *>(addr), &mbi, sizeof(mbi)) == 0)
         break;
+      auto regionEnd =
+          reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+      if (mbi.State == MEM_FREE) {
+        uintptr_t cand = (addr + gran - 1) & ~(gran - 1);
+        if (cand + alignedSize <= regionEnd && cand + alignedSize <= windowEnd) {
+          if (void *p = VirtualAlloc(reinterpret_cast<void *>(cand), alignedSize,
+                                     MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)) {
+            ec = std::error_code();
+            return llvm::sys::MemoryBlock(p, alignedSize);
+          }
+          // Lost a race for this slot; step forward and re-query.
+          addr = cand + gran;
+          continue;
+        }
+      }
+      if (regionEnd <= addr) // no forward progress; bail to fallback
+        break;
+      addr = regionEnd;
     }
   }
 
+  // Last resort: unconstrained. May land out-of-window (EH relocs could overflow);
+  // should not happen given the 4GB window, but better a chance than a hard failure.
   return llvm::sys::Memory::allocateMappedMemory(size, nullptr, prot, ec);
 }
 #endif

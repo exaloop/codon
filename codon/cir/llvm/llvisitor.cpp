@@ -1457,6 +1457,46 @@ llvm::FunctionCallee LLVMVisitor::makePersonalityFunc() {
                                 B->getPtrTy());
 }
 
+llvm::FunctionCallee LLVMVisitor::makeWinEHFilter() {
+  auto *filterTy =
+      llvm::FunctionType::get(B->getInt32Ty(), {B->getPtrTy(), B->getPtrTy()}, false);
+  // Real filter, resolved against codonrt (JIT: a far-loaded DLL; AOT: import thunk).
+  auto realFilter = M->getOrInsertFunction("seq_exc_filter", filterTy);
+  if (!isWinMSVC(&*M))
+    return realFilter;
+
+  static const char *thunkName = "seq_exc_filter.thunk";
+  if (auto *existing = M->getFunction(thunkName))
+    return llvm::FunctionCallee(filterTy, existing);
+
+  // The catchpad scope table emits the filter as an `.xdata` image-relative
+  // (Pointer32NB) reloc = filter - __ImageBase(anchor). codonrt's `seq_exc_filter`
+  // can be >4GB from the anchor under ASLR → that 32-bit value overflows and JIT
+  // materialization aborts. Reference an in-module thunk instead (compiled into the
+  // JIT slab, which `allocateNearImage` keeps within the 4GB window, so its IMGREL
+  // fits) and reach the real filter through a 64-bit pointer (a Pointer64 reloc,
+  // which has no 4GB range limit). On AOT the pointer resolves to the in-image
+  // import thunk, so the same code is correct there too.
+  auto *ptrGlobal = new llvm::GlobalVariable(
+      *M, B->getPtrTy(), /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::cast<llvm::Constant>(realFilter.getCallee()), "seq_exc_filter.addr");
+
+  auto *thunk = llvm::cast<llvm::Function>(
+      M->getOrInsertFunction(thunkName, filterTy).getCallee());
+  thunk->setLinkage(llvm::GlobalValue::PrivateLinkage);
+  auto *saved = B->GetInsertBlock();
+  auto savedPt = saved ? B->GetInsertPoint() : llvm::BasicBlock::iterator();
+  auto *entry = llvm::BasicBlock::Create(*context, "entry", thunk);
+  B->SetInsertPoint(entry);
+  auto *fp = B->CreateLoad(B->getPtrTy(), ptrGlobal);
+  auto *call =
+      B->CreateCall(filterTy, fp, {thunk->getArg(0), thunk->getArg(1)});
+  B->CreateRet(call);
+  if (saved)
+    B->SetInsertPoint(saved, savedPt);
+  return llvm::FunctionCallee(filterTy, thunk);
+}
+
 llvm::FunctionCallee LLVMVisitor::makeExcAllocFunc() {
   auto f = M->getOrInsertFunction("seq_alloc_exc", B->getPtrTy(), B->getPtrTy());
   auto *g = cast<llvm::Function>(f.getCallee());
@@ -1724,12 +1764,7 @@ void LLVMVisitor::visit(const Module *x) {
       auto *catchBlock = llvm::BasicBlock::Create(*context, "catch", proxyMain);
       cs->addHandler(catchBlock);
       B->SetInsertPoint(catchBlock);
-      auto *filter =
-          M->getOrInsertFunction(
-               "seq_exc_filter",
-               llvm::FunctionType::get(B->getInt32Ty(),
-                                       {B->getPtrTy(), B->getPtrTy()}, false))
-              .getCallee();
+      auto *filter = makeWinEHFilter().getCallee();
       auto *cp = B->CreateCatchPad(cs, {filter});
       llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
       auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
@@ -2914,12 +2949,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
           llvm::BasicBlock::Create(*context, "trycatch.finally.catchpad", func);
       cs->addHandler(catchBlock);
       B->SetInsertPoint(catchBlock);
-      auto *filter =
-          M->getOrInsertFunction(
-               "seq_exc_filter",
-               llvm::FunctionType::get(B->getInt32Ty(),
-                                       {B->getPtrTy(), B->getPtrTy()}, false))
-              .getCallee();
+      auto *filter = makeWinEHFilter().getCallee();
       auto *cp = B->CreateCatchPad(cs, {filter});
       llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
       auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
@@ -3069,13 +3099,28 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
   if (options->noexc) {
     B->CreateUnreachable();
   } else if (isWinMSVC(&*M)) {
-    // `resume` is invalid under WinEH. This tc was already popped (exitTryCatch),
-    // so re-raise the stored unwind exception via seq_throw; call() routes it to
-    // the enclosing try-catch's catchswitch (or the proxy-main catch-all at root).
+    // `resume` is invalid under WinEH. This tc was already popped off the *try* stack
+    // (exitTry, above), so re-raise the stored unwind exception via seq_throw; call()
+    // routes it to the enclosing try-catch's catchswitch (or the proxy-main catch-all
+    // at root). NOTE: this tc's *finally* entry is still on the finally-stack here
+    // (exitFinally runs later, after the catch handlers), and call() also considers the
+    // finally-stack when picking the unwind target. If we leave it, the re-raise unwinds
+    // back into THIS tc's own finally-routing pad and the finally body runs a second time
+    // (only on WinEH — the Itanium path below uses `resume`, which ignores these stacks).
+    // Temporarily drop our finally entry so the re-raise propagates to the *enclosing*
+    // handler/caller, matching rethrowBlock (which is emitted after exitFinally).
     block = unwindResumeBlock;
     llvm::Value *exc =
         B->CreateExtractValue(B->CreateLoad(padType, tc.catchStore), 0);
+    const bool popFinally = haveFinally && !finally.empty();
+    TryCatchData savedFinally;
+    if (popFinally) {
+      savedFinally = finally.back();
+      finally.pop_back();
+    }
     call(makeThrowFunc(), {exc});
+    if (popFinally)
+      finally.push_back(savedFinally);
     B->SetInsertPoint(block);
     B->CreateUnreachable();
   } else {
@@ -3131,12 +3176,7 @@ void LLVMVisitor::visit(const TryCatchFlow *x) {
     auto *catchBlock = llvm::BasicBlock::Create(*context, "trycatch.catchpad", func);
     cs->addHandler(catchBlock);
     B->SetInsertPoint(catchBlock);
-    auto *filter =
-        M->getOrInsertFunction(
-             "seq_exc_filter",
-             llvm::FunctionType::get(B->getInt32Ty(),
-                                     {B->getPtrTy(), B->getPtrTy()}, false))
-            .getCallee();
+    auto *filter = makeWinEHFilter().getCallee();
     auto *cp = B->CreateCatchPad(cs, {filter});
     llvm::OperandBundleDef bundle("funclet", llvm::ArrayRef<llvm::Value *>(cp));
     auto excCurrent = M->getOrInsertFunction("seq_exc_current", B->getPtrTy());
