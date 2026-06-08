@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-platform: Static[str] = static.platform()
+platform: Literal[str] = static.platform()
 
 argv = list(__argv__, __argc__)
 
