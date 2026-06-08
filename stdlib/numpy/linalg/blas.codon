@@ -2,16 +2,15 @@
 
 import internal.static as static
 
+fint = i64
+fintp = Ptr[fint]
+
 if static.platform() == "darwin":
-    fint = i64
-    fintp = Ptr[fint]
     _suffix_blas: Literal[str] = "$NEWLAPACK$ILP64"
     _suffix_lapack: Literal[str] = "$NEWLAPACK$ILP64"
 else:
-    fint = i32
-    fintp = Ptr[fint]
-    _suffix_blas: Literal[str] = ""
-    _suffix_lapack: Literal[str] = "_"
+    _suffix_blas: Literal[str] = "64_"
+    _suffix_lapack: Literal[str] = "_64_"
 
 # Constants
 CBLAS_ROW_MAJOR: Literal[int] = 101

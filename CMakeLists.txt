@@ -149,12 +149,12 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:codonfloat>)
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 else()
-  add_dependencies(codonrt openblas)
+  add_dependencies(codonrt openblas_64)
   target_link_libraries(
     codonrt
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
-            $<TARGET_FILE:openblas> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
+            $<TARGET_FILE:openblas_64> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
             $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
 endif()
 if(ASAN)
