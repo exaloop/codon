@@ -18,7 +18,7 @@ if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 endif(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
 
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
@@ -33,6 +33,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
+
+if(WIN32)
+  # Codon/LLVM (and the vcpkg x64-windows-static-md OpenSSL/sodium) use the dynamic CRT
+  # (/MD). Force every dependency built here (xeus, xeus-zmq, libzmq, fmt) to match via
+  # clang's -fms-runtime-lib=dll, else lld-link rejects MT(static)/MD(dynamic) mismatches.
+  add_compile_options(-fms-runtime-lib=dll)
+  # libzmq is linked statically here; ZMQ_STATIC stops zmq.h from marking symbols
+  # __declspec(dllimport), which would otherwise need a (nonexistent) import library.
+  add_compile_definitions(ZMQ_STATIC)
+endif()
 
 find_package(LLVM REQUIRED CONFIG)
 separate_arguments(LLVM_DEFINITIONS_LIST NATIVE_COMMAND ${LLVM_DEFINITIONS})
@@ -62,7 +72,9 @@ CPMAddPackage(
     VERSION 3.0.5
     GIT_TAG 3.0.5
     EXCLUDE_FROM_ALL YES
-    PATCH_COMMAND git apply --reject --whitespace=fix ${CMAKE_SOURCE_DIR}/xeus.patch
+    # xeus.patch: upstream Codon fixes (Linux libuuid). xeus-win.patch: use the Win32
+    # GUID backend (ole32/rpcrt4) instead of libuuid for the clang-on-Windows build.
+    PATCH_COMMAND git apply --reject --whitespace=fix ${CMAKE_SOURCE_DIR}/xeus.patch ${CMAKE_SOURCE_DIR}/xeus-win.patch
     OPTIONS "BUILD_EXAMPLES OFF"
             "XEUS_BUILD_SHARED_LIBS OFF"
             "XEUS_STATIC_DEPENDENCIES ON"
@@ -97,7 +109,10 @@ CPMAddPackage(
     VERSION 1.0.3
     GIT_TAG 1.0.3
     EXCLUDE_FROM_ALL YES
-    PATCH_COMMAND patch -N -u CMakeLists.txt --ignore-whitespace -b ${CMAKE_SOURCE_DIR}/xeus.patch || true
+    # xeus-zmq.patch: skip the libsodium requirement on Windows — our libzmq is built
+    # WITH_LIBSODIUM OFF, so the (NOT MSVC) static-deps workaround pulls in sodium for
+    # nothing. (Harmless no-op on Linux/macOS where the guard already excludes them.)
+    PATCH_COMMAND git apply --reject --whitespace=fix ${CMAKE_SOURCE_DIR}/xeus-zmq.patch
     OPTIONS "XEUS_ZMQ_BUILD_TESTS OFF"
             "XEUS_ZMQ_BUILD_SHARED_LIBS OFF"
             "XEUS_ZMQ_STATIC_DEPENDENCIES ON"
@@ -106,9 +121,32 @@ CPMAddPackage(
 # Codon Jupyter library
 set(CODON_JUPYTER_FILES jupyter.h jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
+if(WIN32)
+  # Export startJupyterKernel (and friends) so codon.exe can resolve them from the
+  # plugin DLL, mirroring the stub codon_jupyter target in the main build.
+  set_target_properties(codon_jupyter PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+endif()
 target_include_directories(codon_jupyter PRIVATE "${CODON_PATH}/include" ${LLVM_INCLUDE_DIRS})
 add_dependencies(codon_jupyter xeus-static xeus-zmq-static nlohmann_json)
 target_link_directories(codon_jupyter PRIVATE "${CODON_PATH}/lib/codon")
 target_link_libraries(codon_jupyter PRIVATE xeus-static xeus-zmq-static codonc)
+
+if(WIN32)
+  # codonc.dll links LLVM + fmt PRIVATE/statically and does not re-export them (unlike
+  # ELF on Linux), so the plugin — which uses LLVM (handleAllErrors/raw_ostream) and fmt
+  # via Codon's headers — must link them itself. Matches fmt 11.1.0 used by the core.
+  CPMAddPackage(
+      NAME fmt
+      GITHUB_REPOSITORY "fmtlib/fmt"
+      GIT_TAG 11.1.0
+      EXCLUDE_FROM_ALL YES
+      OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON")
+  llvm_map_components_to_libnames(JUPYTER_LLVM_LIBS
+    AllTargetsAsmParsers AllTargetsCodeGens AllTargetsDescs AllTargetsInfos
+    AggressiveInstCombine Analysis AsmParser BitWriter CodeGen Core Extensions
+    IPO IRReader InstCombine Instrumentation MC MCJIT ObjCARCOpts OrcJIT Remarks
+    ScalarOpts Support Symbolize Target TransformUtils Vectorize Passes)
+  target_link_libraries(codon_jupyter PRIVATE fmt::fmt ${JUPYTER_LLVM_LIBS})
+endif()
 
 install(TARGETS codon_jupyter DESTINATION .)

@@ -1,0 +1,26 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 53330ba..58318b7 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -166,7 +166,7 @@ macro(xeus_create_target target_name linkage output_name)
+         PUBLIC xtl
+     )
+ 
+-    if (NOT MSVC AND NOT XEUS_EMSCRIPTEN_WASM_BUILD)
++    if (NOT MSVC AND NOT WIN32 AND NOT XEUS_EMSCRIPTEN_WASM_BUILD)
+         if (APPLE)
+             target_link_libraries(${target_name} PUBLIC "-framework CoreFoundation")
+         else ()
+@@ -232,6 +232,12 @@ macro(xeus_create_target target_name linkage output_name)
+         target_compile_definitions(${target_name} PUBLIC -DNOMINMAX)
+         target_compile_options(${target_name} PUBLIC /DGUID_WINDOWS /MP /bigobj)
+         target_compile_options(${target_name} PUBLIC /wd4251 /wd4996)
++    elseif (WIN32)
++        # clang (GNU-style) targeting Windows: use the Win32 GUID backend like MSVC,
++        # not libuuid. CoCreateGuid lives in ole32.
++        target_compile_definitions(${target_name} PUBLIC -DNOMINMAX -DGUID_WINDOWS)
++        target_compile_options(${target_name} PUBLIC -Wno-unused-command-line-argument)
++        target_link_libraries(${target_name} PUBLIC ole32 rpcrt4)
+     elseif (APPLE)
+         target_compile_definitions(${target_name} PUBLIC -DGUID_CFUUID)
+     else ()

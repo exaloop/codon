@@ -97,27 +97,61 @@ class File:
 
     def _iter(self) -> Generator[str]:
         self._ensure_open()
-        while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
-            if rd != -1:
-                yield str(self.buf, rd)
-            else:
-                break
+        if __windows__:
+            # codonrt's getline() shim cannot share the FILE* that the JIT resolves
+            # `_C.fopen` to (a different CRT FILE pool than codonrt's fgetc), so read
+            # lines via `_C.fgetc` — the same CRT the rest of File's `_C.*` calls use.
+            while True:
+                line = List[u8]()
+                while True:
+                    c = int(_C.fgetc(self.fp))
+                    if c == -1:
+                        break
+                    line.append(u8(c))
+                    if c == 10:
+                        break
+                if len(line) == 0:
+                    break
+                yield str(line._ptr, len(line))
+        else:
+            while True:
+                rd = _C.getline(
+                    Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+                )
+                if rd != -1:
+                    yield str(self.buf, rd)
+                else:
+                    break
 
     def _iter_trim_newline(self) -> Generator[str]:
         self._ensure_open()
-        while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
-            if rd != -1:
-                if self.buf[rd - 1] == u8(10):
+        if __windows__:
+            while True:
+                line = List[u8]()
+                while True:
+                    c = int(_C.fgetc(self.fp))
+                    if c == -1:
+                        break
+                    line.append(u8(c))
+                    if c == 10:
+                        break
+                rd = len(line)
+                if rd == 0:
+                    break
+                if line[rd - 1] == u8(10):
                     rd -= 1
-                yield str(self.buf, rd)
-            else:
-                break
+                yield str(line._ptr, rd)
+        else:
+            while True:
+                rd = _C.getline(
+                    Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+                )
+                if rd != -1:
+                    if self.buf[rd - 1] == u8(10):
+                        rd -= 1
+                    yield str(self.buf, rd)
+                else:
+                    break
 
 def _gz_errcheck(stream: cobj):
     errnum = i32(0)

@@ -4,6 +4,7 @@
 
 #include <cinttypes>
 #include <climits>
+#include <limits.h>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -16,6 +17,17 @@
 
 #include <cmrc/cmrc.hpp>
 CMRC_DECLARE(codon);
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 namespace codon::ast {
 
@@ -36,17 +48,17 @@ std::vector<IFilesystem::path_t> IFilesystem::get_stdlib_paths() const {
 
 ImportFile IFilesystem::get_root(const path_t &sp) const {
   bool isStdLib = false;
-  std::string s = sp;
+  std::string s = sp.generic_string();
   std::string root;
   for (auto &p : get_stdlib_paths())
-    if (startswith(s, p)) {
-      root = p;
+    if (startswith(s, p.generic_string())) {
+      root = p.generic_string();
       isStdLib = true;
       break;
     }
   auto module0 = get_module0().parent_path();
-  if (!isStdLib && !module0.empty() && startswith(s, module0))
-    root = module0;
+  if (!isStdLib && !module0.empty() && startswith(s, module0.generic_string()))
+    root = module0.generic_string();
   std::string ext = ".codon";
   if (!((root.empty() || startswith(s, root)) && endswith(s, ext)))
     ext = ".py";
@@ -54,6 +66,7 @@ ImportFile IFilesystem::get_root(const path_t &sp) const {
              "bad path substitution: {}, {}", s, root);
   auto module = s.substr(root.size() + 1, s.size() - root.size() - ext.size() - 1);
   std::ranges::replace(module, '/', '.');
+  std::ranges::replace(module, '\\', '.'); // Windows path separator -> module dot
   return ImportFile{(!isStdLib && root == module0) ? ImportFile::PACKAGE
                                                    : ImportFile::STDLIB,
                     s, module};
@@ -67,10 +80,10 @@ Filesystem::Filesystem(const std::string &argv0, const std::string &module0)
   if (!argv0.empty()) {
     auto root = executable_path(argv0.c_str()).parent_path();
     for (auto loci : {"../lib/codon/stdlib", "../stdlib", "stdlib"}) {
-      add_search_path(root / loci);
+      add_search_path((root / loci).string());
     }
     for (auto loci : {"../lib/codon/plugins", "../plugins"}) {
-      add_search_path(root / loci);
+      add_search_path((root / loci).string());
     }
   }
 }
@@ -118,7 +131,7 @@ ResourceFilesystem::ResourceFilesystem(const std::string &argv0,
 std::vector<std::string> ResourceFilesystem::read_lines(const path_t &path) const {
   auto fs = cmrc::codon::get_filesystem();
 
-  if (!fs.exists(path) && allowExternal)
+  if (!fs.exists(path.string()) && allowExternal)
     return Filesystem::read_lines(path);
 
   std::vector<std::string> lines;
@@ -126,7 +139,7 @@ std::vector<std::string> ResourceFilesystem::read_lines(const path_t &path) cons
     E(error::Error::COMPILER_NO_FILE, SrcInfo(), "<stdin>");
   } else {
     try {
-      auto fd = fs.open(path);
+      auto fd = fs.open(path.string());
       auto contents = std::string(fd.begin(), fd.end());
       lines = split(contents, '\n');
     } catch (std::system_error &) {
@@ -138,7 +151,7 @@ std::vector<std::string> ResourceFilesystem::read_lines(const path_t &path) cons
 
 bool ResourceFilesystem::exists(const path_t &path) const {
   auto fs = cmrc::codon::get_filesystem();
-  if (fs.exists(path))
+  if (fs.exists(path.string()))
     return true;
   if (allowExternal)
     return Filesystem::exists(path);
@@ -297,6 +310,11 @@ std::string library_path() {
     }
     break;
   }
+#elif defined(_WIN32)
+  char buffer[MAX_PATH];
+  DWORD n = GetModuleFileNameA(nullptr, buffer, (DWORD)sizeof(buffer));
+  if (n > 0 && n < (DWORD)sizeof(buffer))
+    result = std::string(buffer, n);
 #else
   for (int r = 0; r < 5; r++) {
     FILE *maps = fopen("/proc/self/maps", "r");
@@ -337,7 +355,11 @@ std::string library_path() {
 }
 
 std::string Filesystem::get_absolute_path(const std::string &path) {
+#ifdef _WIN32
+  char *c = _fullpath(nullptr, path.c_str(), 0);
+#else
   char *c = realpath(path.c_str(), nullptr);
+#endif
   if (!c)
     return path;
   std::string result(c);
@@ -356,20 +378,20 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
       auto path = parentRelativeTo / what;
       path.replace_extension("codon");
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path));
+        paths.emplace_back(fs->canonical(path).generic_string());
 
       path = parentRelativeTo / what / "__init__.codon";
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path));
+        paths.emplace_back(fs->canonical(path).generic_string());
 
       path = parentRelativeTo / what;
       path.replace_extension("py");
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path));
+        paths.emplace_back(fs->canonical(path).generic_string());
 
       path = parentRelativeTo / what / "__init__.py";
       if (fs->exists(path))
-        paths.emplace_back(fs->canonical(path));
+        paths.emplace_back(fs->canonical(path).generic_string());
     }
   }
 
@@ -378,9 +400,9 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
     if (fs->exists(path / what / "plugin.toml") &&
         fs->exists(path / what / "stdlib" / what / "__init__.codon")) {
       bool failed = false;
-      if (cache->compiler && !cache->compiler->isPluginLoaded(path / what)) {
+      if (cache->compiler && !cache->compiler->isPluginLoaded((path / what).string())) {
         LOG_REALIZE("Loading plugin {}", path / what);
-        llvm::handleAllErrors(cache->compiler->load(path / what),
+        llvm::handleAllErrors(cache->compiler->load((path / what).string()),
                               [&failed](const codon::error::PluginErrorInfo &e) {
                                 codon::compilationError(e.getMessage(), /*file=*/"",
                                                         /*line=*/0, /*col=*/0,
@@ -392,7 +414,7 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
       }
       if (!failed)
         paths.emplace_back(
-            fs->canonical(path / what / "stdlib" / what / "__init__.codon"));
+            fs->canonical(path / what / "stdlib" / what / "__init__.codon").generic_string());
     }
   };
 
@@ -404,11 +426,11 @@ std::shared_ptr<ImportFile> getImportFile(Cache *cache, const std::string &what,
     auto path = p / what;
     path.replace_extension("codon");
     if (fs->exists(path))
-      paths.emplace_back(fs->canonical(path));
+      paths.emplace_back(fs->canonical(path).generic_string());
 
     path = p / what / "__init__.codon";
     if (fs->exists(path))
-      paths.emplace_back(fs->canonical(path));
+      paths.emplace_back(fs->canonical(path).generic_string());
 
     // Load a plugin maybe
     checkPlugin(p, what);

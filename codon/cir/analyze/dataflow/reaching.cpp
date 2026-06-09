@@ -76,10 +76,14 @@ struct BitSet {
     return res;
   }
 
-  void set(unsigned bit) { words.data()[bit / B] |= (1UL << (bit % B)); }
+  // NOTE: the shift base must be 64-bit. `1UL` is only 32 bits under LLP64 (Windows),
+  // so `1UL << (bit % 64)` is UB for bit%64 >= 32 and aliases bits 32..63 onto 0..31,
+  // silently corrupting reaching-defs in functions with >32 tracked assignments. Use
+  // uint64_t(1) so the mask is correct on every data model (no-op on LP64).
+  void set(unsigned bit) { words.data()[bit / B] |= (uint64_t(1) << (bit % B)); }
 
   bool get(unsigned bit) const {
-    return (words.data()[bit / B] & (1UL << (bit % B))) != 0;
+    return (words.data()[bit / B] & (uint64_t(1) << (bit % B))) != 0;
   }
 
   bool equals(const BitSet &other, unsigned size) {
