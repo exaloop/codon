@@ -103,19 +103,6 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     }
 
     if (result->isDone()) {
-      // Special union case: if union cannot be inferred return type is Union[NoneType]
-      if (auto tr = ctx->getBase()->returnType) {
-        if (auto tu = tr->getUnion()) {
-          if (!tu->isSealed()) {
-            if (tu->pendingTypes[0]->getLink() &&
-                tu->pendingTypes[0]->getLink()->kind == LinkType::Unbound) {
-              auto r = tu->addType(getStdLibType(StdlibTypes::NoneType));
-              seqassert(r, "cannot add type to union {}", tu->debugString(2));
-              tu->seal();
-            }
-          }
-        }
-      }
       break;
     } else if (changedNodes) {
       continue;
@@ -124,7 +111,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
       // default values (e.g., generics with default values). Unify those types with
       // their default values and then run another round to see if anything changed.
       bool anotherRound = false;
-      // Special case: return type might have default as well (e.g., Union)
+      // Special case: return type might have default as well
       if (auto t = ctx->getBase()->returnType) {
         ctx->getBase()->pendingDefaults[0].insert(t);
       }
@@ -134,13 +121,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
       for (auto &unbounds : ctx->getBase()->pendingDefaults | std::views::values) {
         if (!unbounds.empty()) {
           for (const auto &unbound : unbounds) {
-            if (auto tu = unbound->getUnion()) {
-              // Seal all dynamic unions after the iteration is over
-              if (!tu->isSealed()) {
-                tu->seal();
-                anotherRound = true;
-              }
-            } else if (auto u = unbound->getLink()) {
+            if (auto u = unbound->getLink()) {
               types::Type::Unification undo;
               if (u->defaultType) {
                 if (u->defaultType->getClass()) { // type[...]
@@ -394,7 +375,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
   // Clone the generic AST that is to be realized
   auto ast = clean_clone(type->ast);
-  if (auto s = generateSpecialAst(type))
+  if (auto s = generateSpecialAST(type))
     ast->suite = s;
   addClassGenerics(type, true);
   ctx->getBase()->func = ast;

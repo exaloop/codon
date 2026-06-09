@@ -32,8 +32,8 @@ void TypecheckVisitor::visit(AssignExpr *expr) {
 /// See @c transformAssignment and @c unpackAssignments for more details.
 /// See @c wrapExpr for more examples.
 void TypecheckVisitor::visit(AssignStmt *stmt) {
-  if (cast<TupleExpr>(stmt->lhs) || cast<ListExpr>(stmt->lhs)) {
-    resultStmt = transform(unpackAssignment(stmt->lhs, stmt->rhs));
+  if (cast<TupleExpr>(stmt->getLhs()) || cast<ListExpr>(stmt->getLhs())) {
+    resultStmt = transform(unpackAssignment(stmt->getLhs(), stmt->getRhs()));
     return;
   }
 
@@ -208,6 +208,8 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
     E(Error::ASSIGN_INVALID, stmt->getLhs());
     return nullptr;
   }
+  // Never do undef checks on assignments!
+  e->setAttribute(Attr::ExprNoUndefCheck);
 
   // Ensure that captured values are in a Capsule
   if (ctx->inFunction() && stmt->getRhs() && !mustExist) {
@@ -258,7 +260,14 @@ Stmt *TypecheckVisitor::transformAssignment(AssignStmt *stmt, bool mustExist) {
   stmt->type = typeExpr;
 
   // Generate new canonical variable name for this assignment and add it to the context
-  auto canonical = ctx->generateCanonicalName(e->getValue());
+  std::string canonical;
+  if (endswith(e->getValue(), VAR_USED_SUFFIX)) {
+    auto f = ctx->forceFind(e->getValue().substr(
+        0, e->getValue().size() - std::string(VAR_USED_SUFFIX).size()));
+    canonical = f->canonicalName + VAR_USED_SUFFIX;
+  } else {
+    canonical = ctx->generateCanonicalName(e->getValue());
+  }
   auto assign =
       N<AssignStmt>(N<IdExpr>(canonical), stmt->getRhs(), stmt->getTypeExpr());
   assign->getLhs()->cloneAttributesFrom(stmt->getLhs());

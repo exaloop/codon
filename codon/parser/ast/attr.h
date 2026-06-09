@@ -56,7 +56,7 @@ struct Attr {
     ExprKwStarArgument,
     ExprOrderedCall,
     ExprExternVar,
-    ExprDominatedUndefCheck,
+    ExprNoUndefCheck,
     ExprDominatedUsed,
     ExprTime,
     ExprDoNotRealize,

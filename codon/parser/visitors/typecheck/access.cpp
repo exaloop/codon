@@ -73,14 +73,13 @@ void TypecheckVisitor::visit(IdExpr *expr) {
   }
 
   // If this identifier needs __used__ checks (see @c ScopeVisitor), add them
-  if (expr->hasAttribute(Attr::ExprDominatedUndefCheck)) {
-    auto controlVar =
-        fmt::format("{}{}", getUnmangledName(val->canonicalName), VAR_USED_SUFFIX);
+  if (!expr->hasAttribute(Attr::ExprNoUndefCheck)) {
+    auto controlVar = fmt::format("{}{}", val->canonicalName, VAR_USED_SUFFIX);
     if (ctx->find(controlVar, getTime())) {
       auto checkStmt = N<ExprStmt>(N<CallExpr>(
           N<DotExpr>(N<IdExpr>("__internal__"), "undef"), N<IdExpr>(controlVar),
           N<StringExpr>(getUnmangledName(val->canonicalName))));
-      expr->eraseAttribute(Attr::ExprDominatedUndefCheck);
+      expr->setAttribute(Attr::ExprNoUndefCheck);
       resultExpr = transform(N<StmtExpr>(checkStmt, expr));
     }
   }
@@ -641,17 +640,6 @@ std::pair<Expr *, bool> TypecheckVisitor::getClassMember(Expr *expr,
   // Case: transform `pyobj.member` to `pyobj._getattr("member")`
   if (typ->is("pyobj")) {
     return {transform(N<CallExpr>(N<DotExpr>(expr, "_getattr"), N<StringExpr>(member))),
-            true};
-  }
-
-  // Case: transform `union.m` to `Union._member(union, "m", ...)`
-  if (typ->getUnion()) {
-    if (!typ->canRealize())
-      return {nullptr, true}; // delay!
-    return {transform(N<CallExpr>(
-                N<DotExpr>(N<IdExpr>(StdlibTypes::Union), "_member"),
-                std::vector<CallArg>{CallArg{"union", expr},
-                                     CallArg{"member", N<StringExpr>(member)}})),
             true};
   }
 

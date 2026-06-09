@@ -28,7 +28,8 @@ namespace codon::ast {
 
 llvm::Error
 ScopingVisitor::apply(Cache *cache, Stmt *s,
-                      std::unordered_map<std::string, size_t> *globalShadows) {
+                      std::unordered_map<std::string, size_t> *globalShadows,
+                      bool dominateAll) {
   auto c = std::make_shared<ScopingVisitor::Context>();
   c->cache = cache;
   c->functionScope = nullptr;
@@ -42,6 +43,12 @@ ScopingVisitor::apply(Cache *cache, Stmt *s,
     return llvm::make_error<ParserErrorInfo>(v.errors);
   v.processChildCaptures();
 
+  if (dominateAll) {
+    for (auto &[u, _] : c->map) {
+      v.findDominatingBinding(u);
+    }
+  }
+
   /// Count number of shadowed names to know which names change or not later on
   if (globalShadows) {
     for (auto &[u, v] : c->map) {
@@ -49,8 +56,9 @@ ScopingVisitor::apply(Cache *cache, Stmt *s,
       for (auto &ii : v)
         if (!ii.ignore)
           i++;
-      if (i > 1)
+      if (i > 1) {
         (*globalShadows)[u] = i;
+      }
     }
   }
 
@@ -120,6 +128,8 @@ bool ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
   } else if (cast<ListExpr>(e) || cast<TupleExpr>(e) || cast<IdExpr>(e)) {
     SetInScope s1(&(ctx->adding), true);
     SetInScope s2(&(ctx->root), root);
+    if (cast<IdExpr>(e)) // these IDs are definitions, should not have __used__ checks
+      e->setAttribute(Attr::ExprNoUndefCheck);
     return transform(e);
   } else {
     seqassert(e, "bad call to transformAdding");
@@ -139,8 +149,7 @@ void ScopingVisitor::visit(IdExpr *expr) {
       expr->setValue(*v);
       break;
     }
-  if (visitName(expr->getValue(), ctx->adding, ctx->root, expr->getSrcInfo()))
-    expr->setAttribute(Attr::ExprDominatedUndefCheck);
+  visitName(expr->getValue(), ctx->adding, ctx->root, expr->getSrcInfo());
 }
 
 void ScopingVisitor::visit(DotExpr *expr) {

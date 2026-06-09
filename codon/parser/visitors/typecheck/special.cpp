@@ -39,7 +39,7 @@ void TypecheckVisitor::prepareVTables() {
         continue;
       cache.insert(rn);
       added = true;
-      fn->ast->suite = generateGetThunkIDAst(real->getType());
+      fn->ast->suite = generateGetThunkIDAST(real->getType());
       real->type->ast = fn->ast;
       LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
       realizeFunc(real->type.get(), true);
@@ -199,7 +199,7 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
 /// Generate thunks in all derived classes for a given virtual function (must be fully
 /// realizable) and the corresponding base class.
 /// @return unique thunk ID.
-SuiteStmt *TypecheckVisitor::generateGetThunkIDAst(types::FuncType *f) {
+SuiteStmt *TypecheckVisitor::generateGetThunkIDAST(types::FuncType *f) {
   auto fp = extractType(extractFuncGeneric(f))->getFunc();
   auto cp = extractType(extractFuncGeneric(f, 1))->getClass();
 
@@ -327,6 +327,111 @@ SuiteStmt *TypecheckVisitor::generateUnionTagAST(FuncType *type) {
   return suite;
 }
 
+SuiteStmt *TypecheckVisitor::generateUnionDispatchAST(FuncType *type) {
+  auto attr = extractFuncGeneric(type)->getStrStatic();
+  if (!attr)
+    return nullptr;
+
+  auto unionTyp = extractFuncArgType(type)->getUnion();
+  seqassert(unionTyp, "not an union: {}", extractFuncArgType(type)->debugString(2));
+  auto suite = clone(getFunction(type->getFuncName())->ast->getSuite());
+
+  bool isCall = extractFuncArgType(type, 1)->is(StdlibTypes::Tuple) &&
+                extractFuncArgType(type, 2)->is(StdlibTypes::NamedTuple);
+  std::vector<std::pair<size_t, Expr *>> candidates;
+  std::map<std::string, Type *> unionTypes;
+  size_t tag = 0;
+  for (auto &t : unionTyp->getRealizationTypes()) {
+    Type *typ = nullptr;
+    if (isCall) {
+      std::vector<CallArg> callArgs;
+      for (auto &g : extractFuncArgType(type, 1)->getClass()->generics) {
+        callArgs.emplace_back("", N<NoneExpr>());
+        callArgs.back().getExpr()->setType(g.getType()->shared_from_this());
+      }
+      auto id = getIntLiteral(extractFuncArgType(type, 2));
+      const auto &names = ctx->cache->generatedTupleNames[id];
+      auto kwt = extractClassGeneric(extractFuncArgType(type, 2), 1)->getClass();
+      for (size_t gi = 0; gi < kwt->generics.size(); gi++) {
+        callArgs.emplace_back(names[gi], N<NoneExpr>());
+        callArgs.back().getExpr()->setType(
+            kwt->generics[gi].getType()->shared_from_this());
+      }
+      bool ok = false;
+      if (auto pt = t->getPartial()) {
+        ok = canCall(pt->getPartialFunc(), callArgs, pt) >= 0;
+      } else {
+        auto methods = findMethod(t->getClass(), "__call__", false);
+        auto m = findMatchingMethods(t->getClass(), methods, callArgs);
+        ok = !m.empty();
+      }
+      if (ok) {
+        ctx->addBlock();
+        auto var = getTemporaryVar("union");
+        ctx->addVar(var, var, t->shared_from_this());
+        auto varA = getTemporaryVar("args");
+        ctx->addVar(varA, varA, extractFuncArgType(type, 1)->shared_from_this());
+        auto varK = getTemporaryVar("kwargs");
+        ctx->addVar(varK, varK, extractFuncArgType(type, 2)->shared_from_this());
+        Expr *expr = N<CallExpr>(N<IdExpr>(var), N<StarExpr>(N<IdExpr>(varA)),
+                                 N<KeywordStarExpr>(N<IdExpr>(varK)));
+        expr = transform(expr);
+        typ = expr->getType();
+        ctx->popBlock();
+      }
+    } else {
+      // Do full expression typechecking.
+      ctx->addBlock();
+      auto var = getTemporaryVar("union");
+      ctx->addVar(var, var, t->shared_from_this());
+      auto ei = N<IdExpr>(var);
+      ei->setType(t->shared_from_this());
+      auto [expr, found] = getAttr(ei, attr->value);
+      if (found) {
+        expr = transform(N<DotExpr>(ei, attr->value));
+        typ = expr->getType();
+      }
+      ctx->popBlock();
+    }
+    if (typ) {
+      seqassert(typ->canRealize(), "cannot realize {}", typ->debugString(2));
+      unionTypes[typ->realizedName()] = typ;
+
+      Expr *e = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_data")),
+                            N<IdExpr>("union"), N<IdExpr>(t->realizedName()));
+      if (isCall) {
+        e = N<CallExpr>(e, N<StarExpr>(N<IdExpr>("args")),
+                        N<KeywordStarExpr>(N<IdExpr>("kwargs")));
+      } else {
+        e = N<DotExpr>(e, attr->value);
+      }
+      candidates.emplace_back(tag, e);
+    }
+    tag++;
+  }
+  if (unionTypes.size() > 1) {
+    std::vector<Expr *> args;
+    for (auto &i : unionTypes | std::views::keys)
+      args.push_back(N<IdExpr>(i));
+    auto w = N<InstantiateExpr>(N<IdExpr>(getMangledClass("", "Union")), args);
+    for (auto &[_, e] : candidates)
+      e = N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_new")),
+                      std::vector<Expr *>{e, w});
+  }
+  for (auto &[tag, expr] : candidates) {
+    // # if static.function.can_call(T, *args, **kwargs):
+    suite->addStmt(N<IfStmt>(
+        N<BinaryExpr>(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Union", "_get_tag")),
+                                  N<IdExpr>("union")),
+                      "==", N<IntExpr>(tag)),
+        N<ReturnStmt>(expr)));
+  }
+  // Move the final check to the end
+  suite->addStmt(suite->front());
+  (*suite)[0] = nullptr;
+  return suite;
+}
+
 SuiteStmt *TypecheckVisitor::generateNamedKeysAST(FuncType *type) {
   auto n = getIntLiteral(extractFuncGeneric(type));
   if (n < 0 || n >= ctx->cache->generatedTupleNames.size())
@@ -353,7 +458,7 @@ SuiteStmt *TypecheckVisitor::generateTupleMulAST(FuncType *type) {
 }
 
 /// Generate ASTs for dynamically generated functions.
-SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
+SuiteStmt *TypecheckVisitor::generateSpecialAST(types::FuncType *type) {
   // Clone the generic AST that is to be realized
   auto ast = type->ast;
   if (ast->hasAttribute(Attr::AutoGenerated) && endswith(ast->name, ".__iter__:0") &&
@@ -371,14 +476,16 @@ SuiteStmt *TypecheckVisitor::generateSpecialAst(types::FuncType *type) {
     return generateUnionNewAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Union", "_tag"))) {
     return generateUnionTagAST(type);
+  } else if (startswith(ast->name, getMangledMethod("", "Union", "_dispatch"))) {
+    return generateUnionDispatchAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "NamedTuple", "_namedkeys"))) {
     return generateNamedKeysAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "__magic__", "mul"))) {
     return generateTupleMulAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "TypeInfo", "_init_params"))) {
-    return generateTypeInfoInitAst(type);
+    return generateTypeInfoInitAST(type);
   } else if (startswith(ast->name, getMangledMethod("", "Super", "_dispatch"))) {
-    return generateSuperDispatchAst(type);
+    return generateSuperDispatchAST(type);
   }
   return nullptr;
 }
@@ -623,9 +730,10 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
       return transform(N<BoolExpr>(true));
   }
 
-  std::string instCall = ctx->expectedType && ctx->expectedType->is(StdlibTypes::Bool)
-                             ? "_getinstance"
-                             : "_isinstance";
+  std::string instCall =
+      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Bool)
+          ? "_getinstance"
+          : "_isinstance";
   if (typ->is(StdlibTypes::Any) && !isTypeExpr(expr->begin()->value)) {
     return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Any", instCall)),
                                  expr->begin()->getExpr(), (*expr)[1].getExpr()));
@@ -930,7 +1038,6 @@ Expr *TypecheckVisitor::transformStaticFnCanCall(CallExpr *expr) {
     callArgs.back().getExpr()->setType(t->shared_from_this());
   }
   if (auto fn = typ->getFunc()) {
-    // log("=> {} / {} / {}", fn->debugString(2), callArgs, canCall(fn, callArgs));
     return transform(N<BoolExpr>(canCall(fn, callArgs) >= 0));
   } else if (auto pt = typ->getPartial()) {
     return transform(N<BoolExpr>(canCall(pt->getPartialFunc(), callArgs, pt) >= 0));
@@ -1134,7 +1241,7 @@ Expr *TypecheckVisitor::transformStaticIntToStr(CallExpr *expr) {
   return transform(N<StringExpr>(std::to_string(val)));
 }
 
-SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
+SuiteStmt *TypecheckVisitor::generateTypeInfoInitAST(FuncType *type) {
   auto t = extractFuncGeneric(type)->getClass();
   if (!t || !t->canRealize())
     return nullptr;
@@ -1180,7 +1287,7 @@ SuiteStmt *TypecheckVisitor::generateTypeInfoInitAst(FuncType *type) {
   return suite;
 }
 
-SuiteStmt *TypecheckVisitor::generateSuperDispatchAst(FuncType *type) {
+SuiteStmt *TypecheckVisitor::generateSuperDispatchAST(FuncType *type) {
   auto attr = extractFuncGeneric(type)->getStrStatic();
   if (!attr)
     return nullptr;

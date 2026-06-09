@@ -37,10 +37,8 @@ void TypecheckVisitor::visit(RangeExpr *expr) {
 /// Also wrap conditional expressions to match each other. See @c wrapExpr for more
 /// details.
 void TypecheckVisitor::visit(IfExpr *expr) {
-  auto oldExpectedType = getStdLibType(StdlibTypes::Bool)->shared_from_this();
-  std::swap(ctx->expectedType, oldExpectedType);
+  expr->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   expr->cond = transform(expr->getCond());
-  std::swap(ctx->expectedType, oldExpectedType);
 
   // Static if evaluation
   if (expr->getCond()->getType()->getStaticKind()) {
@@ -75,6 +73,20 @@ void TypecheckVisitor::visit(IfExpr *expr) {
   wrapExpr(&expr->elsexpr, expr->getIf()->getType(), nullptr, /*allowUnwrap*/ false);
   wrapExpr(&expr->ifexpr, expr->getElse()->getType(), nullptr, /*allowUnwrap*/ false);
 
+  // Types not compatible! Check if an union can be made
+  if (expr->getIf()->getType()->unify(expr->getElse()->getType(), nullptr) < 0 &&
+      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Union)) {
+    if (!expr->getIf()->getType()->canRealize() ||
+        !expr->getElse()->getType()->canRealize())
+      return;
+    auto T = N<InstantiateExpr>(
+        N<IdExpr>(StdlibTypes::Union),
+        std::vector<Expr *>{N<IdExpr>(expr->getIf()->getType()->realizedName()),
+                            N<IdExpr>(expr->getElse()->getType()->realizedName())});
+    expr->ifexpr = transform(N<CallExpr>(T, expr->getIf()));
+    expr->elsexpr = transform(N<CallExpr>(clone(T), expr->getElse()));
+  }
+
   unify(expr->getType(), expr->getIf()->getType());
   unify(expr->getType(), expr->getElse()->getType());
   if (expr->getCond()->isDone() && expr->getIf()->isDone() && expr->getElse()->isDone())
@@ -84,10 +96,8 @@ void TypecheckVisitor::visit(IfExpr *expr) {
 /// Typecheck if statements. Evaluate static if blocks if possible.
 /// See @c wrapExpr for more details.
 void TypecheckVisitor::visit(IfStmt *stmt) {
-  auto oldExpectedType = getStdLibType(StdlibTypes::Bool)->shared_from_this();
-  std::swap(ctx->expectedType, oldExpectedType);
+  stmt->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   stmt->cond = transform(stmt->getCond());
-  std::swap(ctx->expectedType, oldExpectedType);
 
   std::shared_ptr<TypecheckItem> blockVar = nullptr, altVar = nullptr;
   if (auto ci = cast<CallExpr>(stmt->getCond())) {

@@ -237,7 +237,7 @@ private:
   Stmt *inferTypes(Stmt *, bool isToplevel = false);
   types::Type *realizeFunc(types::FuncType *, bool = false);
   types::Type *realizeType(types::ClassType *);
-  SuiteStmt *generateSpecialAst(types::FuncType *);
+  SuiteStmt *generateSpecialAST(types::FuncType *);
   codon::ir::types::Type *makeIRType(types::ClassType *);
   codon::ir::Func *
   makeIRFunction(const std::shared_ptr<Cache::Function::FunctionRealization> &);
@@ -410,14 +410,15 @@ public:
   SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
   FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,
                                  const types::ClassType *derived);
-  SuiteStmt *generateGetThunkIDAst(types::FuncType *);
+  SuiteStmt *generateGetThunkIDAST(types::FuncType *);
   SuiteStmt *generateFunctionCallInternalAST(types::FuncType *);
   SuiteStmt *generateUnionNewAST(const types::FuncType *);
   SuiteStmt *generateUnionTagAST(types::FuncType *);
+  SuiteStmt *generateUnionDispatchAST(types::FuncType *);
   SuiteStmt *generateNamedKeysAST(types::FuncType *);
   SuiteStmt *generateTupleMulAST(types::FuncType *);
-  SuiteStmt *generateTypeInfoInitAst(types::FuncType *);
-  SuiteStmt *generateSuperDispatchAst(types::FuncType *);
+  SuiteStmt *generateTypeInfoInitAST(types::FuncType *);
+  SuiteStmt *generateSuperDispatchAST(types::FuncType *);
   std::vector<Stmt *> populateStaticTupleLoop(Expr *, const std::vector<std::string> &);
   std::vector<Stmt *> populateSimpleStaticRangeLoop(Expr *,
                                                     const std::vector<std::string> &);

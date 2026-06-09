@@ -625,6 +625,8 @@ def cast(U: type, obj) -> U:
     def _cast(obj, UU: type) -> UU:
         if static.has_rtti(type(obj)):
             return RTTIType._cast(obj, UU)
+        elif type(obj) is List and UU is List:
+            return [cast(UU.T, i) for i in obj]
         else:
             o: UU = obj
             return o

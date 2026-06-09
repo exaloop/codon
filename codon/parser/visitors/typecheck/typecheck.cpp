@@ -887,11 +887,6 @@ TypecheckVisitor::canWrapExpr(Type *exprType, Type *expectedType, FuncType *call
     }
   } else if (exprClass && expectedClass && expectedClass->getUnion()) {
     // Make union types via Union._new
-    if (!expectedClass->getUnion()->isSealed()) {
-      if (!expectedClass->getUnion()->addType(exprClass))
-        E(error::Error::UNION_TOO_BIG, expectedClass->getSrcInfo(),
-          expectedClass->getUnion()->pendingTypes.size());
-    }
     if (auto t = realize(expectedClass)) {
       if (expectedClass->unify(exprClass, nullptr) == -1) {
         type = t->shared_from_this();
@@ -1386,10 +1381,6 @@ types::TypePtr TypecheckVisitor::instantiateType(const SrcInfo &srcInfo,
         ctx->getBase()->pendingDefaults[0].insert(val);
       }
     }
-  }
-  if (t->getUnion() && !t->getUnion()->isSealed()) {
-    t->setSrcInfo(srcInfo);
-    ctx->getBase()->pendingDefaults[0].insert(t);
   }
   return t;
 }

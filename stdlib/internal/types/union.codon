@@ -36,10 +36,13 @@ class Union:
         for tag, T in static.vars_types(U, with_index=True):
             if isinstance(value, T):
                 return Union._make(tag, value, U)
+            if T is Optional and isinstance(value, T.T):
+                return Union._make(tag, T(value), U)
             if isinstance(value, Union[T]):
                 return Union._make(tag, Union._get(value, T), U)
         # TODO: make this static!
-        raise TypeError("invalid union constructor")
+        raise TypeError("invalid union " + U.__name__ +
+                        " constructor for " + value.__class__.__name__)
 
     def _get(union, T: type) -> T:
         for tag, TU in static.vars_types(union, with_index=True):
@@ -48,40 +51,26 @@ class Union:
                     return Union._get_data(union, TU)
         raise TypeError(f"invalid union getter for type '{T.__class__.__name__}'")
 
-    def _member_helper(union, member: Literal[str]) -> Union:
+    def _member_helper(union, member: Literal[str]):
         for tag, T in static.vars_types(union, with_index=True):
             if hasattr(T, member):
                 if Union._get_tag(union) == tag:
                     return _getattr(Union._get_data(union, T), member)
         raise TypeError(f"invalid union call '{member}'")
 
-    def _member(union, member: Literal[str]):
-        t = Union._member_helper(union, member)
-        if static.len(t) == 1:
-            return Union._tag(t, 0)
+    @__generated__
+    def _dispatch(union, member: Literal[str], args, kwargs):
+        if member != "":
+            raise TypeError("cannot access " + union.__class__.__name__ + "." + member)
         else:
-            return t
+            raise TypeError("cannot call " + union.__class__.__name__ +
+                            " with " + str((args.__class__.__name__, kwargs.__class__.__name__)))
 
-    def _call_helper(union, args, kwargs) -> Union:
-        for tag, T in static.vars_types(union, with_index=True):
-            if static.function.can_call(T, *args, **kwargs):
-                if Union._get_tag(union) == tag:
-                    return Union._get_data(union, T)(*args, **kwargs)
-            elif hasattr(T, '__call__'):
-                if static.function.can_call(T.__call__, *args, **kwargs):
-                    if Union._get_tag(union) == tag:
-                        return Union._get_data(union, T).__call__(*args, **kwargs)
-        raise TypeError("cannot call union " + union.__class__.__name__)
-
-    def _call(union, args, kwargs):
-        t = Union._call_helper(union, args, kwargs)
-        if static.len(t) == 1:
-            return Union._tag(t, 0)
-        else:
-            return t
+    def __getattr__(self, member: Literal[str]):
+        return Union._dispatch(self, member, NoneType(), NoneType())
 
     def __call__(self, *args, **kwargs):
-        return Union._call(self, args, kwargs)
+        return Union._dispatch(self, "", args, kwargs)
 
     def _str(union):
         for tag, T in static.vars_types(union, with_index=True):

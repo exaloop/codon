@@ -317,7 +317,7 @@ std::string ClassType::realizedName() const {
       std::set<std::string> gss;
       for (auto &a : generics[0].type->getClass()->generics)
         gss.insert(a.realizedName());
-      gs = {join(gss, " | ")};
+      gs = {join(gss, "|")};
     } else {
       for (auto &a : generics)
         if (!a.name.empty())

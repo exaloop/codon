@@ -529,10 +529,7 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
       // Fix for functions returning Literal types
       if (auto st = getStaticGeneric(ret))
         baseType->generics[1].staticKind = st;
-
       unify(retType, extractType(ret));
-      if (isId(ret, "Union"))
-        extractClassGeneric(retType)->getUnbound()->kind = LinkType::Generic;
     } else {
       generics.push_back(unify(retType, instantiateUnbound())->shared_from_this());
     }

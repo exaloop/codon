@@ -21,13 +21,13 @@ print(a, a.__class__.__name__)  #: hehe str
 a = 'hehe' and 5.2
 print(a, a.__class__.__name__)  #: 5.2 float
 a = s and 5.2
-print(a, a.__class__.__name__)  #: 5.2 Union[float | str]
+print(a, a.__class__.__name__)  #: 5.2 Union[float|str]
 
 e = ''
 a = '' or 5.1
 print(a, a.__class__.__name__)  #: 5.1 float
 a = e or 5.1
-print(a, a.__class__.__name__)  #: 5.1 Union[float | str]
+print(a, a.__class__.__name__)  #: 5.1 Union[float|str]
 a = '' and 5.1
 print(a, a.__class__.__name__)  #:  str
 
@@ -45,15 +45,15 @@ print(a, a.__class__.__name__)  #:  str
 
 s = 'hehe'
 a = s or 1
-print(a, a.__class__.__name__)  #: hehe Union[int | str]
+print(a, a.__class__.__name__)  #: hehe Union[int|str]
 a = s and 1
-print(a, a.__class__.__name__)  #: 1 Union[int | str]
+print(a, a.__class__.__name__)  #: 1 Union[int|str]
 
 s = ''
 a = s or 1
-print(a, a.__class__.__name__)  #: 1 Union[int | str]
+print(a, a.__class__.__name__)  #: 1 Union[int|str]
 a = s and 1
-print(a, a.__class__.__name__)  #:  Union[int | str]
+print(a, a.__class__.__name__)  #:  Union[int|str]
 
 def foo():
     print('foo')
@@ -77,6 +77,22 @@ print(foo() and bar())
 print(bar() and foo())
 #: bar
 #: False
+
+x: Optional[List[int]] = None
+z = x if x else []
+print(z, z.__class__.__name__)  #: [] Optional[List[int]]
+z = x if x is not None else []
+print(z, z.__class__.__name__)  #: [] Optional[List[int]]
+z = x or []
+print(z, z.__class__.__name__)  #: [] Optional[List[int]]
+
+# Make sure that T|Optional[T] == T, not Union[Optional[T]]
+x = (1, 2)
+y: Optional[Tuple[int,int]] = None
+z = y or x
+print(z, z.__class__.__name__)
+#: (1, 2) Optional[Tuple[int,int]]
+
 
 #%% chain_binary,barebones
 def foo():

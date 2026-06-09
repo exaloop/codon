@@ -255,9 +255,11 @@ def foo(x = None, dtype: type = bool):
 foo()
 #: Optional[bool]
 #: bool True
-foo(int)
-#: bool
-#: NoneType False
+try:
+    foo(5)
+    #: bool
+except NameError:
+    print("oops")  #: oops
 
 #%% new_scoping_loops_try,barebones
 for i in range(10):

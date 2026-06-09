@@ -51,6 +51,8 @@ struct Expr : public AcceptorExtend<Expr, ASTNode> {
   void setDone() { done = true; }
   Expr *getOrigExpr() const { return origExpr; }
   void setOrigExpr(Expr *orig) { origExpr = orig; }
+  types::Type *getExpectedType() const { return expectedType; }
+  void setExpectedType(types::Type *e) { expectedType = e; }
 
   static const char NodeId;
   SERIALIZE(Expr, BASE(ASTNode), /*type,*/ done, origExpr);
@@ -69,6 +71,8 @@ private:
   bool done;
   /// Original (pre-transformation) expression
   Expr *origExpr;
+  /// Expected type of the expression. nullptr by default.
+  types::Type *expectedType;
 };
 
 /// Function signature parameter helper node (name: type = defaultValue).

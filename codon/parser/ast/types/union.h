@@ -12,13 +12,10 @@
 namespace codon::ast::types {
 
 struct UnionType : public ClassType {
-  static constexpr int MAX_UNION = 256;
-
-  std::vector<TypePtr> pendingTypes;
+  // std::vector<TypePtr> pendingTypes;
 
   explicit UnionType(Cache *cache);
-  UnionType(Cache *, const std::vector<ClassType::Generic> &,
-            const std::vector<TypePtr> &);
+  UnionType(Cache *, const std::vector<ClassType::Generic> &);
 
 public:
   int unify(Type *typ, Unification *undo) override;
@@ -27,15 +24,11 @@ public:
                       std::unordered_map<int, TypePtr> *cache) const override;
 
 public:
-  bool canRealize() const override;
   std::string debugString(char mode) const override;
   std::string realizedName() const override;
-  bool isSealed() const;
 
   UnionType *getUnion() override { return this; }
 
-  bool addType(Type *);
-  void seal();
   std::vector<Type *> getRealizationTypes() const;
 };
 

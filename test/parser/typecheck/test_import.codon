@@ -72,6 +72,12 @@ print f.__class__.__name__, f.t.__class__.__name__  #: Foo Ptr[B]
 a.ha()  #: B
 
 print par  #: x
+print woo  #: 10
+try:
+    print woo2
+except NameError:
+    print "woo2 no-no" #: woo2 no-no
+
 
 #%% import_static_time,barebones
 from a.b import stt  #: a

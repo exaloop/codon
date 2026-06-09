@@ -29,11 +29,14 @@ using namespace codon::matcher;
 
 namespace codon::ast {
 
-Expr::Expr() : AcceptorExtend(), type(nullptr), done(false), origExpr(nullptr) {}
+Expr::Expr()
+    : AcceptorExtend(), type(nullptr), done(false), origExpr(nullptr),
+      expectedType(nullptr) {}
 Expr::Expr(const Expr &expr, bool clean) : Expr(expr) {
   if (clean) {
     type = nullptr;
     done = false;
+    expectedType = nullptr;
   }
 }
 types::ClassType *Expr::getClassType() const {

@@ -74,10 +74,8 @@ void TypecheckVisitor::visit(WhileStmt *stmt) {
   ctx->staticLoops.push_back(stmt->gotoVar.empty() ? "" : stmt->gotoVar);
   ctx->getBase()->loops.emplace_back(breakVar);
 
-  auto oldExpectedType = getStdLibType(StdlibTypes::Bool)->shared_from_this();
-  std::swap(ctx->expectedType, oldExpectedType);
+  stmt->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   stmt->cond = transform(stmt->getCond());
-  std::swap(ctx->expectedType, oldExpectedType);
   wrapExpr(&stmt->cond, getStdLibType(StdlibTypes::Bool));
 
   ctx->blockLevel++;
