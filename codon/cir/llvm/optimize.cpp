@@ -10,6 +10,8 @@
 #include "codon/cir/llvm/native/native.h"
 #include "codon/util/common.h"
 
+#include "llvm/IR/AttributeMask.h"
+
 static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
@@ -978,6 +980,362 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
   }
 };
 
+bool isAggregate(llvm::Type *T) {
+  return T->isStructTy() || T->isArrayTy() || T->isVectorTy();
+}
+
+bool shouldPassIndirect(llvm::Type *T, const llvm::DataLayout &DL) {
+  if (!isAggregate(T))
+    return false;
+
+  llvm::TypeSize Size = DL.getTypeAllocSize(T);
+  return !Size.isScalable() && Size.getFixedValue() > 16;
+}
+
+llvm::Align abiAlign(llvm::Type *T, const llvm::DataLayout &DL) {
+  return DL.getABITypeAlign(T);
+}
+
+struct ArgInfo {
+  llvm::Type *OrigTy = nullptr;
+  llvm::Type *NewTy = nullptr;
+  bool ByVal = false;
+};
+
+struct FnABIInfo {
+  bool HasSRet = false;
+  llvm::Type *OrigRetTy = nullptr;
+  llvm::SmallVector<ArgInfo, 8> Args;
+};
+
+bool needsRewrite(llvm::Function &F, const llvm::DataLayout &DL,
+                  FnABIInfo &Info) {
+  if (F.isDeclaration())
+    return false;
+
+  // if (!F.hasLocalLinkage())
+  //   return false;
+
+  if (F.hasAddressTaken())
+    return false;
+
+  llvm::FunctionType *FT = F.getFunctionType();
+  Info.OrigRetTy = FT->getReturnType();
+
+  bool Changed = false;
+
+  if (!FT->getReturnType()->isVoidTy() &&
+      shouldPassIndirect(FT->getReturnType(), DL)) {
+    Info.HasSRet = true;
+    Changed = true;
+  }
+
+  for (llvm::Type *T : FT->params()) {
+    ArgInfo AI;
+    AI.OrigTy = T;
+
+    if (shouldPassIndirect(T, DL)) {
+      AI.NewTy = llvm::PointerType::getUnqual(T);
+      AI.ByVal = true;
+      Changed = true;
+    } else {
+      AI.NewTy = T;
+    }
+
+    Info.Args.push_back(AI);
+  }
+
+  return Changed;
+}
+
+llvm::FunctionType *makeLoweredFunctionType(llvm::LLVMContext &Ctx,
+                                            const FnABIInfo &Info) {
+  llvm::SmallVector<llvm::Type *, 8> Params;
+
+  if (Info.HasSRet)
+    Params.push_back(llvm::PointerType::getUnqual(Info.OrigRetTy));
+
+  for (const ArgInfo &AI : Info.Args)
+    Params.push_back(AI.NewTy);
+
+  llvm::Type *RetTy =
+      Info.HasSRet ? llvm::Type::getVoidTy(Ctx) : Info.OrigRetTy;
+
+  return llvm::FunctionType::get(RetTy, Params, false);
+}
+
+void addABIAttrs(llvm::Function &NF, const FnABIInfo &Info,
+                 const llvm::DataLayout &DL) {
+  llvm::LLVMContext &Ctx = NF.getContext();
+
+  unsigned ParamNo = 0;
+
+  if (Info.HasSRet) {
+    llvm::Type *RetTy = Info.OrigRetTy;
+
+    NF.addParamAttr(
+        ParamNo,
+        llvm::Attribute::getWithStructRetType(Ctx, RetTy));
+
+    NF.addParamAttr(
+        ParamNo,
+        llvm::Attribute::getWithAlignment(Ctx, abiAlign(RetTy, DL)));
+
+    NF.addParamAttr(ParamNo, llvm::Attribute::NoAlias);
+    //NF.addParamAttr(ParamNo, llvm::Attribute::Writable);
+
+    ++ParamNo;
+  }
+
+  for (const ArgInfo &AI : Info.Args) {
+    if (AI.ByVal) {
+      NF.addParamAttr(
+          ParamNo,
+          llvm::Attribute::getWithByValType(Ctx, AI.OrigTy));
+
+      NF.addParamAttr(
+          ParamNo,
+          llvm::Attribute::getWithAlignment(Ctx, abiAlign(AI.OrigTy, DL)));
+    }
+
+    ++ParamNo;
+  }
+}
+
+llvm::Value *materializeArgInNewFunction(llvm::IRBuilder<> &B,
+                                         llvm::Argument *NewArg,
+                                         const ArgInfo &AI) {
+  if (!AI.ByVal)
+    return NewArg;
+
+  return B.CreateLoad(AI.OrigTy, NewArg, NewArg->getName() + ".val");
+}
+
+llvm::Function *rewriteFunctionSignature(llvm::Function &F,
+                                         const FnABIInfo &Info,
+                                         const llvm::DataLayout &DL) {
+  llvm::Module *M = F.getParent();
+  llvm::LLVMContext &Ctx = M->getContext();
+
+  llvm::FunctionType *NFTy = makeLoweredFunctionType(Ctx, Info);
+
+  llvm::Function *NF =
+      llvm::Function::Create(NFTy, F.getLinkage(), F.getAddressSpace(),
+                             F.getName() + ".cabi", M);
+
+  NF->copyAttributesFrom(&F);
+  NF->setCallingConv(F.getCallingConv());
+
+  if (Info.HasSRet) {
+    NF->removeFnAttr(llvm::Attribute::ReadNone);
+    NF->removeFnAttr(llvm::Attribute::ReadOnly);
+    NF->removeFnAttr(llvm::Attribute::WriteOnly);
+    NF->removeFnAttr(llvm::Attribute::Memory);
+
+    llvm::AttributeMask RetAttrsToRemove;
+    RetAttrsToRemove.addAttribute(llvm::Attribute::ZExt);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::SExt);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::NoExt);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::InReg);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::StructRet);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::NoAlias);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::NonNull);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::Dereferenceable);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::DereferenceableOrNull);
+    RetAttrsToRemove.addAttribute(llvm::Attribute::Alignment);
+
+    NF->setAttributes(
+        NF->getAttributes().removeRetAttributes(Ctx, RetAttrsToRemove));
+  }
+
+  addABIAttrs(*NF, Info, DL);
+
+  llvm::ValueToValueMapTy VMap;
+
+  auto NewAI = NF->arg_begin();
+
+  llvm::Argument *SRetArg = nullptr;
+  if (Info.HasSRet) {
+    SRetArg = &*NewAI++;
+    SRetArg->setName("sret.result");
+  }
+
+  llvm::BasicBlock *ShimEntry =
+      llvm::BasicBlock::Create(Ctx, "entry.cabi", NF);
+  llvm::IRBuilder<> B(ShimEntry);
+
+  auto OldAI = F.arg_begin();
+  for (const ArgInfo &AI : Info.Args) {
+    llvm::Argument *NA = &*NewAI++;
+    llvm::Argument *OA = &*OldAI++;
+
+    NA->setName(OA->getName());
+
+    llvm::Value *Mapped = materializeArgInNewFunction(B, NA, AI);
+    VMap[OA] = Mapped;
+  }
+
+  llvm::SmallVector<llvm::BasicBlock *, 16> Blocks;
+  for (llvm::BasicBlock &BB : F)
+    Blocks.push_back(&BB);
+
+  for (llvm::BasicBlock *BB : Blocks) {
+    BB->removeFromParent();
+    BB->insertInto(NF);
+  }
+
+  if (!Blocks.empty())
+    B.CreateBr(Blocks.front());
+
+  for (llvm::BasicBlock &BB : *NF) {
+    for (llvm::Instruction &I : BB) {
+      llvm::RemapInstruction(
+          &I, VMap,
+          llvm::RF_NoModuleLevelChanges | llvm::RF_IgnoreMissingLocals);
+    }
+  }
+
+  if (Info.HasSRet) {
+    llvm::SmallVector<llvm::ReturnInst *, 8> Returns;
+
+    for (llvm::BasicBlock &BB : *NF) {
+      if (auto *RI = llvm::dyn_cast<llvm::ReturnInst>(BB.getTerminator()))
+        Returns.push_back(RI);
+    }
+
+    for (llvm::ReturnInst *RI : Returns) {
+      llvm::IRBuilder<> RB(RI);
+      llvm::Value *RV = RI->getReturnValue();
+
+      RB.CreateStore(RV, SRetArg);
+      RB.CreateRetVoid();
+
+      RI->eraseFromParent();
+    }
+  }
+
+  return NF;
+}
+
+llvm::CallBase *rewriteCall(llvm::CallBase *CB, llvm::Function *OldF,
+                            llvm::Function *NewF, const FnABIInfo &Info,
+                            const llvm::DataLayout &DL) {
+  llvm::IRBuilder<> B(CB);
+  llvm::SmallVector<llvm::Value *, 8> Args;
+  llvm::AllocaInst *SRetSlot = nullptr;
+
+  if (Info.HasSRet) {
+    llvm::Function *Parent = CB->getFunction();
+    llvm::IRBuilder<> EntryB(&*Parent->getEntryBlock().getFirstInsertionPt());
+
+    SRetSlot =
+        EntryB.CreateAlloca(Info.OrigRetTy, nullptr,
+                            CB->getName() + ".sret.slot");
+    SRetSlot->setAlignment(abiAlign(Info.OrigRetTy, DL));
+
+    Args.push_back(SRetSlot);
+  }
+
+  for (unsigned I = 0; I < Info.Args.size(); ++I) {
+    llvm::Value *Arg = CB->getArgOperand(I);
+    const ArgInfo &AI = Info.Args[I];
+
+    if (!AI.ByVal) {
+      Args.push_back(Arg);
+      continue;
+    }
+
+    llvm::Function *Parent = CB->getFunction();
+    llvm::IRBuilder<> EntryB(&*Parent->getEntryBlock().getFirstInsertionPt());
+
+    llvm::AllocaInst *Tmp =
+        EntryB.CreateAlloca(AI.OrigTy, nullptr, "byval.tmp");
+    Tmp->setAlignment(abiAlign(AI.OrigTy, DL));
+
+    B.CreateStore(Arg, Tmp);
+    Args.push_back(Tmp);
+  }
+
+  llvm::CallBase *NC = nullptr;
+
+  if (auto *Invoke = llvm::dyn_cast<llvm::InvokeInst>(CB)) {
+    NC = B.CreateInvoke(NewF, Invoke->getNormalDest(),
+                        Invoke->getUnwindDest(), Args);
+  } else {
+    NC = B.CreateCall(NewF, Args);
+  }
+
+  NC->setCallingConv(CB->getCallingConv());
+
+  if (!CB->getType()->isVoidTy()) {
+    if (Info.HasSRet) {
+      llvm::LoadInst *Loaded =
+          B.CreateLoad(Info.OrigRetTy, SRetSlot,
+                       CB->getName() + ".sret.load");
+      CB->replaceAllUsesWith(Loaded);
+    } else {
+      CB->replaceAllUsesWith(NC);
+    }
+  }
+
+  CB->eraseFromParent();
+  return NC;
+}
+
+struct CABILoweringPass : llvm::PassInfoMixin<CABILoweringPass> {
+  llvm::PreservedAnalyses run(llvm::Module &M,
+                              llvm::ModuleAnalysisManager &) {
+    const llvm::DataLayout &DL = M.getDataLayout();
+
+    llvm::SmallVector<llvm::Function *, 16> Worklist;
+    llvm::DenseMap<llvm::Function *, FnABIInfo> Infos;
+
+    for (llvm::Function &F : M) {
+      FnABIInfo Info;
+      if (needsRewrite(F, DL, Info)) {
+        Worklist.push_back(&F);
+        Infos[&F] = std::move(Info);
+      }
+    }
+
+    if (Worklist.empty())
+      return llvm::PreservedAnalyses::all();
+
+    llvm::DenseMap<llvm::Function *, llvm::Function *> NewFns;
+
+    for (llvm::Function *F : Worklist) {
+      llvm::Function *NF = rewriteFunctionSignature(*F, Infos[F], DL);
+      NewFns[F] = NF;
+    }
+
+    for (llvm::Function *OldF : Worklist) {
+      llvm::Function *NewF = NewFns[OldF];
+      FnABIInfo &Info = Infos[OldF];
+
+      llvm::SmallVector<llvm::User *, 16> Users(OldF->users());
+
+      for (llvm::User *U : Users) {
+        if (auto *CB = llvm::dyn_cast<llvm::CallBase>(U)) {
+          if (CB->getCalledFunction() == OldF)
+            rewriteCall(CB, OldF, NewF, Info, DL);
+        }
+      }
+
+      OldF->eraseFromParent();
+
+      std::string Name = NewF->getName().str();
+      constexpr llvm::StringLiteral Suffix(".cabi");
+
+      if (llvm::StringRef(Name).ends_with(Suffix)) {
+        Name.resize(Name.size() - Suffix.size());
+        NewF->setName(Name);
+      }
+    }
+
+    return llvm::PreservedAnalyses::none();
+  }
+};
+
 void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
                                          Options *options) {
   pb.registerLateLoopOptimizationsEPCallback(
@@ -997,6 +1355,11 @@ void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *p
             pm.addPass(AllocationAutoFree());
         }
       });
+
+  // pb.registerOptimizerLastEPCallback(
+  //     [&](llvm::ModulePassManager &pm, llvm::OptimizationLevel opt, llvm::ThinOrFullLTOPhase) {
+  //       pm.addPass(CABILoweringPass());
+  //     });
 
   if (options->native)
     addNativeLLVMPasses(&pb);

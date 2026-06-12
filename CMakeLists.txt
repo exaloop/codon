@@ -70,38 +70,13 @@ set(CODON_JUPYTER_FILES codon/util/jupyter.h codon/util/jupyter.cpp)
 add_library(codon_jupyter SHARED ${CODON_JUPYTER_FILES})
 
 # Codon runtime library
-add_library(codonfloat STATIC
-            codon/runtime/floatlib/extenddftf2.c
-            codon/runtime/floatlib/fp_trunc.h
-            codon/runtime/floatlib/truncdfhf2.c
-            codon/runtime/floatlib/extendhfsf2.c
-            codon/runtime/floatlib/int_endianness.h
-            codon/runtime/floatlib/truncdfsf2.c
-            codon/runtime/floatlib/extendhftf2.c
-            codon/runtime/floatlib/int_lib.h
-            codon/runtime/floatlib/truncsfbf2.c
-            codon/runtime/floatlib/extendsfdf2.c
-            codon/runtime/floatlib/int_math.h
-            codon/runtime/floatlib/truncsfhf2.c
-            codon/runtime/floatlib/extendsftf2.c
-            codon/runtime/floatlib/int_types.h
-            codon/runtime/floatlib/trunctfdf2.c
-            codon/runtime/floatlib/fp_extend.h
-            codon/runtime/floatlib/int_util.h
-            codon/runtime/floatlib/trunctfhf2.c
-            codon/runtime/floatlib/fp_lib.h
-            codon/runtime/floatlib/truncdfbf2.c
-            codon/runtime/floatlib/trunctfsf2.c)
-target_compile_options(codonfloat PRIVATE -O3)
-target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
-
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
                   codon/runtime/numpy/sort.cpp
                   codon/runtime/numpy/loops.cpp codon/runtime/numpy/zmath.cpp)
 add_library(codonrt SHARED ${CODONRT_FILES})
 add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
-                         re2 hwy hwy_contrib fast_float codonfloat)
+                         re2 hwy hwy_contrib fast_float)
 
 if(DEFINED ENV{CODON_SYSTEM_LIBRARIES})
   if(APPLE)
@@ -136,6 +111,48 @@ target_include_directories(codonrt PRIVATE ${backtrace_SOURCE_DIR}
                                            "${gc_SOURCE_DIR}/include"
                                            "${fast_float_SOURCE_DIR}/include" runtime)
 target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
+
+if(APPLE)
+  set(COMPILER_RT_NAMES clang_rt.osx libclang_rt.osx.a)
+  set(COMPILER_RT_PATHS
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/darwin"
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/darwin"
+  )
+elseif(UNIX)
+  set(COMPILER_RT_NAMES clang_rt.builtins libclang_rt.builtins.a)
+
+  set(COMPILER_RT_TRIPLES
+    "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu"
+    "${CMAKE_SYSTEM_PROCESSOR}-linux-gnu"
+    "aarch64-unknown-linux-gnu"
+    "x86_64-unknown-linux-gnu"
+  )
+
+  foreach(TRIPLE IN LISTS COMPILER_RT_TRIPLES)
+    list(APPEND COMPILER_RT_PATHS
+      "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/${TRIPLE}"
+      "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/${TRIPLE}"
+    )
+  endforeach()
+
+  list(APPEND COMPILER_RT_PATHS
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/linux"
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/linux"
+  )
+endif()
+
+find_library(COMPILER_RT_LIB
+  NAMES ${COMPILER_RT_NAMES}
+  PATHS ${COMPILER_RT_PATHS}
+  NO_DEFAULT_PATH
+)
+
+if(NOT COMPILER_RT_LIB)
+  message(FATAL_ERROR
+    "Could not find compiler-rt. Tried ${COMPILER_RT_NAMES} in ${COMPILER_RT_PATHS}")
+endif()
+message(STATUS "Found compiler-rt: ${COMPILER_RT_LIB}")
+
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -146,7 +163,7 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:re2>
             -Wl,-force_load,$<TARGET_FILE:hwy>
             -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
-            -Wl,-force_load,$<TARGET_FILE:codonfloat>)
+            -Wl,-force_load,${COMPILER_RT_LIB})
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 else()
   add_dependencies(codonrt openblas_64)
@@ -155,7 +172,7 @@ else()
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:openblas_64> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
 endif()
 if(ASAN)
   target_compile_options(
