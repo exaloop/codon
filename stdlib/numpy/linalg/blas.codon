@@ -9,8 +9,8 @@ if static.platform() == "darwin":
     _suffix_blas: Literal[str] = "$NEWLAPACK$ILP64"
     _suffix_lapack: Literal[str] = "$NEWLAPACK$ILP64"
 else:
-    _suffix_blas: Literal[str] = "64_"
-    _suffix_lapack: Literal[str] = "_64_"
+    _suffix_blas: Literal[str] = ""
+    _suffix_lapack: Literal[str] = "_"
 
 # Constants
 CBLAS_ROW_MAJOR: Literal[int] = 101
