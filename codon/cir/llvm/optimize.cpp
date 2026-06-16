@@ -981,13 +981,13 @@ struct CoroBranchSimplifier : public llvm::PassInfoMixin<CoroBranchSimplifier> {
 void registerCodonLLVMOptimizationPasses(llvm::PassBuilder &pb, PluginManager *plugins,
                                          Options *options) {
   pb.registerLateLoopOptimizationsEPCallback(
-      [&](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
+      [](llvm::LoopPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed())
           pm.addPass(CoroBranchSimplifier());
       });
 
   pb.registerPeepholeEPCallback(
-      [&](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
+      [=](llvm::FunctionPassManager &pm, llvm::OptimizationLevel opt) {
         if (opt.isOptimizingForSpeed()) {
           pm.addPass(AllocationRemover());
           pm.addPass(llvm::LoopSimplifyPass());
