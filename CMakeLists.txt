@@ -167,12 +167,59 @@ if(APPLE)
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 else()
   add_dependencies(codonrt openblas_64)
+
+  # Make sure compiler-rt symbols are visible
+  set(LLVM_OBJCOPY "${LLVM_BINARY_DIR}/bin/llvm-objcopy")
+  if(NOT EXISTS "${LLVM_OBJCOPY}")
+    find_program(LLVM_OBJCOPY
+      NAMES llvm-objcopy objcopy
+      REQUIRED
+    )
+  endif()
+  set(COMPILER_RT_DEFAULT "${CMAKE_BINARY_DIR}/libclang_rt.builtins.default.a")
+  set(COMPILER_RT_DEFAULT_VIS_SYMBOLS
+    __truncdfhf2
+    __truncdfsf2
+    __truncsfhf2
+    __trunctfdf2
+    __trunctfhf2
+    __trunctfsf2
+    __trunctfxf2
+    __truncxfhf2
+    __extendsfdf2
+    __extendhfsf2
+    __extenddftf2
+    __extendhftf2
+    __extendsftf2
+    __extendhfxf2
+    __extendxftf2
+  )
+  set(COMPILER_RT_OBJCOPY_ARGS)
+  foreach(SYM IN LISTS COMPILER_RT_DEFAULT_VIS_SYMBOLS)
+    list(APPEND COMPILER_RT_OBJCOPY_ARGS
+      "--set-symbol-visibility=${SYM}=default")
+  endforeach()
+  add_custom_command(
+    OUTPUT "${COMPILER_RT_DEFAULT}"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${COMPILER_RT_LIB}"
+            "${COMPILER_RT_DEFAULT}"
+    COMMAND "${LLVM_OBJCOPY}"
+            ${COMPILER_RT_OBJCOPY_ARGS}
+            "${COMPILER_RT_DEFAULT}"
+    DEPENDS "${COMPILER_RT_LIB}"
+    VERBATIM
+  )
+  add_custom_target(compiler_rt_default_visibility
+    DEPENDS "${COMPILER_RT_DEFAULT}")
+  add_dependencies(codonrt compiler_rt_default_visibility)
+
   target_link_libraries(
     codonrt
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
             $<TARGET_FILE:openblas_64> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            ${COMPILER_RT_LIB} -Wl,--no-whole-archive)
+            ${COMPILER_RT_DEFAULT} -Wl,--no-whole-archive)
 endif()
 if(ASAN)
   target_compile_options(
