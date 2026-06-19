@@ -148,6 +148,8 @@ def _codon_types(args, **kwargs):
 
 def _reset_jit():
     global _jit
+    if "_gpu_finalized" in globals():
+        globals()["_gpu_finalized"] = False
     _jit = JITWrapper()
     init_code = (
         "from internal.python import "
@@ -162,6 +164,8 @@ def _reset_jit():
     return _jit
 
 _jit = _reset_jit()
+_gpu_registry = []
+_gpu_finalized = False
 
 class RewriteFunctionArgs(ast.NodeTransformer):
     def __init__(self, args):
@@ -330,23 +334,62 @@ def execute(code, debug=0):
 
 # ------------------------- For GPU Decorators -------------------------
 
-def _parse_gpu_decorated(obj, **kwargs):
+def _parse_gpu_kernel_source(obj, **kwargs):
     obj_name, obj_str = _obj_to_str(obj, **kwargs)
-    return obj_name, "import gpu\n\n@gpu.kernel\n" + obj_str
+    return obj_name, "@gpu.kernel\n" + obj_str
 
 def _gpu_register_fn(f, pyvars, debug):
+    global _gpu_registry
+    if _gpu_finalized:
+        name = getattr(f, "__name__", "<string>")
+        raise RuntimeError(
+            f"@codon.gpu kernel '{name}' was registered after the GPU registry "
+            "was finalized. Import all GPU kernel modules before the first GPU "
+            "launch, or call codon.gpu_finalize() after imports."
+        )
+
+    obj_name, obj_str = _parse_gpu_kernel_source(f, pyvars=pyvars)
+    fn, fl = "<internal>", 1
+    if hasattr(f, "__code__"):
+        fn, fl = f.__code__.co_filename, f.__code__.co_firstlineno
+
+    _gpu_registry.append({
+        "name": obj_name,
+        "source": obj_str,
+        "filename": fn,
+        "firstlineno": fl,
+        "debug": debug,
+    })
+    return obj_name
+
+def _gpu_finalize(debug=0):
+    global _gpu_finalized
+    if _gpu_finalized:
+        return
+    if not _gpu_registry:
+        _gpu_finalized = True
+        return
+
+    source = "import gpu\n\n" + "\n\n".join(
+        entry["source"] for entry in _gpu_registry
+    )
+    batch_debug = max([debug] + [entry["debug"] for entry in _gpu_registry])
     try:
-        obj_name, obj_str = _parse_gpu_decorated(f, pyvars=pyvars)
-        fn, fl = "<internal>", 1
-        if hasattr(f, "__code__"):
-            fn, fl = f.__code__.co_filename, f.__code__.co_firstlineno
-        if debug == 2:
-            print(f"[jit_debug] execute:\n{obj_str}", file=sys.stderr)
-        _jit.execute(obj_str, fn, fl, int(debug > 0))
-        return obj_name
+        if batch_debug == 2:
+            print(f"[jit_debug] gpu registry execute:\n{source}", file=sys.stderr)
+        _jit.execute(source, "<gpu registry>", 1, int(batch_debug > 0))
+        _gpu_finalized = True
     except JITError:
         _reset_jit()
         raise
+
+def gpu_finalize(debug=0):
+    """Compile all registered @codon.gpu kernels into one GPU JIT unit."""
+    if debug is None:
+        debug = 0
+    if debug_override:
+        debug = debug_override
+    _gpu_finalize(debug)
 
 def _gpu_callback_fn(fn,
                      obj_name,
@@ -385,6 +428,7 @@ def _gpu_callback_fn(fn,
     args = (*data_args, grid, block)
 
     try:
+        _gpu_finalize(debug)
         types = _codon_types(args, debug=debug, sample_size=sample_size)
         if debug > 0:
             print("[python] {}({})".format(obj_name, list(types)), file=sys.stderr)
