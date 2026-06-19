@@ -1095,6 +1095,30 @@ Expr *TypecheckVisitor::transformStaticIntToStr(CallExpr *expr) {
   return transform(N<StringExpr>(std::to_string(val)));
 }
 
+/// Transform staticlen method to a static integer expression. This method supports only
+/// static strings and tuple types.
+Expr *TypecheckVisitor::transformStaticPlatform(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->staticKind = LiteralKind::String;
+
+  std::string platform = (
+#if defined(_WIN32) || defined(_WIN64)
+      "win32"
+#elif defined(__linux__)
+      "linux"
+#elif defined(__APPLE__) && defined(__MACH__)
+      "darwin"
+#elif defined(__unix__)
+      "unix"
+#else
+      ""
+#endif
+  );
+  if (platform.empty())
+    E(Error::CUSTOM, expr->getSrcInfo(), "unsupported platform");
+  return transform(N<StringExpr>(platform));
+}
+
 std::vector<Stmt *>
 TypecheckVisitor::populateStaticTupleLoop(Expr *iter,
                                           const std::vector<std::string> &vars) {

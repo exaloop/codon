@@ -6,6 +6,9 @@
 def len(obj):
     pass
 
+def platform() -> Literal[str]:
+    pass
+
 @no_argument_wrap
 def print(*args):
     pass
