@@ -102,10 +102,10 @@ public:
                         bool debug);
 
   JITResult executePythonGPU(const std::string &name,
-                          const std::vector<std::string> &types,
-                          const std::string &pyModule,
-                          const std::vector<std::string> &pyVars, void *arg,
-                          bool debug);
+                             const std::vector<std::string> &types,
+                             const std::string &pyModule,
+                             const std::vector<std::string> &pyVars, void *arg,
+                             bool debug);
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
 };

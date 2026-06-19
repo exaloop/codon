@@ -268,7 +268,8 @@ std::string buildKey(const std::string &name, const std::vector<std::string> &ty
   return key.str();
 }
 
-std::string buildGpuKey(const std::string &name, const std::vector<std::string> &types) {
+std::string buildGpuKey(const std::string &name,
+                        const std::vector<std::string> &types) {
   std::stringstream key;
   key << "gpu|" << name;
   for (const auto &t : types) {
@@ -324,10 +325,10 @@ std::string buildPythonWrapperGPU(const std::string &name, const std::string &wr
          << "a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, " << i
          << "))\n";
   }
-  wrap << "    grid = " << types[gridIndex]
-       << ".__from_py__(PyTuple_GetItem(args, " << gridIndex << "))\n";
-  wrap << "    block = " << types[blockIndex]
-       << ".__from_py__(PyTuple_GetItem(args, " << blockIndex << "))\n";
+  wrap << "    grid = " << types[gridIndex] << ".__from_py__(PyTuple_GetItem(args, "
+       << gridIndex << "))\n";
+  wrap << "    block = " << types[blockIndex] << ".__from_py__(PyTuple_GetItem(args, "
+       << blockIndex << "))\n";
   wrap << "    " << name << "(";
   for (unsigned i = 0; i < dataCount; i++) {
     if (i > 0)
@@ -412,13 +413,14 @@ JIT::JITResult JIT::executePython(const std::string &name,
 }
 
 JIT::JITResult JIT::executePythonGPU(const std::string &name,
-                                  const std::vector<std::string> &types,
-                                  const std::string &pyModule,
-                                  const std::vector<std::string> &pyVars, void *arg,
-                                  bool debug) {
+                                     const std::vector<std::string> &types,
+                                     const std::string &pyModule,
+                                     const std::vector<std::string> &pyVars, void *arg,
+                                     bool debug) {
   (void)pyModule;
   if (types.size() < 2)
-    return JITResult::error("GPU wrapper expects data arguments followed by grid and block");
+    return JITResult::error(
+        "GPU wrapper expects data arguments followed by grid and block");
   if (!pyVars.empty())
     return JITResult::error("pyvars are not supported for GPU wrappers");
 
@@ -529,7 +531,7 @@ CJITResult gpu_execute_python(void *jit, char *name, char **types, size_t types_
     cppPyVars.emplace_back(py_vars[i]);
   auto t = ((codon::jit::JIT *)jit)
                ->executePythonGPU(std::string(name), cppTypes, std::string(pyModule),
-                               cppPyVars, arg, bool(debug));
+                                  cppPyVars, arg, bool(debug));
   void *result = t.result;
   char *message =
       t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
