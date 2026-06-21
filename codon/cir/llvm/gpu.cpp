@@ -941,8 +941,10 @@ std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M, Options *options
     }
   }
 
-  if (!hasKernels)
+  if (!hasKernels) {
+    patchPTXVar(M, nullptr);
     return {};
+  }
 
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));
