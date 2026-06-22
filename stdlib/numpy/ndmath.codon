@@ -1661,3 +1661,7 @@ class ndarray:
             dtype=dtype,
             out=out
         )
+
+    @inline
+    def __abs__(self):
+        return absolute(self)

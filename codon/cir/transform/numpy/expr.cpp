@@ -295,6 +295,12 @@ int64_t NumPyExpr::cost() const {
   if (c == -1)
     return -1;
 
+  // Special-case for abs(complex)
+  if (op == NP_OP_ABS && lhs &&
+      (lhs->type.dtype == NumPyType::NP_TYPE_ARR_C128 ||
+       lhs->type.dtype == NumPyType::NP_TYPE_ARR_C64))
+    c = 50;
+
   // Account for the fact that the vectorized loops are much faster.
   if (haveVectorizedLoop()) {
     c *= 3;
