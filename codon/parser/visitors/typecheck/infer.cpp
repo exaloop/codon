@@ -699,8 +699,10 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     fn = irm->Nr<ir::LLVMFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::C)) {
     std::string name = r->type->realizedName();
-    if (auto f = r->ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)) {
-      if (auto i = in(f->attributes, getMangledFunc("std.internal.c_stubs", "linkname"))) {
+    if (auto f =
+            r->ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)) {
+      if (auto i =
+              in(f->attributes, getMangledFunc("std.internal.c_stubs", "linkname"))) {
         auto fp = ctx->cache->findFunction(*i);
         auto str = extractFuncGeneric(fp)->getStrStatic();
         unmangledName = str->value;
