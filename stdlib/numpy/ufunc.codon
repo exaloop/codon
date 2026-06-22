@@ -10,6 +10,8 @@ from .npdatetime import datetime64, timedelta64
 def _have_vectorized_loop(dtype: type, func: Literal[str]):
     if not (dtype is float or dtype is float32):
         return False
+    if ((dtype is complex or dtype is complex64) and func == 'abs'):
+        return True
     return (func == 'arccos' or func == 'arccosh' or func == 'arcsin'
             or func == 'arcsinh' or func == 'arctan' or func == 'arctanh'
             or func == 'arctan2' or func == 'cos' or func == 'exp'

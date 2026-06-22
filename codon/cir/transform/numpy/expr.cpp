@@ -108,6 +108,12 @@ void NumPyExpr::replace(NumPyExpr &e) {
 }
 
 bool NumPyExpr::haveVectorizedLoop() const {
+  if (lhs &&
+      (lhs->type.dtype == NumPyType::NP_TYPE_ARR_C64 ||
+       lhs->type.dtype == NumPyType::NP_TYPE_ARR_C128) &&
+      opstring() == "abs")
+    return true;
+
   if (lhs && !(lhs->type.dtype == NumPyType::NP_TYPE_ARR_F32 ||
                lhs->type.dtype == NumPyType::NP_TYPE_ARR_F64))
     return false;
