@@ -535,7 +535,35 @@ struct AllocInfo {
               continue;
             }
           }
-          return false;
+          {
+            auto *call = cast<CallBase>(instr);
+
+            for (unsigned i = 0; i < call->arg_size(); i++) {
+              if (call->getArgOperand(i) != pi)
+                continue;
+
+              // byval is okay because callee sees a copy.
+              if (call->paramHasAttr(i, llvm::Attribute::ByVal))
+                continue;
+
+              // Conservative: do not handle calls that may return this pointer.
+              if (call->getType()->isPointerTy())
+                return false;
+
+              auto ME = call->getMemoryEffects();
+              bool readsOnly = !llvm::isModSet(ME.getModRef());
+              bool onlyArgMem = call->onlyAccessesArgMemory();
+
+              // If the pointer may be captured, only allow read-only calls.
+              if (!call->paramHasAttr(i, llvm::Attribute::NoCapture) && !readsOnly)
+                return false;
+
+              // Writes through argmem are okay, but writes elsewhere are not.
+              if (!onlyArgMem && llvm::isModSet(ME.getModRef()))
+                return false;
+            }
+          }
+          continue;
 
         case Instruction::Store: {
           StoreInst *si = cast<StoreInst>(instr);
@@ -705,6 +733,7 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
     llvm::IRBuilder<> B(C);
     auto *ptr = B.getPtrTy();
     llvm::DomTreeUpdater dtu(postdom, llvm::DomTreeUpdater::UpdateStrategy::Lazy);
+    bool changed = false;
 
     for (auto *ins : hoist) {
       if (postdom.dominates(ins, preheader->getTerminator())) {
@@ -724,6 +753,14 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
         //       cache = p
         //     else:
         //       p = cache
+
+        // Don't process small allocations this way since it can introduce
+        // more complexity/branches.
+        if (auto *ci = llvm::dyn_cast<llvm::ConstantInt>(ins->getArgOperand(0))) {
+          if (ci->getZExtValue() <= 1024)
+            continue;
+        }
+
         B.SetInsertPointPastAllocas(parent);
         auto *cache = B.CreateAlloca(ptr);
         cache->setName("alloc_hoist.cache");
@@ -752,10 +789,11 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
         phi->addIncoming(ins, allocYes);
         phi->addIncoming(cachedAlloc, allocNo);
       }
+      changed = true;
     }
 
     dtu.flush();
-    return true;
+    return changed;
   }
 
   llvm::PreservedAnalyses run(llvm::Function &F, llvm::FunctionAnalysisManager &am) {
