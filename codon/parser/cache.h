@@ -336,6 +336,8 @@ public:
 private:
   std::vector<std::unique_ptr<ast::ASTNode>> *_nodes;
 
+  friend class codon::Compiler;
+
 public:
   /// Convenience method that constructs a node with the visitor's source location.
   template <typename Tn, typename... Ts> Tn *N(Ts &&...args) {

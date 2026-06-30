@@ -42,6 +42,7 @@ private:
 public:
   explicit Compiler(const Options &options,
                     const std::shared_ptr<ast::IFilesystem> &fs = nullptr);
+  ~Compiler();
 
   Options *getOptions() const { return options.get(); }
   std::string getInput() const { return input; }

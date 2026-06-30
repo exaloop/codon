@@ -26,6 +26,12 @@ Compiler::Compiler(const Options &options, const std::shared_ptr<ast::IFilesyste
   llvisitor->setPluginManager(plm.get());
 }
 
+Compiler::~Compiler() {
+  if (cache) {
+    delete cache->_nodes;
+  }
+}
+
 llvm::Error Compiler::load(const std::string &plugin) {
   auto result = plm->load(plugin);
   if (auto err = result.takeError())
