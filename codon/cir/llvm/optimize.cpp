@@ -1086,11 +1086,11 @@ void optimize(llvm::Module *module, Options *options, PluginManager *plugins) {
     gpuOptions.native = false;
     {
       TIME("llvm/gpuopt1");
-      runLLVMOptimizationPasses(module, /*plugins=*/nullptr, &gpuOptions);
+      runLLVMOptimizationPasses(GPUmodule.get(), /*plugins=*/nullptr, &gpuOptions);
     }
     {
       TIME("llvm/gpuopt2");
-      runLLVMOptimizationPasses(module, /*plugins=*/nullptr, &gpuOptions);
+      runLLVMOptimizationPasses(GPUmodule.get(), /*plugins=*/nullptr, &gpuOptions);
     }
     {
       TIME("llvm/gpu");
