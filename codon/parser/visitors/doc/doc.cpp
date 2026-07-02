@@ -92,7 +92,8 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
                                         const std::vector<std::string> &files) {
   auto shared = std::make_shared<DocShared>();
   shared->argv0 = argv0;
-  auto cache = std::make_unique<ast::Cache>(argv0);
+  std::vector<std::unique_ptr<ast::ASTNode>> nodes;
+  auto cache = std::make_unique<ast::Cache>(nodes, argv0);
   shared->cache = cache.get();
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->j = std::make_shared<json>();

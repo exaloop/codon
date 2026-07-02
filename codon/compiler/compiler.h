@@ -29,6 +29,7 @@ private:
   std::string input;
   std::unique_ptr<Options> options;
   std::unique_ptr<PluginManager> plm;
+  std::vector<std::unique_ptr<ast::ASTNode>> nodes;
   std::unique_ptr<ast::Cache> cache;
   std::unique_ptr<ir::Module> module;
   std::unique_ptr<ir::transform::PassManager> pm;
@@ -42,7 +43,6 @@ private:
 public:
   explicit Compiler(const Options &options,
                     const std::shared_ptr<ast::IFilesystem> &fs = nullptr);
-  ~Compiler();
 
   Options *getOptions() const { return options.get(); }
   std::string getInput() const { return input; }

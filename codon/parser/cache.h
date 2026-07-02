@@ -272,7 +272,8 @@ struct Cache {
   ParserErrors errors;
 
 public:
-  explicit Cache(std::string argv0 = "",
+  explicit Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes,
+                 std::string argv0 = "",
                  const std::shared_ptr<IFilesystem> &fs = nullptr);
 
   /// Return a uniquely named temporary variable of a format
@@ -335,8 +336,6 @@ public:
 
 private:
   std::vector<std::unique_ptr<ast::ASTNode>> *_nodes;
-
-  friend class codon::Compiler;
 
 public:
   /// Convenience method that constructs a node with the visitor's source location.
