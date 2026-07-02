@@ -417,7 +417,6 @@ Stmt *TypecheckVisitor::transformNewImport(const ImportFile &file) {
     fn = tv.transform(fn);
     tv.realize(ictx->forceFind(fnName)->getType());
     preamble->addStmt(fn);
-    // LOG_USER("[import] done importing {}", file.module);
   }
   return nullptr;
 }

@@ -325,7 +325,6 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), fields[i].name,
         realized->prettyString());
     }
-    // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, fTypes[i]);
     realization->fields.emplace_back(fields[i].name, fTypes[i]);
     names.emplace_back(fields[i].name);
     typeArgs.emplace_back(makeIRType(fTypes[i]->getClass()));
@@ -355,9 +354,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     }
   }
 
-  // auto *_t = new Cache::CTimer(ctx->cache, ctx->getRealizationStackName() + ":" +
-  //                                              type->realizedName());
-
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
@@ -377,12 +373,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         break;
       }
     }
-    // LOG("[realize] F {} -> {} : base {} ; depth = {} ; ctx-base: {}; ret = {}; "
-    //     "parent = {}",
-    //     type->getFuncName(), type->realizedName(), ctx->getRealizationStackName(),
-    //     ctx->getRealizationDepth(), ctx->getBaseName(),
-    //     ctx->getBase()->returnType->debugString(2),
-    //     ctx->bases[ctx->getBase()->parent].name);
   }
 
   // Types might change after realization, fix it
