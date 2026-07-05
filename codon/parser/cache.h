@@ -272,7 +272,8 @@ struct Cache {
   ParserErrors errors;
 
 public:
-  explicit Cache(std::string argv0 = "",
+  explicit Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes,
+                 std::string argv0 = "",
                  const std::shared_ptr<IFilesystem> &fs = nullptr);
 
   /// Return a uniquely named temporary variable of a format

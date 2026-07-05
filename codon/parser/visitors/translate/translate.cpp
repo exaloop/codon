@@ -203,7 +203,6 @@ void TranslateVisitor::visit(IdExpr *expr) {
     seqassert(val, "cannot find '{}'", expr->getValue());
   }
   if (expr->getValue() == getMangledVar("", "__vtable_size__")) {
-    // LOG("[] __vtable_size__={}", ctx->cache->classRealizationCnt + 2);
     result = make<ir::IntConst>(expr, ctx->cache->classRealizationCnt + 2,
                                 getType(expr->getType()));
   } else if (auto *v = val->getVar()) {

@@ -54,7 +54,6 @@ ScopingVisitor::apply(Cache *cache, Stmt *s,
     }
   }
 
-  // LOG("-> {}", s->toString(2));
   return llvm::Error::success();
 }
 

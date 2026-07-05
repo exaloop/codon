@@ -277,10 +277,6 @@ class ndarray:
         return self._op_unary(operator.invert)
 
     @inline
-    def __abs__(self):
-        return self._op_unary(operator.abs)
-
-    @inline
     def __eq__(self, other):
         return _binop_impl(self, other, operator.eq)
 
