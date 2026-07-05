@@ -179,13 +179,19 @@ else()
   set(COMPILER_RT_DEFAULT "${CMAKE_BINARY_DIR}/libclang_rt.builtins.default.a")
   set(COMPILER_RT_DEFAULT_VIS_SYMBOLS
     __truncdfhf2
+    __truncdfbf2
     __truncdfsf2
+    __truncsfbf2
     __truncsfhf2
     __trunctfdf2
+    __trunctfbf2
     __trunctfhf2
     __trunctfsf2
+    __truncxfbf2
     __trunctfxf2
+    __trunchfbf2
     __truncxfhf2
+    __extendbfsf2
     __extendsfdf2
     __extendhfsf2
     __extenddftf2
