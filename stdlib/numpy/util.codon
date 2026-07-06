@@ -2118,7 +2118,7 @@ def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr,
     from C import cnp_hypot_float64(Ptr[float], int, Ptr[float], int, Ptr[float], int, int)
     from C import cnp_hypot_float32(Ptr[float32], int, Ptr[float32], int, Ptr[float32], int, int)
     from C import cnp_abs_complex128(Ptr[complex], int, Ptr[float], int, int)
-    from C import cnp_abs_complex64(Ptr[complex64], int, Ptr[float], int, int)
+    from C import cnp_abs_complex64(Ptr[complex64], int, Ptr[float32], int, int)
 
     if func == 'arccos' and T is float:
         cnp_acos_float64(in1, is1, out, os, n)
