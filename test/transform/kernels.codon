@@ -1,5 +1,6 @@
 import gpu
 import internal.static as static
+import numpy as np
 
 @test
 def test_hello_world():
@@ -334,6 +335,373 @@ def test_scalar_types():
     check_exact("f32", kernel_f32, float32(1.5), [float32(0.0)], float32(5.0))
     check_exact("f64", kernel_f64, 1.5, [0.0], 5.0)
 
+@test
+def test_numpy_vectorized():
+    def check_unary(kernel_f64, kernel_f32, a64, a32, expected64, expected32):
+        out64 = np.empty_like(a64)
+        kernel_f64(a64, out64, grid=1, block=1)
+        assert np.allclose(out64, expected64, atol=1e-12)
+
+        out32 = np.empty_like(a32)
+        kernel_f32(a32, out32, grid=1, block=1)
+        assert np.allclose(out32, expected32, atol=1e-5)
+
+    def check_binary(kernel_f64, kernel_f32, a64, b64, a32, b32,
+                     expected64, expected32):
+        out64 = np.empty_like(a64)
+        kernel_f64(a64, b64, out64, grid=1, block=1)
+        assert np.allclose(out64, expected64, atol=1e-12)
+
+        out32 = np.empty_like(a32)
+        kernel_f32(a32, b32, out32, grid=1, block=1)
+        assert np.allclose(out32, expected32, atol=1e-5)
+
+    @gpu.kernel
+    def kernel_01_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arccos(a)
+
+    @gpu.kernel
+    def kernel_01_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arccos(a)
+
+    a64 = np.array((-0.75, -0.25, 0.25, 0.75), dtype=np.float64)
+    a32 = np.array((-0.75, -0.25, 0.25, 0.75), dtype=np.float32)
+    check_unary(kernel_01_f64, kernel_01_f32, a64, a32,
+                np.arccos(a64), np.arccos(a32))
+
+    @gpu.kernel
+    def kernel_02_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arccosh(a)
+
+    @gpu.kernel
+    def kernel_02_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arccosh(a)
+
+    a64 = np.array((1.0, 1.25, 2.0, 4.0), dtype=np.float64)
+    a32 = np.array((1.0, 1.25, 2.0, 4.0), dtype=np.float32)
+    check_unary(kernel_02_f64, kernel_02_f32, a64, a32,
+                np.arccosh(a64), np.arccosh(a32))
+
+    @gpu.kernel
+    def kernel_03_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arcsin(a)
+
+    @gpu.kernel
+    def kernel_03_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arcsin(a)
+
+    a64 = np.array((-0.75, -0.25, 0.25, 0.75), dtype=np.float64)
+    a32 = np.array((-0.75, -0.25, 0.25, 0.75), dtype=np.float32)
+    check_unary(kernel_03_f64, kernel_03_f32, a64, a32,
+                np.arcsin(a64), np.arcsin(a32))
+
+    @gpu.kernel
+    def kernel_04_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arcsinh(a)
+
+    @gpu.kernel
+    def kernel_04_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arcsinh(a)
+
+    a64 = np.array((-2.0, -0.5, 0.5, 2.0), dtype=np.float64)
+    a32 = np.array((-2.0, -0.5, 0.5, 2.0), dtype=np.float32)
+    check_unary(kernel_04_f64, kernel_04_f32, a64, a32,
+                np.arcsinh(a64), np.arcsinh(a32))
+
+    @gpu.kernel
+    def kernel_05_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arctan(a)
+
+    @gpu.kernel
+    def kernel_05_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arctan(a)
+
+    a64 = np.array((-2.0, -0.5, 0.5, 2.0), dtype=np.float64)
+    a32 = np.array((-2.0, -0.5, 0.5, 2.0), dtype=np.float32)
+    check_unary(kernel_05_f64, kernel_05_f32, a64, a32,
+                np.arctan(a64), np.arctan(a32))
+
+    @gpu.kernel
+    def kernel_06_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arctanh(a)
+
+    @gpu.kernel
+    def kernel_06_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arctanh(a)
+
+    a64 = np.array((-0.75, -0.25, 0.25, 0.75), dtype=np.float64)
+    a32 = np.array((-0.75, -0.25, 0.25, 0.75), dtype=np.float32)
+    check_unary(kernel_06_f64, kernel_06_f32, a64, a32,
+                np.arctanh(a64), np.arctanh(a32))
+
+    @gpu.kernel
+    def kernel_07_f64(a: np.ndarray[np.float64, 1],
+                      b: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.arctan2(a, b)
+
+    @gpu.kernel
+    def kernel_07_f32(a: np.ndarray[np.float32, 1],
+                      b: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.arctan2(a, b)
+
+    a64 = np.array((-2.0, -1.0, 1.0, 2.0), dtype=np.float64)
+    b64 = np.array((1.0, 2.0, 2.0, 1.0), dtype=np.float64)
+    a32 = np.array((-2.0, -1.0, 1.0, 2.0), dtype=np.float32)
+    b32 = np.array((1.0, 2.0, 2.0, 1.0), dtype=np.float32)
+    check_binary(kernel_07_f64, kernel_07_f32, a64, b64, a32, b32,
+                 np.arctan2(a64, b64), np.arctan2(a32, b32))
+
+    @gpu.kernel
+    def kernel_08_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.cos(a)
+
+    @gpu.kernel
+    def kernel_08_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.cos(a)
+
+    a64 = np.array((0.0, 0.5, 1.0, 1.5), dtype=np.float64)
+    a32 = np.array((0.0, 0.5, 1.0, 1.5), dtype=np.float32)
+    check_unary(kernel_08_f64, kernel_08_f32, a64, a32,
+                np.cos(a64), np.cos(a32))
+
+    @gpu.kernel
+    def kernel_09_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.exp(a)
+
+    @gpu.kernel
+    def kernel_09_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.exp(a)
+
+    a64 = np.array((-1.0, 0.0, 0.5, 1.0), dtype=np.float64)
+    a32 = np.array((-1.0, 0.0, 0.5, 1.0), dtype=np.float32)
+    check_unary(kernel_09_f64, kernel_09_f32, a64, a32,
+                np.exp(a64), np.exp(a32))
+
+    @gpu.kernel
+    def kernel_10_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.exp2(a)
+
+    @gpu.kernel
+    def kernel_10_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.exp2(a)
+
+    a64 = np.array((-1.0, 0.0, 0.5, 2.0), dtype=np.float64)
+    a32 = np.array((-1.0, 0.0, 0.5, 2.0), dtype=np.float32)
+    check_unary(kernel_10_f64, kernel_10_f32, a64, a32,
+                np.exp2(a64), np.exp2(a32))
+
+    @gpu.kernel
+    def kernel_11_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.expm1(a)
+
+    @gpu.kernel
+    def kernel_11_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.expm1(a)
+
+    a64 = np.array((-0.75, 0.0, 0.25, 0.75), dtype=np.float64)
+    a32 = np.array((-0.75, 0.0, 0.25, 0.75), dtype=np.float32)
+    check_unary(kernel_11_f64, kernel_11_f32, a64, a32,
+                np.expm1(a64), np.expm1(a32))
+
+    @gpu.kernel
+    def kernel_12_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.log(a)
+
+    @gpu.kernel
+    def kernel_12_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.log(a)
+
+    a64 = np.array((0.25, 0.5, 1.0, 4.0), dtype=np.float64)
+    a32 = np.array((0.25, 0.5, 1.0, 4.0), dtype=np.float32)
+    check_unary(kernel_12_f64, kernel_12_f32, a64, a32,
+                np.log(a64), np.log(a32))
+
+    @gpu.kernel
+    def kernel_13_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.log10(a)
+
+    @gpu.kernel
+    def kernel_13_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.log10(a)
+
+    a64 = np.array((0.1, 1.0, 10.0, 100.0), dtype=np.float64)
+    a32 = np.array((0.1, 1.0, 10.0, 100.0), dtype=np.float32)
+    check_unary(kernel_13_f64, kernel_13_f32, a64, a32,
+                np.log10(a64), np.log10(a32))
+
+    @gpu.kernel
+    def kernel_14_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.log1p(a)
+
+    @gpu.kernel
+    def kernel_14_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.log1p(a)
+
+    a64 = np.array((-0.5, 0.0, 0.5, 2.0), dtype=np.float64)
+    a32 = np.array((-0.5, 0.0, 0.5, 2.0), dtype=np.float32)
+    check_unary(kernel_14_f64, kernel_14_f32, a64, a32,
+                np.log1p(a64), np.log1p(a32))
+
+    @gpu.kernel
+    def kernel_15_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.log2(a)
+
+    @gpu.kernel
+    def kernel_15_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.log2(a)
+
+    a64 = np.array((0.25, 0.5, 1.0, 4.0), dtype=np.float64)
+    a32 = np.array((0.25, 0.5, 1.0, 4.0), dtype=np.float32)
+    check_unary(kernel_15_f64, kernel_15_f32, a64, a32,
+                np.log2(a64), np.log2(a32))
+
+    @gpu.kernel
+    def kernel_16_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.sin(a)
+
+    @gpu.kernel
+    def kernel_16_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.sin(a)
+
+    a64 = np.array((0.0, 0.5, 1.0, 1.5), dtype=np.float64)
+    a32 = np.array((0.0, 0.5, 1.0, 1.5), dtype=np.float32)
+    check_unary(kernel_16_f64, kernel_16_f32, a64, a32,
+                np.sin(a64), np.sin(a32))
+
+    @gpu.kernel
+    def kernel_17_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.sinh(a)
+
+    @gpu.kernel
+    def kernel_17_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.sinh(a)
+
+    a64 = np.array((-1.0, -0.25, 0.25, 1.0), dtype=np.float64)
+    a32 = np.array((-1.0, -0.25, 0.25, 1.0), dtype=np.float32)
+    check_unary(kernel_17_f64, kernel_17_f32, a64, a32,
+                np.sinh(a64), np.sinh(a32))
+
+    @gpu.kernel
+    def kernel_18_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.tanh(a)
+
+    @gpu.kernel
+    def kernel_18_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.tanh(a)
+
+    a64 = np.array((-1.0, -0.25, 0.25, 1.0), dtype=np.float64)
+    a32 = np.array((-1.0, -0.25, 0.25, 1.0), dtype=np.float32)
+    check_unary(kernel_18_f64, kernel_18_f32, a64, a32,
+                np.tanh(a64), np.tanh(a32))
+
+    @gpu.kernel
+    def kernel_19_f64(a: np.ndarray[np.float64, 1],
+                      b: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.hypot(a, b)
+
+    @gpu.kernel
+    def kernel_19_f32(a: np.ndarray[np.float32, 1],
+                      b: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.hypot(a, b)
+
+    a64 = np.array((3.0, 5.0, 8.0, 7.0), dtype=np.float64)
+    b64 = np.array((4.0, 12.0, 15.0, 24.0), dtype=np.float64)
+    a32 = np.array((3.0, 5.0, 8.0, 7.0), dtype=np.float32)
+    b32 = np.array((4.0, 12.0, 15.0, 24.0), dtype=np.float32)
+    check_binary(kernel_19_f64, kernel_19_f32, a64, b64, a32, b32,
+                 np.hypot(a64, b64), np.hypot(a32, b32))
+
+    @gpu.kernel
+    def kernel_20_c128(a: np.ndarray[complex, 1],
+                       out: np.ndarray[np.float64, 1]):
+        out[:] = np.abs(a)
+
+    @gpu.kernel
+    def kernel_20_c64(a: np.ndarray[np.complex64, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.abs(a)
+
+    c128 = np.array((3.0 + 4.0j, 5.0 + 12.0j, 8.0 + 15.0j, 7.0 + 24.0j),
+                    dtype=complex)
+    out128 = np.empty((4,), dtype=np.float64)
+    kernel_20_c128(c128, out128, grid=1, block=1)
+    assert np.allclose(out128, np.abs(c128), atol=1e-12)
+
+    c64 = np.array((3.0 + 4.0j, 5.0 + 12.0j, 8.0 + 15.0j, 7.0 + 24.0j),
+                   dtype=np.complex64)
+    out64 = np.empty((4,), dtype=np.float32)
+    kernel_20_c64(c64, out64, grid=1, block=1)
+    assert np.allclose(out64, np.abs(c64), atol=1e-5)
+
+    @gpu.kernel
+    def kernel_21_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.tan(a)
+
+    @gpu.kernel
+    def kernel_21_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.tan(a)
+
+    a64 = np.array((-0.5, -0.25, 0.25, 0.5), dtype=np.float64)
+    a32 = np.array((-0.5, -0.25, 0.25, 0.5), dtype=np.float32)
+    check_unary(kernel_21_f64, kernel_21_f32, a64, a32,
+                np.tan(a64), np.tan(a32))
+
+    @gpu.kernel
+    def kernel_22_f64(a: np.ndarray[np.float64, 1],
+                      out: np.ndarray[np.float64, 1]):
+        out[:] = np.cosh(a)
+
+    @gpu.kernel
+    def kernel_22_f32(a: np.ndarray[np.float32, 1],
+                      out: np.ndarray[np.float32, 1]):
+        out[:] = np.cosh(a)
+
+    a64 = np.array((-1.0, -0.25, 0.25, 1.0), dtype=np.float64)
+    a32 = np.array((-1.0, -0.25, 0.25, 1.0), dtype=np.float32)
+    check_unary(kernel_22_f64, kernel_22_f32, a64, a32,
+                np.cosh(a64), np.cosh(a32))
+
+
 test_hello_world()
 test_raw()
 test_conversions()
@@ -344,3 +712,4 @@ test_mandelbrot()
 test_kitchen_sink()
 test_auto_par()
 test_scalar_types()
+test_numpy_vectorized()
