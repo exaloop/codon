@@ -592,6 +592,13 @@ void TranslateVisitor::visit(ForStmt *stmt) {
     bool ordered = fc->funcGenerics[1].type->getBoolStatic()->value;
     auto threads = transform((*c)[0].value);
     auto chunk = transform((*c)[1].value);
+    if (auto *id = cast<IdExpr>((*c)[1].value)) {
+      auto name = id->getValue();
+      if (name.find(".default.std.openmp.for_par") != std::string::npos &&
+          name.find("chunk_size") != std::string::npos) {
+        chunk = ctx->cache->module->getInt(-1);
+      }
+    }
     auto collapse = fc->funcGenerics[2].type->getIntStatic()->value;
     bool gpu = fc->funcGenerics[3].type->getBoolStatic()->value;
     os = std::make_unique<OMPSched>(schedule, threads, chunk, ordered, collapse, gpu);
