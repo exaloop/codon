@@ -392,7 +392,6 @@ set(CODON_HPPFILES
   codon/util/serialize.h
   codon/util/tser.h)
 set(CODON_CPPFILES
-  codon/app/cli.cpp
   codon/compiler/compiler.cpp
   codon/compiler/debug_listener.cpp
   codon/compiler/engine.cpp
@@ -498,7 +497,12 @@ set(CODON_CPPFILES
 add_library(codonc SHARED ${CODON_HPPFILES})
 if(WIN32)
   set_target_properties(codonc PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
-  target_compile_definitions(codonc PRIVATE CODON_COMPILER_BUILD)
+  # The CLI driver (codon/app/main.cpp) is compiled into codonc on Windows so its
+  # option parsing runs in the same llvm::cl registry as the cl::opt globals it
+  # reads (LLVM is statically linked into both codon.exe and codonc.dll, giving
+  # each binary its own registry). codon.exe becomes a thin shim (see main.cpp).
+  target_sources(codonc PRIVATE codon/app/main.cpp)
+  target_compile_definitions(codonc PRIVATE CODON_COMPILER_BUILD CODON_CLI_IN_COMPILER)
 endif()
 target_include_directories(codonc PRIVATE ${peglib_SOURCE_DIR}
                                           ${toml_SOURCE_DIR}/include

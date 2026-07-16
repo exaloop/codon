@@ -1,24 +1,19 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#if defined(_WIN32) && !defined(CODON_CLI_IN_COMPILER)
+// On Windows, LLVM is statically linked into both codon.exe and codonc.dll, so
+// each binary owns a separate llvm::cl CommandLine registry. The CLI driver
+// below must therefore be compiled INTO codonc (CODON_CLI_IN_COMPILER), where
+// the cl::opt flag globals it parses live; codon.exe is this thin shim that
+// forwards to it. `jupyter` mode stays exe-side since it depends on
+// codon_jupyter, not on codonc's compile flags.
 #include <string>
 #include <vector>
 
-#include "codon/app/cli.h"
 #include "codon/util/jupyter.h"
 #include "llvm/Support/CommandLine.h"
 
-// Thin `codon` executable shim. The compile driver (run/build/doc/jit + all
-// codon-specific flag parsing) lives in codonc via codon::cliMain(), so that
-// `ParseCommandLineOptions` runs in the same binary as the `cl::opt` globals it
-// reads. On Windows LLVM is statically linked into both this exe and codonc.dll,
-// giving each its own llvm::cl registry; routing the driver through codonc keeps
-// every compile flag in one registry (otherwise the exe rejects -release etc.
-// with "Unknown command line argument").
-//
-// `jupyter` is the one mode handled here: it depends on codon_jupyter (not on
-// codonc's compile flags) and only uses options local to this binary, so its
-// self-contained parse in the exe registry is fine — and keeping it out of
-// codonc avoids a codonc<->codon_jupyter link dependency.
+extern "C" int codon_cli_main(int argc, const char **argv);
 
 namespace {
 int jupyterMode(const std::vector<const char *> &args) {
@@ -41,5 +36,507 @@ int main(int argc, const char **argv) {
     args[0] = argv0.data();
     return jupyterMode(args);
   }
-  return codon::cliMain(argc, argv);
+  return codon_cli_main(argc, argv);
 }
+
+#else // full CLI driver (compiled into codonc on Windows, into codon.exe elsewhere)
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <fstream>
+#include <functional>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include "codon/cir/util/format.h"
+#include "codon/compiler/compiler.h"
+#include "codon/compiler/error.h"
+#include "codon/compiler/jit.h"
+#include "codon/compiler/options.h"
+#include "codon/parser/common.h"
+#include "codon/util/common.h"
+#ifndef CODON_CLI_IN_COMPILER
+#include "codon/util/jupyter.h"
+#endif
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+
+namespace {
+void versMsg(llvm::raw_ostream &out) {
+  out << CODON_VERSION_MAJOR << "." << CODON_VERSION_MINOR << "." << CODON_VERSION_PATCH
+      << "\n";
+}
+
+bool isMacOS() {
+#ifdef __APPLE__
+  return true;
+#else
+  return false;
+#endif
+}
+
+const std::vector<std::string> &supportedExtensions() {
+  static const std::vector<std::string> extensions = {".codon", ".py", ".seq"};
+  return extensions;
+}
+
+bool hasExtension(const std::string &filename, const std::string &extension) {
+  return filename.size() >= extension.size() &&
+         filename.compare(filename.size() - extension.size(), extension.size(),
+                          extension) == 0;
+}
+
+std::string trimExtension(const std::string &filename, const std::string &extension) {
+  if (hasExtension(filename, extension)) {
+    return filename.substr(0, filename.size() - extension.size());
+  } else {
+    return filename;
+  }
+}
+
+std::string makeOutputFilename(const std::string &filename,
+                               const std::string &extension) {
+  for (const auto &ext : supportedExtensions()) {
+    if (hasExtension(filename, ext))
+      return trimExtension(filename, ext) + extension;
+  }
+  return filename + extension;
+}
+
+void display(const codon::error::ParserErrorInfo &e) {
+  using codon::MessageGroupPos;
+  std::unordered_set<std::string> seen;
+  for (auto &group : e.getErrors()) {
+    int i = 0;
+    for (auto &msg : group) {
+      auto t = msg.toString();
+      if (seen.find(t) != seen.end()) {
+        continue;
+      }
+      seen.insert(t);
+      MessageGroupPos pos = MessageGroupPos::NONE;
+      if (i == 0) {
+        pos = MessageGroupPos::HEAD;
+      } else if (i == group.size() - 1) {
+        pos = MessageGroupPos::LAST;
+      } else {
+        pos = MessageGroupPos::MID;
+      }
+      i++;
+      codon::compilationError(msg.getMessage(), msg.getFile(), msg.getLine(),
+                              msg.getColumn(), msg.getLength(), msg.getErrorCode(),
+                              /*terminate=*/false, pos);
+    }
+  }
+}
+
+void initLogFlags(const std::string &log) {
+  codon::getLogger().parse(log);
+  if (auto *d = getenv("CODON_DEBUG"))
+    codon::getLogger().parse(std::string(d));
+}
+
+enum BuildKind {
+  LLVM,
+  Bitcode,
+  Object,
+  Assembly,
+  Executable,
+  Library,
+  PyExtension,
+  Detect,
+  CIR
+};
+} // namespace
+
+int docMode(const std::vector<const char *> &args, const std::string &argv0) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional,
+                                   llvm::cl::desc("<input directory or file>"),
+                                   llvm::cl::init("-"));
+  llvm::cl::ParseCommandLineOptions(static_cast<int>(args.size()), args.data());
+  std::vector<std::string> files;
+  auto collectPaths = [&files](const std::string &path) {
+    llvm::sys::fs::file_status status;
+    llvm::sys::fs::status(path, status);
+    if (!llvm::sys::fs::exists(status)) {
+      codon::compilationError(fmt::format("'{}' does not exist", path), "", 0, 0, 0, -1,
+                              false);
+    }
+    if (llvm::sys::fs::is_regular_file(status)) {
+      files.emplace_back(path);
+    } else if (llvm::sys::fs::is_directory(status)) {
+      std::error_code ec;
+      for (llvm::sys::fs::recursive_directory_iterator it(path, ec), e; it != e;
+           it.increment(ec)) {
+        auto status = it->status();
+        if (!status)
+          continue;
+        if (status->type() == llvm::sys::fs::file_type::regular_file)
+          if (!codon::ast::endswith(it->path(), "__init_test__.codon"))
+            files.emplace_back(it->path());
+      }
+    }
+  };
+
+  if (args.size() > 1)
+    collectPaths(args[1]);
+
+  auto options = codon::Options::getDefault(args[0]);
+  auto compiler = std::make_unique<codon::Compiler>(*options);
+  bool failed = false;
+  std::sort(files.begin(), files.end());
+  auto result = compiler->docgen(files);
+  llvm::handleAllErrors(result.takeError(),
+                        [&failed](const codon::error::ParserErrorInfo &e) {
+                          display(e);
+                          failed = true;
+                        });
+  if (failed)
+    return EXIT_FAILURE;
+
+  fmt::print("{}\n", *result);
+  return EXIT_SUCCESS;
+}
+
+std::unique_ptr<codon::Compiler> processSource(
+    const std::vector<const char *> &args, bool standalone,
+    std::function<bool()> pyExtension = [] { return false; }) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
+                                   llvm::cl::init("-"));
+
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  auto options = codon::Options::getFromCommandLine(args[0]);
+  options->standalone = standalone;
+  options->pyext = pyExtension();
+  initLogFlags(options->log);
+
+  std::unordered_map<std::string, std::string> defmap;
+  for (const auto &define : options->defines) {
+    auto eq = define.find('=');
+    if (eq == std::string::npos || !eq) {
+      codon::compilationWarning("ignoring malformed definition: " + define);
+      continue;
+    }
+
+    auto name = define.substr(0, eq);
+    auto value = define.substr(eq + 1);
+
+    if (defmap.find(name) != defmap.end()) {
+      codon::compilationWarning("ignoring duplicate definition: " + define);
+      continue;
+    }
+
+    defmap.emplace(name, value);
+  }
+
+  auto compiler = std::make_unique<codon::Compiler>(*options);
+
+  // load plugins
+  for (const auto &plugin : options->plugins) {
+    bool failed = false;
+    llvm::handleAllErrors(
+        compiler->load(plugin), [&failed](const codon::error::PluginErrorInfo &e) {
+          codon::compilationError(e.getMessage(), /*file=*/"",
+                                  /*line=*/0, /*col=*/0, /*len=*/0, /*errorCode=*/-1,
+                                  /*terminate=*/false);
+          failed = true;
+        });
+    if (failed)
+      return {};
+  }
+
+  bool failed = false;
+  int testFlags = 0;
+  if (auto *tf = getenv("CODON_TEST_FLAGS"))
+    testFlags = std::atoi(tf);
+  llvm::handleAllErrors(compiler->parseFile(input, /*testFlags=*/testFlags, defmap),
+                        [&failed](const codon::error::ParserErrorInfo &e) {
+                          display(e);
+                          failed = true;
+                        });
+  if (failed)
+    return {};
+
+  {
+    TIME("compile");
+    llvm::cantFail(compiler->compile());
+  }
+  return compiler;
+}
+
+int runMode(const std::vector<const char *> &args) {
+  llvm::cl::list<std::string> libs(
+      "l", llvm::cl::desc("Load and link the specified library"));
+  llvm::cl::list<std::string> progArgs(llvm::cl::ConsumeAfter,
+                                       llvm::cl::desc("<program arguments>..."));
+  auto compiler = processSource(args, /*standalone=*/false);
+  if (!compiler)
+    return EXIT_FAILURE;
+  std::vector<std::string> libsVec(libs);
+  std::vector<std::string> argsVec(progArgs);
+  argsVec.insert(argsVec.begin(), compiler->getInput());
+  compiler->getLLVMVisitor()->run(argsVec, libsVec);
+  return EXIT_SUCCESS;
+}
+
+namespace {
+std::string jitExec(codon::jit::JIT *jit, const std::string &code) {
+  auto result = jit->execute(code);
+  if (auto err = result.takeError()) {
+    std::string output;
+    llvm::handleAllErrors(
+        std::move(err), [](const codon::error::ParserErrorInfo &e) { display(e); },
+        [&output](const codon::error::RuntimeErrorInfo &e) {
+          std::stringstream buf;
+          buf << e.getOutput();
+          buf << "\n\033[1mBacktrace:\033[0m\n";
+          for (const auto &line : e.getBacktrace()) {
+            buf << "  " << line << "\n";
+          }
+          output = buf.str();
+        });
+    return output;
+  }
+  return *result;
+}
+
+void jitLoop(codon::jit::JIT *jit, std::istream &fp) {
+  std::string code;
+  for (std::string line; std::getline(fp, line);) {
+    if (line != "#%%") {
+      code += line + "\n";
+    } else {
+      fmt::print("{}[done]\n", jitExec(jit, code));
+      code = "";
+      fflush(stdout);
+    }
+  }
+  if (!code.empty())
+    fmt::print("{}[done]\n", jitExec(jit, code));
+}
+} // namespace
+
+int jitMode(const std::vector<const char *> &args) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<input file>"),
+                                   llvm::cl::init("-"));
+
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  auto options = codon::Options::getFromCommandLine(args[0]);
+  options->jit = true;
+  initLogFlags(options->log);
+  codon::jit::JIT jit(*options);
+
+  // load plugins
+  for (const auto &plugin : options->plugins) {
+    bool failed = false;
+    llvm::handleAllErrors(jit.getCompiler()->load(plugin),
+                          [&failed](const codon::error::PluginErrorInfo &e) {
+                            codon::compilationError(e.getMessage(), /*file=*/"",
+                                                    /*line=*/0, /*col=*/0, /*len=*/0,
+                                                    /*errorCode=*/-1,
+                                                    /*terminate=*/false);
+                            failed = true;
+                          });
+    if (failed)
+      return EXIT_FAILURE;
+  }
+
+  llvm::cantFail(jit.init());
+  fmt::print(">>> Codon JIT v{} <<<\n", CODON_VERSION);
+  if (input == "-") {
+    jitLoop(&jit, std::cin);
+  } else {
+    std::ifstream fileInput(input);
+    jitLoop(&jit, fileInput);
+  }
+  return EXIT_SUCCESS;
+}
+
+int buildMode(const std::vector<const char *> &args, const std::string &argv0) {
+  llvm::cl::list<std::string> libs(
+      "l", llvm::cl::desc("Link the specified library (only for executables)"));
+  llvm::cl::opt<std::string> lflags("linker-flags",
+                                    llvm::cl::desc("Pass given flags to linker"));
+  llvm::cl::opt<BuildKind> buildKind(
+      llvm::cl::desc("output type"),
+      llvm::cl::values(
+          clEnumValN(LLVM, "llvm", "Generate LLVM IR"),
+          clEnumValN(Bitcode, "bc", "Generate LLVM bitcode"),
+          clEnumValN(Object, "obj", "Generate native object file"),
+          clEnumValN(Assembly, "asm", "Generate assembly code"),
+          clEnumValN(Executable, "exe", "Generate executable"),
+          clEnumValN(Library, "lib", "Generate shared library"),
+          clEnumValN(PyExtension, "pyext", "Generate Python extension module"),
+          clEnumValN(CIR, "cir", "Generate Codon Intermediate Representation"),
+          clEnumValN(Detect, "detect",
+                     "Detect output type based on output file extension")),
+      llvm::cl::init(Detect));
+  llvm::cl::opt<std::string> output(
+      "o",
+      llvm::cl::desc(
+          "Write compiled output to specified file. Supported extensions: "
+          "none (executable), .o (object file), .ll (LLVM IR), .bc (LLVM bitcode)"));
+  llvm::cl::opt<std::string> pyModule(
+      "module", llvm::cl::desc("Python extension module name (only applicable when "
+                               "building Python extension module)"));
+
+  auto compiler = processSource(args, /*standalone=*/true,
+                                [&] { return buildKind == BuildKind::PyExtension; });
+  if (!compiler)
+    return EXIT_FAILURE;
+  std::vector<std::string> libsVec(libs);
+
+  if (output.empty() && compiler->getInput() == "-")
+    codon::compilationError("output file must be specified when reading from stdin");
+  std::string extension;
+  switch (buildKind) {
+  case BuildKind::LLVM:
+    extension = ".ll";
+    break;
+  case BuildKind::Bitcode:
+    extension = ".bc";
+    break;
+  case BuildKind::Object:
+  case BuildKind::PyExtension:
+    extension = ".o";
+    break;
+  case BuildKind::Assembly:
+    extension = ".s";
+    break;
+  case BuildKind::Library:
+    extension = isMacOS() ? ".dylib" : ".so";
+    break;
+  case BuildKind::Executable:
+  case BuildKind::Detect:
+    extension = "";
+    break;
+  case BuildKind::CIR:
+    extension = ".cir";
+    break;
+  default:
+    seqassertn(0, "unknown build kind");
+  }
+  const std::string filename =
+      output.empty() ? makeOutputFilename(compiler->getInput(), extension) : output;
+  switch (buildKind) {
+  case BuildKind::LLVM:
+    compiler->getLLVMVisitor()->writeToLLFile(filename);
+    break;
+  case BuildKind::Bitcode:
+    compiler->getLLVMVisitor()->writeToBitcodeFile(filename);
+    break;
+  case BuildKind::Object:
+    compiler->getLLVMVisitor()->writeToObjectFile(filename);
+    break;
+  case BuildKind::Assembly:
+    compiler->getLLVMVisitor()->writeToObjectFile(filename, /*pic=*/false,
+                                                  /*assembly=*/true);
+    break;
+  case BuildKind::Executable:
+    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, false, libsVec,
+                                                  lflags);
+    break;
+  case BuildKind::Library:
+    compiler->getLLVMVisitor()->writeToExecutable(filename, argv0, true, libsVec,
+                                                  lflags);
+    break;
+  case BuildKind::PyExtension:
+    compiler->getCache()->pyModule->name =
+        pyModule.empty() ? llvm::sys::path::stem(compiler->getInput()).str() : pyModule;
+    compiler->getLLVMVisitor()->writeToPythonExtension(*compiler->getCache()->pyModule,
+                                                       filename);
+    break;
+  case BuildKind::CIR: {
+    std::ofstream out(filename);
+    codon::ir::util::format(out, compiler->getModule());
+    break;
+  }
+  case BuildKind::Detect:
+    compiler->getLLVMVisitor()->compile(filename, argv0, libsVec, lflags);
+    break;
+  default:
+    seqassertn(0, "unknown build kind");
+  }
+
+  return EXIT_SUCCESS;
+}
+
+#ifndef CODON_CLI_IN_COMPILER
+// When the driver is compiled into codonc, `jupyter` mode is handled by the
+// codon.exe shim above, keeping codonc independent of codon_jupyter.
+int jupyterMode(const std::vector<const char *> &args) {
+  llvm::cl::list<std::string> plugins("plugin",
+                                      llvm::cl::desc("Load specified plugin"));
+  llvm::cl::opt<std::string> input(llvm::cl::Positional,
+                                   llvm::cl::desc("<connection file>"),
+                                   llvm::cl::init("connection.json"));
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+  int code = codon::startJupyterKernel(args[0], plugins, input);
+  return code;
+}
+#endif // CODON_CLI_IN_COMPILER
+
+void showCommandsAndExit() {
+  codon::compilationError("Available commands: codon <run|build|doc>");
+}
+
+int otherMode(const std::vector<const char *> &args) {
+  llvm::cl::opt<std::string> input(llvm::cl::Positional, llvm::cl::desc("<mode>"));
+  llvm::cl::extrahelp("\nMODES:\n\n"
+                      "  run   - run a program interactively\n"
+                      "  build - build a program\n"
+                      "  doc   - generate program documentation\n");
+  llvm::cl::ParseCommandLineOptions(args.size(), args.data());
+
+  if (!input.empty())
+    showCommandsAndExit();
+  return EXIT_SUCCESS;
+}
+
+#ifdef CODON_CLI_IN_COMPILER
+extern "C" int codon_cli_main(int argc, const char **argv) {
+#else
+int main(int argc, const char **argv) {
+#endif
+  if (argc < 2)
+    showCommandsAndExit();
+
+  llvm::cl::SetVersionPrinter(versMsg);
+  std::vector<const char *> args{argv[0]};
+  for (int i = 2; i < argc; i++)
+    args.push_back(argv[i]);
+
+  std::string mode(argv[1]);
+  std::string argv0 = std::string(args[0]) + " " + mode;
+  if (mode == "run") {
+    args[0] = argv0.data();
+    return runMode(args);
+  }
+  if (mode == "build") {
+    const char *oldArgv0 = args[0];
+    args[0] = argv0.data();
+    return buildMode(args, oldArgv0);
+  }
+  if (mode == "doc") {
+    const char *oldArgv0 = args[0];
+    args[0] = argv0.data();
+    return docMode(args, oldArgv0);
+  }
+  if (mode == "jit") {
+    args[0] = argv0.data();
+    return jitMode(args);
+  }
+#ifndef CODON_CLI_IN_COMPILER
+  if (mode == "jupyter") {
+    args[0] = argv0.data();
+    return jupyterMode(args);
+  }
+#endif
+  return otherMode({argv, argv + argc});
+}
+
+#endif // _WIN32 shim
