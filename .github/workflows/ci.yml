@@ -161,9 +161,12 @@ jobs:
       - name: Build Codon
         shell: pwsh
         run: |
+          # Passed via environment rather than -D: the runner's pwsh mangles the
+          # dotted value in "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" to "3", which
+          # CMake rejects. The env var initializes the cache entry equivalently.
+          $env:CMAKE_POLICY_VERSION_MINIMUM = '3.5'
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
             -DLLVM_DIR="llvm/lib/cmake/llvm" `
             -DCMAKE_C_COMPILER=clang `
             -DCMAKE_CXX_COMPILER=clang++ `
