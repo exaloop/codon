@@ -188,8 +188,11 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           Copy-Item codon-deploy/lib/codon/codonc.dll codon-deploy/bin/
           Copy-Item codon-deploy/lib/codon/codonrt.dll codon-deploy/bin/
+          # codon.exe links the codon_jupyter stub, so it must sit next to the exe
+          Copy-Item codon-deploy/lib/codon/codon_jupyter.dll codon-deploy/bin/
           Copy-Item codon-deploy/lib/codon/libomp.dll codon-deploy/bin/        # @par
           Copy-Item codon-deploy/lib/codon/libopenblas.dll codon-deploy/bin/   # numpy.linalg
           Compress-Archive -Path codon-deploy -DestinationPath codon-windows-x86_64.zip -Force
@@ -201,7 +204,7 @@ jobs:
           'print("hello from CI windows codon")' | Out-File -Encoding ascii smoke.py
           "def f(n):`n    return n if n < 2 else f(n-1)+f(n-2)`ntry:`n    raise ValueError('x')`nexcept ValueError as e:`n    print('caught', e)`nfinally:`n    print('fin')`nprint(f(10))" | Out-File -Encoding ascii smoke2.py
           & codon-deploy/bin/codon.exe run smoke.py
-          if ($LASTEXITCODE -ne 0) { throw "codon run smoke.py failed" }
+          if ($LASTEXITCODE -ne 0) { throw "codon run smoke.py failed (exit $LASTEXITCODE)" }
           & codon-deploy/bin/codon.exe run smoke2.py
           if ($LASTEXITCODE -ne 0) { throw "codon run smoke2.py (try/except) failed" }
           & codon-deploy/bin/codon.exe build smoke2.py -o smoke2.exe
