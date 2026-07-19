@@ -879,7 +879,7 @@ def _range_len(start: int, stop: int, step: int):
 
 def for_par(
     num_threads: int = -1,
-    chunk_size: int = -1,
+    chunk_size: int = 0,
     schedule: Literal[str] = "static",
     ordered: Literal[bool] = False,
     collapse: Literal[int] = 0,
