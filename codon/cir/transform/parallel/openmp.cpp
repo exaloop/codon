@@ -183,6 +183,16 @@ struct Reduction {
       }
 
       return (*f32)(*M->getFloat(value));
+    } else if (type->is(M->getBoolType())) {
+      switch (kind) {
+      case Kind::AND:
+        return M->getBool(true);
+      case Kind::OR:
+      case Kind::XOR:
+        return M->getBool(false);
+      default:
+        return nullptr;
+      }
     }
 
     auto *init = (*type)();
@@ -431,6 +441,30 @@ struct ReductionIdentifier : public util::Operator {
     }
   }
 
+  Reduction getReductionFromTernary(Var *shared, Type *type, Value *item) {
+    auto *M = item->getModule();
+    if (!type->is(M->getBoolType()))
+      return {};
+
+    auto *ternary = cast<TernaryInstr>(item);
+    if (!ternary || !isSharedDeref(shared, ternary->getCond()))
+      return {};
+
+    if (util::isConst<bool>(ternary->getFalseValue(), false) &&
+        ternary->getTrueValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::AND, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (util::isConst<bool>(ternary->getTrueValue(), true) &&
+        ternary->getFalseValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::OR, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    return {};
+  }
+
   Reduction getReductionFromCall(CallInstr *v) {
     auto *M = v->getModule();
     auto *func = util::getFunc(v->getCallee());
@@ -519,7 +553,7 @@ struct ReductionIdentifier : public util::Operator {
       return reduction;
     }
 
-    return {};
+    return getReductionFromTernary(shared, type, item);
   }
 
   Reduction getReduction(Var *shared) {
