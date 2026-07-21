@@ -98,6 +98,7 @@ struct Reduction {
   enum Kind {
     NONE,
     ADD,
+    SUB,
     MUL,
     AND,
     OR,
@@ -125,6 +126,8 @@ struct Reduction {
       switch (kind) {
       case Kind::ADD:
         return M->getInt(0);
+      case Kind::SUB:
+        return M->getInt(0);
       case Kind::MUL:
         return M->getInt(1);
       case Kind::AND:
@@ -144,6 +147,8 @@ struct Reduction {
       switch (kind) {
       case Kind::ADD:
         return M->getFloat(0.);
+      case Kind::SUB:
+        return M->getFloat(0.);
       case Kind::MUL:
         return M->getFloat(1.);
       case Kind::MIN:
@@ -159,6 +164,9 @@ struct Reduction {
 
       switch (kind) {
       case Kind::ADD:
+        value = 0.0;
+        break;
+      case Kind::SUB:
         value = 0.0;
         break;
       case Kind::MUL:
@@ -189,6 +197,9 @@ struct Reduction {
     Value *result = nullptr;
     switch (kind) {
     case Kind::ADD:
+      result = *lhs + *arg;
+      break;
+    case Kind::SUB:
       result = *lhs + *arg;
       break;
     case Kind::MUL:
@@ -230,6 +241,9 @@ struct Reduction {
     if (util::isInt(type)) {
       switch (kind) {
       case Kind::ADD:
+        func = "_atomic_int_add";
+        break;
+      case Kind::SUB:
         func = "_atomic_int_add";
         break;
       case Kind::MUL:
@@ -275,6 +289,9 @@ struct Reduction {
       case Kind::ADD:
         func = "_atomic_float32_add";
         break;
+      case Kind::SUB:
+        func = "_atomic_float32_add";
+        break;
       case Kind::MUL:
         func = "_atomic_float32_mul";
         break;
@@ -298,6 +315,9 @@ struct Reduction {
 
     switch (kind) {
     case Kind::ADD:
+      func = "__atomic_add__";
+      break;
+    case Kind::SUB:
       func = "__atomic_add__";
       break;
     case Kind::MUL:
@@ -440,6 +460,7 @@ struct ReductionIdentifier : public util::Operator {
 
     const std::vector<ReductionFunction> reductionFunctions = {
         {Module::ADD_MAGIC_NAME, Reduction::Kind::ADD, true},
+        {Module::SUB_MAGIC_NAME, Reduction::Kind::SUB, true},
         {Module::MUL_MAGIC_NAME, Reduction::Kind::MUL, true},
         {Module::AND_MAGIC_NAME, Reduction::Kind::AND, true},
         {Module::OR_MAGIC_NAME, Reduction::Kind::OR, true},
