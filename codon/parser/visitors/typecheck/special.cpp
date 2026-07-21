@@ -730,10 +730,7 @@ Expr *TypecheckVisitor::transformIsInstance(CallExpr *expr) {
       return transform(N<BoolExpr>(true));
   }
 
-  std::string instCall =
-      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Bool)
-          ? "_getinstance"
-          : "_isinstance";
+  std::string instCall = "_isinstance";
   if (typ->is(StdlibTypes::Any) && !isTypeExpr(expr->begin()->value)) {
     return transform(N<CallExpr>(N<IdExpr>(getMangledMethod("", "Any", instCall)),
                                  expr->begin()->getExpr(), (*expr)[1].getExpr()));

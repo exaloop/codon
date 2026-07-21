@@ -594,6 +594,7 @@ def _jit_display(x, s: Literal[str], bundle: Optional[Set[str]] = None):
         print(x.__str__(), end='')
 
 
+@inline
 def cast(U: type, obj) -> U:
     T = type(obj)
 

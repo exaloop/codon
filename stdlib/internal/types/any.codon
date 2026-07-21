@@ -13,6 +13,15 @@ class Any:
         #     return f"Any({self._typeinfo.repr(self._data)}, {self._typeinfo})"
         return f"Any({self._typeinfo.nice_name})"
 
+    def __hash__(self):
+        return self._data.__int__().__hash__()
+
+    def __eq__(self, o):
+        return self._data == o._data and self._typeinfo == o._typeinfo
+
+    def __ne__(self, o):
+        return not (self == o)
+
     def __repr__(self):
         return self.__str__()
 
@@ -34,7 +43,7 @@ class Any:
             self._data = obj._data
             return
 
-        T = type(obj)
+        T: type = type(obj)
         self._typeinfo = TypeInfo.cache(__vtables__, T)
         if isinstance(T, ByVal):
             p = Ptr[T](1)
@@ -83,20 +92,58 @@ class Any:
                 data = Ptr[i1](self._data)
                 return Optional(Any(ti, (data + self._typeinfo._fields[0][2]).as_byte())) if data[0] else None
         elif T is List[Any]:
-            if not self._typeinfo._isinstance(unrealized_type[list]):
-                raise ValueError("expected list")
+            if self._typeinfo._isinstance(unrealized_type[list]):
+                ti = TypeInfo.cache(self._typeinfo._params[0])
+                sz = Ptr[int](self._data)[0]
+                data = self._data + int.__elemsize__ * 2
+                data = Ptr[Ptr[byte]](data)[0]
+                lst = List[Any](sz)
+                for i in range(sz):
+                    ptr = data + ti._size * i
+                    if ti._ref:
+                        ptr = Ptr[Ptr[byte]](ptr)[0]
+                    lst.append(Any(ti, ptr))
+                return lst
+            elif self._typeinfo._isinstance(unrealized_type[Tuple]):
+                lst = List[Any](len(self._typeinfo._fields))
+                for _, i in self.members:
+                    lst.append(i)
+                return lst
+            else:
+                raise ValueError("expected list or tuple")
+        elif T is Dict[Any, Any]:
+            import internal.khash as khash
 
-            ti = TypeInfo.cache(self._typeinfo._params[0])
-            len = Ptr[int](self._data)[0]
-            data = self._data + int.__elemsize__ * 2
-            data = Ptr[Ptr[byte]](data)[0]
-            lst = List[Any](len)
-            for i in range(len):
-                ptr = data + ti._size * i
-                if ti._ref:
-                    ptr = Ptr[Ptr[byte]](ptr)[0]
-                lst.append(Any(ti, ptr))
-            return lst
+            if not self._typeinfo._isinstance(unrealized_type[Dict]):
+                raise ValueError("expected dict")
+
+            nbuckets = self.__getattr__("_n_buckets", int)
+            flags = self.__getattr__("_flags", Ptr[u32])
+
+            ti = self._real_typeinfo()
+            data = self._data
+            if ti._rtti:
+                data = Ptr[cobj](data)[0]
+
+            kidx, vidx = 5, 6
+            kti, vti = TypeInfo.cache(ti._fields[kidx][1]), TypeInfo.cache(ti._fields[vidx][1])
+            kti, vti = TypeInfo.cache(kti._params[0]), TypeInfo.cache(vti._params[0])
+            kptr, vptr = data + ti._fields[kidx][2], data + ti._fields[vidx][2]
+            kptr, vptr = Ptr[Ptr[byte]](kptr)[0], Ptr[Ptr[byte]](vptr)[0]
+            print(kti._size, vti._size)
+            d: Dict[Any, Any] = {}
+            i = 0
+            while i < nbuckets:
+                if not khash.__ac_iseither(flags, i):
+                    kp = kptr + i * kti._size
+                    if kti._ref:
+                        kp = Ptr[Ptr[byte]](kp)[0]
+                    vp = vptr + i * vti._size
+                    if vti._ref:
+                        vp = Ptr[Ptr[byte]](vp)[0]
+                    d[Any(kti, kp)] = Any(vti, vp)
+                i += 1
+            return d
         else:
             return self.__unwrap__(T)
 
@@ -124,13 +171,19 @@ class Any:
         return ti, ptr
 
     def _isinstance(self, T: type) -> bool:
+        if T is Ptr[Any]:
+            return self._typeinfo._isinstance(unrealized_type[Ptr])
+        if T is Optional[Any]:
+            return self._typeinfo._isinstance(unrealized_type[Optional])
+        if T is List[Any]:
+            return self._typeinfo._isinstance(unrealized_type[List]) or self._typeinfo._isinstance(unrealized_type[Tuple])
+        if T is Dict[Any, Any]:
+            return self._typeinfo._isinstance(unrealized_type[Dict])
         return self._real_typeinfo()._isinstance(T)
 
-    def _getinstance(self, T: type) -> Optional[T]:
-        if self._isinstance(T):
-            return self.__unwrap__(T)
-        else:
-            return None
+    def _getinstance(self, T: type) -> T:
+        # DO NOT USE DIRECTLY. Assumes that isinstance is true.
+        return self.__cast__(T)
 
     def __getattr__(self, attr: Literal[str], T: type = Any) -> T:
         for name, value in self.members:

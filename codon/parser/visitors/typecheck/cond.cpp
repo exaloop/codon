@@ -46,7 +46,11 @@ void TypecheckVisitor::visit(IfExpr *expr) {
         expr->getCond(),
         [&](bool isTrue) {
           LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
-          return transform(isTrue ? expr->getIf() : expr->getElse());
+          Expr *s = isTrue ? expr->getIf() : expr->getElse();
+          if (hasSideEffect(expr->getCond()))
+            s = N<StmtExpr>(N<ExprStmt>(expr->getCond()), s);
+          s = transform(s);
+          return s;
         },
         [&]() -> Expr * { return nullptr; });
     if (resultExpr)
@@ -99,19 +103,37 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
   stmt->getCond()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   stmt->cond = transform(stmt->getCond());
 
-  std::shared_ptr<TypecheckItem> blockVar = nullptr, altVar = nullptr;
   if (auto ci = cast<CallExpr>(stmt->getCond())) {
     if (auto ei = cast<IdExpr>(ci->getExpr());
         ei && ei->getType() && ei->getType()->getFunc() &&
         (startswith(ei->getType()->getFunc()->getFuncName(),
-                    getMangledMethod("", "RTTIType", "_getinstance")) ||
+                    getMangledMethod("", "RTTIType", "_isinstance")) ||
          startswith(ei->getType()->getFunc()->getFuncName(),
-                    getMangledMethod("", "Any", "_getinstance")))) {
+                    getMangledMethod("", "Any", "_isinstance")))) {
       if (auto arg = cast<IdExpr>((*ci)[0])) {
-        blockVar = ctx->forceFind(arg->getValue());
-        std::string tmpName = getTemporaryVar("inst");
-        stmt->cond = transform(N<AssignExpr>(N<IdExpr>(tmpName), stmt->getCond()));
-        altVar = ctx->forceFind(tmpName);
+        // isinstance(a, T) ->
+        // { if (c := isinstance(a, T)): i = getinstance(a, T)) } ; c
+        std::string tmpName =
+            ctx->generateCanonicalName(getUnmangledName(arg->getValue()));
+        std::string condName = getTemporaryVar("cond");
+        stmt->getIf()->setAttribute(
+            Attr::LocalRenames, std::make_unique<ir::KeyValueAttribute>(
+                                    std::unordered_map<std::string, std::string>{
+                                        {getUnmangledName(arg->getValue()), tmpName}}));
+        auto s = N<SuiteStmt>(
+            N<AssignStmt>(N<IdExpr>(condName), stmt->getCond()),
+            N<IfStmt>(N<IdExpr>(condName),
+                      N<SuiteStmt>(
+                          N<AssignStmt>(
+                              N<IdExpr>(tmpName),
+                              N<CallExpr>(N<IdExpr>(replace(
+                                              ei->getType()->getFunc()->getFuncName(),
+                                              "_isinstance", "_getinstance")),
+                                          (*ci)[0], (*ci)[1])),
+                          stmt->getIf()),
+                      stmt->getElse()));
+        resultStmt = transform(s);
+        return;
       }
     }
   }
@@ -122,8 +144,11 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
         stmt->getCond(),
         [&](bool isTrue) {
           LOG_TYPECHECK("[static::cond] {}: {}", getSrcInfo(), isTrue);
-          auto t = transform(isTrue ? stmt->getIf() : stmt->getElse());
-          return t ? t : transform(N<SuiteStmt>());
+          Stmt *s = isTrue ? stmt->getIf() : stmt->getElse();
+          if (hasSideEffect(stmt->getCond()))
+            s = N<SuiteStmt>(N<ExprStmt>(stmt->getCond()), s);
+          s = transform(s);
+          return s ? s : transform(N<SuiteStmt>());
         },
         [&]() -> Stmt * { return nullptr; });
     return;
@@ -131,11 +156,7 @@ void TypecheckVisitor::visit(IfStmt *stmt) {
 
   wrapExpr(&stmt->cond, getStdLibType(StdlibTypes::Bool));
   ctx->blockLevel++;
-  if (blockVar)
-    std::swap(blockVar->alternative, altVar);
   stmt->ifSuite = SuiteStmt::wrap(transform(stmt->getIf()));
-  if (blockVar)
-    std::swap(blockVar->alternative, altVar);
   stmt->elseSuite = SuiteStmt::wrap(transform(stmt->getElse()));
   ctx->blockLevel--;
 

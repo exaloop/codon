@@ -30,6 +30,7 @@ endif()
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
 include_directories(.)
 
+option(SYSTEM_BLAS "Use system-provided BLAS" ON)
 set(APPLE_ARM OFF)
 if (APPLE AND CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
   set(APPLE_ARM ON)
@@ -148,6 +149,15 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
             -Wl,-force_load,$<TARGET_FILE:codonfloat>)
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
+elseif(SYSTEM_BLAS)
+  target_link_libraries(
+    codonrt
+    PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
+            $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
+            $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
+            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+  find_package(BLAS REQUIRED)
+  target_link_libraries(codonrt PUBLIC BLAS::BLAS)
 else()
   add_dependencies(codonrt openblas)
   target_link_libraries(

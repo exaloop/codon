@@ -44,6 +44,9 @@ void ltrim(std::string &str);
 void rtrim(std::string &str);
 /// True if a string only contains digits.
 bool isdigit(const std::string &str);
+/// Replace first occurence of a string with another string;
+std::string replace(const std::string &text, const std::string &match,
+                    const std::string &replace);
 /// Combine items separated by a delimiter into a string.
 /// Combine items separated by a delimiter into a string.
 template <typename T> std::string join(const T &items, const std::string &delim = " ") {

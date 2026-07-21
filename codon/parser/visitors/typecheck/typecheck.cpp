@@ -352,6 +352,12 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
   }
   if (!prepend.empty())
     stmt->items.insert(stmt->items.begin(), prepend.begin(), prepend.end());
+  auto lr = stmt->getAttribute<ir::KeyValueAttribute>(Attr::LocalRenames);
+  if (lr) {
+    for (auto &[k, v] : lr->attributes) {
+      ctx->add(k, ctx->forceFind(v));
+    }
+  }
   for (auto *s : *stmt) {
     if (ctx->returnEarly) {
       // If returnEarly is set (e.g., in the function) ignore the rest
@@ -372,6 +378,11 @@ void TypecheckVisitor::visit(SuiteStmt *stmt) {
     }
   }
   stmt->items = stmts;
+  if (lr) {
+    for (auto &[k, v] : lr->attributes) {
+      ctx->remove(k);
+    }
+  }
   if (done)
     stmt->setDone();
 }

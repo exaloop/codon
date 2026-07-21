@@ -278,6 +278,15 @@ void rtrim(std::string &str) {
 }
 bool isdigit(const std::string &str) { return std::ranges::all_of(str, ::isdigit); }
 
+std::string replace(const std::string &text, const std::string &match,
+                    const std::string &replace) {
+  size_t pos = text.find(match);
+  if (pos != std::string::npos) {
+    return std::string(text).replace(pos, match.length(), replace);
+  }
+  return text;
+}
+
 // Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__
 #include <dlfcn.h>

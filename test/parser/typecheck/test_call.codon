@@ -1276,16 +1276,18 @@ v: Vehicle = y
 l = [v, t]
 
 for i, o in enumerate(l):
-    if isinstance(o, SUV): print(i, "suv", o.drive(), o.make, o.color, o.suv())
+    if isinstance(o, SUV):
+        print(i, "suv", o.drive(), o.make, o.color, o.suv())
     else: print(i, o.drive())
 #: 0 suv YugoSUV niva 5 True
 #: 1 truck
 
 la = [Any(v), Any(t)]
 for i, o in enumerate(la):
-    if isinstance(o, SUV): print(i, "suv", o, cast(Vehicle, o).drive(), o.make, o.color, o.suv())
+    if isinstance(o, SUV):
+        print(i, "suv", o, cast(Vehicle, o).drive(), o.make, o.color, o.suv())
     else: print(i, cast(Vehicle, o).drive())
-#: 0 suv Any(Vehicle) YugoSUV niva 5 True
+#: 0 suv YugoSUV YugoSUV niva 5 True
 #: 1 truck
 
 #%% side_effects,barebones

@@ -61,7 +61,8 @@ struct Attr {
     ExprTime,
     ExprDoNotRealize,
     ExprNoSpecial,
-    TryPyVar
+    TryPyVar,
+    LocalRenames,
   };
 };
 } // namespace codon::ast

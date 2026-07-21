@@ -121,20 +121,28 @@ class RTTIType:
 
     @inline
     def _find_offset(obj, B: type):
-        for pos, (mro, off) in enumerate(RTTIType._typeinfo(obj).mro):
-            if B.__id__ == mro:
-                return pos, off
+        ti = RTTIType._typeinfo(obj)
+        if B.__id__ == ti.id:
+            return 0, 0
+        for i in range(ti._n_parent_ids):
+            if B.__id__ == ti._parent_ids[i]:
+                return i + 1, ti._parent_offsets[i]
         return -1, 0
 
     @inline
     def _find_offsets(obj, B: type, D: type):
+        ti = RTTIType._typeinfo(obj)
         bi, di = -1, -1
         boff, doff = 0, 0
-        for pos, (mro, off) in enumerate(RTTIType._typeinfo(obj).mro):
-            if B.__id__ == mro:
-                bi, boff = pos, off
-            if D.__id__ == mro:
-                di, doff = pos, off
+        if B.__id__ == ti.id:
+            bi, boff = 0, 0
+        if D.__id__ == ti.id:
+            di, doff = 0, 0
+        for i in range(ti._n_parent_ids):
+            if B.__id__ == ti._parent_ids[i]:
+                bi, boff = i + 1, ti._parent_offsets[i]
+            if D.__id__ == ti._parent_ids[i]:
+                di, doff = i + 1, ti._parent_offsets[i]
         return (bi, di), (boff, doff)
 
     @inline
@@ -153,9 +161,10 @@ class RTTIType:
                 raise TypeError(f"cannot cast {type(obj)} to {D}")
             return RTTIType._new(rtti.data - boff + doff, rtti.typeinfo, D)
 
-    def _getinstance(obj, T: type):
+    @inline
+    def _unwrap(obj, T: type):
         if isinstance(T, TypeWrap):
-            return RTTIType._getinstance(obj, T.T)
+            return Optional[T.T](RTTIType._unwrap(obj, T.T))
         else:
             rtti = type._force_cast(obj, RTTIType)
             obj_info = RTTIType._typeinfo(obj)
@@ -164,10 +173,14 @@ class RTTIType:
             if ti == -1:
                 return None
             else:
-                return RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T)
+                return Optional[T](RTTIType._new(rtti.data - ooff + toff, rtti.typeinfo, T))
 
     def _isinstance(obj, T: type) -> bool:
-        return RTTIType._getinstance(obj, T) is not None
+        return RTTIType._unwrap(obj, T) is not None
+
+    def _getinstance(obj, T: type) -> T:
+        # DO NOT USE DIRECTLY. Assumes that isinstance is true.
+        return RTTIType._unwrap(obj, T).__val__()
 
     def _hasattr(obj, attr: Literal[str]):
         children = static.children(type(obj))
@@ -180,7 +193,7 @@ class RTTIType:
         children = static.children(type(obj))
         for cls in children:
             if hasattr(cls, attr):
-                if (cls_obj := RTTIType._getinstance(obj, cls)):
+                if (cls_obj := RTTIType._unwrap(obj, cls)):
                     if attr_type is NoneType:
                         return _getattr(cls_obj, attr)
                     else:
@@ -193,7 +206,7 @@ class RTTIType:
         children = static.children(type(obj))
         for cls in children:
             if hasattr(cls, attr):
-                if (cls_obj := RTTIType._getinstance(obj, cls)):
+                if (cls_obj := RTTIType._unwrap(obj, cls)):
                     setattr(cls_obj, attr, value)
                     return
         raise AttributeError(f"cannot find {attr} in {obj}")

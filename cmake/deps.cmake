@@ -155,7 +155,7 @@ CPMAddPackage(
     GIT_TAG v6.1.1
     EXCLUDE_FROM_ALL YES)
 
-if(NOT APPLE)
+if(NOT SYSTEM_BLAS)
     enable_language(Fortran)
     CPMAddPackage(
         NAME openblas

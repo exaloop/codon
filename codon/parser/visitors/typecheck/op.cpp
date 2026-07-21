@@ -72,6 +72,12 @@ void TypecheckVisitor::visit(UnaryExpr *expr) {
 /// @c transformBinaryInplaceMagic for details.
 /// Also evaluate static expressions. See @c evaluateStaticBinary for details.
 void TypecheckVisitor::visit(BinaryExpr *expr) {
+  if (expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Bool) &&
+      (expr->getOp() == "&&" || expr->getOp() == "||")) {
+    expr->getLhs()->setExpectedType(getStdLibType(StdlibTypes::Bool));
+    expr->getRhs()->setExpectedType(getStdLibType(StdlibTypes::Bool));
+  }
+
   expr->lexpr = transform(expr->getLhs(), true);
 
   // Static short-circuit
@@ -221,6 +227,9 @@ void TypecheckVisitor::visit(BinaryExpr *expr) {
 /// The assignment above ensures that all expressions are executed only once.
 void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
   seqassert(expr->exprs.size() >= 2, "not enough expressions in ChainBinaryExpr");
+  bool isBool =
+      expr->getExpectedType() && expr->getExpectedType()->is(StdlibTypes::Bool);
+
   std::vector<Expr *> items;
   std::string prev;
   for (int i = 1; i < expr->exprs.size(); i++) {
@@ -232,11 +241,16 @@ void TypecheckVisitor::visit(ChainBinaryExpr *expr) {
             : N<StmtExpr>(N<AssignStmt>(N<IdExpr>(prev), clone(expr->exprs[i].second)),
                           N<IdExpr>(prev));
     items.emplace_back(N<BinaryExpr>(l, expr->exprs[i].first, r));
+    if (isBool)
+      items.back()->setExpectedType(getStdLibType(StdlibTypes::Bool));
   }
 
   Expr *final = items.back();
-  for (auto i = items.size() - 1; i-- > 0;)
+  for (auto i = items.size() - 1; i-- > 0;) {
     final = N<BinaryExpr>(items[i], "&&", final);
+    if (isBool)
+      final->setExpectedType(getStdLibType(StdlibTypes::Bool));
+  }
 
   resultExpr = transform(final);
 }
@@ -541,6 +555,7 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
       auto t = instantiateType(generateTuple(tt.size()), tt);
       unify(typ->getUnion()->generics[0].getType(), t);
       unify(expr->getType(), instantiateTypeVar(typ.get()));
+      log("instantiated {}", typ->debugString(2));
     }
   } else {
     for (size_t i = 0; i < expr->size(); i++) {
@@ -844,13 +859,26 @@ Expr *TypecheckVisitor::transformBinarySimple(const BinaryExpr *expr) {
 Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
   seqassert(expr->op == "is", "not an is binary expression");
 
+  bool hasSideL = hasSideEffect(expr->getLhs()),
+       hasSideR = hasSideEffect(expr->getRhs());
+  auto wrapSide = [&](Expr *e) -> Expr * {
+    if (hasSideL && hasSideR) {
+      return transform(
+          N<StmtExpr>(N<ExprStmt>(expr->getLhs()), N<ExprStmt>(expr->getRhs()), e));
+    } else if (hasSideL || hasSideR) {
+      return transform(N<StmtExpr>(
+          hasSideL ? N<ExprStmt>(expr->getLhs()) : N<ExprStmt>(expr->getRhs()), e));
+    }
+    return transform(e);
+  };
+
   // Case: `is None` expressions
   if (cast<NoneExpr>(expr->getRhs())) {
     if (extractClassType(expr->getLhs())->is(StdlibTypes::NoneType))
-      return transform(N<BoolExpr>(true));
+      return transform(wrapSide(N<BoolExpr>(true)));
     if (!extractClassType(expr->getLhs())->is(StdlibTypes::Optional)) {
       // lhs is not optional: `return False`
-      return transform(N<BoolExpr>(false));
+      return transform(wrapSide(N<BoolExpr>(false)));
     } else {
       // Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
       auto g = extractClassType(expr->getLhs());
@@ -864,7 +892,7 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
         return nullptr;
       }
       if (extractClassGeneric(g)->is(StdlibTypes::NoneType))
-        return transform(N<BoolExpr>(true));
+        return transform(wrapSide(N<BoolExpr>(true)));
 
       // lhs is optional: `return lhs.__has__().__invert__()`
       if (expr->getType()->getUnbound() && expr->getType()->getStaticKind())
@@ -880,7 +908,8 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
     auto rt = extractClassType(expr->getRhs());
     if (!lt || !rt)
       return nullptr;
-    return transform(N<BoolExpr>(lt->name == rt->name && lt->unify(rt, nullptr) >= 0));
+    return transform(
+        wrapSide(N<BoolExpr>(lt->name == rt->name && lt->unify(rt, nullptr) >= 0)));
   }
   auto lc = realize(expr->getLhs()->getType());
   auto rc = realize(expr->getRhs()->getType());
@@ -906,7 +935,7 @@ Expr *TypecheckVisitor::transformBinaryIs(const BinaryExpr *expr) {
   }
   if (lc->realizedName() != rc->realizedName()) {
     // tuple names do not match: `return False`
-    return transform(N<BoolExpr>(false));
+    return transform(wrapSide(N<BoolExpr>(false)));
   }
   // Same tuple types: `return lhs == rhs`
   return transform(N<BinaryExpr>(expr->getLhs(), "==", expr->getRhs()));
