@@ -77,9 +77,9 @@ endif()
 
 CPMAddPackage(
     NAME bdwgc
-    GITHUB_REPOSITORY "exaloop/bdwgc"
-    VERSION 8.0.5
-    GIT_TAG e16c67244aff26802203060422545d38305e0160
+    GITHUB_REPOSITORY "bdwgc/bdwgc"
+    VERSION 8.2.12
+    GIT_TAG v8.2.12
     EXCLUDE_FROM_ALL YES
     OPTIONS "CMAKE_POSITION_INDEPENDENT_CODE ON"
             "BUILD_SHARED_LIBS OFF"
@@ -94,7 +94,7 @@ endif()
 CPMAddPackage(
     NAME backtrace
     GITHUB_REPOSITORY "ianlancetaylor/libbacktrace"
-    GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
+    GIT_TAG 6f8310e238fc3ce68f42f391cbe93fd156bb2c23
     DOWNLOAD_ONLY YES)
 if(backtrace_ADDED)
     set(backtrace_SOURCES

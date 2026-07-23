@@ -320,8 +320,10 @@ def _taskred_data(gtid: int, data):
     return T(__kmpc_task_reduction_get_th_data(i32(gtid), cobj(), data.as_byte()))
 
 def _fork_call(microtask: cobj, args):
+    from C import seq_allow_register_threads()
     from C import __kmpc_fork_call(Ptr[Ident], i32, cobj, ...)
     loc_ref = _default_loc()  # TODO: pass real loc?
+    seq_allow_register_threads()
     __kmpc_fork_call(loc_ref, i32(1), microtask, __ptr__(args))
 
 def _static_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
