@@ -94,7 +94,7 @@ endif()
 CPMAddPackage(
     NAME backtrace
     GITHUB_REPOSITORY "ianlancetaylor/libbacktrace"
-    GIT_TAG 6f8310e238fc3ce68f42f391cbe93fd156bb2c23
+    GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
     DOWNLOAD_ONLY YES)
 if(backtrace_ADDED)
     set(backtrace_SOURCES
