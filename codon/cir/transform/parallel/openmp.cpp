@@ -441,23 +441,86 @@ struct ReductionIdentifier : public util::Operator {
     }
   }
 
+  bool isSharedDerefForReductionCond(Var *shared, Value *v) {
+    if (isSharedDeref(shared, v))
+      return true;
+
+    // Only unwrap the known lowering artifact:
+    // flow(series(assign tmp = shared_deref), tmp)
+    if (auto *flow = cast<FlowInstr>(v)) {
+      auto *series = cast<SeriesFlow>(flow->getFlow());
+      auto *ret = cast<VarValue>(flow->getValue());
+      if (!series || !ret || std::distance(series->begin(), series->end()) != 1)
+        return false;
+
+      auto *assign = cast<AssignInstr>(series->front());
+      if (!assign || assign->getLhs()->getId() != ret->getVar()->getId())
+        return false;
+
+      return isSharedDeref(shared, assign->getRhs());
+    }
+
+    return false;
+  }
+
+  static Var *getConditionResultVar(Value *v) {
+    if (auto *flow = cast<FlowInstr>(v))
+      if (auto *ret = cast<VarValue>(flow->getValue()))
+        return ret->getVar();
+
+    if (auto *ret = cast<VarValue>(v))
+      return ret->getVar();
+
+    return nullptr;
+  }
+
+  static bool isConditionResult(Value *cond, Value *v) {
+    auto *condVar = getConditionResultVar(cond);
+    auto *valueVar = cast<VarValue>(v);
+    return condVar && valueVar && condVar->getId() == valueVar->getVar()->getId();
+  }
+
+  static bool isLogicalFalseValue(Value *cond, Value *v) {
+    return util::isConst<bool>(v, false) || isConditionResult(cond, v);
+  }
+
+  static bool isLogicalTrueValue(Value *cond, Value *v) {
+    return util::isConst<bool>(v, true) || isConditionResult(cond, v);
+  }
+
   Reduction getReductionFromTernary(Var *shared, Type *type, Value *item) {
     auto *M = item->getModule();
     if (!type->is(M->getBoolType()))
       return {};
 
     auto *ternary = cast<TernaryInstr>(item);
-    if (!ternary || !isSharedDeref(shared, ternary->getCond()))
+    if (!ternary)
       return {};
 
-    if (util::isConst<bool>(ternary->getFalseValue(), false) &&
+    auto *cond = ternary->getCond();
+
+    if (isSharedDerefForReductionCond(shared, cond) &&
+        isLogicalFalseValue(cond, ternary->getFalseValue()) &&
         ternary->getTrueValue()->getType()->is(type)) {
       Reduction reduction = {Reduction::Kind::AND, shared};
       return reduction.getInitial() ? reduction : Reduction();
     }
 
-    if (util::isConst<bool>(ternary->getTrueValue(), true) &&
+    if (isSharedDerefForReductionCond(shared, cond) &&
+        isLogicalTrueValue(cond, ternary->getTrueValue()) &&
         ternary->getFalseValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::OR, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, ternary->getTrueValue()) &&
+        isLogicalFalseValue(cond, ternary->getFalseValue())) {
+      Reduction reduction = {Reduction::Kind::AND, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, ternary->getFalseValue()) &&
+        isLogicalTrueValue(cond, ternary->getTrueValue())) {
       Reduction reduction = {Reduction::Kind::OR, shared};
       return reduction.getInitial() ? reduction : Reduction();
     }

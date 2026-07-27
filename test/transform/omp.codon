@@ -311,6 +311,30 @@ def test_omp_reductions():
         a &= i
     assert a == expected(N, 0xffffffff, int.__and__)
 
+    a = True
+    @par
+    for i in L:
+        a = a and (i != N//2)
+    assert not a
+
+    a = False
+    @par
+    for i in L:
+        a = a or (i == N//2)
+    assert a
+
+    a = True
+    @par
+    for i in L:
+        a = (i != N//2) and a
+    assert not a
+
+    a = False
+    @par
+    for i in L:
+        a = (i == N//2) or a
+    assert a
+
     a = 1
     @par
     for i in L:
@@ -368,6 +392,30 @@ def test_omp_reductions():
     for i in L:
         a ^= i
     assert a == expected(N, 0, int.__xor__)
+
+    a = True
+    @par(chunk_size=3)
+    for i in L:
+        a = a and (i != N//2)
+    assert not a
+
+    a = False
+    @par(chunk_size=3)
+    for i in L:
+        a = a or (i == N//2)
+    assert a
+
+    a = True
+    @par(chunk_size=3)
+    for i in L:
+        a = (i != N//2) and a
+    assert not a
+
+    a = False
+    @par(chunk_size=3)
+    for i in L:
+        a = (i == N//2) or a
+    assert a
 
     a = 0xffffffff
     @par(chunk_size=3)
@@ -438,6 +486,30 @@ def test_omp_reductions():
         a &= i
     assert a == expected(N, 0xffffffff, int.__and__)
 
+    a = True
+    @par(schedule='dynamic')
+    for i in L:
+        a = a and (i != N//2)
+    assert not a
+
+    a = False
+    @par(schedule='dynamic')
+    for i in L:
+        a = a or (i == N//2)
+    assert a
+
+    a = True
+    @par(schedule='dynamic')
+    for i in L:
+        a = (i != N//2) and a
+    assert not a
+
+    a = False
+    @par(schedule='dynamic')
+    for i in L:
+        a = (i == N//2) or a
+    assert a
+    
     a = 1
     @par(schedule='dynamic')
     for i in L[1:10]:
