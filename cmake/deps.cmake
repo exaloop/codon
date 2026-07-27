@@ -94,7 +94,7 @@ endif()
 CPMAddPackage(
     NAME backtrace
     GITHUB_REPOSITORY "ianlancetaylor/libbacktrace"
-    GIT_TAG d0f5e95a87a4d3e0a1ed6c069b5dae7cbab3ed2a
+    GIT_TAG 6f8310e238fc3ce68f42f391cbe93fd156bb2c23
     DOWNLOAD_ONLY YES)
 if(backtrace_ADDED)
     set(backtrace_SOURCES
@@ -118,6 +118,7 @@ if(backtrace_ADDED)
     set(BACKTRACE_SUPPORTS_THREADS 1)
     set(BACKTRACE_SUPPORTS_DATA 1)
     set(HAVE_SYNC_FUNCTIONS 1)
+    set(HAVE_LINK_H 1)
     if(APPLE)
         set(HAVE_MACH_O_DYLD_H 1)
         list(APPEND backtrace_SOURCES "${backtrace_SOURCE_DIR}/macho.c")
