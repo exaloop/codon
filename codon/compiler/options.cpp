@@ -2,7 +2,9 @@
 
 #include "options.h"
 
+#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/TargetParser/Host.h"
 
 namespace codon {
 namespace {
@@ -113,6 +115,21 @@ void apply(Options *opt) {
   opt->gpuFeat = GpuFeatures;
   opt->gpuOutput = PTXOutput;
   opt->log = Log;
+  opt->march = llvm::codegen::getMArch();
+  opt->mcpu = llvm::codegen::getCPUStr();
+  opt->mattrs = llvm::codegen::getFeatureList();
+  if (opt->march == "native") {
+    opt->march.clear();
+    if (opt->mcpu.empty()) {
+      auto hostCPU = llvm::sys::getHostCPUName();
+      if (!hostCPU.empty() && hostCPU != "generic")
+        opt->mcpu = std::string(hostCPU);
+    }
+    if (opt->mattrs.empty()) {
+      for (const auto &[feature, enabled] : llvm::sys::getHostCPUFeatures())
+        opt->mattrs.push_back((enabled ? "+" : "-") + feature.str());
+    }
+  }
 }
 } // namespace
 

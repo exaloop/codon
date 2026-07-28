@@ -83,6 +83,15 @@ struct Options {
   /// log flags (https://docs.exaloop.io/start/usage/#logging)
   std::string log;
 
+  /// target architecture (e.g. x86_64, aarch64, etc.)
+  std::string march;
+
+  /// target CPU (e.g. skylake, cortex-a72, etc.)
+  std::string mcpu;
+
+  /// target features (e.g. +sse4.2, +neon, etc.)
+  std::vector<std::string> mattrs;
+
   /// Get a default-options instance.
   /// @return default options instance
   static std::unique_ptr<Options> getDefault(const std::string &argv0);

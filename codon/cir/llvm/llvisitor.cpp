@@ -238,12 +238,16 @@ llvm::Function *LLVMVisitor::getFunc(const Func *func) {
 
 std::unique_ptr<llvm::Module> LLVMVisitor::makeModule(llvm::LLVMContext &context,
                                                       const SrcInfo *src) {
+  std::string err;
   auto builder = llvm::EngineBuilder();
-  builder.setMArch(llvm::codegen::getMArch());
-  builder.setMCPU(llvm::codegen::getCPUStr());
-  builder.setMAttrs(llvm::codegen::getFeatureList());
-
+  builder.setErrorStr(&err);
+  builder.setMArch(options->march);
+  builder.setMCPU(options->mcpu);
+  builder.setMAttrs(options->mattrs);
   auto target = builder.selectTarget();
+  if (!target) {
+    compilationError(err.empty() ? "could not select LLVM target" : err);
+  }
   auto M = std::make_unique<llvm::Module>("codon", context);
   M->setTargetTriple(target->getTargetTriple().str());
   M->setDataLayout(target->createDataLayout());
@@ -378,7 +382,8 @@ void LLVMVisitor::writeToObjectFile(const std::string &filename, bool pic,
     compilationError(err.message());
   auto *os = &out->os();
 
-  auto machine = getTargetMachine(M.get(), /*setFunctionAttributes=*/false, pic);
+  auto machine =
+      getTargetMachine(M.get(), options, /*setFunctionAttributes=*/false, pic);
   auto *mmiwp = new llvm::MachineModuleInfoWrapperPass(machine.get());
   llvm::legacy::PassManager pm;
 
