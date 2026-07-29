@@ -98,6 +98,7 @@ struct Reduction {
   enum Kind {
     NONE,
     ADD,
+    SUB,
     MUL,
     AND,
     OR,
@@ -125,6 +126,8 @@ struct Reduction {
       switch (kind) {
       case Kind::ADD:
         return M->getInt(0);
+      case Kind::SUB:
+        return M->getInt(0);
       case Kind::MUL:
         return M->getInt(1);
       case Kind::AND:
@@ -144,6 +147,8 @@ struct Reduction {
       switch (kind) {
       case Kind::ADD:
         return M->getFloat(0.);
+      case Kind::SUB:
+        return M->getFloat(0.);
       case Kind::MUL:
         return M->getFloat(1.);
       case Kind::MIN:
@@ -161,6 +166,9 @@ struct Reduction {
       case Kind::ADD:
         value = 0.0;
         break;
+      case Kind::SUB:
+        value = 0.0;
+        break;
       case Kind::MUL:
         value = 1.0;
         break;
@@ -175,6 +183,16 @@ struct Reduction {
       }
 
       return (*f32)(*M->getFloat(value));
+    } else if (type->is(M->getBoolType())) {
+      switch (kind) {
+      case Kind::AND:
+        return M->getBool(true);
+      case Kind::OR:
+      case Kind::XOR:
+        return M->getBool(false);
+      default:
+        return nullptr;
+      }
     }
 
     auto *init = (*type)();
@@ -189,6 +207,9 @@ struct Reduction {
     Value *result = nullptr;
     switch (kind) {
     case Kind::ADD:
+      result = *lhs + *arg;
+      break;
+    case Kind::SUB:
       result = *lhs + *arg;
       break;
     case Kind::MUL:
@@ -230,6 +251,9 @@ struct Reduction {
     if (util::isInt(type)) {
       switch (kind) {
       case Kind::ADD:
+        func = "_atomic_int_add";
+        break;
+      case Kind::SUB:
         func = "_atomic_int_add";
         break;
       case Kind::MUL:
@@ -275,6 +299,9 @@ struct Reduction {
       case Kind::ADD:
         func = "_atomic_float32_add";
         break;
+      case Kind::SUB:
+        func = "_atomic_float32_add";
+        break;
       case Kind::MUL:
         func = "_atomic_float32_mul";
         break;
@@ -298,6 +325,9 @@ struct Reduction {
 
     switch (kind) {
     case Kind::ADD:
+      func = "__atomic_add__";
+      break;
+    case Kind::SUB:
       func = "__atomic_add__";
       break;
     case Kind::MUL:
@@ -411,6 +441,93 @@ struct ReductionIdentifier : public util::Operator {
     }
   }
 
+  bool isSharedDerefForReductionCond(Var *shared, Value *v) {
+    if (isSharedDeref(shared, v))
+      return true;
+
+    // Only unwrap the known lowering artifact:
+    // flow(series(assign tmp = shared_deref), tmp)
+    if (auto *flow = cast<FlowInstr>(v)) {
+      auto *series = cast<SeriesFlow>(flow->getFlow());
+      auto *ret = cast<VarValue>(flow->getValue());
+      if (!series || !ret || std::distance(series->begin(), series->end()) != 1)
+        return false;
+
+      auto *assign = cast<AssignInstr>(series->front());
+      if (!assign || assign->getLhs()->getId() != ret->getVar()->getId())
+        return false;
+
+      return isSharedDeref(shared, assign->getRhs());
+    }
+
+    return false;
+  }
+
+  static Var *getConditionResultVar(Value *v) {
+    if (auto *flow = cast<FlowInstr>(v))
+      if (auto *ret = cast<VarValue>(flow->getValue()))
+        return ret->getVar();
+
+    if (auto *ret = cast<VarValue>(v))
+      return ret->getVar();
+
+    return nullptr;
+  }
+
+  static bool isConditionResult(Value *cond, Value *v) {
+    auto *condVar = getConditionResultVar(cond);
+    auto *valueVar = cast<VarValue>(v);
+    return condVar && valueVar && condVar->getId() == valueVar->getVar()->getId();
+  }
+
+  static bool isLogicalFalseValue(Value *cond, Value *v) {
+    return util::isConst<bool>(v, false) || isConditionResult(cond, v);
+  }
+
+  static bool isLogicalTrueValue(Value *cond, Value *v) {
+    return util::isConst<bool>(v, true) || isConditionResult(cond, v);
+  }
+
+  Reduction getReductionFromTernary(Var *shared, Type *type, Value *item) {
+    auto *M = item->getModule();
+    if (!type->is(M->getBoolType()))
+      return {};
+
+    auto *ternary = cast<TernaryInstr>(item);
+    if (!ternary)
+      return {};
+
+    auto *cond = ternary->getCond();
+
+    if (isSharedDerefForReductionCond(shared, cond) &&
+        isLogicalFalseValue(cond, ternary->getFalseValue()) &&
+        ternary->getTrueValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::AND, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, cond) &&
+        isLogicalTrueValue(cond, ternary->getTrueValue()) &&
+        ternary->getFalseValue()->getType()->is(type)) {
+      Reduction reduction = {Reduction::Kind::OR, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, ternary->getTrueValue()) &&
+        isLogicalFalseValue(cond, ternary->getFalseValue())) {
+      Reduction reduction = {Reduction::Kind::AND, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    if (isSharedDerefForReductionCond(shared, ternary->getFalseValue()) &&
+        isLogicalTrueValue(cond, ternary->getTrueValue())) {
+      Reduction reduction = {Reduction::Kind::OR, shared};
+      return reduction.getInitial() ? reduction : Reduction();
+    }
+
+    return {};
+  }
+
   Reduction getReductionFromCall(CallInstr *v) {
     auto *M = v->getModule();
     auto *func = util::getFunc(v->getCallee());
@@ -440,6 +557,7 @@ struct ReductionIdentifier : public util::Operator {
 
     const std::vector<ReductionFunction> reductionFunctions = {
         {Module::ADD_MAGIC_NAME, Reduction::Kind::ADD, true},
+        {Module::SUB_MAGIC_NAME, Reduction::Kind::SUB, true},
         {Module::MUL_MAGIC_NAME, Reduction::Kind::MUL, true},
         {Module::AND_MAGIC_NAME, Reduction::Kind::AND, true},
         {Module::OR_MAGIC_NAME, Reduction::Kind::OR, true},
@@ -498,7 +616,7 @@ struct ReductionIdentifier : public util::Operator {
       return reduction;
     }
 
-    return {};
+    return getReductionFromTernary(shared, type, item);
   }
 
   Reduction getReduction(Var *shared) {

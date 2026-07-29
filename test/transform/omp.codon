@@ -16,6 +16,13 @@ class A:
     def __atomic_add__(a: Ptr[A], other: A):
         with lock:
             a[0] = A(a[0].n + other.n)
+    
+    def __sub__(self, other: A):
+        return A(self.n - other.n)
+        
+    def __atomic_sub__(a: Ptr[A], other: A):
+        with lock:
+            a[0] = A(a[0].n - other.n)
 
 @test
 def test_omp_api():
@@ -255,6 +262,9 @@ class Vector:
     def __add__(self, other: Vector):
         return Vector(self.x + other.x, self.y + other.y)
 
+    def __sub__(self, other: Vector):
+        return Vector(self.x - other.x, self.y - other.y)
+
     def __str__(self):
         return f'<{self.x}, {self.y}>'
 
@@ -280,6 +290,12 @@ def test_omp_reductions():
     a = 0
     @par
     for i in L:
+        a -= i
+    assert a == expected(N, 0, int.__sub__)
+
+    a = 0
+    @par
+    for i in L:
         a |= i
     assert a == expected(N, 0, int.__or__)
 
@@ -294,6 +310,30 @@ def test_omp_reductions():
     for i in L:
         a &= i
     assert a == expected(N, 0xffffffff, int.__and__)
+
+    a = True
+    @par
+    for i in L:
+        a = a and (i != N//2)
+    assert not a
+
+    a = False
+    @par
+    for i in L:
+        a = a or (i == N//2)
+    assert a
+
+    a = True
+    @par
+    for i in L:
+        a = (i != N//2) and a
+    assert not a
+
+    a = False
+    @par
+    for i in L:
+        a = (i == N//2) or a
+    assert a
 
     a = 1
     @par
@@ -327,6 +367,19 @@ def test_omp_reductions():
     for i in L:
         a += i
     assert a == expected(N, 0, int.__add__)
+    
+    x = A(0)
+    @par
+    for i in L:
+        x -= A(i)
+    assert x.n == expected(N, 0, int.__sub__)
+
+    # static chunked
+    a = 0
+    @par(chunk_size=3)
+    for i in L:
+        a -= i
+    assert a == expected(N, 0, int.__sub__)
 
     a = 0
     @par(chunk_size=3)
@@ -339,6 +392,30 @@ def test_omp_reductions():
     for i in L:
         a ^= i
     assert a == expected(N, 0, int.__xor__)
+
+    a = True
+    @par(chunk_size=3)
+    for i in L:
+        a = a and (i != N//2)
+    assert not a
+
+    a = False
+    @par(chunk_size=3)
+    for i in L:
+        a = a or (i == N//2)
+    assert a
+
+    a = True
+    @par(chunk_size=3)
+    for i in L:
+        a = (i != N//2) and a
+    assert not a
+
+    a = False
+    @par(chunk_size=3)
+    for i in L:
+        a = (i == N//2) or a
+    assert a
 
     a = 0xffffffff
     @par(chunk_size=3)
@@ -371,6 +448,12 @@ def test_omp_reductions():
     for i in L:
         x += A(i)
     assert x.n == expected(N, 0, int.__add__)
+    
+    x = A(0)
+    @par(chunk_size=3)
+    for i in L:
+        x -= A(i)
+    assert x.n == expected(N, 0, int.__sub__)
 
     # dynamic
     a = 0
@@ -382,6 +465,12 @@ def test_omp_reductions():
     a = 0
     @par(schedule='dynamic')
     for i in L:
+        a -= i
+    assert a == expected(N, 0, int.__sub__)
+
+    a = 0
+    @par(schedule='dynamic')
+    for i in L:
         a |= i
     assert a == expected(N, 0, int.__or__)
 
@@ -397,6 +486,30 @@ def test_omp_reductions():
         a &= i
     assert a == expected(N, 0xffffffff, int.__and__)
 
+    a = True
+    @par(schedule='dynamic')
+    for i in L:
+        a = a and (i != N//2)
+    assert not a
+
+    a = False
+    @par(schedule='dynamic')
+    for i in L:
+        a = a or (i == N//2)
+    assert a
+
+    a = True
+    @par(schedule='dynamic')
+    for i in L:
+        a = (i != N//2) and a
+    assert not a
+
+    a = False
+    @par(schedule='dynamic')
+    for i in L:
+        a = (i == N//2) or a
+    assert a
+    
     a = 1
     @par(schedule='dynamic')
     for i in L[1:10]:
@@ -423,12 +536,24 @@ def test_omp_reductions():
         x += A(i)
     assert x.n == expected(N, 0, int.__add__)
 
+    x = A(0)
+    @par(schedule='dynamic')
+    for i in L:
+        x -= A(i)
+    assert x.n == expected(N, 0, int.__sub__)
+
     # floats
     c = 0.
     @par
     for i in L:
         c += float(i)
     assert c == expected(N, 0., float.__add__)
+
+    c = 0.
+    @par
+    for i in L:
+        c -= float(i)
+    assert c == expected(N, 0., float.__sub__)
 
     c = 1.
     @par
@@ -462,6 +587,18 @@ def test_omp_reductions():
         c = i + c  # int-float op
     assert c == expected(N, 0., float.__add__)
 
+    c = 0.
+    @par
+    for i in L:
+        c -= i  # float-int op
+    assert c == expected(N, 0., float.__sub__)
+
+    c = 0.
+    @par
+    for i in L:
+        c = c - i  # float-int op
+    assert c == expected(N, 0., float.__sub__)
+
     # float32s
     c = f32(0.)
     # this one can give different results due to
@@ -470,6 +607,12 @@ def test_omp_reductions():
     for i in L[1:1001]:
         c += f32(i)
     assert c == sum((f32(i) for i in range(1001)), f32(0))
+
+    c = f32(0.)
+    @par
+    for i in L[1:1001]:
+        c -= f32(i)
+    assert c == sum((-f32(i) for i in range(1001)), f32(0))
 
     c = f32(1.)
     @par
@@ -503,16 +646,31 @@ def test_omp_reductions():
         c = i + c  # int-float op
     assert c == f32(1+2+3+4+5+6+7+8+9+10+11)
 
+    c = f32(0.)
+    @par
+    for i in L[:12]:
+        c -= i  # float-int op
+    assert c == f32(-1-2-3-4-5-6-7-8-9-10-11)
+
+    c = f32(0.)
+    @par
+    for i in L[:12]:
+        c = c - i  # int-float op
+    assert c == f32(0-1-2-3-4-5-6-7-8-9-10-11)
+
     x_add = 10.
+    x_sub = 10.
     x_min = inf
     x_max = -inf
     @par
     for i in L:
         x_i = float(i)
         x_add += x_i
+        x_sub -= x_i
         x_min = min(x_min, x_i)
         x_max = max(x_i, x_max)
     assert x_add == expected(N, 10., float.__add__)
+    assert x_sub == expected(N, 10., float.__sub__)
     assert x_min == expected(N, inf, min)
     assert x_max == expected(N, -inf, max)
 
@@ -528,23 +686,31 @@ def test_omp_reductions():
     g = my_global
     a = 0
     b = 0
+    c = 0
     @par(schedule='dynamic', num_threads=3)
     for i in L:
         a += i
-        b ^= i
+        b -= i
+        c ^= i
         my_global += i
     assert a == expected(N, 0, int.__add__)
-    assert b == expected(N, 0, int.__xor__)
+    assert b == expected(N, 0, int.__sub__)
+    assert c == expected(N, 0, int.__xor__)
     assert my_global == g + expected(N, 0, int.__add__)
 
     # custom reductions
     vectors = [Vector(i, i) for i in range(10)]
-    v = Vector()
+    v_add = Vector()
+    v_sub = Vector()
+    
     @par
     for vv in vectors:
-        v += vv
-    assert v.x == 45.0
-    assert v.y == 45.0
+        v_add += vv
+        v_sub -= vv
+    assert v_add.x == 45.0
+    assert v_add.y == 45.0
+    assert v_sub.x == -45.0
+    assert v_sub.y == -45.0
 
 another_global = 0
 @test
