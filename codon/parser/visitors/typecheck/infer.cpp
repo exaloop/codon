@@ -325,7 +325,6 @@ types::Type *TypecheckVisitor::realizeType(types::ClassType *type) {
       E(Error::TYPE_CANNOT_REALIZE_ATTR, getSrcInfo(), fields[i].name,
         realized->prettyString());
     }
-    // LOG_REALIZE("- member: {} -> {}: {}", field.name, field.type, fTypes[i]);
     realization->fields.emplace_back(fields[i].name, fTypes[i]);
     names.emplace_back(fields[i].name);
     typeArgs.emplace_back(makeIRType(fTypes[i]->getClass()));
@@ -355,9 +354,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     }
   }
 
-  // auto *_t = new Cache::CTimer(ctx->cache, ctx->getRealizationStackName() + ":" +
-  //                                              type->realizedName());
-
   auto oldCtx = this->ctx;
   this->ctx = imp->ctx;
   if (ctx->getRealizationDepth() > MAX_REALIZATION_DEPTH) {
@@ -377,12 +373,6 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         break;
       }
     }
-    // LOG("[realize] F {} -> {} : base {} ; depth = {} ; ctx-base: {}; ret = {}; "
-    //     "parent = {}",
-    //     type->getFuncName(), type->realizedName(), ctx->getRealizationStackName(),
-    //     ctx->getRealizationDepth(), ctx->getBaseName(),
-    //     ctx->getBase()->returnType->debugString(2),
-    //     ctx->bases[ctx->getBase()->parent].name);
   }
 
   // Types might change after realization, fix it
@@ -689,6 +679,8 @@ ir::Func *TypecheckVisitor::makeIRFunction(
     const std::shared_ptr<Cache::Function::FunctionRealization> &r) {
   ir::Func *fn = nullptr;
   auto irm = ctx->cache->module;
+
+  std::string unmangledName = ctx->cache->reverseIdentifierLookup[r->type->ast->name];
   // Create and store a function IR node and a realized AST for IR passes
   if (r->ast->hasAttribute(Attr::Internal)) {
     // e.g., __new__, Ptr.__new__, etc.
@@ -696,11 +688,21 @@ ir::Func *TypecheckVisitor::makeIRFunction(
   } else if (r->ast->hasAttribute(Attr::LLVM)) {
     fn = irm->Nr<ir::LLVMFunc>(r->type->realizedName());
   } else if (r->ast->hasAttribute(Attr::C)) {
-    fn = irm->Nr<ir::ExternalFunc>(r->type->realizedName());
+    std::string name = r->type->realizedName();
+    if (auto f =
+            r->ast->getAttribute<ir::KeyValueAttribute>(Attr::FunctionAttributes)) {
+      if (auto i =
+              in(f->attributes, getMangledFunc("std.internal.c_stubs", "linkname"))) {
+        auto fp = ctx->cache->findFunction(*i);
+        auto str = extractFuncGeneric(fp)->getStrStatic();
+        unmangledName = str->value;
+      }
+    }
+    fn = irm->Nr<ir::ExternalFunc>(name);
   } else {
     fn = irm->Nr<ir::BodiedFunc>(r->type->realizedName());
   }
-  fn->setUnmangledName(ctx->cache->reverseIdentifierLookup[r->type->ast->name]);
+  fn->setUnmangledName(unmangledName);
   auto parent = r->type->funcParent;
   if (auto aa = r->ast->getAttribute<ir::StringValueAttribute>(Attr::ParentClass)) {
     if (!aa->value.empty() && !r->ast->hasAttribute(Attr::Method)) {

@@ -108,6 +108,12 @@ void NumPyExpr::replace(NumPyExpr &e) {
 }
 
 bool NumPyExpr::haveVectorizedLoop() const {
+  if (lhs &&
+      (lhs->type.dtype == NumPyType::NP_TYPE_ARR_C64 ||
+       lhs->type.dtype == NumPyType::NP_TYPE_ARR_C128) &&
+      opstring() == "abs")
+    return true;
+
   if (lhs && !(lhs->type.dtype == NumPyType::NP_TYPE_ARR_F32 ||
                lhs->type.dtype == NumPyType::NP_TYPE_ARR_F64))
     return false;
@@ -288,6 +294,12 @@ int64_t NumPyExpr::cost() const {
   auto c = opcost();
   if (c == -1)
     return -1;
+
+  // Special-case for abs(complex)
+  if (op == NP_OP_ABS && lhs &&
+      (lhs->type.dtype == NumPyType::NP_TYPE_ARR_C128 ||
+       lhs->type.dtype == NumPyType::NP_TYPE_ARR_C64))
+    c = 50;
 
   // Account for the fact that the vectorized loops are much faster.
   if (haveVectorizedLoop()) {

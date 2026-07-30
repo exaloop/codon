@@ -23,11 +23,12 @@ const std::string VAR_ARGC = getMangledVar("", "__argc__");
 const std::string FN_OPTIONAL_UNWRAP =
     getMangledFunc("std.internal.types.optional", "unwrap");
 
-Cache::Cache(std::string argv0, const std::shared_ptr<IFilesystem> &fs) : fs(fs) {
+Cache::Cache(std::vector<std::unique_ptr<ast::ASTNode>> &nodes, std::string argv0,
+             const std::shared_ptr<IFilesystem> &fs)
+    : fs(fs), _nodes(&nodes) {
   if (!this->fs) {
     this->fs = std::make_shared<Filesystem>(argv0);
   }
-  this->_nodes = new std::vector<std::unique_ptr<ast::ASTNode>>();
   typeCtx = std::make_shared<TypeContext>(this, ".root");
 }
 

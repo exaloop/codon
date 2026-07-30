@@ -16,8 +16,8 @@ namespace codon {
 
 Compiler::Compiler(const Options &options, const std::shared_ptr<ast::IFilesystem> &fs)
     : input(), options(std::make_unique<Options>(options)),
-      plm(std::make_unique<PluginManager>(options.argv0)),
-      cache(std::make_unique<ast::Cache>(options.argv0, fs)),
+      plm(std::make_unique<PluginManager>(options.argv0)), nodes(),
+      cache(std::make_unique<ast::Cache>(nodes, options.argv0, fs)),
       module(std::make_unique<ir::Module>(cache.get())),
       pm(std::make_unique<ir::transform::PassManager>(getOptions())),
       llvisitor(std::make_unique<ir::LLVMVisitor>(getOptions())) {

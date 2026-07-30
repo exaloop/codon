@@ -4,6 +4,12 @@
 from C import seq_print(str)
 from C import seq_print_full(str, cobj)
 
+
+@__attribute__
+def linkname(s: Literal[str]):
+    pass
+
+
 @nocapture
 @C
 def seq_str_int(a: int, fmt: str, error: Ptr[bool]) -> str:

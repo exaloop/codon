@@ -92,7 +92,8 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
                                         const std::vector<std::string> &files) {
   auto shared = std::make_shared<DocShared>();
   shared->argv0 = argv0;
-  auto cache = std::make_unique<ast::Cache>(argv0);
+  std::vector<std::unique_ptr<ast::ASTNode>> nodes;
+  auto cache = std::make_unique<ast::Cache>(nodes, argv0);
   shared->cache = cache.get();
   shared->modules[""] = std::make_shared<DocContext>(shared);
   shared->j = std::make_shared<json>();
@@ -132,7 +133,6 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   for (auto &f : files) {
     auto path = cache->fs->canonical(f).generic_string();
     ctx->setFilename(path);
-    // LOG("-> parsing {}", path);
     auto fAstOrErr = ast::parseFile(shared->cache, path);
     if (!fAstOrErr)
       throw exc::ParserException(fAstOrErr.takeError());
@@ -487,7 +487,6 @@ void DocVisitor::visit(ImportStmt *stmt) {
   if (it == ctx->shared->modules.end()) {
     ctx->shared->modules[file->path] = ictx = std::make_shared<DocContext>(ctx->shared);
     ictx->setFilename(file->path);
-    // LOG("=> parsing {}", file->path);
     auto tmpOrErr = parseFile(ctx->shared->cache, file->path);
     if (!tmpOrErr)
       throw exc::ParserException(tmpOrErr.takeError());

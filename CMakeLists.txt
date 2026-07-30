@@ -92,33 +92,6 @@ if(WIN32)
 endif()
 
 # Codon runtime library
-add_library(codonfloat STATIC
-            codon/runtime/floatlib/extenddftf2.c
-            codon/runtime/floatlib/fp_trunc.h
-            codon/runtime/floatlib/truncdfhf2.c
-            codon/runtime/floatlib/extendhfsf2.c
-            codon/runtime/floatlib/int_endianness.h
-            codon/runtime/floatlib/truncdfsf2.c
-            codon/runtime/floatlib/extendhftf2.c
-            codon/runtime/floatlib/int_lib.h
-            codon/runtime/floatlib/truncsfbf2.c
-            codon/runtime/floatlib/extendsfdf2.c
-            codon/runtime/floatlib/int_math.h
-            codon/runtime/floatlib/truncsfhf2.c
-            codon/runtime/floatlib/extendsftf2.c
-            codon/runtime/floatlib/int_types.h
-            codon/runtime/floatlib/trunctfdf2.c
-            codon/runtime/floatlib/fp_extend.h
-            codon/runtime/floatlib/int_util.h
-            codon/runtime/floatlib/trunctfhf2.c
-            codon/runtime/floatlib/fp_lib.h
-            codon/runtime/floatlib/truncdfbf2.c
-            codon/runtime/floatlib/trunctfsf2.c)
-target_compile_options(codonfloat PRIVATE -O3)
-target_compile_definitions(codonfloat PRIVATE COMPILER_RT_HAS_FLOAT16)
-
-# The numpy *core* runtime (Highway-based sort/loops + complex zmath) has no Fortran
-# dependency, so it builds on all platforms. Only OpenBLAS/LAPACK (linalg) is Fortran.
 set(CODONRT_FILES codon/runtime/lib.h codon/runtime/lib.cpp
                   codon/runtime/re.cpp codon/runtime/exc.cpp
                   codon/runtime/numpy/sort.cpp
@@ -161,7 +134,7 @@ if(WIN32)
   add_dependencies(codonrt zlibstatic gc bz2 liblzma re2 hwy hwy_contrib openblas)
 else()
   add_dependencies(codonrt zlibstatic gc backtrace bz2 liblzma
-                           re2 hwy hwy_contrib fast_float codonfloat)
+                           re2 hwy hwy_contrib fast_float)
 endif()
 
 if(WIN32)
@@ -205,6 +178,49 @@ if(WIN32)
 else()
   target_link_libraries(codonrt PRIVATE fmt omp backtrace LLVMSupport)
 endif()
+
+if(APPLE)
+  set(COMPILER_RT_NAMES clang_rt.osx libclang_rt.osx.a)
+  set(COMPILER_RT_PATHS
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/darwin"
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/darwin"
+  )
+elseif(UNIX)
+  set(COMPILER_RT_NAMES clang_rt.builtins libclang_rt.builtins.a)
+
+  set(COMPILER_RT_TRIPLES
+    "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu"
+    "${CMAKE_SYSTEM_PROCESSOR}-linux-gnu"
+    "aarch64-unknown-linux-gnu"
+    "x86_64-unknown-linux-gnu"
+  )
+
+  foreach(TRIPLE IN LISTS COMPILER_RT_TRIPLES)
+    list(APPEND COMPILER_RT_PATHS
+      "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/${TRIPLE}"
+      "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/${TRIPLE}"
+    )
+  endforeach()
+
+  list(APPEND COMPILER_RT_PATHS
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_VERSION_MAJOR}/lib/linux"
+    "${LLVM_LIBRARY_DIR}/clang/${LLVM_PACKAGE_VERSION}/lib/linux"
+  )
+endif()
+
+if(NOT WIN32)
+  find_library(COMPILER_RT_LIB
+    NAMES ${COMPILER_RT_NAMES}
+    PATHS ${COMPILER_RT_PATHS}
+    NO_DEFAULT_PATH
+  )
+
+  if(NOT COMPILER_RT_LIB)
+    message(FATAL_ERROR
+      "Could not find compiler-rt. Tried ${COMPILER_RT_NAMES} in ${COMPILER_RT_PATHS}")
+  endif()
+  message(STATUS "Found compiler-rt: ${COMPILER_RT_LIB}")
+endif()
 if(APPLE)
   target_link_libraries(
     codonrt
@@ -215,7 +231,7 @@ if(APPLE)
             -Wl,-force_load,$<TARGET_FILE:re2>
             -Wl,-force_load,$<TARGET_FILE:hwy>
             -Wl,-force_load,$<TARGET_FILE:hwy_contrib>
-            -Wl,-force_load,$<TARGET_FILE:codonfloat>)
+            -Wl,-force_load,${COMPILER_RT_LIB})
   target_link_libraries(codonrt PUBLIC "-framework Accelerate")
 elseif(WIN32)
   # zlibstatic linked normally (NOT whole-archived): zlib-ng embeds a Windows
@@ -249,13 +265,66 @@ elseif(WIN32)
             -Wl,/EXPORT:BZ2_bzopen -Wl,/EXPORT:BZ2_bzclose -Wl,/EXPORT:BZ2_bzread
             -Wl,/EXPORT:BZ2_bzwrite -Wl,/EXPORT:BZ2_bzflush -Wl,/EXPORT:BZ2_bzerror)
 else()
-  add_dependencies(codonrt openblas)
+  add_dependencies(codonrt openblas_64)
+
+  # Make sure compiler-rt symbols are visible
+  set(LLVM_OBJCOPY "${LLVM_BINARY_DIR}/bin/llvm-objcopy")
+  if(NOT EXISTS "${LLVM_OBJCOPY}")
+    find_program(LLVM_OBJCOPY
+      NAMES llvm-objcopy objcopy
+      REQUIRED
+    )
+  endif()
+  set(COMPILER_RT_DEFAULT "${CMAKE_BINARY_DIR}/libclang_rt.builtins.default.a")
+  set(COMPILER_RT_DEFAULT_VIS_SYMBOLS
+    __truncdfhf2
+    __truncdfbf2
+    __truncdfsf2
+    __truncsfbf2
+    __truncsfhf2
+    __trunctfdf2
+    __trunctfbf2
+    __trunctfhf2
+    __trunctfsf2
+    __truncxfbf2
+    __trunctfxf2
+    __trunchfbf2
+    __truncxfhf2
+    __extendbfsf2
+    __extendsfdf2
+    __extendhfsf2
+    __extenddftf2
+    __extendhftf2
+    __extendsftf2
+    __extendhfxf2
+    __extendxftf2
+  )
+  set(COMPILER_RT_OBJCOPY_ARGS)
+  foreach(SYM IN LISTS COMPILER_RT_DEFAULT_VIS_SYMBOLS)
+    list(APPEND COMPILER_RT_OBJCOPY_ARGS
+      "--set-symbol-visibility=${SYM}=default")
+  endforeach()
+  add_custom_command(
+    OUTPUT "${COMPILER_RT_DEFAULT}"
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${COMPILER_RT_LIB}"
+            "${COMPILER_RT_DEFAULT}"
+    COMMAND "${LLVM_OBJCOPY}"
+            ${COMPILER_RT_OBJCOPY_ARGS}
+            "${COMPILER_RT_DEFAULT}"
+    DEPENDS "${COMPILER_RT_LIB}"
+    VERBATIM
+  )
+  add_custom_target(compiler_rt_default_visibility
+    DEPENDS "${COMPILER_RT_DEFAULT}")
+  add_dependencies(codonrt compiler_rt_default_visibility)
+
   target_link_libraries(
     codonrt
     PRIVATE -Wl,--whole-archive $<TARGET_FILE:zlibstatic> $<TARGET_FILE:gc>
             $<TARGET_FILE:bz2> $<TARGET_FILE:liblzma> $<TARGET_FILE:re2>
-            $<TARGET_FILE:openblas> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
-            $<TARGET_FILE:codonfloat> -Wl,--no-whole-archive)
+            $<TARGET_FILE:openblas_64> $<TARGET_FILE:hwy> $<TARGET_FILE:hwy_contrib>
+            ${COMPILER_RT_DEFAULT} -Wl,--no-whole-archive)
 endif()
 if(ASAN)
   target_compile_options(
@@ -637,6 +706,14 @@ if(WIN32)
 else()
   target_link_libraries(codon PUBLIC fmt codonc codon_jupyter Threads::Threads)
 endif()
+if(ASAN)
+  target_compile_options(
+    codon PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                  "-fsanitize-recover=address")
+  target_link_libraries(
+    codon PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                  "-fsanitize-recover=address")
+endif()
 
 # Codon test Download and unpack googletest at configure time
 include(FetchContent)
@@ -688,7 +765,15 @@ if(WIN32)
   target_compile_definitions(codon_test PRIVATE CODON_COMPILER_BUILD)
   target_link_libraries(codon_test fmt codonrt codon-stdlib gtest_main ${LLVM_LIBS})
 else()
-  target_link_libraries(codon_test fmt codonc codonrt gtest_main)
+  target_link_libraries(codon_test PRIVATE fmt codonc codonrt gtest_main)
+endif()
+if(ASAN)
+  target_compile_options(
+    codon_test PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                       "-fsanitize-recover=address")
+  target_link_libraries(
+    codon_test PRIVATE "-fno-omit-frame-pointer" "-fsanitize=address"
+                       "-fsanitize-recover=address")
 endif()
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")

@@ -2077,7 +2077,7 @@ def i0(x):
     elif isinstance(x, float16):
         return _fp16_op_via_fp32(x, i0_32)
 
-def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr[T],
+def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr,
                          os: int, n: int, func: Literal[str], T: type):
     from C import cnp_acos_float64(Ptr[float], int, Ptr[float], int, int)
     from C import cnp_acos_float32(Ptr[float32], int, Ptr[float32], int, int)
@@ -2117,6 +2117,8 @@ def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr[
     from C import cnp_tanh_float32(Ptr[float32], int, Ptr[float32], int, int)
     from C import cnp_hypot_float64(Ptr[float], int, Ptr[float], int, Ptr[float], int, int)
     from C import cnp_hypot_float32(Ptr[float32], int, Ptr[float32], int, Ptr[float32], int, int)
+    from C import cnp_abs_complex128(Ptr[complex], int, Ptr[float], int, int)
+    from C import cnp_abs_complex64(Ptr[complex64], int, Ptr[float32], int, int)
 
     if func == 'arccos' and T is float:
         cnp_acos_float64(in1, is1, out, os, n)
@@ -2194,6 +2196,10 @@ def call_vectorized_loop(in1: Ptr[T], is1: int, in2: Ptr[T], is2: int, out: Ptr[
         cnp_hypot_float64(in1, is1, in2, is2, out, os, n)
     elif func == 'hypot' and T is float32:
         cnp_hypot_float32(in1, is1, in2, is2, out, os, n)
+    elif (func == 'absolute' or func == 'abs') and T is complex:
+        cnp_abs_complex128(in1, is1, out, os, n)
+    elif (func == 'absolute' or func == 'abs') and T is complex64:
+        cnp_abs_complex64(in1, is1, out, os, n)
     else:
         pass
 

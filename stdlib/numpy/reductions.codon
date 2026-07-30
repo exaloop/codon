@@ -128,7 +128,7 @@ def _pairwise_sum_complex(a: Ptr[C], n: int, stride: int, C: type):
 
         i = 8
         while i < n - (n & 7):
-            (p + (i + (512).cdiv(sz))*stride).__prefetch_r3__()
+            # (p + (i + (512).cdiv(sz))*stride).__prefetch_r3__()
             r0 += Ptr[T](p + (i + 0) * stride)[0]
             r1 += Ptr[T](p + (i + 0) * stride + sz)[0]
             r2 += Ptr[T](p + (i + 2) * stride)[0]
@@ -181,7 +181,7 @@ def _pairwise_sum(a: Ptr[T], n: int, stride: int, T: type, dtype: type = NoneTyp
 
         i = 8
         while i < n - (n & 7):
-            (p + (i + (512).cdiv(T.__elemsize__))*stride).__prefetch_r3__()
+            # (p + (i + (512).cdiv(T.__elemsize__))*stride).__prefetch_r3__()
             r0 += util.cast(Ptr[T](p + (i + 0) * stride)[0], dtype)
             r1 += util.cast(Ptr[T](p + (i + 1) * stride)[0], dtype)
             r2 += util.cast(Ptr[T](p + (i + 2) * stride)[0], dtype)

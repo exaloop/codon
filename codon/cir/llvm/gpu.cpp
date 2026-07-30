@@ -338,6 +338,64 @@ void codegenVectorizedBinaryLoop(llvm::IRBuilder<> &B,
   B.CreateRet(llvm::UndefValue::get(parent->getReturnType()));
 }
 
+void codegenVectorizedComplexLoop(llvm::IRBuilder<> &B,
+                                  const std::vector<llvm::Value *> &args,
+                                  llvm::Function *func) {
+  // Create IR to represent:
+  //   p_in = in
+  //   p_out = out
+  //   for i in range(n):
+  //       re = p_in[0]
+  //       im = p_in[1]
+  //       *p_out = func(re, im)
+  //       p_in += is
+  //       p_out += os
+  auto &context = B.getContext();
+  auto *parent = B.GetInsertBlock()->getParent();
+  auto *ty = func->getReturnType();
+
+  auto *in = args[0];
+  auto *is = args[1];
+  auto *out = args[2];
+  auto *os = args[3];
+  auto *n = args[4];
+
+  auto *loop = llvm::BasicBlock::Create(context, "loop", parent);
+  auto *exit = llvm::BasicBlock::Create(context, "exit", parent);
+
+  auto *pinStore = B.CreateAlloca(B.getPtrTy());
+  auto *poutStore = B.CreateAlloca(B.getPtrTy());
+  auto *idxStore = B.CreateAlloca(B.getInt64Ty());
+
+  B.CreateStore(in, pinStore);
+  B.CreateStore(out, poutStore);
+  B.CreateStore(B.getInt64(0), idxStore);
+  B.CreateCondBr(B.CreateICmpSGT(n, B.getInt64(0)), loop, exit);
+
+  B.SetInsertPoint(loop);
+  auto *pin = B.CreateLoad(B.getPtrTy(), pinStore);
+  auto *pout = B.CreateLoad(B.getPtrTy(), poutStore);
+
+  auto *pre = pin;
+  auto *pim = B.CreateGEP(ty, pin, B.getInt64(1));
+
+  auto *re = B.CreateLoad(ty, pre);
+  auto *im = B.CreateLoad(ty, pim);
+  auto *y = B.CreateCall(func, {re, im});
+  B.CreateStore(y, pout);
+
+  auto *idx = B.CreateLoad(B.getInt64Ty(), idxStore);
+  B.CreateStore(B.CreateAdd(idx, B.getInt64(1)), idxStore);
+  B.CreateStore(B.CreateGEP(B.getInt8Ty(), pin, is), pinStore);
+  B.CreateStore(B.CreateGEP(B.getInt8Ty(), pout, os), poutStore);
+
+  idx = B.CreateLoad(B.getInt64Ty(), idxStore);
+  B.CreateCondBr(B.CreateICmpSLT(idx, n), loop, exit);
+
+  B.SetInsertPoint(exit);
+  B.CreateRet(llvm::UndefValue::get(parent->getReturnType()));
+}
+
 llvm::Function *makeFillIn(llvm::Function *F, Codegen codegen) {
   auto *M = F->getParent();
   auto &context = M->getContext();
@@ -593,6 +651,31 @@ void remapFunctions(llvm::Module *M) {
     }                                                                                  \
   }
 
+#define FILLIN_VECLOOP_COMPLEX64(loop, func)                                           \
+  {                                                                                    \
+    loop, [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {           \
+      auto *M = B.GetInsertBlock()->getModule();                                       \
+      auto f = llvm::cast<llvm::Function>(                                             \
+          M->getOrInsertFunction(func, B.getFloatTy(), B.getFloatTy(), B.getFloatTy()) \
+              .getCallee());                                                           \
+      f->setWillReturn();                                                              \
+      codegenVectorizedComplexLoop(B, args, f);                                        \
+    }                                                                                  \
+  }
+
+#define FILLIN_VECLOOP_COMPLEX128(loop, func)                                          \
+  {                                                                                    \
+    loop, [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {           \
+      auto *M = B.GetInsertBlock()->getModule();                                       \
+      auto f = llvm::cast<llvm::Function>(                                             \
+          M->getOrInsertFunction(func, B.getDoubleTy(), B.getDoubleTy(),               \
+                                 B.getDoubleTy())                                      \
+              .getCallee());                                                           \
+      f->setWillReturn();                                                              \
+      codegenVectorizedComplexLoop(B, args, f);                                        \
+    }                                                                                  \
+  }
+
       FILLIN_VECLOOP_UNARY64("cnp_acos_float64", "__nv_acos"),
       FILLIN_VECLOOP_UNARY64("cnp_acosh_float64", "__nv_acosh"),
       FILLIN_VECLOOP_UNARY64("cnp_asin_float64", "__nv_asin"),
@@ -609,6 +692,8 @@ void remapFunctions(llvm::Module *M) {
       FILLIN_VECLOOP_UNARY64("cnp_log2_float64", "__nv_log2"),
       FILLIN_VECLOOP_UNARY64("cnp_sin_float64", "__nv_sin"),
       FILLIN_VECLOOP_UNARY64("cnp_sinh_float64", "__nv_sinh"),
+      FILLIN_VECLOOP_UNARY64("cnp_cos_float64", "__nv_cos"),
+      FILLIN_VECLOOP_UNARY64("cnp_cosh_float64", "__nv_cosh"),
       FILLIN_VECLOOP_UNARY64("cnp_tan_float64", "__nv_tan"),
       FILLIN_VECLOOP_UNARY64("cnp_tanh_float64", "__nv_tanh"),
       FILLIN_VECLOOP_BINARY64("cnp_hypot_float64", "__nv_hypot"),
@@ -629,9 +714,14 @@ void remapFunctions(llvm::Module *M) {
       FILLIN_VECLOOP_UNARY32("cnp_log2_float32", "__nv_log2f"),
       FILLIN_VECLOOP_UNARY32("cnp_sin_float32", "__nv_sinf"),
       FILLIN_VECLOOP_UNARY32("cnp_sinh_float32", "__nv_sinhf"),
+      FILLIN_VECLOOP_UNARY32("cnp_cos_float32", "__nv_cosf"),
+      FILLIN_VECLOOP_UNARY32("cnp_cosh_float32", "__nv_coshf"),
       FILLIN_VECLOOP_UNARY32("cnp_tan_float32", "__nv_tanf"),
       FILLIN_VECLOOP_UNARY32("cnp_tanh_float32", "__nv_tanhf"),
       FILLIN_VECLOOP_BINARY32("cnp_hypot_float32", "__nv_hypotf"),
+
+      FILLIN_VECLOOP_COMPLEX128("cnp_abs_complex128", "__nv_hypot"),
+      FILLIN_VECLOOP_COMPLEX64("cnp_abs_complex64", "__nv_hypotf"),
   };
 
   for (auto &pair : remapping) {
@@ -941,8 +1031,10 @@ std::unique_ptr<llvm::Module> prepareGPUmodule(llvm::Module *M, Options *options
     }
   }
 
-  if (!hasKernels)
+  if (!hasKernels) {
+    patchPTXVar(M, nullptr);
     return {};
+  }
 
   std::unique_ptr<llvm::Module> clone = llvm::CloneModule(*M);
   clone->setTargetTriple(llvm::Triple::normalize(GPU_TRIPLE));

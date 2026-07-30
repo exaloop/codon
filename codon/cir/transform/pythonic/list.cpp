@@ -15,8 +15,8 @@ namespace {
 
 const std::string LIST =
     ast::getMangledClass("std.internal.types.collections.list", "List");
-const std::string SLICE =
-    ast::getMangledClass("std.internal.types.slice", "Slice") + "[int,int,int]";
+const std::string SLICE = ast::getMangledClass("std.internal.types.slice", "Slice") +
+                          "[Int[64],Int[64],Int[64]]";
 
 bool isList(Value *v) { return v->getType()->getName().rfind(LIST + "[", 0) == 0; }
 bool isSlice(Value *v) { return v->getType()->getName() == SLICE; }

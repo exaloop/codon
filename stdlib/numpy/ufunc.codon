@@ -7,16 +7,21 @@ import internal.static as static
 from .ndarray import ndarray
 from .npdatetime import datetime64, timedelta64
 
-def _have_vectorized_loop(dtype: type, func: Literal[str]):
-    if not (dtype is float or dtype is float32):
+def _have_vectorized_loop(dtype: type, ans_dtype: type, func: Literal[str]):
+    if (((dtype is complex and ans_dtype is float) or
+         (dtype is complex64 and ans_dtype is float32)) and
+        func == 'absolute'):
+        return True
+    elif dtype is not ans_dtype or not (dtype is float or dtype is float32):
         return False
-    return (func == 'arccos' or func == 'arccosh' or func == 'arcsin'
-            or func == 'arcsinh' or func == 'arctan' or func == 'arctanh'
-            or func == 'arctan2' or func == 'cos' or func == 'exp'
-            or func == 'exp2' or func == 'expm1' or func == 'log'
-            or func == 'log10' or func == 'log1p' or func == 'log2'
-            or func == 'sin' or func == 'sinh' or func == 'tanh'
-            or func == 'hypot')
+    else:
+        return (func == 'arccos' or func == 'arccosh' or func == 'arcsin'
+                or func == 'arcsinh' or func == 'arctan' or func == 'arctanh'
+                or func == 'arctan2' or func == 'cos' or func == 'exp'
+                or func == 'exp2' or func == 'expm1' or func == 'log'
+                or func == 'log10' or func == 'log1p' or func == 'log2'
+                or func == 'sin' or func == 'sinh' or func == 'tanh'
+                or func == 'hypot')
 
 def _apply_vectorized_loop_unary(arr, out, func: Literal[str]):
     if arr.ndim == 0 or out.ndim == 0 or arr.ndim > out.ndim:
@@ -425,10 +430,9 @@ class UnaryUFunc:
 
             if isinstance(where, bool):
                 if where:
-                    if x.dtype is ans.dtype:
-                        if _have_vectorized_loop(x.dtype, __name__):
-                            _apply_vectorized_loop_unary(x, ans, __name__)
-                            return ans
+                    if _have_vectorized_loop(x.dtype, ans.dtype, __name__):
+                        _apply_vectorized_loop_unary(x, ans, __name__)
+                        return ans
 
                     functor = _UnaryFunctor(self, dtype)
                     ndarray._loop((ans, x), functor, check=False)
@@ -610,8 +614,8 @@ class BinaryUFunc:
 
         if isinstance(where, bool):
             if where:
-                if x.dtype is ans.dtype and y.dtype is ans.dtype:
-                    if _have_vectorized_loop(x.dtype, __name__):
+                if x.dtype is y.dtype:
+                    if _have_vectorized_loop(x.dtype, ans.dtype, __name__):
                         _apply_vectorized_loop_binary(x, y, ans, __name__)
                         return ans
 

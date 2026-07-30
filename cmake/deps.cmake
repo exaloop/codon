@@ -193,11 +193,13 @@ if(NOT APPLE AND NOT WIN32)
     CPMAddPackage(
         NAME openblas
         GITHUB_REPOSITORY "OpenMathLib/OpenBLAS"
-        GIT_TAG v0.3.29
+        GIT_TAG v0.3.33
         EXCLUDE_FROM_ALL YES
         OPTIONS "DYNAMIC_ARCH ON"
                 "BUILD_TESTING OFF"
                 "BUILD_BENCHMARKS OFF"
+                "INTERFACE64 ON"
+                "SYMBOLSUFFIX 64_"
                 "NUM_THREADS 64"
                 "CCOMMON_OPT -O3")
 elseif(WIN32)
