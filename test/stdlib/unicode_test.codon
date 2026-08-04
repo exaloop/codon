@@ -1,0 +1,936 @@
+from internal.types.unicode.unicode import unicode
+from internal.types.unicode.float_dtoa import (
+    _float_shortest_decimal,
+    _float_dtoa_shortest,
+    _BigUInt,
+    _float_dtoa_scaled_integer,
+    _float_dtoa_fixed,
+    _float_dtoa_exponent,
+    _float_dtoa_general,
+)
+from internal.types.unicode.format import (
+    FORMAT_FLAG_ALT,
+    FORMAT_FLAG_LEFT,
+    FORMAT_FLAG_SPACE,
+    FORMAT_FLAG_PLUS,
+    FORMAT_FLAG_ZERO,
+    _integer_format,
+    _float_format,
+)
+
+
+@test
+def test_empty():
+    u = unicode("")
+    assert len(u) == 0
+    assert not u
+    assert u == unicode("")
+    assert u[0:0] == unicode("")
+    assert u.startswith(unicode(""))
+    assert u.endswith(unicode(""))
+
+
+@test
+def test_ascii_and_slicing():
+    u = unicode("hello")
+    assert len(u) == 5
+    assert u[0] == unicode("h")
+    assert u[-1] == unicode("o")
+    assert u[1:4] == unicode("ell")
+    assert u[:0] == unicode("")
+    assert u[10:12] == unicode("")
+    assert u[4:1] == unicode("")
+
+
+@test
+def test_comparisons_and_search():
+    u = unicode("banana")
+    assert u == unicode("banana")
+    assert u < unicode("candy")
+    assert u > unicode("apple")
+    assert u.find(unicode("ana")) == 1
+    assert u.rfind(unicode("ana")) == 3
+    assert u.index(unicode("na")) == 2
+    assert u.rindex(unicode("na")) == 4
+    assert u.count(unicode("an")) == 2
+    assert u.find(unicode("zzz")) == -1
+    assert u.startswith(unicode("ban"))
+    assert u.endswith(unicode("ana"))
+    assert u.startswith(unicode("na"), 2)
+    assert u.endswith(unicode("na"), 2, 6)
+
+
+@test
+def test_concat_and_repeat():
+    u = unicode("ab") + unicode("cd")
+    assert u == unicode("abcd")
+    assert u * 2 == unicode("abcdabcd")
+    assert u * 0 == unicode("")
+
+
+@test
+def test_unicode_codepoints():
+    u = unicode("héllo🙂")
+    assert len(u) == 6
+    assert u[0] == unicode("h")
+    assert u[2] == unicode("l")
+    assert u[5] == unicode("🙂")
+    assert unicode("AΩ😀") == unicode("AΩ😀")
+    assert unicode("AΩ😀")[1] == unicode("Ω")
+
+
+@test
+def test_membership_and_casefold():
+    u = unicode("Hello, World!")
+    assert unicode("ell") in u
+    assert unicode("zzz") not in u
+    assert u.lower() == unicode("hello, world!")
+    assert u.upper() == unicode("HELLO, WORLD!")
+    assert u.casefold() == unicode("hello, world!")
+
+    assert unicode("  hello\t\n").strip() == unicode("hello")
+    assert unicode("  hello").lstrip() == unicode("hello")
+    assert unicode("hello  ").rstrip() == unicode("hello")
+
+
+@test
+def test_split_join_and_replace():
+    u = unicode("a,b,c")
+    parts = u.split(unicode(","))
+    assert len(parts) == 3
+    assert parts[0] == unicode("a")
+    assert parts[1] == unicode("b")
+    assert parts[2] == unicode("c")
+
+    ws = unicode("a b  c\t d")
+    wsparts = ws.split()
+    assert len(wsparts) == 4
+    assert wsparts[0] == unicode("a")
+    assert wsparts[1] == unicode("b")
+    assert wsparts[2] == unicode("c")
+    assert wsparts[3] == unicode("d")
+
+    joined = unicode(",").join([unicode("a"), unicode("b"), unicode("c")])
+    assert joined == unicode("a,b,c")
+
+    replaced = unicode("ababa").replace(unicode("aba"), unicode("z"))
+    assert replaced == unicode("zba")
+
+    limited = unicode("a,b,c").split(unicode(","), 1)
+    assert len(limited) == 2
+    assert limited[0] == unicode("a")
+    assert limited[1] == unicode("b,c")
+
+    assert unicode(" a b c ").split(None, 1) == [unicode("a"), unicode("b c ")]
+    assert unicode(" a b c ").rsplit(None, 1) == [unicode(" a b"), unicode("c")]
+    assert unicode(" a b ").split(None, 0) == [unicode("a b ")]
+    assert unicode(" a b ").rsplit(None, 0) == [unicode(" a b")]
+    assert unicode(" a b c ").split(None, 1) == [unicode("a"), unicode("b c ")]
+    assert unicode(" a b c ").rsplit(None, 1) == [unicode(" a b"), unicode("c")]
+    assert unicode(" a b ").split(None, 0) == [unicode("a b ")]
+    assert unicode(" a b ").rsplit(None, 0) == [unicode(" a b")]
+
+
+@test
+def test_partition_and_predicates():
+    assert unicode("abc").isalnum()
+    assert unicode("abc").isalpha()
+    assert unicode("123").isdigit()
+    assert unicode(" ").isspace()
+
+    assert not unicode("").isalnum()
+    assert not unicode("").isalpha()
+    assert not unicode("").isdigit()
+    assert not unicode("").isspace()
+
+    left, mid, right = unicode("hello,world").partition(unicode(","))
+    assert left == unicode("hello")
+    assert mid == unicode(",")
+    assert right == unicode("world")
+
+    left, mid, right = unicode("hello,world,again").rpartition(unicode(","))
+    assert left == unicode("hello,world")
+    assert mid == unicode(",")
+    assert right == unicode("again")
+
+    chars = []
+    for ch in unicode("abc"):
+        chars.append(ch)
+
+    assert chars[0] == unicode("a")
+    assert chars[1] == unicode("b")
+    assert chars[2] == unicode("c")
+
+
+@test
+def test_iterator():
+    chars = []
+    for ch in unicode("abc"):
+        chars.append(ch)
+
+    assert len(chars) == 3
+    assert chars[0] == unicode("a")
+    assert chars[1] == unicode("b")
+    assert chars[2] == unicode("c")
+
+
+@test
+def test_padding_and_tabs():
+    assert unicode("abc").center(5) == unicode(" abc ")
+    assert unicode("abc").ljust(5) == unicode("abc  ")
+    assert unicode("abc").rjust(5) == unicode("  abc")
+    assert unicode("12").zfill(5) == unicode("00012")
+    assert unicode("-12").zfill(5) == unicode("-0012")
+    assert unicode("a\tb").expandtabs(2) == unicode("a b")
+
+
+@test
+def test_text_normalization_and_splitlines():
+    assert unicode("hello").capitalize() == unicode("Hello")
+    assert unicode("hELLO").swapcase() == unicode("Hello")
+    assert unicode("hello world").title() == unicode("Hello World")
+
+    assert unicode("hello").removeprefix(unicode("he")) == unicode("llo")
+    assert unicode("hello").removesuffix(unicode("lo")) == unicode("hel")
+    assert unicode("hello").removesuffix(unicode("xyz")) == unicode("hello")
+
+    assert unicode("").splitlines() == []
+    lines = unicode("a\nb\r\nc").splitlines()
+    assert len(lines) == 3
+    assert lines[0] == unicode("a")
+    assert lines[1] == unicode("b")
+    assert lines[2] == unicode("c")
+
+
+@test
+def test_predicates():
+    assert unicode("abc").islower()
+    assert not unicode("ABC").islower()
+    assert unicode("ABC").isupper()
+    assert not unicode("abc").isupper()
+    assert unicode("Hello World").istitle()
+    assert not unicode("hello world").istitle()
+
+    assert unicode("123").isnumeric()
+    assert unicode("123").isdecimal()
+    assert unicode("abc").isascii()
+    assert not unicode("héllo").isascii()
+    assert unicode("abc").isprintable()
+    assert not unicode("abc\n").isprintable()
+
+
+@test
+def test_identifier_and_printable():
+    assert unicode("abc").isidentifier()
+    assert unicode("_abc").isidentifier()
+    assert not unicode("123abc").isidentifier()
+    assert not unicode("abc-def").isidentifier()
+
+    assert unicode("abc").isprintable()
+    assert not unicode("abc\n").isprintable()
+
+
+@test
+def test_translate_and_maketrans():
+    table = unicode.maketrans(unicode("aeiou"), unicode("12345"))
+    assert unicode("hello").translate(table) == unicode("h2ll4")
+
+    delete_table = unicode.maketrans(unicode("aeiou"), unicode("12345"), unicode("o"))
+    assert unicode("hello").translate(delete_table) == unicode("h2ll")
+
+
+@test
+def test_operator_helpers():
+    assert unicode("ab") + unicode("cd") == unicode("abcd")
+    assert unicode("ab") * 3 == unicode("ababab")
+    assert 2 * unicode("ab") == unicode("abab")
+
+
+@test
+def test_rsplit():
+    parts = unicode("a b c").rsplit()
+    assert len(parts) == 3
+    assert parts[0] == unicode("a")
+    assert parts[1] == unicode("b")
+    assert parts[2] == unicode("c")
+
+    parts = unicode("a,b,c").rsplit(unicode(","), 1)
+    assert len(parts) == 2
+    assert parts[0] == unicode("a,b")
+    assert parts[1] == unicode("c")
+
+
+@test
+def test_slice_steps():
+    value = unicode("abcde")
+
+    assert value[::2] == unicode("ace")
+    assert value[1:5:2] == unicode("bd")
+    assert value[::-1] == unicode("edcba")
+    assert value[4::-2] == unicode("eca")
+    assert value[3:0:-1] == unicode("dcb")
+    try:
+        value[::0]
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_padding_strip_chars_and_splitlines_keepends():
+    assert unicode("abc").center(7, unicode("-")) == unicode("--abc--")
+    assert unicode("abc").ljust(5, unicode(".")) == unicode("abc..")
+    assert unicode("abc").rjust(5, unicode(".")) == unicode("..abc")
+
+    assert unicode("xyabcxy").strip(unicode("xy")) == unicode("abc")
+    assert unicode("xyabc").lstrip(unicode("xy")) == unicode("abc")
+    assert unicode("abcxy").rstrip(unicode("xy")) == unicode("abc")
+
+    lines = unicode("a\r\nb\n").splitlines(True)
+    assert len(lines) == 2
+    assert lines[0] == unicode("a\r\n")
+    assert lines[1] == unicode("b\n")
+
+
+@test
+def test_empty_substring_count_and_replace():
+    value = unicode("abc")
+
+    assert value.count(unicode("")) == 4
+    assert value.count(unicode(""), 1, 2) == 2
+    assert value.count(unicode(""), 2, 1) == 0
+
+    assert value.replace(unicode(""), unicode("-")) == unicode("-a-b-c-")
+    assert value.replace(unicode(""), unicode("-"), 2) == unicode("-a-bc")
+    assert value.replace(unicode(""), unicode("-"), 0) == unicode("abc")
+    assert unicode("").replace(unicode(""), unicode("-")) == unicode("-")
+
+
+@test
+def test_empty_bounds_partition_and_expandtabs_edges():
+    value = unicode("abc")
+    empty = unicode("")
+
+    assert value.find(empty, 2, 1) == -1
+    assert value.rfind(empty, 2, 1) == -1
+    assert not value.startswith(empty, 2, 1)
+    assert not value.endswith(empty, 2, 1)
+
+    assert unicode("a\tb").expandtabs(0) == unicode("ab")
+    assert unicode("a\tb").expandtabs(-1) == unicode("ab")
+    assert unicode("a\n\tb").expandtabs(4) == unicode("a\n    b")
+
+
+@test
+def test_case_method_edge_cases():
+    assert unicode("abc-123").islower()
+    assert unicode("ABC-123").isupper()
+    assert not unicode("123-!").islower()
+    assert not unicode("123-!").isupper()
+
+    assert unicode("Hello-World").istitle()
+    assert unicode("Hello3World").istitle()
+    assert not unicode("Hello3world").istitle()
+    assert not unicode("hello-World").istitle()
+
+    assert unicode("foo-bar").title() == unicode("Foo-Bar")
+    assert unicode("foo3bar").title() == unicode("Foo3Bar")
+    assert unicode("FOO3BAR").title() == unicode("Foo3Bar")
+
+
+@test
+def test_search_bounds():
+    value = unicode("abc")
+    empty = unicode("")
+
+    assert value.find(empty, 4) == -1
+    assert value.rfind(empty, 4) == -1
+    assert value.count(empty, 4) == 0
+    assert not value.startswith(empty, 4)
+    assert not value.endswith(empty, 4)
+
+    assert value.find(empty, -10, 99) == 0
+    assert value.rfind(empty, -10, 99) == 3
+    assert value.count(empty, -10, 99) == 4
+
+
+@test
+def test_splitlines_all_boundaries():
+    nel = unicode("\xc2\x85")
+    line_separator = unicode("\xe2\x80\xa8")
+    paragraph_separator = unicode("\xe2\x80\xa9")
+
+    value = (
+        unicode("a\rb\nc\r\nd\ve\ff\x1cg\x1dh\x1ei")
+        + nel
+        + unicode("j")
+        + line_separator
+        + unicode("k")
+        + paragraph_separator
+    )
+    lines = value.splitlines()
+
+    assert len(lines) == 11
+    assert lines[0] == unicode("a")
+    assert lines[1] == unicode("b")
+    assert lines[2] == unicode("c")
+    assert lines[3] == unicode("d")
+    assert lines[4] == unicode("e")
+    assert lines[5] == unicode("f")
+    assert lines[6] == unicode("g")
+    assert lines[7] == unicode("h")
+    assert lines[8] == unicode("i")
+    assert lines[9] == unicode("j")
+    assert lines[10] == unicode("k")
+
+    assert unicode("a\n").splitlines() == [unicode("a")]
+
+    with_ends = unicode("a\rb\nc\r\n").splitlines(True)
+    assert len(with_ends) == 3
+    assert with_ends[0] == unicode("a\r")
+    assert with_ends[1] == unicode("b\n")
+    assert with_ends[2] == unicode("c\r\n")
+
+
+@test
+def test_unicode_data():
+    e_acute = unicode("\xc3\xa9")
+    superscript_two = unicode("\xc2\xb2")
+    arabic_digits = unicode("\xd9\xa1\xd9\xa2")
+    nbsp = unicode("\xc2\xa0")
+    em_space = unicode("\xe2\x80\x83")
+    pi = unicode("\xcf\x80")
+    combining_acute = unicode("\xcc\x81")
+
+    assert e_acute.isalpha()
+    assert (e_acute + unicode("2")).isalnum()
+    assert not (e_acute + unicode("-2")).isalnum()
+
+    assert superscript_two.isdigit()
+    assert not superscript_two.isdecimal()
+    assert superscript_two.isnumeric()
+    assert arabic_digits.isdecimal()
+
+    assert nbsp.isspace()
+    assert (nbsp + unicode("hello") + nbsp).strip() == unicode("hello")
+    assert (unicode("one") + nbsp + unicode("two") + em_space + unicode("three")).split() == [
+        unicode("one"),
+        unicode("two"),
+        unicode("three"),
+    ]
+
+    assert pi.isidentifier()
+    assert (pi + unicode("2")).isidentifier()
+    assert (unicode("a") + combining_acute).isidentifier()
+    assert unicode("_value").isidentifier()
+    assert not (unicode("2") + pi).isidentifier()
+    assert not (pi + unicode("-1")).isidentifier()
+
+    assert unicode("hello world").isprintable()
+    assert unicode("café").isprintable()
+    assert unicode("你好").isprintable()
+    assert unicode("😀").isprintable()
+
+    assert not unicode("hello\nworld").isprintable()
+    assert not unicode("\xc2\xa0").isprintable()  # NO-BREAK SPACE
+    assert not unicode("\xe2\x80\x8b").isprintable()  # ZERO WIDTH SPACE
+    assert not unicode("\xe2\x80\xa8").isprintable()  # LINE SEPARATOR
+
+
+@test
+def test_unicode_case_predicates():
+    lower_alpha = unicode("\xce\xb1")  # α
+    upper_alpha = unicode("\xce\x91")  # Α
+    title_dz = unicode("\xc7\x85")  # ǅ
+
+    assert lower_alpha.islower()
+    assert not lower_alpha.isupper()
+    assert not lower_alpha.istitle()
+
+    assert upper_alpha.isupper()
+    assert not upper_alpha.islower()
+    assert upper_alpha.istitle()
+
+    assert title_dz.istitle()
+    assert not title_dz.islower()
+    assert not title_dz.isupper()
+
+    assert unicode("\xce\xb1-123").islower()
+    assert unicode("\xce\x91-123").isupper()
+    assert not unicode("123-\xcc\x81").islower()
+    assert not unicode("123-\xcc\x81").isupper()
+    assert not unicode("123-\xcc\x81").istitle()
+
+    assert unicode("A\xcc\x81b").istitle()
+    assert not unicode("A\xcc\x81B").istitle()
+
+
+@test
+def test_unicode_case_mappings():
+    sharp_s = unicode("\xc3\x9f")  # ß
+    dotted_i = unicode("\xc4\xb0")  # İ
+    ligature_ffi = unicode("\xef\xac\x83")  # ﬃ
+
+    assert sharp_s.upper() == unicode("SS")
+    assert sharp_s.title() == unicode("Ss")
+    assert sharp_s.swapcase() == unicode("SS")
+
+    assert dotted_i.lower() == unicode("i\xcc\x87")
+    assert ligature_ffi.upper() == unicode("FFI")
+    assert ligature_ffi.casefold() == unicode("ffi")
+    assert unicode("Stra\xc3\x9fe").casefold() == unicode("strasse")
+
+    assert unicode("\xc7\x85").swapcase() == unicode("\xc7\x86")
+
+
+@test
+def test_unicode_final_sigma():
+    assert unicode("\xce\x9f\xce\xa3").lower() == unicode("\xce\xbf\xcf\x82")
+    assert unicode("\xce\x9f\xce\xa3\xce\x91").lower() == unicode(
+        "\xce\xbf\xcf\x83\xce\xb1"
+    )
+
+    # Case-ignorable marks do not prevent final-sigma detection.
+    assert unicode("\xce\x9f\xce\xa3\xcc\x81").lower() == unicode(
+        "\xce\xbf\xcf\x82\xcc\x81"
+    )
+
+
+@test
+def test_unicode_title_and_capitalize_mappings():
+    assert unicode("a\xcc\x81BC").title() == unicode("A\xcc\x81bc")
+    assert unicode("\xc3\x9fABC").capitalize() == unicode("Ssabc")
+    assert unicode("hELLO \xc3\x9f").title() == unicode("Hello Ss")
+
+
+@test
+def test_unicode_ascii_case_mappings():
+    value = unicode("hELLO, wORLD! 123")
+
+    assert value.lower() == unicode("hello, world! 123")
+    assert value.upper() == unicode("HELLO, WORLD! 123")
+    assert value.casefold() == unicode("hello, world! 123")
+    assert value.capitalize() == unicode("Hello, world! 123")
+    assert value.title() == unicode("Hello, World! 123")
+    assert value.swapcase() == unicode("Hello, World! 123")
+
+    assert unicode("").lower() == unicode("")
+    assert unicode("123!?").title() == unicode("123!?")
+
+
+@test
+def test_unicode_case_mapping_identity():
+    value = unicode("123!?")
+    assert value.lower() == value
+    assert value.upper() == value
+    assert value.casefold() == value
+    assert value.capitalize() == value
+    assert value.swapcase() == value
+
+    assert unicode("\xce\xa3").lower() == unicode("\xcf\x83")  # Σ -> σ
+    assert unicode("A\xcc\x81B").title() == unicode("A\xcc\x81b")
+
+
+@test
+def test_unicode_final_sigma_case_methods():
+    assert unicode("\xce\x9f\xce\xa3").capitalize() == unicode("\xce\x9f\xcf\x82")
+    assert unicode("\xce\x9f\xce\xa3").title() == unicode("\xce\x9f\xcf\x82")
+    assert unicode("\xce\x9f\xce\xa3").swapcase() == unicode("\xce\xbf\xcf\x82")
+
+
+test_empty()
+test_ascii_and_slicing()
+test_comparisons_and_search()
+test_concat_and_repeat()
+test_unicode_codepoints()
+test_membership_and_casefold()
+test_split_join_and_replace()
+test_partition_and_predicates()
+test_iterator()
+test_padding_and_tabs()
+test_text_normalization_and_splitlines()
+test_predicates()
+test_identifier_and_printable()
+test_translate_and_maketrans()
+test_operator_helpers()
+test_rsplit()
+test_slice_steps()
+test_padding_strip_chars_and_splitlines_keepends()
+test_empty_substring_count_and_replace()
+test_empty_bounds_partition_and_expandtabs_edges()
+test_case_method_edge_cases()
+test_search_bounds()
+test_splitlines_all_boundaries()
+test_unicode_data()
+test_unicode_case_predicates()
+test_unicode_case_mappings()
+test_unicode_final_sigma()
+test_unicode_title_and_capitalize_mappings()
+test_unicode_ascii_case_mappings()
+test_unicode_case_mapping_identity()
+test_unicode_final_sigma_case_methods()
+
+
+# float-format tests
+@test
+def test_float_shortest_decimal():
+    result = _float_shortest_decimal(1.0)
+    assert result.significand == u64(1)
+    assert result.exponent == 0
+
+    result = _float_shortest_decimal(1.25)
+    assert result.significand == u64(125)
+    assert result.exponent == -2
+
+    result = _float_shortest_decimal(0.1)
+    assert result.significand == u64(1)
+    assert result.exponent == -1
+
+    result = _float_shortest_decimal(1e20)
+    assert result.significand == u64(1)
+    assert result.exponent == 20
+
+    result = _float_shortest_decimal(1e-20)
+    assert result.significand == u64(1)
+    assert result.exponent == -20
+
+    result = _float_shortest_decimal(1.2345678901234567)
+    assert result.significand == u64(12345678901234567)
+    assert result.exponent == -16
+
+
+@test
+def test_float_shortest_decimal_boundaries():
+    result = _float_shortest_decimal(2.0)
+    assert result.significand == u64(2)
+    assert result.exponent == 0
+
+    result = _float_shortest_decimal(0.5)
+    assert result.significand == u64(5)
+    assert result.exponent == -1
+
+    result = _float_shortest_decimal(2.2250738585072014e-308)
+    assert result.significand == u64(22250738585072014)
+    assert result.exponent == -324
+
+    result = _float_shortest_decimal(5e-324)
+    assert result.significand == u64(5)
+    assert result.exponent == -324
+
+
+@test
+def test_float_dtoa_shortest():
+    assert _float_dtoa_shortest(0.0) == "0"
+    assert _float_dtoa_shortest(-0.0) == "-0"
+    assert _float_dtoa_shortest(1.0) == "1.0"
+    assert _float_dtoa_shortest(-1.0) == "-1.0"
+    assert _float_dtoa_shortest(1.25) == "1.25"
+    assert _float_dtoa_shortest(0.1) == "0.1"
+
+    assert _float_dtoa_shortest(1e-4) == "0.0001"
+    assert _float_dtoa_shortest(1e-5) == "1e-05"
+    assert _float_dtoa_shortest(1e16) == "1e+16"
+    assert _float_dtoa_shortest(1e20) == "1e+20"
+
+    assert _float_dtoa_shortest(5e-324) == "5e-324"
+    assert _float_dtoa_shortest(2.2250738585072014e-308) == (
+        "2.2250738585072014e-308"
+    )
+    assert _float_dtoa_shortest(1.2345678901234567) == (
+        "1.2345678901234567"
+    )
+
+    assert _float_dtoa_shortest(float("inf")) == "inf"
+    assert _float_dtoa_shortest(float("-inf")) == "-inf"
+    assert _float_dtoa_shortest(float("nan")) == "nan"
+
+
+@test
+def test_float_dtoa_biguint_division():
+    value = _BigUInt(8)
+    divisor = _BigUInt(8)
+
+    value.set_u64(u64(123456789))
+    divisor.set_u64(u64(10000))
+
+    quotient = value.divmod(divisor)
+
+    assert quotient.length == 1
+    assert quotient.data[0] == u32(12345)
+    assert value.length == 1
+    assert value.data[0] == u32(6789)
+
+
+@test
+def test_float_dtoa_scaled_integer():
+    result = _float_dtoa_scaled_integer(1.25, 2)
+    assert result.length == 1
+    assert result.data[0] == u32(125)
+
+    # The binary64 value is below exact decimal 1.005.
+    result = _float_dtoa_scaled_integer(1.005, 2)
+    assert result.data[0] == u32(100)
+
+    result = _float_dtoa_scaled_integer(1.999, 2)
+    assert result.data[0] == u32(200)
+
+    # Exact ties round to even.
+    result = _float_dtoa_scaled_integer(2.5, 0)
+    assert result.data[0] == u32(2)
+
+    result = _float_dtoa_scaled_integer(3.5, 0)
+    assert result.data[0] == u32(4)
+
+
+@test
+def test_float_dtoa_fixed():
+    assert _float_dtoa_fixed(1.0, 0) == "1"
+    assert _float_dtoa_fixed(1.0, 2) == "1.00"
+    assert _float_dtoa_fixed(-0.0, 3) == "-0.000"
+
+    assert _float_dtoa_fixed(1.25, 1) == "1.2"
+    assert _float_dtoa_fixed(1.25, 2) == "1.25"
+    assert _float_dtoa_fixed(1.999, 2) == "2.00"
+    assert _float_dtoa_fixed(1.005, 2) == "1.00"
+
+    assert _float_dtoa_fixed(0.0001, 5) == "0.00010"
+    assert _float_dtoa_fixed(1e20, 2) == "100000000000000000000.00"
+
+    assert _float_dtoa_fixed(float("inf"), 2) == "inf"
+    assert _float_dtoa_fixed(float("-inf"), 2) == "-inf"
+    assert _float_dtoa_fixed(float("nan"), 2) == "nan"
+
+
+@test
+def test_float_dtoa_exponent():
+    assert _float_dtoa_exponent(1.0, 0) == "1e+00"
+    assert _float_dtoa_exponent(1.0, 2) == "1.00e+00"
+    assert _float_dtoa_exponent(-0.0, 3) == "-0.000e+00"
+
+    assert _float_dtoa_exponent(1.25, 1) == "1.2e+00"
+    assert _float_dtoa_exponent(1.25, 2) == "1.25e+00"
+    assert _float_dtoa_exponent(1.999, 2) == "2.00e+00"
+    assert _float_dtoa_exponent(9.999, 1) == "1.0e+01"
+
+    assert _float_dtoa_exponent(0.0001, 2) == "1.00e-04"
+    assert _float_dtoa_exponent(1e20, 2) == "1.00e+20"
+
+    assert _float_dtoa_exponent(float("inf"), 2) == "inf"
+    assert _float_dtoa_exponent(float("-inf"), 2) == "-inf"
+    assert _float_dtoa_exponent(float("nan"), 2) == "nan"
+
+
+@test
+def test_float_dtoa_general():
+    assert _float_dtoa_general(1.0, 6) == "1"
+    assert _float_dtoa_general(1.0, 6, True) == "1.00000"
+    assert _float_dtoa_general(-0.0, 3) == "-0"
+    assert _float_dtoa_general(-0.0, 3, True) == "-0.00"
+
+    assert _float_dtoa_general(1.25, 3) == "1.25"
+    assert _float_dtoa_general(1.25, 5, True) == "1.2500"
+    assert _float_dtoa_general(1.23456, 4) == "1.235"
+
+    assert _float_dtoa_general(0.0001, 3) == "0.0001"
+    assert _float_dtoa_general(0.00001, 3) == "1e-05"
+    assert _float_dtoa_general(12345.0, 4) == "1.234e+04"
+    assert _float_dtoa_general(999.9, 3) == "1e+03"
+
+    assert _float_dtoa_general(float("inf"), 4) == "inf"
+    assert _float_dtoa_general(float("-inf"), 4) == "-inf"
+    assert _float_dtoa_general(float("nan"), 4) == "nan"
+
+
+@test
+def test_float_dtoa_uppercase():
+    assert _float_dtoa_fixed(1.25, 2, True) == "1.25"
+    assert _float_dtoa_exponent(1.25, 2, True) == "1.25E+00"
+    assert _float_dtoa_general(0.00001, 3, False, True) == "1E-05"
+
+    assert _float_dtoa_fixed(float("inf"), 2, True) == "INF"
+    assert _float_dtoa_exponent(float("-inf"), 2, True) == "-INF"
+    assert _float_dtoa_general(float("nan"), 4, False, True) == "NAN"
+
+
+@test
+def test_float_format_padding():
+    assert _float_format(1.25, 0x66, 2, 0, 0) == "1.25"
+    assert _float_format(1.25, 0x46, 2, 0, 0) == "1.25"
+
+    assert _float_format(1.0, 0x66, 0, FORMAT_FLAG_ALT, 0) == "1."
+    assert _float_format(1.0, 0x65, 0, FORMAT_FLAG_ALT, 0) == "1.e+00"
+    assert _float_format(1.0, 0x45, 0, FORMAT_FLAG_ALT, 0) == "1.E+00"
+
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_PLUS, 0) == "+1.25"
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_SPACE, 0) == " 1.25"
+    assert _float_format(-1.25, 0x66, 2, FORMAT_FLAG_PLUS, 0) == "-1.25"
+
+    assert _float_format(1.25, 0x66, 2, 0, 8) == "    1.25"
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_LEFT, 8) == "1.25    "
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_ZERO, 8) == "00001.25"
+    assert _float_format(-1.25, 0x66, 2, FORMAT_FLAG_ZERO, 8) == "-0001.25"
+
+    assert _float_format(1.25, 0x45, 2, 0, 10) == "  1.25E+00"
+    assert _float_format(float("inf"), 0x47, 3, FORMAT_FLAG_PLUS, 0) == "+INF"
+    assert _float_format(float("nan"), 0x67, 3, FORMAT_FLAG_PLUS, 0) == "+nan"
+
+
+test_float_shortest_decimal()
+test_float_shortest_decimal_boundaries()
+test_float_dtoa_shortest()
+test_float_dtoa_biguint_division()
+test_float_dtoa_scaled_integer()
+test_float_dtoa_fixed()
+test_float_dtoa_exponent()
+test_float_dtoa_general()
+test_float_dtoa_uppercase()
+test_float_format_padding()
+
+
+# integer-format tests
+@test
+def test_integer_format():
+    assert _integer_format(123, 0x64, -1, 0, 0) == "123"
+    assert _integer_format(-123, 0x69, -1, 0, 0) == "-123"
+    assert _integer_format(-123, 0x75, -1, 0, 0) == "-123"
+    assert _integer_format(-15, 0x78, -1, 0, 0) == "-f"
+
+    assert _integer_format(15, 0x6F, -1, 0, 0) == "17"
+    assert _integer_format(255, 0x78, -1, 0, 0) == "ff"
+    assert _integer_format(255, 0x58, -1, 0, 0) == "FF"
+
+    assert _integer_format(0, 0x64, 0, 0, 0) == ""
+    assert _integer_format(0, 0x6F, 0, FORMAT_FLAG_ALT, 0) == "0"
+    assert _integer_format(15, 0x78, -1, FORMAT_FLAG_ALT, 0) == "0xf"
+    assert _integer_format(15, 0x58, -1, FORMAT_FLAG_ALT, 0) == "0XF"
+
+    assert _integer_format(12, 0x64, 5, 0, 0) == "00012"
+    assert _integer_format(12, 0x64, -1, FORMAT_FLAG_PLUS, 5) == "  +12"
+    assert _integer_format(12, 0x64, -1, FORMAT_FLAG_ZERO, 5) == "00012"
+    assert _integer_format(-12, 0x64, -1, FORMAT_FLAG_ZERO, 5) == "-0012"
+    assert _integer_format(15, 0x78, -1, FORMAT_FLAG_ALT | FORMAT_FLAG_ZERO, 6) == (
+        "0x000f"
+    )
+    assert _integer_format(12, 0x64, -1, FORMAT_FLAG_LEFT, 5) == "12   "
+
+
+test_integer_format()
+
+
+# tuple format
+@test
+def test_percent_format():
+    assert unicode("hello") % () == unicode("hello")
+    assert unicode("100%%") % () == unicode("100%")
+    assert unicode("%d") % 42 == unicode("42")
+    assert unicode("%+06d") % 42 == unicode("+00042")
+    assert unicode("%#x") % 255 == unicode("0xff")
+
+    assert unicode("%.2f") % 1.25 == unicode("1.25")
+    assert unicode("%8.2f") % 1.25 == unicode("    1.25")
+    assert unicode("%+.1E") % 1.25 == unicode("+1.2E+00")
+    assert unicode("%.3g") % 0.00001 == unicode("1e-05")
+
+    assert unicode("%d %.1f %#x") % (12, 1.25, 255) == unicode(
+        "12 1.2 0xff"
+    )
+
+
+@test
+def test_percent_format_large_width_and_precision():
+    assert unicode("%10000d") % 1 == unicode(" " * 9999 + "1")
+    assert unicode("%.1000f") % 1.0 == unicode("1." + "0" * 1000)
+    assert unicode("%#1000.0x") % 15 == unicode(" " * 997 + "0xf")
+
+
+@test
+def test_percent_format_string():
+    assert unicode("%s") % unicode("hello") == unicode("hello")
+    assert unicode("hello %s") % unicode("world") == unicode("hello world")
+    assert unicode("%s %s") % (unicode("one"), unicode("two")) == unicode(
+        "one two"
+    )
+
+    assert unicode("%10s") % unicode("x") == unicode("         x")
+    assert unicode("%-10s") % unicode("x") == unicode("x         ")
+    assert unicode("%010s") % unicode("x") == unicode("         x")
+
+    assert unicode("%.3s") % unicode("abcdef") == unicode("abc")
+    assert unicode("%6.3s") % unicode("abcdef") == unicode("   abc")
+    assert unicode("%-6.3s") % unicode("abcdef") == unicode("abc   ")
+
+    assert unicode("%% %s") % unicode("ok") == unicode("% ok")
+    assert unicode("%s:%d:%.1f") % (unicode("value"), 12, 1.25) == unicode(
+        "value:12:1.2"
+    )
+
+
+@test
+def test_percent_format_unicode():
+    assert unicode("héllo %s") % unicode("世界") == unicode("héllo 世界")
+    assert unicode("%.1s") % unicode("世界") == unicode("世")
+    assert unicode("%3s") % unicode("é") == unicode("  é")
+    assert unicode("%-3s") % unicode("é") == unicode("é  ")
+
+
+@test
+def test_percent_format_char():
+    assert unicode("%c") % 65 == unicode("A")
+    assert unicode("%c") % unicode("x") == unicode("x")
+    assert unicode("%5c") % 65 == unicode("    A")
+    assert unicode("%-5c") % unicode("x") == unicode("x    ")
+
+    assert unicode("%c") % 0x03A9 == unicode("Ω")
+    assert unicode("%3c") % unicode("世") == unicode("  世")
+
+    try:
+        unicode("%c") % unicode("ab")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % -1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%c") % 0x110000
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_percent_format_repr():
+    assert unicode("%r") % 42 == unicode("42")
+    assert unicode("%r") % unicode("hello") == unicode("'hello'")
+    assert unicode("%10r") % unicode("x") == unicode("       'x'")
+    assert unicode("%-10r") % unicode("x") == unicode("'x'       ")
+    assert unicode("%.4r") % unicode("hello") == unicode("'hel")
+
+    assert unicode("%r") % unicode("a'b") == unicode('"a\'b"')
+    assert unicode("%r") % unicode("a\nb") == unicode("'a\\nb'")
+
+
+@test
+def test_percent_format_ascii():
+    assert unicode("%a") % 42 == unicode("42")
+    assert unicode("%a") % unicode("hello") == unicode("'hello'")
+    assert unicode("%a") % unicode("café") == unicode("'caf\\xe9'")
+    assert unicode("%a") % unicode("世界") == unicode("'\\u4e16\\u754c'")
+    assert unicode("%a") % unicode("🙂") == unicode("'\\U0001f642'")
+
+    assert unicode("%10a") % unicode("é") == unicode("    '\\xe9'")
+    assert unicode("%.4a") % unicode("世界") == unicode("'\\u4")
+    assert unicode("%-8a") % unicode("é") == unicode("'\\xe9'  ")
+
+
+test_percent_format()
+test_percent_format_large_width_and_precision()
+test_percent_format_string()
+test_percent_format_unicode()
+test_percent_format_char()
+test_percent_format_repr()
+test_percent_format_ascii()

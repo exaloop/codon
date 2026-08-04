@@ -1,0 +1,1169 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+from .float_dtoa_tables import (
+    FLOAT_DTOA_POW5_BITCOUNT,
+    FLOAT_DTOA_POW5_INV_BITCOUNT,
+    _float_dtoa_pow5_hi,
+    _float_dtoa_pow5_inv_hi,
+    _float_dtoa_pow5_inv_lo,
+    _float_dtoa_pow5_lo,
+)
+
+
+FLOAT64_SIGN_MASK: Literal[int] = 0x8000000000000000
+FLOAT64_EXPONENT_MASK: Literal[int] = 0x7FF0000000000000
+FLOAT64_FRACTION_MASK: Literal[int] = 0x000FFFFFFFFFFFFF
+FLOAT64_HIDDEN_BIT: Literal[int] = 0x0010000000000000
+
+FLOAT64_EXPONENT_SHIFT: Literal[int] = 52
+FLOAT64_EXPONENT_INF_NAN: Literal[int] = 0x7FF
+FLOAT64_SUBNORMAL_EXPONENT: Literal[int] = -1074
+FLOAT64_NORMAL_EXPONENT_OFFSET: Literal[int] = -1075
+
+
+@pure
+@llvm
+def float_bits(value: float) -> u64:
+    %bits = bitcast double %value to i64
+    ret i64 %bits
+
+
+def _u128_from_words(lo: u64, hi: u64) -> u128:
+    return u128(lo) | (u128(hi) << u128(64))
+
+
+def _u64_mul_128_shift(
+    value: u64,
+    multiplier_lo: u64,
+    multiplier_hi: u64,
+    shift: int,
+) -> u64:
+    # The full product is 192 bits:
+    # value * (multiplier_hi << 64 | multiplier_lo).
+    product_lo = u128(value) * u128(multiplier_lo)
+    product_hi = u128(value) * u128(multiplier_hi)
+
+    low = u64(product_lo)
+    middle = u64(product_lo >> u128(64)) + u64(product_hi)
+    carry = u64(middle < u64(product_lo >> u128(64)))
+    high = u64(product_hi >> u128(64)) + carry
+
+    if shift < 64:
+        return (low >> u64(shift)) | (middle << u64(64 - shift))
+
+    if shift == 64:
+        return middle
+
+    if shift < 128:
+        shift -= 64
+        return (middle >> u64(shift)) | (high << u64(64 - shift))
+
+    if shift == 128:
+        return high
+
+    return high >> u64(shift - 128)
+
+
+class _Float64:
+    negative: bool
+    mantissa: u64
+    exponent: int
+    is_zero: bool
+    is_infinite: bool
+    is_nan: bool
+
+    def __init__(self, value: float):
+        bits = float_bits(value)
+        exponent_bits = int(
+            (bits & u64(FLOAT64_EXPONENT_MASK))
+            >> u64(FLOAT64_EXPONENT_SHIFT)
+        )
+        fraction = bits & u64(FLOAT64_FRACTION_MASK)
+
+        self.negative = (bits & u64(FLOAT64_SIGN_MASK)) != u64(0)
+        self.is_zero = exponent_bits == 0 and fraction == u64(0)
+        self.is_infinite = (
+            exponent_bits == FLOAT64_EXPONENT_INF_NAN and fraction == u64(0)
+        )
+        self.is_nan = (
+            exponent_bits == FLOAT64_EXPONENT_INF_NAN and fraction != u64(0)
+        )
+
+        if exponent_bits == 0:
+            self.mantissa = fraction
+            self.exponent = FLOAT64_SUBNORMAL_EXPONENT
+        else:
+            self.mantissa = fraction | u64(FLOAT64_HIDDEN_BIT)
+            self.exponent = exponent_bits + FLOAT64_NORMAL_EXPONENT_OFFSET
+
+
+def _floor_log2(value: u64) -> int:
+    result = 0
+    x = value
+
+    if x >= u64(1) << u64(32):
+        x >>= u64(32)
+        result += 32
+
+    if x >= u64(1) << u64(16):
+        x >>= u64(16)
+        result += 16
+
+    if x >= u64(1) << u64(8):
+        x >>= u64(8)
+        result += 8
+
+    if x >= u64(1) << u64(4):
+        x >>= u64(4)
+        result += 4
+
+    if x >= u64(1) << u64(2):
+        x >>= u64(2)
+        result += 2
+
+    if x >= u64(1) << u64(1):
+        result += 1
+
+    return result
+
+
+def _pow5bits(exponent: int) -> int:
+    return ((exponent * 1217359) >> 19) + 1
+
+
+def _log10_pow2(exponent: int) -> int:
+    return (exponent * 78913) >> 18
+
+
+def _log10_pow5(exponent: int) -> int:
+    return (exponent * 732923) >> 20
+
+
+def _float_dtoa_mul_pow5_inv_div_pow2(
+    mantissa: u64,
+    index: int,
+    shift: int,
+) -> u64:
+    return _u64_mul_128_shift(
+        mantissa,
+        _float_dtoa_pow5_inv_lo(index),
+        _float_dtoa_pow5_inv_hi(index),
+        shift,
+    )
+
+
+def _float_dtoa_mul_pow5_div_pow2(
+    mantissa: u64,
+    index: int,
+    shift: int,
+) -> u64:
+    return _u64_mul_128_shift(
+        mantissa,
+        _float_dtoa_pow5_lo(index),
+        _float_dtoa_pow5_hi(index),
+        shift,
+    )
+
+
+def _multiple_of_power_of_2(value: u64, power: int) -> bool:
+    if power >= 64:
+        return value == u64(0)
+
+    return (value & ((u64(1) << u64(power)) - u64(1))) == u64(0)
+
+
+def _multiple_of_power_of_5(value: u64, power: int) -> bool:
+    for _ in range(power):
+        if value.cmod(u64(5)) != u64(0):
+            return False
+        value = value.cdiv(u64(5))
+
+    return True
+
+
+def _decimal_length(value: u64) -> int:
+    if value >= u64(10000000000000000000):
+        return 20
+    if value >= u64(1000000000000000000):
+        return 19
+    if value >= u64(100000000000000000):
+        return 18
+    if value >= u64(10000000000000000):
+        return 17
+    if value >= u64(1000000000000000):
+        return 16
+    if value >= u64(100000000000000):
+        return 15
+    if value >= u64(10000000000000):
+        return 14
+    if value >= u64(1000000000000):
+        return 13
+    if value >= u64(100000000000):
+        return 12
+    if value >= u64(10000000000):
+        return 11
+    if value >= u64(1000000000):
+        return 10
+    if value >= u64(100000000):
+        return 9
+    if value >= u64(10000000):
+        return 8
+    if value >= u64(1000000):
+        return 7
+    if value >= u64(100000):
+        return 6
+    if value >= u64(10000):
+        return 5
+    if value >= u64(1000):
+        return 4
+    if value >= u64(100):
+        return 3
+    if value >= u64(10):
+        return 2
+    return 1
+
+
+class _FloatDecimal:
+    significand: u64
+    exponent: int
+
+    def __init__(self, significand: u64, exponent: int):
+        self.significand = significand
+        self.exponent = exponent
+
+
+def _float_shortest_decimal(value: float) -> _FloatDecimal:
+    decoded = _Float64(value)
+
+    if decoded.is_zero or decoded.is_infinite or decoded.is_nan:
+        return _FloatDecimal(u64(0), 0)
+
+    mantissa = decoded.mantissa
+    exponent = decoded.exponent
+    accept_bounds = (mantissa & u64(1)) == u64(0)
+
+    # Construct exact quarter-ULP boundaries.
+    mv = mantissa << u64(2)
+    mp = mv + u64(2)
+    mm_shift = (
+        1
+        if mantissa != u64(FLOAT64_HIDDEN_BIT) or exponent <= -1074
+        else 0
+    )
+    mm = mv - u64(1 + mm_shift)
+    exponent -= 2
+
+    vm_trailing_zeros = False
+    vr_trailing_zeros = False
+    decimal_exponent = 0
+
+    if exponent >= 0:
+        q = _log10_pow2(exponent)
+
+        if exponent > 3:
+            q -= 1
+
+        decimal_exponent = q
+        k = FLOAT_DTOA_POW5_INV_BITCOUNT + _pow5bits(q) - 1
+        shift = -exponent + q + k
+
+        vr = _float_dtoa_mul_pow5_inv_div_pow2(mv, q, shift)
+        vp = _float_dtoa_mul_pow5_inv_div_pow2(mp, q, shift)
+        vm = _float_dtoa_mul_pow5_inv_div_pow2(mm, q, shift)
+
+        if q <= 21:
+            if mv.cmod(u64(5)) == u64(0):
+                vr_trailing_zeros = _multiple_of_power_of_5(mv, q)
+            elif accept_bounds:
+                vm_trailing_zeros = _multiple_of_power_of_5(mm, q)
+            elif _multiple_of_power_of_5(mp, q):
+                vp -= u64(1)
+    else:
+        q = _log10_pow5(-exponent)
+
+        if -exponent > 1:
+            q -= 1
+
+        decimal_exponent = q + exponent
+        index = -exponent - q
+        k = _pow5bits(index) - FLOAT_DTOA_POW5_BITCOUNT
+        shift = q - k
+
+        vr = _float_dtoa_mul_pow5_div_pow2(mv, index, shift)
+        vp = _float_dtoa_mul_pow5_div_pow2(mp, index, shift)
+        vm = _float_dtoa_mul_pow5_div_pow2(mm, index, shift)
+
+        if q <= 1:
+            vr_trailing_zeros = True
+
+            if accept_bounds:
+                vm_trailing_zeros = mm_shift == 1
+            else:
+                vp -= u64(1)
+        elif q < 63:
+            vr_trailing_zeros = _multiple_of_power_of_2(mv, q - 1)
+
+    removed = 0
+    last_removed_digit = 0
+
+    if vm_trailing_zeros or vr_trailing_zeros:
+        while vp.cdiv(u64(10)) > vm.cdiv(u64(10)):
+            vm_trailing_zeros = (
+                vm_trailing_zeros and vm.cmod(u64(10)) == u64(0)
+            )
+            vr_trailing_zeros = (
+                vr_trailing_zeros and last_removed_digit == 0
+            )
+
+            last_removed_digit = int(vr.cmod(u64(10)))
+            vr = vr.cdiv(u64(10))
+            vp = vp.cdiv(u64(10))
+            vm = vm.cdiv(u64(10))
+            removed += 1
+
+        if vm_trailing_zeros:
+            while vm.cmod(u64(10)) == u64(0):
+                vr_trailing_zeros = (
+                    vr_trailing_zeros and last_removed_digit == 0
+                )
+
+                last_removed_digit = int(vr.cmod(u64(10)))
+                vr = vr.cdiv(u64(10))
+                vp = vp.cdiv(u64(10))
+                vm = vm.cdiv(u64(10))
+                removed += 1
+
+        if (
+            vr_trailing_zeros
+            and last_removed_digit == 5
+            and vr.cmod(u64(2)) == u64(0)
+        ):
+            last_removed_digit = 4
+
+        round_up = (
+            (vr == vm and not accept_bounds) or last_removed_digit >= 5
+        )
+    else:
+        while vp.cdiv(u64(10)) > vm.cdiv(u64(10)):
+            last_removed_digit = int(vr.cmod(u64(10)))
+            vr = vr.cdiv(u64(10))
+            vp = vp.cdiv(u64(10))
+            vm = vm.cdiv(u64(10))
+            removed += 1
+
+        round_up = last_removed_digit >= 5
+
+    if round_up:
+        vr += u64(1)
+
+    return _FloatDecimal(vr, decimal_exponent + removed)
+
+
+def _write_decimal_digits(value: u64, output: Ptr[u8]) -> int:
+    length = _decimal_length(value)
+
+    for i in range(length - 1, -1, -1):
+        output[i] = u8(value.cmod(u64(10))) + u8(0x30)
+        value = value.cdiv(u64(10))
+
+    return length
+
+
+def _write_exponent(exponent: int, output: Ptr[u8]) -> int:
+    pos = 0
+
+    if exponent < 0:
+        output[pos] = u8(0x2D)  # -
+        pos += 1
+        exponent = -exponent
+    else:
+        output[pos] = u8(0x2B)  # +
+        pos += 1
+
+    # CPython requires at least two exponent digits.
+    if exponent < 10:
+        output[pos] = u8(0x30)
+        output[pos + 1] = u8(exponent) + u8(0x30)
+        return pos + 2
+
+    digits = u64(exponent)
+    length = _decimal_length(digits)
+    _write_decimal_digits(digits, output + pos)
+    return pos + length
+
+
+def _float_dtoa_shortest_write(
+    value: float,
+    output: Ptr[u8],
+    scientific: bool,
+) -> int:
+    decoded = _Float64(value)
+    pos = 0
+
+    # CPython does not retain a NaN sign in its default representation.
+    if decoded.is_nan:
+        output[pos] = u8(0x6E)  # n
+        output[pos + 1] = u8(0x61)  # a
+        output[pos + 2] = u8(0x6E)  # n
+        return pos + 3
+
+    if decoded.negative:
+        output[pos] = u8(0x2D)  # -
+        pos += 1
+
+    if decoded.is_infinite:
+        output[pos] = u8(0x69)  # i
+        output[pos + 1] = u8(0x6E)  # n
+        output[pos + 2] = u8(0x66)  # f
+        return pos + 3
+
+    if decoded.is_zero:
+        output[pos] = u8(0x30)  # 0
+
+        if scientific:
+            output[pos + 1] = u8(0x65)  # e
+            output[pos + 2] = u8(0x2B)  # +
+            output[pos + 3] = u8(0x30)  # 0
+            output[pos + 4] = u8(0x30)  # 0
+            return pos + 5
+
+        return pos + 1
+
+    decimal = _float_shortest_decimal(value)
+    digits = decimal.significand
+    digit_count = _decimal_length(digits)
+    decimal_point = digit_count + decimal.exponent
+
+    if scientific or decimal_point <= -4 or decimal_point > 16:
+        _write_decimal_digits(digits, output + pos)
+
+        if digit_count > 1:
+            for i in range(digit_count - 1, 0, -1):
+                output[pos + i + 1] = output[pos + i]
+
+            output[pos + 1] = u8(0x2E)  # .
+            pos += digit_count + 1
+        else:
+            pos += 1
+
+        output[pos] = u8(0x65)  # e
+        pos += 1
+        return pos + _write_exponent(decimal_point - 1, output + pos)
+
+    if decimal_point <= 0:
+        output[pos] = u8(0x30)  # 0
+        output[pos + 1] = u8(0x2E)  # .
+        pos += 2
+
+        for _ in range(-decimal_point):
+            output[pos] = u8(0x30)
+            pos += 1
+
+        _write_decimal_digits(digits, output + pos)
+        return pos + digit_count
+
+    _write_decimal_digits(digits, output + pos)
+
+    if decimal_point >= digit_count:
+        pos += digit_count
+
+        for _ in range(decimal_point - digit_count):
+            output[pos] = u8(0x30)
+            pos += 1
+
+        output[pos] = u8(0x2E)
+        output[pos + 1] = u8(0x30)
+        return pos + 2
+
+    # Insert the decimal point into already-written digits.
+    for i in range(digit_count - 1, decimal_point - 1, -1):
+        output[pos + i + 1] = output[pos + i]
+
+    output[pos + decimal_point] = u8(0x2E)
+    return pos + digit_count + 1
+
+
+def _float_dtoa_shortest(value: float) -> str:
+    FLOAT_DTOA_SHORTEST_BUFFER_SIZE: Literal[int] = 32
+    buffer = __array__[u8](FLOAT_DTOA_SHORTEST_BUFFER_SIZE)
+    length = _float_dtoa_shortest_write(value, buffer, False)
+    p = Ptr[u8](length)
+    str.memcpy(p, buffer, length)
+    return str(p, length)
+
+
+class _BigUInt:
+    data: Ptr[u32]
+    length: int
+    capacity: int
+
+    def __init__(self, capacity: int):
+        if capacity <= 0:
+            capacity = 1
+
+        self.data = Ptr[u32](capacity)
+        self.length = 0
+        self.capacity = capacity
+
+    def _require_capacity(self, length: int):
+        if length > self.capacity:
+            raise OverflowError("float formatting bigint capacity exceeded")
+
+    def _normalize(self):
+        while self.length > 0 and self.data[self.length - 1] == u32(0):
+            self.length -= 1
+
+    def is_zero(self) -> bool:
+        return self.length == 0
+
+    def set_u64(self, value: u64):
+        if value == u64(0):
+            self.length = 0
+            return
+
+        self._require_capacity(2)
+        self.data[0] = u32(value)
+        value >>= u64(32)
+
+        if value != u64(0):
+            self.data[1] = u32(value)
+            self.length = 2
+        else:
+            self.length = 1
+
+    def copy(self) -> _BigUInt:
+        result = _BigUInt(self.capacity)
+        result.length = self.length
+
+        for i in range(self.length):
+            result.data[i] = self.data[i]
+
+        return result
+
+    def compare(self, other: _BigUInt) -> int:
+        if self.length < other.length:
+            return -1
+
+        if self.length > other.length:
+            return 1
+
+        for i in range(self.length - 1, -1, -1):
+            if self.data[i] < other.data[i]:
+                return -1
+
+            if self.data[i] > other.data[i]:
+                return 1
+
+        return 0
+
+    def add(self, other: _BigUInt):
+        length = self.length
+
+        if other.length > length:
+            length = other.length
+
+        self._require_capacity(length + 1)
+
+        carry = u64(0)
+
+        for i in range(length):
+            left = u64(self.data[i]) if i < self.length else u64(0)
+            right = u64(other.data[i]) if i < other.length else u64(0)
+            total = left + right + carry
+            self.data[i] = u32(total)
+            carry = total >> u64(32)
+
+        self.length = length
+
+        if carry != u64(0):
+            self.data[length] = u32(carry)
+            self.length += 1
+
+    def sub(self, other: _BigUInt):
+        if self.compare(other) < 0:
+            raise ValueError("negative bigint result")
+
+        borrow = u64(0)
+
+        for i in range(self.length):
+            left = u64(self.data[i])
+            right = u64(other.data[i]) if i < other.length else u64(0)
+            subtrahend = right + borrow
+
+            if left < subtrahend:
+                self.data[i] = u32((u64(1) << u64(32)) + left - subtrahend)
+                borrow = u64(1)
+            else:
+                self.data[i] = u32(left - subtrahend)
+                borrow = u64(0)
+
+        self._normalize()
+
+    def mul_small(self, multiplier: u32):
+        if self.length == 0 or multiplier == u32(1):
+            return
+
+        if multiplier == u32(0):
+            self.length = 0
+            return
+
+        self._require_capacity(self.length + 1)
+        carry = u64(0)
+
+        for i in range(self.length):
+            product = u64(self.data[i]) * u64(multiplier) + carry
+            self.data[i] = u32(product)
+            carry = product >> u64(32)
+
+        if carry != u64(0):
+            self.data[self.length] = u32(carry)
+            self.length += 1
+
+    def mul_pow5(self, exponent: int):
+        while exponent >= 13:
+            self.mul_small(u32(1220703125))  # 5**13
+            exponent -= 13
+
+        while exponent > 0:
+            self.mul_small(u32(5))
+            exponent -= 1
+
+    def shl(self, bits: int):
+        if self.length == 0 or bits == 0:
+            return
+
+        words = bits.cdiv(32)
+        remainder = bits - words * 32
+        extra = 1 if remainder != 0 else 0
+        old_length = self.length
+
+        self._require_capacity(old_length + words + extra)
+
+        for i in range(old_length - 1, -1, -1):
+            self.data[i + words] = self.data[i]
+
+        for i in range(words):
+            self.data[i] = u32(0)
+
+        self.length = old_length + words
+
+        if remainder != 0:
+            carry = u64(0)
+
+            for i in range(words, self.length):
+                shifted = (u64(self.data[i]) << u64(remainder)) | carry
+                self.data[i] = u32(shifted)
+                carry = shifted >> u64(32)
+
+            if carry != u64(0):
+                self.data[self.length] = u32(carry)
+                self.length += 1
+
+    def divmod_small(self, divisor: u32) -> u32:
+        if divisor == u32(0):
+            raise ZeroDivisionError("bigint division by zero")
+
+        remainder = u64(0)
+
+        for i in range(self.length - 1, -1, -1):
+            value = (remainder << u64(32)) | u64(self.data[i])
+            self.data[i] = u32(value.cdiv(u64(divisor)))
+            remainder = value.cmod(u64(divisor))
+
+        self._normalize()
+        return u32(remainder)
+
+    def bit_length(self) -> int:
+        if self.length == 0:
+            return 0
+
+        top = self.data[self.length - 1]
+        bits = 32
+
+        if top < u32(1 << 16):
+            top <<= u32(16)
+            bits -= 16
+
+        if top < u32(1 << 24):
+            top <<= u32(8)
+            bits -= 8
+
+        if top < u32(1 << 28):
+            top <<= u32(4)
+            bits -= 4
+
+        if top < u32(1 << 30):
+            top <<= u32(2)
+            bits -= 2
+
+        if top < u32(1 << 31):
+            bits -= 1
+
+        return (self.length - 1) * 32 + bits
+
+    def get_bit(self, bit: int) -> bool:
+        word = bit.cdiv(32)
+
+        if word >= self.length:
+            return False
+
+        return (self.data[word] & (u32(1) << u32(bit.cmod(32)))) != u32(0)
+
+    def set_bit(self, bit: int):
+        word = bit.cdiv(32)
+        self._require_capacity(word + 1)
+
+        while self.length <= word:
+            self.data[self.length] = u32(0)
+            self.length += 1
+
+        self.data[word] |= u32(1) << u32(bit.cmod(32))
+
+    def shl1(self):
+        if self.length == 0:
+            return
+
+        self._require_capacity(self.length + 1)
+        carry = u32(0)
+
+        for i in range(self.length):
+            next_carry = self.data[i] >> u32(31)
+            self.data[i] = (self.data[i] << u32(1)) | carry
+            carry = next_carry
+
+        if carry != u32(0):
+            self.data[self.length] = carry
+            self.length += 1
+
+    def add_small(self, value: u32):
+        if value == u32(0):
+            return
+
+        if self.length == 0:
+            self._require_capacity(1)
+            self.data[0] = value
+            self.length = 1
+            return
+
+        total = u64(self.data[0]) + u64(value)
+        self.data[0] = u32(total)
+        carry = total >> u64(32)
+        index = 1
+
+        while carry != u64(0) and index < self.length:
+            total = u64(self.data[index]) + carry
+            self.data[index] = u32(total)
+            carry = total >> u64(32)
+            index += 1
+
+        if carry != u64(0):
+            self._require_capacity(self.length + 1)
+            self.data[self.length] = u32(carry)
+            self.length += 1
+
+    def mul10(self):
+        self.mul_small(u32(10))
+
+    def divmod(self, divisor: _BigUInt) -> _BigUInt:
+        if divisor.length == 0:
+            raise ZeroDivisionError("bigint division by zero")
+
+        quotient = _BigUInt(self.capacity)
+        remainder = _BigUInt(divisor.length + 1)
+        bits = self.bit_length()
+
+        for bit in range(bits - 1, -1, -1):
+            remainder.shl1()
+
+            if self.get_bit(bit):
+                remainder.add_small(u32(1))
+
+            if remainder.compare(divisor) >= 0:
+                remainder.sub(divisor)
+                quotient.set_bit(bit)
+
+        self.length = remainder.length
+
+        for i in range(remainder.length):
+            self.data[i] = remainder.data[i]
+
+        return quotient
+
+    def add_one(self):
+        self.add_small(u32(1))
+
+    def is_odd(self) -> bool:
+        return self.length != 0 and (self.data[0] & u32(1)) != u32(0)
+
+    def mul_pow10(self, exponent: int):
+        self.mul_pow5(exponent)
+        self.shl(exponent)
+
+    def decimal_length(self) -> int:
+        if self.length == 0:
+            return 1
+
+        copy = self.copy()
+        length = 0
+
+        while not copy.is_zero():
+            copy.divmod_small(u32(10))
+            length += 1
+
+        return length
+
+
+def _float_dtoa_biguint_capacity(precision: int) -> int:
+    # Binary64 can require about 1,100 decimal digits before its point.
+    return (precision + 1200).cdiv(9) + 4
+
+
+def _biguint_double_compare(left: _BigUInt, right: _BigUInt) -> int:
+    doubled = left.copy()
+    doubled.shl(1)
+    return doubled.compare(right)
+
+
+def _biguint_round_half_even(
+    quotient: _BigUInt,
+    remainder: _BigUInt,
+    denominator: _BigUInt,
+):
+    comparison = _biguint_double_compare(remainder, denominator)
+
+    if comparison > 0 or (comparison == 0 and quotient.is_odd()):
+        quotient.add_one()
+
+
+def _float_dtoa_scaled_integer(value: float, decimal_shift: int) -> _BigUInt:
+    """
+    Return round-half-even(abs(value) * 10**decimal_shift) as an integer.
+    """
+    decoded = _Float64(value)
+    scale = decimal_shift if decimal_shift >= 0 else -decimal_shift
+    capacity = _float_dtoa_biguint_capacity(scale)
+
+    numerator = _BigUInt(capacity)
+    denominator = _BigUInt(capacity)
+    numerator.set_u64(decoded.mantissa)
+    denominator.set_u64(u64(1))
+
+    if decimal_shift >= 0:
+        numerator.mul_pow5(decimal_shift)
+        binary_shift = decoded.exponent + decimal_shift
+    else:
+        denominator.mul_pow5(-decimal_shift)
+        binary_shift = decoded.exponent - scale
+
+    if binary_shift >= 0:
+        numerator.shl(binary_shift)
+    else:
+        denominator.shl(-binary_shift)
+
+    quotient = numerator.divmod(denominator)
+    _biguint_round_half_even(quotient, numerator, denominator)
+    return quotient
+
+
+def _write_biguint_decimal(value: _BigUInt, output: Ptr[u8]) -> int:
+    length = value.decimal_length()
+    copy = value.copy()
+
+    for i in range(length - 1, -1, -1):
+        output[i] = u8(copy.divmod_small(u32(10))) + u8(0x30)
+
+    return length
+
+
+def _float_dtoa_fixed_write(
+    value: float,
+    precision: int,
+    output: Ptr[u8],
+    uppercase: bool = False,
+) -> int:
+    if precision < 0:
+        raise ValueError("negative precision")
+
+    decoded = _Float64(value)
+
+    if decoded.is_nan or decoded.is_infinite:
+        return _float_dtoa_write_special(decoded, output, uppercase)
+
+    pos = 0
+
+    if decoded.negative:
+        output[pos] = u8(0x2D)  # -
+        pos += 1
+
+    scaled = _float_dtoa_scaled_integer(value, precision)
+    digit_count = scaled.decimal_length()
+    digits = Ptr[u8](digit_count)
+    _write_biguint_decimal(scaled, digits)
+
+    if precision == 0:
+        for i in range(digit_count):
+            output[pos + i] = digits[i]
+
+        return pos + digit_count
+
+    if digit_count > precision:
+        integer_count = digit_count - precision
+
+        for i in range(integer_count):
+            output[pos + i] = digits[i]
+
+        output[pos + integer_count] = u8(0x2E)  # .
+
+        for i in range(precision):
+            output[pos + integer_count + 1 + i] = digits[integer_count + i]
+
+        return pos + digit_count + 1
+
+    output[pos] = u8(0x30)  # 0
+    output[pos + 1] = u8(0x2E)  # .
+    pos += 2
+
+    for i in range(precision - digit_count):
+        output[pos] = u8(0x30)
+        pos += 1
+
+    for i in range(digit_count):
+        output[pos + i] = digits[i]
+
+    return pos + digit_count
+
+
+def _float_dtoa_fixed(
+    value: float,
+    precision: int,
+    uppercase: bool = False,
+) -> str:
+    from internal.gc import free
+
+    # Fixed form requires at most sign + 309 digits + point + precision.
+    buffer = Ptr[u8](precision + 311)
+    length = _float_dtoa_fixed_write(value, precision, buffer, uppercase)
+    p = Ptr[u8](length)
+    str.memcpy(p, buffer, length)
+    free(buffer)
+    return str(p, length)
+
+
+def _float_dtoa_exponent_write(
+    value: float,
+    precision: int,
+    output: Ptr[u8],
+    uppercase: bool = False,
+) -> int:
+    if precision < 0:
+        raise ValueError("negative precision")
+
+    decoded = _Float64(value)
+
+    if decoded.is_nan or decoded.is_infinite:
+        return _float_dtoa_write_special(decoded, output, uppercase)
+
+    pos = 0
+
+    if decoded.negative:
+        output[pos] = u8(0x2D)  # -
+        pos += 1
+
+    exponent_marker = u8(0x45 if uppercase else 0x65)  # E / e
+
+    if decoded.is_zero:
+        output[pos] = u8(0x30)
+        pos += 1
+
+        if precision > 0:
+            output[pos] = u8(0x2E)
+            pos += 1
+
+            for i in range(precision):
+                output[pos + i] = u8(0x30)
+
+            pos += precision
+
+        output[pos] = exponent_marker
+        pos += 1
+        return pos + _write_exponent(0, output + pos)
+
+    shortest = _float_shortest_decimal(value)
+    exponent = _decimal_length(shortest.significand) + shortest.exponent - 1
+    scaled = _float_dtoa_scaled_integer(value, precision - exponent)
+    digit_count = scaled.decimal_length()
+
+    if digit_count > precision + 1:
+        scaled.divmod_small(u32(10))
+        exponent += 1
+
+    digits = Ptr[u8](precision + 1)
+    _write_biguint_decimal(scaled, digits)
+
+    output[pos] = digits[0]
+    pos += 1
+
+    if precision > 0:
+        output[pos] = u8(0x2E)
+        pos += 1
+
+        for i in range(precision):
+            output[pos + i] = digits[i + 1]
+
+        pos += precision
+
+    output[pos] = exponent_marker
+    pos += 1
+    return pos + _write_exponent(exponent, output + pos)
+
+
+def _float_dtoa_exponent(
+    value: float,
+    precision: int,
+    uppercase: bool = False,
+) -> str:
+    from internal.gc import free
+
+    # sign + leading digit + decimal point + precision + e+NNN
+    buffer = Ptr[u8](precision + 16)
+    length = _float_dtoa_exponent_write(value, precision, buffer, uppercase)
+    result = Ptr[u8](length)
+    str.memcpy(result, buffer, length)
+    free(buffer)
+    return str(result, length)
+
+
+def _float_dtoa_trim_zeros(
+    output: Ptr[u8],
+    length: int,
+) -> int:
+    exponent_pos = length
+
+    for i in range(length):
+        if output[i] == u8(0x65) or output[i] == u8(0x45):  # e / E
+            exponent_pos = i
+            break
+
+    decimal_pos = -1
+
+    for i in range(exponent_pos):
+        if output[i] == u8(0x2E):  # .
+            decimal_pos = i
+            break
+
+    if decimal_pos < 0:
+        return length
+
+    trim_end = exponent_pos
+
+    while trim_end > decimal_pos + 1 and output[trim_end - 1] == u8(0x30):
+        trim_end -= 1
+
+    if trim_end == decimal_pos + 1:
+        trim_end = decimal_pos
+
+    if trim_end == exponent_pos:
+        return length
+
+    suffix_length = length - exponent_pos
+
+    for i in range(suffix_length):
+        output[trim_end + i] = output[exponent_pos + i]
+
+    return trim_end + suffix_length
+
+
+def _float_dtoa_general_write(
+    value: float,
+    precision: int,
+    alternate: bool,
+    output: Ptr[u8],
+    uppercase: bool = False,
+) -> int:
+    if precision < 0:
+        raise ValueError("negative precision")
+
+    # CPython treats a %g precision of zero as one significant digit.
+    if precision == 0:
+        precision = 1
+
+    decoded = _Float64(value)
+
+    if decoded.is_nan or decoded.is_infinite:
+        return _float_dtoa_fixed_write(value, 0, output, uppercase)
+
+    exponent = 0
+
+    if not decoded.is_zero:
+        shortest = _float_shortest_decimal(value)
+        exponent = _decimal_length(shortest.significand) + shortest.exponent - 1
+
+        # Round to the requested number of significant digits. Rounding a
+        # value such as 9.999 can increase the exponent.
+        rounded = _float_dtoa_scaled_integer(value, precision - 1 - exponent)
+
+        if rounded.decimal_length() > precision:
+            exponent += 1
+
+    use_exponent = exponent < -4 or exponent >= precision
+
+    if use_exponent:
+        length = _float_dtoa_exponent_write(
+            value, precision - 1, output, uppercase
+        )
+    else:
+        fractional_digits = precision - 1 - exponent
+
+        if fractional_digits < 0:
+            fractional_digits = 0
+
+        length = _float_dtoa_fixed_write(
+            value, fractional_digits, output, uppercase
+        )
+
+    if not alternate:
+        length = _float_dtoa_trim_zeros(output, length)
+
+    return length
+
+
+def _float_dtoa_general(
+    value: float,
+    precision: int,
+    alternate: bool = False,
+    uppercase: bool = False,
+) -> str:
+    from internal.gc import free
+
+    # Fixed form requires at most sign + 309 digits + point + precision.
+    buffer = Ptr[u8](precision + 311)
+    length = _float_dtoa_general_write(
+        value, precision, alternate, buffer, uppercase
+    )
+    p = Ptr[u8](length)
+    str.memcpy(p, buffer, length)
+    free(buffer)
+    return str(p, length)
+
+
+def _float_dtoa_write_special(
+    decoded: _Float64,
+    output: Ptr[u8],
+    uppercase: bool,
+) -> int:
+    if decoded.is_nan:
+        output[0] = u8(0x4E if uppercase else 0x6E)
+        output[1] = u8(0x41 if uppercase else 0x61)
+        output[2] = u8(0x4E if uppercase else 0x6E)
+        return 3
+
+    pos = 0
+
+    if decoded.negative:
+        output[pos] = u8(0x2D)
+        pos += 1
+
+    output[pos] = u8(0x49 if uppercase else 0x69)
+    output[pos + 1] = u8(0x4E if uppercase else 0x6E)
+    output[pos + 2] = u8(0x46 if uppercase else 0x66)
+    return pos + 3
