@@ -52,13 +52,20 @@ SEQ_FUNC void seq_init(int flags) {
 #if !USE_STANDARD_MALLOC
   GC_INIT();
   GC_set_warn_proc(GC_ignore_warn_proc);
-  GC_allow_register_threads();
   __kmpc_set_gc_callbacks(GC_get_stack_base, (gc_setup_callback)GC_register_my_thread,
                           GC_add_roots, GC_remove_roots);
 #endif
 
   seq_exc_init(flags);
   seq_flags = flags;
+}
+
+SEQ_FUNC void seq_allow_register_threads() {
+  static bool called = false;
+  if (!called) {
+    GC_allow_register_threads();
+    called = true;
+  }
 }
 
 SEQ_FUNC seq_int_t seq_pid() { return (seq_int_t)getpid(); }
