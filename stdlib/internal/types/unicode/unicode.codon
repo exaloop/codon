@@ -2270,14 +2270,13 @@ class _UnicodeByteBuffer:
         if required <= self.capacity:
             return
 
-        capacity = self.capacity
+        old_capacity = self.capacity
+        capacity = old_capacity
 
         while capacity < required:
             capacity *= 2
 
-        data = Ptr[u8](capacity)
-        str.memcpy(data, self.data, self.length)
-        self.data = data
+        self.data = gc.realloc(self.data, capacity, old_capacity)
         self.capacity = capacity
 
     def append_byte(self, value: u8):

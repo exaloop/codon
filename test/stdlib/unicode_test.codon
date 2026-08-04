@@ -927,6 +927,175 @@ def test_percent_format_ascii():
     assert unicode("%-8a") % unicode("é") == unicode("'\\xe9'  ")
 
 
+@test
+def test_percent_format_mapping():
+    names = {unicode("name"): unicode("Codon")}
+    counts = {unicode("count"): 3}
+
+    assert unicode("%(name)s") % names == unicode("Codon")
+    assert unicode("%(count)04d") % counts == unicode("0003")
+    assert unicode("%(name)-8s") % names == unicode("Codon   ")
+
+
+@test
+def test_percent_format_dynamic_width_precision():
+    assert unicode("%*d") % (5, 12) == unicode("   12")
+    assert unicode("%*d") % (-5, 12) == unicode("12   ")
+    assert unicode("%0*d") % (5, 12) == unicode("00012")
+
+    assert unicode("%.*f") % (2, 1.25) == unicode("1.25")
+    assert unicode("%*.*f") % (8, 2, 1.25) == unicode("    1.25")
+    assert unicode("%.*f") % (-1, 1.25) == unicode("1.250000")
+
+    assert unicode("%*.*s") % (6, 3, unicode("abcdef")) == unicode("   abc")
+
+
+@test
+def test_percent_format_argument_errors():
+    try:
+        unicode("%d %d") % (1,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%d") % (1, 2)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*d") % (1.5, 2)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(name)s") % unicode("not a mapping")
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_format_length_modifiers():
+    assert unicode("%ld") % 42 == unicode("42")
+    assert unicode("%lld") % -42 == unicode("-42")
+    assert unicode("%#lx") % 255 == unicode("0xff")
+    assert unicode("%.2Lf") % 1.25 == unicode("1.25")
+
+
+@test
+def test_percent_format_general_precision_zero():
+    assert unicode("%.0g") % 1.25 == unicode("1")
+    assert unicode("%.0G") % 12.5 == unicode("1E+01")
+    assert unicode("%#.0g") % 1.0 == unicode("1.")
+
+
+@test
+def test_percent_format_mapping_errors():
+    names = {unicode("name"): unicode("Codon")}
+
+    try:
+        unicode("%(name)*s") % names
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(missing)s") % names
+        assert False
+    except KeyError:
+        pass
+
+
+@test
+def test_percent_format_errors():
+    try:
+        unicode("%") % ()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%q") % 1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%d") % ()
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("text") % 1
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%d") % (1, 2)
+        assert False
+    except TypeError:
+        pass
+
+    assert unicode("%%") % () == unicode("%")
+
+
+@test
+def test_percent_format_mapping_literal_percent():
+    names = {unicode("name"): unicode("Codon")}
+    assert unicode("%% %(name)s") % names == unicode("% Codon")
+
+
+@test
+def test_unicode_repr():
+    assert repr(unicode("")) == "''"
+    assert repr(unicode("hello")) == "'hello'"
+    assert repr(unicode("a'b")) == '"a\'b"'
+    assert repr(unicode('a"b')) == "'a\"b'"
+    assert repr(unicode("a\nb\tc")) == "'a\\nb\\tc'"
+    assert repr(unicode("é")) == "'é'"
+    assert repr(unicode("\x01")) == "'\\x01'"
+
+    text = unicode("x") * 1000
+    assert repr(text) == "'" + "x" * 1000 + "'"
+
+
+@test
+def test_percent_format_integer_as_float():
+    assert unicode("%f") % 1 == unicode("1.000000")
+    assert unicode("%.2e") % 12 == unicode("1.20e+01")
+
+
+@test
+def test_percent_format_flag_precedence():
+    assert unicode("%+ d") % 1 == unicode("+1")
+    assert unicode("%-05d") % 1 == unicode("1    ")
+    assert unicode("%05.3d") % 1 == unicode("  001")
+    assert unicode("%#.0o") % 0 == unicode("0")
+    assert unicode("%#.0x") % 0 == unicode("")
+    assert unicode("%#.0f") % 1.0 == unicode("1.")
+
+
+@test
+def test_percent_format_unicode_mapping_key():
+    values = {unicode("世界"): unicode("hello")}
+    assert unicode("%(世界)s") % values == unicode("hello")
+    assert unicode("value: %(世界).3s") % values == unicode("value: hel")
+
+
+@test
+def test_percent_format_char_errors():
+    try:
+        unicode("%.1c") % 65
+        assert False
+    except ValueError:
+        pass
+
+
 test_percent_format()
 test_percent_format_large_width_and_precision()
 test_percent_format_string()
@@ -934,3 +1103,16 @@ test_percent_format_unicode()
 test_percent_format_char()
 test_percent_format_repr()
 test_percent_format_ascii()
+test_percent_format_mapping()
+test_percent_format_dynamic_width_precision()
+test_percent_format_argument_errors()
+test_percent_format_length_modifiers()
+test_percent_format_general_precision_zero()
+test_percent_format_mapping_errors()
+test_percent_format_errors()
+test_percent_format_mapping_literal_percent()
+test_unicode_repr()
+test_percent_format_integer_as_float()
+test_percent_format_flag_precedence()
+test_percent_format_unicode_mapping_key()
+test_percent_format_char_errors()

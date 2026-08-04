@@ -1,7 +1,9 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.static as static
-from .unicode import unicode, _utf8_size_strict, _utf8_encode_one, _unicode_decode_utf8_strict
+import internal.gc as gc
+
+from .unicode import unicode, _utf8_encode_one, _unicode_decode_utf8_strict
 from .float_dtoa import (
     _float_dtoa_exponent_write,
     _float_dtoa_fixed_write,
@@ -105,6 +107,11 @@ def float_format_write_padded(
 ) -> int:
     if precision < 0:
         precision = 6
+    elif (
+        precision == 0
+        and (conversion == 0x67 or conversion == 0x47)  # g / G
+    ):
+        precision = 1
 
     alternate = (flags & FORMAT_FLAG_ALT) != 0
     scratch = Ptr[u8](_float_format_buffer_size(conversion, precision))
@@ -361,66 +368,120 @@ class _PercentDirective:
     flags: int
     width: int
     precision: int
+    width_from_argument: bool
+    precision_from_argument: bool
     conversion: int
+    key: Optional[unicode]
 
     def __init__(self):
         self.flags = 0
         self.width = 0
         self.precision = -1
+        self.width_from_argument = False
+        self.precision_from_argument = False
         self.conversion = 0
+        self.key = None
 
 
 def _parse_percent_directive(
-    format_data,
+    format: unicode,
     position: int,
 ) -> Tuple[_PercentDirective, int]:
-    format_ptr, format_length = format_data
+    format_length = len(format)
     directive = _PercentDirective()
 
-    while position < format_length:
-        character = int(format_ptr[position])
+    if (
+        position < format_length
+        and format._load_codepoint(position) == 0x28  # (
+    ):
+        key_start = position + 1
+        position = key_start
 
-        if character == 0x23:
+        while (
+            position < format_length
+            and format._load_codepoint(position) != 0x29  # )
+        ):
+            position += 1
+
+        if position >= format_length:
+            raise ValueError("incomplete format key")
+
+        directive.key = format[key_start:position]
+        position += 1
+
+    while position < format_length:
+        character = format._load_codepoint(position)
+
+        if character == 0x23:  # #
             directive.flags |= FORMAT_FLAG_ALT
-        elif character == 0x30:
+        elif character == 0x30:  # 0
             directive.flags |= FORMAT_FLAG_ZERO
-        elif character == 0x2D:
+        elif character == 0x2D:  # -
             directive.flags |= FORMAT_FLAG_LEFT
-        elif character == 0x20:
+        elif character == 0x20:  # space
             directive.flags |= FORMAT_FLAG_SPACE
-        elif character == 0x2B:
+        elif character == 0x2B:  # +
             directive.flags |= FORMAT_FLAG_PLUS
         else:
             break
 
         position += 1
 
-    while position < format_length:
-        character = int(format_ptr[position])
-
-        if character < 0x30 or character > 0x39:
-            break
-
-        directive.width = directive.width * 10 + character - 0x30
+    if (
+        position < format_length
+        and format._load_codepoint(position) == 0x2A  # *
+    ):
+        directive.width_from_argument = True
         position += 1
-
-    if position < format_length and int(format_ptr[position]) == 0x2E:
-        position += 1
-        directive.precision = 0
-
+    else:
         while position < format_length:
-            character = int(format_ptr[position])
+            character = format._load_codepoint(position)
 
             if character < 0x30 or character > 0x39:
                 break
 
-            directive.precision = directive.precision * 10 + character - 0x30
+            directive.width = directive.width * 10 + character - 0x30
             position += 1
+
+    if (
+        position < format_length
+        and format._load_codepoint(position) == 0x2E  # .
+    ):
+        position += 1
+        directive.precision = 0
+
+        if (
+            position < format_length
+            and format._load_codepoint(position) == 0x2A  # *
+        ):
+            directive.precision_from_argument = True
+            position += 1
+        else:
+            while position < format_length:
+                character = format._load_codepoint(position)
+
+                if character < 0x30 or character > 0x39:
+                    break
+
+                directive.precision = (
+                    directive.precision * 10 + character - 0x30
+                )
+                position += 1
+
+    # Compatibility with C/Python printf length modifiers. Codon numeric
+    # values do not need distinct length handling.
+    while position < format_length:
+        character = format._load_codepoint(position)
+
+        if character != 0x68 and character != 0x6C and character != 0x4C:
+            break
+
+        position += 1
 
     if position >= format_length:
         raise ValueError("incomplete format")
 
-    directive.conversion = int(format_ptr[position])
+    directive.conversion = format._load_codepoint(position)
     return directive, position + 1
 
 
@@ -537,17 +598,13 @@ class _FormatBuffer:
         if required <= self.capacity:
             return
 
-        capacity = self.capacity
+        old_capacity = self.capacity
+        capacity = old_capacity
 
         while capacity < required:
             capacity *= 2
 
-        data = Ptr[u8](capacity)
-
-        for i in range(self.length):
-            data[i] = self.data[i]
-
-        self.data = data
+        self.data = gc.realloc(self.data, capacity, old_capacity)
         self.capacity = capacity
 
     def append_byte(self, value: u8):
@@ -570,7 +627,14 @@ def _percent_numeric_buffer_size(
 ) -> int:
     width = directive.width if directive.width > 0 else 0
 
-    if isinstance(value, float):
+    if (
+        directive.conversion == 0x65  # e
+        or directive.conversion == 0x45  # E
+        or directive.conversion == 0x66  # f
+        or directive.conversion == 0x46  # F
+        or directive.conversion == 0x67  # g
+        or directive.conversion == 0x47  # G
+    ):
         precision = directive.precision if directive.precision >= 0 else 6
         return width + precision + 313
 
@@ -637,24 +701,29 @@ def _percent_value_append(
 
 
 def _percent_write_literal_prefix(
-    format_data,
+    format: unicode,
     format_pos: int,
     result: _FormatBuffer,
 ) -> int:
-    format_ptr, format_length = format_data
+    format_length = len(format)
 
     while format_pos < format_length:
-        character = int(format_ptr[format_pos])
+        codepoint = format._load_codepoint(format_pos)
         format_pos += 1
 
-        if character != 0x25:  # %
-            result.append_byte(u8(character))
+        if codepoint != 0x25:  # %
+            result.reserve(4)
+            result.length = _utf8_encode_one(
+                result.data,
+                result.length,
+                codepoint,
+            )
             continue
 
         if format_pos >= format_length:
             raise ValueError("incomplete format")
 
-        if int(format_ptr[format_pos]) == 0x25:  # %%
+        if format._load_codepoint(format_pos) == 0x25:  # %%
             result.append_byte(u8(0x25))
             format_pos += 1
             continue
@@ -718,6 +787,9 @@ def _percent_char_write(
     directive: _PercentDirective,
     output: Ptr[u8],
 ) -> int:
+    if directive.precision >= 0:
+        raise ValueError("precision not allowed in %c format")
+
     codepoint = 0
 
     if isinstance(value, int):
@@ -758,60 +830,123 @@ def _percent_char_write(
     return pos
 
 
-def percent_format(format_data, values):
-    _, format_length = format_data
-    result = _FormatBuffer(format_length + 16)
+def _percent_consume_width(value, directive: _PercentDirective):
+    if isinstance(value, int):
+        if value < 0:
+            directive.width = -value
+            directive.flags |= FORMAT_FLAG_LEFT
+        else:
+            directive.width = value
+
+        directive.width_from_argument = False
+        return
+
+    raise TypeError("* width argument must be an int")
+
+
+def _percent_consume_precision(value, directive: _PercentDirective):
+    if isinstance(value, int):
+        directive.precision = value
+        directive.precision_from_argument = False
+        return
+
+    raise TypeError("* precision argument must be an int")
+
+
+def percent_format(format: unicode, values):
+    result = _FormatBuffer(len(format) + 16)
     format_pos = 0
+    directive: Optional[_PercentDirective] = None
 
+    # Each `values[i]` index remains Literal[int]. A directive can consume
+    # one width argument, one precision argument, and one value argument.
     for i in static.range(static.len(values)):
-        format_pos = _percent_write_literal_prefix(
-            format_data,
-            format_pos,
-            result,
-        )
-
-        if format_pos >= format_length:
-            raise TypeError(
-                "not all arguments converted during string formatting"
+        if directive is None:
+            format_pos = _percent_write_literal_prefix(
+                format,
+                format_pos,
+                result,
             )
 
-        directive, format_pos = _parse_percent_directive(
-            format_data,
-            format_pos,
-        )
-        _percent_value_append(values[i], directive, result)
+            if format_pos >= len(format):
+                raise TypeError(
+                    "not all arguments converted during string formatting"
+                )
+
+            directive, format_pos = _parse_percent_directive(
+                format,
+                format_pos,
+            )
+
+            if directive.key is not None:
+                raise TypeError("format requires a mapping")
+
+        if directive.width_from_argument:
+            _percent_consume_width(values[i], directive)
+        elif directive.precision_from_argument:
+            _percent_consume_precision(values[i], directive)
+        else:
+            _percent_value_append(values[i], directive, result)
+            directive = None
+
+    if directive is not None:
+        raise TypeError("not enough arguments for format string")
 
     format_pos = _percent_write_literal_prefix(
-        format_data,
+        format,
         format_pos,
         result,
     )
 
-    if format_pos != format_length:
+    if format_pos != len(format):
         raise TypeError("not enough arguments for format string")
 
     return result.data, result.length
 
 
-def _unicode_utf8_buffer(value: unicode) -> Tuple[Ptr[u8], int]:
-    byte_length = _utf8_size_strict(value)
-    output = Ptr[u8](byte_length)
-    pos = 0
+def percent_format_mapping(format: unicode, values):
+    result = _FormatBuffer(len(format) + 16)
+    format_pos = 0
 
-    for i in range(len(value)):
-        pos = _utf8_encode_one(output, pos, value._load_codepoint(i))
+    while True:
+        format_pos = _percent_write_literal_prefix(
+            format,
+            format_pos,
+            result,
+        )
 
-    return output, byte_length
+        if format_pos == len(format):
+            break
+
+        directive, format_pos = _parse_percent_directive(
+            format,
+            format_pos,
+        )
+
+        key = directive.key
+
+        if key is None:
+            raise TypeError("format requires a mapping")
+
+        if directive.width_from_argument or directive.precision_from_argument:
+            raise TypeError("* wants int")
+
+        _percent_value_append(values[key], directive, result)
+
+    return result.data, result.length
 
 
 @extend
 class unicode:
     def __mod__(self, values) -> unicode:
+        if isinstance(values, Dict):
+            output, output_length = percent_format_mapping(self, values)
+            return _unicode_decode_utf8_strict(output, output_length)
+
         if not isinstance(values, Tuple):
             return self % (values,)
 
-        format_data = _unicode_utf8_buffer(self)
-        output, output_length = percent_format(format_data, values)
+        output, output_length = percent_format(self, values)
         return _unicode_decode_utf8_strict(output, output_length)
 
 
