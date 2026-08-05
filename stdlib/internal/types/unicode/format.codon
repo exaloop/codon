@@ -245,21 +245,17 @@ def integer_format_write_padded(
         raise ValueError("unsupported integer format conversion")
 
     negative = value < 0
-    specified_precision = precision >= 0
     digits = 1
     remaining = value
 
-    if value == 0 and specified_precision and precision == 0:
-        digits = 0
+    if negative:
+        while remaining <= -base:
+            remaining = remaining.cdiv(base)
+            digits += 1
     else:
-        if negative:
-            while remaining <= -base:
-                remaining = remaining.cdiv(base)
-                digits += 1
-        else:
-            while remaining >= base:
-                remaining = remaining.cdiv(base)
-                digits += 1
+        while remaining >= base:
+            remaining = remaining.cdiv(base)
+            digits += 1
 
     sign = u8(0)
 
@@ -275,19 +271,21 @@ def integer_format_write_padded(
     prefix1 = u8(0)
 
     if (flags & FORMAT_FLAG_ALT) != 0:
-        if conversion == 0x6F and (value != 0 or digits == 0):
+        if conversion == 0x6F:  # o
             prefix0 = u8(0x30)  # 0
-            prefix_length = 1
-        elif value != 0 and conversion == 0x78:
-            prefix0 = u8(0x30)  # 0
-            prefix1 = u8(0x78)  # x
+            prefix1 = u8(0x6F)  # o
             prefix_length = 2
-        elif value != 0 and conversion == 0x58:
-            prefix0 = u8(0x30)  # 0
-            prefix1 = u8(0x58)  # X
+        elif conversion == 0x78:  # x
+            prefix0 = u8(0x30)
+            prefix1 = u8(0x78)
+            prefix_length = 2
+        elif conversion == 0x58:  # X
+            prefix0 = u8(0x30)
+            prefix1 = u8(0x58)
             prefix_length = 2
 
     zero_precision = 0
+    specified_precision = precision >= 0
     if specified_precision and precision > digits:
         zero_precision = precision - digits
 
@@ -303,33 +301,35 @@ def integer_format_write_padded(
         padding = 0
 
     left = (flags & FORMAT_FLAG_LEFT) != 0
-    zero_width = (
-        (flags & FORMAT_FLAG_ZERO) != 0
-        and not left
-        and not specified_precision
-    )
     pos = 0
 
-    if not left and not zero_width:
+    zero_width = 0
+    if (flags & FORMAT_FLAG_ZERO) != 0 and not left:
+        zero_width = padding
+        padding = 0
+
+    # Left-aligned formats write their padding after the digits.
+    if not left:
         for _ in range(padding):
             output[pos] = u8(0x20)
             pos += 1
 
+    # Then sign and base prefix.
     if sign != u8(0):
         output[pos] = sign
         pos += 1
 
-    if prefix_length != 0:
+    if prefix_length > 0:
         output[pos] = prefix0
         pos += 1
-        if prefix_length == 2:
-            output[pos] = prefix1
-            pos += 1
+    if prefix_length > 1:
+        output[pos] = prefix1
+        pos += 1
 
-    if zero_width:
-        for _ in range(padding):
-            output[pos] = u8(0x30)
-            pos += 1
+    # Zero-width padding must follow sign/prefix.
+    for _ in range(zero_width):
+        output[pos] = u8(0x30)
+        pos += 1
 
     for _ in range(zero_precision):
         output[pos] = u8(0x30)
@@ -505,6 +505,9 @@ def _percent_numeric_write(
     directive: _PercentDirective,
     output: Ptr[u8],
 ) -> int:
+    if isinstance(value, bool):
+        return _percent_numeric_write(int(value), directive, output)
+
     conversion = directive.conversion
 
     if isinstance(value, int):
@@ -536,7 +539,11 @@ def _percent_numeric_write(
             )
 
     elif isinstance(value, float):
-        if _percent_is_integer_conversion(conversion):
+        if (
+            conversion == 0x64
+            or conversion == 0x69
+            or conversion == 0x75
+        ):
             return integer_format_write_padded(
                 int(value),
                 conversion,
@@ -547,12 +554,12 @@ def _percent_numeric_write(
             )
 
         if (
-            conversion == 0x65
-            or conversion == 0x45
-            or conversion == 0x66
-            or conversion == 0x46
-            or conversion == 0x67
-            or conversion == 0x47
+            conversion == 0x65  # e
+            or conversion == 0x45  # E
+            or conversion == 0x66  # f
+            or conversion == 0x46  # F
+            or conversion == 0x67  # g
+            or conversion == 0x47  # G
         ):
             return float_format_write_padded(
                 value,
@@ -673,6 +680,9 @@ def _percent_numeric_buffer_size(
     value,
     directive: _PercentDirective,
 ) -> int:
+    if isinstance(value, bool):
+        return _percent_numeric_buffer_size(int(value), directive)
+
     width = directive.width if directive.width > 0 else 0
 
     if (
@@ -690,9 +700,14 @@ def _percent_numeric_buffer_size(
         return _percent_integer_buffer_size(value, directive)
 
     if isinstance(value, float):
-        return _percent_integer_buffer_size(int(value), directive)
+        if (
+            directive.conversion == 0x64
+            or directive.conversion == 0x69
+            or directive.conversion == 0x75
+        ):
+            return _percent_integer_buffer_size(int(value), directive)
 
-    raise TypeError("a number is required")
+        raise TypeError("a number is required")
 
 
 def _percent_numeric_append(
@@ -837,7 +852,9 @@ def _percent_char_write(
 
     codepoint = 0
 
-    if isinstance(value, int):
+    if isinstance(value, bool):
+        codepoint = int(value)
+    elif isinstance(value, int):
         codepoint = value
 
         if (
@@ -845,7 +862,7 @@ def _percent_char_write(
             or codepoint > 0x10FFFF
             or (codepoint >= 0xD800 and codepoint <= 0xDFFF)
         ):
-            raise ValueError("%c arg not in range(0x110000)")
+            raise OverflowError("%c arg not in range(0x110000)")
     elif isinstance(value, unicode):
         if len(value) != 1:
             raise TypeError("%c requires int or char")

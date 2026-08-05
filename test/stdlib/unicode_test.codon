@@ -799,8 +799,8 @@ def test_integer_format():
     assert _integer_format(255, 0x78, -1, 0, 0) == "ff"
     assert _integer_format(255, 0x58, -1, 0, 0) == "FF"
 
-    assert _integer_format(0, 0x64, 0, 0, 0) == ""
-    assert _integer_format(0, 0x6F, 0, FORMAT_FLAG_ALT, 0) == "0"
+    assert _integer_format(0, 0x64, 0, 0, 0) == "0"
+    assert _integer_format(0, 0x6F, 0, FORMAT_FLAG_ALT, 0) == "0o0"
     assert _integer_format(15, 0x78, -1, FORMAT_FLAG_ALT, 0) == "0xf"
     assert _integer_format(15, 0x58, -1, FORMAT_FLAG_ALT, 0) == "0XF"
 
@@ -892,13 +892,13 @@ def test_percent_format_char():
     try:
         unicode("%c") % -1
         assert False
-    except ValueError:
+    except OverflowError:
         pass
 
     try:
         unicode("%c") % 0x110000
         assert False
-    except ValueError:
+    except OverflowError:
         pass
 
 
@@ -1074,9 +1074,9 @@ def test_percent_format_integer_as_float():
 def test_percent_format_flag_precedence():
     assert unicode("%+ d") % 1 == unicode("+1")
     assert unicode("%-05d") % 1 == unicode("1    ")
-    assert unicode("%05.3d") % 1 == unicode("  001")
-    assert unicode("%#.0o") % 0 == unicode("0")
-    assert unicode("%#.0x") % 0 == unicode("")
+    assert unicode("%05.3d") % 1 == unicode("00001")
+    assert unicode("%#.0o") % 0 == unicode("0o0")
+    assert unicode("%#.0x") % 0 == unicode("0x0")
     assert unicode("%#.0f") % 1.0 == unicode("1.")
 
 
@@ -1099,8 +1099,20 @@ def test_percent_format_char_errors():
 @test
 def test_percent_format_float_as_integer():
     assert unicode("%d") % 1.9 == unicode("1")
-    assert unicode("%#x") % 15.9 == unicode("0xf")
-    assert unicode("%06d") % -12.5 == unicode("-00012")
+    assert unicode("%i") % 1.9 == unicode("1")
+    assert unicode("%u") % 1.9 == unicode("1")
+
+    try:
+        unicode("%o") % 1.5
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%#x") % 15.9
+        assert False
+    except TypeError:
+        pass
 
 
 @test
@@ -1135,3 +1147,628 @@ test_percent_format_unicode_mapping_key()
 test_percent_format_char_errors()
 test_percent_format_float_as_integer()
 test_percent_format_integer_boundaries()
+
+
+# Adversarial tests for Python-style '%' formatting with the unicode type.
+# Every string literal is explicitly wrapped in unicode(...).
+
+@test
+def test_percent_basic():
+    assert unicode("%s") % unicode("hello") == unicode("hello")
+    assert unicode("%r") % unicode("hello") == unicode("'hello'")
+    assert unicode("%d") % 42 == unicode("42")
+    assert unicode("%i") % 42 == unicode("42")
+    assert unicode("%u") % 42 == unicode("42")
+    assert unicode("%o") % 8 == unicode("10")
+    assert unicode("%x") % 255 == unicode("ff")
+    assert unicode("%X") % 255 == unicode("FF")
+    assert unicode("%f") % 1.5 == unicode("1.500000")
+    assert unicode("%e") % 1.5 == unicode("1.500000e+00")
+    assert unicode("%E") % 1.5 == unicode("1.500000E+00")
+    assert unicode("%g") % 1.5 == unicode("1.5")
+    assert unicode("%G") % 1.5 == unicode("1.5")
+    assert unicode("%c") % 65 == unicode("A")
+    assert unicode("%c") % unicode("Z") == unicode("Z")
+    assert unicode("%%") % () == unicode("%")
+    assert unicode("100%% complete") % () == unicode("100% complete")
+
+
+@test
+def test_percent_multiple_arguments():
+    assert unicode("%s %s") % (
+        unicode("hello"), unicode("world")
+    ) == unicode("hello world")
+    assert unicode("%d + %d = %d") % (2, 3, 5) == unicode("2 + 3 = 5")
+    assert unicode("%s:%d:%0.2f") % (
+        unicode("x"), 7, 1.25
+    ) == unicode("x:7:1.25")
+    assert unicode("%d%%") % 50 == unicode("50%")
+    assert unicode("%%%d%%") % 5 == unicode("%5%")
+
+
+@test
+def test_percent_integer_signs_flags_width():
+    assert unicode("%d") % 0 == unicode("0")
+    assert unicode("%d") % -1 == unicode("-1")
+    assert unicode("%+d") % 0 == unicode("+0")
+    assert unicode("%+d") % 12 == unicode("+12")
+    assert unicode("%+d") % -12 == unicode("-12")
+    assert unicode("% d") % 12 == unicode(" 12")
+    assert unicode("% d") % -12 == unicode("-12")
+    assert unicode("%+ d") % 12 == unicode("+12")
+    assert unicode("% +d") % 12 == unicode("+12")
+
+    assert unicode("%5d") % 12 == unicode("   12")
+    assert unicode("%5d") % -12 == unicode("  -12")
+    assert unicode("%-5d") % 12 == unicode("12   ")
+    assert unicode("%-5d") % -12 == unicode("-12  ")
+    assert unicode("%05d") % 12 == unicode("00012")
+    assert unicode("%05d") % -12 == unicode("-0012")
+    assert unicode("%+05d") % 12 == unicode("+0012")
+    assert unicode("% 05d") % 12 == unicode(" 0012")
+    assert unicode("%-05d") % 12 == unicode("12   ")
+
+    assert unicode("%0d") % 12 == unicode("12")
+    assert unicode("%00d") % 12 == unicode("12")
+    assert unicode("%0005d") % 12 == unicode("00012")
+
+
+@test
+def test_percent_integer_precision():
+    assert unicode("%.0d") % 0 == unicode("0")
+    assert unicode("%.1d") % 0 == unicode("0")
+    assert unicode("%.3d") % 7 == unicode("007")
+    assert unicode("%.3d") % -7 == unicode("-007")
+    assert unicode("%5.3d") % 7 == unicode("  007")
+    assert unicode("%-5.3d") % 7 == unicode("007  ")
+    assert unicode("%05.3d") % 7 == unicode("00007")
+    assert unicode("%+5.3d") % 7 == unicode(" +007")
+    assert unicode("% 5.3d") % 7 == unicode("  007")
+
+
+@test
+def test_percent_integer_bases():
+    assert unicode("%o") % 0 == unicode("0")
+    assert unicode("%o") % 7 == unicode("7")
+    assert unicode("%o") % 8 == unicode("10")
+    assert unicode("%x") % 0 == unicode("0")
+    assert unicode("%x") % 15 == unicode("f")
+    assert unicode("%x") % 16 == unicode("10")
+    assert unicode("%X") % 255 == unicode("FF")
+
+    assert unicode("%#o") % 0 == unicode("0o0")
+    assert unicode("%#o") % 8 == unicode("0o10")
+    assert unicode("%#x") % 0 == unicode("0x0")
+    assert unicode("%#x") % 15 == unicode("0xf")
+    assert unicode("%#X") % 15 == unicode("0XF")
+
+    assert unicode("%#08x") % 15 == unicode("0x00000f")
+    assert unicode("%#08X") % 15 == unicode("0X00000F")
+    assert unicode("%#08o") % 8 == unicode("0o000010")
+    assert unicode("%#8x") % 15 == unicode("     0xf")
+    assert unicode("%-#8x") % 15 == unicode("0xf     ")
+
+    assert unicode("%.4x") % 15 == unicode("000f")
+    assert unicode("%#.4x") % 15 == unicode("0x000f")
+    assert unicode("%8.4x") % 15 == unicode("    000f")
+    assert unicode("%#8.4x") % 15 == unicode("  0x000f")
+
+
+@test
+def test_percent_negative_nondecimal():
+    assert unicode("%x") % -1 == unicode("-1")
+    assert unicode("%X") % -255 == unicode("-FF")
+    assert unicode("%o") % -8 == unicode("-10")
+    assert unicode("%#x") % -1 == unicode("-0x1")
+    assert unicode("%#X") % -255 == unicode("-0XFF")
+    assert unicode("%#o") % -8 == unicode("-0o10")
+    assert unicode("%08x") % -15 == unicode("-000000f")
+    assert unicode("%#08x") % -15 == unicode("-0x0000f")
+    assert unicode("%#08o") % -8 == unicode("-0o00010")
+
+
+@test
+def test_percent_string_width_precision():
+    assert unicode("%s") % unicode("") == unicode("")
+    assert unicode("%s") % unicode("abc") == unicode("abc")
+    assert unicode("%1s") % unicode("abc") == unicode("abc")
+    assert unicode("%3s") % unicode("abc") == unicode("abc")
+    assert unicode("%5s") % unicode("abc") == unicode("  abc")
+    assert unicode("%-5s") % unicode("abc") == unicode("abc  ")
+
+    assert unicode("%.0s") % unicode("abcdef") == unicode("")
+    assert unicode("%.1s") % unicode("abcdef") == unicode("a")
+    assert unicode("%.3s") % unicode("abcdef") == unicode("abc")
+    assert unicode("%.6s") % unicode("abcdef") == unicode("abcdef")
+    assert unicode("%.20s") % unicode("abcdef") == unicode("abcdef")
+    assert unicode("%5.3s") % unicode("abcdef") == unicode("  abc")
+    assert unicode("%-5.3s") % unicode("abcdef") == unicode("abc  ")
+    assert unicode("%2.3s") % unicode("abcdef") == unicode("abc")
+
+
+@test
+def test_percent_repr_width_precision():
+    assert unicode("%r") % unicode("abc") == unicode("'abc'")
+    assert unicode("%10r") % unicode("abc") == unicode("     'abc'")
+    assert unicode("%-10r") % unicode("abc") == unicode("'abc'     ")
+    assert unicode("%.0r") % unicode("abcdef") == unicode("")
+    assert unicode("%.3r") % unicode("abcdef") == unicode("'ab")
+    assert unicode("%8.3r") % unicode("abcdef") == unicode("     'ab")
+
+
+@test
+def test_percent_characters():
+    assert unicode("%c") % 0 == unicode("\x00")
+    assert unicode("%c") % 65 == unicode("A")
+    assert unicode("%c") % 127 == unicode("\x7f")
+    assert unicode("%c") % 255 == unicode("ÿ")
+    assert unicode("%c") % unicode("a") == unicode("a")
+    assert unicode("%3c") % 65 == unicode("  A")
+    assert unicode("%-3c") % 65 == unicode("A  ")
+    assert unicode("%c%c%c") % (True, False, 65) == unicode("\x01\x00A")
+
+    try:
+        unicode("%c") % unicode("")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % unicode("ab")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % 1.5
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % -1
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        unicode("%c") % 0x110000
+        assert False
+    except OverflowError:
+        pass
+
+
+@test
+def test_percent_fixed_float():
+    assert unicode("%f") % 0.0 == unicode("0.000000")
+    assert unicode("%f") % -0.0 == unicode("-0.000000")
+    assert unicode("%f") % 1.0 == unicode("1.000000")
+    assert unicode("%f") % -1.0 == unicode("-1.000000")
+    assert unicode("%.0f") % 1.4 == unicode("1")
+    assert unicode("%.0f") % 1.6 == unicode("2")
+    assert unicode("%.1f") % 1.25 == unicode("1.2")
+    assert unicode("%.2f") % 1.25 == unicode("1.25")
+    assert unicode("%.3f") % 1.25 == unicode("1.250")
+
+    assert unicode("%8.2f") % 1.25 == unicode("    1.25")
+    assert unicode("%-8.2f") % 1.25 == unicode("1.25    ")
+    assert unicode("%08.2f") % 1.25 == unicode("00001.25")
+    assert unicode("%08.2f") % -1.25 == unicode("-0001.25")
+    assert unicode("%+08.2f") % 1.25 == unicode("+0001.25")
+    assert unicode("% 08.2f") % 1.25 == unicode(" 0001.25")
+
+    assert unicode("%#.0f") % 1.0 == unicode("1.")
+    assert unicode("%#.0f") % 0.0 == unicode("0.")
+    assert unicode("%#.2f") % 1.0 == unicode("1.00")
+
+
+@test
+def test_percent_exponent_float():
+    assert unicode("%e") % 1.0 == unicode("1.000000e+00")
+    assert unicode("%E") % 1.0 == unicode("1.000000E+00")
+    assert unicode("%.2e") % 1234.0 == unicode("1.23e+03")
+    assert unicode("%.2E") % 0.001234 == unicode("1.23E-03")
+    assert unicode("%12.2e") % 1.0 == unicode("    1.00e+00")
+    assert unicode("%-12.2e") % 1.0 == unicode("1.00e+00    ")
+    assert unicode("%012.2e") % 1.0 == unicode("00001.00e+00")
+    assert unicode("%+012.2e") % 1.0 == unicode("+0001.00e+00")
+    assert unicode("%012.2e") % -1.0 == unicode("-0001.00e+00")
+    assert unicode("%#.0e") % 1.0 == unicode("1.e+00")
+    assert unicode("%#.0E") % 1.0 == unicode("1.E+00")
+
+
+@test
+def test_percent_general_float():
+    assert unicode("%g") % 1.0 == unicode("1")
+    assert unicode("%g") % 1.5 == unicode("1.5")
+    assert unicode("%g") % 1000000.0 == unicode("1e+06")
+    assert unicode("%G") % 1000000.0 == unicode("1E+06")
+    assert unicode("%.1g") % 1.25 == unicode("1")
+    assert unicode("%.2g") % 1.25 == unicode("1.2")
+    assert unicode("%.3g") % 1.25 == unicode("1.25")
+    assert unicode("%.3g") % 0.0001234 == unicode("0.000123")
+    assert unicode("%.3g") % 0.00001234 == unicode("1.23e-05")
+    assert unicode("%.3g") % 1234.0 == unicode("1.23e+03")
+    assert unicode("%#g") % 1.0 == unicode("1.00000")
+    assert unicode("%#.3g") % 1.0 == unicode("1.00")
+    assert unicode("%#.3g") % 10.0 == unicode("10.0")
+    assert unicode("%#.3g") % 1000.0 == unicode("1.00e+03")
+
+
+@test
+def test_percent_float_rounding():
+    assert unicode("%.0f") % 0.5 == unicode("0")
+    assert unicode("%.0f") % 1.5 == unicode("2")
+    assert unicode("%.0f") % 2.5 == unicode("2")
+    assert unicode("%.0f") % 3.5 == unicode("4")
+    assert unicode("%.1f") % 1.25 == unicode("1.2")
+    assert unicode("%.1f") % 1.35 == unicode("1.4")
+    assert unicode("%.17g") % 1.0 == unicode("1")
+    assert unicode("%.17g") % 0.1 == unicode("0.10000000000000001")
+    assert unicode("%.20f") % 0.1 == unicode("0.10000000000000000555")
+
+
+@test
+def test_percent_dynamic_width():
+    assert unicode("%*s") % (5, unicode("abc")) == unicode("  abc")
+    assert unicode("%*s") % (-5, unicode("abc")) == unicode("abc  ")
+    assert unicode("%*d") % (5, 12) == unicode("   12")
+    assert unicode("%*d") % (-5, 12) == unicode("12   ")
+    assert unicode("%0*d") % (5, 12) == unicode("00012")
+    assert unicode("%0*d") % (5, -12) == unicode("-0012")
+    assert unicode("%+0*d") % (5, 12) == unicode("+0012")
+    assert unicode("%*.2f") % (8, 1.25) == unicode("    1.25")
+    assert unicode("%-*.2f") % (8, 1.25) == unicode("1.25    ")
+    assert unicode("%0*d") % (-5, 12) == unicode("12   ")
+
+
+@test
+def test_percent_dynamic_precision():
+    assert unicode("%.*s") % (0, unicode("abcdef")) == unicode("")
+    assert unicode("%.*s") % (3, unicode("abcdef")) == unicode("abc")
+    assert unicode("%.*s") % (20, unicode("abcdef")) == unicode("abcdef")
+    assert unicode("%.*f") % (0, 1.25) == unicode("1")
+    assert unicode("%.*f") % (2, 1.25) == unicode("1.25")
+    assert unicode("%.*f") % (5, 1.25) == unicode("1.25000")
+    assert unicode("%*.*f") % (8, 2, 1.25) == unicode("    1.25")
+    assert unicode("%*.*f") % (-8, 2, 1.25) == unicode("1.25    ")
+    assert unicode("%.*f") % (-1, 1.25) == unicode("1.250000")
+    assert unicode("%.*s") % (-1, unicode("abcdef")) == unicode("abcdef")
+
+
+@test
+def test_percent_tuple_semantics():
+    assert unicode("%s %s") % (
+        unicode("a"), unicode("b")
+    ) == unicode("a b")
+    assert unicode("%s") % (
+        (unicode("a"), unicode("b")),
+    ) == unicode("('a', 'b')")
+
+    try:
+        unicode("%s") % (unicode("a"), unicode("b"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%s %s") % unicode("ab")
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_argument_count_errors():
+    try:
+        unicode("%s %s") % (unicode("only one"),)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%s") % (unicode("one"), unicode("extra"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("no conversion") % 1
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%%") % 1
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*s") % (5,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%.*f") % (2,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*.*f") % (8, 2)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*.*f") % (8, 2, 1.25, 99)
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_type_errors():
+    try:
+        unicode("%d") % unicode("12")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%x") % unicode("ff")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%o") % 1.5
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*s") % (unicode("5"), unicode("abc"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%.*f") % (unicode("2"), 1.25)
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_malformed_formats():
+    try:
+        unicode("%") % ()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%q") % 1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%y") % 1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%(") % Dict[unicode, unicode]()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%(name") % {unicode("name"): unicode("x")}
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%(name)") % {unicode("name"): unicode("x")}
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%..2f") % 1.0
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%5.2") % 1.0
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_percent_flags_odd_orders():
+    assert unicode("%-+8d") % 12 == unicode("+12     ")
+    assert unicode("%+-8d") % 12 == unicode("+12     ")
+    assert unicode("%0+8d") % 12 == unicode("+0000012")
+    assert unicode("%+08d") % 12 == unicode("+0000012")
+    assert unicode("%#08x") % 42 == unicode("0x00002a")
+    assert unicode("%0#8x") % 42 == unicode("0x00002a")
+    assert unicode("%-#8x") % 42 == unicode("0x2a    ")
+    assert unicode("%#-8x") % 42 == unicode("0x2a    ")
+    assert unicode("%--5d") % 12 == unicode("12   ")
+    assert unicode("%++d") % 12 == unicode("+12")
+    assert unicode("%  d") % 12 == unicode(" 12")
+    assert unicode("%##x") % 15 == unicode("0xf")
+    assert unicode("%0005d") % 12 == unicode("00012")
+
+
+@test
+def test_percent_length_modifiers():
+    assert unicode("%hd") % 12 == unicode("12")
+    assert unicode("%ld") % 12 == unicode("12")
+    assert unicode("%Ld") % 12 == unicode("12")
+    assert unicode("%hi") % -12 == unicode("-12")
+    assert unicode("%lu") % 12 == unicode("12")
+    assert unicode("%lx") % 255 == unicode("ff")
+    assert unicode("%lX") % 255 == unicode("FF")
+    assert unicode("%lo") % 8 == unicode("10")
+    assert unicode("%lf") % 1.25 == unicode("1.250000")
+    assert unicode("%Le") % 1.25 == unicode("1.250000e+00")
+
+
+@test
+def test_percent_bools():
+    assert unicode("%d") % True == unicode("1")
+    assert unicode("%d") % False == unicode("0")
+    assert unicode("%i") % True == unicode("1")
+    assert unicode("%x") % True == unicode("1")
+    assert unicode("%o") % False == unicode("0")
+    assert unicode("%s") % True == unicode("True")
+    assert unicode("%r") % False == unicode("False")
+    assert unicode("%f") % True == unicode("1.000000")
+
+
+@test
+def test_percent_embedded_nulls():
+    assert unicode("%s") % unicode("a\x00b") == unicode("a\x00b")
+    assert unicode("%.2s") % unicode("a\x00b") == unicode("a\x00")
+    assert unicode("%5s") % unicode("a\x00b") == unicode("  a\x00b")
+    assert unicode("x%sx") % unicode("\x00") == unicode("x\x00x")
+    assert unicode("%c") % 0 == unicode("\x00")
+
+
+@test
+def test_percent_unicode_content():
+    assert unicode("%s") % unicode("λ") == unicode("λ")
+    assert unicode("%s") % unicode("😀") == unicode("😀")
+    assert unicode("%.1s") % unicode("λx") == unicode("λ")
+    assert unicode("%.1s") % unicode("😀x") == unicode("😀")
+    assert unicode("%3s") % unicode("λ") == unicode("  λ")
+    assert unicode("%3s") % unicode("😀") == unicode("  😀")
+    assert unicode("%c") % 0x03BB == unicode("λ")
+    assert unicode("%c") % 0x1F600 == unicode("😀")
+
+
+@test
+def test_percent_literal_percent_corner_cases():
+    assert unicode("%%%%") % () == unicode("%%")
+    assert unicode("%%%%%%") % () == unicode("%%%")
+    assert unicode("a%%b") % () == unicode("a%b")
+    assert unicode("%%s") % () == unicode("%s")
+    assert unicode("%%%s") % unicode("x") == unicode("%x")
+    assert unicode("%s%%") % unicode("x") == unicode("x%")
+    assert unicode("%%%s%%") % unicode("x") == unicode("%x%")
+    assert unicode("%%%(x)s%%") % {
+        unicode("x"): unicode("a")
+    } == unicode("%a%")
+
+
+@test
+def test_percent_large_width_precision():
+    assert unicode("%50d") % 1 == unicode(" ") * 49 + unicode("1")
+    assert unicode("%-50d") % 1 == unicode("1") + unicode(" ") * 49
+    assert unicode("%050d") % 1 == unicode("0") * 49 + unicode("1")
+    assert unicode("%.50d") % 1 == unicode("0") * 49 + unicode("1")
+    assert unicode("%.50s") % unicode("abc") == unicode("abc")
+
+    expected = unicode("1.") + unicode("0") * 50
+    assert unicode("%.50f") % 1.0 == expected
+    assert unicode("%60.50f") % 1.0 == unicode(" ") * 8 + expected
+    assert unicode("%-60.50f") % 1.0 == expected + unicode(" ") * 8
+
+
+@test
+def test_percent_numeric_coercions():
+    assert unicode("%d") % 1.0 == unicode("1")
+    assert unicode("%i") % -1.0 == unicode("-1")
+    assert unicode("%u") % 12.0 == unicode("12")
+    assert unicode("%d") % 1.9 == unicode("1")
+    assert unicode("%d") % -1.9 == unicode("-1")
+    assert unicode("%f") % 1 == unicode("1.000000")
+    assert unicode("%e") % 1 == unicode("1.000000e+00")
+    assert unicode("%g") % 1 == unicode("1")
+
+
+@test
+def test_percent_mapping_positional_mixing_errors():
+    d = {unicode("x"): 12}
+    assert unicode("%(x)d") % d == unicode("12")
+
+    try:
+        unicode("%(x)*d") % d
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(x).*f") % {unicode("x"): 1.25}
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(x)s %s") % (
+            {unicode("x"): unicode("a")},
+            unicode("b"),
+        )
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_regression_combinations():
+    assert unicode("[%10s]") % unicode("x") == unicode("[         x]")
+    assert unicode("[%-10s]") % unicode("x") == unicode("[x         ]")
+    assert unicode("[%010d]") % -123 == unicode("[-000000123]")
+    assert unicode("[%+10.3f]") % 1.25 == unicode("[    +1.250]")
+    assert unicode("[%-+10.3f]") % 1.25 == unicode("[+1.250    ]")
+    assert unicode("[%#10x]") % 255 == unicode("[      0xff]")
+    assert unicode("[%-#10x]") % 255 == unicode("[0xff      ]")
+    assert unicode("[%#010x]") % 255 == unicode("[0x000000ff]")
+    assert unicode("[%10.4s]") % unicode("abcdefgh") == unicode("[      abcd]")
+
+    assert unicode("%d:%#x:%#o:%.2f:%s") % (
+        -17, 255, 8, 1.25, unicode("done")
+    ) == unicode("-17:0xff:0o10:1.25:done")
+
+
+# Explicit calls, useful when @test does not automatically execute tests.
+test_percent_basic()
+test_percent_multiple_arguments()
+test_percent_integer_signs_flags_width()
+test_percent_integer_precision()
+test_percent_integer_bases()
+test_percent_negative_nondecimal()
+test_percent_string_width_precision()
+test_percent_repr_width_precision()
+test_percent_characters()
+test_percent_fixed_float()
+test_percent_exponent_float()
+test_percent_general_float()
+test_percent_float_rounding()
+test_percent_dynamic_width()
+test_percent_dynamic_precision()
+test_percent_tuple_semantics()
+test_percent_argument_count_errors()
+test_percent_type_errors()
+test_percent_malformed_formats()
+test_percent_flags_odd_orders()
+test_percent_length_modifiers()
+test_percent_bools()
+test_percent_embedded_nulls()
+test_percent_unicode_content()
+test_percent_literal_percent_corner_cases()
+test_percent_large_width_precision()
+test_percent_numeric_coercions()
+test_percent_mapping_positional_mixing_errors()
+test_percent_regression_combinations()
+
