@@ -1096,6 +1096,23 @@ def test_percent_format_char_errors():
         pass
 
 
+@test
+def test_percent_format_float_as_integer():
+    assert unicode("%d") % 1.9 == unicode("1")
+    assert unicode("%#x") % 15.9 == unicode("0xf")
+    assert unicode("%06d") % -12.5 == unicode("-00012")
+
+
+@test
+def test_percent_format_integer_boundaries():
+    minimum = -(1 << 63)
+    assert unicode("%d") % minimum == unicode("-9223372036854775808")
+    assert unicode("%+024d") % minimum == unicode("-00009223372036854775808")
+    assert unicode("%.22d") % minimum == unicode("-0009223372036854775808")
+    assert unicode("%x") % minimum == unicode("-8000000000000000")
+    assert unicode("%o") % minimum == unicode("-1000000000000000000000")
+
+
 test_percent_format()
 test_percent_format_large_width_and_precision()
 test_percent_format_string()
@@ -1116,3 +1133,5 @@ test_percent_format_integer_as_float()
 test_percent_format_flag_precedence()
 test_percent_format_unicode_mapping_key()
 test_percent_format_char_errors()
+test_percent_format_float_as_integer()
+test_percent_format_integer_boundaries()

@@ -114,23 +114,20 @@ def float_format_write_padded(
         precision = 1
 
     alternate = (flags & FORMAT_FLAG_ALT) != 0
-    scratch = Ptr[u8](_float_format_buffer_size(conversion, precision))
     length = float_format_write(
         value,
         conversion,
         precision,
         alternate,
-        scratch,
+        output,
     )
 
     if alternate:
-        length = _float_format_force_decimal_point(scratch, length)
+        length = _float_format_force_decimal_point(output, length)
 
-    # `_float_dtoa_*` includes '-' for negative values. Apply explicit signs
-    # only to nonnegative values, including infinities and NaNs.
     sign = u8(0)
 
-    if length == 0 or scratch[0] != u8(0x2D):  # -
+    if length == 0 or output[0] != u8(0x2D):  # -
         if (flags & FORMAT_FLAG_PLUS) != 0:
             sign = u8(0x2B)  # +
         elif (flags & FORMAT_FLAG_SPACE) != 0:
@@ -142,54 +139,66 @@ def float_format_write_padded(
     if padding < 0:
         padding = 0
 
-    pos = 0
     left = (flags & FORMAT_FLAG_LEFT) != 0
     zero = (flags & FORMAT_FLAG_ZERO) != 0 and not left
 
-    if not left and not zero:
-        for _ in range(padding):
-            output[pos] = u8(0x20)
+    if left:
+        if sign != u8(0):
+            for i in range(length - 1, -1, -1):
+                output[i + 1] = output[i]
+
+            output[0] = sign
+            length += 1
+
+        for i in range(padding):
+            output[length + i] = u8(0x20)
+
+        return length + padding
+
+    if zero:
+        if length != 0 and output[0] == u8(0x2D):
+            # Preserve the negative sign ahead of zero padding.
+            for i in range(length - 1, 0, -1):
+                output[i + padding] = output[i]
+
+            for i in range(padding):
+                output[i + 1] = u8(0x30)
+
+            return length + padding
+
+        offset = padding + (1 if sign != u8(0) else 0)
+
+        for i in range(length - 1, -1, -1):
+            output[i + offset] = output[i]
+
+        pos = 0
+
+        if sign != u8(0):
+            output[pos] = sign
             pos += 1
+
+        for _ in range(padding):
+            output[pos] = u8(0x30)
+            pos += 1
+
+        return pos + length
+
+    offset = padding + (1 if sign != u8(0) else 0)
+
+    for i in range(length - 1, -1, -1):
+        output[i + offset] = output[i]
+
+    pos = 0
+
+    for _ in range(padding):
+        output[pos] = u8(0x20)
+        pos += 1
 
     if sign != u8(0):
         output[pos] = sign
         pos += 1
 
-    if zero:
-        # Keep a negative sign before zero padding.
-        if length != 0 and scratch[0] == u8(0x2D):
-            output[pos] = u8(0x2D)
-            pos += 1
-
-            for _ in range(padding):
-                output[pos] = u8(0x30)
-                pos += 1
-
-            for i in range(1, length):
-                output[pos + i - 1] = scratch[i]
-
-            pos += length - 1
-        else:
-            for _ in range(padding):
-                output[pos] = u8(0x30)
-                pos += 1
-
-            for i in range(length):
-                output[pos + i] = scratch[i]
-
-            pos += length
-    else:
-        for i in range(length):
-            output[pos + i] = scratch[i]
-
-        pos += length
-
-    if left:
-        for _ in range(padding):
-            output[pos] = u8(0x20)
-            pos += 1
-
-    return pos
+    return pos + length
 
 
 def _float_format(
@@ -236,31 +245,21 @@ def integer_format_write_padded(
         raise ValueError("unsupported integer format conversion")
 
     negative = value < 0
-    magnitude = -value if negative else value
     specified_precision = precision >= 0
+    digits = 1
+    remaining = value
 
-    digit_count = 1
-
-    if magnitude == 0 and specified_precision and precision == 0:
-        digit_count = 0
+    if value == 0 and specified_precision and precision == 0:
+        digits = 0
     else:
-        remaining = magnitude
-        while remaining >= base:
-            remaining = remaining.cdiv(base)
-            digit_count += 1
-
-    digits = Ptr[u8](digit_count if digit_count > 0 else 1)
-    remaining = magnitude
-
-    for i in range(digit_count - 1, -1, -1):
-        digit = remaining.cmod(base)
-        if digit < 10:
-            digits[i] = u8(digit + 0x30)
-        elif uppercase:
-            digits[i] = u8(digit - 10 + 0x41)
+        if negative:
+            while remaining <= -base:
+                remaining = remaining.cdiv(base)
+                digits += 1
         else:
-            digits[i] = u8(digit - 10 + 0x61)
-        remaining = remaining.cdiv(base)
+            while remaining >= base:
+                remaining = remaining.cdiv(base)
+                digits += 1
 
     sign = u8(0)
 
@@ -276,27 +275,27 @@ def integer_format_write_padded(
     prefix1 = u8(0)
 
     if (flags & FORMAT_FLAG_ALT) != 0:
-        if conversion == 0x6F and (magnitude != 0 or digit_count == 0):
+        if conversion == 0x6F and (value != 0 or digits == 0):
             prefix0 = u8(0x30)  # 0
             prefix_length = 1
-        elif magnitude != 0 and conversion == 0x78:
+        elif value != 0 and conversion == 0x78:
             prefix0 = u8(0x30)  # 0
             prefix1 = u8(0x78)  # x
             prefix_length = 2
-        elif magnitude != 0 and conversion == 0x58:
+        elif value != 0 and conversion == 0x58:
             prefix0 = u8(0x30)  # 0
             prefix1 = u8(0x58)  # X
             prefix_length = 2
 
     zero_precision = 0
-    if specified_precision and precision > digit_count:
-        zero_precision = precision - digit_count
+    if specified_precision and precision > digits:
+        zero_precision = precision - digits
 
     content_length = (
         (1 if sign != u8(0) else 0)
         + prefix_length
         + zero_precision
-        + digit_count
+        + digits
     )
     padding = width - content_length
 
@@ -336,9 +335,25 @@ def integer_format_write_padded(
         output[pos] = u8(0x30)
         pos += 1
 
-    for i in range(digit_count):
-        output[pos] = digits[i]
-        pos += 1
+    digits_start = pos
+    remaining = value
+
+    for i in range(digits - 1, -1, -1):
+        digit = remaining.cmod(base)
+
+        if negative:
+            digit = -digit
+
+        if digit < 10:
+            output[digits_start + i] = u8(digit + 0x30)
+        elif uppercase:
+            output[digits_start + i] = u8(digit - 10 + 0x41)
+        else:
+            output[digits_start + i] = u8(digit - 10 + 0x61)
+
+        remaining = remaining.cdiv(base)
+
+    pos += digits
 
     if left:
         for _ in range(padding):
@@ -612,13 +627,46 @@ class _FormatBuffer:
         self.data[self.length] = value
         self.length += 1
 
-    def append_bytes(self, data: Ptr[u8], length: int):
-        self.reserve(length)
+    def release_excess(self):
+        # Avoid a second allocation for ordinary small formatting results.
+        if (
+            self.length == 0
+            or self.capacity <= self.length * 2
+            or self.capacity - self.length < 4096
+        ):
+            return
 
-        for i in range(length):
-            self.data[self.length + i] = data[i]
+        self.data = gc.realloc(self.data, self.length, self.capacity)
+        self.capacity = self.length
 
-        self.length += length
+
+def _percent_integer_buffer_size(
+    value: int,
+    directive: _PercentDirective,
+) -> int:
+    base = 10
+
+    if directive.conversion == 0x6F:  # o
+        base = 8
+    elif directive.conversion == 0x78 or directive.conversion == 0x58:
+        base = 16
+
+    digits = 1
+    negative = value < 0
+    remaining = value
+
+    if negative:
+        while remaining <= -base:
+            remaining = remaining.cdiv(base)
+            digits += 1
+    else:
+        while remaining >= base:
+            remaining = remaining.cdiv(base)
+            digits += 1
+
+    precision = directive.precision if directive.precision > 0 else 0
+    width = directive.width if directive.width > 0 else 0
+    return width + precision + digits + 3
 
 
 def _percent_numeric_buffer_size(
@@ -628,33 +676,21 @@ def _percent_numeric_buffer_size(
     width = directive.width if directive.width > 0 else 0
 
     if (
-        directive.conversion == 0x65  # e
-        or directive.conversion == 0x45  # E
-        or directive.conversion == 0x66  # f
-        or directive.conversion == 0x46  # F
-        or directive.conversion == 0x67  # g
-        or directive.conversion == 0x47  # G
+        directive.conversion == 0x65
+        or directive.conversion == 0x45
+        or directive.conversion == 0x66
+        or directive.conversion == 0x46
+        or directive.conversion == 0x67
+        or directive.conversion == 0x47
     ):
         precision = directive.precision if directive.precision >= 0 else 6
         return width + precision + 313
 
     if isinstance(value, int):
-        base = 10
+        return _percent_integer_buffer_size(value, directive)
 
-        if directive.conversion == 0x6F:  # o
-            base = 8
-        elif directive.conversion == 0x78 or directive.conversion == 0x58:
-            base = 16
-
-        magnitude = -value if value < 0 else value
-        digits = 1
-
-        while magnitude >= base:
-            magnitude = magnitude.cdiv(base)
-            digits += 1
-
-        precision = directive.precision if directive.precision > 0 else 0
-        return width + precision + digits + 3
+    if isinstance(value, float):
+        return _percent_integer_buffer_size(int(value), directive)
 
     raise TypeError("a number is required")
 
@@ -664,9 +700,12 @@ def _percent_numeric_append(
     directive: _PercentDirective,
     result: _FormatBuffer,
 ):
-    buffer = Ptr[u8](_percent_numeric_buffer_size(value, directive))
-    length = _percent_numeric_write(value, directive, buffer)
-    result.append_bytes(buffer, length)
+    result.reserve(_percent_numeric_buffer_size(value, directive))
+    result.length += _percent_numeric_write(
+        value,
+        directive,
+        result.data + result.length,
+    )
 
 
 def _percent_value_append(
@@ -676,9 +715,12 @@ def _percent_value_append(
 ):
     if directive.conversion == 0x63:  # c
         width = directive.width if directive.width > 0 else 0
-        buffer = Ptr[u8](width + 4)
-        length = _percent_char_write(value, directive, buffer)
-        result.append_bytes(buffer, length)
+        result.reserve(width + 4)
+        result.length += _percent_char_write(
+            value,
+            directive,
+            result.data + result.length,
+        )
         return
 
     if directive.conversion == 0x73:  # s
@@ -777,9 +819,12 @@ def _percent_text_append(
         character_count = directive.precision
 
     width = directive.width if directive.width > 0 else 0
-    buffer = Ptr[u8](character_count * 4 + width)
-    length = _percent_string_write(text, directive, buffer)
-    result.append_bytes(buffer, length)
+    result.reserve(character_count * 4 + width)
+    result.length += _percent_string_write(
+        text,
+        directive,
+        result.data + result.length,
+    )
 
 
 def _percent_char_write(
@@ -833,6 +878,9 @@ def _percent_char_write(
 def _percent_consume_width(value, directive: _PercentDirective):
     if isinstance(value, int):
         if value < 0:
+            if value == -(1 << 63):
+                raise ValueError("width too big")
+
             directive.width = -value
             directive.flags |= FORMAT_FLAG_LEFT
         else:
@@ -901,6 +949,7 @@ def percent_format(format: unicode, values):
     if format_pos != len(format):
         raise TypeError("not enough arguments for format string")
 
+    result.release_excess()
     return result.data, result.length
 
 
@@ -933,6 +982,7 @@ def percent_format_mapping(format: unicode, values):
 
         _percent_value_append(values[key], directive, result)
 
+    result.release_excess()
     return result.data, result.length
 
 
