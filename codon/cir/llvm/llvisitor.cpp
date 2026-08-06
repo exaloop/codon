@@ -1764,8 +1764,8 @@ void LLVMVisitor::visit(const InternalFunc *x) {
   if (internalFuncMatches<GeneratorType, GeneratorType>("__promise__", x)) {
     auto *generatorType = cast<GeneratorType>(parentType);
     auto *baseType = getLLVMType(generatorType->getBase());
-    if (!isStorableType(baseType)) {
-      result = getDummyValue(baseType);
+    if (baseType->isVoidTy()) {
+      result = llvm::ConstantPointerNull::get(B->getVoidTy()->getPointerTo());
     } else {
       llvm::FunctionCallee coroPromise =
           llvm::Intrinsic::getDeclaration(M.get(), llvm::Intrinsic::coro_promise);
@@ -3208,7 +3208,15 @@ void LLVMVisitor::visit(const CallInstr *x) {
   }
 
   auto *funcType = getLLVMFuncType(x->getCallee()->getType());
-  value = call({funcType, f}, args);
+  auto *callResult = call({funcType, f}, args);
+
+  auto *resultType = getLLVMType(x->getType());
+  if (!isStorableType(resultType)) {
+    value = getDummyValue(resultType);
+    return;
+  }
+
+  value = callResult;
 }
 
 void LLVMVisitor::visit(const TypePropertyInstr *x) {
