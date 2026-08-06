@@ -1772,3 +1772,383 @@ test_percent_numeric_coercions()
 test_percent_mapping_positional_mixing_errors()
 test_percent_regression_combinations()
 
+
+# new-style format
+@test
+def test_brace_format_automatic_fields():
+    assert unicode("hello, {}").format(unicode("Codon")) == unicode(
+        "hello, Codon"
+    )
+    assert unicode("{} + {} = {}").format(1, 2, 3) == unicode("1 + 2 = 3")
+    assert unicode("{{{}}}").format(unicode("x")) == unicode("{x}")
+    assert unicode("{{}}").format() == unicode("{}")
+
+
+@test
+def test_brace_format_conversions():
+    assert unicode("{!s}").format(unicode("hello")) == unicode("hello")
+    assert unicode("{!r}").format(unicode("hello")) == unicode("'hello'")
+    assert unicode("{!a}").format(unicode("café")) == unicode("'caf\\xe9'")
+
+
+@test
+def test_brace_format_positional_fields():
+    assert unicode("{1}, {0}!").format(unicode("world"), unicode("hello")) == (
+        unicode("hello, world!")
+    )
+    assert unicode("{0!r} {1!a}").format(
+        unicode("hello"),
+        unicode("café"),
+    ) == unicode("'hello' 'caf\\xe9'")
+
+    try:
+        unicode("{1}").format(unicode("only"))
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        unicode("{} {0}").format(1, 2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0} {}").format(1, 2)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_basic_specs():
+    assert unicode("{:d}").format(42) == unicode("42")
+    assert unicode("{:b}").format(42) == unicode("101010")
+    assert unicode("{:#b}").format(42) == unicode("0b101010")
+    assert unicode("{:#x}").format(255) == unicode("0xff")
+    assert unicode("{:05d}").format(-12) == unicode("-0012")
+    assert unicode("{:.2f}").format(1.25) == unicode("1.25")
+    assert unicode("{:08.2f}").format(1.25) == unicode("00001.25")
+    assert unicode("{:s}").format(unicode("Codon")) == unicode("Codon")
+    assert unicode("{:.3s}").format(unicode("Codon")) == unicode("Cod")
+    assert unicode("{:05}").format(unicode("x")) == unicode("x0000")
+    assert unicode("{:0>5}").format(unicode("x")) == unicode("0000x")
+    assert unicode("{!r:05}").format(unicode("x")) == unicode("'x'00")
+    assert unicode("{:05}").format(unicode("é")) == unicode("é0000")
+    assert unicode("{:.2}").format(1.234) == unicode("1.2")
+    assert unicode("{:+}").format(12) == unicode("+12")
+    assert unicode("{: }").format(12) == unicode(" 12")
+    assert unicode("{:#}").format(1.0) == unicode("1.0")
+    assert unicode("{:08}").format(1.25) == unicode("00001.25")
+    assert unicode("{:+.3}").format(1.25) == unicode("+1.25")
+    assert unicode("{:,}").format(1234567) == unicode("1,234,567")
+    assert unicode("{:z.1f}").format(-0.0) == unicode("0.0")
+    assert unicode("{:z.1f}").format(-0.04) == unicode("0.0")
+    assert unicode("{:z.1f}").format(-0.06) == unicode("-0.1")
+    assert unicode("{:+z.1f}").format(-0.04) == unicode("+0.0")
+    assert unicode("{:z}").format(-0.0) == unicode("0.0")
+
+    try:
+        unicode("{:z}").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    assert unicode("{:.1%}").format(0.125) == unicode("12.5%")
+    assert unicode("{:6.1%}").format(0.125) == unicode(" 12.5%")
+    assert unicode("{:08.1%}").format(0.125) == unicode("00012.5%")
+    assert unicode("{:+08.1%}").format(0.125) == unicode("+0012.5%")
+    assert unicode("{:<8.1%}").format(0.125) == unicode("12.5%   ")
+
+
+@test
+def test_brace_format_type_validation():
+    assert unicode("{:c}").format(65) == unicode("A")
+    assert unicode("{:5c}").format(65) == unicode("    A")
+    assert unicode("{:05c}").format(65) == unicode("0000A")
+    assert unicode("{:<5c}").format(65) == unicode("A    ")
+    assert unicode("{:.2f}").format(1) == unicode("1.00")
+    assert unicode("{!r:>8}").format(unicode("x")) == unicode("     'x'")
+    assert unicode("{:-5d}").format(12) == unicode("   12")
+    assert unicode("{:-5d}").format(-12) == unicode("  -12")
+    assert unicode("{:-5.1f}").format(1.2) == unicode("  1.2")
+    assert unicode("{:<5d}").format(12) == unicode("12   ")
+
+    invalid_formats = (
+        (unicode("{:.3d}"), 12),
+        (unicode("{:d}"), 1.5),
+        (unicode("{:s}"), 1.5),
+        (unicode("{:s}"), 12),
+        (unicode("{:c}"), unicode("x")),
+        (unicode("{:+c}"), 65),
+        (unicode("{:#c}"), 65),
+        (unicode("{:.1c}"), 65),
+        (unicode("{:,c}"), 65),
+        (unicode("{:_c}"), 65),
+        (unicode("{:zc}"), 65),
+        (unicode("{:-5}"), unicode("x")),
+        (unicode("{:+5}"), unicode("x")),
+        (unicode("{:#}"), unicode("x")),
+        (unicode("{:,}"), unicode("x")),
+        (unicode("{:_}"), unicode("x")),
+        (unicode("{:#s}"), unicode("x")),
+        (unicode("{!r:#}"), unicode("x")),
+        (unicode("{!a:,}"), unicode("é")),
+    )
+
+    for format, value in invalid_formats:
+        try:
+            format.format(value)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_brace_format_spec_grammar():
+    assert unicode("{:+z#08,.2f}").format(1.25) == unicode("+0,001.25")
+    assert unicode("{:z#0.1f}").format(1.0) == unicode("1.0")
+    assert unicode("{:#010x}").format(15) == unicode("0x0000000f")
+
+    invalid_formats = (
+        (unicode("{:0#8x}"), 15),
+        (unicode("{:#z.2f}"), 1.2),
+        (unicode("{:+ d}"), 1),
+        (unicode("{:+ +d}"), 1),
+        (unicode("{:##x}"), 1),
+        (unicode("{:, ,d}"), 1),
+    )
+
+    for format, value in invalid_formats:
+        try:
+            format.format(value)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_brace_format_alignment():
+    assert unicode("{:<8}").format(unicode("Codon")) == unicode("Codon   ")
+    assert unicode("{:>8}").format(unicode("Codon")) == unicode("   Codon")
+    assert unicode("{:^8}").format(unicode("Codon")) == unicode(" Codon  ")
+    assert unicode("{:*^8}").format(unicode("Codon")) == unicode("*Codon**")
+
+    assert unicode("{:>5d}").format(12) == unicode("   12")
+    assert unicode("{:<5d}").format(12) == unicode("12   ")
+    assert unicode("{:^5d}").format(12) == unicode(" 12  ")
+    assert unicode("{:=+8d}").format(12) == unicode("+     12")
+    assert unicode("{:=+8d}").format(-12) == unicode("-     12")
+    assert unicode("{:0=+8d}").format(12) == unicode("+0000012")
+    assert unicode("{:=#10x}").format(255) == unicode("0x      ff")
+    assert unicode("{:=+12,d}").format(1234) == unicode("+      1,234")
+
+    try:
+        unicode("{:=8s}").format(unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_grouping():
+    assert unicode("{:,d}").format(1234567) == unicode("1,234,567")
+    assert unicode("{:_x}").format(0xDEADBEEF) == unicode("dead_beef")
+    assert unicode("{:#_x}").format(0xDEADBEEF) == unicode("0xdead_beef")
+    assert unicode("{:_b}").format(0b101010101010) == unicode("1010_1010_1010")
+    assert unicode("{:,.2f}").format(1234.5) == unicode("1,234.50")
+    assert unicode("{:010,d}").format(1234) == unicode("00,001,234")
+    assert unicode("{:,}").format(1e20) == unicode("1e+20")
+    assert unicode("{:_}").format(1e20) == unicode("1e+20")
+    assert unicode("{:,}").format(1234.0) == unicode("1,234.0")
+
+    try:
+        unicode("{:,x}").format(15)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{:,b}").format(15)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_adversarial_combinations():
+    assert unicode("{:+#012x}").format(0xBEEF) == unicode("+0x00000beef")
+    assert unicode("{:=#012x}").format(-0xBEEF) == unicode("-0x00000beef")
+    assert unicode("{:0=+12,d}").format(1234) == unicode("+000,001,234")
+    assert unicode("{:*^11,d}").format(1234) == unicode("***1,234***")
+    assert unicode("{:#012b}").format(0b101101) == unicode("0b0000101101")
+
+    assert unicode("{:#012.0f}").format(1.0) == unicode("00000000001.")
+    assert unicode("{:=+10.0e}").format(1.0) == unicode("+    1e+00")
+    assert unicode("{:#.0g}").format(1.0) == unicode("1.")
+    assert unicode("{:z#08.0f}").format(-0.0) == unicode("0000000.")
+    assert unicode("{:,.0f}").format(999.5) == unicode("1,000")
+    assert unicode("{:_>12.2f}").format(-12.5) == unicode("______-12.50")
+
+    assert unicode("{!r:0^9}").format(unicode("x")) == unicode("000'x'000")
+    assert unicode("{!a:.6}").format(unicode("café")) == unicode("'caf\\x")
+    assert unicode("{:0=5c}").format(65) == unicode("0000A")
+    assert unicode("{:^6c}").format(0x03A9) == unicode("  Ω   ")
+    assert unicode("{{{:0=+8d}}}").format(12) == unicode("{+0000012}")
+    assert unicode("{0:{1}}").format(12, unicode("0=+8d")) == unicode("+0000012")
+
+    try:
+        unicode("{").format()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{{}").format()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0!q}").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0:{1:{2}}}").format(1, 2, 3)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_adversarial_multi_argument_sequences():
+    assert unicode("pre {2:#0{0}x} mid {1:0^7} post {3:z#08.1f}").format(
+        8,
+        unicode("x"),
+        0xBEEF,
+        -0.04,
+    ) == unicode("pre 0x00beef mid 000x000 post 000000.0")
+
+    assert unicode("{0:#0{1}b} {2:{3}.{4}f}").format(
+        45,
+        12,
+        1.25,
+        9,
+        2,
+    ) == unicode("0b0000101101      1.25")
+
+    assert unicode("{0:{1}} {2} {3:{4}}").format(
+        12,
+        unicode("+06d"),
+        unicode("ok"),
+        1e20,
+        unicode(","),
+    ) == unicode("+00012 ok 1e+20")
+
+    assert unicode("{{ {0:{1}} }} | {{ {2:{3}} }}").format(
+        12,
+        unicode("0=+8d"),
+        1.25,
+        unicode("+08.1f"),
+    ) == unicode("{ +0000012 } | { +00001.2 }")
+
+    assert unicode("{2:{0}}:{1:{3}}:{4:#0{5}x}").format(
+        5,
+        12,
+        7,
+        unicode("0=+6d"),
+        255,
+        8,
+    ) == unicode("    7:+00012:0x0000ff")
+
+
+@test
+def test_brace_format_adversarial_malformed_sequences():
+    try:
+        unicode("}").format()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0!").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0!r").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0:").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0:{1}").format(1, 2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{}}").format(1)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_adversarial_dynamic_buffer_growth():
+    assert unicode("α{{{0:{1}}}}β").format(1, 10) == unicode("α{         1}β")
+    assert unicode("{0:{1}d}").format(1, 10000) == unicode(" " * 9999 + "1")
+    assert unicode("{0:{1}.{2}f}").format(1.0, 1005, 1000) == unicode(
+        " " * 3 + "1." + "0" * 1000
+    )
+
+    try:
+        unicode("{0:{1}{2}}").format(1, unicode("d"), unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+    assert unicode("{0:{1!r}}").format(1, 8) == unicode("       1")
+
+
+@test
+def test_brace_format_nested_specs():
+    assert unicode("{0:{1}}").format(42, 5) == unicode("   42")
+    assert unicode("{0:.{1}f}").format(1.25, 1) == unicode("1.2")
+    assert unicode("{:{}}").format(42, 5) == unicode("   42")
+
+    try:
+        unicode("{0:{}}").format(42, 5)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{:{0}}").format(42, 5)
+        assert False
+    except ValueError:
+        pass
+
+
+test_brace_format_automatic_fields()
+test_brace_format_conversions()
+test_brace_format_positional_fields()
+test_brace_format_basic_specs()
+test_brace_format_type_validation()
+test_brace_format_spec_grammar()
+test_brace_format_alignment()
+test_brace_format_grouping()
+test_brace_format_adversarial_combinations()
+test_brace_format_adversarial_multi_argument_sequences()
+test_brace_format_adversarial_malformed_sequences()
+test_brace_format_adversarial_dynamic_buffer_growth()
+test_brace_format_nested_specs()

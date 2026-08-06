@@ -8,6 +8,7 @@ from .float_dtoa import (
     _float_dtoa_exponent_write,
     _float_dtoa_fixed_write,
     _float_dtoa_general_write,
+    _float_dtoa_shortest_write,
 )
 
 
@@ -234,7 +235,9 @@ def integer_format_write_padded(
     uppercase = False
     signed = conversion == 0x64 or conversion == 0x69  # d / i
 
-    if conversion == 0x6F:  # o
+    if conversion == 0x62:  # b
+        base = 2
+    elif conversion == 0x6F:  # o
         base = 8
     elif conversion == 0x78:  # x
         base = 16
@@ -271,7 +274,11 @@ def integer_format_write_padded(
     prefix1 = u8(0)
 
     if (flags & FORMAT_FLAG_ALT) != 0:
-        if conversion == 0x6F:  # o
+        if conversion == 0x62:  # b
+            prefix0 = u8(0x30)  # 0
+            prefix1 = u8(0x62)  # b
+            prefix_length = 2
+        elif conversion == 0x6F:  # o
             prefix0 = u8(0x30)  # 0
             prefix1 = u8(0x6F)  # o
             prefix_length = 2
@@ -387,6 +394,11 @@ class _PercentDirective:
     precision_from_argument: bool
     conversion: int
     key: Optional[unicode]
+    brace_alignment: int
+    brace_fill: int
+    brace_grouping: int
+    brace_coerce_negative_zero: bool
+    brace_sign_minus: bool
 
     def __init__(self):
         self.flags = 0
@@ -396,6 +408,11 @@ class _PercentDirective:
         self.precision_from_argument = False
         self.conversion = 0
         self.key = None
+        self.brace_alignment = 0
+        self.brace_fill = 0x20  # space
+        self.brace_grouping = 0
+        self.brace_coerce_negative_zero = False
+        self.brace_sign_minus = False
 
 
 def _parse_percent_directive(
@@ -1016,6 +1033,10 @@ class unicode:
         output, output_length = percent_format(self, values)
         return _unicode_decode_utf8_strict(output, output_length)
 
+    def format(self, *values) -> unicode:
+        output, output_length = brace_format(self, values)
+        return _unicode_decode_utf8_strict(output, output_length)
+
 
 def _value_string(value):
     return unicode(str(value))
@@ -1060,3 +1081,1043 @@ def _value_ascii(value) -> unicode:
             _percent_append_hex(output, codepoint, 8)
 
     return _unicode_decode_utf8_strict(output.data, output.length)
+
+
+class _BraceField:
+    index: int
+    conversion: int
+    spec: Optional[unicode]
+
+    def __init__(self):
+        self.index = -1
+        self.conversion = 0
+        self.spec = None
+
+
+def _brace_write_literal_prefix(
+    format: unicode,
+    format_pos: int,
+    result: _FormatBuffer,
+) -> int:
+    while format_pos < len(format):
+        codepoint = format._load_codepoint(format_pos)
+        format_pos += 1
+
+        if codepoint == 0x7B:  # {
+            if (
+                format_pos < len(format)
+                and format._load_codepoint(format_pos) == 0x7B
+            ):
+                result.append_byte(u8(0x7B))
+                format_pos += 1
+                continue
+
+            if format_pos == len(format):
+                raise ValueError("expected '}' before end of string")
+
+            # `format_pos` now points immediately after the opening brace.
+            return format_pos
+
+        if codepoint == 0x7D:  # }
+            if (
+                format_pos < len(format)
+                and format._load_codepoint(format_pos) == 0x7D
+            ):
+                result.append_byte(u8(0x7D))
+                format_pos += 1
+                continue
+
+            raise ValueError("single '}' encountered in format string")
+
+        result.reserve(4)
+        result.length = _utf8_encode_one(
+            result.data,
+            result.length,
+            codepoint,
+        )
+
+    return format_pos
+
+
+def _parse_brace_field(
+    format: unicode,
+    position: int,
+) -> Tuple[_BraceField, int]:
+    field = _BraceField()
+
+    if position >= len(format):
+        raise ValueError("expected '}' before end of string")
+
+    codepoint = format._load_codepoint(position)
+
+    if codepoint >= 0x30 and codepoint <= 0x39:
+        field.index = 0
+
+        while position < len(format):
+            codepoint = format._load_codepoint(position)
+
+            if codepoint < 0x30 or codepoint > 0x39:
+                break
+
+            field.index = field.index * 10 + codepoint - 0x30
+            position += 1
+
+        if position >= len(format):
+            raise ValueError("expected '}' before end of string")
+
+        codepoint = format._load_codepoint(position)
+
+    if codepoint == 0x7D:  # }
+        return field, position + 1
+
+    if codepoint == 0x21:  # !
+        position += 1
+
+        if position >= len(format):
+            raise ValueError("expected conversion character")
+
+        field.conversion = format._load_codepoint(position)
+        position += 1
+
+        if (
+            field.conversion != 0x73  # s
+            and field.conversion != 0x72  # r
+            and field.conversion != 0x61  # a
+        ):
+            raise ValueError("unknown conversion specifier")
+
+        if position >= len(format):
+            raise ValueError("expected '}' after conversion specifier")
+
+        codepoint = format._load_codepoint(position)
+
+    if codepoint == 0x3A:  # :
+        spec_start = position + 1
+        position = spec_start
+        nested_depth = 0
+
+        while position < len(format):
+            codepoint = format._load_codepoint(position)
+
+            if codepoint == 0x7B:  # {
+                if nested_depth != 0:
+                    raise ValueError("unexpected '{' in format specifier")
+
+                nested_depth = 1
+                position += 1
+                continue
+
+            if codepoint == 0x7D:  # }
+                if nested_depth != 0:
+                    nested_depth = 0
+                    position += 1
+                    continue
+
+                field.spec = format[spec_start:position]
+                return field, position + 1
+
+            position += 1
+
+        raise ValueError("expected '}' before end of string")
+
+    if codepoint != 0x7D:  # }
+        raise ValueError("invalid replacement field")
+
+    return field, position + 1
+
+
+def _brace_text_append(
+    text: unicode,
+    spec: Optional[unicode],
+    result: _FormatBuffer,
+):
+    if spec is None:
+        _percent_text_append(text, _PercentDirective(), result)
+        return
+
+    directive = _parse_brace_format_spec(spec)
+
+    if directive.conversion != 0x73:  # s
+        raise ValueError("invalid format specifier for string")
+
+    _percent_text_append(text, directive, result)
+
+
+def _brace_value_append_unaligned(
+    value,
+    field: _BraceField,
+    result: _FormatBuffer,
+):
+    if field.spec is None:
+        if field.conversion == 0x72:  # r
+            _brace_text_append(_value_repr(value), None, result)
+        elif field.conversion == 0x61:  # a
+            _brace_text_append(_value_ascii(value), None, result)
+        else:
+            # Default conversion and !s.
+            _brace_text_append(_value_string(value), None, result)
+
+        return
+
+    directive = _parse_brace_format_spec(field.spec)
+    _brace_value_append_with_directive(value, field, directive, result)
+
+
+def _brace_value_append(
+    value,
+    field: _BraceField,
+    result: _FormatBuffer,
+):
+    spec = field.spec
+
+    if spec is None:
+        _brace_value_append_unaligned(value, field, result)
+        return
+
+    directive = _parse_brace_format_spec(spec)
+    _brace_validate_value_format(value, field, directive)
+
+    if (
+        directive.brace_alignment == 0x3D  # =
+        and not isinstance(value, int)
+        and not isinstance(value, float)
+    ):
+        raise ValueError("'=' alignment not allowed in string format specifier")
+
+    if directive.brace_coerce_negative_zero and not isinstance(value, float):
+        raise ValueError("'z' option is only allowed for floats")
+
+    text_value = field.conversion != 0 or isinstance(value, unicode)
+
+    if (
+        text_value
+        and (directive.flags & FORMAT_FLAG_ZERO) != 0
+        and directive.brace_alignment == 0
+    ):
+        directive.flags &= ~FORMAT_FLAG_ZERO
+        directive.brace_fill = 0x30  # 0
+        directive.brace_alignment = 0x3C  # <
+
+    if (
+        directive.conversion == 0x63  # c
+        and (directive.flags & FORMAT_FLAG_ZERO) != 0
+        and directive.brace_alignment == 0
+    ):
+        directive.flags &= ~FORMAT_FLAG_ZERO
+        directive.brace_fill = 0x30  # 0
+        directive.brace_alignment = 0x3E  # >
+
+    if (
+        (directive.flags & FORMAT_FLAG_ZERO) != 0
+        and not text_value
+        and (
+            directive.brace_alignment == 0x3D  # =
+            or directive.brace_coerce_negative_zero
+        )
+    ):
+        directive.flags &= ~FORMAT_FLAG_ZERO
+        directive.brace_fill = 0x30  # 0
+        directive.brace_alignment = 0x3D  # =
+
+    has_zero_padding = (
+        (directive.flags & FORMAT_FLAG_ZERO) != 0
+        and directive.brace_alignment == 0
+        and directive.brace_grouping == 0
+        and not directive.brace_coerce_negative_zero
+    )
+
+    # Existing numeric writers handle sign-aware zero padding directly.
+    if has_zero_padding:
+        _brace_value_append_unaligned(value, field, result)
+        return
+
+    width = directive.width
+
+    if directive.brace_grouping != 0:
+        zero_fill = (
+            (
+                (directive.flags & FORMAT_FLAG_ZERO) != 0
+                and directive.brace_alignment == 0
+            )
+            or (
+                directive.brace_fill == 0x30  # 0
+                and directive.brace_alignment == 0x3D  # =
+            )
+        )
+        directive.width = 0
+
+        if zero_fill:
+            directive.flags &= ~FORMAT_FLAG_ZERO
+
+        rendered = _FormatBuffer(16)
+        _brace_value_append_with_directive(value, field, directive, rendered)
+        grouped = _brace_group_rendered(
+            rendered,
+            directive,
+            width if zero_fill else 0,
+        )
+
+        text_default_left = field.conversion != 0 or (
+            directive.conversion == 0x73  # s
+            and not isinstance(value, int)
+            and not isinstance(value, float)
+        )
+        directive.width = width
+        _brace_append_aligned(grouped, directive, text_default_left, result)
+        return
+
+    direct_numeric = (
+        field.conversion == 0
+        and directive.conversion != 0
+        and directive.conversion != 0x63  # c
+        and directive.conversion != 0x73  # s
+        and directive.conversion != 0x25  # %
+        and directive.brace_fill == 0x20  # space
+        and (
+            directive.brace_alignment == 0
+            or directive.brace_alignment == 0x3E  # >
+        )
+        and not directive.brace_coerce_negative_zero
+    )
+
+    if direct_numeric:
+        _brace_value_append_with_directive(value, field, directive, result)
+        return
+
+    if width <= 0:
+        _brace_value_append_unaligned(value, field, result)
+        return
+
+    # Render without width, then apply brace alignment by character count.
+    directive.width = 0
+    rendered = _FormatBuffer(16)
+
+    original_spec = field.spec
+    field.spec = unicode("")
+
+    # Preserve the parsed conversion/type while avoiding duplicate parsing.
+    # `_brace_value_append_unaligned` parses `field.spec`, so use a small
+    # helper that accepts the directive directly instead.
+    _brace_value_append_with_directive(value, field, directive, rendered)
+
+    field.spec = original_spec
+
+    text_default_left = field.conversion != 0 or (
+        directive.conversion == 0x73  # s
+        and not isinstance(value, int)
+        and not isinstance(value, float)
+    )
+    directive.width = width
+    _brace_append_aligned(rendered, directive, text_default_left, result)
+
+
+def brace_format(format: unicode, values):
+    result = _FormatBuffer(len(format) + 16)
+    format_pos = 0
+    automatic_index = 0
+    numbering_mode = 0  # 0 unknown, 1 automatic, 2 manual
+
+    while True:
+        format_pos = _brace_write_literal_prefix(
+            format,
+            format_pos,
+            result,
+        )
+
+        if format_pos == len(format):
+            break
+
+        field, format_pos = _parse_brace_field(format, format_pos)
+        index = field.index
+
+        if index < 0:
+            if numbering_mode == 2:
+                raise ValueError(
+                    "cannot switch from manual field specification "
+                    "to automatic field numbering"
+                )
+
+            numbering_mode = 1
+            index = automatic_index
+            automatic_index += 1
+        else:
+            if numbering_mode == 1:
+                raise ValueError(
+                    "cannot switch from automatic field numbering "
+                    "to manual field specification"
+                )
+
+            numbering_mode = 2
+
+        if field.spec is not None:
+            field.spec, automatic_index, numbering_mode = (
+                _brace_expand_format_spec(
+                    field.spec,
+                    values,
+                    automatic_index,
+                    numbering_mode,
+                )
+            )
+
+        _brace_index_value_append(values, index, field, result)
+
+    result.release_excess()
+    return result.data, result.length
+
+
+def _brace_expand_format_spec(
+    spec: unicode,
+    values,
+    automatic_index: int,
+    numbering_mode: int,
+) -> Tuple[unicode, int, int]:
+    result = _FormatBuffer(len(spec) + 16)
+    position = 0
+
+    while True:
+        position = _brace_write_literal_prefix(spec, position, result)
+
+        if position == len(spec):
+            break
+
+        field, position = _parse_brace_field(spec, position)
+
+        if field.spec is not None:
+            raise ValueError("nested format specifiers are not supported")
+
+        index = field.index
+
+        if index < 0:
+            if numbering_mode == 2:
+                raise ValueError(
+                    "cannot switch from manual field specification "
+                    "to automatic field numbering"
+                )
+
+            numbering_mode = 1
+            index = automatic_index
+            automatic_index += 1
+        else:
+            if numbering_mode == 1:
+                raise ValueError(
+                    "cannot switch from automatic field numbering "
+                    "to manual field specification"
+                )
+
+            numbering_mode = 2
+
+        _brace_index_value_append(values, index, field, result)
+
+    return (
+        _unicode_decode_utf8_strict(result.data, result.length),
+        automatic_index,
+        numbering_mode,
+    )
+
+
+def _brace_index_value_append(
+    values,
+    index: int,
+    field: _BraceField,
+    result: _FormatBuffer,
+):
+    found = False
+
+    for i in static.range(static.len(values)):
+        if index == i:
+            _brace_value_append(values[i], field, result)
+            found = True
+            break
+
+    if not found:
+        raise IndexError("replacement index out of range")
+
+
+def _parse_brace_format_spec(spec: unicode) -> _PercentDirective:
+    directive = _PercentDirective()
+    position = 0
+
+    if len(spec) >= 2:
+        alignment = spec._load_codepoint(1)
+
+        if (
+            alignment == 0x3C  # <
+            or alignment == 0x3E  # >
+            or alignment == 0x5E  # ^
+            or alignment == 0x3D  # =
+        ):
+            directive.brace_fill = spec._load_codepoint(0)
+            directive.brace_alignment = alignment
+            position = 2
+
+    if position == 0 and len(spec) >= 1:
+        alignment = spec._load_codepoint(0)
+
+        if (
+            alignment == 0x3C  # <
+            or alignment == 0x3E  # >
+            or alignment == 0x5E  # ^
+            or alignment == 0x3D  # =
+        ):
+            directive.brace_alignment = alignment
+            position = 1
+
+    # Parse modifiers in Python's format-spec mini-language order.
+    if position < len(spec):
+        character = spec._load_codepoint(position)
+
+        if character == 0x2D:  # -
+            directive.brace_sign_minus = True
+            position += 1
+        elif character == 0x20:  # space
+            directive.flags |= FORMAT_FLAG_SPACE
+            position += 1
+        elif character == 0x2B:  # +
+            directive.flags |= FORMAT_FLAG_PLUS
+            position += 1
+
+    if (
+        position < len(spec)
+        and spec._load_codepoint(position) == 0x7A  # z
+    ):
+        directive.brace_coerce_negative_zero = True
+        position += 1
+
+    if (
+        position < len(spec)
+        and spec._load_codepoint(position) == 0x23  # #
+    ):
+        directive.flags |= FORMAT_FLAG_ALT
+        position += 1
+
+    if (
+        position < len(spec)
+        and spec._load_codepoint(position) == 0x30  # 0
+    ):
+        directive.flags |= FORMAT_FLAG_ZERO
+        position += 1
+
+    while position < len(spec):
+        character = spec._load_codepoint(position)
+
+        if character < 0x30 or character > 0x39:
+            break
+
+        directive.width = directive.width * 10 + character - 0x30
+        position += 1
+
+    if position < len(spec):
+        character = spec._load_codepoint(position)
+
+        if character == 0x2C or character == 0x5F:  # , / _
+            directive.brace_grouping = character
+            position += 1
+
+    if (
+        position < len(spec)
+        and spec._load_codepoint(position) == 0x2E  # .
+    ):
+        directive.precision = 0
+        position += 1
+
+        while position < len(spec):
+            character = spec._load_codepoint(position)
+
+            if character < 0x30 or character > 0x39:
+                break
+
+            directive.precision = directive.precision * 10 + character - 0x30
+            position += 1
+
+    if position == len(spec):
+        directive.conversion = 0
+        return directive
+
+    directive.conversion = spec._load_codepoint(position)
+    position += 1
+
+    if position != len(spec):
+        raise ValueError("invalid format specifier")
+
+    if (
+        directive.conversion != 0x62  # b
+        and directive.conversion != 0x73  # s
+        and directive.conversion != 0x63  # c
+        and directive.conversion != 0x25  # %
+        and not _percent_is_numeric_conversion(directive.conversion)
+    ):
+        raise ValueError("unknown format code")
+
+    return directive
+
+
+def _brace_utf8_character_count(data: Ptr[u8], length: int) -> int:
+    count = 0
+    position = 0
+
+    while position < length:
+        byte = int(data[position])
+
+        if byte < 0x80:
+            position += 1
+        elif byte < 0xE0:
+            position += 2
+        elif byte < 0xF0:
+            position += 3
+        else:
+            position += 4
+
+        count += 1
+
+    return count
+
+
+def _brace_append_fill(
+    result: _FormatBuffer,
+    fill: int,
+    count: int,
+):
+    result.reserve(count * 4)
+
+    for _ in range(count):
+        result.length = _utf8_encode_one(
+            result.data,
+            result.length,
+            fill,
+        )
+
+
+def _brace_group_rendered(
+    rendered: _FormatBuffer,
+    directive: _PercentDirective,
+    zero_width: int,
+) -> _FormatBuffer:
+    conversion = directive.conversion
+    default_conversion = conversion == 0
+
+    if default_conversion:
+        conversion = 0x64  # d
+
+    if directive.brace_grouping == 0x2C and (
+        conversion == 0x62  # b
+        or conversion == 0x6F  # o
+        or conversion == 0x78  # x
+        or conversion == 0x58  # X
+    ):
+        raise ValueError("cannot specify ',' with this format code")
+
+    group_size = 3 if directive.brace_grouping == 0x2C else 4
+    integer_start = 0
+
+    if (
+        rendered.length > 0
+        and (
+            rendered.data[0] == u8(0x2D)  # -
+            or rendered.data[0] == u8(0x2B)  # +
+            or rendered.data[0] == u8(0x20)  # space
+        )
+    ):
+        integer_start = 1
+
+    if (
+        integer_start + 1 < rendered.length
+        and rendered.data[integer_start] == u8(0x30)  # 0
+        and (
+            rendered.data[integer_start + 1] == u8(0x62)  # b
+            or rendered.data[integer_start + 1] == u8(0x6F)  # o
+            or rendered.data[integer_start + 1] == u8(0x78)  # x
+            or rendered.data[integer_start + 1] == u8(0x58)  # X
+        )
+    ):
+        integer_start += 2
+
+    integer_end = integer_start
+    has_exponent = (
+        default_conversion
+        or conversion == 0x65  # e
+        or conversion == 0x45  # E
+        or conversion == 0x67  # g
+        or conversion == 0x47  # G
+    )
+
+    while integer_end < rendered.length:
+        byte = rendered.data[integer_end]
+
+        if (
+            byte == u8(0x2E)  # .
+            or byte == u8(0x25)  # %
+            or (has_exponent and byte == u8(0x65))  # e
+            or (has_exponent and byte == u8(0x45))  # E
+        ):
+            break
+
+        integer_end += 1
+
+    digits = integer_end - integer_start
+    suffix = rendered.length - integer_end
+    leading = integer_start
+    zeroes = 0
+
+    while zero_width > 0:
+        grouped_digits = digits + zeroes
+        separators = (grouped_digits - 1) // group_size
+
+        if leading + grouped_digits + separators + suffix >= zero_width:
+            break
+
+        zeroes += 1
+
+    grouped_digits = digits + zeroes
+    separators = (grouped_digits - 1) // group_size
+    result = _FormatBuffer(rendered.length + zeroes + separators)
+    result.reserve(rendered.length + zeroes + separators)
+
+    for i in range(integer_start):
+        result.data[result.length] = rendered.data[i]
+        result.length += 1
+
+    for i in range(grouped_digits):
+        if i > 0 and (grouped_digits - i) % group_size == 0:
+            result.append_byte(u8(directive.brace_grouping))
+
+        if i < zeroes:
+            result.append_byte(u8(0x30))
+        else:
+            result.append_byte(rendered.data[integer_start + i - zeroes])
+
+    for i in range(integer_end, rendered.length):
+        result.data[result.length] = rendered.data[i]
+        result.length += 1
+
+    return result
+
+
+def _brace_append_aligned(
+    rendered: _FormatBuffer,
+    directive: _PercentDirective,
+    text_default_left: bool,
+    result: _FormatBuffer,
+):
+    characters = _brace_utf8_character_count(rendered.data, rendered.length)
+    padding = directive.width - characters
+
+    if padding < 0:
+        padding = 0
+
+    alignment = directive.brace_alignment
+
+    if alignment == 0:
+        alignment = 0x3C if text_default_left else 0x3E  # < / >
+
+    left_padding = 0
+    right_padding = 0
+
+    if alignment == 0x3C:  # <
+        right_padding = padding
+    elif alignment == 0x5E:  # ^
+        left_padding = padding.cdiv(2)
+        right_padding = padding - left_padding
+    elif alignment == 0x3D:  # =
+        split = 0
+
+        if (
+            rendered.length > 0
+            and (
+                rendered.data[0] == u8(0x2D)  # -
+                or rendered.data[0] == u8(0x2B)  # +
+                or rendered.data[0] == u8(0x20)  # space
+            )
+        ):
+            split = 1
+
+        if (
+            split + 1 < rendered.length
+            and rendered.data[split] == u8(0x30)  # 0
+            and (
+                rendered.data[split + 1] == u8(0x62)  # b
+                or rendered.data[split + 1] == u8(0x6F)  # o
+                or rendered.data[split + 1] == u8(0x78)  # x
+                or rendered.data[split + 1] == u8(0x58)  # X
+            )
+        ):
+            split += 2
+
+        result.reserve(rendered.length + padding)
+        for i in range(split):
+            result.data[result.length] = rendered.data[i]
+            result.length += 1
+
+        _brace_append_fill(result, directive.brace_fill, padding)
+
+        for i in range(split, rendered.length):
+            result.data[result.length] = rendered.data[i]
+            result.length += 1
+
+        return
+    else:  # >, including the default numeric alignment
+        left_padding = padding
+
+    _brace_append_fill(result, directive.brace_fill, left_padding)
+
+    result.reserve(rendered.length)
+    for i in range(rendered.length):
+        result.data[result.length + i] = rendered.data[i]
+    result.length += rendered.length
+
+    _brace_append_fill(result, directive.brace_fill, right_padding)
+
+
+def _brace_value_append_with_directive(
+    value,
+    field: _BraceField,
+    directive: _PercentDirective,
+    result: _FormatBuffer,
+):
+    if field.conversion == 0x72:  # r
+        if directive.conversion != 0 and directive.conversion != 0x73:
+            raise ValueError("invalid format specifier for string")
+        _percent_text_append(_value_repr(value), directive, result)
+        return
+
+    if field.conversion == 0x61:  # a
+        if directive.conversion != 0 and directive.conversion != 0x73:
+            raise ValueError("invalid format specifier for string")
+        _percent_text_append(_value_ascii(value), directive, result)
+        return
+
+    if field.conversion == 0x73:  # s
+        if directive.conversion != 0 and directive.conversion != 0x73:
+            raise ValueError("invalid format specifier for string")
+        _percent_text_append(_value_string(value), directive, result)
+        return
+
+    start = result.length
+    conversion = directive.conversion
+
+    if conversion == 0:
+        numeric_options = (
+            directive.precision >= 0
+            or directive.flags != 0
+            or directive.brace_grouping != 0
+        )
+
+        if isinstance(value, int) and numeric_options:
+            conversion = 0x64  # d
+        elif isinstance(value, float) and directive.precision >= 0:
+            conversion = 0x67  # g
+
+    if conversion == 0:
+        if isinstance(value, float) and numeric_options:
+            _brace_float_shortest_append(value, directive, result)
+        else:
+            _percent_text_append(_value_string(value), directive, result)
+    elif conversion == 0x73:
+        _percent_text_append(_value_string(value), directive, result)
+    elif conversion == 0x63:
+        result.reserve(4)
+        result.length += _percent_char_write(
+            value,
+            directive,
+            result.data + result.length,
+        )
+    elif conversion == 0x25:  # %
+        result.reserve(_float_format_buffer_size(0x66, directive.precision) + 1)
+        width = directive.width
+
+        # Ordinary brace alignment is applied after this writer returns, so
+        # only the direct zero-fill path must reserve room for the suffix.
+        if (directive.flags & FORMAT_FLAG_ZERO) != 0 and width > 0:
+            width -= 1
+
+        if isinstance(value, int):
+            result.length += float_format_write_padded(
+                float(value) * 100.0,
+                0x66,  # f
+                directive.precision,
+                directive.flags,
+                width,
+                result.data + result.length,
+            )
+        elif isinstance(value, float):
+            result.length += float_format_write_padded(
+                value * 100.0,
+                0x66,  # f
+                directive.precision,
+                directive.flags,
+                width,
+                result.data + result.length,
+            )
+        else:
+            raise TypeError("a number is required")
+
+        result.append_byte(u8(0x25))
+    elif conversion == 0x62:  # b
+        if isinstance(value, int):
+            result.reserve(directive.width + directive.precision + 128)
+            result.length += integer_format_write_padded(
+                value,
+                conversion,
+                directive.precision,
+                directive.flags,
+                directive.width,
+                result.data + result.length,
+            )
+        else:
+            raise TypeError("an integer is required")
+    else:
+        directive.conversion = conversion
+        _percent_numeric_append(value, directive, result)
+
+    if directive.brace_coerce_negative_zero and isinstance(value, float):
+        _brace_coerce_rendered_negative_zero(result, start, directive.flags)
+
+
+def _brace_validate_value_format(
+    value,
+    field: _BraceField,
+    directive: _PercentDirective,
+):
+    conversion = directive.conversion
+    has_sign = (
+        directive.brace_sign_minus
+        or (directive.flags & FORMAT_FLAG_PLUS) != 0
+        or (directive.flags & FORMAT_FLAG_SPACE) != 0
+    )
+
+    if field.conversion != 0 or isinstance(value, unicode):
+        if has_sign:
+            raise ValueError("sign is not allowed in string format specifier")
+        if (directive.flags & FORMAT_FLAG_ALT) != 0:
+            raise ValueError("alternate form is not allowed in string format specifier")
+        if directive.brace_grouping != 0:
+            raise ValueError("grouping is not allowed in string format specifier")
+        if directive.brace_alignment == 0x3D:  # =
+            raise ValueError("'=' alignment not allowed in string format specifier")
+        if directive.brace_coerce_negative_zero:
+            raise ValueError("'z' option is not allowed in string format specifier")
+        if conversion != 0 and conversion != 0x73:  # s
+            raise ValueError("unknown format code for string")
+        return
+
+    integer_conversion = (
+        conversion == 0x62  # b
+        or conversion == 0x63  # c
+        or conversion == 0x64  # d
+        or conversion == 0x6F  # o
+        or conversion == 0x78  # x
+        or conversion == 0x58  # X
+    )
+    float_conversion = (
+        conversion == 0x65  # e
+        or conversion == 0x45  # E
+        or conversion == 0x66  # f
+        or conversion == 0x46  # F
+        or conversion == 0x67  # g
+        or conversion == 0x47  # G
+        or conversion == 0x25  # %
+    )
+
+    if isinstance(value, float):
+        if integer_conversion or conversion == 0x73:  # s
+            raise ValueError("format code is invalid for float")
+        return
+
+    if isinstance(value, int):
+        if conversion == 0x73:  # s
+            raise ValueError("string format code is invalid for integer")
+        if conversion == 0x63:  # c
+            if (
+                has_sign
+                or (directive.flags & FORMAT_FLAG_ALT) != 0
+                or directive.precision >= 0
+                or directive.brace_grouping != 0
+            ):
+                raise ValueError("invalid format specifier for character")
+            return
+        if directive.precision >= 0 and (conversion == 0 or integer_conversion):
+            raise ValueError("precision is not allowed in integer format")
+        return
+
+
+def _brace_coerce_rendered_negative_zero(
+    result: _FormatBuffer,
+    start: int,
+    flags: int,
+):
+    if (
+        result.length - start < 2
+        or result.data[start] != u8(0x2D)  # -
+        or result.data[start + 1] != u8(0x30)  # 0
+    ):
+        return
+
+    for i in range(start + 1, result.length):
+        byte = result.data[i]
+
+        if byte >= u8(0x31) and byte <= u8(0x39):
+            return
+
+    add_default_fraction = result.length == start + 2
+
+    if (flags & FORMAT_FLAG_PLUS) != 0:
+        result.data[start] = u8(0x2B)  # +
+    elif (flags & FORMAT_FLAG_SPACE) != 0:
+        result.data[start] = u8(0x20)  # space
+    else:
+        for i in range(start + 1, result.length):
+            result.data[i - 1] = result.data[i]
+
+        result.length -= 1
+
+    if add_default_fraction:
+        result.append_byte(u8(0x2E))  # .
+        result.append_byte(u8(0x30))  # 0
+
+
+def _brace_float_shortest_append(
+    value: float,
+    directive: _PercentDirective,
+    result: _FormatBuffer,
+):
+    rendered = _FormatBuffer(32)
+    rendered.reserve(32)
+    rendered.length = _float_dtoa_shortest_write(
+        value,
+        rendered.data,
+        False,
+    )
+
+    sign = u8(0)
+
+    if rendered.length == 0 or rendered.data[0] != u8(0x2D):  # -
+        if (directive.flags & FORMAT_FLAG_PLUS) != 0:
+            sign = u8(0x2B)  # +
+        elif (directive.flags & FORMAT_FLAG_SPACE) != 0:
+            sign = u8(0x20)  # space
+
+    padding = directive.width - rendered.length
+    if sign != u8(0):
+        padding -= 1
+    if padding < 0:
+        padding = 0
+
+    left = (directive.flags & FORMAT_FLAG_LEFT) != 0
+    zero = (directive.flags & FORMAT_FLAG_ZERO) != 0 and not left
+
+    result.reserve(rendered.length + (1 if sign != u8(0) else 0) + padding)
+
+    if not left and not zero:
+        _brace_append_fill(result, 0x20, padding)
+
+    if sign != u8(0):
+        result.append_byte(sign)
+
+    if zero:
+        _brace_append_fill(result, 0x30, padding)
+
+    for i in range(rendered.length):
+        result.data[result.length] = rendered.data[i]
+        result.length += 1
+
+    if left:
+        _brace_append_fill(result, 0x20, padding)
