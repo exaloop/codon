@@ -354,6 +354,406 @@ def _unicode_from_text(value: str) -> unicode:
     return _unicode_decode_utf8_strict(value._ptr, len(value))
 
 
+def _codec_name(encoding: str) -> str:
+    return encoding.lower().replace("_", "-")
+
+
+def _codec_error_append(
+    output: List[int],
+    data: Ptr[u8],
+    start: int,
+    end: int,
+    errors: str,
+):
+    if errors == "strict":
+        raise ValueError("invalid byte sequence")
+
+    if errors == "ignore":
+        return
+
+    if errors == "replace":
+        output.append(0xFFFD)
+        return
+
+    if errors == "backslashreplace":
+        for i in range(start, end):
+            byte = int(data[i])
+            output.append(0x5C)  # \
+            output.append(0x78)  # x
+            high = byte >> 4
+            output.append(0x30 + high if high < 10 else 0x61 + high - 10)
+            digit = byte & 0xF
+            output.append(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+        return
+
+    raise ValueError("unsupported error handling: " + errors)
+
+
+def _unicode_from_codepoints(codepoints: List[int]) -> unicode:
+    maxchar = 0
+
+    for codepoint in codepoints:
+        if codepoint > maxchar:
+            maxchar = codepoint
+
+    result = _unicode_new_uninit(len(codepoints), maxchar)
+
+    for i in range(len(codepoints)):
+        result._store_codepoint(i, codepoints[i])
+
+    return result
+
+
+def _unicode_decode_utf8(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> unicode:
+    codepoints = []
+    pos = 0
+
+    while pos < byte_length:
+        start = pos
+        b0 = int(data[pos])
+
+        if b0 < 0x80:
+            codepoints.append(b0)
+            pos += 1
+            continue
+
+        width = 0
+        if 0xC2 <= b0 <= 0xDF:
+            width = 2
+        elif 0xE0 <= b0 <= 0xEF:
+            width = 3
+        elif 0xF0 <= b0 <= 0xF4:
+            width = 4
+
+        if width == 0:
+            _codec_error_append(codepoints, data, start, start + 1, errors)
+            pos += 1
+            continue
+
+        if pos + width > byte_length:
+            _codec_error_append(codepoints, data, start, byte_length, errors)
+            break
+
+        valid = True
+        for i in range(1, width):
+            if not _is_utf8_continuation(int(data[pos + i])):
+                valid = False
+                break
+
+        b1 = int(data[pos + 1])
+        if (
+            not valid
+            or (b0 == 0xE0 and b1 < 0xA0)
+            or (b0 == 0xED and b1 > 0x9F)
+            or (b0 == 0xF0 and b1 < 0x90)
+            or (b0 == 0xF4 and b1 > 0x8F)
+        ):
+            _codec_error_append(codepoints, data, start, start + 1, errors)
+            pos += 1
+            continue
+
+        codepoint = b0 & (0x7F >> width)
+        for i in range(1, width):
+            codepoint = (codepoint << 6) | (int(data[pos + i]) & 0x3F)
+
+        codepoints.append(codepoint)
+        pos += width
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_single_byte(
+    data: Ptr[u8],
+    byte_length: int,
+    ascii: bool,
+    errors: str,
+) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        byte = int(data[i])
+        if ascii and byte > 0x7F:
+            _codec_error_append(codepoints, data, i, i + 1, errors)
+        else:
+            codepoints.append(byte)
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_utf16(
+    data: Ptr[u8],
+    byte_length: int,
+    little_endian: bool,
+    errors: str,
+) -> unicode:
+    codepoints = []
+    pos = 0
+
+    if byte_length >= 2:
+        bom = int(data[0]) | (int(data[1]) << 8)
+        if bom == 0xFEFF:
+            little_endian = True
+            pos = 2
+        elif bom == 0xFFFE:
+            little_endian = False
+            pos = 2
+
+    while pos < byte_length:
+        if pos + 2 > byte_length:
+            _codec_error_append(codepoints, data, pos, byte_length, errors)
+            break
+
+        if little_endian:
+            unit = int(data[pos]) | (int(data[pos + 1]) << 8)
+        else:
+            unit = (int(data[pos]) << 8) | int(data[pos + 1])
+
+        if 0xD800 <= unit <= 0xDBFF:
+            if pos + 4 <= byte_length:
+                if little_endian:
+                    low = int(data[pos + 2]) | (int(data[pos + 3]) << 8)
+                else:
+                    low = (int(data[pos + 2]) << 8) | int(data[pos + 3])
+
+                if 0xDC00 <= low <= 0xDFFF:
+                    codepoints.append(0x10000 + ((unit - 0xD800) << 10) + low - 0xDC00)
+                    pos += 4
+                    continue
+
+            _codec_error_append(codepoints, data, pos, pos + 2, errors)
+        elif 0xDC00 <= unit <= 0xDFFF:
+            _codec_error_append(codepoints, data, pos, pos + 2, errors)
+        else:
+            codepoints.append(unit)
+
+        pos += 2
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_utf32(
+    data: Ptr[u8],
+    byte_length: int,
+    little_endian: bool,
+    errors: str,
+) -> unicode:
+    codepoints = []
+    pos = 0
+
+    if byte_length >= 4:
+        bom = (
+            int(data[0])
+            | (int(data[1]) << 8)
+            | (int(data[2]) << 16)
+            | (int(data[3]) << 24)
+        )
+        if bom == 0x0000FEFF:
+            little_endian = True
+            pos = 4
+        elif bom == 0xFFFE0000:
+            little_endian = False
+            pos = 4
+
+    while pos < byte_length:
+        if pos + 4 > byte_length:
+            _codec_error_append(codepoints, data, pos, byte_length, errors)
+            break
+
+        if little_endian:
+            codepoint = (
+                int(data[pos])
+                | (int(data[pos + 1]) << 8)
+                | (int(data[pos + 2]) << 16)
+                | (int(data[pos + 3]) << 24)
+            )
+        else:
+            codepoint = (
+                (int(data[pos]) << 24)
+                | (int(data[pos + 1]) << 16)
+                | (int(data[pos + 2]) << 8)
+                | int(data[pos + 3])
+            )
+
+        if codepoint > UNICODE_MAX or _is_surrogate(codepoint):
+            _codec_error_append(codepoints, data, pos, pos + 4, errors)
+        else:
+            codepoints.append(codepoint)
+
+        pos += 4
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_codec(data: str, encoding: str, errors: str) -> unicode:
+    name = _codec_name(encoding)
+
+    if name == "utf-8" or name == "utf8":
+        return _unicode_decode_utf8(data._ptr, len(data), errors)
+    if name == "ascii" or name == "us-ascii":
+        return _unicode_decode_single_byte(data._ptr, len(data), True, errors)
+    if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
+        return _unicode_decode_single_byte(data._ptr, len(data), False, errors)
+    if name == "utf-16" or name == "utf-16-le" or name == "utf16le":
+        return _unicode_decode_utf16(data._ptr, len(data), True, errors)
+    if name == "utf-16-be" or name == "utf16be":
+        return _unicode_decode_utf16(data._ptr, len(data), False, errors)
+    if name == "utf-32" or name == "utf-32-le" or name == "utf32le":
+        return _unicode_decode_utf32(data._ptr, len(data), True, errors)
+    if name == "utf-32-be" or name == "utf32be":
+        return _unicode_decode_utf32(data._ptr, len(data), False, errors)
+
+    raise LookupError("unknown encoding: " + encoding)
+
+
+def _bytes_from_values(values: List[int]) -> str:
+    output = Ptr[u8](len(values) + 1)
+
+    for i in range(len(values)):
+        output[i] = u8(values[i])
+
+    output[len(values)] = u8(0)
+    return str(output, len(values))
+
+
+def _codec_encode_error_append(output: List[int], codepoint: int, errors: str):
+    if errors == "strict":
+        _raise_utf8_encode_error(0, 0, "code point not encodable")
+
+    if errors == "ignore":
+        return
+
+    if errors == "replace":
+        output.append(0x3F)  # ?
+        return
+
+    if errors == "backslashreplace":
+        output.append(0x5C)  # \
+        if codepoint <= 0xFF:
+            output.append(0x78)  # x
+            digits = 2
+        elif codepoint <= 0xFFFF:
+            output.append(0x75)  # u
+            digits = 4
+        else:
+            output.append(0x55)  # U
+            digits = 8
+
+        for i in range(digits - 1, -1, -1):
+            digit = (codepoint >> (i * 4)) & 0xF
+            output.append(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+        return
+
+    raise ValueError("unsupported error handling: " + errors)
+
+
+def _unicode_encode_single_byte(
+    value: unicode,
+    ascii: bool,
+    errors: str,
+) -> str:
+    output = []
+    limit = 0x7F if ascii else 0xFF
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if codepoint > limit:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(codepoint)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_utf16(value: unicode, little_endian: bool, bom: bool) -> str:
+    output = []
+
+    if bom:
+        if little_endian:
+            output.append(0xFF)
+            output.append(0xFE)
+        else:
+            output.append(0xFE)
+            output.append(0xFF)
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if codepoint <= 0xFFFF:
+            units = [codepoint]
+        else:
+            scalar = codepoint - 0x10000
+            units = [0xD800 + (scalar >> 10), 0xDC00 + (scalar & 0x3FF)]
+
+        for unit in units:
+            if little_endian:
+                output.append(unit & 0xFF)
+                output.append(unit >> 8)
+            else:
+                output.append(unit >> 8)
+                output.append(unit & 0xFF)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_utf32(value: unicode, little_endian: bool, bom: bool) -> str:
+    output = []
+
+    if bom:
+        if little_endian:
+            output.append(0xFF)
+            output.append(0xFE)
+            output.append(0)
+            output.append(0)
+        else:
+            output.append(0)
+            output.append(0)
+            output.append(0xFE)
+            output.append(0xFF)
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if little_endian:
+            output.append(codepoint & 0xFF)
+            output.append((codepoint >> 8) & 0xFF)
+            output.append((codepoint >> 16) & 0xFF)
+            output.append(codepoint >> 24)
+        else:
+            output.append(codepoint >> 24)
+            output.append((codepoint >> 16) & 0xFF)
+            output.append((codepoint >> 8) & 0xFF)
+            output.append(codepoint & 0xFF)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_codec(value: unicode, encoding: str, errors: str) -> str:
+    name = _codec_name(encoding)
+
+    if name == "utf-8" or name == "utf8":
+        return _unicode_encode_utf8_strict(value)
+    if name == "ascii" or name == "us-ascii":
+        return _unicode_encode_single_byte(value, True, errors)
+    if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
+        return _unicode_encode_single_byte(value, False, errors)
+    if name == "utf-16":
+        return _unicode_encode_utf16(value, True, True)
+    if name == "utf-16-le" or name == "utf16le":
+        return _unicode_encode_utf16(value, True, False)
+    if name == "utf-16-be" or name == "utf16be":
+        return _unicode_encode_utf16(value, False, False)
+    if name == "utf-32":
+        return _unicode_encode_utf32(value, True, True)
+    if name == "utf-32-le" or name == "utf32le":
+        return _unicode_encode_utf32(value, True, False)
+    if name == "utf-32-be" or name == "utf32be":
+        return _unicode_encode_utf32(value, False, False)
+
+    raise LookupError("unknown encoding: " + encoding)
+
+
 @extend
 class unicode:
 
@@ -389,13 +789,7 @@ class unicode:
         encoding: str,
         errors: str,
     ):
-        if encoding != "utf-8" and encoding != "utf8":
-            raise LookupError("unknown encoding: " + encoding)
-
-        if errors != "strict":
-            raise ValueError("unsupported error handling: " + errors)
-
-        self._assign(_unicode_from_text(data))
+        self._assign(_unicode_decode_codec(data, encoding, errors))
 
     def _assign(self, other: unicode):
         n = len(other)
@@ -764,13 +1158,7 @@ class unicode:
         encoding: str,
         errors: str,
     ) -> str:
-        if encoding == "utf-8" or encoding == "utf8":
-            if errors != "strict":
-                raise ValueError("unsupported error handling: " + errors)
-
-            return _unicode_encode_utf8_strict(self)
-
-        raise LookupError("unknown encoding: " + encoding)
+        return _unicode_encode_codec(self, encoding, errors)
 
     def __repr__(self) -> str:
         single_quotes = 0
@@ -809,6 +1197,20 @@ class unicode:
         return x
 
     @staticmethod
+    def maketrans(x: dict[int, unicode]) -> dict[int, unicode]:
+        return x
+
+    @staticmethod
+    def maketrans(x: dict[int, Optional[int]]) -> dict[int, Optional[int]]:
+        return x
+
+    @staticmethod
+    def maketrans(
+        x: dict[int, Optional[unicode]],
+    ) -> dict[int, Optional[unicode]]:
+        return x
+
+    @staticmethod
     def maketrans(
         x: unicode,
         y: unicode = unicode(),
@@ -828,7 +1230,16 @@ class unicode:
         return table
 
     def translate(self, table: dict[int, int]) -> unicode:
-        return _unicode_translate_impl(self, table)
+        return _unicode_translate_int_impl(self, table)
+
+    def translate(self, table: dict[int, unicode]) -> unicode:
+        return _unicode_translate_unicode_impl(self, table)
+
+    def translate(self, table: dict[int, Optional[int]]) -> unicode:
+        return _unicode_translate_optional_int_impl(self, table)
+
+    def translate(self, table: dict[int, Optional[unicode]]) -> unicode:
+        return _unicode_translate_optional_unicode_impl(self, table)
 
     def lower(self) -> unicode:
         if self._is_ascii():
@@ -1844,7 +2255,7 @@ def _unicode_replace_impl(
     return result
 
 
-def _unicode_translate_impl(value: unicode, table: dict[int, int]) -> unicode:
+def _unicode_translate_int_impl(value: unicode, table: dict[int, int]) -> unicode:
     maxchar = 0
     out_len = 0
 
@@ -1854,6 +2265,9 @@ def _unicode_translate_impl(value: unicode, table: dict[int, int]) -> unicode:
 
         if mapped == -1:
             continue
+
+        if mapped < 0 or mapped > UNICODE_MAX or _is_surrogate(mapped):
+            raise ValueError("invalid translation code point")
 
         if mapped > maxchar:
             maxchar = mapped
@@ -1874,6 +2288,76 @@ def _unicode_translate_impl(value: unicode, table: dict[int, int]) -> unicode:
         out += 1
 
     return _unicode_slice_impl(result, 0, out)
+
+
+def _unicode_translate_unicode_impl(
+    value: unicode,
+    table: dict[int, unicode],
+) -> unicode:
+    pieces = []
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        if cp in table:
+            pieces.append(table[cp])
+        else:
+            pieces.append(value[i])
+
+    return _unicode_join_impl(_unicode_empty(), pieces)
+
+
+def _unicode_translate_optional_int_impl(
+    value: unicode,
+    table: dict[int, Optional[int]],
+) -> unicode:
+    maxchar = 0
+    out_len = 0
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        mapped = table[codepoint] if codepoint in table else codepoint
+
+        if mapped is None:
+            continue
+
+        if mapped < 0 or mapped > UNICODE_MAX or _is_surrogate(mapped):
+            raise ValueError("invalid translation code point")
+
+        if mapped > maxchar:
+            maxchar = mapped
+        out_len += 1
+
+    result = _unicode_new_uninit(out_len, maxchar)
+    out = 0
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        mapped = table[codepoint] if codepoint in table else codepoint
+
+        if mapped is not None:
+            result._store_codepoint(out, mapped)
+            out += 1
+
+    return result
+
+
+def _unicode_translate_optional_unicode_impl(
+    value: unicode,
+    table: dict[int, Optional[unicode]],
+) -> unicode:
+    pieces = []
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        if cp not in table:
+            pieces.append(value[i])
+            continue
+
+        mapped = table[cp]
+        if mapped is not None:
+            pieces.append(mapped)
+
+    return _unicode_join_impl(_unicode_empty(), pieces)
 
 
 def _unicode_ascii_map(value: unicode, transform) -> unicode:
@@ -2101,7 +2585,7 @@ def _unicode_title_full(value: unicode) -> unicode:
 
         if unicode_is_cased(cp):
             previous_is_cased = True
-        elif not unicode_is_case_ignorable(cp):
+        else:
             previous_is_cased = False
 
     result = _unicode_new_uninit(output_length, maxchar)
@@ -2130,7 +2614,7 @@ def _unicode_title_full(value: unicode) -> unicode:
 
         if unicode_is_cased(cp):
             previous_is_cased = True
-        elif not unicode_is_case_ignorable(cp):
+        else:
             previous_is_cased = False
 
     return result
@@ -2149,7 +2633,7 @@ def _unicode_swapcase_full(value: unicode) -> unicode:
                 mapped = unicode_upper_mapping_codepoint(cp, j)
                 if mapped > maxchar:
                     maxchar = mapped
-        elif unicode_is_upper(cp) or unicode_is_title(cp):
+        elif unicode_is_upper(cp):
             length = _unicode_lower_mapping_length(value, i)
             for j in range(length):
                 mapped = _unicode_lower_mapping_codepoint(value, i, j)
@@ -2176,7 +2660,7 @@ def _unicode_swapcase_full(value: unicode) -> unicode:
                     unicode_upper_mapping_codepoint(cp, j),
                 )
                 output += 1
-        elif unicode_is_upper(cp) or unicode_is_title(cp):
+        elif unicode_is_upper(cp):
             length = _unicode_lower_mapping_length(value, i)
             for j in range(length):
                 result._store_codepoint(

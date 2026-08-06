@@ -19,6 +19,15 @@ from internal.types.unicode.format import (
 )
 
 
+def _raw_bytes(values: List[int]) -> str:
+    data = Ptr[u8](len(values))
+
+    for i in range(len(values)):
+        data[i] = u8(values[i])
+
+    return str(data, len(values))
+
+
 @test
 def test_empty():
     u = unicode("")
@@ -80,6 +89,64 @@ def test_unicode_codepoints():
 
 
 @test
+def test_codecs_and_error_handlers():
+    assert unicode(_raw_bytes([0x68, 0xC3, 0xA9]), "UTF_8") == unicode("hé")
+    assert unicode(_raw_bytes([0xE9]), "iso-8859-1") == unicode("é")
+    assert unicode(_raw_bytes([0x41, 0xA9, 0x03]), "utf16le") == unicode("AΩ")
+    assert unicode(_raw_bytes([0x00, 0x41, 0x03, 0xA9]), "utf-16-be") == unicode("AΩ")
+    assert unicode(_raw_bytes([0x00, 0xF6, 0x01, 0x00]), "utf32le") == unicode("😀")
+    assert unicode(_raw_bytes([0x00, 0x01, 0xF6, 0x00]), "utf-32-be") == unicode("😀")
+
+    assert unicode(_raw_bytes([0xFF, 0xFE, 0x41, 0x00]), "utf-16") == unicode("A")
+    assert unicode(
+        _raw_bytes([0xFF, 0xFE, 0x00, 0x00, 0x00, 0xF6, 0x01, 0x00]),
+        "utf-32",
+    ) == unicode("😀")
+
+    assert unicode("AΩ").encode("utf-16-le") == _raw_bytes([0x41, 0, 0xA9, 3])
+    assert unicode("AΩ").encode("utf-16-be") == _raw_bytes([0, 0x41, 3, 0xA9])
+    assert unicode("😀").encode("utf-32-le") == _raw_bytes([0, 0xF6, 1, 0])
+    assert unicode("😀").encode("utf-32-be") == _raw_bytes([0, 1, 0xF6, 0])
+    assert unicode("A").encode("utf-16") == _raw_bytes([0xFF, 0xFE, 0x41, 0])
+    assert unicode("A").encode("utf-32") == _raw_bytes([0xFF, 0xFE, 0, 0, 0x41, 0, 0, 0])
+
+    malformed_utf8 = _raw_bytes([0x61, 0xFF, 0x62, 0xE2, 0x82])
+    assert unicode(malformed_utf8, "utf-8", "ignore") == unicode("ab")
+    assert unicode(malformed_utf8, "utf-8", "replace") == unicode("a�b�")
+    assert unicode(malformed_utf8, "utf-8", "backslashreplace") == unicode("a\\xffb\\xe2\\x82")
+
+    assert unicode(_raw_bytes([0xFF]), "ascii", "ignore") == unicode("")
+    assert unicode(_raw_bytes([0xFF]), "ascii", "replace") == unicode("�")
+    assert unicode(_raw_bytes([0xFF]), "ascii", "backslashreplace") == unicode("\\xff")
+    assert unicode("éΩ").encode("ascii", "ignore") == _raw_bytes([])
+    assert unicode("éΩ").encode("ascii", "replace") == _raw_bytes([0x3F, 0x3F])
+    assert unicode("éΩ").encode("ascii", "backslashreplace") == _raw_bytes(
+        [0x5C, 0x78, 0x65, 0x39, 0x5C, 0x75, 0x30, 0x33, 0x61, 0x39]
+    )
+
+    assert unicode(_raw_bytes([0x41]), "utf-16-le", "replace") == unicode("�")
+    assert unicode(_raw_bytes([0x00, 0x00, 0x11, 0x00]), "utf-32-le", "replace") == unicode("�")
+
+    try:
+        unicode(malformed_utf8, "utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("é").encode("ascii")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("x").encode("unknown-codec")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
 def test_membership_and_casefold():
     u = unicode("Hello, World!")
     assert unicode("ell") in u
@@ -91,6 +158,54 @@ def test_membership_and_casefold():
     assert unicode("  hello\t\n").strip() == unicode("hello")
     assert unicode("  hello").lstrip() == unicode("hello")
     assert unicode("hello  ").rstrip() == unicode("hello")
+
+
+@test
+def test_unicode_differential_casing_and_predicates():
+    assert unicode("ΟΣ").lower() == unicode("ος")
+    assert unicode("ΟΣΑ").lower() == unicode("οσα")
+    assert unicode("İ").lower() == unicode("i̇")
+    assert unicode("straße").upper() == unicode("STRASSE")
+    assert unicode("ﬃ").upper() == unicode("FFI")
+    assert unicode("Straße").casefold() == unicode("strasse")
+    assert unicode("h́ELLO-world").title() == unicode("H́Ello-World")
+    assert unicode("ǅelta").swapcase() == unicode("ǅELTA")
+
+    assert unicode("٣").isdecimal()
+    assert unicode("٣").isdigit()
+    assert unicode("٣").isnumeric()
+    assert not unicode("²").isdecimal()
+    assert unicode("²").isdigit()
+    assert unicode("⅕").isnumeric()
+    assert not unicode("⅕").isdigit()
+    assert unicode("①").isdigit()
+    assert unicode("Ⅻ").isnumeric()
+    assert unicode("Ⅻ").isidentifier()
+    assert unicode(" ").isspace()
+    assert not unicode("​").isspace()
+    assert unicode("变量").isidentifier()
+    assert unicode("á").isidentifier()
+    assert not unicode("a​").isidentifier()
+    assert not unicode("​").isprintable()
+
+
+@test
+def test_unicode_differential_lines_bounds_and_repr():
+    lines = unicode("a\x1cbc d\r\ne").splitlines()
+    assert lines == [unicode("a"), unicode("b"), unicode("c"), unicode("d"), unicode("e")]
+    lines = unicode("a\x1cbc d\r\ne").splitlines(True)
+    assert lines == [unicode("a\x1c"), unicode("b"), unicode("c "), unicode("d\r\n"), unicode("e")]
+
+    value = unicode("abc")
+    assert value.find(unicode(""), -10, 10) == 0
+    assert value.rfind(unicode(""), -10, 10) == 3
+    assert value.find(unicode("a"), -10, 10) == 0
+    assert value.find(unicode(""), 10, 20) == -1
+    assert value.rfind(unicode(""), 10, 20) == -1
+    assert value.find(unicode(""), 2, 1) == -1
+    assert value.find(unicode(""), -1, -3) == -1
+
+    assert unicode("'\"\\\x1f\x7f​😀").__repr__() == "'\\'\"\\\\\\x1f\\x7f\\u200b😀'"
 
 
 @test
@@ -237,6 +352,39 @@ def test_translate_and_maketrans():
 
     delete_table = unicode.maketrans(unicode("aeiou"), unicode("12345"), unicode("o"))
     assert unicode("hello").translate(delete_table) == unicode("h2ll")
+
+    integer_table: Dict[int, int] = {ord("a"): ord("A"), ord("-"): -1}
+    assert unicode("a-b").translate(integer_table) == unicode("Ab")
+
+    optional_integer_table: Dict[int, Optional[int]] = {
+        ord("a"): ord("A"),
+        ord("-"): None,
+    }
+    assert unicode("a-b").translate(optional_integer_table) == unicode("Ab")
+    assert unicode("a-b").translate(
+        unicode.maketrans(optional_integer_table)
+    ) == unicode("Ab")
+
+    text_table: Dict[int, unicode] = {
+        ord("a"): unicode("αβ"),
+        ord("b"): unicode(""),
+    }
+    assert unicode("abc").translate(text_table) == unicode("αβc")
+    assert unicode("cab").translate(unicode.maketrans(text_table)) == unicode("cαβ")
+
+    optional_table: Dict[int, Optional[unicode]] = {
+        ord("a"): unicode("α"),
+        ord("-"): None,
+        ord("b"): unicode("βγ"),
+    }
+    assert unicode("a-bc").translate(optional_table) == unicode("αβγc")
+    assert unicode("a-b").translate(unicode.maketrans(optional_table)) == unicode("αβγ")
+
+    try:
+        unicode("x").translate({ord("x"): 0xD800})
+        assert False
+    except ValueError:
+        pass
 
 
 @test
@@ -480,7 +628,7 @@ def test_unicode_case_mappings():
     assert ligature_ffi.casefold() == unicode("ffi")
     assert unicode("Stra\xc3\x9fe").casefold() == unicode("strasse")
 
-    assert unicode("\xc7\x85").swapcase() == unicode("\xc7\x86")
+    assert unicode("\xc7\x85").swapcase() == unicode("\xc7\x85")
 
 
 @test
@@ -498,7 +646,7 @@ def test_unicode_final_sigma():
 
 @test
 def test_unicode_title_and_capitalize_mappings():
-    assert unicode("a\xcc\x81BC").title() == unicode("A\xcc\x81bc")
+    assert unicode("a\xcc\x81BC").title() == unicode("A\xcc\x81Bc")
     assert unicode("\xc3\x9fABC").capitalize() == unicode("Ssabc")
     assert unicode("hELLO \xc3\x9f").title() == unicode("Hello Ss")
 
@@ -528,7 +676,7 @@ def test_unicode_case_mapping_identity():
     assert value.swapcase() == value
 
     assert unicode("\xce\xa3").lower() == unicode("\xcf\x83")  # Σ -> σ
-    assert unicode("A\xcc\x81B").title() == unicode("A\xcc\x81b")
+    assert unicode("A\xcc\x81B").title() == unicode("A\xcc\x81B")
 
 
 @test
@@ -2152,3 +2300,5 @@ test_brace_format_adversarial_multi_argument_sequences()
 test_brace_format_adversarial_malformed_sequences()
 test_brace_format_adversarial_dynamic_buffer_growth()
 test_brace_format_nested_specs()
+test_unicode_differential_casing_and_predicates()
+test_unicode_differential_lines_bounds_and_repr()
