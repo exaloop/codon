@@ -222,6 +222,8 @@ private:
     funcs.emplace(func->getId(), x);
   }
   llvm::Value *getDummyVoidValue() { return llvm::ConstantTokenNone::get(*context); }
+  bool isStorableType(llvm::Type *type);
+  llvm::Value *getDummyValue(llvm::Type *type);
   llvm::DISubprogram *getDISubprogramForFunc(const Func *x);
   void clearLLVMData();
 
