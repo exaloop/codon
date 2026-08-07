@@ -1941,12 +1941,10 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
     const Var *var = *varIter;
     auto *llvmType = getLLVMType(var->getType());
     llvm::Value *storage = nullptr;
+    storage = B->CreateAlloca(llvmType);
+    insertVar(var, storage);
     if (isStorableType(llvmType)) {
-      storage = B->CreateAlloca(llvmType);
       B->CreateStore(argIter, storage);
-      insertVar(var, storage);
-    } else {
-      insertVar(var, getDummyValue(llvmType));
     }
 
     // debug info
@@ -1969,7 +1967,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
 
   for (auto *var : *x) {
     auto *llvmType = getLLVMType(var->getType());
-    if (!isStorableType(llvmType)) {
+    if (llvmType->isVoidTy()) {
       insertVar(var, getDummyValue(llvmType));
     } else {
       auto *storage = B->CreateAlloca(llvmType);
