@@ -1,0 +1,174 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+from internal.types.unicode.unicodedata_data import (
+    unicode_bidirectional_index,
+    unicode_category_index,
+    unicode_decimal_index,
+    unicode_digit_index,
+    unicode_east_asian_width_index,
+    unicode_mirrored_index,
+    unicode_lookup_alias_codepoint,
+    unicode_lookup_alias_index,
+    unicode_lookup_alias_length,
+    unicode_name_codepoint,
+    unicode_name_lookup_index,
+    unicode_name_record_index,
+    unicode_name_value,
+    unicode_numeric_index,
+    unicode_numeric_value,
+    UNICODEDATA_VERSION,
+)
+from internal.types.unicode.normalization import (
+    _normalization_combining_class,
+    _normalization_raw_decomposition,
+    _unicode_normalize,
+)
+from internal.types.unicode.format import _integer_format
+from internal.types.unicode.unicode import (
+    _unicode_from_codepoint,
+    _unicode_from_codepoints,
+    unicode,
+)
+
+_CATEGORY_CODES = (
+    "Cn", "Cc", "Cf", "Co", "Cs", "Ll", "Lm", "Lo", "Lt", "Lu",
+    "Mc", "Me", "Mn", "Nd", "Nl", "No", "Pc", "Pd", "Pe", "Pf",
+    "Pi", "Po", "Ps", "Sc", "Sk", "Sm", "So", "Zl", "Zp", "Zs",
+)
+
+_BIDIRECTIONAL_CODES = (
+    "", "AL", "AN", "B", "BN", "CS", "EN", "ES", "ET", "FSI",
+    "L", "LRE", "LRI", "LRO", "NSM", "ON", "PDF", "PDI", "R",
+    "RLE", "RLI", "RLO", "S", "WS",
+)
+
+_EAST_ASIAN_WIDTH_CODES = ("F", "A", "H", "N", "Na", "W")
+
+_DECOMPOSITION_TAGS = (
+    "", "<circle>", "<compat>", "<final>", "<font>",
+    "<fraction>", "<initial>", "<isolated>", "<medial>",
+    "<narrow>", "<noBreak>", "<small>", "<square>", "<sub>",
+    "<super>", "<vertical>", "<wide>",
+)
+
+unidata_version: str = UNICODEDATA_VERSION
+
+
+def _single_codepoint(value: unicode) -> int:
+    if len(value) != 1:
+        raise TypeError(
+            "unicodedata functions expect a Unicode character, "
+            + "but a string of length "
+            + str(len(value))
+            + " was found"
+        )
+    return value._load_codepoint(0)
+
+
+def normalize(form: str, value: unicode) -> unicode:
+    return _unicode_normalize(form, value)
+
+
+def is_normalized(form: str, value: unicode) -> bool:
+    return _unicode_normalize(form, value) == value
+
+
+def decomposition(value: unicode) -> str:
+    tag, values = _normalization_raw_decomposition(_single_codepoint(value))
+    result = _DECOMPOSITION_TAGS[tag]
+    for codepoint in values:
+        if result:
+            result += " "
+        result += _integer_format(codepoint, 0x58, 4, 0, 0)
+    return result
+
+
+@overload
+def name(value: unicode) -> str:
+    index = unicode_name_record_index(_single_codepoint(value))
+    if index < 0:
+        raise ValueError("no such name")
+    return unicode_name_value(index)
+
+
+def name(value: unicode, default: str) -> str:
+    index = unicode_name_record_index(_single_codepoint(value))
+    return default if index < 0 else unicode_name_value(index)
+
+
+def lookup(value: str) -> unicode:
+    index = unicode_name_lookup_index(value)
+    if index >= 0:
+        return _unicode_from_codepoint(unicode_name_codepoint(index))
+
+    index = unicode_lookup_alias_index(value)
+    if index >= 0:
+        codepoints = []
+        for position in range(unicode_lookup_alias_length(index)):
+            codepoints.append(unicode_lookup_alias_codepoint(index, position))
+        return _unicode_from_codepoints(codepoints)
+
+    raise KeyError("undefined character name '" + value + "'")
+
+
+def category(value: unicode) -> str:
+    return _CATEGORY_CODES[unicode_category_index(_single_codepoint(value))]
+
+
+def combining(value: unicode) -> int:
+    return _normalization_combining_class(_single_codepoint(value))
+
+
+def bidirectional(value: unicode) -> str:
+    return _BIDIRECTIONAL_CODES[
+        unicode_bidirectional_index(_single_codepoint(value))
+    ]
+
+
+def east_asian_width(value: unicode) -> str:
+    return _EAST_ASIAN_WIDTH_CODES[
+        unicode_east_asian_width_index(_single_codepoint(value))
+    ]
+
+
+def mirrored(value: unicode) -> bool:
+    return unicode_mirrored_index(_single_codepoint(value)) != 0
+
+
+@overload
+def decimal(value: unicode) -> int:
+    result = unicode_decimal_index(_single_codepoint(value))
+    if result == 0:
+        raise ValueError("not a decimal")
+    return result - 1
+
+
+def decimal(value: unicode, default: int) -> int:
+    result = unicode_decimal_index(_single_codepoint(value))
+    return default if result == 0 else result - 1
+
+
+@overload
+def digit(value: unicode) -> int:
+    result = unicode_digit_index(_single_codepoint(value))
+    if result == 0:
+        raise ValueError("not a digit")
+    return result - 1
+
+
+def digit(value: unicode, default: int) -> int:
+    result = unicode_digit_index(_single_codepoint(value))
+    return default if result == 0 else result - 1
+
+
+@overload
+def numeric(value: unicode) -> float:
+    codepoint = _single_codepoint(value)
+    if unicode_numeric_index(codepoint) == 0:
+        raise ValueError("not a numeric character")
+    return unicode_numeric_value(codepoint)
+
+
+def numeric(value: unicode, default: float) -> float:
+    codepoint = _single_codepoint(value)
+    return default if unicode_numeric_index(codepoint) == 0 else unicode_numeric_value(codepoint)

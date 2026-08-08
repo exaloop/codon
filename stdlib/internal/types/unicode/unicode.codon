@@ -23,7 +23,14 @@ from .data import (
     unicode_casefold_mapping_length,
     unicode_casefold_mapping_codepoint,
 )
-
+from .codecs import (
+    _single_byte_cp1250_decode,
+    _single_byte_cp1250_encode,
+    _single_byte_cp1253_decode,
+    _single_byte_cp1253_encode,
+    _single_byte_cp1254_decode,
+    _single_byte_cp1254_encode,
+)
 LEN_BITS: Literal[int] = 56
 KIND_SHIFT: Literal[int] = 56
 
@@ -48,6 +55,16 @@ UTF8_CONT_TAG: Literal[int] = 0x80
 UNICODE_MAX: Literal[int] = 0x10FFFF
 SURROGATE_MIN: Literal[int] = 0xD800
 SURROGATE_MAX: Literal[int] = 0xDFFF
+
+HANGUL_SBASE: Literal[int] = 0xAC00
+HANGUL_LBASE: Literal[int] = 0x1100
+HANGUL_VBASE: Literal[int] = 0x1161
+HANGUL_TBASE: Literal[int] = 0x11A7
+HANGUL_LCOUNT: Literal[int] = 19
+HANGUL_VCOUNT: Literal[int] = 21
+HANGUL_TCOUNT: Literal[int] = 28
+HANGUL_NCOUNT: Literal[int] = HANGUL_VCOUNT * HANGUL_TCOUNT
+HANGUL_SCOUNT: Literal[int] = HANGUL_LCOUNT * HANGUL_NCOUNT
 
 class unicode:
     _data: Ptr[u8]
@@ -310,6 +327,9 @@ def _utf8_encode_one(
     pos: int,
     cp: int,
 ) -> int:
+    if cp > UNICODE_MAX or _is_surrogate(cp):
+        _raise_utf8_encode_error(0, 0, "invalid code point")
+
     if cp < 0x80:
         output[pos] = u8(cp)
         return pos + 1
@@ -325,9 +345,6 @@ def _utf8_encode_one(
         output[pos + 2] = u8(0x80 | (cp & 0x3F))
         return pos + 3
 
-    if cp > UNICODE_MAX or _is_surrogate(cp):
-        _raise_utf8_encode_error(0, 0, "invalid code point")
-
     output[pos] = u8(0xF0 | (cp >> 18))
     output[pos + 1] = u8(0x80 | ((cp >> 12) & 0x3F))
     output[pos + 2] = u8(0x80 | ((cp >> 6) & 0x3F))
@@ -337,6 +354,10 @@ def _utf8_encode_one(
 
 
 def _unicode_encode_utf8_strict(value: unicode) -> str:
+    for i in range(len(value)):
+        if _is_surrogate(value._load_codepoint(i)):
+            _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+
     byte_length = _utf8_size_strict(value)
     output = Ptr[u8](byte_length + 1)
 
@@ -348,6 +369,47 @@ def _unicode_encode_utf8_strict(value: unicode) -> str:
     output[byte_length] = u8(0)
 
     return str(output, byte_length)
+
+
+def _unicode_encode_utf8(value: unicode, errors: str) -> str:
+    if errors == "strict":
+        return _unicode_encode_utf8_strict(value)
+
+    output = []
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+
+        if _is_surrogate(codepoint):
+            if errors == "surrogatepass":
+                output.append(0xE0 | (codepoint >> 12))
+                output.append(0x80 | ((codepoint >> 6) & 0x3F))
+                output.append(0x80 | (codepoint & 0x3F))
+                continue
+
+            if errors == "surrogateescape" and 0xDC80 <= codepoint <= 0xDCFF:
+                output.append(codepoint - 0xDC00)
+                continue
+
+            _codec_encode_error_append(output, codepoint, errors)
+            continue
+
+        if codepoint < 0x80:
+            output.append(codepoint)
+        elif codepoint < 0x800:
+            output.append(0xC0 | (codepoint >> 6))
+            output.append(0x80 | (codepoint & 0x3F))
+        elif codepoint < 0x10000:
+            output.append(0xE0 | (codepoint >> 12))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
+        else:
+            output.append(0xF0 | (codepoint >> 18))
+            output.append(0x80 | ((codepoint >> 12) & 0x3F))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
+
+    return _bytes_from_values(output)
 
 
 def _unicode_from_text(value: str) -> unicode:
@@ -373,6 +435,14 @@ def _codec_error_append(
 
     if errors == "replace":
         output.append(0xFFFD)
+        return
+
+    if errors == "surrogateescape":
+        for i in range(start, end):
+            byte = int(data[i])
+            if byte < 0x80:
+                raise ValueError("invalid byte sequence")
+            output.append(0xDC00 + byte)
         return
 
     if errors == "backslashreplace":
@@ -448,7 +518,11 @@ def _unicode_decode_utf8(
         if (
             not valid
             or (b0 == 0xE0 and b1 < 0xA0)
-            or (b0 == 0xED and b1 > 0x9F)
+            or (
+                b0 == 0xED
+                and b1 > 0x9F
+                and errors != "surrogatepass"
+            )
             or (b0 == 0xF0 and b1 < 0x90)
             or (b0 == 0xF4 and b1 > 0x8F)
         ):
@@ -484,16 +558,192 @@ def _unicode_decode_single_byte(
     return _unicode_from_codepoints(codepoints)
 
 
+@pure
+@llvm
+def _cp1252_c1_codepoint(index: int) -> i32:
+    @data = private unnamed_addr constant [32 x i32] [i32 8364, i32 -1, i32 8218, i32 402, i32 8222, i32 8230, i32 8224, i32 8225, i32 710, i32 8240, i32 352, i32 8249, i32 338, i32 -1, i32 381, i32 -1, i32 -1, i32 8216, i32 8217, i32 8220, i32 8221, i32 8226, i32 8211, i32 8212, i32 732, i32 8482, i32 353, i32 8250, i32 339, i32 -1, i32 382, i32 376]
+    %p = getelementptr inbounds [32 x i32], ptr @data, i64 0, i64 %index
+    %x = load i32, ptr %p, align 4
+    ret i32 %x
+
+
+@pure
+@llvm
+def _cp1252_c1_byte(codepoint: int) -> i32:
+    @data = private unnamed_addr constant [64 x i64] [i64 0, i64 96415, i64 2141312, i64 0, i64 0, i64 0, i64 0, i64 2107013, i64 0, i64 0, i64 97678, i64 0, i64 97950, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 90250, i64 90522, i64 0, i64 0, i64 0, i64 0, i64 2109577, i64 0, i64 187544, i64 0, i64 0, i64 2171545, i64 0, i64 0, i64 0, i64 2102166, i64 0, i64 2102423, i64 0, i64 0, i64 0, i64 0, i64 2111883, i64 0, i64 2112155, i64 2103441, i64 2103698, i64 0, i64 2103938, i64 103043, i64 0, i64 181896, i64 2104467, i64 0, i64 2104724, i64 0, i64 2104964, i64 86668, i64 0, i64 86940, i64 2105478, i64 2105735, i64 0, i64 2106005]
+    %product = mul i64 %codepoint, 15
+    %shifted = lshr i64 %product, 3
+    %index = and i64 %shifted, 63
+    %p = getelementptr inbounds [64 x i64], ptr @data, i64 0, i64 %index
+    %packed = load i64, ptr %p, align 8
+    %stored = lshr i64 %packed, 8
+    %matched = icmp eq i64 %stored, %codepoint
+    %byte = trunc i64 %packed to i32
+    %result = select i1 %matched, i32 %byte, i32 -1
+    ret i32 %result
+
+
+@pure
+@llvm
+def _cp1251_c1_codepoint(index: int) -> i32:
+    @data = private unnamed_addr constant [64 x i32] [i32 1026, i32 1027, i32 8218, i32 1107, i32 8222, i32 8230, i32 8224, i32 8225, i32 8364, i32 8240, i32 1033, i32 8249, i32 1034, i32 1036, i32 1035, i32 1039, i32 1106, i32 8216, i32 8217, i32 8220, i32 8221, i32 8226, i32 8211, i32 8212, i32 -1, i32 8482, i32 1113, i32 8250, i32 1114, i32 1116, i32 1115, i32 1119, i32 160, i32 1038, i32 1118, i32 1032, i32 164, i32 1168, i32 166, i32 167, i32 1025, i32 169, i32 1028, i32 171, i32 172, i32 173, i32 174, i32 1031, i32 176, i32 177, i32 1030, i32 1110, i32 1169, i32 181, i32 182, i32 183, i32 1105, i32 8470, i32 1108, i32 187, i32 1112, i32 1029, i32 1109, i32 1111]
+    %p = getelementptr inbounds [64 x i32], ptr @data, i64 0, i64 %index
+    %x = load i32, ptr %p, align 4
+    ret i32 %x
+
+
+@pure
+@llvm
+def _cp1251_c1_byte(codepoint: int) -> i32:
+    @data = private unnamed_addr constant [128 x i64] [i64 44718, i64 2168505, i64 263041, i64 0, i64 2141320, i64 2105478, i64 284860, i64 0, i64 48059, i64 0, i64 0, i64 0, i64 2104467, i64 283834, i64 0, i64 42662, i64 47031, i64 265357, i64 0, i64 2103441, i64 0, i64 2112155, i64 0, i64 0, i64 0, i64 264355, i64 0, i64 2102423, i64 0, i64 0, i64 0, i64 299173, i64 263338, i64 0, i64 0, i64 2105735, i64 285082, i64 0, i64 43947, i64 0, i64 0, i64 0, i64 2104724, i64 284094, i64 0, i64 42919, i64 0, i64 0, i64 0, i64 0, i64 2103698, i64 0, i64 0, i64 0, i64 0, i64 264586, i64 0, i64 0, i64 2107013, i64 286370, i64 45232, i64 299444, i64 263613, i64 0, i64 0, i64 2106005, i64 285340, i64 0, i64 44204, i64 0, i64 0, i64 0, i64 2104964, i64 0, i64 284339, i64 0, i64 0, i64 0, i64 265889, i64 0, i64 2103938, i64 283280, i64 42148, i64 46517, i64 0, i64 264844, i64 0, i64 0, i64 0, i64 286623, i64 41120, i64 45489, i64 263858, i64 0, i64 0, i64 0, i64 285598, i64 0, i64 44461, i64 0, i64 262784, i64 0, i64 0, i64 2109577, i64 284607, i64 43433, i64 0, i64 2171545, i64 266127, i64 0, i64 0, i64 283523, i64 0, i64 46774, i64 0, i64 265102, i64 0, i64 0, i64 0, i64 2111883, i64 0, i64 0, i64 0, i64 264111, i64 0, i64 2102166, i64 0, i64 285853]
+    %product = mul i64 %codepoint, 3861
+    %shifted = lshr i64 %product, 7
+    %index = and i64 %shifted, 127
+    %p = getelementptr inbounds [128 x i64], ptr @data, i64 0, i64 %index
+    %packed = load i64, ptr %p, align 8
+    %stored = lshr i64 %packed, 8
+    %matched = icmp eq i64 %stored, %codepoint
+    %byte = trunc i64 %packed to i32
+    %result = select i1 %matched, i32 %byte, i32 -1
+    ret i32 %result
+
+
+def _unicode_decode_cp1252(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        byte = int(data[i])
+        codepoint = byte
+        if 0x80 <= byte <= 0x9F:
+            codepoint = int(_cp1252_c1_codepoint(byte - 0x80))
+
+        if codepoint < 0:
+            _codec_error_append(codepoints, data, i, i + 1, errors)
+        else:
+            codepoints.append(codepoint)
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_cp1251(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        byte = int(data[i])
+        if byte < 0x80:
+            codepoint = byte
+        elif byte >= 0xC0:
+            codepoint = 0x0410 + byte - 0xC0
+        else:
+            codepoint = int(_cp1251_c1_codepoint(byte - 0x80))
+
+        if codepoint < 0:
+            _codec_error_append(codepoints, data, i, i + 1, errors)
+        else:
+            codepoints.append(codepoint)
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_cp1250(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        codepoint = int(_single_byte_cp1250_decode(int(data[i])))
+        if codepoint < 0:
+            _codec_error_append(codepoints, data, i, i + 1, errors)
+        else:
+            codepoints.append(codepoint)
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_cp1253(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        codepoint = int(_single_byte_cp1253_decode(int(data[i])))
+        if codepoint < 0:
+            _codec_error_append(codepoints, data, i, i + 1, errors)
+        else:
+            codepoints.append(codepoint)
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _unicode_decode_cp1254(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        codepoint = int(_single_byte_cp1254_decode(int(data[i])))
+        if codepoint < 0:
+            _codec_error_append(codepoints, data, i, i + 1, errors)
+        else:
+            codepoints.append(codepoint)
+
+    return _unicode_from_codepoints(codepoints)
+
+
+def _iso8859_15_decode_codepoint(byte: int) -> int:
+    if byte == 0xA4:
+        return 0x20AC
+    if byte == 0xA6:
+        return 0x0160
+    if byte == 0xA8:
+        return 0x0161
+    if byte == 0xB4:
+        return 0x017D
+    if byte == 0xB8:
+        return 0x017E
+    if byte == 0xBC:
+        return 0x0152
+    if byte == 0xBD:
+        return 0x0153
+    if byte == 0xBE:
+        return 0x0178
+    return byte
+
+
+def _unicode_decode_iso8859_15(data: Ptr[u8], byte_length: int) -> unicode:
+    codepoints = []
+
+    for i in range(byte_length):
+        codepoints.append(_iso8859_15_decode_codepoint(int(data[i])))
+
+    return _unicode_from_codepoints(codepoints)
+
+
 def _unicode_decode_utf16(
     data: Ptr[u8],
     byte_length: int,
     little_endian: bool,
+    detect_bom: bool,
     errors: str,
 ) -> unicode:
     codepoints = []
     pos = 0
 
-    if byte_length >= 2:
+    if detect_bom and byte_length >= 2:
         bom = int(data[0]) | (int(data[1]) << 8)
         if bom == 0xFEFF:
             little_endian = True
@@ -501,6 +751,8 @@ def _unicode_decode_utf16(
         elif bom == 0xFFFE:
             little_endian = False
             pos = 2
+        elif errors == "strict":
+            raise ValueError("UTF-16 stream does not start with BOM")
 
     while pos < byte_length:
         if pos + 2 > byte_length:
@@ -524,9 +776,15 @@ def _unicode_decode_utf16(
                     pos += 4
                     continue
 
-            _codec_error_append(codepoints, data, pos, pos + 2, errors)
+            if errors == "surrogatepass":
+                codepoints.append(unit)
+            else:
+                _codec_error_append(codepoints, data, pos, pos + 2, errors)
         elif 0xDC00 <= unit <= 0xDFFF:
-            _codec_error_append(codepoints, data, pos, pos + 2, errors)
+            if errors == "surrogatepass":
+                codepoints.append(unit)
+            else:
+                _codec_error_append(codepoints, data, pos, pos + 2, errors)
         else:
             codepoints.append(unit)
 
@@ -539,12 +797,13 @@ def _unicode_decode_utf32(
     data: Ptr[u8],
     byte_length: int,
     little_endian: bool,
+    detect_bom: bool,
     errors: str,
 ) -> unicode:
     codepoints = []
     pos = 0
 
-    if byte_length >= 4:
+    if detect_bom and byte_length >= 4:
         bom = (
             int(data[0])
             | (int(data[1]) << 8)
@@ -557,6 +816,8 @@ def _unicode_decode_utf32(
         elif bom == 0xFFFE0000:
             little_endian = False
             pos = 4
+        elif errors == "strict":
+            raise ValueError("UTF-32 stream does not start with BOM")
 
     while pos < byte_length:
         if pos + 4 > byte_length:
@@ -578,7 +839,9 @@ def _unicode_decode_utf32(
                 | int(data[pos + 3])
             )
 
-        if codepoint > UNICODE_MAX or _is_surrogate(codepoint):
+        if codepoint > UNICODE_MAX or (
+            _is_surrogate(codepoint) and errors != "surrogatepass"
+        ):
             _codec_error_append(codepoints, data, pos, pos + 4, errors)
         else:
             codepoints.append(codepoint)
@@ -597,14 +860,35 @@ def _unicode_decode_codec(data: str, encoding: str, errors: str) -> unicode:
         return _unicode_decode_single_byte(data._ptr, len(data), True, errors)
     if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
         return _unicode_decode_single_byte(data._ptr, len(data), False, errors)
-    if name == "utf-16" or name == "utf-16-le" or name == "utf16le":
-        return _unicode_decode_utf16(data._ptr, len(data), True, errors)
+    if name == "cp1252" or name == "windows-1252" or name == "windows1252":
+        return _unicode_decode_cp1252(data._ptr, len(data), errors)
+    if name == "cp1251" or name == "windows-1251" or name == "windows1251":
+        return _unicode_decode_cp1251(data._ptr, len(data), errors)
+    if name == "cp1250" or name == "windows-1250" or name == "windows1250":
+        return _unicode_decode_cp1250(data._ptr, len(data), errors)
+    if name == "cp1253" or name == "windows-1253" or name == "windows1253":
+        return _unicode_decode_cp1253(data._ptr, len(data), errors)
+    if name == "cp1254" or name == "windows-1254" or name == "windows1254":
+        return _unicode_decode_cp1254(data._ptr, len(data), errors)
+    if (
+        name == "iso-8859-15"
+        or name == "iso8859-15"
+        or name == "latin-9"
+        or name == "latin9"
+    ):
+        return _unicode_decode_iso8859_15(data._ptr, len(data))
+    if name == "utf-16":
+        return _unicode_decode_utf16(data._ptr, len(data), True, True, errors)
+    if name == "utf-16-le" or name == "utf16le":
+        return _unicode_decode_utf16(data._ptr, len(data), True, False, errors)
     if name == "utf-16-be" or name == "utf16be":
-        return _unicode_decode_utf16(data._ptr, len(data), False, errors)
-    if name == "utf-32" or name == "utf-32-le" or name == "utf32le":
-        return _unicode_decode_utf32(data._ptr, len(data), True, errors)
+        return _unicode_decode_utf16(data._ptr, len(data), False, False, errors)
+    if name == "utf-32":
+        return _unicode_decode_utf32(data._ptr, len(data), True, True, errors)
+    if name == "utf-32-le" or name == "utf32le":
+        return _unicode_decode_utf32(data._ptr, len(data), True, False, errors)
     if name == "utf-32-be" or name == "utf32be":
-        return _unicode_decode_utf32(data._ptr, len(data), False, errors)
+        return _unicode_decode_utf32(data._ptr, len(data), False, False, errors)
 
     raise LookupError("unknown encoding: " + encoding)
 
@@ -668,7 +952,145 @@ def _unicode_encode_single_byte(
     return _bytes_from_values(output)
 
 
-def _unicode_encode_utf16(value: unicode, little_endian: bool, bom: bool) -> str:
+def _unicode_encode_cp1252(value: unicode, errors: str) -> str:
+    output = []
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = -1
+
+        if codepoint <= 0x7F or 0xA0 <= codepoint <= 0xFF:
+            byte = codepoint
+        else:
+            byte = int(_cp1252_c1_byte(codepoint))
+
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_cp1251(value: unicode, errors: str) -> str:
+    output = []
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = -1
+
+        if codepoint <= 0x7F:
+            byte = codepoint
+        elif 0x0410 <= codepoint <= 0x044F:
+            byte = codepoint - 0x0410 + 0xC0
+        elif codepoint == 0x0401:
+            byte = 0xA8
+        elif codepoint == 0x0451:
+            byte = 0xB8
+        else:
+            byte = int(_cp1251_c1_byte(codepoint))
+
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_cp1250(value: unicode, errors: str) -> str:
+    output = []
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1250_encode(codepoint))
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_cp1253(value: unicode, errors: str) -> str:
+    output = []
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1253_encode(codepoint))
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_cp1254(value: unicode, errors: str) -> str:
+    output = []
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1254_encode(codepoint))
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return _bytes_from_values(output)
+
+
+def _iso8859_15_encode_byte(codepoint: int) -> int:
+    if codepoint == 0x20AC:
+        return 0xA4
+    if codepoint == 0x0160:
+        return 0xA6
+    if codepoint == 0x0161:
+        return 0xA8
+    if codepoint == 0x017D:
+        return 0xB4
+    if codepoint == 0x017E:
+        return 0xB8
+    if codepoint == 0x0152:
+        return 0xBC
+    if codepoint == 0x0153:
+        return 0xBD
+    if codepoint == 0x0178:
+        return 0xBE
+    if (
+        codepoint <= 0xFF
+        and codepoint != 0xA4
+        and codepoint != 0xA6
+        and codepoint != 0xA8
+        and codepoint != 0xB4
+        and codepoint != 0xB8
+        and codepoint != 0xBC
+        and codepoint != 0xBD
+        and codepoint != 0xBE
+    ):
+        return codepoint
+    return -1
+
+
+def _unicode_encode_iso8859_15(value: unicode, errors: str) -> str:
+    output = []
+
+    for i in range(len(value)):
+        byte = _iso8859_15_encode_byte(value._load_codepoint(i))
+        if byte < 0:
+            _codec_encode_error_append(output, value._load_codepoint(i), errors)
+        else:
+            output.append(byte)
+
+    return _bytes_from_values(output)
+
+
+def _unicode_encode_utf16(
+    value: unicode,
+    little_endian: bool,
+    bom: bool,
+    errors: str,
+) -> str:
     output = []
 
     if bom:
@@ -681,6 +1103,9 @@ def _unicode_encode_utf16(value: unicode, little_endian: bool, bom: bool) -> str
 
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
+        if _is_surrogate(codepoint) and errors != "surrogatepass":
+            _codec_encode_error_append(output, codepoint, errors)
+            continue
         if codepoint <= 0xFFFF:
             units = [codepoint]
         else:
@@ -698,7 +1123,12 @@ def _unicode_encode_utf16(value: unicode, little_endian: bool, bom: bool) -> str
     return _bytes_from_values(output)
 
 
-def _unicode_encode_utf32(value: unicode, little_endian: bool, bom: bool) -> str:
+def _unicode_encode_utf32(
+    value: unicode,
+    little_endian: bool,
+    bom: bool,
+    errors: str,
+) -> str:
     output = []
 
     if bom:
@@ -715,6 +1145,9 @@ def _unicode_encode_utf32(value: unicode, little_endian: bool, bom: bool) -> str
 
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
+        if _is_surrogate(codepoint) and errors != "surrogatepass":
+            _codec_encode_error_append(output, codepoint, errors)
+            continue
         if little_endian:
             output.append(codepoint & 0xFF)
             output.append((codepoint >> 8) & 0xFF)
@@ -733,23 +1166,40 @@ def _unicode_encode_codec(value: unicode, encoding: str, errors: str) -> str:
     name = _codec_name(encoding)
 
     if name == "utf-8" or name == "utf8":
-        return _unicode_encode_utf8_strict(value)
+        return _unicode_encode_utf8(value, errors)
     if name == "ascii" or name == "us-ascii":
         return _unicode_encode_single_byte(value, True, errors)
     if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
         return _unicode_encode_single_byte(value, False, errors)
+    if name == "cp1252" or name == "windows-1252" or name == "windows1252":
+        return _unicode_encode_cp1252(value, errors)
+    if name == "cp1251" or name == "windows-1251" or name == "windows1251":
+        return _unicode_encode_cp1251(value, errors)
+    if name == "cp1250" or name == "windows-1250" or name == "windows1250":
+        return _unicode_encode_cp1250(value, errors)
+    if name == "cp1253" or name == "windows-1253" or name == "windows1253":
+        return _unicode_encode_cp1253(value, errors)
+    if name == "cp1254" or name == "windows-1254" or name == "windows1254":
+        return _unicode_encode_cp1254(value, errors)
+    if (
+        name == "iso-8859-15"
+        or name == "iso8859-15"
+        or name == "latin-9"
+        or name == "latin9"
+    ):
+        return _unicode_encode_iso8859_15(value, errors)
     if name == "utf-16":
-        return _unicode_encode_utf16(value, True, True)
+        return _unicode_encode_utf16(value, True, True, errors)
     if name == "utf-16-le" or name == "utf16le":
-        return _unicode_encode_utf16(value, True, False)
+        return _unicode_encode_utf16(value, True, False, errors)
     if name == "utf-16-be" or name == "utf16be":
-        return _unicode_encode_utf16(value, False, False)
+        return _unicode_encode_utf16(value, False, False, errors)
     if name == "utf-32":
-        return _unicode_encode_utf32(value, True, True)
+        return _unicode_encode_utf32(value, True, True, errors)
     if name == "utf-32-le" or name == "utf32le":
-        return _unicode_encode_utf32(value, True, False)
+        return _unicode_encode_utf32(value, True, False, errors)
     if name == "utf-32-be" or name == "utf32be":
-        return _unicode_encode_utf32(value, False, False)
+        return _unicode_encode_utf32(value, False, False, errors)
 
     raise LookupError("unknown encoding: " + encoding)
 
@@ -1713,9 +2163,6 @@ def _unicode_empty() -> unicode:
 def _unicode_from_codepoint(cp: int) -> unicode:
     if cp < 0 or cp > UNICODE_MAX:
         raise ValueError("invalid code point")
-
-    if _is_surrogate(cp):
-        raise ValueError("surrogates are not supported")
 
     result = _unicode_new_uninit(1, cp)
     result._store_codepoint(0, cp)

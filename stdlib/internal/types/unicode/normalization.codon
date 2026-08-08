@@ -1,0 +1,202 @@
+from .normalization_data import (
+    NORMALIZATION_COMBINING_MASK,
+    NORMALIZATION_COMPATIBILITY_DECOMPOSITION_MASK,
+    NORMALIZATION_COMPOSITION_MASK,
+    NORMALIZATION_DECOMPOSITION_MASK,
+    NORMALIZATION_RAW_DECOMPOSITION_MASK,
+    _normalization_combining_entry,
+    _normalization_compatibility_decomposition_entry,
+    _normalization_compatibility_decomposition_value,
+    _normalization_composition_entry,
+    _normalization_decomposition_entry,
+    _normalization_decomposition_value,
+    _normalization_raw_decomposition_entry,
+    _normalization_raw_decomposition_value,
+)
+from .unicode import _unicode_from_codepoints, unicode
+
+HANGUL_SBASE: Literal[int] = 0xAC00
+HANGUL_LBASE: Literal[int] = 0x1100
+HANGUL_VBASE: Literal[int] = 0x1161
+HANGUL_TBASE: Literal[int] = 0x11A7
+HANGUL_LCOUNT: Literal[int] = 19
+HANGUL_VCOUNT: Literal[int] = 21
+HANGUL_TCOUNT: Literal[int] = 28
+HANGUL_NCOUNT: Literal[int] = HANGUL_VCOUNT * HANGUL_TCOUNT
+HANGUL_SCOUNT: Literal[int] = HANGUL_LCOUNT * HANGUL_NCOUNT
+
+
+def _normalization_codepoint_hash(codepoint: int, mask: int) -> int:
+    return (codepoint * 0x9E3779B1) & mask
+
+
+def _normalization_pair_hash(first: int, second: int, mask: int) -> int:
+    return ((first * 0x9E3779B1) ^ (second * 0x85EBCA77)) & mask
+
+
+def _normalization_combining_class(codepoint: int) -> int:
+    index = _normalization_codepoint_hash(codepoint, NORMALIZATION_COMBINING_MASK)
+
+    while True:
+        entry = _normalization_combining_entry(index)
+        if entry == u64(0):
+            return 0
+        if int(entry >> u64(8)) == codepoint:
+            return int(entry & u64(0xFF))
+        index = (index + 1) & NORMALIZATION_COMBINING_MASK
+
+
+def _normalization_decomposition_append(
+    codepoint: int,
+    output: List[int],
+    compatibility: bool,
+):
+    if HANGUL_SBASE <= codepoint < HANGUL_SBASE + HANGUL_SCOUNT:
+        syllable = codepoint - HANGUL_SBASE
+        leading = HANGUL_LBASE + syllable // HANGUL_NCOUNT
+        vowel = HANGUL_VBASE + (syllable % HANGUL_NCOUNT) // HANGUL_TCOUNT
+        trailing = syllable % HANGUL_TCOUNT
+        output.append(leading)
+        output.append(vowel)
+        if trailing:
+            output.append(HANGUL_TBASE + trailing)
+        return
+
+    mask = NORMALIZATION_DECOMPOSITION_MASK
+    if compatibility:
+        mask = NORMALIZATION_COMPATIBILITY_DECOMPOSITION_MASK
+    index = _normalization_codepoint_hash(codepoint, mask)
+
+    while True:
+        entry = _normalization_decomposition_entry(index)
+        if compatibility:
+            entry = _normalization_compatibility_decomposition_entry(index)
+        if entry == u64(0):
+            output.append(codepoint)
+            return
+        if int(entry >> u64(32)) == codepoint:
+            offset = int((entry >> u64(8)) & u64(0xFFFFFF))
+            length = int(entry & u64(0xFF))
+            for i in range(length):
+                value = _normalization_decomposition_value(offset + i)
+                if compatibility:
+                    value = _normalization_compatibility_decomposition_value(
+                        offset + i
+                    )
+                _normalization_decomposition_append(
+                    int(value),
+                    output,
+                    compatibility,
+                )
+            return
+        index = (index + 1) & mask
+
+
+def _normalization_raw_decomposition(codepoint: int) -> Tuple[int, List[int]]:
+    index = _normalization_codepoint_hash(
+        codepoint, NORMALIZATION_RAW_DECOMPOSITION_MASK
+    )
+
+    while True:
+        entry = _normalization_raw_decomposition_entry(index)
+        if entry == u64(0):
+            return 0, []
+        if int(entry >> u64(32)) == codepoint:
+            tag = int((entry >> u64(27)) & u64(0x1F))
+            offset = int((entry >> u64(8)) & u64(0x7FFFF))
+            length = int(entry & u64(0xFF))
+            values = []
+            for i in range(length):
+                values.append(
+                    int(_normalization_raw_decomposition_value(offset + i))
+                )
+            return tag, values
+        index = (index + 1) & NORMALIZATION_RAW_DECOMPOSITION_MASK
+
+
+def _normalization_canonical_order(codepoints: List[int]):
+    for i in range(1, len(codepoints)):
+        codepoint = codepoints[i]
+        combining_class = _normalization_combining_class(codepoint)
+        if combining_class == 0:
+            continue
+
+        pos = i
+        while (
+            pos > 0
+            and _normalization_combining_class(codepoints[pos - 1]) > combining_class
+        ):
+            codepoints[pos] = codepoints[pos - 1]
+            pos -= 1
+        codepoints[pos] = codepoint
+
+
+def _normalization_compose(first: int, second: int) -> int:
+    if HANGUL_LBASE <= first < HANGUL_LBASE + HANGUL_LCOUNT and (
+        HANGUL_VBASE <= second < HANGUL_VBASE + HANGUL_VCOUNT
+    ):
+        return HANGUL_SBASE + (first - HANGUL_LBASE) * HANGUL_NCOUNT + (
+            second - HANGUL_VBASE
+        ) * HANGUL_TCOUNT
+
+    if (
+        HANGUL_SBASE <= first < HANGUL_SBASE + HANGUL_SCOUNT
+        and (first - HANGUL_SBASE) % HANGUL_TCOUNT == 0
+        and HANGUL_TBASE < second < HANGUL_TBASE + HANGUL_TCOUNT
+    ):
+        return first + second - HANGUL_TBASE
+
+    index = _normalization_pair_hash(
+        first,
+        second,
+        NORMALIZATION_COMPOSITION_MASK,
+    )
+    key = (first << 21) | second
+
+    while True:
+        entry = _normalization_composition_entry(index)
+        if entry == u64(0):
+            return -1
+        if int(entry >> u64(21)) == key:
+            return int(entry & u64(0x1FFFFF))
+        index = (index + 1) & NORMALIZATION_COMPOSITION_MASK
+
+
+def _unicode_normalize(form: str, value: unicode) -> unicode:
+    if form != "NFD" and form != "NFC" and form != "NFKD" and form != "NFKC":
+        raise ValueError("unsupported normalization form: " + form)
+
+    compatibility = form == "NFKD" or form == "NFKC"
+    decomposed = []
+    for i in range(len(value)):
+        _normalization_decomposition_append(
+            value._load_codepoint(i),
+            decomposed,
+            compatibility,
+        )
+    _normalization_canonical_order(decomposed)
+
+    if form == "NFD" or form == "NFKD":
+        return _unicode_from_codepoints(decomposed)
+
+    composed = []
+    starter = -1
+    previous_combining_class = 0
+    for codepoint in decomposed:
+        combining_class = _normalization_combining_class(codepoint)
+        composite = -1
+        if starter >= 0 and (
+            previous_combining_class < combining_class
+            or previous_combining_class == 0
+        ):
+            composite = _normalization_compose(composed[starter], codepoint)
+
+        if composite >= 0:
+            composed[starter] = composite
+        else:
+            composed.append(codepoint)
+            if combining_class == 0:
+                starter = len(composed) - 1
+            previous_combining_class = combining_class
+
+    return _unicode_from_codepoints(composed)

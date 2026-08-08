@@ -1,4 +1,8 @@
-from internal.types.unicode.unicode import unicode
+from internal.types.unicode.unicode import (
+    _unicode_from_codepoint,
+    _unicode_from_codepoints,
+    unicode,
+)
 from internal.types.unicode.float_dtoa import (
     _float_shortest_decimal,
     _float_dtoa_shortest,
@@ -17,6 +21,7 @@ from internal.types.unicode.format import (
     _integer_format,
     _float_format,
 )
+import unicodedata
 
 
 def _raw_bytes(values: List[int]) -> str:
@@ -89,6 +94,249 @@ def test_unicode_codepoints():
 
 
 @test
+def test_unicode_normalization():
+    assert unicodedata.normalize("NFD", unicode("é")) == unicode("é")
+    assert unicodedata.normalize("NFC", unicode("é")) == unicode("é")
+    assert unicodedata.normalize("NFD", unicode("ά")) == unicode("ά")
+    assert unicodedata.normalize("NFC", unicode("ά")) == unicode("ά")
+    assert unicodedata.normalize("NFD", unicode("각")) == unicode("각")
+    assert unicodedata.normalize("NFC", unicode("각")) == unicode("각")
+    assert unicodedata.normalize("NFD", unicode("ạ̇")) == unicode("ạ̇")
+    assert unicodedata.normalize("NFC", unicode("ạ̇")) == unicode("ạ̇")
+    assert unicodedata.normalize("NFKD", unicode("ﬃ")) == unicode("ffi")
+    assert unicodedata.normalize("NFKD", unicode("①")) == unicode("1")
+    assert unicodedata.normalize("NFKC", unicode("ﬃ")) == unicode("ffi")
+    assert unicodedata.normalize("NFKC", unicode("①")) == unicode("1")
+    assert unicodedata.normalize("NFKC", unicode("Å")) == unicode("Å")
+    assert unicodedata.normalize("NFKC", unicode(" ")) == unicode(" ")
+    assert unicodedata.is_normalized("NFD", unicode("é"))
+    assert not unicodedata.is_normalized("NFC", unicode("é"))
+    assert unicodedata.is_normalized("NFC", unicode("é"))
+    assert unicodedata.is_normalized("NFKC", unicode("ffi"))
+    assert not unicodedata.is_normalized("NFKC", unicode("ﬃ"))
+
+    try:
+        unicodedata.normalize("invalid", unicode("é"))
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_unicodedata_category_and_combining():
+    assert unicodedata.category(unicode("A")) == "Lu"
+    assert unicodedata.category(unicode("é")) == "Ll"
+    assert unicodedata.category(unicode("́")) == "Mn"
+    assert unicodedata.category(unicode("😀")) == "So"
+    assert unicodedata.category(unicode("\x00")) == "Cc"
+    assert unicodedata.category(_unicode_from_codepoints([0xFDD0])) == "Cn"
+    assert unicodedata.combining(unicode("A")) == 0
+    assert unicodedata.combining(unicode("́")) == 230
+    assert unicodedata.combining(unicode("̧")) == 202
+
+    try:
+        unicodedata.category(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicodedata.combining(unicode(""))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicodedata_directionality_and_width():
+    assert unicodedata.bidirectional(unicode("A")) == "L"
+    assert unicodedata.bidirectional(_unicode_from_codepoints([0x0627])) == "AL"
+    assert unicodedata.bidirectional(_unicode_from_codepoints([0x0301])) == "NSM"
+    assert unicodedata.bidirectional(_unicode_from_codepoints([0xFDD0])) == ""
+    assert unicodedata.east_asian_width(unicode("A")) == "Na"
+    assert unicodedata.east_asian_width(_unicode_from_codepoints([0x00B7])) == "A"
+    assert unicodedata.east_asian_width(_unicode_from_codepoints([0x4E2D])) == "W"
+    assert unicodedata.mirrored(unicode("("))
+    assert not unicodedata.mirrored(unicode("A"))
+
+    try:
+        unicodedata.bidirectional(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicodedata.east_asian_width(unicode(""))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicodedata.mirrored(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicodedata_numeric_values():
+    assert unicodedata.decimal(unicode("7")) == 7
+    assert unicodedata.decimal(_unicode_from_codepoints([0x0665])) == 5
+    assert unicodedata.digit(_unicode_from_codepoints([0x00B2])) == 2
+    assert unicodedata.numeric(_unicode_from_codepoints([0x00BD])) == 0.5
+    assert unicodedata.numeric(_unicode_from_codepoints([0x216B])) == 12.0
+    assert unicodedata.decimal(unicode("A"), -1) == -1
+    assert unicodedata.digit(unicode("A"), -1) == -1
+    assert unicodedata.numeric(unicode("A"), -1.0) == -1.0
+
+    for function in [unicodedata.decimal, unicodedata.digit, unicodedata.numeric]:
+        try:
+            function(unicode("A"))
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_unicodedata_decomposition():
+    assert unicodedata.decomposition(unicode("À")) == "0041 0300"
+    assert unicodedata.decomposition(unicode(" ")) == "<noBreak> 0020"
+    assert unicodedata.decomposition(unicode("½")) == "<fraction> 0031 2044 0032"
+    assert unicodedata.decomposition(unicode("각")) == ""
+    assert unicodedata.decomposition(unicode("A")) == ""
+
+    try:
+        unicodedata.decomposition(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicodedata_names():
+    assert unicodedata.name(unicode("A")) == "LATIN CAPITAL LETTER A"
+    assert unicodedata.name(unicode("가")) == "HANGUL SYLLABLE GA"
+    assert (
+        unicodedata.name(_unicode_from_codepoints([0x20000]))
+        == "CJK UNIFIED IDEOGRAPH-20000"
+    )
+    assert unicodedata.name(unicode("\ue000"), "private") == "private"
+    assert unicodedata.lookup("LATIN CAPITAL LETTER A") == unicode("A")
+    assert unicodedata.lookup("HANGUL SYLLABLE GA") == unicode("가")
+    assert unicodedata.lookup("CJK UNIFIED IDEOGRAPH-20000") == (
+        _unicode_from_codepoints([0x20000])
+    )
+    assert unicodedata.lookup("NULL") == unicode("\x00")
+    assert unicodedata.lookup("KEYCAP DIGIT ONE") == (
+        _unicode_from_codepoints([0x0031, 0xFE0F, 0x20E3])
+    )
+
+    try:
+        unicodedata.name(unicode("\ue000"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicodedata.lookup("NOT A NAME")
+        assert False
+    except KeyError:
+        pass
+
+
+@test
+def test_unicodedata_version():
+    assert unicodedata.unidata_version == "16.0.0"
+
+
+@test
+def test_unicodedata_exhaustive_metadata():
+    for codepoint in range(0x110000):
+        value = _unicode_from_codepoint(codepoint)
+        assert len(unicodedata.category(value)) == 2
+        assert unicodedata.combining(value) >= 0
+        assert len(unicodedata.bidirectional(value)) <= 3
+        assert unicodedata.east_asian_width(value) in ("F", "A", "H", "N", "Na", "W")
+        unicodedata.mirrored(value)
+        unicodedata.decimal(value, -1)
+        unicodedata.digit(value, -1)
+        unicodedata.numeric(value, -1.0)
+        unicodedata.decomposition(value)
+
+        character_name = unicodedata.name(value, "")
+        if character_name:
+            assert unicodedata.lookup(character_name) == value
+
+
+def _normalization_field_to_unicode(field: str) -> unicode:
+    codepoints = []
+    for codepoint in field.split():
+        codepoints.append(int(codepoint, 16))
+    return _unicode_from_codepoints(codepoints)
+
+
+def _check_normalization_conformance(
+    form: str,
+    value: unicode,
+    expected: unicode,
+    case: int,
+) -> bool:
+    if unicodedata.normalize(form, value) == expected:
+        return True
+    print("normalization conformance failure", case, form)
+    return False
+
+
+@test
+def test_unicode_normalization_conformance():
+    cases = 0
+    with open("test/stdlib/NormalizationTest.txt") as fixture:
+        for line in fixture:
+            line = line.split("#")[0].strip()
+            if not line or line.startswith("@"):
+                continue
+
+            fields = line.split(";")[:-1]
+            assert len(fields) == 5
+            c1 = _normalization_field_to_unicode(fields[0])
+            c2 = _normalization_field_to_unicode(fields[1])
+            c3 = _normalization_field_to_unicode(fields[2])
+            c4 = _normalization_field_to_unicode(fields[3])
+            c5 = _normalization_field_to_unicode(fields[4])
+
+            if not _check_normalization_conformance("NFC", c1, c2, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFC", c2, c2, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFC", c3, c2, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFD", c1, c3, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFD", c2, c3, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFD", c3, c3, cases):
+                assert False
+                return
+
+            for value in [c1, c2, c3, c4, c5]:
+                if not _check_normalization_conformance("NFKC", value, c4, cases):
+                    assert False
+                    return
+                if not _check_normalization_conformance("NFKD", value, c5, cases):
+                    assert False
+                    return
+
+            cases += 1
+
+    assert cases > 0
+
+
+@test
 def test_codecs_and_error_handlers():
     assert unicode(_raw_bytes([0x68, 0xC3, 0xA9]), "UTF_8") == unicode("hé")
     assert unicode(_raw_bytes([0xE9]), "iso-8859-1") == unicode("é")
@@ -144,6 +392,204 @@ def test_codecs_and_error_handlers():
         assert False
     except LookupError:
         pass
+
+
+@test
+def test_codecs_differential_recovery_and_bom_semantics():
+    malformed_utf8 = _raw_bytes([0xE2, 0x41, 0xA1])
+    assert unicode(malformed_utf8, "utf-8", "ignore") == unicode("A")
+    assert unicode(malformed_utf8, "utf-8", "replace") == unicode("�A�")
+    assert unicode(malformed_utf8, "utf-8", "backslashreplace") == unicode("\\xe2A\\xa1")
+
+    overlong_utf8 = _raw_bytes([0xF0, 0x80, 0x80, 0x80])
+    assert unicode(overlong_utf8, "utf-8", "ignore") == unicode("")
+    assert unicode(overlong_utf8, "utf-8", "replace") == unicode("����")
+    assert unicode(overlong_utf8, "utf-8", "backslashreplace") == unicode("\\xf0\\x80\\x80\\x80")
+
+    surrogate_utf8 = _raw_bytes([0xED, 0xA0, 0x80])
+    assert unicode(surrogate_utf8, "utf-8", "replace") == unicode("���")
+
+    high_surrogate = _raw_bytes([0x41, 0, 0, 0xD8, 0x42, 0])
+    assert unicode(high_surrogate, "utf-16-le", "ignore") == unicode("AB")
+    assert unicode(high_surrogate, "utf-16-le", "replace") == unicode("A�B")
+    assert unicode(high_surrogate, "utf-16-le", "backslashreplace") == unicode("A\\x00\\xd8B")
+
+    invalid_utf32 = _raw_bytes([0x41, 0, 0, 0, 0, 0, 0x11, 0])
+    assert unicode(invalid_utf32, "utf-32-le", "ignore") == unicode("A")
+    assert unicode(invalid_utf32, "utf-32-le", "replace") == unicode("A�")
+    assert unicode(invalid_utf32, "utf-32-le", "backslashreplace") == unicode("A\\x00\\x00\\x11\\x00")
+
+    assert unicode(_raw_bytes([0xFF, 0xFE, 0x41, 0]), "utf-16-le") == unicode("﻿A")
+    assert unicode(_raw_bytes([0, 0x41, 0xFE, 0xFF]), "utf-16-be") == unicode("A﻿")
+    assert unicode(
+        _raw_bytes([0xFF, 0xFE, 0, 0, 0x41, 0, 0, 0]),
+        "utf-32-le",
+    ) == unicode("﻿A")
+
+    try:
+        unicode(_raw_bytes([0x41, 0]), "utf-16")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode(_raw_bytes([0x41, 0, 0, 0]), "utf-32")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_codecs_surrogates_and_cp1252():
+    utf8_surrogate = _raw_bytes([0xED, 0xA0, 0x80])
+    surrogate = unicode(utf8_surrogate, "utf-8", "surrogatepass")
+    assert surrogate.encode("utf-8", "surrogatepass") == utf8_surrogate
+    assert surrogate.encode("utf-16-le", "surrogatepass") == _raw_bytes([0, 0xD8])
+    assert surrogate.encode("utf-32-le", "surrogatepass") == _raw_bytes([0, 0xD8, 0, 0])
+    assert unicode(_raw_bytes([0, 0xD8]), "utf-16-le", "surrogatepass").encode(
+        "utf-8", "surrogatepass"
+    ) == utf8_surrogate
+    assert unicode(_raw_bytes([0, 0xD8, 0, 0]), "utf-32-le", "surrogatepass").encode(
+        "utf-8", "surrogatepass"
+    ) == utf8_surrogate
+
+    escaped_bytes = _raw_bytes([0xFF, 0x80, 0x61])
+    escaped = unicode(escaped_bytes, "utf-8", "surrogateescape")
+    assert escaped.encode("utf-8", "surrogateescape") == escaped_bytes
+
+    try:
+        unicode(utf8_surrogate, "utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        surrogate.encode("utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    assert unicode(_raw_bytes([0x80, 0x82, 0x9F]), "cp1252") == unicode("€‚Ÿ")
+    assert unicode("€‚Ÿ").encode("windows-1252") == _raw_bytes([0x80, 0x82, 0x9F])
+    assert unicode(_raw_bytes([0x80]), "windows1252") == unicode("€")
+    defined_c1_bytes = _raw_bytes(
+        [
+            0x80, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
+            0x8A, 0x8B, 0x8C, 0x8E, 0x91, 0x92, 0x93, 0x94, 0x95,
+            0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9E, 0x9F,
+        ]
+    )
+    assert unicode(defined_c1_bytes, "cp1252").encode("cp1252") == defined_c1_bytes
+    assert unicode(_raw_bytes([0x81]), "cp1252", "ignore") == unicode("")
+    assert unicode(_raw_bytes([0x81]), "cp1252", "replace") == unicode("�")
+    assert unicode(_raw_bytes([0x81]), "cp1252", "backslashreplace") == unicode("\\x81")
+    assert surrogate.encode("cp1252", "backslashreplace") == _raw_bytes(
+        [0x5C, 0x75, 0x64, 0x38, 0x30, 0x30]
+    )
+
+    try:
+        unicode(_raw_bytes([0x81]), "cp1252")
+        assert False
+    except ValueError:
+        pass
+
+    iso8859_15_bytes = _raw_bytes([0xA4, 0xA6, 0xA8, 0xB4, 0xB8, 0xBC, 0xBD, 0xBE])
+    iso8859_15_value = unicode("€ŠšŽžŒœŸ")
+    assert unicode(iso8859_15_bytes, "iso-8859-15") == iso8859_15_value
+    assert iso8859_15_value.encode("latin-9") == iso8859_15_bytes
+    assert unicode(iso8859_15_bytes, "iso8859-15") == iso8859_15_value
+
+    try:
+        unicode("¤").encode("iso-8859-15")
+        assert False
+    except ValueError:
+        pass
+
+    cp1251_bytes = []
+    for byte in range(256):
+        if byte != 0x98:
+            cp1251_bytes.append(byte)
+    cp1251_data = _raw_bytes(cp1251_bytes)
+    assert unicode(cp1251_data, "cp1251").encode("windows-1251") == cp1251_data
+    assert unicode(_raw_bytes([0x80, 0xA8, 0xC0, 0xFF]), "windows1251") == unicode(
+        "ЂЁАя"
+    )
+    assert unicode(_raw_bytes([0x98]), "cp1251", "replace") == unicode("�")
+
+    try:
+        unicode(_raw_bytes([0x98]), "cp1251")
+        assert False
+    except ValueError:
+        pass
+
+    cp1250_values = []
+    for byte in range(256):
+        if byte not in [0x81, 0x83, 0x88, 0x90, 0x98]:
+            cp1250_values.append(byte)
+    cp1250_data = _raw_bytes(cp1250_values)
+    assert unicode(cp1250_data, "cp1250").encode("windows-1250") == cp1250_data
+    assert unicode(_raw_bytes([0x81]), "windows1250", "replace") == unicode("�")
+
+    cp1253_values = []
+    for byte in range(256):
+        if byte not in [
+            0x81, 0x88, 0x8A, 0x8C, 0x8D, 0x8E, 0x8F, 0x90,
+            0x98, 0x9A, 0x9C, 0x9D, 0x9E, 0x9F, 0xAA, 0xD2, 0xFF,
+        ]:
+            cp1253_values.append(byte)
+    cp1253_data = _raw_bytes(cp1253_values)
+    assert unicode(cp1253_data, "cp1253").encode("windows-1253") == cp1253_data
+    assert unicode(_raw_bytes([0x81]), "windows1253", "replace") == unicode("�")
+
+    cp1254_values = []
+    for byte in range(256):
+        if byte not in [0x81, 0x8D, 0x8E, 0x8F, 0x90, 0x9D, 0x9E]:
+            cp1254_values.append(byte)
+    cp1254_data = _raw_bytes(cp1254_values)
+    assert unicode(cp1254_data, "cp1254").encode("windows-1254") == cp1254_data
+    assert unicode(_raw_bytes([0x81]), "windows1254", "replace") == unicode("�")
+
+
+@test
+def test_codecs_handler_fuzz_round_trips():
+    utf8_values = []
+    state = 0x13579BDF
+    for _ in range(257):
+        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+        utf8_values.append(state & 0xFF)
+    utf8_data = _raw_bytes(utf8_values)
+    assert unicode(utf8_data, "utf-8", "surrogateescape").encode(
+        "utf-8", "surrogateescape"
+    ) == utf8_data
+
+    utf16_units = [0, 0x41, 0xD800, 0x42, 0xDC80, 0xD83D, 0xDE00, 0xDFFF, 0xFFFF]
+    utf16_le = []
+    utf16_be = []
+    for unit in utf16_units:
+        utf16_le.append(unit & 0xFF)
+        utf16_le.append(unit >> 8)
+        utf16_be.append(unit >> 8)
+        utf16_be.append(unit & 0xFF)
+    assert unicode(_raw_bytes(utf16_le), "utf-16-le", "surrogatepass").encode(
+        "utf-16-le", "surrogatepass"
+    ) == _raw_bytes(utf16_le)
+    assert unicode(_raw_bytes(utf16_be), "utf-16-be", "surrogatepass").encode(
+        "utf-16-be", "surrogatepass"
+    ) == _raw_bytes(utf16_be)
+
+    utf32_points = [0, 0x41, 0xD800, 0xDC80, 0x1F600, 0x10FFFF]
+    utf32_le = []
+    utf32_be = []
+    for codepoint in utf32_points:
+        for shift in range(0, 32, 8):
+            utf32_le.append((codepoint >> shift) & 0xFF)
+            utf32_be.append((codepoint >> (24 - shift)) & 0xFF)
+    assert unicode(_raw_bytes(utf32_le), "utf-32-le", "surrogatepass").encode(
+        "utf-32-le", "surrogatepass"
+    ) == _raw_bytes(utf32_le)
+    assert unicode(_raw_bytes(utf32_be), "utf-32-be", "surrogatepass").encode(
+        "utf-32-be", "surrogatepass"
+    ) == _raw_bytes(utf32_be)
 
 
 @test
@@ -691,6 +1137,9 @@ test_ascii_and_slicing()
 test_comparisons_and_search()
 test_concat_and_repeat()
 test_unicode_codepoints()
+test_unicode_normalization()
+test_unicodedata_category_and_combining()
+test_unicode_normalization_conformance()
 test_membership_and_casefold()
 test_split_join_and_replace()
 test_partition_and_predicates()
@@ -2287,6 +2736,109 @@ def test_brace_format_nested_specs():
         pass
 
 
+@test
+def test_brace_format_custom_protocol():
+    class Token:
+        value: unicode
+
+        def __init__(self, value: unicode):
+            self.value = value
+
+        def __format__(self, spec: unicode) -> unicode:
+            return unicode("<") + self.value + unicode(":") + spec + unicode(">")
+
+    token = Token(unicode("payload"))
+    assert unicode("{}").format("raw") == unicode("raw")
+    assert unicode("{}").format(token) == unicode("<payload:>")
+    assert unicode("before {:opaque} after").format(token) == unicode(
+        "before <payload:opaque> after"
+    )
+    assert unicode("{0:{1}}").format(token, unicode("nested")) == unicode(
+        "<payload:nested>"
+    )
+
+
+@test
+def test_brace_format_map():
+    values: Dict[unicode, unicode] = {
+        unicode("name"): unicode("Codon"),
+        unicode("greeting"): unicode("hi"),
+        unicode("width"): unicode(">8"),
+    }
+    assert unicode("{name}").format_map(values) == unicode("Codon")
+    assert unicode("{greeting:>8}|{name:.3}").format_map(values) == unicode(
+        "      hi|Cod"
+    )
+    assert unicode("{name:{width}}").format_map(values) == unicode("   Codon")
+    assert unicode("{{{name}}}").format_map(values) == unicode("{Codon}")
+
+    class Names:
+        values: Dict[unicode, unicode]
+
+        def __init__(self):
+            self.values = values
+
+        def __getitem__(self, key: unicode) -> unicode:
+            return self.values[key]
+
+    assert unicode("{greeting}, {name}").format_map(Names()) == unicode(
+        "hi, Codon"
+    )
+
+    class Token:
+        value: unicode
+
+        def __init__(self, value: unicode):
+            self.value = value
+
+        def __format__(self, spec: unicode) -> unicode:
+            return unicode("[") + self.value + unicode(":") + spec + unicode("]")
+
+    class Tokens:
+        value: Token
+        spec: Token
+
+        def __init__(self):
+            self.value = Token(unicode("payload"))
+            self.spec = Token(unicode("nested"))
+
+        def __getitem__(self, key: unicode) -> Token:
+            if key == unicode("value"):
+                return self.value
+            return self.spec
+
+    assert unicode("{value:opaque}").format_map(Tokens()) == unicode(
+        "[payload:opaque]"
+    )
+    assert unicode("{value:{spec}}").format_map(Tokens()) == unicode(
+        "[payload:[nested:]]"
+    )
+
+    try:
+        unicode("{}").format_map(values)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0}").format_map(values)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{name:{}}").format_map(values)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{name}").format(unicode("Codon"))
+        assert False
+    except ValueError:
+        pass
+
+
 test_brace_format_automatic_fields()
 test_brace_format_conversions()
 test_brace_format_positional_fields()
@@ -2300,5 +2852,10 @@ test_brace_format_adversarial_multi_argument_sequences()
 test_brace_format_adversarial_malformed_sequences()
 test_brace_format_adversarial_dynamic_buffer_growth()
 test_brace_format_nested_specs()
+test_brace_format_custom_protocol()
+test_brace_format_map()
 test_unicode_differential_casing_and_predicates()
 test_unicode_differential_lines_bounds_and_repr()
+test_codecs_differential_recovery_and_bom_semantics()
+test_codecs_surrogates_and_cp1252()
+test_codecs_handler_fuzz_round_trips()

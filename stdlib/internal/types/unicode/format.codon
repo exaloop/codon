@@ -1037,6 +1037,10 @@ class unicode:
         output, output_length = brace_format(self, values)
         return _unicode_decode_utf8_strict(output, output_length)
 
+    def format_map(self, mapping) -> unicode:
+        output, output_length = brace_format_map(self, mapping)
+        return _unicode_decode_utf8_strict(output, output_length)
+
 
 def _value_string(value):
     return unicode(str(value))
@@ -1085,11 +1089,13 @@ def _value_ascii(value) -> unicode:
 
 class _BraceField:
     index: int
+    key: Optional[unicode]
     conversion: int
     spec: Optional[unicode]
 
     def __init__(self):
         self.index = -1
+        self.key = None
         self.conversion = 0
         self.spec = None
 
@@ -1165,6 +1171,25 @@ def _parse_brace_field(
         if position >= len(format):
             raise ValueError("expected '}' before end of string")
 
+        codepoint = format._load_codepoint(position)
+
+    elif (
+        codepoint != 0x7D  # }
+        and codepoint != 0x21  # !
+        and codepoint != 0x3A  # :
+    ):
+        key_start = position
+
+        while position < len(format):
+            codepoint = format._load_codepoint(position)
+            if codepoint == 0x7D or codepoint == 0x21 or codepoint == 0x3A:
+                break
+            position += 1
+
+        if position >= len(format):
+            raise ValueError("expected '}' before end of string")
+
+        field.key = format[key_start:position]
         codepoint = format._load_codepoint(position)
 
     if codepoint == 0x7D:  # }
@@ -1269,6 +1294,19 @@ def _brace_value_append(
     result: _FormatBuffer,
 ):
     spec = field.spec
+
+    if field.conversion == 0:
+        if (
+            not isinstance(value, int)
+            and not isinstance(value, float)
+            and not isinstance(value, unicode)
+        ):
+            if hasattr(value, "__format__"):
+                if spec is None:
+                    spec = unicode("")
+                if static.function.can_call(value.__format__, spec):
+                    _brace_text_append(value.__format__(spec), None, result)
+                    return
 
     if spec is None:
         _brace_value_append_unaligned(value, field, result)
@@ -1428,6 +1466,10 @@ def brace_format(format: unicode, values):
             break
 
         field, format_pos = _parse_brace_field(format, format_pos)
+
+        if field.key is not None:
+            raise ValueError("named fields are not supported by format")
+
         index = field.index
 
         if index < 0:
@@ -1482,6 +1524,9 @@ def _brace_expand_format_spec(
 
         field, position = _parse_brace_field(spec, position)
 
+        if field.key is not None:
+            raise ValueError("named fields are not supported by format")
+
         if field.spec is not None:
             raise ValueError("nested format specifiers are not supported")
 
@@ -1531,6 +1576,63 @@ def _brace_index_value_append(
 
     if not found:
         raise IndexError("replacement index out of range")
+
+
+def _brace_mapping_value_append(
+    mapping,
+    key: unicode,
+    field: _BraceField,
+    result: _FormatBuffer,
+):
+    _brace_value_append(mapping[key], field, result)
+
+
+def brace_format_map(format: unicode, mapping):
+    result = _FormatBuffer(len(format) + 16)
+    format_pos = 0
+
+    while True:
+        format_pos = _brace_write_literal_prefix(
+            format,
+            format_pos,
+            result,
+        )
+
+        if format_pos == len(format):
+            break
+
+        field, format_pos = _parse_brace_field(format, format_pos)
+        if field.key is None:
+            raise ValueError("format_map requires named fields")
+
+        if field.spec is not None:
+            field.spec = _brace_expand_format_spec_map(field.spec, mapping)
+
+        _brace_mapping_value_append(mapping, field.key, field, result)
+
+    result.release_excess()
+    return result.data, result.length
+
+
+def _brace_expand_format_spec_map(spec: unicode, mapping) -> unicode:
+    result = _FormatBuffer(len(spec) + 16)
+    position = 0
+
+    while True:
+        position = _brace_write_literal_prefix(spec, position, result)
+
+        if position == len(spec):
+            break
+
+        field, position = _parse_brace_field(spec, position)
+        if field.key is None:
+            raise ValueError("format_map requires named fields")
+        if field.spec is not None:
+            raise ValueError("nested format specifiers are not supported")
+
+        _brace_mapping_value_append(mapping, field.key, field, result)
+
+    return _unicode_decode_utf8_strict(result.data, result.length)
 
 
 def _parse_brace_format_spec(spec: unicode) -> _PercentDirective:
