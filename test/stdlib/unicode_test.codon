@@ -75,6 +75,65 @@ def test_comparisons_and_search():
 
 
 @test
+def test_fastsearch_paths():
+    periodic = unicode("a" * 1024 + "b")
+    needle = unicode("a" * 128 + "b")
+    assert periodic.find(needle) == 896
+    assert periodic.rfind(needle) == 896
+    assert periodic.count(unicode("aa")) == 512
+    no_match = unicode("a" * 1024)
+    assert no_match.find(needle) == -1
+    assert no_match.rfind(needle) == -1
+
+    repeated = unicode("prefix--needle--needle--suffix")
+    assert repeated.find(unicode("needle"), 8) == 8
+    assert repeated.rfind(unicode("needle"), 0, 24) == 16
+    assert repeated.split(unicode("--")) == [
+        unicode("prefix"), unicode("needle"), unicode("needle"), unicode("suffix"),
+    ]
+    assert repeated.rsplit(unicode("--"), 1) == [
+        unicode("prefix--needle--needle"), unicode("suffix"),
+    ]
+    assert repeated.replace(unicode("needle"), unicode("match")) == (
+        unicode("prefix--match--match--suffix")
+    )
+    assert repeated.partition(unicode("--")) == (
+        unicode("prefix"), unicode("--"), unicode("needle--needle--suffix"),
+    )
+    assert repeated.rpartition(unicode("--")) == (
+        unicode("prefix--needle--needle"), unicode("--"), unicode("suffix"),
+    )
+    assert unicode("needle") in repeated
+    assert unicode("αβγδβγ").find(unicode("βγ")) == 1
+    assert unicode("αβγδβγ").rfind(unicode("βγ")) == 4
+
+
+@test
+def test_split_and_rsplit_paths():
+    value = unicode("  alpha  beta  gamma  ")
+    assert value.split() == [unicode("alpha"), unicode("beta"), unicode("gamma")]
+    assert value.rsplit() == [unicode("alpha"), unicode("beta"), unicode("gamma")]
+    assert value.split(None, 1) == [unicode("alpha"), unicode("beta  gamma  ")]
+    assert value.rsplit(None, 1) == [unicode("  alpha  beta"), unicode("gamma")]
+
+    fields = unicode("a--b--c--d")
+    assert fields.split(unicode("--"), 2) == [
+        unicode("a"), unicode("b"), unicode("c--d"),
+    ]
+    assert fields.rsplit(unicode("--"), 2) == [
+        unicode("a--b"), unicode("c"), unicode("d"),
+    ]
+    assert unicode("a,b,c,d").split(unicode(","), 2) == [
+        unicode("a"), unicode("b"), unicode("c,d"),
+    ]
+    assert unicode("a,b,c,d").rsplit(unicode(","), 2) == [
+        unicode("a,b"), unicode("c"), unicode("d"),
+    ]
+    assert unicode("a--").split(unicode("--")) == [unicode("a"), unicode("")]
+    assert unicode("").split(unicode("--")) == [unicode("")]
+
+
+@test
 def test_concat_and_repeat():
     u = unicode("ab") + unicode("cd")
     assert u == unicode("abcd")

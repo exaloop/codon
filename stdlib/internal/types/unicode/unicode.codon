@@ -73,6 +73,10 @@ class unicode:
     _utf8: Ptr[u8]
     _utf8_len: int
 
+
+def _unicode_uninitialized() -> unicode:
+    return unicode()
+
 def _kind_for_maxchar(maxchar: int) -> int:
     if maxchar <= 0x7F:
         return KIND_ASCII
@@ -1208,8 +1212,7 @@ def _unicode_encode_codec(value: unicode, encoding: str, errors: str) -> str:
 class unicode:
 
     def __init__(self):
-        self._data = Ptr[u8](1)
-        self._data[0] = u8(0)
+        self._data = Ptr[u8]()
 
         self._meta = _make_meta(
             0,
@@ -1245,7 +1248,7 @@ class unicode:
         n = len(other)
         width = other._width()
 
-        self._data = Ptr[u8]((n + 1) * width)
+        self._data = Ptr[u8](n * width)
 
         self._meta = other._meta
         self._hash = other._hash
@@ -1254,10 +1257,6 @@ class unicode:
 
         for i in range(n):
             self._store_codepoint(i, other._load_codepoint(i))
-
-        terminator = n * width
-        for i in range(width):
-            self._data[terminator + i] = u8(0)
 
     def __len__(self) -> int:
         return _meta_len(self._meta)
@@ -1428,11 +1427,7 @@ class unicode:
         if len(sub) > end - start:
             return -1
 
-        for i in range(start, end - len(sub) + 1):
-            if _unicode_starts_at(self, sub, i):
-                return i
-
-        return -1
+        return _unicode_fastsearch(self, sub, start, end)
 
     def rfind(self, sub: unicode) -> int:
         return self.rfind(sub, 0, len(self))
@@ -1460,11 +1455,7 @@ class unicode:
         if len(sub) > end - start:
             return -1
 
-        for i in range(end - len(sub), start - 1, -1):
-            if _unicode_starts_at(self, sub, i):
-                return i
-
-        return -1
+        return _unicode_fastsearch_reverse(self, sub, start, end)
 
     def index(self, sub: unicode) -> int:
         return self.index(sub, 0, len(self))
@@ -2135,9 +2126,9 @@ def _unicode_new_uninit(length: int, maxchar: int) -> unicode:
     kind = _kind_for_maxchar(maxchar)
     width = _kind_width(kind)
 
-    result = unicode()
+    result = _unicode_uninitialized()
 
-    result._data = Ptr[u8]((length + 1) * width)
+    result._data = Ptr[u8](length * width)
 
     result._meta = _make_meta(
         length,
@@ -2147,11 +2138,6 @@ def _unicode_new_uninit(length: int, maxchar: int) -> unicode:
     result._hash = HASH_NOT_COMPUTED
     result._utf8 = Ptr[u8]()
     result._utf8_len = 0
-
-    terminator = length * width
-
-    for i in range(width):
-        result._data[terminator + i] = u8(0)
 
     return result
 
@@ -2199,6 +2185,176 @@ def _unicode_starts_at(
     return True
 
 
+def _unicode_search_bloom_add(bloom: u64, codepoint: int) -> u64:
+    return bloom | (u64(1) << u64(codepoint & 63))
+
+
+def _unicode_search_bloom_contains(bloom: u64, codepoint: int) -> bool:
+    return (bloom & (u64(1) << u64(codepoint & 63))) != 0
+
+
+def _unicode_fastsearch(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+) -> int:
+    needle_length = len(sub)
+    if needle_length == 1:
+        needle = sub._load_codepoint(0)
+        for position in range(start, end):
+            if value._load_codepoint(position) == needle:
+                return position
+        return -1
+
+    bloom = u64(0)
+    for index in range(needle_length):
+        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
+
+    last = needle_length - 1
+    tail = sub._load_codepoint(last)
+    limit = end - needle_length
+    position = start
+    attempts = 0
+
+    while position <= limit:
+        candidate_tail = value._load_codepoint(position + last)
+        if candidate_tail == tail and _unicode_starts_at(value, sub, position):
+            return position
+
+        attempts += 1
+        if attempts > needle_length and position + needle_length <= limit:
+            return _unicode_fastsearch_kmp(value, sub, position + 1, end)
+
+        if _unicode_search_bloom_contains(bloom, candidate_tail):
+            position += 1
+        else:
+            position += needle_length
+
+    return -1
+
+
+def _unicode_fastsearch_reverse(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+) -> int:
+    needle_length = len(sub)
+    if needle_length == 1:
+        needle = sub._load_codepoint(0)
+        for position in range(end - 1, start - 1, -1):
+            if value._load_codepoint(position) == needle:
+                return position
+        return -1
+
+    bloom = u64(0)
+    for index in range(needle_length):
+        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
+
+    first = sub._load_codepoint(0)
+    position = end - needle_length
+    attempts = 0
+
+    while position >= start:
+        candidate_first = value._load_codepoint(position)
+        if candidate_first == first and _unicode_starts_at(value, sub, position):
+            return position
+
+        attempts += 1
+        if attempts > needle_length and position - needle_length >= start:
+            return _unicode_fastsearch_reverse_kmp(value, sub, start, position - 1)
+
+        if _unicode_search_bloom_contains(bloom, candidate_first):
+            position -= 1
+        else:
+            position -= needle_length
+
+    return -1
+
+
+def _unicode_fastsearch_kmp(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+) -> int:
+    needle_length = len(sub)
+    prefix = Ptr[int](needle_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, needle_length):
+        while matched > 0 and sub._load_codepoint(index) != sub._load_codepoint(matched):
+            matched = prefix[matched - 1]
+        if sub._load_codepoint(index) == sub._load_codepoint(matched):
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for position in range(start, end):
+        while matched > 0 and value._load_codepoint(position) != sub._load_codepoint(matched):
+            matched = prefix[matched - 1]
+        if value._load_codepoint(position) == sub._load_codepoint(matched):
+            matched += 1
+            if matched == needle_length:
+                result = position - needle_length + 1
+                gc.free(prefix.as_byte())
+                return result
+
+    gc.free(prefix.as_byte())
+    return -1
+
+
+def _unicode_fastsearch_reverse_kmp(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+) -> int:
+    needle_length = len(sub)
+    if end >= len(value):
+        end = len(value) - 1
+
+    prefix = Ptr[int](needle_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, needle_length):
+        while (
+            matched > 0
+            and sub._load_codepoint(needle_length - 1 - index)
+                != sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched = prefix[matched - 1]
+        if (
+            sub._load_codepoint(needle_length - 1 - index)
+            == sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for position in range(end, start - 1, -1):
+        while (
+            matched > 0
+            and value._load_codepoint(position)
+                != sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched = prefix[matched - 1]
+        if (
+            value._load_codepoint(position)
+            == sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched += 1
+            if matched == needle_length:
+                gc.free(prefix.as_byte())
+                return position
+
+    gc.free(prefix.as_byte())
+    return -1
+
+
 def _unicode_copy_range(
     dst: unicode,
     src: unicode,
@@ -2235,16 +2391,12 @@ def _unicode_slice_impl(
     if start >= end:
         return _unicode_empty()
 
-    length = end - start
-    maxchar = 0
-
-    for i in range(start, end):
-        cp = value._load_codepoint(i)
-        if cp > maxchar:
-            maxchar = cp
-
-    result = _unicode_new_uninit(length, maxchar)
-    _unicode_copy_range(result, value, 0, start, end)
+    result = _unicode_uninitialized()
+    result._data = value._data + start * value._width()
+    result._meta = _make_meta(end - start, value._kind())
+    result._hash = HASH_NOT_COMPUTED
+    result._utf8 = Ptr[u8]()
+    result._utf8_len = 0
     return result
 
 
@@ -2418,12 +2570,18 @@ def _unicode_rjust_impl(
     return result
 
 
+def _unicode_split_capacity(maxsplit: int) -> int:
+    if maxsplit < 0 or maxsplit >= 12:
+        return 12
+    return maxsplit + 1
+
+
 def _unicode_split_whitespace_impl(
     value: unicode,
     reverse: Literal[bool] = False,
     maxsplit: int = -1,
 ) -> List[unicode]:
-    parts = []
+    parts = List[unicode](_unicode_split_capacity(maxsplit))
     length = len(value)
 
     if not reverse:
@@ -2473,12 +2631,8 @@ def _unicode_split_whitespace_impl(
         parts.append(_unicode_slice_impl(value, i + 1, end))
         splits += 1
 
-    result = []
-
-    for i in range(len(parts) - 1, -1, -1):
-        result.append(parts[i])
-
-    return result
+    parts.reverse()
+    return parts
 
 
 def _unicode_split_exact_impl(
@@ -2490,10 +2644,44 @@ def _unicode_split_exact_impl(
     if len(sep) == 0:
         raise ValueError("empty separator")
 
-    parts = []
+    parts = List[unicode](_unicode_split_capacity(maxsplit))
 
     if maxsplit == 0:
         parts.append(value)
+        return parts
+
+    if len(sep) == 1:
+        separator = sep._load_codepoint(0)
+
+        if not reverse:
+            start = 0
+            splits = 0
+
+            for position in range(len(value)):
+                if value._load_codepoint(position) != separator:
+                    continue
+                if maxsplit >= 0 and splits == maxsplit:
+                    break
+                parts.append(_unicode_slice_impl(value, start, position))
+                start = position + 1
+                splits += 1
+
+            parts.append(_unicode_slice_impl(value, start, len(value)))
+            return parts
+
+        end = len(value)
+        splits = 0
+        for position in range(len(value) - 1, -1, -1):
+            if value._load_codepoint(position) != separator:
+                continue
+            if maxsplit >= 0 and splits == maxsplit:
+                break
+            parts.append(_unicode_slice_impl(value, position + 1, end))
+            end = position
+            splits += 1
+
+        parts.append(_unicode_slice_impl(value, 0, end))
+        parts.reverse()
         return parts
 
     if not reverse:
@@ -2529,11 +2717,8 @@ def _unicode_split_exact_impl(
         start = pos
         remaining -= 1
 
-    result = []
-    for i in range(len(parts) - 1, -1, -1):
-        result.append(parts[i])
-
-    return result
+    parts.reverse()
+    return parts
 
 
 def _unicode_splitlines_impl(value: unicode, keepends: bool) -> List[unicode]:
