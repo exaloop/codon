@@ -31,6 +31,7 @@ from .codecs import (
     _single_byte_cp1254_decode,
     _single_byte_cp1254_encode,
 )
+
 LEN_BITS: Literal[int] = 56
 KIND_SHIFT: Literal[int] = 56
 
@@ -66,6 +67,7 @@ HANGUL_TCOUNT: Literal[int] = 28
 HANGUL_NCOUNT: Literal[int] = HANGUL_VCOUNT * HANGUL_TCOUNT
 HANGUL_SCOUNT: Literal[int] = HANGUL_LCOUNT * HANGUL_NCOUNT
 
+
 class unicode:
     _data: Ptr[u8]
     _meta: int
@@ -73,9 +75,6 @@ class unicode:
     _utf8: Ptr[u8]
     _utf8_len: int
 
-
-def _unicode_uninitialized() -> unicode:
-    return unicode()
 
 def _kind_for_maxchar(maxchar: int) -> int:
     if maxchar <= 0x7F:
@@ -2126,10 +2125,8 @@ def _unicode_new_uninit(length: int, maxchar: int) -> unicode:
     kind = _kind_for_maxchar(maxchar)
     width = _kind_width(kind)
 
-    result = _unicode_uninitialized()
-
+    result = unicode()
     result._data = Ptr[u8](length * width)
-
     result._meta = _make_meta(
         length,
         kind,
@@ -2388,7 +2385,7 @@ def _unicode_slice_impl(
     if start >= end:
         return _unicode_empty()
 
-    result = _unicode_uninitialized()
+    result = unicode()
     result._data = value._data + start * value._width()
     result._meta = _make_meta(end - start, value._kind())
     result._hash = HASH_NOT_COMPUTED
