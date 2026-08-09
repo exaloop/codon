@@ -109,6 +109,22 @@ def test_fastsearch_paths():
 
 
 @test
+def test_fastsearch_sliced_bounds():
+    parent = unicode("x" + "a" * 1024 + "b" + "z")
+    needle = unicode("a" * 128 + "b")
+
+    truncated = parent[1:1025]
+    assert truncated.find(needle) == -1
+    assert truncated.rfind(needle) == -1
+
+    bounded = parent[1:1026]
+    assert bounded.find(needle) == 896
+    assert bounded.rfind(needle) == 896
+    assert bounded.find(unicode("a" * 128 + "bz")) == -1
+    assert bounded.rfind(unicode("a" * 128 + "bz")) == -1
+
+
+@test
 def test_split_and_rsplit_paths():
     value = unicode("  alpha  beta  gamma  ")
     assert value.split() == [unicode("alpha"), unicode("beta"), unicode("gamma")]
@@ -248,12 +264,23 @@ def test_unicodedata_numeric_values():
     assert unicodedata.digit(unicode("A"), -1) == -1
     assert unicodedata.numeric(unicode("A"), -1.0) == -1.0
 
-    for function in [unicodedata.decimal, unicodedata.digit, unicodedata.numeric]:
-        try:
-            function(unicode("A"))
-            assert False
-        except ValueError:
-            pass
+    try:
+        unicodedata.decimal(unicode("A"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicodedata.digit(unicode("A"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicodedata.numeric(unicode("A"))
+        assert False
+    except ValueError:
+        pass
 
 
 @test
@@ -279,7 +306,7 @@ def test_unicodedata_names():
         unicodedata.name(_unicode_from_codepoints([0x20000]))
         == "CJK UNIFIED IDEOGRAPH-20000"
     )
-    assert unicodedata.name(unicode("\ue000"), "private") == "private"
+    assert unicodedata.name(_unicode_from_codepoint(0xE000), "private") == "private"
     assert unicodedata.lookup("LATIN CAPITAL LETTER A") == unicode("A")
     assert unicodedata.lookup("HANGUL SYLLABLE GA") == unicode("가")
     assert unicodedata.lookup("CJK UNIFIED IDEOGRAPH-20000") == (
@@ -291,7 +318,7 @@ def test_unicodedata_names():
     )
 
     try:
-        unicodedata.name(unicode("\ue000"))
+        unicodedata.name(_unicode_from_codepoint(0xE000))
         assert False
     except ValueError:
         pass
@@ -399,7 +426,7 @@ def test_unicode_normalization_conformance():
 def test_codecs_and_error_handlers():
     assert unicode(_raw_bytes([0x68, 0xC3, 0xA9]), "UTF_8") == unicode("hé")
     assert unicode(_raw_bytes([0xE9]), "iso-8859-1") == unicode("é")
-    assert unicode(_raw_bytes([0x41, 0xA9, 0x03]), "utf16le") == unicode("AΩ")
+    assert unicode(_raw_bytes([0x41, 0, 0xA9, 0x03]), "utf16le") == unicode("AΩ")
     assert unicode(_raw_bytes([0x00, 0x41, 0x03, 0xA9]), "utf-16-be") == unicode("AΩ")
     assert unicode(_raw_bytes([0x00, 0xF6, 0x01, 0x00]), "utf32le") == unicode("😀")
     assert unicode(_raw_bytes([0x00, 0x01, 0xF6, 0x00]), "utf-32-be") == unicode("😀")
@@ -1194,10 +1221,19 @@ def test_unicode_final_sigma_case_methods():
 test_empty()
 test_ascii_and_slicing()
 test_comparisons_and_search()
+test_fastsearch_paths()
+test_fastsearch_sliced_bounds()
+test_split_and_rsplit_paths()
 test_concat_and_repeat()
 test_unicode_codepoints()
 test_unicode_normalization()
 test_unicodedata_category_and_combining()
+test_unicodedata_directionality_and_width()
+test_unicodedata_numeric_values()
+test_unicodedata_decomposition()
+test_unicodedata_names()
+test_unicodedata_version()
+test_unicodedata_exhaustive_metadata()
 test_unicode_normalization_conformance()
 test_membership_and_casefold()
 test_split_join_and_replace()
@@ -2915,6 +2951,7 @@ test_brace_format_custom_protocol()
 test_brace_format_map()
 test_unicode_differential_casing_and_predicates()
 test_unicode_differential_lines_bounds_and_repr()
+test_codecs_and_error_handlers()
 test_codecs_differential_recovery_and_bom_semantics()
 test_codecs_surrogates_and_cp1252()
 test_codecs_handler_fuzz_round_trips()

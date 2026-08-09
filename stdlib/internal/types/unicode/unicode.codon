@@ -2313,9 +2313,6 @@ def _unicode_fastsearch_reverse_kmp(
     end: int,
 ) -> int:
     needle_length = len(sub)
-    if end >= len(value):
-        end = len(value) - 1
-
     prefix = Ptr[int](needle_length)
     prefix[0] = 0
     matched = 0

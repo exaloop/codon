@@ -83,17 +83,13 @@ def decomposition(value: unicode) -> str:
     return result
 
 
-@overload
-def name(value: unicode) -> str:
+def name(value: unicode, default: Optional[str] = None) -> str:
     index = unicode_name_record_index(_single_codepoint(value))
     if index < 0:
-        raise ValueError("no such name")
+        if default is None:
+            raise ValueError("no such name")
+        return default
     return unicode_name_value(index)
-
-
-def name(value: unicode, default: str) -> str:
-    index = unicode_name_record_index(_single_codepoint(value))
-    return default if index < 0 else unicode_name_value(index)
 
 
 def lookup(value: str) -> unicode:
@@ -135,40 +131,28 @@ def mirrored(value: unicode) -> bool:
     return unicode_mirrored_index(_single_codepoint(value)) != 0
 
 
-@overload
-def decimal(value: unicode) -> int:
+def decimal(value: unicode, default: Optional[int] = None) -> int:
     result = unicode_decimal_index(_single_codepoint(value))
     if result == 0:
-        raise ValueError("not a decimal")
+        if default is None:
+            raise ValueError("not a decimal")
+        return default
     return result - 1
 
 
-def decimal(value: unicode, default: int) -> int:
-    result = unicode_decimal_index(_single_codepoint(value))
-    return default if result == 0 else result - 1
-
-
-@overload
-def digit(value: unicode) -> int:
+def digit(value: unicode, default: Optional[int] = None) -> int:
     result = unicode_digit_index(_single_codepoint(value))
     if result == 0:
-        raise ValueError("not a digit")
+        if default is None:
+            raise ValueError("not a digit")
+        return default
     return result - 1
 
 
-def digit(value: unicode, default: int) -> int:
-    result = unicode_digit_index(_single_codepoint(value))
-    return default if result == 0 else result - 1
-
-
-@overload
-def numeric(value: unicode) -> float:
+def numeric(value: unicode, default: Optional[float] = None) -> float:
     codepoint = _single_codepoint(value)
     if unicode_numeric_index(codepoint) == 0:
-        raise ValueError("not a numeric character")
+        if default is None:
+            raise ValueError("not a numeric character")
+        return default
     return unicode_numeric_value(codepoint)
-
-
-def numeric(value: unicode, default: float) -> float:
-    codepoint = _single_codepoint(value)
-    return default if unicode_numeric_index(codepoint) == 0 else unicode_numeric_value(codepoint)
