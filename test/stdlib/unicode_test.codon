@@ -125,6 +125,31 @@ def test_fastsearch_sliced_bounds():
 
 
 @test
+def test_fastsearch_mixed_kind_views():
+    ascii_value = unicode("a--b--c")
+    wide_separator = unicode("Ω--Ω")[1:3]
+    assert ascii_value.find(wide_separator) == 1
+    assert ascii_value.rfind(wide_separator) == 4
+    assert ascii_value.count(wide_separator) == 2
+    assert ascii_value.split(wide_separator) == [
+        unicode("a"), unicode("b"), unicode("c"),
+    ]
+    assert ascii_value.find(unicode("Ω--Ω")[0:1]) == -1
+
+    ucs2_value = unicode("ΩabcΩ")[1:4]
+    assert ucs2_value.find(unicode("bc")) == 1
+    assert ucs2_value.rfind(unicode("bc")) == 1
+    assert ucs2_value.count(unicode("bc")) == 1
+    assert ucs2_value.split(unicode("b")) == [unicode("a"), unicode("c")]
+
+    ucs4_value = unicode("😀abc😀")[1:4]
+    assert ucs4_value.find(unicode("bc")) == 1
+    assert ucs4_value.rfind(unicode("bc")) == 1
+    assert ucs4_value.count(unicode("bc")) == 1
+    assert ucs4_value.split(unicode("b")) == [unicode("a"), unicode("c")]
+
+
+@test
 def test_split_and_rsplit_paths():
     value = unicode("  alpha  beta  gamma  ")
     assert value.split() == [unicode("alpha"), unicode("beta"), unicode("gamma")]
@@ -135,6 +160,16 @@ def test_split_and_rsplit_paths():
     fields = unicode("a--b--c--d")
     assert fields.split(unicode("--"), 2) == [
         unicode("a"), unicode("b"), unicode("c--d"),
+    ]
+    long_tail = unicode("head--" + "tail" * 1024)
+    assert long_tail.split(unicode("--"), 1) == [
+        unicode("head"), unicode("tail" * 1024),
+    ]
+    assert long_tail.split(unicode("-"), 1) == [
+        unicode("head"), unicode("-" + "tail" * 1024),
+    ]
+    assert long_tail.rsplit(unicode("--"), 1) == [
+        unicode("head"), unicode("tail" * 1024),
     ]
     assert fields.rsplit(unicode("--"), 2) == [
         unicode("a--b"), unicode("c"), unicode("d"),
@@ -1223,6 +1258,7 @@ test_ascii_and_slicing()
 test_comparisons_and_search()
 test_fastsearch_paths()
 test_fastsearch_sliced_bounds()
+test_fastsearch_mixed_kind_views()
 test_split_and_rsplit_paths()
 test_concat_and_repeat()
 test_unicode_codepoints()
