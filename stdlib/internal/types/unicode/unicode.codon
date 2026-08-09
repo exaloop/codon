@@ -32,23 +32,15 @@ from .codecs import (
     _single_byte_cp1254_encode,
 )
 
-LEN_BITS: Literal[int] = 56
 KIND_SHIFT: Literal[int] = 56
 
-LEN_MASK: Literal[int] = (1 << LEN_BITS) - 1
+LEN_MASK: Literal[int] = (1 << KIND_SHIFT) - 1
 KIND_MASK: Literal[int] = 3 << KIND_SHIFT
 
 KIND_ASCII: Literal[int] = 0
 KIND_LATIN1: Literal[int] = 1
 KIND_UCS2: Literal[int] = 2
 KIND_UCS4: Literal[int] = 3
-
-FLAG_COMPACT: Literal[int] = 1 << 58
-FLAG_UTF8: Literal[int] = 1 << 59
-FLAG_INTERNED: Literal[int] = 1 << 60
-FLAG_IMMORTAL: Literal[int] = 1 << 61
-
-HASH_NOT_COMPUTED: Literal[int] = -1
 
 UTF8_CONT_MASK: Literal[int] = 0xC0
 UTF8_CONT_TAG: Literal[int] = 0x80
@@ -68,12 +60,10 @@ HANGUL_NCOUNT: Literal[int] = HANGUL_VCOUNT * HANGUL_TCOUNT
 HANGUL_SCOUNT: Literal[int] = HANGUL_LCOUNT * HANGUL_NCOUNT
 
 
+@tuple
 class unicode:
     _data: Ptr[u8]
     _meta: int
-    _hash: int
-    _utf8: Ptr[u8]
-    _utf8_len: int
 
 
 def _kind_for_maxchar(maxchar: int) -> int:
@@ -96,12 +86,8 @@ def _kind_width(kind: int) -> int:
         return 4
 
 
-def _make_meta(length: int, kind: int, flags: int = 0) -> int:
-    return (
-        (length & LEN_MASK)
-        | (kind << KIND_SHIFT)
-        | flags
-    )
+def _make_meta(length: int, kind: int) -> int:
+    return (length & LEN_MASK) | (kind << KIND_SHIFT)
 
 
 def _meta_len(meta: int) -> int:
@@ -110,18 +96,6 @@ def _meta_len(meta: int) -> int:
 
 def _meta_kind(meta: int) -> int:
     return (meta & KIND_MASK) >> KIND_SHIFT
-
-
-def _meta_has(meta: int, flag: int) -> bool:
-    return (meta & flag) != 0
-
-
-def _meta_set(meta: int, flag: int) -> int:
-    return meta | flag
-
-
-def _meta_clear(meta: int, flag: int) -> int:
-    return meta & ~flag
 
 
 def _is_surrogate(cp: int) -> bool:
@@ -1210,52 +1184,20 @@ def _unicode_encode_codec(value: unicode, encoding: str, errors: str) -> str:
 @extend
 class unicode:
 
-    def __init__(self):
-        self._data = Ptr[u8]()
+    def __new__() -> unicode:
+        return unicode(Ptr[u8](), _make_meta(0, KIND_ASCII))
 
-        self._meta = _make_meta(
-            0,
-            KIND_ASCII,
-            FLAG_COMPACT,
-        )
-        self._hash = HASH_NOT_COMPUTED
-        self._utf8 = Ptr[u8]()
-        self._utf8_len = 0
+    def __new__(data: unicode) -> unicode:
+        return data
 
-    def __init__(self, data: unicode):
-        self._assign(data)
+    def __new__(data: str) -> unicode:
+        return _unicode_decode_codec(data, "utf-8", "strict")
 
-    def __init__(self, data: str):
-        self.__init__(data, "utf-8", "strict")
+    def __new__(data: str, encoding: str) -> unicode:
+        return _unicode_decode_codec(data, encoding, "strict")
 
-    def __init__(
-        self,
-        data: str,
-        encoding: str,
-    ):
-        self.__init__(data, encoding, "strict")
-
-    def __init__(
-        self,
-        data: str,
-        encoding: str,
-        errors: str,
-    ):
-        self._assign(_unicode_decode_codec(data, encoding, errors))
-
-    def _assign(self, other: unicode):
-        n = len(other)
-        width = other._width()
-
-        self._data = Ptr[u8](n * width)
-
-        self._meta = other._meta
-        self._hash = other._hash
-        self._utf8 = Ptr[u8]()
-        self._utf8_len = 0
-
-        for i in range(n):
-            self._store_codepoint(i, other._load_codepoint(i))
+    def __new__(data: str, encoding: str, errors: str) -> unicode:
+        return _unicode_decode_codec(data, encoding, errors)
 
     def __len__(self) -> int:
         return _meta_len(self._meta)
@@ -1915,9 +1857,6 @@ class unicode:
         return result
 
     def __hash__(self) -> int:
-        if self._hash != HASH_NOT_COMPUTED:
-            return self._hash
-
         h = u64(0x9e3779b97f4a7c15)
 
         for i in range(len(self)):
@@ -1929,8 +1868,7 @@ class unicode:
         if h == u64(0xFFFFFFFFFFFFFFFF):
             h = u64(0xFFFFFFFFFFFFFFFE)
 
-        self._hash = int(h)
-        return self._hash
+        return int(h)
 
     def __iter__(self):
         for i in range(len(self)):
@@ -2118,18 +2056,10 @@ def _unicode_new_uninit(length: int, maxchar: int) -> unicode:
     kind = _kind_for_maxchar(maxchar)
     width = _kind_width(kind)
 
-    result = unicode()
-    result._data = Ptr[u8](length * width)
-    result._meta = _make_meta(
-        length,
-        kind,
-        FLAG_COMPACT,
+    return unicode(
+        Ptr[u8](length * width),
+        _make_meta(length, kind),
     )
-    result._hash = HASH_NOT_COMPUTED
-    result._utf8 = Ptr[u8]()
-    result._utf8_len = 0
-
-    return result
 
 
 def _unicode_empty() -> unicode:
@@ -2199,12 +2129,10 @@ def _unicode_coerce_kind(value: unicode, kind: int) -> Optional[unicode]:
         if value._load_codepoint(i) > maxchar:
             return None
 
-    result = unicode()
-    result._data = Ptr[u8](len(value) * _kind_width(kind))
-    result._meta = _make_meta(len(value), kind, FLAG_COMPACT)
-    result._hash = HASH_NOT_COMPUTED
-    result._utf8 = Ptr[u8]()
-    result._utf8_len = 0
+    result = unicode(
+        Ptr[u8](len(value) * _kind_width(kind)),
+        _make_meta(len(value), kind),
+    )
 
     for i in range(len(value)):
         result._store_codepoint(i, value._load_codepoint(i))
@@ -2815,13 +2743,10 @@ def _unicode_slice_impl(
     if start >= end:
         return _unicode_empty()
 
-    result = unicode()
-    result._data = value._data + start * value._width()
-    result._meta = _make_meta(end - start, value._kind())
-    result._hash = HASH_NOT_COMPUTED
-    result._utf8 = Ptr[u8]()
-    result._utf8_len = 0
-    return result
+    return unicode(
+        value._data + start * value._width(),
+        _make_meta(end - start, value._kind()),
+    )
 
 
 def _unicode_concat_impl(left: unicode, right: unicode) -> unicode:
