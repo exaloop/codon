@@ -1853,14 +1853,9 @@ class unicode:
         h = u64(0x9e3779b97f4a7c15)
 
         for i in range(len(self)):
-            cp = self._load_codepoint(i)
-            h = (h * u64(1000003)) ^ u64(cp)
+            h = (h * u64(1000003)) ^ u64(self._load_codepoint(i))
 
         h ^= u64(len(self))
-
-        if h == u64(0xFFFFFFFFFFFFFFFF):
-            h = u64(0xFFFFFFFFFFFFFFFE)
-
         return int(h)
 
     def __iter__(self):
