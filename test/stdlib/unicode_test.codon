@@ -882,6 +882,25 @@ def _unicode_fuzz_count(
     return total
 
 
+def _unicode_fuzz_compare(left: unicode, right: unicode) -> int:
+    limit = len(left) if len(left) < len(right) else len(right)
+
+    for index in range(limit):
+        left_codepoint = left._load_codepoint(index)
+        right_codepoint = right._load_codepoint(index)
+
+        if left_codepoint < right_codepoint:
+            return -1
+        if left_codepoint > right_codepoint:
+            return 1
+
+    if len(left) < len(right):
+        return -1
+    if len(left) > len(right):
+        return 1
+    return 0
+
+
 def _unicode_fuzz_split(
     value: unicode,
     sub: unicode,
@@ -960,7 +979,14 @@ def test_unicode_differential_fuzz_search_and_split():
         end = state % 65 - 32
         state = _unicode_fuzz_next(state)
         maxsplit = state % 8 - 1
+        comparison = _unicode_fuzz_compare(value, sub)
 
+        assert (value == sub) == (comparison == 0)
+        assert (value != sub) == (comparison != 0)
+        assert (value < sub) == (comparison < 0)
+        assert (value <= sub) == (comparison <= 0)
+        assert (value > sub) == (comparison > 0)
+        assert (value >= sub) == (comparison >= 0)
         assert value.find(sub, start, end) == _unicode_fuzz_find(
             value, sub, start, end
         )
@@ -1014,6 +1040,112 @@ def test_split_join_and_replace():
     assert unicode(" a b c ").rsplit(None, 1) == [unicode(" a b"), unicode("c")]
     assert unicode(" a b ").split(None, 0) == [unicode("a b ")]
     assert unicode(" a b ").rsplit(None, 0) == [unicode(" a b")]
+
+
+@test
+def test_unicode_api_edge_contracts():
+    value = unicode("abc")
+
+    assert value.partition(unicode("x")) == (
+        value, unicode(""), unicode(""),
+    )
+    assert value.rpartition(unicode("x")) == (
+        unicode(""), unicode(""), value,
+    )
+    assert unicode("a--b--c").replace(unicode("--"), unicode("/"), 1) == (
+        unicode("a/b--c")
+    )
+    assert unicode("aaaa").replace(unicode("aa"), unicode("b")) == unicode("bb")
+    assert unicode("abc").replace(unicode(""), unicode("-"), 2) == unicode("-a-bc")
+    assert unicode(",").join([]) == unicode("")
+    assert unicode(",").join([unicode("only")]) == unicode("only")
+    assert value.removeprefix(unicode("x")) == value
+    assert value.removesuffix(unicode("x")) == value
+    assert value.removeprefix(unicode("ab")) == unicode("c")
+    assert value.removesuffix(unicode("bc")) == unicode("a")
+    assert unicode("+12").zfill(5) == unicode("+0012")
+    assert unicode("-12").zfill(5) == unicode("-0012")
+    assert unicode("a\tb").expandtabs(4) == unicode("a   b")
+
+    try:
+        value.index(unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.rindex(unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.split(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.rsplit(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.center(5, unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicode_views_hash_translation_and_codec_edges():
+    value = unicode("abc")
+    wide_view = (_unicode_from_codepoint(0x1F600) + value)[1:]
+
+    assert wide_view == value
+    assert hash(wide_view) == hash(value)
+    values = {wide_view: 1}
+    assert values[value] == 1
+    assert wide_view[-3:-1] == unicode("ab")
+    assert wide_view[::-1] == unicode("cba")
+
+    table = unicode.maketrans(
+        unicode("ab"), unicode("12"), unicode("x")
+    )
+    assert unicode("xabc").translate(table) == unicode("12c")
+    assert unicode("aba").translate(
+        {ord("a"): unicode("xy"), ord("b"): None}
+    ) == unicode("xyxy")
+    assert value.translate({}) == value
+
+    assert unicode(_raw_bytes([0xC3, 0xA9]), "utf8") == unicode("é")
+    assert unicode(_raw_bytes([0xE9]), "latin_1") == unicode("é")
+    assert unicode(_raw_bytes([0x41, 0]), "utf_16_le") == unicode("A")
+
+    try:
+        value[3]
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        value.partition(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.rpartition(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("x", "unknown-codec")
+        assert False
+    except LookupError:
+        pass
 
 
 @test
@@ -1476,6 +1608,8 @@ test_unicodedata_exhaustive_metadata()
 test_unicode_normalization_conformance()
 test_membership_and_casefold()
 test_split_join_and_replace()
+test_unicode_api_edge_contracts()
+test_unicode_views_hash_translation_and_codec_edges()
 test_partition_and_predicates()
 test_iterator()
 test_padding_and_tabs()

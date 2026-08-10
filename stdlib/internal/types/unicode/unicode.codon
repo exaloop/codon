@@ -1270,7 +1270,7 @@ class unicode:
         start, stop, step, slicelen = item.adjust_indices(len(self))
 
         if slicelen == 0:
-            return _unicode_empty()
+            return unicode()
 
         if step == 1:
             return _unicode_slice_impl(self, start, stop)
@@ -1328,7 +1328,7 @@ class unicode:
             raise ValueError("can't multiply unicode by negative value")
 
         if count == 0:
-            return _unicode_empty()
+            return unicode()
 
         return _unicode_repeat_impl(self, count)
 
@@ -2012,7 +2012,7 @@ class unicode:
         pos = self.find(sep)
 
         if pos == -1:
-            return (self, _unicode_empty(), _unicode_empty())
+            return (self, unicode(), unicode())
 
         return (
             _unicode_slice_impl(self, 0, pos),
@@ -2027,7 +2027,7 @@ class unicode:
         pos = self.rfind(sep)
 
         if pos == -1:
-            return (self, _unicode_empty(), _unicode_empty())
+            return (unicode(), unicode(), self)
 
         return (
             _unicode_slice_impl(self, 0, pos),
@@ -2053,10 +2053,6 @@ def _unicode_new_uninit(length: int, maxchar: int) -> unicode:
         Ptr[u8](length * width),
         _make_meta(length, kind),
     )
-
-
-def _unicode_empty() -> unicode:
-    return unicode()
 
 
 def _unicode_from_codepoint(cp: int) -> unicode:
@@ -2776,7 +2772,7 @@ def _unicode_slice_impl(
     end: int,
 ) -> unicode:
     if start >= end:
-        return _unicode_empty()
+        return unicode()
 
     return unicode(
         value._data + start * value._width(),
@@ -2805,7 +2801,7 @@ def _unicode_concat_impl(left: unicode, right: unicode) -> unicode:
 
 def _unicode_repeat_impl(value: unicode, count: int) -> unicode:
     if count <= 0:
-        return _unicode_empty()
+        return unicode()
 
     length = len(value) * count
     maxchar = _unicode_maxchar(value)
@@ -2820,7 +2816,7 @@ def _unicode_repeat_impl(value: unicode, count: int) -> unicode:
 
 def _unicode_new_from_repeat(cp: int, length: int) -> unicode:
     if length <= 0:
-        return _unicode_empty()
+        return unicode()
 
     result = _unicode_new_uninit(length, cp)
     for i in range(length):
@@ -3222,7 +3218,7 @@ def _unicode_splitlines_impl(value: unicode, keepends: bool) -> List[unicode]:
 
 def _unicode_join_impl(sep: unicode, values: List[unicode]) -> unicode:
     if len(values) == 0:
-        return _unicode_empty()
+        return unicode()
 
     total_len = 0
     maxchar = 0
@@ -3393,7 +3389,7 @@ def _unicode_translate_unicode_impl(
         else:
             pieces.append(value[i])
 
-    return _unicode_join_impl(_unicode_empty(), pieces)
+    return _unicode_join_impl(unicode(), pieces)
 
 
 def _unicode_translate_optional_int_impl(
@@ -3447,7 +3443,7 @@ def _unicode_translate_optional_unicode_impl(
         if mapped is not None:
             pieces.append(mapped)
 
-    return _unicode_join_impl(_unicode_empty(), pieces)
+    return _unicode_join_impl(unicode(), pieces)
 
 
 def _unicode_ascii_map(value: unicode, transform) -> unicode:
