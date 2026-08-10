@@ -60,8 +60,27 @@ def test_ascii_and_slicing():
 def test_comparisons_and_search():
     u = unicode("banana")
     assert u == unicode("banana")
+    assert u != unicode("bandana")
     assert u < unicode("candy")
     assert u > unicode("apple")
+    assert u <= unicode("banana")
+    assert u >= unicode("banana")
+    assert unicode("abc") < unicode("abcd")
+    assert unicode("abcd") > unicode("abc")
+
+    latin1 = _unicode_from_codepoint(0xE9)
+    ucs2 = _unicode_from_codepoint(0x03A9)
+    ucs4 = _unicode_from_codepoint(0x1F600)
+    latin1_view = (latin1 + u)[1:]
+    ucs2_view = (ucs2 + u)[1:]
+    ucs4_view = (ucs4 + u)[1:]
+    assert latin1_view == u
+    assert ucs2_view == u
+    assert ucs4_view == u
+    assert latin1 < ucs2
+    assert ucs2 < ucs4
+    assert latin1 + unicode("z") > latin1 + unicode("a")
+
     assert u.find(unicode("ana")) == 1
     assert u.rfind(unicode("ana")) == 3
     assert u.index(unicode("na")) == 2
@@ -773,6 +792,190 @@ def test_unicode_differential_lines_bounds_and_repr():
     assert value.find(unicode(""), -1, -3) == -1
 
     assert unicode("'\"\\\x1f\x7f​😀").__repr__() == "'\\'\"\\\\\\x1f\\x7f\\u200b😀'"
+
+
+def _unicode_fuzz_normalize_bounds(
+    value: unicode,
+    start: int,
+    end: int,
+) -> Tuple[int, int]:
+    length = len(value)
+
+    if start < 0:
+        start += length
+        if start < 0:
+            start = 0
+
+    if end < 0:
+        end += length
+
+    if end < 0:
+        end = 0
+    elif end > length:
+        end = length
+
+    return start, end
+
+
+def _unicode_fuzz_starts_at(value: unicode, sub: unicode, start: int) -> bool:
+    if start < 0 or start + len(sub) > len(value):
+        return False
+
+    for index in range(len(sub)):
+        if value._load_codepoint(start + index) != sub._load_codepoint(index):
+            return False
+
+    return True
+
+
+def _unicode_fuzz_find(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+    reverse: bool = False,
+) -> int:
+    start, end = _unicode_fuzz_normalize_bounds(value, start, end)
+
+    if len(sub) == 0:
+        if start > end:
+            return -1
+        return end if reverse else start
+
+    if len(sub) > end - start:
+        return -1
+
+    if reverse:
+        for position in range(end - len(sub), start - 1, -1):
+            if _unicode_fuzz_starts_at(value, sub, position):
+                return position
+        return -1
+
+    for position in range(start, end - len(sub) + 1):
+        if _unicode_fuzz_starts_at(value, sub, position):
+            return position
+
+    return -1
+
+
+def _unicode_fuzz_count(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+) -> int:
+    start, end = _unicode_fuzz_normalize_bounds(value, start, end)
+
+    if len(sub) == 0:
+        return 0 if start > end else end - start + 1
+
+    total = 0
+    position = start
+
+    while position <= end - len(sub):
+        position = _unicode_fuzz_find(value, sub, position, end)
+        if position == -1:
+            break
+        total += 1
+        position += len(sub)
+
+    return total
+
+
+def _unicode_fuzz_split(
+    value: unicode,
+    sub: unicode,
+    maxsplit: int,
+    reverse: bool = False,
+) -> List[unicode]:
+    parts = []
+
+    if not reverse:
+        start = 0
+        splits = 0
+
+        while maxsplit < 0 or splits < maxsplit:
+            position = _unicode_fuzz_find(value, sub, start, len(value))
+            if position == -1:
+                break
+            parts.append(value[start:position])
+            start = position + len(sub)
+            splits += 1
+
+        parts.append(value[start:])
+        return parts
+
+    end = len(value)
+    splits = 0
+
+    while maxsplit < 0 or splits < maxsplit:
+        position = _unicode_fuzz_find(value, sub, 0, end, True)
+        if position == -1:
+            break
+        parts.append(value[position + len(sub):end])
+        end = position
+        splits += 1
+
+    parts.append(value[:end])
+    parts.reverse()
+    return parts
+
+
+def _unicode_fuzz_next(state: int) -> int:
+    return (state * 1103515245 + 12345) & 0x7FFFFFFF
+
+
+def _unicode_fuzz_value(state: int, length: int) -> Tuple[unicode, int]:
+    codepoints = []
+    alphabet = [
+        0x00, 0x20, 0x2D, 0x41, 0x61, 0x7F, 0xE9,
+        0x301, 0x3A9, 0x2028, 0x1F600, 0x10FFFF,
+    ]
+
+    for _ in range(length):
+        state = _unicode_fuzz_next(state)
+        codepoints.append(alphabet[state % len(alphabet)])
+
+    return _unicode_from_codepoints(codepoints), state
+
+
+@test
+def test_unicode_differential_fuzz_search_and_split():
+    state = 0x5EED1234
+
+    for case in range(200):
+        state = _unicode_fuzz_next(state)
+        value, state = _unicode_fuzz_value(state, state % 25)
+        state = _unicode_fuzz_next(state)
+        sub, state = _unicode_fuzz_value(state, state % 8 + 1)
+
+        if case % 2 == 0:
+            value = (_unicode_from_codepoint(0x1F600) + value)[1:]
+        if case % 3 == 0:
+            sub = (_unicode_from_codepoint(0x1F600) + sub)[1:]
+
+        state = _unicode_fuzz_next(state)
+        start = state % 65 - 32
+        state = _unicode_fuzz_next(state)
+        end = state % 65 - 32
+        state = _unicode_fuzz_next(state)
+        maxsplit = state % 8 - 1
+
+        assert value.find(sub, start, end) == _unicode_fuzz_find(
+            value, sub, start, end
+        )
+        assert value.rfind(sub, start, end) == _unicode_fuzz_find(
+            value, sub, start, end, True
+        )
+        assert value.count(sub, start, end) == _unicode_fuzz_count(
+            value, sub, start, end
+        )
+        assert value.split(sub, maxsplit) == _unicode_fuzz_split(
+            value, sub, maxsplit
+        )
+        assert value.rsplit(sub, maxsplit) == _unicode_fuzz_split(
+            value, sub, maxsplit, True
+        )
 
 
 @test
@@ -2987,6 +3190,7 @@ test_brace_format_custom_protocol()
 test_brace_format_map()
 test_unicode_differential_casing_and_predicates()
 test_unicode_differential_lines_bounds_and_repr()
+test_unicode_differential_fuzz_search_and_split()
 test_codecs_and_error_handlers()
 test_codecs_differential_recovery_and_bom_semantics()
 test_codecs_surrogates_and_cp1252()

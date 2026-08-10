@@ -1286,6 +1286,13 @@ class unicode:
         if len(self) != len(other):
             return False
 
+        if self._width() == other._width():
+            return _C.memcmp(
+                self._data,
+                other._data,
+                len(self) * self._width(),
+            ) == 0
+
         for i in range(len(self)):
             if self._load_codepoint(i) != other._load_codepoint(i):
                 return False
@@ -1296,30 +1303,16 @@ class unicode:
         return not self.__eq__(other)
 
     def __lt__(self, other: unicode) -> bool:
-        n = len(self)
-        m = len(other)
-
-        limit = n if n < m else m
-
-        for i in range(limit):
-            a = self._load_codepoint(i)
-            b = other._load_codepoint(i)
-
-            if a < b:
-                return True
-            if a > b:
-                return False
-
-        return n < m
+        return _unicode_compare(self, other) < 0
 
     def __le__(self, other: unicode) -> bool:
-        return self.__lt__(other) or self.__eq__(other)
+        return _unicode_compare(self, other) <= 0
 
     def __gt__(self, other: unicode) -> bool:
-        return not self.__le__(other)
+        return _unicode_compare(self, other) > 0
 
     def __ge__(self, other: unicode) -> bool:
-        return not self.__lt__(other)
+        return _unicode_compare(self, other) >= 0
 
     def __add__(self, other: unicode) -> unicode:
         if len(self) == 0:
@@ -2105,6 +2098,57 @@ def _unicode_starts_at(
     return True
 
 
+def _unicode_compare_typed(
+    left: Ptr[Char],
+    right: Ptr[Char],
+    limit: int,
+    Char: type,
+) -> int:
+    for i in range(limit):
+        if left[i] < right[i]:
+            return -1
+        if left[i] > right[i]:
+            return 1
+
+    return 0
+
+
+def _unicode_compare(left: unicode, right: unicode) -> int:
+    left_length = len(left)
+    right_length = len(right)
+    limit = left_length if left_length < right_length else right_length
+    comparison = 0
+
+    if left._kind() <= KIND_LATIN1 and right._kind() <= KIND_LATIN1:
+        comparison = _unicode_compare_typed(left._data, right._data, limit)
+    elif left._kind() == KIND_UCS2 and right._kind() == KIND_UCS2:
+        comparison = _unicode_compare_typed(
+            Ptr[u16](left._data), Ptr[u16](right._data), limit
+        )
+    elif left._kind() == KIND_UCS4 and right._kind() == KIND_UCS4:
+        comparison = _unicode_compare_typed(
+            Ptr[u32](left._data), Ptr[u32](right._data), limit
+        )
+    else:
+        for i in range(limit):
+            left_codepoint = left._load_codepoint(i)
+            right_codepoint = right._load_codepoint(i)
+
+            if left_codepoint < right_codepoint:
+                return -1
+            if left_codepoint > right_codepoint:
+                return 1
+
+    if comparison != 0:
+        return comparison
+
+    if left_length < right_length:
+        return -1
+    if left_length > right_length:
+        return 1
+    return 0
+
+
 def _unicode_search_bloom_add(bloom: u64, codepoint: int) -> u64:
     return bloom | (u64(1) << u64(codepoint & 63))
 
@@ -2270,7 +2314,7 @@ def _unicode_fastsearch_reverse_typed(
         attempts += 1
         if attempts > needle_length and position - needle_length >= start:
             return _unicode_fastsearch_reverse_kmp_typed(
-                value, sub, needle_length, start, position - 1
+                value, sub, needle_length, start, position + needle_length - 2
             )
 
         if _unicode_search_bloom_contains(bloom, int(candidate_first)):
@@ -2607,7 +2651,9 @@ def _unicode_fastsearch_reverse(
 
         attempts += 1
         if attempts > needle_length and position - needle_length >= start:
-            return _unicode_fastsearch_reverse_kmp(value, sub, start, position - 1)
+            return _unicode_fastsearch_reverse_kmp(
+                value, sub, start, position + needle_length - 2
+            )
 
         if _unicode_search_bloom_contains(bloom, candidate_first):
             position -= 1
