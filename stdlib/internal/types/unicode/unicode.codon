@@ -2425,17 +2425,6 @@ def _unicode_count_kmp(
     start: int,
     end: int,
 ) -> int:
-    if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
-        return _unicode_count_typed(value._data, sub._data, len(sub), start, end)
-    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
-        return _unicode_count_typed(
-            Ptr[u16](value._data), Ptr[u16](sub._data), len(sub), start, end
-        )
-    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
-        return _unicode_count_typed(
-            Ptr[u32](value._data), Ptr[u32](sub._data), len(sub), start, end
-        )
-
     sub_length = len(sub)
     if sub_length == 1:
         total = 0
