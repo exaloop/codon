@@ -59,6 +59,193 @@ def backward_mask(s: Ptr[u8], n: int, needle: Ptr[u8], k: int, i: int, firstb: u
     %mask = bitcast <16 x i1> %mask0 to i16
     ret i16 %mask
 
+@pure
+@llvm
+def forward_mask_u16(s: Ptr[u16], needle: Ptr[u16], k: int, i: int, first: u16, last: u16) -> u8:
+    %first0 = insertelement <8 x i16> undef, i16 %first, i64 0
+    %firstv = shufflevector <8 x i16> %first0, <8 x i16> poison, <8 x i32> zeroinitializer
+    %last0 = insertelement <8 x i16> undef, i16 %last, i64 0
+    %lastv = shufflevector <8 x i16> %last0, <8 x i16> poison, <8 x i32> zeroinitializer
+    %offset0 = add i64 %i, %k
+    %offset = sub i64 %offset0, 1
+    %ptr_first = getelementptr inbounds i16, ptr %s, i64 %i
+    %ptr_last = getelementptr inbounds i16, ptr %s, i64 %offset
+    %block_first = load <8 x i16>, ptr %ptr_first, align 1
+    %block_last = load <8 x i16>, ptr %ptr_last, align 1
+    %eq_first = icmp eq <8 x i16> %firstv, %block_first
+    %eq_last = icmp eq <8 x i16> %lastv, %block_last
+    %mask0 = and <8 x i1> %eq_first, %eq_last
+    %mask = bitcast <8 x i1> %mask0 to i8
+    ret i8 %mask
+
+@pure
+@llvm
+def forward_mask_u32(s: Ptr[u32], needle: Ptr[u32], k: int, i: int, first: u32, last: u32) -> u8:
+    %first0 = insertelement <4 x i32> undef, i32 %first, i64 0
+    %firstv = shufflevector <4 x i32> %first0, <4 x i32> poison, <4 x i32> zeroinitializer
+    %last0 = insertelement <4 x i32> undef, i32 %last, i64 0
+    %lastv = shufflevector <4 x i32> %last0, <4 x i32> poison, <4 x i32> zeroinitializer
+    %offset0 = add i64 %i, %k
+    %offset = sub i64 %offset0, 1
+    %ptr_first = getelementptr inbounds i32, ptr %s, i64 %i
+    %ptr_last = getelementptr inbounds i32, ptr %s, i64 %offset
+    %block_first = load <4 x i32>, ptr %ptr_first, align 1
+    %block_last = load <4 x i32>, ptr %ptr_last, align 1
+    %eq_first = icmp eq <4 x i32> %firstv, %block_first
+    %eq_last = icmp eq <4 x i32> %lastv, %block_last
+    %mask0 = and <4 x i1> %eq_first, %eq_last
+    %mask = bitcast <4 x i1> %mask0 to i4
+    %result = zext i4 %mask to i8
+    ret i8 %result
+
+@pure
+@llvm
+def backward_mask_u16(s: Ptr[u16], needle: Ptr[u16], k: int, i: int, first: u16, last: u16) -> u8:
+    %j0 = sub i64 %i, 8
+    %j = add i64 %j0, 1
+    %first0 = insertelement <8 x i16> undef, i16 %first, i64 0
+    %firstv = shufflevector <8 x i16> %first0, <8 x i16> poison, <8 x i32> zeroinitializer
+    %last0 = insertelement <8 x i16> undef, i16 %last, i64 0
+    %lastv = shufflevector <8 x i16> %last0, <8 x i16> poison, <8 x i32> zeroinitializer
+    %offset0 = sub i64 %j, %k
+    %offset = add i64 %offset0, 1
+    %ptr_first = getelementptr inbounds i16, ptr %s, i64 %offset
+    %ptr_last = getelementptr inbounds i16, ptr %s, i64 %j
+    %block_first = load <8 x i16>, ptr %ptr_first, align 1
+    %block_last = load <8 x i16>, ptr %ptr_last, align 1
+    %eq_first = icmp eq <8 x i16> %lastv, %block_last
+    %eq_last = icmp eq <8 x i16> %firstv, %block_first
+    %mask0 = and <8 x i1> %eq_first, %eq_last
+    %mask = bitcast <8 x i1> %mask0 to i8
+    ret i8 %mask
+
+@pure
+@llvm
+def backward_mask_u32(s: Ptr[u32], needle: Ptr[u32], k: int, i: int, first: u32, last: u32) -> u8:
+    %j0 = sub i64 %i, 4
+    %j = add i64 %j0, 1
+    %first0 = insertelement <4 x i32> undef, i32 %first, i64 0
+    %firstv = shufflevector <4 x i32> %first0, <4 x i32> poison, <4 x i32> zeroinitializer
+    %last0 = insertelement <4 x i32> undef, i32 %last, i64 0
+    %lastv = shufflevector <4 x i32> %last0, <4 x i32> poison, <4 x i32> zeroinitializer
+    %offset0 = sub i64 %j, %k
+    %offset = add i64 %offset0, 1
+    %ptr_first = getelementptr inbounds i32, ptr %s, i64 %offset
+    %ptr_last = getelementptr inbounds i32, ptr %s, i64 %j
+    %block_first = load <4 x i32>, ptr %ptr_first, align 1
+    %block_last = load <4 x i32>, ptr %ptr_last, align 1
+    %eq_first = icmp eq <4 x i32> %lastv, %block_last
+    %eq_last = icmp eq <4 x i32> %firstv, %block_first
+    %mask0 = and <4 x i1> %eq_first, %eq_last
+    %mask = bitcast <4 x i1> %mask0 to i4
+    %result = zext i4 %mask to i8
+    ret i8 %result
+
+def _matches(s: Ptr[Char], needle: Ptr[Char], k: int, position: int, Char: type) -> bool:
+    for index in range(k):
+        if s[position + index] != needle[index]:
+            return False
+    return True
+
+def forward_find_u16(s: Ptr[u16], n: int, needle: Ptr[u16], k: int) -> int:
+    if k == 0:
+        return 0
+    if n < k:
+        return -1
+
+    first = needle[0]
+    last = needle[k - 1]
+    i = 0
+    while i + k + 7 <= n:
+        mask = forward_mask_u16(s, needle, k, i, first, last)
+        while mask:
+            position = i + int(cttz(mask))
+            if _matches(s, needle, k, position):
+                return position
+            mask &= mask - u8(1)
+        i += 8
+
+    while i + k <= n:
+        if first == s[i] and last == s[i + k - 1] and _matches(s, needle, k, i):
+            return i
+        i += 1
+    return -1
+
+def forward_find_u32(s: Ptr[u32], n: int, needle: Ptr[u32], k: int) -> int:
+    if k == 0:
+        return 0
+    if n < k:
+        return -1
+
+    first = needle[0]
+    last = needle[k - 1]
+    i = 0
+    while i + k + 3 <= n:
+        mask = forward_mask_u32(s, needle, k, i, first, last)
+        while mask:
+            position = i + int(cttz(mask))
+            if _matches(s, needle, k, position):
+                return position
+            mask &= mask - u8(1)
+        i += 4
+
+    while i + k <= n:
+        if first == s[i] and last == s[i + k - 1] and _matches(s, needle, k, i):
+            return i
+        i += 1
+    return -1
+
+def backward_find_u16(s: Ptr[u16], n: int, needle: Ptr[u16], k: int) -> int:
+    if k == 0:
+        return n
+    if n < k:
+        return -1
+
+    first = needle[0]
+    last = needle[k - 1]
+    i = n - 1
+    while i - (k - 1) - 7 >= 0:
+        mask = backward_mask_u16(s, needle, k, i, first, last)
+        while mask:
+            position = i - (k - 1) - int(ctlz(mask))
+            if _matches(s, needle, k, position):
+                return position
+            mask &= ~(u8(1) << u8(7 - int(ctlz(mask))))
+        i -= 8
+
+    while i - k + 1 >= 0:
+        position = i - k + 1
+        if first == s[position] and last == s[i] and _matches(s, needle, k, position):
+            return position
+        i -= 1
+    return -1
+
+def backward_find_u32(s: Ptr[u32], n: int, needle: Ptr[u32], k: int) -> int:
+    if k == 0:
+        return n
+    if n < k:
+        return -1
+
+    first = needle[0]
+    last = needle[k - 1]
+    i = n - 1
+    while i - (k - 1) - 3 >= 0:
+        mask = backward_mask_u32(s, needle, k, i, first, last)
+        while mask:
+            offset = int(ctlz(mask)) - 4
+            position = i - (k - 1) - offset
+            if _matches(s, needle, k, position):
+                return position
+            mask &= ~(u8(1) << u8(3 - offset))
+        i -= 4
+
+    while i - k + 1 >= 0:
+        position = i - k + 1
+        if first == s[position] and last == s[i] and _matches(s, needle, k, position):
+            return position
+        i -= 1
+    return -1
+
 def forward_find(s: Ptr[u8], n: int, needle: Ptr[u8], k: int):
     if k == 0:
         return 0
@@ -301,7 +488,7 @@ def backward_find(s: Ptr[u8], n: int, needle: Ptr[u8], k: int):
         else:
             break
 
-        j = i + 10
+        j = i - 10
         if j - k + 1 >= 0:
             if lastb == s[j] and firstb == s[j - k + 1] and _C.memcmp(s + j - k + 2, needle + 1, k - 2) == i32(0):
                 return j - k + 1

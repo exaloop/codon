@@ -31,6 +31,7 @@ from .codecs import (
     _single_byte_cp1254_decode,
     _single_byte_cp1254_encode,
 )
+import algorithms.strings as string_algorithms
 
 KIND_SHIFT: Literal[int] = 56
 
@@ -2562,11 +2563,26 @@ def _unicode_fastsearch(
     end: int,
 ) -> int:
     if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
-        return _unicode_fastsearch_typed(value._data, len(value), sub._data, len(sub), start, end)
+        position = string_algorithms.forward_find(
+            value._data + start, end - start, sub._data, len(sub)
+        )
+        return start + position if position >= 0 else -1
     if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
-        return _unicode_fastsearch_typed(Ptr[u16](value._data), len(value), Ptr[u16](sub._data), len(sub), start, end)
+        position = string_algorithms.forward_find_u16(
+            Ptr[u16](value._data) + start,
+            end - start,
+            Ptr[u16](sub._data),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
     if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
-        return _unicode_fastsearch_typed(Ptr[u32](value._data), len(value), Ptr[u32](sub._data), len(sub), start, end)
+        position = string_algorithms.forward_find_u32(
+            Ptr[u32](value._data) + start,
+            end - start,
+            Ptr[u32](sub._data),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
 
     needle_length = len(sub)
     if needle_length == 1:
@@ -2610,11 +2626,26 @@ def _unicode_fastsearch_reverse(
     end: int,
 ) -> int:
     if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
-        return _unicode_fastsearch_reverse_typed(value._data, sub._data, len(sub), start, end)
+        position = string_algorithms.backward_find(
+            value._data + start, end - start, sub._data, len(sub)
+        )
+        return start + position if position >= 0 else -1
     if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
-        return _unicode_fastsearch_reverse_typed(Ptr[u16](value._data), Ptr[u16](sub._data), len(sub), start, end)
+        position = string_algorithms.backward_find_u16(
+            Ptr[u16](value._data) + start,
+            end - start,
+            Ptr[u16](sub._data),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
     if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
-        return _unicode_fastsearch_reverse_typed(Ptr[u32](value._data), Ptr[u32](sub._data), len(sub), start, end)
+        position = string_algorithms.backward_find_u32(
+            Ptr[u32](value._data) + start,
+            end - start,
+            Ptr[u32](sub._data),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
 
     needle_length = len(sub)
     if needle_length == 1:

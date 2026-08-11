@@ -151,6 +151,21 @@ def test_fastsearch_paths():
         unicode("prefix--needle--needle"), unicode("--"), unicode("suffix"),
     )
     assert unicode("needle") in repeated
+    omega = _unicode_from_codepoint(0x03A9)
+    ucs2_needle = omega + unicode("needle")
+    ucs2_value = (omega + unicode("x")) * 24 + ucs2_needle + (
+        omega + unicode("x")
+    ) * 10 + ucs2_needle
+    assert ucs2_value.find(ucs2_needle) == 48
+    assert ucs2_value.rfind(ucs2_needle) == 75
+
+    smile = _unicode_from_codepoint(0x1F600)
+    ucs4_needle = smile + unicode("needle")
+    ucs4_value = (smile + unicode("x")) * 16 + ucs4_needle + (
+        smile + unicode("x")
+    ) * 6 + ucs4_needle
+    assert ucs4_value.find(ucs4_needle) == 32
+    assert ucs4_value.rfind(ucs4_needle) == 51
     assert unicode("αβγδβγ").find(unicode("βγ")) == 1
     assert unicode("αβγδβγ").rfind(unicode("βγ")) == 4
 
