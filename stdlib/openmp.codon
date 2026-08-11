@@ -6,26 +6,26 @@ import internal.static as static
 
 Routine = Function[[i32, cobj], i32]
 
-_KMP_IDENT_IMB = 0x01
-_KMP_IDENT_KMPC = 0x02
-_KMP_IDENT_AUTOPAR = 0x08
-_KMP_IDENT_ATOMIC_REDUCE = 0x10
-_KMP_IDENT_BARRIER_EXPL = 0x20
-_KMP_IDENT_BARRIER_IMPL = 0x0040
-_KMP_IDENT_BARRIER_IMPL_MASK = 0x01C0
-_KMP_IDENT_BARRIER_IMPL_FOR = 0x0040
-_KMP_IDENT_BARRIER_IMPL_SECTIONS = 0x00C0
-_KMP_IDENT_BARRIER_IMPL_SINGLE = 0x0140
-_KMP_IDENT_BARRIER_IMPL_WORKSHARE = 0x01C0
-_KMP_IDENT_WORK_LOOP = 0x200
-_KMP_IDENT_WORK_SECTIONS = 0x400
-_KMP_IDENT_WORK_DISTRIBUTE = 0x800
-_KMP_IDENT_ATOMIC_HINT_MASK = 0xFF0000
-_KMP_IDENT_ATOMIC_HINT_UNCONTENDED = 0x010000
-_KMP_IDENT_ATOMIC_HINT_CONTENDED = 0x020000
-_KMP_IDENT_ATOMIC_HINT_NONSPECULATIVE = 0x040000
-_KMP_IDENT_ATOMIC_HINT_SPECULATIVE = 0x080000
-_KMP_IDENT_OPENMP_SPEC_VERSION_MASK = 0xFF000000
+_KMP_IDENT_IMB: Literal[int] = 0x01
+_KMP_IDENT_KMPC: Literal[int] = 0x02
+_KMP_IDENT_AUTOPAR: Literal[int] = 0x08
+_KMP_IDENT_ATOMIC_REDUCE: Literal[int] = 0x10
+_KMP_IDENT_BARRIER_EXPL: Literal[int] = 0x20
+_KMP_IDENT_BARRIER_IMPL: Literal[int] = 0x0040
+_KMP_IDENT_BARRIER_IMPL_MASK: Literal[int] = 0x01C0
+_KMP_IDENT_BARRIER_IMPL_FOR: Literal[int] = 0x0040
+_KMP_IDENT_BARRIER_IMPL_SECTIONS: Literal[int] = 0x00C0
+_KMP_IDENT_BARRIER_IMPL_SINGLE: Literal[int] = 0x0140
+_KMP_IDENT_BARRIER_IMPL_WORKSHARE: Literal[int] = 0x01C0
+_KMP_IDENT_WORK_LOOP: Literal[int] = 0x200
+_KMP_IDENT_WORK_SECTIONS: Literal[int] = 0x400
+_KMP_IDENT_WORK_DISTRIBUTE: Literal[int] = 0x800
+_KMP_IDENT_ATOMIC_HINT_MASK: Literal[int] = 0xFF0000
+_KMP_IDENT_ATOMIC_HINT_UNCONTENDED: Literal[int] = 0x010000
+_KMP_IDENT_ATOMIC_HINT_CONTENDED: Literal[int] = 0x020000
+_KMP_IDENT_ATOMIC_HINT_NONSPECULATIVE: Literal[int] = 0x040000
+_KMP_IDENT_ATOMIC_HINT_SPECULATIVE: Literal[int] = 0x080000
+_KMP_IDENT_OPENMP_SPEC_VERSION_MASK: Literal[int] = 0xFF000000
 
 @tuple
 class Lock:
@@ -320,8 +320,10 @@ def _taskred_data(gtid: int, data):
     return T(__kmpc_task_reduction_get_th_data(i32(gtid), cobj(), data.as_byte()))
 
 def _fork_call(microtask: cobj, args):
+    from C import seq_allow_register_threads()
     from C import __kmpc_fork_call(Ptr[Ident], i32, cobj, ...)
     loc_ref = _default_loc()  # TODO: pass real loc?
+    seq_allow_register_threads()
     __kmpc_fork_call(loc_ref, i32(1), microtask, __ptr__(args))
 
 def _static_loop_outline_template(gtid_ptr: Ptr[i32], btid_ptr: Ptr[i32], args):
