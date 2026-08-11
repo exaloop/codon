@@ -177,6 +177,14 @@ def _unicode_normalize(form: str, value: unicode) -> unicode:
     _normalization_canonical_order(decomposed)
 
     if form == "NFD" or form == "NFKD":
+        if len(decomposed) == len(value):
+            unchanged = True
+            for i in range(len(value)):
+                if decomposed[i] != value._load_codepoint(i):
+                    unchanged = False
+                    break
+            if unchanged:
+                return value
         return _unicode_from_codepoints(decomposed)
 
     composed = []
@@ -198,5 +206,14 @@ def _unicode_normalize(form: str, value: unicode) -> unicode:
             if combining_class == 0:
                 starter = len(composed) - 1
             previous_combining_class = combining_class
+
+    if len(composed) == len(value):
+        unchanged = True
+        for i in range(len(value)):
+            if composed[i] != value._load_codepoint(i):
+                unchanged = False
+                break
+        if unchanged:
+            return value
 
     return _unicode_from_codepoints(composed)

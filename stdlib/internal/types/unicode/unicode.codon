@@ -3221,9 +3221,10 @@ def _unicode_join_impl(sep: unicode, values: List[unicode]) -> unicode:
     for i in range(len(values)):
         piece = values[i]
         total_len += len(piece)
+        piece_maxchar = _unicode_maxchar(piece)
 
-        if _unicode_maxchar(piece) > maxchar:
-            maxchar = _unicode_maxchar(piece)
+        if piece_maxchar > maxchar:
+            maxchar = piece_maxchar
 
     if len(values) > 1:
         total_len += (len(values) - 1) * len(sep)
@@ -3355,7 +3356,7 @@ def _unicode_translate_int_impl(value: unicode, table: dict[int, int]) -> unicod
 
         out_len += 1
 
-    result = _unicode_new_uninit(len(value), maxchar)
+    result = _unicode_new_uninit(out_len, maxchar)
     out = 0
 
     for i in range(len(value)):
@@ -3368,23 +3369,43 @@ def _unicode_translate_int_impl(value: unicode, table: dict[int, int]) -> unicod
         result._store_codepoint(out, mapped)
         out += 1
 
-    return _unicode_slice_impl(result, 0, out)
+    return result
 
 
 def _unicode_translate_unicode_impl(
     value: unicode,
     table: dict[int, unicode],
 ) -> unicode:
-    pieces = []
+    output_length = 0
+    maxchar = 0
 
     for i in range(len(value)):
         cp = value._load_codepoint(i)
-        if cp in table:
-            pieces.append(table[cp])
+        mapped = table.get(cp)
+        if mapped is not None:
+            output_length += len(mapped)
+            mapped_maxchar = _unicode_maxchar(mapped)
         else:
-            pieces.append(value[i])
+            output_length += 1
+            mapped_maxchar = cp
 
-    return _unicode_join_impl(unicode(), pieces)
+        if mapped_maxchar > maxchar:
+            maxchar = mapped_maxchar
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp)
+        if mapped is not None:
+            _unicode_copy_range(result, mapped, output, 0, len(mapped))
+            output += len(mapped)
+        else:
+            result._store_codepoint(output, cp)
+            output += 1
+
+    return result
 
 
 def _unicode_translate_optional_int_impl(
@@ -3396,7 +3417,7 @@ def _unicode_translate_optional_int_impl(
 
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
-        mapped = table[codepoint] if codepoint in table else codepoint
+        mapped = table.get(codepoint, codepoint)
 
         if mapped is None:
             continue
@@ -3413,7 +3434,7 @@ def _unicode_translate_optional_int_impl(
 
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
-        mapped = table[codepoint] if codepoint in table else codepoint
+        mapped = table.get(codepoint, codepoint)
 
         if mapped is not None:
             result._store_codepoint(out, mapped)
@@ -3426,19 +3447,29 @@ def _unicode_translate_optional_unicode_impl(
     value: unicode,
     table: dict[int, Optional[unicode]],
 ) -> unicode:
-    pieces = []
+    output_length = 0
+    maxchar = 0
 
     for i in range(len(value)):
         cp = value._load_codepoint(i)
-        if cp not in table:
-            pieces.append(value[i])
-            continue
-
-        mapped = table[cp]
+        mapped = table.get(cp, value[i])
         if mapped is not None:
-            pieces.append(mapped)
+            output_length += len(mapped)
+            mapped_maxchar = _unicode_maxchar(mapped)
+            if mapped_maxchar > maxchar:
+                maxchar = mapped_maxchar
 
-    return _unicode_join_impl(unicode(), pieces)
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp, value[i])
+        if mapped is not None:
+            _unicode_copy_range(result, mapped, output, 0, len(mapped))
+            output += len(mapped)
+
+    return result
 
 
 def _unicode_ascii_map(value: unicode, transform) -> unicode:
@@ -3488,16 +3519,25 @@ def _unicode_ascii_title(value: unicode) -> unicode:
 def _unicode_map_full(value: unicode, mapping_length, mapping_codepoint) -> unicode:
     output_length = 0
     maxchar = 0
+    unchanged = True
 
     for i in range(len(value)):
         cp = value._load_codepoint(i)
         length = mapping_length(cp)
         output_length += length
 
+        if length != 1:
+            unchanged = False
+
         for j in range(length):
             mapped = mapping_codepoint(cp, j)
             if mapped > maxchar:
                 maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+
+    if unchanged:
+        return value
 
     result = _unicode_new_uninit(output_length, maxchar)
     output = 0
@@ -3552,15 +3592,25 @@ def _unicode_lower_mapping_codepoint(
 def _unicode_lower_full(value: unicode) -> unicode:
     output_length = 0
     maxchar = 0
+    unchanged = True
 
     for i in range(len(value)):
+        cp = value._load_codepoint(i)
         length = _unicode_lower_mapping_length(value, i)
         output_length += length
+
+        if length != 1:
+            unchanged = False
 
         for j in range(length):
             mapped = _unicode_lower_mapping_codepoint(value, i, j)
             if mapped > maxchar:
                 maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+
+    if unchanged:
+        return value
 
     result = _unicode_new_uninit(output_length, maxchar)
     output = 0
