@@ -116,6 +116,34 @@ def test_fastsearch_paths():
     assert repeated.replace(unicode("needle"), unicode("match")) == (
         unicode("prefix--match--match--suffix")
     )
+    assert repeated.replace(unicode("needle"), unicode("match"), 0) == repeated
+    assert repeated.replace(unicode("needle"), unicode("match"), 1) == (
+        unicode("prefix--match--needle--suffix")
+    )
+    assert repeated.replace(unicode("needle"), unicode("match"), -2) == (
+        unicode("prefix--match--match--suffix")
+    )
+    assert repeated.replace(unicode("needle"), unicode("")) == (
+        unicode("prefix------suffix")
+    )
+    assert repeated.replace(unicode("missing"), unicode("match")) == repeated
+    assert unicode("ababa").replace(unicode("aba"), unicode("z")) == unicode("zba")
+    assert unicode("aaaa").replace(unicode("aa"), unicode("b")) == unicode("bb")
+    assert unicode("abc").replace(unicode(""), unicode("-")) == unicode("-a-b-c-")
+    assert unicode("abc").replace(unicode(""), unicode("-"), 2) == unicode("-a-bc")
+    assert unicode("abc").replace(unicode(""), unicode("-"), 0) == unicode("abc")
+    latin1 = unicode("caf") + _unicode_from_codepoint(0xE9)
+    ucs2 = unicode("a") + _unicode_from_codepoint(0x03A9)
+    ucs4 = unicode("a") + _unicode_from_codepoint(0x1F600) + _unicode_from_codepoint(0x03A9)
+    assert latin1.replace(_unicode_from_codepoint(0xE9), _unicode_from_codepoint(0x1F600)) == (
+        unicode("caf") + _unicode_from_codepoint(0x1F600)
+    )
+    assert ucs2.replace(_unicode_from_codepoint(0x03A9), _unicode_from_codepoint(0x1F600)) == (
+        unicode("a") + _unicode_from_codepoint(0x1F600)
+    )
+    assert ucs4.replace(_unicode_from_codepoint(0x1F600), unicode("x")) == (
+        unicode("ax") + _unicode_from_codepoint(0x03A9)
+    )
     assert repeated.partition(unicode("--")) == (
         unicode("prefix"), unicode("--"), unicode("needle--needle--suffix"),
     )

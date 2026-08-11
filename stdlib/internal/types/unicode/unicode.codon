@@ -1699,14 +1699,11 @@ class unicode:
     def join(self, values: List[unicode]) -> unicode:
         return _unicode_join_impl(self, values)
 
-    def replace(self, old: unicode, new: unicode) -> unicode:
-        return self.replace(old, new, -1)
-
     def replace(
         self,
         old: unicode,
         new: unicode,
-        count: int,
+        count: int = -1,
     ) -> unicode:
         return _unicode_replace_impl(self, old, new, count)
 
@@ -3293,9 +3290,12 @@ def _unicode_replace_impl(
     remaining = count
 
     while True:
-        pos = value.find(old, start)
+        if count >= 0 and remaining == 0:
+            break
 
-        if pos == -1 or (count >= 0 and remaining == 0):
+        pos = _unicode_fastsearch(value, old, start, len(value))
+
+        if pos == -1:
             break
 
         total_len += len(new) - len(old)
@@ -3303,6 +3303,9 @@ def _unicode_replace_impl(
 
         if count >= 0:
             remaining -= 1
+
+    if start == 0:
+        return value
 
     maxchar = _unicode_maxchar(value)
     new_max = _unicode_maxchar(new)
@@ -3317,9 +3320,12 @@ def _unicode_replace_impl(
     remaining = count
 
     while True:
-        pos = value.find(old, start)
+        if count >= 0 and remaining == 0:
+            break
 
-        if pos == -1 or (count >= 0 and remaining == 0):
+        pos = _unicode_fastsearch(value, old, start, len(value))
+
+        if pos == -1:
             break
 
         _unicode_copy_range(result, value, out, start, pos)
