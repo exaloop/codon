@@ -174,12 +174,12 @@ void TypecheckVisitor::loadStdLibrary(
 
 /// Simplify an AST node. Assumes that the standard library is loaded.
 Stmt *TypecheckVisitor::apply(const std::shared_ptr<TypeContext> &ctx, Stmt *node,
-                              const std::string &file) {
+                              const std::string &file, bool sweepForceRealize) {
   auto oldFilename = ctx->getFilename();
   ctx->setFilename(file);
   auto preamble = ctx->cache->N<ast::SuiteStmt>();
   auto tv = TypecheckVisitor(ctx, preamble);
-  auto n = tv.inferTypes(node, true);
+  auto n = tv.inferTypes(node, sweepForceRealize);
   ctx->setFilename(oldFilename);
   if (!n) {
     auto errors = tv.findTypecheckErrors(node);

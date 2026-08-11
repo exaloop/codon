@@ -43,8 +43,7 @@ Type *TypecheckVisitor::unify(Type *a, Type *b) const {
 }
 
 /// Infer all types within a Stmt *. Implements the LTS-DI typechecking.
-/// @param isToplevel set if typechecking the program toplevel.
-Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
+Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool sweepForceRealize) {
   if (!result)
     return nullptr;
 
@@ -83,7 +82,7 @@ Stmt *TypecheckVisitor::inferTypes(Stmt *result, bool isToplevel) {
     std::swap(ctx->returnEarly, returnEarly);
     ctx->typecheckLevel--;
 
-    if (ctx->getBase()->iteration == 1 && isToplevel) {
+    if (sweepForceRealize && ctx->getBase()->iteration == 1) {
       // Realize all @force_realize functions
       // Copy keys to avoid modifications during the iteration (#768)
       std::vector<std::string> fns{std::views::keys(ctx->cache->functions).begin(),
