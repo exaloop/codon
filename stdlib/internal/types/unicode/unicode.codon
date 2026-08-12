@@ -1206,6 +1206,9 @@ class unicode:
     def __bool__(self) -> bool:
         return len(self) != 0
 
+    def __match__(self, other: unicode) -> bool:
+        return self.__eq__(other)
+
     def _kind(self) -> int:
         return _meta_kind(self._meta)
 
@@ -1560,6 +1563,17 @@ class unicode:
 
     def __contains__(self, sub: unicode) -> bool:
         return self.find(sub) != -1
+
+    def __copy__(self) -> unicode:
+        return self
+
+    def __deepcopy__(self) -> unicode:
+        return self
+
+    def __ptrcopy__(self) -> unicode:
+        data = Ptr[u8](len(self) * self._width())
+        str.memcpy(data, self._data, len(self) * self._width())
+        return unicode(data, self._meta)
 
     @staticmethod
     def maketrans(x: dict[int, int]) -> dict[int, int]:

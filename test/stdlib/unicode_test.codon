@@ -1145,8 +1145,15 @@ def test_unicode_api_edge_contracts():
 def test_unicode_views_hash_translation_and_codec_edges():
     value = unicode("abc")
     wide_view = (_unicode_from_codepoint(0x1F600) + value)[1:]
+    copied = value.__ptrcopy__()
+    copied._data[0] = u8(ord("z"))
+    wide_copy = wide_view.__ptrcopy__()
 
     assert wide_view == value
+    assert copied == unicode("zbc")
+    assert value == unicode("abc")
+    assert wide_copy == wide_view
+    assert wide_copy._meta == wide_view._meta
     assert hash(wide_view) == hash(value)
     values = {wide_view: 1}
     assert values[value] == 1
