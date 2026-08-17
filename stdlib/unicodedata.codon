@@ -23,11 +23,10 @@ from internal.types.unicode.normalization import (
     _normalization_raw_decomposition,
     _unicode_normalize,
 )
-from internal.types.unicode.format import _integer_format
-from internal.types.unicode.unicode import (
+from internal.format import _integer_format
+from internal.str import (
     _unicode_from_codepoint,
     _unicode_from_codepoints,
-    unicode,
 )
 
 _CATEGORY_CODES = (
@@ -54,7 +53,7 @@ _DECOMPOSITION_TAGS = (
 unidata_version: str = UNICODEDATA_VERSION
 
 
-def _single_codepoint(value: unicode) -> int:
+def _single_codepoint(value: str) -> int:
     if len(value) != 1:
         raise TypeError(
             "unicodedata functions expect a Unicode character, "
@@ -65,15 +64,15 @@ def _single_codepoint(value: unicode) -> int:
     return value._load_codepoint(0)
 
 
-def normalize(form: str, value: unicode) -> unicode:
+def normalize(form: str, value: str) -> str:
     return _unicode_normalize(form, value)
 
 
-def is_normalized(form: str, value: unicode) -> bool:
+def is_normalized(form: str, value: str) -> bool:
     return _unicode_normalize(form, value) == value
 
 
-def decomposition(value: unicode) -> str:
+def decomposition(value: str) -> str:
     tag, values = _normalization_raw_decomposition(_single_codepoint(value))
     result = _DECOMPOSITION_TAGS[tag]
     for codepoint in values:
@@ -83,7 +82,7 @@ def decomposition(value: unicode) -> str:
     return result
 
 
-def name(value: unicode, default: Optional[str] = None) -> str:
+def name(value: str, default: Optional[str] = None) -> str:
     index = unicode_name_record_index(_single_codepoint(value))
     if index < 0:
         if default is None:
@@ -92,7 +91,7 @@ def name(value: unicode, default: Optional[str] = None) -> str:
     return unicode_name_value(index)
 
 
-def lookup(value: str) -> unicode:
+def lookup(value: str) -> str:
     index = unicode_name_lookup_index(value)
     if index >= 0:
         return _unicode_from_codepoint(unicode_name_codepoint(index))
@@ -107,31 +106,31 @@ def lookup(value: str) -> unicode:
     raise KeyError("undefined character name '" + value + "'")
 
 
-def category(value: unicode) -> str:
+def category(value: str) -> str:
     return _CATEGORY_CODES[unicode_category_index(_single_codepoint(value))]
 
 
-def combining(value: unicode) -> int:
+def combining(value: str) -> int:
     return _normalization_combining_class(_single_codepoint(value))
 
 
-def bidirectional(value: unicode) -> str:
+def bidirectional(value: str) -> str:
     return _BIDIRECTIONAL_CODES[
         unicode_bidirectional_index(_single_codepoint(value))
     ]
 
 
-def east_asian_width(value: unicode) -> str:
+def east_asian_width(value: str) -> str:
     return _EAST_ASIAN_WIDTH_CODES[
         unicode_east_asian_width_index(_single_codepoint(value))
     ]
 
 
-def mirrored(value: unicode) -> bool:
+def mirrored(value: str) -> bool:
     return unicode_mirrored_index(_single_codepoint(value)) != 0
 
 
-def decimal(value: unicode, default: Optional[int] = None) -> int:
+def decimal(value: str, default: Optional[int] = None) -> int:
     result = unicode_decimal_index(_single_codepoint(value))
     if result == 0:
         if default is None:
@@ -140,7 +139,7 @@ def decimal(value: unicode, default: Optional[int] = None) -> int:
     return result - 1
 
 
-def digit(value: unicode, default: Optional[int] = None) -> int:
+def digit(value: str, default: Optional[int] = None) -> int:
     result = unicode_digit_index(_single_codepoint(value))
     if result == 0:
         if default is None:
@@ -149,7 +148,7 @@ def digit(value: unicode, default: Optional[int] = None) -> int:
     return result - 1
 
 
-def numeric(value: unicode, default: Optional[float] = None) -> float:
+def numeric(value: str, default: Optional[float] = None) -> float:
     codepoint = _single_codepoint(value)
     if unicode_numeric_index(codepoint) == 0:
         if default is None:

@@ -893,7 +893,7 @@ def _unicode_decode_utf32(
     return output.finish()
 
 
-def _unicode_decode_codec(data: str, encoding: str, errors: str) -> str:
+def _unicode_decode_codec(data: bytes, encoding: str, errors: str) -> str:
     name = _codec_name(encoding)
 
     if name == "utf-8" or name == "utf8":
@@ -1274,7 +1274,7 @@ class str:
             return what.__repr__()
 
     def __new__(data: bytes, encoding: str = "utf-8", errors: str = "strict") -> str:
-        return _unicode_decode_codec(data, encoding, "strict")
+        return _unicode_decode_codec(data, encoding, errors)
 
     def __len__(self) -> int:
         return _meta_len(self._meta)
@@ -1602,6 +1602,15 @@ class str:
     ) -> bytes:
         return _unicode_encode_codec(self, encoding, errors)
 
+    def c_str(self) -> cobj:
+        # TODO: avoid double allocation here
+        encoded = self.encode()
+        n = len(encoded)
+        result = cobj(n + 1)
+        str.memcpy(result, encoded._ptr, n)
+        result[n] = u8(0)
+        return result
+
     def __repr__(self) -> str:
         single_quotes = 0
         double_quotes = 0
@@ -1626,7 +1635,7 @@ class str:
             )
 
         output.append_byte(u8(quote))
-        return str(output.data, output.length)
+        return _unicode_decode_utf8_strict(output.data, output.length)
 
     def __str__(self) -> str:
         return self
@@ -2267,6 +2276,23 @@ def _unicode_from_codepoint(cp: int) -> str:
 
     result = _unicode_new_uninit(1, cp)
     result._store_codepoint(0, cp)
+
+    return result
+
+
+def _unicode_from_codepoints(codepoints: List[int]) -> str:
+    maxchar = 0
+
+    for cp in codepoints:
+        if cp < 0 or cp > UNICODE_MAX:
+            raise ValueError("invalid code point")
+        if cp > maxchar:
+            maxchar = cp
+
+    result = _unicode_new_uninit(len(codepoints), maxchar)
+
+    for i in range(len(codepoints)):
+        result._store_codepoint(i, codepoints[i])
 
     return result
 

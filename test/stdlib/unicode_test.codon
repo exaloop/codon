@@ -1,7 +1,6 @@
-from internal.types.unicode.unicode import (
+from internal.str import (
     _unicode_from_codepoint,
     _unicode_from_codepoints,
-    unicode,
 )
 from internal.types.unicode.float_dtoa import (
     _float_shortest_decimal,
@@ -12,7 +11,7 @@ from internal.types.unicode.float_dtoa import (
     _float_dtoa_exponent,
     _float_dtoa_general,
 )
-from internal.types.unicode.format import (
+from internal.format import (
     FORMAT_FLAG_ALT,
     FORMAT_FLAG_LEFT,
     FORMAT_FLAG_SPACE,
@@ -22,15 +21,15 @@ from internal.types.unicode.format import (
     _float_format,
 )
 import unicodedata
+unicode = str
 
-
-def _raw_bytes(values: List[int]) -> str:
+def _raw_bytes(values: List[int]) -> bytes:
     data = Ptr[u8](len(values))
 
     for i in range(len(values)):
         data[i] = u8(values[i])
 
-    return str(data, len(values))
+    return bytes(data, len(values))
 
 
 @test
@@ -1146,7 +1145,7 @@ def test_unicode_views_hash_translation_and_codec_edges():
     value = unicode("abc")
     wide_view = (_unicode_from_codepoint(0x1F600) + value)[1:]
     copied = value.__ptrcopy__()
-    copied._data[0] = u8(ord("z"))
+    copied._ptr[0] = u8(ord("z"))
     wide_copy = wide_view.__ptrcopy__()
 
     assert wide_view == value
@@ -1192,7 +1191,7 @@ def test_unicode_views_hash_translation_and_codec_edges():
         pass
 
     try:
-        unicode("x", "unknown-codec")
+        unicode(_raw_bytes([88]), "unknown-codec")
         assert False
     except LookupError:
         pass

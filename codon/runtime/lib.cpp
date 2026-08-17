@@ -269,7 +269,7 @@ static inline uint8_t *utf8_write(uint8_t *p, uint32_t c) {
   return p;
 }
 
-static seq_utf8_t encode(seq_str_t *s, uint8_t *tmp) {
+static seq_utf8_t encode(const seq_str_t *s, uint8_t *tmp) {
   size_t n = SEQ_STR_LEN(*s);
   unsigned kind = SEQ_STR_KIND(*s);
 
@@ -346,11 +346,99 @@ static seq_utf8_t encode(seq_str_t *s, uint8_t *tmp) {
   return {out, out_len};
 }
 
+static bool utf8_read(const uint8_t *data, size_t length, size_t *pos,
+                      uint32_t *codepoint) {
+  if (*pos == length)
+    return false;
+
+  uint8_t byte = data[(*pos)++];
+  if (byte < 0x80) {
+    *codepoint = byte;
+    return true;
+  }
+
+  size_t width = 0;
+  uint32_t value = 0;
+  if (byte >= 0xC2 && byte <= 0xDF) {
+    width = 1;
+    value = byte & 0x1F;
+  } else if (byte >= 0xE0 && byte <= 0xEF) {
+    width = 2;
+    value = byte & 0x0F;
+  } else if (byte >= 0xF0 && byte <= 0xF4) {
+    width = 3;
+    value = byte & 0x07;
+  } else {
+    abort();
+  }
+
+  if (*pos + width > length)
+    abort();
+  for (size_t i = 0; i < width; ++i) {
+    uint8_t continuation = data[(*pos)++];
+    if ((continuation & 0xC0) != 0x80)
+      abort();
+    value = (value << 6) | (continuation & 0x3F);
+  }
+
+  if ((width == 1 && value < 0x80) || (width == 2 && value < 0x800) ||
+      (width == 3 && value < 0x10000) || value > 0x10FFFF ||
+      (value >= 0xD800 && value <= 0xDFFF))
+    abort();
+
+  *codepoint = value;
+  return true;
+}
+
 static seq_str_t string_conv(const std::string &s) {
-  auto n = s.size();
-  auto *p = (uint8_t *)seq_alloc_atomic(n);
-  memcpy(p, s.data(), n);
-  return {p, (seq_int_t)n};
+  if (s.empty())
+    return {nullptr, 0};
+
+  const auto *data = reinterpret_cast<const uint8_t *>(s.data());
+  size_t length = 0;
+  uint32_t maxchar = 0;
+  size_t pos = 0;
+  uint32_t codepoint;
+  while (utf8_read(data, s.size(), &pos, &codepoint)) {
+    ++length;
+    maxchar = std::max(maxchar, codepoint);
+  }
+
+  unsigned kind = SEQ_STR_KIND_ASCII;
+  size_t width = 1;
+  if (maxchar > 0xFFFF) {
+    kind = SEQ_STR_KIND_UCS4;
+    width = sizeof(uint32_t);
+  } else if (maxchar > 0xFF) {
+    kind = SEQ_STR_KIND_UCS2;
+    width = sizeof(uint16_t);
+  } else if (maxchar > 0x7F) {
+    kind = SEQ_STR_KIND_LATIN1;
+  }
+
+  auto *out = (uint8_t *)seq_alloc_atomic(length * width);
+  pos = 0;
+  for (size_t i = 0; utf8_read(data, s.size(), &pos, &codepoint); ++i) {
+    if (kind == SEQ_STR_KIND_UCS4)
+      reinterpret_cast<uint32_t *>(out)[i] = codepoint;
+    else if (kind == SEQ_STR_KIND_UCS2)
+      reinterpret_cast<uint16_t *>(out)[i] = codepoint;
+    else
+      out[i] = codepoint;
+  }
+
+  auto meta = (uint64_t(length) & SEQ_STR_LEN_MASK) |
+              (uint64_t(kind) << SEQ_STR_KIND_SHIFT);
+  return {out, static_cast<seq_int_t>(meta)};
+}
+
+static std::string string_encode(const seq_str_t &s) {
+  uint8_t utf8_buf[UTF8_BUFFER_SIZE];
+  auto utf8 = encode(&s, utf8_buf);
+  std::string result(reinterpret_cast<char *>(utf8.ptr), utf8.len);
+  if (utf8.ptr != utf8_buf && utf8.ptr != s.ptr)
+    seq_free(utf8.ptr);
+  return result;
 }
 
 template <typename T> std::string default_format(T n) {
@@ -368,7 +456,7 @@ template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
       return string_conv(default_format(n));
     } else {
       auto locale = std::locale("en_US.UTF-8");
-      std::string fstr((char *)format.ptr, SEQ_STR_LEN(format));
+      std::string fstr = string_encode(format);
       return string_conv(fmt::format(
           locale, fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
     }
@@ -395,11 +483,15 @@ SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
 }
 
 SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
-  std::string t((char *)s.ptr, SEQ_STR_LEN(s));
+  std::string t = string_encode(s);
   return fmt_conv(t, format, error);
 }
 
 SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
+  if (SEQ_STR_KIND(s) != SEQ_STR_KIND_ASCII) {
+    *e = reinterpret_cast<char *>(s.ptr);
+    return 0.0;
+  }
   double result;
   auto r =
       fast_float::from_chars((char *)s.ptr, (char *)s.ptr + SEQ_STR_LEN(s), result);
@@ -413,12 +505,8 @@ SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
  */
 
 SEQ_FUNC seq_str_t seq_check_errno() {
-  if (errno) {
-    std::string msg = strerror(errno);
-    auto *buf = (uint8_t *)seq_alloc_atomic(msg.size());
-    memcpy(buf, msg.data(), msg.size());
-    return {buf, (seq_int_t)msg.size()};
-  }
+  if (errno)
+    return string_conv(strerror(errno));
   return {nullptr, 0};
 }
 

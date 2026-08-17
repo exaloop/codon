@@ -60,7 +60,7 @@ def _python_to_fmt_format(s):
         width_pre_zero = True
         i += 1
     width = 0
-    while i < len(s) and str._isdigit(s._ptr[i]):
+    while i < len(s) and s[i].isdigit():
         width = 10 * width + ord(s[i]) - ord('0')
         i += 1
 
@@ -75,7 +75,7 @@ def _python_to_fmt_format(s):
     if i < len(s) and s[i] == '.':
         i += 1
         precision = 0
-        while i < len(s) and str._isdigit(s._ptr[i]):
+        while i < len(s) and s[i].isdigit():
             precision = 10 * precision + ord(s[i]) - ord('0')
             i += 1
 

@@ -13,7 +13,7 @@ from .normalization_data import (
     _normalization_raw_decomposition_entry,
     _normalization_raw_decomposition_value,
 )
-from .unicode import _unicode_from_codepoints, unicode
+from internal.str import _unicode_from_codepoints
 
 HANGUL_SBASE: Literal[int] = 0xAC00
 HANGUL_LBASE: Literal[int] = 0x1100
@@ -162,7 +162,7 @@ def _normalization_compose(first: int, second: int) -> int:
         index = (index + 1) & NORMALIZATION_COMPOSITION_MASK
 
 
-def _unicode_normalize(form: str, value: unicode) -> unicode:
+def _unicode_normalize(form: str, value: str) -> str:
     if form != "NFD" and form != "NFC" and form != "NFKD" and form != "NFKC":
         raise ValueError("unsupported normalization form: " + form)
 
