@@ -27,53 +27,70 @@ class bytes:
     def __ge__(self, other: bytes) -> bool:
         return self._cmp(other) >= 0
 
-    def __repr__(self) -> bytes:
-        v = _strbuf(len(self) + 2)
-
-        q, qe = b"'", b"\\'"
-        found_single = False
+    def __repr__(self) -> str:
+        q = 0x27
+        single_quotes = 0
         found_double = False
+        size = 3  # b and two quotes
         for c in self:
-            if c == b"'":
-                found_single = True
-            elif c == b'"':
+            if c == 0x27:
+                single_quotes += 1
+            elif c == 0x22:
                 found_double = True
 
-        if found_single and not found_double:
-            q, qe = b'"', b'\\"'
-
-        v.append(q)
-        for c in self:
-            d = c
-            if c == b"\n":
-                d = b"\\n"
-            elif c == b"\r":
-                d = b"\\r"
-            elif c == b"\t":
-                d = b"\\t"
-            elif c == b"\\":
-                d = b"\\\\"
-            elif c == q:
-                d = qe
+            if (
+                c == 0x09
+                or c == 0x0A
+                or c == 0x0D
+                or c == 0x5C
+                or c == q
+            ):
+                size += 2
+            elif 0x20 <= c <= 0x7E:
+                size += 1
             else:
-                b = int(c._ptr[0])
-                if not (32 <= b <= 126):
-                    h = b"0123456789abcdef"
-                    v.append(b"\\x")
-                    v.append(h[b.cdiv(16)])
-                    v.append(h[b.cmod(16)])
-                    d = bytes()
-            if d:
-                v.append(d)
-        v.append(q)
-        return v.__str__()
+                size += 4
 
-    def __getitem__(self, idx: int) -> bytes:
+        if single_quotes > 0 and not found_double:
+            q = 0x22
+            size -= single_quotes
+
+        p = Ptr[u8](size)
+        n = 0
+        p[n] = u8(0x62)  # b
+        n += 1
+        p[n] = u8(q)
+        n += 1
+        for c in self:
+            if c == 0x09:
+                p[n], p[n + 1] = u8(0x5C), u8(0x74)
+                n += 2
+            elif c == 0x0A:
+                p[n], p[n + 1] = u8(0x5C), u8(0x6E)
+                n += 2
+            elif c == 0x0D:
+                p[n], p[n + 1] = u8(0x5C), u8(0x72)
+                n += 2
+            elif c == 0x5C or c == q:
+                p[n], p[n + 1] = u8(0x5C), u8(c)
+                n += 2
+            elif 0x20 <= c <= 0x7E:
+                p[n] = u8(c)
+                n += 1
+            else:
+                p[n], p[n + 1] = u8(0x5C), u8(0x78)
+                p[n + 2] = u8(0x30 + c.cdiv(16) if c.cdiv(16) < 10 else 0x61 + c.cdiv(16) - 10)
+                p[n + 3] = u8(0x30 + c.cmod(16) if c.cmod(16) < 10 else 0x61 + c.cmod(16) - 10)
+                n += 4
+        p[n] = u8(q)
+        return str(bytes(p, n + 1), "ascii")
+
+    def __getitem__(self, idx: int) -> int:
         if idx < 0:
             idx += len(self)
         if not (0 <= idx < len(self)):
-            raise IndexError("string index out of range")
-        return bytes(self._ptr + idx, 1)
+            raise IndexError("index out of range")
+        return int(self._ptr[idx])
 
     def __getitem__(self, s: Slice) -> bytes:
         if s.start is None and s.stop is None and s.step is None:
@@ -93,20 +110,22 @@ class bytes:
             j += 1
         return bytes(p, length)
 
-    def __iter__(self) -> Generator[bytes]:
+    def __iter__(self) -> Generator[int]:
         i = 0
         n = len(self)
         while i < n:
-            yield bytes(self._ptr + i, 1)
+            yield int(self._ptr[i])
             i += 1
 
-    def __reversed__(self) -> Generator[bytes]:
+    def __reversed__(self) -> Generator[int]:
         i = len(self) - 1
         while i >= 0:
-            yield bytes(self._ptr + i, 1)
+            yield int(self._ptr[i])
             i -= 1
 
     def __mul__(self, x: int) -> bytes:
+        if x <= 0:
+            return bytes()
         total = x * self._len
         p = Ptr[u8](total)
         n = 0
@@ -114,6 +133,9 @@ class bytes:
             bytes.memcpy(p + n, self._ptr, self._len)
             n += self._len
         return bytes(p, total)
+
+    def __rmul__(self, x: int) -> bytes:
+        return self * x
 
     def _cmp(self, other: bytes) -> int:
         n = min(self._len, other._len)
@@ -162,8 +184,8 @@ class bytes:
     def _slice(self, i: int, j: int) -> bytes:
         return bytes(self._ptr + i, j - i)
 
-    def _at(self, i: int) -> bytes:
-        return bytes(self._ptr + i, 1)
+    def _at(self, i: int) -> int:
+        return int(self._ptr[i])
 
     def join(self, l: Generator[bytes]) -> bytes:
         buf = _strbuf()
@@ -500,16 +522,16 @@ class bytes:
 
         # is not a letter or _
         first = self._at(0)
-        if not first.isalpha():
-            if first != b"_":
+        if not bytes._isalpha(u8(first)):
+            if first != 0x5F:
                 return False
 
-        if first.isalpha() or first == b"_":
+        if bytes._isalpha(u8(first)) or first == 0x5F:
             for i in range(1, len(self)):
                 ith = self._at(i)
-                if not ith.isalpha():
-                    if not ith.isdecimal():
-                        if ith != b"_":
+                if not bytes._isalpha(u8(ith)):
+                    if not (0x30 <= ith <= 0x39):
+                        if ith != 0x5F:
                             return False
 
         return True
@@ -528,17 +550,17 @@ class bytes:
                     return True
             return False
         else:
-            return s.isspace()
+            return bytes._isspace(u8(s))
 
     def lstrip(self, chars: bytes = bytes()) -> bytes:
         i = 0
-        while i < len(self) and self._at(i)._has_char(chars):
+        while i < len(self) and bytes(self._ptr + i, 1)._has_char(chars):
             i += 1
         return self._slice(i, len(self))
 
     def rstrip(self, chars: bytes = bytes()) -> bytes:
         i = len(self) - 1
-        while i >= 0 and self._at(i)._has_char(chars):
+        while i >= 0 and bytes(self._ptr + i, 1)._has_char(chars):
             i -= 1
         return self._slice(0, i + 1)
 

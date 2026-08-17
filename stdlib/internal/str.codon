@@ -313,33 +313,6 @@ def _utf8_encode_one(
     return pos + 4
 
 
-def _unicode_encode_utf8_strict(value: str) -> bytes:
-    for i in range(len(value)):
-        if _is_surrogate(value._load_codepoint(i)):
-            _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
-
-    output = _CodecByteBuffer(len(value))
-
-    for i in range(len(value)):
-        codepoint = value._load_codepoint(i)
-        if codepoint < 0x80:
-            output.append(codepoint)
-        elif codepoint < 0x800:
-            output.append(0xC0 | (codepoint >> 6))
-            output.append(0x80 | (codepoint & 0x3F))
-        elif codepoint < 0x10000:
-            output.append(0xE0 | (codepoint >> 12))
-            output.append(0x80 | ((codepoint >> 6) & 0x3F))
-            output.append(0x80 | (codepoint & 0x3F))
-        else:
-            output.append(0xF0 | (codepoint >> 18))
-            output.append(0x80 | ((codepoint >> 12) & 0x3F))
-            output.append(0x80 | ((codepoint >> 6) & 0x3F))
-            output.append(0x80 | (codepoint & 0x3F))
-
-    return output.finish()
-
-
 class _UnicodeCodecBuffer:
     data: Ptr[u8]
     length: int
@@ -426,6 +399,57 @@ class _CodecByteBuffer:
             self.capacity = self.length
 
         return bytes(self.data, self.length)
+
+    def finish_c_str(self) -> cobj:
+        required = self.length + 1
+        if required != self.capacity:
+            self.data = gc.realloc(
+                self.data,
+                required,
+                self.capacity,
+            )
+            self.capacity = required
+
+        self.data[self.length] = u8(0)
+        return self.data.as_byte()
+
+
+def _unicode_encode_utf8_strict_append(
+    value: str,
+    output: _CodecByteBuffer,
+):
+    for i in range(len(value)):
+        if _is_surrogate(value._load_codepoint(i)):
+            _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if codepoint < 0x80:
+            output.append(codepoint)
+        elif codepoint < 0x800:
+            output.append(0xC0 | (codepoint >> 6))
+            output.append(0x80 | (codepoint & 0x3F))
+        elif codepoint < 0x10000:
+            output.append(0xE0 | (codepoint >> 12))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
+        else:
+            output.append(0xF0 | (codepoint >> 18))
+            output.append(0x80 | ((codepoint >> 12) & 0x3F))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
+
+
+def _unicode_encode_utf8_strict(value: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+    _unicode_encode_utf8_strict_append(value, output)
+    return output.finish()
+
+
+def _unicode_encode_utf8_c_str(value: str) -> cobj:
+    output = _CodecByteBuffer(len(value) + 1)
+    _unicode_encode_utf8_strict_append(value, output)
+    return output.finish_c_str()
 
 
 def _unicode_encode_utf8(value: str, errors: str) -> bytes:
@@ -1256,11 +1280,12 @@ class str:
     def __new__(p: Ptr[u8], l: int) -> str:
         pass
 
-    @overload
     def __new__() -> str:
         return str(Ptr[u8](), _make_meta(0, KIND_ASCII))
 
-    @overload
+    def __new__(data: bytes, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return _unicode_decode_codec(data, encoding, errors)
+
     def __new__(what) -> str:
         if isinstance(what, Union):
             return Union._str(what)
@@ -1272,9 +1297,6 @@ class str:
             if not hasattr(what, "__repr__") and hasattr(what, "__repr_default__"):
                 return what.__repr_default__()
             return what.__repr__()
-
-    def __new__(data: bytes, encoding: str = "utf-8", errors: str = "strict") -> str:
-        return _unicode_decode_codec(data, encoding, errors)
 
     def __len__(self) -> int:
         return _meta_len(self._meta)
@@ -1603,13 +1625,7 @@ class str:
         return _unicode_encode_codec(self, encoding, errors)
 
     def c_str(self) -> cobj:
-        # TODO: avoid double allocation here
-        encoded = self.encode()
-        n = len(encoded)
-        result = cobj(n + 1)
-        str.memcpy(result, encoded._ptr, n)
-        result[n] = u8(0)
-        return result
+        return _unicode_encode_utf8_c_str(self)
 
     def __repr__(self) -> str:
         single_quotes = 0

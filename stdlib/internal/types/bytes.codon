@@ -13,20 +13,14 @@ class bytes:
         return bytes(Ptr[u8](), 0)
 
     @overload
-    def __new__(what) -> str:
-        if isinstance(what, Union):
-            return Union._str(what)
-        elif isinstance(what, type):
-            return what.__repr__()
-        elif hasattr(what, "__str__"):
-            return what.__str__()
-        else:
-            if not hasattr(what, "__repr__") and hasattr(what, "__repr_default__"):
-                return what.__repr_default__()
-            return what.__repr__()
-
-    def __str__(what: bytes) -> bytes:
+    def __new__(what: bytes) -> bytes:
         return what
+
+    def __new__(what: str, encoding: str, errors: str = "strict") -> bytes:
+        return what.encode(encoding, errors)
+
+    def __str__(what: bytes) -> str:
+        return what.__repr__()
 
     def __len__(self) -> int:
         return self._len
@@ -123,7 +117,7 @@ class bytes:
             for s in args[0]:
                 bytes.memcpy(p + n, s._ptr, s._len)
                 n += s._len
-            return str(p, total)
+            return bytes(p, total)
         elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
             sz = 10
             p = cobj(sz)
@@ -138,12 +132,12 @@ class bytes:
                     p = pp
                 bytes.memcpy(p + n, s._ptr, s._len)
                 n += s._len
-            return str(p, n)
+            return bytes(p, n)
         else:
             for i in static.range(static.len(args)):
                 s = args[i]
-                if not isinstance(s, str):
-                    compile_error("not a string")
+                if not isinstance(s, bytes):
+                    compile_error("not bytes")
                 total += s._len
             p = cobj(total)
             n = 0
@@ -154,5 +148,4 @@ class bytes:
             return bytes(p, total)
 
     def __prefix_b__(s: str, N: Literal[int]):
-        # Currently a no-op, as Codon str's are just bytes
-        return s
+        return s.encode()
