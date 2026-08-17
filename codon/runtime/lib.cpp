@@ -231,9 +231,124 @@ SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end) {
 /*
  * String conversion
  */
+
+#define UTF8_BUFFER_SIZE 256
+
+typedef struct {
+  uint8_t *ptr;
+  size_t len;
+} seq_utf8_t;
+
+static inline size_t utf8_size(uint32_t c) {
+  if (c <= 0x7f)
+    return 1;
+  if (c <= 0x7ff)
+    return 2;
+  if (c <= 0xffff)
+    return 3;
+  return 4;
+}
+
+static inline uint8_t *utf8_write(uint8_t *p, uint32_t c) {
+  if (c <= 0x7f) {
+    *p++ = (uint8_t)c;
+  } else if (c <= 0x7ff) {
+    *p++ = (uint8_t)(0xc0 | (c >> 6));
+    *p++ = (uint8_t)(0x80 | (c & 0x3f));
+  } else if (c <= 0xffff) {
+    *p++ = (uint8_t)(0xe0 | (c >> 12));
+    *p++ = (uint8_t)(0x80 | ((c >> 6) & 0x3f));
+    *p++ = (uint8_t)(0x80 | (c & 0x3f));
+  } else {
+    *p++ = (uint8_t)(0xf0 | (c >> 18));
+    *p++ = (uint8_t)(0x80 | ((c >> 12) & 0x3f));
+    *p++ = (uint8_t)(0x80 | ((c >> 6) & 0x3f));
+    *p++ = (uint8_t)(0x80 | (c & 0x3f));
+  }
+
+  return p;
+}
+
+static seq_utf8_t encode(seq_str_t *s, uint8_t *tmp) {
+  size_t n = SEQ_STR_LEN(*s);
+  unsigned kind = SEQ_STR_KIND(*s);
+
+  // ASCII is already UTF-8, so no allocation or copy is necessary.
+  if (kind == SEQ_STR_KIND_ASCII || n == 0) {
+    return {s->ptr, n};
+  }
+
+  // Determine the exact UTF-8 size first.
+  size_t out_len = 0;
+
+  switch (kind) {
+  case SEQ_STR_KIND_LATIN1: {
+    const uint8_t *p = s->ptr;
+
+    size_t i = 0;
+    while (i < n && p[i] < 0x80) {
+      out_len += utf8_size(p[i]);
+      ++i;
+    }
+
+    // If the string is pure ASCII, we can return early.
+    if (i == n) {
+      return {s->ptr, n};
+    }
+
+    for (; i < n; ++i)
+      out_len += utf8_size(p[i]);
+
+    break;
+  }
+
+  case SEQ_STR_KIND_UCS2: {
+    for (size_t i = 0; i < n; ++i) {
+      out_len += utf8_size(((uint16_t *)s->ptr)[i]);
+    }
+    break;
+  }
+
+  case SEQ_STR_KIND_UCS4: {
+    for (size_t i = 0; i < n; ++i) {
+      out_len += utf8_size(((uint32_t *)s->ptr)[i]);
+    }
+    break;
+  }
+
+  default:
+    abort();
+  }
+
+  uint8_t *out =
+      (out_len <= UTF8_BUFFER_SIZE) ? tmp : (uint8_t *)seq_alloc_atomic(out_len);
+  uint8_t *dst = out;
+
+  switch (kind) {
+  case SEQ_STR_KIND_LATIN1:
+    for (size_t i = 0; i < n; ++i)
+      dst = utf8_write(dst, s->ptr[i]);
+    break;
+
+  case SEQ_STR_KIND_UCS2:
+    for (size_t i = 0; i < n; ++i) {
+      dst = utf8_write(dst, ((uint16_t *)s->ptr)[i]);
+    }
+    break;
+
+  case SEQ_STR_KIND_UCS4:
+    for (size_t i = 0; i < n; ++i) {
+      dst = utf8_write(dst, ((uint32_t *)s->ptr)[i]);
+    }
+    break;
+  }
+
+  return {out, out_len};
+}
+
 static seq_str_t string_conv(const std::string &s) {
   auto n = s.size();
-  auto *p = (char *)seq_alloc_atomic(n);
+  auto *p = (uint8_t *)seq_alloc_atomic(n);
   memcpy(p, s.data(), n);
   return {p, (seq_int_t)n};
 }
@@ -249,11 +364,11 @@ template <> std::string default_format(double n) {
 template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
   *error = false;
   try {
-    if (format.len == 0) {
+    if (SEQ_STR_LEN(format) == 0) {
       return string_conv(default_format(n));
     } else {
       auto locale = std::locale("en_US.UTF-8");
-      std::string fstr(format.str, format.len);
+      std::string fstr((char *)format.ptr, SEQ_STR_LEN(format));
       return string_conv(fmt::format(
           locale, fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
     }
@@ -280,14 +395,16 @@ SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
 }
 
 SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
-  std::string t(s.str, s.len);
+  std::string t((char *)s.ptr, SEQ_STR_LEN(s));
   return fmt_conv(t, format, error);
 }
 
 SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
   double result;
-  auto r = fast_float::from_chars(s.str, s.str + s.len, result);
-  *e = (r.ec == std::errc() || r.ec == std::errc::result_out_of_range) ? r.ptr : s.str;
+  auto r =
+      fast_float::from_chars((char *)s.ptr, (char *)s.ptr + SEQ_STR_LEN(s), result);
+  *e = (r.ec == std::errc() || r.ec == std::errc::result_out_of_range) ? r.ptr
+                                                                       : (char *)s.ptr;
   return result;
 }
 
@@ -298,7 +415,7 @@ SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
 SEQ_FUNC seq_str_t seq_check_errno() {
   if (errno) {
     std::string msg = strerror(errno);
-    auto *buf = (char *)seq_alloc_atomic(msg.size());
+    auto *buf = (uint8_t *)seq_alloc_atomic(msg.size());
     memcpy(buf, msg.data(), msg.size());
     return {buf, (seq_int_t)msg.size()};
   }
@@ -311,13 +428,19 @@ static std::ostringstream capture;
 static std::mutex captureLock;
 
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo) {
+  uint8_t utf8_buf[UTF8_BUFFER_SIZE];
+  auto utf8 = encode(&str, utf8_buf);
+
   if ((seq_flags & SEQ_FLAG_CAPTURE_OUTPUT) && (fo == stdout || fo == stderr)) {
     captureLock.lock();
-    capture.write(str.str, str.len);
+    capture.write((char *)utf8.ptr, utf8.len);
     captureLock.unlock();
   } else {
-    fwrite(str.str, 1, (size_t)str.len, fo);
+    fwrite(utf8.ptr, 1, utf8.len, fo);
   }
+
+  if (utf8.ptr != utf8_buf && utf8.ptr != str.ptr)
+    seq_free(utf8.ptr);
 }
 
 std::string codon::runtime::getCapturedOutput() {

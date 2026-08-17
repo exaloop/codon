@@ -259,7 +259,7 @@ Type *Module::getStringType() {
     return rVal;
   return Nr<RecordType>(STRING_NAME,
                         std::vector<Type *>{unsafeGetPointerType(), unsafeGetIntType()},
-                        std::vector<std::string>{"_ptr", "_len"});
+                        std::vector<std::string>{"_ptr", "_meta"});
 }
 
 Type *Module::getPointerType(Type *base) {

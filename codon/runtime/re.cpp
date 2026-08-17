@@ -86,13 +86,13 @@ template <typename KV> struct GCMapAllocator : public std::allocator<KV> {
 
 static inline seq_str_t convert(const std::string &p) {
   seq_int_t n = p.size();
-  auto *s = (char *)seq_alloc_atomic(n);
+  auto *s = (uint8_t *)seq_alloc_atomic(n);
   std::memcpy(s, p.data(), n);
   return {s, n};
 }
 
 static inline StringPiece str2sp(const seq_str_t &s) {
-  return StringPiece(s.str, s.len);
+  return StringPiece((char *)s.ptr, SEQ_STR_LEN(s));
 }
 
 using Key = std::pair<seq_str_t, seq_int_t>;
@@ -106,7 +106,7 @@ struct KeyEqual {
 struct KeyHash {
   std::size_t operator()(const Key &k) const {
     using sv = std::string_view;
-    return std::hash<sv>()(sv(k.first.str, k.first.len)) ^ k.second;
+    return std::hash<sv>()(sv((char *)k.first.ptr, SEQ_STR_LEN(k.first))) ^ k.second;
   }
 };
 
@@ -150,8 +150,8 @@ SEQ_FUNC Span *seq_re_match(Regex *re, seq_int_t anchor, seq_str_t s, seq_int_t 
     if (it.data() == nullptr) {
       spans[i++] = {-1, -1};
     } else {
-      spans[i++] = {static_cast<seq_int_t>(it.data() - s.str),
-                    static_cast<seq_int_t>(it.data() - s.str + it.size())};
+      spans[i++] = {static_cast<seq_int_t>(it.data() - (char *)s.ptr),
+                    static_cast<seq_int_t>(it.data() - (char *)s.ptr + it.size())};
     }
   }
 
@@ -164,8 +164,8 @@ SEQ_FUNC Span seq_re_match_one(Regex *re, seq_int_t anchor, seq_str_t s, seq_int
   if (!re->Match(str2sp(s), pos, endpos, static_cast<Regex::Anchor>(anchor), &m, 1))
     return {-1, -1};
   else
-    return {static_cast<seq_int_t>(m.data() - s.str),
-            static_cast<seq_int_t>(m.data() - s.str + m.size())};
+    return {static_cast<seq_int_t>(m.data() - (char *)s.ptr),
+            static_cast<seq_int_t>(m.data() - (char *)s.ptr + m.size())};
 }
 
 /*
@@ -190,7 +190,7 @@ SEQ_FUNC seq_int_t seq_re_pattern_groups(Regex *pattern) {
 
 SEQ_FUNC seq_int_t seq_re_group_name_to_index(Regex *pattern, seq_str_t name) {
   const auto &mapping = pattern->NamedCapturingGroups();
-  auto it = mapping.find(std::string(name.str, name.len));
+  auto it = mapping.find(std::string((char *)name.ptr, SEQ_STR_LEN(name)));
   return (it != mapping.end()) ? it->second : -1;
 }
 

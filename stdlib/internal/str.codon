@@ -1,268 +1,1958 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-_MAX: Literal[int] = 0x7FFFFFFFFFFFFFFF
+from internal.types.unicode.data import (
+    unicode_is_alpha,
+    unicode_is_decimal,
+    unicode_is_digit,
+    unicode_is_numeric,
+    unicode_is_space,
+    unicode_is_printable,
+    unicode_is_lower,
+    unicode_is_upper,
+    unicode_is_title,
+    unicode_is_cased,
+    unicode_is_case_ignorable,
+    unicode_is_xid_start,
+    unicode_is_xid_continue,
+    unicode_lower_mapping_length,
+    unicode_lower_mapping_codepoint,
+    unicode_upper_mapping_length,
+    unicode_upper_mapping_codepoint,
+    unicode_title_mapping_length,
+    unicode_title_mapping_codepoint,
+    unicode_casefold_mapping_length,
+    unicode_casefold_mapping_codepoint,
+)
+from internal.types.unicode.codecs import (
+    _single_byte_cp1250_decode,
+    _single_byte_cp1250_encode,
+    _single_byte_cp1253_decode,
+    _single_byte_cp1253_encode,
+    _single_byte_cp1254_decode,
+    _single_byte_cp1254_encode,
+)
+import algorithms.strings as string_algorithms
+import internal.static as static
+import internal.gc as gc
 
-@extend
-class str:
-    # Magic methods
+KIND_SHIFT: Literal[int] = 56
 
-    def __hash__(self) -> int:
-        h = 0
-        p, n = self._ptr, self._len
-        i = 0
-        while i < n:
-            h = 31 * h + int(p[i])
-            i += 1
-        return h
+LEN_MASK: Literal[int] = (1 << KIND_SHIFT) - 1
+KIND_MASK: Literal[int] = 3 << KIND_SHIFT
 
-    def __lt__(self, other: str) -> bool:
-        return self._cmp(other) < 0
+KIND_ASCII: Literal[int] = 0
+KIND_LATIN1: Literal[int] = 1
+KIND_UCS2: Literal[int] = 2
+KIND_UCS4: Literal[int] = 3
 
-    def __le__(self, other: str) -> bool:
-        return self._cmp(other) <= 0
+UTF8_CONT_MASK: Literal[int] = 0xC0
+UTF8_CONT_TAG: Literal[int] = 0x80
 
-    def __gt__(self, other: str) -> bool:
-        return self._cmp(other) > 0
+UNICODE_MAX: Literal[int] = 0x10FFFF
+SURROGATE_MIN: Literal[int] = 0xD800
+SURROGATE_MAX: Literal[int] = 0xDFFF
 
-    def __ge__(self, other: str) -> bool:
-        return self._cmp(other) >= 0
+HANGUL_SBASE: Literal[int] = 0xAC00
+HANGUL_LBASE: Literal[int] = 0x1100
+HANGUL_VBASE: Literal[int] = 0x1161
+HANGUL_TBASE: Literal[int] = 0x11A7
+HANGUL_LCOUNT: Literal[int] = 19
+HANGUL_VCOUNT: Literal[int] = 21
+HANGUL_TCOUNT: Literal[int] = 28
+HANGUL_NCOUNT: Literal[int] = HANGUL_VCOUNT * HANGUL_TCOUNT
+HANGUL_SCOUNT: Literal[int] = HANGUL_LCOUNT * HANGUL_NCOUNT
 
-    def __repr__(self) -> str:
-        v = _strbuf(len(self) + 2)
 
-        q, qe = "'", "\\'"
-        found_single = False
-        found_double = False
-        for c in self:
-            if c == "'":
-                found_single = True
-            elif c == '"':
-                found_double = True
+def _kind_for_maxchar(maxchar: int) -> int:
+    if maxchar <= 0x7F:
+        return KIND_ASCII
+    elif maxchar <= 0xFF:
+        return KIND_LATIN1
+    elif maxchar <= 0xFFFF:
+        return KIND_UCS2
+    else:
+        return KIND_UCS4
 
-        if found_single and not found_double:
-            q, qe = '"', '\\"'
 
-        v.append(q)
-        for c in self:
-            d = c
-            if c == "\n":
-                d = "\\n"
-            elif c == "\r":
-                d = "\\r"
-            elif c == "\t":
-                d = "\\t"
-            elif c == "\\":
-                d = "\\\\"
-            elif c == q:
-                d = qe
-            else:
-                b = int(c._ptr[0])
-                if not (32 <= b <= 126):
-                    h = "0123456789abcdef"
-                    v.append("\\x")
-                    v.append(h[b.cdiv(16)])
-                    v.append(h[b.cmod(16)])
-                    d = ""
-            if d:
-                v.append(d)
-        v.append(q)
-        return v.__str__()
+def _kind_width(kind: int) -> int:
+    if kind <= KIND_LATIN1:
+        return 1
+    elif kind == KIND_UCS2:
+        return 2
+    else:
+        return 4
 
-    def __getitem__(self, idx: int) -> str:
-        if idx < 0:
-            idx += len(self)
-        if not (0 <= idx < len(self)):
-            raise IndexError("string index out of range")
-        return str(self._ptr + idx, 1)
 
-    def __getitem__(self, s: Slice) -> str:
-        if s.start is None and s.stop is None and s.step is None:
-            return self.__copy__()
-        elif s.step is None:
-            start, stop, step, length = s.adjust_indices(len(self))
-            return str(self._ptr + start, length)
+def _make_meta(length: int, kind: int) -> int:
+    return (length & LEN_MASK) | (kind << KIND_SHIFT)
+
+
+def _meta_len(meta: int) -> int:
+    return meta & LEN_MASK
+
+
+def _meta_kind(meta: int) -> int:
+    return (meta & KIND_MASK) >> KIND_SHIFT
+
+
+def _is_surrogate(cp: int) -> bool:
+    return SURROGATE_MIN <= cp <= SURROGATE_MAX
+
+
+def _is_utf8_continuation(byte: int) -> bool:
+    return (byte & UTF8_CONT_MASK) == UTF8_CONT_TAG
+
+
+def _normalize_search_bounds(length: int, start: int, end: int) -> Tuple[int, int]:
+    if start < 0:
+        start += length
+        if start < 0:
+            start = 0
+
+    if end < 0:
+        end += length
+
+    if end < 0:
+        end = 0
+    elif end > length:
+        end = length
+
+    return start, end
+
+
+def _normalize_slice_bounds(length: int, start: int, end: int) -> Tuple[int, int]:
+    if start < 0:
+        start += length
+
+    if end < 0:
+        end += length
+
+    if start < 0:
+        start = 0
+    elif start > length:
+        start = length
+
+    if end < 0:
+        end = 0
+    elif end > length:
+        end = length
+
+    return start, end
+
+
+def _raise_utf8_decode_error(pos: int, end: int, reason: str):
+    raise ValueError(f"utf-8 decode error at bytes {pos}-{end}: {reason}")
+
+
+def _raise_utf8_encode_error(pos: int, end: int, reason: str):
+    raise ValueError(f"utf-8 encode error at code points {pos}-{end}: {reason}")
+
+
+def _utf8_decode_one(
+    data: Ptr[u8],
+    length: int,
+    pos: int,
+) -> Tuple[int, int]:
+    b0 = int(data[pos])
+
+    if b0 < 0x80:
+        return b0, pos + 1
+
+    if 0xC2 <= b0 <= 0xDF:
+        if pos + 1 >= length:
+            _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
+
+        b1 = int(data[pos + 1])
+
+        if not _is_utf8_continuation(b1):
+            _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
+
+        cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+
+        if cp < 0x80:
+            _raise_utf8_decode_error(pos, pos + 2, "overlong sequence")
+
+        return cp, pos + 2
+
+    if 0xE0 <= b0 <= 0xEF:
+        if pos + 2 >= length:
+            _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
+
+        b1 = int(data[pos + 1])
+        b2 = int(data[pos + 2])
+
+        if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
+            _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
+
+        cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+
+        if cp < 0x800 or _is_surrogate(cp):
+            _raise_utf8_decode_error(pos, pos + 3, "invalid code point")
+
+        return cp, pos + 3
+
+    if 0xF0 <= b0 <= 0xF4:
+        if pos + 3 >= length:
+            _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
+
+        b1 = int(data[pos + 1])
+        b2 = int(data[pos + 2])
+        b3 = int(data[pos + 3])
+
+        if (
+            not _is_utf8_continuation(b1)
+            or not _is_utf8_continuation(b2)
+            or not _is_utf8_continuation(b3)
+        ):
+            _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
+
+        cp = (
+            ((b0 & 0x07) << 18)
+            | ((b1 & 0x3F) << 12)
+            | ((b2 & 0x3F) << 6)
+            | (b3 & 0x3F)
+        )
+
+        if cp < 0x10000 or cp > UNICODE_MAX:
+            _raise_utf8_decode_error(pos, pos + 4, "invalid code point")
+
+        return cp, pos + 4
+
+    _raise_utf8_decode_error(pos, pos + 1, "invalid start byte")
+    return 0, pos + 1
+
+
+def _utf8_scan_strict(
+    data: Ptr[u8],
+    byte_length: int,
+) -> Tuple[int, int]:
+    length = 0
+    maxchar = 0
+    pos = 0
+
+    while pos < byte_length:
+        cp, pos = _utf8_decode_one(data, byte_length, pos)
+        length += 1
+
+        if cp > maxchar:
+            maxchar = cp
+
+    return length, maxchar
+
+
+def _unicode_decode_utf8_strict(
+    data: Ptr[u8],
+    byte_length: int,
+) -> str:
+    if byte_length < 0:
+        raise ValueError("negative length")
+
+    length, maxchar = _utf8_scan_strict(data, byte_length)
+
+    result = _unicode_new_uninit(length, maxchar)
+
+    src = 0
+    dst = 0
+
+    while src < byte_length:
+        cp, src = _utf8_decode_one(data, byte_length, src)
+        result._store_codepoint(dst, cp)
+        dst += 1
+
+    return result
+
+
+def _utf8_encoded_width(cp: int) -> int:
+    if cp < 0x80:
+        return 1
+    elif cp < 0x800:
+        return 2
+    elif cp < 0x10000:
+        return 3
+    else:
+        return 4
+
+
+def _utf8_size_strict(value: str) -> int:
+    size = 0
+
+    for i in range(len(value)):
+        size += _utf8_encoded_width(value._load_codepoint(i))
+
+    return size
+
+
+def _utf8_encode_one(
+    output: Ptr[u8],
+    pos: int,
+    cp: int,
+) -> int:
+    if cp > UNICODE_MAX or _is_surrogate(cp):
+        _raise_utf8_encode_error(0, 0, "invalid code point")
+
+    if cp < 0x80:
+        output[pos] = u8(cp)
+        return pos + 1
+
+    if cp < 0x800:
+        output[pos] = u8(0xC0 | (cp >> 6))
+        output[pos + 1] = u8(0x80 | (cp & 0x3F))
+        return pos + 2
+
+    if cp < 0x10000:
+        output[pos] = u8(0xE0 | (cp >> 12))
+        output[pos + 1] = u8(0x80 | ((cp >> 6) & 0x3F))
+        output[pos + 2] = u8(0x80 | (cp & 0x3F))
+        return pos + 3
+
+    output[pos] = u8(0xF0 | (cp >> 18))
+    output[pos + 1] = u8(0x80 | ((cp >> 12) & 0x3F))
+    output[pos + 2] = u8(0x80 | ((cp >> 6) & 0x3F))
+    output[pos + 3] = u8(0x80 | (cp & 0x3F))
+
+    return pos + 4
+
+
+def _unicode_encode_utf8_strict(value: str) -> bytes:
+    for i in range(len(value)):
+        if _is_surrogate(value._load_codepoint(i)):
+            _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if codepoint < 0x80:
+            output.append(codepoint)
+        elif codepoint < 0x800:
+            output.append(0xC0 | (codepoint >> 6))
+            output.append(0x80 | (codepoint & 0x3F))
+        elif codepoint < 0x10000:
+            output.append(0xE0 | (codepoint >> 12))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
         else:
-            start, stop, step, length = s.adjust_indices(len(self))
-            return self._make_from_range(start, stop, step, length)
+            output.append(0xF0 | (codepoint >> 18))
+            output.append(0x80 | ((codepoint >> 12) & 0x3F))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
 
-    def _make_from_range(self, start: int, stop: int, step: int, length: int) -> str:
-        p = Ptr[u8](length)
-        j = 0
-        for i in range(start, stop, step):
-            p[j] = self._ptr[i]
-            j += 1
-        return str(p, length)
+    return output.finish()
 
-    def __iter__(self) -> Generator[str]:
-        i = 0
-        n = len(self)
-        while i < n:
-            yield str(self._ptr + i, 1)
-            i += 1
 
-    def __reversed__(self) -> Generator[str]:
-        i = len(self) - 1
-        while i >= 0:
-            yield str(self._ptr + i, 1)
-            i -= 1
+class _UnicodeCodecBuffer:
+    data: Ptr[u8]
+    length: int
+    capacity: int
+    kind: int
 
-    def __mul__(self, x: int) -> str:
-        total = x * self._len
-        p = Ptr[u8](total)
-        n = 0
-        for _ in range(x):
-            str.memcpy(p + n, self._ptr, self._len)
-            n += self._len
-        return str(p, total)
+    def __init__(self, capacity: int):
+        self.data = Ptr[u8](capacity)
+        self.length = 0
+        self.capacity = capacity
+        self.kind = KIND_ASCII
 
-    def _cmp(self, other: str) -> int:
-        n = min(self._len, other._len)
-        i = 0
-        while i < n:
-            c1 = self._ptr[i]
-            c2 = other._ptr[i]
-            if c1 != c2:
-                return int(c1) - int(c2)
-            i += 1
-        return self._len - other._len
+    def append(self, codepoint: int):
+        required = self.length + 1
+        new_kind = self.kind
+        codepoint_kind = _kind_for_maxchar(codepoint)
+        if codepoint_kind > new_kind:
+            new_kind = codepoint_kind
 
-import algorithms.strings as algorithms
+        if required > self.capacity or new_kind != self.kind:
+            new_capacity = self.capacity
+            if new_capacity == 0:
+                new_capacity = 1
+            while new_capacity < required:
+                new_capacity *= 2
 
-@extend
-class str:
-    def __contains__(self, pattern: str) -> bool:
-        return self.find(pattern) >= 0
+            expanded = Ptr[u8](new_capacity * _kind_width(new_kind))
+            source = str(self.data, _make_meta(self.length, self.kind))
+            destination = str(expanded, _make_meta(new_capacity, new_kind))
+            _unicode_copy_range(destination, source, 0, 0, self.length)
+            self.data = expanded
+            self.capacity = new_capacity
+            self.kind = new_kind
 
-    # Helper methods
+        buffer = str(self.data, _make_meta(self.capacity, self.kind))
+        buffer._store_codepoint(self.length, codepoint)
+        self.length += 1
 
-    def _isdigit(a: u8) -> bool:
-        return _C.isdigit(i32(int(a))) != i32(0)
+    def finish(self) -> str:
+        if self.length != self.capacity:
+            width = _kind_width(self.kind)
+            self.data = gc.realloc(
+                self.data,
+                self.length * width,
+                self.capacity * width,
+            )
+            self.capacity = self.length
 
-    def _isspace(a: u8) -> bool:
-        return _C.isspace(i32(int(a))) != i32(0)
+        return str(self.data, _make_meta(self.length, self.kind))
 
-    def _isupper(a: u8) -> bool:
-        return _C.isupper(i32(int(a))) != i32(0)
 
-    def _islower(a: u8) -> bool:
-        return _C.islower(i32(int(a))) != i32(0)
+class _CodecByteBuffer:
+    data: Ptr[u8]
+    length: int
+    capacity: int
 
-    def _isalpha(a: u8) -> bool:
-        return _C.isalpha(i32(int(a))) != i32(0)
+    def __init__(self, capacity: int):
+        self.data = Ptr[u8](capacity)
+        self.length = 0
+        self.capacity = capacity
 
-    def _isalnum(a: u8) -> bool:
-        return _C.isalnum(i32(int(a))) != i32(0)
+    def append(self, value: int):
+        required = self.length + 1
+        if required > self.capacity:
+            capacity = self.capacity if self.capacity > 0 else 1
+            while capacity < required:
+                capacity *= 2
 
-    def _toupper(a: u8) -> u8:
-        return u8(int(_C.toupper(i32(int(a)))))
+            expanded = Ptr[u8](capacity)
+            str.memcpy(expanded, self.data, self.length)
+            self.data = expanded
+            self.capacity = capacity
 
-    def _tolower(a: u8) -> u8:
-        return u8(int(_C.tolower(i32(int(a)))))
+        self.data[self.length] = u8(value)
+        self.length += 1
 
-    def _slice(self, i: int, j: int) -> str:
-        return str(self._ptr + i, j - i)
+    def finish(self) -> bytes:
+        if self.length != self.capacity:
+            self.data = gc.realloc(
+                self.data,
+                self.length,
+                self.capacity,
+            )
+            self.capacity = self.length
 
-    def _at(self, i: int) -> str:
-        return str(self._ptr + i, 1)
+        return bytes(self.data, self.length)
 
-    def join(self, l: Generator[str]) -> str:
-        buf = _strbuf()
-        if len(self) == 0:
-            for a in l:
-                buf.append(a)
+
+def _unicode_encode_utf8(value: str, errors: str) -> bytes:
+    if errors == "strict":
+        return _unicode_encode_utf8_strict(value)
+
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+
+        if _is_surrogate(codepoint):
+            if errors == "surrogatepass":
+                output.append(0xE0 | (codepoint >> 12))
+                output.append(0x80 | ((codepoint >> 6) & 0x3F))
+                output.append(0x80 | (codepoint & 0x3F))
+                continue
+
+            if errors == "surrogateescape" and 0xDC80 <= codepoint <= 0xDCFF:
+                output.append(codepoint - 0xDC00)
+                continue
+
+            _codec_encode_error_append(output, codepoint, errors)
+            continue
+
+        if codepoint < 0x80:
+            output.append(codepoint)
+        elif codepoint < 0x800:
+            output.append(0xC0 | (codepoint >> 6))
+            output.append(0x80 | (codepoint & 0x3F))
+        elif codepoint < 0x10000:
+            output.append(0xE0 | (codepoint >> 12))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
         else:
-            first = True
-            for a in l:
-                if first:
-                    first = False
+            output.append(0xF0 | (codepoint >> 18))
+            output.append(0x80 | ((codepoint >> 12) & 0x3F))
+            output.append(0x80 | ((codepoint >> 6) & 0x3F))
+            output.append(0x80 | (codepoint & 0x3F))
+
+    return output.finish()
+
+
+def _unicode_from_text(value: bytes) -> str:
+    return _unicode_decode_utf8_strict(value._ptr, len(value))
+
+
+def _codec_name(encoding: str) -> str:
+    return encoding.lower().replace("_", "-")
+
+
+def _codec_error_append(
+    output: _UnicodeCodecBuffer,
+    data: Ptr[u8],
+    start: int,
+    end: int,
+    errors: str,
+):
+    if errors == "strict":
+        raise ValueError("invalid byte sequence")
+
+    if errors == "ignore":
+        return
+
+    if errors == "replace":
+        output.append(0xFFFD)
+        return
+
+    if errors == "surrogateescape":
+        for i in range(start, end):
+            byte = int(data[i])
+            if byte < 0x80:
+                raise ValueError("invalid byte sequence")
+            output.append(0xDC00 + byte)
+        return
+
+    if errors == "backslashreplace":
+        for i in range(start, end):
+            byte = int(data[i])
+            output.append(0x5C)  # \
+            output.append(0x78)  # x
+            high = byte >> 4
+            output.append(0x30 + high if high < 10 else 0x61 + high - 10)
+            digit = byte & 0xF
+            output.append(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+        return
+
+    raise ValueError("unsupported error handling: " + errors)
+
+
+def _unicode_decode_utf8(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+    pos = 0
+
+    while pos < byte_length:
+        start = pos
+        b0 = int(data[pos])
+
+        if b0 < 0x80:
+            output.append(b0)
+            pos += 1
+            continue
+
+        width = 0
+        if 0xC2 <= b0 <= 0xDF:
+            width = 2
+        elif 0xE0 <= b0 <= 0xEF:
+            width = 3
+        elif 0xF0 <= b0 <= 0xF4:
+            width = 4
+
+        if width == 0:
+            _codec_error_append(output, data, start, start + 1, errors)
+            pos += 1
+            continue
+
+        if pos + width > byte_length:
+            _codec_error_append(output, data, start, byte_length, errors)
+            break
+
+        valid = True
+        for i in range(1, width):
+            if not _is_utf8_continuation(int(data[pos + i])):
+                valid = False
+                break
+
+        b1 = int(data[pos + 1])
+        if (
+            not valid
+            or (b0 == 0xE0 and b1 < 0xA0)
+            or (
+                b0 == 0xED
+                and b1 > 0x9F
+                and errors != "surrogatepass"
+            )
+            or (b0 == 0xF0 and b1 < 0x90)
+            or (b0 == 0xF4 and b1 > 0x8F)
+        ):
+            _codec_error_append(output, data, start, start + 1, errors)
+            pos += 1
+            continue
+
+        codepoint = b0 & (0x7F >> width)
+        for i in range(1, width):
+            codepoint = (codepoint << 6) | (int(data[pos + i]) & 0x3F)
+
+        output.append(codepoint)
+        pos += width
+
+    return output.finish()
+
+
+def _unicode_decode_single_byte(
+    data: Ptr[u8],
+    byte_length: int,
+    ascii: bool,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        byte = int(data[i])
+        if ascii and byte > 0x7F:
+                _codec_error_append(output, data, i, i + 1, errors)
+        else:
+                output.append(byte)
+
+    return output.finish()
+
+
+@pure
+@llvm
+def _cp1252_c1_codepoint(index: int) -> i32:
+    @data = private unnamed_addr constant [32 x i32] [i32 8364, i32 -1, i32 8218, i32 402, i32 8222, i32 8230, i32 8224, i32 8225, i32 710, i32 8240, i32 352, i32 8249, i32 338, i32 -1, i32 381, i32 -1, i32 -1, i32 8216, i32 8217, i32 8220, i32 8221, i32 8226, i32 8211, i32 8212, i32 732, i32 8482, i32 353, i32 8250, i32 339, i32 -1, i32 382, i32 376]
+    %p = getelementptr inbounds [32 x i32], ptr @data, i64 0, i64 %index
+    %x = load i32, ptr %p, align 4
+    ret i32 %x
+
+
+@pure
+@llvm
+def _cp1252_c1_byte(codepoint: int) -> i32:
+    @data = private unnamed_addr constant [64 x i64] [i64 0, i64 96415, i64 2141312, i64 0, i64 0, i64 0, i64 0, i64 2107013, i64 0, i64 0, i64 97678, i64 0, i64 97950, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 0, i64 90250, i64 90522, i64 0, i64 0, i64 0, i64 0, i64 2109577, i64 0, i64 187544, i64 0, i64 0, i64 2171545, i64 0, i64 0, i64 0, i64 2102166, i64 0, i64 2102423, i64 0, i64 0, i64 0, i64 0, i64 2111883, i64 0, i64 2112155, i64 2103441, i64 2103698, i64 0, i64 2103938, i64 103043, i64 0, i64 181896, i64 2104467, i64 0, i64 2104724, i64 0, i64 2104964, i64 86668, i64 0, i64 86940, i64 2105478, i64 2105735, i64 0, i64 2106005]
+    %product = mul i64 %codepoint, 15
+    %shifted = lshr i64 %product, 3
+    %index = and i64 %shifted, 63
+    %p = getelementptr inbounds [64 x i64], ptr @data, i64 0, i64 %index
+    %packed = load i64, ptr %p, align 8
+    %stored = lshr i64 %packed, 8
+    %matched = icmp eq i64 %stored, %codepoint
+    %byte = trunc i64 %packed to i32
+    %result = select i1 %matched, i32 %byte, i32 -1
+    ret i32 %result
+
+
+@pure
+@llvm
+def _cp1251_c1_codepoint(index: int) -> i32:
+    @data = private unnamed_addr constant [64 x i32] [i32 1026, i32 1027, i32 8218, i32 1107, i32 8222, i32 8230, i32 8224, i32 8225, i32 8364, i32 8240, i32 1033, i32 8249, i32 1034, i32 1036, i32 1035, i32 1039, i32 1106, i32 8216, i32 8217, i32 8220, i32 8221, i32 8226, i32 8211, i32 8212, i32 -1, i32 8482, i32 1113, i32 8250, i32 1114, i32 1116, i32 1115, i32 1119, i32 160, i32 1038, i32 1118, i32 1032, i32 164, i32 1168, i32 166, i32 167, i32 1025, i32 169, i32 1028, i32 171, i32 172, i32 173, i32 174, i32 1031, i32 176, i32 177, i32 1030, i32 1110, i32 1169, i32 181, i32 182, i32 183, i32 1105, i32 8470, i32 1108, i32 187, i32 1112, i32 1029, i32 1109, i32 1111]
+    %p = getelementptr inbounds [64 x i32], ptr @data, i64 0, i64 %index
+    %x = load i32, ptr %p, align 4
+    ret i32 %x
+
+
+@pure
+@llvm
+def _cp1251_c1_byte(codepoint: int) -> i32:
+    @data = private unnamed_addr constant [128 x i64] [i64 44718, i64 2168505, i64 263041, i64 0, i64 2141320, i64 2105478, i64 284860, i64 0, i64 48059, i64 0, i64 0, i64 0, i64 2104467, i64 283834, i64 0, i64 42662, i64 47031, i64 265357, i64 0, i64 2103441, i64 0, i64 2112155, i64 0, i64 0, i64 0, i64 264355, i64 0, i64 2102423, i64 0, i64 0, i64 0, i64 299173, i64 263338, i64 0, i64 0, i64 2105735, i64 285082, i64 0, i64 43947, i64 0, i64 0, i64 0, i64 2104724, i64 284094, i64 0, i64 42919, i64 0, i64 0, i64 0, i64 0, i64 2103698, i64 0, i64 0, i64 0, i64 0, i64 264586, i64 0, i64 0, i64 2107013, i64 286370, i64 45232, i64 299444, i64 263613, i64 0, i64 0, i64 2106005, i64 285340, i64 0, i64 44204, i64 0, i64 0, i64 0, i64 2104964, i64 0, i64 284339, i64 0, i64 0, i64 0, i64 265889, i64 0, i64 2103938, i64 283280, i64 42148, i64 46517, i64 0, i64 264844, i64 0, i64 0, i64 0, i64 286623, i64 41120, i64 45489, i64 263858, i64 0, i64 0, i64 0, i64 285598, i64 0, i64 44461, i64 0, i64 262784, i64 0, i64 0, i64 2109577, i64 284607, i64 43433, i64 0, i64 2171545, i64 266127, i64 0, i64 0, i64 283523, i64 0, i64 46774, i64 0, i64 265102, i64 0, i64 0, i64 0, i64 2111883, i64 0, i64 0, i64 0, i64 264111, i64 0, i64 2102166, i64 0, i64 285853]
+    %product = mul i64 %codepoint, 3861
+    %shifted = lshr i64 %product, 7
+    %index = and i64 %shifted, 127
+    %p = getelementptr inbounds [128 x i64], ptr @data, i64 0, i64 %index
+    %packed = load i64, ptr %p, align 8
+    %stored = lshr i64 %packed, 8
+    %matched = icmp eq i64 %stored, %codepoint
+    %byte = trunc i64 %packed to i32
+    %result = select i1 %matched, i32 %byte, i32 -1
+    ret i32 %result
+
+
+def _unicode_decode_cp1252(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        byte = int(data[i])
+        codepoint = byte
+        if 0x80 <= byte <= 0x9F:
+            codepoint = int(_cp1252_c1_codepoint(byte - 0x80))
+
+        if codepoint < 0:
+                _codec_error_append(output, data, i, i + 1, errors)
+        else:
+                output.append(codepoint)
+
+    return output.finish()
+
+
+def _unicode_decode_cp1251(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        byte = int(data[i])
+        if byte < 0x80:
+            codepoint = byte
+        elif byte >= 0xC0:
+            codepoint = 0x0410 + byte - 0xC0
+        else:
+            codepoint = int(_cp1251_c1_codepoint(byte - 0x80))
+
+        if codepoint < 0:
+                _codec_error_append(output, data, i, i + 1, errors)
+        else:
+                output.append(codepoint)
+
+    return output.finish()
+
+
+def _unicode_decode_cp1250(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        codepoint = int(_single_byte_cp1250_decode(int(data[i])))
+        if codepoint < 0:
+                _codec_error_append(output, data, i, i + 1, errors)
+        else:
+                output.append(codepoint)
+
+    return output.finish()
+
+
+def _unicode_decode_cp1253(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        codepoint = int(_single_byte_cp1253_decode(int(data[i])))
+        if codepoint < 0:
+                _codec_error_append(output, data, i, i + 1, errors)
+        else:
+                output.append(codepoint)
+
+    return output.finish()
+
+
+def _unicode_decode_cp1254(
+    data: Ptr[u8],
+    byte_length: int,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        codepoint = int(_single_byte_cp1254_decode(int(data[i])))
+        if codepoint < 0:
+                _codec_error_append(output, data, i, i + 1, errors)
+        else:
+                output.append(codepoint)
+
+    return output.finish()
+
+
+def _iso8859_15_decode_codepoint(byte: int) -> int:
+    if byte == 0xA4:
+        return 0x20AC
+    if byte == 0xA6:
+        return 0x0160
+    if byte == 0xA8:
+        return 0x0161
+    if byte == 0xB4:
+        return 0x017D
+    if byte == 0xB8:
+        return 0x017E
+    if byte == 0xBC:
+        return 0x0152
+    if byte == 0xBD:
+        return 0x0153
+    if byte == 0xBE:
+        return 0x0178
+    return byte
+
+
+def _unicode_decode_iso8859_15(data: Ptr[u8], byte_length: int) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+
+    for i in range(byte_length):
+        output.append(_iso8859_15_decode_codepoint(int(data[i])))
+
+    return output.finish()
+
+
+def _unicode_decode_utf16(
+    data: Ptr[u8],
+    byte_length: int,
+    little_endian: bool,
+    detect_bom: bool,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+    pos = 0
+
+    if detect_bom and byte_length >= 2:
+        bom = int(data[0]) | (int(data[1]) << 8)
+        if bom == 0xFEFF:
+            little_endian = True
+            pos = 2
+        elif bom == 0xFFFE:
+            little_endian = False
+            pos = 2
+        elif errors == "strict":
+            raise ValueError("UTF-16 stream does not start with BOM")
+
+    while pos < byte_length:
+        if pos + 2 > byte_length:
+            _codec_error_append(output, data, pos, byte_length, errors)
+            break
+
+        if little_endian:
+            unit = int(data[pos]) | (int(data[pos + 1]) << 8)
+        else:
+            unit = (int(data[pos]) << 8) | int(data[pos + 1])
+
+        if 0xD800 <= unit <= 0xDBFF:
+            if pos + 4 <= byte_length:
+                if little_endian:
+                    low = int(data[pos + 2]) | (int(data[pos + 3]) << 8)
                 else:
-                    buf.append(self)
-                buf.append(a)
-        return buf.__str__()
+                    low = (int(data[pos + 2]) << 8) | int(data[pos + 3])
 
-    def join(self, l: List[str]) -> str:
-        if len(l) == 0:
-            return ""
-        if len(l) == 1:
-            return l[0]
-        if len(self) == 0:
-            return str.cat(l)
+                if 0xDC00 <= low <= 0xDFFF:
+                    output.append(0x10000 + ((unit - 0xD800) << 10) + low - 0xDC00)
+                    pos += 4
+                    continue
 
-        # compute length
-        n = 0
-        i = 0
-        while i < len(l):
-            n += len(l[i])
-            if i < len(l) - 1:
-                n += len(self)
-            i += 1
+            if errors == "surrogatepass":
+                output.append(unit)
+            else:
+                _codec_error_append(output, data, pos, pos + 2, errors)
+        elif 0xDC00 <= unit <= 0xDFFF:
+            if errors == "surrogatepass":
+                output.append(unit)
+            else:
+                _codec_error_append(output, data, pos, pos + 2, errors)
+        else:
+            output.append(unit)
 
-        # copy to new buffer
-        p = Ptr[u8](n)
-        r = 0
-        i = 0
-        while i < len(l):
-            str.memcpy(p + r, l[i]._ptr, len(l[i]))
-            r += len(l[i])
-            if i < len(l) - 1:
-                str.memcpy(p + r, self._ptr, len(self))
-                r += len(self)
-            i += 1
+        pos += 2
 
-        return str(p, n)
+    return output.finish()
 
-    def isdigit(self) -> bool:
-        if len(self) == 0:
+
+def _unicode_decode_utf32(
+    data: Ptr[u8],
+    byte_length: int,
+    little_endian: bool,
+    detect_bom: bool,
+    errors: str,
+) -> str:
+    output = _UnicodeCodecBuffer(byte_length)
+    pos = 0
+
+    if detect_bom and byte_length >= 4:
+        bom = (
+            int(data[0])
+            | (int(data[1]) << 8)
+            | (int(data[2]) << 16)
+            | (int(data[3]) << 24)
+        )
+        if bom == 0x0000FEFF:
+            little_endian = True
+            pos = 4
+        elif bom == 0xFFFE0000:
+            little_endian = False
+            pos = 4
+        elif errors == "strict":
+            raise ValueError("UTF-32 stream does not start with BOM")
+
+    while pos < byte_length:
+        if pos + 4 > byte_length:
+            _codec_error_append(output, data, pos, byte_length, errors)
+            break
+
+        if little_endian:
+            codepoint = (
+                int(data[pos])
+                | (int(data[pos + 1]) << 8)
+                | (int(data[pos + 2]) << 16)
+                | (int(data[pos + 3]) << 24)
+            )
+        else:
+            codepoint = (
+                (int(data[pos]) << 24)
+                | (int(data[pos + 1]) << 16)
+                | (int(data[pos + 2]) << 8)
+                | int(data[pos + 3])
+            )
+
+        if codepoint > UNICODE_MAX or (
+            _is_surrogate(codepoint) and errors != "surrogatepass"
+        ):
+            _codec_error_append(output, data, pos, pos + 4, errors)
+        else:
+            output.append(codepoint)
+
+        pos += 4
+
+    return output.finish()
+
+
+def _unicode_decode_codec(data: str, encoding: str, errors: str) -> str:
+    name = _codec_name(encoding)
+
+    if name == "utf-8" or name == "utf8":
+        return _unicode_decode_utf8(data._ptr, len(data), errors)
+    if name == "ascii" or name == "us-ascii":
+        return _unicode_decode_single_byte(data._ptr, len(data), True, errors)
+    if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
+        return _unicode_decode_single_byte(data._ptr, len(data), False, errors)
+    if name == "cp1252" or name == "windows-1252" or name == "windows1252":
+        return _unicode_decode_cp1252(data._ptr, len(data), errors)
+    if name == "cp1251" or name == "windows-1251" or name == "windows1251":
+        return _unicode_decode_cp1251(data._ptr, len(data), errors)
+    if name == "cp1250" or name == "windows-1250" or name == "windows1250":
+        return _unicode_decode_cp1250(data._ptr, len(data), errors)
+    if name == "cp1253" or name == "windows-1253" or name == "windows1253":
+        return _unicode_decode_cp1253(data._ptr, len(data), errors)
+    if name == "cp1254" or name == "windows-1254" or name == "windows1254":
+        return _unicode_decode_cp1254(data._ptr, len(data), errors)
+    if (
+        name == "iso-8859-15"
+        or name == "iso8859-15"
+        or name == "latin-9"
+        or name == "latin9"
+    ):
+        return _unicode_decode_iso8859_15(data._ptr, len(data))
+    if name == "utf-16":
+        return _unicode_decode_utf16(data._ptr, len(data), True, True, errors)
+    if name == "utf-16-le" or name == "utf16le":
+        return _unicode_decode_utf16(data._ptr, len(data), True, False, errors)
+    if name == "utf-16-be" or name == "utf16be":
+        return _unicode_decode_utf16(data._ptr, len(data), False, False, errors)
+    if name == "utf-32":
+        return _unicode_decode_utf32(data._ptr, len(data), True, True, errors)
+    if name == "utf-32-le" or name == "utf32le":
+        return _unicode_decode_utf32(data._ptr, len(data), True, False, errors)
+    if name == "utf-32-be" or name == "utf32be":
+        return _unicode_decode_utf32(data._ptr, len(data), False, False, errors)
+
+    raise LookupError("unknown encoding: " + encoding)
+
+
+def _codec_encode_error_append(
+    output: _CodecByteBuffer,
+    codepoint: int,
+    errors: str,
+):
+    if errors == "strict":
+        _raise_utf8_encode_error(0, 0, "code point not encodable")
+
+    if errors == "ignore":
+        return
+
+    if errors == "replace":
+        output.append(0x3F)  # ?
+        return
+
+    if errors == "backslashreplace":
+        output.append(0x5C)  # \
+        if codepoint <= 0xFF:
+            output.append(0x78)  # x
+            digits = 2
+        elif codepoint <= 0xFFFF:
+            output.append(0x75)  # u
+            digits = 4
+        else:
+            output.append(0x55)  # U
+            digits = 8
+
+        for i in range(digits - 1, -1, -1):
+            digit = (codepoint >> (i * 4)) & 0xF
+            output.append(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+        return
+
+    raise ValueError("unsupported error handling: " + errors)
+
+
+def _unicode_encode_single_byte(
+    value: str,
+    ascii: bool,
+    errors: str,
+) -> bytes:
+    output = _CodecByteBuffer(len(value))
+    limit = 0x7F if ascii else 0xFF
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if codepoint > limit:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(codepoint)
+
+    return output.finish()
+
+
+def _unicode_encode_cp1252(value: str, errors: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = -1
+
+        if codepoint <= 0x7F or 0xA0 <= codepoint <= 0xFF:
+            byte = codepoint
+        else:
+            byte = int(_cp1252_c1_byte(codepoint))
+
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return output.finish()
+
+
+def _unicode_encode_cp1251(value: str, errors: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = -1
+
+        if codepoint <= 0x7F:
+            byte = codepoint
+        elif 0x0410 <= codepoint <= 0x044F:
+            byte = codepoint - 0x0410 + 0xC0
+        elif codepoint == 0x0401:
+            byte = 0xA8
+        elif codepoint == 0x0451:
+            byte = 0xB8
+        else:
+            byte = int(_cp1251_c1_byte(codepoint))
+
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return output.finish()
+
+
+def _unicode_encode_cp1250(value: str, errors: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1250_encode(codepoint))
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return output.finish()
+
+
+def _unicode_encode_cp1253(value: str, errors: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1253_encode(codepoint))
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return output.finish()
+
+
+def _unicode_encode_cp1254(value: str, errors: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1254_encode(codepoint))
+        if byte < 0:
+            _codec_encode_error_append(output, codepoint, errors)
+        else:
+            output.append(byte)
+
+    return output.finish()
+
+
+def _iso8859_15_encode_byte(codepoint: int) -> int:
+    if codepoint == 0x20AC:
+        return 0xA4
+    if codepoint == 0x0160:
+        return 0xA6
+    if codepoint == 0x0161:
+        return 0xA8
+    if codepoint == 0x017D:
+        return 0xB4
+    if codepoint == 0x017E:
+        return 0xB8
+    if codepoint == 0x0152:
+        return 0xBC
+    if codepoint == 0x0153:
+        return 0xBD
+    if codepoint == 0x0178:
+        return 0xBE
+    if (
+        codepoint <= 0xFF
+        and codepoint != 0xA4
+        and codepoint != 0xA6
+        and codepoint != 0xA8
+        and codepoint != 0xB4
+        and codepoint != 0xB8
+        and codepoint != 0xBC
+        and codepoint != 0xBD
+        and codepoint != 0xBE
+    ):
+        return codepoint
+    return -1
+
+
+def _unicode_encode_iso8859_15(value: str, errors: str) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    for i in range(len(value)):
+        byte = _iso8859_15_encode_byte(value._load_codepoint(i))
+        if byte < 0:
+            _codec_encode_error_append(output, value._load_codepoint(i), errors)
+        else:
+            output.append(byte)
+
+    return output.finish()
+
+
+def _unicode_encode_utf16(
+    value: str,
+    little_endian: bool,
+    bom: bool,
+    errors: str,
+) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    if bom:
+        if little_endian:
+            output.append(0xFF)
+            output.append(0xFE)
+        else:
+            output.append(0xFE)
+            output.append(0xFF)
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if _is_surrogate(codepoint) and errors != "surrogatepass":
+            _codec_encode_error_append(output, codepoint, errors)
+            continue
+        if codepoint <= 0xFFFF:
+            if little_endian:
+                output.append(codepoint & 0xFF)
+                output.append(codepoint >> 8)
+            else:
+                output.append(codepoint >> 8)
+                output.append(codepoint & 0xFF)
+            continue
+
+        scalar = codepoint - 0x10000
+        high = 0xD800 + (scalar >> 10)
+        low = 0xDC00 + (scalar & 0x3FF)
+        if little_endian:
+            output.append(high & 0xFF)
+            output.append(high >> 8)
+            output.append(low & 0xFF)
+            output.append(low >> 8)
+        else:
+            output.append(high >> 8)
+            output.append(high & 0xFF)
+            output.append(low >> 8)
+            output.append(low & 0xFF)
+
+    return output.finish()
+
+
+def _unicode_encode_utf32(
+    value: str,
+    little_endian: bool,
+    bom: bool,
+    errors: str,
+) -> bytes:
+    output = _CodecByteBuffer(len(value))
+
+    if bom:
+        if little_endian:
+            output.append(0xFF)
+            output.append(0xFE)
+            output.append(0)
+            output.append(0)
+        else:
+            output.append(0)
+            output.append(0)
+            output.append(0xFE)
+            output.append(0xFF)
+
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        if _is_surrogate(codepoint) and errors != "surrogatepass":
+            _codec_encode_error_append(output, codepoint, errors)
+            continue
+        if little_endian:
+            output.append(codepoint & 0xFF)
+            output.append((codepoint >> 8) & 0xFF)
+            output.append((codepoint >> 16) & 0xFF)
+            output.append(codepoint >> 24)
+        else:
+            output.append(codepoint >> 24)
+            output.append((codepoint >> 16) & 0xFF)
+            output.append((codepoint >> 8) & 0xFF)
+            output.append(codepoint & 0xFF)
+
+    return output.finish()
+
+
+def _unicode_encode_codec(value: str, encoding: str, errors: str) -> bytes:
+    name = _codec_name(encoding)
+
+    if name == "utf-8" or name == "utf8":
+        return _unicode_encode_utf8(value, errors)
+    if name == "ascii" or name == "us-ascii":
+        return _unicode_encode_single_byte(value, True, errors)
+    if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
+        return _unicode_encode_single_byte(value, False, errors)
+    if name == "cp1252" or name == "windows-1252" or name == "windows1252":
+        return _unicode_encode_cp1252(value, errors)
+    if name == "cp1251" or name == "windows-1251" or name == "windows1251":
+        return _unicode_encode_cp1251(value, errors)
+    if name == "cp1250" or name == "windows-1250" or name == "windows1250":
+        return _unicode_encode_cp1250(value, errors)
+    if name == "cp1253" or name == "windows-1253" or name == "windows1253":
+        return _unicode_encode_cp1253(value, errors)
+    if name == "cp1254" or name == "windows-1254" or name == "windows1254":
+        return _unicode_encode_cp1254(value, errors)
+    if (
+        name == "iso-8859-15"
+        or name == "iso8859-15"
+        or name == "latin-9"
+        or name == "latin9"
+    ):
+        return _unicode_encode_iso8859_15(value, errors)
+    if name == "utf-16":
+        return _unicode_encode_utf16(value, True, True, errors)
+    if name == "utf-16-le" or name == "utf16le":
+        return _unicode_encode_utf16(value, True, False, errors)
+    if name == "utf-16-be" or name == "utf16be":
+        return _unicode_encode_utf16(value, False, False, errors)
+    if name == "utf-32":
+        return _unicode_encode_utf32(value, True, True, errors)
+    if name == "utf-32-le" or name == "utf32le":
+        return _unicode_encode_utf32(value, True, False, errors)
+    if name == "utf-32-be" or name == "utf32be":
+        return _unicode_encode_utf32(value, False, False, errors)
+
+    raise LookupError("unknown encoding: " + encoding)
+
+
+@extend
+class str:
+
+    @__internal__
+    def __new__(p: Ptr[u8], l: int) -> str:
+        pass
+
+    @overload
+    def __new__() -> str:
+        return str(Ptr[u8](), _make_meta(0, KIND_ASCII))
+
+    @overload
+    def __new__(what) -> str:
+        if isinstance(what, Union):
+            return Union._str(what)
+        elif isinstance(what, type):
+            return what.__repr__()
+        elif hasattr(what, "__str__"):
+            return what.__str__()
+        else:
+            if not hasattr(what, "__repr__") and hasattr(what, "__repr_default__"):
+                return what.__repr_default__()
+            return what.__repr__()
+
+    def __new__(data: bytes, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return _unicode_decode_codec(data, encoding, "strict")
+
+    def __len__(self) -> int:
+        return _meta_len(self._meta)
+
+    def __bool__(self) -> bool:
+        return len(self) != 0
+
+    def __match__(self, other: str) -> bool:
+        return self.__eq__(other)
+
+    def _kind(self) -> int:
+        return _meta_kind(self._meta)
+
+    def _width(self) -> int:
+        return _kind_width(self._kind())
+
+    def _is_ascii(self) -> bool:
+        return self._kind() == KIND_ASCII
+
+    def _load_codepoint(self, i: int) -> int:
+        kind = self._kind()
+
+        if kind <= KIND_LATIN1:
+            return int(self._ptr[i])
+
+        if kind == KIND_UCS2:
+            return (
+                int(self._ptr[2 * i])
+                | (int(self._ptr[2 * i + 1]) << 8)
+            )
+
+        return (
+            int(self._ptr[4 * i])
+            | (int(self._ptr[4 * i + 1]) << 8)
+            | (int(self._ptr[4 * i + 2]) << 16)
+            | (int(self._ptr[4 * i + 3]) << 24)
+        )
+
+    def _store_codepoint(self, i: int, cp: int):
+        kind = self._kind()
+
+        if kind <= KIND_LATIN1:
+            self._ptr[i] = u8(cp)
+            return
+
+        if kind == KIND_UCS2:
+            self._ptr[2 * i] = u8(cp & 0xFF)
+            self._ptr[2 * i + 1] = u8((cp >> 8) & 0xFF)
+            return
+
+        self._ptr[4 * i] = u8(cp & 0xFF)
+        self._ptr[4 * i + 1] = u8((cp >> 8) & 0xFF)
+        self._ptr[4 * i + 2] = u8((cp >> 16) & 0xFF)
+        self._ptr[4 * i + 3] = u8((cp >> 24) & 0xFF)
+
+    def _get_codepoint(self, i: int) -> int:
+        if i < 0 or i >= len(self):
+            raise IndexError("string index out of range")
+        return self._load_codepoint(i)
+
+    def __getitem__(self, item: int):
+        n = len(self)
+
+        if item < 0:
+            item += n
+
+        if item < 0 or item >= n:
+            raise IndexError("string index out of range")
+
+        return _unicode_from_codepoint(self._load_codepoint(item))
+
+    def __getitem__(self, item: slice[int, int, int]) -> str:
+        start, stop, step, slicelen = item.adjust_indices(len(self))
+
+        if slicelen == 0:
+            return str()
+
+        if step == 1:
+            return _unicode_slice_impl(self, start, stop)
+
+        result = _unicode_new_uninit(slicelen, _unicode_maxchar(self))
+
+        for i in range(slicelen):
+            result._store_codepoint(i, self._load_codepoint(start + i * step))
+
+        return result
+
+    def __eq__(self, other: str) -> bool:
+        if len(self) != len(other):
             return False
 
+        if self._width() == other._width():
+            return _C.memcmp(
+                self._ptr,
+                other._ptr,
+                len(self) * self._width(),
+            ) == 0
+
         for i in range(len(self)):
-            if not str._isdigit(self._ptr[i]):
+            if self._load_codepoint(i) != other._load_codepoint(i):
                 return False
+
         return True
 
-    def islower(self) -> bool:
-        cased = False
+    def __ne__(self, other: str) -> bool:
+        return not self.__eq__(other)
 
-        # For empty strings
+    def __lt__(self, other: str) -> bool:
+        return _unicode_compare(self, other) < 0
+
+    def __le__(self, other: str) -> bool:
+        return _unicode_compare(self, other) <= 0
+
+    def __gt__(self, other: str) -> bool:
+        return _unicode_compare(self, other) > 0
+
+    def __ge__(self, other: str) -> bool:
+        return _unicode_compare(self, other) >= 0
+
+    def __add__(self, other: str) -> str:
         if len(self) == 0:
+            return other
+
+        if len(other) == 0:
+            return self
+
+        return _unicode_concat_impl(self, other)
+
+    def __mul__(self, count: int) -> str:
+        if count < 0:
+            raise ValueError("can't multiply str by negative value")
+
+        if count == 0:
+            return str()
+
+        return _unicode_repeat_impl(self, count)
+
+    def __rmul__(self, count: int) -> str:
+        return self.__mul__(count)
+
+    def find(self, sub: str) -> int:
+        return self.find(sub, 0, len(self))
+
+    def find(
+        self,
+        sub: str,
+        start: int,
+    ) -> int:
+        return self.find(sub, start, len(self))
+
+    def find(
+        self,
+        sub: str,
+        start: int,
+        end: int,
+    ) -> int:
+        start, end = _normalize_search_bounds(len(self), start, end)
+
+        if len(sub) == 0:
+            if start > end:
+                return -1
+            return start
+
+        if len(sub) > end - start:
+            return -1
+
+        return _unicode_fastsearch(self, sub, start, end)
+
+    def rfind(self, sub: str) -> int:
+        return self.rfind(sub, 0, len(self))
+
+    def rfind(
+        self,
+        sub: str,
+        start: int,
+    ) -> int:
+        return self.rfind(sub, start, len(self))
+
+    def rfind(
+        self,
+        sub: str,
+        start: int,
+        end: int,
+    ) -> int:
+        start, end = _normalize_search_bounds(len(self), start, end)
+
+        if len(sub) == 0:
+            if start > end:
+                return -1
+            return end
+
+        if len(sub) > end - start:
+            return -1
+
+        return _unicode_fastsearch_reverse(self, sub, start, end)
+
+    def index(self, sub: str) -> int:
+        return self.index(sub, 0, len(self))
+
+    def index(
+        self,
+        sub: str,
+        start: int,
+    ) -> int:
+        return self.index(sub, start, len(self))
+
+    def index(
+        self,
+        sub: str,
+        start: int,
+        end: int,
+    ) -> int:
+        pos = self.find(sub, start, end)
+
+        if pos == -1:
+            raise ValueError("substring not found")
+
+        return pos
+
+    def rindex(self, sub: str) -> int:
+        return self.rindex(sub, 0, len(self))
+
+    def rindex(
+        self,
+        sub: str,
+        start: int,
+    ) -> int:
+        return self.rindex(sub, start, len(self))
+
+    def rindex(
+        self,
+        sub: str,
+        start: int,
+        end: int,
+    ) -> int:
+        pos = self.rfind(sub, start, end)
+
+        if pos == -1:
+            raise ValueError("substring not found")
+
+        return pos
+
+    def count(self, sub: str) -> int:
+        return self.count(sub, 0, len(self))
+
+    def count(
+        self,
+        sub: str,
+        start: int,
+    ) -> int:
+        return self.count(sub, start, len(self))
+
+    def count(
+        self,
+        sub: str,
+        start: int,
+        end: int,
+    ) -> int:
+        start, end = _normalize_search_bounds(len(self), start, end)
+
+        if len(sub) == 0:
+            if start > end:
+                return 0
+            return end - start + 1
+
+        return _unicode_count(self, sub, start, end)
+
+    def startswith(self, prefix: str) -> bool:
+        return self.startswith(prefix, 0, len(self))
+
+    def startswith(
+        self,
+        prefix: str,
+        start: int,
+    ) -> bool:
+        return self.startswith(prefix, start, len(self))
+
+    def startswith(
+        self,
+        prefix: str,
+        start: int,
+        end: int,
+    ) -> bool:
+        start, end = _normalize_search_bounds(len(self), start, end)
+
+        if len(prefix) == 0:
+            return start <= end
+
+        if end - start < len(prefix):
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return str._islower(self._ptr[0])
+        return _unicode_starts_at(self, prefix, start)
 
-        for i in range(len(self)):
-            if str._isupper(self._ptr[i]):
-                return False
-            elif not cased and str._islower(self._ptr[i]):
-                cased = True
-        return cased
+    def endswith(self, suffix: str) -> bool:
+        return self.endswith(suffix, 0, len(self))
 
-    def isupper(self) -> bool:
-        cased = False
+    def endswith(
+        self,
+        suffix: str,
+        start: int,
+    ) -> bool:
+        return self.endswith(suffix, start, len(self))
 
-        # For empty strings
-        if len(self) == 0:
+    def endswith(
+        self,
+        suffix: str,
+        start: int,
+        end: int,
+    ) -> bool:
+        start, end = _normalize_search_bounds(len(self), start, end)
+        m = len(suffix)
+
+        if m == 0:
+            return start <= end
+
+        if end - start < m:
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return str._isupper(self._ptr[0])
+        return _unicode_starts_at(self, suffix, end - m)
+
+    def encode(
+        self,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+    ) -> bytes:
+        return _unicode_encode_codec(self, encoding, errors)
+
+    def __repr__(self) -> str:
+        single_quotes = 0
+        double_quotes = 0
 
         for i in range(len(self)):
-            if str._islower(self._ptr[i]):
-                return False
-            elif not cased and str._isupper(self._ptr[i]):
-                cased = True
-        return cased
+            cp = self._load_codepoint(i)
+
+            if cp == 0x27:
+                single_quotes += 1
+            elif cp == 0x22:
+                double_quotes += 1
+
+        quote = 0x27 if single_quotes <= double_quotes else 0x22
+        output = _UnicodeByteBuffer(len(self) + 2)
+        output.append_byte(u8(quote))
+
+        for i in range(len(self)):
+            _unicode_repr_append_codepoint(
+                output,
+                self._load_codepoint(i),
+                quote,
+            )
+
+        output.append_byte(u8(quote))
+        return str(output.data, output.length)
+
+    def __str__(self) -> str:
+        return self
+
+    def __contains__(self, sub: str) -> bool:
+        return self.find(sub) != -1
+
+    def __copy__(self) -> str:
+        return self
+
+    def __deepcopy__(self) -> str:
+        return self
+
+    def __ptrcopy__(self) -> str:
+        data = Ptr[u8](len(self) * self._width())
+        str.memcpy(data, self._ptr, len(self) * self._width())
+        return str(data, self._meta)
+
+    @staticmethod
+    def maketrans(x: dict[int, int]) -> dict[int, int]:
+        return x
+
+    @staticmethod
+    def maketrans(x: dict[int, str]) -> dict[int, str]:
+        return x
+
+    @staticmethod
+    def maketrans(x: dict[int, Optional[int]]) -> dict[int, Optional[int]]:
+        return x
+
+    @staticmethod
+    def maketrans(
+        x: dict[int, Optional[str]],
+    ) -> dict[int, Optional[str]]:
+        return x
+
+    @staticmethod
+    def maketrans(
+        x: str,
+        y: str = str(),
+        z: str = str(),
+    ) -> dict[int, int]:
+        if len(y) != 0 and len(x) != len(y):
+            raise ValueError("the first two maketrans arguments must have the same length")
+
+        table = {}
+
+        for i in range(len(x)):
+            table[x._load_codepoint(i)] = y._load_codepoint(i)
+
+        for i in range(len(z)):
+            table[z._load_codepoint(i)] = -1
+
+        return table
+
+    def translate(self, table: dict[int, int]) -> str:
+        return _unicode_translate_int_impl(self, table)
+
+    def translate(self, table: dict[int, str]) -> str:
+        return _unicode_translate_unicode_impl(self, table)
+
+    def translate(self, table: dict[int, Optional[int]]) -> str:
+        return _unicode_translate_optional_int_impl(self, table)
+
+    def translate(self, table: dict[int, Optional[str]]) -> str:
+        return _unicode_translate_optional_unicode_impl(self, table)
+
+    def lower(self) -> str:
+        if self._is_ascii():
+            return _unicode_ascii_map(self, _ascii_lower)
+        return _unicode_lower_full(self)
+
+    def upper(self) -> str:
+        if self._is_ascii():
+            return _unicode_ascii_map(self, _ascii_upper)
+        return _unicode_upper_full(self)
+
+    def casefold(self) -> str:
+        if self._is_ascii():
+            return _unicode_ascii_map(self, _ascii_casefold)
+        return _unicode_map_full(
+            self,
+            unicode_casefold_mapping_length,
+            unicode_casefold_mapping_codepoint,
+        )
+
+    def capitalize(self) -> str:
+        if self._is_ascii():
+            return _unicode_ascii_capitalize(self)
+        return _unicode_capitalize_full(self)
+
+    def title(self) -> str:
+        if self._is_ascii():
+            return _unicode_ascii_title(self)
+        return _unicode_title_full(self)
+
+    def swapcase(self) -> str:
+        if self._is_ascii():
+            return _unicode_ascii_map(self, _ascii_swapcase)
+        return _unicode_swapcase_full(self)
+
+    def removeprefix(self, prefix: str) -> str:
+        if len(prefix) > len(self) or not self.startswith(prefix):
+            return self
+
+        return _unicode_slice_impl(self, len(prefix), len(self))
+
+    def removesuffix(self, suffix: str) -> str:
+        if len(suffix) > len(self) or not self.endswith(suffix):
+            return self
+
+        return _unicode_slice_impl(self, 0, len(self) - len(suffix))
+
+    def strip(self) -> str:
+        return _unicode_strip_impl(self, True, True)
+
+    def lstrip(self) -> str:
+        return _unicode_strip_impl(self, True, False)
+
+    def rstrip(self) -> str:
+        return _unicode_strip_impl(self, False, True)
+
+    def strip(self, chars: str) -> str:
+        return _unicode_strip_chars_impl(self, chars, True, True)
+
+    def lstrip(self, chars: str) -> str:
+        return _unicode_strip_chars_impl(self, chars, True, False)
+
+    def rstrip(self, chars: str) -> str:
+        return _unicode_strip_chars_impl(self, chars, False, True)
+
+    def split(
+        self,
+        sep: Optional[str] = None,
+        maxsplit: int = -1,
+    ) -> List[str]:
+        if sep is None:
+            return _unicode_split_whitespace_impl(self, False, maxsplit)
+
+        return _unicode_split_exact_impl(self, sep, maxsplit)
+
+    def rsplit(
+        self,
+        sep: Optional[str] = None,
+        maxsplit: int = -1,
+    ) -> List[str]:
+        if sep is None:
+            return _unicode_split_whitespace_impl(self, True, maxsplit)
+
+        return _unicode_split_exact_impl(self, sep, maxsplit, True)
+
+    def splitlines(self, keepends: bool = False) -> List[str]:
+        return _unicode_splitlines_impl(self, keepends)
+
+    def join(self, values: List[str]) -> str:
+        return _unicode_join_impl(self, values)
+
+    def replace(
+        self,
+        old: str,
+        new: str,
+        count: int = -1,
+    ) -> str:
+        return _unicode_replace_impl(self, old, new, count)
+
+    def center(self, width: int) -> str:
+        if len(self) >= width:
+            return self
+
+        pad = width - len(self)
+        left = pad // 2
+        right = pad - left
+
+        result = _unicode_new_uninit(width, _unicode_maxchar(self))
+
+        for i in range(left):
+            result._store_codepoint(i, 0x20)
+
+        _unicode_copy_range(result, self, left, 0, len(self))
+
+        for i in range(right):
+            result._store_codepoint(left + len(self) + i, 0x20)
+
+        return result
+
+    def ljust(self, width: int) -> str:
+        if len(self) >= width:
+            return self
+
+        result = _unicode_new_uninit(width, _unicode_maxchar(self))
+
+        _unicode_copy_range(result, self, 0, 0, len(self))
+
+        for i in range(width - len(self)):
+            result._store_codepoint(len(self) + i, 0x20)
+
+        return result
+
+    def rjust(self, width: int) -> str:
+        if len(self) >= width:
+            return self
+
+        result = _unicode_new_uninit(width, _unicode_maxchar(self))
+
+        for i in range(width - len(self)):
+            result._store_codepoint(i, 0x20)
+
+        _unicode_copy_range(result, self, width - len(self), 0, len(self))
+
+        return result
+
+    def center(self, width: int, fillchar: str) -> str:
+        return _unicode_center_impl(self, width, fillchar)
+
+    def ljust(self, width: int, fillchar: str) -> str:
+        return _unicode_ljust_impl(self, width, fillchar)
+
+    def rjust(self, width: int, fillchar: str) -> str:
+        return _unicode_rjust_impl(self, width, fillchar)
+
+    def zfill(self, width: int) -> str:
+        if len(self) >= width:
+            return self
+
+        sign_cp = -1
+        body_start = 0
+
+        if len(self) > 0:
+            first = self._load_codepoint(0)
+            if first == 0x2B or first == 0x2D:
+                sign_cp = first
+                body_start = 1
+
+        body_len = len(self) - body_start
+
+        if body_len >= width:
+            return self
+
+        pad = width - len(self)
+
+        result = _unicode_new_uninit(width, _unicode_maxchar(self))
+
+        if sign_cp == -1:
+            for i in range(pad):
+                result._store_codepoint(i, 0x30)
+
+            _unicode_copy_range(result, self, pad, 0, len(self))
+        else:
+            result._store_codepoint(0, sign_cp)
+
+            for i in range(pad):
+                result._store_codepoint(i + 1, 0x30)
+
+            _unicode_copy_range(result, self, pad + 1, body_start, len(self))
+
+        return result
+
+    def expandtabs(self, tabsize: int = 8) -> str:
+        length = len(self)
+        col = 0
+
+        for i in range(len(self)):
+            cp = self._load_codepoint(i)
+
+            if cp == 0x09:
+                spaces = 0
+                if tabsize > 0:
+                    spaces = tabsize - (col % tabsize)
+
+                length += spaces - 1
+                col += spaces
+            elif cp == 0x0A or cp == 0x0D:
+                col = 0
+            else:
+                col += 1
+
+        result = _unicode_new_uninit(length, _unicode_maxchar(self))
+        out = 0
+        col = 0
+
+        for i in range(len(self)):
+            cp = self._load_codepoint(i)
+
+            if cp == 0x09:
+                spaces = 0
+                if tabsize > 0:
+                    spaces = tabsize - (col % tabsize)
+
+                for j in range(spaces):
+                    result._store_codepoint(out + j, 0x20)
+
+                out += spaces
+                col += spaces
+            else:
+                result._store_codepoint(out, cp)
+                out += 1
+
+                if cp == 0x0A or cp == 0x0D:
+                    col = 0
+                else:
+                    col += 1
+
+        return result
+
+    def __hash__(self) -> int:
+        h = u64(0x9e3779b97f4a7c15)
+
+        for i in range(len(self)):
+            h = (h * u64(1000003)) ^ u64(self._load_codepoint(i))
+
+        h ^= u64(len(self))
+        return int(h)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
 
     def isalnum(self) -> bool:
         if len(self) == 0:
             return False
 
         for i in range(len(self)):
-            if not str._isalnum(self._ptr[i]):
+            cp = self._load_codepoint(i)
+            if not (unicode_is_alpha(cp) or unicode_is_numeric(cp)):
                 return False
+
         return True
 
     def isalpha(self) -> bool:
@@ -270,8 +1960,19 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isalpha(self._ptr[i]):
+            if not unicode_is_alpha(self._load_codepoint(i)):
                 return False
+
+        return True
+
+    def isdigit(self) -> bool:
+        if len(self) == 0:
+            return False
+
+        for i in range(len(self)):
+            if not unicode_is_digit(self._load_codepoint(i)):
+                return False
+
         return True
 
     def isspace(self) -> bool:
@@ -279,945 +1980,2235 @@ class str:
             return False
 
         for i in range(len(self)):
-            if not str._isspace(self._ptr[i]):
+            if not unicode_is_space(self._load_codepoint(i)):
                 return False
+
         return True
 
-    def istitle(self) -> bool:
+    def isascii(self) -> bool:
+        if self._kind() != KIND_ASCII:
+            for i in range(len(self)):
+                if self._load_codepoint(i) > 0x7F:
+                    return False
+        return True
 
-        # For empty strings
+    def islower(self) -> bool:
+        has_cased = False
+
+        for i in range(len(self)):
+            cp = self._load_codepoint(i)
+
+            if unicode_is_cased(cp):
+                if not unicode_is_lower(cp):
+                    return False
+                has_cased = True
+
+        return has_cased
+
+    def isupper(self) -> bool:
+        has_cased = False
+
+        for i in range(len(self)):
+            cp = self._load_codepoint(i)
+
+            if unicode_is_cased(cp):
+                if not unicode_is_upper(cp):
+                    return False
+                has_cased = True
+
+        return has_cased
+
+    def istitle(self) -> bool:
+        has_cased = False
+        previous_is_cased = False
+
+        for i in range(len(self)):
+            cp = self._load_codepoint(i)
+
+            if unicode_is_upper(cp) or unicode_is_title(cp):
+                if previous_is_cased:
+                    return False
+                has_cased = True
+                previous_is_cased = True
+            elif unicode_is_lower(cp):
+                if not previous_is_cased:
+                    return False
+                has_cased = True
+                previous_is_cased = True
+            elif not unicode_is_case_ignorable(cp):
+                previous_is_cased = False
+
+        return has_cased
+
+    def isnumeric(self) -> bool:
         if len(self) == 0:
             return False
 
-        # For single character strings
-        if len(self) == 1:
-            return str._isupper(self._ptr[0])
-
-        cased = False
-        prev_is_cased = False
         for i in range(len(self)):
-            if str._isupper(self._ptr[i]):
-                if prev_is_cased:
-                    return False
-                prev_is_cased = True
-                cased = True
-            elif str._islower(self._ptr[i]):
-                if not prev_is_cased:
-                    return False
-                prev_is_cased = True
-                cased = True
-            else:
-                prev_is_cased = False
-        return cased
+            if not unicode_is_numeric(self._load_codepoint(i)):
+                return False
 
-    def capitalize(self) -> str:
-        n = len(self)
-        if n > 0:
-            p = Ptr[u8](n)
-            p[0] = str._toupper(self._ptr[0])
-            for i in range(1, n):
-                p[i] = str._tolower(self._ptr[i])
-            return str(p, n)
-        return ""
+        return True
 
     def isdecimal(self) -> bool:
         if len(self) == 0:
             return False
 
         for i in range(len(self)):
-            # test ascii values 48-57 == 0-9
-            if not (48 <= int(self._ptr[i]) <= 57):
+            if not unicode_is_decimal(self._load_codepoint(i)):
                 return False
-        return True
-
-    def lower(self) -> str:
-        # Empty string
-        n = len(self)
-        if n == 0:
-            return ""
-        p = Ptr[u8](n)
-        for i in range(n):
-            p[i] = str._tolower(self._ptr[i])
-        return str(p, n)
-
-    def upper(self) -> str:
-        # Empty string
-        n = len(self)
-        if n == 0:
-            return ""
-        p = Ptr[u8](n)
-        for i in range(n):
-            p[i] = str._toupper(self._ptr[i])
-        return str(p, n)
-
-    def isascii(self) -> bool:
-        for i in range(len(self)):
-            if int(self._ptr[i]) >= 128:
-                return False
-        return True
-
-    def casefold(self) -> str:
-        return self.lower()
-
-    def swapcase(self) -> str:
-        # Empty string
-        n = len(self)
-        if n == 0:
-            return ""
-        p = Ptr[u8](n)
-        for i in range(n):
-            if str._islower(self._ptr[i]):
-                p[i] = str._toupper(self._ptr[i])
-            elif str._isupper(self._ptr[i]):
-                p[i] = str._tolower(self._ptr[i])
-            else:
-                p[i] = self._ptr[i]
-        return str(p, n)
-
-    def title(self) -> str:
-        prev_is_cased = False
-
-        n = len(self)
-        if n == 0:
-            return ""
-
-        p = Ptr[u8](n)
-        for i in range(n):
-            if str._islower(self._ptr[i]):
-                # lowercase to uppercase
-                if not prev_is_cased:
-                    p[i] = str._toupper(self._ptr[i])
-                else:
-                    p[i] = self._ptr[i]
-                prev_is_cased = True
-            elif str._isupper(self._ptr[i]):
-                # uppercase to lowercase
-                if prev_is_cased:
-                    p[i] = str._tolower(self._ptr[i])
-                else:
-                    p[i] = self._ptr[i]
-                prev_is_cased = True
-            else:
-                p[i] = self._ptr[i]
-                prev_is_cased = False
-        return str(p, n)
-
-    def isnumeric(self) -> bool:
-        return self.isdecimal()
-
-    def _build(*args):
-        total = 0
-        for t in args:
-            if isinstance(t, str):
-                total += len(t)
-            else:
-                total += len(t[0]) * t[1]
-        p = Ptr[u8](total)
-        i = 0
-
-        for t in args:
-            if isinstance(t, str):
-                str.memcpy(p + i, t._ptr, t._len)
-                i += t._len
-            else:
-                s, n = t
-                for _ in range(n):
-                    str.memcpy(p + i, s._ptr, s._len)
-                    i += s._len
-
-        return str(p, total)
-
-    def ljust(self, width: int, fillchar: str = " ") -> str:
-        if len(fillchar) != 1:
-            raise ValueError("The fill character must be exactly one character long")
-        if width <= len(self):
-            return self
-        return str._build(self, (fillchar, width - len(self)))
-
-    def rjust(self, width: int, fillchar: str = " ") -> str:
-        if len(fillchar) != 1:
-            raise ValueError("The fill character must be exactly one character long")
-        if width <= len(self):
-            return self
-        return str._build((fillchar, width - len(self)), self)
-
-    def center(self, width: int, fillchar: str = " ") -> str:
-        if len(fillchar) != 1:
-            raise ValueError("The fill character must be exactly one character long")
-        if width <= len(self):
-            return self
-
-        pad = width - len(self)
-        left_pad = pad.cdiv(2)
-        right_pad = width - len(self) - left_pad
-        return str._build((fillchar, left_pad), self, (fillchar, right_pad))
-
-    def zfill(self, width: int) -> str:
-        if len(self) >= width:
-            return self
-
-        plus = u8(43)   # +
-        minus = u8(45)  # -
-        zero = u8(48)   # 0
-
-        zf = self.rjust(width, '0')
-        fill = width - len(self)
-        p = zf._ptr
-
-        if len(self) > 0 and (p[fill] == plus or p[fill] == minus):
-            p[0] = p[fill]
-            p[fill] = zero
-
-        return zf
-
-    def count(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        end: int = end if end is not None else len(self)
-        start, end = self._correct_indices(start, end)
-        if end - start < len(sub):
-            return 0
-        return algorithms.count(self._slice(start, end), sub)
-
-    def find(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        end: int = end if end is not None else len(self)
-        start, end = self._correct_indices(start, end)
-        if end - start < len(sub):
-            return -1
-        pos = algorithms.find(self._slice(start, end), sub)
-        return pos if pos < 0 else pos + start
-
-    def rfind(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        end: int = end if end is not None else len(self)
-        start, end = self._correct_indices(start, end)
-        if end - start < len(sub):
-            return -1
-        pos = algorithms.rfind(self._slice(start, end), sub)
-        return pos if pos < 0 else pos + start
-
-    def isidentifier(self) -> bool:
-        # empty string
-        if len(self) == 0:
-            return False
-
-        # is not a letter or _
-        first = self._at(0)
-        if not first.isalpha():
-            if first != "_":
-                return False
-
-        if first.isalpha() or first == "_":
-            for i in range(1, len(self)):
-                ith = self._at(i)
-                if not ith.isalpha():
-                    if not ith.isdecimal():
-                        if ith != "_":
-                            return False
 
         return True
 
     def isprintable(self) -> bool:
         for i in range(len(self)):
-            if not (31 < int(self._ptr[i]) < 128):
+            cp = self._load_codepoint(i)
+            if not unicode_is_printable(cp):
                 return False
+
         return True
 
-    def _has_char(self, chars: str) -> bool:
-        s = self._at(0)
-        if chars:
-            for c in chars:
-                if s == c:
-                    return True
+    def isidentifier(self) -> bool:
+        if len(self) == 0:
             return False
-        else:
-            return s.isspace()
 
-    def lstrip(self, chars: str = "") -> str:
-        i = 0
-        while i < len(self) and self._at(i)._has_char(chars):
-            i += 1
-        return self._slice(i, len(self))
+        first = self._load_codepoint(0)
+        if first != 0x5F and not unicode_is_xid_start(first):
+            return False
 
-    def rstrip(self, chars: str = "") -> str:
-        i = len(self) - 1
-        while i >= 0 and self._at(i)._has_char(chars):
-            i -= 1
-        return self._slice(0, i + 1)
+        for i in range(1, len(self)):
+            if not unicode_is_xid_continue(self._load_codepoint(i)):
+                return False
 
-    def strip(self, chars: str = "") -> str:
-        return self.lstrip(chars).rstrip(chars)
+        return True
 
     def partition(self, sep: str) -> Tuple[str, str, str]:
-        if not sep:
-            raise ValueError("empty separator")
-        pos = algorithms.find(self, sep)
-        if pos < 0:
-            return self, "", ""
-        return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
-
-    def rpartition(self, sep: str) -> Tuple[str, str, str]: # XXX
-        if not sep:
-            raise ValueError("empty separator")
-        pos = algorithms.rfind(self, sep)
-        if pos < 0:
-            return "", "", self
-        return self._slice(0, pos), sep, self._slice(pos + len(sep), len(self))
-
-    def split(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
-        if sep is None:
-            return self._split_whitespace(
-                maxsplit if maxsplit >= 0 else _MAX
-            )
-        sep: str = sep
-
         if len(sep) == 0:
             raise ValueError("empty separator")
 
-        # special case for length-1 pattern
-        if len(sep) == 1:
-            return self._split_char(sep._ptr[0], maxsplit if maxsplit >= 0 else _MAX)
+        pos = self.find(sep)
 
-        MAX_PREALLOC = 12
-        maxsplit = maxsplit if maxsplit >= 0 else _MAX
-        prealloc_size = MAX_PREALLOC if maxsplit >= MAX_PREALLOC else maxsplit + 1
-        v = List[str](capacity=prealloc_size)
-        i = 0
-        j = 0
-        n = len(self)
+        if pos == -1:
+            return (self, str(), str())
 
-        while maxsplit > 0:
-            maxsplit -= 1
-            pos = algorithms.find(self._slice(i, n), sep)
-            if pos < 0:
-                break
-            j = i + pos
-            v.append(self._slice(i, j))
-            i = j + len(sep)
+        return (
+            _unicode_slice_impl(self, 0, pos),
+            sep,
+            _unicode_slice_impl(self, pos + len(sep), len(self)),
+        )
 
-        v.append(self._slice(i, n))
-        return v
-
-    def rsplit(self, sep: Optional[str] = None, maxsplit: int = -1) -> List[str]:
-        if sep is None:
-            return self._rsplit_whitespace(
-                maxsplit if maxsplit >= 0 else _MAX
-            )
-        sep: str = sep
-
+    def rpartition(self, sep: str) -> Tuple[str, str, str]:
         if len(sep) == 0:
             raise ValueError("empty separator")
 
-        # special case for length-1 pattern
-        if len(sep) == 1:
-            return self._rsplit_char(sep._ptr[0], maxsplit if maxsplit >= 0 else _MAX)
+        pos = self.rfind(sep)
 
-        MAX_PREALLOC = 12
-        maxsplit = maxsplit if maxsplit >= 0 else _MAX
-        prealloc_size = MAX_PREALLOC if maxsplit >= MAX_PREALLOC else maxsplit + 1
-        v = List[str](capacity=prealloc_size)
-        i = 0
-        j = len(self)
-        n = j
+        if pos == -1:
+            return (str(), str(), self)
 
-        while maxsplit > 0:
-            maxsplit -= 1
-            pos = algorithms.rfind(self._slice(0, j), sep)
-            if pos < 0:
-                break
-            v.append(self._slice(pos + len(sep), j))
-            j = pos
+        return (
+            _unicode_slice_impl(self, 0, pos),
+            sep,
+            _unicode_slice_impl(self, pos + len(sep), len(self)),
+        )
 
-        v.append(self._slice(0, j))
-        v.reverse()
-        return v
 
-    def splitlines(self, keepends: bool = False) -> List[str]:
-        v = []
-        i = 0
-        j = 0
-        n = len(self)
+    def cat(*args) -> str:
+        total = 0
+        maxchar = 0
 
-        break_r = u8(13)  # \r
-        break_n = u8(10)  # \n
+        if (
+            static.len(args) == 1
+            and hasattr(args[0], "__iter__")
+            and hasattr(args[0], "__len__")
+        ):
+            for value in args[0]:
+                if not isinstance(value, str):
+                    compile_error("not a string")
+                total += len(value)
+                value_maxchar = _unicode_maxchar(value)
+                if value_maxchar > maxchar:
+                    maxchar = value_maxchar
 
-        while i < n:
-            while i < n and not (self._ptr[i] == break_r or self._ptr[i] == break_n):
-                i += 1
+            result = _unicode_new_uninit(total, maxchar)
+            output = 0
 
-            eol = i
-            if i < n:
-                if self._ptr[i] == break_r and i + 1 < n and self._ptr[i + 1] == break_n:
-                    i += 2
-                else:
-                    i += 1
-                if keepends:
-                    eol = i
+            for value in args[0]:
+                _unicode_copy_range(result, value, output, 0, len(value))
+                output += len(value)
 
-            if j == 0 and eol == n:
-                v.append(self)
-                break
+            return result
+        elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
+            capacity = 10
+            data = Ptr[u8](capacity)
+            kind = KIND_ASCII
 
-            v.append(self._slice(j, eol))
-            j = i
+            for value in args[0]:
+                if not isinstance(value, str):
+                    compile_error("not a string")
 
-        return v
+                required = total + len(value)
+                width = _kind_width(kind)
+                value_width = value._width()
 
-    def startswith(
-        self, prefix: str, start: int = 0, end: Optional[int] = None
-    ) -> bool:
-        end: int = end if end is not None else len(self)
-        if end < 0:
-            end += len(self)
-        elif start < 0:
-            start += len(self)
+                if required > capacity or value_width > width:
+                    if required > capacity:
+                        capacity = 1 + 3 * required.cdiv(2)
 
-        # length prefix is longer than range of string being compared to
-        if start + len(prefix) > len(self):
-            return False
+                    new_kind = kind
+                    if value_width > width:
+                        new_kind = value._kind()
 
-        # length of prefix is longer than range of string[start:end]
-        if end - start < len(prefix):
-            return False
+                    expanded = Ptr[u8](
+                        capacity * _kind_width(new_kind)
+                    )
 
-        # prefix is an empty string
-        if not prefix:
-            return True
+                    if new_kind == kind:
+                        str.memcpy(
+                            expanded,
+                            data,
+                            total * width,
+                        )
+                    else:
+                        source = str(data, _make_meta(total, kind))
+                        destination = str(
+                            expanded,
+                            _make_meta(capacity, new_kind),
+                        )
+                        _unicode_copy_range(
+                            destination,
+                            source,
+                            0,
+                            0,
+                            total,
+                        )
 
-        return prefix == self._slice(start, start + len(prefix))
+                    data = expanded
+                    kind = new_kind
 
-    def endswith(self, suffix: str, start: int = 0, end: Optional[int] = None) -> bool:
-        end: int = end if end is not None else len(self)
-        if end < 0:
-            end += len(self)
-        elif start < 0:
-            start += len(self)
-        if end > len(self):
-            end = len(self)
+                buffer = str(data, _make_meta(capacity, kind))
+                _unicode_copy_range(buffer, value, total, 0, len(value))
 
-        # length prefix is longer than range of string being compared to
-        if end - start < len(suffix) or start > len(self):
-            return False
+                total = required
+                value_maxchar = _unicode_maxchar(value)
+                if value_maxchar > maxchar:
+                    maxchar = value_maxchar
 
-        if end - len(suffix) > start:
-            start = end - len(suffix)
+            result = _unicode_new_uninit(total, maxchar)
+            for i in range(total):
+                result._store_codepoint(i, int(data[i]))
 
-        # length of prefix is longer than range of string[start:end]
-        if end - start < len(suffix):
-            return False
-
-        # prefix is an empty string
-        if not suffix:
-            return True
-
-        return suffix == self._slice(start, start + len(suffix))
-
-    def index(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        i = self.find(sub, start, end)
-        if i == -1:
-            raise ValueError("substring not found")
+            return result
         else:
-            return i
+            for i in static.range(static.len(args)):
+                value = args[i]
+                if not isinstance(value, str):
+                    compile_error("not a string")
+                total += len(value)
+                value_maxchar = _unicode_maxchar(value)
+                if value_maxchar > maxchar:
+                    maxchar = value_maxchar
 
-    def rindex(self, sub: str, start: int = 0, end: Optional[int] = None) -> int:
-        i = self.rfind(sub, start, end)
-        if i == -1:
-            raise ValueError("substring not found")
+            result = _unicode_new_uninit(total, maxchar)
+            output = 0
+
+            for i in static.range(static.len(args)):
+                value = args[i]
+                _unicode_copy_range(result, value, output, 0, len(value))
+                output += len(value)
+
+            return result
+
+    @llvm
+    def memcpy(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
+        declare void @llvm.memcpy.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memcpy.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    @llvm
+    def memmove(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
+        declare void @llvm.memmove.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memmove.p0i8.p0i8.i64(ptr %dest, ptr %src, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    @llvm
+    def memset(dest: Ptr[u8], val: u8, len: int) -> None:
+        declare void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 %align, i1 %isvolatile)
+        call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
+        ret {} {}
+
+    def __prefix_b__(s: str, N: Literal[int]):
+        # TODO: return bytes
+        return s
+
+
+def _unicode_new_uninit(length: int, maxchar: int) -> str:
+    if length < 0:
+        raise ValueError("negative length")
+
+    if length > LEN_MASK:
+        raise ValueError("string too large")
+
+    if maxchar < 0 or maxchar > UNICODE_MAX:
+        raise ValueError("invalid code point")
+
+    kind = _kind_for_maxchar(maxchar)
+    width = _kind_width(kind)
+
+    return str(
+        Ptr[u8](length * width),
+        _make_meta(length, kind),
+    )
+
+
+def _unicode_from_codepoint(cp: int) -> str:
+    if cp < 0 or cp > UNICODE_MAX:
+        raise ValueError("invalid code point")
+
+    result = _unicode_new_uninit(1, cp)
+    result._store_codepoint(0, cp)
+
+    return result
+
+
+def _unicode_maxchar(value: str) -> int:
+    kind = value._kind()
+
+    if kind == KIND_ASCII:
+        return 0x7F
+    if kind == KIND_LATIN1:
+        return 0xFF
+    if kind == KIND_UCS2:
+        return 0xFFFF
+    return UNICODE_MAX
+
+
+def _unicode_starts_at(
+    value: str,
+    sub: str,
+    pos: int,
+) -> bool:
+    n = len(sub)
+
+    if pos < 0 or pos + n > len(value):
+        return False
+
+    for i in range(n):
+        if value._load_codepoint(pos + i) != sub._load_codepoint(i):
+            return False
+
+    return True
+
+
+def _unicode_compare_typed(
+    left: Ptr[Char],
+    right: Ptr[Char],
+    limit: int,
+    Char: type,
+) -> int:
+    for i in range(limit):
+        if left[i] < right[i]:
+            return -1
+        if left[i] > right[i]:
+            return 1
+
+    return 0
+
+
+def _unicode_compare(left: str, right: str) -> int:
+    left_length = len(left)
+    right_length = len(right)
+    limit = left_length if left_length < right_length else right_length
+    comparison = 0
+
+    if left._kind() <= KIND_LATIN1 and right._kind() <= KIND_LATIN1:
+        comparison = _unicode_compare_typed(left._ptr, right._ptr, limit)
+    elif left._kind() == KIND_UCS2 and right._kind() == KIND_UCS2:
+        comparison = _unicode_compare_typed(
+            Ptr[u16](left._ptr), Ptr[u16](right._ptr), limit
+        )
+    elif left._kind() == KIND_UCS4 and right._kind() == KIND_UCS4:
+        comparison = _unicode_compare_typed(
+            Ptr[u32](left._ptr), Ptr[u32](right._ptr), limit
+        )
+    else:
+        for i in range(limit):
+            left_codepoint = left._load_codepoint(i)
+            right_codepoint = right._load_codepoint(i)
+
+            if left_codepoint < right_codepoint:
+                return -1
+            if left_codepoint > right_codepoint:
+                return 1
+
+    if comparison != 0:
+        return comparison
+
+    if left_length < right_length:
+        return -1
+    if left_length > right_length:
+        return 1
+    return 0
+
+
+def _unicode_search_bloom_add(bloom: u64, codepoint: int) -> u64:
+    return bloom | (u64(1) << u64(codepoint & 63))
+
+
+def _unicode_search_bloom_contains(bloom: u64, codepoint: int) -> bool:
+    return (bloom & (u64(1) << u64(codepoint & 63))) != 0
+
+
+def _unicode_coerce_kind(value: str, kind: int) -> Optional[str]:
+    if value._kind() == kind:
+        return value
+
+    maxchar = 0xFF
+    if kind == KIND_ASCII:
+        maxchar = 0x7F
+    elif kind == KIND_UCS2:
+        maxchar = 0xFFFF
+    elif kind == KIND_UCS4:
+        maxchar = UNICODE_MAX
+
+    for i in range(len(value)):
+        if value._load_codepoint(i) > maxchar:
+            return None
+
+    result = str(
+        Ptr[u8](len(value) * _kind_width(kind)),
+        _make_meta(len(value), kind),
+    )
+
+    for i in range(len(value)):
+        result._store_codepoint(i, value._load_codepoint(i))
+
+    return result
+
+
+def _unicode_starts_at_typed(
+    value: Ptr[Char],
+    sub: Ptr[Char],
+    sub_length: int,
+    pos: int,
+    Char: type,
+) -> bool:
+    for i in range(sub_length):
+        if value[pos + i] != sub[i]:
+            return False
+    return True
+
+
+def _unicode_fastsearch_typed(
+    value: Ptr[Char],
+    value_length: int,
+    sub: Ptr[Char],
+    sub_length: int,
+    start: int,
+    end: int,
+    Char: type,
+) -> int:
+    needle_length = sub_length
+    if needle_length == 1:
+        needle = sub[0]
+        for position in range(start, end):
+            if value[position] == needle:
+                return position
+        return -1
+
+    bloom = u64(0)
+    for index in range(needle_length):
+        bloom = _unicode_search_bloom_add(bloom, int(sub[index]))
+
+    last = needle_length - 1
+    tail = sub[last]
+    limit = end - needle_length
+    position = start
+    attempts = 0
+
+    while position <= limit:
+        candidate_tail = value[position + last]
+        if candidate_tail == tail and _unicode_starts_at_typed(
+            value, sub, needle_length, position
+        ):
+            return position
+
+        attempts += 1
+        if attempts > needle_length and position + needle_length <= limit:
+            return _unicode_fastsearch_kmp_typed(
+                value, sub, needle_length, position + 1, end
+            )
+
+        if _unicode_search_bloom_contains(bloom, int(candidate_tail)):
+            position += 1
         else:
-            return i
+            position += needle_length
 
-    def replace(self, old: str, new: str, maxcount: int = -1) -> str:
-        return self._replace(old, new, maxcount)
+    return -1
 
-    def expandtabs(self, tabsize: int = 8) -> str:
+
+def _unicode_fastsearch_kmp_typed(
+    value: Ptr[Char],
+    sub: Ptr[Char],
+    sub_length: int,
+    start: int,
+    end: int,
+    Char: type,
+) -> int:
+    needle_length = sub_length
+    prefix = Ptr[int](needle_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, needle_length):
+        while matched > 0 and sub[index] != sub[matched]:
+            matched = prefix[matched - 1]
+        if sub[index] == sub[matched]:
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for position in range(start, end):
+        while matched > 0 and value[position] != sub[matched]:
+            matched = prefix[matched - 1]
+        if value[position] == sub[matched]:
+            matched += 1
+            if matched == needle_length:
+                result = position - needle_length + 1
+                gc.free(prefix.as_byte())
+                return result
+
+    gc.free(prefix.as_byte())
+    return -1
+
+
+def _unicode_fastsearch_reverse_typed(
+    value: Ptr[Char],
+    sub: Ptr[Char],
+    sub_length: int,
+    start: int,
+    end: int,
+    Char: type,
+) -> int:
+    needle_length = sub_length
+    if needle_length == 1:
+        needle = sub[0]
+        for position in range(end - 1, start - 1, -1):
+            if value[position] == needle:
+                return position
+        return -1
+
+    bloom = u64(0)
+    for index in range(needle_length):
+        bloom = _unicode_search_bloom_add(bloom, int(sub[index]))
+
+    first = sub[0]
+    position = end - needle_length
+    attempts = 0
+
+    while position >= start:
+        candidate_first = value[position]
+        if candidate_first == first and _unicode_starts_at_typed(
+            value, sub, needle_length, position
+        ):
+            return position
+
+        attempts += 1
+        if attempts > needle_length and position - needle_length >= start:
+            return _unicode_fastsearch_reverse_kmp_typed(
+                value, sub, needle_length, start, position + needle_length - 2
+            )
+
+        if _unicode_search_bloom_contains(bloom, int(candidate_first)):
+            position -= 1
+        else:
+            position -= needle_length
+
+    return -1
+
+
+def _unicode_fastsearch_reverse_kmp_typed(
+    value: Ptr[Char],
+    sub: Ptr[Char],
+    sub_length: int,
+    start: int,
+    end: int,
+    Char: type,
+) -> int:
+    needle_length = sub_length
+    prefix = Ptr[int](needle_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, needle_length):
+        while (
+            matched > 0
+            and sub[needle_length - 1 - index]
+                != sub[needle_length - 1 - matched]
+        ):
+            matched = prefix[matched - 1]
+        if (
+            sub[needle_length - 1 - index]
+            == sub[needle_length - 1 - matched]
+        ):
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for position in range(end, start - 1, -1):
+        while (
+            matched > 0
+            and value[position]
+                != sub[needle_length - 1 - matched]
+        ):
+            matched = prefix[matched - 1]
+        if value[position] == sub[needle_length - 1 - matched]:
+            matched += 1
+            if matched == needle_length:
+                gc.free(prefix.as_byte())
+                return position
+
+    gc.free(prefix.as_byte())
+    return -1
+
+
+def _unicode_count_kmp_typed(
+    value: Ptr[Char],
+    sub: Ptr[Char],
+    sub_length: int,
+    start: int,
+    end: int,
+    Char: type,
+) -> int:
+    if sub_length == 1:
+        total = 0
+        needle = sub[0]
+        for position in range(start, end):
+            if value[position] == needle:
+                total += 1
+        return total
+
+    prefix = Ptr[int](sub_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, sub_length):
+        while matched > 0 and sub[index] != sub[matched]:
+            matched = prefix[matched - 1]
+        if sub[index] == sub[matched]:
+            matched += 1
+        prefix[index] = matched
+
+    total = 0
+    matched = 0
+    for position in range(start, end):
+        while matched > 0 and value[position] != sub[matched]:
+            matched = prefix[matched - 1]
+        if value[position] == sub[matched]:
+            matched += 1
+            if matched == sub_length:
+                total += 1
+                matched = 0
+
+    gc.free(prefix.as_byte())
+    return total
+
+
+def _unicode_count_typed(
+    value: Ptr[Char],
+    sub: Ptr[Char],
+    sub_length: int,
+    start: int,
+    end: int,
+    Char: type,
+) -> int:
+    if sub_length == 1:
+        total = 0
+        needle = sub[0]
+        for position in range(start, end):
+            if value[position] == needle:
+                total += 1
+        return total
+
+    bloom = u64(0)
+    for index in range(sub_length):
+        bloom = _unicode_search_bloom_add(bloom, int(sub[index]))
+
+    last = sub_length - 1
+    tail = sub[last]
+    limit = end - sub_length
+    position = start
+    attempts = 0
+    total = 0
+
+    while position <= limit:
+        candidate_tail = value[position + last]
+        if candidate_tail == tail and _unicode_starts_at_typed(
+            value, sub, sub_length, position
+        ):
+            total += 1
+            position += sub_length
+            attempts = 0
+            continue
+
+        attempts += 1
+        if attempts > sub_length and position + sub_length <= limit:
+            return total + _unicode_count_kmp_typed(
+                value, sub, sub_length, position, end
+            )
+
+        if _unicode_search_bloom_contains(bloom, int(candidate_tail)):
+            position += 1
+        else:
+            position += sub_length
+
+    return total
+
+
+def _unicode_count_kmp(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+) -> int:
+    sub_length = len(sub)
+    if sub_length == 1:
+        total = 0
+        needle = sub._load_codepoint(0)
+        for position in range(start, end):
+            if value._load_codepoint(position) == needle:
+                total += 1
+        return total
+
+    prefix = Ptr[int](sub_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, sub_length):
+        while (
+            matched > 0
+            and sub._load_codepoint(index) != sub._load_codepoint(matched)
+        ):
+            matched = prefix[matched - 1]
+        if sub._load_codepoint(index) == sub._load_codepoint(matched):
+            matched += 1
+        prefix[index] = matched
+
+    total = 0
+    matched = 0
+    for position in range(start, end):
+        while (
+            matched > 0
+            and value._load_codepoint(position) != sub._load_codepoint(matched)
+        ):
+            matched = prefix[matched - 1]
+        if value._load_codepoint(position) == sub._load_codepoint(matched):
+            matched += 1
+            if matched == sub_length:
+                total += 1
+                matched = 0
+
+    gc.free(prefix.as_byte())
+    return total
+
+
+def _unicode_count(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+) -> int:
+    if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
+        return _unicode_count_typed(value._ptr, sub._ptr, len(sub), start, end)
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
+        return _unicode_count_typed(
+            Ptr[u16](value._ptr), Ptr[u16](sub._ptr), len(sub), start, end
+        )
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
+        return _unicode_count_typed(
+            Ptr[u32](value._ptr), Ptr[u32](sub._ptr), len(sub), start, end
+        )
+
+    sub_length = len(sub)
+    if sub_length == 1:
+        total = 0
+        needle = sub._load_codepoint(0)
+        for position in range(start, end):
+            if value._load_codepoint(position) == needle:
+                total += 1
+        return total
+
+    bloom = u64(0)
+    for index in range(sub_length):
+        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
+
+    last = sub_length - 1
+    tail = sub._load_codepoint(last)
+    limit = end - sub_length
+    position = start
+    attempts = 0
+    total = 0
+
+    while position <= limit:
+        candidate_tail = value._load_codepoint(position + last)
+        if candidate_tail == tail and _unicode_starts_at(value, sub, position):
+            total += 1
+            position += sub_length
+            attempts = 0
+            continue
+
+        attempts += 1
+        if attempts > sub_length and position + sub_length <= limit:
+            return total + _unicode_count_kmp(value, sub, position, end)
+
+        if _unicode_search_bloom_contains(bloom, candidate_tail):
+            position += 1
+        else:
+            position += sub_length
+
+    return total
+
+
+def _unicode_fastsearch(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+) -> int:
+    if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
+        position = string_algorithms.forward_find(
+            value._ptr + start, end - start, sub._ptr, len(sub)
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
+        position = string_algorithms.forward_find_u16(
+            Ptr[u16](value._ptr) + start,
+            end - start,
+            Ptr[u16](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
+        position = string_algorithms.forward_find_u32(
+            Ptr[u32](value._ptr) + start,
+            end - start,
+            Ptr[u32](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+
+    needle_length = len(sub)
+    if needle_length == 1:
+        needle = sub._load_codepoint(0)
+        for position in range(start, end):
+            if value._load_codepoint(position) == needle:
+                return position
+        return -1
+
+    bloom = u64(0)
+    for index in range(needle_length):
+        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
+
+    last = needle_length - 1
+    tail = sub._load_codepoint(last)
+    limit = end - needle_length
+    position = start
+    attempts = 0
+
+    while position <= limit:
+        candidate_tail = value._load_codepoint(position + last)
+        if candidate_tail == tail and _unicode_starts_at(value, sub, position):
+            return position
+
+        attempts += 1
+        if attempts > needle_length and position + needle_length <= limit:
+            return _unicode_fastsearch_kmp(value, sub, position + 1, end)
+
+        if _unicode_search_bloom_contains(bloom, candidate_tail):
+            position += 1
+        else:
+            position += needle_length
+
+    return -1
+
+
+def _unicode_fastsearch_reverse(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+) -> int:
+    if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
+        position = string_algorithms.backward_find(
+            value._ptr + start, end - start, sub._ptr, len(sub)
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
+        position = string_algorithms.backward_find_u16(
+            Ptr[u16](value._ptr) + start,
+            end - start,
+            Ptr[u16](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
+        position = string_algorithms.backward_find_u32(
+            Ptr[u32](value._ptr) + start,
+            end - start,
+            Ptr[u32](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+
+    needle_length = len(sub)
+    if needle_length == 1:
+        needle = sub._load_codepoint(0)
+        for position in range(end - 1, start - 1, -1):
+            if value._load_codepoint(position) == needle:
+                return position
+        return -1
+
+    bloom = u64(0)
+    for index in range(needle_length):
+        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
+
+    first = sub._load_codepoint(0)
+    position = end - needle_length
+    attempts = 0
+
+    while position >= start:
+        candidate_first = value._load_codepoint(position)
+        if candidate_first == first and _unicode_starts_at(value, sub, position):
+            return position
+
+        attempts += 1
+        if attempts > needle_length and position - needle_length >= start:
+            return _unicode_fastsearch_reverse_kmp(
+                value, sub, start, position + needle_length - 2
+            )
+
+        if _unicode_search_bloom_contains(bloom, candidate_first):
+            position -= 1
+        else:
+            position -= needle_length
+
+    return -1
+
+
+def _unicode_fastsearch_kmp(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+) -> int:
+    needle_length = len(sub)
+    prefix = Ptr[int](needle_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, needle_length):
+        while matched > 0 and sub._load_codepoint(index) != sub._load_codepoint(matched):
+            matched = prefix[matched - 1]
+        if sub._load_codepoint(index) == sub._load_codepoint(matched):
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for position in range(start, end):
+        while matched > 0 and value._load_codepoint(position) != sub._load_codepoint(matched):
+            matched = prefix[matched - 1]
+        if value._load_codepoint(position) == sub._load_codepoint(matched):
+            matched += 1
+            if matched == needle_length:
+                result = position - needle_length + 1
+                gc.free(prefix.as_byte())
+                return result
+
+    gc.free(prefix.as_byte())
+    return -1
+
+
+def _unicode_fastsearch_reverse_kmp(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+) -> int:
+    needle_length = len(sub)
+    prefix = Ptr[int](needle_length)
+    prefix[0] = 0
+    matched = 0
+
+    for index in range(1, needle_length):
+        while (
+            matched > 0
+            and sub._load_codepoint(needle_length - 1 - index)
+                != sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched = prefix[matched - 1]
+        if (
+            sub._load_codepoint(needle_length - 1 - index)
+            == sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched += 1
+        prefix[index] = matched
+
+    matched = 0
+    for position in range(end, start - 1, -1):
+        while (
+            matched > 0
+            and value._load_codepoint(position)
+                != sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched = prefix[matched - 1]
+        if (
+            value._load_codepoint(position)
+            == sub._load_codepoint(needle_length - 1 - matched)
+        ):
+            matched += 1
+            if matched == needle_length:
+                gc.free(prefix.as_byte())
+                return position
+
+    gc.free(prefix.as_byte())
+    return -1
+
+
+def _unicode_copy_range(
+    dst: str,
+    src: str,
+    dst_offset: int,
+    src_start: int,
+    src_end: int,
+) -> None:
+    length = src_end - src_start
+
+    if length <= 0:
+        return
+
+    src_width = src._width()
+    dst_width = dst._width()
+
+    if src_width == dst_width:
+        nbytes = length * src_width
+        str.memcpy(
+            dst._ptr + dst_offset * dst_width,
+            src._ptr + src_start * src_width,
+            nbytes,
+        )
+        return
+
+    for i in range(length):
+        dst._store_codepoint(dst_offset + i, src._load_codepoint(src_start + i))
+
+
+def _unicode_slice_impl(
+    value: str,
+    start: int,
+    end: int,
+) -> str:
+    if start >= end:
+        return str()
+
+    return str(
+        value._ptr + start * value._width(),
+        _make_meta(end - start, value._kind()),
+    )
+
+
+def _unicode_concat_impl(left: str, right: str) -> str:
+    if len(left) == 0:
+        return right
+
+    if len(right) == 0:
+        return left
+
+    maxchar = _unicode_maxchar(left)
+    right_max = _unicode_maxchar(right)
+
+    if right_max > maxchar:
+        maxchar = right_max
+
+    result = _unicode_new_uninit(len(left) + len(right), maxchar)
+    _unicode_copy_range(result, left, 0, 0, len(left))
+    _unicode_copy_range(result, right, len(left), 0, len(right))
+    return result
+
+
+def _unicode_repeat_impl(value: str, count: int) -> str:
+    if count <= 0:
+        return str()
+
+    length = len(value) * count
+    maxchar = _unicode_maxchar(value)
+
+    result = _unicode_new_uninit(length, maxchar)
+
+    for i in range(count):
+        _unicode_copy_range(result, value, i * len(value), 0, len(value))
+
+    return result
+
+
+def _unicode_new_from_repeat(cp: int, length: int) -> str:
+    if length <= 0:
+        return str()
+
+    result = _unicode_new_uninit(length, cp)
+    for i in range(length):
+        result._store_codepoint(i, cp)
+
+    return result
+
+
+def _unicode_strip_impl(value: str, left: bool, right: bool) -> str:
+    start = 0
+    end = len(value)
+
+    if left:
+        while start < end and unicode_is_space(value._load_codepoint(start)):
+            start += 1
+
+    if right:
+        while end > start and unicode_is_space(value._load_codepoint(end - 1)):
+            end -= 1
+
+    return _unicode_slice_impl(value, start, end)
+
+
+def _unicode_contains_codepoint(value: str, cp: int) -> bool:
+    for i in range(len(value)):
+        if value._load_codepoint(i) == cp:
+            return True
+    return False
+
+
+def _unicode_strip_chars_impl(
+    value: str,
+    chars: str,
+    left: bool,
+    right: bool,
+) -> str:
+    start = 0
+    end = len(value)
+
+    if left:
+        while start < end and _unicode_contains_codepoint(
+            chars, value._load_codepoint(start)
+        ):
+            start += 1
+
+    if right:
+        while end > start and _unicode_contains_codepoint(
+            chars, value._load_codepoint(end - 1)
+        ):
+            end -= 1
+
+    return _unicode_slice_impl(value, start, end)
+
+
+def _unicode_fillchar(fillchar: str) -> int:
+    if len(fillchar) != 1:
+        raise TypeError("The fill character must be exactly one character long")
+    return fillchar._load_codepoint(0)
+
+
+def _unicode_center_impl(
+    value: str,
+    width: int,
+    fillchar: str,
+) -> str:
+    if len(value) >= width:
+        return value
+
+    fill = _unicode_fillchar(fillchar)
+    maxchar = _unicode_maxchar(value)
+    if fill > maxchar:
+        maxchar = fill
+
+    padding = width - len(value)
+    left = padding // 2
+    result = _unicode_new_uninit(width, maxchar)
+
+    for i in range(left):
+        result._store_codepoint(i, fill)
+
+    _unicode_copy_range(result, value, left, 0, len(value))
+
+    for i in range(left + len(value), width):
+        result._store_codepoint(i, fill)
+
+    return result
+
+
+def _unicode_ljust_impl(
+    value: str,
+    width: int,
+    fillchar: str,
+) -> str:
+    if len(value) >= width:
+        return value
+
+    fill = _unicode_fillchar(fillchar)
+    maxchar = _unicode_maxchar(value)
+    if fill > maxchar:
+        maxchar = fill
+
+    result = _unicode_new_uninit(width, maxchar)
+    _unicode_copy_range(result, value, 0, 0, len(value))
+
+    for i in range(len(value), width):
+        result._store_codepoint(i, fill)
+
+    return result
+
+
+def _unicode_rjust_impl(
+    value: str,
+    width: int,
+    fillchar: str,
+) -> str:
+    if len(value) >= width:
+        return value
+
+    fill = _unicode_fillchar(fillchar)
+    maxchar = _unicode_maxchar(value)
+    if fill > maxchar:
+        maxchar = fill
+
+    padding = width - len(value)
+    result = _unicode_new_uninit(width, maxchar)
+
+    for i in range(padding):
+        result._store_codepoint(i, fill)
+
+    _unicode_copy_range(result, value, padding, 0, len(value))
+    return result
+
+
+def _unicode_split_capacity(maxsplit: int) -> int:
+    if maxsplit < 0 or maxsplit >= 12:
+        return 12
+    return maxsplit + 1
+
+
+def _unicode_split_whitespace_impl(
+    value: str,
+    reverse: Literal[bool] = False,
+    maxsplit: int = -1,
+) -> List[str]:
+    parts = List[str](_unicode_split_capacity(maxsplit))
+    length = len(value)
+
+    if not reverse:
         i = 0
-        j = 0
-        p = self._ptr
-        e = p + len(self)
+        splits = 0
 
-        break_r = u8(13)  # \r
-        break_n = u8(10)  # \n
-        tab = u8(9)       # \t
-        space = u8(32)    # ' '
-
-        def overflow():
-            raise OverflowError("result too long")
-
-        while p < e:
-            if p[0] == tab:
-                if tabsize > 0:
-                    incr = tabsize - j.cmod(tabsize)
-                    if j > _MAX - incr:
-                        overflow()
-                    j += incr
-            else:
-                if j > _MAX - 1:
-                    overflow()
-                j += 1
-                if p[0] == break_n or p[0] == break_r:
-                    if i > _MAX - j:
-                        overflow()
-                    i += j
-                    j = 0
-            p += 1
-
-        if i > _MAX - j:
-            overflow()
-
-        u_len = i + j
-        u = Ptr[u8](u_len)
-        j = 0
-        q = u
-        p = self._ptr
-
-        while p < e:
-            if p[0] == tab:
-                if tabsize > 0:
-                    i = tabsize - j.cmod(tabsize)
-                    j += i
-                    while True:
-                        k = i
-                        i -= 1
-                        if k == 0:
-                            break
-                        q[0] = space
-                        q += 1
-            else:
-                j += 1
-                q[0] = p[0]
-                q += 1
-                if p[0] == break_n or p[0] == break_r:
-                    j = 0
-            p += 1
-
-        return str(u, u_len)
-
-    def translate(self, map) -> str:
-        n = len(self)
-        m = 0
-
-        for i in range(n):
-            key = int(self._ptr[i])
-            if key in map:
-                val = map[key]
-                if val is not None:
-                    m += len(val)
-            else:
-                m += 1
-
-        p = Ptr[u8](m)
-        q = p
-
-        for i in range(n):
-            key = int(self._ptr[i])
-            if key in map:
-                val = map[key]
-                if val is not None:
-                    str.memcpy(q, val._ptr, len(val))
-                    q += len(val)
-            else:
-                q[0] = self._ptr[i]
-                q += 1
-
-        return str(p, m)
-
-
-    # Internal helpers
-
-    def _correct_indices(self, start: int, end: int) -> Tuple[int, int]:
-        n = len(self)
-
-        if end > n:
-            end = n
-        elif end < 0:
-            end += n
-            if end < 0:
-                end = 0
-
-        if start < 0:
-            start += n
-            if start < 0:
-                start = 0
-
-        return (start, end)
-
-    def _split_whitespace(self, maxcount: int) -> List[str]:
-        PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
-
-        str_len = len(self)
-        i = 0
-        j = 0
-        while maxcount > 0:
-            maxcount -= 1
-            while i < str_len and str._isspace(self._ptr[i]):
+        while i < length:
+            while i < length and unicode_is_space(value._load_codepoint(i)):
                 i += 1
-            if i == str_len:
+
+            if i == length:
                 break
-            j = i
-            i += 1
-            while i < str_len and not str._isspace(self._ptr[i]):
-                i += 1
-            l.append(self._slice(j, i))
 
-        if i < str_len:
-            while i < str_len and str._isspace(self._ptr[i]):
-                i += 1
-            if i != str_len:
-                l.append(self._slice(i, str_len))
-
-        return l
-
-    def _rsplit_whitespace(self, maxcount: int) -> List[str]:
-        PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
-
-        str_len = len(self)
-        i = str_len - 1
-        j = str_len - 1
-        while maxcount > 0:
-            maxcount -= 1
-            while i >= 0 and str._isspace(self._ptr[i]):
-                i -= 1
-            if i < 0:
+            if maxsplit >= 0 and splits == maxsplit:
+                parts.append(_unicode_slice_impl(value, i, length))
                 break
-            j = i
-            i -= 1
-            while i >= 0 and not str._isspace(self._ptr[i]):
-                i -= 1
-            l.append(self._slice(i + 1, j + 1))
 
-        if i >= 0:
-            while i >= 0 and str._isspace(self._ptr[i]):
-                i -= 1
-            if i >= 0:
-                l.append(self._slice(0, i + 1))
+            start = i
 
-        l.reverse()
-        return l
+            while i < length and not unicode_is_space(value._load_codepoint(i)):
+                i += 1
 
-    def _split_char(self, char: u8, maxcount: int) -> List[str]:
-        PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
+            parts.append(_unicode_slice_impl(value, start, i))
+            splits += 1
 
-        str_len = len(self)
-        i = 0
-        j = 0
+        return parts
 
-        while i < str_len and maxcount > 0:
-            if self._ptr[i] == char:
-                l.append(self._slice(j, i))
-                j = i + 1
-                maxcount -= 1
-            i += 1
+    i = length - 1
+    splits = 0
 
-        l.append(self._slice(j, str_len))
-        return l
-
-    def _rsplit_char(self, char: u8, maxcount: int) -> List[str]:
-        PREALLOC_MAX = 12
-        l = List[str](PREALLOC_MAX if maxcount >= PREALLOC_MAX else maxcount + 1)
-
-        str_len = len(self)
-        i = str_len - 1
-        j = str_len - 1
-
-        while i >= 0 and maxcount > 0:
-            if self._ptr[i] == char:
-                l.append(self._slice(i + 1, j + 1))
-                j = i - 1
-                maxcount -= 1
+    while i >= 0:
+        while i >= 0 and unicode_is_space(value._load_codepoint(i)):
             i -= 1
 
-        l.append(self._slice(0, j + 1))
-        l.reverse()
-        return l
+        if i < 0:
+            break
 
-    def _findchar(self, c: u8):
-        return _C.memchr(self._ptr, i32(int(c)), len(self))
+        if maxsplit >= 0 and splits == maxsplit:
+            parts.append(_unicode_slice_impl(value, 0, i + 1))
+            break
 
-    def _countchar(self, c: u8, maxcount: int):
-        count = 0
-        start = self._ptr
-        end = start + len(self)
+        end = i + 1
+
+        while i >= 0 and not unicode_is_space(value._load_codepoint(i)):
+            i -= 1
+
+        parts.append(_unicode_slice_impl(value, i + 1, end))
+        splits += 1
+
+    parts.reverse()
+    return parts
+
+
+def _unicode_split_char_typed(
+    value: str,
+    data: Ptr[Char],
+    separator: Char,
+    maxsplit: int,
+    reverse: Literal[bool],
+    Char: type,
+) -> List[str]:
+    parts = List[str](_unicode_split_capacity(maxsplit))
+
+    if not reverse:
+        start = 0
+        splits = 0
+
+        for position in range(len(value)):
+            if maxsplit >= 0 and splits == maxsplit:
+                break
+            if data[position] != separator:
+                continue
+            parts.append(_unicode_slice_impl(value, start, position))
+            start = position + 1
+            splits += 1
+
+        parts.append(_unicode_slice_impl(value, start, len(value)))
+        return parts
+
+    end = len(value)
+    splits = 0
+    for position in range(len(value) - 1, -1, -1):
+        if maxsplit >= 0 and splits == maxsplit:
+            break
+        if data[position] != separator:
+            continue
+        parts.append(_unicode_slice_impl(value, position + 1, end))
+        end = position
+        splits += 1
+
+    parts.append(_unicode_slice_impl(value, 0, end))
+    parts.reverse()
+    return parts
+
+
+def _unicode_split_exact_impl(
+    value: str,
+    sep: str,
+    maxsplit: int,
+    reverse: Literal[bool] = False,
+) -> List[str]:
+    if len(sep) == 0:
+        raise ValueError("empty separator")
+
+    parts = List[str](_unicode_split_capacity(maxsplit))
+
+    if maxsplit == 0:
+        parts.append(value)
+        return parts
+
+    if value._kind() != sep._kind():
+        typed_sep = _unicode_coerce_kind(sep, value._kind())
+        if typed_sep is None:
+            parts.append(value)
+            return parts
+        sep = typed_sep
+
+    if len(sep) == 1:
+        if value._kind() <= KIND_LATIN1 and sep._kind() <= KIND_LATIN1:
+            return _unicode_split_char_typed(
+                value, value._ptr, sep._ptr[0], maxsplit, reverse
+            )
+        if value._kind() == KIND_UCS2 and sep._kind() == KIND_UCS2:
+            data = Ptr[u16](value._ptr)
+            separator = Ptr[u16](sep._ptr)[0]
+            return _unicode_split_char_typed(
+                value, data, separator, maxsplit, reverse
+            )
+        if value._kind() == KIND_UCS4 and sep._kind() == KIND_UCS4:
+            data = Ptr[u32](value._ptr)
+            separator = Ptr[u32](sep._ptr)[0]
+            return _unicode_split_char_typed(
+                value, data, separator, maxsplit, reverse
+            )
+
+        separator = sep._load_codepoint(0)
+
+        if not reverse:
+            start = 0
+            splits = 0
+
+            for position in range(len(value)):
+                if maxsplit >= 0 and splits == maxsplit:
+                    break
+                if value._load_codepoint(position) != separator:
+                    continue
+                parts.append(_unicode_slice_impl(value, start, position))
+                start = position + 1
+                splits += 1
+
+            parts.append(_unicode_slice_impl(value, start, len(value)))
+            return parts
+
+        end = len(value)
+        splits = 0
+        for position in range(len(value) - 1, -1, -1):
+            if maxsplit >= 0 and splits == maxsplit:
+                break
+            if value._load_codepoint(position) != separator:
+                continue
+            parts.append(_unicode_slice_impl(value, position + 1, end))
+            end = position
+            splits += 1
+
+        parts.append(_unicode_slice_impl(value, 0, end))
+        parts.reverse()
+        return parts
+
+    if not reverse:
+        start = 0
+        remaining = maxsplit
 
         while True:
-            start = str(start, end - start)._findchar(c)
-            if not start:
+            if maxsplit >= 0 and remaining == 0:
+                parts.append(_unicode_slice_impl(value, start, len(value)))
                 break
-            count += 1
-            if count >= maxcount:
+
+            pos = _unicode_fastsearch(value, sep, start, len(value))
+
+            if pos == -1:
+                parts.append(_unicode_slice_impl(value, start, len(value)))
                 break
-            start += 1
-        return count
 
-    def _replace_interleave(self, to: str, maxcount: int):
-        self_s = self._ptr
-        self_len = len(self)
-        to_len = len(to)
-        to_s = to._ptr
-        count = 0
-        i = 0
+            parts.append(_unicode_slice_impl(value, start, pos))
 
-        if maxcount <= self_len:
-            count = maxcount
+            start = pos + len(sep)
+            remaining -= 1
+
+        return parts
+
+    start = len(value)
+    remaining = maxsplit
+
+    while True:
+        if maxsplit >= 0 and remaining == 0:
+            parts.append(_unicode_slice_impl(value, 0, start))
+            break
+
+        pos = _unicode_fastsearch_reverse(value, sep, 0, start)
+
+        if pos == -1:
+            parts.append(_unicode_slice_impl(value, 0, start))
+            break
+
+        parts.append(_unicode_slice_impl(value, pos + len(sep), start))
+
+        start = pos
+        remaining -= 1
+
+    parts.reverse()
+    return parts
+
+
+def _unicode_splitlines_impl(value: str, keepends: bool) -> List[str]:
+    parts = []
+    start = 0
+    i = 0
+
+    while i < len(value):
+        cp = value._load_codepoint(i)
+        line_end = i
+        next_start = i + 1
+
+        if cp == 0x0D:
+            if i + 1 < len(value) and value._load_codepoint(i + 1) == 0x0A:
+                next_start = i + 2
+        elif (
+            cp != 0x0A
+            and cp != 0x0B
+            and cp != 0x0C
+            and cp != 0x1C
+            and cp != 0x1D
+            and cp != 0x1E
+            and cp != 0x85
+            and cp != 0x2028
+            and cp != 0x2029
+        ):
+            i += 1
+            continue
+
+        if keepends:
+            parts.append(_unicode_slice_impl(value, start, next_start))
         else:
-            count = self_len + 1
+            parts.append(_unicode_slice_impl(value, start, line_end))
 
-        # assert count > 0
-        if to_len > (_MAX - self_len).cdiv(count):
-            raise OverflowError("replace bytes is too long")
+        start = next_start
+        i = next_start
 
-        result_len = count * to_len + self_len
-        result_s = Ptr[u8](result_len)
-        result_s0 = result_s
+    if start < len(value):
+        parts.append(_unicode_slice_impl(value, start, len(value)))
 
-        if to_len > 1:
-            str.memcpy(result_s, to_s, to_len)
-            result_s += to_len
-            count -= 1
+    return parts
 
-            while i < count:
-                result_s[0] = self_s[0]
-                result_s += 1
-                self_s += 1
-                str.memcpy(result_s, to_s, to_len)
-                result_s += to_len
-                i += 1
+
+def _unicode_join_impl(sep: str, values: List[str]) -> str:
+    if len(values) == 0:
+        return str()
+
+    total_len = 0
+    maxchar = 0
+
+    for i in range(len(values)):
+        piece = values[i]
+        total_len += len(piece)
+        piece_maxchar = _unicode_maxchar(piece)
+
+        if piece_maxchar > maxchar:
+            maxchar = piece_maxchar
+
+    if len(values) > 1:
+        total_len += (len(values) - 1) * len(sep)
+
+    if len(sep) > 0 and _unicode_maxchar(sep) > maxchar:
+        maxchar = _unicode_maxchar(sep)
+
+    result = _unicode_new_uninit(total_len, maxchar)
+    out = 0
+
+    for i in range(len(values)):
+        if i > 0 and len(sep) > 0:
+            _unicode_copy_range(result, sep, out, 0, len(sep))
+            out += len(sep)
+
+        piece = values[i]
+        _unicode_copy_range(result, piece, out, 0, len(piece))
+        out += len(piece)
+
+    return result
+
+
+def _unicode_replace_impl(
+    value: str,
+    old: str,
+    new: str,
+    count: int,
+) -> str:
+    if count == 0:
+        return value
+
+    if len(old) == 0:
+        insertions = len(value) + 1
+
+        if count >= 0 and count < insertions:
+            insertions = count
+
+        if insertions == 0:
+            return value
+
+        maxchar = _unicode_maxchar(value)
+        new_maxchar = _unicode_maxchar(new)
+
+        if new_maxchar > maxchar:
+            maxchar = new_maxchar
+
+        result = _unicode_new_uninit(
+            len(value) + insertions * len(new),
+            maxchar,
+        )
+        out = 0
+
+        for i in range(len(value) + 1):
+            if i < insertions:
+                _unicode_copy_range(result, new, out, 0, len(new))
+                out += len(new)
+
+            if i < len(value):
+                result._store_codepoint(out, value._load_codepoint(i))
+                out += 1
+
+        return result
+
+    total_len = len(value)
+    start = 0
+    remaining = count
+
+    while True:
+        if count >= 0 and remaining == 0:
+            break
+
+        pos = _unicode_fastsearch(value, old, start, len(value))
+
+        if pos == -1:
+            break
+
+        total_len += len(new) - len(old)
+        start = pos + len(old)
+
+        if count >= 0:
+            remaining -= 1
+
+    if start == 0:
+        return value
+
+    maxchar = _unicode_maxchar(value)
+    new_max = _unicode_maxchar(new)
+
+    if new_max > maxchar:
+        maxchar = new_max
+
+    result = _unicode_new_uninit(total_len, maxchar)
+
+    out = 0
+    start = 0
+    remaining = count
+
+    while True:
+        if count >= 0 and remaining == 0:
+            break
+
+        pos = _unicode_fastsearch(value, old, start, len(value))
+
+        if pos == -1:
+            break
+
+        _unicode_copy_range(result, value, out, start, pos)
+        out += pos - start
+
+        _unicode_copy_range(result, new, out, 0, len(new))
+        out += len(new)
+
+        start = pos + len(old)
+
+        if count >= 0:
+            remaining -= 1
+
+    _unicode_copy_range(result, value, out, start, len(value))
+    return result
+
+
+def _unicode_translate_int_impl(value: str, table: dict[int, int]) -> str:
+    maxchar = 0
+    out_len = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp, cp)
+
+        if mapped == -1:
+            continue
+
+        if mapped < 0 or mapped > UNICODE_MAX or _is_surrogate(mapped):
+            raise ValueError("invalid translation code point")
+
+        if mapped > maxchar:
+            maxchar = mapped
+
+        out_len += 1
+
+    result = _unicode_new_uninit(out_len, maxchar)
+    out = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp, cp)
+
+        if mapped == -1:
+            continue
+
+        result._store_codepoint(out, mapped)
+        out += 1
+
+    return result
+
+
+def _unicode_translate_unicode_impl(
+    value: str,
+    table: dict[int, str],
+) -> str:
+    output_length = 0
+    maxchar = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp)
+        if mapped is not None:
+            output_length += len(mapped)
+            mapped_maxchar = _unicode_maxchar(mapped)
         else:
-            result_s[0] = to_s[0]
-            result_s += to_len
-            count -= 1
+            output_length += 1
+            mapped_maxchar = cp
 
-            while i < count:
-                result_s[0] = self_s[0]
-                result_s += 1
-                self_s += 1
-                result_s[0] = to_s[0]
-                result_s += to_len
-                i += 1
+        if mapped_maxchar > maxchar:
+            maxchar = mapped_maxchar
 
-        str.memcpy(result_s, self_s, self_len - i)
-        return str(result_s0, result_len)
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
 
-    def _replace_delete_single_character(self, from_c: u8, maxcount: int):
-        self_len = len(self)
-        self_s = self._ptr
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp)
+        if mapped is not None:
+            _unicode_copy_range(result, mapped, output, 0, len(mapped))
+            output += len(mapped)
+        else:
+            result._store_codepoint(output, cp)
+            output += 1
 
-        count = self._countchar(from_c, maxcount)
-        if count == 0:
-            return self
+    return result
 
-        result_len = self_len - count
-        # assert result_len >= 0
-        result_s = Ptr[u8](result_len)
-        result_s0 = result_s
 
-        start = self_s
-        end = self_s + self_len
-        while count > 0:
-            count -= 1
-            nxt = str(start, end - start)._findchar(from_c)
-            if not nxt:
-                break
-            str.memcpy(result_s, start, nxt - start)
-            result_s += nxt - start
-            start = nxt + 1
+def _unicode_translate_optional_int_impl(
+    value: str,
+    table: dict[int, Optional[int]],
+) -> str:
+    maxchar = 0
+    out_len = 0
 
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        mapped = table.get(codepoint, codepoint)
 
-    def _replace_delete_substring(self, from_s: str, maxcount: int):
-        self_len = len(self)
-        self_s = self._ptr
-        from_len = len(from_s)
+        if mapped is None:
+            continue
 
-        count = algorithms.count_with_max(self, from_s, maxcount)
-        if count == 0:
-            return self
+        if mapped < 0 or mapped > UNICODE_MAX or _is_surrogate(mapped):
+            raise ValueError("invalid translation code point")
 
-        result_len = self_len - (count * from_len)
-        # assert result_len >= 0
-        result_s = Ptr[u8](result_len)
-        result_s0 = result_s
+        if mapped > maxchar:
+            maxchar = mapped
+        out_len += 1
 
-        start = self_s
-        end = self_s + self_len
-        while count > 0:
-            count -= 1
-            offset = algorithms.find(str(start, end - start), from_s)
-            if offset == -1:
-                break
-            nxt = start + offset
-            str.memcpy(result_s, start, nxt - start)
-            result_s += nxt - start
-            start = nxt + from_len
+    result = _unicode_new_uninit(out_len, maxchar)
+    out = 0
 
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
+    for i in range(len(value)):
+        codepoint = value._load_codepoint(i)
+        mapped = table.get(codepoint, codepoint)
 
-    def _replace_single_character_in_place(self, from_c: u8, to_c: u8, maxcount: int):
-        self_s = self._ptr
-        self_len = len(self)
+        if mapped is not None:
+            result._store_codepoint(out, mapped)
+            out += 1
 
-        nxt = self._findchar(from_c)
-        if not nxt:
-            return self
+    return result
 
-        result_s = Ptr[u8](self_len)
-        str.memcpy(result_s, self_s, self_len)
 
-        start = result_s + (nxt - self_s)
-        start[0] = to_c
-        start += 1
-        end = result_s + self_len
-        maxcount -= 1
+def _unicode_translate_optional_unicode_impl(
+    value: str,
+    table: dict[int, Optional[str]],
+) -> str:
+    output_length = 0
+    maxchar = 0
 
-        while maxcount > 0:
-            maxcount -= 1
-            nxt = str(start, end - start)._findchar(from_c)
-            if not nxt:
-                break
-            nxt[0] = to_c
-            start = nxt + 1
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp, value[i])
+        if mapped is not None:
+            output_length += len(mapped)
+            mapped_maxchar = _unicode_maxchar(mapped)
+            if mapped_maxchar > maxchar:
+                maxchar = mapped_maxchar
 
-        return str(result_s, self_len)
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
 
-    def _replace_substring_in_place(self, from_s: str, to: str, maxcount: int):
-        self_s = self._ptr
-        self_len = len(self)
-        from_len = len(from_s)
-        to_s = to._ptr
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        mapped = table.get(cp, value[i])
+        if mapped is not None:
+            _unicode_copy_range(result, mapped, output, 0, len(mapped))
+            output += len(mapped)
 
-        offset = algorithms.find(self, from_s)
-        if offset == -1:
-            return self
+    return result
 
-        result_s = Ptr[u8](self_len)
-        str.memcpy(result_s, self_s, self_len)
 
-        start = result_s + offset
-        str.memcpy(start, to_s, from_len)
-        start += from_len
-        end = result_s + self_len
-        maxcount -= 1
+def _unicode_ascii_map(value: str, transform) -> str:
+    result = _unicode_new_uninit(len(value), 0x7F)
 
-        while maxcount > 0:
-            maxcount -= 1
-            offset = algorithms.find(str(start, end - start), from_s)
-            if offset == -1:
-                break
-            str.memcpy(start + offset, to_s, from_len)
-            start += offset + from_len
+    for i in range(len(value)):
+        result._ptr[i] = u8(transform(int(value._ptr[i])))
 
-        return str(result_s, self_len)
+    return result
 
-    def _replace_single_character(self, from_c: u8, to_s: str, maxcount: int):
-        self_s = self._ptr
-        self_len = len(self)
-        to_len = len(to_s)
 
-        count = self._countchar(from_c, maxcount)
-        if count == 0:
-            return self
+def _unicode_ascii_capitalize(value: str) -> str:
+    result = _unicode_new_uninit(len(value), 0x7F)
 
-        # assert count > 0
-        if to_len - 1 > (_MAX - self_len).cdiv(count):
-            raise OverflowError("replace bytes is too long")
+    if len(value) == 0:
+        return result
 
-        result_len = self_len + count * (to_len - 1)
-        result_s = Ptr[u8](result_len)
-        result_s0 = result_s
+    result._ptr[0] = u8(_ascii_upper(int(value._ptr[0])))
 
-        start = self_s
-        end = self_s + self_len
-        while count > 0:
-            count -= 1
-            nxt = str(start, end - start)._findchar(from_c)
-            if not nxt:
-                break
+    for i in range(1, len(value)):
+        result._ptr[i] = u8(_ascii_lower(int(value._ptr[i])))
 
-            if nxt == start:
-                str.memcpy(result_s, to_s._ptr, to_len)
-                result_s += to_len
-                start += 1
+    return result
+
+
+def _unicode_ascii_title(value: str) -> str:
+    result = _unicode_new_uninit(len(value), 0x7F)
+    previous_is_cased = False
+
+    for i in range(len(value)):
+        cp = int(value._ptr[i])
+
+        if _is_ascii_alpha(cp):
+            if previous_is_cased:
+                cp = _ascii_lower(cp)
             else:
-                str.memcpy(result_s, start, nxt - start)
-                result_s += (nxt - start)
-                str.memcpy(result_s, to_s._ptr, to_len)
-                result_s += to_len
-                start = nxt + 1
-
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
-
-    def _replace_substring(self, from_s: str, to_s: str, maxcount: int):
-        self_s = self._ptr
-        self_len = len(self)
-        from_len = len(from_s)
-        to_len = len(to_s)
-
-        count = algorithms.count_with_max(self, from_s, maxcount)
-        if count == 0:
-            return self
-
-        # assert count > 0
-        if to_len - from_len > (_MAX - self_len).cdiv(count):
-            raise OverflowError("replace bytes is too long")
-
-        result_len = self_len + count * (to_len - from_len)
-        result_s = Ptr[u8](result_len)
-        result_s0 = result_s
-
-        start = self_s
-        end = self_s + self_len
-        while count > 0:
-            count -= 1
-            offset = algorithms.find(str(start, end - start), from_s)
-            if offset == -1:
-                break
-
-            nxt = start + offset
-            if nxt == start:
-                str.memcpy(result_s, to_s._ptr, to_len)
-                result_s += to_len
-                start += from_len
-            else:
-                str.memcpy(result_s, start, nxt - start)
-                result_s += (nxt - start)
-                str.memcpy(result_s, to_s._ptr, to_len)
-                result_s += to_len
-                start = nxt + from_len
-
-        str.memcpy(result_s, start, end - start)
-        return str(result_s0, result_len)
-
-    def _replace(self, from_s: str, to_s: str, maxcount: int):
-        self_len = len(self)
-        from_len = len(from_s)
-        to_len = len(to_s)
-
-        if self_len < from_len:
-            return self
-
-        if maxcount < 0:
-            maxcount = _MAX
-        elif maxcount == 0:
-            return self
-
-        if from_len == 0:
-            if to_len == 0:
-                return self
-            return self._replace_interleave(to_s, maxcount)
-
-        if to_len == 0:
-            if from_len == 1:
-                return self._replace_delete_single_character(from_s._ptr[0], maxcount)
-            return self._replace_delete_substring(from_s, maxcount)
-
-        if from_len == to_len:
-            if from_len == 1:
-                return self._replace_single_character_in_place(from_s._ptr[0], to_s._ptr[0], maxcount)
-            return self._replace_substring_in_place(from_s, to_s, maxcount)
-
-        if from_len == 1:
-            return self._replace_single_character(from_s._ptr[0], to_s, maxcount)
+                cp = _ascii_upper(cp)
+            previous_is_cased = True
         else:
-            return self._replace_substring(from_s, to_s, maxcount)
+            previous_is_cased = False
+
+        result._ptr[i] = u8(cp)
+
+    return result
+
+
+def _unicode_map_full(value: str, mapping_length, mapping_codepoint) -> str:
+    output_length = 0
+    maxchar = 0
+    unchanged = True
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        length = mapping_length(cp)
+        output_length += length
+
+        if length != 1:
+            unchanged = False
+
+        for j in range(length):
+            mapped = mapping_codepoint(cp, j)
+            if mapped > maxchar:
+                maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+
+    if unchanged:
+        return value
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        length = mapping_length(cp)
+
+        for j in range(length):
+            result._store_codepoint(output, mapping_codepoint(cp, j))
+            output += 1
+
+    return result
+
+
+def _unicode_is_final_sigma(value: str, pos: int) -> bool:
+    if value._load_codepoint(pos) != 0x03A3:
+        return False
+
+    i = pos - 1
+    while i >= 0 and unicode_is_case_ignorable(value._load_codepoint(i)):
+        i -= 1
+
+    if i < 0 or not unicode_is_cased(value._load_codepoint(i)):
+        return False
+
+    i = pos + 1
+    while i < len(value) and unicode_is_case_ignorable(value._load_codepoint(i)):
+        i += 1
+
+    return i >= len(value) or not unicode_is_cased(value._load_codepoint(i))
+
+
+def _unicode_lower_mapping_length(value: str, pos: int) -> int:
+    if _unicode_is_final_sigma(value, pos):
+        return 1
+
+    return unicode_lower_mapping_length(value._load_codepoint(pos))
+
+
+def _unicode_lower_mapping_codepoint(
+    value: str,
+    pos: int,
+    index: int,
+) -> int:
+    if _unicode_is_final_sigma(value, pos):
+        return 0x03C2
+
+    return unicode_lower_mapping_codepoint(value._load_codepoint(pos), index)
+
+
+def _unicode_lower_full(value: str) -> str:
+    output_length = 0
+    maxchar = 0
+    unchanged = True
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        length = _unicode_lower_mapping_length(value, i)
+        output_length += length
+
+        if length != 1:
+            unchanged = False
+
+        for j in range(length):
+            mapped = _unicode_lower_mapping_codepoint(value, i, j)
+            if mapped > maxchar:
+                maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+
+    if unchanged:
+        return value
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+
+    for i in range(len(value)):
+        length = _unicode_lower_mapping_length(value, i)
+
+        for j in range(length):
+            result._store_codepoint(
+                output,
+                _unicode_lower_mapping_codepoint(value, i, j),
+            )
+            output += 1
+
+    return result
+
+
+def _unicode_upper_full(value: str) -> str:
+    return _unicode_map_full(
+        value,
+        unicode_upper_mapping_length,
+        unicode_upper_mapping_codepoint,
+    )
+
+
+def _unicode_capitalize_full(value: str) -> str:
+    output_length = 0
+    maxchar = 0
+
+    for i in range(len(value)):
+        if i == 0:
+            cp = value._load_codepoint(i)
+            length = unicode_title_mapping_length(cp)
+
+            for j in range(length):
+                mapped = unicode_title_mapping_codepoint(cp, j)
+                if mapped > maxchar:
+                    maxchar = mapped
+        else:
+            length = _unicode_lower_mapping_length(value, i)
+
+            for j in range(length):
+                mapped = _unicode_lower_mapping_codepoint(value, i, j)
+                if mapped > maxchar:
+                    maxchar = mapped
+
+        output_length += length
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+    previous_is_cased = False
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+
+        if previous_is_cased:
+            length = _unicode_lower_mapping_length(value, i)
+            for j in range(length):
+                result._store_codepoint(
+                    output,
+                    _unicode_lower_mapping_codepoint(value, i, j),
+                )
+                output += 1
+        else:
+            length = unicode_title_mapping_length(cp)
+            for j in range(length):
+                result._store_codepoint(
+                    output,
+                    unicode_title_mapping_codepoint(cp, j),
+                )
+                output += 1
+
+        if unicode_is_cased(cp):
+            previous_is_cased = True
+        elif not unicode_is_case_ignorable(cp):
+            previous_is_cased = False
+
+    return result
+
+
+def _unicode_title_full(value: str) -> str:
+    output_length = 0
+    maxchar = 0
+    previous_is_cased = False
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+
+        if previous_is_cased:
+            length = _unicode_lower_mapping_length(value, i)
+            for j in range(length):
+                mapped = _unicode_lower_mapping_codepoint(value, i, j)
+                if mapped > maxchar:
+                    maxchar = mapped
+        else:
+            length = unicode_title_mapping_length(cp)
+            for j in range(length):
+                mapped = unicode_title_mapping_codepoint(cp, j)
+                if mapped > maxchar:
+                    maxchar = mapped
+
+        output_length += length
+
+        if unicode_is_cased(cp):
+            previous_is_cased = True
+        else:
+            previous_is_cased = False
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+    previous_is_cased = False
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+
+        if previous_is_cased:
+            length = _unicode_lower_mapping_length(value, i)
+            for j in range(length):
+                result._store_codepoint(
+                    output,
+                    _unicode_lower_mapping_codepoint(value, i, j),
+                )
+                output += 1
+        else:
+            length = unicode_title_mapping_length(cp)
+            for j in range(length):
+                result._store_codepoint(
+                    output,
+                    unicode_title_mapping_codepoint(cp, j),
+                )
+                output += 1
+
+        if unicode_is_cased(cp):
+            previous_is_cased = True
+        else:
+            previous_is_cased = False
+
+    return result
+
+
+def _unicode_swapcase_full(value: str) -> str:
+    output_length = 0
+    maxchar = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+
+        if unicode_is_lower(cp):
+            length = unicode_upper_mapping_length(cp)
+            for j in range(length):
+                mapped = unicode_upper_mapping_codepoint(cp, j)
+                if mapped > maxchar:
+                    maxchar = mapped
+        elif unicode_is_upper(cp):
+            length = _unicode_lower_mapping_length(value, i)
+            for j in range(length):
+                mapped = _unicode_lower_mapping_codepoint(value, i, j)
+                if mapped > maxchar:
+                    maxchar = mapped
+        else:
+            length = 1
+            if cp > maxchar:
+                maxchar = cp
+
+        output_length += length
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+
+        if unicode_is_lower(cp):
+            length = unicode_upper_mapping_length(cp)
+            for j in range(length):
+                result._store_codepoint(
+                    output,
+                    unicode_upper_mapping_codepoint(cp, j),
+                )
+                output += 1
+        elif unicode_is_upper(cp):
+            length = _unicode_lower_mapping_length(value, i)
+            for j in range(length):
+                result._store_codepoint(
+                    output,
+                    _unicode_lower_mapping_codepoint(value, i, j),
+                )
+                output += 1
+        else:
+            result._store_codepoint(output, cp)
+            output += 1
+
+    return result
+
+
+def _ascii_lower(cp: int) -> int:
+    if 0x41 <= cp <= 0x5A:
+        return cp + 0x20
+    return cp
+
+
+def _ascii_upper(cp: int) -> int:
+    if 0x61 <= cp <= 0x7A:
+        return cp - 0x20
+    return cp
+
+
+def _ascii_casefold(cp: int) -> int:
+    return _ascii_lower(cp)
+
+
+def _ascii_swapcase(cp: int) -> int:
+    if 0x41 <= cp <= 0x5A:
+        return cp + 0x20
+    if 0x61 <= cp <= 0x7A:
+        return cp - 0x20
+    return cp
+
+
+def _is_ascii_whitespace(cp: int) -> bool:
+    return (
+        cp == 0x09
+        or cp == 0x0A
+        or cp == 0x0B
+        or cp == 0x0C
+        or cp == 0x0D
+        or cp == 0x20
+    )
+
+
+def _is_ascii_alpha(cp: int) -> bool:
+    return (0x41 <= cp <= 0x5A) or (0x61 <= cp <= 0x7A)
+
+
+def _is_ascii_digit(cp: int) -> bool:
+    return 0x30 <= cp <= 0x39
+
+
+def _is_ascii_alnum(cp: int) -> bool:
+    return _is_ascii_alpha(cp) or _is_ascii_digit(cp)
+
+
+def _is_ascii_lower(cp: int) -> bool:
+    return 0x61 <= cp <= 0x7A
+
+
+def _is_ascii_upper(cp: int) -> bool:
+    return 0x41 <= cp <= 0x5A
+
+
+def _is_ascii_id_start(cp: int) -> bool:
+    return _is_ascii_alpha(cp) or cp == 0x5F
+
+
+def _is_ascii_id_continue(cp: int) -> bool:
+    return _is_ascii_alpha(cp) or _is_ascii_digit(cp) or cp == 0x5F
+
+
+class _UnicodeByteBuffer:
+    data: Ptr[u8]
+    length: int
+    capacity: int
+
+    def __init__(self, capacity: int = 16):
+        self.data = Ptr[u8](capacity)
+        self.length = 0
+        self.capacity = capacity
+
+    def reserve(self, extra: int):
+        required = self.length + extra
+
+        if required <= self.capacity:
+            return
+
+        old_capacity = self.capacity
+        capacity = old_capacity
+
+        while capacity < required:
+            capacity *= 2
+
+        self.data = gc.realloc(self.data, capacity, old_capacity)
+        self.capacity = capacity
+
+    def append_byte(self, value: u8):
+        self.reserve(1)
+        self.data[self.length] = value
+        self.length += 1
+
+    def append_utf8(self, cp: int):
+        self.reserve(_utf8_encoded_width(cp))
+        self.length = _utf8_encode_one(self.data, self.length, cp)
+
+
+def _unicode_repr_append_hex(
+    output: _UnicodeByteBuffer,
+    value: int,
+    digits: int,
+):
+    for i in range(digits - 1, -1, -1):
+        digit = (value >> (i * 4)) & 0xF
+        output.append_byte(
+            u8(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+        )
+
+
+def _unicode_repr_append_codepoint(
+    output: _UnicodeByteBuffer,
+    cp: int,
+    quote: int,
+):
+    if cp == quote or cp == 0x5C:  # quote / backslash
+        output.append_byte(u8(0x5C))
+        output.append_byte(u8(cp))
+        return
+
+    if cp == 0x09:
+        output.append_byte(u8(0x5C))
+        output.append_byte(u8(0x74))
+        return
+
+    if cp == 0x0A:
+        output.append_byte(u8(0x5C))
+        output.append_byte(u8(0x6E))
+        return
+
+    if cp == 0x0D:
+        output.append_byte(u8(0x5C))
+        output.append_byte(u8(0x72))
+        return
+
+    if cp < 0x20 or cp == 0x7F:
+        output.append_byte(u8(0x5C))
+        output.append_byte(u8(0x78))
+        _unicode_repr_append_hex(output, cp, 2)
+        return
+
+    if unicode_is_printable(cp):
+        output.append_utf8(cp)
+        return
+
+    output.append_byte(u8(0x5C))
+
+    if cp <= 0xFF:
+        output.append_byte(u8(0x78))
+        _unicode_repr_append_hex(output, cp, 2)
+    elif cp <= 0xFFFF:
+        output.append_byte(u8(0x75))
+        _unicode_repr_append_hex(output, cp, 4)
+    else:
+        output.append_byte(u8(0x55))
+        _unicode_repr_append_hex(output, cp, 8)

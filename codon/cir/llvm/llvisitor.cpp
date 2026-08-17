@@ -2441,18 +2441,80 @@ void LLVMVisitor::visit(const BoolConst *x) {
 
 void LLVMVisitor::visit(const StringConst *x) {
   B->SetInsertPoint(block);
-  std::string s = x->getVal();
-  auto *strVar =
-      new llvm::GlobalVariable(*M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
-                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-                               llvm::ConstantDataArray::getString(*context, s), ".str");
+  const auto &utf8 = x->getVal();
+  std::vector<uint32_t> codepoints;
+  codepoints.reserve(utf8.size());
+  uint32_t maxchar = 0;
+
+  for (size_t pos = 0; pos < utf8.size();) {
+    auto byte = static_cast<uint8_t>(utf8[pos]);
+    uint32_t codepoint = 0;
+    size_t width = 0;
+
+    if (byte < 0x80) {
+      codepoint = byte;
+      width = 1;
+    } else if (byte >= 0xC2 && byte <= 0xDF) {
+      codepoint = byte & 0x1F;
+      width = 2;
+    } else if (byte >= 0xE0 && byte <= 0xEF) {
+      codepoint = byte & 0x0F;
+      width = 3;
+    } else if (byte >= 0xF0 && byte <= 0xF4) {
+      codepoint = byte & 0x07;
+      width = 4;
+    } else {
+      seqassertn(false, "invalid UTF-8 string constant");
+    }
+
+    seqassertn(pos + width <= utf8.size(), "truncated UTF-8 string constant");
+    for (size_t i = 1; i < width; ++i) {
+      auto continuation = static_cast<uint8_t>(utf8[pos + i]);
+      seqassertn((continuation & 0xC0) == 0x80, "invalid UTF-8 string constant");
+      codepoint = (codepoint << 6) | (continuation & 0x3F);
+    }
+
+    seqassertn((width == 1 || codepoint >= 0x80) &&
+                   (width != 3 || codepoint >= 0x800) &&
+                   (width != 4 || codepoint >= 0x10000) && codepoint <= 0x10FFFF &&
+                   !(codepoint >= 0xD800 && codepoint <= 0xDFFF),
+               "invalid UTF-8 string constant");
+
+    codepoints.push_back(codepoint);
+    maxchar = std::max(maxchar, codepoint);
+    pos += width;
+  }
+
+  unsigned kind = 0;
+  llvm::IntegerType *elementType = B->getInt8Ty();
+  if (maxchar > 0xFFFF) {
+    kind = 3;
+    elementType = B->getInt32Ty();
+  } else if (maxchar > 0xFF) {
+    kind = 2;
+    elementType = B->getInt16Ty();
+  } else if (maxchar > 0x7F) {
+    kind = 1;
+  }
+
+  std::vector<llvm::Constant *> elements;
+  elements.reserve(codepoints.size());
+  for (auto codepoint : codepoints)
+    elements.push_back(llvm::ConstantInt::get(elementType, codepoint));
+
+  auto *arrayType = llvm::ArrayType::get(elementType, codepoints.size());
+  auto *strVar = new llvm::GlobalVariable(
+      *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, elements), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
   auto *len = B->getInt64(s.length());
+  seqassertn(codepoints.size() <= lengthMask, "string constant too large");
+  auto *meta = B->getInt64(codepoints.size() | (uint64_t(kind) << 56));
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, ptr, 0);
-  str = B->CreateInsertValue(str, len, 1);
+  str = B->CreateInsertValue(str, meta, 1);
   value = str;
 }
 

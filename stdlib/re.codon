@@ -4,23 +4,23 @@
 
 import internal.static as static
 
-A          = (1 << 0)
-ASCII      = (1 << 0)
-DEBUG      = (1 << 1)
-I          = (1 << 2)
-IGNORECASE = (1 << 2)
-L          = (1 << 3)
-LOCALE     = (1 << 3)
-M          = (1 << 4)
-MULTILINE  = (1 << 4)
-S          = (1 << 5)
-DOTALL     = (1 << 5)
-X          = (1 << 6)
-VERBOSE    = (1 << 6)
+A         : Literal[int] = (1 << 0)
+ASCII     : Literal[int] = (1 << 0)
+DEBUG     : Literal[int] = (1 << 1)
+I         : Literal[int] = (1 << 2)
+IGNORECASE: Literal[int] = (1 << 2)
+L         : Literal[int] = (1 << 3)
+LOCALE    : Literal[int] = (1 << 3)
+M         : Literal[int] = (1 << 4)
+MULTILINE : Literal[int] = (1 << 4)
+S         : Literal[int] = (1 << 5)
+DOTALL    : Literal[int] = (1 << 5)
+X         : Literal[int] = (1 << 6)
+VERBOSE   : Literal[int] = (1 << 6)
 
-_ANCHOR_NONE  = 0
-_ANCHOR_START = 1
-_ANCHOR_BOTH  = 2
+_ANCHOR_NONE : Literal[int] = 0
+_ANCHOR_START: Literal[int] = 1
+_ANCHOR_BOTH : Literal[int] = 2
 
 @tuple
 class Span:

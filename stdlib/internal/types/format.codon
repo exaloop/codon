@@ -3,7 +3,7 @@
 import internal.static as static
 import internal.gc as gc
 
-from .unicode import unicode, _utf8_encode_one, _unicode_decode_utf8_strict
+from .str import _utf8_encode_one, _unicode_decode_utf8_strict
 from .float_dtoa import (
     _float_dtoa_exponent_write,
     _float_dtoa_fixed_write,
@@ -393,7 +393,7 @@ class _PercentDirective:
     width_from_argument: bool
     precision_from_argument: bool
     conversion: int
-    key: Optional[unicode]
+    key: Optional[str]
     brace_alignment: int
     brace_fill: int
     brace_grouping: int
@@ -416,7 +416,7 @@ class _PercentDirective:
 
 
 def _parse_percent_directive(
-    format: unicode,
+    format: str,
     position: int,
 ) -> Tuple[_PercentDirective, int]:
     format_length = len(format)
@@ -775,7 +775,7 @@ def _percent_value_append(
 
 
 def _percent_write_literal_prefix(
-    format: unicode,
+    format: str,
     format_pos: int,
     result: _FormatBuffer,
 ) -> int:
@@ -808,7 +808,7 @@ def _percent_write_literal_prefix(
 
 
 def _percent_string_write(
-    text: unicode,
+    text: str,
     directive: _PercentDirective,
     output: Ptr[u8],
 ) -> int:
@@ -841,7 +841,7 @@ def _percent_string_write(
 
 
 def _percent_text_append(
-    text: unicode,
+    text: str,
     directive: _PercentDirective,
     result: _FormatBuffer,
 ):
@@ -880,7 +880,7 @@ def _percent_char_write(
             or (codepoint >= 0xD800 and codepoint <= 0xDFFF)
         ):
             raise OverflowError("%c arg not in range(0x110000)")
-    elif isinstance(value, unicode):
+    elif isinstance(value, str):
         if len(value) != 1:
             raise TypeError("%c requires int or char")
 
@@ -935,7 +935,7 @@ def _percent_consume_precision(value, directive: _PercentDirective):
     raise TypeError("* precision argument must be an int")
 
 
-def percent_format(format: unicode, values):
+def percent_format(format: str, values):
     result = _FormatBuffer(len(format) + 16)
     format_pos = 0
     directive: Optional[_PercentDirective] = None
@@ -987,7 +987,7 @@ def percent_format(format: unicode, values):
     return result.data, result.length
 
 
-def percent_format_mapping(format: unicode, values):
+def percent_format_mapping(format: str, values):
     result = _FormatBuffer(len(format) + 16)
     format_pos = 0
 
@@ -1021,8 +1021,8 @@ def percent_format_mapping(format: unicode, values):
 
 
 @extend
-class unicode:
-    def __mod__(self, values) -> unicode:
+class str:
+    def __mod__(self, values) -> str:
         if isinstance(values, Dict):
             output, output_length = percent_format_mapping(self, values)
             return _unicode_decode_utf8_strict(output, output_length)
@@ -1033,21 +1033,21 @@ class unicode:
         output, output_length = percent_format(self, values)
         return _unicode_decode_utf8_strict(output, output_length)
 
-    def format(self, *values) -> unicode:
+    def format(self, *values) -> str:
         output, output_length = brace_format(self, values)
         return _unicode_decode_utf8_strict(output, output_length)
 
-    def format_map(self, mapping) -> unicode:
+    def format_map(self, mapping) -> str:
         output, output_length = brace_format_map(self, mapping)
         return _unicode_decode_utf8_strict(output, output_length)
 
 
 def _value_string(value):
-    return unicode(str(value))
+    return str(str(value))
 
 
-def _value_repr(value) -> unicode:
-    return unicode(repr(value))
+def _value_repr(value) -> str:
+    return str(repr(value))
 
 
 def _percent_append_hex(
@@ -1062,7 +1062,7 @@ def _percent_append_hex(
         )
 
 
-def _value_ascii(value) -> unicode:
+def _value_ascii(value) -> str:
     text = _value_repr(value)
     output = _FormatBuffer(len(text) + 2)
 
@@ -1089,9 +1089,9 @@ def _value_ascii(value) -> unicode:
 
 class _BraceField:
     index: int
-    key: Optional[unicode]
+    key: Optional[str]
     conversion: int
-    spec: Optional[unicode]
+    spec: Optional[str]
 
     def __init__(self):
         self.index = -1
@@ -1101,7 +1101,7 @@ class _BraceField:
 
 
 def _brace_write_literal_prefix(
-    format: unicode,
+    format: str,
     format_pos: int,
     result: _FormatBuffer,
 ) -> int:
@@ -1146,7 +1146,7 @@ def _brace_write_literal_prefix(
 
 
 def _parse_brace_field(
-    format: unicode,
+    format: str,
     position: int,
 ) -> Tuple[_BraceField, int]:
     field = _BraceField()
@@ -1252,8 +1252,8 @@ def _parse_brace_field(
 
 
 def _brace_text_append(
-    text: unicode,
-    spec: Optional[unicode],
+    text: str,
+    spec: Optional[str],
     result: _FormatBuffer,
 ):
     if spec is None:
@@ -1299,11 +1299,11 @@ def _brace_value_append(
         if (
             not isinstance(value, int)
             and not isinstance(value, float)
-            and not isinstance(value, unicode)
+            and not isinstance(value, str)
         ):
             if hasattr(value, "__format__"):
                 if spec is None:
-                    spec = unicode("")
+                    spec = str("")
                 if static.function.can_call(value.__format__, spec):
                     _brace_text_append(value.__format__(spec), None, result)
                     return
@@ -1325,7 +1325,7 @@ def _brace_value_append(
     if directive.brace_coerce_negative_zero and not isinstance(value, float):
         raise ValueError("'z' option is only allowed for floats")
 
-    text_value = field.conversion != 0 or isinstance(value, unicode)
+    text_value = field.conversion != 0 or isinstance(value, str)
 
     if (
         text_value
@@ -1431,7 +1431,7 @@ def _brace_value_append(
     rendered = _FormatBuffer(16)
 
     original_spec = field.spec
-    field.spec = unicode("")
+    field.spec = str("")
 
     # Preserve the parsed conversion/type while avoiding duplicate parsing.
     # `_brace_value_append_unaligned` parses `field.spec`, so use a small
@@ -1449,7 +1449,7 @@ def _brace_value_append(
     _brace_append_aligned(rendered, directive, text_default_left, result)
 
 
-def brace_format(format: unicode, values):
+def brace_format(format: str, values):
     result = _FormatBuffer(len(format) + 16)
     format_pos = 0
     automatic_index = 0
@@ -1508,11 +1508,11 @@ def brace_format(format: unicode, values):
 
 
 def _brace_expand_format_spec(
-    spec: unicode,
+    spec: str,
     values,
     automatic_index: int,
     numbering_mode: int,
-) -> Tuple[unicode, int, int]:
+) -> Tuple[str, int, int]:
     result = _FormatBuffer(len(spec) + 16)
     position = 0
 
@@ -1580,14 +1580,14 @@ def _brace_index_value_append(
 
 def _brace_mapping_value_append(
     mapping,
-    key: unicode,
+    key: str,
     field: _BraceField,
     result: _FormatBuffer,
 ):
     _brace_value_append(mapping[key], field, result)
 
 
-def brace_format_map(format: unicode, mapping):
+def brace_format_map(format: str, mapping):
     result = _FormatBuffer(len(format) + 16)
     format_pos = 0
 
@@ -1614,7 +1614,7 @@ def brace_format_map(format: unicode, mapping):
     return result.data, result.length
 
 
-def _brace_expand_format_spec_map(spec: unicode, mapping) -> unicode:
+def _brace_expand_format_spec_map(spec: str, mapping) -> str:
     result = _FormatBuffer(len(spec) + 16)
     position = 0
 
@@ -1635,7 +1635,7 @@ def _brace_expand_format_spec_map(spec: unicode, mapping) -> unicode:
     return _unicode_decode_utf8_strict(result.data, result.length)
 
 
-def _parse_brace_format_spec(spec: unicode) -> _PercentDirective:
+def _parse_brace_format_spec(spec: str) -> _PercentDirective:
     directive = _PercentDirective()
     position = 0
 
@@ -2086,7 +2086,7 @@ def _brace_validate_value_format(
         or (directive.flags & FORMAT_FLAG_SPACE) != 0
     )
 
-    if field.conversion != 0 or isinstance(value, unicode):
+    if field.conversion != 0 or isinstance(value, str):
         if has_sign:
             raise ValueError("sign is not allowed in string format specifier")
         if (directive.flags & FORMAT_FLAG_ALT) != 0:

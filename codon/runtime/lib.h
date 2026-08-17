@@ -19,13 +19,26 @@
 
 #define SEQ_EXCEPTION_CLASS 0x6f626a0073657100
 
+#define SEQ_STR_KIND_ASCII 0
+#define SEQ_STR_KIND_LATIN1 1
+#define SEQ_STR_KIND_UCS2 2
+#define SEQ_STR_KIND_UCS4 3
+
+#define SEQ_STR_KIND_SHIFT 56
+#define SEQ_STR_LEN_MASK ((uint64_t(1) << SEQ_STR_KIND_SHIFT) - 1)
+#define SEQ_STR_KIND_MASK (uint64_t(3) << SEQ_STR_KIND_SHIFT)
+
+#define SEQ_STR_LEN(s) ((size_t)((uint64_t)((s).meta) & SEQ_STR_LEN_MASK))
+#define SEQ_STR_KIND(s)                                                                \
+  ((unsigned)(((uint64_t)((s).meta) & SEQ_STR_KIND_MASK) >> SEQ_STR_KIND_SHIFT))
+
 #define SEQ_FUNC extern "C"
 
 typedef int64_t seq_int_t;
 
 struct seq_str_t {
-  char *str;
-  seq_int_t len;
+  uint8_t *ptr;
+  seq_int_t meta;
 };
 
 struct seq_time_t {
