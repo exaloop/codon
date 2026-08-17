@@ -19,6 +19,9 @@ class bytes:
     def __new__(what: str, encoding: str, errors: str = "strict") -> bytes:
         return what.encode(encoding, errors)
 
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return str(self, encoding, errors)
+
     def __str__(what: bytes) -> str:
         return what.__repr__()
 
