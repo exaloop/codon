@@ -21,6 +21,7 @@ from internal.format import (
     _float_format,
 )
 import unicodedata
+import re
 unicode = str
 
 def _raw_bytes(values: List[int]) -> bytes:
@@ -262,6 +263,84 @@ def test_unicode_codepoints():
     assert u[5] == unicode("🙂")
     assert unicode("AΩ😀") == unicode("AΩ😀")
     assert unicode("AΩ😀")[1] == unicode("Ω")
+
+
+@test
+def test_unicode_regex():
+    value = unicode("aβ😀γ😀")
+    match = re.search(unicode("β(?P<face>😀)"), value)
+    assert match is not None
+    assert match.span() == (1, 3)
+    assert match.span("face") == (2, 3)
+    assert match.group("face") == unicode("😀")
+    assert match.re.groupindex == {unicode("face"): 1}
+
+    assert [match.span() for match in re.finditer(unicode("😀"), value)] == [
+        (2, 3), (4, 5),
+    ]
+    assert re.compile(unicode("😀")).search(value, 2, 3).span() == (2, 3)
+    assert re.compile(unicode("γ")).search(value, 3, 4).span() == (3, 4)
+    assert re.sub(unicode("😀"), unicode("!"), value) == unicode("aβ!γ!")
+    assert re.escape(unicode("é😀+")) == unicode("é😀\\+")
+
+    pattern = re.compile(unicode("(?P<latin>é)(?P<greek>β)?(?P<face>😀)"))
+    grouped = unwrap(pattern.match(unicode("é😀")))
+    assert grouped.group() == unicode("é😀")
+    assert unwrap(grouped.group(1)) == unicode("é")
+    assert grouped.group("greek") is None
+    assert grouped["greek"] is None
+    assert grouped.group(1, "greek", "face") == (
+        Optional[unicode](unicode("é")),
+        Optional[unicode](),
+        Optional[unicode](unicode("😀")),
+    )
+    assert [unwrap(group) for group in grouped.groups(unicode("-"))] == [
+        unicode("é"), unicode("-"), unicode("😀")
+    ]
+    groupdict = grouped.groupdict(unicode("-"))
+    assert len(groupdict) == 3
+    assert unwrap(groupdict[unicode("latin")]) == unicode("é")
+    assert unwrap(groupdict[unicode("greek")]) == unicode("-")
+    assert unwrap(groupdict[unicode("face")]) == unicode("😀")
+    assert grouped.lastindex == 3
+    assert grouped.lastgroup == unicode("face")
+    assert grouped.expand(unicode("<\\g<face>\\1>")) == unicode("<😀é>")
+
+    assert re.match(unicode("β"), value) is None
+    assert re.fullmatch(unicode("aβ😀γ😀"), value).span() == (0, 5)
+    assert re.fullmatch(unicode("aβ😀"), value) is None
+    assert re.compile(unicode("β😀")).match(value, 1, 3).span() == (1, 3)
+    assert re.compile(unicode("β😀")).fullmatch(value, 1, 3).span() == (1, 3)
+    assert re.compile(unicode("β")).search(value, 4, 2) is None
+
+    assert re.findall(unicode("[β😀]"), value) == [
+        unicode("β"), unicode("😀"), unicode("😀")
+    ]
+    assert [item.group() for item in re.finditer(unicode(""), unicode("é😀"))] == [
+        unicode(""), unicode(""), unicode("")
+    ]
+    assert [item.span() for item in re.compile(unicode("😀")).finditer(value, 2, 5)] == [
+        (2, 3), (4, 5)
+    ]
+
+    split = re.split(unicode("(?P<face>😀)"), unicode("é😀β😀"), 1)
+    assert unwrap(split[0]) == unicode("é")
+    assert unwrap(split[1]) == unicode("😀")
+    assert unwrap(split[2]) == unicode("β😀")
+    assert re.split(unicode("😀"), value, -1) == [Optional[unicode](value)]
+
+    assert re.sub(unicode("(β)(😀)"), unicode("\\2\\1"), value) == unicode("a😀βγ😀")
+    assert re.sub(unicode("😀"), lambda _: unicode("!"), value, 1) == unicode("aβ!γ😀")
+    assert re.subn(unicode("😀"), unicode("!"), value) == (unicode("aβ!γ!"), 2)
+    assert re.search(unicode("é"), unicode("É"), re.IGNORECASE).span() == (0, 1)
+
+    re.purge()
+    assert re.search(unicode("😀"), value).span() == (2, 3)
+    try:
+        re.compile(unicode("("))
+        assert False
+    except re.error as exc:
+        assert exc.pattern == unicode("(")
 
 
 @test
@@ -1646,6 +1725,7 @@ test_fastsearch_mixed_kind_views()
 test_split_and_rsplit_paths()
 test_concat_and_repeat()
 test_unicode_codepoints()
+test_unicode_regex()
 test_unicode_normalization()
 test_unicodedata_category_and_combining()
 test_unicodedata_directionality_and_width()

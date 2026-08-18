@@ -17,6 +17,39 @@ def test_search_star_plus():
 test_search_star_plus()
 
 @test
+def test_bytes_regex():
+    data_ptr = Ptr[u8](3)
+    data_ptr[0], data_ptr[1], data_ptr[2] = u8(0x61), u8(0xFF), u8(0x62)
+    data = bytes(data_ptr, 3)
+    pattern_ptr = Ptr[u8](4)
+    pattern_ptr[0], pattern_ptr[1], pattern_ptr[2], pattern_ptr[3] = (
+        u8(0x28), u8(0xFF), u8(0x29), u8(0x62)
+    )
+    pattern = bytes(pattern_ptr, 4)
+
+    compiled = re.compile(pattern)
+    match = compiled.search(data)
+    assert match.span() == (1, 3)
+    assert match.group() == bytes(data._ptr + 1, 2)
+    assert unwrap(match.group(1)) == bytes(data._ptr + 1, 1)
+    spans = []
+    for item in re.compile(".".encode()).finditer(data):
+        spans.append(item.span())
+    assert spans == [(0, 1), (1, 2), (2, 3)]
+    assert re.split(":".encode(), "a:b:c".encode()) == [
+        Optional[bytes]("a".encode()),
+        Optional[bytes]("b".encode()),
+        Optional[bytes]("c".encode()),
+    ]
+    assert re.sub(":".encode(), "/".encode(), "a:b:c".encode(), 1) == "a/b:c".encode()
+    assert re.escape("a+b".encode()) == "a\\+b".encode()
+
+    named = re.compile("(?P<letter>a)".encode())
+    assert named.groupindex == {"letter".encode(): 1}
+    assert unwrap(named.search("a".encode())["letter".encode()]) == "a".encode()
+test_bytes_regex()
+
+@test
 def test_branching():
     """Test Branching
     Test expressions using the OR ('|') operator."""
@@ -94,7 +127,7 @@ def test_sub_template_numeric_escape():
     assert re.sub('x', r'\009', 'x') == '\0' + '9'
     assert re.sub('x', r'\111', 'x') == '\111'
     assert re.sub('x', r'\117', 'x') == '\117'
-    assert re.sub('x', r'\377', 'x') == '\377'
+    assert re.sub('x', "\\377", 'x') == chr(255)
 
     assert re.sub('x', r'\1111', 'x'), '\1111'
     assert re.sub('x', r'\1111', 'x'), '\111' + '1'
@@ -106,11 +139,11 @@ def test_sub_template_numeric_escape():
     assert re.sub('x', r'\0a', 'x') == '\0' + 'a'
 
     '''
-    self.checkTemplateError('x', r'\400', 'x',
-                            r'octal escape value \400 outside of '
+    self.checkTemplateError('x', r'\\400', 'x',
+                            r'octal escape value \\400 outside of '
                             r'range 0-0o377', 0)
-    self.checkTemplateError('x', r'\777', 'x',
-                            r'octal escape value \777 outside of '
+    self.checkTemplateError('x', r'\\777', 'x',
+                            r'octal escape value \\777 outside of '
                             r'range 0-0o377', 0)
 
     self.checkTemplateError('x', r'\1', 'x', 'invalid group reference 1', 1)
@@ -240,7 +273,7 @@ def test_re_findall():
     #           if there are capturing groups.
     assert re.findall("(:)(:*)", "a:b::c:::d") == [":", "::", ":::"]
 
-    x = "\xe0"
+    x = "à"
     xx = x * 2
     xxx = x * 3
     string = f"a{x}b{xx}c{xxx}d"
@@ -257,11 +290,11 @@ def test_re_match():
     assert re.match('(a)', 'a').group(0).__val__() == 'a'
     assert re.match('(a)', 'a').group(1).__val__() == 'a'
     assert re.match('(a)', 'a').group(1, 1) == (Optional('a'), Optional('a'))
-    assert cmp_list(re.match('\xe0', '\xe0').groups(), List[Optional[str]]())
-    assert cmp_list(re.match('(\xe0)', '\xe0').groups(), ['\xe0'])
-    assert unwrap(re.match('(\xe0)', '\xe0').group(0)) == '\xe0'
-    assert unwrap(re.match('(\xe0)', '\xe0').group(1)) == '\xe0'
-    assert re.match('(\xe0)', '\xe0').group(1, 1) == (Optional('\xe0'), Optional('\xe0'))
+    assert cmp_list(re.match('à', 'à').groups(), List[Optional[str]]())
+    assert cmp_list(re.match('(à)', 'à').groups(), ['à'])
+    assert unwrap(re.match('(à)', 'à').group(0)) == 'à'
+    assert unwrap(re.match('(à)', 'à').group(1)) == 'à'
+    assert re.match('(à)', 'à').group(1, 1) == (Optional('à'), Optional('à'))
 
     pat = re.compile('((a)|(b))(c)?')
     assert cmp_list(pat.match('a').groups(), [None, 'a', 'a', None, None][1:])
@@ -340,7 +373,7 @@ test_match_getitem()
 def test_re_fullmatch():
     assert re.fullmatch(r"a", "a").span() == (0, 1)
     assert re.fullmatch(r"a|ab", "ab").span() == (0, 2)
-    assert re.fullmatch("\xe0|\xe0\xdf", "\xe0\xdf").span() == (0, 2)
+    assert re.fullmatch("à|àß", "àß").span() == (0, 2)
 
     assert re.fullmatch(r".*?$", "abc").span() == (0, 3)
     assert re.fullmatch(r".*?", "abc").span() == (0, 3)

@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 # Adapted in part from Google's Python re2 wrapper
-# https://github.com/google/re2/blob/abseil/python/re2.py
+# https://github.com/google/re2/tree/main/python
 
 import internal.static as static
 
@@ -34,7 +34,7 @@ class Span:
 @pure
 def seq_re_match(re: cobj,
                  anchor: int,
-                 string: str,
+                 string: bytes,
                  pos: int,
                  endpos: int) -> Ptr[Span]:
     pass
@@ -43,7 +43,7 @@ def seq_re_match(re: cobj,
 @pure
 def seq_re_match_one(re: cobj,
                      anchor: int,
-                     string: str,
+                     string: bytes,
                      pos: int,
                      endpos: int) -> Span:
     pass
@@ -55,22 +55,22 @@ def seq_re_pattern_groups(re: cobj) -> int:
 
 @C
 @pure
-def seq_re_group_name_to_index(re: cobj, name: str) -> int:
+def seq_re_group_name_to_index(re: cobj, name: bytes) -> int:
     pass
 
 @C
 @pure
-def seq_re_group_index_to_name(re: cobj, index: int) -> str:
+def seq_re_group_index_to_name(re: cobj, index: int) -> bytes:
     pass
 
 @C
 @pure
-def seq_re_pattern_error(re: cobj) -> str:
+def seq_re_pattern_error(re: cobj) -> bytes:
     pass
 
 @C
 @pure
-def seq_re_escape(pattern: str) -> str:
+def seq_re_escape(pattern: bytes) -> bytes:
     pass
 
 @C
@@ -79,7 +79,7 @@ def seq_re_purge() -> None:
 
 @C
 @pure
-def seq_re_compile(pattern: str, flags: int) -> cobj:
+def seq_re_compile(pattern: bytes, flags: int, is_bytes: bool) -> cobj:
     pass
 
 class error(Exception):
@@ -94,14 +94,15 @@ class error(Exception):
         return self.message
 
 @tuple
-class Pattern:
-    pattern: str
+class Pattern[T]:
+    pattern: T
     flags: int
     _re: cobj
 
-def compile(pattern: str, flags: int = 0):
-    re = seq_re_compile(pattern, flags)
-    err_msg = seq_re_pattern_error(re)
+def compile(pattern: str, flags: int = 0) -> Pattern[str]:
+    encoded = pattern.encode()
+    re = seq_re_compile(encoded, flags, False)
+    err_msg = seq_re_pattern_error(re).decode()
     if err_msg:
         raise error(err_msg, pattern)
     return Pattern(pattern, flags, re)
@@ -131,18 +132,33 @@ def subn(pattern: str, repl, string: str, count: int = 0, flags: int = 0):
     return compile(pattern, flags).subn(repl, string, count)
 
 def escape(pattern: str):
-    return seq_re_escape(pattern)
+    return seq_re_escape(pattern.encode()).decode()
 
 def purge():
     seq_re_purge()
 
+def _utf8_byte_offset(encoded: bytes, codepoint_offset: int) -> int:
+    byte_offset = 0
+    while codepoint_offset > 0:
+        c = int(encoded._ptr[byte_offset])
+        if c < 0x80:
+            byte_offset += 1
+        elif c < 0xE0:
+            byte_offset += 2
+        elif c < 0xF0:
+            byte_offset += 3
+        else:
+            byte_offset += 4
+        codepoint_offset -= 1
+    return byte_offset
+
 @tuple
-class Match:
+class Match[T]:
     _spans: Ptr[Span]
     pos: int
     endpos: int
-    re: Pattern
-    string: str
+    re: Pattern[T]
+    string: T
 
     def _get_group_int(self, g: int, n: int):
         if not (0 <= g <= n):
@@ -150,6 +166,9 @@ class Match:
         return self._spans[g]
 
     def _get_group_str(self, g: str, n: int):
+        return self._get_group_int(seq_re_group_name_to_index(self.re._re, g.encode()), n)
+
+    def _get_group_bytes(self, g: bytes, n: int):
         return self._get_group_int(seq_re_group_name_to_index(self.re._re, g), n)
 
     def _get_group(self, g, n: int):
@@ -157,15 +176,17 @@ class Match:
             return self._get_group_int(g, n)
         elif isinstance(g, str):
             return self._get_group_str(g, n)
+        elif isinstance(g, bytes):
+            return self._get_group_bytes(g, n)
         else:
             return self._get_group(g.__index__(), n)
 
-    def _span_match(self, span: Span):
+    def _span_match(self, span: Span) -> Optional[T]:
         if not span:
             return None
-        return self.string._slice(span.start, span.end)
+        return T(self.string._slice(span.start, span.end))
 
-    def _get_match(self, g, n: int):
+    def _get_match(self, g, n: int) -> Optional[T]:
         span = self._get_group(g, n)
         return self._span_match(span)
 
@@ -316,7 +337,8 @@ class Match:
         max_group = self.lastindex
         if max_group is None:
             return None
-        return seq_re_group_index_to_name(self.re._re, max_group)
+        name = seq_re_group_index_to_name(self.re._re, max_group)
+        return name.decode() if isinstance(self.string, str) else name
 
     def groups(self, default: Optional[str] = None):
         def get_or_default(item, default):
@@ -350,69 +372,171 @@ class Pattern:
 
     @property
     def groupindex(self):
-        d = {}
-        for i in range(1, self.groups + 1):
-            name = seq_re_group_index_to_name(self._re, i)
-            if name:
-                d[name] = i
-        return d
+        if isinstance(self.pattern, str):
+            d = {}
+            for i in range(1, self.groups + 1):
+                name = seq_re_group_index_to_name(self._re, i).decode()
+                if name:
+                    d[name] = i
+            return d
+        else:
+            d = {}
+            for i in range(1, self.groups + 1):
+                name = seq_re_group_index_to_name(self._re, i)
+                if name:
+                    d[name] = i
+            return d
 
-    def _match_one(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
+    def _match_spans(
+        self,
+        raw_spans: Ptr[Span],
+        encoded: bytes,
+        byte_pos: int,
+        codepoint_pos: int,
+    ):
+        spans = Ptr[Span](self.groups + 1)
+        boundaries = []
+        for i in range(self.groups + 1):
+            span = raw_spans[i]
+            if span:
+                boundaries.append(span.start)
+                boundaries.append(span.end)
+        boundaries.sort()
+
+        offsets = {}
+        last_byte_pos = byte_pos
+        last_codepoint_pos = codepoint_pos
+        for boundary in boundaries:
+            if boundary == last_byte_pos:
+                offsets[boundary] = last_codepoint_pos
+                continue
+
+            while last_byte_pos < boundary:
+                c = int(encoded._ptr[last_byte_pos])
+                if c < 0x80:
+                    last_byte_pos += 1
+                elif c < 0xE0:
+                    last_byte_pos += 2
+                elif c < 0xF0:
+                    last_byte_pos += 3
+                else:
+                    last_byte_pos += 4
+                last_codepoint_pos += 1
+            offsets[boundary] = last_codepoint_pos
+
+        for i in range(self.groups + 1):
+            span = raw_spans[i]
+            if span:
+                spans[i] = Span(offsets[span.start], offsets[span.end])
+            else:
+                spans[i] = Span(-1, -1)
+
+        return spans
+
+    def _raw_spans(self, raw_spans: Ptr[Span]):
+        spans = Ptr[Span](self.groups + 1)
+        for i in range(self.groups + 1):
+            spans[i] = Span(raw_spans[i].start, raw_spans[i].end)
+        return spans
+
+    def _match_one(
+        self, anchor: int, string: T, pos: Optional[int], endpos: Optional[int]
+    ) -> Optional[Match[T]]:
         posx = 0 if pos is None else max(0, min(pos.__val__(), len(string)))
         endposx = len(string) if endpos is None else max(0, min(endpos.__val__(), len(string)))
 
         if posx > endposx:
             return None
 
-        spans = seq_re_match(self._re, anchor, string, posx, endposx)
-        if not spans[0]:
+        encoded = string.encode() if isinstance(string, str) else string
+        byte_pos = _utf8_byte_offset(encoded, posx) if isinstance(string, str) else posx
+        byte_endpos = len(encoded) if endposx == len(string) else (
+            _utf8_byte_offset(encoded, endposx) if isinstance(string, str) else endposx
+        )
+        raw_spans = seq_re_match(self._re, anchor, encoded, byte_pos, byte_endpos)
+
+        if not raw_spans[0]:
             return None
 
-        return Match(spans, posx, endposx, self, string)
+        spans = (
+            self._match_spans(raw_spans, encoded, byte_pos, posx)
+            if isinstance(string, str) else self._raw_spans(raw_spans)
+        )
+        return Match[T](spans, posx, endposx, self, string)
 
-    def _match(self, anchor: int, string: str, pos: Optional[int], endpos: Optional[int]):
+    def _match(
+        self, anchor: int, string: T, pos: Optional[int], endpos: Optional[int]
+    ) -> Generator[Match[T]]:
         posx = 0 if pos is None else max(0, min(pos.__val__(), len(string)))
         endposx = len(string) if endpos is None else max(0, min(endpos.__val__(), len(string)))
 
         if posx > endposx:
             return
 
-        while True:
-            spans = seq_re_match(self._re, anchor, string, posx, endposx)
+        encoded = string.encode() if isinstance(string, str) else string
+        byte_pos = _utf8_byte_offset(encoded, posx) if isinstance(string, str) else posx
+        byte_endpos = len(encoded) if endposx == len(string) else (
+            _utf8_byte_offset(encoded, endposx) if isinstance(string, str) else endposx
+        )
+        codepoint_pos = posx
 
-            if not spans[0]:
+        while True:
+            raw_spans = seq_re_match(self._re, anchor, encoded, byte_pos, byte_endpos)
+
+            if not raw_spans[0]:
                 break
 
-            yield Match(spans, posx, endposx, self, string)
+            spans = (
+                self._match_spans(raw_spans, encoded, byte_pos, codepoint_pos)
+                if isinstance(string, str) else self._raw_spans(raw_spans)
+            )
+
+            yield Match[T](spans, posx, endposx, self, string)
 
             if posx == endposx:
                 break
 
-            elif posx == spans[0][1]:
+            elif byte_pos == raw_spans[0].end:
                 # We matched the empty string at pos and would be stuck, so in order
-                # to make forward progress, increment the bytes offset.
+                # to make forward progress, advance over one UTF-8 code point.
+                if isinstance(string, str):
+                    c = int(encoded._ptr[byte_pos])
+                    byte_pos += 1 if c < 0x80 else 2 if c < 0xE0 else 3 if c < 0xF0 else 4
+                else:
+                    byte_pos += 1
                 posx += 1
+                codepoint_pos += 1
             else:
+                byte_pos = raw_spans[0].end
                 posx = spans[0][1]
+                codepoint_pos = posx
 
-    def search(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+    def search(
+        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+    ) -> Optional[Match[T]]:
         return self._match_one(_ANCHOR_NONE, string, pos, endpos)
 
-    def match(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+    def match(
+        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+    ) -> Optional[Match[T]]:
         return self._match_one(_ANCHOR_START, string, pos, endpos)
 
-    def fullmatch(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+    def fullmatch(
+        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+    ) -> Optional[Match[T]]:
         return self._match_one(_ANCHOR_BOTH, string, pos, endpos)
 
-    def finditer(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+    def finditer(
+        self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None
+    ) -> Generator[Match[T]]:
         return self._match(_ANCHOR_NONE, string, pos, endpos)
 
-    def findall(self, string: str, pos: Optional[int] = None, endpos: Optional[int] = None):
+    def findall(self, string: T, pos: Optional[int] = None, endpos: Optional[int] = None):
         return [m.group() for m in self.finditer(string, pos, endpos)]
 
-    def _split(self, cb, string: str, maxsplit: int = 0, T: type = str):
+    def _split(self, cb, string: T, maxsplit: int = 0):
         if maxsplit < 0:
-            return [T(string)], 0
+            return [string], 0
 
         pieces: List[T] = []
         end = 0
@@ -427,26 +551,88 @@ class Pattern:
         pieces.append(string[end:])
         return pieces, numsplit
 
-    def split(self, string: str, maxsplit: int = 0):
-        cb = lambda match: [match[group] for group in range(1, self.groups + 1)]
-        pieces, _ = self._split(cb, string, maxsplit, Optional[str])
+    def split(self, string: T, maxsplit: int = 0):
+        if maxsplit < 0:
+            return [Optional[T](string)]
+
+        pieces: List[Optional[T]] = []
+        end = 0
+        numsplit = 0
+        for match in self.finditer(string):
+            if maxsplit > 0 and numsplit >= maxsplit:
+                break
+            pieces.append(string[end:match.start()])
+            for group in range(1, self.groups + 1):
+                pieces.append(match[group])
+            end = match.end()
+            numsplit += 1
+        pieces.append(string[end:])
         return pieces
 
     def _repl(match, repl):
         if isinstance(repl, str):
             return match.expand(repl)
+        elif isinstance(repl, bytes):
+            return repl
         else:
             return repl(match)
 
-    def subn(self, repl, string: str, count: int = 0):
+    def subn(self, repl, string: T, count: int = 0):
         cb = lambda match: [Pattern._repl(match, repl)]
-        pieces, numsplit = self._split(cb, string, count, str)
-        joined_pieces = str.cat(pieces)
+        pieces, numsplit = self._split(cb, string, count)
+        joined_pieces = str.cat(pieces) if isinstance(string, str) else bytes.cat(pieces)
         return joined_pieces, numsplit
 
-    def sub(self, repl, string: str, count: int = 0):
+    def sub(self, repl, string: T, count: int = 0):
         joined_pieces, _ = self.subn(repl, string, count)
         return joined_pieces
 
     def __bool__(self):
         return True
+
+def _compile_bytes(pattern: bytes, flags: int = 0) -> Pattern[bytes]:
+    re = seq_re_compile(pattern, flags, True)
+    err_msg = seq_re_pattern_error(re).decode()
+    if err_msg:
+        raise error(err_msg, pattern.decode("latin-1"))
+    return Pattern[bytes](pattern, flags, re)
+
+@overload
+def compile(pattern: bytes, flags: int = 0) -> Pattern[bytes]:
+    return _compile_bytes(pattern, flags)
+
+@overload
+def search(pattern: bytes, string: bytes, flags: int = 0):
+    return _compile_bytes(pattern, flags).search(string)
+
+@overload
+def match(pattern: bytes, string: bytes, flags: int = 0):
+    return _compile_bytes(pattern, flags).match(string)
+
+@overload
+def fullmatch(pattern: bytes, string: bytes, flags: int = 0):
+    return _compile_bytes(pattern, flags).fullmatch(string)
+
+@overload
+def findall(pattern: bytes, string: bytes, flags: int = 0):
+    return _compile_bytes(pattern, flags).findall(string)
+
+@overload
+def finditer(pattern: bytes, string: bytes, flags: int = 0) -> Generator[Match[bytes]]:
+    return _compile_bytes(pattern, flags).finditer(string)
+
+@overload
+def split(pattern: bytes, string: bytes, maxsplit: int = 0, flags: int = 0):
+    return _compile_bytes(pattern, flags).split(string, maxsplit)
+
+@overload
+def sub(pattern: bytes, repl, string: bytes, count: int = 0, flags: int = 0):
+    return _compile_bytes(pattern, flags).sub(repl, string, count)
+
+@overload
+def subn(pattern: bytes, repl, string: bytes, count: int = 0, flags: int = 0):
+    return _compile_bytes(pattern, flags).subn(repl, string, count)
+
+@overload
+def escape(pattern: bytes):
+    return seq_re_escape(pattern)

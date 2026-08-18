@@ -1384,6 +1384,9 @@ class str:
 
         return result
 
+    def _slice(self, start: int, stop: int) -> str:
+        return _unicode_slice_impl(self, start, stop)
+
     def __eq__(self, other: str) -> bool:
         if len(self) != len(other):
             return False
@@ -1805,6 +1808,16 @@ class str:
 
     def splitlines(self, keepends: bool = False) -> List[str]:
         return _unicode_splitlines_impl(self, keepends)
+
+    def join(self, values) -> str:
+        result = _strbuf()
+        first = True
+        for value in values:
+            if not first:
+                result.append(self)
+            result.append(value)
+            first = False
+        return result.__str__()
 
     def join(self, values: List[str]) -> str:
         return _unicode_join_impl(self, values)

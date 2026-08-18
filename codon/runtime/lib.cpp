@@ -427,8 +427,8 @@ static seq_str_t string_conv(const std::string &s) {
       out[i] = codepoint;
   }
 
-  auto meta = (uint64_t(length) & SEQ_STR_LEN_MASK) |
-              (uint64_t(kind) << SEQ_STR_KIND_SHIFT);
+  auto meta =
+      (uint64_t(length) & SEQ_STR_LEN_MASK) | (uint64_t(kind) << SEQ_STR_KIND_SHIFT);
   return {out, static_cast<seq_int_t>(meta)};
 }
 

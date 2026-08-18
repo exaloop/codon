@@ -41,6 +41,11 @@ struct seq_str_t {
   seq_int_t meta;
 };
 
+struct seq_bytes_t {
+  char *ptr;
+  seq_int_t len;
+};
+
 struct seq_time_t {
   int16_t year;
   int16_t yday;
