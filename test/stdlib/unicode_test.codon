@@ -22,6 +22,8 @@ from internal.format import (
 )
 import unicodedata
 import re
+import gzip
+import bz2
 unicode = str
 
 def _raw_bytes(values: List[int]) -> bytes:
@@ -344,6 +346,90 @@ def test_unicode_regex():
 
 
 @test
+def test_unicode_file_io():
+    text = unicode("éβ😀\n")
+    raw = _raw_bytes([0x00, 0xFF, 0x61])
+
+    writer = open(unicode("build/unicode-file.txt"), "w")
+    assert writer.write(text) == len(text)
+    writer.close()
+    reader = open(unicode("build/unicode-file.txt"), "r")
+    assert reader.read() == text
+    reader.close()
+
+    writer = gzip.open(unicode("build/unicode-file.gz"), "w")
+    assert writer.write(text) == len(text)
+    writer.close()
+    reader = gzip.open(unicode("build/unicode-file.gz"), "r")
+    assert reader.read() == text
+    reader.close()
+
+    writer = bz2.open(unicode("build/unicode-file.bz2"), "w")
+    assert writer.write(text) == len(text)
+    writer.close()
+    reader = bz2.open(unicode("build/unicode-file.bz2"), "r")
+    assert reader.read() == text
+    reader.close()
+
+    writer = open("build/unicode-read.txt", "w")
+    writer.write(unicode("éβ😀!"))
+    writer.close()
+    reader = open("build/unicode-read.txt", "r")
+    assert reader.read(1) == unicode("é")
+    assert reader.read(2) == unicode("β😀")
+    assert reader.read() == unicode("!")
+    reader.close()
+
+    writer = gzip.open("build/unicode-read.gz", "w")
+    writer.write(unicode("éβ😀!"))
+    writer.close()
+    reader = gzip.open("build/unicode-read.gz", "r")
+    assert reader.read(1) == unicode("é")
+    assert reader.read(2) == unicode("β😀")
+    assert reader.read() == unicode("!")
+    reader.close()
+
+    writer = bz2.open("build/unicode-read.bz2", "w")
+    writer.write(unicode("éβ😀!"))
+    writer.close()
+    reader = bz2.open("build/unicode-read.bz2", "r")
+    assert reader.read(1) == unicode("é")
+    assert reader.read(2) == unicode("β😀")
+    assert reader.read() == unicode("!")
+    reader.close()
+
+    writer = gzip.open(unicode("build/unicode-nul.gz"), "w")
+    writer.write(unicode("a\x00é\nb"))
+    writer.close()
+    reader = gzip.open(unicode("build/unicode-nul.gz"), "r")
+    assert reader.readline() == unicode("a\x00é\n")
+    assert reader.readline() == unicode("b")
+    assert reader.readline() == unicode("")
+    reader.close()
+
+    writer = open(unicode("build/unicode-file.bin"), "wb")
+    writer.write(raw)
+    writer.close()
+    reader = open(unicode("build/unicode-file.bin"), "rb")
+    assert reader.read() == raw
+    reader.close()
+
+    writer = gzip.open(unicode("build/unicode-file.bin.gz"), "wb")
+    writer.write(raw)
+    writer.close()
+    reader = gzip.open(unicode("build/unicode-file.bin.gz"), "rb")
+    assert reader.read() == raw
+    reader.close()
+
+    writer = bz2.open(unicode("build/unicode-file.bin.bz2"), "wb")
+    writer.write(raw)
+    writer.close()
+    reader = bz2.open(unicode("build/unicode-file.bin.bz2"), "rb")
+    assert reader.read() == raw
+    reader.close()
+
+
+@test
 def test_unicode_normalization():
     assert unicodedata.normalize("NFD", unicode("é")) == unicode("é")
     assert unicodedata.normalize("NFC", unicode("é")) == unicode("é")
@@ -551,7 +637,7 @@ def _check_normalization_conformance(
 @test
 def test_unicode_normalization_conformance():
     cases = 0
-    with open("test/stdlib/NormalizationTest.txt") as fixture:
+    with open("test/stdlib/data/NormalizationTest.txt") as fixture:
         for line in fixture:
             line = line.split("#")[0].strip()
             if not line or line.startswith("@"):
@@ -1726,6 +1812,7 @@ test_split_and_rsplit_paths()
 test_concat_and_repeat()
 test_unicode_codepoints()
 test_unicode_regex()
+test_unicode_file_io()
 test_unicode_normalization()
 test_unicodedata_category_and_combining()
 test_unicodedata_directionality_and_width()

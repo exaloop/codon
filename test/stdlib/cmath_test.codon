@@ -783,7 +783,7 @@ def test_cmath_testcases():
         return True
 
     tests = []
-    with open("test/stdlib/cmath_testcases.txt") as f:
+    with open("test/stdlib/data/cmath_testcases.txt") as f:
         for line in f:
             line = line.strip()
             if not line.startswith("--"):

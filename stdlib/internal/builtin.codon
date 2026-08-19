@@ -15,12 +15,17 @@ def id(x) -> int:
     else:
         return 0
 
-def print(*args, sep: str = " ", end: str = "\n", file=_C.seq_stdout(), flush: bool = False):
+def print(*args, sep: str = " ", end: str = "\n", file=None, flush: bool = False):
+    if file is None:
+        print(*args, sep=sep, end=end, file=_C.seq_stdout(), flush=flush)
+        return
+
     fp = cobj()
     if isinstance(file, cobj):
         fp = file
     else:
         fp = file.fp
+
     i = 0
     for a in args:
         if i and sep:

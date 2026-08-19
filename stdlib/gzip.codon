@@ -1,6 +1,10 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.file import gzFile
+from internal.file import gzFile, gzopen
 
-def open(path: str, mode: str = "r") -> gzFile:
-    return gzFile(path, mode)
+def open(path: str, mode: str = "r") -> gzFile[str]:
+    return gzFile[str](path, mode)
+
+@overload
+def open(path: str, mode: Literal[str]):
+    return gzopen(path, mode)

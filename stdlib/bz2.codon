@@ -1,6 +1,10 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.file import bzFile
+from internal.file import bzFile, bzopen
 
-def open(path: str, mode: str = "r") -> bzFile:
-    return bzFile(path, mode)
+def open(path: str, mode: str = "r") -> bzFile[str]:
+    return bzFile[str](path, mode)
+
+@overload
+def open(path: str, mode: Literal[str]):
+    return bzopen(path, mode)
