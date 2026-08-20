@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <fmt/args.h>
 #include <sys/wait.h>
@@ -2509,9 +2510,11 @@ void LLVMVisitor::visit(const StringConst *x) {
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
-  // auto *len = B->getInt64(codepoints.length());
-  // seqassertn(codepoints.size() <= lengthMask, "string constant too large");
-  auto *meta = B->getInt64(codepoints.size() | (uint64_t(kind) << 56));
+
+  constexpr int LENGTH_BITS = 56;
+  seqassertn(codepoints.size() < (1ULL << LENGTH_BITS), "string constant too large");
+
+  auto *meta = B->getInt64(codepoints.size() | (uint64_t(kind) << LENGTH_BITS));
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, ptr, 0);
   str = B->CreateInsertValue(str, meta, 1);
