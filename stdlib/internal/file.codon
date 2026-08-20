@@ -1,64 +1,144 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import realloc, free
+from internal.str import _CodecByteBuffer
 
 def _file_bytes(data: Ptr[u8], length: int) -> bytes:
-    from internal.str import _CodecByteBuffer
-
     result = _CodecByteBuffer(length)
     bytes.memcpy(result.data, data, length)
     result.length = length
     return result.finish()
 
-def _file_read(fp: cobj, size: int) -> bytes:
-    buffer = Ptr[u8](size)
-    length = _C.fread(buffer, 1, size, fp)
-    return _file_bytes(buffer, length)
+def _file_buffer_reserve(buffer: _CodecByteBuffer, required: int):
+    if required <= buffer.capacity:
+        return
+
+    capacity = buffer.capacity if buffer.capacity > 0 else 1
+    while capacity < required:
+        capacity *= 2
+
+    expanded = Ptr[u8](capacity)
+    str.memcpy(expanded, buffer.data, buffer.length)
+    buffer.data = expanded
+    buffer.capacity = capacity
 
 def _file_read_all(fp: cobj) -> bytes:
+    start = _C.ftell(fp)
+    if start >= 0 and _C.fseek(fp, 0, i32(2)) == 0:
+        end = _C.ftell(fp)
+        if end >= start and _C.fseek(fp, start, i32(0)) == 0:
+            result = _CodecByteBuffer(end - start)
+            result.length = _C.fread(result.data, 1, end - start, fp)
+            if _C.ferror(fp):
+                raise IOError("file I/O error: error in read")
+            return result.finish()
+
     chunk_size = 4096
-    chunks: List[bytes] = []
+    result = _CodecByteBuffer(chunk_size)
     while True:
-        chunk = _file_read(fp, chunk_size)
-        chunks.append(chunk)
-        if len(chunk) < chunk_size:
+        _file_buffer_reserve(result, result.length + chunk_size)
+        length = _C.fread(result.data + result.length, 1, chunk_size, fp)
+        result.length += length
+        if length < chunk_size:
             break
     if _C.ferror(fp):
         raise IOError("file I/O error: error in read")
-    return bytes.cat(chunks)
+    return result.finish()
 
-def _file_collect(chunks: Generator[str]) -> str:
-    result = _strbuf()
-    for chunk in chunks:
-        result.append(chunk)
-    return result.__str__()
+def _file_utf8_sequence_length(first: int) -> int:
+    if first < 0x80:
+        return 1
+    if first >= 0xC2 and first <= 0xDF:
+        return 2
+    if first >= 0xE0 and first <= 0xEF:
+        return 3
+    if first >= 0xF0 and first <= 0xF4:
+        return 4
+    return 1
 
-@overload
-def _file_collect(chunks: Generator[bytes]) -> bytes:
-    parts: List[bytes] = []
-    for chunk in chunks:
-        parts.append(chunk.__ptrcopy__())
-    return bytes.cat(parts)
+def _file_validate_newline(newline: Optional[str]):
+    if (
+        newline is not None
+        and newline != ""
+        and newline != "\n"
+        and newline != "\r"
+        and newline != "\r\n"
+    ):
+        raise ValueError("illegal newline value")
+
+def _file_translate_read_newlines(value: str, newline: Optional[str]) -> str:
+    if newline is None:
+        return value.replace("\r\n", "\n").replace("\r", "\n")
+    return value
+
+def _file_translate_write_newlines(value: str, newline: Optional[str]) -> str:
+    if newline == "\r" or newline == "\r\n":
+        return value.replace("\n", newline)
+    return value
+
+def _file_readline_universal(fp: cobj) -> bytes:
+    result = _CodecByteBuffer(128)
+    while True:
+        byte = _C.fgetc(fp)
+        if byte < 0:
+            break
+        _file_buffer_reserve(result, result.length + 1)
+        result.data[result.length] = u8(byte)
+        result.length += 1
+        if byte == 0x0A:
+            break
+        if byte == 0x0D:
+            following = _C.fgetc(fp)
+            if following == 0x0A:
+                _file_buffer_reserve(result, result.length + 1)
+                result.data[result.length] = u8(following)
+                result.length += 1
+            elif following >= 0:
+                _C.ungetc(following, fp)
+            break
+    if _C.ferror(fp):
+        raise IOError("file I/O error: error in read")
+    return result.finish()
 
 class File[T]:
     sz: int
     buf: Ptr[u8]
     fp: cobj
+    encoding: str
+    errors: str
+    newline: Optional[str]
 
     def __init__(self, fp: cobj):
         self.fp = fp
+        self.encoding = "utf-8"
+        self.errors = "strict"
+        self.newline = None
         self._reset()
 
-    def __init__(self, path: str, mode: str):
+    def __init__(
+        self,
+        path: str,
+        mode: str,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+    ):
         self.fp = _C.fopen(path.c_str(), mode.c_str())
         if not self.fp:
             raise IOError(f"file {path} could not be opened")
+        _file_validate_newline(newline)
+        self.encoding = encoding
+        self.errors = errors
+        self.newline = newline
         self._reset()
 
     def __init__(self, fd: int, mode: str):
         self.fp = _C.fdopen(fd, mode.c_str())
         if not self.fp:
             raise IOError(f"file descriptor {fd} could not be opened")
+        self.encoding = "utf-8"
+        self.errors = "strict"
+        self.newline = None
         self._reset()
 
     def _errcheck(self, msg: str):
@@ -82,14 +162,38 @@ class File[T]:
     def readlines(self) -> List[T]:
         return [l for l in self]
 
-    def write(self, s: T):
+    def readline(self) -> T:
+        self._ensure_open()
+        if T is str and self.newline is None:
+            data = _file_readline_universal(self.fp)
+            return _file_translate_read_newlines(
+                data.decode(self.encoding, self.errors), self.newline
+            )
+        length = _C.getline(
+            Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+        )
+        if length == -1:
+            if T is bytes:
+                return bytes()
+            return str()
+        data = bytes(self.buf, length)
+        if T is bytes:
+            return data.__ptrcopy__()
+        return _file_translate_read_newlines(
+            data.decode(self.encoding, self.errors), self.newline
+        )
+
+    def write(self, s: T) -> int:
         self._ensure_open()
         if T is bytes:
             _C.fwrite(s._ptr, 1, len(s), self.fp)
         else:
-            data = s.encode()
+            data = _file_translate_write_newlines(s, self.newline).encode(
+                self.encoding, self.errors
+            )
             _C.fwrite(data._ptr, 1, len(data), self.fp)
         self._errcheck("error in write")
+        return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
@@ -103,20 +207,41 @@ class File[T]:
         if T is bytes:
             if sz < 0:
                 return _file_read_all(self.fp)
-            result = _file_read(self.fp, sz)
+            result = _CodecByteBuffer(sz)
+            result.length = _C.fread(result.data, 1, sz, self.fp)
             self._errcheck("error in read")
-            return result
+            return result.finish()
         if sz < 0:
-            return _file_read_all(self.fp).decode()
-        result = _file_read(self.fp, sz).decode()
+            return _file_translate_read_newlines(
+                _file_read_all(self.fp).decode(self.encoding, self.errors), self.newline
+            )
+        result = _CodecByteBuffer(sz)
+        for _ in range(sz):
+            _file_buffer_reserve(result, result.length + 1)
+            length = _C.fread(result.data + result.length, 1, 1, self.fp)
+            if length == 0:
+                break
+            width = _file_utf8_sequence_length(int(result.data[result.length]))
+            result.length += length
+            if width > 1:
+                _file_buffer_reserve(result, result.length + width - 1)
+                result.length += _C.fread(
+                    result.data + result.length, 1, width - 1, self.fp
+                )
         self._errcheck("error in read")
-        return result
+        return _file_translate_read_newlines(
+            result.finish().decode(self.encoding, self.errors), self.newline
+        )
 
     def tell(self) -> int:
         self._ensure_open()
         ret = _C.ftell(self.fp)
         self._errcheck("error in tell")
         return ret
+
+    def seekable(self) -> bool:
+        self._ensure_open()
+        return _C.ftell(self.fp) >= 0
 
     def seek(self, offset: int, whence: int):
         self._ensure_open()
@@ -125,7 +250,8 @@ class File[T]:
 
     def flush(self):
         self._ensure_open()
-        _C.fflush(self.fp)
+        if _C.fflush(self.fp) != 0:
+            raise IOError("file I/O error: error in flush")
 
     def close(self):
         if self.fp:
@@ -146,17 +272,10 @@ class File[T]:
     def _iter(self) -> Generator[T]:
         self._ensure_open()
         while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
-            if rd != -1:
-                data = bytes(self.buf, rd)
-                if T is bytes:
-                    yield data
-                else:
-                    yield data.decode()
-            else:
+            line = self.readline()
+            if len(line) == 0:
                 break
+            yield line
 
     def _iter_trim_newline(self) -> Generator[T]:
         self._ensure_open()
@@ -171,7 +290,9 @@ class File[T]:
                 if T is bytes:
                     yield data
                 else:
-                    yield data.decode()
+                    yield _file_translate_read_newlines(
+                        data.decode(self.encoding, self.errors), self.newline
+                    )
             else:
                 break
 
@@ -185,15 +306,33 @@ class gzFile[T]:
     sz: int
     buf: Ptr[u8]
     fp: cobj
+    pending: int
+    encoding: str
+    errors: str
+    newline: Optional[str]
 
     def __init__(self, fp: cobj):
         self.fp = fp
+        self.encoding = "utf-8"
+        self.errors = "strict"
+        self.newline = None
         self._reset()
 
-    def __init__(self, path: str, mode: str):
+    def __init__(
+        self,
+        path: str,
+        mode: str,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+    ):
         self.fp = _C.gzopen(path.c_str(), mode.c_str())
         if not self.fp:
             raise IOError(f"file {path} could not be opened")
+        _file_validate_newline(newline)
+        self.encoding = encoding
+        self.errors = errors
+        self.newline = newline
         self._reset()
 
     def _getline(self) -> int:
@@ -203,20 +342,33 @@ class gzFile[T]:
 
         offset = 0
         while True:
-            if not _C.gzgets(self.fp, self.buf + offset, i32(self.sz - offset)):
-                _gz_errcheck(self.fp)
+            if offset == self.sz:
+                oldsz = self.sz
+                self.sz *= 2
+                self.buf = realloc(self.buf, self.sz, oldsz)
+
+            byte = self._read_byte()
+            if byte < 0:
                 if offset == 0:
                     return -1
                 break
 
-            offset += len(bytes.from_ptr(self.buf + offset))
-
-            if self.buf[offset - 1] == u8(10):  # '\n'
+            self.buf[offset] = u8(byte)
+            offset += 1
+            if byte == 0x0A:
                 break
-
-            oldsz = self.sz
-            self.sz *= 2
-            self.buf = realloc(self.buf, self.sz, oldsz)
+            if T is str and self.newline is None and byte == 0x0D:
+                following = self._read_byte()
+                if following == 0x0A:
+                    if offset == self.sz:
+                        oldsz = self.sz
+                        self.sz *= 2
+                        self.buf = realloc(self.buf, self.sz, oldsz)
+                    self.buf[offset] = u8(following)
+                    offset += 1
+                elif following >= 0:
+                    self.pending = following
+                break
 
         return offset
 
@@ -244,14 +396,31 @@ class gzFile[T]:
     def readlines(self) -> List[T]:
         return [l for l in self]
 
-    def write(self, s: T):
+    def readline(self) -> T:
+        self._ensure_open()
+        length = self._getline()
+        if length == -1:
+            if T is bytes:
+                return bytes()
+            return str()
+        data = bytes(self.buf, length)
+        if T is bytes:
+            return data.__ptrcopy__()
+        return _file_translate_read_newlines(
+            data.decode(self.encoding, self.errors), self.newline
+        )
+
+    def write(self, s: T) -> int:
         self._ensure_open()
         if T is bytes:
             _C.gzwrite(self.fp, s._ptr, u32(len(s)))
         else:
-            data = s.encode()
+            data = _file_translate_write_newlines(s, self.newline).encode(
+                self.encoding, self.errors
+            )
             _C.gzwrite(self.fp, data._ptr, u32(len(data)))
         _gz_errcheck(self.fp)
+        return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
@@ -263,24 +432,48 @@ class gzFile[T]:
     def read(self, sz: int) -> T:
         self._ensure_open()
         if sz < 0:
+            chunk_size = 4096
+            result = _CodecByteBuffer(chunk_size)
+            while True:
+                _file_buffer_reserve(result, result.length + chunk_size)
+                length = int(_C.gzread(
+                    self.fp, result.data + result.length, u32(chunk_size)
+                ))
+                _gz_errcheck(self.fp)
+                result.length += length
+                if length < chunk_size:
+                    break
             if T is bytes:
-                chunk_size = 4096
-                chunks: List[bytes] = []
-                while True:
-                    buffer = Ptr[u8](chunk_size)
-                    length = int(_C.gzread(self.fp, buffer, u32(chunk_size)))
-                    _gz_errcheck(self.fp)
-                    chunks.append(_file_bytes(buffer, length))
-                    if length < chunk_size:
-                        break
-                return bytes.cat(chunks)
-            return _file_collect(self._iter())
-        buf = Ptr[u8](sz)
-        ret = _C.gzread(self.fp, buf, u32(sz))
-        _gz_errcheck(self.fp)
+                return result.finish()
+            else:
+                return _file_translate_read_newlines(
+                    result.finish().decode(self.encoding, self.errors), self.newline
+                )
         if T is bytes:
+            buf = Ptr[u8](sz)
+            ret = _C.gzread(self.fp, buf, u32(sz))
+            _gz_errcheck(self.fp)
             return _file_bytes(buf, int(ret))
-        return _file_bytes(buf, int(ret)).decode()
+        else:
+            result = _CodecByteBuffer(sz)
+            for _ in range(sz):
+                _file_buffer_reserve(result, result.length + 1)
+                length = int(_C.gzread(self.fp, result.data + result.length, u32(1)))
+                _gz_errcheck(self.fp)
+                if length == 0:
+                    break
+                width = _file_utf8_sequence_length(int(result.data[result.length]))
+                result.length += length
+                if width > 1:
+                    _file_buffer_reserve(result, result.length + width - 1)
+                    length = int(_C.gzread(
+                        self.fp, result.data + result.length, u32(width - 1)
+                    ))
+                    _gz_errcheck(self.fp)
+                    result.length += length
+            return _file_translate_read_newlines(
+                result.finish().decode(self.encoding, self.errors), self.newline
+            )
 
     def tell(self) -> int:
         self._ensure_open()
@@ -308,7 +501,9 @@ class gzFile[T]:
                 if T is bytes:
                     yield data
                 else:
-                    yield data.decode()
+                    yield _file_translate_read_newlines(
+                        data.decode(self.encoding, self.errors), self.newline
+                    )
             else:
                 break
 
@@ -323,7 +518,9 @@ class gzFile[T]:
                 if T is bytes:
                     yield data
                 else:
-                    yield data.decode()
+                    yield _file_translate_read_newlines(
+                        data.decode(self.encoding, self.errors), self.newline
+                    )
             else:
                 break
 
@@ -334,6 +531,19 @@ class gzFile[T]:
     def _reset(self):
         self.buf = cobj()
         self.sz = 0
+        self.pending = -1
+
+    def _read_byte(self) -> int:
+        if self.pending >= 0:
+            byte = self.pending
+            self.pending = -1
+            return byte
+        byte = u8(0)
+        length = int(_C.gzread(self.fp, __ptr__(byte), u32(1)))
+        _gz_errcheck(self.fp)
+        if length == 0:
+            return -1
+        return int(byte)
 
 def _bz_errcheck(stream: cobj):
     errnum = i32(0)
@@ -345,15 +555,33 @@ class bzFile[T]:
     sz: int
     buf: Ptr[u8]
     fp: cobj
+    pending: int
+    encoding: str
+    errors: str
+    newline: Optional[str]
 
     def __init__(self, fp: cobj):
         self.fp = fp
+        self.encoding = "utf-8"
+        self.errors = "strict"
+        self.newline = None
         self._reset()
 
-    def __init__(self, path: str, mode: str):
+    def __init__(
+        self,
+        path: str,
+        mode: str,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+    ):
         self.fp = _C.BZ2_bzopen(path.c_str(), mode.c_str())
         if not self.fp:
             raise IOError(f"file {path} could not be opened")
+        _file_validate_newline(newline)
+        self.encoding = encoding
+        self.errors = errors
+        self.newline = newline
         self._reset()
 
     def _getline(self) -> int:
@@ -363,25 +591,32 @@ class bzFile[T]:
 
         offset = 0
         while True:
-            m = self._gets(self.buf + offset, self.sz - offset)
-            if m == 0:
+            if offset == self.sz:
+                oldsz = self.sz
+                self.sz *= 2
+                self.buf = realloc(self.buf, self.sz, oldsz)
+
+            byte = self._read_byte()
+            if byte < 0:
                 if offset == 0:
                     return -1
                 break
-            elif m < 0:
-                _bz_errcheck(self.fp)
-                if offset == 0:
-                    return -1
+            self.buf[offset] = u8(byte)
+            offset += 1
+            if byte == 0x0A:
                 break
-
-            offset += m
-
-            if self.buf[offset - 1] == u8(10):  # '\n'
+            if T is str and self.newline is None and byte == 0x0D:
+                following = self._read_byte()
+                if following == 0x0A:
+                    if offset == self.sz:
+                        oldsz = self.sz
+                        self.sz *= 2
+                        self.buf = realloc(self.buf, self.sz, oldsz)
+                    self.buf[offset] = u8(following)
+                    offset += 1
+                elif following >= 0:
+                    self.pending = following
                 break
-
-            oldsz = self.sz
-            self.sz *= 2
-            self.buf = realloc(self.buf, self.sz, oldsz)
 
         return offset
 
@@ -409,14 +644,31 @@ class bzFile[T]:
     def readlines(self) -> List[T]:
         return [l for l in self]
 
-    def write(self, s: T):
+    def readline(self) -> T:
+        self._ensure_open()
+        length = self._getline()
+        if length == -1:
+            if T is bytes:
+                return bytes()
+            return str()
+        data = bytes(self.buf, length)
+        if T is bytes:
+            return data.__ptrcopy__()
+        return _file_translate_read_newlines(
+            data.decode(self.encoding, self.errors), self.newline
+        )
+
+    def write(self, s: T) -> int:
         self._ensure_open()
         if T is bytes:
             _C.BZ2_bzwrite(self.fp, s._ptr, i32(len(s)))
         else:
-            data = s.encode()
+            data = _file_translate_write_newlines(s, self.newline).encode(
+                self.encoding, self.errors
+            )
             _C.BZ2_bzwrite(self.fp, data._ptr, i32(len(data)))
         _bz_errcheck(self.fp)
+        return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
@@ -428,24 +680,48 @@ class bzFile[T]:
     def read(self, sz: int) -> T:
         self._ensure_open()
         if sz < 0:
+            chunk_size = 4096
+            result = _CodecByteBuffer(chunk_size)
+            while True:
+                _file_buffer_reserve(result, result.length + chunk_size)
+                length = int(_C.BZ2_bzread(
+                    self.fp, result.data + result.length, i32(chunk_size)
+                ))
+                _bz_errcheck(self.fp)
+                result.length += length
+                if length < chunk_size:
+                    break
             if T is bytes:
-                chunk_size = 4096
-                chunks: List[bytes] = []
-                while True:
-                    buffer = Ptr[u8](chunk_size)
-                    length = int(_C.BZ2_bzread(self.fp, buffer, i32(chunk_size)))
-                    _bz_errcheck(self.fp)
-                    chunks.append(_file_bytes(buffer, length))
-                    if length < chunk_size:
-                        break
-                return bytes.cat(chunks)
-            return _file_collect(self._iter())
-        buf = Ptr[u8](sz)
-        ret = _C.BZ2_bzread(self.fp, buf, i32(sz))
-        _bz_errcheck(self.fp)
+                return result.finish()
+            else:
+                return _file_translate_read_newlines(
+                    result.finish().decode(self.encoding, self.errors), self.newline
+                )
         if T is bytes:
+            buf = Ptr[u8](sz)
+            ret = _C.BZ2_bzread(self.fp, buf, i32(sz))
+            _bz_errcheck(self.fp)
             return _file_bytes(buf, int(ret))
-        return _file_bytes(buf, int(ret)).decode()
+        else:
+            result = _CodecByteBuffer(sz)
+            for _ in range(sz):
+                _file_buffer_reserve(result, result.length + 1)
+                length = int(_C.BZ2_bzread(self.fp, result.data + result.length, i32(1)))
+                _bz_errcheck(self.fp)
+                if length == 0:
+                    break
+                width = _file_utf8_sequence_length(int(result.data[result.length]))
+                result.length += length
+                if width > 1:
+                    _file_buffer_reserve(result, result.length + width - 1)
+                    length = int(_C.BZ2_bzread(
+                        self.fp, result.data + result.length, i32(width - 1)
+                    ))
+                    _bz_errcheck(self.fp)
+                    result.length += length
+            return _file_translate_read_newlines(
+                result.finish().decode(self.encoding, self.errors), self.newline
+            )
 
     def flush(self):
         self._ensure_open()
@@ -461,7 +737,9 @@ class bzFile[T]:
                 if T is bytes:
                     yield data
                 else:
-                    yield data.decode()
+                    yield _file_translate_read_newlines(
+                        data.decode(self.encoding, self.errors), self.newline
+                    )
             else:
                 break
 
@@ -476,7 +754,9 @@ class bzFile[T]:
                 if T is bytes:
                     yield data
                 else:
-                    yield data.decode()
+                    yield _file_translate_read_newlines(
+                        data.decode(self.encoding, self.errors), self.newline
+                    )
             else:
                 break
 
@@ -487,6 +767,19 @@ class bzFile[T]:
     def _reset(self):
         self.buf = cobj()
         self.sz = 0
+        self.pending = -1
+
+    def _read_byte(self) -> int:
+        if self.pending >= 0:
+            byte = self.pending
+            self.pending = -1
+            return byte
+        byte = u8(0)
+        length = int(_C.BZ2_bzread(self.fp, __ptr__(byte), i32(1)))
+        _bz_errcheck(self.fp)
+        if length == 0:
+            return -1
+        return int(byte)
 
     def _gets(self, buf: cobj, sz: int):
         if sz <= 0:
@@ -520,35 +813,77 @@ def _literal_contains(needle: Literal[str], haystack: Literal[str]) -> Literal[b
     else:
         return _literal_contains(needle, haystack[1:])
 
-def open(path: str, mode: str = "r") -> File[str]:
-    return File[str](path, mode)
+def open(
+    path: str,
+    mode: str = "r",
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    newline: Optional[str] = None,
+) -> File[str]:
+    return File[str](path, mode, encoding, errors, newline)
 
 @overload
-def open(path: str, mode: Literal[str]):
+def open(
+    path: str,
+    mode: Literal[str],
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    newline: Optional[str] = None,
+):
     if _literal_contains("b", mode):
+        if encoding != "utf-8" or errors != "strict" or newline is not None:
+            raise ValueError("binary mode does not take encoding, errors or newline")
         return File[bytes](path, mode)
     else:
-        return File[str](path, mode)
+        return File[str](path, mode, encoding, errors, newline)
 
-def gzopen(path: str, mode: str = "r") -> gzFile[str]:
-    return gzFile[str](path, mode)
+def gzopen(
+    path: str,
+    mode: str = "r",
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    newline: Optional[str] = None,
+) -> gzFile[str]:
+    return gzFile[str](path, mode, encoding, errors, newline)
 
 @overload
-def gzopen(path: str, mode: Literal[str]):
+def gzopen(
+    path: str,
+    mode: Literal[str],
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    newline: Optional[str] = None,
+):
     if _literal_contains("b", mode):
+        if encoding != "utf-8" or errors != "strict" or newline is not None:
+            raise ValueError("binary mode does not take encoding, errors or newline")
         return gzFile[bytes](path, mode)
     else:
-        return gzFile[str](path, mode)
+        return gzFile[str](path, mode, encoding, errors, newline)
 
-def bzopen(path: str, mode: str = "r") -> bzFile[str]:
-    return bzFile[str](path, mode)
+def bzopen(
+    path: str,
+    mode: str = "r",
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    newline: Optional[str] = None,
+) -> bzFile[str]:
+    return bzFile[str](path, mode, encoding, errors, newline)
 
 @overload
-def bzopen(path: str, mode: Literal[str]):
+def bzopen(
+    path: str,
+    mode: Literal[str],
+    encoding: str = "utf-8",
+    errors: str = "strict",
+    newline: Optional[str] = None,
+):
     if _literal_contains("b", mode):
+        if encoding != "utf-8" or errors != "strict" or newline is not None:
+            raise ValueError("binary mode does not take encoding, errors or newline")
         return bzFile[bytes](path, mode)
     else:
-        return bzFile[str](path, mode)
+        return bzFile[str](path, mode, encoding, errors, newline)
 
 def is_binary(path: str) -> bool:
     # https://stackoverflow.com/questions/898669/how-can-i-detect-if-a-file-is-binary-non-text-in-python/7392391#7392391

@@ -1,0 +1,409 @@
+import gzip
+import bz2
+from internal.str import _unicode_from_codepoint
+
+FIXTURE = "test/stdlib/data/io_fixture.txt"
+PREFIX = "build/io-test"
+
+
+def _latin1_value() -> str:
+    return "caf" + _unicode_from_codepoint(0xE9)
+
+def _raw_bytes(values: List[int]) -> bytes:
+    data = Ptr[u8](len(values))
+    for index in range(len(values)):
+        data[index] = u8(values[index])
+    return bytes(data, len(values))
+
+
+@test
+def test_regular_file_basics():
+    with open(FIXTURE) as reader:
+        assert reader.read() == "alpha\nbeta\ngamma\n"
+
+    path = PREFIX + "-basic.txt"
+    writer = open(path, "w")
+    assert writer.write("alpha\nbeta\ngamma\n") == 17
+    writer.flush()
+    assert writer.seekable()
+    writer.close()
+
+    reader = open(path)
+    assert reader.readline() == "alpha\n"
+    assert reader.readlines() == ["beta\n", "gamma\n"]
+    assert reader.readline() == ""
+    reader.seek(0, 0)
+    assert reader.tell() == 0
+    assert reader.read(2) == "al"
+    assert reader.read() == "pha\nbeta\ngamma\n"
+    reader.close()
+
+
+@test
+def test_regular_file_modes_and_read_boundaries():
+    path = PREFIX + "-modes.txt"
+    writer = open(path, "w")
+    writer.write("first")
+    writer.close()
+
+    writer = open(path, "w")
+    writer.write("second")
+    writer.close()
+    reader = open(path)
+    assert reader.read() == "second"
+    reader.close()
+
+    writer = open(path, "a")
+    assert writer.write("-third") == 6
+    writer.close()
+    reader = open(path)
+    assert reader.read(0) == ""
+    assert reader.tell() == 0
+    assert reader.read(-2) == "second-third"
+    assert reader.read() == ""
+    reader.close()
+
+    binary_path = PREFIX + "-read-boundaries.bin"
+    writer = open(binary_path, "wb")
+    writer.write(_raw_bytes([0, 1, 2]))
+    writer.close()
+    reader = open(binary_path, "rb")
+    assert reader.read(0) == bytes()
+    assert reader.tell() == 0
+    assert reader.read(-2) == _raw_bytes([0, 1, 2])
+    assert reader.read() == bytes()
+    reader.close()
+
+    writer = open(path, "r+")
+    assert writer.read(6) == "second"
+    writer.seek(0, 0)
+    writer.write("FIRST")
+    writer.flush()
+    writer.close()
+    reader = open(path)
+    assert reader.read() == "FIRSTd-third"
+    reader.close()
+
+
+@test
+def test_regular_file_context_and_closed_errors():
+    path = PREFIX + "-closed.txt"
+    with open(path, "w") as writer:
+        writer.write("value")
+
+    reader = open(path)
+    reader.close()
+    for operation in (reader.read, reader.readline, reader.tell, reader.flush):
+        try:
+            operation()
+            assert False
+        except IOError:
+            pass
+
+    writer = open(path, "r")
+    try:
+        writer.write("nope")
+        assert False
+    except IOError:
+        pass
+    writer.close()
+
+
+@test
+def test_regular_file_iteration_and_line_endings():
+    path = PREFIX + "-lines.txt"
+    writer = open(path, "w", newline="")
+    writer.write("one\ntwo\nthree")
+    writer.close()
+
+    reader = open(path)
+    assert list(reader) == ["one\n", "two\n", "three"]
+    assert reader.readlines() == []
+    reader.close()
+
+    writer = open(path, "w", newline="")
+    writer.write("a\r\nb\rc\n")
+    writer.close()
+    reader = open(path, newline=None)
+    assert reader.readline() == "a\n"
+    assert reader.readline() == "b\n"
+    assert reader.readline() == "c\n"
+    assert reader.readline() == ""
+    reader.close()
+
+
+@test
+def test_text_encoding_and_error_modes():
+    path = PREFIX + "-latin1.txt"
+    value = _latin1_value()
+
+    writer = open(path, "w", encoding="latin-1")
+    assert writer.write(value) == len(value)
+    writer.close()
+
+    reader = open(path, "r", encoding="latin-1")
+    assert reader.read() == value
+    reader.close()
+
+    try:
+        open(path, "r", encoding="ascii").read()
+        assert False
+    except ValueError:
+        pass
+
+    reader = open(path, "r", encoding="ascii", errors="replace")
+    assert reader.read() == "caf" + _unicode_from_codepoint(0xFFFD)
+    reader.close()
+
+    reader = open(path, "r", encoding="ascii", errors="ignore")
+    assert reader.read() == "caf"
+    reader.close()
+
+    try:
+        open(path, "r", encoding="unknown").read()
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_text_character_count_reads():
+    path = PREFIX + "-characters.txt"
+    value = "A" + _unicode_from_codepoint(0xE9) + _unicode_from_codepoint(0x3B2)
+    value += _unicode_from_codepoint(0x1F600) + "Z"
+    writer = open(path, "w")
+    writer.write(value)
+    writer.close()
+
+    reader = open(path)
+    assert reader.read(1) == "A"
+    assert reader.read(2) == _unicode_from_codepoint(0xE9) + _unicode_from_codepoint(0x3B2)
+    assert reader.read(1) == _unicode_from_codepoint(0x1F600)
+    assert reader.read(1) == "Z"
+    assert reader.read(1) == ""
+    reader.close()
+
+
+@test
+def test_text_newline_read_semantics():
+    path = PREFIX + "-newlines.txt"
+    writer = open(path, "w", newline="")
+    writer.write("a\r\nb\rc\n")
+    writer.close()
+
+    reader = open(path, "r")
+    assert reader.read() == "a\nb\nc\n"
+    reader.close()
+
+    reader = open(path, "r", newline="")
+    assert reader.read() == "a\r\nb\rc\n"
+    reader.close()
+
+    reader = open(path, "r", newline="\n")
+    assert reader.read() == "a\r\nb\rc\n"
+    reader.close()
+
+
+@test
+def test_text_newline_write_semantics():
+    path = PREFIX + "-write-newlines.txt"
+
+    writer = open(path, "w", newline="\r\n")
+    writer.write("a\nb\n")
+    writer.close()
+    reader = open(path, "r", newline="")
+    assert reader.read() == "a\r\nb\r\n"
+    reader.close()
+
+    writer = open(path, "w", newline="\r")
+    writer.write("a\nb\n")
+    writer.close()
+    reader = open(path, "r", newline="")
+    assert reader.read() == "a\rb\r"
+    reader.close()
+
+    try:
+        open(path, "w", newline="invalid")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_binary_mode_and_text_argument_validation():
+    path = PREFIX + "-binary.bin"
+    data = _raw_bytes([0, 1, 255, 10])
+
+    writer = open(path, "wb")
+    assert writer.write(data) == len(data)
+    writer.close()
+
+    reader = open(path, "rb")
+    assert reader.read(2) == _raw_bytes([0, 1])
+    assert reader.read() == _raw_bytes([255, 10])
+    reader.close()
+
+    try:
+        open(path, "rb", encoding="latin-1")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        open(path, "wb", newline="\n")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_gzip_and_bzip_text_apis():
+    value = _latin1_value() + "\nnext\n"
+
+    gzip_path = PREFIX + ".gz"
+    writer = gzip.open(gzip_path, "w")
+    assert writer.write(value) == len(value)
+    writer.close()
+    reader = gzip.open(gzip_path, "r")
+    assert reader.readline() == _latin1_value() + "\n"
+    assert list(reader) == ["next\n"]
+    reader.close()
+
+    bzip_path = PREFIX + ".bz2"
+    writer = bz2.open(bzip_path, "w")
+    assert writer.write(value) == len(value)
+    writer.close()
+    reader = bz2.open(bzip_path, "r")
+    assert reader.read(4) == _latin1_value()
+    assert reader.read() == "\nnext\n"
+    reader.close()
+
+
+@test
+def test_compressed_text_configuration():
+    value = _latin1_value() + "\nnext\n"
+    gzip_path = PREFIX + "-config.gz"
+    writer = gzip.open(gzip_path, "w", encoding="latin-1", newline="\r\n")
+    writer.write(value)
+    writer.close()
+    reader = gzip.open(gzip_path, "r", encoding="latin-1", newline="")
+    assert reader.read() == _latin1_value() + "\r\nnext\r\n"
+    reader.close()
+
+    bzip_path = PREFIX + "-config.bz2"
+    writer = bz2.open(bzip_path, "w", encoding="latin-1", newline="\r\n")
+    writer.write(value)
+    writer.close()
+    reader = bz2.open(bzip_path, "r", encoding="latin-1", newline="")
+    assert reader.read() == _latin1_value() + "\r\nnext\r\n"
+    reader.close()
+
+    try:
+        gzip.open(PREFIX + "-config.gz", "rb", encoding="latin-1")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        bz2.open(PREFIX + "-config.bz2", "wb", newline="\n")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_compressed_universal_newline_boundaries():
+    value = "a\r\nb\rc\n"
+
+    gzip_path = PREFIX + "-newlines.gz"
+    writer = gzip.open(gzip_path, "w", newline="")
+    writer.write(value)
+    writer.close()
+    reader = gzip.open(gzip_path)
+    assert reader.readlines() == ["a\n", "b\n", "c\n"]
+    reader.close()
+
+    bzip_path = PREFIX + "-newlines.bz2"
+    writer = bz2.open(bzip_path, "w", newline="")
+    writer.write(value)
+    writer.close()
+    reader = bz2.open(bzip_path)
+    assert reader.readlines() == ["a\n", "b\n", "c\n"]
+    reader.close()
+
+
+@test
+def test_compressed_binary_and_gzip_position_apis():
+    data = _raw_bytes([0, 1, 255, 10])
+
+    gzip_path = PREFIX + "-binary.gz"
+    writer = gzip.open(gzip_path, "wb")
+    assert writer.write(data) == len(data)
+    writer.close()
+    reader = gzip.open(gzip_path, "rb")
+    assert reader.read(2) == _raw_bytes([0, 1])
+    assert reader.tell() == 2
+    reader.seek(0, 0)
+    assert reader.tell() == 0
+    assert reader.read() == data
+    reader.close()
+
+    bzip_path = PREFIX + "-binary.bz2"
+    writer = bz2.open(bzip_path, "wb")
+    assert writer.write(data) == len(data)
+    writer.close()
+    reader = bz2.open(bzip_path, "rb")
+    assert reader.read() == data
+    reader.close()
+
+
+@test
+def test_compressed_modes_and_closed_errors():
+    gzip_path = PREFIX + "-lifecycle.gz"
+    writer = gzip.open(gzip_path, "w")
+    writer.write("first")
+    writer.flush()
+    writer.close()
+    writer = gzip.open(gzip_path, "a")
+    writer.write("-second")
+    writer.close()
+    reader = gzip.open(gzip_path)
+    assert reader.read() == "first-second"
+    reader.close()
+    for operation in (reader.read, reader.readline, reader.tell, reader.flush):
+        try:
+            operation()
+            assert False
+        except IOError:
+            pass
+
+    bzip_path = PREFIX + "-lifecycle.bz2"
+    writer = bz2.open(bzip_path, "w")
+    writer.write("value")
+    writer.flush()
+    writer.close()
+    reader = bz2.open(bzip_path)
+    assert reader.read() == "value"
+    reader.close()
+    for operation in (reader.read, reader.readline, reader.flush):
+        try:
+            operation()
+            assert False
+        except IOError:
+            pass
+
+
+test_regular_file_basics()
+test_regular_file_modes_and_read_boundaries()
+test_regular_file_context_and_closed_errors()
+test_regular_file_iteration_and_line_endings()
+test_text_encoding_and_error_modes()
+test_text_character_count_reads()
+test_text_newline_read_semantics()
+test_text_newline_write_semantics()
+test_binary_mode_and_text_argument_validation()
+test_gzip_and_bzip_text_apis()
+test_compressed_text_configuration()
+test_compressed_universal_newline_boundaries()
+test_compressed_binary_and_gzip_position_apis()
+test_compressed_modes_and_closed_errors()

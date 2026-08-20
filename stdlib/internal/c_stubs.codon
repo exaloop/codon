@@ -582,6 +582,11 @@ def fgetc(a: cobj) -> i32:
 
 @nocapture
 @C
+def ungetc(a: i32, b: cobj) -> i32:
+    pass
+
+@nocapture
+@C
 def fopen(a: cobj, b: cobj) -> cobj:
     pass
 
@@ -622,7 +627,7 @@ def fgets(a: cobj, b: int, c: cobj) -> cobj:
 
 @nocapture
 @C
-def fflush(a: cobj) -> None:
+def fflush(a: cobj) -> i32:
     pass
 
 @nocapture
