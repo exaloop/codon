@@ -2509,8 +2509,8 @@ void LLVMVisitor::visit(const StringConst *x) {
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
-  auto *len = B->getInt64(s.length());
-  seqassertn(codepoints.size() <= lengthMask, "string constant too large");
+  // auto *len = B->getInt64(codepoints.length());
+  // seqassertn(codepoints.size() <= lengthMask, "string constant too large");
   auto *meta = B->getInt64(codepoints.size() | (uint64_t(kind) << 56));
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, ptr, 0);

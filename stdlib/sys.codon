@@ -4,9 +4,9 @@ platform: Literal[str] = static.platform()
 
 argv = list(__argv__, __argc__)
 
-stdin = File(_C.seq_stdin())
-stdout = File(_C.seq_stdout())
-stderr = File(_C.seq_stderr())
+stdin = File[str](_C.seq_stdin())
+stdout = File[str](_C.seq_stdout())
+stderr = File[str](_C.seq_stderr())
 
 def exit(status: int = 0):
     raise SystemExit(status)

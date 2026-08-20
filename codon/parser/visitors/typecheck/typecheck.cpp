@@ -135,7 +135,12 @@ void TypecheckVisitor::loadStdLibrary(
   if (auto err = ScopingVisitor::apply(stdlib->cache, core))
     throw exc::ParserException(std::move(err));
   auto tv = TypecheckVisitor(stdlib, preamble);
-  core = tv.inferTypes(core, true);
+  if (auto n = tv.inferTypes(core, true)) {
+    core = n;
+  } else {
+    auto errors = tv.findTypecheckErrors(core);
+    throw exc::ParserException(errors);
+  }
   preamble->addStmt(core);
 
   // 2. Load early compile-time defines (for standard library)
@@ -167,7 +172,12 @@ void TypecheckVisitor::loadStdLibrary(
   if (auto err = ScopingVisitor::apply(stdlib->cache, std, &stdlib->globalShadows))
     throw exc::ParserException(std::move(err));
   tv = TypecheckVisitor(stdlib, preamble);
-  std = tv.inferTypes(std, true);
+  if (auto n = tv.inferTypes(std, true)) {
+    std = n;
+  } else {
+    auto errors = tv.findTypecheckErrors(std);
+    throw exc::ParserException(errors);
+  }
   preamble->addStmt(std);
   stdlib->isStdlibLoading = false;
 }

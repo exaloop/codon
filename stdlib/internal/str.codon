@@ -3357,6 +3357,7 @@ def _unicode_split_exact_impl(
     if len(sep) == 0:
         raise ValueError("empty separator")
 
+    print("- splitting", value, sep, maxsplit)
     parts = List[str](_unicode_split_capacity(maxsplit))
 
     if maxsplit == 0:
@@ -3425,6 +3426,7 @@ def _unicode_split_exact_impl(
         start = 0
         remaining = maxsplit
 
+        print("- inloop")
         while True:
             if maxsplit >= 0 and remaining == 0:
                 parts.append(_unicode_slice_impl(value, start, len(value)))
