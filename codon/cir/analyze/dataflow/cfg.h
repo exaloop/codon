@@ -503,7 +503,8 @@ public:
   DEFAULT_VISIT(TemplatedConst<int64_t>);
   DEFAULT_VISIT(TemplatedConst<double>);
   DEFAULT_VISIT(TemplatedConst<bool>);
-  DEFAULT_VISIT(TemplatedConst<std::string>);
+  DEFAULT_VISIT(StringConst);
+  DEFAULT_VISIT(BytesConst);
   DEFAULT_VISIT(dsl::CustomConst);
 
   void visit(const AssignInstr *v) override;

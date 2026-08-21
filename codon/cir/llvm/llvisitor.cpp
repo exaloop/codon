@@ -2521,6 +2521,28 @@ void LLVMVisitor::visit(const StringConst *x) {
   value = str;
 }
 
+void LLVMVisitor::visit(const BytesConst *x) {
+  B->SetInsertPoint(block);
+  const auto &bytes = x->getVal();
+  std::vector<llvm::Constant *> elements;
+  elements.reserve(bytes.size());
+  for (auto byte : bytes)
+    elements.push_back(B->getInt8(static_cast<uint8_t>(byte)));
+
+  auto *arrayType = llvm::ArrayType::get(B->getInt8Ty(), bytes.size());
+  auto *bytesVar = new llvm::GlobalVariable(
+      *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, elements), ".bytes");
+  bytesVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  auto *bytesType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
+  auto *ptr = B->CreateBitCast(bytesVar, B->getPtrTy());
+  llvm::Value *bytesValue = llvm::UndefValue::get(bytesType);
+  bytesValue = B->CreateInsertValue(bytesValue, ptr, 0);
+  bytesValue = B->CreateInsertValue(bytesValue, B->getInt64(bytes.size()), 1);
+  value = bytesValue;
+}
+
 void LLVMVisitor::visit(const dsl::CustomConst *x) {
   x->getBuilder()->buildValue(this);
 }

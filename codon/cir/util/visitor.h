@@ -64,6 +64,8 @@ class PipelineFlow;
 class Const;
 
 template <typename ValueType> class TemplatedConst;
+class StringConst;
+class BytesConst;
 
 class Instr;
 class AssignInstr;
@@ -122,7 +124,8 @@ public:
   VISIT(TemplatedConst<int64_t>);
   VISIT(TemplatedConst<double>);
   VISIT(TemplatedConst<bool>);
-  VISIT(TemplatedConst<std::string>);
+  VISIT(StringConst);
+  VISIT(BytesConst);
   VISIT(dsl::CustomConst);
 
   VISIT(Instr);
@@ -200,7 +203,8 @@ public:
   CONST_VISIT(TemplatedConst<int64_t>);
   CONST_VISIT(TemplatedConst<double>);
   CONST_VISIT(TemplatedConst<bool>);
-  CONST_VISIT(TemplatedConst<std::string>);
+  CONST_VISIT(StringConst);
+  CONST_VISIT(BytesConst);
   CONST_VISIT(dsl::CustomConst);
 
   CONST_VISIT(Instr);
