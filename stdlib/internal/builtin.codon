@@ -24,7 +24,7 @@ def print(*args, sep: str = " ", end: str = "\n", file=None, flush: bool = False
     if isinstance(file, cobj):
         fp = file
     else:
-        fp = file.fp
+        fp = file._state._fp
 
     i = 0
     for a in args:
