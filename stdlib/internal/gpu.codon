@@ -671,17 +671,31 @@ class UInt:
 @extend
 class str:
     def __to_gpu__(self, cache: AllocCache):
-        n = self._len
-        return str(_ptr_to_gpu(self._ptr, n, cache), n)
+        n = len(self) * self._width()
+        return str(_ptr_to_gpu(self._ptr, n, cache), self._meta)
 
     def __from_gpu__(self, other: str):
         pass
 
     def __from_gpu_new__(other: str):
-        n = other._len
+        n = len(other) * other._width()
         p = Ptr[u8](n)
         _ptr_from_gpu(p, other._ptr, n)
-        return str(p, n)
+        return str(p, other._meta)
+
+@extend
+class bytes:
+    def __to_gpu__(self, cache: AllocCache):
+        n = self._len
+        return bytes(_ptr_to_gpu(self._ptr, n, cache), n)
+
+    def __from_gpu__(self, other: bytes):
+        pass
+
+    def __from_gpu_new__(other: bytes):
+        p = Ptr[u8](other._len)
+        _ptr_from_gpu(p, other._ptr, other._len)
+        return bytes(p, other._len)
 
 @extend
 class List:
