@@ -497,8 +497,18 @@ def _unicode_from_text(value: bytes) -> str:
     return _unicode_decode_utf8_strict(value._ptr, len(value))
 
 
-def _codec_name(encoding: str) -> str:
-    return encoding.lower().replace("_", "-")
+def _encoding_matches(encoding: str, target: str) -> bool:
+    if len(encoding) != len(target):
+        return False
+    for index in range(len(encoding)):
+        codepoint = encoding._load_codepoint(index)
+        if 0x41 <= codepoint and codepoint <= 0x5A:
+            codepoint += 0x20
+        if codepoint == 0x5F:  # _
+            codepoint = 0x2D  # -
+        if codepoint != target._load_codepoint(index):
+            return False
+    return True
 
 
 def _codec_error_append(
@@ -918,42 +928,40 @@ def _unicode_decode_utf32(
 
 
 def _unicode_decode_codec(data: bytes, encoding: str, errors: str) -> str:
-    name = _codec_name(encoding)
-
-    if name == "utf-8" or name == "utf8":
+    if _encoding_matches(encoding, "utf-8") or _encoding_matches(encoding, "utf8"):
         return _unicode_decode_utf8(data._ptr, len(data), errors)
-    if name == "ascii" or name == "us-ascii":
+    if _encoding_matches(encoding, "ascii") or _encoding_matches(encoding, "us-ascii"):
         return _unicode_decode_single_byte(data._ptr, len(data), True, errors)
-    if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
+    if _encoding_matches(encoding, "latin-1") or _encoding_matches(encoding, "latin1") or _encoding_matches(encoding, "iso-8859-1"):
         return _unicode_decode_single_byte(data._ptr, len(data), False, errors)
-    if name == "cp1252" or name == "windows-1252" or name == "windows1252":
+    if _encoding_matches(encoding, "cp1252") or _encoding_matches(encoding, "windows-1252") or _encoding_matches(encoding, "windows1252"):
         return _unicode_decode_cp1252(data._ptr, len(data), errors)
-    if name == "cp1251" or name == "windows-1251" or name == "windows1251":
+    if _encoding_matches(encoding, "cp1251") or _encoding_matches(encoding, "windows-1251") or _encoding_matches(encoding, "windows1251"):
         return _unicode_decode_cp1251(data._ptr, len(data), errors)
-    if name == "cp1250" or name == "windows-1250" or name == "windows1250":
+    if _encoding_matches(encoding, "cp1250") or _encoding_matches(encoding, "windows-1250") or _encoding_matches(encoding, "windows1250"):
         return _unicode_decode_cp1250(data._ptr, len(data), errors)
-    if name == "cp1253" or name == "windows-1253" or name == "windows1253":
+    if _encoding_matches(encoding, "cp1253") or _encoding_matches(encoding, "windows-1253") or _encoding_matches(encoding, "windows1253"):
         return _unicode_decode_cp1253(data._ptr, len(data), errors)
-    if name == "cp1254" or name == "windows-1254" or name == "windows1254":
+    if _encoding_matches(encoding, "cp1254") or _encoding_matches(encoding, "windows-1254") or _encoding_matches(encoding, "windows1254"):
         return _unicode_decode_cp1254(data._ptr, len(data), errors)
     if (
-        name == "iso-8859-15"
-        or name == "iso8859-15"
-        or name == "latin-9"
-        or name == "latin9"
+        _encoding_matches(encoding, "iso-8859-15")
+        or _encoding_matches(encoding, "iso8859-15")
+        or _encoding_matches(encoding, "latin-9")
+        or _encoding_matches(encoding, "latin9")
     ):
         return _unicode_decode_iso8859_15(data._ptr, len(data))
-    if name == "utf-16":
+    if _encoding_matches(encoding, "utf-16"):
         return _unicode_decode_utf16(data._ptr, len(data), True, True, errors)
-    if name == "utf-16-le" or name == "utf16le":
+    if _encoding_matches(encoding, "utf-16-le") or _encoding_matches(encoding, "utf16le"):
         return _unicode_decode_utf16(data._ptr, len(data), True, False, errors)
-    if name == "utf-16-be" or name == "utf16be":
+    if _encoding_matches(encoding, "utf-16-be") or _encoding_matches(encoding, "utf16be"):
         return _unicode_decode_utf16(data._ptr, len(data), False, False, errors)
-    if name == "utf-32":
+    if _encoding_matches(encoding, "utf-32"):
         return _unicode_decode_utf32(data._ptr, len(data), True, True, errors)
-    if name == "utf-32-le" or name == "utf32le":
+    if _encoding_matches(encoding, "utf-32-le") or _encoding_matches(encoding, "utf32le"):
         return _unicode_decode_utf32(data._ptr, len(data), True, False, errors)
-    if name == "utf-32-be" or name == "utf32be":
+    if _encoding_matches(encoding, "utf-32-be") or _encoding_matches(encoding, "utf32be"):
         return _unicode_decode_utf32(data._ptr, len(data), False, False, errors)
 
     raise LookupError("unknown encoding: " + encoding)
@@ -1232,42 +1240,40 @@ def _unicode_encode_utf32(
 
 
 def _unicode_encode_codec(value: str, encoding: str, errors: str) -> bytes:
-    name = _codec_name(encoding)
-
-    if name == "utf-8" or name == "utf8":
+    if _encoding_matches(encoding, "utf-8") or _encoding_matches(encoding, "utf8"):
         return _unicode_encode_utf8(value, errors)
-    if name == "ascii" or name == "us-ascii":
+    if _encoding_matches(encoding, "ascii") or _encoding_matches(encoding, "us-ascii"):
         return _unicode_encode_single_byte(value, True, errors)
-    if name == "latin-1" or name == "latin1" or name == "iso-8859-1":
+    if _encoding_matches(encoding, "latin-1") or _encoding_matches(encoding, "latin1") or _encoding_matches(encoding, "iso-8859-1"):
         return _unicode_encode_single_byte(value, False, errors)
-    if name == "cp1252" or name == "windows-1252" or name == "windows1252":
+    if _encoding_matches(encoding, "cp1252") or _encoding_matches(encoding, "windows-1252") or _encoding_matches(encoding, "windows1252"):
         return _unicode_encode_cp1252(value, errors)
-    if name == "cp1251" or name == "windows-1251" or name == "windows1251":
+    if _encoding_matches(encoding, "cp1251") or _encoding_matches(encoding, "windows-1251") or _encoding_matches(encoding, "windows1251"):
         return _unicode_encode_cp1251(value, errors)
-    if name == "cp1250" or name == "windows-1250" or name == "windows1250":
+    if _encoding_matches(encoding, "cp1250") or _encoding_matches(encoding, "windows-1250") or _encoding_matches(encoding, "windows1250"):
         return _unicode_encode_cp1250(value, errors)
-    if name == "cp1253" or name == "windows-1253" or name == "windows1253":
+    if _encoding_matches(encoding, "cp1253") or _encoding_matches(encoding, "windows-1253") or _encoding_matches(encoding, "windows1253"):
         return _unicode_encode_cp1253(value, errors)
-    if name == "cp1254" or name == "windows-1254" or name == "windows1254":
+    if _encoding_matches(encoding, "cp1254") or _encoding_matches(encoding, "windows-1254") or _encoding_matches(encoding, "windows1254"):
         return _unicode_encode_cp1254(value, errors)
     if (
-        name == "iso-8859-15"
-        or name == "iso8859-15"
-        or name == "latin-9"
-        or name == "latin9"
+        _encoding_matches(encoding, "iso-8859-15")
+        or _encoding_matches(encoding, "iso8859-15")
+        or _encoding_matches(encoding, "latin-9")
+        or _encoding_matches(encoding, "latin9")
     ):
         return _unicode_encode_iso8859_15(value, errors)
-    if name == "utf-16":
+    if _encoding_matches(encoding, "utf-16"):
         return _unicode_encode_utf16(value, True, True, errors)
-    if name == "utf-16-le" or name == "utf16le":
+    if _encoding_matches(encoding, "utf-16-le") or _encoding_matches(encoding, "utf16le"):
         return _unicode_encode_utf16(value, True, False, errors)
-    if name == "utf-16-be" or name == "utf16be":
+    if _encoding_matches(encoding, "utf-16-be") or _encoding_matches(encoding, "utf16be"):
         return _unicode_encode_utf16(value, False, False, errors)
-    if name == "utf-32":
+    if _encoding_matches(encoding, "utf-32"):
         return _unicode_encode_utf32(value, True, True, errors)
-    if name == "utf-32-le" or name == "utf32le":
+    if _encoding_matches(encoding, "utf-32-le") or _encoding_matches(encoding, "utf32le"):
         return _unicode_encode_utf32(value, True, False, errors)
-    if name == "utf-32-be" or name == "utf32be":
+    if _encoding_matches(encoding, "utf-32-be") or _encoding_matches(encoding, "utf32be"):
         return _unicode_encode_utf32(value, False, False, errors)
 
     raise LookupError("unknown encoding: " + encoding)

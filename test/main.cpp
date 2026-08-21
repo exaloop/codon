@@ -489,6 +489,8 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/heapq_test.codon",
         "stdlib/operator_test.codon",
         "stdlib/asyncio_test.codon",
+        "stdlib/io_test.codon",
+        "stdlib/unicode_test.codon",
         "python/pybridge.codon"
       ),
       testing::Values(true, false),
