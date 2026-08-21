@@ -30,7 +30,11 @@ def test_regular_file_basics():
 
     reader = open(path)
     assert reader.readline() == "alpha\n"
-    assert reader.readlines() == ["beta\n", "gamma\n"]
+    assert reader.tell() == 6
+    assert reader.read(4) == "beta"
+    reader.seek(-4, 1)
+    assert reader.read(4) == "beta"
+    assert reader.readlines() == ["\n", "gamma\n"]
     assert reader.readline() == ""
     reader.seek(0, 0)
     assert reader.tell() == 0
@@ -424,6 +428,13 @@ def test_text_newline_read_semantics():
     assert reader.read(1) == "c"
     assert reader.read(1) == "\n"
     assert reader.read(1) == ""
+    reader.close()
+
+    writer = open(path, "w", newline="")
+    writer.write(_latin1_value() + "\r\n")
+    writer.close()
+    reader = open(path, "r")
+    assert reader.read() == _latin1_value() + "\n"
     reader.close()
 
 
