@@ -30,7 +30,6 @@ using namespace codon::matcher;
 
 namespace codon::ast {
 
-namespace {
 std::string pyQuote(const std::string &s) {
   std::string r = "'";
   for (char c : s) {
@@ -48,19 +47,75 @@ std::string pyQuote(const std::string &s) {
   return r + "'";
 }
 
-std::string pyList(const std::vector<std::string> &v) {
+std::string pyList(const std::vector<std::string> &v, int indent, int level) {
   std::string r = "[";
-  for (size_t i = 0; i < v.size(); ++i)
-    r += (i ? ", " : "") + v[i];
-  return r + "]";
+  for (size_t n = 0; n < v.size(); ++n)
+    r += (n ? ", " : "") + v[n];
+  if (indent <= 0 || v.size() < 3)
+    return r + "]";
+  auto pad = std::string(level + indent, ' ');
+  auto close = std::string(level, ' ');
+  r = "[\n" + pad;
+  for (size_t n = 0; n < v.size(); ++n)
+    r += (n ? ",\n" + pad : "") + v[n];
+  return r + "\n" + close + "]";
 }
 
-std::tuple<int, std::string, std::string> pyIndent(int indent, int level) {
-  if (indent <= 0)
-    return {level, "", ", "};
-  else
-    return {level + indent, "\n" + std::string(' ', level + indent),
-            ",\n" + std::string(' ', level + indent)};
+std::string pyArguments(const std::vector<Param> &params, bool attributes, int indent,
+                        int level) {
+  std::string vararg, kwarg;
+  std::vector<std::string> pos, args, kwonly, kwdef, def, typ, typdef;
+  std::string r = "Arguments(";
+  for (auto &p : params) {
+    if (startswith(p.name, "**")) {
+      kwarg = pyNode("Arg",
+                     {"arg=" + pyQuote(p.name.substr(2)),
+                      "annotation=" + (p.type ? p.type->toPythonString(
+                                                    attributes, indent, indent + level)
+                                              : "None")},
+                     nullptr, attributes, indent, level + indent);
+    } else if (startswith(p.name, "*")) {
+      vararg = pyNode("Arg",
+                      {"arg=" + pyQuote(p.name.substr(1)),
+                       "annotation=" + (p.type ? p.type->toPythonString(
+                                                     attributes, indent, indent + level)
+                                               : "None")},
+                      nullptr, attributes, indent, level + indent);
+    } else if (p.status != Param::Value) {
+      typ.push_back(pyNode(
+          "Arg",
+          {"arg=" + pyQuote(p.name),
+           "annotation=" +
+               (p.type ? p.type->toPythonString(attributes, indent, indent + level)
+                       : "None")},
+          nullptr, attributes, indent, level + indent));
+      if (p.defaultValue) {
+        typdef.push_back(
+            p.defaultValue->toPythonString(attributes, indent, indent + level));
+      }
+    } else {
+      args.push_back(pyNode(
+          "Arg",
+          {"arg=" + pyQuote(p.name),
+           "annotation=" +
+               (p.type ? p.type->toPythonString(attributes, indent, indent + level)
+                       : "None")},
+          nullptr, attributes, indent, level + indent));
+      if (p.defaultValue) {
+        def.push_back(
+            p.defaultValue->toPythonString(attributes, indent, indent + level));
+      }
+    }
+  }
+  return pyNode("Arguments",
+                {"posonlyargs=" + pyList(pos, indent, indent + level),
+                 "args=" + pyList(args, indent, indent + level), "vararg=" + vararg,
+                 "kwonlyargs=" + pyList(kwonly, indent, indent + level),
+                 "kw_defaults=" + pyList(kwdef, indent, indent + level),
+                 "kwarg=" + kwarg, "defaults=" + pyList(def, indent, indent + level),
+                 "types=" + pyList(typ, indent, indent + level),
+                 "type_defaults=" + pyList(typdef, indent, indent + level)},
+                nullptr, attributes, indent, indent + level);
 }
 
 std::string pyOperator(const std::string &op) { return pyQuote(op); }
@@ -134,36 +189,65 @@ std::string pyAttrs(const ASTNode *n) {
   std::vector<std::string> a;
   for (auto it = n->attributes_begin(); it != n->attributes_end(); ++it) {
     auto *v = n->getAttribute(*it);
-    std::ostringstream os;
-    os << "(" << pyQuote(attrName(*it)) << ", " << pyQuote(v ? [&] {
-      std::ostringstream x; x << *v; return x.str();
-    }() : "") << ")";
-    a.push_back(os.str());
+    auto name = attrName(*it);
+    if (!name.empty()) {
+      std::ostringstream oss;
+      if (!v) {
+        a.push_back(name);
+      } else {
+        oss << *v;
+        if (oss.str().empty())
+          a.push_back(name);
+        else {
+          std::ostringstream os;
+          os << "(" << name << ", " << oss.str() << ")";
+          a.push_back(os.str());
+        }
+      }
+    }
   }
   std::sort(a.begin(), a.end());
-  return a.empty() ? "" : ", attributes=" + pyList(a);
+  return a.empty() ? "" : ", attributes=" + pyList(a, -1, 0);
 }
 
 std::string pyNode(const std::string &name, const std::vector<std::string> &fields,
-                   const ASTNode *n, bool attrs) {
+                   const ASTNode *n, bool attrs, int indent, int level) {
   std::string r = name + "(";
   size_t j = 0;
-  for (size_t i = 0; i < fields.size(); ++i) {
-    if (!endswith(fields[i], "=") && !endswith(fields[i], "=\'\'") &&
-        !endswith(fields[i], "=None") && !endswith(fields[i], "=[]") &&
-        !endswith(fields[i], "=()")) {
-      r += (j++ ? ", " : "") + fields[i];
-    }
+  for (size_t f = 0; f < fields.size(); ++f) {
+    if (!endswith(fields[f], "=") && !endswith(fields[f], "=''") &&
+        !endswith(fields[f], "=None") && !endswith(fields[f], "=[]") &&
+        !endswith(fields[f], "=()"))
+      r += (j++ ? ", " : "") + fields[f];
   }
-  if (attrs)
-    r += (!j ? "" : ",") + pyAttrs(n).substr(1);
-  return r + ")";
+  if (n && attrs) {
+    auto a = pyAttrs(n);
+    if (!a.empty())
+      r += (!j ? "" : ",") + pyAttrs(n).substr(1);
+  }
+  if (indent <= 0 || j < 3)
+    return r + ")";
+  auto pad = std::string(level + indent, ' ');
+  auto close = std::string(level, ' ');
+  r = name + "(\n" + pad;
+  size_t k = 0;
+  for (size_t f = 0; f < fields.size(); ++f) {
+    if (!endswith(fields[f], "=") && !endswith(fields[f], "=''") &&
+        !endswith(fields[f], "=None") && !endswith(fields[f], "=[]") &&
+        !endswith(fields[f], "=()"))
+      r += (k++ ? ",\n" + pad : "") + fields[f];
+  }
+  if (attrs) {
+    auto attr = pyAttrs(n);
+    if (!attr.empty())
+      r += (k++ ? ",\n" + pad : "") + attr.substr(2);
+  }
+  return r + "\n" + close + ")";
 }
 
-std::string pyExpr(const Expr *e, bool attrs, int indent) {
-  return e ? e->toPythonString(attrs, indent) : "None";
+std::string pyExpr(const Expr *e, bool attrs, int indent, int level) {
+  return e ? e->toPythonString(attrs, indent, level) : "None";
 }
-} // namespace
 
 Expr::Expr()
     : AcceptorExtend(), type(nullptr), done(false), origExpr(nullptr),
@@ -224,8 +308,8 @@ std::pair<int, std::string> Param::getNameWithStars() const {
 NoneExpr::NoneExpr() : AcceptorExtend() {}
 NoneExpr::NoneExpr(const NoneExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string NoneExpr::toString(int) const { return wrapType("none"); }
-std::string NoneExpr::toPythonString(bool a, int i) const {
-  return pyNode("NoneValue", {}, this, a);
+std::string NoneExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("NoneValue", {}, this, a, indent, level);
 }
 
 BoolExpr::BoolExpr(bool value) : AcceptorExtend(), value(value) {}
@@ -235,8 +319,9 @@ bool BoolExpr::getValue() const { return value; }
 std::string BoolExpr::toString(int) const {
   return wrapType(fmt::format("bool {}", static_cast<int>(value)));
 }
-std::string BoolExpr::toPythonString(bool a, int i) const {
-  return pyNode("Bool", {"value=" + std::string(value ? "True" : "False")}, this, a);
+std::string BoolExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Bool", {"value=" + std::string(value ? "True" : "False")}, this, a,
+                indent, level);
 }
 
 IntExpr::IntExpr(int64_t intValue)
@@ -274,8 +359,8 @@ std::string IntExpr::toString(int) const {
       fmt::format("int {}{}", value,
                   suffix.empty() ? "" : fmt::format(" #:suffix \"{}\"", suffix)));
 }
-std::string IntExpr::toPythonString(bool a, int i) const {
-  return pyNode("Num", {"value=" + value, "suffix=" + suffix}, this, a);
+std::string IntExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Num", {"value=" + value, "suffix=" + suffix}, this, a, indent, level);
 }
 
 FloatExpr::FloatExpr(double floatValue)
@@ -309,8 +394,8 @@ std::string FloatExpr::toString(int) const {
       fmt::format("float {}{}", value,
                   suffix.empty() ? "" : fmt::format(" #:suffix \"{}\"", suffix)));
 }
-std::string FloatExpr::toPythonString(bool a, int i) const {
-  return pyNode("Num", {"value=" + value, "suffix=" + suffix}, this, a);
+std::string FloatExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Num", {"value=" + value, "suffix=" + suffix}, this, a, indent, level);
 }
 
 StringExpr::StringExpr(std::vector<StringExpr::String> strings)
@@ -331,11 +416,12 @@ std::string StringExpr::toString(int) const {
         vp.prefix.empty() ? "" : fmt::format(" #:prefix \"{}\"", vp.prefix)));
   return wrapType(fmt::format("string ({})", join(s)));
 }
-std::string StringExpr::toPythonString(bool a, int i) const {
+std::string StringExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> vals;
   for (auto &s : strings) {
-    auto st = pyNode(
-        "Str", {"value=" + pyQuote(s.value), "prefix=" + pyQuote(s.prefix)}, this, a);
+    auto st =
+        pyNode("Str", {"value=" + pyQuote(s.value), "prefix=" + pyQuote(s.prefix)},
+               this, a, indent, level);
     if (s.format.text.empty()) {
       vals.push_back(st);
     } else {
@@ -343,13 +429,14 @@ std::string StringExpr::toPythonString(bool a, int i) const {
           pyNode("FormattedValue",
                  {"value=" + st, "conversion=" + pyQuote(s.format.conversion),
                   "format_spec=" + pyQuote(s.format.spec)},
-                 this, a));
+                 this, a, indent, level));
     }
   }
   if (strings.size() == 1) {
     return vals[0];
   } else {
-    return pyNode("JoinedStr", {"values=" + pyList(vals)}, this, a);
+    return pyNode("JoinedStr", {"values=" + pyList(vals, indent, level + indent)}, this,
+                  a, indent, level);
   }
 }
 std::string StringExpr::getValue() const {
@@ -366,8 +453,8 @@ IdExpr::IdExpr(const IdExpr &expr, bool clean)
 std::string IdExpr::toString(int) const {
   return !getType() ? fmt::format("'{}", value) : wrapType(fmt::format("'{}", value));
 }
-std::string IdExpr::toPythonString(bool a, int i) const {
-  return pyNode("Name", {"id=" + pyQuote(value)}, this, a);
+std::string IdExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Name", {"id=" + pyQuote(value)}, this, a, indent, level);
 }
 
 StarExpr::StarExpr(Expr *expr) : AcceptorExtend(), expr(expr) {}
@@ -376,9 +463,11 @@ StarExpr::StarExpr(const StarExpr &expr, bool clean)
 std::string StarExpr::toString(int indent) const {
   return wrapType(fmt::format("star {}", expr->toString(indent)));
 }
-std::string StarExpr::toPythonString(bool a, int i) const {
-  return pyNode("Starred", {"value=" + (expr ? expr->toPythonString(a, i) : "None")},
-                this, a);
+std::string StarExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Starred",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 KeywordStarExpr::KeywordStarExpr(Expr *expr) : AcceptorExtend(), expr(expr) {}
@@ -387,10 +476,12 @@ KeywordStarExpr::KeywordStarExpr(const KeywordStarExpr &expr, bool clean)
 std::string KeywordStarExpr::toString(int indent) const {
   return wrapType(fmt::format("kwstar {}", expr->toString(indent)));
 }
-std::string KeywordStarExpr::toPythonString(bool a, int i) const {
-  return pyNode("keyword",
-                {"arg=None", "value=" + (expr ? expr->toPythonString(a, i) : "None")},
-                this, a);
+std::string KeywordStarExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "keyword",
+      {"arg=None",
+       "value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 TupleExpr::TupleExpr(std::vector<Expr *> items)
@@ -400,11 +491,12 @@ TupleExpr::TupleExpr(const TupleExpr &expr, bool clean)
 std::string TupleExpr::toString(int) const {
   return wrapType(fmt::format("tuple {}", combine(items)));
 }
-std::string TupleExpr::toPythonString(bool a, int i) const {
+std::string TupleExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> v;
   for (auto x : *this)
-    v.push_back(x ? x->toPythonString(a, i) : "None");
-  return pyNode("TupleEx", {"elts=" + pyList(v)}, this, a);
+    v.push_back(x ? x->toPythonString(a, indent, level + indent) : "None");
+  return pyNode("TupleEx", {"elts=" + pyList(v, indent, level + indent)}, this, a,
+                indent, level);
 }
 
 ListExpr::ListExpr(std::vector<Expr *> items)
@@ -414,11 +506,12 @@ ListExpr::ListExpr(const ListExpr &expr, bool clean)
 std::string ListExpr::toString(int) const {
   return wrapType(!items.empty() ? fmt::format("list {}", combine(items)) : "list");
 }
-std::string ListExpr::toPythonString(bool a, int i) const {
+std::string ListExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> v;
   for (auto x : *this)
-    v.push_back(x ? x->toPythonString(a, i) : "None");
-  return pyNode("ListEx", {"elts=" + pyList(v)}, this, a);
+    v.push_back(x ? x->toPythonString(a, indent, level + indent) : "None");
+  return pyNode("ListEx", {"elts=" + pyList(v, indent, level + indent)}, this, a,
+                indent, level);
 }
 
 SetExpr::SetExpr(std::vector<Expr *> items)
@@ -428,11 +521,12 @@ SetExpr::SetExpr(const SetExpr &expr, bool clean)
 std::string SetExpr::toString(int) const {
   return wrapType(!items.empty() ? fmt::format("set {}", combine(items)) : "set");
 }
-std::string SetExpr::toPythonString(bool a, int i) const {
+std::string SetExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> v;
   for (auto x : *this)
-    v.push_back(x ? x->toPythonString(a, i) : "None");
-  return pyNode("SetEx", {"elts=" + pyList(v)}, this, a);
+    v.push_back(x ? x->toPythonString(a, indent, level + indent) : "None");
+  return pyNode("SetEx", {"elts=" + pyList(v, indent, level + indent)}, this, a, indent,
+                level);
 }
 
 DictExpr::DictExpr(std::vector<Expr *> items)
@@ -447,14 +541,19 @@ DictExpr::DictExpr(const DictExpr &expr, bool clean)
 std::string DictExpr::toString(int) const {
   return wrapType(!items.empty() ? fmt::format("dict {}", combine(items)) : "set");
 }
-std::string DictExpr::toPythonString(bool a, int i) const {
+std::string DictExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> k, v;
   for (auto x : *this)
     if (auto t = cast<TupleExpr>(x)) {
-      k.push_back((*t)[0] ? (*t)[0]->toPythonString(a, i) : "None");
-      v.push_back((*t)[1] ? (*t)[1]->toPythonString(a, i) : "None");
+      k.push_back((*t)[0] ? (*t)[0]->toPythonString(a, indent, level + indent)
+                          : "None");
+      v.push_back((*t)[1] ? (*t)[1]->toPythonString(a, indent, level + indent)
+                          : "None");
     }
-  return pyNode("DictEx", {"keys=" + pyList(k), "values=" + pyList(v)}, this, a);
+  return pyNode("DictEx",
+                {"keys=" + pyList(k, indent, level + indent),
+                 "values=" + pyList(v, indent, level + indent)},
+                this, a, indent, level);
 }
 
 GeneratorExpr::GeneratorExpr(Cache *cache, GeneratorExpr::GeneratorKind kind,
@@ -489,8 +588,55 @@ std::string GeneratorExpr::toString(int indent) const {
   auto l = loops->toString(indent >= 0 ? indent + 2 * INDENT_SIZE : -1);
   return wrapType(fmt::format("{}gen {}", prefix, l));
 }
-std::string GeneratorExpr::toPythonString(bool a, int i) const {
-  return pyNode("GeneratorExp", {"elt=None", "generators=[]"}, this, a);
+std::string GeneratorExpr::toPythonString(bool a, int indent, int level) const {
+  auto name = "GeneratorExp";
+  if (kind == GeneratorKind::ListGenerator)
+    name = "ListComp";
+  if (kind == GeneratorKind::SetGenerator)
+    name = "SetComp";
+  if (kind == GeneratorKind::DictGenerator)
+    name = "DictComp";
+  std::vector<std::string> gens;
+  Expr *target = nullptr, *iter = nullptr, *expr = nullptr;
+  std::vector<std::string> ifs;
+  for (Stmt *i = loops;;) {
+    if (auto sf = cast<ForStmt>(i)) {
+      if (iter) {
+        gens.push_back(
+            pyNode("Comprehension",
+                   {"target=" + target->toPythonString(a, indent, 2 * indent + level),
+                    "iter=" + iter->toPythonString(a, indent, 2 * indent + level),
+                    "ifs=" + pyList(ifs, indent, 2 * indent + level)},
+                   iter, a, indent, indent + level));
+        ifs.clear();
+      }
+      target = sf->var;
+      iter = sf->iter;
+      i = sf->suite;
+    } else if (auto si = cast<IfStmt>(i)) {
+      ifs.push_back(si->cond->toPythonString(a, indent, indent + level));
+      i = si->ifSuite;
+    } else if (auto ss = cast<SuiteStmt>(i)) {
+      i = ss->back();
+    } else if (auto se = cast<ExprStmt>(i)) {
+      gens.push_back(
+          pyNode("Comprehension",
+                 {"target=" + target->toPythonString(a, indent, 2 * indent + level),
+                  "iter=" + iter->toPythonString(a, indent, 2 * indent + level),
+                  "ifs=" + pyList(ifs, indent, 2 * indent + level)},
+                 iter, a, indent, indent + level));
+      ifs.clear();
+      expr = se->getExpr();
+      break;
+    } else {
+      break;
+    }
+  }
+  seqassertn(expr, "bad generator");
+  return pyNode(name,
+                {"elt=" + expr->toPythonString(a, indent, indent + level),
+                 "generators=" + pyList(gens, indent, indent + level)},
+                this, a, indent, level);
 }
 Expr *GeneratorExpr::getFinalExpr() {
   auto s = *(getFinalStmt());
@@ -559,12 +705,14 @@ std::string IfExpr::toString(int indent) const {
   return wrapType(fmt::format("if-expr {} {} {}", cond->toString(indent),
                               ifexpr->toString(indent), elsexpr->toString(indent)));
 }
-std::string IfExpr::toPythonString(bool a, int i) const {
-  return pyNode("IfExp",
-                {"test=" + (cond ? cond->toPythonString(a, i) : "None"),
-                 "body=" + (ifexpr ? ifexpr->toPythonString(a, i) : "None"),
-                 "orelse=" + (elsexpr ? elsexpr->toPythonString(a, i) : "None")},
-                this, a);
+std::string IfExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "IfExp",
+      {"test=" + (cond ? cond->toPythonString(a, indent, level + indent) : "None"),
+       "body=" + (ifexpr ? ifexpr->toPythonString(a, indent, level + indent) : "None"),
+       "orelse=" +
+           (elsexpr ? elsexpr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 UnaryExpr::UnaryExpr(std::string op, Expr *expr)
@@ -574,12 +722,13 @@ UnaryExpr::UnaryExpr(const UnaryExpr &expr, bool clean)
 std::string UnaryExpr::toString(int indent) const {
   return wrapType(fmt::format("unary \"{}\" {}", op, expr->toString(indent)));
 }
-std::string UnaryExpr::toPythonString(bool a, int i) const {
+std::string UnaryExpr::toPythonString(bool a, int indent, int level) const {
   auto p = pyOperator(op);
-  return pyNode("UnaryOp",
-                {"op=" + std::string(p),
-                 "operand=" + (expr ? expr->toPythonString(a, i) : "None")},
-                this, a);
+  return pyNode(
+      "UnaryOp",
+      {"op=" + std::string(p),
+       "operand=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 BinaryExpr::BinaryExpr(Expr *lexpr, std::string op, Expr *rexpr, bool inPlace)
@@ -592,13 +741,16 @@ std::string BinaryExpr::toString(int indent) const {
   return wrapType(fmt::format("binary \"{}\" {} {}{}", op, lexpr->toString(indent),
                               rexpr->toString(indent), inPlace ? " #:in-place" : ""));
 }
-std::string BinaryExpr::toPythonString(bool a, int i) const {
+std::string BinaryExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> vals;
   if (lexpr)
-    vals.push_back(lexpr->toPythonString(a, i));
+    vals.push_back(lexpr->toPythonString(a, indent, level + indent));
   if (rexpr)
-    vals.push_back(rexpr->toPythonString(a, i));
-  return pyNode("BinOp", {"op=" + pyOperator(op), "values=" + pyList(vals)}, this, a);
+    vals.push_back(rexpr->toPythonString(a, indent, level + indent));
+  return pyNode(
+      "BinOp",
+      {"op=" + pyOperator(op), "values=" + pyList(vals, indent, level + indent)}, this,
+      a, indent, level);
 }
 
 ChainBinaryExpr::ChainBinaryExpr(std::vector<std::pair<std::string, Expr *>> exprs)
@@ -614,15 +766,18 @@ std::string ChainBinaryExpr::toString(int indent) const {
     s.push_back(fmt::format("({} \"{}\")", i.first, i.second->toString(indent)));
   return wrapType(fmt::format("chain {}", join(s, " ")));
 }
-std::string ChainBinaryExpr::toPythonString(bool a, int i) const {
+std::string ChainBinaryExpr::toPythonString(bool a, int indent, int level) const {
   std::string prev;
   for (size_t i = exprs.size() - 1; i-- > 0;) {
     std::vector<std::string> vals;
-    vals.push_back(exprs[i].second->toPythonString(a, i));
-    vals.push_back(prev.empty() ? exprs[i + 1].second->toPythonString(a, i) : prev);
-    prev =
-        pyNode("BinOp", {"op=" + pyOperator(exprs[i].first), "values=" + pyList(vals)},
-               this, a);
+    vals.push_back(exprs[i].second->toPythonString(a, indent, level + indent));
+    vals.push_back(prev.empty()
+                       ? exprs[i + 1].second->toPythonString(a, indent, level + indent)
+                       : prev);
+    prev = pyNode("BinOp",
+                  {"op=" + pyOperator(exprs[i].first),
+                   "values=" + pyList(vals, indent, level + indent)},
+                  this, a, indent, level);
   }
   return prev;
 }
@@ -648,15 +803,16 @@ std::string PipeExpr::toString(int indent) const {
     s.push_back(fmt::format("({} \"{}\")", i.expr->toString(indent), i.op));
   return wrapType(fmt::format("pipe {}", join(s, " ")));
 }
-std::string PipeExpr::toPythonString(bool a, int i) const {
+std::string PipeExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> vals;
   for (auto &v : items) {
-    vals.push_back("(" + pyQuote(v.op) + ", " + v.expr->toPythonString(a, i) + ")");
+    vals.push_back("(" + pyQuote(v.op) + ", " +
+                   v.expr->toPythonString(a, indent, level + indent) + ")");
   }
-  return pyNode(
-      "PipeOp",
-      {"head=" + items[0].expr->toPythonString(a, i), "values=" + pyList(vals)}, this,
-      a);
+  return pyNode("PipeOp",
+                {"head=" + items[0].expr->toPythonString(a, indent, level + indent),
+                 "values=" + pyList(vals, indent, level + indent)},
+                this, a, indent, level);
 }
 
 IndexExpr::IndexExpr(Expr *expr, Expr *index)
@@ -668,11 +824,12 @@ std::string IndexExpr::toString(int indent) const {
   return wrapType(
       fmt::format("index {} {}", expr->toString(indent), index->toString(indent)));
 }
-std::string IndexExpr::toPythonString(bool a, int i) const {
-  return pyNode("Subscript",
-                {"value=" + (expr ? expr->toPythonString(a, i) : "None"),
-                 "slice=" + (index ? index->toPythonString(a, i) : "None")},
-                this, a);
+std::string IndexExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Subscript",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "slice=" + (index ? index->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 CallArg CallArg::clone(bool clean) const {
@@ -713,22 +870,25 @@ std::string CallExpr::toString(int indent) const {
   return wrapType(fmt::format("call{} {}{}", partial ? "-partial" : "",
                               expr->toString(indent), join(s, "")));
 }
-std::string CallExpr::toPythonString(bool a, int i) const {
+std::string CallExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> v, kv;
   for (const auto &x : *this) {
     if (x.name.empty()) {
-      v.push_back(x.value->toPythonString(a, i));
+      v.push_back(x.value->toPythonString(a, indent, level + indent));
     } else {
       kv.push_back(
           pyNode("keyword",
-                 {"arg=" + pyQuote(x.name), "value=" + x.value->toPythonString(a, i)},
-                 this, a));
+                 {"arg=" + pyQuote(x.name),
+                  "value=" + x.value->toPythonString(a, indent, level + indent)},
+                 this, a, indent, level));
     }
   }
-  return pyNode(partial ? "PartialCall" : "Call",
-                {"func=" + (expr ? expr->toPythonString(a, i) : "None"),
-                 "args=" + pyList(v), "keywords=" + pyList(kv)},
-                this, a);
+  return pyNode(
+      partial ? "PartialCall" : "Call",
+      {"func=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "args=" + pyList(v, indent, level + indent),
+       "keywords=" + pyList(kv, indent, level + indent)},
+      this, a, indent, level);
 }
 
 DotExpr::DotExpr(Expr *expr, std::string member)
@@ -739,11 +899,12 @@ DotExpr::DotExpr(const DotExpr &expr, bool clean)
 std::string DotExpr::toString(int indent) const {
   return wrapType(fmt::format("dot {} '{}", expr->toString(indent), member));
 }
-std::string DotExpr::toPythonString(bool a, int i) const {
-  return pyNode("Attribute",
-                {"value=" + (expr ? expr->toPythonString(a, i) : "None"),
-                 "attr=" + pyQuote(member)},
-                this, a);
+std::string DotExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Attribute",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "attr=" + pyQuote(member)},
+      this, a, indent, level);
 }
 
 SliceExpr::SliceExpr(Expr *start, Expr *stop, Expr *step)
@@ -757,12 +918,13 @@ std::string SliceExpr::toString(int indent) const {
       stop ? fmt::format(" #:end {}", stop->toString(indent)) : "",
       step ? fmt::format(" #:step {}", step->toString(indent)) : ""));
 }
-std::string SliceExpr::toPythonString(bool a, int i) const {
-  return pyNode("Slice",
-                {"lower=" + (start ? start->toPythonString(a, i) : "None"),
-                 "upper=" + (stop ? stop->toPythonString(a, i) : "None"),
-                 "step=" + (step ? step->toPythonString(a, i) : "None")},
-                this, a);
+std::string SliceExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Slice",
+      {"lower=" + (start ? start->toPythonString(a, indent, level + indent) : "None"),
+       "upper=" + (stop ? stop->toPythonString(a, indent, level + indent) : "None"),
+       "step=" + (step ? step->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 EllipsisExpr::EllipsisExpr(EllipsisType mode) : AcceptorExtend(), mode(mode) {}
@@ -772,8 +934,8 @@ std::string EllipsisExpr::toString(int) const {
   return wrapType(fmt::format(
       "ellipsis{}", mode == PIPE ? " #:pipe" : (mode == PARTIAL ? " #:partial" : "")));
 }
-std::string EllipsisExpr::toPythonString(bool a, int i) const {
-  return pyNode("Ellipsis", {}, this, a);
+std::string EllipsisExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Ellipsis", {}, this, a, indent, level);
 }
 
 LambdaExpr::LambdaExpr(std::vector<Param> vars, Expr *expr)
@@ -787,26 +949,19 @@ std::string LambdaExpr::toString(int indent) const {
     as.push_back(a.toString(indent));
   return wrapType(fmt::format("lambda ({}) {}", join(as, " "), expr->toString(indent)));
 }
-std::string LambdaExpr::toPythonString(bool a, int i) const {
-  std::vector<std::string> v;
-  for (const auto &x : *this) {
-    v.push_back(
-        pyNode("Arg",
-               {"arg=" + pyQuote(x.name),
-                "annotation=" + (x.type ? x.type->toPythonString(a, i) : "None")},
-               this, a));
-  }
-  return pyNode("Lambda",
-                {"args=Arguments(args=" + pyList(v) + ")",
-                 "body=" + (expr ? expr->toPythonString(a, i) : "None")},
-                this, a);
+std::string LambdaExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Lambda",
+      {"args=" + pyArguments(items, a, indent, level + indent),
+       "body=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 YieldExpr::YieldExpr() : AcceptorExtend() {}
 YieldExpr::YieldExpr(const YieldExpr &expr, bool clean) : AcceptorExtend(expr, clean) {}
 std::string YieldExpr::toString(int) const { return "yield-expr"; }
-std::string YieldExpr::toPythonString(bool a, int i) const {
-  return pyNode("Yield", {"value=None"}, this, a);
+std::string YieldExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode("Yield", {"value=None"}, this, a, indent, level);
 }
 
 AwaitExpr::AwaitExpr(Expr *expr) : AcceptorExtend(), expr(expr), transformed(false) {}
@@ -816,9 +971,11 @@ AwaitExpr::AwaitExpr(const AwaitExpr &expr, bool clean)
 std::string AwaitExpr::toString(int indent) const {
   return wrapType(fmt::format("await {}", expr->toString(indent)));
 }
-std::string AwaitExpr::toPythonString(bool a, int i) const {
-  return pyNode("Await", {"value=" + (expr ? expr->toPythonString(a, i) : "None")},
-                this, a);
+std::string AwaitExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Await",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 AssignExpr::AssignExpr(Expr *var, Expr *expr)
@@ -830,11 +987,12 @@ std::string AssignExpr::toString(int indent) const {
   return wrapType(
       fmt::format("assign-expr '{} {}", var->toString(indent), expr->toString(indent)));
 }
-std::string AssignExpr::toPythonString(bool a, int i) const {
-  return pyNode("NamedExpr",
-                {"target=" + (var ? var->toPythonString(a, i) : "None"),
-                 "value=" + (expr ? expr->toPythonString(a, i) : "None")},
-                this, a);
+std::string AssignExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "NamedExpr",
+      {"target=" + (var ? var->toPythonString(a, indent, level + indent) : "None"),
+       "value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 RangeExpr::RangeExpr(Expr *start, Expr *stop)
@@ -846,11 +1004,12 @@ std::string RangeExpr::toString(int indent) const {
   return wrapType(
       fmt::format("range {} {}", start->toString(indent), stop->toString(indent)));
 }
-std::string RangeExpr::toPythonString(bool a, int i) const {
-  return pyNode("Range",
-                {"start=" + (start ? start->toPythonString(a, i) : "None"),
-                 "stop=" + (stop ? stop->toPythonString(a, i) : "None")},
-                this, a);
+std::string RangeExpr::toPythonString(bool a, int indent, int level) const {
+  return pyNode(
+      "Range",
+      {"start=" + (start ? start->toPythonString(a, indent, level + indent) : "None"),
+       "stop=" + (stop ? stop->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 StmtExpr::StmtExpr(std::vector<Stmt *> stmts, Expr *expr)
@@ -875,16 +1034,17 @@ std::string StmtExpr::toString(int indent) const {
   return wrapType(
       fmt::format("stmt-expr {} ({})", expr->toString(indent), join(s, "")));
 }
-std::string StmtExpr::toPythonString(bool a, int i) const {
+std::string StmtExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> vals;
   for (auto &it : items) {
     if (it)
-      vals.push_back(it->toPythonString(a, i));
+      vals.push_back(it->toPythonString(a, indent, level + indent));
   }
   return pyNode(
       "StmtExpr",
-      {"elts=" + pyList(vals), "value=" + (expr ? expr->toPythonString(a, i) : "None")},
-      this, a);
+      {"elts=" + pyList(vals, indent, level + indent),
+       "value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None")},
+      this, a, indent, level);
 }
 
 InstantiateExpr::InstantiateExpr(Expr *expr, std::vector<Expr *> typeParams)
@@ -898,16 +1058,17 @@ std::string InstantiateExpr::toString(int indent) const {
   return wrapType(
       fmt::format("instantiate {} {}", expr->toString(indent), combine(items)));
 }
-std::string InstantiateExpr::toPythonString(bool a, int i) const {
+std::string InstantiateExpr::toPythonString(bool a, int indent, int level) const {
   std::vector<std::string> vals;
   for (auto &it : items) {
     if (it)
-      vals.push_back(it->toPythonString(a, i));
+      vals.push_back(it->toPythonString(a, indent, level + indent));
   }
-  return pyNode("Subscript",
-                {"value=" + (expr ? expr->toPythonString(a, i) : "None"),
-                 "slice=" + pyList(vals)},
-                this, a);
+  return pyNode(
+      "Subscript",
+      {"value=" + (expr ? expr->toPythonString(a, indent, level + indent) : "None"),
+       "slice=" + pyList(vals, indent, level + indent)},
+      this, a, indent, level);
 }
 
 bool isId(Expr *e, const std::string &s) {

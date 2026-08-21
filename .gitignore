@@ -68,3 +68,5 @@ temp/
 playground/
 scratch*.*
 /_*
+external/
+.python-version
