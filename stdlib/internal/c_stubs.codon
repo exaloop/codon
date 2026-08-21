@@ -738,6 +738,11 @@ def BZ2_bzerror(a: cobj, b: Ptr[i32]) -> cobj:
 # <string.h>
 @pure
 @C
+def strlen(a: Ptr[u8]) -> int:
+    pass
+
+@pure
+@C
 def memcmp(lhs: Ptr[u8], rhs: Ptr[u8], count: int) -> i32:
     pass
 

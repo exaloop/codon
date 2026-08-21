@@ -560,7 +560,7 @@ def _gz_errcheck(stream: cobj):
     errnum = i32(0)
     msg = _C.gzerror(stream, __ptr__(errnum))
     if msg and msg[0]:
-        raise IOError(f"zlib error: {bytes.from_ptr(msg).decode()}")
+        raise IOError(f"zlib error: {str.from_ptr(msg)}")
 
 @tuple
 class gzFile[T]:
@@ -900,7 +900,7 @@ def _bz_errcheck(stream: cobj):
     errnum = i32(0)
     msg = _C.BZ2_bzerror(stream, __ptr__(errnum))
     if errnum < i32(0):
-        raise IOError(f"bzip2 error: {bytes.from_ptr(msg).decode()}")
+        raise IOError(f"bzip2 error: {str.from_ptr(msg)}")
 
 @tuple
 class bzFile[T]:

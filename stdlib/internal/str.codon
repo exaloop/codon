@@ -1363,6 +1363,12 @@ class str:
                 return what.__repr_default__()
             return what.__repr__()
 
+    def from_ptr(t: cobj) -> str:
+        n = _C.strlen(t)
+        p = Ptr[u8](n)
+        bytes.memcpy(p, t, n)
+        return str(p, _make_meta(n, KIND_ASCII))
+
     def __len__(self) -> int:
         return _meta_len(self._meta)
 

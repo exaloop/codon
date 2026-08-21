@@ -78,12 +78,7 @@ class bytes:
         return p
 
     def from_ptr(t: cobj) -> bytes:
-        @pure
-        @C
-        def strlen(a: cobj) -> int:
-            pass
-
-        n = strlen(t)
+        n = _C.strlen(t)
         p = Ptr[u8](n)
         bytes.memcpy(p, t, n)
         return bytes(p, n)
