@@ -39,6 +39,9 @@ typedef int64_t seq_int_t;
 struct seq_str_t {
   uint8_t *ptr;
   seq_int_t meta;
+
+  std::string encode() const;
+  bool operator==(const char *other) const;
 };
 
 struct seq_bytes_t {

@@ -269,7 +269,7 @@ static inline uint8_t *utf8_write(uint8_t *p, uint32_t c) {
   return p;
 }
 
-static seq_utf8_t encode(const seq_str_t *s, uint8_t *tmp) {
+static seq_utf8_t encode_utf8(const seq_str_t *s, uint8_t *tmp) {
   size_t n = SEQ_STR_LEN(*s);
   unsigned kind = SEQ_STR_KIND(*s);
 
@@ -390,6 +390,44 @@ static bool utf8_read(const uint8_t *data, size_t length, size_t *pos,
   return true;
 }
 
+bool seq_str_t::operator==(const char *other) const {
+  const auto *data = reinterpret_cast<const uint8_t *>(other);
+  size_t length = std::strlen(other);
+  size_t pos = 0;
+  size_t index = 0;
+  uint32_t codepoint;
+
+  if (SEQ_STR_KIND(*this) == SEQ_STR_KIND_ASCII && length != SEQ_STR_LEN(*this))
+    return false;
+
+  while (utf8_read(data, length, &pos, &codepoint)) {
+    if (index == SEQ_STR_LEN(*this))
+      return false;
+
+    uint32_t current;
+    switch (SEQ_STR_KIND(*this)) {
+    case SEQ_STR_KIND_ASCII:
+    case SEQ_STR_KIND_LATIN1:
+      current = ptr[index];
+      break;
+    case SEQ_STR_KIND_UCS2:
+      current = reinterpret_cast<const uint16_t *>(ptr)[index];
+      break;
+    case SEQ_STR_KIND_UCS4:
+      current = reinterpret_cast<const uint32_t *>(ptr)[index];
+      break;
+    default:
+      abort();
+    }
+
+    if (current != codepoint)
+      return false;
+    ++index;
+  }
+
+  return index == SEQ_STR_LEN(*this);
+}
+
 static seq_str_t string_conv(const std::string &s) {
   if (s.empty())
     return {nullptr, 0};
@@ -432,11 +470,11 @@ static seq_str_t string_conv(const std::string &s) {
   return {out, static_cast<seq_int_t>(meta)};
 }
 
-static std::string string_encode(const seq_str_t &s) {
+std::string seq_str_t::encode() const {
   uint8_t utf8_buf[UTF8_BUFFER_SIZE];
-  auto utf8 = encode(&s, utf8_buf);
+  auto utf8 = encode_utf8(this, utf8_buf);
   std::string result(reinterpret_cast<char *>(utf8.ptr), utf8.len);
-  if (utf8.ptr != utf8_buf && utf8.ptr != s.ptr)
+  if (utf8.ptr != utf8_buf && utf8.ptr != ptr)
     seq_free(utf8.ptr);
   return result;
 }
@@ -456,7 +494,7 @@ template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
       return string_conv(default_format(n));
     } else {
       auto locale = std::locale("en_US.UTF-8");
-      std::string fstr = string_encode(format);
+      std::string fstr = format.encode();
       return string_conv(fmt::format(
           locale, fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
     }
@@ -483,7 +521,7 @@ SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
 }
 
 SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
-  std::string t = string_encode(s);
+  std::string t = s.encode();
   return fmt_conv(t, format, error);
 }
 
@@ -517,7 +555,7 @@ static std::mutex captureLock;
 
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo) {
   uint8_t utf8_buf[UTF8_BUFFER_SIZE];
-  auto utf8 = encode(&str, utf8_buf);
+  auto utf8 = encode_utf8(&str, utf8_buf);
 
   if ((seq_flags & SEQ_FLAG_CAPTURE_OUTPUT) && (fo == stdout || fo == stderr)) {
     captureLock.lock();
