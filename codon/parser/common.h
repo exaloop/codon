@@ -44,6 +44,14 @@ void ltrim(std::string &str);
 void rtrim(std::string &str);
 /// True if a string only contains digits.
 bool isdigit(const std::string &str);
+std::string tolower(std::string s);
+/// Calculate a length of a UTF-8 string.  Assumes a correct UTF-8 string (asserts
+/// otherwise).
+size_t utf8_strlen(const std::string &s);
+/// Take a substring from a UTF-8 string.  Assumes a correct UTF-8 string (asserts
+/// otherwise).
+std::string utf8_substr(const std::string &s, std::size_t start, std::size_t count,
+                        std::ptrdiff_t step = 1);
 /// Combine items separated by a delimiter into a string.
 /// Combine items separated by a delimiter into a string.
 template <typename T> std::string join(const T &items, const std::string &delim = " ") {

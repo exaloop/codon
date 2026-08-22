@@ -144,6 +144,3 @@ class bytes:
                 bytes.memcpy(p + n, s._ptr, s._len)
                 n += s._len
             return bytes(p, total)
-
-    def __prefix_b__(s: str, N: Literal[int]):
-        return s.encode()

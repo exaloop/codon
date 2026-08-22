@@ -1048,8 +1048,8 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
   };
 
   std::string str = isStaticString ? getStrLiteral(expr->getType()) : "";
-  auto sz =
-      static_cast<int64_t>(isStaticString ? str.size() : getClassFields(tuple).size());
+  auto sz = static_cast<int64_t>(isStaticString ? utf8_strlen(str)
+                                                : getClassFields(tuple).size());
   int64_t start = 0, stop = sz, step = 1, multiple = 0;
   if (getInt(&start, index)) {
     // Case: `tuple[int]`
@@ -1076,12 +1076,9 @@ TypecheckVisitor::transformStaticTupleIndex(ClassType *tuple, Expr *expr, Expr *
 
   if (isStaticString) {
     if (!multiple) {
-      return {true, transform(N<StringExpr>(str.substr(start, 1)))};
+      return {true, transform(N<StringExpr>(utf8_substr(str, start, start + 1)))};
     } else {
-      std::string newStr;
-      for (auto i = start; (step > 0) ? (i < stop) : (i > stop); i += step)
-        newStr += str[i];
-      return {true, transform(N<StringExpr>(newStr))};
+      return {true, transform(N<StringExpr>(utf8_substr(str, start, stop, step)))};
     }
   } else {
     auto classFields = getClassFields(tuple);

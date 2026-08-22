@@ -2465,7 +2465,7 @@ void LLVMVisitor::visit(const StringConst *x) {
       codepoint = byte & 0x07;
       width = 4;
     } else {
-      seqassertn(false, "invalid UTF-8 string constant");
+      seqassertn(false, "invalid UTF-8 string constant: {:x}", byte);
     }
 
     seqassertn(pos + width <= utf8.size(), "truncated UTF-8 string constant");

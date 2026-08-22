@@ -73,6 +73,12 @@ void TypecheckVisitor::visit(StringExpr *expr) {
                                N<StringExpr>(p.format.text), p.expr);
         }
         items.emplace_back(p.expr);
+      } else if (tolower(p.prefix) == "b") {
+        for (unsigned char b : p.value)
+          if (b >= 0x80)
+            E(Error::CUSTOM, expr, "bytes can only contain ASCII literal characters");
+        items.emplace_back(N<CallExpr>(N<DotExpr>(N<IdExpr>("bytes"), "__new__"),
+                                       N<StringExpr>(p.value), N<StringExpr>("ascii")));
       } else if (!p.prefix.empty()) {
         /// Custom prefix strings:
         /// call `str.__prefsix_[prefix]__(str, [static length of str])`

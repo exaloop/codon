@@ -799,10 +799,11 @@ STRING <- <NAME? STR> {
     ac<string>(VS.size() > 1 ? V1 : V0),
     VS.size() > 1 ? ac<string>(V0) : ""
   );
-  if (p.prefix != "r" && p.prefix != "R") {
+  auto lp = tolower(p.prefix);
+  if (lp != "r" && lp != "rb" && lp != "br") {
     p.value = unescape(p.value);
   } else {
-    p.prefix = "";
+    p.prefix = (lp != "r" ? "b" : "");
   }
   return p;
 }
@@ -811,7 +812,8 @@ STRING__PREDICATE {
     ac<string>(VS.size() > 1 ? V1 : V0),
     VS.size() > 1 ? ac<string>(V0) : ""
   );
-  if (p.prefix != "r" && p.prefix != "R")
+  auto lp = tolower(p.prefix);
+  if (lp != "r" && lp != "rb" && lp != "br") {
     try {
       p.value = unescape(p.value);
     } catch (std::invalid_argument &e) {
@@ -821,6 +823,7 @@ STRING__PREDICATE {
       MSG = "invalid code in a string";
       return false;
     }
+  }
   return true;
 }
 STR <- <

@@ -394,6 +394,7 @@ public:
   Expr *transformStaticFormat(CallExpr *);
   Expr *transformStaticIntToStr(CallExpr *);
   Expr *transformStaticPlatform(CallExpr *);
+  Expr *transformStaticContains(CallExpr *);
   SuiteStmt *generateClassPopulateVTablesAST();
   SuiteStmt *generateBaseDerivedDistAST(types::FuncType *);
   FunctionStmt *generateThunkAST(const types::FuncType *fp, types::ClassType *base,

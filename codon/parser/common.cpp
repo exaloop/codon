@@ -277,6 +277,65 @@ void rtrim(std::string &str) {
             str.end());
 }
 bool isdigit(const std::string &str) { return std::ranges::all_of(str, ::isdigit); }
+std::string tolower(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](auto c) { return std::tolower(c); });
+  return s;
+}
+size_t utf8_char_length(const std::string &s, std::size_t pos) {
+  unsigned char c = s[pos];
+  std::size_t len = (c < 0x80)             ? 1
+                    : ((c & 0xE0) == 0xC0) ? 2
+                    : ((c & 0xF0) == 0xE0) ? 3
+                    : ((c & 0xF8) == 0xF0) ? 4
+                                           : 0;
+  seqassertn(len, "invalid UTF-8 lead byte");
+  seqassertn(pos + len <= s.size(), "truncated UTF-8 sequence");
+  // for (size_t i = 1; i < len; i++)
+  // seqassertn((s[pos + i] & 0xC0) == 0x80, "invalid UTF-8 continuation byte");
+  return len;
+}
+// Take a length of a UTF-8 string.
+// Assumes a correct UTF-8 string (asserts otherwise).
+// No grapheme cluster support. Codex-assisted.
+size_t utf8_strlen(const std::string &s) {
+  size_t count = 0;
+  for (size_t pos = 0; pos < s.size();) {
+    pos += utf8_char_length(s, pos);
+    ++count;
+  }
+  return count;
+}
+// Take a substring from a UTF-8 string.
+// Assumes a correct UTF-8 string (asserts otherwise).
+// No grapheme cluster support. Codex-assisted.
+std::string utf8_substr(const std::string &s, std::size_t start, std::size_t stop,
+                        std::ptrdiff_t step) {
+  seqassertn(step != 0, "step cannot be zero");
+  // Store byte offsets for each code point.
+  std::string result;
+  if (step > 0) {
+    size_t next_i = start;
+    for (std::size_t pos = 0, i = 0; pos < s.size() && i < stop; i++) {
+      auto len = utf8_char_length(s, pos);
+      if (i == next_i) {
+        result.append(s, pos, len);
+        next_i = i + step;
+      }
+      pos += len;
+    }
+  } else {
+    size_t next_i = stop + 1;
+    for (std::size_t pos = 0, i = 0; pos < s.size() && i <= start; i++) {
+      auto len = utf8_char_length(s, pos);
+      if (i == next_i) {
+        result = s.substr(pos, len) + result;
+        next_i = i + -step;
+      }
+      pos += len;
+    }
+  }
+  return result;
+}
 
 // Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__

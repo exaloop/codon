@@ -2384,10 +2384,6 @@ class str:
         call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
         ret {} {}
 
-    def __prefix_b__(s: str, N: Literal[int]):
-        # TODO: return bytes
-        return s
-
 
 def _unicode_new_uninit(length: int, maxchar: int) -> str:
     if length < 0:

@@ -96,3 +96,6 @@ def loop_string(
         return static.format(val, int_to_string(start))
     else:
         return static.format(val, int_to_string(start)) + delim + loop_string(start + 1, stop, val, delim)
+
+def contains(text: Literal[str], pattern: Literal[str]) -> Literal[bool]:
+    pass
