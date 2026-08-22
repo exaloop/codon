@@ -43,8 +43,8 @@ from internal.types.collections.tuple import *
 from internal.builtin import *
 from internal.builtin import _jit_display
 from internal.str import *
-from internal.bytes import *
 from internal.format import *
+from internal.bytes import *
 
 from internal.sort import sorted
 

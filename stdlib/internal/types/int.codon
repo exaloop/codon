@@ -309,9 +309,9 @@ class Int:
 
     def __repr__(self) -> str:
         if N == 64:
-            return str(self)
+            return self.__str__()
         else:
-            return f"Int[{N}]({str(self)})"
+            return f"Int[{N}]({self.__str__()})"
 
     @pure
     @llvm
