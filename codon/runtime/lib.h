@@ -102,6 +102,11 @@ SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error);
 SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error);
 SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error);
 SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error);
+SEQ_FUNC seq_str_t seq_locale_decimal_point();
+SEQ_FUNC seq_str_t seq_locale_thousands_sep();
+SEQ_FUNC seq_bytes_t seq_locale_grouping();
+SEQ_FUNC seq_str_t seq_locale_numeric();
+SEQ_FUNC bool seq_set_locale_numeric(seq_str_t locale);
 
 SEQ_FUNC void *seq_stdin();
 SEQ_FUNC void *seq_stdout();

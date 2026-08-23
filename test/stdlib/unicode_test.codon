@@ -20,6 +20,8 @@ from internal.format import (
     _integer_format,
     _float_format,
 )
+from C import seq_locale_numeric() -> str
+from C import seq_set_locale_numeric(str) -> bool
 import unicodedata
 import re
 import gzip
@@ -3123,6 +3125,8 @@ def test_brace_format_basic_specs():
     assert unicode("{:08}").format(1.25) == unicode("00001.25")
     assert unicode("{:+.3}").format(1.25) == unicode("+1.25")
     assert unicode("{:,}").format(1234567) == unicode("1,234,567")
+    assert unicode("{:n}").format(1234567) == unicode("1234567")
+    assert unicode("{:.4n}").format(1234.5) == unicode("1234")
     assert unicode("{:z.1f}").format(-0.0) == unicode("0.0")
     assert unicode("{:z.1f}").format(-0.04) == unicode("0.0")
     assert unicode("{:z.1f}").format(-0.06) == unicode("-0.1")
@@ -3140,6 +3144,16 @@ def test_brace_format_basic_specs():
     assert unicode("{:08.1%}").format(0.125) == unicode("00012.5%")
     assert unicode("{:+08.1%}").format(0.125) == unicode("+0012.5%")
     assert unicode("{:<8.1%}").format(0.125) == unicode("12.5%   ")
+
+
+@test
+def test_brace_format_locale_numeric():
+    original = seq_locale_numeric()
+
+    if seq_set_locale_numeric(unicode("en_US.UTF-8")):
+        assert unicode("{:n}").format(1234567) == unicode("1,234,567")
+        assert unicode("{:.4n}").format(1234.5) == unicode("1,234")
+        assert seq_set_locale_numeric(original)
 
 
 @test
@@ -3167,6 +3181,8 @@ def test_brace_format_type_validation():
         (unicode("{:,c}"), 65),
         (unicode("{:_c}"), 65),
         (unicode("{:zc}"), 65),
+        (unicode("{:n}"), unicode("x")),
+        (unicode("{:,n}"), 1),
         (unicode("{:-5}"), unicode("x")),
         (unicode("{:+5}"), unicode("x")),
         (unicode("{:#}"), unicode("x")),
@@ -3388,6 +3404,9 @@ def test_brace_format_adversarial_malformed_sequences():
 def test_brace_format_adversarial_dynamic_buffer_growth():
     assert unicode("α{{{0:{1}}}}β").format(1, 10) == unicode("α{         1}β")
     assert unicode("{0:{1}d}").format(1, 10000) == unicode(" " * 9999 + "1")
+    assert unicode("{:010000.1%}").format(0.125) == unicode(
+        "0" * 9995 + "12.5%"
+    )
     assert unicode("{0:{1}.{2}f}").format(1.0, 1005, 1000) == unicode(
         " " * 3 + "1." + "0" * 1000
     )
@@ -3527,6 +3546,7 @@ test_brace_format_automatic_fields()
 test_brace_format_conversions()
 test_brace_format_positional_fields()
 test_brace_format_basic_specs()
+test_brace_format_locale_numeric()
 test_brace_format_type_validation()
 test_brace_format_spec_grammar()
 test_brace_format_alignment()

@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 #include <fstream>
 #include <iostream>
+#include <locale.h>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -468,6 +469,28 @@ static seq_str_t string_conv(const std::string &s) {
   auto meta =
       (uint64_t(length) & SEQ_STR_LEN_MASK) | (uint64_t(kind) << SEQ_STR_KIND_SHIFT);
   return {out, static_cast<seq_int_t>(meta)};
+}
+
+SEQ_FUNC seq_str_t seq_locale_decimal_point() {
+  return string_conv(localeconv()->decimal_point);
+}
+
+SEQ_FUNC seq_str_t seq_locale_thousands_sep() {
+  return string_conv(localeconv()->thousands_sep);
+}
+
+SEQ_FUNC seq_bytes_t seq_locale_grouping() {
+  auto *grouping = localeconv()->grouping;
+  return {grouping, static_cast<seq_int_t>(std::strlen(grouping))};
+}
+
+SEQ_FUNC seq_str_t seq_locale_numeric() {
+  auto *locale = setlocale(LC_NUMERIC, nullptr);
+  return string_conv(locale ? locale : "");
+}
+
+SEQ_FUNC bool seq_set_locale_numeric(seq_str_t locale) {
+  return setlocale(LC_NUMERIC, locale.encode().c_str()) != nullptr;
 }
 
 std::string seq_str_t::encode() const {

@@ -11,6 +11,10 @@ from .float_dtoa import (
     _float_dtoa_shortest_write,
 )
 
+from C import seq_locale_decimal_point() -> str
+from C import seq_locale_grouping() -> bytes
+from C import seq_locale_thousands_sep() -> str
+
 
 FORMAT_FLAG_ALT: Literal[int] = 1
 FORMAT_FLAG_ZERO: Literal[int] = 2
@@ -397,6 +401,7 @@ class _PercentDirective:
     brace_alignment: int
     brace_fill: int
     brace_grouping: int
+    brace_locale: bool
     brace_coerce_negative_zero: bool
     brace_sign_minus: bool
 
@@ -411,6 +416,7 @@ class _PercentDirective:
         self.brace_alignment = 0
         self.brace_fill = 0x20  # space
         self.brace_grouping = 0
+        self.brace_locale = False
         self.brace_coerce_negative_zero = False
         self.brace_sign_minus = False
 
@@ -1371,7 +1377,7 @@ def _brace_value_append(
 
     width = directive.width
 
-    if directive.brace_grouping != 0:
+    if directive.brace_grouping != 0 or directive.brace_locale:
         zero_fill = (
             (
                 (directive.flags & FORMAT_FLAG_ZERO) != 0
@@ -1389,11 +1395,17 @@ def _brace_value_append(
 
         rendered = _FormatBuffer(16)
         _brace_value_append_with_directive(value, field, directive, rendered)
-        grouped = _brace_group_rendered(
-            rendered,
-            directive,
-            width if zero_fill else 0,
-        )
+        if directive.brace_locale:
+            grouped = _brace_locale_group_rendered(
+                rendered,
+                width if zero_fill else 0,
+            )
+        else:
+            grouped = _brace_group_rendered(
+                rendered,
+                directive,
+                width if zero_fill else 0,
+            )
 
         text_default_left = field.conversion != 0 or (
             directive.conversion == 0x73  # s
@@ -1741,6 +1753,11 @@ def _parse_brace_format_spec(spec: str) -> _PercentDirective:
     if position != len(spec):
         raise ValueError("invalid format specifier")
 
+    if directive.conversion == 0x6E:  # n
+        directive.brace_locale = True
+        directive.conversion = 0
+        return directive
+
     if (
         directive.conversion != 0x62  # b
         and directive.conversion != 0x73  # s
@@ -1787,6 +1804,150 @@ def _brace_append_fill(
             result.length,
             fill,
         )
+
+
+def _brace_append_text(result: _FormatBuffer, text: str):
+    result.reserve(len(text) * 4)
+
+    for i in range(len(text)):
+        result.length = _utf8_encode_one(
+            result.data,
+            result.length,
+            text._load_codepoint(i),
+        )
+
+
+def _brace_locale_separator_count(digits: int, grouping: bytes) -> int:
+    if grouping._len == 0:
+        return 0
+
+    group_size = int(grouping._ptr[0])
+    if group_size <= 0 or group_size >= 127:
+        return 0
+
+    remaining = digits
+    grouping_index = 0
+    separators = 0
+
+    while remaining > group_size:
+        remaining -= group_size
+        separators += 1
+
+        if grouping_index + 1 < grouping._len:
+            grouping_index += 1
+            next_group_size = int(grouping._ptr[grouping_index])
+
+            if next_group_size >= 127:
+                break
+            if next_group_size > 0:
+                group_size = next_group_size
+
+    return separators
+
+
+def _brace_locale_group_rendered(
+    rendered: _FormatBuffer,
+    zero_width: int,
+) -> _FormatBuffer:
+    separator = seq_locale_thousands_sep()
+    decimal_point = seq_locale_decimal_point()
+    grouping = seq_locale_grouping()
+    integer_start = 0
+
+    if (
+        rendered.length > 0
+        and (
+            rendered.data[0] == u8(0x2D)  # -
+            or rendered.data[0] == u8(0x2B)  # +
+            or rendered.data[0] == u8(0x20)  # space
+        )
+    ):
+        integer_start = 1
+
+    integer_end = integer_start
+    while integer_end < rendered.length:
+        byte = rendered.data[integer_end]
+
+        if (
+            byte == u8(0x2E)  # .
+            or byte == u8(0x65)  # e
+            or byte == u8(0x45)  # E
+        ):
+            break
+
+        integer_end += 1
+
+    digits = integer_end - integer_start
+    suffix = rendered.length - integer_end
+    suffix_characters = suffix
+    if integer_end < rendered.length and rendered.data[integer_end] == u8(0x2E):
+        suffix_characters += len(decimal_point) - 1
+
+    zeroes = 0
+    if len(separator) != 0:
+        while zero_width > 0:
+            grouped_digits = digits + zeroes
+            separators = _brace_locale_separator_count(grouped_digits, grouping)
+
+            if (
+                integer_start
+                + grouped_digits
+                + separators * len(separator)
+                + suffix_characters
+                >= zero_width
+            ):
+                break
+
+            zeroes += 1
+
+    grouped_digits = digits + zeroes
+    separators = _brace_locale_separator_count(grouped_digits, grouping)
+    positions = Ptr[int](separators)
+    remaining = grouped_digits
+    grouping_index = 0
+    group_size = int(grouping._ptr[0]) if grouping._len != 0 else 0
+    position_count = 0
+
+    while group_size > 0 and group_size < 127 and remaining > group_size:
+        remaining -= group_size
+        positions[position_count] = remaining
+        position_count += 1
+
+        if grouping_index + 1 < grouping._len:
+            grouping_index += 1
+            next_group_size = int(grouping._ptr[grouping_index])
+
+            if next_group_size >= 127:
+                break
+            if next_group_size > 0:
+                group_size = next_group_size
+
+    result = _FormatBuffer(
+        rendered.length + zeroes + separators * len(separator) * 4
+    )
+    result.reserve(rendered.length + zeroes + separators * len(separator) * 4)
+
+    for i in range(integer_start):
+        result.append_byte(rendered.data[i])
+
+    position_index = position_count - 1
+    for i in range(grouped_digits):
+        if position_index >= 0 and i == positions[position_index]:
+            _brace_append_text(result, separator)
+            position_index -= 1
+
+        if i < zeroes:
+            result.append_byte(u8(0x30))
+        else:
+            result.append_byte(rendered.data[integer_start + i - zeroes])
+
+    for i in range(integer_end, rendered.length):
+        if rendered.data[i] == u8(0x2E):
+            _brace_append_text(result, decimal_point)
+        else:
+            result.append_byte(rendered.data[i])
+
+    return result
 
 
 def _brace_group_rendered(
@@ -1997,6 +2158,12 @@ def _brace_value_append_with_directive(
     conversion = directive.conversion
 
     if conversion == 0:
+        if directive.brace_locale:
+            if isinstance(value, int):
+                conversion = 0x64  # d
+            elif isinstance(value, float):
+                conversion = 0x67  # g
+
         numeric_options = (
             directive.precision >= 0
             or directive.flags != 0
@@ -2023,7 +2190,11 @@ def _brace_value_append_with_directive(
             result.data + result.length,
         )
     elif conversion == 0x25:  # %
-        result.reserve(_float_format_buffer_size(0x66, directive.precision) + 1)
+        result.reserve(
+            _float_format_buffer_size(0x66, directive.precision)
+            + directive.width
+            + 1
+        )
         width = directive.width
 
         # Ordinary brace alignment is applied after this writer returns, so
@@ -2093,6 +2264,8 @@ def _brace_validate_value_format(
             raise ValueError("alternate form is not allowed in string format specifier")
         if directive.brace_grouping != 0:
             raise ValueError("grouping is not allowed in string format specifier")
+        if directive.brace_locale:
+            raise ValueError("'n' format code is only allowed for numbers")
         if directive.brace_alignment == 0x3D:  # =
             raise ValueError("'=' alignment not allowed in string format specifier")
         if directive.brace_coerce_negative_zero:
@@ -2119,6 +2292,9 @@ def _brace_validate_value_format(
         or conversion == 0x25  # %
     )
 
+    if directive.brace_locale and directive.brace_grouping != 0:
+        raise ValueError("cannot specify grouping with 'n' format code")
+
     if isinstance(value, float):
         if integer_conversion or conversion == 0x73:  # s
             raise ValueError("format code is invalid for float")
@@ -2139,6 +2315,9 @@ def _brace_validate_value_format(
         if directive.precision >= 0 and (conversion == 0 or integer_conversion):
             raise ValueError("precision is not allowed in integer format")
         return
+
+    if directive.brace_locale:
+        raise ValueError("'n' format code is only allowed for numbers")
 
 
 def _brace_coerce_rendered_negative_zero(
