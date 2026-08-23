@@ -30,7 +30,7 @@ std::vector<std::string> split(const std::string &str, char delim);
 /// Escape a C string (replace \n with \\n etc.).
 std::string escape(const std::string &str);
 /// Unescape a C string (replace \\n with \n etc.).
-std::string unescape(const std::string &str);
+std::string unescape(const std::string &str, bool utf8 = true);
 /// Escape an F-string braces (replace { and } with {{ and }}).
 std::string escapeFStringBraces(const std::string &str, int start, int len);
 int findStar(const std::string &s);

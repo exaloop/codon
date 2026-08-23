@@ -801,7 +801,7 @@ STRING <- <NAME? STR> {
   );
   auto lp = tolower(p.prefix);
   if (lp != "r" && lp != "rb" && lp != "br") {
-    p.value = unescape(p.value);
+    p.value = unescape(p.value, lp != "b");
   } else {
     p.prefix = (lp != "r" ? "b" : "");
   }
@@ -815,9 +815,9 @@ STRING__PREDICATE {
   auto lp = tolower(p.prefix);
   if (lp != "r" && lp != "rb" && lp != "br") {
     try {
-      p.value = unescape(p.value);
+      p.value = unescape(p.value, lp != "b");
     } catch (std::invalid_argument &e) {
-      MSG = "invalid code in a string";
+      MSG = std::string("invalid code in a string: ") + e.what();
       return false;
     } catch (std::out_of_range &) {
       MSG = "invalid code in a string";

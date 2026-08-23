@@ -179,11 +179,25 @@ std::string escape(const std::string &str) {
   }
   return r;
 }
-std::string unescape(const std::string &str) {
+void utf8_append(std::string& out, int cp) {
+    if (cp <= 0x7F) {
+        out += char(cp);
+    } else if (cp <= 0x7FF) {
+        out += char(0xC0 | (cp >> 6));
+        out += char(0x80 | (cp & 0x3F));
+    } else {
+        out += char(0xE0 | (cp >> 12));
+        out += char(0x80 | ((cp >> 6) & 0x3F));
+        out += char(0x80 | (cp & 0x3F));
+    }
+}
+std::string unescape(const std::string &str, bool utf8) {
   std::string r;
   r.reserve(str.size());
   for (int i = 0; i < str.size(); i++) {
-    if (str[i] == '\\' && i + 1 < str.size())
+    if (!utf8 && (unsigned char)(str[i]) >= 0x80)
+      throw std::invalid_argument("bytes can only contain ASCII literal characters");
+    if (str[i] == '\\' && i + 1 < str.size()) {
       switch(str[i + 1]) {
       case 'a': r += '\a'; i++; break;
       case 'b': r += '\b'; i++; break;
@@ -200,7 +214,10 @@ std::string unescape(const std::string &str) {
           throw std::invalid_argument("invalid \\x code");
         size_t pos = 0;
         auto code = std::stoi(str.substr(i + 2, 2), &pos, 16);
-        r += static_cast<char>(code);
+        if (utf8)
+          utf8_append(r, code);
+        else
+          r += (unsigned char)code;
         i += pos + 1;
         break;
       }
@@ -208,14 +225,18 @@ std::string unescape(const std::string &str) {
         if (str[i + 1] >= '0' && str[i + 1] <= '7') {
           size_t pos = 0;
           auto code = std::stoi(str.substr(i + 1, 3), &pos, 8);
-          r += static_cast<char>(code);
+          if (utf8)
+            utf8_append(r, code);
+          else
+            r += (unsigned char)code;
           i += pos;
         } else {
           r += str[i];
         }
       }
-    else
+    } else {
       r += str[i];
+    }
   }
   return r;
 }

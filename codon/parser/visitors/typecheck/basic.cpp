@@ -41,7 +41,9 @@ void TypecheckVisitor::visit(FloatExpr *expr) { resultExpr = transformFloat(expr
 ///   (e.g., `str` wrap).
 void TypecheckVisitor::visit(StringExpr *expr) {
   if (expr->isSimple()) {
-    unify(expr->getType(), instantiateStatic(expr->getValue()));
+    unify(expr->getType(), expr->begin()->prefix == "b"
+                               ? getStdLibType("bytes")->shared_from_this()
+                               : instantiateStatic(expr->getValue()));
     expr->setDone();
   } else {
     std::vector<Expr *> items;
@@ -59,7 +61,6 @@ void TypecheckVisitor::visit(StringExpr *expr) {
             p.expr = N<CallExpr>(N<IdExpr>("ascii"), p.expr);
             break;
           default:
-            // TODO: error?
             break;
           }
         }
@@ -74,11 +75,7 @@ void TypecheckVisitor::visit(StringExpr *expr) {
         }
         items.emplace_back(p.expr);
       } else if (tolower(p.prefix) == "b") {
-        for (unsigned char b : p.value)
-          if (b >= 0x80)
-            E(Error::CUSTOM, expr, "bytes can only contain ASCII literal characters");
-        items.emplace_back(N<CallExpr>(N<DotExpr>(N<IdExpr>("bytes"), "__new__"),
-                                       N<StringExpr>(p.value), N<StringExpr>("ascii")));
+        items.emplace_back(N<StringExpr>(p.value, "b"));
       } else if (!p.prefix.empty()) {
         /// Custom prefix strings:
         /// call `str.__prefsix_[prefix]__(str, [static length of str])`

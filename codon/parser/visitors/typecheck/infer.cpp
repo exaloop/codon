@@ -601,6 +601,8 @@ ir::Type *TypecheckVisitor::makeIRType(types::ClassType *t) {
     handle = module->getFloat128Type();
   } else if (t->name == "str") {
     handle = module->getStringType();
+  } else if (t->name == "bytes") {
+    handle = module->getBytesType();
   } else if (t->name == "Int" || t->name == "UInt") {
     handle = module->unsafeGetIntType(getIntLiteral(statics[0]), t->name == "Int");
   } else if (t->name == "Ptr") {
