@@ -1,20 +1,20 @@
 import sys
+
 from .bridge import *
+from .parser import *
 
-
-if __name__ == "__main__":
-    mode = sys.argv[1]
+def main(argv):
+    mode = argv[0]
     if mode == "tokenize":
         from .parser.tokenize import main
 
-        main(sys.argv[2])
+        main(argv[1])
     elif mode == "parse":
         from .parser.pegen import simple_parser_main, Tokenizer
         from .parser.tokenize import generate_tokens
         from .parser.ast import dump, NodeVisitor
         from .parser.parser import CodonParser
-
-# Directive: '##' _ 'codon:' _ NAME _ '=' _ (INT / NAME)
+        from .parser.scope import ScopeVisitor
 
         file = """a = 5
 b = "woo"
@@ -64,5 +64,10 @@ WOOLY: lol()
                 return super().visit_Name(node)
         Printer().visit(tree)
 
-        # simple_parser_main(CodonParser, sys.argv[2:])
+        ScopeVisitor().visit(tree)
+
+        # simple_parser_main(CodonParser, argv[1:])
         pass
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

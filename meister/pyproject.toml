@@ -1,0 +1,7 @@
+[project]
+name = "Codon"
+requires-python = ">=3.12"
+[tool.ruff]
+line-length = 100
+[tool.ruff.lint]
+ignore = ["UP006", "SIM102"]
