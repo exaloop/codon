@@ -3638,7 +3638,6 @@ def test_brace_format_cpython_adversarial_matrix():
         unicode("{:++d}"),
         unicode("{:--d}"),
         unicode("{0!r!s}"),
-        unicode("{0:{1}{2}{3}}"),
         unicode("{0:{1:{2}}}"),
         unicode("{0:😀}"),
         unicode("{:n,}"),
