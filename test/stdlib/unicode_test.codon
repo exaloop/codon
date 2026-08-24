@@ -3148,6 +3148,83 @@ def test_percent_cpython_adversarial_matrix():
             pass
 
 
+@test
+def test_bytes_percent_format():
+    raw = _raw_bytes([0x00, 0x7F, 0x80, 0xFF])
+    percent_b = bytes("%b", "ascii")
+    percent_s = bytes("%s", "ascii")
+
+    assert percent_b % raw == raw
+    assert percent_s % raw == raw
+    assert bytes("%.2b", "ascii") % raw == _raw_bytes([0x00, 0x7F])
+    assert bytes("%6s", "ascii") % raw == bytes("  ", "ascii") + raw
+    assert bytes("%-6s", "ascii") % raw == raw + bytes("  ", "ascii")
+
+    assert bytes("%r", "ascii") % _raw_bytes([0xFF]) == bytes(
+        "b'\\xff'", "ascii"
+    )
+    assert bytes("%a", "ascii") % unicode("é") == bytes("'\\xe9'", "ascii")
+    assert bytes("%c", "ascii") % 0xFF == _raw_bytes([0xFF])
+    assert bytes("%c", "ascii") % bytes("Z", "ascii") == bytes("Z", "ascii")
+
+    assert bytes("%+06d:%#x:%.2f", "ascii") % (42, 255, 1.25) == bytes(
+        "+00042:0xff:1.25", "ascii"
+    )
+    assert bytes("%*.*f|%*b", "ascii") % (
+        8,
+        3,
+        1.25,
+        5,
+        bytes("x", "ascii"),
+    ) == bytes("   1.250|    x", "ascii")
+    assert bytes("a%%b", "ascii") % () == bytes("a%b", "ascii")
+
+
+@test
+def test_bytes_percent_mapping():
+    key = bytes("name", "ascii")
+    value = _raw_bytes([0x80, 0xFF])
+    mapping = {key: value}
+
+    assert bytes("%(name)b", "ascii") % mapping == value
+    assert bytes("[%(name)4s]", "ascii") % mapping == (
+        bytes("[  ", "ascii") + value + bytes("]", "ascii")
+    )
+
+
+@test
+def test_bytes_percent_format_errors():
+    try:
+        bytes("%b", "ascii") % unicode("text")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        bytes("%c", "ascii") % 256
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        bytes("%c", "ascii") % bytes("ab", "ascii")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        bytes("%d %d", "ascii") % (1,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        bytes("%q", "ascii") % 1
+        assert False
+    except ValueError:
+        pass
+
+
 test_percent_basic()
 test_percent_multiple_arguments()
 test_percent_integer_signs_flags_width()
@@ -3178,6 +3255,9 @@ test_percent_numeric_coercions()
 test_percent_mapping_positional_mixing_errors()
 test_percent_regression_combinations()
 test_percent_cpython_adversarial_matrix()
+test_bytes_percent_format()
+test_bytes_percent_mapping()
+test_bytes_percent_format_errors()
 
 
 # new-style format

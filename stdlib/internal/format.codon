@@ -541,7 +541,8 @@ class _PercentDirective:
     width_from_argument: bool
     precision_from_argument: bool
     conversion: int
-    key: Optional[str]
+    key_start: int
+    key_end: int
     brace_alignment: int
     brace_fill: int
     brace_grouping: int
@@ -556,7 +557,8 @@ class _PercentDirective:
         self.width_from_argument = False
         self.precision_from_argument = False
         self.conversion = 0
-        self.key = None
+        self.key_start = -1
+        self.key_end = -1
         self.brace_alignment = 0
         self.brace_fill = 0x20  # space
         self.brace_grouping = 0
@@ -565,8 +567,14 @@ class _PercentDirective:
         self.brace_sign_minus = False
 
 
+def _percent_format_at(format, position: int) -> int:
+    if isinstance(format, bytes):
+        return format._at(position)
+    return format._load_codepoint(position)
+
+
 def _parse_percent_directive(
-    format: str,
+    format,
     position: int,
 ) -> Tuple[_PercentDirective, int]:
     format_length = len(format)
@@ -574,25 +582,26 @@ def _parse_percent_directive(
 
     if (
         position < format_length
-        and format._load_codepoint(position) == 0x28  # (
+        and _percent_format_at(format, position) == 0x28  # (
     ):
         key_start = position + 1
         position = key_start
 
         while (
             position < format_length
-            and format._load_codepoint(position) != 0x29  # )
+            and _percent_format_at(format, position) != 0x29  # )
         ):
             position += 1
 
         if position >= format_length:
             raise ValueError("incomplete format key")
 
-        directive.key = format[key_start:position]
+        directive.key_start = key_start
+        directive.key_end = position
         position += 1
 
     while position < format_length:
-        character = format._load_codepoint(position)
+        character = _percent_format_at(format, position)
 
         if character == 0x23:  # #
             directive.flags |= FORMAT_FLAG_ALT
@@ -611,13 +620,13 @@ def _parse_percent_directive(
 
     if (
         position < format_length
-        and format._load_codepoint(position) == 0x2A  # *
+        and _percent_format_at(format, position) == 0x2A  # *
     ):
         directive.width_from_argument = True
         position += 1
     else:
         while position < format_length:
-            character = format._load_codepoint(position)
+            character = _percent_format_at(format, position)
 
             if character < 0x30 or character > 0x39:
                 break
@@ -627,20 +636,20 @@ def _parse_percent_directive(
 
     if (
         position < format_length
-        and format._load_codepoint(position) == 0x2E  # .
+        and _percent_format_at(format, position) == 0x2E  # .
     ):
         position += 1
         directive.precision = 0
 
         if (
             position < format_length
-            and format._load_codepoint(position) == 0x2A  # *
+            and _percent_format_at(format, position) == 0x2A  # *
         ):
             directive.precision_from_argument = True
             position += 1
         else:
             while position < format_length:
-                character = format._load_codepoint(position)
+                character = _percent_format_at(format, position)
 
                 if character < 0x30 or character > 0x39:
                     break
@@ -653,7 +662,7 @@ def _parse_percent_directive(
     # Compatibility with C/Python printf length modifiers. Codon numeric
     # values do not need distinct length handling.
     while position < format_length:
-        character = format._load_codepoint(position)
+        character = _percent_format_at(format, position)
 
         if character != 0x68 and character != 0x6C and character != 0x4C:
             break
@@ -663,7 +672,7 @@ def _parse_percent_directive(
     if position >= format_length:
         raise ValueError("incomplete format")
 
-    directive.conversion = format._load_codepoint(position)
+    directive.conversion = _percent_format_at(format, position)
     return directive, position + 1
 
 
@@ -826,13 +835,19 @@ class _FormatBuffer:
 
     def append_ascii(self, source: Ptr[u8], count: int):
         self.reserve(count)
+
+        if _kind_width(self.kind) == 1:
+            bytes.memcpy(self.data + self.length, source, count)
+            self.length += count
+            return
+
         destination = str(self.data, _make_meta(self.capacity, self.kind))
         for i in range(count):
             destination._store_codepoint(self.length + i, int(source[i]))
         self.length += count
 
     def append_text(self, text: str, count: int = -1):
-        if count < 0 or count > len(text):
+        if count < 0:
             count = len(text)
 
         self._widen(text._kind())
@@ -869,6 +884,64 @@ class _FormatBuffer:
 
     def to_str(self) -> str:
         return str(self.data, _make_meta(self.length, self.kind))
+
+
+class _ByteFormatBuffer:
+    data: Ptr[u8]
+    length: int
+    capacity: int
+
+    def __init__(self, capacity: int):
+        if capacity < 16:
+            capacity = 16
+
+        self.data = Ptr[u8](capacity)
+        self.length = 0
+        self.capacity = capacity
+
+    def reserve(self, extra: int):
+        required = self.length + extra
+
+        if required <= self.capacity:
+            return
+
+        old_capacity = self.capacity
+        capacity = old_capacity
+
+        while capacity < required:
+            capacity *= 2
+
+        self.data = gc.realloc(self.data, capacity, old_capacity)
+        self.capacity = capacity
+
+    def append_byte(self, value: u8):
+        self.reserve(1)
+        self.data[self.length] = value
+        self.length += 1
+
+    def append_bytes(self, value: bytes, count: int):
+        self.reserve(count)
+        bytes.memcpy(self.data + self.length, value._ptr, count)
+        self.length += count
+
+    def append_ascii(self, source: Ptr[u8], count: int):
+        self.reserve(count)
+        bytes.memcpy(self.data + self.length, source, count)
+        self.length += count
+
+    def release_excess(self):
+        if (
+            self.length == 0
+            or self.capacity <= self.length * 2
+            or self.capacity - self.length < 4096
+        ):
+            return
+
+        self.data = gc.realloc(self.data, self.length, self.capacity)
+        self.capacity = self.length
+
+    def to_bytes(self) -> bytes:
+        return bytes(self.data, self.length)
 
 
 def _percent_integer_buffer_size(
@@ -1125,7 +1198,7 @@ def percent_format(format: str, values):
                 format_pos,
             )
 
-            if directive.key is not None:
+            if directive.key_start >= 0:
                 raise TypeError("format requires a mapping")
 
         if directive.width_from_argument:
@@ -1171,18 +1244,265 @@ def percent_format_mapping(format: str, values):
             format_pos,
         )
 
-        key = directive.key
-
-        if key is None:
+        if directive.key_start < 0:
             raise TypeError("format requires a mapping")
 
         if directive.width_from_argument or directive.precision_from_argument:
             raise TypeError("* wants int")
 
+        key = format._slice(directive.key_start, directive.key_end)
         _percent_value_append(values[key], directive, result)
 
     result.release_excess()
     return result.to_str()
+
+
+def _bytes_percent_numeric_append(
+    value,
+    directive: _PercentDirective,
+    result: _ByteFormatBuffer,
+):
+    capacity = _percent_numeric_buffer_size(value, directive)
+    output = Ptr[u8](capacity)
+    length = _percent_numeric_write(value, directive, output)
+    result.append_ascii(output, length)
+
+
+def _bytes_percent_text_append(
+    value: bytes,
+    directive: _PercentDirective,
+    result: _ByteFormatBuffer,
+):
+    count = len(value)
+
+    if directive.precision >= 0 and count > directive.precision:
+        count = directive.precision
+
+    padding = directive.width - count
+    if padding < 0:
+        padding = 0
+
+    if (directive.flags & FORMAT_FLAG_LEFT) == 0:
+        for _ in range(padding):
+            result.append_byte(u8(0x20))
+
+    result.append_bytes(value, count)
+
+    if (directive.flags & FORMAT_FLAG_LEFT) != 0:
+        for _ in range(padding):
+            result.append_byte(u8(0x20))
+
+
+def _bytes_percent_char_append(
+    value,
+    directive: _PercentDirective,
+    result: _ByteFormatBuffer,
+):
+    if directive.precision >= 0:
+        raise ValueError("precision not allowed in %c format")
+
+    byte = 0
+
+    if isinstance(value, bool):
+        byte = int(value)
+    elif isinstance(value, int):
+        byte = value
+        if byte < 0 or byte > 0xFF:
+            raise OverflowError("%c arg not in range(256)")
+    elif isinstance(value, bytes):
+        if len(value) != 1:
+            raise TypeError("%c requires an integer or a single byte")
+        byte = value._at(0)
+    else:
+        raise TypeError("%c requires an integer or a single byte")
+
+    padding = directive.width - 1
+    if padding < 0:
+        padding = 0
+
+    if (directive.flags & FORMAT_FLAG_LEFT) == 0:
+        for _ in range(padding):
+            result.append_byte(u8(0x20))
+
+    result.append_byte(u8(byte))
+
+    if (directive.flags & FORMAT_FLAG_LEFT) != 0:
+        for _ in range(padding):
+            result.append_byte(u8(0x20))
+
+
+def _bytes_percent_value(value) -> bytes:
+    raise TypeError("%b requires a bytes-like object")
+
+
+@overload
+def _bytes_percent_value(value: bytes) -> bytes:
+    return value
+
+
+def _bytes_percent_value_append(
+    value,
+    directive: _PercentDirective,
+    result: _ByteFormatBuffer,
+):
+    conversion = directive.conversion
+
+    if conversion == 0x63:  # c
+        _bytes_percent_char_append(value, directive, result)
+        return
+
+    if conversion == 0x62 or conversion == 0x73:  # b / s
+        _bytes_percent_text_append(
+            _bytes_percent_value(value),
+            directive,
+            result,
+        )
+        return
+
+    if conversion == 0x72 or conversion == 0x61:  # r / a
+        representation = _value_ascii(value)
+        count = len(representation)
+
+        if directive.precision >= 0 and count > directive.precision:
+            count = directive.precision
+
+        padding = directive.width - count
+        if padding < 0:
+            padding = 0
+
+        if (directive.flags & FORMAT_FLAG_LEFT) == 0:
+            for _ in range(padding):
+                result.append_byte(u8(0x20))
+
+        result.append_ascii(representation._ptr, count)
+
+        if (directive.flags & FORMAT_FLAG_LEFT) != 0:
+            for _ in range(padding):
+                result.append_byte(u8(0x20))
+        return
+
+    if _percent_is_numeric_conversion(conversion):
+        _bytes_percent_numeric_append(value, directive, result)
+        return
+
+    raise ValueError("unsupported format character")
+
+
+def _bytes_percent_write_literal_prefix(
+    format: bytes,
+    format_pos: int,
+    result: _ByteFormatBuffer,
+) -> int:
+    while format_pos < len(format):
+        byte = format._at(format_pos)
+        format_pos += 1
+
+        if byte != 0x25:  # %
+            result.append_byte(u8(byte))
+            continue
+
+        if format_pos >= len(format):
+            raise ValueError("incomplete format")
+
+        if format._at(format_pos) == 0x25:  # %%
+            result.append_byte(u8(0x25))
+            format_pos += 1
+            continue
+
+        return format_pos
+
+    return format_pos
+
+
+def bytes_percent_format(format: bytes, values) -> bytes:
+    result = _ByteFormatBuffer(len(format) + 16)
+    format_pos = 0
+    directive: Optional[_PercentDirective] = None
+
+    for i in static.range(static.len(values)):
+        if directive is None:
+            format_pos = _bytes_percent_write_literal_prefix(
+                format,
+                format_pos,
+                result,
+            )
+
+            if format_pos >= len(format):
+                raise TypeError(
+                    "not all arguments converted during bytes formatting"
+                )
+
+            directive, format_pos = _parse_percent_directive(
+                format,
+                format_pos,
+            )
+
+            if directive.key_start >= 0:
+                raise TypeError("format requires a mapping")
+
+        if directive.width_from_argument:
+            _percent_consume_width(values[i], directive)
+        elif directive.precision_from_argument:
+            _percent_consume_precision(values[i], directive)
+        else:
+            _bytes_percent_value_append(values[i], directive, result)
+            directive = None
+
+    if directive is not None:
+        raise TypeError("not enough arguments for format string")
+
+    format_pos = _bytes_percent_write_literal_prefix(
+        format,
+        format_pos,
+        result,
+    )
+
+    if format_pos != len(format):
+        raise TypeError("not enough arguments for format string")
+
+    result.release_excess()
+    return result.to_bytes()
+
+
+def bytes_percent_format_mapping(format: bytes, values) -> bytes:
+    result = _ByteFormatBuffer(len(format) + 16)
+    format_pos = 0
+
+    while True:
+        format_pos = _bytes_percent_write_literal_prefix(
+            format,
+            format_pos,
+            result,
+        )
+
+        if format_pos == len(format):
+            break
+
+        directive, format_pos = _parse_percent_directive(format, format_pos)
+
+        if directive.key_start < 0:
+            raise TypeError("format requires a mapping")
+
+        if directive.width_from_argument or directive.precision_from_argument:
+            raise TypeError("* wants int")
+
+        key = format._slice(directive.key_start, directive.key_end)
+        _bytes_percent_value_append(values[key], directive, result)
+
+    result.release_excess()
+    return result.to_bytes()
+
+
+@extend
+class bytes:
+    def __mod__(self, values) -> bytes:
+        if isinstance(values, Dict):
+            return bytes_percent_format_mapping(self, values)
+
+        if not isinstance(values, Tuple):
+            return self % (values,)
+
+        return bytes_percent_format(self, values)
 
 
 @extend
@@ -1345,7 +1665,7 @@ def _parse_brace_field(
         if position >= len(format):
             raise ValueError("expected '}' before end of string")
 
-        field.key = format[key_start:position]
+        field.key = format._slice(key_start, position)
         codepoint = format._load_codepoint(position)
 
     if codepoint == 0x7D:  # }
@@ -1394,7 +1714,7 @@ def _parse_brace_field(
                     position += 1
                     continue
 
-                field.spec = format[spec_start:position]
+                field.spec = format._slice(spec_start, position)
                 return field, position + 1
 
             position += 1
@@ -1413,7 +1733,7 @@ def _brace_text_append(
     result: _FormatBuffer,
 ):
     if spec is None:
-        _percent_text_append(text, _PercentDirective(), result)
+        result.append_text(text)
         return
 
     directive = _parse_brace_format_spec(spec)
@@ -2053,7 +2373,6 @@ def _brace_locale_group_rendered(
     result = _FormatBuffer(
         rendered.length + zeroes + separators * len(separator) * 4
     )
-    result.reserve(rendered.length + zeroes + separators * len(separator) * 4)
 
     for i in range(integer_start):
         result.append_codepoint(rendered.codepoint(i))
