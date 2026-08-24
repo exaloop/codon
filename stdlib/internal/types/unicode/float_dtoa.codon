@@ -427,7 +427,9 @@ def _float_dtoa_shortest_write(
             output[pos + 4] = u8(0x30)  # 0
             return pos + 5
 
-        return pos + 1
+        output[pos + 1] = u8(0x2E)  # .
+        output[pos + 2] = u8(0x30)  # 0
+        return pos + 3
 
     decimal = _float_shortest_decimal(value)
     digits = decimal.significand

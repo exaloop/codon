@@ -1903,8 +1903,8 @@ def test_float_shortest_decimal_boundaries():
 
 @test
 def test_float_dtoa_shortest():
-    assert _float_dtoa_shortest(0.0) == "0"
-    assert _float_dtoa_shortest(-0.0) == "-0"
+    assert _float_dtoa_shortest(0.0) == "0.0"
+    assert _float_dtoa_shortest(-0.0) == "-0.0"
     assert _float_dtoa_shortest(1.0) == "1.0"
     assert _float_dtoa_shortest(-1.0) == "-1.0"
     assert _float_dtoa_shortest(1.25) == "1.25"
@@ -1926,6 +1926,28 @@ def test_float_dtoa_shortest():
     assert _float_dtoa_shortest(float("inf")) == "inf"
     assert _float_dtoa_shortest(float("-inf")) == "-inf"
     assert _float_dtoa_shortest(float("nan")) == "nan"
+
+
+@test
+def test_float_default_formatting():
+    cases = (
+        (0.0, "0.0"),
+        (-0.0, "-0.0"),
+        (1.0, "1.0"),
+        (-1.0, "-1.0"),
+        (1.25, "1.25"),
+        (1e-4, "0.0001"),
+        (1e-5, "1e-05"),
+        (1e16, "1e+16"),
+        (float("inf"), "inf"),
+        (float("-inf"), "-inf"),
+        (float("nan"), "nan"),
+    )
+
+    for value, expected in cases:
+        assert str(value) == expected
+        assert unicode("{}").format(value) == expected
+        assert value.__format__(unicode("")) == expected
 
 
 @test
@@ -2061,6 +2083,7 @@ def test_float_format_padding():
 test_float_shortest_decimal()
 test_float_shortest_decimal_boundaries()
 test_float_dtoa_shortest()
+test_float_default_formatting()
 test_float_dtoa_biguint_division()
 test_float_dtoa_scaled_integer()
 test_float_dtoa_fixed()
@@ -3421,6 +3444,215 @@ def test_brace_format_adversarial_dynamic_buffer_growth():
 
 
 @test
+def test_brace_format_cpython_adversarial_matrix():
+    minimum = -(1 << 63)
+
+    numeric_cases = (
+        (unicode("{:+#018x}"), -0x1234, unicode("-0x000000000001234")),
+        (unicode("{:#_b}"), 0b1111000011110000, unicode("0b1111_0000_1111_0000")),
+        (unicode("{:=+#15,d}"), 1234567, unicode("+     1,234,567")),
+        (unicode("{:0=+#15,d}"), 1234567, unicode("+00,001,234,567")),
+        (unicode("{:#024o}"), minimum, unicode("-0o1000000000000000000000")),
+        (unicode("{:+020.4e}"), 1.25, unicode("+0000000001.2500e+00")),
+        (unicode("{:#.0g}"), 1000000.0, unicode("1.e+06")),
+        (unicode("{:020,.2f}"), 1234.5, unicode("0,000,000,001,234.50")),
+        (unicode("{:0=+16,.1%}"), 12.34, unicode("+0,000,001,234.0%")),
+        (unicode("{:=+z12.1f}"), -0.04, unicode("+        0.0")),
+        (unicode("{:=+z012.1f}"), -0.04, unicode("+000000000.0")),
+        (unicode("{:+08.1%}"), -0.0, unicode("-0000.0%")),
+        (unicode("{:#08.0f}"), float("inf"), unicode("00000inf")),
+        (unicode("{:+#08.0F}"), float("nan"), unicode("+0000NAN")),
+    )
+
+    for format, value, expected in numeric_cases:
+        assert format.format(value) == expected
+
+    unicode_cases = (
+        (unicode("{:界^7}"), unicode("a"), unicode("界界界a界界界")),
+        (unicode("{:😀>4.2}"), unicode("éΩx"), unicode("😀😀éΩ")),
+        (unicode("{:.0s}"), unicode("é"), unicode("")),
+        (unicode("{!r:*>12.3}"), unicode("éΩx"), unicode("*********'éΩ")),
+    )
+
+    for format, value, expected in unicode_cases:
+        assert format.format(value) == expected
+
+    assert unicode("{2:{0}.{1}f}|{3:{4}}|{5:{6}}").format(
+        8,
+        3,
+        1.25,
+        unicode("x"),
+        unicode("*^5"),
+        42,
+        unicode("0=+6d"),
+    ) == unicode("   1.250|**x**|+00042")
+
+    assert unicode("{{{0:0=+8d}}} {1!a:{2}}").format(
+        12,
+        unicode("é"),
+        unicode("^8"),
+    ) == unicode("{+0000012}  '\\xe9' ")
+
+    assert unicode("{2:0=+{0},d}|{1:{3}.{4}%}|{5:{6}}").format(
+        14,
+        0.125,
+        1234567,
+        8,
+        1,
+        unicode("xy"),
+        unicode("^8"),
+    ) == unicode("+0,001,234,567|   12.5%|   xy   ")
+
+    assert unicode("{{{3:{0}}}}:{2:{1}.{4}f}:{5:{6}}").format(
+        7,
+        10,
+        1.25,
+        42,
+        2,
+        unicode("x"),
+        unicode("*^5"),
+    ) == unicode("{     42}:      1.25:**x**")
+
+    assert unicode("{3:{0}}|{2:{1}}|{4:{5}}").format(
+        unicode("0=+7d"),
+        unicode(">6"),
+        12,
+        7,
+        unicode("éΩx"),
+        unicode(".^8"),
+    ) == unicode("+000007|    12|..éΩx...")
+
+    assert unicode("{0:{2}}/{1:{3}}/{4:{5}}").format(
+        unicode("é"),
+        unicode("Ω"),
+        unicode("^8"),
+        unicode(">12"),
+        1234,
+        unicode("0=+8,d"),
+    ) == unicode("   é    /           Ω/+001,234")
+
+    slash = unicode("\\")
+    assert unicode("pre ({{{0}}}) \\ {1!r} \n {2!a}").format(
+        unicode("x"),
+        unicode("a\tb"),
+        unicode("é\nΩ"),
+    ) == (
+        unicode("pre ({x}) ")
+        + slash
+        + unicode(" 'a")
+        + slash
+        + unicode("tb' \n '")
+        + slash
+        + unicode("xe9")
+        + slash
+        + unicode("n")
+        + slash
+        + unicode("u03a9'")
+    )
+
+    assert unicode("({0:{2}})\\({1!r:{3}})\\n[{4!a:{5}}]").format(
+        unicode("é"),
+        unicode("a\tb"),
+        unicode("^5"),
+        unicode(">10"),
+        unicode("Ω\n"),
+        unicode("^12"),
+    ) == (
+        unicode("(  é  )")
+        + slash
+        + unicode("(    'a")
+        + slash
+        + unicode("tb')")
+        + slash
+        + unicode("n[ '")
+        + slash
+        + unicode("u03a9")
+        + slash
+        + unicode("n' ]")
+    )
+
+    assert unicode("{{({0})}} -> {1!r} -> {2!a}").format(
+        unicode("x\ny"),
+        unicode("a\\b"),
+        unicode("é\t"),
+    ) == (
+        unicode("{(x\ny)} -> 'a")
+        + slash
+        + slash
+        + unicode("b' -> '")
+        + slash
+        + unicode("xe9")
+        + slash
+        + unicode("t'")
+    )
+
+    assert unicode("").format() == unicode("")
+    assert unicode("{{}}").format() == unicode("{}")
+    assert unicode("{{{}}}").format(unicode("")) == unicode("{}")
+    assert unicode("{}|{}|{}").format(unicode(""), 0, -0.0) == unicode(
+        "|0|-0.0"
+    )
+    assert unicode("[{:}]|[{:0}]|[{:>0}]|[{:^0}]").format(
+        unicode(""),
+        unicode(""),
+        unicode(""),
+        unicode(""),
+    ) == unicode("[]|[]|[]|[]")
+    assert unicode("[{:.0}]|[{:.0s}]|[{:.0f}]|[{:.0%}]").format(
+        unicode(""),
+        unicode(""),
+        0.0,
+        0.0,
+    ) == unicode("[]|[]|[0]|[0%]")
+    assert unicode("{0:{1}}|{2:{3}}|{4:{5}}").format(
+        unicode(""),
+        unicode(""),
+        0,
+        unicode(""),
+        unicode("x"),
+        unicode(""),
+    ) == unicode("|0|x")
+    assert unicode("<{0}>|<{1:.0}>|<{2!r}>").format(
+        unicode("\x00"),
+        unicode("\x00"),
+        unicode(""),
+    ) == unicode("<\x00>|<>|<''>")
+
+    numbering_errors = (
+        unicode("{} {1} {0:{2}}"),
+        unicode("{1} {} {0:{2}}"),
+        unicode("{0:{}} {1}"),
+        unicode("{:{1}} {0}"),
+    )
+
+    for format in numbering_errors:
+        try:
+            format.format(1, 2, 3)
+            assert False
+        except ValueError:
+            pass
+
+    malformed_formats = (
+        unicode("{:..2f}"),
+        unicode("{:08.2.1f}"),
+        unicode("{:++d}"),
+        unicode("{:--d}"),
+        unicode("{0!r!s}"),
+        unicode("{0:{1}{2}{3}}"),
+        unicode("{0:{1:{2}}}"),
+        unicode("{0:😀}"),
+        unicode("{:n,}"),
+    )
+
+    for format in malformed_formats:
+        try:
+            format.format(1, 2, 3, 4)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
 def test_brace_format_nested_specs():
     assert unicode("{0:{1}}").format(42, 5) == unicode("   42")
     assert unicode("{0:.{1}f}").format(1.25, 1) == unicode("1.2")
@@ -3555,6 +3787,7 @@ test_brace_format_adversarial_combinations()
 test_brace_format_adversarial_multi_argument_sequences()
 test_brace_format_adversarial_malformed_sequences()
 test_brace_format_adversarial_dynamic_buffer_growth()
+test_brace_format_cpython_adversarial_matrix()
 test_brace_format_nested_specs()
 test_brace_format_custom_protocol()
 test_brace_format_map()
