@@ -3,7 +3,13 @@
 import internal.static as static
 import internal.gc as gc
 
-from .str import _utf8_encode_one, _unicode_decode_utf8_strict
+from .str import (
+    KIND_ASCII,
+    _kind_for_maxchar,
+    _kind_width,
+    _make_meta,
+    _unicode_copy_range,
+)
 from .types.unicode.float_dtoa import (
     _float_dtoa_exponent_write,
     _float_dtoa_fixed_write,
@@ -18,117 +24,19 @@ from C import seq_locale_thousands_sep() -> str
 def _float_to_string(value: float) -> str:
     buffer = Ptr[u8](32)
     length = _float_dtoa_shortest_write(value, buffer, False)
-    return _unicode_decode_utf8_strict(buffer, length)
-
-def _format_error(ret: str):
-	raise ValueError(f"invalid format specifier: {ret}")
-
-def _python_to_fmt_format(s):
-    if not s:
-        return s
-
-    i = 0
-    fill, align = None, None
-    if (i + 1 < len(s) and
-        (s[i + 1] == '<' or
-         s[i + 1] == '>' or
-         s[i + 1] == '=' or
-         s[i + 1] == '^')):
-        fill = s[i]
-        align = s[i + 1]
-        i += 2
-    elif (i < len(s) and
-          (s[i] == '<' or
-           s[i] == '>' or
-           s[i] == '=' or
-           s[i] == '^')):
-        align = s[i]
-        i += 1
-    if align == '=':
-        raise NotImplementedError("'=' alignment not yet supported")
-
-    sign = None
-    if i < len(s) and (s[i] == '+' or s[i] == '-' or s[i] == ' '):
-        sign = s[i]
-        i += 1
-
-    coerce_negative_float = False
-    if i < len(s) and s[i] == 'z':
-        coerce_negative_float = True
-        i += 1
-    if coerce_negative_float:
-        raise NotImplementedError("'z' not yet supported")
-
-    alternate_form = False
-    if i < len(s) and s[i] == '#':
-        alternate_form = True
-        i += 1
-
-    width_pre_zero = False
-    if i < len(s) and s[i] == '#':
-        width_pre_zero = True
-        i += 1
-    width = 0
-    while i < len(s) and s[i].isdigit():
-        width = 10 * width + ord(s[i]) - ord('0')
-        i += 1
-
-    grouping = None
-    if i < len(s) and (s[i] == '_' or s[i] == ','):
-        grouping = s[i]
-        i += 1
-    if grouping == '_':
-        raise NotImplementedError("'_' grouping not yet supported")
-
-    precision = None
-    if i < len(s) and s[i] == '.':
-        i += 1
-        precision = 0
-        while i < len(s) and s[i].isdigit():
-            precision = 10 * precision + ord(s[i]) - ord('0')
-            i += 1
-
-    type = None
-    if i < len(s):
-        type = s[i]
-        i += 1
-
-    if i != len(s):
-        raise ValueError("bad format string")
-
-    # Construct fmt::format-compatible string
-    ns = _strbuf()
-    if align:
-        if fill: ns.append(fill)
-        ns.append(align)
-    if sign: ns.append(sign)
-    if alternate_form: ns.append("#")
-    if width_pre_zero: ns.append("0")
-    if width: ns.append(str(width))
-    if precision is not None:
-        ns.append(".")
-        ns.append(str(precision))
-    if grouping: ns.append("L")
-    if type: ns.append(type)
-    return str(ns)
+    result = _FormatBuffer(length)
+    result.append_ascii(buffer, length)
+    return result.to_str()
 
 @extend
 class Int:
     def __format__(self, format_spec: str) -> str:
-        err = False
-        ret = _C.seq_str_int(self.__int__(), _python_to_fmt_format(format_spec), __ptr__(err))
-        if format_spec and err:
-            _format_error(ret)
-        return ret
+        return _format_scalar(self.__int__(), format_spec)
 
 @extend
 class UInt:
     def __format__(self, format_spec: str) -> str:
-        err = False
-        ret = _C.seq_str_uint(self.__int__(), _python_to_fmt_format(format_spec), __ptr__(err))
-        if format_spec and err:
-            _format_error(ret)
-        return ret
+        return _format_scalar(self.__int__(), format_spec)
 
 @extend
 class float:
@@ -136,32 +44,17 @@ class float:
         return _float_to_string(self)
 
     def __format__(self, format_spec: str) -> str:
-        if len(format_spec) == 0:
-            return self.__str__()
-
-        err = False
-        ret = _C.seq_str_float(self, _python_to_fmt_format(format_spec), __ptr__(err))
-        if format_spec and err:
-            _format_error(ret)
-        return ret if ret != "-nan" else "nan"
+        return _format_scalar(self, format_spec)
 
 @extend
 class str:
     def __format__(self, format_spec: str) -> str:
-        err = False
-        ret = _C.seq_str_str(self, _python_to_fmt_format(format_spec), __ptr__(err))
-        if format_spec and err:
-            _format_error(ret)
-        return ret
+        return _format_scalar(self, format_spec)
 
 @extend
 class Ptr:
     def __format__(self, format_spec: str) -> str:
-        err = False
-        ret = _C.seq_str_ptr(self.as_byte(), _python_to_fmt_format(format_spec), __ptr__(err))
-        if format_spec and err:
-            _format_error(ret)
-        return ret
+        return _format_scalar(int(self), format_spec if format_spec else "#x")
 
 def _divmod_10(dividend, N: Literal[int]):
     T = type(dividend)
@@ -879,6 +772,7 @@ class _FormatBuffer:
     data: Ptr[u8]
     length: int
     capacity: int
+    kind: int
 
     def __init__(self, capacity: int):
         if capacity < 16:
@@ -887,6 +781,7 @@ class _FormatBuffer:
         self.data = Ptr[u8](capacity)
         self.length = 0
         self.capacity = capacity
+        self.kind = KIND_ASCII
 
     def reserve(self, extra: int):
         required = self.length + extra
@@ -900,13 +795,60 @@ class _FormatBuffer:
         while capacity < required:
             capacity *= 2
 
-        self.data = gc.realloc(self.data, capacity, old_capacity)
+        width = _kind_width(self.kind)
+        self.data = gc.realloc(
+            self.data,
+            capacity * width,
+            old_capacity * width,
+        )
         self.capacity = capacity
 
-    def append_byte(self, value: u8):
+    def _widen(self, kind: int):
+        if kind <= self.kind:
+            return
+
+        expanded = Ptr[u8](self.capacity * _kind_width(kind))
+        source = str(self.data, _make_meta(self.length, self.kind))
+        destination = str(expanded, _make_meta(self.capacity, kind))
+        _unicode_copy_range(destination, source, 0, 0, self.length)
+        self.data = expanded
+        self.kind = kind
+
+    def append_codepoint(self, value: int):
+        self._widen(_kind_for_maxchar(value))
         self.reserve(1)
-        self.data[self.length] = value
+        destination = str(self.data, _make_meta(self.capacity, self.kind))
+        destination._store_codepoint(self.length, value)
         self.length += 1
+
+    def append_byte(self, value: u8):
+        self.append_codepoint(int(value))
+
+    def append_ascii(self, source: Ptr[u8], count: int):
+        self.reserve(count)
+        destination = str(self.data, _make_meta(self.capacity, self.kind))
+        for i in range(count):
+            destination._store_codepoint(self.length + i, int(source[i]))
+        self.length += count
+
+    def append_text(self, text: str, count: int = -1):
+        if count < 0 or count > len(text):
+            count = len(text)
+
+        self._widen(text._kind())
+        self.reserve(count)
+        destination = str(self.data, _make_meta(self.capacity, self.kind))
+        _unicode_copy_range(destination, text, self.length, 0, count)
+        self.length += count
+
+    def codepoint(self, index: int) -> int:
+        value = str(self.data, _make_meta(self.capacity, self.kind))
+        return value._load_codepoint(index)
+
+    def set_codepoint(self, index: int, value: int):
+        self._widen(_kind_for_maxchar(value))
+        destination = str(self.data, _make_meta(self.capacity, self.kind))
+        destination._store_codepoint(index, value)
 
     def release_excess(self):
         # Avoid a second allocation for ordinary small formatting results.
@@ -917,8 +859,16 @@ class _FormatBuffer:
         ):
             return
 
-        self.data = gc.realloc(self.data, self.length, self.capacity)
+        width = _kind_width(self.kind)
+        self.data = gc.realloc(
+            self.data,
+            self.length * width,
+            self.capacity * width,
+        )
         self.capacity = self.length
+
+    def to_str(self) -> str:
+        return str(self.data, _make_meta(self.length, self.kind))
 
 
 def _percent_integer_buffer_size(
@@ -989,12 +939,14 @@ def _percent_numeric_append(
     directive: _PercentDirective,
     result: _FormatBuffer,
 ):
-    result.reserve(_percent_numeric_buffer_size(value, directive))
-    result.length += _percent_numeric_write(
+    capacity = _percent_numeric_buffer_size(value, directive)
+    output = Ptr[u8](capacity)
+    length = _percent_numeric_write(
         value,
         directive,
-        result.data + result.length,
+        output,
     )
+    result.append_ascii(output, length)
 
 
 def _percent_value_append(
@@ -1003,13 +955,7 @@ def _percent_value_append(
     result: _FormatBuffer,
 ):
     if directive.conversion == 0x63:  # c
-        width = directive.width if directive.width > 0 else 0
-        result.reserve(width + 4)
-        result.length += _percent_char_write(
-            value,
-            directive,
-            result.data + result.length,
-        )
+        _percent_char_append(value, directive, result)
         return
 
     if directive.conversion == 0x73:  # s
@@ -1043,12 +989,7 @@ def _percent_write_literal_prefix(
         format_pos += 1
 
         if codepoint != 0x25:  # %
-            result.reserve(4)
-            result.length = _utf8_encode_one(
-                result.data,
-                result.length,
-                codepoint,
-            )
+            result.append_codepoint(codepoint)
             continue
 
         if format_pos >= format_length:
@@ -1064,39 +1005,6 @@ def _percent_write_literal_prefix(
     return format_pos
 
 
-def _percent_string_write(
-    text: str,
-    directive: _PercentDirective,
-    output: Ptr[u8],
-) -> int:
-    character_count = len(text)
-
-    if directive.precision >= 0 and character_count > directive.precision:
-        character_count = directive.precision
-
-    padding = directive.width - character_count
-    if padding < 0:
-        padding = 0
-
-    pos = 0
-    left = (directive.flags & FORMAT_FLAG_LEFT) != 0
-
-    if not left:
-        for _ in range(padding):
-            output[pos] = u8(0x20)
-            pos += 1
-
-    for i in range(character_count):
-        pos = _utf8_encode_one(output, pos, text._load_codepoint(i))
-
-    if left:
-        for _ in range(padding):
-            output[pos] = u8(0x20)
-            pos += 1
-
-    return pos
-
-
 def _percent_text_append(
     text: str,
     directive: _PercentDirective,
@@ -1107,19 +1015,25 @@ def _percent_text_append(
     if directive.precision >= 0 and character_count > directive.precision:
         character_count = directive.precision
 
-    width = directive.width if directive.width > 0 else 0
-    result.reserve(character_count * 4 + width)
-    result.length += _percent_string_write(
-        text,
-        directive,
-        result.data + result.length,
-    )
+    padding = directive.width - character_count
+    if padding < 0:
+        padding = 0
+
+    if (directive.flags & FORMAT_FLAG_LEFT) == 0:
+        for _ in range(padding):
+            result.append_byte(u8(0x20))
+
+    result.append_text(text, character_count)
+
+    if (directive.flags & FORMAT_FLAG_LEFT) != 0:
+        for _ in range(padding):
+            result.append_byte(u8(0x20))
 
 
-def _percent_char_write(
+def _percent_char_append(
     value,
     directive: _PercentDirective,
-    output: Ptr[u8],
+    result: _FormatBuffer,
 ) -> int:
     if directive.precision >= 0:
         raise ValueError("precision not allowed in %c format")
@@ -1149,21 +1063,15 @@ def _percent_char_write(
     if padding < 0:
         padding = 0
 
-    pos = 0
-
     if (directive.flags & FORMAT_FLAG_LEFT) == 0:
         for _ in range(padding):
-            output[pos] = u8(0x20)
-            pos += 1
+            result.append_byte(u8(0x20))
 
-    pos = _utf8_encode_one(output, pos, codepoint)
+    result.append_codepoint(codepoint)
 
     if (directive.flags & FORMAT_FLAG_LEFT) != 0:
         for _ in range(padding):
-            output[pos] = u8(0x20)
-            pos += 1
-
-    return pos
+            result.append_byte(u8(0x20))
 
 
 def _percent_consume_width(value, directive: _PercentDirective):
@@ -1241,7 +1149,7 @@ def percent_format(format: str, values):
         raise TypeError("not enough arguments for format string")
 
     result.release_excess()
-    return result.data, result.length
+    return result.to_str()
 
 
 def percent_format_mapping(format: str, values):
@@ -1274,29 +1182,25 @@ def percent_format_mapping(format: str, values):
         _percent_value_append(values[key], directive, result)
 
     result.release_excess()
-    return result.data, result.length
+    return result.to_str()
 
 
 @extend
 class str:
     def __mod__(self, values) -> str:
         if isinstance(values, Dict):
-            output, output_length = percent_format_mapping(self, values)
-            return _unicode_decode_utf8_strict(output, output_length)
+            return percent_format_mapping(self, values)
 
         if not isinstance(values, Tuple):
             return self % (values,)
 
-        output, output_length = percent_format(self, values)
-        return _unicode_decode_utf8_strict(output, output_length)
+        return percent_format(self, values)
 
     def format(self, *values) -> str:
-        output, output_length = brace_format(self, values)
-        return _unicode_decode_utf8_strict(output, output_length)
+        return brace_format(self, values)
 
     def format_map(self, mapping) -> str:
-        output, output_length = brace_format_map(self, mapping)
-        return _unicode_decode_utf8_strict(output, output_length)
+        return brace_format_map(self, mapping)
 
 
 def _value_string(value):
@@ -1341,7 +1245,7 @@ def _value_ascii(value) -> str:
             output.append_byte(u8(0x55))  # U
             _percent_append_hex(output, codepoint, 8)
 
-    return _unicode_decode_utf8_strict(output.data, output.length)
+    return output.to_str()
 
 
 class _BraceField:
@@ -1392,12 +1296,7 @@ def _brace_write_literal_prefix(
 
             raise ValueError("single '}' encountered in format string")
 
-        result.reserve(4)
-        result.length = _utf8_encode_one(
-            result.data,
-            result.length,
-            codepoint,
-        )
+        result.append_codepoint(codepoint)
 
     return format_pos
 
@@ -1768,7 +1667,18 @@ def brace_format(format: str, values):
         _brace_index_value_append(values, index, field, result)
 
     result.release_excess()
-    return result.data, result.length
+    return result.to_str()
+
+
+def _format_scalar(value, format_spec: str) -> str:
+    field = _BraceField()
+    if format_spec:
+        field.spec = format_spec
+
+    result = _FormatBuffer(len(format_spec) + 16)
+    _brace_value_append(value, field, result)
+    result.release_excess()
+    return result.to_str()
 
 
 def _brace_expand_format_spec(
@@ -1818,7 +1728,7 @@ def _brace_expand_format_spec(
         _brace_index_value_append(values, index, field, result)
 
     return (
-        _unicode_decode_utf8_strict(result.data, result.length),
+        result.to_str(),
         automatic_index,
         numbering_mode,
     )
@@ -1875,7 +1785,7 @@ def brace_format_map(format: str, mapping):
         _brace_mapping_value_append(mapping, field.key, field, result)
 
     result.release_excess()
-    return result.data, result.length
+    return result.to_str()
 
 
 def _brace_expand_format_spec_map(spec: str, mapping) -> str:
@@ -1896,7 +1806,7 @@ def _brace_expand_format_spec_map(spec: str, mapping) -> str:
 
         _brace_mapping_value_append(mapping, field.key, field, result)
 
-    return _unicode_decode_utf8_strict(result.data, result.length)
+    return result.to_str()
 
 
 def _parse_brace_format_spec(spec: str) -> _PercentDirective:
@@ -2022,51 +1932,17 @@ def _parse_brace_format_spec(spec: str) -> _PercentDirective:
     return directive
 
 
-def _brace_utf8_character_count(data: Ptr[u8], length: int) -> int:
-    count = 0
-    position = 0
-
-    while position < length:
-        byte = int(data[position])
-
-        if byte < 0x80:
-            position += 1
-        elif byte < 0xE0:
-            position += 2
-        elif byte < 0xF0:
-            position += 3
-        else:
-            position += 4
-
-        count += 1
-
-    return count
-
-
 def _brace_append_fill(
     result: _FormatBuffer,
     fill: int,
     count: int,
 ):
-    result.reserve(count * 4)
-
     for _ in range(count):
-        result.length = _utf8_encode_one(
-            result.data,
-            result.length,
-            fill,
-        )
+        result.append_codepoint(fill)
 
 
 def _brace_append_text(result: _FormatBuffer, text: str):
-    result.reserve(len(text) * 4)
-
-    for i in range(len(text)):
-        result.length = _utf8_encode_one(
-            result.data,
-            result.length,
-            text._load_codepoint(i),
-        )
+    result.append_text(text)
 
 
 def _brace_locale_separator_count(digits: int, grouping: bytes) -> int:
@@ -2109,16 +1985,16 @@ def _brace_locale_group_rendered(
     if (
         rendered.length > 0
         and (
-            rendered.data[0] == u8(0x2D)  # -
-            or rendered.data[0] == u8(0x2B)  # +
-            or rendered.data[0] == u8(0x20)  # space
+            rendered.codepoint(0) == 0x2D  # -
+            or rendered.codepoint(0) == 0x2B  # +
+            or rendered.codepoint(0) == 0x20  # space
         )
     ):
         integer_start = 1
 
     integer_end = integer_start
     while integer_end < rendered.length:
-        byte = rendered.data[integer_end]
+        byte = rendered.codepoint(integer_end)
 
         if (
             byte == u8(0x2E)  # .
@@ -2132,7 +2008,7 @@ def _brace_locale_group_rendered(
     digits = integer_end - integer_start
     suffix = rendered.length - integer_end
     suffix_characters = suffix
-    if integer_end < rendered.length and rendered.data[integer_end] == u8(0x2E):
+    if integer_end < rendered.length and rendered.codepoint(integer_end) == 0x2E:
         suffix_characters += len(decimal_point) - 1
 
     zeroes = 0
@@ -2180,7 +2056,7 @@ def _brace_locale_group_rendered(
     result.reserve(rendered.length + zeroes + separators * len(separator) * 4)
 
     for i in range(integer_start):
-        result.append_byte(rendered.data[i])
+        result.append_codepoint(rendered.codepoint(i))
 
     position_index = position_count - 1
     for i in range(grouped_digits):
@@ -2191,13 +2067,15 @@ def _brace_locale_group_rendered(
         if i < zeroes:
             result.append_byte(u8(0x30))
         else:
-            result.append_byte(rendered.data[integer_start + i - zeroes])
+            result.append_codepoint(
+                rendered.codepoint(integer_start + i - zeroes)
+            )
 
     for i in range(integer_end, rendered.length):
-        if rendered.data[i] == u8(0x2E):
+        if rendered.codepoint(i) == 0x2E:
             _brace_append_text(result, decimal_point)
         else:
-            result.append_byte(rendered.data[i])
+            result.append_codepoint(rendered.codepoint(i))
 
     return result
 
@@ -2227,21 +2105,21 @@ def _brace_group_rendered(
     if (
         rendered.length > 0
         and (
-            rendered.data[0] == u8(0x2D)  # -
-            or rendered.data[0] == u8(0x2B)  # +
-            or rendered.data[0] == u8(0x20)  # space
+            rendered.codepoint(0) == 0x2D  # -
+            or rendered.codepoint(0) == 0x2B  # +
+            or rendered.codepoint(0) == 0x20  # space
         )
     ):
         integer_start = 1
 
     if (
         integer_start + 1 < rendered.length
-        and rendered.data[integer_start] == u8(0x30)  # 0
+        and rendered.codepoint(integer_start) == 0x30  # 0
         and (
-            rendered.data[integer_start + 1] == u8(0x62)  # b
-            or rendered.data[integer_start + 1] == u8(0x6F)  # o
-            or rendered.data[integer_start + 1] == u8(0x78)  # x
-            or rendered.data[integer_start + 1] == u8(0x58)  # X
+            rendered.codepoint(integer_start + 1) == 0x62  # b
+            or rendered.codepoint(integer_start + 1) == 0x6F  # o
+            or rendered.codepoint(integer_start + 1) == 0x78  # x
+            or rendered.codepoint(integer_start + 1) == 0x58  # X
         )
     ):
         integer_start += 2
@@ -2256,7 +2134,7 @@ def _brace_group_rendered(
     )
 
     while integer_end < rendered.length:
-        byte = rendered.data[integer_end]
+        byte = rendered.codepoint(integer_end)
 
         if (
             byte == u8(0x2E)  # .
@@ -2288,8 +2166,7 @@ def _brace_group_rendered(
     result.reserve(rendered.length + zeroes + separators)
 
     for i in range(integer_start):
-        result.data[result.length] = rendered.data[i]
-        result.length += 1
+        result.append_codepoint(rendered.codepoint(i))
 
     for i in range(grouped_digits):
         if i > 0 and (grouped_digits - i) % group_size == 0:
@@ -2298,11 +2175,12 @@ def _brace_group_rendered(
         if i < zeroes:
             result.append_byte(u8(0x30))
         else:
-            result.append_byte(rendered.data[integer_start + i - zeroes])
+            result.append_codepoint(
+                rendered.codepoint(integer_start + i - zeroes)
+            )
 
     for i in range(integer_end, rendered.length):
-        result.data[result.length] = rendered.data[i]
-        result.length += 1
+        result.append_codepoint(rendered.codepoint(i))
 
     return result
 
@@ -2313,8 +2191,7 @@ def _brace_append_aligned(
     text_default_left: bool,
     result: _FormatBuffer,
 ):
-    characters = _brace_utf8_character_count(rendered.data, rendered.length)
-    padding = directive.width - characters
+    padding = directive.width - rendered.length
 
     if padding < 0:
         padding = 0
@@ -2338,35 +2215,32 @@ def _brace_append_aligned(
         if (
             rendered.length > 0
             and (
-                rendered.data[0] == u8(0x2D)  # -
-                or rendered.data[0] == u8(0x2B)  # +
-                or rendered.data[0] == u8(0x20)  # space
+                rendered.codepoint(0) == 0x2D  # -
+                or rendered.codepoint(0) == 0x2B  # +
+                or rendered.codepoint(0) == 0x20  # space
             )
         ):
             split = 1
 
         if (
             split + 1 < rendered.length
-            and rendered.data[split] == u8(0x30)  # 0
+            and rendered.codepoint(split) == 0x30  # 0
             and (
-                rendered.data[split + 1] == u8(0x62)  # b
-                or rendered.data[split + 1] == u8(0x6F)  # o
-                or rendered.data[split + 1] == u8(0x78)  # x
-                or rendered.data[split + 1] == u8(0x58)  # X
+                rendered.codepoint(split + 1) == 0x62  # b
+                or rendered.codepoint(split + 1) == 0x6F  # o
+                or rendered.codepoint(split + 1) == 0x78  # x
+                or rendered.codepoint(split + 1) == 0x58  # X
             )
         ):
             split += 2
 
-        result.reserve(rendered.length + padding)
         for i in range(split):
-            result.data[result.length] = rendered.data[i]
-            result.length += 1
+            result.append_codepoint(rendered.codepoint(i))
 
         _brace_append_fill(result, directive.brace_fill, padding)
 
         for i in range(split, rendered.length):
-            result.data[result.length] = rendered.data[i]
-            result.length += 1
+            result.append_codepoint(rendered.codepoint(i))
 
         return
     else:  # >, including the default numeric alignment
@@ -2374,10 +2248,8 @@ def _brace_append_aligned(
 
     _brace_append_fill(result, directive.brace_fill, left_padding)
 
-    result.reserve(rendered.length)
     for i in range(rendered.length):
-        result.data[result.length + i] = rendered.data[i]
-    result.length += rendered.length
+        result.append_codepoint(rendered.codepoint(i))
 
     _brace_append_fill(result, directive.brace_fill, right_padding)
 
@@ -2435,18 +2307,14 @@ def _brace_value_append_with_directive(
     elif conversion == 0x73:
         _percent_text_append(_value_string(value), directive, result)
     elif conversion == 0x63:
-        result.reserve(4)
-        result.length += _percent_char_write(
-            value,
-            directive,
-            result.data + result.length,
-        )
+        _percent_char_append(value, directive, result)
     elif conversion == 0x25:  # %
-        result.reserve(
+        capacity = (
             _float_format_buffer_size(0x66, directive.precision)
             + directive.width
             + 1
         )
+        output = Ptr[u8](capacity)
         width = directive.width
 
         # Ordinary brace alignment is applied after this writer returns, so
@@ -2455,38 +2323,41 @@ def _brace_value_append_with_directive(
             width -= 1
 
         if isinstance(value, int):
-            result.length += float_format_write_padded(
+            length = float_format_write_padded(
                 float(value) * 100.0,
                 0x66,  # f
                 directive.precision,
                 directive.flags,
                 width,
-                result.data + result.length,
+                output,
             )
         elif isinstance(value, float):
-            result.length += float_format_write_padded(
+            length = float_format_write_padded(
                 value * 100.0,
                 0x66,  # f
                 directive.precision,
                 directive.flags,
                 width,
-                result.data + result.length,
+                output,
             )
         else:
             raise TypeError("a number is required")
 
+        result.append_ascii(output, length)
         result.append_byte(u8(0x25))
     elif conversion == 0x62:  # b
         if isinstance(value, int):
-            result.reserve(directive.width + directive.precision + 128)
-            result.length += integer_format_write_padded(
+            capacity = directive.width + directive.precision + 128
+            output = Ptr[u8](capacity)
+            length = integer_format_write_padded(
                 value,
                 conversion,
                 directive.precision,
                 directive.flags,
                 directive.width,
-                result.data + result.length,
+                output,
             )
+            result.append_ascii(output, length)
         else:
             raise TypeError("an integer is required")
     else:
@@ -2579,26 +2450,26 @@ def _brace_coerce_rendered_negative_zero(
 ):
     if (
         result.length - start < 2
-        or result.data[start] != u8(0x2D)  # -
-        or result.data[start + 1] != u8(0x30)  # 0
+        or result.codepoint(start) != 0x2D  # -
+        or result.codepoint(start + 1) != 0x30  # 0
     ):
         return
 
     for i in range(start + 1, result.length):
-        byte = result.data[i]
+        byte = result.codepoint(i)
 
-        if byte >= u8(0x31) and byte <= u8(0x39):
+        if byte >= 0x31 and byte <= 0x39:
             return
 
     add_default_fraction = result.length == start + 2
 
     if (flags & FORMAT_FLAG_PLUS) != 0:
-        result.data[start] = u8(0x2B)  # +
+        result.set_codepoint(start, 0x2B)  # +
     elif (flags & FORMAT_FLAG_SPACE) != 0:
-        result.data[start] = u8(0x20)  # space
+        result.set_codepoint(start, 0x20)  # space
     else:
         for i in range(start + 1, result.length):
-            result.data[i - 1] = result.data[i]
+            result.set_codepoint(i - 1, result.codepoint(i))
 
         result.length -= 1
 
@@ -2612,23 +2483,22 @@ def _brace_float_shortest_append(
     directive: _PercentDirective,
     result: _FormatBuffer,
 ):
-    rendered = _FormatBuffer(32)
-    rendered.reserve(32)
-    rendered.length = _float_dtoa_shortest_write(
+    rendered = Ptr[u8](32)
+    rendered_length = _float_dtoa_shortest_write(
         value,
-        rendered.data,
+        rendered,
         False,
     )
 
     sign = u8(0)
 
-    if rendered.length == 0 or rendered.data[0] != u8(0x2D):  # -
+    if rendered_length == 0 or rendered[0] != u8(0x2D):  # -
         if (directive.flags & FORMAT_FLAG_PLUS) != 0:
             sign = u8(0x2B)  # +
         elif (directive.flags & FORMAT_FLAG_SPACE) != 0:
             sign = u8(0x20)  # space
 
-    padding = directive.width - rendered.length
+    padding = directive.width - rendered_length
     if sign != u8(0):
         padding -= 1
     if padding < 0:
@@ -2636,8 +2506,6 @@ def _brace_float_shortest_append(
 
     left = (directive.flags & FORMAT_FLAG_LEFT) != 0
     zero = (directive.flags & FORMAT_FLAG_ZERO) != 0 and not left
-
-    result.reserve(rendered.length + (1 if sign != u8(0) else 0) + padding)
 
     if not left and not zero:
         _brace_append_fill(result, 0x20, padding)
@@ -2648,9 +2516,7 @@ def _brace_float_shortest_append(
     if zero:
         _brace_append_fill(result, 0x30, padding)
 
-    for i in range(rendered.length):
-        result.data[result.length] = rendered.data[i]
-        result.length += 1
+    result.append_ascii(rendered, rendered_length)
 
     if left:
         _brace_append_fill(result, 0x20, padding)

@@ -97,11 +97,6 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
                                              _Unwind_Context *context);
 SEQ_FUNC int64_t seq_exc_offset();
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error);
 SEQ_FUNC seq_str_t seq_locale_decimal_point();
 SEQ_FUNC seq_str_t seq_locale_thousands_sep();
 SEQ_FUNC seq_bytes_t seq_locale_grouping();

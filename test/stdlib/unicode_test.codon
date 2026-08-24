@@ -1622,9 +1622,9 @@ def test_search_bounds():
 
 @test
 def test_splitlines_all_boundaries():
-    nel = unicode("\xc2\x85")
-    line_separator = unicode("\xe2\x80\xa8")
-    paragraph_separator = unicode("\xe2\x80\xa9")
+    nel = _unicode_from_codepoint(0x85)
+    line_separator = _unicode_from_codepoint(0x2028)
+    paragraph_separator = _unicode_from_codepoint(0x2029)
 
     value = (
         unicode("a\rb\nc\r\nd\ve\ff\x1cg\x1dh\x1ei")
@@ -1660,13 +1660,13 @@ def test_splitlines_all_boundaries():
 
 @test
 def test_unicode_data():
-    e_acute = unicode("\xc3\xa9")
-    superscript_two = unicode("\xc2\xb2")
-    arabic_digits = unicode("\xd9\xa1\xd9\xa2")
-    nbsp = unicode("\xc2\xa0")
-    em_space = unicode("\xe2\x80\x83")
-    pi = unicode("\xcf\x80")
-    combining_acute = unicode("\xcc\x81")
+    e_acute = _unicode_from_codepoint(0xE9)
+    superscript_two = _unicode_from_codepoint(0xB2)
+    arabic_digits = _unicode_from_codepoints([0x661, 0x662])
+    nbsp = _unicode_from_codepoint(0xA0)
+    em_space = _unicode_from_codepoint(0x2003)
+    pi = _unicode_from_codepoint(0x3C0)
+    combining_acute = _unicode_from_codepoint(0x301)
 
     assert e_acute.isalpha()
     assert (e_acute + unicode("2")).isalnum()
@@ -1698,16 +1698,17 @@ def test_unicode_data():
     assert unicode("😀").isprintable()
 
     assert not unicode("hello\nworld").isprintable()
-    assert not unicode("\xc2\xa0").isprintable()  # NO-BREAK SPACE
-    assert not unicode("\xe2\x80\x8b").isprintable()  # ZERO WIDTH SPACE
-    assert not unicode("\xe2\x80\xa8").isprintable()  # LINE SEPARATOR
+    assert not _unicode_from_codepoint(0xA0).isprintable()  # NO-BREAK SPACE
+    assert not _unicode_from_codepoint(0x200B).isprintable()  # ZERO WIDTH SPACE
+    assert not _unicode_from_codepoint(0x2028).isprintable()  # LINE SEPARATOR
 
 
 @test
 def test_unicode_case_predicates():
-    lower_alpha = unicode("\xce\xb1")  # α
-    upper_alpha = unicode("\xce\x91")  # Α
-    title_dz = unicode("\xc7\x85")  # ǅ
+    lower_alpha = _unicode_from_codepoint(0x3B1)  # alpha
+    upper_alpha = _unicode_from_codepoint(0x391)  # capital alpha
+    title_dz = _unicode_from_codepoint(0x1C5)  # titlecase DZ
+    combining_acute = _unicode_from_codepoint(0x301)
 
     assert lower_alpha.islower()
     assert not lower_alpha.isupper()
@@ -1721,52 +1722,59 @@ def test_unicode_case_predicates():
     assert not title_dz.islower()
     assert not title_dz.isupper()
 
-    assert unicode("\xce\xb1-123").islower()
-    assert unicode("\xce\x91-123").isupper()
-    assert not unicode("123-\xcc\x81").islower()
-    assert not unicode("123-\xcc\x81").isupper()
-    assert not unicode("123-\xcc\x81").istitle()
+    assert (lower_alpha + unicode("-123")).islower()
+    assert (upper_alpha + unicode("-123")).isupper()
+    assert not (unicode("123-") + combining_acute).islower()
+    assert not (unicode("123-") + combining_acute).isupper()
+    assert not (unicode("123-") + combining_acute).istitle()
 
-    assert unicode("A\xcc\x81b").istitle()
-    assert not unicode("A\xcc\x81B").istitle()
+    assert (unicode("A") + combining_acute + unicode("b")).istitle()
+    assert not (unicode("A") + combining_acute + unicode("B")).istitle()
 
 
 @test
 def test_unicode_case_mappings():
-    sharp_s = unicode("\xc3\x9f")  # ß
-    dotted_i = unicode("\xc4\xb0")  # İ
-    ligature_ffi = unicode("\xef\xac\x83")  # ﬃ
+    sharp_s = _unicode_from_codepoint(0xDF)
+    dotted_i = _unicode_from_codepoint(0x130)
+    ligature_ffi = _unicode_from_codepoint(0xFB03)
+    combining_dot = _unicode_from_codepoint(0x307)
 
     assert sharp_s.upper() == unicode("SS")
     assert sharp_s.title() == unicode("Ss")
     assert sharp_s.swapcase() == unicode("SS")
 
-    assert dotted_i.lower() == unicode("i\xcc\x87")
+    assert dotted_i.lower() == unicode("i") + combining_dot
     assert ligature_ffi.upper() == unicode("FFI")
     assert ligature_ffi.casefold() == unicode("ffi")
-    assert unicode("Stra\xc3\x9fe").casefold() == unicode("strasse")
+    assert (unicode("Stra") + sharp_s + unicode("e")).casefold() == unicode("strasse")
 
-    assert unicode("\xc7\x85").swapcase() == unicode("\xc7\x85")
+    title_dz = _unicode_from_codepoint(0x1C5)
+    assert title_dz.swapcase() == title_dz
 
 
 @test
 def test_unicode_final_sigma():
-    assert unicode("\xce\x9f\xce\xa3").lower() == unicode("\xce\xbf\xcf\x82")
-    assert unicode("\xce\x9f\xce\xa3\xce\x91").lower() == unicode(
-        "\xce\xbf\xcf\x83\xce\xb1"
+    omicron_sigma = _unicode_from_codepoints([0x39F, 0x3A3])
+    assert omicron_sigma.lower() == _unicode_from_codepoints([0x3BF, 0x3C2])
+    assert _unicode_from_codepoints([0x39F, 0x3A3, 0x391]).lower() == (
+        _unicode_from_codepoints([0x3BF, 0x3C3, 0x3B1])
     )
 
     # Case-ignorable marks do not prevent final-sigma detection.
-    assert unicode("\xce\x9f\xce\xa3\xcc\x81").lower() == unicode(
-        "\xce\xbf\xcf\x82\xcc\x81"
+    assert _unicode_from_codepoints([0x39F, 0x3A3, 0x301]).lower() == (
+        _unicode_from_codepoints([0x3BF, 0x3C2, 0x301])
     )
 
 
 @test
 def test_unicode_title_and_capitalize_mappings():
-    assert unicode("a\xcc\x81BC").title() == unicode("A\xcc\x81Bc")
-    assert unicode("\xc3\x9fABC").capitalize() == unicode("Ssabc")
-    assert unicode("hELLO \xc3\x9f").title() == unicode("Hello Ss")
+    combining_acute = _unicode_from_codepoint(0x301)
+    sharp_s = _unicode_from_codepoint(0xDF)
+    assert (unicode("a") + combining_acute + unicode("BC")).title() == (
+        unicode("A") + combining_acute + unicode("Bc")
+    )
+    assert (sharp_s + unicode("ABC")).capitalize() == unicode("Ssabc")
+    assert (unicode("hELLO ") + sharp_s).title() == unicode("Hello Ss")
 
 
 @test
@@ -1793,15 +1801,20 @@ def test_unicode_case_mapping_identity():
     assert value.capitalize() == value
     assert value.swapcase() == value
 
-    assert unicode("\xce\xa3").lower() == unicode("\xcf\x83")  # Σ -> σ
-    assert unicode("A\xcc\x81B").title() == unicode("A\xcc\x81B")
+    assert _unicode_from_codepoint(0x3A3).lower() == _unicode_from_codepoint(0x3C3)
+    combining_acute = _unicode_from_codepoint(0x301)
+    value = unicode("A") + combining_acute + unicode("B")
+    assert value.title() == value
 
 
 @test
 def test_unicode_final_sigma_case_methods():
-    assert unicode("\xce\x9f\xce\xa3").capitalize() == unicode("\xce\x9f\xcf\x82")
-    assert unicode("\xce\x9f\xce\xa3").title() == unicode("\xce\x9f\xcf\x82")
-    assert unicode("\xce\x9f\xce\xa3").swapcase() == unicode("\xce\xbf\xcf\x82")
+    omicron_sigma = _unicode_from_codepoints([0x39F, 0x3A3])
+    capitalized = _unicode_from_codepoints([0x39F, 0x3C2])
+    lower = _unicode_from_codepoints([0x3BF, 0x3C2])
+    assert omicron_sigma.capitalize() == capitalized
+    assert omicron_sigma.title() == capitalized
+    assert omicron_sigma.swapcase() == lower
 
 
 test_empty()

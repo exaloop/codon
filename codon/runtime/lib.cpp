@@ -502,52 +502,6 @@ std::string seq_str_t::encode() const {
   return result;
 }
 
-template <typename T> std::string default_format(T n) {
-  return fmt::format(FMT_STRING("{}"), n);
-}
-
-template <> std::string default_format(double n) {
-  return fmt::format(FMT_STRING("{:g}"), n);
-}
-
-template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
-  *error = false;
-  try {
-    if (SEQ_STR_LEN(format) == 0) {
-      return string_conv(default_format(n));
-    } else {
-      auto locale = std::locale("en_US.UTF-8");
-      std::string fstr = format.encode();
-      return string_conv(fmt::format(
-          locale, fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
-    }
-  } catch (const std::runtime_error &f) {
-    *error = true;
-    return string_conv(f.what());
-  }
-}
-
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error) {
-  return fmt_conv<seq_int_t>(n, format, error);
-}
-
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error) {
-  return fmt_conv<uint64_t>(n, format, error);
-}
-
-SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error) {
-  return fmt_conv<double>(f, format, error);
-}
-
-SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
-  return fmt_conv(fmt::ptr(p), format, error);
-}
-
-SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
-  std::string t = s.encode();
-  return fmt_conv(t, format, error);
-}
-
 SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
   if (SEQ_STR_KIND(s) != SEQ_STR_KIND_ASCII) {
     *e = reinterpret_cast<char *>(s.ptr);

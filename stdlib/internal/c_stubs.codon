@@ -12,31 +12,6 @@ def linkname(s: Literal[str]):
 
 @nocapture
 @C
-def seq_str_int(a: int, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_uint(a: int, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_float(a: float, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_str(a: str, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_ptr(a: cobj, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
 def seq_float_from_str(a: str, b: Ptr[cobj]) -> float:
     pass
 
