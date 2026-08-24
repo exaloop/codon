@@ -3060,7 +3060,94 @@ def test_percent_regression_combinations():
     ) == unicode("-17:0xff:0o10:1.25:done")
 
 
-# Explicit calls, useful when @test does not automatically execute tests.
+@test
+def test_percent_cpython_adversarial_matrix():
+    minimum = -(1 << 63)
+
+    numeric_cases = (
+        (unicode("%+#018x"), -0x1234, unicode("-0x000000000001234")),
+        (unicode("%#024o"), minimum, unicode("-0o1000000000000000000000")),
+        (unicode("%+020.4e"), 1.25, unicode("+0000000001.2500e+00")),
+        (unicode("%#.0g"), 1000000.0, unicode("1.e+06")),
+        (unicode("%#08.0f"), float("inf"), unicode("00000inf")),
+        (unicode("%+#08.0F"), float("nan"), unicode("+0000NAN")),
+    )
+
+    for format, value, expected in numeric_cases:
+        assert format % value == expected
+
+    unicode_cases = (
+        (unicode("%7s"), unicode("a"), unicode("      a")),
+        (unicode("%4.2s"), unicode("éΩx"), unicode("  éΩ")),
+        (unicode("%.0s"), unicode("é"), unicode("")),
+        (unicode("%12.3r"), unicode("éΩx"), unicode("         'éΩ")),
+        (unicode("%12.6a"), unicode("café"), unicode("      'caf\\x")),
+    )
+
+    for format, value, expected in unicode_cases:
+        assert format % value == expected
+
+    assert unicode("%*.*f|%*s|%+06d") % (
+        8,
+        3,
+        1.25,
+        5,
+        unicode("x"),
+        42,
+    ) == unicode("   1.250|    x|+00042")
+
+    slash = unicode("\\")
+    assert unicode("pre (%%%s) \\ %r \n %a") % (
+        unicode("x"),
+        unicode("a\tb"),
+        unicode("é\nΩ"),
+    ) == (
+        unicode("pre (%x) ")
+        + slash
+        + unicode(" 'a")
+        + slash
+        + unicode("tb' \n '")
+        + slash
+        + unicode("xe9")
+        + slash
+        + unicode("n")
+        + slash
+        + unicode("u03a9'")
+    )
+
+    assert unicode("") % () == unicode("")
+    assert unicode("%%") % () == unicode("%")
+    assert unicode("%s|%d|%.1f") % (unicode(""), 0, -0.0) == unicode(
+        "|0|-0.0"
+    )
+    assert unicode("<%s>|<%.0s>|<%r>") % (
+        unicode("\x00"),
+        unicode("\x00"),
+        unicode(""),
+    ) == unicode("<\x00>|<>|<''>")
+
+    assert unicode("%10000d") % 1 == unicode(" " * 9999 + "1")
+    assert unicode("%010000.1f") % 12.5 == unicode("0" * 9996 + "12.5")
+    assert unicode("%1005.1000f") % 1.0 == unicode(
+        " " * 3 + "1." + "0" * 1000
+    )
+
+    malformed_formats = (
+        unicode("%"),
+        unicode("%..2f"),
+        unicode("%08.2.1f"),
+        unicode("%q"),
+        unicode("%(name"),
+    )
+
+    for format in malformed_formats:
+        try:
+            format % 1
+            assert False
+        except ValueError:
+            pass
+
+
 test_percent_basic()
 test_percent_multiple_arguments()
 test_percent_integer_signs_flags_width()
@@ -3090,6 +3177,7 @@ test_percent_large_width_precision()
 test_percent_numeric_coercions()
 test_percent_mapping_positional_mixing_errors()
 test_percent_regression_combinations()
+test_percent_cpython_adversarial_matrix()
 
 
 # new-style format
