@@ -1789,6 +1789,15 @@ def _brace_value_append(
         return
 
     directive = _parse_brace_format_spec(spec)
+    _brace_value_append_parsed(value, field, directive, result)
+
+
+def _brace_value_append_parsed(
+    value,
+    field: _BraceField,
+    directive: _PercentDirective,
+    result: _FormatBuffer,
+):
     _brace_validate_value_format(value, field, directive)
 
     if (
@@ -1843,7 +1852,7 @@ def _brace_value_append(
 
     # Existing numeric writers handle sign-aware zero padding directly.
     if has_zero_padding:
-        _brace_value_append_unaligned(value, field, result)
+        _brace_value_append_with_directive(value, field, directive, result)
         return
 
     width = directive.width
@@ -1906,7 +1915,7 @@ def _brace_value_append(
         return
 
     if width <= 0:
-        _brace_value_append_unaligned(value, field, result)
+        _brace_value_append_with_directive(value, field, directive, result)
         return
 
     # Render without width, then apply brace alignment by character count.
@@ -1997,6 +2006,41 @@ def _format_scalar(value, format_spec: str) -> str:
 
     result = _FormatBuffer(len(format_spec) + 16)
     _brace_value_append(value, field, result)
+    result.release_excess()
+    return result.to_str()
+
+
+def _format_parsed(
+    value,
+    field_conversion: int,
+    conversion: int,
+    flags: int,
+    width: int,
+    precision: int,
+    alignment: int,
+    fill: int,
+    grouping: int,
+    locale: bool,
+    coerce_negative_zero: bool,
+    sign_minus: bool,
+) -> str:
+    field = _BraceField()
+    field.conversion = field_conversion
+
+    directive = _PercentDirective()
+    directive.conversion = conversion
+    directive.flags = flags
+    directive.width = width
+    directive.precision = precision
+    directive.brace_alignment = alignment
+    directive.brace_fill = fill
+    directive.brace_grouping = grouping
+    directive.brace_locale = locale
+    directive.brace_coerce_negative_zero = coerce_negative_zero
+    directive.brace_sign_minus = sign_minus
+
+    result = _FormatBuffer(width + 16)
+    _brace_value_append_parsed(value, field, directive, result)
     result.release_excess()
     return result.to_str()
 

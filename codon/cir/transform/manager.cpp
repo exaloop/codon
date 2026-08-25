@@ -22,6 +22,7 @@
 #include "codon/cir/transform/parallel/openmp.h"
 #include "codon/cir/transform/pass.h"
 #include "codon/cir/transform/pythonic/dict.h"
+#include "codon/cir/transform/pythonic/format.h"
 #include "codon/cir/transform/pythonic/generator.h"
 #include "codon/cir/transform/pythonic/io.h"
 #include "codon/cir/transform/pythonic/list.h"
@@ -160,6 +161,7 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<lowering::AsyncForLowering>());
     registerPass(std::make_unique<lowering::AwaitLowering>());
     registerPass(std::make_unique<parallel::OpenMPPass>());
+    registerPass(std::make_unique<pythonic::FormattingOptimization>());
   } else {
     // Pythonic
     registerPass(std::make_unique<pythonic::DictArithmeticOptimization>());
@@ -167,6 +169,7 @@ void PassManager::registerStandardPasses() {
     registerPass(std::make_unique<pythonic::StrAdditionOptimization>());
     registerPass(std::make_unique<pythonic::GeneratorArgumentOptimization>());
     registerPass(std::make_unique<pythonic::IOCatOptimization>());
+    registerPass(std::make_unique<pythonic::FormattingOptimization>());
 
     // lowering
     registerPass(std::make_unique<lowering::PipelineLowering>());
