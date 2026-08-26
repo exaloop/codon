@@ -189,12 +189,20 @@ ScopingVisitor::unpackFString(const std::string &value) {
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < value.size(); i++) {
     if (value[i] == '{') {
+      if (i + 1 < value.size() && value[i + 1] == '{') {
+        i++;
+        continue;
+      }
       if (braceStart < i)
         items.emplace_back(value.substr(braceStart, i - braceStart));
       if (!braceCount)
         braceStart = i + 1;
       braceCount++;
     } else if (value[i] == '}') {
+      if (i + 1 < value.size() && value[i + 1] == '}') {
+        i++;
+        continue;
+      }
       braceCount--;
       if (!braceCount) {
         std::string code = value.substr(braceStart, i - braceStart);

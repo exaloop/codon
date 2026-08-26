@@ -49,24 +49,14 @@ void TypecheckVisitor::visit(StringExpr *expr) {
     std::vector<Expr *> items;
     for (auto &p : *expr) {
       if (p.expr) {
-        if (!p.format.conversion.empty()) {
-          switch (p.format.conversion[0]) {
-          case 'r':
-            p.expr = N<CallExpr>(N<IdExpr>("repr"), p.expr);
-            break;
-          case 's':
-            p.expr = N<CallExpr>(N<IdExpr>("str"), p.expr);
-            break;
-          case 'a':
-            p.expr = N<CallExpr>(N<IdExpr>("ascii"), p.expr);
-            break;
-          default:
-            break;
-          }
-        }
-        if (!p.format.spec.empty()) {
-          p.expr = N<CallExpr>(N<DotExpr>(p.expr, "__format__"),
-                               N<StringExpr>(p.format.spec));
+        if (!p.format.spec.empty() || !p.format.conversion.empty()) {
+          std::string format = "{";
+          if (!p.format.conversion.empty())
+            format += "!" + p.format.conversion;
+          if (!p.format.spec.empty())
+            format += ":" + p.format.spec;
+          format += "}";
+          p.expr = N<CallExpr>(N<DotExpr>(N<StringExpr>(format), "format"), p.expr);
         }
         p.expr = N<CallExpr>(N<IdExpr>("str"), p.expr);
         if (!p.format.text.empty()) {

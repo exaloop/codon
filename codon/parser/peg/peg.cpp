@@ -96,7 +96,7 @@ llvm::Expected<std::pair<Expr *, StringExpr::FormatSpec>>
 parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
   auto newCode = code;
   ltrim(newCode);
-  rtrim(newCode);
+  // rtrim(newCode);
   return parseCode<std::pair<Expr *, StringExpr::FormatSpec>>(
       cache, offset.file, newCode, offset.line, offset.col, "fstring");
 }

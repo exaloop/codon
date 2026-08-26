@@ -56,7 +56,7 @@ program <- (statements (_ EOL)* / (_ EOL)*) !. {
   return ac_stmt(V0);
 }
 
-fstring <- fstring_prefix _ fstring_tail? _ !. {
+fstring <- fstring_prefix fstring_tail? _ !. {
   StringExpr::FormatSpec fs {"", "", ""};
   auto [e, t] = ac<std::pair<Expr *, string>>(V0);
   fs.text = t;
@@ -67,11 +67,9 @@ fstring <- fstring_prefix _ fstring_tail? _ !. {
   }
   return make_pair(e, fs);
 }
-fstring_prefix <- star_expressions _ '='? {
-  auto text = VS.sv();
-  return make_pair(ac_expr(V0),
-                   string(!VS.sv().empty() && VS.sv().back() == '=' ? VS.sv() : ""));
-}
+fstring_prefix <-
+  / star_expressions _ '=' [ \t]* { return make_pair(ac_expr(V0), std::string(VS.sv())); }
+  / star_expression { return make_pair(ac_expr(V0), std::string()); }
 fstring_tail <-
   / fstring_conversion fstring_spec? {
     return make_pair(ac<string>(V0), VS.size() > 1 ? ac<string>(V1) : "");
