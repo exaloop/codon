@@ -1,14 +1,12 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
-from typing import Dict, List, Set
 
-from collections.abc import Iterator
-from dataclasses import dataclass
-from enum import Enum
 import copy
 
-from .types import Literal
+from ...bridge import CODON, Any, Codon, Dict, Enum, Iterator, List, Set, Tuple, cast, dataclass
+from . import types
+
 
 class Attr(Enum):
     """Codon AST node attribute."""
@@ -77,55 +75,130 @@ class Node:
         file: str = ""
         line: int = 0
         col: int = 0
-        length: int = 0
+        end_line: int = 0
+        end_col: int = 0
+
+    class Attribute:
+        pass
 
     info: Node.SrcInfo
-    attributes: Dict[Attr, object]
+    attributes: Dict[Attr, Attribute | None]
     cache: object | None = None
 
-    def clone(self, clean: bool = False):
-        """Deep copy a node."""
-        result = copy.deepcopy(self)
-        if clean:
-            result.attributes.clear()
-            result.cache = None
-        return result
+    def __init__(
+        self,
+        info=None,
+        attributes=None,
+        cache=None,
+        lineno=0,
+        col_offset=0,
+        end_lineno=0,
+        end_col_offset=0,
+    ):
+        self.info = (
+            Node.SrcInfo("", lineno, col_offset, end_lineno, end_col_offset)
+            if info is None
+            else (info.info if isinstance(info, Node) else info)
+        )
+        self.attributes = {} if attributes is None else attributes
+        self.cache = cache
+
+    def validate(self):
+        pass
+
+    @property
+    def lineno(self):
+        return self.info.line
+
+    @property
+    def col_offset(self):
+        return self.info.col
+
+    @property
+    def end_lineno(self):
+        return self.info.end_line
+
+    @property
+    def end_col_offset(self):
+        return self.info.end_col
 
     def accept(self, visitor):
         method = getattr(visitor, f"visit_{type(self).__name__}", None)
-        return visitor.default_visit(self) if method is None else method(self)
+        return visitor.generic_visit(self) if method is None else method(self)
 
-    def set(self, key: Attr, value=True):
+    def set(self, key: Attr, value: Attribute | None = None):
         self.attributes[key] = value
 
     def has(self, key: Attr):
         return key in self.attributes
 
-    def get(self, key: Attr, default=None):
+    def get(self, key: Attr, default: Attribute | None = None):
         return self.attributes.get(key, default)
+
+    def setdefault(self, key: Attr, default: Attribute | None = None):
+        return self.attributes.setdefault(key, default)
 
     def erase(self, key: Attr):
         self.attributes.pop(key, None)
+
+    _CODON_CLEAN = ".clean"
+
+    def __deepcopy__(self, memo):
+        cls = self.__class__
+        result = cls.__new__(cls)
+        memo[id(self)] = result
+        clean = Node._CODON_CLEAN in memo
+        for key, value in self.__dict__.items():
+            if key in ("type", "expected_type"):
+                setattr(result, key, None if clean else value)
+            elif key == "done":
+                setattr(result, key, False if clean else value)
+            elif key in ("cache", "orig"):
+                setattr(result, key, value)
+            else:
+                setattr(result, key, copy.deepcopy(value, memo))
+        return result
+
+    def clone(self, clean: bool = False):
+        """Deep copy a node."""
+        memo = {}
+        if clean:
+            memo[Node._CODON_CLEAN] = True
+        return copy.deepcopy(self, memo)
+
+
+class NodeError(Exception):
+    info: Node.SrcInfo
+
+    def __init__(self, info, msg):
+        super().__init__(msg)
+        if isinstance(info, Node) or (
+            hasattr(info, "info") and isinstance(info.info, Node.SrcInfo)
+        ):
+            self.info = info.info
+        else:
+            assert isinstance(info, Node.SrcInfo)
+            self.info = info
 
 
 @dataclass(init=False)
 class Expr(Node):
     # Type of the expression.
-    type: object | None = None
+    type: types.Type | None = None
     # Flag that indicates if all types in an expression are inferred
     # (i.e. if a type-checking procedure was successful).
     done: bool = False
     # Original (pre-transformation) expression
     orig: Expr | None = None
     # Expected type of the expression.
-    expected_type: object | None = None
+    expected_type: types.Type | None = None
 
     def __init__(
         self,
-        type: object | None = None,
+        type: types.Type | None = None,
         done: bool = False,
         orig: Expr | None = None,
-        expected_type: object | None = None,
+        expected_type: types.Type | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -134,8 +207,8 @@ class Expr(Node):
         self.orig = orig
         self.expected_type = expected_type
 
-    def get_class_type(self) -> object | None:
-        return self.type.get_class() if self.type else None
+    def get_class_type(self) -> types.Class | None:
+        return self.type if isinstance(self.type, types.Class) else None
 
 
 @dataclass(init=False)
@@ -169,14 +242,11 @@ class Param(Node):
 
         if self.status is Param.Status.Value:
             match self.type:
-                case (
-                    IdExpr(value="type" | "TypeTrait")
-                    | IndexExpr(expr=IdExpr(value="TypeTrait"))
-                ):
+                case IdExpr(value="type" | "TypeTrait") | IndexExpr(expr=IdExpr(value="TypeTrait")):
                     self.status = Param.Status.Generic
-                case _:
-                    static_kind = get_static_generic(self.type)
-                    if static_kind is not Literal.Kind.Runtime:
+                case type if type:
+                    static_kind = get_static_generic(type)
+                    if static_kind is not types.Type.Behaviour.Runtime:
                         self.status = Param.Status.Generic
 
     def is_value(self):
@@ -217,9 +287,7 @@ class IntExpr(Expr):
     # Parsed value and sign for "normal" 64-bit integers.
     int_value: int | None = None
 
-    def __init__(
-        self, value: str = "", suffix: str = "", int_value: int | None = None, **kwargs
-    ):
+    def __init__(self, value: str = "", suffix: str = "", int_value: int | None = None, **kwargs):
         super().__init__(**kwargs)
         self.value = value
         self.suffix = suffix
@@ -312,7 +380,7 @@ class StringExpr(Expr):
         conversion: str = ""
         spec: str = ""
 
-    @dataclass
+    @dataclass(init=False)
     class String(Node):
         """Vector of {value, prefix} strings."""
 
@@ -361,7 +429,7 @@ class StringExpr(Expr):
         return len(self.strings) == 1 and not self.strings[0].prefix
 
     def get_value(self) -> str:
-        assert self.is_simple(), "invalid StringExpr"
+        assert self.is_simple, "invalid StringExpr"
         return self.strings[0].value
 
 
@@ -415,9 +483,11 @@ class DictExpr(TupleExpr):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         for item in self.items:
-            assert isinstance(item, TupleExpr) and len(item.items) == 2, (
-                "dictionary items are invalid"
-            )
+            match item:
+                case KeywordStarExpr() | TupleExpr(items=[_, _]):
+                    pass
+                case _:
+                    assert False, "dictionary items are invalid"
 
 
 @dataclass(init=False)
@@ -450,15 +520,15 @@ class GeneratorExpr(Expr):
                     if for_fn:
                         for_fn(i)
                     i = s
-                case IfStmt(suite=s):
+                case IfStmt(if_suite=s):
                     if if_fn:
                         if_fn(i)
                     i = s
-                case SuiteStmt(stmts=[*_, ExprStmt(value=e)]):
+                case SuiteStmt(items=[*_, ExprStmt(expr=e)]):
                     if expr_fn:
                         expr_fn(e)
                     return
-                case SuiteStmt(stmts=[*_, s]):
+                case SuiteStmt(items=[*_, s]):
                     i = s
                 case _:
                     return
@@ -551,10 +621,15 @@ class ChainBinaryExpr(Expr):
 
 @dataclass(init=False)
 class PipeExpr(Expr):
-    @dataclass
+    @dataclass(init=False)
     class Pipe(Node):
         op: str = ""
         expr: Expr | None = None
+
+        def __init__(self, op: str = "", expr: Expr | None = None, **kwargs):
+            super().__init__(**kwargs)
+            self.op = op
+            self.expr = expr
 
     items: List[PipeExpr.Pipe]
     # Output type of a "prefix" pipe ending at the index position.
@@ -664,12 +739,11 @@ class SliceExpr(Expr):
 class EllipsisExpr(Expr):
     class Kind(Enum):
         Pipe = 0
-        Partial = 1
-        Standalone = 2
+        Standalone = 1
 
     mode: EllipsisExpr.Kind = Kind.Standalone
 
-    def __init__(self, mode: EllipsisExpr.Kind = Expr.Kind.Standalone, **kwargs):
+    def __init__(self, mode: EllipsisExpr.Kind = Kind.Standalone, **kwargs):
         super().__init__(**kwargs)
         self.mode = mode
 
@@ -679,18 +753,13 @@ class EllipsisExpr(Expr):
     def is_pipe(self):
         return self.mode is EllipsisExpr.Kind.Pipe
 
-    def is_partial(self):
-        return self.mode is EllipsisExpr.Kind.Partial
-
 
 @dataclass(init=False)
 class LambdaExpr(Expr):
     items: List[Param]
     expr: Expr | None = None
 
-    def __init__(
-        self, items: List[Param] | None = None, expr: Expr | None = None, **kwargs
-    ):
+    def __init__(self, items: List[Param] | None = None, expr: Expr | None = None, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.expr = expr
@@ -749,9 +818,7 @@ class StmtExpr(Expr):
     items: List[object]
     expr: Expr | None = None
 
-    def __init__(
-        self, items: List[object] | None = None, expr: Expr | None = None, **kwargs
-    ):
+    def __init__(self, items: List[object] | None = None, expr: Expr | None = None, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.expr = expr
@@ -762,9 +829,7 @@ class InstantiateExpr(Expr):
     expr: Expr | None = None
     items: List[Expr]
 
-    def __init__(
-        self, expr: Expr | None = None, items: List[Expr] | None = None, **kwargs
-    ):
+    def __init__(self, expr: Expr | None = None, items: List[Expr] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.expr = expr
@@ -814,9 +879,7 @@ class SuiteStmt(Stmt):
     def wrap(stmt: Stmt | None) -> SuiteStmt | None:
         if stmt is None:
             return None
-        return (
-            stmt if isinstance(stmt, SuiteStmt) else SuiteStmt(items=[stmt], info=stmt)
-        )
+        return stmt if isinstance(stmt, SuiteStmt) else SuiteStmt(items=[stmt], info=stmt)
 
 
 @dataclass(init=False)
@@ -901,9 +964,7 @@ class PrintStmt(Stmt):
     # True if there is a dangling comma after print: print a,
     no_newline: bool = False
 
-    def __init__(
-        self, items: List[Expr] | None = None, no_newline: bool = False, **kwargs
-    ):
+    def __init__(self, items: List[Expr] | None = None, no_newline: bool = False, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.no_newline = no_newline
@@ -1030,7 +1091,9 @@ class MatchStmt(Stmt):
             pattern: Expr | None = None,
             guard: Expr | None = None,
             suite: SuiteStmt | None = None,
+            **kwargs,
         ):
+            super().__init__(**kwargs)
             self.pattern = pattern
             self.guard = guard
             self.suite = SuiteStmt.wrap(suite)
@@ -1090,9 +1153,32 @@ class ImportStmt(Stmt):
         self.as_ = as_
         self.dots = dots
         self.is_function = is_function
+        self.validate()
 
     def is_c_var(self):
         return not self.is_function
+
+    def validate(self):
+        match self:
+            case ImportStmt(is_c_var=True, args=[_, *_]):
+                raise NodeError(
+                    self, "function signatures only allowed when importing C or Python functions"
+                )
+            case ImportStmt(from_expr=IdExpr(value="C" | "python")):
+                pass
+            case _:
+                head = self.from_expr
+                while isinstance(head, DotExpr):
+                    head = head.expr
+                if not isinstance(head, IdExpr):
+                    raise NodeError(head, "expected identifier")
+                if self.what and not isinstance(self.what, IdExpr):
+                    raise NodeError(self.what, "expected identifier")
+                if self.args or self.ret:
+                    raise NodeError(
+                        self,
+                        "function signatures only allowed when importing C or Python functions",
+                    )
 
 
 @dataclass(init=False)
@@ -1197,13 +1283,70 @@ class FunctionStmt(Stmt):
         self.decorators = [] if decorators is None else decorators
         self.async_ = async_
         self.signature = signature
+        self.validate()
+
+    def validate(self):
+        decorators = []
+        attributes = {
+            "__attribute__": Attr.Attribute,
+            "llvm": Attr.LLVM,
+            "python": Attr.Python,
+            "__internal__": Attr.Internal,
+            "__hidden__": Attr.HiddenFromUser,
+            "atomic": Attr.Atomic,
+            "property": Attr.Property,
+            "staticmethod": Attr.StaticMethod,
+            "__force__": Attr.ForceRealize,
+            "C": Attr.C,
+        }
+        for decorator in self.decorators:
+            match decorator:
+                case IdExpr(value=val) if val in attributes:
+                    if val == "python" and len(self.decorators) != 1:
+                        raise NodeError(
+                            decorator,
+                            f"cannot combine '@{val}' with other attributes or decorators",
+                        )
+                    self.set(attributes[val])
+                case _:
+                    decorators.append(decorator)
+        self.decorators = decorators
+        if self.has(Attr.C):
+            for argument in self.items:
+                if len(argument.name) > 1 and argument.name[0] == "*" and argument.name[1] != "*":
+                    self.set(Attr.CVarArg)
+                    break
+        if self.items and self.items[0].type is None and self.items[0].name == "self":
+            self.set(Attr.HasSelf)
+        if self.ret is None and (self.has(Attr.LLVM) or self.has(Attr.C)):
+            raise NodeError(self, "return types required for LLVM and C functions")
+        seen = set()
+        defaults_started = False
+        has_star_args = False
+        has_kwargs = False
+        for index, arg in enumerate(self.items):
+            stars, name = arg.get_name_with_stars()
+            if stars == 2:
+                if has_kwargs or arg.default or index != len(self.items) - 1:
+                    raise NodeError(arg, "multiple star arguments provided")
+                has_kwargs = True
+            elif stars == 1:
+                if has_star_args or arg.default:
+                    raise NodeError(arg, "multiple star arguments provided")
+                has_star_args = True
+            if name in seen:
+                raise NodeError(arg, f"duplicate argument '{name}' in function definition")
+            seen.add(name)
+            if arg.default is None and defaults_started and not stars and arg.is_value():
+                raise NodeError(arg, "star arguments cannot have default values")
+            defaults_started = defaults_started or arg.default is not None
+            if self.has(Attr.C) and (arg.default or (stars != 1 and arg.type is None)):
+                raise NodeError(arg, f"argument '{name}' in a C import requires a type annotation")
 
     def get_signature(self):
         """A function signature that consists of generics and arguments in a S-expression form."""
         if not self.signature:
-            self.signature = ":".join(
-                "-" if p.type is None else str(p.type) for p in self.items
-            )
+            self.signature = ":".join("-" if p.type is None else str(p.type) for p in self.items)
         return self.signature
 
     def get_star_arg(self) -> int:
@@ -1228,19 +1371,27 @@ class FunctionStmt(Stmt):
     # Check if a function can be called with the given arguments.
     # See @c reorderNamedArgs for details.
     def get_non_inferrable_generics(self) -> Set[str]:
-        class IdMatch(Visitor):
+        class IdMatch(NodeVisitor):
             def __init__(self, value):
                 self.value = value
+                self.found = False
 
             def visit_IdExpr(self, i):
-                return i.value == self.value
+                if i.value == self.value:
+                    self.found = True
+
+            def generic_visit(self, node):
+                if not self.found:
+                    return super().generic_visit(node)
 
         def contains_id(expr, name):
-            return IdMatch(name).accept(expr)
+            v = IdMatch(name)
+            expr.accept(v)
+            return v.found
 
         result: Set[str] = set()
         for i in self.items:
-            if i.is_generic() and i.default_value is None:
+            if i.is_generic() and i.default is None:
                 inferrable = False
                 for candidate in self.items:
                     if candidate.type and contains_id(candidate.type, i.name):
@@ -1280,6 +1431,7 @@ class ClassStmt(Stmt):
         self.suite = SuiteStmt.wrap(suite)
         self.decorators = [] if decorators is None else decorators
         self.base_classes = [] if base_classes is None else base_classes
+        self.validate()
 
     def is_record(self):
         return self.has(Attr.Tuple)
@@ -1294,6 +1446,116 @@ class ClassStmt(Stmt):
                 return True
             case _:
                 return False
+
+    def validate(self):
+        tuple_magics = {
+            "new": True,
+            "repr": False,
+            "hash": False,
+            "eq": False,
+            "ne": False,
+            "lt": False,
+            "le": False,
+            "gt": False,
+            "ge": False,
+            "pickle": True,
+            "unpickle": True,
+            "to_py": False,
+            "from_py": False,
+            "iter": False,
+            "getitem": False,
+            "len": False,
+            "to_gpu": False,
+            "from_gpu": False,
+            "from_gpu_new": False,
+            "tuplesize": True,
+        }
+        for decorator in self.decorators:
+            args = []
+            match decorator:
+                case IdExpr(value="__notuple__"):
+                    self.set(Attr.ClassNoTuple)
+                case IdExpr(value="__noextend__"):
+                    self.set(Attr.NoExtend)
+                case IdExpr(value="dataclass"):
+                    self.set(Attr.Dataclass)
+                case IdExpr(value="tuple"):
+                    self.set(Attr.Tuple)
+                case CallExpr(expr=IdExpr(value="tuple"), args=a):
+                    self.set(Attr.Tuple)
+                    args = a
+                case CallExpr(expr=IdExpr(value="dataclass"), args=a):
+                    if self.has(Attr.Tuple):
+                        raise NodeError(decorator, "CLASS_CONFLICT_DECORATOR")
+                    args = a
+                case CallExpr():
+                    raise NodeError(decorator, "CLASS_BAD_DECORATOR")
+                case IdExpr(value="extend"):
+                    self.set(Attr.Extend)
+                    if len(self.decorators) != 1:
+                        raise NodeError(decorator, "CLASS_SINGLE_DECORATOR")
+                case IdExpr("__internal__"):
+                    self.set(Attr.Internal)
+                case _:
+                    raise NodeError(decorator, "CLASS_BAD_DECORATOR")
+
+            if self.has(Attr.Tuple):
+                for name in tuple_magics:
+                    tuple_magics[name] = True
+            for arg in args:
+                value = False
+                if isinstance(arg.value, BoolExpr):
+                    value = arg.value.value
+                else:
+                    raise NodeError(arg, "CLASS_NONSTATIC_DECORATOR")
+                groups = {
+                    "init": ["new"],
+                    "repr": ["repr"],
+                    "eq": ["eq", "ne"],
+                    "order": ["lt", "le", "gt", "ge"],
+                    "hash": ["hash"],
+                    "pickle": ["pickle", "unpickle"],
+                    "python": ["to_py", "from_py"],
+                    "gpu": ["to_gpu", "from_gpu", "from_gpu_new"],
+                    "container": ["iter", "getitem"],
+                }
+                if arg.name not in groups:
+                    raise NodeError(arg, "CLASS_BAD_DECORATOR_ARG")
+                for magic in groups[arg.name]:
+                    tuple_magics[magic] = value
+
+            if not (
+                self.has(Attr.Tuple)
+                or self.has(Attr.Internal)
+                or self.has(Attr.Dataclass)
+                or self.items
+            ):
+                self.set(Attr.ClassDeduce)
+            if not self.has(Attr.Tuple):
+                tuple_magics["init"] = tuple_magics["new"]
+                tuple_magics["new"] = True
+                tuple_magics["raw"] = True
+                tuple_magics["len"] = False
+                tuple_magics["repr_default"] = True
+            tuple_magics["dict"] = True
+            magics = []
+            if not self.has(Attr.Internal):
+                for name, enabled in tuple_magics.items():
+                    if enabled:
+                        if name == "new":
+                            magics.insert(0, name)
+                        else:
+                            magics.append(name)
+            self.set(Attr.ClassMagic, magics)
+            seen = set()
+            if self.has(Attr.Extend) and (self.items or self.base_classes):
+                raise NodeError(self, "CLASS_EXTENSION")
+            for argument in self.items:
+                if argument.type is None and argument.default is None:
+                    raise NodeError(argument, "CLASS_MISSING_TYPE")
+                if argument.name in seen:
+                    raise NodeError(argument, "CLASS_ARG_TWICE")
+                seen.add(argument.name)
 
 
 @dataclass(init=False)
@@ -1318,9 +1580,9 @@ class WithStmt(Stmt):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        assert len(self.items) == len(self.vars), "vector size mismatch"
         self.items = [] if items is None else items
         self.vars = [] if vars is None else vars
+        assert len(self.items) == len(self.vars), "vector size mismatch"
         self.suite = SuiteStmt.wrap(suite)
         self.async_ = async_
 
@@ -1386,16 +1648,191 @@ class CommentStmt(Stmt):
         self.comment = comment
 
 
-def get_static_generic(expr: Expr) -> object:
+def get_static_generic(expr: Expr) -> types.Literal.Behaviour:
     match expr:
         case IndexExpr(expr=IdExpr(value="Static" | "Literal"), index=IdExpr(value=v)):
-            return Literal.Kind.from_string(v)
+            return types.Literal.Behaviour.literal_from_string(v)
         case _:
-            return Literal.Kind.Runtime
+            return types.Literal.Behaviour.Runtime
+
 
 def get_docstring(suite) -> str:
     match suite:
-        case SuiteStmt(stmts=[ExprStmt(expr=StringExpr(value=v)), *_]):
+        case SuiteStmt(items=[ExprStmt(expr=StringExpr(value=v)), *_]):
             return v
         case _:
             return ""
+
+
+def dump(
+    node: Node,
+    annotate_fields=True,
+    include_attributes=False,
+    indent: int | None = None,
+):
+    """
+    Return a formatted dump of the tree in node.  This is mainly useful for
+    debugging purposes.  If annotate_fields is true (by default),
+    the returned string will show the names and the values for fields.
+    If annotate_fields is false, the result string will be more compact by
+    omitting unambiguous field names.  Attributes such as line
+    numbers and column offsets are not dumped by default.  If this is wanted,
+    include_attributes can be set to true.  If indent is a non-negative
+    integer or string, then the tree will be pretty-printed with that indent
+    level. None (the default) selects the single line representation.
+    """
+
+    from ...bridge import class_name
+
+    def _format(node: Any, level=0):
+        if indent:
+            level += 1
+            prefix = "\n" + (" " * indent) * level
+            sep = ",\n" + (" " * indent) * level
+        else:
+            prefix = ""
+            sep = ", "
+
+        def parse_args(node):
+            if not hasattr(node, "attributes"):
+                return "", True
+            attrs = []
+            allsimple = True
+            for key, val in node.attributes.items():
+                if isinstance(val, bool) and val:
+                    attrs.append(key.name)
+                else:
+                    value, simple = _format(val, level + 2)
+                    allsimple = allsimple and simple
+                    attrs.append(f"{key.name}={value}")
+            if attrs:
+                if allsimple and len(attrs) <= 4:
+                    return f"attrs={{{', '.join(attrs)}}}", len(attrs) < 2
+                return f"attrs={{{prefix + ' ' * (indent * level)}{sep.join(attrs)}}}", False
+            return "", True
+
+        if isinstance(node, SuiteStmt):
+            if not node.items:
+                return "", True
+            args = []
+            allsimple = True
+            for i in node.items:
+                value, simple = _format(i, level)
+                args.append(value)
+                allsimple = allsimple and simple
+            if include_attributes:
+                args.append(parse_args(node)[0])
+            return f"{'*' if node.done else ''}[{prefix}{sep.join(x for x in args if x)}]", False
+        if isinstance(node, Node) or isinstance(node, Node.Attribute):
+            args = []
+            allsimple = True
+            for name, value in Codon.any_members(node):
+                if name in ["attributes", "info", "done"]:
+                    continue
+                value, simple = _format(value, level)
+                allsimple = allsimple and simple
+                if annotate_fields and value:
+                    args.append(f"{name}={value}")
+                elif value:
+                    args.append(value)
+            if include_attributes:
+                value, simple = parse_args(node)
+                allsimple = allsimple and simple
+                args.append(value)
+            args = [arg for arg in args if arg]
+
+            name, braces = class_name(node), "()"
+            if isinstance(node, SuiteStmt):
+                name, braces = "", "[]"
+            if hasattr(node, "done") and node.done:
+                name += "*"
+            if allsimple and len(args) <= 4:
+                return f"{name}{braces[0]}{', '.join(args)}{braces[1]}", len(args) < 2
+            return f"{name}{braces[0]}{prefix}{sep.join(args)}{braces[1]}", False
+        if isinstance(node, Enum):
+            return f"{node.name}", True
+        if isinstance(node, str):
+            if node == "":
+                return "", True
+            return f"{node!r}", True
+        if isinstance(node, int):
+            return f"{node}", True
+        if isinstance(node, bool):
+            return f"{node}", True
+        else:
+            if Any.is_tuple(node):
+                return (
+                    f"({prefix}{sep.join(_format(x, level)[0] for x in cast(List[Any], node))})",
+                    False,
+                )
+            elif Any.is_list(node):
+                n = cast(List[Any], node)
+                if not n:
+                    return "", True
+                return f"[{prefix}{sep.join(_format(x, level)[0] for x in n)}]", False
+            elif isinstance(node, dict):
+                if not node:
+                    return "", True
+                return (
+                    f"{{{prefix}{sep.join((repr(key) + '=' + _format(x, level)[0]) for key, x in sorted(node.items()))}}}",
+                    False,
+                )
+            elif Any.is_optional(node):
+                n = cast(Any | None, node)
+                if n is None:
+                    return "", True
+                else:
+                    if CODON:
+                        return _format(Codon.unwrap(n), level)
+                    else:
+                        return repr(node), True
+            return repr(node), True
+
+    return _format(node)[0]
+
+
+def iter_fields(node: Node) -> Iterator[Tuple[str, Any]]:
+    """
+    Yield a tuple of ``(fieldname, value)`` for each field in ``node._fields``
+    that is present on *node*.
+    """
+
+    for name, value in Codon.any_members(node):
+        node = value
+        if (
+            isinstance(value, Node)
+            or Any.is_tuple(node)
+            or Any.is_list(node)
+            or Any.is_optional(node)
+        ):
+            yield name, node
+
+
+def iter_child_nodes(node) -> Iterator[Node]:
+    """
+    Yield all direct child nodes of *node*, that is, all fields that are nodes
+    and all items of fields that are lists of nodes.
+    """
+
+    def _get_node(a: Any) -> Any:
+        if Any.is_optional(a):
+            o = cast(Any | None, a)
+            if o:
+                return Codon.unwrap(o)
+        return a
+
+    for _, field in iter_fields(node):
+        f = _get_node(field)
+        if isinstance(f, Node):
+            yield f
+        elif Any.is_list(f):
+            for item in cast(List[Any], f):
+                i = _get_node(item)
+                if isinstance(i, Node):
+                    yield i
+
+
+class NodeVisitor:
+    def generic_visit(self, node):
+        for child in iter_child_nodes(node):
+            child.accept(self)

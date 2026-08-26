@@ -299,6 +299,7 @@ set(CODON_CPPFILES
   codon/compiler/memory_manager.cpp
   codon/dsl/plugins.cpp
   codon/parser/ast/expr.cpp
+  codon/parser/ast/codon_string.cpp
   codon/parser/ast/attr.cpp
   codon/parser/ast/stmt.cpp
   codon/parser/ast/types/type.cpp

@@ -2,9 +2,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List
-
+from ..bridge import List, dataclass
 from . import ast
 
 
@@ -36,10 +34,6 @@ class ErrorMessage:
     @property
     def column(self) -> int:
         return self.info.col
-
-    @property
-    def length(self) -> int:
-        return self.info.length
 
     def __str__(self):
         if self.file:

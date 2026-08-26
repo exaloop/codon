@@ -1,11 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
 
-from abc import abstractmethod
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, Callable, Dict, List, Tuple
-
+from ...bridge import Callable, Dict, Enum, List, abstractmethod, dataclass
 from . import nodes as ast
 
 
@@ -18,7 +14,8 @@ def mangle(
     identifier: int = 0,
     no_core: bool = False,
 ):
-    if module == "std.internal.core": module = ""
+    if module == "std.internal.core":
+        module = ""
 
     if cls and func:
         assert not var
@@ -76,7 +73,7 @@ class Stdlib:
     String = mangle(cls="str")
     ThreadLocal = mangle(cls="ThreadLocal", module="std.threading")
     Tuple = mangle(cls="Tuple")
-    Type = mangle("type")
+    Type = mangle(cls="type")
     TypeWrap = mangle(cls="TypeWrap")
     UInt = mangle(cls="UInt")
     Union = mangle(cls="Union")
@@ -87,7 +84,6 @@ class Stdlib:
 
     Argv = mangle(var="__argv__")
     OptionalUnwrap = mangle(func="unwrap", module="std.internal.types.optional")
-
 
 
 @dataclass(init=False)
@@ -168,7 +164,6 @@ class Type:
                 if isinstance(value, Link):
                     value.static_kind = Type.Behaviour.Runtime
 
-
     cache: object
     info: ast.Node.SrcInfo
 
@@ -236,7 +231,7 @@ class Type:
 
     # Obtain the list of internal unbound types.
     @abstractmethod
-    def get_unbounds(self, include_generics: bool) -> List[Type]:
+    def get_unbounds(self, include_generics: bool) -> List[Link]:
         pass
 
     # True if a type is realizable.
@@ -455,7 +450,7 @@ class Link(Type):
                 id=ctx.next_unbound(),
                 level=level,
                 trait=None if self.trait is None else self.trait.instantiate(level, ctx),
-                copy=self
+                copy=self,
             )
         return ctx.cache[self.id]
 
@@ -471,7 +466,7 @@ class Link(Type):
             include_generics and self.kind is Link.Kind.Generic
         )
 
-    def get_unbounds(self, include_generics: bool) -> List[Type]:
+    def get_unbounds(self, include_generics: bool) -> List[Link]:
         if self.kind is Link.Kind.Link and self.type:
             return self.type.get_unbounds(include_generics)
         return [self] if self.has_unbounds(include_generics) else []
@@ -587,8 +582,8 @@ class Class(Type):
             if what.name == "int" and self.name == Stdlib.Int:
                 return self[0].unify(IntLiteral(value=64, cache=self.cache), undo)
             if self.name == what.name == Stdlib.UnrealizedType:
-                left = self[0].instantiate(Type.InstantiateContext(self.ctx))
-                right = what[0].instantiate(Type.InstantiateContext(self.ctx))
+                left = self[0].instantiate(Type.InstantiateContext(self.cache))
+                right = what[0].instantiate(Type.InstantiateContext(self.cache))
                 return left.unify(right, undo)
             score = 3
             if self.name == what.name == "__NTuple__":
@@ -619,19 +614,19 @@ class Class(Type):
                         score += part
                 else:
                     count = len(what.generics)
-                    # If we are unifying NT[N, T] and T[X, X, ...], we assume that N is number of X's
+                    # If we are unifying NT[N, T] and T[X, X, ...], we assume that N is number of X
                     if (part := self_n.unify(IntLiteral(value=count, cache=self.cache), undo)) < 0:
                         return part
 
-                    tv = TypecheckVisitor(self.cache.type_ctx)
-                    if count:
-                        tup = tv.instantiate_type(tv.generate_tuple(1), [what[0]])
-                        for generic in what.generics[1:]:
-                            if (part := tup[0].unify(generic.type, undo)) < 0:
-                                return part
-                            score += part
-                    else:
-                        tup = tv.instantiate_type(tv.generate_tuple(1))
+                    with self.cache.typecheck() as tc:
+                        if count:
+                            tup = tc.instantiate_type(tc.generate_tuple(1), [what[0]])
+                            for generic in what.generics[1:]:
+                                if (part := tup[0].unify(generic.type, undo)) < 0:
+                                    return part
+                                score += part
+                        else:
+                            tup = tc.instantiate_type(tc.generate_tuple(1))
                     if (part := self[1].unify(tup, undo)) < 0:
                         return part
                 return score
@@ -683,8 +678,8 @@ class Class(Type):
             if generic.type
         )
 
-    def get_unbounds(self, include_generics: bool) -> List[Type]:
-        result: List[Type] = []
+    def get_unbounds(self, include_generics: bool) -> List[Link]:
+        result: List[Link] = []
         if self.name == Stdlib.UnrealizedType:
             return result
         for generic in [*self.generics, *self.hidden_generics]:
@@ -861,8 +856,8 @@ class IntLiteral(Literal):
     def to_string(self, mode: int):
         return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
 
-    def get_static_expr(self) -> Expr:
-        return IntExpr(int_value=self.value)
+    def get_static_expr(self) -> ast.Expr:
+        return ast.IntExpr(int_value=self.value)
 
     def get_static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Int
@@ -896,8 +891,8 @@ class StrLiteral(Literal):
     def to_string(self, mode: int):
         return f"'{self.value!r}'" if mode < 2 else f"Literal['{self.value!r}']"
 
-    def get_static_expr(self) -> Expr:
-        return StringExpr(strings=[StringExpr.String(value=self.value)])
+    def get_static_expr(self) -> ast.Expr:
+        return ast.StringExpr(strings=[ast.StringExpr.String(value=self.value)])
 
     def get_static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.String
@@ -931,8 +926,8 @@ class BoolLiteral(Literal):
     def to_string(self, mode: int):
         return f"{self.value}'" if mode < 2 else f"Literal[{self.value}]"
 
-    def get_static_expr(self) -> Expr:
-        return BoolExpr(value=self.value)
+    def get_static_expr(self) -> ast.Expr:
+        return ast.BoolExpr(value=self.value)
 
     def get_static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Bool
@@ -945,7 +940,7 @@ class Function(Class):
     Handles Function[] class.
     """
 
-    ast: FunctionStmt
+    ast: ast.FunctionStmt
     # Function generics (e.g. T in def foo[T](...)).
     func_generics: List[Generic]
     # Enclosing class or a function.
@@ -953,7 +948,7 @@ class Function(Class):
 
     def __init__(
         self,
-        ast: FunctionStmt,
+        ast: ast.FunctionStmt,
         func_generics: List[Generic] | None = None,
         func_parent: Type | None = None,
         **kwargs,
@@ -1020,8 +1015,8 @@ class Function(Class):
         ret = self.get_ret_type()
         return ret is not None and ret.has_unbounds(include_generics)
 
-    def get_unbounds(self, include_generics: bool) -> List[Type]:
-        result: List[Type] = []
+    def get_unbounds(self, include_generics: bool) -> List[Link]:
+        result: List[Link] = []
         for generic in self.func_generics:
             if generic.type:
                 result[0:0] = generic.type.get_unbounds(include_generics)
@@ -1034,7 +1029,7 @@ class Function(Class):
         return result
 
     def can_realize(self):
-        allow_passthrough = self.ast.has(Attr.AllowPassThrough)
+        allow_passthrough = self.ast.has(ast.Attr.AllowPassThrough)
 
         # Important: return type does not have to be realized.
         for arg in self:
@@ -1195,7 +1190,7 @@ class Trait(Type):
 
 
 @dataclass(init=False)
-class Callable(Trait):
+class CallableTrait(Trait):
     args: List[Type]
 
     def __init__(self, args: List[Type] | None = None, **kwargs):

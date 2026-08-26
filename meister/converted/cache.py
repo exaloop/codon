@@ -1,12 +1,10 @@
-# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+### Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Set
 
+from ..bridge import Callable, Dict, Enum, List, Set, dataclass
 from . import ast
 
 FILE_GENERATED: str = "<generated>"
@@ -380,7 +378,7 @@ class Cache:
         self.thunk_ids = {} if thunk_ids is None else thunk_ids
         self.functions = {} if functions is None else functions
         self.overloads = {} if overloads is None else overloads
-        self.type_ctx = type_ctx or TypeContext(cache=self, filename=".root")
+        self.type_ctx = type_ctx  # or TypeContext(cache=self, filename=".root")
         self.codegen_ctx = codegen_ctx
         self.pending_realizations = set() if pending_realizations is None else pending_realizations
         self.custom_block_stmts = {} if custom_block_stmts is None else custom_block_stmts
@@ -475,19 +473,18 @@ class Cache:
     def find_method(
         self, typ: ast.types.Class, member: str, args: List[ast.types.Type]
     ) -> ast.types.Function | None:
-        v = TypecheckVisitor(self.type_ctx)
-        result = v.find_best_method(typ, member, args)
-        return result
+        with self.typecheck() as tc:
+            return tc.find_best_method(typ, member, args)
 
     # Given a class type and the matching generic vector, instantiate the type and
     # realize it.
     def realize_type(
         self, typ: ast.types.Class, generics: List[ast.types.Type] = []
     ) -> object | None:
-        v = TypecheckVisitor(self.type_ctx)
-        if realized := v.realize(v.instantiate_type(typ, generics)):
-            if isinstance(realized, ast.types.Class):
-                return self.classes[realized.name].realizations[realized.realized_name()].ir
+        with self.typecheck() as tc:
+            if realized := tc.realize(tc.instantiate_type(typ, generics)):
+                if isinstance(realized, ast.types.Class):
+                    return self.classes[realized.name].realizations[realized.realized_name()].ir
         return None
 
     # Given a function type and function arguments, instantiate the type and
@@ -502,72 +499,79 @@ class Cache:
         generics: List[ast.types.Type] = [],
         parent_class: ast.types.Class | None = None,
     ) -> object | None:
-        v = TypecheckVisitor(self.type_ctx)
-        function_type = v.instantiate_type(typ, parent_class)
-        if not isinstance(function_type, ast.types.Function) or len(args) != len(function_type) + 1:
-            return None
-        undo = ast.types.Type.UnifyContext()
-        return_type = function_type.get_ret_type()
-        if return_type.unify(args[0], undo) < 0:
-            undo.undo()
-            return None
-        for generic_index in range(1, len(args)):
+        function = None
+        with self.typecheck() as tc:
+            function_type = tc.instantiate_type(typ, parent_class)
+            if (
+                not isinstance(function_type, ast.types.Function)
+                or len(args) != len(function_type) + 1
+            ):
+                return None
             undo = ast.types.Type.UnifyContext()
-            if function_type[generic_index - 1].unify(args[generic_index], undo) < 0:
+            return_type = function_type.get_ret_type()
+            if return_type.unify(args[0], undo) < 0:
                 undo.undo()
                 return None
-        if generics:
-            if len(generics) != len(function_type.func_generics):
-                return None
-            for generic_index in range(len(generics)):
+            for generic_index in range(1, len(args)):
                 undo = ast.types.Type.UnifyContext()
-                if (
-                    function_type.func_generics[generic_index].type.unify(
-                        generics[generic_index], undo
-                    )
-                    < 0
-                ):
+                if function_type[generic_index - 1].unify(args[generic_index], undo) < 0:
                     undo.undo()
                     return None
-        function = None
-        if realized := v.realize(function_type):
-            pending = self.pending_realizations.copy()
-            for key in pending:
-                template = self.functions[key[0]].ast
-                TranslateVisitor(self.codegen_ctx).translate_stmts(template.clone())
-            if isinstance(realized, ast.types.Function) and realized.ast:
-                function = (
-                    self.functions[realized.ast.name].realizations[realized.realized_name()].ir
-                )
+            if generics:
+                if len(generics) != len(function_type.func_generics):
+                    return None
+                for generic_index in range(len(generics)):
+                    undo = ast.types.Type.UnifyContext()
+                    if (
+                        function_type.func_generics[generic_index].type.unify(
+                            generics[generic_index], undo
+                        )
+                        < 0
+                    ):
+                        undo.undo()
+                        return None
+            if realized := tc.realize(function_type):
+                pending = self.pending_realizations.copy()
+                for key in pending:
+                    template = self.functions[key[0]].ast
+                    with self.translate() as ts:
+                        ts.translate_stmts(template.clone())
+                if isinstance(realized, ast.types.Function) and realized.ast:
+                    function = (
+                        self.functions[realized.ast.name].realizations[realized.realized_name()].ir
+                    )
         return function
 
     def make_tuple(self, types: List[ast.types.Type]) -> object | None:
-        v = TypecheckVisitor(self.type_ctx)
-        tuple_type = v.instantiate_type(v.generate_tuple(len(types)), types)
-        return self.realize_type(tuple_type, types)
+        with self.typecheck() as tc:
+            tuple_type = tc.instantiate_type(tc.generate_tuple(len(types)), types)
+            return self.realize_type(tuple_type, types)
 
     def make_function(self, types: List[ast.types.Type]) -> object | None:
-        v = TypecheckVisitor(self.type_ctx)
-        assert types, "types must have at least one argument"
-        return_type = types[0]
-        arguments_type = v.instantiate_type(v.generate_tuple(len(types) - 1), types[1:])
-        return self.realize_type(ast.types.Stdlib.Function, [arguments_type, return_type])
+        with self.typecheck() as tc:
+            assert types, "types must have at least one argument"
+            return_type = types[0]
+            arguments_type = tc.instantiate_type(tc.generate_tuple(len(types) - 1), types[1:])
+            return self.realize_type(ast.types.Stdlib.Function, [arguments_type, return_type])
 
     def make_union(self, types: List[ast.types.Type]) -> object | None:
-        v = TypecheckVisitor(self.type_ctx)
-        arguments_type = v.instantiate_type(v.generate_tuple(len(types)), types)
-        return self.realize_type(v.get_stdlib_type(ast.types.Stdlib.Union), [arguments_type])
+        with self.typecheck() as tc:
+            arguments_type = tc.instantiate_type(tc.generate_tuple(len(types)), types)
+            return self.realize_type(tc.get_stdlib_type(ast.types.Stdlib.Union), [arguments_type])
 
     def get_realization_id(self, typ: ast.types.Class) -> int:
-        realization = TypecheckVisitor(self.type_ctx).get_class_realization(typ)
-        return realization.id
+        with self.typecheck() as tc:
+            realization = tc.get_class_realization(typ)
+            return realization.id
 
     def get_base_realization_ids(self, typ: ast.types.Class) -> List[int]:
-        realization = TypecheckVisitor(self.type_ctx).get_class_realization(typ)
-        return [self.get_realization_id(base) for base in realization.bases]
+        with self.typecheck() as tc:
+            realization = tc.get_class_realization(typ)
+            return [self.get_realization_id(base) for base in realization.bases]
 
     def get_child_realization_ids(self, typ: ast.types.Class) -> List[int]:
-        class_value = TypecheckVisitor(self.type_ctx).get_class_realization(typ)
+        with self.typecheck() as tc:
+            class_value = tc.get_class_realization(typ)
         parent_id = class_value.id
         child_ids = []
         for class_data in self.classes.values():
@@ -578,7 +582,7 @@ class Cache:
                         break
         return child_ids
 
-    def parse_code(self, code: str) -> List[object]:
+    def parse_code(self, code: str) -> ast.Node:
         raise NotImplementedError()
 
         # try:
@@ -595,6 +599,33 @@ class Cache:
         # current = list(self.codegen_ctx.series)
         # self.codegen_ctx.series = old
         # return current
+
+    def scope(
+        self, node: ast.Stmt, globals: Dict[str, int] | None = None, dominate_all: bool = False
+    ):
+        from .passes import scope
+
+        # Count number of shadowed names to know which names change or not later on
+        ctx = scope.ScopeContext(self, scope=[])
+        visitor = scope.ScopingVisitor(ctx)
+        with visitor.conditional(node, block_id=0):
+            visitor.transform(node)
+            visitor.process_child_captures()
+            if dominate_all:
+                for name in ctx.map:
+                    visitor.dominate(name)
+            if globals:
+                for name, values in ctx.map.items():
+                    if (count := sum(1 for v in values if not v.ignore)) > 1:
+                        globals[name] = count
+
+        return node
+
+    def typecheck(self):
+        return TypecheckVisitor(self.type_ctx)
+
+    def translate(self):
+        return TranslateVisitor(self.codegen_ctx)
 
     @staticmethod
     def merge_c3(seqs: List[List[ast.types.Type]]) -> List[ast.types.Class]:

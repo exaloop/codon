@@ -1,0 +1,1700 @@
+# PEG grammar for Codon
+# Generate: python -m pegen meister/converted/parser/codon.gram -o meister/converted/parser/parser.py
+
+@class CodonParser
+
+@header"""
+import itertools
+
+from ...bridge import *
+from ..ast import nodes as ast
+from .pegen import *
+"""
+
+@trailer"""
+"""
+
+
+# STARTING RULES
+# ==============
+
+start[ast.SuiteStmt]: file
+
+file[ast.SuiteStmt]: a=[statements] ENDMARKER { self.suite(a, LOCATIONS) }
+interactive[ast.SuiteStmt]: a=statement_newline { self.suite(a, LOCATIONS) }
+fstring[ast.Expr]: star_expressions
+
+# GENERAL STATEMENTS
+# ==================
+
+statements[List[ast.Stmt]]: a=statement+ { list(itertools.chain.from_iterable(a)) }
+
+statement[List[ast.Stmt]]: a=compound_stmt { [a] } | a=simple_stmts { a }
+
+statement_newline[List[ast.Stmt]]:
+    | a=compound_stmt NEWLINE { [a] }
+    | simple_stmts
+    | NEWLINE { [ast.SuiteStmt(LOCATIONS)] }
+    | ENDMARKER { None }
+
+simple_stmts[List[ast.Stmt]]:
+    | a=simple_stmt !';' NEWLINE { [a] } # Not needed, there for speedup
+    | a=';'.simple_stmt+ [';'] NEWLINE { a }
+
+# NOTE: assignment MUST precede expression, else parsing a simple assignment
+# will throw a SyntaxError.
+simple_stmt[ast.Stmt] (memo):
+    | assignment
+    | &"print" print_stmt
+    | e=star_expressions { ast.ExprStmt(expr=e, LOCATIONS) }
+    | &'return' return_stmt
+    | &('import' | 'from') import_stmt
+    | &'raise' raise_stmt
+    | 'pass' { ast.SuiteStmt(LOCATIONS) }
+    | &'del' del_stmt
+    | &'yield' yield_stmt
+    | &'assert' assert_stmt
+    | 'break' { ast.BreakStmt(LOCATIONS) }
+    | 'continue' { ast.ContinueStmt(LOCATIONS) }
+    | &'global' global_stmt
+    | &'nonlocal' nonlocal_stmt
+
+compound_stmt[ast.Stmt]:
+    | &('def' | '@' | 'async') function_def
+    | &'if' if_stmt
+    | &('class' | '@') class_def
+    | &('with' | 'async') with_stmt
+    | &('for' | '@' | 'async') for_stmt
+    | &'try' try_stmt
+    | &'while' while_stmt
+    | match_stmt
+    | custom_stmt
+
+# SIMPLE STATEMENTS
+# =================
+
+# NOTE: annotated_rhs may start with 'yield'; yield_expr must start with 'yield'
+assignment[ast.Stmt]:
+    | a=NAME ':' b=expression c=['=' d=annotated_rhs { d }] {
+        ast.AssignStmt(
+            lhs=ast.IdExpr(
+                value=a.string,
+                lineno=a.start[0], col_offset=a.start[1],
+                end_lineno=a.end[0], end_col_offset=a.end[1],
+            ),
+            rhs=c,
+            type_expr=b,
+            LOCATIONS,
+        )
+    }
+    | a=('(' b=single_target ')' { b } | single_subscript_attribute_target) ':' b=expression c=['=' d=annotated_rhs { d }] {
+        ast.AssignStmt(lhs=a, rhs=c, type_expr=b, LOCATIONS)
+    }
+    | a=(z=star_targets '=' { z })+ b=(yield_expr | star_expressions) !'=' {
+         self.assignments(a, b, LOCATIONS)
+    }
+    | a=single_target b=augassign ~ c=(yield_expr | star_expressions) {
+        ast.AssignStmt(
+            lhs=a,
+            rhs=ast.BinaryExpr(lexpr=a.clone(), op=b, rexpr=c, in_place=True, LOCATIONS),
+            LOCATIONS,
+        )
+    }
+    | invalid_assignment
+
+annotated_rhs[ast.Expr]: yield_expr | star_expressions
+
+augassign[str]:
+    | '+=' { "+" }
+    | '-=' { "-" }
+    | '*=' { "*" }
+    | '@=' { "@" }
+    | '/=' { "/" }
+    | '%=' { "%" }
+    | '&=' { "&" }
+    | '|=' { "|" }
+    | '^=' { "^" }
+    | '<<=' { "<<" }
+    | '>>=' { ">>" }
+    | '**=' { "**" }
+    | '//=' { "//" }
+
+return_stmt[ast.ReturnStmt]:
+    | 'return' a=[star_expressions] { ast.ReturnStmt(expr=a, LOCATIONS) }
+
+raise_stmt[ast.ThrowStmt]:
+    | 'raise' a=expression b=['from' z=expression { z }] { ast.ThrowStmt(expr=a, from_expr=b, LOCATIONS) }
+    | 'raise' { ast.ThrowStmt(LOCATIONS) }
+
+global_stmt[ast.SuiteStmt]: 'global' a=','.NAME+ {
+    self.globals(a, LOCATIONS)
+}
+
+nonlocal_stmt[ast.SuiteStmt]: 'nonlocal' a=','.NAME+ {
+    self.globals(a, non_local=True, LOCATIONS)
+}
+
+print_stmt[ast.PrintStmt]: p="print" a=','.expression+ b=[','] {
+    ast.PrintStmt(items=a, no_newline=bool(b), LOCATIONS)
+}
+
+del_stmt[ast.SuiteStmt]:
+    | 'del' a=del_targets &(';' | NEWLINE) { self.deletes(a, LOCATIONS) }
+    | invalid_del_stmt
+
+yield_stmt[ast.Stmt]:
+    | 'yield' 'from' a=expression { ast.YieldFromStmt(expr=a, LOCATIONS) }
+    | 'yield' a=[star_expressions] { ast.YieldStmt(expr=a, LOCATIONS) }
+
+assert_stmt[ast.AssertStmt]: 'assert' a=expression b=[',' z=expression { z }] {
+    ast.AssertStmt(expr=a, message=b, LOCATIONS)
+}
+
+import_stmt[ast.Stmt] (memo):
+    | invalid_import
+    | import_name
+    | import_from
+
+# Import statements
+# -----------------
+
+import_name[ast.SuiteStmt]: 'import' a=dotted_as_names { self.imports(a, LOCATIONS) }
+
+# note below: the ('.' | '...') is necessary because '...' is tokenized as ELLIPSIS
+import_from[ast.SuiteStmt]:
+    | 'from' a=('.' | '...')* b=dotted_name 'import' c=import_from_targets {
+        self.imports_from(b, c, self.extract_import_level(a), LOCATIONS)
+    }
+    | 'from' a=('.' | '...')+ 'import' b=import_from_targets {
+        self.imports_from(None, b, self.extract_import_level(a), LOCATIONS)
+    }
+import_from_targets[List[tuple]]:
+    | '(' a=import_from_as_names [','] ')' { a }
+    | import_from_as_names !','
+    | '*' { [("*", None, [], None, False)] }
+    | invalid_import_from_targets
+import_from_as_names[List[tuple]]:
+    | a=','.import_from_as_name+ { a }
+import_from_as_name[Tuple]:
+    | a=dotted_name '(' c=import_params* ')' '->' d=import_param b=['as' z=NAME { z.string }] {
+        (a, b, [ast.Param(type=p, LOCATIONS) for p in c], d, True)
+    }
+    | a=dotted_name '(' c=import_params* ')' b=['as' z=NAME { z.string }] {
+        (a, b, [ast.Param(type=p, LOCATIONS) for p in c], ast.IdExpr(value="NoneType", LOCATIONS), True)
+    }
+    | a=dotted_name ':' d=import_param b=['as' z=NAME { z.string }] {
+        (a, b, [], d, False)
+    }
+    | a=dotted_name b=['as' z=NAME { z.string }] {
+        (a, b, [], None, False)
+    }
+import_params[ast.Expr]:
+    | a=import_param ',' { a }
+    | a=import_param &')' { a }
+import_param[ast.Expr]: e=expression { e }
+
+dotted_as_names[List[tuple]]:
+    | a=','.dotted_as_name+ { a }
+dotted_as_name[Tuple]:
+    | a=dotted_name b=['as' z=NAME { z.string }] { (a, b, [], None, False) }
+dotted_name[str]:
+    | a=dotted_name '.' b=NAME { a + "." + b.string }
+    | a=NAME { a.string }
+
+# COMPOUND STATEMENTS
+# ===================
+
+# Common elements
+# ---------------
+
+block[ast.SuiteStmt] (memo):
+    | NEWLINE INDENT a=statements DEDENT { self.suite(a, LOCATIONS) }
+    | a=simple_stmts { self.suite(a, LOCATIONS) }
+    | invalid_block
+
+decorators[List[ast.Expr]]: decorator+
+decorator[ast.Expr]:
+    | a=('@' f=dec_maybe_call NEWLINE { f }) { a }
+    | a=('@' f=named_expression NEWLINE { f }) { a }
+dec_maybe_call[ast.Expr]:
+    | dn=dec_primary '(' z=[arguments] ')' {
+        self.call(dn, z[0] if z else [], z[1] if z else [], LOCATIONS)
+    }
+    | dec_primary
+dec_primary[ast.Expr]:
+    | a=dec_primary '.' b=NAME { ast.DotExpr(expr=a, member=b.string, LOCATIONS) }
+    | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
+
+# Class definitions
+# -----------------
+
+class_def[ast.ClassStmt]:
+    | a=decorators b=class_def_raw { self.set_decorators(b, a) }
+    | class_def_raw
+
+class_def_raw[ast.ClassStmt]:
+    | invalid_class_def_raw
+    | 'class' a=NAME t=[type_params] b=['(' z=[arguments] ')' { z }] &&':' c=block {
+        self.make_class(a.string, t or [], b, c, LOCATIONS)
+    }
+
+# Function definitions
+# --------------------
+
+function_def[ast.FunctionStmt]:
+    | (dp=decorator_not_llvm*) '@' "llvm" NEWLINE (da=decorator*) f=function_def_llvm {
+        self.set_decorators(f, (dp or []) + (da or []) + [ast.IdExpr(value="llvm", LOCATIONS)])
+    }
+    | d=decorators f=function_def_raw { self.set_decorators(f, d) }
+    | f=function_def_raw { f }
+
+function_def_raw[ast.FunctionStmt]:
+    | invalid_def_raw
+    | 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=block {
+        ast.FunctionStmt(
+            name=n.string,
+            items=(params or self.make_arguments(LOCATIONS)) + (t or []),
+            ret=a,
+            suite=b,
+            LOCATIONS,
+        )
+    }
+    | 'async' 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=block {
+        ast.FunctionStmt(
+            name=n.string,
+            items=(params or self.make_arguments(LOCATIONS)) + (t or []),
+            ret=a,
+            suite=b,
+            async_=True,
+            LOCATIONS,
+        )
+    }
+
+decorator_not_llvm[ast.Expr]:
+    | !('@' "llvm") d=decorator { d }
+function_def_llvm[ast.FunctionStmt]:
+    | invalid_def_raw
+    | 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=llvm_block {
+        ast.FunctionStmt(
+            name=n.string,
+            items=(params or self.make_arguments(LOCATIONS)) + (t or []),
+            ret=a,
+            suite=self.suite([
+                ast.ExprStmt(
+                    expr=ast.StringExpr(value=b, prefix="llvm", LOCATIONS),
+                    LOCATIONS,
+                )
+            ], LOCATIONS),
+            LOCATIONS,
+        )
+    }
+llvm_block[str]: NEWLINE INDENT a=llvm_line+ DEDENT { ''.join(a) }
+llvm_line[str]: ANY_BUT_NEWLINE* n=NEWLINE { n.line }
+
+# Function parameters
+# -------------------
+
+params[List[ast.Param]]:
+    | invalid_parameters
+    | parameters
+
+parameters[List[ast.Param]]:
+    | a=slash_no_default b=param_no_default* c=param_with_default* d=[star_etc] {
+        self.make_arguments(pos_only=a, param_no_default=b, param_default=c, after_star=d, LOCATIONS)
+    }
+    | a=slash_with_default b=param_with_default* c=[star_etc] {
+        self.make_arguments(pos_only_with_default=a, param_default=b, after_star=c, LOCATIONS)
+    }
+    | a=param_no_default+ b=param_with_default* c=[star_etc] {
+        self.make_arguments(param_no_default=a, param_default=b, after_star=c, LOCATIONS)
+    }
+    | a=param_with_default+ b=[star_etc] { self.make_arguments(param_default=a, after_star=b, LOCATIONS) }
+    | a=star_etc { self.make_arguments(after_star=a, LOCATIONS) }
+
+# Some duplication here because we can't write (',' | &')'),
+# which is because we don't support empty alternatives (yet).
+#
+
+slash_no_default[List[Tuple[ast.Param, ast.Expr | None]]]:
+    | a=param_no_default+ '/' ',' { [(p, None) for p in a] }
+    | a=param_no_default+ '/' &')' { [(p, None) for p in a] }
+slash_with_default[List[Tuple[ast.Param, ast.Expr | None]]]:
+    | a=param_no_default* b=param_with_default+ '/' ',' { ([(p, None) for p in a] if a else []) + b }
+    | a=param_no_default* b=param_with_default+ '/' &')' { ([(p, None) for p in a] if a else []) + b }
+
+star_etc[Tuple[ast.Param | None,
+               List[Tuple[ast.Param, ast.Expr | None]],
+               ast.Param | None,
+               List[Tuple[ast.Param, ast.Expr | None]]]]:
+    | invalid_star_etc
+    | '*' a=param_no_default b=param_maybe_default* c=[kwds] t=codon_type_param* {
+        (a, b, c, Codon.unwrap(t))
+    }
+    | '*' a=param_no_default_star_annotation b=param_maybe_default* c=[kwds] t=codon_type_param* {
+        (a, Codon.unwrap(b), c, Codon.unwrap(t))
+    }
+    | '*' ',' b=param_maybe_default+ c=[kwds] t=codon_type_param* {
+        (None, b, c, Codon.unwrap(t))
+    }
+    | a=kwds t=codon_type_param* {
+        (None, [], a, Codon.unwrap(t))
+    }
+    | t=codon_type_param* {
+        (None, [], None, Codon.unwrap(t))
+    }
+
+kwds[ast.Param]:
+    | invalid_kwds
+    | '**' a=param_no_default { a }
+
+# One parameter.  This *includes* a following comma and type comment.
+#
+# There are three styles:
+# - No default
+# - With default
+# - Maybe with default
+#
+# There are two alternative forms of each, to deal with type comments:
+# - Ends in a comma followed by an optional type comment
+# - No comma, optional type comment, must be followed by close paren
+# The latter form is for a final parameter without trailing comma.
+#
+
+param_no_default[ast.Param]:
+    | a=param ',' { a }
+    | a=param &')' { a }
+param_no_default_star_annotation[ast.Param]:
+    | a=param_star_annotation ',' { a }
+    | a=param_star_annotation &')' { a }
+param_with_default[Tuple[ast.Param, ast.Expr | None]]:
+    | a=param c=default ',' { (a, c) }
+    | a=param c=default &')' { (a, c) }
+param_maybe_default[Tuple[ast.Param, ast.Expr | None]]:
+    | a=param c=default? ',' { (a, c) }
+    | a=param c=default? &')' { (a, c) }
+codon_type_param[Tuple[ast.Param, ast.Expr | None]]:
+    | a=NAME ':' b=type_annotation c=default? ',' { (ast.Param(name=a.string, type=b, LOCATIONS), c) }
+    | a=NAME ':' b=type_annotation c=default? &')' { (ast.Param(name=a.string, type=b, LOCATIONS), c) }
+type_annotation[ast.Expr]:
+    | a="Literal" '[' b=("int" | "str" | "bool") ']' {
+        ast.IndexExpr(
+            expr=ast.IdExpr(
+                value=a.string,
+                lineno=a.start[0], col_offset=a.start[1],
+                end_lineno=a.end[0], end_col_offset=a.end[1],
+            ),
+            index=ast.IdExpr(
+                value=b.string,
+                lineno=b.start[0], col_offset=b.start[1],
+                end_lineno=b.end[0], end_col_offset=b.end[1],
+            ),
+            LOCATIONS,
+        )
+    }
+    | a="type" { ast.IdExpr(value=a.string, LOCATIONS) }
+param[ast.Param]: a=NAME b=annotation? { ast.Param(name=a.string, type=b, LOCATIONS) }
+param_star_annotation[ast.Param]: a=NAME b=star_annotation { ast.Param(name=a.string, type=b, LOCATIONS) }
+annotation[ast.Expr]: ':' a=expression { a }
+star_annotation[ast.Expr]: ':' a=star_expression { a }
+default[ast.Expr]: '=' a=expression { a } | invalid_default
+
+# If statement
+# ------------
+
+if_stmt[ast.IfStmt]:
+    | invalid_if_stmt
+    | 'if' a=named_expression ':' b=block c=elif_stmt { ast.IfStmt(cond=a, if_suite=b, else_suite=self.suite(c, LOCATIONS), LOCATIONS) }
+    | 'if' a=named_expression ':' b=block c=[else_block] { ast.IfStmt(cond=a, if_suite=b, else_suite=c, LOCATIONS) }
+elif_stmt[List[ast.Stmt]]:
+    | invalid_elif_stmt
+    | 'elif' a=named_expression ':' b=block c=elif_stmt { [ast.IfStmt(cond=a, if_suite=b, else_suite=self.suite(c, LOCATIONS), LOCATIONS)] }
+    | 'elif' a=named_expression ':' b=block c=[else_block] { [ast.IfStmt(cond=a, if_suite=b, else_suite=c, LOCATIONS)] }
+else_block[ast.SuiteStmt]:
+    | invalid_else_stmt
+    | 'else' ('not' 'break')* &&':' b=block { b }
+
+# While statement
+# ---------------
+
+while_stmt[ast.WhileStmt]:
+    | invalid_while_stmt
+    | 'while' a=named_expression ':' b=block c=[else_block] { ast.WhileStmt(cond=a, suite=b, else_suite=c, LOCATIONS) }
+
+# For statement
+# -------------
+
+for_stmt[ast.ForStmt]:
+    | a=decorators b=for_stmt_raw { self.set_decorators(b, a) }
+    | for_stmt_raw
+
+for_stmt_raw[ast.ForStmt]:
+    | invalid_for_stmt
+    | 'for' t=star_targets 'in' ~ ex=star_expressions &&':' b=block el=[else_block] {
+        ast.ForStmt(var=t, iter=ex, suite=b, else_suite=el, LOCATIONS)
+    }
+    | 'async' 'for' t=star_targets 'in' ~ ex=star_expressions ':' b=block el=[else_block] {
+        ast.ForStmt(var=t, iter=ex, suite=b, else_suite=el, async_=True, LOCATIONS)
+    }
+    | invalid_for_target
+
+# With statement
+# --------------
+
+with_stmt[ast.WithStmt]:
+    | invalid_with_stmt_indent
+    | 'with' '(' a=','.with_item+ ','? ')' ':' b=block { self.make_with_stmt(a, b, LOCATIONS) }
+    | 'with' a=','.with_item+ ':' b=block { self.make_with_stmt(a, b, LOCATIONS) }
+    | 'async' 'with' '(' a=','.with_item+ ','? ')' ':' b=block { self.make_with_stmt(a, b, async_=True, LOCATIONS) }
+    | 'async' 'with' a=','.with_item+ ':' b=block { self.make_with_stmt(a, b, async_=True, LOCATIONS) }
+    | invalid_with_stmt
+
+with_item[tuple]:
+    | e=expression 'as' t=star_target &(',' | ')' | ':') { (e, t) }
+    | invalid_with_item
+    | e=expression { (e, None) }
+
+# Try statement
+# -------------
+
+try_stmt[ast.TryStmt]:
+    | invalid_try_stmt
+    | 'try' &&':' b=block f=finally_block {
+        ast.TryStmt(suite=b, finally_suite=f, LOCATIONS)
+    }
+    | 'try' &&':' b=block ex=except_block+ el=[else_block] f=[finally_block] {
+        ast.TryStmt(suite=b, items=ex, else_suite=el, finally_suite=f, LOCATIONS)
+    }
+
+# Except statement
+# ----------------
+
+except_block[ast.TryStmt.Except]:
+    | invalid_except_stmt_indent
+    | 'except' e=expression t=['as' z=NAME { z.string }] ':' b=block {
+        ast.TryStmt.Except(var=t or "", exc=e, suite=b, LOCATIONS)
+    }
+    | 'except' ':' b=block { ast.TryStmt.Except(suite=b, LOCATIONS) }
+    | invalid_except_stmt
+except_star_block[ast.TryStmt.Except]:
+    | invalid_except_star_stmt_indent
+    | 'except' '*' e=expression t=['as' z=NAME { z.string }] ':' b=block {
+        ast.TryStmt.Except(var=t or "", exc=e, suite=b, LOCATIONS)
+    }
+    | invalid_except_stmt
+finally_block[ast.SuiteStmt]:
+    | invalid_finally_stmt
+    | 'finally' &&':' a=block { a }
+
+# Match statement
+# ---------------
+
+match_stmt[ast.MatchStmt]:
+    | "match" subject=subject_expr ':' NEWLINE INDENT cases=case_block+ DEDENT {
+        ast.MatchStmt(expr=subject, items=cases, LOCATIONS)
+    }
+    | invalid_match_stmt
+
+subject_expr[ast.Expr]:
+    | value=star_named_expression ',' values=star_named_expressions? {
+        ast.TupleExpr(items=[value] + (values or []), LOCATIONS)
+    }
+    | e=named_expression { e }
+
+case_block[ast.MatchStmt.Case]:
+    | invalid_case_block
+    | "case" pattern=expression guard=guard? ':' body=block { ast.MatchStmt.Case(pattern=pattern, guard=guard, suite=body, LOCATIONS) }
+
+guard[ast.Expr]: 'if' g=pipe { g }
+
+patterns[ast.Expr]:
+    | patterns=open_sequence_pattern { ast.TupleExpr(items=patterns, LOCATIONS) }
+    | pattern
+
+pattern[ast.Expr]:
+    | as_pattern
+    | or_pattern
+
+as_pattern[ast.Expr]:
+    | pattern=or_pattern 'as' target=pattern_capture_target {
+        ast.BinaryExpr(
+            lexpr=pattern,
+            op="as",
+            rexpr=ast.IdExpr(value=target, LOCATIONS),
+            LOCATIONS,
+        )
+    }
+    | invalid_as_pattern
+
+or_pattern[ast.Expr]:
+    | patterns='|'.closed_pattern+ { self.binary_chain(patterns[0], [("|", p) for p in patterns[1:]], LOCATIONS) if len(patterns) > 1 else patterns[0] }
+
+closed_pattern[ast.Expr] (memo):
+    | literal_pattern
+    | capture_pattern
+    | wildcard_pattern
+    | value_pattern
+    | group_pattern
+    | sequence_pattern
+    | mapping_pattern
+    | class_pattern
+
+# Literal patterns are used for equality and identity constraints
+literal_pattern[ast.Expr]:
+    | value=signed_number !('+' | '-') { value }
+    | value=complex_number { value }
+    | value=strings { value }
+    | 'None' { ast.NoneExpr(LOCATIONS) }
+    | 'True' { ast.BoolExpr(value=True, LOCATIONS) }
+    | 'False' { ast.BoolExpr(value=False, LOCATIONS) }
+
+# Literal expressions are used to restrict permitted mapping pattern keys
+literal_expr[ast.Expr]:
+    | signed_number !('+' | '-')
+    | complex_number
+    | strings
+    | 'None' { ast.NoneExpr(LOCATIONS) }
+    | 'True' { ast.BoolExpr(value=True, LOCATIONS) }
+    | 'False' { ast.BoolExpr(value=False, LOCATIONS) }
+
+complex_number[ast.BinaryExpr]:
+    | real=signed_real_number '+' imag=imaginary_number {
+        ast.BinaryExpr(lexpr=real, op="+", rexpr=imag, LOCATIONS)
+    }
+    | real=signed_real_number '-' imag=imaginary_number  {
+        ast.BinaryExpr(lexpr=real, op="-", rexpr=imag, LOCATIONS)
+    }
+
+signed_number[ast.Expr]:
+    | a=any_number { a }
+    | '-' a=any_number { ast.UnaryExpr(op="-", expr=a, LOCATIONS) }
+
+signed_real_number[ast.Expr]:
+    | real_number
+    | '-' real=real_number { ast.UnaryExpr(op="-", expr=real, LOCATIONS) }
+
+real_number[ast.Expr]:
+    | real=any_number { self.ensure_real(real) }
+
+imaginary_number[ast.Expr]:
+    | imag=any_number { self.ensure_imaginary(imag) }
+
+any_number[ast.Expr]:
+    | n=NUMBER s=NUMBER_SUFFIX? { self.make_number(n.string, s.string if s else "", LOCATIONS) }
+
+capture_pattern[ast.Expr]:
+    | target=pattern_capture_target { ast.IdExpr(value=target, LOCATIONS) }
+
+pattern_capture_target[str]:
+    | !"_" name=NAME !('.' | '(' | '=') { name.string }
+
+wildcard_pattern[ast.Expr]:
+    | "_" { ast.IdExpr(value="_", LOCATIONS) }
+
+value_pattern[ast.Expr]:
+    | attr=attr !('.' | '(' | '=') { attr }
+
+attr[ast.DotExpr]:
+    | value=name_or_attr '.' a=NAME { ast.DotExpr(expr=value, member=a.string, LOCATIONS) }
+
+name_or_attr[ast.Expr]:
+    | attr
+    | name=NAME { ast.IdExpr(value=name.string, LOCATIONS) }
+
+group_pattern[ast.Expr]:
+    | '(' pattern=pattern ')' { pattern }
+
+sequence_pattern[ast.Expr]:
+    | '[' patterns=maybe_sequence_pattern? ']' { ast.ListExpr(items=patterns or [], LOCATIONS) }
+    | '(' patterns=open_sequence_pattern? ')' { ast.TupleExpr(items=patterns or [], LOCATIONS) }
+
+open_sequence_pattern[List[ast.Expr]]:
+    | pattern=maybe_star_pattern ',' patterns=maybe_sequence_pattern? { [pattern] + (patterns or []) }
+
+maybe_sequence_pattern[List[ast.Expr]]:
+    | patterns=','.maybe_star_pattern+ ','? { patterns }
+
+maybe_star_pattern[ast.Expr]:
+    | star_pattern
+    | pattern
+
+star_pattern[ast.StarExpr] (memo):
+    | '*' target=pattern_capture_target { ast.StarExpr(expr=ast.IdExpr(value=target, LOCATIONS), LOCATIONS) }
+    | '*' wildcard_pattern { ast.StarExpr(expr=ast.IdExpr(value="_", LOCATIONS), LOCATIONS) }
+
+mapping_pattern[ast.DictExpr]:
+    | '{' '}' { self.dict_expr([], LOCATIONS) }
+    | '{' rest=double_star_pattern ','? '}' { self.dict_expr([(None, ast.IdExpr(value=rest, LOCATIONS))], LOCATIONS) }
+    | '{' items=items_pattern ',' rest=double_star_pattern ','? '}' {
+        self.dict_expr(items + [(None, ast.IdExpr(value=rest, LOCATIONS))], LOCATIONS)
+    }
+    | '{' items=items_pattern ','? '}' {
+        self.dict_expr(items, LOCATIONS)
+    }
+
+items_pattern[List[Tuple[ast.Expr, ast.Expr]]]:
+    | ','.key_value_pattern+
+
+key_value_pattern[Tuple[ast.Expr, ast.Expr]]:
+    | key=(literal_expr | attr) ':' pattern=pattern { (key, pattern) }
+
+double_star_pattern[str]:
+    | '**' target=pattern_capture_target { target }
+
+class_pattern[ast.CallExpr]:
+    | cls=name_or_attr '(' ')' { self.call(cls, LOCATIONS) }
+    | cls=name_or_attr '(' patterns=positional_patterns ','? ')' {
+        self.call(cls, patterns, LOCATIONS)
+    }
+    | cls=name_or_attr '(' keywords=keyword_patterns ','? ')' {
+        self.call(cls, [], [self.call_arg(k, p, LOCATIONS) for k, p in keywords], LOCATIONS)
+    }
+    | cls=name_or_attr '(' patterns=positional_patterns ',' keywords=keyword_patterns ','? ')' {
+        self.call(cls, patterns, [self.call_arg(k, p, LOCATIONS) for k, p in keywords], LOCATIONS)
+    }
+    | invalid_class_pattern
+
+positional_patterns[List[ast.Expr]]:
+    | args=','.pattern+ { args }
+
+keyword_patterns[List[Tuple[str, ast.Expr]]]:
+    | ','.keyword_pattern+
+
+keyword_pattern[Tuple[str, ast.Expr]]:
+    | arg=NAME '=' value=pattern { (arg.string, value) }
+
+
+# Custom statements
+# -----------------
+
+custom_stmt[ast.CustomStmt]:
+    | !"_" a=SOFT_KEYWORD e=expression ':' b=block { ast.CustomStmt(keyword=a.string, expr=e, suite=b, LOCATIONS) }
+    | !"_" a=SOFT_KEYWORD ':' b=block { ast.CustomStmt(keyword=a.string, suite=b, LOCATIONS) }
+
+
+# Type parameter declaration
+# --------------------------
+
+type_params[List[ast.Param]]: '[' t=type_param_seq  ']' { t }
+type_param_seq[List[ast.Param]]: a=','.type_param+ [','] { a }
+type_param[ast.Param] (memo):
+    | a=NAME b=[type_param_bound] { ast.Param(name=a.string, type=b or ast.IdExpr(value="type", LOCATIONS), LOCATIONS) }
+type_param_bound[ast.Expr]: ":" e=expression { e }
+
+
+# EXPRESSIONS
+# -----------
+
+expressions[ast.Expr]:
+    | a=expression b=(',' c=expression { c })+ [','] { ast.TupleExpr(items=[a] + b, LOCATIONS) }
+    | a=expression ',' { ast.TupleExpr(items=[a], LOCATIONS) }
+    | expression
+
+expression[ast.Expr] (memo):
+    | invalid_expression
+    | invalid_legacy_expression
+    | a=disjunction 'if' b=disjunction 'else' c=expression { ast.IfExpr(cond=b, ifexpr=a, elsexpr=c, LOCATIONS) }
+    | pipe
+    | lambdef
+
+yield_expr[ast.Expr]:
+    | '(' 'yield' ')' { ast.YieldExpr(LOCATIONS) }
+    # Codon's YieldExpr is a marker; value-bearing yields are represented by YieldStmt.
+    # | 'yield' 'from' a=expression {
+    #     ast.StmtExpr(
+    #         items=[ast.YieldFromStmt(expr=a, LOCATIONS)],
+    #         expr=ast.YieldExpr(LOCATIONS),
+    #         LOCATIONS,
+    #     )
+    # }
+    # | 'yield' a=[star_expressions] {
+    #     ast.StmtExpr(
+    #         items=[ast.YieldStmt(expr=a, LOCATIONS)],
+    #         expr=ast.YieldExpr(LOCATIONS),
+    #         LOCATIONS,
+    #     )
+    # }
+
+star_expressions[ast.Expr]:
+    | a=star_expression b=(',' c=star_expression { c })+ [','] {
+        ast.TupleExpr(items=[a] + b, LOCATIONS)
+    }
+    | a=star_expression ',' { ast.TupleExpr(items=[a], LOCATIONS) }
+    | star_expression
+
+star_expression[ast.Expr] (memo):
+    | '*' a=bitwise_or { ast.StarExpr(expr=a, LOCATIONS) }
+    | expression
+
+star_named_expressions[List[ast.Expr]]: a=','.star_named_expression+ [','] { a }
+
+star_named_expression[ast.Expr]:
+    | '*' a=bitwise_or { ast.StarExpr(expr=a, LOCATIONS) }
+    | named_expression
+
+assignment_expression[ast.Expr]:
+    | a=NAME ':=' ~ b=expression {
+        ast.AssignExpr(
+            var=ast.IdExpr(
+                value=a.string,
+                lineno=a.start[0], col_offset=a.start[1],
+                end_lineno=a.end[0], end_col_offset=a.end[1],
+            ),
+            expr=b,
+            LOCATIONS,
+        )
+    }
+
+named_expression[ast.Expr]:
+    | assignment_expression
+    | invalid_named_expression
+    | a=expression !':=' { a }
+
+pipe[ast.Expr] (memo):
+    | a=disjunction b=(p=pipe_operator d=disjunction { (p, d) })+ { self.make_pipe(a, b, LOCATIONS) }
+    | disjunction
+
+pipe_operator[str]:
+    | '||>' { "||>" }
+    | '|>' { "|>" }
+
+disjunction[ast.Expr] (memo):
+    | a=conjunction b=('or' c=conjunction { c })+ { self.binary_chain(a, [("||", value) for value in b], LOCATIONS) }
+    | conjunction
+
+conjunction[ast.Expr] (memo):
+    | a=inversion b=('and' c=inversion { c })+ { self.binary_chain(a, [("&&", value) for value in b], LOCATIONS) }
+    | inversion
+
+inversion[ast.Expr] (memo):
+    | 'not' a=inversion { ast.UnaryExpr(op="!", expr=a, LOCATIONS) }
+    | comparison
+
+# Comparisons operators
+# ---------------------
+
+comparison[ast.Expr]:
+    | a=bitwise_or b=compare_op_bitwise_or_pair+ {
+        self.make_comparison(a, b, LOCATIONS)
+    }
+    | bitwise_or
+
+# Make a tuple of operator and comparator
+compare_op_bitwise_or_pair[Tuple[str, ast.Expr]]:
+    | eq_bitwise_or
+    | noteq_bitwise_or
+    | lte_bitwise_or
+    | lt_bitwise_or
+    | gte_bitwise_or
+    | gt_bitwise_or
+    | notin_bitwise_or
+    | in_bitwise_or
+    | isnot_bitwise_or
+    | is_bitwise_or
+
+eq_bitwise_or[Tuple[str, ast.Expr]]: '==' a=bitwise_or { ("==", a) }
+noteq_bitwise_or[Tuple[str, ast.Expr]]: '!=' a=bitwise_or { ("!=", a) }
+lte_bitwise_or[Tuple[str, ast.Expr]]: '<=' a=bitwise_or { ("<=", a) }
+lt_bitwise_or[Tuple[str, ast.Expr]]: '<' a=bitwise_or { ("<", a) }
+gte_bitwise_or[Tuple[str, ast.Expr]]: '>=' a=bitwise_or { (">=", a) }
+gt_bitwise_or[Tuple[str, ast.Expr]]: '>' a=bitwise_or { (">", a) }
+notin_bitwise_or[Tuple[str, ast.Expr]]: 'not' 'in' a=bitwise_or { ("not in", a) }
+in_bitwise_or[Tuple[str, ast.Expr]]: 'in' a=bitwise_or { ("in", a) }
+isnot_bitwise_or[Tuple[str, ast.Expr]]: 'is' 'not' a=bitwise_or { ("is not", a) }
+is_bitwise_or[Tuple[str, ast.Expr]]: 'is' a=bitwise_or { ("is", a) }
+
+# Logical operators
+# -----------------
+
+bitwise_or[ast.Expr]:
+    | a=bitwise_or '|' b=bitwise_xor { ast.BinaryExpr(lexpr=a, op="|", rexpr=b, LOCATIONS) }
+    | bitwise_xor
+
+bitwise_xor[ast.Expr]:
+    | a=bitwise_xor '^' b=bitwise_and { ast.BinaryExpr(lexpr=a, op="^", rexpr=b, LOCATIONS) }
+    | bitwise_and
+
+bitwise_and[ast.Expr]:
+    | a=bitwise_and '&' b=shift_expr { ast.BinaryExpr(lexpr=a, op="&", rexpr=b, LOCATIONS) }
+    | shift_expr
+
+shift_expr[ast.Expr]:
+    | a=shift_expr '<<' b=sum { ast.BinaryExpr(lexpr=a, op="<<", rexpr=b, LOCATIONS) }
+    | a=shift_expr '>>' b=sum { ast.BinaryExpr(lexpr=a, op=">>", rexpr=b, LOCATIONS) }
+    | sum
+
+# Arithmetic operators
+# --------------------
+
+sum[ast.Expr]:
+    | a=sum '+' b=term { ast.BinaryExpr(lexpr=a, op="+", rexpr=b, LOCATIONS) }
+    | a=sum '-' b=term { ast.BinaryExpr(lexpr=a, op="-", rexpr=b, LOCATIONS) }
+    | term
+
+term[ast.Expr]:
+    | a=term '*' b=factor { ast.BinaryExpr(lexpr=a, op="*", rexpr=b, LOCATIONS) }
+    | a=term '/' b=factor { ast.BinaryExpr(lexpr=a, op="/", rexpr=b, LOCATIONS) }
+    | a=term '//' b=factor { ast.BinaryExpr(lexpr=a, op="//", rexpr=b, LOCATIONS) }
+    | a=term '%' b=factor { ast.BinaryExpr(lexpr=a, op="%", rexpr=b, LOCATIONS) }
+    | a=term '@' b=factor { ast.BinaryExpr(lexpr=a, op="@", rexpr=b, LOCATIONS) }
+    | factor
+
+factor[ast.Expr] (memo):
+    | '+' a=factor { ast.UnaryExpr(op="+", expr=a, LOCATIONS) }
+    | '-' a=factor { ast.UnaryExpr(op="-", expr=a, LOCATIONS) }
+    | '~' a=factor { ast.UnaryExpr(op="~", expr=a, LOCATIONS) }
+    | power
+
+power[ast.Expr]:
+    | a=await_primary '**' b=factor { ast.BinaryExpr(lexpr=a, op="**", rexpr=b, LOCATIONS) }
+    | await_primary
+
+# Primary elements
+# ----------------
+
+# Primary elements are things like "obj.something.something", "obj[something]", "obj(something)", "obj" ...
+
+await_primary[ast.Expr] (memo):
+    | 'await' a=primary { ast.AwaitExpr(expr=a, LOCATIONS) }
+    | primary
+
+primary[ast.Expr]:
+    | a=primary '.' b=NAME { ast.DotExpr(expr=a, member=b.string, LOCATIONS) }
+    | a=primary b=genexp { self.call(a, [b], LOCATIONS) }
+    | a=primary '(' b=[arguments_with_partial] '...' ')' {
+        self.call(a, b[0] if b else [], b[1] if b else [], partial=True, LOCATIONS)
+    }
+    | a=primary '(' b=[arguments] ')' {
+        self.call(a, b[0] if b else [], b[1] if b else [], LOCATIONS)
+    }
+    | a=primary '[' b=slices ']' { ast.IndexExpr(expr=a, index=b, LOCATIONS) }
+    | atom
+
+slices[ast.Expr]:
+    | a=slice !',' { a }
+    | a=','.(slice | starred_expression)+ [','] { ast.TupleExpr(items=a, LOCATIONS) }
+
+slice[ast.Expr]:
+    | a=[expression] ':' b=[expression] c=[':' d=[expression] { d }] { ast.SliceExpr(start=a, stop=b, step=c, LOCATIONS) }
+    | a=named_expression { a }
+
+atom[ast.Expr]:
+    | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
+    | 'True' { ast.BoolExpr(value=True, LOCATIONS) }
+    | 'False' { ast.BoolExpr(value=False, LOCATIONS) }
+    | 'None' { ast.NoneExpr(LOCATIONS) }
+    | &(STRING|FSTRING_START|STRING_PREFIX) strings
+    | a=NUMBER '...' b=NUMBER {
+        ast.RangeExpr(
+            start=self.make_number(a.string, LOCATIONS),
+            stop=self.make_number(b.string, LOCATIONS),
+            LOCATIONS,
+        )
+    }
+    | any_number
+    | &'(' (tuple | group | genexp)
+    | &'[' (list | listcomp)
+    | &'{' (dict | set | dictcomp | setcomp)
+    | '...' { ast.EllipsisExpr(LOCATIONS) }
+
+group[ast.Expr]:
+    | '(' a=(yield_expr | named_expression) ')' { a }
+    | invalid_group
+
+
+# Lambda functions
+# ----------------
+
+lambdef[ast.LambdaExpr]:
+    | 'lambda' a=[lambda_params] ':' b=expression { ast.LambdaExpr(items=a or self.make_arguments(LOCATIONS), expr=b, LOCATIONS) }
+
+lambda_params:
+    | invalid_lambda_parameters
+    | lambda_parameters
+
+# lambda_parameters etc. duplicates parameters but without annotations
+# or type comments, and if there's no comma after a parameter, we expect
+# a colon, not a close parenthesis.  (For more, see parameters above.)
+#
+lambda_parameters[List[ast.Param]]:
+    | a=lambda_slash_no_default b=lambda_param_no_default* c=lambda_param_with_default* d=[lambda_star_etc] {
+        self.make_arguments(pos_only=a, param_no_default=b, param_default=c, after_star=d, LOCATIONS)
+    }
+    | a=lambda_slash_with_default b=lambda_param_with_default* c=[lambda_star_etc] {
+        self.make_arguments(pos_only_with_default=a, param_default=b, after_star=c, LOCATIONS)
+    }
+    | a=lambda_param_no_default+ b=lambda_param_with_default* c=[lambda_star_etc] {
+        self.make_arguments(param_no_default=a, param_default=b, after_star=c, LOCATIONS)
+    }
+    | a=lambda_param_with_default+ b=[lambda_star_etc] { self.make_arguments(param_default=a, after_star=b, LOCATIONS) }
+    | a=lambda_star_etc { self.make_arguments(after_star=a, LOCATIONS) }
+
+lambda_slash_no_default[List[Tuple[ast.Param, ast.Expr | None]]]:
+    | a=lambda_param_no_default+ '/' ',' { [(p, None) for p in a] }
+    | a=lambda_param_no_default+ '/' &':' { [(p, None) for p in a] }
+
+lambda_slash_with_default[List[Tuple[ast.Param, ast.Expr | None]]]:
+    | a=lambda_param_no_default* b=lambda_param_with_default+ '/' ',' {
+        ([(p, None) for p in a] if a else []) + b
+    }
+    | a=lambda_param_no_default* b=lambda_param_with_default+ '/' &':' {
+        ([(p, None) for p in a] if a else []) + b
+    }
+
+lambda_star_etc[Tuple[ast.Param | None,
+                      List[Tuple[ast.Param, ast.Expr | None]],
+                      ast.Param | None,
+                      List[Tuple[ast.Param, ast.Expr | None]]]]:
+    | invalid_lambda_star_etc
+    | '*' a=lambda_param_no_default b=lambda_param_maybe_default* c=[lambda_kwds] { (a, b, c, []) }
+    | '*' ',' b=lambda_param_maybe_default+ c=[lambda_kwds] { (None, b, c, []) }
+    | a=lambda_kwds { (None, [], a, []) }
+
+lambda_kwds[ast.Param]:
+    | invalid_lambda_kwds
+    | '**' a=lambda_param_no_default { a }
+
+lambda_param_no_default[ast.Param]:
+    | a=lambda_param ',' { a }
+    | a=lambda_param &':' { a }
+
+lambda_param_with_default[Tuple[ast.Param, ast.Expr | None]]:
+    | a=lambda_param c=default ',' { (a, c) }
+    | a=lambda_param c=default &':' { (a, c) }
+lambda_param_maybe_default[Tuple[ast.Param, ast.Expr | None]]:
+    | a=lambda_param c=default? ',' { (a, c) }
+    | a=lambda_param c=default? &':' { (a, c) }
+lambda_param[ast.Param]: a=NAME { ast.Param(name=a.string, LOCATIONS) }
+
+# LITERALS
+# ========
+
+fstring_mid[ast.StringExpr.String]:
+    | fstring_replacement_field
+    | t=FSTRING_MIDDLE { ast.StringExpr.String(value=t.string, LOCATIONS) }
+fstring_replacement_field[ast.StringExpr.String]:
+    | '{' a=(yield_expr | star_expressions) debug_expr="="? conversion=[fstring_conversion] format=[fstring_full_format_spec] '}' {
+        ast.StringExpr.String(
+            value=debug_expr.string if debug_expr else "",
+            expr=a,
+            format=ast.StringExpr.FormatSpec(
+                conversion=(conversion or ("r" if debug_expr else "")),
+                spec=format or "",
+            ),
+            LOCATIONS,
+        )
+    }
+    | invalid_replacement_field
+fstring_conversion[str]:
+    | conv_token="!" conv=NAME { self.check_fstring_conversion(conv_token, conv) }
+fstring_full_format_spec[str]:
+    | ':' spec=fstring_format_spec* { ''.join(spec) }
+fstring[ast.StringExpr]:
+    | a=FSTRING_START b=fstring_mid* c=FSTRING_END { ast.StringExpr(strings=b, LOCATIONS) }
+
+fstring_format_spec[str]:
+    | a=[fstring_options] b=[fstring_width_and_precision] c=[fstring_type] {
+        (a or "") + (b or "") + (c.string if c else "")
+    }
+fstring_options[str]:
+    | a=[fstring_options_head] b=['+' | '-'] c=["z"] d=["#"] e=["0"] {
+        (a or "") + (b.string if b else "") + (c.string if c else "") + (d.string if d else "") + (e.string if e else "")
+    }
+fstring_options_head[str]: n=[ANY_BUT_NEWLINE] o=('<' | '>' | '=' | '^') { (n.string if n else "") + o.string }
+fstring_width_and_precision[str]:
+    | a=[n=[NUMBER] g=[fstring_grouping] {(n.string if n else "") + (g or "")}] b=[fstring_precision_with_grouping] {
+        (a or "") + (b or "")
+    }
+fstring_precision_with_grouping[str]:
+    | a='.' b=[NUMBER] c=[fstring_grouping] { a.string + (b.string if b else "") + (c or "")}
+    | a='.' b=fstring_grouping { a.string + b }
+fstring_grouping[str]: a=',' { a.string } | a="_" { a.string }
+fstring_type: "b" | "c" | "d" | "e" | "E" | "f" | "F" | "g" | "G" | "n" | "o" | "s" | "x" | "X" | '%'
+
+strings[ast.Expr] (memo): a=(any_string)+ { self.generate_ast_for_string(a, LOCATIONS) }
+
+any_string[ast.StringExpr]:
+    | f=fstring { f }
+    | p=STRING_PREFIX? s=STRING { self.fix_string(s, p.string if p else "", LOCATIONS) }
+
+list[ast.Expr]:
+    | '[' a=[star_named_expressions] ']' { ast.ListExpr(items=a or [], LOCATIONS) }
+
+tuple[ast.Expr]:
+    | '(' a=[y=star_named_expression ',' z=[star_named_expressions] { [y] + (z or []) } ] ')' {
+        ast.TupleExpr(items=a or [], LOCATIONS)
+    }
+
+set[ast.Expr]: '{' a=star_named_expressions '}' { ast.SetExpr(items=a, LOCATIONS) }
+
+# Dicts
+# -----
+
+dict[ast.Expr]:
+    | '{' a=[double_starred_kvpairs] '}' {
+        self.dict_expr(a or [], LOCATIONS)
+    }
+    | '{' invalid_double_starred_kvpairs '}'
+
+double_starred_kvpairs[List[Tuple[ast.Expr | None, ast.Expr]]]:
+    | a=','.double_starred_kvpair+ [','] { a }
+
+double_starred_kvpair[Tuple[ast.Expr | None, ast.Expr]]:
+    | '**' a=bitwise_or { (None, a) }
+    | kvpair
+
+kvpair[Tuple[ast.Expr | None, ast.Expr]]:
+    | a=expression ':' b=expression { (a, b) }
+
+# Comprehensions & Generators
+# ---------------------------
+
+for_if_clauses[List[Comprehension]]:
+    | a=for_if_clause+ { a }
+
+for_if_clause[Comprehension]:
+    | 'async' 'for' a=star_targets 'in' ~ b=disjunction c=('if' z=disjunction { z })* {
+        Comprehension(target=a, iter=b, ifs=c, is_async=True)
+    }
+    | 'for' a=star_targets 'in' ~ b=disjunction c=('if' z=disjunction { z })* {
+       Comprehension(target=a, iter=b, ifs=c, is_async=False)
+    }
+    | invalid_for_target
+
+listcomp[ast.GeneratorExpr]:
+    | '[' a=named_expression b=for_if_clauses ']' { self.generator(ast.GeneratorExpr.Kind.ListGenerator, a, b, LOCATIONS) }
+    | invalid_comprehension
+
+setcomp[ast.GeneratorExpr]:
+    | '{' a=named_expression b=for_if_clauses '}' { self.generator(ast.GeneratorExpr.Kind.SetGenerator, a, b, LOCATIONS) }
+    | invalid_comprehension
+
+genexp[ast.GeneratorExpr]:
+    | '(' a=( assignment_expression | expression !':=') b=for_if_clauses ')' {
+        self.generator(ast.GeneratorExpr.Kind.Generator, a, b, LOCATIONS)
+     }
+    | invalid_comprehension
+
+dictcomp[ast.GeneratorExpr]:
+    | '{' a=kvpair b=for_if_clauses '}' { self.generator(ast.GeneratorExpr.Kind.DictGenerator, a[1], b, key=a[0], LOCATIONS) }
+    | invalid_dict_comprehension
+
+# FUNCTION CALL ARGUMENTS
+# =======================
+
+arguments_with_partial[Tuple[List[ast.Expr], List[ast.CallExpr.Arg]]] (memo):
+    | a=args ',' &'...' { a }
+    | invalid_arguments
+
+arguments[Tuple[List[ast.Expr], List[ast.CallExpr.Arg]]] (memo):
+    | a=args [','] &')' { a }
+    | invalid_arguments
+
+args[Tuple[List[ast.Expr], List[ast.CallExpr.Arg]]]:
+    | a=','.(starred_expression | ( assignment_expression | expression !':=') !'=')+ b=[',' k=kwargs {k}] {
+        (a + ([e for e in b if isinstance(e, ast.StarExpr)] if b else []),
+         ([e for e in b if isinstance(e, ast.CallExpr.Arg)] if b else []))
+    }
+    | a=kwargs {
+        ([e for e in a if isinstance(e, ast.StarExpr)],
+         [e for e in a if isinstance(e, ast.CallExpr.Arg)]) }
+
+kwargs[List[object]]:
+    | a=','.kwarg_or_starred+ ',' b=','.kwarg_or_double_starred+ { a + b }
+    | ','.kwarg_or_starred+
+    | ','.kwarg_or_double_starred+
+
+starred_expression[ast.Expr]:
+    | invalid_starred_expression
+    | '*' a=expression { ast.StarExpr(expr=a, LOCATIONS) }
+    | invalid_star
+
+kwarg_or_starred[object]:
+    | invalid_kwarg
+    | a=NAME '=' b=expression { self.call_arg(a.string, b, LOCATIONS) }
+    | a=starred_expression { a }
+
+kwarg_or_double_starred[object]:
+    | invalid_kwarg
+    | a=NAME '=' b=expression { self.call_arg(a.string, b, LOCATIONS) }   # XXX Unreachable
+    | '**' a=expression { self.call_arg("", ast.KeywordStarExpr(expr=a, LOCATIONS), LOCATIONS) }
+
+# ASSIGNMENT TARGETS
+# ==================
+
+# Generic targets
+# ---------------
+
+# NOTE: star_targets may contain *bitwise_or, targets may not.
+star_targets[ast.Expr]:
+    | a=star_target !',' { a }
+    | a=star_target b=(',' c=star_target { c })* [','] { ast.TupleExpr(items=[a] + b, LOCATIONS) }
+
+star_targets_list_seq[List[ast.Expr]]: a=','.star_target+ [','] { a }
+
+star_targets_tuple_seq[List[ast.Expr]]:
+    | a=star_target b=(',' c=star_target { c })+ [','] { [a] + b }
+    | a=star_target ',' { [a] }
+
+star_target[ast.Expr] (memo):
+    | '*' a=(!'*' star_target) { ast.StarExpr(expr=a, LOCATIONS) }
+    | target_with_star_atom
+
+target_with_star_atom[ast.Expr] (memo):
+    | a=t_primary '.' b=NAME !t_lookahead { ast.DotExpr(expr=a, member=b.string, LOCATIONS) }
+    | a=t_primary '[' b=slices ']' !t_lookahead { ast.IndexExpr(expr=a, index=b, LOCATIONS) }
+    | star_atom
+
+star_atom[ast.Expr]:
+    | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
+    | '(' a=target_with_star_atom ')' { a }
+    | '(' a=[star_targets_tuple_seq] ')' { ast.TupleExpr(items=a or [], LOCATIONS) }
+    | '[' a=[star_targets_list_seq] ']' { ast.ListExpr(items=a or [], LOCATIONS) }
+
+single_target[ast.Expr]:
+    | single_subscript_attribute_target
+    | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
+    | '(' a=single_target ')' { a }
+
+single_subscript_attribute_target[ast.Expr]:
+    | a=t_primary '.' b=NAME !t_lookahead { ast.DotExpr(expr=a, member=b.string, LOCATIONS) }
+    | a=t_primary '[' b=slices ']' !t_lookahead { ast.IndexExpr(expr=a, index=b, LOCATIONS) }
+
+
+t_primary[ast.Expr]:
+    | a=t_primary '.' b=NAME &t_lookahead { ast.DotExpr(expr=a, member=b.string, LOCATIONS) }
+    | a=t_primary '[' b=slices ']' &t_lookahead { ast.IndexExpr(expr=a, index=b, LOCATIONS) }
+    | a=t_primary b=genexp &t_lookahead { self.call(a, [b], LOCATIONS) }
+    | a=t_primary '(' b=[arguments_with_partial] '...' ')' &t_lookahead {
+        self.call(a, b[0] if b else [], b[1] if b else [], partial=True, LOCATIONS)
+    }
+    | a=t_primary '(' b=[arguments] ')' &t_lookahead {
+        self.call(a, b[0] if b else [], b[1] if b else [], LOCATIONS)
+    }
+    | a=atom &t_lookahead { a }
+
+t_lookahead: '(' | '[' | '.'
+
+# Targets for del statements
+# --------------------------
+
+del_targets[List[ast.Expr]]: a=','.del_target+ [','] { a }
+
+del_target[ast.Expr] (memo):
+    | a=t_primary '.' b=NAME !t_lookahead { ast.DotExpr(expr=a, member=b.string, LOCATIONS) }
+    | a=t_primary '[' b=slices ']' !t_lookahead { ast.IndexExpr(expr=a, index=b, LOCATIONS) }
+    | del_t_atom
+
+del_t_atom[ast.Expr]:
+    | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
+    | '(' a=del_target ')' { a }
+    | '(' a=[del_targets] ')' { ast.TupleExpr(items=a or [], LOCATIONS) }
+    | '[' a=[del_targets] ']' { ast.ListExpr(items=a or [], LOCATIONS) }
+
+# ========================= END OF THE GRAMMAR ===========================
+
+
+
+# ========================= START OF INVALID RULES =======================
+
+# From here on, there are rules for invalid syntax with specialised error messages
+# N.B. (rule { True }) returns "True" to ensure that the non-compatible types in the rule can be matched
+# in single expression without raising Codon type errors.
+invalid_arguments[None]:
+    | ( (','.(starred_expression | ( assignment_expression | expression !':=') !'=')+ ',' kwargs { True })
+        | kwargs ) a=',' ','.(starred_expression !'=')+ {
+        self.raise_syntax_error_starting_from(
+            "iterable argument unpacking follows keyword argument unpacking",
+            a,
+        )
+    }
+    | a=expression b=for_if_clauses ',' [args { True } | expression for_if_clauses { True }] {
+        self.raise_syntax_error_known_range(
+            "Generator expression must be parenthesized",
+            a,
+            (b[-1].ifs[-1] if b[-1].ifs else b[-1].iter)
+        )
+    }
+    | a=NAME b='=' expression for_if_clauses {
+        self.raise_syntax_error_known_range(
+            "invalid syntax. Maybe you meant '==' or ':=' instead of '='?", a, b
+        )
+    }
+    | (ar=args ',' { ar })? a=NAME b='=' &(',' | ')') {
+        self.raise_syntax_error_known_range("expected argument value expression", a, b)
+    }
+    | a=args b=for_if_clauses {
+        self.raise_syntax_error_known_range(
+            "Generator expression must be parenthesized",
+            a[0][-1],
+            (b[-1].ifs[-1] if b[-1].ifs else b[-1].iter),
+        )
+        if len(a[0]) > 1
+        else None
+    }
+    | args ',' a=expression b=for_if_clauses {
+        self.raise_syntax_error_known_range(
+            "Generator expression must be parenthesized",
+            a,
+            (b[-1].ifs[-1] if b[-1].ifs else b[-1].iter),
+        )
+    }
+    | a=args ',' args {
+        self.raise_syntax_error(
+            "positional argument follows keyword argument unpacking"
+            if a[1][-1].arg is None else
+            "positional argument follows keyword argument",
+        )
+    }
+invalid_kwarg[None]:
+    | a=('True'|'False'|'None') b='=' {
+        self.raise_syntax_error_known_range(f"cannot assign to {a.string}", a, b)
+    }
+    | a=NAME b='=' expression for_if_clauses {
+        self.raise_syntax_error_known_range(
+            "invalid syntax. Maybe you meant '==' or ':=' instead of '='?", a, b
+        )
+    }
+    | !(NAME '=') a=expression b='=' {
+        self.raise_syntax_error_known_range(
+            "expression cannot contain assignment, perhaps you meant \"==\"?", a, b,
+        )
+    }
+    | a='**' expression '=' b=expression {
+        self.raise_syntax_error_known_range(
+            "cannot assign to keyword argument unpacking", a, b
+        )
+    }
+
+# IMPORTANT: Note that the "_without_invalid" suffix causes the rule to
+# not call invalid rules under it
+expression_without_invalid[ast.Expr]:
+    | a=disjunction 'if' b=disjunction 'else' c=expression { ast.IfExpr(cond=a, ifexpr=b, elsexpr=c, LOCATIONS) }
+    | pipe
+    | lambdef
+invalid_legacy_expression[None]:
+    | a=NAME !'(' b=star_expressions {
+        self.raise_syntax_error_known_range(
+            f"Missing parentheses in call to '{a.string}' . Did you mean {a.string}(...)?", a, b,
+        ) if a.string in ("exec", "print") else
+        None
+    }
+invalid_expression[None]:
+    # !(NAME STRING) is not matched so we don't show this error with some invalid string prefixes like: kf"dsfsdf"
+    # Soft keywords need to also be ignored because they can be parsed as NAME NAME
+    | !(n=NAME STRING { n } | SOFT_KEYWORD) a=pipe b=expression_without_invalid {
+        self.raise_syntax_error_known_range("invalid syntax. Perhaps you forgot a comma?", a, b)
+        if not isinstance(a, ast.IdExpr) or a.value not in ("print", "exec")
+        else None
+    }
+    | a=disjunction 'if' b=disjunction !('else'|':') {
+        self.raise_syntax_error_known_range("expected 'else' after 'if' expression", a, b)
+    }
+    | a='lambda' [lambda_params] b=':' &(FSTRING_MIDDLE { True } | fstring_replacement_field { True })  {
+        self.raise_syntax_error_known_range(
+            "f-string: lambda expressions are not allowed without parentheses", a, b
+        )
+    }
+invalid_named_expression[None] (memo):
+    | a=expression ':=' expression {
+        self.raise_syntax_error_known_location(
+            f"cannot use assignment expressions with {self.get_expr_name(a)}", a
+        )
+    }
+    # Use in_raw_rule
+    | a=NAME '=' b=bitwise_or !('='|':=') {
+        None
+        if self.in_recursive_rule else
+        self.raise_syntax_error_known_range(
+            "invalid syntax. Maybe you meant '==' or ':=' instead of '='?", a, b
+        )
+    }
+    | !((list|tuple|genexp) { True }|('True'|'None'|'False') { True }) a=bitwise_or b='=' bitwise_or !('='|':=') {
+        None
+        if self.in_recursive_rule else
+        self.raise_syntax_error_known_location(
+            f"cannot assign to {self.get_expr_name(a)} here. Maybe you meant '==' instead of '='?", a
+        )
+    }
+
+invalid_assignment[None]:
+    | a=invalid_ann_assign_target ':' expression {
+        self.raise_syntax_error_known_location(
+            f"only single target (not {self.get_expr_name(a)}) can be annotated", a
+        )
+    }
+    | a=star_named_expression ',' star_named_expressions* ':' expression {
+        self.raise_syntax_error_known_location("only single target (not tuple) can be annotated", a) }
+    | a=expression ':' expression {
+        self.raise_syntax_error_known_location("illegal target for annotation", a) }
+    | (star_targets '=' { True })* a=star_expressions '=' {
+        self.raise_syntax_error_invalid_target(Target.STAR_TARGETS, a)
+    }
+    | (star_targets '=' { True })* a=yield_expr '=' {
+        self.raise_syntax_error_known_location("assignment to yield expression not possible", a)
+    }
+    | a=star_expressions augassign (yield_expr | star_expressions) {
+        self.raise_syntax_error_known_location(
+            f"'{self.get_expr_name(a)}' is an illegal expression for augmented assignment", a
+        )
+    }
+invalid_ann_assign_target[ast.Expr]:
+    | a=list { a }
+    | a=tuple { a }
+    | '(' a=invalid_ann_assign_target ')' { a }
+invalid_del_stmt[None]:
+    | 'del' a=star_expressions {
+        self.raise_syntax_error_invalid_target(Target.DEL_TARGETS, a)
+    }
+invalid_block[None]:
+    | NEWLINE !INDENT { self.raise_indentation_error("expected an indented block") }
+invalid_comprehension[None]:
+    | ('[' | '(' | '{') a=starred_expression for_if_clauses {
+        self.raise_syntax_error_known_location("iterable unpacking cannot be used in comprehension", a)
+    }
+    | ('[' | '{') a=star_named_expression ',' b=star_named_expressions for_if_clauses {
+        self.raise_syntax_error_known_range(
+            "did you forget parentheses around the comprehension target?", a, b[-1]
+        )
+    }
+    | ('[' | '{') a=star_named_expression b=',' for_if_clauses {
+        self.raise_syntax_error_known_range(
+            "did you forget parentheses around the comprehension target?", a, b
+        )
+    }
+invalid_dict_comprehension[None]:
+    | '{' a='**' bitwise_or for_if_clauses '}' {
+        self.raise_syntax_error_known_location("dict unpacking cannot be used in dict comprehension", a)
+    }
+invalid_parameters[None]:
+    | a="/" ',' {
+        self.raise_syntax_error_known_location("at least one argument must precede /", a)
+    }
+    | (slash_no_default | slash_with_default) param_maybe_default* a='/' {
+        self.raise_syntax_error_known_location("/ may appear only once", a)
+    }
+    | slash_no_default? param_no_default* invalid_parameters_helper a=param_no_default {
+        self.raise_syntax_error_known_location(
+            "parameter without a default follows parameter with a default", a
+        )
+    }
+    | param_no_default* a='(' param_no_default+ ','? b=')' {
+        self.raise_syntax_error_known_range(
+            "Function parameters cannot be parenthesized", a, b
+        )
+    }
+    | (slash_no_default | slash_with_default)? param_maybe_default* '*' (',' { True } | param_no_default { True }) param_maybe_default* a='/' {
+        self.raise_syntax_error_known_location("/ must be ahead of *", a)
+    }
+    | param_maybe_default+ '/' a='*' {
+        self.raise_syntax_error_known_location("expected comma between / and *", a)
+    }
+invalid_default[None]:
+    | a='=' &(')'|',') {
+        self.raise_syntax_error_known_location("expected default value expression", a)
+    }
+invalid_star_etc[None]:
+    | a='*' (')' | (c=',' (')' | '**') { c })) {
+        self.raise_syntax_error_known_location("named arguments must follow bare *", a)
+    }
+    | '*' param a='=' {
+        self.raise_syntax_error_known_location("var-positional argument cannot have default value", a)
+    }
+    | '*' (param_no_default { True } | ',' { True }) param_maybe_default* a='*' (param_no_default { True } | ',' { True }) {
+        self.raise_syntax_error_known_location("* argument may appear only once", a)
+    }
+invalid_star[None]:
+    | '*' { self.raise_syntax_error("Invalid star expression") }
+invalid_kwds[None]:
+    | '**' param a='=' {
+        self.raise_syntax_error_known_location("var-keyword argument cannot have default value", a)
+    }
+    | '**' param ',' a=param {
+        self.raise_syntax_error_known_location("arguments cannot follow var-keyword argument", a)
+    }
+    | '**' param ',' a=('*'|'**'|'/') {
+        self.raise_syntax_error_known_location("arguments cannot follow var-keyword argument", a)
+    }
+invalid_parameters_helper: # This is only there to avoid type errors
+    | a=slash_with_default
+    | a=param_with_default+ { a }
+invalid_lambda_parameters[None]:
+    | a="/" ',' {
+        self.raise_syntax_error_known_location("at least one argument must precede /", a)
+    }
+    | (lambda_slash_no_default | lambda_slash_with_default) lambda_param_maybe_default* a='/' {
+        self.raise_syntax_error_known_location("/ may appear only once", a)
+    }
+    | lambda_slash_no_default? lambda_param_no_default* invalid_lambda_parameters_helper a=lambda_param_no_default {
+        self.raise_syntax_error_known_location("parameter without a default follows parameter with a default", a)
+    }
+    | lambda_param_no_default* a='(' ','.lambda_param+ ','? b=')' {
+        self.raise_syntax_error_known_range("Lambda expression parameters cannot be parenthesized", a, b)
+    }
+    | (lambda_slash_no_default | lambda_slash_with_default)? lambda_param_maybe_default* '*' (',' { True } | lambda_param_no_default { True }) lambda_param_maybe_default* a='/' {
+        self.raise_syntax_error_known_location("/ must be ahead of *", a)
+    }
+    | lambda_param_maybe_default+ '/' a='*' {
+        self.raise_syntax_error_known_location("expected comma between / and *", a)
+    }
+invalid_lambda_parameters_helper:
+    | a=lambda_slash_with_default
+    | a=lambda_param_with_default+ { a }
+invalid_lambda_star_etc[None]:
+    | '*' (':' | p=',' (':' | '**') { p }) {
+        self.raise_syntax_error("named arguments must follow bare *")
+    }
+    | '*' lambda_param a='=' {
+        self.raise_syntax_error_known_location("var-positional argument cannot have default value", a)
+    }
+    | '*' (lambda_param_no_default { True } | ',' { True }) lambda_param_maybe_default* a='*' (lambda_param_no_default { True } | ',' { True }) {
+        self.raise_syntax_error_known_location("* argument may appear only once", a)
+    }
+invalid_lambda_kwds[None]:
+    | '**' lambda_param a='=' {
+        self.raise_syntax_error_known_location("var-keyword argument cannot have default value", a)
+    }
+    | '**' lambda_param ',' a=lambda_param {
+        self.raise_syntax_error_known_location("arguments cannot follow var-keyword argument", a)
+    }
+    | '**' lambda_param ',' a=('*'|'**'|'/') {
+        self.raise_syntax_error_known_location("arguments cannot follow var-keyword argument", a)
+    }
+invalid_with_item[None]:
+    | expression 'as' a=expression &(',' | ')' | ':') {
+        self.raise_syntax_error_invalid_target(Target.STAR_TARGETS, a)
+    }
+
+invalid_for_target[None]:
+    | 'async'? 'for' a=star_expressions {
+        self.raise_syntax_error_invalid_target(Target.FOR_TARGETS, a)
+    }
+
+invalid_group[None]:
+    | '(' a=starred_expression ')' {
+        self.raise_syntax_error_known_location("cannot use starred expression here", a)
+    }
+    | '(' a='**' expression ')' {
+        self.raise_syntax_error_known_location("cannot use double starred expression here", a)
+    }
+invalid_import[None]:
+    | a='import' ','.dotted_name+ 'from' dotted_name {
+        self.raise_syntax_error_starting_from(
+            "Did you mean to use 'from ... import ...' instead?", a
+        )
+    }
+invalid_import_from_targets[None]:
+    | import_from_as_names ',' NEWLINE {
+        self.raise_syntax_error("trailing comma not allowed without surrounding parentheses")
+    }
+
+invalid_with_stmt[None]:
+    | ['async'] 'with' ','.(expression ['as' s=star_target { s }])+ &&':' { UNREACHABLE }
+    | ['async'] 'with' '(' ','.(expressions ['as' s=star_target { s }])+ ','? ')' &&':' { UNREACHABLE }
+invalid_with_stmt_indent[None]:
+    | ['async'] a='with' ','.(expression ['as' s=star_target { s }])+ ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'with' statement on line {a.start[0]}"
+        )
+    }
+    | ['async'] a='with' '(' ','.(expressions ['as' s=star_target { s }])+ ','? ')' ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'with' statement on line {a.start[0]}"
+        )
+    }
+
+invalid_try_stmt[None]:
+    | a='try' ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'try' statement on line {a.start[0]}",
+        )
+    }
+    | 'try' ':' block !('except' | 'finally') {
+        self.raise_syntax_error("expected 'except' or 'finally' block")
+    }
+    | 'try' ':' block* except_block+ a='except' b='*' expression ['as' NAME { True }] ':' {
+        self.raise_syntax_error_known_range(
+            "cannot have both 'except' and 'except*' on the same 'try'", a, b
+        )
+    }
+    | 'try' &&':' b=block ex=except_star_block+ el=[else_block] f=[finally_block] {
+        self.raise_syntax_error_known_location(
+            "except* not yet supported", a
+        )
+    }
+    | 'try' ':' block* except_star_block+ a='except' [e=expression ['as' NAME { True }] { e }] ':' {
+        self.raise_syntax_error_known_location(
+            "cannot have both 'except' and 'except*' on the same 'try'", a
+        )
+    }
+invalid_except_stmt[None]:
+    | 'except' '*'? a=expression ',' expressions ['as' NAME { True }] ':' {
+        self.raise_syntax_error_starting_from("multiple exception types must be parenthesized", a)
+    }
+    | a='except' '*'? expression ['as' NAME { True }] NEWLINE { self.raise_syntax_error("expected ':'") }
+    | a='except' '*'? NEWLINE { self.raise_syntax_error("expected ':'") }
+    | a='except' '*' (NEWLINE | ':') {
+        self.raise_syntax_error("expected one or more exception types")
+    }
+invalid_finally_stmt[None]:
+    | a='finally' ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'finally' statement on line {a.start[0]}"
+        )
+    }
+invalid_except_stmt_indent[None]:
+    | a='except' expression ['as' NAME { True }] ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'except' statement on line {a.start[0]}"
+        )
+    }
+    | a='except' ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'except' statement on line {a.start[0]}"
+        )
+    }
+invalid_except_star_stmt_indent[None]:
+    | a='except' '*' expression ['as' NAME { True }] ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'except*' statement on line {a.start[0]}"
+        )
+    }
+invalid_match_stmt[None]:
+    | "match" subject_expr !':' { self.raise_syntax_error("expected ':'") }
+    | a="match" subject=subject_expr ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'match' statement on line {a.start[0]}"
+        )
+    }
+invalid_case_block[None]:
+    | "case" patterns guard? !':' { self.raise_syntax_error("expected ':'") }
+    | a="case" patterns guard? ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'case' statement on line {a.start[0]}"
+        )
+    }
+invalid_as_pattern[None]:
+    | or_pattern 'as' a="_" {
+        self.raise_syntax_error_known_location("cannot use '_' as a target", a)
+    }
+    | or_pattern 'as' !NAME a=expression {
+        self.raise_syntax_error_known_location("invalid pattern target", a)
+    }
+invalid_class_pattern[None]:
+    | name_or_attr '(' a=invalid_class_argument_pattern  {
+        self.raise_syntax_error_known_range(
+            "positional patterns follow keyword patterns", a[0], a[-1]
+        )
+    }
+invalid_class_argument_pattern[list]:
+    | [positional_patterns ',' { True }] keyword_patterns ',' a=positional_patterns { a }
+invalid_if_stmt[None]:
+    | 'if' named_expression NEWLINE { self.raise_syntax_error("expected ':'") }
+    | a='if' a=named_expression ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'if' statement on line {a.start[0]}"
+        )
+    }
+invalid_elif_stmt[None]:
+    | 'elif' named_expression NEWLINE { self.raise_syntax_error("expected ':'") }
+    | a='elif' named_expression ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'elif' statement on line {a.start[0]}"
+        )
+    }
+invalid_else_stmt[None]:
+    | a='else' ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'else' statement on line {a.start[0]}"
+        )
+    }
+invalid_while_stmt[None]:
+    | 'while' named_expression NEWLINE { self.raise_syntax_error("expected ':'") }
+    | a='while' named_expression ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'while' statement on line {a.start[0]}"
+        )
+    }
+invalid_for_stmt[None]:
+    | [ASYNC] 'for' star_targets 'in' star_expressions NEWLINE { self.raise_syntax_error("expected ':'") }
+    | ['async'] a='for' star_targets 'in' star_expressions ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after 'for' statement on line {a.start[0]}"
+        )
+    }
+invalid_def_raw[None]:
+    | ['async'] a='def' NAME  [type_params] '(' [params] ')' ['->' expression { True }] ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after function definition on line {a.start[0]}"
+        )
+    }
+invalid_class_def_raw[None]:
+    | 'class' NAME [type_params] ['(' [arguments] ')' { True }] NEWLINE { self.raise_syntax_error("expected ':'") }
+    | a='class' NAME  [type_params] ['(' [arguments] ')' { True }] ':' NEWLINE !INDENT {
+        self.raise_indentation_error(
+            f"expected an indented block after class definition on line {a.start[0]}"
+        )
+    }
+
+invalid_double_starred_kvpairs[None]:
+    | ','.double_starred_kvpair+ ',' invalid_kvpair
+    | expression ':' a='*' bitwise_or {
+        self.raise_syntax_error_starting_from("cannot use a starred expression in a dictionary value", a)
+    }
+    | expression a=':' &('}'|',') {
+        self.raise_syntax_error_known_location("expression expected after dictionary key and ':'", a)
+    }
+invalid_kvpair[None]:
+    | a=expression !(':') {
+        self.raise_raw_syntax_error(
+            "':' expected after dictionary key",
+            (a.lineno, a.col_offset),
+            (a.end_lineno, a.end_col_offset)
+        )
+    }
+    | expression ':' a='*' bitwise_or {
+        self.raise_syntax_error_starting_from("cannot use a starred expression in a dictionary value", a)
+    }
+    | expression a=':' &('}'|',') {
+        self.raise_syntax_error_known_location(
+            "expression expected after dictionary key and ':'", a
+        )
+    }
+    | expression a=':' {
+        self.raise_syntax_error_known_location("expression expected after dictionary key and ':'", a)
+    }
+invalid_starred_expression[None]:
+    | a='*' expression '=' b=expression {
+        self.raise_syntax_error_known_range(
+            "cannot assign to iterable argument unpacking", a, b
+        )
+    }
+invalid_replacement_field[None]:
+    | '{' a='=' { self.raise_syntax_error_known_location("f-string: valid expression required before '='", a) }
+    | '{' a='!' { self.raise_syntax_error_known_location("f-string: valid expression required before '!'", a) }
+    | '{' a=':' { self.raise_syntax_error_known_location("f-string: valid expression required before ':'", a) }
+    | '{' a='}' { self.raise_syntax_error_known_location("f-string: valid expression required before '}'", a) }
+    | '{' !(yield_expr | star_expressions) {
+        self.raise_syntax_error_on_next_token(
+            "f-string: expecting a valid expression after '{'"
+        )
+    }
+    | '{' (yield_expr | star_expressions) !('=' | '!' | ':' | '}') {
+        self.raise_syntax_error_on_next_token("f-string: expecting '=', or '!', or ':', or '}'")
+    }
+    | '{' (yield_expr | star_expressions) '=' !('!' | ':' | '}') {
+       self.raise_syntax_error_on_next_token("f-string: expecting '!', or ':', or '}'")
+    }
+    | '{' (yield_expr | star_expressions) '='? invalid_conversion_character
+    | '{' (yield_expr | star_expressions) '='? ['!' NAME] !(':' | '}') {
+        self.raise_syntax_error_on_next_token("f-string: expecting ':' or '}'")
+    }
+    | '{' (yield_expr | star_expressions) '='? ['!' NAME] ':' fstring_format_spec* !'}' {
+        self.raise_syntax_error_on_next_token("f-string: expecting '}', or format specs")
+    }
+    | '{' (yield_expr | star_expressions) '='? ['!' NAME] !'}' {
+        self.raise_syntax_error_on_next_token("f-string: expecting '}'")
+    }
+
+invalid_conversion_character[None]:
+    | '!' &(':' | '}') { self.raise_syntax_error_on_next_token("f-string: missing conversion character") }
+    | '!' !NAME { self.raise_syntax_error_on_next_token("f-string: invalid conversion character") }

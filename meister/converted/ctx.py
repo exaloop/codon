@@ -2,10 +2,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import dataclass
-from typing import Dict, Generic, List, Set, TypeVar
-
+from ..bridge import Dict, List, Set, contextmanager, dataclass
 from . import ast
 
 
@@ -98,3 +95,10 @@ class Context[T]:
         values.pop(0)
         if not values:
             del self.map[name]
+
+    @contextmanager
+    def substitute(self, name, value):
+        old = getattr(self, name)
+        setattr(self, name, value)
+        yield
+        setattr(self, name, old)

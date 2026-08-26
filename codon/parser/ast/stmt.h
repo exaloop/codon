@@ -20,6 +20,8 @@ namespace codon::ast {
   ASTNode *clone(bool c) const override;                                               \
   void accept(VISITOR &visitor) override;                                              \
   std::string toPythonString(bool attributes = false, int indent = -1, int level = 0) const override;\
+  detail::CodonString formatCodonString(bool attributes, int indent, int level)        \
+      const override;                                                                  \
   std::string toString(int) const override;                                            \
   friend class TypecheckVisitor;                                                       \
   template <typename TE, typename TS> friend struct CallbackASTVisitor;                \

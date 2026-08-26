@@ -1,27 +1,38 @@
+# ruff: noqa
+
+import argparse
+import io
+from abc import abstractmethod
+from dataclasses import dataclass
+from contextlib import contextmanager
+from enum import Enum
 from typing import (
     Any,
     Callable,
     ClassVar,
-    Optional,
+    Dict,
     Iterator,
     List,
     Literal,
     NoReturn,
+    Optional,
+    Set,
     Tuple,
     TypeVar,
     Union,
-    Dict,
-    Set,
     cast,
 )
-from abc import abstractmethod
+
 Generator = Iterator
+
 
 class static:
     def vars(obj):
         yield from vars(obj).items()
+
     def len(*args):
         return len(*args)
+
 
 class Codon:
     def unwrap(x, T=None):
@@ -39,13 +50,13 @@ class Codon:
             for i in self.__dict__.items():
                 yield i
 
+
 class TypeGetter:
     def __getitem__(self, i):
         return i
-unrealized_type = TypeGetter()
 
-import io
-import argparse
+
+unrealized_type = TypeGetter()
 
 CODON: Literal[bool] = False
 
