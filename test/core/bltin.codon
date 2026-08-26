@@ -897,6 +897,30 @@ def test_num_from_str():
     except ValueError as e:
         assert str(e) == "could not convert string to float: ''"
 
+    assert int(" 123 ") == 123
+    assert float(" 3.14 ") == 3.14
+    assert float("é3.14é"[1:-1]) == 3.14
+    assert float("Ω3.14Ω"[1:-1]) == 3.14
+    assert float("😀3.14😀"[1:-1]) == 3.14
+
+    assert complex(" (1+2j) ") == 1+2j
+    assert complex("é1+2jé"[1:-1]) == 1+2j
+    assert complex("Ω1+2jΩ"[1:-1]) == 1+2j
+    assert complex("😀1+2j😀"[1:-1]) == 1+2j
+
+    for value in ("", "é"):
+        try:
+            float(value)
+            assert False
+        except ValueError:
+            pass
+
+        try:
+            complex(value)
+            assert False
+        except ValueError:
+            pass
+
 @test
 def test_num_from_str_extended():
     # Basic decimal

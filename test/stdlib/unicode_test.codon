@@ -4,6 +4,7 @@ from internal.str import (
 )
 from internal.types.unicode.float_dtoa import (
     _float_shortest_decimal,
+    _float32_dtoa_shortest,
     _float_dtoa_shortest,
     _BigUInt,
     _float_dtoa_scaled_integer,
@@ -1986,6 +1987,30 @@ def test_float_dtoa_shortest():
 
 
 @test
+def test_float32_dtoa_shortest():
+    assert _float32_dtoa_shortest(float32(0.0)) == "0.0"
+    assert _float32_dtoa_shortest(float32(-0.0)) == "-0.0"
+    assert _float32_dtoa_shortest(float32(1.0)) == "1.0"
+    assert _float32_dtoa_shortest(float32(1.0), False) == "1"
+    assert _float32_dtoa_shortest(float32(1.1)) == "1.1"
+
+    assert _float32_dtoa_shortest(float32("1e-45")) == "1e-45"
+    assert _float32_dtoa_shortest(float32("1.1754942e-38")) == (
+        "1.1754942e-38"
+    )
+    assert _float32_dtoa_shortest(float32("1.1754944e-38")) == (
+        "1.1754944e-38"
+    )
+    assert _float32_dtoa_shortest(float32("3.4028235e+38")) == (
+        "3.4028235e+38"
+    )
+
+    assert _float32_dtoa_shortest(float32("inf")) == "inf"
+    assert _float32_dtoa_shortest(float32("-inf")) == "-inf"
+    assert _float32_dtoa_shortest(float32("nan")) == "nan"
+
+
+@test
 def test_float_default_formatting():
     cases = (
         (0.0, "0.0"),
@@ -2140,6 +2165,7 @@ def test_float_format_padding():
 test_float_shortest_decimal()
 test_float_shortest_decimal_boundaries()
 test_float_dtoa_shortest()
+test_float32_dtoa_shortest()
 test_float_default_formatting()
 test_float_dtoa_biguint_division()
 test_float_dtoa_scaled_integer()

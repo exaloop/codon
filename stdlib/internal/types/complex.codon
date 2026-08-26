@@ -1,5 +1,16 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+from internal.types.unicode.float_dtoa import (
+    _float32_dtoa_shortest,
+    _float_dtoa_shortest,
+)
+
+def _complex_float_to_string(value) -> str:
+    if isinstance(value, float32):
+        return _float32_dtoa_shortest(value, add_dot_zero=False)
+    else:
+        return _float_dtoa_shortest(value, add_dot_zero=False)
+
 @tuple(python=False)
 class complex64:
     real: float32
@@ -274,14 +285,17 @@ class complex:
             ret double %y
 
         if self.real == 0.0 and copysign(1.0, self.real) == 1.0:
-            return f"{self.imag}j"
+            return str.cat(_complex_float_to_string(self.imag), "j")
         else:
             sign = "+"
             if self.imag < 0.0 or (
                 self.imag == 0.0 and copysign(1.0, self.imag) == -1.0
             ):
                 sign = "-"
-            return f"({self.real}{sign}{fabs(self.imag)}j)"
+            return str.cat(
+                "(", _complex_float_to_string(self.real), sign,
+                _complex_float_to_string(fabs(self.imag)), "j)"
+            )
 
     def conjugate(self) -> complex:
         return complex(self.real, -self.imag)
@@ -686,10 +700,11 @@ class complex64:
             ret float %y
 
         if self.real == f32(0.0) and copysign(f32(1.0), self.real) == f32(1.0):
+            value = str.cat(_complex_float_to_string(self.imag), "j")
             if include_type:
-                return f"complex64({self.imag}j)"
+                return str.cat("complex64(", value, ")")
             else:
-                return f"{self.imag}j"
+                return value
         else:
             sign = "+"
             if self.imag < f32(0.0) or (
@@ -697,10 +712,14 @@ class complex64:
             ):
                 sign = "-"
 
+            value = str.cat(
+                _complex_float_to_string(self.real), sign,
+                _complex_float_to_string(fabs(self.imag)), "j"
+            )
             if include_type:
-                return f"complex64({self.real}{sign}{fabs(self.imag)}j)"
+                return str.cat("complex64(", value, ")")
             else:
-                return f"({self.real}{sign}{fabs(self.imag)}j)"
+                return str.cat("(", value, ")")
 
     def __repr__(self) -> str:
         return self._str(include_type=True)

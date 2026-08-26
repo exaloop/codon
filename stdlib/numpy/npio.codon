@@ -7,6 +7,7 @@ import util
 import gzip
 import re
 import internal.static as static
+from internal.types.unicode.data import unicode_is_space
 
 _ALLOCATIONGRANULARITY: Literal[int] = 16384
 
@@ -18,7 +19,7 @@ _PROT_EXEC: Literal[int] = 4
 _MAP_SHARED: Literal[int] = 1
 _MAP_PRIVATE: Literal[int] = 2
 
-_MAGIC_PREFIX: Literal[str] = '\x93NUMPY'
+_MAGIC_PREFIX = b'\x93NUMPY'
 _ARRAY_ALIGN: Literal[int] = 64
 
 ##################
@@ -34,7 +35,7 @@ def _mmap(f, length: int, access: int, flags: int, offset: int = 0):
     from C import mmap(cobj, int, i32, i32, i32, int) -> cobj
     from C import fileno(cobj) -> i32
 
-    fd = fileno(f.fp)
+    fd = fileno(f._state._fp)
     mm = mmap(cobj(), length, i32(access), i32(flags), fd, offset)
     if int(mm) == -1:
         _io_error("mmap() call failed")
@@ -83,7 +84,7 @@ def _memmap(fid, dtype: type, mode: str, offset: int, shape, forder: bool):
 
     if mode in ('w+', 'r+') and flen < nbytes:
         fid.seek(nbytes - 1, 0)
-        fid.write('\0')
+        fid.write(b'\0')
         fid.flush()
 
     if mode == 'c':
@@ -133,19 +134,70 @@ def memmap(filename,
                        shape=shape,
                        forder=forder)
     elif isinstance(filename, str):
-        with open(filename, ('r' if mode == 'c' else mode) + 'b') as f:
-            return _memmap(f,
-                           dtype=dtype,
-                           mode=mode,
-                           offset=offset,
-                           shape=shape,
-                           forder=forder)
+        if mode == 'w+':
+            with open(filename, 'w+b') as f:
+                return _memmap(f,
+                               dtype=dtype,
+                               mode=mode,
+                               offset=offset,
+                               shape=shape,
+                               forder=forder)
+        elif mode == 'r+':
+            with open(filename, 'r+b') as f:
+                return _memmap(f,
+                               dtype=dtype,
+                               mode=mode,
+                               offset=offset,
+                               shape=shape,
+                               forder=forder)
+        else:
+            with open(filename, 'rb') as f:
+                return _memmap(f,
+                               dtype=dtype,
+                               mode=mode,
+                               offset=offset,
+                               shape=shape,
+                               forder=forder)
     else:
         compile_error("filename must be a string or file handle")
 
 ###############
 # General I/O #
 ###############
+
+def _decode_utf8_slice(data: cobj, length: int) -> str:
+    return bytes(Ptr[u8](data), length).decode()
+
+def _as_text(data: str) -> str:
+    return data
+
+@overload
+def _as_text(data: bytes) -> str:
+    return data.decode()
+
+def _as_latin1_text(data: str) -> str:
+    return data
+
+@overload
+def _as_latin1_text(data: bytes) -> str:
+    return data.decode('latin-1')
+
+def _ascii_byte(value: str, name: str) -> u8:
+    codepoint = value._load_codepoint(0)
+    if codepoint > 0x7F:
+        raise ValueError(f"'{name}' must be an ASCII character")
+    return u8(codepoint)
+
+def _validate_ascii(value: str, name: str):
+    for codepoint in value:
+        if codepoint._load_codepoint(0) > 0x7F:
+            raise ValueError(f"'{name}' must contain only ASCII characters")
+
+def _copy_bytes(data: bytes, count: int, dtype: type):
+    result = Ptr[dtype](count)
+    str.memcpy(result.as_byte(), data._ptr,
+               count * util.sizeof(dtype))
+    return result
 
 def parse_header(header: str):
     regex = (
@@ -177,12 +229,12 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
     # Extract the major and minor version numbers
     major = f.read(1)
     minor = f.read(1)
-    if (major != '\x01' and major != '\x02'
-            and major != '\x03') or minor != '\x00':
+    if (major != b'\x01' and major != b'\x02'
+            and major != b'\x03') or minor != b'\x00':
         raise ValueError("Invalid version numbers.")
 
     # Extract the header length as a little-endian unsigned int
-    if major == '\x01':
+    if major == b'\x01':
         header_len_enc = f.read(2)
         header_len = (int(header_len_enc._ptr[1]) << 8) | int(
             header_len_enc._ptr[0])
@@ -194,7 +246,9 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
                       | int(header_len_enc._ptr[0]))
 
     # Read the header data
-    header_data = f.read(header_len)
+    header_data = f.read(header_len).decode(
+        'utf-8' if major == b'\x03' else 'latin-1'
+    )
 
     # Deserialize the header dictionary data
     shape, fortran_order, dt = parse_header(header_data)
@@ -212,9 +266,9 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
 
     # Read the binary data
     if mmap_mode is None:
-        str_data = f.read()
-        binary_data = str_data._ptr
-        got_bytes = len(str_data)
+        bytes_data = f.read()
+        binary_data = bytes_data._ptr
+        got_bytes = len(bytes_data)
     else:
         arr_data = _memmap(f,
                            dtype=u8,
@@ -232,7 +286,10 @@ def _load(f, mmap_mode: Optional[str], ndim: Literal[int], dtype: type):
         )
 
     # Create a ndarray from the binary data
-    data = Ptr[dtype](binary_data)
+    if mmap_mode is None:
+        data = _copy_bytes(bytes_data, util.count(shape), dtype)
+    else:
+        data = Ptr[dtype](binary_data)
     array = ndarray[dtype, ndim](shape, data, fcontig=forder)
 
     if dt.startswith('>') and mmap_mode is None:
@@ -252,11 +309,12 @@ def load(file,
     if hasattr(file, 'read'):
         return _load(file, mmap_mode=mmap_mode, ndim=ndim, dtype=dtype)
     elif isinstance(file, str):
-        open_mode = 'rb'
-        if mmap_mode is not None:
-            open_mode = ('r' if mmap_mode == 'c' else mmap_mode) + 'b'
-        with open(file, open_mode) as f:
-            return _load(f, mmap_mode=mmap_mode, ndim=ndim, dtype=dtype)
+        if mmap_mode == 'r+':
+            with open(file, 'r+b') as f:
+                return _load(f, mmap_mode=mmap_mode, ndim=ndim, dtype=dtype)
+        else:
+            with open(file, 'rb') as f:
+                return _load(f, mmap_mode=mmap_mode, ndim=ndim, dtype=dtype)
     else:
         compile_error("fname must be a string or file handle")
 
@@ -280,7 +338,7 @@ def _save(f, arr):
         long_header = False
 
     f.write(_MAGIC_PREFIX)
-    f.write('\x02\x00' if long_header else '\x01\x00')
+    f.write(b'\x02\x00' if long_header else b'\x01\x00')
 
     m = len(_MAGIC_PREFIX) + 2 + (4 if long_header else 2) + header_len
     rem = m.cmod(_ARRAY_ALIGN)
@@ -292,31 +350,31 @@ def _save(f, arr):
         byte2 = u8((header_len >> 8) & 0xFF)
         byte3 = u8((header_len >> 16) & 0xFF)
         byte4 = u8((header_len >> 24) & 0xFF)
-        f.write(str(__ptr__(byte1), 1))
-        f.write(str(__ptr__(byte2), 1))
-        f.write(str(__ptr__(byte3), 1))
-        f.write(str(__ptr__(byte4), 1))
+        f.write(bytes(__ptr__(byte1), 1))
+        f.write(bytes(__ptr__(byte2), 1))
+        f.write(bytes(__ptr__(byte3), 1))
+        f.write(bytes(__ptr__(byte4), 1))
     else:
         byte1 = u8(header_len & 0xFF)
         byte2 = u8((header_len >> 8) & 0xFF)
-        f.write(str(__ptr__(byte1), 1))
-        f.write(str(__ptr__(byte2), 1))
+        f.write(bytes(__ptr__(byte1), 1))
+        f.write(bytes(__ptr__(byte2), 1))
 
     for h in header_parts:
-        f.write(h)
+        f.write(h.encode('latin-1'))
 
     for _ in range(spaces):
-        f.write('\x20')
+        f.write(b'\x20')
 
-    f.write('\n')
+    f.write(b'\n')
 
     if cc or fc:
-        f.write(str(arr.data.as_byte(), arr.nbytes))
+        f.write(bytes(arr.data.as_byte(), arr.nbytes))
     else:
         for idx in util.multirange(arr.shape):
             e = arr._ptr(idx)[0]
-            s = str(__ptr__(e).as_byte(), util.sizeof(arr.dtype))
-            f.write(s)
+            data = bytes(__ptr__(e).as_byte(), util.sizeof(arr.dtype))
+            f.write(data)
 
 def save(file, arr):
     if hasattr(file, 'write'):
@@ -399,33 +457,35 @@ def savetxt(fname,
     else:
         compile_error("fname must be a string or a file handle")
 
-def _fromfile(f, dtype: type, count: int, sep: str, offset: int):
-    if sep:
-        if offset:
-            raise TypeError(
-                "'offset' argument only permitted for binary files")
+def _fromfile_text(f, dtype: type, count: int, sep: str, offset: int):
+    if offset:
+        raise TypeError(
+            "'offset' argument only permitted for binary files")
 
-        string_data = f.read()
-        if sep.isspace():
-            string_split = string_data.split(None, count)
-        else:
-            string_split = string_data.split(sep, count)
-
-        n = len(string_split)
-        p = Ptr[dtype](n)
-        for i in range(n):
-            p[i] = dtype(string_split[i])
+    string_data = _as_text(f.read())
+    if sep.isspace():
+        string_split = string_data.split(None, count)
     else:
-        if offset:
-            f.seek(offset, 1)
+        string_split = string_data.split(sep, count)
 
-        if count < 0:
-            binary_data = f.read()
-        else:
-            binary_data = f.read(count * util.sizeof(dtype))
+    n = len(string_split)
+    p = Ptr[dtype](n)
+    for i in range(n):
+        p[i] = dtype(string_split[i])
 
-        p = Ptr[dtype](binary_data._ptr)
-        n = len(binary_data).cdiv(util.sizeof(dtype))
+    return ndarray((n, ), p)
+
+def _fromfile_binary(f, dtype: type, count: int, offset: int):
+    if offset:
+        f.seek(offset, 1)
+
+    if count < 0:
+        binary_data = f.read()
+    else:
+        binary_data = f.read(count * util.sizeof(dtype))
+
+    n = len(binary_data).cdiv(util.sizeof(dtype))
+    p = _copy_bytes(binary_data, n, dtype)
 
     return ndarray((n, ), p)
 
@@ -435,27 +495,49 @@ def fromfile(file,
              sep: str = '',
              offset: int = 0):
     if hasattr(file, 'read'):
-        return _fromfile(file,
-                         dtype=dtype,
-                         count=count,
-                         sep=sep,
-                         offset=offset)
+        if file.T is bytes:
+            if sep:
+                return _fromfile_text(file,
+                                      dtype=dtype,
+                                      count=count,
+                                      sep=sep,
+                                      offset=offset)
+            else:
+                return _fromfile_binary(file,
+                                        dtype=dtype,
+                                        count=count,
+                                        offset=offset)
+        else:
+            if not sep:
+                raise ValueError(
+                    "text file handles require a non-empty separator")
+            return _fromfile_text(file,
+                                  dtype=dtype,
+                                  count=count,
+                                  sep=sep,
+                                  offset=offset)
     elif isinstance(file, str):
         with open(file, 'rb') as f:
-            return _fromfile(f,
-                             dtype=dtype,
-                             count=count,
-                             sep=sep,
-                             offset=offset)
+            if sep:
+                return _fromfile_text(f,
+                                      dtype=dtype,
+                                      count=count,
+                                      sep=sep,
+                                      offset=offset)
+            else:
+                return _fromfile_binary(f,
+                                        dtype=dtype,
+                                        count=count,
+                                        offset=offset)
     else:
         compile_error("fname must be a string or a file handle")
 
-def fromstring(string: str,
+def fromstring(string,
                dtype: type = float,
                count: int = -1,
                sep: str = ''):
     if sep:
-        split = string.split(sep, count)
+        split = _as_text(string).split(sep, count)
         k = len(split)
         n = count if count >= 0 else k
         result = empty((n, ), dtype=dtype)
@@ -466,6 +548,9 @@ def fromstring(string: str,
 
         return result
     else:
+        if isinstance(string, str):
+            raise TypeError("binary mode requires a bytes-like object")
+
         if count < 0:
             if len(string) < util.sizeof(dtype):
                 raise ValueError("string is smaller than requested size")
@@ -478,37 +563,50 @@ def fromstring(string: str,
                 raise ValueError("string is smaller than requested size")
 
         n = count if count >= 0 else len(string).cdiv(util.sizeof(dtype))
-        return ndarray((n, ), Ptr[dtype](string._ptr))
+        return ndarray((n, ), _copy_bytes(string, n, dtype))
 
-def _tofile(arr, f, sep: str):
-    if sep:
-        k = 0
-        n = arr.size
+def _tofile_text(arr, f, sep: str):
+    k = 0
+    n = arr.size
 
+    for idx in util.multirange(arr.shape):
+        e = arr._ptr(idx)[0]
+        f.write(str(e))
+        if k < n - 1:
+            f.write(sep)
+        k += 1
+
+def _tofile_binary(arr, f):
+    cc, _ = arr._contig
+    if cc:
+        f.write(bytes(arr.data.as_byte(), arr.nbytes))
+    else:
         for idx in util.multirange(arr.shape):
             e = arr._ptr(idx)[0]
-            f.write(str(e))
-            if k < n - 1:
-                f.write(sep)
-            k += 1
-    else:
-        cc, _ = arr._contig
-        if cc:
-            f.write(str(arr.data.as_byte(), arr.nbytes))
-        else:
-            for idx in util.multirange(arr.shape):
-                e = arr._ptr(idx)[0]
-                s = str(__ptr__(e).as_byte(), util.sizeof(arr.dtype))
-                f.write(s)
+            data = bytes(__ptr__(e).as_byte(), util.sizeof(arr.dtype))
+            f.write(data)
 
 @extend
 class ndarray:
     def tofile(self, file, sep: str = ''):
         if hasattr(file, 'write'):
-            _tofile(self, file, sep=sep)
+            if file.T is bytes:
+                if sep:
+                    raise ValueError(
+                        "binary file handles do not support a text separator")
+                _tofile_binary(self, file)
+            else:
+                if not sep:
+                    raise ValueError(
+                        "text file handles require a non-empty separator")
+                _tofile_text(self, file, sep)
         elif isinstance(file, str):
-            with open(file, 'w' if sep else 'wb') as f:
-                _tofile(self, f, sep=sep)
+            if sep:
+                with open(file, 'w') as f:
+                    _tofile_text(self, f, sep)
+            else:
+                with open(file, 'wb') as f:
+                    _tofile_binary(self, f)
         else:
             compile_error("fname must be a string or file handle")
 
@@ -600,8 +698,12 @@ def make_conv(converters, num_fields: int, usecols, dtype: type):
     else:
         return converters
 
-def _isspace(c: u8):
-    return bool(_C.isspace(i32(int(c))))
+def _isspace(c):
+    if isinstance(c, u8):
+        value = int(c)
+        return (9 <= value <= 13) or (28 <= value <= 32)
+    else:
+        return unicode_is_space(int(c))
 
 class CSVReader:
     _path: str
@@ -618,15 +720,17 @@ class CSVReader:
                  comments: str = ''):
         dm = u8(0)
         if len(delimiter) == 1:
-            dm = delimiter._ptr[0]
+            dm = _ascii_byte(delimiter, 'delimiter')
         elif len(delimiter) != 0:
             raise ValueError("'delimiter' must be a length-1 string")
 
         qc = u8(0)
         if len(quotechar) == 1:
-            qc = quotechar._ptr[0]
+            qc = _ascii_byte(quotechar, 'quotechar')
         elif len(quotechar) != 0:
             raise ValueError("'quotechar' must be a length-1 string")
+
+        _validate_ascii(comments, 'comments')
 
         self._path = path
         self._delimiter = dm
@@ -636,7 +740,7 @@ class CSVReader:
         self._mmap_len = 0
 
     def __enter__(self):
-        with open(self._path) as f:
+        with open(self._path, 'rb') as f:
             f.seek(0, 2)
             n = f.tell()
             if n > 0:
@@ -655,17 +759,17 @@ class CSVReader:
             self._mmap_ptr = cobj()
             self._mmap_len = 0
 
-    def is_delimiter(self, c: u8):
+    def is_delimiter(self, c):
         delimiter = self._delimiter
         if delimiter:
-            return c == delimiter
+            return int(c) == int(delimiter)
         else:
             return _isspace(c)
 
-    def is_comment(self, c: u8):
+    def is_comment(self, c):
         comments = self._comments
         for i in range(len(comments)):
-            if comments._ptr[i] == c:
+            if comments._load_codepoint(i) == int(c):
                 return True
         return False
 
@@ -836,7 +940,9 @@ class CSVReader:
                 if field != num_fields - 1:
                     malformed(row, num_fields)
 
-                fields[field] = str(p + last_field_start, i - last_field_start)
+                fields[field] = _decode_utf8_slice(
+                    p + last_field_start, i - last_field_start
+                )
                 row_callback(fields, num_fields, row)
 
                 i += 1
@@ -850,7 +956,9 @@ class CSVReader:
                 if maxrows >= 0 and row >= maxrows:
                     break
             elif self.is_delimiter(c) and not quote:
-                fields[field] = str(p + last_field_start, i - last_field_start)
+                fields[field] = _decode_utf8_slice(
+                    p + last_field_start, i - last_field_start
+                )
 
                 i = self.skip_delimiter(i)
 
@@ -869,7 +977,9 @@ class CSVReader:
                 if field != num_fields - 1:
                     malformed(row, num_fields)
 
-                fields[field] = str(p + last_field_start, i - last_field_start)
+                fields[field] = _decode_utf8_slice(
+                    p + last_field_start, i - last_field_start
+                )
                 row_callback(fields, num_fields, row)
 
                 i = self.skip_comments(i)
@@ -886,7 +996,9 @@ class CSVReader:
                 malformed(row, num_fields)
 
             if maxrows < 0 or row <= maxrows:
-                fields[field] = str(p + last_field_start, i - last_field_start)
+                fields[field] = _decode_utf8_slice(
+                    p + last_field_start, i - last_field_start
+                )
                 row_callback(fields, num_fields, row)
 
 class ArrayUpdate:
@@ -1030,8 +1142,8 @@ class ArrayUpdate:
 
 def loadtxt(fname: str,
             dtype: type = float,
-            comments: Optional[str] = '#',
-            delimiter: Optional[str] = None,
+            comments = '#',
+            delimiter = None,
             converters=None,
             skiprows: int = 0,
             usecols=None,
@@ -1053,11 +1165,17 @@ def loadtxt(fname: str,
 
     maxrows: int = max_rows if max_rows is not None else -1
     block_size = maxrows if maxrows >= 0 else _DEFAULT_ROWS
+    comments_text = (
+        _as_latin1_text(comments) if comments is not None else ''
+    )
+    delimiter_text = (
+        _as_latin1_text(delimiter) if delimiter is not None else ''
+    )
 
     with CSVReader(fname,
-                   delimiter=(delimiter if delimiter is not None else ''),
+                   delimiter=delimiter_text,
                    quotechar=(quotechar if quotechar is not None else ''),
-                   comments=comments if comments is not None else '') as csv:
+                   comments=comments_text) as csv:
         i0 = csv.skip_lines(i=0, skip=skiprows) if skiprows > 0 else 0
         num_fields = csv.get_num_fields(i0)
 
@@ -1124,7 +1242,7 @@ def loadtxt(fname: str,
 
 class CSVReaderGen:
     _path: str
-    _delimiter: u8
+    _delimiter: int
     _comments: str
     _names: List[str]
     _mmap_ptr: cobj
@@ -1132,11 +1250,17 @@ class CSVReaderGen:
     _length: int
 
     def __init__(self, path: str, delimiter: str = ',', comments: str = ''):
-        dm = u8(0)
+        dm = 0
         if len(delimiter) == 1:
-            dm = delimiter._ptr[0]
+            if path:
+                dm = int(_ascii_byte(delimiter, 'delimiter'))
+            else:
+                dm = delimiter._load_codepoint(0)
         elif len(delimiter) != 0:
             raise ValueError("'delimiter' must be a length-1 string")
+
+        if path:
+            _validate_ascii(comments, 'comments')
 
         self._path = path
         self._delimiter = dm
@@ -1150,7 +1274,7 @@ class CSVReaderGen:
         if not self._path:
             return
 
-        with open(self._path) as f:
+        with open(self._path, 'rb') as f:
             f.seek(0, 2)
             n = f.tell()
             if n > 0:
@@ -1200,20 +1324,20 @@ class CSVReaderGen:
                                 upper=upper,
                                 lower=lower)
 
-    def is_delimiter(self, c: u8):
+    def is_delimiter(self, c):
         delimiter = self._delimiter
         if delimiter:
-            return c == delimiter
+            return int(c) == int(delimiter)
         else:
             return _isspace(c)
 
     def is_whitespace_delimiter(self):
         return not self._delimiter
 
-    def is_comment(self, c: u8):
+    def is_comment(self, c):
         comments = self._comments
         for i in range(len(comments)):
-            if comments._ptr[i] == c:
+            if comments._load_codepoint(i) == int(c):
                 return True
         return False
 
@@ -1304,11 +1428,10 @@ class CSVReaderGen:
             return i
 
         # Whitespace case
-        p = line._ptr
         n = len(line)
 
         while i < n:
-            c = p[i]
+            c = line._load_codepoint(i)
             if not self.is_delimiter(c):
                 break
             i += 1
@@ -1353,11 +1476,10 @@ class CSVReaderGen:
             return True
 
         if self.is_whitespace_delimiter():
-            p = line._ptr
             n = len(line)
             i = 0
             while i < n:
-                c = p[i]
+                c = line._load_codepoint(i)
                 if self.is_comment(c):
                     return True
                 elif not _isspace(c):
@@ -1365,7 +1487,7 @@ class CSVReaderGen:
                 i += 1
             return True
         else:
-            return self.is_delimiter(line._ptr[0])
+            return self.is_comment(line._load_codepoint(0))
 
     def get_num_fields(self, i: int, get_names: bool):
         p = self._mmap_ptr
@@ -1397,7 +1519,9 @@ class CSVReaderGen:
             if c == u8(_NEWLINE) or c == u8(_CARTRIDGE) or self.is_comment(
                     c):
                 if get_names:
-                    name = str(p + last_field_start, i - last_field_start)
+                    name = _decode_utf8_slice(
+                        p + last_field_start, i - last_field_start
+                    )
                     names.append(name.strip())
 
                 i += 1
@@ -1407,7 +1531,9 @@ class CSVReaderGen:
 
             if self.is_delimiter(c):
                 if get_names:
-                    name = str(p + last_field_start, i - last_field_start)
+                    name = _decode_utf8_slice(
+                        p + last_field_start, i - last_field_start
+                    )
                     names.append(name.strip())
 
                 i = self.skip_delimiter(i)
@@ -1487,7 +1613,7 @@ class CSVReaderGen:
             c = p[i]
             if c == u8(_NEWLINE) or c == u8(_CARTRIDGE) or self.is_comment(
                     c):
-                line = str(p + line_start, i - line_start)
+                line = _decode_utf8_slice(p + line_start, i - line_start)
 
                 i += 1
                 if c == u8(_CARTRIDGE) and i < n and p[i] == u8(_NEWLINE):
@@ -1514,38 +1640,40 @@ class CSVReaderGen:
         return num_fields, i if get_names else i0
 
     def get_num_fields_single(self, line: str, get_names: bool):
-        p = line._ptr
         n = len(line)
         names = self._names
 
         i = 0
         if self.is_whitespace_delimiter():
             if get_names:
-                while i < n and (_isspace(p[i]) or self.is_comment(p[i])):
+                while i < n and (
+                    _isspace(line._load_codepoint(i))
+                    or self.is_comment(line._load_codepoint(i))
+                ):
                     i += 1
             else:
-                if n > 0 and _isspace(p[0]):
+                if n > 0 and _isspace(line._load_codepoint(0)):
                     i = self.skip_delimiter(i, line)
         else:
-            if n > 0 and self.is_comment(p[0]):
+            if n > 0 and self.is_comment(line._load_codepoint(0)):
                 i += 1
 
         last_field_start = i
         num_fields = 0
 
         while i < n:
-            c = p[i]
+            c = line._load_codepoint(i)
             if c == u8(_NEWLINE) or c == u8(_CARTRIDGE) or self.is_comment(
                     c):
                 if get_names:
-                    name = str(p + last_field_start, i - last_field_start)
+                    name = line[last_field_start:i]
                     names.append(name.strip())
 
                 num_fields += 1
                 break
             elif self.is_delimiter(c):
                 if get_names:
-                    name = str(p + last_field_start, i - last_field_start)
+                    name = line[last_field_start:i]
                     names.append(name.strip())
 
                 i = self.skip_delimiter(i, line)
@@ -1553,8 +1681,9 @@ class CSVReaderGen:
 
                 # trailing whitespace case
                 if (self.is_whitespace_delimiter() and
-                    (i >= n or p[i] == u8(_NEWLINE)
-                     or p[i] == u8(_CARTRIDGE) or self.is_comment(p[i]))):
+                    (i >= n or line._load_codepoint(i) == _NEWLINE
+                     or line._load_codepoint(i) == _CARTRIDGE
+                     or self.is_comment(line._load_codepoint(i)))):
                     break
 
                 last_field_start = i
@@ -1568,20 +1697,19 @@ class CSVReaderGen:
 
     def get_num_fields_single_spaced(self, line: str, get_names: bool,
                                      delimiter):
-        p = line._ptr
         n = len(line)
         names = self._names
 
         i = 0
-        if n > 0 and self.is_comment(p[0]):
+        if n > 0 and self.is_comment(line._load_codepoint(0)):
             i += 1
         line_start = i
 
         while i < n:
-            c = p[i]
+            c = line._load_codepoint(i)
             if c == u8(_NEWLINE) or c == u8(_CARTRIDGE) or self.is_comment(
                     c):
-                line = str(p + line_start, i - line_start)
+                line = line[line_start:i]
                 break
             else:
                 i += 1
@@ -1645,8 +1773,9 @@ class CSVReaderGen:
                         ok = False
 
                 if ok:
-                    fields[field] = str(p + last_field_start,
-                                        i - last_field_start)
+                    fields[field] = _decode_utf8_slice(
+                        p + last_field_start, i - last_field_start
+                    )
                     row_callback(fields, num_fields, row)
 
                 i += 1
@@ -1661,8 +1790,9 @@ class CSVReaderGen:
                     break
             elif self.is_delimiter(c):
                 if invalid_raise or field < num_fields:
-                    fields[field] = str(p + last_field_start,
-                                        i - last_field_start)
+                    fields[field] = _decode_utf8_slice(
+                        p + last_field_start, i - last_field_start
+                    )
 
                 i = self.skip_delimiter(i)
 
@@ -1691,8 +1821,9 @@ class CSVReaderGen:
                         ok = False
 
                 if ok:
-                    fields[field] = str(p + last_field_start,
-                                        i - last_field_start)
+                    fields[field] = _decode_utf8_slice(
+                        p + last_field_start, i - last_field_start
+                    )
                     row_callback(fields, num_fields, row)
 
                 i = self.skip_comments(i)
@@ -1713,7 +1844,9 @@ class CSVReaderGen:
                     ok = False
 
             if ok and (maxrows < 0 or row <= maxrows):
-                fields[field] = str(p + last_field_start, i - last_field_start)
+                fields[field] = _decode_utf8_slice(
+                    p + last_field_start, i - last_field_start
+                )
                 row_callback(fields, num_fields, row)
 
     def parse_spaced(self, i: int, row_callback, num_fields: int, maxrows: int,
@@ -1731,7 +1864,9 @@ class CSVReaderGen:
         while i < n:
             c = p[i]
             if (c == u8(_NEWLINE) or c == u8(_CARTRIDGE)):
-                line = str(p + last_line_start, i - last_line_start)
+                line = _decode_utf8_slice(
+                    p + last_line_start, i - last_line_start
+                )
                 k = 0
                 for f in self.partition_line(line,
                                              delimiter=delimiter,
@@ -1753,7 +1888,9 @@ class CSVReaderGen:
                 if maxrows >= 0 and row >= maxrows:
                     break
             elif self.is_comment(c):
-                line = str(p + last_line_start, i - last_line_start)
+                line = _decode_utf8_slice(
+                    p + last_line_start, i - last_line_start
+                )
                 k = 0
                 for f in self.partition_line(line,
                                              delimiter=delimiter,
@@ -1773,7 +1910,9 @@ class CSVReaderGen:
                 i += 1
 
         if last_line_start < i and (maxrows < 0 or row < maxrows):
-            line = str(p + last_line_start, i - last_line_start)
+            line = _decode_utf8_slice(
+                p + last_line_start, i - last_line_start
+            )
             k = 0
             for f in self.partition_line(line,
                                          delimiter=delimiter,
@@ -1790,22 +1929,21 @@ class CSVReaderGen:
         if not line:
             return False
 
-        p = line._ptr
         n = len(line)
         i = 0
         last_field_start = 0
         field = 0
 
-        if n > 0 and self.is_comment(p[0]):
+        if n > 0 and self.is_comment(line._load_codepoint(0)):
             return False
 
         # skip leading whitespace if required
         if self.is_whitespace_delimiter() and i < n and self.is_delimiter(
-                p[i]):
+                line._load_codepoint(i)):
             i = self.skip_delimiter(i, line)
 
         while i < n:
-            c = p[i]
+            c = line._load_codepoint(i)
             if c == u8(_NEWLINE) or c == u8(_CARTRIDGE) or self.is_comment(
                     c):
                 break
@@ -1816,7 +1954,7 @@ class CSVReaderGen:
                     else:
                         return False
 
-                fields[field] = str(p + last_field_start, i - last_field_start)
+                fields[field] = line[last_field_start:i]
                 field += 1
                 i = self.skip_delimiter(i, line)
                 last_field_start = i
@@ -1830,7 +1968,7 @@ class CSVReaderGen:
                 else:
                     return False
 
-            fields[field] = str(p + last_field_start, i - last_field_start)
+            fields[field] = line[last_field_start:i]
             field += 1
 
         if field != num_fields:
@@ -1848,15 +1986,14 @@ class CSVReaderGen:
         if not line:
             return False
 
-        p = line._ptr
         n = len(line)
         i = 0
 
-        if n > 0 and self.is_comment(p[0]):
+        if n > 0 and self.is_comment(line._load_codepoint(0)):
             return False
 
         while i < n:
-            c = p[i]
+            c = line._load_codepoint(i)
             if c == u8(_NEWLINE) or c == u8(_CARTRIDGE) or self.is_comment(
                     c):
                 line = line[:i]
@@ -2204,7 +2341,7 @@ def genfromtxt(fname,
     if isinstance(fname, str):
         if fname.endswith('.gz'):
             from gzip import open as gz_open
-            with gz_open(fname, 'rb') as f:
+            with gz_open(fname, 'r') as f:
                 return genfromtxt(f,
                                   dtype=dtype,
                                   comments=comments,

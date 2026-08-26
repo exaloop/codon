@@ -137,8 +137,29 @@ class Int:
 @extend
 class UInt:
     def __str__(self) -> str:
-        if N <= 64:
-            return self.__format__("")
+        if N < 64:
+            return str(int(self))
+
+        if N == 64:
+            if not self:
+                return '0'
+
+            s = __array__[u8](20)  # max length of 64-bit string
+            d = self
+            n = 0
+
+            while True:
+                m = d.cmod(UInt[64](10))
+                d = d.cdiv(UInt[64](10))
+                s[n] = u8(48 + int(m))  # 48 == ord('0')
+                n += 1
+                if not d:
+                    break
+
+            p = Ptr[u8](n)
+            for i in range(n):
+                p[i] = s[n - i - 1]
+            return str(p, n)
 
         s = _strbuf()
         d = self

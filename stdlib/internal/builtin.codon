@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.static as static
+from internal.types.unicode.data import unicode_is_space
 
 class object:
     def __init__(self):
@@ -51,7 +52,7 @@ def input(prompt: str = ""):
             s -= 1  # skip trailing '\n'
         if s != 0 and buf[s - 1] == u8(13):
             s -= 1  # skip trailing '\r'
-        ans = str(buf, s).__ptrcopy__()
+        ans = bytes(Ptr[u8](buf), s).decode()
         _C.free(buf)
         return ans
     else:
@@ -430,16 +431,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         return -1
 
     def _isspace(c: int):
-        '''
-        space (0x20, ' ')
-        form feed (0x0c, '\f')
-        line feed (0x0a, '\n')
-        carriage return (0x0d, '\r')
-        horizontal tab (0x09, '\t')
-        vertical tab (0x0b, '\v')
-        '''
-        return (c == 0x20 or c == 0x0c or c == 0x0a or c == 0x0d or
-            c == 0x09 or c == 0x0b)
+        return unicode_is_space(c)
 
     def _limit(neg: bool, T: type):
         if T is int:
@@ -620,16 +612,33 @@ class UInt:
     def _from_str(s: str, base: int):
         return _parse_int(s, base, UInt[N])
 
+def _parse_float_prefix(value: str, start: int):
+    length = 0
+    data = Ptr[u8](len(value) - start)
+
+    while start + length < len(value):
+        codepoint = value._load_codepoint(start + length)
+        if codepoint > 0x7F:
+            break
+        data[length] = u8(codepoint)
+        length += 1
+
+    if length == 0:
+        return 0.0, 0
+
+    ascii_value = str(data, length)
+    end = cobj()
+    result = _C.seq_float_from_str(ascii_value, __ptr__(end))
+    return result, end - data
+
 @extend
 class float:
     def _from_str(s: str) -> float:
         s0 = s
-        s = s.rstrip()
-        n = len(s)
-        end = cobj()
-        result = _C.seq_float_from_str(s, __ptr__(end))
+        s = s.strip()
+        result, consumed = _parse_float_prefix(s, 0)
 
-        if n == 0 or end != s._ptr + n:
+        if len(s) == 0 or consumed != len(s):
             raise ValueError(f"could not convert string to float: {s0.__repr__()}")
 
         return result
@@ -641,67 +650,70 @@ class complex:
             raise ValueError("complex() arg is a malformed string")
 
         n = len(v)
-        s = v._ptr
         x = 0.0
         y = 0.0
         z = 0.0
         got_bracket = False
-        end = cobj()
         i = 0
 
-        while i < n and str._isspace(s[i]):
+        while i < n and unicode_is_space(v._load_codepoint(i)):
             i += 1
 
-        if i < n and s[i] == u8(40):  # '('
+        if i < n and v._load_codepoint(i) == 40:  # '('
             got_bracket = True
             i += 1
-            while i < n and str._isspace(s[i]):
+            while i < n and unicode_is_space(v._load_codepoint(i)):
                 i += 1
 
-        z = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
+        z, consumed = _parse_float_prefix(v, i)
 
-        if end != s + i:
-            i = end - s
+        if consumed:
+            i += consumed
 
-            if i < n and (s[i] == u8(43) or s[i] == u8(45)):  # '+' '-'
+            if i < n and (v._load_codepoint(i) == 43 or
+                          v._load_codepoint(i) == 45):  # '+' '-'
                 x = z
-                y = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
+                y, consumed = _parse_float_prefix(v, i)
 
-                if end != s + i:
-                    i = end - s
+                if consumed:
+                    i += consumed
                 else:
-                    y = 1.0 if s[i] == u8(43) else -1.0
+                    y = 1.0 if v._load_codepoint(i) == 43 else -1.0
                     i += 1
 
-                if not (i < n and (s[i] == u8(106) or s[i] == u8(74))):  # 'j' 'J'
+                if not (i < n and (v._load_codepoint(i) == 106 or
+                                   v._load_codepoint(i) == 74)):  # 'j' 'J'
                     parse_error()
 
                 i += 1
-            elif i < n and (s[i] == u8(106) or s[i] == u8(74)):  # 'j' 'J'
+            elif i < n and (v._load_codepoint(i) == 106 or
+                            v._load_codepoint(i) == 74):  # 'j' 'J'
                 i += 1
                 y = z
             else:
                 x = z
         else:
-            if i < n and (s[i] == u8(43) or s[i] == u8(45)):  # '+' '-'
-                y = 1.0 if s[i] == u8(43) else -1.0
+            if i < n and (v._load_codepoint(i) == 43 or
+                          v._load_codepoint(i) == 45):  # '+' '-'
+                y = 1.0 if v._load_codepoint(i) == 43 else -1.0
                 i += 1
             else:
                 y = 1.0
 
-            if not (i < n and (s[i] == u8(106) or s[i] == u8(74))):  # 'j' 'J'
+            if not (i < n and (v._load_codepoint(i) == 106 or
+                               v._load_codepoint(i) == 74)):  # 'j' 'J'
                 parse_error()
 
             i += 1
 
-        while i < n and str._isspace(s[i]):
+        while i < n and unicode_is_space(v._load_codepoint(i)):
             i += 1
 
         if got_bracket:
-            if i < n and s[i] != u8(41):  # ')'
+            if i < n and v._load_codepoint(i) != 41:  # ')'
                 parse_error()
             i += 1
-            while i < n and str._isspace(s[i]):
+            while i < n and unicode_is_space(v._load_codepoint(i)):
                 i += 1
 
         if i != n:

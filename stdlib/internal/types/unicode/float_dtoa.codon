@@ -20,12 +20,29 @@ FLOAT64_EXPONENT_INF_NAN: Literal[int] = 0x7FF
 FLOAT64_SUBNORMAL_EXPONENT: Literal[int] = -1074
 FLOAT64_NORMAL_EXPONENT_OFFSET: Literal[int] = -1075
 
+FLOAT32_SIGN_MASK: Literal[int] = 0x80000000
+FLOAT32_EXPONENT_MASK: Literal[int] = 0x7F800000
+FLOAT32_FRACTION_MASK: Literal[int] = 0x007FFFFF
+FLOAT32_HIDDEN_BIT: Literal[int] = 0x00800000
+
+FLOAT32_EXPONENT_SHIFT: Literal[int] = 23
+FLOAT32_EXPONENT_INF_NAN: Literal[int] = 0xFF
+FLOAT32_SUBNORMAL_EXPONENT: Literal[int] = -149
+FLOAT32_NORMAL_EXPONENT_OFFSET: Literal[int] = -150
+
 
 @pure
 @llvm
 def float_bits(value: float) -> u64:
     %bits = bitcast double %value to i64
     ret i64 %bits
+
+
+@pure
+@llvm
+def float32_bits(value: float32) -> u32:
+    %bits = bitcast float %value to i32
+    ret i32 %bits
 
 
 def _u128_from_words(lo: u64, hi: u64) -> u128:
@@ -95,6 +112,39 @@ class _Float64:
         else:
             self.mantissa = fraction | u64(FLOAT64_HIDDEN_BIT)
             self.exponent = exponent_bits + FLOAT64_NORMAL_EXPONENT_OFFSET
+
+
+class _Float32:
+    negative: bool
+    mantissa: u64
+    exponent: int
+    is_zero: bool
+    is_infinite: bool
+    is_nan: bool
+
+    def __init__(self, value: float32):
+        bits = float32_bits(value)
+        exponent_bits = int(
+            (bits & u32(FLOAT32_EXPONENT_MASK))
+            >> u32(FLOAT32_EXPONENT_SHIFT)
+        )
+        fraction = bits & u32(FLOAT32_FRACTION_MASK)
+
+        self.negative = (bits & u32(FLOAT32_SIGN_MASK)) != u32(0)
+        self.is_zero = exponent_bits == 0 and fraction == u32(0)
+        self.is_infinite = (
+            exponent_bits == FLOAT32_EXPONENT_INF_NAN and fraction == u32(0)
+        )
+        self.is_nan = (
+            exponent_bits == FLOAT32_EXPONENT_INF_NAN and fraction != u32(0)
+        )
+
+        if exponent_bits == 0:
+            self.mantissa = u64(fraction)
+            self.exponent = FLOAT32_SUBNORMAL_EXPONENT
+        else:
+            self.mantissa = u64(fraction | u32(FLOAT32_HIDDEN_BIT))
+            self.exponent = exponent_bits + FLOAT32_NORMAL_EXPONENT_OFFSET
 
 
 def _floor_log2(value: u64) -> int:
@@ -232,9 +282,11 @@ class _FloatDecimal:
         self.exponent = exponent
 
 
-def _float_shortest_decimal(value: float) -> _FloatDecimal:
-    decoded = _Float64(value)
-
+def _float_shortest_decimal_decoded(
+    decoded,
+    hidden_bit: u64,
+    subnormal_exponent: int,
+) -> _FloatDecimal:
     if decoded.is_zero or decoded.is_infinite or decoded.is_nan:
         return _FloatDecimal(u64(0), 0)
 
@@ -247,7 +299,7 @@ def _float_shortest_decimal(value: float) -> _FloatDecimal:
     mp = mv + u64(2)
     mm_shift = (
         1
-        if mantissa != u64(FLOAT64_HIDDEN_BIT) or exponent <= -1074
+        if mantissa != hidden_bit or exponent <= subnormal_exponent
         else 0
     )
     mm = mv - u64(1 + mm_shift)
@@ -359,6 +411,22 @@ def _float_shortest_decimal(value: float) -> _FloatDecimal:
     return _FloatDecimal(vr, decimal_exponent + removed)
 
 
+def _float_shortest_decimal(value: float) -> _FloatDecimal:
+    return _float_shortest_decimal_decoded(
+        _Float64(value),
+        u64(FLOAT64_HIDDEN_BIT),
+        FLOAT64_SUBNORMAL_EXPONENT,
+    )
+
+
+def _float32_shortest_decimal(value: float32) -> _FloatDecimal:
+    return _float_shortest_decimal_decoded(
+        _Float32(value),
+        u64(FLOAT32_HIDDEN_BIT),
+        FLOAT32_SUBNORMAL_EXPONENT,
+    )
+
+
 def _write_decimal_digits(value: u64, output: Ptr[u8]) -> int:
     length = _decimal_length(value)
 
@@ -392,12 +460,13 @@ def _write_exponent(exponent: int, output: Ptr[u8]) -> int:
     return pos + length
 
 
-def _float_dtoa_shortest_write(
-    value: float,
+def _float_dtoa_shortest_decoded_write(
+    decoded,
+    decimal: _FloatDecimal,
     output: Ptr[u8],
     scientific: bool,
+    add_dot_zero: bool = True,
 ) -> int:
-    decoded = _Float64(value)
     pos = 0
 
     # CPython does not retain a NaN sign in its default representation.
@@ -427,11 +496,13 @@ def _float_dtoa_shortest_write(
             output[pos + 4] = u8(0x30)  # 0
             return pos + 5
 
-        output[pos + 1] = u8(0x2E)  # .
-        output[pos + 2] = u8(0x30)  # 0
-        return pos + 3
+        if add_dot_zero:
+            output[pos + 1] = u8(0x2E)  # .
+            output[pos + 2] = u8(0x30)  # 0
+            return pos + 3
 
-    decimal = _float_shortest_decimal(value)
+        return pos + 1
+
     digits = decimal.significand
     digit_count = _decimal_length(digits)
     decimal_point = digit_count + decimal.exponent
@@ -473,9 +544,12 @@ def _float_dtoa_shortest_write(
             output[pos] = u8(0x30)
             pos += 1
 
-        output[pos] = u8(0x2E)
-        output[pos + 1] = u8(0x30)
-        return pos + 2
+        if add_dot_zero:
+            output[pos] = u8(0x2E)
+            output[pos + 1] = u8(0x30)
+            return pos + 2
+
+        return pos
 
     # Insert the decimal point into already-written digits.
     for i in range(digit_count - 1, decimal_point - 1, -1):
@@ -485,10 +559,45 @@ def _float_dtoa_shortest_write(
     return pos + digit_count + 1
 
 
-def _float_dtoa_shortest(value: float) -> str:
+def _float_dtoa_shortest_write(
+    value: float,
+    output: Ptr[u8],
+    scientific: bool,
+    add_dot_zero: bool = True,
+) -> int:
+    return _float_dtoa_shortest_decoded_write(
+        _Float64(value),
+        _float_shortest_decimal(value),
+        output,
+        scientific,
+        add_dot_zero,
+    )
+
+
+def _float_dtoa_shortest(value: float, add_dot_zero: bool = True) -> str:
     FLOAT_DTOA_SHORTEST_BUFFER_SIZE: Literal[int] = 32
     buffer = __array__[u8](FLOAT_DTOA_SHORTEST_BUFFER_SIZE)
-    length = _float_dtoa_shortest_write(value, buffer, False)
+    length = _float_dtoa_shortest_write(
+        value, buffer, False, add_dot_zero
+    )
+    p = Ptr[u8](length)
+    str.memcpy(p, buffer, length)
+    return str(p, length)
+
+
+def _float32_dtoa_shortest(
+    value: float32,
+    add_dot_zero: bool = True,
+) -> str:
+    FLOAT_DTOA_SHORTEST_BUFFER_SIZE: Literal[int] = 32
+    buffer = __array__[u8](FLOAT_DTOA_SHORTEST_BUFFER_SIZE)
+    length = _float_dtoa_shortest_decoded_write(
+        _Float32(value),
+        _float32_shortest_decimal(value),
+        buffer,
+        False,
+        add_dot_zero,
+    )
     p = Ptr[u8](length)
     str.memcpy(p, buffer, length)
     return str(p, length)
