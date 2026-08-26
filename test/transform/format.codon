@@ -1,0 +1,88 @@
+def test_compound_formatting():
+    assert "abc{:04d}xyz".format(42) == "abc0042xyz"
+    assert "{1}:{0}:{1}".format("left", "right") == "right:left:right"
+    assert "{{{0}}} = {1:+06d} = {2:.2f}".format("x", 42, 1.25) == (
+        "{x} = +00042 = 1.25"
+    )
+    assert "{:*^7}|{:.3}".format("x", "abcdef") == "***x***|abc"
+    assert "{:é^5}".format("x") == "ééxéé"
+
+
+class CompoundValue:
+    name: str
+    values: List[int]
+    mapping: Dict[str, str]
+
+    def __init__(self):
+        self.name = "box"
+        self.values = [3, 7]
+        self.mapping = {"key": "value"}
+
+
+def test_compound_fields():
+    value = CompoundValue()
+    assert "{0.name}:{0.values[1]:04d}:{0.mapping[key]}".format(value) == (
+        "box:0007:value"
+    )
+    assert "{[1]}:{[key]}".format(["zero", "one"], {"key": "mapped"}) == (
+        "one:mapped"
+    )
+    assert "{0[1]}:{0[2]}".format(("zero", "one", "two")) == "one:two"
+    assert "{0[1]}".format("abc") == "b"
+    assert "{.name}".format(value) == "box"
+
+
+def test_argument_evaluation():
+    events = List[str]()
+
+    def mark(value: str) -> str:
+        events.append(value)
+        return value
+
+    assert "{1}:{0}:{1}".format(mark("first"), mark("second")) == (
+        "second:first:second"
+    )
+    assert events == ["first", "second"]
+
+    events.clear()
+    assert "{}".format(mark("used"), mark("unused")) == "used"
+    assert events == ["used", "unused"]
+
+
+class Formattable:
+    value: str
+
+    def __init__(self, value: str):
+        self.value = value
+
+    def __format__(self, spec: str) -> str:
+        return self.value + ":" + spec
+
+
+def test_fallbacks():
+    assert "<{:tag}>".format(Formattable("value")) == "<value:tag>"
+
+    dynamic = "{:04d}"
+    assert dynamic.format(7) == "0007"
+
+    assert "{0:{1}}".format(7, "04d") == "0007"
+
+    failed = False
+    try:
+        "{".format(1)
+    except ValueError:
+        failed = True
+    assert failed
+
+
+def test_scalar_formatting():
+    assert (42).__format__("+06d") == "+00042"
+    assert (1.25).__format__("08.2f") == "00001.25"
+    assert "x".__format__("*^5") == "**x**"
+
+
+test_compound_formatting()
+test_compound_fields()
+test_argument_evaluation()
+test_fallbacks()
+test_scalar_formatting()
