@@ -534,13 +534,13 @@ def backward_find(s: Ptr[u8], n: int, needle: Ptr[u8], k: int):
 
     return -1
 
-def find(haystack: str, needle: str):
+def find(haystack: bytes, needle: bytes):
     return forward_find(haystack._ptr, haystack._len, needle._ptr, needle._len)
 
-def rfind(haystack: str, needle: str):
+def rfind(haystack: bytes, needle: bytes):
     return backward_find(haystack._ptr, haystack._len, needle._ptr, needle._len)
 
-def count(haystack: str, needle: str):
+def count(haystack: bytes, needle: bytes):
     occ = 0
     tmp = haystack._ptr
     n = haystack._len
@@ -557,7 +557,7 @@ def count(haystack: str, needle: str):
         occ += 1
     return occ
 
-def count_with_max(haystack: str, needle: str, maxcount: int):
+def count_with_max(haystack: bytes, needle: bytes, maxcount: int):
     occ = 0
     tmp = haystack._ptr
     n = haystack._len

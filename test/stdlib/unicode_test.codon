@@ -61,6 +61,32 @@ def test_ascii_and_slicing():
 
 
 @test
+def test_chr_ord():
+    for codepoint in [
+        0, 0x7F, 0x80, 0xFF, 0x100, 0xD7FF, 0xD800, 0xDFFF,
+        0xE000, 0xFFFF, 0x10000, 0x10FFFF,
+    ]:
+        character = chr(codepoint)
+        assert len(character) == 1
+        assert ord(character) == codepoint
+        assert character == _unicode_from_codepoint(codepoint)
+
+    for codepoint in [-1, 0x110000]:
+        try:
+            chr(codepoint)
+            assert False
+        except ValueError:
+            pass
+
+    for value in [unicode(""), unicode("ab")]:
+        try:
+            ord(value)
+            assert False
+        except TypeError:
+            pass
+
+
+@test
 def test_comparisons_and_search():
     u = unicode("banana")
     assert u == unicode("banana")
@@ -84,7 +110,6 @@ def test_comparisons_and_search():
     assert latin1 < ucs2
     assert ucs2 < ucs4
     assert latin1 + unicode("z") > latin1 + unicode("a")
-
     assert u.find(unicode("ana")) == 1
     assert u.rfind(unicode("ana")) == 3
     assert u.index(unicode("na")) == 2
@@ -95,6 +120,23 @@ def test_comparisons_and_search():
     assert u.endswith(unicode("ana"))
     assert u.startswith(unicode("na"), 2)
     assert u.endswith(unicode("na"), 2, 6)
+
+
+@test
+def test_pointer_description():
+    pointer = Ptr[u8]()
+    address = pointer.__repr__()
+    names = [
+        unicode("pointer"),
+        _unicode_from_codepoint(0xE9),
+        _unicode_from_codepoint(0x03A9),
+        _unicode_from_codepoint(0x1F600),
+    ]
+
+    for name in names:
+        assert Ptr._ptr_to_str(pointer, name) == unicode("<") + name + unicode(
+            " at "
+        ) + address + unicode(">")
 
 
 @test
@@ -1819,7 +1861,9 @@ def test_unicode_final_sigma_case_methods():
 
 test_empty()
 test_ascii_and_slicing()
+test_chr_ord()
 test_comparisons_and_search()
+test_pointer_description()
 test_fastsearch_paths()
 test_fastsearch_sliced_bounds()
 test_fastsearch_mixed_kind_views()
@@ -3225,6 +3269,23 @@ def test_bytes_percent_format_errors():
         pass
 
 
+@test
+def test_bytes_search_algorithms():
+    value = _raw_bytes([0x00, 0xFF, 0x61, 0x00, 0xFF, 0x61])
+    needle = _raw_bytes([0x00, 0xFF])
+
+    assert value.find(needle) == 0
+    assert value.find(needle, 1) == 3
+    assert value.rfind(needle) == 3
+    assert value.count(needle) == 2
+    assert value.find(bytes()) == 0
+    assert value.rfind(bytes()) == len(value)
+    assert value.count(bytes()) == len(value) + 1
+    assert value.replace(needle, _raw_bytes([0x42]), 1) == _raw_bytes(
+        [0x42, 0x61, 0x00, 0xFF, 0x61]
+    )
+
+
 test_percent_basic()
 test_percent_multiple_arguments()
 test_percent_integer_signs_flags_width()
@@ -3258,6 +3319,7 @@ test_percent_cpython_adversarial_matrix()
 test_bytes_percent_format()
 test_bytes_percent_mapping()
 test_bytes_percent_format_errors()
+test_bytes_search_algorithms()
 
 
 # new-style format

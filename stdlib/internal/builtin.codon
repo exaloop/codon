@@ -159,12 +159,13 @@ def abs(x):
 def hash(x) -> int:
     return x.__hash__()
 
-def ord(s: str) -> int:
-    if len(s) != 1:
+def ord(character: str) -> int:
+    n = len(character)
+    if n != 1:
         raise TypeError(
-            f"ord() expected a character, but string of length {len(s)} found"
+            f"ord() expected a character, but string of length {n} found"
         )
-    return int(s._ptr[0])
+    return character._load_codepoint(0)
 
 def divmod(a, b):
     if hasattr(a, "__divmod__"):
@@ -172,10 +173,23 @@ def divmod(a, b):
     else:
         return (a // b, a % b)
 
-def chr(i: int) -> str:
-    p = cobj(1)
-    p[0] = u8(i)
-    return str(p, 1)
+def chr(codepoint: int) -> str:
+    if codepoint < 0 or codepoint > 0x10FFFF:
+        raise ValueError("chr() arg not in range(0x110000)")
+
+    if codepoint <= 0x7F:
+        kind, width = 0, 1
+    elif codepoint <= 0xFF:
+        kind, width = 1, 1
+    elif codepoint <= 0xFFFF:
+        kind, width = 2, 2
+    else:
+        kind, width = 3, 4
+
+    data = Ptr[u8](width)
+    for offset in range(width):
+        data[offset] = u8(codepoint >> (8 * offset))
+    return str(data, 1 | (kind << 56))
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
