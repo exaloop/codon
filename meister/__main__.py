@@ -17,6 +17,10 @@ def main(argv):
         node = cache.scope(node)
         # node = typecheck.visit(node)
         print(ast.dump(node, indent=2, include_attributes=True))
+    elif mode == "test":
+        from . import test
+
+        test.main(argv[1:])
     else:
         print(f"Invalid mode: {mode}")
 

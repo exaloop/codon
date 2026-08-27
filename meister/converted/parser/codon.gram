@@ -45,7 +45,7 @@ simple_stmts[List[ast.Stmt]]:
 # will throw a SyntaxError.
 simple_stmt[ast.Stmt] (memo):
     | assignment
-    | &"print" print_stmt
+    | &("print" !'(') print_stmt
     | e=star_expressions { ast.ExprStmt(expr=e, LOCATIONS) }
     | &'return' return_stmt
     | &('import' | 'from') import_stmt
@@ -171,7 +171,7 @@ import_from[ast.SuiteStmt]:
 import_from_targets[List[tuple]]:
     | '(' a=import_from_as_names [','] ')' { a }
     | import_from_as_names !','
-    | '*' { [("*", None, [], None, False)] }
+    | '*' { [("*", None, [], None, True)] }
     | invalid_import_from_targets
 import_from_as_names[List[tuple]]:
     | a=','.import_from_as_name+ { a }
@@ -186,7 +186,7 @@ import_from_as_name[Tuple]:
         (a, b, [], d, False)
     }
     | a=dotted_name b=['as' z=NAME { z.string }] {
-        (a, b, [], None, False)
+        (a, b, [], None, True)
     }
 import_params[ast.Expr]:
     | a=import_param ',' { a }
@@ -196,7 +196,7 @@ import_param[ast.Expr]: e=expression { e }
 dotted_as_names[List[tuple]]:
     | a=','.dotted_as_name+ { a }
 dotted_as_name[Tuple]:
-    | a=dotted_name b=['as' z=NAME { z.string }] { (a, b, [], None, False) }
+    | a=dotted_name b=['as' z=NAME { z.string }] { (a, b, [], None, True) }
 dotted_name[str]:
     | a=dotted_name '.' b=NAME { a + "." + b.string }
     | a=NAME { a.string }

@@ -423,15 +423,12 @@ class Cache:
     def get_content(self, info: ast.Node.SrcInfo) -> str:
         if not (imported := self.imports.get(info.file, None)):
             return ""
-        line = info.line - 1
-        if line < 0 or line >= len(imported.content):
-            return ""
-        content = imported.content[line]
-        col = info.col - 1
-        if col < 0 or col >= len(content):
-            return ""
-        length = info.length
-        return content[col : col + length]
+        content = imported.content[
+            max(0, info.line - 1) : min(info.end_line, len(imported.content))
+        ]
+        content[0] = content[0][info.col - 1 :]
+        content[-1] = content[-1][: info.end_col]
+        return "".join(content)
 
     def get_class(self, typ: ast.types.Class) -> ClassData:
         return self.classes[typ.name]
@@ -609,7 +606,7 @@ class Cache:
         ctx = scope.ScopeContext(self, scope=[])
         visitor = scope.ScopingVisitor(ctx)
         with visitor.conditional(node, block_id=0):
-            visitor.transform(node)
+            visitor.visit(node)
             visitor.process_child_captures()
             if dominate_all:
                 for name in ctx.map:

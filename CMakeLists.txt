@@ -209,6 +209,7 @@ set(CODON_HPPFILES
   codon/parser/ast/types/static.h
   codon/parser/ast/types/traits.h
   codon/parser/cache.h
+  codon/parser/capi.h
   codon/parser/common.h
   codon/parser/ctx.h
   codon/parser/peg/peg.h
@@ -310,6 +311,7 @@ set(CODON_CPPFILES
   codon/parser/ast/types/static.cpp
   codon/parser/ast/types/traits.cpp
   codon/parser/cache.cpp
+  codon/parser/capi.cpp
   codon/parser/match.cpp
   codon/parser/common.cpp
   codon/parser/peg/peg.cpp

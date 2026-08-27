@@ -80,8 +80,7 @@ class ScopeContext(Context):
     child_captures: Dict[str, Bindings.Scope]
     first_seen: Dict[str, ast.Node]
     class_deduce: tuple[str, Set[str]]
-    assignment: bool = False
-    assignment_source: ast.Node | None = None
+    assignment: ast.Node | None = None
     function_scope: ast.FunctionStmt | None = None
     in_class: bool = False
     renames: List[Dict[str, str]]
@@ -98,8 +97,7 @@ class ScopeContext(Context):
         child_captures: Dict[str, Bindings.Scope] | None = None,
         first_seen: Dict[str, ast.Node] | None = None,
         class_deduce: tuple[str, Set[str]] | None = None,
-        assignment: bool = False,
-        assignment_source: ast.Node | None = None,
+        assignment: ast.Node | None = None,
         function_scope: ast.FunctionStmt | None = None,
         in_class: bool = False,
         renames: List[Dict[str, str]] | None = None,
@@ -114,7 +112,6 @@ class ScopeContext(Context):
         self.first_seen = {} if first_seen is None else first_seen
         self.class_deduce = ("", set()) if class_deduce is None else class_deduce
         self.assignment = assignment
-        self.assignment_source = assignment_source
         self.function_scope = function_scope
         self.in_class = in_class
         self.renames = [{}] if renames is None else renames
@@ -131,7 +128,6 @@ def is_inside(inner, outer):
 
 @dataclass(init=False)
 class ScopingVisitor(ast.NodeVisitor):
-    # Can error!
     ctx: ScopeContext
 
     def __init__(self, ctx: ScopeContext):
@@ -154,41 +150,14 @@ class ScopingVisitor(ast.NodeVisitor):
         )
         self.ctx.scope.pop()
 
-    def transform(self, node: ast.Node | None):
-        if node is not None:
+    def visit(self, node):
+        if node:
             if isinstance(node, ast.Stmt):
                 self.ctx.time += 1
                 node.set(ast.Attr.ExprTime, self.ctx.time)
-            return node.accept(self)
-        return True
-
-    def transform_binding(self, expr: ast.Expr | None, source: ast.Node) -> bool:
-        if expr is None:
-            return False
-        if isinstance(expr, ast.IndexExpr):
-            return self.transform(expr)
-        elif isinstance(expr, ast.DotExpr):
-            result = self.transform(expr)
-            match expr.expr:
-                case ast.IdExpr(value) if result and value == self.ctx.class_deduce[0]:
-                    self.ctx.class_deduce[1].add(expr.member)
-            return result
-        elif isinstance(expr, (ast.ListExpr, ast.TupleExpr, ast.IdExpr)):
-            with (
-                self.ctx.substitute("assignment", True),
-                self.ctx.substitute("assignment_source", source),
-            ):
-                # these IDs are definitions, should not have __used__ checks
-                if isinstance(expr, ast.IdExpr):
-                    expr.set(ast.Attr.ExprNoUndefCheck)
-                return self.transform(expr)
-
-        raise ScopeError(expr, "cannot assign to given expression")
-        return False
+            return super().visit(node)
 
     def visit_IdExpr(self, node: ast.IdExpr):
-        if self.ctx.assignment:
-            self.ctx.assignment_source = node
         if self.ctx.assignment and self.ctx.temp_scope:
             self.ctx.renames[-1][node.value] = self.ctx.cache.get_temporary_var(node.value)
         for renames in reversed(self.ctx.renames):
@@ -196,50 +165,54 @@ class ScopingVisitor(ast.NodeVisitor):
                 node.value = renames[node.value]
                 break
         if self.ctx.assignment:
-            self.bind_name(node.value, node, source=self.ctx.assignment_source)
+            self.bind_name(node.value, node, source=self.ctx.assignment)
+            # Disallow __used__ checks for bindings
+            node.set(ast.Attr.ExprNoUndefCheck)
         else:
             self.read_name(node.value, node)
-        # self.mark_name(node.value, self.ctx.assignment, self.ctx.assignment_source, node.info)
-        return True
 
     def visit_DotExpr(self, node: ast.DotExpr):
         # Disable assignment in all cases (to handle a.x, y = b)
-        with self.ctx.substitute("assignment", False):
+        match node.expr:
+            case ast.IdExpr(value=value) if value == self.ctx.class_deduce[0]:
+                self.ctx.class_deduce[1].add(node.member)
+        with self.ctx.substitute("assignment", None):
             self.generic_visit(node)
 
     def visit_IndexExpr(self, node: ast.IndexExpr):
         # Disable assignment in all cases (to handle a[x], y = b)
-        with self.ctx.substitute("assignment", False):
+        with self.ctx.substitute("assignment", None):
             self.generic_visit(node)
 
     def visit_GeneratorExpr(self, node: ast.GeneratorExpr):
         with self.ctx.substitute("temp_scope", True):
             self.ctx.renames.append({})
             try:
-                self.transform(node.final_expr())
+                self.visit(node.final_expr())
             finally:
                 self.ctx.renames.pop()
 
     def visit_IfExpr(self, node: ast.IfExpr):
-        self.transform(node.cond)
+        self.visit(node.cond)
         with self.conditional():
-            self.transform(node.ifexpr)
+            self.visit(node.ifexpr)
         with self.conditional():
-            self.transform(node.elsexpr)
+            self.visit(node.elsexpr)
 
     def visit_BinaryExpr(self, node: ast.BinaryExpr):
-        self.transform(node.lexpr)
+        self.visit(node.lexpr)
         if node.op in ("&&", "||"):
             with self.conditional():
-                self.transform(node.rexpr)
+                self.visit(node.rexpr)
         else:
-            self.transform(node.rexpr)
+            self.visit(node.rexpr)
 
     def visit_AssignExpr(self, node: ast.AssignExpr):
         assert isinstance(node.var, ast.IdExpr), "only simple assignment expressions are supported"
         with self.ctx.substitute("temp_scope", False):
-            self.transform(node.expr)
-            self.transform_binding(node.var, node)
+            self.visit(node.expr)
+            with self.ctx.substitute("assignment", node):
+                self.visit(node.var)
 
     def visit_LambdaExpr(self, node: ast.LambdaExpr):
         inner = ScopeContext(
@@ -252,12 +225,12 @@ class ScopingVisitor(ast.NodeVisitor):
         for arg in node.items:
             visitor.bind_name(arg.name.lstrip("*"), arg, source=node)
             if arg.default:
-                self.transform(arg.default)
+                self.visit(arg.default)
         inner.scope.pop()
 
         suite = ast.SuiteStmt()
         inner.scope.append(ScopeContext.Block(0, suite))
-        visitor.transform(node.expr)
+        visitor.visit(node.expr)
         visitor.process_child_captures()
         inner.scope.pop()
 
@@ -268,57 +241,59 @@ class ScopingVisitor(ast.NodeVisitor):
         node.set(ast.Attr.Bindings, attr)
 
     def visit_AssignStmt(self, node: ast.AssignStmt):
-        self.transform(node.rhs)
-        self.transform(node.type_expr)
-        self.transform_binding(node.lhs, node)
+        self.visit(node.rhs)
+        self.visit(node.type_expr)
+        with self.ctx.substitute("assignment", node):
+            self.visit(node.lhs)
 
     def visit_IfStmt(self, node: ast.IfStmt):
-        self.transform(node.cond)
+        self.visit(node.cond)
         with self.conditional(node.if_suite):
-            self.transform(node.if_suite)
+            self.visit(node.if_suite)
         with self.conditional(node.else_suite):
-            self.transform(node.else_suite)
+            self.visit(node.else_suite)
 
     def visit_MatchStmt(self, node: ast.MatchStmt):
-        self.transform(node.expr)
+        self.visit(node.expr)
         for item in node.items:
-            self.transform(item.pattern)
-            self.transform(item.guard)
+            self.visit(item.pattern)
+            self.visit(item.guard)
             with self.conditional(item.suite):
-                self.transform(item.suite)
+                self.visit(item.suite)
 
     def visit_WhileStmt(self, node: ast.WhileStmt):
         seen = set()
         with self.conditional(node.suite):
             self.ctx.scope[-1].seen_names = set()
-            self.transform(node.cond)
+            self.visit(node.cond)
             seen.update(self.ctx.scope[-1].seen_names)
         for var in seen:
             self.dominate(var)
         with self.conditional(node.suite):
             self.ctx.scope[-1].seen_names = set()
-            self.transform(node.suite)
+            self.visit(node.suite)
             seen.update(self.ctx.scope[-1].seen_names)
         for var in seen:
             self.dominate(var)
         with self.conditional(node.else_suite):
-            self.transform(node.else_suite)
+            self.visit(node.else_suite)
 
     def visit_ForStmt(self, node: ast.ForStmt):
-        self.transform(node.iter)
-        self.transform(node.decorator)
+        self.visit(node.iter)
+        self.visit(node.decorator)
         for argument in node.omp_args:
-            self.transform(argument.value)
+            self.visit(argument.value)
         seen, seen_def = set(), set()
         with self.conditional(node.suite):
             seen_def = self.ctx.scope[-1].seen_names = set()
-            self.transform_binding(node.var, node)
+            with self.ctx.substitute("assignment", node):
+                self.visit(node.var)
             seen = self.ctx.scope[-1].seen_names = set()
-            self.transform(node.suite)
+            self.visit(node.suite)
         for var in seen - seen_def:
             self.dominate(var)
         with self.conditional(node.else_suite):
-            self.transform(node.else_suite)
+            self.visit(node.else_suite)
 
     def visit_GlobalStmt(self, node: ast.GlobalStmt):
         # No shadowing od global/nonlocal allowed
@@ -339,40 +314,41 @@ class ScopingVisitor(ast.NodeVisitor):
                 raise ScopeError(node, "import * only allowed at module level")
             # dylib C imports
             case ast.ImportStmt(from_expr=ast.IdExpr(value="C"), what=ast.DotExpr(expr=what)):
-                self.transform(what)
+                self.visit(what)
             case ast.ImportStmt(as_="", what=ast.IdExpr(value="*")):
                 pass
             case ast.ImportStmt(as_=""):
-                self.transform_binding(node.what or node.from_expr, node)
+                with self.ctx.substitute("assignment", node):
+                    self.visit(node.what or node.from_expr)
             case _:
                 self.bind_name(node.as_, node)
         for argument in node.args:
-            self.transform(argument.type)
-            self.transform(argument.default)
-        self.transform(node.ret)
+            self.visit(argument.type)
+            self.visit(argument.default)
+        self.visit(node.ret)
 
     def visit_TryStmt(self, node: ast.TryStmt):
         with self.conditional(node.suite):
-            self.transform(node.suite)
+            self.visit(node.suite)
         for catch in node.items:
-            self.transform(catch.exc)
+            self.visit(catch.exc)
             with self.conditional(catch.suite):
                 if catch.var:
                     new_name = self.ctx.cache.get_temporary_var(catch.var)
                     self.ctx.renames.append({catch.var: new_name})
                     catch.var = new_name
                     self.bind_name(catch.var, catch)
-                self.transform(catch.suite)
+                self.visit(catch.suite)
                 if catch.var:
                     self.ctx.renames.pop()
         with self.conditional(node.else_suite):
-            self.transform(node.else_suite)
-        self.transform(node.finally_suite)
+            self.visit(node.else_suite)
+        self.visit(node.finally_suite)
 
     def visit_YieldStmt(self, node: ast.YieldStmt):
         if self.ctx.function_scope:
             self.ctx.function_scope.set(ast.Attr.IsGenerator)
-        self.transform(node.expr)
+        self.visit(node.expr)
 
     def visit_YieldExpr(self, _: ast.YieldExpr):
         if self.ctx.function_scope:
@@ -381,10 +357,10 @@ class ScopingVisitor(ast.NodeVisitor):
     def visit_WithStmt(self, node: ast.WithStmt):
         with self.conditional(node.suite):
             for index, item in enumerate(node.items):
-                self.transform(item)
+                self.visit(item)
                 if node.vars[index]:
                     self.bind_name(node.vars[index], node)
-            self.transform(node.suite)
+            self.visit(node.suite)
 
     def visit_ClassStmt(self, node: ast.ClassStmt):
         if node.has(ast.Attr.Extend):
@@ -401,11 +377,11 @@ class ScopingVisitor(ast.NodeVisitor):
             )
         )
         for argument in node.items:
-            visitor.transform(argument.type)
-            visitor.transform(argument.default)
-        visitor.transform(node.suite)
+            visitor.visit(argument.type)
+            visitor.visit(argument.default)
+        visitor.visit(node.suite)
         for base_class in node.base_classes:
-            self.transform(base_class)
+            self.visit(base_class)
 
     def visit_FunctionStmt(self, node: ast.FunctionStmt):
         if not any(isinstance(d, ast.IdExpr) and d.value == "overload" for d in node.decorators):
@@ -423,11 +399,11 @@ class ScopingVisitor(ast.NodeVisitor):
         for arg in node.items:
             visitor.bind_name(arg.name.lstrip("*"), node, source=arg)
             if arg.default:
-                self.transform(arg.default)
+                self.visit(arg.default)
         inner.scope.pop()
 
         inner.scope.append(ScopeContext.Block(0, node.suite))
-        visitor.transform(node.suite)
+        visitor.visit(node.suite)
         visitor.process_child_captures()
         inner.scope.pop()
 
@@ -442,8 +418,8 @@ class ScopingVisitor(ast.NodeVisitor):
                 attr.bindings[name].is_nonlocal = True
                 self.ctx.child_captures[name] = Bindings.Scope.Nonlocal
         node.set(ast.Attr.Bindings, attr)
-        if inner.class_deduce[1]:
-            node.set(ast.Attr.ClassDeduce, list(inner.class_deduce[1]))
+        if deduced := inner.class_deduce[1]:
+            node.set(ast.Attr.ClassDeduce, list(deduced))
 
     def bind_name(self, name: str, node: ast.Node, source: ast.Node | None = None):
         """
@@ -459,7 +435,6 @@ class ScopingVisitor(ast.NodeVisitor):
                 self.ctx.first_seen[name],
                 f"local variable '{name}' referenced before assignment at {source.info}",
             )
-            return False
         if capture and node:
             self.update_name(name, node, has_used_var=False)
         elif capture is None:
@@ -516,7 +491,8 @@ class ScopingVisitor(ast.NodeVisitor):
             scope.pop()
         # Variable binding check for variables that are defined within conditional blocks
         if item.access_checked:
-            checked = any(is_inside(self.ctx.scope, a) for a in reversed(item.access_checked))
+            scope = self.ctx.get_scope()
+            checked = any(is_inside(scope, a) for a in reversed(item.access_checked))
             if not checked:
                 if item.binding is None or not item.binding.has(ast.Attr.Bindings):
                     # If the expression is not conditional, we can just do the check once
@@ -543,7 +519,7 @@ class ScopingVisitor(ast.NodeVisitor):
         for index, item in enumerate(values):
             if item.ignore:
                 continue
-            if is_inside(self.ctx.scope, item.scope):
+            if is_inside(self.ctx.get_scope(), item.scope):
                 common_scope = len(item.scope)
                 last_good_index = index
                 break
@@ -553,7 +529,7 @@ class ScopingVisitor(ast.NodeVisitor):
             last_good_index = index
         assert last_good_index < len(values), f"corrupted scoping for {name!r}"
         if not allow_shadow:
-            common_scope = longest_common_prefix(values[-1], self.ctx.scope[:common_scope])
+            common_scope = longest_common_prefix(values[-1].scope, self.ctx.scope[:common_scope])
         last_good = values[last_good_index]
         has_used_var = False
         if len(last_good.scope) != common_scope:

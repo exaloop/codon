@@ -621,7 +621,7 @@ def simple_parser_main(parser_class, argv):
         tree = parser.start()
         try:
             endpos = file.tell()
-        except IOError:
+        except OSError:
             endpos = 0
     finally:
         if file is not sys.stdin:
@@ -933,9 +933,8 @@ class Parser(BaseParser):
         return self.suite(
             [
                 ast.ImportStmt(
-                    what=self.dotted_expr(name, **locations),
+                    from_expr=self.dotted_expr(name, **locations),
                     as_=as_name or "",
-                    is_function=False,
                     **locations,
                 )
                 for name, as_name, _, _, _ in aliases
@@ -1100,6 +1099,7 @@ class Parser(BaseParser):
             target.decorator = decorators[0] if decorators else None
         else:
             target.decorators = decorators
+        target.validate()
         return target
 
     def get_comparison_ops(self, pairs):
@@ -1244,7 +1244,7 @@ class Parser(BaseParser):
         invalid_target = self.get_invalid_target(target, node)
 
         if invalid_target is None:
-            return None
+            return
 
         if target in (Target.STAR_TARGETS, Target.FOR_TARGETS):
             msg = f"cannot assign to {self.get_expr_name(invalid_target)}"

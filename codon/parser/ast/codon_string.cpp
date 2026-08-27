@@ -1,6 +1,7 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 #include "codon/parser/ast.h"
+#include "codon/parser/visitors/scoping/scoping.h"
 
 #include <algorithm>
 #include <charconv>
@@ -41,6 +42,14 @@ std::string join(const std::vector<std::string> &values, const std::string &sep)
     result += values[i];
   }
   return result;
+}
+
+Formatted formatItems(std::vector<std::string> items, bool simple, size_t maxItems,
+                      int indent, int level) {
+  items.erase(std::remove(items.begin(), items.end(), ""), items.end());
+  if ((simple && items.size() <= maxItems) || indent <= 0)
+    return {join(items, ", "), true};
+  return {prefix(indent, level) + join(items, separator(indent, level)), false};
 }
 
 std::string quote(const std::string &value) {
@@ -155,8 +164,8 @@ Formatted formatValue(const std::vector<T> &values, bool attributes, int indent,
   items.reserve(values.size());
   for (const auto &value : values)
     items.push_back(formatValue(value, attributes, indent, level).value);
-  return {"[" + prefix(indent, level) + join(items, separator(indent, level)) + "]",
-          false};
+  auto formatted = formatItems(std::move(items), true, 1, indent, level);
+  return {"[" + formatted.value + "]", formatted.simple};
 }
 
 template <typename T, typename U>
@@ -166,12 +175,75 @@ Formatted formatValue(const std::pair<T, U> &value, bool attributes, int indent,
   std::vector<std::string> items{
       formatValue(value.first, attributes, indent, level).value,
       formatValue(value.second, attributes, indent, level).value};
-  return {"(" + prefix(indent, level) + join(items, separator(indent, level)) + ")",
-          false};
+  auto formatted = formatItems(std::move(items), true, 1, indent, level);
+  return {"(" + formatted.value + ")", formatted.simple};
 }
 
 Field field(const std::string &name, Formatted value) {
   return {value.value.empty() ? "" : name + "=" + value.value, value.simple};
+}
+
+Formatted formatRecord(const std::string &name, std::vector<Field> fields, int indent,
+                       int level) {
+  level = nestedLevel(indent, level);
+  bool allSimple = true;
+  std::vector<std::string> args;
+  for (auto &value : fields) {
+    allSimple = allSimple && value.simple;
+    if (!value.value.empty())
+      args.push_back(std::move(value.value));
+  }
+  auto formatted = formatItems(std::move(args), allSimple, 1, indent, level);
+  return {name + "(" + formatted.value + ")", formatted.simple};
+}
+
+Formatted formatValue(BindingsAttribute::CaptureType value, bool, int, int) {
+  switch (value) {
+  case BindingsAttribute::Read:
+    return {"Read", true};
+  case BindingsAttribute::Global:
+    return {"Global", true};
+  case BindingsAttribute::Nonlocal:
+    return {"Nonlocal", true};
+  }
+  return {"", true};
+}
+
+Formatted formatValue(const BindingsAttribute::Binding &value, bool, int, int) {
+  return {"Bindings.Binding(name=" + quote(value.name) +
+              ", count=" + std::to_string(value.count) +
+              ", is_nonlocal=" + (value.isNonlocal ? "True" : "False") + ")",
+          true};
+}
+
+template <typename T>
+Formatted formatDict(const std::unordered_map<std::string, T> &values, bool attributes,
+                     int indent, int level) {
+  if (values.empty())
+    return {"", true};
+  level = nestedLevel(indent, level);
+  std::map<std::string, const T *> sorted;
+  for (const auto &[key, value] : values)
+    sorted.emplace(key, &value);
+  std::vector<std::string> items;
+  items.reserve(sorted.size());
+  for (const auto &[key, value] : sorted)
+    items.push_back(quote(key) + "=" +
+                    formatValue(*value, attributes, indent, level).value);
+  auto formatted = formatItems(std::move(items), true, 1, indent, level);
+  return {"{" + formatted.value + "}", formatted.simple};
+}
+
+Formatted formatBindings(const BindingsAttribute &value, bool attributes, int indent,
+                         int level) {
+  const int child = nestedLevel(indent, level);
+  return formatRecord(
+      "Bindings",
+      {field("captures", formatDict(value.captures, attributes, indent, child)),
+       field("bindings", formatDict(value.bindings, attributes, indent, child)),
+       field("local_renames",
+             formatDict(value.localRenames, attributes, indent, child))},
+      indent, level);
 }
 
 const char *attributeName(int key) {
@@ -239,18 +311,14 @@ const char *attributeName(int key) {
   }
 }
 
-Formatted formatMap(const std::unordered_map<std::string, std::string> &values,
-                    int indent, int level) {
-  if (values.empty())
-    return {"", true};
-  level = nestedLevel(indent, level);
+Formatted
+formatKeyValueAttribute(const std::unordered_map<std::string, std::string> &values) {
   std::map<std::string, std::string> sorted(values.begin(), values.end());
   std::vector<std::string> items;
   items.reserve(sorted.size());
   for (const auto &[key, value] : sorted)
-    items.push_back(quote(key) + "=" + quote(value));
-  return {"{" + prefix(indent, level) + join(items, separator(indent, level)) + "}",
-          false};
+    items.push_back(quote(key) + ": " + quote(value));
+  return {"KeyValueAttribute(attributes={" + join(items, ", ") + "})", true};
 }
 
 Formatted formatAttribute(const ir::Attribute *attribute, bool attributes, int indent,
@@ -264,7 +332,9 @@ Formatted formatAttribute(const ir::Attribute *attribute, bool attributes, int i
   if (auto *value = dynamic_cast<const ir::StringListAttribute *>(attribute))
     return formatValue(value->values, attributes, indent, level);
   if (auto *value = dynamic_cast<const ir::KeyValueAttribute *>(attribute))
-    return formatMap(value->attributes, indent, level);
+    return formatKeyValueAttribute(value->attributes);
+  if (auto *value = dynamic_cast<const BindingsAttribute *>(attribute))
+    return formatBindings(*value, attributes, indent, level);
   std::ostringstream out;
   out << *attribute;
   return out.str().empty() ? Formatted{"", true} : Formatted{out.str(), true};
@@ -291,15 +361,11 @@ Formatted formatAttributes(const ASTNode *node, int indent, int level) {
   items.reserve(values.size());
   for (const auto &value : values) {
     allSimple = allSimple && value.value.simple;
-    items.push_back(value.name + "=" + value.value.value);
+    items.push_back(value.name +
+                    (value.value.value.empty() ? "" : "=" + value.value.value));
   }
-  if (allSimple && values.size() <= 4)
-    return {"attrs={" + join(items, ", ") + "}", values.size() < 2};
-
-  auto start = prefix(indent, level);
-  if (indent > 0)
-    start += std::string(indent * level, ' ');
-  return {"attrs={" + start + join(items, separator(indent, level)) + "}", false};
+  auto formatted = formatItems(std::move(items), allSimple, 1, indent, level + 1);
+  return {"attrs=(" + formatted.value + ")", formatted.simple};
 }
 
 Formatted formatNode(const std::string &name, const ASTNode *node, bool done,
@@ -321,11 +387,8 @@ Formatted formatNode(const std::string &name, const ASTNode *node, bool done,
   }
 
   auto nodeName = name + (done ? "*" : "");
-  if (allSimple && args.size() <= 4)
-    return {nodeName + "(" + join(args, ", ") + ")", args.size() < 2};
-  return {nodeName + "(" + prefix(indent, level) +
-              join(args, separator(indent, level)) + ")",
-          false};
+  auto formatted = formatItems(std::move(args), allSimple, 1, indent, level);
+  return {nodeName + "(" + formatted.value + ")", formatted.simple};
 }
 
 Formatted formatExprNode(const std::string &name, const Expr *node,
@@ -350,19 +413,21 @@ Formatted formatSuite(const SuiteStmt *node, const std::vector<Stmt *> &items,
   level = nestedLevel(indent, level);
   std::vector<std::string> args;
   args.reserve(items.size() + 1);
+  bool allSimple = true;
   for (auto *item : items) {
-    auto value = formatValue(item, attributes, indent, level).value;
-    if (!value.empty())
-      args.push_back(std::move(value));
+    auto value = formatValue(item, attributes, indent, level);
+    allSimple = allSimple && value.simple;
+    if (!value.value.empty())
+      args.push_back(std::move(value.value));
   }
   if (attributes) {
-    auto value = formatAttributes(node, indent, level).value;
-    if (!value.empty())
-      args.push_back(std::move(value));
+    auto value = formatAttributes(node, indent, level);
+    allSimple = allSimple && value.simple;
+    if (!value.value.empty())
+      args.push_back(std::move(value.value));
   }
-  return {(node->isDone() ? "*[" : "[") + prefix(indent, level) +
-              join(args, separator(indent, level)) + "]",
-          false};
+  auto formatted = formatItems(std::move(args), allSimple, 1, indent, level);
+  return {(node->isDone() ? "*[" : "[") + formatted.value + "]", formatted.simple};
 }
 
 Formatted formatValue(decltype(Param::status) value, bool, int, int) {
@@ -419,12 +484,6 @@ Formatted formatValue(AssignStmt::UpdateMode value, bool, int, int) {
   return {std::to_string(value), true};
 }
 
-Formatted formatValue(const StringExpr::FormatSpec &value, bool, int, int) {
-  return {"StringExpr.FormatSpec(text=" + quote(value.text) + ", conversion=" +
-              quote(value.conversion) + ", spec=" + quote(value.spec) + ")",
-          true};
-}
-
 Formatted formatStruct(const std::string &name, std::vector<Field> fields, int indent,
                        int level) {
   level = nestedLevel(indent, level);
@@ -435,11 +494,21 @@ Formatted formatStruct(const std::string &name, std::vector<Field> fields, int i
     if (!value.value.empty())
       args.push_back(std::move(value.value));
   }
-  if (allSimple && args.size() <= 4)
-    return {name + "(" + join(args, ", ") + ")", args.size() < 2};
-  return {name + "(" + prefix(indent, level) + join(args, separator(indent, level)) +
-              ")",
-          false};
+  auto formatted = formatItems(std::move(args), allSimple, 1, indent, level);
+  return {name + "(" + formatted.value + ")", formatted.simple};
+}
+
+Formatted formatValue(const StringExpr::FormatSpec &value, bool attributes, int indent,
+                      int level) {
+  const int child = nestedLevel(indent, level);
+  if (value.text.empty() && value.conversion.empty() && value.spec.empty())
+    return {"", true};
+  return formatStruct(
+      "StringExpr.FormatSpec",
+      {field("text", formatValue(value.text, attributes, indent, child)),
+       field("conversion", formatValue(value.conversion, attributes, indent, child)),
+       field("spec", formatValue(value.spec, attributes, indent, child))},
+      indent, level);
 }
 
 Formatted formatValue(const Param &value, bool attributes, int indent, int level) {

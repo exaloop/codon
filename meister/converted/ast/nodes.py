@@ -82,7 +82,7 @@ class Node:
         pass
 
     info: Node.SrcInfo
-    attributes: Dict[Attr, Attribute | None]
+    attributes: Dict[Attr, Any | None]
     cache: object | None = None
 
     def __init__(
@@ -122,12 +122,8 @@ class Node:
     def end_col_offset(self):
         return self.info.end_col
 
-    def accept(self, visitor):
-        method = getattr(visitor, f"visit_{type(self).__name__}", None)
-        return visitor.generic_visit(self) if method is None else method(self)
-
-    def set(self, key: Attr, value: Attribute | None = None):
-        self.attributes[key] = value
+    def set(self, key: Attr, value=None):
+        self.attributes[key] = value or True  # type: ignore
 
     def has(self, key: Attr):
         return key in self.attributes
@@ -135,8 +131,8 @@ class Node:
     def get(self, key: Attr, default: Attribute | None = None):
         return self.attributes.get(key, default)
 
-    def setdefault(self, key: Attr, default: Attribute | None = None):
-        return self.attributes.setdefault(key, default)
+    def setdefault[T](self, key: Attr, default: T | None = None) -> T:
+        return self.attributes.setdefault(key, default)  # type: ignore
 
     def erase(self, key: Attr):
         self.attributes.pop(key, None)
@@ -177,7 +173,7 @@ class NodeError(Exception):
         ):
             self.info = info.info
         else:
-            assert isinstance(info, Node.SrcInfo)
+            assert isinstance(info, Node.SrcInfo), f"{info} {type(info)} is not SrcInfo"
             self.info = info
 
 
@@ -311,6 +307,14 @@ class IntExpr(Expr):
                     self.int_value = int(self.value, 0)
                 if self.int_value < 0 or self.int_value > (1 << 64) - 1:
                     self.int_value = None
+                else:
+                    # Make int_value 64-bit signed integer
+                    width = 64
+                    self.int_value &= (1 << width) - 1
+                    sign = 1 << (width - 1)
+                    self.int_value = (
+                        self.int_value - (1 << width) if self.int_value & sign else self.int_value
+                    )
             except ValueError:
                 pass
 
@@ -1170,7 +1174,7 @@ class ImportStmt(Stmt):
                 head = self.from_expr
                 while isinstance(head, DotExpr):
                     head = head.expr
-                if not isinstance(head, IdExpr):
+                if head and not isinstance(head, IdExpr):
                     raise NodeError(head, "expected identifier")
                 if self.what and not isinstance(self.what, IdExpr):
                     raise NodeError(self.what, "expected identifier")
@@ -1386,7 +1390,7 @@ class FunctionStmt(Stmt):
 
         def contains_id(expr, name):
             v = IdMatch(name)
-            expr.accept(v)
+            v.visit(expr)
             return v.found
 
         result: Set[str] = set()
@@ -1470,8 +1474,8 @@ class ClassStmt(Stmt):
             "from_gpu_new": False,
             "tuplesize": True,
         }
+        args = []
         for decorator in self.decorators:
-            args = []
             match decorator:
                 case IdExpr(value="__notuple__"):
                     self.set(Attr.ClassNoTuple)
@@ -1481,81 +1485,90 @@ class ClassStmt(Stmt):
                     self.set(Attr.Dataclass)
                 case IdExpr(value="tuple"):
                     self.set(Attr.Tuple)
-                case CallExpr(expr=IdExpr(value="tuple"), args=a):
+                case CallExpr(expr=IdExpr(value="tuple"), items=a):
                     self.set(Attr.Tuple)
                     args = a
-                case CallExpr(expr=IdExpr(value="dataclass"), args=a):
+                case CallExpr(expr=IdExpr(value="dataclass"), items=a):
                     if self.has(Attr.Tuple):
-                        raise NodeError(decorator, "CLASS_CONFLICT_DECORATOR")
+                        raise NodeError(decorator, "cannot combine '@dataclass' with '@tuple'")
                     args = a
                 case CallExpr():
-                    raise NodeError(decorator, "CLASS_BAD_DECORATOR")
+                    raise NodeError(decorator, "unsupported class decorator")
                 case IdExpr(value="extend"):
                     self.set(Attr.Extend)
                     if len(self.decorators) != 1:
-                        raise NodeError(decorator, "CLASS_SINGLE_DECORATOR")
+                        raise NodeError(
+                            decorator,
+                            "cannot combine '@extend' with other attributes or decorators",
+                        )
                 case IdExpr("__internal__"):
                     self.set(Attr.Internal)
                 case _:
-                    raise NodeError(decorator, "CLASS_BAD_DECORATOR")
+                    raise NodeError(decorator, "unsupported class decorator")
 
-            if self.has(Attr.Tuple):
-                for name in tuple_magics:
-                    tuple_magics[name] = True
-            for arg in args:
-                value = False
-                if isinstance(arg.value, BoolExpr):
-                    value = arg.value.value
-                else:
-                    raise NodeError(arg, "CLASS_NONSTATIC_DECORATOR")
-                groups = {
-                    "init": ["new"],
-                    "repr": ["repr"],
-                    "eq": ["eq", "ne"],
-                    "order": ["lt", "le", "gt", "ge"],
-                    "hash": ["hash"],
-                    "pickle": ["pickle", "unpickle"],
-                    "python": ["to_py", "from_py"],
-                    "gpu": ["to_gpu", "from_gpu", "from_gpu_new"],
-                    "container": ["iter", "getitem"],
-                }
-                if arg.name not in groups:
-                    raise NodeError(arg, "CLASS_BAD_DECORATOR_ARG")
-                for magic in groups[arg.name]:
-                    tuple_magics[magic] = value
+        if self.has(Attr.Tuple):
+            for name in tuple_magics:
+                tuple_magics[name] = True
+        for arg in args:
+            value = False
+            if isinstance(arg.value, BoolExpr):
+                value = arg.value.value
+            else:
+                raise NodeError(arg, "class decorator arguments must be compile-time static values")
+            groups = {
+                "init": ["new"],
+                "repr": ["repr"],
+                "eq": ["eq", "ne"],
+                "order": ["lt", "le", "gt", "ge"],
+                "hash": ["hash"],
+                "pickle": ["pickle", "unpickle"],
+                "python": ["to_py", "from_py"],
+                "gpu": ["to_gpu", "from_gpu", "from_gpu_new"],
+                "container": ["iter", "getitem"],
+            }
+            if arg.name not in groups:
+                raise NodeError(arg, "unexpected argument in class decorator")
+            for magic in groups[arg.name]:
+                tuple_magics[magic] = value
 
-            if not (
-                self.has(Attr.Tuple)
-                or self.has(Attr.Internal)
-                or self.has(Attr.Dataclass)
-                or self.items
-            ):
-                self.set(Attr.ClassDeduce)
-            if not self.has(Attr.Tuple):
-                tuple_magics["init"] = tuple_magics["new"]
-                tuple_magics["new"] = True
-                tuple_magics["raw"] = True
-                tuple_magics["len"] = False
-                tuple_magics["repr_default"] = True
-            tuple_magics["dict"] = True
-            magics = []
-            if not self.has(Attr.Internal):
-                for name, enabled in tuple_magics.items():
-                    if enabled:
-                        if name == "new":
-                            magics.insert(0, name)
-                        else:
-                            magics.append(name)
-            self.set(Attr.ClassMagic, magics)
-            seen = set()
-            if self.has(Attr.Extend) and (self.items or self.base_classes):
-                raise NodeError(self, "CLASS_EXTENSION")
-            for argument in self.items:
-                if argument.type is None and argument.default is None:
-                    raise NodeError(argument, "CLASS_MISSING_TYPE")
-                if argument.name in seen:
-                    raise NodeError(argument, "CLASS_ARG_TWICE")
-                seen.add(argument.name)
+        if not (
+            self.has(Attr.Tuple)
+            or self.has(Attr.Internal)
+            or self.has(Attr.Dataclass)
+            or self.items
+        ):
+            self.set(Attr.ClassDeduce)
+        if not self.has(Attr.Tuple):
+            tuple_magics["init"] = tuple_magics["new"]
+            tuple_magics["new"] = True
+            tuple_magics["raw"] = True
+            tuple_magics["len"] = False
+            tuple_magics["repr_default"] = True
+        tuple_magics["dict"] = True
+        magics = []
+        if not self.has(Attr.Internal):
+            for name, enabled in sorted(tuple_magics.items()):
+                if enabled:
+                    if name == "new":
+                        magics.insert(0, name)
+                    else:
+                        magics.append(name)
+        self.set(Attr.ClassMagic, magics)
+        seen = set()
+        if self.has(Attr.Extend) and (self.items or self.base_classes):
+            raise NodeError(
+                self,
+                "class extensions cannot define data attributes and generics or "
+                "inherit other classes",
+            )
+        for argument in self.items:
+            if argument.type is None and argument.default is None:
+                raise NodeError(argument, f"type required for data attribute {argument.name!r}")
+            if argument.name in seen:
+                raise NodeError(
+                    argument, f"duplicate data attribute {argument.name!r} in class definition"
+                )
+            seen.add(argument.name)
 
 
 @dataclass(init=False)
@@ -1687,13 +1700,20 @@ def dump(
     def _format(node: Any, level=0):
         if indent:
             level += 1
-            prefix = "\n" + (" " * indent) * level
-            sep = ",\n" + (" " * indent) * level
-        else:
-            prefix = ""
-            sep = ", "
 
-        def parse_args(node):
+        def format_items(items, simple=True, max_items=1, level=0):
+            if indent:
+                prefix = "\n" + (" " * indent) * level
+                sep = ",\n" + (" " * indent) * level
+            else:
+                prefix = ""
+                sep = ", "
+            items = [i for i in items if i]
+            if (simple and len(items) <= max_items) or not indent:
+                return ", ".join(items), True
+            return prefix + sep.join(items), False
+
+        def format_args(node):
             if not hasattr(node, "attributes"):
                 return "", True
             attrs = []
@@ -1704,11 +1724,14 @@ def dump(
                 else:
                     value, simple = _format(val, level + 2)
                     allsimple = allsimple and simple
-                    attrs.append(f"{key.name}={value}")
+                    if value:
+                        attrs.append(f"{key.name}={value}")
+                    else:
+                        attrs.append(f"{key.name}")
+            attrs.sort()
             if attrs:
-                if allsimple and len(attrs) <= 4:
-                    return f"attrs={{{', '.join(attrs)}}}", len(attrs) < 2
-                return f"attrs={{{prefix + ' ' * (indent * level)}{sep.join(attrs)}}}", False
+                fs = format_items(attrs, allsimple, level=level + 1)
+                return f"attrs=({fs[0]})", fs[1]
             return "", True
 
         if isinstance(node, SuiteStmt):
@@ -1721,9 +1744,12 @@ def dump(
                 args.append(value)
                 allsimple = allsimple and simple
             if include_attributes:
-                args.append(parse_args(node)[0])
-            return f"{'*' if node.done else ''}[{prefix}{sep.join(x for x in args if x)}]", False
-        if isinstance(node, Node) or isinstance(node, Node.Attribute):
+                fs = format_args(node)
+                args.append(fs[0])
+                allsimple = allsimple and fs[1]
+            fs = format_items(args, allsimple, level=level)
+            return f"{'*' if node.done else ''}[{fs[0]}]", fs[1]
+        elif isinstance(node, (Node, Node.Attribute, StringExpr.FormatSpec)):
             args = []
             allsimple = True
             for name, value in Codon.any_members(node):
@@ -1736,7 +1762,7 @@ def dump(
                 elif value:
                     args.append(value)
             if include_attributes:
-                value, simple = parse_args(node)
+                value, simple = format_args(node)
                 allsimple = allsimple and simple
                 args.append(value)
             args = [arg for arg in args if arg]
@@ -1746,37 +1772,38 @@ def dump(
                 name, braces = "", "[]"
             if hasattr(node, "done") and node.done:
                 name += "*"
-            if allsimple and len(args) <= 4:
-                return f"{name}{braces[0]}{', '.join(args)}{braces[1]}", len(args) < 2
-            return f"{name}{braces[0]}{prefix}{sep.join(args)}{braces[1]}", False
+            if isinstance(node, StringExpr.FormatSpec) and not args:
+                return "", True
+            fs = format_items(args, allsimple, level=level)
+            return f"{name}{braces[0]}{fs[0]}{braces[1]}", fs[1]
         if isinstance(node, Enum):
             return f"{node.name}", True
         if isinstance(node, str):
-            if node == "":
-                return "", True
-            return f"{node!r}", True
+            return (f"{node!r}" if node else ""), True
         if isinstance(node, int):
             return f"{node}", True
         if isinstance(node, bool):
             return f"{node}", True
         else:
             if Any.is_tuple(node):
-                return (
-                    f"({prefix}{sep.join(_format(x, level)[0] for x in cast(List[Any], node))})",
-                    False,
+                fs = format_items(
+                    [_format(x, level)[0] for x in cast(List[Any], node)], level=level
                 )
+                return f"({fs[0]})", fs[1]
             elif Any.is_list(node):
                 n = cast(List[Any], node)
                 if not n:
                     return "", True
-                return f"[{prefix}{sep.join(_format(x, level)[0] for x in n)}]", False
+                fs = format_items([_format(x, level)[0] for x in n], level=level)
+                return f"[{fs[0]}]", fs[1]
             elif isinstance(node, dict):
                 if not node:
                     return "", True
-                return (
-                    f"{{{prefix}{sep.join((repr(key) + '=' + _format(x, level)[0]) for key, x in sorted(node.items()))}}}",
-                    False,
+                fs = format_items(
+                    [(repr(key) + "=" + _format(x, level)[0]) for key, x in sorted(node.items())],
+                    level=level,
                 )
+                return f"{{{fs[0]}}}", fs[1]
             elif Any.is_optional(node):
                 n = cast(Any | None, node)
                 if n is None:
@@ -1833,6 +1860,15 @@ def iter_child_nodes(node) -> Iterator[Node]:
 
 
 class NodeVisitor:
+    def visit(self, node):
+        """Visit a node."""
+
+        method = "visit_" + node.__class__.__name__
+        visitor = getattr(self, method, self.generic_visit)
+        return visitor(node)
+
     def generic_visit(self, node):
+        """Called if no explicit visitor function exists for a node."""
+
         for child in iter_child_nodes(node):
-            child.accept(self)
+            self.visit(child)
