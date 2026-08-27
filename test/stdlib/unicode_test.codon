@@ -3348,6 +3348,292 @@ test_bytes_percent_format_errors()
 test_bytes_search_algorithms()
 
 
+# f-strings
+@test
+def test_fstring_literals_expressions_and_unicode():
+    value = unicode("café")
+    values = [10, 20, 30]
+    mapping = {unicode("answer"): 42}
+
+    assert f"" == unicode("")
+    assert f"plain text" == unicode("plain text")
+    assert f"{{}}" == unicode("{}")
+    assert f"{{{{}}}}" == unicode("{{}}")
+    assert f"{{{value}}}" == unicode("{café}")
+    assert f"préfixe {value} Ω" == unicode("préfixe café Ω")
+    assert f"{1 + 2 * 3}" == unicode("7")
+    assert f"{values[1]}" == unicode("20")
+    assert f"{mapping[unicode('answer')]}" == unicode("42")
+    assert f"{value.upper()}" == unicode("CAFÉ")
+    assert f"{42 if value else 0}" == unicode("42")
+
+
+@test
+def test_fstring_conversions_and_format_protocol():
+    class Rendered:
+        def __str__(self) -> str:
+            return unicode("str-é")
+
+        def __repr__(self) -> str:
+            return unicode("repr-Ω")
+
+        def __format__(self, spec: str) -> str:
+            return unicode("format[") + spec + unicode("]")
+
+    value = Rendered()
+    assert f"{value}" == unicode("format[]")
+    assert f"{value:wide}" == unicode("format[wide]")
+    assert f"{value!s}" == unicode("str-é")
+    assert f"{value!r}" == unicode("repr-Ω")
+    assert f"{value!a}" == unicode("repr-\\u03a9")
+    assert f"{value!s:>8}" == unicode("   str-é")
+    assert f"{value!r:.5}" == unicode("repr-")
+
+
+@test
+def test_fstring_numeric_specs():
+    width = 8
+    precision = 3
+
+    assert f"{42:d}" == unicode("42")
+    assert f"{42:#x}" == unicode("0x2a")
+    assert f"{42:08b}" == unicode("00101010")
+    assert f"{1234567:,}" == unicode("1,234,567")
+    assert f"{-12:=+6d}" == unicode("-   12")
+    assert f"{unicode('é'):Ω>5}" == unicode("ΩΩΩΩé")
+    assert f"{unicode('é'):😀^5}" == unicode("😀😀é😀😀")
+    assert f"{1.25:.2f}" == unicode("1.25")
+    assert f"{1.25:{width}.{precision}f}" == unicode("   1.250")
+    assert f"{42:{width}d}" == unicode("      42")
+
+
+@test
+def test_fstring_debug_expressions():
+    value = 42
+    text = unicode("café")
+    assert f"{value=}" == unicode("value=42")
+    assert f"{value=!r}" == unicode("value=42")
+    assert f"{value=:>6}" == unicode("value=    42")
+    assert f"{value + 1=}" == unicode("value + 1=43")
+    assert f"{text=}" == unicode("text='café'")
+    assert f"{text=!s}" == unicode("text=café")
+    assert f"{text=:>8}" == unicode("text=    café")
+    assert f"{ value = }" == unicode(" value = 42")
+    assert f"{value =}" == unicode("value =42")
+    assert f"{value= }" == unicode("value= 42")
+    assert f"{ value=}" == unicode(" value=42")
+
+
+@test
+def test_fstring_evaluation_order_and_count():
+    events: List[str] = []
+
+    def observe(label: str, value: int) -> int:
+        events.append(label)
+        return value
+
+    result = f"{observe('first', 1)}:{observe('second', 2)}:{observe('third', 3)}"
+    assert result == unicode("1:2:3")
+    assert events == [unicode("first"), unicode("second"), unicode("third")]
+
+    events.clear()
+    result = f"{observe('repeat', 7)}-{observe('repeat', 7)}"
+    assert result == unicode("7-7")
+    assert events == [unicode("repeat"), unicode("repeat")]
+
+    events.clear()
+    assert f"{observe('chosen', 1) if True else observe('skipped', 2)}" == unicode("1")
+    assert events == [unicode("chosen")]
+
+    events.clear()
+    assert f"{False and observe('skipped', 1)}" == unicode("False")
+    assert events == []
+
+    events.clear()
+    formatted = f"{float(observe('value', 125)) / 100.0:{observe('width', 8)}.{observe('precision', 2)}f}"
+    assert formatted == unicode("    1.25")
+    assert events == [unicode("value"), unicode("width"), unicode("precision")]
+
+    fill = unicode(".")
+    width = 5
+    assert f"{unicode('x'):{fill}>{width}}" == unicode("....x")
+
+
+@test
+def test_fstring_exception_stops_later_evaluation():
+    events: List[str] = []
+
+    def observe(label: str, value: int) -> int:
+        events.append(label)
+        return value
+
+    def fail() -> int:
+        events.append(unicode("fail"))
+        raise ValueError("stop")
+
+    try:
+        f"{observe('before', 1)}{fail()}{observe('after', 2)}"
+        assert False
+    except ValueError as error:
+        assert str(error) == unicode("stop")
+
+    assert events == [unicode("before"), unicode("fail")]
+
+
+@test
+def test_fstring_conversion_hook_order():
+    class Tracked:
+        events: List[str]
+
+        def __init__(self, events: List[str]):
+            self.events = events
+
+        def __str__(self) -> str:
+            self.events.append(unicode("str"))
+            return unicode("STR")
+
+        def __repr__(self) -> str:
+            self.events.append(unicode("repr"))
+            return unicode("REPR")
+
+        def __format__(self, spec: str) -> str:
+            self.events.append(unicode("format:") + spec)
+            return unicode("FMT[") + spec + unicode("]")
+
+    events: List[str] = []
+    value = Tracked(events)
+
+    assert f"{value}" == unicode("FMT[]")
+    assert events == [unicode("format:")]
+
+    events.clear()
+    assert f"{value:custom}" == unicode("FMT[custom]")
+    assert events == [unicode("format:custom")]
+
+    events.clear()
+    assert f"{value!s:>5}" == unicode("  STR")
+    assert events == [unicode("str")]
+
+    events.clear()
+    assert f"{value!r:>6}" == unicode("  REPR")
+    assert events == [unicode("repr")]
+
+    events.clear()
+    assert f"{value!a}" == unicode("REPR")
+    assert events == [unicode("repr")]
+
+
+@test
+def test_fstring_literal_forms_and_builtin_values():
+    value = unicode("café")
+    assert f"{1}" "-" f"{2}" == unicode("1-2")
+    assert rf"\n{value}" == unicode("\\ncafé")
+    assert f"""line 1
+{value}
+line 3""" == unicode("line 1\ncafé\nline 3")
+    assert f"{None}" == unicode("None")
+    assert f"{True}" == unicode("True")
+    assert f"{[1, 2, 3]}" == unicode("[1, 2, 3]")
+    assert f"{(1, 2)}" == unicode("(1, 2)")
+    assert f"{value!a}" == unicode("'caf\\xe9'")
+
+
+@test
+def test_fstring_rich_expressions():
+    class Box:
+        value: int
+
+        def __init__(self, value: int):
+            self.value = value
+
+        def doubled(self) -> int:
+            return self.value * 2
+
+    box = Box(21)
+    values = [unicode("zero"), unicode("one")]
+    index = 1
+
+    assert f"{box.value}" == unicode("21")
+    assert f"{box.doubled()}" == unicode("42")
+    assert f"{values[index]}" == unicode("one")
+    assert f"{(box.value + 1) * 2}" == unicode("44")
+    assert f"{values[0:2]}" == unicode("['zero', 'one']")
+    assert f"{ {1: 2} }" == unicode("{1: 2}")
+    assert f"outer {f'inner {box.value:04d}'}" == unicode("outer inner 0021")
+
+
+@test
+def test_fstring_numeric_boundaries():
+    import math
+
+    u64_max = UInt[64]("18446744073709551615")
+    i128_min = Int[128]("-170141183460469231731687303715884105728")
+
+    assert f"{i16(-32768)}" == unicode("-32768")
+    assert f"{u16(65535)}" == unicode("65535")
+    assert f"{u64_max}" == unicode("18446744073709551615")
+    assert f"{i128_min}" == unicode("-170141183460469231731687303715884105728")
+    assert f"{255:#010x}" == unicode("0x000000ff")
+    assert f"{-12:06d}" == unicode("-00012")
+    assert f"{0.0}" == unicode("0.0")
+    assert f"{-0.0}" == unicode("-0.0")
+    assert f"{-0.0:+.1f}" == unicode("-0.0")
+    assert f"{math.inf}" == unicode("inf")
+    assert f"{-math.inf}" == unicode("-inf")
+    assert f"{math.nan}" == unicode("nan")
+
+
+@test
+def test_fstring_unicode_buffer_edges():
+    value = unicode("😀éabc")
+    payload = unicode("😀Ωé") * 1024
+    nul = chr(0)
+
+    assert f"{value:.2}" == unicode("😀é")
+    assert f"{value:界<8}" == unicode("😀éabc界界界")
+    assert f"a{nul}b" == unicode("a\0b")
+    assert len(f"a{nul}b") == 3
+    assert f"prefix:{payload}:suffix" == unicode("prefix:") + payload + unicode(":suffix")
+
+    assert rf"\t{value}" == unicode("\\t😀éabc")
+    assert fr"\t{value}" == unicode("\\t😀éabc")
+    assert RF"\t{value}" == unicode("\\t😀éabc")
+    assert FR"\t{value}" == unicode("\\t😀éabc")
+
+
+@test
+def test_fstring_format_errors_propagate():
+    class RejectFormat:
+        def __format__(self, spec: str) -> str:
+            raise ValueError(unicode("rejected:") + spec)
+
+    try:
+        f"{42:not-a-format}"
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f"{RejectFormat():custom}"
+        assert False
+    except ValueError as error:
+        assert str(error) == unicode("rejected:custom")
+
+
+test_fstring_literals_expressions_and_unicode()
+test_fstring_conversions_and_format_protocol()
+test_fstring_numeric_specs()
+test_fstring_debug_expressions()
+test_fstring_evaluation_order_and_count()
+test_fstring_exception_stops_later_evaluation()
+test_fstring_conversion_hook_order()
+test_fstring_literal_forms_and_builtin_values()
+test_fstring_rich_expressions()
+test_fstring_numeric_boundaries()
+test_fstring_unicode_buffer_edges()
+test_fstring_format_errors_propagate()
+
+
 # new-style format
 @test
 def test_brace_format_automatic_fields():

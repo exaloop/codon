@@ -55,17 +55,23 @@ TEST(FormattingOptimizationTest, LowersLiteralFormattingCalls) {
       "    return format.format(value)\n"
       "def format_optimization_malformed(value: int):\n"
       "    return '{'.format(value)\n"
+      "class FormatOptimizationCustom:\n"
+      "    def __format__(self, spec: str):\n"
+      "        return spec\n"
+      "def format_optimization_custom(value: FormatOptimizationCustom):\n"
+      "    return '{}'.format(value) + value.__format__('tag')\n"
       "format_optimization_probe(42)\n"
       "format_optimization_compound(FormatOptimizationValue(42), [7], "
       "{'key': 'value'})\n"
       "format_optimization_bad_member(FormatOptimizationValue(42))\n"
       "format_optimization_bad_element(42)\n"
       "format_optimization_dynamic('{}', 42)\n"
-      "format_optimization_malformed(42)\n"));
+      "format_optimization_malformed(42)\n"
+      "format_optimization_custom(FormatOptimizationCustom())\n"));
   llvm::cantFail(compiler.compile());
 
   FormattingCallCounter counter;
   counter.process(compiler.getModule());
   EXPECT_EQ(5, counter.parsed);
-  EXPECT_EQ(4, counter.dynamic);
+  EXPECT_EQ(6, counter.dynamic);
 }

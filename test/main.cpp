@@ -529,6 +529,7 @@ INSTANTIATE_TEST_SUITE_P(
             "transform/escapes.codon",
             "transform/folding.codon",
             "transform/for_lowering.codon",
+            "transform/format.codon",
             "transform/io_opt.codon",
             "transform/inlining.codon",
             "transform/list_opt.codon",

@@ -21,6 +21,12 @@ from C import seq_locale_decimal_point() -> str
 from C import seq_locale_grouping() -> bytes
 from C import seq_locale_thousands_sep() -> str
 
+def _is_integer(value) -> Literal[bool]:
+    return isinstance(value, Int) or isinstance(value, UInt)
+
+def _is_signed_integer(value) -> Literal[bool]:
+    return isinstance(value, Int)
+
 def _float_to_string(value: float) -> str:
     buffer = Ptr[u8](32)
     length = _float_dtoa_shortest_write(value, buffer, False)
@@ -31,12 +37,12 @@ def _float_to_string(value: float) -> str:
 @extend
 class Int:
     def __format__(self, format_spec: str) -> str:
-        return _format_scalar(self.__int__(), format_spec)
+        return _format_scalar(self, format_spec)
 
 @extend
 class UInt:
     def __format__(self, format_spec: str) -> str:
-        return _format_scalar(self.__int__(), format_spec)
+        return _format_scalar(self, format_spec)
 
 @extend
 class float:
@@ -393,30 +399,31 @@ def _float_format(
 
 
 def integer_format_write_padded(
-    value: int,
+    value,
     conversion: int,
     precision: int,
     flags: int,
     width: int,
     output: Ptr[u8],
 ) -> int:
-    base = 10
+    T = type(value)
+    base = T(10)
     uppercase = False
     signed = conversion == 0x64 or conversion == 0x69  # d / i
 
     if conversion == 0x62:  # b
-        base = 2
+        base = T(2)
     elif conversion == 0x6F:  # o
-        base = 8
+        base = T(8)
     elif conversion == 0x78:  # x
-        base = 16
+        base = T(16)
     elif conversion == 0x58:  # X
-        base = 16
+        base = T(16)
         uppercase = True
     elif not signed and conversion != 0x75:  # u
         raise ValueError("unsupported integer format conversion")
 
-    negative = value < 0
+    negative = _is_signed_integer(value) and value < T(0)
     digits = 1
     remaining = value
 
@@ -707,7 +714,7 @@ def _percent_numeric_write(
 
     conversion = directive.conversion
 
-    if isinstance(value, int):
+    if _is_integer(value):
         if _percent_is_integer_conversion(conversion):
             return integer_format_write_padded(
                 value,
@@ -966,18 +973,21 @@ class _ByteFormatBuffer:
 
 
 def _percent_integer_buffer_size(
-    value: int,
+    value,
     directive: _PercentDirective,
 ) -> int:
-    base = 10
+    T = type(value)
+    base = T(10)
 
-    if directive.conversion == 0x6F:  # o
-        base = 8
+    if directive.conversion == 0x62:  # b
+        base = T(2)
+    elif directive.conversion == 0x6F:  # o
+        base = T(8)
     elif directive.conversion == 0x78 or directive.conversion == 0x58:
-        base = 16
+        base = T(16)
 
     digits = 1
-    negative = value < 0
+    negative = _is_signed_integer(value) and value < T(0)
     remaining = value
 
     if negative:
@@ -1014,7 +1024,7 @@ def _percent_numeric_buffer_size(
         precision = directive.precision if directive.precision >= 0 else 6
         return width + precision + 313
 
-    if isinstance(value, int):
+    if _is_integer(value):
         return _percent_integer_buffer_size(value, directive)
 
     if isinstance(value, float):
@@ -1136,15 +1146,14 @@ def _percent_char_append(
 
     if isinstance(value, bool):
         codepoint = int(value)
-    elif isinstance(value, int):
-        codepoint = value
-
+    elif _is_integer(value):
         if (
-            codepoint < 0
-            or codepoint > 0x10FFFF
-            or (codepoint >= 0xD800 and codepoint <= 0xDFFF)
+            value < 0
+            or value > 0x10FFFF
+            or (value >= 0xD800 and value <= 0xDFFF)
         ):
             raise OverflowError("%c arg not in range(0x110000)")
+        codepoint = int(value)
     elif isinstance(value, str):
         if len(value) != 1:
             raise TypeError("%c requires int or char")
@@ -1326,10 +1335,10 @@ def _bytes_percent_char_append(
 
     if isinstance(value, bool):
         byte = int(value)
-    elif isinstance(value, int):
-        byte = value
-        if byte < 0 or byte > 0xFF:
+    elif _is_integer(value):
+        if value < 0 or value > 0xFF:
             raise OverflowError("%c arg not in range(256)")
+        byte = int(value)
     elif isinstance(value, bytes):
         if len(value) != 1:
             raise TypeError("%c requires an integer or a single byte")
@@ -1794,7 +1803,7 @@ def _brace_value_append(
 
     if field.conversion == 0:
         if (
-            not isinstance(value, int)
+            not _is_integer(value)
             and not isinstance(value, float)
             and not isinstance(value, str)
         ):
@@ -1823,7 +1832,7 @@ def _brace_value_append_parsed(
 
     if (
         directive.brace_alignment == 0x3D  # =
-        and not isinstance(value, int)
+        and not _is_integer(value)
         and not isinstance(value, float)
     ):
         raise ValueError("'=' alignment not allowed in string format specifier")
@@ -1910,7 +1919,7 @@ def _brace_value_append_parsed(
 
         text_default_left = field.conversion != 0 or (
             directive.conversion == 0x73  # s
-            and not isinstance(value, int)
+            and not _is_integer(value)
             and not isinstance(value, float)
         )
         directive.width = width
@@ -1955,7 +1964,7 @@ def _brace_value_append_parsed(
 
     text_default_left = field.conversion != 0 or (
         directive.conversion == 0x73  # s
-        and not isinstance(value, int)
+        and not _is_integer(value)
         and not isinstance(value, float)
     )
     directive.width = width
@@ -2667,7 +2676,7 @@ def _brace_value_append_with_directive(
 
     if conversion == 0:
         if directive.brace_locale:
-            if isinstance(value, int):
+            if _is_integer(value):
                 conversion = 0x64  # d
             elif isinstance(value, float):
                 conversion = 0x67  # g
@@ -2678,7 +2687,7 @@ def _brace_value_append_with_directive(
             or directive.brace_grouping != 0
         )
 
-        if isinstance(value, int) and numeric_options:
+        if _is_integer(value) and numeric_options:
             conversion = 0x64  # d
         elif isinstance(value, float) and directive.precision >= 0:
             conversion = 0x67  # g
@@ -2706,7 +2715,7 @@ def _brace_value_append_with_directive(
         if (directive.flags & FORMAT_FLAG_ZERO) != 0 and width > 0:
             width -= 1
 
-        if isinstance(value, int):
+        if _is_integer(value):
             length = float_format_write_padded(
                 float(value) * 100.0,
                 0x66,  # f
@@ -2730,8 +2739,8 @@ def _brace_value_append_with_directive(
         result.append_ascii(output, length)
         result.append_byte(u8(0x25))
     elif conversion == 0x62:  # b
-        if isinstance(value, int):
-            capacity = directive.width + directive.precision + 128
+        if _is_integer(value):
+            capacity = _percent_integer_buffer_size(value, directive)
             output = Ptr[u8](capacity)
             length = integer_format_write_padded(
                 value,
@@ -2807,7 +2816,7 @@ def _brace_validate_value_format(
             raise ValueError("format code is invalid for float")
         return
 
-    if isinstance(value, int):
+    if _is_integer(value):
         if conversion == 0x73:  # s
             raise ValueError("string format code is invalid for integer")
         if conversion == 0x63:  # c

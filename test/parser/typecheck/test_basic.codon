@@ -109,7 +109,7 @@ print(f"{a!r:>10}")
 print(f"{a=!r:>10}")
 #: a=     'xyz'
 print(f"{a=}")
-#: a=xyz
+#: a='xyz'
 print(f"{a=:>10}")
 #: a=       xyz
 print(f"{a!r}")

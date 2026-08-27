@@ -798,7 +798,9 @@ STRING <- <NAME? STR> {
     VS.size() > 1 ? ac<string>(V0) : ""
   );
   auto lp = tolower(p.prefix);
-  if (lp != "r" && lp != "rb" && lp != "br") {
+  if (lp == "rf" || lp == "fr") {
+    p.prefix = "f";
+  } else if (lp != "r" && lp != "rb" && lp != "br") {
     p.value = unescape(p.value, lp != "b");
   } else {
     p.prefix = (lp != "r" ? "b" : "");
@@ -811,7 +813,9 @@ STRING__PREDICATE {
     VS.size() > 1 ? ac<string>(V0) : ""
   );
   auto lp = tolower(p.prefix);
-  if (lp != "r" && lp != "rb" && lp != "br") {
+  if (lp == "rf" || lp == "fr") {
+    p.prefix = "f";
+  } else if (lp != "r" && lp != "rb" && lp != "br") {
     try {
       p.value = unescape(p.value, lp != "b");
     } catch (std::invalid_argument &e) {
@@ -875,6 +879,6 @@ EXTERNDENT__PREDICATE {
 >
 
 # https://docs.python.org/3/library/string.html#formatspec
-format_spec <- ([^{}] [<>=^] / [<>=^])? [+- ]? 'z'? '#'? '0'? [0-9]* [_,]* ('.' [0-9]+)? [bcdeEfFgGnosxX%]? {
+format_spec <- <.*> {
   return string(VS.sv());
 }
