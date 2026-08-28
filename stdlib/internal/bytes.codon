@@ -1,5 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+import internal.gc as gc
+
 _MAX: Literal[int] = 0x7FFFFFFFFFFFFFFF
 
 @extend
@@ -188,19 +190,31 @@ class bytes:
         return int(self._ptr[i])
 
     def join(self, l: Generator[bytes]) -> bytes:
-        buf = _strbuf()
-        if len(self) == 0:
-            for a in l:
-                buf.append(a)
-        else:
-            first = True
-            for a in l:
-                if first:
-                    first = False
-                else:
-                    buf.append(self)
-                buf.append(a)
-        return buf.__str__()
+        capacity = 16
+        data = Ptr[u8](capacity)
+        length = 0
+        first = True
+
+        for value in l:
+            separator_length = 0 if first else len(self)
+            required = length + separator_length + len(value)
+
+            if required > capacity:
+                old_capacity = capacity
+                while capacity < required:
+                    capacity *= 2
+                data = gc.realloc(data, capacity, old_capacity)
+
+            if not first:
+                bytes.memcpy(data + length, self._ptr, separator_length)
+                length += separator_length
+            else:
+                first = False
+
+            bytes.memcpy(data + length, value._ptr, len(value))
+            length += len(value)
+
+        return bytes(data, length)
 
     def join(self, l: List[bytes]) -> bytes:
         if len(l) == 0:
@@ -544,27 +558,39 @@ class bytes:
 
     def _has_char(self, chars: bytes) -> bool:
         s = self._at(0)
-        if chars:
-            for c in chars:
-                if s == c:
-                    return True
-            return False
-        else:
-            return bytes._isspace(u8(s))
+        for c in chars:
+            if s == c:
+                return True
+        return False
 
-    def lstrip(self, chars: bytes = bytes()) -> bytes:
+    def lstrip(self) -> bytes:
+        i = 0
+        while i < len(self) and bytes._isspace(self._ptr[i]):
+            i += 1
+        return self._slice(i, len(self))
+
+    def lstrip(self, chars: bytes) -> bytes:
         i = 0
         while i < len(self) and bytes(self._ptr + i, 1)._has_char(chars):
             i += 1
         return self._slice(i, len(self))
 
-    def rstrip(self, chars: bytes = bytes()) -> bytes:
+    def rstrip(self) -> bytes:
+        i = len(self) - 1
+        while i >= 0 and bytes._isspace(self._ptr[i]):
+            i -= 1
+        return self._slice(0, i + 1)
+
+    def rstrip(self, chars: bytes) -> bytes:
         i = len(self) - 1
         while i >= 0 and bytes(self._ptr + i, 1)._has_char(chars):
             i -= 1
         return self._slice(0, i + 1)
 
-    def strip(self, chars: bytes = bytes()) -> bytes:
+    def strip(self) -> bytes:
+        return self.lstrip().rstrip()
+
+    def strip(self, chars: bytes) -> bytes:
         return self.lstrip(chars).rstrip(chars)
 
     def partition(self, sep: bytes) -> Tuple[bytes, bytes, bytes]:

@@ -295,8 +295,8 @@ def test_isprintable():
 def test_lstrip():
     assert "".lstrip() == ""
     assert "   ".lstrip() == ""
-    assert "   hello   ".lstrip("") == "hello   "
-    assert " \t\n\rabc \t\n\r".lstrip("") == "abc \t\n\r"
+    assert "   hello   ".lstrip("") == "   hello   "
+    assert " \t\n\rabc \t\n\r".lstrip("") == " \t\n\rabc \t\n\r"
     assert "xyzzyhelloxyzzy".lstrip("xyz") == "helloxyzzy"
 
 
@@ -304,8 +304,8 @@ def test_lstrip():
 def test_rstrip():
     assert "".rstrip() == ""
     assert "   ".rstrip() == ""
-    assert "   hello   ".rstrip("") == "   hello"
-    assert " \t\n\rabc \t\n\r".rstrip("") == " \t\n\rabc"
+    assert "   hello   ".rstrip("") == "   hello   "
+    assert " \t\n\rabc \t\n\r".rstrip("") == " \t\n\rabc \t\n\r"
     assert "xyzzyhelloxyzzy".rstrip("xyz") == "xyzzyhello"
 
 
@@ -313,7 +313,7 @@ def test_rstrip():
 def test_strip():
     assert "".strip() == ""
     assert "   ".strip() == ""
-    assert "   hello   ".strip("") == "hello"
+    assert "   hello   ".strip("") == "   hello   "
     assert "   hello   ".strip() == "hello"
     assert " \t\n\rabc \t\n\r".strip() == "abc"
     assert "xyzzyhelloxyzzy".strip("xyz") == "hello"
@@ -751,17 +751,754 @@ def test_repr():
         "hijklmnopqrstuvwxyz{|}~\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f\x90\x91"
         "\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f\xa0\xff"
     )
-    assert repr(s) == (
-        "'\\x00\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\t\\n\\x0b\\x0c\\r\\x0e\\x0f\\x10\\x11"
-        "\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1a\\x1b\\x1c\\x1d\\x1e\\x1f !\"#$%&\\'()*+,"
-        "-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\\"
-        "x7f\\x80\\x81\\x82\\x83\\x84\\x85\\x86\\x87\\x88\\x89\\x8a\\x8b\\x8c\\x8d\\x8e\\x8f\\x90"
-        "\\x91\\x92\\x93\\x94\\x95\\x96\\x97\\x98\\x99\\x9a\\x9b\\x9c\\x9d\\x9e\\x9f\\xa0\\xff'"
-    )
+    assert repr(s) == '\'\\x00\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\t\\n\\x0b\\x0c\\r\\x0e\\x0f\\x10\\x11\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1a\\x1b\\x1c\\x1d\\x1e\\x1f !"#$%&\\\'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\\x7f\\x80\\x81\\x82\\x83\\x84\\x85\\x86\\x87\\x88\\x89\\x8a\\x8b\\x8c\\x8d\\x8e\\x8f\\x90\\x91\\x92\\x93\\x94\\x95\\x96\\x97\\x98\\x99\\x9a\\x9b\\x9c\\x9d\\x9e\\x9f\\xa0ÿ\''
     assert repr("") == "''"
     assert repr('"') == "'\"'"
     assert repr("'") == '"\'"'
     assert repr("\"'") == "'\"\\''"
+
+
+@test
+def test_bytes_isdigit():
+    assert b"0".isdigit() == True
+    assert b"".isdigit() == False
+    assert b"a".isdigit() == False
+    assert b"2829357".isdigit() == True
+    assert b"kshfkjhe".isdigit() == False
+    assert b"9735g385497".isdigit() == False
+
+
+@test
+def test_bytes_islower():
+    assert b"".islower() == False
+    assert b"a".islower() == True
+    assert b"A".islower() == False
+    assert b"5".islower() == False
+    assert b"ahuiuej".islower() == True
+    assert b"AhUiUeJ".islower() == False
+    assert b"9735g385497".islower() == True
+    assert b"9735G385497".islower() == False
+
+
+@test
+def test_bytes_isupper():
+    assert b"".isupper() == False
+    assert b"a".isupper() == False
+    assert b"A".isupper() == True
+    assert b"5".isupper() == False
+    assert b".J, U-I".isupper() == True
+    assert b"AHUIUEJ".isupper() == True
+    assert b"AhUiUeJ".isupper() == False
+    assert b"9735g385497".isupper() == False
+    assert b"9735G385497".isupper() == True
+
+
+@test
+def test_bytes_isalnum():
+    assert b"".isalnum() == False
+    assert b"a".isalnum() == True
+    assert b"5".isalnum() == True
+    assert b",".isalnum() == False
+    assert b"H6".isalnum() == True
+    assert b".J, U-I".isalnum() == False
+    assert b"A4kki83UE".isalnum() == True
+    assert b"AhUiUeJ".isalnum() == True
+    assert b"973 g38597".isalnum() == False
+    assert b"9735G3-5497".isalnum() == False
+
+
+@test
+def test_bytes_isalpha():
+    assert b"".isalpha() == False
+    assert b"a".isalpha() == True
+    assert b"5".isalpha() == False
+    assert b",".isalpha() == False
+    assert b"Hh".isalpha() == True
+    assert b".J, U-I".isalpha() == False
+    assert b"A4kki83UE".isalpha() == False
+    assert b"AhUiUeJ".isalpha() == True
+    assert b"973 g38597".isalpha() == False
+    assert b"9735G3-5497".isalpha() == False
+
+
+@test
+def test_bytes_isspace():
+    assert b"".isspace() == False
+    assert b" ".isspace() == True
+    assert b"5 ".isspace() == False
+    assert b"\t\n\r ".isspace() == True
+    assert b"\t ".isspace() == True
+    assert b"\t\ngh\r ".isspace() == False
+    assert b"A4kki 3UE".isspace() == False
+
+
+@test
+def test_bytes_istitle():
+    assert b"".istitle() == False
+    assert b" ".istitle() == False
+    assert b"I ".istitle() == True
+    assert b"IH".istitle() == False
+    assert b"Ih".istitle() == True
+    assert b"Hter Hewri".istitle() == True
+    assert b"Kweiur oiejf".istitle() == False
+
+
+@test
+def test_bytes_capitalize():
+    assert b" hello ".capitalize() == b" hello "
+    assert b"Hello ".capitalize() == b"Hello "
+    assert b"hello ".capitalize() == b"Hello "
+    assert b"aaaa".capitalize() == b"Aaaa"
+    assert b"AaAa".capitalize() == b"Aaaa"
+
+
+@test
+def test_bytes_isdecimal():
+    assert b"".isdecimal() == False
+    assert b"a".isdecimal() == False
+    assert b"0".isdecimal() == True
+    assert b"\xbc".isdecimal() == False
+    assert b"0123456789".isdecimal() == True
+    assert b"0123456789a".isdecimal() == False
+
+
+@test
+def test_bytes_lower():
+    assert b"HeLLo".lower() == b"hello"
+    assert b"hello".lower() == b"hello"
+    assert b"HELLO".lower() == b"hello"
+    assert b"HEL _ LO".lower() == b"hel _ lo"
+
+
+@test
+def test_bytes_upper():
+    assert b"HeLLo".upper() == b"HELLO"
+    assert b"hello".upper() == b"HELLO"
+    assert b"HELLO".upper() == b"HELLO"
+    assert b"HEL _ LO".upper() == b"HEL _ LO"
+
+
+@test
+def test_bytes_isascii():
+    assert b"".isascii() == True
+    assert b"\x00".isascii() == True
+    assert b"\x7f".isascii() == True
+    assert b"\x00\x7f".isascii() == True
+    assert b"\x80".isascii() == False
+    assert bytes("строка", "utf-8").isascii() == False
+    assert b"\xe9".isascii() == False
+
+
+@test
+def test_bytes_casefold():
+    assert b"".casefold() == b""
+    assert b"HeLLo".casefold() == b"hello"
+    assert b"hello".casefold() == b"hello"
+    assert b"HELLO".casefold() == b"hello"
+    assert b"HEL _ LO".casefold() == b"hel _ lo"
+
+
+@test
+def test_bytes_swapcase():
+    assert b"".swapcase() == b""
+    assert b"HeLLo cOmpUteRs".swapcase() == b"hEllO CoMPuTErS"
+    assert b"H.e_L,L-o cOmpUteRs".swapcase() == b"h.E_l,l-O CoMPuTErS"
+
+
+@test
+def test_bytes_title():
+    assert b"".title() == b""
+    assert b" hello ".title() == b" Hello "
+    assert b"hello ".title() == b"Hello "
+    assert b"Hello ".title() == b"Hello "
+    assert b"fOrMaT thIs aS titLe String".title() == b"Format This As Title String"
+    assert b"fOrMaT,thIs-aS*titLe;String".title() == b"Format,This-As*Title;String"
+    assert b"getInt".title() == b"Getint"
+
+
+@test
+def test_bytes_isnumeric():
+    assert b"".isnumeric() == False
+    assert b"a".isnumeric() == False
+    assert b"0".isnumeric() == True
+    assert b"\xbc".isnumeric() == False
+    assert b"0123456789".isnumeric() == True
+    assert b"0123456789a".isnumeric() == False
+
+
+@test
+def test_bytes_ljust():
+    assert b"abc".ljust(10, b" ") == b"abc       "
+    assert b"abc".ljust(6, b" ") == b"abc   "
+    assert b"abc".ljust(3, b" ") == b"abc"
+    assert b"abc".ljust(2, b" ") == b"abc"
+    assert b"abc".ljust(10, b"*") == b"abc*******"
+
+
+@test
+def test_bytes_rjust():
+    assert b"abc".rjust(10, b" ") == b"       abc"
+    assert b"abc".rjust(6, b" ") == b"   abc"
+    assert b"abc".rjust(3, b" ") == b"abc"
+    assert b"abc".rjust(2, b" ") == b"abc"
+    assert b"abc".rjust(10, b"*") == b"*******abc"
+
+
+@test
+def test_bytes_center():
+    assert b"abc".center(10, b" ") == b"   abc    "
+    assert b"abc".center(6, b" ") == b" abc  "
+    assert b"abc".center(3, b" ") == b"abc"
+    assert b"abc".center(2, b" ") == b"abc"
+    assert b"abc".center(10, b"*") == b"***abc****"
+
+
+@test
+def test_bytes_zfill():
+    assert b"123".zfill(2) == b"123"
+    assert b"123".zfill(3) == b"123"
+    assert b"123".zfill(4) == b"0123"
+    assert b"+123".zfill(3) == b"+123"
+    assert b"+123".zfill(4) == b"+123"
+    assert b"+123".zfill(5) == b"+0123"
+    assert b"-123".zfill(3) == b"-123"
+    assert b"-123".zfill(4) == b"-123"
+    assert b"-123".zfill(5) == b"-0123"
+    assert b"".zfill(3) == b"000"
+    assert b"34".zfill(1) == b"34"
+    assert b"34".zfill(4) == b"0034"
+    assert b"1+2".zfill(5) == b"001+2"
+    assert b"+".zfill(10) == b"+000000000"
+    assert b"-".zfill(10) == b"-000000000"
+
+
+@test
+def test_bytes_count():
+    assert b"aaa".count(b"a", 0, len(b"aaa")) == 3
+    assert b"aaa".count(b"b", 0, len(b"aaa")) == 0
+    assert b"aaa".count(b"a", 1, len(b"aaa")) == 2
+    assert b"aaa".count(b"a", 10, len(b"aaa")) == 0
+    assert b"aaa".count(b"a", -1, len(b"aaa")) == 1
+    assert b"aaa".count(b"a", 0, 1) == 1
+    assert b"aaa".count(b"a", 0, 10) == 3
+    assert b"aaa".count(b"a", 0, -1) == 2
+    assert b"aaa".count(b"aa") == 1
+    assert b"ababa".count(b"aba") == 1
+    assert b"abababa".count(b"aba") == 2
+    assert b"abababa".count(b"abab") == 1
+
+
+@test
+def test_bytes_find():
+    assert b"abcdefghiabc".find(b"abc", 0, len(b"abcdefghiabc")) == 0
+    assert b"abcdefghiabc".find(b"abc") == 0
+    assert b"abcdefghiabc".find(b"abc", 1, len(b"abcdefghiabc")) == 9
+    assert b"abcdefghiabc".find(b"def", 4, len(b"abcdefghiabc")) == -1
+    assert b"abcdefghiabc".find(b"abcdef", 0, len(b"abcdefghiabc")) == 0
+    assert b"abcdefghiabc".find(b"abcdef") == 0
+    assert b"abcdefghiabc".find(b"hiabc", 1, len(b"abcdefghiabc")) == 7
+    assert b"abcdefghiabc".find(b"defgh", 4, len(b"abcdefghiabc")) == -1
+    assert b"rrarrrrrrrrra".find(b"a", 0, len(b"rrarrrrrrrrra")) == 2
+    assert b"rrarrrrrrrrra".find(b"a", 4, len(b"rrarrrrrrrrra")) == 12
+    assert b"rrarrrrrrrrra".find(b"a", 4, 6) == -1
+    assert b"abc".find(b"", 0, len(b"abc")) == 0
+    assert b"abc".find(b"", 3, len(b"abc")) == 3
+    assert b"abc".find(b"", 4, len(b"abc")) == -1
+
+
+@test
+def test_bytes_rfind():
+    assert b"abcdefghiabc".rfind(b"abc", 0, len(b"abcdefghiabc")) == 9
+    assert b"abcdefghiabc".rfind(b"", 0, len(b"abcdefghiabc")) == 12
+    assert b"abcdefghiabc".rfind(b"abcd", 0, len(b"abcdefghiabc")) == 0
+    assert b"abcdefghiabc".rfind(b"abcz", 0, len(b"abcdefghiabc")) == -1
+    assert b"abcdefghiabc".rfind(b"abc") == 9
+    assert b"abcdefghiabc".rfind(b"") == 12
+    assert b"abcdefghiabc".rfind(b"abcd") == 0
+    assert b"abcdefghiabc".rfind(b"abcz") == -1
+    assert b"rrarrrrrrrrra".rfind(b"a", 0, len(b"rrarrrrrrrrra")) == 12
+    assert b"rrarrrrrrrrra".rfind(b"a", 4, len(b"rrarrrrrrrrra")) == 12
+    assert b"rrarrrrrrrrra".rfind(b"a", 4, 6) == -1
+    assert b"abc".rfind(b"", 0, len(b"abc")) == 3
+    assert b"abc".rfind(b"", 3, len(b"abc")) == 3
+    assert b"abc".rfind(b"", 4, len(b"abc")) == -1
+
+
+@test
+def test_bytes_isidentifier():
+    assert b"a".isidentifier() == True
+    assert b"Z".isidentifier() == True
+    assert b"_".isidentifier() == True
+    assert b"b0".isidentifier() == True
+    assert b"bc".isidentifier() == True
+    assert b"b_".isidentifier() == True
+    assert b" ".isidentifier() == False
+    assert b"3t".isidentifier() == False
+    assert b"_gth_45".isidentifier() == True
+
+
+@test
+def test_bytes_isprintable():
+    assert b"".isprintable() == True
+    assert b'"'.isprintable() == True
+    assert b"'".isprintable() == True
+    assert b" ".isprintable() == True
+    assert b"abcdef".isprintable() == True
+    assert b"0123456789".isprintable() == True
+    assert b"ABCDEFGHIJKLMNOPQRSTUVWXYZ".isprintable() == True
+    assert b"abcdefghijklmnopqrstuvwxyz".isprintable() == True
+    assert b"!#$%&()*+,-./:;?@[\\]^_`{|}~".isprintable() == True
+    assert b"abcdef\n".isprintable() == False
+
+
+@test
+def test_bytes_lstrip():
+    assert b"".lstrip() == b""
+    assert b"   ".lstrip() == b""
+    assert b"   hello   ".lstrip(b"") == b"   hello   "
+    assert b" \t\n\rabc \t\n\r".lstrip(b"") == b" \t\n\rabc \t\n\r"
+    assert b"xyzzyhelloxyzzy".lstrip(b"xyz") == b"helloxyzzy"
+
+
+@test
+def test_bytes_rstrip():
+    assert b"".rstrip() == b""
+    assert b"   ".rstrip() == b""
+    assert b"   hello   ".rstrip(b"") == b"   hello   "
+    assert b" \t\n\rabc \t\n\r".rstrip(b"") == b" \t\n\rabc \t\n\r"
+    assert b"xyzzyhelloxyzzy".rstrip(b"xyz") == b"xyzzyhello"
+
+
+@test
+def test_bytes_strip():
+    assert b"".strip() == b""
+    assert b"   ".strip() == b""
+    assert b"   hello   ".strip(b"") == b"   hello   "
+    assert b"   hello   ".strip() == b"hello"
+    assert b" \t\n\rabc \t\n\r".strip() == b"abc"
+    assert b"xyzzyhelloxyzzy".strip(b"xyz") == b"hello"
+    assert b"hello".strip(b"xyz") == b"hello"
+    assert b"mississippi".strip(b"mississippi") == b""
+    assert b"mississippi".strip(b"i") == b"mississipp"
+
+
+@test
+def test_bytes_partition():
+    assert b"hello".partition(b"l") == (b"he", b"l", b"lo")
+    assert b"this is the partition method".partition(b"ti") == (
+        b"this is the par",
+        b"ti",
+        b"tion method",
+    )
+    assert b"http://www.seq.org".partition(b"://") == (
+        b"http",
+        b"://",
+        b"www.seq.org",
+    )
+    assert b"http://www.seq.org".partition(b"?") == (
+        b"http://www.seq.org",
+        b"",
+        b"",
+    )
+    assert b"http://www.seq.org".partition(b"http://") == (
+        b"",
+        b"http://",
+        b"www.seq.org",
+    )
+    assert b"http://www.seq.org".partition(b"org") == (
+        b"http://www.seq.",
+        b"org",
+        b"",
+    )
+
+
+@test
+def test_bytes_rpartition():
+    assert b"hello".rpartition(b"l") == (b"hel", b"l", b"o")
+    assert b"this is the rpartition method".rpartition(b"ti") == (
+        b"this is the rparti",
+        b"ti",
+        b"on method",
+    )
+    assert b"http://www.seq.org".rpartition(b"://") == (
+        b"http",
+        b"://",
+        b"www.seq.org",
+    )
+    assert b"http://www.seq.org".rpartition(b"?") == (
+        b"",
+        b"",
+        b"http://www.seq.org",
+    )
+    assert b"http://www.seq.org".rpartition(b"http://") == (
+        b"",
+        b"http://",
+        b"www.seq.org",
+    )
+    assert b"http://www.seq.org".rpartition(b"org") == (
+        b"http://www.seq.",
+        b"org",
+        b"",
+    )
+
+
+@test
+def test_bytes_split():
+    assert b"  h    l \t\n l   o ".split() == [b"h", b"l", b"l", b"o"]
+    assert b"  h    l \t\n l   o ".split(None, 2) == [b"h", b"l", b"l   o "]
+    assert b"  h    l \t\n l   o ".split(None, 0) == [b"h    l \t\n l   o "]
+    assert not b"".split()
+    assert not b"   ".split()
+    assert b"h l l o".split(b" ", -1) == [b"h", b"l", b"l", b"o"]
+    assert b"a|b|c|d".split(b"|", -1) == [b"a", b"b", b"c", b"d"]
+    assert b"h l l o".split(b" ") == [b"h", b"l", b"l", b"o"]
+    assert b"a|b|c|d".split(b"|") == [b"a", b"b", b"c", b"d"]
+    assert b"a|b|c|d".split(b"|", 0) == [b"a|b|c|d"]
+    assert b"abcd".split(b"|", -1) == [b"abcd"]
+    assert b"".split(b"|", -1) == [b""]
+    assert b"endcase |".split(b"|", -1) == [b"endcase ", b""]
+    assert b"| startcase".split(b"|", -1) == [b"", b" startcase"]
+    assert b"|bothcase|".split(b"|", -1) == [b"", b"bothcase", b""]
+    assert b"abbbc".split(b"bb", -1) == [b"a", b"bc"]
+    assert b"aaa".split(b"aaa", -1) == [b"", b""]
+    assert b"aaa".split(b"aaa", 0) == [b"aaa"]
+    assert b"abbaab".split(b"ba", -1) == [b"ab", b"ab"]
+    assert b"aa".split(b"aaa", -1) == [b"aa"]
+    assert b"Abbobbbobb".split(b"bbobb", -1) == [b"A", b"bobb"]
+    assert b"AbbobbBbbobb".split(b"bbobb", -1) == [b"A", b"B", b""]
+    assert (b"a|" * 20)[:-1].split(b"|", -1) == [b"a"] * 20
+    assert (b"a|" * 20)[:-1].split(b"|", 15) == [b"a"] * 15 + [b"a|a|a|a|a"]
+    assert b"a|b|c|d".split(b"|", 1) == [b"a", b"b|c|d"]
+    assert b"a|b|c|d".split(b"|", 2) == [b"a", b"b", b"c|d"]
+    assert b"a|b|c|d".split(b"|", 3) == [b"a", b"b", b"c", b"d"]
+    assert b"a|b|c|d".split(b"|", 4) == [b"a", b"b", b"c", b"d"]
+    assert b"a||b||c||d".split(b"|", 2) == [b"a", b"", b"b||c||d"]
+
+
+@test
+def test_bytes_rsplit():
+    assert b"  h    l \t\n l   o ".rsplit() == [b"h", b"l", b"l", b"o"]
+    assert b"  h    l \t\n l   o ".rsplit(None, 2) == [b"  h    l", b"l", b"o"]
+    assert b"  h    l \t\n l   o ".rsplit(None, 0) == [b"  h    l \t\n l   o"]
+    assert not b"".rsplit()
+    assert not b"   ".rsplit()
+    assert b"a|b|c|d".rsplit(b"|", -1) == [b"a", b"b", b"c", b"d"]
+    assert b"a|b|c|d".rsplit(b"|") == [b"a", b"b", b"c", b"d"]
+    assert b"a|b|c|d".rsplit(b"|", 1) == [b"a|b|c", b"d"]
+    assert b"a|b|c|d".rsplit(b"|", 2) == [b"a|b", b"c", b"d"]
+    assert b"a|b|c|d".rsplit(b"|", 3) == [b"a", b"b", b"c", b"d"]
+    assert b"a|b|c|d".rsplit(b"|", 4) == [b"a", b"b", b"c", b"d"]
+    assert b"a|b|c|d".rsplit(b"|", 0) == [b"a|b|c|d"]
+    assert b"a||b||c||d".rsplit(b"|", 2) == [b"a||b||c", b"", b"d"]
+    assert b"abcd".rsplit(b"|", -1) == [b"abcd"]
+    assert b"".rsplit(b"|", -1) == [b""]
+    assert b"endcase |".rsplit(b"|", -1) == [b"endcase ", b""]
+    assert b"| startcase".rsplit(b"|", -1) == [b"", b" startcase"]
+    assert b"|bothcase|".rsplit(b"|", -1) == [b"", b"bothcase", b""]
+    assert b"abbbc".rsplit(b"bb", -1) == [b"ab", b"c"]
+    assert b"aaa".rsplit(b"aaa", -1) == [b"", b""]
+    assert b"aaa".rsplit(b"aaa", 0) == [b"aaa"]
+    assert b"abbaab".rsplit(b"ba", -1) == [b"ab", b"ab"]
+    assert b"aa".rsplit(b"aaa", -1) == [b"aa"]
+    assert b"bbobbbobbA".rsplit(b"bbobb", -1) == [b"bbob", b"A"]
+    assert b"bbobbBbbobbA".rsplit(b"bbobb", -1) == [b"", b"B", b"A"]
+    assert (b"aBLAH" * 20)[:-4].rsplit(b"BLAH", -1) == [b"a"] * 20
+    assert (b"a|" * 20)[:-1].rsplit(b"|", 15) == [b"a|a|a|a|a"] + [b"a"] * 15
+    assert b"a||b||c||d".rsplit(b"|", 2) == [b"a||b||c", b"", b"d"]
+
+
+@test
+def test_bytes_splitlines():
+    assert b"\n\nasdf\nsadf\nsdf\n".splitlines(False) == [b"", b"", b"asdf", b"sadf", b"sdf"]
+    assert b"\n\nasdf\nsadf\nsdf\n".splitlines() == [b"", b"", b"asdf", b"sadf", b"sdf"]
+    assert b"abc\ndef\n\rghi".splitlines(False) == [b"abc", b"def", b"", b"ghi"]
+    assert b"abc\ndef\n\r\nghi".splitlines(False) == [b"abc", b"def", b"", b"ghi"]
+    assert b"abc\ndef\r\nghi".splitlines(False) == [b"abc", b"def", b"ghi"]
+    assert b"abc\ndef\r\nghi\n".splitlines(False) == [b"abc", b"def", b"ghi"]
+    assert b"abc\ndef\r\nghi\n\r".splitlines(False) == [b"abc", b"def", b"ghi", b""]
+    assert b"\nabc\ndef\r\nghi\n\r".splitlines(False) == [b"", b"abc", b"def", b"ghi", b""]
+    assert b"\nabc\ndef\r\nghi\n\r".splitlines(True) == [
+        b"\n",
+        b"abc\n",
+        b"def\r\n",
+        b"ghi\n",
+        b"\r",
+    ]
+    assert b"abc\ndef\r\nghi\n".splitlines(True) == [b"abc\n", b"def\r\n", b"ghi\n"]
+
+
+@test
+def test_bytes_startswith():
+    assert b"hello".startswith(b"he", 0, len(b"hello")) == True
+    assert b"hello".startswith(b"hello", 0, len(b"hello")) == True
+    assert b"hello".startswith(b"hello world", 0, len(b"hello")) == False
+    assert b"hello".startswith(b"", 0, len(b"hello")) == True
+    assert b"hello".startswith(b"ello", 0, len(b"hello")) == False
+    assert b"hello".startswith(b"he") == True
+    assert b"hello".startswith(b"hello") == True
+    assert b"hello".startswith(b"hello world") == False
+    assert b"hello".startswith(b"") == True
+    assert b"hello".startswith(b"ello") == False
+    assert b"hello".startswith(b"ello", 1, len(b"hello")) == True
+    assert b"hello".startswith(b"o", 4, len(b"hello")) == True
+    assert b"hello".startswith(b"o", 5, len(b"hello")) == False
+    assert b"hello".startswith(b"lo", 3, len(b"hello")) == True
+    assert b"hello".startswith(b"", 5, len(b"hello")) == True
+    assert b"hello".startswith(b"lo", 6, len(b"hello")) == False
+    assert b"helloworld".startswith(b"lowo", 3, len(b"helloworld")) == True
+    assert b"helloworld".startswith(b"lowo", 3, 7) == True
+    assert b"helloworld".startswith(b"lowo", 3, 6) == False
+    assert b"".startswith(b"", 0, 1) == True
+    assert b"".startswith(b"", 0, 0) == True
+    assert b"".startswith(b"", 1, 0) == False
+    assert b"hello".startswith(b"he", 0, -1) == True
+    assert b"hello".startswith(b"hello", 0, -1) == False
+    assert b"hello".startswith(b"he", 0, -3) == True
+    assert b"hello".startswith(b"ello", -4, len(b"hello")) == True
+    assert b"hello".startswith(b"ello", -5, len(b"hello")) == False
+    assert b"hello".startswith(b"", -3, -3) == True
+    assert b"hello".startswith(b"o", -1, len(b"hello")) == True
+
+
+@test
+def test_bytes_endswith():
+    assert b"hello".endswith(b"lo", 0, len(b"hello")) == True
+    assert b"hello".endswith(b"he", 0, len(b"hello")) == False
+    assert b"hello".endswith(b"", 0, len(b"hello")) == True
+    assert b"hello".endswith(b"hello world", 0, len(b"hello")) == False
+    assert b"hello".endswith(b"lo") == True
+    assert b"hello".endswith(b"he") == False
+    assert b"hello".endswith(b"") == True
+    assert b"hello".endswith(b"hello world") == False
+    assert b"helloworld".endswith(b"worl", 0, len(b"hello")) == False
+    assert b"helloworld".endswith(b"worl", 3, 9) == True
+    assert b"helloworld".endswith(b"world", 3, 12) == True
+    assert b"helloworld".endswith(b"lowo", 1, 7) == True
+    assert b"helloworld".endswith(b"lowo", 2, 7) == True
+    assert b"helloworld".endswith(b"lowo", 3, 7) == True
+    assert b"helloworld".endswith(b"lowo", 4, 7) == False
+    assert b"helloworld".endswith(b"lowo", 3, 8) == False
+    assert b"ab".endswith(b"ab", 0, 1) == False
+    assert b"ab".endswith(b"ab", 0, 0) == False
+    assert b"".endswith(b"", 0, 1) == True
+    assert b"".endswith(b"", 0, 0) == True
+    assert b"".endswith(b"", 1, 0) == False
+    assert b"hello".endswith(b"lo", -2, len(b"hello")) == True
+    assert b"hello".endswith(b"he", -2, len(b"hello")) == False
+    assert b"hello".endswith(b"", -3, -3) == True
+    assert b"helloworld".endswith(b"worl", -6, len(b"helloworld")) == False
+    assert b"helloworld".endswith(b"worl", -5, -1) == True
+    assert b"helloworld".endswith(b"worl", -5, 9) == True
+    assert b"helloworld".endswith(b"world", -7, 12) == True
+    assert b"helloworld".endswith(b"lowo", -99, -3) == True
+    assert b"helloworld".endswith(b"lowo", -8, -3) == True
+    assert b"helloworld".endswith(b"lowo", -7, -3) == True
+    assert b"helloworld".endswith(b"lowo", 3, -4) == False
+    assert b"helloworld".endswith(b"lowo", -8, -2) == False
+
+
+@test
+def test_bytes_index():
+    assert b"abcdefghiabc".index(b"abc", 0, len(b"abcdefghiabc")) == 0
+    assert b"abcdefghiabc".index(b"abc") == 0
+    assert b"abcdefghiabc".index(b"abc", 1, len(b"abcdefghiabc")) == 9
+    assert b"abc".index(b"", 0, len(b"abc")) == 0
+    assert b"abc".index(b"", 3, len(b"abc")) == 3
+    assert b"rrarrrrrrrrra".index(b"a", 0, len(b"rrarrrrrrrrra")) == 2
+    assert b"rrarrrrrrrrra".index(b"a", 4, len(b"rrarrrrrrrrra")) == 12
+    try:
+        b"abcdefghiabc".index(b"def", 4, len(b"abcdefghiabc"))
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_bytes_rindex():
+    assert b"abcdefghiabc".rindex(b"", 0, len(b"abcdefghiabc")) == 12
+    assert b"abcdefghiabc".rindex(b"") == 12
+    assert b"abcdefghiabc".rindex(b"def", 0, len(b"abcdefghiabc")) == 3
+    assert b"abcdefghiabc".rindex(b"abc", 0, len(b"abcdefghiabc")) == 9
+    assert b"abcdefghiabc".rindex(b"abc", 0, -1) == 0
+    assert b"rrarrrrrrrrra".rindex(b"a", 0, len(b"rrarrrrrrrrra")) == 12
+    assert b"rrarrrrrrrrra".rindex(b"a", 4, len(b"rrarrrrrrrrra")) == 12
+    try:
+        b"rrarrrrrrrrra".rindex(b"a", 4, 6)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_bytes_replace():
+    assert b"A".replace(b"", b"", len(b"A") + 1) == b"A"
+    assert b"A".replace(b"", b"*", len(b"A") + 1) == b"*A*"
+    assert b"A".replace(b"", b"*1", len(b"A") + 1) == b"*1A*1"
+    assert b"A".replace(b"", b"*-#", len(b"A") + 1) == b"*-#A*-#"
+    assert b"AA".replace(b"", b"*-", len(b"AA") + 1) == b"*-A*-A*-"
+    assert b"AA".replace(b"", b"*-", -1) == b"*-A*-A*-"
+    assert b"AA".replace(b"", b"*-") == b"*-A*-A*-"
+    assert b"AA".replace(b"", b"*-", 4) == b"*-A*-A*-"
+    assert b"AA".replace(b"", b"*-", 3) == b"*-A*-A*-"
+    assert b"AA".replace(b"", b"*-", 2) == b"*-A*-A"
+    assert b"AA".replace(b"", b"*-", 1) == b"*-AA"
+    assert b"AA".replace(b"", b"*-", 0) == b"AA"
+
+    assert b"A".replace(b"A", b"", len(b"A") + 1) == b""
+    assert b"AAA".replace(b"A", b"", len(b"AAA") + 1) == b""
+    assert b"AAA".replace(b"A", b"", -1) == b""
+    assert b"AAA".replace(b"A", b"") == b""
+    assert b"AAA".replace(b"A", b"", 4) == b""
+    assert b"AAA".replace(b"A", b"", 3) == b""
+    assert b"AAA".replace(b"A", b"", 2) == b"A"
+    assert b"AAA".replace(b"A", b"", 1) == b"AA"
+    assert b"AAA".replace(b"A", b"", 0) == b"AAA"
+    assert b"ABACADA".replace(b"A", b"", len(b"ABACADA") + 1) == b"BCD"
+    assert b"ABACADA".replace(b"A", b"", -1) == b"BCD"
+    assert b"ABACADA".replace(b"A", b"", 5) == b"BCD"
+    assert b"ABACADA".replace(b"A", b"", 4) == b"BCD"
+    assert b"ABACADA".replace(b"A", b"", 3) == b"BCDA"
+    assert b"ABACADA".replace(b"A", b"", 2) == b"BCADA"
+    assert b"ABACADA".replace(b"A", b"", 1) == b"BACADA"
+    assert b"ABACADA".replace(b"A", b"", 0) == b"ABACADA"
+    assert b"ABCAD".replace(b"A", b"", len(b"ABCAD") + 1) == b"BCD"
+    assert b"ABCADAA".replace(b"A", b"", len(b"ABCADAA") + 1) == b"BCD"
+    assert b"BCD".replace(b"A", b"", len(b"BCD") + 1) == b"BCD"
+    assert (b"^" + (b"A" * 1000) + b"^").replace(b"A", b"", 999) == b"^A^"
+    assert b"the".replace(b"the", b"", len(b"the") + 1) == b""
+    assert b"theater".replace(b"the", b"", len(b"theater") + 1) == b"ater"
+    assert b"thethe".replace(b"the", b"", len(b"thethe") + 1) == b""
+    assert b"thethethethe".replace(b"the", b"", len(b"thethethethe") + 1) == b""
+    assert b"theatheatheathea".replace(b"the", b"", len(b"theatheatheathea") + 1) == b"aaaa"
+    assert b"that".replace(b"the", b"", len(b"that") + 1) == b"that"
+    assert b"here and there".replace(b"the", b"", len(b"here and there") + 1) == b"here and re"
+    assert b"here and there and there".replace(
+        b"the", b"", len(b"here and there and there") + 1
+    ) == b"here and re and re"
+    assert b"here and there and there".replace(b"the", b"", -1) == b"here and re and re"
+    assert b"here and there and there".replace(b"the", b"", 3) == b"here and re and re"
+    assert b"here and there and there".replace(b"the", b"", 2) == b"here and re and re"
+    assert b"here and there and there".replace(b"the", b"", 1) == b"here and re and there"
+    assert b"here and there and there".replace(b"the", b"", 0) == b"here and there and there"
+
+    assert b"Who goes there?".replace(b"o", b"o", len(b"Who goes there?") + 1) == b"Who goes there?"
+    assert b"Who goes there?".replace(b"o", b"O", len(b"Who goes there?") + 1) == b"WhO gOes there?"
+    assert b"Who goes there?".replace(b"o", b"O", -1) == b"WhO gOes there?"
+    assert b"Who goes there?".replace(b"o", b"O", 3) == b"WhO gOes there?"
+    assert b"Who goes there?".replace(b"o", b"O", 2) == b"WhO gOes there?"
+    assert b"Who goes there?".replace(b"o", b"O", 1) == b"WhO goes there?"
+    assert b"Who goes there?".replace(b"o", b"O", 0) == b"Who goes there?"
+    assert b"Who goes there?".replace(b"a", b"q", len(b"Who goes there?") + 1) == b"Who goes there?"
+    assert b"Who goes there?".replace(b"W", b"w", len(b"Who goes there?") + 1) == b"who goes there?"
+    assert b"WWho goes there?WW".replace(b"W", b"w", len(b"WWho goes there?WW") + 1) == b"wwho goes there?ww"
+    assert b"Who goes there?".replace(b"?", b"!", len(b"Who goes there?") + 1) == b"Who goes there!"
+    assert b"This is a tissue".replace(b"is", b"**", len(b"This is a tissue") + 1) == b"Th** ** a t**sue"
+    assert b"This is a tissue".replace(b"is", b"**", -1) == b"Th** ** a t**sue"
+    assert b"This is a tissue".replace(b"is", b"**", 4) == b"Th** ** a t**sue"
+    assert b"This is a tissue".replace(b"is", b"**", 3) == b"Th** ** a t**sue"
+    assert b"This is a tissue".replace(b"is", b"**", 2) == b"Th** ** a tissue"
+    assert b"This is a tissue".replace(b"is", b"**", 1) == b"Th** is a tissue"
+    assert b"This is a tissue".replace(b"is", b"**", 0) == b"This is a tissue"
+    assert b"Reykjavik".replace(b"k", b"KK", len(b"Reykjavik") + 1) == b"ReyKKjaviKK"
+    assert b"Reykjavik".replace(b"k", b"KK", -1) == b"ReyKKjaviKK"
+    assert b"Reykjavik".replace(b"k", b"KK", 2) == b"ReyKKjaviKK"
+    assert b"Reykjavik".replace(b"k", b"KK", 1) == b"ReyKKjavik"
+    assert b"Reykjavik".replace(b"k", b"KK", 0) == b"Reykjavik"
+    assert b"A.B.C.".replace(b".", b"----", len(b"A.B.C.") + 1) == b"A----B----C----"
+    assert b"spam, spam, eggs and spam".replace(
+        b"spam", b"ham", len(b"spam, spam, eggs and spam") + 1
+    ) == b"ham, ham, eggs and ham"
+    assert b"spam, spam, eggs and spam".replace(b"spam", b"ham", -1) == b"ham, ham, eggs and ham"
+    assert b"spam, spam, eggs and spam".replace(b"spam", b"ham", 4) == b"ham, ham, eggs and ham"
+    assert b"spam, spam, eggs and spam".replace(b"spam", b"ham", 3) == b"ham, ham, eggs and ham"
+    assert b"spam, spam, eggs and spam".replace(b"spam", b"ham", 2) == b"ham, ham, eggs and spam"
+    assert b"spam, spam, eggs and spam".replace(b"spam", b"ham", 1) == b"ham, spam, eggs and spam"
+    assert b"spam, spam, eggs and spam".replace(b"spam", b"ham", 0) == b"spam, spam, eggs and spam"
+
+
+@test
+def test_bytes_expandtabs():
+    assert b"abc\rab\tdef\ng\thi".expandtabs(8) == b"abc\rab      def\ng       hi"
+    assert b"abc\rab\tdef\ng\thi".expandtabs(8) == b"abc\rab      def\ng       hi"
+    assert b"abc\rab\tdef\ng\thi".expandtabs(4) == b"abc\rab  def\ng   hi"
+    assert b"abc\r\nab\tdef\ng\thi".expandtabs(8) == b"abc\r\nab      def\ng       hi"
+    assert b"abc\r\nab\tdef\ng\thi".expandtabs(4) == b"abc\r\nab  def\ng   hi"
+    assert b"abc\r\nab\r\ndef\ng\r\nhi".expandtabs(4) == b"abc\r\nab\r\ndef\ng\r\nhi"
+    assert b" \ta\n\tb".expandtabs(1) == b"  a\n b"
+    assert b"\tdndhd\ty\ty\tyu\t".expandtabs(3) == b"   dndhd y  y  yu "
+
+
+@test
+def test_bytes_translate():
+    assert b"I yor ge".translate({ord("g"): b"w", ord("y"): b"f"}) == b"I for we"
+    assert b"abababc".translate({ord("a"): b""}) == b"bbbc"
+    assert b"abababc".translate({ord("a"): b"", ord("b"): b"i"}) == b"iiic"
+    assert b"abababc".translate({ord("a"): b"", ord("b"): b"i", ord("c"): b"x"}) == b"iiix"
+    assert b"abababc".translate({ord("a"): b"", ord("b"): b""}) == b"c"
+    assert b"xzx".translate({ord("z"): b"yy"}) == b"xyyx"
+    assert b"aaabbbccc".translate(
+        {ord("b"): Optional(b"XY"), ord("c"): None, ord("a"): Optional(b"")}
+    ) == b"XYXYXY"
+
+
+@test
+def test_bytes_repr():
+    assert repr(b"") == "b''"
+    assert repr(b"hello") == "b'hello'"
+    assert repr(b"     ") == "b'     '"
+    assert repr(b"\r\a\n\t") == "b'\\r\\x07\\n\\t'"
+
+    value = bytes.cat(
+        b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\x0c\r\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19",
+        b"\x1a\x1b\x1c\x1d\x1e\x1f !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefg",
+        b"hijklmnopqrstuvwxyz{|}~\x7f\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f\x90\x91",
+        b"\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b\x9c\x9d\x9e\x9f\xa0\xff",
+    )
+    assert repr(value) == (
+        "b'\\x00\\x01\\x02\\x03\\x04\\x05\\x06\\x07\\x08\\t\\n\\x0b\\x0c\\r\\x0e\\x0f\\x10\\x11"
+        "\\x12\\x13\\x14\\x15\\x16\\x17\\x18\\x19\\x1a\\x1b\\x1c\\x1d\\x1e\\x1f !\"#$%&\\'()*+,"
+        "-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\\x7f\\x80\\x81"
+        "\\x82\\x83\\x84\\x85\\x86\\x87\\x88\\x89\\x8a\\x8b\\x8c\\x8d\\x8e\\x8f\\x90\\x91\\x92"
+        "\\x93\\x94\\x95\\x96\\x97\\x98\\x99\\x9a\\x9b\\x9c\\x9d\\x9e\\x9f\\xa0\\xff'"
+    )
+    assert repr(b'"') == "b'\"'"
+    assert repr(b"'") == 'b"\'"'
+    assert repr(b"\"'") == "b'\"\\''"
+
+
+@test
+def test_bytes_fstr():
+    value = b"42"
+    assert f"{value}" == "b'42'"
+    assert f"{value}{value}xx{value}" == "b'42'b'42'xxb'42'"
+    assert f"{value=}" == "value=b'42'"
+    assert f"hello {value=} world" == "hello value=b'42' world"
+
+
+@test
+def test_bytes_slice(
+    value=b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+    indices=(0, 1, 3, 41, 0xFFFFFFFFFFF, -1, -2, -37),
+):
+    for start in indices:
+        for stop in indices:
+            for step in indices[1:]:
+                assert list(value[start:stop:step]) == list(value)[start:stop:step]
+
+
+@test
+def test_bytes_join():
+    assert b"".join(bytes(str(a), "ascii") for a in range(0)) == b""
+    assert b"".join(List[bytes]()) == b""
+    assert b"a".join(bytes(str(a), "ascii") for a in range(0)) == b""
+    assert b"a".join(List[bytes]()) == b""
+    assert b"ab".join(bytes(str(a), "ascii") for a in range(999, 1000)) == b"999"
+    assert b"ab".join([b"999"]) == b"999"
+    assert b"xyz".join(bytes(str(a), "ascii") for a in range(5)) == b"0xyz1xyz2xyz3xyz4"
+    assert b"xyz".join([b"00", b"1", b"22", b"3", b"44"]) == b"00xyz1xyz22xyz3xyz44"
+    assert b"xyz".join(iter([b"00", b"1", b"22", b"3", b"44"])) == b"00xyz1xyz22xyz3xyz44"
+    assert b"xyz".join([b"00", b"1", b"22", b"3", b"44"]) == b"00xyz1xyz22xyz3xyz44"
+    assert b"xyz".join(iter([b"00", b"", b"22", b"3", b""])) == b"00xyzxyz22xyz3xyz"
 
 
 test_isdigit()
@@ -809,3 +1546,47 @@ test_fstr()
 test_slice()
 test_join()
 test_repr()
+test_bytes_isdigit()
+test_bytes_islower()
+test_bytes_isupper()
+test_bytes_isalnum()
+test_bytes_isalpha()
+test_bytes_isspace()
+test_bytes_istitle()
+test_bytes_capitalize()
+test_bytes_isdecimal()
+test_bytes_lower()
+test_bytes_upper()
+test_bytes_isascii()
+test_bytes_casefold()
+test_bytes_swapcase()
+test_bytes_title()
+test_bytes_isnumeric()
+test_bytes_ljust()
+test_bytes_rjust()
+test_bytes_center()
+test_bytes_zfill()
+test_bytes_count()
+test_bytes_find()
+test_bytes_rfind()
+test_bytes_isidentifier()
+test_bytes_lstrip()
+test_bytes_rstrip()
+test_bytes_strip()
+test_bytes_isprintable()
+test_bytes_partition()
+test_bytes_rpartition()
+test_bytes_split()
+test_bytes_rsplit()
+test_bytes_splitlines()
+test_bytes_startswith()
+test_bytes_endswith()
+test_bytes_index()
+test_bytes_rindex()
+test_bytes_replace()
+test_bytes_expandtabs()
+test_bytes_translate()
+test_bytes_repr()
+test_bytes_fstr()
+test_bytes_slice()
+test_bytes_join()
