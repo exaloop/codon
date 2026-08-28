@@ -203,6 +203,17 @@ class Expr(Node):
         self.orig = orig
         self.expected_type = expected_type
 
+    def __ior__(self, other: types.Type):
+        if not self.type:
+            self.type = other
+        else:
+            undo = types.Type.UnifyContext()
+            if self.type.unify(other, undo) < 0:
+                raise TypeError(
+                    self, f"cannot unify {self.type.pretty_string()} and {other.pretty_string()}"
+                )
+        return self
+
     def get_class_type(self) -> types.Class | None:
         return self.type if isinstance(self.type, types.Class) else None
 
@@ -702,8 +713,10 @@ class CallExpr(Expr):
             for i in items:
                 if isinstance(i, CallExpr.Arg):
                     self.items.append(i)
-                else:
+                elif isinstance(i, Expr):
                     self.items.append(CallExpr.Arg("", i))
+                else:
+                    raise NodeError(i, "invalid CallExpr argument")
         self.expr = expr
         self.ordered = ordered
         self.partial = partial
