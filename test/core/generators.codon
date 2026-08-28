@@ -84,7 +84,7 @@ fadder = mysum(0.0)
 next(fadder)
 for i in range(10):
     fadder.send(float(i))
-print(fadder.send(-1.0))  # EXPECT: 45
+print(fadder.send(-1.0))  # EXPECT: 45.0
 
 
 @test

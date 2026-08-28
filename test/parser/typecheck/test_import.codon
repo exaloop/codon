@@ -11,7 +11,7 @@ print s2i("11"._ptr) #: 11
 @C
 def log(x: float) -> float:
     pass
-print log(5.5)  #: 1.70475
+print log(5.5)  #: 1.7047480922384253
 
 from C import seq_flags: Int[32] as e
 # debug | standalone == 5
