@@ -1553,12 +1553,12 @@ class str:
         return brace_format_map(self, mapping)
 
 
-def _value_string(value):
-    return str(str(value))
+def _value_string(value) -> str:
+    return str(value)
 
 
 def _value_repr(value) -> str:
-    return str(repr(value))
+    return repr(value)
 
 
 def _percent_append_hex(
