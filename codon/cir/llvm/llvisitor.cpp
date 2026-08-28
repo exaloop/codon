@@ -2499,11 +2499,12 @@ void LLVMVisitor::visit(const StringConst *x) {
   }
 
   std::vector<llvm::Constant *> elements;
-  elements.reserve(codepoints.size());
+  elements.reserve(codepoints.size() + 1);
   for (auto codepoint : codepoints)
     elements.push_back(llvm::ConstantInt::get(elementType, codepoint));
+  elements.push_back(llvm::ConstantInt::get(elementType, 0));
 
-  auto *arrayType = llvm::ArrayType::get(elementType, codepoints.size());
+  auto *arrayType = llvm::ArrayType::get(elementType, elements.size());
   auto *strVar = new llvm::GlobalVariable(
       *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantArray::get(arrayType, elements), ".str");
@@ -2525,11 +2526,12 @@ void LLVMVisitor::visit(const BytesConst *x) {
   B->SetInsertPoint(block);
   const auto &bytes = x->getVal();
   std::vector<llvm::Constant *> elements;
-  elements.reserve(bytes.size());
+  elements.reserve(bytes.size() + 1);
   for (auto byte : bytes)
     elements.push_back(B->getInt8(static_cast<uint8_t>(byte)));
+  elements.push_back(B->getInt8(0));
 
-  auto *arrayType = llvm::ArrayType::get(B->getInt8Ty(), bytes.size());
+  auto *arrayType = llvm::ArrayType::get(B->getInt8Ty(), elements.size());
   auto *bytesVar = new llvm::GlobalVariable(
       *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
       llvm::ConstantArray::get(arrayType, elements), ".bytes");

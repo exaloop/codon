@@ -89,7 +89,7 @@ class TypeInfo:
 
         self.id = T.__id__
         self.raw_name = T.__name__
-        self.nice_name = T.__name__[9:-1]
+        self.nice_name = T.__name__
 
         self.repr = Function[[Ptr[u8]], str](cobj())
         # if hasattr(T, "__repr__") or hasattr(T, "__str__"):

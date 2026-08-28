@@ -1214,12 +1214,12 @@ shapes.append(Square(3))
 
 for s in shapes:
     print_area(s)
-#: A circle with radius 5
+#: A circle with radius 5.0
 #: 78.54
-#: A rectangle with width 4 and height 6
-#: 24
-#: A square with width 3 and height 3
-#: 9
+#: A rectangle with width 4.0 and height 6.0
+#: 24.0
+#: A square with width 3.0 and height 3.0
+#: 9.0
 
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):

@@ -1,6 +1,6 @@
 #%% import_c,barebones
 from C import sqrt(float) -> float
-print sqrt(4.0) #: 2
+print sqrt(4.0) #: 2.0
 
 from C import puts(cobj)
 puts("hello"._ptr) #: hello

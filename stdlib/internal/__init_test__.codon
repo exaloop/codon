@@ -53,7 +53,7 @@ class Set:
             return "set()"
         s = self.items.__repr__()
         s._store_codepoint(0, 123)  # {
-        s._store_codepoint(s._len - 1, 125)  # }
+        s._store_codepoint(len(s) - 1, 125)  # }
         return s
 
 class Dict:
