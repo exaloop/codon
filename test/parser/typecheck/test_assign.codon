@@ -368,7 +368,7 @@ a = 1.5
 print(a) #: 1.5
 if 1:
     a = 1
-print(a, a.__class__.__name__) #: 1 float
+print(a, a.__class__.__name__) #: 1.0 float
 
 a: Optional[int] = None
 if 1:
@@ -385,7 +385,7 @@ z: Generator[int] = [1, 2]
 print(z.__class__.__name__) #: Generator[int]
 
 zx: float = 1
-print(zx.__class__.__name__, zx) #: float 1
+print(zx.__class__.__name__, zx) #: float 1.0
 
 def test(v: Optional[int]):
     v: int = v if v is not None else 3
