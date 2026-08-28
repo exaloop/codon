@@ -1803,7 +1803,7 @@ def _brace_value_append(
         ):
             if hasattr(value, "__format__"):
                 if spec is None:
-                    spec = str("")
+                    spec = str()
                 if static.function.can_call(value.__format__, spec):
                     _brace_text_append(value.__format__(spec), None, result)
                     return
