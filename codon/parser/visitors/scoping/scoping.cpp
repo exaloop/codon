@@ -230,20 +230,6 @@ ScopingVisitor::unpackFString(const std::string &value) {
             return items;
           items.back().format = val->second;
 
-          auto &debugText = items.back().format.text;
-          if (!debugText.empty()) {
-            int leadingWhitespace = 0;
-            while (leadingWhitespace < code.size() &&
-                   (code[leadingWhitespace] == ' ' || code[leadingWhitespace] == '\t'))
-              leadingWhitespace++;
-            if (leadingWhitespace)
-              debugText = code.substr(0, leadingWhitespace) + debugText;
-
-            if (items.back().format.conversion.empty() &&
-                items.back().format.spec.empty())
-              items.back().format.conversion = "r";
-          }
-
           auto &spec = items.back().format.spec;
           if (spec.find('{') != std::string::npos) {
             std::string format = "{";

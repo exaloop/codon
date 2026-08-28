@@ -49,13 +49,15 @@ void TypecheckVisitor::visit(StringExpr *expr) {
     std::vector<Expr *> items;
     for (auto &p : *expr) {
       if (p.expr) {
-        std::string format = "{";
-        if (!p.format.conversion.empty())
-          format += "!" + p.format.conversion;
-        if (!p.format.spec.empty())
-          format += ":" + p.format.spec;
-        format += "}";
-        p.expr = N<CallExpr>(N<DotExpr>(N<StringExpr>(format), "format"), p.expr);
+        if (!p.format.spec.empty() || !p.format.conversion.empty()) {
+          std::string format = "{";
+          if (!p.format.conversion.empty())
+            format += "!" + p.format.conversion;
+          if (!p.format.spec.empty())
+            format += ":" + p.format.spec;
+          format += "}";
+          p.expr = N<CallExpr>(N<DotExpr>(N<StringExpr>(format), "format"), p.expr);
+        }
         p.expr = N<CallExpr>(N<IdExpr>("str"), p.expr);
         if (!p.format.text.empty()) {
           p.expr = N<CallExpr>(N<DotExpr>(N<IdExpr>("str"), "cat"),

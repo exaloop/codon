@@ -878,7 +878,6 @@ EXTERNDENT__PREDICATE {
   'with' / 'elif' / 'if' / 'or' / 'yield' / 'async' / 'await'
 >
 
-# https://docs.python.org/3/library/string.html#formatspec
 format_spec <- <.*> {
   return string(VS.sv());
 }
