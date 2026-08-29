@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.types.unicode.unicodedata_data import (
+from internal.unicode.unicodedata_data import (
     unicode_bidirectional_index,
     unicode_category_index,
     unicode_decimal_index,
@@ -18,7 +18,7 @@ from internal.types.unicode.unicodedata_data import (
     unicode_numeric_value,
     UNICODEDATA_VERSION,
 )
-from internal.types.unicode.normalization import (
+from internal.unicode.normalization import (
     _normalization_combining_class,
     _normalization_raw_decomposition,
     _unicode_normalize,

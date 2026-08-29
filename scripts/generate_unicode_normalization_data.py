@@ -149,7 +149,7 @@ def main():
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=pathlib.Path("stdlib/internal/types/unicode/normalization_data.codon"),
+        default=pathlib.Path("stdlib/internal/unicode/normalization_data.codon"),
     )
     args = parser.parse_args()
     decomposition_table, decomposition_values = build_decomposition_data(

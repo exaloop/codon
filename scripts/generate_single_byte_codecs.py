@@ -101,7 +101,7 @@ def main():
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=pathlib.Path("stdlib/internal/types/unicode/codecs.codon"),
+        default=pathlib.Path("stdlib/internal/unicode/codecs.codon"),
     )
     parser.add_argument(
         "--codecs",

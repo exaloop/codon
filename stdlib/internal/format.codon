@@ -10,7 +10,7 @@ from .str import (
     _make_meta,
     _unicode_copy_range,
 )
-from .types.unicode.float_dtoa import (
+from .unicode.float_dtoa import (
     _float_dtoa_exponent_write,
     _float_dtoa_fixed_write,
     _float_dtoa_general_write,

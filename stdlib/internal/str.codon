@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.types.unicode.data import (
+from internal.unicode.data import (
     unicode_is_alpha,
     unicode_is_decimal,
     unicode_is_digit,
@@ -23,7 +23,7 @@ from internal.types.unicode.data import (
     unicode_casefold_mapping_length,
     unicode_casefold_mapping_codepoint,
 )
-from internal.types.unicode.codecs import (
+from internal.unicode.codecs import (
     _single_byte_cp1250_decode,
     _single_byte_cp1250_encode,
     _single_byte_cp1253_decode,

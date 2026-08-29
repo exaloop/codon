@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.types.unicode.float_dtoa import (
+from internal.unicode.float_dtoa import (
     _float32_dtoa_shortest,
     _float_dtoa_shortest,
 )

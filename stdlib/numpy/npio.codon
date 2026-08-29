@@ -7,7 +7,7 @@ import util
 import gzip
 import re
 import internal.static as static
-from internal.types.unicode.data import unicode_is_space
+from internal.unicode.data import unicode_is_space
 
 _ALLOCATIONGRANULARITY: Literal[int] = 16384
 

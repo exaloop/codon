@@ -539,29 +539,43 @@ llvm_map_components_to_libnames(
   Vectorize
   Passes)
 
+set(CODON_UNICODE_GENERATED_FILES
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
+)
 file(GLOB_RECURSE CODON_STDLIB_RESOURCES
   CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/*.codon"
 )
+list(APPEND CODON_STDLIB_RESOURCES ${CODON_UNICODE_GENERATED_FILES})
+list(REMOVE_DUPLICATES CODON_STDLIB_RESOURCES)
 set(CODON_UNICODE_DATA_STAMP "${CMAKE_BINARY_DIR}/unicode-${CODON_UNICODE_VERSION}.stamp")
 add_custom_command(
   OUTPUT "${CODON_UNICODE_DATA_STAMP}"
-  BYPRODUCTS
-    "${CMAKE_SOURCE_DIR}/stdlib/internal/types/unicode/data.codon"
-    "${CMAKE_SOURCE_DIR}/stdlib/internal/types/unicode/normalization_data.codon"
-    "${CMAKE_SOURCE_DIR}/stdlib/internal/types/unicode/unicodedata_data.codon"
+  BYPRODUCTS ${CODON_UNICODE_GENERATED_FILES}
+  COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_SOURCE_DIR}/scripts/generate_single_byte_codecs.py"
+        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
+  COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_SOURCE_DIR}/scripts/generate_float_dtoa_tables.py"
+        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
   COMMAND ${Python3_EXECUTABLE}
           "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_data.py"
-          --output "${CMAKE_SOURCE_DIR}/stdlib/internal/types/unicode/data.codon"
+        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
           --derived-core-properties "${CODON_UNICODE_UCD_DIR}/DerivedCoreProperties.txt"
-          --unicodedata-output "${CMAKE_SOURCE_DIR}/stdlib/internal/types/unicode/unicodedata_data.codon"
+        --unicodedata-output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
           --name-aliases "${CODON_UNICODE_UCD_DIR}/NameAliases.txt"
           --named-sequences "${CODON_UNICODE_UCD_DIR}/NamedSequences.txt"
   COMMAND ${Python3_EXECUTABLE}
           "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_normalization_data.py"
-          --output "${CMAKE_SOURCE_DIR}/stdlib/internal/types/unicode/normalization_data.codon"
+        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
   COMMAND ${CMAKE_COMMAND} -E touch "${CODON_UNICODE_DATA_STAMP}"
   DEPENDS
+    "${CMAKE_SOURCE_DIR}/scripts/generate_single_byte_codecs.py"
+    "${CMAKE_SOURCE_DIR}/scripts/generate_float_dtoa_tables.py"
     "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_data.py"
     "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_normalization_data.py"
     "${CODON_UNICODE_UCD_DIR}/DerivedCoreProperties.txt"

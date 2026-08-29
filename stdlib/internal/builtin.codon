@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.static as static
-from internal.types.unicode.data import unicode_is_space
+from internal.unicode.data import unicode_is_space
 
 class object:
     def __init__(self):

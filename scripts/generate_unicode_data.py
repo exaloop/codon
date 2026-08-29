@@ -693,7 +693,7 @@ def main():
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=pathlib.Path("stdlib/internal/types/unicode/data.codon"),
+        default=pathlib.Path("stdlib/internal/unicode/data.codon"),
     )
     parser.add_argument(
         "--derived-core-properties",
@@ -705,7 +705,7 @@ def main():
         "--unicodedata-output",
         type=pathlib.Path,
         default=pathlib.Path(
-            "stdlib/internal/types/unicode/unicodedata_data.codon"
+            "stdlib/internal/unicode/unicodedata_data.codon"
         ),
     )
     parser.add_argument("--name-aliases", type=pathlib.Path)
