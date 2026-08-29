@@ -15,6 +15,7 @@ from internal.types.bytes import *
 
 from internal.types.slice import *
 from internal.types.collections.list import *
+from internal.types.collections.bytearray import *
 
 from internal.types.type import *
 from internal.types.tuple import *

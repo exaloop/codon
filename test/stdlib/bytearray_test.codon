@@ -1,0 +1,379 @@
+@test
+def test_construction_and_conversion():
+    assert bytearray() == b""
+    assert bytearray(3) == b"\x00\x00\x00"
+    assert bytearray(b"abc") == b"abc"
+    assert bytearray([65, 66, 67]) == b"ABC"
+    assert bytearray("hé", "utf-8").decode() == "hé"
+
+    original = bytearray(b"abc")
+    copied = bytearray(original)
+    copied[0] = 120
+    assert original == b"abc"
+    assert copied == b"xbc"
+    assert bytes(copied) == b"xbc"
+    assert repr(copied) == "bytearray(b'xbc')"
+
+
+@test
+def test_indexing_and_slice_reads():
+    value = bytearray(b"abcdef")
+    assert value[0] == 97
+    assert value[-1] == 102
+    assert value[:] == b"abcdef"
+    assert value[2:2] == b""
+    assert value[-100:100] == b"abcdef"
+    assert value[100:] == b""
+    assert value[1:5:2] == b"bd"
+    assert value[::-1] == b"fedcba"
+    assert value[5:0:-2] == b"fdb"
+    assert value[1:5:-1] == b""
+    assert bytearray()[::-1] == b""
+
+    result = value[1:4]
+    assert isinstance(result, bytearray)
+    result[0] = 88
+    assert result == b"Xcd"
+    assert value == b"abcdef"
+
+
+@test
+def test_contiguous_slice_assignment():
+    value = bytearray(b"abcdef")
+    value[2:4] = b"XY"
+    assert value == b"abXYef"
+
+    value = bytearray(b"abcdef")
+    value[2:4] = b"YZQ"
+    assert value == b"abYZQef"
+
+    value = bytearray(b"abcdef")
+    value[2:4] = b"WXYZ"
+    assert value == b"abWXYZef"
+
+    value = bytearray(b"abcdef")
+    value[2:5] = b"Q"
+    assert value == b"abQf"
+
+    value = bytearray(b"abcdef")
+    value[3:3] = b"XY"
+    assert value == b"abcXYdef"
+
+    value = bytearray(b"abcdef")
+    value[4:2] = b"XY"
+    assert value == b"abcdXYef"
+
+    value = bytearray(b"abcdef")
+    value[-100:-100] = b"X"
+    assert value == b"Xabcdef"
+
+    value = bytearray(b"abcdef")
+    value[100:200] = b"X"
+    assert value == b"abcdefX"
+
+    value = bytearray(b"abcdef")
+    value[-100:100] = b"X"
+    assert value == b"X"
+
+    value = bytearray(b"abcdef")
+    value[:] = [120, 121]
+    assert value == b"xy"
+
+    value = bytearray(b"abcdef")
+    value[1:3] = value
+    assert value == b"aabcdefdef"
+
+    value = bytearray(b"abcdef")
+    value[:] = b""
+    assert value == b""
+
+
+@test
+def test_extended_slice_assignment():
+    value = bytearray(b"abcdef")
+    value[::2] = b"XYZ"
+    assert value == b"XbYdZf"
+
+    value = bytearray(b"abcdef")
+    value[::-2] = b"XYZ"
+    assert value == b"aZcYeX"
+
+    value = bytearray(b"abcdef")
+    value[2:2:2] = b""
+    assert value == b"abcdef"
+
+    value = bytearray(b"abcdef")
+    value[::-1] = value
+    assert value == b"fedcba"
+
+    value = bytearray(b"abcdef")
+    value[::2] = value[1::2]
+    assert value == b"bbddff"
+
+
+@test
+def test_slice_deletion():
+    value = bytearray(b"abcdef")
+    del value[2:4]
+    assert value == b"abef"
+
+    value = bytearray(b"abcdef")
+    del value[4:2]
+    assert value == b"abcdef"
+
+    value = bytearray(b"abcdef")
+    del value[100:200]
+    assert value == b"abcdef"
+
+    value = bytearray(b"abcdef")
+    del value[-100:100]
+    assert value == b""
+
+    value = bytearray(b"abcdef")
+    del value[::2]
+    assert value == b"bdf"
+
+    value = bytearray(b"abcdef")
+    del value[1::2]
+    assert value == b"ace"
+
+    value = bytearray(b"abcdef")
+    del value[::-2]
+    assert value == b"ace"
+
+    value = bytearray(b"abcdef")
+    del value[5:0:-2]
+    assert value == b"ace"
+
+    value = bytearray(b"abcdef")
+    del value[2:2]
+    assert value == b"abcdef"
+
+    value = bytearray(b"abcdef")
+    del value[:]
+    assert value == b""
+
+
+@test
+def test_slice_errors():
+    value = bytearray(b"abcdef")
+    try:
+        value[::2] = b"XY"
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+    try:
+        value[::-2] = b"WXYZ"
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+    try:
+        value[2:2:2] = b"X"
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+    try:
+        value[1:3] = [120, -1]
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+    try:
+        value[1:3] = [120, 256]
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+    try:
+        value[::0]
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value[::0] = b""
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+    try:
+        del value[::0]
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abcdef"
+
+
+@test
+def test_index_errors():
+    value = bytearray(b"abc")
+
+    try:
+        value[3]
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        value[-4]
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        value[3] = 0
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        del value[-4]
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        value[0] = -1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value[0] = 256
+        assert False
+    except ValueError:
+        pass
+    assert value == b"abc"
+
+
+@test
+def test_mutation():
+    value = bytearray(b"bc")
+    value.insert(0, 97)
+    value.append(100)
+    value.extend(b"ef")
+    value.extend([103, 104])
+    assert value == b"abcdefgh"
+    assert value.pop() == 104
+    assert value.pop(0) == 97
+    value.remove(100)
+    assert value == b"bcefg"
+    value.reverse()
+    assert value == b"gfecb"
+    value.clear()
+    assert not value
+
+    value = bytearray(b"ab")
+    value.extend(value)
+    assert value == b"abab"
+    value[:] = value
+    assert value == b"abab"
+
+
+@test
+def test_sequence_operations():
+    value = bytearray(b"ab")
+    assert value + b"cd" == b"abcd"
+    assert value + bytearray(b"ef") == b"abef"
+    assert b"cd" + value == b"cdab"
+    assert value * 3 == b"ababab"
+    assert 2 * value == b"abab"
+
+    value += b"cd"
+    value *= 2
+    assert value == b"abcdabcd"
+    assert 97 in value
+    assert value.count(97) == 2
+    assert value.index(99) == 2
+    assert list(reversed(value)) == [100, 99, 98, 97, 100, 99, 98, 97]
+
+
+@test
+def test_byte_range_errors():
+    value = bytearray(b"abc")
+    for invalid in (-1, 256):
+        try:
+            value.append(invalid)
+            assert False
+        except ValueError:
+            pass
+        try:
+            invalid in value
+            assert False
+        except ValueError:
+            pass
+        try:
+            value.count(invalid)
+            assert False
+        except ValueError:
+            pass
+        try:
+            value.index(invalid)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_bytes_api():
+    value = bytearray(b"  AbC abC\t")
+    assert b"AbC" in value
+    assert bytearray(b"abC") in value
+    assert value.count(b"bC") == 2
+    assert value.find(b"Ab") == 2
+    assert value.rfind(bytearray(b"ab")) == 6
+    assert value.index(b"Ab") == 2
+    assert value.rindex(b"bC") == 7
+    assert value.startswith(b"  A")
+    assert value.endswith(bytearray(b"\t"))
+
+    assert bytearray(b"abc123").isalnum()
+    assert bytearray(b"ABC").isupper()
+    assert bytearray(b"abc").islower()
+    assert bytearray(b"123").isdigit()
+    assert bytearray(b" \t\n").isspace()
+    assert bytearray(b"Abc Def").istitle()
+    assert bytearray(b"ascii").isascii()
+
+    lowered = value.lower()
+    assert isinstance(lowered, bytearray)
+    assert lowered == b"  abc abc\t"
+    assert value.upper() == b"  ABC ABC\t"
+    assert bytearray(b"hello world").title() == b"Hello World"
+    assert bytearray(b"abc").center(5, b"-") == b"-abc-"
+    assert bytearray(b"-12").zfill(5) == b"-0012"
+    assert value.strip() == b"AbC abC"
+    assert bytearray(b"xyabcxy").strip(b"xy") == b"abc"
+
+    assert bytearray(b"a,b,c").split(b",") == [
+        bytearray(b"a"), bytearray(b"b"), bytearray(b"c")
+    ]
+    assert bytearray(b"a\r\nb").splitlines() == [bytearray(b"a"), bytearray(b"b")]
+    assert bytearray(b"abc").partition(b"b") == (
+        bytearray(b"a"), bytearray(b"b"), bytearray(b"c")
+    )
+    assert bytearray(b"aba").replace(b"a", b"xy") == b"xybxy"
+    assert bytearray(b"\tA").expandtabs(4) == b"    A"
+    assert bytearray(b",").join([bytearray(b"a"), bytearray(b"b")]) == b"a,b"
+
+
+test_construction_and_conversion()
+test_indexing_and_slice_reads()
+test_contiguous_slice_assignment()
+test_extended_slice_assignment()
+test_slice_deletion()
+test_slice_errors()
+test_index_errors()
+test_mutation()
+test_sequence_operations()
+test_byte_range_errors()
+test_bytes_api()

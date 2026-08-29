@@ -477,6 +477,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
+        "stdlib/bytearray_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",

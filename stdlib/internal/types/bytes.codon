@@ -13,6 +13,10 @@ class bytes:
         return bytes(Ptr[u8](), 0)
 
     @overload
+    def __new__(what) -> bytes:
+        return what.__bytes__()
+
+    @overload
     def __new__(what: bytes) -> bytes:
         return what
 
@@ -22,8 +26,11 @@ class bytes:
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         return str(self, encoding, errors)
 
-    def __str__(what: bytes) -> str:
-        return what.__repr__()
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def __bytes__(self) -> bytes:
+        return self
 
     def __len__(self) -> int:
         return self._len
