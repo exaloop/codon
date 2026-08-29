@@ -2,7 +2,11 @@
 
 #pragma once
 
+#include <functional>
 #include <string>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "codon/cir/base.h"
 
@@ -11,13 +15,15 @@ namespace codon::matcher {
 template <typename T, typename... MA> struct match_t {
   std::tuple<MA...> args;
   std::function<void(T &)> fn;
-  match_t(MA... args, std::function<void(T &)> fn)
-      : args(std::tuple<MA...>(args...)), fn(fn) {}
+  template <typename... Args>
+  match_t(std::function<void(T &)> fn, Args &&...args)
+      : args(std::forward<Args>(args)...), fn(std::move(fn)) {}
 };
 
 template <typename... MA> struct match_or_t {
   std::tuple<MA...> args;
-  match_or_t(MA... args) : args(std::tuple<MA...>(args...)) {}
+  template <typename... Args>
+  explicit match_or_t(Args &&...args) : args(std::forward<Args>(args)...) {}
 };
 
 struct match_ignore_t {};
@@ -36,25 +42,27 @@ struct match_contains_t {
   std::string s;
 };
 
-template <typename T, typename... TA> match_t<T, TA...> M(TA... args) {
-  return match_t<T, TA...>(args..., nullptr);
+template <typename T, typename... TA> auto M(TA &&...args) {
+  return match_t<T, std::decay_t<TA>...>(nullptr, std::forward<TA>(args)...);
 }
 
 template <typename T, typename... TA>
-match_t<T, TA...> MCall(TA... args, std::function<void(T &)> fn) {
-  return match_t<T, TA...>(args..., fn);
+auto MCall(TA &&...args, std::function<void(T &)> fn) {
+  return match_t<T, std::decay_t<TA>...>(std::move(fn), std::forward<TA>(args)...);
 }
 
-template <typename T, typename... TA> match_t<T, TA...> MVar(TA... args, T &tp) {
-  return match_t<T, TA...>(args..., [&tp](T &t) { tp = t; });
+template <typename T, typename... TA> auto MVar(TA &&...args, T &tp) {
+  return match_t<T, std::decay_t<TA>...>([&tp](T &t) { tp = t; },
+                                         std::forward<TA>(args)...);
 }
 
-template <typename T, typename... TA> match_t<T, TA...> MVar(TA... args, T *&tp) {
-  return match_t<T, TA...>(args..., [&tp](T &t) { tp = &t; });
+template <typename T, typename... TA> auto MVar(TA &&...args, T *&tp) {
+  return match_t<T, std::decay_t<TA>...>([&tp](T &t) { tp = &t; },
+                                         std::forward<TA>(args)...);
 }
 
-template <typename... TA> match_or_t<TA...> MOr(TA... args) {
-  return match_or_t<TA...>(args...);
+template <typename... TA> auto MOr(TA &&...args) {
+  return match_or_t<std::decay_t<TA>...>(std::forward<TA>(args)...);
 }
 
 match_zero_or_more_t MAny();
@@ -97,7 +105,7 @@ template <> bool match(const char *s, match_endswith_t m);
 
 template <> bool match(const char *s, match_contains_t m);
 
-template <int i, typename T, typename TM> bool match_help(T &t, TM m) {
+template <int i, typename T, typename TM> bool match_help(T &t, const TM &m) {
   if constexpr (i == std::tuple_size_v<decltype(m.args)>) {
     return i == std::tuple_size_v<decltype(t.match_members())>;
   } else if constexpr (i < std::tuple_size_v<decltype(m.args)>) {
@@ -112,25 +120,22 @@ template <int i, typename T, typename TM> bool match_help(T &t, TM m) {
   }
 }
 
-template <int i, typename T, typename... TO>
-bool match_or_help(T &t, match_or_t<TO...> m) {
-  if constexpr (i >= 0 && i < std::tuple_size_v<decltype(m.args)>) {
-    return match(t, std::get<i>(m.args)) || match_or_help<i + 1>(t, m);
-  } else {
-    return false;
-  }
+template <typename T, typename... TA> bool match_or(T &t, const match_or_t<TA...> &m) {
+  static_assert(sizeof...(TA) > 0, "match_or_t requires at least one alternative");
+  return std::apply([&](const auto &...alts) { return (... || match(t, alts)); },
+                    m.args);
 }
 
-template <typename TM, typename... TA> bool match(TM &t, match_or_t<TA...> m) {
-  return match_or_help<0, TM, TA...>(t, m);
+template <typename TM, typename... TA> bool match(TM &t, const match_or_t<TA...> &m) {
+  return match_or(t, m);
 }
 
-template <typename TM, typename... TA> bool match(TM *t, match_or_t<TA...> m) {
-  return match_or_help<0, TM *, TA...>(t, m);
+template <typename TM, typename... TA> bool match(TM *t, const match_or_t<TA...> &m) {
+  return match_or<TM *>(t, m);
 }
 
 template <typename T, typename TM, typename... TA>
-bool match(T &t, match_t<TM, TA...> m) {
+bool match(T &t, const match_t<TM, TA...> &m) {
   if constexpr (std::is_pointer_v<T>) {
     TM *tm = ir::cast<TM>(t);
     if (!tm)
@@ -162,7 +167,7 @@ bool match(T &t, match_t<TM, TA...> m) {
 }
 
 template <typename T, typename TM, typename... TA>
-bool match(T *t, match_t<TM, TA...> m) {
+bool match(T *t, const match_t<TM, TA...> &m) {
   return match<T *, TM, TA...>(t, m);
 }
 
