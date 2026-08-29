@@ -58,7 +58,7 @@ Compiler::parse(bool isCode, const std::string &file, const std::string &code,
                 int startLine, int testFlags,
                 const std::unordered_map<std::string, std::string> &defines) {
   input = file;
-  std::string abspath = (file != "-") ? std::string(cache->fs->canonical(file)) : file;
+  std::string abspath = (file != "-") ? cache->fs->canonical(file).generic_string() : file;
   try {
     auto nodeOrErr = isCode ? ast::parseCode(cache.get(), abspath, code, startLine)
                             : ast::parseFile(cache.get(), abspath);
@@ -156,6 +156,13 @@ std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
   earlyDefines.emplace("__dict_unordered__", options->unordereddict ? "1" : "0");
   earlyDefines.emplace("__apple__",
 #if __APPLE__
+                       "1"
+#else
+                       "0"
+#endif
+  );
+  earlyDefines.emplace("__windows__",
+#ifdef _WIN32
                        "1"
 #else
                        "0"

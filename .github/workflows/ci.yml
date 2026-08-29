@@ -91,6 +91,160 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags') && matrix.arch == 'linux-x86_64'
         uses: pypa/gh-action-pypi-publish@release/v1
 
+  build_windows:
+    name: Build Codon (Windows)
+    runs-on: windows-latest
+    needs: create_release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+
+      - name: Set up toolchain on PATH
+        shell: pwsh
+        run: |
+          echo "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          choco install ninja -y --no-progress
+          clang --version
+          ninja --version
+
+      - name: Cache LLVM
+        id: cache-llvm
+        uses: actions/cache@v4
+        with:
+          path: llvm
+          key: windows-msvc-llvm-20-1-7-omp
+
+      - name: Build LLVM
+        if: steps.cache-llvm.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          git clone --depth 1 -b codon-20.1.7 https://github.com/exaloop/llvm-project llvm-project
+          cmake -S llvm-project/llvm -B llvm-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_HOST_TRIPLE=x86_64-pc-windows-msvc `
+            -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-pc-windows-msvc `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++ `
+            -DLLVM_INCLUDE_TESTS=OFF `
+            -DLLVM_INCLUDE_BENCHMARKS=OFF `
+            -DLLVM_INCLUDE_EXAMPLES=OFF `
+            -DLLVM_ENABLE_WERROR=OFF `
+            -DLLVM_ENABLE_RTTI=ON `
+            -DLLVM_ENABLE_ZLIB=OFF `
+            -DLLVM_ENABLE_ZSTD=OFF `
+            -DLLVM_ENABLE_TERMINFO=OFF `
+            -DLLVM_TARGETS_TO_BUILD=X86 `
+            -DLLVM_BUILD_TOOLS=OFF `
+            -DLLVM_ENABLE_PROJECTS=""
+          cmake --build llvm-build --config Release
+          cmake --install llvm-build --prefix llvm
+          # GC-patched libomp (enables @par). Built standalone with clang-cl so CMake sets
+          # MSVC=TRUE -> KMP_MSVC_COMPAT=1 (the pid_t shim etc.); a plain clang build fails.
+          cmake -S llvm-project/openmp -B libomp-build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_C_COMPILER=clang-cl `
+            -DCMAKE_CXX_COMPILER=clang-cl `
+            -DOPENMP_STANDALONE_BUILD=ON `
+            -DLIBOMP_ENABLE_SHARED=ON `
+            -DOPENMP_ENABLE_LIBOMPTARGET=OFF
+          cmake --build libomp-build --target omp
+          Copy-Item libomp-build/runtime/src/libomp.dll llvm/bin/
+          Copy-Item libomp-build/runtime/src/libomp.lib llvm/lib/
+          Copy-Item libomp-build/runtime/src/omp.h llvm/include/
+
+      - name: Build Codon
+        shell: pwsh
+        run: |
+          # Passed via environment rather than -D: the runner's pwsh mangles the
+          # dotted value in "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" to "3", which
+          # CMake rejects. The env var initializes the cache entry equivalently.
+          $env:CMAKE_POLICY_VERSION_MINIMUM = '3.5'
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLLVM_DIR="llvm/lib/cmake/llvm" `
+            -DCMAKE_C_COMPILER=clang `
+            -DCMAKE_CXX_COMPILER=clang++ `
+            -DCODON_GPU=OFF
+          cmake --build build --config Release
+          cmake --install build --prefix codon-deploy
+
+      - name: Test
+        shell: pwsh
+        run: |
+          # codon_test is EXCLUDE_FROM_ALL on Windows (it statically links the compiler),
+          # so build it explicitly and run the fast in-process IR suite.
+          cmake --build build --config Release --target codon_test
+          $env:PATH = "$PWD\build;$env:PATH"
+          $env:CODON_PATH = "$PWD\stdlib"
+          & build/codon_test.exe --gtest_filter=CIRCoreTest.*
+          if ($LASTEXITCODE -ne 0) { throw "CIRCoreTest failed" }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item codon-deploy/lib/codon/codonc.dll codon-deploy/bin/
+          Copy-Item codon-deploy/lib/codon/codonrt.dll codon-deploy/bin/
+          # codon.exe links the codon_jupyter stub, so it must sit next to the exe
+          Copy-Item codon-deploy/lib/codon/codon_jupyter.dll codon-deploy/bin/
+          Copy-Item codon-deploy/lib/codon/libomp.dll codon-deploy/bin/        # @par
+          Copy-Item codon-deploy/lib/codon/libopenblas.dll codon-deploy/bin/   # numpy.linalg
+          Compress-Archive -Path codon-deploy -DestinationPath codon-windows-x86_64.zip -Force
+
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $env:PATH = "$PWD\codon-deploy\bin;$env:PATH"
+          'print("hello from CI windows codon")' | Out-File -Encoding ascii smoke.py
+          "def f(n):`n    return n if n < 2 else f(n-1)+f(n-2)`ntry:`n    raise ValueError('x')`nexcept ValueError as e:`n    print('caught', e)`nfinally:`n    print('fin')`nprint(f(10))" | Out-File -Encoding ascii smoke2.py
+          & codon-deploy/bin/codon.exe run smoke.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run smoke.py failed (exit $LASTEXITCODE)" }
+          & codon-deploy/bin/codon.exe run smoke2.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run smoke2.py (try/except) failed" }
+          & codon-deploy/bin/codon.exe build smoke2.py -o smoke2.exe
+          if ($LASTEXITCODE -ne 0) { throw "codon build smoke2.py failed" }
+          & ./smoke2.exe
+          if ($LASTEXITCODE -ne 0) { throw "AOT smoke2.exe failed" }
+          # OpenMP @par (JIT + AOT)
+          "import openmp as omp`nomp.set_num_threads(4)`ns = 0`n@par`nfor i in range(1000):`n    s += i`nprint('parsum', s)" | Out-File -Encoding ascii smoke_omp.py
+          & codon-deploy/bin/codon.exe run smoke_omp.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run @par failed" }
+          & codon-deploy/bin/codon.exe build smoke_omp.py -o smoke_omp.exe
+          if ($LASTEXITCODE -ne 0) { throw "codon build @par failed" }
+          & ./smoke_omp.exe
+          if ($LASTEXITCODE -ne 0) { throw "AOT @par failed" }
+          # numpy core (Highway) + linalg (OpenBLAS), JIT + AOT
+          "import numpy as np`nprint('npsum', np.arange(10).sum())`nprint('npdet', np.linalg.det(np.array([[3.0,1.0],[1.0,2.0]])))" | Out-File -Encoding ascii smoke_np.py
+          & codon-deploy/bin/codon.exe run smoke_np.py
+          if ($LASTEXITCODE -ne 0) { throw "codon run numpy failed" }
+          & codon-deploy/bin/codon.exe build smoke_np.py -o smoke_np.exe
+          if ($LASTEXITCODE -ne 0) { throw "codon build numpy failed" }
+          & ./smoke_np.exe
+          if ($LASTEXITCODE -ne 0) { throw "AOT numpy failed" }
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: codon-windows-x86_64.zip
+          path: codon-windows-x86_64.zip
+
+      - name: Upload Release Asset
+        if: contains(github.ref, 'tags/v')
+        uses: actions/upload-release-asset@v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
+          asset_path: ./codon-windows-x86_64.zip
+          asset_name: codon-windows-x86_64.zip
+          asset_content_type: application/zip
+
   build_documentation:
     name: Build Docs
     runs-on: ubuntu-latest

@@ -112,6 +112,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
   shared->modules[""]->add("__py_extension__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__debug__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__apple__", std::make_shared<int>(shared->itemID++));
+  shared->modules[""]->add("__windows__", std::make_shared<int>(shared->itemID++));
   shared->modules[""]->add("__dict_unordered__",
                            std::make_shared<int>(shared->itemID++));
 
@@ -130,7 +131,7 @@ std::shared_ptr<json> DocVisitor::apply(const std::string &argv0,
 
   auto ctx = std::make_shared<DocContext>(shared);
   for (auto &f : files) {
-    auto path = std::string(cache->fs->canonical(f));
+    auto path = cache->fs->canonical(f).generic_string();
     ctx->setFilename(path);
     auto fAstOrErr = ast::parseFile(shared->cache, path);
     if (!fAstOrErr)

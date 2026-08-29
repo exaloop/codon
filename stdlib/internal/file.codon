@@ -84,7 +84,10 @@ class File:
             _C.fclose(self.fp)
             self.fp = cobj()
         if self.buf:
-            _C.free(self.buf)
+            if not __windows__:
+                # POSIX getline() allocates self.buf with the C allocator; on Windows
+                # _getline() allocates it from the GC heap, so it must not be free()d.
+                _C.free(self.buf)
             self._reset()
 
     def _ensure_open(self):
@@ -95,12 +98,40 @@ class File:
         self.buf = Ptr[u8]()
         self.sz = 0
 
+    def _getline(self) -> int:
+        """Read one line into self.buf (grown as needed); returns its length or -1 at EOF."""
+        if __windows__:
+            # codonrt's getline() shim cannot share the FILE* that the JIT resolves
+            # `_C.fopen` to (a different CRT FILE pool than codonrt's fgetc), so read
+            # lines via `_C.fgetc` — the same CRT the rest of File's `_C.*` calls use.
+            # self.buf is reused across lines and grown geometrically, mirroring the
+            # allocation behavior of POSIX getline() (but GC-managed; see close()).
+            n = 0
+            while True:
+                c = int(_C.fgetc(self.fp))
+                if c == -1:
+                    break
+                if n == self.sz:
+                    newsz = 128 if self.sz == 0 else self.sz * 2
+                    if self.buf:
+                        self.buf = Ptr[u8](realloc(self.buf.as_byte(), newsz, self.sz))
+                    else:
+                        self.buf = Ptr[u8](newsz)
+                    self.sz = newsz
+                self.buf[n] = u8(c)
+                n += 1
+                if c == 10:
+                    break
+            return n if n > 0 else -1
+        else:
+            return _C.getline(
+                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
+            )
+
     def _iter(self) -> Generator[str]:
         self._ensure_open()
         while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
+            rd = self._getline()
             if rd != -1:
                 yield str(self.buf, rd)
             else:
@@ -109,9 +140,7 @@ class File:
     def _iter_trim_newline(self) -> Generator[str]:
         self._ensure_open()
         while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
+            rd = self._getline()
             if rd != -1:
                 if self.buf[rd - 1] == u8(10):
                     rd -= 1
