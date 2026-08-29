@@ -366,6 +366,81 @@ def test_bytes_api():
     assert bytearray(b",").join([bytearray(b"a"), bytearray(b"b")]) == b"a,b"
 
 
+@test
+def test_bytes_result_ownership():
+    original = bytearray(b"ABC")
+    lowered = original.lower()
+    lowered[0] = 120
+    lowered.append(33)
+    assert lowered == b"xbc!"
+    assert original == b"ABC"
+
+    padded = original.ljust(3)
+    padded[0] = 120
+    assert padded == b"xBC"
+    assert original == b"ABC"
+
+    unchanged = original.replace(b"missing", b"x")
+    unchanged[0] = 120
+    assert unchanged == b"xBC"
+    assert original == b"ABC"
+
+    stripped = bytearray(b" abc ")
+    strip_result = stripped.strip()
+    strip_result[0] = 120
+    assert strip_result == b"xbc"
+    assert stripped == b" abc "
+
+    partitioned = bytearray(b"a,b")
+    before, separator, after = partitioned.partition(b",")
+    before[0] = 120
+    separator[0] = 59
+    after[0] = 121
+    assert before == b"x"
+    assert separator == b";"
+    assert after == b"y"
+    assert partitioned == b"a,b"
+
+    split_source = bytearray(b"a,b")
+    split_result = split_source.split(b",")
+    split_result[0][0] = 120
+    assert split_result == [bytearray(b"x"), bytearray(b"b")]
+    assert split_source == b"a,b"
+
+    bytes_item = b"abc"
+    bytes_items: List[bytes] = [bytes_item]
+    joined_bytes = bytearray(b",").join(bytes_items)
+    joined_bytes[0] = 120
+    assert joined_bytes == b"xbc"
+    assert bytes_item == b"abc"
+
+    bytearray_item = bytearray(b"abc")
+    bytearray_items: List[bytearray] = [bytearray_item]
+    joined_bytearray = bytearray(b",").join(bytearray_items)
+    joined_bytearray[0] = 120
+    assert joined_bytearray == b"xbc"
+    assert bytearray_item == b"abc"
+
+    joined_many = bytearray(b",").join([bytearray(b"a"), bytearray(b"b")])
+    joined_many[0] = 120
+    joined_many.append(33)
+    assert joined_many == b"x,b!"
+
+    joined_generator = bytearray(b",").join(
+        value for value in [bytearray(b"a"), bytearray(b"b")]
+    )
+    joined_generator[0] = 120
+    joined_generator.append(33)
+    assert joined_generator == b"x,b!"
+
+    joined_bytes_generator = bytearray(b",").join(
+        value for value in [b"a", b"b"]
+    )
+    joined_bytes_generator[0] = 120
+    joined_bytes_generator.append(33)
+    assert joined_bytes_generator == b"x,b!"
+
+
 test_construction_and_conversion()
 test_indexing_and_slice_reads()
 test_contiguous_slice_assignment()
@@ -377,3 +452,4 @@ test_mutation()
 test_sequence_operations()
 test_byte_range_errors()
 test_bytes_api()
+test_bytes_result_ownership()

@@ -17,6 +17,14 @@ class bytearray:
     _len: int
     _cap: int
 
+    @staticmethod
+    def _adopt_bytes(value: bytes) -> bytearray:
+        result = bytearray()
+        result._ptr = value._ptr
+        result._len = len(value)
+        result._cap = len(value)
+        return result
+
     def __init__(self):
         self._ptr = Ptr[u8]()
         self._len = 0
@@ -440,34 +448,34 @@ class bytearray:
         return self._bytes_view().isprintable()
 
     def capitalize(self) -> bytearray:
-        return bytearray(self._bytes_view().capitalize())
+        return bytearray._adopt_bytes(self._bytes_view().capitalize())
 
     def lower(self) -> bytearray:
-        return bytearray(self._bytes_view().lower())
+        return bytearray._adopt_bytes(self._bytes_view().lower())
 
     def upper(self) -> bytearray:
-        return bytearray(self._bytes_view().upper())
+        return bytearray._adopt_bytes(self._bytes_view().upper())
 
     def casefold(self) -> bytearray:
-        return bytearray(self._bytes_view().casefold())
+        return bytearray._adopt_bytes(self._bytes_view().casefold())
 
     def swapcase(self) -> bytearray:
-        return bytearray(self._bytes_view().swapcase())
+        return bytearray._adopt_bytes(self._bytes_view().swapcase())
 
     def title(self) -> bytearray:
-        return bytearray(self._bytes_view().title())
+        return bytearray._adopt_bytes(self._bytes_view().title())
 
     def ljust(self, width: int, fillchar: bytes = b" ") -> bytearray:
-        return bytearray(self._bytes_view().ljust(width, fillchar))
+        return self._adopt_or_copy(self._bytes_view().ljust(width, fillchar))
 
     def rjust(self, width: int, fillchar: bytes = b" ") -> bytearray:
-        return bytearray(self._bytes_view().rjust(width, fillchar))
+        return self._adopt_or_copy(self._bytes_view().rjust(width, fillchar))
 
     def center(self, width: int, fillchar: bytes = b" ") -> bytearray:
-        return bytearray(self._bytes_view().center(width, fillchar))
+        return self._adopt_or_copy(self._bytes_view().center(width, fillchar))
 
     def zfill(self, width: int) -> bytearray:
-        return bytearray(self._bytes_view().zfill(width))
+        return self._adopt_or_copy(self._bytes_view().zfill(width))
 
     def lstrip(self) -> bytearray:
         return bytearray(self._bytes_view().lstrip())
@@ -511,31 +519,48 @@ class bytearray:
     def replace(
         self, old: bytes, new: bytes, count: int = -1
     ) -> bytearray:
-        return bytearray(self._bytes_view().replace(old, new, count))
+        return self._adopt_or_copy(self._bytes_view().replace(old, new, count))
 
     def expandtabs(self, tabsize: int = 8) -> bytearray:
-        return bytearray(self._bytes_view().expandtabs(tabsize))
+        return bytearray._adopt_bytes(self._bytes_view().expandtabs(tabsize))
 
     def translate(self, table) -> bytearray:
-        return bytearray(self._bytes_view().translate(table))
+        return bytearray._adopt_bytes(self._bytes_view().translate(table))
 
-    def join(self, values: Generator[bytes]) -> bytearray:
-        return bytearray(self._bytes_view().join(values))
+    def join(self, values: Generator[T], T: type) -> bytearray:
+        if T is bytes:
+            result = self._bytes_view().join(values)
+        elif T is bytearray:
+            result = self._bytes_view().join(
+                value._bytes_view() for value in values
+            )
+        else:
+            compile_error("sequence item must be bytes or bytearray")
+        return bytearray._adopt_bytes(result)
 
-    def join(self, values: List[bytes]) -> bytearray:
-        return bytearray(self._bytes_view().join(values))
-
-    def join(self, values: Generator[bytearray]) -> bytearray:
-        return bytearray(self._bytes_view().join(bytes(value) for value in values))
-
-    def join(self, values: List[bytearray]) -> bytearray:
-        return bytearray(self._bytes_view().join(bytes(value) for value in values))
+    def join(self, values: List[T], T: type) -> bytearray:
+        if len(values) == 1:
+            return bytearray(values[0])
+        if T is bytes:
+            result = self._bytes_view().join(values)
+        elif T is bytearray:
+            result = self._bytes_view().join(
+                [value._bytes_view() for value in values]
+            )
+        else:
+            compile_error("sequence item must be bytes or bytearray")
+        return bytearray._adopt_bytes(result)
 
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
         return str(self._bytes_view(), encoding, errors)
 
     def _bytes_view(self) -> bytes:
         return bytes(self._ptr, self._len)
+
+    def _adopt_or_copy(self, value: bytes) -> bytearray:
+        if value._ptr == self._ptr:
+            return bytearray(self)
+        return bytearray._adopt_bytes(value)
 
     def _check_index(self, index: int, message: str):
         if index < 0 or index >= self._len:
