@@ -20,3 +20,8 @@ cdef extern from "codon/compiler/jit_extern.h":
         char *pyModule, char **py_vars, size_t py_vars_size,
         void *arg, uint8_t debug
     )
+    cdef CJITResult gpu_execute_python(
+        void *jit, char *name, char **types, size_t types_size,
+        char *pyModule, char **py_vars, size_t py_vars_size,
+        void *arg, uint8_t debug
+    )

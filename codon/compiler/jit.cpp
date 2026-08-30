@@ -268,6 +268,16 @@ std::string buildKey(const std::string &name, const std::vector<std::string> &ty
   return key.str();
 }
 
+std::string buildGpuKey(const std::string &name,
+                        const std::vector<std::string> &types) {
+  std::stringstream key;
+  key << "gpu|" << name;
+  for (const auto &t : types) {
+    key << "|" << t;
+  }
+  return key.str();
+}
+
 std::string buildPythonWrapper(const std::string &name, const std::string &wrapname,
                                const std::vector<std::string> &types,
                                const std::string &pyModule,
@@ -297,6 +307,38 @@ std::string buildPythonWrapper(const std::string &name, const std::string &wrapn
     wrap << "py" << i;
   }
   wrap << ").__to_py__()\n";
+
+  return wrap.str();
+}
+
+std::string buildPythonWrapperGPU(const std::string &name, const std::string &wrapname,
+                                  const std::vector<std::string> &types) {
+  std::stringstream wrap;
+  const auto dataCount = types.size() - 2;
+  const auto gridIndex = types.size() - 2;
+  const auto blockIndex = types.size() - 1;
+
+  wrap << "@export\n";
+  wrap << "def " << wrapname << "(args: cobj) -> cobj:\n";
+  for (unsigned i = 0; i < dataCount; i++) {
+    wrap << "    "
+         << "a" << i << " = " << types[i] << ".__from_py__(PyTuple_GetItem(args, " << i
+         << "))\n";
+  }
+  wrap << "    grid = " << types[gridIndex] << ".__from_py__(PyTuple_GetItem(args, "
+       << gridIndex << "))\n";
+  wrap << "    block = " << types[blockIndex] << ".__from_py__(PyTuple_GetItem(args, "
+       << blockIndex << "))\n";
+  wrap << "    " << name << "(";
+  for (unsigned i = 0; i < dataCount; i++) {
+    if (i > 0)
+      wrap << ", ";
+    wrap << "a" << i;
+  }
+  if (dataCount > 0)
+    wrap << ", ";
+  wrap << "grid=grid, block=block)\n";
+  wrap << "    return None.__to_py__()\n";
 
   return wrap.str();
 }
@@ -342,6 +384,62 @@ JIT::JITResult JIT::executePython(const std::string &name,
     auto wrapper = buildPythonWrapper(name, wrapname, types, pyModule, pyVars);
     if (debug)
       fmt::print(stderr, "[codon::jit::executePython] wrapper:\n{}-----\n", wrapper);
+    if (auto err = compile(wrapper).takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+
+    auto *M = compiler->getModule();
+    auto *func = M->getOrRealizeFunc(wrapname, {pydata->getCObjType(M)});
+    seqassertn(func, "could not access wrapper func '{}'", wrapname);
+    cache.emplace(key, func);
+
+    auto result = address(func);
+    if (auto err = result.takeError()) {
+      auto errorInfo = llvm::toString(std::move(err));
+      return JITResult::error(errorInfo);
+    }
+    wrap = (PyWrapperFunc *)result.get();
+  }
+
+  try {
+    auto *ans = (*wrap)(arg);
+    return JITResult::success(ans);
+  } catch (const runtime::JITError &e) {
+    auto err = handleJITError(e);
+    auto errorInfo = llvm::toString(std::move(err));
+    return JITResult::error(errorInfo);
+  }
+}
+
+JIT::JITResult JIT::executePythonGPU(const std::string &name,
+                                     const std::vector<std::string> &types,
+                                     const std::string &pyModule,
+                                     const std::vector<std::string> &pyVars, void *arg,
+                                     bool debug) {
+  (void)pyModule;
+  if (types.size() < 2)
+    return JITResult::error(
+        "GPU wrapper expects data arguments followed by grid and block");
+  if (!pyVars.empty())
+    return JITResult::error("pyvars are not supported for GPU wrappers");
+
+  auto key = buildGpuKey(name, types);
+  auto &cache = pydata->cache;
+  auto it = cache.find(key);
+  PyWrapperFunc *wrap;
+
+  if (it != cache.end()) {
+    auto *wrapper = it->second;
+    const std::string name = ir::LLVMVisitor::getNameForFunction(wrapper);
+    auto func = llvm::cantFail(engine->lookup(name));
+    wrap = func.toPtr<PyWrapperFunc>();
+  } else {
+    static int idx = 0;
+    auto wrapname = "__codon_gpu_wrapped__" + name + "_" + std::to_string(idx++);
+    auto wrapper = buildPythonWrapperGPU(name, wrapname, types);
+    if (debug)
+      fmt::print(stderr, "[codon::jit::executePythonGPU] wrapper:\n{}-----\n", wrapper);
     if (auto err = compile(wrapper).takeError()) {
       auto errorInfo = llvm::toString(std::move(err));
       return JITResult::error(errorInfo);
@@ -418,4 +516,24 @@ CJITResult jit_execute_safe(void *jit, char *code, char *file, int32_t line,
 char *get_jit_library() {
   auto t = codon::ast::library_path();
   return strndup(t.c_str(), t.size());
+}
+
+CJITResult gpu_execute_python(void *jit, char *name, char **types, size_t types_size,
+                              char *pyModule, char **py_vars, size_t py_vars_size,
+                              void *arg, uint8_t debug) {
+  std::vector<std::string> cppTypes;
+  cppTypes.reserve(types_size);
+  for (size_t i = 0; i < types_size; i++)
+    cppTypes.emplace_back(types[i]);
+  std::vector<std::string> cppPyVars;
+  cppPyVars.reserve(py_vars_size);
+  for (size_t i = 0; i < py_vars_size; i++)
+    cppPyVars.emplace_back(py_vars[i]);
+  auto t = ((codon::jit::JIT *)jit)
+               ->executePythonGPU(std::string(name), cppTypes, std::string(pyModule),
+                                  cppPyVars, arg, bool(debug));
+  void *result = t.result;
+  char *message =
+      t.message.empty() ? nullptr : strndup(t.message.c_str(), t.message.size());
+  return {result, message};
 }
