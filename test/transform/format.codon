@@ -137,6 +137,30 @@ def test_fallbacks():
 
 
 @test
+def test_union_formatting():
+    value: Union[int, str] = 42
+    assert value.__format__("#x") == "0x2a"
+    assert "{}".format(value) == "42"
+    assert "{:04d}".format(value) == "0042"
+    assert f"{value:+06d}" == "+00042"
+
+    dynamic = "{:*^6}"
+    if True:
+        value = "xy"
+    assert value.__format__("*^6") == "**xy**"
+    assert dynamic.format(value) == "**xy**"
+    assert "{!s:>5}".format(value) == "   xy"
+    assert "{!r:>6}".format(value) == "  'xy'"
+
+    if True:
+        value = "café"
+    assert "{!a}".format(value) == "'caf\\xe9'"
+
+    custom: Union[Formattable, int] = Formattable("union")
+    assert "<{:tag}>".format(custom) == "<union:tag>"
+
+
+@test
 def test_scalar_formatting():
     assert (42).__format__("+06d") == "+00042"
     assert (1.25).__format__("08.2f") == "00001.25"
@@ -166,4 +190,5 @@ test_compound_fields()
 test_argument_evaluation()
 test_field_evaluation()
 test_fallbacks()
+test_union_formatting()
 test_scalar_formatting()

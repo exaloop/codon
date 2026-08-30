@@ -1795,6 +1795,24 @@ def _brace_value_append(
 ):
     spec = field.spec
 
+    if isinstance(value, Union):
+        if field.conversion == 0x72:  # r
+            text = _value_repr(value)
+        elif field.conversion == 0x61:  # a
+            text = _value_ascii(value)
+        elif field.conversion == 0x73:  # s
+            text = _value_string(value)
+        else:
+            if spec is None:
+                spec = str()
+            _brace_text_append(value.__format__(spec), None, result)
+            return
+
+        converted = _BraceField()
+        converted.spec = spec
+        _brace_value_append(text, converted, result)
+        return
+
     if field.conversion == 0:
         if (
             not (isinstance(value, Int) or isinstance(value, UInt))

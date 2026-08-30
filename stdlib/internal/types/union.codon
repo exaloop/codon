@@ -98,8 +98,8 @@ class Union:
                 return repr(Union._get_data(self, T))
         return ''
 
-    def __format__(self, spec) -> str:
+    def __format__(self, format_spec: str) -> str:
         for tag, T in static.vars_types(self, with_index=True):
             if Union._get_tag(self) == tag:
-                return Union._get_data(self, T).__format__(spec)
+                return Union._get_data(self, T).__format__(format_spec)
         return ''
