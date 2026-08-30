@@ -134,8 +134,8 @@ def discover_tests(path):
         paths = sorted(path.rglob("*.codon"))
     cases = []
     for test_path in paths:
-        if "numpy" in str(test_path):
-            continue
+        # if "numpy" in str(test_path):
+        #     continue
         cases.extend(split_test_file(test_path))
     return cases
 

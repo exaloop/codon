@@ -431,10 +431,10 @@ class StringExpr(Expr):
     ):
         super().__init__(**kwargs)
         self.strings = [] if strings is None else strings
-        self.value = value
-        self.prefix = prefix
         if not self.strings:
-            self.strings = [StringExpr.String(value=self.value, prefix=self.prefix)]
+            self.strings = [StringExpr.String(value=value, prefix=prefix)]
+        self.value = self.strings[0].value if len(self.strings) == 1 else ""
+        self.prefix = self.strings[0].prefix if len(self.strings) == 1 else ""
 
     def __iter__(self) -> Iterator[String]:
         yield from self.strings
@@ -1694,6 +1694,59 @@ def get_docstring(suite) -> str:
             return ""
 
 
+def _quote_dump_string(value):
+    use_double = "'" in value and '"' not in value
+    delimiter = '"' if use_double else "'"
+    result = delimiter
+    escapes = {
+        "\a": "\\a",
+        "\b": "\\b",
+        "\f": "\\f",
+        "\n": "\\n",
+        "\r": "\\r",
+        "\t": "\\t",
+        "\v": "\\v",
+    }
+    for char in value:
+        code = ord(char)
+        if char == delimiter or char == "\\":
+            result += "\\" + char
+        elif char in escapes:
+            result += escapes[char]
+        elif 0xDC80 <= code <= 0xDCFF:
+            result += f"\\x{code - 0xDC00:02x}"
+        elif code < 32 or code == 127:
+            result += f"\\x{code:02x}"
+        else:
+            result += char
+    return result + delimiter
+
+
+def _format_dump_float(value):
+    value_repr = repr(value)
+    if "e" not in value_repr and "E" not in value_repr:
+        return value_repr
+
+    mantissa, exponent_text = value_repr.lower().split("e")
+    exponent = int(exponent_text)
+    negative = mantissa.startswith("-")
+    digits = mantissa.removeprefix("-").replace(".", "")
+    decimal_pos = exponent + 1
+    sign = "-" if negative else ""
+    if decimal_pos <= 0:
+        fixed = sign + "0." + "0" * -decimal_pos + digits
+    elif decimal_pos >= len(digits):
+        fixed = sign + digits + "0" * (decimal_pos - len(digits))
+    else:
+        fixed = sign + digits[:decimal_pos] + "." + digits[decimal_pos:]
+
+    # std::to_chars first chooses the shortest round-tripping representation;
+    # the C++ dumper then expands scientific notation in Python's [-4, 16) range.
+    if -4 <= exponent < 16 or len(fixed) <= len(value_repr):
+        return fixed + (".0" if "." not in fixed else "")
+    return value_repr
+
+
 def dump(
     node: Node,
     annotate_fields=True,
@@ -1787,6 +1840,8 @@ def dump(
             name, braces = class_name(node), "()"
             if isinstance(node, SuiteStmt):
                 name, braces = "", "[]"
+            elif isinstance(node, StringExpr.FormatSpec):
+                name = "StringExpr.FormatSpec"
             if hasattr(node, "done") and node.done:
                 name += "*"
             if isinstance(node, StringExpr.FormatSpec) and not args:
@@ -1796,7 +1851,9 @@ def dump(
         if isinstance(node, Enum):
             return f"{node.name}", True
         if isinstance(node, str):
-            return (f"{node!r}" if node else ""), True
+            return (_quote_dump_string(node) if node else ""), True
+        if isinstance(node, float):
+            return _format_dump_float(node), True
         if isinstance(node, int):
             return f"{node}", True
         if isinstance(node, bool):

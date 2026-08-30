@@ -207,6 +207,18 @@ class ScopingVisitor(ast.NodeVisitor):
         else:
             self.visit(node.rexpr)
 
+    def visit_StringExpr(self, node: ast.StringExpr):
+        strings = []
+        for item in node.strings:
+            self.visit(item.expr)
+            if not item.prefix and strings and not strings[-1].prefix:
+                strings[-1].value += item.value
+            else:
+                strings.append(item)
+        node.strings = strings
+        node.value = strings[0].value if len(strings) == 1 else ""
+        node.prefix = strings[0].prefix if len(strings) == 1 else ""
+
     def visit_AssignExpr(self, node: ast.AssignExpr):
         assert isinstance(node.var, ast.IdExpr), "only simple assignment expressions are supported"
         with self.ctx.substitute("temp_scope", False):
@@ -237,7 +249,8 @@ class ScopingVisitor(ast.NodeVisitor):
         attr = Bindings(captures=copy.deepcopy(inner.captures))
         for name, values in inner.map.items():
             attr.bindings[name] = Bindings.Binding(name, len(values))
-        self.ctx.child_captures.update(inner.captures)
+        for name, capture in inner.captures.items():
+            self.ctx.child_captures.setdefault(name, capture)
         node.set(ast.Attr.Bindings, attr)
 
     def visit_AssignStmt(self, node: ast.AssignStmt):
@@ -408,7 +421,8 @@ class ScopingVisitor(ast.NodeVisitor):
         inner.scope.pop()
 
         attr = Bindings(captures=dict(inner.captures))
-        self.ctx.child_captures.update(inner.captures)
+        for name, capture in inner.captures.items():
+            self.ctx.child_captures.setdefault(name, capture)
         if len(inner.map.get(node.name, [])) == 1 and node.name in inner.first_seen:
             attr.captures[node.name] = Bindings.Scope.Read
         for name, values in inner.map.items():
@@ -580,4 +594,4 @@ class ScopingVisitor(ast.NodeVisitor):
             ):
                 continue
             if not self.dominate(name):
-                self.ctx.captures[name] = capture
+                self.ctx.captures.setdefault(name, capture)

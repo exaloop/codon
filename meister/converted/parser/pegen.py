@@ -56,66 +56,68 @@ class Comprehension:
 
 def unescape(string):
     # C++ implementation: codon/parser/common.cpp:182
-    result = ""
+    # TODO: merge
+    string = string.encode("utf-8")
+    result = bytearray()
     i = 0
     while i < len(string):
-        if string[i] == "\\" and i + 1 < len(string):
-            if string[i + 1] == "a":
-                result += "\a"
+        if string[i] == ord("\\") and i + 1 < len(string):
+            if string[i + 1] == ord("a"):
+                result.append(ord("\a"))
                 i += 1
-            elif string[i + 1] == "b":
-                result += "\b"
+            elif string[i + 1] == ord("b"):
+                result.append(ord("\b"))
                 i += 1
-            elif string[i + 1] == "f":
-                result += "\f"
+            elif string[i + 1] == ord("f"):
+                result.append(ord("\f"))
                 i += 1
-            elif string[i + 1] == "n":
-                result += "\n"
+            elif string[i + 1] == ord("n"):
+                result.append(ord("\n"))
                 i += 1
-            elif string[i + 1] == "r":
-                result += "\r"
+            elif string[i + 1] == ord("r"):
+                result.append(ord("\r"))
                 i += 1
-            elif string[i + 1] == "t":
-                result += "\t"
+            elif string[i + 1] == ord("t"):
+                result.append(ord("\t"))
                 i += 1
-            elif string[i + 1] == "v":
-                result += "\v"
+            elif string[i + 1] == ord("v"):
+                result.append(ord("\v"))
                 i += 1
-            elif string[i + 1] == '"':
-                result += '"'
+            elif string[i + 1] == ord('"'):
+                result.append(ord('"'))
                 i += 1
-            elif string[i + 1] == "'":
-                result += "'"
+            elif string[i + 1] == ord("'"):
+                result.append(ord("'"))
                 i += 1
-            elif string[i + 1] == "\\":
-                result += "\\"
+            elif string[i + 1] == ord("\\"):
+                result.append(ord("\\"))
                 i += 1
-            elif string[i + 1] == "x":
+            elif string[i + 1] == ord("x"):
                 if i + 3 > len(string):
                     raise ValueError("invalid \\x code")
-                digits = string[i + 2 : i + 4]
+                digits = string[i + 2 : i + 4].decode("ascii")
                 pos = 0
                 while pos < len(digits) and digits[pos] in "0123456789abcdefABCDEF":
                     pos += 1
                 if pos == 0:
                     raise ValueError("invalid \\x code")
                 code = int(digits[:pos], 16)
-                result += chr(code & 0xFF)
+                result.append(code & 0xFF)
                 i += pos + 1
-            elif "0" <= string[i + 1] <= "7":
-                digits = string[i + 1 : i + 4]
+            elif ord("0") <= string[i + 1] <= ord("7"):
+                digits = string[i + 1 : i + 4].decode("ascii")
                 pos = 0
                 while pos < len(digits) and "0" <= digits[pos] <= "7":
                     pos += 1
                 code = int(digits[:pos], 8)
-                result += chr(code & 0xFF)
+                result.append(code & 0xFF)
                 i += pos
             else:
-                result += string[i]
+                result.append(string[i])
         else:
-            result += string[i]
+            result.append(string[i])
         i += 1
-    return result
+    return result.decode("utf-8", errors="surrogateescape")
 
 
 def shorttok(tok: tokenize.TokenInfo) -> str:
@@ -836,8 +838,39 @@ class Parser(BaseParser):
     def call_arg(self, name, value, **locations):
         return ast.CallExpr.Arg(name=name, value=value, **locations)
 
+    def print_parenthesized(self, print_token, left, arguments, **locations):
+        positional, keywords = arguments or ([], [])
+        # TODO: fix this, make print () switch to normal print
+        if print_token.end == left.start:
+            return ast.ExprStmt(
+                self.call(
+                    ast.IdExpr(
+                        value=print_token.string,
+                        lineno=print_token.start[0],
+                        col_offset=print_token.start[1],
+                        end_lineno=print_token.end[0],
+                        end_col_offset=print_token.end[1],
+                    ),
+                    positional,
+                    keywords,
+                    **locations,
+                ),
+                **locations,
+            )
+        items = [item.value if isinstance(item, ast.CallExpr.Arg) else item for item in positional]
+        items.extend(item.value for item in keywords)
+        value = ast.TupleExpr(items=items, **locations) if len(items) != 1 else items[0]
+        return ast.PrintStmt(items=[value], **locations)
+
+    def directive(self, token, **locations):
+        key, value = token.string.removeprefix("##").strip().removeprefix("codon:").split("=", 1)
+        return ast.DirectiveStmt(key=key.strip(), value=value.strip(), **locations)
+
     def call(self, expr, positional=None, keywords=None, partial=False, **locations):
-        items = [self.call_arg("", value, **locations) for value in (positional or [])]
+        items = [
+            value if isinstance(value, ast.CallExpr.Arg) else self.call_arg("", value, **locations)
+            for value in (positional or [])
+        ]
         items.extend(keywords or [])
         if partial:
             items.append(
@@ -850,6 +883,8 @@ class Parser(BaseParser):
                     **locations,
                 )
             )
+        elif items and not items[-1].name and isinstance(items[-1].value, ast.EllipsisExpr):
+            items[-1].value.mode = ast.EllipsisExpr.Kind.Partial
         return ast.CallExpr(
             expr=expr,
             items=items,
@@ -895,7 +930,7 @@ class Parser(BaseParser):
 
     def assignments(self, targets, value, **locations):
         statements = []
-        values = [t.clone() for t in targets] + [value]
+        values = targets + [value]
         for index in range(len(targets) - 1, -1, -1):
             statements.append(
                 ast.AssignStmt(

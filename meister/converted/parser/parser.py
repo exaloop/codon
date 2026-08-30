@@ -159,15 +159,10 @@ class CodonParser(Parser):
 
     @memoize
     def simple_stmt(self) -> Optional[ast.Stmt]:
-        # simple_stmt: assignment | &"print" print_stmt | star_expressions | &'return' return_stmt | &('import' | 'from') import_stmt | &'raise' raise_stmt | 'pass' | &'del' del_stmt | &'yield' yield_stmt | &'assert' assert_stmt | 'break' | 'continue' | &'global' global_stmt | &'nonlocal' nonlocal_stmt
+        # simple_stmt: &"print" print_stmt | assignment | TYPE_COMMENT | star_expressions | &'return' return_stmt | &('import' | 'from') import_stmt | &'raise' raise_stmt | 'pass' | &'del' del_stmt | &'yield' yield_stmt | &'assert' assert_stmt | 'break' | 'continue' | &'global' global_stmt | &'nonlocal' nonlocal_stmt
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if assignment := self.assignment():
-            assignment = Codon.unwrap(assignment)
-            return assignment
-        self._reset(mark)
-        assignment = None
         if (self.positive_lookahead(self.expect_literal, "print")) and (
             print_stmt := self.print_stmt()
         ):
@@ -175,6 +170,24 @@ class CodonParser(Parser):
             return print_stmt
         self._reset(mark)
         print_stmt = None
+        if assignment := self.assignment():
+            assignment = Codon.unwrap(assignment)
+            return assignment
+        self._reset(mark)
+        assignment = None
+        if a := self.type_comment():
+            a = Codon.unwrap(a)
+            tok = self._tokenizer.get_last_non_whitespace_token()
+            end_lineno, end_col_offset = tok.end
+            return self.directive(
+                a,
+                lineno=start_lineno,
+                col_offset=start_col_offset,
+                end_lineno=end_lineno,
+                end_col_offset=end_col_offset,
+            )
+        self._reset(mark)
+        a = None
         if e := self.star_expressions():
             e = Codon.unwrap(e)
             tok = self._tokenizer.get_last_non_whitespace_token()
@@ -345,7 +358,7 @@ class CodonParser(Parser):
         return None
 
     def assignment(self) -> Optional[ast.Stmt]:
-        # assignment: NAME ':' expression ['=' annotated_rhs] | ('(' single_target ')' | single_subscript_attribute_target) ':' expression ['=' annotated_rhs] | ((star_targets '='))+ (yield_expr | star_expressions) !'=' | single_target augassign ~ (yield_expr | star_expressions) | invalid_assignment
+        # assignment: NAME ':' expression ['=' annotated_rhs] | ('(' single_target ')' | single_subscript_attribute_target) ':' expression ['=' annotated_rhs] | ((star_targets '='))+ star_expressions !'=' | single_target augassign ~ star_expressions | invalid_assignment
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
@@ -403,7 +416,7 @@ class CodonParser(Parser):
         c = None
         if (
             (a := self._loop1_13())
-            and (b := self._tmp_14())
+            and (b := self.star_expressions())
             and (self.negative_lookahead(self.expect_literal, "="))
         ):
             a = Codon.unwrap(a)
@@ -426,7 +439,7 @@ class CodonParser(Parser):
             (a := self.single_target())
             and (b := self.augassign())
             and (cut := True)
-            and (c := self._tmp_15())
+            and (c := self.star_expressions())
         ):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
@@ -462,13 +475,8 @@ class CodonParser(Parser):
         return None
 
     def annotated_rhs(self) -> Optional[ast.Expr]:
-        # annotated_rhs: yield_expr | star_expressions
+        # annotated_rhs: star_expressions
         mark = self._mark()
-        if yield_expr := self.yield_expr():
-            yield_expr = Codon.unwrap(yield_expr)
-            return yield_expr
-        self._reset(mark)
-        yield_expr = None
         if star_expressions := self.star_expressions():
             star_expressions = Codon.unwrap(star_expressions)
             return star_expressions
@@ -544,7 +552,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.expect_literal("raise")) and (a := self.expression()) and (b := self._tmp_16(),):
+        if (self.expect_literal("raise")) and (a := self.expression()) and (b := self._tmp_14(),):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -576,7 +584,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.expect_literal("global")) and (a := self._gather_17()):
+        if (self.expect_literal("global")) and (a := self._gather_15()):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -596,7 +604,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.expect_literal("nonlocal")) and (a := self._gather_19()):
+        if (self.expect_literal("nonlocal")) and (a := self._gather_17()):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -613,72 +621,29 @@ class CodonParser(Parser):
         return None
 
     def print_stmt(self) -> Optional[ast.PrintStmt]:
-        # print_stmt: "print" '(' arguments_with_partial? '...' ')' &NEWLINE | "print" '(' arguments? ')' &NEWLINE | "print" ','.expression+ ','? &NEWLINE | "print" &NEWLINE
+        # print_stmt: "print" '(' arguments? ')' &(';' | NEWLINE) | "print" ','.expression+ ','? | "print"
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
         if (
             (a := self.expect_literal("print"))
-            and (self.expect_literal("("))
-            and (b := self.arguments_with_partial(),)
-            and (self.expect_literal("..."))
-            and (self.expect_literal(")"))
-            and (self.positive_lookahead(self.expect_type, tokenize.Tokens.NEWLINE))
-        ):
-            a = Codon.unwrap(a)
-            tok = self._tokenizer.get_last_non_whitespace_token()
-            end_lineno, end_col_offset = tok.end
-            return ast.ExprStmt(
-                self.call(
-                    ast.IdExpr(
-                        value=a.string,
-                        lineno=a.start[0],
-                        col_offset=a.start[1],
-                        end_lineno=a.end[0],
-                        end_col_offset=a.end[1],
-                    ),
-                    b[0] if b else [],
-                    b[1] if b else [],
-                    partial=True,
-                    lineno=start_lineno,
-                    col_offset=start_col_offset,
-                    end_lineno=end_lineno,
-                    end_col_offset=end_col_offset,
-                ),
-                lineno=start_lineno,
-                col_offset=start_col_offset,
-                end_lineno=end_lineno,
-                end_col_offset=end_col_offset,
-            )
-        self._reset(mark)
-        a = None
-        b = None
-        if (
-            (a := self.expect_literal("print"))
-            and (self.expect_literal("("))
+            and (left := self.expect_literal("("))
             and (b := self.arguments(),)
             and (self.expect_literal(")"))
-            and (self.positive_lookahead(self.expect_type, tokenize.Tokens.NEWLINE))
+            and (
+                self.positive_lookahead(
+                    self._tmp_19,
+                )
+            )
         ):
             a = Codon.unwrap(a)
+            left = Codon.unwrap(left)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
-            return ast.ExprStmt(
-                self.call(
-                    ast.IdExpr(
-                        value=a.string,
-                        lineno=a.start[0],
-                        col_offset=a.start[1],
-                        end_lineno=a.end[0],
-                        end_col_offset=a.end[1],
-                    ),
-                    b[0] if b else [],
-                    b[1] if b else [],
-                    lineno=start_lineno,
-                    col_offset=start_col_offset,
-                    end_lineno=end_lineno,
-                    end_col_offset=end_col_offset,
-                ),
+            return self.print_parenthesized(
+                a,
+                left,
+                b,
                 lineno=start_lineno,
                 col_offset=start_col_offset,
                 end_lineno=end_lineno,
@@ -686,12 +651,12 @@ class CodonParser(Parser):
             )
         self._reset(mark)
         a = None
+        left = None
         b = None
         if (
             (self.expect_literal("print"))
-            and (a := self._gather_21())
+            and (a := self._gather_20())
             and (b := self.expect_literal(","),)
-            and (self.positive_lookahead(self.expect_type, tokenize.Tokens.NEWLINE))
         ):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
@@ -707,9 +672,7 @@ class CodonParser(Parser):
         self._reset(mark)
         a = None
         b = None
-        if (self.expect_literal("print")) and (
-            self.positive_lookahead(self.expect_type, tokenize.Tokens.NEWLINE)
-        ):
+        if self.expect_literal("print"):
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
             return ast.PrintStmt(
@@ -732,7 +695,7 @@ class CodonParser(Parser):
             and (a := self.del_targets())
             and (
                 self.positive_lookahead(
-                    self._tmp_23,
+                    self._tmp_22,
                 )
             )
         ):
@@ -794,7 +757,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.expect_literal("assert")) and (a := self.expression()) and (b := self._tmp_24(),):
+        if (self.expect_literal("assert")) and (a := self.expression()) and (b := self._tmp_23(),):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -857,7 +820,7 @@ class CodonParser(Parser):
         start_lineno, start_col_offset = tok.start
         if (
             (self.expect_literal("from"))
-            and (a := self._loop0_25(),)
+            and (a := self._loop0_24(),)
             and (b := self.dotted_name())
             and (self.expect_literal("import"))
             and (c := self.import_from_targets())
@@ -881,7 +844,7 @@ class CodonParser(Parser):
         c = None
         if (
             (self.expect_literal("from"))
-            and (a := self._loop1_26())
+            and (a := self._loop1_25())
             and (self.expect_literal("import"))
             and (b := self.import_from_targets())
         ):
@@ -934,7 +897,7 @@ class CodonParser(Parser):
     def import_from_as_names(self) -> Optional[List[tuple]]:
         # import_from_as_names: ','.import_from_as_name+
         mark = self._mark()
-        if a := self._gather_27():
+        if a := self._gather_26():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -949,11 +912,11 @@ class CodonParser(Parser):
         if (
             (a := self.dotted_name())
             and (self.expect_literal("("))
-            and (c := self._loop0_29(),)
+            and (c := self._loop0_28(),)
             and (self.expect_literal(")"))
             and (self.expect_literal("->"))
             and (d := self.import_param())
-            and (b := self._tmp_30(),)
+            and (b := self._tmp_29(),)
         ):
             a = Codon.unwrap(a)
             d = Codon.unwrap(d)
@@ -983,9 +946,9 @@ class CodonParser(Parser):
         if (
             (a := self.dotted_name())
             and (self.expect_literal("("))
-            and (c := self._loop0_31(),)
+            and (c := self._loop0_30(),)
             and (self.expect_literal(")"))
-            and (b := self._tmp_32(),)
+            and (b := self._tmp_31(),)
         ):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
@@ -1020,7 +983,7 @@ class CodonParser(Parser):
             (a := self.dotted_name())
             and (self.expect_literal(":"))
             and (d := self.import_param())
-            and (b := self._tmp_33(),)
+            and (b := self._tmp_32(),)
         ):
             a = Codon.unwrap(a)
             d = Codon.unwrap(d)
@@ -1029,7 +992,7 @@ class CodonParser(Parser):
         a = None
         d = None
         b = None
-        if (a := self.dotted_name()) and (b := self._tmp_34(),):
+        if (a := self.dotted_name()) and (b := self._tmp_33(),):
             a = Codon.unwrap(a)
             return (a, b, [], None, True)
         self._reset(mark)
@@ -1065,7 +1028,7 @@ class CodonParser(Parser):
     def dotted_as_names(self) -> Optional[List[tuple]]:
         # dotted_as_names: ','.dotted_as_name+
         mark = self._mark()
-        if a := self._gather_35():
+        if a := self._gather_34():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -1075,7 +1038,7 @@ class CodonParser(Parser):
     def dotted_as_name(self) -> Optional[Tuple]:
         # dotted_as_name: dotted_name ['as' NAME]
         mark = self._mark()
-        if (a := self.dotted_name()) and (b := self._tmp_37(),):
+        if (a := self.dotted_name()) and (b := self._tmp_36(),):
             a = Codon.unwrap(a)
             return (a, b, [], None, True)
         self._reset(mark)
@@ -1146,22 +1109,22 @@ class CodonParser(Parser):
     def decorators(self) -> Optional[List[ast.Expr]]:
         # decorators: decorator+
         mark = self._mark()
-        if _loop1_38 := self._loop1_38():
-            _loop1_38 = Codon.unwrap(_loop1_38)
-            return _loop1_38
+        if _loop1_37 := self._loop1_37():
+            _loop1_37 = Codon.unwrap(_loop1_37)
+            return _loop1_37
         self._reset(mark)
-        _loop1_38 = None
+        _loop1_37 = None
         return None
 
     def decorator(self) -> Optional[ast.Expr]:
         # decorator: ('@' dec_maybe_call NEWLINE) | ('@' named_expression NEWLINE)
         mark = self._mark()
-        if a := self._tmp_39():
+        if a := self._tmp_38():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
         a = None
-        if a := self._tmp_40():
+        if a := self._tmp_39():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -1267,7 +1230,7 @@ class CodonParser(Parser):
             (self.expect_literal("class"))
             and (a := self.name())
             and (t := self.type_params(),)
-            and (b := self._tmp_41(),)
+            and (b := self._tmp_40(),)
             and (self.expect_forced(self.expect_literal(":"), "':'"))
             and (c := self.block())
         ):
@@ -1293,18 +1256,19 @@ class CodonParser(Parser):
         return None
 
     def function_def(self) -> Optional[ast.FunctionStmt]:
-        # function_def: (decorator_not_llvm*) '@' "llvm" NEWLINE (decorator*) function_def_llvm | decorators function_def_raw | function_def_raw
+        # function_def: (decorator_not_extern*) '@' ("llvm" | "python") NEWLINE (decorator*) function_def_extern | decorators function_def_raw | function_def_raw
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
         if (
-            (dp := self._loop0_42(),)
+            (dp := self._loop0_41(),)
             and (self.expect_literal("@"))
-            and (self.expect_literal("llvm"))
+            and (e := self._tmp_42())
             and (self.expect_type(tokenize.Tokens.NEWLINE))
             and (da := self._loop0_43(),)
-            and (f := self.function_def_llvm())
+            and (f := self.function_def_extern())
         ):
+            e = Codon.unwrap(e)
             f = Codon.unwrap(f)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -1314,7 +1278,7 @@ class CodonParser(Parser):
                 + (da or [])
                 + [
                     ast.IdExpr(
-                        value="llvm",
+                        value=e.string,
                         lineno=start_lineno,
                         col_offset=start_col_offset,
                         end_lineno=end_lineno,
@@ -1324,6 +1288,7 @@ class CodonParser(Parser):
             )
         self._reset(mark)
         dp = None
+        e = None
         da = None
         f = None
         if (d := self.decorators()) and (f := self.function_def_raw()):
@@ -1432,8 +1397,8 @@ class CodonParser(Parser):
         b = None
         return None
 
-    def decorator_not_llvm(self) -> Optional[ast.Expr]:
-        # decorator_not_llvm: !('@' "llvm") decorator
+    def decorator_not_extern(self) -> Optional[ast.Expr]:
+        # decorator_not_extern: !('@' ("llvm" | "python")) decorator
         mark = self._mark()
         if (
             self.negative_lookahead(
@@ -1446,8 +1411,8 @@ class CodonParser(Parser):
         d = None
         return None
 
-    def function_def_llvm(self) -> Optional[ast.FunctionStmt]:
-        # function_def_llvm: invalid_def_raw | 'def' NAME type_params? &&'(' params? ')' ['->' expression] &&':' llvm_block
+    def function_def_extern(self) -> Optional[ast.FunctionStmt]:
+        # function_def_extern: invalid_def_raw | 'def' NAME type_params? &&'(' params? ')' ['->' expression] &&':' llvm_block
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
@@ -3781,6 +3746,7 @@ class CodonParser(Parser):
                     end_lineno=end_lineno,
                     end_col_offset=end_col_offset,
                 ),
+                status=ast.Param.Status.Generic,
                 lineno=start_lineno,
                 col_offset=start_col_offset,
                 end_lineno=end_lineno,
@@ -5067,9 +5033,18 @@ class CodonParser(Parser):
         return None
 
     def group(self) -> Optional[ast.Expr]:
-        # group: '(' (yield_expr | named_expression) ')' | invalid_group
+        # group: yield_expr | '(' named_expression ')' | invalid_group
         mark = self._mark()
-        if (self.expect_literal("(")) and (a := self._tmp_117()) and (self.expect_literal(")")):
+        if yield_expr := self.yield_expr():
+            yield_expr = Codon.unwrap(yield_expr)
+            return yield_expr
+        self._reset(mark)
+        yield_expr = None
+        if (
+            (self.expect_literal("("))
+            and (a := self.named_expression())
+            and (self.expect_literal(")"))
+        ):
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -5132,8 +5107,8 @@ class CodonParser(Parser):
         start_lineno, start_col_offset = tok.start
         if (
             (a := self.lambda_slash_no_default())
-            and (b := self._loop0_118(),)
-            and (c := self._loop0_119(),)
+            and (b := self._loop0_117(),)
+            and (c := self._loop0_118(),)
             and (d := self.lambda_star_etc(),)
         ):
             a = Codon.unwrap(a)
@@ -5156,7 +5131,7 @@ class CodonParser(Parser):
         d = None
         if (
             (a := self.lambda_slash_with_default())
-            and (b := self._loop0_120(),)
+            and (b := self._loop0_119(),)
             and (c := self.lambda_star_etc(),)
         ):
             a = Codon.unwrap(a)
@@ -5176,8 +5151,8 @@ class CodonParser(Parser):
         b = None
         c = None
         if (
-            (a := self._loop1_121())
-            and (b := self._loop0_122(),)
+            (a := self._loop1_120())
+            and (b := self._loop0_121(),)
             and (c := self.lambda_star_etc(),)
         ):
             a = Codon.unwrap(a)
@@ -5196,7 +5171,7 @@ class CodonParser(Parser):
         a = None
         b = None
         c = None
-        if (a := self._loop1_123()) and (b := self.lambda_star_etc(),):
+        if (a := self._loop1_122()) and (b := self.lambda_star_etc(),):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -5229,13 +5204,13 @@ class CodonParser(Parser):
     def lambda_slash_no_default(self) -> Optional[List[Tuple[ast.Param, ast.Expr | None]]]:
         # lambda_slash_no_default: lambda_param_no_default+ '/' ',' | lambda_param_no_default+ '/' &':'
         mark = self._mark()
-        if (a := self._loop1_124()) and (self.expect_literal("/")) and (self.expect_literal(",")):
+        if (a := self._loop1_123()) and (self.expect_literal("/")) and (self.expect_literal(",")):
             a = Codon.unwrap(a)
             return [(p, None) for p in a]
         self._reset(mark)
         a = None
         if (
-            (a := self._loop1_125())
+            (a := self._loop1_124())
             and (self.expect_literal("/"))
             and (self.positive_lookahead(self.expect_literal, ":"))
         ):
@@ -5249,8 +5224,8 @@ class CodonParser(Parser):
         # lambda_slash_with_default: lambda_param_no_default* lambda_param_with_default+ '/' ',' | lambda_param_no_default* lambda_param_with_default+ '/' &':'
         mark = self._mark()
         if (
-            (a := self._loop0_126(),)
-            and (b := self._loop1_127())
+            (a := self._loop0_125(),)
+            and (b := self._loop1_126())
             and (self.expect_literal("/"))
             and (self.expect_literal(","))
         ):
@@ -5260,8 +5235,8 @@ class CodonParser(Parser):
         a = None
         b = None
         if (
-            (a := self._loop0_128(),)
-            and (b := self._loop1_129())
+            (a := self._loop0_127(),)
+            and (b := self._loop1_128())
             and (self.expect_literal("/"))
             and (self.positive_lookahead(self.expect_literal, ":"))
         ):
@@ -5290,7 +5265,7 @@ class CodonParser(Parser):
         if (
             (self.expect_literal("*"))
             and (a := self.lambda_param_no_default())
-            and (b := self._loop0_130(),)
+            and (b := self._loop0_129(),)
             and (c := self.lambda_kwds(),)
         ):
             a = Codon.unwrap(a)
@@ -5302,7 +5277,7 @@ class CodonParser(Parser):
         if (
             (self.expect_literal("*"))
             and (self.expect_literal(","))
-            and (b := self._loop1_131())
+            and (b := self._loop1_130())
             and (c := self.lambda_kwds(),)
         ):
             b = Codon.unwrap(b)
@@ -5441,7 +5416,7 @@ class CodonParser(Parser):
         start_lineno, start_col_offset = tok.start
         if (
             (left := self.expect_literal("{"))
-            and (a := self._tmp_132())
+            and (a := self._tmp_131())
             and (debug_expr := self.expect_literal("="),)
             and (conversion := self.fstring_conversion(),)
             and (format := self.fstring_full_format_spec(),)
@@ -5488,12 +5463,22 @@ class CodonParser(Parser):
         return None
 
     def fstring_full_format_spec(self) -> Optional[str]:
-        # fstring_full_format_spec: ':' fstring_format_spec*
+        # fstring_full_format_spec: ':' fstring_format_char*
         mark = self._mark()
-        if (self.expect_literal(":")) and (spec := self._loop0_133(),):
+        if (self.expect_literal(":")) and (spec := self._loop0_132(),):
             return "".join(spec)
         self._reset(mark)
         spec = None
+        return None
+
+    def fstring_format_char(self) -> Optional[str]:
+        # fstring_format_char: !'}' ANY_BUT_NEWLINE
+        mark = self._mark()
+        if (self.negative_lookahead(self.expect_literal, "}")) and (a := self.any_but_newline()):
+            a = Codon.unwrap(a)
+            return a.string
+        self._reset(mark)
+        a = None
         return None
 
     def fstring_format_spec(self) -> Optional[str]:
@@ -5518,7 +5503,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (
             (a := self.fstring_options_head(),)
-            and (b := self._tmp_134(),)
+            and (b := self._tmp_133(),)
             and (c := self.expect_literal("z"),)
             and (d := self.expect_literal("#"),)
             and (e := self.expect_literal("0"),)
@@ -5541,7 +5526,7 @@ class CodonParser(Parser):
     def fstring_options_head(self) -> Optional[str]:
         # fstring_options_head: ANY_BUT_NEWLINE? ('<' | '>' | '=' | '^')
         mark = self._mark()
-        if (n := self.any_but_newline(),) and (o := self._tmp_135()):
+        if (n := self.any_but_newline(),) and (o := self._tmp_134()):
             o = Codon.unwrap(o)
             return (n.string if n else "") + o.string
         self._reset(mark)
@@ -5553,7 +5538,7 @@ class CodonParser(Parser):
         # fstring_width_and_precision: [NUMBER? fstring_grouping?] fstring_precision_with_grouping?
         # nullable=True
         mark = self._mark()
-        if (a := self._tmp_136(),) and (b := self.fstring_precision_with_grouping(),):
+        if (a := self._tmp_135(),) and (b := self.fstring_precision_with_grouping(),):
             return (a or "") + (b or "")
         self._reset(mark)
         a = None
@@ -5684,7 +5669,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if a := self._loop1_137():
+        if a := self._loop1_136():
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -5754,7 +5739,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.expect_literal("(")) and (a := self._tmp_138(),) and (self.expect_literal(")")):
+        if (self.expect_literal("(")) and (a := self._tmp_137(),) and (self.expect_literal(")")):
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
             return ast.TupleExpr(
@@ -5826,7 +5811,7 @@ class CodonParser(Parser):
     def double_starred_kvpairs(self) -> Optional[List[Tuple[ast.Expr | None, ast.Expr]]]:
         # double_starred_kvpairs: ','.double_starred_kvpair+ ','?
         mark = self._mark()
-        if (a := self._gather_139()) and (self.expect_literal(","),):
+        if (a := self._gather_138()) and (self.expect_literal(","),):
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -5863,7 +5848,7 @@ class CodonParser(Parser):
     def for_if_clauses(self) -> Optional[List[Comprehension]]:
         # for_if_clauses: for_if_clause+
         mark = self._mark()
-        if a := self._loop1_141():
+        if a := self._loop1_140():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -5881,7 +5866,7 @@ class CodonParser(Parser):
             and (self.expect_literal("in"))
             and (cut := True)
             and (b := self.disjunction())
-            and (c := self._loop0_142(),)
+            and (c := self._loop0_141(),)
         ):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
@@ -5899,7 +5884,7 @@ class CodonParser(Parser):
             and (self.expect_literal("in"))
             and (cut := True)
             and (b := self.disjunction())
-            and (c := self._loop0_143(),)
+            and (c := self._loop0_142(),)
         ):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
@@ -5986,7 +5971,7 @@ class CodonParser(Parser):
         start_lineno, start_col_offset = tok.start
         if (
             (self.expect_literal("("))
-            and (a := self._tmp_144())
+            and (a := self._tmp_143())
             and (b := self.for_if_clauses())
             and (self.expect_literal(")"))
         ):
@@ -6081,23 +6066,73 @@ class CodonParser(Parser):
         return None
 
     def args(self) -> Optional[Tuple[List[ast.Expr], List[ast.CallExpr.Arg]]]:
-        # args: ','.(starred_expression | (assignment_expression | expression !':=') !'=')+ [',' kwargs] | kwargs
+        # args: ','.call_argument+
         mark = self._mark()
-        if (a := self._gather_145()) and (b := self._tmp_147(),):
+        if a := self._gather_144():
             a = Codon.unwrap(a)
-            return (
-                a + ([e for e in b if isinstance(e, ast.StarExpr)] if b else []),
-                ([e for e in b if isinstance(e, ast.CallExpr.Arg)] if b else []),
+            return (a, [])
+        self._reset(mark)
+        a = None
+        return None
+
+    def call_argument(self) -> Optional[object]:
+        # call_argument: NAME '=' expression | '**' expression | starred_expression | assignment_expression | expression !':=' !'='
+        mark = self._mark()
+        tok = self._tokenizer.peek()
+        start_lineno, start_col_offset = tok.start
+        if (a := self.name()) and (self.expect_literal("=")) and (b := self.expression()):
+            a = Codon.unwrap(a)
+            b = Codon.unwrap(b)
+            tok = self._tokenizer.get_last_non_whitespace_token()
+            end_lineno, end_col_offset = tok.end
+            return self.call_arg(
+                a.string,
+                b,
+                lineno=start_lineno,
+                col_offset=start_col_offset,
+                end_lineno=end_lineno,
+                end_col_offset=end_col_offset,
             )
         self._reset(mark)
         a = None
         b = None
-        if a := self.kwargs():
+        if (self.expect_literal("**")) and (a := self.expression()):
             a = Codon.unwrap(a)
-            return (
-                [e for e in a if isinstance(e, ast.StarExpr)],
-                [e for e in a if isinstance(e, ast.CallExpr.Arg)],
+            tok = self._tokenizer.get_last_non_whitespace_token()
+            end_lineno, end_col_offset = tok.end
+            return self.call_arg(
+                "",
+                ast.KeywordStarExpr(
+                    expr=a,
+                    lineno=start_lineno,
+                    col_offset=start_col_offset,
+                    end_lineno=end_lineno,
+                    end_col_offset=end_col_offset,
+                ),
+                lineno=start_lineno,
+                col_offset=start_col_offset,
+                end_lineno=end_lineno,
+                end_col_offset=end_col_offset,
             )
+        self._reset(mark)
+        a = None
+        if starred_expression := self.starred_expression():
+            starred_expression = Codon.unwrap(starred_expression)
+            return starred_expression
+        self._reset(mark)
+        starred_expression = None
+        if assignment_expression := self.assignment_expression():
+            assignment_expression = Codon.unwrap(assignment_expression)
+            return assignment_expression
+        self._reset(mark)
+        assignment_expression = None
+        if (
+            (a := self.expression())
+            and (self.negative_lookahead(self.expect_literal, ":="))
+            and (self.negative_lookahead(self.expect_literal, "="))
+        ):
+            a = Codon.unwrap(a)
+            return a
         self._reset(mark)
         a = None
         return None
@@ -6105,23 +6140,23 @@ class CodonParser(Parser):
     def kwargs(self) -> Optional[List[object]]:
         # kwargs: ','.kwarg_or_starred+ ',' ','.kwarg_or_double_starred+ | ','.kwarg_or_starred+ | ','.kwarg_or_double_starred+
         mark = self._mark()
-        if (a := self._gather_148()) and (self.expect_literal(",")) and (b := self._gather_150()):
+        if (a := self._gather_146()) and (self.expect_literal(",")) and (b := self._gather_148()):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
             return a + b
         self._reset(mark)
         a = None
         b = None
+        if _gather_150 := self._gather_150():
+            _gather_150 = Codon.unwrap(_gather_150)
+            return _gather_150
+        self._reset(mark)
+        _gather_150 = None
         if _gather_152 := self._gather_152():
             _gather_152 = Codon.unwrap(_gather_152)
             return _gather_152
         self._reset(mark)
         _gather_152 = None
-        if _gather_154 := self._gather_154():
-            _gather_154 = Codon.unwrap(_gather_154)
-            return _gather_154
-        self._reset(mark)
-        _gather_154 = None
         return None
 
     def starred_expression(self) -> Optional[ast.Expr]:
@@ -6237,7 +6272,7 @@ class CodonParser(Parser):
             return a
         self._reset(mark)
         a = None
-        if (a := self.star_target()) and (b := self._loop0_156(),) and (self.expect_literal(","),):
+        if (a := self.star_target()) and (b := self._loop0_154(),) and (self.expect_literal(","),):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -6256,7 +6291,7 @@ class CodonParser(Parser):
     def star_targets_list_seq(self) -> Optional[List[ast.Expr]]:
         # star_targets_list_seq: ','.star_target+ ','?
         mark = self._mark()
-        if (a := self._gather_157()) and (self.expect_literal(","),):
+        if (a := self._gather_155()) and (self.expect_literal(","),):
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -6266,7 +6301,7 @@ class CodonParser(Parser):
     def star_targets_tuple_seq(self) -> Optional[List[ast.Expr]]:
         # star_targets_tuple_seq: star_target ((',' star_target))+ ','? | star_target ','
         mark = self._mark()
-        if (a := self.star_target()) and (b := self._loop1_159()) and (self.expect_literal(","),):
+        if (a := self.star_target()) and (b := self._loop1_157()) and (self.expect_literal(","),):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
             return [a] + b
@@ -6286,7 +6321,7 @@ class CodonParser(Parser):
         mark = self._mark()
         tok = self._tokenizer.peek()
         start_lineno, start_col_offset = tok.start
-        if (self.expect_literal("*")) and (a := self._tmp_160()):
+        if (self.expect_literal("*")) and (a := self._tmp_158()):
             a = Codon.unwrap(a)
             tok = self._tokenizer.get_last_non_whitespace_token()
             end_lineno, end_col_offset = tok.end
@@ -6692,7 +6727,7 @@ class CodonParser(Parser):
     def del_targets(self) -> Optional[List[ast.Expr]]:
         # del_targets: ','.del_target+ ','?
         mark = self._mark()
-        if (a := self._gather_161()) and (self.expect_literal(","),):
+        if (a := self._gather_159()) and (self.expect_literal(","),):
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -6823,7 +6858,7 @@ class CodonParser(Parser):
     def invalid_arguments(self) -> None:
         # invalid_arguments: ((','.(starred_expression | (assignment_expression | expression !':=') !'=')+ ',' kwargs) | kwargs) ',' ','.(starred_expression !'=')+ | expression for_if_clauses ',' [args | expression for_if_clauses] | NAME '=' expression for_if_clauses | [(args ',')] NAME '=' &(',' | ')') | args for_if_clauses | args ',' expression for_if_clauses | args ',' args
         mark = self._mark()
-        if (self._tmp_163()) and (a := self.expect_literal(",")) and (self._gather_164()):
+        if (self._tmp_161()) and (a := self.expect_literal(",")) and (self._gather_162()):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_starting_from(
                 "iterable argument unpacking follows keyword argument unpacking",
@@ -6835,7 +6870,7 @@ class CodonParser(Parser):
             (a := self.expression())
             and (b := self.for_if_clauses())
             and (self.expect_literal(","))
-            and (self._tmp_166(),)
+            and (self._tmp_164(),)
         ):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
@@ -6862,12 +6897,12 @@ class CodonParser(Parser):
         a = None
         b = None
         if (
-            (self._tmp_167(),)
+            (self._tmp_165(),)
             and (a := self.name())
             and (b := self.expect_literal("="))
             and (
                 self.positive_lookahead(
-                    self._tmp_168,
+                    self._tmp_166,
                 )
             )
         ):
@@ -6924,7 +6959,7 @@ class CodonParser(Parser):
     def invalid_kwarg(self) -> None:
         # invalid_kwarg: ('True' | 'False' | 'None') '=' | NAME '=' expression for_if_clauses | !(NAME '=') expression '=' | '**' expression '=' expression
         mark = self._mark()
-        if (a := self._tmp_169()) and (b := self.expect_literal("=")):
+        if (a := self._tmp_167()) and (b := self.expect_literal("=")):
             a = Codon.unwrap(a)
             b = Codon.unwrap(b)
             return self.raise_syntax_error_known_range(f"cannot assign to {a.string}", a, b)
@@ -6948,7 +6983,7 @@ class CodonParser(Parser):
         if (
             (
                 self.negative_lookahead(
-                    self._tmp_170,
+                    self._tmp_168,
                 )
             )
             and (a := self.expression())
@@ -7058,7 +7093,7 @@ class CodonParser(Parser):
         if (
             (
                 self.negative_lookahead(
-                    self._tmp_171,
+                    self._tmp_169,
                 )
             )
             and (a := self.pipe())
@@ -7082,7 +7117,7 @@ class CodonParser(Parser):
             and (b := self.disjunction())
             and (
                 self.negative_lookahead(
-                    self._tmp_172,
+                    self._tmp_170,
                 )
             )
         ):
@@ -7100,7 +7135,7 @@ class CodonParser(Parser):
             and (b := self.expect_literal(":"))
             and (
                 self.positive_lookahead(
-                    self._tmp_173,
+                    self._tmp_171,
                 )
             )
         ):
@@ -7131,7 +7166,7 @@ class CodonParser(Parser):
             and (b := self.bitwise_or())
             and (
                 self.negative_lookahead(
-                    self._tmp_174,
+                    self._tmp_172,
                 )
             )
         ):
@@ -7150,7 +7185,7 @@ class CodonParser(Parser):
         if (
             (
                 self.negative_lookahead(
-                    self._tmp_175,
+                    self._tmp_173,
                 )
             )
             and (a := self.bitwise_or())
@@ -7158,7 +7193,7 @@ class CodonParser(Parser):
             and (self.bitwise_or())
             and (
                 self.negative_lookahead(
-                    self._tmp_176,
+                    self._tmp_174,
                 )
             )
         ):
@@ -7193,7 +7228,7 @@ class CodonParser(Parser):
         if (
             (a := self.star_named_expression())
             and (self.expect_literal(","))
-            and (self._loop0_177(),)
+            and (self._loop0_175(),)
             and (self.expect_literal(":"))
             and (self.expression())
         ):
@@ -7208,19 +7243,19 @@ class CodonParser(Parser):
             return self.raise_syntax_error_known_location("illegal target for annotation", a)
         self._reset(mark)
         a = None
-        if (self._loop0_178(),) and (a := self.star_expressions()) and (self.expect_literal("=")):
+        if (self._loop0_176(),) and (a := self.star_expressions()) and (self.expect_literal("=")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_invalid_target(Target.STAR_TARGETS, a)
         self._reset(mark)
         a = None
-        if (self._loop0_179(),) and (a := self.yield_expr()) and (self.expect_literal("=")):
+        if (self._loop0_177(),) and (a := self.yield_expr()) and (self.expect_literal("=")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location(
                 "assignment to yield expression not possible", a
             )
         self._reset(mark)
         a = None
-        if (a := self.star_expressions()) and (self.augassign()) and (self._tmp_180()):
+        if (a := self.star_expressions()) and (self.augassign()) and (self._tmp_178()):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location(
                 f"'{self.get_expr_name(a)}' is an illegal expression for augmented assignment", a
@@ -7277,7 +7312,7 @@ class CodonParser(Parser):
     def invalid_comprehension(self) -> None:
         # invalid_comprehension: ('[' | '(' | '{') starred_expression for_if_clauses | ('[' | '{') star_named_expression ',' star_named_expressions for_if_clauses | ('[' | '{') star_named_expression ',' for_if_clauses
         mark = self._mark()
-        if (self._tmp_181()) and (a := self.starred_expression()) and (self.for_if_clauses()):
+        if (self._tmp_179()) and (a := self.starred_expression()) and (self.for_if_clauses()):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location(
                 "iterable unpacking cannot be used in comprehension", a
@@ -7285,7 +7320,7 @@ class CodonParser(Parser):
         self._reset(mark)
         a = None
         if (
-            (self._tmp_182())
+            (self._tmp_180())
             and (a := self.star_named_expression())
             and (self.expect_literal(","))
             and (b := self.star_named_expressions())
@@ -7300,7 +7335,7 @@ class CodonParser(Parser):
         a = None
         b = None
         if (
-            (self._tmp_183())
+            (self._tmp_181())
             and (a := self.star_named_expression())
             and (b := self.expect_literal(","))
             and (self.for_if_clauses())
@@ -7343,7 +7378,7 @@ class CodonParser(Parser):
             )
         self._reset(mark)
         a = None
-        if (self._tmp_184()) and (self._loop0_185(),) and (a := self.expect_literal("/")):
+        if (self._tmp_182()) and (self._loop0_183(),) and (a := self.expect_literal("/")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("/ may appear only once", a)
         self._reset(mark)
@@ -7351,7 +7386,7 @@ class CodonParser(Parser):
         if (
             self.call_invalid_rules
             and (self.slash_no_default(),)
-            and (self._loop0_186(),)
+            and (self._loop0_184(),)
             and (self.invalid_parameters_helper())
             and (a := self.param_no_default())
         ):
@@ -7362,9 +7397,9 @@ class CodonParser(Parser):
         self._reset(mark)
         a = None
         if (
-            (self._loop0_187(),)
+            (self._loop0_185(),)
             and (a := self.expect_literal("("))
-            and (self._loop1_188())
+            and (self._loop1_186())
             and (self.expect_literal(","),)
             and (b := self.expect_literal(")"))
         ):
@@ -7377,18 +7412,18 @@ class CodonParser(Parser):
         a = None
         b = None
         if (
-            (self._tmp_189(),)
-            and (self._loop0_190(),)
+            (self._tmp_187(),)
+            and (self._loop0_188(),)
             and (self.expect_literal("*"))
-            and (self._tmp_191())
-            and (self._loop0_192(),)
+            and (self._tmp_189())
+            and (self._loop0_190(),)
             and (a := self.expect_literal("/"))
         ):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("/ must be ahead of *", a)
         self._reset(mark)
         a = None
-        if (self._loop1_193()) and (self.expect_literal("/")) and (a := self.expect_literal("*")):
+        if (self._loop1_191()) and (self.expect_literal("/")) and (a := self.expect_literal("*")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("expected comma between / and *", a)
         self._reset(mark)
@@ -7400,7 +7435,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (a := self.expect_literal("=")) and (
             self.positive_lookahead(
-                self._tmp_194,
+                self._tmp_192,
             )
         ):
             a = Codon.unwrap(a)
@@ -7412,7 +7447,7 @@ class CodonParser(Parser):
     def invalid_star_etc(self) -> None:
         # invalid_star_etc: '*' (')' | (',' (')' | '**'))) | '*' param '=' | '*' (param_no_default | ',') param_maybe_default* '*' (param_no_default | ',')
         mark = self._mark()
-        if (a := self.expect_literal("*")) and (self._tmp_195()):
+        if (a := self.expect_literal("*")) and (self._tmp_193()):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("named arguments must follow bare *", a)
         self._reset(mark)
@@ -7426,10 +7461,10 @@ class CodonParser(Parser):
         a = None
         if (
             (self.expect_literal("*"))
-            and (self._tmp_196())
-            and (self._loop0_197(),)
+            and (self._tmp_194())
+            and (self._loop0_195(),)
             and (a := self.expect_literal("*"))
-            and (self._tmp_198())
+            and (self._tmp_196())
         ):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("* argument may appear only once", a)
@@ -7471,7 +7506,7 @@ class CodonParser(Parser):
             (self.expect_literal("**"))
             and (self.param())
             and (self.expect_literal(","))
-            and (a := self._tmp_199())
+            and (a := self._tmp_197())
         ):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location(
@@ -7489,7 +7524,7 @@ class CodonParser(Parser):
             return a
         self._reset(mark)
         a = None
-        if a := self._loop1_200():
+        if a := self._loop1_198():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -7506,7 +7541,7 @@ class CodonParser(Parser):
             )
         self._reset(mark)
         a = None
-        if (self._tmp_201()) and (self._loop0_202(),) and (a := self.expect_literal("/")):
+        if (self._tmp_199()) and (self._loop0_200(),) and (a := self.expect_literal("/")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("/ may appear only once", a)
         self._reset(mark)
@@ -7514,7 +7549,7 @@ class CodonParser(Parser):
         if (
             self.call_invalid_rules
             and (self.lambda_slash_no_default(),)
-            and (self._loop0_203(),)
+            and (self._loop0_201(),)
             and (self.invalid_lambda_parameters_helper())
             and (a := self.lambda_param_no_default())
         ):
@@ -7525,9 +7560,9 @@ class CodonParser(Parser):
         self._reset(mark)
         a = None
         if (
-            (self._loop0_204(),)
+            (self._loop0_202(),)
             and (a := self.expect_literal("("))
-            and (self._gather_205())
+            and (self._gather_203())
             and (self.expect_literal(","),)
             and (b := self.expect_literal(")"))
         ):
@@ -7540,18 +7575,18 @@ class CodonParser(Parser):
         a = None
         b = None
         if (
-            (self._tmp_207(),)
-            and (self._loop0_208(),)
+            (self._tmp_205(),)
+            and (self._loop0_206(),)
             and (self.expect_literal("*"))
-            and (self._tmp_209())
-            and (self._loop0_210(),)
+            and (self._tmp_207())
+            and (self._loop0_208(),)
             and (a := self.expect_literal("/"))
         ):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("/ must be ahead of *", a)
         self._reset(mark)
         a = None
-        if (self._loop1_211()) and (self.expect_literal("/")) and (a := self.expect_literal("*")):
+        if (self._loop1_209()) and (self.expect_literal("/")) and (a := self.expect_literal("*")):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("expected comma between / and *", a)
         self._reset(mark)
@@ -7566,7 +7601,7 @@ class CodonParser(Parser):
             return a
         self._reset(mark)
         a = None
-        if a := self._loop1_212():
+        if a := self._loop1_210():
             a = Codon.unwrap(a)
             return a
         self._reset(mark)
@@ -7576,7 +7611,7 @@ class CodonParser(Parser):
     def invalid_lambda_star_etc(self) -> None:
         # invalid_lambda_star_etc: '*' (':' | ',' (':' | '**')) | '*' lambda_param '=' | '*' (lambda_param_no_default | ',') lambda_param_maybe_default* '*' (lambda_param_no_default | ',')
         mark = self._mark()
-        if (self.expect_literal("*")) and (self._tmp_213()):
+        if (self.expect_literal("*")) and (self._tmp_211()):
             return self.raise_syntax_error("named arguments must follow bare *")
         self._reset(mark)
         if (
@@ -7592,10 +7627,10 @@ class CodonParser(Parser):
         a = None
         if (
             (self.expect_literal("*"))
-            and (self._tmp_214())
-            and (self._loop0_215(),)
+            and (self._tmp_212())
+            and (self._loop0_213(),)
             and (a := self.expect_literal("*"))
-            and (self._tmp_216())
+            and (self._tmp_214())
         ):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location("* argument may appear only once", a)
@@ -7633,7 +7668,7 @@ class CodonParser(Parser):
             (self.expect_literal("**"))
             and (self.lambda_param())
             and (self.expect_literal(","))
-            and (a := self._tmp_217())
+            and (a := self._tmp_215())
         ):
             a = Codon.unwrap(a)
             return self.raise_syntax_error_known_location(
@@ -7652,7 +7687,7 @@ class CodonParser(Parser):
             and (a := self.expression())
             and (
                 self.positive_lookahead(
-                    self._tmp_218,
+                    self._tmp_216,
                 )
             )
         ):
@@ -7707,7 +7742,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (
             (a := self.expect_literal("import"))
-            and (self._gather_219())
+            and (self._gather_217())
             and (self.expect_literal("from"))
             and (self.dotted_name())
         ):
@@ -7739,7 +7774,7 @@ class CodonParser(Parser):
         if (
             (self.expect_literal("async"),)
             and (self.expect_literal("with"))
-            and (self._gather_221())
+            and (self._gather_219())
             and (self.expect_forced(self.expect_literal(":"), "':'"))
         ):
             return None  # pragma: no cover
@@ -7748,7 +7783,7 @@ class CodonParser(Parser):
             (self.expect_literal("async"),)
             and (self.expect_literal("with"))
             and (self.expect_literal("("))
-            and (self._gather_223())
+            and (self._gather_221())
             and (self.expect_literal(","),)
             and (self.expect_literal(")"))
             and (self.expect_forced(self.expect_literal(":"), "':'"))
@@ -7763,7 +7798,7 @@ class CodonParser(Parser):
         if (
             (self.expect_literal("async"),)
             and (a := self.expect_literal("with"))
-            and (self._gather_225())
+            and (self._gather_223())
             and (self.expect_literal(":"))
             and (self.expect_type(tokenize.Tokens.NEWLINE))
             and (self.negative_lookahead(self.expect_type, tokenize.Tokens.INDENT))
@@ -7778,7 +7813,7 @@ class CodonParser(Parser):
             (self.expect_literal("async"),)
             and (a := self.expect_literal("with"))
             and (self.expect_literal("("))
-            and (self._gather_227())
+            and (self._gather_225())
             and (self.expect_literal(","),)
             and (self.expect_literal(")"))
             and (self.expect_literal(":"))
@@ -7814,7 +7849,7 @@ class CodonParser(Parser):
             and (self.block())
             and (
                 self.negative_lookahead(
-                    self._tmp_229,
+                    self._tmp_227,
                 )
             )
         ):
@@ -7823,12 +7858,12 @@ class CodonParser(Parser):
         if (
             (self.expect_literal("try"))
             and (self.expect_literal(":"))
-            and (self._loop0_230(),)
-            and (self._loop1_231())
+            and (self._loop0_228(),)
+            and (self._loop1_229())
             and (a := self.expect_literal("except"))
             and (b := self.expect_literal("*"))
             and (self.expression())
-            and (self._tmp_232(),)
+            and (self._tmp_230(),)
             and (self.expect_literal(":"))
         ):
             a = Codon.unwrap(a)
@@ -7843,7 +7878,7 @@ class CodonParser(Parser):
             (self.expect_literal("try"))
             and (self.expect_forced(self.expect_literal(":"), "':'"))
             and (self.block())
-            and (self._loop1_233())
+            and (self._loop1_231())
             and (self.else_block(),)
             and (self.finally_block(),)
         ):
@@ -7852,10 +7887,10 @@ class CodonParser(Parser):
         if (
             (self.expect_literal("try"))
             and (self.expect_literal(":"))
-            and (self._loop0_234(),)
-            and (self._loop1_235())
+            and (self._loop0_232(),)
+            and (self._loop1_233())
             and (a := self.expect_literal("except"))
-            and (self._tmp_236(),)
+            and (self._tmp_234(),)
             and (self.expect_literal(":"))
         ):
             a = Codon.unwrap(a)
@@ -7875,7 +7910,7 @@ class CodonParser(Parser):
             and (a := self.expression())
             and (self.expect_literal(","))
             and (self.expressions())
-            and (self._tmp_237(),)
+            and (self._tmp_235(),)
             and (self.expect_literal(":"))
         ):
             a = Codon.unwrap(a)
@@ -7888,7 +7923,7 @@ class CodonParser(Parser):
             (self.expect_literal("except"))
             and (self.expect_literal("*"),)
             and (self.expression())
-            and (self._tmp_238(),)
+            and (self._tmp_236(),)
             and (self.expect_type(tokenize.Tokens.NEWLINE))
         ):
             return self.raise_syntax_error("expected ':'")
@@ -7900,7 +7935,7 @@ class CodonParser(Parser):
         ):
             return self.raise_syntax_error("expected ':'")
         self._reset(mark)
-        if (self.expect_literal("except")) and (self.expect_literal("*")) and (self._tmp_239()):
+        if (self.expect_literal("except")) and (self.expect_literal("*")) and (self._tmp_237()):
             return self.raise_syntax_error("expected one or more exception types")
         self._reset(mark)
         return None
@@ -7928,7 +7963,7 @@ class CodonParser(Parser):
         if (
             (a := self.expect_literal("except"))
             and (self.expression())
-            and (self._tmp_240(),)
+            and (self._tmp_238(),)
             and (self.expect_literal(":"))
             and (self.expect_type(tokenize.Tokens.NEWLINE))
             and (self.negative_lookahead(self.expect_type, tokenize.Tokens.INDENT))
@@ -7960,7 +7995,7 @@ class CodonParser(Parser):
             (a := self.expect_literal("except"))
             and (self.expect_literal("*"))
             and (self.expression())
-            and (self._tmp_241(),)
+            and (self._tmp_239(),)
             and (self.expect_literal(":"))
             and (self.expect_type(tokenize.Tokens.NEWLINE))
             and (self.negative_lookahead(self.expect_type, tokenize.Tokens.INDENT))
@@ -8070,7 +8105,7 @@ class CodonParser(Parser):
         # invalid_class_argument_pattern: [positional_patterns ','] keyword_patterns ',' positional_patterns
         mark = self._mark()
         if (
-            (self._tmp_242(),)
+            (self._tmp_240(),)
             and (self.keyword_patterns())
             and (self.expect_literal(","))
             and (a := self.positional_patterns())
@@ -8217,7 +8252,7 @@ class CodonParser(Parser):
             and (self.expect_literal("("))
             and (self.params(),)
             and (self.expect_literal(")"))
-            and (self._tmp_243(),)
+            and (self._tmp_241(),)
             and (self.expect_literal(":"))
             and (self.expect_type(tokenize.Tokens.NEWLINE))
             and (self.negative_lookahead(self.expect_type, tokenize.Tokens.INDENT))
@@ -8237,7 +8272,7 @@ class CodonParser(Parser):
             (self.expect_literal("class"))
             and (self.name())
             and (self.type_params(),)
-            and (self._tmp_244(),)
+            and (self._tmp_242(),)
             and (self.expect_type(tokenize.Tokens.NEWLINE))
         ):
             return self.raise_syntax_error("expected ':'")
@@ -8246,7 +8281,7 @@ class CodonParser(Parser):
             (a := self.expect_literal("class"))
             and (self.name())
             and (self.type_params(),)
-            and (self._tmp_245(),)
+            and (self._tmp_243(),)
             and (self.expect_literal(":"))
             and (self.expect_type(tokenize.Tokens.NEWLINE))
             and (self.negative_lookahead(self.expect_type, tokenize.Tokens.INDENT))
@@ -8264,7 +8299,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (
             self.call_invalid_rules
-            and (self._gather_246())
+            and (self._gather_244())
             and (self.expect_literal(","))
             and (self.invalid_kvpair())
         ):
@@ -8287,7 +8322,7 @@ class CodonParser(Parser):
             and (a := self.expect_literal(":"))
             and (
                 self.positive_lookahead(
-                    self._tmp_248,
+                    self._tmp_246,
                 )
             )
         ):
@@ -8328,7 +8363,7 @@ class CodonParser(Parser):
             and (a := self.expect_literal(":"))
             and (
                 self.positive_lookahead(
-                    self._tmp_249,
+                    self._tmp_247,
                 )
             )
         ):
@@ -8399,7 +8434,7 @@ class CodonParser(Parser):
         a = None
         if (self.expect_literal("{")) and (
             self.negative_lookahead(
-                self._tmp_250,
+                self._tmp_248,
             )
         ):
             return self.raise_syntax_error_on_next_token(
@@ -8408,10 +8443,10 @@ class CodonParser(Parser):
         self._reset(mark)
         if (
             (self.expect_literal("{"))
-            and (self._tmp_251())
+            and (self._tmp_249())
             and (
                 self.negative_lookahead(
-                    self._tmp_252,
+                    self._tmp_250,
                 )
             )
         ):
@@ -8421,11 +8456,11 @@ class CodonParser(Parser):
         self._reset(mark)
         if (
             (self.expect_literal("{"))
-            and (self._tmp_253())
+            and (self._tmp_251())
             and (self.expect_literal("="))
             and (
                 self.negative_lookahead(
-                    self._tmp_254,
+                    self._tmp_252,
                 )
             )
         ):
@@ -8434,7 +8469,7 @@ class CodonParser(Parser):
         if (
             self.call_invalid_rules
             and (self.expect_literal("{"))
-            and (self._tmp_255())
+            and (self._tmp_253())
             and (self.expect_literal("="),)
             and (self.invalid_conversion_character())
         ):
@@ -8442,12 +8477,12 @@ class CodonParser(Parser):
         self._reset(mark)
         if (
             (self.expect_literal("{"))
-            and (self._tmp_256())
+            and (self._tmp_254())
             and (self.expect_literal("="),)
-            and (self._tmp_257(),)
+            and (self._tmp_255(),)
             and (
                 self.negative_lookahead(
-                    self._tmp_258,
+                    self._tmp_256,
                 )
             )
         ):
@@ -8455,11 +8490,11 @@ class CodonParser(Parser):
         self._reset(mark)
         if (
             (self.expect_literal("{"))
-            and (self._tmp_259())
+            and (self._tmp_257())
             and (self.expect_literal("="),)
-            and (self._tmp_260(),)
+            and (self._tmp_258(),)
             and (self.expect_literal(":"))
-            and (self._loop0_261(),)
+            and (self._loop0_259(),)
             and (self.negative_lookahead(self.expect_literal, "}"))
         ):
             return self.raise_syntax_error_on_next_token(
@@ -8468,9 +8503,9 @@ class CodonParser(Parser):
         self._reset(mark)
         if (
             (self.expect_literal("{"))
-            and (self._tmp_262())
+            and (self._tmp_260())
             and (self.expect_literal("="),)
-            and (self._tmp_263(),)
+            and (self._tmp_261(),)
             and (self.negative_lookahead(self.expect_literal, "}"))
         ):
             return self.raise_syntax_error_on_next_token("f-string: expecting '}'")
@@ -8482,7 +8517,7 @@ class CodonParser(Parser):
         mark = self._mark()
         if (self.expect_literal("!")) and (
             self.positive_lookahead(
-                self._tmp_264,
+                self._tmp_262,
             )
         ):
             return self.raise_syntax_error_on_next_token("f-string: missing conversion character")
@@ -8672,52 +8707,46 @@ class CodonParser(Parser):
         # _loop1_13: (star_targets '=')
         mark = self._mark()
         children = []
-        while _tmp_265_ := self._tmp_265():
-            _tmp_265 = Codon.unwrap(_tmp_265_)
-            children.append(_tmp_265)
+        while _tmp_263_ := self._tmp_263():
+            _tmp_263 = Codon.unwrap(_tmp_263_)
+            children.append(_tmp_263)
             mark = self._mark()
         self._reset(mark)
-        _tmp_265 = None
+        _tmp_263 = None
         return children
 
     def _tmp_14(self) -> Optional:
-        # _tmp_14: yield_expr | star_expressions
-        mark = self._mark()
-        if yield_expr := self.yield_expr():
-            yield_expr = Codon.unwrap(yield_expr)
-            return yield_expr
-        self._reset(mark)
-        yield_expr = None
-        if star_expressions := self.star_expressions():
-            star_expressions = Codon.unwrap(star_expressions)
-            return star_expressions
-        self._reset(mark)
-        star_expressions = None
-        return None
-
-    def _tmp_15(self) -> Optional:
-        # _tmp_15: yield_expr | star_expressions
-        mark = self._mark()
-        if yield_expr := self.yield_expr():
-            yield_expr = Codon.unwrap(yield_expr)
-            return yield_expr
-        self._reset(mark)
-        yield_expr = None
-        if star_expressions := self.star_expressions():
-            star_expressions = Codon.unwrap(star_expressions)
-            return star_expressions
-        self._reset(mark)
-        star_expressions = None
-        return None
-
-    def _tmp_16(self) -> Optional:
-        # _tmp_16: 'from' expression
+        # _tmp_14: 'from' expression
         mark = self._mark()
         if (self.expect_literal("from")) and (z := self.expression()):
             z = Codon.unwrap(z)
             return z
         self._reset(mark)
         z = None
+        return None
+
+    def _loop0_16(self) -> List:
+        # _loop0_16: ',' NAME
+        mark = self._mark()
+        children = []
+        while (self.expect_literal(",")) and (elem_ := self.name()):
+            elem = Codon.unwrap(elem_)
+            children.append(elem)
+            mark = self._mark()
+        self._reset(mark)
+        elem = None
+        return children
+
+    def _gather_15(self) -> Optional:
+        # _gather_15: NAME _loop0_16
+        mark = self._mark()
+        if (elem := self.name()) is not None and (seq := self._loop0_16()) is not None:
+            elem = Codon.unwrap(elem)
+            seq = Codon.unwrap(seq)
+            return [elem] + seq
+        self._reset(mark)
+        elem = None
+        seq = None
         return None
 
     def _loop0_18(self) -> List:
@@ -8744,56 +8773,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop0_20(self) -> List:
-        # _loop0_20: ',' NAME
-        mark = self._mark()
-        children = []
-        while (self.expect_literal(",")) and (elem_ := self.name()):
-            elem = Codon.unwrap(elem_)
-            children.append(elem)
-            mark = self._mark()
-        self._reset(mark)
-        elem = None
-        return children
-
-    def _gather_19(self) -> Optional:
-        # _gather_19: NAME _loop0_20
-        mark = self._mark()
-        if (elem := self.name()) is not None and (seq := self._loop0_20()) is not None:
-            elem = Codon.unwrap(elem)
-            seq = Codon.unwrap(seq)
-            return [elem] + seq
-        self._reset(mark)
-        elem = None
-        seq = None
-        return None
-
-    def _loop0_22(self) -> List:
-        # _loop0_22: ',' expression
-        mark = self._mark()
-        children = []
-        while (self.expect_literal(",")) and (elem_ := self.expression()):
-            elem = Codon.unwrap(elem_)
-            children.append(elem)
-            mark = self._mark()
-        self._reset(mark)
-        elem = None
-        return children
-
-    def _gather_21(self) -> Optional:
-        # _gather_21: expression _loop0_22
-        mark = self._mark()
-        if (elem := self.expression()) is not None and (seq := self._loop0_22()) is not None:
-            elem = Codon.unwrap(elem)
-            seq = Codon.unwrap(seq)
-            return [elem] + seq
-        self._reset(mark)
-        elem = None
-        seq = None
-        return None
-
-    def _tmp_23(self) -> Optional:
-        # _tmp_23: ';' | NEWLINE
+    def _tmp_19(self) -> Optional:
+        # _tmp_19: ';' | NEWLINE
         mark = self._mark()
         if literal := self.expect_literal(";"):
             literal = Codon.unwrap(literal)
@@ -8807,8 +8788,47 @@ class CodonParser(Parser):
         _newline = None
         return None
 
-    def _tmp_24(self) -> Optional:
-        # _tmp_24: ',' expression
+    def _loop0_21(self) -> List:
+        # _loop0_21: ',' expression
+        mark = self._mark()
+        children = []
+        while (self.expect_literal(",")) and (elem_ := self.expression()):
+            elem = Codon.unwrap(elem_)
+            children.append(elem)
+            mark = self._mark()
+        self._reset(mark)
+        elem = None
+        return children
+
+    def _gather_20(self) -> Optional:
+        # _gather_20: expression _loop0_21
+        mark = self._mark()
+        if (elem := self.expression()) is not None and (seq := self._loop0_21()) is not None:
+            elem = Codon.unwrap(elem)
+            seq = Codon.unwrap(seq)
+            return [elem] + seq
+        self._reset(mark)
+        elem = None
+        seq = None
+        return None
+
+    def _tmp_22(self) -> Optional:
+        # _tmp_22: ';' | NEWLINE
+        mark = self._mark()
+        if literal := self.expect_literal(";"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if _newline := self.expect_type(tokenize.Tokens.NEWLINE):
+            _newline = Codon.unwrap(_newline)
+            return _newline
+        self._reset(mark)
+        _newline = None
+        return None
+
+    def _tmp_23(self) -> Optional:
+        # _tmp_23: ',' expression
         mark = self._mark()
         if (self.expect_literal(",")) and (z := self.expression()):
             z = Codon.unwrap(z)
@@ -8817,32 +8837,32 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _loop0_25(self) -> List:
-        # _loop0_25: ('.' | '...')
+    def _loop0_24(self) -> List:
+        # _loop0_24: ('.' | '...')
         mark = self._mark()
         children = []
-        while _tmp_266_ := self._tmp_266():
-            _tmp_266 = Codon.unwrap(_tmp_266_)
-            children.append(_tmp_266)
+        while _tmp_264_ := self._tmp_264():
+            _tmp_264 = Codon.unwrap(_tmp_264_)
+            children.append(_tmp_264)
             mark = self._mark()
         self._reset(mark)
-        _tmp_266 = None
+        _tmp_264 = None
         return children
 
-    def _loop1_26(self) -> List:
-        # _loop1_26: ('.' | '...')
+    def _loop1_25(self) -> List:
+        # _loop1_25: ('.' | '...')
         mark = self._mark()
         children = []
-        while _tmp_267_ := self._tmp_267():
-            _tmp_267 = Codon.unwrap(_tmp_267_)
-            children.append(_tmp_267)
+        while _tmp_265_ := self._tmp_265():
+            _tmp_265 = Codon.unwrap(_tmp_265_)
+            children.append(_tmp_265)
             mark = self._mark()
         self._reset(mark)
-        _tmp_267 = None
+        _tmp_265 = None
         return children
 
-    def _loop0_28(self) -> List:
-        # _loop0_28: ',' import_from_as_name
+    def _loop0_27(self) -> List:
+        # _loop0_27: ',' import_from_as_name
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.import_from_as_name()):
@@ -8853,11 +8873,11 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_27(self) -> Optional:
-        # _gather_27: import_from_as_name _loop0_28
+    def _gather_26(self) -> Optional:
+        # _gather_26: import_from_as_name _loop0_27
         mark = self._mark()
         if (elem := self.import_from_as_name()) is not None and (
-            seq := self._loop0_28()
+            seq := self._loop0_27()
         ) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
@@ -8867,8 +8887,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop0_29(self) -> List:
-        # _loop0_29: import_params
+    def _loop0_28(self) -> List:
+        # _loop0_28: import_params
         mark = self._mark()
         children = []
         while import_params_ := self.import_params():
@@ -8879,8 +8899,8 @@ class CodonParser(Parser):
         import_params = None
         return children
 
-    def _tmp_30(self) -> Optional:
-        # _tmp_30: 'as' NAME
+    def _tmp_29(self) -> Optional:
+        # _tmp_29: 'as' NAME
         mark = self._mark()
         if (self.expect_literal("as")) and (z := self.name()):
             z = Codon.unwrap(z)
@@ -8889,8 +8909,8 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _loop0_31(self) -> List:
-        # _loop0_31: import_params
+    def _loop0_30(self) -> List:
+        # _loop0_30: import_params
         mark = self._mark()
         children = []
         while import_params_ := self.import_params():
@@ -8900,6 +8920,16 @@ class CodonParser(Parser):
         self._reset(mark)
         import_params = None
         return children
+
+    def _tmp_31(self) -> Optional:
+        # _tmp_31: 'as' NAME
+        mark = self._mark()
+        if (self.expect_literal("as")) and (z := self.name()):
+            z = Codon.unwrap(z)
+            return z.string
+        self._reset(mark)
+        z = None
+        return None
 
     def _tmp_32(self) -> Optional:
         # _tmp_32: 'as' NAME
@@ -8921,18 +8951,8 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _tmp_34(self) -> Optional:
-        # _tmp_34: 'as' NAME
-        mark = self._mark()
-        if (self.expect_literal("as")) and (z := self.name()):
-            z = Codon.unwrap(z)
-            return z.string
-        self._reset(mark)
-        z = None
-        return None
-
-    def _loop0_36(self) -> List:
-        # _loop0_36: ',' dotted_as_name
+    def _loop0_35(self) -> List:
+        # _loop0_35: ',' dotted_as_name
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.dotted_as_name()):
@@ -8943,10 +8963,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_35(self) -> Optional:
-        # _gather_35: dotted_as_name _loop0_36
+    def _gather_34(self) -> Optional:
+        # _gather_34: dotted_as_name _loop0_35
         mark = self._mark()
-        if (elem := self.dotted_as_name()) is not None and (seq := self._loop0_36()) is not None:
+        if (elem := self.dotted_as_name()) is not None and (seq := self._loop0_35()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -8955,8 +8975,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _tmp_37(self) -> Optional:
-        # _tmp_37: 'as' NAME
+    def _tmp_36(self) -> Optional:
+        # _tmp_36: 'as' NAME
         mark = self._mark()
         if (self.expect_literal("as")) and (z := self.name()):
             z = Codon.unwrap(z)
@@ -8965,8 +8985,8 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _loop1_38(self) -> List:
-        # _loop1_38: decorator
+    def _loop1_37(self) -> List:
+        # _loop1_37: decorator
         mark = self._mark()
         children = []
         while decorator_ := self.decorator():
@@ -8977,8 +8997,8 @@ class CodonParser(Parser):
         decorator = None
         return children
 
-    def _tmp_39(self) -> Optional:
-        # _tmp_39: '@' dec_maybe_call NEWLINE
+    def _tmp_38(self) -> Optional:
+        # _tmp_38: '@' dec_maybe_call NEWLINE
         mark = self._mark()
         if (
             (self.expect_literal("@"))
@@ -8991,8 +9011,8 @@ class CodonParser(Parser):
         f = None
         return None
 
-    def _tmp_40(self) -> Optional:
-        # _tmp_40: '@' named_expression NEWLINE
+    def _tmp_39(self) -> Optional:
+        # _tmp_39: '@' named_expression NEWLINE
         mark = self._mark()
         if (
             (self.expect_literal("@"))
@@ -9005,8 +9025,8 @@ class CodonParser(Parser):
         f = None
         return None
 
-    def _tmp_41(self) -> Optional:
-        # _tmp_41: '(' arguments? ')'
+    def _tmp_40(self) -> Optional:
+        # _tmp_40: '(' arguments? ')'
         mark = self._mark()
         if (self.expect_literal("(")) and (z := self.arguments(),) and (self.expect_literal(")")):
             return z
@@ -9014,17 +9034,32 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _loop0_42(self) -> List:
-        # _loop0_42: decorator_not_llvm
+    def _loop0_41(self) -> List:
+        # _loop0_41: decorator_not_extern
         mark = self._mark()
         children = []
-        while decorator_not_llvm_ := self.decorator_not_llvm():
-            decorator_not_llvm = Codon.unwrap(decorator_not_llvm_)
-            children.append(decorator_not_llvm)
+        while decorator_not_extern_ := self.decorator_not_extern():
+            decorator_not_extern = Codon.unwrap(decorator_not_extern_)
+            children.append(decorator_not_extern)
             mark = self._mark()
         self._reset(mark)
-        decorator_not_llvm = None
+        decorator_not_extern = None
         return children
+
+    def _tmp_42(self) -> Optional:
+        # _tmp_42: "llvm" | "python"
+        mark = self._mark()
+        if literal := self.expect_literal("llvm"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("python"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
 
     def _loop0_43(self) -> List:
         # _loop0_43: decorator
@@ -9059,15 +9094,15 @@ class CodonParser(Parser):
         return None
 
     def _tmp_46(self) -> Optional:
-        # _tmp_46: '@' "llvm"
+        # _tmp_46: '@' ("llvm" | "python")
         mark = self._mark()
-        if (literal := self.expect_literal("@")) and (literal_1 := self.expect_literal("llvm")):
+        if (literal := self.expect_literal("@")) and (_tmp_266 := self._tmp_266()):
             literal = Codon.unwrap(literal)
-            literal_1 = Codon.unwrap(literal_1)
-            return [literal, literal_1]
+            _tmp_266 = Codon.unwrap(_tmp_266)
+            return [literal, _tmp_266]
         self._reset(mark)
         literal = None
-        literal_1 = None
+        _tmp_266 = None
         return None
 
     def _tmp_47(self) -> Optional:
@@ -9368,12 +9403,12 @@ class CodonParser(Parser):
         # _loop0_71: ('not' 'break')
         mark = self._mark()
         children = []
-        while _tmp_268_ := self._tmp_268():
-            _tmp_268 = Codon.unwrap(_tmp_268_)
-            children.append(_tmp_268)
+        while _tmp_267_ := self._tmp_267():
+            _tmp_267 = Codon.unwrap(_tmp_267_)
+            children.append(_tmp_267)
             mark = self._mark()
         self._reset(mark)
-        _tmp_268 = None
+        _tmp_267 = None
         return children
 
     def _loop0_73(self) -> List:
@@ -9773,24 +9808,24 @@ class CodonParser(Parser):
         # _loop1_102: (',' expression)
         mark = self._mark()
         children = []
-        while _tmp_269_ := self._tmp_269():
-            _tmp_269 = Codon.unwrap(_tmp_269_)
-            children.append(_tmp_269)
+        while _tmp_268_ := self._tmp_268():
+            _tmp_268 = Codon.unwrap(_tmp_268_)
+            children.append(_tmp_268)
             mark = self._mark()
         self._reset(mark)
-        _tmp_269 = None
+        _tmp_268 = None
         return children
 
     def _loop1_103(self) -> List:
         # _loop1_103: (',' star_expression)
         mark = self._mark()
         children = []
-        while _tmp_270_ := self._tmp_270():
-            _tmp_270 = Codon.unwrap(_tmp_270_)
-            children.append(_tmp_270)
+        while _tmp_269_ := self._tmp_269():
+            _tmp_269 = Codon.unwrap(_tmp_269_)
+            children.append(_tmp_269)
             mark = self._mark()
         self._reset(mark)
-        _tmp_270 = None
+        _tmp_269 = None
         return children
 
     def _loop0_105(self) -> List:
@@ -9823,6 +9858,18 @@ class CodonParser(Parser):
         # _loop1_106: (pipe_operator disjunction)
         mark = self._mark()
         children = []
+        while _tmp_270_ := self._tmp_270():
+            _tmp_270 = Codon.unwrap(_tmp_270_)
+            children.append(_tmp_270)
+            mark = self._mark()
+        self._reset(mark)
+        _tmp_270 = None
+        return children
+
+    def _loop1_107(self) -> List:
+        # _loop1_107: ('or' conjunction)
+        mark = self._mark()
+        children = []
         while _tmp_271_ := self._tmp_271():
             _tmp_271 = Codon.unwrap(_tmp_271_)
             children.append(_tmp_271)
@@ -9831,8 +9878,8 @@ class CodonParser(Parser):
         _tmp_271 = None
         return children
 
-    def _loop1_107(self) -> List:
-        # _loop1_107: ('or' conjunction)
+    def _loop1_108(self) -> List:
+        # _loop1_108: ('and' inversion)
         mark = self._mark()
         children = []
         while _tmp_272_ := self._tmp_272():
@@ -9841,18 +9888,6 @@ class CodonParser(Parser):
             mark = self._mark()
         self._reset(mark)
         _tmp_272 = None
-        return children
-
-    def _loop1_108(self) -> List:
-        # _loop1_108: ('and' inversion)
-        mark = self._mark()
-        children = []
-        while _tmp_273_ := self._tmp_273():
-            _tmp_273 = Codon.unwrap(_tmp_273_)
-            children.append(_tmp_273)
-            mark = self._mark()
-        self._reset(mark)
-        _tmp_273 = None
         return children
 
     def _loop1_109(self) -> List:
@@ -9871,7 +9906,7 @@ class CodonParser(Parser):
         # _loop0_111: ',' (slice | starred_expression)
         mark = self._mark()
         children = []
-        while (self.expect_literal(",")) and (elem_ := self._tmp_274()):
+        while (self.expect_literal(",")) and (elem_ := self._tmp_273()):
             elem = Codon.unwrap(elem_)
             children.append(elem)
             mark = self._mark()
@@ -9882,7 +9917,7 @@ class CodonParser(Parser):
     def _gather_110(self) -> Optional:
         # _gather_110: (slice | starred_expression) _loop0_111
         mark = self._mark()
-        if (elem := self._tmp_274()) is not None and (seq := self._loop0_111()) is not None:
+        if (elem := self._tmp_273()) is not None and (seq := self._loop0_111()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -9980,23 +10015,8 @@ class CodonParser(Parser):
         setcomp = None
         return None
 
-    def _tmp_117(self) -> Optional:
-        # _tmp_117: yield_expr | named_expression
-        mark = self._mark()
-        if yield_expr := self.yield_expr():
-            yield_expr = Codon.unwrap(yield_expr)
-            return yield_expr
-        self._reset(mark)
-        yield_expr = None
-        if named_expression := self.named_expression():
-            named_expression = Codon.unwrap(named_expression)
-            return named_expression
-        self._reset(mark)
-        named_expression = None
-        return None
-
-    def _loop0_118(self) -> List:
-        # _loop0_118: lambda_param_no_default
+    def _loop0_117(self) -> List:
+        # _loop0_117: lambda_param_no_default
         mark = self._mark()
         children = []
         while lambda_param_no_default_ := self.lambda_param_no_default():
@@ -10005,6 +10025,18 @@ class CodonParser(Parser):
             mark = self._mark()
         self._reset(mark)
         lambda_param_no_default = None
+        return children
+
+    def _loop0_118(self) -> List:
+        # _loop0_118: lambda_param_with_default
+        mark = self._mark()
+        children = []
+        while lambda_param_with_default_ := self.lambda_param_with_default():
+            lambda_param_with_default = Codon.unwrap(lambda_param_with_default_)
+            children.append(lambda_param_with_default)
+            mark = self._mark()
+        self._reset(mark)
+        lambda_param_with_default = None
         return children
 
     def _loop0_119(self) -> List:
@@ -10019,20 +10051,8 @@ class CodonParser(Parser):
         lambda_param_with_default = None
         return children
 
-    def _loop0_120(self) -> List:
-        # _loop0_120: lambda_param_with_default
-        mark = self._mark()
-        children = []
-        while lambda_param_with_default_ := self.lambda_param_with_default():
-            lambda_param_with_default = Codon.unwrap(lambda_param_with_default_)
-            children.append(lambda_param_with_default)
-            mark = self._mark()
-        self._reset(mark)
-        lambda_param_with_default = None
-        return children
-
-    def _loop1_121(self) -> List:
-        # _loop1_121: lambda_param_no_default
+    def _loop1_120(self) -> List:
+        # _loop1_120: lambda_param_no_default
         mark = self._mark()
         children = []
         while lambda_param_no_default_ := self.lambda_param_no_default():
@@ -10043,8 +10063,20 @@ class CodonParser(Parser):
         lambda_param_no_default = None
         return children
 
-    def _loop0_122(self) -> List:
-        # _loop0_122: lambda_param_with_default
+    def _loop0_121(self) -> List:
+        # _loop0_121: lambda_param_with_default
+        mark = self._mark()
+        children = []
+        while lambda_param_with_default_ := self.lambda_param_with_default():
+            lambda_param_with_default = Codon.unwrap(lambda_param_with_default_)
+            children.append(lambda_param_with_default)
+            mark = self._mark()
+        self._reset(mark)
+        lambda_param_with_default = None
+        return children
+
+    def _loop1_122(self) -> List:
+        # _loop1_122: lambda_param_with_default
         mark = self._mark()
         children = []
         while lambda_param_with_default_ := self.lambda_param_with_default():
@@ -10056,15 +10088,15 @@ class CodonParser(Parser):
         return children
 
     def _loop1_123(self) -> List:
-        # _loop1_123: lambda_param_with_default
+        # _loop1_123: lambda_param_no_default
         mark = self._mark()
         children = []
-        while lambda_param_with_default_ := self.lambda_param_with_default():
-            lambda_param_with_default = Codon.unwrap(lambda_param_with_default_)
-            children.append(lambda_param_with_default)
+        while lambda_param_no_default_ := self.lambda_param_no_default():
+            lambda_param_no_default = Codon.unwrap(lambda_param_no_default_)
+            children.append(lambda_param_no_default)
             mark = self._mark()
         self._reset(mark)
-        lambda_param_with_default = None
+        lambda_param_no_default = None
         return children
 
     def _loop1_124(self) -> List:
@@ -10079,8 +10111,8 @@ class CodonParser(Parser):
         lambda_param_no_default = None
         return children
 
-    def _loop1_125(self) -> List:
-        # _loop1_125: lambda_param_no_default
+    def _loop0_125(self) -> List:
+        # _loop0_125: lambda_param_no_default
         mark = self._mark()
         children = []
         while lambda_param_no_default_ := self.lambda_param_no_default():
@@ -10091,20 +10123,8 @@ class CodonParser(Parser):
         lambda_param_no_default = None
         return children
 
-    def _loop0_126(self) -> List:
-        # _loop0_126: lambda_param_no_default
-        mark = self._mark()
-        children = []
-        while lambda_param_no_default_ := self.lambda_param_no_default():
-            lambda_param_no_default = Codon.unwrap(lambda_param_no_default_)
-            children.append(lambda_param_no_default)
-            mark = self._mark()
-        self._reset(mark)
-        lambda_param_no_default = None
-        return children
-
-    def _loop1_127(self) -> List:
-        # _loop1_127: lambda_param_with_default
+    def _loop1_126(self) -> List:
+        # _loop1_126: lambda_param_with_default
         mark = self._mark()
         children = []
         while lambda_param_with_default_ := self.lambda_param_with_default():
@@ -10115,8 +10135,8 @@ class CodonParser(Parser):
         lambda_param_with_default = None
         return children
 
-    def _loop0_128(self) -> List:
-        # _loop0_128: lambda_param_no_default
+    def _loop0_127(self) -> List:
+        # _loop0_127: lambda_param_no_default
         mark = self._mark()
         children = []
         while lambda_param_no_default_ := self.lambda_param_no_default():
@@ -10127,8 +10147,8 @@ class CodonParser(Parser):
         lambda_param_no_default = None
         return children
 
-    def _loop1_129(self) -> List:
-        # _loop1_129: lambda_param_with_default
+    def _loop1_128(self) -> List:
+        # _loop1_128: lambda_param_with_default
         mark = self._mark()
         children = []
         while lambda_param_with_default_ := self.lambda_param_with_default():
@@ -10139,8 +10159,8 @@ class CodonParser(Parser):
         lambda_param_with_default = None
         return children
 
-    def _loop0_130(self) -> List:
-        # _loop0_130: lambda_param_maybe_default
+    def _loop0_129(self) -> List:
+        # _loop0_129: lambda_param_maybe_default
         mark = self._mark()
         children = []
         while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
@@ -10151,8 +10171,8 @@ class CodonParser(Parser):
         lambda_param_maybe_default = None
         return children
 
-    def _loop1_131(self) -> List:
-        # _loop1_131: lambda_param_maybe_default
+    def _loop1_130(self) -> List:
+        # _loop1_130: lambda_param_maybe_default
         mark = self._mark()
         children = []
         while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
@@ -10163,8 +10183,8 @@ class CodonParser(Parser):
         lambda_param_maybe_default = None
         return children
 
-    def _tmp_132(self) -> Optional:
-        # _tmp_132: yield_expr | star_expressions
+    def _tmp_131(self) -> Optional:
+        # _tmp_131: yield_expr | star_expressions
         mark = self._mark()
         if yield_expr := self.yield_expr():
             yield_expr = Codon.unwrap(yield_expr)
@@ -10178,20 +10198,20 @@ class CodonParser(Parser):
         star_expressions = None
         return None
 
-    def _loop0_133(self) -> List:
-        # _loop0_133: fstring_format_spec
+    def _loop0_132(self) -> List:
+        # _loop0_132: fstring_format_char
         mark = self._mark()
         children = []
-        while fstring_format_spec_ := self.fstring_format_spec():
-            fstring_format_spec = Codon.unwrap(fstring_format_spec_)
-            children.append(fstring_format_spec)
+        while fstring_format_char_ := self.fstring_format_char():
+            fstring_format_char = Codon.unwrap(fstring_format_char_)
+            children.append(fstring_format_char)
             mark = self._mark()
         self._reset(mark)
-        fstring_format_spec = None
+        fstring_format_char = None
         return children
 
-    def _tmp_134(self) -> Optional:
-        # _tmp_134: '+' | '-'
+    def _tmp_133(self) -> Optional:
+        # _tmp_133: '+' | '-'
         mark = self._mark()
         if literal := self.expect_literal("+"):
             literal = Codon.unwrap(literal)
@@ -10205,8 +10225,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_135(self) -> Optional:
-        # _tmp_135: '<' | '>' | '=' | '^'
+    def _tmp_134(self) -> Optional:
+        # _tmp_134: '<' | '>' | '=' | '^'
         mark = self._mark()
         if literal := self.expect_literal("<"):
             literal = Codon.unwrap(literal)
@@ -10230,8 +10250,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_136(self) -> Optional:
-        # _tmp_136: NUMBER? fstring_grouping?
+    def _tmp_135(self) -> Optional:
+        # _tmp_135: NUMBER? fstring_grouping?
         mark = self._mark()
         if (n := self.number(),) and (g := self.fstring_grouping(),):
             return (n.string if n else "") + (g or "")
@@ -10240,8 +10260,8 @@ class CodonParser(Parser):
         g = None
         return None
 
-    def _loop1_137(self) -> List:
-        # _loop1_137: (any_string)
+    def _loop1_136(self) -> List:
+        # _loop1_136: (any_string)
         mark = self._mark()
         children = []
         while any_string_ := self.any_string():
@@ -10252,8 +10272,8 @@ class CodonParser(Parser):
         any_string = None
         return children
 
-    def _tmp_138(self) -> Optional:
-        # _tmp_138: star_named_expression ',' star_named_expressions?
+    def _tmp_137(self) -> Optional:
+        # _tmp_137: star_named_expression ',' star_named_expressions?
         mark = self._mark()
         if (
             (y := self.star_named_expression())
@@ -10267,8 +10287,8 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _loop0_140(self) -> List:
-        # _loop0_140: ',' double_starred_kvpair
+    def _loop0_139(self) -> List:
+        # _loop0_139: ',' double_starred_kvpair
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.double_starred_kvpair()):
@@ -10279,11 +10299,11 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_139(self) -> Optional:
-        # _gather_139: double_starred_kvpair _loop0_140
+    def _gather_138(self) -> Optional:
+        # _gather_138: double_starred_kvpair _loop0_139
         mark = self._mark()
         if (elem := self.double_starred_kvpair()) is not None and (
-            seq := self._loop0_140()
+            seq := self._loop0_139()
         ) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
@@ -10293,8 +10313,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop1_141(self) -> List:
-        # _loop1_141: for_if_clause
+    def _loop1_140(self) -> List:
+        # _loop1_140: for_if_clause
         mark = self._mark()
         children = []
         while for_if_clause_ := self.for_if_clause():
@@ -10303,6 +10323,18 @@ class CodonParser(Parser):
             mark = self._mark()
         self._reset(mark)
         for_if_clause = None
+        return children
+
+    def _loop0_141(self) -> List:
+        # _loop0_141: ('if' disjunction)
+        mark = self._mark()
+        children = []
+        while _tmp_274_ := self._tmp_274():
+            _tmp_274 = Codon.unwrap(_tmp_274_)
+            children.append(_tmp_274)
+            mark = self._mark()
+        self._reset(mark)
+        _tmp_274 = None
         return children
 
     def _loop0_142(self) -> List:
@@ -10317,20 +10349,8 @@ class CodonParser(Parser):
         _tmp_275 = None
         return children
 
-    def _loop0_143(self) -> List:
-        # _loop0_143: ('if' disjunction)
-        mark = self._mark()
-        children = []
-        while _tmp_276_ := self._tmp_276():
-            _tmp_276 = Codon.unwrap(_tmp_276_)
-            children.append(_tmp_276)
-            mark = self._mark()
-        self._reset(mark)
-        _tmp_276 = None
-        return children
-
-    def _tmp_144(self) -> Optional:
-        # _tmp_144: assignment_expression | expression !':='
+    def _tmp_143(self) -> Optional:
+        # _tmp_143: assignment_expression | expression !':='
         mark = self._mark()
         if assignment_expression := self.assignment_expression():
             assignment_expression = Codon.unwrap(assignment_expression)
@@ -10346,11 +10366,11 @@ class CodonParser(Parser):
         expression = None
         return None
 
-    def _loop0_146(self) -> List:
-        # _loop0_146: ',' (starred_expression | (assignment_expression | expression !':=') !'=')
+    def _loop0_145(self) -> List:
+        # _loop0_145: ',' call_argument
         mark = self._mark()
         children = []
-        while (self.expect_literal(",")) and (elem_ := self._tmp_277()):
+        while (self.expect_literal(",")) and (elem_ := self.call_argument()):
             elem = Codon.unwrap(elem_)
             children.append(elem)
             mark = self._mark()
@@ -10358,10 +10378,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_145(self) -> Optional:
-        # _gather_145: (starred_expression | (assignment_expression | expression !':=') !'=') _loop0_146
+    def _gather_144(self) -> Optional:
+        # _gather_144: call_argument _loop0_145
         mark = self._mark()
-        if (elem := self._tmp_277()) is not None and (seq := self._loop0_146()) is not None:
+        if (elem := self.call_argument()) is not None and (seq := self._loop0_145()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -10370,18 +10390,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _tmp_147(self) -> Optional:
-        # _tmp_147: ',' kwargs
-        mark = self._mark()
-        if (self.expect_literal(",")) and (k := self.kwargs()):
-            k = Codon.unwrap(k)
-            return k
-        self._reset(mark)
-        k = None
-        return None
-
-    def _loop0_149(self) -> List:
-        # _loop0_149: ',' kwarg_or_starred
+    def _loop0_147(self) -> List:
+        # _loop0_147: ',' kwarg_or_starred
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.kwarg_or_starred()):
@@ -10392,10 +10402,36 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_148(self) -> Optional:
-        # _gather_148: kwarg_or_starred _loop0_149
+    def _gather_146(self) -> Optional:
+        # _gather_146: kwarg_or_starred _loop0_147
         mark = self._mark()
         if (elem := self.kwarg_or_starred()) is not None and (
+            seq := self._loop0_147()
+        ) is not None:
+            elem = Codon.unwrap(elem)
+            seq = Codon.unwrap(seq)
+            return [elem] + seq
+        self._reset(mark)
+        elem = None
+        seq = None
+        return None
+
+    def _loop0_149(self) -> List:
+        # _loop0_149: ',' kwarg_or_double_starred
+        mark = self._mark()
+        children = []
+        while (self.expect_literal(",")) and (elem_ := self.kwarg_or_double_starred()):
+            elem = Codon.unwrap(elem_)
+            children.append(elem)
+            mark = self._mark()
+        self._reset(mark)
+        elem = None
+        return children
+
+    def _gather_148(self) -> Optional:
+        # _gather_148: kwarg_or_double_starred _loop0_149
+        mark = self._mark()
+        if (elem := self.kwarg_or_double_starred()) is not None and (
             seq := self._loop0_149()
         ) is not None:
             elem = Codon.unwrap(elem)
@@ -10407,10 +10443,10 @@ class CodonParser(Parser):
         return None
 
     def _loop0_151(self) -> List:
-        # _loop0_151: ',' kwarg_or_double_starred
+        # _loop0_151: ',' kwarg_or_starred
         mark = self._mark()
         children = []
-        while (self.expect_literal(",")) and (elem_ := self.kwarg_or_double_starred()):
+        while (self.expect_literal(",")) and (elem_ := self.kwarg_or_starred()):
             elem = Codon.unwrap(elem_)
             children.append(elem)
             mark = self._mark()
@@ -10419,9 +10455,9 @@ class CodonParser(Parser):
         return children
 
     def _gather_150(self) -> Optional:
-        # _gather_150: kwarg_or_double_starred _loop0_151
+        # _gather_150: kwarg_or_starred _loop0_151
         mark = self._mark()
-        if (elem := self.kwarg_or_double_starred()) is not None and (
+        if (elem := self.kwarg_or_starred()) is not None and (
             seq := self._loop0_151()
         ) is not None:
             elem = Codon.unwrap(elem)
@@ -10433,33 +10469,7 @@ class CodonParser(Parser):
         return None
 
     def _loop0_153(self) -> List:
-        # _loop0_153: ',' kwarg_or_starred
-        mark = self._mark()
-        children = []
-        while (self.expect_literal(",")) and (elem_ := self.kwarg_or_starred()):
-            elem = Codon.unwrap(elem_)
-            children.append(elem)
-            mark = self._mark()
-        self._reset(mark)
-        elem = None
-        return children
-
-    def _gather_152(self) -> Optional:
-        # _gather_152: kwarg_or_starred _loop0_153
-        mark = self._mark()
-        if (elem := self.kwarg_or_starred()) is not None and (
-            seq := self._loop0_153()
-        ) is not None:
-            elem = Codon.unwrap(elem)
-            seq = Codon.unwrap(seq)
-            return [elem] + seq
-        self._reset(mark)
-        elem = None
-        seq = None
-        return None
-
-    def _loop0_155(self) -> List:
-        # _loop0_155: ',' kwarg_or_double_starred
+        # _loop0_153: ',' kwarg_or_double_starred
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.kwarg_or_double_starred()):
@@ -10470,11 +10480,11 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_154(self) -> Optional:
-        # _gather_154: kwarg_or_double_starred _loop0_155
+    def _gather_152(self) -> Optional:
+        # _gather_152: kwarg_or_double_starred _loop0_153
         mark = self._mark()
         if (elem := self.kwarg_or_double_starred()) is not None and (
-            seq := self._loop0_155()
+            seq := self._loop0_153()
         ) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
@@ -10484,20 +10494,20 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop0_156(self) -> List:
-        # _loop0_156: (',' star_target)
+    def _loop0_154(self) -> List:
+        # _loop0_154: (',' star_target)
         mark = self._mark()
         children = []
-        while _tmp_278_ := self._tmp_278():
-            _tmp_278 = Codon.unwrap(_tmp_278_)
-            children.append(_tmp_278)
+        while _tmp_276_ := self._tmp_276():
+            _tmp_276 = Codon.unwrap(_tmp_276_)
+            children.append(_tmp_276)
             mark = self._mark()
         self._reset(mark)
-        _tmp_278 = None
+        _tmp_276 = None
         return children
 
-    def _loop0_158(self) -> List:
-        # _loop0_158: ',' star_target
+    def _loop0_156(self) -> List:
+        # _loop0_156: ',' star_target
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.star_target()):
@@ -10508,10 +10518,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_157(self) -> Optional:
-        # _gather_157: star_target _loop0_158
+    def _gather_155(self) -> Optional:
+        # _gather_155: star_target _loop0_156
         mark = self._mark()
-        if (elem := self.star_target()) is not None and (seq := self._loop0_158()) is not None:
+        if (elem := self.star_target()) is not None and (seq := self._loop0_156()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -10520,20 +10530,20 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop1_159(self) -> List:
-        # _loop1_159: (',' star_target)
+    def _loop1_157(self) -> List:
+        # _loop1_157: (',' star_target)
         mark = self._mark()
         children = []
-        while _tmp_279_ := self._tmp_279():
-            _tmp_279 = Codon.unwrap(_tmp_279_)
-            children.append(_tmp_279)
+        while _tmp_277_ := self._tmp_277():
+            _tmp_277 = Codon.unwrap(_tmp_277_)
+            children.append(_tmp_277)
             mark = self._mark()
         self._reset(mark)
-        _tmp_279 = None
+        _tmp_277 = None
         return children
 
-    def _tmp_160(self) -> Optional:
-        # _tmp_160: !'*' star_target
+    def _tmp_158(self) -> Optional:
+        # _tmp_158: !'*' star_target
         mark = self._mark()
         if (self.negative_lookahead(self.expect_literal, "*")) and (
             star_target := self.star_target()
@@ -10544,8 +10554,8 @@ class CodonParser(Parser):
         star_target = None
         return None
 
-    def _loop0_162(self) -> List:
-        # _loop0_162: ',' del_target
+    def _loop0_160(self) -> List:
+        # _loop0_160: ',' del_target
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.del_target()):
@@ -10556,10 +10566,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_161(self) -> Optional:
-        # _gather_161: del_target _loop0_162
+    def _gather_159(self) -> Optional:
+        # _gather_159: del_target _loop0_160
         mark = self._mark()
-        if (elem := self.del_target()) is not None and (seq := self._loop0_162()) is not None:
+        if (elem := self.del_target()) is not None and (seq := self._loop0_160()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -10568,14 +10578,14 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _tmp_163(self) -> Optional:
-        # _tmp_163: (','.(starred_expression | (assignment_expression | expression !':=') !'=')+ ',' kwargs) | kwargs
+    def _tmp_161(self) -> Optional:
+        # _tmp_161: (','.(starred_expression | (assignment_expression | expression !':=') !'=')+ ',' kwargs) | kwargs
         mark = self._mark()
-        if _tmp_280 := self._tmp_280():
-            _tmp_280 = Codon.unwrap(_tmp_280)
-            return _tmp_280
+        if _tmp_278 := self._tmp_278():
+            _tmp_278 = Codon.unwrap(_tmp_278)
+            return _tmp_278
         self._reset(mark)
-        _tmp_280 = None
+        _tmp_278 = None
         if kwargs := self.kwargs():
             kwargs = Codon.unwrap(kwargs)
             return kwargs
@@ -10583,11 +10593,11 @@ class CodonParser(Parser):
         kwargs = None
         return None
 
-    def _loop0_165(self) -> List:
-        # _loop0_165: ',' (starred_expression !'=')
+    def _loop0_163(self) -> List:
+        # _loop0_163: ',' (starred_expression !'=')
         mark = self._mark()
         children = []
-        while (self.expect_literal(",")) and (elem_ := self._tmp_281()):
+        while (self.expect_literal(",")) and (elem_ := self._tmp_279()):
             elem = Codon.unwrap(elem_)
             children.append(elem)
             mark = self._mark()
@@ -10595,10 +10605,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_164(self) -> Optional:
-        # _gather_164: (starred_expression !'=') _loop0_165
+    def _gather_162(self) -> Optional:
+        # _gather_162: (starred_expression !'=') _loop0_163
         mark = self._mark()
-        if (elem := self._tmp_281()) is not None and (seq := self._loop0_165()) is not None:
+        if (elem := self._tmp_279()) is not None and (seq := self._loop0_163()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -10607,8 +10617,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _tmp_166(self) -> Optional:
-        # _tmp_166: args | expression for_if_clauses
+    def _tmp_164(self) -> Optional:
+        # _tmp_164: args | expression for_if_clauses
         mark = self._mark()
         if self.args():
             return True
@@ -10618,8 +10628,8 @@ class CodonParser(Parser):
         self._reset(mark)
         return None
 
-    def _tmp_167(self) -> Optional:
-        # _tmp_167: args ','
+    def _tmp_165(self) -> Optional:
+        # _tmp_165: args ','
         mark = self._mark()
         if (ar := self.args()) and (self.expect_literal(",")):
             ar = Codon.unwrap(ar)
@@ -10628,8 +10638,8 @@ class CodonParser(Parser):
         ar = None
         return None
 
-    def _tmp_168(self) -> Optional:
-        # _tmp_168: ',' | ')'
+    def _tmp_166(self) -> Optional:
+        # _tmp_166: ',' | ')'
         mark = self._mark()
         if literal := self.expect_literal(","):
             literal = Codon.unwrap(literal)
@@ -10643,8 +10653,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_169(self) -> Optional:
-        # _tmp_169: 'True' | 'False' | 'None'
+    def _tmp_167(self) -> Optional:
+        # _tmp_167: 'True' | 'False' | 'None'
         mark = self._mark()
         if literal := self.expect_literal("True"):
             literal = Codon.unwrap(literal)
@@ -10663,8 +10673,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_170(self) -> Optional:
-        # _tmp_170: NAME '='
+    def _tmp_168(self) -> Optional:
+        # _tmp_168: NAME '='
         mark = self._mark()
         if (name := self.name()) and (literal := self.expect_literal("=")):
             name = Codon.unwrap(name)
@@ -10675,8 +10685,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_171(self) -> Optional:
-        # _tmp_171: NAME STRING | SOFT_KEYWORD
+    def _tmp_169(self) -> Optional:
+        # _tmp_169: NAME STRING | SOFT_KEYWORD
         mark = self._mark()
         if (n := self.name()) and (self.string()):
             n = Codon.unwrap(n)
@@ -10690,8 +10700,8 @@ class CodonParser(Parser):
         soft_keyword = None
         return None
 
-    def _tmp_172(self) -> Optional:
-        # _tmp_172: 'else' | ':'
+    def _tmp_170(self) -> Optional:
+        # _tmp_170: 'else' | ':'
         mark = self._mark()
         if literal := self.expect_literal("else"):
             literal = Codon.unwrap(literal)
@@ -10705,13 +10715,39 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_173(self) -> Optional:
-        # _tmp_173: FSTRING_MIDDLE | fstring_replacement_field
+    def _tmp_171(self) -> Optional:
+        # _tmp_171: FSTRING_MIDDLE | fstring_replacement_field
         mark = self._mark()
         if self.fstring_middle():
             return True
         self._reset(mark)
         if self.fstring_replacement_field():
+            return True
+        self._reset(mark)
+        return None
+
+    def _tmp_172(self) -> Optional:
+        # _tmp_172: '=' | ':='
+        mark = self._mark()
+        if literal := self.expect_literal("="):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal(":="):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
+    def _tmp_173(self) -> Optional:
+        # _tmp_173: (list | tuple | genexp) | ('True' | 'None' | 'False')
+        mark = self._mark()
+        if self._tmp_280():
+            return True
+        self._reset(mark)
+        if self._tmp_281():
             return True
         self._reset(mark)
         return None
@@ -10731,34 +10767,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_175(self) -> Optional:
-        # _tmp_175: (list | tuple | genexp) | ('True' | 'None' | 'False')
-        mark = self._mark()
-        if self._tmp_282():
-            return True
-        self._reset(mark)
-        if self._tmp_283():
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_176(self) -> Optional:
-        # _tmp_176: '=' | ':='
-        mark = self._mark()
-        if literal := self.expect_literal("="):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal(":="):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _loop0_177(self) -> List:
-        # _loop0_177: star_named_expressions
+    def _loop0_175(self) -> List:
+        # _loop0_175: star_named_expressions
         mark = self._mark()
         children = []
         while star_named_expressions_ := self.star_named_expressions():
@@ -10769,32 +10779,32 @@ class CodonParser(Parser):
         star_named_expressions = None
         return children
 
-    def _loop0_178(self) -> List:
-        # _loop0_178: (star_targets '=')
+    def _loop0_176(self) -> List:
+        # _loop0_176: (star_targets '=')
         mark = self._mark()
         children = []
-        while _tmp_284_ := self._tmp_284():
-            _tmp_284 = Codon.unwrap(_tmp_284_)
-            children.append(_tmp_284)
+        while _tmp_282_ := self._tmp_282():
+            _tmp_282 = Codon.unwrap(_tmp_282_)
+            children.append(_tmp_282)
             mark = self._mark()
         self._reset(mark)
-        _tmp_284 = None
+        _tmp_282 = None
         return children
 
-    def _loop0_179(self) -> List:
-        # _loop0_179: (star_targets '=')
+    def _loop0_177(self) -> List:
+        # _loop0_177: (star_targets '=')
         mark = self._mark()
         children = []
-        while _tmp_285_ := self._tmp_285():
-            _tmp_285 = Codon.unwrap(_tmp_285_)
-            children.append(_tmp_285)
+        while _tmp_283_ := self._tmp_283():
+            _tmp_283 = Codon.unwrap(_tmp_283_)
+            children.append(_tmp_283)
             mark = self._mark()
         self._reset(mark)
-        _tmp_285 = None
+        _tmp_283 = None
         return children
 
-    def _tmp_180(self) -> Optional:
-        # _tmp_180: yield_expr | star_expressions
+    def _tmp_178(self) -> Optional:
+        # _tmp_178: yield_expr | star_expressions
         mark = self._mark()
         if yield_expr := self.yield_expr():
             yield_expr = Codon.unwrap(yield_expr)
@@ -10808,8 +10818,8 @@ class CodonParser(Parser):
         star_expressions = None
         return None
 
-    def _tmp_181(self) -> Optional:
-        # _tmp_181: '[' | '(' | '{'
+    def _tmp_179(self) -> Optional:
+        # _tmp_179: '[' | '(' | '{'
         mark = self._mark()
         if literal := self.expect_literal("["):
             literal = Codon.unwrap(literal)
@@ -10828,38 +10838,38 @@ class CodonParser(Parser):
         literal = None
         return None
 
+    def _tmp_180(self) -> Optional:
+        # _tmp_180: '[' | '{'
+        mark = self._mark()
+        if literal := self.expect_literal("["):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("{"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
+    def _tmp_181(self) -> Optional:
+        # _tmp_181: '[' | '{'
+        mark = self._mark()
+        if literal := self.expect_literal("["):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("{"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
     def _tmp_182(self) -> Optional:
-        # _tmp_182: '[' | '{'
-        mark = self._mark()
-        if literal := self.expect_literal("["):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("{"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_183(self) -> Optional:
-        # _tmp_183: '[' | '{'
-        mark = self._mark()
-        if literal := self.expect_literal("["):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("{"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_184(self) -> Optional:
-        # _tmp_184: slash_no_default | slash_with_default
+        # _tmp_182: slash_no_default | slash_with_default
         mark = self._mark()
         if slash_no_default := self.slash_no_default():
             slash_no_default = Codon.unwrap(slash_no_default)
@@ -10873,8 +10883,8 @@ class CodonParser(Parser):
         slash_with_default = None
         return None
 
-    def _loop0_185(self) -> List:
-        # _loop0_185: param_maybe_default
+    def _loop0_183(self) -> List:
+        # _loop0_183: param_maybe_default
         mark = self._mark()
         children = []
         while param_maybe_default_ := self.param_maybe_default():
@@ -10885,8 +10895,8 @@ class CodonParser(Parser):
         param_maybe_default = None
         return children
 
-    def _loop0_186(self) -> List:
-        # _loop0_186: param_no_default
+    def _loop0_184(self) -> List:
+        # _loop0_184: param_no_default
         mark = self._mark()
         children = []
         while param_no_default_ := self.param_no_default():
@@ -10897,8 +10907,8 @@ class CodonParser(Parser):
         param_no_default = None
         return children
 
-    def _loop0_187(self) -> List:
-        # _loop0_187: param_no_default
+    def _loop0_185(self) -> List:
+        # _loop0_185: param_no_default
         mark = self._mark()
         children = []
         while param_no_default_ := self.param_no_default():
@@ -10909,8 +10919,8 @@ class CodonParser(Parser):
         param_no_default = None
         return children
 
-    def _loop1_188(self) -> List:
-        # _loop1_188: param_no_default
+    def _loop1_186(self) -> List:
+        # _loop1_186: param_no_default
         mark = self._mark()
         children = []
         while param_no_default_ := self.param_no_default():
@@ -10921,8 +10931,8 @@ class CodonParser(Parser):
         param_no_default = None
         return children
 
-    def _tmp_189(self) -> Optional:
-        # _tmp_189: slash_no_default | slash_with_default
+    def _tmp_187(self) -> Optional:
+        # _tmp_187: slash_no_default | slash_with_default
         mark = self._mark()
         if slash_no_default := self.slash_no_default():
             slash_no_default = Codon.unwrap(slash_no_default)
@@ -10934,6 +10944,29 @@ class CodonParser(Parser):
             return slash_with_default
         self._reset(mark)
         slash_with_default = None
+        return None
+
+    def _loop0_188(self) -> List:
+        # _loop0_188: param_maybe_default
+        mark = self._mark()
+        children = []
+        while param_maybe_default_ := self.param_maybe_default():
+            param_maybe_default = Codon.unwrap(param_maybe_default_)
+            children.append(param_maybe_default)
+            mark = self._mark()
+        self._reset(mark)
+        param_maybe_default = None
+        return children
+
+    def _tmp_189(self) -> Optional:
+        # _tmp_189: ',' | param_no_default
+        mark = self._mark()
+        if self.expect_literal(","):
+            return True
+        self._reset(mark)
+        if self.param_no_default():
+            return True
+        self._reset(mark)
         return None
 
     def _loop0_190(self) -> List:
@@ -10948,19 +10981,8 @@ class CodonParser(Parser):
         param_maybe_default = None
         return children
 
-    def _tmp_191(self) -> Optional:
-        # _tmp_191: ',' | param_no_default
-        mark = self._mark()
-        if self.expect_literal(","):
-            return True
-        self._reset(mark)
-        if self.param_no_default():
-            return True
-        self._reset(mark)
-        return None
-
-    def _loop0_192(self) -> List:
-        # _loop0_192: param_maybe_default
+    def _loop1_191(self) -> List:
+        # _loop1_191: param_maybe_default
         mark = self._mark()
         children = []
         while param_maybe_default_ := self.param_maybe_default():
@@ -10971,20 +10993,8 @@ class CodonParser(Parser):
         param_maybe_default = None
         return children
 
-    def _loop1_193(self) -> List:
-        # _loop1_193: param_maybe_default
-        mark = self._mark()
-        children = []
-        while param_maybe_default_ := self.param_maybe_default():
-            param_maybe_default = Codon.unwrap(param_maybe_default_)
-            children.append(param_maybe_default)
-            mark = self._mark()
-        self._reset(mark)
-        param_maybe_default = None
-        return children
-
-    def _tmp_194(self) -> Optional:
-        # _tmp_194: ')' | ','
+    def _tmp_192(self) -> Optional:
+        # _tmp_192: ')' | ','
         mark = self._mark()
         if literal := self.expect_literal(")"):
             literal = Codon.unwrap(literal)
@@ -10998,20 +11008,43 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_195(self) -> Optional:
-        # _tmp_195: ')' | (',' (')' | '**'))
+    def _tmp_193(self) -> Optional:
+        # _tmp_193: ')' | (',' (')' | '**'))
         mark = self._mark()
         if literal := self.expect_literal(")"):
             literal = Codon.unwrap(literal)
             return literal
         self._reset(mark)
         literal = None
-        if _tmp_286 := self._tmp_286():
-            _tmp_286 = Codon.unwrap(_tmp_286)
-            return _tmp_286
+        if _tmp_284 := self._tmp_284():
+            _tmp_284 = Codon.unwrap(_tmp_284)
+            return _tmp_284
         self._reset(mark)
-        _tmp_286 = None
+        _tmp_284 = None
         return None
+
+    def _tmp_194(self) -> Optional:
+        # _tmp_194: param_no_default | ','
+        mark = self._mark()
+        if self.param_no_default():
+            return True
+        self._reset(mark)
+        if self.expect_literal(","):
+            return True
+        self._reset(mark)
+        return None
+
+    def _loop0_195(self) -> List:
+        # _loop0_195: param_maybe_default
+        mark = self._mark()
+        children = []
+        while param_maybe_default_ := self.param_maybe_default():
+            param_maybe_default = Codon.unwrap(param_maybe_default_)
+            children.append(param_maybe_default)
+            mark = self._mark()
+        self._reset(mark)
+        param_maybe_default = None
+        return children
 
     def _tmp_196(self) -> Optional:
         # _tmp_196: param_no_default | ','
@@ -11024,31 +11057,8 @@ class CodonParser(Parser):
         self._reset(mark)
         return None
 
-    def _loop0_197(self) -> List:
-        # _loop0_197: param_maybe_default
-        mark = self._mark()
-        children = []
-        while param_maybe_default_ := self.param_maybe_default():
-            param_maybe_default = Codon.unwrap(param_maybe_default_)
-            children.append(param_maybe_default)
-            mark = self._mark()
-        self._reset(mark)
-        param_maybe_default = None
-        return children
-
-    def _tmp_198(self) -> Optional:
-        # _tmp_198: param_no_default | ','
-        mark = self._mark()
-        if self.param_no_default():
-            return True
-        self._reset(mark)
-        if self.expect_literal(","):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_199(self) -> Optional:
-        # _tmp_199: '*' | '**' | '/'
+    def _tmp_197(self) -> Optional:
+        # _tmp_197: '*' | '**' | '/'
         mark = self._mark()
         if literal := self.expect_literal("*"):
             literal = Codon.unwrap(literal)
@@ -11067,8 +11077,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _loop1_200(self) -> List:
-        # _loop1_200: param_with_default
+    def _loop1_198(self) -> List:
+        # _loop1_198: param_with_default
         mark = self._mark()
         children = []
         while param_with_default_ := self.param_with_default():
@@ -11079,8 +11089,8 @@ class CodonParser(Parser):
         param_with_default = None
         return children
 
-    def _tmp_201(self) -> Optional:
-        # _tmp_201: lambda_slash_no_default | lambda_slash_with_default
+    def _tmp_199(self) -> Optional:
+        # _tmp_199: lambda_slash_no_default | lambda_slash_with_default
         mark = self._mark()
         if lambda_slash_no_default := self.lambda_slash_no_default():
             lambda_slash_no_default = Codon.unwrap(lambda_slash_no_default)
@@ -11094,8 +11104,8 @@ class CodonParser(Parser):
         lambda_slash_with_default = None
         return None
 
-    def _loop0_202(self) -> List:
-        # _loop0_202: lambda_param_maybe_default
+    def _loop0_200(self) -> List:
+        # _loop0_200: lambda_param_maybe_default
         mark = self._mark()
         children = []
         while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
@@ -11106,8 +11116,20 @@ class CodonParser(Parser):
         lambda_param_maybe_default = None
         return children
 
-    def _loop0_203(self) -> List:
-        # _loop0_203: lambda_param_no_default
+    def _loop0_201(self) -> List:
+        # _loop0_201: lambda_param_no_default
+        mark = self._mark()
+        children = []
+        while lambda_param_no_default_ := self.lambda_param_no_default():
+            lambda_param_no_default = Codon.unwrap(lambda_param_no_default_)
+            children.append(lambda_param_no_default)
+            mark = self._mark()
+        self._reset(mark)
+        lambda_param_no_default = None
+        return children
+
+    def _loop0_202(self) -> List:
+        # _loop0_202: lambda_param_no_default
         mark = self._mark()
         children = []
         while lambda_param_no_default_ := self.lambda_param_no_default():
@@ -11119,19 +11141,7 @@ class CodonParser(Parser):
         return children
 
     def _loop0_204(self) -> List:
-        # _loop0_204: lambda_param_no_default
-        mark = self._mark()
-        children = []
-        while lambda_param_no_default_ := self.lambda_param_no_default():
-            lambda_param_no_default = Codon.unwrap(lambda_param_no_default_)
-            children.append(lambda_param_no_default)
-            mark = self._mark()
-        self._reset(mark)
-        lambda_param_no_default = None
-        return children
-
-    def _loop0_206(self) -> List:
-        # _loop0_206: ',' lambda_param
+        # _loop0_204: ',' lambda_param
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.lambda_param()):
@@ -11142,10 +11152,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_205(self) -> Optional:
-        # _gather_205: lambda_param _loop0_206
+    def _gather_203(self) -> Optional:
+        # _gather_203: lambda_param _loop0_204
         mark = self._mark()
-        if (elem := self.lambda_param()) is not None and (seq := self._loop0_206()) is not None:
+        if (elem := self.lambda_param()) is not None and (seq := self._loop0_204()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -11154,8 +11164,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _tmp_207(self) -> Optional:
-        # _tmp_207: lambda_slash_no_default | lambda_slash_with_default
+    def _tmp_205(self) -> Optional:
+        # _tmp_205: lambda_slash_no_default | lambda_slash_with_default
         mark = self._mark()
         if lambda_slash_no_default := self.lambda_slash_no_default():
             lambda_slash_no_default = Codon.unwrap(lambda_slash_no_default)
@@ -11167,6 +11177,29 @@ class CodonParser(Parser):
             return lambda_slash_with_default
         self._reset(mark)
         lambda_slash_with_default = None
+        return None
+
+    def _loop0_206(self) -> List:
+        # _loop0_206: lambda_param_maybe_default
+        mark = self._mark()
+        children = []
+        while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
+            lambda_param_maybe_default = Codon.unwrap(lambda_param_maybe_default_)
+            children.append(lambda_param_maybe_default)
+            mark = self._mark()
+        self._reset(mark)
+        lambda_param_maybe_default = None
+        return children
+
+    def _tmp_207(self) -> Optional:
+        # _tmp_207: ',' | lambda_param_no_default
+        mark = self._mark()
+        if self.expect_literal(","):
+            return True
+        self._reset(mark)
+        if self.lambda_param_no_default():
+            return True
+        self._reset(mark)
         return None
 
     def _loop0_208(self) -> List:
@@ -11181,19 +11214,8 @@ class CodonParser(Parser):
         lambda_param_maybe_default = None
         return children
 
-    def _tmp_209(self) -> Optional:
-        # _tmp_209: ',' | lambda_param_no_default
-        mark = self._mark()
-        if self.expect_literal(","):
-            return True
-        self._reset(mark)
-        if self.lambda_param_no_default():
-            return True
-        self._reset(mark)
-        return None
-
-    def _loop0_210(self) -> List:
-        # _loop0_210: lambda_param_maybe_default
+    def _loop1_209(self) -> List:
+        # _loop1_209: lambda_param_maybe_default
         mark = self._mark()
         children = []
         while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
@@ -11204,20 +11226,8 @@ class CodonParser(Parser):
         lambda_param_maybe_default = None
         return children
 
-    def _loop1_211(self) -> List:
-        # _loop1_211: lambda_param_maybe_default
-        mark = self._mark()
-        children = []
-        while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
-            lambda_param_maybe_default = Codon.unwrap(lambda_param_maybe_default_)
-            children.append(lambda_param_maybe_default)
-            mark = self._mark()
-        self._reset(mark)
-        lambda_param_maybe_default = None
-        return children
-
-    def _loop1_212(self) -> List:
-        # _loop1_212: lambda_param_with_default
+    def _loop1_210(self) -> List:
+        # _loop1_210: lambda_param_with_default
         mark = self._mark()
         children = []
         while lambda_param_with_default_ := self.lambda_param_with_default():
@@ -11228,20 +11238,43 @@ class CodonParser(Parser):
         lambda_param_with_default = None
         return children
 
-    def _tmp_213(self) -> Optional:
-        # _tmp_213: ':' | ',' (':' | '**')
+    def _tmp_211(self) -> Optional:
+        # _tmp_211: ':' | ',' (':' | '**')
         mark = self._mark()
         if literal := self.expect_literal(":"):
             literal = Codon.unwrap(literal)
             return literal
         self._reset(mark)
         literal = None
-        if (p := self.expect_literal(",")) and (self._tmp_287()):
+        if (p := self.expect_literal(",")) and (self._tmp_285()):
             p = Codon.unwrap(p)
             return p
         self._reset(mark)
         p = None
         return None
+
+    def _tmp_212(self) -> Optional:
+        # _tmp_212: lambda_param_no_default | ','
+        mark = self._mark()
+        if self.lambda_param_no_default():
+            return True
+        self._reset(mark)
+        if self.expect_literal(","):
+            return True
+        self._reset(mark)
+        return None
+
+    def _loop0_213(self) -> List:
+        # _loop0_213: lambda_param_maybe_default
+        mark = self._mark()
+        children = []
+        while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
+            lambda_param_maybe_default = Codon.unwrap(lambda_param_maybe_default_)
+            children.append(lambda_param_maybe_default)
+            mark = self._mark()
+        self._reset(mark)
+        lambda_param_maybe_default = None
+        return children
 
     def _tmp_214(self) -> Optional:
         # _tmp_214: lambda_param_no_default | ','
@@ -11254,31 +11287,8 @@ class CodonParser(Parser):
         self._reset(mark)
         return None
 
-    def _loop0_215(self) -> List:
-        # _loop0_215: lambda_param_maybe_default
-        mark = self._mark()
-        children = []
-        while lambda_param_maybe_default_ := self.lambda_param_maybe_default():
-            lambda_param_maybe_default = Codon.unwrap(lambda_param_maybe_default_)
-            children.append(lambda_param_maybe_default)
-            mark = self._mark()
-        self._reset(mark)
-        lambda_param_maybe_default = None
-        return children
-
-    def _tmp_216(self) -> Optional:
-        # _tmp_216: lambda_param_no_default | ','
-        mark = self._mark()
-        if self.lambda_param_no_default():
-            return True
-        self._reset(mark)
-        if self.expect_literal(","):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_217(self) -> Optional:
-        # _tmp_217: '*' | '**' | '/'
+    def _tmp_215(self) -> Optional:
+        # _tmp_215: '*' | '**' | '/'
         mark = self._mark()
         if literal := self.expect_literal("*"):
             literal = Codon.unwrap(literal)
@@ -11297,8 +11307,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_218(self) -> Optional:
-        # _tmp_218: ',' | ')' | ':'
+    def _tmp_216(self) -> Optional:
+        # _tmp_216: ',' | ')' | ':'
         mark = self._mark()
         if literal := self.expect_literal(","):
             literal = Codon.unwrap(literal)
@@ -11317,8 +11327,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _loop0_220(self) -> List:
-        # _loop0_220: ',' dotted_name
+    def _loop0_218(self) -> List:
+        # _loop0_218: ',' dotted_name
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.dotted_name()):
@@ -11329,10 +11339,34 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_219(self) -> Optional:
-        # _gather_219: dotted_name _loop0_220
+    def _gather_217(self) -> Optional:
+        # _gather_217: dotted_name _loop0_218
         mark = self._mark()
-        if (elem := self.dotted_name()) is not None and (seq := self._loop0_220()) is not None:
+        if (elem := self.dotted_name()) is not None and (seq := self._loop0_218()) is not None:
+            elem = Codon.unwrap(elem)
+            seq = Codon.unwrap(seq)
+            return [elem] + seq
+        self._reset(mark)
+        elem = None
+        seq = None
+        return None
+
+    def _loop0_220(self) -> List:
+        # _loop0_220: ',' (expression ['as' star_target])
+        mark = self._mark()
+        children = []
+        while (self.expect_literal(",")) and (elem_ := self._tmp_286()):
+            elem = Codon.unwrap(elem_)
+            children.append(elem)
+            mark = self._mark()
+        self._reset(mark)
+        elem = None
+        return children
+
+    def _gather_219(self) -> Optional:
+        # _gather_219: (expression ['as' star_target]) _loop0_220
+        mark = self._mark()
+        if (elem := self._tmp_286()) is not None and (seq := self._loop0_220()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -11342,7 +11376,31 @@ class CodonParser(Parser):
         return None
 
     def _loop0_222(self) -> List:
-        # _loop0_222: ',' (expression ['as' star_target])
+        # _loop0_222: ',' (expressions ['as' star_target])
+        mark = self._mark()
+        children = []
+        while (self.expect_literal(",")) and (elem_ := self._tmp_287()):
+            elem = Codon.unwrap(elem_)
+            children.append(elem)
+            mark = self._mark()
+        self._reset(mark)
+        elem = None
+        return children
+
+    def _gather_221(self) -> Optional:
+        # _gather_221: (expressions ['as' star_target]) _loop0_222
+        mark = self._mark()
+        if (elem := self._tmp_287()) is not None and (seq := self._loop0_222()) is not None:
+            elem = Codon.unwrap(elem)
+            seq = Codon.unwrap(seq)
+            return [elem] + seq
+        self._reset(mark)
+        elem = None
+        seq = None
+        return None
+
+    def _loop0_224(self) -> List:
+        # _loop0_224: ',' (expression ['as' star_target])
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self._tmp_288()):
@@ -11353,10 +11411,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_221(self) -> Optional:
-        # _gather_221: (expression ['as' star_target]) _loop0_222
+    def _gather_223(self) -> Optional:
+        # _gather_223: (expression ['as' star_target]) _loop0_224
         mark = self._mark()
-        if (elem := self._tmp_288()) is not None and (seq := self._loop0_222()) is not None:
+        if (elem := self._tmp_288()) is not None and (seq := self._loop0_224()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -11365,8 +11423,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop0_224(self) -> List:
-        # _loop0_224: ',' (expressions ['as' star_target])
+    def _loop0_226(self) -> List:
+        # _loop0_226: ',' (expressions ['as' star_target])
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self._tmp_289()):
@@ -11377,34 +11435,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_223(self) -> Optional:
-        # _gather_223: (expressions ['as' star_target]) _loop0_224
-        mark = self._mark()
-        if (elem := self._tmp_289()) is not None and (seq := self._loop0_224()) is not None:
-            elem = Codon.unwrap(elem)
-            seq = Codon.unwrap(seq)
-            return [elem] + seq
-        self._reset(mark)
-        elem = None
-        seq = None
-        return None
-
-    def _loop0_226(self) -> List:
-        # _loop0_226: ',' (expression ['as' star_target])
-        mark = self._mark()
-        children = []
-        while (self.expect_literal(",")) and (elem_ := self._tmp_290()):
-            elem = Codon.unwrap(elem_)
-            children.append(elem)
-            mark = self._mark()
-        self._reset(mark)
-        elem = None
-        return children
-
     def _gather_225(self) -> Optional:
-        # _gather_225: (expression ['as' star_target]) _loop0_226
+        # _gather_225: (expressions ['as' star_target]) _loop0_226
         mark = self._mark()
-        if (elem := self._tmp_290()) is not None and (seq := self._loop0_226()) is not None:
+        if (elem := self._tmp_289()) is not None and (seq := self._loop0_226()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -11413,32 +11447,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _loop0_228(self) -> List:
-        # _loop0_228: ',' (expressions ['as' star_target])
-        mark = self._mark()
-        children = []
-        while (self.expect_literal(",")) and (elem_ := self._tmp_291()):
-            elem = Codon.unwrap(elem_)
-            children.append(elem)
-            mark = self._mark()
-        self._reset(mark)
-        elem = None
-        return children
-
-    def _gather_227(self) -> Optional:
-        # _gather_227: (expressions ['as' star_target]) _loop0_228
-        mark = self._mark()
-        if (elem := self._tmp_291()) is not None and (seq := self._loop0_228()) is not None:
-            elem = Codon.unwrap(elem)
-            seq = Codon.unwrap(seq)
-            return [elem] + seq
-        self._reset(mark)
-        elem = None
-        seq = None
-        return None
-
-    def _tmp_229(self) -> Optional:
-        # _tmp_229: 'except' | 'finally'
+    def _tmp_227(self) -> Optional:
+        # _tmp_227: 'except' | 'finally'
         mark = self._mark()
         if literal := self.expect_literal("except"):
             literal = Codon.unwrap(literal)
@@ -11452,8 +11462,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _loop0_230(self) -> List:
-        # _loop0_230: block
+    def _loop0_228(self) -> List:
+        # _loop0_228: block
         mark = self._mark()
         children = []
         while block_ := self.block():
@@ -11464,8 +11474,8 @@ class CodonParser(Parser):
         block = None
         return children
 
-    def _loop1_231(self) -> List:
-        # _loop1_231: except_block
+    def _loop1_229(self) -> List:
+        # _loop1_229: except_block
         mark = self._mark()
         children = []
         while except_block_ := self.except_block():
@@ -11476,13 +11486,37 @@ class CodonParser(Parser):
         except_block = None
         return children
 
-    def _tmp_232(self) -> Optional:
-        # _tmp_232: 'as' NAME
+    def _tmp_230(self) -> Optional:
+        # _tmp_230: 'as' NAME
         mark = self._mark()
         if (self.expect_literal("as")) and (self.name()):
             return True
         self._reset(mark)
         return None
+
+    def _loop1_231(self) -> List:
+        # _loop1_231: except_star_block
+        mark = self._mark()
+        children = []
+        while except_star_block_ := self.except_star_block():
+            except_star_block = Codon.unwrap(except_star_block_)
+            children.append(except_star_block)
+            mark = self._mark()
+        self._reset(mark)
+        except_star_block = None
+        return children
+
+    def _loop0_232(self) -> List:
+        # _loop0_232: block
+        mark = self._mark()
+        children = []
+        while block_ := self.block():
+            block = Codon.unwrap(block_)
+            children.append(block)
+            mark = self._mark()
+        self._reset(mark)
+        block = None
+        return children
 
     def _loop1_233(self) -> List:
         # _loop1_233: except_star_block
@@ -11496,58 +11530,34 @@ class CodonParser(Parser):
         except_star_block = None
         return children
 
-    def _loop0_234(self) -> List:
-        # _loop0_234: block
+    def _tmp_234(self) -> Optional:
+        # _tmp_234: expression ['as' NAME]
         mark = self._mark()
-        children = []
-        while block_ := self.block():
-            block = Codon.unwrap(block_)
-            children.append(block)
-            mark = self._mark()
-        self._reset(mark)
-        block = None
-        return children
-
-    def _loop1_235(self) -> List:
-        # _loop1_235: except_star_block
-        mark = self._mark()
-        children = []
-        while except_star_block_ := self.except_star_block():
-            except_star_block = Codon.unwrap(except_star_block_)
-            children.append(except_star_block)
-            mark = self._mark()
-        self._reset(mark)
-        except_star_block = None
-        return children
-
-    def _tmp_236(self) -> Optional:
-        # _tmp_236: expression ['as' NAME]
-        mark = self._mark()
-        if (e := self.expression()) and (self._tmp_292(),):
+        if (e := self.expression()) and (self._tmp_290(),):
             e = Codon.unwrap(e)
             return e
         self._reset(mark)
         e = None
         return None
 
+    def _tmp_235(self) -> Optional:
+        # _tmp_235: 'as' NAME
+        mark = self._mark()
+        if (self.expect_literal("as")) and (self.name()):
+            return True
+        self._reset(mark)
+        return None
+
+    def _tmp_236(self) -> Optional:
+        # _tmp_236: 'as' NAME
+        mark = self._mark()
+        if (self.expect_literal("as")) and (self.name()):
+            return True
+        self._reset(mark)
+        return None
+
     def _tmp_237(self) -> Optional:
-        # _tmp_237: 'as' NAME
-        mark = self._mark()
-        if (self.expect_literal("as")) and (self.name()):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_238(self) -> Optional:
-        # _tmp_238: 'as' NAME
-        mark = self._mark()
-        if (self.expect_literal("as")) and (self.name()):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_239(self) -> Optional:
-        # _tmp_239: NEWLINE | ':'
+        # _tmp_237: NEWLINE | ':'
         mark = self._mark()
         if _newline := self.expect_type(tokenize.Tokens.NEWLINE):
             _newline = Codon.unwrap(_newline)
@@ -11561,56 +11571,56 @@ class CodonParser(Parser):
         literal = None
         return None
 
+    def _tmp_238(self) -> Optional:
+        # _tmp_238: 'as' NAME
+        mark = self._mark()
+        if (self.expect_literal("as")) and (self.name()):
+            return True
+        self._reset(mark)
+        return None
+
+    def _tmp_239(self) -> Optional:
+        # _tmp_239: 'as' NAME
+        mark = self._mark()
+        if (self.expect_literal("as")) and (self.name()):
+            return True
+        self._reset(mark)
+        return None
+
     def _tmp_240(self) -> Optional:
-        # _tmp_240: 'as' NAME
-        mark = self._mark()
-        if (self.expect_literal("as")) and (self.name()):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_241(self) -> Optional:
-        # _tmp_241: 'as' NAME
-        mark = self._mark()
-        if (self.expect_literal("as")) and (self.name()):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_242(self) -> Optional:
-        # _tmp_242: positional_patterns ','
+        # _tmp_240: positional_patterns ','
         mark = self._mark()
         if (self.positional_patterns()) and (self.expect_literal(",")):
             return True
         self._reset(mark)
         return None
 
-    def _tmp_243(self) -> Optional:
-        # _tmp_243: '->' expression
+    def _tmp_241(self) -> Optional:
+        # _tmp_241: '->' expression
         mark = self._mark()
         if (self.expect_literal("->")) and (self.expression()):
             return True
         self._reset(mark)
         return None
 
-    def _tmp_244(self) -> Optional:
-        # _tmp_244: '(' arguments? ')'
+    def _tmp_242(self) -> Optional:
+        # _tmp_242: '(' arguments? ')'
         mark = self._mark()
         if (self.expect_literal("(")) and (self.arguments(),) and (self.expect_literal(")")):
             return True
         self._reset(mark)
         return None
 
-    def _tmp_245(self) -> Optional:
-        # _tmp_245: '(' arguments? ')'
+    def _tmp_243(self) -> Optional:
+        # _tmp_243: '(' arguments? ')'
         mark = self._mark()
         if (self.expect_literal("(")) and (self.arguments(),) and (self.expect_literal(")")):
             return True
         self._reset(mark)
         return None
 
-    def _loop0_247(self) -> List:
-        # _loop0_247: ',' double_starred_kvpair
+    def _loop0_245(self) -> List:
+        # _loop0_245: ',' double_starred_kvpair
         mark = self._mark()
         children = []
         while (self.expect_literal(",")) and (elem_ := self.double_starred_kvpair()):
@@ -11621,11 +11631,11 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_246(self) -> Optional:
-        # _gather_246: double_starred_kvpair _loop0_247
+    def _gather_244(self) -> Optional:
+        # _gather_244: double_starred_kvpair _loop0_245
         mark = self._mark()
         if (elem := self.double_starred_kvpair()) is not None and (
-            seq := self._loop0_247()
+            seq := self._loop0_245()
         ) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
@@ -11635,38 +11645,38 @@ class CodonParser(Parser):
         seq = None
         return None
 
+    def _tmp_246(self) -> Optional:
+        # _tmp_246: '}' | ','
+        mark = self._mark()
+        if literal := self.expect_literal("}"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal(","):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
+    def _tmp_247(self) -> Optional:
+        # _tmp_247: '}' | ','
+        mark = self._mark()
+        if literal := self.expect_literal("}"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal(","):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
     def _tmp_248(self) -> Optional:
-        # _tmp_248: '}' | ','
-        mark = self._mark()
-        if literal := self.expect_literal("}"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal(","):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_249(self) -> Optional:
-        # _tmp_249: '}' | ','
-        mark = self._mark()
-        if literal := self.expect_literal("}"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal(","):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_250(self) -> Optional:
-        # _tmp_250: yield_expr | star_expressions
+        # _tmp_248: yield_expr | star_expressions
         mark = self._mark()
         if yield_expr := self.yield_expr():
             yield_expr = Codon.unwrap(yield_expr)
@@ -11678,6 +11688,46 @@ class CodonParser(Parser):
             return star_expressions
         self._reset(mark)
         star_expressions = None
+        return None
+
+    def _tmp_249(self) -> Optional:
+        # _tmp_249: yield_expr | star_expressions
+        mark = self._mark()
+        if yield_expr := self.yield_expr():
+            yield_expr = Codon.unwrap(yield_expr)
+            return yield_expr
+        self._reset(mark)
+        yield_expr = None
+        if star_expressions := self.star_expressions():
+            star_expressions = Codon.unwrap(star_expressions)
+            return star_expressions
+        self._reset(mark)
+        star_expressions = None
+        return None
+
+    def _tmp_250(self) -> Optional:
+        # _tmp_250: '=' | '!' | ':' | '}'
+        mark = self._mark()
+        if literal := self.expect_literal("="):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("!"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal(":"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("}"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
         return None
 
     def _tmp_251(self) -> Optional:
@@ -11696,13 +11746,8 @@ class CodonParser(Parser):
         return None
 
     def _tmp_252(self) -> Optional:
-        # _tmp_252: '=' | '!' | ':' | '}'
+        # _tmp_252: '!' | ':' | '}'
         mark = self._mark()
-        if literal := self.expect_literal("="):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
         if literal := self.expect_literal("!"):
             literal = Codon.unwrap(literal)
             return literal
@@ -11736,57 +11781,22 @@ class CodonParser(Parser):
         return None
 
     def _tmp_254(self) -> Optional:
-        # _tmp_254: '!' | ':' | '}'
+        # _tmp_254: yield_expr | star_expressions
         mark = self._mark()
-        if literal := self.expect_literal("!"):
-            literal = Codon.unwrap(literal)
-            return literal
+        if yield_expr := self.yield_expr():
+            yield_expr = Codon.unwrap(yield_expr)
+            return yield_expr
         self._reset(mark)
-        literal = None
-        if literal := self.expect_literal(":"):
-            literal = Codon.unwrap(literal)
-            return literal
+        yield_expr = None
+        if star_expressions := self.star_expressions():
+            star_expressions = Codon.unwrap(star_expressions)
+            return star_expressions
         self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("}"):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
+        star_expressions = None
         return None
 
     def _tmp_255(self) -> Optional:
-        # _tmp_255: yield_expr | star_expressions
-        mark = self._mark()
-        if yield_expr := self.yield_expr():
-            yield_expr = Codon.unwrap(yield_expr)
-            return yield_expr
-        self._reset(mark)
-        yield_expr = None
-        if star_expressions := self.star_expressions():
-            star_expressions = Codon.unwrap(star_expressions)
-            return star_expressions
-        self._reset(mark)
-        star_expressions = None
-        return None
-
-    def _tmp_256(self) -> Optional:
-        # _tmp_256: yield_expr | star_expressions
-        mark = self._mark()
-        if yield_expr := self.yield_expr():
-            yield_expr = Codon.unwrap(yield_expr)
-            return yield_expr
-        self._reset(mark)
-        yield_expr = None
-        if star_expressions := self.star_expressions():
-            star_expressions = Codon.unwrap(star_expressions)
-            return star_expressions
-        self._reset(mark)
-        star_expressions = None
-        return None
-
-    def _tmp_257(self) -> Optional:
-        # _tmp_257: '!' NAME
+        # _tmp_255: '!' NAME
         mark = self._mark()
         if (literal := self.expect_literal("!")) and (name := self.name()):
             literal = Codon.unwrap(literal)
@@ -11797,8 +11807,8 @@ class CodonParser(Parser):
         name = None
         return None
 
-    def _tmp_258(self) -> Optional:
-        # _tmp_258: ':' | '}'
+    def _tmp_256(self) -> Optional:
+        # _tmp_256: ':' | '}'
         mark = self._mark()
         if literal := self.expect_literal(":"):
             literal = Codon.unwrap(literal)
@@ -11812,8 +11822,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_259(self) -> Optional:
-        # _tmp_259: yield_expr | star_expressions
+    def _tmp_257(self) -> Optional:
+        # _tmp_257: yield_expr | star_expressions
         mark = self._mark()
         if yield_expr := self.yield_expr():
             yield_expr = Codon.unwrap(yield_expr)
@@ -11827,8 +11837,8 @@ class CodonParser(Parser):
         star_expressions = None
         return None
 
-    def _tmp_260(self) -> Optional:
-        # _tmp_260: '!' NAME
+    def _tmp_258(self) -> Optional:
+        # _tmp_258: '!' NAME
         mark = self._mark()
         if (literal := self.expect_literal("!")) and (name := self.name()):
             literal = Codon.unwrap(literal)
@@ -11839,8 +11849,8 @@ class CodonParser(Parser):
         name = None
         return None
 
-    def _loop0_261(self) -> List:
-        # _loop0_261: fstring_format_spec
+    def _loop0_259(self) -> List:
+        # _loop0_259: fstring_format_spec
         mark = self._mark()
         children = []
         while fstring_format_spec_ := self.fstring_format_spec():
@@ -11851,8 +11861,8 @@ class CodonParser(Parser):
         fstring_format_spec = None
         return children
 
-    def _tmp_262(self) -> Optional:
-        # _tmp_262: yield_expr | star_expressions
+    def _tmp_260(self) -> Optional:
+        # _tmp_260: yield_expr | star_expressions
         mark = self._mark()
         if yield_expr := self.yield_expr():
             yield_expr = Codon.unwrap(yield_expr)
@@ -11866,8 +11876,8 @@ class CodonParser(Parser):
         star_expressions = None
         return None
 
-    def _tmp_263(self) -> Optional:
-        # _tmp_263: '!' NAME
+    def _tmp_261(self) -> Optional:
+        # _tmp_261: '!' NAME
         mark = self._mark()
         if (literal := self.expect_literal("!")) and (name := self.name()):
             literal = Codon.unwrap(literal)
@@ -11878,8 +11888,8 @@ class CodonParser(Parser):
         name = None
         return None
 
-    def _tmp_264(self) -> Optional:
-        # _tmp_264: ':' | '}'
+    def _tmp_262(self) -> Optional:
+        # _tmp_262: ':' | '}'
         mark = self._mark()
         if literal := self.expect_literal(":"):
             literal = Codon.unwrap(literal)
@@ -11893,8 +11903,8 @@ class CodonParser(Parser):
         literal = None
         return None
 
-    def _tmp_265(self) -> Optional:
-        # _tmp_265: star_targets '='
+    def _tmp_263(self) -> Optional:
+        # _tmp_263: star_targets '='
         mark = self._mark()
         if (z := self.star_targets()) and (self.expect_literal("=")):
             z = Codon.unwrap(z)
@@ -11903,8 +11913,8 @@ class CodonParser(Parser):
         z = None
         return None
 
-    def _tmp_266(self) -> Optional:
-        # _tmp_266: '.' | '...'
+    def _tmp_264(self) -> Optional:
+        # _tmp_264: '.' | '...'
         mark = self._mark()
         if literal := self.expect_literal("."):
             literal = Codon.unwrap(literal)
@@ -11912,6 +11922,36 @@ class CodonParser(Parser):
         self._reset(mark)
         literal = None
         if literal := self.expect_literal("..."):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
+    def _tmp_265(self) -> Optional:
+        # _tmp_265: '.' | '...'
+        mark = self._mark()
+        if literal := self.expect_literal("."):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("..."):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        return None
+
+    def _tmp_266(self) -> Optional:
+        # _tmp_266: "llvm" | "python"
+        mark = self._mark()
+        if literal := self.expect_literal("llvm"):
+            literal = Codon.unwrap(literal)
+            return literal
+        self._reset(mark)
+        literal = None
+        if literal := self.expect_literal("python"):
             literal = Codon.unwrap(literal)
             return literal
         self._reset(mark)
@@ -11919,22 +11959,7 @@ class CodonParser(Parser):
         return None
 
     def _tmp_267(self) -> Optional:
-        # _tmp_267: '.' | '...'
-        mark = self._mark()
-        if literal := self.expect_literal("."):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        if literal := self.expect_literal("..."):
-            literal = Codon.unwrap(literal)
-            return literal
-        self._reset(mark)
-        literal = None
-        return None
-
-    def _tmp_268(self) -> Optional:
-        # _tmp_268: 'not' 'break'
+        # _tmp_267: 'not' 'break'
         mark = self._mark()
         if (literal := self.expect_literal("not")) and (literal_1 := self.expect_literal("break")):
             literal = Codon.unwrap(literal)
@@ -11945,8 +11970,8 @@ class CodonParser(Parser):
         literal_1 = None
         return None
 
-    def _tmp_269(self) -> Optional:
-        # _tmp_269: ',' expression
+    def _tmp_268(self) -> Optional:
+        # _tmp_268: ',' expression
         mark = self._mark()
         if (self.expect_literal(",")) and (c := self.expression()):
             c = Codon.unwrap(c)
@@ -11955,8 +11980,8 @@ class CodonParser(Parser):
         c = None
         return None
 
-    def _tmp_270(self) -> Optional:
-        # _tmp_270: ',' star_expression
+    def _tmp_269(self) -> Optional:
+        # _tmp_269: ',' star_expression
         mark = self._mark()
         if (self.expect_literal(",")) and (c := self.star_expression()):
             c = Codon.unwrap(c)
@@ -11965,8 +11990,8 @@ class CodonParser(Parser):
         c = None
         return None
 
-    def _tmp_271(self) -> Optional:
-        # _tmp_271: pipe_operator disjunction
+    def _tmp_270(self) -> Optional:
+        # _tmp_270: pipe_operator disjunction
         mark = self._mark()
         if (p := self.pipe_operator()) and (d := self.disjunction()):
             p = Codon.unwrap(p)
@@ -11977,8 +12002,8 @@ class CodonParser(Parser):
         d = None
         return None
 
-    def _tmp_272(self) -> Optional:
-        # _tmp_272: 'or' conjunction
+    def _tmp_271(self) -> Optional:
+        # _tmp_271: 'or' conjunction
         mark = self._mark()
         if (self.expect_literal("or")) and (c := self.conjunction()):
             c = Codon.unwrap(c)
@@ -11987,8 +12012,8 @@ class CodonParser(Parser):
         c = None
         return None
 
-    def _tmp_273(self) -> Optional:
-        # _tmp_273: 'and' inversion
+    def _tmp_272(self) -> Optional:
+        # _tmp_272: 'and' inversion
         mark = self._mark()
         if (self.expect_literal("and")) and (c := self.inversion()):
             c = Codon.unwrap(c)
@@ -11997,8 +12022,8 @@ class CodonParser(Parser):
         c = None
         return None
 
-    def _tmp_274(self) -> Optional:
-        # _tmp_274: slice | starred_expression
+    def _tmp_273(self) -> Optional:
+        # _tmp_273: slice | starred_expression
         mark = self._mark()
         if slice := self.slice():
             slice = Codon.unwrap(slice)
@@ -12012,6 +12037,16 @@ class CodonParser(Parser):
         starred_expression = None
         return None
 
+    def _tmp_274(self) -> Optional:
+        # _tmp_274: 'if' disjunction
+        mark = self._mark()
+        if (self.expect_literal("if")) and (z := self.disjunction()):
+            z = Codon.unwrap(z)
+            return z
+        self._reset(mark)
+        z = None
+        return None
+
     def _tmp_275(self) -> Optional:
         # _tmp_275: 'if' disjunction
         mark = self._mark()
@@ -12023,60 +12058,35 @@ class CodonParser(Parser):
         return None
 
     def _tmp_276(self) -> Optional:
-        # _tmp_276: 'if' disjunction
+        # _tmp_276: ',' star_target
         mark = self._mark()
-        if (self.expect_literal("if")) and (z := self.disjunction()):
-            z = Codon.unwrap(z)
-            return z
+        if (self.expect_literal(",")) and (c := self.star_target()):
+            c = Codon.unwrap(c)
+            return c
         self._reset(mark)
-        z = None
+        c = None
         return None
 
     def _tmp_277(self) -> Optional:
-        # _tmp_277: starred_expression | (assignment_expression | expression !':=') !'='
+        # _tmp_277: ',' star_target
         mark = self._mark()
-        if starred_expression := self.starred_expression():
-            starred_expression = Codon.unwrap(starred_expression)
-            return starred_expression
+        if (self.expect_literal(",")) and (c := self.star_target()):
+            c = Codon.unwrap(c)
+            return c
         self._reset(mark)
-        starred_expression = None
-        if (_tmp_293 := self._tmp_293()) and (self.negative_lookahead(self.expect_literal, "=")):
-            _tmp_293 = Codon.unwrap(_tmp_293)
-            return _tmp_293
-        self._reset(mark)
-        _tmp_293 = None
+        c = None
         return None
 
     def _tmp_278(self) -> Optional:
-        # _tmp_278: ',' star_target
+        # _tmp_278: ','.(starred_expression | (assignment_expression | expression !':=') !'=')+ ',' kwargs
         mark = self._mark()
-        if (self.expect_literal(",")) and (c := self.star_target()):
-            c = Codon.unwrap(c)
-            return c
-        self._reset(mark)
-        c = None
-        return None
-
-    def _tmp_279(self) -> Optional:
-        # _tmp_279: ',' star_target
-        mark = self._mark()
-        if (self.expect_literal(",")) and (c := self.star_target()):
-            c = Codon.unwrap(c)
-            return c
-        self._reset(mark)
-        c = None
-        return None
-
-    def _tmp_280(self) -> Optional:
-        # _tmp_280: ','.(starred_expression | (assignment_expression | expression !':=') !'=')+ ',' kwargs
-        mark = self._mark()
-        if (self._gather_294()) and (self.expect_literal(",")) and (self.kwargs()):
+        if (self._gather_291()) and (self.expect_literal(",")) and (self.kwargs()):
             return True
         self._reset(mark)
         return None
 
-    def _tmp_281(self) -> Optional:
-        # _tmp_281: starred_expression !'='
+    def _tmp_279(self) -> Optional:
+        # _tmp_279: starred_expression !'='
         mark = self._mark()
         if (starred_expression := self.starred_expression()) and (
             self.negative_lookahead(self.expect_literal, "=")
@@ -12087,8 +12097,8 @@ class CodonParser(Parser):
         starred_expression = None
         return None
 
-    def _tmp_282(self) -> Optional:
-        # _tmp_282: list | tuple | genexp
+    def _tmp_280(self) -> Optional:
+        # _tmp_280: list | tuple | genexp
         mark = self._mark()
         if list := self.list():
             list = Codon.unwrap(list)
@@ -12107,8 +12117,8 @@ class CodonParser(Parser):
         genexp = None
         return None
 
-    def _tmp_283(self) -> Optional:
-        # _tmp_283: 'True' | 'None' | 'False'
+    def _tmp_281(self) -> Optional:
+        # _tmp_281: 'True' | 'None' | 'False'
         mark = self._mark()
         if literal := self.expect_literal("True"):
             literal = Codon.unwrap(literal)
@@ -12127,34 +12137,34 @@ class CodonParser(Parser):
         literal = None
         return None
 
+    def _tmp_282(self) -> Optional:
+        # _tmp_282: star_targets '='
+        mark = self._mark()
+        if (self.star_targets()) and (self.expect_literal("=")):
+            return True
+        self._reset(mark)
+        return None
+
+    def _tmp_283(self) -> Optional:
+        # _tmp_283: star_targets '='
+        mark = self._mark()
+        if (self.star_targets()) and (self.expect_literal("=")):
+            return True
+        self._reset(mark)
+        return None
+
     def _tmp_284(self) -> Optional:
-        # _tmp_284: star_targets '='
+        # _tmp_284: ',' (')' | '**')
         mark = self._mark()
-        if (self.star_targets()) and (self.expect_literal("=")):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_285(self) -> Optional:
-        # _tmp_285: star_targets '='
-        mark = self._mark()
-        if (self.star_targets()) and (self.expect_literal("=")):
-            return True
-        self._reset(mark)
-        return None
-
-    def _tmp_286(self) -> Optional:
-        # _tmp_286: ',' (')' | '**')
-        mark = self._mark()
-        if (c := self.expect_literal(",")) and (self._tmp_296()):
+        if (c := self.expect_literal(",")) and (self._tmp_293()):
             c = Codon.unwrap(c)
             return c
         self._reset(mark)
         c = None
         return None
 
-    def _tmp_287(self) -> Optional:
-        # _tmp_287: ':' | '**'
+    def _tmp_285(self) -> Optional:
+        # _tmp_285: ':' | '**'
         mark = self._mark()
         if literal := self.expect_literal(":"):
             literal = Codon.unwrap(literal)
@@ -12168,10 +12178,32 @@ class CodonParser(Parser):
         literal = None
         return None
 
+    def _tmp_286(self) -> Optional:
+        # _tmp_286: expression ['as' star_target]
+        mark = self._mark()
+        if (expression := self.expression()) and (opt := self._tmp_294(),):
+            expression = Codon.unwrap(expression)
+            return [expression, opt]
+        self._reset(mark)
+        expression = None
+        opt = None
+        return None
+
+    def _tmp_287(self) -> Optional:
+        # _tmp_287: expressions ['as' star_target]
+        mark = self._mark()
+        if (expressions := self.expressions()) and (opt := self._tmp_295(),):
+            expressions = Codon.unwrap(expressions)
+            return [expressions, opt]
+        self._reset(mark)
+        expressions = None
+        opt = None
+        return None
+
     def _tmp_288(self) -> Optional:
         # _tmp_288: expression ['as' star_target]
         mark = self._mark()
-        if (expression := self.expression()) and (opt := self._tmp_297(),):
+        if (expression := self.expression()) and (opt := self._tmp_296(),):
             expression = Codon.unwrap(expression)
             return [expression, opt]
         self._reset(mark)
@@ -12182,7 +12214,7 @@ class CodonParser(Parser):
     def _tmp_289(self) -> Optional:
         # _tmp_289: expressions ['as' star_target]
         mark = self._mark()
-        if (expressions := self.expressions()) and (opt := self._tmp_298(),):
+        if (expressions := self.expressions()) and (opt := self._tmp_297(),):
             expressions = Codon.unwrap(expressions)
             return [expressions, opt]
         self._reset(mark)
@@ -12191,57 +12223,18 @@ class CodonParser(Parser):
         return None
 
     def _tmp_290(self) -> Optional:
-        # _tmp_290: expression ['as' star_target]
-        mark = self._mark()
-        if (expression := self.expression()) and (opt := self._tmp_299(),):
-            expression = Codon.unwrap(expression)
-            return [expression, opt]
-        self._reset(mark)
-        expression = None
-        opt = None
-        return None
-
-    def _tmp_291(self) -> Optional:
-        # _tmp_291: expressions ['as' star_target]
-        mark = self._mark()
-        if (expressions := self.expressions()) and (opt := self._tmp_300(),):
-            expressions = Codon.unwrap(expressions)
-            return [expressions, opt]
-        self._reset(mark)
-        expressions = None
-        opt = None
-        return None
-
-    def _tmp_292(self) -> Optional:
-        # _tmp_292: 'as' NAME
+        # _tmp_290: 'as' NAME
         mark = self._mark()
         if (self.expect_literal("as")) and (self.name()):
             return True
         self._reset(mark)
         return None
 
-    def _tmp_293(self) -> Optional:
-        # _tmp_293: assignment_expression | expression !':='
-        mark = self._mark()
-        if assignment_expression := self.assignment_expression():
-            assignment_expression = Codon.unwrap(assignment_expression)
-            return assignment_expression
-        self._reset(mark)
-        assignment_expression = None
-        if (expression := self.expression()) and (
-            self.negative_lookahead(self.expect_literal, ":=")
-        ):
-            expression = Codon.unwrap(expression)
-            return expression
-        self._reset(mark)
-        expression = None
-        return None
-
-    def _loop0_295(self) -> List:
-        # _loop0_295: ',' (starred_expression | (assignment_expression | expression !':=') !'=')
+    def _loop0_292(self) -> List:
+        # _loop0_292: ',' (starred_expression | (assignment_expression | expression !':=') !'=')
         mark = self._mark()
         children = []
-        while (self.expect_literal(",")) and (elem_ := self._tmp_301()):
+        while (self.expect_literal(",")) and (elem_ := self._tmp_298()):
             elem = Codon.unwrap(elem_)
             children.append(elem)
             mark = self._mark()
@@ -12249,10 +12242,10 @@ class CodonParser(Parser):
         elem = None
         return children
 
-    def _gather_294(self) -> Optional:
-        # _gather_294: (starred_expression | (assignment_expression | expression !':=') !'=') _loop0_295
+    def _gather_291(self) -> Optional:
+        # _gather_291: (starred_expression | (assignment_expression | expression !':=') !'=') _loop0_292
         mark = self._mark()
-        if (elem := self._tmp_301()) is not None and (seq := self._loop0_295()) is not None:
+        if (elem := self._tmp_298()) is not None and (seq := self._loop0_292()) is not None:
             elem = Codon.unwrap(elem)
             seq = Codon.unwrap(seq)
             return [elem] + seq
@@ -12261,8 +12254,8 @@ class CodonParser(Parser):
         seq = None
         return None
 
-    def _tmp_296(self) -> Optional:
-        # _tmp_296: ')' | '**'
+    def _tmp_293(self) -> Optional:
+        # _tmp_293: ')' | '**'
         mark = self._mark()
         if literal := self.expect_literal(")"):
             literal = Codon.unwrap(literal)
@@ -12276,6 +12269,36 @@ class CodonParser(Parser):
         literal = None
         return None
 
+    def _tmp_294(self) -> Optional:
+        # _tmp_294: 'as' star_target
+        mark = self._mark()
+        if (self.expect_literal("as")) and (s := self.star_target()):
+            s = Codon.unwrap(s)
+            return s
+        self._reset(mark)
+        s = None
+        return None
+
+    def _tmp_295(self) -> Optional:
+        # _tmp_295: 'as' star_target
+        mark = self._mark()
+        if (self.expect_literal("as")) and (s := self.star_target()):
+            s = Codon.unwrap(s)
+            return s
+        self._reset(mark)
+        s = None
+        return None
+
+    def _tmp_296(self) -> Optional:
+        # _tmp_296: 'as' star_target
+        mark = self._mark()
+        if (self.expect_literal("as")) and (s := self.star_target()):
+            s = Codon.unwrap(s)
+            return s
+        self._reset(mark)
+        s = None
+        return None
+
     def _tmp_297(self) -> Optional:
         # _tmp_297: 'as' star_target
         mark = self._mark()
@@ -12287,52 +12310,22 @@ class CodonParser(Parser):
         return None
 
     def _tmp_298(self) -> Optional:
-        # _tmp_298: 'as' star_target
-        mark = self._mark()
-        if (self.expect_literal("as")) and (s := self.star_target()):
-            s = Codon.unwrap(s)
-            return s
-        self._reset(mark)
-        s = None
-        return None
-
-    def _tmp_299(self) -> Optional:
-        # _tmp_299: 'as' star_target
-        mark = self._mark()
-        if (self.expect_literal("as")) and (s := self.star_target()):
-            s = Codon.unwrap(s)
-            return s
-        self._reset(mark)
-        s = None
-        return None
-
-    def _tmp_300(self) -> Optional:
-        # _tmp_300: 'as' star_target
-        mark = self._mark()
-        if (self.expect_literal("as")) and (s := self.star_target()):
-            s = Codon.unwrap(s)
-            return s
-        self._reset(mark)
-        s = None
-        return None
-
-    def _tmp_301(self) -> Optional:
-        # _tmp_301: starred_expression | (assignment_expression | expression !':=') !'='
+        # _tmp_298: starred_expression | (assignment_expression | expression !':=') !'='
         mark = self._mark()
         if starred_expression := self.starred_expression():
             starred_expression = Codon.unwrap(starred_expression)
             return starred_expression
         self._reset(mark)
         starred_expression = None
-        if (_tmp_302 := self._tmp_302()) and (self.negative_lookahead(self.expect_literal, "=")):
-            _tmp_302 = Codon.unwrap(_tmp_302)
-            return _tmp_302
+        if (_tmp_299 := self._tmp_299()) and (self.negative_lookahead(self.expect_literal, "=")):
+            _tmp_299 = Codon.unwrap(_tmp_299)
+            return _tmp_299
         self._reset(mark)
-        _tmp_302 = None
+        _tmp_299 = None
         return None
 
-    def _tmp_302(self) -> Optional:
-        # _tmp_302: assignment_expression | expression !':='
+    def _tmp_299(self) -> Optional:
+        # _tmp_299: assignment_expression | expression !':='
         mark = self._mark()
         if assignment_expression := self.assignment_expression():
             assignment_expression = Codon.unwrap(assignment_expression)
@@ -12387,4 +12380,4 @@ class CodonParser(Parser):
             "with",
             "yield",
         ]
-        self.SOFT_KEYWORDS = ["Literal", "case", "match", "print"]
+        self.SOFT_KEYWORDS = ["Literal", "case", "match", "print", "python"]

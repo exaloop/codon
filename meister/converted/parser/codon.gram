@@ -44,8 +44,9 @@ simple_stmts[List[ast.Stmt]]:
 # NOTE: assignment MUST precede expression, else parsing a simple assignment
 # will throw a SyntaxError.
 simple_stmt[ast.Stmt] (memo):
-    | assignment
     | &"print" print_stmt
+    | assignment
+    | a=TYPE_COMMENT { self.directive(a, LOCATIONS) }
     | e=star_expressions { ast.ExprStmt(expr=e, LOCATIONS) }
     | &'return' return_stmt
     | &('import' | 'from') import_stmt
@@ -90,10 +91,10 @@ assignment[ast.Stmt]:
     | a=('(' b=single_target ')' { b } | single_subscript_attribute_target) ':' b=expression c=['=' d=annotated_rhs { d }] {
         ast.AssignStmt(lhs=a, rhs=c, type_expr=b, LOCATIONS)
     }
-    | a=(z=star_targets '=' { z })+ b=(yield_expr | star_expressions) !'=' {
+    | a=(z=star_targets '=' { z })+ b=star_expressions !'=' {
          self.assignments(a, b, LOCATIONS)
     }
-    | a=single_target b=augassign ~ c=(yield_expr | star_expressions) {
+    | a=single_target b=augassign ~ c=star_expressions {
         ast.AssignStmt(
             lhs=a,
             rhs=ast.BinaryExpr(lexpr=a.clone(), op=b, rexpr=c, in_place=True, LOCATIONS),
@@ -102,7 +103,7 @@ assignment[ast.Stmt]:
     }
     | invalid_assignment
 
-annotated_rhs[ast.Expr]: yield_expr | star_expressions
+annotated_rhs[ast.Expr]: star_expressions
 
 augassign[str]:
     | '+=' { "+" }
@@ -135,36 +136,13 @@ nonlocal_stmt[ast.SuiteStmt]: 'nonlocal' a=','.NAME+ {
 }
 
 print_stmt[ast.PrintStmt]:
-    | a="print" '(' b=[arguments_with_partial] '...' ')' &NEWLINE {
-        ast.ExprStmt(
-            self.call(
-                ast.IdExpr(
-                    value=a.string,
-                    lineno=a.start[0], col_offset=a.start[1],
-                    end_lineno=a.end[0], end_col_offset=a.end[1],
-                ),
-                b[0] if b else [], b[1] if b else [], partial=True, LOCATIONS
-            ),
-            LOCATIONS
-        )
+    | a="print" left='(' b=[arguments] ')' &(';' | NEWLINE) {
+        self.print_parenthesized(a, left, b, LOCATIONS)
     }
-    | a="print" '(' b=[arguments] ')' &NEWLINE {
-        ast.ExprStmt(
-            self.call(
-                ast.IdExpr(
-                    value=a.string,
-                    lineno=a.start[0], col_offset=a.start[1],
-                    end_lineno=a.end[0], end_col_offset=a.end[1],
-                ),
-                b[0] if b else [], b[1] if b else [], LOCATIONS
-            ),
-            LOCATIONS
-        )
-    }
-    | "print" a=','.expression+ b=[','] &NEWLINE {
+    | "print" a=','.expression+ b=[','] {
         ast.PrintStmt(items=a, no_newline=bool(b), LOCATIONS)
     }
-    | "print" &NEWLINE {
+    | "print" {
         ast.PrintStmt(items=[], LOCATIONS)
     }
 
@@ -272,8 +250,8 @@ class_def_raw[ast.ClassStmt]:
 # --------------------
 
 function_def[ast.FunctionStmt]:
-    | (dp=decorator_not_llvm*) '@' "llvm" NEWLINE (da=decorator*) f=function_def_llvm {
-        self.set_decorators(f, (dp or []) + (da or []) + [ast.IdExpr(value="llvm", LOCATIONS)])
+    | (dp=decorator_not_extern*) '@' e=("llvm" | "python") NEWLINE (da=decorator*) f=function_def_extern {
+        self.set_decorators(f, (dp or []) + (da or []) + [ast.IdExpr(value=e.string, LOCATIONS)])
     }
     | d=decorators f=function_def_raw { self.set_decorators(f, d) }
     | f=function_def_raw { f }
@@ -300,9 +278,9 @@ function_def_raw[ast.FunctionStmt]:
         )
     }
 
-decorator_not_llvm[ast.Expr]:
-    | !('@' "llvm") d=decorator { d }
-function_def_llvm[ast.FunctionStmt]:
+decorator_not_extern[ast.Expr]:
+    | !('@' ("llvm" | "python")) d=decorator { d }
+function_def_extern[ast.FunctionStmt]:
     | invalid_def_raw
     | 'def' n=NAME t=[type_params] &&'(' params=[params] ')' a=['->' z=expression { z }] &&':' b=llvm_block {
         ast.FunctionStmt(
@@ -707,7 +685,14 @@ custom_stmt[ast.CustomStmt]:
 type_params[List[ast.Param]]: '[' t=type_param_seq  ']' { t }
 type_param_seq[List[ast.Param]]: a=','.type_param+ [','] { a }
 type_param[ast.Param] (memo):
-    | a=NAME b=[type_param_bound] { ast.Param(name=a.string, type=b or ast.IdExpr(value="type", LOCATIONS), LOCATIONS) }
+    | a=NAME b=[type_param_bound] {
+        ast.Param(
+            name=a.string,
+            type=b or ast.IdExpr(value="type", LOCATIONS),
+            status=ast.Param.Status.Generic,
+            LOCATIONS
+        )
+    }
 type_param_bound[ast.Expr]: ":" e=expression { e }
 
 
@@ -728,21 +713,6 @@ expression[ast.Expr] (memo):
 
 yield_expr[ast.Expr]:
     | '(' 'yield' ')' { ast.YieldExpr(LOCATIONS) }
-    # Codon's YieldExpr is a marker; value-bearing yields are represented by YieldStmt.
-    # | 'yield' 'from' a=expression {
-    #     ast.StmtExpr(
-    #         items=[ast.YieldFromStmt(expr=a, LOCATIONS)],
-    #         expr=ast.YieldExpr(LOCATIONS),
-    #         LOCATIONS,
-    #     )
-    # }
-    # | 'yield' a=[star_expressions] {
-    #     ast.StmtExpr(
-    #         items=[ast.YieldStmt(expr=a, LOCATIONS)],
-    #         expr=ast.YieldExpr(LOCATIONS),
-    #         LOCATIONS,
-    #     )
-    # }
 
 star_expressions[ast.Expr]:
     | a=star_expression b=(',' c=star_expression { c })+ [','] {
@@ -927,7 +897,8 @@ atom[ast.Expr]:
     | '...' { ast.EllipsisExpr(LOCATIONS) }
 
 group[ast.Expr]:
-    | '(' a=(yield_expr | named_expression) ')' { a }
+    | yield_expr
+    | '(' a=named_expression ')' { a }
     | invalid_group
 
 
@@ -1019,7 +990,10 @@ fstring_replacement_field[ast.StringExpr.String]:
 fstring_conversion[str]:
     | conv_token="!" conv=NAME { self.check_fstring_conversion(conv_token, conv) }
 fstring_full_format_spec[str]:
-    | ':' spec=fstring_format_spec* { ''.join(spec) }
+    | ':' spec=fstring_format_char* { ''.join(spec) }
+# TODO: this is a hack, should be fstring_format_spec (fix after porting)
+fstring_format_char[str]:
+    | !'}' a=ANY_BUT_NEWLINE { a.string }
 fstring[ast.StringExpr]:
     | a=FSTRING_START b=fstring_mid* c=FSTRING_END { ast.StringExpr(strings=b, LOCATIONS) }
 
@@ -1121,14 +1095,16 @@ arguments[Tuple[List[ast.Expr], List[ast.CallExpr.Arg]]] (memo):
     | a=args [','] &')' { a }
     | invalid_arguments
 
+# TODO: fix after porting TC, use Pythonic version?...
 args[Tuple[List[ast.Expr], List[ast.CallExpr.Arg]]]:
-    | a=','.(starred_expression | ( assignment_expression | expression !':=') !'=')+ b=[',' k=kwargs {k}] {
-        (a + ([e for e in b if isinstance(e, ast.StarExpr)] if b else []),
-         ([e for e in b if isinstance(e, ast.CallExpr.Arg)] if b else []))
-    }
-    | a=kwargs {
-        ([e for e in a if isinstance(e, ast.StarExpr)],
-         [e for e in a if isinstance(e, ast.CallExpr.Arg)]) }
+    | a=','.call_argument+ { (a, []) }
+
+call_argument[object]:
+    | a=NAME '=' b=expression { self.call_arg(a.string, b, LOCATIONS) }
+    | '**' a=expression { self.call_arg("", ast.KeywordStarExpr(expr=a, LOCATIONS), LOCATIONS) }
+    | starred_expression
+    | assignment_expression
+    | a=expression !':=' !'=' { a }
 
 kwargs[List[object]]:
     | a=','.kwarg_or_starred+ ',' b=','.kwarg_or_double_starred+ { a + b }
