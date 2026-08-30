@@ -389,10 +389,7 @@ class File[T]:
         for s in g:
             self.write(s)
 
-    def read(self) -> T:
-        return self.read(-1)
-
-    def read(self, sz: int) -> T:
+    def read(self, sz: int = -1) -> T:
         self._ensure_open()
         if T is bytes:
             if sz < 0:
@@ -710,10 +707,7 @@ class gzFile[T]:
         for s in g:
             self.write(s)
 
-    def read(self) -> T:
-        return self.read(-1)
-
-    def read(self, sz: int) -> T:
+    def read(self, sz: int = -1) -> T:
         self._ensure_open()
         if sz < 0:
             chunk_size = 4096
@@ -1052,10 +1046,7 @@ class bzFile[T]:
         for s in g:
             self.write(s)
 
-    def read(self) -> T:
-        return self.read(-1)
-
-    def read(self, sz: int) -> T:
+    def read(self, sz: int = -1) -> T:
         self._ensure_open()
         if sz < 0:
             chunk_size = 4096
