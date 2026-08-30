@@ -10,9 +10,9 @@ namespace jit {
 
 Engine::Engine(Options *options) : jit(), debug(nullptr), options(options) {
   auto eb = llvm::EngineBuilder();
-  eb.setMArch(llvm::codegen::getMArch());
-  eb.setMCPU(llvm::codegen::getCPUStr());
-  eb.setMAttrs(llvm::codegen::getFeatureList());
+  eb.setMArch(options->march);
+  eb.setMCPU(options->mcpu);
+  eb.setMAttrs(options->mattrs);
 
   auto target = eb.selectTarget();
   auto layout = target->createDataLayout();

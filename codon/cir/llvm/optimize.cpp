@@ -14,36 +14,49 @@ static llvm::codegen::RegisterCodeGenFlags CFG;
 
 namespace codon {
 namespace ir {
+namespace {
+std::string getFeaturesStr(const std::vector<std::string> &mattrs) {
+  llvm::SubtargetFeatures features;
+  for (const auto &mattr : mattrs)
+    features.AddFeature(mattr);
+  return features.getString();
+}
+} // namespace
 
 std::unique_ptr<llvm::TargetMachine>
 getTargetMachine(llvm::Triple triple, llvm::StringRef cpuStr,
-                 llvm::StringRef featuresStr, const llvm::TargetOptions &options,
-                 bool pic) {
+                 llvm::StringRef featuresStr, const llvm::TargetOptions &targetOptions,
+                 llvm::StringRef march, bool pic) {
   std::string err;
-  const llvm::Target *target =
-      llvm::TargetRegistry::lookupTarget(llvm::codegen::getMArch(), triple, err);
+  const llvm::Target *target = llvm::TargetRegistry::lookupTarget(march, triple, err);
 
   if (!target)
     return nullptr;
 
-  return std::unique_ptr<llvm::TargetMachine>(target->createTargetMachine(
-      triple.getTriple(), cpuStr, featuresStr, options,
+  auto *tm = target->createTargetMachine(
+      triple.getTriple(), cpuStr, featuresStr, targetOptions,
       pic ? llvm::Reloc::Model::PIC_ : llvm::codegen::getExplicitRelocModel(),
-      llvm::codegen::getExplicitCodeModel(), llvm::CodeGenOptLevel::Aggressive));
+      llvm::codegen::getExplicitCodeModel(), llvm::CodeGenOptLevel::Aggressive);
+  if (!tm)
+    compilationError("could not create LLVM target machine");
+  return std::unique_ptr<llvm::TargetMachine>(tm);
 }
 
-std::unique_ptr<llvm::TargetMachine>
-getTargetMachine(llvm::Module *module, bool setFunctionAttributes, bool pic) {
+std::unique_ptr<llvm::TargetMachine> getTargetMachine(llvm::Module *module,
+                                                      Options *options,
+                                                      bool setFunctionAttributes,
+                                                      bool pic) {
   llvm::Triple moduleTriple(module->getTargetTriple());
   std::string cpuStr, featuresStr;
-  const llvm::TargetOptions options =
+  const llvm::TargetOptions targetOptions =
       llvm::codegen::InitTargetOptionsFromCodeGenFlags(moduleTriple);
   llvm::TargetLibraryInfoImpl tlii(moduleTriple);
 
   if (moduleTriple.getArch()) {
-    cpuStr = llvm::codegen::getCPUStr();
-    featuresStr = llvm::codegen::getFeaturesStr();
-    auto machine = getTargetMachine(moduleTriple, cpuStr, featuresStr, options);
+    cpuStr = options->mcpu;
+    featuresStr = getFeaturesStr(options->mattrs);
+    auto machine = getTargetMachine(moduleTriple, cpuStr, featuresStr, targetOptions,
+                                    options->march, pic);
     if (setFunctionAttributes)
       llvm::codegen::setFunctionAttributes(cpuStr, featuresStr, *module);
     return machine;
@@ -1057,7 +1070,7 @@ void runLLVMOptimizationPasses(llvm::Module *module, PluginManager *plugins,
   llvm::CGSCCAnalysisManager cgam;
   llvm::ModuleAnalysisManager mam;
   auto machine = options->native
-                     ? getTargetMachine(module, /*setFunctionAttributes=*/true)
+                     ? getTargetMachine(module, options, /*setFunctionAttributes=*/true)
                      : std::unique_ptr<llvm::TargetMachine>();
   llvm::PassBuilder pb(machine.get());
 
