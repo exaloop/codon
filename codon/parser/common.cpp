@@ -179,16 +179,21 @@ std::string escape(const std::string &str) {
   }
   return r;
 }
-void utf8_append(std::string& out, int cp) {
+void utf8_append(std::string& out, uint32_t cp) {
     if (cp <= 0x7F) {
         out += char(cp);
     } else if (cp <= 0x7FF) {
         out += char(0xC0 | (cp >> 6));
         out += char(0x80 | (cp & 0x3F));
-    } else {
+  } else if (cp <= 0xFFFF) {
         out += char(0xE0 | (cp >> 12));
         out += char(0x80 | ((cp >> 6) & 0x3F));
         out += char(0x80 | (cp & 0x3F));
+  } else {
+    out += char(0xF0 | (cp >> 18));
+    out += char(0x80 | ((cp >> 12) & 0x3F));
+    out += char(0x80 | ((cp >> 6) & 0x3F));
+    out += char(0x80 | (cp & 0x3F));
     }
 }
 std::string unescape(const std::string &str, bool utf8) {
@@ -219,6 +224,35 @@ std::string unescape(const std::string &str, bool utf8) {
         else
           r += (unsigned char)code;
         i += pos + 1;
+        break;
+      }
+      case 'u':
+      case 'U': {
+        if (!utf8) {
+          r += str[i];
+          break;
+        }
+        int digits = str[i + 1] == 'u' ? 4 : 8;
+        if (i + digits + 2 > str.size())
+          throw std::invalid_argument("truncated Unicode escape");
+        uint32_t code = 0;
+        for (int j = 0; j < digits; j++) {
+          char c = str[i + 2 + j];
+          int digit;
+          if (c >= '0' && c <= '9')
+            digit = c - '0';
+          else if (c >= 'a' && c <= 'f')
+            digit = c - 'a' + 10;
+          else if (c >= 'A' && c <= 'F')
+            digit = c - 'A' + 10;
+          else
+            throw std::invalid_argument("invalid Unicode escape");
+          code = (code << 4) | digit;
+        }
+        if (code > 0x10FFFF)
+          throw std::invalid_argument("Unicode escape out of range");
+        utf8_append(r, code);
+        i += digits + 1;
         break;
       }
       default:

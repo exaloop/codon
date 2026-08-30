@@ -88,6 +88,15 @@ def test_chr_ord():
 
 
 @test
+def test_unicode_literal_escapes():
+    assert "\u0041" == "A"
+    assert "\u00e9" == _unicode_from_codepoint(0xE9)
+    assert "\u03a9" == _unicode_from_codepoint(0x03A9)
+    assert "\ud800" == _unicode_from_codepoint(0xD800)
+    assert "\U0001f600" == _unicode_from_codepoint(0x1F600)
+
+
+@test
 def test_comparisons_and_search():
     u = unicode("banana")
     assert u == unicode("banana")
@@ -818,17 +827,8 @@ def test_codecs_differential_recovery_and_bom_semantics():
         "utf-32-le",
     ) == unicode("﻿A")
 
-    try:
-        unicode(_raw_bytes([0x41, 0]), "utf-16")
-        assert False
-    except ValueError:
-        pass
-
-    try:
-        unicode(_raw_bytes([0x41, 0, 0, 0]), "utf-32")
-        assert False
-    except ValueError:
-        pass
+    assert unicode(_raw_bytes([0x41, 0]), "utf-16") == unicode("A")
+    assert unicode(_raw_bytes([0x41, 0, 0, 0]), "utf-32") == unicode("A")
 
 
 @test
@@ -1514,9 +1514,6 @@ def test_translate_and_maketrans():
     delete_table = unicode.maketrans(unicode("aeiou"), unicode("12345"), unicode("o"))
     assert unicode("hello").translate(delete_table) == unicode("h2ll")
 
-    integer_table: Dict[int, int] = {ord("a"): ord("A"), ord("-"): -1}
-    assert unicode("a-b").translate(integer_table) == unicode("Ab")
-
     optional_integer_table: Dict[int, Optional[int]] = {
         ord("a"): ord("A"),
         ord("-"): None,
@@ -1540,12 +1537,7 @@ def test_translate_and_maketrans():
     }
     assert unicode("a-bc").translate(optional_table) == unicode("αβγc")
     assert unicode("a-b").translate(unicode.maketrans(optional_table)) == unicode("αβγ")
-
-    try:
-        unicode("x").translate({ord("x"): 0xD800})
-        assert False
-    except ValueError:
-        pass
+    assert unicode("x").translate({ord("x"): 0xD800}) == unicode("\ud800")
 
 
 @test
@@ -1771,8 +1763,8 @@ def test_unicode_case_predicates():
     assert not (unicode("123-") + combining_acute).isupper()
     assert not (unicode("123-") + combining_acute).istitle()
 
-    assert (unicode("A") + combining_acute + unicode("b")).istitle()
-    assert not (unicode("A") + combining_acute + unicode("B")).istitle()
+    assert not (unicode("A") + combining_acute + unicode("b")).istitle()
+    assert (unicode("A") + combining_acute + unicode("B")).istitle()
 
 
 @test
@@ -1863,6 +1855,7 @@ def test_unicode_final_sigma_case_methods():
 test_empty()
 test_ascii_and_slicing()
 test_chr_ord()
+test_unicode_literal_escapes()
 test_comparisons_and_search()
 test_pointer_description()
 test_fastsearch_paths()
@@ -4352,3 +4345,296 @@ test_codecs_and_error_handlers()
 test_codecs_differential_recovery_and_bom_semantics()
 test_codecs_surrogates_and_cp1252()
 test_codecs_handler_fuzz_round_trips()
+
+
+_native_is_little_endian = lambda: True
+
+@test
+def test_negative_repeat():
+    assert "abc" * -1 == ""
+    assert "abc" * -100 == ""
+    assert "abc" * 0 == ""
+    assert "abc" * 2 == "abcabc"
+
+
+@test
+def test_capitalize_full_unicode():
+    assert "élan VITAL".capitalize() == "Élan vital"
+    assert "ßFOO".capitalize() == "Ssfoo"
+    assert "ǳABC DEF".capitalize() == "ǲabc def"
+
+
+@test
+def test_istitle_combining_marks():
+    assert "A\u0301a".istitle() == False
+    assert "A\u0301A".istitle() == True
+    assert "A-a".istitle() == False
+    assert "A-A".istitle() == True
+
+
+@test
+def test_cat_generator_multibyte():
+    def pieces():
+        yield "A"
+        yield "é"
+        yield "Ω"
+        yield "😀"
+        yield "Z"
+
+    assert str.cat(pieces()) == "AéΩ😀Z"
+
+    def ucs2_only():
+        yield "α"
+        yield "β"
+        yield "γ"
+
+    assert str.cat(ucs2_only()) == "αβγ"
+
+
+@test
+def test_utf8_error_span_replace():
+    assert str(b"\xe1\x80A", "utf-8", "replace") == "\ufffdA"
+    assert str(b"\xf0\x90\x80A", "utf-8", "replace") == "\ufffdA"
+    assert str(b"\xe1\x80", "utf-8", "replace") == "\ufffd"
+    assert str(b"\xf0\x90\x80", "utf-8", "replace") == "\ufffd"
+
+    # Illegal second bytes make the lead byte an error on its own.
+    assert str(b"\xe0\x80\x80", "utf-8", "replace") == "\ufffd\ufffd\ufffd"
+    assert str(b"\xed\xa0\x80", "utf-8", "replace") == "\ufffd\ufffd\ufffd"
+
+
+@test
+def test_utf8_error_span_ignore():
+    assert str(b"\xe1\x80A", "utf-8", "ignore") == "A"
+    assert str(b"\xf0\x90\x80A", "utf-8", "ignore") == "A"
+    assert str(b"\xe1\x80", "utf-8", "ignore") == ""
+
+
+@test
+def test_utf8_error_span_backslashreplace():
+    assert str(b"\xe1\x80A", "utf-8", "backslashreplace") == "\\xe1\\x80A"
+    assert str(b"\xf0\x90\x80A", "utf-8", "backslashreplace") == "\\xf0\\x90\\x80A"
+
+
+@test
+def test_utf8_error_span_surrogateescape():
+    s = str(b"\xe1\x80A", "utf-8", "surrogateescape")
+    assert len(s) == 3
+    assert s._load_codepoint(0) == 0xDCE1
+    assert s._load_codepoint(1) == 0xDC80
+    assert s[2] == "A"
+
+
+@test
+def test_utf16_without_bom_uses_native_endian():
+    if _native_is_little_endian():
+        assert str(b"a\x00", "utf-16") == "a"
+        assert str(b"a\x00b\x00", "utf-16") == "ab"
+    else:
+        assert str(b"\x00a", "utf-16") == "a"
+        assert str(b"\x00a\x00b", "utf-16") == "ab"
+
+
+@test
+def test_utf32_without_bom_uses_native_endian():
+    if _native_is_little_endian():
+        assert str(b"a\x00\x00\x00", "utf-32") == "a"
+    else:
+        assert str(b"\x00\x00\x00a", "utf-32") == "a"
+
+
+@test
+def test_utf16_utf32_bom_roundtrip():
+    text = "AéΩ😀"
+    assert str(text.encode("utf-16"), "utf-16") == text
+    assert str(text.encode("utf-32"), "utf-32") == text
+    assert str(text.encode("utf-16-le"), "utf-16-le") == text
+    assert str(text.encode("utf-16-be"), "utf-16-be") == text
+    assert str(text.encode("utf-32-le"), "utf-32-le") == text
+    assert str(text.encode("utf-32-be"), "utf-32-be") == text
+
+
+@test
+def test_internal_storage_is_native_endian():
+    a = _unicode_from_codepoint(0x1234)
+    b = _unicode_from_codepoint(0x1F600)
+    assert int(Ptr[u16](a._ptr)[0]) == 0x1234
+    assert int(Ptr[u32](b._ptr)[0]) == 0x1F600
+
+
+@test
+def test_maketrans_string_forms():
+    table = str.maketrans("abc", "xyz")
+    assert "cab".translate(table) == "zxy"
+
+    table2 = str.maketrans("ab", "xy", "c")
+    assert table2[ord("c")] is None
+    assert "cabca".translate(table2) == "xyx"
+
+    try:
+        str.maketrans("ab", "x")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_translate_int_minus_one_is_invalid():
+    table: dict[int, int] = {ord("a"): -1}
+    try:
+        "a".translate(table)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_translate_none_deletes():
+    table: dict[int, Optional[int]] = {ord("a"): None}
+    assert "banana".translate(table) == "bnn"
+
+
+@test
+def test_translate_allows_surrogate_codepoint():
+    table: dict[int, int] = {ord("a"): 0xD800}
+    result = "a".translate(table)
+    assert len(result) == 1
+    assert result._load_codepoint(0) == 0xD800
+
+
+@test
+def test_surrogateescape_single_byte_encoders():
+    s = _unicode_from_codepoint(0xDC80)
+    assert s.encode("ascii", "surrogateescape") == b"\x80"
+    assert s.encode("latin-1", "surrogateescape") == b"\x80"
+    assert s.encode("cp1252", "surrogateescape") == b"\x80"
+    assert s.encode("cp1250", "surrogateescape") == b"\x80"
+
+
+@test
+def test_surrogateescape_not_raw_for_utf16_utf32():
+    s = _unicode_from_codepoint(0xDC80)
+
+    try:
+        s.encode("utf-16-le", "surrogateescape")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        s.encode("utf-32-le", "surrogateescape")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_surrogatepass_utf_encoders():
+    s = _unicode_from_codepoint(0xD800)
+    assert s.encode("utf-8", "surrogatepass") == b"\xed\xa0\x80"
+    assert s.encode("utf-16-le", "surrogatepass") == b"\x00\xd8"
+    assert s.encode("utf-32-le", "surrogatepass") == b"\x00\xd8\x00\x00"
+
+
+@test
+def test_error_handler_lookup_is_lazy_decode():
+    assert str(b"abc", "ascii", "does-not-exist") == "abc"
+    try:
+        str(b"\xff", "ascii", "does-not-exist")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_error_handler_lookup_is_lazy_encode():
+    assert "abc".encode("ascii", "does-not-exist") == b"abc"
+    try:
+        "é".encode("ascii", "does-not-exist")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_encoding_name_normalization():
+    assert str(b"abc", "UTF 8") == "abc"
+    assert str(b"abc", "utf_8") == "abc"
+    assert str(b"abc", "utf--8") == "abc"
+    assert str(b"abc", " latin 1 ") == "abc"
+
+    try:
+        str(b"abc", "utf.8")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_repr_quote_choice_matches_python():
+    assert repr("abc") == "'abc'"
+    assert repr("a'b") == "\"a'b\""
+    assert repr('a"b') == "'a\"b'"
+    assert repr("a'\"b") == "'a\\'\"b'"
+
+
+@test
+def test_strip_none():
+    assert "  abc \t".strip(None) == "abc"
+    assert "  abc \t".lstrip(None) == "abc \t"
+    assert "  abc \t".rstrip(None) == "  abc"
+
+
+@test
+def test_slices_do_not_alias_parent_storage():
+    # This is primarily a lifetime/ownership regression test. The result must
+    # remain valid after the source reference is replaced.
+    source = "xx😀éΩyy"
+    middle = source[2:5]
+    source = "replacement"
+    assert middle == "😀éΩ"
+
+
+@test
+def test_utf8_strict_encoding_paths():
+    assert "".encode("utf-8") == b""
+    assert "ascii".encode("utf-8") == b"ascii"
+    assert "é".encode("utf-8") == b"\xc3\xa9"
+    assert "Ω".encode("utf-8") == b"\xce\xa9"
+    assert "😀".encode("utf-8") == b"\xf0\x9f\x98\x80"
+
+
+@test
+def test_bytes_constructor_requires_explicit_decode_to_decode_contents():
+    # CPython: str(bytes_obj) is its repr; decoding bytes requires an encoding.
+    assert str(b"abc") == "b'abc'"
+    assert str(b"abc", "utf-8") == "abc"
+
+
+test_negative_repeat()
+test_capitalize_full_unicode()
+test_istitle_combining_marks()
+test_cat_generator_multibyte()
+test_utf8_error_span_replace()
+test_utf8_error_span_ignore()
+test_utf8_error_span_backslashreplace()
+test_utf8_error_span_surrogateescape()
+test_utf16_without_bom_uses_native_endian()
+test_utf32_without_bom_uses_native_endian()
+test_utf16_utf32_bom_roundtrip()
+test_internal_storage_is_native_endian()
+test_maketrans_string_forms()
+test_translate_int_minus_one_is_invalid()
+test_translate_none_deletes()
+test_translate_allows_surrogate_codepoint()
+test_surrogateescape_single_byte_encoders()
+test_surrogateescape_not_raw_for_utf16_utf32()
+test_surrogatepass_utf_encoders()
+test_error_handler_lookup_is_lazy_decode()
+test_error_handler_lookup_is_lazy_encode()
+test_encoding_name_normalization()
+test_repr_quote_choice_matches_python()
+test_strip_none()
+test_slices_do_not_alias_parent_storage()
+test_utf8_strict_encoding_paths()
+test_bytes_constructor_requires_explicit_decode_to_decode_contents()

@@ -2477,8 +2477,7 @@ void LLVMVisitor::visit(const StringConst *x) {
 
     seqassertn((width == 1 || codepoint >= 0x80) &&
                    (width != 3 || codepoint >= 0x800) &&
-                   (width != 4 || codepoint >= 0x10000) && codepoint <= 0x10FFFF &&
-                   !(codepoint >= 0xD800 && codepoint <= 0xDFFF),
+                   (width != 4 || codepoint >= 0x10000) && codepoint <= 0x10FFFF,
                "invalid UTF-8 string constant");
 
     codepoints.push_back(codepoint);
