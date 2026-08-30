@@ -531,7 +531,7 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
         elif len(token) >= 2 and token[0] == token[-1]:
             prefix = token[0]
 
-        if str_prefix and str_prefix.string in ["f", "fr", "rf"]:
+        if str_prefix and str_prefix.string.lower() in ["f", "fr", "rf"]:
             yield TokenInfo(
                 Tokens.FSTRING_START,
                 prefix,

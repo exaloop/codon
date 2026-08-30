@@ -8,6 +8,6 @@ target-version = "py312"
 
 [tool.ruff.lint]
 # select = ["E", "F", "W", "I"]
-ignore = ["UP006", "SIM102", "E741"]
+ignore = ["UP006", "SIM102", "E741", "SIM114"]
 # Disable fix for unused imports (`F401`).
 unfixable = ["F401"]

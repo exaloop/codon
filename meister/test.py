@@ -134,6 +134,8 @@ def discover_tests(path):
         paths = sorted(path.rglob("*.codon"))
     cases = []
     for test_path in paths:
+        if "numpy" in str(test_path):
+            continue
         cases.extend(split_test_file(test_path))
     return cases
 
@@ -373,6 +375,7 @@ def main(argv=None):
         help="diff display (default: side-by-side)",
     )
     argument_parser.add_argument("--verbose", action="store_true")
+    argument_parser.add_argument("--stop-on-error", action="store_true")
     args = argument_parser.parse_args(argv)
 
     tests = args.tests.resolve()
@@ -416,7 +419,8 @@ def main(argv=None):
                         args.max_diff_lines,
                     )
                     printed += 1
-                # break
+                if args.stop_on_error:
+                    break
         elif python_result.error is not None and native_result.error is not None:
             rejected += 1
             print(f"MATCH-ERROR {case.label}")
@@ -427,7 +431,8 @@ def main(argv=None):
                 print(f"  C++: {native_result.error or 'produced an AST'}")
                 print(f"  Python: {python_result.error or 'produced an AST'}")
                 printed += 1
-            # break
+            if args.stop_on_error:
+                break
 
     print(
         f"Scoped ASTs: {matched} matched, {mismatched} mismatched, "

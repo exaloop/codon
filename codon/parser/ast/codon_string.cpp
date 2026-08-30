@@ -112,6 +112,33 @@ Formatted formatValue(double value, bool, int, int) {
   if (error != std::errc())
     return {"", true};
   std::string result(buffer, end);
+  // Python's float repr uses fixed notation for decimal exponents in [-4, 16).
+  auto exponentPos = result.find_first_of("eE");
+  if (exponentPos != std::string::npos) {
+    auto exponentBegin = result.data() + exponentPos + 1;
+    if (exponentBegin != result.data() + result.size() && *exponentBegin == '+')
+      ++exponentBegin;
+    int exponent = 0;
+    auto [exponentEnd, exponentError] =
+        std::from_chars(exponentBegin, result.data() + result.size(), exponent);
+    if (exponentError == std::errc() && exponentEnd == result.data() + result.size() &&
+        exponent >= -4 && exponent < 16) {
+      const bool negative = result.front() == '-';
+      std::string digits = result.substr(negative ? 1 : 0,
+                                         exponentPos - (negative ? 1 : 0));
+      digits.erase(std::remove(digits.begin(), digits.end(), '.'), digits.end());
+
+      const auto decimalPos = exponent + 1;
+      result = negative ? "-" : "";
+      if (decimalPos <= 0) {
+        result += "0." + std::string(-decimalPos, '0') + digits;
+      } else if (decimalPos >= static_cast<int>(digits.size())) {
+        result += digits + std::string(decimalPos - digits.size(), '0') + ".0";
+      } else {
+        result += digits.substr(0, decimalPos) + "." + digits.substr(decimalPos);
+      }
+    }
+  }
   if (result.find_first_of(".eE") == std::string::npos)
     result += ".0";
   return {result, true};
@@ -501,12 +528,11 @@ Formatted formatStruct(const std::string &name, std::vector<Field> fields, int i
 Formatted formatValue(const StringExpr::FormatSpec &value, bool attributes, int indent,
                       int level) {
   const int child = nestedLevel(indent, level);
-  if (value.text.empty() && value.conversion.empty() && value.spec.empty())
+  if (value.conversion.empty() && value.spec.empty())
     return {"", true};
   return formatStruct(
       "StringExpr.FormatSpec",
-      {field("text", formatValue(value.text, attributes, indent, child)),
-       field("conversion", formatValue(value.conversion, attributes, indent, child)),
+      {field("conversion", formatValue(value.conversion, attributes, indent, child)),
        field("spec", formatValue(value.spec, attributes, indent, child))},
       indent, level);
 }

@@ -188,7 +188,7 @@ class ScopingVisitor(ast.NodeVisitor):
         with self.ctx.substitute("temp_scope", True):
             self.ctx.renames.append({})
             try:
-                self.visit(node.final_expr())
+                self.visit(node.final_suite())
             finally:
                 self.ctx.renames.pop()
 
@@ -484,7 +484,7 @@ class ScopingVisitor(ast.NodeVisitor):
         scope = self.ctx.get_scope()
         for index in range(len(self.ctx.scope) - 1, -1, -1):
             seen = self.ctx.scope[index].seen_names
-            if seen:
+            if seen is not None:
                 if is_inside(item.scope, scope):
                     break
                 seen.add(name)

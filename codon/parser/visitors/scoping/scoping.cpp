@@ -115,33 +115,8 @@ bool ScopingVisitor::transformScope(Stmt *s) {
   return true;
 }
 
-bool ScopingVisitor::transformAdding(Expr *e, ASTNode *root) {
-  if (cast<IndexExpr>(e)) {
-    return transform(e);
-  } else if (auto de = cast<DotExpr>(e)) {
-    if (!transform(e))
-      return false;
-    if (!ctx->classDeduce.first.empty() &&
-        match(de->getExpr(), M<IdExpr>(ctx->classDeduce.first)))
-      ctx->classDeduce.second.insert(de->getMember());
-    return true;
-  } else if (cast<ListExpr>(e) || cast<TupleExpr>(e) || cast<IdExpr>(e)) {
-    SetInScope s1(&(ctx->adding), true);
-    SetInScope s2(&(ctx->root), root);
-    if (cast<IdExpr>(e)) // these IDs are definitions, should not have __used__ checks
-      e->setAttribute(Attr::ExprNoUndefCheck);
-    return transform(e);
-  } else {
-    seqassert(e, "bad call to transformAdding");
-    addError(Error::ASSIGN_INVALID, e);
-    return false;
-  }
-}
-
 void ScopingVisitor::visit(IdExpr *expr) {
-  if (ctx->adding)
-    ctx->root = expr;
-  if (ctx->adding && ctx->tempScope)
+  if (ctx->root && ctx->tempScope)
     ctx->renames.back()[expr->getValue()] =
         ctx->cache->getTemporaryVar(expr->getValue());
   for (size_t i = ctx->renames.size(); i-- > 0;)
@@ -149,16 +124,22 @@ void ScopingVisitor::visit(IdExpr *expr) {
       expr->setValue(*v);
       break;
     }
-  visitName(expr->getValue(), ctx->adding, ctx->root, expr->getSrcInfo());
+  if (ctx->root) {
+    expr->setAttribute(Attr::ExprNoUndefCheck);
+  }
+  visitName(expr->getValue(), ctx->root != nullptr, expr, expr->getSrcInfo());
 }
 
 void ScopingVisitor::visit(DotExpr *expr) {
-  SetInScope s(&(ctx->adding), false); // to handle a.x, y = b
+  SetInScope s(&(ctx->root), (ASTNode *)nullptr); // to handle a.x, y = b
   CallbackASTVisitor<bool, bool>::visit(expr);
+  if (!ctx->classDeduce.first.empty() &&
+      match(expr->getExpr(), M<IdExpr>(ctx->classDeduce.first)))
+    ctx->classDeduce.second.insert(expr->getMember());
 }
 
 void ScopingVisitor::visit(IndexExpr *expr) {
-  SetInScope s(&(ctx->adding), false); // to handle a[x], y = b
+  SetInScope s(&(ctx->root), (ASTNode *)nullptr); // to handle a[x], y = b
   CallbackASTVisitor<bool, bool>::visit(expr);
 }
 
@@ -219,6 +200,8 @@ ScopingVisitor::unpackFString(const std::string &value) {
           addError(val.takeError());
         } else {
           items.back().expr = val->first;
+          items.back().value = val->second.text;
+          val->second.text = "";
           if (!transform(items.back().expr))
             return items;
           items.back().format = val->second;
@@ -264,7 +247,9 @@ void ScopingVisitor::visit(AssignExpr *expr) {
 
   SetInScope s(&(ctx->tempScope), false);
   CHECK(transform(expr->getExpr()));
-  CHECK(transformAdding(expr->getVar(), expr));
+
+  SetInScope s2(&(ctx->root), (ASTNode *)expr);
+  CHECK(transform(expr->getVar()));
 }
 
 void ScopingVisitor::visit(LambdaExpr *expr) {
@@ -306,7 +291,8 @@ void ScopingVisitor::visit(LambdaExpr *expr) {
 void ScopingVisitor::visit(AssignStmt *stmt) {
   CHECK(transform(stmt->getRhs()));
   CHECK(transform(stmt->getTypeExpr()));
-  CHECK(transformAdding(stmt->getLhs(), stmt));
+  SetInScope s(&(ctx->root), (ASTNode *)stmt);
+  CHECK(transform(stmt->getLhs()));
 }
 
 void ScopingVisitor::visit(IfStmt *stmt) {
@@ -357,7 +343,10 @@ void ScopingVisitor::visit(ForStmt *stmt) {
     ConditionalBlock c(ctx.get(), stmt->getSuite());
 
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
-    CHECK(transformAdding(stmt->getVar(), stmt));
+    {
+      SetInScope s(&(ctx->root), (ASTNode *)stmt);
+      CHECK(transform(stmt->getVar()));
+    }
     seenDef = *(ctx->scope.back().seenVars);
 
     ctx->scope.back().seenVars = std::make_unique<std::unordered_set<std::string>>();
@@ -399,10 +388,13 @@ void ScopingVisitor::visit(ImportStmt *stmt) {
 
   if (stmt->getAs().empty()) {
     if (stmt->getWhat()) {
-      if (!match(stmt->getWhat(), M<IdExpr>("*")))
-        CHECK(transformAdding(stmt->getWhat(), stmt));
+      if (!match(stmt->getWhat(), M<IdExpr>("*"))) {
+        SetInScope s(&(ctx->root), (ASTNode *)stmt);
+        CHECK(transform(stmt->getWhat()));
+      }
     } else {
-      CHECK(transformAdding(stmt->getFrom(), stmt));
+      SetInScope s(&(ctx->root), (ASTNode *)stmt);
+      CHECK(transform(stmt->getFrom()));
     }
   } else {
     visitName(stmt->getAs(), true, stmt, stmt->getSrcInfo());

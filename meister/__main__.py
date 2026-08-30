@@ -12,11 +12,15 @@ def main(argv):
     if mode == "tokenize":
         parser.tokenize_main(argv[1])
     elif mode == "parse":
-        cache = cache.Cache("codon")
-        node = parser.parse(file=argv[1])
-        node = cache.scope(node)
-        # node = typecheck.visit(node)
-        print(ast.dump(node, indent=2, include_attributes=True))
+        try:
+            cache = cache.Cache("codon")
+
+            node = parser.parse(file=argv[1])
+            node = cache.scope(node)
+            # node = typecheck.visit(node)
+            print(ast.dump(node, indent=2, include_attributes=True))
+        except parser.pegen.CodonSyntaxError as error:
+            print(f"{error.location}: {error.msg}")
     elif mode == "test":
         from . import test
 

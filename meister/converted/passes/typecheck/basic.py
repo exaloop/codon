@@ -154,10 +154,10 @@ def visit_StringExpr(self: TypecheckVisitor, node: ast.StringExpr):
                     items=[ast.StringExpr(value=part.format.spec)],
                 )
             expr = ast.CallExpr(ast.IdExpr("str"), items=[expr])
-            if part.format.text:
+            if part.value:
                 expr = ast.CallExpr(
                     ast.DotExpr(ast.IdExpr(ast.types.Stdlib.String), member="cat"),
-                    items=[ast.StringExpr(value=part.format.text), expr],
+                    items=[ast.StringExpr(value=part.value), expr],
                 )
             items.append(expr)
         elif part.prefix:

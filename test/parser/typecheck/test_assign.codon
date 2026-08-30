@@ -180,7 +180,7 @@ print(x(1)) #: 2
 x = bar #! name 'bar' is not defined
 
 #%% assign_err_7,barebones
-foo() += bar #! cannot assign to given expression
+foo() += bar #! local variable 'foo' referenced before assignment
 
 #%% assign_update_eq,barebones
 a = 5

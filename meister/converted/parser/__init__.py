@@ -14,11 +14,9 @@ def parse(file: str | None, code: str | None = None, verbose=False) -> ast.Suite
 
     tokenizer = pegen.Tokenizer(gen, verbose=verbose)
     engine = parser.CodonParser(tokenizer, verbose=verbose)
-    tree = engine.start()
-
-    if file:
-        f.close()
-    if not tree:
-        err = engine.make_syntax_error("fn")
-        raise err
-    return tree
+    try:
+        tree = engine.parse("start")
+        return tree
+    finally:
+        if file:
+            f.close()

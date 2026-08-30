@@ -326,7 +326,7 @@ print FooBarBaz[str]().baz() #: baz! foo 0 bar None/Optional[str]
 #%% inherit_class_err_5,barebones
 class defdict(Dict[str,float]):
     def __init__(self, d: Dict[str, float]):
-        self.__init__(d.items())
+        pass
 z = defdict()
 z[1.1] #! 'float' does not match expected type 'str'
 

@@ -66,9 +66,9 @@ void TypecheckVisitor::visit(StringExpr *expr) {
                                N<StringExpr>(p.format.spec));
         }
         p.expr = N<CallExpr>(N<IdExpr>("str"), p.expr);
-        if (!p.format.text.empty()) {
+        if (!p.value.empty()) {
           p.expr = N<CallExpr>(N<DotExpr>(N<IdExpr>(StdlibTypes::String), "cat"),
-                               N<StringExpr>(p.format.text), p.expr);
+                               N<StringExpr>(p.value), p.expr);
         }
         items.emplace_back(p.expr);
       } else if (!p.prefix.empty()) {

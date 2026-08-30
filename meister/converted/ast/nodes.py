@@ -551,7 +551,7 @@ class GeneratorExpr(Expr):
     def loop_count(self):
         cnt = 0
 
-        def inc(s):
+        def inc(_):
             nonlocal cnt
             cnt += 1
 
@@ -757,6 +757,7 @@ class EllipsisExpr(Expr):
     class Kind(Enum):
         Pipe = 0
         Standalone = 1
+        Partial = 2
 
     mode: EllipsisExpr.Kind = Kind.Standalone
 
@@ -769,6 +770,9 @@ class EllipsisExpr(Expr):
 
     def is_pipe(self):
         return self.mode is EllipsisExpr.Kind.Pipe
+
+    def is_partial(self):
+        return self.mode is EllipsisExpr.Kind.Partial
 
 
 @dataclass(init=False)

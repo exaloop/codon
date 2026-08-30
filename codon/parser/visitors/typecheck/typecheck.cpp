@@ -76,7 +76,7 @@ Stmt *TypecheckVisitor::apply(
 
   if (auto err = ScopingVisitor::apply(cache, suite, &ctx->globalShadows))
     throw exc::ParserException(std::move(err));
-  LOG(">> {}", suite->toPythonString(true, 2));
+  // LOG(">> {}", suite->toPythonString(true, 2));
   auto n = tv.inferTypes(suite, true);
   if (!n) {
     auto errors = tv.findTypecheckErrors(suite);

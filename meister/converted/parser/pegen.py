@@ -853,7 +853,7 @@ class Parser(BaseParser):
         return ast.CallExpr(
             expr=expr,
             items=items,
-            partial=partial,
+            partial=False,
             **locations,
         )
 
@@ -864,6 +864,9 @@ class Parser(BaseParser):
         return expr
 
     def make_number(self, value, suffix="", **locations):
+        if value.lower().endswith("j"):
+            value = value[:-1]
+            suffix = "j" + suffix
         if any(marker in value for marker in (".", "e", "E")):
             return ast.FloatExpr(value=value, suffix=suffix, **locations)
         return ast.IntExpr(value=value, suffix=suffix, **locations)
@@ -1026,11 +1029,9 @@ class Parser(BaseParser):
         return ast.GeneratorExpr(kind=kind, loops=current, **locations)
 
     def ensure_real(self, number):
-        # TODO
         return number
 
     def ensure_imaginary(self, number):
-        # TODO
         return number
 
     def _concat_strings_in_constant(self, parts):
@@ -1256,3 +1257,12 @@ class Parser(BaseParser):
     def raise_syntax_error_on_next_token(self, message: str):
         next_token = self._tokenizer.peek()
         raise self._build_syntax_error(message, next_token.start, next_token.end)
+
+    def source_between(self, start, end):
+        lines = self._tokenizer.get_lines(list(range(start[0], end[0] + 1)))
+
+        if start[0] == end[0]:
+            return lines[0][start[1] : end[1]]
+        lines[0] = lines[0][start[1] :]
+        lines[-1] = lines[-1][: end[1]]
+        return "".join(lines)

@@ -45,7 +45,7 @@ simple_stmts[List[ast.Stmt]]:
 # will throw a SyntaxError.
 simple_stmt[ast.Stmt] (memo):
     | assignment
-    | &("print" !'(') print_stmt
+    | &"print" print_stmt
     | e=star_expressions { ast.ExprStmt(expr=e, LOCATIONS) }
     | &'return' return_stmt
     | &('import' | 'from') import_stmt
@@ -134,9 +134,39 @@ nonlocal_stmt[ast.SuiteStmt]: 'nonlocal' a=','.NAME+ {
     self.globals(a, non_local=True, LOCATIONS)
 }
 
-print_stmt[ast.PrintStmt]: p="print" a=','.expression+ b=[','] {
-    ast.PrintStmt(items=a, no_newline=bool(b), LOCATIONS)
-}
+print_stmt[ast.PrintStmt]:
+    | a="print" '(' b=[arguments_with_partial] '...' ')' &NEWLINE {
+        ast.ExprStmt(
+            self.call(
+                ast.IdExpr(
+                    value=a.string,
+                    lineno=a.start[0], col_offset=a.start[1],
+                    end_lineno=a.end[0], end_col_offset=a.end[1],
+                ),
+                b[0] if b else [], b[1] if b else [], partial=True, LOCATIONS
+            ),
+            LOCATIONS
+        )
+    }
+    | a="print" '(' b=[arguments] ')' &NEWLINE {
+        ast.ExprStmt(
+            self.call(
+                ast.IdExpr(
+                    value=a.string,
+                    lineno=a.start[0], col_offset=a.start[1],
+                    end_lineno=a.end[0], end_col_offset=a.end[1],
+                ),
+                b[0] if b else [], b[1] if b else [], LOCATIONS
+            ),
+            LOCATIONS
+        )
+    }
+    | "print" a=','.expression+ b=[','] &NEWLINE {
+        ast.PrintStmt(items=a, no_newline=bool(b), LOCATIONS)
+    }
+    | "print" &NEWLINE {
+        ast.PrintStmt(items=[], LOCATIONS)
+    }
 
 del_stmt[ast.SuiteStmt]:
     | 'del' a=del_targets &(';' | NEWLINE) { self.deletes(a, LOCATIONS) }
@@ -281,14 +311,14 @@ function_def_llvm[ast.FunctionStmt]:
             ret=a,
             suite=self.suite([
                 ast.ExprStmt(
-                    expr=ast.StringExpr(value=b, prefix="llvm", LOCATIONS),
+                    expr=ast.StringExpr(value=b, LOCATIONS),
                     LOCATIONS,
                 )
             ], LOCATIONS),
             LOCATIONS,
         )
     }
-llvm_block[str]: NEWLINE INDENT a=llvm_line+ DEDENT { ''.join(a) }
+llvm_block[str]: NEWLINE INDENT a=llvm_line+ DEDENT { ''.join(a).rstrip("\n") }
 llvm_line[str]: ANY_BUT_NEWLINE* n=NEWLINE { n.line }
 
 # Function parameters
@@ -972,14 +1002,16 @@ fstring_mid[ast.StringExpr.String]:
     | fstring_replacement_field
     | t=FSTRING_MIDDLE { ast.StringExpr.String(value=t.string, LOCATIONS) }
 fstring_replacement_field[ast.StringExpr.String]:
-    | '{' a=(yield_expr | star_expressions) debug_expr="="? conversion=[fstring_conversion] format=[fstring_full_format_spec] '}' {
+    | left='{' a=(yield_expr | star_expressions) debug_expr="="? conversion=[fstring_conversion] format=[fstring_full_format_spec] '}' {
         ast.StringExpr.String(
-            value=debug_expr.string if debug_expr else "",
+            value=self.source_between(left.end, debug_expr.end) if debug_expr else "",
             expr=a,
             format=ast.StringExpr.FormatSpec(
-                conversion=(conversion or ("r" if debug_expr else "")),
+                # conversion=(conversion or ("r" if debug_expr else "")),
+                conversion=conversion or "",
                 spec=format or "",
             ),
+            prefix="#f",
             LOCATIONS,
         )
     }
@@ -1148,7 +1180,7 @@ star_atom[ast.Expr]:
     | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
     | '(' a=target_with_star_atom ')' { a }
     | '(' a=[star_targets_tuple_seq] ')' { ast.TupleExpr(items=a or [], LOCATIONS) }
-    | '[' a=[star_targets_list_seq] ']' { ast.ListExpr(items=a or [], LOCATIONS) }
+    | '[' a=[star_targets_list_seq] ']' { ast.TupleExpr(items=a or [], LOCATIONS) }
 
 single_target[ast.Expr]:
     | single_subscript_attribute_target

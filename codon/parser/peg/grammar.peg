@@ -350,7 +350,10 @@ function <-
   / extern_decorators function_def_async (_ EOL)+ &INDENT extern (_ EOL)* &DEDENT {
     auto fn = (FunctionStmt*)(ac_stmt(V1));
     fn->setDecorators(ac<vector<Expr*>>(V0));
-    fn->setSuite(SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, ac<string>(V2)))));
+    std::string s = ac<string>(V2);
+    while (s.size() && s.back() == '\n')
+      s.pop_back();
+    fn->setSuite(SuiteStmt::wrap(asts(Expr, LOC, aste(String, LOC, s))));
     return (Stmt*)fn;
   }
   / decorators? function_def_async _ suite {

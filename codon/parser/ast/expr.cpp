@@ -237,7 +237,7 @@ std::string pyNode(const std::string &name, const std::vector<std::string> &fiel
         !endswith(fields[f], "=()"))
       r += (k++ ? ",\n" + pad : "") + fields[f];
   }
-  if (attrs) {
+  if (n && attrs) {
     auto attr = pyAttrs(n);
     if (!attr.empty())
       r += (k++ ? ",\n" + pad : "") + attr.substr(2);
@@ -422,7 +422,7 @@ std::string StringExpr::toPythonString(bool a, int indent, int level) const {
     auto st =
         pyNode("Str", {"value=" + pyQuote(s.value), "prefix=" + pyQuote(s.prefix)},
                this, a, indent, level);
-    if (s.format.text.empty()) {
+    if (s.format.conversion.empty() && s.format.spec.empty()) {
       vals.push_back(st);
     } else {
       vals.push_back(
