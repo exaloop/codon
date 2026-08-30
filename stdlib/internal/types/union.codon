@@ -91,3 +91,9 @@ class Union:
                 if Union._get_tag(union) == tag:
                     return Union._get_data(union, T).__repr__()
         return ''
+
+    def __repr_default__(self) -> str:
+        for tag, T in static.vars_types(self, with_index=True):
+            if Union._get_tag(self) == tag:
+                return repr(Union._get_data(self, T))
+        return ''
