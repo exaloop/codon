@@ -129,8 +129,8 @@ void LLVMVisitor::registerGlobal(const Var *var) {
     insertFunc(f, makeLLVMFunction(f));
   } else {
     auto *llvmType = getLLVMType(var->getType());
-    if (llvmType->isVoidTy()) {
-      insertVar(var, getDummyVoidValue());
+    if (!isStorableType(llvmType)) {
+      insertVar(var, getDummyValue(llvmType));
     } else {
       bool external = var->isExternal();
       bool tls = var->isThreadLocal();
@@ -1939,21 +1939,27 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   auto argIter = func->arg_begin();
   for (auto varIter = x->arg_begin(); varIter != x->arg_end(); ++varIter) {
     const Var *var = *varIter;
-    auto *storage = B->CreateAlloca(getLLVMType(var->getType()));
-    B->CreateStore(argIter, storage);
+    auto *llvmType = getLLVMType(var->getType());
+    llvm::Value *storage = nullptr;
+    storage = B->CreateAlloca(llvmType);
     insertVar(var, storage);
+    if (isStorableType(llvmType)) {
+      B->CreateStore(argIter, storage);
+    }
 
     // debug info
-    auto *srcInfo = getSrcInfo(var);
-    auto *file = db.getFile(srcInfo->file);
-    auto *scope = func->getSubprogram();
-    auto *debugVar = db.builder->createParameterVariable(
-        scope, getDebugNameForVariable(var), argIdx, file, srcInfo->line,
-        getDIType(var->getType()), options->debug);
-    db.builder->insertDeclare(
-        storage, debugVar, db.builder->createExpression(),
-        llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
-        entryBlock);
+    if (storage) {
+      auto *srcInfo = getSrcInfo(var);
+      auto *file = db.getFile(srcInfo->file);
+      auto *scope = func->getSubprogram();
+      auto *debugVar = db.builder->createParameterVariable(
+          scope, getDebugNameForVariable(var), argIdx, file, srcInfo->line,
+          getDIType(var->getType()), options->debug);
+      db.builder->insertDeclare(
+          storage, debugVar, db.builder->createExpression(),
+          llvm::DILocation::get(*context, srcInfo->line, srcInfo->col, scope),
+          entryBlock);
+    }
 
     ++argIter;
     ++argIdx;
@@ -1962,7 +1968,7 @@ void LLVMVisitor::visit(const BodiedFunc *x) {
   for (auto *var : *x) {
     auto *llvmType = getLLVMType(var->getType());
     if (llvmType->isVoidTy()) {
-      insertVar(var, getDummyVoidValue());
+      insertVar(var, getDummyValue(llvmType));
     } else {
       auto *storage = B->CreateAlloca(llvmType);
       insertVar(var, storage);
@@ -2084,10 +2090,15 @@ void LLVMVisitor::visit(const VarValue *x) {
   } else {
     auto *varPtr = getVar(x->getVar());
     seqassertn(varPtr, "{} value not found", *x);
+    auto *llvmType = getLLVMType(x->getType());
+    if (!isStorableType(llvmType)) {
+      value = getDummyValue(llvmType);
+      return;
+    }
     B->SetInsertPoint(block);
     if (x->getVar()->isThreadLocal())
       varPtr = B->CreateThreadLocalAddress(varPtr);
-    value = B->CreateLoad(getLLVMType(x->getType()), varPtr);
+    value = B->CreateLoad(llvmType, varPtr);
   }
 }
 
@@ -2129,6 +2140,16 @@ void LLVMVisitor::visit(const PointerValue *x) {
   }
 
   value = B->CreateInBoundsGEP(getLLVMType(x->getVar()->getType()), var, gepIndices);
+}
+
+bool LLVMVisitor::isStorableType(llvm::Type *type) {
+  return !type->isVoidTy() && M->getDataLayout().getTypeAllocSize(type) != 0;
+}
+
+llvm::Value *LLVMVisitor::getDummyValue(llvm::Type *type) {
+  if (type->isVoidTy())
+    return getDummyVoidValue();
+  return llvm::UndefValue::get(type);
 }
 
 /*
@@ -2557,7 +2578,7 @@ void LLVMVisitor::visit(const ForFlow *x) {
   auto *done = B->CreateCall(coroDone, iter);
   B->CreateCondBr(done, cleanupBlock, bodyBlock);
 
-  if (!loopVarType->isVoidTy()) {
+  if (isStorableType(loopVarType)) {
     B->SetInsertPoint(bodyBlock);
     auto *alignment =
         B->getInt32(M->getDataLayout().getPrefTypeAlign(loopVarType).value());
@@ -3125,7 +3146,7 @@ void LLVMVisitor::visit(const AssignInstr *x) {
   auto *var = getVar(x->getLhs());
   seqassertn(var, "could not find {} var", *x->getLhs());
   process(x->getRhs());
-  if (var != getDummyVoidValue()) {
+  if (isStorableType(getLLVMType(x->getLhs()->getType()))) {
     B->SetInsertPoint(block);
     if (x->getLhs()->isThreadLocal())
       var = B->CreateThreadLocalAddress(var);
@@ -3185,7 +3206,15 @@ void LLVMVisitor::visit(const CallInstr *x) {
   }
 
   auto *funcType = getLLVMFuncType(x->getCallee()->getType());
-  value = call({funcType, f}, args);
+  auto *callResult = call({funcType, f}, args);
+
+  auto *resultType = getLLVMType(x->getType());
+  if (!isStorableType(resultType)) {
+    value = getDummyValue(resultType);
+    return;
+  }
+
+  value = callResult;
 }
 
 void LLVMVisitor::visit(const TypePropertyInstr *x) {
