@@ -44,39 +44,58 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
-find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
 set(CODON_UNICODE_VERSION "16.0.0")
-set(CODON_UNICODE_UCD_DIR "${CMAKE_BINARY_DIR}/unicode-${CODON_UNICODE_VERSION}")
-file(MAKE_DIRECTORY "${CODON_UNICODE_UCD_DIR}")
+set(CODON_UNICODE_GENERATED_FILES
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
+  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
+)
 
-function(codon_download_unicode_data filename)
-  set(destination "${CODON_UNICODE_UCD_DIR}/${filename}")
-  if(NOT EXISTS "${destination}")
-    file(DOWNLOAD
-      "https://www.unicode.org/Public/${CODON_UNICODE_VERSION}/ucd/${filename}"
-      "${destination}"
-      STATUS status
-      TLS_VERIFY ON)
-    list(GET status 0 status_code)
-    list(GET status 1 status_message)
-    if(NOT status_code EQUAL 0)
-      message(FATAL_ERROR "Failed to download ${filename}: ${status_message}")
-    endif()
+# Release builds use checked-in tables; generation is a missing-file fallback.
+set(CODON_UNICODE_GENERATION_REQUIRED OFF)
+foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
+  if(NOT EXISTS "${unicode_file}")
+    set(CODON_UNICODE_GENERATION_REQUIRED ON)
+    break()
   endif()
-endfunction()
+endforeach()
 
-codon_download_unicode_data("DerivedCoreProperties.txt")
-codon_download_unicode_data("NameAliases.txt")
-codon_download_unicode_data("NamedSequences.txt")
+if(CODON_UNICODE_GENERATION_REQUIRED)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
 
-execute_process(
-  COMMAND ${Python3_EXECUTABLE} -c
-          "import unicodedata, sys; sys.exit(unicodedata.unidata_version != '${CODON_UNICODE_VERSION}')"
-  RESULT_VARIABLE CODON_UNICODE_VERSION_MISMATCH)
-if(CODON_UNICODE_VERSION_MISMATCH)
-  message(FATAL_ERROR
-    "${Python3_EXECUTABLE} must use Unicode ${CODON_UNICODE_VERSION} to generate Codon Unicode tables")
+  set(CODON_UNICODE_UCD_DIR "${CMAKE_BINARY_DIR}/unicode-${CODON_UNICODE_VERSION}")
+  file(MAKE_DIRECTORY "${CODON_UNICODE_UCD_DIR}")
+
+  function(codon_download_unicode_data filename)
+    set(destination "${CODON_UNICODE_UCD_DIR}/${filename}")
+    if(NOT EXISTS "${destination}")
+      file(DOWNLOAD
+        "https://www.unicode.org/Public/${CODON_UNICODE_VERSION}/ucd/${filename}"
+        "${destination}"
+        STATUS status
+        TLS_VERIFY ON)
+      list(GET status 0 status_code)
+      list(GET status 1 status_message)
+      if(NOT status_code EQUAL 0)
+        message(FATAL_ERROR "Failed to download ${filename}: ${status_message}")
+      endif()
+    endif()
+  endfunction()
+
+  codon_download_unicode_data("DerivedCoreProperties.txt")
+  codon_download_unicode_data("NameAliases.txt")
+  codon_download_unicode_data("NamedSequences.txt")
+
+  execute_process(
+    COMMAND ${Python3_EXECUTABLE} -c
+            "import unicodedata, sys; sys.exit(unicodedata.unidata_version != '${CODON_UNICODE_VERSION}')"
+    RESULT_VARIABLE CODON_UNICODE_VERSION_MISMATCH)
+  if(CODON_UNICODE_VERSION_MISMATCH)
+    message(FATAL_ERROR
+      "${Python3_EXECUTABLE} must use Unicode ${CODON_UNICODE_VERSION} to generate Codon Unicode tables")
+  endif()
 endif()
 
 set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
@@ -539,51 +558,35 @@ llvm_map_components_to_libnames(
   Vectorize
   Passes)
 
-set(CODON_UNICODE_GENERATED_FILES
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
-)
 file(GLOB_RECURSE CODON_STDLIB_RESOURCES
   CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/*.codon"
 )
 list(APPEND CODON_STDLIB_RESOURCES ${CODON_UNICODE_GENERATED_FILES})
 list(REMOVE_DUPLICATES CODON_STDLIB_RESOURCES)
-set(CODON_UNICODE_DATA_STAMP "${CMAKE_BINARY_DIR}/unicode-${CODON_UNICODE_VERSION}.stamp")
-add_custom_command(
-  OUTPUT "${CODON_UNICODE_DATA_STAMP}"
-  BYPRODUCTS ${CODON_UNICODE_GENERATED_FILES}
-  COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_SOURCE_DIR}/scripts/generate_single_byte_codecs.py"
-        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
-  COMMAND ${Python3_EXECUTABLE}
-        "${CMAKE_SOURCE_DIR}/scripts/generate_float_dtoa_tables.py"
-        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
-  COMMAND ${Python3_EXECUTABLE}
-          "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_data.py"
-        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
-          --derived-core-properties "${CODON_UNICODE_UCD_DIR}/DerivedCoreProperties.txt"
-        --unicodedata-output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
-          --name-aliases "${CODON_UNICODE_UCD_DIR}/NameAliases.txt"
-          --named-sequences "${CODON_UNICODE_UCD_DIR}/NamedSequences.txt"
-  COMMAND ${Python3_EXECUTABLE}
-          "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_normalization_data.py"
-        --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
-  COMMAND ${CMAKE_COMMAND} -E touch "${CODON_UNICODE_DATA_STAMP}"
-  DEPENDS
-    "${CMAKE_SOURCE_DIR}/scripts/generate_single_byte_codecs.py"
-    "${CMAKE_SOURCE_DIR}/scripts/generate_float_dtoa_tables.py"
-    "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_data.py"
-    "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_normalization_data.py"
-    "${CODON_UNICODE_UCD_DIR}/DerivedCoreProperties.txt"
-    "${CODON_UNICODE_UCD_DIR}/NameAliases.txt"
-    "${CODON_UNICODE_UCD_DIR}/NamedSequences.txt"
-  COMMENT "Generating Unicode ${CODON_UNICODE_VERSION} tables"
-  VERBATIM)
-add_custom_target(unicode_data DEPENDS "${CODON_UNICODE_DATA_STAMP}")
+if(CODON_UNICODE_GENERATION_REQUIRED)
+  add_custom_command(
+    OUTPUT ${CODON_UNICODE_GENERATED_FILES}
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/scripts/generate_single_byte_codecs.py"
+            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/scripts/generate_float_dtoa_tables.py"
+            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_data.py"
+            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
+            --derived-core-properties "${CODON_UNICODE_UCD_DIR}/DerivedCoreProperties.txt"
+            --unicodedata-output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
+            --name-aliases "${CODON_UNICODE_UCD_DIR}/NameAliases.txt"
+            --named-sequences "${CODON_UNICODE_UCD_DIR}/NamedSequences.txt"
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_normalization_data.py"
+            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
+    COMMENT "Generating Unicode ${CODON_UNICODE_VERSION} tables"
+    VERBATIM)
+endif()
+add_custom_target(unicode_data DEPENDS ${CODON_UNICODE_GENERATED_FILES})
 cmrc_add_resource_library(
   codon-stdlib
   NAMESPACE codon
