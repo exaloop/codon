@@ -842,7 +842,7 @@ def test_gft_from_gzip():
     for sep in linesep:
         f = f"{test_dir}/data_{i}.gz"
         data = '0 1 2' + sep + '3 4 5'
-        with gzip.open(f, mode='w') as g:
+        with gzip.open(f, mode='wt') as g:
             g.write(data)
         i += 1
 
@@ -1372,7 +1372,7 @@ def test_gft_from_bz2():
     for sep in linesep:
         f = f"{test_dir}/data_{i}.bz2"
         data = '0 1 2' + sep + '3 4 5'
-        with bz2.open(f, mode='w') as b:
+        with bz2.open(f, mode='wt') as b:
             b.write(data)
         i += 1
 
@@ -1686,7 +1686,7 @@ def test_load_version_mismatch_v1():
     np.save(filename, array)
     try:
         with open(filename, 'rb+') as f:
-            f.seek(0, 6)
+            f.seek(6, 0)
             f.write(b'\x00\x00')  # Change the version to 0
         np.load(filename)
         assert False

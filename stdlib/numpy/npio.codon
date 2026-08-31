@@ -437,7 +437,7 @@ def savetxt(fname,
                  comments=comments)
     elif isinstance(fname, str):
         if fname.endswith('.gz'):
-            with gzip.open(fname, 'w9') as f:
+            with gzip.open(fname, 'w9t') as f:
                 _savetxt(f,
                          X,
                          delimiter=delimiter,
@@ -2341,7 +2341,7 @@ def genfromtxt(fname,
     if isinstance(fname, str):
         if fname.endswith('.gz'):
             from gzip import open as gz_open
-            with gz_open(fname, 'r') as f:
+            with gz_open(fname, 'rt') as f:
                 return genfromtxt(f,
                                   dtype=dtype,
                                   comments=comments,
@@ -2364,7 +2364,7 @@ def genfromtxt(fname,
                                   ndmin=ndmin)
         elif fname.endswith('.bz2'):
             from bz2 import open as bz_open
-            with bz_open(fname, 'r') as f:
+            with bz_open(fname, 'rt') as f:
                 return genfromtxt(f,
                                   dtype=dtype,
                                   comments=comments,
