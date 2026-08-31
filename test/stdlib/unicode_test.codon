@@ -2327,7 +2327,7 @@ def test_percent_format_dynamic_width_precision():
 
     assert unicode("%.*f") % (2, 1.25) == unicode("1.25")
     assert unicode("%*.*f") % (8, 2, 1.25) == unicode("    1.25")
-    assert unicode("%.*f") % (-1, 1.25) == unicode("1.250000")
+    assert unicode("%.*f") % (-1, 1.25) == unicode("1")
 
     assert unicode("%*.*s") % (6, 3, unicode("abcdef")) == unicode("   abc")
 
@@ -2362,7 +2362,11 @@ def test_percent_format_argument_errors():
 @test
 def test_percent_format_length_modifiers():
     assert unicode("%ld") % 42 == unicode("42")
-    assert unicode("%lld") % -42 == unicode("-42")
+    try:
+        unicode("%lld") % -42 == unicode("-42")
+        assert False
+    except ValueError:
+        pass
     assert unicode("%#lx") % 255 == unicode("0xff")
     assert unicode("%.2Lf") % 1.25 == unicode("1.25")
 
@@ -2470,15 +2474,6 @@ def test_percent_format_unicode_mapping_key():
 
 
 @test
-def test_percent_format_char_errors():
-    try:
-        unicode("%.1c") % 65
-        assert False
-    except ValueError:
-        pass
-
-
-@test
 def test_percent_format_float_as_integer():
     assert unicode("%d") % 1.9 == unicode("1")
     assert unicode("%i") % 1.9 == unicode("1")
@@ -2526,7 +2521,6 @@ test_unicode_repr()
 test_percent_format_integer_as_float()
 test_percent_format_flag_precedence()
 test_percent_format_unicode_mapping_key()
-test_percent_format_char_errors()
 test_percent_format_float_as_integer()
 test_percent_format_integer_boundaries()
 
@@ -2814,8 +2808,12 @@ def test_percent_dynamic_precision():
     assert unicode("%.*f") % (5, 1.25) == unicode("1.25000")
     assert unicode("%*.*f") % (8, 2, 1.25) == unicode("    1.25")
     assert unicode("%*.*f") % (-8, 2, 1.25) == unicode("1.25    ")
-    assert unicode("%.*f") % (-1, 1.25) == unicode("1.250000")
-    assert unicode("%.*s") % (-1, unicode("abcdef")) == unicode("abcdef")
+    assert unicode("%.*f") % (-1, 1.25) == unicode("1")
+    assert unicode("%.*s") % (-1, unicode("abcdef")) == unicode("")
+    assert unicode("%.*r") % (-1, unicode("abcdef")) == unicode("")
+    assert unicode("%.*d") % (-1, 12) == unicode("12")
+    assert unicode("%.*c") % (-1, 65) == unicode("A")
+    assert unicode("%.3c") % 65 == unicode("A")
 
 
 @test
@@ -3229,6 +3227,9 @@ def test_bytes_percent_format():
     assert bytes("%a", "ascii") % unicode("é") == bytes("'\\xe9'", "ascii")
     assert bytes("%c", "ascii") % 0xFF == _raw_bytes([0xFF])
     assert bytes("%c", "ascii") % bytes("Z", "ascii") == bytes("Z", "ascii")
+    assert bytes("%.*s", "ascii") % (-1, bytes("abc", "ascii")) == bytes()
+    assert bytes("%.*f", "ascii") % (-1, 1.75) == bytes("2", "ascii")
+    assert bytes("%.*c", "ascii") % (-1, 65) == bytes("A", "ascii")
 
     assert bytes("%+06d:%#x:%.2f", "ascii") % (42, 255, 1.25) == bytes(
         "+00042:0xff:1.25", "ascii"
@@ -4638,3 +4639,212 @@ test_strip_none()
 test_slices_do_not_alias_parent_storage()
 test_utf8_strict_encoding_paths()
 test_bytes_constructor_requires_explicit_decode_to_decode_contents()
+
+
+# Regression tests for format.codon CPython compatibility fixes.
+
+@test
+def test_percent_length_modifiers():
+    assert "%hd" % 12 == "12"
+    assert "%ld" % 12 == "12"
+    assert "%Ld" % 12 == "12"
+
+    try:
+        "%lld" % 12
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        "%hhd" % 12
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        "%LLf" % 1.0
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_percent_c_allows_surrogates():
+    s = "%c" % 0xD800
+    assert len(s) == 1
+    assert ord(s) == 0xD800
+
+    s = "{:c}".format(0xDFFF)
+    assert len(s) == 1
+    assert ord(s) == 0xDFFF
+
+    try:
+        "%c" % 0x110000
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        "{:c}".format(-1)
+        assert False
+    except OverflowError:
+        pass
+
+
+@test
+def test_percent_mapping_can_be_positional_operand():
+    d = {"x": "value"}
+
+    assert "%s" % d == str(d)
+    assert "%r" % d == repr(d)
+    assert "%s %(x)s" % d == str(d) + " value"
+    assert "%% %s" % d == "% " + str(d)
+
+    try:
+        "%(x)s %s" % d
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        "%s %s" % d
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_bytes_percent_mapping_positional_rules():
+    d = {b"x": b"value"}
+
+    assert b"%r" % d == bytes(repr(d), "ascii")
+    assert b"%r %(x)s" % d == bytes(repr(d), "ascii") + b" value"
+
+    try:
+        b"%(x)s %r" % d
+        assert False
+    except TypeError:
+        pass
+
+    # A mapping is not itself a bytes-like value for %s/%b.
+    try:
+        b"%s" % d
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_brace_rejects_percent_only_i_u_codes():
+    for spec in ("i", "u"):
+        try:
+            format(1, spec)
+            assert False
+        except ValueError:
+            pass
+
+        try:
+            format(1.25, spec)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_default_float_zero_padding_is_sign_aware():
+    assert format(-1.2, "08") == "-00001.2"
+    assert format(-0.0, "08") == "-00000.0"
+    assert format(1.2, "08") == "000001.2"
+    assert format(1.2, "+08") == "+00001.2"
+    assert format(1.2, " 08") == " 00001.2"
+
+    assert "{:08}".format(-1.2) == "-00001.2"
+    assert "{:08}".format(-0.0) == "-00000.0"
+
+
+@test
+def test_underscore_grouping_decimal_vs_nondecimal():
+    assert format(123456789, "_") == "123_456_789"
+    assert format(123456789, "_d") == "123_456_789"
+    assert format(1234567.89, "_") == "1_234_567.89"
+    assert format(1234567.89, "_.2f") == "1_234_567.89"
+
+    # Non-decimal integer formats group by four.
+    assert format(0x75BCD15, "_x") == "75b_cd15"
+    assert format(0o726746425, "_o") == "7_2674_6425"
+    assert format(0b111010110111100110100010101, "_b") == (
+        "111_0101_1011_1100_1101_0001_0101"
+    )
+
+
+@test
+def test_comma_nondecimal_is_rejected():
+    for spec in (",b", ",o", ",x", ",X"):
+        try:
+            format(123, spec)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_zero_padding_with_grouping():
+    assert format(-1.2, "010,") == "-000,001.2"
+    assert format(-1.2, "0=10,") == "-000,001.2"
+    assert format(1234, "010_d") == "00_001_234"
+
+
+@test
+def test_unicode_fill_and_character_width():
+    assert format("x", "🦄^5") == "🦄🦄x🦄🦄"
+    assert format("é", ">3") == "  é"
+    assert format("é", ".1s") == "é"
+
+
+@test
+def test_percent_regressions_baseline():
+    assert "%#o" % 8 == "0o10"
+    assert "%.0d" % 0 == "0"
+    assert "%05.3d" % 1 == "00001"
+    assert "%#05x" % 1 == "0x001"
+    assert "%+05d" % 1 == "+0001"
+    assert "%05s" % "x" == "    x"
+    assert "%05c" % 65 == "    A"
+    assert "%*s" % (-5, "x") == "x    "
+    assert "%.*s" % (-1, "abc") == ""
+
+
+@test
+def test_brace_regressions_baseline():
+    assert format("x", "05") == "x0000"
+    assert format("x", "0>5") == "0000x"
+    assert format("x", "^5") == "  x  "
+    assert format(-1, "0=5d") == "-0001"
+    assert format(-1, "#06x") == "-0x001"
+    assert format(123456789, ",d") == "123,456,789"
+    assert format(1234567.89, ",.2f") == "1,234,567.89"
+
+
+@test
+def test_invalid_string_specs():
+    for spec in ("=5", "-5", "+5", "z", "#5", ",5"):
+        try:
+            format("x", spec)
+            assert False
+        except ValueError:
+            pass
+
+
+test_percent_length_modifiers()
+test_percent_c_allows_surrogates()
+test_percent_mapping_can_be_positional_operand()
+test_bytes_percent_mapping_positional_rules()
+test_brace_rejects_percent_only_i_u_codes()
+test_default_float_zero_padding_is_sign_aware()
+test_underscore_grouping_decimal_vs_nondecimal()
+test_comma_nondecimal_is_rejected()
+test_zero_padding_with_grouping()
+test_unicode_fill_and_character_width()
+test_percent_regressions_baseline()
+test_brace_regressions_baseline()
+test_invalid_string_specs()

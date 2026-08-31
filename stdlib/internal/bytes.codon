@@ -564,28 +564,24 @@ class bytes:
         return False
 
     def lstrip(self, chars: Optional[bytes] = None) -> bytes:
+        i = 0
         if chars is None:
-            i = 0
             while i < len(self) and bytes._isspace(self._ptr[i]):
                 i += 1
-            return self._slice(i, len(self))
         else:
-            i = 0
             while i < len(self) and bytes(self._ptr + i, 1)._has_char(chars):
                 i += 1
-            return self._slice(i, len(self))
+        return self._slice(i, len(self))
 
     def rstrip(self, chars: Optional[bytes] = None) -> bytes:
+        i = len(self) - 1
         if chars is None:
-            i = len(self) - 1
             while i >= 0 and bytes._isspace(self._ptr[i]):
                 i -= 1
-            return self._slice(0, i + 1)
         else:
-            i = len(self) - 1
             while i >= 0 and bytes(self._ptr + i, 1)._has_char(chars):
                 i -= 1
-            return self._slice(0, i + 1)
+        return self._slice(0, i + 1)
 
     def strip(self, chars: Optional[bytes] = None) -> bytes:
         return self.lstrip(chars).rstrip(chars)

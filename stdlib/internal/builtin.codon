@@ -379,6 +379,9 @@ def oct(n):
 def hex(n):
     return _int_format(n.__index__(), 16, "0x")
 
+def format(value, format_spec: str = ""):
+    return value.__format__(format_spec)
+
 def pow(base: float, exp: float):
     return base ** exp
 

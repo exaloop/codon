@@ -681,20 +681,19 @@ def _parse_percent_directive(
                 )
                 position += 1
 
-    # Compatibility with C/Python printf length modifiers. Codon numeric
-    # values do not need distinct length handling.
-    while position < format_length:
+    # CPython accepts a single h/l/L length modifier for compatibility.
+    # A second modifier is parsed as the conversion and is therefore invalid.
+    if position < format_length:
         character = _percent_format_at(format, position)
-
-        if character != 0x68 and character != 0x6C and character != 0x4C:
-            break
-
-        position += 1
+        if character == 0x68 or character == 0x6C or character == 0x4C:
+            position += 1
 
     if position >= format_length:
         raise ValueError("incomplete format")
 
     directive.conversion = _percent_format_at(format, position)
+    if directive.conversion == 0x63 and not directive.precision_from_argument:
+        directive.precision = -1
     return directive, position + 1
 
 
@@ -1141,11 +1140,9 @@ def _percent_char_append(
     if isinstance(value, bool):
         codepoint = int(value)
     elif isinstance(value, Int) or isinstance(value, UInt):
-        if (
-            value < 0
-            or value > 0x10FFFF
-            or (value >= 0xD800 and value <= 0xDFFF)
-        ):
+        # Python strings may contain lone surrogates, and both %c and :c
+        # accept every ordinal in range(0x110000).
+        if value < 0 or value > 0x10FFFF:
             raise OverflowError("%c arg not in range(0x110000)")
         codepoint = int(value)
     elif isinstance(value, str):
@@ -1190,7 +1187,10 @@ def _percent_consume_width(value, directive: _PercentDirective):
 
 def _percent_consume_precision(value, directive: _PercentDirective):
     if isinstance(value, int):
-        directive.precision = value
+        if directive.conversion == 0x63:  # c
+            directive.precision = -1
+        else:
+            directive.precision = 0 if value < 0 else value
         directive.precision_from_argument = False
         return
 
@@ -1252,6 +1252,8 @@ def percent_format(format: str, values):
 def percent_format_mapping(format: str, values):
     result = _FormatBuffer(len(format) + 16)
     format_pos = 0
+    saw_mapping_field = False
+    consumed_positional_mapping = False
 
     while True:
         format_pos = _percent_write_literal_prefix(
@@ -1268,14 +1270,29 @@ def percent_format_mapping(format: str, values):
             format_pos,
         )
 
-        if directive.key_start < 0:
-            raise TypeError("format requires a mapping")
+        if directive.key_start >= 0:
+            saw_mapping_field = True
+
+            if (
+                directive.width_from_argument
+                or directive.precision_from_argument
+            ):
+                raise TypeError("* wants int")
+
+            key = format._slice(directive.key_start, directive.key_end)
+            _percent_value_append(values[key], directive, result)
+            continue
+
+        # A mapping can itself be the single positional operand before any
+        # keyed directive.
+        if saw_mapping_field or consumed_positional_mapping:
+            raise TypeError("not enough arguments for format string")
 
         if directive.width_from_argument or directive.precision_from_argument:
             raise TypeError("* wants int")
 
-        key = format._slice(directive.key_start, directive.key_end)
-        _percent_value_append(values[key], directive, result)
+        _percent_value_append(values, directive, result)
+        consumed_positional_mapping = True
 
     result.release_excess()
     return result.to_str()
@@ -1491,6 +1508,8 @@ def bytes_percent_format(format: bytes, values) -> bytes:
 def bytes_percent_format_mapping(format: bytes, values) -> bytes:
     result = _ByteFormatBuffer(len(format) + 16)
     format_pos = 0
+    saw_mapping_field = False
+    consumed_positional_mapping = False
 
     while True:
         format_pos = _bytes_percent_write_literal_prefix(
@@ -1504,14 +1523,27 @@ def bytes_percent_format_mapping(format: bytes, values) -> bytes:
 
         directive, format_pos = _parse_percent_directive(format, format_pos)
 
-        if directive.key_start < 0:
-            raise TypeError("format requires a mapping")
+        if directive.key_start >= 0:
+            saw_mapping_field = True
+
+            if (
+                directive.width_from_argument
+                or directive.precision_from_argument
+            ):
+                raise TypeError("* wants int")
+
+            key = format._slice(directive.key_start, directive.key_end)
+            _bytes_percent_value_append(values[key], directive, result)
+            continue
+
+        if saw_mapping_field or consumed_positional_mapping:
+            raise TypeError("not enough arguments for format string")
 
         if directive.width_from_argument or directive.precision_from_argument:
             raise TypeError("* wants int")
 
-        key = format._slice(directive.key_start, directive.key_end)
-        _bytes_percent_value_append(values[key], directive, result)
+        _bytes_percent_value_append(values, directive, result)
+        consumed_positional_mapping = True
 
     result.release_excess()
     return result.to_bytes()
@@ -2330,7 +2362,16 @@ def _parse_brace_format_spec(spec: str) -> _PercentDirective:
         and directive.conversion != 0x73  # s
         and directive.conversion != 0x63  # c
         and directive.conversion != 0x25  # %
-        and not _percent_is_numeric_conversion(directive.conversion)
+        and directive.conversion != 0x64  # d
+        and directive.conversion != 0x6F  # o
+        and directive.conversion != 0x78  # x
+        and directive.conversion != 0x58  # X
+        and directive.conversion != 0x65  # e
+        and directive.conversion != 0x45  # E
+        and directive.conversion != 0x66  # f
+        and directive.conversion != 0x46  # F
+        and directive.conversion != 0x67  # g
+        and directive.conversion != 0x47  # G
     ):
         raise ValueError("unknown format code")
 
@@ -2456,7 +2497,7 @@ def _brace_locale_group_rendered(
                 group_size = next_group_size
 
     result = _FormatBuffer(
-        rendered.length + zeroes + separators * len(separator) * 4
+        rendered.length + zeroes + separators * len(separator)
     )
 
     for i in range(integer_start):
@@ -2503,7 +2544,16 @@ def _brace_group_rendered(
     ):
         raise ValueError("cannot specify ',' with this format code")
 
-    group_size = 3 if directive.brace_grouping == 0x2C else 4
+    # '_' groups decimal/floating-point formats by 3 digits, just like ','.
+    # It uses groups of 4 only for binary/octal/hexadecimal formatting.
+    group_size = 3
+    if directive.brace_grouping == 0x5F and (
+        conversion == 0x62  # b
+        or conversion == 0x6F  # o
+        or conversion == 0x78  # x
+        or conversion == 0x58  # X
+    ):
+        group_size = 4
     integer_start = 0
 
     if (
@@ -2895,15 +2945,21 @@ def _brace_float_shortest_append(
     )
 
     sign = u8(0)
+    rendered_start = 0
 
-    if rendered_length == 0 or rendered[0] != u8(0x2D):  # -
+    if rendered_length != 0 and rendered[0] == u8(0x2D):  # -
+        sign = u8(0x2D)
+        rendered_start = 1
+    else:
         if (directive.flags & FORMAT_FLAG_PLUS) != 0:
             sign = u8(0x2B)  # +
         elif (directive.flags & FORMAT_FLAG_SPACE) != 0:
             sign = u8(0x20)  # space
 
+    # A negative sign is already included in rendered_length. An injected
+    # '+'/' ' sign is not.
     padding = directive.width - rendered_length
-    if sign != u8(0):
+    if sign != u8(0) and rendered_start == 0:
         padding -= 1
     if padding < 0:
         padding = 0
@@ -2920,7 +2976,10 @@ def _brace_float_shortest_append(
     if zero:
         _brace_append_fill(result, 0x30, padding)
 
-    result.append_ascii(rendered, rendered_length)
+    result.append_ascii(
+        rendered + rendered_start,
+        rendered_length - rendered_start,
+    )
 
     if left:
         _brace_append_fill(result, 0x20, padding)
