@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from ... import ast
-from .typecheck import TypecheckVisitor
+from . import TypecheckVisitor
 
 
-def visit_NoneExpr(self: TypecheckVisitor, node: ast.NoneExpr):
+def typecheck_none(self: TypecheckVisitor, node: ast.NoneExpr):
     """Set type to `Optional[?]`"""
     node |= self.instantiate_type(self.get_stdlib_type(ast.types.Stdlib.Optional))
     if self.realize(node.type):
@@ -20,14 +20,14 @@ def visit_NoneExpr(self: TypecheckVisitor, node: ast.NoneExpr):
     return node
 
 
-def visit_BoolExpr(self: TypecheckVisitor, node: ast.BoolExpr):
+def typecheck_bool(self: TypecheckVisitor, node: ast.BoolExpr):
     """Set type to `bool`"""
     node |= self.instantiate_static(node.value)
     node.done = True
     return node
 
 
-def visit_IntExpr(self: TypecheckVisitor, node: ast.IntExpr):
+def typecheck_int(self: TypecheckVisitor, node: ast.IntExpr):
     """
     Parse various integer representations depending on the integer suffix.
     @example
@@ -89,7 +89,7 @@ def visit_IntExpr(self: TypecheckVisitor, node: ast.IntExpr):
         return self.visit(call)
 
 
-def visit_FloatExpr(self: TypecheckVisitor, node: ast.FloatExpr):
+def typecheck_float(self: TypecheckVisitor, node: ast.FloatExpr):
     """
     Parse various float representations depending on the suffix.
     @example
@@ -123,7 +123,7 @@ def visit_FloatExpr(self: TypecheckVisitor, node: ast.FloatExpr):
         return self.visit(call)
 
 
-def visit_StringExpr(self: TypecheckVisitor, node: ast.StringExpr):
+def typecheck_str(self: TypecheckVisitor, node: ast.StringExpr):
     """
     Set type to `str`. Concatinate strings in list and apply appropriate transformations
     (e.g., `str` wrap).

@@ -5,7 +5,6 @@ import copy
 from ...bridge import Dict, Enum, List, Set, contextmanager, dataclass
 from .. import ast
 from ..cache import Cache
-from ..ctx import Context
 
 
 class ScopeError(ast.NodeError):
@@ -43,7 +42,7 @@ class Bindings(ast.Node.Attribute):
 
 
 @dataclass(init=False)
-class ScopeContext(Context):
+class ScopeContext:
     @dataclass
     class Block:
         id: int
