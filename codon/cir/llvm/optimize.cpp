@@ -556,17 +556,15 @@ struct AllocInfo {
               if (call->paramHasAttr(i, llvm::Attribute::ByVal))
                 continue;
 
-              bool readsOnly = !llvm::isModSet(call->getMemoryEffects().getModRef());
-
               // Conservative: do not handle calls that may return this pointer.
               if (call->getType()->isPointerTy())
                 return false;
 
-              // Reusing the allocation is safe if the call can neither retain
-              // nor free it. Otherwise, only permit read-only calls.
-              bool reusable = call->paramHasAttr(i, llvm::Attribute::NoCapture) &&
-                              call->hasFnAttr(llvm::Attribute::NoFree);
-              if (!reusable && !readsOnly)
+              // Reusing the allocation is safe only if the call can neither
+              // retain nor free it. Read-only does not imply either property.
+              bool noFree = call->hasFnAttr(llvm::Attribute::NoFree) ||
+                            call->paramHasAttr(i, llvm::Attribute::NoFree);
+              if (!call->paramHasAttr(i, llvm::Attribute::NoCapture) || !noFree)
                 return false;
             }
           }

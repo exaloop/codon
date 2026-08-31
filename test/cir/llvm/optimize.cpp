@@ -5,6 +5,9 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/options.h"
 
+#include <llvm/AsmParser/Parser.h>
+#include <llvm/Support/SourceMgr.h>
+
 using namespace codon;
 
 namespace {
@@ -91,6 +94,63 @@ std::unique_ptr<Compiler> compileAndOptimize(const std::string &code) {
   ir::optimize(compiler->getLLVMVisitor()->getModule(), options.get());
   return compiler;
 }
+
+struct OptimizedModule {
+  std::unique_ptr<llvm::LLVMContext> context;
+  std::unique_ptr<llvm::Module> module;
+};
+
+std::string makeAllocationLoopIR(llvm::StringRef declaration,
+                                 llvm::StringRef allocationUse) {
+  std::string code = "declare noalias ptr @seq_alloc_atomic(i64)\n";
+  code += declaration;
+  code += R"(
+define i64 @test(i64 %count) {
+entry:
+  br label %header
+
+header:
+  %index = phi i64 [ 0, %entry ], [ %next, %body ]
+  %total = phi i64 [ 0, %entry ], [ %updated, %body ]
+  %done = icmp eq i64 %index, %count
+  br i1 %done, label %exit, label %body
+
+body:
+  %allocation = call ptr @seq_alloc_atomic(i64 65536)
+)";
+  code += allocationUse;
+  code += R"(
+  %extended = zext i8 %value to i64
+  %updated = add i64 %total, %extended
+  %next = add i64 %index, 1
+  br label %header
+
+exit:
+  ret i64 %total
+}
+)";
+  return code;
+}
+
+OptimizedModule compileAndOptimizeIR(const std::string &code) {
+  OptimizedModule result{std::make_unique<llvm::LLVMContext>(), nullptr};
+  llvm::SMDiagnostic diagnostic;
+  result.module = llvm::parseAssemblyString(code, diagnostic, *result.context);
+  if (!result.module) {
+    std::string message;
+    llvm::raw_string_ostream output(message);
+    diagnostic.print("allocation_hoister_test", output);
+    ADD_FAILURE() << output.str();
+    return result;
+  }
+
+  auto options = Options::getDefault("build/codon_test");
+  options->debug = false;
+  options->native = false;
+  options->standalone = true;
+  ir::optimize(result.module.get(), options.get());
+  return result;
+}
 } // namespace
 
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {
@@ -125,4 +185,58 @@ TEST(LLVMOptimizationTest, DoesNotHoistEscapingPointerThroughAggregatePhi) {
   auto *module = compiler->getLLVMVisitor()->getModule();
   EXPECT_GT(countFixedAllocations(module, 65536, /*inLoopOnly=*/true), 0);
   EXPECT_EQ(0, countLazyFixedAllocationCaches(module, 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistReadonlyCallWithoutNoCapture) {
+  auto optimized = compileAndOptimizeIR(
+      makeAllocationLoopIR("declare i8 @read_and_capture(ptr) nofree memory(read)\n",
+                           "  %value = call i8 @read_and_capture(ptr %allocation)\n"));
+
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536,
+                                  /*inLoopOnly=*/true),
+            0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistCallWithoutNoFree) {
+  auto optimized = compileAndOptimizeIR(makeAllocationLoopIR(
+      "declare i8 @read_and_maybe_free(ptr nocapture)\n",
+      "  %value = call i8 @read_and_maybe_free(ptr %allocation)\n"));
+
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536,
+                                  /*inLoopOnly=*/true),
+            0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistPointerReturnedThroughAggregate) {
+  auto optimized = compileAndOptimizeIR(makeAllocationLoopIR(
+      "@escaped = global ptr null\n"
+      "declare { ptr, i8 } @return_and_read(ptr) nofree memory(read)\n",
+      "  %result = call { ptr, i8 } @return_and_read(ptr %allocation)\n"
+      "  %returned = extractvalue { ptr, i8 } %result, 0\n"
+      "  store ptr %returned, ptr @escaped\n"
+      "  %value = extractvalue { ptr, i8 } %result, 1\n"));
+
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536,
+                                  /*inLoopOnly=*/true),
+            0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
+}
+
+TEST(LLVMOptimizationTest, DoesNotHoistReallocatedPointer) {
+  auto optimized = compileAndOptimizeIR(makeAllocationLoopIR(
+      "declare ptr @seq_realloc(ptr, i64, i64)\n"
+      "declare i8 @read(ptr nocapture) nofree memory(read)\n",
+      "  %resized = call ptr @seq_realloc(ptr %allocation, i64 131072, i64 65536)\n"
+      "  %value = call i8 @read(ptr %resized)\n"));
+
+  ASSERT_NE(nullptr, optimized.module);
+  EXPECT_GT(countFixedAllocations(optimized.module.get(), 65536,
+                                  /*inLoopOnly=*/true),
+            0);
+  EXPECT_EQ(0, countLazyFixedAllocationCaches(optimized.module.get(), 65536));
 }
