@@ -2,21 +2,23 @@
 
 from internal.file import bzFile, bzopen
 
+BZ2File = bzFile
+
 def open(
     path: str,
-    mode: str = "r",
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    mode: str = "rb",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
-) -> bzFile[str]:
-    return bzFile[str](path, mode, encoding, errors, newline)
+) -> bzFile[bytes]:
+    return bzopen(path, mode, encoding, errors, newline)
 
 @overload
 def open(
     path: str,
     mode: Literal[str],
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
 ):
     return bzopen(path, mode, encoding, errors, newline)

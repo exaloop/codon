@@ -2,21 +2,23 @@
 
 from internal.file import gzFile, gzopen
 
+GzipFile = gzFile
+
 def open(
     path: str,
-    mode: str = "r",
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    mode: str = "rb",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
-) -> gzFile[str]:
-    return gzFile[str](path, mode, encoding, errors, newline)
+) -> gzFile[bytes]:
+    return gzopen(path, mode, encoding, errors, newline)
 
 @overload
 def open(
     path: str,
     mode: Literal[str],
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
 ):
     return gzopen(path, mode, encoding, errors, newline)

@@ -1,7 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import realloc, free
-from internal.str import _UnicodeCodecBuffer, _make_meta, _unicode_decode_ptr, _unicode_encode_code, _encoding_code, _error_code, _ENCODING_UTF8, _ENCODING_UTF16, _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, _ENCODING_UTF32_LE, _ENCODING_UTF32_BE
+from internal.str import _UnicodeCodecBuffer, _make_meta, _unicode_decode_ptr, _unicode_encode_code, _encoding_code, _error_code, _native_is_little_endian, _ENCODING_UTF8, _ENCODING_UTF16, _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, _ENCODING_UTF32_LE, _ENCODING_UTF32_BE
 
 _FILE_READ_BUFFER_SIZE: Literal[int] = 8192
 
@@ -115,13 +115,18 @@ class _FileState:
     _read_length: int
     _newline: Optional[str]
     _encoding_kind: int
+    _initial_encoding_kind: int
+    _write_encoding_kind: int
     _error_code: int
     _pending: int
     _path: str
     _mode: str
     _position: int
     _text_pending: str
+    _text_pending_raw_length: int
+    _last_text_read_bytes: int
     _bom_checked: bool
+    _write_bom_done: bool
     _skip_initial_lf: bool
     _raw_line_read: bool
 
@@ -142,13 +147,18 @@ class _FileState:
         self._read_length = 0
         self._newline = newline
         self._encoding_kind = _file_encoding_kind(encoding)
+        self._initial_encoding_kind = self._encoding_kind
+        self._write_encoding_kind = self._encoding_kind
         self._error_code = _error_code(errors)
         self._pending = -1
         self._path = path
         self._mode = mode
         self._position = 0
         self._text_pending = str()
+        self._text_pending_raw_length = 0
+        self._last_text_read_bytes = 0
         self._bom_checked = not _file_encoding_has_bom(self._encoding_kind)
+        self._write_bom_done = not _file_encoding_has_bom(self._write_encoding_kind)
         self._skip_initial_lf = False
         self._raw_line_read = False
 
@@ -161,6 +171,103 @@ class _FileState:
         self._skip_initial_lf = False
         self._raw_line_read = False
         self._text_pending = str()
+        self._text_pending_raw_length = 0
+        self._last_text_read_bytes = 0
+
+def _file_reset_text_state(state: _FileState, reset_encoding: bool = False):
+    state._pending = -1
+    state._text_pending = str()
+    state._text_pending_raw_length = 0
+    state._last_text_read_bytes = 0
+    state._skip_initial_lf = False
+    state._raw_line_read = False
+    if reset_encoding:
+        state._encoding_kind = state._initial_encoding_kind
+        state._bom_checked = not _file_encoding_has_bom(state._encoding_kind)
+
+def _file_check_initial_bom(state: _FileState, length: int) -> int:
+    if state._bom_checked or length == 0:
+        return 0
+    encoding, bom_length = _file_bom_encoding(
+        state._buf, length, state._encoding_kind
+    )
+    if bom_length == 0:
+        raise ValueError("UTF-16/UTF-32 stream does not start with BOM")
+    state._encoding_kind = encoding
+    state._bom_checked = True
+    return bom_length
+
+def _file_native_stream_encoding(encoding: int) -> int:
+    if encoding == _ENCODING_UTF16:
+        return _ENCODING_UTF16_LE if _native_is_little_endian() else _ENCODING_UTF16_BE
+    if encoding == _ENCODING_UTF32:
+        return _ENCODING_UTF32_LE if _native_is_little_endian() else _ENCODING_UTF32_BE
+    return encoding
+
+def _file_stream_encode(state: _FileState, value: str) -> bytes:
+    encoding = state._write_encoding_kind
+    data = _unicode_encode_code(value, encoding, state._error_code)
+    if not state._write_bom_done:
+        state._write_bom_done = True
+        state._write_encoding_kind = _file_native_stream_encoding(encoding)
+    return data
+
+def _file_disable_stream_bom(state: _FileState):
+    state._write_encoding_kind = _file_native_stream_encoding(
+        state._write_encoding_kind
+    )
+    state._write_bom_done = True
+
+def _file_text_raw_length(state: _FileState, value: str) -> int:
+    encoding = state._encoding_kind
+    if encoding == _ENCODING_UTF16:
+        encoding = _ENCODING_UTF16_LE
+    elif encoding == _ENCODING_UTF32:
+        encoding = _ENCODING_UTF32_LE
+    return len(_unicode_encode_code(value, encoding, state._error_code))
+
+def _file_readline_raw(state: _FileState, newline: Optional[str], binary: bool) -> int:
+    length = 0
+    while True:
+        byte = _file_read_byte(state)
+        if byte < 0:
+            break
+        _file_buffer_reserve(state, length + 1)
+        state._buf[length] = u8(byte)
+        length += 1
+
+        if byte == 0x0A:
+            if binary or newline is None or newline == "" or newline == "\n":
+                break
+            continue
+
+        if byte != 0x0D or binary:
+            continue
+
+        if newline == "\r":
+            break
+        if newline is None or newline == "":
+            following = _file_read_byte(state)
+            if following == 0x0A:
+                _file_buffer_reserve(state, length + 1)
+                state._buf[length] = u8(following)
+                length += 1
+            elif following >= 0:
+                state._pending = following
+            break
+        if newline == "\r\n":
+            following = _file_read_byte(state)
+            if following == 0x0A:
+                _file_buffer_reserve(state, length + 1)
+                state._buf[length] = u8(following)
+                length += 1
+                break
+            if following >= 0:
+                state._pending = following
+
+    if _C.ferror(state._fp):
+        raise IOError("file I/O error: error in read")
+    return length
 
 def _file_buffer_reserve(state: _FileState, required: int):
     if required <= state._size:
@@ -309,7 +416,8 @@ class File[T]:
             raise IOError(f"file I/O error: {msg}")
 
     def __enter__(self):
-        pass
+        self._ensure_open()
+        return self
 
     def __exit__(self):
         self.close()
@@ -352,23 +460,22 @@ class File[T]:
                         line.append(following._load_codepoint(0))
                     elif len(following) > 0:
                         self._state._text_pending = following
+                        self._state._text_pending_raw_length = (
+                            self._state._last_text_read_bytes
+                        )
                     if self._state._newline == "\r\n" and following != "\n":
                         continue
                     break
             self._state._raw_line_read = False
             return _file_translate_line_ending_inplace(line.finish(), self._state._newline)
-        if T is str and self._state._newline is None:
-            length = _file_readline_universal(self._state)
-            return _file_translate_line_ending_inplace(
-                _file_decode_buffer(
-                    self._state, length, 0
-                ), self._state._newline
-            )
-        length = _file_readline_universal(self._state)
+        length = _file_readline_raw(
+            self._state, self._state._newline, T is bytes
+        )
         if T is bytes:
             return _file_buffer_bytes(self._state, length)
-        return _file_decode_buffer(
-            self._state, length, 0
+        value = _file_decode_buffer(self._state, length, 0)
+        return _file_translate_line_ending_inplace(
+            value, self._state._newline
         )
 
     def write(self, s: T) -> int:
@@ -376,10 +483,9 @@ class File[T]:
         if T is bytes:
             _C.fwrite(s._ptr, 1, len(s), self._state._fp)
         else:
-            data = _unicode_encode_code(
+            data = _file_stream_encode(
+                self._state,
                 _file_translate_write_newlines(s, self._state._newline),
-                self._state._encoding_kind,
-                self._state._error_code,
             )
             _C.fwrite(data._ptr, 1, len(data), self._state._fp)
         self._errcheck("error in write")
@@ -409,13 +515,26 @@ class File[T]:
             )
             self._errcheck("error in read")
             return _file_buffer_bytes(self._state, length)
+        if sz == 0:
+            return str()
+        if sz > 0 and len(self._state._text_pending) > 0:
+            prefix = self._state._text_pending
+            self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
+            if len(prefix) >= sz:
+                if len(prefix) > sz:
+                    self._state._text_pending = prefix[sz:]
+                return prefix[:sz]
+            return prefix + self.read(sz - len(prefix))
         if sz < 0:
             prefix = self._state._text_pending
             self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
             length = _file_read_all_buffered(self._state)
+            bom_length = _file_check_initial_bom(self._state, length)
             value = _file_translate_read_newlines_inplace(
                 _file_decode_buffer(
-                    self._state, length, 0
+                    self._state, length, bom_length
                 ), self._state._newline
             )
             return prefix + value if len(prefix) > 0 else value
@@ -443,10 +562,7 @@ class File[T]:
                     self._state._buf[length] = u8(byte)
                     length += 1
             if not self._state._bom_checked:
-                self._state._encoding_kind, bom_length = _file_bom_encoding(
-                    self._state._buf, length, self._state._encoding_kind
-                )
-                self._state._bom_checked = True
+                bom_length = _file_check_initial_bom(self._state, length)
             if width == 2 and _file_utf16_surrogate_pair(
                 self._state._buf, length - 2, self._state._encoding_kind
             ):
@@ -458,6 +574,7 @@ class File[T]:
                     self._state._buf[length] = u8(byte)
                     length += 1
         self._errcheck("error in read")
+        self._state._last_text_read_bytes = length
         value = _file_decode_buffer(
             self._state, length, bom_length
         )
@@ -467,7 +584,7 @@ class File[T]:
                 self._state._pending = following
         if _file_encoding_is_multibyte(self._state._encoding_kind):
             if self._state._raw_line_read:
-                return value
+                return self._finish_text_read(value, sz)
             if self._state._newline is None:
                 if self._state._skip_initial_lf:
                     self._state._skip_initial_lf = False
@@ -477,16 +594,41 @@ class File[T]:
                         value = value[1:]
                 if value.endswith("\r"):
                     self._state._skip_initial_lf = True
-                return _file_translate_read_newlines_inplace(value, self._state._newline)
+                value = _file_translate_read_newlines_inplace(
+                    value, self._state._newline
+                )
+                return self._finish_text_read(value, sz)
+            return self._finish_text_read(value, sz)
+        value = _file_translate_read_newlines_inplace(
+            value, self._state._newline
+        )
+        return self._finish_text_read(value, sz)
+
+    def _finish_text_read(self, value: str, sz: int) -> str:
+        if len(value) == 0:
+            if self._state._last_text_read_bytes > 0:
+                return self.read(sz)
             return value
-        return _file_translate_read_newlines_inplace(value, self._state._newline)
+        if len(value) > sz:
+            self._state._text_pending = value[sz:]
+            self._state._text_pending_raw_length = _file_text_raw_length(
+                self._state, self._state._text_pending
+            )
+            return value[:sz]
+        if len(value) < sz:
+            return value + self.read(sz - len(value))
+        return value
 
     def tell(self) -> int:
         self._ensure_open()
         ret = _C.ftell(self._state._fp)
         self._errcheck("error in tell")
-        return ret - self._state._read_length + self._state._read_offset - (
-            1 if self._state._pending >= 0 else 0
+        return (
+            ret
+            - self._state._read_length
+            + self._state._read_offset
+            - (1 if self._state._pending >= 0 else 0)
+            - self._state._text_pending_raw_length
         )
 
     def seekable(self) -> bool:
@@ -499,15 +641,17 @@ class File[T]:
             unread = self._state._read_length - self._state._read_offset
             if self._state._pending >= 0:
                 unread += 1
+            unread += self._state._text_pending_raw_length
             if unread > 0:
-                _C.fseek(self._state._fp, -unread, i32(1))
-        _C.fseek(self._state._fp, offset, i32(whence))
+                if _C.fseek(self._state._fp, -unread, i32(1)) != 0:
+                    raise IOError("file I/O error: error in seek")
+        if _C.fseek(self._state._fp, offset, i32(whence)) != 0:
+            raise IOError("file I/O error: error in seek")
         self._errcheck("error in seek")
         _file_discard_read_buffer(self._state)
-        self._state._pending = -1
-        self._state._text_pending = str()
-        self._state._skip_initial_lf = False
-        self._state._raw_line_read = False
+        _file_reset_text_state(
+            self._state, whence == 0 and offset == 0
+        )
 
     def flush(self):
         self._ensure_open()
@@ -533,8 +677,13 @@ class File[T]:
         if len(self._state._text_pending) > 0:
             character = self._state._text_pending
             self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
             return character
-        return self.read(1)
+        while True:
+            character = self.read(1)
+            if len(character) > 0:
+                return character
+            return character
 
     def _iter_trim_newline(self) -> Generator[T]:
         self._ensure_open()
@@ -573,7 +722,8 @@ class gzFile[T]:
         errors: str = "strict",
         newline: Optional[str] = None,
     ):
-        fp = _C.gzopen(path.c_str(), mode.c_str())
+        raw_mode = mode.replace("t", "")
+        fp = _C.gzopen(path.c_str(), raw_mode.c_str())
         if not fp:
             raise IOError(f"file {path} could not be opened")
         _file_validate_newline(newline)
@@ -586,33 +736,42 @@ class gzFile[T]:
 
         offset = 0
         while True:
-            if offset == self._state._size:
-                oldsz = self._state._size
-                self._state._size *= 2
-                self._state._buf = realloc(self._state._buf, self._state._size, oldsz)
-
             byte = self._read_byte()
             if byte < 0:
-                if offset == 0:
-                    return -1
-                break
+                return -1 if offset == 0 else offset
 
+            _file_buffer_reserve(self._state, offset + 1)
             self._state._buf[offset] = u8(byte)
             offset += 1
+
             if byte == 0x0A:
+                if T is bytes or self._state._newline is None or self._state._newline == "" or self._state._newline == "\n":
+                    break
+                continue
+
+            if byte != 0x0D or T is bytes:
+                continue
+
+            if self._state._newline == "\r":
                 break
-            if T is str and self._state._newline is None and byte == 0x0D:
+            if self._state._newline is None or self._state._newline == "":
                 following = self._read_byte()
                 if following == 0x0A:
-                    if offset == self._state._size:
-                        oldsz = self._state._size
-                        self._state._size *= 2
-                        self._state._buf = realloc(self._state._buf, self._state._size, oldsz)
+                    _file_buffer_reserve(self._state, offset + 1)
                     self._state._buf[offset] = u8(following)
                     offset += 1
                 elif following >= 0:
                     self._state._pending = following
                 break
+            if self._state._newline == "\r\n":
+                following = self._read_byte()
+                if following == 0x0A:
+                    _file_buffer_reserve(self._state, offset + 1)
+                    self._state._buf[offset] = u8(following)
+                    offset += 1
+                    break
+                if following >= 0:
+                    self._state._pending = following
 
         return offset
 
@@ -625,7 +784,8 @@ class gzFile[T]:
             yield line
 
     def __enter__(self):
-        pass
+        self._ensure_open()
+        return self
 
     def __exit__(self):
         self.close()
@@ -671,6 +831,9 @@ class gzFile[T]:
                         line.append(following._load_codepoint(0))
                     elif len(following) > 0:
                         self._state._text_pending = following
+                        self._state._text_pending_raw_length = (
+                            self._state._last_text_read_bytes
+                        )
                     if self._state._newline == "\r\n" and following != "\n":
                         continue
                     break
@@ -694,10 +857,9 @@ class gzFile[T]:
         if T is bytes:
             _C.gzwrite(self._state._fp, s._ptr, u32(len(s)))
         else:
-            data = _unicode_encode_code(
+            data = _file_stream_encode(
+                self._state,
                 _file_translate_write_newlines(s, self._state._newline),
-                self._state._encoding_kind,
-                self._state._error_code,
             )
             _C.gzwrite(self._state._fp, data._ptr, u32(len(data)))
         _gz_errcheck(self._state._fp)
@@ -709,11 +871,23 @@ class gzFile[T]:
 
     def read(self, sz: int = -1) -> T:
         self._ensure_open()
+        if sz == 0:
+            return bytes() if T is bytes else str()
+        if T is str and sz > 0 and len(self._state._text_pending) > 0:
+            prefix = self._state._text_pending
+            self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
+            if len(prefix) >= sz:
+                if len(prefix) > sz:
+                    self._state._text_pending = prefix[sz:]
+                return prefix[:sz]
+            return prefix + self.read(sz - len(prefix))
         if sz < 0:
             chunk_size = 4096
             length = 0
             prefix = self._state._text_pending
             self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
             if self._state._pending >= 0:
                 _file_buffer_reserve(self._state, 1)
                 self._state._buf[0] = u8(self._read_byte())
@@ -739,9 +913,10 @@ class gzFile[T]:
             if T is bytes:
                 return _file_buffer_bytes(self._state, length)
             else:
+                bom_length = _file_check_initial_bom(self._state, length)
                 value = _file_translate_read_newlines_inplace(
                     _file_decode_buffer(
-                        self._state, length, 0
+                        self._state, length, bom_length
                     ), self._state._newline
                 )
                 return prefix + value if len(prefix) > 0 else value
@@ -779,10 +954,7 @@ class gzFile[T]:
                         self._state._buf[length] = u8(byte)
                         length += 1
                 if not self._state._bom_checked:
-                    self._state._encoding_kind, bom_length = _file_bom_encoding(
-                        self._state._buf, length, self._state._encoding_kind
-                    )
-                    self._state._bom_checked = True
+                    bom_length = _file_check_initial_bom(self._state, length)
                 if width == 2 and _file_utf16_surrogate_pair(
                     self._state._buf, length - 2, self._state._encoding_kind
                 ):
@@ -793,6 +965,7 @@ class gzFile[T]:
                             break
                         self._state._buf[length] = u8(byte)
                         length += 1
+            self._state._last_text_read_bytes = length
             value = _file_decode_buffer(
                 self._state, length, bom_length
             )
@@ -802,7 +975,7 @@ class gzFile[T]:
                     self._state._pending = following
             if _file_encoding_is_multibyte(self._state._encoding_kind):
                 if self._state._raw_line_read:
-                    return value
+                    return self._finish_text_read(value, sz)
                 if self._state._newline is None:
                     if self._state._skip_initial_lf:
                         self._state._skip_initial_lf = False
@@ -812,34 +985,67 @@ class gzFile[T]:
                             value = value[1:]
                     if value.endswith("\r"):
                         self._state._skip_initial_lf = True
-                    return _file_translate_read_newlines_inplace(value, self._state._newline)
-                return value
-            return _file_translate_read_newlines_inplace(value, self._state._newline)
+                    value = _file_translate_read_newlines_inplace(
+                        value, self._state._newline
+                    )
+                    return self._finish_text_read(value, sz)
+                return self._finish_text_read(value, sz)
+            value = _file_translate_read_newlines_inplace(
+                value, self._state._newline
+            )
+            return self._finish_text_read(value, sz)
+
+    def _finish_text_read(self, value: str, sz: int) -> str:
+        if len(value) == 0:
+            if self._state._last_text_read_bytes > 0:
+                return self.read(sz)
+            return value
+        if len(value) > sz:
+            self._state._text_pending = value[sz:]
+            self._state._text_pending_raw_length = _file_text_raw_length(
+                self._state, self._state._text_pending
+            )
+            return value[:sz]
+        if len(value) < sz:
+            return value + self.read(sz - len(value))
+        return value
 
     def tell(self) -> int:
         self._ensure_open()
         ret = _C.gztell(self._state._fp)
         _gz_errcheck(self._state._fp)
-        return ret
+        return (
+            ret
+            - self._state._read_length
+            + self._state._read_offset
+            - (1 if self._state._pending >= 0 else 0)
+            - self._state._text_pending_raw_length
+        )
 
     def seek(self, offset: int, whence: int):
         self._ensure_open()
         unread = self._state._read_length - self._state._read_offset
+        if self._state._pending >= 0:
+            unread += 1
+        unread += self._state._text_pending_raw_length
         if unread > 0:
-            _C.gzseek(self._state._fp, -unread, i32(1))
+            if _C.gzseek(self._state._fp, -unread, i32(1)) < 0:
+                _gz_errcheck(self._state._fp)
+                raise IOError("zlib error: error in seek")
             _gz_errcheck(self._state._fp)
-        _C.gzseek(self._state._fp, offset, i32(whence))
+        if _C.gzseek(self._state._fp, offset, i32(whence)) < 0:
+            _gz_errcheck(self._state._fp)
+            raise IOError("zlib error: error in seek")
         _gz_errcheck(self._state._fp)
         _file_discard_read_buffer(self._state)
-        self._state._pending = -1
-        self._state._text_pending = str()
-        self._state._skip_initial_lf = False
-        self._state._raw_line_read = False
+        _file_reset_text_state(
+            self._state, whence == 0 and offset == 0
+        )
 
     def flush(self):
-        Z_FINISH = 4
+        Z_SYNC_FLUSH = 2
         self._ensure_open()
-        _C.gzflush(self._state._fp, i32(Z_FINISH))
+        _C.gzflush(self._state._fp, i32(Z_SYNC_FLUSH))
         _gz_errcheck(self._state._fp)
 
     def _iter_trim_newline(self) -> Generator[T]:
@@ -868,8 +1074,13 @@ class gzFile[T]:
         if len(self._state._text_pending) > 0:
             character = self._state._text_pending
             self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
             return character
-        return self.read(1)
+        while True:
+            character = self.read(1)
+            if len(character) > 0:
+                return character
+            return character
 
     def _read_byte(self) -> int:
         if self._state._pending >= 0:
@@ -910,11 +1121,15 @@ class bzFile[T]:
         errors: str = "strict",
         newline: Optional[str] = None,
     ):
-        fp = _C.BZ2_bzopen(path.c_str(), mode.c_str())
+        raw_mode = mode.replace("t", "")
+        fp = _C.BZ2_bzopen(path.c_str(), raw_mode.c_str())
         if not fp:
             raise IOError(f"file {path} could not be opened")
         _file_validate_newline(newline)
-        return bzFile[T](_FileState(fp, encoding, errors, newline, path, mode))
+        state = _FileState(fp, encoding, errors, newline, path, mode)
+        if T is str and ("w" in mode or "a" in mode or "x" in mode):
+            _file_disable_stream_bom(state)
+        return bzFile[T](state)
 
     def _getline(self) -> int:
         if not self._state._buf:
@@ -923,33 +1138,44 @@ class bzFile[T]:
 
         offset = 0
         while True:
-            if offset == self._state._size:
-                oldsz = self._state._size
-                self._state._size *= 2
-                self._state._buf = realloc(self._state._buf, self._state._size, oldsz)
-
             byte = self._read_byte()
             if byte < 0:
-                if offset == 0:
-                    return -1
-                break
+                return -1 if offset == 0 else offset
+
+            _file_buffer_reserve(self._state, offset + 1)
             self._state._buf[offset] = u8(byte)
             offset += 1
+
             if byte == 0x0A:
+                if T is bytes or self._state._newline is None or self._state._newline == "" or self._state._newline == "\n":
+                    break
+                continue
+
+            if byte != 0x0D or T is bytes:
+                continue
+
+            if self._state._newline == "\r":
                 break
-            if T is str and self._state._newline is None and byte == 0x0D:
+            if self._state._newline is None or self._state._newline == "":
                 following = self._read_byte()
                 if following == 0x0A:
-                    if offset == self._state._size:
-                        oldsz = self._state._size
-                        self._state._size *= 2
-                        self._state._buf = realloc(self._state._buf, self._state._size, oldsz)
+                    _file_buffer_reserve(self._state, offset + 1)
                     self._state._buf[offset] = u8(following)
                     offset += 1
                 elif following >= 0:
                     self._state._pending = following
                     self._state._position -= 1
                 break
+            if self._state._newline == "\r\n":
+                following = self._read_byte()
+                if following == 0x0A:
+                    _file_buffer_reserve(self._state, offset + 1)
+                    self._state._buf[offset] = u8(following)
+                    offset += 1
+                    break
+                if following >= 0:
+                    self._state._pending = following
+                    self._state._position -= 1
 
         return offset
 
@@ -962,7 +1188,8 @@ class bzFile[T]:
             yield line
 
     def __enter__(self):
-        pass
+        self._ensure_open()
+        return self
 
     def __exit__(self):
         self.close()
@@ -1008,6 +1235,9 @@ class bzFile[T]:
                         line.append(following._load_codepoint(0))
                     elif len(following) > 0:
                         self._state._text_pending = following
+                        self._state._text_pending_raw_length = (
+                            self._state._last_text_read_bytes
+                        )
                     if self._state._newline == "\r\n" and following != "\n":
                         continue
                     break
@@ -1032,10 +1262,9 @@ class bzFile[T]:
             _C.BZ2_bzwrite(self._state._fp, s._ptr, i32(len(s)))
             self._state._position += len(s)
         else:
-            data = _unicode_encode_code(
+            data = _file_stream_encode(
+                self._state,
                 _file_translate_write_newlines(s, self._state._newline),
-                self._state._encoding_kind,
-                self._state._error_code,
             )
             _C.BZ2_bzwrite(self._state._fp, data._ptr, i32(len(data)))
             self._state._position += len(data)
@@ -1048,11 +1277,23 @@ class bzFile[T]:
 
     def read(self, sz: int = -1) -> T:
         self._ensure_open()
+        if sz == 0:
+            return bytes() if T is bytes else str()
+        if T is str and sz > 0 and len(self._state._text_pending) > 0:
+            prefix = self._state._text_pending
+            self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
+            if len(prefix) >= sz:
+                if len(prefix) > sz:
+                    self._state._text_pending = prefix[sz:]
+                return prefix[:sz]
+            return prefix + self.read(sz - len(prefix))
         if sz < 0:
             chunk_size = 4096
             length = 0
             prefix = self._state._text_pending
             self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
             if self._state._pending >= 0:
                 _file_buffer_reserve(self._state, 1)
                 self._state._buf[0] = u8(self._read_byte())
@@ -1080,9 +1321,10 @@ class bzFile[T]:
             if T is bytes:
                 return _file_buffer_bytes(self._state, length)
             else:
+                bom_length = _file_check_initial_bom(self._state, length)
                 value = _file_translate_read_newlines_inplace(
                     _file_decode_buffer(
-                        self._state, length, 0
+                        self._state, length, bom_length
                     ), self._state._newline
                 )
                 return prefix + value if len(prefix) > 0 else value
@@ -1123,10 +1365,7 @@ class bzFile[T]:
                         self._state._buf[length] = u8(byte)
                         length += 1
                 if not self._state._bom_checked:
-                    self._state._encoding_kind, bom_length = _file_bom_encoding(
-                        self._state._buf, length, self._state._encoding_kind
-                    )
-                    self._state._bom_checked = True
+                    bom_length = _file_check_initial_bom(self._state, length)
                 if width == 2 and _file_utf16_surrogate_pair(
                     self._state._buf, length - 2, self._state._encoding_kind
                 ):
@@ -1137,6 +1376,7 @@ class bzFile[T]:
                             break
                         self._state._buf[length] = u8(byte)
                         length += 1
+            self._state._last_text_read_bytes = length
             value = _file_decode_buffer(
                 self._state, length, bom_length
             )
@@ -1147,7 +1387,7 @@ class bzFile[T]:
                     self._state._position -= 1
             if _file_encoding_is_multibyte(self._state._encoding_kind):
                 if self._state._raw_line_read:
-                    return value
+                    return self._finish_text_read(value, sz)
                 if self._state._newline is None:
                     if self._state._skip_initial_lf:
                         self._state._skip_initial_lf = False
@@ -1157,13 +1397,34 @@ class bzFile[T]:
                             value = value[1:]
                     if value.endswith("\r"):
                         self._state._skip_initial_lf = True
-                    return _file_translate_read_newlines_inplace(value, self._state._newline)
-                return value
-            return _file_translate_read_newlines_inplace(value, self._state._newline)
+                    value = _file_translate_read_newlines_inplace(
+                        value, self._state._newline
+                    )
+                    return self._finish_text_read(value, sz)
+                return self._finish_text_read(value, sz)
+            value = _file_translate_read_newlines_inplace(
+                value, self._state._newline
+            )
+            return self._finish_text_read(value, sz)
+
+    def _finish_text_read(self, value: str, sz: int) -> str:
+        if len(value) == 0:
+            if self._state._last_text_read_bytes > 0:
+                return self.read(sz)
+            return value
+        if len(value) > sz:
+            self._state._text_pending = value[sz:]
+            self._state._text_pending_raw_length = _file_text_raw_length(
+                self._state, self._state._text_pending
+            )
+            return value[:sz]
+        if len(value) < sz:
+            return value + self.read(sz - len(value))
+        return value
 
     def tell(self) -> int:
         self._ensure_open()
-        return self._state._position
+        return self._state._position - self._state._text_pending_raw_length
 
     def seekable(self) -> bool:
         self._ensure_open()
@@ -1171,35 +1432,48 @@ class bzFile[T]:
 
     def seek(self, offset: int, whence: int):
         self._ensure_open()
-        self._state._pending = -1
-        self._state._text_pending = str()
-        self._state._skip_initial_lf = False
-        self._state._raw_line_read = False
         if "r" not in self._state._mode:
             raise IOError("file is not open for reading")
+
+        logical_position = self.tell()
         if whence == 0:
             target = offset
         elif whence == 1:
-            target = self._state._position + offset
+            target = logical_position + offset
         elif whence == 2:
+            # Determine the logical uncompressed end position first.
             while self._read_byte() >= 0:
                 pass
-            target = self._state._position + offset
+            target = self.tell() + offset
         else:
             raise ValueError("unsupported seek whence")
+
         if target < 0:
             raise ValueError("negative seek position")
-        if target < self._state._position:
-            _C.BZ2_bzclose(self._state._fp)
-            self._state._fp = _C.BZ2_bzopen(self._state._path.c_str(), self._state._mode.c_str())
-            if not self._state._fp:
-                raise IOError(f"file {self._state._path} could not be opened")
-            self._state._position = 0
-            self._state._pending = -1
-            _file_discard_read_buffer(self._state)
+
+        # BZ2_bzread() performs internal read-ahead and we also maintain our
+        # own byte/text pending buffers. Once seek() is requested, the safest
+        # way to restore an exact logical position is to reopen the compressed
+        # stream and replay the uncompressed bytes up to the requested offset.
+        # In particular, merely clearing _pending would lose a byte that was
+        # consumed as newline lookahead but is still logically unread.
+        _C.BZ2_bzclose(self._state._fp)
+        raw_mode = self._state._mode.replace("t", "")
+        self._state._fp = _C.BZ2_bzopen(
+            self._state._path.c_str(), raw_mode.c_str()
+        )
+        if not self._state._fp:
+            raise IOError(f"file {self._state._path} could not be opened")
+
+        self._state._position = 0
+        _file_discard_read_buffer(self._state)
+        _file_reset_text_state(self._state, True)
+
         while self._state._position < target:
             if self._read_byte() < 0:
                 break
+        if target == 0:
+            _file_reset_text_state(self._state, True)
 
     def flush(self):
         self._ensure_open()
@@ -1232,8 +1506,13 @@ class bzFile[T]:
         if len(self._state._text_pending) > 0:
             character = self._state._text_pending
             self._state._text_pending = str()
+            self._state._text_pending_raw_length = 0
             return character
-        return self.read(1)
+        while True:
+            character = self.read(1)
+            if len(character) > 0:
+                return character
+            return character
 
     def _read_byte(self) -> int:
         if self._state._pending >= 0:
@@ -1267,77 +1546,125 @@ def _literal_contains(needle: Literal[str], haystack: Literal[str]) -> Literal[b
     else:
         return _literal_contains(needle, haystack[1:])
 
+def _file_text_encoding(encoding: Optional[str]) -> str:
+    return "utf-8" if encoding is None else encoding
+
+def _file_text_errors(errors: Optional[str]) -> str:
+    return "strict" if errors is None else errors
+
 def open(
     path: str,
     mode: str = "r",
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
 ) -> File[str]:
-    return File[str](path, mode, encoding, errors, newline)
+    return File[str](
+        path,
+        mode,
+        _file_text_encoding(encoding),
+        _file_text_errors(errors),
+        newline,
+    )
 
 @overload
 def open(
     path: str,
     mode: Literal[str],
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
 ):
     if _literal_contains("b", mode):
-        if encoding != "utf-8" or errors != "strict" or newline is not None:
+        if encoding is not None or errors is not None or newline is not None:
             raise ValueError("binary mode does not take encoding, errors or newline")
         return File[bytes](path, mode)
     else:
-        return File[str](path, mode, encoding, errors, newline)
+        return File[str](
+            path,
+            mode,
+            _file_text_encoding(encoding),
+            _file_text_errors(errors),
+            newline,
+        )
 
 def gzopen(
     path: str,
-    mode: str = "r",
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    mode: str = "rb",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
-) -> gzFile[str]:
-    return gzFile[str](path, mode, encoding, errors, newline)
+) -> gzFile[bytes]:
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return gzFile[bytes](path, mode)
 
 @overload
 def gzopen(
     path: str,
     mode: Literal[str],
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
 ):
-    if _literal_contains("b", mode):
-        if encoding != "utf-8" or errors != "strict" or newline is not None:
-            raise ValueError("binary mode does not take encoding, errors or newline")
-        return gzFile[bytes](path, mode)
-    else:
-        return gzFile[str](path, mode, encoding, errors, newline)
+    binary: Literal[bool] = _literal_contains("b", mode)
+    text: Literal[bool] = _literal_contains("t", mode)
+
+    if binary and text:
+        compile_error("can't have text and binary mode at once")
+
+    if text:
+        return gzFile[str](
+            path,
+            mode,
+            _file_text_encoding(encoding),
+            _file_text_errors(errors),
+            newline,
+        )
+
+    # gzip.open() uses binary mode unless 't' is explicitly present.
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return gzFile[bytes](path, mode)
 
 def bzopen(
     path: str,
-    mode: str = "r",
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    mode: str = "rb",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
-) -> bzFile[str]:
-    return bzFile[str](path, mode, encoding, errors, newline)
+) -> bzFile[bytes]:
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return bzFile[bytes](path, mode)
 
 @overload
 def bzopen(
     path: str,
     mode: Literal[str],
-    encoding: str = "utf-8",
-    errors: str = "strict",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
     newline: Optional[str] = None,
 ):
-    if _literal_contains("b", mode):
-        if encoding != "utf-8" or errors != "strict" or newline is not None:
-            raise ValueError("binary mode does not take encoding, errors or newline")
-        return bzFile[bytes](path, mode)
-    else:
-        return bzFile[str](path, mode, encoding, errors, newline)
+    binary: Literal[bool] = _literal_contains("b", mode)
+    text: Literal[bool] = _literal_contains("t", mode)
+
+    if binary and text:
+        compile_error("can't have text and binary mode at once")
+
+    if text:
+        return bzFile[str](
+            path,
+            mode,
+            _file_text_encoding(encoding),
+            _file_text_errors(errors),
+            newline,
+        )
+
+    # bz2.open() uses binary mode unless 't' is explicitly present.
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return bzFile[bytes](path, mode)
 
 def is_binary(path: str) -> bool:
     # https://stackoverflow.com/questions/898669/how-can-i-detect-if-a-file-is-binary-non-text-in-python/7392391#7392391

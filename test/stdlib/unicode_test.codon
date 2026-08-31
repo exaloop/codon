@@ -402,7 +402,7 @@ def test_unicode_regex():
 @test
 def test_unicode_file_io():
     text = unicode("éβ😀\n")
-    raw = _raw_bytes([0x00, 0xFF, 0x61])
+    raw = b'\x00\xff\x61'
 
     writer = open(unicode("build/unicode-file.txt"), "w")
     assert writer.write(text) == len(text)
@@ -411,17 +411,17 @@ def test_unicode_file_io():
     assert reader.read() == text
     reader.close()
 
-    writer = gzip.open(unicode("build/unicode-file.gz"), "w")
+    writer = gzip.open(unicode("build/unicode-file.gz"), "wt")
     assert writer.write(text) == len(text)
     writer.close()
-    reader = gzip.open(unicode("build/unicode-file.gz"), "r")
+    reader = gzip.open(unicode("build/unicode-file.gz"), "rt")
     assert reader.read() == text
     reader.close()
 
-    writer = bz2.open(unicode("build/unicode-file.bz2"), "w")
+    writer = bz2.open(unicode("build/unicode-file.bz2"), "wt")
     assert writer.write(text) == len(text)
     writer.close()
-    reader = bz2.open(unicode("build/unicode-file.bz2"), "r")
+    reader = bz2.open(unicode("build/unicode-file.bz2"), "rt")
     assert reader.read() == text
     reader.close()
 
@@ -434,28 +434,28 @@ def test_unicode_file_io():
     assert reader.read() == unicode("!")
     reader.close()
 
-    writer = gzip.open("build/unicode-read.gz", "w")
+    writer = gzip.open("build/unicode-read.gz", "wt")
     writer.write(unicode("éβ😀!"))
     writer.close()
-    reader = gzip.open("build/unicode-read.gz", "r")
+    reader = gzip.open("build/unicode-read.gz", "rt")
     assert reader.read(1) == unicode("é")
     assert reader.read(2) == unicode("β😀")
     assert reader.read() == unicode("!")
     reader.close()
 
-    writer = bz2.open("build/unicode-read.bz2", "w")
+    writer = bz2.open("build/unicode-read.bz2", "wt")
     writer.write(unicode("éβ😀!"))
     writer.close()
-    reader = bz2.open("build/unicode-read.bz2", "r")
+    reader = bz2.open("build/unicode-read.bz2", "rt")
     assert reader.read(1) == unicode("é")
     assert reader.read(2) == unicode("β😀")
     assert reader.read() == unicode("!")
     reader.close()
 
-    writer = gzip.open(unicode("build/unicode-nul.gz"), "w")
+    writer = gzip.open(unicode("build/unicode-nul.gz"), "wt")
     writer.write(unicode("a\x00é\nb"))
     writer.close()
-    reader = gzip.open(unicode("build/unicode-nul.gz"), "r")
+    reader = gzip.open(unicode("build/unicode-nul.gz"), "rt")
     assert reader.readline() == unicode("a\x00é\n")
     assert reader.readline() == unicode("b")
     assert reader.readline() == unicode("")
@@ -4848,3 +4848,400 @@ test_unicode_fill_and_character_width()
 test_percent_regressions_baseline()
 test_brace_regressions_baseline()
 test_invalid_string_specs()
+
+
+# File I/O tests
+
+from gzip import open as gzopen
+from bz2 import open as bzopen
+
+
+@test
+def test_file_context_manager_returns_self():
+    path = "build/file_context_manager.txt"
+    with open(path, "w") as f:
+        assert f is not None
+        assert f.write("hello") == 5
+
+    with open(path, "r") as f:
+        assert f.read() == "hello"
+
+
+@test
+def test_binary_readline_only_splits_on_lf():
+    path = "build/file_binary_readline.bin"
+    with open(path, "wb") as f:
+        f.write(b"a\rb\nc")
+
+    with open(path, "rb") as f:
+        assert f.readline() == b"a\rb\n"
+        assert f.readline() == b"c"
+        assert f.readline() == b""
+
+
+@test
+def test_text_readline_newline_modes():
+    path = "build/file_newline_modes.txt"
+    with open(path, "wb") as f:
+        f.write(b"a\rb\r\nc\n")
+
+    with open(path, "r", newline=None) as f:
+        assert f.readline() == "a\n"
+        assert f.readline() == "b\n"
+        assert f.readline() == "c\n"
+
+    with open(path, "r", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r\n"
+        assert f.readline() == "c\n"
+
+    with open(path, "r", newline="\n") as f:
+        assert f.readline() == "a\rb\r\n"
+        assert f.readline() == "c\n"
+
+    with open(path, "r", newline="\r") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r"
+        assert f.readline() == "\nc\n"
+
+    with open(path, "r", newline="\r\n") as f:
+        assert f.readline() == "a\rb\r\n"
+        assert f.readline() == "c\n"
+
+
+@test
+def test_gzip_and_bzip_newline_empty_mode():
+    gz_path = "build/file_newline_modes.gz"
+    bz_path = "build/file_newline_modes.bz2"
+    data = b"a\rb\r\nc\n"
+
+    with gzopen(gz_path, "wb") as f:
+        f.write(data)
+    with gzopen(gz_path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r\n"
+        assert f.readline() == "c\n"
+
+    with bzopen(bz_path, "wb") as f:
+        f.write(data)
+    with bzopen(bz_path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r\n"
+        assert f.readline() == "c\n"
+
+
+@test
+def test_utf16_bom_written_once_file():
+    path = "build/file_utf16_once.txt"
+    with open(path, "w", encoding="utf-16") as f:
+        f.write("A")
+        f.write("B")
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    assert data == b"\xff\xfeA\x00B\x00"
+
+
+@test
+def test_utf32_bom_written_once_file():
+    path = "build/file_utf32_once.txt"
+    with open(path, "w", encoding="utf-32") as f:
+        f.write("A")
+        f.write("B")
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    assert data == b"\xff\xfe\x00\x00A\x00\x00\x00B\x00\x00\x00"
+
+
+@test
+def test_utf16_compressed_writer_matches_python():
+    gz_path = "build/file_utf16_once.gz"
+    bz_path = "build/file_utf16_once.bz2"
+
+    # gzip's text wrapper is seekable, so generic UTF-16 emits its BOM once.
+    with gzopen(gz_path, "wt", encoding="utf-16") as f:
+        f.write("A")
+        f.write("B")
+    with gzopen(gz_path, "rb") as f:
+        assert f.read() == b"\xff\xfeA\x00B\x00"
+
+    # CPython's writable BZ2File is non-seekable. TextIOWrapper therefore
+    # uses the native-endian UTF-16 encoder without writing a BOM.
+    with bzopen(bz_path, "wt", encoding="utf-16") as f:
+        f.write("A")
+        f.write("B")
+    with bzopen(bz_path, "rb") as f:
+        assert f.read() == b"A\x00B\x00"
+
+
+@test
+def test_utf32_compressed_writer_matches_python():
+    gz_path = "build/file_utf32_once.gz"
+    bz_path = "build/file_utf32_once.bz2"
+
+    with gzopen(gz_path, "wt", encoding="utf-32") as f:
+        f.write("A")
+        f.write("B")
+    with gzopen(gz_path, "rb") as f:
+        assert f.read() == b"\xff\xfe\x00\x00A\x00\x00\x00B\x00\x00\x00"
+
+    with bzopen(bz_path, "wt", encoding="utf-32") as f:
+        f.write("A")
+        f.write("B")
+    with bzopen(bz_path, "rb") as f:
+        assert f.read() == b"A\x00\x00\x00B\x00\x00\x00"
+
+
+@test
+def test_utf16_stream_requires_bom():
+    path = "build/file_utf16_no_bom.txt"
+    with open(path, "wb") as f:
+        f.write(b"A\x00")
+
+    try:
+        with open(path, "r", encoding="utf-16") as f:
+            f.read()
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_empty_utf16_stream_is_allowed():
+    path = "build/file_utf16_empty.txt"
+    with open(path, "wb") as f:
+        pass
+
+    with open(path, "r", encoding="utf-16") as f:
+        assert f.read() == ""
+
+
+@test
+def test_utf16_seek_zero_resets_bom_state():
+    path = "build/file_utf16_seek.txt"
+    with open(path, "w", encoding="utf-16") as f:
+        f.write("AB")
+
+    with open(path, "r", encoding="utf-16") as f:
+        assert f.read(1) == "A"
+        f.seek(0, 0)
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+
+
+@test
+def test_utf16_seek_zero_resets_bom_state_compressed():
+    gz_path = "build/file_utf16_seek.gz"
+    bz_path = "build/file_utf16_seek.bz2"
+    payload = b"\xff\xfeA\x00B\x00"
+
+    # Write the encoded payload explicitly so this test is about decoder/seek
+    # state, not the different TextIOWrapper write behavior of gzip vs. bz2.
+    with gzopen(gz_path, "wb") as f:
+        f.write(payload)
+    with gzopen(gz_path, "rt", encoding="utf-16") as f:
+        assert f.read(1) == "A"
+        f.seek(0, 0)
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+
+    with bzopen(bz_path, "wb") as f:
+        f.write(payload)
+    with bzopen(bz_path, "rt", encoding="utf-16") as f:
+        assert f.read(1) == "A"
+        f.seek(0, 0)
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+
+
+@test
+def test_read_n_characters_with_ignore_errors():
+    path = "build/file_ignore_read.txt"
+    with open(path, "wb") as f:
+        f.write(b"\xffAB")
+
+    with open(path, "r", encoding="ascii", errors="ignore") as f:
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+        assert f.read(1) == ""
+
+
+@test
+def test_readline_skips_ignored_decode_errors():
+    path = "build/file_ignore_readline.txt"
+    with open(path, "wb") as f:
+        f.write(b"\xffA\nB\n")
+
+    with open(path, "r", encoding="ascii", errors="ignore") as f:
+        assert f.readline() == "A\n"
+        assert f.readline() == "B\n"
+
+
+@test
+def test_utf8_malformed_read_one_preserves_following_character():
+    path = "build/file_utf8_replace.txt"
+    with open(path, "wb") as f:
+        f.write(b"\xe1\x80A")
+
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        assert f.read(1) == "\ufffd"
+        assert f.read(1) == "A"
+        assert f.read(1) == ""
+
+
+@test
+def test_gzip_tell_accounts_for_read_ahead():
+    path = "build/file_gzip_tell.gz"
+    data = b"a" * 9000
+
+    with gzopen(path, "wb") as f:
+        f.write(data)
+
+    with gzopen(path, "rb") as f:
+        assert f.tell() == 0
+        assert f.read(1) == b"a"
+        assert f.tell() == 1
+        assert f.read(10) == b"a" * 10
+        assert f.tell() == 11
+        f.seek(0, 0)
+        assert f.tell() == 0
+        assert f.read(1) == b"a"
+        assert f.tell() == 1
+
+
+@test
+def test_gzip_seek_accounts_for_pending_byte():
+    path = "build/file_gzip_pending.gz"
+    with gzopen(path, "wb") as f:
+        f.write(b"a\rb")
+
+    with gzopen(path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        pos = f.tell()
+
+        # Text-mode tell() values are opaque seek cookies in CPython, not
+        # necessarily raw byte offsets. The portable contract is that the
+        # returned value can be passed back to seek().
+        f.seek(pos, 0)
+        assert f.read(1) == "b"
+
+
+@test
+def test_bzip_tell_accounts_for_pending_text():
+    path = "build/file_bzip_pending.bz2"
+    with bzopen(path, "wb") as f:
+        f.write(b"a\rb")
+
+    with bzopen(path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        pos = f.tell()
+
+        # As with gzip, text-mode tell() is an opaque cookie under CPython.
+        f.seek(pos, 0)
+        assert f.read(1) == "b"
+
+
+@test
+def test_gzip_flush_does_not_finish_stream():
+    path = "build/file_gzip_flush.gz"
+    with gzopen(path, "wb") as f:
+        f.write(b"A")
+        f.flush()
+        f.write(b"B")
+        f.flush()
+        f.write(b"C")
+
+    with gzopen(path, "rb") as f:
+        assert f.read() == b"ABC"
+
+
+
+@test
+def test_compressed_bare_modes_are_binary():
+    gz_path = "build/file_gzip_default_binary.gz"
+    bz_path = "build/file_bzip_default_binary.bz2"
+
+    with gzopen(gz_path, "w") as f:
+        assert f.write(b"abc") == 3
+    with gzopen(gz_path, "r") as f:
+        assert f.read() == b"abc"
+
+    with bzopen(bz_path, "w") as f:
+        assert f.write(b"abc") == 3
+    with bzopen(bz_path, "r") as f:
+        assert f.read() == b"abc"
+
+
+@test
+def test_compressed_text_options_require_text_mode():
+    gz_path = "build/file_gzip_text_mode.gz"
+    bz_path = "build/file_bzip_text_mode.bz2"
+
+    try:
+        gzopen(gz_path, "w", encoding="utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        gzopen(gz_path, "r", newline="")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        bzopen(bz_path, "w", encoding="utf-8", newline="\n")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        bzopen(bz_path, "r", errors="ignore")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_compressed_explicit_text_mode():
+    gz_path = "build/file_gzip_explicit_text.gz"
+    bz_path = "build/file_bzip_explicit_text.bz2"
+
+    with gzopen(gz_path, "wt", encoding="utf-8", newline="") as f:
+        assert f.write("a\rb\n") == 4
+    with gzopen(gz_path, "rt", encoding="utf-8", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\n"
+
+    with bzopen(bz_path, "wt", encoding="utf-8", newline="") as f:
+        assert f.write("a\rb\n") == 4
+    with bzopen(bz_path, "rt", encoding="utf-8", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\n"
+
+
+test_compressed_bare_modes_are_binary()
+test_compressed_text_options_require_text_mode()
+test_compressed_explicit_text_mode()
+test_file_context_manager_returns_self()
+test_binary_readline_only_splits_on_lf()
+test_text_readline_newline_modes()
+test_gzip_and_bzip_newline_empty_mode()
+test_utf16_bom_written_once_file()
+test_utf32_bom_written_once_file()
+test_utf16_compressed_writer_matches_python()
+test_utf32_compressed_writer_matches_python()
+test_utf16_stream_requires_bom()
+test_empty_utf16_stream_is_allowed()
+test_utf16_seek_zero_resets_bom_state()
+test_utf16_seek_zero_resets_bom_state_compressed()
+test_read_n_characters_with_ignore_errors()
+test_readline_skips_ignored_decode_errors()
+test_utf8_malformed_read_one_preserves_following_character()
+test_gzip_tell_accounts_for_read_ahead()
+test_gzip_seek_accounts_for_pending_byte()
+test_bzip_tell_accounts_for_pending_text()
+test_gzip_flush_does_not_finish_stream()

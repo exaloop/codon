@@ -380,7 +380,10 @@ def hex(n):
     return _int_format(n.__index__(), 16, "0x")
 
 def format(value, format_spec: str = ""):
-    return value.__format__(format_spec)
+    if hasattr(value, "__format__"):
+        return value.__format__(format_spec)
+    else:
+        return format_spec.format(value)
 
 def pow(base: float, exp: float):
     return base ** exp

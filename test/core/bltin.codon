@@ -1719,14 +1719,14 @@ def test_num_from_str_extended():
 @test
 def test_files(open_fn, append_allowed: bool = True):
     path = 'build/testfile.txt'
-    f = open_fn(path, 'w')
+    f = open_fn(path, 'wt')
     f.write('hello\nworld\n')
     f.close()
 
-    with open_fn(path) as f:
+    with open_fn(path, 'rt') as f:
         assert [line for line in f] == ['hello\n', 'world\n']
 
-    with open_fn(path) as f:
+    with open_fn(path, 'rt') as f:
         assert f.read(3) == 'hel'
         assert f.read() == 'lo\nworld\n'
         if hasattr(f, "seek"):
@@ -1755,20 +1755,20 @@ def test_files(open_fn, append_allowed: bool = True):
         pass
 
     if append_allowed:
-        f = open_fn(path, 'a')
+        f = open_fn(path, 'at')
         f.write('goodbye')
         f.flush()
         f.close()
     else:
-        f = open_fn(path, 'w')
+        f = open_fn(path, 'wt')
         f.write('hello\nworld\ngoodbye')
         f.flush()
         f.close()
 
-    with open_fn(path) as f:
+    with open_fn(path, 'rt') as f:
         assert [line for line in f] == ['hello\n', 'world\n', 'goodbye']
 
-    with open_fn(path) as f:
+    with open_fn(path, 'rt') as f:
         assert f.read(3) == 'hel'
         assert f.read() == 'lo\nworld\ngoodbye'
 
