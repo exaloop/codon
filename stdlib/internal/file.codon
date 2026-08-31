@@ -7,7 +7,7 @@ from internal.str import _UnicodeCodecBuffer, _make_meta, _unicode_decode_ptr, _
 # and a larger buffered raw I/O layer. CPython dynamically chooses the raw
 # buffer from the device block size (commonly 128 KiB on regular files).
 _FILE_READ_BUFFER_SIZE: Literal[int] = 131072
-_FILE_TEXT_CHUNK_SIZE: Literal[int] = 8192
+_FILE_TEXT_LARGE_CHUNK_SIZE: Literal[int] = 1048576
 _FILE_READ_ALL_CHUNK_SIZE: Literal[int] = 131072
 
 _FILE_BACKEND_STDIO: Literal[int] = 0
@@ -120,10 +120,14 @@ class _FileBuffer:
     def reserve(self, required: int):
         if required <= self._capacity:
             return
-        capacity = self._capacity if self._capacity > 0 else 1
+        capacity = self._capacity if self._capacity > 0 else required
         while capacity < required:
             capacity *= 2
-        self._ptr = realloc(self._ptr, capacity, self._capacity)
+        self._ptr = (
+            realloc(self._ptr, capacity, self._capacity)
+            if self._ptr
+            else Ptr[u8](capacity)
+        )
         self._capacity = capacity
 
     def finish_bytes(self, length: int) -> bytes:
@@ -426,6 +430,11 @@ def _file_decode_text_chunk(
 
     if bom_length < 0:
         bom_length = _file_check_initial_bom(state, buffer, length)
+    translate_newlines = True
+    if state._newline is None and state._encoding_kind == _ENCODING_UTF8:
+        translate_newlines = bool(
+            _C.memchr(buffer + bom_length, i32(0x0D), length - bom_length)
+        )
     value = _file_decode_buffer(state, buffer, length, bom_length)
     raw_payload = length - bom_length
     if len(value) > 0 and raw_payload > 0:
@@ -443,7 +452,8 @@ def _file_decode_text_chunk(
                 value = value[1:]
         if value.endswith("\r"):
             state._skip_initial_lf = True
-        value = _file_translate_read_newlines_inplace(value, state._newline)
+            if translate_newlines:
+                value = _file_translate_read_newlines_inplace(value, state._newline)
     return value
 
 def _file_decode_owned_text_chunk(
@@ -456,7 +466,25 @@ def _file_decode_owned_text_chunk(
 
     if bom_length < 0:
         bom_length = _file_check_initial_bom(state, buffer._ptr, length)
-    value = _file_decode_owned_buffer(state, buffer, length, bom_length)
+    translate_newlines = True
+    if (
+        state._newline is None
+        and state._encoding_kind == _ENCODING_UTF8
+        and bom_length == 0
+    ):
+        is_ascii, translate_newlines = _file_classify_ascii_cr(
+            buffer._ptr, length
+        )
+        if is_ascii:
+            value = str(buffer.detach(), _make_meta(length, 0))
+        else:
+            value = _file_decode_owned_buffer(state, buffer, length, 0)
+    else:
+        if state._newline is None and state._encoding_kind == _ENCODING_UTF8:
+            translate_newlines = bool(
+                _C.memchr(buffer._ptr + bom_length, i32(0x0D), length - bom_length)
+            )
+        value = _file_decode_owned_buffer(state, buffer, length, bom_length)
     raw_payload = length - bom_length
     if len(value) > 0 and raw_payload > 0:
         state._b2cratio = float(raw_payload) / float(len(value))
@@ -470,19 +498,109 @@ def _file_decode_owned_text_chunk(
                 value = value[1:]
         if value.endswith("\r"):
             state._skip_initial_lf = True
-        value = _file_translate_read_newlines_inplace(value, state._newline)
+        if translate_newlines:
+            value = _file_translate_read_newlines_inplace(value, state._newline)
     return value
 
 def _file_text_chunk_target(state: _FileState, remaining: int) -> int:
-    # CPython keeps a bytes-to-characters ratio (b2cratio) and uses it as a
-    # read-size heuristic. Keep an 8 KiB floor to amortize decoder overhead,
-    # but avoid arbitrarily large speculative read-ahead.
+    # Decode from the full read buffer to amortize Unicode allocation and
+    # validation; read(n) retains any extra characters as zero-copy views.
     estimated = int(float(remaining) * state._b2cratio)
-    if estimated < _FILE_TEXT_CHUNK_SIZE:
-        return _FILE_TEXT_CHUNK_SIZE
-    if estimated > _FILE_READ_BUFFER_SIZE:
+    if remaining >= 65536 and estimated < _FILE_TEXT_LARGE_CHUNK_SIZE:
+        return _FILE_TEXT_LARGE_CHUNK_SIZE
+    if estimated < _FILE_READ_BUFFER_SIZE:
         return _FILE_READ_BUFFER_SIZE
+    if estimated > _FILE_TEXT_LARGE_CHUNK_SIZE:
+        return _FILE_TEXT_LARGE_CHUNK_SIZE
     return estimated
+
+@pure
+@llvm
+def _file_byte_mask16(data: Ptr[u8], pos: int, needle: u8) -> u16:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %base = insertelement <16 x i8> poison, i8 %needle, i64 0
+    %needles = shufflevector <16 x i8> %base, <16 x i8> poison, <16 x i32> zeroinitializer
+    %matches = icmp eq <16 x i8> %bytes, %needles
+    %mask = bitcast <16 x i1> %matches to i16
+    ret i16 %mask
+
+@pure
+@llvm
+def _file_newline_mask16(data: Ptr[u8], pos: int) -> u16:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %lfbase = insertelement <16 x i8> poison, i8 10, i64 0
+    %lf = shufflevector <16 x i8> %lfbase, <16 x i8> poison, <16 x i32> zeroinitializer
+    %crbase = insertelement <16 x i8> poison, i8 13, i64 0
+    %cr = shufflevector <16 x i8> %crbase, <16 x i8> poison, <16 x i32> zeroinitializer
+    %islf = icmp eq <16 x i8> %bytes, %lf
+    %iscr = icmp eq <16 x i8> %bytes, %cr
+    %matches = or <16 x i1> %islf, %iscr
+    %mask = bitcast <16 x i1> %matches to i16
+    ret i16 %mask
+
+@pure
+@llvm
+def _file_nonascii_mask16(data: Ptr[u8], pos: int) -> u16:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %nonascii = icmp slt <16 x i8> %bytes, zeroinitializer
+    %mask = bitcast <16 x i1> %nonascii to i16
+    ret i16 %mask
+
+@pure
+@llvm
+def _file_ascii_cr_mask16(data: Ptr[u8], pos: int) -> u32:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %nonascii = icmp slt <16 x i8> %bytes, zeroinitializer
+    %nonascii16 = bitcast <16 x i1> %nonascii to i16
+    %crbase = insertelement <16 x i8> poison, i8 13, i64 0
+    %cr = shufflevector <16 x i8> %crbase, <16 x i8> poison, <16 x i32> zeroinitializer
+    %iscr = icmp eq <16 x i8> %bytes, %cr
+    %cr16 = bitcast <16 x i1> %iscr to i16
+    %nonascii32 = zext i16 %nonascii16 to i32
+    %cr32 = zext i16 %cr16 to i32
+    %shifted = shl i32 %cr32, 16
+    %mask = or i32 %nonascii32, %shifted
+    ret i32 %mask
+
+@pure
+@llvm
+def _file_first_match(mask: u16) -> int:
+    declare i16 @llvm.cttz.i16(i16, i1)
+    %index16 = call i16 @llvm.cttz.i16(i16 %mask, i1 true)
+    %index = zext i16 %index16 to i64
+    ret i64 %index
+
+def _file_is_ascii(data: Ptr[u8], length: int) -> bool:
+    i = 0
+    while i + 16 <= length:
+        if _file_nonascii_mask16(data, i):
+            return False
+        i += 16
+    while i < length:
+        if data[i] >= u8(0x80):
+            return False
+        i += 1
+    return True
+
+def _file_classify_ascii_cr(data: Ptr[u8], length: int) -> Tuple[bool, bool]:
+    is_ascii = True
+    has_cr = False
+    i = 0
+    while i + 16 <= length:
+        mask = _file_ascii_cr_mask16(data, i)
+        is_ascii = is_ascii and not bool(mask & u32(0xFFFF))
+        has_cr = has_cr or bool(mask & u32(0xFFFF0000))
+        i += 16
+    while i < length:
+        byte = data[i]
+        is_ascii = is_ascii and byte < u8(0x80)
+        has_cr = has_cr or byte == u8(0x0D)
+        i += 1
+    return is_ascii, has_cr
 
 def _file_scan_line_buffer(
     buffer: Ptr[u8],
@@ -491,41 +609,70 @@ def _file_scan_line_buffer(
     newline: Optional[str],
     binary: bool,
 ) -> Tuple[int, bool]:
-    i = start
-    while i < end:
-        byte = int(buffer[i])
-        if binary or newline == "\n":
-            if byte == 0x0A:
+    if binary or newline == "\n":
+        needle = u8(0x0A)
+        i = start
+        while i + 16 <= end:
+            mask = _file_byte_mask16(buffer, i, needle)
+            if mask:
+                return (i + _file_first_match(mask) + 1, False)
+            i += 16
+        while i < end:
+            if buffer[i] == needle:
                 return (i + 1, False)
             i += 1
-            continue
+        return (-1, False)
 
-        if newline == "\r":
-            if byte == 0x0D:
+    if newline == "\r":
+        needle = u8(0x0D)
+        i = start
+        while i + 16 <= end:
+            mask = _file_byte_mask16(buffer, i, needle)
+            if mask:
+                return (i + _file_first_match(mask) + 1, False)
+            i += 16
+        while i < end:
+            if buffer[i] == needle:
                 return (i + 1, False)
             i += 1
-            continue
+        return (-1, False)
 
-        if newline == "\r\n":
-            if byte != 0x0D:
+    if newline == "\r\n":
+        i = start
+        while i < end:
+            while i + 16 <= end:
+                mask = _file_byte_mask16(buffer, i, u8(0x0D))
+                if mask:
+                    i += _file_first_match(mask)
+                    break
+                i += 16
+            while i < end and buffer[i] != u8(0x0D):
                 i += 1
-                continue
-            if i + 1 < end:
-                if buffer[i + 1] == u8(0x0A):
-                    return (i + 2, False)
-                i += 1
-                continue
-            return (i + 1, True)
-
-        # Universal newline modes (None and "").
-        if byte == 0x0A:
-            return (i + 1, False)
-        if byte == 0x0D:
-            if i + 1 < end and buffer[i + 1] == u8(0x0A):
+            if i == end:
+                return (-1, False)
+            if i + 1 == end:
+                return (i + 1, True)
+            if buffer[i + 1] == u8(0x0A):
                 return (i + 2, False)
-            return (i + 1, i + 1 == end)
+            i += 1
+        return (-1, False)
+
+    i = start
+    while i + 16 <= end:
+        mask = _file_newline_mask16(buffer, i)
+        if mask:
+            i += _file_first_match(mask)
+            break
+        i += 16
+    while i < end and buffer[i] != u8(0x0A) and buffer[i] != u8(0x0D):
         i += 1
-    return (-1, False)
+    if i == end:
+        return (-1, False)
+    if buffer[i] == u8(0x0A):
+        return (i + 1, False)
+    if i + 1 < end and buffer[i + 1] == u8(0x0A):
+        return (i + 2, False)
+    return (i + 1, i + 1 == end)
 
 def _file_readline_raw(
     state: _FileState,
@@ -600,10 +747,7 @@ def _file_decode_buffer(
     # decoder entirely when every byte is ASCII: Codon's ASCII string layout is
     # byte-for-byte identical to the input payload.
     if state._encoding_kind == _ENCODING_UTF8:
-        i = offset
-        while i < length and int(buffer[i]) < 0x80:
-            i += 1
-        if i == length:
+        if _file_is_ascii(buffer + offset, payload):
             result = Ptr[u8](payload)
             bytes.memcpy(result, buffer + offset, payload)
             return str(result, _make_meta(payload, 0))
@@ -624,10 +768,7 @@ def _file_decode_owned_buffer(
     # Unicode representation. Transfer ownership of the read allocation to the
     # str instead of allocating and copying the payload a second time.
     if state._encoding_kind == _ENCODING_UTF8 and offset == 0:
-        i = 0
-        while i < length and int(buffer._ptr[i]) < 0x80:
-            i += 1
-        if i == length:
+        if _file_is_ascii(buffer._ptr, length):
             data = buffer.detach()
             return str(data, _make_meta(length, 0))
 
@@ -635,6 +776,7 @@ def _file_decode_owned_buffer(
     buffer.clear()
     return value
 
+@inline
 def _file_read_all_append(
     state: _FileState, buffer: _FileBuffer, length: int
 ) -> int:
@@ -673,6 +815,7 @@ def _file_discard_read_buffer(state: _FileState):
     state._read_offset = 0
     state._read_length = 0
 
+@inline
 def _file_read_all_buffered(state: _FileState, buffer: _FileBuffer) -> int:
     length = 0
     if state._pending >= 0:
@@ -693,8 +836,8 @@ def _file_read_all_buffered(state: _FileState, buffer: _FileBuffer) -> int:
 class File[T]:
     _state: _FileState
 
-    def __new__(fp: cobj):
-        return File[T](_FileState(fp))
+    def __new__(fp: cobj, mode: str):
+        return File[T](_FileState(fp, mode=mode))
 
     def __new__(
         path: str,
@@ -778,8 +921,7 @@ class File[T]:
         )
         if T is bytes:
             return buffer.finish_bytes(length)
-        value = _file_decode_buffer(self._state, buffer._ptr, length, 0)
-        buffer.clear()
+        value = _file_decode_owned_buffer(self._state, buffer, length, 0)
         return _file_translate_line_ending_inplace(
             value, self._state._newline
         )
@@ -817,6 +959,7 @@ class File[T]:
         for s in g:
             self.write(s)
 
+    @inline
     def read(self, sz: int = -1) -> T:
         self._ensure_open()
         _file_flush_stdio_write_buffer(self._state)
@@ -839,6 +982,9 @@ class File[T]:
             value = _file_decode_owned_text_chunk(self._state, buffer, length)
             return prefix + value if len(prefix) > 0 else value
 
+        if sz >= 65536:
+            return self._read_large_text(sz)
+
         result = str()
         pending_length = _file_text_pending_length(self._state)
         if pending_length > 0:
@@ -847,20 +993,75 @@ class File[T]:
             result = _file_take_all_text_pending(self._state)
 
         while len(result) < sz:
+            remaining = sz - len(result)
             value = self._read_text_chunk(
-                _file_text_chunk_target(self._state, sz - len(result))
+                _file_text_chunk_target(self._state, remaining)
             )
             if len(value) == 0:
                 if self._state._last_text_read_bytes > 0:
                     continue
                 break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                prefix = value[:remaining]
+                return prefix if len(result) == 0 else result + prefix
             result = value if len(result) == 0 else result + value
 
-        if len(result) > sz:
-            _file_set_text_pending(self._state, result, sz)
-            return result[:sz]
         return result
 
+    @inline
+    def _read_large_text(self, sz: int) -> str:
+        if (
+            sz <= _FILE_READ_BUFFER_SIZE
+            and _file_text_pending_length(self._state) == 0
+            and self._state._backend == _FILE_BACKEND_STDIO
+            and self._state._encoding_kind == _ENCODING_UTF8
+            and self._state._b2cratio == 1.0
+            and self._state._pending < 0
+            and not self._state._skip_initial_lf
+        ):
+            available = self._state._read_length - self._state._read_offset
+            if available == 0:
+                available = _file_fill_read_buffer(self._state)
+            if available >= sz or self._state._read_length < _FILE_READ_BUFFER_SIZE:
+                take = min(available, sz)
+                source = self._state._read_buf + self._state._read_offset
+                is_ascii, has_cr = _file_classify_ascii_cr(source, take)
+                if is_ascii and (self._state._newline is not None or not has_cr):
+                    data = Ptr[u8](sz)
+                    bytes.memcpy(data, source, take)
+                    self._state._read_offset += take
+                    self._state._last_text_read_bytes = take
+                    return str(data, _make_meta(take, 0))
+        return self._read_large_text_slow(sz)
+
+    @noinline
+    def _read_large_text_slow(self, sz: int) -> str:
+        result = str()
+        pending_length = _file_text_pending_length(self._state)
+        if pending_length > 0:
+            if pending_length >= sz:
+                return _file_take_text_pending(self._state, sz)
+            result = _file_take_all_text_pending(self._state)
+
+        while len(result) < sz:
+            remaining = sz - len(result)
+            value = self._read_text_chunk(
+                _file_text_chunk_target(self._state, remaining)
+            )
+            if len(value) == 0:
+                if self._state._last_text_read_bytes > 0:
+                    continue
+                break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                prefix = value[:remaining]
+                return prefix if len(result) == 0 else result + prefix
+            result = value if len(result) == 0 else result + value
+
+        return result
+
+    @inline
     def _read_raw_into(self, output: Ptr[u8], length: int) -> int:
         if length <= 0:
             return 0
@@ -1011,8 +1212,8 @@ def _gz_errcheck(stream: cobj):
 class gzFile[T]:
     _state: _FileState
 
-    def __new__(fp: cobj):
-        return gzFile[T](_FileState(fp, backend=_FILE_BACKEND_GZIP))
+    def __new__(fp: cobj, mode: str):
+        return gzFile[T](_FileState(fp, mode=mode, backend=_FILE_BACKEND_GZIP))
 
     def __new__(
         path: str,
@@ -1387,8 +1588,8 @@ def _bz_errcheck(stream: cobj):
 class bzFile[T]:
     _state: _FileState
 
-    def __new__(fp: cobj):
-        return bzFile[T](_FileState(fp, backend=_FILE_BACKEND_BZIP2))
+    def __new__(fp: cobj, mode: str):
+        return bzFile[T](_FileState(fp, mode=mode, backend=_FILE_BACKEND_BZIP2))
 
     def __new__(
         path: str,
@@ -1403,6 +1604,12 @@ class bzFile[T]:
             raise IOError(f"file {path} could not be opened")
         _file_validate_newline(newline)
         state = _FileState(fp, encoding, errors, newline, path, mode, _FILE_BACKEND_BZIP2)
+        if "w" in mode or "a" in mode or "x" in mode:
+            if state._write_encoding_kind == _ENCODING_UTF16 or state._write_encoding_kind == _ENCODING_UTF32:
+                state._write_encoding_kind = _file_native_stream_encoding(
+                    state._write_encoding_kind
+                )
+                state._write_bom_done = True
         return bzFile[T](state)
 
     def _getline(self, buffer: _FileBuffer) -> int:

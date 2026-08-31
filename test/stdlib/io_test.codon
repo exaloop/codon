@@ -90,6 +90,51 @@ def test_regular_file_modes_and_read_boundaries():
 
 
 @test
+def test_large_read_chunks_do_not_alias():
+    chunk_size = 65536
+    binary_chunk_size = 1024 * 1024
+    characters = ["A", "B", "C", "D"]
+    text_path = PREFIX + "-retained-chunks.txt"
+    with open(text_path, "w", encoding="utf-8", newline="") as writer:
+        for character in characters:
+            writer.write(character * chunk_size)
+
+    text_chunks = List[str]()
+    with open(text_path, "r", encoding="utf-8") as reader:
+        while True:
+            chunk = reader.read(chunk_size)
+            if not chunk:
+                break
+            text_chunks.append(chunk)
+
+    assert len(text_chunks) == len(characters)
+    for index, character in enumerate(characters):
+        assert len(text_chunks[index]) == chunk_size
+        assert text_chunks[index][0] == character
+        assert text_chunks[index][-1] == character
+
+    binary_path = PREFIX + "-retained-chunks.bin"
+    with open(binary_path, "wb") as writer:
+        for character in characters:
+            writer.write(character.encode("ascii") * binary_chunk_size)
+
+    binary_chunks = List[bytes]()
+    with open(binary_path, "rb") as reader:
+        while True:
+            chunk = reader.read(binary_chunk_size)
+            if not chunk:
+                break
+            binary_chunks.append(chunk)
+
+    assert len(binary_chunks) == len(characters)
+    for index, character in enumerate(characters):
+        expected = character.encode("ascii")[0]
+        assert len(binary_chunks[index]) == binary_chunk_size
+        assert binary_chunks[index][0] == expected
+        assert binary_chunks[index][-1] == expected
+
+
+@test
 def test_regular_file_context_and_closed_errors():
     path = PREFIX + "-closed.txt"
     with open(path, "w") as writer:
@@ -567,7 +612,7 @@ def test_compressed_utf16_and_utf32_bounded_reads():
     writer = bz2.open(bzip_path, "wt", encoding="utf-32")
     writer.write(value)
     writer.close()
-    reader = bz2.open(bzip_path, "rt", encoding="utf-32")
+    reader = bz2.open(bzip_path, "rt", encoding="utf-32-le")
     assert reader.read(1) == "A"
     assert reader.read(1) == _unicode_from_codepoint(0xE9)
     assert reader.read(1) == _unicode_from_codepoint(0x3B2)

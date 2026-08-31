@@ -669,6 +669,7 @@ set(CODON_TEST_CPPFILES
     test/cir/flow.cpp
     test/cir/func.cpp
     test/cir/instr.cpp
+    test/cir/llvm/optimize.cpp
     test/cir/module.cpp
     test/cir/transform/format.cpp
     test/cir/transform/manager.cpp

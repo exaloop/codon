@@ -129,6 +129,121 @@ def _is_utf8_continuation(byte: int) -> bool:
     return (byte & UTF8_CONT_MASK) == UTF8_CONT_TAG
 
 
+@pure
+@llvm
+def _utf8_nonascii_mask16(data: Ptr[u8], pos: int) -> u16:
+    %p = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %p, align 1
+    %nonascii = icmp slt <16 x i8> %bytes, zeroinitializer
+    %mask = bitcast <16 x i1> %nonascii to i16
+    ret i16 %mask
+
+
+@pure
+@llvm
+def _utf8_first_nonascii(mask: u16) -> int:
+    declare i16 @llvm.cttz.i16(i16, i1)
+    %index16 = call i16 @llvm.cttz.i16(i16 %mask, i1 true)
+    %index = zext i16 %index16 to i64
+    ret i64 %index
+
+
+@llvm
+def _utf8_copy_ascii16(data: Ptr[u8], pos: int, output: Ptr[u8], out: int) -> None:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i8, ptr %output, i64 %out
+    %bytes = load <16 x i8>, ptr %src, align 1
+    store <16 x i8> %bytes, ptr %dst, align 1
+    ret {} {}
+
+
+@llvm
+def _utf8_widen_ascii16_u16(data: Ptr[u8], pos: int, output: Ptr[u16], out: int) -> None:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i16, ptr %output, i64 %out
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %wide = zext <16 x i8> %bytes to <16 x i16>
+    store <16 x i16> %wide, ptr %dst, align 2
+    ret {} {}
+
+
+@llvm
+def _utf8_widen_ascii16_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: int) -> None:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i32, ptr %output, i64 %out
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %wide = zext <16 x i8> %bytes to <16 x i32>
+    store <16 x i32> %wide, ptr %dst, align 4
+    ret {} {}
+
+
+@pure
+@llvm
+def _utf8_size16_u32(data: Ptr[u32], pos: int) -> u64:
+    declare i16 @llvm.ctpop.i16(i16)
+    %src = getelementptr inbounds i32, ptr %data, i64 %pos
+    %codepoints = load <16 x i32>, ptr %src, align 4
+    %v80base = insertelement <16 x i32> poison, i32 128, i64 0
+    %v80 = shufflevector <16 x i32> %v80base, <16 x i32> poison, <16 x i32> zeroinitializer
+    %v800base = insertelement <16 x i32> poison, i32 2048, i64 0
+    %v800 = shufflevector <16 x i32> %v800base, <16 x i32> poison, <16 x i32> zeroinitializer
+    %v10000base = insertelement <16 x i32> poison, i32 65536, i64 0
+    %v10000 = shufflevector <16 x i32> %v10000base, <16 x i32> poison, <16 x i32> zeroinitializer
+    %vd800base = insertelement <16 x i32> poison, i32 55296, i64 0
+    %vd800 = shufflevector <16 x i32> %vd800base, <16 x i32> poison, <16 x i32> zeroinitializer
+    %vdfffbase = insertelement <16 x i32> poison, i32 57343, i64 0
+    %vdfff = shufflevector <16 x i32> %vdfffbase, <16 x i32> poison, <16 x i32> zeroinitializer
+    %vmaxbase = insertelement <16 x i32> poison, i32 1114111, i64 0
+    %vmax = shufflevector <16 x i32> %vmaxbase, <16 x i32> poison, <16 x i32> zeroinitializer
+    %ge80 = icmp uge <16 x i32> %codepoints, %v80
+    %ge800 = icmp uge <16 x i32> %codepoints, %v800
+    %ge10000 = icmp uge <16 x i32> %codepoints, %v10000
+    %ged800 = icmp uge <16 x i32> %codepoints, %vd800
+    %ledfff = icmp ule <16 x i32> %codepoints, %vdfff
+    %surrogate = and <16 x i1> %ged800, %ledfff
+    %above = icmp ugt <16 x i32> %codepoints, %vmax
+    %invalid = or <16 x i1> %surrogate, %above
+    %mask80 = bitcast <16 x i1> %ge80 to i16
+    %mask800 = bitcast <16 x i1> %ge800 to i16
+    %mask10000 = bitcast <16 x i1> %ge10000 to i16
+    %invalidmask = bitcast <16 x i1> %invalid to i16
+    %count80i16 = call i16 @llvm.ctpop.i16(i16 %mask80)
+    %count800i16 = call i16 @llvm.ctpop.i16(i16 %mask800)
+    %count10000i16 = call i16 @llvm.ctpop.i16(i16 %mask10000)
+    %count80 = zext i16 %count80i16 to i64
+    %count800 = zext i16 %count800i16 to i64
+    %count10000 = zext i16 %count10000i16 to i64
+    %size1 = add i64 %count80, 16
+    %size2 = add i64 %size1, %count800
+    %size = add i64 %size2, %count10000
+    %invalid64 = zext i16 %invalidmask to i64
+    %shifted = shl i64 %invalid64, 32
+    %result = or i64 %size, %shifted
+    ret i64 %result
+
+
+@pure
+@llvm
+def _utf8_nonascii_mask16_u32(data: Ptr[u32], pos: int) -> u16:
+    %src = getelementptr inbounds i32, ptr %data, i64 %pos
+    %codepoints = load <16 x i32>, ptr %src, align 4
+    %v7fbase = insertelement <16 x i32> poison, i32 127, i64 0
+    %v7f = shufflevector <16 x i32> %v7fbase, <16 x i32> poison, <16 x i32> zeroinitializer
+    %nonascii = icmp ugt <16 x i32> %codepoints, %v7f
+    %mask = bitcast <16 x i1> %nonascii to i16
+    ret i16 %mask
+
+
+@llvm
+def _utf8_pack_ascii16_u32(data: Ptr[u32], pos: int, output: Ptr[u8], out: int) -> None:
+    %src = getelementptr inbounds i32, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i8, ptr %output, i64 %out
+    %codepoints = load <16 x i32>, ptr %src, align 4
+    %bytes = trunc <16 x i32> %codepoints to <16 x i8>
+    store <16 x i8> %bytes, ptr %dst, align 1
+    ret {} {}
+
+
 def _normalize_search_bounds(length: int, start: int, end: int) -> Tuple[int, int]:
     if start < 0:
         start += length
@@ -154,80 +269,6 @@ def _raise_utf8_encode_error(pos: int, end: int, reason: str):
     raise ValueError(f"utf-8 encode error at code points {pos}-{end}: {reason}")
 
 
-def _utf8_decode_one(
-    data: Ptr[u8],
-    length: int,
-    pos: int,
-) -> Tuple[int, int]:
-    b0 = int(data[pos])
-
-    if b0 < 0x80:
-        return b0, pos + 1
-
-    if 0xC2 <= b0 <= 0xDF:
-        if pos + 1 >= length:
-            _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
-
-        b1 = int(data[pos + 1])
-
-        if not _is_utf8_continuation(b1):
-            _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
-
-        cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
-
-        if cp < 0x80:
-            _raise_utf8_decode_error(pos, pos + 2, "overlong sequence")
-
-        return cp, pos + 2
-
-    if 0xE0 <= b0 <= 0xEF:
-        if pos + 2 >= length:
-            _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
-
-        b1 = int(data[pos + 1])
-        b2 = int(data[pos + 2])
-
-        if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
-            _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
-
-        cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
-
-        if cp < 0x800 or _is_surrogate(cp):
-            _raise_utf8_decode_error(pos, pos + 3, "invalid code point")
-
-        return cp, pos + 3
-
-    if 0xF0 <= b0 <= 0xF4:
-        if pos + 3 >= length:
-            _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
-
-        b1 = int(data[pos + 1])
-        b2 = int(data[pos + 2])
-        b3 = int(data[pos + 3])
-
-        if (
-            not _is_utf8_continuation(b1)
-            or not _is_utf8_continuation(b2)
-            or not _is_utf8_continuation(b3)
-        ):
-            _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
-
-        cp = (
-            ((b0 & 0x07) << 18)
-            | ((b1 & 0x3F) << 12)
-            | ((b2 & 0x3F) << 6)
-            | (b3 & 0x3F)
-        )
-
-        if cp < 0x10000 or cp > UNICODE_MAX:
-            _raise_utf8_decode_error(pos, pos + 4, "invalid code point")
-
-        return cp, pos + 4
-
-    _raise_utf8_decode_error(pos, pos + 1, "invalid start byte")
-    return 0, pos + 1
-
-
 def _utf8_scan_strict(
     data: Ptr[u8],
     byte_length: int,
@@ -237,11 +278,71 @@ def _utf8_scan_strict(
     pos = 0
 
     while pos < byte_length:
-        cp, pos = _utf8_decode_one(data, byte_length, pos)
+        if pos + 16 <= byte_length:
+            mask = _utf8_nonascii_mask16(data, pos)
+            if mask == 0:
+                pos += 16
+                length += 16
+                continue
+            ascii = _utf8_first_nonascii(mask)
+            pos += ascii
+            length += ascii
+
+        start = pos
+        b0 = int(data[pos])
+        if b0 < 0x80:
+            cp = b0
+            pos += 1
+        elif 0xC2 <= b0 <= 0xDF:
+            if pos + 1 >= byte_length:
+                _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
+            b1 = int(data[pos + 1])
+            if not _is_utf8_continuation(b1):
+                _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
+            cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+            pos += 2
+        elif 0xE0 <= b0 <= 0xEF:
+            if pos + 2 >= byte_length:
+                _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
+            b1 = int(data[pos + 1])
+            b2 = int(data[pos + 2])
+            if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
+                _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
+            cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+            if cp < 0x800 or _is_surrogate(cp):
+                _raise_utf8_decode_error(start, start + 3, "invalid code point")
+            pos += 3
+        elif 0xF0 <= b0 <= 0xF4:
+            if pos + 3 >= byte_length:
+                _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
+            b1 = int(data[pos + 1])
+            b2 = int(data[pos + 2])
+            b3 = int(data[pos + 3])
+            if (
+                not _is_utf8_continuation(b1)
+                or not _is_utf8_continuation(b2)
+                or not _is_utf8_continuation(b3)
+            ):
+                _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
+            cp = (
+                ((b0 & 0x07) << 18)
+                | ((b1 & 0x3F) << 12)
+                | ((b2 & 0x3F) << 6)
+                | (b3 & 0x3F)
+            )
+            if cp < 0x10000 or cp > UNICODE_MAX:
+                _raise_utf8_decode_error(start, start + 4, "invalid code point")
+            pos += 4
+        else:
+            _raise_utf8_decode_error(start, start + 1, "invalid start byte")
+            cp = 0
+            pos += 1
         length += 1
 
         if cp > maxchar:
             maxchar = cp
+            if cp > 0xFFFF:
+                return length, maxchar
 
     return length, maxchar
 
@@ -254,16 +355,142 @@ def _unicode_decode_utf8_strict(
         raise ValueError("negative length")
 
     length, maxchar = _utf8_scan_strict(data, byte_length)
+    if maxchar > 0xFFFF:
+        output = Ptr[u32](byte_length)
+        pos = 0
+        out = 0
+        while pos < byte_length:
+            if pos + 16 <= byte_length:
+                mask = _utf8_nonascii_mask16(data, pos)
+                if mask == 0:
+                    _utf8_widen_ascii16_u32(data, pos, output, out)
+                    pos += 16
+                    out += 16
+                    continue
+                ascii = _utf8_first_nonascii(mask)
+                while ascii > 0:
+                    output[out] = u32(data[pos])
+                    pos += 1
+                    out += 1
+                    ascii -= 1
+
+            start = pos
+            b0 = int(data[pos])
+            if b0 < 0x80:
+                cp = b0
+                pos += 1
+            elif 0xC2 <= b0 <= 0xDF:
+                if pos + 1 >= byte_length:
+                    _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
+                b1 = int(data[pos + 1])
+                if not _is_utf8_continuation(b1):
+                    _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
+                cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
+                pos += 2
+            elif 0xE0 <= b0 <= 0xEF:
+                if pos + 2 >= byte_length:
+                    _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
+                b1 = int(data[pos + 1])
+                b2 = int(data[pos + 2])
+                if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
+                    _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
+                cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
+                if cp < 0x800 or _is_surrogate(cp):
+                    _raise_utf8_decode_error(start, start + 3, "invalid code point")
+                pos += 3
+            elif 0xF0 <= b0 <= 0xF4:
+                if pos + 3 >= byte_length:
+                    _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
+                b1 = int(data[pos + 1])
+                b2 = int(data[pos + 2])
+                b3 = int(data[pos + 3])
+                if (
+                    not _is_utf8_continuation(b1)
+                    or not _is_utf8_continuation(b2)
+                    or not _is_utf8_continuation(b3)
+                ):
+                    _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
+                cp = (
+                    ((b0 & 0x07) << 18)
+                    | ((b1 & 0x3F) << 12)
+                    | ((b2 & 0x3F) << 6)
+                    | (b3 & 0x3F)
+                )
+                if cp < 0x10000 or cp > UNICODE_MAX:
+                    _raise_utf8_decode_error(start, start + 4, "invalid code point")
+                pos += 4
+            else:
+                _raise_utf8_decode_error(start, start + 1, "invalid start byte")
+                cp = 0
+                pos += 1
+            output[out] = u32(cp)
+            out += 1
+        return str(Ptr[u8](output), _make_meta(out, KIND_UCS4))
 
     result = _unicode_new_uninit(length, maxchar)
+    kind = result._kind()
+    pos = 0
+    out = 0
 
-    src = 0
-    dst = 0
+    if kind <= KIND_LATIN1:
+        output = result._ptr
+        while pos < byte_length:
+            if pos + 16 <= byte_length:
+                mask = _utf8_nonascii_mask16(data, pos)
+                if mask == 0:
+                    _utf8_copy_ascii16(data, pos, output, out)
+                    pos += 16
+                    out += 16
+                    continue
+                ascii = _utf8_first_nonascii(mask)
+                while ascii > 0:
+                    output[out] = data[pos]
+                    pos += 1
+                    out += 1
+                    ascii -= 1
+            b0 = int(data[pos])
+            if b0 < 0x80:
+                output[out] = u8(b0)
+                pos += 1
+            else:
+                output[out] = u8(((b0 & 0x1F) << 6) | (int(data[pos + 1]) & 0x3F))
+                pos += 2
+            out += 1
+        return result
 
-    while src < byte_length:
-        cp, src = _utf8_decode_one(data, byte_length, src)
-        result._store_codepoint(dst, cp)
-        dst += 1
+    if kind == KIND_UCS2:
+        output = Ptr[u16](result._ptr)
+        while pos < byte_length:
+            if pos + 16 <= byte_length:
+                mask = _utf8_nonascii_mask16(data, pos)
+                if mask == 0:
+                    _utf8_widen_ascii16_u16(data, pos, output, out)
+                    pos += 16
+                    out += 16
+                    continue
+                ascii = _utf8_first_nonascii(mask)
+                while ascii > 0:
+                    output[out] = u16(data[pos])
+                    pos += 1
+                    out += 1
+                    ascii -= 1
+            b0 = int(data[pos])
+            if b0 < 0x80:
+                cp = b0
+                pos += 1
+            elif b0 < 0xE0:
+                cp = ((b0 & 0x1F) << 6) | (int(data[pos + 1]) & 0x3F)
+                pos += 2
+            else:
+                cp = (
+                    ((b0 & 0x0F) << 12)
+                    | ((int(data[pos + 1]) & 0x3F) << 6)
+                    | (int(data[pos + 2]) & 0x3F)
+                )
+                pos += 3
+            output[out] = u16(cp)
+            out += 1
+        return result
 
     return result
 
@@ -456,6 +683,46 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
         if len(value) > 0:
             str.memcpy(output, value._ptr, len(value))
         return bytes(output, len(value))
+
+    if value._kind() == KIND_UCS4:
+        codepoints = Ptr[u32](value._ptr)
+        size = 0
+        i = 0
+        while i + 16 <= len(value):
+            block = _utf8_size16_u32(codepoints, i)
+            invalid = u16(block >> u64(32))
+            if invalid:
+                offset = _utf8_first_nonascii(invalid)
+                _raise_utf8_encode_error(i + offset, i + offset + 1, "surrogates not allowed")
+            size += int(block & u64(0xFFFFFFFF))
+            i += 16
+        while i < len(value):
+            cp = int(codepoints[i])
+            if cp > UNICODE_MAX or _is_surrogate(cp):
+                _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+            size += _utf8_encoded_width(cp)
+            i += 1
+
+        output = Ptr[u8](size)
+        pos = 0
+        i = 0
+        while i < len(value):
+            if i + 16 <= len(value):
+                mask = _utf8_nonascii_mask16_u32(codepoints, i)
+                if mask == 0:
+                    _utf8_pack_ascii16_u32(codepoints, i, output, pos)
+                    i += 16
+                    pos += 16
+                    continue
+                ascii = _utf8_first_nonascii(mask)
+                while ascii > 0:
+                    output[pos] = u8(codepoints[i])
+                    i += 1
+                    pos += 1
+                    ascii -= 1
+            pos = _utf8_encode_one(output, pos, int(codepoints[i]))
+            i += 1
+        return bytes(output, size)
 
     size = 0
     for i in range(len(value)):
@@ -1030,6 +1297,8 @@ def _unicode_decode_utf32(
 
 def _unicode_decode_ptr(data: Ptr[u8], length: int, encoding: int, errors: int) -> str:
     if encoding == _ENCODING_UTF8:
+        if errors == _ERROR_STRICT:
+            return _unicode_decode_utf8_strict(data, length)
         return _unicode_decode_utf8(data, length, errors)
     if encoding == _ENCODING_ASCII:
         return _unicode_decode_single_byte(data, length, True, errors)
