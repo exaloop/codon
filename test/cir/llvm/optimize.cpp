@@ -8,7 +8,8 @@
 using namespace codon;
 
 namespace {
-int countFixedAllocations(llvm::Module *module, uint64_t size, bool inLoopOnly = false) {
+int countFixedAllocations(llvm::Module *module, uint64_t size,
+                          bool inLoopOnly = false) {
   int count = 0;
   for (auto &function : *module) {
     if (function.isDeclaration())
@@ -25,7 +26,8 @@ int countFixedAllocations(llvm::Module *module, uint64_t size, bool inLoopOnly =
         auto *callee = call->getCalledFunction();
         if (!callee || callee->getName() != "seq_alloc_atomic")
           continue;
-        auto *allocationSize = llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(0));
+        auto *allocationSize =
+            llvm::dyn_cast<llvm::ConstantInt>(call->getArgOperand(0));
         if (allocationSize && allocationSize->getZExtValue() == size)
           ++count;
       }
@@ -92,16 +94,16 @@ std::unique_ptr<Compiler> compileAndOptimize(const std::string &code) {
 } // namespace
 
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {
-  auto compiler = compileAndOptimize(
-      "PATH = 'allocation_phi_test.txt'\n"
-      "total = 0\n"
-      "with open(PATH, 'r', encoding='utf-8') as stream:\n"
-      "    while True:\n"
-      "        value = stream.read(65536)\n"
-      "        if not value:\n"
-      "            break\n"
-      "        total += len(value)\n"
-      "print(total)\n");
+  auto compiler =
+      compileAndOptimize("PATH = 'allocation_phi_test.txt'\n"
+                         "total = 0\n"
+                         "with open(PATH, 'r', encoding='utf-8') as stream:\n"
+                         "    while True:\n"
+                         "        value = stream.read(65536)\n"
+                         "        if not value:\n"
+                         "            break\n"
+                         "        total += len(value)\n"
+                         "print(total)\n");
 
   auto *module = compiler->getLLVMVisitor()->getModule();
   EXPECT_GT(countFixedAllocations(module, 65536), 0);
@@ -109,16 +111,16 @@ TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {
 }
 
 TEST(LLVMOptimizationTest, DoesNotHoistEscapingPointerThroughAggregatePhi) {
-  auto compiler = compileAndOptimize(
-      "PATH = 'allocation_phi_test.txt'\n"
-      "chunks = List[str]()\n"
-      "with open(PATH, 'r', encoding='utf-8') as stream:\n"
-      "    while True:\n"
-      "        value = stream.read(65536)\n"
-      "        if not value:\n"
-      "            break\n"
-      "        chunks.append(value)\n"
-      "print(len(chunks))\n");
+  auto compiler =
+      compileAndOptimize("PATH = 'allocation_phi_test.txt'\n"
+                         "chunks = List[str]()\n"
+                         "with open(PATH, 'r', encoding='utf-8') as stream:\n"
+                         "    while True:\n"
+                         "        value = stream.read(65536)\n"
+                         "        if not value:\n"
+                         "            break\n"
+                         "        chunks.append(value)\n"
+                         "print(len(chunks))\n");
 
   auto *module = compiler->getLLVMVisitor()->getModule();
   EXPECT_GT(countFixedAllocations(module, 65536, /*inLoopOnly=*/true), 0);
