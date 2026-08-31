@@ -505,14 +505,16 @@ void TypecheckVisitor::visit(InstantiateExpr *expr) {
           E(Error::EXPECTED_TYPE, (*expr)[i], "type");
       }
       if (isUnion) {
-        if (!typ->getUnion()->addType(t.get()))
-          E(error::Error::UNION_TOO_BIG, (*expr)[i],
-            typ->getUnion()->pendingTypes.size());
+        if (!typ->getUnion()->isSealed()) {
+          if (!typ->getUnion()->addType(t.get()))
+            E(error::Error::UNION_TOO_BIG, (*expr)[i],
+              typ->getUnion()->pendingTypes.size());
+        }
       } else {
         unify(t.get(), generics[i].getType());
       }
     }
-    if (isUnion) {
+    if (isUnion && !typ->getUnion()->isSealed()) {
       typ->getUnion()->seal();
     }
 
