@@ -514,6 +514,19 @@ def test_text_newline_write_semantics():
     assert reader.read() == "a\r\n" + _unicode_from_codepoint(0x010A) + "\r\nb"
     reader.close()
 
+    replacement_path = PREFIX + "-write-newlines-utf16-replace.txt"
+    replacement_value = _unicode_from_codepoint(0xD800) + "\n"
+    with open(
+        replacement_path,
+        "w",
+        encoding="utf-16-le",
+        errors="replace",
+        newline="\r\n",
+    ) as writer:
+        writer.write(replacement_value)
+    with open(replacement_path, "rb") as reader:
+        assert reader.read() == _raw_bytes([0x3F, 0, 0x0D, 0, 0x0A, 0])
+
     try:
         open(path, "w", newline="invalid")
         assert False
@@ -762,6 +775,61 @@ def test_compressed_binary_and_gzip_position_apis():
 
 
 @test
+def test_text_positions_across_translated_crlf():
+    path = PREFIX + "-crlf-position.txt"
+    with open(path, "w", newline="") as writer:
+        writer.write("a\r\nb")
+    with open(path, "r") as reader:
+        assert reader.read(1) == "a"
+        assert reader.tell() == 1
+        reader.seek(0, 1)
+        assert reader.read(1) == "\n"
+        assert reader.tell() == 3
+
+    dense_path = PREFIX + "-dense-crlf-position.txt"
+    with open(dense_path, "w", newline="") as writer:
+        writer.write("a\r\nb\r\nc\r\nd\r\ne\r\nf")
+    with open(dense_path, "r") as reader:
+        assert reader.read(1) == "a"
+        assert reader.tell() == 1
+        assert reader.read(8) == "\nb\nc\nd\ne"
+        assert reader.tell() == 13
+        assert reader.read(1) == "\n"
+        assert reader.tell() == 15
+
+    utf16_path = PREFIX + "-crlf-position-utf16.txt"
+    with open(
+        utf16_path, "w", encoding="utf-16-le", newline=""
+    ) as writer:
+        writer.write("a\r\nb")
+    with open(utf16_path, "r", encoding="utf-16-le") as reader:
+        assert reader.read(1) == "a"
+        assert reader.tell() == 2
+        assert reader.read(1) == "\n"
+        assert reader.tell() == 6
+
+    gzip_path = PREFIX + "-crlf-position.gz"
+    with gzip.open(gzip_path, "wt", newline="") as writer:
+        writer.write("a\r\nb")
+    with gzip.open(gzip_path, "rt") as reader:
+        assert reader.read(1) == "a"
+        assert reader.tell() == 1
+        reader.seek(0, 1)
+        assert reader.read(1) == "\n"
+        assert reader.tell() == 3
+
+    bzip_path = PREFIX + "-crlf-position.bz2"
+    with bz2.open(bzip_path, "wt", newline="") as writer:
+        writer.write("a\r\nb")
+    with bz2.open(bzip_path, "rt") as reader:
+        assert reader.read(1) == "a"
+        assert reader.tell() == 1
+        reader.seek(0, 1)
+        assert reader.read(1) == "\n"
+        assert reader.tell() == 3
+
+
+@test
 def test_compressed_modes_and_closed_errors():
     gzip_path = PREFIX + "-lifecycle.gz"
     writer = gzip.open(gzip_path, "w")
@@ -797,6 +865,89 @@ def test_compressed_modes_and_closed_errors():
             pass
 
 
+@test
+def test_invalid_modes_and_operation_permissions():
+    path = PREFIX + "-permissions.txt"
+    invalid_modes = ["", "garbage", "rr", "rw", "rbt", "r++"]
+    for mode in invalid_modes:
+        try:
+            open(path, mode)
+            assert False
+        except ValueError:
+            pass
+        try:
+            gzip.open(path + ".gz", mode)
+            assert False
+        except ValueError:
+            pass
+        try:
+            bz2.open(path + ".bz2", mode)
+            assert False
+        except ValueError:
+            pass
+
+    for mode in ["r+", "rb+"]:
+        try:
+            gzip.open(path + ".gz", mode)
+            assert False
+        except ValueError:
+            pass
+        try:
+            bz2.open(path + ".bz2", mode)
+            assert False
+        except ValueError:
+            pass
+
+    with open(path, "w") as writer:
+        writer.write("data")
+        try:
+            writer.read()
+            assert False
+        except IOError:
+            pass
+        try:
+            writer.readline()
+            assert False
+        except IOError:
+            pass
+    with open(path, "r") as reader:
+        try:
+            reader.write("data")
+            assert False
+        except IOError:
+            pass
+
+    gzip_path = path + ".gz"
+    with gzip.open(gzip_path, "wb") as writer:
+        writer.write(b"data")
+        try:
+            writer.read()
+            assert False
+        except IOError:
+            pass
+    with gzip.open(gzip_path, "rb") as reader:
+        try:
+            reader.write(b"data")
+            assert False
+        except IOError:
+            pass
+
+    bzip_path = path + ".bz2"
+    with bz2.open(bzip_path, "wb") as writer:
+        writer.write(b"data")
+        try:
+            writer.read()
+            assert False
+        except IOError:
+            pass
+    with bz2.open(bzip_path, "rb") as reader:
+        try:
+            reader.write(b"data")
+            assert False
+        except IOError:
+            pass
+
+
 test_regular_file_basics()
 test_regular_file_modes_and_read_boundaries()
 test_regular_file_context_and_closed_errors()
@@ -817,4 +968,6 @@ test_compressed_text_configuration()
 test_compressed_utf16_and_utf32_bounded_reads()
 test_compressed_universal_newline_boundaries()
 test_compressed_binary_and_gzip_position_apis()
+test_text_positions_across_translated_crlf()
 test_compressed_modes_and_closed_errors()
+test_invalid_modes_and_operation_permissions()

@@ -1338,11 +1338,41 @@ def _unicode_decode_codec(data: bytes, encoding: str, errors: str) -> str:
     return _unicode_decode_ptr(data._ptr, len(data), encoding_code, _error_code(errors))
 
 
+def _codec_encode_ascii_append(
+    output: _CodecByteBuffer,
+    codepoint: int,
+    width: int,
+    little_endian: bool,
+):
+    if width == 1:
+        output.append(codepoint)
+    elif width == 2:
+        if little_endian:
+            output.append(codepoint)
+            output.append(0)
+        else:
+            output.append(0)
+            output.append(codepoint)
+    else:
+        if little_endian:
+            output.append(codepoint)
+            output.append(0)
+            output.append(0)
+            output.append(0)
+        else:
+            output.append(0)
+            output.append(0)
+            output.append(0)
+            output.append(codepoint)
+
+
 def _codec_encode_error_append(
     output: _CodecByteBuffer,
     codepoint: int,
     errors: int,
     allow_surrogateescape: bool = False,
+    width: int = 1,
+    little_endian: bool = True,
 ):
     if errors == _ERROR_STRICT or errors == _ERROR_SURROGATEPASS:
         _raise_utf8_encode_error(0, 0, "code point not encodable")
@@ -1351,7 +1381,7 @@ def _codec_encode_error_append(
         return
 
     if errors == _ERROR_REPLACE:
-        output.append(0x3F)  # ?
+        _codec_encode_ascii_append(output, 0x3F, width, little_endian)  # ?
         return
 
     if errors == _ERROR_SURROGATEESCAPE:
@@ -1361,20 +1391,25 @@ def _codec_encode_error_append(
         _raise_utf8_encode_error(0, 0, "code point not encodable")
 
     if errors == _ERROR_BACKSLASHREPLACE:
-        output.append(0x5C)  # \
+        _codec_encode_ascii_append(output, 0x5C, width, little_endian)  # \
         if codepoint <= 0xFF:
-            output.append(0x78)  # x
+            _codec_encode_ascii_append(output, 0x78, width, little_endian)  # x
             digits = 2
         elif codepoint <= 0xFFFF:
-            output.append(0x75)  # u
+            _codec_encode_ascii_append(output, 0x75, width, little_endian)  # u
             digits = 4
         else:
-            output.append(0x55)  # U
+            _codec_encode_ascii_append(output, 0x55, width, little_endian)  # U
             digits = 8
 
         for i in range(digits - 1, -1, -1):
             digit = (codepoint >> (i * 4)) & 0xF
-            output.append(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+            _codec_encode_ascii_append(
+                output,
+                0x30 + digit if digit < 10 else 0x61 + digit - 10,
+                width,
+                little_endian,
+            )
         return
 
     if errors == _ERROR_UNKNOWN:
@@ -1554,7 +1589,9 @@ def _unicode_encode_utf16(
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
         if _is_surrogate(codepoint) and errors != _ERROR_SURROGATEPASS:
-            _codec_encode_error_append(output, codepoint, errors)
+            _codec_encode_error_append(
+                output, codepoint, errors, False, 2, little_endian
+            )
             continue
         if codepoint <= 0xFFFF:
             if little_endian:
@@ -1606,7 +1643,9 @@ def _unicode_encode_utf32(
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
         if _is_surrogate(codepoint) and errors != _ERROR_SURROGATEPASS:
-            _codec_encode_error_append(output, codepoint, errors)
+            _codec_encode_error_append(
+                output, codepoint, errors, False, 4, little_endian
+            )
             continue
         if little_endian:
             output.append(codepoint & 0xFF)

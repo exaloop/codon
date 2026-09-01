@@ -4538,6 +4538,17 @@ def test_surrogatepass_utf_encoders():
 
 
 @test
+def test_utf16_utf32_encode_error_alignment():
+    s = _unicode_from_codepoint(0xD800)
+    assert s.encode("utf-16-le", "replace") == b"?\x00"
+    assert s.encode("utf-16-be", "replace") == b"\x00?"
+    assert s.encode("utf-32-le", "replace") == b"?\x00\x00\x00"
+    assert s.encode("utf-32-be", "replace") == b"\x00\x00\x00?"
+    assert s.encode("utf-16-le", "backslashreplace") == "\\ud800".encode("utf-16-le")
+    assert s.encode("utf-32-be", "backslashreplace") == "\\ud800".encode("utf-32-be")
+
+
+@test
 def test_error_handler_lookup_is_lazy_decode():
     assert str(b"abc", "ascii", "does-not-exist") == "abc"
     try:
@@ -4631,6 +4642,7 @@ test_translate_allows_surrogate_codepoint()
 test_surrogateescape_single_byte_encoders()
 test_surrogateescape_not_raw_for_utf16_utf32()
 test_surrogatepass_utf_encoders()
+test_utf16_utf32_encode_error_alignment()
 test_error_handler_lookup_is_lazy_decode()
 test_error_handler_lookup_is_lazy_encode()
 test_encoding_name_normalization()
