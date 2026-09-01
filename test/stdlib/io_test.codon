@@ -486,19 +486,32 @@ def test_text_newline_read_semantics():
 @test
 def test_text_newline_write_semantics():
     path = PREFIX + "-write-newlines.txt"
+    value = "a\nb\n"
 
     writer = open(path, "w", newline="\r\n")
-    writer.write("a\nb\n")
+    writer.write(value)
     writer.close()
+    assert value == "a\nb\n"
     reader = open(path, "r", newline="")
     assert reader.read() == "a\r\nb\r\n"
     reader.close()
 
     writer = open(path, "w", newline="\r")
-    writer.write("a\nb\n")
+    writer.write(value)
     writer.close()
+    assert value == "a\nb\n"
     reader = open(path, "r", newline="")
     assert reader.read() == "a\rb\r"
+    reader.close()
+
+    utf16_path = PREFIX + "-write-newlines-utf16.txt"
+    utf16_value = "a\n" + _unicode_from_codepoint(0x010A) + "\nb"
+    writer = open(utf16_path, "w", encoding="utf-16-le", newline="\r\n")
+    writer.write(utf16_value)
+    writer.close()
+    assert utf16_value == "a\n" + _unicode_from_codepoint(0x010A) + "\nb"
+    reader = open(utf16_path, "r", encoding="utf-16-le", newline="")
+    assert reader.read() == "a\r\n" + _unicode_from_codepoint(0x010A) + "\r\nb"
     reader.close()
 
     try:
@@ -575,6 +588,20 @@ def test_compressed_text_configuration():
     writer.close()
     reader = bz2.open(bzip_path, "rt", encoding="latin-1", newline="")
     assert reader.read() == _latin1_value() + "\r\nnext\r\n"
+    reader.close()
+
+    multibyte_value = "a\n" + _unicode_from_codepoint(0x010A) + "\nb"
+    multibyte_path = PREFIX + "-config-utf32.bz2"
+    writer = bz2.open(
+        multibyte_path, "wt", encoding="utf-32-be", newline="\r\n"
+    )
+    writer.write(multibyte_value)
+    writer.close()
+    assert multibyte_value == "a\n" + _unicode_from_codepoint(0x010A) + "\nb"
+    reader = bz2.open(
+        multibyte_path, "rt", encoding="utf-32-be", newline=""
+    )
+    assert reader.read() == "a\r\n" + _unicode_from_codepoint(0x010A) + "\r\nb"
     reader.close()
 
     try:
