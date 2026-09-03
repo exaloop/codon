@@ -150,6 +150,28 @@ def _file_compressed_mode_flags(mode: str) -> int:
         _invalid_mode(mode)
     return flags
 
+def _literal_mode_flags(mode: Literal[str]) -> Literal[int]:
+    import internal.static as static
+
+    if static.len(mode) == 0:
+        return 0
+    elif mode[0] == "r":
+        return _FILE_MODE_READ | _literal_mode_flags(mode[1:])
+    elif mode[0] == "w":
+        return _FILE_MODE_WRITE | _FILE_MODE_TRUNCATE | _literal_mode_flags(mode[1:])
+    elif mode[0] == "a":
+        return _FILE_MODE_WRITE | _FILE_MODE_APPEND | _literal_mode_flags(mode[1:])
+    elif mode[0] == "x":
+        return _FILE_MODE_WRITE | _FILE_MODE_EXCLUSIVE | _literal_mode_flags(mode[1:])
+    elif mode[0] == "+":
+        return _FILE_MODE_READ | _FILE_MODE_WRITE | _FILE_MODE_UPDATE | _literal_mode_flags(mode[1:])
+    elif mode[0] == "b":
+        return _FILE_MODE_BINARY | _literal_mode_flags(mode[1:])
+    elif mode[0] == "t":
+        return _FILE_MODE_TEXT | _literal_mode_flags(mode[1:])
+    else:
+        return _literal_mode_flags(mode[1:])
+
 def _file_validate_text_config(
     encoding: str, errors: str, newline: Optional[str]
 ):
@@ -344,6 +366,36 @@ class _FileState:
     _b2cratio: float
     _backend: int
     _stdio_direction: int
+
+    @inline
+    def __init__(self, fp: cobj, mode_flags: Literal[int]):
+        self._fp = fp
+        self._read_buf = Ptr[u8]()
+        self._read_offset = 0
+        self._read_length = 0
+        self._write_buf = Ptr[u8]()
+        self._write_length = 0
+        self._newline_flags = _FILE_NEWLINE_UNIVERSAL | _FILE_NEWLINE_TRANSLATE
+        self._encoding_kind = _ENCODING_UTF8
+        self._initial_encoding_kind = _ENCODING_UTF8
+        self._write_encoding_kind = _ENCODING_UTF8
+        self._error_code = _ERROR_STRICT
+        self._path = str()
+        self._mode_flags = mode_flags
+        self._position = 0
+        self._backend = _FILE_BACKEND_STDIO
+        self._text_pending = str()
+        self._text_pending_offset = 0
+        self._text_pending_crlf = Ptr[int]()
+        self._last_text_crlf = Ptr[int]()
+        self._text_pending_errors = None
+        self._last_text_errors = None
+        self._last_text_read_bytes = 0
+        self._bom_checked = True
+        self._write_bom_done = True
+        self._skip_initial_lf = False
+        self._stdio_direction = _FILE_STDIO_NONE
+        self._b2cratio = 1.0
 
     def __init__(
         self,
@@ -1393,10 +1445,8 @@ def _file_prepare_stdio_append(state: _FileState):
 class File[T]:
     _state: _FileState
 
-    def __new__(fp: cobj, mode: str):
-        return File[T](_FileState(
-            fp, mode_flags=_file_mode_flags(mode)
-        ))
+    def __new__(fp: cobj, mode: Literal[str]):
+        return File[T](_FileState(fp, _literal_mode_flags(mode)))
 
     def __new__(
         path: str,
@@ -2717,28 +2767,6 @@ class bzFile[T]:
         self._state._position += 1
         return int(byte)
 
-
-def _literal_mode_flags(mode: Literal[str]) -> Literal[int]:
-    import internal.static as static
-
-    if static.len(mode) == 0:
-        return 0
-    elif mode[0] == "r":
-        return _FILE_MODE_READ | _literal_mode_flags(mode[1:])
-    elif mode[0] == "w":
-        return _FILE_MODE_WRITE | _FILE_MODE_TRUNCATE | _literal_mode_flags(mode[1:])
-    elif mode[0] == "a":
-        return _FILE_MODE_WRITE | _FILE_MODE_APPEND | _literal_mode_flags(mode[1:])
-    elif mode[0] == "x":
-        return _FILE_MODE_WRITE | _FILE_MODE_EXCLUSIVE | _literal_mode_flags(mode[1:])
-    elif mode[0] == "+":
-        return _FILE_MODE_READ | _FILE_MODE_WRITE | _FILE_MODE_UPDATE | _literal_mode_flags(mode[1:])
-    elif mode[0] == "b":
-        return _FILE_MODE_BINARY | _literal_mode_flags(mode[1:])
-    elif mode[0] == "t":
-        return _FILE_MODE_TEXT | _literal_mode_flags(mode[1:])
-    else:
-        return _literal_mode_flags(mode[1:])
 
 def _file_text_encoding(encoding: Optional[str]) -> str:
     return "utf-8" if encoding is None else encoding

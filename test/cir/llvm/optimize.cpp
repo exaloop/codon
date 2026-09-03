@@ -153,6 +153,21 @@ OptimizedModule compileAndOptimizeIR(const std::string &code) {
 }
 } // namespace
 
+TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
+  auto compiler = compileAndOptimize("print(\"hello world\")\n");
+  auto *module = compiler->getLLVMVisitor()->getModule();
+
+  EXPECT_EQ(nullptr, module->getFunction("seq_alloc"));
+  EXPECT_EQ(nullptr, module->getFunction("seq_stdin"));
+  EXPECT_EQ(nullptr, module->getFunction("seq_stderr"));
+  EXPECT_NE(nullptr, module->getFunction("seq_stdout"));
+
+  unsigned definitions = 0;
+  for (const auto &function : *module)
+    definitions += !function.isDeclaration();
+  EXPECT_EQ(1, definitions);
+}
+
 TEST(LLVMOptimizationTest, HoistsNonescapingPointerThroughAggregatePhi) {
   auto compiler =
       compileAndOptimize("PATH = 'allocation_phi_test.txt'\n"

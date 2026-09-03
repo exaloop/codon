@@ -21,16 +21,19 @@ def seq_strdup(a: cobj) -> str:
     pass
 
 @pure
+@llvm_memory_none
 @C
 def seq_stdin() -> cobj:
     pass
 
 @pure
+@llvm_memory_none
 @C
 def seq_stdout() -> cobj:
     pass
 
 @pure
+@llvm_memory_none
 @C
 def seq_stderr() -> cobj:
     pass
