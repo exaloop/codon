@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 from internal.gc import realloc, free, sizeof
+import internal.static as static
 from internal.str import _UnicodeCodecBuffer, _UnicodeDecodeErrorTracker, _make_meta, _unicode_decode_ptr, _unicode_encode_code, \
                          _encoding_code, _error_code, _native_is_little_endian, _ENCODING_UTF8, \
                          _ENCODING_UTF16, _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, \
@@ -703,6 +704,14 @@ def _file_translate_encoded_newlines(
             destination -= width
             _file_store_encoded_cr(output, destination, width, byte_offset)
     return bytes(output, new_length)
+
+def _file_write_newline_flags(newline_flags: int) -> int:
+    if (
+        newline_flags & _FILE_NEWLINE_TRANSLATE
+        and static.platform() == "win32"
+    ):
+        return _FILE_NEWLINE_CRLF
+    return newline_flags
 
 def _file_stream_encode(
     state: _FileState, value: str, newline_flags: int
@@ -1465,15 +1474,8 @@ class File[T]:
                 character = self._read_text_character()
                 if len(character) == 0:
                     break
-                if self._state._skip_initial_lf:
-                    self._state._skip_initial_lf = False
-                    if character == "\n":
-                        continue
                 line.append(character._load_codepoint(0))
                 if character == "\n" and self._state._newline_flags & _FILE_NEWLINE_LF:
-                    break
-                if character == "\r" and self._state._newline_flags & _FILE_NEWLINE_TRANSLATE:
-                    self._state._skip_initial_lf = True
                     break
                 if character == "\r" and self._state._newline_flags & (_FILE_NEWLINE_CR | _FILE_NEWLINE_CRLF):
                     following = self._read_text_character()
@@ -1510,13 +1512,16 @@ class File[T]:
         if T is bytes:
             _file_buffered_stdio_write(self._state, s._ptr, len(s))
         else:
+            newline_flags = _file_write_newline_flags(
+                self._state._newline_flags
+            )
             # ASCII UTF-8 is already in the exact byte representation required
             # by the stream. Avoid both encoding allocation and transcoding.
             if (
                 self._state._write_encoding_kind == _ENCODING_UTF8
                 and s._is_ascii()
-                and self._state._newline_flags != _FILE_NEWLINE_CR
-                and self._state._newline_flags != _FILE_NEWLINE_CRLF
+                and newline_flags != _FILE_NEWLINE_CR
+                and newline_flags != _FILE_NEWLINE_CRLF
             ):
                 self._state._write_bom_done = True
                 _file_buffered_stdio_write(self._state, s._ptr, len(s))
@@ -1524,7 +1529,7 @@ class File[T]:
                 data = _file_stream_encode(
                     self._state,
                     s,
-                    self._state._newline_flags,
+                    newline_flags,
                 )
                 _file_buffered_stdio_write(self._state, data._ptr, len(data))
         return len(s)
@@ -1840,15 +1845,8 @@ class gzFile[T]:
                 character = self._read_text_character()
                 if len(character) == 0:
                     break
-                if self._state._skip_initial_lf:
-                    self._state._skip_initial_lf = False
-                    if character == "\n":
-                        continue
                 line.append(character._load_codepoint(0))
                 if character == "\n" and self._state._newline_flags & _FILE_NEWLINE_LF:
-                    break
-                if character == "\r" and self._state._newline_flags & _FILE_NEWLINE_TRANSLATE:
-                    self._state._skip_initial_lf = True
                     break
                 if character == "\r" and self._state._newline_flags & (_FILE_NEWLINE_CR | _FILE_NEWLINE_CRLF):
                     following = self._read_text_character()
@@ -1885,10 +1883,13 @@ class gzFile[T]:
         if T is bytes:
             _C.gzwrite(self._state._fp, s._ptr, u32(len(s)))
         else:
+            newline_flags = _file_write_newline_flags(
+                self._state._newline_flags
+            )
             data = _file_stream_encode(
                 self._state,
                 s,
-                self._state._newline_flags,
+                newline_flags,
             )
             _C.gzwrite(self._state._fp, data._ptr, u32(len(data)))
         _gz_errcheck(self._state._fp)
@@ -2432,15 +2433,8 @@ class bzFile[T]:
                 character = self._read_text_character()
                 if len(character) == 0:
                     break
-                if self._state._skip_initial_lf:
-                    self._state._skip_initial_lf = False
-                    if character == "\n":
-                        continue
                 line.append(character._load_codepoint(0))
                 if character == "\n" and self._state._newline_flags & _FILE_NEWLINE_LF:
-                    break
-                if character == "\r" and self._state._newline_flags & _FILE_NEWLINE_TRANSLATE:
-                    self._state._skip_initial_lf = True
                     break
                 if character == "\r" and self._state._newline_flags & (_FILE_NEWLINE_CR | _FILE_NEWLINE_CRLF):
                     following = self._read_text_character()
@@ -2476,10 +2470,13 @@ class bzFile[T]:
             _bz_write(self._bz, s._ptr, len(s))
             self._state._position += len(s)
         else:
+            newline_flags = _file_write_newline_flags(
+                self._state._newline_flags
+            )
             data = _file_stream_encode(
                 self._state,
                 s,
-                self._state._newline_flags,
+                newline_flags,
             )
             _bz_write(self._bz, data._ptr, len(data))
             self._state._position += len(data)

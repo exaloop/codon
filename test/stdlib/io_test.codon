@@ -1,5 +1,6 @@
 import gzip
 import bz2
+import sys
 from internal.str import _encoding_matches, _unicode_from_codepoint
 from C import remove(cobj) -> i32
 
@@ -593,6 +594,30 @@ def test_multibyte_newline_modes_and_long_lines():
     assert reader.readline() == long_line
     reader.close()
 
+    boundary_value = "\n" + "x" * 65534 + "\r"
+    boundary_tail = "x" * 65534 + "\n"
+
+    boundary_path = PREFIX + "-utf16-leading-lf.txt"
+    with open(boundary_path, "w", encoding="utf-16-le", newline="") as writer:
+        writer.write(boundary_value)
+    with open(boundary_path, "r", encoding="utf-16-le") as reader:
+        assert reader.readline() == "\n"
+        assert reader.readline() == boundary_tail
+
+    gzip_boundary_path = PREFIX + "-utf16-leading-lf.gz"
+    with gzip.open(gzip_boundary_path, "wt", encoding="utf-16-le", newline="") as writer:
+        writer.write(boundary_value)
+    with gzip.open(gzip_boundary_path, "rt", encoding="utf-16-le") as reader:
+        assert reader.readline() == "\n"
+        assert reader.readline() == boundary_tail
+
+    bzip_boundary_path = PREFIX + "-utf16-leading-lf.bz2"
+    with bz2.open(bzip_boundary_path, "wt", encoding="utf-16-le", newline="") as writer:
+        writer.write(boundary_value)
+    with bz2.open(bzip_boundary_path, "rt", encoding="utf-16-le") as reader:
+        assert reader.readline() == "\n"
+        assert reader.readline() == boundary_tail
+
 
 @test
 def test_compressed_multibyte_bounded_newline_reads():
@@ -792,6 +817,43 @@ def test_text_newline_write_semantics():
     reader = open(path, "r", newline="")
     assert reader.read() == "a\rb\r"
     reader.close()
+
+    native_newline = "\r\n" if sys.platform == "win32" else "\n"
+    native_value = "a" + native_newline + "b"
+
+    native_path = PREFIX + "-write-native-newlines.txt"
+    with open(native_path, "w", newline=None) as writer:
+        writer.write("a\nb")
+    with open(native_path, "rb") as reader:
+        assert reader.read() == native_value.encode()
+
+    native_gzip_path = PREFIX + "-write-native-newlines.gz"
+    with gzip.open(native_gzip_path, "wt", newline=None) as writer:
+        writer.write("a\nb")
+    with gzip.open(native_gzip_path, "rb") as reader:
+        assert reader.read() == native_value.encode()
+
+    native_bzip_path = PREFIX + "-write-native-newlines.bz2"
+    with bz2.open(native_bzip_path, "wt", newline=None) as writer:
+        writer.write("a\nb")
+    with bz2.open(native_bzip_path, "rb") as reader:
+        assert reader.read() == native_value.encode()
+
+    native_utf16_path = PREFIX + "-write-native-newlines-utf16.txt"
+    with open(
+        native_utf16_path,
+        "w",
+        encoding="utf-16-le",
+        newline=None,
+    ) as writer:
+        writer.write("a\nb")
+    with open(
+        native_utf16_path,
+        "r",
+        encoding="utf-16-le",
+        newline="",
+    ) as reader:
+        assert reader.read() == native_value
 
     utf16_path = PREFIX + "-write-newlines-utf16.txt"
     utf16_value = "a\n" + _unicode_from_codepoint(0x010A) + "\nb"
