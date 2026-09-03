@@ -29,6 +29,8 @@ const std::string INLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "inline");
 const std::string NOINLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "noinline");
+const std::string LLVM_MEMORY_NONE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_memory_none");
 const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
@@ -1712,6 +1714,8 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
   coro = {};
   func->setDoesNotThrow();
   func->setWillReturn();
+  if (util::hasAttribute(x, LLVM_MEMORY_NONE_ATTR))
+    func->setDoesNotAccessMemory();
 }
 
 namespace {
