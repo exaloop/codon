@@ -31,6 +31,10 @@ from internal.unicode.codecs import (
     _single_byte_cp1254_decode,
     _single_byte_cp1254_encode,
 )
+from internal.unicode.unicodedata_data import (
+    unicode_name_record_index,
+    unicode_name_value,
+)
 import algorithms.strings as string_algorithms
 import internal.static as static
 import internal.gc as gc
@@ -76,6 +80,8 @@ _ERROR_REPLACE: Literal[int] = 3
 _ERROR_SURROGATEPASS: Literal[int] = 4
 _ERROR_SURROGATEESCAPE: Literal[int] = 5
 _ERROR_BACKSLASHREPLACE: Literal[int] = 6
+_ERROR_XMLCHARREFREPLACE: Literal[int] = 7
+_ERROR_NAMEREPLACE: Literal[int] = 8
 
 
 @pure
@@ -546,17 +552,88 @@ def _utf8_encode_one(
     return pos + 4
 
 
+class _UnicodeDecodeErrorTracker:
+    data: Ptr[int]
+    length: int
+    capacity: int
+    raw_length: int
+
+    def __init__(self):
+        self.data = Ptr[int]()
+        self.length = 0
+        self.capacity = 0
+        self.raw_length = 0
+
+    def append(
+        self,
+        output_start: int,
+        output_end: int,
+        raw_start: int,
+        raw_length: int,
+    ):
+        if self.length == self.capacity:
+            old_capacity = self.capacity
+            new_capacity = 4 if old_capacity == 0 else old_capacity * 2
+            self.data = (
+                Ptr[int](gc.realloc(
+                    self.data.as_byte(),
+                    new_capacity * 4 * gc.sizeof(int),
+                    old_capacity * 4 * gc.sizeof(int),
+                ))
+                if self.data
+                else Ptr[int](new_capacity * 4)
+            )
+            self.capacity = new_capacity
+        self.set(
+            self.length,
+            output_start,
+            output_end,
+            raw_start,
+            raw_length,
+        )
+        self.length += 1
+
+    def get(self, index: int) -> Tuple[int, int, int, int]:
+        offset = index * 4
+        return (
+            self.data[offset],
+            self.data[offset + 1],
+            self.data[offset + 2],
+            self.data[offset + 3],
+        )
+
+    def set(
+        self,
+        index: int,
+        output_start: int,
+        output_end: int,
+        raw_start: int,
+        raw_length: int,
+    ):
+        offset = index * 4
+        self.data[offset] = output_start
+        self.data[offset + 1] = output_end
+        self.data[offset + 2] = raw_start
+        self.data[offset + 3] = raw_length
+
+
 class _UnicodeCodecBuffer:
     data: Ptr[u8]
     length: int
     capacity: int
     kind: int
+    errors: Optional[_UnicodeDecodeErrorTracker]
 
-    def __init__(self, capacity: int):
+    def __init__(
+        self,
+        capacity: int,
+        errors: Optional[_UnicodeDecodeErrorTracker] = None,
+    ):
         self.data = Ptr[u8](capacity)
         self.length = 0
         self.capacity = capacity
         self.kind = KIND_ASCII
+        self.errors = errors
 
     def append(self, codepoint: int):
         required = self.length + 1
@@ -869,6 +946,10 @@ def _error_code(errors: str) -> int:
         return _ERROR_SURROGATEESCAPE
     if errors == "backslashreplace":
         return _ERROR_BACKSLASHREPLACE
+    if errors == "xmlcharrefreplace":
+        return _ERROR_XMLCHARREFREPLACE
+    if errors == "namereplace":
+        return _ERROR_NAMEREPLACE
     return _ERROR_UNKNOWN
 
 
@@ -883,10 +964,15 @@ def _codec_error_append(
         raise ValueError("invalid byte sequence")
 
     if errors == _ERROR_IGNORE:
+        if output.errors is not None:
+            output.errors.append(output.length, output.length, start, end - start)
         return
 
     if errors == _ERROR_REPLACE:
+        output_start = output.length
         output.append(0xFFFD)
+        if output.errors is not None:
+            output.errors.append(output_start, output.length, start, end - start)
         return
 
     if errors == _ERROR_SURROGATEESCAPE:
@@ -898,6 +984,7 @@ def _codec_error_append(
         return
 
     if errors == _ERROR_BACKSLASHREPLACE:
+        output_start = output.length
         for i in range(start, end):
             byte = int(data[i])
             output.append(0x5C)  # \
@@ -906,7 +993,12 @@ def _codec_error_append(
             output.append(0x30 + high if high < 10 else 0x61 + high - 10)
             digit = byte & 0xF
             output.append(0x30 + digit if digit < 10 else 0x61 + digit - 10)
+        if output.errors is not None:
+            output.errors.append(output_start, output.length, start, end - start)
         return
+
+    if errors == _ERROR_XMLCHARREFREPLACE or errors == _ERROR_NAMEREPLACE:
+        raise TypeError("unsupported Unicode decode error handler")
 
     if errors == _ERROR_UNKNOWN:
         raise LookupError("unknown error handler")
@@ -918,8 +1010,9 @@ def _unicode_decode_utf8(
     data: Ptr[u8],
     byte_length: int,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
     pos = 0
 
     while pos < byte_length:
@@ -993,8 +1086,9 @@ def _unicode_decode_single_byte(
     byte_length: int,
     ascii: bool,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
 
     for i in range(byte_length):
         byte = int(data[i])
@@ -1060,8 +1154,9 @@ def _unicode_decode_cp1252(
     data: Ptr[u8],
     byte_length: int,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
 
     for i in range(byte_length):
         byte = int(data[i])
@@ -1070,9 +1165,9 @@ def _unicode_decode_cp1252(
             codepoint = int(_cp1252_c1_codepoint(byte - 0x80))
 
         if codepoint < 0:
-                _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors)
         else:
-                output.append(codepoint)
+            output.append(codepoint)
 
     return output.finish()
 
@@ -1081,8 +1176,9 @@ def _unicode_decode_cp1251(
     data: Ptr[u8],
     byte_length: int,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
 
     for i in range(byte_length):
         byte = int(data[i])
@@ -1094,9 +1190,9 @@ def _unicode_decode_cp1251(
             codepoint = int(_cp1251_c1_codepoint(byte - 0x80))
 
         if codepoint < 0:
-                _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors)
         else:
-                output.append(codepoint)
+            output.append(codepoint)
 
     return output.finish()
 
@@ -1105,15 +1201,16 @@ def _unicode_decode_cp1250(
     data: Ptr[u8],
     byte_length: int,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
 
     for i in range(byte_length):
         codepoint = int(_single_byte_cp1250_decode(int(data[i])))
         if codepoint < 0:
-                _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors)
         else:
-                output.append(codepoint)
+            output.append(codepoint)
 
     return output.finish()
 
@@ -1122,15 +1219,16 @@ def _unicode_decode_cp1253(
     data: Ptr[u8],
     byte_length: int,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
 
     for i in range(byte_length):
         codepoint = int(_single_byte_cp1253_decode(int(data[i])))
         if codepoint < 0:
-                _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors)
         else:
-                output.append(codepoint)
+            output.append(codepoint)
 
     return output.finish()
 
@@ -1139,15 +1237,16 @@ def _unicode_decode_cp1254(
     data: Ptr[u8],
     byte_length: int,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
 
     for i in range(byte_length):
         codepoint = int(_single_byte_cp1254_decode(int(data[i])))
         if codepoint < 0:
-                _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors)
         else:
-                output.append(codepoint)
+            output.append(codepoint)
 
     return output.finish()
 
@@ -1187,8 +1286,9 @@ def _unicode_decode_utf16(
     little_endian: bool,
     detect_bom: bool,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
     pos = 0
 
     if detect_bom and byte_length >= 2:
@@ -1245,8 +1345,9 @@ def _unicode_decode_utf32(
     little_endian: bool,
     detect_bom: bool,
     errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
 ) -> str:
-    output = _UnicodeCodecBuffer(byte_length)
+    output = _UnicodeCodecBuffer(byte_length, tracker)
     pos = 0
 
     if detect_bom and byte_length >= 4:
@@ -1295,39 +1396,45 @@ def _unicode_decode_utf32(
     return output.finish()
 
 
-def _unicode_decode_ptr(data: Ptr[u8], length: int, encoding: int, errors: int) -> str:
+def _unicode_decode_ptr(
+    data: Ptr[u8],
+    length: int,
+    encoding: int,
+    errors: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
+) -> str:
     if encoding == _ENCODING_UTF8:
         if errors == _ERROR_STRICT:
             return _unicode_decode_utf8_strict(data, length)
-        return _unicode_decode_utf8(data, length, errors)
+        return _unicode_decode_utf8(data, length, errors, tracker)
     if encoding == _ENCODING_ASCII:
-        return _unicode_decode_single_byte(data, length, True, errors)
+        return _unicode_decode_single_byte(data, length, True, errors, tracker)
     if encoding == _ENCODING_LATIN1:
-        return _unicode_decode_single_byte(data, length, False, errors)
+        return _unicode_decode_single_byte(data, length, False, errors, tracker)
     if encoding == _ENCODING_CP1252:
-        return _unicode_decode_cp1252(data, length, errors)
+        return _unicode_decode_cp1252(data, length, errors, tracker)
     if encoding == _ENCODING_CP1251:
-        return _unicode_decode_cp1251(data, length, errors)
+        return _unicode_decode_cp1251(data, length, errors, tracker)
     if encoding == _ENCODING_CP1250:
-        return _unicode_decode_cp1250(data, length, errors)
+        return _unicode_decode_cp1250(data, length, errors, tracker)
     if encoding == _ENCODING_CP1253:
-        return _unicode_decode_cp1253(data, length, errors)
+        return _unicode_decode_cp1253(data, length, errors, tracker)
     if encoding == _ENCODING_CP1254:
-        return _unicode_decode_cp1254(data, length, errors)
+        return _unicode_decode_cp1254(data, length, errors, tracker)
     if encoding == _ENCODING_ISO8859_15:
         return _unicode_decode_iso8859_15(data, length)
     if encoding == _ENCODING_UTF16:
-        return _unicode_decode_utf16(data, length, _native_is_little_endian(), True, errors)
+        return _unicode_decode_utf16(data, length, _native_is_little_endian(), True, errors, tracker)
     if encoding == _ENCODING_UTF16_LE:
-        return _unicode_decode_utf16(data, length, True, False, errors)
+        return _unicode_decode_utf16(data, length, True, False, errors, tracker)
     if encoding == _ENCODING_UTF16_BE:
-        return _unicode_decode_utf16(data, length, False, False, errors)
+        return _unicode_decode_utf16(data, length, False, False, errors, tracker)
     if encoding == _ENCODING_UTF32:
-        return _unicode_decode_utf32(data, length, _native_is_little_endian(), True, errors)
+        return _unicode_decode_utf32(data, length, _native_is_little_endian(), True, errors, tracker)
     if encoding == _ENCODING_UTF32_LE:
-        return _unicode_decode_utf32(data, length, True, False, errors)
+        return _unicode_decode_utf32(data, length, True, False, errors, tracker)
     if encoding == _ENCODING_UTF32_BE:
-        return _unicode_decode_utf32(data, length, False, False, errors)
+        return _unicode_decode_utf32(data, length, False, False, errors, tracker)
 
     raise LookupError("unknown encoding")
 
@@ -1366,6 +1473,33 @@ def _codec_encode_ascii_append(
             output.append(codepoint)
 
 
+def _codec_encode_backslashreplace_append(
+    output: _CodecByteBuffer,
+    codepoint: int,
+    width: int = 1,
+    little_endian: bool = True,
+):
+    _codec_encode_ascii_append(output, 0x5C, width, little_endian)  # \
+    if codepoint <= 0xFF:
+        _codec_encode_ascii_append(output, 0x78, width, little_endian)  # x
+        digits = 2
+    elif codepoint <= 0xFFFF:
+        _codec_encode_ascii_append(output, 0x75, width, little_endian)  # u
+        digits = 4
+    else:
+        _codec_encode_ascii_append(output, 0x55, width, little_endian)  # U
+        digits = 8
+
+    for i in range(digits - 1, -1, -1):
+        digit = (codepoint >> (i * 4)) & 0xF
+        _codec_encode_ascii_append(
+            output,
+            0x30 + digit if digit < 10 else 0x61 + digit - 10,
+            width,
+            little_endian,
+        )
+
+
 def _codec_encode_error_append(
     output: _CodecByteBuffer,
     codepoint: int,
@@ -1391,25 +1525,42 @@ def _codec_encode_error_append(
         _raise_utf8_encode_error(0, 0, "code point not encodable")
 
     if errors == _ERROR_BACKSLASHREPLACE:
-        _codec_encode_ascii_append(output, 0x5C, width, little_endian)  # \
-        if codepoint <= 0xFF:
-            _codec_encode_ascii_append(output, 0x78, width, little_endian)  # x
-            digits = 2
-        elif codepoint <= 0xFFFF:
-            _codec_encode_ascii_append(output, 0x75, width, little_endian)  # u
-            digits = 4
-        else:
-            _codec_encode_ascii_append(output, 0x55, width, little_endian)  # U
-            digits = 8
+        _codec_encode_backslashreplace_append(
+            output, codepoint, width, little_endian
+        )
+        return
 
-        for i in range(digits - 1, -1, -1):
-            digit = (codepoint >> (i * 4)) & 0xF
+    if errors == _ERROR_XMLCHARREFREPLACE:
+        _codec_encode_ascii_append(output, 0x26, width, little_endian)  # &
+        _codec_encode_ascii_append(output, 0x23, width, little_endian)  # #
+        divisor = 1
+        while codepoint // divisor >= 10:
+            divisor *= 10
+        while divisor > 0:
             _codec_encode_ascii_append(
-                output,
-                0x30 + digit if digit < 10 else 0x61 + digit - 10,
-                width,
-                little_endian,
+                output, 0x30 + codepoint // divisor, width, little_endian
             )
+            codepoint %= divisor
+            divisor //= 10
+        _codec_encode_ascii_append(output, 0x3B, width, little_endian)  # ;
+        return
+
+    if errors == _ERROR_NAMEREPLACE:
+        name_index = unicode_name_record_index(codepoint)
+        if name_index < 0:
+            _codec_encode_backslashreplace_append(
+                output, codepoint, width, little_endian
+            )
+            return
+        _codec_encode_ascii_append(output, 0x5C, width, little_endian)  # \
+        _codec_encode_ascii_append(output, 0x4E, width, little_endian)  # N
+        _codec_encode_ascii_append(output, 0x7B, width, little_endian)  # {
+        name = unicode_name_value(name_index)
+        for character in name:
+            _codec_encode_ascii_append(
+                output, ord(character), width, little_endian
+            )
+        _codec_encode_ascii_append(output, 0x7D, width, little_endian)  # }
         return
 
     if errors == _ERROR_UNKNOWN:

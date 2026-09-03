@@ -682,32 +682,34 @@ def gzflush(a: cobj, b: i32) -> i32:
 # <bzlib.h>
 @nocapture
 @C
-def BZ2_bzopen(a: cobj, b: cobj) -> cobj:
+def BZ2_bzCompressInit(
+    stream: cobj, compresslevel: i32, verbosity: i32, work_factor: i32,
+) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzread(a: cobj, b: cobj, c: i32) -> i32:
+def BZ2_bzCompress(stream: cobj, action: i32) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzwrite(a: cobj, b: cobj, c: i32) -> i32:
+def BZ2_bzCompressEnd(stream: cobj) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzflush(a: cobj) -> i32:
+def BZ2_bzDecompressInit(stream: cobj, verbosity: i32, small: i32) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzclose(a: cobj) -> None:
+def BZ2_bzDecompress(stream: cobj) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzerror(a: cobj, b: Ptr[i32]) -> cobj:
+def BZ2_bzDecompressEnd(stream: cobj) -> i32:
     pass
 
 # <string.h>

@@ -578,6 +578,13 @@ def test_unicodedata_numeric_values():
     assert unicodedata.decimal(unicode("A"), -1) == -1
     assert unicodedata.digit(unicode("A"), -1) == -1
     assert unicodedata.numeric(unicode("A"), -1.0) == -1.0
+    assert unicodedata.numeric(unicode("A"), -1) == -1.0
+    assert unicodedata.decimal(unicode("A"), None) is None
+    assert unicodedata.digit(unicode("A"), None) is None
+    assert unicodedata.numeric(unicode("A"), None) is None
+    assert unicodedata.decimal(unicode("7"), None) == 7
+    assert unicodedata.digit(_unicode_from_codepoint(0x00B2), None) == 2
+    assert unicodedata.numeric(_unicode_from_codepoint(0x00BD), None) == 0.5
 
     try:
         unicodedata.decimal(unicode("A"))
@@ -622,6 +629,8 @@ def test_unicodedata_names():
         == "CJK UNIFIED IDEOGRAPH-20000"
     )
     assert unicodedata.name(_unicode_from_codepoint(0xE000), "private") == "private"
+    assert unicodedata.name(_unicode_from_codepoint(0xE000), None) is None
+    assert unicodedata.name(unicode("A"), None) == "LATIN CAPITAL LETTER A"
     assert unicodedata.lookup("LATIN CAPITAL LETTER A") == unicode("A")
     assert unicodedata.lookup("HANGUL SYLLABLE GA") == unicode("가")
     assert unicodedata.lookup("CJK UNIFIED IDEOGRAPH-20000") == (
@@ -772,6 +781,15 @@ def test_codecs_and_error_handlers():
     assert unicode("éΩ").encode("ascii", "backslashreplace") == _raw_bytes(
         [0x5C, 0x78, 0x65, 0x39, 0x5C, 0x75, 0x30, 0x33, 0x61, 0x39]
     )
+    assert unicode("éΩ").encode("ascii", "xmlcharrefreplace") == b"&#233;&#937;"
+    assert unicode("éΩ").encode("ascii", "namereplace") == (
+        b"\\N{LATIN SMALL LETTER E WITH ACUTE}\\N{GREEK CAPITAL LETTER OMEGA}"
+    )
+    unnamed = _unicode_from_codepoints([0xE000, 0xD800])
+    assert unnamed.encode("ascii", "namereplace") == b"\\ue000\\ud800"
+    assert _unicode_from_codepoint(0xD800).encode(
+        "utf-16-le", "xmlcharrefreplace"
+    ) == unicode("&#55296;").encode("utf-16-le")
 
     assert unicode(_raw_bytes([0x41]), "utf-16-le", "replace") == unicode("�")
     assert unicode(_raw_bytes([0x00, 0x00, 0x11, 0x00]), "utf-32-le", "replace") == unicode("�")

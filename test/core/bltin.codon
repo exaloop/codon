@@ -1787,7 +1787,7 @@ test_files(open)
 import gzip
 test_files(gzip.open)
 import bz2
-test_files(bz2.open, append_allowed=False)
+test_files(bz2.open)
 
 
 # Codon-specific

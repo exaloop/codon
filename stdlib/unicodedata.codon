@@ -82,13 +82,22 @@ def decomposition(value: str) -> str:
     return result
 
 
-def name(value: str, default: Optional[str] = None) -> str:
+def name(value: str) -> str:
     index = unicode_name_record_index(_single_codepoint(value))
     if index < 0:
-        if default is None:
-            raise ValueError("no such name")
-        return default
+        raise ValueError("no such name")
     return unicode_name_value(index)
+
+
+@overload
+def name(value: str, default):
+    index = unicode_name_record_index(_single_codepoint(value))
+    if default is None:
+        return None if index < 0 else unicode_name_value(index)
+    elif isinstance(default, str):
+        return default if index < 0 else unicode_name_value(index)
+    else:
+        compile_error("unicodedata.name() default must be str or None")
 
 
 def lookup(value: str) -> str:
@@ -130,28 +139,63 @@ def mirrored(value: str) -> bool:
     return unicode_mirrored_index(_single_codepoint(value)) != 0
 
 
-def decimal(value: str, default: Optional[int] = None) -> int:
+def decimal(value: str) -> int:
     result = unicode_decimal_index(_single_codepoint(value))
     if result == 0:
-        if default is None:
-            raise ValueError("not a decimal")
-        return default
+        raise ValueError("not a decimal")
     return result - 1
 
 
-def digit(value: str, default: Optional[int] = None) -> int:
+@overload
+def decimal(value: str, default):
+    result = unicode_decimal_index(_single_codepoint(value))
+    if default is None:
+        return None if result == 0 else result - 1
+    elif isinstance(default, int):
+        return default if result == 0 else result - 1
+    else:
+        compile_error("unicodedata.decimal() default must be int or None")
+
+
+def digit(value: str) -> int:
     result = unicode_digit_index(_single_codepoint(value))
     if result == 0:
-        if default is None:
-            raise ValueError("not a digit")
-        return default
+        raise ValueError("not a digit")
     return result - 1
 
 
-def numeric(value: str, default: Optional[float] = None) -> float:
+@overload
+def digit(value: str, default):
+    result = unicode_digit_index(_single_codepoint(value))
+    if default is None:
+        return None if result == 0 else result - 1
+    elif isinstance(default, int):
+        return default if result == 0 else result - 1
+    else:
+        compile_error("unicodedata.digit() default must be int or None")
+
+
+def numeric(value: str) -> float:
     codepoint = _single_codepoint(value)
     if unicode_numeric_index(codepoint) == 0:
-        if default is None:
-            raise ValueError("not a numeric character")
-        return default
+        raise ValueError("not a numeric character")
     return unicode_numeric_value(codepoint)
+
+
+@overload
+def numeric(value: str, default):
+    codepoint = _single_codepoint(value)
+    if default is None:
+        return (
+            None
+            if unicode_numeric_index(codepoint) == 0
+            else unicode_numeric_value(codepoint)
+        )
+    elif isinstance(default, int) or isinstance(default, float):
+        return (
+            float(default)
+            if unicode_numeric_index(codepoint) == 0
+            else unicode_numeric_value(codepoint)
+        )
+    else:
+        compile_error("unicodedata.numeric() default must be int, float or None")

@@ -7,18 +7,20 @@ GzipFile = gzFile
 def open(
     path: str,
     mode: str = "rb",
+    compresslevel: int = 9,
     encoding: Optional[str] = None,
     errors: Optional[str] = None,
     newline: Optional[str] = None,
 ) -> gzFile[bytes]:
-    return gzopen(path, mode, encoding, errors, newline)
+    return gzopen(path, mode, compresslevel, encoding, errors, newline)
 
 @overload
 def open(
     path: str,
     mode: Literal[str],
+    compresslevel: int = 9,
     encoding: Optional[str] = None,
     errors: Optional[str] = None,
     newline: Optional[str] = None,
 ):
-    return gzopen(path, mode, encoding, errors, newline)
+    return gzopen(path, mode, compresslevel, encoding, errors, newline)
