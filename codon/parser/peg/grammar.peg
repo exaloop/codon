@@ -112,11 +112,6 @@ small_stmt <-
   / custom_small_stmt
 
 assignment <-
-  / id _ ':' _ expression (_ '=' _ star_expressions)? {
-    return asts(Assign, LOC,
-      ac_expr(V0), VS.size() > 2 ? ac_expr(V2) : nullptr, ac_expr(V1)
-    );
-  }
   / primary _ ':' _ expression (_ '=' _ star_expressions)? {
     return asts(Assign, LOC,
       ac_expr(V0),
@@ -358,7 +353,8 @@ function <-
     fn->setSuite(SuiteStmt::wrap(ac_stmt(VS.size() > 2 ? V2 : V1)));
     return (Stmt*)fn;
   }
-extern <- (empty_line* EXTERNDENT (!EOL .)* EOL empty_line*)+ {
+# A character class is much faster than !EOL
+extern <- (empty_line* EXTERNDENT [^\r\n]* EOL empty_line*)+ {
   return string(VS.sv());
 }
 ~empty_line <- [ \t]* EOL
@@ -524,30 +520,30 @@ lparams <- tlist(',', lparam)? { return VS; }
 lparam <- param_name (_ '=' _ expression)? {
     return Param(LOC, ac<string>(V0), nullptr, VS.size() > 1 ? ac_expr(V1) : nullptr);
   }
-pipe <-
-  / disjunction (_ <'|>' / '||>'> _ disjunction)+ {
-    vector<Pipe> v;
-    for (int i = 0; i < VS.size(); i++)
-      v.push_back(Pipe{i ? VS.token_to_string(i - 1) : "", ac_expr(VS[i])});
-    return aste(Pipe, LOC, std::move(v));
-  }
-  / disjunction { return ac_expr(V0); }
-disjunction <-
-  / conjunction (SPACE? 'or' SPACE? conjunction)+ {
-    auto b = aste(Binary, LOC, ac_expr(V0), "||", ac_expr(V1));
-    for (int i = 2; i < VS.size(); i++)
-      b = aste(Binary, LOC, b, "||", ac_expr(VS[i]));
-    return b;
-  }
-  / conjunction { return ac_expr(V0); }
-conjunction <-
-  / inversion (SPACE? 'and' SPACE? inversion)+ {
-    auto b = aste(Binary, LOC, ac_expr(V0), "&&", ac_expr(V1));
-    for (int i = 2; i < VS.size(); i++)
-      b = aste(Binary, LOC, b, "&&", ac_expr(VS[i]));
-    return b;
-  }
-  / inversion { return ac_expr(V0); }
+pipe <- disjunction (_ <'|>' / '||>'> _ disjunction)* {
+  if (VS.size() == 1)
+    return ac_expr(V0);
+  vector<Pipe> v;
+  for (int i = 0; i < VS.size(); i++)
+    v.push_back(Pipe{i ? VS.token_to_string(i - 1) : "", ac_expr(VS[i])});
+  return aste(Pipe, LOC, std::move(v));
+}
+disjunction <- conjunction (SPACE? 'or' SPACE? conjunction)* {
+  if (VS.size() == 1)
+    return ac_expr(V0);
+  auto b = aste(Binary, LOC, ac_expr(V0), "||", ac_expr(V1));
+  for (int i = 2; i < VS.size(); i++)
+    b = aste(Binary, LOC, b, "||", ac_expr(VS[i]));
+  return b;
+}
+conjunction <- inversion (SPACE? 'and' SPACE? inversion)* {
+  if (VS.size() == 1)
+    return ac_expr(V0);
+  auto b = aste(Binary, LOC, ac_expr(V0), "&&", ac_expr(V1));
+  for (int i = 2; i < VS.size(); i++)
+    b = aste(Binary, LOC, b, "&&", ac_expr(VS[i]));
+  return b;
+}
 inversion <-
   / 'not' SPACE inversion { return aste(Unary, LOC, "!", ac_expr(V0)); }
   / comparison { return ac_expr(V0); }
@@ -588,11 +584,11 @@ factor <-
     return aste(Unary, LOC, VS.token_to_string(), ac_expr(V0));
   }
   / power { return ac_expr(V0); }
-power <-
-  / await_primary _ <'**'> _ factor {
-    return aste(Binary, LOC, ac_expr(V0), "**", ac_expr(V1));
-  }
-  / await_primary { return ac_expr(V0); }
+power <- await_primary (_ <'**'> _ factor)? {
+  return VS.size() == 1
+    ? ac_expr(V0)
+    : aste(Binary, LOC, ac_expr(V0), "**", ac_expr(V1));
+}
 await_primary <-
   / 'await' SPACE primary { return aste(Await, LOC, ac_expr(V0)); }
   / primary { return ac_expr(V0); }
@@ -839,7 +835,7 @@ STR <- <
   return s;
 }
 CHAR <- ('\\' . / .) { return string(VS.sv()); }
-~COMMENT <- !directive <'#' (!EOL .)*>
+~COMMENT <- !directive <'#' [^\r\n]*>
 ~INDENT__NOPACKRAT <- <[ \t]*> { CTX.indent.push(VS.sv().size()); }
 INDENT__PREDICATE {
   if (!(CTX.indent.empty() && VS.sv().size()) &&
@@ -868,7 +864,8 @@ EXTERNDENT__PREDICATE {
          !(CTX.indent.size() && VS.sv().size() < CTX.indent.top());
 }
 ~EOL <- <[\r][\n] / [\r\n]>
-~SPACE <- ([ \t]+ / COMMENT / NLP EOL) SPACE?
+# Repetition avoids a recursive SPACE rule frame for every whitespace/comment chunk.
+~SPACE <- ([ \t]+ / COMMENT / NLP EOL)+
 ~_ <- SPACE?
 
 ~keyword <- <

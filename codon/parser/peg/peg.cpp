@@ -39,6 +39,9 @@ std::shared_ptr<peg::Grammar> initParser() {
   }
   (*g)["program"].enablePackratParsing = true;
   (*g)["fstring"].enablePackratParsing = true;
+  // Codon's generated grammar has no capture/back-reference operators.
+  (*g)["program"].enableCaptureScope = false;
+  (*g)["fstring"].enableCaptureScope = false;
   for (auto &rule : std::vector<std::string>{
            "arguments", "slices", "genexp", "parentheses", "star_parens", "generics",
            "with_parens_item", "params", "from_as_parens", "from_params"}) {
@@ -74,10 +77,24 @@ llvm::Expected<T> parseCode(Cache *cache, const std::string &file,
     errors.emplace_back(msg.substr(0, ed), file, line, col);
   };
   T result;
-  auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
-  auto r = (*grammar)[rule].parse_and_get_value(code.c_str(), code.size(), ctx, result,
-                                                file.c_str(), log);
+  auto parse = [&](const peg::Log &parseLog) {
+    // ParseContext contains indentation state, so each retry must start with a fresh
+    // context.
+    auto ctx = std::make_any<ParseContext>(cache, 0, line_offset, col_offset);
+    result = T{};
+    return (*grammar)[rule].parse_and_get_value(code.c_str(), code.size(), ctx, result,
+                                                file.c_str(), parseLog);
+  };
+
+  // Detailed expected-token tracking is surprisingly expensive because ordinary PEG
+  // backtracking and negative lookahead produce many intentional failures. Keep the
+  // successful path lean and pay for diagnostics only when the input is invalid.
+  auto r = parse(peg::Log{});
   auto ret = r.ret && r.len == code.size();
+  if (!ret) {
+    r = parse(log);
+    ret = r.ret && r.len == code.size();
+  }
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
   totalPeg += t.elapsed();
@@ -102,9 +119,22 @@ parseExpr(Cache *cache, const std::string &code, const codon::SrcInfo &offset) {
 
 llvm::Expected<Stmt *> parseFile(Cache *cache, const std::string &file) {
   auto lines = cache->fs->read_lines(file);
-  cache->imports[file].content = lines;
-  std::string code = join(lines, "\n");
-  auto result = parseCode(cache, file, code);
+
+  // Build the parser buffer once (avoid join and copying if lines)
+  size_t codeSize = lines.empty() ? 0 : lines.size() - 1;
+  for (const auto &line : lines)
+    codeSize += line.size();
+  std::string code;
+  code.reserve(codeSize + 1);
+  for (size_t i = 0; i < lines.size(); ++i) {
+    if (i)
+      code.push_back('\n');
+    code.append(lines[i]);
+  }
+  code.push_back('\n');
+  cache->imports[file].content = std::move(lines);
+  auto result = parseCode<Stmt *>(cache, file, code, /*line_offset=*/0,
+                                  /*col_offset=*/0, "program");
   // /* For debugging purposes: */ LOG("peg/{} :=  {}", file, result);
   return result;
 }
@@ -118,6 +148,8 @@ std::shared_ptr<peg::Grammar> initOpenMPParser() {
     val.accept(v);
   }
   (*g)["pragma"].enablePackratParsing = true;
+  // The OpenMP grammar likewise uses semantic values, but no PEG captures.
+  (*g)["pragma"].enableCaptureScope = false;
   return g;
 }
 
@@ -131,10 +163,20 @@ llvm::Expected<std::vector<CallArg>> parseOpenMP(Cache *cache, const std::string
     errors.emplace_back(fmt::format("openmp: {}", msg), loc.file, loc.line, loc.col);
   };
   std::vector<CallArg> result;
-  auto ctx = std::make_any<ParseContext>(cache, 0, 0, 0);
-  auto r = (*ompGrammar)["pragma"].parse_and_get_value(code.c_str(), code.size(), ctx,
-                                                       result, "", log);
+  auto parse = [&](const peg::Log &parseLog) {
+    auto ctx = std::make_any<ParseContext>(cache, 0, 0, 0);
+    result.clear();
+    return (*ompGrammar)["pragma"].parse_and_get_value(code.c_str(), code.size(), ctx,
+                                                       result, "", parseLog);
+  };
+
+  // Use the same failure-only diagnostics policy as the main grammar.
+  auto r = parse(peg::Log{});
   auto ret = r.ret && r.len == code.size();
+  if (!ret) {
+    r = parse(log);
+    ret = r.ret && r.len == code.size();
+  }
   if (!ret)
     r.error_info.output_log(log, code.c_str(), code.size());
   if (!errors.empty())
