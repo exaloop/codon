@@ -2,32 +2,43 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ... import ast
-from . import TypecheckVisitor
+from . import infer, utils
+
+if TYPE_CHECKING:
+    from . import TypeVisitor
 
 
-def typecheck_none(self: TypecheckVisitor, node: ast.NoneExpr):
+def typecheck_none(self: TypeVisitor, node: ast.NoneExpr):
     """Set type to `Optional[?]`"""
-    node |= self.instantiate_type(self.get_stdlib_type(ast.types.Stdlib.Optional))
-    if self.realize(node.type):
+    node |= utils.instantiate_type(
+        self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional)
+    )
+    if infer.realize(node.type):
         # Realize the appropriate `Optional.__new__` for the translation stage
-        self.realize(
-            self.instantiate_type(
-                self.ctx.force_find("Optional.__new__").get_type(), [self.extract_class_type(node)]
+        infer.realize(
+            utils.instantiate_type(
+                self.ctx,
+                utils.force_find(
+                    self.ctx, ast.types.mangle(cls="Optional", func="__new__")
+                ).get_type(),
+                [utils.extract_class_type(self.ctx, node)],
             )
         )
         node.done = True
     return node
 
 
-def typecheck_bool(self: TypecheckVisitor, node: ast.BoolExpr):
+def typecheck_bool(self: TypeVisitor, node: ast.BoolExpr):
     """Set type to `bool`"""
-    node |= self.instantiate_static(node.value)
+    node |= utils.instantiate_static(self.ctx, node.value)
     node.done = True
     return node
 
 
-def typecheck_int(self: TypecheckVisitor, node: ast.IntExpr):
+def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
     """
     Parse various integer representations depending on the integer suffix.
     @example
@@ -54,7 +65,7 @@ def typecheck_int(self: TypecheckVisitor, node: ast.IntExpr):
 
     if not suffix and node.has_stored_value():
         # A normal integer (int64_t)
-        node |= self.instantiate_static(node.get_value())
+        node |= utils.instantiate_static(self.ctx, node.get_value())
         node.done = True
         return node
     elif suffix == "u":
@@ -89,7 +100,7 @@ def typecheck_int(self: TypecheckVisitor, node: ast.IntExpr):
         return self.visit(call)
 
 
-def typecheck_float(self: TypecheckVisitor, node: ast.FloatExpr):
+def typecheck_float(self: TypeVisitor, node: ast.FloatExpr):
     """
     Parse various float representations depending on the suffix.
     @example
@@ -103,7 +114,7 @@ def typecheck_float(self: TypecheckVisitor, node: ast.FloatExpr):
         holder = ast.FloatExpr(value=str(node.get_value()), float_value=node.get_value())
     if not suffix and node.has_stored_value():
         # A normal float (double)
-        node |= self.get_stdlib_type(ast.types.Stdlib.Float)
+        node |= utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Float)
         node.done = True
         return node
     elif not suffix:
@@ -123,13 +134,13 @@ def typecheck_float(self: TypecheckVisitor, node: ast.FloatExpr):
         return self.visit(call)
 
 
-def typecheck_str(self: TypecheckVisitor, node: ast.StringExpr):
+def typecheck_str(self: TypeVisitor, node: ast.StringExpr):
     """
     Set type to `str`. Concatinate strings in list and apply appropriate transformations
     (e.g., `str` wrap).
     """
     if node.is_simple:
-        node |= self.instantiate_static(node.get_value())
+        node |= utils.instantiate_static(self.ctx, node.get_value())
         node.done = True
         return node
 

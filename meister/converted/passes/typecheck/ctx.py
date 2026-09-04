@@ -5,6 +5,10 @@ from ....bridge import Dict, List, Set, contextmanager, dataclass
 from ... import ast, cache
 
 
+class TypecheckError(ast.NodeError):
+    pass
+
+
 @dataclass(init=False)
 class Item:
     """

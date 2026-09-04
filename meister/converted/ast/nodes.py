@@ -515,12 +515,12 @@ class GeneratorExpr(Expr):
         DictGenerator = 4
 
     kind: GeneratorExpr.Kind = Kind.Generator
-    loops: object | None = None
+    loops: ForStmt
 
     def __init__(
         self,
-        kind: GeneratorExpr.Kind = Kind.Generator,
-        loops: object | None = None,
+        kind: GeneratorExpr.Kind,
+        loops: ForStmt,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -528,7 +528,7 @@ class GeneratorExpr(Expr):
         self.loops = loops
 
     def iter_blocks(self, for_fn=None, if_fn=None, expr_fn=None):
-        i = self.loops
+        i: Stmt = self.loops
         while True:
             match i:
                 case ForStmt(suite=s):
@@ -568,23 +568,17 @@ class GeneratorExpr(Expr):
         self.iter_blocks(expr_fn=catch)
         return expr
 
-    def final_suite(self):
+    def final_suite(self) -> ForStmt:
         return self.loops
 
 
 @dataclass(init=False)
 class IfExpr(Expr):
-    cond: Expr | None = None
-    ifexpr: Expr | None = None
-    elsexpr: Expr | None = None
+    cond: Expr
+    ifexpr: Expr
+    elsexpr: Expr
 
-    def __init__(
-        self,
-        cond: Expr | None = None,
-        ifexpr: Expr | None = None,
-        elsexpr: Expr | None = None,
-        **kwargs,
-    ):
+    def __init__(self, cond: Expr, ifexpr: Expr, elsexpr: Expr, **kwargs):
         super().__init__(**kwargs)
         self.cond = cond
         self.ifexpr = ifexpr
@@ -593,10 +587,10 @@ class IfExpr(Expr):
 
 @dataclass(init=False)
 class UnaryExpr(Expr):
-    op: str = ""
-    expr: Expr | None = None
+    op: str
+    expr: Expr
 
-    def __init__(self, op: str = "", expr: Expr | None = None, **kwargs):
+    def __init__(self, op: str, expr: Expr, **kwargs):
         super().__init__(**kwargs)
         self.op = op
         self.expr = expr
@@ -604,20 +598,13 @@ class UnaryExpr(Expr):
 
 @dataclass(init=False)
 class BinaryExpr(Expr):
-    lexpr: Expr | None = None
+    lexpr: Expr
     op: str = ""
-    rexpr: Expr | None = None
+    rexpr: Expr
     # True if an expression modifies lhs in-place (e.g. a += b).
     in_place: bool = False
 
-    def __init__(
-        self,
-        lexpr: Expr | None = None,
-        op: str = "",
-        rexpr: Expr | None = None,
-        in_place: bool = False,
-        **kwargs,
-    ):
+    def __init__(self, lexpr: Expr, op: str, rexpr: Expr, in_place: bool = False, **kwargs):
         super().__init__(**kwargs)
         self.lexpr = lexpr
         self.op = op
@@ -814,10 +801,10 @@ class AwaitExpr(Expr):
 
 @dataclass(init=False)
 class AssignExpr(Expr):
-    var: Expr | None = None
-    expr: Expr | None = None
+    var: Expr
+    expr: Expr
 
-    def __init__(self, var: Expr | None = None, expr: Expr | None = None, **kwargs):
+    def __init__(self, var: Expr, expr: Expr, **kwargs):
         super().__init__(**kwargs)
         self.var = var
         self.expr = expr
@@ -825,10 +812,10 @@ class AssignExpr(Expr):
 
 @dataclass(init=False)
 class RangeExpr(Expr):
-    start: Expr | None = None
-    stop: Expr | None = None
+    start: Expr
+    stop: Expr
 
-    def __init__(self, start: Expr | None = None, stop: Expr | None = None, **kwargs):
+    def __init__(self, start: Expr, stop: Expr, **kwargs):
         super().__init__(**kwargs)
         self.start = start
         self.stop = stop
@@ -836,10 +823,10 @@ class RangeExpr(Expr):
 
 @dataclass(init=False)
 class StmtExpr(Expr):
-    items: List[object]
-    expr: Expr | None = None
+    items: List[Stmt]
+    expr: Expr
 
-    def __init__(self, items: List[object] | None = None, expr: Expr | None = None, **kwargs):
+    def __init__(self, items: List[Stmt], expr: Expr, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.expr = expr
@@ -847,10 +834,10 @@ class StmtExpr(Expr):
 
 @dataclass(init=False)
 class InstantiateExpr(Expr):
-    expr: Expr | None = None
+    expr: Expr
     items: List[Expr]
 
-    def __init__(self, expr: Expr | None = None, items: List[Expr] | None = None, **kwargs):
+    def __init__(self, expr: Expr, items: List[Expr] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.expr = expr
@@ -874,10 +861,12 @@ class Stmt(Node):
 class SuiteStmt(Stmt):
     items: List[Stmt]
 
-    def __init__(self, items: List[Stmt] | None = None, **kwargs):
-        # C++ source: codon/parser/ast/stmt.cpp:35
+    def __init__(self, items: List[Stmt] | Stmt | None = None, **kwargs):
         super().__init__(**kwargs)
-        self.items = [] if items is None else items
+        if isinstance(items, Stmt):
+            self.items = [items]
+        else:
+            self.items = [] if items is None else items
 
     def first_in_block(self) -> Stmt | None:
         return None if not self.items else self.items[0].first_in_block()
@@ -897,9 +886,9 @@ class SuiteStmt(Stmt):
             self.done = self.done and stmt.done
 
     @staticmethod
-    def wrap(stmt: Stmt | None) -> SuiteStmt | None:
+    def wrap(stmt: Stmt | None):
         if stmt is None:
-            return None
+            return SuiteStmt()
         return stmt if isinstance(stmt, SuiteStmt) else SuiteStmt(items=[stmt], info=stmt)
 
 
@@ -1043,9 +1032,9 @@ class WhileStmt(Stmt):
 
 @dataclass(init=False)
 class ForStmt(Stmt):
-    var: Expr | None = None
-    iter: Expr | None = None
-    suite: SuiteStmt | None = None
+    var: Expr
+    iter: Expr
+    suite: SuiteStmt
     else_suite: SuiteStmt | None = None
     decorator: Expr | None = None
     omp_args: List[CallExpr.Arg]
@@ -1057,10 +1046,10 @@ class ForStmt(Stmt):
 
     def __init__(
         self,
-        var: Expr | None = None,
-        iter: Expr | None = None,
-        suite: SuiteStmt | None = None,
-        else_suite: SuiteStmt | None = None,
+        var: Expr,
+        iter: Expr,
+        suite: Stmt | None = None,
+        else_suite: Stmt | None = None,
         decorator: Expr | None = None,
         omp_args: List[CallExpr.Arg] | None = None,
         async_: bool = False,
@@ -1082,17 +1071,11 @@ class ForStmt(Stmt):
 
 @dataclass(init=False)
 class IfStmt(Stmt):
-    cond: Expr | None = None
-    if_suite: SuiteStmt | None = None
+    cond: Expr
+    if_suite: SuiteStmt
     else_suite: SuiteStmt | None = None
 
-    def __init__(
-        self,
-        cond: Expr | None = None,
-        if_suite: SuiteStmt | None = None,
-        else_suite: SuiteStmt | None = None,
-        **kwargs,
-    ):
+    def __init__(self, cond: Expr, if_suite: Stmt, else_suite: Stmt | None = None, **kwargs):
         super().__init__(**kwargs)
         self.cond = cond
         self.if_suite = SuiteStmt.wrap(if_suite)
@@ -1103,13 +1086,13 @@ class IfStmt(Stmt):
 class MatchStmt(Stmt):
     @dataclass(init=False)
     class Case(Node):
-        pattern: Expr | None = None
+        pattern: Expr
         guard: Expr | None = None
-        suite: SuiteStmt | None = None
+        suite: SuiteStmt
 
         def __init__(
             self,
-            pattern: Expr | None = None,
+            pattern: Expr,
             guard: Expr | None = None,
             suite: SuiteStmt | None = None,
             **kwargs,
@@ -1119,15 +1102,10 @@ class MatchStmt(Stmt):
             self.guard = guard
             self.suite = SuiteStmt.wrap(suite)
 
-    expr: Expr | None = None
+    expr: Expr
     items: List[MatchStmt.Case]
 
-    def __init__(
-        self,
-        expr: Expr | None = None,
-        items: List[MatchStmt.Case] | None = None,
-        **kwargs,
-    ):
+    def __init__(self, expr: Expr, items: List[MatchStmt.Case] | None = None, **kwargs):
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.expr = expr

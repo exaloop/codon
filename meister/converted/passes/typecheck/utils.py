@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from ....bridge import Callable, Dict, List, Set, Tuple, cast, contextmanager, dataclass
 from ... import ast, cache, error
-from . import TypecheckError, TypeVisitor, infer
+from . import infer
 from .classes import generate_tuple
-from .ctx import TypeContext
+from .ctx import TypecheckError, TypeContext
 
 
 @dataclass
@@ -25,7 +25,7 @@ class PartialCallData:
 
 
 def find_best_method(
-    tc: TypeVisitor, typ: ast.types.Class, member: str, args
+    ctx: TypeContext, typ: ast.types.Class, member: str, args
 ) -> ast.types.Function | None:
     """
     Select the best method indicated of an object that matches the given arg
@@ -39,13 +39,13 @@ def find_best_method(
             call_args.append(ast.CallExpr.Arg(value=arg))
         elif isinstance(arg, Tuple[str, ast.types.Type]):
             call_args.append(ast.CallExpr.Arg(name=arg[0], value=ast.NoneExpr(type=arg[1])))
-    methods = find_method(typ, member, hide_shadowed=False)
-    matches = find_matching_methods(typ, methods, call_args)
+    methods = find_method(ctx, typ, member, hide_shadowed=False)
+    matches = find_matching_methods(ctx, methods, call_args)
     return matches[0] if matches else None
 
 
 def can_call(
-    tc: TypeVisitor,
+    ctx: TypeContext,
     function: ast.types.Function,
     args: List[ast.CallExpr.Arg],
     partial: ast.types.Class | None = None,
@@ -111,7 +111,7 @@ def can_call(
                 reordered.append((args[slot[0]].value.type, slot[0]))
         return 0
 
-    score = reorder_named_args(function, args, on_done, lambda *_: -1, known)
+    score = reorder_named_args(ctx, function, args, on_done, lambda *_: -1, known)
     value_idx = 0
     generic_idx = 0
     real_generic_idx = 0
@@ -141,7 +141,7 @@ def can_call(
                 arg_idx += 1
                 # TODO: check if these are real types or if traits are satisfied
                 continue
-        _, wrapped_type, _ = can_wrap_expr(arg_type, expected_type, function)
+        _, wrapped_type, _ = can_wrap_expr(ctx, arg_type, expected_type, function)
         candidate = wrapped_type or arg_type
         if candidate.unify(expected_type, None) < 0:
             score = -1
@@ -152,7 +152,7 @@ def can_call(
 
 
 def find_matching_methods(
-    tc: TypeVisitor,
+    ctx: TypeContext,
     typ: ast.types.Class,
     methods: List[ast.types.Function | None],
     args: List[ast.CallExpr.Arg],
@@ -167,17 +167,17 @@ def find_matching_methods(
     for method in methods:
         if not method:
             continue  # avoid overloads that have not been seen yet
-        instantiated = instantiate_type(method, typ)
+        instantiated = instantiate_type(ctx, method, typ)
         if (
             isinstance(instantiated, ast.types.Function)
-            and can_call(instantiated, args, partial) != -1
+            and can_call(ctx, instantiated, args, partial) != -1
         ):
             results.append(method)
     return results
 
 
 def wrap_expr(
-    tc: TypeVisitor,
+    visitor,
     expr: ast.Expr,
     expected_type: ast.types.Type | None,
     callee: ast.types.Function | None = None,
@@ -208,14 +208,14 @@ def wrap_expr(
     if expr.type.get_static_kind() is not ast.types.Type.Behaviour.Runtime and (
         expected_type is None or expected_type.get_static_kind() is ast.types.Type.Behaviour.Runtime
     ):
-        expr.type = get_underlying_static_type(expr.type)
+        expr.type = get_underlying_static_type(visitor.ctx, expr.type)
     if can_wrap and wrapper:
-        expr = tc.visit(wrapper(expr))
+        expr = visitor.visit(wrapper(expr))
     return can_wrap, expr
 
 
 def can_wrap_expr(
-    tc: TypeVisitor,
+    visitor,
     expr_type: ast.types.Type,
     expected_type: ast.types.Type | None,
     callee: ast.types.Function | None = None,
@@ -505,7 +505,7 @@ def can_wrap_expr(
                 assert False, f"bad type: {value_class.debug_string(2)}"
 
             function_name = f".proxy.{function_name}"
-            if not tc.ctx.find(function_name):
+            if not visitor.ctx.find(function_name):
                 proxy = ast.FunctionStmt(
                     function_name,
                     ret=None,
@@ -527,7 +527,7 @@ def can_wrap_expr(
                         ]
                     ),
                 )
-                tc.visit(proxy)
+                visitor.visit(proxy)
             return ast.CallExpr(
                 ast.IdExpr(ast.types.Stdlib.Callable),
                 items=[ast.IdExpr(function_name), data_arg or value],
@@ -564,7 +564,9 @@ def can_wrap_expr(
     ):
         wrapped_type = instantiate_type(expected_class)
         empty_function_name = expr_class.get_partial().get_partial_func().ast.name
-        empty_function_type = instantiate_type(tc.ctx.force_find(empty_function_name).get_type())
+        empty_function_type = instantiate_type(
+            visitor.ctx, visitor.ctx.force_find(empty_function_name).get_type()
+        )
         if wrapped_type.unify(empty_function_type) >= 0:
             wrapper = lambda value: ast.IdExpr(empty_function_name)
         else:
@@ -626,7 +628,7 @@ def can_wrap_expr(
             source = source[0].get_class()
             destination = destination[0].get_class()
         if source and destination and source.name != destination.name:
-            source_data = get_class(tc.ctx, source)
+            source_data = get_class(visitor.ctx, source)
             # Cast derived classes to base classes
             for mro in source_data.mro[1:]:
                 base = instantiate_type(mro, source)
@@ -657,7 +659,7 @@ def can_wrap_expr(
     return True, wrapped_type, wrapper
 
 
-def unpack_tuple_types(tc: TypeVisitor, expr: ast.Expr) -> List[Tuple[str, ast.types.Type]] | None:
+def unpack_tuple_types(visitor, expr: ast.Expr) -> List[Tuple[str, ast.types.Type]] | None:
     """
     Unpack a Tuple or KwTuple expression into (name, type) vector.
     Name is empty when handling Tuple; otherwise it matches names of KwTuple.
@@ -666,7 +668,7 @@ def unpack_tuple_types(tc: TypeVisitor, expr: ast.Expr) -> List[Tuple[str, ast.t
     match expr.orig_expr or expr:
         case ast.TupleExpr(items):
             for idx, arg in enumerate(items):
-                transformed = tc.visit(arg)
+                transformed = visitor.visit(arg)
                 if not isinstance(transformed, ast.Expr) or transformed.get_class_type() is None:
                     return None
                 items[idx] = transformed
@@ -682,8 +684,8 @@ def unpack_tuple_types(tc: TypeVisitor, expr: ast.Expr) -> List[Tuple[str, ast.t
             ):
                 return None
             tuple_id = get_int_literal(value)
-            assert 0 <= tuple_id < len(tc.ctx.cache.generated_tuple_names)
-            names = tc.ctx.cache.generated_tuple_names[tuple_id]
+            assert 0 <= tuple_id < len(visitor.ctx.cache.generated_tuple_names)
+            names = visitor.ctx.cache.generated_tuple_names[tuple_id]
             for idx in range(len(tuple_values.generics)):
                 if not (item_type := tuple_values[idx]):
                     return None
@@ -720,14 +722,14 @@ def get_class_fields(cls: ast.types.Class) -> List[cache.ClassData.Field]:
     return fields
 
 
-def get_class_field_types(tc: TypeVisitor, cls: ast.types.Class) -> List[ast.types.Type]:
+def get_class_field_types(visitor, cls: ast.types.Class) -> List[ast.types.Type]:
     def collect() -> List[ast.types.Type]:
         result: List[ast.types.Type] = []
         for class_field in get_class_fields(cls):
             field_type = infer.instantiate_type(class_field.type, cls)
             if not field_type.can_realize() and class_field.type_expr is not None:
                 cloned_type_expr = cast(ast.Expr, class_field.type_expr.clone(True))
-                transformed = tc.visit(cloned_type_expr)
+                transformed = visitor.visit(cloned_type_expr)
                 extracted = extract_type(transformed)
                 infer.unify(field_type, extracted)
             result.append(field_type)
@@ -1185,7 +1187,9 @@ def find_method(
     return result
 
 
-def find_member(ctx: TypeContext, typ: ast.types.Class, member: str) -> cache.ClassData.Field | None:
+def find_member(
+    ctx: TypeContext, typ: ast.types.Class, member: str
+) -> cache.ClassData.Field | None:
     """
     Returns the generic type of typeName.member, if it exists (nullptr otherwise).
     Special cases: __elemsize__ and __atomic__.
@@ -1400,9 +1404,7 @@ def with_class_generics(
     ctx.add_block()
     added = add_class_generics(ctx, typ, func, only_mangled, instantiate)
     yield
-    add_later = [
-        (name, ctx.force_find(name)) for name in ctx.get_block() if name not in added
-    ]
+    add_later = [(name, ctx.force_find(name)) for name in ctx.get_block() if name not in added]
     ctx.pop_block()
     for name, item in add_later:
         ctx.add(name, item)

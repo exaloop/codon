@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ... import ast, cache
-from . import TypecheckError, TypecheckVisitor
+from .ctx import TypecheckError
+
+if TYPE_CHECKING:
+    from . import TypeVisitor
 
 
-def typecheck_stmt(self: TypecheckVisitor, node: ast.StmtExpr) -> ast.Node:
+def typecheck_stmt(self: TypeVisitor, node: ast.StmtExpr) -> ast.Node:
     """Typecheck statement expressions."""
 
     done = True
@@ -23,7 +28,7 @@ def typecheck_stmt(self: TypecheckVisitor, node: ast.StmtExpr) -> ast.Node:
     return node
 
 
-def typecheck_suite(self: TypecheckVisitor, node: ast.SuiteStmt) -> ast.Node:
+def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Node:
     """Typecheck a list of statements."""
 
     output = []
@@ -66,14 +71,14 @@ def typecheck_suite(self: TypecheckVisitor, node: ast.SuiteStmt) -> ast.Node:
                 self.ctx.remove(original)
     return node
 
-def typecheck_expr(self, node: ast.ExprStmt) -> ast.Node:
+def typecheck_expr(self: TypeVisitor, node: ast.ExprStmt) -> ast.Node:
     """Typecheck expression statements."""
 
     node.expr = self.visit(node.expr)
     node.done = node.expr.done
     return node
 
-def typecheck_custom(self, node: ast.CustomStmt) -> ast.Node:
+def typecheck_custom(self: TypeVisitor, node: ast.CustomStmt) -> ast.Node:
     if node.suite:
         block_callback = self.ctx.cache.custom_block_stmts.get(node.keyword)
         assert block_callback is not None, f"unknown keyword {node.keyword}"
@@ -84,11 +89,11 @@ def typecheck_custom(self, node: ast.CustomStmt) -> ast.Node:
         result = expression_callback(self, node)
     return result
 
-def typecheck_comment(self, node: ast.CommentStmt) -> ast.Node:
+def typecheck_comment(self: TypeVisitor, node: ast.CommentStmt) -> ast.Node:
     node.done = True
     return node
 
-def typecheck_directive(self, node: ast.DirectiveStmt) -> ast.Node:
+def typecheck_directive(self: TypeVisitor, node: ast.DirectiveStmt) -> ast.Node:
     if node.key == "auto_python":
         self.ctx.auto_python = node.value == "1"
         self.log(f"directive '{node.key}' = {self.ctx.auto_python}")

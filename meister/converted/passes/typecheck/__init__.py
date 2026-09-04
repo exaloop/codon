@@ -3,27 +3,23 @@
 from ....bridge import Dict, List, dataclass
 from ... import ast, cache
 from . import (
-    access,
-    assign,
+    # access,
+    # assign,
     basic,
-    call,
-    classes,
+    # call,
+    # classes,
     collections,
     cond,
     ctx,
     error,
-    function,
-    imports,
+    # function,
+    # imports,
     infer,
     loops,
-    ops,
+    # ops,
     stmts,
     utils,
 )
-
-
-class TypecheckError(ast.NodeError):
-    pass
 
 
 @dataclass(init=False)
@@ -51,15 +47,15 @@ class TypeVisitor(ast.NodeVisitor):
 
     def visit(
         self,
-        node: ast.Node,
+        node: ast.Node | None,
         type_allowed: bool = True,
-        type_required: bool = False,
+        enforce_type: bool = False,
         simple_types: bool = False,
     ):
         if node is None:
             return None
 
-        if type_required:
+        if enforce_type:
             if isinstance(node, ast.NoneExpr):
                 node = ast.IdExpr(ast.types.Stdlib.NoneType, info=node.info)
             with self.ctx.substitute("simple_types", simple_types):
@@ -76,7 +72,7 @@ class TypeVisitor(ast.NodeVisitor):
             elif node.type.get_unbound() and node.type.get_unbound().trait:
                 node.type = self.instantiate_type(node.type)
             else:
-                raise TypecheckError(node, "expected a type expression")
+                raise ctx.TypecheckError(node, "expected a type expression")
         elif isinstance(node, ast.Expr):
             if not isinstance(node.type, ast.types.Type):
                 node.type = utils.instantiate_unbound(node.info)
@@ -92,7 +88,7 @@ class TypeVisitor(ast.NodeVisitor):
                 if not isinstance(node.type, ast.types.Type):
                     node.type = utils.instantiate_unbound(node.info)
                 if not ctx.allow_types and utils.is_type_expr(node):
-                    raise TypecheckError(node, "unexpected type; expected a value")
+                    raise ctx.TypecheckError(node, "unexpected type; expected a value")
                 if node.done:
                     self.ctx.changed_nodes += 1
             if not node.has(ast.Attr.ExprDoNotRealize):
@@ -143,7 +139,7 @@ class TypeVisitor(ast.NodeVisitor):
         return cond.typecheck_range(self, node)
 
     def visit_IfExpr(self, node: ast.IfExpr):
-        return cond.typecheck_if(self, node)
+        return cond.typecheck_ifexpr(self, node)
 
     def visit_IfStmt(self, node: ast.IfStmt):
         return cond.typecheck_if(self, node)
@@ -297,7 +293,7 @@ class TypeVisitor(ast.NodeVisitor):
         self.ctx.get_last_node().info = source
 
 
-def run(
+def typecheck_program(
     cache: cache.Cache,
     node: ast.Stmt,
     file: str = "<internal>",
@@ -362,12 +358,12 @@ def run(
     cache.scope(suite, type_ctx.global_shadows)
     inferred = visitor.infer_types(suite, True)
     if not inferred:
-        raise TypecheckError(visitor.find_typecheck_errors(suite))
+        raise ctx.TypecheckError(visitor.find_typecheck_errors(suite))
     result = ast.SuiteStmt([preamble, inferred])
     if isinstance(inferred, ast.SuiteStmt):
         visitor.prepare_vtables()
     if not type_ctx.cache.errors.empty():
-        raise TypecheckError(type_ctx.cache.errors)
+        raise ctx.TypecheckError(type_ctx.cache.errors)
     return result
 
 
@@ -439,7 +435,7 @@ def load_std_library(
     stdlib.is_stdlib_loading = False
 
 
-def apply_context(
+def typecheck_node(
     context: ctx.TypeContext, node: ast.Stmt, file: str = "<internal>"
 ) -> ast.Stmt | None:
     with ctx.substitute("filename", file):
@@ -447,5 +443,5 @@ def apply_context(
         visitor = TypeVisitor(ctx=context, preamble=preamble)
         if inferred := visitor.infer_types(node, True):
             return ast.SuiteStmt([preamble, inferred])
-        raise TypecheckError(visitor.find_typecheck_errors(node))
+        raise ctx.TypecheckError(visitor.find_typecheck_errors(node))
     return None
