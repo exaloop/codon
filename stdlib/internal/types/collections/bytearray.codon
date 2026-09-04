@@ -599,7 +599,7 @@ class bytearray:
         return bytearray._adopt_bytes(result)
 
     def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
-        return str(self._bytes_view(), encoding, errors)
+        return str(bytes(self), encoding, errors)
 
     def _bytes_view(self) -> bytes:
         return bytes(self._ptr, self._len)

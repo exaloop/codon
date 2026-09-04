@@ -976,6 +976,48 @@ def _float_dtoa_scaled_integer(value: float, decimal_shift: int) -> _BigUInt:
     return quotient
 
 
+def _float_dtoa_scaled_u64(
+    decoded: _Float64,
+    decimal_shift: int,
+) -> Tuple[bool, u64]:
+    if decimal_shift > 18:
+        return False, u64(0)
+
+    power5 = u128(1)
+    for _ in range(decimal_shift):
+        power5 *= u128(5)
+
+    scaled = u128(decoded.mantissa) * power5
+    binary_shift = decoded.exponent + decimal_shift
+    maximum = (u128(1) << u128(64)) - u128(1)
+
+    if binary_shift >= 0:
+        if binary_shift >= 64 or scaled > (maximum >> u128(binary_shift)):
+            return False, u64(0)
+        return True, u64(scaled << u128(binary_shift))
+
+    right_shift = -binary_shift
+    if right_shift > 128:
+        return True, u64(0)
+
+    if right_shift == 128:
+        half = u128(1) << u128(127)
+        return True, u64(1 if scaled > half else 0)
+
+    quotient = scaled >> u128(right_shift)
+    if quotient > maximum:
+        return False, u64(0)
+
+    remainder = scaled & ((u128(1) << u128(right_shift)) - u128(1))
+    half = u128(1) << u128(right_shift - 1)
+    if remainder > half or (remainder == half and (quotient & u128(1)) != u128(0)):
+        quotient += u128(1)
+        if quotient > maximum:
+            return False, u64(0)
+
+    return True, u64(quotient)
+
+
 def _write_biguint_decimal(value: _BigUInt, output: Ptr[u8]) -> int:
     length = value.decimal_length()
     copy = value.copy()
@@ -1005,6 +1047,29 @@ def _float_dtoa_fixed_write(
     if decoded.negative:
         output[pos] = u8(0x2D)  # -
         pos += 1
+
+    fast, scaled_u64 = _float_dtoa_scaled_u64(decoded, precision)
+    if fast:
+        digit_count = _write_decimal_digits(scaled_u64, output + pos)
+
+        if precision == 0:
+            return pos + digit_count
+
+        if digit_count > precision:
+            integer_count = digit_count - precision
+            for i in range(digit_count - 1, integer_count - 1, -1):
+                output[pos + i + 1] = output[pos + i]
+            output[pos + integer_count] = u8(0x2E)  # .
+            return pos + digit_count + 1
+
+        digits_start = pos + 2 + precision - digit_count
+        for i in range(digit_count - 1, -1, -1):
+            output[digits_start + i] = output[pos + i]
+        output[pos] = u8(0x30)  # 0
+        output[pos + 1] = u8(0x2E)  # .
+        for i in range(precision - digit_count):
+            output[pos + 2 + i] = u8(0x30)
+        return pos + 2 + precision
 
     scaled = _float_dtoa_scaled_integer(value, precision)
     digit_count = scaled.decimal_length()

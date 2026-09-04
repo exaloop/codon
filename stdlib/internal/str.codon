@@ -143,6 +143,37 @@ def _utf8_nonascii_mask16(data: Ptr[u8], pos: int) -> u16:
 
 @pure
 @llvm
+def _utf8_scan_latin1_16(data: Ptr[u8], pos: int) -> int:
+    declare i16 @llvm.ctpop.i16(i16)
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %ascii = icmp ult <16 x i8> %bytes, <i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128>
+    %leadlower = icmp uge <16 x i8> %bytes, <i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194, i8 194>
+    %leadupper = icmp ule <16 x i8> %bytes, <i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195, i8 195>
+    %lead = and <16 x i1> %leadlower, %leadupper
+    %conttag = and <16 x i8> %bytes, <i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192, i8 192>
+    %continuation = icmp eq <16 x i8> %conttag, <i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128, i8 128>
+    %valid0 = or <16 x i1> %ascii, %lead
+    %valid = or <16 x i1> %valid0, %continuation
+    %validmask = bitcast <16 x i1> %valid to i16
+    %leadmask = bitcast <16 x i1> %lead to i16
+    %continuationmask = bitcast <16 x i1> %continuation to i16
+    %expected = shl i16 %leadmask, 1
+    %allvalid = icmp eq i16 %validmask, -1
+    %paired = icmp eq i16 %continuationmask, %expected
+    %lastlead = and i16 %leadmask, -32768
+    %endscomplete = icmp eq i16 %lastlead, 0
+    %structure0 = and i1 %allvalid, %paired
+    %structure = and i1 %structure0, %endscomplete
+    %continuations = call i16 @llvm.ctpop.i16(i16 %continuationmask)
+    %count16 = sub i16 16, %continuations
+    %count = zext i16 %count16 to i64
+    %result = select i1 %structure, i64 %count, i64 0
+    ret i64 %result
+
+
+@pure
+@llvm
 def _utf8_first_nonascii(mask: u16) -> int:
     declare i16 @llvm.cttz.i16(i16, i1)
     %index16 = call i16 @llvm.cttz.i16(i16 %mask, i1 true)
@@ -177,6 +208,20 @@ def _utf8_widen_ascii16_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: int)
     %wide = zext <16 x i8> %bytes to <16 x i32>
     store <16 x i32> %wide, ptr %dst, align 4
     ret {} {}
+
+
+@pure
+@llvm
+def _utf8_size16_u8(data: Ptr[u8], pos: int) -> int:
+    declare i16 @llvm.ctpop.i16(i16)
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %codepoints = load <16 x i8>, ptr %src, align 1
+    %nonascii = icmp slt <16 x i8> %codepoints, zeroinitializer
+    %mask = bitcast <16 x i1> %nonascii to i16
+    %count16 = call i16 @llvm.ctpop.i16(i16 %mask)
+    %count = zext i16 %count16 to i64
+    %size = add i64 %count, 16
+    ret i64 %size
 
 
 @pure
@@ -444,6 +489,13 @@ def _utf8_scan_strict(
                 pos += 16
                 length += 16
                 continue
+            latin1_length = _utf8_scan_latin1_16(data, pos)
+            if latin1_length != 0:
+                pos += 16
+                length += latin1_length
+                if maxchar < 0xFF:
+                    maxchar = 0xFF
+                continue
             ascii = _utf8_first_nonascii(mask)
             pos += ascii
             length += ascii
@@ -515,6 +567,9 @@ def _unicode_decode_utf8_strict(
         raise ValueError("negative length")
 
     length, maxchar = _utf8_scan_strict(data, byte_length)
+    if maxchar <= 0x7F:
+        return str(data, _make_meta(byte_length, KIND_ASCII))
+
     if maxchar > 0xFFFF:
         output = Ptr[u32](byte_length)
         pos = 0
@@ -917,10 +972,52 @@ def _unicode_encode_utf8_strict_append(
 
 def _unicode_encode_utf8_strict(value: str) -> bytes:
     if value._is_ascii():
-        output = Ptr[u8](len(value))
-        if len(value) > 0:
-            str.memcpy(output, value._ptr, len(value))
-        return bytes(output, len(value))
+        return bytes(value._ptr, len(value))
+
+    if value._kind() == KIND_LATIN1:
+        codepoints = value._ptr
+        size = 0
+        i = 0
+        while i + 16 <= len(value):
+            size += _utf8_size16_u8(codepoints, i)
+            i += 16
+        while i < len(value):
+            size += 1 if codepoints[i] < u8(0x80) else 2
+            i += 1
+
+        output = Ptr[u8](size)
+        pos = 0
+        i = 0
+        while i < len(value):
+            if i + 16 <= len(value):
+                mask = _utf8_nonascii_mask16(codepoints, i)
+                if mask == 0:
+                    _utf8_copy_ascii16(codepoints, i, output, pos)
+                    i += 16
+                    pos += 16
+                    continue
+                block_end = i + 16
+                while i < block_end:
+                    cp = codepoints[i]
+                    if cp < u8(0x80):
+                        output[pos] = cp
+                        pos += 1
+                    else:
+                        output[pos] = u8(0xC0 | (int(cp) >> 6))
+                        output[pos + 1] = u8(0x80 | (int(cp) & 0x3F))
+                        pos += 2
+                    i += 1
+                continue
+            cp = codepoints[i]
+            if cp < u8(0x80):
+                output[pos] = cp
+                pos += 1
+            else:
+                output[pos] = u8(0xC0 | (int(cp) >> 6))
+                output[pos + 1] = u8(0x80 | (int(cp) & 0x3F))
+                pos += 2
+            i += 1
+        return bytes(output, size)
 
     if value._kind() == KIND_UCS2:
         codepoints = Ptr[u16](value._ptr)
@@ -1029,6 +1126,9 @@ def _unicode_encode_utf8_c_str(value: str) -> cobj:
 
 
 def _unicode_encode_utf8(value: str, errors: int) -> bytes:
+    if value._is_ascii():
+        return bytes(value._ptr, len(value))
+
     if errors == _ERROR_STRICT:
         return _unicode_encode_utf8_strict(value)
 
@@ -1645,10 +1745,18 @@ def _unicode_decode_ptr(
 
     raise LookupError("unknown encoding")
 
-def _unicode_decode_codec(data: bytes, encoding: str, errors: str) -> str:
+def _unicode_decode_codec(
+    data: bytes,
+    encoding: str,
+    errors: str,
+) -> str:
     encoding_code = _encoding_code(encoding)
     if encoding_code == _ENCODING_UNKNOWN:
         raise LookupError("unknown encoding: " + encoding)
+
+    if encoding_code == _ENCODING_LATIN1:
+        return str(data._ptr, _make_meta(len(data), KIND_LATIN1))
+
     return _unicode_decode_ptr(data._ptr, len(data), encoding_code, _error_code(errors))
 
 
@@ -1786,6 +1894,10 @@ def _unicode_encode_single_byte(
     ascii: bool,
     errors: int,
 ) -> bytes:
+    if value._kind() <= KIND_LATIN1:
+        if not ascii or value._is_ascii():
+            return bytes(value._ptr, len(value))
+
     output = _CodecByteBuffer(len(value))
     limit = 0x7F if ascii else 0xFF
 
@@ -4704,11 +4816,50 @@ def _unicode_lower_full(value: str) -> str:
 
 
 def _unicode_upper_full(value: str) -> str:
-    return _unicode_map_full(
-        value,
-        unicode_upper_mapping_length,
-        unicode_upper_mapping_codepoint,
-    )
+    output_length = 0
+    maxchar = 0
+    unchanged = True
+
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        if cp < 0x80:
+            mapped = _ascii_upper(cp)
+            output_length += 1
+            if mapped > maxchar:
+                maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+            continue
+
+        length = unicode_upper_mapping_length(cp)
+        output_length += length
+        if length != 1:
+            unchanged = False
+        for j in range(length):
+            mapped = unicode_upper_mapping_codepoint(cp, j)
+            if mapped > maxchar:
+                maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+
+    if unchanged:
+        return value
+
+    result = _unicode_new_uninit(output_length, maxchar)
+    output = 0
+    for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        if cp < 0x80:
+            result._store_codepoint(output, _ascii_upper(cp))
+            output += 1
+            continue
+
+        length = unicode_upper_mapping_length(cp)
+        for j in range(length):
+            result._store_codepoint(output, unicode_upper_mapping_codepoint(cp, j))
+            output += 1
+
+    return result
 
 
 def _unicode_capitalize_full(value: str) -> str:

@@ -2090,8 +2090,15 @@ def test_float_dtoa_fixed():
     assert _float_dtoa_fixed(1.25, 2) == "1.25"
     assert _float_dtoa_fixed(1.999, 2) == "2.00"
     assert _float_dtoa_fixed(1.005, 2) == "1.00"
+    assert _float_dtoa_fixed(2.5, 0) == "2"
+    assert _float_dtoa_fixed(3.5, 0) == "4"
+    assert _float_dtoa_fixed(0.125, 2) == "0.12"
+    assert _float_dtoa_fixed(0.375, 2) == "0.38"
 
     assert _float_dtoa_fixed(0.0001, 5) == "0.00010"
+    assert _float_dtoa_fixed(1.0, 18) == "1.000000000000000000"
+    assert _float_dtoa_fixed(1.0, 19) == "1.0000000000000000000"
+    assert _float_dtoa_fixed(1e19, 0) == "10000000000000000000"
     assert _float_dtoa_fixed(1e20, 2) == "100000000000000000000.00"
 
     assert _float_dtoa_fixed(float("inf"), 2) == "inf"
@@ -4630,9 +4637,13 @@ def test_utf8_strict_encoding_paths():
     assert "".encode("utf-8") == b""
     assert "ascii".encode("utf-8") == b"ascii"
     assert "é".encode("utf-8") == b"\xc3\xa9"
+    assert ("é" * 16).encode("utf-8") == b"\xc3\xa9" * 16
+    assert ("a" * 15 + "é" + "z" * 16).encode("utf-8") == (
+        b"a" * 15 + b"\xc3\xa9" + b"z" * 16
+    )
     assert "Ω".encode("utf-8") == b"\xce\xa9"
     assert "😀".encode("utf-8") == b"\xf0\x9f\x98\x80"
-    value = "a" * 31 + "\x7f\x80\x7ff\u0800\ud7ff\ue000\uffff" + "z" * 33
+    value = "a" * 31 + "\x7f\x80\u07ff\u0800\ud7ff\ue000\uffff" + "z" * 33
     expected = (
         b"a" * 31
         + b"\x7f\xc2\x80\xdf\xbf\xe0\xa0\x80"
@@ -4655,6 +4666,19 @@ def test_utf8_strict_encoding_paths():
     assert (b"\xf0\x90\x80\x80\xf4\x8f\xbf\xbf" * 9).decode("utf-8") == (
         "\U00010000\U0010ffff" * 9
     )
+    assert (b"\xc3\xa9" * 8).decode("utf-8") == "é" * 8
+    assert (b"a" * 15 + b"\xc3\xa9").decode("utf-8") == "a" * 15 + "é"
+    assert (b"\xc4\x80" * 8).decode("utf-8") == "Ā" * 8
+
+    for invalid in (
+        b"a" * 14 + b"\xc3x",
+        b"\xc3\xa9" * 7 + b"\x80a",
+    ):
+        try:
+            invalid.decode("utf-8")
+            assert False
+        except ValueError:
+            pass
 
     valid_prefix = b"\xf0\x9f\x98\x80" * 4
     for invalid in (
@@ -4668,6 +4692,36 @@ def test_utf8_strict_encoding_paths():
             assert False
         except ValueError:
             pass
+
+
+@test
+def test_identity_codecs_share_immutable_storage():
+    ascii_text = "shared ascii storage"
+    assert ascii_text.encode("utf-8")._ptr == ascii_text._ptr
+    assert ascii_text.encode("ascii")._ptr == ascii_text._ptr
+    assert ascii_text.encode("latin-1")._ptr == ascii_text._ptr
+    assert ascii_text.encode("utf-8", "ignore")._ptr == ascii_text._ptr
+
+    latin1_text = "café Noël"
+    assert latin1_text.encode("latin-1")._ptr == latin1_text._ptr
+    ascii_slice = latin1_text[5:]
+    assert ascii_slice.encode("utf-8")._ptr != ascii_slice._ptr
+
+    ascii_data = _raw_bytes([0x61, 0x62, 0x63])
+    assert ascii_data.decode("utf-8")._ptr == ascii_data._ptr
+    assert ascii_data.decode("ascii")._ptr != ascii_data._ptr
+    assert ascii_data.decode("utf-8", "ignore")._ptr != ascii_data._ptr
+
+    latin1_data = _raw_bytes([0x63, 0x61, 0x66, 0xE9])
+    assert latin1_data.decode("latin-1")._ptr == latin1_data._ptr
+
+    encoded = ascii_text.encode("utf-8")
+    ascii_text = "replacement"
+    assert encoded == b"shared ascii storage"
+
+    decoded = ascii_data.decode("utf-8")
+    ascii_data = b"replacement"
+    assert decoded == "abc"
 
 
 @test

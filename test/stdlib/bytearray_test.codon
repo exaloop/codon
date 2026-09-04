@@ -14,6 +14,11 @@ def test_construction_and_conversion():
     assert bytes(copied) == b"xbc"
     assert repr(copied) == "bytearray(b'xbc')"
 
+    mutable = bytearray(b"abc")
+    decoded = mutable.decode("utf-8")
+    mutable[0] = 120
+    assert decoded == "abc"
+
 
 @test
 def test_indexing_and_slice_reads():
