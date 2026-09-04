@@ -4,6 +4,27 @@ import internal.gc as gc
 
 _MAX: Literal[int] = 0x7FFFFFFFFFFFFFFF
 
+
+def _bytes_hex_value(value: u8) -> int:
+    if u8(0x30) <= value <= u8(0x39):
+        return int(value) - 0x30
+    if u8(0x41) <= value <= u8(0x46):
+        return int(value) - 0x41 + 10
+    if u8(0x61) <= value <= u8(0x66):
+        return int(value) - 0x61 + 10
+    return -1
+
+
+def _bytes_fromhex_whitespace(value: u8) -> bool:
+    return (
+        value == u8(0x09)
+        or value == u8(0x0A)
+        or value == u8(0x0B)
+        or value == u8(0x0C)
+        or value == u8(0x0D)
+        or value == u8(0x20)
+    )
+
 @extend
 class bytes:
     # Magic methods
@@ -188,6 +209,114 @@ class bytes:
 
     def _at(self, i: int) -> int:
         return int(self._ptr[i])
+
+    @staticmethod
+    def _fromhex(value: bytes) -> bytes:
+        p = Ptr[u8](len(value).cdiv(2))
+        i = 0
+        n = 0
+        while i < len(value):
+            while i < len(value) and _bytes_fromhex_whitespace(value._ptr[i]):
+                i += 1
+            if i == len(value):
+                break
+
+            high = _bytes_hex_value(value._ptr[i])
+            if high < 0:
+                raise ValueError(
+                    f"non-hexadecimal number found in fromhex() arg at position {i}"
+                )
+            i += 1
+            if i == len(value):
+                raise ValueError(
+                    "fromhex() arg must contain an even number of hexadecimal digits"
+                )
+
+            low = _bytes_hex_value(value._ptr[i])
+            if low < 0:
+                raise ValueError(
+                    f"non-hexadecimal number found in fromhex() arg at position {i}"
+                )
+            p[n] = u8((high << 4) | low)
+            n += 1
+            i += 1
+        return bytes(p, n)
+
+    @staticmethod
+    def fromhex(value) -> bytes:
+        return bytes._fromhex(bytes(value))
+
+    @staticmethod
+    def fromhex(value: str) -> bytes:
+        for i in range(len(value)):
+            if ord(value[i]) > 0x7F:
+                raise ValueError(
+                    f"non-hexadecimal number found in fromhex() arg at position {i}"
+                )
+        return bytes._fromhex(bytes(value, "ascii"))
+
+    @staticmethod
+    def fromhex(value: bytes) -> bytes:
+        return bytes._fromhex(value)
+
+    def _hex(self, separator: int, bytes_per_sep: int) -> str:
+        group = abs(bytes_per_sep)
+        separator_count = 0
+        if group > 0 and len(self) > 1:
+            separator_count = (len(self) - 1).cdiv(group)
+
+        p = Ptr[u8](2 * len(self) + separator_count)
+        j = 0
+        for i in range(len(self)):
+            if i > 0 and group > 0:
+                separate = (
+                    bytes_per_sep > 0 and (len(self) - i).cmod(group) == 0
+                ) or (
+                    bytes_per_sep < 0 and i.cmod(group) == 0
+                )
+                if separate:
+                    p[j] = u8(separator)
+                    j += 1
+
+            value = int(self._ptr[i])
+            high = value >> 4
+            low = value & 0x0F
+            p[j] = u8(0x30 + high if high < 10 else 0x61 + high - 10)
+            p[j + 1] = u8(0x30 + low if low < 10 else 0x61 + low - 10)
+            j += 2
+        return str(bytes(p, j), "ascii")
+
+    def hex(self) -> str:
+        return self._hex(0, 0)
+
+    def hex(self, sep: str, bytes_per_sep: int = 1) -> str:
+        if len(sep) != 1:
+            raise ValueError("sep must be length 1")
+        separator = ord(sep)
+        if separator > 0x7F:
+            raise ValueError("sep must be ASCII")
+        return self._hex(separator, bytes_per_sep)
+
+    def hex(self, sep: bytes, bytes_per_sep: int = 1) -> str:
+        if len(sep) != 1:
+            raise ValueError("sep must be length 1")
+        if sep[0] > 0x7F:
+            raise ValueError("sep must be ASCII")
+        return self._hex(sep[0], bytes_per_sep)
+
+    @staticmethod
+    def maketrans(source, replacement) -> bytes:
+        source: bytes = bytes(source)
+        replacement: bytes = bytes(replacement)
+        if len(source) != len(replacement):
+            raise ValueError("maketrans arguments must have same length")
+
+        p = Ptr[u8](256)
+        for i in range(256):
+            p[i] = u8(i)
+        for i in range(len(source)):
+            p[int(source._ptr[i])] = replacement._ptr[i]
+        return bytes(p, 256)
 
     def join(self, l: Generator[bytes]) -> bytes:
         capacity = 16
@@ -750,6 +879,18 @@ class bytes:
 
         return suffix == self._slice(start, start + len(suffix))
 
+    def removeprefix(self, prefix) -> bytes:
+        prefix: bytes = bytes(prefix)
+        if self.startswith(prefix):
+            return self._slice(len(prefix), len(self))
+        return self
+
+    def removesuffix(self, suffix) -> bytes:
+        suffix: bytes = bytes(suffix)
+        if self.endswith(suffix):
+            return self._slice(0, len(self) - len(suffix))
+        return self
+
     def index(self, sub: bytes, start: int = 0, end: Optional[int] = None) -> int:
         i = self.find(sub, start, end)
         if i == -1:
@@ -831,6 +972,9 @@ class bytes:
         return bytes(u, u_len)
 
     def translate(self, map) -> bytes:
+        if hasattr(map, "__bytes__"):
+            return self.translate(bytes(map))
+
         n = len(self)
         m = 0
 
@@ -858,6 +1002,24 @@ class bytes:
                 q += 1
 
         return bytes(p, m)
+
+    def translate(self, table: bytes, delete: bytes = b"") -> bytes:
+        if len(table) != 256:
+            raise ValueError("translation table must be 256 characters long")
+
+        deleted = Ptr[u8](256)
+        bytes.memset(deleted, u8(0), 256)
+        for value in delete:
+            deleted[value] = u8(1)
+
+        p = Ptr[u8](len(self))
+        n = 0
+        for i in range(len(self)):
+            value = int(self._ptr[i])
+            if deleted[value] == u8(0):
+                p[n] = table._ptr[value]
+                n += 1
+        return bytes(p, n)
 
 
     # Internal helpers

@@ -1442,6 +1442,80 @@ def test_bytes_translate():
 
 
 @test
+def test_bytes_fromhex():
+    assert bytes.fromhex("") == b""
+    assert bytes.fromhex("2Ef0 F1f2\n") == b".\xf0\xf1\xf2"
+    assert bytes.fromhex("\t00\v11\f22\r33 44") == b"\x00\x11\x22\x33\x44"
+    assert bytes.fromhex(b"4142") == b"AB"
+    assert bytes.fromhex(bytearray(b"4344")) == b"CD"
+
+    for invalid in ("0", "0g", "00 1", "00\x1c11", "é"):
+        try:
+            bytes.fromhex(invalid)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_bytes_hex():
+    assert b"".hex() == ""
+    assert b"\x00\xffabc".hex() == "00ff616263"
+    assert b"12345".hex(":") == "31:32:33:34:35"
+    assert b"12345".hex(":", 2) == "31:3233:3435"
+    assert b"12345".hex(b":", -2) == "3132:3334:35"
+    assert b"12345".hex(":", 0) == "3132333435"
+    assert b"12345".hex(":", 10) == "3132333435"
+
+    for separator in ("", "::", "é"):
+        try:
+            b"abc".hex(separator)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_bytes_maketrans():
+    table = bytes.maketrans(b"abc", b"xyz")
+    assert len(table) == 256
+    assert table[0] == 0
+    assert table[97] == 120
+    assert table[98] == 121
+    assert table[99] == 122
+    assert table[255] == 255
+    assert b"abacus".translate(table) == b"xyxzus"
+    assert b"abacus".translate(bytearray(table)) == b"xyxzus"
+    assert b"abacus".translate(table, b"u") == b"xyxzs"
+
+    try:
+        bytes.maketrans(b"ab", b"x")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        b"abc".translate(b"short")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_bytes_remove_affixes():
+    assert b"TestHook".removeprefix(b"Test") == b"Hook"
+    assert b"TestHook".removeprefix(bytearray(b"Test")) == b"Hook"
+    assert b"TestHook".removeprefix(b"Hook") == b"TestHook"
+    assert b"TestHook".removeprefix(b"") == b"TestHook"
+    assert b"TestHook".removeprefix(b"TestHook") == b""
+    assert b"TestHook".removesuffix(b"Hook") == b"Test"
+    assert b"TestHook".removesuffix(bytearray(b"Hook")) == b"Test"
+    assert b"TestHook".removesuffix(b"Test") == b"TestHook"
+    assert b"TestHook".removesuffix(b"") == b"TestHook"
+    assert b"TestHook".removesuffix(b"TestHook") == b""
+
+
+@test
 def test_bytes_repr():
     assert repr(b"") == "b''"
     assert repr(b"hello") == "b'hello'"
@@ -1586,6 +1660,10 @@ test_bytes_rindex()
 test_bytes_replace()
 test_bytes_expandtabs()
 test_bytes_translate()
+test_bytes_fromhex()
+test_bytes_hex()
+test_bytes_maketrans()
+test_bytes_remove_affixes()
 test_bytes_repr()
 test_bytes_fstr()
 test_bytes_slice()

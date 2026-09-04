@@ -367,6 +367,70 @@ def test_bytes_api():
 
 
 @test
+def test_hex_conversion_and_translation():
+    assert bytearray.fromhex("") == b""
+    assert bytearray.fromhex("2Ef0 F1f2\n") == b".\xf0\xf1\xf2"
+    assert bytearray.fromhex(b"4142") == b"AB"
+    assert bytearray.fromhex(bytearray(b"4344")) == b"CD"
+
+    value = bytearray(b"12345")
+    assert value.hex() == "3132333435"
+    assert value.hex(":", 2) == "31:3233:3435"
+    assert value.hex(b":", -2) == "3132:3334:35"
+
+    table = bytearray.maketrans(bytearray(b"abc"), b"xyz")
+    assert isinstance(table, bytes)
+    assert len(table) == 256
+    assert bytearray(b"abacus").translate(table) == b"xyxzus"
+    assert bytearray(b"abacus").translate(bytearray(table), b"u") == b"xyxzs"
+
+
+@test
+def test_remove_affixes():
+    original = bytearray(b"TestHook")
+    prefix_removed = original.removeprefix(b"Test")
+    suffix_removed = original.removesuffix(bytearray(b"Hook"))
+    unchanged = original.removeprefix(b"missing")
+    assert prefix_removed == b"Hook"
+    assert suffix_removed == b"Test"
+    assert unchanged == b"TestHook"
+    assert original.removeprefix(b"") == b"TestHook"
+    assert original.removesuffix(b"") == b"TestHook"
+
+    prefix_removed[0] = 104
+    suffix_removed[0] = 116
+    unchanged[0] = 116
+    assert prefix_removed == b"hook"
+    assert suffix_removed == b"test"
+    assert unchanged == b"testHook"
+    assert original == b"TestHook"
+
+
+@test
+def test_resize():
+    value = bytearray(b"abc")
+    value.resize(2)
+    assert value == b"ab"
+    value.resize(5)
+    assert value == b"ab\x00\x00\x00"
+    value[4] = 120
+    value.resize(1)
+    value.resize(5)
+    assert value == b"a\x00\x00\x00\x00"
+    value.resize(0)
+    assert value == b""
+    value.resize(3)
+    assert value == b"\x00\x00\x00"
+
+    try:
+        value.resize(-1)
+        assert False
+    except ValueError:
+        pass
+    assert value == b"\x00\x00\x00"
+
+
+@test
 def test_bytes_result_ownership():
     original = bytearray(b"ABC")
     lowered = original.lower()
@@ -452,4 +516,7 @@ test_mutation()
 test_sequence_operations()
 test_byte_range_errors()
 test_bytes_api()
+test_hex_conversion_and_translation()
+test_remove_affixes()
+test_resize()
 test_bytes_result_ownership()

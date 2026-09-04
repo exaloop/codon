@@ -25,6 +25,22 @@ class bytearray:
         result._cap = len(value)
         return result
 
+    @staticmethod
+    def fromhex(value: str) -> bytearray:
+        return bytearray._adopt_bytes(bytes.fromhex(value))
+
+    @staticmethod
+    def fromhex(value: bytes) -> bytearray:
+        return bytearray._adopt_bytes(bytes.fromhex(value))
+
+    @staticmethod
+    def fromhex(value: bytearray) -> bytearray:
+        return bytearray._adopt_bytes(bytes._fromhex(value._bytes_view()))
+
+    @staticmethod
+    def maketrans(source, replacement) -> bytes:
+        return bytes.maketrans(source, replacement)
+
     def __init__(self):
         self._ptr = Ptr[u8]()
         self._len = 0
@@ -315,6 +331,14 @@ class bytearray:
     def clear(self):
         self._len = 0
 
+    def resize(self, size: int):
+        if size < 0:
+            raise ValueError(f"Can only resize to non-negative sizes, got {size}")
+        if size > self._len:
+            self._reserve(size)
+            bytes.memset(self._ptr + self._len, u8(0), size - self._len)
+        self._len = size
+
     def reverse(self):
         i = 0
         while i < (self._len >> 1):
@@ -410,6 +434,12 @@ class bytearray:
         self, suffix: bytearray, start: int = 0, end: Optional[int] = None
     ) -> bool:
         return self._bytes_view().endswith(suffix._bytes_view(), start, end)
+
+    def removeprefix(self, prefix) -> bytearray:
+        return bytearray(self._bytes_view().removeprefix(prefix))
+
+    def removesuffix(self, suffix) -> bytearray:
+        return bytearray(self._bytes_view().removesuffix(suffix))
 
     def isdigit(self) -> bool:
         return self._bytes_view().isdigit()
@@ -526,6 +556,23 @@ class bytearray:
 
     def translate(self, table) -> bytearray:
         return bytearray._adopt_bytes(self._bytes_view().translate(table))
+
+    def translate(self, table: bytes, delete: bytes = b"") -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().translate(table, delete))
+
+    def translate(self, table: bytearray, delete: bytes = b"") -> bytearray:
+        return bytearray._adopt_bytes(
+            self._bytes_view().translate(table._bytes_view(), delete)
+        )
+
+    def hex(self) -> str:
+        return self._bytes_view().hex()
+
+    def hex(self, sep: str, bytes_per_sep: int = 1) -> str:
+        return self._bytes_view().hex(sep, bytes_per_sep)
+
+    def hex(self, sep: bytes, bytes_per_sep: int = 1) -> str:
+        return self._bytes_view().hex(sep, bytes_per_sep)
 
     def join(self, values: Generator[T], T: type) -> bytearray:
         if T is bytes:
