@@ -3449,9 +3449,57 @@ def _unicode_fastsearch(
             value._ptr + start, end - start, sub._ptr, len(sub)
         )
         return start + position if position >= 0 else -1
+    if value._kind() <= KIND_LATIN1 and sub._kind() == KIND_UCS2:
+        position = string_algorithms.forward_find_u8_u16(
+            value._ptr + start,
+            end - start,
+            Ptr[u16](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() <= KIND_LATIN1 and sub._kind() == KIND_UCS4:
+        position = string_algorithms.forward_find_u8_u32(
+            value._ptr + start,
+            end - start,
+            Ptr[u32](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS2 and sub._kind() <= KIND_LATIN1:
+        position = string_algorithms.forward_find_u16_u8(
+            Ptr[u16](value._ptr) + start,
+            end - start,
+            sub._ptr,
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
     if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
         position = string_algorithms.forward_find_u16(
             Ptr[u16](value._ptr) + start,
+            end - start,
+            Ptr[u16](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS4:
+        position = string_algorithms.forward_find_u16_u32(
+            Ptr[u16](value._ptr) + start,
+            end - start,
+            Ptr[u32](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS4 and sub._kind() <= KIND_LATIN1:
+        position = string_algorithms.forward_find_u32_u8(
+            Ptr[u32](value._ptr) + start,
+            end - start,
+            sub._ptr,
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS2:
+        position = string_algorithms.forward_find_u32_u16(
+            Ptr[u32](value._ptr) + start,
             end - start,
             Ptr[u16](sub._ptr),
             len(sub),
@@ -3465,39 +3513,6 @@ def _unicode_fastsearch(
             len(sub),
         )
         return start + position if position >= 0 else -1
-
-    needle_length = len(sub)
-    if needle_length == 1:
-        needle = sub._load_codepoint(0)
-        for position in range(start, end):
-            if value._load_codepoint(position) == needle:
-                return position
-        return -1
-
-    bloom = u64(0)
-    for index in range(needle_length):
-        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
-
-    last = needle_length - 1
-    tail = sub._load_codepoint(last)
-    limit = end - needle_length
-    position = start
-    attempts = 0
-
-    while position <= limit:
-        candidate_tail = value._load_codepoint(position + last)
-        if candidate_tail == tail and _unicode_starts_at(value, sub, position):
-            return position
-
-        attempts += 1
-        if attempts > needle_length and position + needle_length <= limit:
-            return _unicode_fastsearch_kmp(value, sub, position + 1, end)
-
-        if _unicode_search_bloom_contains(bloom, candidate_tail):
-            position += 1
-        else:
-            position += needle_length
-
     return -1
 
 
@@ -3512,9 +3527,57 @@ def _unicode_fastsearch_reverse(
             value._ptr + start, end - start, sub._ptr, len(sub)
         )
         return start + position if position >= 0 else -1
+    if value._kind() <= KIND_LATIN1 and sub._kind() == KIND_UCS2:
+        position = string_algorithms.backward_find_u8_u16(
+            value._ptr + start,
+            end - start,
+            Ptr[u16](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() <= KIND_LATIN1 and sub._kind() == KIND_UCS4:
+        position = string_algorithms.backward_find_u8_u32(
+            value._ptr + start,
+            end - start,
+            Ptr[u32](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS2 and sub._kind() <= KIND_LATIN1:
+        position = string_algorithms.backward_find_u16_u8(
+            Ptr[u16](value._ptr) + start,
+            end - start,
+            sub._ptr,
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
     if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
         position = string_algorithms.backward_find_u16(
             Ptr[u16](value._ptr) + start,
+            end - start,
+            Ptr[u16](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS4:
+        position = string_algorithms.backward_find_u16_u32(
+            Ptr[u16](value._ptr) + start,
+            end - start,
+            Ptr[u32](sub._ptr),
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS4 and sub._kind() <= KIND_LATIN1:
+        position = string_algorithms.backward_find_u32_u8(
+            Ptr[u32](value._ptr) + start,
+            end - start,
+            sub._ptr,
+            len(sub),
+        )
+        return start + position if position >= 0 else -1
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS2:
+        position = string_algorithms.backward_find_u32_u16(
+            Ptr[u32](value._ptr) + start,
             end - start,
             Ptr[u16](sub._ptr),
             len(sub),
@@ -3528,118 +3591,6 @@ def _unicode_fastsearch_reverse(
             len(sub),
         )
         return start + position if position >= 0 else -1
-
-    needle_length = len(sub)
-    if needle_length == 1:
-        needle = sub._load_codepoint(0)
-        for position in range(end - 1, start - 1, -1):
-            if value._load_codepoint(position) == needle:
-                return position
-        return -1
-
-    bloom = u64(0)
-    for index in range(needle_length):
-        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
-
-    first = sub._load_codepoint(0)
-    position = end - needle_length
-    attempts = 0
-
-    while position >= start:
-        candidate_first = value._load_codepoint(position)
-        if candidate_first == first and _unicode_starts_at(value, sub, position):
-            return position
-
-        attempts += 1
-        if attempts > needle_length and position - needle_length >= start:
-            return _unicode_fastsearch_reverse_kmp(
-                value, sub, start, position + needle_length - 2
-            )
-
-        if _unicode_search_bloom_contains(bloom, candidate_first):
-            position -= 1
-        else:
-            position -= needle_length
-
-    return -1
-
-
-def _unicode_fastsearch_kmp(
-    value: str,
-    sub: str,
-    start: int,
-    end: int,
-) -> int:
-    needle_length = len(sub)
-    prefix = Ptr[int](needle_length)
-    prefix[0] = 0
-    matched = 0
-
-    for index in range(1, needle_length):
-        while matched > 0 and sub._load_codepoint(index) != sub._load_codepoint(matched):
-            matched = prefix[matched - 1]
-        if sub._load_codepoint(index) == sub._load_codepoint(matched):
-            matched += 1
-        prefix[index] = matched
-
-    matched = 0
-    for position in range(start, end):
-        while matched > 0 and value._load_codepoint(position) != sub._load_codepoint(matched):
-            matched = prefix[matched - 1]
-        if value._load_codepoint(position) == sub._load_codepoint(matched):
-            matched += 1
-            if matched == needle_length:
-                result = position - needle_length + 1
-                gc.free(prefix.as_byte())
-                return result
-
-    gc.free(prefix.as_byte())
-    return -1
-
-
-def _unicode_fastsearch_reverse_kmp(
-    value: str,
-    sub: str,
-    start: int,
-    end: int,
-) -> int:
-    needle_length = len(sub)
-    prefix = Ptr[int](needle_length)
-    prefix[0] = 0
-    matched = 0
-
-    for index in range(1, needle_length):
-        while (
-            matched > 0
-            and sub._load_codepoint(needle_length - 1 - index)
-                != sub._load_codepoint(needle_length - 1 - matched)
-        ):
-            matched = prefix[matched - 1]
-        if (
-            sub._load_codepoint(needle_length - 1 - index)
-            == sub._load_codepoint(needle_length - 1 - matched)
-        ):
-            matched += 1
-        prefix[index] = matched
-
-    matched = 0
-    for position in range(end, start - 1, -1):
-        while (
-            matched > 0
-            and value._load_codepoint(position)
-                != sub._load_codepoint(needle_length - 1 - matched)
-        ):
-            matched = prefix[matched - 1]
-        if (
-            value._load_codepoint(position)
-            == sub._load_codepoint(needle_length - 1 - matched)
-        ):
-            matched += 1
-            if matched == needle_length:
-                gc.free(prefix.as_byte())
-                return position
-
-    gc.free(prefix.as_byte())
     return -1
 
 

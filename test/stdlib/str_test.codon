@@ -265,6 +265,114 @@ def test_rfind():
 
 
 @test
+def test_multibyte_search():
+    for first, second in ((chr(0x400), chr(0x401)), (chr(0x10000), chr(0x10001))):
+        needle = first * 15 + second + first
+        prefix = first * 2048
+        suffix = first * 2048
+        value = prefix + needle + suffix
+        position = len(prefix)
+
+        assert prefix.find(needle) == -1
+        assert prefix.rfind(needle) == -1
+        assert value.find(needle) == position
+        assert value.rfind(needle) == position
+        assert value.find(needle, 100, position + len(needle)) == position
+        assert value.rfind(needle, 100, position + len(needle)) == position
+        assert value.find(needle, position + 1) == -1
+        assert value.rfind(needle, 0, position + len(needle) - 1) == -1
+
+    for marker, first, second in (
+        (chr(0x400), "a", "b"),
+        (chr(0x400), chr(0xFF), chr(0xFE)),
+        (chr(0x10000), "a", "b"),
+        (chr(0x10000), chr(0xFF), chr(0xFE)),
+        (chr(0x10000), chr(0x400), chr(0x401)),
+    ):
+        needle = first * 15 + second + first
+        prefix = marker + first * 2048
+        value = prefix + needle + first * 2048
+        position = len(prefix)
+
+        assert prefix.find(needle) == -1
+        assert prefix.rfind(needle) == -1
+        assert value.find(needle) == position
+        assert value.rfind(needle) == position
+        assert value.find(needle, 100, position + len(needle)) == position
+        assert value.rfind(needle, 100, position + len(needle)) == position
+        assert value.find(needle, position + 1) == -1
+        assert value.rfind(needle, 0, position + len(needle) - 1) == -1
+        assert value.find(second) == position + 15
+        assert value.rfind(second) == position + 15
+
+        short_value = marker + needle
+        assert short_value.find(needle) == 1
+        assert short_value.rfind(needle) == 1
+        assert marker.find(needle) == -1
+        assert marker.rfind(needle) == -1
+
+        repeated_value = value + needle
+        assert repeated_value.find(needle) == position
+        assert repeated_value.rfind(needle) == len(value)
+
+    assert (chr(0x400) + "abc").find(chr(0x10000)) == -1
+    assert (chr(0x400) + "abc").rfind(chr(0x10000)) == -1
+
+    for marker, first, second in (
+        (chr(0x400), "a", "b"),
+        (chr(0x400), chr(0xFF), chr(0xFE)),
+        (chr(0x10000), "a", "b"),
+        (chr(0x10000), chr(0xFF), chr(0xFE)),
+        (chr(0x10000), chr(0x400), chr(0x401)),
+    ):
+        narrow_needle = first * 15 + second + first
+        wide_needle = (marker + narrow_needle)[1:]
+        value = first * 2048 + narrow_needle + first * 2048
+        position = 2048
+
+        assert value.find(wide_needle) == position
+        assert value.rfind(wide_needle) == position
+        assert value.find(wide_needle, 100, position + len(wide_needle)) == position
+        assert value.rfind(wide_needle, 100, position + len(wide_needle)) == position
+        assert value.find(wide_needle, position + 1) == -1
+        assert value.rfind(wide_needle, 0, position + len(wide_needle) - 1) == -1
+
+        wide_character = wide_needle[15:16]
+        assert value.find(wide_character) == position + 15
+        assert value.rfind(wide_character) == position + 15
+
+        assert narrow_needle.find(wide_needle) == 0
+        assert narrow_needle.rfind(wide_needle) == 0
+
+        repeated_value = narrow_needle + first * 17 + narrow_needle
+        assert repeated_value.find(wide_needle) == 0
+        assert repeated_value.rfind(wide_needle) == len(narrow_needle) + 17
+
+    for source, value in (
+        (chr(0x400) + "a" + chr(0x100) + "b", "a\x00b"),
+        (chr(0x10000) + "a" + chr(0x100) + "b", "a\x00b"),
+        (
+            chr(0x10000) + chr(0x400) + chr(0x10000) + chr(0x401),
+            chr(0x400) + "\x00" + chr(0x401),
+        ),
+    ):
+        wide_needle = source[1:]
+        assert value.find(wide_needle) == -1
+        assert value.rfind(wide_needle) == -1
+        wide_endpoint = source[:1]
+        assert value.find(wide_endpoint) == -1
+        assert value.rfind(wide_endpoint) == -1
+
+    for first, second in ((chr(0x400), chr(0x401)), (chr(0x10000), chr(0x10001))):
+        needle = second * 3000
+        value = first * 1500 + needle + first * 1500
+        assert value.find(needle) == 1500
+        assert value.rfind(needle) == 1500
+        assert value.find(needle, 100, len(value) - 100) == 1500
+        assert value.rfind(needle, 100, len(value) - 100) == 1500
+
+
+@test
 def test_isidentifier():
     assert "a".isidentifier() == True
     assert "Z".isidentifier() == True
@@ -1598,6 +1706,7 @@ test_zfill()
 test_count()
 test_find()
 test_rfind()
+test_multibyte_search()
 test_isidentifier()
 test_isprintable()
 test_lstrip()
