@@ -181,6 +181,62 @@ def _utf8_widen_ascii16_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: int)
 
 @pure
 @llvm
+def _utf8_size16_u16(data: Ptr[u16], pos: int) -> u64:
+    declare i16 @llvm.ctpop.i16(i16)
+    %src = getelementptr inbounds i16, ptr %data, i64 %pos
+    %codepoints = load <16 x i16>, ptr %src, align 2
+    %v80base = insertelement <16 x i16> poison, i16 128, i64 0
+    %v80 = shufflevector <16 x i16> %v80base, <16 x i16> poison, <16 x i32> zeroinitializer
+    %v800base = insertelement <16 x i16> poison, i16 2048, i64 0
+    %v800 = shufflevector <16 x i16> %v800base, <16 x i16> poison, <16 x i32> zeroinitializer
+    %vd800base = insertelement <16 x i16> poison, i16 55296, i64 0
+    %vd800 = shufflevector <16 x i16> %vd800base, <16 x i16> poison, <16 x i32> zeroinitializer
+    %vdfffbase = insertelement <16 x i16> poison, i16 57343, i64 0
+    %vdfff = shufflevector <16 x i16> %vdfffbase, <16 x i16> poison, <16 x i32> zeroinitializer
+    %ge80 = icmp uge <16 x i16> %codepoints, %v80
+    %ge800 = icmp uge <16 x i16> %codepoints, %v800
+    %ged800 = icmp uge <16 x i16> %codepoints, %vd800
+    %ledfff = icmp ule <16 x i16> %codepoints, %vdfff
+    %invalid = and <16 x i1> %ged800, %ledfff
+    %mask80 = bitcast <16 x i1> %ge80 to i16
+    %mask800 = bitcast <16 x i1> %ge800 to i16
+    %invalidmask = bitcast <16 x i1> %invalid to i16
+    %count80i16 = call i16 @llvm.ctpop.i16(i16 %mask80)
+    %count800i16 = call i16 @llvm.ctpop.i16(i16 %mask800)
+    %count80 = zext i16 %count80i16 to i64
+    %count800 = zext i16 %count800i16 to i64
+    %size1 = add i64 %count80, 16
+    %size = add i64 %size1, %count800
+    %invalid64 = zext i16 %invalidmask to i64
+    %shifted = shl i64 %invalid64, 32
+    %result = or i64 %size, %shifted
+    ret i64 %result
+
+
+@pure
+@llvm
+def _utf8_nonascii_mask16_u16(data: Ptr[u16], pos: int) -> u16:
+    %src = getelementptr inbounds i16, ptr %data, i64 %pos
+    %codepoints = load <16 x i16>, ptr %src, align 2
+    %v7fbase = insertelement <16 x i16> poison, i16 127, i64 0
+    %v7f = shufflevector <16 x i16> %v7fbase, <16 x i16> poison, <16 x i32> zeroinitializer
+    %nonascii = icmp ugt <16 x i16> %codepoints, %v7f
+    %mask = bitcast <16 x i1> %nonascii to i16
+    ret i16 %mask
+
+
+@llvm
+def _utf8_pack_ascii16_u16(data: Ptr[u16], pos: int, output: Ptr[u8], out: int) -> None:
+    %src = getelementptr inbounds i16, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i8, ptr %output, i64 %out
+    %codepoints = load <16 x i16>, ptr %src, align 2
+    %bytes = trunc <16 x i16> %codepoints to <16 x i8>
+    store <16 x i8> %bytes, ptr %dst, align 1
+    ret {} {}
+
+
+@pure
+@llvm
 def _utf8_size16_u32(data: Ptr[u32], pos: int) -> u64:
     declare i16 @llvm.ctpop.i16(i16)
     %src = getelementptr inbounds i32, ptr %data, i64 %pos
@@ -243,6 +299,108 @@ def _utf8_pack_ascii16_u32(data: Ptr[u32], pos: int, output: Ptr[u8], out: int) 
     %codepoints = load <16 x i32>, ptr %src, align 4
     %bytes = trunc <16 x i32> %codepoints to <16 x i8>
     store <16 x i8> %bytes, ptr %dst, align 1
+    ret {} {}
+
+
+@pure
+@llvm
+def _utf8_all_fourbyte4_u32(data: Ptr[u32], pos: int) -> bool:
+    %src = getelementptr inbounds i32, ptr %data, i64 %pos
+    %codepoints = load <4 x i32>, ptr %src, align 4
+    %v10000base = insertelement <4 x i32> poison, i32 65536, i64 0
+    %v10000 = shufflevector <4 x i32> %v10000base, <4 x i32> poison, <4 x i32> zeroinitializer
+    %fourbyte = icmp uge <4 x i32> %codepoints, %v10000
+    %mask = bitcast <4 x i1> %fourbyte to i4
+    %all = icmp eq i4 %mask, 15
+    %result = zext i1 %all to i8
+    ret i8 %result
+
+
+@llvm
+def _utf8_pack_fourbyte4_u32(data: Ptr[u32], pos: int, output: Ptr[u8], out: int) -> None:
+    %src = getelementptr inbounds i32, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i8, ptr %output, i64 %out
+    %codepoints = load <4 x i32>, ptr %src, align 4
+    %shift18 = lshr <4 x i32> %codepoints, <i32 18, i32 18, i32 18, i32 18>
+    %first32 = or <4 x i32> %shift18, <i32 240, i32 240, i32 240, i32 240>
+    %shift12 = lshr <4 x i32> %codepoints, <i32 12, i32 12, i32 12, i32 12>
+    %secondbits = and <4 x i32> %shift12, <i32 63, i32 63, i32 63, i32 63>
+    %second32 = or <4 x i32> %secondbits, <i32 128, i32 128, i32 128, i32 128>
+    %shift6 = lshr <4 x i32> %codepoints, <i32 6, i32 6, i32 6, i32 6>
+    %thirdbits = and <4 x i32> %shift6, <i32 63, i32 63, i32 63, i32 63>
+    %third32 = or <4 x i32> %thirdbits, <i32 128, i32 128, i32 128, i32 128>
+    %fourthbits = and <4 x i32> %codepoints, <i32 63, i32 63, i32 63, i32 63>
+    %fourth32 = or <4 x i32> %fourthbits, <i32 128, i32 128, i32 128, i32 128>
+    %first = trunc <4 x i32> %first32 to <4 x i8>
+    %second = trunc <4 x i32> %second32 to <4 x i8>
+    %third = trunc <4 x i32> %third32 to <4 x i8>
+    %fourth = trunc <4 x i32> %fourth32 to <4 x i8>
+    %first_second = shufflevector <4 x i8> %first, <4 x i8> %second, <8 x i32> <i32 0, i32 4, i32 1, i32 5, i32 2, i32 6, i32 3, i32 7>
+    %third_fourth = shufflevector <4 x i8> %third, <4 x i8> %fourth, <8 x i32> <i32 0, i32 4, i32 1, i32 5, i32 2, i32 6, i32 3, i32 7>
+    %bytes = shufflevector <8 x i8> %first_second, <8 x i8> %third_fourth, <16 x i32> <i32 0, i32 1, i32 8, i32 9, i32 2, i32 3, i32 10, i32 11, i32 4, i32 5, i32 12, i32 13, i32 6, i32 7, i32 14, i32 15>
+    store <16 x i8> %bytes, ptr %dst, align 1
+    ret {} {}
+
+
+@pure
+@llvm
+def _utf8_all_fourbyte4(data: Ptr[u8], pos: int) -> bool:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %starts = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 0, i32 4, i32 8, i32 12>
+    %second = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 1, i32 5, i32 9, i32 13>
+    %third = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 2, i32 6, i32 10, i32 14>
+    %fourth = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 3, i32 7, i32 11, i32 15>
+    %startlower = icmp uge <4 x i8> %starts, <i8 240, i8 240, i8 240, i8 240>
+    %startupper = icmp ule <4 x i8> %starts, <i8 244, i8 244, i8 244, i8 244>
+    %secondtag = and <4 x i8> %second, <i8 192, i8 192, i8 192, i8 192>
+    %thirdtag = and <4 x i8> %third, <i8 192, i8 192, i8 192, i8 192>
+    %fourthtag = and <4 x i8> %fourth, <i8 192, i8 192, i8 192, i8 192>
+    %secondcont = icmp eq <4 x i8> %secondtag, <i8 128, i8 128, i8 128, i8 128>
+    %thirdcont = icmp eq <4 x i8> %thirdtag, <i8 128, i8 128, i8 128, i8 128>
+    %fourthcont = icmp eq <4 x i8> %fourthtag, <i8 128, i8 128, i8 128, i8 128>
+    %notf0 = icmp ne <4 x i8> %starts, <i8 240, i8 240, i8 240, i8 240>
+    %notf4 = icmp ne <4 x i8> %starts, <i8 244, i8 244, i8 244, i8 244>
+    %secondge90 = icmp uge <4 x i8> %second, <i8 144, i8 144, i8 144, i8 144>
+    %secondle8f = icmp ule <4 x i8> %second, <i8 143, i8 143, i8 143, i8 143>
+    %not-overlong = or <4 x i1> %notf0, %secondge90
+    %not-above = or <4 x i1> %notf4, %secondle8f
+    %validstart = and <4 x i1> %startlower, %startupper
+    %validcontinuations0 = and <4 x i1> %secondcont, %thirdcont
+    %validcontinuations = and <4 x i1> %validcontinuations0, %fourthcont
+    %validrange = and <4 x i1> %not-overlong, %not-above
+    %valid0 = and <4 x i1> %validstart, %validcontinuations
+    %valid = and <4 x i1> %valid0, %validrange
+    %mask = bitcast <4 x i1> %valid to i4
+    %all = icmp eq i4 %mask, 15
+    %result = zext i1 %all to i8
+    ret i8 %result
+
+
+@llvm
+def _utf8_unpack_fourbyte4_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: int) -> None:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i32, ptr %output, i64 %out
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %first8 = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 0, i32 4, i32 8, i32 12>
+    %second8 = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 1, i32 5, i32 9, i32 13>
+    %third8 = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 2, i32 6, i32 10, i32 14>
+    %fourth8 = shufflevector <16 x i8> %bytes, <16 x i8> poison, <4 x i32> <i32 3, i32 7, i32 11, i32 15>
+    %first = zext <4 x i8> %first8 to <4 x i32>
+    %second = zext <4 x i8> %second8 to <4 x i32>
+    %third = zext <4 x i8> %third8 to <4 x i32>
+    %fourth = zext <4 x i8> %fourth8 to <4 x i32>
+    %firstbits = and <4 x i32> %first, <i32 7, i32 7, i32 7, i32 7>
+    %firstshift = shl <4 x i32> %firstbits, <i32 18, i32 18, i32 18, i32 18>
+    %secondbits = and <4 x i32> %second, <i32 63, i32 63, i32 63, i32 63>
+    %secondshift = shl <4 x i32> %secondbits, <i32 12, i32 12, i32 12, i32 12>
+    %thirdbits = and <4 x i32> %third, <i32 63, i32 63, i32 63, i32 63>
+    %thirdshift = shl <4 x i32> %thirdbits, <i32 6, i32 6, i32 6, i32 6>
+    %fourthbits = and <4 x i32> %fourth, <i32 63, i32 63, i32 63, i32 63>
+    %high = or <4 x i32> %firstshift, %secondshift
+    %low = or <4 x i32> %thirdshift, %fourthbits
+    %codepoints = or <4 x i32> %high, %low
+    store <4 x i32> %codepoints, ptr %dst, align 4
     ret {} {}
 
 
@@ -375,6 +533,13 @@ def _unicode_decode_utf8_strict(
                     pos += 1
                     out += 1
                     ascii -= 1
+
+            while pos + 16 <= byte_length and _utf8_all_fourbyte4(data, pos):
+                _utf8_unpack_fourbyte4_u32(data, pos, output, out)
+                pos += 16
+                out += 4
+            if pos == byte_length:
+                break
 
             start = pos
             b0 = int(data[pos])
@@ -757,6 +922,46 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
             str.memcpy(output, value._ptr, len(value))
         return bytes(output, len(value))
 
+    if value._kind() == KIND_UCS2:
+        codepoints = Ptr[u16](value._ptr)
+        size = 0
+        i = 0
+        while i + 16 <= len(value):
+            block = _utf8_size16_u16(codepoints, i)
+            invalid = u16(block >> u64(32))
+            if invalid:
+                offset = _utf8_first_nonascii(invalid)
+                _raise_utf8_encode_error(i + offset, i + offset + 1, "surrogates not allowed")
+            size += int(block & u64(0xFFFFFFFF))
+            i += 16
+        while i < len(value):
+            cp = int(codepoints[i])
+            if _is_surrogate(cp):
+                _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+            size += _utf8_encoded_width(cp)
+            i += 1
+
+        output = Ptr[u8](size)
+        pos = 0
+        i = 0
+        while i < len(value):
+            if i + 16 <= len(value):
+                mask = _utf8_nonascii_mask16_u16(codepoints, i)
+                if mask == 0:
+                    _utf8_pack_ascii16_u16(codepoints, i, output, pos)
+                    i += 16
+                    pos += 16
+                    continue
+                ascii = _utf8_first_nonascii(mask)
+                while ascii > 0:
+                    output[pos] = u8(codepoints[i])
+                    i += 1
+                    pos += 1
+                    ascii -= 1
+            pos = _utf8_encode_one(output, pos, int(codepoints[i]))
+            i += 1
+        return bytes(output, size)
+
     if value._kind() == KIND_UCS4:
         codepoints = Ptr[u32](value._ptr)
         size = 0
@@ -793,6 +998,12 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
                     i += 1
                     pos += 1
                     ascii -= 1
+            while i + 4 <= len(value) and _utf8_all_fourbyte4_u32(codepoints, i):
+                _utf8_pack_fourbyte4_u32(codepoints, i, output, pos)
+                i += 4
+                pos += 16
+            if i == len(value):
+                break
             pos = _utf8_encode_one(output, pos, int(codepoints[i]))
             i += 1
         return bytes(output, size)
