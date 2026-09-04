@@ -31,10 +31,6 @@ from internal.unicode.codecs import (
     _single_byte_cp1254_decode,
     _single_byte_cp1254_encode,
 )
-from internal.unicode.unicodedata_data import (
-    unicode_name_record_index,
-    unicode_name_value,
-)
 import algorithms.strings as string_algorithms
 import internal.static as static
 import internal.gc as gc
@@ -1546,6 +1542,11 @@ def _codec_encode_error_append(
         return
 
     if errors == _ERROR_NAMEREPLACE:
+        from internal.unicode.unicodedata_data import (
+            unicode_name_record_index,
+            unicode_name_value,
+        )
+
         name_index = unicode_name_record_index(codepoint)
         if name_index < 0:
             _codec_encode_backslashreplace_append(
