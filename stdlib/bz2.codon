@@ -1,6 +1,26 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.file import bzFile
+from internal.file import bzFile, bzopen
 
-def open(path: str, mode: str = "r") -> bzFile:
-    return bzFile(path, mode)
+BZ2File = bzFile
+
+def open(
+    path: str,
+    mode: str = "rb",
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+) -> bzFile[bytes]:
+    return bzopen(path, mode, compresslevel, encoding, errors, newline)
+
+@overload
+def open(
+    path: str,
+    mode: Literal[str],
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+):
+    return bzopen(path, mode, compresslevel, encoding, errors, newline)

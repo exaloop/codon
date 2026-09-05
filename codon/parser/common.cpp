@@ -179,11 +179,30 @@ std::string escape(const std::string &str) {
   }
   return r;
 }
-std::string unescape(const std::string &str) {
+void utf8_append(std::string& out, uint32_t cp) {
+    if (cp <= 0x7F) {
+        out += char(cp);
+    } else if (cp <= 0x7FF) {
+        out += char(0xC0 | (cp >> 6));
+        out += char(0x80 | (cp & 0x3F));
+  } else if (cp <= 0xFFFF) {
+        out += char(0xE0 | (cp >> 12));
+        out += char(0x80 | ((cp >> 6) & 0x3F));
+        out += char(0x80 | (cp & 0x3F));
+  } else {
+    out += char(0xF0 | (cp >> 18));
+    out += char(0x80 | ((cp >> 12) & 0x3F));
+    out += char(0x80 | ((cp >> 6) & 0x3F));
+    out += char(0x80 | (cp & 0x3F));
+    }
+}
+std::string unescape(const std::string &str, bool utf8) {
   std::string r;
   r.reserve(str.size());
   for (int i = 0; i < str.size(); i++) {
-    if (str[i] == '\\' && i + 1 < str.size())
+    if (!utf8 && (unsigned char)(str[i]) >= 0x80)
+      throw std::invalid_argument("bytes can only contain ASCII literal characters");
+    if (str[i] == '\\' && i + 1 < str.size()) {
       switch(str[i + 1]) {
       case 'a': r += '\a'; i++; break;
       case 'b': r += '\b'; i++; break;
@@ -200,22 +219,58 @@ std::string unescape(const std::string &str) {
           throw std::invalid_argument("invalid \\x code");
         size_t pos = 0;
         auto code = std::stoi(str.substr(i + 2, 2), &pos, 16);
-        r += static_cast<char>(code);
+        if (utf8)
+          utf8_append(r, code);
+        else
+          r += (unsigned char)code;
         i += pos + 1;
+        break;
+      }
+      case 'u':
+      case 'U': {
+        if (!utf8) {
+          r += str[i];
+          break;
+        }
+        int digits = str[i + 1] == 'u' ? 4 : 8;
+        if (i + digits + 2 > str.size())
+          throw std::invalid_argument("truncated Unicode escape");
+        uint32_t code = 0;
+        for (int j = 0; j < digits; j++) {
+          char c = str[i + 2 + j];
+          int digit;
+          if (c >= '0' && c <= '9')
+            digit = c - '0';
+          else if (c >= 'a' && c <= 'f')
+            digit = c - 'a' + 10;
+          else if (c >= 'A' && c <= 'F')
+            digit = c - 'A' + 10;
+          else
+            throw std::invalid_argument("invalid Unicode escape");
+          code = (code << 4) | digit;
+        }
+        if (code > 0x10FFFF)
+          throw std::invalid_argument("Unicode escape out of range");
+        utf8_append(r, code);
+        i += digits + 1;
         break;
       }
       default:
         if (str[i + 1] >= '0' && str[i + 1] <= '7') {
           size_t pos = 0;
           auto code = std::stoi(str.substr(i + 1, 3), &pos, 8);
-          r += static_cast<char>(code);
+          if (utf8)
+            utf8_append(r, code);
+          else
+            r += (unsigned char)code;
           i += pos;
         } else {
           r += str[i];
         }
       }
-    else
+    } else {
       r += str[i];
+    }
   }
   return r;
 }
@@ -277,6 +332,65 @@ void rtrim(std::string &str) {
             str.end());
 }
 bool isdigit(const std::string &str) { return std::ranges::all_of(str, ::isdigit); }
+std::string tolower(std::string s) {
+  std::transform(s.begin(), s.end(), s.begin(), [](auto c) { return std::tolower(c); });
+  return s;
+}
+size_t utf8_char_length(const std::string &s, std::size_t pos) {
+  unsigned char c = s[pos];
+  std::size_t len = (c < 0x80)             ? 1
+                    : ((c & 0xE0) == 0xC0) ? 2
+                    : ((c & 0xF0) == 0xE0) ? 3
+                    : ((c & 0xF8) == 0xF0) ? 4
+                                           : 0;
+  seqassertn(len, "invalid UTF-8 lead byte");
+  seqassertn(pos + len <= s.size(), "truncated UTF-8 sequence");
+  // for (size_t i = 1; i < len; i++)
+  // seqassertn((s[pos + i] & 0xC0) == 0x80, "invalid UTF-8 continuation byte");
+  return len;
+}
+// Take a length of a UTF-8 string.
+// Assumes a correct UTF-8 string (asserts otherwise).
+// No grapheme cluster support. Codex-assisted.
+size_t utf8_strlen(const std::string &s) {
+  size_t count = 0;
+  for (size_t pos = 0; pos < s.size();) {
+    pos += utf8_char_length(s, pos);
+    ++count;
+  }
+  return count;
+}
+// Take a substring from a UTF-8 string.
+// Assumes a correct UTF-8 string (asserts otherwise).
+// No grapheme cluster support. Codex-assisted.
+std::string utf8_substr(const std::string &s, std::size_t start, std::size_t stop,
+                        std::ptrdiff_t step) {
+  seqassertn(step != 0, "step cannot be zero");
+  // Store byte offsets for each code point.
+  std::string result;
+  if (step > 0) {
+    size_t next_i = start;
+    for (std::size_t pos = 0, i = 0; pos < s.size() && i < stop; i++) {
+      auto len = utf8_char_length(s, pos);
+      if (i == next_i) {
+        result.append(s, pos, len);
+        next_i = i + step;
+      }
+      pos += len;
+    }
+  } else {
+    size_t next_i = stop + 1;
+    for (std::size_t pos = 0, i = 0; pos < s.size() && i <= start; i++) {
+      auto len = utf8_char_length(s, pos);
+      if (i == next_i) {
+        result = s.substr(pos, len) + result;
+        next_i = i + -step;
+      }
+      pos += len;
+    }
+  }
+  return result;
+}
 
 // Adapted from https://github.com/gpakosz/whereami/blob/master/src/whereami.c (MIT)
 #ifdef __APPLE__

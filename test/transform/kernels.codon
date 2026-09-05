@@ -68,7 +68,8 @@ def test_conversions():
     assert check(DynamicTuple(([1], [2], [3])))
     assert check(DynamicTuple[int]())
     assert check(DynamicTuple[List[List[List[str]]]]())
-    assert check('hello world')
+    assert check('hello world ∆')
+    assert check(b'hello world')
     assert check([1, 2, 3])
     assert check([[1], [2], [3]])
     assert check({1: [1.1], 2: [2.2]})
@@ -269,11 +270,11 @@ def test_auto_par():
 
 @test
 def test_scalar_types():
-    
+
     def check_exact(name, kernel, x, out, expected):
         kernel(x, out, grid=1, block=1)
         assert out[0] == expected
-    
+
     @gpu.kernel
     def kernel_i8(x: i8, out):
         out[0] = (x + i8(3)) * i8(2)

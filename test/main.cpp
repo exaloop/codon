@@ -477,6 +477,7 @@ INSTANTIATE_TEST_SUITE_P(
       testing::Values(
         "stdlib/llvm_test.codon",
         "stdlib/str_test.codon",
+        "stdlib/bytearray_test.codon",
         "stdlib/re_test.codon",
         "stdlib/math_test.codon",
         "stdlib/cmath_test.codon",
@@ -489,6 +490,8 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/heapq_test.codon",
         "stdlib/operator_test.codon",
         "stdlib/asyncio_test.codon",
+        "stdlib/io_test.codon",
+        "stdlib/unicode_test.codon",
         "python/pybridge.codon"
       ),
       testing::Values(true, false),
@@ -527,6 +530,7 @@ INSTANTIATE_TEST_SUITE_P(
             "transform/escapes.codon",
             "transform/folding.codon",
             "transform/for_lowering.codon",
+            "transform/format.codon",
             "transform/io_opt.codon",
             "transform/inlining.codon",
             "transform/list_opt.codon",

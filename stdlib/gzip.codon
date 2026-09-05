@@ -1,6 +1,26 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.file import gzFile
+from internal.file import gzFile, gzopen
 
-def open(path: str, mode: str = "r") -> gzFile:
-    return gzFile(path, mode)
+GzipFile = gzFile
+
+def open(
+    path: str,
+    mode: str = "rb",
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+) -> gzFile[bytes]:
+    return gzopen(path, mode, compresslevel, encoding, errors, newline)
+
+@overload
+def open(
+    path: str,
+    mode: Literal[str],
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+):
+    return gzopen(path, mode, compresslevel, encoding, errors, newline)

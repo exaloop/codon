@@ -35,6 +35,7 @@ public:
   static const std::string BFLOAT16_NAME;
   static const std::string FLOAT128_NAME;
   static const std::string STRING_NAME;
+  static const std::string BYTES_NAME;
 
   static const std::string EQ_MAGIC_NAME;
   static const std::string NE_MAGIC_NAME;
@@ -359,6 +360,8 @@ public:
   Type *getFloat128Type();
   /// @return the string type
   Type *getStringType();
+  /// @return the bytes type
+  Type *getBytesType();
   /// Gets a pointer type.
   /// @param base the base type, null for `u8*`
   /// @return a pointer type that references the base
@@ -406,6 +409,9 @@ public:
   /// @param v the value
   /// @return a string constant
   Value *getString(std::string v);
+  /// @param v the value
+  /// @return a bytes constant
+  Value *getBytes(std::string v);
 
   /// Gets a pointer type. Should generally not be used as no type-checker
   /// information is generated.

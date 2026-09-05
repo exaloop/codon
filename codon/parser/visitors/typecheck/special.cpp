@@ -682,7 +682,7 @@ Expr *TypecheckVisitor::transformStaticLen(CallExpr *expr) {
 
   if (auto ss = typ->getStrStatic()) {
     // Case: staticlen on static strings
-    return transform(N<IntExpr>(ss->value.size()));
+    return transform(N<IntExpr>(utf8_strlen(ss->value)));
   }
   if (!typ->getClass())
     return nullptr;
@@ -1117,6 +1117,16 @@ Expr *TypecheckVisitor::transformStaticPlatform(CallExpr *expr) {
   if (platform.empty())
     E(Error::CUSTOM, expr->getSrcInfo(), "unsupported platform");
   return transform(N<StringExpr>(platform));
+}
+
+/// Transform static.contains method for literal strings.
+Expr *TypecheckVisitor::transformStaticContains(CallExpr *expr) {
+  if (auto u = expr->getType()->getUnbound())
+    u->staticKind = LiteralKind::Bool;
+  auto funcTyp = expr->getExpr()->getType()->getFunc();
+  auto t = getStrLiteral(extractFuncGeneric(funcTyp, 0));
+  auto p = getStrLiteral(extractFuncGeneric(funcTyp, 1));
+  return transform(N<BoolExpr>(in(t, p)));
 }
 
 std::vector<Stmt *>

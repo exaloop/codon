@@ -19,12 +19,33 @@
 
 #define SEQ_EXCEPTION_CLASS 0x6f626a0073657100
 
+#define SEQ_STR_KIND_ASCII 0
+#define SEQ_STR_KIND_LATIN1 1
+#define SEQ_STR_KIND_UCS2 2
+#define SEQ_STR_KIND_UCS4 3
+
+#define SEQ_STR_KIND_SHIFT 56
+#define SEQ_STR_LEN_MASK ((uint64_t(1) << SEQ_STR_KIND_SHIFT) - 1)
+#define SEQ_STR_KIND_MASK (uint64_t(3) << SEQ_STR_KIND_SHIFT)
+
+#define SEQ_STR_LEN(s) ((size_t)((uint64_t)((s).meta) & SEQ_STR_LEN_MASK))
+#define SEQ_STR_KIND(s)                                                                \
+  ((unsigned)(((uint64_t)((s).meta) & SEQ_STR_KIND_MASK) >> SEQ_STR_KIND_SHIFT))
+
 #define SEQ_FUNC extern "C"
 
 typedef int64_t seq_int_t;
 
 struct seq_str_t {
-  char *str;
+  uint8_t *ptr;
+  seq_int_t meta;
+
+  std::string encode() const;
+  bool operator==(const char *other) const;
+};
+
+struct seq_bytes_t {
+  char *ptr;
   seq_int_t len;
 };
 
@@ -76,11 +97,11 @@ SEQ_FUNC _Unwind_Reason_Code seq_personality(int version, _Unwind_Action actions
                                              _Unwind_Context *context);
 SEQ_FUNC int64_t seq_exc_offset();
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error);
-SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error);
+SEQ_FUNC seq_str_t seq_locale_decimal_point();
+SEQ_FUNC seq_str_t seq_locale_thousands_sep();
+SEQ_FUNC seq_bytes_t seq_locale_grouping();
+SEQ_FUNC seq_str_t seq_locale_numeric();
+SEQ_FUNC bool seq_set_locale_numeric(seq_str_t locale);
 
 SEQ_FUNC void *seq_stdin();
 SEQ_FUNC void *seq_stdout();

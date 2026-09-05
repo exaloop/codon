@@ -8,13 +8,14 @@ from internal.static import print as __print__
 from internal.ops import *
 from internal.types.int import *
 from internal.types.ptr import *
-from internal.types.str import *
 from internal.types.bool import *
 from internal.types.error import *
 from internal.types.float import *
+from internal.types.bytes import *
 
 from internal.types.slice import *
 from internal.types.collections.list import *
+from internal.types.collections.bytearray import *
 
 from internal.types.type import *
 from internal.types.tuple import *
@@ -33,17 +34,6 @@ from internal.types.complex import *
 from internal.types.strbuf import strbuf as _strbuf
 
 import internal.c_stubs as _C
-from internal.format import *
-
-def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
-    if g.done():
-        if default:
-            return unwrap(default)
-        else:
-            raise StopIteration()
-    return g.__next__()
-
-from C import seq_print_full(str, cobj)
 
 class Set:
     items: List[T]
@@ -63,8 +53,8 @@ class Set:
         if len(self.items) == 0:
             return "set()"
         s = self.items.__repr__()
-        s._ptr[0] = "{"._ptr[0]
-        s._ptr[s._len - 1] = "}"._ptr[0]
+        s._store_codepoint(0, 123)  # {
+        s._store_codepoint(len(s) - 1, 125)  # }
         return s
 
 class Dict:
@@ -121,67 +111,23 @@ class Dict:
             lst.append("}")
             return str.cat(lst)
 
-@extend
-class str:
-    def __getitem__(self, idx: int) -> str:
-        if idx < 0:
-            idx += self._len
-        if not (0 <= idx < self._len):
-            raise IndexError("string index out of range")
-        return str(self._ptr + idx, 1)
-
-    def __getitem__(self, s: Slice) -> str:
-        if s.start is None and s.stop is None and s.step is None:
-            return self.__copy__()
-        elif s.step is None:
-            start, stop, step, length = s.adjust_indices(self._len)
-            return str(self._ptr + start, length)
-        else:
-            raise ValueError("nope")
-
-    def strip(self):
-        if self.__len__() == 0:
-            return ""
-
-        i = 0
-        while i < self.__len__() and _C.isspace(i32(int(self._ptr[i]))):
-            i += 1
-
-        j = self.__len__() - 1
-        while j >= 0 and _C.isspace(i32(int(self._ptr[j]))):
-            j -= 1
-        j += 1
-
-        if j <= i:
-            return ""
-
-        return str(self._ptr + i, j - i)
-
-    def join(self, l: Generator[str]) -> str:
-        buf = _strbuf()
-        if len(self) == 0:
-            for a in l:
-                buf.append(a)
-        else:
-            first = True
-            for a in l:
-                if first:
-                    first = False
-                else:
-                    buf.append(self)
-                buf.append(a)
-        return buf.__str__()
-
-    def __repr__(self) -> str:
-        return f"'{self}'"
-
-    def _isdigit(a: u8) -> bool:
-        return _C.isdigit(i32(int(a))) != i32(0)
-
 set = Set
 dict = Dict
 
 from internal.builtin import *
+from internal.str import *
+from internal.format import *
+from internal.bytes import *
+
+def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
+    if g.done():
+        if default:
+            return unwrap(default)
+        else:
+            raise StopIteration()
+    return g.__next__()
+
+from C import seq_print_full(str, cobj)
 
 # from openmp import Ident as __OMPIdent, for_par
 from internal.dlopen import dlsym as _dlsym

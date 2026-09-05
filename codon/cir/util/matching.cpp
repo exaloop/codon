@@ -159,6 +159,10 @@ public:
   void handle(const StringConst *x, const StringConst *y) {
     result = process(x->getType(), y->getType()) && x->getVal() == y->getVal();
   }
+  VISIT(BytesConst);
+  void handle(const BytesConst *x, const BytesConst *y) {
+    result = process(x->getType(), y->getType()) && x->getVal() == y->getVal();
+  }
   VISIT(dsl::CustomConst);
   void handle(const dsl::CustomConst *x, const dsl::CustomConst *y) {
     result = x->match(y);

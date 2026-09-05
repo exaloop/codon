@@ -1,417 +1,2986 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.gc import realloc, free
+from internal.gc import realloc, free, sizeof
+import internal.static as static
+from internal.str import _UnicodeCodecBuffer, _UnicodeDecodeErrorTracker, _make_meta, _unicode_decode_ptr, \
+                         _unicode_encode_code, _unicode_encode_code_with_ownership, _encoding_code, \
+                         _error_code, _native_is_little_endian, _ENCODING_UTF8, _ENCODING_UTF16, \
+                         _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, _ENCODING_UTF32_LE, \
+                         _ENCODING_UTF32_BE, _ENCODING_UNKNOWN, _ERROR_STRICT, _ERROR_IGNORE, \
+                         _ERROR_REPLACE, _ERROR_BACKSLASHREPLACE
 
-class File:
-    sz: int
-    buf: Ptr[u8]
-    fp: cobj
+# Match CPython's split between a relatively small TextIOWrapper decode chunk
+# and a larger buffered raw I/O layer. CPython dynamically chooses the raw
+# buffer from the device block size (commonly 128 KiB on regular files).
+_FILE_READ_BUFFER_SIZE: Literal[int] = 131072
+_FILE_TEXT_LARGE_CHUNK_SIZE: Literal[int] = 1048576
+_FILE_READ_ALL_CHUNK_SIZE: Literal[int] = 131072
 
-    def __init__(self, fp: cobj):
-        self.fp = fp
-        self._reset()
+_FILE_TEXT_COOKIE_FLAG: Literal[int] = 1 << 62
+_FILE_TEXT_COOKIE_RAW_SHIFT: Literal[int] = 10
+_FILE_TEXT_COOKIE_SKIP_MASK: Literal[int] = 0x3F
+_FILE_TEXT_COOKIE_ENCODING_SHIFT: Literal[int] = 6
+_FILE_TEXT_COOKIE_ENCODING_MASK: Literal[int] = 0xF
 
-    def __init__(self, path: str, mode: str):
-        self.fp = _C.fopen(path.c_str(), mode.c_str())
-        if not self.fp:
+_FILE_BACKEND_STDIO: Literal[int] = 0
+_FILE_BACKEND_GZIP: Literal[int] = 1
+_FILE_BACKEND_BZIP2: Literal[int] = 2
+
+_FILE_STDIO_NONE: Literal[int] = 0
+_FILE_STDIO_READ: Literal[int] = 1
+_FILE_STDIO_WRITE: Literal[int] = 2
+
+_FILE_MODE_READ: Literal[int] = 1
+_FILE_MODE_WRITE: Literal[int] = 2
+_FILE_MODE_APPEND: Literal[int] = 4
+_FILE_MODE_EXCLUSIVE: Literal[int] = 8
+_FILE_MODE_UPDATE: Literal[int] = 16
+_FILE_MODE_BINARY: Literal[int] = 32
+_FILE_MODE_TEXT: Literal[int] = 64
+_FILE_MODE_TRUNCATE: Literal[int] = 128
+
+_FILE_NEWLINE_LF: Literal[int] = 1
+_FILE_NEWLINE_CR: Literal[int] = 2
+_FILE_NEWLINE_CRLF: Literal[int] = 4
+_FILE_NEWLINE_TRANSLATE: Literal[int] = 8
+_FILE_NEWLINE_UNIVERSAL: Literal[int] = _FILE_NEWLINE_LF | _FILE_NEWLINE_CR
+
+_BZ_OK: Literal[int] = 0
+_BZ_RUN: Literal[int] = 0
+_BZ_FINISH: Literal[int] = 2
+_BZ_RUN_OK: Literal[int] = 1
+_BZ_FINISH_OK: Literal[int] = 3
+_BZ_STREAM_END: Literal[int] = 4
+_BZ_BUFFER_SIZE: Literal[int] = 8192
+_BZ_UINT_MAX: Literal[int] = 0xFFFFFFFF
+
+def _invalid_mode(mode: str):
+    raise ValueError(f"invalid mode: {mode!r}")
+
+def _file_mode_flags(mode: str) -> int:
+    flags = 0
+    primary = 0
+    seen_update = False
+    seen_binary = False
+    seen_text = False
+    for i in range(len(mode)):
+        character = mode._load_codepoint(i)
+        if character == 0x72:  # r
+            primary += 1
+            flags |= _FILE_MODE_READ
+        elif character == 0x77:  # w
+            primary += 1
+            flags |= _FILE_MODE_WRITE | _FILE_MODE_TRUNCATE
+        elif character == 0x61:  # a
+            primary += 1
+            flags |= _FILE_MODE_WRITE | _FILE_MODE_APPEND
+        elif character == 0x78:  # x
+            primary += 1
+            flags |= _FILE_MODE_WRITE | _FILE_MODE_EXCLUSIVE
+        elif character == 0x2B:  # +
+            if seen_update:
+                _invalid_mode(mode)
+            seen_update = True
+            flags |= _FILE_MODE_READ | _FILE_MODE_WRITE | _FILE_MODE_UPDATE
+        elif character == 0x62:  # b
+            if seen_binary:
+                _invalid_mode(mode)
+            seen_binary = True
+            flags |= _FILE_MODE_BINARY
+        elif character == 0x74:  # t
+            if seen_text:
+                _invalid_mode(mode)
+            seen_text = True
+            flags |= _FILE_MODE_TEXT
+        else:
+            _invalid_mode(mode)
+    if primary != 1 or seen_binary and seen_text:
+        _invalid_mode(mode)
+    return flags
+
+def _file_compressed_mode(
+    flags: int, compresslevel: int, mode: Ptr[u8]
+):
+    if flags & _FILE_MODE_APPEND:
+        mode[0] = u8(0x61)
+    elif flags & _FILE_MODE_EXCLUSIVE:
+        mode[0] = u8(0x77)
+    elif flags & _FILE_MODE_WRITE:
+        mode[0] = u8(0x77)
+    else:
+        mode[0] = u8(0x72)
+    mode[1] = u8(0x62)
+    length = 2
+    if flags & _FILE_MODE_EXCLUSIVE:
+        mode[length] = u8(0x78)
+        length += 1
+    if flags & _FILE_MODE_WRITE and compresslevel >= 0:
+        mode[length] = u8(0x30 + compresslevel)
+        length += 1
+    mode[length] = u8(0)
+
+def _file_stdio_mode(flags: int, mode: Ptr[u8]):
+    if flags & _FILE_MODE_APPEND:
+        mode[0] = u8(0x61)
+    elif flags & (_FILE_MODE_TRUNCATE | _FILE_MODE_EXCLUSIVE):
+        mode[0] = u8(0x77)
+    else:
+        mode[0] = u8(0x72)
+    length = 1
+    if flags & _FILE_MODE_UPDATE:
+        mode[length] = u8(0x2B)
+        length += 1
+    mode[length] = u8(0x62)
+    length += 1
+    if flags & _FILE_MODE_EXCLUSIVE:
+        mode[length] = u8(0x78)
+        length += 1
+    mode[length] = u8(0)
+
+def _file_validate_gzip_compresslevel(flags: int, compresslevel: int):
+    if flags & _FILE_MODE_WRITE and (compresslevel < -1 or compresslevel > 9):
+        raise ValueError("Invalid initialization option")
+
+def _file_validate_bz2_compresslevel(compresslevel: int):
+    if compresslevel < 1 or compresslevel > 9:
+        raise ValueError("compresslevel must be between 1 and 9")
+
+def _file_compressed_mode_flags(mode: str) -> int:
+    flags = _file_mode_flags(mode)
+    if flags & _FILE_MODE_UPDATE:
+        _invalid_mode(mode)
+    return flags
+
+def _literal_mode_flags(mode: Literal[str]) -> Literal[int]:
+    import internal.static as static
+
+    if static.len(mode) == 0:
+        return 0
+    elif mode[0] == "r":
+        return _FILE_MODE_READ | _literal_mode_flags(mode[1:])
+    elif mode[0] == "w":
+        return _FILE_MODE_WRITE | _FILE_MODE_TRUNCATE | _literal_mode_flags(mode[1:])
+    elif mode[0] == "a":
+        return _FILE_MODE_WRITE | _FILE_MODE_APPEND | _literal_mode_flags(mode[1:])
+    elif mode[0] == "x":
+        return _FILE_MODE_WRITE | _FILE_MODE_EXCLUSIVE | _literal_mode_flags(mode[1:])
+    elif mode[0] == "+":
+        return _FILE_MODE_READ | _FILE_MODE_WRITE | _FILE_MODE_UPDATE | _literal_mode_flags(mode[1:])
+    elif mode[0] == "b":
+        return _FILE_MODE_BINARY | _literal_mode_flags(mode[1:])
+    elif mode[0] == "t":
+        return _FILE_MODE_TEXT | _literal_mode_flags(mode[1:])
+    else:
+        return _literal_mode_flags(mode[1:])
+
+def _file_validate_text_config(
+    encoding: str, errors: str, newline: Optional[str]
+):
+    if _encoding_code(encoding) == _ENCODING_UNKNOWN:
+        raise LookupError("unknown encoding: " + encoding)
+    _error_code(errors)
+    _file_newline_flags(newline)
+
+def _file_ensure_readable(state):
+    if not state._mode_flags & _FILE_MODE_READ:
+        raise IOError("file is not open for reading")
+
+def _file_ensure_writable(state):
+    if not state._mode_flags & _FILE_MODE_WRITE:
+        raise IOError("file is not open for writing")
+
+def _file_utf8_sequence_length(first: int) -> int:
+    if first < 0x80:
+        return 1
+    if first >= 0xC2 and first <= 0xDF:
+        return 2
+    if first >= 0xE0 and first <= 0xEF:
+        return 3
+    if first >= 0xF0 and first <= 0xF4:
+        return 4
+    return 1
+
+def _file_utf16_surrogate_pair(data: Ptr[u8], offset: int, encoding_kind: int) -> bool:
+    if encoding_kind != _ENCODING_UTF16_LE and encoding_kind != _ENCODING_UTF16_BE:
+        return False
+    if encoding_kind == _ENCODING_UTF16_LE:
+        unit = int(data[offset]) | (int(data[offset + 1]) << 8)
+    else:
+        unit = (int(data[offset]) << 8) | int(data[offset + 1])
+    return 0xD800 <= unit and unit <= 0xDBFF
+
+def _file_bom_encoding(data: Ptr[u8], length: int, encoding: int) -> Tuple[int, int]:
+    if encoding == _ENCODING_UTF16 and length >= 2:
+        if data[0] == u8(0xFF) and data[1] == u8(0xFE):
+            return (_ENCODING_UTF16_LE, 2)
+        if data[0] == u8(0xFE) and data[1] == u8(0xFF):
+            return (_ENCODING_UTF16_BE, 2)
+    if encoding == _ENCODING_UTF32 and length >= 4:
+        if data[0] == u8(0xFF) and data[1] == u8(0xFE) and data[2] == u8(0) and data[3] == u8(0):
+            return (_ENCODING_UTF32_LE, 4)
+        if data[0] == u8(0) and data[1] == u8(0) and data[2] == u8(0xFE) and data[3] == u8(0xFF):
+            return (_ENCODING_UTF32_BE, 4)
+    return (encoding, 0)
+
+def _file_encoding_has_bom(encoding: int) -> bool:
+    return encoding == _ENCODING_UTF16 or encoding == _ENCODING_UTF32
+
+def _file_encoding_is_multibyte(encoding_kind: int) -> bool:
+    return encoding_kind == _ENCODING_UTF16 or encoding_kind == _ENCODING_UTF16_LE or encoding_kind == _ENCODING_UTF16_BE or encoding_kind == _ENCODING_UTF32 or encoding_kind == _ENCODING_UTF32_LE or encoding_kind == _ENCODING_UTF32_BE
+
+def _file_newline_flags(newline: Optional[str]) -> int:
+    if newline is None:
+        return _FILE_NEWLINE_UNIVERSAL | _FILE_NEWLINE_TRANSLATE
+    if newline == "":
+        return _FILE_NEWLINE_UNIVERSAL
+    if newline == "\n":
+        return _FILE_NEWLINE_LF
+    if newline == "\r":
+        return _FILE_NEWLINE_CR
+    if newline == "\r\n":
+        return _FILE_NEWLINE_CRLF
+    raise ValueError("illegal newline value")
+
+def _file_translate_line_ending_inplace(value: str, newline_flags: int) -> str:
+    if not newline_flags & _FILE_NEWLINE_TRANSLATE or len(value) == 0:
+        return value
+
+    last = len(value) - 1
+    if value._load_codepoint(last) == 0x0D:
+        value._store_codepoint(last, 0x0A)
+        return value
+    if last > 0 and value._load_codepoint(last - 1) == 0x0D and value._load_codepoint(last) == 0x0A:
+        value._store_codepoint(last - 1, 0x0A)
+        return str(value._ptr, _make_meta(last, value._kind()))
+    return value
+
+class _FileBuffer:
+    _ptr: Ptr[u8]
+    _capacity: int
+
+    def __init__(self, capacity: int = 0):
+        self._ptr = Ptr[u8](capacity) if capacity > 0 else Ptr[u8]()
+        self._capacity = capacity
+
+    def reserve(self, required: int):
+        if required <= self._capacity:
+            return
+        capacity = self._capacity if self._capacity > 0 else required
+        while capacity < required:
+            capacity *= 2
+        self._ptr = (
+            realloc(self._ptr, capacity, self._capacity)
+            if self._ptr
+            else Ptr[u8](capacity)
+        )
+        self._capacity = capacity
+
+    def finish_bytes(self, length: int) -> bytes:
+        if length == 0:
+            self.clear()
+            return bytes()
+        return bytes(self.detach(), length)
+
+    def detach(self) -> Ptr[u8]:
+        result = self._ptr
+        self._ptr = Ptr[u8]()
+        self._capacity = 0
+        return result
+
+    def clear(self):
+        if self._ptr:
+            free(self._ptr)
+            self._ptr = Ptr[u8]()
+        self._capacity = 0
+
+class _BZState:
+    next_in: cobj
+    avail_in: u32
+    total_in_lo32: u32
+    total_in_hi32: u32
+    next_out: cobj
+    avail_out: u32
+    total_out_lo32: u32
+    total_out_hi32: u32
+    state: cobj
+    bzalloc: cobj
+    bzfree: cobj
+    opaque: cobj
+    _raw_fp: cobj
+    _eof: bool
+    _initialized: bool
+    _input: Ptr[u8]
+    _mode_flags: int
+
+    def __init__(self, raw_fp: cobj, mode_flags: int):
+        self._raw_fp = raw_fp
+        self._eof = False
+        self._initialized = False
+        self._input = Ptr[u8]()
+        self._mode_flags = mode_flags
+        self._reset_stream()
+
+    def _reset_stream(self):
+        self.next_in = cobj()
+        self.avail_in = u32(0)
+        self.total_in_lo32 = u32(0)
+        self.total_in_hi32 = u32(0)
+        self.next_out = cobj()
+        self.avail_out = u32(0)
+        self.total_out_lo32 = u32(0)
+        self.total_out_hi32 = u32(0)
+        self.state = cobj()
+        self.bzalloc = cobj()
+        self.bzfree = cobj()
+        self.opaque = cobj()
+
+    def _clear_input(self):
+        if self._input:
+            free(self._input)
+            self._input = Ptr[u8]()
+
+class _FileState:
+    _fp: cobj
+    _read_buf: Ptr[u8]
+    _read_offset: int
+    _read_length: int
+    _write_buf: Ptr[u8]
+    _write_length: int
+    _newline_flags: int
+    _encoding_kind: int
+    _initial_encoding_kind: int
+    _write_encoding_kind: int
+    _error_code: int
+    _path: str
+    _mode_flags: int
+    _position: int
+    _text_pending: str
+    _text_pending_offset: int
+    _text_pending_crlf: Ptr[int]
+    _last_text_crlf: Ptr[int]
+    _text_pending_errors: Optional[_UnicodeDecodeErrorTracker]
+    _last_text_errors: Optional[_UnicodeDecodeErrorTracker]
+    _last_text_read_bytes: int
+    _bom_checked: bool
+    _write_bom_done: bool
+    _skip_initial_lf: bool
+    _b2cratio: float
+    _backend: int
+    _stdio_direction: int
+
+    @inline
+    def __init__(self, fp: cobj, mode_flags: Literal[int]):
+        self._fp = fp
+        self._read_buf = Ptr[u8]()
+        self._read_offset = 0
+        self._read_length = 0
+        self._write_buf = Ptr[u8]()
+        self._write_length = 0
+        self._newline_flags = _FILE_NEWLINE_UNIVERSAL | _FILE_NEWLINE_TRANSLATE
+        self._encoding_kind = _ENCODING_UTF8
+        self._initial_encoding_kind = _ENCODING_UTF8
+        self._write_encoding_kind = _ENCODING_UTF8
+        self._error_code = _ERROR_STRICT
+        self._path = str()
+        self._mode_flags = mode_flags
+        self._position = 0
+        self._backend = _FILE_BACKEND_STDIO
+        self._text_pending = str()
+        self._text_pending_offset = 0
+        self._text_pending_crlf = Ptr[int]()
+        self._last_text_crlf = Ptr[int]()
+        self._text_pending_errors = None
+        self._last_text_errors = None
+        self._last_text_read_bytes = 0
+        self._bom_checked = True
+        self._write_bom_done = True
+        self._skip_initial_lf = False
+        self._stdio_direction = _FILE_STDIO_NONE
+        self._b2cratio = 1.0
+
+    def __init__(
+        self,
+        fp: cobj,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+        path: str = "",
+        mode_flags: int = 0,
+        backend: int = _FILE_BACKEND_STDIO,
+    ):
+        self._fp = fp
+        self._read_buf = Ptr[u8]()
+        self._read_offset = 0
+        self._read_length = 0
+        self._write_buf = Ptr[u8]()
+        self._write_length = 0
+        self._newline_flags = _file_newline_flags(newline)
+        self._encoding_kind = _encoding_code(encoding)
+        self._initial_encoding_kind = self._encoding_kind
+        self._write_encoding_kind = self._encoding_kind
+        self._error_code = _error_code(errors)
+        self._path = path
+        self._mode_flags = mode_flags
+        self._position = 0
+        self._backend = backend
+        self._text_pending = str()
+        self._text_pending_offset = 0
+        self._text_pending_crlf = Ptr[int]()
+        self._last_text_crlf = Ptr[int]()
+        self._text_pending_errors = None
+        self._last_text_errors = None
+        self._last_text_read_bytes = 0
+        self._bom_checked = not _file_encoding_has_bom(self._encoding_kind)
+        self._write_bom_done = not _file_encoding_has_bom(self._write_encoding_kind)
+        self._skip_initial_lf = False
+        self._stdio_direction = _FILE_STDIO_NONE
+        if self._encoding_kind == _ENCODING_UTF16 or self._encoding_kind == _ENCODING_UTF16_LE or self._encoding_kind == _ENCODING_UTF16_BE:
+            self._b2cratio = 2.0
+        elif self._encoding_kind == _ENCODING_UTF32 or self._encoding_kind == _ENCODING_UTF32_LE or self._encoding_kind == _ENCODING_UTF32_BE:
+            self._b2cratio = 4.0
+        else:
+            self._b2cratio = 1.0
+
+    def _clear_text_pending_crlf(self):
+        if self._text_pending_crlf:
+            free(self._text_pending_crlf.as_byte())
+            self._text_pending_crlf = Ptr[int]()
+
+    def _clear_last_text_crlf(self):
+        if self._last_text_crlf:
+            free(self._last_text_crlf.as_byte())
+            self._last_text_crlf = Ptr[int]()
+
+    def _close(self, report_errors: bool):
+        write_error = False
+        close_error = False
+        if self._fp:
+            if self._backend == _FILE_BACKEND_STDIO:
+                if self._write_length > 0:
+                    written = int(_C.fwrite(
+                        self._write_buf, 1, self._write_length, self._fp
+                    ))
+                    write_error = (
+                        written != self._write_length or bool(_C.ferror(self._fp))
+                    )
+                close_error = _C.fclose(self._fp) != 0
+            elif self._backend == _FILE_BACKEND_GZIP:
+                close_error = _C.gzclose(self._fp) != 0
+            self._fp = cobj()
+
+        if self._read_buf:
+            free(self._read_buf)
+            self._read_buf = Ptr[u8]()
+        if self._write_buf:
+            free(self._write_buf)
+            self._write_buf = Ptr[u8]()
+        self._read_offset = 0
+        self._read_length = 0
+        self._write_length = 0
+        self._text_pending = str()
+        self._text_pending_offset = 0
+        self._clear_text_pending_crlf()
+        self._clear_last_text_crlf()
+        self._text_pending_errors = None
+        self._last_text_errors = None
+        self._last_text_read_bytes = 0
+        self._skip_initial_lf = False
+        self._stdio_direction = _FILE_STDIO_NONE
+
+        if report_errors:
+            if write_error:
+                raise IOError("file I/O error: error in write")
+            if close_error:
+                raise IOError("file I/O error: error in close")
+
+
+def _file_reset_text_state(state: _FileState, reset_encoding: bool = False):
+    state._text_pending = str()
+    state._text_pending_offset = 0
+    state._clear_text_pending_crlf()
+    state._clear_last_text_crlf()
+    state._text_pending_errors = None
+    state._last_text_errors = None
+    state._last_text_read_bytes = 0
+    state._skip_initial_lf = False
+    if reset_encoding:
+        state._encoding_kind = state._initial_encoding_kind
+        state._bom_checked = not _file_encoding_has_bom(state._encoding_kind)
+        if state._encoding_kind == _ENCODING_UTF16 or state._encoding_kind == _ENCODING_UTF16_LE or state._encoding_kind == _ENCODING_UTF16_BE:
+            state._b2cratio = 2.0
+        elif state._encoding_kind == _ENCODING_UTF32 or state._encoding_kind == _ENCODING_UTF32_LE or state._encoding_kind == _ENCODING_UTF32_BE:
+            state._b2cratio = 4.0
+        else:
+            state._b2cratio = 1.0
+
+def _file_append_last_text_crlf(state: _FileState, position: int):
+    length = state._last_text_crlf[0] if state._last_text_crlf else 0
+    capacity = state._last_text_crlf[1] if state._last_text_crlf else 0
+    if length == capacity:
+        old_capacity = capacity
+        new_capacity = 4 if old_capacity == 0 else old_capacity * 2
+        state._last_text_crlf = (
+            Ptr[int](realloc(
+                state._last_text_crlf.as_byte(),
+                (new_capacity + 2) * sizeof(int),
+                (old_capacity + 2) * sizeof(int),
+            ))
+            if state._last_text_crlf
+            else Ptr[int](new_capacity + 2)
+        )
+        state._last_text_crlf[1] = new_capacity
+    state._last_text_crlf[length + 2] = position
+    state._last_text_crlf[0] = length + 1
+
+def _file_shift_text_errors(
+    tracker: Optional[_UnicodeDecodeErrorTracker], offset: int, prefix: int = 0
+):
+    if tracker is None or offset == 0 and prefix == 0:
+        return
+    output = 0
+    for i in range(tracker.length):
+        start, end, raw_start, raw_length = tracker.get(i)
+        if end > offset:
+            tracker.set(
+                output,
+                prefix + start - offset,
+                prefix + end - offset,
+                raw_start,
+                raw_length,
+            )
+            output += 1
+    tracker.length = output
+
+def _file_translate_last_text_errors(state: _FileState):
+    tracker = state._last_text_errors
+    crlf = state._last_text_crlf
+    if tracker is None or not crlf:
+        return
+    for span in range(tracker.length):
+        start, end, raw_start, raw_length = tracker.get(span)
+        start_shift = 0
+        end_shift = 0
+        for i in range(crlf[0]):
+            removed = crlf[i + 2] + i + 1
+            if removed < start:
+                start_shift += 1
+            if removed < end:
+                end_shift += 1
+        tracker.set(
+            span,
+            start - start_shift,
+            end - end_shift,
+            raw_start,
+            raw_length,
+        )
+
+def _file_translate_read_newlines_inplace(
+    state: _FileState, value: str, newline_flags: int
+) -> str:
+    if not newline_flags & _FILE_NEWLINE_TRANSLATE:
+        return value
+
+    # Universal-newline translation only changes CR. Codon's str.find uses the
+    # optimized Unicode fast-search path, so the overwhelmingly common LF-only
+    # case avoids the slower codepoint-by-codepoint rewrite completely.
+    if value.find("\r") < 0:
+        return value
+
+    source = 0
+    output = 0
+    while source < len(value):
+        codepoint = value._load_codepoint(source)
+        if codepoint == 0x0D:
+            value._store_codepoint(output, 0x0A)
+            source += 1
+            if source < len(value) and value._load_codepoint(source) == 0x0A:
+                _file_append_last_text_crlf(state, output)
+                source += 1
+        else:
+            if output != source:
+                value._store_codepoint(output, codepoint)
+            source += 1
+        output += 1
+    if output == len(value):
+        return value
+    _file_translate_last_text_errors(state)
+    return str(value._ptr, _make_meta(output, value._kind()))
+
+def _file_flush_stdio_write_buffer(state: _FileState):
+    if state._backend != _FILE_BACKEND_STDIO or state._write_length == 0:
+        return
+    written = int(_C.fwrite(state._write_buf, 1, state._write_length, state._fp))
+    if written != state._write_length or _C.ferror(state._fp):
+        raise IOError("file I/O error: error in write")
+    state._write_length = 0
+
+def _file_buffered_stdio_write(state: _FileState, data: Ptr[u8], length: int):
+    if length <= 0:
+        return
+    _file_prepare_stdio_write(state)
+    if not state._write_buf:
+        state._write_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
+
+    # Large writes bypass the staging buffer once any earlier data has been
+    # committed. Small writes are coalesced so line-at-a-time text output does
+    # not pay a libc call/lock for every Python-level write().
+    if length >= _FILE_READ_BUFFER_SIZE:
+        _file_flush_stdio_write_buffer(state)
+        written = int(_C.fwrite(data, 1, length, state._fp))
+        if written != length or _C.ferror(state._fp):
+            raise IOError("file I/O error: error in write")
+        state._stdio_direction = _FILE_STDIO_WRITE
+        return
+
+    if state._write_length + length > _FILE_READ_BUFFER_SIZE:
+        _file_flush_stdio_write_buffer(state)
+    bytes.memcpy(state._write_buf + state._write_length, data, length)
+    state._write_length += length
+    state._stdio_direction = _FILE_STDIO_WRITE
+
+def _file_raw_read(state: _FileState, output: Ptr[u8], length: int) -> int:
+    if length <= 0:
+        return 0
+
+    if state._backend == _FILE_BACKEND_STDIO:
+        count = int(_C.fread(output, 1, length, state._fp))
+        if _C.ferror(state._fp):
+            raise IOError("file I/O error: error in read")
+        return count
+
+    count = int(_C.gzread(state._fp, output, u32(length)))
+    _gz_errcheck(state._fp)
+    return count
+
+def _file_fill_read_buffer(state: _FileState) -> int:
+    if not state._read_buf:
+        state._read_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
+    state._read_offset = 0
+    state._read_length = _file_raw_read(
+        state, state._read_buf, _FILE_READ_BUFFER_SIZE
+    )
+    return state._read_length
+
+def _file_read_byte(state: _FileState) -> int:
+    if state._read_offset == state._read_length:
+        if _file_fill_read_buffer(state) == 0:
+            return -1
+
+    byte = state._read_buf[state._read_offset]
+    state._read_offset += 1
+    return int(byte)
+
+def _file_check_initial_bom(state: _FileState, buffer: Ptr[u8], length: int) -> int:
+    if state._bom_checked or length == 0:
+        return 0
+    encoding, bom_length = _file_bom_encoding(
+        buffer, length, state._encoding_kind
+    )
+    if bom_length == 0:
+        raise ValueError("UTF-16/UTF-32 stream does not start with BOM")
+    state._encoding_kind = encoding
+    state._bom_checked = True
+    return bom_length
+
+def _file_native_stream_encoding(encoding: int) -> int:
+    if encoding == _ENCODING_UTF16:
+        return _ENCODING_UTF16_LE if _native_is_little_endian() else _ENCODING_UTF16_BE
+    if encoding == _ENCODING_UTF32:
+        return _ENCODING_UTF32_LE if _native_is_little_endian() else _ENCODING_UTF32_BE
+    return encoding
+
+def _file_encoded_newline_layout(encoding: int) -> Tuple[int, int]:
+    encoding = _file_native_stream_encoding(encoding)
+    if encoding == _ENCODING_UTF16_LE:
+        return 2, 0
+    if encoding == _ENCODING_UTF16_BE:
+        return 2, 1
+    if encoding == _ENCODING_UTF32_LE:
+        return 4, 0
+    if encoding == _ENCODING_UTF32_BE:
+        return 4, 3
+    return 1, 0
+
+def _file_encoded_is_lf(
+    data: Ptr[u8], position: int, width: int, byte_offset: int
+) -> bool:
+    if data[position + byte_offset] != u8(0x0A):
+        return False
+    for offset in range(width):
+        if offset != byte_offset and data[position + offset] != u8(0):
+            return False
+    return True
+
+def _file_store_encoded_cr(
+    data: Ptr[u8], position: int, width: int, byte_offset: int
+):
+    for offset in range(width):
+        data[position + offset] = u8(0)
+    data[position + byte_offset] = u8(0x0D)
+
+def _file_translate_encoded_newlines(
+    data: bytes,
+    encoding: int,
+    newline_flags: int,
+    uniquely_owned: bool,
+) -> bytes:
+    if newline_flags != _FILE_NEWLINE_CR and newline_flags != _FILE_NEWLINE_CRLF:
+        return data
+
+    width, byte_offset = _file_encoded_newline_layout(encoding)
+    newline_count = 0
+    position = 0
+    while position + width <= len(data):
+        if _file_encoded_is_lf(data._ptr, position, width, byte_offset):
+            newline_count += 1
+        position += width
+
+    if newline_count == 0:
+        return data
+
+    old_length = len(data)
+
+    if newline_flags == _FILE_NEWLINE_CR:
+        if uniquely_owned:
+            position = 0
+            while position + width <= old_length:
+                if _file_encoded_is_lf(data._ptr, position, width, byte_offset):
+                    data._ptr[position + byte_offset] = u8(0x0D)
+                position += width
+            return data
+
+        output = Ptr[u8](old_length)
+        position = 0
+        while position + width <= old_length:
+            if _file_encoded_is_lf(data._ptr, position, width, byte_offset):
+                _file_store_encoded_cr(output, position, width, byte_offset)
+            else:
+                bytes.memcpy(output + position, data._ptr + position, width)
+            position += width
+        if position < old_length:
+            bytes.memcpy(output + position, data._ptr + position, old_length - position)
+        return bytes(output, old_length)
+
+    new_length = old_length + newline_count * width
+    if uniquely_owned:
+        output = realloc(data._ptr, new_length, old_length)
+        source = old_length
+        destination = new_length
+        while source >= width:
+            source -= width
+            is_lf = _file_encoded_is_lf(output, source, width, byte_offset)
+            destination -= width
+            bytes.memcpy(output + destination, output + source, width)
+            if is_lf:
+                destination -= width
+                _file_store_encoded_cr(output, destination, width, byte_offset)
+        return bytes(output, new_length)
+
+    output = Ptr[u8](new_length)
+    source = 0
+    destination = 0
+    while source + width <= old_length:
+        if _file_encoded_is_lf(data._ptr, source, width, byte_offset):
+            _file_store_encoded_cr(output, destination, width, byte_offset)
+            destination += width
+        bytes.memcpy(output + destination, data._ptr + source, width)
+        source += width
+        destination += width
+    if source < old_length:
+        bytes.memcpy(output + destination, data._ptr + source, old_length - source)
+    return bytes(output, new_length)
+
+def _file_write_newline_flags(newline_flags: int) -> int:
+    if (
+        newline_flags & _FILE_NEWLINE_TRANSLATE
+        and static.platform() == "win32"
+    ):
+        return _FILE_NEWLINE_CRLF
+    return newline_flags
+
+def _file_stream_encode(
+    state: _FileState, value: str, newline_flags: int
+) -> bytes:
+    encoding = state._write_encoding_kind
+    data, uniquely_owned = _unicode_encode_code_with_ownership(
+        value, encoding, state._error_code
+    )
+    data = _file_translate_encoded_newlines(
+        data, encoding, newline_flags, uniquely_owned
+    )
+    if not state._write_bom_done:
+        state._write_bom_done = True
+        state._write_encoding_kind = _file_native_stream_encoding(encoding)
+    return data
+
+def _file_text_raw_length(state: _FileState, value: str) -> int:
+    encoding = state._encoding_kind
+    if encoding == _ENCODING_UTF16:
+        encoding = _ENCODING_UTF16_LE
+    elif encoding == _ENCODING_UTF32:
+        encoding = _ENCODING_UTF32_LE
+    return len(_unicode_encode_code(value, encoding, state._error_code))
+
+def _file_text_pending_length(state: _FileState) -> int:
+    return len(state._text_pending) - state._text_pending_offset
+
+def _file_take_text_pending(state: _FileState, length: int) -> str:
+    available = _file_text_pending_length(state)
+    if available <= 0 or length <= 0:
+        return str()
+    take = length if length < available else available
+    start = state._text_pending_offset
+    result = state._text_pending[start:start + take]
+    state._text_pending_offset += take
+    if state._text_pending_offset == len(state._text_pending):
+        state._text_pending = str()
+        state._text_pending_offset = 0
+        state._clear_text_pending_crlf()
+        state._text_pending_errors = None
+    return result
+
+def _file_take_all_text_pending(state: _FileState) -> str:
+    if _file_text_pending_length(state) <= 0:
+        return str()
+    start = state._text_pending_offset
+    result = state._text_pending[start:] if start > 0 else state._text_pending
+    state._text_pending = str()
+    state._text_pending_offset = 0
+    state._clear_text_pending_crlf()
+    state._text_pending_errors = None
+    return result
+
+def _file_scan_text_line(
+    value: str, start: int, newline_flags: int
+) -> Tuple[int, bool]:
+    if newline_flags & _FILE_NEWLINE_TRANSLATE or newline_flags == _FILE_NEWLINE_LF:
+        position = value.find("\n", start)
+        return (position + 1, False) if position >= 0 else (-1, False)
+    if newline_flags == _FILE_NEWLINE_CR:
+        position = value.find("\r", start)
+        return (position + 1, False) if position >= 0 else (-1, False)
+    if newline_flags == _FILE_NEWLINE_CRLF:
+        position = value.find("\r\n", start)
+        if position >= 0:
+            return (position + 2, False)
+        return (-1, len(value) > start and value.endswith("\r"))
+
+    cr = value.find("\r", start)
+    lf = value.find("\n", start)
+    if lf >= 0 and (cr < 0 or lf < cr):
+        return (lf + 1, False)
+    if cr < 0:
+        return (-1, False)
+    if cr + 1 == len(value):
+        return (cr + 1, True)
+    if value._load_codepoint(cr + 1) == 0x0A:
+        return (cr + 2, False)
+    return (cr + 1, False)
+
+def _file_set_text_pending(state: _FileState, value: str, offset: int = 0):
+    state._clear_text_pending_crlf()
+    state._text_pending = value
+    state._text_pending_offset = offset
+    state._text_pending_crlf = state._last_text_crlf
+    state._last_text_crlf = Ptr[int]()
+    state._text_pending_errors = state._last_text_errors
+    state._last_text_errors = None
+
+def _file_prepend_text_pending(state: _FileState, value: str):
+    if _file_text_pending_length(state) > 0:
+        output = 0
+        length = state._text_pending_crlf[0] if state._text_pending_crlf else 0
+        for i in range(length):
+            position = state._text_pending_crlf[i + 2]
+            if position >= state._text_pending_offset:
+                state._text_pending_crlf[output + 2] = (
+                    len(value) + position - state._text_pending_offset
+                )
+                output += 1
+        if state._text_pending_crlf:
+            state._text_pending_crlf[0] = output
+        _file_shift_text_errors(
+            state._text_pending_errors,
+            state._text_pending_offset,
+            len(value),
+        )
+        value = value + state._text_pending[state._text_pending_offset:]
+    else:
+        state._clear_text_pending_crlf()
+        state._text_pending_errors = None
+    state._text_pending = value
+    state._text_pending_offset = 0
+
+def _file_text_pending_raw_length(state: _FileState) -> int:
+    # Raw-byte accounting is only needed by tell()/seek(). Keep it off the hot
+    # read path; in particular, read(1) must not re-encode the remaining chunk.
+    if _file_text_pending_length(state) <= 0:
+        return 0
+    value = state._text_pending[state._text_pending_offset:]
+    length = _file_text_raw_length(state, value)
+    width, _ = _file_encoded_newline_layout(state._encoding_kind)
+    crlf_length = state._text_pending_crlf[0] if state._text_pending_crlf else 0
+    for i in range(crlf_length):
+        position = state._text_pending_crlf[i + 2]
+        if position >= state._text_pending_offset:
+            length += width
+    if state._text_pending_errors is not None:
+        for i in range(state._text_pending_errors.length):
+            start, end, _, raw_length = state._text_pending_errors.get(i)
+            if start >= state._text_pending_offset:
+                encoded = _file_text_raw_length(
+                    state, state._text_pending[start:end]
+                )
+                length += raw_length - encoded
+    return length
+
+def _file_text_replay_cookie(state: _FileState, position: int) -> int:
+    tracker = state._text_pending_errors
+    if tracker is None:
+        return -1
+    offset = state._text_pending_offset
+    for i in range(tracker.length):
+        start, end, raw_start, _ = tracker.get(i)
+        if start < offset and offset < end:
+            raw_position = position - tracker.raw_length + raw_start
+            skip = offset - start
+            if (
+                raw_position < 0
+                or raw_position >= 1 << (62 - _FILE_TEXT_COOKIE_RAW_SHIFT)
+                or skip > _FILE_TEXT_COOKIE_SKIP_MASK
+            ):
+                return -1
+            return (
+                _FILE_TEXT_COOKIE_FLAG
+                | (raw_position << _FILE_TEXT_COOKIE_RAW_SHIFT)
+                | (state._encoding_kind << _FILE_TEXT_COOKIE_ENCODING_SHIFT)
+                | skip
+            )
+    return -1
+
+def _file_decode_text_replay_cookie(cookie: int) -> Tuple[int, int, int]:
+    if cookie < 0 or not cookie & _FILE_TEXT_COOKIE_FLAG:
+        return (-1, 0, 0)
+    raw_position = (
+        cookie & (_FILE_TEXT_COOKIE_FLAG - 1)
+    ) >> _FILE_TEXT_COOKIE_RAW_SHIFT
+    encoding = (
+        cookie >> _FILE_TEXT_COOKIE_ENCODING_SHIFT
+    ) & _FILE_TEXT_COOKIE_ENCODING_MASK
+    skip = cookie & _FILE_TEXT_COOKIE_SKIP_MASK
+    if encoding == _ENCODING_UNKNOWN or skip == 0:
+        return (-1, 0, 0)
+    return (raw_position, skip, encoding)
+
+def _file_restore_text_replay_state(state: _FileState, encoding: int):
+    state._encoding_kind = encoding
+    state._bom_checked = True
+
+# Number of additional raw bytes needed to avoid cutting a decode chunk in the
+# middle of a code unit / UTF-8 sequence. This is the small bit of incremental
+# decoder state we need for the encodings implemented by Codon.
+def _file_text_chunk_extra(state: _FileState, buffer: Ptr[u8], length: int, offset: int) -> int:
+    encoding = state._encoding_kind
+    payload = length - offset
+    if payload <= 0:
+        return 0
+
+    if encoding == _ENCODING_UTF32_LE or encoding == _ENCODING_UTF32_BE:
+        rem = payload % 4
+        return 0 if rem == 0 else 4 - rem
+
+    if encoding == _ENCODING_UTF16_LE or encoding == _ENCODING_UTF16_BE:
+        if payload % 2 != 0:
+            return 1
+        if payload >= 2 and _file_utf16_surrogate_pair(
+            buffer, length - 2, encoding
+        ):
+            return 2
+        return 0
+
+    if encoding != _ENCODING_UTF8:
+        return 0
+
+    # Find the start byte of the final UTF-8 sequence. Stop completion as soon
+    # as an invalid continuation makes the decoder's error span decidable.
+    start = length - 1
+    continuation = 0
+    while start >= offset and continuation < 3 and (int(buffer[start]) & 0xC0) == 0x80:
+        start -= 1
+        continuation += 1
+    if start < offset:
+        return 0
+    expected = _file_utf8_sequence_length(int(buffer[start]))
+    available = length - start
+    if expected == 1:
+        return 0
+    if available >= 2:
+        first = int(buffer[start])
+        second = int(buffer[start + 1])
+        if (
+            second & 0xC0 != 0x80
+            or first == 0xE0 and second < 0xA0
+            or first == 0xED and second > 0x9F
+            or first == 0xF0 and second < 0x90
+            or first == 0xF4 and second > 0x8F
+        ):
+            return 0
+    if available >= 3 and int(buffer[start + 2]) & 0xC0 != 0x80:
+        return 0
+    if available >= 4 and int(buffer[start + 3]) & 0xC0 != 0x80:
+        return 0
+    return expected - available if expected > available else 0
+
+def _file_decode_owned_text_chunk(
+    state: _FileState, buffer: _FileBuffer, length: int, bom_length: int = -1
+) -> str:
+    state._last_text_read_bytes = length
+    state._clear_last_text_crlf()
+    state._last_text_errors = None
+    if length == 0:
+        buffer.clear()
+        return str()
+
+    if bom_length < 0:
+        bom_length = _file_check_initial_bom(state, buffer._ptr, length)
+    tracker = (
+        _UnicodeDecodeErrorTracker()
+        if (
+            state._error_code == _ERROR_IGNORE
+            or state._error_code == _ERROR_REPLACE
+            or state._error_code == _ERROR_BACKSLASHREPLACE
+        )
+        else None
+    )
+    translate_newlines = True
+    if (
+        state._newline_flags & _FILE_NEWLINE_TRANSLATE
+        and state._encoding_kind == _ENCODING_UTF8
+        and bom_length == 0
+    ):
+        is_ascii, translate_newlines = _file_classify_ascii_cr(
+            buffer._ptr, length
+        )
+        if is_ascii:
+            value = str(buffer.detach(), _make_meta(length, 0))
+        else:
+            value = _file_decode_owned_buffer(
+                state, buffer, length, 0, known_non_ascii=True, tracker=tracker
+            )
+    else:
+        if state._newline_flags & _FILE_NEWLINE_TRANSLATE and state._encoding_kind == _ENCODING_UTF8:
+            translate_newlines = bool(
+                _C.memchr(buffer._ptr + bom_length, i32(0x0D), length - bom_length)
+            )
+        value = _file_decode_owned_buffer(
+            state, buffer, length, bom_length, tracker=tracker
+        )
+    if tracker is not None and tracker.length > 0:
+        state._last_text_errors = tracker
+    raw_payload = length - bom_length
+    if tracker is not None:
+        tracker.raw_length = raw_payload
+    if len(value) > 0 and raw_payload > 0:
+        state._b2cratio = float(raw_payload) / float(len(value))
+
+    if state._newline_flags & _FILE_NEWLINE_TRANSLATE:
+        if state._skip_initial_lf:
+            state._skip_initial_lf = False
+            if value == "\n":
+                return str()
+            if value.startswith("\n"):
+                value = value[1:]
+                _file_shift_text_errors(state._last_text_errors, 1)
+        if value.endswith("\r"):
+            state._skip_initial_lf = True
+        if translate_newlines:
+            value = _file_translate_read_newlines_inplace(
+                state, value, state._newline_flags
+            )
+    return value
+
+def _file_text_chunk_target(state: _FileState, remaining: int) -> int:
+    if state._error_code != _ERROR_STRICT:
+        width, _ = _file_encoded_newline_layout(state._encoding_kind)
+        return min(remaining * width, _FILE_TEXT_LARGE_CHUNK_SIZE)
+
+    # Decode from the full read buffer to amortize Unicode allocation and
+    # validation; read(n) retains any extra characters as zero-copy views.
+    estimated = int(float(remaining) * state._b2cratio)
+    if remaining >= 65536 and estimated < _FILE_TEXT_LARGE_CHUNK_SIZE:
+        return _FILE_TEXT_LARGE_CHUNK_SIZE
+    if estimated < _FILE_READ_BUFFER_SIZE:
+        return _FILE_READ_BUFFER_SIZE
+    if estimated > _FILE_TEXT_LARGE_CHUNK_SIZE:
+        return _FILE_TEXT_LARGE_CHUNK_SIZE
+    return estimated
+
+@pure
+@llvm
+def _file_byte_mask16(data: Ptr[u8], pos: int, needle: u8) -> u16:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %base = insertelement <16 x i8> poison, i8 %needle, i64 0
+    %needles = shufflevector <16 x i8> %base, <16 x i8> poison, <16 x i32> zeroinitializer
+    %matches = icmp eq <16 x i8> %bytes, %needles
+    %mask = bitcast <16 x i1> %matches to i16
+    ret i16 %mask
+
+@pure
+@llvm
+def _file_newline_mask16(data: Ptr[u8], pos: int) -> u16:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %lfbase = insertelement <16 x i8> poison, i8 10, i64 0
+    %lf = shufflevector <16 x i8> %lfbase, <16 x i8> poison, <16 x i32> zeroinitializer
+    %crbase = insertelement <16 x i8> poison, i8 13, i64 0
+    %cr = shufflevector <16 x i8> %crbase, <16 x i8> poison, <16 x i32> zeroinitializer
+    %islf = icmp eq <16 x i8> %bytes, %lf
+    %iscr = icmp eq <16 x i8> %bytes, %cr
+    %matches = or <16 x i1> %islf, %iscr
+    %mask = bitcast <16 x i1> %matches to i16
+    ret i16 %mask
+
+@pure
+@llvm
+def _file_nonascii_mask16(data: Ptr[u8], pos: int) -> u16:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %nonascii = icmp slt <16 x i8> %bytes, zeroinitializer
+    %mask = bitcast <16 x i1> %nonascii to i16
+    ret i16 %mask
+
+@pure
+@llvm
+def _file_ascii_cr_mask16(data: Ptr[u8], pos: int) -> u32:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %nonascii = icmp slt <16 x i8> %bytes, zeroinitializer
+    %nonascii16 = bitcast <16 x i1> %nonascii to i16
+    %crbase = insertelement <16 x i8> poison, i8 13, i64 0
+    %cr = shufflevector <16 x i8> %crbase, <16 x i8> poison, <16 x i32> zeroinitializer
+    %iscr = icmp eq <16 x i8> %bytes, %cr
+    %cr16 = bitcast <16 x i1> %iscr to i16
+    %nonascii32 = zext i16 %nonascii16 to i32
+    %cr32 = zext i16 %cr16 to i32
+    %shifted = shl i32 %cr32, 16
+    %mask = or i32 %nonascii32, %shifted
+    ret i32 %mask
+
+@pure
+@llvm
+def _file_first_match(mask: u16) -> int:
+    declare i16 @llvm.cttz.i16(i16, i1)
+    %index16 = call i16 @llvm.cttz.i16(i16 %mask, i1 true)
+    %index = zext i16 %index16 to i64
+    ret i64 %index
+
+def _file_is_ascii(data: Ptr[u8], length: int) -> bool:
+    i = 0
+    while i + 16 <= length:
+        if _file_nonascii_mask16(data, i):
+            return False
+        i += 16
+    while i < length:
+        if data[i] >= u8(0x80):
+            return False
+        i += 1
+    return True
+
+def _file_classify_ascii_cr(data: Ptr[u8], length: int) -> Tuple[bool, bool]:
+    is_ascii = True
+    has_cr = False
+    i = 0
+    while i + 16 <= length:
+        mask = _file_ascii_cr_mask16(data, i)
+        is_ascii = is_ascii and not bool(mask & u32(0xFFFF))
+        has_cr = has_cr or bool(mask & u32(0xFFFF0000))
+        i += 16
+    while i < length:
+        byte = data[i]
+        is_ascii = is_ascii and byte < u8(0x80)
+        has_cr = has_cr or byte == u8(0x0D)
+        i += 1
+    return is_ascii, has_cr
+
+def _file_scan_line_buffer(
+    buffer: Ptr[u8],
+    start: int,
+    end: int,
+    newline_flags: int,
+    binary: bool,
+) -> Tuple[int, bool]:
+    if binary or newline_flags == _FILE_NEWLINE_LF:
+        needle = u8(0x0A)
+        i = start
+        while i + 16 <= end:
+            mask = _file_byte_mask16(buffer, i, needle)
+            if mask:
+                return (i + _file_first_match(mask) + 1, False)
+            i += 16
+        while i < end:
+            if buffer[i] == needle:
+                return (i + 1, False)
+            i += 1
+        return (-1, False)
+
+    if newline_flags == _FILE_NEWLINE_CR:
+        needle = u8(0x0D)
+        i = start
+        while i + 16 <= end:
+            mask = _file_byte_mask16(buffer, i, needle)
+            if mask:
+                return (i + _file_first_match(mask) + 1, False)
+            i += 16
+        while i < end:
+            if buffer[i] == needle:
+                return (i + 1, False)
+            i += 1
+        return (-1, False)
+
+    if newline_flags == _FILE_NEWLINE_CRLF:
+        i = start
+        while i < end:
+            while i + 16 <= end:
+                mask = _file_byte_mask16(buffer, i, u8(0x0D))
+                if mask:
+                    i += _file_first_match(mask)
+                    break
+                i += 16
+            while i < end and buffer[i] != u8(0x0D):
+                i += 1
+            if i == end:
+                return (-1, False)
+            if i + 1 == end:
+                return (i + 1, True)
+            if buffer[i + 1] == u8(0x0A):
+                return (i + 2, False)
+            i += 1
+        return (-1, False)
+
+    i = start
+    while i + 16 <= end:
+        mask = _file_newline_mask16(buffer, i)
+        if mask:
+            i += _file_first_match(mask)
+            break
+        i += 16
+    while i < end and buffer[i] != u8(0x0A) and buffer[i] != u8(0x0D):
+        i += 1
+    if i == end:
+        return (-1, False)
+    if buffer[i] == u8(0x0A):
+        return (i + 1, False)
+    if i + 1 < end and buffer[i + 1] == u8(0x0A):
+        return (i + 2, False)
+    return (i + 1, i + 1 == end)
+
+def _file_readline_raw(
+    state: _FileState,
+    buffer: _FileBuffer,
+    newline_flags: int,
+    binary: bool,
+) -> int:
+    length = 0
+
+    if not binary and state._skip_initial_lf:
+        state._skip_initial_lf = False
+        following = _file_read_byte(state)
+        if following >= 0 and following != 0x0A:
+            state._read_offset -= 1
+
+    while True:
+        if state._read_offset == state._read_length:
+            if _file_fill_read_buffer(state) == 0:
+                break
+
+        start = state._read_offset
+        line_end, lookahead = _file_scan_line_buffer(
+            state._read_buf, start, state._read_length, newline_flags, binary
+        )
+        copy_end = state._read_length if line_end < 0 else line_end
+        count = copy_end - start
+        buffer.reserve(length + count + 1)
+        if count > 0:
+            bytes.memcpy(buffer._ptr + length, state._read_buf + start, count)
+            length += count
+            state._read_offset = copy_end
+
+        if line_end < 0:
+            continue
+        if not lookahead:
+            break
+
+        following = _file_read_byte(state)
+        if newline_flags == _FILE_NEWLINE_CRLF:
+            if following == 0x0A:
+                buffer._ptr[length] = u8(following)
+                length += 1
+                break
+            if following >= 0:
+                state._read_offset -= 1
+            continue
+
+        if following == 0x0A:
+            buffer._ptr[length] = u8(following)
+            length += 1
+        elif following >= 0:
+            state._read_offset -= 1
+        break
+
+    return length
+
+def _file_decode_buffer(
+    state: _FileState,
+    buffer: Ptr[u8],
+    length: int,
+    offset: int,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
+) -> str:
+    payload = length - offset
+    if payload <= 0:
+        return str()
+
+    # UTF-8 is overwhelmingly ASCII in many text workloads. Avoid the generic
+    # decoder entirely when every byte is ASCII: Codon's ASCII string layout is
+    # byte-for-byte identical to the input payload.
+    if state._encoding_kind == _ENCODING_UTF8:
+        if _file_is_ascii(buffer + offset, payload):
+            result = Ptr[u8](payload)
+            bytes.memcpy(result, buffer + offset, payload)
+            return str(result, _make_meta(payload, 0))
+
+    return _unicode_decode_ptr(
+        buffer + offset,
+        payload,
+        state._encoding_kind,
+        state._error_code,
+        tracker,
+    )
+
+def _file_decode_owned_buffer(
+    state: _FileState,
+    buffer: _FileBuffer,
+    length: int,
+    offset: int,
+    known_non_ascii: bool = False,
+    tracker: Optional[_UnicodeDecodeErrorTracker] = None,
+) -> str:
+    payload = length - offset
+    if payload <= 0:
+        buffer.clear()
+        return str()
+
+    # For ASCII UTF-8 the raw bytes are already exactly Codon's in-memory
+    # Unicode representation. Transfer ownership of the read allocation to the
+    # str instead of allocating and copying the payload a second time.
+    if state._encoding_kind == _ENCODING_UTF8 and offset == 0:
+        if not known_non_ascii and _file_is_ascii(buffer._ptr, length):
+            data = buffer.detach()
+            return str(data, _make_meta(length, 0))
+        value = _unicode_decode_ptr(
+            buffer._ptr,
+            length,
+            state._encoding_kind,
+            state._error_code,
+            tracker,
+        )
+    else:
+        value = _file_decode_buffer(
+            state, buffer._ptr, length, offset, tracker
+        )
+
+    buffer.clear()
+    return value
+
+def _file_read_all_append(
+    state: _FileState, buffer: _FileBuffer, length: int
+) -> int:
+    start = _C.ftell(state._fp)
+    if start >= 0 and _C.fseek(state._fp, 0, i32(2)) == 0:
+        end = _C.ftell(state._fp)
+        if end >= start and _C.fseek(state._fp, start, i32(0)) == 0:
+            buffer.reserve(length + end - start)
+            length += _C.fread(buffer._ptr + length, 1, end - start, state._fp)
+            if _C.ferror(state._fp):
+                raise IOError("file I/O error: error in read")
+            return length
+
+    while True:
+        buffer.reserve(length + _FILE_READ_ALL_CHUNK_SIZE)
+        count = _C.fread(
+            buffer._ptr + length, 1, _FILE_READ_ALL_CHUNK_SIZE, state._fp
+        )
+        length += count
+        if count < _FILE_READ_ALL_CHUNK_SIZE:
+            break
+    if _C.ferror(state._fp):
+        raise IOError("file I/O error: error in read")
+    return length
+
+def _file_take_read_buffer(state: _FileState, output: Ptr[u8], length: int) -> int:
+    available = state._read_length - state._read_offset
+    if available <= 0 or length <= 0:
+        return 0
+    count = min(available, length)
+    bytes.memcpy(output, state._read_buf + state._read_offset, count)
+    state._read_offset += count
+    return count
+
+def _file_discard_read_buffer(state: _FileState):
+    state._read_offset = 0
+    state._read_length = 0
+
+def _file_read_all_buffered(state: _FileState, buffer: _FileBuffer) -> int:
+    length = 0
+    buffered = state._read_length - state._read_offset
+    buffer.reserve(length + buffered)
+    if buffered > 0:
+        bytes.memcpy(
+            buffer._ptr + length, state._read_buf + state._read_offset, buffered
+        )
+        length += buffered
+    _file_discard_read_buffer(state)
+    return _file_read_all_append(state, buffer, length)
+
+def _file_prepare_stdio_write(state: _FileState):
+    if state._stdio_direction != _FILE_STDIO_READ:
+        return
+    unread = (
+        state._read_length - state._read_offset
+        if state._mode_flags & _FILE_MODE_BINARY
+        else 0
+    )
+    if _C.fseek(state._fp, -unread, i32(1)) != 0:
+        raise IOError("file I/O error: error in seek")
+    _file_discard_read_buffer(state)
+    _file_reset_text_state(state)
+    state._stdio_direction = _FILE_STDIO_NONE
+
+def _file_prepare_stdio_read(state: _FileState):
+    _file_flush_stdio_write_buffer(state)
+    if state._stdio_direction == _FILE_STDIO_WRITE:
+        if _C.fflush(state._fp) != 0:
+            raise IOError("file I/O error: error in flush")
+        state._stdio_direction = _FILE_STDIO_NONE
+
+def _file_prepare_stdio_append(state: _FileState):
+    if not state._mode_flags & _FILE_MODE_APPEND:
+        return
+    if _C.fseek(state._fp, 0, i32(2)) != 0:
+        return
+    if (
+        _C.ftell(state._fp) > 0
+        and _file_encoding_has_bom(state._write_encoding_kind)
+    ):
+        state._write_encoding_kind = _file_native_stream_encoding(
+            state._write_encoding_kind
+        )
+        state._write_bom_done = True
+
+@tuple
+class File[T]:
+    _state: _FileState
+
+    def __new__(fp: cobj, mode: Literal[str]):
+        return File[T](_FileState(fp, _literal_mode_flags(mode)))
+
+    def __new__(
+        path: str,
+        mode: str,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+    ):
+        mode_flags = _file_mode_flags(mode)
+        _file_validate_text_config(encoding, errors, newline)
+        raw_mode = __array__[u8](5)
+        _file_stdio_mode(mode_flags, raw_mode)
+        fp = _C.fopen(path.c_str(), raw_mode)
+        if not fp:
             raise IOError(f"file {path} could not be opened")
-        self._reset()
+        state = _FileState(fp, encoding, errors, newline, path, mode_flags)
+        _file_prepare_stdio_append(state)
+        return File[T](state)
 
-    def __init__(self, fd: int, mode: str):
-        self.fp = _C.fdopen(fd, mode.c_str())
-        if not self.fp:
+    def __new__(fd: int, mode: str):
+        mode_flags = _file_mode_flags(mode)
+        raw_mode = __array__[u8](5)
+        _file_stdio_mode(mode_flags, raw_mode)
+        fp = _C.fdopen(fd, raw_mode)
+        if not fp:
             raise IOError(f"file descriptor {fd} could not be opened")
-        self._reset()
+        return File[T](_FileState(fp, path="", mode_flags=mode_flags))
 
     def _errcheck(self, msg: str):
-        err = int(_C.ferror(self.fp))
+        err = int(_C.ferror(self._state._fp))
         if err:
             raise IOError(f"file I/O error: {msg}")
 
     def __enter__(self):
-        pass
+        self._ensure_open()
+        return self
 
     def __exit__(self):
         self.close()
 
-    def __iter__(self) -> Generator[str]:
-        for a in self._iter():
-            yield a.__ptrcopy__()
+    def __iter__(self) -> Generator[T]:
+        self._ensure_open()
+        while True:
+            line = self.readline()
+            if len(line) == 0:
+                break
+            yield line
 
-    def readlines(self) -> List[str]:
+    def readlines(self) -> List[T]:
         return [l for l in self]
 
-    def write(self, s: str):
+    def readline(self) -> T:
         self._ensure_open()
-        _C.fwrite(s._ptr, 1, len(s), self.fp)
-        self._errcheck("error in write")
+        _file_ensure_readable(self._state)
+        _file_prepare_stdio_read(self._state)
+        self._state._stdio_direction = _FILE_STDIO_READ
+        pending_lookahead = False
+        if T is str and _file_text_pending_length(self._state) > 0:
+            line_end, pending_lookahead = _file_scan_text_line(
+                self._state._text_pending,
+                self._state._text_pending_offset,
+                self._state._newline_flags,
+            )
+            if line_end >= 0 and not pending_lookahead:
+                return _file_take_text_pending(
+                    self._state,
+                    line_end - self._state._text_pending_offset,
+                )
+        if T is str and (
+            _file_encoding_is_multibyte(self._state._encoding_kind)
+            or pending_lookahead
+        ):
+            line = _UnicodeCodecBuffer(128)
+            while True:
+                character = self._read_text_character()
+                if len(character) == 0:
+                    break
+                line.append(character._load_codepoint(0))
+                if character == "\n" and self._state._newline_flags & _FILE_NEWLINE_LF:
+                    break
+                if character == "\r" and self._state._newline_flags & (_FILE_NEWLINE_CR | _FILE_NEWLINE_CRLF):
+                    following = self._read_text_character()
+                    if self._state._newline_flags == _FILE_NEWLINE_CRLF and following == "\n":
+                        line.append(following._load_codepoint(0))
+                    elif self._state._newline_flags == _FILE_NEWLINE_UNIVERSAL and following == "\n":
+                        line.append(following._load_codepoint(0))
+                    elif len(following) > 0:
+                        _file_prepend_text_pending(self._state, following)
+                    if self._state._newline_flags == _FILE_NEWLINE_CRLF and following != "\n":
+                        continue
+                    break
+            return _file_translate_line_ending_inplace(line.finish(), self._state._newline_flags)
+        prefix = (
+            _file_take_all_text_pending(self._state)
+            if T is str
+            else str()
+        )
+        buffer = _FileBuffer()
+        length = _file_readline_raw(
+            self._state, buffer, self._state._newline_flags, T is bytes
+        )
+        if T is bytes:
+            return buffer.finish_bytes(length)
+        value = _file_decode_owned_buffer(self._state, buffer, length, 0)
+        value = _file_translate_line_ending_inplace(
+            value, self._state._newline_flags
+        )
+        return prefix + value if len(prefix) > 0 else value
+
+    def write(self, s: T) -> int:
+        self._ensure_open()
+        _file_ensure_writable(self._state)
+        if T is bytes:
+            _file_buffered_stdio_write(self._state, s._ptr, len(s))
+        else:
+            newline_flags = _file_write_newline_flags(
+                self._state._newline_flags
+            )
+            # ASCII UTF-8 is already in the exact byte representation required
+            # by the stream. Avoid both encoding allocation and transcoding.
+            if (
+                self._state._write_encoding_kind == _ENCODING_UTF8
+                and s._is_ascii()
+                and newline_flags != _FILE_NEWLINE_CR
+                and newline_flags != _FILE_NEWLINE_CRLF
+            ):
+                self._state._write_bom_done = True
+                _file_buffered_stdio_write(self._state, s._ptr, len(s))
+            else:
+                data = _file_stream_encode(
+                    self._state,
+                    s,
+                    newline_flags,
+                )
+                _file_buffered_stdio_write(self._state, data._ptr, len(data))
+        return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
-            self.write(str(s))
+            self.write(s)
 
-    def read(self, sz: int = -1) -> str:
+    def read(self, sz: int = -1) -> T:
         self._ensure_open()
+        _file_ensure_readable(self._state)
+        _file_prepare_stdio_read(self._state)
+        if sz == 0:
+            return bytes() if T is bytes else str()
+        self._state._stdio_direction = _FILE_STDIO_READ
+
+        if T is bytes:
+            if sz < 0:
+                buffer = _FileBuffer()
+                length = _file_read_all_buffered(self._state, buffer)
+                return buffer.finish_bytes(length)
+            result = Ptr[u8](sz)
+            length = self._read_raw_into(result, sz)
+            return bytes(result, length)
+
         if sz < 0:
-            SEEK_SET = 0
-            SEEK_END = 2
-            cur = _C.ftell(self.fp)
-            _C.fseek(self.fp, 0, i32(SEEK_END))
-            sz = _C.ftell(self.fp) - cur
-            _C.fseek(self.fp, cur, i32(SEEK_SET))
-        buf = Ptr[u8](sz)
-        ret = _C.fread(buf, 1, sz, self.fp)
-        self._errcheck("error in read")
-        return str(buf, ret)
+            prefix = _file_take_all_text_pending(self._state)
+            buffer = _FileBuffer()
+            length = _file_read_all_buffered(self._state, buffer)
+            value = _file_decode_owned_text_chunk(self._state, buffer, length)
+            return prefix + value if len(prefix) > 0 else value
+
+        if sz >= 65536:
+            return self._read_large_text(sz)
+
+        result = str()
+        pending_length = _file_text_pending_length(self._state)
+        if pending_length > 0:
+            if pending_length >= sz:
+                return _file_take_text_pending(self._state, sz)
+            result = _file_take_all_text_pending(self._state)
+
+        while len(result) < sz:
+            remaining = sz - len(result)
+            value = self._read_text_chunk(
+                _file_text_chunk_target(self._state, remaining)
+            )
+            if len(value) == 0:
+                if self._state._last_text_read_bytes > 0:
+                    continue
+                break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                prefix = value[:remaining]
+                return prefix if len(result) == 0 else result + prefix
+            result = value if len(result) == 0 else result + value
+
+        return result
+
+    def _read_large_text(self, sz: int) -> str:
+        if (
+            sz <= _FILE_READ_BUFFER_SIZE
+            and _file_text_pending_length(self._state) == 0
+            and self._state._backend == _FILE_BACKEND_STDIO
+            and self._state._encoding_kind == _ENCODING_UTF8
+            and self._state._b2cratio == 1.0
+            and not self._state._skip_initial_lf
+        ):
+            available = self._state._read_length - self._state._read_offset
+            if available == 0:
+                available = _file_fill_read_buffer(self._state)
+            if available >= sz or self._state._read_length < _FILE_READ_BUFFER_SIZE:
+                take = min(available, sz)
+                source = self._state._read_buf + self._state._read_offset
+                is_ascii, has_cr = _file_classify_ascii_cr(source, take)
+                if is_ascii and (not self._state._newline_flags & _FILE_NEWLINE_TRANSLATE or not has_cr):
+                    data = Ptr[u8](sz)
+                    bytes.memcpy(data, source, take)
+                    self._state._read_offset += take
+                    self._state._last_text_read_bytes = take
+                    return str(data, _make_meta(take, 0))
+        return self._read_large_text_slow(sz)
+
+    def _read_large_text_slow(self, sz: int) -> str:
+        result = str()
+        pending_length = _file_text_pending_length(self._state)
+        if pending_length > 0:
+            if pending_length >= sz:
+                return _file_take_text_pending(self._state, sz)
+            result = _file_take_all_text_pending(self._state)
+
+        while len(result) < sz:
+            remaining = sz - len(result)
+            value = self._read_text_chunk(
+                _file_text_chunk_target(self._state, remaining)
+            )
+            if len(value) == 0:
+                if self._state._last_text_read_bytes > 0:
+                    continue
+                break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                prefix = value[:remaining]
+                return prefix if len(result) == 0 else result + prefix
+            result = value if len(result) == 0 else result + value
+
+        return result
+
+    def _read_raw_into(self, output: Ptr[u8], length: int) -> int:
+        if length <= 0:
+            return 0
+        total = 0
+        total += _file_take_read_buffer(
+            self._state, output + total, length - total
+        )
+        if total < length:
+            remaining = length - total
+            if remaining <= _FILE_READ_BUFFER_SIZE // 2:
+                if _file_fill_read_buffer(self._state) > 0:
+                    total += _file_take_read_buffer(
+                        self._state, output + total, remaining
+                    )
+            else:
+                total += _C.fread(
+                    output + total, 1, remaining, self._state._fp
+                )
+                self._errcheck("error in read")
+        return total
+
+    def _read_text_chunk(self, target: int) -> str:
+        buffer = _FileBuffer(target + 4)
+        length = self._read_raw_into(buffer._ptr, target)
+        if length == 0:
+            buffer.clear()
+            self._state._last_text_read_bytes = 0
+            return str()
+
+        bom_length = 0
+        if not self._state._bom_checked:
+            bom_length = _file_check_initial_bom(
+                self._state, buffer._ptr, length
+            )
+        while True:
+            extra = _file_text_chunk_extra(
+                self._state, buffer._ptr, length, bom_length
+            )
+            if extra <= 0:
+                break
+            buffer.reserve(length + 1)
+            got = self._read_raw_into(buffer._ptr + length, 1)
+            length += got
+            if got < 1:
+                break
+        return _file_decode_owned_text_chunk(
+            self._state, buffer, length, bom_length
+        )
 
     def tell(self) -> int:
         self._ensure_open()
-        ret = _C.ftell(self.fp)
+        _file_flush_stdio_write_buffer(self._state)
+        if (
+            self._state._skip_initial_lf
+            and _file_text_pending_length(self._state) == 0
+        ):
+            value = self._read_text_chunk(1)
+            if len(value) > 0:
+                _file_set_text_pending(self._state, value)
+            elif self._state._last_text_read_bytes == 0:
+                self._state._skip_initial_lf = False
+        ret = _C.ftell(self._state._fp)
         self._errcheck("error in tell")
-        return ret
+        position = (
+            ret
+            - self._state._read_length
+            + self._state._read_offset
+        )
+        cookie = _file_text_replay_cookie(self._state, position)
+        if cookie >= 0:
+            return cookie
+        return position - _file_text_pending_raw_length(self._state)
+
+    def seekable(self) -> bool:
+        self._ensure_open()
+        return _C.ftell(self._state._fp) >= 0
 
     def seek(self, offset: int, whence: int):
         self._ensure_open()
-        _C.fseek(self.fp, offset, i32(whence))
+        _file_flush_stdio_write_buffer(self._state)
+        if whence == 1:
+            current = self.tell()
+            current_cookie_position, _, _ = (
+                _file_decode_text_replay_cookie(current)
+            )
+            if current_cookie_position >= 0:
+                if offset == 0:
+                    return current
+                raise IOError("can't do nonzero cur-relative seek from a text replay cookie")
+        cookie_position, cookie_skip, cookie_encoding = (
+            _file_decode_text_replay_cookie(offset)
+            if whence == 0
+            else (-1, 0, 0)
+        )
+        if cookie_position >= 0:
+            if _C.fseek(self._state._fp, cookie_position, i32(0)) != 0:
+                raise IOError("file I/O error: error in seek")
+            self._errcheck("error in seek")
+            _file_discard_read_buffer(self._state)
+            _file_reset_text_state(self._state, cookie_position == 0)
+            _file_restore_text_replay_state(self._state, cookie_encoding)
+            self._state._stdio_direction = _FILE_STDIO_NONE
+            self.read(cookie_skip)
+            return offset
+        if whence == 1:
+            unread = self._state._read_length - self._state._read_offset
+            unread += _file_text_pending_raw_length(self._state)
+            if unread > 0:
+                if _C.fseek(self._state._fp, -unread, i32(1)) != 0:
+                    raise IOError("file I/O error: error in seek")
+        if _C.fseek(self._state._fp, offset, i32(whence)) != 0:
+            raise IOError("file I/O error: error in seek")
         self._errcheck("error in seek")
+        _file_discard_read_buffer(self._state)
+        _file_reset_text_state(
+            self._state, whence == 0 and offset == 0
+        )
+        self._state._stdio_direction = _FILE_STDIO_NONE
+        return self.tell()
 
     def flush(self):
         self._ensure_open()
-        _C.fflush(self.fp)
+        _file_flush_stdio_write_buffer(self._state)
+        if _C.fflush(self._state._fp) != 0:
+            raise IOError("file I/O error: error in flush")
+        if self._state._stdio_direction == _FILE_STDIO_WRITE:
+            self._state._stdio_direction = _FILE_STDIO_NONE
 
     def close(self):
-        if self.fp:
-            _C.fclose(self.fp)
-            self.fp = cobj()
-        if self.buf:
-            _C.free(self.buf)
-            self._reset()
+        self._state._close(True)
 
     def _ensure_open(self):
-        if not self.fp:
+        if not self._state._fp:
             raise IOError("I/O operation on closed file")
 
-    def _reset(self):
-        self.buf = Ptr[u8]()
-        self.sz = 0
-
-    def _iter(self) -> Generator[str]:
-        self._ensure_open()
-        while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
-            if rd != -1:
-                yield str(self.buf, rd)
-            else:
-                break
-
-    def _iter_trim_newline(self) -> Generator[str]:
-        self._ensure_open()
-        while True:
-            rd = _C.getline(
-                Ptr[Ptr[u8]](self.__raw__() + 8), Ptr[int](self.__raw__()), self.fp
-            )
-            if rd != -1:
-                if self.buf[rd - 1] == u8(10):
-                    rd -= 1
-                yield str(self.buf, rd)
-            else:
-                break
+    def _read_text_character(self) -> str:
+        if _file_text_pending_length(self._state) > 0:
+            return _file_take_text_pending(self._state, 1)
+        return self.read(1)
 
 def _gz_errcheck(stream: cobj):
     errnum = i32(0)
     msg = _C.gzerror(stream, __ptr__(errnum))
     if msg and msg[0]:
-        raise IOError(f"zlib error: {str(msg, _C.strlen(msg))}")
+        raise IOError(f"zlib error: {str.from_ptr(msg)}")
 
-class gzFile:
-    sz: int
-    buf: Ptr[u8]
-    fp: cobj
+@tuple
+class gzFile[T]:
+    _state: _FileState
 
-    def __init__(self, fp: cobj):
-        self.fp = fp
-        self._reset()
+    def __new__(fp: cobj, mode: str):
+        return gzFile[T](_FileState(fp, mode_flags=_file_compressed_mode_flags(mode), backend=_FILE_BACKEND_GZIP))
 
-    def __init__(self, path: str, mode: str):
-        self.fp = _C.gzopen(path.c_str(), mode.c_str())
-        if not self.fp:
+    def __new__(
+        path: str,
+        mode: str,
+        compresslevel: int = 9,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+    ):
+        mode_flags = _file_compressed_mode_flags(mode)
+        _file_validate_gzip_compresslevel(mode_flags, compresslevel)
+        _file_validate_text_config(encoding, errors, newline)
+        raw_mode = __array__[u8](5)
+        _file_compressed_mode(mode_flags, compresslevel, raw_mode)
+        fp = _C.gzopen(path.c_str(), raw_mode)
+        if not fp:
             raise IOError(f"file {path} could not be opened")
-        self._reset()
+        return gzFile[T](_FileState(fp, encoding, errors, newline, path, mode_flags, _FILE_BACKEND_GZIP))
 
-    def _getline(self) -> int:
-        if not self.buf:
-            self.sz = 128
-            self.buf = Ptr[u8](self.sz)
-
-        offset = 0
+    def __iter__(self) -> Generator[T]:
+        self._ensure_open()
         while True:
-            if not _C.gzgets(self.fp, self.buf + offset, i32(self.sz - offset)):
-                _gz_errcheck(self.fp)
-                if offset == 0:
-                    return -1
+            line = self.readline()
+            if len(line) == 0:
                 break
-
-            offset += _C.strlen(self.buf + offset)
-
-            if self.buf[offset - 1] == u8(10):  # '\n'
-                break
-
-            oldsz = self.sz
-            self.sz *= 2
-            self.buf = realloc(self.buf, self.sz, oldsz)
-
-        return offset
-
-    def __iter__(self) -> Generator[str]:
-        for a in self._iter():
-            yield a.__ptrcopy__()
+            yield line
 
     def __enter__(self):
-        pass
+        self._ensure_open()
+        return self
 
     def __exit__(self):
         self.close()
 
     def close(self):
-        if self.fp:
-            _C.gzclose(self.fp)
-            self.fp = cobj()
-        if self.buf:
-            free(self.buf)
-            self._reset()
+        self._state._close(True)
 
-    def readlines(self) -> List[str]:
+    def readlines(self) -> List[T]:
         return [l for l in self]
 
-    def write(self, s: str):
+    def readline(self) -> T:
         self._ensure_open()
-        _C.gzwrite(self.fp, s._ptr, u32(len(s)))
-        _gz_errcheck(self.fp)
+        _file_ensure_readable(self._state)
+        pending_lookahead = False
+        if T is str and _file_text_pending_length(self._state) > 0:
+            line_end, pending_lookahead = _file_scan_text_line(
+                self._state._text_pending,
+                self._state._text_pending_offset,
+                self._state._newline_flags,
+            )
+            if line_end >= 0 and not pending_lookahead:
+                return _file_take_text_pending(
+                    self._state,
+                    line_end - self._state._text_pending_offset,
+                )
+        if T is str and (
+            _file_encoding_is_multibyte(self._state._encoding_kind)
+            or pending_lookahead
+        ):
+            line = _UnicodeCodecBuffer(128)
+            while True:
+                character = self._read_text_character()
+                if len(character) == 0:
+                    break
+                line.append(character._load_codepoint(0))
+                if character == "\n" and self._state._newline_flags & _FILE_NEWLINE_LF:
+                    break
+                if character == "\r" and self._state._newline_flags & (_FILE_NEWLINE_CR | _FILE_NEWLINE_CRLF):
+                    following = self._read_text_character()
+                    if self._state._newline_flags == _FILE_NEWLINE_CRLF and following == "\n":
+                        line.append(following._load_codepoint(0))
+                    elif self._state._newline_flags == _FILE_NEWLINE_UNIVERSAL and following == "\n":
+                        line.append(following._load_codepoint(0))
+                    elif len(following) > 0:
+                        _file_prepend_text_pending(self._state, following)
+                    if self._state._newline_flags == _FILE_NEWLINE_CRLF and following != "\n":
+                        continue
+                    break
+            return _file_translate_line_ending_inplace(line.finish(), self._state._newline_flags)
+        prefix = (
+            _file_take_all_text_pending(self._state)
+            if T is str
+            else str()
+        )
+        buffer = _FileBuffer()
+        length = _file_readline_raw(
+            self._state, buffer, self._state._newline_flags, T is bytes
+        )
+        if T is bytes:
+            return buffer.finish_bytes(length)
+        value = _file_decode_owned_buffer(self._state, buffer, length, 0)
+        value = _file_translate_line_ending_inplace(
+            value, self._state._newline_flags
+        )
+        return prefix + value if len(prefix) > 0 else value
+
+    def write(self, s: T) -> int:
+        self._ensure_open()
+        _file_ensure_writable(self._state)
+        if T is bytes:
+            _C.gzwrite(self._state._fp, s._ptr, u32(len(s)))
+        else:
+            newline_flags = _file_write_newline_flags(
+                self._state._newline_flags
+            )
+            data = _file_stream_encode(
+                self._state,
+                s,
+                newline_flags,
+            )
+            _C.gzwrite(self._state._fp, data._ptr, u32(len(data)))
+        _gz_errcheck(self._state._fp)
+        return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
-            self.write(str(s))
+            self.write(s)
 
-    def read(self, sz: int = -1) -> str:
+    def read(self, sz: int = -1) -> T:
         self._ensure_open()
+        _file_ensure_readable(self._state)
+        if sz == 0:
+            return bytes() if T is bytes else str()
+
+        if T is bytes:
+            if sz < 0:
+                buffer = _FileBuffer()
+                length = self._read_all_raw(buffer)
+                return buffer.finish_bytes(length)
+            result = Ptr[u8](sz)
+            length = self._read_raw_into(result, sz)
+            return bytes(result, length)
+
         if sz < 0:
-            buf = _strbuf()
-            for a in self._iter():
-                buf.append(a)
-            return buf.__str__()
-        buf = Ptr[u8](sz)
-        ret = _C.gzread(self.fp, buf, u32(sz))
-        _gz_errcheck(self.fp)
-        return str(buf, int(ret))
+            prefix = _file_take_all_text_pending(self._state)
+            buffer = _FileBuffer()
+            length = self._read_all_raw(buffer)
+            value = _file_decode_owned_text_chunk(
+                self._state, buffer, length
+            )
+            return prefix + value if len(prefix) > 0 else value
+
+        result = str()
+        pending_length = _file_text_pending_length(self._state)
+        if pending_length > 0:
+            if pending_length >= sz:
+                return _file_take_text_pending(self._state, sz)
+            result = _file_take_all_text_pending(self._state)
+
+        while len(result) < sz:
+            remaining = sz - len(result)
+            value = self._read_text_chunk(
+                _file_text_chunk_target(self._state, remaining)
+            )
+            if len(value) == 0:
+                if self._state._last_text_read_bytes > 0:
+                    continue
+                break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                prefix = value[:remaining]
+                return prefix if len(result) == 0 else result + prefix
+            result = value if len(result) == 0 else result + value
+
+        return result
+
+    def _read_raw_into(self, output: Ptr[u8], length: int) -> int:
+        if length <= 0:
+            return 0
+        total = 0
+        total += _file_take_read_buffer(
+            self._state, output + total, length - total
+        )
+        if total < length:
+            total += int(_C.gzread(
+                self._state._fp, output + total, u32(length - total)
+            ))
+            _gz_errcheck(self._state._fp)
+        return total
+
+    def _read_text_chunk(self, target: int) -> str:
+        buffer = _FileBuffer(target + 4)
+        length = self._read_raw_into(buffer._ptr, target)
+        if length == 0:
+            buffer.clear()
+            self._state._last_text_read_bytes = 0
+            return str()
+
+        bom_length = 0
+        if not self._state._bom_checked:
+            bom_length = _file_check_initial_bom(
+                self._state, buffer._ptr, length
+            )
+        while True:
+            extra = _file_text_chunk_extra(
+                self._state, buffer._ptr, length, bom_length
+            )
+            if extra <= 0:
+                break
+            buffer.reserve(length + 1)
+            got = self._read_raw_into(buffer._ptr + length, 1)
+            length += got
+            if got < 1:
+                break
+        return _file_decode_owned_text_chunk(
+            self._state, buffer, length, bom_length
+        )
+
+    def _read_all_raw(self, buffer: _FileBuffer) -> int:
+        length = 0
+        buffered = self._state._read_length - self._state._read_offset
+        buffer.reserve(length + buffered)
+        if buffered > 0:
+            bytes.memcpy(
+                buffer._ptr + length,
+                self._state._read_buf + self._state._read_offset,
+                buffered,
+            )
+            length += buffered
+        _file_discard_read_buffer(self._state)
+        while True:
+            buffer.reserve(length + _FILE_READ_ALL_CHUNK_SIZE)
+            count = int(_C.gzread(
+                self._state._fp,
+                buffer._ptr + length,
+                u32(_FILE_READ_ALL_CHUNK_SIZE),
+            ))
+            _gz_errcheck(self._state._fp)
+            length += count
+            if count < _FILE_READ_ALL_CHUNK_SIZE:
+                break
+        return length
 
     def tell(self) -> int:
         self._ensure_open()
-        ret = _C.gztell(self.fp)
-        _gz_errcheck(self.fp)
-        return ret
+        if (
+            self._state._skip_initial_lf
+            and _file_text_pending_length(self._state) == 0
+        ):
+            value = self._read_text_chunk(1)
+            if len(value) > 0:
+                _file_set_text_pending(self._state, value)
+            elif self._state._last_text_read_bytes == 0:
+                self._state._skip_initial_lf = False
+        ret = _C.gztell(self._state._fp)
+        _gz_errcheck(self._state._fp)
+        position = (
+            ret
+            - self._state._read_length
+            + self._state._read_offset
+        )
+        cookie = _file_text_replay_cookie(self._state, position)
+        if cookie >= 0:
+            return cookie
+        return position - _file_text_pending_raw_length(self._state)
+
+    def _seek_read_forward(self, start: int, target: int) -> int:
+        if _C.gzseek(self._state._fp, start, i32(0)) < 0:
+            _gz_errcheck(self._state._fp)
+            raise IOError("zlib error: error in seek")
+        _gz_errcheck(self._state._fp)
+        _file_discard_read_buffer(self._state)
+        _file_reset_text_state(self._state)
+
+        scratch = _FileBuffer(_FILE_READ_BUFFER_SIZE)
+        position = start
+        while target < 0 or position < target:
+            request = (
+                _FILE_READ_BUFFER_SIZE
+                if target < 0
+                else min(target - position, _FILE_READ_BUFFER_SIZE)
+            )
+            count = int(_C.gzread(
+                self._state._fp, scratch._ptr, u32(request)
+            ))
+            _gz_errcheck(self._state._fp)
+            position += count
+            if count < request:
+                break
+        scratch.clear()
+        return position
 
     def seek(self, offset: int, whence: int):
         self._ensure_open()
-        _C.gzseek(self.fp, offset, i32(whence))
-        _gz_errcheck(self.fp)
+        if self._state._mode_flags & _FILE_MODE_READ:
+            cookie_position, cookie_skip, cookie_encoding = (
+                _file_decode_text_replay_cookie(offset)
+                if whence == 0
+                else (-1, 0, 0)
+            )
+            if cookie_position >= 0:
+                if _C.gzseek(self._state._fp, cookie_position, i32(0)) < 0:
+                    _gz_errcheck(self._state._fp)
+                    raise IOError("zlib error: error in seek")
+                _gz_errcheck(self._state._fp)
+                _file_discard_read_buffer(self._state)
+                _file_reset_text_state(self._state, cookie_position == 0)
+                _file_restore_text_replay_state(self._state, cookie_encoding)
+                self.read(cookie_skip)
+                return offset
+            current = self.tell()
+            current_cookie_position, _, _ = (
+                _file_decode_text_replay_cookie(current)
+            )
+            if current_cookie_position >= 0:
+                if whence == 1:
+                    if offset == 0:
+                        return current
+                    raise IOError("can't do nonzero cur-relative seek from a text replay cookie")
+                current = current_cookie_position
+            if whence == 0:
+                target = max(offset, 0)
+            elif whence == 1:
+                target = max(current + offset, 0)
+            elif whence == 2:
+                end = self._seek_read_forward(current, -1)
+                target = min(max(end + offset, 0), end)
+                current = end
+            else:
+                raise ValueError("unsupported seek whence")
+
+            if target > current:
+                position = self._seek_read_forward(current, target)
+            else:
+                if _C.gzseek(self._state._fp, target, i32(0)) < 0:
+                    _gz_errcheck(self._state._fp)
+                    raise IOError("zlib error: error in seek")
+                _gz_errcheck(self._state._fp)
+                position = target
+            _file_discard_read_buffer(self._state)
+            _file_reset_text_state(self._state, position == 0)
+            return self.tell()
+
+        if _C.gzseek(self._state._fp, offset, i32(whence)) < 0:
+            _gz_errcheck(self._state._fp)
+            raise IOError("zlib error: error in seek")
+        _gz_errcheck(self._state._fp)
+        _file_discard_read_buffer(self._state)
+        _file_reset_text_state(self._state, whence == 0 and offset == 0)
+        return self.tell()
 
     def flush(self):
-        Z_FINISH = 4
+        Z_SYNC_FLUSH = 2
         self._ensure_open()
-        _C.gzflush(self.fp, i32(Z_FINISH))
-        _gz_errcheck(self.fp)
-
-    def _iter(self) -> Generator[str]:
-        self._ensure_open()
-        while True:
-            rd = self._getline()
-            if rd != -1:
-                yield str(self.buf, rd)
-            else:
-                break
-
-    def _iter_trim_newline(self) -> Generator[str]:
-        self._ensure_open()
-        while True:
-            rd = self._getline()
-            if rd != -1:
-                if self.buf[rd - 1] == u8(10):
-                    rd -= 1
-                yield str(self.buf, rd)
-            else:
-                break
+        _C.gzflush(self._state._fp, i32(Z_SYNC_FLUSH))
+        _gz_errcheck(self._state._fp)
 
     def _ensure_open(self):
-        if not self.fp:
+        if not self._state._fp:
             raise IOError("I/O operation on closed file")
 
-    def _reset(self):
-        self.buf = cobj()
-        self.sz = 0
+    def _read_text_character(self) -> str:
+        if _file_text_pending_length(self._state) > 0:
+            return _file_take_text_pending(self._state, 1)
+        return self.read(1)
 
-def _bz_errcheck(stream: cobj):
-    errnum = i32(0)
-    msg = _C.BZ2_bzerror(stream, __ptr__(errnum))
-    if errnum < i32(0):
-        raise IOError(f"bzip2 error: {str(msg, _C.strlen(msg))}")
+def _bz_open(path: str, mode_flags: int) -> cobj:
+    mode = __array__[u8](4)
+    if mode_flags & _FILE_MODE_APPEND:
+        mode[0] = u8(0x61)
+    elif mode_flags & _FILE_MODE_WRITE:
+        mode[0] = u8(0x77)
+    else:
+        mode[0] = u8(0x72)
+    mode[1] = u8(0x62)
+    if mode_flags & _FILE_MODE_EXCLUSIVE:
+        mode[2] = u8(0x78)
+        mode[3] = u8(0)
+    else:
+        mode[2] = u8(0)
+    return _C.fopen(path.c_str(), mode)
 
-class bzFile:
-    sz: int
-    buf: Ptr[u8]
-    fp: cobj
+def _bz_initialize(state: _BZState, compresslevel: int = 9) -> bool:
+    state._reset_stream()
+    if state._mode_flags & _FILE_MODE_WRITE:
+        result = _C.BZ2_bzCompressInit(
+            state.__raw__(), i32(compresslevel), i32(0), i32(0)
+        )
+    else:
+        result = _C.BZ2_bzDecompressInit(
+            state.__raw__(), i32(0), i32(0)
+        )
+    state._initialized = result == i32(_BZ_OK)
+    return state._initialized
 
-    def __init__(self, fp: cobj):
-        self.fp = fp
-        self._reset()
+def _bz_fill_input(state: _BZState) -> int:
+    if not state._input:
+        state._input = Ptr[u8](_BZ_BUFFER_SIZE)
+    count = int(_C.fread(
+        state._input, 1, _BZ_BUFFER_SIZE, state._raw_fp
+    ))
+    if _C.ferror(state._raw_fp):
+        return -1
+    state.next_in = state._input
+    state.avail_in = u32(count)
+    return count
 
-    def __init__(self, path: str, mode: str):
-        self.fp = _C.BZ2_bzopen(path.c_str(), mode.c_str())
-        if not self.fp:
+def _bz_advance_read_stream(state: _BZState) -> int:
+    length = int(state.avail_in)
+    if length > 0:
+        bytes.memmove(
+            state._input,
+            Ptr[u8](state.next_in),
+            length,
+        )
+    if _C.BZ2_bzDecompressEnd(state.__raw__()) != i32(_BZ_OK):
+        state._initialized = False
+        return -1
+    state._initialized = False
+
+    if length == 0:
+        count = int(_C.fread(
+            state._input, 1, _BZ_BUFFER_SIZE, state._raw_fp
+        ))
+        length += count
+    if _C.ferror(state._raw_fp):
+        return -1
+    if length == 0:
+        state._eof = True
+        return 0
+
+    if not _bz_initialize(state):
+        return -1
+    state.next_in = state._input
+    state.avail_in = u32(length)
+    return 1
+
+def _bz_read(state: _BZState, output: Ptr[u8], length: int) -> int:
+    if state._eof or length <= 0:
+        return 0
+
+    total = 0
+    while total < length:
+        if state.avail_in == u32(0):
+            count = _bz_fill_input(state)
+            if count < 0:
+                raise IOError("bzip2 error: error in read")
+            if count == 0:
+                raise IOError("bzip2 error: compressed file ended unexpectedly")
+
+        request = min(length - total, _BZ_UINT_MAX)
+        state.next_out = output + total
+        state.avail_out = u32(request)
+        result = _C.BZ2_bzDecompress(state.__raw__())
+        total += request - int(state.avail_out)
+        if result == i32(_BZ_OK):
+            continue
+        if result != i32(_BZ_STREAM_END):
+            raise IOError("bzip2 error: error in read")
+        advanced = _bz_advance_read_stream(state)
+        if advanced < 0:
+            raise IOError("bzip2 error: error in read")
+        if advanced == 0 or total == length:
+            return total
+    return total
+
+def _bz_write(state: _BZState, data: Ptr[u8], length: int):
+    output = __array__[u8](_BZ_BUFFER_SIZE)
+    offset = 0
+    while offset < length:
+        count = min(length - offset, _BZ_UINT_MAX)
+        state.next_in = data + offset
+        state.avail_in = u32(count)
+        while state.avail_in > u32(0):
+            state.next_out = output
+            state.avail_out = u32(_BZ_BUFFER_SIZE)
+            result = _C.BZ2_bzCompress(
+                state.__raw__(), i32(_BZ_RUN)
+            )
+            produced = _BZ_BUFFER_SIZE - int(state.avail_out)
+            if result != i32(_BZ_RUN_OK) or (
+                produced > 0 and int(_C.fwrite(
+                    output, 1, produced, state._raw_fp
+                )) != produced
+            ):
+                raise IOError("bzip2 error: error in write")
+        offset += count
+
+def _bz_finish_write(state: _BZState) -> bool:
+    output = __array__[u8](_BZ_BUFFER_SIZE)
+    while True:
+        state.next_in = cobj()
+        state.avail_in = u32(0)
+        state.next_out = output
+        state.avail_out = u32(_BZ_BUFFER_SIZE)
+        result = _C.BZ2_bzCompress(
+            state.__raw__(), i32(_BZ_FINISH)
+        )
+        produced = _BZ_BUFFER_SIZE - int(state.avail_out)
+        if produced > 0 and int(_C.fwrite(
+            output, 1, produced, state._raw_fp
+        )) != produced:
+            return True
+        if result == i32(_BZ_STREAM_END):
+            return False
+        if result != i32(_BZ_FINISH_OK):
+            return True
+
+def _bz_flush(state: _BZState) -> bool:
+    if not state._mode_flags & _FILE_MODE_WRITE:
+        return False
+    return _C.fflush(state._raw_fp) != 0 or bool(_C.ferror(state._raw_fp))
+
+def _bz_close(state: _BZState) -> bool:
+    failed = False
+    if state._initialized:
+        if state._mode_flags & _FILE_MODE_WRITE:
+            if _bz_finish_write(state):
+                failed = True
+            if _C.BZ2_bzCompressEnd(state.__raw__()) != i32(_BZ_OK):
+                failed = True
+        else:
+            if _C.BZ2_bzDecompressEnd(state.__raw__()) != i32(_BZ_OK):
+                failed = True
+        state._initialized = False
+    if state._raw_fp:
+        if _C.fclose(state._raw_fp) != 0:
+            failed = True
+        state._raw_fp = cobj()
+    state._eof = False
+    state._clear_input()
+    return failed
+
+@tuple
+class bzFile[T]:
+    _state: _FileState
+    _bz: _BZState
+
+    def __new__(
+        path: str,
+        mode: str,
+        compresslevel: int = 9,
+        encoding: str = "utf-8",
+        errors: str = "strict",
+        newline: Optional[str] = None,
+    ):
+        mode_flags = _file_compressed_mode_flags(mode)
+        _file_validate_bz2_compresslevel(compresslevel)
+        _file_validate_text_config(encoding, errors, newline)
+        raw_fp = _bz_open(path, mode_flags)
+        if not raw_fp:
             raise IOError(f"file {path} could not be opened")
-        self._reset()
+        state = _FileState(cobj(), encoding, errors, newline, path, mode_flags, _FILE_BACKEND_BZIP2)
+        bz = _BZState(raw_fp, mode_flags)
+        if not _bz_initialize(bz, compresslevel):
+            _bz_close(bz)
+            raise IOError(f"file {path} could not be opened")
+        if mode_flags & _FILE_MODE_WRITE:
+            if state._write_encoding_kind == _ENCODING_UTF16 or state._write_encoding_kind == _ENCODING_UTF32:
+                state._write_encoding_kind = _file_native_stream_encoding(
+                    state._write_encoding_kind
+                )
+                state._write_bom_done = True
+        return bzFile[T](state, bz)
 
-    def _getline(self) -> int:
-        if not self.buf:
-            self.sz = 128
-            self.buf = Ptr[u8](self.sz)
+    def _getline(self, buffer: _FileBuffer) -> int:
+        length = 0
+        if T is str and self._state._skip_initial_lf:
+            self._state._skip_initial_lf = False
+            following = self._read_byte()
+            if following >= 0 and following != 0x0A:
+                self._state._read_offset -= 1
+                self._state._position -= 1
 
-        offset = 0
         while True:
-            m = self._gets(self.buf + offset, self.sz - offset)
-            if m == 0:
-                if offset == 0:
-                    return -1
+            if self._state._read_offset == self._state._read_length:
+                if not self._state._read_buf:
+                    self._state._read_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
+                self._state._read_offset = 0
+                self._state._read_length = _bz_read(
+                    self._bz,
+                    self._state._read_buf,
+                    _FILE_READ_BUFFER_SIZE,
+                )
+                if self._state._read_length == 0:
+                    return length
+
+            start = self._state._read_offset
+            line_end, lookahead = _file_scan_line_buffer(
+                self._state._read_buf,
+                start,
+                self._state._read_length,
+                self._state._newline_flags,
+                T is bytes,
+            )
+            copy_end = self._state._read_length if line_end < 0 else line_end
+            count = copy_end - start
+            buffer.reserve(length + count + 1)
+            if count > 0:
+                bytes.memcpy(
+                    buffer._ptr + length,
+                    self._state._read_buf + start,
+                    count,
+                )
+                length += count
+                self._state._read_offset = copy_end
+                self._state._position += count
+
+            if line_end < 0:
+                continue
+            if not lookahead:
+                return length
+
+            following = self._read_byte()
+            if self._state._newline_flags == _FILE_NEWLINE_CRLF:
+                if following == 0x0A:
+                    buffer._ptr[length] = u8(following)
+                    return length + 1
+                if following >= 0:
+                    self._state._read_offset -= 1
+                    self._state._position -= 1
+                continue
+            if following == 0x0A:
+                buffer._ptr[length] = u8(following)
+                length += 1
+            elif following >= 0:
+                self._state._read_offset -= 1
+                self._state._position -= 1
+            return length
+
+    def __iter__(self) -> Generator[T]:
+        self._ensure_open()
+        while True:
+            line = self.readline()
+            if len(line) == 0:
                 break
-            elif m < 0:
-                _bz_errcheck(self.fp)
-                if offset == 0:
-                    return -1
-                break
-
-            offset += m
-
-            if self.buf[offset - 1] == u8(10):  # '\n'
-                break
-
-            oldsz = self.sz
-            self.sz *= 2
-            self.buf = realloc(self.buf, self.sz, oldsz)
-
-        return offset
-
-    def __iter__(self) -> Generator[str]:
-        for a in self._iter():
-            yield a.__ptrcopy__()
+            yield line
 
     def __enter__(self):
-        pass
+        self._ensure_open()
+        return self
 
     def __exit__(self):
         self.close()
 
     def close(self):
-        if self.fp:
-            _C.BZ2_bzclose(self.fp)
-            self.fp = cobj()
-        if self.buf:
-            free(self.buf)
-            self._reset()
+        close_error = _bz_close(self._bz)
+        self._state._close(False)
+        if close_error:
+            raise IOError("file I/O error: error in close")
 
-    def readlines(self) -> List[str]:
+    def readlines(self) -> List[T]:
         return [l for l in self]
 
-    def write(self, s: str):
+    def readline(self) -> T:
         self._ensure_open()
-        _C.BZ2_bzwrite(self.fp, s._ptr, i32(len(s)))
-        _bz_errcheck(self.fp)
+        _file_ensure_readable(self._state)
+        pending_lookahead = False
+        if T is str and _file_text_pending_length(self._state) > 0:
+            line_end, pending_lookahead = _file_scan_text_line(
+                self._state._text_pending,
+                self._state._text_pending_offset,
+                self._state._newline_flags,
+            )
+            if line_end >= 0 and not pending_lookahead:
+                return _file_take_text_pending(
+                    self._state,
+                    line_end - self._state._text_pending_offset,
+                )
+        if T is str and (
+            _file_encoding_is_multibyte(self._state._encoding_kind)
+            or pending_lookahead
+        ):
+            line = _UnicodeCodecBuffer(128)
+            while True:
+                character = self._read_text_character()
+                if len(character) == 0:
+                    break
+                line.append(character._load_codepoint(0))
+                if character == "\n" and self._state._newline_flags & _FILE_NEWLINE_LF:
+                    break
+                if character == "\r" and self._state._newline_flags & (_FILE_NEWLINE_CR | _FILE_NEWLINE_CRLF):
+                    following = self._read_text_character()
+                    if self._state._newline_flags == _FILE_NEWLINE_CRLF and following == "\n":
+                        line.append(following._load_codepoint(0))
+                    elif self._state._newline_flags == _FILE_NEWLINE_UNIVERSAL and following == "\n":
+                        line.append(following._load_codepoint(0))
+                    elif len(following) > 0:
+                        _file_prepend_text_pending(self._state, following)
+                    if self._state._newline_flags == _FILE_NEWLINE_CRLF and following != "\n":
+                        continue
+                    break
+            return _file_translate_line_ending_inplace(line.finish(), self._state._newline_flags)
+        prefix = (
+            _file_take_all_text_pending(self._state)
+            if T is str
+            else str()
+        )
+        buffer = _FileBuffer()
+        length = self._getline(buffer)
+        if T is bytes:
+            return buffer.finish_bytes(length)
+        value = _file_decode_owned_buffer(self._state, buffer, length, 0)
+        value = _file_translate_line_ending_inplace(
+            value, self._state._newline_flags
+        )
+        return prefix + value if len(prefix) > 0 else value
+
+    def write(self, s: T) -> int:
+        self._ensure_open()
+        _file_ensure_writable(self._state)
+        if T is bytes:
+            _bz_write(self._bz, s._ptr, len(s))
+            self._state._position += len(s)
+        else:
+            newline_flags = _file_write_newline_flags(
+                self._state._newline_flags
+            )
+            data = _file_stream_encode(
+                self._state,
+                s,
+                newline_flags,
+            )
+            _bz_write(self._bz, data._ptr, len(data))
+            self._state._position += len(data)
+        return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
-            self.write(str(s))
+            self.write(s)
 
-    def read(self, sz: int = -1) -> str:
+    def read(self, sz: int = -1) -> T:
         self._ensure_open()
+        _file_ensure_readable(self._state)
+        if sz == 0:
+            return bytes() if T is bytes else str()
+
+        if T is bytes:
+            if sz < 0:
+                buffer = _FileBuffer()
+                length = self._read_all_raw(buffer)
+                return buffer.finish_bytes(length)
+            result = Ptr[u8](sz)
+            length = self._read_raw_into(result, sz)
+            return bytes(result, length)
+
         if sz < 0:
-            buf = _strbuf()
-            for a in self._iter():
-                buf.append(a)
-            return buf.__str__()
-        buf = Ptr[u8](sz)
-        ret = _C.BZ2_bzread(self.fp, buf, i32(sz))
-        _bz_errcheck(self.fp)
-        return str(buf, int(ret))
+            prefix = _file_take_all_text_pending(self._state)
+            buffer = _FileBuffer()
+            length = self._read_all_raw(buffer)
+            value = _file_decode_owned_text_chunk(
+                self._state, buffer, length
+            )
+            return prefix + value if len(prefix) > 0 else value
+
+        result = str()
+        pending_length = _file_text_pending_length(self._state)
+        if pending_length > 0:
+            if pending_length >= sz:
+                return _file_take_text_pending(self._state, sz)
+            result = _file_take_all_text_pending(self._state)
+
+        while len(result) < sz:
+            remaining = sz - len(result)
+            value = self._read_text_chunk(
+                _file_text_chunk_target(self._state, remaining)
+            )
+            if len(value) == 0:
+                if self._state._last_text_read_bytes > 0:
+                    continue
+                break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                prefix = value[:remaining]
+                return prefix if len(result) == 0 else result + prefix
+            result = value if len(result) == 0 else result + value
+
+        return result
+
+    def _read_raw_into(self, output: Ptr[u8], length: int) -> int:
+        if length <= 0:
+            return 0
+        total = 0
+        total += _file_take_read_buffer(
+            self._state, output + total, length - total
+        )
+        if total < length:
+            total += _bz_read(self._bz, output + total, length - total)
+        self._state._position += total
+        return total
+
+    def _read_text_chunk(self, target: int) -> str:
+        buffer = _FileBuffer(target + 4)
+        length = self._read_raw_into(buffer._ptr, target)
+        if length == 0:
+            buffer.clear()
+            self._state._last_text_read_bytes = 0
+            return str()
+
+        bom_length = 0
+        if not self._state._bom_checked:
+            bom_length = _file_check_initial_bom(
+                self._state, buffer._ptr, length
+            )
+        while True:
+            extra = _file_text_chunk_extra(
+                self._state, buffer._ptr, length, bom_length
+            )
+            if extra <= 0:
+                break
+            buffer.reserve(length + 1)
+            got = self._read_raw_into(buffer._ptr + length, 1)
+            length += got
+            if got < 1:
+                break
+        return _file_decode_owned_text_chunk(
+            self._state, buffer, length, bom_length
+        )
+
+    def _read_all_raw(self, buffer: _FileBuffer) -> int:
+        length = 0
+        buffered = self._state._read_length - self._state._read_offset
+        buffer.reserve(length + buffered)
+        if buffered > 0:
+            bytes.memcpy(
+                buffer._ptr + length,
+                self._state._read_buf + self._state._read_offset,
+                buffered,
+            )
+            length += buffered
+            self._state._position += buffered
+        _file_discard_read_buffer(self._state)
+        while True:
+            buffer.reserve(length + _FILE_READ_ALL_CHUNK_SIZE)
+            count = _bz_read(
+                self._bz,
+                buffer._ptr + length,
+                _FILE_READ_ALL_CHUNK_SIZE,
+            )
+            length += count
+            self._state._position += count
+            if count < _FILE_READ_ALL_CHUNK_SIZE:
+                break
+        return length
+
+    def tell(self) -> int:
+        self._ensure_open()
+        if (
+            self._state._skip_initial_lf
+            and _file_text_pending_length(self._state) == 0
+        ):
+            value = self._read_text_chunk(1)
+            if len(value) > 0:
+                _file_set_text_pending(self._state, value)
+            elif self._state._last_text_read_bytes == 0:
+                self._state._skip_initial_lf = False
+        cookie = _file_text_replay_cookie(
+            self._state, self._state._position
+        )
+        if cookie >= 0:
+            return cookie
+        return self._state._position - _file_text_pending_raw_length(self._state)
+
+    def seekable(self) -> bool:
+        self._ensure_open()
+        return bool(self._state._mode_flags & _FILE_MODE_READ)
+
+    def seek(self, offset: int, whence: int):
+        self._ensure_open()
+        if not self._state._mode_flags & _FILE_MODE_READ:
+            raise IOError("file is not open for reading")
+
+        cookie_position, cookie_skip, cookie_encoding = (
+            _file_decode_text_replay_cookie(offset)
+            if whence == 0
+            else (-1, 0, 0)
+        )
+        logical_position = self.tell()
+        logical_cookie_position, _, _ = (
+            _file_decode_text_replay_cookie(logical_position)
+        )
+        if logical_cookie_position >= 0 and whence == 1:
+            if offset == 0:
+                return logical_position
+            raise IOError("can't do nonzero cur-relative seek from a text replay cookie")
+        if cookie_position >= 0:
+            target = cookie_position
+        elif whence == 0:
+            target = offset
+        elif whence == 1:
+            target = logical_position + offset
+        elif whence == 2:
+            # Determine the logical uncompressed end position in blocks rather
+            # than replaying one byte at a time.
+            scratch = _FileBuffer(_FILE_READ_BUFFER_SIZE)
+            while self._read_raw_into(
+                scratch._ptr, _FILE_READ_BUFFER_SIZE
+            ) > 0:
+                pass
+            scratch.clear()
+            target = self._state._position + offset
+        else:
+            raise ValueError("unsupported seek whence")
+
+        target = max(target, 0)
+
+        # The bzip2 decoder performs internal read-ahead and we also maintain a
+        # text pending buffer. Once seek() is requested, the safest
+        # way to restore an exact logical position is to reopen the compressed
+        # stream and replay the uncompressed bytes up to the requested offset.
+        if _bz_close(self._bz):
+            raise IOError("bzip2 error: error in close")
+        raw_fp = _bz_open(self._state._path, _FILE_MODE_READ)
+        self._bz._raw_fp = raw_fp
+        if not raw_fp or not _bz_initialize(self._bz):
+            _bz_close(self._bz)
+            raise IOError(f"file {self._state._path} could not be opened")
+
+        self._state._position = 0
+        _file_discard_read_buffer(self._state)
+        _file_reset_text_state(self._state, True)
+
+        if not self._state._read_buf:
+            self._state._read_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
+        while self._state._position < target:
+            remaining = target - self._state._position
+            request = min(remaining, _FILE_READ_BUFFER_SIZE)
+            count = _bz_read(self._bz, self._state._read_buf, request)
+            self._state._position += count
+            if count < request:
+                break
+        _file_discard_read_buffer(self._state)
+        if target == 0:
+            _file_reset_text_state(self._state, True)
+        if cookie_position >= 0:
+            _file_restore_text_replay_state(self._state, cookie_encoding)
+            self.read(cookie_skip)
+            return offset
+        return self.tell()
 
     def flush(self):
         self._ensure_open()
-        _C.BZ2_bzflush(self.fp)
-        _bz_errcheck(self.fp)
-
-    def _iter(self) -> Generator[str]:
-        self._ensure_open()
-        while True:
-            rd = self._getline()
-            if rd != -1:
-                yield str(self.buf, rd)
-            else:
-                break
-
-    def _iter_trim_newline(self) -> Generator[str]:
-        self._ensure_open()
-        while True:
-            rd = self._getline()
-            if rd != -1:
-                if self.buf[rd - 1] == u8(10):
-                    rd -= 1
-                yield str(self.buf, rd)
-            else:
-                break
+        if _bz_flush(self._bz):
+            raise IOError("bzip2 error: error in flush")
 
     def _ensure_open(self):
-        if not self.fp:
+        if not self._bz._raw_fp:
             raise IOError("I/O operation on closed file")
 
-    def _reset(self):
-        self.buf = cobj()
-        self.sz = 0
+    def _read_text_character(self) -> str:
+        if _file_text_pending_length(self._state) > 0:
+            return _file_take_text_pending(self._state, 1)
+        return self.read(1)
 
-    def _gets(self, buf: cobj, sz: int):
-        if sz <= 0:
-            return 0
-
-        fp = self.fp
-        b = u8(0)
-        i = 0
-
-        while i < sz - 1:
-            status = _C.BZ2_bzread(fp, __ptr__(b), i32(1))
-            if status == i32(0):
-                break
-            elif status < i32(0):
+    def _read_byte(self) -> int:
+        if self._state._read_offset == self._state._read_length:
+            if not self._state._read_buf:
+                self._state._read_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
+            self._state._read_offset = 0
+            self._state._read_length = _bz_read(
+                self._bz, self._state._read_buf, _FILE_READ_BUFFER_SIZE
+            )
+            if self._state._read_length == 0:
                 return -1
+        byte = self._state._read_buf[self._state._read_offset]
+        self._state._read_offset += 1
+        self._state._position += 1
+        return int(byte)
 
-            buf[i] = b
-            i += 1
-            if b == u8(10):
-                break
 
-        return i
+def _file_text_encoding(encoding: Optional[str]) -> str:
+    return "utf-8" if encoding is None else encoding
 
-def open(path, mode: str = "r") -> File:
-    return File(path, mode)
+def _file_text_errors(errors: Optional[str]) -> str:
+    return "strict" if errors is None else errors
 
-def gzopen(path: str, mode: str = "r") -> gzFile:
-    return gzFile(path, mode)
+def open(
+    path: str,
+    mode: str = "r",
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+) -> File[str]:
+    return File[str](
+        path,
+        mode,
+        _file_text_encoding(encoding),
+        _file_text_errors(errors),
+        newline,
+    )
 
-def bzopen(path: str, mode: str = "r") -> bzFile:
-    return bzFile(path, mode)
+@overload
+def open(
+    path: str,
+    mode: Literal[str],
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+):
+    mode_flags: Literal[int] = _literal_mode_flags(mode)
+    binary: Literal[bool] = mode_flags & _FILE_MODE_BINARY != 0
+    if binary:
+        if encoding is not None or errors is not None or newline is not None:
+            raise ValueError("binary mode does not take encoding, errors or newline")
+        return File[bytes](path, mode)
+    else:
+        return File[str](
+            path,
+            mode,
+            _file_text_encoding(encoding),
+            _file_text_errors(errors),
+            newline,
+        )
+
+def gzopen(
+    path: str,
+    mode: str = "rb",
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+) -> gzFile[bytes]:
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return gzFile[bytes](path, mode, compresslevel)
+
+@overload
+def gzopen(
+    path: str,
+    mode: Literal[str],
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+):
+    mode_flags: Literal[int] = _literal_mode_flags(mode)
+    binary: Literal[bool] = mode_flags & _FILE_MODE_BINARY != 0
+    text: Literal[bool] = mode_flags & _FILE_MODE_TEXT != 0
+
+    if binary and text:
+        compile_error("can't have text and binary mode at once")
+
+    if text:
+        return gzFile[str](
+            path,
+            mode,
+            compresslevel,
+            _file_text_encoding(encoding),
+            _file_text_errors(errors),
+            newline,
+        )
+
+    # gzip.open() uses binary mode unless 't' is explicitly present.
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return gzFile[bytes](path, mode, compresslevel)
+
+def bzopen(
+    path: str,
+    mode: str = "rb",
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+) -> bzFile[bytes]:
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return bzFile[bytes](path, mode, compresslevel)
+
+@overload
+def bzopen(
+    path: str,
+    mode: Literal[str],
+    compresslevel: int = 9,
+    encoding: Optional[str] = None,
+    errors: Optional[str] = None,
+    newline: Optional[str] = None,
+):
+    mode_flags: Literal[int] = _literal_mode_flags(mode)
+    binary: Literal[bool] = mode_flags & _FILE_MODE_BINARY != 0
+    text: Literal[bool] = mode_flags & _FILE_MODE_TEXT != 0
+
+    if binary and text:
+        compile_error("can't have text and binary mode at once")
+
+    if text:
+        return bzFile[str](
+            path,
+            mode,
+            compresslevel,
+            _file_text_encoding(encoding),
+            _file_text_errors(errors),
+            newline,
+        )
+
+    # bz2.open() uses binary mode unless 't' is explicitly present.
+    if encoding is not None or errors is not None or newline is not None:
+        raise ValueError("binary mode does not take encoding, errors or newline")
+    return bzFile[bytes](path, mode, compresslevel)
 
 def is_binary(path: str) -> bool:
     # https://stackoverflow.com/questions/898669/how-can-i-detect-if-a-file-is-binary-non-text-in-python/7392391#7392391
     # Can get both false positive and false negatives, but still is a
     # clever approach that works for the large majority of files
-    textchars = {7, 8, 9, 10, 12, 13, 27} | set(iter(range(0x20, 0x100))) - {0x7F}
     with open(path, "rb") as f:
         header = f.read(1024)
-        return any(ord(c) not in textchars for c in header)
+        return any(
+            c != 7
+            and c != 8
+            and c != 9
+            and c != 10
+            and c != 12
+            and c != 13
+            and c != 27
+            and (c < 0x20 or c == 0x7F)
+            for c in header
+        )

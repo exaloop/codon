@@ -180,7 +180,15 @@ test_cabs()
 @test
 def test_negative_zero_repr_str():
     def test(v, expected):
-        return str(v) == expected
+        return str(v) == expected and repr(v) == expected
+
+    def test64(v, expected):
+        return (
+            str(v) == expected
+            and repr(v) == str.cat(
+                "complex64(", expected.strip("()"), ")"
+            )
+        )
 
     assert test(complex(0.0, 1.0), "1j")
     assert test(complex(-0.0, 1.0), "(-0+1j)")
@@ -191,6 +199,24 @@ def test_negative_zero_repr_str():
     assert test(complex(0.0, -0.0), "-0j")
     assert test(complex(-0.0, 0.0), "(-0+0j)")
     assert test(complex(-0.0, -0.0), "(-0-0j)")
+
+    assert test(complex(1.0, 0.0), "(1+0j)")
+    assert test(complex(1.0, 2.0), "(1+2j)")
+    assert test(complex(1.1, 2.2), "(1.1+2.2j)")
+    assert test(complex(float("inf"), float("inf")), "(inf+infj)")
+    assert test(complex(float("nan"), float("nan")), "(nan+nanj)")
+    assert test(complex(1e16, 1e-5), "(1e+16+1e-05j)")
+    assert test(complex(1e17, 1e-4), "(1e+17+0.0001j)")
+
+    assert test64(complex64(0.0, 1.0), "1j")
+    assert test64(complex64(-0.0, 1.0), "(-0+1j)")
+    assert test64(complex64(0.0, -0.0), "-0j")
+    assert test64(complex64(-0.0, -0.0), "(-0-0j)")
+    assert test64(complex64(1.0, 2.0), "(1+2j)")
+    assert test64(complex64(1.1, 2.2), "(1.1+2.2j)")
+    assert test64(complex64(float("inf"), float("inf")), "(inf+infj)")
+    assert test64(complex64(float("nan"), float("nan")), "(nan+nanj)")
+    assert test64(complex64(1e16, 1e-5), "(1e+16+1e-05j)")
 
 
 test_negative_zero_repr_str()
@@ -783,7 +809,7 @@ def test_cmath_testcases():
         return True
 
     tests = []
-    with open("test/stdlib/cmath_testcases.txt") as f:
+    with open("test/stdlib/data/cmath_testcases.txt") as f:
         for line in f:
             line = line.strip()
             if not line.startswith("--"):

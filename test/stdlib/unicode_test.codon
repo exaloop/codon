@@ -1,0 +1,5421 @@
+from internal.str import (
+    _unicode_from_codepoint,
+    _unicode_from_codepoints,
+)
+from internal.unicode.float_dtoa import (
+    _float_shortest_decimal,
+    _float32_dtoa_shortest,
+    _float_dtoa_shortest,
+    _BigUInt,
+    _float_dtoa_scaled_integer,
+    _float_dtoa_fixed,
+    _float_dtoa_exponent,
+    _float_dtoa_general,
+)
+from internal.format import (
+    FORMAT_FLAG_ALT,
+    FORMAT_FLAG_LEFT,
+    FORMAT_FLAG_SPACE,
+    FORMAT_FLAG_PLUS,
+    FORMAT_FLAG_ZERO,
+    _integer_format,
+    _float_format,
+)
+from C import seq_locale_numeric() -> str
+from C import seq_set_locale_numeric(str) -> bool
+import unicodedata
+import re
+import gzip
+import bz2
+unicode = str
+
+def _raw_bytes(values: List[int]) -> bytes:
+    data = Ptr[u8](len(values))
+
+    for i in range(len(values)):
+        data[i] = u8(values[i])
+
+    return bytes(data, len(values))
+
+
+@test
+def test_empty():
+    u = unicode("")
+    assert len(u) == 0
+    assert not u
+    assert u == unicode("")
+    assert u[0:0] == unicode("")
+    assert u.startswith(unicode(""))
+    assert u.endswith(unicode(""))
+
+
+@test
+def test_ascii_and_slicing():
+    u = unicode("hello")
+    assert len(u) == 5
+    assert u[0] == unicode("h")
+    assert u[-1] == unicode("o")
+    assert u[1:4] == unicode("ell")
+    assert u[:0] == unicode("")
+    assert u[10:12] == unicode("")
+    assert u[4:1] == unicode("")
+
+
+@test
+def test_chr_ord():
+    for codepoint in [
+        0, 0x7F, 0x80, 0xFF, 0x100, 0xD7FF, 0xD800, 0xDFFF,
+        0xE000, 0xFFFF, 0x10000, 0x10FFFF,
+    ]:
+        character = chr(codepoint)
+        assert len(character) == 1
+        assert ord(character) == codepoint
+        assert character == _unicode_from_codepoint(codepoint)
+
+    for codepoint in [-1, 0x110000]:
+        try:
+            chr(codepoint)
+            assert False
+        except ValueError:
+            pass
+
+    for value in [unicode(""), unicode("ab")]:
+        try:
+            ord(value)
+            assert False
+        except TypeError:
+            pass
+
+
+@test
+def test_unicode_literal_escapes():
+    assert "\u0041" == "A"
+    assert "\u00e9" == _unicode_from_codepoint(0xE9)
+    assert "\u03a9" == _unicode_from_codepoint(0x03A9)
+    assert "\ud800" == _unicode_from_codepoint(0xD800)
+    assert "\U0001f600" == _unicode_from_codepoint(0x1F600)
+
+
+@test
+def test_from_ptr():
+    ascii_source = b"ascii".c_str()
+    ascii_value = str.from_ptr(ascii_source)
+    ascii_source[0] = u8(ord("X"))
+    assert ascii_value == "ascii"
+
+    utf8_source = _raw_bytes([
+        0x63, 0x61, 0x66, 0xC3, 0xA9,
+        0xCE, 0xA9,
+        0xF0, 0x9F, 0x98, 0x80,
+    ]).c_str()
+    utf8_value = str.from_ptr(utf8_source)
+    utf8_source[0] = u8(ord("X"))
+    assert utf8_value == "caf\u00e9\u03a9\U0001f600"
+
+    assert str.from_ptr(b"".c_str()) == ""
+    try:
+        str.from_ptr(_raw_bytes([0xFF]).c_str())
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_comparisons_and_search():
+    u = unicode("banana")
+    assert u == unicode("banana")
+    assert u != unicode("bandana")
+    assert u < unicode("candy")
+    assert u > unicode("apple")
+    assert u <= unicode("banana")
+    assert u >= unicode("banana")
+    assert unicode("abc") < unicode("abcd")
+    assert unicode("abcd") > unicode("abc")
+
+    latin1 = _unicode_from_codepoint(0xE9)
+    ucs2 = _unicode_from_codepoint(0x03A9)
+    ucs4 = _unicode_from_codepoint(0x1F600)
+    latin1_view = (latin1 + u)[1:]
+    ucs2_view = (ucs2 + u)[1:]
+    ucs4_view = (ucs4 + u)[1:]
+    assert latin1_view == u
+    assert ucs2_view == u
+    assert ucs4_view == u
+    assert latin1 < ucs2
+    assert ucs2 < ucs4
+    assert latin1 + unicode("z") > latin1 + unicode("a")
+    assert u.find(unicode("ana")) == 1
+    assert u.rfind(unicode("ana")) == 3
+    assert u.index(unicode("na")) == 2
+    assert u.rindex(unicode("na")) == 4
+    assert u.count(unicode("an")) == 2
+    assert u.find(unicode("zzz")) == -1
+    assert u.startswith(unicode("ban"))
+    assert u.endswith(unicode("ana"))
+    assert u.startswith(unicode("na"), 2)
+    assert u.endswith(unicode("na"), 2, 6)
+
+
+@test
+def test_pointer_description():
+    pointer = Ptr[u8]()
+    address = pointer.__repr__()
+    names = [
+        unicode("pointer"),
+        _unicode_from_codepoint(0xE9),
+        _unicode_from_codepoint(0x03A9),
+        _unicode_from_codepoint(0x1F600),
+    ]
+
+    for name in names:
+        assert Ptr._ptr_to_str(pointer, name) == unicode("<") + name + unicode(
+            " at "
+        ) + address + unicode(">")
+
+
+@test
+def test_fastsearch_paths():
+    periodic = unicode("a" * 1024 + "b")
+    needle = unicode("a" * 128 + "b")
+    assert periodic.find(needle) == 896
+    assert periodic.rfind(needle) == 896
+    assert periodic.count(unicode("aa")) == 512
+    no_match = unicode("a" * 1024)
+    assert no_match.find(needle) == -1
+    assert no_match.rfind(needle) == -1
+
+    repeated = unicode("prefix--needle--needle--suffix")
+    assert repeated.find(unicode("needle"), 8) == 8
+    assert repeated.rfind(unicode("needle"), 0, 24) == 16
+    assert repeated.split(unicode("--")) == [
+        unicode("prefix"), unicode("needle"), unicode("needle"), unicode("suffix"),
+    ]
+    assert repeated.rsplit(unicode("--"), 1) == [
+        unicode("prefix--needle--needle"), unicode("suffix"),
+    ]
+    assert repeated.replace(unicode("needle"), unicode("match")) == (
+        unicode("prefix--match--match--suffix")
+    )
+    assert repeated.replace(unicode("needle"), unicode("match"), 0) == repeated
+    assert repeated.replace(unicode("needle"), unicode("match"), 1) == (
+        unicode("prefix--match--needle--suffix")
+    )
+    assert repeated.replace(unicode("needle"), unicode("match"), -2) == (
+        unicode("prefix--match--match--suffix")
+    )
+    assert repeated.replace(unicode("needle"), unicode("")) == (
+        unicode("prefix------suffix")
+    )
+    assert repeated.replace(unicode("missing"), unicode("match")) == repeated
+    assert unicode("ababa").replace(unicode("aba"), unicode("z")) == unicode("zba")
+    assert unicode("aaaa").replace(unicode("aa"), unicode("b")) == unicode("bb")
+    assert unicode("abc").replace(unicode(""), unicode("-")) == unicode("-a-b-c-")
+    assert unicode("abc").replace(unicode(""), unicode("-"), 2) == unicode("-a-bc")
+    assert unicode("abc").replace(unicode(""), unicode("-"), 0) == unicode("abc")
+    latin1 = unicode("caf") + _unicode_from_codepoint(0xE9)
+    ucs2 = unicode("a") + _unicode_from_codepoint(0x03A9)
+    ucs4 = unicode("a") + _unicode_from_codepoint(0x1F600) + _unicode_from_codepoint(0x03A9)
+    assert latin1.replace(_unicode_from_codepoint(0xE9), _unicode_from_codepoint(0x1F600)) == (
+        unicode("caf") + _unicode_from_codepoint(0x1F600)
+    )
+    assert ucs2.replace(_unicode_from_codepoint(0x03A9), _unicode_from_codepoint(0x1F600)) == (
+        unicode("a") + _unicode_from_codepoint(0x1F600)
+    )
+    assert ucs4.replace(_unicode_from_codepoint(0x1F600), unicode("x")) == (
+        unicode("ax") + _unicode_from_codepoint(0x03A9)
+    )
+    assert repeated.partition(unicode("--")) == (
+        unicode("prefix"), unicode("--"), unicode("needle--needle--suffix"),
+    )
+    assert repeated.rpartition(unicode("--")) == (
+        unicode("prefix--needle--needle"), unicode("--"), unicode("suffix"),
+    )
+    assert unicode("needle") in repeated
+    omega = _unicode_from_codepoint(0x03A9)
+    ucs2_needle = omega + unicode("needle")
+    ucs2_value = (omega + unicode("x")) * 24 + ucs2_needle + (
+        omega + unicode("x")
+    ) * 10 + ucs2_needle
+    assert ucs2_value.find(ucs2_needle) == 48
+    assert ucs2_value.rfind(ucs2_needle) == 75
+
+    smile = _unicode_from_codepoint(0x1F600)
+    ucs4_needle = smile + unicode("needle")
+    ucs4_value = (smile + unicode("x")) * 16 + ucs4_needle + (
+        smile + unicode("x")
+    ) * 6 + ucs4_needle
+    assert ucs4_value.find(ucs4_needle) == 32
+    assert ucs4_value.rfind(ucs4_needle) == 51
+    assert unicode("αβγδβγ").find(unicode("βγ")) == 1
+    assert unicode("αβγδβγ").rfind(unicode("βγ")) == 4
+
+
+@test
+def test_fastsearch_sliced_bounds():
+    parent = unicode("x" + "a" * 1024 + "b" + "z")
+    needle = unicode("a" * 128 + "b")
+
+    truncated = parent[1:1025]
+    assert truncated.find(needle) == -1
+    assert truncated.rfind(needle) == -1
+
+    bounded = parent[1:1026]
+    assert bounded.find(needle) == 896
+    assert bounded.rfind(needle) == 896
+    assert bounded.find(unicode("a" * 128 + "bz")) == -1
+    assert bounded.rfind(unicode("a" * 128 + "bz")) == -1
+
+
+@test
+def test_fastsearch_mixed_kind_views():
+    ascii_value = unicode("a--b--c")
+    wide_separator = unicode("Ω--Ω")[1:3]
+    assert ascii_value.find(wide_separator) == 1
+    assert ascii_value.rfind(wide_separator) == 4
+    assert ascii_value.count(wide_separator) == 2
+    assert ascii_value.split(wide_separator) == [
+        unicode("a"), unicode("b"), unicode("c"),
+    ]
+    assert ascii_value.find(unicode("Ω--Ω")[0:1]) == -1
+
+    ucs2_value = unicode("ΩabcΩ")[1:4]
+    assert ucs2_value.find(unicode("bc")) == 1
+    assert ucs2_value.rfind(unicode("bc")) == 1
+    assert ucs2_value.count(unicode("bc")) == 1
+    assert ucs2_value.split(unicode("b")) == [unicode("a"), unicode("c")]
+
+    ucs4_value = unicode("😀abc😀")[1:4]
+    assert ucs4_value.find(unicode("bc")) == 1
+    assert ucs4_value.rfind(unicode("bc")) == 1
+    assert ucs4_value.count(unicode("bc")) == 1
+    assert ucs4_value.split(unicode("b")) == [unicode("a"), unicode("c")]
+
+
+@test
+def test_split_and_rsplit_paths():
+    value = unicode("  alpha  beta  gamma  ")
+    assert value.split() == [unicode("alpha"), unicode("beta"), unicode("gamma")]
+    assert value.rsplit() == [unicode("alpha"), unicode("beta"), unicode("gamma")]
+    assert value.split(None, 1) == [unicode("alpha"), unicode("beta  gamma  ")]
+    assert value.rsplit(None, 1) == [unicode("  alpha  beta"), unicode("gamma")]
+
+    fields = unicode("a--b--c--d")
+    assert fields.split(unicode("--"), 2) == [
+        unicode("a"), unicode("b"), unicode("c--d"),
+    ]
+    long_tail = unicode("head--" + "tail" * 1024)
+    assert long_tail.split(unicode("--"), 1) == [
+        unicode("head"), unicode("tail" * 1024),
+    ]
+    assert long_tail.split(unicode("-"), 1) == [
+        unicode("head"), unicode("-" + "tail" * 1024),
+    ]
+    assert long_tail.rsplit(unicode("--"), 1) == [
+        unicode("head"), unicode("tail" * 1024),
+    ]
+    assert fields.rsplit(unicode("--"), 2) == [
+        unicode("a--b"), unicode("c"), unicode("d"),
+    ]
+    assert unicode("a,b,c,d").split(unicode(","), 2) == [
+        unicode("a"), unicode("b"), unicode("c,d"),
+    ]
+    assert unicode("a,b,c,d").rsplit(unicode(","), 2) == [
+        unicode("a,b"), unicode("c"), unicode("d"),
+    ]
+    assert unicode("a--").split(unicode("--")) == [unicode("a"), unicode("")]
+    assert unicode("").split(unicode("--")) == [unicode("")]
+
+
+@test
+def test_concat_and_repeat():
+    u = unicode("ab") + unicode("cd")
+    assert u == unicode("abcd")
+    assert u * 2 == unicode("abcdabcd")
+    assert (u * 1)._ptr == u._ptr
+    assert unicode("éΩ😀") * 5 == unicode("éΩ😀éΩ😀éΩ😀éΩ😀éΩ😀")
+    assert u * 0 == unicode("")
+
+
+@test
+def test_unicode_codepoints():
+    u = unicode("héllo🙂")
+    assert len(u) == 6
+    assert u[0] == unicode("h")
+    assert u[2] == unicode("l")
+    assert u[5] == unicode("🙂")
+    assert unicode("AΩ😀") == unicode("AΩ😀")
+    assert unicode("AΩ😀")[1] == unicode("Ω")
+
+
+@test
+def test_unicode_regex():
+    value = unicode("aβ😀γ😀")
+    match = re.search(unicode("β(?P<face>😀)"), value)
+    assert match is not None
+    assert match.span() == (1, 3)
+    assert match.span("face") == (2, 3)
+    assert match.group("face") == unicode("😀")
+    assert match.re.groupindex == {unicode("face"): 1}
+
+    assert [match.span() for match in re.finditer(unicode("😀"), value)] == [
+        (2, 3), (4, 5),
+    ]
+    assert re.compile(unicode("😀")).search(value, 2, 3).span() == (2, 3)
+    assert re.compile(unicode("γ")).search(value, 3, 4).span() == (3, 4)
+    assert re.sub(unicode("😀"), unicode("!"), value) == unicode("aβ!γ!")
+    assert re.escape(unicode("é😀+")) == unicode("é😀\\+")
+
+    pattern = re.compile(unicode("(?P<latin>é)(?P<greek>β)?(?P<face>😀)"))
+    grouped = unwrap(pattern.match(unicode("é😀")))
+    assert grouped.group() == unicode("é😀")
+    assert unwrap(grouped.group(1)) == unicode("é")
+    assert grouped.group("greek") is None
+    assert grouped["greek"] is None
+    assert grouped.group(1, "greek", "face") == (
+        Optional[unicode](unicode("é")),
+        Optional[unicode](),
+        Optional[unicode](unicode("😀")),
+    )
+    assert [unwrap(group) for group in grouped.groups(unicode("-"))] == [
+        unicode("é"), unicode("-"), unicode("😀")
+    ]
+    groupdict = grouped.groupdict(unicode("-"))
+    assert len(groupdict) == 3
+    assert unwrap(groupdict[unicode("latin")]) == unicode("é")
+    assert unwrap(groupdict[unicode("greek")]) == unicode("-")
+    assert unwrap(groupdict[unicode("face")]) == unicode("😀")
+    assert grouped.lastindex == 3
+    assert grouped.lastgroup == unicode("face")
+    assert grouped.expand(unicode("<\\g<face>\\1>")) == unicode("<😀é>")
+
+    assert re.match(unicode("β"), value) is None
+    assert re.fullmatch(unicode("aβ😀γ😀"), value).span() == (0, 5)
+    assert re.fullmatch(unicode("aβ😀"), value) is None
+    assert re.compile(unicode("β😀")).match(value, 1, 3).span() == (1, 3)
+    assert re.compile(unicode("β😀")).fullmatch(value, 1, 3).span() == (1, 3)
+    assert re.compile(unicode("β")).search(value, 4, 2) is None
+
+    assert re.findall(unicode("[β😀]"), value) == [
+        unicode("β"), unicode("😀"), unicode("😀")
+    ]
+    assert [item.group() for item in re.finditer(unicode(""), unicode("é😀"))] == [
+        unicode(""), unicode(""), unicode("")
+    ]
+    assert [item.span() for item in re.compile(unicode("😀")).finditer(value, 2, 5)] == [
+        (2, 3), (4, 5)
+    ]
+
+    split = re.split(unicode("(?P<face>😀)"), unicode("é😀β😀"), 1)
+    assert unwrap(split[0]) == unicode("é")
+    assert unwrap(split[1]) == unicode("😀")
+    assert unwrap(split[2]) == unicode("β😀")
+    assert re.split(unicode("😀"), value, -1) == [Optional[unicode](value)]
+
+    assert re.sub(unicode("(β)(😀)"), unicode("\\2\\1"), value) == unicode("a😀βγ😀")
+    assert re.sub(unicode("😀"), lambda _: unicode("!"), value, 1) == unicode("aβ!γ😀")
+    assert re.subn(unicode("😀"), unicode("!"), value) == (unicode("aβ!γ!"), 2)
+    assert re.search(unicode("é"), unicode("É"), re.IGNORECASE).span() == (0, 1)
+
+    re.purge()
+    assert re.search(unicode("😀"), value).span() == (2, 3)
+    try:
+        re.compile(unicode("("))
+        assert False
+    except re.error as exc:
+        assert exc.pattern == unicode("(")
+
+
+@test
+def test_unicode_file_io():
+    text = unicode("éβ😀\n")
+    raw = b'\x00\xff\x61'
+
+    writer = open(unicode("build/unicode-file.txt"), "w")
+    assert writer.write(text) == len(text)
+    writer.close()
+    reader = open(unicode("build/unicode-file.txt"), "r")
+    assert reader.read() == text
+    reader.close()
+
+    writer = gzip.open(unicode("build/unicode-file.gz"), "wt")
+    assert writer.write(text) == len(text)
+    writer.close()
+    reader = gzip.open(unicode("build/unicode-file.gz"), "rt")
+    assert reader.read() == text
+    reader.close()
+
+    writer = bz2.open(unicode("build/unicode-file.bz2"), "wt")
+    assert writer.write(text) == len(text)
+    writer.close()
+    reader = bz2.open(unicode("build/unicode-file.bz2"), "rt")
+    assert reader.read() == text
+    reader.close()
+
+    writer = open("build/unicode-read.txt", "w")
+    writer.write(unicode("éβ😀!"))
+    writer.close()
+    reader = open("build/unicode-read.txt", "r")
+    assert reader.read(1) == unicode("é")
+    assert reader.read(2) == unicode("β😀")
+    assert reader.read() == unicode("!")
+    reader.close()
+
+    writer = gzip.open("build/unicode-read.gz", "wt")
+    writer.write(unicode("éβ😀!"))
+    writer.close()
+    reader = gzip.open("build/unicode-read.gz", "rt")
+    assert reader.read(1) == unicode("é")
+    assert reader.read(2) == unicode("β😀")
+    assert reader.read() == unicode("!")
+    reader.close()
+
+    writer = bz2.open("build/unicode-read.bz2", "wt")
+    writer.write(unicode("éβ😀!"))
+    writer.close()
+    reader = bz2.open("build/unicode-read.bz2", "rt")
+    assert reader.read(1) == unicode("é")
+    assert reader.read(2) == unicode("β😀")
+    assert reader.read() == unicode("!")
+    reader.close()
+
+    writer = gzip.open(unicode("build/unicode-nul.gz"), "wt")
+    writer.write(unicode("a\x00é\nb"))
+    writer.close()
+    reader = gzip.open(unicode("build/unicode-nul.gz"), "rt")
+    assert reader.readline() == unicode("a\x00é\n")
+    assert reader.readline() == unicode("b")
+    assert reader.readline() == unicode("")
+    reader.close()
+
+    writer = open(unicode("build/unicode-file.bin"), "wb")
+    writer.write(raw)
+    writer.close()
+    reader = open(unicode("build/unicode-file.bin"), "rb")
+    assert reader.read() == raw
+    reader.close()
+
+    writer = gzip.open(unicode("build/unicode-file.bin.gz"), "wb")
+    writer.write(raw)
+    writer.close()
+    reader = gzip.open(unicode("build/unicode-file.bin.gz"), "rb")
+    assert reader.read() == raw
+    reader.close()
+
+    writer = bz2.open(unicode("build/unicode-file.bin.bz2"), "wb")
+    writer.write(raw)
+    writer.close()
+    reader = bz2.open(unicode("build/unicode-file.bin.bz2"), "rb")
+    assert reader.read() == raw
+    reader.close()
+
+
+@test
+def test_unicode_normalization():
+    assert unicodedata.normalize("NFD", unicode("é")) == unicode("é")
+    assert unicodedata.normalize("NFC", unicode("é")) == unicode("é")
+    assert unicodedata.normalize("NFD", unicode("ά")) == unicode("ά")
+    assert unicodedata.normalize("NFC", unicode("ά")) == unicode("ά")
+    assert unicodedata.normalize("NFD", unicode("각")) == unicode("각")
+    assert unicodedata.normalize("NFC", unicode("각")) == unicode("각")
+    assert unicodedata.normalize("NFD", unicode("ạ̇")) == unicode("ạ̇")
+    assert unicodedata.normalize("NFC", unicode("ạ̇")) == unicode("ạ̇")
+    assert unicodedata.normalize("NFKD", unicode("ﬃ")) == unicode("ffi")
+    assert unicodedata.normalize("NFKD", unicode("①")) == unicode("1")
+    assert unicodedata.normalize("NFKC", unicode("ﬃ")) == unicode("ffi")
+    assert unicodedata.normalize("NFKC", unicode("①")) == unicode("1")
+    assert unicodedata.normalize("NFKC", unicode("Å")) == unicode("Å")
+    assert unicodedata.normalize("NFKC", unicode(" ")) == unicode(" ")
+    assert unicodedata.is_normalized("NFD", unicode("é"))
+    assert not unicodedata.is_normalized("NFC", unicode("é"))
+    assert unicodedata.is_normalized("NFC", unicode("é"))
+    assert unicodedata.is_normalized("NFKC", unicode("ffi"))
+    assert not unicodedata.is_normalized("NFKC", unicode("ﬃ"))
+
+    try:
+        unicodedata.normalize("invalid", unicode("é"))
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_unicodedata_category_and_combining():
+    assert unicodedata.category(unicode("A")) == "Lu"
+    assert unicodedata.category(unicode("é")) == "Ll"
+    assert unicodedata.category(unicode("́")) == "Mn"
+    assert unicodedata.category(unicode("😀")) == "So"
+    assert unicodedata.category(unicode("\x00")) == "Cc"
+    assert unicodedata.category(_unicode_from_codepoints([0xFDD0])) == "Cn"
+    assert unicodedata.combining(unicode("A")) == 0
+    assert unicodedata.combining(unicode("́")) == 230
+    assert unicodedata.combining(unicode("̧")) == 202
+
+    try:
+        unicodedata.category(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicodedata.combining(unicode(""))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicodedata_directionality_and_width():
+    assert unicodedata.bidirectional(unicode("A")) == "L"
+    assert unicodedata.bidirectional(_unicode_from_codepoints([0x0627])) == "AL"
+    assert unicodedata.bidirectional(_unicode_from_codepoints([0x0301])) == "NSM"
+    assert unicodedata.bidirectional(_unicode_from_codepoints([0xFDD0])) == ""
+    assert unicodedata.east_asian_width(unicode("A")) == "Na"
+    assert unicodedata.east_asian_width(_unicode_from_codepoints([0x00B7])) == "A"
+    assert unicodedata.east_asian_width(_unicode_from_codepoints([0x4E2D])) == "W"
+    assert unicodedata.mirrored(unicode("("))
+    assert not unicodedata.mirrored(unicode("A"))
+
+    try:
+        unicodedata.bidirectional(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicodedata.east_asian_width(unicode(""))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicodedata.mirrored(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicodedata_numeric_values():
+    assert unicodedata.decimal(unicode("7")) == 7
+    assert unicodedata.decimal(_unicode_from_codepoints([0x0665])) == 5
+    assert unicodedata.digit(_unicode_from_codepoints([0x00B2])) == 2
+    assert unicodedata.numeric(_unicode_from_codepoints([0x00BD])) == 0.5
+    assert unicodedata.numeric(_unicode_from_codepoints([0x216B])) == 12.0
+    assert unicodedata.decimal(unicode("A"), -1) == -1
+    assert unicodedata.digit(unicode("A"), -1) == -1
+    assert unicodedata.numeric(unicode("A"), -1.0) == -1.0
+    assert unicodedata.numeric(unicode("A"), -1) == -1.0
+    assert unicodedata.decimal(unicode("A"), None) is None
+    assert unicodedata.digit(unicode("A"), None) is None
+    assert unicodedata.numeric(unicode("A"), None) is None
+    assert unicodedata.decimal(unicode("7"), None) == 7
+    assert unicodedata.digit(_unicode_from_codepoint(0x00B2), None) == 2
+    assert unicodedata.numeric(_unicode_from_codepoint(0x00BD), None) == 0.5
+
+    try:
+        unicodedata.decimal(unicode("A"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicodedata.digit(unicode("A"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicodedata.numeric(unicode("A"))
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_unicodedata_decomposition():
+    assert unicodedata.decomposition(unicode("À")) == "0041 0300"
+    assert unicodedata.decomposition(unicode(" ")) == "<noBreak> 0020"
+    assert unicodedata.decomposition(unicode("½")) == "<fraction> 0031 2044 0032"
+    assert unicodedata.decomposition(unicode("각")) == ""
+    assert unicodedata.decomposition(unicode("A")) == ""
+
+    try:
+        unicodedata.decomposition(unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicodedata_names():
+    assert unicodedata.name(unicode("A")) == "LATIN CAPITAL LETTER A"
+    assert unicodedata.name(unicode("가")) == "HANGUL SYLLABLE GA"
+    assert (
+        unicodedata.name(_unicode_from_codepoints([0x20000]))
+        == "CJK UNIFIED IDEOGRAPH-20000"
+    )
+    assert unicodedata.name(_unicode_from_codepoint(0xE000), "private") == "private"
+    assert unicodedata.name(_unicode_from_codepoint(0xE000), None) is None
+    assert unicodedata.name(unicode("A"), None) == "LATIN CAPITAL LETTER A"
+    assert unicodedata.lookup("LATIN CAPITAL LETTER A") == unicode("A")
+    assert unicodedata.lookup("HANGUL SYLLABLE GA") == unicode("가")
+    assert unicodedata.lookup("CJK UNIFIED IDEOGRAPH-20000") == (
+        _unicode_from_codepoints([0x20000])
+    )
+    assert unicodedata.lookup("NULL") == unicode("\x00")
+    assert unicodedata.lookup("KEYCAP DIGIT ONE") == (
+        _unicode_from_codepoints([0x0031, 0xFE0F, 0x20E3])
+    )
+
+    try:
+        unicodedata.name(_unicode_from_codepoint(0xE000))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicodedata.lookup("NOT A NAME")
+        assert False
+    except KeyError:
+        pass
+
+
+@test
+def test_unicodedata_version():
+    assert unicodedata.unidata_version == "16.0.0"
+
+
+@test
+def test_unicodedata_exhaustive_metadata():
+    for codepoint in range(0x110000):
+        value = _unicode_from_codepoint(codepoint)
+        assert len(unicodedata.category(value)) == 2
+        assert unicodedata.combining(value) >= 0
+        assert len(unicodedata.bidirectional(value)) <= 3
+        assert unicodedata.east_asian_width(value) in ("F", "A", "H", "N", "Na", "W")
+        unicodedata.mirrored(value)
+        unicodedata.decimal(value, -1)
+        unicodedata.digit(value, -1)
+        unicodedata.numeric(value, -1.0)
+        unicodedata.decomposition(value)
+
+        character_name = unicodedata.name(value, "")
+        if character_name:
+            assert unicodedata.lookup(character_name) == value
+
+
+def _normalization_field_to_unicode(field: str) -> unicode:
+    codepoints = []
+    for codepoint in field.split():
+        codepoints.append(int(codepoint, 16))
+    return _unicode_from_codepoints(codepoints)
+
+
+def _check_normalization_conformance(
+    form: str,
+    value: unicode,
+    expected: unicode,
+    case: int,
+) -> bool:
+    if unicodedata.normalize(form, value) == expected:
+        return True
+    print("normalization conformance failure", case, form)
+    return False
+
+
+@test
+def test_unicode_normalization_conformance():
+    cases = 0
+    with open("test/stdlib/data/NormalizationTest.txt") as fixture:
+        for line in fixture:
+            line = line.split("#")[0].strip()
+            if not line or line.startswith("@"):
+                continue
+
+            fields = line.split(";")[:-1]
+            assert len(fields) == 5
+            c1 = _normalization_field_to_unicode(fields[0])
+            c2 = _normalization_field_to_unicode(fields[1])
+            c3 = _normalization_field_to_unicode(fields[2])
+            c4 = _normalization_field_to_unicode(fields[3])
+            c5 = _normalization_field_to_unicode(fields[4])
+
+            if not _check_normalization_conformance("NFC", c1, c2, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFC", c2, c2, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFC", c3, c2, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFD", c1, c3, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFD", c2, c3, cases):
+                assert False
+                return
+            if not _check_normalization_conformance("NFD", c3, c3, cases):
+                assert False
+                return
+
+            for value in [c1, c2, c3, c4, c5]:
+                if not _check_normalization_conformance("NFKC", value, c4, cases):
+                    assert False
+                    return
+                if not _check_normalization_conformance("NFKD", value, c5, cases):
+                    assert False
+                    return
+
+            cases += 1
+
+    assert cases > 0
+
+
+@test
+def test_codecs_and_error_handlers():
+    assert unicode(_raw_bytes([0x68, 0xC3, 0xA9]), "UTF_8") == unicode("hé")
+    assert unicode(_raw_bytes([0xE9]), "iso-8859-1") == unicode("é")
+    assert unicode(_raw_bytes([0x41, 0, 0xA9, 0x03]), "utf16le") == unicode("AΩ")
+    assert unicode(_raw_bytes([0x00, 0x41, 0x03, 0xA9]), "utf-16-be") == unicode("AΩ")
+    assert unicode(_raw_bytes([0x00, 0xF6, 0x01, 0x00]), "utf32le") == unicode("😀")
+    assert unicode(_raw_bytes([0x00, 0x01, 0xF6, 0x00]), "utf-32-be") == unicode("😀")
+
+    assert unicode(_raw_bytes([0xFF, 0xFE, 0x41, 0x00]), "utf-16") == unicode("A")
+    assert unicode(
+        _raw_bytes([0xFF, 0xFE, 0x00, 0x00, 0x00, 0xF6, 0x01, 0x00]),
+        "utf-32",
+    ) == unicode("😀")
+
+    assert unicode("AΩ").encode("utf-16-le") == _raw_bytes([0x41, 0, 0xA9, 3])
+    assert unicode("AΩ").encode("utf-16-be") == _raw_bytes([0, 0x41, 3, 0xA9])
+    assert unicode("😀").encode("utf-32-le") == _raw_bytes([0, 0xF6, 1, 0])
+    assert unicode("😀").encode("utf-32-be") == _raw_bytes([0, 1, 0xF6, 0])
+    assert unicode("A").encode("utf-16") == _raw_bytes([0xFF, 0xFE, 0x41, 0])
+    assert unicode("A").encode("utf-32") == _raw_bytes([0xFF, 0xFE, 0, 0, 0x41, 0, 0, 0])
+
+    malformed_utf8 = _raw_bytes([0x61, 0xFF, 0x62, 0xE2, 0x82])
+    assert unicode(malformed_utf8, "utf-8", "ignore") == unicode("ab")
+    assert unicode(malformed_utf8, "utf-8", "replace") == unicode("a�b�")
+    assert unicode(malformed_utf8, "utf-8", "backslashreplace") == unicode("a\\xffb\\xe2\\x82")
+
+    assert unicode(_raw_bytes([0xFF]), "ascii", "ignore") == unicode("")
+    assert unicode(_raw_bytes([0xFF]), "ascii", "replace") == unicode("�")
+    assert unicode(_raw_bytes([0xFF]), "ascii", "backslashreplace") == unicode("\\xff")
+    assert unicode("éΩ").encode("ascii", "ignore") == _raw_bytes([])
+    assert unicode("éΩ").encode("ascii", "replace") == _raw_bytes([0x3F, 0x3F])
+    assert unicode("éΩ").encode("ascii", "backslashreplace") == _raw_bytes(
+        [0x5C, 0x78, 0x65, 0x39, 0x5C, 0x75, 0x30, 0x33, 0x61, 0x39]
+    )
+    assert unicode("éΩ").encode("ascii", "xmlcharrefreplace") == b"&#233;&#937;"
+    assert unicode("éΩ").encode("ascii", "namereplace") == (
+        b"\\N{LATIN SMALL LETTER E WITH ACUTE}\\N{GREEK CAPITAL LETTER OMEGA}"
+    )
+    unnamed = _unicode_from_codepoints([0xE000, 0xD800])
+    assert unnamed.encode("ascii", "namereplace") == b"\\ue000\\ud800"
+    assert _unicode_from_codepoint(0xD800).encode(
+        "utf-16-le", "xmlcharrefreplace"
+    ) == unicode("&#55296;").encode("utf-16-le")
+
+    assert unicode(_raw_bytes([0x41]), "utf-16-le", "replace") == unicode("�")
+    assert unicode(_raw_bytes([0x00, 0x00, 0x11, 0x00]), "utf-32-le", "replace") == unicode("�")
+
+    try:
+        unicode(malformed_utf8, "utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("é").encode("ascii")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("x").encode("unknown-codec")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_codecs_differential_recovery_and_bom_semantics():
+    malformed_utf8 = _raw_bytes([0xE2, 0x41, 0xA1])
+    assert unicode(malformed_utf8, "utf-8", "ignore") == unicode("A")
+    assert unicode(malformed_utf8, "utf-8", "replace") == unicode("�A�")
+    assert unicode(malformed_utf8, "utf-8", "backslashreplace") == unicode("\\xe2A\\xa1")
+
+    overlong_utf8 = _raw_bytes([0xF0, 0x80, 0x80, 0x80])
+    assert unicode(overlong_utf8, "utf-8", "ignore") == unicode("")
+    assert unicode(overlong_utf8, "utf-8", "replace") == unicode("����")
+    assert unicode(overlong_utf8, "utf-8", "backslashreplace") == unicode("\\xf0\\x80\\x80\\x80")
+
+    surrogate_utf8 = _raw_bytes([0xED, 0xA0, 0x80])
+    assert unicode(surrogate_utf8, "utf-8", "replace") == unicode("���")
+
+    high_surrogate = _raw_bytes([0x41, 0, 0, 0xD8, 0x42, 0])
+    assert unicode(high_surrogate, "utf-16-le", "ignore") == unicode("AB")
+    assert unicode(high_surrogate, "utf-16-le", "replace") == unicode("A�B")
+    assert unicode(high_surrogate, "utf-16-le", "backslashreplace") == unicode("A\\x00\\xd8B")
+
+    invalid_utf32 = _raw_bytes([0x41, 0, 0, 0, 0, 0, 0x11, 0])
+    assert unicode(invalid_utf32, "utf-32-le", "ignore") == unicode("A")
+    assert unicode(invalid_utf32, "utf-32-le", "replace") == unicode("A�")
+    assert unicode(invalid_utf32, "utf-32-le", "backslashreplace") == unicode("A\\x00\\x00\\x11\\x00")
+
+    assert unicode(_raw_bytes([0xFF, 0xFE, 0x41, 0]), "utf-16-le") == unicode("﻿A")
+    assert unicode(_raw_bytes([0, 0x41, 0xFE, 0xFF]), "utf-16-be") == unicode("A﻿")
+    assert unicode(
+        _raw_bytes([0xFF, 0xFE, 0, 0, 0x41, 0, 0, 0]),
+        "utf-32-le",
+    ) == unicode("﻿A")
+
+    assert unicode(_raw_bytes([0x41, 0]), "utf-16") == unicode("A")
+    assert unicode(_raw_bytes([0x41, 0, 0, 0]), "utf-32") == unicode("A")
+
+
+@test
+def test_codecs_surrogates_and_cp1252():
+    utf8_surrogate = _raw_bytes([0xED, 0xA0, 0x80])
+    surrogate = unicode(utf8_surrogate, "utf-8", "surrogatepass")
+    assert surrogate.encode("utf-8", "surrogatepass") == utf8_surrogate
+    assert surrogate.encode("utf-16-le", "surrogatepass") == _raw_bytes([0, 0xD8])
+    assert surrogate.encode("utf-32-le", "surrogatepass") == _raw_bytes([0, 0xD8, 0, 0])
+    assert unicode(_raw_bytes([0, 0xD8]), "utf-16-le", "surrogatepass").encode(
+        "utf-8", "surrogatepass"
+    ) == utf8_surrogate
+    assert unicode(_raw_bytes([0, 0xD8, 0, 0]), "utf-32-le", "surrogatepass").encode(
+        "utf-8", "surrogatepass"
+    ) == utf8_surrogate
+
+    escaped_bytes = _raw_bytes([0xFF, 0x80, 0x61])
+    escaped = unicode(escaped_bytes, "utf-8", "surrogateescape")
+    assert escaped.encode("utf-8", "surrogateescape") == escaped_bytes
+
+    try:
+        unicode(utf8_surrogate, "utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        surrogate.encode("utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    assert unicode(_raw_bytes([0x80, 0x82, 0x9F]), "cp1252") == unicode("€‚Ÿ")
+    assert unicode("€‚Ÿ").encode("windows-1252") == _raw_bytes([0x80, 0x82, 0x9F])
+    assert unicode(_raw_bytes([0x80]), "windows1252") == unicode("€")
+    defined_c1_bytes = _raw_bytes(
+        [
+            0x80, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
+            0x8A, 0x8B, 0x8C, 0x8E, 0x91, 0x92, 0x93, 0x94, 0x95,
+            0x96, 0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9E, 0x9F,
+        ]
+    )
+    assert unicode(defined_c1_bytes, "cp1252").encode("cp1252") == defined_c1_bytes
+    assert unicode(_raw_bytes([0x81]), "cp1252", "ignore") == unicode("")
+    assert unicode(_raw_bytes([0x81]), "cp1252", "replace") == unicode("�")
+    assert unicode(_raw_bytes([0x81]), "cp1252", "backslashreplace") == unicode("\\x81")
+    assert surrogate.encode("cp1252", "backslashreplace") == _raw_bytes(
+        [0x5C, 0x75, 0x64, 0x38, 0x30, 0x30]
+    )
+
+    try:
+        unicode(_raw_bytes([0x81]), "cp1252")
+        assert False
+    except ValueError:
+        pass
+
+    iso8859_15_bytes = _raw_bytes([0xA4, 0xA6, 0xA8, 0xB4, 0xB8, 0xBC, 0xBD, 0xBE])
+    iso8859_15_value = unicode("€ŠšŽžŒœŸ")
+    assert unicode(iso8859_15_bytes, "iso-8859-15") == iso8859_15_value
+    assert iso8859_15_value.encode("latin-9") == iso8859_15_bytes
+    assert unicode(iso8859_15_bytes, "iso8859-15") == iso8859_15_value
+
+    try:
+        unicode("¤").encode("iso-8859-15")
+        assert False
+    except ValueError:
+        pass
+
+    cp1251_bytes = []
+    for byte in range(256):
+        if byte != 0x98:
+            cp1251_bytes.append(byte)
+    cp1251_data = _raw_bytes(cp1251_bytes)
+    assert unicode(cp1251_data, "cp1251").encode("windows-1251") == cp1251_data
+    assert unicode(_raw_bytes([0x80, 0xA8, 0xC0, 0xFF]), "windows1251") == unicode(
+        "ЂЁАя"
+    )
+    assert unicode(_raw_bytes([0x98]), "cp1251", "replace") == unicode("�")
+
+    try:
+        unicode(_raw_bytes([0x98]), "cp1251")
+        assert False
+    except ValueError:
+        pass
+
+    cp1250_values = []
+    for byte in range(256):
+        if byte not in [0x81, 0x83, 0x88, 0x90, 0x98]:
+            cp1250_values.append(byte)
+    cp1250_data = _raw_bytes(cp1250_values)
+    assert unicode(cp1250_data, "cp1250").encode("windows-1250") == cp1250_data
+    assert unicode(_raw_bytes([0x81]), "windows1250", "replace") == unicode("�")
+
+    cp1253_values = []
+    for byte in range(256):
+        if byte not in [
+            0x81, 0x88, 0x8A, 0x8C, 0x8D, 0x8E, 0x8F, 0x90,
+            0x98, 0x9A, 0x9C, 0x9D, 0x9E, 0x9F, 0xAA, 0xD2, 0xFF,
+        ]:
+            cp1253_values.append(byte)
+    cp1253_data = _raw_bytes(cp1253_values)
+    assert unicode(cp1253_data, "cp1253").encode("windows-1253") == cp1253_data
+    assert unicode(_raw_bytes([0x81]), "windows1253", "replace") == unicode("�")
+
+    cp1254_values = []
+    for byte in range(256):
+        if byte not in [0x81, 0x8D, 0x8E, 0x8F, 0x90, 0x9D, 0x9E]:
+            cp1254_values.append(byte)
+    cp1254_data = _raw_bytes(cp1254_values)
+    assert unicode(cp1254_data, "cp1254").encode("windows-1254") == cp1254_data
+    assert unicode(_raw_bytes([0x81]), "windows1254", "replace") == unicode("�")
+
+
+@test
+def test_codecs_handler_fuzz_round_trips():
+    utf8_values = []
+    state = 0x13579BDF
+    for _ in range(257):
+        state = (state * 1103515245 + 12345) & 0x7FFFFFFF
+        utf8_values.append(state & 0xFF)
+    utf8_data = _raw_bytes(utf8_values)
+    assert unicode(utf8_data, "utf-8", "surrogateescape").encode(
+        "utf-8", "surrogateescape"
+    ) == utf8_data
+
+    utf16_units = [0, 0x41, 0xD800, 0x42, 0xDC80, 0xD83D, 0xDE00, 0xDFFF, 0xFFFF]
+    utf16_le = []
+    utf16_be = []
+    for unit in utf16_units:
+        utf16_le.append(unit & 0xFF)
+        utf16_le.append(unit >> 8)
+        utf16_be.append(unit >> 8)
+        utf16_be.append(unit & 0xFF)
+    assert unicode(_raw_bytes(utf16_le), "utf-16-le", "surrogatepass").encode(
+        "utf-16-le", "surrogatepass"
+    ) == _raw_bytes(utf16_le)
+    assert unicode(_raw_bytes(utf16_be), "utf-16-be", "surrogatepass").encode(
+        "utf-16-be", "surrogatepass"
+    ) == _raw_bytes(utf16_be)
+
+    utf32_points = [0, 0x41, 0xD800, 0xDC80, 0x1F600, 0x10FFFF]
+    utf32_le = []
+    utf32_be = []
+    for codepoint in utf32_points:
+        for shift in range(0, 32, 8):
+            utf32_le.append((codepoint >> shift) & 0xFF)
+            utf32_be.append((codepoint >> (24 - shift)) & 0xFF)
+    assert unicode(_raw_bytes(utf32_le), "utf-32-le", "surrogatepass").encode(
+        "utf-32-le", "surrogatepass"
+    ) == _raw_bytes(utf32_le)
+    assert unicode(_raw_bytes(utf32_be), "utf-32-be", "surrogatepass").encode(
+        "utf-32-be", "surrogatepass"
+    ) == _raw_bytes(utf32_be)
+
+
+@test
+def test_membership_and_casefold():
+    u = unicode("Hello, World!")
+    assert unicode("ell") in u
+    assert unicode("zzz") not in u
+    assert u.lower() == unicode("hello, world!")
+    assert u.upper() == unicode("HELLO, WORLD!")
+    assert u.casefold() == unicode("hello, world!")
+
+    assert unicode("  hello\t\n").strip() == unicode("hello")
+    assert unicode("  hello").lstrip() == unicode("hello")
+    assert unicode("hello  ").rstrip() == unicode("hello")
+
+
+@test
+def test_unicode_differential_casing_and_predicates():
+    assert unicode("ΟΣ").lower() == unicode("ος")
+    assert unicode("ΟΣΑ").lower() == unicode("οσα")
+    assert unicode("İ").lower() == unicode("i̇")
+    assert unicode("straße").upper() == unicode("STRASSE")
+    assert unicode("ﬃ").upper() == unicode("FFI")
+    assert unicode("Straße").casefold() == unicode("strasse")
+    assert unicode("h́ELLO-world").title() == unicode("H́Ello-World")
+    assert unicode("ǅelta").swapcase() == unicode("ǅELTA")
+
+    assert unicode("٣").isdecimal()
+    assert unicode("٣").isdigit()
+    assert unicode("٣").isnumeric()
+    assert not unicode("²").isdecimal()
+    assert unicode("²").isdigit()
+    assert unicode("⅕").isnumeric()
+    assert not unicode("⅕").isdigit()
+    assert unicode("①").isdigit()
+    assert unicode("Ⅻ").isnumeric()
+    assert unicode("Ⅻ").isidentifier()
+    assert unicode(" ").isspace()
+    assert not unicode("​").isspace()
+    assert unicode("变量").isidentifier()
+    assert unicode("á").isidentifier()
+    assert not unicode("a​").isidentifier()
+    assert not unicode("​").isprintable()
+
+
+@test
+def test_unicode_differential_lines_bounds_and_repr():
+    lines = unicode("a\x1cbc d\r\ne").splitlines()
+    assert lines == [unicode("a"), unicode("b"), unicode("c"), unicode("d"), unicode("e")]
+    lines = unicode("a\x1cbc d\r\ne").splitlines(True)
+    assert lines == [unicode("a\x1c"), unicode("b"), unicode("c "), unicode("d\r\n"), unicode("e")]
+
+    value = unicode("abc")
+    assert value.find(unicode(""), -10, 10) == 0
+    assert value.rfind(unicode(""), -10, 10) == 3
+    assert value.find(unicode("a"), -10, 10) == 0
+    assert value.find(unicode(""), 10, 20) == -1
+    assert value.rfind(unicode(""), 10, 20) == -1
+    assert value.find(unicode(""), 2, 1) == -1
+    assert value.find(unicode(""), -1, -3) == -1
+
+    assert unicode("'\"\\\x1f\x7f​😀").__repr__() == "'\\'\"\\\\\\x1f\\x7f\\u200b😀'"
+
+
+def _unicode_fuzz_normalize_bounds(
+    value: unicode,
+    start: int,
+    end: int,
+) -> Tuple[int, int]:
+    length = len(value)
+
+    if start < 0:
+        start += length
+        if start < 0:
+            start = 0
+
+    if end < 0:
+        end += length
+
+    if end < 0:
+        end = 0
+    elif end > length:
+        end = length
+
+    return start, end
+
+
+def _unicode_fuzz_starts_at(value: unicode, sub: unicode, start: int) -> bool:
+    if start < 0 or start + len(sub) > len(value):
+        return False
+
+    for index in range(len(sub)):
+        if value._load_codepoint(start + index) != sub._load_codepoint(index):
+            return False
+
+    return True
+
+
+def _unicode_fuzz_find(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+    reverse: bool = False,
+) -> int:
+    start, end = _unicode_fuzz_normalize_bounds(value, start, end)
+
+    if len(sub) == 0:
+        if start > end:
+            return -1
+        return end if reverse else start
+
+    if len(sub) > end - start:
+        return -1
+
+    if reverse:
+        for position in range(end - len(sub), start - 1, -1):
+            if _unicode_fuzz_starts_at(value, sub, position):
+                return position
+        return -1
+
+    for position in range(start, end - len(sub) + 1):
+        if _unicode_fuzz_starts_at(value, sub, position):
+            return position
+
+    return -1
+
+
+def _unicode_fuzz_count(
+    value: unicode,
+    sub: unicode,
+    start: int,
+    end: int,
+) -> int:
+    start, end = _unicode_fuzz_normalize_bounds(value, start, end)
+
+    if len(sub) == 0:
+        return 0 if start > end else end - start + 1
+
+    total = 0
+    position = start
+
+    while position <= end - len(sub):
+        position = _unicode_fuzz_find(value, sub, position, end)
+        if position == -1:
+            break
+        total += 1
+        position += len(sub)
+
+    return total
+
+
+def _unicode_fuzz_compare(left: unicode, right: unicode) -> int:
+    limit = len(left) if len(left) < len(right) else len(right)
+
+    for index in range(limit):
+        left_codepoint = left._load_codepoint(index)
+        right_codepoint = right._load_codepoint(index)
+
+        if left_codepoint < right_codepoint:
+            return -1
+        if left_codepoint > right_codepoint:
+            return 1
+
+    if len(left) < len(right):
+        return -1
+    if len(left) > len(right):
+        return 1
+    return 0
+
+
+def _unicode_fuzz_split(
+    value: unicode,
+    sub: unicode,
+    maxsplit: int,
+    reverse: bool = False,
+) -> List[unicode]:
+    parts = []
+
+    if not reverse:
+        start = 0
+        splits = 0
+
+        while maxsplit < 0 or splits < maxsplit:
+            position = _unicode_fuzz_find(value, sub, start, len(value))
+            if position == -1:
+                break
+            parts.append(value[start:position])
+            start = position + len(sub)
+            splits += 1
+
+        parts.append(value[start:])
+        return parts
+
+    end = len(value)
+    splits = 0
+
+    while maxsplit < 0 or splits < maxsplit:
+        position = _unicode_fuzz_find(value, sub, 0, end, True)
+        if position == -1:
+            break
+        parts.append(value[position + len(sub):end])
+        end = position
+        splits += 1
+
+    parts.append(value[:end])
+    parts.reverse()
+    return parts
+
+
+def _unicode_fuzz_next(state: int) -> int:
+    return (state * 1103515245 + 12345) & 0x7FFFFFFF
+
+
+def _unicode_fuzz_value(state: int, length: int) -> Tuple[unicode, int]:
+    codepoints = []
+    alphabet = [
+        0x00, 0x20, 0x2D, 0x41, 0x61, 0x7F, 0xE9,
+        0x301, 0x3A9, 0x2028, 0x1F600, 0x10FFFF,
+    ]
+
+    for _ in range(length):
+        state = _unicode_fuzz_next(state)
+        codepoints.append(alphabet[state % len(alphabet)])
+
+    return _unicode_from_codepoints(codepoints), state
+
+
+@test
+def test_unicode_differential_fuzz_search_and_split():
+    state = 0x5EED1234
+
+    for case in range(200):
+        state = _unicode_fuzz_next(state)
+        value, state = _unicode_fuzz_value(state, state % 25)
+        state = _unicode_fuzz_next(state)
+        sub, state = _unicode_fuzz_value(state, state % 8 + 1)
+
+        if case % 2 == 0:
+            value = (_unicode_from_codepoint(0x1F600) + value)[1:]
+        if case % 3 == 0:
+            sub = (_unicode_from_codepoint(0x1F600) + sub)[1:]
+
+        state = _unicode_fuzz_next(state)
+        start = state % 65 - 32
+        state = _unicode_fuzz_next(state)
+        end = state % 65 - 32
+        state = _unicode_fuzz_next(state)
+        maxsplit = state % 8 - 1
+        comparison = _unicode_fuzz_compare(value, sub)
+
+        assert (value == sub) == (comparison == 0)
+        assert (value != sub) == (comparison != 0)
+        assert (value < sub) == (comparison < 0)
+        assert (value <= sub) == (comparison <= 0)
+        assert (value > sub) == (comparison > 0)
+        assert (value >= sub) == (comparison >= 0)
+        assert value.find(sub, start, end) == _unicode_fuzz_find(
+            value, sub, start, end
+        )
+        assert value.rfind(sub, start, end) == _unicode_fuzz_find(
+            value, sub, start, end, True
+        )
+        assert value.count(sub, start, end) == _unicode_fuzz_count(
+            value, sub, start, end
+        )
+        assert value.split(sub, maxsplit) == _unicode_fuzz_split(
+            value, sub, maxsplit
+        )
+        assert value.rsplit(sub, maxsplit) == _unicode_fuzz_split(
+            value, sub, maxsplit, True
+        )
+
+
+@test
+def test_split_join_and_replace():
+    u = unicode("a,b,c")
+    parts = u.split(unicode(","))
+    assert len(parts) == 3
+    assert parts[0] == unicode("a")
+    assert parts[1] == unicode("b")
+    assert parts[2] == unicode("c")
+
+    ws = unicode("a b  c\t d")
+    wsparts = ws.split()
+    assert len(wsparts) == 4
+    assert wsparts[0] == unicode("a")
+    assert wsparts[1] == unicode("b")
+    assert wsparts[2] == unicode("c")
+    assert wsparts[3] == unicode("d")
+
+    joined = unicode(",").join([unicode("a"), unicode("b"), unicode("c")])
+    assert joined == unicode("a,b,c")
+    only = unicode("only")
+    assert unicode(",").join([only])._ptr == only._ptr
+
+    replaced = unicode("ababa").replace(unicode("aba"), unicode("z"))
+    assert replaced == unicode("zba")
+
+    limited = unicode("a,b,c").split(unicode(","), 1)
+    assert len(limited) == 2
+    assert limited[0] == unicode("a")
+    assert limited[1] == unicode("b,c")
+
+    assert unicode(" a b c ").split(None, 1) == [unicode("a"), unicode("b c ")]
+    assert unicode(" a b c ").rsplit(None, 1) == [unicode(" a b"), unicode("c")]
+    assert unicode(" a b ").split(None, 0) == [unicode("a b ")]
+    assert unicode(" a b ").rsplit(None, 0) == [unicode(" a b")]
+    assert unicode(" a b c ").split(None, 1) == [unicode("a"), unicode("b c ")]
+    assert unicode(" a b c ").rsplit(None, 1) == [unicode(" a b"), unicode("c")]
+    assert unicode(" a b ").split(None, 0) == [unicode("a b ")]
+    assert unicode(" a b ").rsplit(None, 0) == [unicode(" a b")]
+
+
+@test
+def test_unicode_api_edge_contracts():
+    value = unicode("abc")
+
+    assert value.partition(unicode("x")) == (
+        value, unicode(""), unicode(""),
+    )
+    assert value.rpartition(unicode("x")) == (
+        unicode(""), unicode(""), value,
+    )
+    assert unicode("a--b--c").replace(unicode("--"), unicode("/"), 1) == (
+        unicode("a/b--c")
+    )
+    assert unicode("aaaa").replace(unicode("aa"), unicode("b")) == unicode("bb")
+    assert unicode("abc").replace(unicode(""), unicode("-"), 2) == unicode("-a-bc")
+    assert unicode(",").join([]) == unicode("")
+    assert unicode(",").join([unicode("only")]) == unicode("only")
+    assert value.removeprefix(unicode("x")) == value
+    assert value.removesuffix(unicode("x")) == value
+    assert value.removeprefix(unicode("ab")) == unicode("c")
+    assert value.removesuffix(unicode("bc")) == unicode("a")
+    assert unicode("+12").zfill(5) == unicode("+0012")
+    assert unicode("-12").zfill(5) == unicode("-0012")
+    assert unicode("a\tb").expandtabs(4) == unicode("a   b")
+
+    try:
+        value.index(unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.rindex(unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.split(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.rsplit(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.center(5, unicode("ab"))
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_unicode_views_hash_translation_and_codec_edges():
+    value = unicode("abc")
+    wide_view = (_unicode_from_codepoint(0x1F600) + value)[1:]
+    copied = value.__ptrcopy__()
+    copied._ptr[0] = u8(ord("z"))
+    wide_copy = wide_view.__ptrcopy__()
+
+    assert wide_view == value
+    assert copied == unicode("zbc")
+    assert value == unicode("abc")
+    assert wide_copy == wide_view
+    assert wide_copy._meta == wide_view._meta
+    assert hash(wide_view) == hash(value)
+    values = {wide_view: 1}
+    assert values[value] == 1
+    assert wide_view[-3:-1] == unicode("ab")
+    assert wide_view[::-1] == unicode("cba")
+
+    table = unicode.maketrans(
+        unicode("ab"), unicode("12"), unicode("x")
+    )
+    assert unicode("xabc").translate(table) == unicode("12c")
+    assert unicode("aba").translate(
+        {ord("a"): unicode("xy"), ord("b"): None}
+    ) == unicode("xyxy")
+    assert value.translate({}) == value
+
+    assert unicode(_raw_bytes([0xC3, 0xA9]), "utf8") == unicode("é")
+    assert unicode(_raw_bytes([0xE9]), "latin_1") == unicode("é")
+    assert unicode(_raw_bytes([0x41, 0]), "utf_16_le") == unicode("A")
+
+    try:
+        value[3]
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        value.partition(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        value.rpartition(unicode(""))
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode(_raw_bytes([88]), "unknown-codec")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_partition_and_predicates():
+    assert unicode("abc").isalnum()
+    assert unicode("abc").isalpha()
+    assert unicode("123").isdigit()
+    assert unicode(" ").isspace()
+
+    assert not unicode("").isalnum()
+    assert not unicode("").isalpha()
+    assert not unicode("").isdigit()
+    assert not unicode("").isspace()
+
+    left, mid, right = unicode("hello,world").partition(unicode(","))
+    assert left == unicode("hello")
+    assert mid == unicode(",")
+    assert right == unicode("world")
+
+    left, mid, right = unicode("hello,world,again").rpartition(unicode(","))
+    assert left == unicode("hello,world")
+    assert mid == unicode(",")
+    assert right == unicode("again")
+
+    chars = []
+    for ch in unicode("abc"):
+        chars.append(ch)
+
+    assert chars[0] == unicode("a")
+    assert chars[1] == unicode("b")
+    assert chars[2] == unicode("c")
+
+
+@test
+def test_iterator():
+    chars = []
+    for ch in unicode("abc"):
+        chars.append(ch)
+
+    assert len(chars) == 3
+    assert chars[0] == unicode("a")
+    assert chars[1] == unicode("b")
+    assert chars[2] == unicode("c")
+
+
+@test
+def test_padding_and_tabs():
+    assert unicode("abc").center(5) == unicode(" abc ")
+    assert unicode("abc").ljust(5) == unicode("abc  ")
+    assert unicode("abc").rjust(5) == unicode("  abc")
+    assert unicode("12").zfill(5) == unicode("00012")
+    assert unicode("-12").zfill(5) == unicode("-0012")
+    assert unicode("a\tb").expandtabs(2) == unicode("a b")
+
+
+@test
+def test_text_normalization_and_splitlines():
+    assert unicode("hello").capitalize() == unicode("Hello")
+    assert unicode("hELLO").swapcase() == unicode("Hello")
+    assert unicode("hello world").title() == unicode("Hello World")
+
+    assert unicode("hello").removeprefix(unicode("he")) == unicode("llo")
+    assert unicode("hello").removesuffix(unicode("lo")) == unicode("hel")
+    assert unicode("hello").removesuffix(unicode("xyz")) == unicode("hello")
+
+    assert unicode("").splitlines() == []
+    lines = unicode("a\nb\r\nc").splitlines()
+    assert len(lines) == 3
+    assert lines[0] == unicode("a")
+    assert lines[1] == unicode("b")
+    assert lines[2] == unicode("c")
+
+
+@test
+def test_predicates():
+    assert unicode("abc").islower()
+    assert not unicode("ABC").islower()
+    assert unicode("ABC").isupper()
+    assert not unicode("abc").isupper()
+    assert unicode("Hello World").istitle()
+    assert not unicode("hello world").istitle()
+
+    assert unicode("123").isnumeric()
+    assert unicode("123").isdecimal()
+    assert unicode("abc").isascii()
+    assert not unicode("héllo").isascii()
+    assert unicode("abc").isprintable()
+    assert not unicode("abc\n").isprintable()
+
+
+@test
+def test_identifier_and_printable():
+    assert unicode("abc").isidentifier()
+    assert unicode("_abc").isidentifier()
+    assert not unicode("123abc").isidentifier()
+    assert not unicode("abc-def").isidentifier()
+
+    assert unicode("abc").isprintable()
+    assert not unicode("abc\n").isprintable()
+
+
+@test
+def test_translate_and_maketrans():
+    table = unicode.maketrans(unicode("aeiou"), unicode("12345"))
+    assert unicode("hello").translate(table) == unicode("h2ll4")
+
+    delete_table = unicode.maketrans(unicode("aeiou"), unicode("12345"), unicode("o"))
+    assert unicode("hello").translate(delete_table) == unicode("h2ll")
+
+    optional_integer_table: Dict[int, Optional[int]] = {
+        ord("a"): ord("A"),
+        ord("-"): None,
+    }
+    assert unicode("a-b").translate(optional_integer_table) == unicode("Ab")
+    assert unicode("a-b").translate(
+        unicode.maketrans(optional_integer_table)
+    ) == unicode("Ab")
+
+    text_table: Dict[int, unicode] = {
+        ord("a"): unicode("αβ"),
+        ord("b"): unicode(""),
+    }
+    assert unicode("abc").translate(text_table) == unicode("αβc")
+    assert unicode("cab").translate(unicode.maketrans(text_table)) == unicode("cαβ")
+
+    optional_table: Dict[int, Optional[unicode]] = {
+        ord("a"): unicode("α"),
+        ord("-"): None,
+        ord("b"): unicode("βγ"),
+    }
+    assert unicode("a-bc").translate(optional_table) == unicode("αβγc")
+    assert unicode("a-b").translate(unicode.maketrans(optional_table)) == unicode("αβγ")
+    assert unicode("x").translate({ord("x"): 0xD800}) == unicode("\ud800")
+
+
+@test
+def test_operator_helpers():
+    assert unicode("ab") + unicode("cd") == unicode("abcd")
+    assert unicode("ab") * 3 == unicode("ababab")
+    assert 2 * unicode("ab") == unicode("abab")
+
+
+@test
+def test_rsplit():
+    parts = unicode("a b c").rsplit()
+    assert len(parts) == 3
+    assert parts[0] == unicode("a")
+    assert parts[1] == unicode("b")
+    assert parts[2] == unicode("c")
+
+    parts = unicode("a,b,c").rsplit(unicode(","), 1)
+    assert len(parts) == 2
+    assert parts[0] == unicode("a,b")
+    assert parts[1] == unicode("c")
+
+
+@test
+def test_slice_steps():
+    value = unicode("abcde")
+
+    assert value[::2] == unicode("ace")
+    assert value[1:5:2] == unicode("bd")
+    assert value[::-1] == unicode("edcba")
+    assert value[4::-2] == unicode("eca")
+    assert value[3:0:-1] == unicode("dcb")
+    try:
+        value[::0]
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_padding_strip_chars_and_splitlines_keepends():
+    assert unicode("abc").center(7, unicode("-")) == unicode("--abc--")
+    assert unicode("abc").ljust(5, unicode(".")) == unicode("abc..")
+    assert unicode("abc").rjust(5, unicode(".")) == unicode("..abc")
+
+    assert unicode("xyabcxy").strip(unicode("xy")) == unicode("abc")
+    assert unicode("xyabc").lstrip(unicode("xy")) == unicode("abc")
+    assert unicode("abcxy").rstrip(unicode("xy")) == unicode("abc")
+
+    lines = unicode("a\r\nb\n").splitlines(True)
+    assert len(lines) == 2
+    assert lines[0] == unicode("a\r\n")
+    assert lines[1] == unicode("b\n")
+
+
+@test
+def test_empty_substring_count_and_replace():
+    value = unicode("abc")
+
+    assert value.count(unicode("")) == 4
+    assert value.count(unicode(""), 1, 2) == 2
+    assert value.count(unicode(""), 2, 1) == 0
+
+    assert value.replace(unicode(""), unicode("-")) == unicode("-a-b-c-")
+    assert value.replace(unicode(""), unicode("-"), 2) == unicode("-a-bc")
+    assert value.replace(unicode(""), unicode("-"), 0) == unicode("abc")
+    assert unicode("").replace(unicode(""), unicode("-")) == unicode("-")
+
+
+@test
+def test_empty_bounds_partition_and_expandtabs_edges():
+    value = unicode("abc")
+    empty = unicode("")
+
+    assert value.find(empty, 2, 1) == -1
+    assert value.rfind(empty, 2, 1) == -1
+    assert not value.startswith(empty, 2, 1)
+    assert not value.endswith(empty, 2, 1)
+
+    assert unicode("a\tb").expandtabs(0) == unicode("ab")
+    assert unicode("a\tb").expandtabs(-1) == unicode("ab")
+    assert unicode("a\n\tb").expandtabs(4) == unicode("a\n    b")
+
+
+@test
+def test_case_method_edge_cases():
+    assert unicode("abc-123").islower()
+    assert unicode("ABC-123").isupper()
+    assert not unicode("123-!").islower()
+    assert not unicode("123-!").isupper()
+
+    assert unicode("Hello-World").istitle()
+    assert unicode("Hello3World").istitle()
+    assert not unicode("Hello3world").istitle()
+    assert not unicode("hello-World").istitle()
+
+    assert unicode("foo-bar").title() == unicode("Foo-Bar")
+    assert unicode("foo3bar").title() == unicode("Foo3Bar")
+    assert unicode("FOO3BAR").title() == unicode("Foo3Bar")
+
+
+@test
+def test_search_bounds():
+    value = unicode("abc")
+    empty = unicode("")
+
+    assert value.find(empty, 4) == -1
+    assert value.rfind(empty, 4) == -1
+    assert value.count(empty, 4) == 0
+    assert not value.startswith(empty, 4)
+    assert not value.endswith(empty, 4)
+
+    assert value.find(empty, -10, 99) == 0
+    assert value.rfind(empty, -10, 99) == 3
+    assert value.count(empty, -10, 99) == 4
+
+
+@test
+def test_splitlines_all_boundaries():
+    nel = _unicode_from_codepoint(0x85)
+    line_separator = _unicode_from_codepoint(0x2028)
+    paragraph_separator = _unicode_from_codepoint(0x2029)
+
+    value = (
+        unicode("a\rb\nc\r\nd\ve\ff\x1cg\x1dh\x1ei")
+        + nel
+        + unicode("j")
+        + line_separator
+        + unicode("k")
+        + paragraph_separator
+    )
+    lines = value.splitlines()
+
+    assert len(lines) == 11
+    assert lines[0] == unicode("a")
+    assert lines[1] == unicode("b")
+    assert lines[2] == unicode("c")
+    assert lines[3] == unicode("d")
+    assert lines[4] == unicode("e")
+    assert lines[5] == unicode("f")
+    assert lines[6] == unicode("g")
+    assert lines[7] == unicode("h")
+    assert lines[8] == unicode("i")
+    assert lines[9] == unicode("j")
+    assert lines[10] == unicode("k")
+
+    assert unicode("a\n").splitlines() == [unicode("a")]
+
+    with_ends = unicode("a\rb\nc\r\n").splitlines(True)
+    assert len(with_ends) == 3
+    assert with_ends[0] == unicode("a\r")
+    assert with_ends[1] == unicode("b\n")
+    assert with_ends[2] == unicode("c\r\n")
+
+
+@test
+def test_unicode_data():
+    e_acute = _unicode_from_codepoint(0xE9)
+    superscript_two = _unicode_from_codepoint(0xB2)
+    arabic_digits = _unicode_from_codepoints([0x661, 0x662])
+    nbsp = _unicode_from_codepoint(0xA0)
+    em_space = _unicode_from_codepoint(0x2003)
+    pi = _unicode_from_codepoint(0x3C0)
+    combining_acute = _unicode_from_codepoint(0x301)
+
+    assert e_acute.isalpha()
+    assert (e_acute + unicode("2")).isalnum()
+    assert not (e_acute + unicode("-2")).isalnum()
+
+    assert superscript_two.isdigit()
+    assert not superscript_two.isdecimal()
+    assert superscript_two.isnumeric()
+    assert arabic_digits.isdecimal()
+
+    assert nbsp.isspace()
+    assert (nbsp + unicode("hello") + nbsp).strip() == unicode("hello")
+    assert (unicode("one") + nbsp + unicode("two") + em_space + unicode("three")).split() == [
+        unicode("one"),
+        unicode("two"),
+        unicode("three"),
+    ]
+
+    assert pi.isidentifier()
+    assert (pi + unicode("2")).isidentifier()
+    assert (unicode("a") + combining_acute).isidentifier()
+    assert unicode("_value").isidentifier()
+    assert not (unicode("2") + pi).isidentifier()
+    assert not (pi + unicode("-1")).isidentifier()
+
+    assert unicode("hello world").isprintable()
+    assert unicode("café").isprintable()
+    assert unicode("你好").isprintable()
+    assert unicode("😀").isprintable()
+
+    assert not unicode("hello\nworld").isprintable()
+    assert not _unicode_from_codepoint(0xA0).isprintable()  # NO-BREAK SPACE
+    assert not _unicode_from_codepoint(0x200B).isprintable()  # ZERO WIDTH SPACE
+    assert not _unicode_from_codepoint(0x2028).isprintable()  # LINE SEPARATOR
+
+
+@test
+def test_unicode_case_predicates():
+    lower_alpha = _unicode_from_codepoint(0x3B1)  # alpha
+    upper_alpha = _unicode_from_codepoint(0x391)  # capital alpha
+    title_dz = _unicode_from_codepoint(0x1C5)  # titlecase DZ
+    combining_acute = _unicode_from_codepoint(0x301)
+
+    assert lower_alpha.islower()
+    assert not lower_alpha.isupper()
+    assert not lower_alpha.istitle()
+
+    assert upper_alpha.isupper()
+    assert not upper_alpha.islower()
+    assert upper_alpha.istitle()
+
+    assert title_dz.istitle()
+    assert not title_dz.islower()
+    assert not title_dz.isupper()
+
+    assert (lower_alpha + unicode("-123")).islower()
+    assert (upper_alpha + unicode("-123")).isupper()
+    assert not (unicode("123-") + combining_acute).islower()
+    assert not (unicode("123-") + combining_acute).isupper()
+    assert not (unicode("123-") + combining_acute).istitle()
+
+    assert not (unicode("A") + combining_acute + unicode("b")).istitle()
+    assert (unicode("A") + combining_acute + unicode("B")).istitle()
+
+
+@test
+def test_unicode_case_mappings():
+    sharp_s = _unicode_from_codepoint(0xDF)
+    dotted_i = _unicode_from_codepoint(0x130)
+    ligature_ffi = _unicode_from_codepoint(0xFB03)
+    combining_dot = _unicode_from_codepoint(0x307)
+
+    assert sharp_s.upper() == unicode("SS")
+    assert sharp_s.title() == unicode("Ss")
+    assert sharp_s.swapcase() == unicode("SS")
+
+    assert dotted_i.lower() == unicode("i") + combining_dot
+    assert ligature_ffi.upper() == unicode("FFI")
+    assert ligature_ffi.casefold() == unicode("ffi")
+    assert (unicode("Stra") + sharp_s + unicode("e")).casefold() == unicode("strasse")
+
+    title_dz = _unicode_from_codepoint(0x1C5)
+    assert title_dz.swapcase() == title_dz
+
+
+@test
+def test_unicode_final_sigma():
+    omicron_sigma = _unicode_from_codepoints([0x39F, 0x3A3])
+    assert omicron_sigma.lower() == _unicode_from_codepoints([0x3BF, 0x3C2])
+    assert _unicode_from_codepoints([0x39F, 0x3A3, 0x391]).lower() == (
+        _unicode_from_codepoints([0x3BF, 0x3C3, 0x3B1])
+    )
+
+    # Case-ignorable marks do not prevent final-sigma detection.
+    assert _unicode_from_codepoints([0x39F, 0x3A3, 0x301]).lower() == (
+        _unicode_from_codepoints([0x3BF, 0x3C2, 0x301])
+    )
+
+
+@test
+def test_unicode_title_and_capitalize_mappings():
+    combining_acute = _unicode_from_codepoint(0x301)
+    sharp_s = _unicode_from_codepoint(0xDF)
+    assert (unicode("a") + combining_acute + unicode("BC")).title() == (
+        unicode("A") + combining_acute + unicode("Bc")
+    )
+    assert (sharp_s + unicode("ABC")).capitalize() == unicode("Ssabc")
+    assert (unicode("hELLO ") + sharp_s).title() == unicode("Hello Ss")
+
+
+@test
+def test_unicode_ascii_case_mappings():
+    value = unicode("hELLO, wORLD! 123")
+
+    assert value.lower() == unicode("hello, world! 123")
+    assert value.upper() == unicode("HELLO, WORLD! 123")
+    assert value.casefold() == unicode("hello, world! 123")
+    assert value.capitalize() == unicode("Hello, world! 123")
+    assert value.title() == unicode("Hello, World! 123")
+    assert value.swapcase() == unicode("Hello, World! 123")
+
+    assert unicode("").lower() == unicode("")
+    assert unicode("123!?").title() == unicode("123!?")
+
+
+@test
+def test_unicode_case_mapping_identity():
+    value = unicode("123!?")
+    assert value.lower() == value
+    assert value.upper() == value
+    assert value.casefold() == value
+    assert value.capitalize() == value
+    assert value.swapcase() == value
+
+    assert _unicode_from_codepoint(0x3A3).lower() == _unicode_from_codepoint(0x3C3)
+    combining_acute = _unicode_from_codepoint(0x301)
+    value = unicode("A") + combining_acute + unicode("B")
+    assert value.title() == value
+
+
+@test
+def test_unicode_final_sigma_case_methods():
+    omicron_sigma = _unicode_from_codepoints([0x39F, 0x3A3])
+    capitalized = _unicode_from_codepoints([0x39F, 0x3C2])
+    lower = _unicode_from_codepoints([0x3BF, 0x3C2])
+    assert omicron_sigma.capitalize() == capitalized
+    assert omicron_sigma.title() == capitalized
+    assert omicron_sigma.swapcase() == lower
+
+
+test_empty()
+test_ascii_and_slicing()
+test_chr_ord()
+test_unicode_literal_escapes()
+test_from_ptr()
+test_comparisons_and_search()
+test_pointer_description()
+test_fastsearch_paths()
+test_fastsearch_sliced_bounds()
+test_fastsearch_mixed_kind_views()
+test_split_and_rsplit_paths()
+test_concat_and_repeat()
+test_unicode_codepoints()
+test_unicode_regex()
+test_unicode_file_io()
+test_unicode_normalization()
+test_unicodedata_category_and_combining()
+test_unicodedata_directionality_and_width()
+test_unicodedata_numeric_values()
+test_unicodedata_decomposition()
+test_unicodedata_names()
+test_unicodedata_version()
+test_unicodedata_exhaustive_metadata()
+test_unicode_normalization_conformance()
+test_membership_and_casefold()
+test_split_join_and_replace()
+test_unicode_api_edge_contracts()
+test_unicode_views_hash_translation_and_codec_edges()
+test_partition_and_predicates()
+test_iterator()
+test_padding_and_tabs()
+test_text_normalization_and_splitlines()
+test_predicates()
+test_identifier_and_printable()
+test_translate_and_maketrans()
+test_operator_helpers()
+test_rsplit()
+test_slice_steps()
+test_padding_strip_chars_and_splitlines_keepends()
+test_empty_substring_count_and_replace()
+test_empty_bounds_partition_and_expandtabs_edges()
+test_case_method_edge_cases()
+test_search_bounds()
+test_splitlines_all_boundaries()
+test_unicode_data()
+test_unicode_case_predicates()
+test_unicode_case_mappings()
+test_unicode_final_sigma()
+test_unicode_title_and_capitalize_mappings()
+test_unicode_ascii_case_mappings()
+test_unicode_case_mapping_identity()
+test_unicode_final_sigma_case_methods()
+
+
+# float-format tests
+@test
+def test_float_shortest_decimal():
+    result = _float_shortest_decimal(1.0)
+    assert result.significand == u64(1)
+    assert result.exponent == 0
+
+    result = _float_shortest_decimal(1.25)
+    assert result.significand == u64(125)
+    assert result.exponent == -2
+
+    result = _float_shortest_decimal(0.1)
+    assert result.significand == u64(1)
+    assert result.exponent == -1
+
+    result = _float_shortest_decimal(1e20)
+    assert result.significand == u64(1)
+    assert result.exponent == 20
+
+    result = _float_shortest_decimal(1e-20)
+    assert result.significand == u64(1)
+    assert result.exponent == -20
+
+    result = _float_shortest_decimal(1.2345678901234567)
+    assert result.significand == u64(12345678901234567)
+    assert result.exponent == -16
+
+
+@test
+def test_float_shortest_decimal_boundaries():
+    result = _float_shortest_decimal(2.0)
+    assert result.significand == u64(2)
+    assert result.exponent == 0
+
+    result = _float_shortest_decimal(0.5)
+    assert result.significand == u64(5)
+    assert result.exponent == -1
+
+    result = _float_shortest_decimal(2.2250738585072014e-308)
+    assert result.significand == u64(22250738585072014)
+    assert result.exponent == -324
+
+    result = _float_shortest_decimal(5e-324)
+    assert result.significand == u64(5)
+    assert result.exponent == -324
+
+
+@test
+def test_float_dtoa_shortest():
+    assert _float_dtoa_shortest(0.0) == "0.0"
+    assert _float_dtoa_shortest(-0.0) == "-0.0"
+    assert _float_dtoa_shortest(1.0) == "1.0"
+    assert _float_dtoa_shortest(-1.0) == "-1.0"
+    assert _float_dtoa_shortest(1.25) == "1.25"
+    assert _float_dtoa_shortest(0.1) == "0.1"
+
+    assert _float_dtoa_shortest(1e-4) == "0.0001"
+    assert _float_dtoa_shortest(1e-5) == "1e-05"
+    assert _float_dtoa_shortest(1e16) == "1e+16"
+    assert _float_dtoa_shortest(1e20) == "1e+20"
+
+    assert _float_dtoa_shortest(5e-324) == "5e-324"
+    assert _float_dtoa_shortest(2.2250738585072014e-308) == (
+        "2.2250738585072014e-308"
+    )
+    assert _float_dtoa_shortest(1.2345678901234567) == (
+        "1.2345678901234567"
+    )
+
+    assert _float_dtoa_shortest(float("inf")) == "inf"
+    assert _float_dtoa_shortest(float("-inf")) == "-inf"
+    assert _float_dtoa_shortest(float("nan")) == "nan"
+
+
+@test
+def test_float32_dtoa_shortest():
+    assert _float32_dtoa_shortest(float32(0.0)) == "0.0"
+    assert _float32_dtoa_shortest(float32(-0.0)) == "-0.0"
+    assert _float32_dtoa_shortest(float32(1.0)) == "1.0"
+    assert _float32_dtoa_shortest(float32(1.0), False) == "1"
+    assert _float32_dtoa_shortest(float32(1.1)) == "1.1"
+
+    assert _float32_dtoa_shortest(float32("1e-45")) == "1e-45"
+    assert _float32_dtoa_shortest(float32("1.1754942e-38")) == (
+        "1.1754942e-38"
+    )
+    assert _float32_dtoa_shortest(float32("1.1754944e-38")) == (
+        "1.1754944e-38"
+    )
+    assert _float32_dtoa_shortest(float32("3.4028235e+38")) == (
+        "3.4028235e+38"
+    )
+
+    assert _float32_dtoa_shortest(float32("inf")) == "inf"
+    assert _float32_dtoa_shortest(float32("-inf")) == "-inf"
+    assert _float32_dtoa_shortest(float32("nan")) == "nan"
+
+
+@test
+def test_float_default_formatting():
+    cases = (
+        (0.0, "0.0"),
+        (-0.0, "-0.0"),
+        (1.0, "1.0"),
+        (-1.0, "-1.0"),
+        (1.25, "1.25"),
+        (1e-4, "0.0001"),
+        (1e-5, "1e-05"),
+        (1e16, "1e+16"),
+        (float("inf"), "inf"),
+        (float("-inf"), "-inf"),
+        (float("nan"), "nan"),
+    )
+
+    for value, expected in cases:
+        assert str(value) == expected
+        assert unicode("{}").format(value) == expected
+        assert value.__format__(unicode("")) == expected
+
+
+@test
+def test_float_dtoa_biguint_division():
+    value = _BigUInt(8)
+    divisor = _BigUInt(8)
+
+    value.set_u64(u64(123456789))
+    divisor.set_u64(u64(10000))
+
+    quotient = value.divmod(divisor)
+
+    assert quotient.length == 1
+    assert quotient.data[0] == u32(12345)
+    assert value.length == 1
+    assert value.data[0] == u32(6789)
+
+
+@test
+def test_float_dtoa_scaled_integer():
+    result = _float_dtoa_scaled_integer(1.25, 2)
+    assert result.length == 1
+    assert result.data[0] == u32(125)
+
+    # The binary64 value is below exact decimal 1.005.
+    result = _float_dtoa_scaled_integer(1.005, 2)
+    assert result.data[0] == u32(100)
+
+    result = _float_dtoa_scaled_integer(1.999, 2)
+    assert result.data[0] == u32(200)
+
+    # Exact ties round to even.
+    result = _float_dtoa_scaled_integer(2.5, 0)
+    assert result.data[0] == u32(2)
+
+    result = _float_dtoa_scaled_integer(3.5, 0)
+    assert result.data[0] == u32(4)
+
+
+@test
+def test_float_dtoa_fixed():
+    assert _float_dtoa_fixed(1.0, 0) == "1"
+    assert _float_dtoa_fixed(1.0, 2) == "1.00"
+    assert _float_dtoa_fixed(-0.0, 3) == "-0.000"
+
+    assert _float_dtoa_fixed(1.25, 1) == "1.2"
+    assert _float_dtoa_fixed(1.25, 2) == "1.25"
+    assert _float_dtoa_fixed(1.999, 2) == "2.00"
+    assert _float_dtoa_fixed(1.005, 2) == "1.00"
+    assert _float_dtoa_fixed(2.5, 0) == "2"
+    assert _float_dtoa_fixed(3.5, 0) == "4"
+    assert _float_dtoa_fixed(0.125, 2) == "0.12"
+    assert _float_dtoa_fixed(0.375, 2) == "0.38"
+
+    assert _float_dtoa_fixed(0.0001, 5) == "0.00010"
+    assert _float_dtoa_fixed(1.0, 18) == "1.000000000000000000"
+    assert _float_dtoa_fixed(1.0, 19) == "1.0000000000000000000"
+    assert _float_dtoa_fixed(1e19, 0) == "10000000000000000000"
+    assert _float_dtoa_fixed(1e20, 2) == "100000000000000000000.00"
+
+    assert _float_dtoa_fixed(float("inf"), 2) == "inf"
+    assert _float_dtoa_fixed(float("-inf"), 2) == "-inf"
+    assert _float_dtoa_fixed(float("nan"), 2) == "nan"
+
+
+@test
+def test_float_dtoa_exponent():
+    assert _float_dtoa_exponent(1.0, 0) == "1e+00"
+    assert _float_dtoa_exponent(1.0, 2) == "1.00e+00"
+    assert _float_dtoa_exponent(-0.0, 3) == "-0.000e+00"
+
+    assert _float_dtoa_exponent(1.25, 1) == "1.2e+00"
+    assert _float_dtoa_exponent(1.25, 2) == "1.25e+00"
+    assert _float_dtoa_exponent(1.999, 2) == "2.00e+00"
+    assert _float_dtoa_exponent(9.999, 1) == "1.0e+01"
+
+    assert _float_dtoa_exponent(0.0001, 2) == "1.00e-04"
+    assert _float_dtoa_exponent(1e20, 2) == "1.00e+20"
+
+    assert _float_dtoa_exponent(float("inf"), 2) == "inf"
+    assert _float_dtoa_exponent(float("-inf"), 2) == "-inf"
+    assert _float_dtoa_exponent(float("nan"), 2) == "nan"
+
+
+@test
+def test_float_dtoa_general():
+    assert _float_dtoa_general(1.0, 6) == "1"
+    assert _float_dtoa_general(1.0, 6, True) == "1.00000"
+    assert _float_dtoa_general(-0.0, 3) == "-0"
+    assert _float_dtoa_general(-0.0, 3, True) == "-0.00"
+
+    assert _float_dtoa_general(1.25, 3) == "1.25"
+    assert _float_dtoa_general(1.25, 5, True) == "1.2500"
+    assert _float_dtoa_general(1.23456, 4) == "1.235"
+
+    assert _float_dtoa_general(0.0001, 3) == "0.0001"
+    assert _float_dtoa_general(0.00001, 3) == "1e-05"
+    assert _float_dtoa_general(12345.0, 4) == "1.234e+04"
+    assert _float_dtoa_general(999.9, 3) == "1e+03"
+
+    assert _float_dtoa_general(float("inf"), 4) == "inf"
+    assert _float_dtoa_general(float("-inf"), 4) == "-inf"
+    assert _float_dtoa_general(float("nan"), 4) == "nan"
+
+
+@test
+def test_float_dtoa_uppercase():
+    assert _float_dtoa_fixed(1.25, 2, True) == "1.25"
+    assert _float_dtoa_exponent(1.25, 2, True) == "1.25E+00"
+    assert _float_dtoa_general(0.00001, 3, False, True) == "1E-05"
+
+    assert _float_dtoa_fixed(float("inf"), 2, True) == "INF"
+    assert _float_dtoa_exponent(float("-inf"), 2, True) == "-INF"
+    assert _float_dtoa_general(float("nan"), 4, False, True) == "NAN"
+
+
+@test
+def test_float_format_padding():
+    assert _float_format(1.25, 0x66, 2, 0, 0) == "1.25"
+    assert _float_format(1.25, 0x46, 2, 0, 0) == "1.25"
+
+    assert _float_format(1.0, 0x66, 0, FORMAT_FLAG_ALT, 0) == "1."
+    assert _float_format(1.0, 0x65, 0, FORMAT_FLAG_ALT, 0) == "1.e+00"
+    assert _float_format(1.0, 0x45, 0, FORMAT_FLAG_ALT, 0) == "1.E+00"
+
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_PLUS, 0) == "+1.25"
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_SPACE, 0) == " 1.25"
+    assert _float_format(-1.25, 0x66, 2, FORMAT_FLAG_PLUS, 0) == "-1.25"
+
+    assert _float_format(1.25, 0x66, 2, 0, 8) == "    1.25"
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_LEFT, 8) == "1.25    "
+    assert _float_format(1.25, 0x66, 2, FORMAT_FLAG_ZERO, 8) == "00001.25"
+    assert _float_format(-1.25, 0x66, 2, FORMAT_FLAG_ZERO, 8) == "-0001.25"
+
+    assert _float_format(1.25, 0x45, 2, 0, 10) == "  1.25E+00"
+    assert _float_format(float("inf"), 0x47, 3, FORMAT_FLAG_PLUS, 0) == "+INF"
+    assert _float_format(float("nan"), 0x67, 3, FORMAT_FLAG_PLUS, 0) == "+nan"
+
+
+test_float_shortest_decimal()
+test_float_shortest_decimal_boundaries()
+test_float_dtoa_shortest()
+test_float32_dtoa_shortest()
+test_float_default_formatting()
+test_float_dtoa_biguint_division()
+test_float_dtoa_scaled_integer()
+test_float_dtoa_fixed()
+test_float_dtoa_exponent()
+test_float_dtoa_general()
+test_float_dtoa_uppercase()
+test_float_format_padding()
+
+
+# integer-format tests
+@test
+def test_integer_format():
+    assert _integer_format(123, 0x64, -1, 0, 0) == "123"
+    assert _integer_format(-123, 0x69, -1, 0, 0) == "-123"
+    assert _integer_format(-123, 0x75, -1, 0, 0) == "-123"
+    assert _integer_format(-15, 0x78, -1, 0, 0) == "-f"
+
+    assert _integer_format(15, 0x6F, -1, 0, 0) == "17"
+    assert _integer_format(255, 0x78, -1, 0, 0) == "ff"
+    assert _integer_format(255, 0x58, -1, 0, 0) == "FF"
+
+    assert _integer_format(0, 0x64, 0, 0, 0) == "0"
+    assert _integer_format(0, 0x6F, 0, FORMAT_FLAG_ALT, 0) == "0o0"
+    assert _integer_format(15, 0x78, -1, FORMAT_FLAG_ALT, 0) == "0xf"
+    assert _integer_format(15, 0x58, -1, FORMAT_FLAG_ALT, 0) == "0XF"
+
+    assert _integer_format(12, 0x64, 5, 0, 0) == "00012"
+    assert _integer_format(12, 0x64, -1, FORMAT_FLAG_PLUS, 5) == "  +12"
+    assert _integer_format(12, 0x64, -1, FORMAT_FLAG_ZERO, 5) == "00012"
+    assert _integer_format(-12, 0x64, -1, FORMAT_FLAG_ZERO, 5) == "-0012"
+    assert _integer_format(15, 0x78, -1, FORMAT_FLAG_ALT | FORMAT_FLAG_ZERO, 6) == (
+        "0x000f"
+    )
+    assert _integer_format(12, 0x64, -1, FORMAT_FLAG_LEFT, 5) == "12   "
+
+
+test_integer_format()
+
+
+# tuple format
+@test
+def test_percent_format():
+    assert unicode("hello") % () == unicode("hello")
+    assert unicode("100%%") % () == unicode("100%")
+    assert unicode("%d") % 42 == unicode("42")
+    assert unicode("%+06d") % 42 == unicode("+00042")
+    assert unicode("%#x") % 255 == unicode("0xff")
+
+    assert unicode("%.2f") % 1.25 == unicode("1.25")
+    assert unicode("%8.2f") % 1.25 == unicode("    1.25")
+    assert unicode("%+.1E") % 1.25 == unicode("+1.2E+00")
+    assert unicode("%.3g") % 0.00001 == unicode("1e-05")
+
+    assert unicode("%d %.1f %#x") % (12, 1.25, 255) == unicode(
+        "12 1.2 0xff"
+    )
+
+
+@test
+def test_percent_format_large_width_and_precision():
+    assert unicode("%10000d") % 1 == unicode(" " * 9999 + "1")
+    assert unicode("%.1000f") % 1.0 == unicode("1." + "0" * 1000)
+    assert unicode("%#1000.0x") % 15 == unicode(" " * 997 + "0xf")
+
+
+@test
+def test_percent_format_string():
+    assert unicode("%s") % unicode("hello") == unicode("hello")
+    assert unicode("hello %s") % unicode("world") == unicode("hello world")
+    assert unicode("%s %s") % (unicode("one"), unicode("two")) == unicode(
+        "one two"
+    )
+
+    assert unicode("%10s") % unicode("x") == unicode("         x")
+    assert unicode("%-10s") % unicode("x") == unicode("x         ")
+    assert unicode("%010s") % unicode("x") == unicode("         x")
+
+    assert unicode("%.3s") % unicode("abcdef") == unicode("abc")
+    assert unicode("%6.3s") % unicode("abcdef") == unicode("   abc")
+    assert unicode("%-6.3s") % unicode("abcdef") == unicode("abc   ")
+
+    assert unicode("%% %s") % unicode("ok") == unicode("% ok")
+    assert unicode("%s:%d:%.1f") % (unicode("value"), 12, 1.25) == unicode(
+        "value:12:1.2"
+    )
+
+
+@test
+def test_percent_format_unicode():
+    assert unicode("héllo %s") % unicode("世界") == unicode("héllo 世界")
+    assert unicode("%.1s") % unicode("世界") == unicode("世")
+    assert unicode("%3s") % unicode("é") == unicode("  é")
+    assert unicode("%-3s") % unicode("é") == unicode("é  ")
+
+
+@test
+def test_percent_format_char():
+    assert unicode("%c") % 65 == unicode("A")
+    assert unicode("%c") % unicode("x") == unicode("x")
+    assert unicode("%5c") % 65 == unicode("    A")
+    assert unicode("%-5c") % unicode("x") == unicode("x    ")
+
+    assert unicode("%c") % 0x03A9 == unicode("Ω")
+    assert unicode("%3c") % unicode("世") == unicode("  世")
+
+    try:
+        unicode("%c") % unicode("ab")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % -1
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        unicode("%c") % 0x110000
+        assert False
+    except OverflowError:
+        pass
+
+
+@test
+def test_percent_format_repr():
+    assert unicode("%r") % 42 == unicode("42")
+    assert unicode("%r") % unicode("hello") == unicode("'hello'")
+    assert unicode("%10r") % unicode("x") == unicode("       'x'")
+    assert unicode("%-10r") % unicode("x") == unicode("'x'       ")
+    assert unicode("%.4r") % unicode("hello") == unicode("'hel")
+
+    assert unicode("%r") % unicode("a'b") == unicode('"a\'b"')
+    assert unicode("%r") % unicode("a\nb") == unicode("'a\\nb'")
+
+
+@test
+def test_percent_format_ascii():
+    assert unicode("%a") % 42 == unicode("42")
+    assert unicode("%a") % unicode("hello") == unicode("'hello'")
+    assert unicode("%a") % unicode("café") == unicode("'caf\\xe9'")
+    assert unicode("%a") % unicode("世界") == unicode("'\\u4e16\\u754c'")
+    assert unicode("%a") % unicode("🙂") == unicode("'\\U0001f642'")
+
+    assert unicode("%10a") % unicode("é") == unicode("    '\\xe9'")
+    assert unicode("%.4a") % unicode("世界") == unicode("'\\u4")
+    assert unicode("%-8a") % unicode("é") == unicode("'\\xe9'  ")
+
+
+@test
+def test_percent_format_mapping():
+    names = {unicode("name"): unicode("Codon")}
+    counts = {unicode("count"): 3}
+
+    assert unicode("%(name)s") % names == unicode("Codon")
+    assert unicode("%(count)04d") % counts == unicode("0003")
+    assert unicode("%(name)-8s") % names == unicode("Codon   ")
+
+
+@test
+def test_percent_format_dynamic_width_precision():
+    assert unicode("%*d") % (5, 12) == unicode("   12")
+    assert unicode("%*d") % (-5, 12) == unicode("12   ")
+    assert unicode("%0*d") % (5, 12) == unicode("00012")
+
+    assert unicode("%.*f") % (2, 1.25) == unicode("1.25")
+    assert unicode("%*.*f") % (8, 2, 1.25) == unicode("    1.25")
+    assert unicode("%.*f") % (-1, 1.25) == unicode("1")
+
+    assert unicode("%*.*s") % (6, 3, unicode("abcdef")) == unicode("   abc")
+
+
+@test
+def test_percent_format_argument_errors():
+    try:
+        unicode("%d %d") % (1,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%d") % (1, 2)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*d") % (1.5, 2)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(name)s") % unicode("not a mapping")
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_format_length_modifiers():
+    assert unicode("%ld") % 42 == unicode("42")
+    try:
+        unicode("%lld") % -42 == unicode("-42")
+        assert False
+    except ValueError:
+        pass
+    assert unicode("%#lx") % 255 == unicode("0xff")
+    assert unicode("%.2Lf") % 1.25 == unicode("1.25")
+
+
+@test
+def test_percent_format_general_precision_zero():
+    assert unicode("%.0g") % 1.25 == unicode("1")
+    assert unicode("%.0G") % 12.5 == unicode("1E+01")
+    assert unicode("%#.0g") % 1.0 == unicode("1.")
+
+
+@test
+def test_percent_format_mapping_errors():
+    names = {unicode("name"): unicode("Codon")}
+
+    try:
+        unicode("%(name)*s") % names
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(missing)s") % names
+        assert False
+    except KeyError:
+        pass
+
+
+@test
+def test_percent_format_errors():
+    try:
+        unicode("%") % ()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%q") % 1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%d") % ()
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("text") % 1
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%d") % (1, 2)
+        assert False
+    except TypeError:
+        pass
+
+    assert unicode("%%") % () == unicode("%")
+
+
+@test
+def test_percent_format_mapping_literal_percent():
+    names = {unicode("name"): unicode("Codon")}
+    assert unicode("%% %(name)s") % names == unicode("% Codon")
+
+
+@test
+def test_unicode_repr():
+    assert repr(unicode("")) == "''"
+    assert repr(unicode("hello")) == "'hello'"
+    assert repr(unicode("a'b")) == '"a\'b"'
+    assert repr(unicode('a"b')) == "'a\"b'"
+    assert repr(unicode("a\nb\tc")) == "'a\\nb\\tc'"
+    assert repr(unicode("é")) == "'é'"
+    assert repr(unicode("\x01")) == "'\\x01'"
+
+    text = unicode("x") * 1000
+    assert repr(text) == "'" + "x" * 1000 + "'"
+
+
+@test
+def test_percent_format_integer_as_float():
+    assert unicode("%f") % 1 == unicode("1.000000")
+    assert unicode("%.2e") % 12 == unicode("1.20e+01")
+
+
+@test
+def test_percent_format_flag_precedence():
+    assert unicode("%+ d") % 1 == unicode("+1")
+    assert unicode("%-05d") % 1 == unicode("1    ")
+    assert unicode("%05.3d") % 1 == unicode("00001")
+    assert unicode("%#.0o") % 0 == unicode("0o0")
+    assert unicode("%#.0x") % 0 == unicode("0x0")
+    assert unicode("%#.0f") % 1.0 == unicode("1.")
+
+
+@test
+def test_percent_format_unicode_mapping_key():
+    values = {unicode("世界"): unicode("hello")}
+    assert unicode("%(世界)s") % values == unicode("hello")
+    assert unicode("value: %(世界).3s") % values == unicode("value: hel")
+
+
+@test
+def test_percent_format_float_as_integer():
+    assert unicode("%d") % 1.9 == unicode("1")
+    assert unicode("%i") % 1.9 == unicode("1")
+    assert unicode("%u") % 1.9 == unicode("1")
+
+    try:
+        unicode("%o") % 1.5
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%#x") % 15.9
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_format_integer_boundaries():
+    minimum = -(1 << 63)
+    assert unicode("%d") % minimum == unicode("-9223372036854775808")
+    assert unicode("%+024d") % minimum == unicode("-00009223372036854775808")
+    assert unicode("%.22d") % minimum == unicode("-0009223372036854775808")
+    assert unicode("%x") % minimum == unicode("-8000000000000000")
+    assert unicode("%o") % minimum == unicode("-1000000000000000000000")
+
+
+test_percent_format()
+test_percent_format_large_width_and_precision()
+test_percent_format_string()
+test_percent_format_unicode()
+test_percent_format_char()
+test_percent_format_repr()
+test_percent_format_ascii()
+test_percent_format_mapping()
+test_percent_format_dynamic_width_precision()
+test_percent_format_argument_errors()
+test_percent_format_length_modifiers()
+test_percent_format_general_precision_zero()
+test_percent_format_mapping_errors()
+test_percent_format_errors()
+test_percent_format_mapping_literal_percent()
+test_unicode_repr()
+test_percent_format_integer_as_float()
+test_percent_format_flag_precedence()
+test_percent_format_unicode_mapping_key()
+test_percent_format_float_as_integer()
+test_percent_format_integer_boundaries()
+
+
+# Adversarial tests for Python-style '%' formatting with the unicode type.
+# Every string literal is explicitly wrapped in unicode(...).
+
+@test
+def test_percent_basic():
+    assert unicode("%s") % unicode("hello") == unicode("hello")
+    assert unicode("%r") % unicode("hello") == unicode("'hello'")
+    assert unicode("%d") % 42 == unicode("42")
+    assert unicode("%i") % 42 == unicode("42")
+    assert unicode("%u") % 42 == unicode("42")
+    assert unicode("%o") % 8 == unicode("10")
+    assert unicode("%x") % 255 == unicode("ff")
+    assert unicode("%X") % 255 == unicode("FF")
+    assert unicode("%f") % 1.5 == unicode("1.500000")
+    assert unicode("%e") % 1.5 == unicode("1.500000e+00")
+    assert unicode("%E") % 1.5 == unicode("1.500000E+00")
+    assert unicode("%g") % 1.5 == unicode("1.5")
+    assert unicode("%G") % 1.5 == unicode("1.5")
+    assert unicode("%c") % 65 == unicode("A")
+    assert unicode("%c") % unicode("Z") == unicode("Z")
+    assert unicode("%%") % () == unicode("%")
+    assert unicode("100%% complete") % () == unicode("100% complete")
+
+
+@test
+def test_percent_multiple_arguments():
+    assert unicode("%s %s") % (
+        unicode("hello"), unicode("world")
+    ) == unicode("hello world")
+    assert unicode("%d + %d = %d") % (2, 3, 5) == unicode("2 + 3 = 5")
+    assert unicode("%s:%d:%0.2f") % (
+        unicode("x"), 7, 1.25
+    ) == unicode("x:7:1.25")
+    assert unicode("%d%%") % 50 == unicode("50%")
+    assert unicode("%%%d%%") % 5 == unicode("%5%")
+
+
+@test
+def test_percent_integer_signs_flags_width():
+    assert unicode("%d") % 0 == unicode("0")
+    assert unicode("%d") % -1 == unicode("-1")
+    assert unicode("%+d") % 0 == unicode("+0")
+    assert unicode("%+d") % 12 == unicode("+12")
+    assert unicode("%+d") % -12 == unicode("-12")
+    assert unicode("% d") % 12 == unicode(" 12")
+    assert unicode("% d") % -12 == unicode("-12")
+    assert unicode("%+ d") % 12 == unicode("+12")
+    assert unicode("% +d") % 12 == unicode("+12")
+
+    assert unicode("%5d") % 12 == unicode("   12")
+    assert unicode("%5d") % -12 == unicode("  -12")
+    assert unicode("%-5d") % 12 == unicode("12   ")
+    assert unicode("%-5d") % -12 == unicode("-12  ")
+    assert unicode("%05d") % 12 == unicode("00012")
+    assert unicode("%05d") % -12 == unicode("-0012")
+    assert unicode("%+05d") % 12 == unicode("+0012")
+    assert unicode("% 05d") % 12 == unicode(" 0012")
+    assert unicode("%-05d") % 12 == unicode("12   ")
+
+    assert unicode("%0d") % 12 == unicode("12")
+    assert unicode("%00d") % 12 == unicode("12")
+    assert unicode("%0005d") % 12 == unicode("00012")
+
+
+@test
+def test_percent_integer_precision():
+    assert unicode("%.0d") % 0 == unicode("0")
+    assert unicode("%.1d") % 0 == unicode("0")
+    assert unicode("%.3d") % 7 == unicode("007")
+    assert unicode("%.3d") % -7 == unicode("-007")
+    assert unicode("%5.3d") % 7 == unicode("  007")
+    assert unicode("%-5.3d") % 7 == unicode("007  ")
+    assert unicode("%05.3d") % 7 == unicode("00007")
+    assert unicode("%+5.3d") % 7 == unicode(" +007")
+    assert unicode("% 5.3d") % 7 == unicode("  007")
+
+
+@test
+def test_percent_integer_bases():
+    assert unicode("%o") % 0 == unicode("0")
+    assert unicode("%o") % 7 == unicode("7")
+    assert unicode("%o") % 8 == unicode("10")
+    assert unicode("%x") % 0 == unicode("0")
+    assert unicode("%x") % 15 == unicode("f")
+    assert unicode("%x") % 16 == unicode("10")
+    assert unicode("%X") % 255 == unicode("FF")
+
+    assert unicode("%#o") % 0 == unicode("0o0")
+    assert unicode("%#o") % 8 == unicode("0o10")
+    assert unicode("%#x") % 0 == unicode("0x0")
+    assert unicode("%#x") % 15 == unicode("0xf")
+    assert unicode("%#X") % 15 == unicode("0XF")
+
+    assert unicode("%#08x") % 15 == unicode("0x00000f")
+    assert unicode("%#08X") % 15 == unicode("0X00000F")
+    assert unicode("%#08o") % 8 == unicode("0o000010")
+    assert unicode("%#8x") % 15 == unicode("     0xf")
+    assert unicode("%-#8x") % 15 == unicode("0xf     ")
+
+    assert unicode("%.4x") % 15 == unicode("000f")
+    assert unicode("%#.4x") % 15 == unicode("0x000f")
+    assert unicode("%8.4x") % 15 == unicode("    000f")
+    assert unicode("%#8.4x") % 15 == unicode("  0x000f")
+
+
+@test
+def test_percent_negative_nondecimal():
+    assert unicode("%x") % -1 == unicode("-1")
+    assert unicode("%X") % -255 == unicode("-FF")
+    assert unicode("%o") % -8 == unicode("-10")
+    assert unicode("%#x") % -1 == unicode("-0x1")
+    assert unicode("%#X") % -255 == unicode("-0XFF")
+    assert unicode("%#o") % -8 == unicode("-0o10")
+    assert unicode("%08x") % -15 == unicode("-000000f")
+    assert unicode("%#08x") % -15 == unicode("-0x0000f")
+    assert unicode("%#08o") % -8 == unicode("-0o00010")
+
+
+@test
+def test_percent_string_width_precision():
+    assert unicode("%s") % unicode("") == unicode("")
+    assert unicode("%s") % unicode("abc") == unicode("abc")
+    assert unicode("%1s") % unicode("abc") == unicode("abc")
+    assert unicode("%3s") % unicode("abc") == unicode("abc")
+    assert unicode("%5s") % unicode("abc") == unicode("  abc")
+    assert unicode("%-5s") % unicode("abc") == unicode("abc  ")
+
+    assert unicode("%.0s") % unicode("abcdef") == unicode("")
+    assert unicode("%.1s") % unicode("abcdef") == unicode("a")
+    assert unicode("%.3s") % unicode("abcdef") == unicode("abc")
+    assert unicode("%.6s") % unicode("abcdef") == unicode("abcdef")
+    assert unicode("%.20s") % unicode("abcdef") == unicode("abcdef")
+    assert unicode("%5.3s") % unicode("abcdef") == unicode("  abc")
+    assert unicode("%-5.3s") % unicode("abcdef") == unicode("abc  ")
+    assert unicode("%2.3s") % unicode("abcdef") == unicode("abc")
+
+
+@test
+def test_percent_repr_width_precision():
+    assert unicode("%r") % unicode("abc") == unicode("'abc'")
+    assert unicode("%10r") % unicode("abc") == unicode("     'abc'")
+    assert unicode("%-10r") % unicode("abc") == unicode("'abc'     ")
+    assert unicode("%.0r") % unicode("abcdef") == unicode("")
+    assert unicode("%.3r") % unicode("abcdef") == unicode("'ab")
+    assert unicode("%8.3r") % unicode("abcdef") == unicode("     'ab")
+
+
+@test
+def test_percent_characters():
+    assert unicode("%c") % 0 == unicode("\x00")
+    assert unicode("%c") % 65 == unicode("A")
+    assert unicode("%c") % 127 == unicode("\x7f")
+    assert unicode("%c") % 255 == unicode("ÿ")
+    assert unicode("%c") % unicode("a") == unicode("a")
+    assert unicode("%3c") % 65 == unicode("  A")
+    assert unicode("%-3c") % 65 == unicode("A  ")
+    assert unicode("%c%c%c") % (True, False, 65) == unicode("\x01\x00A")
+
+    try:
+        unicode("%c") % unicode("")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % unicode("ab")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % 1.5
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%c") % -1
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        unicode("%c") % 0x110000
+        assert False
+    except OverflowError:
+        pass
+
+
+@test
+def test_percent_fixed_float():
+    assert unicode("%f") % 0.0 == unicode("0.000000")
+    assert unicode("%f") % -0.0 == unicode("-0.000000")
+    assert unicode("%f") % 1.0 == unicode("1.000000")
+    assert unicode("%f") % -1.0 == unicode("-1.000000")
+    assert unicode("%.0f") % 1.4 == unicode("1")
+    assert unicode("%.0f") % 1.6 == unicode("2")
+    assert unicode("%.1f") % 1.25 == unicode("1.2")
+    assert unicode("%.2f") % 1.25 == unicode("1.25")
+    assert unicode("%.3f") % 1.25 == unicode("1.250")
+
+    assert unicode("%8.2f") % 1.25 == unicode("    1.25")
+    assert unicode("%-8.2f") % 1.25 == unicode("1.25    ")
+    assert unicode("%08.2f") % 1.25 == unicode("00001.25")
+    assert unicode("%08.2f") % -1.25 == unicode("-0001.25")
+    assert unicode("%+08.2f") % 1.25 == unicode("+0001.25")
+    assert unicode("% 08.2f") % 1.25 == unicode(" 0001.25")
+
+    assert unicode("%#.0f") % 1.0 == unicode("1.")
+    assert unicode("%#.0f") % 0.0 == unicode("0.")
+    assert unicode("%#.2f") % 1.0 == unicode("1.00")
+
+
+@test
+def test_percent_exponent_float():
+    assert unicode("%e") % 1.0 == unicode("1.000000e+00")
+    assert unicode("%E") % 1.0 == unicode("1.000000E+00")
+    assert unicode("%.2e") % 1234.0 == unicode("1.23e+03")
+    assert unicode("%.2E") % 0.001234 == unicode("1.23E-03")
+    assert unicode("%12.2e") % 1.0 == unicode("    1.00e+00")
+    assert unicode("%-12.2e") % 1.0 == unicode("1.00e+00    ")
+    assert unicode("%012.2e") % 1.0 == unicode("00001.00e+00")
+    assert unicode("%+012.2e") % 1.0 == unicode("+0001.00e+00")
+    assert unicode("%012.2e") % -1.0 == unicode("-0001.00e+00")
+    assert unicode("%#.0e") % 1.0 == unicode("1.e+00")
+    assert unicode("%#.0E") % 1.0 == unicode("1.E+00")
+
+
+@test
+def test_percent_general_float():
+    assert unicode("%g") % 1.0 == unicode("1")
+    assert unicode("%g") % 1.5 == unicode("1.5")
+    assert unicode("%g") % 1000000.0 == unicode("1e+06")
+    assert unicode("%G") % 1000000.0 == unicode("1E+06")
+    assert unicode("%.1g") % 1.25 == unicode("1")
+    assert unicode("%.2g") % 1.25 == unicode("1.2")
+    assert unicode("%.3g") % 1.25 == unicode("1.25")
+    assert unicode("%.3g") % 0.0001234 == unicode("0.000123")
+    assert unicode("%.3g") % 0.00001234 == unicode("1.23e-05")
+    assert unicode("%.3g") % 1234.0 == unicode("1.23e+03")
+    assert unicode("%#g") % 1.0 == unicode("1.00000")
+    assert unicode("%#.3g") % 1.0 == unicode("1.00")
+    assert unicode("%#.3g") % 10.0 == unicode("10.0")
+    assert unicode("%#.3g") % 1000.0 == unicode("1.00e+03")
+
+
+@test
+def test_percent_float_rounding():
+    assert unicode("%.0f") % 0.5 == unicode("0")
+    assert unicode("%.0f") % 1.5 == unicode("2")
+    assert unicode("%.0f") % 2.5 == unicode("2")
+    assert unicode("%.0f") % 3.5 == unicode("4")
+    assert unicode("%.1f") % 1.25 == unicode("1.2")
+    assert unicode("%.1f") % 1.35 == unicode("1.4")
+    assert unicode("%.17g") % 1.0 == unicode("1")
+    assert unicode("%.17g") % 0.1 == unicode("0.10000000000000001")
+    assert unicode("%.20f") % 0.1 == unicode("0.10000000000000000555")
+
+
+@test
+def test_percent_dynamic_width():
+    assert unicode("%*s") % (5, unicode("abc")) == unicode("  abc")
+    assert unicode("%*s") % (-5, unicode("abc")) == unicode("abc  ")
+    assert unicode("%*d") % (5, 12) == unicode("   12")
+    assert unicode("%*d") % (-5, 12) == unicode("12   ")
+    assert unicode("%0*d") % (5, 12) == unicode("00012")
+    assert unicode("%0*d") % (5, -12) == unicode("-0012")
+    assert unicode("%+0*d") % (5, 12) == unicode("+0012")
+    assert unicode("%*.2f") % (8, 1.25) == unicode("    1.25")
+    assert unicode("%-*.2f") % (8, 1.25) == unicode("1.25    ")
+    assert unicode("%0*d") % (-5, 12) == unicode("12   ")
+
+
+@test
+def test_percent_dynamic_precision():
+    assert unicode("%.*s") % (0, unicode("abcdef")) == unicode("")
+    assert unicode("%.*s") % (3, unicode("abcdef")) == unicode("abc")
+    assert unicode("%.*s") % (20, unicode("abcdef")) == unicode("abcdef")
+    assert unicode("%.*f") % (0, 1.25) == unicode("1")
+    assert unicode("%.*f") % (2, 1.25) == unicode("1.25")
+    assert unicode("%.*f") % (5, 1.25) == unicode("1.25000")
+    assert unicode("%*.*f") % (8, 2, 1.25) == unicode("    1.25")
+    assert unicode("%*.*f") % (-8, 2, 1.25) == unicode("1.25    ")
+    assert unicode("%.*f") % (-1, 1.25) == unicode("1")
+    assert unicode("%.*s") % (-1, unicode("abcdef")) == unicode("")
+    assert unicode("%.*r") % (-1, unicode("abcdef")) == unicode("")
+    assert unicode("%.*d") % (-1, 12) == unicode("12")
+    assert unicode("%.*c") % (-1, 65) == unicode("A")
+    assert unicode("%.3c") % 65 == unicode("A")
+
+
+@test
+def test_percent_tuple_semantics():
+    assert unicode("%s %s") % (
+        unicode("a"), unicode("b")
+    ) == unicode("a b")
+    assert unicode("%s") % (
+        (unicode("a"), unicode("b")),
+    ) == unicode("('a', 'b')")
+
+    try:
+        unicode("%s") % (unicode("a"), unicode("b"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%s %s") % unicode("ab")
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_argument_count_errors():
+    try:
+        unicode("%s %s") % (unicode("only one"),)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%s") % (unicode("one"), unicode("extra"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("no conversion") % 1
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%%") % 1
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*s") % (5,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%.*f") % (2,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*.*f") % (8, 2)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*.*f") % (8, 2, 1.25, 99)
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_type_errors():
+    try:
+        unicode("%d") % unicode("12")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%x") % unicode("ff")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%o") % 1.5
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%*s") % (unicode("5"), unicode("abc"))
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%.*f") % (unicode("2"), 1.25)
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_malformed_formats():
+    try:
+        unicode("%") % ()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%q") % 1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%y") % 1
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%(") % Dict[unicode, unicode]()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%(name") % {unicode("name"): unicode("x")}
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%(name)") % {unicode("name"): unicode("x")}
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%..2f") % 1.0
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("%5.2") % 1.0
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_percent_flags_odd_orders():
+    assert unicode("%-+8d") % 12 == unicode("+12     ")
+    assert unicode("%+-8d") % 12 == unicode("+12     ")
+    assert unicode("%0+8d") % 12 == unicode("+0000012")
+    assert unicode("%+08d") % 12 == unicode("+0000012")
+    assert unicode("%#08x") % 42 == unicode("0x00002a")
+    assert unicode("%0#8x") % 42 == unicode("0x00002a")
+    assert unicode("%-#8x") % 42 == unicode("0x2a    ")
+    assert unicode("%#-8x") % 42 == unicode("0x2a    ")
+    assert unicode("%--5d") % 12 == unicode("12   ")
+    assert unicode("%++d") % 12 == unicode("+12")
+    assert unicode("%  d") % 12 == unicode(" 12")
+    assert unicode("%##x") % 15 == unicode("0xf")
+    assert unicode("%0005d") % 12 == unicode("00012")
+
+
+@test
+def test_percent_length_modifiers():
+    assert unicode("%hd") % 12 == unicode("12")
+    assert unicode("%ld") % 12 == unicode("12")
+    assert unicode("%Ld") % 12 == unicode("12")
+    assert unicode("%hi") % -12 == unicode("-12")
+    assert unicode("%lu") % 12 == unicode("12")
+    assert unicode("%lx") % 255 == unicode("ff")
+    assert unicode("%lX") % 255 == unicode("FF")
+    assert unicode("%lo") % 8 == unicode("10")
+    assert unicode("%lf") % 1.25 == unicode("1.250000")
+    assert unicode("%Le") % 1.25 == unicode("1.250000e+00")
+
+
+@test
+def test_percent_bools():
+    assert unicode("%d") % True == unicode("1")
+    assert unicode("%d") % False == unicode("0")
+    assert unicode("%i") % True == unicode("1")
+    assert unicode("%x") % True == unicode("1")
+    assert unicode("%o") % False == unicode("0")
+    assert unicode("%s") % True == unicode("True")
+    assert unicode("%r") % False == unicode("False")
+    assert unicode("%f") % True == unicode("1.000000")
+
+
+@test
+def test_percent_embedded_nulls():
+    assert unicode("%s") % unicode("a\x00b") == unicode("a\x00b")
+    assert unicode("%.2s") % unicode("a\x00b") == unicode("a\x00")
+    assert unicode("%5s") % unicode("a\x00b") == unicode("  a\x00b")
+    assert unicode("x%sx") % unicode("\x00") == unicode("x\x00x")
+    assert unicode("%c") % 0 == unicode("\x00")
+
+
+@test
+def test_percent_unicode_content():
+    assert unicode("%s") % unicode("λ") == unicode("λ")
+    assert unicode("%s") % unicode("😀") == unicode("😀")
+    assert unicode("%.1s") % unicode("λx") == unicode("λ")
+    assert unicode("%.1s") % unicode("😀x") == unicode("😀")
+    assert unicode("%3s") % unicode("λ") == unicode("  λ")
+    assert unicode("%3s") % unicode("😀") == unicode("  😀")
+    assert unicode("%c") % 0x03BB == unicode("λ")
+    assert unicode("%c") % 0x1F600 == unicode("😀")
+
+
+@test
+def test_percent_literal_percent_corner_cases():
+    assert unicode("%%%%") % () == unicode("%%")
+    assert unicode("%%%%%%") % () == unicode("%%%")
+    assert unicode("a%%b") % () == unicode("a%b")
+    assert unicode("%%s") % () == unicode("%s")
+    assert unicode("%%%s") % unicode("x") == unicode("%x")
+    assert unicode("%s%%") % unicode("x") == unicode("x%")
+    assert unicode("%%%s%%") % unicode("x") == unicode("%x%")
+    assert unicode("%%%(x)s%%") % {
+        unicode("x"): unicode("a")
+    } == unicode("%a%")
+
+
+@test
+def test_percent_large_width_precision():
+    assert unicode("%50d") % 1 == unicode(" ") * 49 + unicode("1")
+    assert unicode("%-50d") % 1 == unicode("1") + unicode(" ") * 49
+    assert unicode("%050d") % 1 == unicode("0") * 49 + unicode("1")
+    assert unicode("%.50d") % 1 == unicode("0") * 49 + unicode("1")
+    assert unicode("%.50s") % unicode("abc") == unicode("abc")
+
+    expected = unicode("1.") + unicode("0") * 50
+    assert unicode("%.50f") % 1.0 == expected
+    assert unicode("%60.50f") % 1.0 == unicode(" ") * 8 + expected
+    assert unicode("%-60.50f") % 1.0 == expected + unicode(" ") * 8
+
+
+@test
+def test_percent_numeric_coercions():
+    assert unicode("%d") % 1.0 == unicode("1")
+    assert unicode("%i") % -1.0 == unicode("-1")
+    assert unicode("%u") % 12.0 == unicode("12")
+    assert unicode("%d") % 1.9 == unicode("1")
+    assert unicode("%d") % -1.9 == unicode("-1")
+    assert unicode("%f") % 1 == unicode("1.000000")
+    assert unicode("%e") % 1 == unicode("1.000000e+00")
+    assert unicode("%g") % 1 == unicode("1")
+
+
+@test
+def test_percent_mapping_positional_mixing_errors():
+    d = {unicode("x"): 12}
+    assert unicode("%(x)d") % d == unicode("12")
+
+    try:
+        unicode("%(x)*d") % d
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(x).*f") % {unicode("x"): 1.25}
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        unicode("%(x)s %s") % (
+            {unicode("x"): unicode("a")},
+            unicode("b"),
+        )
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_percent_regression_combinations():
+    assert unicode("[%10s]") % unicode("x") == unicode("[         x]")
+    assert unicode("[%-10s]") % unicode("x") == unicode("[x         ]")
+    assert unicode("[%010d]") % -123 == unicode("[-000000123]")
+    assert unicode("[%+10.3f]") % 1.25 == unicode("[    +1.250]")
+    assert unicode("[%-+10.3f]") % 1.25 == unicode("[+1.250    ]")
+    assert unicode("[%#10x]") % 255 == unicode("[      0xff]")
+    assert unicode("[%-#10x]") % 255 == unicode("[0xff      ]")
+    assert unicode("[%#010x]") % 255 == unicode("[0x000000ff]")
+    assert unicode("[%10.4s]") % unicode("abcdefgh") == unicode("[      abcd]")
+
+    assert unicode("%d:%#x:%#o:%.2f:%s") % (
+        -17, 255, 8, 1.25, unicode("done")
+    ) == unicode("-17:0xff:0o10:1.25:done")
+
+
+@test
+def test_percent_cpython_adversarial_matrix():
+    minimum = -(1 << 63)
+
+    numeric_cases = (
+        (unicode("%+#018x"), -0x1234, unicode("-0x000000000001234")),
+        (unicode("%#024o"), minimum, unicode("-0o1000000000000000000000")),
+        (unicode("%+020.4e"), 1.25, unicode("+0000000001.2500e+00")),
+        (unicode("%#.0g"), 1000000.0, unicode("1.e+06")),
+        (unicode("%#08.0f"), float("inf"), unicode("00000inf")),
+        (unicode("%+#08.0F"), float("nan"), unicode("+0000NAN")),
+    )
+
+    for format, value, expected in numeric_cases:
+        assert format % value == expected
+
+    unicode_cases = (
+        (unicode("%7s"), unicode("a"), unicode("      a")),
+        (unicode("%4.2s"), unicode("éΩx"), unicode("  éΩ")),
+        (unicode("%.0s"), unicode("é"), unicode("")),
+        (unicode("%12.3r"), unicode("éΩx"), unicode("         'éΩ")),
+        (unicode("%12.6a"), unicode("café"), unicode("      'caf\\x")),
+    )
+
+    for format, value, expected in unicode_cases:
+        assert format % value == expected
+
+    assert unicode("%*.*f|%*s|%+06d") % (
+        8,
+        3,
+        1.25,
+        5,
+        unicode("x"),
+        42,
+    ) == unicode("   1.250|    x|+00042")
+
+    slash = unicode("\\")
+    assert unicode("pre (%%%s) \\ %r \n %a") % (
+        unicode("x"),
+        unicode("a\tb"),
+        unicode("é\nΩ"),
+    ) == (
+        unicode("pre (%x) ")
+        + slash
+        + unicode(" 'a")
+        + slash
+        + unicode("tb' \n '")
+        + slash
+        + unicode("xe9")
+        + slash
+        + unicode("n")
+        + slash
+        + unicode("u03a9'")
+    )
+
+    assert unicode("") % () == unicode("")
+    assert unicode("%%") % () == unicode("%")
+    assert unicode("%s|%d|%.1f") % (unicode(""), 0, -0.0) == unicode(
+        "|0|-0.0"
+    )
+    assert unicode("<%s>|<%.0s>|<%r>") % (
+        unicode("\x00"),
+        unicode("\x00"),
+        unicode(""),
+    ) == unicode("<\x00>|<>|<''>")
+
+    assert unicode("%10000d") % 1 == unicode(" " * 9999 + "1")
+    assert unicode("%010000.1f") % 12.5 == unicode("0" * 9996 + "12.5")
+    assert unicode("%1005.1000f") % 1.0 == unicode(
+        " " * 3 + "1." + "0" * 1000
+    )
+
+    malformed_formats = (
+        unicode("%"),
+        unicode("%..2f"),
+        unicode("%08.2.1f"),
+        unicode("%q"),
+        unicode("%(name"),
+    )
+
+    for format in malformed_formats:
+        try:
+            format % 1
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_bytes_percent_format():
+    raw = _raw_bytes([0x00, 0x7F, 0x80, 0xFF])
+    percent_b = bytes("%b", "ascii")
+    percent_s = bytes("%s", "ascii")
+
+    assert percent_b % raw == raw
+    assert percent_s % raw == raw
+    assert bytes("%.2b", "ascii") % raw == _raw_bytes([0x00, 0x7F])
+    assert bytes("%6s", "ascii") % raw == bytes("  ", "ascii") + raw
+    assert bytes("%-6s", "ascii") % raw == raw + bytes("  ", "ascii")
+
+    assert bytes("%r", "ascii") % _raw_bytes([0xFF]) == bytes(
+        "b'\\xff'", "ascii"
+    )
+    assert bytes("%a", "ascii") % unicode("é") == bytes("'\\xe9'", "ascii")
+    assert bytes("%c", "ascii") % 0xFF == _raw_bytes([0xFF])
+    assert bytes("%c", "ascii") % bytes("Z", "ascii") == bytes("Z", "ascii")
+    assert bytes("%.*s", "ascii") % (-1, bytes("abc", "ascii")) == bytes()
+    assert bytes("%.*f", "ascii") % (-1, 1.75) == bytes("2", "ascii")
+    assert bytes("%.*c", "ascii") % (-1, 65) == bytes("A", "ascii")
+
+    assert bytes("%+06d:%#x:%.2f", "ascii") % (42, 255, 1.25) == bytes(
+        "+00042:0xff:1.25", "ascii"
+    )
+    assert bytes("%*.*f|%*b", "ascii") % (
+        8,
+        3,
+        1.25,
+        5,
+        bytes("x", "ascii"),
+    ) == bytes("   1.250|    x", "ascii")
+    assert bytes("a%%b", "ascii") % () == bytes("a%b", "ascii")
+
+
+@test
+def test_bytes_percent_mapping():
+    key = bytes("name", "ascii")
+    value = _raw_bytes([0x80, 0xFF])
+    mapping = {key: value}
+
+    assert bytes("%(name)b", "ascii") % mapping == value
+    assert bytes("[%(name)4s]", "ascii") % mapping == (
+        bytes("[  ", "ascii") + value + bytes("]", "ascii")
+    )
+
+
+@test
+def test_bytes_percent_format_errors():
+    try:
+        bytes("%b", "ascii") % unicode("text")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        bytes("%c", "ascii") % 256
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        bytes("%c", "ascii") % bytes("ab", "ascii")
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        bytes("%d %d", "ascii") % (1,)
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        bytes("%q", "ascii") % 1
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_bytes_search_algorithms():
+    value = _raw_bytes([0x00, 0xFF, 0x61, 0x00, 0xFF, 0x61])
+    needle = _raw_bytes([0x00, 0xFF])
+
+    assert value.find(needle) == 0
+    assert value.find(needle, 1) == 3
+    assert value.rfind(needle) == 3
+    assert value.count(needle) == 2
+    assert value.find(bytes()) == 0
+    assert value.rfind(bytes()) == len(value)
+    assert value.count(bytes()) == len(value) + 1
+    assert value.replace(needle, _raw_bytes([0x42]), 1) == _raw_bytes(
+        [0x42, 0x61, 0x00, 0xFF, 0x61]
+    )
+
+
+test_percent_basic()
+test_percent_multiple_arguments()
+test_percent_integer_signs_flags_width()
+test_percent_integer_precision()
+test_percent_integer_bases()
+test_percent_negative_nondecimal()
+test_percent_string_width_precision()
+test_percent_repr_width_precision()
+test_percent_characters()
+test_percent_fixed_float()
+test_percent_exponent_float()
+test_percent_general_float()
+test_percent_float_rounding()
+test_percent_dynamic_width()
+test_percent_dynamic_precision()
+test_percent_tuple_semantics()
+test_percent_argument_count_errors()
+test_percent_type_errors()
+test_percent_malformed_formats()
+test_percent_flags_odd_orders()
+test_percent_length_modifiers()
+test_percent_bools()
+test_percent_embedded_nulls()
+test_percent_unicode_content()
+test_percent_literal_percent_corner_cases()
+test_percent_large_width_precision()
+test_percent_numeric_coercions()
+test_percent_mapping_positional_mixing_errors()
+test_percent_regression_combinations()
+test_percent_cpython_adversarial_matrix()
+test_bytes_percent_format()
+test_bytes_percent_mapping()
+test_bytes_percent_format_errors()
+test_bytes_search_algorithms()
+
+
+# f-strings
+@test
+def test_fstring_literals_expressions_and_unicode():
+    value = unicode("café")
+    values = [10, 20, 30]
+    mapping = {unicode("answer"): 42}
+
+    assert f"" == unicode("")
+    assert f"plain text" == unicode("plain text")
+    assert f"{{}}" == unicode("{}")
+    assert f"{{{{}}}}" == unicode("{{}}")
+    assert f"{{{value}}}" == unicode("{café}")
+    assert f"préfixe {value} Ω" == unicode("préfixe café Ω")
+    assert f"{1 + 2 * 3}" == unicode("7")
+    assert f"{values[1]}" == unicode("20")
+    assert f"{mapping[unicode('answer')]}" == unicode("42")
+    assert f"{value.upper()}" == unicode("CAFÉ")
+    assert f"{42 if value else 0}" == unicode("42")
+
+
+@test
+def test_fstring_conversions_and_format_protocol():
+    class Rendered:
+        def __str__(self) -> str:
+            return unicode("str-é")
+
+        def __repr__(self) -> str:
+            return unicode("repr-Ω")
+
+        def __format__(self, spec: str) -> str:
+            return unicode("format[") + spec + unicode("]")
+
+    value = Rendered()
+    assert f"{value}" == unicode("format[]")
+    assert f"{value:wide}" == unicode("format[wide]")
+    assert f"{value!s}" == unicode("str-é")
+    assert f"{value!r}" == unicode("repr-Ω")
+    assert f"{value!a}" == unicode("repr-\\u03a9")
+    assert f"{value!s:>8}" == unicode("   str-é")
+    assert f"{value!r:.5}" == unicode("repr-")
+
+
+@test
+def test_fstring_numeric_specs():
+    width = 8
+    precision = 3
+
+    assert f"{42:d}" == unicode("42")
+    assert f"{42:#x}" == unicode("0x2a")
+    assert f"{42:08b}" == unicode("00101010")
+    assert f"{1234567:,}" == unicode("1,234,567")
+    assert f"{-12:=+6d}" == unicode("-   12")
+    assert f"{unicode('é'):Ω>5}" == unicode("ΩΩΩΩé")
+    assert f"{unicode('é'):😀^5}" == unicode("😀😀é😀😀")
+    assert f"{1.25:.2f}" == unicode("1.25")
+    assert f"{1.25:{width}.{precision}f}" == unicode("   1.250")
+    assert f"{42:{width}d}" == unicode("      42")
+
+
+@test
+def test_fstring_debug_expressions():
+    value = 42
+    text = unicode("café")
+    assert f"{value=}" == unicode("value=42")
+    assert f"{value=!r}" == unicode("value=42")
+    assert f"{value=:>6}" == unicode("value=    42")
+    assert f"{value + 1=}" == unicode("value + 1=43")
+    assert f"{text=}" == unicode("text='café'")
+    assert f"{text=!s}" == unicode("text=café")
+    assert f"{text=:>8}" == unicode("text=    café")
+    assert f"{ value = }" == unicode(" value = 42")
+    assert f"{value =}" == unicode("value =42")
+    assert f"{value= }" == unicode("value= 42")
+    assert f"{ value=}" == unicode(" value=42")
+
+
+@test
+def test_fstring_evaluation_order_and_count():
+    events: List[str] = []
+
+    def observe(label: str, value: int) -> int:
+        events.append(label)
+        return value
+
+    result = f"{observe('first', 1)}:{observe('second', 2)}:{observe('third', 3)}"
+    assert result == unicode("1:2:3")
+    assert events == [unicode("first"), unicode("second"), unicode("third")]
+
+    events.clear()
+    result = f"{observe('repeat', 7)}-{observe('repeat', 7)}"
+    assert result == unicode("7-7")
+    assert events == [unicode("repeat"), unicode("repeat")]
+
+    events.clear()
+    assert f"{observe('chosen', 1) if True else observe('skipped', 2)}" == unicode("1")
+    assert events == [unicode("chosen")]
+
+    events.clear()
+    assert f"{False and observe('skipped', 1)}" == unicode("False")
+    assert events == []
+
+    events.clear()
+    formatted = f"{float(observe('value', 125)) / 100.0:{observe('width', 8)}.{observe('precision', 2)}f}"
+    assert formatted == unicode("    1.25")
+    assert events == [unicode("value"), unicode("width"), unicode("precision")]
+
+    fill = unicode(".")
+    width = 5
+    assert f"{unicode('x'):{fill}>{width}}" == unicode("....x")
+
+
+@test
+def test_fstring_exception_stops_later_evaluation():
+    events: List[str] = []
+
+    def observe(label: str, value: int) -> int:
+        events.append(label)
+        return value
+
+    def fail() -> int:
+        events.append(unicode("fail"))
+        raise ValueError("stop")
+
+    try:
+        f"{observe('before', 1)}{fail()}{observe('after', 2)}"
+        assert False
+    except ValueError as error:
+        assert str(error) == unicode("stop")
+
+    assert events == [unicode("before"), unicode("fail")]
+
+
+@test
+def test_fstring_conversion_hook_order():
+    class Tracked:
+        events: List[str]
+
+        def __init__(self, events: List[str]):
+            self.events = events
+
+        def __str__(self) -> str:
+            self.events.append(unicode("str"))
+            return unicode("STR")
+
+        def __repr__(self) -> str:
+            self.events.append(unicode("repr"))
+            return unicode("REPR")
+
+        def __format__(self, spec: str) -> str:
+            self.events.append(unicode("format:") + spec)
+            return unicode("FMT[") + spec + unicode("]")
+
+    events: List[str] = []
+    value = Tracked(events)
+
+    assert f"{value}" == unicode("FMT[]")
+    assert events == [unicode("format:")]
+
+    events.clear()
+    assert f"{value:custom}" == unicode("FMT[custom]")
+    assert events == [unicode("format:custom")]
+
+    events.clear()
+    assert f"{value!s:>5}" == unicode("  STR")
+    assert events == [unicode("str")]
+
+    events.clear()
+    assert f"{value!r:>6}" == unicode("  REPR")
+    assert events == [unicode("repr")]
+
+    events.clear()
+    assert f"{value!a}" == unicode("REPR")
+    assert events == [unicode("repr")]
+
+
+@test
+def test_fstring_literal_forms_and_builtin_values():
+    value = unicode("café")
+    assert f"{1}" "-" f"{2}" == unicode("1-2")
+    assert rf"\n{value}" == unicode("\\ncafé")
+    assert f"""line 1
+{value}
+line 3""" == unicode("line 1\ncafé\nline 3")
+    assert f"{None}" == unicode("None")
+    assert f"{True}" == unicode("True")
+    assert f"{[1, 2, 3]}" == unicode("[1, 2, 3]")
+    assert f"{(1, 2)}" == unicode("(1, 2)")
+    assert f"{value!a}" == unicode("'caf\\xe9'")
+
+
+@test
+def test_fstring_rich_expressions():
+    class Box:
+        value: int
+
+        def __init__(self, value: int):
+            self.value = value
+
+        def doubled(self) -> int:
+            return self.value * 2
+
+    box = Box(21)
+    values = [unicode("zero"), unicode("one")]
+    index = 1
+
+    assert f"{box.value}" == unicode("21")
+    assert f"{box.doubled()}" == unicode("42")
+    assert f"{values[index]}" == unicode("one")
+    assert f"{(box.value + 1) * 2}" == unicode("44")
+    assert f"{values[0:2]}" == unicode("['zero', 'one']")
+    assert f"{ {1: 2} }" == unicode("{1: 2}")
+    assert f"outer {f'inner {box.value:04d}'}" == unicode("outer inner 0021")
+
+
+@test
+def test_fstring_numeric_boundaries():
+    import math
+
+    u64_max = UInt[64]("18446744073709551615")
+    i128_min = Int[128]("-170141183460469231731687303715884105728")
+
+    assert f"{i16(-32768)}" == unicode("-32768")
+    assert f"{u16(65535)}" == unicode("65535")
+    assert f"{u64_max}" == unicode("18446744073709551615")
+    assert f"{i128_min}" == unicode("-170141183460469231731687303715884105728")
+    assert f"{255:#010x}" == unicode("0x000000ff")
+    assert f"{-12:06d}" == unicode("-00012")
+    assert f"{0.0}" == unicode("0.0")
+    assert f"{-0.0}" == unicode("-0.0")
+    assert f"{-0.0:+.1f}" == unicode("-0.0")
+    assert f"{math.inf}" == unicode("inf")
+    assert f"{-math.inf}" == unicode("-inf")
+    assert f"{math.nan}" == unicode("nan")
+
+
+@test
+def test_fstring_unicode_buffer_edges():
+    value = unicode("😀éabc")
+    payload = unicode("😀Ωé") * 1024
+    nul = chr(0)
+
+    assert f"{value:.2}" == unicode("😀é")
+    assert f"{value:界<8}" == unicode("😀éabc界界界")
+    assert f"a{nul}b" == unicode("a\0b")
+    assert len(f"a{nul}b") == 3
+    assert f"prefix:{payload}:suffix" == unicode("prefix:") + payload + unicode(":suffix")
+
+    assert rf"\t{value}" == unicode("\\t😀éabc")
+    assert fr"\t{value}" == unicode("\\t😀éabc")
+    assert RF"\t{value}" == unicode("\\t😀éabc")
+    assert FR"\t{value}" == unicode("\\t😀éabc")
+
+
+@test
+def test_fstring_format_errors_propagate():
+    class RejectFormat:
+        def __format__(self, spec: str) -> str:
+            raise ValueError(unicode("rejected:") + spec)
+
+    try:
+        f"{42:not-a-format}"
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        f"{RejectFormat():custom}"
+        assert False
+    except ValueError as error:
+        assert str(error) == unicode("rejected:custom")
+
+
+test_fstring_literals_expressions_and_unicode()
+test_fstring_conversions_and_format_protocol()
+test_fstring_numeric_specs()
+test_fstring_debug_expressions()
+test_fstring_evaluation_order_and_count()
+test_fstring_exception_stops_later_evaluation()
+test_fstring_conversion_hook_order()
+test_fstring_literal_forms_and_builtin_values()
+test_fstring_rich_expressions()
+test_fstring_numeric_boundaries()
+test_fstring_unicode_buffer_edges()
+test_fstring_format_errors_propagate()
+
+
+# new-style format
+@test
+def test_brace_format_automatic_fields():
+    assert unicode("hello, {}").format(unicode("Codon")) == unicode(
+        "hello, Codon"
+    )
+    assert unicode("{} + {} = {}").format(1, 2, 3) == unicode("1 + 2 = 3")
+    assert unicode("{{{}}}").format(unicode("x")) == unicode("{x}")
+    assert unicode("{{}}").format() == unicode("{}")
+
+
+@test
+def test_brace_format_conversions():
+    assert unicode("{!s}").format(unicode("hello")) == unicode("hello")
+    assert unicode("{!r}").format(unicode("hello")) == unicode("'hello'")
+    assert unicode("{!a}").format(unicode("café")) == unicode("'caf\\xe9'")
+
+
+@test
+def test_brace_format_positional_fields():
+    assert unicode("{1}, {0}!").format(unicode("world"), unicode("hello")) == (
+        unicode("hello, world!")
+    )
+    assert unicode("{0!r} {1!a}").format(
+        unicode("hello"),
+        unicode("café"),
+    ) == unicode("'hello' 'caf\\xe9'")
+
+    try:
+        unicode("{1}").format(unicode("only"))
+        assert False
+    except IndexError:
+        pass
+
+    try:
+        unicode("{} {0}").format(1, 2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0} {}").format(1, 2)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_basic_specs():
+    assert unicode("{:d}").format(42) == unicode("42")
+    assert unicode("{:b}").format(42) == unicode("101010")
+    assert unicode("{:#b}").format(42) == unicode("0b101010")
+    assert unicode("{:#x}").format(255) == unicode("0xff")
+    assert unicode("{:05d}").format(-12) == unicode("-0012")
+    assert unicode("{:.2f}").format(1.25) == unicode("1.25")
+    assert unicode("{:08.2f}").format(1.25) == unicode("00001.25")
+    assert unicode("{:s}").format(unicode("Codon")) == unicode("Codon")
+    assert unicode("{:.3s}").format(unicode("Codon")) == unicode("Cod")
+    assert unicode("{:05}").format(unicode("x")) == unicode("x0000")
+    assert unicode("{:0>5}").format(unicode("x")) == unicode("0000x")
+    assert unicode("{!r:05}").format(unicode("x")) == unicode("'x'00")
+    assert unicode("{:05}").format(unicode("é")) == unicode("é0000")
+    assert unicode("{:.2}").format(1.234) == unicode("1.2")
+    assert unicode("{:+}").format(12) == unicode("+12")
+    assert unicode("{: }").format(12) == unicode(" 12")
+    assert unicode("{:#}").format(1.0) == unicode("1.0")
+    assert unicode("{:08}").format(1.25) == unicode("00001.25")
+    assert unicode("{:+.3}").format(1.25) == unicode("+1.25")
+    assert unicode("{:,}").format(1234567) == unicode("1,234,567")
+    assert unicode("{:n}").format(1234567) == unicode("1234567")
+    assert unicode("{:.4n}").format(1234.5) == unicode("1234")
+    assert unicode("{:z.1f}").format(-0.0) == unicode("0.0")
+    assert unicode("{:z.1f}").format(-0.04) == unicode("0.0")
+    assert unicode("{:z.1f}").format(-0.06) == unicode("-0.1")
+    assert unicode("{:+z.1f}").format(-0.04) == unicode("+0.0")
+    assert unicode("{:z}").format(-0.0) == unicode("0.0")
+
+    try:
+        unicode("{:z}").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    assert unicode("{:.1%}").format(0.125) == unicode("12.5%")
+    assert unicode("{:6.1%}").format(0.125) == unicode(" 12.5%")
+    assert unicode("{:08.1%}").format(0.125) == unicode("00012.5%")
+    assert unicode("{:+08.1%}").format(0.125) == unicode("+0012.5%")
+    assert unicode("{:<8.1%}").format(0.125) == unicode("12.5%   ")
+
+
+@test
+def test_brace_format_locale_numeric():
+    original = seq_locale_numeric()
+
+    if seq_set_locale_numeric(unicode("en_US.UTF-8")):
+        assert unicode("{:n}").format(1234567) == unicode("1,234,567")
+        assert unicode("{:.4n}").format(1234.5) == unicode("1,234")
+        assert seq_set_locale_numeric(original)
+
+
+@test
+def test_brace_format_type_validation():
+    assert unicode("{:c}").format(65) == unicode("A")
+    assert unicode("{:5c}").format(65) == unicode("    A")
+    assert unicode("{:05c}").format(65) == unicode("0000A")
+    assert unicode("{:<5c}").format(65) == unicode("A    ")
+    assert unicode("{:.2f}").format(1) == unicode("1.00")
+    assert unicode("{!r:>8}").format(unicode("x")) == unicode("     'x'")
+    assert unicode("{:-5d}").format(12) == unicode("   12")
+    assert unicode("{:-5d}").format(-12) == unicode("  -12")
+    assert unicode("{:-5.1f}").format(1.2) == unicode("  1.2")
+    assert unicode("{:<5d}").format(12) == unicode("12   ")
+
+    invalid_formats = (
+        (unicode("{:.3d}"), 12),
+        (unicode("{:d}"), 1.5),
+        (unicode("{:s}"), 1.5),
+        (unicode("{:s}"), 12),
+        (unicode("{:c}"), unicode("x")),
+        (unicode("{:+c}"), 65),
+        (unicode("{:#c}"), 65),
+        (unicode("{:.1c}"), 65),
+        (unicode("{:,c}"), 65),
+        (unicode("{:_c}"), 65),
+        (unicode("{:zc}"), 65),
+        (unicode("{:n}"), unicode("x")),
+        (unicode("{:,n}"), 1),
+        (unicode("{:-5}"), unicode("x")),
+        (unicode("{:+5}"), unicode("x")),
+        (unicode("{:#}"), unicode("x")),
+        (unicode("{:,}"), unicode("x")),
+        (unicode("{:_}"), unicode("x")),
+        (unicode("{:#s}"), unicode("x")),
+        (unicode("{!r:#}"), unicode("x")),
+        (unicode("{!a:,}"), unicode("é")),
+    )
+
+    for format, value in invalid_formats:
+        try:
+            format.format(value)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_brace_format_spec_grammar():
+    assert unicode("{:+z#08,.2f}").format(1.25) == unicode("+0,001.25")
+    assert unicode("{:z#0.1f}").format(1.0) == unicode("1.0")
+    assert unicode("{:#010x}").format(15) == unicode("0x0000000f")
+
+    invalid_formats = (
+        (unicode("{:0#8x}"), 15),
+        (unicode("{:#z.2f}"), 1.2),
+        (unicode("{:+ d}"), 1),
+        (unicode("{:+ +d}"), 1),
+        (unicode("{:##x}"), 1),
+        (unicode("{:, ,d}"), 1),
+    )
+
+    for format, value in invalid_formats:
+        try:
+            format.format(value)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_brace_format_alignment():
+    assert unicode("{:<8}").format(unicode("Codon")) == unicode("Codon   ")
+    assert unicode("{:>8}").format(unicode("Codon")) == unicode("   Codon")
+    assert unicode("{:^8}").format(unicode("Codon")) == unicode(" Codon  ")
+    assert unicode("{:*^8}").format(unicode("Codon")) == unicode("*Codon**")
+
+    assert unicode("{:>5d}").format(12) == unicode("   12")
+    assert unicode("{:<5d}").format(12) == unicode("12   ")
+    assert unicode("{:^5d}").format(12) == unicode(" 12  ")
+    assert unicode("{:=+8d}").format(12) == unicode("+     12")
+    assert unicode("{:=+8d}").format(-12) == unicode("-     12")
+    assert unicode("{:0=+8d}").format(12) == unicode("+0000012")
+    assert unicode("{:=#10x}").format(255) == unicode("0x      ff")
+    assert unicode("{:=+12,d}").format(1234) == unicode("+      1,234")
+
+    try:
+        unicode("{:=8s}").format(unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_grouping():
+    assert unicode("{:,d}").format(1234567) == unicode("1,234,567")
+    assert unicode("{:_x}").format(0xDEADBEEF) == unicode("dead_beef")
+    assert unicode("{:#_x}").format(0xDEADBEEF) == unicode("0xdead_beef")
+    assert unicode("{:_b}").format(0b101010101010) == unicode("1010_1010_1010")
+    assert unicode("{:,.2f}").format(1234.5) == unicode("1,234.50")
+    assert unicode("{:010,d}").format(1234) == unicode("00,001,234")
+    assert unicode("{:,}").format(1e20) == unicode("1e+20")
+    assert unicode("{:_}").format(1e20) == unicode("1e+20")
+    assert unicode("{:,}").format(1234.0) == unicode("1,234.0")
+
+    try:
+        unicode("{:,x}").format(15)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{:,b}").format(15)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_adversarial_combinations():
+    assert unicode("{:+#012x}").format(0xBEEF) == unicode("+0x00000beef")
+    assert unicode("{:=#012x}").format(-0xBEEF) == unicode("-0x00000beef")
+    assert unicode("{:0=+12,d}").format(1234) == unicode("+000,001,234")
+    assert unicode("{:*^11,d}").format(1234) == unicode("***1,234***")
+    assert unicode("{:#012b}").format(0b101101) == unicode("0b0000101101")
+
+    assert unicode("{:#012.0f}").format(1.0) == unicode("00000000001.")
+    assert unicode("{:=+10.0e}").format(1.0) == unicode("+    1e+00")
+    assert unicode("{:#.0g}").format(1.0) == unicode("1.")
+    assert unicode("{:z#08.0f}").format(-0.0) == unicode("0000000.")
+    assert unicode("{:,.0f}").format(999.5) == unicode("1,000")
+    assert unicode("{:_>12.2f}").format(-12.5) == unicode("______-12.50")
+
+    assert unicode("{!r:0^9}").format(unicode("x")) == unicode("000'x'000")
+    assert unicode("{!a:.6}").format(unicode("café")) == unicode("'caf\\x")
+    assert unicode("{:0=5c}").format(65) == unicode("0000A")
+    assert unicode("{:^6c}").format(0x03A9) == unicode("  Ω   ")
+    assert unicode("{{{:0=+8d}}}").format(12) == unicode("{+0000012}")
+    assert unicode("{0:{1}}").format(12, unicode("0=+8d")) == unicode("+0000012")
+
+    try:
+        unicode("{").format()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{{}").format()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0!q}").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0:{1:{2}}}").format(1, 2, 3)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_adversarial_multi_argument_sequences():
+    assert unicode("pre {2:#0{0}x} mid {1:0^7} post {3:z#08.1f}").format(
+        8,
+        unicode("x"),
+        0xBEEF,
+        -0.04,
+    ) == unicode("pre 0x00beef mid 000x000 post 000000.0")
+
+    assert unicode("{0:#0{1}b} {2:{3}.{4}f}").format(
+        45,
+        12,
+        1.25,
+        9,
+        2,
+    ) == unicode("0b0000101101      1.25")
+
+    assert unicode("{0:{1}} {2} {3:{4}}").format(
+        12,
+        unicode("+06d"),
+        unicode("ok"),
+        1e20,
+        unicode(","),
+    ) == unicode("+00012 ok 1e+20")
+
+    assert unicode("{{ {0:{1}} }} | {{ {2:{3}} }}").format(
+        12,
+        unicode("0=+8d"),
+        1.25,
+        unicode("+08.1f"),
+    ) == unicode("{ +0000012 } | { +00001.2 }")
+
+    assert unicode("{2:{0}}:{1:{3}}:{4:#0{5}x}").format(
+        5,
+        12,
+        7,
+        unicode("0=+6d"),
+        255,
+        8,
+    ) == unicode("    7:+00012:0x0000ff")
+
+
+@test
+def test_brace_format_adversarial_malformed_sequences():
+    try:
+        unicode("}").format()
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0!").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0!r").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0:").format(1)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0:{1}").format(1, 2)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{}}").format(1)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_adversarial_dynamic_buffer_growth():
+    assert unicode("α{{{0:{1}}}}β").format(1, 10) == unicode("α{         1}β")
+    assert unicode("{0:{1}d}").format(1, 10000) == unicode(" " * 9999 + "1")
+    assert unicode("{:010000.1%}").format(0.125) == unicode(
+        "0" * 9995 + "12.5%"
+    )
+    assert unicode("{0:{1}.{2}f}").format(1.0, 1005, 1000) == unicode(
+        " " * 3 + "1." + "0" * 1000
+    )
+
+    try:
+        unicode("{0:{1}{2}}").format(1, unicode("d"), unicode("x"))
+        assert False
+    except ValueError:
+        pass
+
+    assert unicode("{0:{1!r}}").format(1, 8) == unicode("       1")
+
+
+@test
+def test_brace_format_cpython_adversarial_matrix():
+    minimum = -(1 << 63)
+
+    numeric_cases = (
+        (unicode("{:+#018x}"), -0x1234, unicode("-0x000000000001234")),
+        (unicode("{:#_b}"), 0b1111000011110000, unicode("0b1111_0000_1111_0000")),
+        (unicode("{:=+#15,d}"), 1234567, unicode("+     1,234,567")),
+        (unicode("{:0=+#15,d}"), 1234567, unicode("+00,001,234,567")),
+        (unicode("{:#024o}"), minimum, unicode("-0o1000000000000000000000")),
+        (unicode("{:+020.4e}"), 1.25, unicode("+0000000001.2500e+00")),
+        (unicode("{:#.0g}"), 1000000.0, unicode("1.e+06")),
+        (unicode("{:020,.2f}"), 1234.5, unicode("0,000,000,001,234.50")),
+        (unicode("{:0=+16,.1%}"), 12.34, unicode("+0,000,001,234.0%")),
+        (unicode("{:=+z12.1f}"), -0.04, unicode("+        0.0")),
+        (unicode("{:=+z012.1f}"), -0.04, unicode("+000000000.0")),
+        (unicode("{:+08.1%}"), -0.0, unicode("-0000.0%")),
+        (unicode("{:#08.0f}"), float("inf"), unicode("00000inf")),
+        (unicode("{:+#08.0F}"), float("nan"), unicode("+0000NAN")),
+    )
+
+    for format, value, expected in numeric_cases:
+        assert format.format(value) == expected
+
+    unicode_cases = (
+        (unicode("{:界^7}"), unicode("a"), unicode("界界界a界界界")),
+        (unicode("{:😀>4.2}"), unicode("éΩx"), unicode("😀😀éΩ")),
+        (unicode("{:.0s}"), unicode("é"), unicode("")),
+        (unicode("{!r:*>12.3}"), unicode("éΩx"), unicode("*********'éΩ")),
+    )
+
+    for format, value, expected in unicode_cases:
+        assert format.format(value) == expected
+
+    assert unicode("{2:{0}.{1}f}|{3:{4}}|{5:{6}}").format(
+        8,
+        3,
+        1.25,
+        unicode("x"),
+        unicode("*^5"),
+        42,
+        unicode("0=+6d"),
+    ) == unicode("   1.250|**x**|+00042")
+
+    assert unicode("{{{0:0=+8d}}} {1!a:{2}}").format(
+        12,
+        unicode("é"),
+        unicode("^8"),
+    ) == unicode("{+0000012}  '\\xe9' ")
+
+    assert unicode("{2:0=+{0},d}|{1:{3}.{4}%}|{5:{6}}").format(
+        14,
+        0.125,
+        1234567,
+        8,
+        1,
+        unicode("xy"),
+        unicode("^8"),
+    ) == unicode("+0,001,234,567|   12.5%|   xy   ")
+
+    assert unicode("{{{3:{0}}}}:{2:{1}.{4}f}:{5:{6}}").format(
+        7,
+        10,
+        1.25,
+        42,
+        2,
+        unicode("x"),
+        unicode("*^5"),
+    ) == unicode("{     42}:      1.25:**x**")
+
+    assert unicode("{3:{0}}|{2:{1}}|{4:{5}}").format(
+        unicode("0=+7d"),
+        unicode(">6"),
+        12,
+        7,
+        unicode("éΩx"),
+        unicode(".^8"),
+    ) == unicode("+000007|    12|..éΩx...")
+
+    assert unicode("{0:{2}}/{1:{3}}/{4:{5}}").format(
+        unicode("é"),
+        unicode("Ω"),
+        unicode("^8"),
+        unicode(">12"),
+        1234,
+        unicode("0=+8,d"),
+    ) == unicode("   é    /           Ω/+001,234")
+
+    slash = unicode("\\")
+    assert unicode("pre ({{{0}}}) \\ {1!r} \n {2!a}").format(
+        unicode("x"),
+        unicode("a\tb"),
+        unicode("é\nΩ"),
+    ) == (
+        unicode("pre ({x}) ")
+        + slash
+        + unicode(" 'a")
+        + slash
+        + unicode("tb' \n '")
+        + slash
+        + unicode("xe9")
+        + slash
+        + unicode("n")
+        + slash
+        + unicode("u03a9'")
+    )
+
+    assert unicode("({0:{2}})\\({1!r:{3}})\\n[{4!a:{5}}]").format(
+        unicode("é"),
+        unicode("a\tb"),
+        unicode("^5"),
+        unicode(">10"),
+        unicode("Ω\n"),
+        unicode("^12"),
+    ) == (
+        unicode("(  é  )")
+        + slash
+        + unicode("(    'a")
+        + slash
+        + unicode("tb')")
+        + slash
+        + unicode("n[ '")
+        + slash
+        + unicode("u03a9")
+        + slash
+        + unicode("n' ]")
+    )
+
+    assert unicode("{{({0})}} -> {1!r} -> {2!a}").format(
+        unicode("x\ny"),
+        unicode("a\\b"),
+        unicode("é\t"),
+    ) == (
+        unicode("{(x\ny)} -> 'a")
+        + slash
+        + slash
+        + unicode("b' -> '")
+        + slash
+        + unicode("xe9")
+        + slash
+        + unicode("t'")
+    )
+
+    assert unicode("").format() == unicode("")
+    assert unicode("{{}}").format() == unicode("{}")
+    assert unicode("{{{}}}").format(unicode("")) == unicode("{}")
+    assert unicode("{}|{}|{}").format(unicode(""), 0, -0.0) == unicode(
+        "|0|-0.0"
+    )
+    assert unicode("[{:}]|[{:0}]|[{:>0}]|[{:^0}]").format(
+        unicode(""),
+        unicode(""),
+        unicode(""),
+        unicode(""),
+    ) == unicode("[]|[]|[]|[]")
+    assert unicode("[{:.0}]|[{:.0s}]|[{:.0f}]|[{:.0%}]").format(
+        unicode(""),
+        unicode(""),
+        0.0,
+        0.0,
+    ) == unicode("[]|[]|[0]|[0%]")
+    assert unicode("{0:{1}}|{2:{3}}|{4:{5}}").format(
+        unicode(""),
+        unicode(""),
+        0,
+        unicode(""),
+        unicode("x"),
+        unicode(""),
+    ) == unicode("|0|x")
+    assert unicode("<{0}>|<{1:.0}>|<{2!r}>").format(
+        unicode("\x00"),
+        unicode("\x00"),
+        unicode(""),
+    ) == unicode("<\x00>|<>|<''>")
+
+    numbering_errors = (
+        unicode("{} {1} {0:{2}}"),
+        unicode("{1} {} {0:{2}}"),
+        unicode("{0:{}} {1}"),
+        unicode("{:{1}} {0}"),
+    )
+
+    for format in numbering_errors:
+        try:
+            format.format(1, 2, 3)
+            assert False
+        except ValueError:
+            pass
+
+    malformed_formats = (
+        unicode("{:..2f}"),
+        unicode("{:08.2.1f}"),
+        unicode("{:++d}"),
+        unicode("{:--d}"),
+        unicode("{0!r!s}"),
+        unicode("{0:{1:{2}}}"),
+        unicode("{0:😀}"),
+        unicode("{:n,}"),
+    )
+
+    for format in malformed_formats:
+        try:
+            format.format(1, 2, 3, 4)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_brace_format_nested_specs():
+    assert unicode("{0:{1}}").format(42, 5) == unicode("   42")
+    assert unicode("{0:.{1}f}").format(1.25, 1) == unicode("1.2")
+    assert unicode("{:{}}").format(42, 5) == unicode("   42")
+
+    try:
+        unicode("{0:{}}").format(42, 5)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{:{0}}").format(42, 5)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_brace_format_custom_protocol():
+    class Token:
+        value: unicode
+
+        def __init__(self, value: unicode):
+            self.value = value
+
+        def __format__(self, spec: unicode) -> unicode:
+            return unicode("<") + self.value + unicode(":") + spec + unicode(">")
+
+    token = Token(unicode("payload"))
+    assert unicode("{}").format("raw") == unicode("raw")
+    assert unicode("{}").format(token) == unicode("<payload:>")
+    assert unicode("before {:opaque} after").format(token) == unicode(
+        "before <payload:opaque> after"
+    )
+    assert unicode("{0:{1}}").format(token, unicode("nested")) == unicode(
+        "<payload:nested>"
+    )
+
+
+@test
+def test_brace_format_map():
+    values: Dict[unicode, unicode] = {
+        unicode("name"): unicode("Codon"),
+        unicode("greeting"): unicode("hi"),
+        unicode("width"): unicode(">8"),
+    }
+    assert unicode("{name}").format_map(values) == unicode("Codon")
+    assert unicode("{greeting:>8}|{name:.3}").format_map(values) == unicode(
+        "      hi|Cod"
+    )
+    assert unicode("{name:{width}}").format_map(values) == unicode("   Codon")
+    assert unicode("{{{name}}}").format_map(values) == unicode("{Codon}")
+
+    class Names:
+        values: Dict[unicode, unicode]
+
+        def __init__(self):
+            self.values = values
+
+        def __getitem__(self, key: unicode) -> unicode:
+            return self.values[key]
+
+    assert unicode("{greeting}, {name}").format_map(Names()) == unicode(
+        "hi, Codon"
+    )
+
+    class Token:
+        value: unicode
+
+        def __init__(self, value: unicode):
+            self.value = value
+
+        def __format__(self, spec: unicode) -> unicode:
+            return unicode("[") + self.value + unicode(":") + spec + unicode("]")
+
+    class Tokens:
+        value: Token
+        spec: Token
+
+        def __init__(self):
+            self.value = Token(unicode("payload"))
+            self.spec = Token(unicode("nested"))
+
+        def __getitem__(self, key: unicode) -> Token:
+            if key == unicode("value"):
+                return self.value
+            return self.spec
+
+    assert unicode("{value:opaque}").format_map(Tokens()) == unicode(
+        "[payload:opaque]"
+    )
+    assert unicode("{value:{spec}}").format_map(Tokens()) == unicode(
+        "[payload:[nested:]]"
+    )
+
+    try:
+        unicode("{}").format_map(values)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{0}").format_map(values)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{name:{}}").format_map(values)
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        unicode("{name}").format(unicode("Codon"))
+        assert False
+    except ValueError:
+        pass
+
+
+test_brace_format_automatic_fields()
+test_brace_format_conversions()
+test_brace_format_positional_fields()
+test_brace_format_basic_specs()
+test_brace_format_locale_numeric()
+test_brace_format_type_validation()
+test_brace_format_spec_grammar()
+test_brace_format_alignment()
+test_brace_format_grouping()
+test_brace_format_adversarial_combinations()
+test_brace_format_adversarial_multi_argument_sequences()
+test_brace_format_adversarial_malformed_sequences()
+test_brace_format_adversarial_dynamic_buffer_growth()
+test_brace_format_cpython_adversarial_matrix()
+test_brace_format_nested_specs()
+test_brace_format_custom_protocol()
+test_brace_format_map()
+test_unicode_differential_casing_and_predicates()
+test_unicode_differential_lines_bounds_and_repr()
+test_unicode_differential_fuzz_search_and_split()
+test_codecs_and_error_handlers()
+test_codecs_differential_recovery_and_bom_semantics()
+test_codecs_surrogates_and_cp1252()
+test_codecs_handler_fuzz_round_trips()
+
+
+_native_is_little_endian = lambda: True
+
+@test
+def test_negative_repeat():
+    assert "abc" * -1 == ""
+    assert "abc" * -100 == ""
+    assert "abc" * 0 == ""
+    assert "abc" * 2 == "abcabc"
+
+
+@test
+def test_capitalize_full_unicode():
+    assert "élan VITAL".capitalize() == "Élan vital"
+    assert "ßFOO".capitalize() == "Ssfoo"
+    assert "ǳABC DEF".capitalize() == "ǲabc def"
+
+
+@test
+def test_istitle_combining_marks():
+    assert "A\u0301a".istitle() == False
+    assert "A\u0301A".istitle() == True
+    assert "A-a".istitle() == False
+    assert "A-A".istitle() == True
+
+
+@test
+def test_cat_generator_multibyte():
+    def pieces():
+        yield "A"
+        yield "é"
+        yield "Ω"
+        yield "😀"
+        yield "Z"
+
+    assert str.cat(pieces()) == "AéΩ😀Z"
+
+    def ucs2_only():
+        yield "α"
+        yield "β"
+        yield "γ"
+
+    assert str.cat(ucs2_only()) == "αβγ"
+
+
+@test
+def test_utf8_error_span_replace():
+    assert str(b"\xe1\x80A", "utf-8", "replace") == "\ufffdA"
+    assert str(b"\xf0\x90\x80A", "utf-8", "replace") == "\ufffdA"
+    assert str(b"\xe1\x80", "utf-8", "replace") == "\ufffd"
+    assert str(b"\xf0\x90\x80", "utf-8", "replace") == "\ufffd"
+
+    # Illegal second bytes make the lead byte an error on its own.
+    assert str(b"\xe0\x80\x80", "utf-8", "replace") == "\ufffd\ufffd\ufffd"
+    assert str(b"\xed\xa0\x80", "utf-8", "replace") == "\ufffd\ufffd\ufffd"
+
+
+@test
+def test_utf8_error_span_ignore():
+    assert str(b"\xe1\x80A", "utf-8", "ignore") == "A"
+    assert str(b"\xf0\x90\x80A", "utf-8", "ignore") == "A"
+    assert str(b"\xe1\x80", "utf-8", "ignore") == ""
+
+
+@test
+def test_utf8_error_span_backslashreplace():
+    assert str(b"\xe1\x80A", "utf-8", "backslashreplace") == "\\xe1\\x80A"
+    assert str(b"\xf0\x90\x80A", "utf-8", "backslashreplace") == "\\xf0\\x90\\x80A"
+
+
+@test
+def test_utf8_error_span_surrogateescape():
+    s = str(b"\xe1\x80A", "utf-8", "surrogateescape")
+    assert len(s) == 3
+    assert s._load_codepoint(0) == 0xDCE1
+    assert s._load_codepoint(1) == 0xDC80
+    assert s[2] == "A"
+
+
+@test
+def test_utf16_without_bom_uses_native_endian():
+    if _native_is_little_endian():
+        assert str(b"a\x00", "utf-16") == "a"
+        assert str(b"a\x00b\x00", "utf-16") == "ab"
+    else:
+        assert str(b"\x00a", "utf-16") == "a"
+        assert str(b"\x00a\x00b", "utf-16") == "ab"
+
+
+@test
+def test_utf32_without_bom_uses_native_endian():
+    if _native_is_little_endian():
+        assert str(b"a\x00\x00\x00", "utf-32") == "a"
+    else:
+        assert str(b"\x00\x00\x00a", "utf-32") == "a"
+
+
+@test
+def test_utf16_utf32_bom_roundtrip():
+    text = "AéΩ😀"
+    assert str(text.encode("utf-16"), "utf-16") == text
+    assert str(text.encode("utf-32"), "utf-32") == text
+    assert str(text.encode("utf-16-le"), "utf-16-le") == text
+    assert str(text.encode("utf-16-be"), "utf-16-be") == text
+    assert str(text.encode("utf-32-le"), "utf-32-le") == text
+    assert str(text.encode("utf-32-be"), "utf-32-be") == text
+
+
+@test
+def test_internal_storage_is_native_endian():
+    a = _unicode_from_codepoint(0x1234)
+    b = _unicode_from_codepoint(0x1F600)
+    assert int(Ptr[u16](a._ptr)[0]) == 0x1234
+    assert int(Ptr[u32](b._ptr)[0]) == 0x1F600
+
+
+@test
+def test_maketrans_string_forms():
+    table = str.maketrans("abc", "xyz")
+    assert "cab".translate(table) == "zxy"
+
+    table2 = str.maketrans("ab", "xy", "c")
+    assert table2[ord("c")] is None
+    assert "cabca".translate(table2) == "xyx"
+
+    try:
+        str.maketrans("ab", "x")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_translate_int_minus_one_is_invalid():
+    table: dict[int, int] = {ord("a"): -1}
+    try:
+        "a".translate(table)
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_translate_none_deletes():
+    table: dict[int, Optional[int]] = {ord("a"): None}
+    assert "banana".translate(table) == "bnn"
+
+
+@test
+def test_translate_allows_surrogate_codepoint():
+    table: dict[int, int] = {ord("a"): 0xD800}
+    result = "a".translate(table)
+    assert len(result) == 1
+    assert result._load_codepoint(0) == 0xD800
+
+
+@test
+def test_surrogateescape_single_byte_encoders():
+    s = _unicode_from_codepoint(0xDC80)
+    assert s.encode("ascii", "surrogateescape") == b"\x80"
+    assert s.encode("latin-1", "surrogateescape") == b"\x80"
+    assert s.encode("cp1252", "surrogateescape") == b"\x80"
+    assert s.encode("cp1250", "surrogateescape") == b"\x80"
+
+
+@test
+def test_surrogateescape_not_raw_for_utf16_utf32():
+    s = _unicode_from_codepoint(0xDC80)
+
+    try:
+        s.encode("utf-16-le", "surrogateescape")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        s.encode("utf-32-le", "surrogateescape")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_surrogatepass_utf_encoders():
+    s = _unicode_from_codepoint(0xD800)
+    assert s.encode("utf-8", "surrogatepass") == b"\xed\xa0\x80"
+    assert s.encode("utf-16-le", "surrogatepass") == b"\x00\xd8"
+    assert s.encode("utf-32-le", "surrogatepass") == b"\x00\xd8\x00\x00"
+
+
+@test
+def test_utf16_utf32_encode_error_alignment():
+    s = _unicode_from_codepoint(0xD800)
+    assert s.encode("utf-16-le", "replace") == b"?\x00"
+    assert s.encode("utf-16-be", "replace") == b"\x00?"
+    assert s.encode("utf-32-le", "replace") == b"?\x00\x00\x00"
+    assert s.encode("utf-32-be", "replace") == b"\x00\x00\x00?"
+    assert s.encode("utf-16-le", "backslashreplace") == "\\ud800".encode("utf-16-le")
+    assert s.encode("utf-32-be", "backslashreplace") == "\\ud800".encode("utf-32-be")
+
+
+@test
+def test_error_handler_lookup_is_lazy_decode():
+    assert str(b"abc", "ascii", "does-not-exist") == "abc"
+    try:
+        str(b"\xff", "ascii", "does-not-exist")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_error_handler_lookup_is_lazy_encode():
+    assert "abc".encode("ascii", "does-not-exist") == b"abc"
+    try:
+        "é".encode("ascii", "does-not-exist")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_encoding_name_normalization():
+    assert str(b"abc", "UTF 8") == "abc"
+    assert str(b"abc", "utf_8") == "abc"
+    assert str(b"abc", "utf--8") == "abc"
+    assert str(b"abc", " latin 1 ") == "abc"
+
+    try:
+        str(b"abc", "utf.8")
+        assert False
+    except LookupError:
+        pass
+
+
+@test
+def test_repr_quote_choice_matches_python():
+    assert repr("abc") == "'abc'"
+    assert repr("a'b") == "\"a'b\""
+    assert repr('a"b') == "'a\"b'"
+    assert repr("a'\"b") == "'a\\'\"b'"
+
+
+@test
+def test_strip_none():
+    assert "  abc \t".strip(None) == "abc"
+    assert "  abc \t".lstrip(None) == "abc \t"
+    assert "  abc \t".rstrip(None) == "  abc"
+
+
+@test
+def test_slices_do_not_alias_parent_storage():
+    # This is primarily a lifetime/ownership regression test. The result must
+    # remain valid after the source reference is replaced.
+    source = "xx😀éΩyy"
+    middle = source[2:5]
+    source = "replacement"
+    assert middle == "😀éΩ"
+
+
+@test
+def test_utf8_strict_encoding_paths():
+    ascii_c_str = Ptr[u8]("ascii".c_str())
+    assert bytes(ascii_c_str, 6) == b"ascii\x00"
+    unicode_c_str = Ptr[u8]("é".c_str())
+    assert bytes(unicode_c_str, 3) == b"\xc3\xa9\x00"
+    try:
+        chr(0xD800).c_str()
+        assert False
+    except ValueError:
+        pass
+
+    assert "".encode("utf-8") == b""
+    assert "ascii".encode("utf-8") == b"ascii"
+    assert "é".encode("utf-8") == b"\xc3\xa9"
+    assert ("é" * 16).encode("utf-8") == b"\xc3\xa9" * 16
+    assert ("Ā" * 8).encode("utf-8") == b"\xc4\x80" * 8
+    assert ("a" * 15 + "é" + "z" * 16).encode("utf-8") == (
+        b"a" * 15 + b"\xc3\xa9" + b"z" * 16
+    )
+    assert "Ω".encode("utf-8") == b"\xce\xa9"
+    assert "😀".encode("utf-8") == b"\xf0\x9f\x98\x80"
+    value = "a" * 31 + "\x7f\x80\u07ff\u0800\ud7ff\ue000\uffff" + "z" * 33
+    expected = (
+        b"a" * 31
+        + b"\x7f\xc2\x80\xdf\xbf\xe0\xa0\x80"
+        + b"\xed\x9f\xbf\xee\x80\x80\xef\xbf\xbf"
+        + b"z" * 33
+    )
+    assert value.encode("utf-8") == expected
+
+    try:
+        ("a" * 16 + chr(0xD800) + "z" * 16).encode("utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    assert ("😀" * 17).encode("utf-8") == b"\xf0\x9f\x98\x80" * 17
+    assert ("\U00010000\U0010ffff" * 9).encode("utf-8") == (
+        b"\xf0\x90\x80\x80\xf4\x8f\xbf\xbf" * 9
+    )
+    assert (b"\xf0\x9f\x98\x80" * 17).decode("utf-8") == "😀" * 17
+    assert (b"\xf0\x90\x80\x80\xf4\x8f\xbf\xbf" * 9).decode("utf-8") == (
+        "\U00010000\U0010ffff" * 9
+    )
+    assert (b"\xc3\xa9" * 8).decode("utf-8") == "é" * 8
+    assert (b"a" * 15 + b"\xc3\xa9").decode("utf-8") == "a" * 15 + "é"
+    assert (b"\xc4\x80" * 8).decode("utf-8") == "Ā" * 8
+    assert b"\xce\xa9\xf0\x9f\x98\x80".decode("utf-8") == "Ω😀"
+
+    for invalid in (
+        b"\xce\xa9\xc3x",
+        b"\xce\xa9\xe0\x80\x80",
+        b"\xce\xa9\xf4\x90\x80\x80",
+        b"\xce\xa9\xf0\x9f\x98\x80\xc3x",
+    ):
+        try:
+            invalid.decode("utf-8")
+            assert False
+        except ValueError:
+            pass
+
+    for invalid in (
+        b"a" * 14 + b"\xc3x",
+        b"\xc3\xa9" * 7 + b"\x80a",
+    ):
+        try:
+            invalid.decode("utf-8")
+            assert False
+        except ValueError:
+            pass
+
+    valid_prefix = b"\xf0\x9f\x98\x80" * 4
+    for invalid in (
+        b"\xf0\x80\x80\x80",
+        b"\xf4\x90\x80\x80",
+        b"\xf0\x90\x00\x80",
+        b"\xf5\x80\x80\x80",
+    ):
+        try:
+            (valid_prefix + invalid * 4).decode("utf-8")
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_identity_codecs_share_immutable_storage():
+    ascii_text = "shared ascii storage"
+    assert ascii_text.encode("utf-8")._ptr == ascii_text._ptr
+    assert ascii_text.encode("ascii")._ptr == ascii_text._ptr
+    assert ascii_text.encode("latin-1")._ptr == ascii_text._ptr
+    assert ascii_text.encode("utf-8", "ignore")._ptr == ascii_text._ptr
+
+    latin1_text = "café Noël"
+    assert latin1_text.encode("latin-1")._ptr == latin1_text._ptr
+    ascii_slice = latin1_text[5:]
+    assert ascii_slice.encode("utf-8")._ptr != ascii_slice._ptr
+
+    ascii_data = _raw_bytes([0x61, 0x62, 0x63])
+    assert ascii_data.decode("utf-8")._ptr == ascii_data._ptr
+    assert ascii_data.decode("ascii")._ptr != ascii_data._ptr
+    assert ascii_data.decode("utf-8", "ignore")._ptr != ascii_data._ptr
+
+    latin1_data = _raw_bytes([0x63, 0x61, 0x66, 0xE9])
+    assert latin1_data.decode("latin-1")._ptr == latin1_data._ptr
+
+    encoded = ascii_text.encode("utf-8")
+    ascii_text = "replacement"
+    assert encoded == b"shared ascii storage"
+
+    decoded = ascii_data.decode("utf-8")
+    ascii_data = b"replacement"
+    assert decoded == "abc"
+
+
+@test
+def test_bytes_constructor_requires_explicit_decode_to_decode_contents():
+    # CPython: str(bytes_obj) is its repr; decoding bytes requires an encoding.
+    assert str(b"abc") == "b'abc'"
+    assert str(b"abc", "utf-8") == "abc"
+
+
+test_negative_repeat()
+test_capitalize_full_unicode()
+test_istitle_combining_marks()
+test_cat_generator_multibyte()
+test_utf8_error_span_replace()
+test_utf8_error_span_ignore()
+test_utf8_error_span_backslashreplace()
+test_utf8_error_span_surrogateescape()
+test_utf16_without_bom_uses_native_endian()
+test_utf32_without_bom_uses_native_endian()
+test_utf16_utf32_bom_roundtrip()
+test_internal_storage_is_native_endian()
+test_maketrans_string_forms()
+test_translate_int_minus_one_is_invalid()
+test_translate_none_deletes()
+test_translate_allows_surrogate_codepoint()
+test_surrogateescape_single_byte_encoders()
+test_surrogateescape_not_raw_for_utf16_utf32()
+test_surrogatepass_utf_encoders()
+test_utf16_utf32_encode_error_alignment()
+test_error_handler_lookup_is_lazy_decode()
+test_error_handler_lookup_is_lazy_encode()
+test_encoding_name_normalization()
+test_repr_quote_choice_matches_python()
+test_strip_none()
+test_slices_do_not_alias_parent_storage()
+test_utf8_strict_encoding_paths()
+test_identity_codecs_share_immutable_storage()
+test_bytes_constructor_requires_explicit_decode_to_decode_contents()
+
+
+# Regression tests for format.codon CPython compatibility fixes.
+
+@test
+def test_percent_length_modifiers():
+    assert "%hd" % 12 == "12"
+    assert "%ld" % 12 == "12"
+    assert "%Ld" % 12 == "12"
+
+    try:
+        "%lld" % 12
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        "%hhd" % 12
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        "%LLf" % 1.0
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_percent_c_allows_surrogates():
+    s = "%c" % 0xD800
+    assert len(s) == 1
+    assert ord(s) == 0xD800
+
+    s = "{:c}".format(0xDFFF)
+    assert len(s) == 1
+    assert ord(s) == 0xDFFF
+
+    try:
+        "%c" % 0x110000
+        assert False
+    except OverflowError:
+        pass
+
+    try:
+        "{:c}".format(-1)
+        assert False
+    except OverflowError:
+        pass
+
+
+@test
+def test_percent_mapping_can_be_positional_operand():
+    d = {"x": "value"}
+
+    assert "%s" % d == str(d)
+    assert "%r" % d == repr(d)
+    assert "%s %(x)s" % d == str(d) + " value"
+    assert "%% %s" % d == "% " + str(d)
+
+    try:
+        "%(x)s %s" % d
+        assert False
+    except TypeError:
+        pass
+
+    try:
+        "%s %s" % d
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_bytes_percent_mapping_positional_rules():
+    d = {b"x": b"value"}
+
+    assert b"%r" % d == bytes(repr(d), "ascii")
+    assert b"%r %(x)s" % d == bytes(repr(d), "ascii") + b" value"
+
+    try:
+        b"%(x)s %r" % d
+        assert False
+    except TypeError:
+        pass
+
+    # A mapping is not itself a bytes-like value for %s/%b.
+    try:
+        b"%s" % d
+        assert False
+    except TypeError:
+        pass
+
+
+@test
+def test_brace_rejects_percent_only_i_u_codes():
+    for spec in ("i", "u"):
+        try:
+            format(1, spec)
+            assert False
+        except ValueError:
+            pass
+
+        try:
+            format(1.25, spec)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_default_float_zero_padding_is_sign_aware():
+    assert format(-1.2, "08") == "-00001.2"
+    assert format(-0.0, "08") == "-00000.0"
+    assert format(1.2, "08") == "000001.2"
+    assert format(1.2, "+08") == "+00001.2"
+    assert format(1.2, " 08") == " 00001.2"
+
+    assert "{:08}".format(-1.2) == "-00001.2"
+    assert "{:08}".format(-0.0) == "-00000.0"
+
+
+@test
+def test_underscore_grouping_decimal_vs_nondecimal():
+    assert format(123456789, "_") == "123_456_789"
+    assert format(123456789, "_d") == "123_456_789"
+    assert format(1234567.89, "_") == "1_234_567.89"
+    assert format(1234567.89, "_.2f") == "1_234_567.89"
+
+    # Non-decimal integer formats group by four.
+    assert format(0x75BCD15, "_x") == "75b_cd15"
+    assert format(0o726746425, "_o") == "7_2674_6425"
+    assert format(0b111010110111100110100010101, "_b") == (
+        "111_0101_1011_1100_1101_0001_0101"
+    )
+
+
+@test
+def test_comma_nondecimal_is_rejected():
+    for spec in (",b", ",o", ",x", ",X"):
+        try:
+            format(123, spec)
+            assert False
+        except ValueError:
+            pass
+
+
+@test
+def test_zero_padding_with_grouping():
+    assert format(-1.2, "010,") == "-000,001.2"
+    assert format(-1.2, "0=10,") == "-000,001.2"
+    assert format(1234, "010_d") == "00_001_234"
+
+
+@test
+def test_unicode_fill_and_character_width():
+    assert format("x", "🦄^5") == "🦄🦄x🦄🦄"
+    assert format("é", ">3") == "  é"
+    assert format("é", ".1s") == "é"
+
+
+@test
+def test_percent_regressions_baseline():
+    assert "%#o" % 8 == "0o10"
+    assert "%.0d" % 0 == "0"
+    assert "%05.3d" % 1 == "00001"
+    assert "%#05x" % 1 == "0x001"
+    assert "%+05d" % 1 == "+0001"
+    assert "%05s" % "x" == "    x"
+    assert "%05c" % 65 == "    A"
+    assert "%*s" % (-5, "x") == "x    "
+    assert "%.*s" % (-1, "abc") == ""
+
+
+@test
+def test_brace_regressions_baseline():
+    assert format("x", "05") == "x0000"
+    assert format("x", "0>5") == "0000x"
+    assert format("x", "^5") == "  x  "
+    assert format(-1, "0=5d") == "-0001"
+    assert format(-1, "#06x") == "-0x001"
+    assert format(123456789, ",d") == "123,456,789"
+    assert format(1234567.89, ",.2f") == "1,234,567.89"
+
+
+@test
+def test_invalid_string_specs():
+    for spec in ("=5", "-5", "+5", "z", "#5", ",5"):
+        try:
+            format("x", spec)
+            assert False
+        except ValueError:
+            pass
+
+
+test_percent_length_modifiers()
+test_percent_c_allows_surrogates()
+test_percent_mapping_can_be_positional_operand()
+test_bytes_percent_mapping_positional_rules()
+test_brace_rejects_percent_only_i_u_codes()
+test_default_float_zero_padding_is_sign_aware()
+test_underscore_grouping_decimal_vs_nondecimal()
+test_comma_nondecimal_is_rejected()
+test_zero_padding_with_grouping()
+test_unicode_fill_and_character_width()
+test_percent_regressions_baseline()
+test_brace_regressions_baseline()
+test_invalid_string_specs()
+
+
+# File I/O tests
+
+from gzip import open as gzopen
+from bz2 import open as bzopen
+
+
+@test
+def test_file_context_manager_returns_self():
+    path = "build/file_context_manager.txt"
+    with open(path, "w") as f:
+        assert f is not None
+        assert f.write("hello") == 5
+
+    with open(path, "r") as f:
+        assert f.read() == "hello"
+
+
+@test
+def test_binary_readline_only_splits_on_lf():
+    path = "build/file_binary_readline.bin"
+    with open(path, "wb") as f:
+        f.write(b"a\rb\nc")
+
+    with open(path, "rb") as f:
+        assert f.readline() == b"a\rb\n"
+        assert f.readline() == b"c"
+        assert f.readline() == b""
+
+
+@test
+def test_text_readline_newline_modes():
+    path = "build/file_newline_modes.txt"
+    with open(path, "wb") as f:
+        f.write(b"a\rb\r\nc\n")
+
+    with open(path, "r", newline=None) as f:
+        assert f.readline() == "a\n"
+        assert f.readline() == "b\n"
+        assert f.readline() == "c\n"
+
+    with open(path, "r", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r\n"
+        assert f.readline() == "c\n"
+
+    with open(path, "r", newline="\n") as f:
+        assert f.readline() == "a\rb\r\n"
+        assert f.readline() == "c\n"
+
+    with open(path, "r", newline="\r") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r"
+        assert f.readline() == "\nc\n"
+
+    with open(path, "r", newline="\r\n") as f:
+        assert f.readline() == "a\rb\r\n"
+        assert f.readline() == "c\n"
+
+
+@test
+def test_gzip_and_bzip_newline_empty_mode():
+    gz_path = "build/file_newline_modes.gz"
+    bz_path = "build/file_newline_modes.bz2"
+    data = b"a\rb\r\nc\n"
+
+    with gzopen(gz_path, "wb") as f:
+        f.write(data)
+    with gzopen(gz_path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r\n"
+        assert f.readline() == "c\n"
+
+    with bzopen(bz_path, "wb") as f:
+        f.write(data)
+    with bzopen(bz_path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\r\n"
+        assert f.readline() == "c\n"
+
+
+@test
+def test_utf16_bom_written_once_file():
+    path = "build/file_utf16_once.txt"
+    with open(path, "w", encoding="utf-16") as f:
+        f.write("A")
+        f.write("B")
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    assert data == b"\xff\xfeA\x00B\x00"
+
+
+@test
+def test_utf32_bom_written_once_file():
+    path = "build/file_utf32_once.txt"
+    with open(path, "w", encoding="utf-32") as f:
+        f.write("A")
+        f.write("B")
+
+    with open(path, "rb") as f:
+        data = f.read()
+
+    assert data == b"\xff\xfe\x00\x00A\x00\x00\x00B\x00\x00\x00"
+
+
+@test
+def test_utf16_compressed_writer_matches_python():
+    gz_path = "build/file_utf16_once.gz"
+    bz_path = "build/file_utf16_once.bz2"
+
+    # gzip's text wrapper is seekable, so generic UTF-16 emits its BOM once.
+    with gzopen(gz_path, "wt", encoding="utf-16") as f:
+        f.write("A")
+        f.write("B")
+    with gzopen(gz_path, "rb") as f:
+        assert f.read() == b"\xff\xfeA\x00B\x00"
+
+    # CPython's writable BZ2File is non-seekable. TextIOWrapper therefore
+    # uses the native-endian UTF-16 encoder without writing a BOM.
+    with bzopen(bz_path, "wt", encoding="utf-16") as f:
+        f.write("A")
+        f.write("B")
+    with bzopen(bz_path, "rb") as f:
+        assert f.read() == b"A\x00B\x00"
+
+
+@test
+def test_utf32_compressed_writer_matches_python():
+    gz_path = "build/file_utf32_once.gz"
+    bz_path = "build/file_utf32_once.bz2"
+
+    with gzopen(gz_path, "wt", encoding="utf-32") as f:
+        f.write("A")
+        f.write("B")
+    with gzopen(gz_path, "rb") as f:
+        assert f.read() == b"\xff\xfe\x00\x00A\x00\x00\x00B\x00\x00\x00"
+
+    with bzopen(bz_path, "wt", encoding="utf-32") as f:
+        f.write("A")
+        f.write("B")
+    with bzopen(bz_path, "rb") as f:
+        assert f.read() == b"A\x00\x00\x00B\x00\x00\x00"
+
+
+@test
+def test_utf16_stream_requires_bom():
+    path = "build/file_utf16_no_bom.txt"
+    with open(path, "wb") as f:
+        f.write(b"A\x00")
+
+    try:
+        with open(path, "r", encoding="utf-16") as f:
+            f.read()
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_empty_utf16_stream_is_allowed():
+    path = "build/file_utf16_empty.txt"
+    with open(path, "wb") as f:
+        pass
+
+    with open(path, "r", encoding="utf-16") as f:
+        assert f.read() == ""
+
+
+@test
+def test_utf16_seek_zero_resets_bom_state():
+    path = "build/file_utf16_seek.txt"
+    with open(path, "w", encoding="utf-16") as f:
+        f.write("AB")
+
+    with open(path, "r", encoding="utf-16") as f:
+        assert f.read(1) == "A"
+        f.seek(0, 0)
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+
+
+@test
+def test_utf16_seek_zero_resets_bom_state_compressed():
+    gz_path = "build/file_utf16_seek.gz"
+    bz_path = "build/file_utf16_seek.bz2"
+    payload = b"\xff\xfeA\x00B\x00"
+
+    # Write the encoded payload explicitly so this test is about decoder/seek
+    # state, not the different TextIOWrapper write behavior of gzip vs. bz2.
+    with gzopen(gz_path, "wb") as f:
+        f.write(payload)
+    with gzopen(gz_path, "rt", encoding="utf-16") as f:
+        assert f.read(1) == "A"
+        f.seek(0, 0)
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+
+    with bzopen(bz_path, "wb") as f:
+        f.write(payload)
+    with bzopen(bz_path, "rt", encoding="utf-16") as f:
+        assert f.read(1) == "A"
+        f.seek(0, 0)
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+
+
+@test
+def test_read_n_characters_with_ignore_errors():
+    path = "build/file_ignore_read.txt"
+    with open(path, "wb") as f:
+        f.write(b"\xffAB")
+
+    with open(path, "r", encoding="ascii", errors="ignore") as f:
+        assert f.read(1) == "A"
+        assert f.read(1) == "B"
+        assert f.read(1) == ""
+
+
+@test
+def test_readline_skips_ignored_decode_errors():
+    path = "build/file_ignore_readline.txt"
+    with open(path, "wb") as f:
+        f.write(b"\xffA\nB\n")
+
+    with open(path, "r", encoding="ascii", errors="ignore") as f:
+        assert f.readline() == "A\n"
+        assert f.readline() == "B\n"
+
+
+@test
+def test_utf8_malformed_read_one_preserves_following_character():
+    path = "build/file_utf8_replace.txt"
+    with open(path, "wb") as f:
+        f.write(b"\xe1\x80A")
+
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        assert f.read(1) == "\ufffd"
+        assert f.read(1) == "A"
+        assert f.read(1) == ""
+
+
+@test
+def test_gzip_tell_accounts_for_read_ahead():
+    path = "build/file_gzip_tell.gz"
+    data = b"a" * 9000
+
+    with gzopen(path, "wb") as f:
+        f.write(data)
+
+    with gzopen(path, "rb") as f:
+        assert f.tell() == 0
+        assert f.read(1) == b"a"
+        assert f.tell() == 1
+        assert f.read(10) == b"a" * 10
+        assert f.tell() == 11
+        f.seek(0, 0)
+        assert f.tell() == 0
+        assert f.read(1) == b"a"
+        assert f.tell() == 1
+
+
+@test
+def test_gzip_seek_accounts_for_pending_byte():
+    path = "build/file_gzip_pending.gz"
+    with gzopen(path, "wb") as f:
+        f.write(b"a\rb")
+
+    with gzopen(path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        pos = f.tell()
+
+        # Text-mode tell() values are opaque seek cookies in CPython, not
+        # necessarily raw byte offsets. The portable contract is that the
+        # returned value can be passed back to seek().
+        f.seek(pos, 0)
+        assert f.read(1) == "b"
+
+
+@test
+def test_bzip_tell_accounts_for_pending_text():
+    path = "build/file_bzip_pending.bz2"
+    with bzopen(path, "wb") as f:
+        f.write(b"a\rb")
+
+    with bzopen(path, "rt", newline="") as f:
+        assert f.readline() == "a\r"
+        pos = f.tell()
+
+        # As with gzip, text-mode tell() is an opaque cookie under CPython.
+        f.seek(pos, 0)
+        assert f.read(1) == "b"
+
+
+@test
+def test_gzip_flush_does_not_finish_stream():
+    path = "build/file_gzip_flush.gz"
+    with gzopen(path, "wb") as f:
+        f.write(b"A")
+        f.flush()
+        f.write(b"B")
+        f.flush()
+        f.write(b"C")
+
+    with gzopen(path, "rb") as f:
+        assert f.read() == b"ABC"
+
+
+
+@test
+def test_compressed_bare_modes_are_binary():
+    gz_path = "build/file_gzip_default_binary.gz"
+    bz_path = "build/file_bzip_default_binary.bz2"
+
+    with gzopen(gz_path, "w") as f:
+        assert f.write(b"abc") == 3
+    with gzopen(gz_path, "r") as f:
+        assert f.read() == b"abc"
+
+    with bzopen(bz_path, "w") as f:
+        assert f.write(b"abc") == 3
+    with bzopen(bz_path, "r") as f:
+        assert f.read() == b"abc"
+
+
+@test
+def test_compressed_text_options_require_text_mode():
+    gz_path = "build/file_gzip_text_mode.gz"
+    bz_path = "build/file_bzip_text_mode.bz2"
+
+    try:
+        gzopen(gz_path, "w", encoding="utf-8")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        gzopen(gz_path, "r", newline="")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        bzopen(bz_path, "w", encoding="utf-8", newline="\n")
+        assert False
+    except ValueError:
+        pass
+
+    try:
+        bzopen(bz_path, "r", errors="ignore")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_compressed_explicit_text_mode():
+    gz_path = "build/file_gzip_explicit_text.gz"
+    bz_path = "build/file_bzip_explicit_text.bz2"
+
+    with gzopen(gz_path, "wt", encoding="utf-8", newline="") as f:
+        assert f.write("a\rb\n") == 4
+    with gzopen(gz_path, "rt", encoding="utf-8", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\n"
+
+    with bzopen(bz_path, "wt", encoding="utf-8", newline="") as f:
+        assert f.write("a\rb\n") == 4
+    with bzopen(bz_path, "rt", encoding="utf-8", newline="") as f:
+        assert f.readline() == "a\r"
+        assert f.readline() == "b\n"
+
+
+test_compressed_bare_modes_are_binary()
+test_compressed_text_options_require_text_mode()
+test_compressed_explicit_text_mode()
+test_file_context_manager_returns_self()
+test_binary_readline_only_splits_on_lf()
+test_text_readline_newline_modes()
+test_gzip_and_bzip_newline_empty_mode()
+test_utf16_bom_written_once_file()
+test_utf32_bom_written_once_file()
+test_utf16_compressed_writer_matches_python()
+test_utf32_compressed_writer_matches_python()
+test_utf16_stream_requires_bom()
+test_empty_utf16_stream_is_allowed()
+test_utf16_seek_zero_resets_bom_state()
+test_utf16_seek_zero_resets_bom_state_compressed()
+test_read_n_characters_with_ignore_errors()
+test_readline_skips_ignored_decode_errors()
+test_utf8_malformed_read_one_preserves_following_character()
+test_gzip_tell_accounts_for_read_ahead()
+test_gzip_seek_accounts_for_pending_byte()
+test_bzip_tell_accounts_for_pending_text()
+test_gzip_flush_does_not_finish_stream()

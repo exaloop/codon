@@ -9,13 +9,14 @@ from internal.static import print as __print__
 from internal.ops import *
 from internal.types.int import *
 from internal.types.ptr import *
-from internal.types.str import *
 from internal.types.bool import *
 from internal.types.error import *
 from internal.types.float import *
+from internal.types.bytes import *
 
 from internal.types.slice import *
 from internal.types.collections.list import *
+from internal.types.collections.bytearray import *
 
 from internal.types.type import *
 from internal.types.tuple import *
@@ -28,7 +29,6 @@ from internal.types.import_ import *
 from internal.types.generator import *
 from internal.types.optional import *
 import internal.c_stubs as _C
-from internal.format import *
 from internal.internal import *
 from internal.types.range import *
 from internal.types.complex import *
@@ -44,6 +44,8 @@ from internal.types.collections.tuple import *
 from internal.builtin import *
 from internal.builtin import _jit_display
 from internal.str import *
+from internal.format import *
+from internal.bytes import *
 
 from internal.sort import sorted
 

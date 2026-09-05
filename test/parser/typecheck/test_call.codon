@@ -281,8 +281,8 @@ r(zh=55)  #: 5 (38,) (zh: 55)
 def foo(*args: float, **kwargs: int):
     print(args, kwargs, args.__class__.__name__)
 
-foo(1, f=1)  #: (1,) (f: 1) Tuple[float]
-foo(1, 2.1, 3, z=2)  #: (1, 2.1, 3) (z: 2) Tuple[float,float,float]
+foo(1, f=1)  #: (1.0,) (f: 1) Tuple[float]
+foo(1, 2.1, 3, z=2)  #: (1.0, 2.1, 3.0) (z: 2) Tuple[float,float,float]
 
 def sum(x: Generator[int]):
     a = 0
@@ -969,7 +969,7 @@ m = Add(c1, c2)
 c3 = Const(2)
 a : Expr = Mul(m, c3)
 print(f'{a} = {a.eval()}')
-#: ((5) + (4)) * (2) = 18
+#: ((5.0) + (4.0)) * (2.0) = 18.0
 
 from random import random, seed
 seed(137)
@@ -986,17 +986,17 @@ def random_expr(depth) -> Expr:
             return Add(lhs,rhs)
 for i in range(11):
     print(random_expr(i).eval())
-#: 3
-#: 697
-#: 109
-#: 73568
-#: 1.5469e+06
-#: 2892
-#: 1.51958e+11
-#: 7.94951e+15
-#: 3.70513e+20
-#: 3.09768e+28
-#: 1.3109e+40
+#: 3.0
+#: 697.0
+#: 109.0
+#: 73568.0
+#: 1546895.0
+#: 2892.0
+#: 151957796367.0
+#: 7949505675733567.0
+#: 3.705131828609201e+20
+#: 3.097679034076037e+28
+#: 1.31089785077958e+40
 
 #%% polymorphism_3
 import operator
@@ -1214,12 +1214,12 @@ shapes.append(Square(3))
 
 for s in shapes:
     print_area(s)
-#: A circle with radius 5
-#: 78.54
-#: A rectangle with width 4 and height 6
-#: 24
-#: A square with width 3 and height 3
-#: 9
+#: A circle with radius 5.0
+#: 78.53999999999999
+#: A rectangle with width 4.0 and height 6.0
+#: 24.0
+#: A square with width 3.0 and height 3.0
+#: 9.0
 
 #%% side_effects,barebones
 def foo(a, b, T: type, N: Literal[int]):

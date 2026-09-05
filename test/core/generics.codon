@@ -65,7 +65,7 @@ v3.append("world")
 f = a2.m0
 
 a1.m1(a2)                           # EXPECT: 1 2 3
-A[int,float,str].m2(1, 1.0, "one")  # EXPECT: 1 1 one
+A[int,float,str].m2(1, 1.0, "one")  # EXPECT: 1 1.0 one
 A[int,int,int].m2(11, 22, 33)       # EXPECT: 11 22 33
 print a1.m3(a2)                     # EXPECT: 42
 print a1.m3(a2)                     # EXPECT: 42

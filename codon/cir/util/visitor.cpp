@@ -31,7 +31,8 @@ void Visitor::visit(Const *x) { defaultVisit(x); }
 void Visitor::visit(TemplatedConst<int64_t> *x) { defaultVisit(x); }
 void Visitor::visit(TemplatedConst<double> *x) { defaultVisit(x); }
 void Visitor::visit(TemplatedConst<bool> *x) { defaultVisit(x); }
-void Visitor::visit(TemplatedConst<std::string> *x) { defaultVisit(x); }
+void Visitor::visit(StringConst *x) { defaultVisit(x); }
+void Visitor::visit(BytesConst *x) { defaultVisit(x); }
 void Visitor::visit(dsl::CustomConst *x) { defaultVisit(x); }
 void Visitor::visit(Instr *x) { defaultVisit(x); }
 void Visitor::visit(AssignInstr *x) { defaultVisit(x); }
@@ -92,7 +93,8 @@ void ConstVisitor::visit(const Const *x) { defaultVisit(x); }
 void ConstVisitor::visit(const TemplatedConst<int64_t> *x) { defaultVisit(x); }
 void ConstVisitor::visit(const TemplatedConst<double> *x) { defaultVisit(x); }
 void ConstVisitor::visit(const TemplatedConst<bool> *x) { defaultVisit(x); }
-void ConstVisitor::visit(const TemplatedConst<std::string> *x) { defaultVisit(x); }
+void ConstVisitor::visit(const StringConst *x) { defaultVisit(x); }
+void ConstVisitor::visit(const BytesConst *x) { defaultVisit(x); }
 void ConstVisitor::visit(const dsl::CustomConst *x) { defaultVisit(x); }
 void ConstVisitor::visit(const Instr *x) { defaultVisit(x); }
 void ConstVisitor::visit(const AssignInstr *x) { defaultVisit(x); }

@@ -12,31 +12,6 @@ def linkname(s: Literal[str]):
 
 @nocapture
 @C
-def seq_str_int(a: int, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_uint(a: int, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_float(a: float, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_str(a: str, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
-def seq_str_ptr(a: cobj, fmt: str, error: Ptr[bool]) -> str:
-    pass
-
-@nocapture
-@C
 def seq_float_from_str(a: str, b: Ptr[cobj]) -> float:
     pass
 
@@ -46,16 +21,19 @@ def seq_strdup(a: cobj) -> str:
     pass
 
 @pure
+@llvm_memory_none
 @C
 def seq_stdin() -> cobj:
     pass
 
 @pure
+@llvm_memory_none
 @C
 def seq_stdout() -> cobj:
     pass
 
 @pure
+@llvm_memory_none
 @C
 def seq_stderr() -> cobj:
     pass
@@ -582,6 +560,11 @@ def fgetc(a: cobj) -> i32:
 
 @nocapture
 @C
+def ungetc(a: i32, b: cobj) -> i32:
+    pass
+
+@nocapture
+@C
 def fopen(a: cobj, b: cobj) -> cobj:
     pass
 
@@ -622,7 +605,7 @@ def fgets(a: cobj, b: int, c: cobj) -> cobj:
 
 @nocapture
 @C
-def fflush(a: cobj) -> None:
+def fflush(a: cobj) -> i32:
     pass
 
 @nocapture
@@ -702,35 +685,42 @@ def gzflush(a: cobj, b: i32) -> i32:
 # <bzlib.h>
 @nocapture
 @C
-def BZ2_bzopen(a: cobj, b: cobj) -> cobj:
+def BZ2_bzCompressInit(
+    stream: cobj, compresslevel: i32, verbosity: i32, work_factor: i32,
+) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzread(a: cobj, b: cobj, c: i32) -> i32:
+def BZ2_bzCompress(stream: cobj, action: i32) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzwrite(a: cobj, b: cobj, c: i32) -> i32:
+def BZ2_bzCompressEnd(stream: cobj) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzflush(a: cobj) -> i32:
+def BZ2_bzDecompressInit(stream: cobj, verbosity: i32, small: i32) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzclose(a: cobj) -> None:
+def BZ2_bzDecompress(stream: cobj) -> i32:
     pass
 
 @nocapture
 @C
-def BZ2_bzerror(a: cobj, b: Ptr[i32]) -> cobj:
+def BZ2_bzDecompressEnd(stream: cobj) -> i32:
     pass
 
 # <string.h>
+@pure
+@C
+def strlen(a: Ptr[u8]) -> int:
+    pass
+
 @pure
 @C
 def memcmp(lhs: Ptr[u8], rhs: Ptr[u8], count: int) -> i32:

@@ -1,6 +1,6 @@
 #%% import_c,barebones
 from C import sqrt(float) -> float
-print sqrt(4.0) #: 2
+print sqrt(4.0) #: 2.0
 
 from C import puts(cobj)
 puts("hello"._ptr) #: hello
@@ -11,7 +11,7 @@ print s2i("11"._ptr) #: 11
 @C
 def log(x: float) -> float:
     pass
-print log(5.5)  #: 1.70475
+print log(5.5)  #: 1.7047480922384253
 
 from C import seq_flags: Int[32] as e
 # debug | standalone == 5
@@ -26,9 +26,8 @@ sqrt(100.0)  #! name 'sqrt' is not defined
 #%% import_c_dylib,barebones
 from internal.dlopen import dlext
 RT = "./libcodonrt." + dlext()
-from C import RT.seq_str_int(int, str, Ptr[bool]) -> str as sp
-p = False
-print sp(65, "", __ptr__(p))  #: 65
+from C import RT.seq_print(str) -> None as sp
+sp("hello\n")  #: hello
 
 #%% import_c_dylib_error,barebones
 from C import "".seq_print(str) as sp

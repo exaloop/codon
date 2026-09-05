@@ -56,13 +56,10 @@ public:
 using IntConst = TemplatedConst<int64_t>;
 using FloatConst = TemplatedConst<double>;
 using BoolConst = TemplatedConst<bool>;
-using StringConst = TemplatedConst<std::string>;
 
 template <typename T> const char TemplatedConst<T>::NodeId = 0;
 
-template <>
-class TemplatedConst<std::string>
-    : public AcceptorExtend<TemplatedConst<std::string>, Const> {
+template <> class TemplatedConst<std::string> : public Const {
 private:
   std::string val;
 
@@ -70,13 +67,27 @@ public:
   static const char NodeId;
 
   TemplatedConst(std::string v, Type *type, std::string name = "")
-      : AcceptorExtend(type, std::move(name)), val(std::move(v)) {}
+      : Const(type, std::move(name)), val(std::move(v)) {}
 
   /// @return the internal value.
   std::string getVal() const { return val; }
   /// Sets the value.
   /// @param v the value
   void setVal(std::string v) { val = std::move(v); }
+};
+
+class StringConst : public AcceptorExtend<StringConst, TemplatedConst<std::string>> {
+public:
+  static const char NodeId;
+
+  using AcceptorExtend<StringConst, TemplatedConst<std::string>>::AcceptorExtend;
+};
+
+class BytesConst : public AcceptorExtend<BytesConst, TemplatedConst<std::string>> {
+public:
+  static const char NodeId;
+
+  using AcceptorExtend<BytesConst, TemplatedConst<std::string>>::AcceptorExtend;
 };
 
 } // namespace ir

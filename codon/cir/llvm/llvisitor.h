@@ -389,6 +389,7 @@ public:
   void visit(const FloatConst *) override;
   void visit(const BoolConst *) override;
   void visit(const StringConst *) override;
+  void visit(const BytesConst *) override;
   void visit(const dsl::CustomConst *) override;
 
   void visit(const SeriesFlow *) override;

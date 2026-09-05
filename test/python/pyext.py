@@ -88,7 +88,7 @@ def test_codon_extensions(m):
         assert m.f4(a=2.2) == (2.2, 2.22)
         assert m.f4(b=3.3) == (1.11, 3.3)
         assert m.f4('foo') == ('foo', 'foo')
-        assert m.f4(b'foo') == ('foo', 'foo')
+        assert m.f4(b'foo') == b'foo'
         assert m.f4({1}) == {1}
         assert m.f5() is None
         assert equal(m.f6(1.9, 't'), 1.9, 1.9, 't')
@@ -240,7 +240,7 @@ def test_codon_extensions(m):
     # assert equal(50.5 + y, 150.5, 1050.5, '(y+50.5)')  # support for r-magics?
     assert equal(y - x, 96.86, 995.8, '(y-x)')
     assert equal(y * 3.5, 350.0, 3500.0, '(y*3.5)')
-    assert equal(y // 3, 33, 333, '(y//3)')
+    assert equal(y // 3, 33, 333, '(y//3.0)')
     assert equal(y / 2.5, 40.0, 400.0, '(y/2.5)')
     try:
         divmod(y, 1)
@@ -248,8 +248,8 @@ def test_codon_extensions(m):
         assert str(e) == 'no divmod'
     else:
         assert False
-    assert equal(y % 7, 2, 6, '(y%7)')
-    assert equal(y ** 2, 10000, 1000000, '(y**2)')
+    assert equal(y % 7, 2, 6, '(y%7.0)')
+    assert equal(y ** 2, 10000, 1000000, '(y**2.0)')
     assert equal(y << 1, 200, 2000, '(y<<1)')
     assert equal(y >> 2, 25, 250, '(y>>2)')
     assert equal(y & 77, 68, 72, '(y&77)')
@@ -278,7 +278,7 @@ def test_codon_extensions(m):
 
     y1 = dup(y)
     y1 //= 3
-    assert equal(y1, 33, 333, '(y1//=3)')
+    assert equal(y1, 33, 333, '(y1//=3.0)')
 
     y1 = dup(y)
     y1 /= 2.5
@@ -286,11 +286,11 @@ def test_codon_extensions(m):
 
     y1 = dup(y)
     y1 %= 7
-    assert equal(y1, 2, 6, '(y1%=7)')
+    assert equal(y1, 2, 6, '(y1%=7.0)')
 
     y1 = dup(y)
     y1 **= 2
-    assert equal(y1, 10000, 1000000, '(y1**=2)')
+    assert equal(y1, 10000, 1000000, '(y1**=2.0)')
 
     y1 = dup(y)
     y1 <<= 1

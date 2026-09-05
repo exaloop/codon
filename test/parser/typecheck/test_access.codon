@@ -549,7 +549,7 @@ n1 = B.Nest1[int](0)
 print n1.n, n1.__class__.__name__, n1.n.__class__.__name__ #: 0 B.Nest1[int] int
 
 n1: B.Nest2 = B.Nest2[float, int](0, 0)
-print (n1.m, n1.n), n1.__class__.__name__, n1.m.__class__.__name__, n1.n.__class__.__name__ #: (0, 0) B.Nest2[float,int] float int
+print (n1.m, n1.n), n1.__class__.__name__, n1.m.__class__.__name__, n1.n.__class__.__name__ #: (0.0, 0) B.Nest2[float,int] float int
 
 #%% class_fn_access_NOPY,barebones
 class X[T]:
@@ -638,7 +638,7 @@ foo('hooooooooy!', 1, 2)
 
 #%% fn_overloads_dispatch
 import math
-print(math.sqrt(4.0))  #: 2
+print(math.sqrt(4.0))  #: 2.0
 
 #%% generator_capture_nonglobal,barebones
 # Issue #49
@@ -672,7 +672,7 @@ def test_mandelbrot():
         while i < MAX: i += 1  # this is needed for test to make sense
         return (MAX, N, pixels, scale(N, -2, 0.4))
     k(pixels, grid=(N*N)//1024, block=1024)
-test_mandelbrot()  #: 0 1024 (10, 2, [0, 0], 0.4)
+test_mandelbrot()  #: 0 1024 (10, 2, [0, 0], 0.3999999999999999)
 
 #%% id_shadow_overload_call,barebones
 def foo():

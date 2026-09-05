@@ -42,7 +42,7 @@ class float:
             return what.__float__()
 
     def __repr__(self) -> str:
-        return self.__format__("")
+        return self.__format__(str())
 
     def __copy__(self) -> float:
         return self
@@ -478,7 +478,7 @@ class float32:
         return self.__float__().__repr__()
 
     def __format__(self, format_spec: str) -> str:
-        return self.__float__().__format(format_spec)
+        return self.__float__().__format__(format_spec)
 
     def __copy__(self) -> float32:
         return self
@@ -839,7 +839,7 @@ class float16:
         return self.__float__().__repr__()
 
     def __format__(self, format_spec: str) -> str:
-        return self.__float__().__format(format_spec)
+        return self.__float__().__format__(format_spec)
 
     def __copy__(self) -> float16:
         return self
@@ -1146,7 +1146,7 @@ class bfloat16:
         return self.__float__().__repr__()
 
     def __format__(self, format_spec: str) -> str:
-        return self.__float__().__format(format_spec)
+        return self.__float__().__format__(format_spec)
 
     def __copy__(self) -> bfloat16:
         return self
@@ -1449,7 +1449,7 @@ class float128:
         return self.__float__().__repr__()
 
     def __format__(self, format_spec: str) -> str:
-        return self.__float__().__format(format_spec)
+        return self.__float__().__format__(format_spec)
 
     def __copy__(self) -> float128:
         return self

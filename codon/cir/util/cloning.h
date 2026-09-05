@@ -54,6 +54,7 @@ public:
   void visit(const FloatConst *v) override;
   void visit(const BoolConst *v) override;
   void visit(const StringConst *v) override;
+  void visit(const BytesConst *v) override;
   void visit(const dsl::CustomConst *v) override;
 
   void visit(const AssignInstr *v) override;

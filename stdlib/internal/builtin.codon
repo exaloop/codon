@@ -1,6 +1,7 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
 import internal.static as static
+from internal.unicode.data import unicode_is_space
 
 class object:
     def __init__(self):
@@ -15,12 +16,17 @@ def id(x) -> int:
     else:
         return 0
 
-def print(*args, sep: str = " ", end: str = "\n", file=_C.seq_stdout(), flush: bool = False):
+def print(*args, sep: str = " ", end: str = "\n", file=None, flush: bool = False):
+    if file is None:
+        print(*args, sep=sep, end=end, file=_C.seq_stdout(), flush=flush)
+        return
+
     fp = cobj()
     if isinstance(file, cobj):
         fp = file
     else:
-        fp = file.fp
+        fp = file._state._fp
+
     i = 0
     for a in args:
         if i and sep:
@@ -46,9 +52,10 @@ def input(prompt: str = ""):
             s -= 1  # skip trailing '\n'
         if s != 0 and buf[s - 1] == u8(13):
             s -= 1  # skip trailing '\r'
-        ans = str(buf, s).__ptrcopy__()
+        data = Ptr[u8](s)
+        bytes.memcpy(data, Ptr[u8](buf), s)
         _C.free(buf)
-        return ans
+        return bytes(data, s).decode()
     else:
         _C.free(buf)
         raise EOFError("EOF when reading a line")
@@ -154,12 +161,13 @@ def abs(x):
 def hash(x) -> int:
     return x.__hash__()
 
-def ord(s: str) -> int:
-    if len(s) != 1:
+def ord(character: str) -> int:
+    n = len(character)
+    if n != 1:
         raise TypeError(
-            f"ord() expected a character, but string of length {len(s)} found"
+            f"ord() expected a character, but string of length {n} found"
         )
-    return int(s._ptr[0])
+    return character._load_codepoint(0)
 
 def divmod(a, b):
     if hasattr(a, "__divmod__"):
@@ -167,10 +175,23 @@ def divmod(a, b):
     else:
         return (a // b, a % b)
 
-def chr(i: int) -> str:
-    p = cobj(1)
-    p[0] = u8(i)
-    return str(p, 1)
+def chr(codepoint: int) -> str:
+    if codepoint < 0 or codepoint > 0x10FFFF:
+        raise ValueError("chr() arg not in range(0x110000)")
+
+    if codepoint <= 0x7F:
+        kind, width = 0, 1
+    elif codepoint <= 0xFF:
+        kind, width = 1, 1
+    elif codepoint <= 0xFFFF:
+        kind, width = 2, 2
+    else:
+        kind, width = 3, 4
+
+    data = Ptr[u8](width)
+    for offset in range(width):
+        data[offset] = u8(codepoint >> (8 * offset))
+    return str(data, 1 | (kind << 56))
 
 def next(g: Generator[T], default: Optional[T] = None, T: type) -> T:
     if g.done():
@@ -359,6 +380,12 @@ def oct(n):
 def hex(n):
     return _int_format(n.__index__(), 16, "0x")
 
+def format(value, format_spec: str = ""):
+    if hasattr(value, "__format__"):
+        return value.__format__(format_spec)
+    else:
+        return format_spec.format(value)
+
 def pow(base: float, exp: float):
     return base ** exp
 
@@ -401,27 +428,17 @@ _CHAR_NEG: Literal[int] = 45
 
 def _parse_int(s: str, base: int = 10, T: type = int):
 
-    def _digit_value(c: u8):
-        if u8(_CHAR_0) <= c and c <= u8(_CHAR_9):
-            return int(c) - _CHAR_0
-        if u8(_CHAR_A) <= c and c <= u8(_CHAR_Z):
-            return int(c) - _CHAR_A + 10
-        if u8(_CHAR_a) <= c and c <= u8(_CHAR_z):
-            return int(c) - _CHAR_a + 10
+    def _digit_value(c: int):
+        if _CHAR_0 <= c and c <= _CHAR_9:
+            return c - _CHAR_0
+        if _CHAR_A <= c and c <= _CHAR_Z:
+            return c - _CHAR_A + 10
+        if _CHAR_a <= c and c <= _CHAR_z:
+            return c - _CHAR_a + 10
         return -1
 
-    def _isspace(c: u8):
-        '''
-        space (0x20, ' ')
-        form feed (0x0c, '\f')
-        line feed (0x0a, '\n')
-        carriage return (0x0d, '\r')
-        horizontal tab (0x09, '\t')
-        vertical tab (0x0b, '\v')
-        '''
-        return (c == u8(0x20) or c == u8(0x0c) or
-                c == u8(0x0a) or c == u8(0x0d) or
-                c == u8(0x09) or c == u8(0x0b))
+    def _isspace(c: int):
+        return unicode_is_space(c)
 
     def _limit(neg: bool, T: type):
         if T is int:
@@ -453,17 +470,19 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     if base != 0 and (base < 2 or base > 36):
         raise ValueError("int() base must be >= 2 and <= 36, or 0")
 
-    p = s._ptr
-    end = p + s.__len__()
+    p = 0
+    end = len(s)
 
     # skip leading whitespace
-    while p < end and _isspace(p[0]):
+    while p < end and _isspace(s._load_codepoint(p)):
         p += 1
 
     # sign
     neg = False
-    if p < end and (p[0] == _CHAR_POS or p[0] == _CHAR_NEG):
-        neg = (p[0] == _CHAR_NEG)
+    if p < end and (
+        s._load_codepoint(p) == _CHAR_POS or s._load_codepoint(p) == _CHAR_NEG
+    ):
+        neg = s._load_codepoint(p) == _CHAR_NEG
         p += 1
 
     if not _signed(T):
@@ -474,39 +493,42 @@ def _parse_int(s: str, base: int = 10, T: type = int):
     base0_leading_zero = False
     if base == 0:
         base = 10
-        if (end - p) >= 2 and p[0] == _CHAR_0:
-            if p[1] == _CHAR_x or p[1] == _CHAR_X:
+        if (end - p) >= 2 and s._load_codepoint(p) == _CHAR_0:
+            if s._load_codepoint(p + 1) == _CHAR_x or s._load_codepoint(p + 1) == _CHAR_X:
                 base = 16
                 p += 2
-                if p < end and p[0] == _CHAR_UNDERSCORE:
+                if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
                     p += 1
-            elif p[1] == _CHAR_b or p[1] == _CHAR_B:
+            elif s._load_codepoint(p + 1) == _CHAR_b or s._load_codepoint(p + 1) == _CHAR_B:
                 base = 2
                 p += 2
-                if p < end and p[0] == _CHAR_UNDERSCORE:
+                if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
                     p += 1
-            elif p[1] == _CHAR_o or p[1] == _CHAR_O:
+            elif s._load_codepoint(p + 1) == _CHAR_o or s._load_codepoint(p + 1) == _CHAR_O:
                 base = 8
                 p += 2
-                if p < end and p[0] == _CHAR_UNDERSCORE:
+                if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
                     p += 1
             else:
                 base0_leading_zero = True
     else:
         if (base == 16 and (end - p) >= 2 and
-            p[0] == _CHAR_0 and (p[1] == _CHAR_x or p[1] == _CHAR_X)):
+            s._load_codepoint(p) == _CHAR_0 and
+            (s._load_codepoint(p + 1) == _CHAR_x or s._load_codepoint(p + 1) == _CHAR_X)):
             p += 2
-            if p < end and p[0] == _CHAR_UNDERSCORE:
+            if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
                 p += 1
         elif (base == 8 and (end - p) >= 2 and
-              p[0] == _CHAR_0 and (p[1] == _CHAR_o or p[1] == _CHAR_O)):
+              s._load_codepoint(p) == _CHAR_0 and
+              (s._load_codepoint(p + 1) == _CHAR_o or s._load_codepoint(p + 1) == _CHAR_O)):
             p += 2
-            if p < end and p[0] == _CHAR_UNDERSCORE:
+            if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
                 p += 1
         elif (base == 2 and (end - p) >= 2 and
-              p[0] == _CHAR_0 and (p[1] == _CHAR_b or p[1] == _CHAR_B)):
+              s._load_codepoint(p) == _CHAR_0 and
+              (s._load_codepoint(p + 1) == _CHAR_b or s._load_codepoint(p + 1) == _CHAR_B)):
             p += 2
-            if p < end and p[0] == _CHAR_UNDERSCORE:
+            if p < end and s._load_codepoint(p) == _CHAR_UNDERSCORE:
                 p += 1
 
     limit = _limit(neg, T)
@@ -530,7 +552,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         raise ValueError(f"invalid literal for int() with base {base}: {s.__repr__()}")
 
     while p < end:
-        c = p[0]
+        c = s._load_codepoint(p)
 
         if c == _CHAR_UNDERSCORE:
             if (not saw_digit) or prev_underscore:
@@ -566,7 +588,7 @@ def _parse_int(s: str, base: int = 10, T: type = int):
         invalid(s, base)
 
     # skip trailing whitespace
-    while p < end and _isspace(p[0]):
+    while p < end and _isspace(s._load_codepoint(p)):
         p += 1
 
     if p != end:
@@ -597,16 +619,33 @@ class UInt:
     def _from_str(s: str, base: int):
         return _parse_int(s, base, UInt[N])
 
+def _parse_float_prefix(value: str, start: int):
+    length = 0
+    data = Ptr[u8](len(value) - start)
+
+    while start + length < len(value):
+        codepoint = value._load_codepoint(start + length)
+        if codepoint > 0x7F:
+            break
+        data[length] = u8(codepoint)
+        length += 1
+
+    if length == 0:
+        return 0.0, 0
+
+    ascii_value = str(data, length)
+    end = cobj()
+    result = _C.seq_float_from_str(ascii_value, __ptr__(end))
+    return result, end - data
+
 @extend
 class float:
     def _from_str(s: str) -> float:
         s0 = s
-        s = s.rstrip()
-        n = len(s)
-        end = cobj()
-        result = _C.seq_float_from_str(s, __ptr__(end))
+        s = s.strip()
+        result, consumed = _parse_float_prefix(s, 0)
 
-        if n == 0 or end != s._ptr + n:
+        if len(s) == 0 or consumed != len(s):
             raise ValueError(f"could not convert string to float: {s0.__repr__()}")
 
         return result
@@ -618,67 +657,70 @@ class complex:
             raise ValueError("complex() arg is a malformed string")
 
         n = len(v)
-        s = v._ptr
         x = 0.0
         y = 0.0
         z = 0.0
         got_bracket = False
-        end = cobj()
         i = 0
 
-        while i < n and str._isspace(s[i]):
+        while i < n and unicode_is_space(v._load_codepoint(i)):
             i += 1
 
-        if i < n and s[i] == u8(40):  # '('
+        if i < n and v._load_codepoint(i) == 40:  # '('
             got_bracket = True
             i += 1
-            while i < n and str._isspace(s[i]):
+            while i < n and unicode_is_space(v._load_codepoint(i)):
                 i += 1
 
-        z = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
+        z, consumed = _parse_float_prefix(v, i)
 
-        if end != s + i:
-            i = end - s
+        if consumed:
+            i += consumed
 
-            if i < n and (s[i] == u8(43) or s[i] == u8(45)):  # '+' '-'
+            if i < n and (v._load_codepoint(i) == 43 or
+                          v._load_codepoint(i) == 45):  # '+' '-'
                 x = z
-                y = _C.seq_float_from_str(str(s + i, n - i), __ptr__(end))
+                y, consumed = _parse_float_prefix(v, i)
 
-                if end != s + i:
-                    i = end - s
+                if consumed:
+                    i += consumed
                 else:
-                    y = 1.0 if s[i] == u8(43) else -1.0
+                    y = 1.0 if v._load_codepoint(i) == 43 else -1.0
                     i += 1
 
-                if not (i < n and (s[i] == u8(106) or s[i] == u8(74))):  # 'j' 'J'
+                if not (i < n and (v._load_codepoint(i) == 106 or
+                                   v._load_codepoint(i) == 74)):  # 'j' 'J'
                     parse_error()
 
                 i += 1
-            elif i < n and (s[i] == u8(106) or s[i] == u8(74)):  # 'j' 'J'
+            elif i < n and (v._load_codepoint(i) == 106 or
+                            v._load_codepoint(i) == 74):  # 'j' 'J'
                 i += 1
                 y = z
             else:
                 x = z
         else:
-            if i < n and (s[i] == u8(43) or s[i] == u8(45)):  # '+' '-'
-                y = 1.0 if s[i] == u8(43) else -1.0
+            if i < n and (v._load_codepoint(i) == 43 or
+                          v._load_codepoint(i) == 45):  # '+' '-'
+                y = 1.0 if v._load_codepoint(i) == 43 else -1.0
                 i += 1
             else:
                 y = 1.0
 
-            if not (i < n and (s[i] == u8(106) or s[i] == u8(74))):  # 'j' 'J'
+            if not (i < n and (v._load_codepoint(i) == 106 or
+                               v._load_codepoint(i) == 74)):  # 'j' 'J'
                 parse_error()
 
             i += 1
 
-        while i < n and str._isspace(s[i]):
+        while i < n and unicode_is_space(v._load_codepoint(i)):
             i += 1
 
         if got_bracket:
-            if i < n and s[i] != u8(41):  # ')'
+            if i < n and v._load_codepoint(i) != 41:  # ')'
                 parse_error()
             i += 1
-            while i < n and str._isspace(s[i]):
+            while i < n and unicode_is_space(v._load_codepoint(i)):
                 i += 1
 
         if i != n:
