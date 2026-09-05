@@ -1224,7 +1224,7 @@ def reorder_named_args(
     function: ast.types.Function,
     args: List[ast.CallExpr.Arg],
     known: str = "",
-) -> int:
+):
     """
     Reorders a given vector or named args (consisting of names and the
     corresponding types) according to the signature of a given function.
@@ -1344,7 +1344,7 @@ def reorder_named_args(
                     f"{get_unmangled_name(ctx, function.ast.name)}() missing 1 required positional argument: "
                     f"'{get_unmangled_name(ctx, missing_name)}'",
                 )
-    return score
+    return score, (star_idx, keyword_star_idx, slots, partial)
     # done_score = on_done(star_idx, keyword_star_idx, slots, partial)
     # return score + done_score if done_score != -1 else -1
 
