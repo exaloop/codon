@@ -552,8 +552,8 @@ literal_pattern[ast.Expr]:
     | value=complex_number { value }
     | value=strings { value }
     | 'None' { ast.NoneExpr(LOCATIONS) }
-    | 'True' { ast.BoolExpr(value=True, LOCATIONS) }
-    | 'False' { ast.BoolExpr(value=False, LOCATIONS) }
+    | 'True' { ast.BoolExpr(True, LOCATIONS) }
+    | 'False' { ast.BoolExpr(False, LOCATIONS) }
 
 # Literal expressions are used to restrict permitted mapping pattern keys
 literal_expr[ast.Expr]:
@@ -561,8 +561,8 @@ literal_expr[ast.Expr]:
     | complex_number
     | strings
     | 'None' { ast.NoneExpr(LOCATIONS) }
-    | 'True' { ast.BoolExpr(value=True, LOCATIONS) }
-    | 'False' { ast.BoolExpr(value=False, LOCATIONS) }
+    | 'True' { ast.BoolExpr(True, LOCATIONS) }
+    | 'False' { ast.BoolExpr(False, LOCATIONS) }
 
 complex_number[ast.BinaryExpr]:
     | real=signed_real_number '+' imag=imaginary_number {
@@ -879,8 +879,8 @@ slice[ast.Expr]:
 
 atom[ast.Expr]:
     | a=NAME { ast.IdExpr(value=a.string, LOCATIONS) }
-    | 'True' { ast.BoolExpr(value=True, LOCATIONS) }
-    | 'False' { ast.BoolExpr(value=False, LOCATIONS) }
+    | 'True' { ast.BoolExpr(True, LOCATIONS) }
+    | 'False' { ast.BoolExpr(False, LOCATIONS) }
     | 'None' { ast.NoneExpr(LOCATIONS) }
     | &(STRING|FSTRING_START|STRING_PREFIX) strings
     | a=NUMBER '...' b=NUMBER {

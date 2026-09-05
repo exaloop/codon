@@ -857,7 +857,7 @@ class IntLiteral(Literal):
         return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
 
     def get_static_expr(self) -> ast.Expr:
-        return ast.IntExpr(int_value=self.value)
+        return ast.IntExpr(self.value)
 
     def get_static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Int
@@ -927,7 +927,7 @@ class BoolLiteral(Literal):
         return f"{self.value}'" if mode < 2 else f"Literal[{self.value}]"
 
     def get_static_expr(self) -> ast.Expr:
-        return ast.BoolExpr(value=self.value)
+        return ast.BoolExpr(self.value)
 
     def get_static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Bool

@@ -39,8 +39,7 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Node:
             if binding.count > 0:
                 prepended.append(
                     ast.AssignStmt(
-                        ast.IdExpr(f"{name}{cache.VAR_USED_SUFFIX}"),
-                        rhs=ast.BoolExpr(value=False),
+                        ast.IdExpr(f"{name}{cache.VAR_USED_SUFFIX}"), rhs=ast.BoolExpr(False)
                     )
                 )
         node.erase(ast.Attr.Bindings)
@@ -71,12 +70,14 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Node:
                 self.ctx.remove(original)
     return node
 
+
 def typecheck_expr(self: TypeVisitor, node: ast.ExprStmt) -> ast.Node:
     """Typecheck expression statements."""
 
     node.expr = self.visit(node.expr)
     node.done = node.expr.done
     return node
+
 
 def typecheck_custom(self: TypeVisitor, node: ast.CustomStmt) -> ast.Node:
     if node.suite:
@@ -89,9 +90,11 @@ def typecheck_custom(self: TypeVisitor, node: ast.CustomStmt) -> ast.Node:
         result = expression_callback(self, node)
     return result
 
+
 def typecheck_comment(self: TypeVisitor, node: ast.CommentStmt) -> ast.Node:
     node.done = True
     return node
+
 
 def typecheck_directive(self: TypeVisitor, node: ast.DirectiveStmt) -> ast.Node:
     if node.key == "auto_python":

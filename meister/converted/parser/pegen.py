@@ -828,11 +828,11 @@ class Parser(BaseParser):
     def suite(self, statements=None, **locations):
         if isinstance(statements, ast.SuiteStmt):
             return statements
-        suite = ast.SuiteStmt(
-            items=[] if statements is None else statements,
-            **locations,
-        )
-        suite.flatten()
+        if statements is None:
+            suite = ast.SuiteStmt(**locations)
+        else:
+            suite = ast.SuiteStmt(*statements, **locations)
+            suite.flatten()
         return suite
 
     def call_arg(self, name, value, **locations):
@@ -903,8 +903,8 @@ class Parser(BaseParser):
             value = value[:-1]
             suffix = "j" + suffix
         if any(marker in value for marker in (".", "e", "E")):
-            return ast.FloatExpr(value=value, suffix=suffix, **locations)
-        return ast.IntExpr(value=value, suffix=suffix, **locations)
+            return ast.FloatExpr(value, suffix=suffix, **locations)
+        return ast.IntExpr(value, suffix=suffix, **locations)
 
     def dict_expr(self, pairs, **locations):
         items = []
@@ -1104,7 +1104,7 @@ class Parser(BaseParser):
             prefix = ""
         else:
             value = unescape(value)
-        return ast.StringExpr(value=value, prefix=prefix, **kwargs)
+        return ast.StringExpr(value, prefix=prefix, **kwargs)
 
     def generate_ast_for_string(self, tokens, **locations) -> Optional[ast.Expr]:
         """Generate AST nodes for strings."""

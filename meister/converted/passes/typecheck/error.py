@@ -22,22 +22,18 @@ def typecheck_assert(self: TypeVisitor, node: ast.AssertStmt) -> ast.Node:
     testing (i.e., when the enclosing function is marked with `@test`).
     """
 
-    message = ast.StringExpr(value="")
+    message = ast.StringExpr("")
     if node.message:
         message = ast.CallExpr(ast.IdExpr("str"), items=[node.message])
     base = self.ctx.get_base()
     is_test = self.ctx.in_function() and base and base.func and base.func.has(ast.Attr.Test)
     call = ast.CallExpr(
         ast.types.mangle(cls="__internal__", func="seq_assert_test" if is_test else "seq_assert"),
-        items=[
-            ast.StringExpr(value=node.info.file),
-            ast.IntExpr(int_value=node.info.line),
-            message,
-        ],
+        items=[ast.StringExpr(node.info.file), ast.IntExpr(node.info.line), message],
     )
     statement = ast.IfStmt(
         ast.UnaryExpr("!", expr=node.expr),
-        if_suite=ast.SuiteStmt([ast.ExprStmt(call) if is_test else ast.ThrowStmt(call)]),
+        if_suite=ast.ExprStmt(call) if is_test else ast.ThrowStmt(call),
     )
     return self.visit(statement)
 
@@ -84,17 +80,14 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
                 catch.attributes.pop(ast.Attr.ExprDominatedUsed, None)
                 catch.set(ast.Attr.ExprDominated)
                 catch.suite = ast.SuiteStmt(
-                    [
-                        ast.AssignStmt(
-                            ast.IdExpr(
-                                utils.get_unmangled_name(self.ctx, catch.var)
-                                + cache.VAR_USED_SUFFIX
-                            ),
-                            rhs=ast.BoolExpr(True),
-                            update=ast.AssignStmt.Mode.Update,
+                    ast.AssignStmt(
+                        ast.IdExpr(
+                            utils.get_unmangled_name(self.ctx, catch.var) + cache.VAR_USED_SUFFIX
                         ),
-                        catch.suite,
-                    ]
+                        rhs=ast.BoolExpr(True),
+                        update=ast.AssignStmt.Mode.Update,
+                    ),
+                    catch.suite,
                 )
             else:
                 value = self.ctx.force_find(catch.var)
@@ -111,13 +104,11 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
             python_variable: str = node.attributes[ast.Attr.TryPyVar]
             if catch.var:
                 catch.suite = ast.SuiteStmt(
-                    [
-                        ast.AssignStmt(
-                            ast.IdExpr(catch.var),
-                            rhs=ast.DotExpr(ast.IdExpr(python_variable), member="pytype"),
-                        ),
-                        catch.suite,
-                    ]
+                    ast.AssignStmt(
+                        ast.IdExpr(catch.var),
+                        rhs=ast.DotExpr(ast.IdExpr(python_variable), member="pytype"),
+                    ),
+                    catch.suite,
                 )
             catch.suite = ast.SuiteStmt(
                 ast.IfStmt(
@@ -128,7 +119,7 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
                             catch.exc,
                         ],
                     ),
-                    if_suite=ast.SuiteStmt([catch.suite, ast.BreakStmt()]),
+                    if_suite=ast.SuiteStmt(catch.suite, ast.BreakStmt()),
                 )
             )
             python_catch_body.add_stmt(catch.suite)
@@ -139,12 +130,10 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
             python_variable = str(node.attributes[ast.Attr.TryPyVar])
             if catch.var:
                 catch.suite = ast.SuiteStmt(
-                    [
-                        ast.AssignStmt(ast.IdExpr(catch.var), rhs=ast.IdExpr(python_variable)),
-                        catch.suite,
-                    ]
+                    ast.AssignStmt(ast.IdExpr(catch.var), rhs=ast.IdExpr(python_variable)),
+                    catch.suite,
                 )
-            catch.suite = ast.SuiteStmt([catch.suite, ast.BreakStmt()])
+            catch.suite = ast.SuiteStmt(catch.suite, ast.BreakStmt())
             python_catch_body.add_stmt(catch.suite)
         else:
             if catch.exc:
@@ -173,9 +162,7 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
         python_variable: str = node.attributes[ast.Attr.TryPyVar]
         python_catch_body.add(ast.ThrowStmt())
         python_exception = self.visit(ast.IdExpr(ast.types.Stdlib.PyError), enforce_Type=True)
-        catch = ast.TryStmt.Except(
-            python_variable, exc=python_exception, suite=ast.SuiteStmt(python_catch)
-        )
+        catch = ast.TryStmt.Except(python_variable, exc=python_exception, suite=python_catch)
         self.ctx.add_var(
             python_variable,
             python_variable,
@@ -228,10 +215,10 @@ def typecheck_throw(self: TypeVisitor, node: ast.ThrowStmt) -> ast.Node:
                 ast.IdExpr(setter_name),
                 items=[
                     node.expr,
-                    ast.StringExpr(value="" if base is None else base.name),
-                    ast.StringExpr(value=node.info.file),
-                    ast.IntExpr(int_value=node.info.line),
-                    ast.IntExpr(int_value=node.info.col),
+                    ast.StringExpr("" if base is None else base.name),
+                    ast.StringExpr(node.info.file),
+                    ast.IntExpr(node.info.line),
+                    ast.IntExpr(node.info.col),
                     node.from_expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType)),
                 ],
             )
@@ -280,10 +267,10 @@ def transform_with(self: TypeVisitor, node: ast.WithStmt) -> ast.Node:
             enter = ast.AwaitExpr(enter)
             exit = ast.AwaitExpr(exit)
         if content:
-            body = ast.SuiteStmt(content)
+            body = ast.SuiteStmt(*content)
         else:
             body = node.suite.clone()
-        try_statement = ast.TryStmt(body, finally_suite=ast.SuiteStmt(ast.ExprStmt(exit)))
+        try_statement = ast.TryStmt(body, finally_suite=ast.ExprStmt(exit))
         content = [assignment, ast.ExprStmt(enter), try_statement]
-    result = self.visit(ast.SuiteStmt(content))
+    result = self.visit(ast.SuiteStmt(*content))
     return result

@@ -37,33 +37,28 @@ def _parse_open_mp(code: str, info: ast.Node.SrcInfo) -> List[ast.CallExpr.Arg]:
         text = match.group(0)
         if text.startswith("schedule"):
             arguments.append(
-                ast.CallExpr.Arg("schedule", value=ast.StringExpr(value=match.group(1), info=info))
+                ast.CallExpr.Arg(name="schedule", value=ast.StringExpr(match.group(1), info=info))
             )
             if match.group(2):
                 arguments.append(
                     ast.CallExpr.Arg(
-                        "chunk_size",
-                        value=ast.IntExpr(int_value=int(match.group(2)), info=info),
+                        name="chunk_size", value=ast.IntExpr(int(match.group(2)), info=info)
                     )
                 )
         elif text.startswith("num_threads"):
             arguments.append(
                 ast.CallExpr.Arg(
-                    "num_threads",
-                    value=ast.IntExpr(int_value=int(match.group(3)), info=info),
+                    name="num_threads", value=ast.IntExpr(int(match.group(3)), info=info)
                 )
             )
         elif text.startswith("ordered"):
-            arguments.append(ast.CallExpr.Arg("ordered", value=ast.BoolExpr(value=True, info=info)))
+            arguments.append(ast.CallExpr.Arg(name="ordered", value=ast.BoolExpr(True, info=info)))
         elif text.startswith("collapse"):
             arguments.append(
-                ast.CallExpr.Arg(
-                    "collapse",
-                    value=ast.IntExpr(int_value=int(match.group(4)), info=info),
-                )
+                ast.CallExpr.Arg(name="collapse", value=ast.IntExpr(int(match.group(4)), info=info))
             )
         else:
-            arguments.append(ast.CallExpr.Arg("gpu", value=ast.BoolExpr(value=True, info=info)))
+            arguments.append(ast.CallExpr.Arg(name="gpu", value=ast.BoolExpr(True, info=info)))
         source = source[match.end() :].lstrip()
     return arguments
 
@@ -88,7 +83,7 @@ def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Node:
             update=ast.AssignStmt.Mode.Update,
         )
         assignment = self.visit(assignment)
-        return ast.SuiteStmt([assignment, ast.BreakStmt()])
+        return ast.SuiteStmt(assignment, ast.BreakStmt())
 
     node.done = True
     if self.ctx.static_loops[-1]:
@@ -97,7 +92,7 @@ def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Node:
             rhs=ast.BoolExpr(False),
             update=ast.AssignStmt.Mode.Update,
         )
-        return self.visit(ast.SuiteStmt([assignment, node]))
+        return self.visit(ast.SuiteStmt(assignment, node))
     return node
 
 
@@ -155,9 +150,7 @@ def typecheck_while(self: TypeVisitor, node: ast.WhileStmt) -> ast.Node:
     # Complete while-else clause
     if node.else_suite and node.else_suite.first_in_block():
         suite, node.else_suite = node.else_suite, None
-        result = self.visit(
-            ast.SuiteStmt([node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite)])
-        )
+        result = self.visit(ast.SuiteStmt(node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite)))
     if node.cond.done and node.suite.done:
         node.done = True
     return result
@@ -207,7 +200,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
         temp = ast.IdExpr(utils.get_temporary_var(self.ctx, "for"))
         unpacked = assign.unpack_assignment(self, node.var, temp)
         node.var = temp
-        node.suite = ast.SuiteStmt([unpacked, node.suite])
+        node.suite = ast.SuiteStmt(unpacked, node.suite)
 
     # Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
     is_generator = iterator_type.name == ("AsyncGenerator" if node.async_ else "Generator")
@@ -236,14 +229,12 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
             var.erase(ast.Attr.ExprDominatedUsed)
             var.set(ast.Attr.ExprDominated)
             node.suite = ast.SuiteStmt(
-                [
-                    ast.AssignStmt(
-                        ast.IdExpr(f"{var.value}{cache.VAR_USED_SUFFIX}"),
-                        rhs=ast.BoolExpr(value=True),
-                        update=ast.AssignStmt.Mode.Update,
-                    ),
-                    node.suite,
-                ]
+                ast.AssignStmt(
+                    ast.IdExpr(f"{var.value}{cache.VAR_USED_SUFFIX}"),
+                    rhs=ast.BoolExpr(True),
+                    update=ast.AssignStmt.Mode.Update,
+                ),
+                node.suite,
             )
         node.var = self.visit(var)
 
@@ -269,7 +260,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
     if node.else_suite and node.else_suite.first_in_block():
         suite, node.else_suite = node.else_suite, None
         result = self.visit(
-            ast.SuiteStmt([assignment, node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite)])
+            ast.SuiteStmt(assignment, node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite))
         )
     if node.iter.done and node.suite.done:
         node.done = True
@@ -331,16 +322,16 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
             break_stmt = ast.BreakStmt(done=True)  # set done to skip extra checks
             return ast.WhileStmt(
                 ast.IdExpr(loop_var),
-                suite=ast.SuiteStmt([assignments, suite.clone(), break_stmt]),
+                suite=ast.SuiteStmt(assignments, suite.clone(), break_stmt),
                 goto_var=loop_var,
             )
         else:
-            return ast.SuiteStmt([assignments, stmt.suite.clone()])
+            return ast.SuiteStmt(assignments, stmt.suite.clone())
 
     ok, delay, preamble, items = transform_static_loop_call(self, stmt.var, stmt.iter, wrap)
     if not ok or delay:
         return ok, None
-    block = ast.SuiteStmt([preamble] + items)
+    block = ast.SuiteStmt(preamble, *items)
     if not stmt.flat:
         with self.ctx.substitute("block_level", self.ctx.block_level + 1):
             block.add(
@@ -351,10 +342,8 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
             # var [: Static] := expr; suite...
             loop_result = self.visit(
                 ast.SuiteStmt(
-                    [
-                        ast.AssignStmt(ast.IdExpr(loop_var), rhs=ast.BoolExpr(True)),
-                        ast.WhileStmt(ast.IdExpr(loop_var), suite=block),
-                    ]
+                    ast.AssignStmt(ast.IdExpr(loop_var), rhs=ast.BoolExpr(True)),
+                    ast.WhileStmt(ast.IdExpr(loop_var), suite=block),
                 )
             )
     else:
@@ -372,7 +361,7 @@ def populate_static_loop(
     results = []
     for idx in range(len(iterator.type.generics)):
         assignment = ast.AssignStmt(
-            var.clone(), rhs=ast.IndexExpr(iterator.clone(), idx=ast.IntExpr(int_value=idx))
+            var.clone(), rhs=ast.IndexExpr(iterator.clone(), idx=ast.IntExpr(idx))
         )
         results.append(ast.StmtExpr([assignment], expr=final.clone))
     return results

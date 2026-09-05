@@ -3,8 +3,8 @@
 from ....bridge import Dict, List, dataclass
 from ... import ast, cache
 from . import (
-    # access,
-    # assign,
+    access,
+    assign,
     basic,
     # call,
     # classes,
@@ -12,8 +12,8 @@ from . import (
     cond,
     ctx,
     error,
-    # function,
-    # imports,
+    function,
+    imports,
     infer,
     loops,
     # ops,
@@ -109,7 +109,7 @@ class TypeVisitor(ast.NodeVisitor):
                 del self.prepend_stmts[prepend_start:]
                 if node:
                     prepended.append(node)
-                node = ast.SuiteStmt(prepended, done=all(s.done for s in prepended))
+                node = ast.SuiteStmt(*prepended, done=all(s.done for s in prepended))
             if node.done:
                 self.ctx.changed_nodes += 1
         return node
@@ -229,7 +229,7 @@ class TypeVisitor(ast.NodeVisitor):
         return stmts.typecheck_directive(self, node)
 
     def visit_AssignExpr(self, node: ast.AssignExpr):
-        return assign.typecheck_assign(self, node)
+        return assign.typecheck_assignexpr(self, node)
 
     def visit_AssignStmt(self, node: ast.AssignStmt):
         return assign.typecheck_assign(self, node)
@@ -262,7 +262,7 @@ class TypeVisitor(ast.NodeVisitor):
         return function.typecheck_lambda(self, node)
 
     def visit_YieldExpr(self, node: ast.YieldExpr):
-        return function.typecheck_yield(self, node)
+        return function.typecheck_yieldexpr(self, node)
 
     def visit_AwaitExpr(self, node: ast.AwaitExpr):
         return function.typecheck_await(self, node)
@@ -333,13 +333,13 @@ def typecheck_program(
     # Load compile-time defines (e.g., codon run -DFOO=1 ...)
     for name, value in (defines or {}).items():
         if value.startswith("str:"):
-            defined_value = ast.StringExpr(value=value[4:])
+            defined_value = ast.StringExpr(value[4:])
             literal_name = "str"
         elif value.startswith("bool:"):
-            defined_value = ast.BoolExpr(value=value == "bool:True")
+            defined_value = ast.BoolExpr(value == "bool:True")
             literal_name = "bool"
         else:
-            defined_value = ast.IntExpr(value=value.removeprefix("int:"))
+            defined_value = ast.IntExpr(value.removeprefix("int:"))
             literal_name = "int"
         statements.append(
             ast.AssignStmt(
@@ -349,17 +349,15 @@ def typecheck_program(
             )
         )
     # Set up __name__
-    statements.append(
-        ast.AssignStmt(ast.IdExpr("__name__"), rhs=ast.StringExpr(value=cache.MODULE_MAIN))
-    )
-    statements.append(ast.AssignStmt(ast.IdExpr("__file__"), rhs=ast.StringExpr(value=file)))
+    statements.append(ast.AssignStmt(ast.IdExpr("__name__"), rhs=ast.StringExpr(cache.MODULE_MAIN)))
+    statements.append(ast.AssignStmt(ast.IdExpr("__file__"), rhs=ast.StringExpr(file)))
     statements.append(node)
-    suite = ast.SuiteStmt(statements)
+    suite = ast.SuiteStmt(*statements)
     cache.scope(suite, type_ctx.global_shadows)
     inferred = visitor.infer_types(suite, True)
     if not inferred:
         raise ctx.TypecheckError(visitor.find_typecheck_errors(suite))
-    result = ast.SuiteStmt([preamble, inferred])
+    result = ast.SuiteStmt(preamble, inferred)
     if isinstance(inferred, ast.SuiteStmt):
         visitor.prepare_vtables()
     if not type_ctx.cache.errors.empty():
@@ -408,13 +406,13 @@ def load_std_library(
     # 2. Load early compile-time defines (for standard library)
     for name, value in early_defines.items():
         if value.startswith("str:"):
-            defined_value = ast.StringExpr(value=value[4:])
+            defined_value = ast.StringExpr(value[4:])
             literal_name = "str"
         elif value.startswith("bool:"):
-            defined_value = ast.BoolExpr(value=value == "bool:True")
+            defined_value = ast.BoolExpr(value == "bool:True")
             literal_name = "bool"
         else:
-            defined_value = ast.IntExpr(value=value.removeprefix("int:"))
+            defined_value = ast.IntExpr(value.removeprefix("int:"))
             literal_name = "int"
         transformed = visitor.transform(
             ast.AssignStmt(
@@ -442,6 +440,6 @@ def typecheck_node(
         preamble = ast.SuiteStmt()
         visitor = TypeVisitor(ctx=context, preamble=preamble)
         if inferred := visitor.infer_types(node, True):
-            return ast.SuiteStmt([preamble, inferred])
+            return ast.SuiteStmt(preamble, inferred)
         raise ctx.TypecheckError(visitor.find_typecheck_errors(node))
     return None

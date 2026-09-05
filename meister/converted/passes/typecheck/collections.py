@@ -95,39 +95,27 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
         # List comprehensions
         node.set_final_expr(ast.CallExpr(ast.DotExpr(var.clone(), member="append"), items=[expr]))
         plain = ast.SuiteStmt(
-            [
-                ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.List))),
-                node.loops,
-            ]
+            ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.List))),
+            node.loops,
         )
         if optimize:
             opt_var = utils.get_temporary_var(self.ctx, "i")
             opt_for = node.loops.clone()
             opt_for.iter = ast.IdExpr(opt_var)
             opt = ast.SuiteStmt(
-                [
-                    ast.AssignStmt(ast.IdExpr(opt_var), rhs=final.iter.clone()),
-                    ast.AssignStmt(
-                        var.clone(),
-                        rhs=ast.CallExpr(
-                            ast.IdExpr(ast.types.Stdlib.List),
-                            items=[
-                                ast.CallExpr(
-                                    ast.DotExpr(
-                                        ast.IdExpr(opt_var),
-                                        member="__len__",
-                                    )
-                                )
-                            ],
-                        ),
+                ast.AssignStmt(ast.IdExpr(opt_var), rhs=final.iter.clone()),
+                ast.AssignStmt(
+                    var.clone(),
+                    rhs=ast.CallExpr(
+                        ast.IdExpr(ast.types.Stdlib.List),
+                        items=[ast.CallExpr(ast.DotExpr(ast.IdExpr(opt_var), member="__len__"))],
                     ),
-                    opt_for,
-                ]
+                ),
+                opt_for,
             )
             result = ast.IfExpr(
                 ast.CallExpr(
-                    ast.IdExpr("hasattr"),
-                    items=[final.iter.clone(), ast.StringExpr(value="__len__")],
+                    ast.IdExpr("hasattr"), items=[final.iter.clone(), ast.StringExpr("__len__")]
                 ),
                 ifexpr=ast.StmtExpr(opt.items, expr=var.clone()),
                 elsexpr=ast.StmtExpr(plain.items, expr=var),
@@ -156,7 +144,7 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
 
         # `tuple = tuple_generator`
         tuple_name = utils.get_temporary_var(self.ctx, "tuple")
-        block = ast.SuiteStmt([ast.AssignStmt(ast.IdExpr(tuple_name), rhs=generator_node)])
+        block = ast.SuiteStmt(ast.AssignStmt(ast.IdExpr(tuple_name), rhs=generator_node))
         static_items = loops.populate_static_loop(
             self,
             final.var,
@@ -349,8 +337,8 @@ def transform_comprehension(
             loop_var = ast.IdExpr(utils.get_temporary_var(self.ctx, "it"))
             item.expr.set(ast.Attr.ExprStarSequenceItem)
             args = [
-                ast.IndexExpr(loop_var.clone(), index=ast.IntExpr(int_value=0)),
-                ast.IndexExpr(loop_var.clone(), index=ast.IntExpr(int_value=1)),
+                ast.IndexExpr(loop_var.clone(), index=ast.IntExpr(0)),
+                ast.IndexExpr(loop_var.clone(), index=ast.IntExpr(1)),
             ]
             stmts.append(
                 ast.ForStmt(
@@ -375,8 +363,8 @@ def transform_comprehension(
                 lead.set(ast.Attr.ExprSequenceItem)
                 head.set(ast.Attr.ExprSequenceItem)
                 args = [
-                    ast.IndexExpr(lead, index=ast.IntExpr(int_value=0)),
-                    ast.IndexExpr(head, index=ast.IntExpr(int_value=1)),
+                    ast.IndexExpr(lead, index=ast.IntExpr(0)),
+                    ast.IndexExpr(head, index=ast.IntExpr(1)),
                 ]
             else:
                 args = [item]

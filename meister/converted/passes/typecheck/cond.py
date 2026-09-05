@@ -119,24 +119,20 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Node:
             getter = fn_name.replace("_isinstance", "_getinstance")
             result = self.visit(
                 ast.SuiteStmt(
-                    [
-                        ast.AssignStmt(ast.IdExpr(condition_name), rhs=node.cond),
-                        ast.IfStmt(
-                            ast.IdExpr(condition_name),
-                            if_suite=ast.SuiteStmt(
-                                [
-                                    ast.AssignStmt(
-                                        ast.IdExpr(name),
-                                        rhs=ast.CallExpr(
-                                            ast.IdExpr(getter), items=[obj_arg.value, typ_arg.value]
-                                        ),
-                                    ),
-                                    *([] if not node.if_suite else node.if_suite.items),
-                                ]
+                    ast.AssignStmt(ast.IdExpr(condition_name), rhs=node.cond),
+                    ast.IfStmt(
+                        ast.IdExpr(condition_name),
+                        if_suite=ast.SuiteStmt(
+                            ast.AssignStmt(
+                                ast.IdExpr(name),
+                                rhs=ast.CallExpr(
+                                    ast.IdExpr(getter), items=[obj_arg.value, typ_arg.value]
+                                ),
                             ),
-                            else_suite=node.else_suite,
+                            *([] if not node.if_suite else node.if_suite.items),
                         ),
-                    ]
+                        else_suite=node.else_suite,
+                    ),
                 )
             )
             return result
@@ -158,7 +154,7 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Node:
                     condition = False
             selected = node.if_suite if condition else node.else_suite
             if utils.has_side_effect(node.cond):
-                selected = ast.SuiteStmt([ast.ExprStmt(node.cond), selected])
+                selected = ast.SuiteStmt(ast.ExprStmt(node.cond), selected)
             result = self.visit(selected)
             return result
 
@@ -201,11 +197,11 @@ def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Node:
     var = utils.get_temporary_var(self.ctx, "match")
     assignment: ast.Stmt = ast.AssignStmt(ast.IdExpr(var), rhs=node.expr.clone())
     assignment = self.visit(assignment)
-    result = ast.SuiteStmt([assignment])
+    result = ast.SuiteStmt(assignment)
     for case in node.items:
-        case_suite = ast.SuiteStmt([case.suite, ast.BreakStmt()])
+        case_suite = ast.SuiteStmt(case.suite, ast.BreakStmt())
         if case.guard:
-            case_suite = ast.IfStmt(case.guard, if_suite=ast.SuiteStmt([case_suite]))
+            case_suite = ast.IfStmt(case.guard, if_suite=ast.SuiteStmt(case_suite))
         result.add(typecheck_pattern(self, ast.IdExpr(var), case.pattern, case_suite))
     # Make sure to break even if there is no case _ to prevent infinite loop
     result.add(ast.BreakStmt())
@@ -275,7 +271,7 @@ def typecheck_pattern(
             for idx in range(len(items) - 1, -1, -1):
                 nested = typecheck_pattern(
                     self,
-                    ast.IndexExpr(var.clone(), index=ast.IntExpr(int_value=idx)),
+                    ast.IndexExpr(var.clone(), index=ast.IntExpr(idx)),
                     items[idx],
                     nested,
                 )
@@ -285,9 +281,7 @@ def typecheck_pattern(
             )
             return ast.IfStmt(
                 isinstance_call(var, ast.types.Stdlib.Tuple),
-                ast.IfStmt(
-                    ast.BinaryExpr(length, "==", ast.IntExpr(int_value=len(items))), if_suite=nested
-                ),
+                ast.IfStmt(ast.BinaryExpr(length, "==", ast.IntExpr(len(items))), if_suite=nested),
             )
         case ast.ListExpr(items=items):
             ellipsis = ellipsis_index(items)
@@ -300,14 +294,14 @@ def typecheck_pattern(
                 relative = idx - len(items)
                 nested = typecheck_pattern(
                     self,
-                    ast.IndexExpr(var.clone(), idx=ast.IntExpr(int_value=relative)),
+                    ast.IndexExpr(var.clone(), idx=ast.IntExpr(relative)),
                     items[idx],
                     nested,
                 )
             for idx in range(ellipsis - 1, -1, -1):
                 nested = typecheck_pattern(
                     self,
-                    ast.IndexExpr(var.clone(), idx=ast.IntExpr(int_value=idx)),
+                    ast.IndexExpr(var.clone(), idx=ast.IntExpr(idx)),
                     items[idx],
                     nested,
                 )
@@ -315,27 +309,23 @@ def typecheck_pattern(
                 isinstance_call(var, "List"),
                 ast.IfStmt(
                     ast.BinaryExpr(
-                        ast.CallExpr(ast.IdExpr("len"), items=[var]),
-                        op,
-                        ast.IntExpr(int_value=size),
+                        ast.CallExpr(ast.IdExpr("len"), items=[var]), op, ast.IntExpr(size)
                     ),
                     if_suite=nested,
                 ),
             )
         case ast.BinaryExpr(op=op) if op in ("|", "||"):
             return ast.SuiteStmt(
-                [
-                    typecheck_pattern(self, var.clone(), pattern.lexpr, suite.clone()),
-                    typecheck_pattern(self, var, pattern.rexpr, suite),
-                ]
+                typecheck_pattern(self, var.clone(), pattern.lexpr, suite.clone()),
+                typecheck_pattern(self, var, pattern.rexpr, suite),
             )
         case ast.IdExpr(value="_"):
             return suite
         case ast.IdExpr():
-            return ast.SuiteStmt([ast.AssignStmt(pattern, rhs=var), suite])
+            return ast.SuiteStmt(ast.AssignStmt(pattern, rhs=var), suite)
         case ast.AssignExpr(var=ast.IdExpr() as var, expr=expr):
             return ast.SuiteStmt(
-                [ast.AssignStmt(var, rhs=var.clone()), typecheck_pattern(self, var, expr, suite)]
+                ast.AssignStmt(var, rhs=var.clone()), typecheck_pattern(self, var, expr, suite)
             )
         case ast.AssignExpr:
             assert False, "only simple assignment expressions are supported"
@@ -346,8 +336,7 @@ def typecheck_pattern(
 
     # Fallback (`__match__`) pattern
     has_match = ast.CallExpr(
-        ast.IdExpr("hasattr"),
-        items=[var.clone(), ast.StringExpr(value="__match__"), pattern.clone()],
+        ast.IdExpr("hasattr"), items=[var.clone(), ast.StringExpr("__match__"), pattern.clone()]
     )
     match_call = ast.CallExpr(
         ast.DotExpr(var.clone().clone(), "__match__"), items=[pattern.clone()]

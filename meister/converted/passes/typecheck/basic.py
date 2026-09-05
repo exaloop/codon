@@ -49,10 +49,10 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
     value, suffix = node.get_raw_data()
     holder: ast.Expr | None = None
     if not node.has_stored_value():
-        holder = ast.StringExpr(value=value)
+        holder = ast.StringExpr(value)
         suffix = suffix or "i64"
     else:
-        holder = ast.IntExpr(value=str(node.get_value()), int_value=node.get_value())
+        holder = ast.IntExpr(node.get_value())
 
     width = None
     if len(suffix) > 1 and suffix[0] in ("u", "i") and suffix[1:].isdigit():
@@ -74,7 +74,7 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
         call = ast.CallExpr(
             ast.IndexExpr(
                 ast.IdExpr(ast.types.Stdlib.UInt),
-                index=ast.IntExpr(value=f"{width}", int_value=width),
+                index=ast.IntExpr(width),
             ),
             items=[holder],
         )
@@ -84,10 +84,7 @@ def typecheck_int(self: TypeVisitor, node: ast.IntExpr):
         # call `UInt[NNN](value)` or `Int[NNN](value)`
         type_name = ast.types.Stdlib.UInt if suffix[0] == "u" else ast.types.Stdlib.Int
         call = ast.CallExpr(
-            ast.IndexExpr(
-                ast.IdExpr(type_name),
-                index=ast.IntExpr(value=f"{width}", int_value=width),
-            ),
+            ast.IndexExpr(ast.IdExpr(type_name), index=ast.IntExpr(width)),
             items=[holder],
         )
         return self.visit(call)
@@ -109,9 +106,9 @@ def typecheck_float(self: TypeVisitor, node: ast.FloatExpr):
 
     value, suffix = node.get_raw_data()
     if not node.has_stored_value():
-        holder = ast.StringExpr(value=value)
+        holder = ast.StringExpr(value)
     else:
-        holder = ast.FloatExpr(value=str(node.get_value()), float_value=node.get_value())
+        holder = ast.FloatExpr(node.get_value())
     if not suffix and node.has_stored_value():
         # A normal float (double)
         node |= utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Float)
@@ -162,13 +159,13 @@ def typecheck_str(self: TypeVisitor, node: ast.StringExpr):
             if part.format.spec:
                 expr = ast.CallExpr(
                     ast.DotExpr(expr, member="__format__"),
-                    items=[ast.StringExpr(value=part.format.spec)],
+                    items=[ast.StringExpr(part.format.spec)],
                 )
             expr = ast.CallExpr(ast.IdExpr("str"), items=[expr])
             if part.value:
                 expr = ast.CallExpr(
                     ast.DotExpr(ast.IdExpr(ast.types.Stdlib.String), member="cat"),
-                    items=[ast.StringExpr(value=part.value), expr],
+                    items=[ast.StringExpr(part.value), expr],
                 )
             items.append(expr)
         elif part.prefix:
@@ -181,16 +178,13 @@ def typecheck_str(self: TypeVisitor, node: ast.StringExpr):
                         member=f"__prefix_{part.prefix}__",
                     ),
                     items=[
-                        ast.StringExpr(value=part.value),
-                        ast.IntExpr(
-                            value=f"{len(part.value)}",
-                            int_value=len(part.value),
-                        ),
+                        ast.StringExpr(part.value),
+                        ast.IntExpr(len(part.value)),
                     ],
                 )
             )
         else:
-            items.append(ast.StringExpr(value=part.value))
+            items.append(ast.StringExpr(part.value))
     if len(items) == 1:
         return self.visit(items[0])
     else:

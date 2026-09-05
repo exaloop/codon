@@ -484,7 +484,7 @@ def can_wrap_expr(
                         ),
                         items=[ast.IdExpr("data")],
                     ),
-                    idx=ast.IntExpr(int_value=0),
+                    idx=ast.IntExpr(0),
                 )
                 data_type = ast.IdExpr(ast.types.Stdlib.CObj)
             elif value.type.get_func():
@@ -516,15 +516,11 @@ def can_wrap_expr(
                             type=ast.IdExpr(callable_args.realized_name()),
                         ),
                     ],
-                    suite=ast.SuiteStmt(
-                        [
-                            ast.ReturnStmt(
-                                expr=ast.CallExpr(
-                                    return_function,
-                                    items=[ast.StarExpr(ast.IdExpr("args"))],
-                                )
-                            )
-                        ]
+                    suite=ast.ReturnStmt(
+                        expr=ast.CallExpr(
+                            return_function,
+                            items=[ast.StarExpr(ast.IdExpr("args"))],
+                        )
                     ),
                 )
                 visitor.visit(proxy)
@@ -707,7 +703,7 @@ def extract_named_tuple(ctx: TypeContext, expr: ast.Expr) -> List[Tuple[str, ast
             name,
             ast.IndexExpr(
                 ast.DotExpr(expr, member="args"),
-                idx=ast.IntExpr(int_value=idx),
+                idx=ast.IntExpr(idx),
             ),
         )
         for idx, name in enumerate(names)
