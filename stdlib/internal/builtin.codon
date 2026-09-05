@@ -52,9 +52,10 @@ def input(prompt: str = ""):
             s -= 1  # skip trailing '\n'
         if s != 0 and buf[s - 1] == u8(13):
             s -= 1  # skip trailing '\r'
-        ans = bytes(Ptr[u8](buf), s).decode()
+        data = Ptr[u8](s)
+        bytes.memcpy(data, Ptr[u8](buf), s)
         _C.free(buf)
-        return ans
+        return bytes(data, s).decode()
     else:
         _C.free(buf)
         raise EOFError("EOF when reading a line")

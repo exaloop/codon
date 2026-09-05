@@ -4663,6 +4663,7 @@ def test_utf8_strict_encoding_paths():
     assert "ascii".encode("utf-8") == b"ascii"
     assert "é".encode("utf-8") == b"\xc3\xa9"
     assert ("é" * 16).encode("utf-8") == b"\xc3\xa9" * 16
+    assert ("Ā" * 8).encode("utf-8") == b"\xc4\x80" * 8
     assert ("a" * 15 + "é" + "z" * 16).encode("utf-8") == (
         b"a" * 15 + b"\xc3\xa9" + b"z" * 16
     )
@@ -4694,6 +4695,18 @@ def test_utf8_strict_encoding_paths():
     assert (b"\xc3\xa9" * 8).decode("utf-8") == "é" * 8
     assert (b"a" * 15 + b"\xc3\xa9").decode("utf-8") == "a" * 15 + "é"
     assert (b"\xc4\x80" * 8).decode("utf-8") == "Ā" * 8
+    assert b"\xce\xa9\xf0\x9f\x98\x80".decode("utf-8") == "Ω😀"
+
+    for invalid in (
+        b"\xce\xa9\xc3x",
+        b"\xce\xa9\xe0\x80\x80",
+        b"\xce\xa9\xf4\x90\x80\x80",
+    ):
+        try:
+            invalid.decode("utf-8")
+            assert False
+        except ValueError:
+            pass
 
     for invalid in (
         b"a" * 14 + b"\xc3x",

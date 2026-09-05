@@ -479,9 +479,11 @@ def _unicode_lower_mapping_lookup(cp: int) -> int:
     )
 
 
-def unicode_lower_mapping_length(cp: int) -> int:
-    record = _unicode_lower_mapping_lookup(cp)
+def unicode_lower_mapping_record(cp: int) -> int:
+    return _unicode_lower_mapping_lookup(cp)
 
+
+def unicode_lower_mapping_record_length(record: int) -> int:
     if record >= 0:
         return 1
 
@@ -492,9 +494,11 @@ def unicode_lower_mapping_length(cp: int) -> int:
     )
 
 
-def unicode_lower_mapping_codepoint(cp: int, index: int) -> int:
-    record = _unicode_lower_mapping_lookup(cp)
-
+def unicode_lower_mapping_record_codepoint(
+    cp: int,
+    record: int,
+    index: int,
+) -> int:
     if record == 0:
         return cp
 
@@ -505,6 +509,20 @@ def unicode_lower_mapping_codepoint(cp: int, index: int) -> int:
         _unicode_lower_mapping_data(
             (record & 0x7FFFFFFF) * 4 + 1 + index
         )
+    )
+
+
+def unicode_lower_mapping_length(cp: int) -> int:
+    return unicode_lower_mapping_record_length(
+        unicode_lower_mapping_record(cp)
+    )
+
+
+def unicode_lower_mapping_codepoint(cp: int, index: int) -> int:
+    return unicode_lower_mapping_record_codepoint(
+        cp,
+        unicode_lower_mapping_record(cp),
+        index,
     )
 
 @pure
@@ -550,9 +568,11 @@ def _unicode_upper_mapping_lookup(cp: int) -> int:
     )
 
 
-def unicode_upper_mapping_length(cp: int) -> int:
-    record = _unicode_upper_mapping_lookup(cp)
+def unicode_upper_mapping_record(cp: int) -> int:
+    return _unicode_upper_mapping_lookup(cp)
 
+
+def unicode_upper_mapping_record_length(record: int) -> int:
     if record >= 0:
         return 1
 
@@ -563,9 +583,11 @@ def unicode_upper_mapping_length(cp: int) -> int:
     )
 
 
-def unicode_upper_mapping_codepoint(cp: int, index: int) -> int:
-    record = _unicode_upper_mapping_lookup(cp)
-
+def unicode_upper_mapping_record_codepoint(
+    cp: int,
+    record: int,
+    index: int,
+) -> int:
     if record == 0:
         return cp
 
@@ -576,6 +598,20 @@ def unicode_upper_mapping_codepoint(cp: int, index: int) -> int:
         _unicode_upper_mapping_data(
             (record & 0x7FFFFFFF) * 4 + 1 + index
         )
+    )
+
+
+def unicode_upper_mapping_length(cp: int) -> int:
+    return unicode_upper_mapping_record_length(
+        unicode_upper_mapping_record(cp)
+    )
+
+
+def unicode_upper_mapping_codepoint(cp: int, index: int) -> int:
+    return unicode_upper_mapping_record_codepoint(
+        cp,
+        unicode_upper_mapping_record(cp),
+        index,
     )
 
 @pure
@@ -621,9 +657,11 @@ def _unicode_title_mapping_lookup(cp: int) -> int:
     )
 
 
-def unicode_title_mapping_length(cp: int) -> int:
-    record = _unicode_title_mapping_lookup(cp)
+def unicode_title_mapping_record(cp: int) -> int:
+    return _unicode_title_mapping_lookup(cp)
 
+
+def unicode_title_mapping_record_length(record: int) -> int:
     if record >= 0:
         return 1
 
@@ -634,9 +672,11 @@ def unicode_title_mapping_length(cp: int) -> int:
     )
 
 
-def unicode_title_mapping_codepoint(cp: int, index: int) -> int:
-    record = _unicode_title_mapping_lookup(cp)
-
+def unicode_title_mapping_record_codepoint(
+    cp: int,
+    record: int,
+    index: int,
+) -> int:
     if record == 0:
         return cp
 
@@ -647,6 +687,20 @@ def unicode_title_mapping_codepoint(cp: int, index: int) -> int:
         _unicode_title_mapping_data(
             (record & 0x7FFFFFFF) * 4 + 1 + index
         )
+    )
+
+
+def unicode_title_mapping_length(cp: int) -> int:
+    return unicode_title_mapping_record_length(
+        unicode_title_mapping_record(cp)
+    )
+
+
+def unicode_title_mapping_codepoint(cp: int, index: int) -> int:
+    return unicode_title_mapping_record_codepoint(
+        cp,
+        unicode_title_mapping_record(cp),
+        index,
     )
 
 @pure
@@ -692,9 +746,11 @@ def _unicode_casefold_mapping_lookup(cp: int) -> int:
     )
 
 
-def unicode_casefold_mapping_length(cp: int) -> int:
-    record = _unicode_casefold_mapping_lookup(cp)
+def unicode_casefold_mapping_record(cp: int) -> int:
+    return _unicode_casefold_mapping_lookup(cp)
 
+
+def unicode_casefold_mapping_record_length(record: int) -> int:
     if record >= 0:
         return 1
 
@@ -705,9 +761,11 @@ def unicode_casefold_mapping_length(cp: int) -> int:
     )
 
 
-def unicode_casefold_mapping_codepoint(cp: int, index: int) -> int:
-    record = _unicode_casefold_mapping_lookup(cp)
-
+def unicode_casefold_mapping_record_codepoint(
+    cp: int,
+    record: int,
+    index: int,
+) -> int:
     if record == 0:
         return cp
 
@@ -718,4 +776,18 @@ def unicode_casefold_mapping_codepoint(cp: int, index: int) -> int:
         _unicode_casefold_mapping_data(
             (record & 0x7FFFFFFF) * 4 + 1 + index
         )
+    )
+
+
+def unicode_casefold_mapping_length(cp: int) -> int:
+    return unicode_casefold_mapping_record_length(
+        unicode_casefold_mapping_record(cp)
+    )
+
+
+def unicode_casefold_mapping_codepoint(cp: int, index: int) -> int:
+    return unicode_casefold_mapping_record_codepoint(
+        cp,
+        unicode_casefold_mapping_record(cp),
+        index,
     )

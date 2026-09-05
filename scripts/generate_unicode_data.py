@@ -632,9 +632,11 @@ def _unicode_{name}_mapping_lookup(cp: int) -> int:
     )
 
 
-def unicode_{name}_mapping_length(cp: int) -> int:
-    record = _unicode_{name}_mapping_lookup(cp)
+def unicode_{name}_mapping_record(cp: int) -> int:
+    return _unicode_{name}_mapping_lookup(cp)
 
+
+def unicode_{name}_mapping_record_length(record: int) -> int:
     if record >= 0:
         return 1
 
@@ -645,9 +647,11 @@ def unicode_{name}_mapping_length(cp: int) -> int:
     )
 
 
-def unicode_{name}_mapping_codepoint(cp: int, index: int) -> int:
-    record = _unicode_{name}_mapping_lookup(cp)
-
+def unicode_{name}_mapping_record_codepoint(
+    cp: int,
+    record: int,
+    index: int,
+) -> int:
     if record == 0:
         return cp
 
@@ -658,6 +662,20 @@ def unicode_{name}_mapping_codepoint(cp: int, index: int) -> int:
         _unicode_{name}_mapping_data(
             (record & 0x7FFFFFFF) * 4 + 1 + index
         )
+    )
+
+
+def unicode_{name}_mapping_length(cp: int) -> int:
+    return unicode_{name}_mapping_record_length(
+        unicode_{name}_mapping_record(cp)
+    )
+
+
+def unicode_{name}_mapping_codepoint(cp: int, index: int) -> int:
+    return unicode_{name}_mapping_record_codepoint(
+        cp,
+        unicode_{name}_mapping_record(cp),
+        index,
     )
 """
     )
