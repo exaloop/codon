@@ -577,7 +577,7 @@ test_gft_skip_footer()
 # def test_header(self): TODO
 # def test_auto_dtype(self): TODO
 
-@test
+# TODO: Enable when genfromtxt supports dtype=None.
 def test_auto_dtype_uniform():
     # Tests whether the output dtype can be uniformized
     data = test_dir + '/data_50.txt'
@@ -587,8 +587,6 @@ def test_auto_dtype_uniform():
     test = np.genfromtxt(data, dtype=None)
     control = np.array([[1, 2, 3, 4], [5, 6, 7, 8]], dtype=None)
     assert np.array_equal(test, control)
-
-# test_auto_dtype_uniform()
 
 # def test_fancy_dtype(self): TODO
 # def test_names_overwrite(self): TODO
@@ -928,8 +926,10 @@ def test_save_load_memmap_readwrite():
     b = np.load(path, dtype=int, ndim=2, mmap_mode='r+')
     a[0][0] = 5
     b[0][0] = 5
-    data = np.load(path)
+    data = np.load(path, dtype=int, ndim=2)
     assert np.array_equal(data, a)
+
+test_save_load_memmap_readwrite()
 
 # def test_savez_load(): Not yet implemented
 

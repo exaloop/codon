@@ -331,6 +331,8 @@ def test_concat_and_repeat():
     u = unicode("ab") + unicode("cd")
     assert u == unicode("abcd")
     assert u * 2 == unicode("abcdabcd")
+    assert (u * 1)._ptr == u._ptr
+    assert unicode("éΩ😀") * 5 == unicode("éΩ😀éΩ😀éΩ😀éΩ😀éΩ😀")
     assert u * 0 == unicode("")
 
 
@@ -1317,6 +1319,8 @@ def test_split_join_and_replace():
 
     joined = unicode(",").join([unicode("a"), unicode("b"), unicode("c")])
     assert joined == unicode("a,b,c")
+    only = unicode("only")
+    assert unicode(",").join([only])._ptr == only._ptr
 
     replaced = unicode("ababa").replace(unicode("aba"), unicode("z"))
     assert replaced == unicode("zba")
@@ -4659,6 +4663,16 @@ def test_slices_do_not_alias_parent_storage():
 
 @test
 def test_utf8_strict_encoding_paths():
+    ascii_c_str = Ptr[u8]("ascii".c_str())
+    assert bytes(ascii_c_str, 6) == b"ascii\x00"
+    unicode_c_str = Ptr[u8]("é".c_str())
+    assert bytes(unicode_c_str, 3) == b"\xc3\xa9\x00"
+    try:
+        chr(0xD800).c_str()
+        assert False
+    except ValueError:
+        pass
+
     assert "".encode("utf-8") == b""
     assert "ascii".encode("utf-8") == b"ascii"
     assert "é".encode("utf-8") == b"\xc3\xa9"
@@ -4701,6 +4715,7 @@ def test_utf8_strict_encoding_paths():
         b"\xce\xa9\xc3x",
         b"\xce\xa9\xe0\x80\x80",
         b"\xce\xa9\xf4\x90\x80\x80",
+        b"\xce\xa9\xf0\x9f\x98\x80\xc3x",
     ):
         try:
             invalid.decode("utf-8")
