@@ -2,11 +2,12 @@
 
 from internal.gc import realloc, free, sizeof
 import internal.static as static
-from internal.str import _UnicodeCodecBuffer, _UnicodeDecodeErrorTracker, _make_meta, _unicode_decode_ptr, _unicode_encode_code, \
-                         _encoding_code, _error_code, _native_is_little_endian, _ENCODING_UTF8, \
-                         _ENCODING_UTF16, _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, \
-                         _ENCODING_UTF32_LE, _ENCODING_UTF32_BE, _ENCODING_UNKNOWN, _ERROR_STRICT, \
-                         _ERROR_IGNORE, _ERROR_REPLACE, _ERROR_BACKSLASHREPLACE
+from internal.str import _UnicodeCodecBuffer, _UnicodeDecodeErrorTracker, _make_meta, _unicode_decode_ptr, \
+                         _unicode_encode_code, _unicode_encode_code_with_ownership, _encoding_code, \
+                         _error_code, _native_is_little_endian, _ENCODING_UTF8, _ENCODING_UTF16, \
+                         _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, _ENCODING_UTF32_LE, \
+                         _ENCODING_UTF32_BE, _ENCODING_UNKNOWN, _ERROR_STRICT, _ERROR_IGNORE, \
+                         _ERROR_REPLACE, _ERROR_BACKSLASHREPLACE
 
 # Match CPython's split between a relatively small TextIOWrapper decode chunk
 # and a larger buffered raw I/O layer. CPython dynamically chooses the raw
@@ -718,7 +719,10 @@ def _file_store_encoded_cr(
     data[position + byte_offset] = u8(0x0D)
 
 def _file_translate_encoded_newlines(
-    data: bytes, encoding: int, newline_flags: int
+    data: bytes,
+    encoding: int,
+    newline_flags: int,
+    uniquely_owned: bool,
 ) -> bytes:
     if newline_flags != _FILE_NEWLINE_CR and newline_flags != _FILE_NEWLINE_CRLF:
         return data
@@ -734,27 +738,56 @@ def _file_translate_encoded_newlines(
     if newline_count == 0:
         return data
 
-    if newline_flags == _FILE_NEWLINE_CR:
-        position = 0
-        while position + width <= len(data):
-            if _file_encoded_is_lf(data._ptr, position, width, byte_offset):
-                data._ptr[position + byte_offset] = u8(0x0D)
-            position += width
-        return data
-
     old_length = len(data)
+
+    if newline_flags == _FILE_NEWLINE_CR:
+        if uniquely_owned:
+            position = 0
+            while position + width <= old_length:
+                if _file_encoded_is_lf(data._ptr, position, width, byte_offset):
+                    data._ptr[position + byte_offset] = u8(0x0D)
+                position += width
+            return data
+
+        output = Ptr[u8](old_length)
+        position = 0
+        while position + width <= old_length:
+            if _file_encoded_is_lf(data._ptr, position, width, byte_offset):
+                _file_store_encoded_cr(output, position, width, byte_offset)
+            else:
+                bytes.memcpy(output + position, data._ptr + position, width)
+            position += width
+        if position < old_length:
+            bytes.memcpy(output + position, data._ptr + position, old_length - position)
+        return bytes(output, old_length)
+
     new_length = old_length + newline_count * width
-    output = realloc(data._ptr, new_length, old_length)
-    source = old_length
-    destination = new_length
-    while source >= width:
-        source -= width
-        is_lf = _file_encoded_is_lf(output, source, width, byte_offset)
-        destination -= width
-        bytes.memcpy(output + destination, output + source, width)
-        if is_lf:
+    if uniquely_owned:
+        output = realloc(data._ptr, new_length, old_length)
+        source = old_length
+        destination = new_length
+        while source >= width:
+            source -= width
+            is_lf = _file_encoded_is_lf(output, source, width, byte_offset)
             destination -= width
+            bytes.memcpy(output + destination, output + source, width)
+            if is_lf:
+                destination -= width
+                _file_store_encoded_cr(output, destination, width, byte_offset)
+        return bytes(output, new_length)
+
+    output = Ptr[u8](new_length)
+    source = 0
+    destination = 0
+    while source + width <= old_length:
+        if _file_encoded_is_lf(data._ptr, source, width, byte_offset):
             _file_store_encoded_cr(output, destination, width, byte_offset)
+            destination += width
+        bytes.memcpy(output + destination, data._ptr + source, width)
+        source += width
+        destination += width
+    if source < old_length:
+        bytes.memcpy(output + destination, data._ptr + source, old_length - source)
     return bytes(output, new_length)
 
 def _file_write_newline_flags(newline_flags: int) -> int:
@@ -769,8 +802,12 @@ def _file_stream_encode(
     state: _FileState, value: str, newline_flags: int
 ) -> bytes:
     encoding = state._write_encoding_kind
-    data = _unicode_encode_code(value, encoding, state._error_code)
-    data = _file_translate_encoded_newlines(data, encoding, newline_flags)
+    data, uniquely_owned = _unicode_encode_code_with_ownership(
+        value, encoding, state._error_code
+    )
+    data = _file_translate_encoded_newlines(
+        data, encoding, newline_flags, uniquely_owned
+    )
     if not state._write_bom_done:
         state._write_bom_done = True
         state._write_encoding_kind = _file_native_stream_encoding(encoding)

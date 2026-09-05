@@ -1,7 +1,20 @@
 import gzip
 import bz2
 import sys
-from internal.str import _encoding_matches, _unicode_from_codepoint
+from internal.str import (
+    _encoding_matches,
+    _unicode_from_codepoint,
+    _unicode_encode_code_with_ownership,
+    _ENCODING_UTF8,
+    _ENCODING_ASCII,
+    _ENCODING_LATIN1,
+    _ERROR_STRICT,
+    _ERROR_REPLACE,
+)
+from internal.file import (
+    _file_translate_encoded_newlines,
+    _FILE_NEWLINE_CR,
+)
 from C import remove(cobj) -> i32
 
 FIXTURE = "test/stdlib/data/io_fixture.txt"
@@ -16,6 +29,51 @@ def _raw_bytes(values: List[int]) -> bytes:
     for index in range(len(values)):
         data[index] = u8(values[index])
     return bytes(data, len(values))
+
+@test
+def test_encoded_newline_buffer_ownership():
+    ascii_value = "a\nb"
+    borrowed, uniquely_owned = _unicode_encode_code_with_ownership(
+        ascii_value, _ENCODING_UTF8, _ERROR_STRICT
+    )
+    assert not uniquely_owned
+    assert borrowed._ptr == ascii_value._ptr
+    translated = _file_translate_encoded_newlines(
+        borrowed, _ENCODING_UTF8, _FILE_NEWLINE_CR, uniquely_owned
+    )
+    assert translated == b"a\rb"
+    assert translated._ptr != ascii_value._ptr
+    assert ascii_value == "a\nb"
+
+    borrowed, uniquely_owned = _unicode_encode_code_with_ownership(
+        ascii_value, _ENCODING_ASCII, _ERROR_REPLACE
+    )
+    assert not uniquely_owned
+    assert borrowed._ptr == ascii_value._ptr
+
+    unicode_value = _latin1_value() + "\n"
+    borrowed, uniquely_owned = _unicode_encode_code_with_ownership(
+        unicode_value, _ENCODING_LATIN1, _ERROR_STRICT
+    )
+    assert not uniquely_owned
+    assert borrowed._ptr == unicode_value._ptr
+
+    owned, uniquely_owned = _unicode_encode_code_with_ownership(
+        unicode_value, _ENCODING_ASCII, _ERROR_REPLACE
+    )
+    assert uniquely_owned
+    assert owned == b"caf?\n"
+
+    owned, uniquely_owned = _unicode_encode_code_with_ownership(
+        unicode_value, _ENCODING_UTF8, _ERROR_STRICT
+    )
+    assert uniquely_owned
+    owned_pointer = owned._ptr
+    translated = _file_translate_encoded_newlines(
+        owned, _ENCODING_UTF8, _FILE_NEWLINE_CR, uniquely_owned
+    )
+    assert translated._ptr == owned_pointer
+    assert translated == (_latin1_value() + "\r").encode()
 
 def _assert_stateful_text_reads(reader):
     first = reader.read(1)
@@ -1534,6 +1592,7 @@ def test_invalid_modes_and_operation_permissions():
             pass
 
 
+test_encoded_newline_buffer_ownership()
 test_regular_file_basics()
 test_regular_file_modes_and_read_boundaries()
 test_large_read_chunks_do_not_alias()

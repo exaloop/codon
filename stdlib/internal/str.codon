@@ -562,13 +562,19 @@ def _utf8_scan_strict(
 def _unicode_decode_utf8_strict(
     data: Ptr[u8],
     byte_length: int,
+    share_data: bool = False,
 ) -> str:
     if byte_length < 0:
         raise ValueError("negative length")
 
     length, maxchar = _utf8_scan_strict(data, byte_length)
     if maxchar <= 0x7F:
-        return str(data, _make_meta(byte_length, KIND_ASCII))
+        if share_data:
+            return str(data, _make_meta(byte_length, KIND_ASCII))
+        output = Ptr[u8](byte_length)
+        if byte_length > 0:
+            str.memcpy(output, data, byte_length)
+        return str(output, _make_meta(byte_length, KIND_ASCII))
 
     if maxchar > 0xFFFF:
         output = Ptr[u32](byte_length)
@@ -1757,7 +1763,11 @@ def _unicode_decode_codec(
     if encoding_code == _ENCODING_LATIN1:
         return str(data._ptr, _make_meta(len(data), KIND_LATIN1))
 
-    return _unicode_decode_ptr(data._ptr, len(data), encoding_code, _error_code(errors))
+    error_code = _error_code(errors)
+    if encoding_code == _ENCODING_UTF8 and error_code == _ERROR_STRICT:
+        return _unicode_decode_utf8_strict(data._ptr, len(data), True)
+
+    return _unicode_decode_ptr(data._ptr, len(data), encoding_code, error_code)
 
 
 def _codec_encode_ascii_append(
@@ -2136,39 +2146,65 @@ def _unicode_encode_utf32(
     return output.finish()
 
 
-def _unicode_encode_code(value: str, encoding: int, errors: int) -> bytes:
+def _unicode_encode_code_with_ownership(
+    value: str,
+    encoding: int,
+    errors: int,
+) -> Tuple[bytes, bool]:
     if encoding == _ENCODING_UTF8:
-        return _unicode_encode_utf8(value, errors)
+        return _unicode_encode_utf8(value, errors), not value._is_ascii()
     if encoding == _ENCODING_ASCII:
-        return _unicode_encode_single_byte(value, True, errors)
+        return (
+            _unicode_encode_single_byte(value, True, errors),
+            not value._is_ascii(),
+        )
     if encoding == _ENCODING_LATIN1:
-        return _unicode_encode_single_byte(value, False, errors)
+        return (
+            _unicode_encode_single_byte(value, False, errors),
+            value._kind() > KIND_LATIN1,
+        )
     if encoding == _ENCODING_CP1252:
-        return _unicode_encode_cp1252(value, errors)
+        return _unicode_encode_cp1252(value, errors), True
     if encoding == _ENCODING_CP1251:
-        return _unicode_encode_cp1251(value, errors)
+        return _unicode_encode_cp1251(value, errors), True
     if encoding == _ENCODING_CP1250:
-        return _unicode_encode_cp1250(value, errors)
+        return _unicode_encode_cp1250(value, errors), True
     if encoding == _ENCODING_CP1253:
-        return _unicode_encode_cp1253(value, errors)
+        return _unicode_encode_cp1253(value, errors), True
     if encoding == _ENCODING_CP1254:
-        return _unicode_encode_cp1254(value, errors)
+        return _unicode_encode_cp1254(value, errors), True
     if encoding == _ENCODING_ISO8859_15:
-        return _unicode_encode_iso8859_15(value, errors)
+        return _unicode_encode_iso8859_15(value, errors), True
     if encoding == _ENCODING_UTF16:
-        return _unicode_encode_utf16(value, _native_is_little_endian(), True, errors)
+        return (
+            _unicode_encode_utf16(
+                value, _native_is_little_endian(), True, errors
+            ),
+            True,
+        )
     if encoding == _ENCODING_UTF16_LE:
-        return _unicode_encode_utf16(value, True, False, errors)
+        return _unicode_encode_utf16(value, True, False, errors), True
     if encoding == _ENCODING_UTF16_BE:
-        return _unicode_encode_utf16(value, False, False, errors)
+        return _unicode_encode_utf16(value, False, False, errors), True
     if encoding == _ENCODING_UTF32:
-        return _unicode_encode_utf32(value, _native_is_little_endian(), True, errors)
+        return (
+            _unicode_encode_utf32(
+                value, _native_is_little_endian(), True, errors
+            ),
+            True,
+        )
     if encoding == _ENCODING_UTF32_LE:
-        return _unicode_encode_utf32(value, True, False, errors)
+        return _unicode_encode_utf32(value, True, False, errors), True
     if encoding == _ENCODING_UTF32_BE:
-        return _unicode_encode_utf32(value, False, False, errors)
+        return _unicode_encode_utf32(value, False, False, errors), True
 
     raise LookupError("unknown encoding")
+
+
+def _unicode_encode_code(value: str, encoding: int, errors: int) -> bytes:
+    data, _ = _unicode_encode_code_with_ownership(value, encoding, errors)
+    return data
+
 
 def _unicode_encode_codec(value: str, encoding: str, errors: str) -> bytes:
     encoding_code = _encoding_code(encoding)
