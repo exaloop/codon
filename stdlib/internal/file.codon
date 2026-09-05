@@ -540,7 +540,7 @@ def _file_shift_text_errors(
     output = 0
     for i in range(tracker.length):
         start, end, raw_start, raw_length = tracker.get(i)
-        if start >= offset:
+        if end > offset:
             tracker.set(
                 output,
                 prefix + start - offset,
@@ -1805,6 +1805,15 @@ class File[T]:
     def seek(self, offset: int, whence: int):
         self._ensure_open()
         _file_flush_stdio_write_buffer(self._state)
+        if whence == 1:
+            current = self.tell()
+            current_cookie_position, _, _ = (
+                _file_decode_text_replay_cookie(current)
+            )
+            if current_cookie_position >= 0:
+                if offset == 0:
+                    return current
+                raise IOError("can't do nonzero cur-relative seek from a text replay cookie")
         cookie_position, cookie_skip, cookie_encoding = (
             _file_decode_text_replay_cookie(offset)
             if whence == 0
@@ -2169,6 +2178,15 @@ class gzFile[T]:
                 self.read(cookie_skip)
                 return offset
             current = self.tell()
+            current_cookie_position, _, _ = (
+                _file_decode_text_replay_cookie(current)
+            )
+            if current_cookie_position >= 0:
+                if whence == 1:
+                    if offset == 0:
+                        return current
+                    raise IOError("can't do nonzero cur-relative seek from a text replay cookie")
+                current = current_cookie_position
             if whence == 0:
                 target = max(offset, 0)
             elif whence == 1:
@@ -2416,6 +2434,13 @@ class bzFile[T]:
 
     def _getline(self, buffer: _FileBuffer) -> int:
         length = 0
+        if T is str and self._state._skip_initial_lf:
+            self._state._skip_initial_lf = False
+            following = self._read_byte()
+            if following >= 0 and following != 0x0A:
+                self._state._read_offset -= 1
+                self._state._position -= 1
+
         while True:
             if self._state._read_offset == self._state._read_length:
                 if not self._state._read_buf:
@@ -2720,6 +2745,13 @@ class bzFile[T]:
             else (-1, 0, 0)
         )
         logical_position = self.tell()
+        logical_cookie_position, _, _ = (
+            _file_decode_text_replay_cookie(logical_position)
+        )
+        if logical_cookie_position >= 0 and whence == 1:
+            if offset == 0:
+                return logical_position
+            raise IOError("can't do nonzero cur-relative seek from a text replay cookie")
         if cookie_position >= 0:
             target = cookie_position
         elif whence == 0:

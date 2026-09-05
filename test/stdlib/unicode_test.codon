@@ -97,6 +97,30 @@ def test_unicode_literal_escapes():
 
 
 @test
+def test_from_ptr():
+    ascii_source = b"ascii".c_str()
+    ascii_value = str.from_ptr(ascii_source)
+    ascii_source[0] = u8(ord("X"))
+    assert ascii_value == "ascii"
+
+    utf8_source = _raw_bytes([
+        0x63, 0x61, 0x66, 0xC3, 0xA9,
+        0xCE, 0xA9,
+        0xF0, 0x9F, 0x98, 0x80,
+    ]).c_str()
+    utf8_value = str.from_ptr(utf8_source)
+    utf8_source[0] = u8(ord("X"))
+    assert utf8_value == "caf\u00e9\u03a9\U0001f600"
+
+    assert str.from_ptr(b"".c_str()) == ""
+    try:
+        str.from_ptr(_raw_bytes([0xFF]).c_str())
+        assert False
+    except ValueError:
+        pass
+
+
+@test
 def test_comparisons_and_search():
     u = unicode("banana")
     assert u == unicode("banana")
@@ -1874,6 +1898,7 @@ test_empty()
 test_ascii_and_slicing()
 test_chr_ord()
 test_unicode_literal_escapes()
+test_from_ptr()
 test_comparisons_and_search()
 test_pointer_description()
 test_fastsearch_paths()
@@ -4758,6 +4783,7 @@ test_repr_quote_choice_matches_python()
 test_strip_none()
 test_slices_do_not_alias_parent_storage()
 test_utf8_strict_encoding_paths()
+test_identity_codecs_share_immutable_storage()
 test_bytes_constructor_requires_explicit_decode_to_decode_contents()
 
 

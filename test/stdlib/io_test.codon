@@ -405,8 +405,15 @@ def test_lossy_decode_position_round_trip():
     data = _raw_bytes([0x41, 0xFF, 0x42, 0x0D, 0x0A, 0x43])
     replacement = _unicode_from_codepoint(0xFFFD)
 
-    for errors in ("ignore", "replace"):
-        suffix = "B\nC" if errors == "ignore" else replacement + "B\nC"
+    for errors in ("ignore", "replace", "backslashreplace", "surrogateescape"):
+        if errors == "ignore":
+            suffix = "B\nC"
+        elif errors == "replace":
+            suffix = replacement + "B\nC"
+        elif errors == "backslashreplace":
+            suffix = "\\xffB\nC"
+        else:
+            suffix = _unicode_from_codepoint(0xDCFF) + "B\nC"
 
         path = PREFIX + "-lossy-position-" + errors + ".txt"
         with open(path, "wb") as writer:
@@ -441,6 +448,93 @@ def test_lossy_decode_position_round_trip():
             assert reader.seek(position, 0) == position
             assert reader.read() == suffix
 
+    lookahead_data = _raw_bytes([
+        0x0D, 0x00,
+        0x00, 0xDC,
+        0x51, 0x00,
+    ])
+    lookahead_path = PREFIX + "-lossy-lookahead-utf16.txt"
+    with open(lookahead_path, "wb") as writer:
+        writer.write(lookahead_data)
+    with open(
+        lookahead_path,
+        "r",
+        encoding="utf-16-le",
+        errors="backslashreplace",
+        newline="",
+    ) as reader:
+        assert reader.readline() == "\r"
+        assert reader.read(1) == "\\"
+        position = reader.tell()
+        suffix = reader.read()
+        assert suffix == "x00\\xdcQ"
+        assert reader.seek(position, 0) == position
+        assert reader.read() == suffix
+
+    lookahead_gzip_path = PREFIX + "-lossy-lookahead-utf16.gz"
+    with gzip.open(lookahead_gzip_path, "wb") as writer:
+        writer.write(lookahead_data)
+    with gzip.open(
+        lookahead_gzip_path,
+        "rt",
+        encoding="utf-16-le",
+        errors="backslashreplace",
+        newline="",
+    ) as reader:
+        assert reader.readline() == "\r"
+        assert reader.read(1) == "\\"
+        position = reader.tell()
+        suffix = reader.read()
+        assert suffix == "x00\\xdcQ"
+        assert reader.seek(position, 0) == position
+        assert reader.read() == suffix
+
+    lookahead_bzip_path = PREFIX + "-lossy-lookahead-utf16.bz2"
+    with bz2.open(lookahead_bzip_path, "wb") as writer:
+        writer.write(lookahead_data)
+    with bz2.open(
+        lookahead_bzip_path,
+        "rt",
+        encoding="utf-16-le",
+        errors="backslashreplace",
+        newline="",
+    ) as reader:
+        assert reader.readline() == "\r"
+        assert reader.read(1) == "\\"
+        position = reader.tell()
+        suffix = reader.read()
+        assert suffix == "x00\\xdcQ"
+        assert reader.seek(position, 0) == position
+        assert reader.read() == suffix
+
+    boundary_path = PREFIX + "-lossy-decode-boundary.txt"
+    with open(boundary_path, "wb") as writer:
+        writer.write(("A" * 131071).encode())
+        writer.write(_raw_bytes([0xFF, 0x42]))
+    for errors in (
+        "ignore", "replace", "backslashreplace", "surrogateescape"
+    ):
+        with open(boundary_path, "r", errors=errors) as reader:
+            prefix = reader.read(131072)
+            assert len(prefix) == 131072
+            if errors == "ignore":
+                assert prefix.endswith("B")
+                expected_suffix = ""
+            elif errors == "replace":
+                assert prefix.endswith(replacement)
+                expected_suffix = "B"
+            elif errors == "backslashreplace":
+                assert prefix.endswith("\\")
+                expected_suffix = "xffB"
+            else:
+                assert prefix.endswith(_unicode_from_codepoint(0xDCFF))
+                expected_suffix = "B"
+            position = reader.tell()
+            suffix = reader.read()
+            assert suffix == expected_suffix
+            assert reader.seek(position, 0) == position
+            assert reader.read() == suffix
+
     malformed = _raw_bytes([0xF0, 0x80, 0x80, 0x80, 0x5A])
     replacement = _unicode_from_codepoint(0xFFFD)
     escaped = _unicode_from_codepoint(0xDCF0)
@@ -462,6 +556,13 @@ def test_lossy_decode_position_round_trip():
         with open(path, "r", errors=errors) as reader:
             assert reader.read(1) == prefix
             position = reader.tell()
+            if errors == "backslashreplace":
+                assert reader.seek(0, 1) == position
+                try:
+                    reader.seek(1, 1)
+                    assert False
+                except IOError:
+                    pass
             assert reader.read() == suffix
             assert reader.seek(position, 0) == position
             assert reader.read() == suffix
@@ -472,6 +573,16 @@ def test_lossy_decode_position_round_trip():
         with gzip.open(gzip_path, "rt", errors=errors) as reader:
             assert reader.read(1) == prefix
             position = reader.tell()
+            if errors == "backslashreplace":
+                assert reader.seek(0, 1) == position
+                try:
+                    reader.seek(1, 1)
+                    assert False
+                except IOError:
+                    pass
+                assert reader.seek(0, 2) == len(malformed)
+                assert reader.read() == ""
+                assert reader.seek(position, 0) == position
             assert reader.read() == suffix
             assert reader.seek(position, 0) == position
             assert reader.read() == suffix
@@ -482,6 +593,16 @@ def test_lossy_decode_position_round_trip():
         with bz2.open(bzip_path, "rt", errors=errors) as reader:
             assert reader.read(1) == prefix
             position = reader.tell()
+            if errors == "backslashreplace":
+                assert reader.seek(0, 1) == position
+                try:
+                    reader.seek(1, 1)
+                    assert False
+                except IOError:
+                    pass
+                assert reader.seek(0, 2) == len(malformed)
+                assert reader.read() == ""
+                assert reader.seek(position, 0) == position
             assert reader.read() == suffix
             assert reader.seek(position, 0) == position
             assert reader.read() == suffix
@@ -1408,6 +1529,15 @@ def test_text_positions_across_translated_crlf():
         assert reader.read() == "z"
         assert reader.seek(position, 0) == position
         assert reader.read() == "z"
+
+    bzip_readline_boundary_path = PREFIX + "-crlf-readline-boundary.bz2"
+    with bz2.open(bzip_readline_boundary_path, "wt", newline="") as writer:
+        writer.write(boundary_value + "\n")
+    with bz2.open(
+        bzip_readline_boundary_path, "rt", errors="replace"
+    ) as reader:
+        assert reader.read(131072) == "x" * 131071 + "\n"
+        assert reader.readline() == "z\n"
 
 
 @test

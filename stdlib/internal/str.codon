@@ -2239,9 +2239,19 @@ class str:
             return what.__repr__()
 
     def from_ptr(t: cobj) -> str:
-        n = _C.strlen(t)
+        source = Ptr[u8](t)
+        n = 0
+        needs_decode = False
+        while True:
+            byte = source[n]
+            if byte == 0:
+                break
+            needs_decode |= byte >= 0x80
+            n += 1
+        if needs_decode:
+            return _unicode_decode_utf8_strict(source, n)
         p = Ptr[u8](n)
-        bytes.memcpy(p, t, n)
+        bytes.memcpy(p, source, n)
         return str(p, _make_meta(n, KIND_ASCII))
 
     def __len__(self) -> int:
