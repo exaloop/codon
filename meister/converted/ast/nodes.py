@@ -871,10 +871,14 @@ class SuiteStmt(Stmt):
                 flattened.append(item)
         self.items = flattened
 
-    def add(self, stmt: Stmt | None):
-        if stmt is not None:
-            self.items.append(stmt)
-            self.done = self.done and stmt.done
+    def add(self, node: Expr | Stmt | None):
+        if node is None:
+            return
+        elif isinstance(node, Expr):
+            self.items.append(ExprStmt(expr=node), done=node.done)
+        else:
+            self.items.append(node)
+        self.done = self.done and node.done
 
     @staticmethod
     def wrap(stmt: Stmt | None):
