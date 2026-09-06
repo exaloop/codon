@@ -216,6 +216,23 @@ def _utf8_unpack_twobyte8_u16(data: Ptr[u8], pos: int, output: Ptr[u16], out: in
     ret {} {}
 
 
+@llvm
+def _utf8_unpack_twobyte8_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: int) -> None:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i32, ptr %output, i64 %out
+    %bytes = load <16 x i8>, ptr %src, align 1
+    %starts8 = shufflevector <16 x i8> %bytes, <16 x i8> poison, <8 x i32> <i32 0, i32 2, i32 4, i32 6, i32 8, i32 10, i32 12, i32 14>
+    %seconds8 = shufflevector <16 x i8> %bytes, <16 x i8> poison, <8 x i32> <i32 1, i32 3, i32 5, i32 7, i32 9, i32 11, i32 13, i32 15>
+    %starts = zext <8 x i8> %starts8 to <8 x i32>
+    %seconds = zext <8 x i8> %seconds8 to <8 x i32>
+    %firstbits = and <8 x i32> %starts, <i32 31, i32 31, i32 31, i32 31, i32 31, i32 31, i32 31, i32 31>
+    %firstshift = shl <8 x i32> %firstbits, <i32 6, i32 6, i32 6, i32 6, i32 6, i32 6, i32 6, i32 6>
+    %secondbits = and <8 x i32> %seconds, <i32 63, i32 63, i32 63, i32 63, i32 63, i32 63, i32 63, i32 63>
+    %codepoints = or <8 x i32> %firstshift, %secondbits
+    store <8 x i32> %codepoints, ptr %dst, align 4
+    ret {} {}
+
+
 @pure
 @llvm
 def _utf8_all_twobyte4(data: Ptr[u8], pos: int) -> bool:
@@ -249,6 +266,23 @@ def _utf8_unpack_twobyte4_u16(data: Ptr[u8], pos: int, output: Ptr[u16], out: in
     %secondbits = and <4 x i16> %seconds, <i16 63, i16 63, i16 63, i16 63>
     %codepoints = or <4 x i16> %firstshift, %secondbits
     store <4 x i16> %codepoints, ptr %dst, align 2
+    ret {} {}
+
+
+@llvm
+def _utf8_unpack_twobyte4_u32(data: Ptr[u8], pos: int, output: Ptr[u32], out: int) -> None:
+    %src = getelementptr inbounds i8, ptr %data, i64 %pos
+    %dst = getelementptr inbounds i32, ptr %output, i64 %out
+    %bytes = load <8 x i8>, ptr %src, align 1
+    %starts8 = shufflevector <8 x i8> %bytes, <8 x i8> poison, <4 x i32> <i32 0, i32 2, i32 4, i32 6>
+    %seconds8 = shufflevector <8 x i8> %bytes, <8 x i8> poison, <4 x i32> <i32 1, i32 3, i32 5, i32 7>
+    %starts = zext <4 x i8> %starts8 to <4 x i32>
+    %seconds = zext <4 x i8> %seconds8 to <4 x i32>
+    %firstbits = and <4 x i32> %starts, <i32 31, i32 31, i32 31, i32 31>
+    %firstshift = shl <4 x i32> %firstbits, <i32 6, i32 6, i32 6, i32 6>
+    %secondbits = and <4 x i32> %seconds, <i32 63, i32 63, i32 63, i32 63>
+    %codepoints = or <4 x i32> %firstshift, %secondbits
+    store <4 x i32> %codepoints, ptr %dst, align 4
     ret {} {}
 
 
@@ -762,6 +796,7 @@ def _unicode_decode_utf8_ucs4_strict(
             _utf8_unpack_fourbyte4_u32(data, pos, output, out)
             pos += 16
             out += 4
+
         if pos == byte_length:
             break
 
@@ -778,6 +813,17 @@ def _unicode_decode_utf8_ucs4_strict(
                 _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
             cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
             pos += 2
+            output[out] = u32(cp)
+            out += 1
+            while pos + 16 <= byte_length and _utf8_all_twobyte8(data, pos):
+                _utf8_unpack_twobyte8_u32(data, pos, output, out)
+                pos += 16
+                out += 8
+            while pos + 8 <= byte_length and _utf8_all_twobyte4(data, pos):
+                _utf8_unpack_twobyte4_u32(data, pos, output, out)
+                pos += 8
+                out += 4
+            continue
         elif 0xE0 <= b0 <= 0xEF:
             if pos + 2 >= byte_length:
                 _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
@@ -1264,6 +1310,66 @@ class _CodecByteBuffer:
 
         return bytes(self.data, self.length)
 
+
+def _utf8_encode_ucs2_mixed_tail(
+    codepoints: Ptr[u16],
+    length: int,
+    output: Ptr[u8],
+    i: int,
+    pos: int,
+) -> None:
+    while i < length:
+        if i + 16 <= length:
+            mask = _utf8_nonascii_mask16_u16(codepoints, i)
+            if mask == 0:
+                _utf8_pack_ascii16_u16(codepoints, i, output, pos)
+                i += 16
+                pos += 16
+                continue
+            ascii = _utf8_first_nonascii(mask)
+            while ascii > 0:
+                output[pos] = u8(codepoints[i])
+                i += 1
+                pos += 1
+                ascii -= 1
+
+        if codepoints[i] < u16(0x80):
+            output[pos] = u8(codepoints[i])
+            i += 1
+            pos += 1
+            continue
+
+        if codepoints[i] >= u16(0x800):
+            while i < length and codepoints[i] >= u16(0x800):
+                pos = _utf8_encode_one_valid(output, pos, int(codepoints[i]))
+                i += 1
+            continue
+
+        if i + 1 < length and codepoints[i + 1] >= u16(0x800):
+            pos = _utf8_encode_one_valid(output, pos, int(codepoints[i]))
+            pos = _utf8_encode_one_valid(output, pos, int(codepoints[i + 1]))
+            i += 2
+            continue
+
+        start = i
+        if i + 4 <= length and _utf8_all_twobyte4_u16(codepoints, i):
+            while i + 8 <= length and _utf8_all_twobyte8_u16(codepoints, i):
+                _utf8_pack_twobyte8_u16(codepoints, i, output, pos)
+                i += 8
+                pos += 16
+            while i + 4 <= length and _utf8_all_twobyte4_u16(codepoints, i):
+                _utf8_pack_twobyte4_u16(codepoints, i, output, pos)
+                i += 4
+                pos += 8
+        elif i + 2 <= length and _utf8_all_twobyte2_u16(codepoints, i):
+            _utf8_pack_twobyte2_u16(codepoints, i, output, pos)
+            i += 2
+            pos += 4
+        if i == start:
+            pos = _utf8_encode_one_valid(output, pos, int(codepoints[i]))
+            i += 1
+
+
 def _unicode_encode_utf8_strict(value: str) -> bytes:
     if value._is_ascii():
         return bytes(value._ptr, len(value))
@@ -1368,9 +1474,15 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
                     pos += 4
             if i == len(value):
                 break
+
             cp = int(codepoints[i])
             pos = _utf8_encode_one_valid(output, pos, cp)
             i += 1
+            if cp >= 0x800:
+                _utf8_encode_ucs2_mixed_tail(
+                    codepoints, len(value), output, i, pos
+                )
+                return bytes(output, size)
             try_twobyte = cp < 0x80
         return bytes(output, size)
 
@@ -5299,19 +5411,22 @@ def _unicode_lower_mapping_codepoint(
     return unicode_lower_mapping_codepoint(value._load_codepoint(pos), index)
 
 
-def _unicode_lower_full(value: str) -> str:
-    result, complete = _unicode_map_simple_width_aware(
-        value, _unicode_lower_simple_mapping
-    )
-    if complete:
-        return result
-
+def _unicode_lower_full_fallback(value: str) -> str:
     output_length = 0
     maxchar = 0
     unchanged = True
 
     for i in range(len(value)):
         cp = value._load_codepoint(i)
+        if cp < 0x80:
+            mapped = _ascii_lower(cp)
+            output_length += 1
+            if mapped > maxchar:
+                maxchar = mapped
+            if mapped != cp:
+                unchanged = False
+            continue
+
         length = _unicode_lower_mapping_length(value, i)
         output_length += length
 
@@ -5332,6 +5447,12 @@ def _unicode_lower_full(value: str) -> str:
     output = 0
 
     for i in range(len(value)):
+        cp = value._load_codepoint(i)
+        if cp < 0x80:
+            result._store_codepoint(output, _ascii_lower(cp))
+            output += 1
+            continue
+
         length = _unicode_lower_mapping_length(value, i)
 
         for j in range(length):
@@ -5344,13 +5465,16 @@ def _unicode_lower_full(value: str) -> str:
     return result
 
 
-def _unicode_upper_full(value: str) -> str:
+def _unicode_lower_full(value: str) -> str:
     result, complete = _unicode_map_simple_width_aware(
-        value, _unicode_upper_simple_mapping
+        value, _unicode_lower_simple_mapping
     )
     if complete:
         return result
+    return _unicode_lower_full_fallback(value)
 
+
+def _unicode_upper_full_fallback(value: str) -> str:
     output_length = 0
     maxchar = 0
     unchanged = True
@@ -5395,6 +5519,15 @@ def _unicode_upper_full(value: str) -> str:
             output += 1
 
     return result
+
+
+def _unicode_upper_full(value: str) -> str:
+    result, complete = _unicode_map_simple_width_aware(
+        value, _unicode_upper_simple_mapping
+    )
+    if complete:
+        return result
+    return _unicode_upper_full_fallback(value)
 
 
 def _unicode_capitalize_full(value: str) -> str:
