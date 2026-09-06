@@ -21,6 +21,13 @@ def ctlz(n: UInt[N], N: Literal[int]) -> UInt[N]:
 
 @pure
 @llvm
+def ctpop(n: UInt[N], N: Literal[int]) -> UInt[N]:
+    declare i{=N} @llvm.ctpop.i{=N}(i{=N})
+    %0 = call i{=N} @llvm.ctpop.i{=N}(i{=N} %n)
+    ret i{=N} %0
+
+@pure
+@llvm
 def forward_mask(s: Ptr[u8], k: int, i: int, firstb: u8, lastb: u8) -> u16:
     %first0 = insertelement <16 x i8> undef, i8 %firstb, i64 0
     %first = shufflevector <16 x i8> %first0, <16 x i8> poison, <16 x i32> zeroinitializer
@@ -291,6 +298,244 @@ def forward_find_u32_u8(s: Ptr[u32], n: int, needle: Ptr[u8], k: int) -> int:
 
 def forward_find_u32_u16(s: Ptr[u32], n: int, needle: Ptr[u16], k: int) -> int:
     return _forward_find_u32(s, n, needle, k)
+
+def _forward_count_u8(
+    s: Ptr[u8],
+    n: int,
+    needle: Ptr[NeedleChar],
+    k: int,
+    NeedleChar: type,
+) -> Tuple[int, int]:
+    if k == 0:
+        return n + 1, -1
+    if n < k:
+        return 0, -1
+
+    first_codepoint = int(needle[0])
+    last_codepoint = int(needle[k - 1])
+    if first_codepoint > 0xFF or last_codepoint > 0xFF:
+        return 0, -1
+
+    first = u8(first_codepoint)
+    last = u8(last_codepoint)
+    minimum_position = 0
+    candidate_work = 0
+    total = 0
+    i = 0
+    if k == 1:
+        while i + 15 < n:
+            total += int(ctpop(forward_mask(s, k, i, first, last)))
+            i += 16
+        while i < n:
+            if s[i] == first:
+                total += 1
+            i += 1
+        return total, -1
+
+    while i + k + 15 <= n:
+        mask = forward_mask(s, k, i, first, last)
+        while mask:
+            bit = int(cttz(mask))
+            position = i + bit
+            if k == 2 and position >= minimum_position:
+                total += 1
+                minimum_position = position + k
+                mask &= ~(u16(3) << u16(bit))
+                continue
+            if position >= minimum_position:
+                candidate_work += k
+                if candidate_work > n:
+                    return total, position
+                if _matches(s, needle, k, position, 0xFF):
+                    total += 1
+                    minimum_position = position + k
+            mask &= mask - u16(1)
+        i += 16
+
+    while i + k <= n:
+        if (
+            i >= minimum_position
+            and first == s[i]
+            and last == s[i + k - 1]
+        ):
+            if k == 2:
+                total += 1
+                minimum_position = i + k
+            else:
+                candidate_work += k
+                if candidate_work > n:
+                    return total, i
+                if _matches(s, needle, k, i, 0xFF):
+                    total += 1
+                    minimum_position = i + k
+        i += 1
+    return total, -1
+
+def forward_count(s: Ptr[u8], n: int, needle: Ptr[u8], k: int) -> Tuple[int, int]:
+    return _forward_count_u8(s, n, needle, k)
+
+def forward_count_u8_u16(s: Ptr[u8], n: int, needle: Ptr[u16], k: int) -> Tuple[int, int]:
+    return _forward_count_u8(s, n, needle, k)
+
+def forward_count_u8_u32(s: Ptr[u8], n: int, needle: Ptr[u32], k: int) -> Tuple[int, int]:
+    return _forward_count_u8(s, n, needle, k)
+
+def _forward_count_u16(
+    s: Ptr[u16],
+    n: int,
+    needle: Ptr[NeedleChar],
+    k: int,
+    NeedleChar: type,
+) -> Tuple[int, int]:
+    if k == 0:
+        return n + 1, -1
+    if n < k:
+        return 0, -1
+
+    first_codepoint = int(needle[0])
+    last_codepoint = int(needle[k - 1])
+    if first_codepoint > 0xFFFF or last_codepoint > 0xFFFF:
+        return 0, -1
+
+    first = u16(first_codepoint)
+    last = u16(last_codepoint)
+    minimum_position = 0
+    candidate_work = 0
+    total = 0
+    i = 0
+    if k == 1:
+        while i + 7 < n:
+            total += int(ctpop(forward_mask_u16(s, k, i, first, last)))
+            i += 8
+        while i < n:
+            if s[i] == first:
+                total += 1
+            i += 1
+        return total, -1
+
+    while i + k + 7 <= n:
+        mask = forward_mask_u16(s, k, i, first, last)
+        while mask:
+            bit = int(cttz(mask))
+            position = i + bit
+            if k == 2 and position >= minimum_position:
+                total += 1
+                minimum_position = position + k
+                mask &= ~(u8(3) << u8(bit))
+                continue
+            if position >= minimum_position:
+                candidate_work += k
+                if candidate_work > n:
+                    return total, position
+                if _matches(s, needle, k, position, 0xFFFF):
+                    total += 1
+                    minimum_position = position + k
+            mask &= mask - u8(1)
+        i += 8
+
+    while i + k <= n:
+        if (
+            i >= minimum_position
+            and first == s[i]
+            and last == s[i + k - 1]
+        ):
+            if k == 2:
+                total += 1
+                minimum_position = i + k
+            else:
+                candidate_work += k
+                if candidate_work > n:
+                    return total, i
+                if _matches(s, needle, k, i, 0xFFFF):
+                    total += 1
+                    minimum_position = i + k
+        i += 1
+    return total, -1
+
+def forward_count_u16(s: Ptr[u16], n: int, needle: Ptr[u16], k: int) -> Tuple[int, int]:
+    return _forward_count_u16(s, n, needle, k)
+
+def forward_count_u16_u8(s: Ptr[u16], n: int, needle: Ptr[u8], k: int) -> Tuple[int, int]:
+    return _forward_count_u16(s, n, needle, k)
+
+def forward_count_u16_u32(s: Ptr[u16], n: int, needle: Ptr[u32], k: int) -> Tuple[int, int]:
+    return _forward_count_u16(s, n, needle, k)
+
+def _forward_count_u32(
+    s: Ptr[u32],
+    n: int,
+    needle: Ptr[NeedleChar],
+    k: int,
+    NeedleChar: type,
+) -> Tuple[int, int]:
+    if k == 0:
+        return n + 1, -1
+    if n < k:
+        return 0, -1
+
+    first = u32(needle[0])
+    last = u32(needle[k - 1])
+    minimum_position = 0
+    candidate_work = 0
+    total = 0
+    i = 0
+    if k == 1:
+        while i + 3 < n:
+            total += int(ctpop(forward_mask_u32(s, k, i, first, last)))
+            i += 4
+        while i < n:
+            if s[i] == first:
+                total += 1
+            i += 1
+        return total, -1
+
+    while i + k + 3 <= n:
+        mask = forward_mask_u32(s, k, i, first, last)
+        while mask:
+            bit = int(cttz(mask))
+            position = i + bit
+            if k == 2 and position >= minimum_position:
+                total += 1
+                minimum_position = position + k
+                mask &= ~(u8(3) << u8(bit))
+                continue
+            if position >= minimum_position:
+                candidate_work += k
+                if candidate_work > n:
+                    return total, position
+                if _matches(s, needle, k, position, 0xFFFFFFFF):
+                    total += 1
+                    minimum_position = position + k
+            mask &= mask - u8(1)
+        i += 4
+
+    while i + k <= n:
+        if (
+            i >= minimum_position
+            and first == s[i]
+            and last == s[i + k - 1]
+        ):
+            if k == 2:
+                total += 1
+                minimum_position = i + k
+            else:
+                candidate_work += k
+                if candidate_work > n:
+                    return total, i
+                if _matches(s, needle, k, i, 0xFFFFFFFF):
+                    total += 1
+                    minimum_position = i + k
+        i += 1
+    return total, -1
+
+def forward_count_u32(s: Ptr[u32], n: int, needle: Ptr[u32], k: int) -> Tuple[int, int]:
+    return _forward_count_u32(s, n, needle, k)
+
+def forward_count_u32_u8(s: Ptr[u32], n: int, needle: Ptr[u8], k: int) -> Tuple[int, int]:
+    return _forward_count_u32(s, n, needle, k)
+
+def forward_count_u32_u16(s: Ptr[u32], n: int, needle: Ptr[u16], k: int) -> Tuple[int, int]:
+    return _forward_count_u32(s, n, needle, k)
 
 def _backward_find_u8(
     s: Ptr[u8],

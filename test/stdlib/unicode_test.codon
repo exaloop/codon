@@ -183,6 +183,10 @@ def test_fastsearch_paths():
     no_match = unicode("a" * 1024)
     assert no_match.find(needle) == -1
     assert no_match.rfind(needle) == -1
+    assert no_match.count(needle) == 0
+    assert no_match.count(unicode("a" * 128 + "b" + "a")) == 0
+    sparse = unicode("x" * 1024) + needle + unicode("x" * 1024)
+    assert sparse.count(needle) == 1
 
     repeated = unicode("prefix--needle--needle--suffix")
     assert repeated.find(unicode("needle"), 8) == 8
@@ -1871,6 +1875,12 @@ def test_unicode_ascii_case_mappings():
 
     assert unicode("").lower() == unicode("")
     assert unicode("123!?").title() == unicode("123!?")
+
+    combining_acute = _unicode_from_codepoint(0x301)
+    wide_value = unicode("hELLO, wORLD! 123") + combining_acute
+    assert wide_value.capitalize() == unicode("Hello, world! 123") + combining_acute
+    assert wide_value.title() == unicode("Hello, World! 123") + combining_acute
+    assert wide_value.swapcase() == unicode("Hello, World! 123") + combining_acute
 
 
 @test

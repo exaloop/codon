@@ -4178,6 +4178,41 @@ def _unicode_count_kmp(
     return total
 
 
+def _unicode_count_result(
+    value: str,
+    sub: str,
+    start: int,
+    end: int,
+    result,
+) -> int:
+    total, fallback = result
+    if fallback < 0:
+        return total
+
+    fallback += start
+    if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
+        return total + _unicode_count_typed(
+            value._ptr, sub._ptr, len(sub), fallback, end
+        )
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
+        return total + _unicode_count_typed(
+            Ptr[u16](value._ptr),
+            Ptr[u16](sub._ptr),
+            len(sub),
+            fallback,
+            end,
+        )
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
+        return total + _unicode_count_typed(
+            Ptr[u32](value._ptr),
+            Ptr[u32](sub._ptr),
+            len(sub),
+            fallback,
+            end,
+        )
+    return total + _unicode_count_kmp(value, sub, fallback, end)
+
+
 def _unicode_count(
     value: str,
     sub: str,
@@ -4185,54 +4220,120 @@ def _unicode_count(
     end: int,
 ) -> int:
     if value._kind() <= KIND_LATIN1 and sub._kind() <= KIND_LATIN1:
-        return _unicode_count_typed(value._ptr, sub._ptr, len(sub), start, end)
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count(
+                value._ptr + start, end - start, sub._ptr, len(sub)
+            ),
+        )
+    if value._kind() <= KIND_LATIN1 and sub._kind() == KIND_UCS2:
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u8_u16(
+                value._ptr + start,
+                end - start,
+                Ptr[u16](sub._ptr),
+                len(sub),
+            ),
+        )
+    if value._kind() <= KIND_LATIN1 and sub._kind() == KIND_UCS4:
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u8_u32(
+                value._ptr + start,
+                end - start,
+                Ptr[u32](sub._ptr),
+                len(sub),
+            ),
+        )
+    if value._kind() == KIND_UCS2 and sub._kind() <= KIND_LATIN1:
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u16_u8(
+                Ptr[u16](value._ptr) + start,
+                end - start,
+                sub._ptr,
+                len(sub),
+            ),
+        )
     if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS2:
-        return _unicode_count_typed(
-            Ptr[u16](value._ptr), Ptr[u16](sub._ptr), len(sub), start, end
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u16(
+                Ptr[u16](value._ptr) + start,
+                end - start,
+                Ptr[u16](sub._ptr),
+                len(sub),
+            ),
+        )
+    if value._kind() == KIND_UCS2 and sub._kind() == KIND_UCS4:
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u16_u32(
+                Ptr[u16](value._ptr) + start,
+                end - start,
+                Ptr[u32](sub._ptr),
+                len(sub),
+            ),
+        )
+    if value._kind() == KIND_UCS4 and sub._kind() <= KIND_LATIN1:
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u32_u8(
+                Ptr[u32](value._ptr) + start,
+                end - start,
+                sub._ptr,
+                len(sub),
+            ),
+        )
+    if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS2:
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u32_u16(
+                Ptr[u32](value._ptr) + start,
+                end - start,
+                Ptr[u16](sub._ptr),
+                len(sub),
+            ),
         )
     if value._kind() == KIND_UCS4 and sub._kind() == KIND_UCS4:
-        return _unicode_count_typed(
-            Ptr[u32](value._ptr), Ptr[u32](sub._ptr), len(sub), start, end
+        return _unicode_count_result(
+            value,
+            sub,
+            start,
+            end,
+            string_algorithms.forward_count_u32(
+                Ptr[u32](value._ptr) + start,
+                end - start,
+                Ptr[u32](sub._ptr),
+                len(sub),
+            ),
         )
-
-    sub_length = len(sub)
-    if sub_length == 1:
-        total = 0
-        needle = sub._load_codepoint(0)
-        for position in range(start, end):
-            if value._load_codepoint(position) == needle:
-                total += 1
-        return total
-
-    bloom = u64(0)
-    for index in range(sub_length):
-        bloom = _unicode_search_bloom_add(bloom, sub._load_codepoint(index))
-
-    last = sub_length - 1
-    tail = sub._load_codepoint(last)
-    limit = end - sub_length
-    position = start
-    attempts = 0
-    total = 0
-
-    while position <= limit:
-        candidate_tail = value._load_codepoint(position + last)
-        if candidate_tail == tail and _unicode_starts_at(value, sub, position):
-            total += 1
-            position += sub_length
-            attempts = 0
-            continue
-
-        attempts += 1
-        if attempts > sub_length and position + sub_length <= limit:
-            return total + _unicode_count_kmp(value, sub, position, end)
-
-        if _unicode_search_bloom_contains(bloom, candidate_tail):
-            position += 1
-        else:
-            position += sub_length
-
-    return total
+    return 0
 
 
 def _unicode_fastsearch(
@@ -5384,6 +5485,30 @@ def _unicode_upper_simple_mapping(value: str, pos: int, cp: int) -> int:
     return unicode_upper_mapping_codepoint(cp, 0)
 
 
+def _unicode_title_simple_mapping(value: str, pos: int, cp: int) -> int:
+    if cp < 0x80:
+        return _ascii_upper(cp)
+    if unicode_title_mapping_length(cp) != 1:
+        return -1
+    return unicode_title_mapping_codepoint(cp, 0)
+
+
+def _unicode_capitalize_simple_mapping(value: str, pos: int, cp: int) -> int:
+    if pos == 0:
+        return _unicode_title_simple_mapping(value, pos, cp)
+    return _unicode_lower_simple_mapping(value, pos, cp)
+
+
+def _unicode_swapcase_simple_mapping(value: str, pos: int, cp: int) -> int:
+    if cp < 0x80:
+        return _ascii_swapcase(cp)
+    if unicode_is_lower(cp):
+        return _unicode_upper_simple_mapping(value, pos, cp)
+    if unicode_is_upper(cp):
+        return _unicode_lower_simple_mapping(value, pos, cp)
+    return cp
+
+
 def _unicode_casefold_simple_mapping(value: str, pos: int, cp: int) -> int:
     if cp < 0x80:
         return _ascii_casefold(cp)
@@ -5530,7 +5655,7 @@ def _unicode_upper_full(value: str) -> str:
     return _unicode_upper_full_fallback(value)
 
 
-def _unicode_capitalize_full(value: str) -> str:
+def _unicode_capitalize_full_fallback(value: str) -> str:
     output_length = 0
     maxchar = 0
 
@@ -5578,7 +5703,75 @@ def _unicode_capitalize_full(value: str) -> str:
     return result
 
 
-def _unicode_title_full(value: str) -> str:
+def _unicode_capitalize_full(value: str) -> str:
+    result, complete = _unicode_map_simple_width_aware(
+        value, _unicode_capitalize_simple_mapping
+    )
+    if complete:
+        return result
+    return _unicode_capitalize_full_fallback(value)
+
+
+def _unicode_title_simple_typed(
+    value: str,
+    data: Ptr[Char],
+    kind: int,
+    Char: type,
+) -> Tuple[str, bool]:
+    result = str()
+    changed = False
+    maxchar = 0
+    previous_is_cased = False
+
+    for i in range(len(value)):
+        cp = int(data[i])
+        if previous_is_cased:
+            mapped = _unicode_lower_simple_mapping(value, i, cp)
+        else:
+            mapped = _unicode_title_simple_mapping(value, i, cp)
+
+        if mapped < 0 or _kind_for_maxchar(mapped) > kind:
+            return str(), False
+        if mapped > maxchar:
+            maxchar = mapped
+
+        if not changed and mapped != cp:
+            result = str(
+                Ptr[u8](len(value) * _kind_width(kind)),
+                _make_meta(len(value), kind),
+            )
+            str.memcpy(result._ptr, value._ptr, i * _kind_width(kind))
+            changed = True
+
+        if changed:
+            Ptr[Char](result._ptr)[i] = Char(mapped)
+
+        if cp < 0x80:
+            previous_is_cased = 0x41 <= cp <= 0x5A or 0x61 <= cp <= 0x7A
+        else:
+            previous_is_cased = unicode_is_cased(cp)
+
+    if not changed:
+        return value, True
+    if _kind_for_maxchar(maxchar) != kind:
+        return str(), False
+    return result, True
+
+
+def _unicode_title_simple_width_aware(value: str) -> Tuple[str, bool]:
+    kind = value._kind()
+    if kind <= KIND_LATIN1:
+        return _unicode_title_simple_typed(value, value._ptr, kind)
+    if kind == KIND_UCS2:
+        return _unicode_title_simple_typed(
+            value, Ptr[u16](value._ptr), kind
+        )
+    return _unicode_title_simple_typed(
+        value, Ptr[u32](value._ptr), kind
+    )
+
+
+def _unicode_title_full_fallback(value: str) -> str:
     output_length = 0
     maxchar = 0
     previous_is_cased = False
@@ -5638,7 +5831,14 @@ def _unicode_title_full(value: str) -> str:
     return result
 
 
-def _unicode_swapcase_full(value: str) -> str:
+def _unicode_title_full(value: str) -> str:
+    result, complete = _unicode_title_simple_width_aware(value)
+    if complete:
+        return result
+    return _unicode_title_full_fallback(value)
+
+
+def _unicode_swapcase_full_fallback(value: str) -> str:
     output_length = 0
     maxchar = 0
 
@@ -5691,6 +5891,15 @@ def _unicode_swapcase_full(value: str) -> str:
             output += 1
 
     return result
+
+
+def _unicode_swapcase_full(value: str) -> str:
+    result, complete = _unicode_map_simple_width_aware(
+        value, _unicode_swapcase_simple_mapping
+    )
+    if complete:
+        return result
+    return _unicode_swapcase_full_fallback(value)
 
 
 def _ascii_lower(cp: int) -> int:
