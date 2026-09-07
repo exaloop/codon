@@ -493,12 +493,14 @@ class Pattern:
 
             yield Match[T](spans, posx, endposx, self, string)
 
-            if posx == endposx:
-                break
-
-            elif byte_pos == raw_spans[0].end:
+            if raw_spans[0].start == raw_spans[0].end:
+                if raw_spans[0].end == byte_endpos:
+                    break
                 # We matched the empty string at pos and would be stuck, so in order
                 # to make forward progress, advance over one UTF-8 code point.
+                byte_pos = raw_spans[0].end
+                posx = spans[0].end
+                codepoint_pos = posx
                 if isinstance(string, str):
                     c = int(encoded._ptr[byte_pos])
                     byte_pos += 1 if c < 0x80 else 2 if c < 0xE0 else 3 if c < 0xF0 else 4
@@ -508,7 +510,7 @@ class Pattern:
                 codepoint_pos += 1
             else:
                 byte_pos = raw_spans[0].end
-                posx = spans[0][1]
+                posx = spans[0].end
                 codepoint_pos = posx
 
     def search(

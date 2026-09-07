@@ -4,6 +4,8 @@ import internal.static as static
 
 @test
 def test_search_star_plus():
+    assert re.search('', '').span() == (0, 0)
+    assert re.search(''.encode(), ''.encode()).span() == (0, 0)
     assert re.search('x*', 'axx').span(0) == (0, 0)
     assert re.search('x*', 'axx').span() == (0, 0)
     assert re.search('x+', 'axx').span(0) == (1, 3)
@@ -14,6 +16,7 @@ def test_search_star_plus():
     assert re.match('x*', 'xxxa').span(0) == (0, 3)
     assert re.match('x*', 'xxxa').span() == (0, 3)
     assert re.match('a+', 'xxx') is None
+    assert [m.span() for m in re.finditer('$', 'abc')] == [(3, 3)]
 test_search_star_plus()
 
 @test
@@ -389,6 +392,22 @@ def test_re_fullmatch():
     #assert re.compile(r".*?$").fullmatch("abcd", pos=1, endpos=3).span() == (1, 3)
     assert re.compile(r".*?").fullmatch("abcd", pos=1, endpos=3).span() == (1, 3)
 test_re_fullmatch()
+
+@test
+def test_unicode_spans_and_bounds():
+    value = "aé😀ßz"
+    match = re.compile("(é)(😀ß)").search(value, pos=1, endpos=4)
+    assert match.span() == (1, 4)
+    assert match.span(1) == (1, 2)
+    assert match.span(2) == (2, 4)
+    assert unwrap(match.group(1)) == "é"
+    assert unwrap(match.group(2)) == "😀ß"
+    assert re.compile("😀").search(value, pos=2, endpos=3).span() == (2, 3)
+    assert re.compile("😀").search(value, pos=3) is None
+    assert [m.span() for m in re.finditer("", "é😀")] == [
+        (0, 0), (1, 1), (2, 2),
+    ]
+test_unicode_spans_and_bounds()
 
 @test
 def test_finditer():

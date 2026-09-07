@@ -195,7 +195,7 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
 }
 
 static struct backtrace_state *state = nullptr;
-static std::mutex stateLock;
+static std::once_flag stateOnce;
 
 SEQ_FUNC void *seq_alloc_exc(void *obj) {
   const size_t size = sizeof(CodonBaseException);
@@ -209,14 +209,11 @@ SEQ_FUNC void *seq_alloc_exc(void *obj) {
     e->bt.count = 0;
 
     if (seq_flags & SEQ_FLAG_STANDALONE) {
-      if (!state) {
-        stateLock.lock();
-        if (!state)
-          state =
-              backtrace_create_state(/*filename=*/nullptr, /*threaded=*/1,
-                                     seq_backtrace_error_callback, /*data=*/nullptr);
-        stateLock.unlock();
-      }
+      std::call_once(stateOnce, [] {
+        state = backtrace_create_state(/*filename=*/nullptr, /*threaded=*/1,
+                                       seq_backtrace_error_callback,
+                                       /*data=*/nullptr);
+      });
       backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
                      seq_backtrace_error_callback, &e->bt);
     } else {
@@ -227,8 +224,7 @@ SEQ_FUNC void *seq_alloc_exc(void *obj) {
   return &(e->unwindException);
 }
 
-static void print_from_last_dot(seq_str_t s, std::ostringstream &buf) {
-  auto name = s.encode();
+static void print_from_last_dot(const std::string &name, std::ostringstream &buf) {
   auto dot = name.rfind('.');
   buf << name.substr(dot == std::string::npos ? 0 : dot + 1);
 }
@@ -246,23 +242,28 @@ SEQ_FUNC void seq_terminate(void *exc) {
     exit((int)status);
   }
 
+  auto type = tname.encode();
+  auto msg = hdr->msg.encode();
+  auto func = hdr->func.encode();
+  auto file = hdr->file.encode();
+
   std::ostringstream buf;
   if (seq_flags & SEQ_FLAG_CAPTURE_OUTPUT)
     buf << codon::runtime::getCapturedOutput();
 
   buf << "\033[1m";
-  print_from_last_dot(tname, buf);
-  if (SEQ_STR_LEN(hdr->msg) > 0) {
+  print_from_last_dot(type, buf);
+  if (!msg.empty()) {
     buf << ": \033[0m";
-    buf << hdr->msg.encode();
+    buf << msg;
   } else {
     buf << "\033[0m";
   }
 
   buf << "\n\n\033[1mRaised from:\033[0m \033[32m";
-  buf << hdr->func.encode();
+  buf << func;
   buf << "\033[0m\n";
-  buf << hdr->file.encode();
+  buf << file;
   if (hdr->line > 0) {
     buf << ":" << hdr->line;
     if (hdr->col > 0)
@@ -291,9 +292,6 @@ SEQ_FUNC void seq_terminate(void *exc) {
     abort();
   } else {
     auto *bt = &base->bt;
-    auto msg = hdr->msg.encode();
-    auto file = hdr->file.encode();
-    auto type = tname.encode();
 
     std::vector<uintptr_t> backtrace;
     if (seq_flags & SEQ_FLAG_DEBUG) {
