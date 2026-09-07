@@ -333,12 +333,14 @@ std::string GlobalStmt::toString(int indent) const {
 FunctionStmt::FunctionStmt(std::string name, Expr *ret, std::vector<Param> args,
                            Stmt *suite, std::vector<Expr *> decorators, bool async)
     : AcceptorExtend(), Items(std::move(args)), name(std::move(name)), ret(ret),
-      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)), async(async) {}
+      suite(SuiteStmt::wrap(suite)), decorators(std::move(decorators)), async(async),
+      nonInferrableGenerics(nullptr) {}
 FunctionStmt::FunctionStmt(const FunctionStmt &stmt, bool clean)
     : AcceptorExtend(stmt, clean), Items(ast::clone(stmt.items, clean)),
       name(stmt.name), ret(ast::clone(stmt.ret, clean)),
       suite(ast::clone(stmt.suite, clean)),
-      decorators(ast::clone(stmt.decorators, clean)), async(stmt.async) {}
+      decorators(ast::clone(stmt.decorators, clean)), async(stmt.async),
+      nonInferrableGenerics(nullptr) {}
 std::string FunctionStmt::toString(int indent) const {
   std::string pad = indent > 0 ? ("\n" + std::string(indent + INDENT_SIZE, ' ')) : " ";
   std::vector<std::string> as;
@@ -431,8 +433,10 @@ public:
 
 /// Check if a function can be called with the given arguments.
 /// See @c reorderNamedArgs for details.
-std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() const {
-  std::unordered_set<std::string> nonInferrableGenerics;
+const std::unordered_set<std::string> &FunctionStmt::getNonInferrableGenerics() {
+  if (nonInferrableGenerics)
+    return *nonInferrableGenerics;
+  nonInferrableGenerics = std::make_shared<std::unordered_set<std::string>>();
   for (const auto &a : items) {
     if (a.status == Param::Generic && !a.defaultValue) {
       bool inferrable = false;
@@ -444,10 +448,10 @@ std::unordered_set<std::string> FunctionStmt::getNonInferrableGenerics() const {
       if (ret && IdSearchVisitor(a.name).transform(ret))
         inferrable = true;
       if (!inferrable)
-        nonInferrableGenerics.insert(a.name);
+        nonInferrableGenerics->insert(a.name);
     }
   }
-  return nonInferrableGenerics;
+  return *nonInferrableGenerics;
 }
 
 ClassStmt::ClassStmt(std::string name, std::vector<Param> args, Stmt *suite,

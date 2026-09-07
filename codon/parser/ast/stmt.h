@@ -3,6 +3,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <vector>
@@ -500,7 +501,11 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   void setDecorators(const std::vector<Expr *> &d) { decorators = d; }
   bool isAsync() const { return async; }
   void setAsync() { async = true; }
-  void addParam(const Param &p) { items.push_back(p); }
+  void addParam(const Param &p) {
+    items.push_back(p);
+    if (nonInferrableGenerics)
+      nonInferrableGenerics->clear();
+  }
 
   /// @return a function signature that consists of generics and arguments in a
   /// S-expression form.
@@ -509,7 +514,7 @@ struct FunctionStmt : public AcceptorExtend<FunctionStmt, Stmt>, Items<Param> {
   size_t getStarArgs() const;
   size_t getKwStarArgs() const;
   std::string getDocstr() const;
-  std::unordered_set<std::string> getNonInferrableGenerics() const;
+  const std::unordered_set<std::string> &getNonInferrableGenerics();
   bool hasFunctionAttribute(const std::string &attr) const;
 
   ACCEPT(FunctionStmt, ASTVisitor, name, items, ret, suite, decorators, async);
@@ -521,6 +526,9 @@ private:
   std::vector<Expr *> decorators;
   bool async;
   std::string signature;
+
+  // Cache non-inferrable generics for speed.
+  std::shared_ptr<std::unordered_set<std::string>> nonInferrableGenerics;
 
   friend struct Cache;
 };
