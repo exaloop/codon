@@ -821,7 +821,8 @@ types::ClassType *TypecheckVisitor::generateTuple(size_t n, bool generateNew) {
     auto oldBases = rctx->bases;
     rctx->bases.clear();
     rctx->bases.push_back(oldBases[0]);
-    ext = TypecheckVisitor::apply(rctx, ext);
+    ext =
+        TypecheckVisitor::apply(rctx, ext, "<internal>", /* sweepForceRealize */ false);
     rctx->bases = oldBases;
     preamble->addStmt(ext);
   }
