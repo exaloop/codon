@@ -35,6 +35,10 @@ class EnvMap:
                 i += 1
                 p = env[i]
 
+    def get(self, key: str, default: str = "") -> str:
+        self._init_if_needed()
+        return self._map.get(key, default)
+
     def __getitem__(self, key: str) -> str:
         self._init_if_needed()
         return self._map[key]
@@ -54,11 +58,11 @@ class EnvMap:
 environ = EnvMap()
 
 def getenv(key: str, default: str = "") -> str:
-    return environ[key] if key in environ else default
+    return environ.get(key, default)
 
 def mkdir(name: str, mode: int = 0x1FF) -> int:
     # TODO: use errno
     from C import mkdir(cobj, int) -> int
-    ret = mkdir(name._ptr, mode)
+    ret = mkdir(name.c_str(), mode)
     if ret != 0:
         raise OSError("mkdir failed")

@@ -4,7 +4,18 @@ import os
 
 from gc import atomic, alloc_uncollectable
 from internal.dlopen import *
+from internal.str import (
+    KIND_LATIN1,
+    KIND_UCS2,
+    _ENCODING_UTF8,
+    _ERROR_STRICT,
+    _unicode_decode_ptr,
+)
 import internal.static as static
+
+_PY_UNICODE_1BYTE_KIND: Literal[int] = 1
+_PY_UNICODE_2BYTE_KIND: Literal[int] = 2
+_PY_UNICODE_4BYTE_KIND: Literal[int] = 4
 
 # general
 Py_DecRef = Function[[cobj], NoneType](cobj())
@@ -26,6 +37,7 @@ PyFloat_FromDouble = Function[[float], cobj](cobj())
 PyBool_FromLong = Function[[int], cobj](cobj())
 PyBytes_AsString = Function[[cobj], cobj](cobj())
 PyBytes_Size = Function[[cobj], int](cobj())
+PyBytes_FromStringAndSize = Function[[cobj, int], cobj](cobj())
 PyList_New = Function[[int], cobj](cobj())
 PyList_Size = Function[[cobj], int](cobj())
 PyList_GetItem = Function[[cobj, int], cobj](cobj())
@@ -43,7 +55,8 @@ PyTuple_Size = Function[[cobj], int](cobj())
 PyTuple_GetItem = Function[[cobj, int], cobj](cobj())
 PyTuple_SetItem = Function[[cobj, int, cobj], i32](cobj())
 PyUnicode_AsEncodedString = Function[[cobj, cobj, cobj], cobj](cobj())
-PyUnicode_DecodeFSDefaultAndSize = Function[[cobj, int], cobj](cobj())
+PyUnicode_AsUTF8AndSize = Function[[cobj, Ptr[int]], cobj](cobj())
+PyUnicode_FromKindAndData = Function[[int, cobj, int], cobj](cobj())
 PyUnicode_FromString = Function[[cobj], cobj](cobj())
 PyComplex_FromDoubles = Function[[float, float], cobj](cobj())
 PyComplex_RealAsDouble = Function[[cobj], float](cobj())
@@ -219,6 +232,7 @@ def init_handles_dlopen(py_handle: cobj):
     global PyBool_FromLong
     global PyBytes_AsString
     global PyBytes_Size
+    global PyBytes_FromStringAndSize
     global PyList_New
     global PyList_Size
     global PyList_GetItem
@@ -236,7 +250,8 @@ def init_handles_dlopen(py_handle: cobj):
     global PyTuple_GetItem
     global PyTuple_SetItem
     global PyUnicode_AsEncodedString
-    global PyUnicode_DecodeFSDefaultAndSize
+    global PyUnicode_AsUTF8AndSize
+    global PyUnicode_FromKindAndData
     global PyUnicode_FromString
     global PyComplex_FromDoubles
     global PyComplex_RealAsDouble
@@ -357,6 +372,7 @@ def init_handles_dlopen(py_handle: cobj):
     PyBool_FromLong = dlsym(py_handle, "PyBool_FromLong")
     PyBytes_AsString = dlsym(py_handle, "PyBytes_AsString")
     PyBytes_Size = dlsym(py_handle, "PyBytes_Size")
+    PyBytes_FromStringAndSize = dlsym(py_handle, "PyBytes_FromStringAndSize")
     PyList_New = dlsym(py_handle, "PyList_New")
     PyList_Size = dlsym(py_handle, "PyList_Size")
     PyList_GetItem = dlsym(py_handle, "PyList_GetItem")
@@ -374,7 +390,8 @@ def init_handles_dlopen(py_handle: cobj):
     PyTuple_GetItem = dlsym(py_handle, "PyTuple_GetItem")
     PyTuple_SetItem = dlsym(py_handle, "PyTuple_SetItem")
     PyUnicode_AsEncodedString = dlsym(py_handle, "PyUnicode_AsEncodedString")
-    PyUnicode_DecodeFSDefaultAndSize = dlsym(py_handle, "PyUnicode_DecodeFSDefaultAndSize")
+    PyUnicode_AsUTF8AndSize = dlsym(py_handle, "PyUnicode_AsUTF8AndSize")
+    PyUnicode_FromKindAndData = dlsym(py_handle, "PyUnicode_FromKindAndData")
     PyUnicode_FromString = dlsym(py_handle, "PyUnicode_FromString")
     PyComplex_FromDoubles = dlsym(py_handle, "PyComplex_FromDoubles")
     PyComplex_RealAsDouble = dlsym(py_handle, "PyComplex_RealAsDouble")
@@ -496,6 +513,7 @@ def init_handles_static():
     from C import PyBool_FromLong(int) -> cobj as _PyBool_FromLong
     from C import PyBytes_AsString(cobj) -> cobj as _PyBytes_AsString
     from C import PyBytes_Size(cobj) -> int as _PyBytes_Size
+    from C import PyBytes_FromStringAndSize(cobj, int) -> cobj as _PyBytes_FromStringAndSize
     from C import PyList_New(int) -> cobj as _PyList_New
     from C import PyList_Size(cobj) -> int as _PyList_Size
     from C import PyList_GetItem(cobj, int) -> cobj as _PyList_GetItem
@@ -513,7 +531,8 @@ def init_handles_static():
     from C import PyTuple_GetItem(cobj, int) -> cobj as _PyTuple_GetItem
     from C import PyTuple_SetItem(cobj, int, cobj) -> i32 as _PyTuple_SetItem
     from C import PyUnicode_AsEncodedString(cobj, cobj, cobj) -> cobj as _PyUnicode_AsEncodedString
-    from C import PyUnicode_DecodeFSDefaultAndSize(cobj, int) -> cobj as _PyUnicode_DecodeFSDefaultAndSize
+    from C import PyUnicode_AsUTF8AndSize(cobj, Ptr[int]) -> cobj as _PyUnicode_AsUTF8AndSize
+    from C import PyUnicode_FromKindAndData(int, cobj, int) -> cobj as _PyUnicode_FromKindAndData
     from C import PyUnicode_FromString(cobj) -> cobj as _PyUnicode_FromString
     from C import PyComplex_FromDoubles(float, float) -> cobj as _PyComplex_FromDoubles
     from C import PyComplex_RealAsDouble(cobj) -> float as _PyComplex_RealAsDouble
@@ -634,6 +653,7 @@ def init_handles_static():
     global PyBool_FromLong
     global PyBytes_AsString
     global PyBytes_Size
+    global PyBytes_FromStringAndSize
     global PyList_New
     global PyList_Size
     global PyList_GetItem
@@ -651,7 +671,8 @@ def init_handles_static():
     global PyTuple_GetItem
     global PyTuple_SetItem
     global PyUnicode_AsEncodedString
-    global PyUnicode_DecodeFSDefaultAndSize
+    global PyUnicode_AsUTF8AndSize
+    global PyUnicode_FromKindAndData
     global PyUnicode_FromString
     global PyComplex_FromDoubles
     global PyComplex_RealAsDouble
@@ -772,6 +793,7 @@ def init_handles_static():
     PyBool_FromLong = _PyBool_FromLong
     PyBytes_AsString = _PyBytes_AsString
     PyBytes_Size = _PyBytes_Size
+    PyBytes_FromStringAndSize = _PyBytes_FromStringAndSize
     PyList_New = _PyList_New
     PyList_Size = _PyList_Size
     PyList_GetItem = _PyList_GetItem
@@ -789,7 +811,8 @@ def init_handles_static():
     PyTuple_GetItem = _PyTuple_GetItem
     PyTuple_SetItem = _PyTuple_SetItem
     PyUnicode_AsEncodedString = _PyUnicode_AsEncodedString
-    PyUnicode_DecodeFSDefaultAndSize = _PyUnicode_DecodeFSDefaultAndSize
+    PyUnicode_AsUTF8AndSize = _PyUnicode_AsUTF8AndSize
+    PyUnicode_FromKindAndData = _PyUnicode_FromKindAndData
     PyUnicode_FromString = _PyUnicode_FromString
     PyComplex_FromDoubles = _PyComplex_FromDoubles
     PyComplex_RealAsDouble = _PyComplex_RealAsDouble
@@ -1266,13 +1289,22 @@ class pyobj:
         return pyobj.to_str(self.p, errors, empty)
 
     def to_str(p: cobj, errors: str, empty: str = "") -> str:
-        obj = PyUnicode_AsEncodedString(p, "utf-8"._ptr, errors.c_str() if errors else ""._ptr)
-        if obj == cobj():
+        encoded = PyUnicode_AsEncodedString(
+            p,
+            "utf-8".c_str(),
+            errors.c_str() if errors else cobj(),
+        )
+        if encoded == cobj():
             return empty
-        bts = PyBytes_AsString(obj)
-        res = str.from_ptr(bts)
-        pyobj.decref(obj)
-        return res
+        data = PyBytes_AsString(encoded)
+        result = _unicode_decode_ptr(
+            data,
+            PyBytes_Size(encoded),
+            _ENCODING_UTF8,
+            _ERROR_STRICT,
+        )
+        pyobj.decref(encoded)
+        return result
 
     def exc_check():
         ptype, pvalue, ptraceback = cobj(), cobj(), cobj()
@@ -1443,17 +1475,28 @@ class bool:
 @extend
 class str:
     def __to_py__(self) -> cobj:
-        return pyobj.exc_wrap(PyUnicode_DecodeFSDefaultAndSize(self._ptr, self._len))
+        kind = self._kind()
+        py_kind = _PY_UNICODE_1BYTE_KIND
+        if kind == KIND_UCS2:
+            py_kind = _PY_UNICODE_2BYTE_KIND
+        elif kind > KIND_LATIN1:
+            py_kind = _PY_UNICODE_4BYTE_KIND
+        return pyobj.exc_wrap(PyUnicode_FromKindAndData(py_kind, self._ptr, len(self)))
 
     def __from_py__(s: cobj) -> str:
-        if _get_type(s) == PyBytes_Type:
-            n = PyBytes_Size(s)
-            p0 = PyBytes_AsString(s)
-            p1 = cobj(n)
-            str.memcpy(p1, p0, n)
-            return str(p1, n)
-        else:
-            return pyobj.exc_wrap(pyobj.to_str(s, "strict"))
+        _ensure_type(s, PyUnicode_Type, "str")
+        n = 0
+        data = pyobj.exc_wrap(PyUnicode_AsUTF8AndSize(s, __ptr__(n)))
+        return _unicode_decode_ptr(data, n, _ENCODING_UTF8, _ERROR_STRICT)
+
+@extend
+class bytes:
+    def __to_py__(self) -> cobj:
+        return pyobj.exc_wrap(PyBytes_FromStringAndSize(self._ptr, self._len))
+
+    def __from_py__(b: cobj) -> bytes:
+        _ensure_type(b, PyBytes_Type, "bytes")
+        return bytes(PyBytes_AsString(b), PyBytes_Size(b)).__ptrcopy__()
 
 @extend
 class complex:

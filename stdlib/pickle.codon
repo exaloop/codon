@@ -10,10 +10,10 @@ def unpickle(jar: Jar, T: type) -> T:
     return T.__unpickle__(jar)
 
 def dump(x: T, f, T: type):
-    x.__pickle__(f.fp)
+    x.__pickle__(f._state._fp)
 
 def load(f, T: type) -> T:
-    return T.__unpickle__(f.fp)
+    return T.__unpickle__(f._state._fp)
 
 def _write_raw(jar: Jar, p: cobj, n: int):
     LIMIT = 0x7FFFFFFF
@@ -50,14 +50,6 @@ def _read(jar: Jar, T: type) -> T:
 # Extend core types to allow pickling
 
 @extend
-class int:
-    def __pickle__(self, jar: Jar):
-        _write(jar, self)
-
-    def __unpickle__(jar: Jar) -> int:
-        return _read(jar, int)
-
-@extend
 class Int:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
@@ -90,6 +82,30 @@ class float32:
         return _read(jar, float32)
 
 @extend
+class float16:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> float16:
+        return _read(jar, float16)
+
+@extend
+class bfloat16:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> bfloat16:
+        return _read(jar, bfloat16)
+
+@extend
+class float128:
+    def __pickle__(self, jar: Jar):
+        _write(jar, self)
+
+    def __unpickle__(jar: Jar) -> float128:
+        return _read(jar, float128)
+
+@extend
 class bool:
     def __pickle__(self, jar: Jar):
         _write(jar, self)
@@ -100,14 +116,28 @@ class bool:
 @extend
 class str:
     def __pickle__(self, jar: Jar):
+        _write(jar, self._meta)
+        _write_raw(jar, self._ptr, len(self) * self._width())
+
+    def __unpickle__(jar: Jar) -> str:
+        meta = _read(jar, int)
+        value = str(Ptr[u8](), meta)
+        size = len(value) * value._width()
+        p = Ptr[u8](size)
+        _read_raw(jar, p, size)
+        return str(p, meta)
+
+@extend
+class bytes:
+    def __pickle__(self, jar: Jar):
         _write(jar, self._len)
         _write_raw(jar, self._ptr, self._len)
 
-    def __unpickle__(jar: Jar) -> str:
+    def __unpickle__(jar: Jar) -> bytes:
         n = _read(jar, int)
         p = Ptr[u8](n)
         _read_raw(jar, p, n)
-        return str(p, n)
+        return bytes(p, n)
 
 @extend
 class List:

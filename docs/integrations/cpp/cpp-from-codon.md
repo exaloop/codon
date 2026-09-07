@@ -46,10 +46,23 @@ The following table shows the conversions between Codon and C/C++ types:
 | `float`       | `double`                             |
 | `bool`        | `bool`                               |
 | `complex`     | `{double, double}` (real and imag.)  |
-| `str`         | `{char*, int64_t}` (data and length) |
+| `str`         | `{char*, int64_t}` (data and meta)   |
+| `bytes`       | `{char*, int64_t}` (data and length) |
 | `tuple`       | Struct of fields                     |
 | `class`       | Pointer to corresponding tuple       |
 | `Ptr[T]`      | `T*`                                 |
+
+Note that `str`'s "meta" field encodes both length and character width
+(strings use a dynamic fixed-width encoding) where the high byte indicates
+the character width and the low 63 bytes indicate the length. Specifically:
+
+- `meta & ((1 << 56) - 1)` gives the string length
+- `(meta & (3 << 56)) >> 56` gives the string kind:
+
+    - `0`: ASCII (1-byte encoding)
+    - `1`: Latin-1 (1-byte encoding)
+    - `2`: UCS-2 (2-byte encoding)
+    - `3`: UCS-4 (4-byte encoding)
 
 !!! warning
 

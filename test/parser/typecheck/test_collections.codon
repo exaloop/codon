@@ -127,11 +127,11 @@ print(l, l.__class__.__name__)
 
 l = [1.1, 2, 3]
 print(l, l.__class__.__name__)
-#: [1.1, 2, 3] List[float]
+#: [1.1, 2.0, 3.0] List[float]
 
 l = [1, 2, 3.3]
 print(l, l.__class__.__name__)
-#: [1, 2, 3.3] List[float]
+#: [1.0, 2.0, 3.3] List[float]
 
 l = [1, None]
 print(l, l.__class__.__name__)
@@ -175,7 +175,7 @@ print(l, l.__class__.__name__)
 
 d = {1: None, 2.2: 's'}
 print(d, d.__class__.__name__)
-#: {1: None, 2.2: 's'} Dict[float,Optional[str]]
+#: {1.0: None, 2.2: 's'} Dict[float,Optional[str]]
 
 #%% comprehension_opt_clone
 import sys

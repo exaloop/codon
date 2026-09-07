@@ -272,6 +272,10 @@ void CloneVisitor::visit(const StringConst *v) {
   result = Nt(v, v->getVal(), v->getType());
 }
 
+void CloneVisitor::visit(const BytesConst *v) {
+  result = Nt(v, v->getVal(), v->getType());
+}
+
 void CloneVisitor::visit(const dsl::CustomConst *v) { result = v->doClone(*this); }
 
 void CloneVisitor::visit(const AssignInstr *v) {

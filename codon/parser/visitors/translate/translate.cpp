@@ -193,7 +193,10 @@ void TranslateVisitor::visit(FloatExpr *expr) {
 }
 
 void TranslateVisitor::visit(StringExpr *expr) {
-  result = make<ir::StringConst>(expr, expr->getValue(), getType(expr->getType()));
+  if (expr->getType()->is("bytes"))
+    result = make<ir::BytesConst>(expr, expr->getValue(), getType(expr->getType()));
+  else
+    result = make<ir::StringConst>(expr, expr->getValue(), getType(expr->getType()));
 }
 
 void TranslateVisitor::visit(IdExpr *expr) {

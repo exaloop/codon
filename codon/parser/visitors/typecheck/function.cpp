@@ -368,8 +368,9 @@ void TypecheckVisitor::visit(FunctionStmt *stmt) {
 
       // Handle default values
       auto defaultValue = a.getDefault();
-      if (match(defaultValue, MOr(M<NoneExpr>(), M<IntExpr>(), M<BoolExpr>(),
-                                  M<FloatExpr>(), M<IdExpr>(), M<StringExpr>()))) {
+      if (match(defaultValue,
+                MOr(M<NoneExpr>(), M<IntExpr>(), M<BoolExpr>(), M<FloatExpr>(),
+                    M<IdExpr>(), M<StringExpr>(), M<UnaryExpr>(M_, M<IntExpr>())))) {
         // Special case: all simple types and Nones are handled at call site
         // (as they are not mutable).
         if (match(defaultValue, M<NoneExpr>())) {

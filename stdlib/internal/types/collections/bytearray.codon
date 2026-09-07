@@ -1,0 +1,695 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+import internal.gc as gc
+
+_DEFAULT_BYTEARRAY_CAPACITY: Literal[int] = 16
+
+
+def _bytearray_byte(value: int) -> u8:
+    if value < 0 or value > 255:
+        raise ValueError("byte must be in range(0, 256)")
+    return u8(value)
+
+
+@dataclass(init=False)
+class bytearray:
+    _ptr: Ptr[u8]
+    _len: int
+    _cap: int
+
+    @staticmethod
+    def _adopt_bytes(value: bytes) -> bytearray:
+        result = bytearray()
+        result._ptr = value._ptr
+        result._len = len(value)
+        result._cap = len(value)
+        return result
+
+    @staticmethod
+    def fromhex(value: str) -> bytearray:
+        return bytearray._adopt_bytes(bytes.fromhex(value))
+
+    @staticmethod
+    def fromhex(value: bytes) -> bytearray:
+        return bytearray._adopt_bytes(bytes.fromhex(value))
+
+    @staticmethod
+    def fromhex(value: bytearray) -> bytearray:
+        return bytearray._adopt_bytes(bytes._fromhex(value._bytes_view()))
+
+    @staticmethod
+    def maketrans(source, replacement) -> bytes:
+        return bytes.maketrans(source, replacement)
+
+    def __init__(self):
+        self._ptr = Ptr[u8]()
+        self._len = 0
+        self._cap = 0
+
+    def __init__(self, size: int):
+        if size < 0:
+            raise ValueError("negative count")
+        self._ptr = Ptr[u8](size)
+        self._len = size
+        self._cap = size
+        bytes.memset(self._ptr, u8(0), size)
+
+    def __init__(self, source: bytes):
+        n = len(source)
+        self._ptr = Ptr[u8](n)
+        self._len = n
+        self._cap = n
+        bytes.memcpy(self._ptr, source._ptr, n)
+
+    def __init__(self, source: bytearray):
+        n = len(source)
+        self._ptr = Ptr[u8](n)
+        self._len = n
+        self._cap = n
+        bytes.memcpy(self._ptr, source._ptr, n)
+
+    def __init__(self, source: Generator[int]):
+        self._ptr = Ptr[u8](_DEFAULT_BYTEARRAY_CAPACITY)
+        self._len = 0
+        self._cap = _DEFAULT_BYTEARRAY_CAPACITY
+        self.extend(source)
+
+    def __init__(self, source: str, encoding: str, errors: str = "strict"):
+        encoded = bytes(source, encoding, errors)
+        n = len(encoded)
+        self._ptr = Ptr[u8](n)
+        self._len = n
+        self._cap = n
+        bytes.memcpy(self._ptr, encoded._ptr, n)
+
+    def __len__(self) -> int:
+        return self._len
+
+    def __bool__(self) -> bool:
+        return self._len != 0
+
+    def __iter__(self) -> Generator[int]:
+        i = 0
+        n = self._len
+        while i < n:
+            yield int(self._ptr[i])
+            i += 1
+
+    def __reversed__(self) -> Generator[int]:
+        i = self._len - 1
+        while i >= 0:
+            yield int(self._ptr[i])
+            i -= 1
+
+    def __getitem__(self, index: int) -> int:
+        if index < 0:
+            index += self._len
+        self._check_index(index, "bytearray index out of range")
+        return int(self._ptr[index])
+
+    def __getitem__(self, slice: Slice) -> bytearray:
+        start, stop, step, length = slice.adjust_indices(self._len)
+        result = bytearray()
+        result._reserve(length)
+        if step == 1:
+            bytes.memcpy(result._ptr, self._ptr + start, length)
+            result._len = length
+        else:
+            for i in range(start, stop, step):
+                result.append(int(self._ptr[i]))
+        return result
+
+    def __setitem__(self, slice: Slice, source: Generator[int]):
+        self.__setitem__(slice, bytearray(source))
+
+    def __setitem__(self, index: int, value: int):
+        if index < 0:
+            index += self._len
+        self._check_index(index, "bytearray index out of range")
+        self._ptr[index] = _bytearray_byte(value)
+
+    def __setitem__(self, slice: Slice, source: bytes):
+        self._set_slice(slice, source)
+
+    def __setitem__(self, slice: Slice, source: bytearray):
+        if source._ptr == self._ptr:
+            source = source.__copy__()
+        self._set_slice(slice, source)
+
+    def __delitem__(self, index: int):
+        if index < 0:
+            index += self._len
+        self._check_index(index, "bytearray index out of range")
+        self._delete_range(index, index + 1)
+
+    def __delitem__(self, slice: Slice):
+        start, stop, step, length = slice.adjust_indices(self._len)
+        if length == 0:
+            return
+        if step == 1:
+            self._delete_range(start, stop)
+            return
+
+        result = bytearray()
+        result._reserve(self._len - length)
+        remove = Ptr[bool](self._len)
+        bytes.memset(remove.as_byte(), u8(0), self._len)
+        for i in range(start, stop, step):
+            remove[i] = True
+        for i in range(self._len):
+            if not remove[i]:
+                result.append(int(self._ptr[i]))
+        self._ptr = result._ptr
+        self._len = result._len
+        self._cap = result._cap
+
+    def __contains__(self, value: int) -> bool:
+        value = int(_bytearray_byte(value))
+        for i in range(self._len):
+            if int(self._ptr[i]) == value:
+                return True
+        return False
+
+    def __contains__(self, pattern: bytes) -> bool:
+        return pattern in self._bytes_view()
+
+    def __contains__(self, pattern: bytearray) -> bool:
+        return pattern._bytes_view() in self._bytes_view()
+
+    def __bytes__(self) -> bytes:
+        p = Ptr[u8](self._len)
+        bytes.memcpy(p, self._ptr, self._len)
+        return bytes(p, self._len)
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def __repr__(self) -> str:
+        return f"bytearray({self._bytes_view().__repr__()})"
+
+    def __copy__(self) -> bytearray:
+        return bytearray(self)
+
+    def __deepcopy__(self) -> bytearray:
+        return bytearray(self)
+
+    def copy(self) -> bytearray:
+        return bytearray(self)
+
+    def __eq__(self, other: bytearray) -> bool:
+        return self._bytes_view() == other._bytes_view()
+
+    def __eq__(self, other: bytes) -> bool:
+        return self._bytes_view() == other
+
+    def __ne__(self, other: bytearray) -> bool:
+        return not self.__eq__(other)
+
+    def __ne__(self, other: bytes) -> bool:
+        return not self.__eq__(other)
+
+    def __lt__(self, other: bytearray) -> bool:
+        return self._bytes_view() < other._bytes_view()
+
+    def __lt__(self, other: bytes) -> bool:
+        return self._bytes_view() < other
+
+    def __le__(self, other: bytearray) -> bool:
+        return self._bytes_view() <= other._bytes_view()
+
+    def __le__(self, other: bytes) -> bool:
+        return self._bytes_view() <= other
+
+    def __gt__(self, other: bytearray) -> bool:
+        return self._bytes_view() > other._bytes_view()
+
+    def __gt__(self, other: bytes) -> bool:
+        return self._bytes_view() > other
+
+    def __ge__(self, other: bytearray) -> bool:
+        return self._bytes_view() >= other._bytes_view()
+
+    def __ge__(self, other: bytes) -> bool:
+        return self._bytes_view() >= other
+
+    def __add__(self, other: bytearray) -> bytearray:
+        return self._concat(other._ptr, len(other))
+
+    def __add__(self, other: bytes) -> bytearray:
+        return self._concat(other._ptr, len(other))
+
+    def __iadd__(self, other: bytearray) -> bytearray:
+        old_len = self._len
+        other_len = len(other)
+        self._reserve(old_len + other_len)
+        bytes.memcpy(self._ptr + old_len, other._ptr, other_len)
+        self._len += other_len
+        return self
+
+    def __iadd__(self, other: bytes) -> bytearray:
+        old_len = self._len
+        other_len = len(other)
+        self._reserve(old_len + other_len)
+        bytes.memcpy(self._ptr + old_len, other._ptr, other_len)
+        self._len += other_len
+        return self
+
+    def __mul__(self, count: int) -> bytearray:
+        if count <= 0:
+            return bytearray()
+        result = bytearray()
+        result._reserve(self._len * count)
+        for _ in range(count):
+            bytes.memcpy(result._ptr + result._len, self._ptr, self._len)
+            result._len += self._len
+        return result
+
+    def __rmul__(self, count: int) -> bytearray:
+        return self * count
+
+    def __imul__(self, count: int) -> bytearray:
+        if count <= 0:
+            self.clear()
+            return self
+        if count == 1:
+            return self
+        old_len = self._len
+        self._reserve(old_len * count)
+        for i in range(1, count):
+            bytes.memcpy(self._ptr + i * old_len, self._ptr, old_len)
+        self._len = old_len * count
+        return self
+
+    def append(self, value: int):
+        self._reserve(self._len + 1)
+        self._ptr[self._len] = _bytearray_byte(value)
+        self._len += 1
+
+    def extend(self, source: Generator[int]):
+        for value in source:
+            self.append(value)
+
+    def extend(self, source: bytes):
+        n = len(source)
+        self._reserve(self._len + n)
+        bytes.memcpy(self._ptr + self._len, source._ptr, n)
+        self._len += n
+
+    def extend(self, source: bytearray):
+        self += source
+
+    def insert(self, index: int, value: int):
+        if index < 0:
+            index += self._len
+            if index < 0:
+                index = 0
+        elif index > self._len:
+            index = self._len
+        self._reserve(self._len + 1)
+        bytes.memmove(self._ptr + index + 1, self._ptr + index, self._len - index)
+        self._ptr[index] = _bytearray_byte(value)
+        self._len += 1
+
+    def pop(self, index: int = -1) -> int:
+        if self._len == 0:
+            raise IndexError("pop from empty bytearray")
+        if index < 0:
+            index += self._len
+        self._check_index(index, "pop index out of range")
+        value = int(self._ptr[index])
+        self._delete_range(index, index + 1)
+        return value
+
+    def remove(self, value: int):
+        value = int(_bytearray_byte(value))
+        for i in range(self._len):
+            if int(self._ptr[i]) == value:
+                self._delete_range(i, i + 1)
+                return
+        raise ValueError("value not found in bytearray")
+
+    def clear(self):
+        self._len = 0
+
+    def resize(self, size: int):
+        if size < 0:
+            raise ValueError(f"Can only resize to non-negative sizes, got {size}")
+        if size > self._len:
+            self._reserve(size)
+            bytes.memset(self._ptr + self._len, u8(0), size - self._len)
+        self._len = size
+
+    def reverse(self):
+        i = 0
+        while i < (self._len >> 1):
+            j = self._len - i - 1
+            value = self._ptr[i]
+            self._ptr[i] = self._ptr[j]
+            self._ptr[j] = value
+            i += 1
+
+    def count(self, value: int) -> int:
+        value = int(_bytearray_byte(value))
+        result = 0
+        for i in range(self._len):
+            if int(self._ptr[i]) == value:
+                result += 1
+        return result
+
+    def count(
+        self, pattern: bytes, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().count(pattern, start, end)
+
+    def count(
+        self, pattern: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().count(pattern._bytes_view(), start, end)
+
+    def index(self, value: int, start: int = 0, end: Optional[int] = None) -> int:
+        value = int(_bytearray_byte(value))
+        end: int = self._len if end is None else end
+        start, end = self._bytes_view()._correct_indices(start, end)
+        for i in range(start, end):
+            if int(self._ptr[i]) == value:
+                return i
+        raise ValueError("subsection not found")
+
+    def index(
+        self, pattern: bytes, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().index(pattern, start, end)
+
+    def index(
+        self, pattern: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().index(pattern._bytes_view(), start, end)
+
+    def find(
+        self, pattern: bytes, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().find(pattern, start, end)
+
+    def find(
+        self, pattern: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().find(pattern._bytes_view(), start, end)
+
+    def rfind(
+        self, pattern: bytes, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().rfind(pattern, start, end)
+
+    def rfind(
+        self, pattern: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().rfind(pattern._bytes_view(), start, end)
+
+    def rindex(
+        self, pattern: bytes, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().rindex(pattern, start, end)
+
+    def rindex(
+        self, pattern: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> int:
+        return self._bytes_view().rindex(pattern._bytes_view(), start, end)
+
+    def startswith(
+        self, prefix: bytes, start: int = 0, end: Optional[int] = None
+    ) -> bool:
+        return self._bytes_view().startswith(prefix, start, end)
+
+    def startswith(
+        self, prefix: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> bool:
+        return self._bytes_view().startswith(prefix._bytes_view(), start, end)
+
+    def endswith(
+        self, suffix: bytes, start: int = 0, end: Optional[int] = None
+    ) -> bool:
+        return self._bytes_view().endswith(suffix, start, end)
+
+    def endswith(
+        self, suffix: bytearray, start: int = 0, end: Optional[int] = None
+    ) -> bool:
+        return self._bytes_view().endswith(suffix._bytes_view(), start, end)
+
+    def removeprefix(self, prefix) -> bytearray:
+        return bytearray(self._bytes_view().removeprefix(prefix))
+
+    def removesuffix(self, suffix) -> bytearray:
+        return bytearray(self._bytes_view().removesuffix(suffix))
+
+    def isdigit(self) -> bool:
+        return self._bytes_view().isdigit()
+
+    def islower(self) -> bool:
+        return self._bytes_view().islower()
+
+    def isupper(self) -> bool:
+        return self._bytes_view().isupper()
+
+    def isalnum(self) -> bool:
+        return self._bytes_view().isalnum()
+
+    def isalpha(self) -> bool:
+        return self._bytes_view().isalpha()
+
+    def isspace(self) -> bool:
+        return self._bytes_view().isspace()
+
+    def istitle(self) -> bool:
+        return self._bytes_view().istitle()
+
+    def isdecimal(self) -> bool:
+        return self._bytes_view().isdecimal()
+
+    def isascii(self) -> bool:
+        return self._bytes_view().isascii()
+
+    def isnumeric(self) -> bool:
+        return self._bytes_view().isnumeric()
+
+    def isidentifier(self) -> bool:
+        return self._bytes_view().isidentifier()
+
+    def isprintable(self) -> bool:
+        return self._bytes_view().isprintable()
+
+    def capitalize(self) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().capitalize())
+
+    def lower(self) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().lower())
+
+    def upper(self) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().upper())
+
+    def casefold(self) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().casefold())
+
+    def swapcase(self) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().swapcase())
+
+    def title(self) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().title())
+
+    def ljust(self, width: int, fillchar: bytes = b" ") -> bytearray:
+        return self._adopt_or_copy(self._bytes_view().ljust(width, fillchar))
+
+    def rjust(self, width: int, fillchar: bytes = b" ") -> bytearray:
+        return self._adopt_or_copy(self._bytes_view().rjust(width, fillchar))
+
+    def center(self, width: int, fillchar: bytes = b" ") -> bytearray:
+        return self._adopt_or_copy(self._bytes_view().center(width, fillchar))
+
+    def zfill(self, width: int) -> bytearray:
+        return self._adopt_or_copy(self._bytes_view().zfill(width))
+
+    def lstrip(self) -> bytearray:
+        return bytearray(self._bytes_view().lstrip())
+
+    def lstrip(self, chars: bytes) -> bytearray:
+        return bytearray(self._bytes_view().lstrip(chars))
+
+    def rstrip(self) -> bytearray:
+        return bytearray(self._bytes_view().rstrip())
+
+    def rstrip(self, chars: bytes) -> bytearray:
+        return bytearray(self._bytes_view().rstrip(chars))
+
+    def strip(self) -> bytearray:
+        return bytearray(self._bytes_view().strip())
+
+    def strip(self, chars: bytes) -> bytearray:
+        return bytearray(self._bytes_view().strip(chars))
+
+    def partition(self, separator: bytes) -> Tuple[bytearray, bytearray, bytearray]:
+        before, middle, after = self._bytes_view().partition(separator)
+        return bytearray(before), bytearray(middle), bytearray(after)
+
+    def rpartition(self, separator: bytes) -> Tuple[bytearray, bytearray, bytearray]:
+        before, middle, after = self._bytes_view().rpartition(separator)
+        return bytearray(before), bytearray(middle), bytearray(after)
+
+    def split(
+        self, separator: Optional[bytes] = None, maxsplit: int = -1
+    ) -> List[bytearray]:
+        return [bytearray(part) for part in self._bytes_view().split(separator, maxsplit)]
+
+    def rsplit(
+        self, separator: Optional[bytes] = None, maxsplit: int = -1
+    ) -> List[bytearray]:
+        return [bytearray(part) for part in self._bytes_view().rsplit(separator, maxsplit)]
+
+    def splitlines(self, keepends: bool = False) -> List[bytearray]:
+        return [bytearray(part) for part in self._bytes_view().splitlines(keepends)]
+
+    def replace(
+        self, old: bytes, new: bytes, count: int = -1
+    ) -> bytearray:
+        return self._adopt_or_copy(self._bytes_view().replace(old, new, count))
+
+    def expandtabs(self, tabsize: int = 8) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().expandtabs(tabsize))
+
+    def translate(self, table) -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().translate(table))
+
+    def translate(self, table: bytes, delete: bytes = b"") -> bytearray:
+        return bytearray._adopt_bytes(self._bytes_view().translate(table, delete))
+
+    def translate(self, table: bytearray, delete: bytes = b"") -> bytearray:
+        return bytearray._adopt_bytes(
+            self._bytes_view().translate(table._bytes_view(), delete)
+        )
+
+    def hex(self) -> str:
+        return self._bytes_view().hex()
+
+    def hex(self, sep: str, bytes_per_sep: int = 1) -> str:
+        return self._bytes_view().hex(sep, bytes_per_sep)
+
+    def hex(self, sep: bytes, bytes_per_sep: int = 1) -> str:
+        return self._bytes_view().hex(sep, bytes_per_sep)
+
+    def join(self, values: Generator[T], T: type) -> bytearray:
+        if T is bytes:
+            result = self._bytes_view().join(values)
+        elif T is bytearray:
+            result = self._bytes_view().join(
+                value._bytes_view() for value in values
+            )
+        else:
+            compile_error("sequence item must be bytes or bytearray")
+        return bytearray._adopt_bytes(result)
+
+    def join(self, values: List[T], T: type) -> bytearray:
+        if len(values) == 1:
+            return bytearray(values[0])
+        if T is bytes:
+            result = self._bytes_view().join(values)
+        elif T is bytearray:
+            result = self._bytes_view().join(
+                [value._bytes_view() for value in values]
+            )
+        else:
+            compile_error("sequence item must be bytes or bytearray")
+        return bytearray._adopt_bytes(result)
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return str(bytes(self), encoding, errors)
+
+    def _bytes_view(self) -> bytes:
+        return bytes(self._ptr, self._len)
+
+    def _adopt_or_copy(self, value: bytes) -> bytearray:
+        if value._ptr == self._ptr:
+            return bytearray(self)
+        return bytearray._adopt_bytes(value)
+
+    def _check_index(self, index: int, message: str):
+        if index < 0 or index >= self._len:
+            raise IndexError(message)
+
+    def _reserve(self, required: int):
+        if required <= self._cap:
+            return
+        capacity = self._cap if self._cap > 0 else _DEFAULT_BYTEARRAY_CAPACITY
+        while capacity < required:
+            capacity = (1 + 3 * capacity) >> 1
+        self._ptr = gc.realloc(self._ptr, capacity, self._cap)
+        self._cap = capacity
+
+    def _concat(self, source: Ptr[u8], n: int) -> bytearray:
+        result = bytearray()
+        result._reserve(self._len + n)
+        bytes.memcpy(result._ptr, self._ptr, self._len)
+        bytes.memcpy(result._ptr + self._len, source, n)
+        result._len = self._len + n
+        return result
+
+    def _delete_range(self, start: int, stop: int):
+        bytes.memmove(self._ptr + start, self._ptr + stop, self._len - stop)
+        self._len -= stop - start
+
+    def _set_slice(self, slice: Slice, source):
+        start, stop, step, length = slice.adjust_indices(self._len)
+        source_len = len(source)
+
+        if step != 1:
+            if source_len != length:
+                raise ValueError(
+                    f"attempt to assign bytes of size {source_len} "
+                    f"to extended slice of size {length}"
+                )
+
+            index = start
+            for i in range(length):
+                self._ptr[index] = source._ptr[i]
+                index += step
+            return
+
+        # For a normal slice, an empty slice inserts at start.
+        if stop < start:
+            stop = start
+
+        removed = stop - start
+        new_len = self._len - removed + source_len
+        self._reserve(new_len)
+        bytes.memmove(
+            self._ptr + start + source_len,
+            self._ptr + stop,
+            self._len - stop,
+        )
+        bytes.memcpy(
+            self._ptr + start,
+            source._ptr,
+            source_len,
+        )
+        self._len = new_len
+
+
+@extend
+class bytes:
+    def __eq__(self, other: bytearray) -> bool:
+        return self == other._bytes_view()
+
+    def __ne__(self, other: bytearray) -> bool:
+        return not self.__eq__(other)
+
+    def __add__(self, other: bytearray) -> bytes:
+        return self + other._bytes_view()
+
+    def __lt__(self, other: bytearray) -> bool:
+        return self < other._bytes_view()
+
+    def __le__(self, other: bytearray) -> bool:
+        return self <= other._bytes_view()
+
+    def __gt__(self, other: bytearray) -> bool:
+        return self > other._bytes_view()
+
+    def __ge__(self, other: bytearray) -> bool:
+        return self >= other._bytes_view()

@@ -195,7 +195,7 @@ static void seq_delete_unwind_exc(_Unwind_Reason_Code reason,
 }
 
 static struct backtrace_state *state = nullptr;
-static std::mutex stateLock;
+static std::once_flag stateOnce;
 
 SEQ_FUNC void *seq_alloc_exc(void *obj) {
   const size_t size = sizeof(CodonBaseException);
@@ -209,14 +209,11 @@ SEQ_FUNC void *seq_alloc_exc(void *obj) {
     e->bt.count = 0;
 
     if (seq_flags & SEQ_FLAG_STANDALONE) {
-      if (!state) {
-        stateLock.lock();
-        if (!state)
-          state =
-              backtrace_create_state(/*filename=*/nullptr, /*threaded=*/1,
-                                     seq_backtrace_error_callback, /*data=*/nullptr);
-        stateLock.unlock();
-      }
+      std::call_once(stateOnce, [] {
+        state = backtrace_create_state(/*filename=*/nullptr, /*threaded=*/1,
+                                       seq_backtrace_error_callback,
+                                       /*data=*/nullptr);
+      });
       backtrace_full(state, /*skip=*/1, seq_backtrace_full_callback,
                      seq_backtrace_error_callback, &e->bt);
     } else {
@@ -227,19 +224,9 @@ SEQ_FUNC void *seq_alloc_exc(void *obj) {
   return &(e->unwindException);
 }
 
-static void print_from_last_dot(seq_str_t s, std::ostringstream &buf) {
-  char *p = s.str;
-  int64_t n = s.len;
-
-  for (int64_t i = n - 1; i >= 0; i--) {
-    if (p[i] == '.') {
-      p += (i + 1);
-      n -= (i + 1);
-      break;
-    }
-  }
-
-  buf.write(p, (size_t)n);
+static void print_from_last_dot(const std::string &name, std::ostringstream &buf) {
+  auto dot = name.rfind('.');
+  buf << name.substr(dot == std::string::npos ? 0 : dot + 1);
 }
 
 static std::function<void(const codon::runtime::JITError &)> jitErrorCallback;
@@ -250,28 +237,33 @@ SEQ_FUNC void seq_terminate(void *exc) {
   auto *hdr = *(CodonExceptionHeader **)obj;
   auto tname = ((RTTIObject *)obj)->type->raw_name;
 
-  if (std::string(tname.str, tname.len) == "SystemExit") {
+  if (tname == "SystemExit") {
     seq_int_t status = *(seq_int_t *)(hdr + 1);
     exit((int)status);
   }
+
+  auto type = tname.encode();
+  auto msg = hdr->msg.encode();
+  auto func = hdr->func.encode();
+  auto file = hdr->file.encode();
 
   std::ostringstream buf;
   if (seq_flags & SEQ_FLAG_CAPTURE_OUTPUT)
     buf << codon::runtime::getCapturedOutput();
 
   buf << "\033[1m";
-  print_from_last_dot(tname, buf);
-  if (hdr->msg.len > 0) {
+  print_from_last_dot(type, buf);
+  if (!msg.empty()) {
     buf << ": \033[0m";
-    buf.write(hdr->msg.str, hdr->msg.len);
+    buf << msg;
   } else {
     buf << "\033[0m";
   }
 
   buf << "\n\n\033[1mRaised from:\033[0m \033[32m";
-  buf.write(hdr->func.str, hdr->func.len);
+  buf << func;
   buf << "\033[0m\n";
-  buf.write(hdr->file.str, hdr->file.len);
+  buf << file;
   if (hdr->line > 0) {
     buf << ":" << hdr->line;
     if (hdr->col > 0)
@@ -300,9 +292,6 @@ SEQ_FUNC void seq_terminate(void *exc) {
     abort();
   } else {
     auto *bt = &base->bt;
-    std::string msg(hdr->msg.str, hdr->msg.len);
-    std::string file(hdr->file.str, hdr->file.len);
-    std::string type(tname.str, tname.len);
 
     std::vector<uintptr_t> backtrace;
     if (seq_flags & SEQ_FLAG_DEBUG) {

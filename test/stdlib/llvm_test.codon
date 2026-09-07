@@ -57,7 +57,7 @@ print (-b).__abs__() #: 5
 print c.__truediv__(5) #: 0.2
 print b.__lshift__(1) #: 10
 print b.__rshift__(1) #: 2
-print b.__truediv__(5.15) #: 0.970874
+print b.__truediv__(5.15) #: 0.9708737864077669
 print a.__add__(1) #: 1
 print a.__add__(1.1) #: 1.1
 print a.__sub__(1) #: -1
@@ -65,9 +65,9 @@ print a.__sub__(1.1) #: -1.1
 print b.__mul__(1) #: 5
 print b.__mul__(1.1) #: 5.5
 print b.__floordiv__(2) #: 2
-print b.__floordiv__(1.1) #: 4
+print b.__floordiv__(1.1) #: 4.0
 print b.__mod__(2) #: 1
-print b.__mod__(1.1) #: 0.6
+print b.__mod__(1.1) #: 0.5999999999999996
 print a.__eq__(1) #: False
 print a.__eq__(1.1) #: False
 print a.__ne__(1) #: True
@@ -125,12 +125,12 @@ print z.__repr__() #: 5.5
 print z.__copy__() #: 5.5
 print z.__bool__(), z.__pos__(), z.__neg__() #: True 5.5 -5.5
 f = 1.3
-print z.__floordiv__(f), z.__floordiv__(2) #: 4 2
-print z.__truediv__(f), z.__truediv__(2) #: 4.23077 2.75
-print z.__pow__(2.2), z.__pow__(2) #: 42.54 30.25
+print z.__floordiv__(f), z.__floordiv__(2) #: 4.0 2.0
+print z.__truediv__(f), z.__truediv__(2) #: 4.230769230769231 2.75
+print z.__pow__(2.2), z.__pow__(2) #: 42.540042248725975 30.25
 print z.__add__(2) #: 7.5
 print z.__sub__(2) #: 3.5
-print z.__mul__(2) #: 11
+print z.__mul__(2) #: 11.0
 print z.__truediv__(2) #: 2.75
 print z.__mod__(2) #: 1.5
 print z.__eq__(2) #: False

@@ -87,7 +87,7 @@ class A[TA,TB,TC]:
 a1 = A(42, 3.14, "hello")
 a2 = A(1, 2, 3)
 a1.m1(a2)                           #: 1 2 3
-A[int,float,str].m2(1, 1.0, "one")  #: 1 1 one
+A[int,float,str].m2(1, 1.0, "one")  #: 1 1.0 one
 A[int,int,int].m2(11, 22, 33)       #: 11 22 33
 print a1.m3(a2)                     #: 42
 print a1.m3(a2)                     #: 42
@@ -453,7 +453,7 @@ z(3) #: hai(2,3,3)
 
 #%% int_float,barebones
 l = [1., 2, 3, 4]
-print l, l.__class__.__name__ #: [1, 2, 3, 4] List[float]
+print l, l.__class__.__name__ #: [1.0, 2.0, 3.0, 4.0] List[float]
 
 #%% forward_fn,barebones
 def test(name, sort, key):
@@ -592,7 +592,7 @@ call(foo)
 #: ('f1_1_(2,)', 3)
 def foo(a:int, *b: float): return f"f2_{a}_{b}", int(a+b[0])
 call(foo)
-#: ('f2_1_(2,)', 3)
+#: ('f2_1_(2.0,)', 3)
 
 def call(f: CallableTrait[[int,int],str]):
     print(f(1, 2))
@@ -901,7 +901,7 @@ def fox(a, b, key=None): # key=None delays it!
 a = 1.0
 b = 2.0
 c = fox(a, b)
-print(math.log(c) / 2) #: 0
+print(math.log(c) / 2) #: 0.0
 
 #%% repeated_lambda,barebones
 def acc(i, func=lambda a, b: a + b):
@@ -926,7 +926,7 @@ def foo(a):
 
 foo(float)
 #: float <class 'float'>
-#: float 0
+#: float 0.0
 print(float)
 #: <class 'float'>
 foo(list[int])

@@ -69,6 +69,7 @@ However, we would like to support the following modules natively:
     - **As of Codon 0.18, NumPy is natively supported!**
 
 - Unicode support
+    - **As of Codon 0.20, unicode is fully supported!**
 
 - Python's testing infrastructure
 

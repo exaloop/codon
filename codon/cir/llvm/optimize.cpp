@@ -410,25 +410,38 @@ struct AllocInfo {
         anySubLoopContains(ai) || inIrreducibleCycle(ai))
       return false;
 
-    // Need to track insertvalue/extractvalue to make this effective.
-    // This maps each "insertvalue" of the pointer (or derived value)
-    // to a list of indices at which it is inserted (usually there will
-    // be just one).
-    SmallDenseMap<Instruction *, SmallVector<ArrayRef<unsigned>, 1>> inserts;
+    // Track the aggregate field paths that can contain the allocation. An empty path
+    // means that the value itself is derived from the allocation.
+    using IndexPath = SmallVector<unsigned, 2>;
+    using IndexPaths = SmallVector<IndexPath, 2>;
+    SmallDenseMap<Instruction *, IndexPaths> provenance;
 
     std::deque<Instruction *> worklist;
-    SmallSet<Instruction *, 20> visited;
-    auto add_to_worklist = [&](Instruction *instr) {
-      if (!visited.contains(instr)) {
-        visited.insert(instr);
+    SmallSet<Instruction *, 20> pending;
+    auto addProvenance = [&](Instruction *instr, ArrayRef<unsigned> path) {
+      auto &paths = provenance[instr];
+      if (llvm::find(paths, path) != paths.end())
+        return;
+      paths.emplace_back(path.begin(), path.end());
+      if (!pending.contains(instr)) {
+        pending.insert(instr);
         worklist.push_front(instr);
       }
     };
-    add_to_worklist(ai);
+    auto propagate = [&](Instruction *dest, Instruction *source) {
+      for (const auto &path : provenance[source])
+        addProvenance(dest, path);
+    };
+    auto startsWith = [](ArrayRef<unsigned> path, ArrayRef<unsigned> prefix) {
+      return path.size() >= prefix.size() &&
+             std::equal(prefix.begin(), prefix.end(), path.begin());
+    };
+    addProvenance(ai, {});
 
     do {
       Instruction *pi = worklist.back();
       worklist.pop_back();
+      pending.erase(pi);
 
       for (User *u : pi->users()) {
         Instruction *instr = cast<Instruction>(u);
@@ -443,7 +456,13 @@ struct AllocInfo {
         case Instruction::PHI:
           if (instr->getParent() == loop.getHeader())
             return false;
-          LLVM_FALLTHROUGH;
+          propagate(instr, pi);
+          continue;
+
+        case Instruction::Select:
+        case Instruction::Freeze:
+          propagate(instr, pi);
+          continue;
 
         case Instruction::PtrToInt:
         case Instruction::IntToPtr:
@@ -451,56 +470,40 @@ struct AllocInfo {
         case Instruction::Sub:
         case Instruction::AddrSpaceCast:
         case Instruction::BitCast:
-        case Instruction::GetElementPtr:
-          add_to_worklist(instr);
+        case Instruction::GetElementPtr: {
+          for (const auto &path : provenance[pi]) {
+            if (!path.empty())
+              return false;
+          }
+          addProvenance(instr, {});
           continue;
+        }
 
         case Instruction::InsertValue: {
-          auto *op0 = instr->getOperand(0);
-          auto *op1 = instr->getOperand(1);
-          if (isa<InsertValueInst>(op0) || isa<FreezeInst>(op0) ||
-              isa<UndefValue>(op0)) {
-            // Add for this insertvalue
-            if (op1 == pi) {
-              auto *insertValueInst = cast<InsertValueInst>(instr);
-              inserts[instr].push_back(insertValueInst->getIndices());
-            }
-            // Add for previous insertvalue
-            if (auto *instrOp = dyn_cast<Instruction>(op0)) {
-              auto it = inserts.find(instrOp);
-              if (it != inserts.end())
-                inserts[instr].append(it->second);
+          auto *insert = cast<InsertValueInst>(instr);
+          auto indices = insert->getIndices();
+          if (insert->getAggregateOperand() == pi) {
+            for (const auto &path : provenance[pi]) {
+              if (!startsWith(path, indices))
+                addProvenance(instr, path);
             }
           }
-          add_to_worklist(instr);
+          if (insert->getInsertedValueOperand() == pi) {
+            for (const auto &path : provenance[pi]) {
+              IndexPath result(indices.begin(), indices.end());
+              result.append(path);
+              addProvenance(instr, result);
+            }
+          }
           continue;
         }
 
         case Instruction::ExtractValue: {
-          auto *extractValueInst = cast<ExtractValueInst>(instr);
-          auto it = inserts.end();
-          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0)))
-            it = inserts.find(instrOp);
-          if (it != inserts.end()) {
-            for (auto &indices : it->second) {
-              if (indices == extractValueInst->getIndices()) {
-                add_to_worklist(instr);
-                break;
-              }
-            }
-          } else {
-            add_to_worklist(instr);
+          auto indices = cast<ExtractValueInst>(instr)->getIndices();
+          for (const auto &path : provenance[pi]) {
+            if (startsWith(path, indices))
+              addProvenance(instr, ArrayRef<unsigned>(path).drop_front(indices.size()));
           }
-          continue;
-        }
-
-        case Instruction::Freeze: {
-          if (auto *instrOp = dyn_cast<Instruction>(instr->getOperand(0))) {
-            auto it = inserts.find(instrOp);
-            if (it != inserts.end())
-              inserts[instr] = it->second;
-          }
-          add_to_worklist(instr);
           continue;
         }
 
@@ -531,7 +534,7 @@ struct AllocInfo {
               continue;
             case Intrinsic::launder_invariant_group:
             case Intrinsic::strip_invariant_group:
-              add_to_worklist(instr);
+              addProvenance(instr, {});
               continue;
             }
           }
@@ -542,6 +545,13 @@ struct AllocInfo {
               if (call->getArgOperand(i) != pi)
                 continue;
 
+              // Aggregate arguments containing the pointer need interprocedural
+              // field-sensitive capture information, which LLVM does not provide.
+              for (const auto &path : provenance[pi]) {
+                if (!path.empty())
+                  return false;
+              }
+
               // byval is okay because callee sees a copy.
               if (call->paramHasAttr(i, llvm::Attribute::ByVal))
                 continue;
@@ -550,16 +560,11 @@ struct AllocInfo {
               if (call->getType()->isPointerTy())
                 return false;
 
-              auto ME = call->getMemoryEffects();
-              bool readsOnly = !llvm::isModSet(ME.getModRef());
-              bool onlyArgMem = call->onlyAccessesArgMemory();
-
-              // If the pointer may be captured, only allow read-only calls.
-              if (!call->paramHasAttr(i, llvm::Attribute::NoCapture) && !readsOnly)
-                return false;
-
-              // Writes through argmem are okay, but writes elsewhere are not.
-              if (!onlyArgMem && llvm::isModSet(ME.getModRef()))
+              // Reusing the allocation is safe only if the call can neither
+              // retain nor free it. Read-only does not imply either property.
+              bool noFree = call->hasFnAttr(llvm::Attribute::NoFree) ||
+                            call->paramHasAttr(i, llvm::Attribute::NoFree);
+              if (!call->paramHasAttr(i, llvm::Attribute::NoCapture) || !noFree)
                 return false;
             }
           }

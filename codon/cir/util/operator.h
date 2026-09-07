@@ -101,7 +101,8 @@ public:
   LAMBDA_VISIT(TemplatedConst<int64_t>);
   LAMBDA_VISIT(TemplatedConst<double>);
   LAMBDA_VISIT(TemplatedConst<bool>);
-  LAMBDA_VISIT(TemplatedConst<std::string>);
+  LAMBDA_VISIT(StringConst);
+  LAMBDA_VISIT(BytesConst);
   LAMBDA_VISIT(dsl::CustomConst);
 
   LAMBDA_VISIT(Instr);

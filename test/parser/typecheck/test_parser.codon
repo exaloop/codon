@@ -16,7 +16,7 @@ def space_test():
     x = 0.77
     y = 0.86
     z = x/(1if((1if(y==0)else(y))==0)else((1if(y==0)else(y))))
-    print(z)  #: 0.895349
+    print(z)  #: 0.8953488372093024
 
     h = "hello"
     b = ((True)or(False))or((("sR2Kt7"))==(h))

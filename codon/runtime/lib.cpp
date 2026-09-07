@@ -13,6 +13,7 @@
 #include <fmt/format.h>
 #include <fstream>
 #include <iostream>
+#include <locale.h>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -231,63 +232,286 @@ SEQ_FUNC void seq_gc_exclude_static_roots(void *start, void *end) {
 /*
  * String conversion
  */
-static seq_str_t string_conv(const std::string &s) {
-  auto n = s.size();
-  auto *p = (char *)seq_alloc_atomic(n);
-  memcpy(p, s.data(), n);
-  return {p, (seq_int_t)n};
+
+#define UTF8_BUFFER_SIZE 256
+
+typedef struct {
+  uint8_t *ptr;
+  size_t len;
+} seq_utf8_t;
+
+static inline size_t utf8_size(uint32_t c) {
+  if (c <= 0x7f)
+    return 1;
+  if (c <= 0x7ff)
+    return 2;
+  if (c <= 0xffff)
+    return 3;
+  return 4;
 }
 
-template <typename T> std::string default_format(T n) {
-  return fmt::format(FMT_STRING("{}"), n);
-}
-
-template <> std::string default_format(double n) {
-  return fmt::format(FMT_STRING("{:g}"), n);
-}
-
-template <typename T> seq_str_t fmt_conv(T n, seq_str_t format, bool *error) {
-  *error = false;
-  try {
-    if (format.len == 0) {
-      return string_conv(default_format(n));
-    } else {
-      auto locale = std::locale("en_US.UTF-8");
-      std::string fstr(format.str, format.len);
-      return string_conv(fmt::format(
-          locale, fmt::runtime(fmt::format(FMT_STRING("{{:{}}}"), fstr)), n));
-    }
-  } catch (const std::runtime_error &f) {
-    *error = true;
-    return string_conv(f.what());
+static inline uint8_t *utf8_write(uint8_t *p, uint32_t c) {
+  if (c <= 0x7f) {
+    *p++ = (uint8_t)c;
+  } else if (c <= 0x7ff) {
+    *p++ = (uint8_t)(0xc0 | (c >> 6));
+    *p++ = (uint8_t)(0x80 | (c & 0x3f));
+  } else if (c <= 0xffff) {
+    *p++ = (uint8_t)(0xe0 | (c >> 12));
+    *p++ = (uint8_t)(0x80 | ((c >> 6) & 0x3f));
+    *p++ = (uint8_t)(0x80 | (c & 0x3f));
+  } else {
+    *p++ = (uint8_t)(0xf0 | (c >> 18));
+    *p++ = (uint8_t)(0x80 | ((c >> 12) & 0x3f));
+    *p++ = (uint8_t)(0x80 | ((c >> 6) & 0x3f));
+    *p++ = (uint8_t)(0x80 | (c & 0x3f));
   }
+
+  return p;
 }
 
-SEQ_FUNC seq_str_t seq_str_int(seq_int_t n, seq_str_t format, bool *error) {
-  return fmt_conv<seq_int_t>(n, format, error);
+static seq_utf8_t encode_utf8(const seq_str_t *s, uint8_t *tmp) {
+  size_t n = SEQ_STR_LEN(*s);
+  unsigned kind = SEQ_STR_KIND(*s);
+
+  // ASCII is already UTF-8, so no allocation or copy is necessary.
+  if (kind == SEQ_STR_KIND_ASCII || n == 0) {
+    return {s->ptr, n};
+  }
+
+  // Determine the exact UTF-8 size first.
+  size_t out_len = 0;
+
+  switch (kind) {
+  case SEQ_STR_KIND_LATIN1: {
+    const uint8_t *p = s->ptr;
+
+    size_t i = 0;
+    while (i < n && p[i] < 0x80) {
+      out_len += utf8_size(p[i]);
+      ++i;
+    }
+
+    // If the string is pure ASCII, we can return early.
+    if (i == n) {
+      return {s->ptr, n};
+    }
+
+    for (; i < n; ++i)
+      out_len += utf8_size(p[i]);
+
+    break;
+  }
+
+  case SEQ_STR_KIND_UCS2: {
+    for (size_t i = 0; i < n; ++i) {
+      out_len += utf8_size(((uint16_t *)s->ptr)[i]);
+    }
+    break;
+  }
+
+  case SEQ_STR_KIND_UCS4: {
+    for (size_t i = 0; i < n; ++i) {
+      out_len += utf8_size(((uint32_t *)s->ptr)[i]);
+    }
+    break;
+  }
+
+  default:
+    abort();
+  }
+
+  uint8_t *out =
+      (out_len <= UTF8_BUFFER_SIZE) ? tmp : (uint8_t *)seq_alloc_atomic(out_len);
+  uint8_t *dst = out;
+
+  switch (kind) {
+  case SEQ_STR_KIND_LATIN1:
+    for (size_t i = 0; i < n; ++i)
+      dst = utf8_write(dst, s->ptr[i]);
+    break;
+
+  case SEQ_STR_KIND_UCS2:
+    for (size_t i = 0; i < n; ++i) {
+      dst = utf8_write(dst, ((uint16_t *)s->ptr)[i]);
+    }
+    break;
+
+  case SEQ_STR_KIND_UCS4:
+    for (size_t i = 0; i < n; ++i) {
+      dst = utf8_write(dst, ((uint32_t *)s->ptr)[i]);
+    }
+    break;
+  }
+
+  return {out, out_len};
 }
 
-SEQ_FUNC seq_str_t seq_str_uint(seq_int_t n, seq_str_t format, bool *error) {
-  return fmt_conv<uint64_t>(n, format, error);
+static bool utf8_read(const uint8_t *data, size_t length, size_t *pos,
+                      uint32_t *codepoint) {
+  if (*pos == length)
+    return false;
+
+  uint8_t byte = data[(*pos)++];
+  if (byte < 0x80) {
+    *codepoint = byte;
+    return true;
+  }
+
+  size_t width = 0;
+  uint32_t value = 0;
+  if (byte >= 0xC2 && byte <= 0xDF) {
+    width = 1;
+    value = byte & 0x1F;
+  } else if (byte >= 0xE0 && byte <= 0xEF) {
+    width = 2;
+    value = byte & 0x0F;
+  } else if (byte >= 0xF0 && byte <= 0xF4) {
+    width = 3;
+    value = byte & 0x07;
+  } else {
+    abort();
+  }
+
+  if (*pos + width > length)
+    abort();
+  for (size_t i = 0; i < width; ++i) {
+    uint8_t continuation = data[(*pos)++];
+    if ((continuation & 0xC0) != 0x80)
+      abort();
+    value = (value << 6) | (continuation & 0x3F);
+  }
+
+  if ((width == 1 && value < 0x80) || (width == 2 && value < 0x800) ||
+      (width == 3 && value < 0x10000) || value > 0x10FFFF ||
+      (value >= 0xD800 && value <= 0xDFFF))
+    abort();
+
+  *codepoint = value;
+  return true;
 }
 
-SEQ_FUNC seq_str_t seq_str_float(double f, seq_str_t format, bool *error) {
-  return fmt_conv<double>(f, format, error);
+bool seq_str_t::operator==(const char *other) const {
+  const auto *data = reinterpret_cast<const uint8_t *>(other);
+  size_t length = std::strlen(other);
+  size_t pos = 0;
+  size_t index = 0;
+  uint32_t codepoint;
+
+  if (SEQ_STR_KIND(*this) == SEQ_STR_KIND_ASCII && length != SEQ_STR_LEN(*this))
+    return false;
+
+  while (utf8_read(data, length, &pos, &codepoint)) {
+    if (index == SEQ_STR_LEN(*this))
+      return false;
+
+    uint32_t current;
+    switch (SEQ_STR_KIND(*this)) {
+    case SEQ_STR_KIND_ASCII:
+    case SEQ_STR_KIND_LATIN1:
+      current = ptr[index];
+      break;
+    case SEQ_STR_KIND_UCS2:
+      current = reinterpret_cast<const uint16_t *>(ptr)[index];
+      break;
+    case SEQ_STR_KIND_UCS4:
+      current = reinterpret_cast<const uint32_t *>(ptr)[index];
+      break;
+    default:
+      abort();
+    }
+
+    if (current != codepoint)
+      return false;
+    ++index;
+  }
+
+  return index == SEQ_STR_LEN(*this);
 }
 
-SEQ_FUNC seq_str_t seq_str_ptr(void *p, seq_str_t format, bool *error) {
-  return fmt_conv(fmt::ptr(p), format, error);
+static seq_str_t string_conv(const std::string &s) {
+  if (s.empty())
+    return {nullptr, 0};
+
+  const auto *data = reinterpret_cast<const uint8_t *>(s.data());
+  size_t length = 0;
+  uint32_t maxchar = 0;
+  size_t pos = 0;
+  uint32_t codepoint;
+  while (utf8_read(data, s.size(), &pos, &codepoint)) {
+    ++length;
+    maxchar = std::max(maxchar, codepoint);
+  }
+
+  unsigned kind = SEQ_STR_KIND_ASCII;
+  size_t width = 1;
+  if (maxchar > 0xFFFF) {
+    kind = SEQ_STR_KIND_UCS4;
+    width = sizeof(uint32_t);
+  } else if (maxchar > 0xFF) {
+    kind = SEQ_STR_KIND_UCS2;
+    width = sizeof(uint16_t);
+  } else if (maxchar > 0x7F) {
+    kind = SEQ_STR_KIND_LATIN1;
+  }
+
+  auto *out = (uint8_t *)seq_alloc_atomic(length * width);
+  pos = 0;
+  for (size_t i = 0; utf8_read(data, s.size(), &pos, &codepoint); ++i) {
+    if (kind == SEQ_STR_KIND_UCS4)
+      reinterpret_cast<uint32_t *>(out)[i] = codepoint;
+    else if (kind == SEQ_STR_KIND_UCS2)
+      reinterpret_cast<uint16_t *>(out)[i] = codepoint;
+    else
+      out[i] = codepoint;
+  }
+
+  auto meta =
+      (uint64_t(length) & SEQ_STR_LEN_MASK) | (uint64_t(kind) << SEQ_STR_KIND_SHIFT);
+  return {out, static_cast<seq_int_t>(meta)};
 }
 
-SEQ_FUNC seq_str_t seq_str_str(seq_str_t s, seq_str_t format, bool *error) {
-  std::string t(s.str, s.len);
-  return fmt_conv(t, format, error);
+SEQ_FUNC seq_str_t seq_locale_decimal_point() {
+  return string_conv(localeconv()->decimal_point);
+}
+
+SEQ_FUNC seq_str_t seq_locale_thousands_sep() {
+  return string_conv(localeconv()->thousands_sep);
+}
+
+SEQ_FUNC seq_bytes_t seq_locale_grouping() {
+  auto *grouping = localeconv()->grouping;
+  return {grouping, static_cast<seq_int_t>(std::strlen(grouping))};
+}
+
+SEQ_FUNC seq_str_t seq_locale_numeric() {
+  auto *locale = setlocale(LC_NUMERIC, nullptr);
+  return string_conv(locale ? locale : "");
+}
+
+SEQ_FUNC bool seq_set_locale_numeric(seq_str_t locale) {
+  return setlocale(LC_NUMERIC, locale.encode().c_str()) != nullptr;
+}
+
+std::string seq_str_t::encode() const {
+  uint8_t utf8_buf[UTF8_BUFFER_SIZE];
+  auto utf8 = encode_utf8(this, utf8_buf);
+  std::string result(reinterpret_cast<char *>(utf8.ptr), utf8.len);
+  if (utf8.ptr != utf8_buf && utf8.ptr != ptr)
+    seq_free(utf8.ptr);
+  return result;
 }
 
 SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
+  if (SEQ_STR_KIND(s) != SEQ_STR_KIND_ASCII) {
+    *e = reinterpret_cast<char *>(s.ptr);
+    return 0.0;
+  }
   double result;
-  auto r = fast_float::from_chars(s.str, s.str + s.len, result);
-  *e = (r.ec == std::errc() || r.ec == std::errc::result_out_of_range) ? r.ptr : s.str;
+  auto r =
+      fast_float::from_chars((char *)s.ptr, (char *)s.ptr + SEQ_STR_LEN(s), result);
+  *e = (r.ec == std::errc() || r.ec == std::errc::result_out_of_range) ? r.ptr
+                                                                       : (char *)s.ptr;
   return result;
 }
 
@@ -296,12 +520,8 @@ SEQ_FUNC double seq_float_from_str(seq_str_t s, const char **e) {
  */
 
 SEQ_FUNC seq_str_t seq_check_errno() {
-  if (errno) {
-    std::string msg = strerror(errno);
-    auto *buf = (char *)seq_alloc_atomic(msg.size());
-    memcpy(buf, msg.data(), msg.size());
-    return {buf, (seq_int_t)msg.size()};
-  }
+  if (errno)
+    return string_conv(strerror(errno));
   return {nullptr, 0};
 }
 
@@ -311,13 +531,19 @@ static std::ostringstream capture;
 static std::mutex captureLock;
 
 SEQ_FUNC void seq_print_full(seq_str_t str, FILE *fo) {
+  uint8_t utf8_buf[UTF8_BUFFER_SIZE];
+  auto utf8 = encode_utf8(&str, utf8_buf);
+
   if ((seq_flags & SEQ_FLAG_CAPTURE_OUTPUT) && (fo == stdout || fo == stderr)) {
     captureLock.lock();
-    capture.write(str.str, str.len);
+    capture.write((char *)utf8.ptr, utf8.len);
     captureLock.unlock();
   } else {
-    fwrite(str.str, 1, (size_t)str.len, fo);
+    fwrite(utf8.ptr, 1, utf8.len, fo);
   }
+
+  if (utf8.ptr != utf8_buf && utf8.ptr != str.ptr)
+    seq_free(utf8.ptr);
 }
 
 std::string codon::runtime::getCapturedOutput() {

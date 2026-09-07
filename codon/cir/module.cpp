@@ -67,6 +67,7 @@ const std::string Module::FLOAT16_NAME = "float16";
 const std::string Module::BFLOAT16_NAME = "bfloat16";
 const std::string Module::FLOAT128_NAME = "float128";
 const std::string Module::STRING_NAME = "str";
+const std::string Module::BYTES_NAME = "bytes";
 
 const std::string Module::EQ_MAGIC_NAME = "__eq__";
 const std::string Module::NE_MAGIC_NAME = "__ne__";
@@ -259,6 +260,14 @@ Type *Module::getStringType() {
     return rVal;
   return Nr<RecordType>(STRING_NAME,
                         std::vector<Type *>{unsafeGetPointerType(), unsafeGetIntType()},
+                        std::vector<std::string>{"_ptr", "_meta"});
+}
+
+Type *Module::getBytesType() {
+  if (auto *rVal = getType(BYTES_NAME))
+    return rVal;
+  return Nr<RecordType>(BYTES_NAME,
+                        std::vector<Type *>{unsafeGetPointerType(), unsafeGetIntType()},
                         std::vector<std::string>{"_ptr", "_len"});
 }
 
@@ -331,6 +340,10 @@ Value *Module::getBool(bool v) { return Nr<BoolConst>(v, getBoolType()); }
 
 Value *Module::getString(std::string v) {
   return Nr<StringConst>(std::move(v), getStringType());
+}
+
+Value *Module::getBytes(std::string v) {
+  return Nr<BytesConst>(std::move(v), getBytesType());
 }
 
 Type *Module::unsafeGetPointerType(Type *base) {

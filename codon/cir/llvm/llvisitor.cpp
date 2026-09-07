@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <fmt/args.h>
 #include <sys/wait.h>
@@ -28,6 +29,8 @@ const std::string INLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "inline");
 const std::string NOINLINE_ATTR =
     ast::getMangledFunc("std.internal.attributes", "noinline");
+const std::string LLVM_MEMORY_NONE_ATTR =
+    ast::getMangledFunc("std.internal.attributes", "llvm_memory_none");
 const std::string GPU_KERNEL_ATTR = ast::getMangledFunc("std.internal.gpu", "kernel");
 
 const std::string MAIN_UNCLASH = ".main.unclash";
@@ -1711,6 +1714,8 @@ void LLVMVisitor::visit(const ExternalFunc *x) {
   coro = {};
   func->setDoesNotThrow();
   func->setWillReturn();
+  if (util::hasAttribute(x, LLVM_MEMORY_NONE_ATTR))
+    func->setDoesNotAccessMemory();
 }
 
 namespace {
@@ -2441,19 +2446,106 @@ void LLVMVisitor::visit(const BoolConst *x) {
 
 void LLVMVisitor::visit(const StringConst *x) {
   B->SetInsertPoint(block);
-  std::string s = x->getVal();
-  auto *strVar =
-      new llvm::GlobalVariable(*M, llvm::ArrayType::get(B->getInt8Ty(), s.length() + 1),
-                               /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
-                               llvm::ConstantDataArray::getString(*context, s), ".str");
+  const auto &utf8 = x->getVal();
+  std::vector<uint32_t> codepoints;
+  codepoints.reserve(utf8.size());
+  uint32_t maxchar = 0;
+
+  for (size_t pos = 0; pos < utf8.size();) {
+    auto byte = static_cast<uint8_t>(utf8[pos]);
+    uint32_t codepoint = 0;
+    size_t width = 0;
+
+    if (byte < 0x80) {
+      codepoint = byte;
+      width = 1;
+    } else if (byte >= 0xC2 && byte <= 0xDF) {
+      codepoint = byte & 0x1F;
+      width = 2;
+    } else if (byte >= 0xE0 && byte <= 0xEF) {
+      codepoint = byte & 0x0F;
+      width = 3;
+    } else if (byte >= 0xF0 && byte <= 0xF4) {
+      codepoint = byte & 0x07;
+      width = 4;
+    } else {
+      seqassertn(false, "invalid UTF-8 string constant: {:x}", byte);
+    }
+
+    seqassertn(pos + width <= utf8.size(), "truncated UTF-8 string constant");
+    for (size_t i = 1; i < width; ++i) {
+      auto continuation = static_cast<uint8_t>(utf8[pos + i]);
+      seqassertn((continuation & 0xC0) == 0x80, "invalid UTF-8 string constant");
+      codepoint = (codepoint << 6) | (continuation & 0x3F);
+    }
+
+    seqassertn((width == 1 || codepoint >= 0x80) &&
+                   (width != 3 || codepoint >= 0x800) &&
+                   (width != 4 || codepoint >= 0x10000) && codepoint <= 0x10FFFF,
+               "invalid UTF-8 string constant");
+
+    codepoints.push_back(codepoint);
+    maxchar = std::max(maxchar, codepoint);
+    pos += width;
+  }
+
+  unsigned kind = 0;
+  llvm::IntegerType *elementType = B->getInt8Ty();
+  if (maxchar > 0xFFFF) {
+    kind = 3;
+    elementType = B->getInt32Ty();
+  } else if (maxchar > 0xFF) {
+    kind = 2;
+    elementType = B->getInt16Ty();
+  } else if (maxchar > 0x7F) {
+    kind = 1;
+  }
+
+  std::vector<llvm::Constant *> elements;
+  elements.reserve(codepoints.size() + 1);
+  for (auto codepoint : codepoints)
+    elements.push_back(llvm::ConstantInt::get(elementType, codepoint));
+  elements.push_back(llvm::ConstantInt::get(elementType, 0));
+
+  auto *arrayType = llvm::ArrayType::get(elementType, elements.size());
+  auto *strVar = new llvm::GlobalVariable(
+      *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, elements), ".str");
   strVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
   auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
   auto *ptr = B->CreateBitCast(strVar, B->getPtrTy());
-  auto *len = B->getInt64(s.length());
+
+  constexpr int LENGTH_BITS = 56;
+  seqassertn(codepoints.size() < (1ULL << LENGTH_BITS), "string constant too large");
+
+  auto *meta = B->getInt64(codepoints.size() | (uint64_t(kind) << LENGTH_BITS));
   llvm::Value *str = llvm::UndefValue::get(strType);
   str = B->CreateInsertValue(str, ptr, 0);
-  str = B->CreateInsertValue(str, len, 1);
+  str = B->CreateInsertValue(str, meta, 1);
   value = str;
+}
+
+void LLVMVisitor::visit(const BytesConst *x) {
+  B->SetInsertPoint(block);
+  const auto &bytes = x->getVal();
+  std::vector<llvm::Constant *> elements;
+  elements.reserve(bytes.size() + 1);
+  for (auto byte : bytes)
+    elements.push_back(B->getInt8(static_cast<uint8_t>(byte)));
+  elements.push_back(B->getInt8(0));
+
+  auto *arrayType = llvm::ArrayType::get(B->getInt8Ty(), elements.size());
+  auto *bytesVar = new llvm::GlobalVariable(
+      *M, arrayType, /*isConstant=*/true, llvm::GlobalValue::PrivateLinkage,
+      llvm::ConstantArray::get(arrayType, elements), ".bytes");
+  bytesVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+
+  auto *bytesType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
+  auto *ptr = B->CreateBitCast(bytesVar, B->getPtrTy());
+  llvm::Value *bytesValue = llvm::UndefValue::get(bytesType);
+  bytesValue = B->CreateInsertValue(bytesValue, ptr, 0);
+  bytesValue = B->CreateInsertValue(bytesValue, B->getInt64(bytes.size()), 1);
+  value = bytesValue;
 }
 
 void LLVMVisitor::visit(const dsl::CustomConst *x) {

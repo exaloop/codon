@@ -2,36 +2,35 @@
 
 import internal.static as static
 
-@pure
-@C
-def strlen(a: cobj) -> int:
-    pass
-
 @extend
-class str:
+class bytes:
     @__internal__
-    def __new__(p: Ptr[u8], l: int) -> str:
+    def __new__(p: Ptr[u8], l: int) -> bytes:
         pass
 
     @overload
-    def __new__() -> str:
-        return str(Ptr[u8](), 0)
+    def __new__() -> bytes:
+        return bytes(Ptr[u8](), 0)
 
     @overload
-    def __new__(what) -> str:
-        if isinstance(what, Union):
-            return Union._str(what)
-        elif isinstance(what, type):
-            return what.__repr__()
-        elif hasattr(what, "__str__"):
-            return what.__str__()
-        else:
-            if not hasattr(what, "__repr__") and hasattr(what, "__repr_default__"):
-                return what.__repr_default__()
-            return what.__repr__()
+    def __new__(what) -> bytes:
+        return what.__bytes__()
 
-    def __str__(what: str) -> str:
+    @overload
+    def __new__(what: bytes) -> bytes:
         return what
+
+    def __new__(what: str, encoding: str, errors: str = "strict") -> bytes:
+        return what.encode(encoding, errors)
+
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        return str(self, encoding, errors)
+
+    def __str__(self) -> str:
+        return self.__repr__()
+
+    def __bytes__(self) -> bytes:
+        return self
 
     def __len__(self) -> int:
         return self._len
@@ -39,17 +38,17 @@ class str:
     def __bool__(self) -> bool:
         return self._len != 0
 
-    def __copy__(self) -> str:
+    def __copy__(self) -> bytes:
         return self
 
-    def __deepcopy__(self) -> str:
+    def __deepcopy__(self) -> bytes:
         return self
 
-    def __ptrcopy__(self) -> str:
+    def __ptrcopy__(self) -> bytes:
         n = self._len
         p = cobj(n)
-        str.memcpy(p, self._ptr, n)
-        return str(p, n)
+        bytes.memcpy(p, self._ptr, n)
+        return bytes(p, n)
 
     @llvm
     def memcpy(dest: Ptr[u8], src: Ptr[u8], len: int) -> None:
@@ -69,29 +68,29 @@ class str:
         call void @llvm.memset.p0i8.i64(ptr %dest, i8 %val, i64 %len, i32 0, i1 false)
         ret {} {}
 
-    def __add__(self, other: str) -> str:
+    def __add__(self, other: bytes) -> bytes:
         len1 = self._len
         len2 = other._len
         len3 = len1 + len2
         p = Ptr[u8](len3)
-        str.memcpy(p, self._ptr, len1)
-        str.memcpy(p + len1, other._ptr, len2)
-        return str(p, len3)
+        bytes.memcpy(p, self._ptr, len1)
+        bytes.memcpy(p + len1, other._ptr, len2)
+        return bytes(p, len3)
 
     def c_str(self) -> cobj:
         n = self.__len__()
         p = cobj(n + 1)
-        str.memcpy(p, self._ptr, n)
+        bytes.memcpy(p, self._ptr, n)
         p[n] = u8(0)
         return p
 
-    def from_ptr(t: cobj) -> str:
-        n = strlen(t)
+    def from_ptr(t: cobj) -> bytes:
+        n = _C.strlen(t)
         p = Ptr[u8](n)
-        str.memcpy(p, t, n)
-        return str(p, n)
+        bytes.memcpy(p, t, n)
+        return bytes(p, n)
 
-    def __eq__(self, other: str) -> bool:
+    def __eq__(self, other: bytes) -> bool:
         if self._len != other._len:
             return False
         i = 0
@@ -101,13 +100,13 @@ class str:
             i += 1
         return True
 
-    def __match__(self, obj: str) -> bool:
+    def __match__(self, obj: bytes) -> bool:
         return self.__eq__(obj)
 
-    def __ne__(self, other: str) -> bool:
+    def __ne__(self, other: bytes) -> bool:
         return not self.__eq__(other)
 
-    def cat(*args) -> str:
+    def cat(*args) -> bytes:
         total = 0
         if (
             static.len(args) == 1
@@ -115,44 +114,40 @@ class str:
             and hasattr(args[0], "__len__")
         ):
             for s in args[0]:
-                if not isinstance(s, str):
+                if not isinstance(s, bytes):
                     compile_error("not a string")
                 total += s._len
             p = cobj(total)
             n = 0
             for s in args[0]:
-                str.memcpy(p + n, s._ptr, s._len)
+                bytes.memcpy(p + n, s._ptr, s._len)
                 n += s._len
-            return str(p, total)
+            return bytes(p, total)
         elif static.len(args) == 1 and hasattr(args[0], "__iter__"):
             sz = 10
             p = cobj(sz)
             n = 0
             for s in args[0]:
-                if not isinstance(s, str):
+                if not isinstance(s, bytes):
                     compile_error("not a string")
                 if n + s._len > sz:
                     sz = 1 + 3 * (n + s._len).cdiv(2)
                     pp = cobj(sz)
-                    str.memcpy(pp, p, n)
+                    bytes.memcpy(pp, p, n)
                     p = pp
-                str.memcpy(p + n, s._ptr, s._len)
+                bytes.memcpy(p + n, s._ptr, s._len)
                 n += s._len
-            return str(p, n)
+            return bytes(p, n)
         else:
             for i in static.range(static.len(args)):
                 s = args[i]
-                if not isinstance(s, str):
-                    compile_error("not a string")
+                if not isinstance(s, bytes):
+                    compile_error("not bytes")
                 total += s._len
             p = cobj(total)
             n = 0
             for i in static.range(static.len(args)):
                 s = args[i]
-                str.memcpy(p + n, s._ptr, s._len)
+                bytes.memcpy(p + n, s._ptr, s._len)
                 n += s._len
-            return str(p, total)
-
-    def __prefix_b__(s: str, N: Literal[int]):
-        # Currently a no-op, as Codon str's are just bytes
-        return s
+            return bytes(p, total)

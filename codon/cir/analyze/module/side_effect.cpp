@@ -257,6 +257,8 @@ struct SideEfectAnalyzer : public util::ConstVisitor {
 
   void visit(const StringConst *v) override { set(v, Status::PURE); }
 
+  void visit(const BytesConst *v) override { set(v, Status::PURE); }
+
   void visit(const dsl::CustomConst *v) override { set(v, Status::PURE); }
 
   void visit(const AssignInstr *v) override {

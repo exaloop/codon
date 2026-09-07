@@ -189,12 +189,29 @@ ScopingVisitor::unpackFString(const std::string &value) {
   int braceCount = 0, braceStart = 0;
   for (int i = 0; i < value.size(); i++) {
     if (value[i] == '{') {
-      if (braceStart < i)
-        items.emplace_back(value.substr(braceStart, i - braceStart));
-      if (!braceCount)
+      if (!braceCount && i + 1 < value.size() && value[i + 1] == '{') {
+        if (braceStart < i)
+          items.emplace_back(value.substr(braceStart, i - braceStart));
+        items.emplace_back("{");
+        i++;
         braceStart = i + 1;
+        continue;
+      }
+      if (!braceCount) {
+        if (braceStart < i)
+          items.emplace_back(value.substr(braceStart, i - braceStart));
+        braceStart = i + 1;
+      }
       braceCount++;
     } else if (value[i] == '}') {
+      if (!braceCount && i + 1 < value.size() && value[i + 1] == '}') {
+        if (braceStart < i)
+          items.emplace_back(value.substr(braceStart, i - braceStart));
+        items.emplace_back("}");
+        i++;
+        braceStart = i + 1;
+        continue;
+      }
       braceCount--;
       if (!braceCount) {
         std::string code = value.substr(braceStart, i - braceStart);
@@ -212,9 +229,77 @@ ScopingVisitor::unpackFString(const std::string &value) {
           if (!transform(items.back().expr))
             return items;
           items.back().format = val->second;
+
+          auto &debugText = items.back().format.text;
+          if (!debugText.empty()) {
+            int leadingWhitespace = 0;
+            while (leadingWhitespace < code.size() &&
+                   (code[leadingWhitespace] == ' ' || code[leadingWhitespace] == '\t'))
+              leadingWhitespace++;
+            if (leadingWhitespace)
+              debugText = code.substr(0, leadingWhitespace) + debugText;
+
+            if (items.back().format.conversion.empty() &&
+                items.back().format.spec.empty())
+              items.back().format.conversion = "r";
+          }
+
+          auto &spec = items.back().format.spec;
+          if (spec.find('{') != std::string::npos) {
+            std::string format = "{";
+            if (!items.back().format.conversion.empty())
+              format += "!" + items.back().format.conversion;
+            format += ":";
+
+            std::vector<Expr *> arguments{items.back().expr};
+            int start = 0;
+            for (int j = 0; j < spec.size(); j++) {
+              if (spec[j] != '{')
+                continue;
+
+              format += spec.substr(start, j - start) + "{";
+              int depth = 1;
+              int expressionStart = ++j;
+              while (j < spec.size() && depth) {
+                if (spec[j] == '{')
+                  depth++;
+                else if (spec[j] == '}')
+                  depth--;
+                if (depth)
+                  j++;
+              }
+
+              auto nested =
+                  parseExpr(ctx->cache,
+                            spec.substr(expressionStart, j - expressionStart), offset);
+              if (!nested) {
+                addError(nested.takeError());
+                return items;
+              }
+
+              auto nestedExpr = nested->first;
+              if (!transform(nestedExpr))
+                return items;
+              arguments.push_back(nestedExpr);
+
+              auto &nestedFormat = nested->second;
+              if (!nestedFormat.conversion.empty())
+                format += "!" + nestedFormat.conversion;
+              if (!nestedFormat.spec.empty())
+                format += ":" + nestedFormat.spec;
+              format += "}";
+              start = j + 1;
+            }
+
+            format += spec.substr(start) + "}";
+            items.back().expr =
+                N<CallExpr>(N<DotExpr>(N<StringExpr>(format), "format"), arguments);
+            items.back().format.conversion.clear();
+            items.back().format.spec.clear();
+          }
         }
+        braceStart = i + 1;
       }
-      braceStart = i + 1;
     }
   }
   if (braceCount > 0)

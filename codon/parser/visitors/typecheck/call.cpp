@@ -939,6 +939,8 @@ std::pair<bool, Expr *> TypecheckVisitor::transformSpecialCall(CallExpr *expr) {
     return {true, transformStaticIntToStr(expr)};
   } else if (isF(ei, "std.internal.static", "platform")) { // static
     return {true, transformStaticPlatform(expr)};
+  } else if (isF(ei, "std.internal.static", "contains")) { // static
+    return {true, transformStaticContains(expr)};
   } else {
     return {false, nullptr};
   }
