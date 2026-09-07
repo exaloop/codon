@@ -1461,13 +1461,29 @@ def test_unicode_views_hash_translation_and_codec_edges():
 def test_partition_and_predicates():
     assert unicode("abc").isalnum()
     assert unicode("abc").isalpha()
+    assert unicode("AZaz").isalpha()
+    assert not unicode("A[z").isalpha()
     assert unicode("123").isdigit()
+    assert unicode("09").isdigit()
+    assert not unicode("0:9").isdigit()
     assert unicode(" ").isspace()
 
     assert not unicode("").isalnum()
     assert not unicode("").isalpha()
     assert not unicode("").isdigit()
     assert not unicode("").isspace()
+
+    wide_alpha = (_unicode_from_codepoint(0x1F600) + unicode("AZaz"))[1:]
+    wide_digits = (_unicode_from_codepoint(0x1F600) + unicode("09"))[1:]
+    assert wide_alpha.isalpha()
+    assert wide_digits.isdigit()
+
+    for cp in range(128):
+        character = _unicode_from_codepoint(cp)
+        assert (unicode("A") + character * 15).isalpha() == (
+            0x41 <= cp <= 0x5A or 0x61 <= cp <= 0x7A
+        )
+        assert (unicode("0") + character * 15).isdigit() == (0x30 <= cp <= 0x39)
 
     left, mid, right = unicode("hello,world").partition(unicode(","))
     assert left == unicode("hello")

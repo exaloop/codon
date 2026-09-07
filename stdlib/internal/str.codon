@@ -144,6 +144,31 @@ def _utf8_nonascii_mask16(data: Ptr[u8], pos: int) -> u16:
 
 @pure
 @llvm
+def _ascii_alpha_mask16(data: Ptr[u8], pos: int) -> u16:
+    %p = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %p, align 1
+    %lower = or <16 x i8> %bytes, <i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32, i8 32>
+    %ge = icmp uge <16 x i8> %lower, <i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97, i8 97>
+    %le = icmp ule <16 x i8> %lower, <i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122, i8 122>
+    %alpha = and <16 x i1> %ge, %le
+    %mask = bitcast <16 x i1> %alpha to i16
+    ret i16 %mask
+
+
+@pure
+@llvm
+def _ascii_digit_mask16(data: Ptr[u8], pos: int) -> u16:
+    %p = getelementptr inbounds i8, ptr %data, i64 %pos
+    %bytes = load <16 x i8>, ptr %p, align 1
+    %ge = icmp uge <16 x i8> %bytes, <i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48, i8 48>
+    %le = icmp ule <16 x i8> %bytes, <i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57, i8 57>
+    %digit = and <16 x i1> %ge, %le
+    %mask = bitcast <16 x i1> %digit to i16
+    ret i16 %mask
+
+
+@pure
+@llvm
 def _utf8_scan_twobyte_16(data: Ptr[u8], pos: int) -> int:
     declare i16 @llvm.ctpop.i16(i16)
     %src = getelementptr inbounds i8, ptr %data, i64 %pos
@@ -3381,6 +3406,22 @@ class str:
         if len(self) == 0:
             return False
 
+        if self._is_ascii():
+            if not _is_ascii_alpha(int(self._ptr[0])):
+                return False
+            i = 1
+            if len(self) >= 16:
+                i = 0
+            while i + 16 <= len(self):
+                if _ascii_alpha_mask16(self._ptr, i) != u16(0xFFFF):
+                    return False
+                i += 16
+            while i < len(self):
+                if not _is_ascii_alpha(int(self._ptr[i])):
+                    return False
+                i += 1
+            return True
+
         for i in range(len(self)):
             if not unicode_is_alpha(self._load_codepoint(i)):
                 return False
@@ -3390,6 +3431,22 @@ class str:
     def isdigit(self) -> bool:
         if len(self) == 0:
             return False
+
+        if self._is_ascii():
+            if not _is_ascii_digit(int(self._ptr[0])):
+                return False
+            i = 1
+            if len(self) >= 16:
+                i = 0
+            while i + 16 <= len(self):
+                if _ascii_digit_mask16(self._ptr, i) != u16(0xFFFF):
+                    return False
+                i += 16
+            while i < len(self):
+                if not _is_ascii_digit(int(self._ptr[i])):
+                    return False
+                i += 1
+            return True
 
         for i in range(len(self)):
             if not unicode_is_digit(self._load_codepoint(i)):
