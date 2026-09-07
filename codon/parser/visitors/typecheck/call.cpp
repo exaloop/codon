@@ -725,7 +725,7 @@ Expr *TypecheckVisitor::callReorderArguments(FuncType *calleeFn, CallExpr *expr,
                  typeArgs.size() == calleeFn->funcGenerics.size()),
             "bad vector sizes");
   if (!calleeFn->funcGenerics.empty()) {
-    auto niGenerics = calleeFn->ast->getNonInferrableGenerics();
+    const auto &niGenerics = calleeFn->ast->getNonInferrableGenerics();
     for (size_t si = 0; !expr->hasAttribute(Attr::ExprOrderedCall) &&
                         si < calleeFn->funcGenerics.size();
          si++) {
