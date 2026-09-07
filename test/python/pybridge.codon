@@ -40,6 +40,26 @@ def test_pythrow():
 test_pythrow()
 
 @test
+def test_pysetattr():
+    from python import mymodule
+    # Set an existing attribute and read it back through the pyobj boundary.
+    box = mymodule.Box(1)
+    box.value = 42
+    assert int.__from_py__(box._getattr('value').p) == 42
+    # Create a brand-new attribute.
+    box.extra = 7
+    assert int.__from_py__(box._getattr('extra').p) == 7
+    # A failing __setattr__ must surface the real Python exception, not be swallowed.
+    frozen = mymodule.Frozen()
+    try:
+        frozen.value = 1
+    except PyError as e:
+        assert e.message == "frozen"
+        return
+    assert False
+test_pysetattr()
+
+@test
 def test_pyargs():
     from python import mymodule
     assert str(mymodule.print_args_var(1, 2, 3)) == "a=1, b=2, c=3, args=(), kwargs={}"

@@ -399,6 +399,15 @@ void TypecheckVisitor::visit(AssignMemberStmt *stmt) {
           stmt->getRhs()));
       return;
     }
+    // Case: transform `pyobj.member = value` to `pyobj._setattr("member", value)`.
+    // Mirrors the read path in @c getClassMember, deferring the attribute write to
+    // CPython at runtime.
+    if (!member && lhsClass->is("pyobj")) {
+      resultStmt = transform(
+          N<ExprStmt>(N<CallExpr>(N<DotExpr>(stmt->getLhs(), "_setattr"),
+                                  N<StringExpr>(stmt->getMember()), stmt->getRhs())));
+      return;
+    }
     // Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
     if (!member) {
       auto u = instantiateUnbound(), v = instantiateUnbound();

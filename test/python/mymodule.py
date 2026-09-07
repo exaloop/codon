@@ -19,3 +19,10 @@ def test_call_no_args():
 
 def test_call_one_arg(x):
     return x**2
+
+class Box:
+    def __init__(self, value):
+        self.value = value
+class Frozen:
+    def __setattr__(self, name, value):
+        raise ValueError('frozen')
