@@ -15,8 +15,10 @@ class Generator:
         pass
 
     def done(self) -> bool:
-        self.__resume__()
-        return self.__done__()
+        is_done = self.__done__()
+        if not is_done:
+            self.__resume__()
+        return is_done
 
     def __next__(self: Generator[T]) -> T:
         if isinstance(T, None):
