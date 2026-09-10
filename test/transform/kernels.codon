@@ -702,6 +702,35 @@ def test_numpy_vectorized():
     check_unary(kernel_22_f64, kernel_22_f32, a64, a32,
                 np.cosh(a64), np.cosh(a32))
 
+@test
+def test_memcmp():
+    from internal.c_stubs import memcmp
+
+    @gpu.kernel
+    def compare(a, b, n, result):
+        result[0] = int(memcmp(a._ptr, b._ptr, n))
+        result[1] = int(a == b)
+
+    def check(a, b, n, sign):
+        result = [0, 0]
+        compare(a, b, n, result, grid=1, block=1)
+        assert (result[0] > 0) - (result[0] < 0) == sign
+        assert bool(result[1]) == (a == b)
+
+    check('', '', 0, 0)
+    check('a', 'b', 0, 0)
+    check('C', 'K', 1, -1)
+    check('K', 'C', 1, 1)
+    check('same', 'same', 4, 0)
+    check('prefix-a', 'prefix-b', 7, 0)
+    check('prefix-a', 'prefix-b', 8, -1)
+    check('a\0b', 'a\0c', 3, -1)
+    # Latin-1 storage must be compared as unsigned bytes, not signed chars.
+    check('\xff', '\x7f', 1, 1)
+    check('\x7f', '\xff', 1, -1)
+    check('\u0100', '\u0101', 2, -1)
+    check('\U0001f600', '\U0001f601', 4, -1)
+
 
 test_hello_world()
 test_raw()
@@ -714,3 +743,4 @@ test_kitchen_sink()
 test_auto_par()
 test_scalar_types()
 test_numpy_vectorized()
+test_memcmp()

@@ -533,6 +533,44 @@ void remapFunctions(llvm::Module *M) {
 
   // functions that need to be generated as they're not available on GPU
   static const std::vector<std::pair<std::string, Codegen>> fillins = {
+      {"memcmp",
+       [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
+         // NVPTX has neither libc's memcmp nor LLVM's libc-call folding. Give
+         // string equality a device body that can also fold for constant strings.
+         auto *F = B.GetInsertBlock()->getParent();
+         auto &context = B.getContext();
+         auto *entry = B.GetInsertBlock();
+         auto *loop = llvm::BasicBlock::Create(context, "loop", F);
+         auto *next = llvm::BasicBlock::Create(context, "next", F);
+         auto *different = llvm::BasicBlock::Create(context, "different", F);
+         auto *equal = llvm::BasicBlock::Create(context, "equal", F);
+         auto *sizeTy = llvm::cast<llvm::IntegerType>(args[2]->getType());
+         auto *zero = llvm::ConstantInt::get(sizeTy, 0);
+         auto *one = llvm::ConstantInt::get(sizeTy, 1);
+         B.CreateCondBr(B.CreateICmpEQ(args[2], zero), equal, loop);
+
+         B.SetInsertPoint(loop);
+         auto *index = B.CreatePHI(sizeTy, 2);
+         index->addIncoming(zero, entry);
+         auto *lhs = B.CreateLoad(B.getInt8Ty(),
+                                  B.CreateInBoundsGEP(B.getInt8Ty(), args[0], index));
+         auto *rhs = B.CreateLoad(B.getInt8Ty(),
+                                  B.CreateInBoundsGEP(B.getInt8Ty(), args[1], index));
+         B.CreateCondBr(B.CreateICmpEQ(lhs, rhs), next, different);
+
+         B.SetInsertPoint(next);
+         auto *nextIndex = B.CreateAdd(index, one);
+         index->addIncoming(nextIndex, next);
+         B.CreateCondBr(B.CreateICmpEQ(nextIndex, args[2]), equal, loop);
+
+         B.SetInsertPoint(different);
+         B.CreateRet(B.CreateSub(B.CreateZExt(lhs, F->getReturnType()),
+                                 B.CreateZExt(rhs, F->getReturnType())));
+
+         B.SetInsertPoint(equal);
+         B.CreateRet(llvm::ConstantInt::get(F->getReturnType(), 0));
+       }},
+
       {"seq_alloc",
        [](llvm::IRBuilder<> &B, const std::vector<llvm::Value *> &args) {
          auto *M = B.GetInsertBlock()->getModule();

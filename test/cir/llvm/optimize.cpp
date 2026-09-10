@@ -5,7 +5,10 @@
 #include "codon/compiler/compiler.h"
 #include "codon/compiler/options.h"
 
+#include <cstdlib>
+
 #include <llvm/AsmParser/Parser.h>
+#include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/SourceMgr.h>
 
 using namespace codon;
@@ -151,7 +154,89 @@ OptimizedModule compileAndOptimizeIR(const std::string &code) {
   ir::optimize(result.module.get(), options.get());
   return result;
 }
+
+class GPUCodegenTest : public testing::Test {
+  llvm::SmallString<128> libdevicePath;
+  llvm::FileRemover libdeviceRemover;
+
+protected:
+  void SetUp() override {
+    // These tests only emit PTX and need neither CUDA nor a GPU. Supply an empty
+    // libdevice module rather than depending on a system CUDA installation.
+    int fd;
+    auto error =
+        llvm::sys::fs::createTemporaryFile("codon-gpu-test", "ll", fd, libdevicePath);
+    ASSERT_FALSE(error) << error.message();
+    libdeviceRemover.setFile(libdevicePath);
+    llvm::raw_fd_ostream output(fd, /*shouldClose=*/true);
+    output << "; Empty libdevice for compile-only GPU tests.\n";
+  }
+
+  std::string compileToPTX(const std::string &code) {
+    auto options = Options::getDefault("build/codon_test");
+    options->debug = false;
+    options->standalone = true;
+    options->libdevice = libdevicePath.str().str();
+    Compiler compiler(*options);
+    llvm::cantFail(compiler.parseCode("gpu_codegen_test.codon", code));
+    llvm::cantFail(compiler.compile());
+    auto *module = compiler.getLLVMVisitor()->getModule();
+    ir::optimize(module, options.get());
+    auto *ptx = module->getNamedGlobal(".ptx");
+    if (!ptx || !ptx->hasInitializer()) {
+      ADD_FAILURE() << "No embedded PTX generated";
+      return {};
+    }
+    return llvm::cast<llvm::ConstantDataArray>(ptx->getInitializer())
+        ->getAsCString()
+        .str();
+  }
+};
 } // namespace
+
+TEST_F(GPUCodegenTest, FoldsNumpyArrayOrderChecks) {
+  // Keep compiler state isolated, as in the source-file test harness.
+  ASSERT_EXIT(
+      {
+        auto ptx = compileToPTX(R"(
+import numpy as np
+
+values = np.ones(16)
+@par(gpu=True)
+for i in range(len(values)):
+    values[i] = np.exp(values[i])
+)");
+
+        EXPECT_NE(std::string::npos, ptx.find(".visible .entry"));
+        EXPECT_NE(std::string::npos, ptx.find("__nv_exp"));
+        EXPECT_EQ(std::string::npos, ptx.find("memcmp"));
+        EXPECT_EQ(std::string::npos, ptx.find("_str_"));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
+
+TEST_F(GPUCodegenTest, LowersRuntimeStringEquality) {
+  ASSERT_EXIT(
+      {
+        auto ptx = compileToPTX(R"(
+import gpu
+
+@gpu.kernel
+def compare(a, b, result):
+    result[0] = a == b
+
+result = [False]
+compare('hello', 'world', result, grid=1, block=1)
+)");
+
+        EXPECT_NE(std::string::npos, ptx.find(".visible .entry"));
+        // A device-side helper is fine; an external libc symbol is not.
+        EXPECT_EQ(std::string::npos, ptx.find(") memcmp\n"));
+        std::_Exit(HasFailure() ? EXIT_FAILURE : EXIT_SUCCESS);
+      },
+      testing::ExitedWithCode(EXIT_SUCCESS), "");
+}
 
 TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   auto compiler = compileAndOptimize("print(\"hello world\")\n");
