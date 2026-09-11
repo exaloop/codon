@@ -21,6 +21,10 @@ struct CJITResult jit_execute_python(void *jit, char *name, char **types,
                                      size_t types_size, char *pyModule, char **py_vars,
                                      size_t py_vars_size, void *arg, uint8_t debug);
 
+struct CJITResult gpu_execute_python(void *jit, char *name, char **types,
+                                     size_t types_size, char *pyModule, char **py_vars,
+                                     size_t py_vars_size, void *arg, uint8_t debug);
+
 struct CJITResult jit_execute_safe(void *jit, char *code, char *file, int32_t line,
                                    uint8_t debug);
 

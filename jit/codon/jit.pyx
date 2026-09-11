@@ -76,6 +76,38 @@ cdef class JITWrapper:
                 free(c_pyvars[i])
             free(c_pyvars)
 
+    def run_gpu_wrapper(self, name: str, types: list[str], module: str, pyvars: list[str], args, debug) -> object:
+        cdef char** c_types = <char**>calloc(len(types), sizeof(char*))
+        cdef char** c_pyvars = <char**>calloc(len(pyvars), sizeof(char*))
+        if not c_types or not c_pyvars:
+            raise JITError("Cython allocation failed")
+        try:
+            for i, s in enumerate(types):
+                bytes = s.encode('utf-8')
+                c_types[i] = <char*>malloc(len(bytes) + 1)
+                strcpy(c_types[i], bytes)
+            for i, s in enumerate(pyvars):
+                bytes = s.encode('utf-8')
+                c_pyvars[i] = <char*>malloc(len(bytes) + 1)
+                strcpy(c_pyvars[i], bytes)
+
+            result = codon.jit.gpu_execute_python(
+                self.jit, name.encode('utf-8'), c_types, len(types),
+                module.encode('utf-8'), c_pyvars, len(pyvars),
+                <void *>args, <uint8_t>debug
+            )
+            if result.error is NULL:
+                return <object>result.result
+            else:
+                msg = get_free_str(result.error)
+                raise JITError(msg)
+        finally:
+            for i in range(len(types)):
+                free(c_types[i])
+            free(c_types)
+            for i in range(len(pyvars)):
+                free(c_pyvars[i])
+            free(c_pyvars)
 
 def codon_library():
     cdef char* c = codon.jit.get_jit_library()
