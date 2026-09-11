@@ -1,8 +1,14 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
 
-from ...bridge import Callable, Dict, Enum, List, abstractmethod, dataclass
+import copy
+from typing import TYPE_CHECKING
+
+from ...bridge import Callable, Dict, Enum, List, abstractmethod, cast, dataclass
 from . import nodes as ast
+
+if TYPE_CHECKING:
+    from ..cache import Cache
 
 
 def mangle(
@@ -162,16 +168,14 @@ class Type:
                     value.trait = None
             for value in self.statics:
                 if isinstance(value, Link):
-                    value.static_kind = Type.Behaviour.Runtime
+                    value._static_kind = Type.Behaviour.Runtime
 
-    cache: object
-    info: ast.Node.SrcInfo
+    cache: Cache
+    info: ast.Node.SrcInfo | None
 
-    def __init__(
-        self, cache: object = None, info: ast.Node.SrcInfo | None = None, copy: Type | None = None
-    ):
-        self.cache = cache or getattr(copy, "cache", None)
-        self.info = info or getattr(copy, "info", ast.Node.SrcInfo())
+    def __init__(self, cache: Cache, info: ast.Node.SrcInfo | None = None):
+        self.cache = cache
+        self.info = info
 
     # Unifies a given type with the current type.
     # @param typ A given type.
@@ -262,16 +266,139 @@ class Type:
     def realized_name(self) -> str:
         pass
 
-    def is_type(self, name: str):
-        cls = self.follow()
-        return isinstance(cls, Class) and cls.name == name
+    @property
+    def cls(self) -> Class | None:
+        t = self.follow()
+        if isinstance(t, Class):
+            return cast(Class, t)
+        return None
 
-    def get_static_kind(self) -> Type.Behaviour:
+    @property
+    def require_cls(self) -> Class:
+        if c := self.cls:
+            return c
+        raise ValueError("expected a Class")
+
+    @property
+    def func(self) -> Function | None:
+        t = self.follow()
+        if isinstance(t, Function):
+            return cast(Function, t)
+        return None
+
+    @property
+    def require_func(self) -> Function:
+        if c := self.func:
+            return c
+        raise ValueError("expected a Function")
+
+    @property
+    def union(self) -> Union | None:
+        t = self.follow()
+        if isinstance(t, Union):
+            return cast(Union, t)
+        return None
+
+    @property
+    def literal(self) -> Literal | None:
+        t = self.follow()
+        if isinstance(t, Literal):
+            return cast(Literal, t)
+        return None
+
+    @property
+    def link(self) -> Link | None:
+        t = self.follow()
+        if isinstance(t, Link):
+            return cast(Link, t)
+        return None
+
+    @property
+    def require_link(self) -> Link:
+        if c := self.link:
+            return c
+        raise ValueError("expected a Link")
+
+    @property
+    def unbound(self) -> Link | None:
+        t = self.follow()
+        if isinstance(t, Link) and t.kind is Link.Kind.Unbound:
+            return t
+        return None
+
+    @property
+    def int(self) -> int | None:
+        t = self.follow()
+        if isinstance(t, IntLiteral):
+            return t.value
+        return None
+
+    @property
+    def str(self) -> str | None:
+        t = self.follow()
+        if isinstance(t, StrLiteral):
+            return t.value
+        return None
+
+    @property
+    def bool(self) -> bool | None:
+        t = self.follow()
+        if isinstance(t, BoolLiteral):
+            return t.value
+        return None
+
+    @property
+    def require_int(self) -> int:
+        if c := self.int:
+            return c
+        raise ValueError("expected an IntLiteral")
+
+    @property
+    def require_str(self) -> str:
+        if c := self.str:
+            return c
+        raise ValueError("expected an IntLiteral")
+
+    @property
+    def require_bool(self) -> bool:
+        if c := self.bool:
+            return c
+        raise ValueError("expected an IntLiteral")
+
+    @property
+    def partial(self) -> Class | None:
+        return None
+
+    def __eq__(self, value):
+        if isinstance(value, str):
+            if cls := self.follow().cls:
+                return cls.name == value
+            return False
+        else:
+            return super().__eq__(value)
+
+    @property
+    def static_kind(self) -> Type.Behaviour:
         if isinstance(self, Literal):
-            return self.get_static_kind()
+            return self.static_kind
         if isinstance((link := self.follow()), Link):
             return link.static_kind
         return Type.Behaviour.Runtime
+
+    def __or__(self, other: Type):
+        return self.unify(other, None) >= 0
+
+    def __ior__(self, other: Type | None):
+        if other:
+            undo = Type.UnifyContext()
+            if self.unify(other, undo) < 0:
+                undo.undo()
+                raise TypeError("cannot unify")
+        return self
+
+    @property
+    def is_runtime(self):
+        return self.static_kind is Type.Behaviour.Runtime
 
 
 @dataclass(init=False)
@@ -290,7 +417,7 @@ class Link(Type):
     # The type to which Link points to.
     # nullptr if unknown (unbound or generic).
     type: Type | None = None
-    static_kind: Type.Behaviour = Type.Behaviour.Runtime
+    _static_kind: Type.Behaviour = Type.Behaviour.Runtime
     # Optional trait that unbound type requires prior to unification.
     trait: Type | None = None
     # The generic name of a generic type, if applicable.
@@ -321,7 +448,7 @@ class Link(Type):
         self.id = id
         self.level = level
         self.type = type
-        self.static_kind = static_kind
+        self._static_kind = static_kind
         self.trait = trait
         self.generic_name = generic_name
         self.default_type = default_type
@@ -334,39 +461,38 @@ class Link(Type):
     # Checks if a current (unbound) type occurs within a given type.
     # Needed to prevent a recursive unification (e.g. ?1 with list[?1]).
     def occurs(self, what: Type, undo: Type.UnifyContext | None):
-        if isinstance(what, Link):
-            if what.kind is Link.Kind.Unbound:
-                if what.id == self.id:
-                    return True
-                if what.trait and self.occurs(what.trait, undo):
-                    return True
-                if undo and what.level > self.level:
-                    undo.leveled.append((what, what.level))
+        match what:
+            case Link(kind=Link.Kind.Unbound, id=self.id):
+                return True
+            case Link(kind=Link.Kind.Unbound, trait=trait) if trait and self.occurs(trait, undo):
+                return True
+            case Link(kind=Link.Kind.Unbound, level=level):
+                if level > self.level:
+                    if undo:
+                        undo.leveled.append((what, what.level))
                     what.level = self.level
                 return False
-            elif what.kind is Link.Kind.Link:
+            case Link(kind=Link.Kind.Link):
                 assert what.type, "type is None"
                 return self.occurs(what.type, undo)
-            else:
+            case Literal():
                 return False
-        elif isinstance(what, Literal):
-            return False
-        elif isinstance(what, Class):
-            return any(g.type and self.occurs(g.type, undo) for g in what.generics)
-        else:
-            return False
+            case Class(generics=generics):
+                return any(g.type and self.occurs(g.type, undo) for g in generics)
+            case _:
+                return False
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if self.kind is Link.Kind.Link and self.type:
             # Case: Just follow the link
             return self.type.unify(what, undo)
         # Case: Unbound unification
-        if self.get_static_kind() is not what.get_static_kind():
-            if self.get_static_kind() is Type.Behaviour.Runtime:
+        if self._static_kind is not what.static_kind:
+            if self._static_kind is Type.Behaviour.Runtime:
                 # other one is; move this to non-static equivalent
                 if undo is not None:
                     undo.statics.append(self)
-                    self.static_kind = what.get_static_kind()
+                    self._static_kind = what.static_kind
             else:
                 return -1
         if isinstance(what, Link):
@@ -416,7 +542,7 @@ class Link(Type):
                 self.type.trait = self.trait
         return 0
 
-    def generalize(self, level: int) -> Type:
+    def generalize(self, level: int):
         if self.kind is Link.Kind.Generic:
             return self
         if self.kind is Link.Kind.Unbound:
@@ -424,7 +550,7 @@ class Link(Type):
                 return Link(
                     kind=Link.Kind.Generic,
                     id=self.id,
-                    static_kind=self.static_kind,
+                    static_kind=self._static_kind,
                     trait=None if self.trait is None else self.trait.generalize(level),
                     generic_name=self.generic_name,
                     default_type=None
@@ -439,19 +565,18 @@ class Link(Type):
             return self.type.generalize(level)
         assert False, "link is null"
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
         if self.kind is Link.Kind.Link and self.type:
             return self.type.instantiate(level, ctx)
         if self.kind is not Link.Kind.Generic:
             return self
         if self.id not in ctx.cache:
-            ctx.cache[self.id] = Link(
-                kind=Link.Kind.Unbound,
-                id=ctx.next_unbound(),
-                level=level,
-                trait=None if self.trait is None else self.trait.instantiate(level, ctx),
-                copy=self,
-            )
+            link = copy.copy(self)
+            link.kind = Link.Kind.Unbound
+            link.id = ctx.next_unbound()
+            link.level = level
+            link.trait = None if self.trait is None else self.trait.instantiate(level, ctx)
+            ctx.cache[self.id] = link
         return ctx.cache[self.id]
 
     def follow(self) -> Type:
@@ -486,8 +611,8 @@ class Link(Type):
             trait = "" if self.trait is None else f":{self.trait.to_string(mode)}"
             static = (
                 ""
-                if self.static_kind is Type.Behaviour.Runtime
-                else f":S{list(Type.Behaviour).index(self.static_kind)}"
+                if self._static_kind is Type.Behaviour.Runtime
+                else f":S{list(Type.Behaviour).index(self._static_kind)}"
             )
             return f"{generic}{prefix}{self.id}{trait}{static}"
         if self.trait:
@@ -502,6 +627,14 @@ class Link(Type):
         assert self.type, "unexpected generic link"
         return self.type.realized_name()
 
+    @property
+    def static_kind(self) -> Type.Behaviour:
+        link = self.follow()
+        if isinstance(link, Link):
+            return link._static_kind
+        else:
+            return link.static_kind
+
 
 @dataclass
 class Generic:
@@ -512,7 +645,7 @@ class Generic:
 
     def generalize(self, level: int):
         if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            value = self.type.get_non_static_type().generalize(level)
+            value = self.type.runtime_type.generalize(level)
         else:
             value = self.type.generalize(level)
         return Generic(self.name, value, self.id, self.static_kind)
@@ -520,7 +653,7 @@ class Generic:
     def instantiate(self, level: int, ctx: Type.InstantiateContext):
         value: Type | None = None
         if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            value = self.type.get_non_static_type().instantiate(level, ctx)
+            value = self.type.runtime_type.instantiate(level, ctx)
         else:
             value = self.type.generalize(level)
         return Generic(self.name, value, self.id, self.static_kind)
@@ -529,18 +662,22 @@ class Generic:
         assert self.type, "generic type is null"
         if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
             if mode != 2:
-                return self.type.get_non_static_type().to_string(mode)
+                return self.type.runtime_type.to_string(mode)
         return self.type.to_string(mode)
 
     def realized_name(self) -> str:
         assert self.type, "generic type is null"
         if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
-            return self.type.get_non_static_type().realized_name()
+            return self.type.runtime_type.realized_name()
         return self.type.realized_name()
 
     def __str__(self):
         name = "" if not self.name else f"{self.name} = "
         return f"({name}{self.type})"
+
+    @property
+    def is_runtime(self):
+        return self.static_kind is Type.Behaviour.Runtime
 
 
 @dataclass(init=False)
@@ -566,14 +703,19 @@ class Class(Type):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.name = name
-        self.generics = [] if generics is None else generics
-        self.hidden_generics = [] if hidden_generics is None else hidden_generics
-        self.is_tuple = is_tuple
-        self._cached_name = _cached_name
-
-    def __getitem__(self, key):
-        return self.generics[key].type
+        if "base" in kwargs:
+            copy = kwargs["base"]
+            self.name = copy.name
+            self.generics = copy.generics
+            self.hidden_generics = copy.hidden_generics
+            self.is_tuple = copy.is_tuple
+            self._cached_name = copy._cached_name
+        else:
+            self.name = name
+            self.generics = [] if generics is None else generics
+            self.hidden_generics = [] if hidden_generics is None else hidden_generics
+            self.is_tuple = is_tuple
+            self._cached_name = _cached_name
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
         if isinstance(what, Class):
@@ -582,16 +724,16 @@ class Class(Type):
             if what.name == "int" and self.name == Stdlib.Int:
                 return self[0].unify(IntLiteral(value=64, cache=self.cache), undo)
             if self.name == what.name == Stdlib.UnrealizedType:
-                left = self[0].instantiate(Type.InstantiateContext(self.cache))
-                right = what[0].instantiate(Type.InstantiateContext(self.cache))
+                left = self[0].instantiate(0, Type.InstantiateContext(self.cache))
+                right = what[0].instantiate(0, Type.InstantiateContext(self.cache))
                 return left.unify(right, undo)
             score = 3
             if self.name == what.name == "__NTuple__":
                 self_n, what_n = self[0], what[0]
-                self_t, what_t = self[1], what[1]
-                if isinstance(self_n, IntLiteral) and isinstance(what_n, IntLiteral):
-                    count = self_n.value * len(self_t.generics)
-                    if count != what_n.value * len(what_t.generics):
+                self_t, what_t = self[1].require_cls, what[1].require_cls
+                if (self_i := self_n.int) and (what_i := what_n.int):
+                    count = self_i * len(self_t.generics)
+                    if count != what_i * len(what_t.generics):
                         return -1
                     for i in range(count):
                         if (part := self_t[i].unify(what_t[i], undo)) < 0:
@@ -601,7 +743,7 @@ class Class(Type):
             elif what.name == "__NTuple__":
                 return what.unify(self, undo)
             elif self.name == "__NTuple__" and what.name == Stdlib.Tuple:
-                self_n, self_t = self[0], self[1]
+                self_n, self_t = self[0].require_cls, self[1].require_cls
                 if isinstance(self_n, IntLiteral):
                     count = self_n.value
                     if count * len(self_t.generics) != len(what.generics):
@@ -618,15 +760,19 @@ class Class(Type):
                     if (part := self_n.unify(IntLiteral(value=count, cache=self.cache), undo)) < 0:
                         return part
 
-                    with self.cache.typecheck() as tc:
-                        if count:
-                            tup = tc.instantiate_type(tc.generate_tuple(1), [what[0]])
-                            for generic in what.generics[1:]:
-                                if (part := tup[0].unify(generic.type, undo)) < 0:
-                                    return part
-                                score += part
-                        else:
-                            tup = tc.instantiate_type(tc.generate_tuple(1))
+                    from ..passes.typecheck.utils import generate_tuple, instantiate
+
+                    ctx = self.cache.type_ctx
+                    assert ctx
+                    tuple_type = generate_tuple(ctx, 1)
+                    if count:
+                        tup = instantiate(ctx, tuple_type, [what[0]]).require_cls
+                        for generic in what.generics[1:]:
+                            if (part := tup[0].unify(generic.type, undo)) < 0:
+                                return part
+                            score += part
+                    else:
+                        tup = instantiate(ctx, tuple_type).require_cls
                     if (part := self[1].unify(tup, undo)) < 0:
                         return part
                 return score
@@ -649,7 +795,7 @@ class Class(Type):
         else:
             return -1
 
-    def generalize(self, level: int) -> Type:
+    def generalize(self, level: int):
         return Class(
             self.name,
             [g.generalize(level) for g in self.generics],
@@ -659,7 +805,7 @@ class Class(Type):
             info=self.info,
         )
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
         return Class(
             self.name,
             [g.instantiate(level, ctx) for g in self.generics],
@@ -709,14 +855,13 @@ class Class(Type):
 
     def to_string(self, mode: int) -> str:
         if self.name == Stdlib.NamedTuple:
-            if isinstance(self[0], IntLiteral):
-                tid = self[0].value
+            if tid := self[0].int:
                 assert 0 <= tid < len(self.cache.generated_tuple_names), f"bad id: {tid}"
                 names = self.cache.generated_tuple_names[tid]
                 if not names:
                     return self.name
                 values = [
-                    f"{field_name}={self[1].generics[index].to_string(mode)}"
+                    f"{field_name}={self[1].require_cls.generics[index].to_string(mode)}"
                     for index, field_name in enumerate(names)
                 ]
                 return f"{self.name}[{','.join(values)}]"
@@ -724,9 +869,9 @@ class Class(Type):
                 return f"{self.name}[{self[0].to_string(mode)}]"
         elif self.name == "Partial" and isinstance(self[3], Class):
             # Name: function[full_args](instantiated_args...)
-            known = self.get_partial_mask()
-            function = self.get_partial_func()
-            positional = [generic.to_string(mode) for generic in self[1].generics]
+            known = self.partial_mask
+            function = self.partial_func
+            positional = [generic.to_string(mode) for generic in self[1].require_cls.generics]
 
             values = []
             ai, gi = 0, 0
@@ -781,7 +926,9 @@ class Class(Type):
         else:
             values = []
             if self.name == Stdlib.Union and isinstance(self[0], Class):
-                values = ["|".join(sorted({g.realized_name() for g in self[0].generics}))]
+                values = [
+                    "|".join(sorted({g.realized_name() for g in self[0].require_cls.generics}))
+                ]
             else:
                 values = [g.realized_name() for g in self.generics if g.name]
             result = self.name if not values else f"{self.name}[{','.join(values)}]"
@@ -789,17 +936,37 @@ class Class(Type):
             self._cached_name = result
         return result
 
-    def get_partial_func(self):
-        assert self.name == "Partial" and isinstance(self[3][0], Function), "not a partial"
-        return self[3][0]
+    def __getitem__(self, key) -> Type:
+        return self.generics[key].type
 
-    def get_partial_mask(self) -> str:
-        assert self.name == "Partial" and isinstance(self[3][0], StrLiteral), "not a partial"
-        return self[0].value
+    def __len__(self):
+        return len(self.generics)
 
+    @property
+    def partial(self):
+        if self.name == "Partial" and self[3].require_cls[0].func:
+            return self
+        return None
+
+    @property
+    def partial_func(self) -> Function:
+        assert self.partial, "not a partial"
+        return self[3].require_cls[0].require_func
+
+    @property
+    def partial_mask(self) -> List[Flag]:
+        assert self.partial, "not a partial"
+        return [Class.Flag(int(p)) for p in self[0].require_str]
+
+    @property
     def is_partial_empty(self):
-        args, kwargs = self[1], self[2]
-        return len(args.generics) == 1 and not args[0].generics and not kwargs[1].generics
+        assert self.partial, "not a partial"
+        args, kwargs = self[1].require_cls, self[2].require_cls
+        return (
+            len(args) == 1
+            and not args[0].require_cls.generics
+            and not kwargs[1].require_cls.generics
+        )
 
 
 @dataclass(init=False)
@@ -818,14 +985,17 @@ class Literal(Class):
 
     @abstractmethod
     def get_static_expr(self):
-        # C++ source: codon/parser/ast/types/static.h:34
         raise NotImplementedError
 
-    def get_static_kind(self) -> Type.Behaviour:
+    @property
+    def static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Runtime
 
-    def get_non_static_type(self) -> Type:
-        return self.cache.find_class(self.name)
+    @property
+    def runtime_type(self) -> Class:
+        cls = self.cache.find_class(self.name)
+        assert cls
+        return cls
 
 
 @dataclass(init=False)
@@ -847,11 +1017,11 @@ class IntLiteral(Literal):
         else:
             return -1
 
-    def generalize(self, level: int) -> Type:
-        return IntLiteral(self.value, copy=self)
+    def generalize(self, level: int):
+        return copy.copy(self)
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
-        return IntLiteral(self.value, copy=self)
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        return copy.copy(self)
 
     def to_string(self, mode: int):
         return f"{self.value}" if mode < 2 else f"Literal[{self.value}]"
@@ -859,7 +1029,8 @@ class IntLiteral(Literal):
     def get_static_expr(self) -> ast.Expr:
         return ast.IntExpr(self.value)
 
-    def get_static_kind(self) -> Type.Behaviour:
+    @property
+    def static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Int
 
 
@@ -882,19 +1053,20 @@ class StrLiteral(Literal):
         else:
             return -1
 
-    def generalize(self, level: int) -> Type:
-        return StrLiteral(self.value, copy=self)
+    def generalize(self, level: int):
+        return copy.copy(self)
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
-        return StrLiteral(self.value, copy=self)
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        return copy.copy(self)
 
     def to_string(self, mode: int):
         return f"'{self.value!r}'" if mode < 2 else f"Literal['{self.value!r}']"
 
     def get_static_expr(self) -> ast.Expr:
-        return ast.StringExpr(strings=[ast.StringExpr.String(value=self.value)])
+        return ast.StringExpr(value=self.value)
 
-    def get_static_kind(self) -> Type.Behaviour:
+    @property
+    def static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.String
 
 
@@ -917,11 +1089,11 @@ class BoolLiteral(Literal):
         else:
             return -1
 
-    def generalize(self, level: int) -> Type:
-        return BoolLiteral(self.value, copy=self)
+    def generalize(self, level: int):
+        return copy.copy(self)
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
-        return BoolLiteral(self.value, copy=self)
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        return copy.copy(self)
 
     def to_string(self, mode: int):
         return f"{self.value}'" if mode < 2 else f"Literal[{self.value}]"
@@ -929,7 +1101,8 @@ class BoolLiteral(Literal):
     def get_static_expr(self) -> ast.Expr:
         return ast.BoolExpr(self.value)
 
-    def get_static_kind(self) -> Type.Behaviour:
+    @property
+    def static_kind(self) -> Type.Behaviour:
         return Type.Behaviour.Bool
 
 
@@ -964,7 +1137,7 @@ class Function(Class):
         score = 2
         if isinstance(what, Function):
             # Check if names and parents match.
-            if self.get_func_name() != what.get_func_name() or (
+            if self.func_name != what.func_name or (
                 (self.func_parent is None) != (what.func_parent is None)
             ):
                 return -1
@@ -975,7 +1148,7 @@ class Function(Class):
                 score += part
             # Check if function generics match.
             assert len(self.func_generics) == len(what.func_generics), (
-                f"generic size mismatch for {self.get_func_name()}"
+                f"generic size mismatch for {self.func_name}"
             )
             for left, right in zip(self.func_generics, what.func_generics):
                 if (part := left.type.unify(right.type, undo)) < 0:
@@ -984,25 +1157,35 @@ class Function(Class):
         part = super().unify(what, undo)
         return part if part < 0 else score + part
 
-    def generalize(self, level: int) -> Type:
+    def generalize(self, level: int):
         return Function(
             self.ast,
             [g.generalize(level) for g in self.func_generics],
             None if self.func_parent is None else self.func_parent.generalize(level),
-            copy=super().generalize(level),
+            name=self.name,
+            generics=[g.generalize(level) for g in self.generics],
+            hidden_generics=[g.generalize(level) for g in self.hidden_generics],
+            is_tuple=self.is_tuple,
+            cache=self.cache,
+            info=self.info,
         )
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
         func_generics = []
         for g in self.func_generics:
             func_generics.append(t := g.instantiate(level, ctx))
             if ctx.cache and t and g.id in ctx.cache:
-                ctx.cache[g.id] = t
+                ctx.cache[g.id] = t.type
         return Function(
             self.ast,
-            func_generics,
-            None if self.func_parent is None else self.func_parent.generalize(level),
-            copy=super().generalize(level),
+            [g.instantiate(level, ctx) for g in self.func_generics],
+            None if self.func_parent is None else self.func_parent.instantiate(level, ctx),
+            name=self.name,
+            generics=[g.instantiate(level, ctx) for g in self.generics],
+            hidden_generics=[g.instantiate(level, ctx) for g in self.hidden_generics],
+            is_tuple=self.is_tuple,
+            cache=self.cache,
+            info=self.info,
         )
 
     def has_unbounds(self, include_generics: bool):
@@ -1012,7 +1195,7 @@ class Function(Class):
             return True
         if any(g.type.has_unbounds(include_generics) for g in self if g.type):
             return True
-        ret = self.get_ret_type()
+        ret = self.ret_type
         return ret is not None and ret.has_unbounds(include_generics)
 
     def get_unbounds(self, include_generics: bool) -> List[Link]:
@@ -1036,7 +1219,7 @@ class Function(Class):
             if not isinstance(arg, Function) and not arg.type.can_realize():
                 if not allow_passthrough:
                     return False
-                for unbound in arg.get_unbounds(include_generics=True):
+                for unbound in arg.type.get_unbounds(include_generics=True):
                     if unbound.kind is Link.Kind.Generic or not unbound.pass_through:
                         return False
         result = all(g.type.can_realize() for g in self.func_generics if g.type)
@@ -1049,7 +1232,7 @@ class Function(Class):
         return result
 
     def is_instantiated(self):
-        ret_type = self.get_ret_type()
+        ret_type = self.ret_type
         removed = None
         if isinstance(ret_type, Function) and ret_type.func_parent is self:
             removed = ret_type.func_parent
@@ -1059,6 +1242,7 @@ class Function(Class):
             result = result and self.func_parent.is_instantiated()
         result = result and super().is_instantiated()
         if removed:
+            assert isinstance(ret_type, Function)
             ret_type.func_parent = removed
         return result
 
@@ -1074,7 +1258,7 @@ class Function(Class):
                         f"{self.cache.rev(generic.name)}={generic.type.to_string(mode)}"
                     )
         values = []
-        ret = self.get_ret_type()
+        ret = self.ret_type
         # Important: return type does not have to be realized.
         if mode == 2:
             assert ret, "function return type is null"
@@ -1102,26 +1286,29 @@ class Function(Class):
     def realized_name(self):
         generic_values = [g.realized_name() for g in self.func_generics if g.name]
         argument_values = []
-        for arg in self.generics[0].type.generics:
+        for arg in self.generics[0].type.require_cls.generics:
             argument_values.append(
                 arg.type.realized_name() if isinstance(arg.type, Function) else arg.realized_name()
             )
         values = ",".join(argument_values + generic_values)
         parent = "" if self.func_parent is None else f"{self.func_parent.realized_name()}:"
         suffix = "" if not values else f"[{values}]"
-        return f"{parent}{self.get_func_name()}{suffix}"
+        return f"{parent}{self.func_name}{suffix}"
 
-    def get_ret_type(self) -> Type | None:
+    @property
+    def ret_type(self) -> Type:
         return self[1]
 
-    def get_func_name(self) -> str:
+    @property
+    def func_name(self) -> str:
+        assert self.ast
         return self.ast.name
 
-    def __getitem__(self, index: int) -> Type | None:
-        return self.generics[0].type[index].type
+    def __getitem__(self, index: int) -> Type:
+        return self.generics[0].type.require_cls[index]
 
     def __iter__(self):
-        yield from self.generics[0].type.generics
+        yield from self.generics[0].type.require_cls.generics
 
 
 @dataclass(init=False)
@@ -1152,11 +1339,11 @@ class Union(Class):
             return -1
 
     def to_string(self, mode: int) -> str:
-        if mode == 2 or not self.generics or not self[0]:
+        if mode == 2 or not self.generics or not self[0].cls:
             return super().to_string(mode)
         if not isinstance(self[0], Class):
             return super().to_string(mode)
-        values = sorted({g.to_string(mode) for g in self[0].generics})
+        values = sorted({g.to_string(mode) for g in self[0].require_cls.generics})
         joined = "|".join(values)
         return self.name if not joined else f"{self.name}[{joined}]"
 
@@ -1166,9 +1353,9 @@ class Union(Class):
 
     def get_realization_types(self) -> List[Type]:
         assert self.can_realize(), f"cannot realize {self.to_string(2)}"
-        assert self.generics and isinstance(self[0], Class), "union realization tuple is null"
+        assert self.generics and self[0].cls, "union realization tuple is null"
         realization = {}
-        for generic in self[0].generics:
+        for generic in self[0].require_cls.generics:
             if generic.type:
                 realization[generic.type.realized_name()] = generic.type
         return [realization[key] for key in sorted(realization)]
@@ -1210,7 +1397,7 @@ class CallableTrait(Trait):
             if typ.is_type(StdlibTypes.TypeWrap):
                 type_visitor = TypecheckVisitor(type_context)
                 methods = type_visitor.find_method(typ.get_class(), "__call_no_self__")
-                function_holder = type_visitor.instantiate_type(methods[0])
+                function_holder = type_visitor.instantiate(methods[0])
                 wrapped_class = function_holder.get_class()
                 assert isinstance(wrapped_class, ClassType), "bad type wrapper callable"
                 tr = wrapped_class
@@ -1242,7 +1429,7 @@ class CallableTrait(Trait):
                     "bad instantiated partial function"
                 )
                 tr_function = instantiated_class
-                known = partial.get_partial_mask()
+                known = partial.partial_mask
 
                 known_arg_value = partial.generics[1].type
                 known_arg_class = None if known_arg_value is None else known_arg_value.get_class()
@@ -1386,7 +1573,7 @@ class CallableTrait(Trait):
                         # if we have *args: type, use those types
                         star_type = type_visitor.extract_type(transformed)
                         star_arg_types = [star_type for _ in star_arg_types]
-                    tuple_type = type_visitor.instantiate_type(
+                    tuple_type = type_visitor.instantiate(
                         type_visitor.generate_tuple(len(star_arg_types)), star_arg_types
                     )
                     target_type = tr_input_args.generics[star].type
@@ -1414,7 +1601,7 @@ class CallableTrait(Trait):
                         assert isinstance(tuple_class_value, ClassType), "bad partial keyword tuple"
                         tuple_class = tuple_class_value
                     identifier_type = IntStaticType(cache=self.cache, value=tuple_id)
-                    keyword_type = type_visitor.instantiate_type(
+                    keyword_type = type_visitor.instantiate(
                         type_visitor.get_stdlib_type(StdlibTypes.NamedTuple),
                         [identifier_type, tuple_class],
                     )
@@ -1451,11 +1638,15 @@ class CallableTrait(Trait):
         return -1
         """
 
-    def generalize(self, level: int) -> Type:
-        return CallableTrait([arg.generalize(level) for arg in self.args], copy=self)
+    def generalize(self, level: int):
+        ret = copy.copy(self)
+        ret.args = [arg.generalize(level) for arg in self.args]
+        return ret
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
-        return CallableTrait([arg.instantiate(level, ctx) for arg in self.args], copy=self)
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        ret = copy.copy(self)
+        ret.args = [arg.instantiate(level, ctx) for arg in self.args]
+        return ret
 
     def to_string(self, mode: int):
         value = self.args[0].to_string(mode)
@@ -1465,9 +1656,9 @@ class CallableTrait(Trait):
 
 @dataclass(init=False)
 class TypeTrait(Trait):
-    type: Type | None = None
+    type: Type
 
-    def __init__(self, type: Type | None = None, **kwargs):
+    def __init__(self, type: Type, **kwargs):
         super().__init__(**kwargs)
         self.type = type
 
@@ -1481,13 +1672,15 @@ class TypeTrait(Trait):
             return 0
         return -1
 
-    def generalize(self, level: int) -> Type:
-        return TypeTrait(None if self.type is None else self.type.generalize(level), copy=self)
+    def generalize(self, level: int):
+        ret = copy.copy(self)
+        ret.type = self.type.generalize(level)
+        return ret
 
-    def instantiate(self, level: int, ctx: Type.InstantiateContext) -> Type:
-        return TypeTrait(
-            None if self.type is None else self.type.instantiate(level, ctx), copy=self
-        )
+    def instantiate(self, level: int, ctx: Type.InstantiateContext):
+        ret = copy.copy(self)
+        ret.type = self.type.instantiate(level, ctx)
+        return ret
 
     def to_string(self, mode: int):
         name = self.type.name if isinstance(self.type, Class) else "-"

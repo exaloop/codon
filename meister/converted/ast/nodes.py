@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import copy
+from typing import TYPE_CHECKING
 
 from ...bridge import CODON, Any, Codon, Dict, Enum, Iterator, List, Set, Tuple, cast, dataclass
 from . import types
+
+if TYPE_CHECKING:
+    from ..cache import Cache
 
 
 class Attr(Enum):
@@ -83,7 +87,7 @@ class Node:
 
     info: Node.SrcInfo
     attributes: Dict[Attr, Any | None]
-    cache: object | None = None
+    cache: Cache | None = None
 
     def __init__(
         self,
@@ -128,8 +132,11 @@ class Node:
     def has(self, key: Attr):
         return key in self.attributes
 
-    def get(self, key: Attr, default: Attribute | None = None):
-        return self.attributes.get(key, default)
+    def get[T: object | None](self, key: Attr, default: T = None) -> T:
+        a = self.attributes.get(key, default)
+        if T is not None:
+            return cast(T, a)
+        return a
 
     def setdefault[T](self, key: Attr, default: T | None = None) -> T:
         return self.attributes.setdefault(key, default)  # type: ignore
@@ -164,7 +171,7 @@ class Node:
 
 
 class NodeError(Exception):
-    info: Node.SrcInfo
+    info: Node.SrcInfo | None
 
     def __init__(self, info, msg):
         super().__init__(msg)
@@ -172,9 +179,20 @@ class NodeError(Exception):
             hasattr(info, "info") and isinstance(info.info, Node.SrcInfo)
         ):
             self.info = info.info
-        else:
+        elif info:
             assert isinstance(info, Node.SrcInfo), f"{info} {type(info)} is not SrcInfo"
             self.info = info
+
+
+class ItemIterator:
+    def __iter__(self):
+        yield from self.items  # type: ignore
+
+    def __len__(self):
+        return len(self.items)  # type: ignore
+
+    def __getitem__(self, idx: int):
+        return self.items[idx]  # type: ignore
 
 
 @dataclass(init=False)
@@ -209,12 +227,11 @@ class Expr(Node):
         else:
             undo = types.Type.UnifyContext()
             if self.type.unify(other, undo) < 0:
-                raise TypeError(
-                    self, f"cannot unify {self.type.pretty_string()} and {other.pretty_string()}"
-                )
+                raise TypeError(self, f"cannot unify {self.type} and {other}")
         return self
 
-    def get_class_type(self) -> types.Class | None:
+    @property
+    def cls(self) -> types.Class | None:
         return self.type if isinstance(self.type, types.Class) else None
 
 
@@ -325,7 +342,8 @@ class IntExpr(Expr):
             except ValueError:
                 pass
 
-    def has_stored_value(self):
+    @property
+    def has_value(self):
         return self.int_value is not None
 
     def get_value(self) -> int:
@@ -366,7 +384,8 @@ class FloatExpr(Expr):
             except ValueError:
                 pass
 
-    def has_stored_value(self):
+    @property
+    def has_value(self):
         return self.float_value is not None
 
     def get_value(self) -> float:
@@ -464,7 +483,7 @@ class KeywordStarExpr(StarExpr):
 
 
 @dataclass(init=False)
-class TupleExpr(Expr):
+class TupleExpr(Expr, ItemIterator):
     items: List[Expr]
 
     def __init__(self, items: List[Expr] | None = None, **kwargs):
@@ -613,7 +632,7 @@ class ChainBinaryExpr(Expr):
 
 
 @dataclass(init=False)
-class PipeExpr(Expr):
+class PipeExpr(Expr, ItemIterator):
     @dataclass(init=False)
     class Pipe(Node):
         op: str = ""
@@ -657,7 +676,7 @@ class IndexExpr(Expr):
 
 
 @dataclass(init=False)
-class CallExpr(Expr):
+class CallExpr(Expr, ItemIterator):
     @dataclass(init=False)
     class Arg(Node):
         name: str = ""
@@ -754,7 +773,7 @@ class EllipsisExpr(Expr):
 
 
 @dataclass(init=False)
-class LambdaExpr(Expr):
+class LambdaExpr(Expr, ItemIterator):
     expr: Expr
     items: List[Param]
 
@@ -774,17 +793,12 @@ class YieldExpr(Expr):
 
 @dataclass(init=False)
 class AwaitExpr(Expr):
-    expr: Expr | None = None
+    expr: Expr
     # True if a statement was transformed during type-checking stage
     # (to avoid setting up __await__ multiple times).
     transformed: bool = False
 
-    def __init__(
-        self,
-        expr: Expr | None = None,
-        transformed: bool = False,
-        **kwargs,
-    ):
+    def __init__(self, expr: Expr, transformed: bool = False, **kwargs):
         super().__init__(**kwargs)
         self.expr = expr
         self.transformed = transformed
@@ -813,7 +827,7 @@ class RangeExpr(Expr):
 
 
 @dataclass(init=False)
-class StmtExpr(Expr):
+class StmtExpr(Expr, ItemIterator):
     items: List[Stmt]
     expr: Expr
 
@@ -827,7 +841,7 @@ class StmtExpr(Expr):
 
 
 @dataclass(init=False)
-class InstantiateExpr(Expr):
+class InstantiateExpr(Expr, ItemIterator):
     expr: Expr
     items: List[Expr]
 
@@ -852,7 +866,7 @@ class Stmt(Node):
 
 
 @dataclass(init=False)
-class SuiteStmt(Stmt):
+class SuiteStmt(Stmt, ItemIterator):
     items: List[Stmt]
 
     def __init__(self, *items: Stmt | None, **kwargs):
@@ -875,7 +889,7 @@ class SuiteStmt(Stmt):
         if node is None:
             return
         elif isinstance(node, Expr):
-            self.items.append(ExprStmt(expr=node), done=node.done)
+            self.items.append(ExprStmt(expr=node, done=node.done))
         else:
             self.items.append(node)
         self.done = self.done and node.done
@@ -1080,7 +1094,7 @@ class IfStmt(Stmt):
 
 
 @dataclass(init=False)
-class MatchStmt(Stmt):
+class MatchStmt(Stmt, ItemIterator):
     @dataclass(init=False)
     class Case(Node):
         pattern: Expr
@@ -1178,7 +1192,7 @@ class ImportStmt(Stmt):
 
 
 @dataclass(init=False)
-class TryStmt(Stmt):
+class TryStmt(Stmt, ItemIterator):
     @dataclass(init=False)
     class Except(Stmt):
         var: str = ""
@@ -1250,7 +1264,7 @@ class GlobalStmt(Stmt):
 
 
 @dataclass(init=False)
-class FunctionStmt(Stmt):
+class FunctionStmt(Stmt, ItemIterator):
     name: str = ""
     ret: Expr | None = None
     items: List[Param]
@@ -1405,7 +1419,7 @@ class FunctionStmt(Stmt):
 
 
 @dataclass(init=False)
-class ClassStmt(Stmt):
+class ClassStmt(Stmt, ItemIterator):
     name: str = ""
     items: List[Param]
     suite: SuiteStmt
@@ -1653,7 +1667,7 @@ class CommentStmt(Stmt):
         self.comment = comment
 
 
-def get_static_generic(expr: Expr) -> types.Literal.Behaviour:
+def get_static_generic(expr: Expr | None) -> types.Literal.Behaviour:
     match expr:
         case IndexExpr(expr=IdExpr(value="Static" | "Literal"), index=IdExpr(value=v)):
             return types.Literal.Behaviour.literal_from_string(v)
@@ -1742,7 +1756,7 @@ def dump(
 
     from ...bridge import class_name
 
-    def _format(node: Any, level=0):
+    def _format(node, level=0):
         if indent:
             level += 1
 
@@ -1817,7 +1831,7 @@ def dump(
                 name, braces = "", "[]"
             elif isinstance(node, StringExpr.FormatSpec):
                 name = "StringExpr.FormatSpec"
-            if hasattr(node, "done") and node.done:
+            if getattr(node, "done", False):
                 name += "*"
             if isinstance(node, StringExpr.FormatSpec) and not args:
                 return "", True

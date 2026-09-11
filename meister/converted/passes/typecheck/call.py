@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 
 from ....bridge import List, cast
 from ... import ast, cache
+from ...error import TypecheckError
 from . import classes, infer, ops, special, utils
-from .ctx import TypecheckError
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_print(self: TypeVisitor, node: ast.PrintStmt) -> ast.Node:
+def typecheck_print(self: TypeVisitor, node: ast.PrintStmt) -> ast.Stmt:
     """
     Transform print statement.
     @example
@@ -25,15 +25,15 @@ def typecheck_print(self: TypeVisitor, node: ast.PrintStmt) -> ast.Node:
     if not node.has_newline():
         args.append(ast.CallExpr.Arg(name="end", value=ast.StringExpr(" ")))
     result = ast.ExprStmt(ast.CallExpr(ast.IdExpr("print"), items=args))
-    return self.visit(result)
+    return self.visit_stmt(result)
 
 
-def typecheck_star(self: TypeVisitor, node: ast.StarExpr) -> ast.Node:
+def typecheck_star(_: TypeVisitor, node: ast.StarExpr) -> ast.Node:
     """Just ensure that this expression is not independent of CallExpr where it is handled."""
     raise TypecheckError(node, "unexpected star expression")
 
 
-def typecheck_keywordstar(self: TypeVisitor, node: ast.KeywordStarExpr) -> ast.Node:
+def typecheck_keywordstar(_: TypeVisitor, node: ast.KeywordStarExpr) -> ast.Node:
     """Just ensure that this expression is not independent of CallExpr where it is handled."""
     raise TypecheckError(node, "unexpected keyword-star expression")
 
@@ -44,16 +44,17 @@ def typecheck_ellipsis(self: TypeVisitor, node: ast.EllipsisExpr) -> ast.Node:
     only remaining ellipses are those that belong to PipeExprs.
     """
 
-    if node.is_pipe() and infer.realize(self, node.type):
+    if node.is_pipe() and infer.realize(self.ctx, node.type):
         node.done = True
     elif node.is_standalone():
-        result = self.visit(ast.CallExpr(ast.IdExpr("ellipsis")))
-        infer.unify(node.type, result.type)
+        result = self.visit_expr(ast.CallExpr(ast.IdExpr("ellipsis")))
+        assert node.type and result.type
+        node.type |= result.type
         return result
     return node
 
 
-def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
+def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
     """
     Typecheck a call expression. This is the most complex expression to typecheck.
     @example
@@ -81,7 +82,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
     node.set(ast.Attr.ParentCallExpr)
     if partial.is_partial:
         node.expr.set(ast.Attr.ExprDoNotRealize)
-    node.expr = self.visit(node.expr)
+    node.expr = self.visit_expr(node.expr)
     node.erase(ast.Attr.ParentCallExpr)
     if utils.is_unbound(node.expr):
         return node  # delay
@@ -99,21 +100,21 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
                     "tuple constructor does not accept nested or conditioned comprehensions",
                 )
             first.kind = ast.GeneratorExpr.Kind.TupleGenerator
-            return self.visit(first)
+            return self.visit_expr(first)
         return special.transform_tuple_fn(self, node)
     elif new_expr:
         return new_expr
     elif callee_fn is None:
         return node
 
-    with utils.with_class_generics(self.ctx, callee_fn, transform_arguments, True, True):
+    with utils.with_class_generics(self.ctx, callee_fn, only_mangled=True, instantiate=True):
         if not transform_call_args(self, node):
             return node
 
     # Early dispatch modifier
     if utils.is_dispatch(callee_fn):
-        if callee_fn.get_func_name().startswith("Tuple.__new__"):
-            classes.generate_tuple(self, len(node.items))
+        if callee_fn.func_name.startswith("Tuple.__new__"):
+            classes.generate_tuple(self.ctx, len(node.items))
         matching = None
         head_expr = utils.get_head_expr(node.expr)
         if isinstance(head_expr, ast.IdExpr) and not partial.var:
@@ -126,15 +127,17 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
             for overload in utils.get_overloads(self.ctx, key):
                 if not utils.is_dispatch(overload):
                     function = utils.get_function(self.ctx, overload)
+                    assert function and function.type
                     methods.append(function.type)
             methods.reverse()
-            parent_class = (
-                None if callee_fn.func_parent is None else callee_fn.func_parent.get_class()
-            )
-            partial_class = None if node.expr.type is None else node.expr.type.get_partial()
-            matching = utils.find_matching_methods(
-                self.ctx, parent_class, methods, node.items, partial_class
-            )
+            if parent := callee_fn.func_parent:
+                matching = utils.matching_methods(
+                    self.ctx,
+                    parent.require_cls,
+                    methods,
+                    node.items,
+                    node.expr.type.partial if node.expr.type else None,
+                )
         # partials have dangling ellipsis that messes up with the unbound check below
         do_dispatch = matching is None or not matching or partial.is_partial
         if not do_dispatch and matching is not None and len(matching) > 1:
@@ -142,12 +145,11 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
                 if utils.is_unbound(arg.value):
                     return node  # typecheck this later once we know the argument
         if not do_dispatch:
-            parent_class = (
-                None if callee_fn.func_parent is None else callee_fn.func_parent.get_class()
-            )
-            instantiated = utils.instantiate_type(self.ctx, matching[0], parent_class)
-            callee_fn = instantiated.get_func()
-            identifier = ast.IdExpr(callee_fn.get_func_name(), type=callee_fn)
+            parent_class = callee_fn.func_parent.cls if callee_fn.func_parent else None
+            assert matching
+            instantiated = utils.instantiate(self.ctx, matching[0], parent_class)
+            callee_fn = instantiated.require_func
+            identifier = ast.IdExpr(callee_fn.func_name, type=callee_fn)
             if isinstance(node.expr, ast.IdExpr):
                 node.expr = identifier
             elif isinstance(node.expr, ast.StmtExpr):
@@ -160,12 +162,12 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
             node.expr.type = callee_fn
         elif matching is not None and not matching:
             arg_names = [
-                arg.value.get_class_type().name
-                if arg.value.type.get_static() and arg.value.get_class_type()
-                else arg.value.type.pretty_string()
+                arg.value.type.require_cls.name
+                if arg.value.type and arg.value.type.literal
+                else str(arg.value.type)
                 for arg in node.items
             ]
-            name = utils.get_unmangled_name(self.ctx, callee_fn.get_func_name())
+            name = utils.get_unmangled_name(self.ctx, callee_fn.func_name)
             parent_name = callee_fn.ast.get(ast.Attr.ParentClass, "")
             if parent_name:
                 name = f"{utils.get_user_facing_name(self.ctx, parent_name)}.{name}"
@@ -181,16 +183,16 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
 
     # Handle special calls
     if not partial.is_partial:
-        is_special, special = transform_special_call(self, node)
+        is_special, special_expr = transform_special_call(self, node)
         if is_special:
-            return special or node
+            return special_expr or node
 
     # Typecheck arguments with the function signature
     done = typecheck_call_args(self, callee_fn, node.items, partial)
     if not partial.is_partial and callee_fn.can_realize():
         # Previous unifications can qualify existing identifiers.
         # Transform again to get the full identifier
-        node.expr = self.visit(node.expr)
+        node.expr = self.visit_expr(node.expr)
     done = done and node.expr.done
 
     # Final call
@@ -205,14 +207,14 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
         partial_call = generate_partial_call(
             self,
             partial.known,
-            callee_fn.get_func(),
+            callee_fn.require_func,
             ast.TupleExpr(new_args),
             partial.kw_args,
         )
         var_name = utils.get_temporary_var(self.ctx, "part")
         if partial.var:
             # Callee is already a partial call
-            stmts = [s.clone() for s in node.expr.items]
+            stmts = [s.clone() for s in cast(ast.StmtExpr, node.expr)]
             call = ast.StmtExpr(
                 [*stmts, ast.AssignStmt(ast.IdExpr(var_name), rhs=partial_call)],
                 expr=ast.IdExpr(var_name),
@@ -224,9 +226,10 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Node:
                 expr=ast.IdExpr(var_name),
             )
         call.set(ast.Attr.ExprPartial)
-        return self.visit(call)
+        return self.visit_expr(call)
     else:
-        infer.unify(node.type, callee_fn.get_ret_type())
+        assert node.type
+        node.type |= callee_fn.ret_type
         if done:
             node.done = True
         return node
@@ -266,23 +269,20 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
         if isinstance(arg.value, ast.StarExpr):
             # Case: *args expansion
             star = arg.value
-            star.expr = self.visit(star.expr)
-            tuple_type = star.expr.get_class_type()
-            while tuple_type and tuple_type.is_type(ast.types.Stdlib.Optional):
-                star.expr = self.visit(
+            star.expr = self.visit_expr(star.expr)
+
+            while (tuple_type := star.expr.cls) and tuple_type == ast.types.Stdlib.Optional:
+                star.expr = self.visit_expr(
                     ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), items=[star.expr])
                 )
-                tuple_type = star.expr.get_class_type()
 
             # Process later
+            tuple_type = star.expr.cls
             if not tuple_type:
                 return False
-            if not tuple_type.is_record():
-                raise TypecheckError(
-                    star,
-                    f"argument after * must be a tuple, not '{tuple_type.pretty_string()}'",
-                )
-            fields = utils.get_class_fields(tuple_type)
+            if not tuple_type.is_tuple:
+                raise TypecheckError(star, f"argument after * must be a tuple, not '{tuple_type}'")
+            fields = utils.get_class_fields(self.ctx, tuple_type)
             head = star.expr
             lead = None
             if utils.has_side_effect(head):
@@ -291,20 +291,19 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
                 head = ast.IdExpr(var)
             inserted = []
             for field_idx, field in enumerate(fields):
-                base = ((lead if lead and field_idx == 0 else head).clone(),)
+                base = (lead if lead and field_idx == 0 else head).clone()
                 inserted.append(self.visit(ast.DotExpr(base, member=field.name)))
             expr.items[arg_index : arg_index + 1] = inserted
             arg_index += len(inserted)
         elif isinstance(arg.value, ast.KeywordStarExpr):
             # Case: **kwargs expansion
             kwstar = arg.value
-            kwstar.expr = self.visit(kwstar.expr)
-            named_type = kwstar.expr.get_class_type()
-            while named_type and named_type.is_type(ast.types.Stdlib.Optional):
-                kwstar.expr = self.visit(
+            kwstar.expr = self.visit_expr(kwstar.expr)
+
+            while (named_type := kwstar.expr.cls) and named_type == ast.types.Stdlib.Optional:
+                kwstar.expr = self.visit_expr(
                     ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), items=[kwstar.expr])
                 )
-                named_type = kwstar.expr.get_class_type()
             if not named_type:
                 return False
             head = kwstar.expr
@@ -314,32 +313,31 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
                 lead = ast.AssignExpr(ast.IdExpr(var), expr=head)
                 head = ast.IdExpr(var)
             inserted = []
-            if named_type.is_type(ast.types.Stdlib.NamedTuple):
-                tuple_id = utils.get_int_literal(named_type)
+            if named_type == ast.types.Stdlib.NamedTuple:
+                tuple_id = named_type[0].require_int
                 assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
                 names = self.ctx.cache.generated_tuple_names[tuple_id]
                 for field_idx, name in enumerate(names):
                     base = (lead if lead and field_idx == 0 else head).clone()
-                    field = self.visit(
+                    field = self.visit_expr(
                         ast.DotExpr(ast.DotExpr(base, member="args"), member=f"item{field_idx + 1}")
                     )
-                    inserted.append(ast.CallExpr.Arg(name, value=field))
-            elif named_type.is_record():
-                fields = utils.get_class_fields(named_type)
+                    inserted.append(ast.CallExpr.Arg(field, name=name))
+            elif named_type.is_tuple:
+                fields = utils.get_class_fields(self.ctx, named_type)
                 for field_idx, field in enumerate(fields):
                     base = (lead if lead and field_idx == 0 else head).clone()
-                    field = self.visit(ast.DotExpr(base, member=field.name))
-                    inserted.append(ast.CallExpr.Arg(field.name, value=field))
+                    field_expr = self.visit_expr(ast.DotExpr(base, member=field.name))
+                    inserted.append(ast.CallExpr.Arg(field_expr, name=field.name))
             else:
                 raise TypecheckError(
-                    kwstar,
-                    f"argument after ** must be a named tuple, not '{named_type.pretty_string()}'",
+                    kwstar, f"argument after ** must be a named tuple, not '{named_type}'"
                 )
             expr.items[arg_index : arg_index + 1] = inserted
             arg_index += len(inserted)
         else:
             # Case: normal argument (no expansion)
-            arg.value = self.visit(arg.value)
+            arg.value = self.visit_expr(arg.value)
             arg_index += 1
 
     # Check if some argument names are reused after the expansion
@@ -352,7 +350,9 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
     return True
 
 
-def get_callee_fn(self: TypeVisitor, expr: ast.CallExpr, part):
+def get_callee_fn(
+    self: TypeVisitor, expr: ast.CallExpr, part
+) -> tuple[ast.types.Function | None, ast.Expr | None]:
     """
     Extract the @c FuncType that represents the function to be called by the callee.
     Also handle special callees: constructors and partial functions.
@@ -360,31 +360,32 @@ def get_callee_fn(self: TypeVisitor, expr: ast.CallExpr, part):
     (when needed; otherwise nullptr).
     """
 
-    callee = expr.expr.get_class_type()
+    callee = expr.expr.cls
     if callee is None:
         # Case: unknown callee, wait until it becomes known
         return None, None
 
     extracted = utils.extract_type(self.ctx, expr.expr)
-    callee_fn = callee.get_func()
+    callee_fn = callee.func
     if expr.has(ast.Attr.TupleCall) and (
-        extracted.is_type(ast.types.Stdlib.Tuple)
+        extracted == ast.types.Stdlib.Tuple
         or (
             callee_fn
-            and isinstance(callee_fn.ast, ast.FunctionStmt)
+            and callee_fn.ast
             and callee_fn.ast.name.startswith("std.internal.static.tuple.")
         )
     ):
         return None, None
 
     if utils.is_type_expr(expr.expr):
-        class_type = expr.expr.get_class_type()
+        class_type = expr.expr.cls
         if not (isinstance(expr.expr, ast.IdExpr) and expr.expr.value == ast.types.Stdlib.Type):
-            class_type = class_type[0].get_class()
+            assert class_type
+            class_type = class_type[0].cls
         if class_type is None:
             return None, None
 
-        if class_type.is_record():
+        if class_type.is_tuple:
             if expr.has(ast.Attr.TupleCall):
                 expr.erase(ast.Attr.TupleCall)
             # Case: tuple constructor. Transform to: `T.__new__(args)`
@@ -405,41 +406,39 @@ def get_callee_fn(self: TypeVisitor, expr: ast.CallExpr, part):
         )
         return None, self.visit(result)
 
-    if partial_type := callee.get_partial():
-        mask = partial_type.get_partial_mask()
-        partial_function = partial_type.get_partial_func()
-        generalized = partial_function.generalize(0)
-        instantiated = utils.instantiate_type(self.ctx, generalized).get_func()
-        if not partial_type.is_partial_empty() or any(
-            flag != ast.types.Class.Flag.Missing for flag in mask
+    if partial := callee.partial:
+        mask = partial.partial_mask
+        partial_fn = partial.partial_func
+        generalized = partial_fn.generalize(0)
+        instantiated = utils.instantiate(self.ctx, generalized)
+        if not partial.is_partial_empty or any(
+            flag is not ast.types.Class.Flag.Missing for flag in mask
         ):
             # Case: calling partial object `p`. Transform roughly to
             # `part = callee; partial_fn(*part.args, args...)`
             part.var = utils.get_temporary_var(self.ctx, "partcall")
-            expr.expr = self.visit(
+            expr.expr = self.visit_expr(
                 ast.StmtExpr(
                     [ast.AssignStmt(ast.IdExpr(part.var), rhs=expr.expr)],
-                    expr=ast.IdExpr(instantiated.get_func_name(), type=instantiated),
+                    expr=ast.IdExpr(instantiated.func_name, type=instantiated),
                 )
             )
             part.known = mask
         else:
-            expr.expr = self.visit(ast.IdExpr(instantiated.get_func_name()))
-        assert expr.expr.type.get_func() is not None, f"not a function: {expr.expr.type}"
-        infer.unify(expr.expr.type, instantiated)
+            expr.expr = self.visit_expr(ast.IdExpr(instantiated.func_name))
+        assert expr.expr.type and expr.expr.type.func, f"not a function: {expr.expr.type}"
+        expr.expr.type |= instantiated
 
         # Unify partial generics with types known thus far
-        known_argument_types = _extract_class_generic(partial_type, 1).get_class()
+        known_argument_types = partial[1].require_cls
         generic_idx = 0
         known_idx = 0
         for param_idx, flag in enumerate(mask):
             if instantiated.ast.items[param_idx].is_generic():
                 generic_idx += 1
             elif flag == ast.types.Class.Flag.Included:
-                infer.unify(
-                    instantiated.get_func()[param_idx - generic_idx],
-                    known_argument_types[known_idx],
-                )
+                arg_type = instantiated[param_idx - generic_idx]
+                arg_type |= known_argument_types[known_idx]
                 known_idx += 1
             elif flag == ast.types.Class.Flag.Default:
                 known_idx += 1
@@ -481,10 +480,11 @@ def call_reorder_arguments(
 
     def get_partial_argument(partial_index: int) -> ast.Expr:
         """Extract pi-th partial argument from a partial object"""
-        args_expr = self.visit(ast.DotExpr(ast.IdExpr(part.var), member="args"))
+        args_expr = self.visit_expr(ast.DotExpr(ast.IdExpr(part.var), member="args"))
+        assert args_expr.cls
         # Manually call @c transformStaticTupleIndex to avoid spurious InstantiateExpr
         found, expr = ops.transform_static_tuple_index(
-            self, args_expr.get_class_type(), args_expr, ast.IntExpr(partial_index)
+            self, args_expr.cls, args_expr, ast.IntExpr(partial_index)
         )
         assert found and expr is not None, f"partial indexing failed: {args_expr.type}"
         return expr
@@ -559,7 +559,8 @@ def call_reorder_arguments(
                     star_args.append(source)
                     add_reordered(source_idx)
                 star_idx = len(args)
-                args.append(ast.CallExpr.Arg(name=real_name))
+                # add dummy value, will be fixed later
+                args.append(ast.CallExpr.Arg(ast.NoneExpr(), name=real_name))
                 if partial:
                     new_mask[slot_idx] = ast.types.Class.Flag.Missing
             elif slot_idx == kwstar_pos and not (
@@ -570,7 +571,9 @@ def call_reorder_arguments(
                 # Case: **kwargs. Build the named tuple that holds them all
                 new_names = {expr.items[source_index].name for source_index in slot}
                 if part.known:
-                    kwargs_expr = self.visit(ast.DotExpr(ast.IdExpr(part.var), member="kwargs"))
+                    kwargs_expr = self.visit_expr(
+                        ast.DotExpr(ast.IdExpr(part.var), member="kwargs")
+                    )
                     names, named_types = utils.extract_named_tuple(self.ctx, kwargs_expr)
                     for name, named_type in zip(names, named_types):
                         if name not in new_names:
@@ -584,7 +587,8 @@ def call_reorder_arguments(
                     kwstar_args.append(source)
                     add_reordered(source_idx)
                 kwstar_idx = len(args)
-                args.append(ast.CallExpr.Arg(name=real_name))
+                # add dummy value, will be fixed later
+                args.append(ast.CallExpr.Arg(ast.NoneExpr(), name=real_name))
                 if partial:
                     new_mask[slot_idx] = ast.types.Class.Flag.Missing
             elif not slot:
@@ -597,23 +601,19 @@ def call_reorder_arguments(
                     # Case 3: Local name capture
                     added = False
                     if partial:
-                        value = self.ctx.find(real_name[1:])
-                        if (
-                            value
-                            and value.is_func()
-                            and value.type.get_func()
-                            and value.type.get_func().ast.name == callee_fn.ast.name
-                        ):
+                        value = self.ctx.get(real_name[1:])
+                        if value and value.func and value.func.func_name == callee_fn.ast.name:
                             # Special case: fn(fn=fn)
                             # Delay this one.
-                            ellipsis = self.visit(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+                            ellipsis = self.visit_expr(
+                                ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)
+                            )
                             args.append(ast.CallExpr.Arg(ellipsis, name=real_name))
                             new_mask[slot_idx] = ast.types.Class.Flag.Missing
                             added = True
                     if not added:
-                        args.append(
-                            ast.CallExpr.Arg(self.visit(ast.IdExpr(real_name[1:]), name=real_name))
-                        )
+                        arg = self.visit_expr(ast.IdExpr(real_name[1:]))
+                        args.append(ast.CallExpr.Arg(arg, name=real_name))
                 elif param.default:
                     default = param.default
                     # Case 4: default is present
@@ -627,8 +627,8 @@ def call_reorder_arguments(
                             partial_idx += 1
                         else:
                             # TODO: check if the value is toplevel to avoid capturing it
-                            transformed = self.visit(ast.IdExpr(default.value))
-                            assert transformed.type.get_link() is not None, "not a link type"
+                            transformed = self.visit_expr(ast.IdExpr(default.value))
+                            assert transformed.type and transformed.type.link, "not a link type"
                             args.append(ast.CallExpr.Arg(transformed, name=real_name))
                         if partial:
                             new_mask[slot_idx] = ast.types.Class.Flag.Default
@@ -643,14 +643,15 @@ def call_reorder_arguments(
                             )
                         else:
                             transformed = default.clone()
-                        args.append(ast.CallExpr.Arg(self.visit(transformed), name=real_name))
+                        arg = self.visit_expr(transformed)
+                        args.append(ast.CallExpr.Arg(arg, name=real_name))
                     else:
-                        ellipsis = self.visit(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+                        ellipsis = self.visit_expr(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
                         args.append(ast.CallExpr.Arg(ellipsis, name=real_name))
                         new_mask[slot_idx] = ast.types.Class.Flag.Missing
                 elif partial:
                     # Case 5: this is partial call. Just add ... for missing arguments
-                    ellipsis = self.visit(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+                    ellipsis = self.visit_expr(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
                     args.append(ast.CallExpr.Arg(ellipsis, name=real_name))
                     new_mask[slot_idx] = ast.types.Class.Flag.Missing
                 else:
@@ -671,7 +672,7 @@ def call_reorder_arguments(
             front = self.visit(
                 ast.AssignStmt(ast.IdExpr(name), rhs=old, type_expr=utils.get_param_type(old.type))
             )
-            swap = self.visit(ast.IdExpr(name))
+            swap = self.visit_expr(ast.IdExpr(name))
             expr.items[source_idx].value = swap
             for arg in args:
                 if arg.value is old:
@@ -687,18 +688,17 @@ def call_reorder_arguments(
         star_expr = ast.TupleExpr(star_args)
         star_expr.set(ast.Attr.ExprStarArgument)
         if not (isinstance(expr.expr, ast.IdExpr) and expr.expr.value == "hasattr"):
-            transformed = self.visit(star_expr)
-            star_expr = transformed
+            star_expr = self.visit_expr(star_expr)
         if partial:
             part.args = star_expr
-            args[star_idx].value = self.visit(ast.EllipsisExpr(ast.EllipsisExpr.PARTIAL))
+            args[star_idx].value = self.visit_expr(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
         else:
             args[star_idx].value = star_expr
 
     # Handle **kwargs
     if kwstar_idx != -1:
         keyword_id = classes.generate_kw_id(self, kwstar_names)
-        kwstar_expr = self.visit(
+        kwstar_expr = self.visit_expr(
             ast.CallExpr(
                 ast.IdExpr(ast.types.Stdlib.NamedTuple),
                 items=[ast.TupleExpr(kwstar_args), ast.IntExpr(keyword_id)],
@@ -707,7 +707,9 @@ def call_reorder_arguments(
         kwstar_expr.set(ast.Attr.ExprKwStarArgument)
         if partial:
             part.kw_args = kwstar_expr
-            args[kwstar_idx].value = self.visit(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+            args[kwstar_idx].value = self.visit_expr(
+                ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)
+            )
         else:
             args[kwstar_idx].value = kwstar_expr
 
@@ -739,13 +741,13 @@ def call_reorder_arguments(
                 argument_type = utils.extract_type(self.ctx, type_arg)
                 if (
                     generic.static_kind is not ast.types.Type.Behaviour.Runtime
-                    and argument_type.get_static_kind() is ast.types.Type.Behaviour.Runtime
+                    and argument_type.is_runtime
                 ):
                     raise TypecheckError(expr, "expected static expression")
                 infer.unify(argument_type, generic.type)
             elif (
                 utils.is_unbound(generic.type)
-                and callee_fn.ast.items[generic_idx].default_value is None
+                and callee_fn.ast.items[generic_idx].default is None
                 and not partial
                 and generic.name in non_inferrable
             ):
@@ -776,7 +778,7 @@ def typecheck_call_args(
 
     wrapping_done = True  # tracks whether all arguments are wrapped
     replacements = []  # list of replacement arguments
-    with utils.with_class_generics(self.ctx, callee_fn, check_arguments, True):
+    with utils.with_class_generics(self.ctx, callee_fn, func=True):
         signature_idx = 0
         for _, param in enumerate(callee_fn.ast.items):
             if param.is_generic():
@@ -788,25 +790,27 @@ def typecheck_call_args(
                     type_expression = self.visit(param.type.clone())
                     expected_type = utils.extract_type(self.ctx, type_expression)
                     if param.name.startswith("**"):
-                        call_expr = call_expr.items[0].value
-                    for call_arg in call_expr.items:
+                        call_expr = cast(ast.CallExpr, call_expr[0].value)
+                    for call_arg in call_expr:
                         can_wrap, call_arg.value = utils.wrap_expr(
-                            self, call_arg.value, expected_type, callee_fn
+                            self.ctx, call_arg.value, expected_type, callee_fn
                         )
                         if can_wrap:
-                            infer.unify(call_arg.value.type, expected_type)
+                            infer.unify(call_arg.type, expected_type)
                         else:
                             wrapping_done = False
-                    call_type = call_expr.get_class_type()
-                    tuple_expr = self.visit(
+                    call_type = call_expr.cls
+                    assert call_type
+                    tuple_expr = self.visit_expr(
                         ast.CallExpr(ast.IdExpr(call_type.name), items=call_expr.items)
                     )
                     if param.name.startswith("**"):
-                        tuple_id = arg.value.type[0].get_int_static()
-                        arg.value = self.visit(
+                        assert arg.value.type
+                        tuple_id = arg.value.type.require_cls[0].require_int
+                        arg.value = self.visit_expr(
                             ast.CallExpr(
                                 ast.IdExpr(ast.types.mangle(cls="NamedTuple", func="__new__")),
-                                items=[tuple_expr, ast.IntExpr(tuple_id.value)],
+                                items=[tuple_expr, ast.IntExpr(tuple_id)],
                             )
                         )
                     else:
@@ -822,14 +826,13 @@ def typecheck_call_args(
                 replacements.append(callee_fn[signature_idx])
             else:
                 expected_type = callee_fn[signature_idx]
-                can_wrap, arg.value = utils.wrap_expr(self, arg.value, expected_type, callee_fn)
+                can_wrap, arg.value = utils.wrap_expr(self.ctx, arg.value, expected_type, callee_fn)
                 if can_wrap:
-                    infer.unify(arg.value.type, expected_type)
+                    assert arg.value.type
+                    arg.value.type |= expected_type
                 else:
                     wrapping_done = False
-                replacements.append(
-                    arg.value.type if expected_type.get_class() is None else expected_type
-                )
+                replacements.append(arg.value.type if not expected_type.cls else expected_type)
             signature_idx += 1
         return True
 
@@ -950,24 +953,6 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
     return False, None
 
 
-def get_mro(self: TypeVisitor, class_type: ast.types.Class | None) -> List[ast.types.Type]:
-    """
-    Get the list that describes the inheritance hierarchy of a given type.
-    The first type in the list is the most recently inherited type.
-    """
-
-    result = []
-    if not class_type:
-        return result
-    cls_data = utils.get_class(self.ctx, class_type)
-    for uninstantiated in cls_data.mro:
-        instantiated = utils.instantiate_type(self.ctx, uninstantiated, class_type)
-        # ensure that parent types are realized
-        infer.realize(instantiated)
-        result.append(instantiated)
-    return result
-
-
 def generate_partial_call(
     self: TypeVisitor,
     mask: str,
@@ -996,11 +981,11 @@ def generate_partial_call(
             ast.CallExpr.Arg(
                 name="F",
                 value=ast.IdExpr(
-                    function_type.get_func_name(),
-                    type=utils.instantiate_type(
+                    function_type.func_name,
+                    type=utils.instantiate(
                         self.ctx,
                         utils.get_stdlib_type(self.ctx, ast.types.Stdlib.UnrealizedType),
-                        [function_type.get_func()],
+                        [function_type.require_func],
                     ),
                     done=True,
                 ),

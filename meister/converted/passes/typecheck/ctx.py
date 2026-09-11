@@ -3,10 +3,7 @@ from __future__ import annotations
 
 from ....bridge import Dict, List, Set, contextmanager, dataclass
 from ... import ast, cache
-
-
-class TypecheckError(ast.NodeError):
-    pass
+from ...cache import Import
 
 
 @dataclass(init=False)
@@ -17,13 +14,13 @@ class Item:
     """
 
     # Unique identifier (canonical name)
-    canonical_name: str = ""
+    canonical: str
     # Base name (e.g., foo.bar.baz)
-    base_name: str = ""
+    base: str
     # Full module name
-    module_name: str = ""
+    module: str
     # Type
-    type: ast.types.Type | None = None
+    type: ast.types.Type
     # Information about number of nested conditionals (blocks).
     block_level: int = 0
     # Specifies at which time the name was added to the context.
@@ -39,39 +36,40 @@ class Item:
 
     def __init__(
         self,
-        canonical_name: str = "",
-        base_name: str = "",
-        module_name: str = "",
-        type: ast.types.Type | None = None,
+        canonical: str,
+        base: str,
+        module: str,
+        typ: ast.types.Type,
         block_level: int = 0,
         time: int = 0,
         generic: bool = False,
         alternative: Item | None = None,
         info: ast.Node.SrcInfo | None = None,
     ):
-        self.canonical_name = canonical_name
-        self.base_name = base_name
-        self.module_name = module_name
-        self.type = type
+        self.canonical = canonical
+        self.base = base
+        self.module = module
+        self.type = typ
         self.block_level = block_level
         self.time = time
         self.generic = generic
         self.alternative = alternative
         self.info = info or ast.Node.SrcInfo()
-        self.__post_init__()
 
     def is_var(self):
-        return not self.generic and not self.is_func() and not self.is_type()
+        return not self.generic and not self.func and not self.is_type
 
-    def is_func(self):
-        return self.type.get_func() is not None
+    @property
+    def func(self):
+        return self.type.func
 
+    @property
     def is_type(self):
-        return self.type.is_type(ast.types.Stdlib.Type)
+        return self.type == ast.types.Stdlib.Type
 
     def is_global(self):
         """True if we are at the toplevel."""
-        return self.block_level == 0 and not self.base_name
+        return self.block_level == 0 and not self.base
 
     def is_conditional(self):
         """
@@ -81,8 +79,9 @@ class Item:
         """
         return self.block_level > 0
 
-    def get_static_kind(self) -> ast.types.Type.Behaviour:
-        return self.type.get_static_kind()
+    @property
+    def static_kind(self) -> ast.types.Type.Behaviour:
+        return self.type.static_kind
 
 
 @dataclass(init=False)
@@ -161,9 +160,11 @@ class Base:
         self.loops = [] if loops is None else loops
         self.pending_defaults = {} if pending_defaults is None else pending_defaults
 
-    def get_loop(self) -> LoopData | None:
+    @property
+    def loop(self) -> LoopData | None:
         return None if not self.loops else self.loops[-1]
 
+    @property
     def is_type(self):
         return self.func is None
 
@@ -193,7 +194,7 @@ class TypeContext:
     # Current base stack (the last enclosing base is the last base in the stack).
     bases: List[Base]
     # Current module. The default module is named `__main__`.
-    module_name: cache.Import.File
+    module: cache.Import.File
     # Set if the standard library is currently being loaded.
     is_stdlib_loading: bool = False
     # The current type-checking level (for type instantiation and generalization).
@@ -216,6 +217,9 @@ class TypeContext:
     simple_types: bool = False
     global_shadows: Dict[str, int]
     iteration_times: Dict[str, float]
+    preamble: ast.SuiteStmt
+    # Statements to prepend before the current statement.
+    prepend_stmts: List[List[ast.Stmt]]
 
     def __init__(
         self,
@@ -226,7 +230,7 @@ class TypeContext:
         flags: Set[str] | None = None,
         node_stack: List[ast.Node] | None = None,
         bases: List[Base] | None = None,
-        module_name: cache.Import.File | None = None,
+        module: cache.Import.File | None = None,
         is_stdlib_loading: bool = False,
         typecheck_level: int = 0,
         changed_nodes: int = 0,
@@ -240,15 +244,16 @@ class TypeContext:
         simple_types: bool = False,
         global_shadows: Dict[str, int] | None = None,
         iteration_times: Dict[str, float] | None = None,
+        preamble: ast.SuiteStmt | None = None,
     ):
         self.cache = cache
         self.filename = filename
         self.map = {} if map is None else map
         self.stack = [] if stack is None else stack
         self.flags = set() if flags is None else flags
-        self.node_stack = [] if node_stack is None else node_stack
+        self.node_stack = [ast.NoneExpr()] if node_stack is None else node_stack
         self.bases = [Base()] if bases is None else bases
-        self.module_name = module_name or cache.Import.File(cache.Import.File.Status.External)
+        self.module = module or Import.File(Import.File.Status.External)
         self.is_stdlib_loading = is_stdlib_loading
         self.typecheck_level = typecheck_level
         self.changed_nodes = changed_nodes
@@ -262,8 +267,8 @@ class TypeContext:
         self.simple_types = simple_types
         self.global_shadows = {} if global_shadows is None else global_shadows
         self.iteration_times = {} if iteration_times is None else iteration_times
-
-        self.push_node(ast.NoneExpr())
+        self.preamble = preamble or ast.SuiteStmt()
+        self.prepend_stmts = []
 
     def add(self, name: str, variable: Item):
         """Add an object to the top of the stack."""
@@ -313,6 +318,10 @@ class TypeContext:
         if not values:
             del self.map[name]
 
+    @property
+    def info(self) -> ast.Node.SrcInfo:
+        return self.node_stack[-1].info
+
     def add_item(
         self,
         name: str,
@@ -326,8 +335,8 @@ class TypeContext:
         assert canonical_name, f"empty canonical name for '{name}'"
         item = Item(
             canonical_name,
-            self.get_base_name(),
-            self.get_module(),
+            self.base_name,
+            self.module_name,
             typ,
             self.block_level,
             info=info,
@@ -347,72 +356,50 @@ class TypeContext:
         Add the item to the standard library module, thus ensuring its visibility from all
         modules.
         """
-        self.add(item.canonical_name, item)
+        self.add(item.canonical, item)
         if pop:
             self.stack[0].pop()  # do not remove it later!
-        if self.cache.type_ctx and not self.cache.type_ctx.find(item.canonical_name):
-            self.cache.type_ctx.add(item.canonical_name, item)
+        if self.cache.type_ctx and not self.cache.type_ctx.get(item.canonical):
+            self.cache.type_ctx.add(item.canonical, item)
             if pop:
                 self.cache.type_ctx.stack[0].pop()
-            if item.canonical_name not in self.cache.reverse_identifier_lookup:
-                self.cache.reverse_identifier_lookup[item.canonical_name] = item.canonical_name
+            if item.canonical not in self.cache.reverse_identifier_lookup:
+                self.cache.reverse_identifier_lookup[item.canonical] = item.canonical
         return item
 
-    def find_at(self, name: str, time: int = 0, in_base: str | None = None) -> Item | None:
-        # def find(self, name: str) -> Item | None:
-        #     """Return a top-most object with a given identifier or nullptr if it does not exist."""
-        #     values = self.map.get(name)
-        #     return values[0] if values is not None else None
+    def __getitem__(self, name: str) -> Item:
+        if not (v := self.get(name)):
+            raise ValueError(f"cannot find an item {name}")
+        return v
 
+    def get(self, name: str) -> Item | None:
+        """Return a top-most object with a given identifier or nullptr if it does not exist."""
         values = self.map.get(name)
-        is_mangled = "." in name
-        base = in_base or self.get_base_name()
+        return values[0] if values is not None else None
+
+    def find_at(self, name: str, time: int = 0, in_base: str | None = None) -> Item | None:
+        values = self.map.get(name)
         if values:
+            is_mangled = "." in name
+            base = in_base or self.base_name
             for item in values:
-                if not is_mangled and not base.startswith(item.get_base_name()):
+                if not is_mangled and not base.startswith(item.base):
                     continue
-                if (
-                    is_mangled
-                    or item.get_base_name() != base
-                    or time == 0
-                    or item.get_module() != self.get_module()
-                ):
+                if is_mangled or item.base != base or time == 0 or item.module != self.module_name:
                     return item  # avoid middle realizations
-                if item.get_time() <= time:
+                if item.time <= time:
                     return item
 
         # Item is not found in the current module. Time to look in the standard library!
         # Note: the standard library items cannot be dominated.
-        stdlib_ctx = self.cache.imports.get(cache.STDLIB_IMPORT).ctx
+        stdlib_ctx = self.cache.imports[cache.STDLIB_IMPORT].ctx
         if stdlib_ctx is not self and (values := stdlib_ctx.map.get(name, None)):
             return values[0]
         # Maybe we are looking for a canonical identifier?
         type_ctx = self.cache.type_ctx
-        if type_ctx is not self:
-            return type_ctx.find(type_ctx, name)
+        if type_ctx and type_ctx is not self:
+            return type_ctx.get(name)
         return None
-
-    def force_find(self, name: str) -> Item:
-        """
-        Get an item that exists in the context. If the item does not exist, assertion is
-        raised.
-        """
-        item = self.find(name)
-        assert item is not None, f"cannot find '{name}'"
-        return item
-
-    def get_base_name(self) -> str:
-        return self.bases[-1].name
-
-    def get_module(self) -> str:
-        base = "std." if self.module_name.status is cache.Import.File.Status.StdLibrary else ""
-        base += self.module_name.module
-        base = base.removeprefix("__main__")
-        return base
-
-    def get_module_path(self) -> str:
-        """Return the current module path."""
-        return self.module_name.path
 
     def generate_canonical_name(
         self, name: str, include_base: bool = False, no_suffix: bool = False
@@ -423,9 +410,7 @@ class TypeContext:
             return name
         include_base = include_base and not name.startswith("%")
         if include_base:
-            base = self.get_base_name()
-            if not base:
-                base = self.get_module()
+            base = self.base_name or self.module_name
             if base == "std.internal.core":
                 no_suffix = True
                 base = ""
@@ -439,41 +424,64 @@ class TypeContext:
         self.cache.reverse_identifier_lookup[new_name] = name
         return new_name
 
+    @property
+    def base_name(self) -> str:
+        return self.bases[-1].name
+
+    @property
+    def module_name(self) -> str:
+        name = "std." if self.module.status is cache.Import.File.Status.StdLibrary else ""
+        name += self.module.module
+        name = name.removeprefix("__main__")
+        return name
+
+    @property
+    def module_path(self) -> str:
+        """Return the current module path."""
+        return self.module.path
+
+    @property
     def is_global(self):
         return len(self.bases) == 1
 
+    @property
     def is_conditional(self):
         return self.block_level > 0
 
-    def get_base(self) -> Base | None:
+    @property
+    def base(self) -> Base:
         """Get the current base."""
-        return None if not self.bases else self.bases[-1]
+        assert self.bases
+        return self.bases[-1]
 
+    @property
     def in_function(self):
         """True if the current base is function."""
-        return not self.is_global() and not self.bases[-1].is_type()
+        return not self.is_global and not self.bases[-1].is_type
 
+    @property
     def in_class(self):
         """True if the current base is class."""
-        return not self.is_global() and self.bases[-1].is_type()
+        return not self.is_global and self.bases[-1].is_type
 
     def is_outer(self, value: Item):
         """True if an item is defined outside of the current base or a module."""
-        return (
-            self.get_base_name() != value.get_base_name() or self.get_module() != value.get_module()
-        )
+        return self.base_name != value.base or self.module_name != value.module
 
-    def get_class_base(self) -> Base | None:
+    @property
+    def class_base(self) -> Base | None:
         """Get the enclosing class base (or nullptr if such does not exist)."""
-        if len(self.bases) >= 2 and self.bases[-2].is_type():
+        if len(self.bases) >= 2 and self.bases[-2].is_type:
             return self.bases[-2]
         return None
 
-    def get_realization_depth(self):
+    @property
+    def nested_realization_count(self):
         """Get the current realization depth (i.e., the number of nested realizations)."""
         return len(self.bases)
 
-    def get_realization_stack_name(self) -> str:
+    @property
+    def realization_stack_name(self) -> str:
         """Get the name of the current realization stack (e.g., `fn1:fn2:...`)."""
         if not self.bases:
             return ""
@@ -484,24 +492,21 @@ class TypeContext:
         return ":".join(names)
 
     def dump(self, pad: int = 0):
-        print(f"current module: {self.module_name.module} ({self.module_name.path})")
-        base = self.get_base()
-        print(f"current base:   {self.get_realization_stack_name()} / {base.name}")
+        print(f"current module: {self.module_name} ({self.module_path})")
+        base = self.base_name
+        print(f"current base:   {self.realization_stack_name} / {base}")
         for name, items in sorted(self.map.items()):
             item = items[0]
             print(f"{' ' * (pad * 2)}{name:.<25}")
             print(
                 "   ... kind:      "
-                f"{int(item.is_type()) * 100 + int(item.is_func()) * 10 + int(item.is_var())}"
+                f"{int(item.is_type) * 100 + int(item.func is not None) * 10 + int(item.is_var())}"
             )
-            print(f"   ... canonical: {item.canonical_name}")
-            print(f"   ... base:      {item.base_name}")
-            print(f"   ... module:    {item.module_name}")
-            print(
-                "   ... type:      "
-                + ("<null>" if item.type is None else item.type.debug_string(2))
-            )
-            print(f"   ... gnrc/sttc: {item.generic} / {int(item.get_static_kind().value)}")
+            print(f"   ... canonical: {item.canonical}")
+            print(f"   ... base:      {item.base}")
+            print(f"   ... module:    {item.module}")
+            print("   ... type:      " + ("<null>" if item.type is None else repr(item.type)))
+            print(f"   ... gnrc/sttc: {item.generic} / {item.static_kind}")
 
     @contextmanager
     def within_base(self, name: str):

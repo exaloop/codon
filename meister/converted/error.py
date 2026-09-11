@@ -10,7 +10,6 @@ from . import ast
 class ErrorMessage:
     message: str = ""
     info: ast.Node.SrcInfo
-    error_code: int = -1
 
     def __init__(
         self,
@@ -21,7 +20,6 @@ class ErrorMessage:
         self.message = message
         self.info = info or ast.Node.SrcInfo()
         self.error_code = error_code
-        self.error_code = -1
 
     @property
     def file(self) -> str:
@@ -80,10 +78,10 @@ class ParserErrors:
         for trace in other:
             self.add_error(trace)
 
-    def add_error(self, trace: Backtrace):
+    def add_error(self, trace: Backtrace | ErrorMessage):
         """Add an error message to the current backtrace"""
         if not self.errors or self.errors[-1] != trace:
-            self.errors.append(trace)
+            self.errors.append(trace if isinstance(trace, Backtrace) else Backtrace([trace]))
 
     @property
     def message(self) -> str:
@@ -97,6 +95,25 @@ class ParserError(Exception):
     # These vectors (stacks) store an error stack-trace.
     errors: ParserErrors
 
-    def __init__(self, errors: ParserErrors | None = None):
-        self.errors = ParserErrors() if errors is None else errors
+    def __init__(self, errors=None):
+        if isinstance(errors, list):
+            self.errors = ParserErrors()
+            for e in errors:
+                self.errors.add_error(e)
+        else:
+            self.errors = ParserErrors() if errors is None else errors
         Exception.__init__(self, self.errors.message)
+
+class ScopeError(ast.NodeError):
+    pass
+
+
+class TypecheckError(ParserError):
+    def __init__(self, info=None, msg="", trace=None):
+        if isinstance(msg, str):
+            super().__init__(errors=ParserErrors(ErrorMessage(msg, info)))
+        else:
+            super().__init__(msg)
+        if trace:
+            for e in trace:
+                self.errors.add_error(e)

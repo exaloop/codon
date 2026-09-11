@@ -1,7 +1,9 @@
 """Converted Codon parser package."""
 
-from ....bridge import Dict, List, dataclass
-from ... import ast, cache
+from ....bridge import Dict, List, cast, dataclass
+from ... import ast
+from ...cache import Cache
+from ...error import TypecheckError
 from . import (
     access,
     assign,
@@ -10,7 +12,6 @@ from . import (
     classes,
     collections,
     cond,
-    ctx,
     error,
     function,
     imports,
@@ -20,6 +21,7 @@ from . import (
     stmts,
     utils,
 )
+from .ctx import TypeContext
 
 
 @dataclass(init=False)
@@ -30,88 +32,72 @@ class TypeVisitor(ast.NodeVisitor):
     Note: this stage *modifies* the provided AST. Clone it before simplification
     """
 
-    ctx: ctx.TypeContext
-    # Statements to prepend before the current statement.
-    prepend_stmts: List[ast.Stmt]
-    preamble: ast.SuiteStmt | None = None
+    ctx: TypeContext
 
-    def __init__(
-        self,
-        ctx: ctx.TypeContext | None = None,
-        prepend_stmts: List[ast.Stmt] | None = None,
-        preamble: ast.SuiteStmt | None = None,
-    ):
-        self.ctx = ctx.TypeContext() if ctx is None else ctx
-        self.prepend_stmts = [] if prepend_stmts is None else prepend_stmts
-        self.preamble = preamble or ast.SuiteStmt()
+    def __init__(self, ctx: TypeContext):
+        self.ctx = ctx
 
-    def visit(
+    def visit_stmt(self, node: ast.Stmt) -> ast.Stmt:
+        if node.done:
+            return node
+
+        self.ctx.node_stack.append(node)
+        self.ctx.prepend_stmts.append([])
+        with self.ctx.substitute("time", node.get(ast.Attr.ExprTime, 0)):
+            transformed = cast(ast.Stmt, self.visit(node))
+        self.ctx.node_stack.pop()
+        prepended = self.ctx.prepend_stmts.pop()
+        node = transformed
+        assert isinstance(node, ast.Stmt)
+        if prepended:
+            prepended.append(node)
+            node = ast.SuiteStmt(*prepended, done=all(s.done for s in prepended))
+        if node.done:
+            self.ctx.changed_nodes += 1
+        return node
+
+    def visit_expr(
         self,
-        node: ast.Node | None,
+        node: ast.Expr,
         type_allowed: bool = True,
         enforce_type: bool = False,
         simple_types: bool = False,
-    ):
-        if node is None:
-            return None
-
+    ) -> ast.Expr:
+        if not node.type:
+            node.type = utils.instantiate_unbound(self.ctx, node.info)
         if enforce_type:
             if isinstance(node, ast.NoneExpr):
                 node = ast.IdExpr(ast.types.Stdlib.NoneType, info=node.info)
             with self.ctx.substitute("simple_types", simple_types):
-                result = self.visit(node)
-                if not result:
-                    return node
-                node = result
-            if node.type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
+                node = cast(ast.Expr, self.visit(node))
+            assert isinstance(node, ast.Expr) and node.type
+            if node.type.static_kind is not ast.types.Type.Behaviour.Runtime:
                 pass
             elif utils.is_type_expr(node):
-                node.type = self.instantiate_type(node.type)
-            elif node.type.get_unbound() and not node.type.get_unbound().generic_name:
-                node.type = self.instantiate_type(node.type)
-            elif node.type.get_unbound() and node.type.get_unbound().trait:
-                node.type = self.instantiate_type(node.type)
+                node.type = utils.instantiate(self.ctx, node.type)
+            elif (u := node.type.unbound) and (not u.generic_name or u.trait):
+                node.type = utils.instantiate(self.ctx, node.type)
             else:
-                raise ctx.TypecheckError(node, "expected a type expression")
-        elif isinstance(node, ast.Expr):
-            if not isinstance(node.type, ast.types.Type):
-                node.type = utils.instantiate_unbound(node.info)
+                raise TypecheckError(node, "expected a type expression")
+        else:
             if not node.done:
-                self.ctx.push_node(node)
-                transformed = super().visit(node)
-                self.ctx.pop_node()
+                self.ctx.node_stack.append(node)
+                transformed = self.visit(node)
+                assert isinstance(transformed, ast.Expr) and transformed.type
+                self.ctx.node_stack.pop()
                 if transformed is not node:
                     for attr, value in node.attributes.items():
                         transformed.attributes.setdefault(attr, value)
-                    transformed.orig_expr = node.orig_expr or node
+                    transformed.orig = node.orig or node
                 node = transformed
-                if not isinstance(node.type, ast.types.Type):
-                    node.type = utils.instantiate_unbound(node.info)
-                if not ctx.allow_types and utils.is_type_expr(node):
-                    raise ctx.TypecheckError(node, "unexpected type; expected a value")
+                node.type = node.type or utils.instantiate_unbound(self.ctx, node.info)
+                if not type_allowed and utils.is_type_expr(node):
+                    raise TypecheckError(node, "unexpected type; expected a value")
                 if node.done:
                     self.ctx.changed_nodes += 1
             if not node.has(ast.Attr.ExprDoNotRealize):
-                if realized := infer.realize(node.type):
-                    node |= realized
-        elif isinstance(node, ast.Stmt):
-            if node.done:
-                return node
-            prepend_start = len(self.prepend_stmts)
-
-            self.ctx.push_node(node)
-            with self.ctx.substitute("time", node.get(ast.Attr.ExprTime, 0)):
-                transformed = super().visit()
-            self.ctx.pop_node()
-            node = transformed
-
-            if prepended := self.prepend_stmts[prepend_start:]:
-                del self.prepend_stmts[prepend_start:]
-                if node:
-                    prepended.append(node)
-                node = ast.SuiteStmt(*prepended, done=all(s.done for s in prepended))
-            if node.done:
-                self.ctx.changed_nodes += 1
+                if realized := infer.realize(self.ctx, node.type):
+                    node.type |= realized
         return node
 
     def visit_AssertStmt(self, node: ast.AssertStmt):
@@ -193,7 +179,7 @@ class TypeVisitor(ast.NodeVisitor):
         return basic.typecheck_float(self, node)
 
     def visit_StringExpr(self, node: ast.StringExpr):
-        return basic.typecheck_string(self, node)
+        return basic.typecheck_str(self, node)
 
     def visit_TupleExpr(self, node: ast.TupleExpr):
         return collections.typecheck_tuple(self, node)
@@ -283,18 +269,14 @@ class TypeVisitor(ast.NodeVisitor):
         return function.typecheck_function(self, node)
 
     def log(self, prefix: str, file: str = "", *args: object):
-        if file and file not in ctx.get_info().file:
+        if file and file not in self.ctx.info.file:
             return
-        base = self.ctx.get_base()
-        iteration = 0 if base is None else base.iteration
-        print(f"[{self.ctx.get_info()}] [{self.ctx.get_base_name()}${iteration}]: {prefix} {args}")
-
-    def set_info(self, source: ast.Node.SrcInfo):
-        self.ctx.get_last_node().info = source
+        iteration = 0 if self.ctx.base is None else self.ctx.base.iteration
+        print(f"[{self.ctx.info}] [{self.ctx.base_name}${iteration}]: {prefix} {args}")
 
 
 def typecheck_program(
-    cache: cache.Cache,
+    cache: Cache,
     node: ast.Stmt,
     file: str = "<internal>",
     defines: Dict[str, str] | None = None,
@@ -311,25 +293,25 @@ def typecheck_program(
     Simplify an AST node. Assumes that the standard library is loaded.
     """
 
-    preamble = ast.SuiteStmt()
+    from ...cache import MAIN_IMPORT, MODULE_MAIN, STDLIB_IMPORT, Import
+    from . import infer, special, utils
+
     assert cache.module is not None, "cache's module is not set"
 
+    preamble = ast.SuiteStmt()
+
     # Load standard library if it has not been loaded
-    if cache.STDLIB_IMPORT not in cache.imports:
-        load_std_library(cache, preamble, early_defines, barebones)
+    if STDLIB_IMPORT not in cache.imports:
+        load_std_library(cache, preamble, early_defines or {}, barebones)
 
     # Set up the context and the cache
-    type_ctx = ctx.TypeContext(filename=file, cache=cache)
-    cache.imports.setdefault(file, cache.Import()).update(cache.MAIN_IMPORT, file, type_ctx)
-    cache.imports[cache.MAIN_IMPORT] = cache.imports[file]
-    type_ctx.set_filename(file)
-    type_ctx.module_name = cache.Import.File(
-        cache.Import.File.Status.External, file, cache.MODULE_MAIN
-    )
+    type_ctx = TypeContext(filename=file, cache=cache)
+    cache.imports[MAIN_IMPORT] = cache.imports.setdefault(file, Import(MAIN_IMPORT, file, type_ctx))
+    type_ctx.filename = file
+    type_ctx.module = Import.File(Import.File.Status.External, file, MODULE_MAIN)
 
     # Prepare the code
-    visitor = TypeVisitor(ctx=type_ctx, preamble=preamble)
-    statements: List[ast.Stmt] = []
+    stmts: List[ast.Stmt] = []
     # Load compile-time defines (e.g., codon run -DFOO=1 ...)
     for name, value in (defines or {}).items():
         if value.startswith("str:"):
@@ -341,7 +323,7 @@ def typecheck_program(
         else:
             defined_value = ast.IntExpr(value.removeprefix("int:"))
             literal_name = "int"
-        statements.append(
+        stmts.append(
             ast.AssignStmt(
                 ast.IdExpr(name),
                 rhs=defined_value,
@@ -349,31 +331,39 @@ def typecheck_program(
             )
         )
     # Set up __name__
-    statements.append(ast.AssignStmt(ast.IdExpr("__name__"), rhs=ast.StringExpr(cache.MODULE_MAIN)))
-    statements.append(ast.AssignStmt(ast.IdExpr("__file__"), rhs=ast.StringExpr(file)))
-    statements.append(node)
-    suite = ast.SuiteStmt(*statements)
+    stmts.append(ast.AssignStmt(ast.IdExpr("__name__"), rhs=ast.StringExpr(MODULE_MAIN)))
+    stmts.append(ast.AssignStmt(ast.IdExpr("__file__"), rhs=ast.StringExpr(file)))
+    stmts.append(node)
+    suite = ast.SuiteStmt(*stmts)
+
     cache.scope(suite, type_ctx.global_shadows)
-    inferred = visitor.infer_types(suite, True)
-    if not inferred:
-        raise ctx.TypecheckError(visitor.find_typecheck_errors(suite))
-    result = ast.SuiteStmt(preamble, inferred)
-    if isinstance(inferred, ast.SuiteStmt):
-        visitor.prepare_vtables()
-    if not type_ctx.cache.errors.empty():
-        raise ctx.TypecheckError(type_ctx.cache.errors)
+    with type_ctx.substitute("preamble", preamble):
+        inferred = infer.infer_types(type_ctx, suite, True)
+        if not inferred:
+            raise TypecheckError(trace=utils.find_typecheck_errors(type_ctx, suite))
+        result = ast.SuiteStmt(preamble, inferred)
+        if isinstance(inferred, ast.SuiteStmt):
+            special.prepare_vtables(type_ctx)
     return result
 
 
 def load_std_library(
-    cache: cache.Cache,
+    cache: Cache,
     preamble: ast.SuiteStmt,
     early_defines: Dict[str, str],
     barebones: bool,
 ):
+    from ...cache import (
+        STDLIB_IMPORT,
+        STDLIB_INTERNAL_MODULE,
+        VAR_CLASS_TOPLEVEL,
+        ClassData,
+        Import,
+    )
+
     # Load the internal.__init__
-    stdlib = ctx.TypeContext(filename=cache.STDLIB_IMPORT, cache=cache)
-    stdlib_path = cache.get_import_file(cache.STDLIB_INTERNAL_MODULE, "", True)
+    stdlib = TypeContext(filename=STDLIB_IMPORT, cache=cache)
+    stdlib_path = cache.get_import_file(STDLIB_INTERNAL_MODULE, "", True)
     initial_file = "__init__.codon"
     if stdlib_path is None or not stdlib_path.path.endswith(initial_file):
         raise FileNotFoundError("standard library cannot be found")
@@ -383,63 +373,58 @@ def load_std_library(
     if barebones:
         stdlib_path.path.removesuffix("__init__.codon")
         stdlib_path.path += "__init_test__.codon"
-    stdlib.set_filename(stdlib_path.path)
-    cache.imports.setdefault(stdlib_path.path, cache.Import()).update(
-        cache.STDLIB_IMPORT, stdlib_path.path, stdlib
+    stdlib.filename = stdlib_path.path
+    cache.imports[STDLIB_IMPORT] = cache.imports.setdefault(
+        stdlib_path.path, Import(STDLIB_IMPORT, stdlib_path.path, stdlib)
     )
-    cache.imports[cache.STDLIB_IMPORT] = cache.imports[stdlib_path.path]
 
     # Load the standard library
     stdlib.is_stdlib_loading = True
-    stdlib.module_name = cache.Import.File(
-        cache.Import.File.Status.StdLibrary, stdlib_path.path, "__init__"
-    )
+    stdlib.module = Import.File(Import.File.Status.StdLibrary, stdlib_path.path, "__init__")
+    stdlib.preamble = preamble
 
     # 1. Core definitions
-    cache.classes[cache.VAR_CLASS_TOPLEVEL] = cache.ClassData()
+    cache.classes[VAR_CLASS_TOPLEVEL] = ClassData()
     core = cache.parse(code="from internal.core import *")
+    assert isinstance(core, ast.Stmt)
     cache.scope(core)
-    visitor = TypeVisitor(ctx=stdlib, preamble=preamble)
-    if core := visitor.infer_types(core, True):
+    if core := infer.infer_types(stdlib, core, True):
         preamble.items.append(core)
 
     # 2. Load early compile-time defines (for standard library)
     for name, value in early_defines.items():
         if value.startswith("str:"):
-            defined_value = ast.StringExpr(value[4:])
-            literal_name = "str"
+            value = ast.StringExpr(value[4:])
+            type_name = "str"
         elif value.startswith("bool:"):
-            defined_value = ast.BoolExpr(value == "bool:True")
-            literal_name = "bool"
+            value = ast.BoolExpr(value == "bool:True")
+            type_name = "bool"
         else:
-            defined_value = ast.IntExpr(value.removeprefix("int:"))
-            literal_name = "int"
-        transformed = visitor.transform(
+            value = ast.IntExpr(value.removeprefix("int:"))
+            type_name = "int"
+        assign = cache.typecheck(
             ast.AssignStmt(
                 ast.IdExpr(name),
-                rhs=defined_value,
-                type_expr=ast.IndexExpr(ast.IdExpr("Literal"), index=ast.IdExpr(literal_name)),
-            )
+                rhs=value,
+                type_expr=ast.IndexExpr(ast.IdExpr("Literal"), ast.IdExpr(type_name)),
+            ),
+            ctx=stdlib,
         )
-        if isinstance(transformed, ast.Stmt):
-            preamble.items.append(transformed)
+        preamble.items.append(cast(ast.Stmt, assign))
 
     # 3. Load stdlib
-    stdlib = cache.parse(file=stdlib_path.path)
-    cache.scope(stdlib)
-    visitor = TypeVisitor(ctx=stdlib, preamble=preamble)
-    if stdlib := visitor.infer_types(stdlib, True):
-        preamble.items.append(stdlib)
+    node = cache.parse(file=stdlib_path.path)
+    assert isinstance(node, ast.Stmt)
+    cache.scope(node)
+    if node := infer.infer_types(stdlib, node, True):
+        preamble.items.append(node)
     stdlib.is_stdlib_loading = False
 
 
-def typecheck_node(
-    context: ctx.TypeContext, node: ast.Stmt, file: str = "<internal>"
-) -> ast.Stmt | None:
+def typecheck_node(ctx: TypeContext, node: ast.Stmt, file: str = "<internal>") -> ast.Stmt | None:
     with ctx.substitute("filename", file):
         preamble = ast.SuiteStmt()
-        visitor = TypeVisitor(ctx=context, preamble=preamble)
-        if inferred := visitor.infer_types(node, True):
+        if inferred := infer.infer_types(ctx, node, is_toplevel=True):
             return ast.SuiteStmt(preamble, inferred)
-        raise ctx.TypecheckError(visitor.find_typecheck_errors(node))
+        raise TypecheckError(trace=utils.find_typecheck_errors(ctx, node))
     return None

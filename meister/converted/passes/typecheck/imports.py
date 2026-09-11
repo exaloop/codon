@@ -6,14 +6,15 @@ from typing import TYPE_CHECKING
 
 from ....bridge import List
 from ... import ast, cache
+from ...error import TypecheckError
 from . import infer, utils
-from .ctx import TypecheckError, TypeContext
+from .ctx import TypeContext
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Node:
+def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
     """
     Import and parse a new module into its own context.
     Also handle special imports ( see @c transformSpecialImport ).
@@ -25,12 +26,13 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Node:
     See @c transformNewImport and below for more details.
     """
 
-    assert not self.ctx.in_class()
+    assert not self.ctx.in_class
     # Transform special `from C` and `from python` imports.
     match node:
         case ast.ImportStmt(from_expr=ast.IdExpr(value="C"), what=ast.IdExpr(value=value)):
             if node.is_c_var():
                 # C variable imports
+                assert node.ret
                 return transform_c_var_import(self, value, node.ret, node.as_)
             else:
                 # C function imports
@@ -45,28 +47,39 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Node:
         case _:
             pass
 
+    def code(node: ast.Expr):
+        match node:
+            case ast.IdExpr(value=value):
+                return value
+            case ast.DotExpr(expr=expr, member=member):
+                return f"{code(expr)}.{member}"
+            case _:
+                raise TypecheckError(node, f"unexpected import expression {node}")
+
     # Fetch the import
-    components = get_import_path(self, node.from_expr, node.dots)
+    components = get_import_path(node.from_expr, node.dots)
     path = "/".join(components)
     # from "." case
     if node.dots == 1 and not path:
         assert isinstance(node.what, ast.IdExpr), f"not an identifier: {node.what}"
-        return self.visit(ast.ImportStmt(node.what, dots=1))
+        return self.visit_stmt(ast.ImportStmt(node.what, dots=1))
     import_file = self.ctx.cache.get_import_file(path, self.ctx.filename)
     if not import_file:
         if node.dots == 0 and self.ctx.auto_python:
-            python_name = node.from_expr.code()
+            assert node.from_expr
+            python_name = code(node.from_expr)
             if node.what:
-                python_name += f".{node.what.code()}"
-            parsed_expression = parse_string(python_name, "eval")
+                python_name += "." + code(node.what)
+            name_expr = self.ctx.cache.parse(expr=python_name)
+            assert isinstance(name_expr, ast.Expr)
             python_import = ast.ImportStmt(
+                name_expr,
                 ast.IdExpr("python"),
-                what=parsed_expression,
                 args=node.args,
                 ret=node.ret,
                 as_=node.as_,
             )
-            return self.visit(python_import)
+            return self.visit_stmt(python_import)
         display_name = "." * node.dots
         for component in components:
             if component == "..":
@@ -128,21 +141,21 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Node:
         case _:  # from foo import bar
             assert isinstance(node.what, ast.IdExpr), "not a valid import what expression"
             # Make sure that we are importing an existing global symbol
-            if not (found := imported.ctx.find(node.what.value)):
+            if not (found := imported.ctx.get(node.what.value)):
                 raise TypecheckError(
                     node.what,
                     f"cannot import name '{node.what.value}' from '{import_file.module}'",
                 )
             if found.is_conditional():
-                if replacement := imported.ctx.find(node.what.value):
+                if replacement := imported.ctx.get(node.what.value):
                     found = replacement
             # Imports should ignore noShadow property
             self.ctx.add(node.what.value if not node.as_ else node.as_, found)
-    result = self.visit(ast.SuiteStmt() if not result else result)  # erase the statement
+    result = self.visit_stmt(ast.SuiteStmt() if not result else result)  # erase the statement
     return result
 
 
-def get_import_path(self: TypeVisitor, from_expr: ast.Expr | None, dots: int = 0) -> List[str]:
+def get_import_path(from_expr: ast.Expr | None, dots: int = 0) -> List[str]:
     """
     Transform Dot(Dot(a, b), c...) into "{a, b, c, ...}".
     Useful for getting import paths.
@@ -207,10 +220,9 @@ def transform_c_import(
     if has_var_args:
         function.set(ast.Attr.CVarArg)
     # Already in the preamble
-    result = self.visit(function)
+    result = self.visit_stmt(function)
     if alt_name:
-        self.ctx.find(alt_name)
-        self.ctx.add(alt_name, self.ctx.force_find(name))
+        self.ctx.add(alt_name, self.ctx[name])
         self.ctx.remove(name)
     return result
 
@@ -218,7 +230,7 @@ def transform_c_import(
 def transform_c_var_import(
     self: TypeVisitor,
     name: str,
-    type_expr: ast.Expr | None,
+    type_expr: ast.Expr,
     alt_name: str,
 ) -> ast.Stmt:
     """
@@ -228,21 +240,18 @@ def transform_c_var_import(
     ```f: int = "foo"```
     """
     canonical = self.ctx.generate_canonical_name(name)
-    type_expr = self.visit(type_expr.clone(), enforce_type=True)
+    type_expr = self.visit_expr(type_expr.clone(), enforce_type=True)
     linked_type = ast.types.Link(
         cache=self.ctx.cache,
         kind=ast.types.Link.Kind.Link,
         type=utils.extract_class_type(self.ctx, type_expr),
     )
-    value = self.ctx.add_var(
+    value = self.ctx.add_item(
         name if not alt_name else alt_name, canonical, linked_type, self.ctx.time
     )
-    lhs = ast.IdExpr(canonical)
+    lhs = ast.IdExpr(canonical, type=value.type, done=True)
     lhs.set(ast.Attr.ExprExternVar)
-    lhs.type = value.type
-    lhs.done = True
-    assignment = ast.AssignStmt(lhs, type_expr=type_expr)
-    assignment.done = True
+    assignment = ast.AssignStmt(lhs, type_expr=type_expr, done=True)
     return assignment
 
 
@@ -278,16 +287,14 @@ def transform_cdll_import(
             index=ast.TupleExpr([argument_types, return_type]),
         )
     else:
-        if not ret:
-            type_expr = None
-        else:
-            type_expr = ret.clone()
+        assert ret
+        type_expr = ret.clone()
     call = ast.CallExpr(
         ast.IdExpr("_dlsym"),
-        items=[dylib.clone(), ast.StringExpr(name), ast.CallExpr.Arg(name="Fn", value=type_expr)],
+        items=[dylib.clone(), ast.StringExpr(name), ast.CallExpr.Arg(type_expr, name="Fn")],
     )
     assignment = ast.AssignStmt(ast.IdExpr(alt_name or name), rhs=call)
-    return self.visit(assignment)
+    return self.visit_stmt(assignment)
 
 
 def transform_python_import(
@@ -309,7 +316,7 @@ def transform_python_import(
     """
 
     # Get a module name (e.g., os.path)
-    components = get_import_path(self, what)
+    components = get_import_path(what)
     assert components
 
     # Simple import: `from python import foo.bar` -> `bar = pyobj._import("foo.bar")`
@@ -319,7 +326,7 @@ def transform_python_import(
             items=[ast.StringExpr(".".join(components))],
         )
         assignment = ast.AssignStmt(ast.IdExpr(alt_name or components[-1]), rhs=call)
-        return self.visit(assignment)
+        return self.visit_stmt(assignment)
 
     # Python function import:
     # `from python import foo.bar(int) -> float` ->
@@ -338,8 +345,7 @@ def transform_python_import(
     local_fn = ast.AssignStmt(ast.IdExpr("f"), rhs=getattr_call)
 
     # Arguments: f(a1, ...)
-    fn_params = []
-    call_args = []
+    fn_params, call_args = [], []
     for index, argument in enumerate(args):
         fn_params.append(
             ast.Param(f"a{index}", type=argument.type.clone() if argument.type else None)
@@ -362,7 +368,7 @@ def transform_python_import(
         items=fn_params,
         suite=ast.SuiteStmt(local_fn, ast.ReturnStmt(expr=ret_expr)),
     )
-    return self.visit(fn)
+    return self.visit_stmt(fn)
 
 
 def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt | None:
@@ -376,7 +382,6 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
     __name__ = [I]
     [imported top-level statements]```
     """
-    from . import TypeVisitor
 
     # Use a clean context to parse a new file
     module_id = file.module.replace(".", "_")
@@ -384,14 +389,15 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
         filename=file.path,
         cache=self.ctx.cache,
         is_stdlib_loading=self.ctx.is_stdlib_loading,
-        module_name=file,
+        module=file,
     )
-    imported = self.ctx.cache.imports.setdefault(file.path, cache.Import())
-    imported.update(file.module, file.path, ctx)
-    current_module = self.ctx.cache.imports.get(self.ctx.module_name.path)
+    imported = self.ctx.cache.imports.setdefault(
+        file.path, cache.Import(file.module, file.path, ctx)
+    )
+    current_module = self.ctx.cache.imports.get(self.ctx.module.path)
     parent_loaded = True if not current_module else current_module.loaded_at_toplevel
     imported.loaded_at_toplevel = parent_loaded and (
-        self.ctx.is_stdlib_loading or (self.ctx.is_global() and self.ctx.block_level == 0)
+        self.ctx.is_stdlib_loading or (self.ctx.is_global and self.ctx.block_level == 0)
     )
     var = utils.get_temporary_var(self.ctx, f"import_{module_id}")
     imported.import_var = var
@@ -401,8 +407,8 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
     if file.module != "internal.core":
         # str is not defined when loading internal.core; __name__ is not needed anyway
         initial = ast.SuiteStmt(
-            ast.AssignStmt(ast.IdExpr("__name__"), rhs=ast.StringExpr(ctx.module_name.module)),
-            ast.AssignStmt(ast.IdExpr("__file__"), rhs=ast.StringExpr(ctx.module_name.path)),
+            ast.AssignStmt(ast.IdExpr("__name__"), ast.StringExpr(ctx.module.module)),
+            ast.AssignStmt(ast.IdExpr("__file__"), ast.StringExpr(ctx.module.path)),
         )
         self.ctx.add_block()
         try:
@@ -414,24 +420,22 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
                 ast.IdExpr(var), rhs=import_ctr, type_expr=ast.IdExpr("Import")
             )
             import_assignment = self.visit(import_assignment)
-            if self.preamble:
-                self.preamble.add(import_assignment)
-            value = self.ctx.force_find(var)
+            self.ctx.preamble.add(import_assignment)
+            value = self.ctx[var]
             value.block_level = 0
-            value.base_name = ""
-            value.module_name = cache.MODULE_MAIN
+            value.base = ""
+            value.module = cache.MODULE_MAIN
             value.time = 0
         finally:
             self.ctx.pop_block()
         stdlib_module = utils.get_import_module(self.ctx, cache.STDLIB_IMPORT)
         stdlib_module.ctx.add_toplevel(var, value)
-        utils.register_global(self.ctx, value.canonical_name)
+        utils.register_global(self.ctx, value.canonical)
+
     parsed = self.ctx.cache.parse(file=file.path)
-    suite = ast.SuiteStmt(initial, *parsed)
-    visitor = TypeVisitor(ctx=ctx, preamble=self.preamble)
+    assert isinstance(parsed, ast.Stmt)
+    suite = ast.SuiteStmt(initial, parsed)
     self.ctx.cache.scope(suite, ctx.global_shadows, dominate_all=not self.ctx.is_stdlib_loading)
-    if self.ctx.cache.errors.errors:
-        raise TypecheckError(self.ctx.node_stack[-1], f"parse failed for import {file.path}")
 
     # Add comment to the top of import for easier dump inspection
     suite = ast.SuiteStmt(ast.CommentStmt(f"import: {file.module} at {file.path}"), suite)
@@ -439,7 +443,8 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
         # When loading the standard library, imports are not wrapped.
         # We assume that the standard library has no recursive imports and that all
         # statements are executed before the user-provided code.
-        return visitor.visit(suite)
+        with ctx.substitute("preamble", self.ctx.preamble):
+            return ctx.cache.typecheck(suite, ctx)
 
     # Generate import identifier
     internal_return = ast.ReturnStmt()
@@ -452,13 +457,14 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
                 items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[ast.IdExpr(var)])],
             )
         ),
-        suite
+        suite,
     )
     # Wrap all imported top-level statements into a function.
     fn_name = f"{var}_call"
     fn = ast.FunctionStmt(fn_name, ret=ast.IdExpr(ast.types.Stdlib.NoneType), suite=stmts)
-    transformed = visitor.visit(fn)
-    infer.realize(ctx.force_find(fn_name).type)
-    if self.preamble:
-        self.preamble.add(transformed)
+    with ctx.substitute("preamble", self.ctx.preamble):
+        transformed = ctx.cache.typecheck(fn, ctx)
+        infer.realize(ctx, ctx[fn_name].type)
+        self.ctx.preamble.add(transformed)
+
     return None

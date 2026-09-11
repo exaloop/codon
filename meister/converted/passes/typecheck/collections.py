@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from ....bridge import List, cast
 from ... import ast
+from ...error import TypecheckError
 from . import classes, infer, loops, utils
-from .ctx import TypecheckError
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -122,40 +122,36 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
             )
         else:
             result = ast.StmtExpr(plain.items, expr=var)
-        return self.visit(result)
+        return self.visit_expr(result)
 
     if node.kind is ast.GeneratorExpr.Kind.SetGenerator:
         # Set comprehensions
         head = ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Set)))
         node.set_final_expr(ast.CallExpr(ast.DotExpr(var.clone(), member="add"), items=[expr]))
-        return self.visit(ast.StmtExpr([head, node.loops], expr=var))
+        return self.visit_expr(ast.StmtExpr([head, node.loops], expr=var))
     elif node.kind is ast.GeneratorExpr.Kind.DictGenerator:
         # Dictionary comprehensions
         head = ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Dict)))
         node.set_final_expr(
             ast.CallExpr(ast.DotExpr(var.clone(), member="__setitem__"), items=[ast.StarExpr(expr)])
         )
-        return self.visit(ast.StmtExpr([head, node.loops], expr=var))
+        return self.visit_expr(ast.StmtExpr([head, node.loops], expr=var))
     elif node.kind is ast.GeneratorExpr.Kind.TupleGenerator:
         assert node.loop_count() == 1, "invalid tuple generator"
-        generator_node = self.visit(final.iter)
+        generator_node = self.visit_expr(final.iter)
+        assert generator_node and generator_node.type
         if not generator_node.type.can_realize():
             return node  # Wait until the iterator can be realized
 
         # `tuple = tuple_generator`
         tuple_name = utils.get_temporary_var(self.ctx, "tuple")
         block = ast.SuiteStmt(ast.AssignStmt(ast.IdExpr(tuple_name), rhs=generator_node))
-        static_items = loops.populate_static_loop(
-            self,
-            final.var,
-            final.suite,
-            generator_node,
-            expr,
-        )
-
-        return self.visit(ast.StmtExpr(block.items, expr=ast.TupleExpr(static_items)))
+        static_items = loops.populate_static_loop(self, final.var, generator_node, expr)
+        return self.visit_expr(ast.StmtExpr(block.items, expr=ast.TupleExpr(static_items)))
     else:
-        node.loops = self.visit(node.loops)  # assume: internal data will be changed
+        new_loops = self.visit_stmt(node.loops)  # assume: internal data will be changed
+        assert isinstance(new_loops, ast.ForStmt)
+        node.loops = new_loops
         expr = node.final_expr()
         if not expr:
             # Case such as (0 for _ in static.range(2))
@@ -165,15 +161,13 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
                 "generator cannot be compiled. If using static tuple generator, use "
                 "tuple(...) instead.",
             )
-        infer.unify(
-            node.type,
-            utils.instantiate_type(
-                self.ctx,
-                utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Generator),
-                [expr.type],
-            ),
+        assert node.type
+        node.type |= utils.instantiate(
+            self.ctx,
+            utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Generator),
+            [expr.type],
         )
-        if infer.realize(node.type):
+        if infer.realize(self.ctx, node.type):
             node.done = True
         return node
 
@@ -208,32 +202,30 @@ def transform_comprehension(
     ) -> ast.types.Type | None:
         if not typ:
             return item_type
-        elif typ.is_type("int") and item_type.is_type("float"):
+        elif typ == "int" and item_type == "float":
             return item_type
         elif typ.name != ast.types.Stdlib.Optional and item_type.name == ast.types.Stdlib.Optional:
-            return utils.instantiate_type(
-                self.ctx,
-                utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional),
-                [typ],
+            return utils.instantiate(
+                self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional), [typ]
             )
         elif typ.name == ast.types.Stdlib.Optional and item_type.name != ast.types.Stdlib.Optional:
-            return utils.instantiate_type(
+            return utils.instantiate(
                 self.ctx,
                 utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional),
                 [item_type],
             )
-        elif not typ.is_type("pyobj") and item_type.is_type("pyobj"):
+        elif typ != "pyobj" and item_type == "pyobj":
             return item_type
         elif typ.name != item_type.name:
             cls_data = utils.get_class(self.ctx, typ)
             item_cls_data = utils.get_class(self.ctx, item_type)
             if cls_data and item_cls_data:
                 for collection_mro in cls_data.mro:
-                    typ = utils.instantiate_type(
+                    typ = utils.instantiate(
                         self.ctx, collection_mro, [g.type for g in typ.generics]
                     )
                     for item_mro in item_cls_data.mro:
-                        candidate = utils.instantiate_type(
+                        candidate = utils.instantiate(
                             self.ctx, item_mro, [g.type for g in item_type.generics]
                         )
                         if typ.unify(candidate) >= 0:
@@ -251,65 +243,60 @@ def transform_comprehension(
 
         item_type = None
         if not is_dict and isinstance(item, ast.StarExpr):
-            item.expr = self.visit(ast.CallExpr(ast.DotExpr(item.expr, member="__iter__")))
-            if item.expr and item.expr.type and item.expr.type.is_type("Generator"):
-                item_type = item.expr.type[0]
+            item.expr = self.visit_expr(ast.CallExpr(ast.DotExpr(item.expr, member="__iter__")))
+            if item.expr and item.expr.type and item.expr.type == "Generator":
+                item_type = item.expr.type.require_cls[0]
         elif is_dict and isinstance(item, ast.KeywordStarExpr):
-            item.expr = self.visit(ast.CallExpr(ast.DotExpr(item.expr, member="items")))
-            if item.expr and item.expr.type and item.expr.type.is_type("Generator"):
-                item_type = item.expr.type[0]
+            item.expr = self.visit_expr(ast.CallExpr(ast.DotExpr(item.expr, member="items")))
+            if item.expr and item.expr.type and item.expr.type == "Generator":
+                item_type = item.expr.type.require_cls[0]
         else:
-            items[idx] = item = self.visit(item)
-            item_type = item.get_class_type()
+            items[idx] = item = self.visit_expr(item)
+            item_type = item.cls
         if not item_type:
             done = False
             continue
 
-        if not collection_type:
-            infer.unify(collection_type, item_type)
-        elif not is_dict:
-            if common := lowest_common_type(collection_type, item_type):
+        if not is_dict:
+            if common := lowest_common_type(collection_type.require_cls, item_type.require_cls):
                 collection_type = common
         else:
-            tuple_type = infer.unify(
-                item_type,
-                utils.instantiate_type(self.ctx, classes.generate_tuple(self, 2)),
-            )
-            assert collection_type.is_record() and len(collection_type.generics) == 2
-            assert len(tuple_type.generics) == 2
+            tuple_type = utils.instantiate(self.ctx, classes.generate_tuple(self.ctx, 2))
+            item_type |= tuple_type
+            collection_type = collection_type.require_cls
+            assert collection_type.is_tuple and len(collection_type.generics) == 2
+            assert len(tuple_type.require_cls.generics) == 2
 
             new_types = []
             for dict_index in range(2):
-                new_type = collection_type[dict_index]
+                new_type = collection_type[dict_index].require_cls
                 if not new_type:
                     infer.unify(new_type, tuple_type[dict_index])
-                elif common := lowest_common_type(new_type, tuple_type[dict_index]):
+                elif common := lowest_common_type(new_type, tuple_type[dict_index].require_cls):
                     new_type = common
                 new_types.append(new_type)
-            collection_type = utils.instantiate_type(
-                self.ctx, classes.generate_tuple(self, len(new_types)), new_types
+            collection_type = utils.instantiate(
+                self.ctx, classes.generate_tuple(self.ctx, len(new_types)), new_types
             )
     if not done:
         return None
 
     stmts = []
     var = ast.IdExpr(utils.get_temporary_var(self.ctx, "cont"))
-    ctr_args: List[ast.CallExpr.Arg] = []
+    ctr_args = []
     if type_name == ast.types.Stdlib.List and items:
-        ctr_args.append(ast.IntExpr(len(items)))
+        ctr_args.append(ast.CallExpr.Arg(ast.IntExpr(len(items))))
     ctr = ast.IdExpr(type_name)
-    collection_template = utils.instantiate_type(
-        self.ctx, utils.get_stdlib_type(self.ctx, type_name)
-    )
+    collection_template = utils.instantiate(self.ctx, utils.get_stdlib_type(self.ctx, type_name))
     if is_dict and collection_type:
-        assert collection_type.is_record()
-        collection_template = utils.instantiate_type(
+        assert collection_type.require_cls.is_tuple
+        collection_template = utils.instantiate(
             self.ctx,
             utils.get_stdlib_type(self.ctx, type_name),
-            [generic.type for generic in collection_type.generics],
+            [generic.type for generic in collection_type.require_cls.generics],
         )
     elif not is_dict:
-        collection_template = utils.instantiate_type(
+        collection_template = utils.instantiate(
             self.ctx,
             utils.get_stdlib_type(self.ctx, type_name),
             [collection_type],

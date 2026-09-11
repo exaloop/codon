@@ -2,80 +2,83 @@
 
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 from ....bridge import List, cast
-from ... import ast, cache, error
-from ..scope import Bindings, ScopingVisitor
+from ... import ast, cache
+from ...error import TypecheckError
+from ..scope import Bindings
 from . import classes, infer, utils
-from .ctx import TypecheckError
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_lambda(self: TypeVisitor, node: ast.LambdaExpr) -> ast.Node:
+def typecheck_lambda(self: TypeVisitor, node: ast.LambdaExpr) -> ast.Expr:
     """
     Unify the function return type with `Generator[?]`.
     The unbound type will be deduced from return/yield statements.
     """
 
-    function = ast.FunctionStmt(
+    fn = ast.FunctionStmt(
         name=utils.get_temporary_var(self.ctx, "lambda"),
         items=[param.clone() for param in node.items],
-        suite=ast.ReturnStmt(node.expr),
+        suite=ast.ReturnStmt(expr=node.expr),
     )
     # TODO: just copy BindingsAttribute from expr instead?
-    self.ctx.cache.scope(ast.SuiteStmt(function))
-    function.set(ast.Attr.ExprTime, self.ctx.time)  # to handle captures properly
-    function = self.visit(function)
+    self.ctx.cache.scope(ast.SuiteStmt(fn))
+    fn.set(ast.Attr.ExprTime, self.ctx.time)  # to handle captures properly
+    fn = self.visit_stmt(fn)
+    assert isinstance(fn, ast.FunctionStmt)
     if bindings := node.get(ast.Attr.Bindings):
-        function.set(ast.Attr.Bindings, bindings.clone())
-    self.prepend_stmts.append(function)
-    return self.visit(ast.IdExpr(function.name))
+        fn.set(ast.Attr.Bindings, bindings.clone())
+    self.ctx.prepend_stmts[-1].append(fn)
+    return self.visit_expr(ast.IdExpr(fn.name))
 
 
-def typecheck_yieldexpr(self: TypeVisitor, node: ast.YieldExpr) -> ast.Node:
+def typecheck_yieldexpr(self: TypeVisitor, node: ast.YieldExpr) -> ast.Expr:
     """
     Unify the function return type with `Generator[?]`.
     The unbound type will be deduced from return/yield statements.
     """
-    if not self.ctx.in_function():
+    if not self.ctx.in_function:
         raise TypecheckError(node, "'yield' outside function")
 
-    base = self.ctx.get_base()
-    infer.unify(
-        base.return_type,
-        utils.instantiate_type(self.ctx, utils.get_stdlib_type(self.ctx, "Generator"), [node.type]),
+    base = self.ctx.base
+    assert node.type and base.return_type
+    base.return_type |= utils.instantiate(
+        self.ctx, utils.get_stdlib_type(self.ctx, "Generator"), [node.type]
     )
-    if infer.realize(node.type):
+    if infer.realize(self.ctx, node.type):
         node.done = True
     return node
 
 
-def typecheck_await(self: TypeVisitor, node: ast.AwaitExpr) -> ast.Node:
+def typecheck_await(self: TypeVisitor, node: ast.AwaitExpr) -> ast.Expr:
     """Typecheck await statements."""
-    if not self.ctx.in_function():
+    if not self.ctx.in_function:
         raise TypecheckError(node, "'await' outside function")
-    base = self.ctx.get_base()
+    base = self.ctx.base
+    assert base.func
     if not base.func.async_:
         raise TypecheckError(node, "'await' outside function")
 
-    node.expr = self.visit(node.expr)
-    if not node.transformed and (expr_type := node.expr.type.get_class()):
+    node.expr = self.visit_expr(node.expr)
+    if not node.transformed and (expr_type := node.expr.cls):
         is_coroutine = (
-            expr_type.is_type(ast.types.Stdlib.Coroutine)
-            or expr_type.is_type(ast.types.mangle("std.asyncio", cls="Future"))
-            or expr_type.is_type(ast.types.mangle("std.asyncio", cls="Task"))
+            expr_type == ast.types.Stdlib.Coroutine
+            or expr_type == ast.types.mangle("std.asyncio", cls="Future")
+            or expr_type == ast.types.mangle("std.asyncio", cls="Task")
         )
         if not is_coroutine:
             if utils.find_method(self.ctx, expr_type, "__await__"):
-                awaited = self.visit(ast.CallExpr(ast.DotExpr(node.expr, member="__await__")))
+                awaited = self.visit_expr(ast.CallExpr(ast.DotExpr(node.expr, member="__await__")))
                 is_coroutine = (
-                    awaited.type.is_type(ast.types.Stdlib.Coroutine)
-                    or awaited.type.is_type(ast.types.mangle("std.asyncio", cls="Future"))
-                    or awaited.type.is_type(ast.types.mangle("std.asyncio", cls="Task"))
-                    or awaited.type.is_type(ast.types.Stdlib.Generator)
+                    awaited.type == ast.types.Stdlib.Coroutine
+                    or awaited.type == ast.types.mangle("std.asyncio", cls="Future")
+                    or awaited.type == ast.types.mangle("std.asyncio", cls="Task")
+                    or awaited.type == ast.types.Stdlib.Generator
                 )
                 if not is_coroutine:
                     raise TypecheckError(node, "expected awaitable expression")
@@ -83,14 +86,16 @@ def typecheck_await(self: TypeVisitor, node: ast.AwaitExpr) -> ast.Node:
                 node.transformed = True
             else:
                 raise TypecheckError(node, "expected awaitable expression")
-    if typ := node.expr.type.get_class():
-        infer.unify(node.type, typ[0])
+
+    assert node.expr.type and node.type
+    if typ := node.expr.type.cls:
+        node.type |= typ[0]
     if node.expr.done:
         node.done = True
     return node
 
 
-def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Node:
+def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Stmt:
     """
     Typecheck return statements. Empty return is transformed to `return NoneType()`.
     Also partialize functions if they are being returned.
@@ -98,15 +103,17 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Node:
     """
 
     if node.has(ast.Attr.Internal):
-        node.expr = self.visit(
+        node.expr = self.visit_expr(
             ast.CallExpr(ast.IdExpr(ast.types.mangle(cls="NoneType", func="__new__")))
         )
         node.done = True
         return node
-    if not self.ctx.in_function():
+    if not self.ctx.in_function:
         raise TypecheckError(node, "'return' outside function")
 
-    base = self.ctx.get_base()
+    base = self.ctx.base
+    assert base.func and base.return_type
+
     is_async = base.func.async_
     if node.expr is None and base.func.has(ast.Attr.IsGenerator):
         node.done = True
@@ -115,38 +122,36 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Node:
             raise TypecheckError(node, "returning values from generators not yet supported")
         if node.expr is None:
             node.expr = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
-        node.expr = self.visit(node.expr)
+        node.expr = self.visit_expr(node.expr)
 
         # Wrap expression to match the return type
-        if base.return_type.get_unbound() is None:
-            can_wrap, node.expr = utils.wrap_expr(self, node.expr, base.return_type)
+        if not base.return_type.unbound:
+            can_wrap, node.expr = utils.wrap_expr(self.ctx, node.expr, base.return_type)
             if not can_wrap:
                 return node
-        fn_type = node.expr.type.get_func()
-        ret_type = base.return_type.get_class()
+
+        assert node.expr.type
+        fn_type = node.expr.type.func
+        ret_type = base.return_type.cls
         # Special case: partialize functions if we are returning them
-        if fn_type and not (ret_type and base.return_type.is_type(ast.types.Stdlib.Function)):
+        if fn_type and not (ret_type and base.return_type == ast.types.Stdlib.Function):
             partial = ast.CallExpr(
                 ast.IdExpr(fn_type.ast.name),
-                items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.PARTIAL)],
+                items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)],
             )
-            node.expr = self.visit(partial)
-        if (
-            base.return_type.get_static_kind() is ast.types.Type.Behaviour.Runtime
-            and node.expr.type.get_static()
-        ):
-            node.expr.type = node.expr.type.get_static().get_non_static_type()
+            node.expr = self.visit_expr(partial)
+
+        assert node.expr.type
+        if base.return_type.is_runtime and node.expr.type.literal:
+            node.expr.type = node.expr.type.literal.runtime_type
         if is_async:
-            infer.unify(
-                base.return_type,
-                utils.instantiate_type(
-                    self.ctx,
-                    utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Coroutine),
-                    [node.expr.type],
-                ),
+            base.return_type |= utils.instantiate(
+                self.ctx,
+                utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Coroutine),
+                [node.expr.type],
             )
         else:
-            infer.unify(base.return_type, node.expr.type)
+            base.return_type |= node.expr.type
 
     if self.ctx.block_level == 0:
         # If we are not within conditional block, ignore later statements in this function.
@@ -158,39 +163,38 @@ def typecheck_return(self: TypeVisitor, node: ast.ReturnStmt) -> ast.Node:
     return node
 
 
-def typecheck_yield(self: TypeVisitor, node: ast.YieldStmt) -> ast.Node:
+def typecheck_yield(self: TypeVisitor, node: ast.YieldStmt) -> ast.Stmt:
     """Typecheck yield statements. Empty yields assume `NoneType`."""
-    if not self.ctx.in_function():
+    if not self.ctx.in_function:
         raise TypecheckError(node, "'yield' outside function")
 
-    base = self.ctx.get_base()
+    base = self.ctx.base
+    assert base.return_type and base.func
     expression = node.expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType))
-    node.expr = self.visit(expression)
-    infer.unify(
-        base.return_type,
-        utils.instantiate_type(
-            self.ctx,
-            utils.get_stdlib_type(self.ctx, "AsyncGenerator" if base.func.async_ else "Generator"),
-            [node.expr.type],
-        ),
+    node.expr = self.visit_expr(expression)
+    assert node.expr.type
+    base.return_type |= utils.instantiate(
+        self.ctx,
+        utils.get_stdlib_type(self.ctx, "AsyncGenerator" if base.func.async_ else "Generator"),
+        [node.expr.type],
     )
     if node.expr.done:
         node.done = True
     return node
 
 
-def typecheck_yieldfrom(self: TypeVisitor, node: ast.YieldFromStmt) -> ast.Node:
+def typecheck_yieldfrom(self: TypeVisitor, node: ast.YieldFromStmt) -> ast.Stmt:
     """
     Transform `yield from` statements.
     @example
     `yield from a` -> `for var in a: yield var`
     """
     var = utils.get_temporary_var(self.ctx, "yield")
-    result = ast.ForStmt(ast.IdExpr(var), iter=node.expr, suite=ast.YieldStmt(ast.IdExpr(var)))
-    return self.visit(result)
+    result = ast.ForStmt(ast.IdExpr(var), iter=node.expr, suite=ast.YieldStmt(expr=ast.IdExpr(var)))
+    return self.visit_stmt(result)
 
 
-def typecheck_global(self: TypeVisitor, node: ast.GlobalStmt) -> ast.Node:
+def typecheck_global(_: TypeVisitor, node: ast.GlobalStmt) -> ast.Node:
     """Handled in scoping stage."""
     return ast.SuiteStmt()
 
@@ -212,8 +216,10 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
     # Parse attributes
     has_decorators = False
+    decorators = []
     for idx in range(len(node.decorators) - 1, -1, -1):
         decorator = node.decorators[idx]
+        decorators.append(decorator)
         if decorator is None:
             continue
         is_attr, attr_name, attr_realized_name = get_decorator(self, decorator)
@@ -245,21 +251,22 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 if inherited_attrs := attr_fn.ast.get(ast.Attr.FunctionAttributes):
                     fn_attrs.update(inherited_attrs)
             if is_attr:
-                node.decorators[idx] = None  # ignore it later on
+                decorators[idx] = None  # ignore it later on
         if not is_attr:
             has_decorators = True
 
-    is_class_member = self.ctx.in_class()
-    if node.has(ast.Attr.ForceRealize) and (not self.ctx.is_global() or is_class_member):
+    is_class_member = self.ctx.in_class
+    if node.has(ast.Attr.ForceRealize) and (not self.ctx.is_global or is_class_member):
         raise TypecheckError(node, "builtin must be a top-level statement")
 
     # All overloads share the same canonical name except for the number at the
     # end (e.g., `foo.1:0`, `foo.1:1` etc.)
     root_name = ""
-    current_base = self.ctx.get_base()
+    current_base = self.ctx.base
     if is_class_member:
         # Case 1: method overload
         current_class = utils.get_class(self.ctx, current_base.name)
+        assert current_class
         root_name = current_class.methods.get(node.name, "")
         # TODO: handle static inherits and auto-generated cases
         if not root_name and node.has(ast.Attr.Overload):
@@ -270,62 +277,58 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     elif node.has(ast.Attr.Overload):
         # Case 2: function overload
         if (
-            (existing := self.ctx.find(node.name, self.ctx.time))
-            and existing.is_func()
-            and existing.module_name == self.ctx.get_module()
-            and existing.base_name == self.ctx.get_base_name()
+            (existing := self.ctx.find_at(node.name, self.ctx.time))
+            and existing.func
+            and existing.module == self.ctx.module_name
+            and existing.base == self.ctx.base_name
         ):
-            root_name = existing.canonical_name
+            root_name = existing.canonical
     if not root_name:
         root_name = self.ctx.generate_canonical_name(node.name, True, is_class_member)
     # Append overload number to the name
-    canonical_name = root_name
+    canonical = root_name
     self.ctx.cache.overloads.setdefault(root_name, [])
-    canonical_name += f":{len(utils.get_overloads(self.ctx, root_name))}"
-    self.ctx.cache.reverse_identifier_lookup[canonical_name] = node.name
+    canonical += f":{len(utils.get_overloads(self.ctx, root_name))}"
+    self.ctx.cache.reverse_identifier_lookup[canonical] = node.name
 
     if is_class_member:
         # Set the enclosing class name
         node.set(ast.Attr.ParentClass, current_base.name)
         # Add the method to the class' method list
         cls_data = utils.get_class(self.ctx, current_base.name)
+        assert cls_data
         cls_data.methods[node.name] = root_name
 
     # Handle captures. Add additional argument to the function for every capture.
     # Make sure to account for **kwargs if present
     if bindings := node.get(ast.Attr.Bindings):
+        assert isinstance(bindings, Bindings)
         insert_idx = len(node.items)
         if node.items and node.items[-1].name.startswith("**"):
             insert_idx -= 1
         for captured_name, capture_type in bindings.captures.items():
             capture_arg = f"${captured_name}"
             if (
-                (captured_item := self.ctx.find(captured_name, self.ctx.time))
+                (captured_item := self.ctx.find_at(captured_name, self.ctx.time))
                 and capture_type is not Bindings.Scope.Global
                 and not captured_item.is_global()
             ):
                 parent_class_generic = (
-                    self.ctx.bases[-1].is_type()
-                    and self.ctx.bases[-1].name == captured_item.base_name
+                    self.ctx.bases[-1].is_type and self.ctx.bases[-1].name == captured_item.base
                 )
                 if captured_item.generic and parent_class_generic:
                     node.set(ast.Attr.Method)
                 if not captured_item.generic or (
-                    captured_item.get_static_kind() is not ast.types.Type.Behaviour.Runtime
-                    and not parent_class_generic
+                    not captured_item.type.is_runtime and not parent_class_generic
                 ):
-                    if not captured_item.is_func():
-                        if captured_item.is_type():
+                    if not captured_item.func:
+                        if captured_item.is_type:
                             node.items.insert(
                                 insert_idx,
                                 ast.Param(capture_arg, type=ast.IdExpr(ast.types.Stdlib.Type)),
                             )
-                        elif (
-                            captured_item.get_static_kind() is not ast.types.Type.Behaviour.Runtime
-                        ):
-                            type_name = ast.types.Type.string_from_literal(
-                                captured_item.get_static_kind()
-                            )
+                        elif not captured_item.type.is_runtime:
+                            type_name = str(captured_item.type.static_kind)
                             node.items.insert(
                                 insert_idx,
                                 ast.Param(
@@ -346,7 +349,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     else:
                         # Local function is captured. Just note its canonical name and add it to
                         # the context during realization.
-                        bindings.local_renames[captured_name] = captured_item.canonical_name
+                        bindings.local_renames[captured_name] = captured_item.canonical
                 continue
             if (
                 captured_name == node.name and has_decorators  # decorated recursive fns
@@ -359,10 +362,10 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     ret = None
     explicits = []
     base_type = None
-    is_global = self.ctx.is_global()
+    is_global = self.ctx.is_global
 
-    with self.ctx.within_base(canonical_name):
-        fn_base = self.ctx.get_base()
+    with self.ctx.within_base(canonical):
+        fn_base = self.ctx.base
         fn_base.func = node
 
         # Parse arguments and add them to the context
@@ -401,7 +404,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     # Special case: generic defaults are evaluated as-is!
                     default = self.visit(default)
                 case _:
-                    default_name = f".default.{canonical_name}.{param.name}"
+                    default_name = f".default.{canonical}.{param.name}"
+
                     new_context = self.ctx.clone()
                     new_context.bases.pop()
                     if is_class_member:
@@ -417,13 +421,13 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                         declaration = default_visitor.visit(
                             ast.AssignStmt(ast.IdExpr(default_name))
                         )
-                        self.preamble.add(declaration)
+                        self.ctx.preamble.add(declaration)
                         utils.register_global(self.ctx, default_name)
                         assignment.set_update()
                     elif is_global:
                         utils.register_global(self.ctx, default_name)
-                    self.prepend_stmts.append(default_visitor.visit(assignment))
-                    default_item = self.ctx.force_find(default_name)
+                    self.ctx.prepend_stmts[-1].append(default_visitor.visit_stmt(assignment))
+                    default_item = self.ctx[default_name]
                     # Default unbounds must be allowed to pass through
                     # to support cases such as `a = []`
                     for unbound in default_item.type.get_unbounds(False):
@@ -444,17 +448,15 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 generic_type = utils.instantiate_unbound(self.ctx)
                 type_id = generic_type.id
                 generic_type.generic_name = var_name
-                transformed_generic_default = self.visit(
-                    None if param.default_value is None else param.default_value.clone()
-                )
+                default = self.visit_expr(param.default.clone()) if param.default else None
                 default_type = None
-                if isinstance(transformed_generic_default, ast.Expr):
-                    default_type = utils.extract_type(self.ctx, transformed_generic_default)
+                if isinstance(default, ast.Expr):
+                    default_type = utils.extract_type(self.ctx, default)
                 static_kind = ast.get_static_generic(param.type)
                 if static_kind is not ast.types.Type.Behaviour.Runtime:
-                    generic_item = self.ctx.add(var_name, param_name, generic_type)
+                    generic_item = self.ctx.add_item(var_name, param_name, generic_type)
                     generic_item.generic = True
-                    generic_type.static_kind = static_kind
+                    generic_type._static_kind = static_kind
                     if default_type:
                         generic_type.default_type = default_type
                 else:
@@ -463,30 +465,30 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                             expr=ast.IdExpr(value=ast.types.Stdlib.TypeTrait), items=[type_expr, *_]
                         ):
                             # Parse TraitVar
-                            trait_expr = self.visit(type_expr, enforce_type=True, simple_types=True)
-                            trait_type = trait_expr.type.get_link()
+                            trait_expr = self.visit_expr(
+                                type_expr, enforce_type=True, simple_types=True
+                            )
+                            assert trait_expr.type
                             generic_type.trait = (
-                                trait_type.trait
-                                if trait_type and trait_type.trait
+                                trait_expr.type.link.trait
+                                if trait_expr.type.link
                                 else ast.types.TypeTrait(trait_expr.type)
                             )
-                    generic_item = self.ctx.add(var_name, param_name, generic_type)
+                    generic_item = self.ctx.add_item(var_name, param_name, generic_type)
                     generic_item.generic = True
                     if default_type:
                         generic_type.default_type = default_type
                 generalized = generic_type.generalize(self.ctx.typecheck_level)
                 var_name = var_name.removeprefix("$")
                 explicits.append(
-                    ast.types.Generic(
-                        param_name, generalized, type_id, generalized.get_static_kind()
-                    )
+                    ast.types.Generic(param_name, generalized, type_id, generalized.static_kind)
                 )
 
         # Prepare list of all generic types
         parent_class = None
         if is_class_member and node.has(ast.Attr.Method):
             # Get class generics (e.g., T for `class Cls[T]: def foo:`)
-            parent_item = self.ctx.force_find(node.get(ast.Attr.ParentClass).value)
+            parent_item = self.ctx[node.get(ast.Attr.ParentClass)]
             parent_class = utils.extract_class_type(self.ctx, parent_item.type)
         # Add function generics
         generic_types = []
@@ -500,11 +502,11 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             # Parse arguments to the context. Needs to be done after adding generics
             # to support cases like `foo(a: T, T: type)`
             for arg in arguments:
-                arg.type = self.visit(arg.type, enforce_type=True, simple_types=True)
+                arg.type = self.visit_expr(arg.type, enforce_type=True, simple_types=True)
 
             # Unify base type generics with argument types. Add non-generic arguments to the
             # context. Delayed to prevent cases like `def foo(a, b=a)`
-            arg_tuple = base_type[0].get_class()
+            arg_tuple = base_type[0].require_cls
             arg_idx = 0
             for param_idx, param in enumerate(node.items):
                 if not param.is_value():
@@ -513,7 +515,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 if param.type is None:
                     if parent_class and param_idx == 0 and param.name == "self":
                         # Special case: self in methods
-                        unified_self = infer.unify(arg_generic, parent_class)
+                        arg_generic |= parent_class
                         parent_cache = utils.get_class(self.ctx, parent_class)
                         if (
                             parent_cache
@@ -522,11 +524,9 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                             and node.has(ast.Attr.ClassDeduce)
                             and node.name == "__init__"
                         ):
-                            for unbound in unified_self.get_unbounds(True):
+                            for unbound in arg_generic.get_unbounds(True):
                                 node.set(ast.Attr.AllowPassThrough)
-                                link = unbound.get_link()
-                                if link:
-                                    link.pass_through = True
+                                unbound.pass_through = True
                     else:
                         generic_types.append(arg_generic)
                 elif param.name.startswith("*"):
@@ -535,21 +535,28 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     # call typechecking
                     generic_types.append(arg_generic)
                 else:
-                    param_type_expr = self.visit(param.type, enforce_type=True, simple_types=True)
-                    infer.unify(arg_generic, utils.extract_type(self.ctx, param_type_expr))
+                    param_type_expr = self.visit_expr(
+                        param.type, enforce_type=True, simple_types=True
+                    )
+                    arg_generic |= utils.extract_type(self.ctx, param_type_expr)
                 arg_idx += 1
 
             # Parse the return type
-            ret = self.visit(node.ret, enforce_type=True, simple_types=True)
+            ret = (
+                self.visit_expr(node.ret, enforce_type=True, simple_types=True)
+                if node.ret
+                else None
+            )
             ret_type = base_type[1]
             if ret:
                 # Fix for functions returning Literal types
                 return_static_kind = ast.get_static_generic(ret)
                 if return_static_kind is not ast.types.Type.Behaviour.Runtime:
                     base_type.generics[1].static_kind = return_static_kind
-                infer.unify(ret_type, utils.extract_type(self.ctx, ret))
+                ret_type |= utils.extract_type(self.ctx, ret)
             else:
-                generic_types.append(infer.unify(ret_type, utils.instantiate_unbound(self.ctx)))
+                ret_type |= utils.instantiate_unbound(self.ctx)
+                generic_types.append(ret_type)
 
         # Generalize generics and remove them from the context
         for generic_type in generic_types:
@@ -560,31 +567,33 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
         # Parse function body
         if not node.has(ast.Attr.Internal) and not node.has(ast.Attr.C):
             if node.has(ast.Attr.LLVM):
-                suite = transform_llvm_definition(self, node.suite.first_in_block())
+                code = node.suite.first_in_block()
+                assert code
+                suite = transform_llvm_definition(self, code)
             elif node.has(ast.Attr.C):
                 pass
             else:
                 suite = node.suite.clone()
-    node.set(ast.Attr.Module, self.ctx.module_name.path)
+    node.set(ast.Attr.Module, self.ctx.module.path)
 
     # Make function AST and cache it for later realization
     function_ast = ast.FunctionStmt(
-        canonical_name, ret=ret, items=arguments, suite=suite, async_=node.async_, done=True
+        canonical, ret=ret, items=arguments, suite=suite, async_=node.async_, done=True
     )
     function_ast.attributes = copy.deepcopy(node.attributes)
-    if "_thunk_dispatch" in canonical_name:
+    if "_thunk_dispatch" in canonical:
         node.set(ast.Attr.AllowPassThrough)
     fn_data = cache.FunctionData(
-        module=self.ctx.get_module_path(),
+        module=self.ctx.module_path,
         root_name=root_name,
         ast=function_ast,
         orig_ast=original_statement,
-        is_toplevel=not self.ctx.get_module() and self.ctx.is_global(),
+        is_toplevel=not self.ctx.module_name and self.ctx.is_global,
     )
-    self.ctx.cache.functions[canonical_name] = fn_data
+    self.ctx.cache.functions[canonical] = fn_data
     parent_class = None
-    if parent_name := node.get(ast.Attr.ParentClass).value:
-        parent_item = self.ctx.force_find(parent_name)
+    if parent_name := node.get(ast.Attr.ParentClass):
+        parent_item = self.ctx[parent_name]
         parent_class = utils.extract_class_type(self.ctx, parent_item.type)
 
     # Construct the type
@@ -607,31 +616,34 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             ):
                 insert_idx = idx
                 break
-        overloads.insert(insert_idx, canonical_name)
+        overloads.insert(insert_idx, canonical)
     else:
-        overloads.append(canonical_name)
-    self.ctx.add(node.name, root_name, fn_type)
-    self.ctx.add(canonical_name, canonical_name, fn_type)
+        overloads.append(canonical)
+    self.ctx.add_item(node.name, root_name, fn_type)
+    self.ctx.add_item(canonical, canonical, fn_type)
     if node.has(ast.Attr.Overload) or is_class_member:
         self.ctx.remove(node.name)  # first overload will handle it!
 
     # Special method handling
     if is_class_member:
+        assert parent_class
         method_root = utils.get_class_method(
-            self.ctx, parent_class, utils.get_unmangled_name(self.ctx, canonical_name)
+            self.ctx, parent_class, utils.get_unmangled_name(self.ctx, canonical)
         )
         found = False
         for overload_name in utils.get_overloads(self.ctx, method_root):
-            if overload_name == canonical_name:
-                matching_function = utils.get_function(self.ctx, overload_name)
-                matching_function.type = fn_type
+            if overload_name == canonical:
+                fn_data = utils.get_function(self.ctx, overload_name)
+                assert fn_data
+                fn_data.type = fn_type
                 found = True
                 break
-        assert found, f"cannot find matching class method for {canonical_name}"
+        assert found, f"cannot find matching class method for {canonical}"
     else:
         # Hack so that we can later use same helpers for class overloads
-        top_level_class = utils.get_class(self.ctx, cache.VAR_CLASS_TOPLEVEL)
-        top_level_class.methods[node.name] = root_name
+        cls_data = utils.get_class(self.ctx, cache.VAR_CLASS_TOPLEVEL)
+        assert cls_data
+        cls_data.methods[node.name] = root_name
 
     # Ensure that functions with @C, @force_realize, and @export attributes can be realized
     if (
@@ -649,11 +661,12 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             if final:
                 final = ast.CallExpr(decorator, items=[final])
             else:
-                e = ast.IdExpr(canonical_name)
+                e = ast.IdExpr(canonical)
                 e.set(ast.Attr.ExprDoNotRealize)
                 final = ast.CallExpr(decorator, items=[e])
     if final:
-        assign = ast.AssignStmt(ast.IdExpr(node.name), rhs=final)
+        assign_lhs = ast.IdExpr(node.name)
+        assign = ast.AssignStmt(assign_lhs, rhs=final)
         if is_class_member:  # class method decorator
             new_context = self.ctx.clone()
             new_context.bases.pop()
@@ -661,14 +674,14 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             visitor = TypeVisitor(ctx=new_context)
             decorated_name = self.ctx.generate_canonical_name(node.name)
             declaration = visitor.visit(ast.AssignStmt(ast.IdExpr(decorated_name)))
-            self.preamble.add_stmt(declaration)
+            self.ctx.preamble.add(declaration)
             utils.register_global(self.ctx, decorated_name)
             assign.set_update()
-            assign.lhs.value = decorated_name
+            assign_lhs.value = decorated_name
             call_args = []
             for arg in node.items:
                 if arg.name.startswith("**"):
-                    call_args.append(ast.KeywordStarExpr(ast.IdExpr(arg.name)))
+                    call_args.append(ast.KeywordStarExpr(expr=ast.IdExpr(arg.name)))
                 elif arg.name.startswith("*"):
                     call_args.append(ast.StarExpr(ast.IdExpr(arg.name)))
                 else:
@@ -677,12 +690,12 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 node.name,
                 ret=None if node.ret is None else node.ret.clone(),
                 items=[argument.clone() for argument in node.items],
-                suite=ast.ReturnStmt(ast.CallExpr(ast.IdExpr(decorated_name), items=call_args)),
+                suite=ast.ReturnStmt(expr=ast.CallExpr(ast.IdExpr(decorated_name), call_args)),
                 async_=node.async_,
             )
             wrapper_fn = self.visit(wrapper_fn)
             assign = self.visit(assign)
-            return ast.SuiteStmt(function_ast, ast.SuiteStmt([assign, wrapper_fn]))
+            return ast.SuiteStmt(function_ast, ast.SuiteStmt(assign, wrapper_fn))
         assign = self.visit(assign)
         return ast.SuiteStmt(function_ast, assign)
     return function_ast
@@ -723,13 +736,13 @@ def transform_python_definition(
             )
         ),
         ast.ImportStmt(
+            ast.DotExpr(ast.IdExpr("__main__"), member=name),
             ast.IdExpr("python"),
-            what=ast.DotExpr(ast.IdExpr("__main__"), member=name),
             args=imported_args,
             ret=ret.clone() if ret else ast.IdExpr("pyobj"),
         ),
     )
-    return self.visit(transformed)
+    return self.visit_stmt(transformed)
 
 
 def transform_llvm_definition(self: TypeVisitor, code_stmt: ast.Stmt) -> ast.Stmt:
@@ -802,7 +815,8 @@ def transform_llvm_definition(self: TypeVisitor, code_stmt: ast.Stmt) -> ast.Stm
             offset = self.ctx.node_stack[-1].info
             offset.col += index
 
-            parsed = parse_string(expression_code, "eval")
+            parsed = self.ctx.cache.parse(expr=expression_code)
+            assert isinstance(parsed, ast.Expr)
             parsed.info = offset
             items.append(ast.ExprStmt(parsed))
             brace_start = index + 1
@@ -821,7 +835,7 @@ def get_decorator(self: TypeVisitor, expression: ast.Expr):
     actually an attribute (a function with `@__attribute__`).
     """
 
-    decorator = self.visit(expression.clone())
+    decorator = self.visit_expr(expression.clone())
     decorator = utils.get_head_expr(decorator)
 
     match decorator:
@@ -832,21 +846,26 @@ def get_decorator(self: TypeVisitor, expression: ast.Expr):
         case _:
             identifier = None
     if identifier:
-        item = self.ctx.find(identifier.value, self.ctx.time)
-        if item and item.is_func():
-            fn_name = item.type.get_func().ast.name
-            fn = utils.get_function(self.ctx, fn_name)
-            if fn is None:
+        item = self.ctx.find_at(identifier.value, self.ctx.time)
+        if item and item.func:
+            fn_name = item.func.func_name
+            fn_data = utils.get_function(self.ctx, fn_name)
+            if not fn_data:
                 if (overloads := self.ctx.cache.overloads.get(fn_name)) and len(overloads) == 1:
-                    fn = utils.get_function(self.ctx, overloads[0])
+                    fn_data = utils.get_function(self.ctx, overloads[0])
 
             # Special case: Id to Call
-            if fn and fn.ast.has(ast.Attr.Attribute) and isinstance(decorator, ast.IdExpr):
-                decorator = self.visit(ast.CallExpr(decorator))
+            if (
+                fn_data
+                and fn_data.ast
+                and fn_data.ast.has(ast.Attr.Attribute)
+                and isinstance(decorator, ast.IdExpr)
+            ):
+                decorator = self.visit_expr(ast.CallExpr(decorator))
 
-            if fn:
+            if fn_data and fn_data.ast:
                 return (
-                    fn.ast.has(ast.Attr.Attribute),
+                    fn_data.ast.has(ast.Attr.Attribute),
                     fn_name,
                     identifier.value if decorator.done else "",
                 )
@@ -856,11 +875,10 @@ def get_decorator(self: TypeVisitor, expression: ast.Expr):
 def get_func_type_base(self: TypeVisitor, argument_count: int) -> ast.types.Class:
     """Generate and return `Function[Tuple[args...], ret]` type"""
 
-    base = utils.instantiate_type(
+    base = utils.instantiate(
         self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Function)
-    ).get_class()
-    infer.unify(
-        base[0],
-        utils.instantiate_type(self.ctx, classes.generate_tuple(self, argument_count, False)),
+    ).require_cls
+    base.generics[0].type |= utils.instantiate(
+        self.ctx, classes.generate_tuple(self.ctx, argument_count, False)
     )
     return base

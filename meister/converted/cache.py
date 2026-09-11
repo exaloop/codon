@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..bridge import Callable, Dict, Enum, List, Set, dataclass
 from . import ast
+
+if TYPE_CHECKING:
+    from .passes.typecheck.ctx import TypeContext
+
 
 FILE_GENERATED: str = "<generated>"
 MODULE_MAIN: str = "__main__"
@@ -39,13 +44,12 @@ class Import:
         # Module name (e.g. foo.bar.baz).
         module: str = ""
 
-
     # Relative module name (e.g., `foo.bar`)
-    name: str = ""
+    name: str
     # Absolute filename of an import.
-    filename: str = ""
+    filename: str
     # Import typechecking context.
-    ctx: object | None = None
+    ctx: TypeContext
     # Unique import variable for checking already loaded imports.
     import_var: str = ""
     # File content (line:col indexable)
@@ -55,9 +59,9 @@ class Import:
 
     def __init__(
         self,
-        name: str = "",
-        filename: str = "",
-        ctx: object | None = None,
+        name: str,
+        filename: str,
+        ctx: TypeContext,
         import_var: str = "",
         content: List[str] | None = None,
         loaded_at_toplevel: bool = True,
@@ -95,7 +99,7 @@ class ClassData:
         # A list of field names and realization's realized field types.
         fields: List[tuple[str, ast.types.Type]]
         # IR type pointer.
-        ir: object | None = None
+        ir: ast.ir.Type | None = None
         # Bases (in MRO order)
         bases: List[ast.types.Class]
         # Realization vtable (for each base class).
@@ -110,7 +114,7 @@ class ClassData:
             self,
             type: ast.types.Class,
             fields: List[tuple[str, ast.types.Type]] | None = None,
-            ir: object | None = None,
+            ir: ast.ir.Type | None = None,
             bases: List[ast.types.Class] | None = None,
             vtable: Dict[tuple[str, str], ast.types.Function] | None = None,
             id: int = 0,
@@ -188,7 +192,7 @@ class FunctionData:
         # stage).
         ast: ast.FunctionStmt | None = None
         # IR function pointer.
-        ir: object | None = None
+        ir: ast.ir.Function | None = None
         # Resolved captures
         captures: List[str]
 
@@ -196,7 +200,7 @@ class FunctionData:
             self,
             type: ast.types.Function,
             ast: ast.FunctionStmt | None = None,
-            ir: object | None = None,
+            ir: ast.ir.Function | None = None,
             captures: List[str] | None = None,
         ):
             self.type = type
@@ -238,20 +242,6 @@ class FunctionData:
         self.is_toplevel = is_toplevel
         self.realizations = {} if realizations is None else realizations
         self.captures = set() if captures is None else captures
-
-
-@dataclass(init=False)
-class PyModule:
-    types: List[object]
-    functions: List[object]
-
-    def __init__(
-        self,
-        types: List[object] | None = None,
-        functions: List[object] | None = None,
-    ):
-        self.types = [] if types is None else types
-        self.functions = [] if functions is None else functions
 
 
 @dataclass(init=False)
@@ -306,7 +296,7 @@ class Cache:
     # overloads (canonical names).
     overloads: Dict[str, List[str]]
     # Pointer to the later contexts needed for IR API access.
-    type_ctx: object | None = None
+    type_ctx: TypeContext | None = None
     codegen_ctx: object | None = None
     # Set of function realizations that are to be translated to IR.
     pending_realizations: Set[tuple[str, str]]
@@ -322,7 +312,7 @@ class Cache:
     python_compat: bool = False
     # Set if Codon operates in Python extension mode
     python_ext: bool = False
-    py_module: PyModule | None = None
+    py_module: ast.ir.PyModule | None = None
     _timings: Dict[str, float]
 
     def __init__(
@@ -344,7 +334,7 @@ class Cache:
         thunk_ids: Dict[tuple[str, str], int] | None = None,
         functions: Dict[str, FunctionData] | None = None,
         overloads: Dict[str, List[str]] | None = None,
-        type_ctx: object | None = None,
+        type_ctx: TypeContext | None = None,
         codegen_ctx: object | None = None,
         pending_realizations: Set[tuple[str, str]] | None = None,
         custom_block_stmts: Dict[str, tuple[bool, Callable[[object, object], object]]]
@@ -357,7 +347,7 @@ class Cache:
         generated_tuple_names: List[List[str]] | None = None,
         python_compat: bool = False,
         python_ext: bool = False,
-        py_module: PyModule | None = None,
+        py_module: ast.ir.PyModule | None = None,
     ):
         self.argv0 = argv0
         self.fs = fs or Filesystem(argv0=self.argv0)
@@ -446,9 +436,9 @@ class Cache:
     def find_class(self, name: str) -> ast.types.Class | None:
         if self.type_ctx is None:
             return None
-        if (item := self.type_ctx.find(name)) and item.is_type():
-            if isinstance(item.type, ast.types.Class) and item.type.generics:
-                return item.type[0]
+        if (item := self.type_ctx.get(name)) and item.is_type:
+            if (cls := item.type.cls) and cls.generics:
+                return cls[0].cls
         return None
 
     # Find a function with a given canonical name and return a matching types::ast.types.Type
@@ -460,9 +450,8 @@ class Cache:
         if self.type_ctx is None:
             return None
         for n in (name, f"{name}:0"):
-            if (item := self.type_ctx.find(name)) and item.is_type():
-                if isinstance(item.type, ast.types.Function):
-                    return item.type
+            if (item := self.type_ctx.get(n)) and item.is_type:
+                return item.type.func
         return None
 
     # Find the class method in a given class type that best matches the given arguments.
@@ -470,18 +459,27 @@ class Cache:
     def find_method(
         self, typ: ast.types.Class, member: str, args: List[ast.types.Type]
     ) -> ast.types.Function | None:
-        with self.typecheck() as tc:
-            return tc.find_best_method(typ, member, args)
+        from .passes.typecheck.utils import best_method
+
+        assert self.type_ctx
+        return best_method(self.type_ctx, typ, member, args)
 
     # Given a class type and the matching generic vector, instantiate the type and
     # realize it.
     def realize_type(
-        self, typ: ast.types.Class, generics: List[ast.types.Type] = []
-    ) -> object | None:
-        with self.typecheck() as tc:
-            if realized := tc.realize(tc.instantiate_type(typ, generics)):
-                if isinstance(realized, ast.types.Class):
-                    return self.classes[realized.name].realizations[realized.realized_name()].ir
+        self, typ: ast.types.Class | str, generics: List[ast.types.Type] | None = None
+    ) -> ast.ir.Type | None:
+        from .passes.typecheck.infer import realize
+        from .passes.typecheck.utils import get_stdlib_type, instantiate
+
+        assert self.type_ctx
+
+        if isinstance(typ, str):
+            typ = get_stdlib_type(self.type_ctx, typ)
+
+        if realized := realize(self.type_ctx, instantiate(self.type_ctx, typ, generics or [])):
+            if cls := realized.cls:
+                return self.classes[cls.name].realizations[cls.realized_name()].ir
         return None
 
     # Given a function type and function arguments, instantiate the type and
@@ -493,83 +491,96 @@ class Cache:
         self,
         typ: ast.types.Function,
         args: List[ast.types.Type],
-        generics: List[ast.types.Type] = [],
+        generics: List[ast.types.Type] | None = None,
         parent_class: ast.types.Class | None = None,
-    ) -> object | None:
-        function = None
-        with self.typecheck() as tc:
-            function_type = tc.instantiate_type(typ, parent_class)
-            if (
-                not isinstance(function_type, ast.types.Function)
-                or len(args) != len(function_type) + 1
-            ):
-                return None
+    ) -> ast.ir.Function | None:
+        from .passes.typecheck.infer import realize
+        from .passes.typecheck.utils import instantiate
+
+        assert self.type_ctx
+
+        fn_ir = None
+        fn_type = instantiate(self.type_ctx, typ, parent_class)
+        if not isinstance(fn_type, ast.types.Function) or len(args) != len(fn_type) + 1:
+            return None
+        undo = ast.types.Type.UnifyContext()
+        return_type = fn_type.ret_type
+        if return_type.unify(args[0], undo) < 0:
+            undo.undo()
+            return None
+        for idx in range(1, len(args)):
             undo = ast.types.Type.UnifyContext()
-            return_type = function_type.get_ret_type()
-            if return_type.unify(args[0], undo) < 0:
+            if fn_type[idx - 1].unify(args[idx], undo) < 0:
                 undo.undo()
                 return None
-            for generic_index in range(1, len(args)):
+        if generics:
+            if len(generics) != len(fn_type.func_generics):
+                return None
+            for idx in range(len(generics)):
                 undo = ast.types.Type.UnifyContext()
-                if function_type[generic_index - 1].unify(args[generic_index], undo) < 0:
+                if fn_type.func_generics[idx].type.unify(generics[idx], undo) < 0:
                     undo.undo()
                     return None
-            if generics:
-                if len(generics) != len(function_type.func_generics):
-                    return None
-                for generic_index in range(len(generics)):
-                    undo = ast.types.Type.UnifyContext()
-                    if (
-                        function_type.func_generics[generic_index].type.unify(
-                            generics[generic_index], undo
-                        )
-                        < 0
-                    ):
-                        undo.undo()
-                        return None
-            if realized := tc.realize(function_type):
-                pending = self.pending_realizations.copy()
-                for key in pending:
-                    template = self.functions[key[0]].ast
-                    with self.translate() as ts:
-                        ts.translate_stmts(template.clone())
-                if isinstance(realized, ast.types.Function) and realized.ast:
-                    function = (
-                        self.functions[realized.ast.name].realizations[realized.realized_name()].ir
-                    )
-        return function
+        if realized := realize(self.type_ctx, fn_type):
+            pending = self.pending_realizations.copy()
+            for key in pending:
+                if template := self.functions[key[0]].ast:
+                    self.translate(template.clone())
+            if isinstance(realized, ast.types.Function) and realized.ast:
+                fn_ir = self.functions[realized.ast.name].realizations[realized.realized_name()].ir
+        return fn_ir
 
-    def make_tuple(self, types: List[ast.types.Type]) -> object | None:
-        with self.typecheck() as tc:
-            tuple_type = tc.instantiate_type(tc.generate_tuple(len(types)), types)
-            return self.realize_type(tuple_type, types)
+    def make_tuple(self, types: List[ast.types.Type]) -> ast.ir.Type | None:
+        from .passes.typecheck.classes import generate_tuple
+        from .passes.typecheck.utils import instantiate
 
-    def make_function(self, types: List[ast.types.Type]) -> object | None:
-        with self.typecheck() as tc:
-            assert types, "types must have at least one argument"
-            return_type = types[0]
-            arguments_type = tc.instantiate_type(tc.generate_tuple(len(types) - 1), types[1:])
-            return self.realize_type(ast.types.Stdlib.Function, [arguments_type, return_type])
+        assert self.type_ctx
 
-    def make_union(self, types: List[ast.types.Type]) -> object | None:
-        with self.typecheck() as tc:
-            arguments_type = tc.instantiate_type(tc.generate_tuple(len(types)), types)
-            return self.realize_type(tc.get_stdlib_type(ast.types.Stdlib.Union), [arguments_type])
+        typ = instantiate(self.type_ctx, generate_tuple(self.type_ctx, len(types)), types)
+        return self.realize_type(typ, types)
+
+    def make_function(self, types: List[ast.types.Type]) -> ast.ir.Type | None:
+        from .passes.typecheck.classes import generate_tuple
+        from .passes.typecheck.utils import instantiate
+
+        assert self.type_ctx
+
+        assert types, "types must have at least one argument"
+        ret = types[0]
+        args = instantiate(self.type_ctx, generate_tuple(self.type_ctx, len(types) - 1), types[1:])
+        return self.realize_type(ast.types.Stdlib.Function, [args, ret])
+
+    def make_union(self, types: List[ast.types.Type]) -> ast.ir.Type | None:
+        from .passes.typecheck.classes import generate_tuple
+        from .passes.typecheck.utils import instantiate
+
+        assert self.type_ctx
+
+        args = instantiate(self.type_ctx, generate_tuple(self.type_ctx, len(types)), types)
+        return self.realize_type(ast.types.Stdlib.Union, [args])
 
     def get_realization_id(self, typ: ast.types.Class) -> int:
-        with self.typecheck() as tc:
-            realization = tc.get_class_realization(typ)
-            return realization.id
+        from .passes.typecheck.utils import get_class_realization
+
+        assert self.type_ctx
+
+        realization = get_class_realization(self.type_ctx, typ)
+        return realization.id
 
     def get_base_realization_ids(self, typ: ast.types.Class) -> List[int]:
-        with self.typecheck() as tc:
-            realization = tc.get_class_realization(typ)
-            return [self.get_realization_id(base) for base in realization.bases]
+        from .passes.typecheck.utils import get_class_realization
+
+        assert self.type_ctx
+
+        realization = get_class_realization(self.type_ctx, typ)
+        return [self.get_realization_id(base) for base in realization.bases]
 
     def get_child_realization_ids(self, typ: ast.types.Class) -> List[int]:
-        with self.typecheck() as tc:
-            class_value = tc.get_class_realization(typ)
-        parent_id = class_value.id
+        from .passes.typecheck.utils import get_class_realization
+
+        assert self.type_ctx
+
+        parent_id = get_class_realization(self.type_ctx, typ).id
         child_ids = []
         for class_data in self.classes.values():
             for realization in class_data.realizations.values():
@@ -579,7 +590,7 @@ class Cache:
                         break
         return child_ids
 
-    def parse_code(self, code: str) -> ast.Node:
+    def parse(self, file: str = "", code: str = "", expr: str = "") -> ast.Stmt | ast.Expr:
         raise NotImplementedError()
 
         # try:
@@ -618,14 +629,22 @@ class Cache:
 
         return node
 
-    def typecheck(self):
-        return TypecheckVisitor(self.type_ctx)
+    def typecheck[T: ast.Stmt | ast.Expr](self, node: T, ctx: TypeContext | None = None) -> T:
+        from .passes.typecheck import TypeVisitor
 
-    def translate(self):
-        return TranslateVisitor(self.codegen_ctx)
+        ctx = ctx or self.type_ctx
+        assert ctx
+        if isinstance(node, ast.Expr):
+            return TypeVisitor(ctx).visit_expr(node)
+        else:
+            return TypeVisitor(ctx).visit_stmt(node)
+
+    def translate(self, node: ast.Stmt):
+        raise NotImplementedError
+        # return TranslateVisitor(self.codegen_ctx)
 
     @staticmethod
-    def merge_c3(seqs: List[List[ast.types.Type]]) -> List[ast.types.Class]:
+    def merge_c3(seqs: List[List[ast.types.Class]]) -> List[ast.types.Class]:
         # Reference: https://www.python.org/download/releases/2.3/mro/
         result = []
         index = 0
@@ -641,8 +660,7 @@ class Cache:
                     if other:
                         present = False
                         for item_index in range(1, len(other)):
-                            if isinstance(other[item_index], ast.types.Class):
-                                present = present or sequence[0].is_type(other[item_index].name)
+                            present = present or sequence[0] == other[item_index]
                             if present:
                                 break
                         if present:
@@ -658,48 +676,9 @@ class Cache:
             result.append(candidate)
             for sequence in seqs:
                 if sequence:
-                    if isinstance(sequence[0], ast.types.Class) and candidate.is_type(
-                        sequence[0].name
-                    ):
+                    if candidate == sequence[0]:
                         del sequence[0]
             index += 1
-
-    # Generate Python bindings for Cython-like access.
-    def populate_python_module(self):
-        from .visitors.translate.translate import TranslateVisitor
-        from .visitors.typecheck.typecheck import TypecheckVisitor
-
-        cython_iter = "_PyWrap.IterWrap"
-        if not self.python_ext:
-            return
-        if self.py_module is None:
-            self.py_module = PyModule()
-        visitor = TypecheckVisitor(self.type_ctx)
-
-        # needs copy as below fns can mutate this
-        classes = self.classes.copy()
-        for class_name in classes:
-            python_type = visitor.cythonize_class(class_name)
-            if python_type.name:
-                self.py_module.types.append(python_type)
-
-        # Handle __iternext__ wrappers
-        for class_name in self.classes[cython_iter].realizations:
-            python_type = visitor.cythonize_iterator(class_name)
-            self.py_module.types.append(python_type)
-
-        # needs copy as below fns can mutate this
-        functions = self.functions.copy()
-        for function_name in functions:
-            python_function = visitor.cythonize_function(function_name)
-            if python_function.name:
-                self.py_module.functions.append(python_function)
-
-        # Handle pending realizations!
-        # copy it as it might be modified
-        pending = self.pending_realizations.copy()
-        for key in pending:
-            TranslateVisitor(self.codegen_ctx).translate_stmts(self.functions[key[0]].ast)
 
     def get_import_file(
         self, what: str, relative_to: str, force_stdlib: bool = False
@@ -727,20 +706,20 @@ class Cache:
                     paths.append(self.fs.canonical(path))
 
         def check_plugin(path: Path, requested: str):
-            # C++ source: codon/parser/common.cpp:385
-            plugin = path / requested
-            init = plugin / "stdlib" / requested / "__init__.codon"
-            if self.fs.exists(plugin / "plugin.toml") and self.fs.exists(init):
-                failed = False
-                if self.compiler and self.compiler.is_plugin_loaded(plugin):
-                    try:
-                        self.compiler.load(plugin)
-                    except Exception:
-                        # TODO-CONV: Needs to print an error message
-                        raise NotImplementedError
-                        failed = True
-                if not failed:
-                    paths.append(self.fs.canonical(init))
+            raise NotImplementedError
+            # plugin = path / requested
+            # init = plugin / "stdlib" / requested / "__init__.codon"
+            # if self.fs.exists(plugin / "plugin.toml") and self.fs.exists(init):
+            #     failed = False
+            #     if self.compiler and self.compiler.is_plugin_loaded(plugin):
+            #         try:
+            #             self.compiler.load(plugin)
+            #         except Exception:
+            #             # TODO-CONV: Needs to print an error message
+            #             raise NotImplementedError
+            #             failed = True
+            #     if not failed:
+            #         paths.append(self.fs.canonical(init))
 
         if not paths:
             # Load a plugin maybe

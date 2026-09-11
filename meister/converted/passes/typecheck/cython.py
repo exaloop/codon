@@ -1,5 +1,43 @@
 # TODO: review / fix
 
+# Generate Python bindings for Cython-like access.
+def populate_python_module(self: Cache):
+    from .visitors.translate.translate import TranslateVisitor
+    from .visitors.typecheck.typecheck import TypecheckVisitor
+
+    cython_iter = "_PyWrap.IterWrap"
+    if not self.python_ext:
+        return
+    if self.py_module is None:
+        self.py_module = PyModule()
+    visitor = TypecheckVisitor(self.type_ctx)
+
+    # needs copy as below fns can mutate this
+    classes = self.classes.copy()
+    for class_name in classes:
+        python_type = visitor.cythonize_class(class_name)
+        if python_type.name:
+            self.py_module.types.append(python_type)
+
+    # Handle __iternext__ wrappers
+    for class_name in self.classes[cython_iter].realizations:
+        python_type = visitor.cythonize_iterator(class_name)
+        self.py_module.types.append(python_type)
+
+    # needs copy as below fns can mutate this
+    functions = self.functions.copy()
+    for function_name in functions:
+        python_function = visitor.cythonize_function(function_name)
+        if python_function.name:
+            self.py_module.functions.append(python_function)
+
+    # Handle pending realizations!
+    # copy it as it might be modified
+    pending = self.pending_realizations.copy()
+    for key in pending:
+        TranslateVisitor(self.codegen_ctx).translate_stmts(self.functions[key[0]].ast)
+
+
 def cythonize_class(tc: TypeVisitor, name: str) -> object:
     """*** Cython-like code generation ****"""
     cython_module = "std.internal.python"
@@ -205,24 +243,24 @@ def cythonize_iterator(tc: TypeVisitor, name: str) -> object:
         overload = self.get_overloads(iterator_class.methods[method_name])[0]
         function = self.get_function(overload)
         if method_name == "_iter":
-            instantiated = self.instantiate_type(function.type, iterator_type)
+            instantiated = self.instantiate(function.type, iterator_type)
         else:
             underlying = self.extract_class_generic(iterator_type).get_class()
             if underlying is None:
                 continue
             iter_methods = self.find_method(underlying, "__iter__", False)
-            matches = self.find_matching_methods(
+            matches = self.matching_methods(
                 underlying,
                 iter_methods,
                 [self._typed(ast.NoneExpr(), underlying)],
             )
             if not matches:
                 continue
-            found_type = self.instantiate_type(matches[0], underlying)
+            found_type = self.instantiate(matches[0], underlying)
             realized_found = self.realize(found_type)
             if realized_found is None:
                 continue
-            instantiated = self.instantiate_type(function.type, iterator_type)
+            instantiated = self.instantiate(function.type, iterator_type)
             instantiated_function = instantiated.get_func()
             self.unify(
                 self.extract_func_generic(instantiated_function),
@@ -277,7 +315,7 @@ def realize_ir_func(
     if not generics:
         generics = []
     # TODO: used by cytonization. Probably needs refactoring.
-    instantiated = utils.instantiate_type(self.ctx, function)
+    instantiated = utils.instantiate(self.ctx, function)
     instantiated_function = instantiated.get_func()
     undo = ast.types.Type.UnifyContext()
     for idx, generic in enumerate(generics):

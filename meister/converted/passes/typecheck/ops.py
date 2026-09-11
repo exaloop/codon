@@ -439,9 +439,9 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 )
                 ntuple = ast.InstantiateExpr(ast.IdExpr("__NTuple__"), items=[first, tail])
                 return self.visit(ntuple)
-        typ = utils.instantiate_type(self.ctx, classes.generate_tuple(self, types_count))
+        typ = utils.instantiate(self.ctx, classes.generate_tuple(self, types_count))
     else:
-        typ = utils.instantiate_type(self.ctx, root_type, info=node.expr.info)
+        typ = utils.instantiate(self.ctx, root_type, info=node.expr.info)
 
     assert typ.get_class(), f"unknown type: {node.expr}"
     if not typ.get_union() and types_count != len(typ.generics):
@@ -498,7 +498,7 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 # A | B | ... | None -> Optional[A] | Optional[B] | ...
                 for idx, union_type in enumerate(union_types):
                     if not union_type.is_type(ast.types.Stdlib.Optional):
-                        union_types[idx] = utils.instantiate_type(
+                        union_types[idx] = utils.instantiate(
                             self.ctx,
                             utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional),
                             [union_type],
@@ -522,7 +522,7 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 result = solo_type_expression
                 infer.unify(node.type, result.type)
             else:
-                tuple_type = utils.instantiate_type(
+                tuple_type = utils.instantiate(
                     self.ctx,
                     classes.generate_tuple(self, len(union_types)),
                     [v for _, v in sorted(union_types.items())],
@@ -532,7 +532,7 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
         case _:
             for idx, param in enumerate(node.items):
                 node.items[idx] = self.visit(param, enforce_type=True)
-                param_type = utils.instantiate_type(
+                param_type = utils.instantiate(
                     self.ctx,
                     utils.extract_type(self.ctx, node.items[idx]),
                     info=node.items[idx].info,
@@ -964,10 +964,10 @@ def transform_binary_inplace_magic(
     method = None
     # Atomic operations: check if `lhs.__atomic_op__(Ptr[lhs], rhs)` exists
     if is_atomic:
-        pointer = utils.instantiate_type(
+        pointer = utils.instantiate(
             self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr), [left_type]
         )
-        method = utils.find_best_method(
+        method = utils.best_method(
             self.ctx, left_type, f"__atomic_{magic}__", [pointer, expr.rexpr.type]
         )
         if method:
@@ -975,7 +975,7 @@ def transform_binary_inplace_magic(
 
     # In-place operations: check if `lhs.__iop__(lhs, rhs)` exists
     if not method and expr.in_place:
-        method = utils.find_best_method(
+        method = utils.best_method(
             self.ctx, left_type, f"__i{magic}__", [left_type, expr.rexpr.type]
         )
     if method:
@@ -1020,7 +1020,7 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
         right_type = right_type.get_class()
         # Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
         if left_type and (
-            method := utils.find_best_method(
+            method := utils.best_method(
                 self.ctx, left_type, f"__{magic}__", [left_type, right_type]
             )
         ):
@@ -1029,7 +1029,7 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
                 ast.IdExpr(method.get_func_name()), items=[expr.lexpr, expr.rexpr]
             )
         elif right_type and (
-            method := utils.find_best_method(
+            method := utils.best_method(
                 self.ctx, right_type, f"__{right_magic}__", [right_type, left_type]
             )
         ):

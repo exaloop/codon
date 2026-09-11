@@ -5,14 +5,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ... import ast, cache
-from . import infer, utils
-from .ctx import TypecheckError
+from ...error import TypecheckError
+from . import utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_assert(self: TypeVisitor, node: ast.AssertStmt) -> ast.Node:
+def typecheck_assert(self: TypeVisitor, node: ast.AssertStmt) -> ast.Stmt:
     """
     Transform asserts.
     @example
@@ -25,20 +25,24 @@ def typecheck_assert(self: TypeVisitor, node: ast.AssertStmt) -> ast.Node:
     message = ast.StringExpr("")
     if node.message:
         message = ast.CallExpr(ast.IdExpr("str"), items=[node.message])
-    base = self.ctx.get_base()
-    is_test = self.ctx.in_function() and base and base.func and base.func.has(ast.Attr.Test)
+    base = self.ctx.base
+    is_test = self.ctx.in_function and base and base.func and base.func.has(ast.Attr.Test)
     call = ast.CallExpr(
-        ast.types.mangle(cls="__internal__", func="seq_assert_test" if is_test else "seq_assert"),
+        ast.IdExpr(
+            ast.types.mangle(
+                cls="__internal__", func="seq_assert_test" if is_test else "seq_assert"
+            )
+        ),
         items=[ast.StringExpr(node.info.file), ast.IntExpr(node.info.line), message],
     )
     statement = ast.IfStmt(
         ast.UnaryExpr("!", expr=node.expr),
         if_suite=ast.ExprStmt(call) if is_test else ast.ThrowStmt(call),
     )
-    return self.visit(statement)
+    return self.visit_stmt(statement)
 
 
-def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
+def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Stmt:
     """
     Typecheck try-except statements. Handle Python exceptions separately.
     @example
@@ -58,8 +62,7 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
     """
 
     with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-        node.suite = self.visit(node.suite)
-        node.suite = ast.SuiteStmt.wrap(node.suite)
+        node.suite = ast.SuiteStmt.wrap(self.visit_stmt(node.suite))
 
     catches = []
     python_catch_body = ast.SuiteStmt()
@@ -69,14 +72,14 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
         value = None
         if catch.var:
             if not catch.has(ast.Attr.ExprDominated) and not catch.has(ast.Attr.ExprDominatedUsed):
-                value = self.ctx.add(
+                value = self.ctx.add_item(
                     utils.get_unmangled_name(self.ctx, catch.var),
-                    utils.generate_canonical_name(self.ctx, catch.var),
+                    self.ctx.generate_canonical_name(catch.var),
                     utils.instantiate_unbound(self.ctx),
                     self.ctx.time,
                 )
             elif catch.has(ast.Attr.ExprDominatedUsed):
-                value = self.ctx.force_find(catch.var)
+                value = self.ctx[catch.var]
                 catch.attributes.pop(ast.Attr.ExprDominatedUsed, None)
                 catch.set(ast.Attr.ExprDominated)
                 catch.suite = ast.SuiteStmt(
@@ -90,23 +93,22 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
                     catch.suite,
                 )
             else:
-                value = self.ctx.force_find(catch.var)
-            catch.var = value.canonical_name
+                value = self.ctx[catch.var]
+            catch.var = value.canonical
         if catch.exc:
-            catch.exc = self.visit(catch.exc)
+            catch.exc = self.visit_expr(catch.exc)
         exception_class = (
             None if catch.exc is None else utils.extract_class_type(self.ctx, catch.exc)
         )
-        if exception_class and exception_class.is_type("pyobj"):
+        if exception_class and exception_class == "pyobj":
             if not node.has(ast.Attr.TryPyVar):
                 # Transform python.Error exceptions
                 node.set(ast.Attr.TryPyVar, utils.get_temporary_var(self.ctx, "pyexc"))
-            python_variable: str = node.attributes[ast.Attr.TryPyVar]
+            py_var = node.get(ast.Attr.TryPyVar, "")
             if catch.var:
                 catch.suite = ast.SuiteStmt(
                     ast.AssignStmt(
-                        ast.IdExpr(catch.var),
-                        rhs=ast.DotExpr(ast.IdExpr(python_variable), member="pytype"),
+                        ast.IdExpr(catch.var), rhs=ast.DotExpr(ast.IdExpr(py_var), member="pytype")
                     ),
                     catch.suite,
                 )
@@ -114,84 +116,72 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Node:
                 ast.IfStmt(
                     ast.CallExpr(
                         ast.IdExpr("isinstance"),
-                        items=[
-                            ast.DotExpr(ast.IdExpr(python_variable), member="pytype"),
-                            catch.exc,
-                        ],
+                        items=[ast.DotExpr(ast.IdExpr(py_var), member="pytype"), catch.exc],
                     ),
                     if_suite=ast.SuiteStmt(catch.suite, ast.BreakStmt()),
                 )
             )
-            python_catch_body.add_stmt(catch.suite)
-        elif exception_class and exception_class.is_type(ast.types.Stdlib.PyError):
+            python_catch_body.add(catch.suite)
+        elif exception_class and exception_class == ast.types.Stdlib.PyError:
             if not node.has(ast.Attr.TryPyVar):
                 # Transform PyExc exceptions
                 node.set(ast.Attr.TryPyVar, utils.get_temporary_var(self.ctx, "pyexc"))
-            python_variable = str(node.attributes[ast.Attr.TryPyVar])
+            py_var = str(node.attributes[ast.Attr.TryPyVar])
             if catch.var:
                 catch.suite = ast.SuiteStmt(
-                    ast.AssignStmt(ast.IdExpr(catch.var), rhs=ast.IdExpr(python_variable)),
+                    ast.AssignStmt(ast.IdExpr(catch.var), rhs=ast.IdExpr(py_var)),
                     catch.suite,
                 )
             catch.suite = ast.SuiteStmt(catch.suite, ast.BreakStmt())
-            python_catch_body.add_stmt(catch.suite)
+            python_catch_body.add(catch.suite)
         else:
             if catch.exc:
                 # Handle all other exceptions
-                catch.exc = self.visit(catch.exc, enforce_type=True)
+                catch.exc = self.visit_expr(catch.exc, enforce_type=True)
                 exception_type = utils.extract_class_type(self.ctx, catch.exc)
                 if not any(
-                    parent.is_type(ast.types.Stdlib.BaseException)
+                    parent == ast.types.Stdlib.BaseException
                     for parent in utils.get_mro(self.ctx, exception_type)
                 ):
-                    raise TypecheckError(
-                        catch.exc, f"invalid exception type {exception_type.pretty_string()}"
-                    )
+                    raise TypecheckError(catch.exc, f"invalid exception type {exception_type}")
                 if value:
-                    infer.unify(value.type, utils.extract_type(self.ctx, exception_type))
+                    value.type |= utils.extract_type(self.ctx, exception_type)
 
             with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-                catch.suite = self.visit(catch.suite)
-                catch.suite = ast.SuiteStmt.wrap(catch.suite)
+                catch.suite = ast.SuiteStmt.wrap(self.visit_stmt(catch.suite))
             done = done and (catch.exc is None or catch.exc.done)
             done = done and catch.suite and catch.suite.done
             catches.append(catch)
 
     if python_catch_body.items:
         # Process PyError catches
-        python_variable: str = node.attributes[ast.Attr.TryPyVar]
+        py_var = node.get(ast.Attr.TryPyVar, "")
         python_catch_body.add(ast.ThrowStmt())
-        python_exception = self.visit(ast.IdExpr(ast.types.Stdlib.PyError), enforce_Type=True)
-        catch = ast.TryStmt.Except(python_variable, exc=python_exception, suite=python_catch)
-        self.ctx.add_var(
-            python_variable,
-            python_variable,
-            utils.extract_type(self.ctx, python_exception),
-            self.time,
+        python_exception = self.visit_expr(ast.IdExpr(ast.types.Stdlib.PyError), enforce_type=True)
+        catch = ast.TryStmt.Except(python_exception, var=py_var, suite=python_catch)
+        self.ctx.add_item(
+            py_var, py_var, utils.extract_type(self.ctx, python_exception), self.ctx.time
         )
         with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-            catch.suite = self.transform(catch.suite)
-            catch.suite = ast.SuiteStmt.wrap(catch.suite)
+            catch.suite = ast.SuiteStmt.wrap(self.visit_stmt(catch.suite))
         done = done and catch.exc.done and catch.suite and catch.suite.done
         catches.append(catch)
 
     node.items = catches
     if node.else_suite:
         with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-            node.else_suite = self.transform(node.else_suite)
-            node.else_suite = ast.SuiteStmt.wrap(node.else_suite)
+            node.else_suite = ast.SuiteStmt.wrap(self.visit_stmt(node.else_suite))
         done = done and node.else_suite and node.else_suite.done
     if node.finally_suite:
         with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-            node.finally_suite = self.transform(node.finally_suite)
-            node.finally_suite = ast.SuiteStmt.wrap(node.finally_suite)
+            node.finally_suite = ast.SuiteStmt.wrap(self.visit_stmt(node.finally_suite))
         done = done and node.finally_suite and node.finally_suite.done
     if done:
         node.done = True
     return node
 
 
-def typecheck_throw(self: TypeVisitor, node: ast.ThrowStmt) -> ast.Node:
+def typecheck_throw(self: TypeVisitor, node: ast.ThrowStmt) -> ast.Stmt:
     """
     Transform `raise` statements.
     @example
@@ -201,7 +191,7 @@ def typecheck_throw(self: TypeVisitor, node: ast.ThrowStmt) -> ast.Node:
         node.done = True
         return node
 
-    node.expr = self.transform(node.expr)
+    node.expr = self.visit_expr(node.expr)
     setter_name = ast.types.mangle(
         module="std.internal.types.error", cls="BaseException", func="_set_header"
     )
@@ -210,25 +200,24 @@ def typecheck_throw(self: TypeVisitor, node: ast.ThrowStmt) -> ast.Node:
             # already wrapped
             pass
         case _:
-            base = self.ctx.get_base()
             call = ast.CallExpr(
                 ast.IdExpr(setter_name),
                 items=[
                     node.expr,
-                    ast.StringExpr("" if base is None else base.name),
+                    ast.StringExpr(self.ctx.base_name),
                     ast.StringExpr(node.info.file),
                     ast.IntExpr(node.info.line),
                     ast.IntExpr(node.info.col),
                     node.from_expr or ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NoneType)),
                 ],
             )
-            node.expr = self.visit(call)
+            node.expr = self.visit_expr(call)
     if node.expr.done:
         node.done = True
     return node
 
 
-def transform_with(self: TypeVisitor, node: ast.WithStmt) -> ast.Node:
+def typecheck_with(self: TypeVisitor, node: ast.WithStmt) -> ast.Stmt:
     """
     Transform with statements.
     @example
@@ -246,9 +235,9 @@ def transform_with(self: TypeVisitor, node: ast.WithStmt) -> ast.Node:
     tmp.__exit__()```
     """
 
-    is_async = node.is_async()
+    is_async = node.async_
     content = []
-    for var, item in reversed(zip(node.vars, node.items)):
+    for var, item in reversed(list(zip(node.vars, node.items))):
         var = var or utils.get_temporary_var(self.ctx, "with")
         assignment = ast.AssignStmt(
             ast.IdExpr(var),
@@ -272,5 +261,4 @@ def transform_with(self: TypeVisitor, node: ast.WithStmt) -> ast.Node:
             body = node.suite.clone()
         try_statement = ast.TryStmt(body, finally_suite=ast.ExprStmt(exit))
         content = [assignment, ast.ExprStmt(enter), try_statement]
-    result = self.visit(ast.SuiteStmt(*content))
-    return result
+    return self.visit_stmt(ast.SuiteStmt(*content))

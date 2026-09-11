@@ -127,7 +127,7 @@ def typecheck_while(self: TypeVisitor, node: ast.WhileStmt) -> ast.Node:
         # no_break = True
         break_var = utils.get_temporary_var(self.ctx, "no_break")
         assignment = self.visit(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
-        self.prepend_stmts.append(assignment)
+        self.ctx.prepend_stmts[-1].append(assignment)
 
     base = self.ctx.get_base()
     base.loops.append(Base.LoopData(break_var=break_var))
@@ -173,7 +173,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
                 import_gpu = ast.ImportStmt(
                     ast.IdExpr("gpu"), args=[], as_=utils.get_temporary_var(self.ctx, "_")
                 )
-                self.prepend_stmts.append(self.visit(import_gpu))
+                self.ctx.prepend_stmts[-1].append(self.visit(import_gpu))
 
     break_var = ""
     # Needs in-advance transformation to prevent name clashes with the iterator variable

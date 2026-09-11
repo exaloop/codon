@@ -16,6 +16,7 @@ from typing import (
     Literal,
     NoReturn,
     Optional,
+    overload,
     Set,
     Tuple,
     TypeVar,

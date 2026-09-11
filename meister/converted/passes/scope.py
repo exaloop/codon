@@ -5,10 +5,7 @@ import copy
 from ...bridge import Dict, Enum, List, Set, contextmanager, dataclass
 from .. import ast
 from ..cache import Cache
-
-
-class ScopeError(ast.NodeError):
-    pass
+from ..error import ScopeError
 
 
 @dataclass(init=False)
@@ -120,6 +117,12 @@ class ScopeContext:
     def get_scope(self) -> List[int]:
         return [block.id for block in self.scope]
 
+    @contextmanager
+    def substitute(self, name, value):
+        old = getattr(self, name)
+        setattr(self, name, value)
+        yield
+        setattr(self, name, old)
 
 def is_inside(inner, outer):
     return len(inner) >= len(outer) and inner[len(outer) - 1] == outer[-1]
@@ -550,7 +553,7 @@ class ScopingVisitor(ast.NodeVisitor):
             new_scope = scope[:common_scope]
             for scope_index in range(common_scope - 1, -1, -1):
                 if suite := self.ctx.scope[scope_index].suite:
-                    attr = suite.attributes.setdefault(ast.Attr.Bindings, Bindings())
+                    attr = suite.setdefault(ast.Attr.Bindings, Bindings())
                     attr.bindings[name] = Bindings.Binding(name, count=1)
                     new_item = ScopeContext.Item(suite, new_scope, access_checked=[last_good.scope])
                     last_good_index += 1

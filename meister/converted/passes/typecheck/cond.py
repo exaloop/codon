@@ -4,32 +4,32 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import List, cast
+from ....bridge import List
 from ... import ast
-from . import infer, utils
-from .ctx import TypecheckError
+from ...error import TypecheckError
+from . import utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_range(self: TypeVisitor, node: ast.RangeExpr) -> ast.Node:
+def typecheck_range(_: TypeVisitor, node: ast.RangeExpr):
     """Only allowed in @c MatchStmt"""
     raise TypecheckError(node, "unexpected range expression")
 
 
-def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Node:
+def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Expr:
     """
     Typecheck if expressions. Evaluate static if blocks if possible.
     Also wrap conditional expressions to match each other. See @c wrapExpr for more
     details.
     """
     node.cond.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
-    node.cond = self.visit(node.cond)
-    assert node.cond.type
+    node.cond = self.visit_expr(node.cond)
+    assert node.cond.type and node.type
 
     # Static if evaluation
-    if node.cond.type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
+    if not node.cond.type.is_runtime:
         condition = False
         if node.cond.type.can_realize():
             match node.cond.type:
@@ -44,30 +44,32 @@ def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Node:
             selected = node.ifexpr if condition else node.elsexpr
             if utils.has_side_effect(node.cond):
                 selected = ast.StmtExpr([ast.ExprStmt(node.cond)], expr=selected)
-            result = self.visit(selected)
-            infer.unify(node.type, result.type)
+            result = self.visit_expr(selected)
+
+            node.type |= result.type
             return result
-        elif unbound := node.type.get_unbound():
+        elif unbound := node.type.unbound:
             # determine later!
-            unbound.static_kind = ast.types.Type.Behaviour.Int
+            unbound._static_kind = ast.types.Type.Behaviour.Int
         return node
 
-    node.ifexpr = self.visit(node.ifexpr)
-    node.elsexpr = self.visit(node.elsexpr)
+    node.ifexpr = self.visit_expr(node.ifexpr)
+    node.elsexpr = self.visit_expr(node.elsexpr)
     _, node.cond = utils.wrap_expr(
-        self, node.cond, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
+        self.ctx, node.cond, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
     )
     for branch in (node.ifexpr, node.elsexpr):
-        if static := branch.type.get_static():
+        if branch.type and (literal := branch.type.literal):
             # Add wrappers and unify both sides
-            branch.type = static.get_non_static_type()
-    _, node.elsexpr = utils.wrap_expr(self, node.elsexpr, node.ifexpr.type, allow_unwrap=False)
-    _, node.ifexpr = utils.wrap_expr(self, node.ifexpr, node.elsexpr.type, allow_unwrap=False)
+            branch.type = literal.runtime_type
+    _, node.elsexpr = utils.wrap_expr(self.ctx, node.elsexpr, node.ifexpr.type, allow_unwrap=False)
+    _, node.ifexpr = utils.wrap_expr(self.ctx, node.ifexpr, node.elsexpr.type, allow_unwrap=False)
+
+    assert node.elsexpr.type and node.ifexpr.type
     # Types not compatible! Check if an union can be made
     if (
         node.ifexpr.type.unify(node.elsexpr.type) < 0
-        and node.expected_type
-        and node.expected_type.is_type(ast.types.Stdlib.Union)
+        and node.expected_type == ast.types.Stdlib.Union
     ):
         if not node.ifexpr.type.can_realize() or not node.elsexpr.type.can_realize():
             return node
@@ -78,23 +80,23 @@ def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Node:
                 ast.IdExpr(node.elsexpr.type.realized_name()),
             ],
         )
-        node.ifexpr = self.visit(ast.CallExpr(union_type, items=[node.ifexpr]))
-        node.elsexpr = self.visit(ast.CallExpr(union_type.clone(), items=[node.elsexpr]))
-    infer.unify(node.type, node.ifexpr.type)
-    infer.unify(node.type, node.elsexpr.type)
+        node.ifexpr = self.visit_expr(ast.CallExpr(union_type, items=[node.ifexpr]))
+        node.elsexpr = self.visit_expr(ast.CallExpr(union_type.clone(), items=[node.elsexpr]))
+    node.type |= node.ifexpr.type
+    node.type |= node.elsexpr.type
     if node.cond.done and node.ifexpr.done and node.elsexpr.done:
         node.done = True
     return node
 
 
-def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Node:
+def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
     """
     Typecheck if statements. Evaluate static if blocks if possible.
     See @c wrapExpr for more details.
     """
 
     node.cond.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
-    node.cond = self.visit(node.cond)
+    node.cond = self.visit_expr(node.cond)
 
     match node.cond:
         case ast.CallExpr(
@@ -136,8 +138,10 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Node:
                 )
             )
             return result
+
     # Static if evaluation
-    if node.cond.type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
+    assert node.cond.type
+    if not node.cond.type.is_runtime:
         if not node.cond.type.can_realize():
             return node
 
@@ -152,20 +156,20 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Node:
                     condition = True
                 case _:
                     condition = False
-            selected = node.if_suite if condition else node.else_suite
+            selected = node.if_suite if condition else ast.SuiteStmt.wrap(node.else_suite)
             if utils.has_side_effect(node.cond):
                 selected = ast.SuiteStmt(ast.ExprStmt(node.cond), selected)
-            result = self.visit(selected)
+            result = self.visit_stmt(selected)
             return result
 
     _, node.cond = utils.wrap_expr(
-        self, node.cond, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
+        self.ctx, node.cond, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
     )
     with self.ctx.substitute("block_level", self.ctx.block_level + 1):
-        node.if_suite = self.visit(node.if_suite)
-        node.else_suite = self.visit(node.else_suite) if node.else_suite else None
-        node.if_suite = ast.SuiteStmt.wrap(node.if_suite)
-        node.else_suite = ast.SuiteStmt.wrap(node.else_suite)
+        node.if_suite = ast.SuiteStmt.wrap(self.visit_stmt(node.if_suite))
+        node.else_suite = (
+            ast.SuiteStmt.wrap(self.visit_stmt(node.else_suite)) if node.else_suite else None
+        )
     if (
         node.cond.done
         and (not node.if_suite or node.if_suite.done)
@@ -175,7 +179,7 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Node:
     return node
 
 
-def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Node:
+def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Stmt:
     """
     Simplify match statement by transforming it into a series of conditional statements.
     @example
@@ -195,8 +199,8 @@ def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Node:
     """
 
     var = utils.get_temporary_var(self.ctx, "match")
-    assignment: ast.Stmt = ast.AssignStmt(ast.IdExpr(var), rhs=node.expr.clone())
-    assignment = self.visit(assignment)
+    assignment = ast.AssignStmt(ast.IdExpr(var), rhs=node.expr.clone())
+    assignment = self.visit_stmt(assignment)
     result = ast.SuiteStmt(assignment)
     for case in node.items:
         case_suite = ast.SuiteStmt(case.suite, ast.BreakStmt())
@@ -206,7 +210,7 @@ def typecheck_match(self: TypeVisitor, node: ast.MatchStmt) -> ast.Node:
     # Make sure to break even if there is no case _ to prevent infinite loop
     result.add(ast.BreakStmt())
     loop = ast.WhileStmt(ast.BoolExpr(True), suite=result)
-    return self.visit(loop)
+    return self.visit_stmt(loop)
 
 
 def typecheck_pattern(
@@ -294,14 +298,14 @@ def typecheck_pattern(
                 relative = idx - len(items)
                 nested = typecheck_pattern(
                     self,
-                    ast.IndexExpr(var.clone(), idx=ast.IntExpr(relative)),
+                    ast.IndexExpr(var.clone(), index=ast.IntExpr(relative)),
                     items[idx],
                     nested,
                 )
             for idx in range(ellipsis - 1, -1, -1):
                 nested = typecheck_pattern(
                     self,
-                    ast.IndexExpr(var.clone(), idx=ast.IntExpr(idx)),
+                    ast.IndexExpr(var.clone(), index=ast.IntExpr(idx)),
                     items[idx],
                     nested,
                 )
@@ -330,7 +334,7 @@ def typecheck_pattern(
         case ast.AssignExpr:
             assert False, "only simple assignment expressions are supported"
 
-    pattern = self.visit(pattern)
+    pattern = self.visit_expr(pattern)
     if isinstance(pattern, ast.EllipsisExpr):
         pattern = ast.CallExpr(ast.IdExpr("ellipsis"))
 

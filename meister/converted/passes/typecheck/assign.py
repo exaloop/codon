@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING
 
 from ....bridge import List, cast
 from ... import ast, cache
-from ..scope import Bindings
+from ...error import TypecheckError
 from . import infer, ops, utils
-from .ctx import Item, TypecheckError
+from .ctx import Item
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_assignexpr(self: TypeVisitor, node: ast.AssignExpr) -> ast.Node:
+def typecheck_assignexpr(self: TypeVisitor, node: ast.AssignExpr) -> ast.Expr:
     """
     Transform walrus (assignment) expression.
     @example
@@ -23,11 +23,11 @@ def typecheck_assignexpr(self: TypeVisitor, node: ast.AssignExpr) -> ast.Node:
     """
     assignment = ast.AssignStmt(node.var.clone(), rhs=node.expr)
     assignment.attributes = copy.deepcopy(node.attributes)
-    transformed = self.visit(ast.StmtExpr(assignment, expr=node.var))
+    transformed = self.visit_expr(ast.StmtExpr(assignment, expr=node.var))
     return transformed
 
 
-def typecheck_assign(self: TypeVisitor, node: ast.AssignStmt) -> ast.Node:
+def typecheck_assign(self: TypeVisitor, node: ast.AssignStmt) -> ast.Stmt:
     """
     Transform assignments. Handle dominated assignments, forward declarations, static
     assignments and type/function aliases.
@@ -36,15 +36,16 @@ def typecheck_assign(self: TypeVisitor, node: ast.AssignStmt) -> ast.Node:
     """
 
     if isinstance(node.lhs, (ast.TupleExpr, ast.ListExpr)):
+        assert node.rhs
         unpacked = unpack_assignment(self, node.lhs, node.rhs)
-        return self.visit(unpacked)
+        return self.visit_stmt(unpacked)
 
     must_update = node.is_update() or node.is_atomic_update()
     must_update = must_update or node.lhs.has(ast.Attr.ExprDominated)
     must_update = must_update or node.lhs.has(ast.Attr.ExprDominatedUsed)
     if isinstance(node.rhs, ast.BinaryExpr) and node.rhs.in_place:
         # Update case: a += b
-        assert node.type_expr is None, f"invalid AssignStmt {node.to_string()}"
+        assert node.type_expr is None, f"invalid AssignStmt {node}"
         must_update = True
 
     result = transform_assignment(self, node, must_update)
@@ -59,7 +60,7 @@ def typecheck_assign(self: TypeVisitor, node: ast.AssignStmt) -> ast.Node:
             rhs=ast.BoolExpr(True),
             update=ast.AssignStmt.Mode.Update,
         )
-        result = self.visit(ast.SuiteStmt(result, used_assignment))
+        result = self.visit_stmt(ast.SuiteStmt(result, used_assignment))
     return result
 
 
@@ -74,18 +75,17 @@ def typecheck_del(self: TypeVisitor, node: ast.DelStmt) -> ast.Node:
     match node.expr:
         case ast.IndexExpr(expr=expr, index=index):
             call = ast.CallExpr(ast.DotExpr(expr, member="__delitem__"), items=[index])
-            return self.visit(ast.ExprStmt(call))
+            return self.visit_stmt(ast.ExprStmt(call))
         case ast.IdExpr(value=name):
             # Assign `a` to `type(a)()` to mark it for deletion
             type_call = ast.CallExpr(
                 ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Type), items=[node.expr.clone()])
             )
             assignment = ast.AssignStmt(node.expr, rhs=type_call, update=ast.AssignStmt.Mode.Update)
-            result = self.visit(assignment)
+            result = self.visit_stmt(assignment)
 
             # Allow deletion *only* if the binding is dominated
-            value = self.ctx.find(name)
-            if not value:
+            if not self.ctx.get(name):
                 raise TypecheckError(node.expr, f"name '{name}' is not defined")
             # TODO: check if variable can be deleted (e.g., can you delete a variable in
             # outside scope?!)
@@ -118,8 +118,7 @@ def unpack_assignment(self: TypeVisitor, lhs: ast.Expr, rhs: ast.Expr) -> ast.St
     else:
         return ast.AssignStmt(lhs, rhs=rhs)
 
-    old_info = self.ctx.node_stack[-1].info
-    self.set_info(rhs.info)
+    old_info, self.ctx.node_stack[-1].info = self.ctx.node_stack[-1].info, rhs.info
     try:
         # Prepare the right-side expression
         block = ast.SuiteStmt()
@@ -167,7 +166,7 @@ def unpack_assignment(self: TypeVisitor, lhs: ast.Expr, rhs: ast.Expr) -> ast.St
                 ],
             )
             star = left_side[star_idx]
-            block.items.append(unpack_assignment(self, star.expr, right_side))
+            block.items.append(unpack_assignment(self, cast(ast.StarExpr, star).expr, right_side))
             star_idx += 1
             # Process remaining assignments. They will use negative indices (-1, -2 etc.)
             # because we do not know how big is StarExpr
@@ -180,7 +179,7 @@ def unpack_assignment(self: TypeVisitor, lhs: ast.Expr, rhs: ast.Expr) -> ast.St
                 block.items.append(unpack_assignment(self, left_side[star_idx], right_side))
                 star_idx += 1
     finally:
-        self.set_info(old_info)
+        self.ctx.node_stack[-1].info = old_info
     return block
 
 
@@ -226,22 +225,18 @@ def transform_assignment(
                     ),
                 )
             else:
-                result = self.visit(
-                    ast.ExprStmt(
-                        ast.CallExpr(
-                            ast.DotExpr(index.expr, member="__setitem__"),
-                            items=[index.index, stmt.rhs],
-                        )
-                    )
+                result = ast.ExprStmt(
+                    ast.CallExpr(ast.DotExpr(expr, member="__setitem__"), items=[index, stmt.rhs])
                 )
-            return self.visit(result)
+            return self.visit_stmt(result)
         case ast.DotExpr(expr=expr, member=member):  # a.x = b
-            expr = self.visit(expr, type_allowed=True)
-            rhs = self.visit(stmt.rhs)
+            expr = self.visit_expr(expr, type_allowed=True)
+            assert stmt.rhs
+            rhs = self.visit_expr(stmt.rhs)
             transformed = ast.AssignMemberStmt(
                 expr, member=member, rhs=rhs, type_expr=stmt.type_expr
             )
-            return self.visit(transformed)
+            return self.visit_stmt(transformed)
         case ast.IdExpr():  # a (: T) = b
             var = stmt.lhs
             # Never do undef checks on assignments!
@@ -251,9 +246,9 @@ def transform_assignment(
             raise TypecheckError(stmt, "cannot assign to given expression")
 
     # Ensure that captured values are in a Capsule
-    if self.ctx.in_function() and stmt.rhs and not must_exist:
-        base = self.ctx.get_base()
-        if bindings := base.func.attributes.get(ast.Attr.Bindings):
+    if self.ctx.in_function and stmt.rhs and not must_exist:
+        base = self.ctx.base
+        if base.func and (bindings := base.func.get(ast.Attr.Bindings)):
             if (binding := bindings.bindings.get(var.value)) and binding.is_nonlocal:
                 stmt.type_expr = (
                     ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Capsule), index=stmt.type_expr)
@@ -262,37 +257,37 @@ def transform_assignment(
                 )
 
     is_thread_local = False
-    type_expr = self.visit(stmt.type_expr, enforce_type=True)
-    if type_expr and utils.extract_type(self.ctx, type_expr).is_type(ast.types.Stdlib.ThreadLocal):
+    type_expr = self.visit_expr(stmt.type_expr, enforce_type=True) if stmt.type_expr else None
+    if type_expr and utils.extract_type(self.ctx, type_expr) == ast.types.Stdlib.ThreadLocal:
         is_thread_local = True
         if isinstance(type_expr, ast.IndexExpr):
-            type_expr = self.visit(stmt.type_expr.index, enforce_type=True)
+            type_expr = self.visit_expr(type_expr.index, enforce_type=True)
         else:
             type_expr = None
 
     # Make sure that existing values that cannot be shadowed are only updated
     # mustExist |= val && !ctx->isOuter(val);
     if must_exist:
-        value = self.ctx.find(var.value, self.ctx.time)
+        value = self.ctx.find_at(var.value, self.ctx.time)
         if not value:
             raise TypecheckError(
                 var,
                 f"local variable '{var.value}' referenced before assignment at {var.info}",
             )
         update = ast.AssignStmt(stmt.lhs, rhs=stmt.rhs, type_expr=type_expr)
-        base = self.ctx.get_base()
-        if not base.is_type() and base.func and base.func.has(ast.Attr.Atomic):
+        base = self.ctx.base
+        if not base.is_type and base.func and base.func.has(ast.Attr.Atomic):
             update.set_atomic_update()
         else:
             update.set_update()
         return transform_update(self, update) or update  # delay on fail
 
     # Generate new canonical variable name for this assignment and add it to the context
-    stmt.rhs = self.visit(stmt.rhs, type_allowed=True)
+    stmt.rhs = self.visit_expr(stmt.rhs, type_allowed=True) if stmt.rhs else None
     stmt.type_expr = type_expr
     if var.value.endswith(cache.VAR_USED_SUFFIX):
-        found = self.ctx.force_find(var.value.removesuffix(cache.VAR_USED_SUFFIX))
-        canonical = f"{found.canonical_name}{cache.VAR_USED_SUFFIX}"
+        found = self.ctx[var.value.removesuffix(cache.VAR_USED_SUFFIX)]
+        canonical = f"{found.canonical}{cache.VAR_USED_SUFFIX}"
     else:
         canonical = self.ctx.generate_canonical_name(var.value)
     lhs = ast.IdExpr(canonical)
@@ -302,28 +297,26 @@ def transform_assignment(
     if is_thread_local:
         assignment.set_thread_local()
 
-    base = self.ctx.get_base()
+    base = self.ctx.base
     if (
         assignment.rhs is None
         and assignment.type_expr is None
-        and self.ctx.find(ast.types.Stdlib.NoneType)
+        and self.ctx.get(ast.types.Stdlib.NoneType)
     ):
         # All declarations that are not handled are to be marked with NoneType later on
         # (useful for dangling declarations that are not initialized afterwards due to static check)
-        link = lhs.type.get_link()
+        link = lhs.type.link
+        assert link
         link.default_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.NoneType)
         base.pending_defaults.setdefault(1, set()).add(lhs.type)
     if assignment.type_expr:
-        annotated_type = utils.extract_type(self.ctx, assignment.type_expr)
-        infer.unify(
-            lhs.type,
-            utils.instantiate_type(self.ctx, annotated_type, info=assignment.type_expr.info),
-        )
+        ann_type = utils.extract_type(self.ctx, assignment.type_expr)
+        lhs.type |= utils.instantiate(self.ctx, ann_type, info=assignment.type_expr.info)
     value = Item(
-        canonical_name=canonical,
-        base_name=self.ctx.get_base_name(),
-        module_name=self.ctx.get_module(),
-        type=lhs.type,
+        canonical=canonical,
+        base=self.ctx.base_name,
+        module=self.ctx.module_name,
+        typ=lhs.type,
         block_level=self.ctx.block_level,
         time=self.ctx.time,
         info=self.ctx.node_stack[-1].info,
@@ -333,9 +326,9 @@ def transform_assignment(
 
     if assignment.rhs:  # not a declaration
         # Check if we can wrap the expression (e.g., `a: float = 3` -> `a = float(3)`)
-        can_wrap, assignment.rhs = utils.wrap_expr(self, assignment.rhs, lhs.type)
-        if can_wrap:
-            infer.unify(lhs.type, assignment.rhs.type)
+        can_wrap, assignment.rhs = utils.wrap_expr(self.ctx, assignment.rhs, lhs.type)
+        if can_wrap and assignment.rhs.type:
+            lhs.type |= assignment.rhs.type
 
         # Generalize non-variable types. That way we can support cases like:
         # `a = foo(x, ...); a(1); a('s')`
@@ -346,7 +339,7 @@ def transform_assignment(
 
     # Mark declarations or generalized type/functions as done
     if (assignment.rhs is None or assignment.rhs.done) and lhs.type.can_realize():
-        realized = infer.realize(lhs.type)
+        realized = infer.realize(self.ctx, lhs.type)
         if realized:
             # overwrite types to remove dangling unbounds with some partials...
             lhs.type = realized
@@ -361,16 +354,16 @@ def transform_assignment(
     is_global = (
         self.ctx.cache.is_jit
         and value.is_global()
-        and (not value.is_generic())
+        and (not value.generic)
         or canonical == ast.types.Stdlib.Argv
-        or (value.is_global() and value.module_name != "")
+        or (value.is_global() and value.module)
     )
     if is_global and value.is_var():
         utils.register_global(self.ctx, canonical)
         if self.ctx.cache.is_jit:
             imported_stdlib = utils.get_import_module(self.ctx, cache.STDLIB_IMPORT)
             imported_stdlib.ctx.add_toplevel(
-                utils.get_unmangled_name(self.ctx, value.canonical_name), value
+                utils.get_unmangled_name(self.ctx, value.canonical), value
             )
     return assignment
 
@@ -382,33 +375,33 @@ def transform_update(self: TypeVisitor, stmt: ast.AssignStmt) -> ast.Stmt:
     See @c transformInplaceUpdate and @c wrapExpr for details.
     """
 
-    stmt.lhs = self.visit(stmt.lhs)
+    stmt.lhs = self.visit_expr(stmt.lhs)
 
     # Check inplace updates
     in_place, replacement = transform_inplace_update(self, stmt)
     if in_place:
         return replacement or stmt
 
-    stmt.rhs = self.visit(stmt.rhs)
-    stmt.type_expr = self.visit(stmt.type_expr, enforce_type=True)
+    assert stmt.rhs
+    stmt.rhs = self.visit_expr(stmt.rhs)
+    stmt.type_expr = self.visit_expr(stmt.type_expr, enforce_type=True) if stmt.type_expr else None
     if stmt.type_expr:
-        infer.unify(
-            stmt.lhs.type,
-            utils.instantiate_type(
-                self.ctx, utils.extract_type(self.ctx, stmt.type_expr), info=stmt.type_expr.info
-            ),
+        assert stmt.lhs.type
+        stmt.lhs.type |= utils.instantiate(
+            self.ctx, utils.extract_type(self.ctx, stmt.type_expr), info=stmt.type_expr.info
         )
 
     # Case: wrap expressions if needed (e.g. floats or optionals)
-    can_wrap, stmt.rhs = utils.wrap_expr(self, stmt.rhs, stmt.lhs.type)
+    can_wrap, stmt.rhs = utils.wrap_expr(self.ctx, stmt.rhs, stmt.lhs.type)
     if can_wrap:
-        infer.unify(stmt.rhs.type, stmt.lhs.type)
-    if stmt.rhs.done and infer.realize(stmt.lhs.type):
+        assert stmt.rhs.type and stmt.lhs.type
+        stmt.rhs.type |= stmt.lhs.type
+    if stmt.rhs.done and infer.realize(self.ctx, stmt.lhs.type):
         stmt.done = True
     return stmt
 
 
-def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast.Node:
+def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast.Stmt:
     """
     Typecheck instance member assignments (e.g., `a.b = c`) and handle optional
     instances. Disallow tuple updates.
@@ -417,7 +410,7 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     See @c wrapExpr for more examples.
     """
 
-    node.lhs = self.visit(node.lhs)
+    node.lhs = self.visit_expr(node.lhs)
     if (lhs_type := utils.extract_class_type(self.ctx, node.lhs)) is None:
         return node  # delay
 
@@ -426,10 +419,8 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     if member is None and (
         setters := utils.find_method(self.ctx, lhs_type, f"{cache.FN_SETTER_SUFFIX}{node.member}")
     ):
-        setter_call = ast.CallExpr(
-            ast.IdExpr(setters[0].get_func_name()), items=[node.lhs, node.rhs]
-        )
-        return self.visit(ast.ExprStmt(setter_call))
+        setter_call = ast.CallExpr(ast.IdExpr(setters[0].func_name), items=[node.lhs, node.rhs])
+        return self.visit_stmt(ast.ExprStmt(setter_call))
 
     # Case: class variables
     if member is None and (cls_data := utils.get_class(self.ctx, lhs_type)):
@@ -438,67 +429,60 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
             assignment = ast.AssignStmt(
                 ast.IdExpr(cls_var), rhs=rhs, update=ast.AssignStmt.Mode.Update
             )
-            return self.visit(assignment)
+            return self.visit_stmt(assignment)
 
     # Unwrap optional and look up there
-    if member is None and lhs_type.is_type(ast.types.Stdlib.Optional):
+    if member is None and lhs_type == ast.types.Stdlib.Optional:
         unwrapped = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), items=[node.lhs])
         assignment = ast.AssignMemberStmt(unwrapped, member=node.member, rhs=node.rhs)
-        return self.visit(assignment)
+        return self.visit_stmt(assignment)
 
     # Case: __setattr__ support. Ensure that only Literal[str] arguments are accepted.
     if member is None:
         static_name = utils.instantiate_unbound(self.ctx)
-        static_name.static_kind = ast.types.Type.Behaviour.String
+        static_name._static_kind = ast.types.Type.Behaviour.String
         value_type = utils.instantiate_unbound(self.ctx)
-        setattr_method = utils.find_best_method(
+        setattr_method = utils.best_method(
             self.ctx, lhs_type, "__setattr__", [lhs_type, static_name, value_type]
         )
         if (
             setattr_method
             and setattr_method.func_generics
-            and utils.extract_func_generic(setattr_method).get_static_kind()
+            and utils.extract_func_generic(setattr_method).static_kind
             is ast.types.Type.Behaviour.String
         ):
             setattr_call = ast.CallExpr(
                 ast.DotExpr(node.lhs, member="__setattr__"),
                 items=[ast.StringExpr(node.member), node.rhs],
             )
-            return self.visit(ast.ExprStmt(setattr_call))
+            return self.visit_stmt(ast.ExprStmt(setattr_call))
 
     if member is None:
-        raise TypecheckError(
-            node,
-            f"'{lhs_type.pretty_string()}' object has no attribute '{node.member}'",
-        )
+        raise TypecheckError(node, f"'{lhs_type}' object has no attribute '{node.member}'")
 
-    if lhs_type.is_record():
+    if lhs_type.is_tuple:
         # prevent tuple member assignment
         raise TypecheckError(node, "cannot modify tuple attributes")
 
-    node.rhs = self.visit(node.rhs)
-    node.type_expr = self.visit(node.type_expr, enforce_type=True)
+    node.rhs = self.visit_expr(node.rhs)
+    node.type_expr = self.visit_expr(node.type_expr, enforce_type=True) if node.type_expr else None
     if node.type_expr:
-        infer.unify(
-            node.rhs.type,
-            utils.instantiate_type(
-                self.ctx, utils.extract_type(self.ctx, node.type_expr), info=node.type_expr.info
-            ),
+        assert node.rhs.type
+        node.rhs.type |= utils.instantiate(
+            self.ctx, utils.extract_type(self.ctx, node.type_expr), info=node.type_expr.info
         )
-    field_type = utils.instantiate_type(self.ctx, member.type, lhs_type, node.lhs.info)
+    field_type = utils.instantiate(self.ctx, member.type, lhs_type, node.lhs.info)
     if not field_type.can_realize() and member.type_expr:
         member_type = self.visit(member.type_expr.clone(clean=True))
-        infer.unify(field_type, utils.extract_type(self.ctx, member_type))
+        field_type |= utils.extract_type(self.ctx, member_type)
     cache_class = utils.get_class(self.ctx, lhs_type)
-    if member.base_class != lhs_type.name and cache_class and cache_class.has_rtti():
+    if member.base_class != lhs_type.name and cache_class and cache_class.rtti:
         base_type = None
         for candidate in utils.get_base_classes(self.ctx, lhs_type):
-            if (
-                candidate_class := candidate.get_class()
-            ) and candidate_class.name == member.base_class:
+            if (candidate_class := candidate.cls) and candidate_class.name == member.base_class:
                 base_type = candidate
                 break
-        assert base_type is not None, f"cannot find base type of {lhs_type.debug_string(2)}"
+        assert base_type is not None, f"cannot find base type of {lhs_type!r}"
         if not base_type.can_realize():
             return node  # delay!
         cast_call = ast.CallExpr(
@@ -508,12 +492,13 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
         base_assignment = ast.AssignMemberStmt(
             cast_call, member=node.member, rhs=node.rhs, type_expr=node.type_expr
         )
-        return self.visit(base_assignment)
+        return self.visit_stmt(base_assignment)
 
-    can_wrap, node.rhs = utils.wrap_expr(self, node.rhs, field_type)
+    can_wrap, node.rhs = utils.wrap_expr(self.ctx, node.rhs, field_type)
     if not can_wrap:
         return node
-    infer.unify(node.rhs.type, field_type)
+    assert node.rhs.type
+    node.rhs.type |= field_type
     if node.rhs.done:
         node.done = True
     return node
@@ -554,49 +539,52 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
         case _, ast.BinaryExpr(in_place=True) as binary if not stmt.is_atomic_update():
             # Case: in-place updates (e.g., `a += b`).
             # They are stored as `Update(a, Binary(a + b, inPlace=true))`
-            binary.lexpr, binary.rexpr = self.visit(binary.lexpr), self.visit(binary.rexpr)
+            binary.lexpr, binary.rexpr = (
+                self.visit_expr(binary.lexpr),
+                self.visit_expr(binary.rexpr),
+            )
             if not isinstance(binary.type, ast.types.Type):
                 binary.type = utils.instantiate_unbound(self.ctx)
-            if binary.lexpr.get_class_type() and binary.rexpr.get_class_type():
+            if binary.lexpr.cls and binary.rexpr.cls:
                 if replacement := ops.transform_binary_inplace_magic(
                     self, binary, stmt.is_atomic_update()
                 ):
-                    infer.unify(stmt.rhs.type, replacement.type)
+                    assert stmt.rhs.type and replacement.type
+                    stmt.rhs.type |= replacement.type
                     transformed = self.visit(ast.ExprStmt(replacement))
                     return True, transformed
                 return False, None
             else:
-                infer.unify(
-                    stmt.lhs.type, infer.unify(stmt.rhs.type, utils.instantiate_unbound(self.ctx))
-                )
+                assert stmt.rhs.type and stmt.lhs.type
+                stmt.rhs.type |= utils.instantiate_unbound(self.ctx)
+                stmt.lhs.type |= stmt.rhs.type
                 return True, None
         case ast.IdExpr(value=name), ast.CallExpr(
             expr=ast.IdExpr(value="min" | "max" as fn_name),
             args=[ast.CallExpr.Arg(value=ast.IdExpr(value=arg_name)), other],
         ) if (
-            stmt.is_atomic_update()
-            and (item := self.ctx.find(arg_name))
-            and item.canonical_name == name
+            stmt.is_atomic_update() and (item := self.ctx.get(arg_name)) and item.canonical == name
         ):
             # Case: atomic min/max operations.
             # Note: check only `a = min(a, b)`; does NOT check `a = min(b, a)`
 
             # `type(a).__atomic_min__(__ptr__(a), b)`
             lhs_type = utils.extract_class_type(self.ctx, stmt.lhs)
-            pointer = utils.instantiate_type(
+            pointer = utils.instantiate(
                 self.ctx,
                 utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr),
                 [lhs_type],
                 stmt.lhs.info,
             )
-            other.value = self.visit(other.value)
-            if rhs_type := other.value.get_class_type():
-                if method := utils.find_best_method(
+            other.value = self.visit_expr(other.value)
+            assert other.value.type
+            if rhs_type := other.value.type.cls:
+                if method := utils.best_method(
                     self.ctx, lhs_type, f"__atomic_{fn_name}__", [pointer, rhs_type]
                 ):
                     transformed = ast.ExprStmt(
                         ast.CallExpr(
-                            ast.IdExpr(method.get_func_name()),
+                            ast.IdExpr(method.func_name),
                             items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[stmt.lhs]), other],
                         )
                     )
@@ -605,22 +593,24 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
         case _ if stmt.is_atomic_update():
             # Case: atomic assignments
             lhs_type = utils.extract_class_type(self.ctx, stmt.lhs)
-            stmt.rhs = self.visit(stmt.rhs)
-            rhs_type = stmt.rhs.get_class_type()
+            assert stmt.rhs
+            stmt.rhs = self.visit_expr(stmt.rhs)
+            assert stmt.rhs.type
+            rhs_type = stmt.rhs.type.cls
             if lhs_type and rhs_type:
-                pointer = utils.instantiate_type(
+                pointer = utils.instantiate(
                     self.ctx,
                     utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Ptr),
                     [lhs_type],
                     stmt.lhs.info,
                 )
                 # `type(a).__atomic_xchg__(__ptr__(a), b)`
-                if method := utils.find_best_method(
+                if method := utils.best_method(
                     self.ctx, lhs_type, "__atomic_xchg__", [pointer, rhs_type]
                 ):
                     transformed = ast.ExprStmt(
                         ast.CallExpr(
-                            ast.IdExpr(method.get_func_name()),
+                            ast.IdExpr(method.func_name),
                             items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[stmt.lhs]), stmt.rhs],
                         )
                     )

@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from ....bridge import Callable, Dict, List, Set, Tuple, cast, contextmanager, dataclass
-from ... import ast, cache, error
+from ... import ast, cache
+from ...error import ErrorMessage, ParserErrors, TypecheckError
 from . import infer
 from .classes import generate_tuple
-from .ctx import TypecheckError, TypeContext
+from .ctx import TypeContext
+
+if TYPE_CHECKING:
+    from . import TypeVisitor
 
 
 @dataclass
@@ -24,7 +30,7 @@ class PartialCallData:
     kw_args: ast.Expr | None = None
 
 
-def find_best_method(
+def best_method(
     ctx: TypeContext, typ: ast.types.Class, member: str, args
 ) -> ast.types.Function | None:
     """
@@ -37,11 +43,35 @@ def find_best_method(
             call_args.append(ast.CallExpr.Arg(value=ast.NoneExpr(type=arg)))
         elif isinstance(arg, ast.Expr):
             call_args.append(ast.CallExpr.Arg(value=arg))
-        elif isinstance(arg, Tuple[str, ast.types.Type]):
+        else:
             call_args.append(ast.CallExpr.Arg(name=arg[0], value=ast.NoneExpr(type=arg[1])))
     methods = find_method(ctx, typ, member, hide_shadowed=False)
-    matches = find_matching_methods(ctx, methods, call_args)
-    return matches[0] if matches else None
+    if matches := matching_methods(ctx, typ, methods, call_args):
+        return matches[0]
+    return None
+
+
+def matching_methods(
+    ctx: TypeContext,
+    typ: ast.types.Class,
+    methods: List[ast.types.Function],
+    args: List[ast.CallExpr.Arg],
+    partial: ast.types.Class | None = None,
+) -> List[ast.types.Function]:
+    """
+    Select the best method among the provided methods given the list of args.
+    See @c reorderNamedArgs for details.
+    """
+
+    # Pick the last method that accepts the given args
+    results = []
+    for method in methods:
+        if not method:
+            continue  # avoid overloads that have not been seen yet
+        fn = instantiate(ctx, method, typ).func
+        if fn and can_call(ctx, fn, args, partial) >= 0:
+            results.append(method)
+    return results
 
 
 def can_call(
@@ -55,9 +85,10 @@ def can_call(
     See @c reorderNamedArgs for details.
     """
     partial_args = []
-    if partial and partial.get_partial():
-        known = partial.get_partial_mask()
-        known_arg_types = partial[1].get_class()
+    known = []
+    if partial and partial.partial:
+        known = partial.partial_mask
+        known_arg_types = partial[1].require_cls
         known_idx = 0
         for flag in known:
             if flag == ast.types.Class.Flag.Included:
@@ -69,38 +100,31 @@ def can_call(
     reordered: List[Tuple[ast.types.Type | None, int]] = []
     non_inferrable = function.ast.get_non_inferrable_generics()
 
-    def on_done(
-        star_idx: int,
-        keyword_star_idx: int,
-        slots: List[List[int]],
-        is_partial: bool,
-    ) -> int:
+    try:
+        score, (star_idx, kwstar_idx, slots, _) = reorder_named_args(ctx, function, args, known)
         generic_idx = 0
         partial_idx = 0
         for slot_idx, slot in enumerate(slots):
             param = function.ast.items[slot_idx]
             if param.is_generic():
                 if not slot:
-                    if param.name in non_inferrable and not param.default_value:
+                    if param.name in non_inferrable and not param.default:
                         return -1  # is this "real" type?
                     reordered.append((None, 0))
                 else:
                     expected_type = extract_func_generic(function, generic_idx)
                     arg = args[slot[0]].value
-                    if (
-                        expected_type.get_static_kind() is ast.types.Type.Behaviour.Runtime
-                        and not is_type_expr(arg)
-                    ):
+                    if expected_type.is_runtime and not is_type_expr(arg):
                         return -1
                     reordered.append((arg.type, slot[0]))
                 generic_idx += 1
-            elif slot_idx in {star_idx, keyword_star_idx} or len(slot) != 1:
+            elif slot_idx in {star_idx, kwstar_idx} or len(slot) != 1:
                 # Partials
                 if (
                     not slot
                     and partial
-                    and partial.get_partial()
-                    and known[slot_idx] == ast.types.Class.Flag.Included
+                    and partial.partial
+                    and known[slot_idx] is ast.types.Class.Flag.Included
                 ):
                     reordered.append((partial_args[partial_idx], 0))
                     partial_idx += 1
@@ -109,9 +133,9 @@ def can_call(
                     reordered.append((None, 0))
             else:
                 reordered.append((args[slot[0]].value.type, slot[0]))
-        return 0
+    except TypecheckError:
+        return -1
 
-    score = reorder_named_args(ctx, function, args, on_done, lambda *_: -1, known)
     value_idx = 0
     generic_idx = 0
     real_generic_idx = 0
@@ -130,17 +154,19 @@ def can_call(
             continue
         if not param.is_value():
             real_generic_idx += 1
-            if expected_type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
-                arg = args[source_idx].value
+            if not expected_type.is_runtime:
+                arg = args[source_idx].value.type
                 # Check if this is a good generic!
-                if arg.type.get_static_kind() is ast.types.Type.Behaviour.Runtime:
+                if arg and arg.require_cls.is_runtime:
                     score = -1
                     break
-                arg_type = arg.type
+                arg_type = arg
             else:
                 arg_idx += 1
                 # TODO: check if these are real types or if traits are satisfied
                 continue
+
+        assert arg_type
         _, wrapped_type, _ = can_wrap_expr(ctx, arg_type, expected_type, function)
         candidate = wrapped_type or arg_type
         if candidate.unify(expected_type, None) < 0:
@@ -151,33 +177,8 @@ def can_call(
     return score
 
 
-def find_matching_methods(
-    ctx: TypeContext,
-    typ: ast.types.Class,
-    methods: List[ast.types.Function | None],
-    args: List[ast.CallExpr.Arg],
-    partial: ast.types.Class | None = None,
-) -> List[ast.types.Function]:
-    """
-    Select the best method among the provided methods given the list of args.
-    See @c reorderNamedArgs for details.
-    """
-    # Pick the last method that accepts the given args
-    results = []
-    for method in methods:
-        if not method:
-            continue  # avoid overloads that have not been seen yet
-        instantiated = instantiate_type(ctx, method, typ)
-        if (
-            isinstance(instantiated, ast.types.Function)
-            and can_call(ctx, instantiated, args, partial) != -1
-        ):
-            results.append(method)
-    return results
-
-
 def wrap_expr(
-    visitor,
+    ctx: TypeContext,
     expr: ast.Expr,
     expected_type: ast.types.Type | None,
     callee: ast.types.Function | None = None,
@@ -197,63 +198,59 @@ def wrap_expr(
     expected base class, got derived    -> downcast to base class
     @param allowUnwrap allow optional unwrapping.
     """
+
+    from . import TypeVisitor
+
+    assert expr.type
     can_wrap, _, wrapper = can_wrap_expr(
-        expr.type,
-        expected_type,
-        callee,
-        allow_unwrap,
-        isinstance(expr, ast.EllipsisExpr),
+        ctx, expr.type, expected_type, callee, allow_unwrap, isinstance(expr, ast.EllipsisExpr)
     )
     # TODO: get rid of this line one day!
-    if expr.type.get_static_kind() is not ast.types.Type.Behaviour.Runtime and (
-        expected_type is None or expected_type.get_static_kind() is ast.types.Type.Behaviour.Runtime
-    ):
-        expr.type = get_underlying_static_type(visitor.ctx, expr.type)
+    if not expr.type.is_runtime and (not expected_type or expected_type.is_runtime):
+        expr.type = get_underlying_static_type(ctx, expr.type)
     if can_wrap and wrapper:
-        expr = visitor.visit(wrapper(expr))
+        expr = TypeVisitor(ctx).visit_expr(wrapper(expr))
     return can_wrap, expr
 
 
 def can_wrap_expr(
-    visitor,
+    ctx: TypeContext,
     expr_type: ast.types.Type,
     expected_type: ast.types.Type | None,
     callee: ast.types.Function | None = None,
     allow_unwrap: bool = True,
     is_ellipsis: bool = False,
 ):
-    expected_class = expected_type.get_class() if expected_type else None
-    expr_class = expr_type.get_class()
+    from . import TypeVisitor
+
+    expected_class = expected_type.require_cls if expected_type else None
+    expr_class = expr_type.require_cls
     wrapped_type = None
     wrapper: Callable[[ast.Expr], ast.Expr] | None = None
     if (
         callee
-        and isinstance(callee.ast, ast.FunctionStmt)
-        and callee.ast.has_function_attribute(
+        and callee.ast
+        and callee.ast.has_function_attr(
             ast.types.mangle("std.internal.attributes", func="no_arg_wrap")
         )
     ):
         return True, expected_type, None  # do not wrap
 
     # Case: types are wrapped in TypeWrap when type is not expected
-    if callee and expr_type.name == ast.types.Stdlib.Type:
-        expr_type = extract_class_type(expr_type)
+    if callee and expr_type == ast.types.Stdlib.Type:
+        expr_type = extract_class_type(ctx, expr_type)
         if not expr_type:
             return False, None, None
-        if not (expected_class and expected_class.name == ast.types.Stdlib.Type):
-            wrapped_type = infer.instantiate_type(
-                get_stdlib_type(ast.types.Stdlib.TypeWrap), [expr_type]
-            )
+        if not expected_class or expected_class != ast.types.Stdlib.Type:
+            wrapped_type = instantiate(ctx, ast.types.Stdlib.TypeWrap, [expr_type])
             wrapper = lambda value: ast.CallExpr(
                 ast.IdExpr(ast.types.Stdlib.TypeWrap),
                 items=[value],
             )
         return True, wrapped_type, wrapper
-    if (
-        expected_type is None or expected_type.get_static_kind() is ast.types.Type.Behaviour.Runtime
-    ) and expr_type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
-        expr_type = get_underlying_static_type(expr_type)
-        expr_class = expr_type.get_class()
+    if (expected_type is None or expected_type.is_runtime) and not expr_type.is_runtime:
+        expr_type = get_underlying_static_type(ctx, expr_type)
+        expr_class = expr_type.require_cls
         wrapped_type = expr_type
 
     hints = {ast.types.Stdlib.Generator, ast.types.Stdlib.Float, ast.types.Stdlib.Optional, "pyobj"}
@@ -264,101 +261,87 @@ def can_wrap_expr(
     if (
         allow_unwrap
         and expected_class
-        and expected_class.name == ast.types.Stdlib.Capsule
+        and expected_class == ast.types.Stdlib.Capsule
         and expr_class
-        and expr_class.name != ast.types.Stdlib.Capsule
+        and expr_class != ast.types.Stdlib.Capsule
     ):
-        wrapped_type = infer.instantiate_type(
-            get_stdlib_type(ast.types.Stdlib.Capsule), [expr_class]
-        )
+        wrapped_type = instantiate(ctx, ast.types.Stdlib.Capsule, [expr_class])
 
         def wrap_capsule(value: ast.Expr) -> ast.Expr:
             match value:
-                case ast.CallExpr(expr, items=[ast.CallExpr.Arg(value)]) if (
-                    is_function_expr(expr, ast.types.mangle(cls="Capsule", func="_get")) and value
+                case ast.CallExpr(expr=expr, items=[item]) if (
+                    is_function_expr(expr, ast.types.mangle(cls="Capsule", func="_get")) and item
                 ):
                     # Do not wrap already wrapped vars
-                    return value.items[0].value
+                    return item.value
                 case _:
                     return ast.CallExpr(
-                        ast.IdExpr(ast.types.mangle(cls="Capsule", func="_make")),
-                        items=[value],
+                        ast.IdExpr(ast.types.mangle(cls="Capsule", func="_make")), items=[value]
                     )
 
         wrapper = wrap_capsule
     elif (
         expected_class
-        and expected_class.name != ast.types.Stdlib.Any
+        and expected_class != ast.types.Stdlib.Any
         and expr_class
-        and expr_class.name == ast.types.Stdlib.Any
+        and expr_class == ast.types.Stdlib.Any
     ):
         wrapped_type = expected_class
 
         def unwrap_any(value: ast.Expr) -> ast.Expr:
-
-            realized = infer.realize(expected_class)
+            realized = infer.realize(ctx, expected_class)
+            assert realized
             return ast.CallExpr(
                 ast.IdExpr(ast.types.Stdlib.OptionalUnwrap),
-                items=[
-                    value,
-                    ast.IdExpr(realized.realized_name()),
-                ],
+                items=[value, ast.IdExpr(realized.realized_name())],
             )
 
         wrapper = unwrap_any
     elif (
         expected_class
-        and expected_class.name == (ast.types.Stdlib.Any)
+        and expected_class == (ast.types.Stdlib.Any)
         and expr_class
-        and expr_class.name != (ast.types.Stdlib.Any)
+        and expr_class != (ast.types.Stdlib.Any)
     ):
         wrapped_type = expected_class
         wrapper = lambda value: ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Any), items=[value])
     elif (
         expected_class
-        and expected_class.name == ast.types.Stdlib.Generator
+        and expected_class == ast.types.Stdlib.Generator
         and expr_class
-        and expr_class.name != expected_class.name
+        and expr_class != expected_class.name
         and not is_ellipsis
     ):
-        if not find_method(expr_class, "__iter__"):
+        if not find_method(ctx, expr_class, "__iter__"):
             # Do not wrap already wrapped vars
             return False, None, None
         # Note: do not do this in pipelines (TODO: why?)
-        wrapped_type = instantiate_type(expected_class)
+        wrapped_type = instantiate(ctx, expected_class)
         wrapper = lambda value: ast.CallExpr(ast.DotExpr(value, member="__iter__"), items=[])
-    elif (
-        expected_class
-        and expected_class.name == "float"
-        and expr_class
-        and expr_class.name == "int"
-    ):
-        wrapped_type = instantiate_type(expected_class)
+    elif expected_class and expected_class == "float" and expr_class and expr_class == "int":
+        wrapped_type = instantiate(ctx, expected_class)
         wrapper = lambda value: ast.CallExpr(ast.IdExpr("float"), items=[value])
     elif (
         callee is None
         and expected_class
-        and expected_class.name == ast.types.Stdlib.Bool
+        and expected_class == ast.types.Stdlib.Bool
         and expr_class
-        and expr_class.name != ast.types.Stdlib.Bool
+        and expr_class != ast.types.Stdlib.Bool
     ):
         # Do not do this in function calls---only use for if-else wrapping
-        wrapped_type = instantiate_type(expected_class)
+        wrapped_type = instantiate(ctx, expected_class)
         wrapper = lambda value: ast.CallExpr(ast.DotExpr(value, member="__bool__"), items=[])
     elif (
         expected_class
-        and expected_class.name == ast.types.Stdlib.Optional
+        and expected_class == ast.types.Stdlib.Optional
         and expr_class
-        and expr_class.name != ast.types.Stdlib.Optional
+        and expr_class != ast.types.Stdlib.Optional
     ):
         expected_inner = expected_class[0]
         _, inner_type, inner_wrapper = can_wrap_expr(
-            tc, expr_class, expected_inner, callee, allow_unwrap, is_ellipsis
+            ctx, expr_class, expected_inner, callee, allow_unwrap, is_ellipsis
         )
-        wrapped_type = instantiate_type(
-            get_stdlib_type(ast.types.Stdlib.Optional),
-            [expr_class if inner_type is None else inner_type],
-        )
+        wrapped_type = instantiate(ctx, ast.types.Stdlib.Optional, [inner_type or expr_class])
         wrapper = lambda value: ast.CallExpr(
             ast.IdExpr(ast.types.Stdlib.Optional),
             items=[value if inner_wrapper is None else inner_wrapper(value)],
@@ -367,27 +350,22 @@ def can_wrap_expr(
         allow_unwrap
         and expected_class
         and expr_class
-        and expr_class.name == ast.types.Stdlib.Optional
-        and expected_class.name != ast.types.Stdlib.Optional
+        and expr_class == ast.types.Stdlib.Optional
+        and expected_class != ast.types.Stdlib.Optional
     ):
         expression_inner = expr_class[0]
         _, inner_type, inner_wrapper = can_wrap_expr(
-            tc, expression_inner, expected_class, callee, allow_unwrap, is_ellipsis
+            ctx, expression_inner, expected_class, callee, allow_unwrap, is_ellipsis
         )
-        wrapped_type = instantiate_type(inner_type or expression_inner)
+        wrapped_type = instantiate(ctx, inner_type or expression_inner)
         wrapper = lambda value: ast.CallExpr(
             ast.IdExpr(ast.types.Stdlib.OptionalUnwrap),
             items=[inner_wrapper(value) if inner_wrapper else value],
         )
-    elif (
-        expected_class
-        and expected_class.name == "pyobj"
-        and expr_class
-        and expr_class.name != "pyobj"
-    ):
-        if not find_method(expr_class, "__to_py__"):
+    elif expected_class and expected_class == "pyobj" and expr_class and expr_class != "pyobj":
+        if not find_method(ctx, expr_class, "__to_py__"):
             return False, None, None
-        wrapped_type = instantiate_type(expected_class)
+        wrapped_type = instantiate(ctx, expected_class)
         wrapper = lambda value: ast.CallExpr(
             ast.IdExpr("pyobj"),
             items=[ast.CallExpr(ast.DotExpr(value, member="__to_py__"))],
@@ -396,155 +374,144 @@ def can_wrap_expr(
         allow_unwrap
         and expected_class
         and expr_class
-        and expr_class.is_type("pyobj")
-        and not expected_class.is_type("pyobj")
+        and expr_class == "pyobj"
+        and expected_class != "pyobj"
     ):
-        if not find_method(expected_class, "__from_py__"):
+        if not find_method(ctx, expected_class, "__from_py__"):
             return False, None, None
-        wrapped_type = instantiate_type(expected_class)
+        wrapped_type = instantiate(ctx, expected_class)
         wrapper = lambda value: ast.CallExpr(
             ast.DotExpr(ast.IdExpr(expected_class.name, type=expected_type), member="__from_py__"),
             items=[ast.DotExpr(value, member="p")],
         )
     elif (
         expected_class
-        and expected_class.is_type(ast.types.Stdlib.Callable)
+        and expected_class == ast.types.Stdlib.Callable
         and expr_class
-        and (
-            expr_class.get_partial()
-            or expr_type.get_func()
-            or expr_class.is_type(ast.types.Stdlib.Function)
-        )
+        and (expr_class.partial or expr_type.func or expr_class == ast.types.Stdlib.Function)
     ):
         arg_types = []
         # Get list of args
         function_type: ast.types.Function | None = None
 
-        if partial_class := expr_class.get_partial():
-            instantiated_function = instantiate_type(partial_class.get_partial_func())
-            function_type = instantiated_function.get_func()
-            for idx, flag in enumerate(partial_class.get_partial_mask()):
+        if partial := expr_class.partial:
+            function_type = instantiate(ctx, partial.partial_func)
+            for idx, flag in enumerate(partial.partial_mask):
                 if flag != ast.types.Class.Flag.Included:
-                    arg_type = function_type[idx]
-                    arg_types.append(arg_type)
-            return_type = function_type.get_ret_type()
+                    arg_types.append(function_type[idx])
+            ret_type = function_type.ret_type
         else:
-            tuple_type = expr_class[0].get_class()
+            tuple_type = expr_class[0].require_cls
             for generic in tuple_type.generics:
                 arg_types.append(generic.type)
-            return_type = expr_class[1]
+            ret_type = expr_class[1]
 
-        expected_args = expected_class[0].get_class()
+        expected_args = expected_class[0].require_cls
         if len(arg_types) != len(expected_args.generics):
             return False, None, None
         for idx, arg_type in enumerate(arg_types):
             expected_arg = expected_args[idx]
             if arg_type.unify(expected_arg) < 0:
                 return False, None, None
-        if return_type.unify(expected_class[1]) < 0:
+        if ret_type.unify(expected_class[1]) < 0:
             return False, None, None
 
         wrapped_type = expected_type
 
         def wrap_callable(value: ast.Expr) -> ast.Expr:
-            value_class = value.type.get_class()
-            expected_value_class = wrapped_type.get_class()
+            assert value.type
+            value_class = value.type.require_cls
+            assert wrapped_type
+            expected_class = wrapped_type.require_cls
 
             value_arg_types = []
-            if value_partial := value_class.get_partial():
-                partial_fn = instantiate_type(value_partial.get_partial_func()).get_func()
-                for idx, flag in enumerate(value_partial.get_partial_mask()):
+            if value_partial := value_class.partial:
+                partial_fn = instantiate(ctx, value_partial.partial_func)
+                for idx, flag in enumerate(value_partial.partial_mask):
                     if flag != ast.types.Class.Flag.Included:
-                        value_arg_type = partial_fn[idx]
-                        value_arg_types.append(value_arg_type)
-                value_return_type = partial_fn.get_ret_type()
+                        value_arg_types.append(partial_fn[idx])
+                value_return_type = partial_fn.ret_type
             else:
-                value_tuple = value_class[0].get_class()
+                value_tuple = value_class[0].require_cls
                 for generic in value_tuple.generics:
                     value_arg_types.append(generic.type)
                 value_return_type = value_class[1]
 
-            callable_args = expected_value_class[0]
+            callable_args = expected_class[0].require_cls
             for idx, arg_type in enumerate(value_arg_types):
-                expected_arg = callable_args[idx]
-                infer.unify(arg_type, expected_arg)
-            infer.unify(value_return_type, expected_value_class[1])
+                arg_type |= callable_args[idx]
+            value_return_type |= expected_class[1]
 
-            return_function: ast.Expr | None = None
+            ret_fn: ast.Expr | None = None
             data_arg: ast.Expr | None = None
             data_type: ast.Expr | None = None
             if value_partial:
-                realized_value = infer.realize(value_class, force=True)
-                function_name = realized_value.realized_name()
-                return_function = ast.IndexExpr(
+                value_class = infer.realize(ctx, value_class, force=True)
+                assert value_class
+                fn_name = value_class.realized_name()
+                ret_fn = ast.IndexExpr(
                     ast.CallExpr(
                         ast.IndexExpr(
                             ast.IdExpr(ast.types.Stdlib.Ptr),
-                            idx=ast.IdExpr(realized_value.realized_name()),
+                            index=ast.IdExpr(value_class.realized_name()),
                         ),
                         items=[ast.IdExpr("data")],
                     ),
-                    idx=ast.IntExpr(0),
+                    index=ast.IntExpr(0),
                 )
                 data_type = ast.IdExpr(ast.types.Stdlib.CObj)
-            elif value.type.get_func():
-                realized_value = infer.realize(value_class, force=True)
-                function_name = realized_value.realized_name()
-                return_function = ast.IdExpr(realized_value.get_func().realized_name())
+            elif value.type.func:
+                value_class = infer.realize(ctx, value_class, force=True)
+                assert value_class
+                fn_name = value_class.realized_name()
+                ret_fn = ast.IdExpr(value_class.realized_name())
                 data_arg = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.CObj))
                 data_type = ast.IdExpr(ast.types.Stdlib.CObj)
             elif value_class.name == ast.types.Stdlib.Function:
-                realized_value = infer.realize(value_class, force=True)
-                function_name = realized_value.realized_name()
-                return_function = ast.CallExpr(
-                    ast.IdExpr(realized_value.realized_name()),
+                value_class = infer.realize(ctx, value_class, force=True)
+                assert value_class
+                fn_name = value_class.realized_name()
+                ret_fn = ast.CallExpr(
+                    ast.IdExpr(value_class.realized_name()),
                     items=[ast.IdExpr("data")],
                 )
                 data_type = ast.IdExpr(ast.types.Stdlib.CObj)
             else:
-                assert False, f"bad type: {value_class.debug_string(2)}"
+                assert False, f"bad type: {value_class!r}"
 
-            function_name = f".proxy.{function_name}"
-            if not visitor.ctx.find(function_name):
+            fn_name = f".proxy.{fn_name}"
+            if not ctx.get(fn_name):
                 proxy = ast.FunctionStmt(
-                    function_name,
-                    ret=None,
+                    fn_name,
                     items=[
                         ast.Param("data", type=data_type),
-                        ast.Param(
-                            "args",
-                            type=ast.IdExpr(callable_args.realized_name()),
-                        ),
+                        ast.Param("args", type=ast.IdExpr(callable_args.realized_name())),
                     ],
                     suite=ast.ReturnStmt(
-                        expr=ast.CallExpr(
-                            return_function,
-                            items=[ast.StarExpr(ast.IdExpr("args"))],
-                        )
+                        expr=ast.CallExpr(ret_fn, items=[ast.StarExpr(ast.IdExpr("args"))])
                     ),
                 )
-                visitor.visit(proxy)
+                TypeVisitor(ctx).visit_stmt(proxy)
             return ast.CallExpr(
                 ast.IdExpr(ast.types.Stdlib.Callable),
-                items=[ast.IdExpr(function_name), data_arg or value],
+                items=[ast.IdExpr(fn_name), data_arg or value],
             )
 
         wrapper = wrap_callable
     elif (
         callee
         and expr_class
-        and expr_type.get_func()
+        and expr_type.func
         and not (expected_class and expected_class.name == ast.types.Stdlib.Function)
     ):
         if expected_class:
-            wrapped_type = instantiate_type(expected_class)
+            wrapped_type = instantiate(ctx, expected_class)
         # Create wrapper if needed
-        function_name = expr_type.get_func().ast.name
+        function_name = expr_type.func.func_name
 
         def wrap_raw_function(value: ast.Expr) -> ast.Expr:
             partial_call = ast.CallExpr(
-                ast.IdExpr(function_name),
-                items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.PARTIAL)],
+                ast.IdExpr(function_name), items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)]
             )
             if isinstance(value, ast.StmtExpr):
                 return ast.StmtExpr(value.items, expr=partial_call)
@@ -555,61 +522,56 @@ def can_wrap_expr(
         expected_class
         and expected_class.name == ast.types.Stdlib.Function
         and expr_class
-        and expr_class.get_partial()
-        and expr_class.get_partial().is_partial_empty()
+        and expr_class.partial
+        and expr_class.is_partial_empty
     ):
-        wrapped_type = instantiate_type(expected_class)
-        empty_function_name = expr_class.get_partial().get_partial_func().ast.name
-        empty_function_type = instantiate_type(
-            visitor.ctx, visitor.ctx.force_find(empty_function_name).get_type()
-        )
+        wrapped_type = instantiate(ctx, expected_class)
+        empty_function_name = expr_class.partial_func.ast.name
+        empty_function_type = instantiate(ctx, ctx[empty_function_name].type)
         if wrapped_type.unify(empty_function_type) >= 0:
-            wrapper = lambda value: ast.IdExpr(empty_function_name)
+            wrapper = lambda _: ast.IdExpr(empty_function_name)
         else:
             wrapped_type = None
     elif (
         allow_unwrap
         and expr_class
-        and expr_type.get_union()
+        and expr_class.union
         and expected_class
-        and not expected_class.get_union()
+        and not expected_class.union
     ):
-        if not (realized_expected := infer.realize(expected_class)):
+        if not (expected_class := infer.realize(ctx, expected_class)):
             return False, None, None
-        realized_expression = infer.realize(expr_type)
-        if not realized_expression or not realized_expression.get_union():
+        expr_class = infer.realize(ctx, expr_class)
+        if not expr_class or not expr_class.union:
             return False, None, None
-        union_types = realized_expression.get_union().get_realization_types()
-        if any(item.unify(realized_expected) >= 0 for item in union_types):
-            wrapped_type = realized_expected
+        union_types = expr_class.union.get_realization_types()
+        if any(item.unify(expected_class) >= 0 for item in union_types):
+            wrapped_type = expected_class
             wrapper = lambda value: ast.CallExpr(
                 ast.IdExpr(ast.types.mangle(cls="Union", func="_get")),
                 items=[
                     value,
-                    ast.IdExpr(realized_expected.realized_name()),
+                    ast.IdExpr(expected_class.realized_name()),
                 ],
             )
-    elif expr_class and expected_class and expected_class.get_union():
-        if not (realized_expected := infer.realize(expected_class)):
+    elif expr_class and expected_class and expected_class.union:
+        if not (expected_class := infer.realize(ctx, expected_class)):
             return False, None, None
         # Wrap raw Seq functions into Partial(...) call for easy realization.
         # Special case: Seq functions are embedded (via lambda!)
-        if expected_class.unify(expr_class) == -1:
-            wrapped_type = realized_expected
+        if not (expected_class | expr_class):
+            wrapped_type = expected_class
             wrapper = lambda value: ast.CallExpr(
                 ast.DotExpr(ast.IdExpr(ast.types.Stdlib.Union), member="_new"),
-                items=[
-                    value,
-                    ast.IdExpr(realized_expected.realized_name()),
-                ],
+                items=[value, ast.IdExpr(expected_class.realized_name())],
             )
     elif (
         expr_class
-        and expr_class.name == ast.types.Stdlib.Type
+        and expr_class == ast.types.Stdlib.Type
         and expected_class
-        and expected_class.name == ast.types.Stdlib.TypeWrap
+        and expected_class == ast.types.Stdlib.TypeWrap
     ):
-        wrapped_type = instantiate_type(get_stdlib_type(ast.types.Stdlib.TypeWrap), [expr_class])
+        wrapped_type = instantiate(ctx, ast.types.Stdlib.TypeWrap, [expr_class])
         wrapper = lambda value: ast.CallExpr(
             ast.IdExpr(ast.types.Stdlib.TypeWrap),
             items=[value],
@@ -617,37 +579,32 @@ def can_wrap_expr(
     elif expr_class and expected_class:
         source = expr_class
         destination = expected_class
-        optional = source.is_type(ast.types.Stdlib.Optional) and destination.is_type(
-            ast.types.Stdlib.Optional
-        )
+        optional = source == ast.types.Stdlib.Optional and destination == ast.types.Stdlib.Optional
         if optional:
-            source = source[0].get_class()
-            destination = destination[0].get_class()
+            source = source[0].require_cls
+            destination = destination[0].require_cls
         if source and destination and source.name != destination.name:
-            source_data = get_class(visitor.ctx, source)
+            source_data = get_class(ctx, source)
+            assert source_data
             # Cast derived classes to base classes
             for mro in source_data.mro[1:]:
-                base = instantiate_type(mro, source)
+                base = instantiate(ctx, mro, source)
                 if base.unify(destination) >= 0:
-                    infer.unify(base, destination)
+                    base |= destination
                     wrapped_type = expected_class
 
                     def cast_base(value: ast.Expr, base_type: ast.types.Type = base) -> ast.Expr:
-                        base_class = base_type.get_class()
+                        base_class = base_type.require_cls
                         type_expr = ast.IdExpr(
-                            base_class.name, type=instantiate_type_var(base_class)
+                            base_class.name, type=instantiate_type_var(ctx, base_class)
                         )
                         if optional:
                             type_expr = ast.InstantiateExpr(
-                                ast.IdExpr(ast.types.Stdlib.Optional),
-                                items=[type_expr],
+                                ast.IdExpr(ast.types.Stdlib.Optional), items=[type_expr]
                             )
                         return ast.CallExpr(
                             ast.IdExpr(ast.types.mangle(cls="RTTIType", func="_cast")),
-                            items=[
-                                value,
-                                type_expr,
-                            ],
+                            items=[value, type_expr],
                         )
 
                     wrapper = cast_base
@@ -655,31 +612,33 @@ def can_wrap_expr(
     return True, wrapped_type, wrapper
 
 
-def unpack_tuple_types(visitor, expr: ast.Expr) -> List[Tuple[str, ast.types.Type]] | None:
+def unpack_tuple_types(
+    visitor: TypeVisitor, expr: ast.Expr
+) -> List[Tuple[str, ast.types.Type]] | None:
     """
     Unpack a Tuple or KwTuple expression into (name, type) vector.
     Name is empty when handling Tuple; otherwise it matches names of KwTuple.
     """
     result = []
-    match expr.orig_expr or expr:
-        case ast.TupleExpr(items):
+    match expr.orig or expr:
+        case ast.TupleExpr(items=items):
             for idx, arg in enumerate(items):
-                transformed = visitor.visit(arg)
-                if not isinstance(transformed, ast.Expr) or transformed.get_class_type() is None:
+                arg = visitor.visit_expr(arg)
+                if not arg.cls:
                     return None
-                items[idx] = transformed
-                result.append(("", transformed.type))
+                items[idx] = arg
+                result.append(("", arg.type))
             return result
         case ast.CallExpr():
-            value = extract_class_type(expr.type)
-            tuple_values = value[1].get_class()
+            value = extract_class_type(visitor.ctx, expr.type)
+            tuple_values = value[1].require_cls
             if (
-                value.name != ast.types.Stdlib.NamedTuple
+                value != ast.types.Stdlib.NamedTuple
                 or not tuple_values
                 or not value[0].can_realize()
             ):
                 return None
-            tuple_id = get_int_literal(value)
+            tuple_id = value[0].require_int
             assert 0 <= tuple_id < len(visitor.ctx.cache.generated_tuple_names)
             names = visitor.ctx.cache.generated_tuple_names[tuple_id]
             for idx in range(len(tuple_values.generics)):
@@ -692,89 +651,77 @@ def unpack_tuple_types(visitor, expr: ast.Expr) -> List[Tuple[str, ast.types.Typ
 
 
 def extract_named_tuple(ctx: TypeContext, expr: ast.Expr) -> List[Tuple[str, ast.Expr]]:
-    class_type = expr.get_class_type()
-    arg_type = class_type[0]
-    assert arg_type.can_realize(), f"bad named tuple: {expr.to_string()}"
-    tuple_id = get_int_literal(class_type)
+    assert expr.type
+    tuple_id = expr.type.require_cls[0].require_int
     assert 0 <= tuple_id < len(ctx.cache.generated_tuple_names)
     names = ctx.cache.generated_tuple_names[tuple_id]
     return [
-        (
-            name,
-            ast.IndexExpr(
-                ast.DotExpr(expr, member="args"),
-                idx=ast.IntExpr(idx),
-            ),
-        )
+        (name, ast.IndexExpr(ast.DotExpr(expr, member="args"), index=ast.IntExpr(idx)))
         for idx, name in enumerate(names)
     ]
 
 
-def get_class_fields(cls: ast.types.Class) -> List[cache.ClassData.Field]:
-    cache_class = get_class(cls.name)
+def get_class_fields(ctx: TypeContext, cls: ast.types.Class) -> List[cache.ClassData.Field]:
+    cache_class = get_class(ctx, cls.name)
     fields = [] if not cache_class else list(cache_class.fields)
     if cls.name == ast.types.Stdlib.Tuple:
         fields = fields[: len(cls.generics)]
     return fields
 
 
-def get_class_field_types(visitor, cls: ast.types.Class) -> List[ast.types.Type]:
-    def collect() -> List[ast.types.Type]:
-        result: List[ast.types.Type] = []
-        for class_field in get_class_fields(cls):
-            field_type = infer.instantiate_type(class_field.type, cls)
-            if not field_type.can_realize() and class_field.type_expr is not None:
-                cloned_type_expr = cast(ast.Expr, class_field.type_expr.clone(True))
-                transformed = visitor.visit(cloned_type_expr)
-                extracted = extract_type(transformed)
-                infer.unify(field_type, extracted)
+def get_class_field_types(ctx: TypeContext, cls: ast.types.Class) -> List[ast.types.Type]:
+    result = []
+    with with_class_generics(ctx, cls):
+        for field in get_class_fields(ctx, cls):
+            field_type = instantiate(ctx, field.type, cls)
+            if not field_type.can_realize() and field.type_expr is not None:
+                type_expr = ctx.cache.typecheck(field.type_expr.clone(clean=True), ctx=ctx)
+                field_type |= extract_type(ctx, type_expr)
             result.append(field_type)
-        return result
-
-    return with_class_generics(cls, collect)
+    return result
 
 
 def extract_type(ctx: TypeContext, value) -> ast.types.Type:
     match value:
-        case ast.IdExpr(value) | ast.InstantiateExpr(expr=ast.IdExpr(value)) if (
-            value == ast.types.Stdlib.Type
+        case (
+            ast.IdExpr(value=ast.types.Stdlib.Type)
+            | ast.InstantiateExpr(expr=ast.IdExpr(value=ast.types.Stdlib.Type))
         ):
+            assert value.type
             return value.type
         case ast.Expr():
-            return extract_type(value.type)
+            return extract_type(ctx, value.type)
         case ast.types.Stdlib.Type:
-            return ctx.force_find(value).get_type()
+            return ctx[value].type
         case str():
-            return extract_type(ctx.force_find(value).get_type())
+            return extract_type(ctx, ctx[value].type)
         case ast.types.Type():
             result = value
-            while result.get_class() and result.name == ast.types.Stdlib.Type:
-                result = result[0]
+            while result == ast.types.Stdlib.Type:
+                result = result.require_cls[0]
             return result
         case _:
             raise TypecheckError("expected a type, expression, or canonical name")
 
 
 def extract_class_type(ctx: TypeContext, value) -> ast.types.Class:
-    cls = extract_type(ctx, value).get_class()
+    cls = extract_type(ctx, value).cls
     assert cls, "bad class"
     return cls
 
 
 def is_unbound(value: ast.types.Type | ast.Expr) -> bool:
     typ = value.type if isinstance(value, ast.Expr) else value
-    return typ and typ.get_unbound()
+    return typ is not None and typ.unbound is not None
 
 
 def has_overloads(ctx: TypeContext, root: str) -> bool:
     overloads = ctx.cache.overloads.get(root)
-    return overloads and len(overloads) > 1
+    return bool(overloads) and len(overloads) > 1
 
 
 def get_overloads(ctx: TypeContext, root: str):
-    overloads = ctx.cache.overloads.get(root)
-    assert overloads is not None, "bad root"
-    return list(overloads)
+    return ctx.cache.overloads[root]
 
 
 def get_unmangled_name(ctx: TypeContext, name: str) -> str:
@@ -789,43 +736,36 @@ def get_user_facing_name(ctx: TypeContext, name: str) -> str:
     return result
 
 
-def get_class(ctx: TypeContext, value: str | ast.types.Type) -> cache.Cache.ClassData | None:
+def get_class(ctx: TypeContext, value: str | ast.types.Type) -> cache.ClassData | None:
     if isinstance(value, ast.types.Type):
-        cls = value.get_class()
-        assert cls, "bad class"
-        name = cls.name
+        name = value.require_cls.name
     else:
         name = value
     return ctx.cache.classes.get(name)
 
 
-def get_function(ctx: TypeContext, value: str | ast.types.Type) -> cache.Cache.FunctionData | None:
+def get_function(ctx: TypeContext, value: str | ast.types.Type) -> cache.FunctionData | None:
     if isinstance(value, ast.types.Type):
-        func = value.get_func()
-        assert func, "bad function"
-        name = func.get_func_name()
+        name = value.require_func.func_name
     else:
         name = value
     return ctx.cache.functions.get(name)
 
 
-def get_class_realization(
-    ctx: TypeContext, typ: ast.types.Type
-) -> cache.Cache.ClassData.Realization:
+def get_class_realization(ctx: TypeContext, typ: ast.types.Type) -> cache.ClassData.Realization:
     assert typ.can_realize(), "bad class"
-    cache_class = get_class(ctx, typ)
-    assert cache_class is not None, "bad class"
-    cls_obj = typ.get_class()
-    assert isinstance(cls_obj, ast.types.Class), "bad class"
-    realization = cache_class.realizations.get(cls_obj.realized_name())
-    assert realization is not None, f"bad class realization: {typ.debug_string(2)}"
+    cls_data = get_class(ctx, typ)
+    assert cls_data, "bad class"
+    cls_obj = typ.require_cls
+    realization = cls_data.realizations.get(cls_obj.realized_name())
+    assert realization, f"bad class realization: {typ!r}"
     return realization
 
 
 def get_root_name(ctx: TypeContext, typ: ast.types.Function) -> str:
-    function = ctx.cache.functions.get(typ.get_func_name())
-    assert function and function.root_name, "bad function"
-    return function.root_name
+    fn = ctx.cache.functions.get(typ.func_name)
+    assert fn and fn.root_name, "bad function"
+    return fn.root_name
 
 
 def is_type_expr(expr: ast.Expr | None):
@@ -857,7 +797,7 @@ def is_dispatch(value: str | ast.FunctionStmt | ast.types.Type):
         return value.endswith(cache.FN_DISPATCH_SUFFIX)
     if isinstance(value, ast.FunctionStmt):
         return value.name.endswith(cache.FN_DISPATCH_SUFFIX)
-    typ = value.get_func()
+    typ = value.func
     return typ and typ.ast and typ.ast.name.endswith(cache.FN_DISPATCH_SUFFIX)
 
 
@@ -866,19 +806,17 @@ def is_dispatch_stmt(stmt: ast.FunctionStmt | None):
 
 
 def is_dispatch_type(typ: ast.types.Type):
-    typ = typ.get_func()
-    return isinstance(typ, ast.types.Function) and is_dispatch_stmt(typ.ast)
+    return typ.func and is_dispatch_stmt(typ.func.ast)
 
 
-def is_heterogenous(ctx: TypeContext, typ: ast.types.Type):
-    typ = typ.get_class()
-    if not typ or not typ.is_record():
+def is_heterogenous(ctx: TypeContext, typ: ast.types.Class):
+    if not typ or not typ.is_tuple:
         return False
     fields = []
-    if typ.name == ast.types.Stdlib.Tuple:
+    if typ == ast.types.Stdlib.Tuple:
         fields = [g.type for g in typ.generics if g.type]
     else:
-        fields = get_class_field_types(ctx)
+        fields = get_class_field_types(ctx, typ)
     if len(fields) > 1:
         first = fields[0].realized_name()
         for field in fields[1:]:
@@ -897,29 +835,22 @@ def add_class_generics(
     added: Set[str] = set()
 
     def add_generic(generic: ast.types.Generic):
-        generic_type = generic.type
+        typ = generic.type
         if instantiate:
-            link = generic_type.get_link()
-            if link and link.kind is ast.types.Link.Kind.Generic:
-                generic_type = ast.types.Link(kind=ast.types.Link.Kind.Unbound, src=link)
-        assert (
-            generic.static_kind is ast.types.Type.Behaviour.Runtime
-            or generic_type.get_static_kind() is not ast.types.Type.Behaviour.Runtime
-        )
-        if generic.static_kind is ast.types.Type.Behaviour.Runtime and not generic_type.is_type(
-            ast.types.Stdlib.Type
-        ):
-            generic_type = instantiate_type_var(ctx, generic_type)
+            if isinstance(typ, ast.types.Link) and typ.kind is ast.types.Link.Kind.Generic:
+                typ = ast.types.Link(kind=ast.types.Link.Kind.Unbound, src=typ)
+        assert generic.static_kind is ast.types.Type.Behaviour.Runtime or not typ.is_runtime
+        if generic.static_kind is ast.types.Type.Behaviour.Runtime and not typ.is_runtime:
+            typ = instantiate_type_var(ctx, typ)
         name = generic.name if only_mangled else get_unmangled_name(ctx, generic.name)
-        value = ctx.add_type(name, generic.name, generic_type)
+        value = ctx.add_item(name, generic.name, typ)
         added.add(name)
         if name != generic.name:
             added.add(generic.name)
         value.generic = True
 
-    typ = typ.get_func()
-    if function and typ:
-        parent = typ.func_parent
+    if function and typ.func:
+        parent = typ.func.func_parent
         while parent is not None:
             if isinstance(parent, ast.types.Function):
                 # Add parent function generics
@@ -935,7 +866,7 @@ def add_class_generics(
                 break
             else:
                 assert False, f"not a class: {parent}"
-        for generic in typ.func_generics:
+        for generic in typ.func.func_generics:
             add_generic(generic)
     else:
         for generic in typ.hidden_generics:
@@ -946,8 +877,7 @@ def add_class_generics(
 
 
 def instantiate_type_var(ctx: TypeContext, typ: ast.types.Type) -> ast.types.Type:
-    root = ctx.force_find(ast.types.Stdlib.Type).get_type()
-    return instantiate_type(ctx, root, [typ])
+    return instantiate(ctx, ctx[ast.types.Stdlib.Type].type, [typ])
 
 
 def register_global(ctx: TypeContext, name: str):
@@ -957,9 +887,9 @@ def register_global(ctx: TypeContext, name: str):
 
 def get_stdlib_type(ctx: TypeContext, type_name: str) -> ast.types.Class:
     module = get_import_module(ctx, cache.STDLIB_IMPORT)
-    typ = module.ctx.force_find(type_name).get_type()
+    typ = module.ctx[type_name].type
     if type_name == ast.types.Stdlib.Type:
-        return typ.get_class()
+        return typ.require_cls
     else:
         return extract_class_type(ctx, typ)
 
@@ -973,50 +903,22 @@ def get_class_method(ctx: TypeContext, typ: ast.types.Type, member: str) -> str:
     if class_data := get_class(ctx, typ):
         if method := class_data.methods.get(member):
             return method
-    assert False, f"cannot find '{member}' in '{typ.pretty_string()}'"
+    assert False, f"cannot find '{member}' in {typ}"
 
 
 def get_temporary_var(ctx: TypeContext, prefix: str) -> str:
     return ctx.cache.get_temporary_var(prefix)
 
 
-def get_str_literal(typ: ast.types.Type, position: int = 0) -> str:
-    direct = typ.get_str_static()
-    if isinstance(direct, ast.types.StrLiteral):
-        return direct.value
-    static = typ[position].get_str_static()
-    assert isinstance(static, ast.types.StrLiteral), "not a string literal"
-    return static.value
-
-
-def get_int_literal(typ: ast.types.Type, position: int = 0) -> int:
-    direct = typ.get_int_static()
-    if isinstance(direct, ast.types.IntLiteral):
-        return direct.value
-    static = typ[position].get_int_static()
-    assert isinstance(static, ast.types.IntLiteral), "not a int literal"
-    return static.value
-
-
-def get_bool_literal(typ: ast.types.Type, position: int = 0) -> bool:
-    direct = typ.get_bool_static()
-    if isinstance(direct, ast.types.BoolLiteral):
-        return direct.value
-    static = typ[position].get_bool_static()
-    assert isinstance(static, ast.types.BoolLiteral), "not a bool literal"
-    return static.value
-
-
 def get_param_type(typ: ast.types.Type | None) -> ast.Expr | None:
     if typ is None:
         return None
-    if typ.is_type(ast.types.Stdlib.Type):
+    if typ == ast.types.Stdlib.Type:
         return ast.IdExpr(ast.types.Stdlib.Type)
-    static_kind = typ.get_static_kind()
-    if static_kind is not ast.types.Type.Behaviour.Runtime:
+    if not typ.is_runtime:
         return ast.IndexExpr(
             ast.IdExpr("Literal"),
-            idx=ast.IdExpr(ast.types.Type.string_from_literal(static_kind)),
+            ast.IdExpr(str(ast.types.Type.Behaviour(typ.static_kind))),
         )
     return None
 
@@ -1026,7 +928,7 @@ def has_side_effect(expr: ast.Expr):
     match expr:
         case ast.IdExpr:
             return False
-        case ast.DotExpr(expr=ast.IdExpr):
+        case ast.DotExpr(expr=ast.IdExpr()):
             return False
         case ast.NoneExpr | ast.BoolExpr | ast.IntExpr | ast.FloatExpr | ast.StringExpr:
             return False
@@ -1050,13 +952,10 @@ def is_import_fn(name: str):
 
 
 def get_underlying_static_type(ctx: TypeContext, typ: ast.types.Type) -> ast.types.Type:
-    static_obj = typ.get_static()
-    if isinstance(static_obj, ast.types.Literal):
-        result = static_obj.get_non_static_type()
-        return result
-    static_kind = typ.get_static_kind()
-    if static_kind is not ast.types.Type.Behaviour.Runtime:
-        return get_stdlib_type(ctx, ast.types.Type.string_from_literal(static_kind))
+    if literal := typ.literal:
+        return literal.runtime_type
+    if not typ.is_runtime:
+        return get_stdlib_type(ctx, str(ast.types.Type.Behaviour(typ.static_kind)))
     return typ
 
 
@@ -1075,70 +974,61 @@ def instantiate_unbound(
     )
 
 
-def instantiate_type(
+def instantiate[T: ast.types.Type](
     ctx: TypeContext,
-    root: ast.types.Type,
+    root: T | str,
     generics: List[ast.types.Type] | ast.types.Class | None = None,
     info: ast.Node.SrcInfo | None = None,
-) -> ast.types.Type:
+) -> T:
     """
     Call `type->instantiate`.
     Prepare the generic instantiation table with the given a generic param.
     Example: when instantiating List[T].foo, generics=List[int].foo will ensure that
     T=int.
     """
-    assert root is not None, "type is null"
 
-    instantiate_ctx = ast.types.Type.InstantiateContext()
-    if isinstance(generics, ast.types.Class):
-        for generic in [*generics.hidden_generics, *generics.generics]:
-            if generic.type is None:
-                continue
-            if not (
-                isinstance(generic.type, ast.types.Link)
-                and generic.type.kind is ast.types.Link.Kind.Generic
-            ):
-                instantiate_ctx.cache[generic.id] = generic.type
-        if isinstance(root, ast.types.Function) and root.func_generics:
-            self_generic = root.func_generics[0]
-            if get_unmangled_name(ctx, self_generic.name) == "__SELF__":
-                instantiate_ctx.cache[self_generic.id] = generics
-    elif generics is not None:
-        assert isinstance(root, ast.types.Class), "root class is null"
-        if len(generics) != len(root.generics):
+    typ = get_stdlib_type(ctx, root) if isinstance(root, str) else root.require_cls
+
+    instantiate_ctx = ast.types.Type.InstantiateContext(ctx)
+
+    cls_type = None
+    if isinstance(generics, List):
+        if len(generics) != len(typ.generics):
             raise TypeError(
                 f"generic mismatch for "
-                f"{get_user_facing_name(ctx, root.name)}: "
-                f"expected {len(root.generics)}, got {len(generics)}"
+                f"{get_user_facing_name(ctx, typ.name)}: "
+                f"expected {len(typ.generics)}, got {len(generics)}"
             )
-        dummy = ast.types.Class(cache=ctx.cache, name="")
+        cls_type = ast.types.Class(cache=ctx.cache, name="")
         for idx, generic_type in enumerate(generics):
-            generic = root.generics[idx]
+            generic = typ.generics[idx]
             assert generic.type is not None, "generic is null"
-            if (
-                generic.static_kind is ast.types.Type.Behaviour.Runtime
-                and generic_type.get_static()
-            ):
-                generic_type = generic_type.get_static().get_non_static_type()
-            dummy.generics.append(
-                ast.types.Generic(
-                    type=generic_type,
-                    id=generic.id,
-                    static_kind=generic.static_kind,
-                )
+            if generic.is_runtime and generic.type.literal:
+                generic_type = generic.type.literal.runtime_type
+            cls_type.generics.append(
+                ast.types.Generic(generic.name, generic_type, generic.id, generic.static_kind)
             )
-        return instantiate_type(ctx, root, dummy, info)
+    elif isinstance(generics, ast.types.Class):
+        cls_type = generics
 
-    instantiate_ctx.next_unbound = ctx.cache.unbound_count
-    instantiated = root.instantiate(ctx.typecheck_level, instantiate_ctx)
-    ctx.cache.unbound_count = instantiate_ctx.next_unbound
-    current_base = ctx.get_base()
+    if cls_type:
+        for generic in [*cls_type.hidden_generics, *cls_type.generics]:
+            if generic.type is None:
+                continue
+            if not ((link := generic.type.link) and link.kind is ast.types.Link.Kind.Generic):
+                instantiate_ctx.cache[generic.id] = generic.type
+        if (fn := typ.func) and fn.func_generics:
+            self_generic = fn.func_generics[0]
+            if get_unmangled_name(ctx, self_generic.name) == "__SELF__":
+                instantiate_ctx.cache[self_generic.id] = cls_type
+
+    instantiated = typ.instantiate(ctx.typecheck_level, instantiate_ctx)
     for value in instantiate_ctx.cache.values():
         if isinstance(value, ast.types.Link):
             value.info = info or ctx.info
-            if value.default_type and current_base:
-                current_base.pending_defaults.setdefault(0, set()).add(value)
-    return instantiated
+            if value.default_type and ctx.base:
+                ctx.base.pending_defaults.setdefault(0, set()).add(value)
+    return cast(T, instantiated)
 
 
 def find_method(
@@ -1154,18 +1044,19 @@ def find_method(
             return
         methods = get_overloads(ctx, root)
         for exact_method in reversed(methods):
-            function = get_function(ctx, exact_method)
-            if is_dispatch(exact_method) or function is None or function.type is None:
+            fn_data = get_function(ctx, exact_method)
+            if is_dispatch(exact_method) or fn_data is None or fn_data.type is None:
                 continue
             if hide_shadowed:
-                signature = function.ast.get_signature()
+                assert fn_data.ast
+                signature = fn_data.ast.get_signature()
                 if signature not in signature_loci:
                     signature_loci.add(signature)
-                    result.append(function.type)
+                    result.append(fn_data.type)
             else:
-                result.append(function.type)
+                result.append(fn_data.type)
 
-    if typ and typ.is_type(ast.types.Stdlib.Tuple) and method == "__new__" and typ.generics:
+    if typ and typ == ast.types.Stdlib.Tuple and method == "__new__" and typ.generics:
         generate_tuple(ctx, len(typ.generics))
         tuple_class = get_class(ctx, ast.types.Stdlib.Tuple)
         if tuple_class:
@@ -1199,7 +1090,7 @@ def find_member(
         if method_class is None:
             continue
         for idx, class_field in enumerate(method_class.fields):
-            if parent_class.is_type(ast.types.Stdlib.Tuple) and idx >= len(typ.generics):
+            if parent_class == ast.types.Stdlib.Tuple and idx >= len(typ.generics):
                 break
             if class_field.name == member:
                 return class_field
@@ -1209,9 +1100,10 @@ def find_member(
 def get_base_classes(ctx: TypeContext, typ: ast.types.Class) -> List[ast.types.Type]:
     """Return list of instantiated base classes for a given type."""
     class_data = get_class(ctx, typ)
+    assert class_data
     bases: List[ast.types.Type] = []
     for base in class_data.mro:
-        bases.append(instantiate_type(ctx, base, typ))
+        bases.append(instantiate(ctx, base, typ))
     return bases
 
 
@@ -1221,9 +1113,9 @@ class ReorderError(ast.NodeError):
 
 def reorder_named_args(
     ctx: TypeContext,
-    function: ast.types.Function,
+    fn: ast.types.Function,
     args: List[ast.CallExpr.Arg],
-    known: str = "",
+    known: List[ast.types.Class.Flag],
 ):
     """
     Reorders a given vector or named args (consisting of names and the
@@ -1260,7 +1152,7 @@ def reorder_named_args(
 
     star_idx = -1
     keyword_star_idx = -1
-    for idx, param in enumerate(function.ast.items):
+    for idx, param in enumerate(fn.ast.items):
         if param.name.startswith("**"):
             keyword_star_idx = idx
             score -= 2
@@ -1268,12 +1160,12 @@ def reorder_named_args(
             star_idx = idx
             score -= 2
 
-    slots = [[] for _ in function.ast.items]
+    slots = [[] for _ in fn.ast.items]
     extra: List[int] = []
     named_args: Dict[str, int] = {}
     extra_named_args: Dict[str, int] = {}
     slot_idx = 0
-    assert not known or len(function.ast.items) == len(known), "bad 'known' string"
+    assert not known or len(fn.ast.items) == len(known), "bad 'known' string"
     for arg_idx, arg in enumerate(args[: -int(partial)]):
         if not arg.name:
             while (
@@ -1287,7 +1179,7 @@ def reorder_named_args(
                 extra.append(arg_idx)
         else:
             named_args[arg.name] = arg_idx
-    score += 2 * (len(slots) - len(function.func_generics))
+    score += 2 * (len(slots) - len(fn.func_generics))
     for variadic_idx in [
         max(star_idx, keyword_star_idx),
         min(star_idx, keyword_star_idx),
@@ -1297,7 +1189,7 @@ def reorder_named_args(
             slots[variadic_idx].clear()
     if named_args:
         slot_names: Dict[str, int] = {}
-        for idx, param in enumerate(function.ast.items):
+        for idx, param in enumerate(fn.ast.items):
             if not known or known[idx] != ast.types.Class.Flag.Included:
                 _, name = param.get_name_with_stars()
                 slot_names[get_unmangled_name(ctx, name)] = idx
@@ -1314,7 +1206,7 @@ def reorder_named_args(
     if extra and star_idx == -1:
         raise ReorderError(
             ctx.info,
-            f"{get_user_facing_name(function.ast.name)}() takes {len(function.ast)} arguments "
+            f"{get_user_facing_name(ctx, fn.func_name)}() takes {len(fn.ast)} arguments "
             f"({len(args) - int(partial)} given)",
         )
     if star_idx != -1:
@@ -1324,15 +1216,15 @@ def reorder_named_args(
         value = args[extra_named_args[invalid_name]].value
         raise ReorderError(
             value.info if value else ctx.info,
-            f"'{extra_named_args.pop()[0]}' is an invalid keyword argument for {get_user_facing_name(function.ast.name)}()",
+            f"'{next(iter(extra_named_args))}' is an invalid keyword argument for {get_user_facing_name(ctx, fn.func_name)}()",
         )
     if keyword_star_idx != -1:
         for name in sorted(extra_named_args):
             slots[keyword_star_idx].append(extra_named_args[name])
-    for idx, param in enumerate(function.ast.items):
+    for idx, param in enumerate(fn.ast.items):
         if not slots[idx] and idx not in (star_idx, keyword_star_idx):
             if param.is_value() and (
-                param.default_value or (known and known[idx] == ast.types.Class.Flag.Included)
+                param.default or (known and known[idx] == ast.types.Class.Flag.Included)
             ):
                 score -= 2
             elif param.name.startswith("$"):
@@ -1341,7 +1233,7 @@ def reorder_named_args(
                 _, missing_name = param.get_name_with_stars()
                 raise ReorderError(
                     ctx.info,
-                    f"{get_unmangled_name(ctx, function.ast.name)}() missing 1 required positional argument: "
+                    f"{get_unmangled_name(ctx, fn.func_name)}() missing 1 required positional argument: "
                     f"'{get_unmangled_name(ctx, missing_name)}'",
                 )
     return score, (star_idx, keyword_star_idx, slots, partial)
@@ -1356,14 +1248,12 @@ def is_canonical_name(name: str):
 def extract_function(typ: ast.types.Type) -> ast.types.Function | None:
     if isinstance(typ, ast.types.Function):
         return typ
-    partial = typ.get_partial()
-    if partial:
-        result = typ.get_partial_func()
-        return result if isinstance(result, ast.types.Function) else None
+    if partial := typ.partial:
+        return partial.partial_func
     return None
 
 
-def find_typecheck_errors(ctx: TypeContext, node: ast.Stmt) -> error.ParserErrors:
+def find_typecheck_errors(ctx: TypeContext, node: ast.Stmt) -> ParserErrors:
     @dataclass
     class UnfinishedVisitor(ast.NodeVisitor):
         unfinished: List[ast.Node]
@@ -1371,11 +1261,11 @@ def find_typecheck_errors(ctx: TypeContext, node: ast.Stmt) -> error.ParserError
         def __init__(self):
             self.unfinished = []
 
-        def visit(self, value):
-            if value and not value.done:
-                self.unfinished.append(value)
+        def visit(self, node):
+            if node and not node.done:
+                self.unfinished.append(node)
             else:
-                super().visit(value)
+                super().visit(node)
 
     v = UnfinishedVisitor()
     v.visit(node)
@@ -1383,30 +1273,29 @@ def find_typecheck_errors(ctx: TypeContext, node: ast.Stmt) -> error.ParserError
     for unfinished_node in v.unfinished:
         content = ctx.cache.get_content(unfinished_node.info)
         message = "cannot typecheck " + (repr(content) if content else "expression")
-        errors.append(error.ErrorMessage(message, unfinished_node.info))
-    return error.ParserErrors.from_messages(errors)
+        errors.append(ErrorMessage(message, unfinished_node.info))
+    return ParserErrors(errors)
 
 
 @contextmanager
 def with_class_generics(
     ctx: TypeContext,
     typ: ast.types.Class,
-    function: Callable[[], object],
     func: bool = False,
     only_mangled: bool = False,
     instantiate: bool = False,
-) -> object:
+):
     # do not remove stuff that was added in the meantime, potentially by AssignExpr
     ctx.add_block()
     added = add_class_generics(ctx, typ, func, only_mangled, instantiate)
     yield
-    add_later = [(name, ctx.force_find(name)) for name in ctx.get_block() if name not in added]
+    add_later = [(name, ctx[name]) for name in ctx.get_block() if name not in added]
     ctx.pop_block()
     for name, item in add_later:
         ctx.add(name, item)
 
 
-def instantiate_static(ctx: TypeContext, value: object) -> ast.types.Literal:
+def instantiate_static(ctx: TypeContext, value) -> ast.types.Literal:
     if isinstance(value, bool):
         return ast.types.BoolLiteral(cache=ctx.cache, value=value)
     if isinstance(value, int):
@@ -1418,3 +1307,22 @@ def instantiate_static(ctx: TypeContext, value: object) -> ast.types.Literal:
 
 def warning(message: str, info: ast.Node.SrcInfo):
     print(f"{info.file}:{info.line}: warning: {message}")
+
+
+def get_mro(ctx: TypeContext, class_type: ast.types.Class | None) -> List[ast.types.Type]:
+    """
+    Get the list that describes the inheritance hierarchy of a given type.
+    The first type in the list is the most recently inherited type.
+    """
+
+    result = []
+    if not class_type:
+        return result
+    cls_data = get_class(ctx, class_type)
+    assert cls_data
+    for uninstantiated in cls_data.mro:
+        instantiated = instantiate(ctx, uninstantiated, class_type)
+        # ensure that parent types are realized
+        infer.realize(ctx, instantiated)
+        result.append(instantiated)
+    return result
