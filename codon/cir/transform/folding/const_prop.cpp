@@ -15,6 +15,24 @@ namespace {
 bool okConst(const Value *v) {
   return v && (isA<IntConst>(v) || isA<FloatConst>(v) || isA<BoolConst>(v));
 }
+
+bool okGlobalConst(const Value *v) {
+  if (okConst(v))
+    return true;
+
+  const auto *call = cast<CallInstr>(v);
+  if (!call || call->numArgs() != 1)
+    return false;
+
+  auto *func = util::getFunc(call->getCallee());
+  if (!func || func->getUnmangledName() != Module::NEW_MAGIC_NAME)
+    return false;
+
+  if (!func->getParentType())
+    return false;
+
+  return okConst(call->front());
+}
 } // namespace
 
 const std::string ConstPropPass::KEY = "core-folding-const-prop";
@@ -36,7 +54,7 @@ void ConstPropPass::handle(VarValue *v) {
       return;
 
     auto *constDef = M->getValue(it->second);
-    if (!okConst(constDef))
+    if (!okGlobalConst(constDef))
       return;
 
     util::CloneVisitor cv(M);
