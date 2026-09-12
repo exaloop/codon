@@ -132,11 +132,10 @@ class Node:
     def has(self, key: Attr):
         return key in self.attributes
 
-    def get[T: object | None](self, key: Attr, default: T = None) -> T:
-        a = self.attributes.get(key, default)
-        if T is not None:
+    def get[T, U](self, key: Attr, typ: type[T], default: U = None) -> T | U:
+        if a := self.attributes.get(key):
             return cast(T, a)
-        return a
+        return default
 
     def setdefault[T](self, key: Attr, default: T | None = None) -> T:
         return self.attributes.setdefault(key, default)  # type: ignore
@@ -549,9 +548,10 @@ class GeneratorExpr(Expr):
                     if if_fn:
                         if_fn(i)
                     i = s
-                case SuiteStmt(items=[*_, ExprStmt(expr=e)]):
+                case SuiteStmt(items=[*_, ExprStmt(expr=e)]) as suite:
                     if expr_fn:
-                        expr_fn(e)
+                        if en := expr_fn(e):
+                            suite.items[-1] = en
                     return
                 case SuiteStmt(items=[*_, s]):
                     i = s
@@ -659,9 +659,9 @@ class PipeExpr(Expr, ItemIterator):
         self.in_types = [] if in_types is None else in_types
         for item in self.items:
             if isinstance(item.expr, CallExpr):
-                for argument in item.expr.items:
-                    if isinstance(argument.value, EllipsisExpr):
-                        argument.value.mode = EllipsisExpr.Kind.Pipe
+                for arg in item.expr:
+                    if isinstance(arg.value, EllipsisExpr):
+                        arg.value.mode = EllipsisExpr.Kind.Pipe
 
 
 @dataclass(init=False)
@@ -1322,8 +1322,8 @@ class FunctionStmt(Stmt, ItemIterator):
                     decorators.append(decorator)
         self.decorators = decorators
         if self.has(Attr.C):
-            for argument in self.items:
-                if len(argument.name) > 1 and argument.name[0] == "*" and argument.name[1] != "*":
+            for arg in self.items:
+                if len(arg.name) > 1 and arg.name[0] == "*" and arg.name[1] != "*":
                     self.set(Attr.CVarArg)
                     break
         if self.items and self.items[0].type is None and self.items[0].name == "self":
@@ -1414,7 +1414,7 @@ class FunctionStmt(Stmt, ItemIterator):
         return result
 
     def has_function_attr(self, attribute: str):
-        if a := self.get(Attr.FunctionAttributes):
+        if a := self.get(Attr.FunctionAttributes, dict[str, Attr]):
             return attribute in a
 
 
@@ -1567,14 +1567,12 @@ class ClassStmt(Stmt, ItemIterator):
                 "class extensions cannot define data attributes and generics or "
                 "inherit other classes",
             )
-        for argument in self.items:
-            if argument.type is None and argument.default is None:
-                raise NodeError(argument, f"type required for data attribute {argument.name!r}")
-            if argument.name in seen:
-                raise NodeError(
-                    argument, f"duplicate data attribute {argument.name!r} in class definition"
-                )
-            seen.add(argument.name)
+        for arg in self.items:
+            if arg.type is None and arg.default is None:
+                raise NodeError(arg, f"type required for data attribute {arg.name!r}")
+            if arg.name in seen:
+                raise NodeError(arg, f"duplicate data attribute {arg.name!r} in class definition")
+            seen.add(arg.name)
 
 
 @dataclass(init=False)
@@ -1811,7 +1809,7 @@ def dump(
         elif isinstance(node, (Node, Node.Attribute, StringExpr.FormatSpec)):
             args = []
             allsimple = True
-            for name, value in Codon.any_members(node):
+            for name, value in Codon.any_members(node):  # type: ignore
                 if name in ["attributes", "info", "done"]:
                     continue
                 value, simple = _format(value, level)
@@ -1873,7 +1871,7 @@ def dump(
                     return "", True
                 else:
                     if CODON:
-                        return _format(Codon.unwrap(n), level)
+                        return _format(Codon.unwrap(n), level)  # type: ignore
                     else:
                         return repr(node), True
             return repr(node), True
@@ -1887,15 +1885,10 @@ def iter_fields(node: Node) -> Iterator[Tuple[str, Any]]:
     that is present on *node*.
     """
 
-    for name, value in Codon.any_members(node):
-        node = value
-        if (
-            isinstance(value, Node)
-            or Any.is_tuple(node)
-            or Any.is_list(node)
-            or Any.is_optional(node)
-        ):
-            yield name, node
+    for name, value in Codon.any_members(node):  # type: ignore
+        n = value
+        if isinstance(n, Node) or Any.is_tuple(n) or Any.is_list(n) or Any.is_optional(n):  # type: ignore
+            yield name, n  # type: ignore
 
 
 def iter_child_nodes(node) -> Iterator[Node]:
@@ -1908,7 +1901,7 @@ def iter_child_nodes(node) -> Iterator[Node]:
         if Any.is_optional(a):
             o = cast(Any | None, a)
             if o:
-                return Codon.unwrap(o)
+                return Codon.unwrap(o)  # type: ignore
         return a
 
     for _, field in iter_fields(node):

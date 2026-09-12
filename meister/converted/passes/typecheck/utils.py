@@ -392,14 +392,14 @@ def can_wrap_expr(
     ):
         arg_types = []
         # Get list of args
-        function_type: ast.types.Function | None = None
+        fn_type: ast.types.Function | None = None
 
         if partial := expr_class.partial:
-            function_type = instantiate(ctx, partial.partial_func)
+            fn_type = instantiate(ctx, partial.partial_func)
             for idx, flag in enumerate(partial.partial_mask):
                 if flag != ast.types.Class.Flag.Included:
-                    arg_types.append(function_type[idx])
-            ret_type = function_type.ret_type
+                    arg_types.append(fn_type[idx])
+            ret_type = fn_type.ret_type
         else:
             tuple_type = expr_class[0].require_cls
             for generic in tuple_type.generics:
@@ -507,11 +507,11 @@ def can_wrap_expr(
         if expected_class:
             wrapped_type = instantiate(ctx, expected_class)
         # Create wrapper if needed
-        function_name = expr_type.func.func_name
+        fn_name = expr_type.func.func_name
 
         def wrap_raw_function(value: ast.Expr) -> ast.Expr:
             partial_call = ast.CallExpr(
-                ast.IdExpr(function_name), items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)]
+                ast.IdExpr(fn_name), items=[ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial)]
             )
             if isinstance(value, ast.StmtExpr):
                 return ast.StmtExpr(value.items, expr=partial_call)
@@ -526,10 +526,10 @@ def can_wrap_expr(
         and expr_class.is_partial_empty
     ):
         wrapped_type = instantiate(ctx, expected_class)
-        empty_function_name = expr_class.partial_func.ast.name
-        empty_function_type = instantiate(ctx, ctx[empty_function_name].type)
-        if wrapped_type.unify(empty_function_type) >= 0:
-            wrapper = lambda _: ast.IdExpr(empty_function_name)
+        empty_fn_name = expr_class.partial_func.ast.name
+        empty_fn_type = instantiate(ctx, ctx[empty_fn_name].type)
+        if wrapped_type.unify(empty_fn_type) >= 0:
+            wrapper = lambda _: ast.IdExpr(empty_fn_name)
         else:
             wrapped_type = None
     elif (
@@ -662,8 +662,8 @@ def extract_named_tuple(ctx: TypeContext, expr: ast.Expr) -> List[Tuple[str, ast
 
 
 def get_class_fields(ctx: TypeContext, cls: ast.types.Class) -> List[cache.ClassData.Field]:
-    cache_class = get_class(ctx, cls.name)
-    fields = [] if not cache_class else list(cache_class.fields)
+    cls_data = get_class(ctx, cls.name)
+    fields = [] if not cls_data else list(cls_data.fields)
     if cls.name == ast.types.Stdlib.Tuple:
         fields = fields[: len(cls.generics)]
     return fields
@@ -960,7 +960,11 @@ def get_underlying_static_type(ctx: TypeContext, typ: ast.types.Type) -> ast.typ
 
 
 def instantiate_unbound(
-    ctx: TypeContext, info: ast.Node.SrcInfo | None = None, level: int | None = None
+    ctx: TypeContext,
+    info: ast.Node.SrcInfo | None = None,
+    level: int | None = None,
+    static_kind: ast.types.Type.Behaviour = ast.types.Type.Behaviour.Runtime,
+    trait: ast.types.Type | None = None,
 ) -> ast.types.Link:
     """Create an unbound type with the provided typechecking level."""
     identifier = ctx.cache.unbound_count
@@ -971,6 +975,8 @@ def instantiate_unbound(
         kind=ast.types.Link.Kind.Unbound,
         id=identifier,
         level=level or ctx.typecheck_level,
+        static_kind=static_kind,
+        trait=trait,
     )
 
 
@@ -1061,13 +1067,13 @@ def find_method(
         tuple_class = get_class(ctx, ast.types.Stdlib.Tuple)
         if tuple_class:
             populate(tuple_class)
-        for function_type in result:
-            if len(function_type.generics) == len(typ.generics):
-                return [function_type]
+        for fn_type in result:
+            if len(fn_type.generics) == len(typ.generics):
+                return [fn_type]
         return []
 
-    if cache_class := None if typ is None else get_class(ctx, typ):
-        for parent in cache_class.mro:
+    if cls_data := None if typ is None else get_class(ctx, typ):
+        for parent in cls_data.mro:
             parent_name = ast.types.Stdlib.Tuple if parent.name == "__NTuple__" else parent.name
             if method_class := get_class(ctx, parent_name):
                 populate(method_class)

@@ -168,7 +168,7 @@ def typecheck_call(self: TypeVisitor, node: ast.CallExpr) -> ast.Expr:
                 for arg in node.items
             ]
             name = utils.get_unmangled_name(self.ctx, callee_fn.func_name)
-            parent_name = callee_fn.ast.get(ast.Attr.ParentClass, "")
+            parent_name = callee_fn.ast.get(ast.Attr.ParentClass, str)
             if parent_name:
                 name = f"{utils.get_user_facing_name(self.ctx, parent_name)}.{name}"
             raise TypecheckError(
@@ -263,9 +263,9 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
     @return false if expansion could not be completed; true otherwise
     """
 
-    arg_index = 0
-    while arg_index < len(expr.items):
-        arg = expr.items[arg_index]
+    arg_idx = 0
+    while arg_idx < len(expr.items):
+        arg = expr.items[arg_idx]
         if isinstance(arg.value, ast.StarExpr):
             # Case: *args expansion
             star = arg.value
@@ -293,8 +293,8 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
             for field_idx, field in enumerate(fields):
                 base = (lead if lead and field_idx == 0 else head).clone()
                 inserted.append(self.visit(ast.DotExpr(base, member=field.name)))
-            expr.items[arg_index : arg_index + 1] = inserted
-            arg_index += len(inserted)
+            expr.items[arg_idx : arg_idx + 1] = inserted
+            arg_idx += len(inserted)
         elif isinstance(arg.value, ast.KeywordStarExpr):
             # Case: **kwargs expansion
             kwstar = arg.value
@@ -333,12 +333,12 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
                 raise TypecheckError(
                     kwstar, f"argument after ** must be a named tuple, not '{named_type}'"
                 )
-            expr.items[arg_index : arg_index + 1] = inserted
-            arg_index += len(inserted)
+            expr.items[arg_idx : arg_idx + 1] = inserted
+            arg_idx += len(inserted)
         else:
             # Case: normal argument (no expansion)
             arg.value = self.visit_expr(arg.value)
-            arg_index += 1
+            arg_idx += 1
 
     # Check if some argument names are reused after the expansion
     seen = set()
@@ -430,7 +430,7 @@ def get_callee_fn(
         expr.expr.type |= instantiated
 
         # Unify partial generics with types known thus far
-        known_argument_types = partial[1].require_cls
+        known_types = partial[1].require_cls
         generic_idx = 0
         known_idx = 0
         for param_idx, flag in enumerate(mask):
@@ -438,7 +438,7 @@ def get_callee_fn(
                 generic_idx += 1
             elif flag == ast.types.Class.Flag.Included:
                 arg_type = instantiated[param_idx - generic_idx]
-                arg_type |= known_argument_types[known_idx]
+                arg_type |= known_types[known_idx]
                 known_idx += 1
             elif flag == ast.types.Class.Flag.Default:
                 known_idx += 1
@@ -478,21 +478,20 @@ def call_reorder_arguments(
     new_mask = [ast.types.Class.Flag.Included] * len(callee_fn.ast.items)
     partial = False
 
-    def get_partial_argument(partial_index: int) -> ast.Expr:
+    def get_partial_argument(partial_idx: int) -> ast.Expr:
         """Extract pi-th partial argument from a partial object"""
         args_expr = self.visit_expr(ast.DotExpr(ast.IdExpr(part.var), member="args"))
         assert args_expr.cls
         # Manually call @c transformStaticTupleIndex to avoid spurious InstantiateExpr
         found, expr = ops.transform_static_tuple_index(
-            self, args_expr.cls, args_expr, ast.IntExpr(partial_index)
+            self, args_expr.cls, args_expr, ast.IntExpr(partial_idx)
         )
         assert found and expr is not None, f"partial indexing failed: {args_expr.type}"
         return expr
 
     def add_reordered(arg_idx: int):
         nonlocal in_order
-        argument_expr = expr.items[arg_idx].value
-        if utils.has_side_effect(argument_expr):
+        if utils.has_side_effect(expr.items[arg_idx].value):
             if ordered and arg_idx < ordered[-1]:
                 in_order = False
             ordered.append(arg_idx)
@@ -569,7 +568,7 @@ def call_reorder_arguments(
                 and expr.items[slot[0]].value.has(ast.Attr.ExprKwStarArgument)
             ):
                 # Case: **kwargs. Build the named tuple that holds them all
-                new_names = {expr.items[source_index].name for source_index in slot}
+                new_names = {expr.items[idx].name for idx in slot}
                 if part.known:
                     kwargs_expr = self.visit_expr(
                         ast.DotExpr(ast.IdExpr(part.var), member="kwargs")
@@ -738,13 +737,13 @@ def call_reorder_arguments(
                 break
             type_arg = type_args[generic_idx]
             if type_arg:
-                argument_type = utils.extract_type(self.ctx, type_arg)
+                arg_type = utils.extract_type(self.ctx, type_arg)
                 if (
                     generic.static_kind is not ast.types.Type.Behaviour.Runtime
-                    and argument_type.is_runtime
+                    and arg_type.is_runtime
                 ):
                     raise TypecheckError(expr, "expected static expression")
-                infer.unify(argument_type, generic.type)
+                arg_type |= generic.type
             elif (
                 utils.is_unbound(generic.type)
                 and callee_fn.ast.items[generic_idx].default is None
@@ -796,7 +795,7 @@ def typecheck_call_args(
                             self.ctx, call_arg.value, expected_type, callee_fn
                         )
                         if can_wrap:
-                            infer.unify(call_arg.type, expected_type)
+                            call_arg.type |= expected_type
                         else:
                             wrapping_done = False
                     call_type = call_expr.cls
@@ -915,7 +914,7 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
     if name == ast.types.mangle(cls="type", func="__new__"):
         return True, special.transform_type_fn(self, expr)
     if name == ast.types.mangle(func="compile_error"):
-        return True, special.transform_compile_error(self, expr)
+        return True, special.transform_compile_error(expr)
     if name == ast.types.mangle("std.internal.static", func="print"):
         return False, special.transform_static_print_fn(self, expr)
     if name == ast.types.mangle("std.collections", func="namedtuple"):
@@ -956,7 +955,7 @@ def transform_special_call(self: TypeVisitor, expr: ast.CallExpr):
 def generate_partial_call(
     self: TypeVisitor,
     mask: str,
-    function_type: ast.types.Function,
+    fn_type: ast.types.Function,
     args: ast.Expr | None = None,
     kwargs: ast.Expr | None = None,
 ) -> ast.Expr:
@@ -981,11 +980,11 @@ def generate_partial_call(
             ast.CallExpr.Arg(
                 name="F",
                 value=ast.IdExpr(
-                    function_type.func_name,
+                    fn_type.func_name,
                     type=utils.instantiate(
                         self.ctx,
                         utils.get_stdlib_type(self.ctx, ast.types.Stdlib.UnrealizedType),
-                        [function_type.require_func],
+                        [fn_type.require_func],
                     ),
                     done=True,
                 ),

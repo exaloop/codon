@@ -300,6 +300,12 @@ class Type:
         return None
 
     @property
+    def require_union(self) -> Union:
+        if c := self.union:
+            return c
+        raise ValueError("expected a Union")
+
+    @property
     def literal(self) -> Literal | None:
         t = self.follow()
         if isinstance(t, Literal):
@@ -748,10 +754,8 @@ class Class(Type):
                     count = self_n.value
                     if count * len(self_t.generics) != len(what.generics):
                         return -1
-                    for index in range(len(self_t.generics) * count):
-                        if (
-                            part := self_t[index % len(self_t.generics)].unify(what[index], undo)
-                        ) < 0:
+                    for idx in range(len(self_t.generics) * count):
+                        if (part := self_t[idx % len(self_t.generics)].unify(what[idx], undo)) < 0:
                             return part
                         score += part
                 else:
@@ -861,8 +865,8 @@ class Class(Type):
                 if not names:
                     return self.name
                 values = [
-                    f"{field_name}={self[1].require_cls.generics[index].to_string(mode)}"
-                    for index, field_name in enumerate(names)
+                    f"{field_name}={self[1].require_cls.generics[idx].to_string(mode)}"
+                    for idx, field_name in enumerate(names)
                 ]
                 return f"{self.name}[{','.join(values)}]"
             else:
@@ -905,10 +909,10 @@ class Class(Type):
             kwargs = self[2].to_string(mode)
             if len(kwargs) > 10:  # if **kwargs is used
                 values.append(kwargs[11:-1])  # chop off NamedTuple[...]
-            function_name = function.ast.name
+            fn_name = function.ast.name
             if mode == 0:
-                function_name = self.cache.rev(function_name)
-            return f"{function_name}({','.join(values)})"
+                fn_name = self.cache.rev(fn_name)
+            return f"{fn_name}({','.join(values)})"
         else:
             values = [g.to_string(mode) for g in self.generics if g.name]
             if mode == 2:
@@ -938,6 +942,10 @@ class Class(Type):
 
     def __getitem__(self, key) -> Type:
         return self.generics[key].type
+
+    def __iter__(self):
+        for g in self.generics:
+            yield g.type
 
     def __len__(self):
         return len(self.generics)
@@ -1193,7 +1201,7 @@ class Function(Class):
             return True
         if self.func_parent and self.func_parent.has_unbounds(include_generics):
             return True
-        if any(g.type.has_unbounds(include_generics) for g in self if g.type):
+        if any(g.has_unbounds(include_generics) for g in self if g):
             return True
         ret = self.ret_type
         return ret is not None and ret.has_unbounds(include_generics)
@@ -1207,8 +1215,8 @@ class Function(Class):
             result[0:0] = self.func_parent.get_unbounds(include_generics)
         # Important: return type unbounds are not important, so skip them.
         for generic in self:
-            if generic.type:
-                result[0:0] = generic.type.get_unbounds(include_generics)
+            if generic:
+                result[0:0] = generic.get_unbounds(include_generics)
         return result
 
     def can_realize(self):
@@ -1216,10 +1224,10 @@ class Function(Class):
 
         # Important: return type does not have to be realized.
         for arg in self:
-            if not isinstance(arg, Function) and not arg.type.can_realize():
+            if not isinstance(arg, Function) and not arg.can_realize():
                 if not allow_passthrough:
                     return False
-                for unbound in arg.type.get_unbounds(include_generics=True):
+                for unbound in arg.get_unbounds(include_generics=True):
                     if unbound.kind is Link.Kind.Generic or not unbound.pass_through:
                         return False
         result = all(g.type.can_realize() for g in self.func_generics if g.type)
@@ -1264,8 +1272,8 @@ class Function(Class):
             assert ret, "function return type is null"
             values.append(f"ret={ret.to_string(mode)}")
         if mode < 2 or self.ast is None:
-            for argument in self:
-                values.append(argument.to_string(mode))
+            for arg in self:
+                values.append(arg.to_string(mode))
         else:
             sig_idx = 0
             for param in self.ast:
@@ -1274,8 +1282,8 @@ class Function(Class):
                 values.append(f"{param.name}={self[sig_idx].to_string(mode)}")
                 sig_idx += 1
         merged = ",".join(generic_values)
-        arguments = ",".join(values)
-        merged = arguments if not merged else f"{merged};{arguments}"
+        args = ",".join(values)
+        merged = args if not merged else f"{merged};{args}"
         name = self.ast.name
         if mode == 0:
             name = self.cache.rev(name)
@@ -1285,19 +1293,23 @@ class Function(Class):
 
     def realized_name(self):
         generic_values = [g.realized_name() for g in self.func_generics if g.name]
-        argument_values = []
+        arg_values = []
         for arg in self.generics[0].type.require_cls.generics:
-            argument_values.append(
+            arg_values.append(
                 arg.type.realized_name() if isinstance(arg.type, Function) else arg.realized_name()
             )
-        values = ",".join(argument_values + generic_values)
+        values = ",".join(arg_values + generic_values)
         parent = "" if self.func_parent is None else f"{self.func_parent.realized_name()}:"
         suffix = "" if not values else f"[{values}]"
         return f"{parent}{self.func_name}{suffix}"
 
     @property
+    def arg_type(self):
+        return self.generics[0].type.require_cls
+
+    @property
     def ret_type(self) -> Type:
-        return self[1]
+        return self.generics[1].type
 
     @property
     def func_name(self) -> str:
@@ -1305,10 +1317,14 @@ class Function(Class):
         return self.ast.name
 
     def __getitem__(self, index: int) -> Type:
-        return self.generics[0].type.require_cls[index]
+        return self.arg_type[index]
 
     def __iter__(self):
-        yield from self.generics[0].type.require_cls.generics
+        for g in self.arg_type.generics:
+            yield g.type
+
+    def __len__(self):
+        return len(self.arg_type.generics)
 
 
 @dataclass(init=False)
@@ -1351,7 +1367,7 @@ class Union(Class):
         assert self.can_realize(), f"cannot realize {self.to_string(2)}"
         return super().realized_name()
 
-    def get_realization_types(self) -> List[Type]:
+    def get_realization_types(self) -> List[Class]:
         assert self.can_realize(), f"cannot realize {self.to_string(2)}"
         assert self.generics and self[0].cls, "union realization tuple is null"
         realization = {}
@@ -1385,123 +1401,79 @@ class CallableTrait(Trait):
         self.args = [] if args is None else args
 
     def unify(self, what: Type, undo: Type.UnifyContext | None = None) -> int:
-        raise NotImplementedError()
-        """
-        # TODO: one day merge with the CallExpr's logic...
-        class_value = typ.get_class()
-        if isinstance(class_value, ClassType):
-            tr = class_value
-            function_holder: Type | None = None
-            cache_value = cast(Cache, self.cache)
-            type_context = cast(TypeContext, cache_value.type_ctx)
-            if typ.is_type(StdlibTypes.TypeWrap):
-                type_visitor = TypecheckVisitor(type_context)
-                methods = type_visitor.find_method(typ.get_class(), "__call_no_self__")
-                function_holder = type_visitor.instantiate(methods[0])
-                wrapped_class = function_holder.get_class()
-                assert isinstance(wrapped_class, ClassType), "bad type wrapper callable"
-                tr = wrapped_class
+        # TODO: this fn is total mess. one day merge with the CallExpr's logic...
 
-            if tr.name == StdlibTypes.NoneType:
+        from ..passes.typecheck import classes, infer, utils
+
+        ctx = self.cache.type_ctx
+        assert ctx
+
+        if what_cls := what.cls:
+            if what_cls == Stdlib.TypeWrap:
+                methods = utils.find_method(ctx, what_cls, "__call_no_self__")
+                what_cls = utils.instantiate(ctx, methods[0])
+
+            if what_cls == Stdlib.NoneType:
                 return 1
-            if tr.name != StdlibTypes.Function and tr.get_partial() is None:
+            if what_cls.name != Stdlib.Function and not what_cls.partial:
                 return -1
-            if not tr.is_record():
+            if not what_cls.is_tuple:
                 return -1
             if not self.args:
                 return 1
 
-            # C++ comment: codon/parser/ast/types/traits.cpp:47
-            # trFun can point to it
             known = ""
-            tr_function = tr
-            partial = tr.get_partial()
-            if partial is not None:
-                unbound_count = [0]
-                generic_cache: Dict[int, Type] = {}
-                partial_function_value = partial.get_partial_func()
-                assert isinstance(partial_function_value, FuncType), "bad partial function"
-                function_holder = partial_function_value.instantiate(
-                    0, unbound_count, generic_cache
-                )
-                instantiated_class = function_holder.get_class()
-                assert isinstance(instantiated_class, ClassType), (
-                    "bad instantiated partial function"
-                )
-                tr_function = instantiated_class
+            what_fn = what_cls
+            if partial := what_cls.partial:
+                what_fn = partial.partial_func.instantiate(0, Type.InstantiateContext(ctx))
                 known = partial.partial_mask
 
-                known_arg_value = partial.generics[1].type
-                known_arg_class = None if known_arg_value is None else known_arg_value.get_class()
-                assert isinstance(known_arg_class, ClassType), "bad partial arguments"
-                partial_func = function_holder.get_func()
-                assert not (
-                    not isinstance(partial_func, FuncType)
-                    or not isinstance(partial_func.ast, FunctionStmt)
-                ), "bad partial function AST"
-                generic_index = 0
-                known_index = 0
-                for parameter_index in range(len(known)):
-                    parameter = partial_func.ast[parameter_index]
-                    if parameter.is_generic():
-                        generic_index += 1
-                    elif known[parameter_index] == PartialFlag.Included.value:
-                        function_arg = partial_func[parameter_index - generic_index]
-                        known_arg = known_arg_class.generics[known_index].type
+                known_type = partial[1].require_cls
+                generic_idx, known_idx = 0, 0
+                for param_idx in range(len(known)):
+                    param = what_fn.ast.items[param_idx]
+                    if param.is_generic:
+                        generic_idx += 1
+                    elif known[param_idx] is Class.Flag.Included:
+                        fn_arg = what_fn[param_idx - generic_idx]
+                        known_arg = known_type.generics[known_idx].type
                         if (
-                            function_arg is None
+                            fn_arg is None
                             or known_arg is None
-                            or function_arg.unify(known_arg, undo) == -1
+                            or fn_arg.unify(known_arg, undo) == -1
                         ):
                             return -1
-                        known_index += 1
+                        known_idx += 1
             else:
-                first_generic = tr.generics[0].type
-                first_class = None if first_generic is None else first_generic.get_class()
-                assert isinstance(first_class, ClassType), "bad function argument tuple"
-                known = PartialFlag.Missing.value * len(first_class.generics)
+                count = len(what_cls.generics[0].type.require_cls)
+                known = [Class.Flag.Missing] * count
 
-            input_args_value = self.args[0].get_class()
-            function_input_value = tr_function.generics[0].type
-            function_input_args = (
-                None if function_input_value is None else function_input_value.get_class()
-            )
-            assert not (
-                not isinstance(input_args_value, ClassType)
-                or not isinstance(function_input_args, ClassType)
-            ), "bad callable argument tuple"
-            input_args = input_args_value
-            tr_input_args = function_input_args
-            tr_func_value = tr_function.get_func()
-            tr_func = tr_func_value if isinstance(tr_func_value, FuncType) else None
-            tr_ast = (
-                tr_func.ast
-                if tr_func is not None and isinstance(tr_func.ast, FunctionStmt)
-                else None
-            )
-            star = 0
-            kw_star = len(tr_input_args.generics)
+            input_args = self.args[0].require_cls
+            tr_input_args = what_fn.generics[0].type.require_cls
+            tr_func = what_fn.func
+            tr_ast = tr_func.ast if tr_func else None
+            star_idx, kwargs_idx = 0, len(tr_input_args.generics)
             total = 0
-            if tr_ast is not None:
-                star = tr_ast.get_star_args()
-                kw_star = tr_ast.get_kw_star_args()
-                for function_index in range(len(tr_ast)):
-                    if function_index < star and not tr_ast[function_index].is_value():
-                        star -= 1
-                    if function_index < kw_star and not tr_ast[function_index].is_value():
-                        kw_star -= 1
-                if kw_star < len(tr_ast) and star >= len(tr_input_args.generics):
-                    star -= 1
+            if tr_ast:
+                star_idx = tr_ast.get_star_arg()
+                kwargs_idx = tr_ast.get_kwstar_arg()
+                for fn_idx in range(len(tr_ast)):
+                    if fn_idx < star_idx and not tr_ast[fn_idx].is_value():
+                        star_idx -= 1
+                    if fn_idx < kwargs_idx and not tr_ast[fn_idx].is_value():
+                        kwargs_idx -= 1
+                if kwargs_idx < len(tr_ast) and star_idx >= len(tr_input_args.generics):
+                    star_idx -= 1
                 pre_star = 0
-                for function_index in range(len(tr_ast)):
+                for fn_idx in range(len(tr_ast)):
                     if (
-                        function_index != kw_star
-                        and known[function_index] != PartialFlag.Included.value
-                        and tr_ast[function_index].is_value()
-                        and not tr_ast[function_index].name.startswith("$")
+                        fn_idx != kwargs_idx
+                        and known[fn_idx] is not Class.Flag.Included
+                        and tr_ast.items[fn_idx].is_value
+                        and not tr_ast[fn_idx].name.startswith("$")
                     ):
                         total += 1
-                        if function_index < star:
+                        if fn_idx < star_idx:
                             pre_star += 1
                 if pre_star < total:
                     if len(input_args.generics) < pre_star:
@@ -1510,133 +1482,94 @@ class CallableTrait(Trait):
                     return -1
             else:
                 total = len(tr_input_args.generics)
-                star = total
+                star_idx = total
                 if len(input_args.generics) != total:
                     return -1
 
-            input_index = 0
-            function_index = 0
-            while input_index < len(input_args.generics) and function_index < star:
+            input_idx, fn_idx = 0, 0
+            while input_idx < len(input_args.generics) and fn_idx < star_idx:
                 if (
-                    known[function_index] != PartialFlag.Included.value
+                    known[fn_idx] is not Class.Flag.Included
                     and tr_ast is not None
-                    and tr_ast[function_index].is_value()
-                    and not tr_ast[function_index].name.startswith("$")
+                    and tr_ast[fn_idx].is_value()
+                    and not tr_ast[fn_idx].name.startswith("$")
                 ):
-                    input_type = input_args.generics[input_index].type
-                    target_type = tr_input_args.generics[function_index].type
-                    input_index += 1
+                    input_type = input_args.generics[input_idx].type
+                    target_type = tr_input_args.generics[fn_idx].type
+                    input_idx += 1
                     if (
                         input_type is None
                         or target_type is None
                         or input_type.unify(target_type, undo) == -1
                     ):
                         return -1
-                function_index += 1
+                fn_idx += 1
 
-            type_visitor = TypecheckVisitor(type_context)
-            if tr_func is not None:
-                # C++ comment: codon/parser/ast/types/traits.cpp:118
+            if tr_func:
                 # Make sure to set types of *args/**kwargs so that the function that
-                # C++ comment: codon/parser/ast/types/traits.cpp:119
                 # is being unified with Callable[] can be realized
-                if star < len(tr_input_args.generics) - int(kw_star < len(tr_input_args.generics)):
-                    star_arg_types: List[Type] = []
-                    if partial is not None:
-                        positional_value = partial.generics[1].type
-                        positional_class = (
-                            None if positional_value is None else positional_value.get_class()
-                        )
-                        assert not (
-                            not isinstance(positional_class, ClassType)
-                            or not positional_class.generics
-                        ), "bad partial *args/**kwargs"
-                        final_value = positional_class.generics[-1].type
-                        final_class = None if final_value is None else final_value.get_class()
-                        assert isinstance(final_class, ClassType), "bad partial *args/**kwargs"
-                        for generic in final_class.generics:
-                            assert not (generic.type is None), "bad partial *args"
+                if star_idx < len(tr_input_args.generics) - int(
+                    kwargs_idx < len(tr_input_args.generics)
+                ):
+                    star_arg_types = []
+                    if partial:
+                        final = partial[1].require_cls[-1].require_cls
+                        for generic in final.generics:
                             star_arg_types.append(generic.type)
-                    while input_index < len(input_args.generics):
-                        input_type = input_args.generics[input_index].type
-                        assert not (input_type is None), "bad callable argument"
-                        star_arg_types.append(input_type)
-                        input_index += 1
-                    assert isinstance(tr_func.ast, FunctionStmt), "bad callable function AST"
-                    star_parameter = tr_func.ast[star]
-                    if star_parameter.type is not None:
-                        transformed = type_visitor.transform(
-                            cast(Expr, star_parameter.type.clone())
-                        )
-                        assert isinstance(transformed, Expr), "bad *args annotation"
-                        # C++ comment: codon/parser/ast/types/traits.cpp:134
+                    while input_idx < len(input_args.generics):
+                        star_arg_types.append(input_args[input_idx])
+                        input_idx += 1
+                    star_param = tr_func.ast[star_idx]
+                    if star_param.type:
+                        transformed = ctx.cache.typecheck(star_param.type.clone(), ctx=ctx)
+                        assert isinstance(transformed, ast.Expr), "bad *args annotation"
                         # if we have *args: type, use those types
-                        star_type = type_visitor.extract_type(transformed)
+                        star_type = utils.extract_type(ctx, transformed)
                         star_arg_types = [star_type for _ in star_arg_types]
-                    tuple_type = type_visitor.instantiate(
-                        type_visitor.generate_tuple(len(star_arg_types)), star_arg_types
+                    tuple_type = utils.instantiate(
+                        ctx, classes.generate_tuple(ctx, len(star_arg_types)), star_arg_types
                     )
-                    target_type = tr_input_args.generics[star].type
+                    target_type = tr_input_args[star_idx]
                     if target_type is None or tuple_type.unify(target_type, undo) == -1:
                         return -1
-                if kw_star < len(tr_input_args.generics):
-                    tuple_class = type_visitor.generate_tuple(0)
+                if kwargs_idx < len(tr_input_args.generics):
+                    tuple_type = classes.generate_tuple(ctx, 0)
                     tuple_id = 0
-                    if partial is not None:
-                        kwargs_value = partial.generics[2].type
-                        kwargs_class_value = (
-                            None if kwargs_value is None else kwargs_value.get_class()
-                        )
-                        assert not (
-                            not isinstance(kwargs_class_value, ClassType)
-                            or not kwargs_class_value.is_type(StdlibTypes.NamedTuple)
-                        ), "bad partial *args/**kwargs"
-                        identifier_value = kwargs_class_value.generics[0].type
-                        identifier_static = (
-                            None if identifier_value is None else identifier_value.get_int_static()
-                        )
-                        tuple_id = int(identifier_static.value)
-                        tuple_value = kwargs_class_value.generics[1].type
-                        tuple_class_value = None if tuple_value is None else tuple_value.get_class()
-                        assert isinstance(tuple_class_value, ClassType), "bad partial keyword tuple"
-                        tuple_class = tuple_class_value
-                    identifier_type = IntStaticType(cache=self.cache, value=tuple_id)
-                    keyword_type = type_visitor.instantiate(
-                        type_visitor.get_stdlib_type(StdlibTypes.NamedTuple),
-                        [identifier_type, tuple_class],
+                    if partial:
+                        tuple_id = partial[2].require_cls[0].require_int
+                        tuple_type = partial[2].require_cls[1].require_cls
+                    kw_type = utils.instantiate(
+                        ctx,
+                        utils.get_stdlib_type(ctx, Stdlib.NamedTuple),
+                        [IntLiteral(tuple_id, cache=ctx.cache), tuple_type],
                     )
-                    target_type = tr_input_args.generics[kw_star].type
-                    if target_type is None or keyword_type.unify(target_type, undo) == -1:
+                    target_type = tr_input_args.generics[kwargs_idx].type
+                    if target_type is None or kw_type.unify(target_type, undo) == -1:
                         return -1
 
                 if undo is not None and tr_func.can_realize():
-                    # C++ comment: codon/parser/ast/types/traits.cpp:164
                     # Realize if possible to allow deduction of return type
-                    realized = type_visitor.realize(tr_func)
-                    assert not (realized is None), "cannot realize callable"
+                    realized = infer.realize(ctx, tr_func)
+                    assert realized
                     tr_func.unify(realized, undo)
-                return_type = tr_func.get_ret_type()
-                if return_type is None or self.args[1].unify(return_type, undo) == -1:
+                if not tr_func.ret_type or self.args[1].unify(tr_func.ret_type, undo) == -1:
                     return -1
             return 1
-        link = typ.get_link()
-        from .link import LinkKind, LinkType
-
-        if isinstance(link, LinkType):
-            if link.kind is LinkKind.Link and link.type is not None:
+        elif link := what.link:
+            if link.kind is Link.Kind.Link and link.type:
                 return self.unify(link.type, undo)
-            if link.kind is LinkKind.Unbound:
-                if link.trait is not None:
-                    if not isinstance(link.trait, Callable) or len(link.trait.args) != len(
-                        self.args
-                    ):
-                        return -1
-                    for left, right in zip(self.args, link.trait.args):
-                        if left.unify(right, undo) == -1:
+            if link.kind is Link.Kind.Unbound:
+                if link.trait:
+                    if isinstance(link.trait, CallableTrait):
+                        if len(link.trait.args) != len(self.args):
                             return -1
+                        for left, right in zip(self.args, link.trait.args):
+                            if left.unify(right, undo) == -1:
+                                return -1
+                    else:
+                        return -1
                 return 1
         return -1
-        """
 
     def generalize(self, level: int):
         ret = copy.copy(self)

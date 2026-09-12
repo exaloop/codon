@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from ....bridge import List, cast
 from ... import ast, cache
 from ...error import TypecheckError
+from ..scope import Bindings
 from . import infer, ops, utils
 from .ctx import Item
 
@@ -248,7 +249,7 @@ def transform_assignment(
     # Ensure that captured values are in a Capsule
     if self.ctx.in_function and stmt.rhs and not must_exist:
         base = self.ctx.base
-        if base.func and (bindings := base.func.get(ast.Attr.Bindings)):
+        if base.func and (bindings := base.func.get(ast.Attr.Bindings, Bindings)):
             if (binding := bindings.bindings.get(var.value)) and binding.is_nonlocal:
                 stmt.type_expr = (
                     ast.IndexExpr(ast.IdExpr(ast.types.Stdlib.Capsule), index=stmt.type_expr)
@@ -475,8 +476,8 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     if not field_type.can_realize() and member.type_expr:
         member_type = self.visit(member.type_expr.clone(clean=True))
         field_type |= utils.extract_type(self.ctx, member_type)
-    cache_class = utils.get_class(self.ctx, lhs_type)
-    if member.base_class != lhs_type.name and cache_class and cache_class.rtti:
+    cls_data = utils.get_class(self.ctx, lhs_type)
+    if member.base_class != lhs_type.name and cls_data and cls_data.rtti:
         base_type = None
         for candidate in utils.get_base_classes(self.ctx, lhs_type):
             if (candidate_class := candidate.cls) and candidate_class.name == member.base_class:

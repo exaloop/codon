@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import List, cast
+from ....bridge import List
 from ... import ast
 from ...error import TypecheckError
-from . import classes, infer, loops, utils
+from . import classes, infer, utils
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -20,7 +20,7 @@ def typecheck_tuple(self: TypeVisitor, node: ast.TupleExpr) -> ast.Node:
     `(a1, ..., aN)` -> `Tuple.__new__(a1, ..., aN)`
     """
 
-    result = self.visit(
+    result = self.visit_expr(
         ast.CallExpr(
             ast.DotExpr(ast.IdExpr(ast.types.Stdlib.Tuple), member="__new__"),
             items=node.items,
@@ -90,10 +90,14 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
                 optimize = False
     var = ast.IdExpr(utils.get_temporary_var(self.ctx, "gen"))
     expr = node.final_expr()
+    assert expr
+
+    def set_final_expr(node, expr):
+        node.iter_blocks(expr_fn=lambda _: ast.ExprStmt(expr))
 
     if node.kind is ast.GeneratorExpr.Kind.ListGenerator:
         # List comprehensions
-        node.set_final_expr(ast.CallExpr(ast.DotExpr(var.clone(), member="append"), items=[expr]))
+        set_final_expr(node, ast.CallExpr(ast.DotExpr(var.clone(), member="append"), items=[expr]))
         plain = ast.SuiteStmt(
             ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.List))),
             node.loops,
@@ -127,13 +131,16 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
     if node.kind is ast.GeneratorExpr.Kind.SetGenerator:
         # Set comprehensions
         head = ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Set)))
-        node.set_final_expr(ast.CallExpr(ast.DotExpr(var.clone(), member="add"), items=[expr]))
+        set_final_expr(node, ast.CallExpr(ast.DotExpr(var.clone(), member="add"), items=[expr]))
         return self.visit_expr(ast.StmtExpr([head, node.loops], expr=var))
     elif node.kind is ast.GeneratorExpr.Kind.DictGenerator:
         # Dictionary comprehensions
         head = ast.AssignStmt(var.clone(), rhs=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Dict)))
-        node.set_final_expr(
-            ast.CallExpr(ast.DotExpr(var.clone(), member="__setitem__"), items=[ast.StarExpr(expr)])
+        set_final_expr(
+            node,
+            ast.CallExpr(
+                ast.DotExpr(var.clone(), member="__setitem__"), items=[ast.StarExpr(expr=expr)]
+            ),
         )
         return self.visit_expr(ast.StmtExpr([head, node.loops], expr=var))
     elif node.kind is ast.GeneratorExpr.Kind.TupleGenerator:
@@ -146,7 +153,18 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
         # `tuple = tuple_generator`
         tuple_name = utils.get_temporary_var(self.ctx, "tuple")
         block = ast.SuiteStmt(ast.AssignStmt(ast.IdExpr(tuple_name), rhs=generator_node))
-        static_items = loops.populate_static_loop(self, final.var, generator_node, expr)
+
+        # assert generator_node.type
+        assert expr
+        static_items: List[ast.Expr] = [
+            ast.StmtExpr(
+                ast.AssignStmt(
+                    final.var.clone(), ast.IndexExpr(generator_node.clone(), index=ast.IntExpr(idx))
+                ),
+                expr=expr.clone(),
+            )
+            for idx in range(len(generator_node.type.require_cls))
+        ]
         return self.visit_expr(ast.StmtExpr(block.items, expr=ast.TupleExpr(static_items)))
     else:
         new_loops = self.visit_stmt(node.loops)  # assume: internal data will be changed
@@ -268,11 +286,11 @@ def transform_comprehension(
             assert len(tuple_type.require_cls.generics) == 2
 
             new_types = []
-            for dict_index in range(2):
-                new_type = collection_type[dict_index].require_cls
+            for dict_idx in range(2):
+                new_type = collection_type[dict_idx].require_cls
                 if not new_type:
-                    infer.unify(new_type, tuple_type[dict_index])
-                elif common := lowest_common_type(new_type, tuple_type[dict_index].require_cls):
+                    new_type |= tuple_type[dict_idx]
+                elif common := lowest_common_type(new_type, tuple_type[dict_idx].require_cls):
                     new_type = common
                 new_types.append(new_type)
             collection_type = utils.instantiate(

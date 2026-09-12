@@ -6,8 +6,9 @@ from typing import TYPE_CHECKING
 
 from ....bridge import Callable, List, cast
 from ... import ast, cache
-from . import assign, infer, special, utils
-from .ctx import Base, TypecheckError
+from ...error import TypecheckError
+from . import assign, special, utils
+from .ctx import Base
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -23,7 +24,7 @@ def _parse_open_mp(code: str, info: ast.Node.SrcInfo) -> List[ast.CallExpr.Arg]:
     source = code.strip()
     source = re.sub(r"^omp\b", "", source, count=1).lstrip()
     source = re.sub(r"^parallel\b", "", source, count=1).lstrip()
-    arguments = []
+    args = []
     clause = re.compile(
         r"(?:schedule\s*\(\s*(static|dynamic|guided|auto|runtime)"
         r"(?:\s*,\s*([1-9][0-9]*))?\s*\)"
@@ -36,34 +37,34 @@ def _parse_open_mp(code: str, info: ast.Node.SrcInfo) -> List[ast.CallExpr.Arg]:
             raise TypecheckError(info, "openmp: invalid syntax")
         text = match.group(0)
         if text.startswith("schedule"):
-            arguments.append(
+            args.append(
                 ast.CallExpr.Arg(name="schedule", value=ast.StringExpr(match.group(1), info=info))
             )
             if match.group(2):
-                arguments.append(
+                args.append(
                     ast.CallExpr.Arg(
                         name="chunk_size", value=ast.IntExpr(int(match.group(2)), info=info)
                     )
                 )
         elif text.startswith("num_threads"):
-            arguments.append(
+            args.append(
                 ast.CallExpr.Arg(
                     name="num_threads", value=ast.IntExpr(int(match.group(3)), info=info)
                 )
             )
         elif text.startswith("ordered"):
-            arguments.append(ast.CallExpr.Arg(name="ordered", value=ast.BoolExpr(True, info=info)))
+            args.append(ast.CallExpr.Arg(name="ordered", value=ast.BoolExpr(True, info=info)))
         elif text.startswith("collapse"):
-            arguments.append(
+            args.append(
                 ast.CallExpr.Arg(name="collapse", value=ast.IntExpr(int(match.group(4)), info=info))
             )
         else:
-            arguments.append(ast.CallExpr.Arg(name="gpu", value=ast.BoolExpr(True, info=info)))
+            args.append(ast.CallExpr.Arg(name="gpu", value=ast.BoolExpr(True, info=info)))
         source = source[match.end() :].lstrip()
-    return arguments
+    return args
 
 
-def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Node:
+def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Stmt:
     """
     Ensure that `break` is in a loop.
     Transform if a loop break variable is available
@@ -72,9 +73,10 @@ def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Node:
     `break` -> `no_break = False; break`
     """
 
-    loop = self.ctx.get_base().get_loop()
+    loop = self.ctx.base.loop
     if not loop:
         raise TypecheckError(node, "'break' outside loop")
+
     loop.flat = False
     if loop.break_var:
         assignment = ast.AssignStmt(
@@ -92,14 +94,14 @@ def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Node:
             rhs=ast.BoolExpr(False),
             update=ast.AssignStmt.Mode.Update,
         )
-        return self.visit(ast.SuiteStmt(assignment, node))
+        return self.visit_stmt(ast.SuiteStmt(assignment, node))
     return node
 
 
-def typecheck_continue(self: TypeVisitor, node: ast.ContinueStmt) -> ast.Node:
+def typecheck_continue(self: TypeVisitor, node: ast.ContinueStmt) -> ast.Stmt:
     """Ensure that `continue` is in a loop"""
 
-    loop = self.ctx.get_base().get_loop()
+    loop = self.ctx.base.loop
     if not loop:
         raise TypecheckError(node, "'continue' outside loop")
     loop.flat = False
@@ -110,7 +112,7 @@ def typecheck_continue(self: TypeVisitor, node: ast.ContinueStmt) -> ast.Node:
     return node
 
 
-def typecheck_while(self: TypeVisitor, node: ast.WhileStmt) -> ast.Node:
+def typecheck_while(self: TypeVisitor, node: ast.WhileStmt) -> ast.Stmt:
     """
     Transform a while loop.
     @example
@@ -126,23 +128,22 @@ def typecheck_while(self: TypeVisitor, node: ast.WhileStmt) -> ast.Node:
     if node.else_suite and node.else_suite.first_in_block():
         # no_break = True
         break_var = utils.get_temporary_var(self.ctx, "no_break")
-        assignment = self.visit(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
+        assignment = self.visit_stmt(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
         self.ctx.prepend_stmts[-1].append(assignment)
 
-    base = self.ctx.get_base()
+    base = self.ctx.base
     base.loops.append(Base.LoopData(break_var=break_var))
     try:
         node.cond.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
-        node.cond = self.visit(node.cond)
+        node.cond = self.visit_expr(node.cond)
         _, node.cond = utils.wrap_expr(
-            self, node.cond, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
+            self.ctx, node.cond, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
         )
         with (
             self.ctx.substitute("static_loops", self.ctx.static_loops + [node.goto_var or ""]),
             self.ctx.substitute("block_level", self.ctx.block_level + 1),
         ):
-            node.suite = self.visit(node.suite)
-            node.suite = ast.SuiteStmt.wrap(node.suite)
+            node.suite = ast.SuiteStmt.wrap(self.visit_stmt(node.suite))
     finally:
         base.loops.pop()
 
@@ -150,13 +151,15 @@ def typecheck_while(self: TypeVisitor, node: ast.WhileStmt) -> ast.Node:
     # Complete while-else clause
     if node.else_suite and node.else_suite.first_in_block():
         suite, node.else_suite = node.else_suite, None
-        result = self.visit(ast.SuiteStmt(node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite)))
+        result = self.visit_stmt(
+            ast.SuiteStmt(node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite))
+        )
     if node.cond.done and node.suite.done:
         node.done = True
     return result
 
 
-def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
+def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
     """
     Typecheck for statements. Wrap the iterator expression with `__iter__` if needed.
     See @c transformHeterogenousTupleFor for iterating heterogenous tuples.
@@ -166,21 +169,20 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
         node.decorator = transform_for_decorator(self, node.decorator)
     match node.decorator:
         case ast.CallExpr(expr=ast.IdExpr(type=typ)) if (
-            typ := typ.get_func()
-        ) and typ.get_func_name() == ast.types.mangle("std.openmp", func="for_par"):
-            static_bool = utils.extract_func_generic(typ, 3).get_bool_static()
-            if static_bool and bool(static_bool.value):
+            typ and typ.func and typ.func.name == ast.types.mangle("std.openmp", func="for_par")
+        ):
+            if utils.extract_func_generic(typ, 3).bool:
                 import_gpu = ast.ImportStmt(
                     ast.IdExpr("gpu"), args=[], as_=utils.get_temporary_var(self.ctx, "_")
                 )
-                self.ctx.prepend_stmts[-1].append(self.visit(import_gpu))
+                self.ctx.prepend_stmts[-1].append(self.visit_stmt(import_gpu))
 
     break_var = ""
     # Needs in-advance transformation to prevent name clashes with the iterator variable
     # do not expand special calls here,
     node.iter.set(ast.Attr.ExprNoSpecial)
     # might be needed for static loops!
-    node.iter = self.visit(node.iter)
+    node.iter = self.visit_expr(node.iter)
     # Check for for-else clause
     assignment: ast.Stmt | None = None
     if node.else_suite and node.else_suite.first_in_block():
@@ -188,7 +190,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
         assignment = self.visit(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
 
     # Extract the iterator type of the for
-    if not (iterator_type := node.iter.get_class_type()):
+    if not (iterator_type := node.iter.cls):
         return node
 
     delay, static_loop = transform_static_for_loop(self, node)
@@ -205,8 +207,8 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
     # Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
     is_generator = iterator_type.name == ("AsyncGenerator" if node.async_ else "Generator")
     if not is_generator and not node.wrapped:
-        node.iter = self.visit(ast.CallExpr(ast.DotExpr(node.iter, member="__iter__")))
-        iter_type = node.iter.get_class_type()
+        node.iter = self.visit_expr(ast.CallExpr(ast.DotExpr(node.iter, member="__iter__")))
+        iter_type = node.iter.cls
         node.wrapped = True
         if not iter_type:
             return node
@@ -214,12 +216,12 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
     var = cast(ast.IdExpr, node.var)
     assert var, f"corrupt for variable: {node.var}"
 
-    base = self.ctx.get_base()
+    base = self.ctx.base
     base.loops.append(Base.LoopData(break_var=break_var))
     try:
         if not var.has(ast.Attr.ExprDominated) and not var.has(ast.Attr.ExprDominatedUsed):
             var.type = var.type or utils.instantiate_unbound(self.ctx)
-            self.ctx.add(
+            self.ctx.add_item(
                 utils.get_unmangled_name(self.ctx, var.value),
                 self.ctx.generate_canonical_name(var.value),
                 var.type,
@@ -236,21 +238,21 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
                 ),
                 node.suite,
             )
-        node.var = self.visit(var)
+        node.var = self.visit_expr(var)
 
         # Case: iterating a non-generator. Wrap with `__iter__`
         if iterator_type and not is_generator:
             # Unify iterator var and the iterator type
             raise TypecheckError(node.iter, "expected iterable expression")
         if iterator_type:
-            infer.unify(node.var.type, iterator_type[0])
+            assert node.var.type
+            node.var.type |= iterator_type[0]
         with (
             self.ctx.substitute("static_loops", self.ctx.static_loops + [""]),
             self.ctx.substitute("block_level", self.ctx.block_level + 1),
         ):
-            node.suite = self.visit(node.suite)
-            node.suite = ast.SuiteStmt.wrap(node.suite)
-        if base.get_loop() and base.get_loop().flat:
+            node.suite = ast.SuiteStmt.wrap(self.visit_stmt(node.suite))
+        if base.loop and base.loop.flat:
             node.flat = True
         result = node
     finally:
@@ -259,7 +261,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Node:
     # Complete for-else clause
     if node.else_suite and node.else_suite.first_in_block():
         suite, node.else_suite = node.else_suite, None
-        result = self.visit(
+        result = self.visit_stmt(
             ast.SuiteStmt(assignment, node, ast.IfStmt(ast.IdExpr(break_var), if_suite=suite))
         )
     if node.iter.done and node.suite.done:
@@ -284,18 +286,17 @@ def transform_for_decorator(self: TypeVisitor, decorator: ast.Expr) -> ast.Expr:
     ):
         raise TypecheckError(decorator, "invalid loop decorator")
 
-    arguments = []
-    omp_arguments = []
+    args = []
+    omp_args = []
     if isinstance(decorator, ast.CallExpr):
         for arg in decorator.items:
             str_arg = arg.value if isinstance(arg.value, ast.StringExpr) else None
             if str_arg and (arg.name == "openmp" or not arg.name):
-                omp_arguments = _parse_open_mp(str_arg.get_value(), str_arg.info)
+                omp_args = _parse_open_mp(str_arg.get_value(), str_arg.info)
             else:
-                arguments.append(arg)
-    arguments += omp_arguments
-    result = self.visit(ast.CallExpr(ast.IdExpr("for_par"), items=arguments))
-    return result
+                args.append(arg)
+    args += omp_args
+    return self.visit_expr(ast.CallExpr(ast.IdExpr("for_par"), args))
 
 
 def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
@@ -317,7 +318,7 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
     loop_var = utils.get_temporary_var(self.ctx, "loop")
     suite = stmt.suite.clone(clean=True)
 
-    def wrap(assignments: ast.Stmt) -> ast.Node:
+    def wrap(assignments: ast.Stmt) -> ast.Stmt:
         if not stmt.flat:
             break_stmt = ast.BreakStmt(done=True)  # set done to skip extra checks
             return ast.WhileStmt(
@@ -352,29 +353,14 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
     return False, loop_result
 
 
-def populate_static_loop(
-    self: TypeVisitor,
-    var: ast.Expr | None,
-    iterator: ast.Expr,
-    final: ast.Expr,
-) -> List[ast.Node]:
-    results = []
-    for idx in range(len(iterator.type.generics)):
-        assignment = ast.AssignStmt(
-            var.clone(), rhs=ast.IndexExpr(iterator.clone(), idx=ast.IntExpr(idx))
-        )
-        results.append(ast.StmtExpr([assignment], expr=final.clone))
-    return results
-
-
 def transform_static_loop_call(
     self: TypeVisitor,
     var: ast.Expr,
     iterator: ast.Expr,
-    wrapper: Callable[[ast.Stmt], ast.Node],
+    wrapper: Callable[[ast.Stmt], ast.Stmt],
     allow_non_heterogenous: bool = False,
-):
-    if not iterator.get_class_type():
+) -> tuple[bool, bool, ast.Stmt | None, list[ast.Stmt]]:
+    if not iterator.cls:
         return True, True, None, []
 
     vars = []
@@ -400,34 +386,36 @@ def transform_static_loop_call(
     block: List[ast.Stmt] = []
     name = "" if not function else function.value
     if function and name.startswith(ast.types.mangle("std.internal.static", func="tuple")):
-        block = special.populate_static_tuple_loop(self, iterator, vars)
+        block = special.populate_static_tuple_loop(self, cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(
         ast.types.mangle("std.internal.static", func="range", overload=1)
     ):
-        block = special.populate_simple_static_range_loop(self, iterator, vars)
+        block = special.populate_simple_static_range_loop(cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(ast.types.mangle("std.internal.static", func="range")):
-        block = special.populate_static_range_loop(self, iterator, vars)
+        block = special.populate_static_range_loop(cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(
         ast.types.mangle("std.internal.static", cls="function", func="overloads")
     ):
-        block = special.populate_static_fn_overloads_loop(self, iterator, vars)
+        block = special.populate_static_fn_overloads_loop(self, cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(ast.types.mangle("std.internal.static", func="enumerate")):
-        block = special.populate_static_enumerate_loop(self, iterator, vars)
+        block = special.populate_static_enumerate_loop(self, cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(ast.types.mangle("std.internal.static", func="vars")):
-        block = special.populate_static_vars_loop(self, iterator, vars)
+        block = special.populate_static_vars_loop(self, cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(ast.types.mangle("std.internal.static", func="methods")):
-        block = special.populate_static_methods_loop(self, iterator, vars)
+        block = special.populate_static_methods_loop(self, cast(ast.CallExpr, iterator), vars)
     elif function and name.startswith(ast.types.mangle("std.internal.static", func="vars_types")):
-        block = special.populate_static_var_types_loop(self, iterator, vars)
-    elif isinstance(iterator.type, ast.types.Type) and iterator.type.is_type(
-        ast.types.Stdlib.Tuple
-    ):
+        block = special.populate_static_var_types_loop(self, cast(ast.CallExpr, iterator), vars)
+    elif iterator.type and iterator.type == ast.types.Stdlib.Tuple:
         # Maybe heterogenous?
         if not iterator.type.can_realize():
             return True, True, None, []
         # wait until the tuple is fully realizable
-        if not utils.is_heterogenous(self.ctx, iterator.type) and not allow_non_heterogenous:
+        if (
+            not utils.is_heterogenous(self.ctx, iterator.type.require_cls)
+            and not allow_non_heterogenous
+        ):
             return False, False, None, []
+        assert iterator
         block = special.populate_static_heterogenous_tuple_loop(self, iterator, vars)
         preamble = block[-1]
         block.pop()

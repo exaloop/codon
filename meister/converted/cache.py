@@ -300,8 +300,8 @@ class Cache:
     codegen_ctx: object | None = None
     # Set of function realizations that are to be translated to IR.
     pending_realizations: Set[tuple[str, str]]
-    custom_block_stmts: Dict[str, tuple[bool, Callable[[object, object], object]]]
-    custom_expr_stmts: Dict[str, Callable[[object, object], object]]
+    custom_block_stmts: Dict[str, tuple[bool, Callable[[TypeContext, ast.Stmt], ast.Stmt]]]
+    custom_expr_stmts: Dict[str, Callable[[TypeContext, ast.Expr | None], ast.Stmt]]
     # Set if the Codon is running in JIT mode.
     is_jit: bool = False
     jit_cell: int = 0
@@ -337,9 +337,8 @@ class Cache:
         type_ctx: TypeContext | None = None,
         codegen_ctx: object | None = None,
         pending_realizations: Set[tuple[str, str]] | None = None,
-        custom_block_stmts: Dict[str, tuple[bool, Callable[[object, object], object]]]
-        | None = None,
-        custom_expr_stmts: Dict[str, Callable[[object, object], object]] | None = None,
+        custom_block_stmts: dict | None = None,
+        custom_expr_stmts: dict | None = None,
         is_jit: bool = False,
         jit_cell: int = 0,
         generated_tuples: Set[int] | None = None,
@@ -647,7 +646,7 @@ class Cache:
     def merge_c3(seqs: List[List[ast.types.Class]]) -> List[ast.types.Class]:
         # Reference: https://www.python.org/download/releases/2.3/mro/
         result = []
-        index = 0
+        idx = 0
         while True:
             found = False
             candidate = None
@@ -659,8 +658,8 @@ class Cache:
                 for other in seqs:
                     if other:
                         present = False
-                        for item_index in range(1, len(other)):
-                            present = present or sequence[0] == other[item_index]
+                        for item_idx in range(1, len(other)):
+                            present = present or sequence[0] == other[item_idx]
                             if present:
                                 break
                         if present:
@@ -678,7 +677,7 @@ class Cache:
                 if sequence:
                     if candidate == sequence[0]:
                         del sequence[0]
-            index += 1
+            idx += 1
 
     def get_import_file(
         self, what: str, relative_to: str, force_stdlib: bool = False

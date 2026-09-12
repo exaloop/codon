@@ -77,7 +77,7 @@ class ScopeContext:
     first_seen: Dict[str, ast.Node]
     class_deduce: tuple[str, Set[str]]
     assignment: ast.Node | None = None
-    function_scope: ast.FunctionStmt | None = None
+    fn_scope: ast.FunctionStmt | None = None
     in_class: bool = False
     renames: List[Dict[str, str]]
     temp_scope: bool = False
@@ -94,7 +94,7 @@ class ScopeContext:
         first_seen: Dict[str, ast.Node] | None = None,
         class_deduce: tuple[str, Set[str]] | None = None,
         assignment: ast.Node | None = None,
-        function_scope: ast.FunctionStmt | None = None,
+        fn_scope: ast.FunctionStmt | None = None,
         in_class: bool = False,
         renames: List[Dict[str, str]] | None = None,
         temp_scope: bool = False,
@@ -108,7 +108,7 @@ class ScopeContext:
         self.first_seen = {} if first_seen is None else first_seen
         self.class_deduce = ("", set()) if class_deduce is None else class_deduce
         self.assignment = assignment
-        self.function_scope = function_scope
+        self.fn_scope = fn_scope
         self.in_class = in_class
         self.renames = [{}] if renames is None else renames
         self.temp_scope = temp_scope
@@ -232,7 +232,7 @@ class ScopingVisitor(ast.NodeVisitor):
         inner = ScopeContext(
             self.ctx.cache,
             scope=[ScopeContext.Block(0)],
-            function_scope=ast.FunctionStmt(name="lambda"),
+            fn_scope=ast.FunctionStmt(name="lambda"),
             renames=copy.deepcopy(self.ctx.renames),
         )
         visitor = ScopingVisitor(ctx=inner)
@@ -296,8 +296,8 @@ class ScopingVisitor(ast.NodeVisitor):
     def visit_ForStmt(self, node: ast.ForStmt):
         self.visit(node.iter)
         self.visit(node.decorator)
-        for argument in node.omp_args:
-            self.visit(argument.value)
+        for arg in node.omp_args:
+            self.visit(arg.value)
         seen, seen_def = set(), set()
         with self.conditional(node.suite):
             seen_def = self.ctx.scope[-1].seen_names = set()
@@ -312,7 +312,7 @@ class ScopingVisitor(ast.NodeVisitor):
 
     def visit_GlobalStmt(self, node: ast.GlobalStmt):
         # No shadowing od global/nonlocal allowed
-        if self.ctx.function_scope is None:
+        if self.ctx.fn_scope is None:
             raise ScopeError(node, f"'{node.var}' outside a function")
         if node.var in self.ctx.map or node.var in self.ctx.captures:
             raise ScopeError(node, f"name '{node.var}' is assigned to before global declaration")
@@ -325,7 +325,7 @@ class ScopingVisitor(ast.NodeVisitor):
 
     def visit_ImportStmt(self, node: ast.ImportStmt):
         match node:
-            case ast.ImportStmt(what=ast.IdExpr(value="*")) if self.ctx.function_scope:
+            case ast.ImportStmt(what=ast.IdExpr(value="*")) if self.ctx.fn_scope:
                 raise ScopeError(node, "import * only allowed at module level")
             # dylib C imports
             case ast.ImportStmt(from_expr=ast.IdExpr(value="C"), what=ast.DotExpr(expr=what)):
@@ -337,9 +337,9 @@ class ScopingVisitor(ast.NodeVisitor):
                     self.visit(node.what or node.from_expr)
             case _:
                 self.bind_name(node.as_, node)
-        for argument in node.args:
-            self.visit(argument.type)
-            self.visit(argument.default)
+        for arg in node.args:
+            self.visit(arg.type)
+            self.visit(arg.default)
         self.visit(node.ret)
 
     def visit_TryStmt(self, node: ast.TryStmt):
@@ -361,20 +361,20 @@ class ScopingVisitor(ast.NodeVisitor):
         self.visit(node.finally_suite)
 
     def visit_YieldStmt(self, node: ast.YieldStmt):
-        if self.ctx.function_scope:
-            self.ctx.function_scope.set(ast.Attr.IsGenerator)
+        if self.ctx.fn_scope:
+            self.ctx.fn_scope.set(ast.Attr.IsGenerator)
         self.visit(node.expr)
 
     def visit_YieldExpr(self, _: ast.YieldExpr):
-        if self.ctx.function_scope:
-            self.ctx.function_scope.set(ast.Attr.IsGenerator)
+        if self.ctx.fn_scope:
+            self.ctx.fn_scope.set(ast.Attr.IsGenerator)
 
     def visit_WithStmt(self, node: ast.WithStmt):
         with self.conditional(node.suite):
-            for index, item in enumerate(node.items):
+            for idx, item in enumerate(node.items):
                 self.visit(item)
-                if node.vars[index]:
-                    self.bind_name(node.vars[index], node)
+                if node.vars[idx]:
+                    self.bind_name(node.vars[idx], node)
             self.visit(node.suite)
 
     def visit_ClassStmt(self, node: ast.ClassStmt):
@@ -391,9 +391,9 @@ class ScopingVisitor(ast.NodeVisitor):
                 renames=copy.deepcopy(self.ctx.renames),
             )
         )
-        for argument in node.items:
-            visitor.visit(argument.type)
-            visitor.visit(argument.default)
+        for arg in node.items:
+            visitor.visit(arg.type)
+            visitor.visit(arg.default)
         visitor.visit(node.suite)
         for base_class in node.base_classes:
             self.visit(base_class)
@@ -404,7 +404,7 @@ class ScopingVisitor(ast.NodeVisitor):
         inner = ScopeContext(
             self.ctx.cache,
             scope=[ScopeContext.Block(0)],
-            function_scope=node,
+            fn_scope=node,
             renames=copy.deepcopy(self.ctx.renames),
         )
         if self.ctx.in_class and node.items:
@@ -456,7 +456,7 @@ class ScopingVisitor(ast.NodeVisitor):
         elif capture is None:
             child = self.ctx.child_captures.get(name)
             items = self.ctx.map.setdefault(name, [])
-            if child and child is not Bindings.Scope.Global and self.ctx.function_scope:
+            if child and child is not Bindings.Scope.Global and self.ctx.fn_scope:
                 new_scope = [self.ctx.scope[0].id]
                 suite = self.ctx.scope[0].suite
                 assert suite, "invalid suite"
@@ -479,7 +479,7 @@ class ScopingVisitor(ast.NodeVisitor):
 
     def update_name(self, name: str, node: ast.Node | None, has_used_var: bool):
         if node:
-            if attr := node.get(ast.Attr.Bindings):
+            if attr := node.get(ast.Attr.Bindings, Bindings):
                 attr.bindings.pop(name, None)
             node.attributes.pop(ast.Attr.ExprDominatedUsed, None)
             node.set(ast.Attr.ExprDominatedUsed if has_used_var else ast.Attr.ExprDominated)
@@ -498,8 +498,8 @@ class ScopingVisitor(ast.NodeVisitor):
         """
 
         scope = self.ctx.get_scope()
-        for index in range(len(self.ctx.scope) - 1, -1, -1):
-            seen = self.ctx.scope[index].seen_names
+        for idx in range(len(self.ctx.scope) - 1, -1, -1):
+            seen = self.ctx.scope[idx].seen_names
             if seen is not None:
                 if is_inside(item.scope, scope):
                     break
@@ -526,49 +526,49 @@ class ScopingVisitor(ast.NodeVisitor):
         values = self.ctx.map.get(name, [])
         if not values:
             return None
-        last_good_index = 0
-        while last_good_index < len(values) and values[last_good_index].ignore:
-            last_good_index += 1
+        last_good_idx = 0
+        while last_good_idx < len(values) and values[last_good_idx].ignore:
+            last_good_idx += 1
         common_scope = len(self.ctx.scope)
         # Iterate through all bindings with the given name and find the closest binding
         # that dominates the current scope.
-        for index, item in enumerate(values):
+        for idx, item in enumerate(values):
             if item.ignore:
                 continue
             if is_inside(self.ctx.get_scope(), item.scope):
                 common_scope = len(item.scope)
-                last_good_index = index
+                last_good_idx = idx
                 break
             assert item.scope[0] == 0 and self.ctx.scope[0].id == 0, "bad scoping"
             # Find the longest block prefix between the binding and the current common scope.
             common_scope = longest_common_prefix(item.scope, self.ctx.scope[:common_scope])
-            last_good_index = index
-        assert last_good_index < len(values), f"corrupted scoping for {name!r}"
+            last_good_idx = idx
+        assert last_good_idx < len(values), f"corrupted scoping for {name!r}"
         if not allow_shadow:
             common_scope = longest_common_prefix(values[-1].scope, self.ctx.scope[:common_scope])
-        last_good = values[last_good_index]
+        last_good = values[last_good_idx]
         has_used_var = False
         if len(last_good.scope) != common_scope:
             scope = self.ctx.get_scope()
             new_scope = scope[:common_scope]
-            for scope_index in range(common_scope - 1, -1, -1):
-                if suite := self.ctx.scope[scope_index].suite:
+            for scope_idx in range(common_scope - 1, -1, -1):
+                if suite := self.ctx.scope[scope_idx].suite:
                     attr = suite.setdefault(ast.Attr.Bindings, Bindings())
                     attr.bindings[name] = Bindings.Binding(name, count=1)
                     new_item = ScopeContext.Item(suite, new_scope, access_checked=[last_good.scope])
-                    last_good_index += 1
-                    values.insert(last_good_index, new_item)
+                    last_good_idx += 1
+                    values.insert(last_good_idx, new_item)
                     last_good = new_item
                     has_used_var = True
                     break
         elif (
             last_good.binding
-            and (attr := last_good.binding.get(ast.Attr.Bindings))
+            and (attr := last_good.binding.get(ast.Attr.Bindings, Bindings))
             and name in attr.bindings
         ):
             has_used_var = attr.bindings[name].count > 0
-        for index, item in enumerate(values):
-            if index == last_good_index:
+        for idx, item in enumerate(values):
+            if idx == last_good_idx:
                 break
             self.update_name(name, item.binding, has_used_var)
             # The current scope is potentially reachable by multiple bindings that are
@@ -579,7 +579,7 @@ class ScopingVisitor(ast.NodeVisitor):
         if (
             not has_used_var
             and last_good.binding
-            and (attr := last_good.binding.get(ast.Attr.Bindings))
+            and (attr := last_good.binding.get(ast.Attr.Bindings, Bindings))
         ):
             # Make sure to prepend a binding declaration: `var` and `var__used__ = False`
             # to the dominating scope.

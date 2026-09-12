@@ -195,19 +195,19 @@ def transform_c_import(
     No return type implies void return type. *args is treated as C VAR_ARGS.
     """
 
-    function_args = []
+    fn_args = []
     has_var_args = False
-    for index, argument in enumerate(args):
-        assert not argument.name, "unexpected argument name"
-        assert not argument.default, "unexpected default argument"
-        assert argument.type, "missing type"
-        if isinstance(argument.type, ast.EllipsisExpr) and index + 1 == len(args):
+    for idx, arg in enumerate(args):
+        assert not arg.name, "unexpected argument name"
+        assert not arg.default, "unexpected default argument"
+        assert arg.type, "missing type"
+        if isinstance(arg.type, ast.EllipsisExpr) and idx + 1 == len(args):
             # C VAR_ARGS support
             has_var_args = True
-            function_args.append(ast.Param("*args"))
+            fn_args.append(ast.Param("*args"))
         else:
-            cloned_type = argument.type.clone()
-            function_args.append(ast.Param(f"a{index}", type=cloned_type))
+            cloned_type = arg.type.clone()
+            fn_args.append(ast.Param(f"a{idx}", type=cloned_type))
     # avoid canonicalName == name
     self.ctx.generate_canonical_name(name)
     if not ret:
@@ -215,7 +215,7 @@ def transform_c_import(
     else:
         ret_clone = ret.clone()
         ret_type = ret_clone
-    function = ast.FunctionStmt(name, ret=ret_type, items=function_args)
+    function = ast.FunctionStmt(name, ret=ret_type, items=fn_args)
     function.set(ast.Attr.C)
     if has_var_args:
         function.set(ast.Attr.CVarArg)
@@ -272,19 +272,19 @@ def transform_cdll_import(
     No return type implies void return type.
     """
     if is_function:
-        argument_types = ast.ListExpr()
+        arg_types = ast.ListExpr()
         if not ret:
             return_type = ast.IdExpr(ast.types.Stdlib.NoneType)
         else:
             return_type = ret.clone()
-        for argument in args:
-            assert not argument.name, "unexpected argument name"
-            assert not argument.default, "unexpected default argument"
-            assert argument.type, "missing type"
-            argument_types.items.append(argument.type.clone())
+        for arg in args:
+            assert not arg.name, "unexpected argument name"
+            assert not arg.default, "unexpected default argument"
+            assert arg.type, "missing type"
+            arg_types.items.append(arg.type.clone())
         type_expr = ast.IndexExpr(
             ast.IdExpr(ast.types.Stdlib.Function),
-            index=ast.TupleExpr([argument_types, return_type]),
+            index=ast.TupleExpr([arg_types, return_type]),
         )
     else:
         assert ret
@@ -346,11 +346,9 @@ def transform_python_import(
 
     # Arguments: f(a1, ...)
     fn_params, call_args = [], []
-    for index, argument in enumerate(args):
-        fn_params.append(
-            ast.Param(f"a{index}", type=argument.type.clone() if argument.type else None)
-        )
-        call_args.append(ast.IdExpr(f"a{index}"))
+    for idx, arg in enumerate(args):
+        fn_params.append(ast.Param(f"a{idx}", type=arg.type.clone() if arg.type else None))
+        call_args.append(ast.IdExpr(f"a{idx}"))
     # `return ret.__from_py__(f(a1, ...))`
     if ret and not isinstance(ret, ast.NoneExpr):
         return_type = ret.clone()

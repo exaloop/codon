@@ -244,15 +244,15 @@ def typecheck_pattern(
             items=[expression.clone(), ast.IdExpr(type_name)],
         )
 
-    def ellipsis_index(items: List[ast.Expr]) -> int:
+    def ellipsis_idx(items: List[ast.Expr]) -> int:
         """Convenience function to find the index of an ellipsis within a list pattern."""
         # TODO: replace with StarExpr
         result = len(items)
-        for index, item in enumerate(items):
+        for idx, item in enumerate(items):
             if isinstance(item, ast.EllipsisExpr):
                 if result != len(items):
                     raise TypecheckError(item, "multiple ellipses in a pattern")
-                result = index
+                result = idx
         return result
 
     match pattern:
@@ -288,7 +288,7 @@ def typecheck_pattern(
                 ast.IfStmt(ast.BinaryExpr(length, "==", ast.IntExpr(len(items))), if_suite=nested),
             )
         case ast.ListExpr(items=items):
-            ellipsis = ellipsis_index(items)
+            ellipsis = ellipsis_idx(items)
             size = len(items)
             op = "=="
             if ellipsis != len(items):

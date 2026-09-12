@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from ....bridge import List, Tuple, cast
 from ... import ast
+from ...error import TypecheckError
 from . import classes, infer, utils
-from .ctx import TypecheckError
 
 if TYPE_CHECKING:
     from . import TypeVisitor
@@ -19,10 +19,11 @@ def typecheck_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr:
     Also evaluate static expressions. See @c evaluateStaticUnary for details.
     """
 
-    node.expr = self.visit(node.expr)
+    node.expr = self.visit_expr(node.expr)
+    assert node.expr.type
     if isinstance(node.expr, ast.IntExpr) and node.op == "-":
         # Special case: make - INT(val) same as INT(-val) to simplify IR and everything
-        return self.visit(ast.IntExpr(-node.expr.get_value()))
+        return self.visit_expr(ast.IntExpr(-node.expr.get_value()))
 
     static_type = None
     static_ops = {
@@ -31,11 +32,12 @@ def typecheck_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr:
         ast.types.Type.Behaviour.Bool: {"!"},
     }
     # Handle static expressions
-    op_kind = node.expr.type.get_static_kind()
+    op_kind = node.expr.type.static_kind
     if op_kind is not ast.types.Type.Behaviour.Runtime:
         if node.op in static_ops.get(op_kind, set()):
             if expr := evaluate_static_unary(self, node):
-                static_type = expr.type.get_static()
+                assert expr.type
+                static_type = expr.type.literal
             else:
                 return node
     elif utils.is_unbound(node.expr.type):
@@ -53,7 +55,7 @@ def typecheck_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr:
         assert not (node.op not in magics), f"invalid unary operator '{node.op}'"
         result = ast.CallExpr(ast.DotExpr(node.expr, member=f"__{magics[node.op]}__"))
 
-    result = self.visit(result)
+    result = self.visit_expr(result)
     if static_type:
         result.type = static_type
     return result
@@ -67,25 +69,27 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
     Also evaluate static expressions. See @c evaluateStaticBinary for details.
     """
 
-    expects_bool = node.expected_type and node.expected_type.is_type(ast.types.Stdlib.Bool)
+    expects_bool = node.expected_type and node.expected_type == ast.types.Stdlib.Bool
     if expects_bool and node.op in {"&&", "||"}:
         node.lexpr.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
         node.rexpr.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
 
-    node.lexpr = self.visit(node.lexpr)
+    node.lexpr = self.visit_expr(node.lexpr)
+    assert node.type and node.lexpr.type
 
     # Static short-circuit
-    left_kind = node.lexpr.type.get_static_kind()
-    if left_kind is not ast.types.Type.Behaviour.Runtime and node.op in {"&&", "||"}:
+    left_kind = node.lexpr.type.static_kind
+    if not node.lexpr.type.is_runtime and node.op in {"&&", "||"}:
         truth = False
-        if b := node.lexpr.type.get_bool_static():
-            truth = b.value
-        elif s := node.lexpr.type.get_str_static():
-            truth = bool(s.value)
-        elif i := node.lexpr.type.get_int_static():
-            truth = bool(i.value)
+        if b := node.lexpr.type.bool:
+            truth = b
+        elif s := node.lexpr.type.str:
+            truth = bool(s)
+        elif i := node.lexpr.type.int:
+            truth = bool(i)
         else:
-            node.type.get_unbound().static_kind = ast.types.Type.Behaviour.Bool
+            assert node.type.unbound
+            node.type.unbound._static_kind = ast.types.Type.Behaviour.Bool
             return node
 
         ignore_right = (node.op == "&&" and not truth) or (node.op == "||" and truth)
@@ -93,9 +97,10 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
             short_result = ast.BoolExpr(truth) if expects_bool else node.lexpr
         else:
             short_result = ast.StmtExpr([ast.ExprStmt(node.lexpr)], expr=node.rexpr)
-        return self.visit(short_result)
+        return self.visit_expr(short_result)
 
-    node.rexpr = self.visit(node.rexpr)
+    node.rexpr = self.visit_expr(node.rexpr)
+    assert node.rexpr.type
 
     static_type = None
     # fmt: off
@@ -108,12 +113,9 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
         ast.types.Type.Behaviour.Bool: {"<", "<=", ">", ">=", "==", "!=", "&&", "||"},
     }
     # fmt: on
-    left_kind = node.lexpr.type.get_static_kind()
-    right_kind = node.rexpr.type.get_static_kind()
-    if (
-        left_kind is not ast.types.Type.Behaviour.Runtime
-        and right_kind is not ast.types.Type.Behaviour.Runtime
-    ):
+    if not (node.lexpr.type.is_runtime or node.lexpr.type.is_runtime):
+        left_kind = node.lexpr.type.static_kind
+        right_kind = node.rexpr.type.static_kind
         is_static = left_kind is right_kind and node.op in static_ops.get(left_kind, set())
         if (
             not is_static
@@ -124,7 +126,8 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
             is_static = True
         if is_static:
             if expr := evaluate_static_binary(self, node):
-                static_type = expr.type.get_static()
+                assert expr.type
+                static_type = expr.type.literal
             else:
                 return node
 
@@ -138,12 +141,11 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
         union_expr = ast.InstantiateExpr(
             ast.IdExpr(ast.types.Stdlib.Union), items=[node.lexpr, node.rexpr]
         )
-        transformed_union = self.visit(union_expr)
-        result = transformed_union
+        result = self.visit_expr(union_expr)
     elif result := transform_binary_simple(self, node):
         # Case: simple binary expressions
         pass
-    elif node.lexpr.type.get_unbound() or (node.op != "is" and node.rexpr.type.get_unbound()):
+    elif node.lexpr.type.unbound or (node.op != "is" and node.rexpr.type.unbound):
         # Case: types are unknown, so continue later
         return node
     elif node.op == "is":
@@ -155,8 +157,8 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
     elif result := transform_binary_magic(self, node):
         # Case: normal magic methods
         pass
-    elif node.lexpr.type.is_type(ast.types.Stdlib.Optional):
-        result = self.visit(
+    elif node.lexpr.type == ast.types.Stdlib.Optional:
+        result = self.visit_expr(
             ast.BinaryExpr(
                 ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), items=[node.lexpr]),
                 op=node.op,
@@ -167,10 +169,10 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
     else:
         raise TypecheckError(
             node,
-            f"unsupported operand type(s) for {node.op}: "
-            f"'{node.lexpr.type.pretty_string()}' and "
-            f"'{node.rexpr.type.pretty_string()}'",
+            f"unsupported operand type(s) for {node.op}: '{node.lexpr.type}' and '{node.rexpr.type}'",
         )
+
+    assert result
     if static_type:
         result.type = static_type
     return result
@@ -185,26 +187,27 @@ def typecheck_chainbinary(self: TypeVisitor, node: ast.ChainBinaryExpr) -> ast.N
     """
 
     assert len(node.exprs) >= 2
-    is_bool = isinstance(node.expected_type, ast.types.Type) and node.expected_type.is_type(
-        ast.types.Stdlib.Bool
+    is_bool = (
+        isinstance(node.expected_type, ast.types.Type)
+        and node.expected_type == ast.types.Stdlib.Bool
     )
     items = []
     prev = ""
-    for index in range(1, len(node.exprs)):
+    for idx in range(1, len(node.exprs)):
         if prev:
             left = ast.IdExpr(prev)
         else:
-            left = node.exprs[index - 1][1].clone()
+            left = node.exprs[idx - 1][1].clone()
         prev = self.ctx.generate_canonical_name("chain")
-        if index + 1 == len(node.exprs):
-            right = node.exprs[index][1].clone()
+        if idx + 1 == len(node.exprs):
+            right = node.exprs[idx][1].clone()
         else:
-            assignment = ast.AssignStmt(ast.IdExpr(prev), rhs=node.exprs[index][1].clone())
+            assignment = ast.AssignStmt(ast.IdExpr(prev), rhs=node.exprs[idx][1].clone())
             right = ast.StmtExpr([assignment], expr=ast.IdExpr(prev))
         items.append(
             ast.BinaryExpr(
                 left,
-                op=node.exprs[index][0],
+                op=node.exprs[idx][0],
                 rexpr=right,
                 expected_type=utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
                 if is_bool
@@ -212,16 +215,16 @@ def typecheck_chainbinary(self: TypeVisitor, node: ast.ChainBinaryExpr) -> ast.N
             )
         )
     final = items[-1]
-    for index in range(len(items) - 2, -1, -1):
+    for idx in range(len(items) - 2, -1, -1):
         final = ast.BinaryExpr(
-            items[index],
+            items[idx],
             op="&&",
             rexpr=final,
             expected_type=utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
             if is_bool
             else None,
         )
-    return self.visit(final)
+    return self.visit_expr(final)
 
 
 def find_ellipsis(self: TypeVisitor, expr: ast.Expr):
@@ -245,7 +248,7 @@ def find_ellipsis(self: TypeVisitor, expr: ast.Expr):
             yield from find_ellipsis(self, arg_expr)
 
 
-def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Node:
+def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Expr:
     """
     Typecheck pipe expressions.
     Each stage call `foo(x)` without an ellipsis will be transformed to `foo(..., x)`.
@@ -260,9 +263,9 @@ def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Node:
     def iterable_type(typ: ast.types.Type) -> ast.types.Type:
         """Return T if t is of type `Generator[T]`; otherwise just `type(t)`"""
         nonlocal has_generator
-        if typ.is_type("Generator"):
+        if typ == "Generator":
             has_generator = True
-            return typ[0]
+            return typ.require_cls[0]
         return typ
 
     # List of output types
@@ -271,8 +274,10 @@ def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Node:
     node.in_types.clear()
 
     # Process the pipeline head
-    node.items[0].expr = head = self.visit(node.items[0].expr)
+    node.items[0].expr = head = self.visit_expr(node.items[0].expr)
     input_type = head.type  # input type to the next stage
+    assert input_type
+
     node.in_types.append(input_type)
     input_type = iterable_type(input_type)
     done = head.done
@@ -295,7 +300,9 @@ def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Node:
                     break
             # No ellipses found? Prepend it as the first argument
             if ellipsis_pos == -1:
-                core.items.insert(0, ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+                core.items.insert(
+                    0, ast.CallExpr.Arg(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
+                )
                 ellipsis_pos = 0
         else:
             # Case: not a call. Convert it to a call with a single ellipsis
@@ -305,20 +312,23 @@ def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Node:
             else:
                 node.items[pipe_idx].expr = core
             ellipsis_pos = 0
+
         # Set the ellipsis type
-        ellipsis = core.items[ellipsis_pos].value
+        ellipsis = cast(ast.EllipsisExpr, core.items[ellipsis_pos].value)
         ellipsis.mode = ast.EllipsisExpr.Kind.Pipe
+
         # Don't unify unbound inType yet (it might become a generator that needs to be extracted)
         if not ellipsis.type:
             ellipsis.type = utils.instantiate_unbound(self.ctx)
-        if not input_type.get_unbound():
-            infer.unify(ellipsis.type, input_type)
+        assert input_type
+        if not input_type.unbound:
+            ellipsis.type |= input_type
 
         # Transform the call. Because a transformation might wrap the ellipsis in layers,
         # make sure to extract these layers and move them to the pipeline.
         # Example: `foo(...)` that is transformed to `foo(unwrap(...))` will become
         # `unwrap(...) |> foo(...)`
-        core = self.visit(core)
+        core = self.visit_expr(core)
         # input type to the next stage
         if enclosing_stmtexpr:
             enclosing_stmtexpr[-1].expr = core
@@ -340,27 +350,31 @@ def typecheck_pipe(self: TypeVisitor, node: ast.PipeExpr) -> ast.Node:
             continue
 
         if core.type:
-            infer.unify(node.items[pipe_idx].expr.type, core.type)
+            item_type = node.items[pipe_idx].expr.type
+            assert item_type
+            item_type |= core.type
         node.items[pipe_idx].expr = core
         input_type = core.type
-        if infer.realize(input_type) is None:
+        if infer.realize(self.ctx, input_type) is None:
             done = False
+        assert input_type
         node.in_types.append(input_type)
 
         # Do not extract the generator in the last stage of a pipeline
         if pipe_idx + 1 < len(node.items):
             input_type = iterable_type(input_type)
         pipe_idx += 1
-    infer.unify(
-        node.type,
-        utils.get_stdlib_type(self.ctx, ast.types.Stdlib.NoneType) if has_generator else input_type,
+
+    assert node.type
+    node.type |= (
+        utils.get_stdlib_type(self.ctx, ast.types.Stdlib.NoneType) if has_generator else input_type
     )
     if done:
         node.done = True
     return node
 
 
-def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Node:
+def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Expr:
     """
     Transform index expressions.
     @example
@@ -370,15 +384,15 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Node:
     expr.itemN or a sub-tuple if index is static (see transformStaticTupleIndex()),
     """
 
+    assert node.type
     match node:
         case ast.IndexExpr(
             expr=ast.IdExpr(value="Literal" | "Static"),
             index=ast.IdExpr(value="int" | "str" | "bool"),
         ):
             # Special case: static types.
-            infer.unify(
-                node.type,
-                utils.instantiate_unbound(self.ctx, static_kind=ast.get_static_generic(node)),
+            node.type |= utils.instantiate_unbound(
+                self.ctx, static_kind=ast.get_static_generic(node)
             )
             node.done = True
             return node
@@ -387,7 +401,7 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Node:
         case ast.IndexExpr(expr=ast.IdExpr("tuple")):
             node.expr.value = ast.types.Stdlib.Tuple
 
-    node.expr = self.visit(node.expr)
+    node.expr = self.visit_expr(node.expr)
 
     # IndexExpr[i1, ..., iN] is internally represented as
     # IndexExpr[TupleExpr[i1, ..., iN]] for N > 1
@@ -396,14 +410,14 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Node:
     for idx, item in enumerate(items):
         if utils.is_type_expr(node.expr) and isinstance(item, ast.ListExpr):
             item = ast.InstantiateExpr(ast.IdExpr(ast.types.Stdlib.Tuple), items=list(item.items))
-        items[idx] = self.visit(item)
+        items[idx] = self.visit_expr(item)
     orig_index = node.index.clone()
     if utils.is_type_expr(node.expr):
         # Special case: `A[[A, B], C]` -> `A[Tuple[A, B], C]` (e.g., in `Function[...]`)
-        return self.visit(ast.InstantiateExpr(node.expr, items=items))
+        return self.visit_expr(ast.InstantiateExpr(node.expr, items=items))
 
     node.index = items[0] if not is_tuple and len(items) == 1 else ast.TupleExpr(items)
-    expr_type = node.expr.get_class_type()
+    expr_type = node.expr.cls
     if expr_type is None:
         return node  # Wait until the type becomes known
 
@@ -417,7 +431,7 @@ def typecheck_index(self: TypeVisitor, node: ast.IndexExpr) -> ast.Node:
 
     # Case: normal __getitem__
     getitem_call = ast.CallExpr(ast.DotExpr(node.expr, member="__getitem__"), items=[node.index])
-    return self.visit(getitem_call)
+    return self.visit_expr(getitem_call)
 
 
 def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.Node:
@@ -427,24 +441,25 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
     Instantiate(foo, [bar]) -> Id("foo[bar]")
     """
 
-    node.expr = self.visit(node.expr, enforce_type=True)
+    node.expr = self.visit_expr(node.expr, enforce_type=True)
     types_count = len(node.items)
     root_type = utils.extract_type(self.ctx, node.expr)
-    if root_type.is_type(ast.types.Stdlib.Tuple):
+    if root_type == ast.types.Stdlib.Tuple:
         if node.items:
-            first = node.items[0] = self.visit(node.items[0])
-            if first.type and first.type.get_static_kind() is ast.types.Type.Behaviour.Int:
+            first = node.items[0] = self.visit_expr(node.items[0])
+            if first.type and first.type.static_kind is ast.types.Type.Behaviour.Int:
                 tail = ast.InstantiateExpr(
                     ast.IdExpr(ast.types.Stdlib.Tuple), items=list(node.items[1:])
                 )
                 ntuple = ast.InstantiateExpr(ast.IdExpr("__NTuple__"), items=[first, tail])
-                return self.visit(ntuple)
-        typ = utils.instantiate(self.ctx, classes.generate_tuple(self, types_count))
+                return self.visit_expr(ntuple)
+        typ = utils.instantiate(self.ctx, classes.generate_tuple(self.ctx, types_count))
     else:
         typ = utils.instantiate(self.ctx, root_type, info=node.expr.info)
 
-    assert typ.get_class(), f"unknown type: {node.expr}"
-    if not typ.get_union() and types_count != len(typ.generics):
+    typ = typ.cls
+    assert typ, f"unknown type: {node.expr}"
+    if not typ.union and types_count != len(typ):
         raise TypecheckError(
             node,
             f"{utils.get_user_facing_name(self.ctx, typ.name)} takes "
@@ -452,105 +467,101 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
         )
 
     result = None
-    match node.expr, bool(typ.get_union()):
+    assert node.type
+    match node.expr, bool(typ.union):
         case ast.IdExpr(value=ast.types.Stdlib.CallableTrait), _:
             # Case: CallableTrait[...] trait instantiation
             # CallableTrait error checking.
             trait_types = []
             for idx, param in enumerate(node.items):
-                node.items[idx] = self.visit(param, enforce_type=True)
-                param_type = utils.extract_type(self.ctx, nodes.items[idx])
-                if param_type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
+                node.items[idx] = self.visit_expr(param, enforce_type=True)
+                param_type = utils.extract_type(self.ctx, node.items[idx])
+                if not param_type.is_runtime:
                     raise TypecheckError(node, "CallableTrait cannot take static types")
                 trait_types.append(param_type)
             unbound = utils.instantiate_unbound(
                 self.ctx, trait=ast.types.CallableTrait(cache=self.ctx.cache, args=trait_types)
             )
-            infer.unify(node.type, utils.instantiate_type_var(self.ctx, unbound))
+            node.type |= utils.instantiate_type_var(self.ctx, unbound)
         case ast.IdExpr(value=ast.types.Stdlib.TypeTrait), _:
             assert node.items
             # Case: TypeTrait[...] trait instantiation
-            node.items[0] = self.visit(node.items[0], enforce_type=True)
-            unbound = utils.instantiate_unbound(
+            node.items[0] = self.visit_expr(node.items[0], enforce_type=True)
+            node.type |= utils.instantiate_unbound(
                 self.ctx,
                 trait=ast.types.TypeTrait(
-                    cache=self.ctx.cache, type=utils.extract_type(self.ctx, node.items[0])
+                    utils.extract_type(self.ctx, node.items[0]), cache=self.ctx.cache
                 ),
             )
-            infer.unify(node.type, unbound)
         case _, True:  # union
             optional = False
-            union_types = []
-            solo_type_expression = None
+            union_types: List[ast.types.Type] = []
+            solo_type_expr = None
             for idx, param in enumerate(node.items):
-                node.items[idx] = self.visit(param, enforce_type=True)
+                node.items[idx] = self.visit_expr(param, enforce_type=True)
                 param_type = utils.extract_type(self.ctx, node.items[idx])
-                optional = optional or param_type.is_type(ast.types.Stdlib.Optional)
-                optional = optional or param_type.is_type(ast.types.Stdlib.NoneType)
-                if param_type.get_union():
-                    for generic in param_type[0].get_class().generics:
-                        union_types.append(generic.type)
-                        optional = optional or generic.type.is_type(ast.types.Stdlib.Optional)
-                elif not param_type.is_type(ast.types.Stdlib.NoneType):
+                optional = optional or param_type == ast.types.Stdlib.Optional
+                optional = optional or param_type == ast.types.Stdlib.NoneType
+                if union := param_type.union:
+                    for generic in union[0].require_cls:
+                        union_types.append(generic)
+                        optional = optional or generic == ast.types.Stdlib.Optional
+                elif param_type != ast.types.Stdlib.NoneType:
                     union_types.append(param_type)
-                    solo_type_expression = node.items[idx]
+                    solo_type_expr = node.items[idx]
             if optional:
                 # A | B | ... | None -> Optional[A] | Optional[B] | ...
                 for idx, union_type in enumerate(union_types):
-                    if not union_type.is_type(ast.types.Stdlib.Optional):
+                    if union_type != ast.types.Stdlib.Optional:
                         union_types[idx] = utils.instantiate(
-                            self.ctx,
-                            utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Optional),
-                            [union_type],
+                            self.ctx, ast.types.Stdlib.Optional, [union_type]
                         )
-                if solo_type_expression:
-                    solo_type_expression = self.visit(
+                if solo_type_expr:
+                    solo_type_expr = self.visit_expr(
                         ast.InstantiateExpr(
-                            ast.IdExpr(ast.types.Stdlib.Optional), items=[solo_type_expression]
+                            ast.IdExpr(ast.types.Stdlib.Optional), items=[solo_type_expr]
                         )
                     )
-            union_types = {}
+
+            union_dict = {}
             for union_type in union_types:
-                union_types.setdefault(union_type.realized_name(), union_type)
-            if not union_types:
+                union_dict.setdefault(union_type.realized_name(), union_type)
+            if not union_dict:
                 # All nones: None | None ...
-                result = self.visit(ast.IdExpr(ast.types.Stdlib.NoneType))
-                infer.unify(node.type, none_identifier.type)
-            elif len(union_types) == 1:
+                result = self.visit_expr(ast.IdExpr(ast.types.Stdlib.NoneType))
+                node.type |= result.type
+            elif len(union_dict) == 1:
                 # Union[T] = T. Note that we do not check for the same types here...
-                assert solo_type_expression is not None, f"type not detected: {node.to_string()}"
-                result = solo_type_expression
-                infer.unify(node.type, result.type)
+                assert solo_type_expr is not None, f"type not detected: {node}"
+                result = solo_type_expr
+                node.type |= result.type
             else:
                 tuple_type = utils.instantiate(
                     self.ctx,
-                    classes.generate_tuple(self, len(union_types)),
-                    [v for _, v in sorted(union_types.items())],
+                    classes.generate_tuple(self.ctx, len(union_dict)),
+                    [v for _, v in sorted(union_dict.items())],
                 )
-                infer.unify(typ.get_union()[0], tuple_type)
-                infer.unify(node.type, utils.instantiate_type_var(self.ctx, typ))
+                union_tuple = typ[0]
+                union_tuple |= tuple_type
+                node.type |= utils.instantiate_type_var(self.ctx, typ)
         case _:
             for idx, param in enumerate(node.items):
-                node.items[idx] = self.visit(param, enforce_type=True)
+                node.items[idx] = self.visit_expr(param, enforce_type=True)
                 param_type = utils.instantiate(
                     self.ctx,
                     utils.extract_type(self.ctx, node.items[idx]),
                     info=node.items[idx].info,
                 )
-                if (
-                    node.items[idx].type
-                    and node.items[idx].type.get_static_kind()
-                    is not generics[idx].type.get_static_kind()
-                ):
+                if (t := node.items[idx].type) and t.static_kind is not typ[idx].static_kind:
                     # `None` -> `NoneType`
                     if isinstance(node.items[idx], ast.NoneExpr):
-                        node.items[idx] = self.visit(node.items[idx], enforce_type=True)
+                        node.items[idx] = self.visit_expr(node.items[idx], enforce_type=True)
                     if not utils.is_type_expr(node.items[idx]):
                         raise TypecheckError(node, "expected type expression")
-                infer.unify(param_type, generics[idx].type)
-            infer.unify(node.type, utils.instantiate_type_var(self.ctx, typ))
+                param_type |= typ[idx]
+            node.type |= utils.instantiate_type_var(self.ctx, typ)
 
-    realized = infer.realize(node.type)
+    realized = infer.realize(self.ctx, node.type)
     if realized and result is None:
         # If the type is realizable, use the realized name instead of instantiation
         # (e.g. use Id("Ptr[byte]") instead of Instantiate(Ptr, {byte}))
@@ -570,14 +581,15 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                     type_expr=(None if not param.type else utils.get_param_type(param.type)),
                 )
                 front = self.visit(assignment)
-                node.items[idx] = self.visit(ast.IdExpr(name), enforce_type=True)
+                node.items[idx] = self.visit_expr(ast.IdExpr(name), enforce_type=True)
                 prepends.append(front)
         if prepends:
-            result = self.visit(ast.StmtExpr(prepends, expr=result or None))
+            assert result
+            result = self.visit_expr(ast.StmtExpr(prepends, expr=result))
     return node if result is None else result
 
 
-def typecheck_slice(self: TypeVisitor, node: ast.SliceExpr) -> ast.Node:
+def typecheck_slice(self: TypeVisitor, node: ast.SliceExpr) -> ast.Expr:
     """
     Transform a slice expression.
     @example
@@ -589,7 +601,7 @@ def typecheck_slice(self: TypeVisitor, node: ast.SliceExpr) -> ast.Node:
     stop = none_call() if node.stop is None else node.stop
     step = none_call() if node.step is None else node.step
     call = ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Slice), items=[start, stop, step])
-    return self.visit(call)
+    return self.visit_expr(call)
 
 
 def evaluate_static_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr | None:
@@ -600,38 +612,40 @@ def evaluate_static_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr | 
     """
 
     op_type = node.expr.type
-    # Case: static strings
-    if op_type.get_static_kind() is ast.types.Type.Behaviour.String:
+    assert node.type and op_type
+
+    if op_type.static_kind is ast.types.Type.Behaviour.String:
+        # Case: static strings
         if node.op == "!":
             if op_type.can_realize():
-                return self.visit(ast.IntExpr(int(not utils.get_str_literal(op_type))))
-            if unbound := node.type.get_unbound():
+                return self.visit(ast.IntExpr(int(op_type.require_str == "")))
+            if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
-                unbound.static_kind = ast.types.Type.Behaviour.Int
+                unbound._static_kind = ast.types.Type.Behaviour.Int
         return None
-    # Case: static bools
-    if op_type.get_static_kind() is ast.types.Type.Behaviour.Bool:
+    elif op_type.static_kind is ast.types.Type.Behaviour.Bool:
+        # Case: static bools
         if node.op == "!":
             if op_type.can_realize():
-                return self.visit(ast.BoolExpr(value=not utils.get_bool_literal(op_type)))
-            if unbound := node.type.get_unbound():
+                return self.visit(ast.BoolExpr(value=not op_type.require_bool))
+            if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
-                unbound.static_kind = ast.types.Type.Behaviour.Bool
+                unbound._static_kind = ast.types.Type.Behaviour.Bool
         return None
-    # Case: static integers
-    if node.op in {"-", "+", "!", "~"}:
+    elif node.op in {"-", "+", "!", "~"}:
+        # Case: static integers
         if op_type.can_realize():
-            value = utils.get_int_literal(op_type)
+            value = op_type.require_int
             if node.op == "-":
                 value = -value
             elif node.op == "~":
                 value = ~value
             elif node.op == "!":
                 value = int(not bool(value))
-            return self.visit(ast.BoolExpr(value) if node.op == "!" else ast.IntExpr(value))
-        if unbound := node.type.get_unbound():
+            return self.visit(ast.BoolExpr(bool(value)) if node.op == "!" else ast.IntExpr(value))
+        if unbound := node.type.unbound:
             # Cannot be evaluated yet: just set the type
-            unbound.static_kind = (
+            unbound._static_kind = (
                 ast.types.Type.Behaviour.Bool if node.op == "!" else ast.types.Type.Behaviour.Int
             )
     return None
@@ -664,39 +678,33 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
 
     left_type = node.lexpr.type
     right_type = node.rexpr.type
-    # Case: static strings
-    if right_type.get_static_kind() is ast.types.Type.Behaviour.String:
+    assert node.type and left_type and right_type
+
+    if right_type.static_kind is ast.types.Type.Behaviour.String:
+        # Case: static strings
         if node.op == "+":
             # `"a" + "b"` -> `"ab"`
-            if left_type.get_str_static() and right_type.get_str_static():
-                value = utils.get_str_literal(left_type) + utils.get_str_literal(right_type)
-                return self.visit(ast.StringExpr(value))
-            if unbound := node.type.get_unbound():
+            if (lv := left_type.str) and (rv := right_type.str):
+                return self.visit(ast.StringExpr(lv + rv))
+            if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
-                unbound.static_kind = ast.types.Type.Behaviour.String
+                unbound._static_kind = ast.types.Type.Behaviour.String
         else:
             # `"a" == "b"` -> `False` (also handles `!=`)
-            if left_type.get_str_static() and right_type.get_str_static():
-                equal = utils.get_str_literal(left_type) == utils.get_str_literal(right_type)
-                transformed = self.visit(ast.BoolExpr(equal if node.op == "==" else not equal))
+            if (lv := left_type.str) and (rv := right_type.str):
+                eq = lv == rv
+                transformed = self.visit(ast.BoolExpr(eq if node.op == "==" else not eq))
                 return transformed
-            if unbound := node.type.get_unbound():
+            if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
-                unbound.static_kind = ast.types.Type.Behaviour.Bool
+                unbound._static_kind = ast.types.Type.Behaviour.Bool
         return None
 
-    # Case: static integers
-    if left_type.get_static() and right_type.get_static():
-        value = (
-            utils.get_int_literal(left_type)
-            if left_type.get_int_static()
-            else int(utils.get_bool_literal(left_type))
-        )
-        right = (
-            utils.get_int_literal(right_type)
-            if right_type.get_int_static()
-            else int(utils.get_bool_literal(right_type))
-        )
+    if left_type.literal and right_type.literal:
+        # Case: static integers
+
+        value = int(left_type.bool) if left_type.bool else left_type.require_int
+        right = int(right_type.bool) if right_type.bool else right_type.require_int
         if node.op == "<":
             value = int(value < right)
         elif node.op == "<=":
@@ -736,18 +744,18 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
         else:
             assert False, f"unknown static operator {node.op}"
         comparisons = {"==", "!=", "<", "<=", ">", ">="}
-        both_bools = left_type.get_bool_static() and right_type.get_bool_static()
+        both_bools = left_type.bool and right_type.bool
         literal: ast.Expr = (
-            ast.BoolExpr(value)
+            ast.BoolExpr(bool(value))
             if node.op in comparisons or (node.op in {"&&", "||"} and both_bools)
             else ast.IntExpr(value)
         )
         return self.visit(literal)
 
-    if unbound := node.type.get_unbound():
+    if unbound := node.type.unbound:
         comparisons = {"==", "!=", "<", "<=", ">", ">="}
-        both_bools = left_type.get_bool_static() and right_type.get_bool_static()
-        unbound.static_kind = (
+        both_bools = left_type.bool and right_type.bool
+        unbound._static_kind = (
             ast.types.Type.Behaviour.Bool
             if node.op in comparisons or (node.op in {"&&", "||"} and both_bools)
             else ast.types.Type.Behaviour.Int
@@ -768,7 +776,7 @@ def transform_binary_simple(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr
 
     # Case: simple transformations
     if expr.op == "&&":
-        if expr.expected_type and expr.expected_type.is_type(ast.types.Stdlib.Bool):
+        if expr.expected_type and expr.expected_type == ast.types.Stdlib.Bool:
             result = ast.IfExpr(
                 expr.lexpr,
                 ast.CallExpr(ast.DotExpr(expr.rexpr, member="__bool__")),
@@ -781,7 +789,7 @@ def transform_binary_simple(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr
             )
             result.expected_type = utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Union)
     elif expr.op == "||":
-        if expr.expected_type and expr.expected_type.is_type(ast.types.Stdlib.Bool):
+        if expr.expected_type and expr.expected_type == ast.types.Stdlib.Bool:
             result = ast.IfExpr(
                 expr.lexpr,
                 ast.BoolExpr(True),
@@ -823,6 +831,7 @@ def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | N
     None` cаses as well. See inside for details.
     """
 
+    assert expr.type
     assert expr.op == "is", "not an is binary expression"
     has_side_left = utils.has_side_effect(expr.lexpr)
     has_side_right = utils.has_side_effect(expr.rexpr)
@@ -834,46 +843,45 @@ def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | N
         if has_side_right:
             statements.append(ast.ExprStmt(expr.rexpr))
         wrapped = ast.StmtExpr(statements, expr=value) if statements else value
-        return self.visit(wrapped)
+        return self.visit_expr(wrapped)
 
     # Case: `is None` expressions
     if isinstance(expr.rexpr, ast.NoneExpr):
         left_type = utils.extract_class_type(self.ctx, expr.lexpr)
-        if left_type.is_type(ast.types.Stdlib.NoneType):
+        if left_type == ast.types.Stdlib.NoneType:
             return wrap_side(ast.BoolExpr(True))
-        if not left_type.is_type(ast.types.Stdlib.Optional):
+        if left_type != ast.types.Stdlib.Optional:
             # lhs is not optional: `return False`
             return wrap_side(ast.BoolExpr(False))
-        final_type = left_type
-        while final_type[0].is_type(ast.types.Stdlib.Optional):
-            final_type = final_type[0].get_class()
-        final_type = final_type[0]
-        if final_type.get_class() is None:
-            # Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
-            infer.unify(
-                expr.type,
-                utils.instantiate_unbound(self.ctx, static_kind=ast.types.Type.Behaviour.Bool),
+
+        # Special case: Optional[Optional[... Optional[NoneType]]...] == NoneType
+        final_type: ast.types.Class | None = left_type
+        while final_type and final_type[0] == ast.types.Stdlib.Optional:
+            final_type = final_type[0].cls
+        assert final_type
+        final_type = final_type[0].cls
+        if not final_type:
+            expr.type |= utils.instantiate_unbound(
+                self.ctx, static_kind=ast.types.Type.Behaviour.Bool
             )
             return None
-        if final_type.is_type(ast.types.Stdlib.NoneType):
+        if final_type == ast.types.Stdlib.NoneType:
             return wrap_side(ast.BoolExpr(True))
 
         # lhs is optional: `return lhs.__has__().__invert__()`
-        link = expr.type.get_unbound()
-        if link and expr.type.get_static_kind() is not ast.types.Type.Behaviour.Runtime:
-            link.static_kind = ast.types.Type.Behaviour.Runtime
-        return self.visit(
+        link = expr.type.unbound
+        if link and not expr.type.is_runtime:
+            link._static_kind = ast.types.Type.Behaviour.Runtime
+        return self.visit_expr(
             ast.CallExpr(
-                ast.DotExpr(
-                    ast.CallExpr(ast.DotExpr(expr.lexpr, member="__has__")), member="__invert__"
-                )
+                ast.DotExpr(ast.CallExpr(ast.DotExpr(expr.lexpr, "__has__")), "__invert__")
             )
         )
 
     # Check the type equality (operand types and __raw__ pointers must match).
     if utils.is_type_expr(expr.lexpr) and utils.is_type_expr(expr.rexpr):
-        left_type = utils.extract_type(self.ctx, expr.lexpr).get_class()
-        right_type = utils.extract_type(self.ctx, expr.rexpr).get_class()
+        left_type = utils.extract_type(self.ctx, expr.lexpr).cls
+        right_type = utils.extract_type(self.ctx, expr.rexpr).cls
         if left_type is None or right_type is None:
             return None
         return wrap_side(
@@ -882,22 +890,23 @@ def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | N
             )
         )
 
-    left_type = infer.realize(expr.lexpr.type)
-    right_type = infer.realize(expr.rexpr.type)
+    left_type = infer.realize(self.ctx, expr.lexpr.type)
+    right_type = infer.realize(self.ctx, expr.rexpr.type)
     if left_type is None or right_type is None:
         # Types not known: return early
-        infer.unify(expr.type, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool))
+        expr.type |= utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Bool)
         return None
 
-    if not left_type.is_record() and not right_type.is_record():
+    left_type, right_type = left_type.require_cls, right_type.require_cls
+    if not left_type.is_tuple and not right_type.is_tuple:
         # Both reference types: `return type._is(lhs, rhs)`
         result = ast.CallExpr(
             ast.IdExpr(ast.types.mangle(cls="type", func="_is")), items=[expr.lexpr, expr.rexpr]
         )
-    elif left_type.is_type(ast.types.Stdlib.Optional):
+    elif left_type == ast.types.Stdlib.Optional:
         # lhs is optional: `return lhs.__is_optional__(rhs)`
         result = ast.CallExpr(ast.DotExpr(expr.lexpr, member="__is_optional__"), items=[expr.rexpr])
-    elif right_type.is_type(ast.types.Stdlib.Optional):
+    elif right_type == ast.types.Stdlib.Optional:
         # rhs is optional: `return rhs.__is_optional__(lhs)`
         result = ast.CallExpr(ast.DotExpr(expr.rexpr, member="__is_optional__"), items=[expr.lexpr])
     elif left_type.realized_name() != right_type.realized_name():
@@ -958,7 +967,7 @@ def transform_binary_inplace_magic(
     """
 
     magic, _ = get_magic(expr.op)
-    left_type = expr.lexpr.get_class_type()
+    left_type = expr.lexpr.cls
     assert left_type is not None, "lhs type not known"
 
     method = None
@@ -979,7 +988,7 @@ def transform_binary_inplace_magic(
             self.ctx, left_type, f"__i{magic}__", [left_type, expr.rexpr.type]
         )
     if method:
-        result = ast.CallExpr(ast.IdExpr(method.get_func_name()), items=[expr.lexpr, expr.rexpr])
+        result = ast.CallExpr(ast.IdExpr(method.func_name), items=[expr.lexpr, expr.rexpr])
         return self.visit(result)
 
     return None
@@ -993,62 +1002,56 @@ def transform_binary_magic(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr 
     """
 
     magic, right_magic = get_magic(expr.op)
-    left_type = expr.lexpr.type
-    right_type = expr.rexpr.type
-    if not left_type.is_type("pyobj") and right_type.is_type("pyobj"):
+    lt, rt = expr.lexpr.type, expr.rexpr.type
+    assert lt and rt
+    if lt != "pyobj" and rt == "pyobj":
         # Special case: `obj op pyobj` -> `rhs.__rmagic__(lhs)` on lhs
         # Assumes that pyobj implements all left and right magics
-        left_name = utils.get_temporary_var(self.ctx, "l")
-        right_name = utils.get_temporary_var(self.ctx, "r")
-        replacement = ast.StmtExpr(
-            [
-                ast.AssignStmt(ast.IdExpr(left_name), rhs=expr.lexpr),
-                ast.AssignStmt(ast.IdExpr(right_name), rhs=expr.rexpr),
-            ],
-            expr=ast.CallExpr(
-                ast.DotExpr(ast.IdExpr(right_name), member=f"__{right_magic}__"),
-                items=[ast.IdExpr(left_name)],
-            ),
-        )
-    elif left_type.get_union():
-        # Special case: `union op obj` -> `union.__magic__(rhs)`
-        replacement = ast.CallExpr(
-            ast.DotExpr(expr.lexpr, member=f"__{magic}__"), items=[expr.rexpr]
-        )
-    else:
-        left_type = left_type.get_class()
-        right_type = right_type.get_class()
-        # Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
-        if left_type and (
-            method := utils.best_method(
-                self.ctx, left_type, f"__{magic}__", [left_type, right_type]
-            )
-        ):
-            # Normal case: `__magic__(lhs, rhs)`
-            result = ast.CallExpr(
-                ast.IdExpr(method.get_func_name()), items=[expr.lexpr, expr.rexpr]
-            )
-        elif right_type and (
-            method := utils.best_method(
-                self.ctx, right_type, f"__{right_magic}__", [right_type, left_type]
-            )
-        ):
-            # Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
-            left_name = utils.get_temporary_var(self.ctx, "l")
-            right_name = utils.get_temporary_var(self.ctx, "r")
-            result = ast.StmtExpr(
+        l_var = utils.get_temporary_var(self.ctx, "l")
+        r_var = utils.get_temporary_var(self.ctx, "r")
+        return self.visit_expr(
+            ast.StmtExpr(
                 [
-                    ast.AssignStmt(ast.IdExpr(left_name), rhs=expr.lexpr),
-                    ast.AssignStmt(ast.IdExpr(right_name), rhs=expr.rexpr),
+                    ast.AssignStmt(ast.IdExpr(l_var), rhs=expr.lexpr),
+                    ast.AssignStmt(ast.IdExpr(r_var), rhs=expr.rexpr),
                 ],
                 expr=ast.CallExpr(
-                    ast.IdExpr(method.get_func_name()),
-                    items=[ast.IdExpr(right_name), ast.IdExpr(left_name)],
+                    ast.DotExpr(ast.IdExpr(r_var), member=f"__{right_magic}__"),
+                    items=[ast.IdExpr(l_var)],
                 ),
+            )
+        )
+    elif lt.union:
+        # Special case: `union op obj` -> `union.__magic__(rhs)`
+        return self.visit_expr(
+            ast.CallExpr(ast.DotExpr(expr.lexpr, member=f"__{magic}__"), items=[expr.rexpr])
+        )
+    else:
+        lt = lt.cls
+        rt = rt.cls
+        # Normal operations: check if `lhs.__magic__(lhs, rhs)` exists
+        if lt and (method := utils.best_method(self.ctx, lt, f"__{magic}__", [lt, rt])):
+            # Normal case: `__magic__(lhs, rhs)`
+            return self.visit_expr(
+                ast.CallExpr(ast.IdExpr(method.func_name), items=[expr.lexpr, expr.rexpr])
+            )
+        elif rt and (method := utils.best_method(self.ctx, rt, f"__{right_magic}__", [rt, lt])):
+            # Right-side magics: check if `rhs.__rmagic__(rhs, lhs)` exists
+            l_var = utils.get_temporary_var(self.ctx, "l")
+            r_var = utils.get_temporary_var(self.ctx, "r")
+            return self.visit_expr(
+                ast.StmtExpr(
+                    [
+                        ast.AssignStmt(ast.IdExpr(l_var), rhs=expr.lexpr),
+                        ast.AssignStmt(ast.IdExpr(r_var), rhs=expr.rexpr),
+                    ],
+                    expr=ast.CallExpr(
+                        ast.IdExpr(method.func_name), [ast.IdExpr(r_var), ast.IdExpr(l_var)]
+                    ),
+                )
             )
         else:
             return None
-    return self.visit(result)
 
 
 def transform_static_tuple_index(
@@ -1064,16 +1067,17 @@ def transform_static_tuple_index(
     Works only on normal tuples and partial functions.
     """
 
-    is_static_str = expr.type.get_static_kind() is ast.types.Type.Behaviour.String
+    assert expr.type
+    is_static_str = expr.type.static_kind is ast.types.Type.Behaviour.String
     if is_static_str and not expr.type.can_realize():
         return True, None
     if not is_static_str:
-        if not tuple_type.is_record():
+        if not tuple_type.is_tuple:
             return False, None
-        if not tuple_type.is_type(ast.types.Stdlib.Tuple):
-            if tuple_type.is_type(ast.types.Stdlib.Optional):
-                if new_tuple := tuple_type[0].get_class():
-                    unwrapped = self.visit(
+        if tuple_type != ast.types.Stdlib.Tuple:
+            if tuple_type == ast.types.Stdlib.Optional:
+                if new_tuple := tuple_type[0].cls:
+                    unwrapped = self.visit_expr(
                         ast.CallExpr(ast.IdExpr(ast.types.Stdlib.OptionalUnwrap), items=[expr])
                     )
                     return transform_static_tuple_index(self, new_tuple, unwrapped, index)
@@ -1084,13 +1088,14 @@ def transform_static_tuple_index(
         """Extract the static integer value from expression"""
         if value is None:
             return True, default
-        result = self.visit(value.clone())
-        if static := result.type.get_int_static():
-            return True, static.value
+        result = self.visit_expr(value.clone())
+        assert result.type
+        if (i := result.type.int) is not None:
+            return True, i
         return False, default
 
-    str_value = utils.get_str_literal(expr.type) if is_static_str else ""
-    class_fields = [] if is_static_str else utils.get_class_fields(tuple_type)
+    str_value = expr.type.require_str if is_static_str else ""
+    class_fields = [] if is_static_str else utils.get_class_fields(self.ctx, tuple_type)
     size = len(str_value) if is_static_str else len(class_fields)
     start, stop, step = 0, size, 1
     multiple = False
@@ -1137,11 +1142,11 @@ def transform_static_tuple_index(
     for idx in range(start, stop, step):
         if idx < 0 or idx >= size:
             raise TypecheckError(
-                index,
+                idx,
                 f"tuple index out of range (expected 0..{size - 1}, got instead {idx})",
             )
         tuple_items.append(ast.DotExpr(cast(ast.Expr, name.clone()), member=class_fields[idx].name))
-    classes.generate_tuple(self, len(tuple_items))
+    classes.generate_tuple(self.ctx, len(tuple_items))
     result = ast.StmtExpr(
         [assignment],
         expr=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Tuple), items=tuple_items),
@@ -1149,23 +1154,23 @@ def transform_static_tuple_index(
     return True, self.visit(result)
 
 
-def translate_index(self: TypeVisitor, index: int, length: int, clamp: bool = False):
+def translate_index(self: TypeVisitor, idx: int, length: int, clamp: bool = False):
     """
     Follow Python indexing rules for static tuple indices.
     Taken from https://github.com/python/cpython/blob/main/Objects/sliceobject.c.
     """
 
-    if index < 0:
-        index += length
+    if idx < 0:
+        idx += length
     if clamp:
-        index = max(index, 0)
-        index = min(index, length)
-    elif index < 0 or index >= length:
+        idx = max(idx, 0)
+        idx = min(idx, length)
+    elif idx < 0 or idx >= length:
         raise TypecheckError(
             self.ctx.node_stack[-1],
-            f"tuple index out of range (expected 0..{length - 1}, got instead {index})",
+            f"tuple index out of range (expected 0..{length - 1}, got instead {idx})",
         )
-    return index
+    return idx
 
 
 def slice_adjust_indices(

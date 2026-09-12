@@ -104,7 +104,7 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Stmt:
             if not node.has(ast.Attr.TryPyVar):
                 # Transform python.Error exceptions
                 node.set(ast.Attr.TryPyVar, utils.get_temporary_var(self.ctx, "pyexc"))
-            py_var = node.get(ast.Attr.TryPyVar, "")
+            py_var = node.get(ast.Attr.TryPyVar, str, "")
             if catch.var:
                 catch.suite = ast.SuiteStmt(
                     ast.AssignStmt(
@@ -126,7 +126,7 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Stmt:
             if not node.has(ast.Attr.TryPyVar):
                 # Transform PyExc exceptions
                 node.set(ast.Attr.TryPyVar, utils.get_temporary_var(self.ctx, "pyexc"))
-            py_var = str(node.attributes[ast.Attr.TryPyVar])
+            py_var = node.get(ast.Attr.TryPyVar, str, "")
             if catch.var:
                 catch.suite = ast.SuiteStmt(
                     ast.AssignStmt(ast.IdExpr(catch.var), rhs=ast.IdExpr(py_var)),
@@ -155,7 +155,7 @@ def typecheck_try(self: TypeVisitor, node: ast.TryStmt) -> ast.Stmt:
 
     if python_catch_body.items:
         # Process PyError catches
-        py_var = node.get(ast.Attr.TryPyVar, "")
+        py_var = node.get(ast.Attr.TryPyVar, str, "")
         python_catch_body.add(ast.ThrowStmt())
         python_exception = self.visit_expr(ast.IdExpr(ast.types.Stdlib.PyError), enforce_type=True)
         catch = ast.TryStmt.Except(python_exception, var=py_var, suite=python_catch)

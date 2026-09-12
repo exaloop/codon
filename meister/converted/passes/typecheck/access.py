@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ....bridge import List, Tuple, cast
 from ... import ast, cache
 from ...error import TypecheckError
-from . import call, function, infer, utils
+from . import function, infer, utils
 from .ctx import Item
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ def typecheck_id(self: TypeVisitor, node: ast.IdExpr) -> ast.Expr:
     node.value = value.canonical
 
     # Set up type
-    infer.unify(node.type, utils.instantiate(self.ctx, value.type))
+    node.type |= utils.instantiate(self.ctx, value.type)
     if fn_type := node.type.func:
         # resolve overloads
         node.value = fn_type.func_name
@@ -211,7 +211,7 @@ def access_attribute(
         if infer.realize(self.ctx, expr.type):
             items = [
                 cast(ast.Expr, ast.IdExpr(base.realized_name()))
-                for base in call.get_mro(self, expr_typ)
+                for base in utils.get_mro(self.ctx, expr_typ)
             ]
             return wrap_side(ast.TupleExpr(items)), True
         return None, True
@@ -499,7 +499,7 @@ def get_dispatch(self: TypeVisitor, fn: str) -> ast.types.Function:
     name = f"{fn}{cache.FN_DISPATCH_SUFFIX}"
     overloaded_fn = utils.get_function(self.ctx, overloads[0])
     assert overloaded_fn and overloaded_fn.ast and overloaded_fn.type
-    parent_cls = overloaded_fn.ast.get(ast.Attr.ParentClass, "")
+    parent_cls = overloaded_fn.ast.get(ast.Attr.ParentClass, str)
     # Root function name used for calling
     root = (
         ast.DotExpr(ast.IdExpr(parent_cls), member=utils.get_unmangled_name(self.ctx, fn))
@@ -608,7 +608,7 @@ def get_class_member(
     if not utils.is_type_expr(expr):
         if class_member := utils.find_member(self.ctx, class_type, member):
             if typ and class_member.type:
-                infer.unify(typ, utils.instantiate(self.ctx, class_member.type, class_type))
+                typ |= utils.instantiate(self.ctx, class_member.type, class_type)
             cls_data = utils.get_class(self.ctx, class_type)
             if class_member.base_class != class_type.name and cls_data and cls_data.rtti:
                 base_type = None
@@ -633,7 +633,7 @@ def get_class_member(
             if typ and not typ.can_realize() and class_member.type_expr:
                 with utils.with_class_generics(self.ctx, class_type):
                     type_expr = self.visit(class_member.type_expr.clone())
-                infer.unify(typ, utils.extract_type(self.ctx, type_expr))
+                typ |= utils.extract_type(self.ctx, type_expr)
             return None, True
     has_side = utils.has_side_effect(expr)
 
@@ -655,11 +655,11 @@ def get_class_member(
     }
     if member in special_members:
         if typ:
-            infer.unify(typ, utils.get_stdlib_type(self.ctx, special_members[member]))
+            typ |= utils.get_stdlib_type(self.ctx, special_members[member])
         return None, True
     if member == "__name__" and utils.is_type_expr(expr):
         if typ:
-            infer.unify(typ, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.String))
+            typ |= utils.get_stdlib_type(self.ctx, ast.types.Stdlib.String)
         return None, True
 
     # Case: object generic access (`obj.T`)
@@ -668,14 +668,14 @@ def get_class_member(
         if member == utils.get_unmangled_name(self.ctx, generic.name):
             if generic.static_kind is not ast.types.Type.Behaviour.Runtime:
                 if typ:
-                    infer.unify(typ, generic.type)
+                    typ |= generic.type
                 if infer.realize(self.ctx, generic.type):
                     assert generic.type.literal
                     return wrap_side(generic.type.literal.get_static_expr()), True
             else:
                 instantiated = utils.instantiate_type_var(self.ctx, generic.type)
                 if typ:
-                    infer.unify(typ, instantiated)
+                    typ |= instantiated
                 if infer.realize(self.ctx, instantiated):
                     return wrap_side(ast.IdExpr(generic.type.realized_name())), True
             return None, True

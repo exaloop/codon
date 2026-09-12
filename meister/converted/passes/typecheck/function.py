@@ -31,8 +31,8 @@ def typecheck_lambda(self: TypeVisitor, node: ast.LambdaExpr) -> ast.Expr:
     fn.set(ast.Attr.ExprTime, self.ctx.time)  # to handle captures properly
     fn = self.visit_stmt(fn)
     assert isinstance(fn, ast.FunctionStmt)
-    if bindings := node.get(ast.Attr.Bindings):
-        fn.set(ast.Attr.Bindings, bindings.clone())
+    if bindings := node.get(ast.Attr.Bindings, Bindings):
+        fn.set(ast.Attr.Bindings, copy.deepcopy(bindings))
     self.ctx.prepend_stmts[-1].append(fn)
     return self.visit_expr(ast.IdExpr(fn.name))
 
@@ -234,7 +234,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 node.set(ast.Attr.NoArgReorder)
             elif attr_name == ast.types.mangle(func="overload"):
                 node.set(ast.Attr.Overload)
-            fn_attrs = node.get(ast.Attr.FunctionAttributes, {})
+            fn_attrs: dict[str, str] = node.get(ast.Attr.FunctionAttributes, dict[str, str], {})
             if not fn_attrs:
                 node.set(ast.Attr.FunctionAttributes, fn_attrs)
             fn_attrs[attr_name] = attr_realized_name
@@ -248,7 +248,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     node.set(ast.Attr.NoArgReorder)
                 if attr_fn.ast.has(ast.Attr.ForceRealize):
                     node.set(ast.Attr.ForceRealize)
-                if inherited_attrs := attr_fn.ast.get(ast.Attr.FunctionAttributes):
+                if inherited_attrs := attr_fn.ast.get(ast.Attr.FunctionAttributes, dict[str, str]):
                     fn_attrs.update(inherited_attrs)
             if is_attr:
                 decorators[idx] = None  # ignore it later on
@@ -301,8 +301,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
     # Handle captures. Add additional argument to the function for every capture.
     # Make sure to account for **kwargs if present
-    if bindings := node.get(ast.Attr.Bindings):
-        assert isinstance(bindings, Bindings)
+    if bindings := node.get(ast.Attr.Bindings, Bindings):
         insert_idx = len(node.items)
         if node.items and node.items[-1].name.startswith("**"):
             insert_idx -= 1
@@ -357,7 +356,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 node.items.insert(insert_idx, ast.Param(capture_arg))
                 insert_idx += 1
 
-    arguments = []
+    args = []
     suite = None
     ret = None
     explicits = []
@@ -406,11 +405,12 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 case _:
                     default_name = f".default.{canonical}.{param.name}"
 
-                    new_context = self.ctx.clone()
+                    # TODO: fix this, do not copy whole context, use substitute
+                    new_context = copy.copy(self.ctx)
                     new_context.bases.pop()
                     if is_class_member:
                         del new_context.bases[1:]
-                    default_visitor = TypeVisitor(ctx=new_context)
+                    visitor = TypeVisitor(ctx=new_context)
                     assignment = ast.AssignStmt(
                         ast.IdExpr(default_name),
                         rhs=default,
@@ -418,23 +418,21 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     )
                     if is_class_member:
                         # class variable; go to the global context
-                        declaration = default_visitor.visit(
-                            ast.AssignStmt(ast.IdExpr(default_name))
-                        )
+                        declaration = visitor.visit_stmt(ast.AssignStmt(ast.IdExpr(default_name)))
                         self.ctx.preamble.add(declaration)
                         utils.register_global(self.ctx, default_name)
                         assignment.set_update()
                     elif is_global:
                         utils.register_global(self.ctx, default_name)
-                    self.ctx.prepend_stmts[-1].append(default_visitor.visit_stmt(assignment))
+                    self.ctx.prepend_stmts[-1].append(visitor.visit_stmt(assignment))
                     default_item = self.ctx[default_name]
                     # Default unbounds must be allowed to pass through
                     # to support cases such as `a = []`
                     for unbound in default_item.type.get_unbounds(False):
                         unbound.pass_through = True
                         node.set(ast.Attr.AllowPassThrough)
-                    default = default_visitor.visit(ast.IdExpr(default_name))
-            arguments.append(
+                    default = visitor.visit_expr(ast.IdExpr(default_name))
+            args.append(
                 ast.Param(
                     f"{'*' * stars}{param_name}",
                     type=param.type,
@@ -488,7 +486,9 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
         parent_class = None
         if is_class_member and node.has(ast.Attr.Method):
             # Get class generics (e.g., T for `class Cls[T]: def foo:`)
-            parent_item = self.ctx[node.get(ast.Attr.ParentClass)]
+            parent_class = node.get(ast.Attr.ParentClass, str)
+            assert parent_class
+            parent_item = self.ctx[parent_class]
             parent_class = utils.extract_class_type(self.ctx, parent_item.type)
         # Add function generics
         generic_types = []
@@ -501,7 +501,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
         with self.ctx.substitute("typecheck_level", self.ctx.typecheck_level + 1):
             # Parse arguments to the context. Needs to be done after adding generics
             # to support cases like `foo(a: T, T: type)`
-            for arg in arguments:
+            for arg in args:
                 arg.type = self.visit_expr(arg.type, enforce_type=True, simple_types=True)
 
             # Unify base type generics with argument types. Add non-generic arguments to the
@@ -577,28 +577,28 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     node.set(ast.Attr.Module, self.ctx.module.path)
 
     # Make function AST and cache it for later realization
-    function_ast = ast.FunctionStmt(
-        canonical, ret=ret, items=arguments, suite=suite, async_=node.async_, done=True
+    fn_ast = ast.FunctionStmt(
+        canonical, ret=ret, items=args, suite=suite, async_=node.async_, done=True
     )
-    function_ast.attributes = copy.deepcopy(node.attributes)
+    fn_ast.attributes = copy.deepcopy(node.attributes)
     if "_thunk_dispatch" in canonical:
         node.set(ast.Attr.AllowPassThrough)
     fn_data = cache.FunctionData(
         module=self.ctx.module_path,
         root_name=root_name,
-        ast=function_ast,
+        ast=fn_ast,
         orig_ast=original_statement,
         is_toplevel=not self.ctx.module_name and self.ctx.is_global,
     )
     self.ctx.cache.functions[canonical] = fn_data
     parent_class = None
-    if parent_name := node.get(ast.Attr.ParentClass):
+    if parent_name := node.get(ast.Attr.ParentClass, str):
         parent_item = self.ctx[parent_name]
         parent_class = utils.extract_class_type(self.ctx, parent_item.type)
 
     # Construct the type
     fn_type = ast.types.Function(
-        base=base_type, ast=function_ast, func_generics=explicits, info=self.ctx.node_stack[-1].info
+        base=base_type, ast=fn_ast, func_generics=explicits, info=self.ctx.node_stack[-1].info
     )
     if is_class_member and node.has(ast.Attr.Method):
         fn_type.func_parent = parent_class
@@ -668,7 +668,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
         assign_lhs = ast.IdExpr(node.name)
         assign = ast.AssignStmt(assign_lhs, rhs=final)
         if is_class_member:  # class method decorator
-            new_context = self.ctx.clone()
+            # TODO: fix this, do not copy whole context, use substitute
+            new_context = copy.copy(self.ctx)
             new_context.bases.pop()
             del new_context.bases[1:]  # go to global context
             visitor = TypeVisitor(ctx=new_context)
@@ -689,22 +690,22 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             wrapper_fn = ast.FunctionStmt(
                 node.name,
                 ret=None if node.ret is None else node.ret.clone(),
-                items=[argument.clone() for argument in node.items],
+                items=[arg.clone() for arg in node.items],
                 suite=ast.ReturnStmt(expr=ast.CallExpr(ast.IdExpr(decorated_name), call_args)),
                 async_=node.async_,
             )
             wrapper_fn = self.visit(wrapper_fn)
             assign = self.visit(assign)
-            return ast.SuiteStmt(function_ast, ast.SuiteStmt(assign, wrapper_fn))
+            return ast.SuiteStmt(fn_ast, ast.SuiteStmt(assign, wrapper_fn))
         assign = self.visit(assign)
-        return ast.SuiteStmt(function_ast, assign)
-    return function_ast
+        return ast.SuiteStmt(fn_ast, assign)
+    return fn_ast
 
 
 def transform_python_definition(
     self: TypeVisitor,
     name: str,
-    arguments: List[ast.Param],
+    args: List[ast.Param],
     ret: ast.Expr | None,
     code_stmt: ast.Stmt,
 ) -> ast.Stmt:
@@ -725,9 +726,9 @@ def transform_python_definition(
     )
 
     code = code_stmt.expr.value
-    python_args = [arg.name for arg in arguments]
+    python_args = [arg.name for arg in args]
     code = f"def {name}({', '.join(python_args)}):\n{code}\n"
-    imported_args = [arg.clone() for arg in arguments]
+    imported_args = [arg.clone() for arg in args]
     transformed = ast.SuiteStmt(
         ast.ExprStmt(
             ast.CallExpr(
@@ -794,34 +795,34 @@ def transform_llvm_definition(self: TypeVisitor, code_stmt: ast.Stmt) -> ast.Stm
 
     # Parse LLVM code and look for expression blocks that start with `{=`
     brace_count, brace_start = 0, 0
-    index = 0
+    idx = 0
 
     code = list(code)  # so that we can modify it
-    while index < len(code):
-        if index < len(code) - 1 and code[index] == "\\" and code[index + 1] == "\n":
-            code[index] = " "
-            code[index + 1] = " "
-        if index < len(code) - 1 and code[index] == "{" and code[index + 1] == "=":
-            if brace_start <= index:
-                final_code += escape_braces("".join(code), brace_start, index - brace_start) + "{"
+    while idx < len(code):
+        if idx < len(code) - 1 and code[idx] == "\\" and code[idx + 1] == "\n":
+            code[idx] = " "
+            code[idx + 1] = " "
+        if idx < len(code) - 1 and code[idx] == "{" and code[idx + 1] == "=":
+            if brace_start <= idx:
+                final_code += escape_braces("".join(code), brace_start, idx - brace_start) + "{"
             if brace_count == 0:
-                brace_start = index + 2
+                brace_start = idx + 2
                 brace_count += 1
             else:
                 raise TypecheckError(code_stmt, "invalid LLVM code")
-        elif brace_count and code[index] == "}":
+        elif brace_count and code[idx] == "}":
             brace_count -= 1
-            expression_code = "".join(code[brace_start:index])
+            expression_code = "".join(code[brace_start:idx])
             offset = self.ctx.node_stack[-1].info
-            offset.col += index
+            offset.col += idx
 
             parsed = self.ctx.cache.parse(expr=expression_code)
             assert isinstance(parsed, ast.Expr)
             parsed.info = offset
             items.append(ast.ExprStmt(parsed))
-            brace_start = index + 1
+            brace_start = idx + 1
             final_code += "}"
-        index += 1
+        idx += 1
     if brace_count:
         raise TypecheckError(code_stmt, "invalid LLVM code")
     if brace_start != len(code):
@@ -872,13 +873,13 @@ def get_decorator(self: TypeVisitor, expression: ast.Expr):
     return False, "", ""
 
 
-def get_func_type_base(self: TypeVisitor, argument_count: int) -> ast.types.Class:
+def get_func_type_base(self: TypeVisitor, arg_count: int) -> ast.types.Class:
     """Generate and return `Function[Tuple[args...], ret]` type"""
 
     base = utils.instantiate(
         self.ctx, utils.get_stdlib_type(self.ctx, ast.types.Stdlib.Function)
     ).require_cls
     base.generics[0].type |= utils.instantiate(
-        self.ctx, classes.generate_tuple(self.ctx, argument_count, False)
+        self.ctx, classes.generate_tuple(self.ctx, arg_count, False)
     )
     return base

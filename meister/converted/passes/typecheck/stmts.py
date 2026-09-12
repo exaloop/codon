@@ -4,35 +4,39 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from meister.converted.passes import scope
+
 from ... import ast, cache
-from .ctx import TypecheckError
+from ...error import TypecheckError
 
 if TYPE_CHECKING:
     from . import TypeVisitor
 
 
-def typecheck_stmt(self: TypeVisitor, node: ast.StmtExpr) -> ast.Node:
+def typecheck_stmt(self: TypeVisitor, node: ast.StmtExpr) -> ast.Expr:
     """Typecheck statement expressions."""
+
+    assert node.type
 
     done = True
     statements = []
     for stmt in node.items:
-        transformed = self.visit(stmt)
+        transformed = self.visit_stmt(stmt)
         statements.append(transformed)
         done = done and transformed.done
     node.items = statements
-    node.expr = self.visit(node.expr)
-    node |= node.expr.type
+    node.expr = self.visit_expr(node.expr)
+    node.type |= node.expr.type
     if done and node.expr.done:
         node.done = True
     return node
 
 
-def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Node:
+def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
     """Typecheck a list of statements."""
 
     output = []
-    if bindings := node.get(ast.Attr.Bindings):
+    if bindings := node.get(ast.Attr.Bindings, scope.Bindings):
         prepended = []
         for name, binding in bindings.bindings.items():
             prepended.append(ast.AssignStmt(ast.IdExpr(name)))
@@ -44,9 +48,9 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Node:
                 )
         node.erase(ast.Attr.Bindings)
         node.items[0:0] = prepended
-    if local_renames := node.get(ast.Attr.LocalRenames):
-        for original, renamed in local_renames.attributes.items():
-            self.ctx.add(original, self.ctx.force_find(renamed))
+    if local_renames := node.get(ast.Attr.LocalRenames, dict[str, str]):
+        for original, renamed in local_renames.items():
+            self.ctx.add(original, self.ctx[renamed])
     try:
         done = True
         for statement in node.items:
@@ -66,37 +70,37 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Node:
             node.done = True
     finally:
         if local_renames:
-            for original in local_renames.attributes:
+            for original in local_renames:
                 self.ctx.remove(original)
     return node
 
 
-def typecheck_expr(self: TypeVisitor, node: ast.ExprStmt) -> ast.Node:
+def typecheck_expr(self: TypeVisitor, node: ast.ExprStmt) -> ast.Stmt:
     """Typecheck expression statements."""
 
-    node.expr = self.visit(node.expr)
+    node.expr = self.visit_expr(node.expr)
     node.done = node.expr.done
     return node
 
 
-def typecheck_custom(self: TypeVisitor, node: ast.CustomStmt) -> ast.Node:
+def typecheck_custom(self: TypeVisitor, node: ast.CustomStmt) -> ast.Stmt:
     if node.suite:
         block_callback = self.ctx.cache.custom_block_stmts.get(node.keyword)
         assert block_callback is not None, f"unknown keyword {node.keyword}"
-        result = block_callback[1](self, node)
+        result = block_callback[1](self.ctx, node)
     else:
         expression_callback = self.ctx.cache.custom_expr_stmts.get(node.keyword)
         assert expression_callback is not None, f"unknown keyword {node.keyword}"
-        result = expression_callback(self, node)
+        result = expression_callback(self.ctx, node.expr)
     return result
 
 
-def typecheck_comment(self: TypeVisitor, node: ast.CommentStmt) -> ast.Node:
+def typecheck_comment(_: TypeVisitor, node: ast.CommentStmt) -> ast.Stmt:
     node.done = True
     return node
 
 
-def typecheck_directive(self: TypeVisitor, node: ast.DirectiveStmt) -> ast.Node:
+def typecheck_directive(self: TypeVisitor, node: ast.DirectiveStmt) -> ast.Stmt:
     if node.key == "auto_python":
         self.ctx.auto_python = node.value == "1"
         self.log(f"directive '{node.key}' = {self.ctx.auto_python}")

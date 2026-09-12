@@ -217,7 +217,11 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                     )
                     args.append(ast.Param(var_name, type=typ, default_value=default))
                     cls_data.fields.append(
-                        cache.ClassData.Field(name=var_name, base_class=canonical)
+                        cache.ClassData.Field(
+                            name=var_name,
+                            base_class=canonical,
+                            type=ast.types.Type(self.ctx.cache),  # Use dummy type
+                        )
                     )
 
             # Handle RTTI inheritance. Must come after other arguments are handled
@@ -264,6 +268,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
             if not node.has(ast.Attr.Extend):
                 # Now that we are done with arguments, add record type to the context
                 if node.has(ast.Attr.Tuple):
+                    assert timed_item
                     self.ctx.add(name, timed_item)
                     self.ctx.add_always_visible(item)
                 node.set(
@@ -275,7 +280,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 # Create a cached AST
                 cached_ast = ast.ClassStmt(
                     canonical,
-                    items=[argument.clone() for argument in args],
+                    items=[arg.clone() for arg in args],
                     suite=ast.SuiteStmt(),
                     attributes=copy.deepcopy(node.attributes),
                     base_classes=node.base_classes,
@@ -285,7 +290,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                 cls_data.jit_cell = self.ctx.cache.jit_cell
 
                 # Codegen default magic methods
-                if magics := node.get(ast.Attr.ClassMagic):
+                if magics := node.get(ast.Attr.ClassMagic, list[str]):
                     # __new__ must be the first
                     assert not magics or magics[0] == "new"
                     assert isinstance(magics, dict) and type_expr
@@ -535,13 +540,11 @@ def auto_deduce_members(self: TypeVisitor, node: ast.ClassStmt, args: List[ast.P
     for stmt in get_class_methods(self, cast(ast.Stmt, node.suite)):
         match stmt:
             case ast.FunctionStmt(name="__init__"):
-                if deduced := stmt.get(ast.Attr.ClassDeduce):
-                    assert isinstance(deduced, list)
+                if deduced := stmt.get(ast.Attr.ClassDeduce, list[str]):
                     for member in deduced:
                         members.add(member)
     if members:
-        if magics := node.get(ast.Attr.ClassMagic):
-            assert isinstance(magics, list)
+        if magics := node.get(ast.Attr.ClassMagic, list[str]):
             magics[:] = [m for m in magics if m != "init"]
         for member in sorted(members):
             generic_name = f"T_{member}"

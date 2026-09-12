@@ -43,7 +43,7 @@ class TypeVisitor(ast.NodeVisitor):
 
         self.ctx.node_stack.append(node)
         self.ctx.prepend_stmts.append([])
-        with self.ctx.substitute("time", node.get(ast.Attr.ExprTime, 0)):
+        with self.ctx.substitute("time", node.get(ast.Attr.ExprTime, int, 0)):
             transformed = cast(ast.Stmt, self.visit(node))
         self.ctx.node_stack.pop()
         prepended = self.ctx.prepend_stmts.pop()

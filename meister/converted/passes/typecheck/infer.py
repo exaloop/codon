@@ -135,19 +135,19 @@ def realize[T](ctx: TypeContext, typ: T, force: bool = False) -> T | None:
             if typ.ast.has(ast.Attr.HiddenFromUser):
                 backtrace.trace[-1].info = ctx.node_stack[-1].info
             else:
-                arguments = []
-                argument_idx = 0
+                args = []
+                arg_idx = 0
                 generic_idx = 0
-                for parameter in typ.ast.items:
-                    stars, name = parameter.get_name_with_stars()
-                    if parameter.is_generic():
-                        parameter_type = utils.extract_func_generic(typ, generic_idx)
+                for param in typ.ast.items:
+                    stars, name = param.get_name_with_stars()
+                    if param.is_generic():
+                        param_type = utils.extract_func_generic(typ, generic_idx)
                         generic_idx += 1
                     else:
-                        parameter_type = typ[argument_idx]
-                        argument_idx += 1
-                    arguments.append(
-                        f"{'*' * stars}{utils.get_user_facing_name(ctx, name)}: {parameter_type}"
+                        param_type = typ[arg_idx]
+                        arg_idx += 1
+                    args.append(
+                        f"{'*' * stars}{utils.get_user_facing_name(ctx, name)}: {param_type}"
                     )
                 name = typ.ast.name
                 name_arguments = ""
@@ -162,7 +162,7 @@ def realize[T](ctx: TypeContext, typ: T, force: bool = False) -> T | None:
                     name = f"<import {name}>"
                 else:
                     name = utils.get_user_facing_name(ctx, typ.ast.name)
-                    name_arguments = f"({', '.join(arguments)})"
+                    name_arguments = f"({', '.join(args)})"
                 backtrace.add(
                     f"during the realization of {name}{name_arguments}", ctx.node_stack[-1].info
                 )
@@ -335,31 +335,31 @@ def _realize_func_body(
                 realize_type(ctx, generic.type)
 
     # Clone the generic AST that is to be realized
-    function_ast = typ.ast.clone(clean=True)
+    fn_ast = typ.ast.clone(clean=True)
     if special_suite := special.generate_special_ast(ctx, typ):
-        function_ast.suite = special_suite
+        fn_ast.suite = special_suite
     utils.add_class_generics(ctx, typ, True)
     base = ctx.base
     if base:
-        base.func = function_ast
+        base.func = fn_ast
 
     # Internal functions have no AST that can be realized
-    has_ast = function_ast.suite is not None and not function_ast.has(ast.Attr.Internal)
-    if bindings := function_ast.attributes.get(ast.Attr.Bindings):
+    has_ast = fn_ast.suite is not None and not fn_ast.has(ast.Attr.Internal)
+    if bindings := fn_ast.attributes.get(ast.Attr.Bindings):
         assert isinstance(bindings, scope.Bindings)
         for captured, capture_type in bindings.captures.items():
             if capture_type is Bindings.Scope.Global:
                 captured_item = ctx.get(captured)
                 if not captured_item:
-                    raise TypecheckError(function_ast, f"name '{captured}' is not defined")
+                    raise TypecheckError(fn_ast, f"name '{captured}' is not defined")
                 if not captured_item.is_global():
-                    raise TypecheckError(function_ast, f"no binding for global '{captured}' found")
+                    raise TypecheckError(fn_ast, f"no binding for global '{captured}' found")
         for name, canonical in bindings.local_renames.items():
             ctx.add(name, ctx[canonical])
 
     arg_idx = 0
     generic_idx = 0
-    for param in function_ast.items if has_ast else []:
+    for param in fn_ast.items if has_ast else []:
         _, variable_name = param.get_name_with_stars()
         unmangled = utils.get_unmangled_name(ctx, variable_name)
         if param.is_value():
@@ -406,13 +406,13 @@ def _realize_func_body(
     ctx.add_always_visible(Item(key, base="", module=ctx.module_name, typ=typ), True)
 
     if base:
-        base.suite = function_ast.suite
+        base.suite = fn_ast.suite
     if has_ast and base:
         with ctx.substitute("block_level", 0):
             inferred = infer_types(ctx, base.suite)
         if not inferred:
             fn_data.realizations.pop(key, None)
-            if not function_ast.name.startswith("%_lambda"):
+            if not fn_ast.name.startswith("%_lambda"):
                 # TODO: generalize this further.
                 assert base.suite
                 raise TypecheckError(trace=utils.find_typecheck_errors(ctx, base.suite))
@@ -423,9 +423,9 @@ def _realize_func_body(
         # Use NoneType as the return type when the return type is not specified and
         # function has no return statement
         return_type = typ.ret_type
-        if not function_ast.ret and return_type and utils.is_unbound(return_type):
+        if not fn_ast.ret and return_type and utils.is_unbound(return_type):
             default_return = utils.get_stdlib_type(ctx, ast.types.Stdlib.NoneType)
-            if function_ast.async_:
+            if fn_ast.async_:
                 default_return = utils.instantiate(
                     ctx,
                     utils.get_stdlib_type(ctx, ast.types.Stdlib.Coroutine),
@@ -441,17 +441,17 @@ def _realize_func_body(
         fn_data.realizations.pop(key, None)
         return None
     assert realized_return, f"cannot realize return type '{return_type}'"
-    realized_parameters = []
-    for param in function_ast.items:
+    realized_params = []
+    for param in fn_ast.items:
         _, variable_name = param.get_name_with_stars()
-        realized_parameters.append(ast.Param(variable_name, status=param.status))
+        realized_params.append(ast.Param(variable_name, status=param.status))
     realized_ast = ast.FunctionStmt(
         typ.realized_name(),
-        items=realized_parameters,
+        items=realized_params,
         suite=None if not base else base.suite,
-        async_=function_ast.async_,
-        info=function_ast.info,
-        attributes=dict(function_ast.attributes),
+        async_=fn_ast.async_,
+        info=fn_ast.info,
+        attributes=dict(fn_ast.attributes),
     )
     realization.ast = realized_ast
     generalized = typ.generalize(0)
@@ -632,7 +632,7 @@ def make_ir_function(
         function.set_unmangled_name(utils.get_unmangled_name(ctx, realization.type.ast.name))
 
     parent = realization.type.func_parent
-    parent_name = realization.ast.get(ast.Attr.ParentClass, "")
+    parent_name = realization.ast.get(ast.Attr.ParentClass, str)
     if parent_name and not realization.ast.has(ast.Attr.Method):
         # Hack for non-generic methods
         parent = ctx[parent_name].type
@@ -653,12 +653,12 @@ def make_ir_function(
     names = []
     arg_types = []
     value_idx = 0
-    for parameter in realization.ast.items:
-        if parameter.is_value():
+    for param in realization.ast.items:
+        if param.is_value():
             arg_type = realization.type[value_idx]
             if not arg_type.func:
                 arg_types.append(make_ir_type(ctx, arg_type.require_cls))
-                names.append(utils.get_unmangled_name(ctx, parameter.name))
+                names.append(utils.get_unmangled_name(ctx, param.name))
             value_idx += 1
     is_c_vararg = realization.ast.has(ast.Attr.CVarArg)
     if is_c_vararg:
