@@ -84,7 +84,7 @@ def typecheck_break(self: TypeVisitor, node: ast.BreakStmt) -> ast.Stmt:
             rhs=ast.BoolExpr(False),
             update=ast.AssignStmt.Mode.Update,
         )
-        assignment = self.visit(assignment)
+        assignment = self.visit_stmt(assignment)
         return ast.SuiteStmt(assignment, ast.BreakStmt())
 
     node.done = True
@@ -187,7 +187,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
     assignment: ast.Stmt | None = None
     if node.else_suite and node.else_suite.first_in_block():
         break_var = utils.get_temporary_var(self.ctx, "no_break")
-        assignment = self.visit(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
+        assignment = self.visit_stmt(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
 
     # Extract the iterator type of the for
     if not (iterator_type := node.iter.cls):
@@ -280,7 +280,7 @@ def transform_for_decorator(self: TypeVisitor, decorator: ast.Expr) -> ast.Expr:
     callee = decorator
     if isinstance(callee, ast.CallExpr):
         callee = callee.expr
-    callee = self.visit(callee)
+    callee = self.visit_expr(callee)
     if not isinstance(callee, ast.IdExpr) or not callee.value.startswith(
         ast.types.mangle("std.openmp", func="for_par")
     ):
@@ -341,7 +341,7 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
                 )
             )
             # var [: Static] := expr; suite...
-            loop_result = self.visit(
+            loop_result = self.visit_stmt(
                 ast.SuiteStmt(
                     ast.AssignStmt(ast.IdExpr(loop_var), rhs=ast.BoolExpr(True)),
                     ast.WhileStmt(ast.IdExpr(loop_var), suite=block),
@@ -349,7 +349,7 @@ def transform_static_for_loop(self: TypeVisitor, stmt: ast.ForStmt):
             )
     else:
         # Close the loop
-        loop_result = self.visit(block)
+        loop_result = self.visit_stmt(block)
     return False, loop_result
 
 

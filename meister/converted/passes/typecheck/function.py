@@ -398,10 +398,10 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                     ),
                     _,
                 ):
-                    default = self.visit(default)
+                    default = self.visit_expr(default)
                 case _ if not param.is_value():
                     # Special case: generic defaults are evaluated as-is!
-                    default = self.visit(default)
+                    default = self.visit_expr(default) if default else None
                 case _:
                     default_name = f".default.{canonical}.{param.name}"
 
@@ -694,10 +694,10 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 suite=ast.ReturnStmt(expr=ast.CallExpr(ast.IdExpr(decorated_name), call_args)),
                 async_=node.async_,
             )
-            wrapper_fn = self.visit(wrapper_fn)
-            assign = self.visit(assign)
+            wrapper_fn = self.visit_stmt(wrapper_fn)
+            assign = self.visit_stmt(assign)
             return ast.SuiteStmt(fn_ast, ast.SuiteStmt(assign, wrapper_fn))
-        assign = self.visit(assign)
+        assign = self.visit_stmt(assign)
         return ast.SuiteStmt(fn_ast, assign)
     return fn_ast
 

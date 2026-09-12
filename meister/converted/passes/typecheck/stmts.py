@@ -57,7 +57,7 @@ def typecheck_suite(self: TypeVisitor, node: ast.SuiteStmt) -> ast.Stmt:
             if self.ctx.return_early:
                 # If returnEarly is set (e.g., in the function) ignore the rest
                 break
-            transformed = self.visit(statement)
+            transformed = self.visit_stmt(statement)
             if isinstance(transformed, ast.SuiteStmt):
                 for nested in transformed.items:
                     done = done and nested.done

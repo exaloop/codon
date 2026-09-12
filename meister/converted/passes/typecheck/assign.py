@@ -426,7 +426,7 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
     # Case: class variables
     if member is None and (cls_data := utils.get_class(self.ctx, lhs_type)):
         if cls_var := cls_data.class_vars.get(node.member):
-            rhs = self.visit(node.rhs)
+            rhs = self.visit_expr(node.rhs)
             assignment = ast.AssignStmt(
                 ast.IdExpr(cls_var), rhs=rhs, update=ast.AssignStmt.Mode.Update
             )
@@ -474,7 +474,7 @@ def typecheck_assignmember(self: TypeVisitor, node: ast.AssignMemberStmt) -> ast
         )
     field_type = utils.instantiate(self.ctx, member.type, lhs_type, node.lhs.info)
     if not field_type.can_realize() and member.type_expr:
-        member_type = self.visit(member.type_expr.clone(clean=True))
+        member_type = self.visit_expr(member.type_expr.clone(clean=True))
         field_type |= utils.extract_type(self.ctx, member_type)
     cls_data = utils.get_class(self.ctx, lhs_type)
     if member.base_class != lhs_type.name and cls_data and cls_data.rtti:
@@ -536,7 +536,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                 ),
                 rhs=stmt.rhs,
             )
-            return True, self.visit(transformed)
+            return True, self.visit_stmt(transformed)
         case _, ast.BinaryExpr(in_place=True) as binary if not stmt.is_atomic_update():
             # Case: in-place updates (e.g., `a += b`).
             # They are stored as `Update(a, Binary(a + b, inPlace=true))`
@@ -552,7 +552,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                 ):
                     assert stmt.rhs.type and replacement.type
                     stmt.rhs.type |= replacement.type
-                    transformed = self.visit(ast.ExprStmt(replacement))
+                    transformed = self.visit_stmt(ast.ExprStmt(replacement))
                     return True, transformed
                 return False, None
             else:
@@ -589,7 +589,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                             items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[stmt.lhs]), other],
                         )
                     )
-                    return True, self.visit(transformed)
+                    return True, self.visit_stmt(transformed)
             return False, None
         case _ if stmt.is_atomic_update():
             # Case: atomic assignments
@@ -615,5 +615,5 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                             items=[ast.CallExpr(ast.IdExpr("__ptr__"), items=[stmt.lhs]), stmt.rhs],
                         )
                     )
-                    return True, self.visit(transformed)
+                    return True, self.visit_stmt(transformed)
     return False, None

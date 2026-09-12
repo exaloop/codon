@@ -292,7 +292,7 @@ def transform_call_args(self: TypeVisitor, expr: ast.CallExpr):
             inserted = []
             for field_idx, field in enumerate(fields):
                 base = (lead if lead and field_idx == 0 else head).clone()
-                inserted.append(self.visit(ast.DotExpr(base, member=field.name)))
+                inserted.append(self.visit_expr(ast.DotExpr(base, member=field.name)))
             expr.items[arg_idx : arg_idx + 1] = inserted
             arg_idx += len(inserted)
         elif isinstance(arg.value, ast.KeywordStarExpr):
@@ -390,7 +390,7 @@ def get_callee_fn(
                 expr.erase(ast.Attr.TupleCall)
             # Case: tuple constructor. Transform to: `T.__new__(args)`
             replacement = ast.CallExpr(ast.DotExpr(expr.expr, member="__new__"), items=expr.items)
-            return None, self.visit(replacement)
+            return None, self.visit_expr(replacement)
 
         # Case: reference type constructor. Transform to
         # `ctr = T.__new__(); v.__init__(args)`
@@ -404,7 +404,7 @@ def get_callee_fn(
                 ast.CallExpr(ast.DotExpr(var.clone(), member="__init__"), items=expr.items)
             )
         )
-        return None, self.visit(result)
+        return None, self.visit_expr(result)
 
     if partial := callee.partial:
         mask = partial.partial_mask
@@ -447,7 +447,7 @@ def get_callee_fn(
     if callee_fn is None:
         # Case: callee is not a function. Try __call__ method instead
         result = ast.CallExpr(ast.DotExpr(expr.expr, member="__call__"), items=expr.items)
-        return None, self.visit(result)
+        return None, self.visit_expr(result)
 
     return callee_fn, None
 
@@ -528,7 +528,7 @@ def call_reorder_arguments(
                                 )
                             )
                         else:
-                            type_args.append(self.visit(ast.IdExpr(real_name[1:])))
+                            type_args.append(self.visit_expr(ast.IdExpr(real_name[1:])))
                     else:
                         type_args.append(expr.items[slot[0]].value)
                         if add_reordered(slot[0]):
@@ -578,7 +578,7 @@ def call_reorder_arguments(
                         if name not in new_names:
                             new_names.add(name)
                             kwstar_names.append(name)
-                            kwstar_args.append(self.visit(ast.NoneExpr(type=named_type)))
+                            kwstar_args.append(self.visit_expr(ast.NoneExpr(type=named_type)))
                 # kwargs names can be overriden later
                 for source_idx in slot:
                     source = expr.items[source_idx].value
@@ -668,7 +668,7 @@ def call_reorder_arguments(
         for source_idx in sorted(ordered):
             old = expr.items[source_idx].value
             name = utils.get_temporary_var(self.ctx, "call")
-            front = self.visit(
+            front = self.visit_stmt(
                 ast.AssignStmt(ast.IdExpr(name), rhs=old, type_expr=utils.get_param_type(old.type))
             )
             swap = self.visit_expr(ast.IdExpr(name))
@@ -680,7 +680,7 @@ def call_reorder_arguments(
             star_args = [swap if item is old else item for item in star_args]
             kwstar_args = [swap if item is old else item for item in kwstar_args]
             prepends.append(front)
-        return self.visit(ast.StmtExpr(prepends, expr=expr))
+        return self.visit_expr(ast.StmtExpr(prepends, expr=expr))
 
     # Handle *args
     if star_idx != -1:
@@ -721,10 +721,10 @@ def call_reorder_arguments(
         expr.items.pop()
         if part.args is None:
             # use ()
-            part.args = self.visit(ast.TupleExpr())
+            part.args = self.visit_expr(ast.TupleExpr())
         if part.kw_args is None:
             # use NamedTuple()
-            part.kw_args = self.visit(ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NamedTuple)))
+            part.kw_args = self.visit_expr(ast.CallExpr(ast.IdExpr(ast.types.Stdlib.NamedTuple)))
 
     # Unify function type generics with the provided generics
     assert (expr.has(ast.Attr.ExprOrderedCall) and not type_args) or (
@@ -786,7 +786,7 @@ def typecheck_call_args(
             if param.name.startswith("*") and param.type:
                 # Special case: `*args: type` and `**kwargs: type`
                 if call_expr := cast(ast.CallExpr, arg.value):
-                    type_expression = self.visit(param.type.clone())
+                    type_expression = self.visit_expr(param.type.clone())
                     expected_type = utils.extract_type(self.ctx, type_expression)
                     if param.name.startswith("**"):
                         call_expr = cast(ast.CallExpr, call_expr[0].value)
@@ -841,7 +841,7 @@ def typecheck_call_args(
         # Previous unifications can qualify existing identifiers.
         # Transform again to get the full identifier
         if infer.realize(arg.value.type):
-            arg.value = self.visit(arg.value)
+            arg.value = self.visit_expr(arg.value)
         done = done and arg.value.done
 
     # Handle default generics
@@ -854,7 +854,7 @@ def typecheck_call_args(
                 generic = utils.extract_func_generic(callee_fn, generic_idx)
                 if param.default and utils.is_unbound(generic):
                     with utils.with_class_generics(self.ctx, callee_fn, True):
-                        default = self.visit(param.default.clone())
+                        default = self.visit_expr(param.default.clone())
                     infer.unify(generic, utils.extract_type(self.ctx, default))
                 generic_idx += 1
 

@@ -417,7 +417,7 @@ def transform_new_import(self: TypeVisitor, file: cache.Import.File) -> ast.Stmt
             import_assignment = ast.AssignStmt(
                 ast.IdExpr(var), rhs=import_ctr, type_expr=ast.IdExpr("Import")
             )
-            import_assignment = self.visit(import_assignment)
+            import_assignment = self.visit_stmt(import_assignment)
             self.ctx.preamble.add(import_assignment)
             value = self.ctx[var]
             value.block_level = 0

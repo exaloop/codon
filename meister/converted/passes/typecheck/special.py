@@ -757,13 +757,13 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
     target_type = utils.extract_type(self.ctx, type_expr)
     match type_expr:
         case ast.IdExpr(value="type"):
-            return self.visit(ast.BoolExpr(utils.is_type_expr(obj_arg)))
+            return self.visit_expr(ast.BoolExpr(utils.is_type_expr(obj_arg)))
         case ast.IdExpr(value="type[Tuple]"):
-            return self.visit(ast.BoolExpr(obj_type == ast.types.Stdlib.Tuple))
+            return self.visit_expr(ast.BoolExpr(obj_type == ast.types.Stdlib.Tuple))
         case ast.IdExpr(value="type[ByVal]"):
-            return self.visit(ast.BoolExpr(obj_type.is_tuple))
+            return self.visit_expr(ast.BoolExpr(obj_type.is_tuple))
         case ast.IdExpr(value="type[ByRef]"):
-            return self.visit(ast.BoolExpr(not obj_type.is_tuple))
+            return self.visit_expr(ast.BoolExpr(not obj_type.is_tuple))
         case _ if not target_type and (union := obj_type.union):
             union_types = union.get_realization_types()
             matching_tag = -1
@@ -775,8 +775,8 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
                     matching_tag = idx
                     break
             if matching_tag == -1:
-                return self.visit(ast.BoolExpr(False))
-            return self.visit(
+                return self.visit_expr(ast.BoolExpr(False))
+            return self.visit_expr(
                 ast.BinaryExpr(
                     ast.CallExpr(
                         ast.IdExpr(ast.types.mangle(cls="Union", func="_get_tag")), [obj_arg]
@@ -787,14 +787,14 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
             )
         case _ if type_expr.type == "pyobj":
             if obj_type == "pyobj":
-                return self.visit(
+                return self.visit_expr(
                     ast.CallExpr(
                         ast.IdExpr(ast.types.mangle("std.internal.python", func="_isinstance")),
                         items=[obj_arg, type_expr],
                     )
                 )
             else:
-                return self.visit(ast.BoolExpr(False))
+                return self.visit_expr(ast.BoolExpr(False))
 
     type_expr = expr.items[1].value = self.visit_expr(type_expr, enforce_type=True)
     target_type = utils.extract_type(self.ctx, type_expr).require_cls
@@ -805,11 +805,11 @@ def transform_is_instance(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
         score = obj_type.unify(target_type, undo)
         undo.undo()
         if score >= 0:
-            return self.visit(ast.BoolExpr(True))
+            return self.visit_expr(ast.BoolExpr(True))
 
     instance_call = "_isinstance"
     if obj_type == ast.types.Stdlib.Any and not utils.is_type_expr(obj_arg):
-        return self.visit(
+        return self.visit_expr(
             ast.CallExpr(
                 ast.IdExpr(ast.types.mangle(cls="Any", func=instance_call)),
                 items=[obj_arg, type_expr],
@@ -854,7 +854,7 @@ def transform_static_len(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | No
     typ = utils.extract_type(self.ctx, expr.items[0].value)
     if static := typ.str:
         # Case: staticlen on static strings
-        return self.visit(ast.IntExpr(len(static)))
+        return self.visit_expr(ast.IntExpr(len(static)))
     if union := typ.union:
         if infer.realize(self.ctx, typ):
             return self.visit_expr(ast.IntExpr(len(union.get_realization_types())))
@@ -864,7 +864,7 @@ def transform_static_len(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | No
         return None
     if not typ.is_tuple:
         raise TypecheckError(expr, "expected tuple type")
-    return self.visit(ast.IntExpr(len(utils.get_class_fields(self.ctx, typ))))
+    return self.visit_expr(ast.IntExpr(len(utils.get_class_fields(self.ctx, typ))))
 
 
 def transform_has_attr(
@@ -899,7 +899,7 @@ def transform_has_attr(
                 arg_type = arg_type.require_cls[0]
             arg_types.append(("", arg_type))
     for name, named_expr in utils.extract_named_tuple(self.ctx, expr.items[2].value):
-        named_expr = self.visit(named_expr)
+        named_expr = self.visit_expr(named_expr)
         named_type = utils.extract_type(self.ctx, named_expr)
         if named_type == ast.types.Stdlib.TypeWrap:
             named_type = named_type.require_cls[0]
@@ -919,14 +919,14 @@ def transform_has_attr(
             condition = (
                 branch if condition is None else ast.BinaryExpr(condition, op="||", rexpr=branch)
             )
-        return self.visit(ast.BoolExpr(False) if condition is None else condition)
+        return self.visit_expr(ast.BoolExpr(False) if condition is None else condition)
 
     if typ == ast.types.Stdlib.NamedTuple:
         if not typ.can_realize():
             return None
         tuple_id = typ[0].require_int
         assert 0 <= tuple_id < len(self.ctx.cache.generated_tuple_names)
-        return self.visit(ast.BoolExpr(attr in self.ctx.cache.generated_tuple_names[tuple_id]))
+        return self.visit_expr(ast.BoolExpr(attr in self.ctx.cache.generated_tuple_names[tuple_id]))
 
     exists = bool(utils.find_method(self.ctx, typ, attr) or utils.find_member(self.ctx, typ, attr))
     if exists and len(arg_types) > 1:
@@ -938,7 +938,7 @@ def transform_has_attr(
 
     cls_data = utils.get_class(self.ctx, typ)
     if not exists and allow_dynamic and cls_data and cls_data.rtti:
-        return self.visit(
+        return self.visit_expr(
             ast.CallExpr(
                 ast.IdExpr(ast.types.mangle(cls="RTTIType", func="_hasattr")),
                 items=[expr.items[0].value, ast.StringExpr(attr)],
@@ -960,7 +960,7 @@ def transform_get_attr(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None
     if not found:
         cls_data = utils.get_class(self.ctx, typ)
         if cls_data and cls_data.rtti:
-            return self.visit(
+            return self.visit_expr(
                 ast.CallExpr(
                     ast.IdExpr(ast.types.mangle(cls="RTTIType", func="_getattr")),
                     items=[
@@ -1135,7 +1135,7 @@ def transform_has_rtti_fn(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
 
     cls_data = utils.get_class(self.ctx, arg_type)
     assert cls_data
-    return self.visit(ast.BoolExpr(cls_data.rtti))
+    return self.visit_expr(ast.BoolExpr(cls_data.rtti))
 
 
 def transform_static_fn_can_call(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr:
@@ -1263,7 +1263,7 @@ def transform_static_fn_wrap_call_args(self: TypeVisitor, expr: ast.CallExpr) ->
     tuple_args = []
     for arg in cast(ast.CallExpr, call):
         tuple_args.append(arg.value)
-    return self.visit(ast.TupleExpr(tuple_args))
+    return self.visit_expr(ast.TupleExpr(tuple_args))
 
 
 def transform_static_vars(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
@@ -1285,7 +1285,7 @@ def transform_static_vars(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | N
             tuple_items.append(ast.TupleExpr([ast.IntExpr(idx), key, value]))
         else:
             tuple_items.append(ast.TupleExpr([key, value]))
-    return self.visit(ast.TupleExpr(tuple_items))
+    return self.visit_expr(ast.TupleExpr(tuple_items))
 
 
 def transform_static_children(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:
@@ -1307,7 +1307,7 @@ def transform_static_children(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr
                 if base.realized_name() == obj_type.realized_name():
                     tuple_items.append(ast.IdExpr(realization.type.realized_name()))
                     break
-    return self.visit(ast.TupleExpr(tuple_items))
+    return self.visit_expr(ast.TupleExpr(tuple_items))
 
 
 def transform_static_tuple_type(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | None:

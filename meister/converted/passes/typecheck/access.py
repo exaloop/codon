@@ -130,7 +130,7 @@ def typecheck_dot(self: TypeVisitor, node: ast.DotExpr) -> ast.Expr:
                 ),
                 items=[ast.StringExpr(chain[position])],
             )
-            final = self.visit(final)
+            final = self.visit_expr(final)
             position += 1
         elif value.module == self.ctx.module_name and position == 1:
             final = self.visit_expr(ast.IdExpr(chain[0]), type_allowed=True)
@@ -274,7 +274,7 @@ def access_attribute(
         # Modify the call to push `self` to the front of the argument list.
         # Avoids creating partial functions.
         parent.items.insert(0, ast.CallExpr.Arg(expr))
-        return self.visit(method_expr), True
+        return self.visit_expr(method_expr), True
     else:
         # Instance access: `obj.method`
         # Transform y.method to a partial call `type(y).method(y, ...)`
@@ -286,7 +286,7 @@ def access_attribute(
         if not method_ast.has(ast.Attr.Property):
             method_args.append(ast.EllipsisExpr(ast.EllipsisExpr.Kind.Partial))
         result = ast.CallExpr(method_expr, items=method_args)
-        return self.visit(result), True
+        return self.visit_expr(result), True
 
 
 def check_capture(self: TypeVisitor, value: Item):
@@ -632,7 +632,7 @@ def get_class_member(
                 return self.visit_expr(result), True
             if typ and not typ.can_realize() and class_member.type_expr:
                 with utils.with_class_generics(self.ctx, class_type):
-                    type_expr = self.visit(class_member.type_expr.clone())
+                    type_expr = self.visit_expr(class_member.type_expr.clone())
                 typ |= utils.extract_type(self.ctx, type_expr)
             return None, True
     has_side = utils.has_side_effect(expr)
@@ -712,12 +712,12 @@ def get_class_member(
             result = ast.CallExpr(
                 ast.DotExpr(expr, member="__getattr__"), items=[ast.StringExpr(member)]
             )
-            return self.visit(result), True
+            return self.visit_expr(result), True
 
     # Case: name has an alternative identifier with more precise type. Use it.
     if isinstance(expr, ast.IdExpr):
         if (value := self.ctx.get(expr.value)) and value.alternative:
             result = ast.DotExpr(ast.IdExpr(value.alternative.canonical), member=member)
-            return self.visit(result), True
+            return self.visit_expr(result), True
 
     return None, False

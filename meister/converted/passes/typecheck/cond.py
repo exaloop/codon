@@ -119,7 +119,7 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
                     ast.Attr.LocalRenames, {utils.get_unmangled_name(self.ctx, obj_arg.value): name}
                 )
             getter = fn_name.replace("_isinstance", "_getinstance")
-            result = self.visit(
+            result = self.visit_stmt(
                 ast.SuiteStmt(
                     ast.AssignStmt(ast.IdExpr(condition_name), rhs=node.cond),
                     ast.IfStmt(

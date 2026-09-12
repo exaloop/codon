@@ -85,7 +85,7 @@ def typecheck_generator(self: TypeVisitor, node: ast.GeneratorExpr) -> ast.Node:
     final = node.final_suite()
     if optimize:
         # Turn off this optimization for static items
-        match self.visit(final.iter.clone()):
+        match self.visit_expr(final.iter.clone()):
             case ast.CallExpr(ast.IdExpr(value=name)) if not name.startswith("std.internal.static"):
                 optimize = False
     var = ast.IdExpr(utils.get_temporary_var(self.ctx, "gen"))
@@ -376,4 +376,4 @@ def transform_comprehension(
             stmts.append(
                 ast.ExprStmt(ast.CallExpr(ast.DotExpr(var.clone(), member=method), items=args))
             )
-    return self.visit(ast.StmtExpr(stmts, expr=var))
+    return self.visit_expr(ast.StmtExpr(stmts, expr=var))

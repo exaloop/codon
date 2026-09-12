@@ -580,7 +580,7 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                     rhs=param,
                     type_expr=(None if not param.type else utils.get_param_type(param.type)),
                 )
-                front = self.visit(assignment)
+                front = self.visit_stmt(assignment)
                 node.items[idx] = self.visit_expr(ast.IdExpr(name), enforce_type=True)
                 prepends.append(front)
         if prepends:
@@ -618,7 +618,7 @@ def evaluate_static_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr | 
         # Case: static strings
         if node.op == "!":
             if op_type.can_realize():
-                return self.visit(ast.IntExpr(int(op_type.require_str == "")))
+                return self.visit_expr(ast.IntExpr(int(op_type.require_str == "")))
             if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
                 unbound._static_kind = ast.types.Type.Behaviour.Int
@@ -627,7 +627,7 @@ def evaluate_static_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr | 
         # Case: static bools
         if node.op == "!":
             if op_type.can_realize():
-                return self.visit(ast.BoolExpr(value=not op_type.require_bool))
+                return self.visit_expr(ast.BoolExpr(value=not op_type.require_bool))
             if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
                 unbound._static_kind = ast.types.Type.Behaviour.Bool
@@ -642,7 +642,9 @@ def evaluate_static_unary(self: TypeVisitor, node: ast.UnaryExpr) -> ast.Expr | 
                 value = ~value
             elif node.op == "!":
                 value = int(not bool(value))
-            return self.visit(ast.BoolExpr(bool(value)) if node.op == "!" else ast.IntExpr(value))
+            return self.visit_expr(
+                ast.BoolExpr(bool(value)) if node.op == "!" else ast.IntExpr(value)
+            )
         if unbound := node.type.unbound:
             # Cannot be evaluated yet: just set the type
             unbound._static_kind = (
@@ -685,7 +687,7 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
         if node.op == "+":
             # `"a" + "b"` -> `"ab"`
             if (lv := left_type.str) and (rv := right_type.str):
-                return self.visit(ast.StringExpr(lv + rv))
+                return self.visit_expr(ast.StringExpr(lv + rv))
             if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
                 unbound._static_kind = ast.types.Type.Behaviour.String
@@ -693,7 +695,7 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
             # `"a" == "b"` -> `False` (also handles `!=`)
             if (lv := left_type.str) and (rv := right_type.str):
                 eq = lv == rv
-                transformed = self.visit(ast.BoolExpr(eq if node.op == "==" else not eq))
+                transformed = self.visit_expr(ast.BoolExpr(eq if node.op == "==" else not eq))
                 return transformed
             if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
@@ -750,7 +752,7 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
             if node.op in comparisons or (node.op in {"&&", "||"} and both_bools)
             else ast.IntExpr(value)
         )
-        return self.visit(literal)
+        return self.visit_expr(literal)
 
     if unbound := node.type.unbound:
         comparisons = {"==", "!=", "<", "<=", ">", ">="}
@@ -822,7 +824,7 @@ def transform_binary_simple(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr
         result = ast.UnaryExpr("!", expr=ast.BinaryExpr(expr.lexpr, op="is", rexpr=expr.rexpr))
     else:
         return None
-    return self.visit(result)
+    return self.visit_expr(result)
 
 
 def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | None:
@@ -915,7 +917,7 @@ def transform_binary_is(self: TypeVisitor, expr: ast.BinaryExpr) -> ast.Expr | N
     else:
         # Same tuple types: `return lhs == rhs`
         result = ast.BinaryExpr(expr.lexpr, op="==", rexpr=expr.rexpr)
-    return self.visit(result)
+    return self.visit_expr(result)
 
 
 def get_magic(op: str):
@@ -989,7 +991,7 @@ def transform_binary_inplace_magic(
         )
     if method:
         result = ast.CallExpr(ast.IdExpr(method.func_name), items=[expr.lexpr, expr.rexpr])
-        return self.visit(result)
+        return self.visit_expr(result)
 
     return None
 
@@ -1131,9 +1133,9 @@ def transform_static_tuple_index(
             if not multiple
             else "".join(str_value[i] for i in range(start, stop, step))
         )
-        return True, self.visit(ast.StringExpr(value))
+        return True, self.visit_expr(ast.StringExpr(value))
     if not multiple:
-        return True, self.visit(ast.DotExpr(expr, member=class_fields[start].name))
+        return True, self.visit_expr(ast.DotExpr(expr, member=class_fields[start].name))
 
     # Tuple slicing: generate a sub-tuple
     name = ast.IdExpr(utils.get_temporary_var(self.ctx, "tup"))
@@ -1151,7 +1153,7 @@ def transform_static_tuple_index(
         [assignment],
         expr=ast.CallExpr(ast.IdExpr(ast.types.Stdlib.Tuple), items=tuple_items),
     )
-    return True, self.visit(result)
+    return True, self.visit_expr(result)
 
 
 def translate_index(self: TypeVisitor, idx: int, length: int, clamp: bool = False):
