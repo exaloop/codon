@@ -1,53 +1,128 @@
-from ..bridge import *
-from . import ast
-from . import tokenize
-
 import os
+from dataclasses import dataclass
 
-
-### File: pegen/{parser,grammar,tokenizer}.py
+from ...bridge import (
+    CODON,
+    Any,
+    Codon,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    cast,
+    inline,
+)
+from ..ast import nodes as ast
+from . import tokenize
 
 Mark = int
 
 # Static flag for verbosity to avoid unnecessary branching in hotspots.
 ENABLE_VERBOSE: Literal[bool] = False
 
-# Singleton ast nodes, created once for efficiency
-Load = ast.VariableCtx.Load
-Store = ast.VariableCtx.Store
-Del = ast.VariableCtx.Del
-
 EXPR_NAME_MAPPING = {
-    "Attribute": "attribute",
-    "Subscript": "subscript",
-    "Starred": "starred",
-    "Name": "name",
-    "List": "list",
-    "Tuple": "tuple",
-    "Lambda": "lambda",
-    "Call": "function call",
-    "BoolOp": "expression",
-    "BinOp": "expression",
-    "UnaryOp": "expression",
-    "GeneratorExp": "generator expression",
-    "Yield": "yield expression",
-    "YieldFrom": "yield expression",
-    "Await": "await expression",
-    "ListComp": "list comprehension",
-    "SetComp": "set comprehension",
-    "DictComp": "dict comprehension",
-    "Dict": "dict literal",
-    "Set": "set display",
-    "Compare": "comparison",
-    "IfExp": "conditional expression",
-    "NamedExpr": "named expression",
+    "DotExpr": "attribute",
+    "IndexExpr": "subscript",
+    "StarExpr": "starred",
+    "IdExpr": "name",
+    "ListExpr": "list",
+    "TupleExpr": "tuple",
+    "LambdaExpr": "lambda",
+    "CallExpr": "function call",
+    "BinaryExpr": "expression",
+    "ChainBinaryExpr": "comparison",
+    "UnaryExpr": "expression",
+    "GeneratorExpr": "generator expression",
+    "YieldExpr": "yield expression",
+    "AwaitExpr": "await expression",
+    "DictExpr": "dict literal",
+    "SetExpr": "set display",
+    "IfExpr": "conditional expression",
+    "AssignExpr": "named expression",
 }
+
+
+@dataclass
+class Comprehension:
+    """Parser-only carrier used until a GeneratorExpr loop nest is built."""
+
+    target: object
+    iter: object
+    ifs: List[object]
+    is_async: bool = False
+
+
+def unescape(string):
+    # C++ implementation: codon/parser/common.cpp:182
+    # TODO: merge
+    string = string.encode("utf-8")
+    result = bytearray()
+    i = 0
+    while i < len(string):
+        if string[i] == ord("\\") and i + 1 < len(string):
+            if string[i + 1] == ord("a"):
+                result.append(ord("\a"))
+                i += 1
+            elif string[i + 1] == ord("b"):
+                result.append(ord("\b"))
+                i += 1
+            elif string[i + 1] == ord("f"):
+                result.append(ord("\f"))
+                i += 1
+            elif string[i + 1] == ord("n"):
+                result.append(ord("\n"))
+                i += 1
+            elif string[i + 1] == ord("r"):
+                result.append(ord("\r"))
+                i += 1
+            elif string[i + 1] == ord("t"):
+                result.append(ord("\t"))
+                i += 1
+            elif string[i + 1] == ord("v"):
+                result.append(ord("\v"))
+                i += 1
+            elif string[i + 1] == ord('"'):
+                result.append(ord('"'))
+                i += 1
+            elif string[i + 1] == ord("'"):
+                result.append(ord("'"))
+                i += 1
+            elif string[i + 1] == ord("\\"):
+                result.append(ord("\\"))
+                i += 1
+            elif string[i + 1] == ord("x"):
+                if i + 3 > len(string):
+                    raise ValueError("invalid \\x code")
+                digits = string[i + 2 : i + 4].decode("ascii")
+                pos = 0
+                while pos < len(digits) and digits[pos] in "0123456789abcdefABCDEF":
+                    pos += 1
+                if pos == 0:
+                    raise ValueError("invalid \\x code")
+                code = int(digits[:pos], 16)
+                result.append(code & 0xFF)
+                i += pos + 1
+            elif ord("0") <= string[i + 1] <= ord("7"):
+                digits = string[i + 1 : i + 4].decode("ascii")
+                pos = 0
+                while pos < len(digits) and "0" <= digits[pos] <= "7":
+                    pos += 1
+                code = int(digits[:pos], 8)
+                result.append(code & 0xFF)
+                i += pos
+            else:
+                result.append(string[i])
+        else:
+            result.append(string[i])
+        i += 1
+    return result.decode("utf-8", errors="surrogateescape")
 
 
 def shorttok(tok: tokenize.TokenInfo) -> str:
     formatted = (
-        f"{tok.start[0]}.{tok.start[1]}: "
-        f"{tokenize.Tokens.get_name(tok.type)}:{tok.string!r}"
+        f"{tok.start[0]}.{tok.start[1]}: {tokenize.Tokens.get_name(tok.type)}:{tok.string!r}"
     )
     return f"{formatted:<25.25}"
 
@@ -102,6 +177,9 @@ class Tokenizer:
         while self._index == len(self._tokens):
             tok = next(self._tokengen)
             if tok.type in (tokenize.Tokens.NL, tokenize.Tokens.COMMENT):
+                # TODO(Codon AST): preserve `## codon: key=value` comments as
+                # DirectiveStmt nodes. The copied tokenizer currently drops all
+                # comments before grammar rules can distinguish directives.
                 continue
             if tok.type == tokenize.Tokens.ERRORTOKEN and tok.string.isspace():
                 continue
@@ -128,7 +206,7 @@ class Tokenizer:
                 tok.type < tokenize.Tokens.NEWLINE or tok.type > tokenize.Tokens.DEDENT
             ):
                 return tok
-        return None
+        return self._tokens[-1] if self._tokens else None
 
     def get_lines(self, line_numbers: List[int]) -> List[str]:
         """Retrieve source lines corresponding to line numbers."""
@@ -200,6 +278,7 @@ def logger(method):
 
     return logger_wrapper
 
+
 def memoize(method):
     """Memoize a symbol method."""
 
@@ -227,9 +306,7 @@ def memoize(method):
             fill = "  " * self._level
         if not hit:
             if ENABLE_VERBOSE and verbose:
-                print(
-                    f"{fill}{method_name}({argsr}) ... (looking at {self.showpeek()})"
-                )
+                print(f"{fill}{method_name}({argsr}) ... (looking at {self.showpeek()})")
             self._level += 1
             tree = method(self, *args)
             self._level -= 1
@@ -307,7 +384,8 @@ def memoize_left_rec(method):
                 depth += 1
                 if ENABLE_VERBOSE and verbose:
                     print(
-                        f"{fill}Recursive {method_name} at {mark} depth {depth}: {result!s:.200} to {endmark}"
+                        f"{fill}Recursive {method_name} at {mark} depth {depth}: "
+                        f"{result!s:.200} to {endmark}"
                     )
                 if not result:
                     if ENABLE_VERBOSE and verbose:
@@ -394,7 +472,13 @@ class BaseParser:
 
     def any_but_newline(self) -> Optional[tokenize.TokenInfo]:
         tok = self._tokenizer.peek()
-        if tok.type not in [tokenize.Tokens.NEWLINE, tokenize.Tokens.NL, tokenize.Tokens.INDENT, tokenize.Tokens.DEDENT, tokenize.Tokens.ENDMARKER]:
+        if tok.type not in [
+            tokenize.Tokens.NEWLINE,
+            tokenize.Tokens.NL,
+            tokenize.Tokens.INDENT,
+            tokenize.Tokens.DEDENT,
+            tokenize.Tokens.ENDMARKER,
+        ]:
             return self._tokenizer.advance(tok)
         return None
 
@@ -495,13 +579,14 @@ class BaseParser:
 
     def make_syntax_error(self, message: str, filename: str = "<unknown>"):
         tok = self._tokenizer.diagnose()
-        return CodonSyntaxError(
-            message, (filename, tok.start[0], 1 + tok.start[1], tok.line)
-        )
+        return CodonSyntaxError(message, (filename, tok.start[0], 1 + tok.start[1], tok.line))
 
 
 def simple_parser_main(parser_class, argv):
-    import time, sys
+    import sys
+    import time
+
+    from ...bridge import argparse
 
     argparser = argparse.ArgumentParser()
     argparser.add_argument(
@@ -515,9 +600,7 @@ def simple_parser_main(parser_class, argv):
         "-q", "--quiet", action="store_true", help="Don't print the parsed program"
     )
     argparser.add_argument("-i", "--indent", type="int", help="Indentation level")
-    argparser.add_argument(
-        "-r", "--run", action="store_true", help="Run the parsed program"
-    )
+    argparser.add_argument("-r", "--run", action="store_true", help="Run the parsed program")
     argparser.add_argument("filename", help="Input file ('-' to use stdin)")
 
     args = argparser.parse_args(args=argv)
@@ -540,7 +623,7 @@ def simple_parser_main(parser_class, argv):
         tree = parser.start()
         try:
             endpos = file.tell()
-        except IOError:
+        except OSError:
             endpos = 0
     finally:
         if file is not sys.stdin:
@@ -554,9 +637,9 @@ def simple_parser_main(parser_class, argv):
         sys.exit(1)
 
     if not bool(args.quiet):
-        print(ast.dump(unwrap(tree), indent=int(args.indent)))
+        print(ast.dump(Codon.unwrap(tree), indent=int(args.indent)))
     # if bool(args.run):
-        # exec(compile(tree, filename=filename, mode="exec"))
+    # exec(compile(tree, filename=filename, mode="exec"))
 
     if verbose:
         dt = t1 - t0
@@ -581,9 +664,11 @@ class CodonIndentationError(Exception):
     def __init__(self, message: str = ""):
         super().__init__(message)
 
+
 class CodonSyntaxError(SyntaxError):
     location: Tuple[str, int, int, str, int, int]
-    def __init__(self, message: str = "", location = ("", 0, 0, "", 0, 0)):
+
+    def __init__(self, message: str = "", location=("", 0, 0, "", 0, 0)):
         super().__init__(message)
         self.location = location
 
@@ -592,13 +677,11 @@ def parse_file(
     path: str,
     token_stream_factory=None,
     verbose: bool = False,
-) -> ast.Module:
+) -> ast.SuiteStmt:
     """Parse a file."""
     with open(path) as f:
         tok_stream = (
-            token_stream_factory(f)
-            if token_stream_factory
-            else tokenize.generate_tokens(f)
+            token_stream_factory(f) if token_stream_factory else tokenize.generate_tokens(f)
         )
         tokenizer = Tokenizer(tok_stream, verbose=verbose, path=path)
         parser = Parser(
@@ -616,6 +699,9 @@ def parse_string(
     verbose: bool = False,
 ):
     """Parse a string."""
+
+    from ...bridge import io
+
     tok_stream = (
         token_stream_factory(io.StringIO(source))
         if token_stream_factory
@@ -645,10 +731,7 @@ class Parser(BaseParser):
         super().__init__(tokenizer, verbose=verbose)
         self.filename = filename
 
-    def parse(
-        self, rule: Literal[str], call_invalid_rules: bool = False
-    ) -> Optional[ast.AST]:
-        old = self.call_invalid_rules
+    def parse(self, rule: Literal[str], call_invalid_rules: bool = False) -> Optional[ast.Node]:
         self.call_invalid_rules = call_invalid_rules
         res = getattr(self, rule)()
 
@@ -667,9 +750,7 @@ class Parser(BaseParser):
 
                 res = getattr(self, rule)()
 
-            self.raise_raw_syntax_error(
-                "invalid syntax", last_token.start, last_token.end
-            )
+            self.raise_raw_syntax_error("invalid syntax", last_token.start, last_token.end)
 
         return res
 
@@ -691,26 +772,24 @@ class Parser(BaseParser):
         # See https://github.com/python/cpython/blob/master/Parser/pegen.c#L161
         assert node is not None
         node_t = type(node)
-        if node_t is ast.Ellipsis:
+        if node_t is ast.EllipsisExpr:
             return "ellipsis"
-        elif node_t is ast.NoneValue:
+        elif node_t is ast.NoneExpr:
             return str(None)
-        elif node_t is ast.Bool:
+        elif node_t is ast.BoolExpr:
             return str(node.value)
-        elif node_t is ast.Constant:
+        elif node_t in (ast.IntExpr, ast.FloatExpr, ast.StringExpr):
             return "literal"
 
         try:
-            return EXPR_NAME_MAPPING[node_t.__class__.__name__]
+            return EXPR_NAME_MAPPING[node_t.__name__]
         except KeyError:
             raise ValueError(
                 f"unexpected expression in assignment {type(node).__name__} "
-                f"(line {node.lineno})."
+                f"(line {node.info.line})."
             )
 
-    def get_invalid_target(
-        self, target: int, node: Optional[ast.AST]
-    ) -> Optional[ast.AST]:
+    def get_invalid_target(self, target: int, node: Optional[ast.Expr]) -> Optional[ast.Expr]:
         """Get the meaningful invalid target for different assignment type."""
         if node is None:
             return None
@@ -720,123 +799,290 @@ class Parser(BaseParser):
         # they are parsed as expressions. Any other kind of expression
         # that is a container (like Sets or Dicts) is directly invalid and
         # we do not need to visit it recursively.
-        if isinstance(node, (ast.ListEx, ast.TupleEx)):
-            for e in getattr(node, "elts", list[BaseExpression]):
+        if isinstance(node, (ast.ListExpr, ast.TupleExpr)):
+            for e in node.items:
                 if (inv := self.get_invalid_target(target, e)) is not None:
                     return inv
-        elif isinstance(node, ast.Starred):
+        elif isinstance(node, ast.StarExpr):
             if target == Target.DEL_TARGETS:
                 return node
-            return self.get_invalid_target(target, node.value)
-        elif isinstance(node, ast.Compare):
+            return self.get_invalid_target(target, node.expr)
+        elif isinstance(node, (ast.BinaryExpr, ast.ChainBinaryExpr)):
             # This is needed, because the `a in b` in `for a in b` gets parsed
             # as a comparison, and so we need to search the left side of the comparison
             # for invalid targets.
             if target == Target.FOR_TARGETS:
-                if isinstance(node.ops[0], ast.In):
-                    return self.get_invalid_target(target, node.left)
+                if isinstance(node, ast.BinaryExpr) and node.op == "in":
+                    return self.get_invalid_target(target, node.lexpr)
                 return None
             return node
-        elif isinstance(node, (ast.Name, ast.Subscript, ast.Attribute)):
+        elif isinstance(node, (ast.IdExpr, ast.IndexExpr, ast.DotExpr)):
             return None
         else:
             return node
 
     def set_expr_context(self, node, context):
-        """Set the context (Load, Store, Del) of an ast node."""
-        if hasattr(node, "ctx"):
-            setattr(node, "ctx", context)
+        """Codon targets use ordinary Expr nodes and have no load/store context."""
         return node
 
-    def ensure_real(self, number):
-        # TODO
-        value = number
-        # value = ast.literal_eval(number.string)
-        # if type(value) is complex:
-        #     self.raise_syntax_error_known_location(
-        #         "real number required in complex literal", number
-        #     )
-        return value
+    def suite(self, statements=None, **locations):
+        if isinstance(statements, ast.SuiteStmt):
+            return statements
+        if statements is None:
+            suite = ast.SuiteStmt(**locations)
+        else:
+            suite = ast.SuiteStmt(*statements, **locations)
+            suite.flatten()
+        return suite
 
-    def ensure_imaginary(self, number):
-        # TODO
-        value = number
-        # value = ast.literal_eval(number.string)
-        # if type(value) is not complex:
-        #     self.raise_syntax_error_known_location(
-        #         "imaginary number required in complex literal", number
-        #     )
-        return value
+    def call_arg(self, name, value, **locations):
+        return ast.CallExpr.Arg(name=name, value=value, **locations)
 
-    def _concat_strings_in_constant(self, parts):
-        s = ast.literal_eval(parts[0].string)
-        for ss in parts[1:]:
-            s += ast.literal_eval(ss.string)
-        return ast.Constant(
-            value=s,
-            lineno=parts[0].start[0],
-            col_offset=parts[0].start[1],
-            end_lineno=parts[-1].end[0],
-            end_col_offset=parts[0].end[1],
-            kind="u" if parts[0].string.startswith("u") else "",
+    def print_parenthesized(self, print_token, left, arguments, **locations):
+        positional, keywords = arguments or ([], [])
+        # TODO: fix this, make print () switch to normal print
+        if print_token.end == left.start:
+            return ast.ExprStmt(
+                self.call(
+                    ast.IdExpr(
+                        value=print_token.string,
+                        lineno=print_token.start[0],
+                        col_offset=print_token.start[1],
+                        end_lineno=print_token.end[0],
+                        end_col_offset=print_token.end[1],
+                    ),
+                    positional,
+                    keywords,
+                    **locations,
+                ),
+                **locations,
+            )
+        items = [item.value if isinstance(item, ast.CallExpr.Arg) else item for item in positional]
+        items.extend(item.value for item in keywords)
+        value = ast.TupleExpr(items=items, **locations) if len(items) != 1 else items[0]
+        return ast.PrintStmt(items=[value], **locations)
+
+    def directive(self, token, **locations):
+        key, value = token.string.removeprefix("##").strip().removeprefix("codon:").split("=", 1)
+        return ast.DirectiveStmt(key=key.strip(), value=value.strip(), **locations)
+
+    def call(self, expr, positional=None, keywords=None, partial=False, **locations):
+        items = [
+            value if isinstance(value, ast.CallExpr.Arg) else self.call_arg("", value, **locations)
+            for value in (positional or [])
+        ]
+        items.extend(keywords or [])
+        if partial:
+            items.append(
+                self.call_arg(
+                    "",
+                    ast.EllipsisExpr(
+                        mode=ast.EllipsisExpr.Kind.Partial,
+                        **locations,
+                    ),
+                    **locations,
+                )
+            )
+        elif items and not items[-1].name and isinstance(items[-1].value, ast.EllipsisExpr):
+            items[-1].value.mode = ast.EllipsisExpr.Kind.Partial
+        return ast.CallExpr(
+            expr=expr,
+            items=items,
+            partial=False,
+            **locations,
         )
 
-    def concatenate_strings(self, parts):
-        """Concatenate multiple tokens and ast.JoinedStr"""
-        # Get proper start and stop
-        start = end = None
-        if isinstance(parts[0], ast.JoinedStr):
-            start = parts[0].lineno, parts[0].col_offset
-        if isinstance(parts[-1], ast.JoinedStr):
-            end = parts[-1].end_lineno, parts[-1].end_col_offset
+    def binary_chain(self, first, pairs, **locations):
+        expr = first
+        for op, rhs in pairs:
+            expr = ast.BinaryExpr(lexpr=expr, op=op, rexpr=rhs, **locations)
+        return expr
 
-        # Combine the different parts
-        seen_joined = False
-        values = []
-        ss = []
-        for p in parts:
-            if isinstance(p, ast.JoinedStr):
-                seen_joined = True
-                if ss:
-                    values.append(self._concat_strings_in_constant(ss))
-                    ss.clear()
-                values.extend(p.values)
+    def make_number(self, value, suffix="", **locations):
+        if value.lower().endswith("j"):
+            value = value[:-1]
+            suffix = "j" + suffix
+        if any(marker in value for marker in (".", "e", "E")):
+            return ast.FloatExpr(value, suffix=suffix, **locations)
+        return ast.IntExpr(value, suffix=suffix, **locations)
+
+    def dict_expr(self, pairs, **locations):
+        items = []
+        for key, value in pairs:
+            if key is None:
+                items.append(ast.KeywordStarExpr(expr=value, **locations))
             else:
-                ss.append(p)
+                items.append(ast.TupleExpr(items=[key, value], **locations))
+        return ast.DictExpr(items=items, **locations)
 
-        if ss:
-            values.append(self._concat_strings_in_constant(ss))
+    def make_comparison(self, first, pairs, **locations):
+        if len(pairs) == 1:
+            op, rhs = pairs[0]
+            return ast.BinaryExpr(lexpr=first, op=op, rexpr=rhs, **locations)
+        return ast.ChainBinaryExpr(exprs=[("", first)] + pairs, **locations)
 
-        consolidated = []
-        for p in values:
-            if (
-                consolidated
-                and isinstance(consolidated[-1], ast.Constant)
-                and isinstance(p, ast.Constant)
-            ):
-                consolidated[-1].value += p.value
-                consolidated[-1].end_lineno = p.end_lineno
-                consolidated[-1].end_col_offset = p.end_col_offset
-            else:
-                consolidated.append(p)
+    def make_pipe(self, first, rest, **locations):
+        return ast.PipeExpr(
+            items=[ast.PipeExpr.Pipe("", first, **locations)]
+            + [ast.PipeExpr.Pipe(op, expr, **locations) for op, expr in rest],
+            **locations,
+        )
 
-        if not seen_joined and len(values) == 1 and isinstance(values[0], ast.Constant):
-            return values[0]
-        else:
-            return ast.JoinedStr(
-                values=consolidated,
-                lineno=start[0] if start else values[0].lineno,
-                col_offset=start[1] if start else values[0].col_offset,
-                end_lineno=end[0] if end else values[-1].end_lineno,
-                end_col_offset=end[1] if end else values[-1].end_col_offset,
+    def assignments(self, targets, value, **locations):
+        statements = []
+        values = targets + [value]
+        for index in range(len(targets) - 1, -1, -1):
+            statements.append(
+                ast.AssignStmt(
+                    lhs=targets[index],
+                    rhs=values[index + 1],
+                    **locations,
+                )
             )
+        return self.suite(statements, **locations)
+
+    def globals(self, names, non_local=False, **locations):
+        return self.suite(
+            [
+                ast.GlobalStmt(
+                    var=name.string,
+                    non_local=non_local,
+                    **locations,
+                )
+                for name in names
+            ],
+            **locations,
+        )
+
+    def deletes(self, targets, **locations):
+        return self.suite(
+            [ast.DelStmt(expr=target, **locations) for target in targets],
+            **locations,
+        )
+
+    def dotted_expr(self, value, **locations):
+        parts = value.split(".")
+        expr = ast.IdExpr(value=parts[0], **locations)
+        for part in parts[1:]:
+            expr = ast.DotExpr(expr=expr, member=part, **locations)
+        return expr
+
+    def imports(self, aliases, **locations):
+        return self.suite(
+            [
+                ast.ImportStmt(
+                    from_expr=self.dotted_expr(name, **locations),
+                    as_=as_name or "",
+                    **locations,
+                )
+                for name, as_name, _, _, _ in aliases
+            ],
+            **locations,
+        )
+
+    def imports_from(self, module, aliases, dots, **locations):
+        return self.suite(
+            [
+                ast.ImportStmt(
+                    from_expr=self.dotted_expr(module, **locations) if module else None,
+                    what=self.dotted_expr(name, **locations),
+                    args=params,
+                    ret=ret,
+                    as_=as_name or "",
+                    dots=dots,
+                    is_function=is_function,
+                    **locations,
+                )
+                for name, as_name, params, ret, is_function in aliases
+            ],
+            **locations,
+        )
+
+    def make_class(self, name, generics, arguments, suite, **locations):
+        positional, keywords = arguments or ([], [])
+        bases = list(positional)
+        for arg in keywords:
+            assert not arg.name, "class got invalid base"
+            bases.append(arg.value)
+        params = []
+        body = []
+        for statement in suite.items:
+            if isinstance(statement, ast.AssignStmt) and isinstance(statement.lhs, ast.IdExpr):
+                params.append(
+                    ast.Param(
+                        name=statement.lhs.value,
+                        type=statement.type_expr,
+                        default=statement.rhs,
+                        **locations,
+                    )
+                )
+            else:
+                body.append(statement)
+        params.extend(generics)
+        return ast.ClassStmt(
+            name=name,
+            items=params,
+            suite=self.suite(body, **locations),
+            base_classes=bases,
+            **locations,
+        )
+
+    def make_with_stmt(self, items, suite, async_=False, **locations):
+        # C++ WithStmt stores simple IdExpr targets as names and uses an empty
+        # string for every other target (codon/parser/ast/stmt.cpp:791).
+        values = [item[0] for item in items]
+        names = [item[1].value if isinstance(item[1], ast.IdExpr) else "" for item in items]
+        return ast.WithStmt(
+            items=values,
+            vars=names,
+            suite=self.suite(suite, **locations),
+            async_=async_,
+            **locations,
+        )
+
+    def generator(self, kind, expr, comprehensions, key=None, **locations):
+        tail = ast.ExprStmt(
+            expr=(ast.TupleExpr(items=[key, expr], **locations) if key is not None else expr),
+            **locations,
+        )
+        current = tail
+        for comp in reversed(comprehensions):
+            nested = current
+            for condition in reversed(comp.ifs):
+                nested = ast.IfStmt(
+                    cond=condition,
+                    if_suite=nested,
+                    **locations,
+                )
+            current = ast.ForStmt(
+                var=comp.target,
+                iter=comp.iter,
+                suite=nested,
+                async_=comp.is_async,
+                **locations,
+            )
+        return ast.GeneratorExpr(kind=kind, loops=current, **locations)
+
+    def ensure_real(self, number):
+        return number
+
+    def ensure_imaginary(self, number):
+        return number
+
+    def _concat_strings_in_constant(self, parts):
+        return "".join(part.value for part in parts)
+
+    def concatenate_strings(self, parts, **locations):
+        """Concatenate adjacent Codon StringExpr nodes."""
+        strings = []
+        for part in parts:
+            strings.extend(part.strings)
+        return ast.StringExpr(strings=strings, **locations)
 
     def check_fstring_conversion(self, mark: tokenize.TokenInfo, name: tokenize.TokenInfo) -> str:
-        if mark.start != name.start:
+        if mark.end != name.start:
             self.raise_syntax_error_known_range(
-                "f-string: conversion type must come right after the exclamanation mark",
-                mark,
-                name
+                "f-string: conversion type must come right after the exclamation mark", mark, name
             )
         s = name.string
         if len(s) > 1 or s not in ("s", "r", "a"):
@@ -846,27 +1092,27 @@ class Parser(BaseParser):
             )
         return name.string
 
-    def fix_string(self, string, prefix = "", **kwargs):
-        value = string.string
+    def fix_string(self, string, prefix="", **kwargs):
+        source = string.string
+        value = source
         if len(value) >= 6 and value[:3] == value[-3:]:
             value = value[3:-3]
         elif len(value) >= 2 and value[0] == value[-1]:
             value = value[1:-1]
-        return ast.Str(value, prefix, **kwargs)
+        raw = prefix.lower() == "r"
+        if raw:
+            prefix = ""
+        else:
+            value = unescape(value)
+        return ast.StringExpr(value, prefix=prefix, **kwargs)
 
-    def generate_ast_for_string(self, tokens) -> Optional[ast.BaseExpression]:
+    def generate_ast_for_string(self, tokens, **locations) -> Optional[ast.Expr]:
         """Generate AST nodes for strings."""
 
         if len(tokens) == 1:
             return tokens[0]
         else:
-            return ast.JoinedStr(
-                value=tokens,
-                lineno=tokens[0].lineno,
-                col_offset=tokens[0].col_offset,
-                end_lineno=tokens[-1].lineno,
-                end_col_offset=tokens[-1].col_offset,
-            )
+            return self.concatenate_strings(tokens, **locations)
 
     def extract_import_level(self, tokens: List[tokenize.TokenInfo]) -> int:
         """Extract the relative import level from the tokens preceding the module name.
@@ -884,7 +1130,12 @@ class Parser(BaseParser):
 
     def set_decorators(self, target, decorators):
         """Set the decorators on a function or class definition."""
-        target.decorator_list = decorators
+        if isinstance(target, ast.ForStmt):
+            # The Codon ForStmt has one decorator slot.
+            target.decorator = decorators[0] if decorators else None
+        else:
+            target.decorators = decorators
+        target.validate()
         return target
 
     def get_comparison_ops(self, pairs):
@@ -895,43 +1146,48 @@ class Parser(BaseParser):
 
     def make_arguments(
         self,
-        pos_only = None,  #: Optional[List[Tuple[ast.arg, None]]],
-        pos_only_with_default = None,  #: List[Tuple[ast.arg, Any]],
-        param_no_default = None,  #: Optional[List[Tuple[ast.arg, None]]],
-        param_default = None,  #: Optional[List[Tuple[ast.arg, Any]]],
-        after_star = None,  #: Optional[Tuple[Optional[ast.arg], List[Tuple[ast.arg, Any]], Optional[ast.arg]]]
-    ) -> ast.arguments:
+        pos_only=None,  #: Optional[List[Tuple[ast.Param, None]]],
+        pos_only_with_default=None,  #: List[Tuple[ast.Param, Any]],
+        param_no_default=None,  #: Optional[List[Tuple[ast.Param, None]]],
+        param_default=None,  #: Optional[List[Tuple[ast.Param, Any]]],
+        #: Optional[Tuple[Optional[ast.Param], List[Tuple[ast.Param, Any]], Optional[ast.Param]]]
+        after_star=None,
+        **locations,
+    ) -> List[ast.Param]:
         """Build a function definition arguments."""
-        defaults: List[ast.BaseExpression] = (
-            [Codon.unwrap(d) for _, d in pos_only_with_default if d is not None]
-            if pos_only_with_default is not None
-            else []
-        )
-        defaults += [Codon.unwrap(d) for _, d in param_default if d is not None] if param_default is not None else []
-        # Because we need to combine pos only with and without default even
-        # the version with no default is a tuple
-        posonlyargs: List[ast.Arg] = []
+        params = []
         if pos_only is not None:
-            posonlyargs += [p for p, _ in pos_only]
+            params.extend(p for p, _ in pos_only)
         elif pos_only_with_default is not None:
-            posonlyargs += [p for p, _ in pos_only_with_default]
-        params: List[ast.Arg] = []
+            for param, default in pos_only_with_default:
+                param.default = default
+                params.append(param)
         if param_no_default is not None:
-            params += param_no_default
+            params.extend(param_no_default)
         if param_default is not None:
-            params += [p for p, _ in param_default]
-
-        return ast.arguments(
-            posonlyargs=posonlyargs,
-            args=params,
-            defaults=defaults,
-            vararg=after_star[0] if after_star is not None else None,
-            kwonlyargs=[p for p, _ in after_star[1]] if after_star is not None else None,
-            kw_defaults=[d for _, d in after_star[1]] if after_star is not None else None,
-            kwarg=after_star[2] if after_star is not None else None,
-            types=[p for p, _ in after_star[3]] if after_star is not None else None,
-            type_defaults=[d for _, d in after_star[3]] if after_star is not None else None,
-        )
+            for param, default in param_default:
+                param.default = default
+                params.append(param)
+        if after_star is not None:
+            vararg, keyword_only, kwarg, generics = after_star
+            if vararg is not None:
+                vararg.name = "*" + vararg.name
+                params.append(vararg)
+            elif keyword_only:
+                params.append(ast.Param(name="*", **locations))
+            for param, default in keyword_only:
+                param.default = default
+                params.append(param)
+            if kwarg is not None:
+                kwarg.name = "**" + kwarg.name
+                params.append(kwarg)
+            for param, default in generics:
+                param.default = default
+                param.status = ast.Param.Status.Generic
+                if param.type is None:
+                    param.type = ast.IdExpr(value="type", **locations)
+                params.append(param)
+        return params
 
     def _build_syntax_error(
         self,
@@ -949,9 +1205,7 @@ class Parser(BaseParser):
             line = tok.line
         else:
             # End is used only to get the proper text
-            line = "\\n".join(
-                self._tokenizer.get_lines(list(range(start[0], end[0] + 1)))
-            )
+            line = "\\n".join(self._tokenizer.get_lines(list(range(start[0], end[0] + 1))))
 
         # tokenize.py index column offset from 0 while Cpython index column
         # offset at 1 when reporting SyntaxError, so we need to increment
@@ -975,9 +1229,7 @@ class Parser(BaseParser):
             last_token = self._tokenizer.diagnose()
             end = last_token.start
             end = last_token.end
-            self.raise_raw_syntax_error(
-                f"expected {expectation}", last_token.start, end
-            )
+            self.raise_raw_syntax_error(f"expected {expectation}", last_token.start, end)
         return res
 
     def raise_syntax_error(self, message: str):
@@ -1024,13 +1276,11 @@ class Parser(BaseParser):
 
         raise self._build_syntax_error(message, start, last_token.start)
 
-    def raise_syntax_error_invalid_target(
-        self, target: int, node: Optional[ast.AST]
-    ):
+    def raise_syntax_error_invalid_target(self, target: int, node: Optional[ast.Expr]):
         invalid_target = self.get_invalid_target(target, node)
 
         if invalid_target is None:
-            return None
+            return
 
         if target in (Target.STAR_TARGETS, Target.FOR_TARGETS):
             msg = f"cannot assign to {self.get_expr_name(invalid_target)}"
@@ -1042,3 +1292,12 @@ class Parser(BaseParser):
     def raise_syntax_error_on_next_token(self, message: str):
         next_token = self._tokenizer.peek()
         raise self._build_syntax_error(message, next_token.start, next_token.end)
+
+    def source_between(self, start, end):
+        lines = self._tokenizer.get_lines(list(range(start[0], end[0] + 1)))
+
+        if start[0] == end[0]:
+            return lines[0][start[1] : end[1]]
+        lines[0] = lines[0][start[1] :]
+        lines[-1] = lines[-1][: end[1]]
+        return "".join(lines)

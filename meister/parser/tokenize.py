@@ -1,6 +1,7 @@
 ### File: token.py / tokenize.py (Python 3.11.11)
 
-from ..bridge import *
+from ...bridge import ClassVar, Codon, Dict, Generator, List, Optional, Set, Tuple, static
+
 
 class Tokens:
     ENDMARKER = 0
@@ -247,11 +248,7 @@ class TokenPatterns:
         while pos < n:
             if TokenPatterns._is_digit(line[pos], base):
                 pos += 1
-            elif (
-                line[pos] == "_"
-                and pos + 1 < n
-                and TokenPatterns._is_digit(line[pos + 1], base)
-            ):
+            elif line[pos] == "_" and pos + 1 < n and TokenPatterns._is_digit(line[pos + 1], base):
                 pos += 2
             else:
                 break
@@ -382,9 +379,7 @@ class TokenPatterns:
             return -1
         initial = line[pos]
         if TokenPatterns._is_digit(initial, 10) or (
-            initial == "."
-            and pos + 1 < n
-            and TokenPatterns._is_digit(line[pos + 1], 10)
+            initial == "." and pos + 1 < n and TokenPatterns._is_digit(line[pos + 1], 10)
         ):
             return TokenPatterns._scan_number(line, pos)
         if initial == "\r" and pos + 1 < n and line[pos + 1] == "\n":
@@ -394,7 +389,7 @@ class TokenPatterns:
         special_end = self._scan_special(line, pos)
         if special_end >= 0:
             return special_end
-        if initial == "'" or initial == '\"':
+        if initial == "'" or initial == '"':
             return TokenPatterns._scan_string(line, pos, allow_continuation)
         if initial == "_" or initial.isalnum():
             end = pos + 1
@@ -459,7 +454,7 @@ class TokenPatterns:
             while end < n and line[end] not in "\r\n":
                 end += 1
             return start, end
-        if line.startswith("'''", pos) or line.startswith('\"\"\"', pos):
+        if line.startswith("'''", pos) or line.startswith('"""', pos):
             return start, pos + 3
         end = self._scan_plain_token(line, pos, True)
         return (start, end) if end >= 0 else None
@@ -527,6 +522,10 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
     strstart = (0, 0)
     str_prefix: Optional[TokenInfo] = None
 
+    # keywords that can came after a number without a space
+    # TODO: replace this with just NUMBER+NAME?
+    space_keywords = {"if", "else", "and", "or", "in", "is", "not"}
+
     def get_string(token, spos, lnum, pos, line) -> Generator[TokenInfo]:
         nonlocal str_prefix
 
@@ -536,7 +535,7 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
         elif len(token) >= 2 and token[0] == token[-1]:
             prefix = token[0]
 
-        if str_prefix and str_prefix.string in ["f", "fr", "rf"]:
+        if str_prefix and str_prefix.string.lower() in ["f", "fr", "rf"]:
             yield TokenInfo(
                 Tokens.FSTRING_START,
                 prefix,
@@ -571,7 +570,32 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                             tokens.pop()
                         if tokens and tokens[-1].type == Tokens.NEWLINE:
                             tokens.pop()
-                        for t in tokens:
+                        split_tokens = []
+                        nesting = 0
+                        for index, t in enumerate(tokens):
+                            if t.string in ("(", "["):
+                                nesting += 1
+                            elif t.string in (")", "]"):
+                                nesting -= 1
+                            # expr:=<30 would be tokenized as := instead of : and =
+                            if t.string == ":=" and nesting == 0:
+                                yield TokenInfo(
+                                    Tokens.OP,
+                                    ":",
+                                    (last_pos[0] + t.start[0] - 1, last_pos[1] + t.start[1]),
+                                    (last_pos[0] + t.end[0] - 1, last_pos[1] + t.start[1] + 1),
+                                    t.line,
+                                )
+                                t.type = Tokens.OP
+                                t.start = (t.start[0], t.start[1] + 1)
+                                t.string = "="
+                            t.start = (
+                                last_pos[0] + t.start[0] - 1,
+                                last_pos[1] + t.start[1],
+                            )
+                            t.end = (last_pos[0] + t.end[0] - 1, last_pos[1] + t.end[1])
+                            yield t
+                        for t in split_tokens:
                             t.start = (
                                 last_pos[0] + t.start[0] - 1,
                                 last_pos[1] + t.start[1],
@@ -584,9 +608,9 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                 else:
                     current_pos = (current_pos[0], current_pos[1] + 1)
             if brace_cnt > 0:
-                yield TokenInfo(Tokens.ERRORTOKEN, line[pos], spos, (spos[0], spos[1] + len(prefix)), line)
+                raise TokenError("expecting '}' in f-string", spos)
             if brace_cnt < 0:
-                yield TokenInfo(Tokens.ERRORTOKEN, line[pos], spos, (spos[0], spos[1] + len(prefix)), line)
+                raise TokenError("single '}' is not allowed in f-string", spos)
             if last_brace < len(token) - len(prefix):
                 yield TokenInfo(
                     Tokens.FSTRING_MIDDLE,
@@ -607,6 +631,10 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
             yield TokenInfo(Tokens.STRING, token, spos, (lnum, pos), line)
 
     lnum = parenlev = continued = 0
+    raw_decorator = False
+    raw_block_pending = False
+    raw_def_indent = 0
+    raw_block_indent = None
     numchars = "0123456789"
     contstr, needcont = "", 0
     contline = None
@@ -627,6 +655,48 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
 
         lnum += 1
         pos, max = 0, len(line)
+
+        stripped = line.lstrip(" \t\f") if line else ""
+        leading = len(line) - len(stripped) if line else 0
+        if raw_block_pending and stripped and not stripped.startswith(("#", "\r", "\n")):
+            if leading > raw_def_indent:
+                raw_block_indent = leading
+                indents.append(leading)
+                yield TokenInfo(Tokens.INDENT, line[:leading], (lnum, 0), (lnum, leading), line)
+            raw_block_pending = False
+        if raw_block_indent is not None:
+            if not line:
+                raw_block_indent = None
+                raw_decorator = False
+            elif not stripped or stripped.startswith(("#", "\r", "\n")):
+                yield TokenInfo(Tokens.NL, line, (lnum, 0), (lnum, len(line)), line)
+                continue
+            elif leading >= raw_block_indent:
+                content = line[leading:].rstrip("\r\n")
+                yield TokenInfo(
+                    Tokens.NAME,
+                    content,
+                    (lnum, leading),
+                    (lnum, leading + len(content)),
+                    line,
+                )
+                yield TokenInfo(
+                    Tokens.NEWLINE,
+                    line[leading + len(content) :],
+                    (lnum, leading + len(content)),
+                    (lnum, len(line)),
+                    line,
+                )
+                continue
+            else:
+                raw_block_indent = None
+                raw_decorator = False
+
+        if stripped.startswith(("@llvm", "@python")):
+            raw_decorator = True
+        elif raw_decorator and stripped.startswith("def "):
+            raw_def_indent = leading
+            raw_block_pending = True
 
         if contstr:  # continued string
             if not line:
@@ -670,9 +740,7 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                 if line[pos] == " ":
                     column += 1
                 elif line[pos] == "\t":
-                    column = (
-                        column // token_patterns.tabsize + 1
-                    ) * token_patterns.tabsize
+                    column = (column // token_patterns.tabsize + 1) * token_patterns.tabsize
                 elif line[pos] == "\f":
                     column = 0
                 else:
@@ -685,7 +753,9 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                 if line[pos] == "#":
                     comment_token = line[pos:].rstrip("\r\n")
                     yield TokenInfo(
-                        Tokens.COMMENT,
+                        Tokens.TYPE_COMMENT
+                        if comment_token.startswith("## codon:")
+                        else Tokens.COMMENT,
                         comment_token,
                         (lnum, pos),
                         (lnum, pos + len(comment_token)),
@@ -694,7 +764,11 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                     pos += len(comment_token)
 
                 yield TokenInfo(
-                    Tokens.NL, line[pos:], (lnum, pos), (lnum, len(line)), line
+                    Tokens.NEWLINE if line.lstrip().startswith("## codon:") else Tokens.NL,
+                    line[pos:],
+                    (lnum, pos),
+                    (lnum, len(line)),
+                    line,
                 )
                 continue
 
@@ -767,13 +841,13 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
 
                 elif initial.isidentifier():  # ordinary name
                     if end < len(line) and (line[end] == '"' or line[end] == "'"):
-                        str_prefix = TokenInfo(
-                            Tokens.STRING_PREFIX, token, spos, epos, line
-                        )
+                        str_prefix = TokenInfo(Tokens.STRING_PREFIX, token, spos, epos, line)
                     elif (
                         token_patterns.prev_token
                         and token_patterns.prev_token.end == (lnum, start)
                         and token_patterns.prev_token.type == Tokens.NUMBER
+                        # Support stuff like 1if(condition)else(value) (not a suffix!)
+                        and token not in space_keywords
                     ):
                         yield TokenInfo(Tokens.NUMBER_SUFFIX, token, spos, epos, line)
                     else:
@@ -787,17 +861,11 @@ def _tokenize(readline, token_patterns) -> Generator[TokenInfo]:
                         parenlev -= 1
                     yield TokenInfo(Tokens.OP, token, spos, epos, line)
             else:
-                yield TokenInfo(
-                    Tokens.ERRORTOKEN, line[pos], (lnum, pos), (lnum, pos + 1), line
-                )
+                yield TokenInfo(Tokens.ERRORTOKEN, line[pos], (lnum, pos), (lnum, pos + 1), line)
                 pos += 1
 
     # Add an implicit NEWLINE if the input doesn't end in one
-    if (
-        last_line
-        and last_line[-1] not in "\r\n"
-        and not last_line.strip().startswith("#")
-    ):
+    if last_line and last_line[-1] not in "\r\n" and not last_line.strip().startswith("#"):
         yield TokenInfo(
             Tokens.NEWLINE,
             "",
@@ -831,9 +899,7 @@ def main(filename):
             tokens = list(tokenize(f))
         for token in tokens:
             token_type = token.type
-            token_range = (
-                f"{token.start[0]},{token.start[1]}-{token.end[0]},{token.end[1]}:"
-            )
+            token_range = f"{token.start[0]},{token.start[1]}-{token.end[0]},{token.end[1]}:"
             s = "'" + token.string.replace("\n", "\\n") + "'"
             print(f"{token_range:20}{Tokens.get_name(token_type):15}{s:15}")
     except IndentationError as err:

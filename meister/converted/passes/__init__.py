@@ -1,1 +1,0 @@
-"""Converted Codon parser package."""
