@@ -22,6 +22,11 @@ export CODON_PYTHON=$(python ${WORKSPACE}/test/python/find-python-library.py)
 export PYTHONPATH=${WORKSPACE}/test/python
 export CODON_DIR=$(pwd)/codon-deploy-${ARCH}
 
+GTEST_PARALLEL="${WORKSPACE}/gtest-parallel/gtest-parallel"
+if [ ! -f "${GTEST_PARALLEL}" ]; then
+  git submodule update --init --recursive
+fi
+
 echo "=> Unit tests..."
 mkdir -p build  # needed for some tests that write into this directory
 if [ "${ARCH}" = "darwin-x86_64" ]; then
@@ -29,10 +34,10 @@ if [ "${ARCH}" = "darwin-x86_64" ]; then
   # (macOS 14 Intel runners are not free).
   # arithmetic.codon fails in debug mode on x86 due to float16 (TODO: why?)
   export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
-  time build-${ARCH}/codon_test --gtest_filter="-*numpy*:*core_arithmetic_codon_debug*"
+  time "${GTEST_PARALLEL}" build-${ARCH}/codon_test --gtest_filter="-*numpy*:*core_arithmetic_codon_debug*"
   # :*python*:*core_arithmetic*:*stdlib_random_test*"
 else
-  time build-${ARCH}/codon_test
+  time "${GTEST_PARALLEL}" build-${ARCH}/codon_test
 fi
 
 echo "=> Standalone test..."

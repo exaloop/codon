@@ -1,0 +1,3 @@
+[submodule "gtest-parallel"]
+	path = gtest-parallel
+	url = https://github.com/google/gtest-parallel.git
