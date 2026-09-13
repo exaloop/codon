@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import Callable, List, cast
 from ... import ast, cache
+from ...bridge import Callable, List, cast
 from ...error import TypecheckError
 from . import assign, special, utils
 from .ctx import Base

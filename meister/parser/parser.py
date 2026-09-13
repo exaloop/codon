@@ -1,7 +1,7 @@
 import itertools
 
-from ...bridge import *
 from ..ast import nodes as ast
+from ..bridge import *
 from .pegen import *
 
 
@@ -7777,7 +7777,7 @@ class CodonParser(Parser):
             and (self._gather_219())
             and (self.expect_forced(self.expect_literal(":"), "':'"))
         ):
-            return None  # pragma: no cover
+            return  # pragma: no cover
         self._reset(mark)
         if (
             (self.expect_literal("async"),)
@@ -7788,9 +7788,9 @@ class CodonParser(Parser):
             and (self.expect_literal(")"))
             and (self.expect_forced(self.expect_literal(":"), "':'"))
         ):
-            return None  # pragma: no cover
+            return  # pragma: no cover
         self._reset(mark)
-        return None
+        return
 
     def invalid_with_stmt_indent(self) -> None:
         # invalid_with_stmt_indent: 'async'? 'with' ','.(expression ['as' star_target])+ ':' NEWLINE !INDENT | 'async'? 'with' '(' ','.(expressions ['as' star_target])+ ','? ')' ':' NEWLINE !INDENT

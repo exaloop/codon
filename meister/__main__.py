@@ -5,22 +5,49 @@ from .bridge import *
 
 def main(argv):
     mode = argv[0]
+    root = "/Users/inumanag/Projekti/exaloop/meydan/meister"
 
-    from .converted import ast, cache, parser
-    # from .converted.passes import scope
+    from . import ast, cache, parser
+    from .passes import typecheck
 
     if mode == "tokenize":
-        parser.tokenize_main(argv[1])
-    elif mode == "parse":
-        try:
-            cache = cache.Cache("codon")
+        from .parser.tokenize import main as tokenize_main
 
-            node = parser.parse(file=argv[1])
+        tokenize_main(argv[1])
+    elif mode == "scope":
+        try:
+            cache = cache.Cache(root)
+            node = cache.parse(file=argv[1])
             node = cache.scope(node)
-            # node = typecheck.visit(node)
             print(ast.dump(node, indent=2, include_attributes=True))
         except parser.pegen.CodonSyntaxError as error:
             print(f"{error.location}: {error.msg}")
+        except ast.NodeError as error:
+            if error.info:
+                print(f"{error.info}: {error}")
+            else:
+                print(error)
+    elif mode == "typecheck":
+        try:
+            cache = cache.Cache(root)
+            node = cache.parse(file=argv[1])
+            node = cache.scope(node)
+            node = typecheck.typecheck_program(cache, node, file=argv[1])
+
+            print(ast.dump(node, indent=2, include_attributes=True))
+            for fn_data in cache.functions.values():
+                for r in fn_data.realizations.values():
+                    if r.ast:
+                        print(ast.dump(r.ast, indent=2, include_attributes=True))
+        # except parser.pegen.CodonSyntaxError as error:
+        #     print(f"{error.location}: {error.msg}")
+        # except ast.NodeError as error:
+        #     if error.info:
+        #         print(f"{error.info}: {error}")
+        #     else:
+        #         print(error)
+        finally:
+            pass
     elif mode == "test":
         from . import test
 

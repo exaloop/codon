@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import List
 from ... import ast, cache
+from ...bridge import List
 from ...error import TypecheckError
 from . import infer, utils
 from .ctx import TypeContext
@@ -70,7 +70,7 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
             python_name = code(node.from_expr)
             if node.what:
                 python_name += "." + code(node.what)
-            name_expr = self.ctx.cache.parse(expr=python_name)
+            name_expr = self.ctx.cache.parse_expr(python_name)
             assert isinstance(name_expr, ast.Expr)
             python_import = ast.ImportStmt(
                 name_expr,

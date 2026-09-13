@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import Callable, Dict, List, Set, Tuple, cast, contextmanager, dataclass
 from ... import ast, cache
+from ...bridge import Callable, Dict, List, Set, Tuple, cast, contextmanager, dataclass
 from ...error import ErrorMessage, ParserErrors, TypecheckError
 from . import infer
 from .classes import generate_tuple

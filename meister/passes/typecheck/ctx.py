@@ -1,8 +1,8 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
 
-from ....bridge import Dict, List, Set, contextmanager, dataclass
 from ... import ast, cache
+from ...bridge import Dict, List, Set, contextmanager, dataclass
 from ...cache import Import
 
 

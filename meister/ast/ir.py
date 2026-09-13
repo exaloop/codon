@@ -1,3 +1,10 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+from __future__ import annotations
+
+from ..bridge import List, dataclass
+
+
 class Type:
     pass
 

@@ -1,6 +1,6 @@
 ### File: token.py / tokenize.py (Python 3.11.11)
 
-from ...bridge import ClassVar, Codon, Dict, Generator, List, Optional, Set, Tuple, static
+from ..bridge import ClassVar, Codon, Dict, Generator, List, Optional, Set, Tuple, static
 
 
 class Tokens:

@@ -1,11 +1,11 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io
-# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 from __future__ import annotations
 
 import copy
 from typing import TYPE_CHECKING
 
-from ...bridge import CODON, Any, Codon, Dict, Enum, Iterator, List, Set, Tuple, cast, dataclass
+from ..bridge import CODON, Any, Codon, Dict, Enum, Iterator, List, Set, Tuple, cast, dataclass
 from . import types
 
 if TYPE_CHECKING:
@@ -438,11 +438,11 @@ class StringExpr(Expr):
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.prefix = self.strings[0].prefix if len(self.strings) == 1 else ""
         if isinstance(value, str):
             self.strings = [StringExpr.String(value=value, prefix=prefix)]
         else:
             self.strings = value
+        self.prefix = self.strings[0].prefix if len(self.strings) == 1 else ""
         self.value = self.strings[0].value if len(self.strings) == 1 else ""
 
     def __iter__(self) -> Iterator[String]:
@@ -1284,7 +1284,6 @@ class FunctionStmt(Stmt, ItemIterator):
         signature: str = "",
         **kwargs,
     ):
-        # C++ source: codon/parser/ast/stmt.cpp:570
         super().__init__(**kwargs)
         self.items = [] if items is None else items
         self.name = name
@@ -1752,7 +1751,7 @@ def dump(
     level. None (the default) selects the single line representation.
     """
 
-    from ...bridge import class_name
+    from ..bridge import class_name
 
     def _format(node, level=0):
         if indent:

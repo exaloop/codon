@@ -12,10 +12,10 @@ import traceback
 from pathlib import Path
 
 if __package__:
-    from .converted import ast, cache, parser
+    from . import ast, cache, parser
 else:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from meister.converted import ast, cache, parser
+    from meister import ast, cache, parser
 
 
 class TestCase:

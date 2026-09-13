@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..bridge import Callable, Dict, Enum, List, Set, dataclass
 from . import ast
+from .bridge import Callable, Dict, Enum, List, Set, dataclass
+from .parser import parse
 
 if TYPE_CHECKING:
     from .passes.typecheck.ctx import TypeContext
@@ -589,8 +590,16 @@ class Cache:
                         break
         return child_ids
 
-    def parse(self, file: str = "", code: str = "", expr: str = "") -> ast.Stmt | ast.Expr:
-        raise NotImplementedError()
+    def parse_expr(self, expr: str) -> ast.Expr:
+        node = parse(code=expr, rule="expressions")
+        assert isinstance(node, ast.Expr)
+        return node
+
+    def parse(self, file: str | None = None, code: str | None = None) -> ast.Stmt:
+        print(".. parsing", file, code)
+        node = parse(file=file, code=code)
+        assert isinstance(node, ast.Stmt)
+        return node
 
         # try:
         #     # startLine=
@@ -705,6 +714,7 @@ class Cache:
                     paths.append(self.fs.canonical(path))
 
         def check_plugin(path: Path, requested: str):
+            return
             raise NotImplementedError
             # plugin = path / requested
             # init = plugin / "stdlib" / requested / "__init__.codon"

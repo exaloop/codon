@@ -1,22 +1,24 @@
 from .. import ast
 from . import parser, pegen, tokenize
-from .tokenize import main as tokenize_main  # noqa: F401
 
 
-def parse(file: str | None, code: str | None = None, verbose=False) -> ast.SuiteStmt:
+def parse(
+    file: str | None = None, code: str | None = None, verbose=False, rule: str = "start"
+) -> ast.Node:
     assert (file is not None) ^ (code is not None), "bad arguments"
 
-    if file:
-        f = open(file)
-        gen = tokenize.generate_tokens(f)
-    else:
-        gen = tokenize.generate_tokens([l + "\n" for l in code.split("\n")])
-
-    tokenizer = pegen.Tokenizer(gen, verbose=verbose)
-    engine = parser.CodonParser(tokenizer, verbose=verbose)
-    try:
-        tree = engine.parse("start")
+    def helper(gen):
+        tokenizer = pegen.Tokenizer(gen, verbose=verbose)
+        engine = parser.CodonParser(tokenizer, verbose=verbose)
+        tree = engine.parse(rule)
+        assert tree
         return tree
-    finally:
-        if file:
-            f.close()
+
+    if file:
+        with open(file) as f:
+            gen = tokenize.generate_tokens(f)
+            return helper(gen)
+    else:
+        assert code
+        gen = tokenize.generate_tokens([l + "\n" for l in code.split("\n")])
+        return helper(gen)

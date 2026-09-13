@@ -5,8 +5,8 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from ....bridge import List, cast
 from ... import ast, cache
+from ...bridge import List, cast
 from ...error import TypecheckError
 from ..scope import Bindings
 from . import classes, infer, utils
@@ -812,12 +812,11 @@ def transform_llvm_definition(self: TypeVisitor, code_stmt: ast.Stmt) -> ast.Stm
                 raise TypecheckError(code_stmt, "invalid LLVM code")
         elif brace_count and code[idx] == "}":
             brace_count -= 1
-            expression_code = "".join(code[brace_start:idx])
+            expr_code = "".join(code[brace_start:idx])
             offset = self.ctx.node_stack[-1].info
             offset.col += idx
 
-            parsed = self.ctx.cache.parse(expr=expression_code)
-            assert isinstance(parsed, ast.Expr)
+            parsed = self.ctx.cache.parse_expr(expr_code)
             parsed.info = offset
             items.append(ast.ExprStmt(parsed))
             brace_start = idx + 1

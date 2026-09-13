@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import List
 from ... import ast
+from ...bridge import List
 from ...error import TypecheckError
 from . import utils
 

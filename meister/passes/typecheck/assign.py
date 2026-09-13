@@ -5,8 +5,8 @@ from __future__ import annotations
 import copy
 from typing import TYPE_CHECKING
 
-from ....bridge import List, cast
 from ... import ast, cache
+from ...bridge import List, cast
 from ...error import TypecheckError
 from ..scope import Bindings
 from . import infer, ops, utils

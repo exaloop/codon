@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from meister.converted.passes import scope
-
 from ... import ast, cache
 from ...error import TypecheckError
+from .. import scope
 
 if TYPE_CHECKING:
     from . import TypeVisitor

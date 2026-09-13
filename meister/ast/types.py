@@ -1,10 +1,11 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 from __future__ import annotations
 
 import copy
 from typing import TYPE_CHECKING
 
-from ...bridge import Callable, Dict, Enum, List, abstractmethod, cast, dataclass
+from ..bridge import Callable, Dict, Enum, List, abstractmethod, cast, dataclass
 from . import nodes as ast
 
 if TYPE_CHECKING:
@@ -993,7 +994,7 @@ class Literal(Class):
 
     @abstractmethod
     def get_static_expr(self):
-        raise NotImplementedError
+        pass
 
     @property
     def static_kind(self) -> Type.Behaviour:

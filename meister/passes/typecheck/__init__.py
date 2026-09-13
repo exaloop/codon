@@ -1,9 +1,13 @@
 """Converted Codon parser package."""
 
-from ....bridge import Dict, List, cast, dataclass
 from ... import ast
+from ...bridge import Dict, List, cast, dataclass
 from ...cache import Cache
 from ...error import TypecheckError
+
+from .ctx import TypeContext  # isort: skip
+from . import utils  # isort: skip
+
 from . import (
     access,
     assign,
@@ -19,9 +23,7 @@ from . import (
     loops,
     ops,
     stmts,
-    utils,
 )
-from .ctx import TypeContext
 
 
 @dataclass(init=False)
@@ -296,7 +298,9 @@ def typecheck_program(
     from ...cache import MAIN_IMPORT, MODULE_MAIN, STDLIB_IMPORT, Import
     from . import infer, special, utils
 
-    assert cache.module is not None, "cache's module is not set"
+    if False:
+        raise NotImplementedError
+        assert cache.module is not None, "cache's module is not set"
 
     preamble = ast.SuiteStmt()
 
@@ -363,7 +367,7 @@ def load_std_library(
 
     # Load the internal.__init__
     stdlib = TypeContext(filename=STDLIB_IMPORT, cache=cache)
-    stdlib_path = cache.get_import_file(STDLIB_INTERNAL_MODULE, "", True)
+    stdlib_path = cache.get_import_file(STDLIB_INTERNAL_MODULE, cache.argv0, True)
     initial_file = "__init__.codon"
     if stdlib_path is None or not stdlib_path.path.endswith(initial_file):
         raise FileNotFoundError("standard library cannot be found")

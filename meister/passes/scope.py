@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import copy
 
-from ...bridge import Dict, Enum, List, Set, contextmanager, dataclass
 from .. import ast
+from ..bridge import Dict, Enum, List, Set, contextmanager, dataclass
 from ..cache import Cache
 from ..error import ScopeError
 

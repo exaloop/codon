@@ -1,9 +1,9 @@
-# C++ comment: codon/parser/ast/error.h:1
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 from __future__ import annotations
 
-from ..bridge import List, dataclass
 from . import ast
+from .bridge import List, dataclass
 
 
 @dataclass(init=False)

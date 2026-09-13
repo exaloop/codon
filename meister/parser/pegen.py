@@ -1,7 +1,8 @@
 import os
 from dataclasses import dataclass
 
-from ...bridge import (
+from ..ast import nodes as ast
+from ..bridge import (
     CODON,
     Any,
     Codon,
@@ -14,7 +15,6 @@ from ...bridge import (
     cast,
     inline,
 )
-from ..ast import nodes as ast
 from . import tokenize
 
 Mark = int

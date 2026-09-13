@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ....bridge import List, Tuple, cast
 from ... import ast, cache
+from ...bridge import List, Tuple, cast
 from ...error import TypecheckError
 from . import function, infer, utils
 from .ctx import Item
