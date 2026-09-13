@@ -27,6 +27,25 @@ def f4(x: str):
 def f5():
     pass
 
+def raise_native_error(kind: int):
+    if kind == 0:
+        raise OSError(2, "missing", "source", None, "target")
+    if kind == 1:
+        raise UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "invalid start byte")
+    if kind == 2:
+        raise UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)")
+    if kind == 3:
+        raise UnicodeTranslateError("\u1234", 0, 1, "invalid")
+    if kind == 4:
+        error = UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "original")
+        error.reason = "changed"
+        raise error
+    if kind == 5:
+        raise BrokenPipeError("closed")
+    if kind == 6:
+        raise KeyboardInterrupt("stop")
+    raise ValueError("ordinary")
+
 @dataclass(python=True)
 class Vec:
     a: float

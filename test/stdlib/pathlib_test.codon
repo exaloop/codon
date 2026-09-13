@@ -113,6 +113,13 @@ def test_lexical():
     except ValueError:
         pass
     if static.platform() != "win32":
+        ordered = [Path("/"), Path("//"), Path("//a/b"), Path("/a/b"), Path("."), Path(".."), Path("a")]
+        assert sorted(ordered[::-1]) == ordered
+        for index in range(len(ordered) - 1):
+            assert ordered[index] < ordered[index + 1]
+            assert ordered[index] <= ordered[index + 1]
+            assert ordered[index + 1] > ordered[index]
+            assert ordered[index + 1] >= ordered[index]
         assert Path("//a///b").anchor == "//"
         assert Path("///a").root == "/"
         assert Path("/a/b").parts == ("/", "a", "b")
@@ -249,6 +256,91 @@ def test_filesystem():
 
 
 @test
+def test_mutation_failures():
+    root = Path("build", "pathlib-mutations-" + str(os.getpid()))
+    root.mkdir()
+    file = root / "file"
+    destination = root / "destination"
+    directory = root / "directory"
+    try:
+        file.write_text("original")
+        directory.mkdir()
+        (directory / "child").touch()
+        for parents in [False, True]:
+            try:
+                file.mkdir(parents=parents, exist_ok=True)
+                assert False
+            except OSError:
+                pass
+            try:
+                (file / "child").mkdir(parents=parents)
+                assert False
+            except OSError:
+                pass
+            assert file.read_text() == "original"
+        try:
+            directory.rmdir()
+            assert False
+        except OSError:
+            pass
+        assert (directory / "child").is_file()
+        try:
+            (root / "missing" / "file").touch()
+            assert False
+        except OSError as error:
+            assert error.errno == 2
+        assert not (root / "missing").exists()
+        try:
+            (file / "child").unlink(missing_ok=True)
+            assert False
+        except OSError:
+            pass
+        try:
+            file.replace(directory)
+            assert False
+        except OSError:
+            pass
+        assert file.read_text() == "original" and directory.is_dir()
+        destination.write_text("overwritten")
+        assert file.replace(destination) == destination
+        assert not file.exists() and destination.read_text() == "original"
+        try:
+            with destination.open("x") as stream:
+                assert False
+        except OSError as error:
+            assert isinstance(error, IOError)
+            assert error.errno == 17 and error.filename == str(destination)
+        assert destination.read_text() == "original"
+        if static.platform() != "win32":
+            link = root / "link"
+            link.symlink_to("target")
+            try:
+                link.touch(exist_ok=False)
+                assert False
+            except OSError as error:
+                assert error.errno == 17
+            assert not (root / "target").exists() and link.is_symlink()
+            link.touch()
+            assert (root / "target").is_file() and link.is_symlink()
+            link.write_text("through link")
+            assert (root / "target").read_text() == "through link"
+            link.unlink()
+            assert (root / "target").read_text() == "through link"
+            link.symlink_to("directory", target_is_directory=True)
+            link.mkdir(exist_ok=True)
+            assert link.is_symlink()
+            link.unlink()
+            file.write_text("replacement")
+            assert file.rename(destination) == destination
+            assert destination.read_text() == "replacement"
+    finally:
+        for current, directories, files in root.walk(top_down=False):
+            for name in files:
+                (current / name).unlink()
+            current.rmdir()
+
+
+@test
 def test_traversal():
     root = Path("build", "pathlib-walk-" + str(os.getpid()))
     root.mkdir()
@@ -269,12 +361,40 @@ def test_traversal():
         assert len(list(root.rglob(pattern))) == 3 and pattern.calls == 1
         assert list((root / "missing").glob("*")) == []
         assert list((root / "a.txt").glob("*")) == []
+        for base in [root, root / "missing", root / "a.txt"]:
+            for pattern in ["", ".", "./", "././"]:
+                try:
+                    list(base.glob(pattern))
+                    assert False
+                except ValueError:
+                    pass
+            try:
+                list(base.glob(str(root.absolute())))
+                assert False
+            except NotImplementedError:
+                pass
+            try:
+                list(base.rglob(str(root.absolute())))
+                assert False
+            except NotImplementedError:
+                pass
         seen: List[str] = []
         for directory, directories, files in root.walk():
             seen.append(directory.name)
             if directory == root:
                 directories.remove("one")
         assert seen == [root.name, "two"]
+        visited: List[Path] = []
+        for current, directories, files in root.walk():
+            visited.append(current)
+            if current == root:
+                directories.clear()
+        assert visited == [root]
+        visited.clear()
+        for current, directories, files in root.walk(top_down=False):
+            visited.append(current)
+            directories.clear()
+        assert len(visited) == 4 and visited[-1] == root
         bottom = list(root.walk(top_down=False))
         assert bottom[-1][0] == root and len(bottom) == 4
         errors: List[str] = []
@@ -282,12 +402,21 @@ def test_traversal():
             errors.append(unwrap(error.filename))
         assert list((root / "missing").walk(on_error=on_error)) == []
         assert errors == [str(root / "missing")]
+        def reject_error(error):
+            raise ValueError("walk callback")
+        try:
+            list((root / "missing").walk(on_error=reject_error))
+            assert False
+        except ValueError as error:
+            assert error.message == "walk callback"
         if static.platform() != "win32":
             alias = root / "alias"
             alias.symlink_to(StringPath("one"), target_is_directory=True)
             assert len(list(root.rglob(StringPath("*.txt")))) == 3
             assert len(list(root.rglob(StringPath("*.txt"), recurse_symlinks=True))) == 5
             assert len(list(root.glob("**/", recurse_symlinks=True))) == 6
+            assert len(list(root.walk(follow_symlinks=True))) == 6
+            assert len(list(root.walk(top_down=False, follow_symlinks=True))) == 6
             alias.unlink()
             (root / "loop").symlink_to(".", target_is_directory=True)
             assert len(list(root.rglob("*.txt"))) == 3
@@ -303,4 +432,5 @@ def test_traversal():
 
 test_lexical()
 test_filesystem()
+test_mutation_failures()
 test_traversal()

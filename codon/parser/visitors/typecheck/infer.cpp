@@ -758,10 +758,6 @@ ir::Func *TypecheckVisitor::realizeIRFunc(types::FuncType *fn,
   if (!realize(fnType.get()))
     return nullptr;
 
-  auto pr = ctx->cache->pendingRealizations; // copy it as it might be modified
-  for (const auto &key : pr | std::views::keys)
-    TranslateVisitor(ctx->cache->codegenCtx)
-        .translateStmts(clone(getFunction(key)->ast));
   return getFunction(fn->ast->getName())->realizations[fnType->realizedName()]->ir;
 }
 

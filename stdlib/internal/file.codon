@@ -1485,6 +1485,13 @@ def _file_path_cstring(path: str) -> cobj:
         raise ValueError("embedded null byte")
     return path.encode("utf-8", "surrogateescape").c_str()
 
+def _file_open_error(path: Optional[str] = None):
+    from internal.types.error import _errno
+    code = _errno()
+    from C import strerror(i32) -> cobj
+    message = str.from_ptr(strerror(i32(code)))
+    raise OSError(code, message, path)
+
 @tuple
 class File[T]:
     _state: _FileState
@@ -1505,7 +1512,7 @@ class File[T]:
         _file_stdio_mode(mode_flags, raw_mode)
         fp = _C.fopen(_file_path_cstring(path), raw_mode)
         if not fp:
-            raise IOError(f"file {path} could not be opened")
+            _file_open_error(path)
         state = _FileState(fp, encoding, errors, newline, path, mode_flags)
         _file_prepare_stdio_append(state)
         return File[T](state)
@@ -1516,7 +1523,7 @@ class File[T]:
         _file_stdio_mode(mode_flags, raw_mode)
         fp = _C.fdopen(fd, raw_mode)
         if not fp:
-            raise IOError(f"file descriptor {fd} could not be opened")
+            _file_open_error()
         return File[T](_FileState(fp, path="", mode_flags=mode_flags))
 
     def _errcheck(self, msg: str):
@@ -1900,7 +1907,7 @@ class gzFile[T]:
         _file_compressed_mode(mode_flags, compresslevel, raw_mode)
         fp = _C.gzopen(_file_path_cstring(path), raw_mode)
         if not fp:
-            raise IOError(f"file {path} could not be opened")
+            _file_open_error(path)
         return gzFile[T](_FileState(fp, encoding, errors, newline, path, mode_flags, _FILE_BACKEND_GZIP))
 
     def __iter__(self) -> Generator[T]:
@@ -2425,7 +2432,7 @@ class bzFile[T]:
         _file_validate_text_config(encoding, errors, newline)
         raw_fp = _bz_open(path, mode_flags)
         if not raw_fp:
-            raise IOError(f"file {path} could not be opened")
+            _file_open_error(path)
         state = _FileState(cobj(), encoding, errors, newline, path, mode_flags, _FILE_BACKEND_BZIP2)
         bz = _BZState(raw_fp, mode_flags)
         if not _bz_initialize(bz, compresslevel):

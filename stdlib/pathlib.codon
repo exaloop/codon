@@ -190,7 +190,7 @@ class Path:
         return not self == other
 
     def __lt__(self, other: Path) -> bool:
-        return [_path.normcase(part) for part in self.parts] < [_path.normcase(part) for part in other.parts]
+        return _path.normcase(self._path).split(os.sep) < _path.normcase(other._path).split(os.sep)
 
     def __le__(self, other: Path) -> bool:
         return self == other or self < other
@@ -521,8 +521,8 @@ class Path:
         text = _path_string(pattern)
         parsed = Path(text)
         if parsed.anchor:
-            raise ValueError("glob patterns must be relative")
-        if not text:
+            raise NotImplementedError("glob patterns must be relative")
+        if not parsed.parts:
             raise ValueError("empty pattern")
         directory_only = text.endswith(os.sep)
         if static.platform() == "win32":
@@ -568,7 +568,7 @@ class Path:
     def rglob(self, pattern, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
         value = _path_string(pattern)
         if Path(value).anchor:
-            raise ValueError("glob patterns must be relative")
+            raise NotImplementedError("glob patterns must be relative")
         for path in self.glob("**" + os.sep + value, case_sensitive, recurse_symlinks):
             yield path
 

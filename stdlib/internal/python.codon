@@ -175,6 +175,33 @@ PyExc_StopIteration = cobj()
 PyExc_AssertionError = cobj()
 PyExc_EOFError = cobj()
 PyExc_SystemExit = cobj()
+PyExc_GeneratorExit = cobj()
+PyExc_KeyboardInterrupt = cobj()
+PyExc_MemoryError = cobj()
+PyExc_ReferenceError = cobj()
+PyExc_SystemError = cobj()
+PyExc_StopAsyncIteration = cobj()
+PyExc_FloatingPointError = cobj()
+PyExc_RecursionError = cobj()
+PyExc_UnicodeError = cobj()
+PyExc_UnicodeDecodeError = cobj()
+PyExc_UnicodeEncodeError = cobj()
+PyExc_UnicodeTranslateError = cobj()
+PyExc_BlockingIOError = cobj()
+PyExc_ChildProcessError = cobj()
+PyExc_ConnectionError = cobj()
+PyExc_BrokenPipeError = cobj()
+PyExc_ConnectionAbortedError = cobj()
+PyExc_ConnectionRefusedError = cobj()
+PyExc_ConnectionResetError = cobj()
+PyExc_FileExistsError = cobj()
+PyExc_FileNotFoundError = cobj()
+PyExc_InterruptedError = cobj()
+PyExc_IsADirectoryError = cobj()
+PyExc_NotADirectoryError = cobj()
+PyExc_PermissionError = cobj()
+PyExc_ProcessLookupError = cobj()
+PyExc_TimeoutError = cobj()
 
 _PY_MODULE_CACHE = Dict[str, pyobj]()
 
@@ -352,6 +379,33 @@ def init_handles_dlopen(py_handle: cobj):
     global PyExc_AssertionError
     global PyExc_EOFError
     global PyExc_SystemExit
+    global PyExc_GeneratorExit
+    global PyExc_KeyboardInterrupt
+    global PyExc_MemoryError
+    global PyExc_ReferenceError
+    global PyExc_SystemError
+    global PyExc_StopAsyncIteration
+    global PyExc_FloatingPointError
+    global PyExc_RecursionError
+    global PyExc_UnicodeError
+    global PyExc_UnicodeDecodeError
+    global PyExc_UnicodeEncodeError
+    global PyExc_UnicodeTranslateError
+    global PyExc_BlockingIOError
+    global PyExc_ChildProcessError
+    global PyExc_ConnectionError
+    global PyExc_BrokenPipeError
+    global PyExc_ConnectionAbortedError
+    global PyExc_ConnectionRefusedError
+    global PyExc_ConnectionResetError
+    global PyExc_FileExistsError
+    global PyExc_FileNotFoundError
+    global PyExc_InterruptedError
+    global PyExc_IsADirectoryError
+    global PyExc_NotADirectoryError
+    global PyExc_PermissionError
+    global PyExc_ProcessLookupError
+    global PyExc_TimeoutError
 
     Py_DecRef = dlsym(py_handle, "Py_DecRef")
     Py_IncRef = dlsym(py_handle, "Py_IncRef")
@@ -492,6 +546,33 @@ def init_handles_dlopen(py_handle: cobj):
     PyExc_AssertionError = Ptr[cobj](dlsym(py_handle, "PyExc_AssertionError", cobj))[0]
     PyExc_EOFError = Ptr[cobj](dlsym(py_handle, "PyExc_EOFError", cobj))[0]
     PyExc_SystemExit = Ptr[cobj](dlsym(py_handle, "PyExc_SystemExit", cobj))[0]
+    PyExc_GeneratorExit = Ptr[cobj](dlsym(py_handle, "PyExc_GeneratorExit", cobj))[0]
+    PyExc_KeyboardInterrupt = Ptr[cobj](dlsym(py_handle, "PyExc_KeyboardInterrupt", cobj))[0]
+    PyExc_MemoryError = Ptr[cobj](dlsym(py_handle, "PyExc_MemoryError", cobj))[0]
+    PyExc_ReferenceError = Ptr[cobj](dlsym(py_handle, "PyExc_ReferenceError", cobj))[0]
+    PyExc_SystemError = Ptr[cobj](dlsym(py_handle, "PyExc_SystemError", cobj))[0]
+    PyExc_StopAsyncIteration = Ptr[cobj](dlsym(py_handle, "PyExc_StopAsyncIteration", cobj))[0]
+    PyExc_FloatingPointError = Ptr[cobj](dlsym(py_handle, "PyExc_FloatingPointError", cobj))[0]
+    PyExc_RecursionError = Ptr[cobj](dlsym(py_handle, "PyExc_RecursionError", cobj))[0]
+    PyExc_UnicodeError = Ptr[cobj](dlsym(py_handle, "PyExc_UnicodeError", cobj))[0]
+    PyExc_UnicodeDecodeError = Ptr[cobj](dlsym(py_handle, "PyExc_UnicodeDecodeError", cobj))[0]
+    PyExc_UnicodeEncodeError = Ptr[cobj](dlsym(py_handle, "PyExc_UnicodeEncodeError", cobj))[0]
+    PyExc_UnicodeTranslateError = Ptr[cobj](dlsym(py_handle, "PyExc_UnicodeTranslateError", cobj))[0]
+    PyExc_BlockingIOError = Ptr[cobj](dlsym(py_handle, "PyExc_BlockingIOError", cobj))[0]
+    PyExc_ChildProcessError = Ptr[cobj](dlsym(py_handle, "PyExc_ChildProcessError", cobj))[0]
+    PyExc_ConnectionError = Ptr[cobj](dlsym(py_handle, "PyExc_ConnectionError", cobj))[0]
+    PyExc_BrokenPipeError = Ptr[cobj](dlsym(py_handle, "PyExc_BrokenPipeError", cobj))[0]
+    PyExc_ConnectionAbortedError = Ptr[cobj](dlsym(py_handle, "PyExc_ConnectionAbortedError", cobj))[0]
+    PyExc_ConnectionRefusedError = Ptr[cobj](dlsym(py_handle, "PyExc_ConnectionRefusedError", cobj))[0]
+    PyExc_ConnectionResetError = Ptr[cobj](dlsym(py_handle, "PyExc_ConnectionResetError", cobj))[0]
+    PyExc_FileExistsError = Ptr[cobj](dlsym(py_handle, "PyExc_FileExistsError", cobj))[0]
+    PyExc_FileNotFoundError = Ptr[cobj](dlsym(py_handle, "PyExc_FileNotFoundError", cobj))[0]
+    PyExc_InterruptedError = Ptr[cobj](dlsym(py_handle, "PyExc_InterruptedError", cobj))[0]
+    PyExc_IsADirectoryError = Ptr[cobj](dlsym(py_handle, "PyExc_IsADirectoryError", cobj))[0]
+    PyExc_NotADirectoryError = Ptr[cobj](dlsym(py_handle, "PyExc_NotADirectoryError", cobj))[0]
+    PyExc_PermissionError = Ptr[cobj](dlsym(py_handle, "PyExc_PermissionError", cobj))[0]
+    PyExc_ProcessLookupError = Ptr[cobj](dlsym(py_handle, "PyExc_ProcessLookupError", cobj))[0]
+    PyExc_TimeoutError = Ptr[cobj](dlsym(py_handle, "PyExc_TimeoutError", cobj))[0]
 
 def init_handles_static():
     from C import Py_DecRef(cobj) as _Py_DecRef
@@ -633,6 +714,33 @@ def init_handles_static():
     from C import PyExc_AssertionError: cobj as _PyExc_AssertionError
     from C import PyExc_EOFError: cobj as _PyExc_EOFError
     from C import PyExc_SystemExit: cobj as _PyExc_SystemExit
+    from C import PyExc_GeneratorExit: cobj as _PyExc_GeneratorExit
+    from C import PyExc_KeyboardInterrupt: cobj as _PyExc_KeyboardInterrupt
+    from C import PyExc_MemoryError: cobj as _PyExc_MemoryError
+    from C import PyExc_ReferenceError: cobj as _PyExc_ReferenceError
+    from C import PyExc_SystemError: cobj as _PyExc_SystemError
+    from C import PyExc_StopAsyncIteration: cobj as _PyExc_StopAsyncIteration
+    from C import PyExc_FloatingPointError: cobj as _PyExc_FloatingPointError
+    from C import PyExc_RecursionError: cobj as _PyExc_RecursionError
+    from C import PyExc_UnicodeError: cobj as _PyExc_UnicodeError
+    from C import PyExc_UnicodeDecodeError: cobj as _PyExc_UnicodeDecodeError
+    from C import PyExc_UnicodeEncodeError: cobj as _PyExc_UnicodeEncodeError
+    from C import PyExc_UnicodeTranslateError: cobj as _PyExc_UnicodeTranslateError
+    from C import PyExc_BlockingIOError: cobj as _PyExc_BlockingIOError
+    from C import PyExc_ChildProcessError: cobj as _PyExc_ChildProcessError
+    from C import PyExc_ConnectionError: cobj as _PyExc_ConnectionError
+    from C import PyExc_BrokenPipeError: cobj as _PyExc_BrokenPipeError
+    from C import PyExc_ConnectionAbortedError: cobj as _PyExc_ConnectionAbortedError
+    from C import PyExc_ConnectionRefusedError: cobj as _PyExc_ConnectionRefusedError
+    from C import PyExc_ConnectionResetError: cobj as _PyExc_ConnectionResetError
+    from C import PyExc_FileExistsError: cobj as _PyExc_FileExistsError
+    from C import PyExc_FileNotFoundError: cobj as _PyExc_FileNotFoundError
+    from C import PyExc_InterruptedError: cobj as _PyExc_InterruptedError
+    from C import PyExc_IsADirectoryError: cobj as _PyExc_IsADirectoryError
+    from C import PyExc_NotADirectoryError: cobj as _PyExc_NotADirectoryError
+    from C import PyExc_PermissionError: cobj as _PyExc_PermissionError
+    from C import PyExc_ProcessLookupError: cobj as _PyExc_ProcessLookupError
+    from C import PyExc_TimeoutError: cobj as _PyExc_TimeoutError
 
     global Py_DecRef
     global Py_IncRef
@@ -773,6 +881,33 @@ def init_handles_static():
     global PyExc_AssertionError
     global PyExc_EOFError
     global PyExc_SystemExit
+    global PyExc_GeneratorExit
+    global PyExc_KeyboardInterrupt
+    global PyExc_MemoryError
+    global PyExc_ReferenceError
+    global PyExc_SystemError
+    global PyExc_StopAsyncIteration
+    global PyExc_FloatingPointError
+    global PyExc_RecursionError
+    global PyExc_UnicodeError
+    global PyExc_UnicodeDecodeError
+    global PyExc_UnicodeEncodeError
+    global PyExc_UnicodeTranslateError
+    global PyExc_BlockingIOError
+    global PyExc_ChildProcessError
+    global PyExc_ConnectionError
+    global PyExc_BrokenPipeError
+    global PyExc_ConnectionAbortedError
+    global PyExc_ConnectionRefusedError
+    global PyExc_ConnectionResetError
+    global PyExc_FileExistsError
+    global PyExc_FileNotFoundError
+    global PyExc_InterruptedError
+    global PyExc_IsADirectoryError
+    global PyExc_NotADirectoryError
+    global PyExc_PermissionError
+    global PyExc_ProcessLookupError
+    global PyExc_TimeoutError
 
     Py_DecRef = _Py_DecRef
     Py_IncRef = _Py_IncRef
@@ -913,6 +1048,33 @@ def init_handles_static():
     PyExc_AssertionError = _PyExc_AssertionError
     PyExc_EOFError = _PyExc_EOFError
     PyExc_SystemExit = _PyExc_SystemExit
+    PyExc_GeneratorExit = _PyExc_GeneratorExit
+    PyExc_KeyboardInterrupt = _PyExc_KeyboardInterrupt
+    PyExc_MemoryError = _PyExc_MemoryError
+    PyExc_ReferenceError = _PyExc_ReferenceError
+    PyExc_SystemError = _PyExc_SystemError
+    PyExc_StopAsyncIteration = _PyExc_StopAsyncIteration
+    PyExc_FloatingPointError = _PyExc_FloatingPointError
+    PyExc_RecursionError = _PyExc_RecursionError
+    PyExc_UnicodeError = _PyExc_UnicodeError
+    PyExc_UnicodeDecodeError = _PyExc_UnicodeDecodeError
+    PyExc_UnicodeEncodeError = _PyExc_UnicodeEncodeError
+    PyExc_UnicodeTranslateError = _PyExc_UnicodeTranslateError
+    PyExc_BlockingIOError = _PyExc_BlockingIOError
+    PyExc_ChildProcessError = _PyExc_ChildProcessError
+    PyExc_ConnectionError = _PyExc_ConnectionError
+    PyExc_BrokenPipeError = _PyExc_BrokenPipeError
+    PyExc_ConnectionAbortedError = _PyExc_ConnectionAbortedError
+    PyExc_ConnectionRefusedError = _PyExc_ConnectionRefusedError
+    PyExc_ConnectionResetError = _PyExc_ConnectionResetError
+    PyExc_FileExistsError = _PyExc_FileExistsError
+    PyExc_FileNotFoundError = _PyExc_FileNotFoundError
+    PyExc_InterruptedError = _PyExc_InterruptedError
+    PyExc_IsADirectoryError = _PyExc_IsADirectoryError
+    PyExc_NotADirectoryError = _PyExc_NotADirectoryError
+    PyExc_PermissionError = _PyExc_PermissionError
+    PyExc_ProcessLookupError = _PyExc_ProcessLookupError
+    PyExc_TimeoutError = _PyExc_TimeoutError
 
 def init_error_py_types():
     BaseException._pytype = PyExc_BaseException
@@ -935,6 +1097,59 @@ def init_error_py_types():
     AssertionError._pytype = PyExc_AssertionError
     EOFError._pytype = PyExc_EOFError
     SystemExit._pytype = PyExc_SystemExit
+    GeneratorExit._pytype = PyExc_GeneratorExit
+    KeyboardInterrupt._pytype = PyExc_KeyboardInterrupt
+    MemoryError._pytype = PyExc_MemoryError
+    ReferenceError._pytype = PyExc_ReferenceError
+    SystemError._pytype = PyExc_SystemError
+    StopAsyncIteration._pytype = PyExc_StopAsyncIteration
+    FloatingPointError._pytype = PyExc_FloatingPointError
+    RecursionError._pytype = PyExc_RecursionError
+    UnicodeError._pytype = PyExc_UnicodeError
+    UnicodeDecodeError._pytype = PyExc_UnicodeDecodeError
+    UnicodeEncodeError._pytype = PyExc_UnicodeEncodeError
+    UnicodeTranslateError._pytype = PyExc_UnicodeTranslateError
+    BlockingIOError._pytype = PyExc_BlockingIOError
+    ChildProcessError._pytype = PyExc_ChildProcessError
+    ConnectionError._pytype = PyExc_ConnectionError
+    BrokenPipeError._pytype = PyExc_BrokenPipeError
+    ConnectionAbortedError._pytype = PyExc_ConnectionAbortedError
+    ConnectionRefusedError._pytype = PyExc_ConnectionRefusedError
+    ConnectionResetError._pytype = PyExc_ConnectionResetError
+    FileExistsError._pytype = PyExc_FileExistsError
+    FileNotFoundError._pytype = PyExc_FileNotFoundError
+    InterruptedError._pytype = PyExc_InterruptedError
+    IsADirectoryError._pytype = PyExc_IsADirectoryError
+    NotADirectoryError._pytype = PyExc_NotADirectoryError
+    PermissionError._pytype = PyExc_PermissionError
+    ProcessLookupError._pytype = PyExc_ProcessLookupError
+    TimeoutError._pytype = PyExc_TimeoutError
+
+def _exception_to_python(error: BaseException) -> pyobj:
+    python_type = pyobj(error.python_type if error.python_type != cobj() else PyExc_RuntimeError)
+    for native_type in (UnicodeDecodeError, UnicodeEncodeError, UnicodeTranslateError):
+        if isinstance(error, type(native_type).T):
+            native = type._force_cast(error, type(native_type).T)
+            result = python_type(*native.args)
+            result._setattr("object", native.object)
+            result._setattr("start", native.start)
+            result._setattr("end", native.end)
+            result._setattr("reason", native.reason)
+            if type(native_type).T is not UnicodeTranslateError:
+                result._setattr("encoding", native.encoding)
+            return result
+    if isinstance(error, OSError):
+        native = type._force_cast(error, OSError)
+        if native.strerror is not None:
+            return python_type(native.errno, native.strerror, native.filename, native.winerror, native.filename2)
+    return python_type(error.message)
+
+if __py_extension__:
+    @export
+    def seq_set_python_exception(raw: cobj):
+        from C import PyErr_SetObject(cobj, cobj)
+        error = _exception_to_python(type._force_cast(raw, BaseException))
+        PyErr_SetObject(error._getattr("__class__").p, error.p)
 
 def setup_python(python_loaded: bool):
     global _PY_INITIALIZED
@@ -950,11 +1165,11 @@ def setup_python(python_loaded: bool):
         py_handle = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 
     init_handles_dlopen(py_handle)
-    init_error_py_types()
 
     if not python_loaded:
         Py_Initialize()
 
+    init_error_py_types()
     PyOS_setsig(i32(2), cobj())  # disable CPython's SIGINT handler
     _PY_INITIALIZED = True
 

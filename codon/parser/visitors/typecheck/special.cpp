@@ -194,7 +194,9 @@ FunctionStmt *TypecheckVisitor::generateThunkAST(const FuncType *fp, ClassType *
                                   debugCallArgs)),
           N<ReturnStmt>(N<CallExpr>(N<IdExpr>(m->ast->getName()), callArgs))));
   thunkAst->setAttribute(Attr::Inline);
-  return cast<FunctionStmt>(transform(thunkAst));
+  auto thunk = cast<FunctionStmt>(transform(thunkAst));
+  getFunction(thunk->name)->isToplevel = false;
+  return thunk;
 }
 
 /// Generate thunks in all derived classes for a given virtual function (must be fully
@@ -996,7 +998,7 @@ Expr *TypecheckVisitor::transformStaticFnWrapCallArgs(CallExpr *expr) {
   if (!typ)
     return nullptr;
 
-  auto fn = extractFunction(expr->begin()->getExpr()->getType());
+  auto fn = extractFunction(extractType(expr->begin()->getExpr()->getType()));
   if (!fn)
     E(Error::CUSTOM, getSrcInfo(), "expected a function, got '{}'",
       expr->begin()->getExpr()->getType()->prettyString());

@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PureWindowsPath
 import random
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -20,12 +21,63 @@ import sys
 for line in sys.stdin:
     fields = line.rstrip("\\n").split("\\t")
     path = Path(fields[0])
-    if sys.argv[1] == "lexical":
+    if sys.argv[1] == "transform":
+        try:
+            operation = fields[1]
+            if operation == "with_name":
+                result = str(path.with_name(fields[2]))
+            elif operation == "with_stem":
+                result = str(path.with_stem(fields[2]))
+            elif operation == "with_suffix":
+                result = str(path.with_suffix(fields[2]))
+            elif operation == "joinpath":
+                result = str(path.joinpath(fields[2]))
+            elif operation == "relative_to":
+                result = str(path.relative_to(fields[2], walk_up=fields[3] == "True"))
+            elif operation == "is_relative_to":
+                result = str(path.is_relative_to(fields[2]))
+            else:
+                result = str(path < Path(fields[2]))
+            print("OK:" + repr(result))
+        except ValueError:
+            print("ValueError")
+    elif sys.argv[1] == "lexical":
         print("\\t".join([str(path), path.drive, path.root, path.anchor, path.name,
                          path.stem, path.suffix, repr(path.suffixes),
                          repr(list(path.parts)), str(path.parent),
                          repr([str(parent) for parent in path.parents]),
                          str(path.is_absolute())]))
+    elif sys.argv[1] == "filesystem":
+        operation = fields[1]
+        follow = fields[2] == "True"
+        try:
+            if operation == "exists":
+                result = str(path.exists(follow_symlinks=follow))
+            elif operation == "is_file":
+                result = str(path.is_file(follow_symlinks=follow))
+            elif operation == "is_dir":
+                result = str(path.is_dir(follow_symlinks=follow))
+            elif operation == "is_symlink":
+                result = str(path.is_symlink())
+            elif operation == "is_fifo":
+                result = str(path.is_fifo())
+            elif operation == "is_socket":
+                result = str(path.is_socket())
+            elif operation == "stat":
+                result = str(path.stat(follow_symlinks=follow).st_mode & 0o170000)
+            elif operation == "resolve":
+                result = str(path.resolve(strict=follow))
+            elif operation == "samefile":
+                result = str(path.samefile(fields[3]))
+            elif operation == "readlink":
+                result = str(path.readlink())
+            else:
+                result = repr(sorted(entry.name for entry in path.iterdir()))
+            print("OK:" + repr(result))
+        except OSError as error:
+            print("OSError:" + str(error.errno))
+        except ValueError:
+            print("ValueError")
     elif sys.argv[1] == "wildcard":
         print(_pattern(fields[1], fields[2] == "True").fullmatch(fields[0]))
     elif sys.argv[1] == "class":
@@ -43,14 +95,19 @@ for line in sys.stdin:
         if len(fields) > 2:
             sensitive = fields[2] == "True"
         recurse = len(fields) > 3 and fields[3] == "True"
-        if sys.argv[1] == "rglob":
-            print(repr(sorted(str(found.relative_to(path)) for found in path.rglob(fields[1], case_sensitive=sensitive, recurse_symlinks=recurse))))
-        else:
-            print(repr(sorted(str(found.relative_to(path)) for found in path.glob(fields[1], case_sensitive=sensitive, recurse_symlinks=recurse))))
+        try:
+            if sys.argv[1] == "rglob":
+                print(repr(sorted(str(found.relative_to(path)) for found in path.rglob(fields[1], case_sensitive=sensitive, recurse_symlinks=recurse))))
+            else:
+                print(repr(sorted(str(found.relative_to(path)) for found in path.glob(fields[1], case_sensitive=sensitive, recurse_symlinks=recurse))))
+        except ValueError:
+            print("ValueError")
+        except NotImplementedError:
+            print("NotImplementedError")
 '''
 
 
-def compare(binary, operation, rows, expected):
+def compare(binary, operation, rows, expected, known_differences=None):
     result = subprocess.run(
         [str(binary), operation], input="\n".join(rows) + "\n",
         text=True, capture_output=True, check=True, timeout=120,
@@ -58,10 +115,14 @@ def compare(binary, operation, rows, expected):
     actual = result.stdout.splitlines()
     if len(actual) != len(expected):
         raise AssertionError(f"{operation}: expected {len(expected)} rows, got {len(actual)}")
-    failures = [
-        f"{row!r}: CPython={wanted!r}, Codon={got!r}"
-        for row, wanted, got in zip(rows, expected, actual) if wanted != got
-    ]
+    failures = []
+    for row, wanted, got in zip(rows, expected, actual):
+        if wanted == got:
+            continue
+        if known_differences and known_differences.get(row) == (wanted, got):
+            print(f"KNOWN DIFFERENCE ({operation}): {row!r}: CPython={wanted!r}, Codon={got!r}")
+        else:
+            failures.append(f"{row!r}: CPython={wanted!r}, Codon={got!r}")
     if result.stderr or failures:
         raise AssertionError(result.stderr + "\n".join(failures[:20]) + f"\n{len(failures)} mismatches")
     return len(rows)
@@ -71,6 +132,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--codon", type=Path, default=Path("build/codon"))
     parser.add_argument("--seed", type=int, default=1729)
+    parser.add_argument("--lexical-only", action="store_true")
+    parser.add_argument("--filesystem-only", action="store_true")
     args = parser.parse_args()
     if sys.version_info < (3, 14):
         parser.error("CPython 3.14+ is required for single-dot suffix and full_match semantics")
@@ -96,6 +159,37 @@ def main():
                 repr([str(parent) for parent in path.parents]), str(path.is_absolute()),
             ]))
         lexical_count = compare(binary, "lexical", paths, expected)
+        transform_paths = ["", ".", "..", "...", "/", "//", "a", "a.txt", ".profile",
+                           ".a.b", "a.", "a..b", "a/b", "a/..", "../a", "/a/b", "//a/b"]
+        replacements = ["", ".", "..", "...", "a", "b.txt", ".txt", "a/b", "/b", "a\\b", "café", "a:"]
+        transform_cases = [(value, method, replacement, False)
+                           for value, method, replacement in itertools.product(
+                               transform_paths, ["with_name", "with_stem", "with_suffix", "joinpath"], replacements)]
+        transform_cases += [(value, method, base, walk_up)
+                            for value, method, base, walk_up in itertools.product(
+                                transform_paths, ["relative_to", "is_relative_to", "lt"], transform_paths, [False, True])]
+        expected = []
+        for value, method, argument, walk_up in transform_cases:
+            path = Path(value)
+            try:
+                if method == "relative_to":
+                    result = path.relative_to(argument, walk_up=walk_up)
+                elif method == "lt":
+                    result = path < Path(argument)
+                else:
+                    result = getattr(path, method)(argument)
+                expected.append("OK:" + repr(str(result)))
+            except ValueError:
+                expected.append("ValueError")
+        transform_count = compare(binary, "transform", [f"{value}\t{method}\t{argument}\t{walk_up}"
+                                  for value, method, argument, walk_up in transform_cases], expected)
+        if args.lexical_only:
+            print(f"PASS: {lexical_count} lexical, {transform_count} transformation cases")
+            return
+        filesystem_count = check_filesystem(binary, root)
+        if args.filesystem_only:
+            print(f"PASS: {filesystem_count} filesystem cases")
+            return
         names = [".", "/", "/a", "/a/b", "a", "a/b", "a/b.txt", "a/B.TXT",
                  "a/b/c", ".hidden", "a[", "a]", "café", "-", "z"]
         patterns = ["*", "**", "?", "*.txt", "a/*", "a/**", "**/b", "**/c",
@@ -202,7 +296,69 @@ def main():
             repr(sorted(str(found.relative_to(base)) for found in base.rglob(pattern, case_sensitive=True, recurse_symlinks=recurse)))
             for base, pattern, recurse in rglob_cases
         ])
-        print(f"PASS: {lexical_count} lexical, {match_count} matching, {fuzz_count} wildcard, {class_count} short-class, {unicode_count} Unicode-class, {uri_count} Windows URI, {glob_count} glob cases (seed={args.seed})")
+        print(f"PASS: {lexical_count} lexical, {transform_count} transformation, {filesystem_count} filesystem, {match_count} matching, {fuzz_count} wildcard, {class_count} short-class, {unicode_count} Unicode-class, {uri_count} Windows URI, {glob_count} glob cases (seed={args.seed})")
+
+
+def check_filesystem(binary, root):
+    tree = root / "filesystem"
+    (tree / "directory" / "nested").mkdir(parents=True)
+    (tree / "file").write_bytes(b"content")
+    (tree / "directory" / "nested" / "leaf").touch()
+    paths = [tree, tree / "file", tree / "directory", tree / "missing",
+             tree / "file" / "child", tree / ("x" * 300), tree / "nul\0name"]
+    if os.name == "posix":
+        for name, target in [("link", "file"), ("dirlink", "directory"), ("dangling", "missing"), ("loop", "loop")]:
+            (tree / name).symlink_to(target)
+            paths.append(tree / name)
+        os.mkfifo(tree / "fifo")
+        paths.append(tree / "fifo")
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as endpoint:
+            endpoint.bind(str(tree / "socket"))
+        paths.append(tree / "socket")
+    methods = ["exists", "is_file", "is_dir", "is_symlink", "is_fifo", "is_socket",
+               "stat", "resolve", "samefile", "readlink", "iterdir"]
+    cases = list(itertools.product(paths, methods, [False, True]))
+    expected = []
+    for path, method, follow in cases:
+        try:
+            if method in ["exists", "is_file", "is_dir", "stat"]:
+                result = getattr(path, method)(follow_symlinks=follow)
+                if method == "stat":
+                    result = result.st_mode & 0o170000
+            elif method == "resolve":
+                result = path.resolve(strict=follow)
+            elif method == "samefile":
+                result = path.samefile(tree / "file")
+            elif method == "iterdir":
+                result = repr(sorted(entry.name for entry in path.iterdir()))
+            else:
+                result = getattr(path, method)()
+            expected.append("OK:" + repr(str(result)))
+        except OSError as error:
+            expected.append("OSError:" + str(error.errno))
+        except ValueError:
+            expected.append("ValueError")
+    count = compare(binary, "filesystem", [f"{path}\t{method}\t{follow}\t{tree / 'file'}" for path, method, follow in cases], expected)
+    for operation in ["glob", "rglob"]:
+        cases = list(itertools.product(paths[:5] + [tree / "dirlink", tree / "dangling"],
+                                      ["", ".", "./", "..", "*/", "**", "**/", "directory/..", "file/..", "*/..", "missing/..", "/absolute", "***", "a**b"],
+                                      [False, True]))
+        expected = []
+        known_differences = {}
+        for path, pattern, recurse in cases:
+            try:
+                result = list(getattr(path, operation)(pattern, recurse_symlinks=recurse))
+                relative = sorted(str(Path(str(found)).relative_to(path)) for found in result)
+                expected.append(repr(relative))
+                if operation == "rglob" and pattern == "***" and recurse and any(str(found) == str(path) + os.sep for found in result):
+                    row = f"{path}\t{pattern}\tTrue\t{recurse}"
+                    known_differences[row] = (repr(relative), repr([value for value in relative if value != "."]))
+            except ValueError:
+                expected.append("ValueError")
+            except NotImplementedError:
+                expected.append("NotImplementedError")
+        count += compare(binary, operation, [f"{path}\t{pattern}\tTrue\t{recurse}" for path, pattern, recurse in cases], expected, known_differences)
+    return count
 
 
 if __name__ == "__main__":

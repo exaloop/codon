@@ -1,6 +1,34 @@
 import myext as m
 import myext2 as m2
 
+def test_native_exceptions():
+    expected = [
+        FileNotFoundError(2, "missing", "source", None, "target"),
+        UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "invalid start byte"),
+        UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)"),
+        UnicodeTranslateError("\u1234", 0, 1, "invalid"),
+        UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "original"),
+        BrokenPipeError("closed"),
+        KeyboardInterrupt("stop"),
+        ValueError("ordinary"),
+    ]
+    expected[4].reason = "changed"
+    for index, reference in enumerate(expected):
+        try:
+            m.raise_native_error(index)
+        except BaseException as error:
+            assert type(error) is type(reference), (index, type(error), type(reference))
+            assert error.args == reference.args
+            assert str(error) == str(reference)
+            for field in ("errno", "strerror", "filename", "filename2", "encoding",
+                          "object", "start", "end", "reason"):
+                if hasattr(reference, field):
+                    assert getattr(error, field) == getattr(reference, field), (index, field)
+        else:
+            raise AssertionError(f"exception {index} was not raised")
+
+test_native_exceptions()
+
 def equal(v, a, b, tag):
     ok = (v.a == a and v.b == b and v.tag == tag)
     if not ok:

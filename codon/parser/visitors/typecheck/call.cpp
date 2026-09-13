@@ -373,6 +373,12 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
     if (!typ)
       return {nullptr, nullptr};
     auto clsName = typ->name;
+    if (clsName == "OSError" || clsName == "std.internal.types.error.OSError" ||
+        startswith(clsName, "std.internal.types.error.OSError.")) {
+      auto factory = transform(
+          N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));
+      return {nullptr, factory};
+    }
     if (typ->isRecord()) {
       if (expr->hasAttribute(Attr::TupleCall)) {
         expr->eraseAttribute(Attr::TupleCall);

@@ -99,17 +99,8 @@ def _cstring(value: str) -> cobj:
     return value.encode("utf-8", "surrogateescape").c_str()
 
 def _errno() -> int:
-    if static.platform() == "darwin":
-        from C import __error() -> Ptr[i32]
-        return int(__error()[0])
-    elif static.platform() == "win32":
-        from C import _get_errno(Ptr[i32]) -> i32
-        code = i32(0)
-        _get_errno(__ptr__(code))
-        return int(code)
-    else:
-        from C import __errno_location() -> Ptr[i32]
-        return int(__errno_location()[0])
+    from internal.types.error import _errno as get_errno
+    return get_errno()
 
 def _error(operation: str, filename: Optional[str] = None,
            filename2: Optional[str] = None):
