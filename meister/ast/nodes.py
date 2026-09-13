@@ -127,7 +127,7 @@ class Node:
         return self.info.end_col
 
     def set(self, key: Attr, value=None):
-        self.attributes[key] = value or True  # type: ignore
+        self.attributes[key] = True if value is None else value
 
     def has(self, key: Attr):
         return key in self.attributes
@@ -168,6 +168,10 @@ class Node:
             memo[Node._CODON_CLEAN] = True
         return copy.deepcopy(self, memo)
 
+    # These nodes should ALWAYS be true;
+    # Python should NOT default to __len__ check
+    def __bool__(self) -> bool:
+        return True
 
 class NodeError(Exception):
     info: Node.SrcInfo | None
@@ -898,7 +902,7 @@ class SuiteStmt(Stmt, ItemIterator):
     def wrap(stmt: Stmt | None):
         if stmt is None:
             return SuiteStmt()
-        return stmt if isinstance(stmt, SuiteStmt) else SuiteStmt(items=[stmt], info=stmt)
+        return stmt if isinstance(stmt, SuiteStmt) else SuiteStmt(stmt, info=stmt)
 
 
 @dataclass(init=False)
@@ -1451,7 +1455,9 @@ class ClassStmt(Stmt, ItemIterator):
     @staticmethod
     def is_class_var(param: Param):
         match param.type:
-            case IndexExpr(expr=IdExpr("ClassVar")):
+            case None:
+                return True
+            case IndexExpr(expr=IdExpr(value="ClassVar")):
                 return True
             case _:
                 return False
@@ -1506,7 +1512,7 @@ class ClassStmt(Stmt, ItemIterator):
                             decorator,
                             "cannot combine '@extend' with other attributes or decorators",
                         )
-                case IdExpr("__internal__"):
+                case IdExpr(value="__internal__"):
                     self.set(Attr.Internal)
                 case _:
                     raise NodeError(decorator, "unsupported class decorator")

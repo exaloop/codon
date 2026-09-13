@@ -971,7 +971,7 @@ class Parser(BaseParser):
         return self.suite(
             [
                 ast.ImportStmt(
-                    from_expr=self.dotted_expr(name, **locations),
+                    what=self.dotted_expr(name, **locations),
                     as_=as_name or "",
                     **locations,
                 )
@@ -1077,7 +1077,7 @@ class Parser(BaseParser):
         strings = []
         for part in parts:
             strings.extend(part.strings)
-        return ast.StringExpr(strings=strings, **locations)
+        return ast.StringExpr(strings, **locations)
 
     def check_fstring_conversion(self, mark: tokenize.TokenInfo, name: tokenize.TokenInfo) -> str:
         if mark.end != name.start:

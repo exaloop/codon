@@ -995,7 +995,7 @@ fstring_full_format_spec[str]:
 fstring_format_char[str]:
     | !'}' a=ANY_BUT_NEWLINE { a.string }
 fstring[ast.StringExpr]:
-    | a=FSTRING_START b=fstring_mid* c=FSTRING_END { ast.StringExpr(strings=b, LOCATIONS) }
+    | a=FSTRING_START b=fstring_mid* c=FSTRING_END { ast.StringExpr(b, LOCATIONS) }
 
 fstring_format_spec[str]:
     | a=[fstring_options] b=[fstring_width_and_precision] c=[fstring_type] {

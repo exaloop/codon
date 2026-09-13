@@ -202,10 +202,10 @@ class Type:
         cache: Dict[int, Type]
         next_unbound: Callable[[], int]
 
-        def __init__(self, ctx):
+        def __init__(self, cache):
             def incr():
-                i = ctx.unbound_count
-                ctx.unbound_count += 1
+                i = cache.unbound_count
+                cache.unbound_count += 1
                 return i
 
             self.cache = {}
@@ -251,6 +251,10 @@ class Type:
 
     def __repr__(self):
         return self.to_string(2)
+
+    def __bool__(self):
+        # Always True; do not use __len__
+        return True
 
     def __str__(self) -> str:
         return self.to_string(0)
@@ -408,7 +412,7 @@ class Type:
         return self.static_kind is Type.Behaviour.Runtime
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class Link(Type):
     class Kind(Enum):
         Unbound = 0
@@ -463,7 +467,7 @@ class Link(Type):
 
         if self.type is not None and self.kind is Link.Kind.Unbound:
             self.kind = Link.Kind.Link
-        assert (self.type is None) == (self.kind is Link.Kind.Link), "inconsistent link state"
+        assert (self.type is not None) == (self.kind is Link.Kind.Link), "inconsistent link state"
 
     # Checks if a current (unbound) type occurs within a given type.
     # Needed to prevent a recursive unification (e.g. ?1 with list[?1]).
@@ -535,7 +539,9 @@ class Link(Type):
             ## WARNING: destructive part!
             what = what.follow()
             assert (
-                isinstance(what, Link) and what.kind is Link.Kind.Unbound and what.id <= self.id
+                not isinstance(what, Link)
+                or what.kind is not Link.Kind.Unbound
+                or what.id <= self.id
             ), "type unification is not consistent"
             self.type = what
             # Link current type to what and ensure that this modification is recorded in undo.
@@ -543,7 +549,7 @@ class Link(Type):
                 isinstance(self.type, Link)
                 and self.trait
                 and self.type.kind is Link.Kind.Unbound
-                and self.type.trait
+                and not self.type.trait
             ):
                 undo.traits.append(self.type)
                 self.type.trait = self.trait
@@ -662,7 +668,7 @@ class Generic:
         if self.static_kind is Type.Behaviour.Runtime and isinstance(self.type, Literal):
             value = self.type.runtime_type.instantiate(level, ctx)
         else:
-            value = self.type.generalize(level)
+            value = self.type.instantiate(level, ctx)
         return Generic(self.name, value, self.id, self.static_kind)
 
     def to_string(self, mode: int) -> str:
@@ -687,7 +693,7 @@ class Generic:
         return self.static_kind is Type.Behaviour.Runtime
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class Class(Type):
     class Flag(Enum):
         Missing = 0
@@ -709,14 +715,16 @@ class Class(Type):
         _cached_name: str = "",
         **kwargs,
     ):
+        base = kwargs.pop("base", None)
+        if base:
+            kwargs.setdefault("cache", base.cache)
         super().__init__(**kwargs)
-        if "base" in kwargs:
-            copy = kwargs["base"]
-            self.name = copy.name
-            self.generics = copy.generics
-            self.hidden_generics = copy.hidden_generics
-            self.is_tuple = copy.is_tuple
-            self._cached_name = copy._cached_name
+        if base:
+            self.name = base.name
+            self.generics = base.generics
+            self.hidden_generics = base.hidden_generics
+            self.is_tuple = base.is_tuple
+            self._cached_name = base._cached_name
         else:
             self.name = name
             self.generics = [] if generics is None else generics
@@ -978,7 +986,7 @@ class Class(Type):
         )
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class Literal(Class):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1007,7 +1015,7 @@ class Literal(Class):
         return cls
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class IntLiteral(Literal):
     value: int = 0
 
@@ -1043,7 +1051,7 @@ class IntLiteral(Literal):
         return Type.Behaviour.Int
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class StrLiteral(Literal):
     value: str = ""
 
@@ -1079,7 +1087,7 @@ class StrLiteral(Literal):
         return Type.Behaviour.String
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class BoolLiteral(Literal):
     value: bool = False
 
@@ -1115,7 +1123,7 @@ class BoolLiteral(Literal):
         return Type.Behaviour.Bool
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class Function(Class):
     """
     A generic type that represents a Codon function instantiation.
@@ -1328,7 +1336,7 @@ class Function(Class):
         return len(self.arg_type.generics)
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class Union(Class):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1378,7 +1386,7 @@ class Union(Class):
         return [realization[key] for key in sorted(realization)]
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class Trait(Type):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -1393,7 +1401,7 @@ class Trait(Type):
         return ""
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class CallableTrait(Trait):
     args: List[Type]
 
@@ -1426,7 +1434,7 @@ class CallableTrait(Trait):
             known = ""
             what_fn = what_cls
             if partial := what_cls.partial:
-                what_fn = partial.partial_func.instantiate(0, Type.InstantiateContext(ctx))
+                what_fn = partial.partial_func.instantiate(0, Type.InstantiateContext(ctx.cache))
                 known = partial.partial_mask
 
                 known_type = partial[1].require_cls
@@ -1588,7 +1596,7 @@ class CallableTrait(Trait):
         return f"CallableTrait[{input_value},{self.args[1].to_string(mode)}]"
 
 
-@dataclass(init=False)
+@dataclass(init=False, eq=False)
 class TypeTrait(Trait):
     type: Type
 

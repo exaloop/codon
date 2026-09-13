@@ -223,8 +223,8 @@ def can_wrap_expr(
 ):
     from . import TypeVisitor
 
-    expected_class = expected_type.require_cls if expected_type else None
-    expr_class = expr_type.require_cls
+    expected_class = expected_type.cls if expected_type else None
+    expr_class = expr_type.cls
     wrapped_type = None
     wrapper: Callable[[ast.Expr], ast.Expr] | None = None
     if (
@@ -250,7 +250,7 @@ def can_wrap_expr(
         return True, wrapped_type, wrapper
     if (expected_type is None or expected_type.is_runtime) and not expr_type.is_runtime:
         expr_type = get_underlying_static_type(ctx, expr_type)
-        expr_class = expr_type.require_cls
+        expr_class = expr_type.cls
         wrapped_type = expr_type
 
     hints = {ast.types.Stdlib.Generator, ast.types.Stdlib.Float, ast.types.Stdlib.Optional, "pyobj"}
@@ -691,15 +691,15 @@ def extract_type(ctx: TypeContext, value) -> ast.types.Type:
             return value.type
         case ast.Expr():
             return extract_type(ctx, value.type)
-        case ast.types.Stdlib.Type:
-            return ctx[value].type
-        case str():
-            return extract_type(ctx, ctx[value].type)
         case ast.types.Type():
             result = value
             while result == ast.types.Stdlib.Type:
                 result = result.require_cls[0]
             return result
+        case ast.types.Stdlib.Type:
+            return ctx[value].type
+        case str():
+            return extract_type(ctx, ctx[value].type)
         case _:
             raise TypecheckError("expected a type, expression, or canonical name")
 
@@ -769,11 +769,7 @@ def get_root_name(ctx: TypeContext, typ: ast.types.Function) -> str:
 
 
 def is_type_expr(expr: ast.Expr | None):
-    match expr:
-        case ast.Expr(type=ast.types.Class(name=ast.types.Stdlib.Type)):
-            return True
-        case _:
-            return False
+    return bool(expr and expr.type and expr.type == ast.types.Stdlib.Type)
 
 
 def is_function_expr(expr: ast.Expr | None, fn_name: str = ""):
@@ -971,7 +967,7 @@ def instantiate_unbound(
     ctx.cache.unbound_count += 1
     return ast.types.Link(
         cache=ctx.cache,
-        src_info=info or ctx.info,
+        info=info or ctx.info,
         kind=ast.types.Link.Kind.Unbound,
         id=identifier,
         level=level or ctx.typecheck_level,
@@ -993,9 +989,9 @@ def instantiate[T: ast.types.Type](
     T=int.
     """
 
-    typ = get_stdlib_type(ctx, root) if isinstance(root, str) else root.require_cls
-
-    instantiate_ctx = ast.types.Type.InstantiateContext(ctx)
+    typ = get_stdlib_type(ctx, root) if isinstance(root, str) else root
+    instantiate_ctx = ast.types.Type.InstantiateContext(ctx.cache)
+    typ = typ.require_cls
 
     cls_type = None
     if isinstance(generics, List):

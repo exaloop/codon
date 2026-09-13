@@ -109,8 +109,8 @@ def realize[T](ctx: TypeContext, typ: T, force: bool = False) -> T | None:
         return None
 
     try:
-        if isinstance(typ, ast.types.Function):
-            if realized := realize_func(ctx, typ, force):
+        if fn := typ.func:
+            if realized := realize_func(ctx, fn, force):
                 # Realize Function[..] type as well
                 class_type = ast.types.Class(
                     name=realized.name,
@@ -123,34 +123,34 @@ def realize[T](ctx: TypeContext, typ: T, force: bool = False) -> T | None:
                 )
                 realize_type(ctx, class_type)
                 # Needed for return type unification
-                ret_type = typ.ret_type
-                ret_type |= realized[1]
+                ret_type = fn.ret_type
+                ret_type |= realized.ret_type
                 return realized  # type: ignore
-        else:
-            return realize_type(ctx, typ)  # type: ignore
+        elif cls := typ.cls:
+            return realize_type(ctx, cls)  # type: ignore
     except TypecheckError as err:
         assert err.errors.errors
         backtrace = err.errors.errors[-1]
-        if isinstance(typ, ast.types.Function):
-            if typ.ast.has(ast.Attr.HiddenFromUser):
+        if fn := typ.func:
+            if fn.ast.has(ast.Attr.HiddenFromUser):
                 backtrace.trace[-1].info = ctx.node_stack[-1].info
             else:
                 args = []
                 arg_idx = 0
                 generic_idx = 0
-                for param in typ.ast.items:
+                for param in fn.ast.items:
                     stars, name = param.get_name_with_stars()
                     if param.is_generic():
-                        param_type = utils.extract_func_generic(typ, generic_idx)
+                        param_type = utils.extract_func_generic(fn, generic_idx)
                         generic_idx += 1
                     else:
-                        param_type = typ[arg_idx]
+                        param_type = fn[arg_idx]
                         arg_idx += 1
                     args.append(
                         f"{'*' * stars}{utils.get_user_facing_name(ctx, name)}: {param_type}"
                     )
-                name = typ.ast.name
-                name_arguments = ""
+                name = fn.func_name
+                name_args = ""
                 if name.startswith("%_import_"):
                     for imported in ctx.cache.imports.values():
                         imported_var = ast.types.mangle(
@@ -161,10 +161,10 @@ def realize[T](ctx: TypeContext, typ: T, force: bool = False) -> T | None:
                             break
                     name = f"<import {name}>"
                 else:
-                    name = utils.get_user_facing_name(ctx, typ.ast.name)
-                    name_arguments = f"({', '.join(args)})"
+                    name = utils.get_user_facing_name(ctx, fn.ast.name)
+                    name_args = f"({', '.join(args)})"
                 backtrace.add(
-                    f"during the realization of {name}{name_arguments}", ctx.node_stack[-1].info
+                    f"during the realization of {name}{name_args}", ctx.node_stack[-1].info
                 )
         else:
             backtrace.add(f"during the realization of {typ}", ctx.node_stack[-1].info)
@@ -451,8 +451,8 @@ def _realize_func_body(
         suite=None if not base else base.suite,
         async_=fn_ast.async_,
         info=fn_ast.info,
-        attributes=dict(fn_ast.attributes),
     )
+    realized_ast.attributes = dict(fn_ast.attributes)
     realization.ast = realized_ast
     generalized = typ.generalize(0)
     new_key = generalized.realized_name()
@@ -493,13 +493,13 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
         return realization.ir
 
     def force_find_ir_type(typ: ast.types.Type):
-        assert isinstance(typ, ast.types.Class), f"{typ} not realized"
-        cls_data = utils.get_class(ctx, typ)
+        cls = typ.cls
+        assert cls, f"{typ} not realized"
+        cls_data = utils.get_class(ctx, cls)
         assert cls_data
-        name = typ.realized_name()
-        assert name in cls_data.realizations, f"{typ} not realized"
+        name = cls.realized_name()
         handle = cls_data.realizations[name].ir
-        assert handle, f"no LLVM type for {typ}"
+        assert handle, f"no LLVM type for {cls}"
         return handle
 
     # Prepare generics and statics
@@ -604,7 +604,7 @@ def make_ir_type(ctx: TypeContext, typ: ast.types.Class) -> ast.ir.Type:
                 handle.set_polymorphic()
         handle.info = typ.info
         handle.ast_type = typ
-        realization.ir = handle
+    realization.ir = handle
     return handle
 
 
@@ -647,9 +647,7 @@ def make_ir_function(
     ctx.cache.pending_realizations.add(
         (realization.type.ast.name, realization.type.realized_name())
     )
-    assert len(realization.ast.items) == len(realization.type.generics) + len(
-        realization.type.func_generics
-    )
+    assert len(realization.ast.items) == len(realization.type) + len(realization.type.func_generics)
     names = []
     arg_types = []
     value_idx = 0

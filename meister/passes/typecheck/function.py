@@ -379,6 +379,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             # Handle default values
             default = param.default
             match default, param.type:
+                case None, _:
+                    pass
                 case ast.NoneExpr(), ast.IdExpr(
                     value=ast.types.Stdlib.Type | ast.types.Stdlib.TypeTrait
                 ):
@@ -502,7 +504,11 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
             # Parse arguments to the context. Needs to be done after adding generics
             # to support cases like `foo(a: T, T: type)`
             for arg in args:
-                arg.type = self.visit_expr(arg.type, enforce_type=True, simple_types=True)
+                arg.type = (
+                    self.visit_expr(arg.type, enforce_type=True, simple_types=True)
+                    if arg.type
+                    else None
+                )
 
             # Unify base type generics with argument types. Add non-generic arguments to the
             # context. Delayed to prevent cases like `def foo(a, b=a)`
@@ -561,8 +567,8 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
         # Generalize generics and remove them from the context
         for generic_type in generic_types:
             for unbound in generic_type.get_unbounds(False):
-                if unbound_link := unbound.get_unbound():
-                    unbound_link.kind = ast.types.Link.Kind.Generic
+                if link := unbound.unbound:
+                    link.kind = ast.types.Link.Kind.Generic
 
         # Parse function body
         if not node.has(ast.Attr.Internal) and not node.has(ast.Attr.C):
@@ -580,9 +586,9 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     fn_ast = ast.FunctionStmt(
         canonical, ret=ret, items=args, suite=suite, async_=node.async_, done=True
     )
-    fn_ast.attributes = copy.deepcopy(node.attributes)
     if "_thunk_dispatch" in canonical:
         node.set(ast.Attr.AllowPassThrough)
+    fn_ast.attributes = copy.deepcopy(node.attributes)
     fn_data = cache.FunctionData(
         module=self.ctx.module_path,
         root_name=root_name,
@@ -593,8 +599,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
     self.ctx.cache.functions[canonical] = fn_data
     parent_class = None
     if parent_name := node.get(ast.Attr.ParentClass, str):
-        parent_item = self.ctx[parent_name]
-        parent_class = utils.extract_class_type(self.ctx, parent_item.type)
+        parent_class = utils.extract_class_type(self.ctx, parent_name)
 
     # Construct the type
     fn_type = ast.types.Function(
@@ -655,7 +660,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
     # Expression to be used if function binding is modified by captures or decorators
     final = None
-    for decorator in reversed(node.decorators):
+    for decorator in reversed(decorators):
         if decorator:
             # Replace each decorator with `decorator(finalExpr)` in the reverse order
             if final:

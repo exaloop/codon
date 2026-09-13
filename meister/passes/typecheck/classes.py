@@ -154,9 +154,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                         )
                     )
                     args.append(
-                        ast.Param(
-                            var_name, type=arg.type, default_value=default_expr, status=arg.status
-                        )
+                        ast.Param(var_name, type=arg.type, default=default_expr, status=arg.status)
                     )
 
             # Form class type node (e.g. `Foo`, or `Foo[T, U]` for generic classes)
@@ -215,7 +213,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
                         if arg.default
                         else None
                     )
-                    args.append(ast.Param(var_name, type=typ, default_value=default))
+                    args.append(ast.Param(var_name, type=typ, default=default))
                     cls_data.fields.append(
                         cache.ClassData.Field(
                             name=var_name,
@@ -291,9 +289,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
 
                 # Codegen default magic methods
                 if magics := node.get(ast.Attr.ClassMagic, list[str]):
-                    # __new__ must be the first
-                    assert not magics or magics[0] == "new"
-                    assert isinstance(magics, dict) and type_expr
+                    assert magics[0] == "new" and type_expr
                     for magic in magics:
                         magic_statement = codegen_magic(
                             self, magic, type_expr, member_args, node.has(ast.Attr.Tuple)
@@ -479,7 +475,7 @@ def parse_base_classes(
 
     # Add normal fields
     for inherited_type in asts:
-        if inherited_type == typ.name:
+        if inherited_type.name == typ.name:
             continue
         inherited_data = utils.get_class(self.ctx, inherited_type)
         assert inherited_data
@@ -552,7 +548,7 @@ def auto_deduce_members(self: TypeVisitor, node: ast.ClassStmt, args: List[ast.P
                 ast.Param(
                     generic_name,
                     type=ast.IdExpr(ast.types.Stdlib.Type),
-                    default_value=ast.IdExpr(ast.types.Stdlib.NoneType),
+                    default=ast.IdExpr(ast.types.Stdlib.NoneType),
                     status=ast.Param.Status.Generic,
                 )
             )

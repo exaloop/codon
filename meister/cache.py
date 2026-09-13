@@ -368,7 +368,7 @@ class Cache:
         self.thunk_ids = {} if thunk_ids is None else thunk_ids
         self.functions = {} if functions is None else functions
         self.overloads = {} if overloads is None else overloads
-        self.type_ctx = type_ctx  # or TypeContext(cache=self, filename=".root")
+        self.type_ctx = type_ctx
         self.codegen_ctx = codegen_ctx
         self.pending_realizations = set() if pending_realizations is None else pending_realizations
         self.custom_block_stmts = {} if custom_block_stmts is None else custom_block_stmts

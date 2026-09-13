@@ -77,7 +77,7 @@ class TypeVisitor(ast.NodeVisitor):
                 pass
             elif utils.is_type_expr(node):
                 node.type = utils.instantiate(self.ctx, node.type)
-            elif (u := node.type.unbound) and (not u.generic_name or u.trait):
+            elif (u := node.type.unbound) and (u.generic_name or u.trait):
                 node.type = utils.instantiate(self.ctx, node.type)
             else:
                 raise TypecheckError(node, "expected a type expression")

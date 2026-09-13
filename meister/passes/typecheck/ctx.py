@@ -249,7 +249,7 @@ class TypeContext:
         self.cache = cache
         self.filename = filename
         self.map = {} if map is None else map
-        self.stack = [] if stack is None else stack
+        self.stack = [[]] if stack is None else stack
         self.flags = set() if flags is None else flags
         self.node_stack = [ast.NoneExpr()] if node_stack is None else node_stack
         self.bases = [Base()] if bases is None else bases
@@ -368,9 +368,9 @@ class TypeContext:
         return item
 
     def __getitem__(self, name: str) -> Item:
-        if not (v := self.get(name)):
-            raise ValueError(f"cannot find an item {name}")
-        return v
+        if v := self.find_at(name):
+            return v
+        raise ValueError(f"cannot find an item {name}")
 
     def get(self, name: str) -> Item | None:
         """Return a top-most object with a given identifier or nullptr if it does not exist."""
