@@ -101,6 +101,11 @@ public:
   JITResult executeSafe(const std::string &code, const std::string &file, int line,
                         bool debug);
 
+  JITResult executePythonGPU(const std::string &name,
+                             const std::vector<std::string> &types,
+                             const std::string &pyModule,
+                             const std::vector<std::string> &pyVars, void *arg,
+                             bool debug);
   // Errors
   llvm::Error handleJITError(const runtime::JITError &e);
 };
