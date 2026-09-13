@@ -67,6 +67,18 @@ else:
     O_TRUNC: Literal[int] = 0x200
     O_CLOEXEC: Literal[int] = 0x80000
 
+def fspath(path):
+    if isinstance(path, (str, bytes)):
+        return path
+    elif hasattr(path, "__fspath__"):
+        value = path.__fspath__()
+        if isinstance(value, (str, bytes)):
+            return value
+        else:
+            compile_error("__fspath__ must return str or bytes")
+    else:
+        compile_error("expected str, bytes or a path-like object")
+
 def fsencode(filename: str) -> bytes:
     return filename.encode("utf-8", "surrogatepass" if static.platform() == "win32" else "surrogateescape")
 
@@ -431,32 +443,37 @@ def open(path: str, flags: int, mode: int = 0o777) -> int:
         _error("open", path)
     return int(descriptor)
 
-def listdir(path: str = ".") -> List[str]:
+def _listdir_status(path: str) -> Tuple[List[str], _Status]:
     if static.platform() == "win32":
-        return _win32.listdir(path)
+        return _win32._listdir_status(path)
+    error = _path_status(path)
+    if error:
+        return [], error
     from C import opendir(cobj) -> cobj
     from C import seq_os_readdir(cobj) -> cobj
     from C import closedir(cobj) -> i32
     directory = opendir(_cstring(path))
     if not directory:
-        _error("listdir", path)
-    succeeded = False
+        return [], _status(errno=_errno())
+    names: List[str] = []
     try:
-        names: List[str] = []
         while True:
             pointer = seq_os_readdir(directory)
             if not pointer:
-                if _errno() != 0:
-                    _error("listdir", path)
+                error = _status(errno=_errno())
                 break
             name = fsdecode(bytes.from_ptr(pointer))
             if name != "." and name != "..":
                 names.append(name)
-        succeeded = True
-        return names
     finally:
-        if closedir(directory) != i32(0) and succeeded:
-            _error("closedir", path)
+        if closedir(directory) != i32(0) and not error:
+            error = _status(errno=_errno())
+    return names, error
+
+def listdir(path: str = ".") -> List[str]:
+    names, error = _listdir_status(path)
+    error.raise_error("listdir", path)
+    return names
 
 def _makedirs_status(name: str, mode: int, exist_ok: bool) -> Tuple[str, _Status]:
     import os.path as path
@@ -549,12 +566,19 @@ def _getfullpathname(path: str) -> str:
     else:
         compile_error("Windows full-path resolution is only available on Windows")
 
-def unlink(path: str):
+def _unlink_status(path: str) -> _Status:
     if static.platform() == "win32":
-        return _win32.unlink(path)
+        return _win32._unlink_status(path)
+    error = _path_status(path)
+    if error:
+        return error
     from C import unlink(cobj) -> i32
     if unlink(_cstring(path)) != i32(0):
-        _error("unlink", path)
+        return _status(errno=_errno())
+    return _status()
+
+def unlink(path: str):
+    _unlink_status(path).raise_error("unlink", path)
 
 def remove(path: str):
     # libc remove also removes directories; Python os.remove must not.
@@ -617,9 +641,18 @@ def access(path: str, mode: int) -> bool:
     from C import access(cobj, i32) -> i32
     return access(_cstring(path), _fd(mode)) == i32(0)
 
-def chmod(path: str, mode: int):
+def chmod(path: str, mode: int, follow_symlinks: bool = True):
     if static.platform() == "win32":
+        if not follow_symlinks:
+            raise NotImplementedError("chmod without following symlinks is not supported on Windows")
         return _win32.chmod(path, mode)
+    if not follow_symlinks:
+        from C import fchmodat(i32, cobj, u32, i32) -> i32
+        directory = -2 if static.platform() == "darwin" else -100
+        flags = 0x20 if static.platform() == "darwin" else 0x100
+        if fchmodat(i32(directory), _cstring(path), u32(mode), i32(flags)) != i32(0):
+            _error("chmod", path)
+        return
     from C import chmod(cobj, u32) -> i32
     if chmod(_cstring(path), u32(mode)) != i32(0):
         _error("chmod", path)

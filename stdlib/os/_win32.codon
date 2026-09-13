@@ -127,7 +127,10 @@ def open(path: str, flags: int, mode: int = 0o777) -> int:
                    _fd(flags | 0x8080), i32(0x40), i32(permissions))
     return int(descriptor)
 
-def listdir(path: str = ".") -> List[str]:
+def _listdir_status(path: str) -> Tuple[List[str], _Status]:
+    error = _path_status(path, True)
+    if error:
+        return [], error
     from C import GetFileAttributesW(Ptr[u16]) -> u32
     from C import FindFirstFileW(Ptr[u16], cobj) -> cobj
     from C import FindNextFileW(cobj, cobj) -> i32
@@ -136,20 +139,19 @@ def listdir(path: str = ".") -> List[str]:
     attributes = GetFileAttributesW(_wide(path))
     if attributes == u32(0xFFFFFFFF):
         code = GetLastError()
-        _winerror("listdir", code, path)
+        return [], _status(winerror=int(code))
     if int(attributes) & 0x10 == 0:
-        _winerror("listdir", u32(267), path)
+        return [], _status(winerror=267)
     pattern = path + ("*" if path.endswith("\\") or path.endswith("/") else "\\*")
     buffer = Ptr[u32](148).as_byte()
     handle = FindFirstFileW(_wide(pattern), buffer)
     if int(handle) == -1:
         code = GetLastError()
         if code == u32(2):
-            return []
-        _winerror("listdir", code, path)
-    succeeded = False
+            return [], _status()
+        return [], _status(winerror=int(code))
+    names: List[str] = []
     try:
-        names: List[str] = []
         while True:
             pointer = Ptr[u16](buffer + 44)
             count = 0
@@ -161,14 +163,18 @@ def listdir(path: str = ".") -> List[str]:
             if FindNextFileW(handle, buffer) == i32(0):
                 code = GetLastError()
                 if code != u32(18):
-                    _winerror("listdir", code, path)
+                    error = _status(winerror=int(code))
                 break
-        succeeded = True
-        return names
     finally:
-        if FindClose(handle) == i32(0) and succeeded:
+        if FindClose(handle) == i32(0) and not error:
             code = GetLastError()
-            _winerror("FindClose", code, path)
+            error = _status(winerror=int(code))
+    return names, error
+
+def listdir(path: str = ".") -> List[str]:
+    names, error = _listdir_status(path)
+    error.raise_error("listdir", path)
+    return names
 
 def _final_path_status(path: str) -> Tuple[str, _Status]:
     error = _path_status(path, True)
@@ -472,7 +478,10 @@ def getcwdb() -> bytes:
     return getcwd().encode("utf-8", "surrogatepass")
 
 
-def unlink(path: str):
+def _unlink_status(path: str) -> _Status:
+    error = _path_status(path, True)
+    if error:
+        return error
     from C import GetFileAttributesW(Ptr[u16]) -> u32
     from C import RemoveDirectoryW(Ptr[u16]) -> i32
     from C import DeleteFileW(Ptr[u16]) -> i32
@@ -481,7 +490,7 @@ def unlink(path: str):
     attributes = GetFileAttributesW(name)
     if attributes == u32(0xFFFFFFFF):
         code = GetLastError()
-        _winerror("unlink", code, path)
+        return _status(winerror=int(code))
     # Directory symlinks/junctions need RemoveDirectoryW; real directories must
     # still fail, rather than accidentally becoming os.rmdir.
     if (int(attributes) & 0x410) == 0x410:  # DIRECTORY | REPARSE_POINT
@@ -490,7 +499,12 @@ def unlink(path: str):
         result = DeleteFileW(name)
     if result == i32(0):
         code = GetLastError()
-        _winerror("unlink", code, path)
+        return _status(winerror=int(code))
+    return _status()
+
+
+def unlink(path: str):
+    _unlink_status(path).raise_error("unlink", path)
 
 
 def remove(path: str):

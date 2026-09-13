@@ -2850,15 +2850,27 @@ def _file_text_encoding(encoding: Optional[str]) -> str:
 def _file_text_errors(errors: Optional[str]) -> str:
     return "strict" if errors is None else errors
 
+def _file_path_string(path) -> str:
+    if isinstance(path, str):
+        return path
+    elif hasattr(path, "__fspath__"):
+        value = path.__fspath__()
+        if isinstance(value, str):
+            return value
+        else:
+            compile_error("file paths must resolve to str")
+    else:
+        compile_error("expected str or a path-like object")
+
 def open(
-    path: str,
+    path,
     mode: str = "r",
     encoding: Optional[str] = None,
     errors: Optional[str] = None,
     newline: Optional[str] = None,
 ) -> File[str]:
     return File[str](
-        path,
+        _file_path_string(path),
         mode,
         _file_text_encoding(encoding),
         _file_text_errors(errors),
@@ -2867,7 +2879,7 @@ def open(
 
 @overload
 def open(
-    path: str,
+    path,
     mode: Literal[str],
     encoding: Optional[str] = None,
     errors: Optional[str] = None,
@@ -2878,10 +2890,10 @@ def open(
     if binary:
         if encoding is not None or errors is not None or newline is not None:
             raise ValueError("binary mode does not take encoding, errors or newline")
-        return File[bytes](path, mode)
+        return File[bytes](_file_path_string(path), mode)
     else:
         return File[str](
-            path,
+            _file_path_string(path),
             mode,
             _file_text_encoding(encoding),
             _file_text_errors(errors),

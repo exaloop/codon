@@ -493,6 +493,7 @@ INSTANTIATE_TEST_SUITE_P(
         "stdlib/io_test.codon",
         "stdlib/sys_test.codon",
         "stdlib/os_test.codon",
+        "stdlib/pathlib_test.codon",
         "stdlib/ntpath_test.codon",
         "stdlib/win32_os_test.codon",
         "stdlib/unicode_test.codon",

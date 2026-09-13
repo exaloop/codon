@@ -427,6 +427,13 @@ def test_surrogate_filesystem(root: str):
         assert os.access(target, os.F_OK)
         with open(target, "rb") as stream:
             assert stream.read() == b"abcdef"
+        from pathlib import Path
+        assert Path(target).read_bytes() == b"abcdef"
+        assert Path(symbolic).readlink() == Path(target)
+        assert Path(symbolic).resolve() == Path(target).resolve()
+        assert Path(filename) in list(Path(".").glob("file-?"))
+        with open(Path(target), "rb") as stream:
+            assert stream.read() == b"abcdef"
         os.chmod(target, 0o600)
         os.truncate(target, 3)
         os.link(target, hard)

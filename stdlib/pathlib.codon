@@ -1,0 +1,602 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+"""Native filesystem paths. Lexical operations preserve parent components."""
+
+import internal.static as static
+import os
+import os.path as _path
+from internal.file import open as _open
+
+
+def _case_key(character: str) -> str:
+    return character.lower()[0].replace("\u0131", "i").casefold()
+
+
+def _case_variants(character: str) -> List[str]:
+    for group in ("Ii\u0130\u0131", "Kk\u212a", "Ss\u017f", "\xb5\u039c\u03bc",
+                  "\xc5\xe5\u212b", "\xdf\u1e9e", "\u0345\u0399\u03b9\u1fbe",
+                  "\u0390\u1fd3", "\u0392\u03b2\u03d0", "\u0395\u03b5\u03f5",
+                  "\u0398\u03b8\u03d1\u03f4", "\u039a\u03ba\u03f0",
+                  "\u03a0\u03c0\u03d6", "\u03a1\u03c1\u03f1",
+                  "\u03a3\u03c2\u03c3", "\u03a6\u03c6\u03d5",
+                  "\u03a9\u03c9\u2126", "\u03b0\u1fe3", "\u0412\u0432\u1c80",
+                  "\u0414\u0434\u1c81", "\u041e\u043e\u1c82", "\u0421\u0441\u1c83",
+                  "\u0422\u0442\u1c84\u1c85", "\u042a\u044a\u1c86",
+                  "\u0462\u0463\u1c87", "\u1c88\ua64a\ua64b",
+                  "\u1e60\u1e61\u1e9b", "\ufb05\ufb06"):
+        if character in group:
+            return list(group)
+    return [value for value in (character, character.lower(), character.upper(), character.title())
+            if len(value) == 1]
+
+
+def _class_matches(content: str, character: str, sensitive: bool) -> bool:
+    chunks: List[str] = []
+    start = 0
+    offset = content.find("-", 2 if content.startswith("!") else 1)
+    while offset >= 0:
+        chunks.append(content[start:offset])
+        start = offset + 1
+        offset = content.find("-", offset + 3)
+    if start < len(content):
+        chunks.append(content[start:])
+    elif chunks:
+        chunks[-1] += "-"
+    for index in range(len(chunks) - 1, 0, -1):
+        if chunks[index - 1][-1] > chunks[index][0]:
+            chunks[index - 1] = chunks[index - 1][:-1] + chunks[index][1:]
+            del chunks[index]
+    negate = bool(chunks) and chunks[0].startswith("!")
+    if negate:
+        chunks[0] = chunks[0][1:]
+    variants = [character] if sensitive else _case_variants(character)
+    found = False
+    for index in range(len(chunks)):
+        chunk = chunks[index]
+        begin = 1 if index else 0
+        end = len(chunk) - 1 if index + 1 < len(chunks) else len(chunk)
+        for offset in range(begin, end):
+            found = found or (chunk[offset] == character if sensitive
+                              else _case_key(chunk[offset]) == _case_key(character))
+        if index + 1 < len(chunks):
+            found = found or any(chunk[-1] <= value <= chunks[index + 1][0] for value in variants)
+    return not found if negate else found
+
+
+@tuple
+class _WildcardPattern:
+    tokens: List[Tuple[int, str]]
+    sensitive: bool
+
+    def fullmatch(self, text: str) -> bool:
+        states = [False] * (len(text) + 1)
+        states[0] = True
+        for kind, value in self.tokens:
+            following = [False] * (len(text) + 1)
+            if kind == 1 or kind == 4:
+                following[0] = states[0]
+            if kind == 5:
+                following = states.copy()
+            reachable = False
+            for index in range(len(text)):
+                character = text[index]
+                separator = character == os.sep or (static.platform() == "win32" and character == "/")
+                if kind == 1 or kind == 4:
+                    following[index + 1] = states[index + 1] or (following[index] and (kind == 4 or not separator))
+                elif kind == 5:
+                    reachable = reachable or (index > 0 and states[index - 1])
+                    following[index + 1] = following[index + 1] or (reachable and separator)
+                elif states[index]:
+                    if kind == 2:
+                        following[index + 1] = not separator
+                    elif kind == 3:
+                        following[index + 1] = _class_matches(value, character, self.sensitive)
+                    else:
+                        following[index + 1] = (value == character if self.sensitive
+                                                else _case_key(value) == _case_key(character))
+            states = following
+        return states[-1]
+
+
+def _pattern(pattern: str, case_sensitive: Optional[bool]):
+    tokens: List[Tuple[int, str]] = []
+    index = 0
+    while index < len(pattern):
+        character = pattern[index]
+        index += 1
+        if character == "*":
+            if not tokens or tokens[-1][0] != 1:
+                tokens.append((1, ""))
+        elif character == "?":
+            tokens.append((2, ""))
+        elif character == "[":
+            end = index
+            if end < len(pattern) and pattern[end] == "!":
+                end += 1
+            if end < len(pattern) and pattern[end] == "]":
+                end += 1
+            end = pattern.find("]", end)
+            if end < 0:
+                tokens.append((0, "["))
+                continue
+            tokens.append((3, pattern[index:end]))
+            index = end + 1
+        else:
+            tokens.append((0, character))
+    sensitive = static.platform() != "win32" if case_sensitive is None else unwrap(case_sensitive)
+    return _WildcardPattern(tokens, sensitive)
+
+
+def _path_string(value) -> str:
+    result = os.fspath(value)
+    if isinstance(result, str):
+        return result
+    else:
+        compile_error("path segments must resolve to str, not bytes")
+
+
+def _as_uri(value: str, drive: str) -> str:
+    if len(drive) == 2 and drive[1] == ":":
+        prefix = "file:///" + drive
+        value = value[2:]
+    else:
+        prefix = "file:" if drive else "file://"
+    safe = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/"
+    result = _strbuf()
+    for byte in os.fsencode(value):
+        if chr(byte) in safe:
+            result.append(chr(byte))
+        else:
+            result.append("%%%02X" % byte)
+    return prefix + result.__str__()
+
+
+def _normalize(value: str) -> str:
+    if static.platform() == "win32":
+        value = value.replace("/", "\\")
+    drive, root, tail = _path.splitroot(value)
+    parts = [part for part in tail.split(os.sep) if part and part != "."]
+    return drive + root + os.sep.join(parts) or "."
+
+
+class Path:
+    _path: str
+
+    def __init__(self, *segments):
+        value = ""
+        for index in static.range(static.len(segments)):
+            value = _path.join(value, _path_string(segments[index]))
+        self._path = _normalize(value)
+
+    def __str__(self) -> str:
+        return self._path
+
+    def __repr__(self) -> str:
+        return "Path(" + repr(self.as_posix()) + ")"
+
+    def __fspath__(self) -> str:
+        return self._path
+
+    def __hash__(self) -> int:
+        return hash(_path.normcase(self._path))
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Path):
+            return _path.normcase(self._path) == _path.normcase(other._path)
+        else:
+            return False
+
+    def __ne__(self, other) -> bool:
+        return not self == other
+
+    def __lt__(self, other: Path) -> bool:
+        return [_path.normcase(part) for part in self.parts] < [_path.normcase(part) for part in other.parts]
+
+    def __le__(self, other: Path) -> bool:
+        return self == other or self < other
+
+    def __gt__(self, other: Path) -> bool:
+        return other < self
+
+    def __ge__(self, other: Path) -> bool:
+        return self == other or other < self
+
+    def __truediv__(self, other):
+        return Path(self, other)
+
+    def __rtruediv__(self, other):
+        return Path(other, self)
+
+    def joinpath(self, *segments):
+        return Path(self, *segments)
+
+    def as_posix(self) -> str:
+        return self._path.replace("\\", "/") if static.platform() == "win32" else self._path
+
+    @property
+    def drive(self) -> str:
+        return _path.splitroot(self._path)[0]
+
+    @property
+    def root(self) -> str:
+        return _path.splitroot(self._path)[1]
+
+    @property
+    def anchor(self) -> str:
+        return self.drive + self.root
+
+    @property
+    def parts(self) -> DynamicTuple[str]:
+        drive, root, tail = _path.splitroot(self._path)
+        values = [drive + root] if drive or root else List[str]()
+        values.extend(part for part in tail.split(os.sep) if part and part != ".")
+        return DynamicTuple(values)
+
+    @property
+    def name(self) -> str:
+        tail = _path.splitroot(self._path)[2]
+        return "" if tail == "." else _path.basename(tail)
+
+    @property
+    def suffix(self) -> str:
+        name = self.name
+        if not name.strip("."):
+            return ""
+        index = name.rfind(".")
+        return name[index:] if index > 0 else ""
+
+    @property
+    def suffixes(self) -> List[str]:
+        name = self.name.lstrip(".")
+        return ["." + part for part in name.split(".")[1:]]
+
+    @property
+    def stem(self) -> str:
+        suffix = self.suffix
+        return self.name[:-len(suffix)] if suffix else self.name
+
+    @property
+    def parent(self):
+        return Path(_path.dirname(self._path)) if self.name else Path(self)
+
+    @property
+    def parents(self) -> DynamicTuple[Path]:
+        values: List[Path] = []
+        current = self
+        while current.parent != current:
+            current = current.parent
+            values.append(current)
+        return DynamicTuple(values)
+
+    def with_name(self, name: str):
+        if not self.name:
+            raise ValueError("path has an empty name")
+        if not name or name == "." or os.sep in name:
+            raise ValueError("invalid name")
+        if static.platform() == "win32":
+            if "/" in name or _path.splitdrive(name)[0]:
+                raise ValueError("invalid name")
+        return self.parent / name
+
+    def with_stem(self, stem: str):
+        if not stem:
+            raise ValueError("invalid stem")
+        return self.with_name(stem + self.suffix)
+
+    def with_suffix(self, suffix: str):
+        if suffix and (not suffix.startswith(".") or os.sep in suffix):
+            raise ValueError("invalid suffix")
+        if static.platform() == "win32":
+            if "/" in suffix:
+                raise ValueError("invalid suffix")
+        return self.with_name(self.stem + suffix)
+
+    def is_absolute(self) -> bool:
+        return bool(self.root and self.drive) if static.platform() == "win32" else bool(self.root)
+
+    def is_relative_to(self, other) -> bool:
+        base = Path(other)
+        if _path.normcase(self.anchor) != _path.normcase(base.anchor):
+            return False
+        target_parts, base_parts = self.parts, base.parts
+        if len(base_parts) > len(target_parts):
+            return False
+        for index in range(len(base_parts)):
+            if _path.normcase(base_parts[index]) != _path.normcase(target_parts[index]):
+                return False
+        return True
+
+    def relative_to(self, other, walk_up: bool = False):
+        base = Path(other)
+        if self.is_relative_to(base):
+            return Path(os.sep.join(list(self.parts)[len(base.parts):]))
+        if not walk_up or _path.normcase(self.anchor) != _path.normcase(base.anchor):
+            raise ValueError("path is not relative to the given base")
+        target_parts, base_parts = list(self.parts), list(base.parts)
+        shared = 0
+        while shared < min(len(target_parts), len(base_parts)):
+            if _path.normcase(target_parts[shared]) != _path.normcase(base_parts[shared]):
+                break
+            shared += 1
+        if ".." in base_parts[shared:]:
+            raise ValueError("cannot walk up through a parent component")
+        return Path(os.sep.join([".."] * (len(base_parts) - shared) + target_parts[shared:]))
+
+    def cwd():
+        return Path(os.getcwd())
+
+    def home():
+        return Path("~").expanduser()
+
+    def absolute(self):
+        if self.is_absolute():
+            return Path(self)
+        if static.platform() == "win32":
+            if self.drive:
+                return Path(os._getfullpathname(self.drive), self)
+        return Path(os.getcwd(), self)
+
+    def resolve(self, strict: bool = False):
+        return Path(_path.realpath(self._path, strict))
+
+    def expanduser(self):
+        value = _path.expanduser(self._path)
+        if self._path.startswith("~") and value == self._path:
+            raise RuntimeError("could not determine home directory")
+        return Path(value)
+
+    def as_uri(self) -> str:
+        if not self.is_absolute():
+            raise ValueError("relative path cannot be expressed as a file URI")
+        return _as_uri(self.as_posix(), self.drive)
+
+    def stat(self, follow_symlinks: bool = True):
+        return os.stat(self._path, follow_symlinks)
+
+    def lstat(self):
+        return os.lstat(self._path)
+
+    def exists(self, follow_symlinks: bool = True) -> bool:
+        fields, error = os._stat_status(self._path, follow_symlinks)
+        return not error
+
+    def is_file(self, follow_symlinks: bool = True) -> bool:
+        return _path._mode(self._path, follow_symlinks) == 0o100000
+
+    def is_dir(self, follow_symlinks: bool = True) -> bool:
+        return _path._mode(self._path, follow_symlinks) == 0o040000
+
+    def is_symlink(self) -> bool:
+        return _path.islink(self._path)
+
+    def is_socket(self) -> bool:
+        return _path._mode(self._path, True) == 0o140000
+
+    def is_fifo(self) -> bool:
+        return _path._mode(self._path, True) == 0o010000
+
+    def is_block_device(self) -> bool:
+        return _path._mode(self._path, True) == 0o060000
+
+    def is_char_device(self) -> bool:
+        return _path._mode(self._path, True) == 0o020000
+
+    def is_mount(self) -> bool:
+        if not self.is_dir() or self.is_symlink():
+            return False
+        current, error = os._stat_status(self._path)
+        parent, parent_error = os._stat_status(str(self / ".."))
+        if error or parent_error:
+            return False
+        return current[2] != parent[2] or current[1] == parent[1]
+
+    def samefile(self, other) -> bool:
+        return _path.samefile(self._path, _path_string(other))
+
+    def open(self, mode: str = "r", encoding: Optional[str] = None,
+             errors: Optional[str] = None, newline: Optional[str] = None):
+        return _open(self._path, mode, encoding, errors, newline)
+
+    def open(self, mode: Literal[str], encoding: Optional[str] = None,
+             errors: Optional[str] = None, newline: Optional[str] = None):
+        return _open(self._path, mode, encoding, errors, newline)
+
+    def read_text(self, encoding: Optional[str] = None, errors: Optional[str] = None,
+                  newline: Optional[str] = None) -> str:
+        with self.open("r", encoding, errors, newline) as stream:
+            return stream.read()
+
+    def read_bytes(self) -> bytes:
+        with self.open("rb") as stream:
+            return stream.read()
+
+    def write_text(self, data: str, encoding: Optional[str] = None,
+                   errors: Optional[str] = None, newline: Optional[str] = None) -> int:
+        with self.open("w", encoding, errors, newline) as stream:
+            return stream.write(data)
+
+    def write_bytes(self, data: bytes) -> int:
+        with self.open("wb") as stream:
+            return stream.write(data)
+
+    def iterdir(self):
+        for name in os.listdir(self._path):
+            yield self / name
+
+    def mkdir(self, mode: int = 0o777, parents: bool = False, exist_ok: bool = False):
+        if parents:
+            os.makedirs(self._path, mode, exist_ok)
+        else:
+            error = os._mkdir_status(self._path, mode)
+            if error and not (exist_ok and self.is_dir()):
+                error.raise_error("mkdir", self._path)
+
+    def rmdir(self):
+        os.rmdir(self._path)
+
+    def unlink(self, missing_ok: bool = False):
+        error = os._unlink_status(self._path)
+        if missing_ok and (error.errno == 2 or error.winerror == 2 or error.winerror == 3):
+            return
+        error.raise_error("unlink", self._path)
+
+    def rename(self, target):
+        destination = Path(target)
+        os.rename(self._path, str(destination))
+        return destination
+
+    def replace(self, target):
+        destination = Path(target)
+        os.replace(self._path, str(destination))
+        return destination
+
+    def chmod(self, mode: int, follow_symlinks: bool = True):
+        os.chmod(self._path, mode, follow_symlinks)
+
+    def lchmod(self, mode: int):
+        self.chmod(mode, follow_symlinks=False)
+
+    def symlink_to(self, target, target_is_directory: bool = False):
+        os.symlink(_path_string(target), self._path, target_is_directory)
+
+    def hardlink_to(self, target):
+        os.link(_path_string(target), self._path)
+
+    def readlink(self):
+        return Path(os.readlink(self._path))
+
+    def touch(self, mode: int = 0o666, exist_ok: bool = True):
+        if exist_ok:
+            if static.platform() == "win32":
+                import os._win32 as native
+                from C import _wutime64(Ptr[u16], cobj) -> i32
+                result, error = native._crt_status(False, _wutime64, native._wide(self._path), cobj())
+                if not error:
+                    return
+            else:
+                from C import utime(cobj, cobj) -> i32
+                if utime(os._cstring(self._path), cobj()) == i32(0):
+                    return
+        flags = os.O_CREAT | os.O_WRONLY
+        if not exist_ok:
+            flags |= os.O_EXCL
+        descriptor = os.open(self._path, flags, mode)
+        os.close(descriptor)
+
+    def match(self, pattern, case_sensitive: Optional[bool] = None) -> bool:
+        value = Path(pattern)
+        patterns, parts = list(value.parts), list(self.parts)
+        if not patterns:
+            raise ValueError("empty pattern")
+        if value.anchor and len(patterns) != len(parts):
+            return False
+        if len(patterns) > len(parts):
+            return False
+        offset = len(parts) - len(patterns)
+        for index in range(len(patterns)):
+            if not _pattern(patterns[index], case_sensitive).fullmatch(parts[offset + index]):
+                return False
+        return True
+
+    def full_match(self, pattern, case_sensitive: Optional[bool] = None) -> bool:
+        value = Path(pattern)
+        patterns = (str(value) if value.parts else "").split(os.sep)
+        tokens: List[Tuple[int, str]] = []
+        for index, component in enumerate(patterns):
+            if component == "**":
+                if index == len(patterns) - 1:
+                    tokens.append((4, ""))
+                elif patterns[index + 1] != "**":
+                    tokens.append((5, ""))
+            else:
+                if component == "*":
+                    tokens.append((2, ""))
+                tokens.extend(_pattern(component, case_sensitive).tokens)
+                if index < len(patterns) - 1:
+                    tokens.append((0, os.sep))
+        sensitive = static.platform() != "win32" if case_sensitive is None else unwrap(case_sensitive)
+        return _WildcardPattern(tokens, sensitive).fullmatch(str(self) if self.parts else "")
+
+    def glob(self, pattern, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
+        text = _path_string(pattern)
+        parsed = Path(text)
+        if parsed.anchor:
+            raise ValueError("glob patterns must be relative")
+        if not text:
+            raise ValueError("empty pattern")
+        directory_only = text.endswith(os.sep)
+        if static.platform() == "win32":
+            directory_only = directory_only or text.endswith("/")
+        patterns = list(parsed.parts)
+        matchers = [_pattern(component, case_sensitive) for component in patterns]
+        pending = [(self, 0)]
+        visited: Set[Tuple[str, int]] = set()
+        emitted: Set[Path] = set()
+        while pending:
+            current, index = pending.pop()
+            state = (str(current), index)
+            if state in visited:
+                continue
+            visited.add(state)
+            if index == len(patterns):
+                if current not in emitted and current.exists(follow_symlinks=False):
+                    if not directory_only or current.is_dir():
+                        emitted.add(current)
+                        yield current
+                continue
+            if not current.is_dir():
+                continue
+            component = patterns[index]
+            if component == "..":
+                pending.append((current / "..", index + 1))
+                continue
+            if component == "**":
+                pending.append((current, index + 1))
+            names, error = os._listdir_status(str(current))
+            if error:
+                continue
+            for name in names:
+                child = current / name
+                if component == "**":
+                    if index + 1 == len(patterns) and not directory_only:
+                        pending.append((child, index + 1))
+                    if child.is_dir() and (recurse_symlinks or not child.is_symlink()):
+                        pending.append((child, index))
+                elif matchers[index].fullmatch(name):
+                    pending.append((child, index + 1))
+
+    def rglob(self, pattern, case_sensitive: Optional[bool] = None, recurse_symlinks: bool = False):
+        value = _path_string(pattern)
+        if Path(value).anchor:
+            raise ValueError("glob patterns must be relative")
+        for path in self.glob("**" + os.sep + value, case_sensitive, recurse_symlinks):
+            yield path
+
+    def walk(self, top_down: bool = True, on_error=None, follow_symlinks: bool = False):
+        pending = [(self, False, List[str](), List[str]())]
+        while pending:
+            current, completed, directories, files = pending.pop()
+            if completed:
+                yield current, directories, files
+                continue
+            names, error = os._listdir_status(str(current))
+            if error:
+                if on_error is not None:
+                    on_error(OSError(error.errno if error.errno else None,
+                                     error.message or "directory listing failed", str(current),
+                                     error.winerror if error.winerror else None))
+                continue
+            for name in names:
+                child = current / name
+                if child.is_dir() and (follow_symlinks or not child.is_symlink()):
+                    directories.append(name)
+                else:
+                    files.append(name)
+            if top_down:
+                yield current, directories, files
+            else:
+                pending.append((current, True, directories, files))
+            for name in directories[::-1]:
+                child = current / name
+                if follow_symlinks or not child.is_symlink():
+                    pending.append((child, False, List[str](), List[str]()))

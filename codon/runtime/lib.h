@@ -76,7 +76,7 @@ SEQ_FUNC void seq_sleep(double secs);
 SEQ_FUNC char **seq_env();
 SEQ_FUNC int32_t seq_os_open(const char *path, int32_t flags, uint32_t mode);
 SEQ_FUNC int32_t seq_os_stat(const char *path, int32_t descriptor, bool follow,
-                            int64_t *fields);
+                             int64_t *fields);
 SEQ_FUNC const char *seq_os_readdir(void *directory);
 SEQ_FUNC char *seq_os_home(const char *name);
 SEQ_FUNC void seq_assert_failed(seq_str_t file, seq_int_t line);

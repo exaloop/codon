@@ -160,7 +160,7 @@ SEQ_FUNC int32_t seq_os_open(const char *path, int32_t flags, uint32_t mode) {
 }
 
 SEQ_FUNC int32_t seq_os_stat(const char *path, int32_t descriptor, bool follow,
-                            int64_t *fields) {
+                             int64_t *fields) {
   struct stat info;
   int result = path ? (follow ? stat(path, &info) : lstat(path, &info))
                     : fstat(descriptor, &info);
@@ -200,9 +200,9 @@ SEQ_FUNC char *seq_os_home(const char *name) {
   struct passwd record;
   struct passwd *found = nullptr;
   for (;;) {
-    int error = name ? getpwnam_r(name, &record, buffer.data(), buffer.size(), &found)
-                     : getpwuid_r(getuid(), &record, buffer.data(), buffer.size(),
-                                  &found);
+    int error =
+        name ? getpwnam_r(name, &record, buffer.data(), buffer.size(), &found)
+             : getpwuid_r(getuid(), &record, buffer.data(), buffer.size(), &found);
     if (error == ERANGE && buffer.size() < 1024 * 1024) {
       buffer.resize(buffer.size() * 2);
       continue;

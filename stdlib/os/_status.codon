@@ -1,3 +1,5 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 import internal.static as static
 
 @tuple
