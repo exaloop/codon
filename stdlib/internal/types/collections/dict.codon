@@ -192,8 +192,8 @@ class OrderedDict:
 
     def _lookup(self, key: K, h: int):
         mask = self._size - 1
-        i = h & mask
-        perturb = h
+        perturb = u64(h)
+        i = int(perturb & u64(mask))
         freeslot = _DKIX_EMPTY
 
         while True:
@@ -213,8 +213,8 @@ class OrderedDict:
                     if e.hash == h and e.key == key:
                         return LookupResult(i, True)
 
-            perturb >>= _PERTURB_SHIFT
-            i = (i * 5 + perturb + 1) & mask
+            perturb >>= u64(_PERTURB_SHIFT)
+            i = int((u64(i) * u64(5) + perturb + u64(1)) & u64(mask))
 
     def _resize(self, minused: int):
         minsize = ((minused * 3) >> 1) + 1
@@ -378,7 +378,6 @@ class OrderedDict:
         while self._nentries > 0:
             ix = self._nentries - 1
             self._nentries -= 1
-            self._usable += 1
 
             if not self._is_active(ix):
                 continue
@@ -388,8 +387,11 @@ class OrderedDict:
             if r.found:
                 _set_index(self._indices, self._log2_index_bytes, r.slot, _DKIX_DUMMY)
 
+            e_key = e.key
+            e_value = e.value
+            self._clear_slot(ix)
             self._used -= 1
-            return (e.key, e.value)
+            return (e_key, e_value)
 
         raise KeyError("popitem(): dictionary is empty")
 

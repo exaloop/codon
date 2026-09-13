@@ -1617,3 +1617,58 @@ def test_defaultdict():
     d = defaultdict(constant_factory('<missing>'))
     assert d[10] == '<missing>'
 test_defaultdict()
+
+@test
+def test_ordereddict_termination():
+    class Key:
+        x: int
+
+        def __init__(self, x):
+            self.x = x
+
+        def __hash__(self):
+            return self.x
+
+        def __eq__(self, other):
+            return self.x == other.x
+
+    d = OrderedDict[Key, int]()
+
+    # size = 16, usable = 10
+    #
+    # Occupy slots 0..9.
+    for i in range(10):
+        d[Key(i)] = i
+
+    # Convert all 10 occupied index slots to DUMMY.
+    # popitem() also incorrectly restores _usable each time.
+    for _ in range(10):
+        d.popitem()
+
+    # At this point:
+    #
+    # indices =
+    # D D D D D D D D D D E E E E E E
+    #
+    # usable = 10
+
+    # Consume the remaining six genuinely EMPTY hash slots.
+    for i in range(10, 16):
+        d[Key(i)] = i
+
+    # Expected index table:
+    #
+    # D D D D D D D D D D O O O O O O
+    #
+    # No DKIX_EMPTY anywhere, but _usable == 4.
+
+    # This should loop forever in _lookup().
+    assert (Key(16) in d) == False
+
+
+    d = OrderedDict[Key, int]()
+    d[Key(0)] = 0
+    d[Key(1)] = 1
+    d[Key(4)] = 4
+    assert (Key(-1) in d) == False
+test_ordereddict_termination()
