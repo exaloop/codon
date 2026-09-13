@@ -1,10 +1,312 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+"""Native path operations (POSIX, or Windows when targeting win32)."""
+
+import internal.static as static
+
+curdir: Literal[str] = "."
+pardir: Literal[str] = ".."
+extsep: Literal[str] = "."
+if static.platform() == "win32":
+    import os._ntpath as _ntpath
+    sep: Literal[str] = "\\"
+    pathsep: Literal[str] = ";"
+    defpath: Literal[str] = ".;C:\\bin"
+    altsep: Optional[str] = "/"
+    devnull: Literal[str] = "nul"
+else:
+    sep: Literal[str] = "/"
+    pathsep: Literal[str] = ":"
+    defpath: Literal[str] = "/bin:/usr/bin"
+    altsep: Optional[str] = None
+    devnull: Literal[str] = "/dev/null"
+
+def exists(path: str) -> bool:
+    from os import _stat_status
+    fields, error = _stat_status(path)
+    return not error
+
+def lexists(path: str) -> bool:
+    from os import _stat_status
+    fields, error = _stat_status(path, False)
+    return not error
+
+def _mode(path: str, follow: bool) -> int:
+    from os import _stat_status
+    fields, error = _stat_status(path, follow)
+    return 0 if error else fields[0] & 0o170000
+
+def isfile(path: str) -> bool:
+    return _mode(path, True) == 0o100000
+
+def isdir(path: str) -> bool:
+    return _mode(path, True) == 0o040000
+
+def islink(path: str) -> bool:
+    return _mode(path, False) == 0o120000
+
+def samefile(path1: str, path2: str) -> bool:
+    from os import stat
+    first, second = stat(path1), stat(path2)
+    return first.st_ino == second.st_ino and first.st_dev == second.st_dev
+
+def sameopenfile(fd1: int, fd2: int) -> bool:
+    from os import fstat
+    first, second = fstat(fd1), fstat(fd2)
+    return first.st_ino == second.st_ino and first.st_dev == second.st_dev
+
+def getsize(path: str) -> int:
+    from os import stat
+    return stat(path).st_size
+
+def getmtime(path: str) -> float:
+    from os import stat
+    return stat(path).st_mtime
+
+def getatime(path: str) -> float:
+    from os import stat
+    return stat(path).st_atime
+
+def getctime(path: str) -> float:
+    from os import stat
+    return stat(path).st_ctime
+
+def expanduser(path: str) -> str:
+    if static.platform() == "win32":
+        return _ntpath.expanduser(path)
+    if not path.startswith("~"):
+        return path
+    from os import environ, _cstring, _errno, _error
+    end = path.find("/")
+    if end < 0:
+        end = len(path)
+    if end == 1 and "HOME" in environ:
+        home = environ["HOME"]
+    else:
+        from C import seq_os_home(cobj) -> cobj
+        from C import free(cobj)
+        pointer = seq_os_home(cobj() if end == 1 else _cstring(path[1:end]))
+        if not pointer:
+            if _errno() != 0:
+                _error("expanduser")
+            return path
+        try:
+            home = bytes.from_ptr(pointer).decode("utf-8", "surrogateescape")
+        finally:
+            free(pointer)
+    return home.rstrip("/") + path[end:] or "/"
+
+def realpath(path: str, strict: bool = False) -> str:
+    if static.platform() == "win32":
+        from os import _win32
+        return _win32.realpath(path, strict)
+    from os import _cstring, _error, getcwd, _stat_status, _readlink_status
+    if strict:
+        from C import realpath(cobj, cobj) -> cobj as c_realpath
+        from C import free(cobj)
+        pointer = c_realpath(_cstring(path if path else "."), cobj())
+        if not pointer:
+            _error("realpath", path)
+        try:
+            return bytes.from_ptr(pointer).decode("utf-8", "surrogateescape")
+        finally:
+            free(pointer)
+    absolute = path if path.startswith("/") else getcwd() + "/" + path
+    pending = [(part, False) for part in absolute.split("/")[::-1]]
+    resolved: List[str] = []
+    active: Set[str] = set()
+    while pending:
+        part, completed = pending.pop()
+        if completed:
+            active.remove(part)
+            continue
+        if not part or part == ".":
+            continue
+        if part == "..":
+            if resolved:
+                resolved.pop()
+            continue
+        candidate = "/" + "/".join(resolved + [part])
+        fields, error = _stat_status(candidate, False)
+        if error:
+            if error.kind:
+                error.raise_error("realpath", candidate)
+            resolved.append(part)
+            continue
+        if fields[0] & 0o170000 != 0o120000 or candidate in active:
+            resolved.append(part)
+            continue
+        target, error = _readlink_status(candidate)
+        if error:
+            if error.kind:
+                error.raise_error("realpath", candidate)
+            resolved.append(part)
+            continue
+        active.add(candidate)
+        pending.append((candidate, True))
+        if target.startswith("/"):
+            resolved.clear()
+        for component in target.split("/")[::-1]:
+            pending.append((component, False))
+    return "/" + "/".join(resolved)
+
+def isabs(path: str) -> bool:
+    if static.platform() == "win32":
+        return _ntpath.isabs(path)
+    return path.startswith("/")
+
+def join(a: str, *paths) -> str:
+    if static.platform() == "win32":
+        return _ntpath.join(a, *paths)
+    result = a
+    for i in static.range(static.len(paths)):
+        part = paths[i]
+        if part.startswith("/") or not result:
+            result = part
+        elif result.endswith("/"):
+            result += part
+        else:
+            result += "/" + part
+    return result
+
+def split(path: str) -> Tuple[str, str]:
+    if static.platform() == "win32":
+        return _ntpath.split(path)
+    i = path.rfind("/") + 1
+    head, tail = path[:i], path[i:]
+    if head and head != "/" * len(head):
+        head = head.rstrip("/")
+    return head, tail
+
+def dirname(path: str) -> str:
+    return split(path)[0]
+
+def basename(path: str) -> str:
+    return split(path)[1]
+
+def splitdrive(path: str) -> Tuple[str, str]:
+    if static.platform() == "win32":
+        return _ntpath.splitdrive(path)
+    return "", path
+
+def splitroot(path: str) -> Tuple[str, str, str]:
+    if static.platform() == "win32":
+        return _ntpath.splitroot(path)
+    if not path.startswith("/"):
+        return "", "", path
+    if path.startswith("//") and not path.startswith("///"):
+        return "", "//", path[2:]
+    return "", "/", path[1:]
+
+def normcase(path: str) -> str:
+    if static.platform() == "win32":
+        return _ntpath.normcase(path)
+    return path
+
+def normpath(path: str) -> str:
+    if static.platform() == "win32":
+        return _ntpath.normpath(path)
+    if not path:
+        return "."
+    root = ""
+    if path.startswith("/"):
+        root = "//" if path.startswith("//") and not path.startswith("///") else "/"
+    parts: List[str] = []
+    for part in path.split("/"):
+        if not part or part == ".":
+            continue
+        if part == "..":
+            if parts and parts[-1] != "..":
+                parts.pop()
+            elif not root:
+                parts.append(part)
+        else:
+            parts.append(part)
+    result = root + "/".join(parts)
+    return result if result else "."
+
+def abspath(path: str) -> str:
+    if static.platform() == "win32":
+        return _ntpath.abspath(path)
+    from os import getcwd
+    return normpath(path if isabs(path) else join(getcwd(), path))
+
+def relpath(path: str, start: str = ".") -> str:
+    if static.platform() == "win32":
+        return _ntpath.relpath(path, start)
+    if not path:
+        raise ValueError("no path specified")
+    target = [p for p in abspath(path).split("/") if p]
+    origin = [p for p in abspath(start).split("/") if p]
+    i = 0
+    while i < len(target) and i < len(origin) and target[i] == origin[i]:
+        i += 1
+    parts = [".."] * (len(origin) - i) + target[i:]
+    return "/".join(parts) if parts else "."
+
+def commonprefix(paths) -> str:
+    values = list(paths)
+    if not values:
+        return ""
+    first, last = min(values), max(values)
+    i = 0
+    while i < len(first) and i < len(last) and first[i] == last[i]:
+        i += 1
+    return first[:i]
+
+def commonpath(paths) -> str:
+    if static.platform() == "win32":
+        return _ntpath.commonpath(paths)
+    values = list(paths)
+    if not values:
+        raise ValueError("commonpath() arg is an empty sequence")
+    absolute = isabs(values[0])
+    common = [p for p in values[0].split("/") if p and p != "."]
+    for path in values[1:]:
+        if isabs(path) != absolute:
+            raise ValueError("Can't mix absolute and relative paths")
+        parts = [p for p in path.split("/") if p and p != "."]
+        i = 0
+        while i < len(common) and i < len(parts) and common[i] == parts[i]:
+            i += 1
+        common = common[:i]
+    return ("/" if absolute else "") + "/".join(common)
+
+def expandvars(path: str) -> str:
+    if static.platform() == "win32":
+        return _ntpath.expandvars(path)
+    from os import environ
+    result = _strbuf()
+    i = 0
+    while i < len(path):
+        if path[i] != "$":
+            result.append(path[i])
+            i += 1
+            continue
+        start = i
+        i += 1
+        if i < len(path) and path[i] == "{":
+            end = path.find("}", i + 1)
+            if end < 0:
+                result.append(path[start:])
+                break
+            key = path[i + 1:end]
+            i = end + 1
+        else:
+            begin = i
+            while i < len(path) and path[i] in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_":
+                i += 1
+            key = path[begin:i]
+        result.append(environ[key] if key in environ else path[start:i])
+    return result.__str__()
+
 def splitext(p: str) -> Tuple[str, str]:
     """
     Split the extension from a pathname.
     Extension is everything from the last dot to the end, ignoring
     leading dots.  Returns "(root, ext)"; ext may be empty."""
+    if static.platform() == "win32":
+        return _ntpath.splitext(p)
     sep = "/"
     extsep = "."
 

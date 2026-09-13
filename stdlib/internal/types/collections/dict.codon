@@ -355,11 +355,13 @@ class OrderedDict:
             self._clear_slot(ix)
             self._used -= 1
 
-    def pop(self, key: K):
+    def pop(self, key: K, missing: Optional[V] = None) -> V:
         h = self._hash(key)
         r = self._lookup(key, h)
 
         if not r.found:
+            if missing is not None:
+                return missing
             raise KeyError(str(key))
 
         ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
@@ -712,9 +714,9 @@ class UnorderedDict:
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def get(self, key: K, s: V) -> V:
+    def get(self, key: K, default: V) -> V:
         x = self._kh_get(key)
-        return self._vals[x] if x != self._kh_end() else s
+        return self._vals[x] if x != self._kh_end() else default
 
     def get(self, key: K) -> Optional[V]:
         x = self._kh_get(key)
@@ -760,12 +762,14 @@ class UnorderedDict:
         for k, v in other.items():
             self[k] = v
 
-    def pop(self, key: K) -> V:
+    def pop(self, key: K, missing: Optional[V] = None) -> V:
         x = self._kh_get(key)
         if x != self._kh_end():
             v = self._vals[x]
             self._kh_del(x)
             return v
+        if missing is not None:
+            return missing
         raise KeyError(str(key))
 
     def popitem(self) -> Tuple[K, V]:

@@ -243,13 +243,18 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   auto *module = compiler->getLLVMVisitor()->getModule();
 
   EXPECT_EQ(nullptr, module->getFunction("seq_alloc"));
+  EXPECT_EQ(nullptr, module->getFunction("seq_alloc_atomic"));
+  EXPECT_EQ(nullptr, module->getFunction("seq_env"));
   EXPECT_EQ(nullptr, module->getFunction("seq_stdin"));
   EXPECT_EQ(nullptr, module->getFunction("seq_stderr"));
   EXPECT_NE(nullptr, module->getFunction("seq_stdout"));
 
   unsigned definitions = 0;
-  for (const auto &function : *module)
+  for (const auto &function : *module) {
+    EXPECT_FALSE(function.getName().contains("std.internal.format"));
+    EXPECT_FALSE(function.getName().contains("std.internal.str"));
     definitions += !function.isDeclaration();
+  }
   EXPECT_EQ(1, definitions);
 }
 

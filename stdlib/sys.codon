@@ -1,5 +1,11 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+"""Native process streams, encoding queries and Codon implementation metadata.
+
+Version information describes Codon, not a CPython language compatibility level.
+The compiled runtime does not expose interpreter frames or reference counts.
+"""
+
 platform: Literal[str] = static.platform()
 
 argv = list(__argv__, __argc__)
@@ -8,7 +14,98 @@ stdin = File[str](_C.seq_stdin(), mode="r")
 stdout = File[str](_C.seq_stdout(), mode="w")
 stderr = File[str](_C.seq_stderr(), mode="w")
 
-def exit(status: int = 0):
-    raise SystemExit(status)
+__stdin__ = stdin
+__stdout__ = stdout
+__stderr__ = stderr
 
-maxsize = 0x7FFFFFFFFFFFFFFF
+def exit(status=0):
+    if status is None:
+        raise SystemExit(0)
+    elif isinstance(status, Optional):
+        exit(unwrap(status))
+    elif isinstance(status, (int, bool)):
+        raise SystemExit(int(status))
+    else:
+        compile_error("sys.exit() supports only integers, booleans and None")
+
+maxsize: Literal[int] = 0x7FFFFFFFFFFFFFFF
+maxunicode: Literal[int] = 0x10FFFF
+
+def _byteorder() -> str:
+    value = 1
+    return "little" if __ptr__(value).as_byte()[0] == u8(1) else "big"
+
+byteorder = _byteorder()
+
+@tuple
+class _version_info:
+    major: int
+    minor: int
+    micro: int
+    releaselevel: str
+    serial: int
+
+    def __getitem__(self, index: Literal[int]):
+        if index < -5 or index >= 5:
+            compile_error("version_info index out of range")
+        else:
+            return (self.major, self.minor, self.micro, self.releaselevel, self.serial)[index]
+
+version_info = _version_info(__codon_version_major__, __codon_version_minor__,
+                             __codon_version_micro__, "final", 0)
+version: Literal[str] = (static.int_to_string(__codon_version_major__) + "." +
+                         static.int_to_string(__codon_version_minor__) + "." +
+                         static.int_to_string(__codon_version_micro__) + " (Codon)")
+hexversion: Literal[int] = ((__codon_version_major__ << 24) |
+                            (__codon_version_minor__ << 16) |
+                            (__codon_version_micro__ << 8) | 0xF0)
+
+@tuple
+class _implementation:
+    name: str
+    version: _version_info
+    hexversion: int
+    cache_tag: Optional[str]
+
+implementation = _implementation("codon", version_info, hexversion, None)
+
+@tuple
+class _float_info:
+    max: float
+    max_exp: int
+    max_10_exp: int
+    min: float
+    min_exp: int
+    min_10_exp: int
+    dig: int
+    mant_dig: int
+    epsilon: float
+    radix: int
+    rounds: int
+
+    def _values(self):
+        return (self.max, self.max_exp, self.max_10_exp, self.min,
+                self.min_exp, self.min_10_exp, self.dig, self.mant_dig,
+                self.epsilon, self.radix, self.rounds)
+
+    def __getitem__(self, index: Literal[int]):
+        if index < -11 or index >= 11:
+            compile_error("float_info index out of range")
+        else:
+            return self._values()[index]
+
+float_info = _float_info(
+    1.7976931348623157e308, 1024, 308,
+    2.2250738585072014e-308, -1021, -307,
+    15, 53, 2.220446049250313e-16, 2, 1,
+)
+float_repr_style: Literal[str] = "short"
+
+def getdefaultencoding() -> Literal[str]:
+    return "utf-8"
+
+def getfilesystemencoding() -> Literal[str]:
+    return "utf-8"
+
+def getfilesystemencodeerrors() -> Literal[str]:
+    return "surrogatepass" if static.platform() == "win32" else "surrogateescape"

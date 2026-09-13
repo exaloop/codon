@@ -22,6 +22,13 @@
 #include <unwind.h>
 #include <vector>
 
+#ifndef _WIN32
+#include <dirent.h>
+#include <fcntl.h>
+#include <pwd.h>
+#include <sys/stat.h>
+#endif
+
 #define GC_THREADS
 #include "codon/runtime/lib.h"
 #include <dlfcn.h>
@@ -146,6 +153,65 @@ SEQ_FUNC void seq_sleep(double secs) {
 
 extern char **environ;
 SEQ_FUNC char **seq_env() { return environ; }
+
+#ifndef _WIN32
+SEQ_FUNC int32_t seq_os_open(const char *path, int32_t flags, uint32_t mode) {
+  return open(path, flags | O_CLOEXEC, static_cast<mode_t>(mode));
+}
+
+SEQ_FUNC int32_t seq_os_stat(const char *path, int32_t descriptor, bool follow,
+                            int64_t *fields) {
+  struct stat info;
+  int result = path ? (follow ? stat(path, &info) : lstat(path, &info))
+                    : fstat(descriptor, &info);
+  if (result != 0)
+    return result;
+  fields[0] = info.st_mode;
+  fields[1] = info.st_ino;
+  fields[2] = info.st_dev;
+  fields[3] = info.st_nlink;
+  fields[4] = info.st_uid;
+  fields[5] = info.st_gid;
+  fields[6] = info.st_size;
+  fields[7] = info.st_atime;
+  fields[8] = info.st_mtime;
+  fields[9] = info.st_ctime;
+#ifdef __APPLE__
+  fields[10] = info.st_atimespec.tv_nsec;
+  fields[11] = info.st_mtimespec.tv_nsec;
+  fields[12] = info.st_ctimespec.tv_nsec;
+#else
+  fields[10] = info.st_atim.tv_nsec;
+  fields[11] = info.st_mtim.tv_nsec;
+  fields[12] = info.st_ctim.tv_nsec;
+#endif
+  fields[13] = info.st_rdev;
+  return 0;
+}
+
+SEQ_FUNC const char *seq_os_readdir(void *directory) {
+  errno = 0;
+  auto *entry = readdir(static_cast<DIR *>(directory));
+  return entry ? entry->d_name : nullptr;
+}
+
+SEQ_FUNC char *seq_os_home(const char *name) {
+  std::vector<char> buffer(1024);
+  struct passwd record;
+  struct passwd *found = nullptr;
+  for (;;) {
+    int error = name ? getpwnam_r(name, &record, buffer.data(), buffer.size(), &found)
+                     : getpwuid_r(getuid(), &record, buffer.data(), buffer.size(),
+                                  &found);
+    if (error == ERANGE && buffer.size() < 1024 * 1024) {
+      buffer.resize(buffer.size() * 2);
+      continue;
+    }
+    errno = error;
+    return error || !found ? nullptr : strdup(record.pw_dir);
+  }
+}
+#endif
 
 /*
  * GC

@@ -1,68 +1,714 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+"""Native operating-system interfaces for POSIX and Windows.
+
+POSIX paths and environment use UTF-8 with surrogateescape to preserve arbitrary
+bytes; Windows uses wide-character APIs. Filesystem APIs currently accept str paths
+only; fsencode and fsdecode additionally accept bytes and str identity inputs,
+respectively.
+Failures raise
+OSError with errno, system diagnostic and applicable filenames (plus winerror
+for Windows API failures). File-descriptor reads/writes may transfer fewer bytes than
+requested. Windows permissions and available process APIs differ from POSIX.
+"""
+
+import internal.static as static
+from os._status import _Status, _status, _path_status
+
+curdir: Literal[str] = "."
+pardir: Literal[str] = ".."
+extsep: Literal[str] = "."
+if static.platform() == "win32":
+    import os._win32 as _win32
+    name: Literal[str] = "nt"
+    sep: Literal[str] = "\\"
+    pathsep: Literal[str] = ";"
+    defpath: Literal[str] = ".;C:\\bin"
+    altsep: Optional[str] = "/"
+    linesep: Literal[str] = "\r\n"
+    devnull: Literal[str] = "nul"
+else:
+    name: Literal[str] = "posix"
+    sep: Literal[str] = "/"
+    pathsep: Literal[str] = ":"
+    defpath: Literal[str] = "/bin:/usr/bin"
+    altsep: Optional[str] = None
+    linesep: Literal[str] = "\n"
+    devnull: Literal[str] = "/dev/null"
+
+SEEK_SET: Literal[int] = 0
+SEEK_CUR: Literal[int] = 1
+SEEK_END: Literal[int] = 2
+F_OK: Literal[int] = 0
+R_OK: Literal[int] = 4
+W_OK: Literal[int] = 2
+X_OK: Literal[int] = 1
+
+O_RDONLY: Literal[int] = 0
+O_WRONLY: Literal[int] = 1
+O_RDWR: Literal[int] = 2
+if static.platform() == "win32":
+    O_APPEND: Literal[int] = 0x8
+    O_CREAT: Literal[int] = 0x100
+    O_EXCL: Literal[int] = 0x400
+    O_TRUNC: Literal[int] = 0x200
+    O_BINARY: Literal[int] = 0x8000
+    O_NOINHERIT: Literal[int] = 0x80
+elif static.platform() == "darwin":
+    O_APPEND: Literal[int] = 0x8
+    O_CREAT: Literal[int] = 0x200
+    O_EXCL: Literal[int] = 0x800
+    O_TRUNC: Literal[int] = 0x400
+    O_CLOEXEC: Literal[int] = 0x1000000
+else:
+    O_APPEND: Literal[int] = 0x400
+    O_CREAT: Literal[int] = 0x40
+    O_EXCL: Literal[int] = 0x80
+    O_TRUNC: Literal[int] = 0x200
+    O_CLOEXEC: Literal[int] = 0x80000
+
+def fsencode(filename: str) -> bytes:
+    return filename.encode("utf-8", "surrogatepass" if static.platform() == "win32" else "surrogateescape")
+
+@overload
+def fsencode(filename: bytes) -> bytes:
+    return filename
+
+def fsdecode(filename: bytes) -> str:
+    return filename.decode("utf-8", "surrogatepass" if static.platform() == "win32" else "surrogateescape")
+
+@overload
+def fsdecode(filename: str) -> str:
+    return filename
+
+def _cstring(value: str) -> cobj:
+    if "\0" in value:
+        raise ValueError("embedded null byte")
+    return value.encode("utf-8", "surrogateescape").c_str()
+
+def _errno() -> int:
+    if static.platform() == "darwin":
+        from C import __error() -> Ptr[i32]
+        return int(__error()[0])
+    elif static.platform() == "win32":
+        from C import _get_errno(Ptr[i32]) -> i32
+        code = i32(0)
+        _get_errno(__ptr__(code))
+        return int(code)
+    else:
+        from C import __errno_location() -> Ptr[i32]
+        return int(__errno_location()[0])
+
+def _error(operation: str, filename: Optional[str] = None,
+           filename2: Optional[str] = None):
+    code = _errno()
+    from C import strerror(i32) -> cobj
+    message = str.from_ptr(strerror(i32(code)))
+    raise OSError(code, message if message else operation, filename, None, filename2)
+
+def _fd(fd: int) -> i32:
+    if fd < -2147483648 or fd > 2147483647:
+        raise OverflowError("file descriptor out of range")
+    return i32(fd)
+
 def system(cmd: str) -> int:
-    return _C.system(cmd.c_str())
+    if static.platform() == "win32":
+        return _win32.system(cmd)
+    return _C.system(_cstring(cmd))
 
-SEEK_SET = 0
-SEEK_CUR = 1
-SEEK_END = 2
+def _envkey(key: str) -> cobj:
+    if not key or "=" in key:
+        raise ValueError("illegal environment variable name")
+    return _cstring(key)
 
-@tuple
-class EnvMap:
-    _map: Dict[str, str]
+def putenv(key: str, value: str):
+    """Set the process environment without updating the environ mapping."""
+    if static.platform() == "win32":
+        return _win32.putenv(key, value)
+    from C import setenv(cobj, cobj, i32) -> i32
+    if setenv(_envkey(key), _cstring(value), i32(1)) != i32(0):
+        _error("setenv")
 
-    def __new__() -> EnvMap:
-        return EnvMap(Dict[str, str]())
+def unsetenv(key: str):
+    """Remove a process variable without updating the environ mapping."""
+    if static.platform() == "win32":
+        return _win32.unsetenv(key)
+    from C import unsetenv(cobj) -> i32
+    if unsetenv(_envkey(key)) != i32(0):
+        _error("unsetenv")
 
-    def _init_if_needed(self):
-        if len(self._map) == 0:
-            env = _C.seq_env()
-            p = env[0]
-            i = 0
-            while p:
-                s = str.from_ptr(p)
-                if s:
-                    j = 0
-                    found = False
-                    while j < len(s):
-                        if s[j] == "=":
-                            found = True
-                            break
-                        j += 1
-                    k = s[0:j] if found else s
-                    v = s[j + 1 :] if found else ""
-                    self._map[k] = v
-                i += 1
-                p = env[i]
+def _make_env_map():
+    if static.platform() == "win32":
+        return _win32.make_env_map()
+    env = _C.seq_env()
+    d: Dict[str, str] = {}
+    if env:
+        i = 0
+        while env[i]:
+            s = bytes.from_ptr(env[i]).decode("utf-8", "surrogateescape")
+            j = s.find("=")
+            if j > 0:
+                d[s[:j]] = s[j + 1:]
+            i += 1
+    return d
 
-    def get(self, key: str, default: str = "") -> str:
-        self._init_if_needed()
-        return self._map.get(key, default)
+class _Environ:
+    """Dictionary-backed process environment snapshot.
+
+    Read-only operations delegate to the dictionary. ALL mutators go through
+    __setitem__/__delitem__, so libc/Win32 and the snapshot stay synchronized.
+    Direct putenv/unsetenv deliberately do not change this snapshot, as in Python.
+    """
+    _data: Dict[str, str]
+
+    def __init__(self, data: Dict[str, str]):
+        # Do not expose an alias that could bypass the mutation hooks.
+        self._data = {}
+        for key, value in data.items():
+            self._data[self._key(key)] = value
+
+    def _key(self, key: str) -> str:
+        if static.platform() == "win32":
+            return key.upper()
+        return key
 
     def __getitem__(self, key: str) -> str:
-        self._init_if_needed()
-        return self._map[key]
+        return self._data[self._key(key)]
 
-    def __repr__(self) -> str:
-        self._init_if_needed()
-        return repr(self._map)
+    def __setitem__(self, key: str, value):
+        if isinstance(value, str):
+            normalized = self._key(key)
+            # Publish the snapshot only after the OS operation succeeds.
+            putenv(normalized, value)
+            self._data[normalized] = value
+        else:
+            compile_error("environment values must be strings")
+
+    def __delitem__(self, key: str):
+        normalized = self._key(key)
+        if normalized not in self._data:
+            raise KeyError(key)
+        unsetenv(normalized)
+        del self._data[normalized]
 
     def __contains__(self, key: str) -> bool:
-        self._init_if_needed()
-        return key in self._map
+        return self._key(key) in self._data
 
-    def __iter__(self) -> Generator[Tuple[str, str]]:
-        self._init_if_needed()
-        return self._map.items()
+    def __iter__(self):
+        return iter(self._data)
 
-environ = EnvMap()
+    def __len__(self) -> int:
+        return len(self._data)
 
-def getenv(key: str, default: str = "") -> str:
+    def __bool__(self) -> bool:
+        return bool(self._data)
+
+    def __repr__(self) -> str:
+        return "environ(" + repr(self._data) + ")"
+
+    def keys(self):
+        return self._data.keys()
+
+    def values(self):
+        return self._data.values()
+
+    def items(self):
+        return self._data.items()
+
+    def copy(self) -> Dict[str, str]:
+        return self._data.copy()
+
+    def _get(self, key: str, default) -> Optional[str]:
+        normalized = self._key(key)
+        if normalized in self._data:
+            return self._data[normalized]
+        if default[0] is None:
+            return None
+        else:
+            return default[0]
+
+    def _get(self, key: str, default: Tuple[str]) -> str:
+        return self._data.get(self._key(key), default[0])
+
+    def get(self, key: str, default=None):
+        return self._get(key, (default,))
+
+    def setdefault(self, key: str, default=None) -> str:
+        if key not in self:
+            # Like Python, an omitted default is None, not an empty string.
+            # It is legal for an existing key, but cannot create a variable.
+            if isinstance(default, str):
+                self[key] = default
+            else:
+                raise TypeError("environment values must be strings")
+        return self[key]
+
+    def pop(self, key: str) -> str:
+        value = self[key]
+        del self[key]
+        return value
+
+    def _pop(self, key: str, default) -> Optional[str]:
+        if key in self:
+            return self.pop(key)
+        if default[0] is None:
+            return None
+        else:
+            return default[0]
+
+    def _pop(self, key: str, default: Tuple[str]) -> str:
+        if key in self:
+            return self.pop(key)
+        return default[0]
+
+    def pop(self, key: str, default):
+        return self._pop(key, (default,))
+
+    def popitem(self) -> Tuple[str, str]:
+        # Python's environment is a MutableMapping: remove its first key.
+        for key in self._data:
+            return key, self.pop(key)
+        raise KeyError("environ is empty")
+
+    def clear(self):
+        for key in list(self._data):
+            del self[key]
+
+    def update(self, *args, **kwargs):
+        # The optional mapping is positional-only: update(other="value") must
+        # set the environment variable named "other", not consume the value.
+        if static.len(args) > 1:
+            compile_error("update expected at most one positional argument")
+        elif static.len(args) == 1:
+            other = args[0]
+            if isinstance(other, Optional[NoneType]):
+                compile_error("'NoneType' object is not iterable")
+            elif other is None:
+                raise TypeError("'NoneType' object is not iterable")
+            elif isinstance(other, Optional):
+                self.update(unwrap(other))
+            elif hasattr(other, "keys"):
+                # Snapshot keys so update(self) remains well-defined.
+                for key in list(other.keys()):
+                    self[key] = other[key]
+            else:
+                for key, value in other:
+                    self[key] = value
+        keys = kwargs.__keys__()
+        for i in static.range(static.len(kwargs.args)):
+            self[keys[i]] = kwargs.args[i]
+
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
+    def __or__(self, other):
+        result = self.copy()
+        for key in other.keys():
+            result[key] = other[key]
+        return result
+
+    def __ror__(self, other):
+        result = {key: other[key] for key in other.keys()}
+        result.update(self._data)
+        return result
+
+    def __eq__(self, other) -> bool:
+        if not hasattr(other, "keys"):
+            return False
+        if len(self) != len(other):
+            return False
+        for key, value in self.items():
+            if key not in other or other[key] != value:
+                return False
+        return True
+
+    def __ne__(self, other) -> bool:
+        return not self.__eq__(other)
+
+environ = _Environ(_make_env_map())
+
+def getenv(key: str, default=None):
     return environ.get(key, default)
 
-def mkdir(name: str, mode: int = 0x1FF) -> int:
-    # TODO: use errno
-    from C import mkdir(cobj, int) -> int
-    ret = mkdir(name.c_str(), mode)
-    if ret != 0:
-        raise OSError("mkdir failed")
+class stat_result:
+    st_mode: int
+    st_ino: int
+    st_dev: int
+    st_nlink: int
+    st_uid: int
+    st_gid: int
+    st_size: int
+    st_atime: float
+    st_mtime: float
+    st_ctime: float
+    st_atime_ns: int
+    st_mtime_ns: int
+    st_ctime_ns: int
+    st_rdev: int
+
+    def __init__(self, fields: List[int]):
+        self.st_mode = fields[0]
+        self.st_ino = fields[1]
+        self.st_dev = fields[2]
+        self.st_nlink = fields[3]
+        self.st_uid = fields[4]
+        self.st_gid = fields[5]
+        self.st_size = fields[6]
+        self.st_atime = float(fields[7]) + float(fields[10]) / 1e9
+        self.st_mtime = float(fields[8]) + float(fields[11]) / 1e9
+        self.st_ctime = float(fields[9]) + float(fields[12]) / 1e9
+        self.st_atime_ns = fields[7] * 1000000000 + fields[10]
+        self.st_mtime_ns = fields[8] * 1000000000 + fields[11]
+        self.st_ctime_ns = fields[9] * 1000000000 + fields[12]
+        self.st_rdev = fields[13]
+
+    def __len__(self) -> int:
+        return 10
+
+    def __getitem__(self, index: int) -> int:
+        return (self.st_mode, self.st_ino, self.st_dev, self.st_nlink,
+                self.st_uid, self.st_gid, self.st_size,
+                self.st_atime_ns // 1000000000, self.st_mtime_ns // 1000000000,
+                self.st_ctime_ns // 1000000000)[index]
+
+    def __iter__(self):
+        for index in range(10):
+            yield self[index]
+
+    def __repr__(self) -> str:
+        return (f"os.stat_result(st_mode={self.st_mode}, st_ino={self.st_ino}, "
+                f"st_dev={self.st_dev}, st_nlink={self.st_nlink}, "
+                f"st_uid={self.st_uid}, st_gid={self.st_gid}, st_size={self.st_size}, "
+                f"st_atime={self[7]}, st_mtime={self[8]}, st_ctime={self[9]})")
+
+def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[List[int], _Status]:
+    if static.platform() == "win32":
+        return _win32._stat_status(path, follow_symlinks)
+    error = _path_status(path)
+    if error:
+        return [], error
+    from C import seq_os_stat(cobj, i32, bool, Ptr[int]) -> i32
+    fields = Ptr[int](14)
+    if seq_os_stat(_cstring(path), i32(-1), follow_symlinks, fields) != i32(0):
+        return [], _status(errno=_errno())
+    return [fields[index] for index in range(14)], _status()
+
+def stat(path: str, follow_symlinks: bool = True) -> stat_result:
+    fields, error = _stat_status(path, follow_symlinks)
+    error.raise_error("stat" if follow_symlinks else "lstat", path)
+    return stat_result(fields)
+
+def _fstat_status(fd: int) -> Tuple[List[int], _Status]:
+    if fd < -2147483648 or fd > 2147483647:
+        return [], _status(message="file descriptor out of range", kind=2)
+    if static.platform() == "win32":
+        return _win32._fstat_status(fd)
+    from C import seq_os_stat(cobj, i32, bool, Ptr[int]) -> i32
+    fields = Ptr[int](14)
+    if seq_os_stat(cobj(), _fd(fd), True, fields) != i32(0):
+        return [], _status(errno=_errno())
+    return [fields[index] for index in range(14)], _status()
+
+def fstat(fd: int) -> stat_result:
+    fields, error = _fstat_status(fd)
+    error.raise_error("fstat")
+    return stat_result(fields)
+
+@overload
+def stat(fd: int) -> stat_result:
+    return fstat(fd)
+
+def lstat(path: str) -> stat_result:
+    return stat(path, follow_symlinks=False)
+
+def open(path: str, flags: int, mode: int = 0o777) -> int:
+    if static.platform() == "win32":
+        return _win32.open(path, flags, mode)
+    from C import seq_os_open(cobj, i32, u32) -> i32
+    descriptor = seq_os_open(_cstring(path), _fd(flags), u32(mode))
+    if descriptor == i32(-1):
+        _error("open", path)
+    return int(descriptor)
+
+def listdir(path: str = ".") -> List[str]:
+    if static.platform() == "win32":
+        return _win32.listdir(path)
+    from C import opendir(cobj) -> cobj
+    from C import seq_os_readdir(cobj) -> cobj
+    from C import closedir(cobj) -> i32
+    directory = opendir(_cstring(path))
+    if not directory:
+        _error("listdir", path)
+    succeeded = False
+    try:
+        names: List[str] = []
+        while True:
+            pointer = seq_os_readdir(directory)
+            if not pointer:
+                if _errno() != 0:
+                    _error("listdir", path)
+                break
+            name = fsdecode(bytes.from_ptr(pointer))
+            if name != "." and name != "..":
+                names.append(name)
+        succeeded = True
+        return names
+    finally:
+        if closedir(directory) != i32(0) and succeeded:
+            _error("closedir", path)
+
+def _makedirs_status(name: str, mode: int, exist_ok: bool) -> Tuple[str, _Status]:
+    import os.path as path
+    head, tail = path.split(name)
+    if not tail:
+        head, tail = path.split(head)
+    if head and tail and not path.exists(head):
+        failed_path, error = _makedirs_status(head, 0o777, True)
+        if error:
+            return failed_path, error
+        if tail == curdir:
+            return name, _status()
+    error = _mkdir_status(name, mode)
+    if error and exist_ok and path.isdir(name):
+        return name, _status()
+    return name, error
+
+def makedirs(name: str, mode: int = 0o777, exist_ok: bool = False):
+    failed_path, error = _makedirs_status(name, mode, exist_ok)
+    error.raise_error("mkdir", failed_path)
+
+def removedirs(name: str):
+    import os.path as path
+    _rmdir_status(name).raise_error("rmdir", name)
+    head, tail = path.split(name)
+    if not tail:
+        head, tail = path.split(head)
+    while head:
+        if _rmdir_status(head):
+            break
+        head, tail = path.split(head)
+
+def _mkdir_status(path: str, mode: int = 0o777) -> _Status:
+    if static.platform() == "win32":
+        return _win32._mkdir_status(path, mode)
+    error = _path_status(path)
+    if error:
+        return error
+    from C import mkdir(cobj, u32) -> i32
+    if mkdir(_cstring(path), u32(mode)) != i32(0):
+        return _status(errno=_errno())
+    return _status()
+
+def mkdir(path: str, mode: int = 0o777):
+    _mkdir_status(path, mode).raise_error("mkdir", path)
+
+def _rmdir_status(path: str) -> _Status:
+    if static.platform() == "win32":
+        return _win32._rmdir_status(path)
+    error = _path_status(path)
+    if error:
+        return error
+    from C import rmdir(cobj) -> i32
+    if rmdir(_cstring(path)) != i32(0):
+        return _status(errno=_errno())
+    return _status()
+
+def rmdir(path: str):
+    _rmdir_status(path).raise_error("rmdir", path)
+
+def chdir(path: str):
+    if static.platform() == "win32":
+        return _win32.chdir(path)
+    from C import chdir(cobj) -> i32
+    if chdir(_cstring(path)) != i32(0):
+        _error("chdir", path)
+
+def getcwdb() -> bytes:
+    if static.platform() == "win32":
+        return _win32.getcwdb()
+    from C import getcwd(cobj, int) -> cobj
+    from C import free(cobj)
+    # Both supported POSIX targets allocate with malloc for getcwd(NULL, 0).
+    p = getcwd(cobj(), 0)
+    if not p:
+        _error("getcwd")
+    try:
+        return bytes.from_ptr(p)
+    finally:
+        free(p)
+
+def getcwd() -> str:
+    if static.platform() == "win32":
+        return _win32.getcwd()
+    return getcwdb().decode("utf-8", "surrogateescape")
+
+def _getfullpathname(path: str) -> str:
+    if static.platform() == "win32":
+        return _win32.getfullpathname(path)
+    else:
+        compile_error("Windows full-path resolution is only available on Windows")
+
+def unlink(path: str):
+    if static.platform() == "win32":
+        return _win32.unlink(path)
+    from C import unlink(cobj) -> i32
+    if unlink(_cstring(path)) != i32(0):
+        _error("unlink", path)
+
+def remove(path: str):
+    # libc remove also removes directories; Python os.remove must not.
+    unlink(path)
+
+def rename(src: str, dst: str):
+    if static.platform() == "win32":
+        return _win32.rename(src, dst)
+    from C import rename(cobj, cobj) -> i32
+    if rename(_cstring(src), _cstring(dst)) != i32(0):
+        _error("rename", src, dst)
+
+def replace(src: str, dst: str):
+    if static.platform() == "win32":
+        return _win32.replace(src, dst)
+    rename(src, dst)
+
+def link(src: str, dst: str):
+    if static.platform() == "win32":
+        return _win32.link(src, dst)
+    from C import link(cobj, cobj) -> i32
+    if link(_cstring(src), _cstring(dst)) != i32(0):
+        _error("link", src, dst)
+
+def symlink(src: str, dst: str, target_is_directory: bool = False):
+    if static.platform() == "win32":
+        return _win32.symlink(src, dst, target_is_directory)
+    from C import symlink(cobj, cobj) -> i32
+    if symlink(_cstring(src), _cstring(dst)) != i32(0):
+        _error("symlink", src, dst)
+
+def _readlink_status(path: str) -> Tuple[str, _Status]:
+    if static.platform() == "win32":
+        return _win32._readlink_status(path)
+    error = _path_status(path)
+    if error:
+        return "", error
+    from C import readlink(cobj, cobj, int) -> int
+    name = _cstring(path)
+    capacity = 256
+    while True:
+        buffer = cobj(capacity)
+        n = readlink(name, buffer, capacity)
+        if n < 0:
+            return "", _status(errno=_errno())
+        if n < capacity:
+            return bytes(buffer, n).decode("utf-8", "surrogateescape"), _status()
+        if capacity > 0x3FFFFFFFFFFFFFFF:
+            return "", _status(message="symlink target is too long", kind=2)
+        capacity *= 2
+
+def readlink(path: str) -> str:
+    target, error = _readlink_status(path)
+    error.raise_error("readlink", path)
+    return target
+
+def access(path: str, mode: int) -> bool:
+    if static.platform() == "win32":
+        return _win32.access(path, mode)
+    from C import access(cobj, i32) -> i32
+    return access(_cstring(path), _fd(mode)) == i32(0)
+
+def chmod(path: str, mode: int):
+    if static.platform() == "win32":
+        return _win32.chmod(path, mode)
+    from C import chmod(cobj, u32) -> i32
+    if chmod(_cstring(path), u32(mode)) != i32(0):
+        _error("chmod", path)
+
+def getpid() -> int:
+    if static.platform() == "win32":
+        return _win32.getpid()
+    from C import getpid() -> i32
+    return int(getpid())
+
+def getppid() -> int:
+    if static.platform() == "win32":
+        return _win32.getppid()
+    from C import getppid() -> i32
+    return int(getppid())
+
+if static.platform() != "win32":
+    # These APIs have no Windows equivalent and are absent in Python on Windows.
+    def getuid() -> int:
+        from C import getuid() -> u32
+        return int(getuid())
+
+    def geteuid() -> int:
+        from C import geteuid() -> u32
+        return int(geteuid())
+
+    def getgid() -> int:
+        from C import getgid() -> u32
+        return int(getgid())
+
+    def getegid() -> int:
+        from C import getegid() -> u32
+        return int(getegid())
+
+def close(fd: int):
+    if static.platform() == "win32":
+        return _win32.close(fd)
+    from C import close(i32) -> i32
+    if close(_fd(fd)) != i32(0):
+        _error("close")
+
+def read(fd: int, n: int) -> bytes:
+    if static.platform() == "win32":
+        return _win32.read(fd, n)
+    from C import read(i32, cobj, int) -> int
+    descriptor = _fd(fd)
+    if n < 0:
+        raise ValueError("negative read length")
+    buffer = cobj(n)
+    count = read(descriptor, buffer, n)
+    if count < 0:
+        _error("read")
+    return bytes(buffer, count)
+
+def write(fd: int, data: bytes) -> int:
+    if static.platform() == "win32":
+        return _win32.write(fd, data)
+    from C import write(i32, cobj, int) -> int
+    count = write(_fd(fd), data._ptr, len(data))
+    if count < 0:
+        _error("write")
+    return count
+
+def lseek(fd: int, pos: int, how: int) -> int:
+    if static.platform() == "win32":
+        return _win32.lseek(fd, pos, how)
+    from C import lseek(i32, int, i32) -> int
+    result = lseek(_fd(fd), pos, _fd(how))
+    if result < 0:
+        _error("lseek")
+    return result
+
+def fsync(fd: int):
+    if static.platform() == "win32":
+        return _win32.fsync(fd)
+    from C import fsync(i32) -> i32
+    if fsync(_fd(fd)) != i32(0):
+        _error("fsync")
+
+def ftruncate(fd: int, length: int):
+    if static.platform() == "win32":
+        return _win32.ftruncate(fd, length)
+    from C import ftruncate(i32, int) -> i32
+    if ftruncate(_fd(fd), length) != i32(0):
+        _error("ftruncate")
+
+def truncate(path: str, length: int):
+    if static.platform() == "win32":
+        return _win32.truncate(path, length)
+    from C import truncate(cobj, int) -> i32
+    if truncate(_cstring(path), length) != i32(0):
+        _error("truncate", path)

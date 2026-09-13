@@ -121,3 +121,51 @@ try:
 except:
     print('caught') #: caught
 
+#%% sys_float_info_index_high
+import sys
+sys.float_info[11]
+#! float_info index out of range
+#! during the realization of __getitem__
+
+#%% sys_float_info_index_low
+import sys
+sys.float_info[-12]
+#! float_info index out of range
+#! during the realization of __getitem__
+
+#%% sys_version_info_index_high
+import sys
+sys.version_info[5]
+#! version_info index out of range
+#! during the realization of __getitem__
+
+#%% sys_version_info_index_low
+import sys
+sys.version_info[-6]
+#! version_info index out of range
+#! during the realization of __getitem__
+
+#%% os_environment_value_type
+import os
+os.environ["CODON_INVALID_VALUE"] = 123
+#! environment values must be strings
+#! during the realization of __setitem__
+
+#%% os_environment_update_arity
+import os
+os.environ.update({"key": "first"}, {"key": "second"})
+#! update expected at most one positional argument
+#! during the realization of update
+
+#%% os_environment_update_none
+import os
+os.environ.update(None)
+#! 'NoneType' object is not iterable
+#! during the realization of update
+
+#%% os_fullpathname_posix
+import os
+os._getfullpathname(".")
+#! Windows full-path resolution is only available on Windows
+#! during the realization of _getfullpathname
+

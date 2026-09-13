@@ -65,9 +65,46 @@ class NameError(Exception):
 
 class OSError(Exception):
     _pytype: ClassVar[cobj] = cobj()
+    errno: Optional[int]
+    strerror: Optional[str]
+    filename: Optional[str]
+    filename2: Optional[str]
+    winerror: Optional[int]
+
     def __init__(self, message: str = ""):
         super().__init__(message)
         self.python_type = self.__class__._pytype
+        self.errno = None
+        self.strerror = None
+        self.filename = None
+        self.filename2 = None
+        self.winerror = None
+
+    def __init__(self, errno: Optional[int], strerror: str,
+                 filename: Optional[str] = None, winerror: Optional[int] = None,
+                 filename2: Optional[str] = None):
+        super().__init__()
+        self.python_type = self.__class__._pytype
+        self.errno = errno
+        self.strerror = strerror
+        self.filename = filename
+        self.filename2 = filename2
+        self.winerror = winerror
+        self.message = self._format_message()
+
+    def _format_message(self) -> str:
+        if self.strerror is None:
+            return self.message
+        result = str(self.strerror)
+        if self.winerror is not None:
+            result = f"[WinError {self.winerror}] {result}"
+        elif self.errno is not None:
+            result = f"[Errno {self.errno}] {result}"
+        if self.filename is not None:
+            result += ": " + repr(str(self.filename))
+            if self.filename2 is not None:
+                result += " -> " + repr(str(self.filename2))
+        return result
 
 class IOError(Exception):
     _pytype: ClassVar[cobj] = cobj()

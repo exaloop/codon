@@ -1,0 +1,750 @@
+import os
+import os.path as path
+import internal.static as static
+
+def literal_string(value: Literal[str]) -> str:
+    return value
+
+@test
+def test_constant_types():
+    assert literal_string(os.name) == os.name
+    assert literal_string(os.sep) == path.sep
+    assert literal_string(os.pathsep) == path.pathsep
+    assert literal_string(os.defpath) == path.defpath
+    assert literal_string(os.linesep) == os.linesep
+    assert literal_string(os.devnull) == path.devnull
+    assert literal_string(path.curdir) == "."
+    assert literal_string(path.pardir) == ".."
+    assert literal_string(path.extsep) == "."
+    assert type(os.altsep) is Optional[str]
+    assert type(path.altsep) is Optional[str]
+    if static.platform() == "win32":
+        assert os.altsep == "/" and path.altsep == "/"
+    else:
+        assert os.altsep is None and path.altsep is None
+
+def process_getenv(key: str) -> Optional[str]:
+    if static.platform() == "win32":
+        import os._win32 as win32
+        return win32.process_getenv(key)
+    else:
+        from C import getenv(cobj) -> cobj
+        value = getenv(os._cstring(key))
+        return bytes.from_ptr(value).decode("utf-8", "surrogateescape") if value else None
+
+def open_rw(path: str) -> int:
+    if static.platform() == "win32":
+        import os._win32 as win32
+        from C import _wsopen_s(Ptr[i32], Ptr[u16], i32, i32, i32) -> i32
+        fd = i32(-1)
+        # Read/write, binary, sharing allowed; no creation or truncation.
+        win32._crt_call("test/open", True, _wsopen_s, __ptr__(fd),
+                        win32._wide(path), i32(0x8002), i32(0x40), i32(0))
+        return int(fd)
+    else:
+        from C import open(cobj, i32) -> i32
+        return int(open(os._cstring(path), i32(2)))
+
+
+@test
+def test_oserror():
+    legacy = OSError("legacy")
+    assert str(legacy) == "legacy"
+    assert legacy.errno is None and legacy.strerror is None
+    assert legacy.filename is None and legacy.filename2 is None
+    assert legacy.winerror is None
+    assert str(OSError()) == ""
+    error = OSError(2, "missing", "source", None, "destination")
+    assert error.errno == 2 and error.strerror == "missing"
+    assert error.filename == "source" and error.filename2 == "destination"
+    assert str(error) == "[Errno 2] missing: 'source' -> 'destination'"
+    assert error.message == str(error)
+    windows = OSError(13, "denied", "file", 5)
+    assert windows.winerror == 5 and windows.errno == 13
+    assert str(windows) == "[WinError 5] denied: 'file'"
+    try:
+        raise error
+    except OSError as caught:
+        assert caught.errno == 2 and caught.filename2 == "destination"
+    try:
+        raise error
+    except Exception as caught:
+        assert str(caught) == str(error)
+
+
+@test
+def test_paths():
+    assert os.name == "posix"
+    assert os.SEEK_SET == 0 and os.SEEK_CUR == 1 and os.SEEK_END == 2
+    assert path.join("a", "b", "") == "a/b/"
+    assert path.join("a", "/b", "c") == "/b/c"
+    assert path.join("", "a") == "a"
+    assert path.join("a") == "a"
+    assert path.split("//") == ("//", "")
+    assert path.split("a///b") == ("a", "b")
+    assert path.basename("a/b/") == ""
+    assert path.dirname("file") == ""
+    assert path.splitdrive("C:\\a") == ("", "C:\\a")
+    assert path.splitroot("///a") == ("", "/", "//a")
+    assert path.splitroot("//a") == ("", "//", "a")
+    assert path.normpath("") == "."
+    assert path.normpath("a/../../b") == "../b"
+    assert path.normpath("//a/../b//") == "//b"
+    assert path.normpath("///../../a") == "/a"
+    assert path.normpath("a\\b") == "a\\b"
+    assert path.normcase("A") == "A"
+    assert path.splitext(".profile") == (".profile", "")
+    assert path.splitext("a/.b.c") == ("a/.b", ".c")
+    assert path.relpath("/a/b", "/a/c") == "../b"
+    assert path.relpath("/a", "/a") == "."
+    assert path.commonprefix(["/abc", "/abd"]) == "/ab"
+    assert path.commonpath(["/a/b", "/a/c"]) == "/a"
+    assert path.commonpath(["a", "b"]) == ""
+    assert path.commonpath(["//a/./b", "/a/c"]) == "/a"
+    assert path.commonpath(["a/../b", "a/../c"]) == "a/.."
+    assert path.commonpath(["a/./b//", "a/b/c"]) == "a/b"
+    assert path.commonpath(["", "a"]) == ""
+    assert path.commonpath((p for p in ["/a", "/b"])) == "/"
+    try:
+        path.commonpath(["a", "/b"])
+        assert False
+    except ValueError:
+        pass
+    try:
+        path.relpath("")
+        assert False
+    except ValueError:
+        pass
+
+
+@test
+def test_environment():
+    key = "CODON_OS_TEST_" + str(os.getpid())
+    assert key not in os.environ
+    assert os.getenv(key) is None
+    assert os.getenv(key, "fallback") == "fallback"
+    try:
+        os.environ[key] = "a=b-é"
+        assert process_getenv(key) == "a=b-é"
+        assert os.getenv(key) == "a=b-é"
+        assert key in list(os.environ)
+        assert (key, "a=b-é") in list(os.environ.items())
+        snapshot = os.environ.copy()
+        assert os.environ.setdefault(key, "unused") == "a=b-é"
+        os.environ.update({key: "changed"})
+        assert snapshot[key] == "a=b-é"
+        assert path.expandvars("${" + key + "}/$" + key) == "changed/changed"
+        assert path.expandvars("$-/${UNCLOSED") == "$-/${UNCLOSED"
+        repeated = "${" + key + "}"
+        assert path.expandvars(repeated * 4096) == "changed" * 4096
+        unclosed = "${" * 4096
+        assert path.expandvars(unclosed) == unclosed
+        os.putenv(key, "raw")
+        assert os.environ[key] == "changed"
+        assert process_getenv(key) == "raw"
+        assert os.environ.pop(key) == "changed"
+        assert process_getenv(key) is None
+        assert os.environ.pop(key, "missing") == "missing"
+        assert os.getenv(key, None) is None
+        # Failed mutations must not insert a variable into either environment.
+        try:
+            os.environ.setdefault(key)
+            assert False
+        except TypeError:
+            pass
+        assert key not in os.environ and process_getenv(key) is None
+        os.environ[key] = ""
+        assert os.environ.setdefault(key) == ""
+        assert os.environ.setdefault(key, 123) == ""
+        assert process_getenv(key) == ""
+        os.environ.update([(key, "pairs")])
+        os.environ.update(os.environ)
+        assert os.environ[key] == "pairs"
+        assert os.environ[key] == "pairs" and process_getenv(key) == "pairs"
+        if static.platform() == "win32":
+            os.environ[key.lower()] = "case-insensitive"
+            assert os.environ[key] == "case-insensitive"
+            assert key in os.environ.keys()
+            assert key.lower() not in list(os.environ)
+            assert path.expandvars("%" + key.lower() + "%") == "case-insensitive"
+        del os.environ[key]
+        try:
+            os.environ["bad=name"] = "x"
+            assert False
+        except ValueError:
+            pass
+        try:
+            os.environ[key] = "bad\0value"
+            assert False
+        except ValueError:
+            pass
+    finally:
+        if key in os.environ:
+            del os.environ[key]
+        os.unsetenv(key)
+
+
+@test
+def test_environment_default_overloads():
+    key = "CODON_OS_DEFAULT_TEST_" + str(os.getpid())
+    assert key not in os.environ and process_getenv(key) is None
+    try:
+        for present in [False, True]:
+            if present:
+                os.environ[key] = "value"
+            plain = os.environ.get(key)
+            explicit_none = os.environ.get(key, None)
+            string_default = os.environ.get(key, "fallback")
+            assert type(plain) is Optional[str]
+            assert type(explicit_none) is Optional[str]
+            assert type(string_default) is str
+            assert plain == ("value" if present else None)
+            assert explicit_none == plain
+            assert string_default == ("value" if present else "fallback")
+            assert type(os.getenv(key)) is Optional[str]
+            assert type(os.getenv(key, None)) is Optional[str]
+            assert type(os.getenv(key, "fallback")) is str
+            for default in [Optional[str](), Optional[str]("fallback")]:
+                result = os.environ.get(key, default)
+                environment_result = os.getenv(key, default)
+                assert type(result) is Optional[str]
+                assert type(environment_result) is Optional[str]
+                assert result == ("value" if present else default)
+                assert environment_result == result
+                if present:
+                    os.environ[key] = "value"
+                popped = os.environ.pop(key, default)
+                assert type(popped) is Optional[str]
+                assert popped == ("value" if present else default)
+                assert process_getenv(key) is None
+                if present:
+                    os.environ[key] = "value"
+            popped_string = os.environ.pop(key, "fallback")
+            assert type(popped_string) is str
+            assert popped_string == ("value" if present else "fallback")
+            if present:
+                os.environ[key] = "value"
+            popped_none = os.environ.pop(key, None)
+            assert type(popped_none) is Optional[str]
+            assert popped_none == ("value" if present else None)
+            assert process_getenv(key) is None
+        os.environ[key] = "value"
+        popped = os.environ.pop(key)
+        assert type(popped) is str and popped == "value"
+        try:
+            os.environ.pop(key)
+            assert False
+        except KeyError:
+            pass
+    finally:
+        if key in os.environ:
+            del os.environ[key]
+
+
+@test
+def test_environment_mapping():
+    # Exercise bulk operations on a private snapshot, NEVER clear os.environ.
+    first = "CODON_OS_MAP_A_" + str(os.getpid())
+    second = "CODON_OS_MAP_B_" + str(os.getpid())
+    assert process_getenv(first) is None and process_getenv(second) is None
+    mapping = os._Environ(Dict[str, str]())
+    try:
+        assert not mapping and len(mapping) == 0
+        mapping.update({first: "one", second: "two"})
+        assert len(mapping) == 2 and mapping == {first: "one", second: "two"}
+        assert list(mapping.values()) == ["one", "two"]
+        assert repr(mapping).startswith("environ(")
+        mapping |= {first: "updated"}
+        assert process_getenv(first) == "updated"
+        merged = mapping | {first: "copy-only"}
+        assert merged[first] == "copy-only" and mapping[first] == "updated"
+        saved = mapping.copy()
+        item = mapping.popitem()
+        assert item == (first, "updated")
+        assert process_getenv(first) is None
+        assert saved[first] == "updated"
+        mapping.clear()
+        assert not mapping and process_getenv(second) is None
+        try:
+            mapping.popitem()
+            assert False
+        except KeyError:
+            pass
+        try:
+            del mapping[first]
+            assert False
+        except KeyError:
+            pass
+    finally:
+        mapping.clear()
+        os.unsetenv(first)
+        os.unsetenv(second)
+
+
+def update_optional_environment(mapping, other: Optional[Dict[str, str]]):
+    mapping.update(other)
+
+
+@test
+def test_environment_update_arguments():
+    # "other" must remain a valid keyword variable name. Restore any inherited
+    # process value without disturbing the separate public environ snapshot.
+    old = process_getenv("other")
+    mapping = os._Environ(Dict[str, str]())
+    try:
+        mapping.update(other="keyword-value")
+        assert mapping["other"] == "keyword-value"
+        assert process_getenv("other") == "keyword-value"
+        mapping.update()
+        try:
+            update_optional_environment(mapping, None)
+            assert False
+        except TypeError:
+            pass
+        assert mapping["other"] == "keyword-value"
+        update_optional_environment(mapping, {"other": "optional-value"})
+        assert mapping["other"] == "optional-value"
+    finally:
+        mapping.clear()
+        if old is not None:
+            os.putenv("other", old)
+
+
+@test
+def test_expanduser():
+    old_home = os.environ.get("HOME")
+    try:
+        os.environ["HOME"] = "/example/home/"
+        assert path.expanduser("~") == "/example/home"
+        assert path.expanduser("~/child") == "/example/home/child"
+        assert path.expanduser("prefix/~") == "prefix/~"
+        os.environ["HOME"] = ""
+        assert path.expanduser("~") == "/"
+        assert path.expanduser("~/child") == "/child"
+        os.environ["HOME"] = "/home/" + chr(0xDCFF)
+        assert path.expanduser("~/child") == "/home/" + chr(0xDCFF) + "/child"
+        del os.environ["HOME"]
+        assert path.expanduser("~").startswith("/")
+        unknown = "~codon-missing-user-" + str(os.getpid())
+        assert path.expanduser(unknown + "/child") == unknown + "/child"
+    finally:
+        if old_home is None:
+            if "HOME" in os.environ:
+                del os.environ["HOME"]
+        else:
+            os.environ["HOME"] = unwrap(old_home)
+
+
+@test
+def test_posix_path_encoders():
+    from internal.file import _file_path_cstring
+    from internal.dlopen import dlopen
+    buffer = cobj(128)
+    for index in range(128):
+        buffer[index] = u8(index + 128)
+    raw = b"path-\xc3\xa9-" + bytes(buffer, 128)
+    decoded = raw.decode("utf-8", "surrogateescape")
+    for invalid in ["bad\0path", chr(0xD800)]:
+        fields, error = os._stat_status(invalid)
+        assert fields == [] and bool(error) and error.kind == 1
+        target, error = os._readlink_status(invalid)
+        assert target == "" and error.kind == 1
+        assert os._mkdir_status(invalid).kind == 1
+        assert os._rmdir_status(invalid).kind == 1
+        assert not path.exists(invalid) and not path.lexists(invalid)
+        assert not path.isfile(invalid) and not path.isdir(invalid) and not path.islink(invalid)
+    assert bytes.from_ptr(os._cstring(decoded)) == raw
+    assert bytes.from_ptr(_file_path_cstring(decoded)) == raw
+    assert os.fsencode(decoded) == raw and os.fsdecode(raw) == decoded
+    assert os.fsencode(raw) == raw and os.fsdecode(decoded) == decoded
+    for encode in (os._cstring, _file_path_cstring):
+        try:
+            encode("bad\0path")
+            assert False
+        except ValueError:
+            pass
+        for code in [0xD800, 0xDBFF, 0xDC00, 0xDC7F, 0xDD00, 0xDFFF]:
+            try:
+                encode(chr(code))
+                assert False
+            except ValueError as error:
+                assert "code point not encodable" in str(error)
+    for code in [0xD800, 0xDBFF, 0xDC00, 0xDC7F, 0xDD00, 0xDFFF]:
+        try:
+            descriptor = os.open(chr(code), os.O_RDONLY)
+            os.close(descriptor)
+            assert False
+        except ValueError as error:
+            assert "code point not encodable" in str(error)
+    try:
+        dlopen("build/codon-missing-library-" + str(os.getpid()) + chr(0xDCFF))
+        assert False
+    except CError:
+        pass
+
+
+@test
+def test_surrogate_filesystem(root: str):
+    import gzip
+    import bz2
+    from C import open(cobj, i32) -> i32 as raw_open
+    from C import access(cobj, i32) -> i32 as raw_access
+    original = os.getcwd()
+    filename = "file-" + chr(0xDCFE)
+    renamed = "renamed-" + chr(0xDCFD)
+    hard = "hard-" + chr(0xDCFC)
+    symbolic = "symbolic-" + chr(0xDCFB)
+    child = "child-" + chr(0xDCFA)
+    compressed = "compressed-" + chr(0xDCF9)
+    bzip = "bzip-" + chr(0xDCF8)
+    os.chdir(root)
+    try:
+        cwd = os.getcwd()
+        raw_cwd = os.getcwdb()
+        assert cwd.endswith("/dir-" + chr(0xDCFF))
+        assert cwd.encode("utf-8", "surrogateescape") == raw_cwd
+        os.chdir(original)
+        os.chdir(cwd)
+        assert os.getcwdb() == raw_cwd
+        with open(filename, "wb") as stream:
+            stream.write(b"abcdef")
+        assert filename in os.listdir()
+        opened = os.open(filename, os.O_RDONLY)
+        try:
+            assert os.fstat(opened).st_size == 6
+        finally:
+            os.close(opened)
+        descriptor = int(raw_open(b"file-\xfe".c_str(), i32(0)))
+        assert descriptor >= 0
+        try:
+            assert os.read(descriptor, 6) == b"abcdef"
+        finally:
+            os.close(descriptor)
+        os.symlink(filename, symbolic)
+        target = os.readlink(symbolic)
+        assert target == filename
+        assert os.stat(target).st_size == 6
+        assert os.access(target, os.F_OK)
+        with open(target, "rb") as stream:
+            assert stream.read() == b"abcdef"
+        os.chmod(target, 0o600)
+        os.truncate(target, 3)
+        os.link(target, hard)
+        os.rename(target, renamed)
+        os.replace(renamed, filename)
+        with open(hard, "rb") as stream:
+            assert stream.read() == b"abc"
+        os.remove(hard)
+        os.unlink(symbolic)
+        os.mkdir(child)
+        assert raw_access(b"child-\xfa".c_str(), i32(0)) == i32(0)
+        os.rmdir(child)
+        with gzip.open(compressed, "wb") as stream:
+            stream.write(b"gzip payload")
+        assert raw_access(b"compressed-\xf9".c_str(), i32(0)) == i32(0)
+        with gzip.open(compressed, "rb") as stream:
+            assert stream.read() == b"gzip payload"
+        with bz2.open(bzip, "wb") as stream:
+            stream.write(b"bzip payload")
+        assert raw_access(b"bzip-\xf8".c_str(), i32(0)) == i32(0)
+        with bz2.open(bzip, "rb") as stream:
+            assert stream.read() == b"bzip payload"
+    finally:
+        os.chdir(cwd)
+        for filename in [filename, renamed, hard, symbolic, compressed, bzip]:
+            try:
+                os.unlink(filename)
+            except OSError:
+                pass
+        try:
+            os.rmdir(child)
+        except OSError:
+            pass
+        os.chdir(original)
+
+
+@test
+def test_filesystem():
+    from C import mkdtemp(cobj) -> cobj
+    from C import mkdir(cobj, u32) -> i32
+    from C import symlink(cobj, cobj) -> i32
+    from C import setenv(cobj, cobj, i32) -> i32
+    from C import getenv(cobj) -> cobj
+    test_directory = os.environ.get("CODON_OS_TEST_TMPDIR", "build")
+    template = os._cstring(path.join(test_directory, "codon-os-test-XXXXXX"))
+    result = mkdtemp(template)
+    assert result
+    root = bytes.from_ptr(result).decode("utf-8", "surrogateescape")
+    original = os.getcwd()
+    sub = path.join(root, "dir-é")
+    file = path.join(root, "file")
+    renamed = path.join(root, "renamed")
+    hard = path.join(root, "hard")
+    symbolic = path.join(root, "symbolic")
+    dangling = path.join(root, "dangling")
+    loop = path.join(root, "loop")
+    directory_link = path.join(root, "directory-link")
+    opened_path = path.join(root, "opened")
+    raw_sub = root.encode("utf-8", "surrogateescape") + b"/dir-\xff"
+    escaped_sub = raw_sub.decode("utf-8", "surrogateescape")
+    raw_key = ("CODON_OS_BYTES_TEST_" + str(os.getpid())).encode() + b"\xff"
+    escaped_key = raw_key.decode("utf-8", "surrogateescape")
+    created = i32(-1)
+    sub_created = False
+    try:
+        created = mkdir(raw_sub.c_str(), u32(0o700))
+        if created == i32(0):
+            test_surrogate_filesystem(escaped_sub)
+        else:
+            assert static.platform() == "darwin" and os._errno() == 92
+            print("SKIP: non-UTF-8 directory round trips; filesystem rejected the raw name")
+            if os.environ.get("CODON_OS_TEST_REQUIRE_RAW_PATHS", "0") == "1":
+                raise RuntimeError("a filesystem accepting non-UTF-8 names is required")
+        linked = symlink(b"dir-\xff".c_str(), symbolic.c_str())
+        assert linked == i32(0)
+        assert os.readlink(symbolic) == "dir-" + chr(0xDCFF)
+        os.unlink(symbolic)
+        os.symlink("dir-" + chr(0xDCFF), symbolic)
+        assert os.readlink(symbolic).encode("utf-8", "surrogateescape") == b"dir-\xff"
+        os.unlink(symbolic)
+        stored = setenv(raw_key.c_str(), b"value-\xfe".c_str(), i32(1))
+        assert stored == i32(0)
+        snapshot = os._make_env_map()
+        assert snapshot[escaped_key] == "value-" + chr(0xDCFE)
+        os.environ[escaped_key] = snapshot[escaped_key]
+        assert bytes.from_ptr(getenv(raw_key.c_str())) == b"value-\xfe"
+        del os.environ[escaped_key]
+        assert not getenv(raw_key.c_str())
+        os.mkdir(sub)
+        sub_created = True
+        os.chdir(sub)
+        assert os.getcwd() == path.join(path.dirname(os.getcwd()), "dir-é")
+        assert os.getcwdb().decode() == os.getcwd()
+        assert path.abspath(".") == os.getcwd()
+        os.chdir(original)
+        with open(file, "w") as f:
+            f.write("abcdef")
+        assert os.access(file, os.F_OK)
+        os.chmod(file, 0o600)
+        os.link(file, hard)
+        os.symlink("file", symbolic)
+        assert os.readlink(symbolic) == "file"
+        assert sorted(os.listdir(root)) == sorted([
+            "dir-é", "file", "hard", "symbolic"
+        ] + (["dir-" + chr(0xDCFF)] if created == i32(0) else []))
+        tree = path.join(root, "tree", "nested", "leaf")
+        os.makedirs(tree, mode=0o700)
+        assert path.isdir(tree) and os.listdir(tree) == []
+        os.makedirs(tree, exist_ok=True)
+        try:
+            os.makedirs(tree)
+            assert False
+        except OSError:
+            pass
+        try:
+            os.makedirs(file, exist_ok=True)
+            assert False
+        except OSError:
+            pass
+        os.removedirs(tree)
+        assert not path.exists(path.join(root, "tree"))
+        assert path.isdir(root)
+        assert os._mkdir_status(sub).errno == 17
+        assert os._rmdir_status(file).errno == 20
+        target, error = os._readlink_status(file)
+        assert target == "" and error.errno == 22
+        fields, error = os._fstat_status(-1)
+        assert fields == [] and error.errno == 9
+        fields, error = os._fstat_status(1 << 32)
+        assert fields == [] and error.kind == 2
+        failed_path, error = os._makedirs_status(path.join(file, "child"), 0o777, True)
+        assert error.errno == 20 and failed_path == path.join(file, "child")
+        opened = os.open(opened_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
+        try:
+            written = os.write(opened, b"abc")
+            assert written == 3
+            assert os.fstat(opened).st_mode & 0o077 == 0
+        finally:
+            os.close(opened)
+        try:
+            os.open(opened_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            assert False
+        except OSError as error:
+            assert error.errno == 17 and error.filename == opened_path
+        opened = os.open(opened_path, os.O_APPEND | os.O_WRONLY)
+        try:
+            written = os.write(opened, b"d")
+            assert written == 1
+        finally:
+            os.close(opened)
+        assert path.getsize(opened_path) == 4
+        opened = os.open(opened_path, os.O_TRUNC | os.O_WRONLY)
+        os.close(opened)
+        assert path.getsize(opened_path) == 0
+        try:
+            os.listdir(file)
+            assert False
+        except OSError as error:
+            assert error.errno == 20 and error.filename == file
+        try:
+            os.fstat(-1)
+            assert False
+        except OSError as error:
+            assert error.errno == 9 and error.filename is None
+        metadata = os.stat(file)
+        fields, status = os._stat_status(file)
+        assert not status and fields[6] == 6
+        fields, status = os._stat_status(path.join(root, "missing"))
+        assert fields == [] and status.errno == 2 and status.winerror == 0
+        changed_errno = os._mkdir_status(sub)
+        assert changed_errno.errno == 17
+        try:
+            status.raise_error("stat", path.join(root, "missing"))
+            assert False
+        except OSError as error:
+            assert error.errno == 2 and error.filename == path.join(root, "missing")
+        assert metadata.st_size == 6 and metadata.st_nlink == 2
+        assert metadata.st_mode & 0o170000 == 0o100000
+        assert metadata.st_mtime_ns // 1000000000 == int(metadata.st_mtime)
+        assert len(metadata) == 10 and metadata[6] == 6
+        assert list(metadata)[-1] == metadata.st_ctime_ns // 1000000000
+        assert os.stat(symbolic).st_ino == metadata.st_ino
+        assert os.lstat(symbolic).st_mode & 0o170000 == 0o120000
+        assert os.stat(symbolic, follow_symlinks=False).st_ino == os.lstat(symbolic).st_ino
+        assert path.exists(file) and path.isfile(file) and not path.isdir(file)
+        assert path.isdir(sub) and not path.isfile(sub) and not path.islink(sub)
+        assert path.islink(symbolic) and path.isfile(symbolic)
+        assert path.samefile(file, hard) and path.samefile(file, symbolic)
+        assert not path.samefile(file, sub)
+        assert path.getsize(file) == 6 and path.getmtime(file) == metadata.st_mtime
+        assert path.getatime(file) == metadata.st_atime
+        assert path.getctime(file) == metadata.st_ctime
+        os.symlink("missing", dangling)
+        assert path.lexists(dangling) and path.islink(dangling)
+        assert not path.exists(dangling) and not path.isfile(dangling)
+        assert not path.isdir(dangling) and not path.exists(file + "\0suffix")
+        assert path.realpath(symbolic) == path.join(path.realpath(root), "file")
+        assert path.realpath(symbolic, strict=True) == path.realpath(file)
+        os.symlink("dir-é", directory_link)
+        assert path.isdir(directory_link) and path.islink(directory_link)
+        assert path.realpath(directory_link + "/..") == path.realpath(root)
+        assert path.realpath(directory_link + "/../directory-link") == path.realpath(sub)
+        assert path.realpath(directory_link + "/missing/../child") == path.join(path.realpath(sub), "child")
+        assert path.realpath(dangling) == path.join(path.realpath(root), "missing")
+        os.symlink("loop", loop)
+        assert path.realpath(loop) == path.join(path.realpath(root), "loop")
+        for invalid in [dangling, loop, file + "/child"]:
+            try:
+                path.realpath(invalid, strict=True)
+                assert False
+            except OSError:
+                pass
+        try:
+            path.getsize(dangling)
+            assert False
+        except OSError as error:
+            assert error.errno == 2
+        os.truncate(file, 3)
+        descriptor = open_rw(file)  # POSIX O_RDWR
+        assert descriptor >= 0
+        try:
+            assert os.fstat(descriptor).st_ino == metadata.st_ino
+            assert os.stat(descriptor).st_size == 3
+            opened = os.open(file, os.O_RDONLY)
+            try:
+                assert path.sameopenfile(descriptor, opened)
+                from C import fcntl(i32, i32) -> i32
+                assert int(fcntl(i32(opened), i32(1))) & 1 == 1
+            finally:
+                os.close(opened)
+            assert os.read(descriptor, 0) == b""
+            assert os.read(descriptor, 20) == b"abc"
+            assert os.read(descriptor, 1) == b""
+            assert os.lseek(descriptor, 0, os.SEEK_SET) == 0
+            assert os.write(descriptor, b"x\0y") == 3
+            os.fsync(descriptor)
+            os.ftruncate(descriptor, 2)
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            assert os.read(descriptor, 10) == b"x\0"
+        finally:
+            os.close(descriptor)
+        os.rename(file, renamed)
+        os.replace(renamed, file)
+        try:
+            os.remove(sub)
+            assert False
+        except OSError:
+            pass
+        try:
+            os.chdir(root + "\0suffix")
+            assert False
+        except ValueError:
+            pass
+        try:
+            os.unlink(path.join(root, "missing"))
+            assert False
+        except OSError as e:
+            assert e.errno == 2
+            assert e.strerror is not None
+            assert e.filename == path.join(root, "missing")
+            assert e.filename2 is None and e.winerror is None
+        try:
+            os.rename(path.join(root, "missing"), renamed)
+            assert False
+        except OSError as e:
+            assert e.errno == 2
+            assert e.filename == path.join(root, "missing")
+            assert e.filename2 == renamed
+            assert " -> " in str(e)
+        assert os.getpid() > 0 and os.getppid() > 0
+        assert os.getuid() >= 0 and os.geteuid() >= 0
+        assert os.getgid() >= 0 and os.getegid() >= 0
+        try:
+            os.read(-1, 1)
+            assert False
+        except OSError as e:
+            assert e.errno == 9
+            assert e.strerror is not None
+            assert e.filename is None and e.filename2 is None
+            assert e.winerror is None
+        try:
+            os.read(-1, -1)
+            assert False
+        except ValueError:
+            pass
+        try:
+            os.close(1 << 32)
+            assert False
+        except OverflowError:
+            pass
+    finally:
+        os.chdir(original)
+        os.unsetenv(escaped_key)
+        if escaped_key in os.environ:
+            del os.environ[escaped_key]
+        if created == i32(0):
+            os.rmdir(escaped_sub)
+        for p in [symbolic, dangling, loop, directory_link, hard, file, renamed, opened_path]:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        try:
+            if sub_created:
+                os.rmdir(sub)
+        finally:
+            os.rmdir(root)
+
+
+test_constant_types()
+test_oserror()
+if static.platform() != "win32":
+    test_paths()
+test_environment()
+test_environment_default_overloads()
+test_environment_mapping()
+test_environment_update_arguments()
+if static.platform() != "win32":
+    test_expanduser()
+    test_posix_path_encoders()
+    test_filesystem()

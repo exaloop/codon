@@ -1,0 +1,256 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+"""Windows string path operations, importable on every target.
+
+Lexical operations follow Python 3.13 Windows path rules. They do not inspect
+the filesystem or resolve symlinks. Relative abspath/relpath need Windows'
+current-directory and per-drive state; on other targets only fully qualified
+paths can be resolved. Environment expansion has a mapping-based helper for
+host-independent tests.
+"""
+
+import internal.static as static
+
+curdir: Literal[str] = "."
+pardir: Literal[str] = ".."
+sep: Literal[str] = "\\"
+pathsep: Literal[str] = ";"
+defpath: Literal[str] = ".;C:\\bin"
+extsep: Literal[str] = "."
+altsep: Optional[str] = "/"
+devnull: Literal[str] = "nul"
+
+def isabs(path: str) -> bool:
+    # A single leading separator is rooted on the current drive, not absolute.
+    prefix = path[:3].replace("/", "\\")
+    return prefix.startswith("\\\\") or prefix[1:3] == ":\\"
+
+def splitroot(path: str) -> Tuple[str, str, str]:
+    normalized = path.replace("/", "\\")
+    if normalized.startswith("\\\\"):
+        # UNC mounts include server and share. Extended UNC has an extra
+        # namespace prefix; other device paths use the ordinary two fields.
+        begin = 8 if normalized[:8].upper() == "\\\\?\\UNC\\" else 2
+        server_end = normalized.find("\\", begin)
+        if server_end < 0:
+            return path, "", ""
+        root_at = normalized.find("\\", server_end + 1)
+        if root_at < 0:
+            return path, "", ""
+        return path[:root_at], path[root_at:root_at + 1], path[root_at + 1:]
+    if normalized.startswith("\\"):
+        return "", path[:1], path[1:]
+    if normalized[1:2] == ":":
+        if normalized[2:3] == "\\":
+            return path[:2], path[2:3], path[3:]
+        return path[:2], "", path[2:]
+    return "", "", path
+
+def splitdrive(path: str) -> Tuple[str, str]:
+    drive, root, tail = splitroot(path)
+    return drive, root + tail
+
+def join(a: str, *paths) -> str:
+    drive, root, tail = splitroot(a)
+    for i in static.range(static.len(paths)):
+        next_drive, next_root, next_tail = splitroot(paths[i])
+        if next_root:
+            # A rooted operand inherits the previous drive unless it names one.
+            if next_drive or not drive:
+                drive = next_drive
+            root, tail = next_root, next_tail
+        elif next_drive and next_drive.lower() != drive.lower():
+            # D:foo uses D's current directory, not the preceding C: path.
+            drive, root, tail = next_drive, next_root, next_tail
+        else:
+            if next_drive:
+                drive = next_drive
+            if tail and tail[-1] not in "\\/":
+                tail += "\\"
+            tail += next_tail
+    if drive and not root and tail and drive[-1] not in ":\\/":
+        # A bare UNC share still needs a separator before a relative operand.
+        return drive + "\\" + tail
+    return drive + root + tail
+
+def split(path: str) -> Tuple[str, str]:
+    drive, root, tail = splitroot(path)
+    cut = max(tail.rfind("\\"), tail.rfind("/")) + 1
+    return drive + root + tail[:cut].rstrip("\\/"), tail[cut:]
+
+def dirname(path: str) -> str:
+    return split(path)[0]
+
+def basename(path: str) -> str:
+    return split(path)[1]
+
+def splitext(path: str) -> Tuple[str, str]:
+    begin = max(path.rfind("\\"), path.rfind("/")) + 1
+    dot = path.rfind(".")
+    # Leading dots alone do not introduce an extension.
+    while begin < dot:
+        if path[begin] != ".":
+            return path[:dot], path[dot:]
+        begin += 1
+    return path, ""
+
+def normcase(path: str) -> str:
+    # Use Unicode lowercase, not casefold (which would also expand e.g. ß).
+    return path.replace("/", "\\").lower()
+
+def normpath(path: str) -> str:
+    drive, root, tail = splitroot(path.replace("/", "\\"))
+    parts: List[str] = []
+    for part in tail.split("\\"):
+        if not part or part == ".":
+            continue
+        if part == "..":
+            if parts and parts[-1] != "..":
+                parts.pop()
+            elif not root:
+                parts.append(part)
+        else:
+            parts.append(part)
+    result = drive + root + "\\".join(parts)
+    return result if result else "."
+
+def _abspath(path: str, getfullpathname) -> str:
+    # Keep the native resolver injectable without importing the OS backend.
+    return getfullpathname(normpath(path))
+
+def abspath(path: str) -> str:
+    if static.platform() == "win32":
+        from os import _getfullpathname
+        return _abspath(path, _getfullpathname)
+    else:
+        if isabs(path):
+            return normpath(path)
+        raise NotImplementedError("relative Windows paths require Windows drive state")
+
+def relpath(path: str, start: str = ".") -> str:
+    if not path:
+        raise ValueError("no path specified")
+    origin = abspath(start)
+    target = abspath(path)
+    return _relpath_from_absolute(target, origin)
+
+def _relpath_from_absolute(path: str, start: str) -> str:
+    # Inputs have already been resolved by abspath; no OS state is needed here.
+    origin_drive, _, origin_tail = splitroot(start)
+    target_drive, _, target_tail = splitroot(path)
+    if normcase(origin_drive) != normcase(target_drive):
+        raise ValueError("path and start are on different drives")
+    origin = [p for p in origin_tail.split("\\") if p]
+    target = [p for p in target_tail.split("\\") if p]
+    shared = 0
+    while shared < len(origin) and shared < len(target):
+        if normcase(origin[shared]) != normcase(target[shared]):
+            break
+        shared += 1
+    parts = [".."] * (len(origin) - shared) + target[shared:]
+    return "\\".join(parts) if parts else "."
+
+def commonprefix(paths) -> str:
+    # Character-based and case-sensitive, unlike commonpath.
+    values = list(paths)
+    if not values:
+        return ""
+    first, last = min(values), max(values)
+    size = 0
+    while size < len(first) and size < len(last) and first[size] == last[size]:
+        size += 1
+    return first[:size]
+
+def commonpath(paths) -> str:
+    values = list(paths)
+    if not values:
+        raise ValueError("commonpath() arg is an empty sequence")
+    drive, root, tail = splitroot(values[0].replace("/", "\\"))
+    common = [p for p in tail.split("\\") if p and p != "."]
+    for path in values[1:]:
+        next_drive, next_root, next_tail = splitroot(path.replace("/", "\\"))
+        if normcase(drive) != normcase(next_drive):
+            raise ValueError("Paths don't have the same drive")
+        # isabs cannot distinguish root-relative from unrooted paths in 3.13.
+        if root != next_root:
+            raise ValueError("Can't mix rooted and not-rooted paths")
+        parts = [p for p in next_tail.split("\\") if p and p != "."]
+        shared = 0
+        while shared < len(common) and shared < len(parts):
+            if normcase(common[shared]) != normcase(parts[shared]):
+                break
+            shared += 1
+        common = common[:shared]
+    return drive + root + "\\".join(common)
+
+def _expanduser(path: str, environ) -> str:
+    if not path.startswith("~"):
+        return path
+    if "USERPROFILE" in environ:
+        home = environ["USERPROFILE"]
+    elif "HOMEPATH" in environ:
+        home = environ.get("HOMEDRIVE", "") + environ["HOMEPATH"]
+    else:
+        return path
+    end = 1
+    while end < len(path) and path[end] != "\\" and path[end] != "/":
+        end += 1
+    if end > 1:
+        user = path[1:end]
+        current_user = environ.get("USERNAME", "")
+        if user != current_user:
+            if not current_user or basename(home) != current_user:
+                return path
+            home = join(dirname(home), user)
+    return home + path[end:]
+
+def expanduser(path: str) -> str:
+    from os import environ
+    return _expanduser(path, environ)
+
+def _expandvars(path: str, environ) -> str:
+    result = _strbuf()
+    i = 0
+    while i < len(path):
+        token = path[i]
+        if token == "'":
+            end = path.find("'", i + 1)
+            if end < 0:
+                result.append(path[i:])
+                break
+            result.append(path[i:end + 1])
+            i = end + 1
+        elif token == "$" or token == "%":
+            begin = i
+            i += 1
+            if i < len(path) and path[i] == token:
+                result.append(token)
+                i += 1
+                continue
+            if token == "%" or (i < len(path) and path[i] == "{"):
+                closing = "%" if token == "%" else "}"
+                if token == "$":
+                    i += 1
+                end = path.find(closing, i)
+                if end < 0:
+                    result.append(path[begin:])
+                    break
+                key = path[i:end]
+                i = end + 1
+            else:
+                start = i
+                while i < len(path) and path[i] in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-":
+                    i += 1
+                key = path[start:i]
+                if not key:
+                    result.append(token)
+                    continue
+            result.append(environ[key] if key in environ else path[begin:i])
+        else:
+            result.append(token)
+            i += 1
+    return result.__str__()
+
+def expandvars(path: str) -> str:
+    from os import environ
+    return _expandvars(path, environ)

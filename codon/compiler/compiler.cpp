@@ -3,6 +3,7 @@
 #include "compiler.h"
 
 #include "codon/compiler/error.h"
+#include "codon/config/config.h"
 #include "codon/parser/cache.h"
 #include "codon/parser/peg/peg.h"
 #include "codon/parser/visitors/doc/doc.h"
@@ -154,6 +155,9 @@ std::unordered_map<std::string, std::string> Compiler::getEarlyDefines() {
   earlyDefines.emplace("__py_numerics__", options->pynum ? "1" : "0");
   earlyDefines.emplace("__py_extension__", options->pyext ? "1" : "0");
   earlyDefines.emplace("__dict_unordered__", options->unordereddict ? "1" : "0");
+  earlyDefines.emplace("__codon_version_major__", std::to_string(CODON_VERSION_MAJOR));
+  earlyDefines.emplace("__codon_version_minor__", std::to_string(CODON_VERSION_MINOR));
+  earlyDefines.emplace("__codon_version_micro__", std::to_string(CODON_VERSION_PATCH));
   earlyDefines.emplace("__apple__",
 #if __APPLE__
                        "1"

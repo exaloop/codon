@@ -74,6 +74,11 @@ SEQ_FUNC bool seq_gmtime(seq_int_t secs, seq_time_t *output);
 SEQ_FUNC seq_int_t seq_mktime(seq_time_t *time);
 SEQ_FUNC void seq_sleep(double secs);
 SEQ_FUNC char **seq_env();
+SEQ_FUNC int32_t seq_os_open(const char *path, int32_t flags, uint32_t mode);
+SEQ_FUNC int32_t seq_os_stat(const char *path, int32_t descriptor, bool follow,
+                            int64_t *fields);
+SEQ_FUNC const char *seq_os_readdir(void *directory);
+SEQ_FUNC char *seq_os_home(const char *name);
 SEQ_FUNC void seq_assert_failed(seq_str_t file, seq_int_t line);
 
 SEQ_FUNC void *seq_alloc(size_t n);

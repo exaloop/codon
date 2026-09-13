@@ -1,7 +1,5 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-import os
-
 from gc import atomic, alloc_uncollectable
 from internal.dlopen import *
 from internal.str import (
@@ -947,6 +945,7 @@ def setup_python(python_loaded: bool):
     if python_loaded:
         py_handle = dlopen("", RTLD_LOCAL | RTLD_NOW)
     else:
+        import os
         LD = os.getenv("CODON_PYTHON", default="libpython." + dlext())
         py_handle = dlopen(LD, RTLD_LOCAL | RTLD_NOW)
 

@@ -1,0 +1,795 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+"""Windows backend for os; native little-endian Windows x64/ARM64 only.
+
+All foreign declarations are local to functions and nothing calls Windows at
+module initialization. The public os module supplies compile-time dispatch and
+the environ mapping. This module does not import os or port the compiler/runtime.
+Called functions require Kernel32 and a compatible Microsoft UCRT;
+no new C++ runtime helpers are needed.
+
+Paths/commands/environment use UTF-16LE with surrogatepass, never ANSI. getcwdb
+uses UTF-8 with surrogatepass, as modern Python on Windows does. Extended-length
+paths are accepted as supplied; no automatic long-path prefix/manifest is added.
+mkdir ignores mode and inherits the parent's Windows security descriptor (even
+for 0o700); chmod changes only the read-only attribute. access is an attribute
+probe, not an ACL check, and X_OK means existence. Descriptor I/O retains the
+descriptor's CRT text/binary mode and can return partial transfers.
+
+Environment updates are not atomic across the CRT and OS and must be externally
+synchronized with other environment writers. The CRT treats an empty value as
+deletion; putenv restores an actual empty OS value afterwards, but cannot make
+CRT getenv distinguish empty from missing. Other CRT instances/ANSI mirrors
+cannot be kept fully Unicode-consistent. No snapshot is updated here.
+
+OSError carries errno, strerror, applicable filenames and the original winerror
+for Windows API failures. CRT failures supply errno without inventing winerror.
+Toolhelp reports the recorded parent PID, which can have exited or been reused.
+This backend has not been executed on Windows as part of its implementation.
+"""
+
+from os._status import _Status, _status, _path_status
+
+def _filetime_parts(info: Ptr[u32], offset: int) -> Tuple[int, int]:
+    ticks = ((int(info[offset + 1]) << 32) | int(info[offset])) - 116444736000000000
+    return ticks // 10000000, (ticks % 10000000) * 100
+
+def _stat_fields(info: Ptr[u32], tag: int = 0) -> List[int]:
+    attributes = int(info[0])
+    mode = (0o040000 | 0o111) if attributes & 0x10 else 0o100000
+    mode |= 0o444 if attributes & 1 else 0o666
+    if tag == 0xA000000C:
+        mode = 0o120777
+    access_seconds, access_nanos = _filetime_parts(info, 3)
+    modified_seconds, modified_nanos = _filetime_parts(info, 5)
+    created_seconds, created_nanos = _filetime_parts(info, 1)
+    return [mode, (int(info[11]) << 32) | int(info[12]), int(info[7]),
+            int(info[10]), 0, 0, (int(info[8]) << 32) | int(info[9]),
+            access_seconds, modified_seconds, created_seconds,
+            access_nanos, modified_nanos, created_nanos, 0]
+
+def _stat_handle_status(handle: cobj, follow_symlinks: bool = True) -> Tuple[List[int], _Status]:
+    from C import GetFileType(cobj) -> u32
+    from C import GetFileInformationByHandle(cobj, Ptr[u32]) -> i32
+    from C import GetFileInformationByHandleEx(cobj, i32, cobj, u32) -> i32
+    from C import GetLastError() -> u32
+    kind = int(GetFileType(handle))
+    if kind == 2 or kind == 3:
+        fields = [0] * 14
+        fields[0] = 0o020666 if kind == 2 else 0o010666
+        fields[3] = 1
+        return fields, _status()
+    info = Ptr[u32](13)
+    if GetFileInformationByHandle(handle, info) == i32(0):
+        code = GetLastError()
+        return [], _status(winerror=int(code))
+    tag = 0
+    if not follow_symlinks and int(info[0]) & 0x400:
+        attributes = Ptr[u32](2)
+        if GetFileInformationByHandleEx(handle, i32(9), attributes.as_byte(), u32(8)) == i32(0):
+            code = GetLastError()
+            return [], _status(winerror=int(code))
+        tag = int(attributes[1])
+    return _stat_fields(info, tag), _status()
+
+def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[List[int], _Status]:
+    error = _path_status(path, True)
+    if error:
+        return [], error
+    from C import CreateFileW(Ptr[u16], u32, u32, cobj, u32, u32, cobj) -> cobj
+    from C import GetLastError() -> u32
+    flags = 0x02000000 | (0 if follow_symlinks else 0x00200000)
+    handle = CreateFileW(_wide(path), u32(0), u32(7), cobj(), u32(3), u32(flags), cobj())
+    if int(handle) == -1:
+        code = GetLastError()
+        return [], _status(winerror=int(code))
+    try:
+        fields, error = _stat_handle_status(handle, follow_symlinks)
+        if not error and fields[0] & 0o170000 == 0o100000:
+            for extension in [".exe", ".com", ".bat", ".cmd"]:
+                if path.lower().endswith(extension):
+                    fields[0] |= 0o111
+                    break
+    finally:
+        cleanup = _close_handle_status(handle)
+    return fields, error if error else cleanup
+
+def stat(path: str, follow_symlinks: bool = True) -> List[int]:
+    fields, error = _stat_status(path, follow_symlinks)
+    error.raise_error("stat" if follow_symlinks else "lstat", path)
+    return fields
+
+@pure
+@llvm
+def _handle_pointer(value: int) -> cobj:
+    %pointer = inttoptr i64 %value to ptr
+    ret ptr %pointer
+
+def _fstat_status(fd: int) -> Tuple[List[int], _Status]:
+    if fd < -2147483648 or fd > 2147483647:
+        return [], _status(message="file descriptor out of range", kind=2)
+    from C import _get_osfhandle(i32) -> int
+    handle, error = _crt_status(False, _get_osfhandle, i32(fd))
+    if error:
+        return [], error
+    return _stat_handle_status(_handle_pointer(handle))
+
+def fstat(fd: int) -> List[int]:
+    fields, error = _fstat_status(fd)
+    error.raise_error("fstat")
+    return fields
+
+def open(path: str, flags: int, mode: int = 0o777) -> int:
+    from C import _wsopen_s(Ptr[i32], Ptr[u16], i32, i32, i32) -> i32
+    descriptor = i32(-1)
+    permissions = (0x100 if mode & 0o400 else 0) | (0x80 if mode & 0o200 else 0)
+    _crt_path_call(path, "open", True, _wsopen_s, __ptr__(descriptor), _wide(path),
+                   _fd(flags | 0x8080), i32(0x40), i32(permissions))
+    return int(descriptor)
+
+def listdir(path: str = ".") -> List[str]:
+    from C import GetFileAttributesW(Ptr[u16]) -> u32
+    from C import FindFirstFileW(Ptr[u16], cobj) -> cobj
+    from C import FindNextFileW(cobj, cobj) -> i32
+    from C import FindClose(cobj) -> i32
+    from C import GetLastError() -> u32
+    attributes = GetFileAttributesW(_wide(path))
+    if attributes == u32(0xFFFFFFFF):
+        code = GetLastError()
+        _winerror("listdir", code, path)
+    if int(attributes) & 0x10 == 0:
+        _winerror("listdir", u32(267), path)
+    pattern = path + ("*" if path.endswith("\\") or path.endswith("/") else "\\*")
+    buffer = Ptr[u32](148).as_byte()
+    handle = FindFirstFileW(_wide(pattern), buffer)
+    if int(handle) == -1:
+        code = GetLastError()
+        if code == u32(2):
+            return []
+        _winerror("listdir", code, path)
+    succeeded = False
+    try:
+        names: List[str] = []
+        while True:
+            pointer = Ptr[u16](buffer + 44)
+            count = 0
+            while count < 260 and pointer[count] != u16(0):
+                count += 1
+            name = _decode_wide(pointer, count)
+            if name != "." and name != "..":
+                names.append(name)
+            if FindNextFileW(handle, buffer) == i32(0):
+                code = GetLastError()
+                if code != u32(18):
+                    _winerror("listdir", code, path)
+                break
+        succeeded = True
+        return names
+    finally:
+        if FindClose(handle) == i32(0) and succeeded:
+            code = GetLastError()
+            _winerror("FindClose", code, path)
+
+def _final_path_status(path: str) -> Tuple[str, _Status]:
+    error = _path_status(path, True)
+    if error:
+        return "", error
+    from C import CreateFileW(Ptr[u16], u32, u32, cobj, u32, u32, cobj) -> cobj
+    from C import GetFinalPathNameByHandleW(cobj, Ptr[u16], u32, u32) -> u32
+    from C import GetLastError() -> u32
+    handle = CreateFileW(_wide(path), u32(0), u32(7), cobj(), u32(3), u32(0x02000000), cobj())
+    if int(handle) == -1:
+        code = GetLastError()
+        return "", _status(winerror=int(code))
+    result = ""
+    try:
+        capacity = 256
+        while True:
+            if capacity > 0xFFFFFFFF:
+                error = _status(message="Windows buffer size out of range", kind=2)
+                break
+            buffer = Ptr[u16](capacity)
+            count = int(GetFinalPathNameByHandleW(handle, buffer, _capacity(capacity), u32(0)))
+            if count == 0:
+                code = GetLastError()
+                error = _status(winerror=int(code))
+                break
+            if count < capacity:
+                result = _decode_wide(buffer, count)
+                break
+            capacity = count + 1
+    finally:
+        cleanup = _close_handle_status(handle)
+    return result, error if error else cleanup
+
+def realpath(path: str, strict: bool = False) -> str:
+    import os._ntpath as ntpath
+    current = getfullpathname(path if path else ".")
+    suffix: List[str] = []
+    while True:
+        result, error = _final_path_status(current)
+        if not error:
+            break
+        if strict or error.kind:
+            error.raise_error("realpath", current)
+        head, tail = ntpath.split(current)
+        if not tail or head == current:
+            result = current
+            break
+        suffix.append(tail)
+        current = head
+    for component in suffix[::-1]:
+        result = ntpath.join(result, component)
+    if not path.startswith("\\\\?\\"):
+        if result.startswith("\\\\?\\UNC\\"):
+            return "\\\\" + result[8:]
+        if result.startswith("\\\\?\\"):
+            return result[4:]
+    return result
+
+def _wide(value: str) -> Ptr[u16]:
+    if "\0" in value:
+        raise ValueError("embedded null character")
+    # bytes.c_str() adds ONE byte, not one WCHAR. Encode a full terminator first.
+    encoded = (value + "\0").encode("utf-16-le", "surrogatepass")
+    p = Ptr[u16](encoded.c_str())
+    return p
+
+
+def _decode_wide(p: Ptr[u16], count: int) -> str:
+    return bytes(p.as_byte(), count * 2).decode("utf-16-le", "surrogatepass")
+
+
+def _envkey(key: str) -> Ptr[u16]:
+    if not key or "=" in key:
+        raise ValueError("illegal environment variable name")
+    return _wide(key)
+
+
+def _winerror(operation: str, code: u32, filename: Optional[str] = None,
+              filename2: Optional[str] = None):
+    from C import _dosmaperr(u32)
+    from C import _get_errno(Ptr[i32]) -> i32
+    from C import FormatMessageW(u32, cobj, u32, u32, Ptr[u16], u32, cobj) -> u32
+    _dosmaperr(code)
+    mapped = i32(0)
+    _get_errno(__ptr__(mapped))
+    buffer = Ptr[u16](2048)
+    count = FormatMessageW(u32(0x1200), cobj(), code, u32(0), buffer,
+                           u32(2048), cobj())
+    message = (_decode_wide(buffer, int(count)).rstrip("\r\n") if count
+               else f"{operation}: Windows error {int(code)}")
+    raise OSError(int(mapped), message, filename, int(code), filename2)
+
+
+def _crt_path_call(filename: str, operation: str, returns_errno: bool, function, *args):
+    result, error = _crt_status(returns_errno, function, *args)
+    error.raise_error(operation, filename)
+    return result
+
+
+def _ignore_invalid_parameter(expression: Ptr[u16], function: Ptr[u16],
+                              file: Ptr[u16], line: u32, reserved: u64) -> None:
+    # UCRT then returns -1/errno_t instead of terminating on a bad descriptor.
+    # Never allocate, raise, or call another CRT function in this C callback.
+    return
+
+
+def _crt_status(returns_errno: bool, function, *args):
+    from C import _set_thread_local_invalid_parameter_handler(cobj) -> cobj
+    from C import _get_errno(Ptr[i32]) -> i32
+    handler: Function[[Ptr[u16], Ptr[u16], Ptr[u16], u32, u64], None] = _ignore_invalid_parameter
+    previous = _set_thread_local_invalid_parameter_handler(handler.__raw__())
+    try:
+        result = function(*args)
+        code = 0
+        if returns_errno:
+            code = int(result)
+        elif int(result) == -1:
+            captured = i32(0)
+            _get_errno(__ptr__(captured))
+            code = int(captured) if captured != i32(0) else 22
+        return result, _status(errno=code)
+    finally:
+        _set_thread_local_invalid_parameter_handler(previous)
+
+def _crt_call(operation: str, returns_errno: bool, function, *args):
+    result, error = _crt_status(returns_errno, function, *args)
+    error.raise_error(operation)
+    return result
+
+
+def _fd(fd: int) -> i32:
+    if fd < -2147483648 or fd > 2147483647:
+        raise OverflowError("file descriptor out of range")
+    # In-range invalid/closed descriptors go through the guarded CRT call.
+    return i32(fd)
+
+
+def _capacity(n: int) -> u32:
+    if n < 1 or n > 0xFFFFFFFF:
+        raise OverflowError("Windows buffer size out of range")
+    return u32(n)
+
+
+def _close_handle_status(handle: cobj) -> _Status:
+    from C import CloseHandle(cobj) -> i32
+    from C import GetLastError() -> u32
+    if CloseHandle(handle) == i32(0):
+        code = GetLastError()
+        return _status(winerror=int(code))
+    return _status()
+
+def _close_handle(handle: cobj, ignore_errors: bool = False):
+    error = _close_handle_status(handle)
+    if not ignore_errors:
+        error.raise_error("CloseHandle")
+
+
+def make_env_map() -> Dict[str, str]:
+    """Return an uppercase-key snapshot of the actual Windows environment."""
+    from C import GetEnvironmentStringsW() -> Ptr[u16]
+    from C import FreeEnvironmentStringsW(Ptr[u16]) -> i32
+    from C import GetLastError() -> u32
+    block = GetEnvironmentStringsW()
+    if not block:
+        code = GetLastError()
+        _winerror("GetEnvironmentStringsW", code)
+    completed = False
+    try:
+        result: Dict[str, str] = {}
+        offset = 0
+        while block[offset] != u16(0):
+            end = offset
+            while block[end] != u16(0):
+                end += 1
+            entry = _decode_wide(block + offset, end - offset)
+            split = entry.find("=")
+            # Skip Windows' hidden '=C:=...' per-drive working directories.
+            if split > 0:
+                result[entry[:split].upper()] = entry[split + 1:]
+            offset = end + 1
+        completed = True
+        return result
+    finally:
+        if FreeEnvironmentStringsW(block) == i32(0):
+            code = GetLastError()
+            if completed:
+                _winerror("FreeEnvironmentStringsW", code)
+
+
+def putenv(key: str, value: str):
+    """Update CRT and OS environment, but not the public environ snapshot."""
+    from C import _wputenv_s(Ptr[u16], Ptr[u16]) -> i32
+    from C import SetEnvironmentVariableW(Ptr[u16], Ptr[u16]) -> i32
+    from C import GetLastError() -> u32
+    name = _envkey(key)
+    data = _wide(value)
+    _crt_call("putenv", True, _wputenv_s, name, data)
+    # Non-null data preserves an empty OS value even though CRT removed it.
+    if SetEnvironmentVariableW(name, data) == i32(0):
+        code = GetLastError()
+        _winerror("putenv", code)
+
+
+def unsetenv(key: str):
+    from C import _wputenv_s(Ptr[u16], Ptr[u16]) -> i32
+    from C import SetEnvironmentVariableW(Ptr[u16], Ptr[u16]) -> i32
+    from C import GetLastError() -> u32
+    name = _envkey(key)
+    _crt_call("unsetenv", True, _wputenv_s, name, _wide(""))
+    if SetEnvironmentVariableW(name, Ptr[u16]()) == i32(0):
+        code = GetLastError()
+        # Deleting an already absent variable is a successful no-op.
+        if code != u32(203):  # ERROR_ENVVAR_NOT_FOUND
+            _winerror("unsetenv", code)
+
+
+def process_getenv(key: str) -> Optional[str]:
+    """Query the true OS environment, distinguishing empty from missing."""
+    from C import GetEnvironmentVariableW(Ptr[u16], Ptr[u16], u32) -> u32
+    from C import SetLastError(u32)
+    from C import GetLastError() -> u32
+    name = _envkey(key)
+    capacity = 256
+    while True:
+        size = _capacity(capacity)
+        buffer = Ptr[u16](capacity)
+        SetLastError(u32(0))
+        count = GetEnvironmentVariableW(name, buffer, size)
+        code = GetLastError()
+        if count == u32(0):
+            if code == u32(203):
+                return None
+            if code == u32(0):
+                return ""
+            _winerror("GetEnvironmentVariableW", code)
+        if int(count) < capacity:
+            return _decode_wide(buffer, int(count))
+        # Required size includes NUL. Retry also handles concurrent growth.
+        capacity = int(count) + 1
+
+
+def system(cmd: str) -> int:
+    """Run the Windows command processor; return its native status, not wait bits."""
+    from C import _wsystem(Ptr[u16]) -> i32
+    return int(_crt_call("system", False, _wsystem, _wide(cmd)))
+
+
+def _mkdir_status(path: str, mode: int = 0o777) -> _Status:
+    """Create a directory with inherited Windows security; mode is ignored."""
+    error = _path_status(path, True)
+    if error:
+        return error
+    from C import CreateDirectoryW(Ptr[u16], cobj) -> i32
+    from C import GetLastError() -> u32
+    if CreateDirectoryW(_wide(path), cobj()) == i32(0):
+        code = GetLastError()
+        return _status(winerror=int(code))
+    return _status()
+
+def mkdir(path: str, mode: int = 0o777):
+    _mkdir_status(path, mode).raise_error("mkdir", path)
+
+def _rmdir_status(path: str) -> _Status:
+    error = _path_status(path, True)
+    if error:
+        return error
+    from C import RemoveDirectoryW(Ptr[u16]) -> i32
+    from C import GetLastError() -> u32
+    if RemoveDirectoryW(_wide(path)) == i32(0):
+        code = GetLastError()
+        return _status(winerror=int(code))
+    return _status()
+
+def rmdir(path: str):
+    _rmdir_status(path).raise_error("rmdir", path)
+
+
+def chdir(path: str):
+    from C import _wchdir(Ptr[u16]) -> i32
+    # Unlike SetCurrentDirectoryW alone, this also maintains CRT drive state.
+    _crt_path_call(path, "chdir", False, _wchdir, _wide(path))
+
+
+def getcwd() -> str:
+    from C import GetCurrentDirectoryW(u32, Ptr[u16]) -> u32
+    from C import GetLastError() -> u32
+    capacity = 260
+    while True:
+        size = _capacity(capacity)
+        buffer = Ptr[u16](capacity)
+        count = GetCurrentDirectoryW(size, buffer)
+        if count == u32(0):
+            code = GetLastError()
+            _winerror("getcwd", code)
+        if int(count) < capacity:
+            return _decode_wide(buffer, int(count))
+        capacity = int(count) + 1
+
+
+def getcwdb() -> bytes:
+    return getcwd().encode("utf-8", "surrogatepass")
+
+
+def unlink(path: str):
+    from C import GetFileAttributesW(Ptr[u16]) -> u32
+    from C import RemoveDirectoryW(Ptr[u16]) -> i32
+    from C import DeleteFileW(Ptr[u16]) -> i32
+    from C import GetLastError() -> u32
+    name = _wide(path)
+    attributes = GetFileAttributesW(name)
+    if attributes == u32(0xFFFFFFFF):
+        code = GetLastError()
+        _winerror("unlink", code, path)
+    # Directory symlinks/junctions need RemoveDirectoryW; real directories must
+    # still fail, rather than accidentally becoming os.rmdir.
+    if (int(attributes) & 0x410) == 0x410:  # DIRECTORY | REPARSE_POINT
+        result = RemoveDirectoryW(name)
+    else:
+        result = DeleteFileW(name)
+    if result == i32(0):
+        code = GetLastError()
+        _winerror("unlink", code, path)
+
+
+def remove(path: str):
+    unlink(path)
+
+
+def rename(src: str, dst: str):
+    from C import MoveFileExW(Ptr[u16], Ptr[u16], u32) -> i32
+    from C import GetLastError() -> u32
+    # No preflight existence check (racy), no REPLACE_EXISTING flag.
+    if MoveFileExW(_wide(src), _wide(dst), u32(0)) == i32(0):
+        code = GetLastError()
+        _winerror("rename", code, src, dst)
+
+
+def replace(src: str, dst: str):
+    from C import MoveFileExW(Ptr[u16], Ptr[u16], u32) -> i32
+    from C import GetLastError() -> u32
+    if MoveFileExW(_wide(src), _wide(dst), u32(1)) == i32(0):
+        code = GetLastError()
+        _winerror("replace", code, src, dst)
+
+
+def link(src: str, dst: str):
+    from C import CreateHardLinkW(Ptr[u16], Ptr[u16], cobj) -> i32
+    from C import GetLastError() -> u32
+    if CreateHardLinkW(_wide(dst), _wide(src), cobj()) == i32(0):
+        code = GetLastError()
+        _winerror("link", code, src, dst)
+
+
+def _symlink_is_directory(src: str, dst: str) -> bool:
+    from C import GetFileAttributesW(Ptr[u16]) -> u32
+    from C import GetLastError() -> u32
+    # Relative link targets are relative to the link's directory, not cwd.
+    if (src.startswith("\\") or src.startswith("/") or
+            (len(src) >= 2 and src[1] == ":")):
+        probe = src
+    else:
+        full = getfullpathname(dst)
+        split = max(full.rfind("\\"), full.rfind("/"))
+        probe = full[:split + 1] + src
+    attributes = GetFileAttributesW(_wide(probe))
+    if attributes == u32(0xFFFFFFFF):
+        code = GetLastError()
+        # This is only a best-effort type probe: dangling links are legal.
+        return False
+    return (int(attributes) & 0x10) != 0
+
+
+def symlink(src: str, dst: str, target_is_directory: bool = False):
+    from C import CreateSymbolicLinkW(Ptr[u16], Ptr[u16], u32) -> u8
+    from C import GetLastError() -> u32
+    target = _wide(src)
+    name = _wide(dst)
+    directory = target_is_directory or _symlink_is_directory(src, dst)
+    flags = 1 if directory else 0
+    # BOOLEAN is a BYTE, unlike the 32-bit BOOL used by most Win32 APIs.
+    if CreateSymbolicLinkW(name, target, u32(flags | 2)) != u8(0):
+        return
+    code = GetLastError()
+    if code == u32(87):  # Older Windows rejects ALLOW_UNPRIVILEGED_CREATE.
+        if CreateSymbolicLinkW(name, target, u32(flags)) != u8(0):
+            return
+        code = GetLastError()
+    # ERROR_PRIVILEGE_NOT_HELD and other failures must remain visible.
+    _winerror("symlink", code, src, dst)
+
+
+def _load_u16(buffer: cobj, offset: int) -> int:
+    # Explicit little-endian bytes avoid unaligned structure loads.
+    return int(buffer[offset]) | (int(buffer[offset + 1]) << 8)
+
+
+def _load_u32(buffer: cobj, offset: int) -> int:
+    return _load_u16(buffer, offset) | (_load_u16(buffer, offset + 2) << 16)
+
+
+def _reparse_target_status(buffer: cobj, count: int) -> Tuple[str, _Status]:
+    """Decode a bounded REPARSE_DATA_BUFFER, never a structure returned by value."""
+    if count < 8 or count > 16384:
+        return "", _status(errno=22, message="readlink: invalid reparse buffer size")
+    end = 8 + _load_u16(buffer, 4)
+    if end > count:
+        return "", _status(errno=22, message="readlink: truncated reparse buffer")
+    tag = _load_u32(buffer, 0)
+    if tag == 0xA000000C:  # IO_REPARSE_TAG_SYMLINK
+        start = 20  # Common header + four USHORTs + ULONG Flags
+    elif tag == 0xA0000003:  # IO_REPARSE_TAG_MOUNT_POINT (junction)
+        start = 16
+    else:
+        return "", _status(errno=22, winerror=4390, message="not a symbolic link")
+    if end < start:
+        return "", _status(errno=22, message="readlink: truncated reparse name header")
+    offset = _load_u16(buffer, 8)
+    length = _load_u16(buffer, 10)
+    print_offset = _load_u16(buffer, 12)
+    print_length = _load_u16(buffer, 14)
+    available = end - start
+    if ((offset | length | print_offset | print_length) & 1) != 0:
+        return "", _status(errno=22, message="readlink: unaligned UTF-16 reparse name")
+    if (offset > available or length > available - offset or
+            print_offset > available or print_length > available - print_offset):
+        return "", _status(errno=22, message="readlink: reparse name outside buffer")
+    target = _decode_wide(Ptr[u16](buffer + start + offset), length // 2)
+    if target.startswith("\\??\\"):
+        target = "\\\\?\\" + target[4:]
+    return target, _status()
+
+
+def _readlink_status(path: str) -> Tuple[str, _Status]:
+    error = _path_status(path, True)
+    if error:
+        return "", error
+    from C import CreateFileW(Ptr[u16], u32, u32, cobj, u32, u32, cobj) -> cobj
+    from C import DeviceIoControl(cobj, u32, cobj, u32, cobj, u32, Ptr[u32], cobj) -> i32
+    from C import GetLastError() -> u32
+    # DesiredAccess=0, share READ|WRITE|DELETE, OPEN_EXISTING,
+    # FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS.
+    handle = CreateFileW(_wide(path), u32(0), u32(7), cobj(), u32(3),
+                         u32(0x02200000), cobj())
+    if int(handle) == -1:  # cobj(-1) would allocate, NOT make INVALID_HANDLE_VALUE.
+        code = GetLastError()
+        return "", _status(winerror=int(code))
+    target = ""
+    try:
+        buffer = cobj(16384)  # MAXIMUM_REPARSE_DATA_BUFFER_SIZE
+        count = u32(0)
+        if DeviceIoControl(handle, u32(0x000900A8), cobj(), u32(0), buffer,
+                           u32(16384), __ptr__(count), cobj()) == i32(0):
+            code = GetLastError()
+            error = _status(winerror=int(code))
+        else:
+            target, error = _reparse_target_status(buffer, int(count))
+    finally:
+        cleanup = _close_handle_status(handle)
+    return target, error if error else cleanup
+
+def readlink(path: str) -> str:
+    target, error = _readlink_status(path)
+    error.raise_error("readlink", path)
+    return target
+
+
+def access(path: str, mode: int) -> bool:
+    from C import GetFileAttributesW(Ptr[u16]) -> u32
+    from C import GetLastError() -> u32
+    if mode < 0 or (mode & ~7) != 0:
+        raise ValueError("access mode must contain only F_OK, R_OK, W_OK, X_OK")
+    attributes = GetFileAttributesW(_wide(path))
+    if attributes == u32(0xFFFFFFFF):
+        code = GetLastError()
+        return False
+    # Like Windows os.access, a directory's READONLY bit does not deny writes.
+    return ((mode & 2) == 0 or (int(attributes) & 1) == 0 or
+            (int(attributes) & 0x10) != 0)
+
+
+def chmod(path: str, mode: int):
+    from C import GetFileAttributesW(Ptr[u16]) -> u32
+    from C import SetFileAttributesW(Ptr[u16], u32) -> i32
+    from C import GetLastError() -> u32
+    name = _wide(path)
+    attributes = GetFileAttributesW(name)
+    if attributes == u32(0xFFFFFFFF):
+        code = GetLastError()
+        _winerror("chmod", code, path)
+    flags = int(attributes)
+    if mode & 0o200:
+        flags &= ~1
+    else:
+        flags |= 1
+    if SetFileAttributesW(name, u32(flags)) == i32(0):
+        code = GetLastError()
+        _winerror("chmod", code, path)
+
+
+def getpid() -> int:
+    from C import GetCurrentProcessId() -> u32
+    return int(GetCurrentProcessId())
+
+
+def getppid() -> int:
+    from C import CreateToolhelp32Snapshot(u32, u32) -> cobj
+    from C import Process32FirstW(cobj, cobj) -> i32
+    from C import Process32NextW(cobj, cobj) -> i32
+    from C import GetLastError() -> u32
+    pid = getpid()
+    snapshot = CreateToolhelp32Snapshot(u32(2), u32(0))  # TH32CS_SNAPPROCESS
+    if int(snapshot) == -1:
+        code = GetLastError()
+        _winerror("getppid/CreateToolhelp32Snapshot", code)
+    succeeded = False
+    try:
+        # SDK PROCESSENTRY32W, LLP64, default packing on both x64 and ARM64:
+        # DWORD size@0, usage@4, pid@8, padding@12, ULONG_PTR heap@16,
+        # DWORD module@24, threads@28, parent@32, LONG priority@36,
+        # DWORD flags@40, WCHAR exe[260]@44, tail padding@564. sizeof=568,
+        # alignment=8. Use aligned storage and byte offsets, not Codon tuples.
+        storage = Ptr[u64](71)
+        entry = storage.as_byte()
+        bytes.memset(entry, u8(0), 568)
+        Ptr[u32](entry)[0] = u32(568)
+        result = Process32FirstW(snapshot, entry)
+        if result == i32(0):
+            code = GetLastError()
+            _winerror("getppid/Process32FirstW", code)
+        while True:
+            if _load_u32(entry, 8) == pid:
+                succeeded = True
+                return _load_u32(entry, 32)
+            result = Process32NextW(snapshot, entry)
+            if result == i32(0):
+                code = GetLastError()
+                if code != u32(18):  # ERROR_NO_MORE_FILES
+                    _winerror("getppid/Process32NextW", code)
+                _winerror("getppid: current process not in snapshot", u32(1168))
+    finally:
+        _close_handle(snapshot, not succeeded)
+
+
+def close(fd: int):
+    from C import _close(i32) -> i32
+    # Exactly one close attempt, including on failure.
+    _crt_call("close", False, _close, _fd(fd))
+
+
+def read(fd: int, n: int) -> bytes:
+    from C import _read(i32, cobj, u32) -> i32
+    descriptor = _fd(fd)
+    if n < 0:
+        raise ValueError("negative read length")
+    size = min(n, 2147483647)  # unsigned int parameter, signed int result
+    buffer = cobj(max(size, 1))  # UCRT requires non-null even for a zero read.
+    count = _crt_call("read", False, _read, descriptor, buffer, u32(size))
+    return bytes(buffer, int(count))
+
+
+def write(fd: int, data: bytes) -> int:
+    from C import _write(i32, cobj, u32) -> i32
+    descriptor = _fd(fd)
+    size = min(len(data), 2147483647)
+    buffer = data._ptr if size else cobj(1)
+    return int(_crt_call("write", False, _write, descriptor, buffer, u32(size)))
+
+
+def lseek(fd: int, pos: int, how: int) -> int:
+    from C import _lseeki64(i32, int, i32) -> int
+    descriptor = _fd(fd)
+    if how < 0 or how > 2:
+        raise ValueError("invalid seek origin")
+    return _crt_call("lseek", False, _lseeki64, descriptor, pos, i32(how))
+
+
+def fsync(fd: int):
+    from C import _commit(i32) -> i32
+    _crt_call("fsync", False, _commit, _fd(fd))
+
+
+def ftruncate(fd: int, length: int):
+    from C import _chsize_s(i32, int) -> i32
+    descriptor = _fd(fd)
+    if length < 0:
+        raise ValueError("negative truncate length")
+    _crt_call("ftruncate", True, _chsize_s, descriptor, length)
+
+
+def truncate(path: str, length: int):
+    from C import _wsopen_s(Ptr[i32], Ptr[u16], i32, i32, i32) -> i32
+    from C import _chsize_s(i32, int) -> i32
+    from C import _close(i32) -> i32
+    name = _wide(path)
+    if length < 0:
+        raise ValueError("negative truncate length")
+    descriptor = i32(-1)
+    # _O_WRONLY|_O_BINARY, _SH_DENYNO; no creation or premature truncation.
+    _crt_path_call(path, "truncate/open", True, _wsopen_s, __ptr__(descriptor), name,
+                   i32(0x8001), i32(0x40), i32(0))
+    try:
+        result, error = _crt_status(True, _chsize_s, descriptor, length)
+    finally:
+        closed, cleanup = _crt_status(False, _close, descriptor)
+    error.raise_error("truncate", path)
+    cleanup.raise_error("close", path)
+
+
+def getfullpathname(path: str) -> str:
+    """Resolve Windows drive-relative/UNC syntax without requiring existence."""
+    from C import GetFullPathNameW(Ptr[u16], u32, Ptr[u16], Ptr[Ptr[u16]]) -> u32
+    from C import GetLastError() -> u32
+    name = _wide(path)
+    capacity = 260
+    while True:
+        size = _capacity(capacity)
+        buffer = Ptr[u16](capacity)
+        count = GetFullPathNameW(name, size, buffer, Ptr[Ptr[u16]]())
+        if count == u32(0):
+            code = GetLastError()
+            _winerror("GetFullPathNameW", code, path)
+        if int(count) < capacity:
+            return _decode_wide(buffer, int(count))
+        capacity = int(count) + 1
