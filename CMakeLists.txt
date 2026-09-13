@@ -15,7 +15,6 @@ if (CMAKE_VERSION VERSION_GREATER_EQUAL "3.24.0")
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CMAKE_CXX_FLAGS
       "${CMAKE_CXX_FLAGS} -pedantic -fvisibility-inlines-hidden -Wno-return-type-c-linkage -Wno-gnu-zero-variadic-macro-arguments -Wno-deprecated-declarations"
@@ -96,13 +95,6 @@ if(CODON_UNICODE_GENERATION_REQUIRED)
     message(FATAL_ERROR
       "${Python3_EXECUTABLE} must use Unicode ${CODON_UNICODE_VERSION} to generate Codon Unicode tables")
   endif()
-endif()
-
-set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
-if(APPLE)
-  set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib/codon")
-else()
-  set(CMAKE_INSTALL_RPATH "$ORIGIN:$ORIGIN/../lib/codon")
 endif()
 
 add_executable(peg2cpp codon/util/peg2cpp.cpp)
@@ -641,6 +633,30 @@ if(ASAN)
 endif()
 target_compile_definitions(codon_test
                            PRIVATE TEST_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test")
+
+if(APPLE)
+  set_target_properties(
+    codonrt codonc codon_jupyter
+    PROPERTIES
+      INSTALL_RPATH "@loader_path"
+  )
+  set_target_properties(
+    codon
+    PROPERTIES
+      INSTALL_RPATH "@loader_path/../lib/codon"
+  )
+else()
+  set_target_properties(
+    codonrt codonc codon_jupyter
+    PROPERTIES
+      INSTALL_RPATH "$ORIGIN"
+  )
+  set_target_properties(
+    codon
+    PROPERTIES
+      INSTALL_RPATH "$ORIGIN/../lib/codon"
+  )
+endif()
 
 install(TARGETS codonrt codonc codon_jupyter DESTINATION lib/codon)
 install(FILES ${CMAKE_BINARY_DIR}/libomp${CMAKE_SHARED_LIBRARY_SUFFIX} DESTINATION lib/codon)

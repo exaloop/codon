@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Exit unless on macOS
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This script must be run on macOS (Darwin). Exiting." >&2
   exit 0
@@ -14,52 +13,57 @@ if [[ ! -d "$DIR" ]]; then
   exit 1
 fi
 
-command -v install_name_tool >/dev/null || { echo "install_name_tool not found"; exit 1; }
-command -v otool             >/dev/null || { echo "otool not found"; exit 1; }
+command -v install_name_tool >/dev/null || {
+  echo "install_name_tool not found"
+  exit 1
+}
+command -v otool >/dev/null || {
+  echo "otool not found"
+  exit 1
+}
 
 echo "Patching dylibs/SOs in: $DIR"
 echo
 
-# Helper: check if file already has an RPATH
 has_rpath() {
   local f="$1" p="$2"
-  otool -l "$f" | awk '/LC_RPATH/{show=1} show && /path/ {print $2; show=0}' | grep -qx "$p"
+  otool -l "$f" |
+    awk '/LC_RPATH/{show=1} show && /path/ {print $2; show=0}' |
+    grep -qx "$p"
 }
 
-# Iterate over all dylib/so files in DIR
 while IFS= read -r -d '' f; do
   base="$(basename "$f")"
   echo ">>> $base"
 
-  # Skip changing install_name for libcodon* files themselves
+  # Preserve existing @rpath/@loader_path IDs. Convert absolute IDs
+  # to @rpath so clients can locate these libraries via LC_RPATH.
   if [[ "$f" == *.dylib && ! "$base" =~ ^libcodon ]]; then
-    echo "    - set id -> @loader_path/$base"
-    install_name_tool -id "@loader_path/$base" "$f"
+    current_id="$(otool -D "$f" | sed -n '2p')"
+
+    if [[ -n "$current_id" &&
+          "$current_id" != @rpath/* &&
+          "$current_id" != @loader_path/* ]]; then
+      echo "    - set id $current_id -> @rpath/$base"
+      install_name_tool -id "@rpath/$base" "$f"
+    fi
   fi
 
-  # Rewrite @rpath deps to @loader_path if they exist in the same DIR
-  while IFS= read -r dep; do
-    dep_name="$(basename "$dep")"
-    if [[ "$dep" == @rpath/* && -e "$DIR/$dep_name" ]]; then
-      echo "    - change dep $dep -> @loader_path/$dep_name"
-      install_name_tool -change "$dep" "@loader_path/$dep_name" "$f"
-    fi
-  done < <(otool -L "$f" | tail -n +2 | awk '{print $1}')
+  # All libraries processed here live in lib/codon. @loader_path is
+  # therefore sufficient to resolve sibling @rpath dependencies.
+  if ! has_rpath "$f" "@loader_path"; then
+    echo "    - add rpath @loader_path"
+    install_name_tool -add_rpath "@loader_path" "$f"
+  fi
 
-  # Ensure LC_RPATH has @loader_path and @loader_path/../lib/codon
-  for rp in "@loader_path" "@loader_path/../lib/codon"; do
-    if ! has_rpath "$f" "$rp"; then
-      echo "    - add rpath $rp"
-      install_name_tool -add_rpath "$rp" "$f" || true
-    fi
-  done
-
-  # Sign to avoid Gatekeeper complaints after modification
   if command -v codesign >/dev/null; then
     codesign --force --sign - "$f" >/dev/null 2>&1 || true
   fi
 
   echo
-done < <(find "$DIR" -maxdepth 1 -type f \( -name '*.dylib' -o -name '*.so' \) -print0)
+done < <(
+  find "$DIR" -maxdepth 1 -type f \
+    \( -name '*.dylib' -o -name '*.so' \) -print0
+)
 
 echo "Done."
