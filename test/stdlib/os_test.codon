@@ -80,6 +80,11 @@ def test_paths():
     assert path.join("a", "/b", "c") == "/b/c"
     assert path.join("", "a") == "a"
     assert path.join("a") == "a"
+    assert path.join("", "", "") == ""
+    assert path.join("a", "", "", "b", "") == "a/b/"
+    assert path.join("a", "//b", "", "c", "///d", "") == "///d/"
+    assert path.join("caf\u00e9", "\u03b1", "\U0001f600", "") == "caf\u00e9/\u03b1/\U0001f600/"
+    assert path.join("\U0001f600", "/ascii", "last") == "/ascii/last"
     assert path.split("//") == ("//", "")
     assert path.split("a///b") == ("a", "b")
     assert path.basename("a/b/") == ""

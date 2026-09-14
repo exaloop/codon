@@ -80,6 +80,10 @@ def test_join():
     assert path.join("//host/share", "dir", "") == "//host/share\\dir\\"
     assert path.join("//host/share/a", "//other/share/b") == "//other/share/b"
     assert path.join("\\\\?\\C:\\a", "b") == "\\\\?\\C:\\a\\b"
+    assert path.join("", "", "") == ""
+    assert path.join("C:a", "", "", "b", "") == "C:a\\b\\"
+    assert path.join("C:\\caf\u00e9", "\u03b1", "\U0001f600", "") == "C:\\caf\u00e9\\\u03b1\\\U0001f600\\"
+    assert path.join("C:\\wide-\U0001f600", "D:ascii", "last") == "D:ascii\\last"
 
 
 @test

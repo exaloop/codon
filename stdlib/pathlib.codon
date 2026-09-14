@@ -42,10 +42,24 @@ def _class_matches(content: str, character: str, sensitive: bool) -> bool:
         chunks.append(content[start:])
     elif chunks:
         chunks[-1] += "-"
-    for index in range(len(chunks) - 1, 0, -1):
-        if chunks[index - 1][-1] > chunks[index][0]:
-            chunks[index - 1] = chunks[index - 1][:-1] + chunks[index][1:]
-            del chunks[index]
+    if len(chunks) > 1:
+        cleaned: List[str] = []
+        last = len(chunks) - 1
+        while last >= 0:
+            first = last
+            while first > 0 and chunks[first - 1][-1] > chunks[first][0]:
+                first -= 1
+            if first == last:
+                cleaned.append(chunks[first])
+            else:
+                merged = _strbuf()
+                merged.append(chunks[first][:-1])
+                for index in range(first + 1, last):
+                    merged.append(chunks[index][1:-1])
+                merged.append(chunks[last][1:])
+                cleaned.append(merged.__str__())
+            last = first - 1
+        chunks = cleaned[::-1]
     negate = bool(chunks) and chunks[0].startswith("!")
     if negate:
         chunks[0] = chunks[0][1:]
@@ -159,14 +173,17 @@ def _normalize(value: str) -> str:
     return drive + root + os.sep.join(parts) or "."
 
 
+@tuple(init=False, container=False)
 class Path:
     _path: str
 
-    def __init__(self, *segments):
-        value = ""
-        for index in static.range(static.len(segments)):
-            value = _path.join(value, _path_string(segments[index]))
-        self._path = _normalize(value)
+    def __new__(*segments) -> Path:
+        values = tuple(_path_string(segment) for segment in segments)
+        if static.len(values) == 1:
+            value = values[0]
+        else:
+            value = _path.join("", *values)
+        return type._force_value_cast((_normalize(value),), Path)
 
     def __str__(self) -> str:
         return self._path

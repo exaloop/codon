@@ -51,23 +51,30 @@ def splitdrive(path: str) -> Tuple[str, str]:
     return drive, root + tail
 
 def join(a: str, *paths) -> str:
+    if static.len(paths) == 0:
+        return a
     drive, root, tail = splitroot(a)
-    for i in static.range(static.len(paths)):
-        next_drive, next_root, next_tail = splitroot(paths[i])
+    result = _strbuf()
+    result.append(tail)
+    for index in static.range(static.len(paths)):
+        next_drive, next_root, next_tail = splitroot(paths[index])
         if next_root:
             # A rooted operand inherits the previous drive unless it names one.
             if next_drive or not drive:
                 drive = next_drive
-            root, tail = next_root, next_tail
+            root = next_root
+            result.n = 0
         elif next_drive and next_drive.lower() != drive.lower():
             # D:foo uses D's current directory, not the preceding C: path.
-            drive, root, tail = next_drive, next_root, next_tail
+            drive, root = next_drive, next_root
+            result.n = 0
         else:
             if next_drive:
                 drive = next_drive
-            if tail and tail[-1] not in "\\/":
-                tail += "\\"
-            tail += next_tail
+            if result.n and result.__str__()[-1] not in "\\/":
+                result.append("\\")
+        result.append(next_tail)
+    tail = result.__str__()
     if drive and not root and tail and drive[-1] not in ":\\/":
         # A bare UNC share still needs a separator before a relative operand.
         return drive + "\\" + tail

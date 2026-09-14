@@ -1,5 +1,6 @@
 from pathlib import Path
 from pathlib import _as_uri
+from internal.gc import sizeof
 import os
 import internal.static as static
 
@@ -29,6 +30,9 @@ class StatefulPath:
 
 @test
 def test_lexical():
+    assert sizeof(Path) == sizeof(str)
+    assert not hasattr(Path, "__iter__")
+    assert not hasattr(Path, "__getitem__")
     source = StatefulPath("a/b")
     snapshot = Path(source)
     assert snapshot == Path("a/b") and source.calls == 1
@@ -47,6 +51,12 @@ def test_lexical():
     assert _as_uri("//server/share/caf\u00e9 #:%", "\\\\server\\share") == "file://server/share/caf%C3%A9%20%23%3A%25"
     assert _as_uri("//?/C:/a:b", "\\\\?\\C:") == "file://%3F/C%3A/a%3Ab"
     assert str(Path()) == "." and Path("") == Path(".")
+    assert str(Path("a//./b/")) == os.path.join("a", "b")
+    segments = tuple("part" for index in static.range(32))
+    assert str(Path(*segments)) == os.sep.join(list(segments))
+    repeated = StatefulPath("part")
+    assert Path(repeated, repeated, repeated) == Path("part/part/part")
+    assert repeated.calls == 3
     assert Path("a", "", "./b//", "../c") == Path("a/b/../c")
     assert Path(Path("a"), "b") == Path("a") / "b"
     assert "a" / Path("b") == Path("a/b")
@@ -94,6 +104,15 @@ def test_lexical():
             assert Path("a").full_match(pattern, case_sensitive=sensitive)
             assert Path("!").full_match(pattern, case_sensitive=sensitive)
     assert not Path("!").full_match("[!b-a!]")
+    for lower, upper in [("a", "z"), ("\u03b1", "\u03c9")]:
+        pattern = "[Q" + upper + "-" + (lower + upper + "-") * 128 + lower + "!]"
+        assert Path("Q").full_match(pattern)
+        assert Path("!").full_match(pattern)
+        assert Path("q").full_match(pattern, case_sensitive=False)
+        assert not Path(lower).full_match(pattern)
+        assert not Path(upper).full_match(pattern)
+        assert Path(lower).full_match("[!" + pattern[1:])
+        assert not Path("!").full_match("[!" + pattern[1:])
     assert not Path("a/b/c").match("a/**")
     assert Path("a/b/c").full_match("a/**")
     assert Path("a/b/c").full_match("**/c")

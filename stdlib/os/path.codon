@@ -158,16 +158,23 @@ def isabs(path: str) -> bool:
 def join(a: str, *paths) -> str:
     if static.platform() == "win32":
         return _ntpath.join(a, *paths)
-    result = a
-    for i in static.range(static.len(paths)):
-        part = paths[i]
-        if part.startswith("/") or not result:
-            result = part
-        elif result.endswith("/"):
-            result += part
-        else:
-            result += "/" + part
-    return result
+    if static.len(paths) == 0:
+        return a
+    if static.len(paths) == 1:
+        part = paths[0]
+        if part.startswith("/") or not a:
+            return part
+        return a + part if a.endswith("/") else a + "/" + part
+    result = _strbuf()
+    result.append(a)
+    for index in static.range(static.len(paths)):
+        part = paths[index]
+        if part.startswith("/"):
+            result.n = 0
+        elif result.n and not result.__str__().endswith("/"):
+            result.append("/")
+        result.append(part)
+    return result.__str__()
 
 def split(path: str) -> Tuple[str, str]:
     if static.platform() == "win32":
