@@ -46,6 +46,27 @@ def raise_native_error(kind: int):
         raise KeyboardInterrupt("stop")
     raise ValueError("ordinary")
 
+class DispatchBase:
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def evaluate(self, offset: int) -> int:
+        return self.value + offset
+
+class DispatchDerived(DispatchBase):
+    def evaluate(self, offset: int) -> int:
+        if offset < 0:
+            raise ValueError("negative offset in derived method")
+        return 3 * self.value + offset
+
+def export_only_dispatch(derived: bool, value: int, offset: int) -> int:
+    instance: DispatchBase = DispatchBase(value)
+    if derived:
+        instance = DispatchDerived(value)
+    return instance.evaluate(offset)
+
 @dataclass(python=True)
 class Vec:
     a: float

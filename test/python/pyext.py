@@ -29,6 +29,24 @@ def test_native_exceptions():
 
 test_native_exceptions()
 
+def test_export_only_dispatch():
+    for derived in (False, True):
+        for value in (-4, 0, 7):
+            for offset in (0, 5):
+                expected = (3 * value if derived else value) + offset
+                assert m.export_only_dispatch(derived, value, offset) == expected
+    assert m.export_only_dispatch(False, 7, -1) == 6
+    try:
+        m.export_only_dispatch(True, 7, -1)
+    except ValueError as error:
+        assert type(error) is ValueError
+        assert error.args == ("negative offset in derived method",)
+    else:
+        raise AssertionError("derived method did not raise")
+    assert m.export_only_dispatch(True, 7, 5) == 26
+
+test_export_only_dispatch()
+
 def equal(v, a, b, tag):
     ok = (v.a == a and v.b == b and v.tag == tag)
     if not ok:

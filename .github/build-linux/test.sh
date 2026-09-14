@@ -45,8 +45,11 @@ CODON_PATH=${CODON_DIR}/lib/codon/stdlib test/app/test.sh build-${ARCH}
 echo "=> Cython test..."
 CODON_PATH=${CODON_DIR}/lib/codon/stdlib python test/python/cython_jit.py
 
-echo "=> pyext test..."
-(cd test/python && python setup.py build_ext --inplace && python pyext.py)
+echo "=> pyext debug test..."
+(cd test/python && python setup.py build_ext --inplace --debug --force && python pyext.py)
+
+echo "=> pyext release test..."
+(cd test/python && python setup.py build_ext --inplace --force && python pyext.py)
 
 # GPU test; only on select platforms
 if command -v nvcc &> /dev/null; then
