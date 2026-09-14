@@ -8,6 +8,11 @@ def test_container():
     assert int(JSON(42)) == 42
     assert float(JSON(1.25)) == 1.25
     assert JSON("text").as_str() == "text"
+    for value in [JSON(), JSON(True), JSON(42), JSON(1.25), JSON("text"), JSON.array(), JSON.object()]:
+        assert value.is_bool() == (value.kind == "bool")
+        assert value.is_str() == (value.kind == "str")
+        assert value.is_array() == (value.kind == "array")
+        assert value.is_object() == (value.kind == "object")
     value = JSON((1, "two", None, True))
     assert len(value) == 4 and value[1].as_str() == "two"
     value[0] = 5
@@ -71,6 +76,30 @@ def test_decode():
         pass
     value, end = json.JSONDecoder().raw_decode("  [1] trailing", 2)
     assert value[0].as_int() == 1 and end == 5
+
+    for literal in ["null", "true", "false", "NaN", "Infinity", "-Infinity"]:
+        for prefix in ["", " ", chr(0xE9), chr(0x1234), chr(0x1F600)]:
+            value, end = json.JSONDecoder().raw_decode(prefix + literal + "!", len(prefix))
+            assert json.dumps(value) == literal and end == len(prefix) + len(literal)
+        for length in range(1, len(literal)):
+            try:
+                json.loads(literal[:length])
+                assert False
+            except json.JSONDecodeError:
+                pass
+
+    for source, lineno, line_start in [("", 1, 0), ("123", 1, 0),
+                                       ("a\nb\n", 3, 4), (chr(0x1F600) + "\n" + chr(0xE9), 2, 2)]:
+        for position in [len(source), 100, 1000000]:
+            error = json.JSONDecodeError("test", source, position)
+            assert error.pos == position and error.doc == source
+            assert error.lineno == lineno and error.colno == position - line_start + 1
+            try:
+                json.JSONDecoder().raw_decode(source, position)
+                assert False
+            except json.JSONDecodeError as error:
+                assert error.msg == "Expecting value" and error.pos == position
+                assert error.lineno == lineno and error.colno == position - line_start + 1
 
 test_decode()
 
@@ -148,6 +177,12 @@ test_storage()
 
 @test
 def test_string_boundaries():
+    for code, escaped in [(0xD800, '"\\ud800"'), (0xDC00, '"\\udc00"')]:
+        value = JSON(chr(code))
+        assert json.loads(escaped) == value
+        assert json.dumps(value, ensure_ascii=True) == escaped
+        assert json.dumps(value, ensure_ascii=False) == '"' + chr(code) + '"'
+    assert json.loads('"\\ud800\\udc00"').as_str() == chr(0x10000)
     for offset in range(24):
         for code in range(256):
             text = "a" * offset + chr(code) + "tail" * 8

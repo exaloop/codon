@@ -367,15 +367,19 @@ def test_posix_path_encoders():
             try:
                 encode(chr(code))
                 assert False
-            except ValueError as error:
-                assert "code point not encodable" in str(error)
+            except UnicodeEncodeError as error:
+                assert error.encoding == "utf-8" and error.object == chr(code)
+                assert error.start == 0 and error.end == 1
+                assert error.reason == "surrogates not allowed"
     for code in [0xD800, 0xDBFF, 0xDC00, 0xDC7F, 0xDD00, 0xDFFF]:
         try:
             descriptor = os.open(chr(code), os.O_RDONLY)
             os.close(descriptor)
             assert False
-        except ValueError as error:
-            assert "code point not encodable" in str(error)
+        except UnicodeEncodeError as error:
+            assert error.encoding == "utf-8" and error.object == chr(code)
+            assert error.start == 0 and error.end == 1
+            assert error.reason == "surrogates not allowed"
     try:
         dlopen("build/codon-missing-library-" + str(os.getpid()) + chr(0xDCFF))
         assert False

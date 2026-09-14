@@ -66,10 +66,11 @@ def test_native_exception_conversion():
     from python import builtins
     from internal.python import init_error_py_types
     from python import sys as python_sys
-    before = int(python_sys.getrefcount(builtins.FileNotFoundError))
+    exception_type = builtins.FileNotFoundError
+    before = int(python_sys.getrefcount(exception_type))
     init_error_py_types()
     init_error_py_types()
-    assert int(python_sys.getrefcount(builtins.FileNotFoundError)) == before
+    assert int(python_sys.getrefcount(exception_type)) == before
 test_native_exception_conversion()
 
 @test
