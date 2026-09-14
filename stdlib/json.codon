@@ -50,6 +50,14 @@ _KIND_FLOAT: Literal[int] = 3
 _KIND_STR: Literal[int] = 4
 _KIND_ARRAY: Literal[int] = 5
 _KIND_OBJECT: Literal[int] = 6
+_TAG_BITS: Literal[int] = 3
+_TAG_MASK: Literal[int] = (1 << _TAG_BITS) - 1
+
+@pure
+@llvm
+def _bits_pointer(value: int) -> cobj:
+    %pointer = inttoptr i64 %value to ptr
+    ret ptr %pointer
 
 @pure
 @llvm
@@ -122,12 +130,12 @@ def _append_text(output: _UnicodeCodecBuffer, value: str, start: int, end: int,
 
 @tuple
 class JSON:
-    _tag: int
-    _bits: int
+    """Two-word value with a packed tag and string metadata, plus scalar bits or a pointer."""
+    _meta: int
     _payload: cobj
 
     def __new__():
-        return JSON(_KIND_NULL, 0, cobj())
+        return JSON(_KIND_NULL, cobj())
 
     def __new__(value):
         if isinstance(value, JSON):
@@ -137,13 +145,13 @@ class JSON:
         elif isinstance(value, Optional):
             return JSON(value.__val__()) if value.__has__() else JSON()
         elif isinstance(value, bool):
-            return JSON(_KIND_BOOL, int(value), cobj())
+            return JSON(_KIND_BOOL, _bits_pointer(int(value)))
         elif isinstance(value, int):
-            return JSON(_KIND_INT, value, cobj())
+            return JSON(_KIND_INT, _bits_pointer(value))
         elif isinstance(value, float):
-            return JSON(_KIND_FLOAT, _float_bits(value), cobj())
+            return JSON(_KIND_FLOAT, _bits_pointer(_float_bits(value)))
         elif isinstance(value, str):
-            return JSON(_KIND_STR, value._meta, value._ptr)
+            return JSON((value._meta << _TAG_BITS) | _KIND_STR, value._ptr)
         elif isinstance(value, dict):
             result = JSON.object()
             for key, item in value.items():
@@ -161,10 +169,14 @@ class JSON:
             compile_error("JSON requires null, bool, int, float, str, array or string-keyed object")
 
     def array():
-        return JSON(_KIND_ARRAY, 0, type._force_cast(_Array(), cobj))
+        return JSON(_KIND_ARRAY, type._force_cast(_Array(), cobj))
 
     def object():
-        return JSON(_KIND_OBJECT, 0, type._force_cast(_Object(), cobj))
+        return JSON(_KIND_OBJECT, type._force_cast(_Object(), cobj))
+
+    @property
+    def _tag(self) -> int:
+        return self._meta & _TAG_MASK
 
     @property
     def kind(self) -> str:
@@ -200,21 +212,21 @@ class JSON:
 
     def as_bool(self) -> bool:
         self._require(_KIND_BOOL)
-        return self._bits != 0
+        return bool(self._payload)
 
     def as_int(self) -> int:
         self._require(_KIND_INT)
-        return self._bits
+        return int(self._payload)
 
     def as_float(self) -> float:
         if self._tag == _KIND_INT:
-            return float(self._bits)
+            return float(int(self._payload))
         self._require(_KIND_FLOAT)
-        return _bits_float(self._bits)
+        return _bits_float(int(self._payload))
 
     def as_str(self) -> str:
         self._require(_KIND_STR)
-        return str(self._payload, self._bits)
+        return str(self._payload, self._meta >> _TAG_BITS)
 
     def _array(self):
         self._require(_KIND_ARRAY)
@@ -232,7 +244,7 @@ class JSON:
 
     def __bool__(self) -> bool:
         if self._tag == _KIND_NULL: return False
-        if self._tag == _KIND_BOOL or self._tag == _KIND_INT: return self._bits != 0
+        if self._tag == _KIND_BOOL or self._tag == _KIND_INT: return bool(self._payload)
         if self._tag == _KIND_FLOAT: return self.as_float() != 0.0
         return len(self) != 0
 
@@ -310,7 +322,7 @@ class JSON:
     def _equals(self, other: JSON, depth: int) -> bool:
         if self._tag != other._tag: return False
         if self._tag == _KIND_NULL: return True
-        if self._tag == _KIND_BOOL or self._tag == _KIND_INT: return self._bits == other._bits
+        if self._tag == _KIND_BOOL or self._tag == _KIND_INT: return self._payload == other._payload
         if self._tag == _KIND_FLOAT: return self.as_float() == other.as_float()
         if self._tag == _KIND_STR: return self.as_str() == other.as_str()
         if self._payload == other._payload: return True

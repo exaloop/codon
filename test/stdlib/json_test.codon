@@ -144,15 +144,48 @@ test_encode()
 
 @test
 def test_storage():
-    assert JSON.__elemsize__ == 24 and not JSON.__atomic__
+    assert JSON.__elemsize__ == 16 and not JSON.__atomic__
+    for value in [0, 1, -1, -9223372036854775808, 9223372036854775807]:
+        scalar = JSON(value)
+        assert scalar.kind == "int" and scalar.as_int() == value
+        assert scalar.as_float() == float(value)
+        assert bool(scalar) == bool(value)
+    for magnitude in [0, 1, 0x000FFFFFFFFFFFFF, 0x0010000000000000,
+                      0x7FEFFFFFFFFFFFFF, 0x7FF0000000000000,
+                      0x7FF8000000001234, 0x7FFFFFFFFFFFFFFF]:
+        for negative in [False, True]:
+            bits = magnitude | (-9223372036854775808 if negative else 0)
+            scalar = JSON(json._bits_float(bits))
+            assert scalar.kind == "float"
+            assert json._float_bits(scalar.as_float()) == bits
+    for text in ["", "a\0b", chr(0xE9), chr(0x1234), chr(0x1F600),
+                 (chr(0x1F600) + "abc" + chr(0x1F600))[1:-1]]:
+        scalar = JSON(text)
+        restored = scalar.as_str()
+        assert scalar.kind == "str" and len(scalar) == len(text)
+        assert restored == text and restored._ptr == text._ptr
+        assert restored._meta == text._meta
+    assert not JSON() and not JSON(False) and not JSON(0.0) and not JSON(-0.0)
+    assert not JSON(False).as_bool() and JSON(True).as_bool()
+    assert JSON(0.0) == JSON(-0.0)
+    assert JSON(float("nan")) != JSON(float("nan"))
     array = JSON.array()
     alias = array
     for index in range(4097):
         array.append(JSON((str(index), index)))
+    native_list = [_decode_temporary() for index in range(64)]
+    native_dict = {index: JSON((str(index), {"value": str(index)})) for index in range(64)}
+    from C import GC_gcollect()
+    GC_gcollect()
     assert len(alias) == 4097
     for index in range(4097):
         assert alias[index][0].as_str() == str(index)
         assert alias[index][1].as_int() == index
+    for index in range(64):
+        assert native_list[index][0].as_str() == "long value"
+        assert native_list[index][1].as_int() == 2
+        assert native_dict[index][0].as_str() == str(index)
+        assert native_dict[index][1]["value"].as_str() == str(index)
     alias[100] = "changed"
     assert array[100].as_str() == "changed"
     obj = JSON({"one": 1, "two": 2})
