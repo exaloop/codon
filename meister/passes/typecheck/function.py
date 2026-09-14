@@ -251,7 +251,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
                 if inherited_attrs := attr_fn.ast.get(ast.Attr.FunctionAttributes, dict[str, str]):
                     fn_attrs.update(inherited_attrs)
             if is_attr:
-                decorators[idx] = None  # ignore it later on
+                decorators[-1] = None  # ignore it later on
         if not is_attr:
             has_decorators = True
 
@@ -660,7 +660,7 @@ def typecheck_function(self: TypeVisitor, node: ast.FunctionStmt) -> ast.Node:
 
     # Expression to be used if function binding is modified by captures or decorators
     final = None
-    for decorator in reversed(decorators):
+    for decorator in decorators:
         if decorator:
             # Replace each decorator with `decorator(finalExpr)` in the reverse order
             if final:

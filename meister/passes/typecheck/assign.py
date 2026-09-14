@@ -562,7 +562,7 @@ def transform_inplace_update(self: TypeVisitor, stmt: ast.AssignStmt):
                 return True, None
         case ast.IdExpr(value=name), ast.CallExpr(
             expr=ast.IdExpr(value="min" | "max" as fn_name),
-            args=[ast.CallExpr.Arg(value=ast.IdExpr(value=arg_name)), other],
+            items=[ast.CallExpr.Arg(value=ast.IdExpr(value=arg_name)), other],
         ) if (
             stmt.is_atomic_update() and (item := self.ctx.get(arg_name)) and item.canonical == name
         ):

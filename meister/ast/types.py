@@ -360,19 +360,19 @@ class Type:
 
     @property
     def require_int(self) -> int:
-        if c := self.int:
+        if (c := self.int) is not None:
             return c
         raise ValueError("expected an IntLiteral")
 
     @property
     def require_str(self) -> str:
-        if c := self.str:
+        if (c := self.str) is not None:
             return c
         raise ValueError("expected an IntLiteral")
 
     @property
     def require_bool(self) -> bool:
-        if c := self.bool:
+        if (c := self.bool) is not None:
             return c
         raise ValueError("expected an IntLiteral")
 
@@ -410,6 +410,9 @@ class Type:
     @property
     def is_runtime(self):
         return self.static_kind is Type.Behaviour.Runtime
+
+    def __hash__(self):
+        return super().__hash__()
 
 
 @dataclass(init=False, eq=False)

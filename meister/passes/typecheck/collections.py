@@ -218,6 +218,12 @@ def transform_comprehension(
     def lowest_common_type(
         typ: ast.types.Class | None, item_type: ast.types.Class
     ) -> ast.types.Type | None:
+        """
+        Deduce the lowest common type of the collection--- in other words, the lowest
+        common ancestor of all types in the collection. For example, `type([1, 1.2]) ==
+        type([1.2, 1]) == float` because float is an "ancestor" of int.
+        TODO: use wrapExpr...
+        """
         if not typ:
             return item_type
         elif typ == "int" and item_type == "float":
@@ -254,11 +260,6 @@ def transform_comprehension(
     done = True
     is_dict = type_name == ast.types.Stdlib.Dict
     for idx, item in enumerate(items):
-        # Deduce the lowest common type of the collection--- in other words, the lowest
-        # common ancestor of all types in the collection. For example, `type([1, 1.2]) ==
-        # type([1.2, 1]) == float` because float is an "ancestor" of int.
-        # TODO: use wrapExpr...
-
         item_type = None
         if not is_dict and isinstance(item, ast.StarExpr):
             item.expr = self.visit_expr(ast.CallExpr(ast.DotExpr(item.expr, member="__iter__")))
@@ -275,7 +276,9 @@ def transform_comprehension(
             done = False
             continue
 
-        if not is_dict:
+        if not collection_type.cls:
+            collection_type |= item_type
+        elif not is_dict:
             if common := lowest_common_type(collection_type.require_cls, item_type.require_cls):
                 collection_type = common
         else:

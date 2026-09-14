@@ -133,7 +133,7 @@ class Node:
         return key in self.attributes
 
     def get[T, U](self, key: Attr, typ: type[T], default: U = None) -> T | U:
-        if a := self.attributes.get(key):
+        if (a := self.attributes.get(key, None)) is not None:
             return cast(T, a)
         return default
 

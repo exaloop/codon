@@ -113,7 +113,7 @@ def typecheck_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr:
         ast.types.Type.Behaviour.Bool: {"<", "<=", ">", ">=", "==", "!=", "&&", "||"},
     }
     # fmt: on
-    if not (node.lexpr.type.is_runtime or node.lexpr.type.is_runtime):
+    if not (node.lexpr.type.is_runtime or node.rexpr.type.is_runtime):
         left_kind = node.lexpr.type.static_kind
         right_kind = node.rexpr.type.static_kind
         is_static = left_kind is right_kind and node.op in static_ops.get(left_kind, set())
@@ -584,8 +584,9 @@ def typecheck_instantiate(self: TypeVisitor, node: ast.InstantiateExpr) -> ast.N
                 node.items[idx] = self.visit_expr(ast.IdExpr(name), enforce_type=True)
                 prepends.append(front)
         if prepends:
-            assert result
-            result = self.visit_expr(ast.StmtExpr(prepends, expr=result))
+            result = self.visit_expr(
+                ast.StmtExpr(prepends, expr=result if result is not None else node)
+            )
     return node if result is None else result
 
 
@@ -686,14 +687,14 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
         # Case: static strings
         if node.op == "+":
             # `"a" + "b"` -> `"ab"`
-            if (lv := left_type.str) and (rv := right_type.str):
+            if (lv := left_type.str) is not None and (rv := right_type.str) is not None:
                 return self.visit_expr(ast.StringExpr(lv + rv))
             if unbound := node.type.unbound:
                 # Cannot be evaluated yet: just set the type
                 unbound._static_kind = ast.types.Type.Behaviour.String
         else:
             # `"a" == "b"` -> `False` (also handles `!=`)
-            if (lv := left_type.str) and (rv := right_type.str):
+            if (lv := left_type.str) is not None and (rv := right_type.str) is not None:
                 eq = lv == rv
                 transformed = self.visit_expr(ast.BoolExpr(eq if node.op == "==" else not eq))
                 return transformed
@@ -705,8 +706,8 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
     if left_type.literal and right_type.literal:
         # Case: static integers
 
-        value = int(left_type.bool) if left_type.bool else left_type.require_int
-        right = int(right_type.bool) if right_type.bool else right_type.require_int
+        value = int(left_type.bool) if left_type.bool is not None else left_type.require_int
+        right = int(right_type.bool) if right_type.bool is not None else right_type.require_int
         if node.op == "<":
             value = int(value < right)
         elif node.op == "<=":
@@ -746,7 +747,7 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
         else:
             assert False, f"unknown static operator {node.op}"
         comparisons = {"==", "!=", "<", "<=", ">", ">="}
-        both_bools = left_type.bool and right_type.bool
+        both_bools = left_type.bool is not None and right_type.bool is not None
         literal: ast.Expr = (
             ast.BoolExpr(bool(value))
             if node.op in comparisons or (node.op in {"&&", "||"} and both_bools)
@@ -756,7 +757,7 @@ def evaluate_static_binary(self: TypeVisitor, node: ast.BinaryExpr) -> ast.Expr 
 
     if unbound := node.type.unbound:
         comparisons = {"==", "!=", "<", "<=", ">", ">="}
-        both_bools = left_type.bool and right_type.bool
+        both_bools = left_type.bool is not None and right_type.bool is not None
         unbound._static_kind = (
             ast.types.Type.Behaviour.Bool
             if node.op in comparisons or (node.op in {"&&", "||"} and both_bools)

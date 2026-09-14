@@ -852,7 +852,7 @@ def transform_static_len(self: TypeVisitor, expr: ast.CallExpr) -> ast.Expr | No
 
     expr.items[0].value = self.visit_expr(expr.items[0].value)
     typ = utils.extract_type(self.ctx, expr.items[0].value)
-    if static := typ.str:
+    if (static := typ.str) is not None:
         # Case: staticlen on static strings
         return self.visit_expr(ast.IntExpr(len(static)))
     if union := typ.union:

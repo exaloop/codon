@@ -1,6 +1,8 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 from __future__ import annotations
 
+import copy
+
 from ... import ast, cache
 from ...bridge import Dict, List, Set, contextmanager, dataclass
 from ...cache import Import
@@ -270,6 +272,22 @@ class TypeContext:
         self.preamble = preamble or ast.SuiteStmt()
         self.prepend_stmts = []
 
+    def __copy__(self):
+        result = object.__new__(type(self))
+        result.__dict__ = self.__dict__.copy()
+        for name, value in self.__dict__.items():
+            if isinstance(value, (list, dict, set)):
+                setattr(result, name, value.copy())
+
+        # Copy map, stack and bases (need its own copies)
+        result.map = {name: items.copy() for name, items in self.map.items()}
+        result.stack = [block.copy() for block in self.stack]
+        result.bases = [copy.copy(base) for base in self.bases]
+        for base in result.bases:
+            base.loops = [copy.copy(loop) for loop in base.loops]
+            base.pending_defaults = {key: values.copy() for key, values in base.pending_defaults.items()}
+        return result
+
     def add(self, name: str, variable: Item):
         """Add an object to the top of the stack."""
         assert name, "adding an empty identifier"
@@ -381,7 +399,7 @@ class TypeContext:
         values = self.map.get(name)
         if values:
             is_mangled = "." in name
-            base = in_base or self.base_name
+            base = in_base if in_base is not None else self.base_name
             for item in values:
                 if not is_mangled and not base.startswith(item.base):
                     continue
@@ -426,7 +444,7 @@ class TypeContext:
 
     @property
     def base_name(self) -> str:
-        return self.bases[-1].name
+        return self.base.name
 
     @property
     def module_name(self) -> str:

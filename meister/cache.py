@@ -297,7 +297,7 @@ class Cache:
     # overloads (canonical names).
     overloads: Dict[str, List[str]]
     # Pointer to the later contexts needed for IR API access.
-    type_ctx: TypeContext | None = None
+    type_ctx: TypeContext
     codegen_ctx: object | None = None
     # Set of function realizations that are to be translated to IR.
     pending_realizations: Set[tuple[str, str]]
@@ -349,6 +349,8 @@ class Cache:
         python_ext: bool = False,
         py_module: ast.ir.PyModule | None = None,
     ):
+        from .passes.typecheck.ctx import TypeContext
+
         self.argv0 = argv0
         self.fs = fs or Filesystem(argv0=self.argv0)
         self.identifier_count = {} if identifier_count is None else identifier_count
@@ -368,7 +370,7 @@ class Cache:
         self.thunk_ids = {} if thunk_ids is None else thunk_ids
         self.functions = {} if functions is None else functions
         self.overloads = {} if overloads is None else overloads
-        self.type_ctx = type_ctx
+        self.type_ctx = type_ctx or TypeContext(self, ".root")
         self.codegen_ctx = codegen_ctx
         self.pending_realizations = set() if pending_realizations is None else pending_realizations
         self.custom_block_stmts = {} if custom_block_stmts is None else custom_block_stmts

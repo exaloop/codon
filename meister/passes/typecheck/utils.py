@@ -991,10 +991,10 @@ def instantiate[T: ast.types.Type](
 
     typ = get_stdlib_type(ctx, root) if isinstance(root, str) else root
     instantiate_ctx = ast.types.Type.InstantiateContext(ctx.cache)
-    typ = typ.require_cls
 
     cls_type = None
     if isinstance(generics, List):
+        typ = typ.require_cls
         if len(generics) != len(typ.generics):
             raise TypeError(
                 f"generic mismatch for "
@@ -1064,7 +1064,7 @@ def find_method(
         if tuple_class:
             populate(tuple_class)
         for fn_type in result:
-            if len(fn_type.generics) == len(typ.generics):
+            if len(fn_type) == len(typ.generics):
                 return [fn_type]
         return []
 

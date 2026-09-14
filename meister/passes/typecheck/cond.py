@@ -35,7 +35,7 @@ def typecheck_ifexpr(self: TypeVisitor, node: ast.IfExpr) -> ast.Expr:
             match node.cond.type:
                 case ast.types.StrLiteral(value=v) if v:
                     condition = True
-                case ast.types.IntLiteral(value=v) if v >= 0:
+                case ast.types.IntLiteral(value=v) if v:
                     condition = True
                 case ast.types.BoolLiteral(value=v) if v:
                     condition = True
@@ -100,8 +100,8 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
 
     match node.cond:
         case ast.CallExpr(
-            ast.IdExpr(type=ast.types.Function(ast=ast.FunctionStmt(name=fn_name))),
-            args=[obj_arg, typ_arg],
+            expr=ast.IdExpr(type=ast.types.Function(ast=ast.FunctionStmt(name=fn_name))),
+            items=[ast.CallExpr.Arg(value=ast.IdExpr(value=name)) as obj_arg, typ_arg],
         ) if fn_name.startswith(
             (
                 ast.types.mangle(cls="RTTIType", func="_isinstance"),
@@ -110,13 +110,11 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
         ):
             # isinstance(a, T) ->
             # { if (c := isinstance(a, T)): i = getinstance(a, T)) } ; c
-            name = self.ctx.generate_canonical_name(
-                utils.get_unmangled_name(self.ctx, obj_arg.value)
-            )
+            name = self.ctx.generate_canonical_name(utils.get_unmangled_name(self.ctx, name))
             condition_name = utils.get_temporary_var(self.ctx, "cond")
             if node.if_suite:
                 node.if_suite.set(
-                    ast.Attr.LocalRenames, {utils.get_unmangled_name(self.ctx, obj_arg.value): name}
+                    ast.Attr.LocalRenames, {utils.get_unmangled_name(self.ctx, name): name}
                 )
             getter = fn_name.replace("_isinstance", "_getinstance")
             result = self.visit_stmt(
@@ -127,9 +125,7 @@ def typecheck_if(self: TypeVisitor, node: ast.IfStmt) -> ast.Stmt:
                         if_suite=ast.SuiteStmt(
                             ast.AssignStmt(
                                 ast.IdExpr(name),
-                                rhs=ast.CallExpr(
-                                    ast.IdExpr(getter), items=[obj_arg.value, typ_arg.value]
-                                ),
+                                rhs=ast.CallExpr(ast.IdExpr(getter), items=[obj_arg, typ_arg]),
                             ),
                             *([] if not node.if_suite else node.if_suite.items),
                         ),

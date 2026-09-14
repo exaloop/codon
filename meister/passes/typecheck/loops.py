@@ -190,7 +190,7 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
         assignment = self.visit_stmt(ast.AssignStmt(ast.IdExpr(break_var), rhs=ast.BoolExpr(True)))
 
     # Extract the iterator type of the for
-    if not (iterator_type := node.iter.cls):
+    if not (iter_type := node.iter.cls):
         return node
 
     delay, static_loop = transform_static_for_loop(self, node)
@@ -205,14 +205,14 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
         node.suite = ast.SuiteStmt(unpacked, node.suite)
 
     # Replace for (i, j) in ... { ... } with for tmp in ...: { i, j = tmp ; ... }
-    is_generator = iterator_type.name == ("AsyncGenerator" if node.async_ else "Generator")
+    is_generator = iter_type.name == ("AsyncGenerator" if node.async_ else "Generator")
     if not is_generator and not node.wrapped:
         node.iter = self.visit_expr(ast.CallExpr(ast.DotExpr(node.iter, member="__iter__")))
         iter_type = node.iter.cls
         node.wrapped = True
         if not iter_type:
             return node
-        is_generator = iterator_type.name == ("AsyncGenerator" if node.async_ else "Generator")
+        is_generator = iter_type.name == ("AsyncGenerator" if node.async_ else "Generator")
     var = cast(ast.IdExpr, node.var)
     assert var, f"corrupt for variable: {node.var}"
 
@@ -241,12 +241,12 @@ def typecheck_for(self: TypeVisitor, node: ast.ForStmt) -> ast.Stmt:
         node.var = self.visit_expr(var)
 
         # Case: iterating a non-generator. Wrap with `__iter__`
-        if iterator_type and not is_generator:
+        if iter_type and not is_generator:
             # Unify iterator var and the iterator type
             raise TypecheckError(node.iter, "expected iterable expression")
-        if iterator_type:
+        if iter_type:
             assert node.var.type
-            node.var.type |= iterator_type[0]
+            node.var.type |= iter_type[0]
         with (
             self.ctx.substitute("static_loops", self.ctx.static_loops + [""]),
             self.ctx.substitute("block_level", self.ctx.block_level + 1),
