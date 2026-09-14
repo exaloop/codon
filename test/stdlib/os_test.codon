@@ -644,6 +644,8 @@ def test_filesystem():
         assert path.realpath(dangling) == path.join(path.realpath(root), "missing")
         os.symlink("loop", loop)
         assert path.realpath(loop) == path.join(path.realpath(root), "loop")
+        assert path.realpath(loop + "/../directory-link") == path.realpath(sub)
+        assert path.realpath(loop + "/../loop/../symbolic") == path.realpath(file)
         for invalid in [dangling, loop, file + "/child"]:
             try:
                 path.realpath(invalid, strict=True)

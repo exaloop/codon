@@ -1,10 +1,16 @@
-"""Compare POSIX path resolution and access modes with the host CPython."""
+"""Compare POSIX path resolution and access modes with the host CPython.
+
+Legacy CPython stops resolving after a symlink loop, unlike modern CPython and
+Codon. Exclude those incomplete oracle results; os_test.codon covers post-loop
+resolution independently, and modern CPython checks the entire generated corpus.
+"""
 
 import argparse
 import os
 from pathlib import Path
 import random
 import subprocess
+import sys
 import tempfile
 
 
@@ -102,6 +108,19 @@ def main():
             check=True, timeout=120,
         )
         cases = realpath_cases(root, args.seed, args.graphs)
+        legacy_resolver = getattr(os.path, "_joinrealpath", None)
+        if legacy_resolver is not None:
+            compatible = [
+                value for value in cases
+                if legacy_resolver("", value, False, {})[1]
+            ]
+            skipped = len(cases) - len(compatible)
+            if skipped:
+                print(
+                    f"SKIP: {skipped} realpath cases where CPython "
+                    f"{sys.version.split()[0]} stops at a symlink loop"
+                )
+            cases = compatible
         count = compare(binary, "realpath", cases, [os.path.realpath(value) for value in cases])
         modes = [-2147483648, -8, -1, *range(16), 255, 2147483647]
         access_count = 0
