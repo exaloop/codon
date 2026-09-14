@@ -44,7 +44,22 @@ def raise_native_error(kind: int):
         raise BrokenPipeError("closed")
     if kind == 6:
         raise KeyboardInterrupt("stop")
+    if kind == 7:
+        raise SystemExit(42)
+    if kind == 8:
+        raise SystemExit("input file not found")
+    if kind == 9:
+        raise SystemExit("")
     raise ValueError("ordinary")
+
+def exit_native(status: int):
+    import sys
+    sys.exit(status)
+
+@overload
+def exit_native(status: str):
+    import sys
+    sys.exit(status)
 
 class DispatchBase:
     value: int

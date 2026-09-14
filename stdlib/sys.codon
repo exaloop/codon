@@ -4,6 +4,10 @@
 
 Version information describes Codon, not a CPython language compatibility level.
 The compiled runtime does not expose interpreter frames or reference counts.
+`exit()` accepts integers, booleans, strings and `None`, including optional values.
+An uncaught string exit writes the message to stderr and exits with status 1;
+`None` maps to status zero. Unlike Python, other objects are rejected at compile
+time.
 """
 
 platform: Literal[str] = static.platform()
@@ -25,8 +29,10 @@ def exit(status=0):
         exit(unwrap(status))
     elif isinstance(status, (int, bool)):
         raise SystemExit(int(status))
+    elif isinstance(status, str):
+        raise SystemExit(status)
     else:
-        compile_error("sys.exit() supports only integers, booleans and None")
+        compile_error("sys.exit() supports only integers, booleans, strings and None")
 
 maxsize: Literal[int] = 0x7FFFFFFFFFFFFFFF
 maxunicode: Literal[int] = 0x10FFFF

@@ -259,14 +259,17 @@ class EOFError(Exception):
 class SystemExit(BaseException):
     _pytype: ClassVar[cobj] = cobj()
     _status: int
+    _message_exit: bool
 
-    def __init__(self, message: str = "", status: int = 0):
+    def __init__(self, message: str, status: int = 1):
         super().__init__(message)
         self._status = status
+        self._message_exit = True
         self.python_type = self.__class__._pytype
 
-    def __init__(self, status: int):
+    def __init__(self, status: int = 0):
         self.__init__("", status)
+        self._message_exit = False
 
     @property
     def status(self):

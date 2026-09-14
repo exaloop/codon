@@ -419,6 +419,26 @@ def test_traversal():
             assert False
         except ValueError as error:
             assert error.message == "walk callback"
+        invalid = root / "nul\0name"
+        for use_callback in [False, True]:
+            try:
+                if use_callback:
+                    list(invalid.walk(on_error=on_error))
+                else:
+                    list(invalid.walk())
+                assert False
+            except ValueError as error:
+                assert error.message.startswith("embedded null")
+        assert errors == [str(root / "missing")]
+        for recursive in [False, True]:
+            try:
+                if recursive:
+                    list(invalid.rglob("*"))
+                else:
+                    list(invalid.glob("*"))
+                assert False
+            except ValueError as error:
+                assert error.message.startswith("embedded null")
         if static.platform() != "win32":
             alias = root / "alias"
             alias.symlink_to(StringPath("one"), target_is_directory=True)

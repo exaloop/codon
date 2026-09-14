@@ -59,7 +59,7 @@ def test_streams():
     assert sys.stderr._state is sys.__stderr__._state
 
 
-def check_exit(value, expected: int):
+def check_exit(value, expected: int, message: str = ""):
     cleaned = False
     caught = False
     try:
@@ -70,6 +70,7 @@ def check_exit(value, expected: int):
     except SystemExit as error:
         caught = True
         assert error.status == expected
+        assert error.message == message
     assert cleaned and caught
 
 
@@ -83,6 +84,18 @@ def test_exit():
     check_exit(False, 0)
     check_exit(Optional(7), 7)
     check_exit(Optional[int](), 0)
+    check_exit("input file not found", 1, "input file not found")
+    check_exit("", 1)
+    check_exit("caf\u00e9\n", 1, "caf\u00e9\n")
+    check_exit(Optional("optional message"), 1, "optional message")
+    check_exit(Optional[str](), 0)
+    assert SystemExit().status == 0
+    assert SystemExit(42).status == 42
+    assert SystemExit("").status == 1
+    error = SystemExit("message")
+    assert error.status == 1 and error.message == "message"
+    assert str(error) == "message"
+    assert SystemExit("message", 3).status == 3
     try:
         sys.exit()
         assert False

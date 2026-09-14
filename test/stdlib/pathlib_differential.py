@@ -1,4 +1,4 @@
-"""Compare native pathlib lexical and glob behavior with CPython 3.14+."""
+"""Compare native pathlib lexical and filesystem behavior with CPython 3.14+."""
 
 import argparse
 import itertools
@@ -17,6 +17,31 @@ PROBE = '''from pathlib import Path
 from pathlib import _pattern, _as_uri
 from os._ntpath import splitdrive
 import sys
+
+def walk_result(path, top_down, follow, mutation, callback, limit):
+    events: List[str] = []
+    def on_error(error):
+        events.append("ERROR:" + str(error.errno) + ":" + str(Path(str(error.filename)).relative_to(path)))
+        if callback == "raise":
+            raise ValueError("walk callback")
+    walker = path.walk(top_down=top_down, follow_symlinks=follow)
+    if callback != "ignore":
+        walker = path.walk(top_down=top_down, follow_symlinks=follow, on_error=on_error)
+    try:
+        for index, (current, directories, files) in enumerate(walker):
+            directories.sort(reverse=mutation == "reverse")
+            if current == path:
+                if mutation == "prune" and "one" in directories:
+                    directories.remove("one")
+                elif mutation == "clear":
+                    directories.clear()
+            events.append("VISIT:" + repr((str(current.relative_to(path)), sorted(directories), sorted(files))))
+            if limit and index + 1 == limit:
+                events.append("LIMIT")
+                break
+    except ValueError:
+        events.append("ValueError")
+    return repr(events)
 
 for line in sys.stdin:
     fields = line.rstrip("\\n").split("\\t")
@@ -78,6 +103,8 @@ for line in sys.stdin:
             print("OSError:" + str(error.errno))
         except ValueError:
             print("ValueError")
+    elif sys.argv[1] == "walk":
+        print(walk_result(path, fields[1] == "True", fields[2] == "True", fields[3], fields[4], int(fields[5])))
     elif sys.argv[1] == "wildcard":
         print(_pattern(fields[1], fields[2] == "True").fullmatch(fields[0]))
     elif sys.argv[1] == "class":
@@ -187,8 +214,9 @@ def main():
             print(f"PASS: {lexical_count} lexical, {transform_count} transformation cases")
             return
         filesystem_count = check_filesystem(binary, root)
+        walk_count = check_walk(binary, root)
         if args.filesystem_only:
-            print(f"PASS: {filesystem_count} filesystem cases")
+            print(f"PASS: {filesystem_count} filesystem, {walk_count} walk cases")
             return
         names = [".", "/", "/a", "/a/b", "a", "a/b", "a/b.txt", "a/B.TXT",
                  "a/b/c", ".hidden", "a[", "a]", "café", "-", "z"]
@@ -296,7 +324,7 @@ def main():
             repr(sorted(str(found.relative_to(base)) for found in base.rglob(pattern, case_sensitive=True, recurse_symlinks=recurse)))
             for base, pattern, recurse in rglob_cases
         ])
-        print(f"PASS: {lexical_count} lexical, {transform_count} transformation, {filesystem_count} filesystem, {match_count} matching, {fuzz_count} wildcard, {class_count} short-class, {unicode_count} Unicode-class, {uri_count} Windows URI, {glob_count} glob cases (seed={args.seed})")
+        print(f"PASS: {lexical_count} lexical, {transform_count} transformation, {filesystem_count} filesystem, {walk_count} walk, {match_count} matching, {fuzz_count} wildcard, {class_count} short-class, {unicode_count} Unicode-class, {uri_count} Windows URI, {glob_count} glob cases (seed={args.seed})")
 
 
 def check_filesystem(binary, root):
@@ -343,6 +371,7 @@ def check_filesystem(binary, root):
         cases = list(itertools.product(paths[:5] + [tree / "dirlink", tree / "dangling"],
                                       ["", ".", "./", "..", "*/", "**", "**/", "directory/..", "file/..", "*/..", "missing/..", "/absolute", "***", "a**b"],
                                       [False, True]))
+        cases += list(itertools.product([tree / "nul\0name"], ["*", "*/", "**", "**/*"], [False, True]))
         expected = []
         known_differences = {}
         for path, pattern, recurse in cases:
@@ -359,6 +388,68 @@ def check_filesystem(binary, root):
                 expected.append("NotImplementedError")
         count += compare(binary, operation, [f"{path}\t{pattern}\tTrue\t{recurse}" for path, pattern, recurse in cases], expected, known_differences)
     return count
+
+
+def check_walk(binary, root):
+    tree = root / "walk"
+    (tree / "one" / "deep").mkdir(parents=True)
+    (tree / "two").mkdir()
+    for name in ["file", ".hidden", "one/first", "one/deep/leaf", "two/last"]:
+        (tree / name).touch()
+    paths = [tree, tree / "one", tree / "file", tree / "missing", tree / "nul\0name"]
+    if os.name == "posix":
+        (tree / "alias").symlink_to("one", target_is_directory=True)
+        (tree / "filelink").symlink_to("file")
+        (tree / "dangling").symlink_to("missing")
+        paths.extend([tree / "alias", tree / "dangling"])
+    blocked = tree / "blocked"
+    blocked.mkdir()
+    (blocked / "hidden").touch()
+    try:
+        blocked.chmod(0)
+        try:
+            list(blocked.iterdir())
+        except PermissionError:
+            paths.append(blocked)
+        else:
+            print("SKIP: inaccessible walk root (current user can read mode-000 directories)")
+        cases = [(*case, 0) for case in itertools.product(
+            paths, [True, False], [False, True],
+            ["sort", "reverse", "prune", "clear"], ["ignore", "record", "raise"],
+        )]
+        if os.name == "posix":
+            cycle = root / "walk-cycle"
+            cycle.mkdir()
+            (cycle / "file").touch()
+            (cycle / "again").symlink_to(".", target_is_directory=True)
+            cases.extend((cycle, True, follow, "sort", "record", 4) for follow in [False, True])
+        expected = []
+        for path, top_down, follow, mutation, callback, limit in cases:
+            events = []
+            def on_error(error):
+                events.append("ERROR:" + str(error.errno) + ":" + str(Path(str(error.filename)).relative_to(path)))
+                if callback == "raise":
+                    raise ValueError("walk callback")
+            walker = path.walk(top_down=top_down, follow_symlinks=follow,
+                               on_error=None if callback == "ignore" else on_error)
+            try:
+                for index, (current, directories, files) in enumerate(walker):
+                    directories.sort(reverse=mutation == "reverse")
+                    if current == path:
+                        if mutation == "prune" and "one" in directories:
+                            directories.remove("one")
+                        elif mutation == "clear":
+                            directories.clear()
+                    events.append("VISIT:" + repr((str(current.relative_to(path)), sorted(directories), sorted(files))))
+                    if limit and index + 1 == limit:
+                        events.append("LIMIT")
+                        break
+            except ValueError:
+                events.append("ValueError")
+            expected.append(repr(events))
+        return compare(binary, "walk", ["\t".join(map(str, case)) for case in cases], expected)
+    finally:
+        blocked.chmod(0o700)
 
 
 if __name__ == "__main__":

@@ -1127,6 +1127,11 @@ def init_error_py_types():
 
 def _exception_to_python(error: BaseException) -> pyobj:
     python_type = pyobj(error.python_type if error.python_type != cobj() else PyExc_RuntimeError)
+    if isinstance(error, SystemExit):
+        native = type._force_cast(error, SystemExit)
+        if native._message_exit:
+            return python_type(native.message)
+        return python_type(native.status)
     for native_type in (UnicodeDecodeError, UnicodeEncodeError, UnicodeTranslateError):
         if isinstance(error, type(native_type).T):
             native = type._force_cast(error, type(native_type).T)

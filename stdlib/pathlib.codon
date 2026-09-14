@@ -544,7 +544,12 @@ class Path:
                         emitted.add(current)
                         yield current
                 continue
-            if not current.is_dir():
+            fields, error = os._stat_status(str(current))
+            if error:
+                if error.kind:
+                    error.raise_error("scandir", str(current))
+                continue
+            if fields[0] & 0o170000 != 0o040000:
                 continue
             component = patterns[index]
             if component == "..":
@@ -554,6 +559,8 @@ class Path:
                 pending.append((current, index + 1))
             names, error = os._listdir_status(str(current))
             if error:
+                if error.kind:
+                    error.raise_error("scandir", str(current))
                 continue
             for name in names:
                 child = current / name
@@ -581,6 +588,8 @@ class Path:
                 continue
             names, error = os._listdir_status(str(current))
             if error:
+                if error.kind:
+                    error.raise_error("scandir", str(current))
                 if on_error is not None:
                     on_error(OSError(error.errno if error.errno else None,
                                      error.message or "directory listing failed", str(current),

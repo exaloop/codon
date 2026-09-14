@@ -10,6 +10,9 @@ def test_native_exceptions():
         UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "original"),
         BrokenPipeError("closed"),
         KeyboardInterrupt("stop"),
+        SystemExit(42),
+        SystemExit("input file not found"),
+        SystemExit(""),
         ValueError("ordinary"),
     ]
     expected[4].reason = "changed"
@@ -21,13 +24,27 @@ def test_native_exceptions():
             assert error.args == reference.args
             assert str(error) == str(reference)
             for field in ("errno", "strerror", "filename", "filename2", "encoding",
-                          "object", "start", "end", "reason"):
+                          "object", "start", "end", "reason", "code"):
                 if hasattr(reference, field):
                     assert getattr(error, field) == getattr(reference, field), (index, field)
         else:
             raise AssertionError(f"exception {index} was not raised")
 
 test_native_exceptions()
+
+def test_native_exit():
+    for status in (-7, 0, 42, "input file not found", "", "caf\u00e9", "line\nbreak", "nul\0message"):
+        try:
+            m.exit_native(status)
+        except SystemExit as error:
+            assert type(error) is SystemExit
+            assert error.code == status
+            assert error.args == (status,)
+        else:
+            raise AssertionError(f"sys.exit({status!r}) did not raise")
+        assert m.f5() is None
+
+test_native_exit()
 
 def test_export_only_dispatch():
     for derived in (False, True):
