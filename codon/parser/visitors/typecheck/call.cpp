@@ -372,9 +372,7 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
-    auto clsName = typ->name;
-    if (clsName == "OSError" || clsName == "std.internal.types.error.OSError" ||
-        startswith(clsName, "std.internal.types.error.OSError.")) {
+    if (typ->is(getMangledClass("std.internal.types.error", "OSError"))) {
       auto factory = transform(
           N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));
       return {nullptr, factory};

@@ -50,6 +50,24 @@ def test_native_hierarchy():
 
 test_native_hierarchy()
 
+from internal.types.error import OSError as NativeOSError
+
+class OSError:
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+
+@test
+def test_shadowed_oserror():
+    shadowed = OSError(7)
+    assert shadowed.value == 7
+    assert isinstance(NativeOSError(2, "missing"), FileNotFoundError)
+    assert isinstance(IOError(13, "denied"), PermissionError)
+    assert isinstance(EnvironmentError(17, "exists"), FileExistsError)
+
+test_shadowed_oserror()
+
 class Exc1(Exception):
     def __init__(self, msg: str):
         super().__init__(msg)
