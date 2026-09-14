@@ -40,7 +40,13 @@ def test_stat_fields():
     info[10] = u32(2)
     info[11] = u32(3)
     info[12] = u32(4)
-    result = os.stat_result(win32._stat_fields(info))
+    fields = win32._stat_fields(info)
+    assert type(fields) is Ptr[int]
+    owned = List(fields, 14)
+    assert owned._ptr == fields
+    assert owned == [0o040777, (3 << 32) | 4, 17, 2, 0, 0, (1 << 32) | 23,
+                     12, 12, 12, 345678900, 345678900, 345678900, 0]
+    result = os.stat_result(fields)
     assert result.st_mode == 0o040777
     assert result.st_dev == 17 and result.st_ino == (3 << 32) | 4
     assert result.st_size == (1 << 32) + 23 and result.st_nlink == 2
@@ -49,6 +55,7 @@ def test_stat_fields():
     assert os.stat_result(win32._stat_fields(info, 0xA000000C)).st_mode == 0o120777
     info[0] = u32(1)
     assert os.stat_result(win32._stat_fields(info)).st_mode == 0o100444
+    assert fields[0] == 0o040777
 
 
 @test

@@ -218,18 +218,27 @@ def test_environment_default_overloads():
                 assert environment_result == result
                 if present:
                     os.environ[key] = "value"
-                popped = os.environ.pop(key, default)
+                reference: Dict[str, str] = {key: "value"} if present else {}
+                expected = reference.pop(key, missing=default)
+                popped = os.environ.pop(key, missing=default)
+                assert type(popped) is type(expected) and popped == expected
                 assert type(popped) is Optional[str]
                 assert popped == ("value" if present else default)
                 assert process_getenv(key) is None
                 if present:
                     os.environ[key] = "value"
+            reference = {key: "value"} if present else {}
+            expected_string = reference.pop(key, "fallback")
             popped_string = os.environ.pop(key, "fallback")
+            assert type(popped_string) is type(expected_string) and popped_string == expected_string
             assert type(popped_string) is str
             assert popped_string == ("value" if present else "fallback")
             if present:
                 os.environ[key] = "value"
+            reference = {key: "value"} if present else {}
+            expected_none = reference.pop(key, None)
             popped_none = os.environ.pop(key, None)
+            assert type(popped_none) is type(expected_none) and popped_none == expected_none
             assert type(popped_none) is Optional[str]
             assert popped_none == ("value" if present else None)
             assert process_getenv(key) is None
@@ -241,9 +250,22 @@ def test_environment_default_overloads():
             assert False
         except KeyError:
             pass
+        for default in ["", "fallback"]:
+            os.environ[key] = ""
+            reference = {key: ""}
+            popped_empty = os.environ.pop(key, missing=default)
+            expected_empty = reference.pop(key, missing=default)
+            assert type(popped_empty) is type(expected_empty) and popped_empty == expected_empty
+            assert key not in os.environ and process_getenv(key) is None
+            assert os.environ.pop(key, missing=default) == reference.pop(key, missing=default)
+        os.putenv(key, "process-only")
+        assert os.environ.pop(key, missing=None) is None
+        assert process_getenv(key) == "process-only"
+        os.unsetenv(key)
     finally:
         if key in os.environ:
             del os.environ[key]
+        os.unsetenv(key)
 
 
 @test
@@ -252,11 +274,31 @@ def test_environment_mapping():
     first = "CODON_OS_MAP_A_" + str(os.getpid())
     second = "CODON_OS_MAP_B_" + str(os.getpid())
     assert process_getenv(first) is None and process_getenv(second) is None
-    mapping = os._Environ(Dict[str, str]())
+    from internal.gc import sizeof
+    assert sizeof(os._Environ) == sizeof(Dict[str, str])
+    source = {first: "original"}
+    for snapshot in [os._Environ(source), os._Environ(source, copy=True)]:
+        assert snapshot._data is not source
+        source[first] = "outside"
+        assert snapshot[first] == "original"
+    assert process_getenv(first) is None
+    mixed = {"mixedCase": "first", "MIXEDCASE": "last"}
+    snapshot = os._Environ(mixed)
+    if static.platform() == "win32":
+        assert snapshot == {"MIXEDCASE": "last"}
+        assert snapshot["mixedCase"] == "last"
+    else:
+        assert snapshot == mixed
+    assert mixed == {"mixedCase": "first", "MIXEDCASE": "last"}
+    owned: Dict[str, str] = {}
+    mapping = os._Environ(owned, copy=False)
+    assert mapping._data is owned
+    alias = mapping
     try:
         assert not mapping and len(mapping) == 0
         mapping.update({first: "one", second: "two"})
         assert len(mapping) == 2 and mapping == {first: "one", second: "two"}
+        assert alias[first] == "one" and owned[first] == "one"
         assert list(mapping.values()) == ["one", "two"]
         assert repr(mapping).startswith("environ(")
         mapping |= {first: "updated"}
@@ -351,7 +393,8 @@ def test_posix_path_encoders():
     decoded = raw.decode("utf-8", "surrogateescape")
     for invalid in ["bad\0path", chr(0xD800)]:
         fields, error = os._stat_status(invalid)
-        assert fields == [] and bool(error) and error.kind == 1
+        assert type(fields) is Ptr[int]
+        assert not fields and bool(error) and error.kind == 1
         target, error = os._readlink_status(invalid)
         assert target == "" and error.kind == 1
         assert os._mkdir_status(invalid).kind == 1
@@ -570,9 +613,10 @@ def test_filesystem():
         target, error = os._readlink_status(file)
         assert target == "" and error.errno == 22
         fields, error = os._fstat_status(-1)
-        assert fields == [] and error.errno == 9
+        assert type(fields) is Ptr[int]
+        assert not fields and error.errno == 9
         fields, error = os._fstat_status(1 << 32)
-        assert fields == [] and error.kind == 2
+        assert not fields and error.kind == 2
         failed_path, error = os._makedirs_status(path.join(file, "child"), 0o777, True)
         assert error.errno == 20 and failed_path == path.join(file, "child")
         opened = os.open(opened_path, os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600)
@@ -580,6 +624,9 @@ def test_filesystem():
             written = os.write(opened, b"abc")
             assert written == 3
             assert os.fstat(opened).st_mode & 0o077 == 0
+            fields, error = os._fstat_status(opened)
+            assert type(fields) is Ptr[int]
+            assert fields and not error and fields[6] == 3
         finally:
             os.close(opened)
         try:
@@ -609,9 +656,23 @@ def test_filesystem():
             assert error.errno == 9 and error.filename is None
         metadata = os.stat(file)
         fields, status = os._stat_status(file)
+        assert type(fields) is Ptr[int]
         assert not status and fields[6] == 6
+        other_fields, other_status = os._stat_status(opened_path)
+        assert not other_status and other_fields[6] == 0
+        assert fields != other_fields and fields[6] == 6
+        assert os.stat_result(fields).st_mtime_ns == metadata.st_mtime_ns
+        owned = List(fields, 14)
+        assert owned._ptr == fields and len(owned) == 14
+        assert os.stat_result(owned).st_ino == metadata.st_ino
+        for count in [0, 13]:
+            try:
+                os.stat_result([0] * count)
+                assert False
+            except IndexError:
+                pass
         fields, status = os._stat_status(path.join(root, "missing"))
-        assert fields == [] and status.errno == 2 and status.winerror == 0
+        assert not fields and status.errno == 2 and status.winerror == 0
         changed_errno = os._mkdir_status(sub)
         assert changed_errno.errno == 17
         try:

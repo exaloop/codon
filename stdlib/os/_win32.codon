@@ -1,29 +1,29 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-"""Windows backend for os; native little-endian Windows x64/ARM64 only.
+"""Windows backend for `os`; native little-endian Windows x64/ARM64 only.
 
 All foreign declarations are local to functions and nothing calls Windows at
-module initialization. The public os module supplies compile-time dispatch and
-the environ mapping. This module does not import os or port the compiler/runtime.
+module initialization. The public `os` module supplies compile-time dispatch and
+the `environ` mapping. This module does not import `os` or port the compiler/runtime.
 Called functions require Kernel32 and a compatible Microsoft UCRT;
 no new C++ runtime helpers are needed.
 
-Paths/commands/environment use UTF-16LE with surrogatepass, never ANSI. getcwdb
-uses UTF-8 with surrogatepass, as modern Python on Windows does. Extended-length
+Paths, commands and environment use UTF-16LE with `surrogatepass`, never ANSI.
+`getcwdb()` uses UTF-8 with `surrogatepass`, as modern Python on Windows does. Extended-length
 paths are accepted as supplied; no automatic long-path prefix/manifest is added.
-mkdir ignores mode and inherits the parent's Windows security descriptor (even
-for 0o700); chmod changes only the read-only attribute. access is an attribute
-probe, not an ACL check, and X_OK means existence. Descriptor I/O retains the
+`mkdir()` ignores `mode` and inherits the parent's Windows security descriptor (even
+for `0o700`); `chmod()` changes only the read-only attribute. `access()` is an attribute
+probe, not an ACL check, and `X_OK` means existence. Descriptor I/O retains the
 descriptor's CRT text/binary mode and can return partial transfers.
 
 Environment updates are not atomic across the CRT and OS and must be externally
 synchronized with other environment writers. The CRT treats an empty value as
-deletion; putenv restores an actual empty OS value afterwards, but cannot make
-CRT getenv distinguish empty from missing. Other CRT instances/ANSI mirrors
+deletion; `putenv()` restores an actual empty OS value afterwards, but cannot make
+CRT `getenv()` distinguish empty from missing. Other CRT instances/ANSI mirrors
 cannot be kept fully Unicode-consistent. No snapshot is updated here.
 
-OSError carries errno, strerror, applicable filenames and the original winerror
-for Windows API failures. CRT failures supply errno without inventing winerror.
+`OSError` carries `errno`, `strerror`, applicable filenames and the original `winerror`
+for Windows API failures. CRT failures supply `errno` without inventing `winerror`.
 Toolhelp reports the recorded parent PID, which can have exited or been reused.
 This backend has not been executed on Windows as part of its implementation.
 """
@@ -34,7 +34,7 @@ def _filetime_parts(info: Ptr[u32], offset: int) -> Tuple[int, int]:
     ticks = ((int(info[offset + 1]) << 32) | int(info[offset])) - 116444736000000000
     return ticks // 10000000, (ticks % 10000000) * 100
 
-def _stat_fields(info: Ptr[u32], tag: int = 0) -> List[int]:
+def _stat_fields(info: Ptr[u32], tag: int = 0) -> Ptr[int]:
     attributes = int(info[0])
     mode = (0o040000 | 0o111) if attributes & 0x10 else 0o100000
     mode |= 0o444 if attributes & 1 else 0o666
@@ -43,46 +43,60 @@ def _stat_fields(info: Ptr[u32], tag: int = 0) -> List[int]:
     access_seconds, access_nanos = _filetime_parts(info, 3)
     modified_seconds, modified_nanos = _filetime_parts(info, 5)
     created_seconds, created_nanos = _filetime_parts(info, 1)
-    return [mode, (int(info[11]) << 32) | int(info[12]), int(info[7]),
-            int(info[10]), 0, 0, (int(info[8]) << 32) | int(info[9]),
-            access_seconds, modified_seconds, created_seconds,
-            access_nanos, modified_nanos, created_nanos, 0]
+    fields = Ptr[int](14)
+    fields[0] = mode
+    fields[1] = (int(info[11]) << 32) | int(info[12])
+    fields[2] = int(info[7])
+    fields[3] = int(info[10])
+    fields[4] = 0
+    fields[5] = 0
+    fields[6] = (int(info[8]) << 32) | int(info[9])
+    fields[7] = access_seconds
+    fields[8] = modified_seconds
+    fields[9] = created_seconds
+    fields[10] = access_nanos
+    fields[11] = modified_nanos
+    fields[12] = created_nanos
+    fields[13] = 0
+    return fields
 
-def _stat_handle_status(handle: cobj, follow_symlinks: bool = True) -> Tuple[List[int], _Status]:
+def _stat_handle_status(handle: cobj, follow_symlinks: bool = True) -> Tuple[Ptr[int], _Status]:
     from C import GetFileType(cobj) -> u32
     from C import GetFileInformationByHandle(cobj, Ptr[u32]) -> i32
     from C import GetFileInformationByHandleEx(cobj, i32, cobj, u32) -> i32
     from C import GetLastError() -> u32
     kind = int(GetFileType(handle))
     if kind == 2 or kind == 3:
-        fields = [0] * 14
+        fields = Ptr[int](14)
+        for index in range(14):
+            fields[index] = 0
         fields[0] = 0o020666 if kind == 2 else 0o010666
         fields[3] = 1
         return fields, _status()
     info = Ptr[u32](13)
     if GetFileInformationByHandle(handle, info) == i32(0):
         code = GetLastError()
-        return [], _status(winerror=int(code))
+        return Ptr[int](), _status(winerror=int(code))
     tag = 0
     if not follow_symlinks and int(info[0]) & 0x400:
         attributes = Ptr[u32](2)
         if GetFileInformationByHandleEx(handle, i32(9), attributes.as_byte(), u32(8)) == i32(0):
             code = GetLastError()
-            return [], _status(winerror=int(code))
+            return Ptr[int](), _status(winerror=int(code))
         tag = int(attributes[1])
     return _stat_fields(info, tag), _status()
 
-def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[List[int], _Status]:
+def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[Ptr[int], _Status]:
     error = _path_status(path, True)
     if error:
-        return [], error
+        return Ptr[int](), error
     from C import CreateFileW(Ptr[u16], u32, u32, cobj, u32, u32, cobj) -> cobj
     from C import GetLastError() -> u32
     flags = 0x02000000 | (0 if follow_symlinks else 0x00200000)
     handle = CreateFileW(_wide(path), u32(0), u32(7), cobj(), u32(3), u32(flags), cobj())
     if int(handle) == -1:
         code = GetLastError()
-        return [], _status(winerror=int(code))
+        return Ptr[int](), _status(winerror=int(code))
     try:
         fields, error = _stat_handle_status(handle, follow_symlinks)
         if not error and fields[0] & 0o170000 == 0o100000:
@@ -92,12 +106,13 @@ def _stat_status(path: str, follow_symlinks: bool = True) -> Tuple[List[int], _S
                     break
     finally:
         cleanup = _close_handle_status(handle)
-    return fields, error if error else cleanup
+    error = error if error else cleanup
+    return Ptr[int]() if error else fields, error
 
 def stat(path: str, follow_symlinks: bool = True) -> List[int]:
     fields, error = _stat_status(path, follow_symlinks)
     error.raise_error("stat" if follow_symlinks else "lstat", path)
-    return fields
+    return List(fields, 14)
 
 @pure
 @llvm
@@ -105,19 +120,19 @@ def _handle_pointer(value: int) -> cobj:
     %pointer = inttoptr i64 %value to ptr
     ret ptr %pointer
 
-def _fstat_status(fd: int) -> Tuple[List[int], _Status]:
+def _fstat_status(fd: int) -> Tuple[Ptr[int], _Status]:
     if fd < -2147483648 or fd > 2147483647:
-        return [], _status(message="file descriptor out of range", kind=2)
+        return Ptr[int](), _status(message="file descriptor out of range", kind=2)
     from C import _get_osfhandle(i32) -> int
     handle, error = _crt_status(False, _get_osfhandle, i32(fd))
     if error:
-        return [], error
+        return Ptr[int](), error
     return _stat_handle_status(_handle_pointer(handle))
 
 def fstat(fd: int) -> List[int]:
     fields, error = _fstat_status(fd)
     error.raise_error("fstat")
-    return fields
+    return List(fields, 14)
 
 def open(path: str, flags: int, mode: int = 0o777) -> int:
     from C import _wsopen_s(Ptr[i32], Ptr[u16], i32, i32, i32) -> i32
@@ -365,7 +380,7 @@ def make_env_map() -> Dict[str, str]:
 
 
 def putenv(key: str, value: str):
-    """Update CRT and OS environment, but not the public environ snapshot."""
+    """Update CRT and OS environment, but not the public `environ` snapshot."""
     from C import _wputenv_s(Ptr[u16], Ptr[u16]) -> i32
     from C import SetEnvironmentVariableW(Ptr[u16], Ptr[u16]) -> i32
     from C import GetLastError() -> u32
@@ -423,7 +438,7 @@ def system(cmd: str) -> int:
 
 
 def _mkdir_status(path: str, mode: int = 0o777) -> _Status:
-    """Create a directory with inherited Windows security; mode is ignored."""
+    """Create a directory with inherited Windows security; `mode` is ignored."""
     error = _path_status(path, True)
     if error:
         return error
@@ -584,7 +599,7 @@ def _load_u32(buffer: cobj, offset: int) -> int:
 
 
 def _reparse_target_status(buffer: cobj, count: int) -> Tuple[str, _Status]:
-    """Decode a bounded REPARSE_DATA_BUFFER, never a structure returned by value."""
+    """Decode a bounded `REPARSE_DATA_BUFFER`, never a structure returned by value."""
     if count < 8 or count > 16384:
         return "", _status(errno=22, message="readlink: invalid reparse buffer size")
     end = 8 + _load_u16(buffer, 4)

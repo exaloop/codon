@@ -1,6 +1,10 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-"""Native filesystem paths. Lexical operations preserve parent components."""
+"""Native filesystem paths represented by the immutable `Path` tuple class.
+
+Lexical operations preserve `..` components. Methods that change the filesystem
+do not change the stored path.
+"""
 
 import internal.static as static
 import os

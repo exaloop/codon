@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-"""Native path operations (POSIX, or Windows when targeting win32)."""
+"""Native path operations (POSIX, or Windows when targeting `win32`)."""
 
 import internal.static as static
 
@@ -308,10 +308,11 @@ def expandvars(path: str) -> str:
     return result.__str__()
 
 def splitext(p: str) -> Tuple[str, str]:
+    """Split a pathname into `(root, ext)`.
+
+    The extension runs from the last dot to the end, ignoring leading dots.
+    `ext` may be empty.
     """
-    Split the extension from a pathname.
-    Extension is everything from the last dot to the end, ignoring
-    leading dots.  Returns "(root, ext)"; ext may be empty."""
     if static.platform() == "win32":
         return _ntpath.splitext(p)
     sep = "/"

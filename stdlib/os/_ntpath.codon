@@ -3,7 +3,7 @@
 """Windows string path operations, importable on every target.
 
 Lexical operations follow Python 3.13 Windows path rules. They do not inspect
-the filesystem or resolve symlinks. Relative abspath/relpath need Windows'
+the filesystem or resolve symlinks. Relative `abspath()` and `relpath()` need Windows'
 current-directory and per-drive state; on other targets only fully qualified
 paths can be resolved. Environment expansion has a mapping-based helper for
 host-independent tests.

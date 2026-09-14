@@ -4,9 +4,10 @@
 
 Version information describes Codon, not a CPython language compatibility level.
 The compiled runtime does not expose interpreter frames or reference counts.
+
 `exit()` accepts integers, booleans, strings and `None`, including optional values.
-An uncaught string exit writes the message to stderr and exits with status 1;
-`None` maps to status zero. Unlike Python, other objects are rejected at compile
+An uncaught string exit writes the message to `stderr` and exits with status `1`;
+`None` maps to status `0`. Unlike Python, other objects are rejected at compile
 time.
 """
 
