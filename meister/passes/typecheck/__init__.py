@@ -69,7 +69,11 @@ class TypeVisitor(ast.NodeVisitor):
             node.type = utils.instantiate_unbound(self.ctx, node.info)
         if enforce_type:
             if isinstance(node, ast.NoneExpr):
-                node = ast.IdExpr(ast.types.Stdlib.NoneType, info=node.info)
+                node = ast.IdExpr(
+                    ast.types.Stdlib.NoneType,
+                    info=node.info,
+                    type=utils.instantiate_unbound(self.ctx, node.info),
+                )
             with self.ctx.substitute("simple_types", simple_types):
                 node = cast(ast.Expr, self.visit(node))
             assert isinstance(node, ast.Expr) and node.type

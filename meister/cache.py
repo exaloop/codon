@@ -670,8 +670,7 @@ class Cache:
                     if other:
                         present = False
                         for item_idx in range(1, len(other)):
-                            present = present or sequence[0] == other[item_idx]
-                            if present:
+                            if present := present or sequence[0].name == other[item_idx].name:
                                 break
                         if present:
                             not_head = True
@@ -685,9 +684,8 @@ class Cache:
                 return []
             result.append(candidate)
             for sequence in seqs:
-                if sequence:
-                    if candidate == sequence[0]:
-                        del sequence[0]
+                if sequence and candidate.name == sequence[0].name:
+                    del sequence[0]
             idx += 1
 
     def get_import_file(

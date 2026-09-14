@@ -1186,8 +1186,15 @@ class ImportStmt(Stmt):
                     head = head.expr
                 if head and not isinstance(head, IdExpr):
                     raise NodeError(head, "expected identifier")
-                if self.what and not isinstance(self.what, IdExpr):
-                    raise NodeError(self.what, "expected identifier")
+                # ``import package.member`` stores the dotted module path in
+                # ``what``.  Its components are identifiers just like the
+                # ``from`` expression, so accept a dotted expression here.
+                if self.what:
+                    what = self.what
+                    while isinstance(what, DotExpr):
+                        what = what.expr
+                    if not isinstance(what, IdExpr):
+                        raise NodeError(self.what, "expected identifier")
                 if self.args or self.ret:
                     raise NodeError(
                         self,

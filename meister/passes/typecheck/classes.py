@@ -289,7 +289,7 @@ def typecheck_class(self: TypeVisitor, node: ast.ClassStmt) -> ast.Node:
 
                 # Codegen default magic methods
                 if magics := node.get(ast.Attr.ClassMagic, list[str]):
-                    assert magics[0] == "new" and type_expr
+                    assert type_expr
                     for magic in magics:
                         magic_statement = codegen_magic(
                             self, magic, type_expr, member_args, node.has(ast.Attr.Tuple)

@@ -57,7 +57,10 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
                 raise TypecheckError(node, f"unexpected import expression {node}")
 
     # Fetch the import
-    components = get_import_path(node.from_expr, node.dots)
+    # `import package.module` stores the module path in `what` while
+    # `from package import name` stores it in `from_expr`.
+    path_expr = node.from_expr if node.from_expr is not None else node.what
+    components = get_import_path(path_expr, node.dots)
     path = "/".join(components)
     # from "." case
     if node.dots == 1 and not path:
@@ -119,11 +122,7 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
 
     # Import requested identifiers from the import's scope to the current scope
     match node.what:
-        case None:  # import foo
-            name = path if not node.as_ else node.as_
-            imported_item = self.ctx.force_find(import_var)
-            self.ctx.add(name, imported_item)
-        case ast.IdExpr("*"):  # from foo import *
+        case ast.IdExpr(value="*"):  # from foo import *
             assert not node.as_
             # Just copy all symbols from import's context here.
             for name, value in imported.ctx:
@@ -138,6 +137,10 @@ def typecheck_import(self: TypeVisitor, node: ast.ImportStmt) -> ast.Stmt:
                             imported_item = replacement
                     # Imports should ignore noShadow property
                     self.ctx.add(name, imported_item)
+        case _ if node.from_expr is None:  # import foo
+            name = path if not node.as_ else node.as_
+            imported_item = self.ctx[import_var]
+            self.ctx.add(name, imported_item)
         case _:  # from foo import bar
             assert isinstance(node.what, ast.IdExpr), "not a valid import what expression"
             # Make sure that we are importing an existing global symbol
