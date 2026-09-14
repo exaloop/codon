@@ -349,6 +349,8 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
   auto imp = getImport(module);
   if (auto r = in(realizations, type->realizedName())) {
     if (!force) {
+      if (!(*r)->ast && !(*r)->getType()->getRetType()->canRealize())
+        ctx->getBase()->recursiveDependencies.insert((*r)->type);
       return (*r)->getType();
     }
   }
@@ -461,6 +463,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
 
     if (!ret) {
       realizations.erase(key);
+      auto dependencies = std::move(ctx->getBase()->recursiveDependencies);
       ParserErrors errors;
       if (!startswith(ast->name, "%_lambda")) {
         // Lambda typecheck failures are "ignored" as they are treated as statements,
@@ -474,7 +477,22 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
         ctx->typecheckLevel--;
         getLogger().level--;
       }
-      if (!errors.empty()) {
+      bool deferred = false;
+      for (const auto &dependency : dependencies) {
+        if (dependency->getFunc()->getRetType()->canRealize())
+          continue;
+        for (const auto &[name, imported] : ctx->cache->imports) {
+          if (!imported.ctx)
+            continue;
+          for (const auto &base : imported.ctx->bases) {
+            if (base.type == dependency) {
+              oldCtx->getBase()->recursiveDependencies.insert(dependency);
+              deferred = true;
+            }
+          }
+        }
+      }
+      if (!errors.empty() && !deferred) {
         throw exc::ParserException(errors);
       }
       this->ctx = oldCtx;
@@ -500,6 +518,7 @@ types::Type *TypecheckVisitor::realizeFunc(types::FuncType *type, bool force) {
     ctx->popBlock();
     ctx->typecheckLevel--;
     getLogger().level--;
+    this->ctx = oldCtx;
     return nullptr;
   }
   seqassert(ret, "cannot realize return type '{}'", *(type->getRetType()));

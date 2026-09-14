@@ -169,3 +169,27 @@ os._getfullpathname(".")
 #! Windows full-path resolution is only available on Windows
 #! during the realization of _getfullpathname
 
+#%% unicode_decode_format_first,barebones
+import internal.static as static
+formatter = static.function.realized(UnicodeDecodeError.__str__, type._force_cast(cobj(), UnicodeDecodeError))
+error = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+print(formatter(error))  #: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
+base: BaseException = error
+assert str(base) == error.message
+
+#%% unicode_encode_format_first,barebones
+import internal.static as static
+formatter = static.function.realized(UnicodeEncodeError.__str__, type._force_cast(cobj(), UnicodeEncodeError))
+error = UnicodeEncodeError("ascii", chr(0xE9), 0, 1, "ordinal not in range(128)")
+print(formatter(error))  #: 'ascii' codec can't encode character '\xe9' in position 0: ordinal not in range(128)
+base: BaseException = error
+assert str(base) == error.message
+
+#%% unicode_translate_format_first,barebones
+import internal.static as static
+formatter = static.function.realized(UnicodeTranslateError.__str__, type._force_cast(cobj(), UnicodeTranslateError))
+error = UnicodeTranslateError("a", 0, 1, "missing mapping")
+print(formatter(error))  #: can't translate character '\x61' in position 0: missing mapping
+base: BaseException = error
+assert str(base) == error.message
+

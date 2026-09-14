@@ -1,5 +1,6 @@
 // Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
+#include <algorithm>
 #include <fmt/args.h>
 #include <limits>
 #include <map>
@@ -21,6 +22,17 @@ namespace codon::ast {
 
 using namespace types;
 
+namespace {
+template <typename Map> auto sortedKeys(const Map &items) {
+  std::vector<typename Map::key_type> keys;
+  keys.reserve(items.size());
+  for (const auto &[key, value] : items)
+    keys.push_back(key);
+  std::sort(keys.begin(), keys.end());
+  return keys;
+}
+} // namespace
+
 /// Generate ASTs for all internal functions that deal with vtable generation.
 /// Intended to be called once the typechecking is done.
 /// TODO: add JIT compatibility.
@@ -35,11 +47,12 @@ void TypecheckVisitor::prepareVTables() {
   std::unordered_set<std::string> cache;
   for (bool added = true; added;) {
     added = false;
-    for (const auto &[rn, real] : fn->realizations) {
+    for (const auto &rn : sortedKeys(fn->realizations)) {
       if (in(cache, rn))
         continue;
       cache.insert(rn);
       added = true;
+      auto real = fn->realizations.at(rn);
       fn->ast->suite = generateGetThunkIDAst(real->getType());
       real->type->ast = fn->ast;
       LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
@@ -60,7 +73,8 @@ void TypecheckVisitor::prepareVTables() {
   //   return Tuple[<types before B is reached in D>].__elemsize__
   fn = getFunction(getMangledMethod("std.internal.core", "RTTIType", "_dist"));
   oldAst = fn->ast;
-  for (const auto &real : fn->realizations | std::views::values) {
+  for (const auto &name : sortedKeys(fn->realizations)) {
+    auto real = fn->realizations.at(name);
     fn->ast->suite = generateBaseDerivedDistAST(real->getType());
     real->type->ast = fn->ast;
     LOG_REALIZE("[poly] {} : {}", real->type->debugString(2), fn->ast->toString(2));
@@ -71,8 +85,10 @@ void TypecheckVisitor::prepareVTables() {
 
 SuiteStmt *TypecheckVisitor::generateClassPopulateVTablesAST() {
   auto suite = N<SuiteStmt>();
-  for (const auto &cls : ctx->cache->classes | std::views::values) {
-    for (const auto &[r, real] : cls.realizations) {
+  for (const auto &name : sortedKeys(ctx->cache->classes)) {
+    const auto &cls = ctx->cache->classes.at(name);
+    for (const auto &r : sortedKeys(cls.realizations)) {
+      auto real = cls.realizations.at(r);
       if (real->vtable.empty())
         continue;
       // RTTIType._init_vtable(size, real.type)
@@ -240,27 +256,36 @@ SuiteStmt *TypecheckVisitor::generateGetThunkIDAst(types::FuncType *f) {
       std::static_pointer_cast<FuncType>(fp->shared_from_this());
 
   // Iterate through all derived classes and instantiate the corresponding thunk
-  for (const auto &[clsName, cls] : ctx->cache->classes) {
-    bool inMro = false;
-    for (auto &m : cls.mro)
-      if (m && m->is(baseCls)) {
-        inMro = true;
-        break;
-      }
-    if (inMro && clsName != baseCls) {
-      for (const auto &real : cls.realizations | std::views::values) {
-        if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
-          auto thunkFn = getFunction(thunkAst->name);
-          auto ti =
-              std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
-          auto tm = realizeFunc(ti.get(), true);
-          seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
-          seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}", baseCls,
-                    fnSig, real->getType()->realizedName());
-          real->vtable[key] =
-              std::static_pointer_cast<FuncType>(tm->shared_from_this());
-          LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
-                      real->getType()->realizedName(), key, vid);
+  std::set<std::pair<std::string, std::string>> visited;
+  for (bool added = true; added;) {
+    added = false;
+    for (const auto &clsName : sortedKeys(ctx->cache->classes)) {
+      const auto &cls = ctx->cache->classes.at(clsName);
+      bool inMro = false;
+      for (auto &m : cls.mro)
+        if (m && m->is(baseCls)) {
+          inMro = true;
+          break;
+        }
+      if (inMro && clsName != baseCls) {
+        for (const auto &name : sortedKeys(cls.realizations)) {
+          if (!visited.emplace(clsName, name).second)
+            continue;
+          added = true;
+          auto real = cls.realizations.at(name);
+          if (auto thunkAst = generateThunkAST(fp, cp, real->getType())) {
+            auto thunkFn = getFunction(thunkAst->name);
+            auto ti =
+                std::static_pointer_cast<FuncType>(instantiateType(thunkFn->getType()));
+            auto tm = realizeFunc(ti.get(), true);
+            seqassert(tm, "bad thunk {}", thunkFn->type->debugString(2));
+            seqassert(!in(real->vtable, key), "thunk {}.{} already added to {}",
+                      baseCls, fnSig, real->getType()->realizedName());
+            real->vtable[key] =
+                std::static_pointer_cast<FuncType>(tm->shared_from_this());
+            LOG_REALIZE("[thunk]: {}->{}@{} == {}", baseCls,
+                        real->getType()->realizedName(), key, vid);
+          }
         }
       }
     }
