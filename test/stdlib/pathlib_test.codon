@@ -215,7 +215,17 @@ def test_filesystem():
             assert link.readlink() == Path(file.name)
             assert link.samefile(file) and link.resolve() == file.resolve()
             assert link.lstat().st_mode & 0o170000 == 0o120000
-            file.chmod(0o600, follow_symlinks=False)
+            file.chmod(0o640)
+            try:
+                file.chmod(0o600, follow_symlinks=False)
+            except OSError as error:
+                assert static.platform() != "darwin"
+                assert error.errno == 95 or error.errno == 38
+                assert file.stat().st_mode & 0o777 == 0o640
+                print("SKIP: chmod without following symlinks is unsupported by the platform")
+            else:
+                assert file.stat().st_mode & 0o777 == 0o600
+            file.chmod(0o600)
             for use_lchmod in [False, True]:
                 try:
                     if use_lchmod:
