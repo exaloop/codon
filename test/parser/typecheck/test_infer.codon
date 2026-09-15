@@ -984,3 +984,81 @@ class A:
 A(1, 1.1)[1]
 #! expected iterable expression
 #! during the realization of __getitem__
+
+#%% recursive_virtual_method_first,barebones
+import internal.static as static
+
+class Root:
+    def value(self):
+        return 0
+
+class Leaf(Root):
+    cached: int
+    def __init__(self):
+        self.cached = self.value()
+    def value(self):
+        return build_value(False)
+
+class Other(Root):
+    def value(self):
+        return 7
+
+def build_value(recurse: bool) -> int:
+    if recurse:
+        return Leaf().cached
+    return 42
+
+method = static.function.realized(Leaf.value, type._force_cast(cobj(), Leaf))
+leaf = Leaf()
+base: Root = leaf
+print(method(leaf), base.value(), leaf.cached, build_value(True))  #: 42 42 42 42
+base = Other()
+print(base.value())  #: 7
+
+#%% recursive_virtual_constructor_first,barebones
+import internal.static as static
+
+class Root:
+    def value(self):
+        return 0
+
+class Other(Root):
+    def value(self):
+        return 7
+
+class Leaf(Root):
+    cached: int
+    def __init__(self):
+        self.cached = self.value()
+    def value(self):
+        return build_value(False)
+
+def build_value(recurse: bool) -> int:
+    if recurse:
+        return Leaf().cached
+    return 42
+
+leaf = Leaf()
+method = static.function.realized(Leaf.value, type._force_cast(cobj(), Leaf))
+base: Root = leaf
+print(method(leaf), base.value(), leaf.cached, build_value(True))  #: 42 42 42 42
+base = Other()
+print(base.value())  #: 7
+
+#%% recursive_virtual_no_return_constraint,barebones
+import internal.static as static
+
+class Root:
+    def value(self):
+        return 0
+
+class Leaf(Root):
+    def value(self):
+        return recurse(self)
+
+def recurse(value: Leaf):
+    return value.value()
+
+static.function.realized(Leaf.value, type._force_cast(cobj(), Leaf))
+#! cannot typecheck
+#! during the realization of value

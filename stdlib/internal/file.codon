@@ -800,7 +800,7 @@ def _file_write_newline_flags(newline_flags: int) -> int:
 
 def _file_stream_encode(
     state: _FileState, value: str, newline_flags: int
-) -> bytes:
+) -> Tuple[bytes, bool]:
     encoding = state._write_encoding_kind
     data, uniquely_owned = _unicode_encode_code_with_ownership(
         value, encoding, state._error_code
@@ -811,7 +811,7 @@ def _file_stream_encode(
     if not state._write_bom_done:
         state._write_bom_done = True
         state._write_encoding_kind = _file_native_stream_encoding(encoding)
-    return data
+    return data, uniquely_owned or data._ptr != value._ptr
 
 def _file_text_raw_length(state: _FileState, value: str) -> int:
     encoding = state._encoding_kind
@@ -1478,6 +1478,20 @@ def _file_prepare_stdio_append(state: _FileState):
         )
         state._write_bom_done = True
 
+def _file_path_cstring(path: str) -> cobj:
+    if static.platform() == "win32":
+        return path.c_str()
+    if "\0" in path:
+        raise ValueError("embedded null byte")
+    return path.encode("utf-8", "surrogateescape").c_str()
+
+def _file_open_error(path: Optional[str] = None):
+    from internal.types.error import _errno
+    code = _errno()
+    from C import strerror(i32) -> cobj
+    message = str.from_ptr(strerror(i32(code)))
+    raise OSError(code, message, path)
+
 @tuple
 class File[T]:
     _state: _FileState
@@ -1496,9 +1510,9 @@ class File[T]:
         _file_validate_text_config(encoding, errors, newline)
         raw_mode = __array__[u8](5)
         _file_stdio_mode(mode_flags, raw_mode)
-        fp = _C.fopen(path.c_str(), raw_mode)
+        fp = _C.fopen(_file_path_cstring(path), raw_mode)
         if not fp:
-            raise IOError(f"file {path} could not be opened")
+            _file_open_error(path)
         state = _FileState(fp, encoding, errors, newline, path, mode_flags)
         _file_prepare_stdio_append(state)
         return File[T](state)
@@ -1509,7 +1523,7 @@ class File[T]:
         _file_stdio_mode(mode_flags, raw_mode)
         fp = _C.fdopen(fd, raw_mode)
         if not fp:
-            raise IOError(f"file descriptor {fd} could not be opened")
+            _file_open_error()
         return File[T](_FileState(fp, path="", mode_flags=mode_flags))
 
     def _errcheck(self, msg: str):
@@ -1613,18 +1627,23 @@ class File[T]:
                 self._state._write_bom_done = True
                 _file_buffered_stdio_write(self._state, s._ptr, len(s))
             else:
-                data = _file_stream_encode(
+                data, uniquely_owned = _file_stream_encode(
                     self._state,
                     s,
                     newline_flags,
                 )
-                _file_buffered_stdio_write(self._state, data._ptr, len(data))
+                try:
+                    _file_buffered_stdio_write(self._state, data._ptr, len(data))
+                finally:
+                    if uniquely_owned:
+                        free(data._ptr)
         return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
             self.write(s)
 
+    @inline
     def read(self, sz: int = -1) -> T:
         self._ensure_open()
         _file_ensure_readable(self._state)
@@ -1725,6 +1744,7 @@ class File[T]:
 
         return result
 
+    @inline
     def _read_raw_into(self, output: Ptr[u8], length: int) -> int:
         if length <= 0:
             return 0
@@ -1891,9 +1911,9 @@ class gzFile[T]:
         _file_validate_text_config(encoding, errors, newline)
         raw_mode = __array__[u8](5)
         _file_compressed_mode(mode_flags, compresslevel, raw_mode)
-        fp = _C.gzopen(path.c_str(), raw_mode)
+        fp = _C.gzopen(_file_path_cstring(path), raw_mode)
         if not fp:
-            raise IOError(f"file {path} could not be opened")
+            _file_open_error(path)
         return gzFile[T](_FileState(fp, encoding, errors, newline, path, mode_flags, _FILE_BACKEND_GZIP))
 
     def __iter__(self) -> Generator[T]:
@@ -1982,12 +2002,14 @@ class gzFile[T]:
             newline_flags = _file_write_newline_flags(
                 self._state._newline_flags
             )
-            data = _file_stream_encode(
+            data, uniquely_owned = _file_stream_encode(
                 self._state,
                 s,
                 newline_flags,
             )
             _C.gzwrite(self._state._fp, data._ptr, u32(len(data)))
+            if uniquely_owned:
+                free(data._ptr)
         _gz_errcheck(self._state._fp)
         return len(s)
 
@@ -2247,7 +2269,7 @@ def _bz_open(path: str, mode_flags: int) -> cobj:
         mode[3] = u8(0)
     else:
         mode[2] = u8(0)
-    return _C.fopen(path.c_str(), mode)
+    return _C.fopen(_file_path_cstring(path), mode)
 
 def _bz_initialize(state: _BZState, compresslevel: int = 9) -> bool:
     state._reset_stream()
@@ -2418,7 +2440,7 @@ class bzFile[T]:
         _file_validate_text_config(encoding, errors, newline)
         raw_fp = _bz_open(path, mode_flags)
         if not raw_fp:
-            raise IOError(f"file {path} could not be opened")
+            _file_open_error(path)
         state = _FileState(cobj(), encoding, errors, newline, path, mode_flags, _FILE_BACKEND_BZIP2)
         bz = _BZState(raw_fp, mode_flags)
         if not _bz_initialize(bz, compresslevel):
@@ -2585,12 +2607,16 @@ class bzFile[T]:
             newline_flags = _file_write_newline_flags(
                 self._state._newline_flags
             )
-            data = _file_stream_encode(
+            data, uniquely_owned = _file_stream_encode(
                 self._state,
                 s,
                 newline_flags,
             )
-            _bz_write(self._bz, data._ptr, len(data))
+            try:
+                _bz_write(self._bz, data._ptr, len(data))
+            finally:
+                if uniquely_owned:
+                    free(data._ptr)
             self._state._position += len(data)
         return len(s)
 
@@ -2843,15 +2869,27 @@ def _file_text_encoding(encoding: Optional[str]) -> str:
 def _file_text_errors(errors: Optional[str]) -> str:
     return "strict" if errors is None else errors
 
+def _file_path_string(path) -> str:
+    if isinstance(path, str):
+        return path
+    elif hasattr(path, "__fspath__"):
+        value = path.__fspath__()
+        if isinstance(value, str):
+            return value
+        else:
+            compile_error("file paths must resolve to str")
+    else:
+        compile_error("expected str or a path-like object")
+
 def open(
-    path: str,
+    path,
     mode: str = "r",
     encoding: Optional[str] = None,
     errors: Optional[str] = None,
     newline: Optional[str] = None,
 ) -> File[str]:
     return File[str](
-        path,
+        _file_path_string(path),
         mode,
         _file_text_encoding(encoding),
         _file_text_errors(errors),
@@ -2860,7 +2898,7 @@ def open(
 
 @overload
 def open(
-    path: str,
+    path,
     mode: Literal[str],
     encoding: Optional[str] = None,
     errors: Optional[str] = None,
@@ -2871,10 +2909,10 @@ def open(
     if binary:
         if encoding is not None or errors is not None or newline is not None:
             raise ValueError("binary mode does not take encoding, errors or newline")
-        return File[bytes](path, mode)
+        return File[bytes](_file_path_string(path), mode)
     else:
         return File[str](
-            path,
+            _file_path_string(path),
             mode,
             _file_text_encoding(encoding),
             _file_text_errors(errors),

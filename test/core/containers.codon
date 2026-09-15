@@ -748,6 +748,108 @@ def test_dict():
 test_dict()
 
 @test
+def test_dict_pop(mapping):
+    for populated in [False, True]:
+        if populated:
+            mapping["keep"] = 17
+            mapping["target"] = 0
+        before = list(mapping.items())
+        try:
+            mapping.pop("absent")
+        except KeyError:
+            pass
+        else:
+            assert False
+        assert list(mapping.items()) == before
+    value = mapping.pop("target")
+    assert type(value) is int and value == 0
+    assert "target" not in mapping and len(mapping) == 1
+    assert mapping["keep"] == 17
+    try:
+        mapping.pop("target")
+    except KeyError:
+        pass
+    else:
+        assert False
+    assert list(mapping.items()) == [("keep", 17)]
+    mapping["target"] = 23
+    value = mapping.pop("target")
+    assert value == 23 and "target" not in mapping
+    value = mapping.pop("keep")
+    assert value == 17 and len(mapping) == 0
+
+test_dict_pop(OrderedDict[str, int]())
+test_dict_pop(UnorderedDict[str, int]())
+
+@test
+def test_dict_pop_with_missing(mapping, missing, expected: Optional[int]):
+    value = mapping.pop("absent", missing)
+    assert value == expected and len(mapping) == 0
+    mapping["first"] = 11
+    mapping["target"] = 0
+    mapping["last"] = 17
+    before = list(mapping.items())
+    value = mapping.pop("absent", missing)
+    assert value == expected and list(mapping.items()) == before
+    value = mapping.pop("target", missing)
+    assert value == 0
+    assert "target" not in mapping and len(mapping) == 2
+    assert sorted(mapping.items()) == [("first", 11), ("last", 17)]
+    if isinstance(mapping, OrderedDict):
+        assert list(mapping.items()) == [("first", 11), ("last", 17)]
+    value = mapping.pop("target", missing=missing)
+    assert value == expected and len(mapping) == 2
+    mapping["target"] = 23
+    if isinstance(mapping, OrderedDict):
+        assert list(mapping.items()) == [("first", 11), ("last", 17), ("target", 23)]
+    value = mapping.pop("target", missing=missing)
+    assert value == 23 and "target" not in mapping
+    value = mapping.pop("first", missing)
+    assert value == 11
+    value = mapping.pop("last", missing)
+    assert value == 17 and len(mapping) == 0
+    value = mapping.pop("last", missing)
+    assert value == expected and len(mapping) == 0
+
+test_dict_pop_with_missing(OrderedDict[str, int](), 0, Optional(0))
+test_dict_pop_with_missing(UnorderedDict[str, int](), 0, Optional(0))
+test_dict_pop_with_missing(OrderedDict[str, int](), -1, Optional(-1))
+test_dict_pop_with_missing(UnorderedDict[str, int](), -1, Optional(-1))
+test_dict_pop_with_missing(OrderedDict[str, int](), None, Optional[int]())
+test_dict_pop_with_missing(UnorderedDict[str, int](), None, Optional[int]())
+test_dict_pop_with_missing(OrderedDict[str, int](), Optional[int](), Optional[int]())
+test_dict_pop_with_missing(UnorderedDict[str, int](), Optional[int](), Optional[int]())
+test_dict_pop_with_missing(OrderedDict[str, int](), Optional(99), Optional(99))
+test_dict_pop_with_missing(UnorderedDict[str, int](), Optional(99), Optional(99))
+
+@test
+def test_dict_pop_optional(mapping):
+    for stored in (Optional[int](), Optional(0), Optional(42)):
+        mapping["key"] = stored
+        value = mapping.pop("key")
+        assert value == stored and len(mapping) == 0
+        mapping["key"] = stored
+        value = mapping.pop("key", Optional(99))
+        assert value == stored and len(mapping) == 0
+        mapping["key"] = stored
+        value = mapping.pop("key", None)
+        assert value == stored and len(mapping) == 0
+    value = mapping.pop("key", Optional(99))
+    assert value == 99 and len(mapping) == 0
+    value = mapping.pop("key", None)
+    assert value is None and len(mapping) == 0
+    try:
+        mapping.pop("key")
+    except KeyError:
+        pass
+    else:
+        assert False
+    assert len(mapping) == 0
+
+test_dict_pop_optional(OrderedDict[str, Optional[int]]())
+test_dict_pop_optional(UnorderedDict[str, Optional[int]]())
+
+@test
 def test_dict_ordering():
     # test_order_basic_insert
     d = OrderedDict()

@@ -302,6 +302,8 @@ void Cache::populatePythonModule() {
       pyModule->functions.push_back(py);
   }
 
+  tv.prepareVTables();
+
   // Handle pending realizations!
   auto pr = pendingRealizations; // copy it as it might be modified
   for (const auto &key : pr | std::views::keys)

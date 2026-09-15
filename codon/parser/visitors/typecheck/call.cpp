@@ -372,7 +372,11 @@ TypecheckVisitor::getCalleeFn(CallExpr *expr, PartialCallData &part) {
       typ = extractClassGeneric(typ)->getClass();
     if (!typ)
       return {nullptr, nullptr};
-    auto clsName = typ->name;
+    if (typ->is(getMangledClass("std.internal.types.error", "OSError"))) {
+      auto factory = transform(
+          N<CallExpr>(N<DotExpr>(expr->getExpr(), "_construct"), expr->items));
+      return {nullptr, factory};
+    }
     if (typ->isRecord()) {
       if (expr->hasAttribute(Attr::TupleCall)) {
         expr->eraseAttribute(Attr::TupleCall);

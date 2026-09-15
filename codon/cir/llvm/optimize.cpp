@@ -782,6 +782,7 @@ struct AllocationHoister : public llvm::PassInfoMixin<AllocationHoister> {
         B.SetInsertPointPastAllocas(parent);
         auto *cache = B.CreateAlloca(ptr);
         cache->setName("alloc_hoist.cache");
+        B.SetInsertPoint(terminator);
         B.CreateStore(llvm::ConstantPointerNull::get(ptr), cache);
         B.SetInsertPoint(ins);
         auto *cachedAlloc = B.CreateLoad(ptr, cache);

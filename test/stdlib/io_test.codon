@@ -31,6 +31,54 @@ def _raw_bytes(values: List[int]) -> bytes:
     return bytes(data, len(values))
 
 @test
+def test_oserror_compatibility():
+    assert IOError is OSError
+    for error in [IOError("message"), OSError("message")]:
+        assert isinstance(error, IOError) and isinstance(error, OSError)
+        assert error.errno is None and str(error) == "message"
+    try:
+        raise IOError(2, "missing", "example")
+    except OSError as error:
+        assert error.errno == 2 and error.filename == "example"
+        assert error.strerror == "missing"
+    try:
+        raise OSError("caught by old handler")
+    except IOError as error:
+        assert str(error) == "caught by old handler"
+    missing = PREFIX + "-missing-parent/file"
+    for backend in [0, 1, 2]:
+        try:
+            if backend == 0:
+                with open(missing) as stream:
+                    assert False
+            elif backend == 1:
+                with gzip.open(missing, "rt") as stream:
+                    assert False
+            else:
+                with bz2.open(missing, "rt") as stream:
+                    assert False
+            assert False
+        except OSError as error:
+            assert isinstance(error, IOError)
+            assert error.errno == 2 and error.filename == missing
+            assert error.strerror is not None and bool(unwrap(error.strerror))
+            assert repr(missing) in str(error)
+    path = PREFIX + "-exclusive-error.txt"
+    try:
+        with open(path, "w") as stream:
+            stream.write("preserved")
+        try:
+            with open(path, "x") as stream:
+                assert False
+        except OSError as error:
+            assert error.errno == 17 and error.filename == path
+        with open(path) as stream:
+            assert stream.read() == "preserved"
+    finally:
+        remove(path.c_str())
+
+
+@test
 def test_encoded_newline_buffer_ownership():
     ascii_value = "a\nb"
     borrowed, uniquely_owned = _unicode_encode_code_with_ownership(
@@ -74,6 +122,32 @@ def test_encoded_newline_buffer_ownership():
     )
     assert translated._ptr == owned_pointer
     assert translated == (_latin1_value() + "\r").encode()
+
+    path = PREFIX + "-write-ownership"
+    for encoding in ["ascii", "latin-1", "utf-8", "utf-16-le"]:
+        for newline in ["", "\r", "\r\n"]:
+            for value in [ascii_value, unicode_value, unicode_value + _unicode_from_codepoint(0x1F600)]:
+                original = value.encode("utf-8")
+                expected = value.replace("\n", newline or "\n").encode(encoding, "replace") * 32
+                with open(path, "w", encoding=encoding, errors="replace", newline=newline) as writer:
+                    for repeat in range(32):
+                        assert writer.write(value) == len(value)
+                with open(path, "rb") as reader:
+                    assert reader.read() == expected
+                assert value.encode("utf-8") == original
+                with gzip.open(path, "wt", encoding=encoding, errors="replace", newline=newline) as writer:
+                    for repeat in range(32):
+                        assert writer.write(value) == len(value)
+                with gzip.open(path, "rb") as reader:
+                    assert reader.read() == expected
+                assert value.encode("utf-8") == original
+                with bz2.open(path, "wt", encoding=encoding, errors="replace", newline=newline) as writer:
+                    for repeat in range(32):
+                        assert writer.write(value) == len(value)
+                with bz2.open(path, "rb") as reader:
+                    assert reader.read() == expected
+                assert value.encode("utf-8") == original
+    remove(path.c_str())
 
 def _assert_stateful_text_reads(reader):
     first = reader.read(1)
@@ -1727,6 +1801,7 @@ test_regular_file_basics()
 test_regular_file_modes_and_read_boundaries()
 test_large_read_chunks_do_not_alias()
 test_stateful_buffering_and_retained_results()
+test_oserror_compatibility()
 test_regular_file_context_and_closed_errors()
 test_regular_file_iteration_and_line_endings()
 test_text_encoding_and_error_modes()

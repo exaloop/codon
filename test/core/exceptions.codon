@@ -1,3 +1,73 @@
+@test
+def test_native_hierarchy():
+    assert IOError is OSError and EnvironmentError is OSError
+    assert isinstance(FileNotFoundError("missing"), OSError)
+    assert isinstance(BrokenPipeError("pipe"), ConnectionError)
+    assert isinstance(UnicodeError("unicode"), ValueError)
+    assert isinstance(RecursionError("recursion"), RuntimeError)
+    assert not isinstance(KeyboardInterrupt(), Exception)
+    assert not isinstance(GeneratorExit(), Exception)
+    assert isinstance(OSError(2, "missing", "file"), FileNotFoundError)
+    assert isinstance(OSError(13, "denied"), PermissionError)
+    assert isinstance(OSError(17, "exists"), FileExistsError)
+    assert not isinstance(FileNotFoundError(13, "explicit"), PermissionError)
+    decoded = UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "invalid start byte")
+    assert isinstance(decoded, UnicodeError) and isinstance(decoded, ValueError)
+    assert decoded.args == ("utf-8", b"a\xff", 1, 2, "invalid start byte")
+    assert str(decoded) == "'utf-8' codec can't decode byte 0xff in position 1: invalid start byte"
+    decoded.reason = "changed"
+    assert decoded.args[-1] == "invalid start byte"
+    try:
+        raise decoded
+    except ValueError as error:
+        assert str(error).endswith(": changed")
+        assert repr(error) == "UnicodeDecodeError('utf-8', b'a\\xff', 1, 2, 'invalid start byte')"
+    encoded = UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)")
+    assert str(encoded) == "'ascii' codec can't encode character '\\xe9' in position 0: ordinal not in range(128)"
+    for encoding in ["utf-8", "utf-16-le", "ascii", "cp1252"]:
+        value = "a" + chr(0xD800) + chr(0xD801) + "b"
+        try:
+            value.encode(encoding)
+            assert False
+        except UnicodeEncodeError as error:
+            assert error.object == value and error.start == 1
+            assert error.end == (2 if encoding == "utf-16-le" else 3)
+    translated = UnicodeTranslateError("\u1234", 0, 1, "invalid")
+    assert str(translated) == "can't translate character '\\u1234' in position 0: invalid"
+    for raw in [b"a\xff", b"a\xe2\x82", b"a\xe2\x82b"]:
+        try:
+            raw.decode("utf-8")
+            assert False
+        except UnicodeDecodeError as error:
+            assert error.encoding == "utf-8" and error.object == raw
+            assert error.start == 1
+            assert error.end == (2 if raw == b"a\xff" else 3)
+            assert str(error) == error.message
+    try:
+        raise OSError(2, "missing", "file")
+    except FileNotFoundError as error:
+        assert error.errno == 2 and error.filename == "file"
+
+test_native_hierarchy()
+
+from internal.types.error import OSError as NativeOSError
+
+class OSError:
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+
+@test
+def test_shadowed_oserror():
+    shadowed = OSError(7)
+    assert shadowed.value == 7
+    assert isinstance(NativeOSError(2, "missing"), FileNotFoundError)
+    assert isinstance(IOError(13, "denied"), PermissionError)
+    assert isinstance(EnvironmentError(17, "exists"), FileExistsError)
+
+test_shadowed_oserror()
+
 class Exc1(Exception):
     def __init__(self, msg: str):
         super().__init__(msg)

@@ -1,6 +1,69 @@
 import myext as m
 import myext2 as m2
 
+def test_native_exceptions():
+    expected = [
+        FileNotFoundError(2, "missing", "source", None, "target"),
+        UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "invalid start byte"),
+        UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)"),
+        UnicodeTranslateError("\u1234", 0, 1, "invalid"),
+        UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "original"),
+        BrokenPipeError("closed"),
+        KeyboardInterrupt("stop"),
+        SystemExit(42),
+        SystemExit("input file not found"),
+        SystemExit(""),
+        ValueError("ordinary"),
+    ]
+    expected[4].reason = "changed"
+    for index, reference in enumerate(expected):
+        try:
+            m.raise_native_error(index)
+        except BaseException as error:
+            assert type(error) is type(reference), (index, type(error), type(reference))
+            assert error.args == reference.args
+            assert str(error) == str(reference)
+            for field in ("errno", "strerror", "filename", "filename2", "encoding",
+                          "object", "start", "end", "reason", "code"):
+                if hasattr(reference, field):
+                    assert getattr(error, field) == getattr(reference, field), (index, field)
+        else:
+            raise AssertionError(f"exception {index} was not raised")
+
+test_native_exceptions()
+
+def test_native_exit():
+    for status in (-7, 0, 42, "input file not found", "", "caf\u00e9", "line\nbreak", "nul\0message"):
+        try:
+            m.exit_native(status)
+        except SystemExit as error:
+            assert type(error) is SystemExit
+            assert error.code == status
+            assert error.args == (status,)
+        else:
+            raise AssertionError(f"sys.exit({status!r}) did not raise")
+        assert m.f5() is None
+
+test_native_exit()
+
+def test_export_only_dispatch():
+    for derived in (False, True):
+        for value in (-4, 0, 7):
+            for offset in (0, 5):
+                expected = (3 * value if derived else value) + offset
+                assert m.export_only_dispatch(derived, value, offset) == expected
+    assert m.export_only_dispatch(False, 7, -1) == 6
+    try:
+        m.export_only_dispatch(True, 7, -1)
+    except ValueError as error:
+        assert type(error) is ValueError
+        assert error.args == ("negative offset in derived method",)
+    else:
+        raise AssertionError("derived method did not raise")
+    assert m.export_only_dispatch(True, 7, 5) == 26
+
+test_export_only_dispatch()
+
 def equal(v, a, b, tag):
     ok = (v.a == a and v.b == b and v.tag == tag)
     if not ok:

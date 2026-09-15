@@ -695,12 +695,14 @@ def _normalize_search_bounds(length: int, start: int, end: int) -> Tuple[int, in
     return start, end
 
 
-def _raise_utf8_decode_error(pos: int, end: int, reason: str):
-    raise ValueError(f"utf-8 decode error at bytes {pos}-{end}: {reason}")
+def _raise_utf8_decode_error(data: Ptr[u8], byte_length: int):
+    _unicode_decode_utf8(data, byte_length, _ERROR_STRICT)
 
 
-def _raise_utf8_encode_error(pos: int, end: int, reason: str):
-    raise ValueError(f"utf-8 encode error at code points {pos}-{end}: {reason}")
+def _raise_utf8_encode_error(value: str, pos: int, end: int, reason: str):
+    while end < len(value) and _is_surrogate(value._load_codepoint(end)):
+        end += 1
+    raise UnicodeEncodeError("utf-8", value, pos, end, reason)
 
 
 def _utf8_scan_strict(
@@ -739,26 +741,26 @@ def _utf8_scan_strict(
             pos += 1
         elif 0xC2 <= b0 <= 0xDF:
             if pos + 1 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             if not _is_utf8_continuation(b1):
-                _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
             pos += 2
         elif 0xE0 <= b0 <= 0xEF:
             if pos + 2 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             b2 = int(data[pos + 2])
             if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
-                _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
             if cp < 0x800 or _is_surrogate(cp):
-                _raise_utf8_decode_error(start, start + 3, "invalid code point")
+                _raise_utf8_decode_error(data, byte_length)
             pos += 3
         elif 0xF0 <= b0 <= 0xF4:
             if pos + 3 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             b2 = int(data[pos + 2])
             b3 = int(data[pos + 3])
@@ -767,7 +769,7 @@ def _utf8_scan_strict(
                 or not _is_utf8_continuation(b2)
                 or not _is_utf8_continuation(b3)
             ):
-                _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = (
                 ((b0 & 0x07) << 18)
                 | ((b1 & 0x3F) << 12)
@@ -775,10 +777,10 @@ def _utf8_scan_strict(
                 | (b3 & 0x3F)
             )
             if cp < 0x10000 or cp > UNICODE_MAX:
-                _raise_utf8_decode_error(start, start + 4, "invalid code point")
+                _raise_utf8_decode_error(data, byte_length)
             pos += 4
         else:
-            _raise_utf8_decode_error(start, start + 1, "invalid start byte")
+            _raise_utf8_decode_error(data, byte_length)
             cp = 0
             pos += 1
         length += 1
@@ -832,10 +834,10 @@ def _unicode_decode_utf8_ucs4_strict(
             pos += 1
         elif 0xC2 <= b0 <= 0xDF:
             if pos + 1 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             if not _is_utf8_continuation(b1):
-                _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
             pos += 2
             output[out] = u32(cp)
@@ -851,18 +853,18 @@ def _unicode_decode_utf8_ucs4_strict(
             continue
         elif 0xE0 <= b0 <= 0xEF:
             if pos + 2 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             b2 = int(data[pos + 2])
             if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
-                _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
             if cp < 0x800 or _is_surrogate(cp):
-                _raise_utf8_decode_error(start, start + 3, "invalid code point")
+                _raise_utf8_decode_error(data, byte_length)
             pos += 3
         elif 0xF0 <= b0 <= 0xF4:
             if pos + 3 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             b2 = int(data[pos + 2])
             b3 = int(data[pos + 3])
@@ -871,7 +873,7 @@ def _unicode_decode_utf8_ucs4_strict(
                 or not _is_utf8_continuation(b2)
                 or not _is_utf8_continuation(b3)
             ):
-                _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = (
                 ((b0 & 0x07) << 18)
                 | ((b1 & 0x3F) << 12)
@@ -879,10 +881,10 @@ def _unicode_decode_utf8_ucs4_strict(
                 | (b3 & 0x3F)
             )
             if cp < 0x10000 or cp > UNICODE_MAX:
-                _raise_utf8_decode_error(start, start + 4, "invalid code point")
+                _raise_utf8_decode_error(data, byte_length)
             pos += 4
         else:
-            _raise_utf8_decode_error(start, start + 1, "invalid start byte")
+            _raise_utf8_decode_error(data, byte_length)
             cp = 0
             pos += 1
         output[out] = u32(cp)
@@ -934,26 +936,26 @@ def _unicode_decode_utf8_ucs2_optimistic(
             pos += 1
         elif 0xC2 <= b0 <= 0xDF:
             if pos + 1 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 1, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             if not _is_utf8_continuation(b1):
-                _raise_utf8_decode_error(pos + 1, pos + 2, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = ((b0 & 0x1F) << 6) | (b1 & 0x3F)
             pos += 2
         elif 0xE0 <= b0 <= 0xEF:
             if pos + 2 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 3, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             b2 = int(data[pos + 2])
             if not _is_utf8_continuation(b1) or not _is_utf8_continuation(b2):
-                _raise_utf8_decode_error(pos + 1, pos + 3, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = ((b0 & 0x0F) << 12) | ((b1 & 0x3F) << 6) | (b2 & 0x3F)
             if cp < 0x800 or _is_surrogate(cp):
-                _raise_utf8_decode_error(start, start + 3, "invalid code point")
+                _raise_utf8_decode_error(data, byte_length)
             pos += 3
         elif 0xF0 <= b0 <= 0xF4:
             if pos + 3 >= byte_length:
-                _raise_utf8_decode_error(pos, pos + 4, "unexpected EOF")
+                _raise_utf8_decode_error(data, byte_length)
             b1 = int(data[pos + 1])
             b2 = int(data[pos + 2])
             b3 = int(data[pos + 3])
@@ -962,7 +964,7 @@ def _unicode_decode_utf8_ucs2_optimistic(
                 or not _is_utf8_continuation(b2)
                 or not _is_utf8_continuation(b3)
             ):
-                _raise_utf8_decode_error(pos + 1, pos + 4, "invalid continuation byte")
+                _raise_utf8_decode_error(data, byte_length)
             cp = (
                 ((b0 & 0x07) << 18)
                 | ((b1 & 0x3F) << 12)
@@ -970,10 +972,11 @@ def _unicode_decode_utf8_ucs2_optimistic(
                 | (b3 & 0x3F)
             )
             if cp < 0x10000 or cp > UNICODE_MAX:
-                _raise_utf8_decode_error(start, start + 4, "invalid code point")
+                _raise_utf8_decode_error(data, byte_length)
+            gc.free(output.as_byte())
             return str(), False
         else:
-            _raise_utf8_decode_error(start, start + 1, "invalid start byte")
+            _raise_utf8_decode_error(data, byte_length)
             cp = 0
             pos += 1
 
@@ -1139,7 +1142,7 @@ def _utf8_encode_one(
     cp: int,
 ) -> int:
     if cp > UNICODE_MAX or _is_surrogate(cp):
-        _raise_utf8_encode_error(0, 0, "invalid code point")
+        raise ValueError("invalid code point")
 
     return _utf8_encode_one_valid(output, pos, cp)
 
@@ -1453,13 +1456,13 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
             invalid = u16(block >> u64(32))
             if invalid:
                 offset = _utf8_first_nonascii(invalid)
-                _raise_utf8_encode_error(i + offset, i + offset + 1, "surrogates not allowed")
+                _raise_utf8_encode_error(value, i + offset, i + offset + 1, "surrogates not allowed")
             size += int(block & u64(0xFFFFFFFF))
             i += 16
         while i < len(value):
             cp = int(codepoints[i])
             if _is_surrogate(cp):
-                _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+                _raise_utf8_encode_error(value, i, i + 1, "surrogates not allowed")
             size += _utf8_encoded_width(cp)
             i += 1
 
@@ -1520,13 +1523,13 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
             invalid = u16(block >> u64(32))
             if invalid:
                 offset = _utf8_first_nonascii(invalid)
-                _raise_utf8_encode_error(i + offset, i + offset + 1, "surrogates not allowed")
+                _raise_utf8_encode_error(value, i + offset, i + offset + 1, "surrogates not allowed")
             size += int(block & u64(0xFFFFFFFF))
             i += 16
         while i < len(value):
             cp = int(codepoints[i])
             if cp > UNICODE_MAX or _is_surrogate(cp):
-                _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+                _raise_utf8_encode_error(value, i, i + 1, "surrogates not allowed")
             size += _utf8_encoded_width(cp)
             i += 1
 
@@ -1565,7 +1568,7 @@ def _unicode_encode_utf8_strict(value: str) -> bytes:
     for i in range(len(value)):
         cp = value._load_codepoint(i)
         if _is_surrogate(cp):
-            _raise_utf8_encode_error(i, i + 1, "surrogates not allowed")
+            _raise_utf8_encode_error(value, i, i + 1, "surrogates not allowed")
         size += _utf8_encoded_width(cp)
 
     output = Ptr[u8](size)
@@ -1611,7 +1614,7 @@ def _unicode_encode_utf8(value: str, errors: int) -> bytes:
                 output.append(codepoint - 0xDC00)
                 continue
 
-            _codec_encode_error_append(output, codepoint, errors)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_UTF8)
             continue
 
         if codepoint < 0x80:
@@ -1729,9 +1732,16 @@ def _codec_error_append(
     start: int,
     end: int,
     errors: int,
+    byte_length: int,
+    encoding: str,
+    reason: str,
 ):
-    if errors == _ERROR_STRICT:
-        raise ValueError("invalid byte sequence")
+    if errors == _ERROR_STRICT or errors == _ERROR_SURROGATEPASS or (
+        errors == _ERROR_SURROGATEESCAPE and any(data[index] < u8(0x80) for index in range(start, end))
+    ):
+        owned = Ptr[u8](byte_length)
+        str.memcpy(owned, data, byte_length)
+        raise UnicodeDecodeError(encoding, bytes(owned, byte_length), start, end, reason)
 
     if errors == _ERROR_IGNORE:
         if output.errors is not None:
@@ -1748,8 +1758,6 @@ def _codec_error_append(
     if errors == _ERROR_SURROGATEESCAPE:
         for i in range(start, end):
             byte = int(data[i])
-            if byte < 0x80:
-                raise ValueError("invalid byte sequence")
             output.append(0xDC00 + byte)
         return
 
@@ -1801,12 +1809,12 @@ def _unicode_decode_utf8(
         elif 0xF0 <= b0 <= 0xF4:
             width = 4
         else:
-            _codec_error_append(output, data, start, start + 1, errors)
+            _codec_error_append(output, data, start, start + 1, errors, byte_length, "utf-8", "invalid start byte")
             pos += 1
             continue
 
         if pos + 1 >= byte_length:
-            _codec_error_append(output, data, start, byte_length, errors)
+            _codec_error_append(output, data, start, byte_length, errors, byte_length, "utf-8", "unexpected end of data")
             break
 
         b1 = int(data[pos + 1])
@@ -1817,27 +1825,27 @@ def _unicode_decode_utf8(
             or (b0 == 0xF0 and b1 < 0x90)
             or (b0 == 0xF4 and b1 > 0x8F)
         ):
-            _codec_error_append(output, data, start, start + 1, errors)
+            _codec_error_append(output, data, start, start + 1, errors, byte_length, "utf-8", "invalid continuation byte")
             pos += 1
             continue
 
         if width >= 3:
             if pos + 2 >= byte_length:
-                _codec_error_append(output, data, start, byte_length, errors)
+                _codec_error_append(output, data, start, byte_length, errors, byte_length, "utf-8", "unexpected end of data")
                 break
             b2 = int(data[pos + 2])
             if not _is_utf8_continuation(b2):
-                _codec_error_append(output, data, start, start + 2, errors)
+                _codec_error_append(output, data, start, start + 2, errors, byte_length, "utf-8", "invalid continuation byte")
                 pos += 2
                 continue
 
         if width == 4:
             if pos + 3 >= byte_length:
-                _codec_error_append(output, data, start, byte_length, errors)
+                _codec_error_append(output, data, start, byte_length, errors, byte_length, "utf-8", "unexpected end of data")
                 break
             b3 = int(data[pos + 3])
             if not _is_utf8_continuation(b3):
-                _codec_error_append(output, data, start, start + 3, errors)
+                _codec_error_append(output, data, start, start + 3, errors, byte_length, "utf-8", "invalid continuation byte")
                 pos += 3
                 continue
 
@@ -1863,7 +1871,7 @@ def _unicode_decode_single_byte(
     for i in range(byte_length):
         byte = int(data[i])
         if ascii and byte > 0x7F:
-                _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors, byte_length, "ascii", "ordinal not in range(128)")
         else:
                 output.append(byte)
 
@@ -1935,7 +1943,7 @@ def _unicode_decode_cp1252(
             codepoint = int(_cp1252_c1_codepoint(byte - 0x80))
 
         if codepoint < 0:
-            _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors, byte_length, "charmap", "character maps to <undefined>")
         else:
             output.append(codepoint)
 
@@ -1960,7 +1968,7 @@ def _unicode_decode_cp1251(
             codepoint = int(_cp1251_c1_codepoint(byte - 0x80))
 
         if codepoint < 0:
-            _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors, byte_length, "charmap", "character maps to <undefined>")
         else:
             output.append(codepoint)
 
@@ -1978,7 +1986,7 @@ def _unicode_decode_cp1250(
     for i in range(byte_length):
         codepoint = int(_single_byte_cp1250_decode(int(data[i])))
         if codepoint < 0:
-            _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors, byte_length, "charmap", "character maps to <undefined>")
         else:
             output.append(codepoint)
 
@@ -1996,7 +2004,7 @@ def _unicode_decode_cp1253(
     for i in range(byte_length):
         codepoint = int(_single_byte_cp1253_decode(int(data[i])))
         if codepoint < 0:
-            _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors, byte_length, "charmap", "character maps to <undefined>")
         else:
             output.append(codepoint)
 
@@ -2014,7 +2022,7 @@ def _unicode_decode_cp1254(
     for i in range(byte_length):
         codepoint = int(_single_byte_cp1254_decode(int(data[i])))
         if codepoint < 0:
-            _codec_error_append(output, data, i, i + 1, errors)
+            _codec_error_append(output, data, i, i + 1, errors, byte_length, "charmap", "character maps to <undefined>")
         else:
             output.append(codepoint)
 
@@ -2070,9 +2078,10 @@ def _unicode_decode_utf16(
             little_endian = False
             pos = 2
 
+    encoding = "utf-16-le" if little_endian else "utf-16-be"
     while pos < byte_length:
         if pos + 2 > byte_length:
-            _codec_error_append(output, data, pos, byte_length, errors)
+            _codec_error_append(output, data, pos, byte_length, errors, byte_length, encoding, "truncated data")
             break
 
         if little_endian:
@@ -2095,12 +2104,14 @@ def _unicode_decode_utf16(
             if errors == _ERROR_SURROGATEPASS:
                 output.append(unit)
             else:
-                _codec_error_append(output, data, pos, pos + 2, errors)
+                end = byte_length if pos + 4 > byte_length else pos + 2
+                reason = "unexpected end of data" if pos + 4 > byte_length else "illegal UTF-16 surrogate"
+                _codec_error_append(output, data, pos, end, errors, byte_length, encoding, reason)
         elif 0xDC00 <= unit <= 0xDFFF:
             if errors == _ERROR_SURROGATEPASS:
                 output.append(unit)
             else:
-                _codec_error_append(output, data, pos, pos + 2, errors)
+                _codec_error_append(output, data, pos, pos + 2, errors, byte_length, encoding, "illegal encoding")
         else:
             output.append(unit)
 
@@ -2134,9 +2145,10 @@ def _unicode_decode_utf32(
             little_endian = False
             pos = 4
 
+    encoding = "utf-32-le" if little_endian else "utf-32-be"
     while pos < byte_length:
         if pos + 4 > byte_length:
-            _codec_error_append(output, data, pos, byte_length, errors)
+            _codec_error_append(output, data, pos, byte_length, errors, byte_length, encoding, "truncated data")
             break
 
         if little_endian:
@@ -2157,7 +2169,8 @@ def _unicode_decode_utf32(
         if codepoint > UNICODE_MAX or (
             _is_surrogate(codepoint) and errors != _ERROR_SURROGATEPASS
         ):
-            _codec_error_append(output, data, pos, pos + 4, errors)
+            reason = "code point not in range(0x110000)" if codepoint > UNICODE_MAX else "code point in surrogate code point range(0xd800, 0xe000)"
+            _codec_error_append(output, data, pos, pos + 4, errors, byte_length, encoding, reason)
         else:
             output.append(codepoint)
 
@@ -2284,14 +2297,36 @@ def _codec_encode_backslashreplace_append(
 
 def _codec_encode_error_append(
     output: _CodecByteBuffer,
-    codepoint: int,
+    value: str,
+    start: int,
     errors: int,
+    encoding: int,
     allow_surrogateescape: bool = False,
     width: int = 1,
     little_endian: bool = True,
 ):
-    if errors == _ERROR_STRICT or errors == _ERROR_SURROGATEPASS:
-        _raise_utf8_encode_error(0, 0, "code point not encodable")
+    codepoint = value._load_codepoint(start)
+    if errors == _ERROR_STRICT or errors == _ERROR_SURROGATEPASS or (
+        errors == _ERROR_SURROGATEESCAPE and not (allow_surrogateescape and 0xDC80 <= codepoint <= 0xDCFF)
+    ):
+        end = start + 1
+        if width == 1:
+            while end < len(value) and not _unicode_encode_code(value[end:end + 1], encoding, _ERROR_IGNORE):
+                end += 1
+        if encoding == _ENCODING_UTF8:
+            name, reason = "utf-8", "surrogates not allowed"
+        elif encoding == _ENCODING_ASCII:
+            name, reason = "ascii", "ordinal not in range(128)"
+        elif encoding == _ENCODING_LATIN1:
+            name, reason = "latin-1", "ordinal not in range(256)"
+        elif width == 2 or width == 4:
+            name = "utf-16" if width == 2 else "utf-32"
+            if encoding != _ENCODING_UTF16 and encoding != _ENCODING_UTF32:
+                name += "-le" if little_endian else "-be"
+            reason = "surrogates not allowed"
+        else:
+            name, reason = "charmap", "character maps to <undefined>"
+        raise UnicodeEncodeError(name, value, start, end, reason)
 
     if errors == _ERROR_IGNORE:
         return
@@ -2301,10 +2336,8 @@ def _codec_encode_error_append(
         return
 
     if errors == _ERROR_SURROGATEESCAPE:
-        if allow_surrogateescape and 0xDC80 <= codepoint <= 0xDCFF:
-            output.append(codepoint - 0xDC00)
-            return
-        _raise_utf8_encode_error(0, 0, "code point not encodable")
+        output.append(codepoint - 0xDC00)
+        return
 
     if errors == _ERROR_BACKSLASHREPLACE:
         _codec_encode_backslashreplace_append(
@@ -2371,7 +2404,7 @@ def _unicode_encode_single_byte(
     for i in range(len(value)):
         codepoint = value._load_codepoint(i)
         if codepoint > limit:
-            _codec_encode_error_append(output, codepoint, errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_ASCII if ascii else _ENCODING_LATIN1, True)
         else:
             output.append(codepoint)
 
@@ -2391,7 +2424,7 @@ def _unicode_encode_cp1252(value: str, errors: int) -> bytes:
             byte = int(_cp1252_c1_byte(codepoint))
 
         if byte < 0:
-            _codec_encode_error_append(output, codepoint, errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_CP1252, True)
         else:
             output.append(byte)
 
@@ -2417,7 +2450,7 @@ def _unicode_encode_cp1251(value: str, errors: int) -> bytes:
             byte = int(_cp1251_c1_byte(codepoint))
 
         if byte < 0:
-            _codec_encode_error_append(output, codepoint, errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_CP1251, True)
         else:
             output.append(byte)
 
@@ -2431,7 +2464,7 @@ def _unicode_encode_cp1250(value: str, errors: int) -> bytes:
         codepoint = value._load_codepoint(i)
         byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1250_encode(codepoint))
         if byte < 0:
-            _codec_encode_error_append(output, codepoint, errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_CP1250, True)
         else:
             output.append(byte)
 
@@ -2445,7 +2478,7 @@ def _unicode_encode_cp1253(value: str, errors: int) -> bytes:
         codepoint = value._load_codepoint(i)
         byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1253_encode(codepoint))
         if byte < 0:
-            _codec_encode_error_append(output, codepoint, errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_CP1253, True)
         else:
             output.append(byte)
 
@@ -2459,7 +2492,7 @@ def _unicode_encode_cp1254(value: str, errors: int) -> bytes:
         codepoint = value._load_codepoint(i)
         byte = codepoint if codepoint <= 0x7F else int(_single_byte_cp1254_encode(codepoint))
         if byte < 0:
-            _codec_encode_error_append(output, codepoint, errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_CP1254, True)
         else:
             output.append(byte)
 
@@ -2504,7 +2537,7 @@ def _unicode_encode_iso8859_15(value: str, errors: int) -> bytes:
     for i in range(len(value)):
         byte = _iso8859_15_encode_byte(value._load_codepoint(i))
         if byte < 0:
-            _codec_encode_error_append(output, value._load_codepoint(i), errors, True)
+            _codec_encode_error_append(output, value, i, errors, _ENCODING_ISO8859_15, True)
         else:
             output.append(byte)
 
@@ -2532,7 +2565,7 @@ def _unicode_encode_utf16(
         codepoint = value._load_codepoint(i)
         if _is_surrogate(codepoint) and errors != _ERROR_SURROGATEPASS:
             _codec_encode_error_append(
-                output, codepoint, errors, False, 2, little_endian
+                output, value, i, errors, _ENCODING_UTF16 if bom else _ENCODING_UTF16_LE if little_endian else _ENCODING_UTF16_BE, False, 2, little_endian
             )
             continue
         if codepoint <= 0xFFFF:
@@ -2586,7 +2619,7 @@ def _unicode_encode_utf32(
         codepoint = value._load_codepoint(i)
         if _is_surrogate(codepoint) and errors != _ERROR_SURROGATEPASS:
             _codec_encode_error_append(
-                output, codepoint, errors, False, 4, little_endian
+                output, value, i, errors, _ENCODING_UTF32 if bom else _ENCODING_UTF32_LE if little_endian else _ENCODING_UTF32_BE, False, 4, little_endian
             )
             continue
         if little_endian:

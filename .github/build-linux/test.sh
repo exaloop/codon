@@ -11,6 +11,7 @@ cd "$WORKSPACE"
 if [ "$(uname -s)" = "Linux" ]; then
   ~/.pyenv/bin/pyenv global 3.11
   export PATH="/root/.pyenv/shims:${PATH}"
+  export CODON_OS_TEST_REQUIRE_RAW_PATHS=1
 
   # needed for dylib test
   ln -s -f $(pwd)/build-${ARCH}/libcodonrt.so .
@@ -35,14 +36,20 @@ else
   time build-${ARCH}/codon_test
 fi
 
+echo "=> OS differential tests..."
+python test/stdlib/os_differential.py --codon "${CODON_DIR}/bin/codon"
+
 echo "=> Standalone test..."
 CODON_PATH=${CODON_DIR}/lib/codon/stdlib test/app/test.sh build-${ARCH}
 
 echo "=> Cython test..."
 CODON_PATH=${CODON_DIR}/lib/codon/stdlib python test/python/cython_jit.py
 
-echo "=> pyext test..."
-(cd test/python && python setup.py build_ext --inplace && python pyext.py)
+echo "=> pyext debug test..."
+(cd test/python && python setup.py build_ext --inplace --debug --force && python pyext.py)
+
+echo "=> pyext release test..."
+(cd test/python && python setup.py build_ext --inplace --force && python pyext.py)
 
 # GPU test; only on select platforms
 if command -v nvcc &> /dev/null; then

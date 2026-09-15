@@ -27,6 +27,61 @@ def f4(x: str):
 def f5():
     pass
 
+def raise_native_error(kind: int):
+    if kind == 0:
+        raise OSError(2, "missing", "source", None, "target")
+    if kind == 1:
+        raise UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "invalid start byte")
+    if kind == 2:
+        raise UnicodeEncodeError("ascii", "\u00e9", 0, 1, "ordinal not in range(128)")
+    if kind == 3:
+        raise UnicodeTranslateError("\u1234", 0, 1, "invalid")
+    if kind == 4:
+        error = UnicodeDecodeError("utf-8", b"a\xff", 1, 2, "original")
+        error.reason = "changed"
+        raise error
+    if kind == 5:
+        raise BrokenPipeError("closed")
+    if kind == 6:
+        raise KeyboardInterrupt("stop")
+    if kind == 7:
+        raise SystemExit(42)
+    if kind == 8:
+        raise SystemExit("input file not found")
+    if kind == 9:
+        raise SystemExit("")
+    raise ValueError("ordinary")
+
+def exit_native(status: int):
+    import sys
+    sys.exit(status)
+
+@overload
+def exit_native(status: str):
+    import sys
+    sys.exit(status)
+
+class DispatchBase:
+    value: int
+
+    def __init__(self, value: int):
+        self.value = value
+
+    def evaluate(self, offset: int) -> int:
+        return self.value + offset
+
+class DispatchDerived(DispatchBase):
+    def evaluate(self, offset: int) -> int:
+        if offset < 0:
+            raise ValueError("negative offset in derived method")
+        return 3 * self.value + offset
+
+def export_only_dispatch(derived: bool, value: int, offset: int) -> int:
+    instance: DispatchBase = DispatchBase(value)
+    if derived:
+        instance = DispatchDerived(value)
+    return instance.evaluate(offset)
+
 @dataclass(python=True)
 class Vec:
     a: float

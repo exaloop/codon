@@ -93,7 +93,8 @@ class RTTIType:
         if not static.has_rtti(type(slf)):
             compile_error("class is not polymorphic")
 
-        FR = type(static.function.realized(F, slf, *args))
+        converted = static.function.wrap_args(F, slf, *args)
+        FR = type(static.function.realized(F, *converted))
         T = type(slf)
         thunk_id = RTTIType._get_thunk_id(FR, T)
 
@@ -102,7 +103,7 @@ class RTTIType:
             cls_id = type._force_cast(type._force_cast(slf, RTTIType).typeinfo, TypeInfo).id
         fptr = __vtables__[cls_id][thunk_id]
         f = FR(fptr)
-        return f(slf, *args)
+        return f(*converted)
 
     def _get_typeinfo(obj: T, T: type) -> TypeInfo:
         if static.has_rtti(T):
