@@ -973,6 +973,7 @@ def _unicode_decode_utf8_ucs2_optimistic(
             )
             if cp < 0x10000 or cp > UNICODE_MAX:
                 _raise_utf8_decode_error(data, byte_length)
+            gc.free(output.as_byte())
             return str(), False
         else:
             _raise_utf8_decode_error(data, byte_length)

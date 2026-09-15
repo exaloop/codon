@@ -800,7 +800,7 @@ def _file_write_newline_flags(newline_flags: int) -> int:
 
 def _file_stream_encode(
     state: _FileState, value: str, newline_flags: int
-) -> bytes:
+) -> Tuple[bytes, bool]:
     encoding = state._write_encoding_kind
     data, uniquely_owned = _unicode_encode_code_with_ownership(
         value, encoding, state._error_code
@@ -811,7 +811,7 @@ def _file_stream_encode(
     if not state._write_bom_done:
         state._write_bom_done = True
         state._write_encoding_kind = _file_native_stream_encoding(encoding)
-    return data
+    return data, uniquely_owned or data._ptr != value._ptr
 
 def _file_text_raw_length(state: _FileState, value: str) -> int:
     encoding = state._encoding_kind
@@ -1627,18 +1627,23 @@ class File[T]:
                 self._state._write_bom_done = True
                 _file_buffered_stdio_write(self._state, s._ptr, len(s))
             else:
-                data = _file_stream_encode(
+                data, uniquely_owned = _file_stream_encode(
                     self._state,
                     s,
                     newline_flags,
                 )
-                _file_buffered_stdio_write(self._state, data._ptr, len(data))
+                try:
+                    _file_buffered_stdio_write(self._state, data._ptr, len(data))
+                finally:
+                    if uniquely_owned:
+                        free(data._ptr)
         return len(s)
 
     def __file_write_gen__(self, g: Generator[T], T: type):
         for s in g:
             self.write(s)
 
+    @inline
     def read(self, sz: int = -1) -> T:
         self._ensure_open()
         _file_ensure_readable(self._state)
@@ -1739,6 +1744,7 @@ class File[T]:
 
         return result
 
+    @inline
     def _read_raw_into(self, output: Ptr[u8], length: int) -> int:
         if length <= 0:
             return 0
@@ -1996,12 +2002,14 @@ class gzFile[T]:
             newline_flags = _file_write_newline_flags(
                 self._state._newline_flags
             )
-            data = _file_stream_encode(
+            data, uniquely_owned = _file_stream_encode(
                 self._state,
                 s,
                 newline_flags,
             )
             _C.gzwrite(self._state._fp, data._ptr, u32(len(data)))
+            if uniquely_owned:
+                free(data._ptr)
         _gz_errcheck(self._state._fp)
         return len(s)
 
@@ -2599,12 +2607,16 @@ class bzFile[T]:
             newline_flags = _file_write_newline_flags(
                 self._state._newline_flags
             )
-            data = _file_stream_encode(
+            data, uniquely_owned = _file_stream_encode(
                 self._state,
                 s,
                 newline_flags,
             )
-            _bz_write(self._bz, data._ptr, len(data))
+            try:
+                _bz_write(self._bz, data._ptr, len(data))
+            finally:
+                if uniquely_owned:
+                    free(data._ptr)
             self._state._position += len(data)
         return len(s)
 

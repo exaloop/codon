@@ -123,6 +123,32 @@ def test_encoded_newline_buffer_ownership():
     assert translated._ptr == owned_pointer
     assert translated == (_latin1_value() + "\r").encode()
 
+    path = PREFIX + "-write-ownership"
+    for encoding in ["ascii", "latin-1", "utf-8", "utf-16-le"]:
+        for newline in ["", "\r", "\r\n"]:
+            for value in [ascii_value, unicode_value, unicode_value + _unicode_from_codepoint(0x1F600)]:
+                original = value.encode("utf-8")
+                expected = value.replace("\n", newline or "\n").encode(encoding, "replace") * 32
+                with open(path, "w", encoding=encoding, errors="replace", newline=newline) as writer:
+                    for repeat in range(32):
+                        assert writer.write(value) == len(value)
+                with open(path, "rb") as reader:
+                    assert reader.read() == expected
+                assert value.encode("utf-8") == original
+                with gzip.open(path, "wt", encoding=encoding, errors="replace", newline=newline) as writer:
+                    for repeat in range(32):
+                        assert writer.write(value) == len(value)
+                with gzip.open(path, "rb") as reader:
+                    assert reader.read() == expected
+                assert value.encode("utf-8") == original
+                with bz2.open(path, "wt", encoding=encoding, errors="replace", newline=newline) as writer:
+                    for repeat in range(32):
+                        assert writer.write(value) == len(value)
+                with bz2.open(path, "rb") as reader:
+                    assert reader.read() == expected
+                assert value.encode("utf-8") == original
+    remove(path.c_str())
+
 def _assert_stateful_text_reads(reader):
     first = reader.read(1)
     assert reader.read(0) == ""
