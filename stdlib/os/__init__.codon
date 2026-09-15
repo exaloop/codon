@@ -103,7 +103,7 @@ def _errno() -> int:
     from internal.types.error import _errno as get_errno
     return get_errno()
 
-def _error(operation: str, filename: Optional[str] = None,
+def _error(operation: Static[str], filename: Optional[str] = None,
            filename2: Optional[str] = None):
     code = _errno()
     from C import strerror(i32) -> cobj
@@ -549,15 +549,14 @@ def getcwdb() -> bytes:
     if static.platform() == "win32":
         return _win32.getcwdb()
     from C import getcwd(cobj, int) -> cobj
-    from C import free(cobj)
-    # Both supported POSIX targets allocate with malloc for getcwd(NULL, 0).
-    p = getcwd(cobj(), 0)
-    if not p:
-        _error("getcwd")
-    try:
-        return bytes.from_ptr(p)
-    finally:
-        free(p)
+    capacity = 256
+    while True:
+        buffer = cobj(capacity)
+        if getcwd(buffer, capacity):
+            return bytes.from_ptr(buffer)
+        if _errno() != 34:
+            _error("getcwd")
+        capacity *= 2
 
 def getcwd() -> str:
     if static.platform() == "win32":

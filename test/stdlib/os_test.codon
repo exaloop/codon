@@ -523,6 +523,40 @@ def test_surrogate_filesystem(root: str):
 
 
 @test
+def test_getcwd_buffers():
+    from C import getcwd(cobj, int) -> cobj as raw_getcwd
+    original = os.getcwd()
+    components = ["cwd-" + str(index) + "-" + "\u00e9" * 60 for index in range(4)]
+    entered = 0
+    try:
+        for component in components:
+            os.mkdir(component)
+            os.chdir(component)
+            entered += 1
+        expected = original
+        for component in components:
+            expected = path.join(expected, component)
+        expected_bytes = os.fsencode(expected)
+        assert len(expected_bytes) > 512
+        buffer = cobj(256)
+        result = raw_getcwd(buffer, 256)
+        assert not result and os._errno() == 34
+        first = os.getcwdb()
+        assert first == expected_bytes
+        assert os.getcwd() == expected
+        os.chdir("..")
+        entered -= 1
+        os.rmdir(components[entered])
+        assert os.getcwdb() != first
+        assert first == expected_bytes
+    finally:
+        while entered:
+            os.chdir("..")
+            entered -= 1
+            os.rmdir(components[entered])
+
+
+@test
 def test_filesystem():
     from C import mkdtemp(cobj) -> cobj
     from C import mkdir(cobj, u32) -> i32
@@ -580,6 +614,7 @@ def test_filesystem():
         assert os.getcwd() == path.join(path.dirname(os.getcwd()), "dir-é")
         assert os.getcwdb().decode() == os.getcwd()
         assert path.abspath(".") == os.getcwd()
+        test_getcwd_buffers()
         os.chdir(original)
         with open(file, "w") as f:
             f.write("abcdef")
