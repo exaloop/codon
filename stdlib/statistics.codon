@@ -188,7 +188,7 @@ def _sum(data: Generator[T], overflow: Ptr[bool] = Ptr[bool](), T: type) -> floa
             total += Int[128](value)
         return float(total)
     elif T is str:
-        raise TypeError("expected a real number")
+        compile_error("expected a real number")
     else:
         total, correction, special = 0.0, 0.0, 0.0
         for value in data:
@@ -422,7 +422,7 @@ def _scaled_difference(value, center, scale: float) -> float:
         return float(value).cdiv(scale) - float(center).cdiv(scale)
     return difference.cdiv(scale)
 
-def _spread(data, center, correction: int, root: bool, recenter: Static[bool] = True) -> float:
+def _spread(data, center, correction: int, root: bool, recenter: Literal[bool] = True) -> float:
     count = len(data)
     maximum = 0.0
     magnitude = abs(float(center))
@@ -644,7 +644,7 @@ def _kernel_id(data, bandwidth, kernel: str) -> int:
     if not len(data):
         raise StatisticsError("Empty data sequence")
     if not isinstance(data[0], int) and not isinstance(data[0], float):
-        raise TypeError("Data sequence must contain ints or floats")
+        compile_error("Data sequence must contain ints or floats")
     if bandwidth <= 0.0:
         raise StatisticsError(f"Bandwidth h must be positive, not h={bandwidth!r}")
     if kernel == "normal" or kernel == "gauss":

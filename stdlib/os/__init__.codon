@@ -103,7 +103,7 @@ def _errno() -> int:
     from internal.types.error import _errno as get_errno
     return get_errno()
 
-def _error(operation: Static[str], filename: Optional[str] = None,
+def _error(operation: Literal[str], filename: Optional[str] = None,
            filename2: Optional[str] = None):
     code = _errno()
     from C import strerror(i32) -> cobj

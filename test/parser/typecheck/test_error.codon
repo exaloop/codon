@@ -121,6 +121,27 @@ try:
 except:
     print('caught') #: caught
 
+#%% statistics_mean_element_type
+import statistics
+statistics.mean(["1", "2"])
+#! expected a real number
+#! during the realization of _sum
+#! during the realization of mean
+
+#%% statistics_kde_element_type
+import statistics
+statistics.kde(["1", "2"], 1.0)
+#! Data sequence must contain ints or floats
+#! during the realization of _kernel_id
+#! during the realization of kde
+
+#%% statistics_kde_random_element_type
+import statistics
+statistics.kde_random(["1", "2"], 1.0)
+#! Data sequence must contain ints or floats
+#! during the realization of _kernel_id
+#! during the realization of kde_random
+
 #%% sys_float_info_index_high
 import sys
 sys.float_info[11]
