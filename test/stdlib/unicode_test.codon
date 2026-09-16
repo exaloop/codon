@@ -4688,6 +4688,31 @@ def test_slices_do_not_alias_parent_storage():
 
 
 @test
+def test_utf8_large_decode_ownership():
+    retained = List[str]()
+    expected = List[str]()
+    for size in [4095, 4096, 4097, 65536]:
+        for pattern in ["a", "\u03a9", "\U0001f600", "caf\u00e9 \u03bb \u4e2d \U0001f600\n"]:
+            value = pattern * size + "\u03a9\U0001f600"
+            encoded = value.encode("utf-8")
+            retained.append(encoded.decode("utf-8"))
+            expected.append(value)
+        for tail in [b"\x80", b"\xff", b"\xc3", b"\xe0\x80\x80", b"\xf0\x9f\x98", b"\xf4\x90\x80\x80"]:
+            prefix = ("\u03a9\U0001f600" * size).encode("utf-8")
+            encoded = prefix + tail
+            try:
+                encoded.decode("utf-8")
+                assert False
+            except UnicodeDecodeError as error:
+                assert error.start == len(prefix)
+                assert error.object == encoded
+    assert retained == expected
+    for size in [4095, 4096, 4097]:
+        encoded = b"a" * (size - 4) + b"\xf0\x9f\x98\x80"
+        assert encoded.decode("utf-8") == "a" * (size - 4) + "\U0001f600"
+
+
+@test
 def test_utf8_strict_encoding_paths():
     ascii_c_str = Ptr[u8]("ascii".c_str())
     assert bytes(ascii_c_str, 6) == b"ascii\x00"
@@ -4848,6 +4873,7 @@ test_encoding_name_normalization()
 test_repr_quote_choice_matches_python()
 test_strip_none()
 test_slices_do_not_alias_parent_storage()
+test_utf8_large_decode_ownership()
 test_utf8_strict_encoding_paths()
 test_identity_codecs_share_immutable_storage()
 test_bytes_constructor_requires_explicit_decode_to_decode_contents()

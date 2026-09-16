@@ -355,12 +355,35 @@ class OrderedDict:
             self._clear_slot(ix)
             self._used -= 1
 
-    def pop(self, key: K):
+    def pop(self, key: K) -> V:
         h = self._hash(key)
         r = self._lookup(key, h)
 
         if not r.found:
             raise KeyError(str(key))
+
+        ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
+        e = self._entries[ix]
+
+        _set_index(self._indices, self._log2_index_bytes, r.slot, _DKIX_DUMMY)
+        self._clear_slot(ix)
+        self._used -= 1
+
+        return e.value
+
+    def pop(self, key: K, missing):
+        h = self._hash(key)
+        r = self._lookup(key, h)
+
+        if not r.found:
+            if missing is None:
+                return None
+            elif isinstance(missing, Optional[V]):
+                return missing
+            elif isinstance(missing, V):
+                return missing
+            else:
+                compile_error("invalid type for missing value")
 
         ix = _get_index(self._indices, self._log2_index_bytes, r.slot)
         e = self._entries[ix]
@@ -712,9 +735,9 @@ class UnorderedDict:
     def resize(self, new_n_buckets: int):
         self._kh_resize(new_n_buckets)
 
-    def get(self, key: K, s: V) -> V:
+    def get(self, key: K, default: V) -> V:
         x = self._kh_get(key)
-        return self._vals[x] if x != self._kh_end() else s
+        return self._vals[x] if x != self._kh_end() else default
 
     def get(self, key: K) -> Optional[V]:
         x = self._kh_get(key)
@@ -767,6 +790,21 @@ class UnorderedDict:
             self._kh_del(x)
             return v
         raise KeyError(str(key))
+
+    def pop(self, key: K, missing):
+        x = self._kh_get(key)
+        if x == self._kh_end():
+            if missing is None:
+                return None
+            elif isinstance(missing, Optional[V]):
+                return missing
+            elif isinstance(missing, V):
+                return missing
+            else:
+                compile_error("invalid type for missing value")
+        v = self._vals[x]
+        self._kh_del(x)
+        return v
 
     def popitem(self) -> Tuple[K, V]:
         if self._size == 0:

@@ -9,6 +9,7 @@
 
 #include "codon/cir/pyextension.h"
 #include "codon/cir/util/irtools.h"
+#include "codon/compiler/compiler.h"
 #include "codon/parser/ast.h"
 #include "codon/parser/common.h"
 #include "codon/parser/match.h"
@@ -90,7 +91,7 @@ Stmt *TypecheckVisitor::apply(
                       ctx->scope.back().stmts.end());
   suite->items.push_back(n);
 
-  if (cast<SuiteStmt>(n))
+  if (cast<SuiteStmt>(n) && !cache->compiler->getOptions()->pyext)
     tv.prepareVTables();
 
   if (!ctx->cache->errors.empty())

@@ -243,13 +243,18 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   auto *module = compiler->getLLVMVisitor()->getModule();
 
   EXPECT_EQ(nullptr, module->getFunction("seq_alloc"));
+  EXPECT_EQ(nullptr, module->getFunction("seq_alloc_atomic"));
+  EXPECT_EQ(nullptr, module->getFunction("seq_env"));
   EXPECT_EQ(nullptr, module->getFunction("seq_stdin"));
   EXPECT_EQ(nullptr, module->getFunction("seq_stderr"));
   EXPECT_NE(nullptr, module->getFunction("seq_stdout"));
 
   unsigned definitions = 0;
-  for (const auto &function : *module)
+  for (const auto &function : *module) {
+    EXPECT_FALSE(function.getName().contains("std.internal.format"));
+    EXPECT_FALSE(function.getName().contains("std.internal.str"));
     definitions += !function.isDeclaration();
+  }
   EXPECT_EQ(1, definitions);
 }
 
@@ -285,6 +290,67 @@ TEST(LLVMOptimizationTest, DoesNotHoistEscapingPointerThroughAggregatePhi) {
   auto *module = compiler->getLLVMVisitor()->getModule();
   EXPECT_GT(countFixedAllocations(module, 65536, /*inLoopOnly=*/true), 0);
   EXPECT_EQ(0, countLazyFixedAllocationCaches(module, 65536));
+}
+
+TEST(LLVMOptimizationTest, ResetsLazyAllocationCacheForEachOuterIteration) {
+  auto optimized = compileAndOptimizeIR(R"(
+declare noalias ptr @seq_alloc_atomic(i64)
+declare i8 @read(ptr nocapture) nofree memory(read)
+
+define i64 @test(i64 %limit, i64 %count) {
+entry:
+  br label %outer
+outer:
+  %size = phi i64 [ 2, %entry ], [ %next.size, %outer.latch ]
+  %total = phi i64 [ 0, %entry ], [ %subtotal, %outer.latch ]
+  br label %inner
+inner:
+  %index = phi i64 [ 0, %outer ], [ %next.index, %inner.latch ]
+  %subtotal = phi i64 [ %total, %outer ], [ %updated, %inner.latch ]
+  %done = icmp eq i64 %index, %count
+  br i1 %done, label %outer.latch, label %body
+body:
+  %parity = and i64 %index, 1
+  %allocate = icmp eq i64 %parity, 0
+  br i1 %allocate, label %allocation, label %inner.latch
+allocation:
+  %buffer = call ptr @seq_alloc_atomic(i64 %size)
+  store i8 42, ptr %buffer
+  %value = call i8 @read(ptr %buffer)
+  %extended = zext i8 %value to i64
+  %sum = add i64 %subtotal, %extended
+  br label %inner.latch
+inner.latch:
+  %updated = phi i64 [ %subtotal, %body ], [ %sum, %allocation ]
+  %next.index = add i64 %index, 1
+  br label %inner
+outer.latch:
+  %next.size = add i64 %size, 1
+  %finished = icmp eq i64 %next.size, %limit
+  br i1 %finished, label %exit, label %outer
+exit:
+  ret i64 %subtotal
+}
+)");
+  ASSERT_NE(nullptr, optimized.module);
+  auto *function = optimized.module->getFunction("test");
+  ASSERT_NE(nullptr, function);
+  llvm::DominatorTree dominators(*function);
+  llvm::LoopInfo loops(dominators);
+  unsigned caches = 0;
+  for (auto &block : *function) {
+    auto *loop = loops.getLoopFor(&block);
+    if (!loop || loop->getLoopDepth() != 2 || loop->getHeader() != &block)
+      continue;
+    for (auto &phi : block.phis()) {
+      if (!phi.getType()->isPointerTy())
+        continue;
+      ++caches;
+      auto *initial = phi.getIncomingValueForBlock(loop->getLoopPreheader());
+      EXPECT_TRUE(llvm::isa<llvm::ConstantPointerNull>(initial));
+    }
+  }
+  EXPECT_EQ(1, caches);
 }
 
 TEST(LLVMOptimizationTest, DoesNotHoistReadonlyCallWithoutNoCapture) {

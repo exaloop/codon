@@ -167,6 +167,11 @@ struct CodonExceptionHeader {
   void *cause;
 };
 
+struct CodonSystemExitData {
+  seq_int_t status;
+  bool messageExit;
+};
+
 void seq_exc_init(int flags) {
 #ifdef APPLE_SILICON
   if (!(flags & SEQ_FLAG_STANDALONE)) {
@@ -238,8 +243,13 @@ SEQ_FUNC void seq_terminate(void *exc) {
   auto tname = ((RTTIObject *)obj)->type->raw_name;
 
   if (tname == "SystemExit") {
-    seq_int_t status = *(seq_int_t *)(hdr + 1);
-    exit((int)status);
+    auto *data = (CodonSystemExitData *)(hdr + 1);
+    if (data->messageExit) {
+      auto message = hdr->msg.encode();
+      fwrite(message.data(), 1, message.size(), stderr);
+      fputc('\n', stderr);
+    }
+    exit((int)data->status);
   }
 
   auto type = tname.encode();

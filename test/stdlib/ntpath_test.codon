@@ -1,0 +1,290 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+# Lexical fixtures follow CPython 3.13 ntpath semantics. No Python runtime,
+# environment mutation, or filesystem fixtures are needed.
+import internal.static as static
+import os._ntpath as path
+
+
+@test
+def test_constants_and_isabs():
+    assert path.curdir == "." and path.pardir == ".."
+    assert path.sep == "\\" and path.altsep == "/"
+    assert path.pathsep == ";" and path.extsep == "."
+    assert path.defpath == ".;C:\\bin" and path.devnull == "nul"
+    assert type(path.altsep) is Optional[str]
+    for value in ["", ".", "a", "C:", "C:a", "/", "\\", "/a", "\\a"]:
+        assert not path.isabs(value), value
+    for value in ["C:/", "c:\\a", "//server/share", "\\\\server\\share",
+                  "//", "/\\a", "\\\\?\\C:\\a", "\\\\.\\NUL"]:
+        assert path.isabs(value), value
+
+
+@test
+def test_roots():
+    cases = [
+        ("", ("", "", "")),
+        ("file", ("", "", "file")),
+        ("C:", ("C:", "", "")),
+        ("C:file", ("C:", "", "file")),
+        ("C:/file", ("C:", "/", "file")),
+        ("c:\\file", ("c:", "\\", "file")),
+        ("/file", ("", "/", "file")),
+        ("\\file", ("", "\\", "file")),
+        ("//server/share/file", ("//server/share", "/", "file")),
+        ("\\\\server/share\\file", ("\\\\server/share", "\\", "file")),
+        ("//server/share", ("//server/share", "", "")),
+        ("//server/share/", ("//server/share", "/", "")),
+        ("//server", ("//server", "", "")),
+        ("//server/", ("//server/", "", "")),
+        ("//", ("//", "", "")),
+        ("///a", ("///a", "", "")),
+        ("////a", ("///", "/", "a")),
+        ("C://a", ("C:", "/", "/a")),
+        ("\\\\?\\C:\\file", ("\\\\?\\C:", "\\", "file")),
+        ("//?/unc/server/share/file", ("//?/unc/server/share", "/", "file")),
+        ("\\\\?\\UNC\\server\\share", ("\\\\?\\UNC\\server\\share", "", "")),
+        ("\\\\.\\NUL", ("\\\\.\\NUL", "", "")),
+        ("\\\\.\\pipe\\name", ("\\\\.\\pipe", "\\", "name")),
+        ("//?/Volume{123}/file", ("//?/Volume{123}", "/", "file")),
+    ]
+    for value, expected in cases:
+        assert path.splitroot(value) == expected, value
+        drive, root, tail = expected
+        assert drive + root + tail == value
+        assert path.splitdrive(value) == (drive, root + tail), value
+
+
+@test
+def test_join():
+    # Varargs must be statically unrolled, including empty and multiple tuples.
+    assert path.join("") == ""
+    assert path.join("C:a") == "C:a"
+    assert path.join("a", "b", "") == "a\\b\\"
+    assert path.join("", "a") == "a"
+    assert path.join("C:", "a", "b") == "C:a\\b"
+    assert path.join("C:\\a", "b", "c") == "C:\\a\\b\\c"
+    assert path.join("C:/a", "b/c") == "C:/a\\b/c"
+    assert path.join("C:/a/", "b") == "C:/a/b"
+    assert path.join("C:/a", "/b", "c") == "C:/b\\c"
+    assert path.join("C:a", "\\b") == "C:\\b"
+    assert path.join("C:/a", "c:b") == "c:/a\\b"
+    assert path.join("C:/a", "c:") == "c:/a\\"
+    assert path.join("C:/a", "D:b", "c") == "D:b\\c"
+    assert path.join("C:/a", "D:") == "D:"
+    assert path.join("C:/a", "D:/b") == "D:/b"
+    assert path.join("a", "C:b") == "C:b"
+    assert path.join("C:/a", "//host/share", "b") == "//host/share\\b"
+    assert path.join("//host/share", "") == "//host/share"
+    assert path.join("//host/share/a", "/b") == "//host/share/b"
+    assert path.join("//host/share", "dir", "") == "//host/share\\dir\\"
+    assert path.join("//host/share/a", "//other/share/b") == "//other/share/b"
+    assert path.join("\\\\?\\C:\\a", "b") == "\\\\?\\C:\\a\\b"
+    assert path.join("", "", "") == ""
+    assert path.join("C:a", "", "", "b", "") == "C:a\\b\\"
+    assert path.join("C:\\caf\u00e9", "\u03b1", "\U0001f600", "") == "C:\\caf\u00e9\\\u03b1\\\U0001f600\\"
+    assert path.join("C:\\wide-\U0001f600", "D:ascii", "last") == "D:ascii\\last"
+
+
+@test
+def test_split_and_extensions():
+    cases = [
+        ("", ("", "")),
+        ("file", ("", "file")),
+        ("C:file", ("C:", "file")),
+        ("C:/", ("C:/", "")),
+        ("C://file", ("C:/", "file")),
+        ("a\\b/c", ("a\\b", "c")),
+        ("a\\b\\", ("a\\b", "")),
+        ("a///b", ("a", "b")),
+        ("//host/share", ("//host/share", "")),
+        ("//host/share/file", ("//host/share/", "file")),
+        ("\\\\?\\C:\\file", ("\\\\?\\C:\\", "file")),
+    ]
+    for value, expected in cases:
+        assert path.split(value) == expected, value
+        assert path.dirname(value) == expected[0], value
+        assert path.basename(value) == expected[1], value
+    extensions = [
+        ("", ("", "")),
+        (".profile", (".profile", "")),
+        ("...", ("...", "")),
+        ("C:\\a.b\\.profile", ("C:\\a.b\\.profile", "")),
+        ("C:/a.b\\file", ("C:/a.b\\file", "")),
+        ("C:\\a/.b.c", ("C:\\a/.b", ".c")),
+        ("a\\...name.ext", ("a\\...name", ".ext")),
+        ("file.", ("file", ".")),
+        ("a.ext\\", ("a.ext\\", "")),
+    ]
+    for value, expected in extensions:
+        assert path.splitext(value) == expected, value
+        assert expected[0] + expected[1] == value
+
+
+@test
+def test_normalization():
+    assert path.normcase("C:/Mixed\\Name") == "c:\\mixed\\name"
+    assert path.normcase("C:/Ä/Σ/ß") == "c:\\ä\\σ\\ß"
+    cases = [
+        ("", "."),
+        (".", "."),
+        ("a/..", "."),
+        ("a/../../b", "..\\b"),
+        ("../../a", "..\\..\\a"),
+        ("C:", "C:"),
+        ("C:.", "C:"),
+        ("C:a/../../b", "C:..\\b"),
+        ("C:/../../b//", "C:\\b"),
+        ("/../../b", "\\b"),
+        ("C:/a\\.\\b/../c", "C:\\a\\c"),
+        ("//host/share/a/../../b", "\\\\host\\share\\b"),
+        ("//host/share", "\\\\host\\share"),
+        ("//host/share/", "\\\\host\\share\\"),
+        ("//?/C:/a/../b", "\\\\?\\C:\\b"),
+        ("//?/UNC/host/share/../b", "\\\\?\\UNC\\host\\share\\b"),
+        ("//./pipe/a/../b", "\\\\.\\pipe\\b"),
+    ]
+    for value, expected in cases:
+        assert path.normpath(value) == expected, value
+        assert path.normpath(expected) == expected, value
+
+
+@test
+def test_common_paths():
+    assert path.commonprefix(["C:/abc", "C:/abd"]) == "C:/ab"
+    assert path.commonprefix(["ABC", "abc"]) == ""
+    assert path.commonprefix(List[str]()) == ""
+    assert path.commonpath(["C:/Users/A", "c:\\users\\B"]) == "C:\\Users"
+    assert path.commonpath(["C:/A", "c:/B"]) == "C:\\"
+    assert path.commonpath(["C:Foo/a", "c:foo/b"]) == "C:Foo"
+    assert path.commonpath(["C:a", "c:b"]) == "C:"
+    assert path.commonpath(["/Foo/a", "\\foo\\b"]) == "\\Foo"
+    assert path.commonpath(["//Host/Share/A", "\\\\host\\share\\B"]) == "\\\\Host\\Share\\"
+    assert path.commonpath(["//Host/Share", "//host/share"]) == "\\\\Host\\Share"
+    assert path.commonpath(["A/./b//", "a/b/c"]) == "A\\b"
+    assert path.commonpath(["A/../b", "a/../c"]) == "A\\.."
+    assert path.commonpath(["foo", "foobar"]) == ""
+    assert path.commonpath(["", "a"]) == ""
+    assert path.commonpath((p for p in ["C:/A/b", "c:/a/c"])) == "C:\\A"
+    for values in [List[str](), ["C:/a", "D:/a"], ["C:/a", "C:a"],
+                   ["/a", "a"], ["//host/one/a", "//host/two/a"],
+                   ["//host/share", "//host/share/a"]]:
+        try:
+            path.commonpath(values)
+            assert False, str(values)
+        except ValueError:
+            pass
+
+
+def fake_fullpathname(value: str) -> str:
+    assert value == "C:child"
+    # Stand in for the native per-drive current-directory lookup.
+    return "C:\\drive-c-cwd\\child"
+
+
+@test
+def test_absolute_and_relative():
+    assert path._abspath("C:dir/../child", fake_fullpathname) == "C:\\drive-c-cwd\\child"
+    cases = [
+        ("C:/A/File", "c:/a/Other", "..\\File"),
+        ("C:/A", "c:/a", "."),
+        ("C:/a/../b", "C:/", "b"),
+        ("C:/", "C:/a/b", "..\\.."),
+        ("//Host/Share/A", "//host/share/B", "..\\A"),
+        ("//Host/Share", "//host/share/B", ".."),
+        ("//?/C:/A/file", "//?/c:/a", "file"),
+    ]
+    for target, start, expected in cases:
+        assert path._relpath_from_absolute(path.normpath(target), path.normpath(start)) == expected
+    for target, start in [("C:/a", "D:/a"), ("//host/one/a", "//host/two/a")]:
+        try:
+            path._relpath_from_absolute(path.normpath(target), path.normpath(start))
+            assert False
+        except ValueError:
+            pass
+    try:
+        path.relpath("")
+        assert False
+    except ValueError:
+        pass
+    # On Windows abspath uses the native backend; these tests deliberately do
+    # not call it. On other targets fully qualified paths are purely lexical.
+    if static.platform() != "win32":
+        assert path.abspath("C:/a/../b") == "C:\\b"
+        for target, start, expected in cases:
+            assert path.relpath(target, start) == expected
+        for target, start in [("C:/a", "D:/a"), ("//host/one/a", "//host/two/a"),
+                              ("", "C:/a")]:
+            try:
+                path.relpath(target, start)
+                assert False
+            except ValueError:
+                pass
+        for value in ["", ".", "C:child", "C:", "\\child"]:
+            try:
+                path.abspath(value)
+                assert False
+            except NotImplementedError:
+                pass
+
+
+@test
+def test_expanduser():
+    env = {"USERPROFILE": "C:\\Users\\Alice", "USERNAME": "Alice", "HOME": "ignored"}
+    assert path._expanduser("~", env) == "C:\\Users\\Alice"
+    assert path._expanduser("~/child", env) == "C:\\Users\\Alice/child"
+    assert path._expanduser("~Alice\\child", env) == "C:\\Users\\Alice\\child"
+    assert path._expanduser("~Bob\\child", env) == "C:\\Users\\Bob\\child"
+    assert path._expanduser("prefix/~", env) == "prefix/~"
+    env["USERPROFILE"] = "C:\\custom"
+    assert path._expanduser("~Bob", env) == "~Bob"
+    del env["USERPROFILE"]
+    assert path._expanduser("~", env) == "~"
+    env["HOMEDRIVE"] = "D:"
+    env["HOMEPATH"] = "\\Users\\Alice"
+    assert path._expanduser("~", env) == "D:\\Users\\Alice"
+    del env["HOMEDRIVE"]
+    assert path._expanduser("~", env) == "\\Users\\Alice"
+
+
+@test
+def test_expandvars():
+    # The same parser used by expandvars, but with no process environment access.
+    env = {"A": "alpha", "B": "beta", "EMPTY": "", "A-B": "dash",
+           "1": "one", "WITH SPACE": "space", "NEST": "$A% B %"}
+    cases = [
+        ("plain", "plain"),
+        ("$A/${B}/%A%", "alpha/beta/alpha"),
+        ("%A%%B%", "alphabeta"),
+        ("%EMPTY%${EMPTY}$EMPTY", ""),
+        ("$A-B/$1", "dash/one"),
+        ("${WITH SPACE}/%WITH SPACE%", "space/space"),
+        ("%MISSING%/${MISSING}/$MISSING", "%MISSING%/${MISSING}/$MISSING"),
+        ("'${A} %B% $A' $B", "'${A} %B% $A' beta"),
+        ("'$A %B%", "'$A %B%"),
+        ("\"$A\"", "\"alpha\""),
+        ("$$A/%%A%%", "$A/%A%"),
+        ("$$$A/%%%A%", "$alpha/%alpha"),
+        ("${A}suffix", "alphasuffix"),
+        ("$NEST", "$A% B %"),
+        ("${A/$B", "${A/$B"),
+        ("%A/$B", "%A/$B"),
+        ("$/$!/$", "$/$!/$"),
+        ("%", "%"),
+    ]
+    for value, expected in cases:
+        assert path._expandvars(value, env) == expected, value
+    assert path._expandvars("${A}%B%" * 4096, env) == "alphabeta" * 4096
+    for unclosed in ["${" * 4096, "%" + "${" * 4096, "'" + "$A" * 4096]:
+        assert path._expandvars(unclosed, env) == unclosed
+
+
+test_constants_and_isabs()
+test_roots()
+test_join()
+test_split_and_extensions()
+test_normalization()
+test_common_paths()
+test_absolute_and_relative()
+test_expanduser()
+test_expandvars()

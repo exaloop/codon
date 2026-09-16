@@ -652,43 +652,9 @@ llvm::Function *LLVMVisitor::createPyTryCatchWrapper(llvm::Function *func) {
                                        (uint64_t)seq_exc_offset());
   auto *loadedExc = B->CreateLoad(B->getPtrTy(), excVal);
 
-  auto *strType = llvm::StructType::get(B->getPtrTy(), B->getInt64Ty());
-  auto *excHeader =
-      llvm::StructType::get(strType, strType, strType, B->getInt64Ty(), B->getInt64Ty(),
-                            B->getPtrTy(), B->getPtrTy());
-  auto *header = B->CreateLoad(excHeader, B->CreateLoad(B->getPtrTy(), loadedExc));
-  auto *msg = B->CreateExtractValue(header, 0);
-  auto *msgPtr = B->CreateExtractValue(msg, 0);
-  auto *msgLen = B->CreateExtractValue(msg, 1);
-  auto *pyType = B->CreateExtractValue(header, 5);
-
-  // copy msg into new null-terminated buffer
-  auto alloc = makeAllocFunc(/*atomic=*/true);
-  auto *buf = B->CreateCall(alloc, B->CreateAdd(msgLen, B->getInt64(1)));
-  B->CreateMemCpy(buf, {}, msgPtr, {}, msgLen);
-  auto *last = B->CreateInBoundsGEP(B->getInt8Ty(), buf, msgLen);
-  B->CreateStore(B->getInt8(0), last);
-
-  auto *pyErrSetString = llvm::cast<llvm::Function>(
-      M->getOrInsertFunction("PyErr_SetString", B->getVoidTy(), B->getPtrTy(),
-                             B->getPtrTy())
-          .getCallee());
-
-  const std::string pyExcRuntimeErrorName = "PyExc_RuntimeError";
-  llvm::Value *pyExcRuntimeError = M->getNamedValue(pyExcRuntimeErrorName);
-  if (!pyExcRuntimeError) {
-    auto *pyExcRuntimeErrorVar = new llvm::GlobalVariable(
-        *M, B->getPtrTy(), /*isConstant=*/false, llvm::GlobalValue::ExternalLinkage,
-        /*Initializer=*/nullptr, pyExcRuntimeErrorName);
-    pyExcRuntimeErrorVar->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
-    pyExcRuntimeError = pyExcRuntimeErrorVar;
-  }
-  pyExcRuntimeError = B->CreateLoad(B->getPtrTy(), pyExcRuntimeError);
-
-  auto *havePyType =
-      B->CreateICmpNE(pyType, llvm::ConstantPointerNull::get(B->getPtrTy()));
-  B->CreateCall(pyErrSetString,
-                {B->CreateSelect(havePyType, pyType, pyExcRuntimeError), buf});
+  B->CreateCall(
+      M->getOrInsertFunction("seq_set_python_exception", B->getVoidTy(), B->getPtrTy()),
+      {loadedExc});
 
   auto *retType = wrap->getReturnType();
   if (retType == B->getInt32Ty()) {
