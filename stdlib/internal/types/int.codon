@@ -204,15 +204,27 @@ class Int:
 
     @pure
     @llvm
-    def __lshift__(self, other: Int[N]) -> Int[N]:
+    def _lshift(self, other: Int[N]) -> Int[N]:
         %0 = shl i{=N} %self, %other
         ret i{=N} %0
 
+    def __lshift__(self, other: Int[N]) -> Int[N]:
+        return self._lshift(other)
+
+    def __lshift__(self, other: int) -> Int[N]:
+        return self._lshift(Int[N](other))
+
     @pure
     @llvm
-    def __rshift__(self, other: Int[N]) -> Int[N]:
+    def _rshift(self, other: Int[N]) -> Int[N]:
         %0 = ashr i{=N} %self, %other
         ret i{=N} %0
+
+    def __rshift__(self, other: Int[N]) -> Int[N]:
+        return self._rshift(other)
+
+    def __rshift__(self, other: int) -> Int[N]:
+        return self._rshift(Int[N](other))
 
     @pure
     @llvm
@@ -613,15 +625,27 @@ class UInt:
 
     @pure
     @llvm
-    def __lshift__(self, other: UInt[N]) -> UInt[N]:
+    def _lshift(self, other: UInt[N]) -> UInt[N]:
         %0 = shl i{=N} %self, %other
         ret i{=N} %0
 
+    def __lshift__(self, other: UInt[N]) -> UInt[N]:
+        return self._lshift(other)
+
+    def __lshift__(self, other: int) -> UInt[N]:
+        return self._lshift(UInt[N](other))
+
     @pure
     @llvm
-    def __rshift__(self, other: UInt[N]) -> UInt[N]:
+    def _rshift(self, other: UInt[N]) -> UInt[N]:
         %0 = lshr i{=N} %self, %other
         ret i{=N} %0
+
+    def __rshift__(self, other: UInt[N]) -> UInt[N]:
+        return self._rshift(other)
+
+    def __rshift__(self, other: int) -> UInt[N]:
+        return self._rshift(UInt[N](other))
 
     @pure
     @llvm
