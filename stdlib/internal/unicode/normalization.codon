@@ -15,7 +15,7 @@ from .normalization_data import (
     _normalization_raw_decomposition_entry,
     _normalization_raw_decomposition_value,
 )
-from internal.str import _unicode_from_codepoints
+from internal.types.str import _unicode_from_codepoints
 
 HANGUL_SBASE: Literal[int] = 0xAC00
 HANGUL_LBASE: Literal[int] = 0x1100

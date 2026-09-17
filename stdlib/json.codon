@@ -39,7 +39,7 @@ print(json.dumps(value, indent=2))
 """
 
 from internal import gc
-from internal.str import _UnicodeCodecBuffer, _make_meta, _kind_width, KIND_ASCII
+from internal.types.str import _UnicodeCodecBuffer, _make_meta, _kind_width, KIND_ASCII
 from algorithms.pdqsort import pdq_sort_array
 import math
 

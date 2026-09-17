@@ -3,7 +3,7 @@
 import internal.static as static
 import internal.gc as gc
 
-from .str import (
+from internal.types.str import (
     KIND_ASCII,
     _kind_for_maxchar,
     _kind_width,

@@ -1,5 +1,5 @@
 import internal.static as static
-from internal.str import KIND_ASCII, KIND_LATIN1, KIND_UCS2, KIND_UCS4, \
+from internal.types.str import KIND_ASCII, KIND_LATIN1, KIND_UCS2, KIND_UCS4, \
   _unicode_new_uninit, _unicode_maxchar, _unicode_copy_range
 
 cat_count = 0

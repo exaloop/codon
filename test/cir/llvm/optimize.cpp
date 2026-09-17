@@ -252,7 +252,7 @@ TEST(LLVMOptimizationTest, RemovesUnusedStandardStreamInitialization) {
   unsigned definitions = 0;
   for (const auto &function : *module) {
     EXPECT_FALSE(function.getName().contains("std.internal.format"));
-    EXPECT_FALSE(function.getName().contains("std.internal.str"));
+    EXPECT_FALSE(function.getName().contains("std.internal.types.str"));
     definitions += !function.isDeclaration();
   }
   EXPECT_EQ(1, definitions);

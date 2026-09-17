@@ -24,7 +24,7 @@ from internal.unicode.normalization import (
     _unicode_normalize,
 )
 from internal.format import _integer_format
-from internal.str import (
+from internal.types.str import (
     _unicode_from_codepoint,
     _unicode_from_codepoints,
 )

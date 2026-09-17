@@ -37,13 +37,13 @@ def print(*args, sep: str = " ", end: str = "\n", file=None, flush: bool = False
     if flush:
         _C.fflush(fp)
 
-def input(prompt: str = ""):
+def input(prompt: str = "") -> str:
     stdout = _C.seq_stdout()
     stderr = _C.seq_stderr()
     stdin = _C.seq_stdin()
     _C.fflush(stderr)
     _C.fflush(stdout)
-    print(prompt, end="")
+    print(prompt, end="", flush=True)
     buf = cobj()
     n = 0
     s = _C.getline(__ptr__(buf), __ptr__(n), stdin)

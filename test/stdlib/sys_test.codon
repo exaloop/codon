@@ -80,7 +80,7 @@ def test_standard_stream_writes_are_visible():
                 with open(path) as reader:
                     observed.append(reader.read())
                 assert written == len(value)
-            print("print", "output", sep="-", end="", file=stream)
+            print("print", "output", sep="-", end="", file=stream, flush=True)
             expected.append(output + "print-output")
             with open(path) as reader:
                 observed.append(reader.read())
@@ -114,7 +114,7 @@ def test_default_print_is_visible():
     output = ""
     try:
         assert dup2(fileno(target._state._fp), descriptor) == descriptor
-        print("prompt", "ready", sep=": ", end="")
+        print("prompt", "ready", sep=": ", end="", flush=True)
         with open(path) as reader:
             output = reader.read()
     finally:
@@ -126,6 +126,67 @@ def test_default_print_is_visible():
             target.close()
             remove(path.c_str())
     assert output == "prompt: ready"
+
+
+@test
+def test_input_prompt_is_visible_before_read():
+    if static.platform() == "win32":
+        return
+
+    from C import pipe(Ptr[i32]) -> i32
+    from C import read(i32, cobj, int) -> int
+    from C import write(i32, cobj, int) -> int
+    from C import dup2(i32, i32) -> i32
+    from C import fileno(cobj) -> i32
+    from C import close(i32) -> i32
+    from C import fork() -> i32
+    from C import waitpid(i32, Ptr[i32], i32) -> i32
+    from C import alarm(u32) -> u32
+    from C import _exit(i32)
+
+    incoming = __array__[i32](2)
+    outgoing = __array__[i32](2)
+    assert pipe(incoming) == 0
+    assert pipe(outgoing) == 0
+    sys.stdout.flush()
+    sys.stderr.flush()
+    process = fork()
+    assert process >= 0
+    if process == 0:
+        if dup2(incoming[0], fileno(sys.stdin._state._fp)) < 0:
+            _exit(i32(1))
+        if dup2(outgoing[1], fileno(sys.stdout._state._fp)) < 0:
+            _exit(i32(1))
+        for descriptor in (incoming[0], incoming[1], outgoing[0], outgoing[1]):
+            close(descriptor)
+        try:
+            response = input("prompt: ")
+        except EOFError:
+            _exit(i32(1))
+        if type(response) is not str:
+            _exit(i32(1))
+        _exit(i32(0 if response == "caf\u00e9 \U0001f600" else 1))
+
+    close(incoming[0])
+    close(outgoing[1])
+    child_status = i32(0)
+    alarm(u32(10))
+    try:
+        prompt = Ptr[u8](8)
+        received = 0
+        while received < 8:
+            count = read(outgoing[0], prompt + received, 8 - received)
+            assert count > 0
+            received += count
+        assert bytes(prompt, received) == b"prompt: "
+        response = "caf\u00e9 \U0001f600\n".encode("utf-8")
+        assert write(incoming[1], response._ptr, len(response)) == len(response)
+    finally:
+        close(incoming[1])
+        close(outgoing[0])
+        assert waitpid(process, __ptr__(child_status), i32(0)) == process
+        alarm(u32(0))
+    assert child_status == 0
 
 
 @test
@@ -256,5 +317,6 @@ test_version()
 test_streams()
 test_standard_stream_writes_are_visible()
 test_default_print_is_visible()
+test_input_prompt_is_visible_before_read()
 test_stdin_reads_without_waiting_for_eof()
 test_exit()

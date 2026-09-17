@@ -2,12 +2,12 @@
 
 from internal.gc import realloc, free, sizeof
 import internal.static as static
-from internal.str import _UnicodeCodecBuffer, _UnicodeDecodeErrorTracker, _make_meta, _unicode_decode_ptr, \
-                         _unicode_encode_code, _unicode_encode_code_with_ownership, _encoding_code, \
-                         _error_code, _native_is_little_endian, _ENCODING_UTF8, _ENCODING_UTF16, \
-                         _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, _ENCODING_UTF32_LE, \
-                         _ENCODING_UTF32_BE, _ENCODING_UNKNOWN, _ERROR_STRICT, _ERROR_IGNORE, \
-                         _ERROR_REPLACE, _ERROR_BACKSLASHREPLACE
+from internal.types.str import _UnicodeCodecBuffer, _UnicodeDecodeErrorTracker, _make_meta, _unicode_decode_ptr, \
+                               _unicode_encode_code, _unicode_encode_code_with_ownership, _encoding_code, \
+                               _error_code, _native_is_little_endian, _ENCODING_UTF8, _ENCODING_UTF16, \
+                               _ENCODING_UTF16_LE, _ENCODING_UTF16_BE, _ENCODING_UTF32, _ENCODING_UTF32_LE, \
+                               _ENCODING_UTF32_BE, _ENCODING_UNKNOWN, _ERROR_STRICT, _ERROR_IGNORE, \
+                               _ERROR_REPLACE, _ERROR_BACKSLASHREPLACE
 
 # Match CPython's split between a relatively small TextIOWrapper decode chunk
 # and a larger buffered raw I/O layer. CPython dynamically chooses the raw

@@ -7,7 +7,7 @@ class strbuf:
     kind: int
 
     def __init__(self, capacity: int = 16, kind: int = 0):
-        from internal.str import _kind_width
+        from internal.types.str import _kind_width
 
         self.data = Ptr[u8](capacity * _kind_width(kind))
         self.n = 0
@@ -16,7 +16,7 @@ class strbuf:
 
     def append(self, s: str):
         from internal.gc import realloc
-        from internal.str import _kind_width, _make_meta, _unicode_copy_range
+        from internal.types.str import _kind_width, _make_meta, _unicode_copy_range
 
         adding = s.__len__()
         needed = self.n + adding
@@ -51,7 +51,7 @@ class strbuf:
         self.n = needed
 
     def reverse(self):
-        from internal.str import _make_meta
+        from internal.types.str import _make_meta
 
         a = 0
         b = self.n - 1
@@ -65,7 +65,7 @@ class strbuf:
 
     def trim(self):
         from internal.gc import realloc
-        from internal.str import _kind_width
+        from internal.types.str import _kind_width
 
         if self.n != self.m:
             width = _kind_width(self.kind)
@@ -73,6 +73,6 @@ class strbuf:
             self.m = self.n
 
     def __str__(self):
-        from internal.str import _make_meta
+        from internal.types.str import _make_meta
 
         return str(self.data, _make_meta(self.n, self.kind))
