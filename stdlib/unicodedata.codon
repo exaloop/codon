@@ -1,12 +1,17 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.unicode.unicodedata_data import (
+from internal.unicode.generated.metadata import (
     unicode_bidirectional_index,
     unicode_category_index,
     unicode_decimal_index,
     unicode_digit_index,
     unicode_east_asian_width_index,
     unicode_mirrored_index,
+    unicode_numeric_index,
+    unicode_numeric_value,
+    UNICODEDATA_VERSION,
+)
+from internal.unicode.names import (
     unicode_lookup_alias_codepoint,
     unicode_lookup_alias_index,
     unicode_lookup_alias_length,
@@ -14,9 +19,6 @@ from internal.unicode.unicodedata_data import (
     unicode_name_lookup_index,
     unicode_name_record_index,
     unicode_name_value,
-    unicode_numeric_index,
-    unicode_numeric_value,
-    UNICODEDATA_VERSION,
 )
 from internal.unicode.normalization import (
     _normalization_combining_class,

@@ -289,113 +289,82 @@ def build_numeric_pages():
 def build_name_data():
     records = []
     values = []
+    words = []
+    word_indices = {}
+    cjk_ranges = []
     for codepoint in range(MAX_CPL + 1):
         name = unicodedata.name(chr(codepoint), "")
         if not name:
             continue
+        if 0xAC00 <= codepoint <= 0xD7A3:
+            assert name.startswith("HANGUL SYLLABLE ")
+            continue
+        if name == f"CJK UNIFIED IDEOGRAPH-{codepoint:04X}":
+            if cjk_ranges and cjk_ranges[-1][1] == codepoint - 1:
+                cjk_ranges[-1] = (cjk_ranges[-1][0], codepoint)
+            else:
+                cjk_ranges.append((codepoint, codepoint))
+            continue
         offset = len(values)
-        values.extend(name.encode("ascii"))
-        records.append((codepoint, offset, len(name), name))
+        tokens = name.split(" ")
+        for word in tokens:
+            if word not in word_indices:
+                word_indices[word] = len(words)
+                words.append(word)
+            values.append(word_indices[word])
+        assert " ".join(words[index] for index in values[offset:]) == name
+        assert offset < 1 << 24 and len(tokens) < 256
+        records.append((codepoint, offset, len(tokens), name))
 
     name_order = sorted(range(len(records)), key=lambda index: records[index][3])
-    return records, values, name_order
+    assert len(words) < 1 << 16
+    return records, values, name_order, words, cjk_ranges
 
 
-def emit_names(out, records, values, name_order):
-    # A record packs [code point: 32 bits, byte offset: 24 bits, length: 8 bits].
-    record_values = [
-        (codepoint << 32) | (offset << 8) | length
-        for codepoint, offset, length, _ in records
-    ]
-
+def emit_name_array(out, name, values, llvm_type, codon_type):
+    if llvm_type == "i8":
+        data = 'c"' + "".join(
+            chr(value) if 32 <= value < 127 and value not in (34, 92)
+            else f"\\{value:02X}" for value in values
+        ) + '"'
+    else:
+        data = f"[{llvm_array(values, llvm_type)}]"
     out.write(
         f"""
 @pure
 @llvm
-def _unicode_name_record(index: int) -> u64:
-    @data = private unnamed_addr constant [{len(record_values)} x i64] [{llvm_array(record_values, 'i64')}]
-    %p = getelementptr inbounds [{len(record_values)} x i64], ptr @data, i64 0, i64 %index
-    %x = load i64, ptr %p, align 8
-    ret i64 %x
+def {name}(index: int) -> {codon_type}:
+    @data = private unnamed_addr constant [{len(values)} x {llvm_type}] {data}
+    %p = getelementptr inbounds [{len(values)} x {llvm_type}], ptr @data, i64 0, i64 %index
+    %x = load {llvm_type}, ptr %p, align {int(llvm_type[1:]) // 8}
+    ret {llvm_type} %x
 
-
-@pure
-@llvm
-def _unicode_name_byte(index: int) -> u8:
-    @data = private unnamed_addr constant [{len(values)} x i8] [{llvm_array(values, 'i8')}]
-    %p = getelementptr inbounds [{len(values)} x i8], ptr @data, i64 0, i64 %index
-    %x = load i8, ptr %p, align 1
-    ret i8 %x
-
-
-@pure
-@llvm
-def _unicode_name_order(index: int) -> i32:
-    @data = private unnamed_addr constant [{len(name_order)} x i32] [{llvm_array(name_order, 'i32')}]
-    %p = getelementptr inbounds [{len(name_order)} x i32], ptr @data, i64 0, i64 %index
-    %x = load i32, ptr %p, align 4
-    ret i32 %x
-
-
-def unicode_name_record_index(codepoint: int) -> int:
-    low = 0
-    high = {len(records)}
-    while low < high:
-        middle = low + (high - low) // 2
-        record = _unicode_name_record(middle)
-        value = int(record >> u64(32))
-        if value < codepoint:
-            low = middle + 1
-        else:
-            high = middle
-    if low == {len(records)}:
-        return -1
-    return low if int(_unicode_name_record(low) >> u64(32)) == codepoint else -1
-
-
-def unicode_name_compare(value: str, record_index: int) -> int:
-    record = _unicode_name_record(record_index)
-    offset = int((record >> u64(8)) & u64(0xFFFFFF))
-    length = int(record & u64(0xFF))
-    shared = min(len(value), length)
-    for index in range(shared):
-        left = ord(value[index])
-        right = int(_unicode_name_byte(offset + index))
-        if left != right:
-            return left - right
-    return len(value) - length
-
-
-def unicode_name_lookup_index(value: str) -> int:
-    low = 0
-    high = {len(name_order)}
-    while low < high:
-        middle = low + (high - low) // 2
-        record_index = int(_unicode_name_order(middle))
-        if unicode_name_compare(value, record_index) > 0:
-            low = middle + 1
-        else:
-            high = middle
-    if low == {len(name_order)}:
-        return -1
-    record_index = int(_unicode_name_order(low))
-    return record_index if unicode_name_compare(value, record_index) == 0 else -1
-
-
-def unicode_name_value(record_index: int) -> str:
-    record = _unicode_name_record(record_index)
-    offset = int((record >> u64(8)) & u64(0xFFFFFF))
-    length = int(record & u64(0xFF))
-    value = ""
-    for index in range(length):
-        value += chr(int(_unicode_name_byte(offset + index)))
-    return value
-
-
-def unicode_name_codepoint(record_index: int) -> int:
-    return int(_unicode_name_record(record_index) >> u64(32))
 """
     )
+
+
+def emit_names(out, records, values, name_order, words, cjk_ranges):
+    record_values = [
+        (codepoint << 32) | (offset << 8) | length
+        for codepoint, offset, length, _ in records
+    ]
+    word_records = []
+    word_bytes = bytearray()
+    for word in words:
+        encoded = word.encode("ascii")
+        assert len(encoded) < 256 and len(word_bytes) < 1 << 24
+        word_records.append((len(word_bytes) << 8) | len(encoded))
+        word_bytes.extend(encoded)
+    out.write(f"UNICODE_NAME_COUNT: Literal[int] = {len(records)}\n")
+    out.write(f"UNICODE_CJK_RANGE_COUNT: Literal[int] = {len(cjk_ranges)}\n")
+    emit_name_array(out, "_unicode_name_record", record_values, "i64", "u64")
+    emit_name_array(out, "_unicode_name_token", values, "i16", "u16")
+    emit_name_array(out, "_unicode_name_word", word_records, "i32", "u32")
+    emit_name_array(out, "_unicode_name_byte", word_bytes, "i8", "u8")
+    emit_name_array(out, "_unicode_name_order", name_order, "i32", "i32")
+    emit_name_array(out, "_unicode_cjk_range", [
+        (start << 32) | end for start, end in cjk_ranges
+    ], "i64", "u64")
 
 
 def parse_named_codepoints(path, name_first):
@@ -443,72 +412,10 @@ def emit_lookup_aliases(out, records, name_values, codepoint_values):
         name_values = [0]
         codepoint_values = [0]
 
-    out.write(
-        f"""
-@pure
-@llvm
-def _unicode_lookup_alias_record(index: int) -> u64:
-    @data = private unnamed_addr constant [{len(record_values)} x i64] [{llvm_array(record_values, 'i64')}]
-    %p = getelementptr inbounds [{len(record_values)} x i64], ptr @data, i64 0, i64 %index
-    %x = load i64, ptr %p, align 8
-    ret i64 %x
-
-
-@pure
-@llvm
-def _unicode_lookup_alias_byte(index: int) -> u8:
-    @data = private unnamed_addr constant [{len(name_values)} x i8] [{llvm_array(name_values, 'i8')}]
-    %p = getelementptr inbounds [{len(name_values)} x i8], ptr @data, i64 0, i64 %index
-    %x = load i8, ptr %p, align 1
-    ret i8 %x
-
-
-@pure
-@llvm
-def _unicode_lookup_alias_codepoint(index: int) -> i32:
-    @data = private unnamed_addr constant [{len(codepoint_values)} x i32] [{llvm_array(codepoint_values, 'i32')}]
-    %p = getelementptr inbounds [{len(codepoint_values)} x i32], ptr @data, i64 0, i64 %index
-    %x = load i32, ptr %p, align 4
-    ret i32 %x
-
-
-def unicode_lookup_alias_compare(value: str, record_index: int) -> int:
-    record = _unicode_lookup_alias_record(record_index)
-    offset = int(record >> u64(40))
-    length = int((record >> u64(32)) & u64(0xFF))
-    shared = min(len(value), length)
-    for index in range(shared):
-        left = ord(value[index])
-        right = int(_unicode_lookup_alias_byte(offset + index))
-        if left != right:
-            return left - right
-    return len(value) - length
-
-
-def unicode_lookup_alias_index(value: str) -> int:
-    low = 0
-    high = {len(records)}
-    while low < high:
-        middle = low + (high - low) // 2
-        if unicode_lookup_alias_compare(value, middle) > 0:
-            low = middle + 1
-        else:
-            high = middle
-    if low == {len(records)}:
-        return -1
-    return low if unicode_lookup_alias_compare(value, low) == 0 else -1
-
-
-def unicode_lookup_alias_length(record_index: int) -> int:
-    return int(_unicode_lookup_alias_record(record_index) & u64(0xFF))
-
-
-def unicode_lookup_alias_codepoint(record_index: int, index: int) -> int:
-    record = _unicode_lookup_alias_record(record_index)
-    offset = int((record >> u64(8)) & u64(0xFFFFFF))
-    return int(_unicode_lookup_alias_codepoint(offset + index))
-"""
-    )
+    out.write(f"UNICODE_ALIAS_COUNT: Literal[int] = {len(records)}\n")
+    emit_name_array(out, "_unicode_lookup_alias_record", record_values, "i64", "u64")
+    emit_name_array(out, "_unicode_lookup_alias_byte", name_values, "i8", "u8")
+    emit_name_array(out, "_unicode_lookup_alias_codepoint", codepoint_values, "i32", "i32")
 
 
 def build_mapping_pages(method):
@@ -711,7 +618,7 @@ def main():
     parser.add_argument(
         "--output",
         type=pathlib.Path,
-        default=pathlib.Path("stdlib/internal/unicode/data.codon"),
+        default=pathlib.Path("build/stdlib/internal/unicode/generated/properties.codon"),
     )
     parser.add_argument(
         "--derived-core-properties",
@@ -723,8 +630,13 @@ def main():
         "--unicodedata-output",
         type=pathlib.Path,
         default=pathlib.Path(
-            "stdlib/internal/unicode/unicodedata_data.codon"
+            "build/stdlib/internal/unicode/generated/metadata.codon"
         ),
+    )
+    parser.add_argument(
+        "--names-output",
+        type=pathlib.Path,
+        default=pathlib.Path("build/stdlib/internal/unicode/generated/names.codon"),
     )
     parser.add_argument("--name-aliases", type=pathlib.Path)
     parser.add_argument("--named-sequences", type=pathlib.Path)
@@ -739,7 +651,9 @@ def main():
 
     with args.output.open("w", encoding="utf-8") as out:
         out.write(
-            f"""# AUTO-GENERATED by scripts/generate_unicode_data.py.
+            f"""# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+# AUTO-GENERATED by scripts/generate_unicode_data.py.
 # Python Unicode database: {unicodedata.unidata_version}
 # Do not edit manually.
 
@@ -790,7 +704,9 @@ UNICODE_PAGE_WORDS: Literal[int] = 4
     args.unicodedata_output.parent.mkdir(parents=True, exist_ok=True)
     with args.unicodedata_output.open("w", encoding="utf-8") as out:
         out.write(
-            f"""# AUTO-GENERATED by scripts/generate_unicode_data.py.
+            f"""# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+# AUTO-GENERATED by scripts/generate_unicode_data.py.
 # Python Unicode database: {unicodedata.unidata_version}
 # Do not edit manually.
 
@@ -862,10 +778,21 @@ UNICODEDATA_VERSION: str = "{unicodedata.unidata_version}"
             file=sys.stderr,
         )
 
-        records, values, name_order = build_name_data()
-        emit_names(out, records, values, name_order)
+    args.names_output.parent.mkdir(parents=True, exist_ok=True)
+    with args.names_output.open("w", encoding="utf-8") as out:
+        out.write(
+            f"""# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+# AUTO-GENERATED by scripts/generate_unicode_data.py.
+# Python Unicode database: {unicodedata.unidata_version}
+# Do not edit manually.
+
+"""
+        )
+        records, values, name_order, words, cjk_ranges = build_name_data()
+        emit_names(out, records, values, name_order, words, cjk_ranges)
         print(
-            f"  names: {len(records)} records, {len(values)} bytes",
+            f"  names: {len(records)} records, {len(values)} tokens, {len(words)} words",
             file=sys.stderr,
         )
 

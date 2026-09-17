@@ -43,59 +43,7 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 include(${CMAKE_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/CMakeRC.cmake)
 
-set(CODON_UNICODE_VERSION "16.0.0")
-set(CODON_UNICODE_GENERATED_FILES
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
-  "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
-)
-
-# Release builds use checked-in tables; generation is a missing-file fallback.
-set(CODON_UNICODE_GENERATION_REQUIRED OFF)
-foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
-  if(NOT EXISTS "${unicode_file}")
-    set(CODON_UNICODE_GENERATION_REQUIRED ON)
-    break()
-  endif()
-endforeach()
-
-if(CODON_UNICODE_GENERATION_REQUIRED)
-  find_package(Python3 COMPONENTS Interpreter REQUIRED)
-
-  set(CODON_UNICODE_UCD_DIR "${CMAKE_BINARY_DIR}/unicode-${CODON_UNICODE_VERSION}")
-  file(MAKE_DIRECTORY "${CODON_UNICODE_UCD_DIR}")
-
-  function(codon_download_unicode_data filename)
-    set(destination "${CODON_UNICODE_UCD_DIR}/${filename}")
-    if(NOT EXISTS "${destination}")
-      file(DOWNLOAD
-        "https://www.unicode.org/Public/${CODON_UNICODE_VERSION}/ucd/${filename}"
-        "${destination}"
-        STATUS status
-        TLS_VERIFY ON)
-      list(GET status 0 status_code)
-      list(GET status 1 status_message)
-      if(NOT status_code EQUAL 0)
-        message(FATAL_ERROR "Failed to download ${filename}: ${status_message}")
-      endif()
-    endif()
-  endfunction()
-
-  codon_download_unicode_data("DerivedCoreProperties.txt")
-  codon_download_unicode_data("NameAliases.txt")
-  codon_download_unicode_data("NamedSequences.txt")
-
-  execute_process(
-    COMMAND ${Python3_EXECUTABLE} -c
-            "import unicodedata, sys; sys.exit(unicodedata.unidata_version != '${CODON_UNICODE_VERSION}')"
-    RESULT_VARIABLE CODON_UNICODE_VERSION_MISMATCH)
-  if(CODON_UNICODE_VERSION_MISMATCH)
-    message(FATAL_ERROR
-      "${Python3_EXECUTABLE} must use Unicode ${CODON_UNICODE_VERSION} to generate Codon Unicode tables")
-  endif()
-endif()
+include(${CMAKE_SOURCE_DIR}/cmake/UnicodeTables.cmake)
 
 add_executable(peg2cpp codon/util/peg2cpp.cpp)
 target_include_directories(peg2cpp PRIVATE ${peglib_SOURCE_DIR})
@@ -504,36 +452,12 @@ file(GLOB_RECURSE CODON_STDLIB_RESOURCES
   CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/stdlib/*.codon"
 )
-list(APPEND CODON_STDLIB_RESOURCES ${CODON_UNICODE_GENERATED_FILES})
-list(REMOVE_DUPLICATES CODON_STDLIB_RESOURCES)
-if(CODON_UNICODE_GENERATION_REQUIRED)
-  add_custom_command(
-    OUTPUT ${CODON_UNICODE_GENERATED_FILES}
-    COMMAND ${Python3_EXECUTABLE}
-            "${CMAKE_SOURCE_DIR}/scripts/generate_single_byte_codecs.py"
-            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/codecs.codon"
-    COMMAND ${Python3_EXECUTABLE}
-            "${CMAKE_SOURCE_DIR}/scripts/generate_float_dtoa_tables.py"
-            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/float_dtoa_tables.codon"
-    COMMAND ${Python3_EXECUTABLE}
-            "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_data.py"
-            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/data.codon"
-            --derived-core-properties "${CODON_UNICODE_UCD_DIR}/DerivedCoreProperties.txt"
-            --unicodedata-output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/unicodedata_data.codon"
-            --name-aliases "${CODON_UNICODE_UCD_DIR}/NameAliases.txt"
-            --named-sequences "${CODON_UNICODE_UCD_DIR}/NamedSequences.txt"
-    COMMAND ${Python3_EXECUTABLE}
-            "${CMAKE_SOURCE_DIR}/scripts/generate_unicode_normalization_data.py"
-            --output "${CMAKE_SOURCE_DIR}/stdlib/internal/unicode/normalization_data.codon"
-    COMMENT "Generating Unicode ${CODON_UNICODE_VERSION} tables"
-    VERBATIM)
-endif()
-add_custom_target(unicode_data DEPENDS ${CODON_UNICODE_GENERATED_FILES})
 cmrc_add_resource_library(
   codon-stdlib
   NAMESPACE codon
   ${CODON_STDLIB_RESOURCES}
 )
+cmrc_add_resources(codon-stdlib WHENCE "${CMAKE_BINARY_DIR}" ${CODON_UNICODE_GENERATED_FILES})
 set_property(TARGET codon-stdlib PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(codon-stdlib unicode_data)
 
@@ -674,6 +598,11 @@ install(DIRECTORY ${CMAKE_BINARY_DIR}/include/codon DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm DESTINATION include)
 install(DIRECTORY ${LLVM_INCLUDE_DIRS}/llvm-c DESTINATION include)
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/stdlib DESTINATION lib/codon)
+foreach(unicode_file IN LISTS CODON_UNICODE_GENERATED_FILES)
+  file(RELATIVE_PATH unicode_relative "${CMAKE_BINARY_DIR}" "${unicode_file}")
+  get_filename_component(unicode_directory "${unicode_relative}" DIRECTORY)
+  install(FILES "${unicode_file}" DESTINATION "lib/codon/${unicode_directory}")
+endforeach()
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/jit/ DESTINATION python)
 install(DIRECTORY DESTINATION lib/codon/plugins)
 

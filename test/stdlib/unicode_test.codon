@@ -2,7 +2,7 @@ from internal.types.str import (
     _unicode_from_codepoint,
     _unicode_from_codepoints,
 )
-from internal.unicode.float_dtoa import (
+from internal.numeric.float_dtoa import (
     _float_shortest_decimal,
     _float32_dtoa_shortest,
     _float_dtoa_shortest,
@@ -670,6 +670,33 @@ def test_unicodedata_names():
     assert unicodedata.lookup("KEYCAP DIGIT ONE") == (
         _unicode_from_codepoints([0x0031, 0xFE0F, 0x20E3])
     )
+    for codepoint, expected in [
+        (0xAC00, "HANGUL SYLLABLE GA"),
+        (0xC544, "HANGUL SYLLABLE A"),
+        (0xD7A3, "HANGUL SYLLABLE HIH"),
+        (0x3400, "CJK UNIFIED IDEOGRAPH-3400"),
+        (0x4DBF, "CJK UNIFIED IDEOGRAPH-4DBF"),
+        (0x2A6DF, "CJK UNIFIED IDEOGRAPH-2A6DF"),
+        (0x323AF, "CJK UNIFIED IDEOGRAPH-323AF"),
+        (0xF900, "CJK COMPATIBILITY IDEOGRAPH-F900"),
+    ]:
+        character = _unicode_from_codepoint(codepoint)
+        assert unicodedata.name(character) == expected
+        assert unicodedata.lookup(expected) == character
+        assert character.encode("ascii", "namereplace") == ("\\N{" + expected + "}").encode()
+    for codepoint in [0xD7A4, 0x2A6E0, 0x2B73A, 0x2EE5E, 0x323B0]:
+        assert unicodedata.name(_unicode_from_codepoint(codepoint), "") == ""
+    for invalid in [
+        "HANGUL SYLLABLE ", "HANGUL SYLLABLE G", "HANGUL SYLLABLE GAX",
+        "CJK UNIFIED IDEOGRAPH-03400", "CJK UNIFIED IDEOGRAPH-2A6E0",
+        "CJK UNIFIED IDEOGRAPH-4dbf", "CJK UNIFIED IDEOGRAPH-+3400",
+        "CJK UNIFIED IDEOGRAPH-3400 ", "CJK UNIFIED IDEOGRAPH-110000",
+    ]:
+        try:
+            unicodedata.lookup(invalid)
+            assert False, invalid
+        except KeyError:
+            pass
 
     try:
         unicodedata.name(_unicode_from_codepoint(0xE000))

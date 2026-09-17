@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from .normalization_data import (
+from internal.unicode.generated.normalization import (
     NORMALIZATION_COMBINING_MASK,
     NORMALIZATION_COMPATIBILITY_DECOMPOSITION_MASK,
     NORMALIZATION_COMPOSITION_MASK,

@@ -1,0 +1,213 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
+from internal.unicode.generated.names import (
+    UNICODE_NAME_COUNT,
+    UNICODE_CJK_RANGE_COUNT,
+    UNICODE_ALIAS_COUNT,
+    _unicode_name_record,
+    _unicode_name_token,
+    _unicode_name_word,
+    _unicode_name_byte,
+    _unicode_name_order,
+    _unicode_cjk_range,
+    _unicode_lookup_alias_record,
+    _unicode_lookup_alias_byte,
+    _unicode_lookup_alias_codepoint,
+)
+
+_HANGUL_LEADING = (
+    "G", "GG", "N", "D", "DD", "R", "M", "B", "BB", "S", "SS", "",
+    "J", "JJ", "C", "K", "T", "P", "H",
+)
+_HANGUL_VOWEL = (
+    "A", "AE", "YA", "YAE", "EO", "E", "YEO", "YE", "O", "WA", "WAE",
+    "OE", "YO", "U", "WEO", "WE", "WI", "YU", "EU", "YI", "I",
+)
+_HANGUL_TRAILING = (
+    "", "G", "GG", "GS", "N", "NJ", "NH", "D", "L", "LG", "LM", "LB",
+    "LS", "LT", "LP", "LH", "M", "B", "BS", "S", "SS", "NG", "J",
+    "C", "K", "T", "P", "H",
+)
+
+
+def _unicode_is_cjk(codepoint: int) -> bool:
+    for index in range(UNICODE_CJK_RANGE_COUNT):
+        bounds = _unicode_cjk_range(index)
+        if int(bounds >> u64(32)) <= codepoint <= int(bounds & u64(0xFFFFFFFF)):
+            return True
+    return False
+
+
+def _unicode_algorithmic_name(codepoint: int) -> str:
+    if 0xAC00 <= codepoint <= 0xD7A3:
+        offset = codepoint - 0xAC00
+        return (
+            "HANGUL SYLLABLE " + _HANGUL_LEADING[offset // 588]
+            + _HANGUL_VOWEL[(offset % 588) // 28] + _HANGUL_TRAILING[offset % 28]
+        )
+    from internal.format import _integer_format
+    return "CJK UNIFIED IDEOGRAPH-" + _integer_format(codepoint, 0x58, 4, 0, 0)
+
+
+def _unicode_algorithmic_lookup(value: str) -> int:
+    if value.startswith("CJK UNIFIED IDEOGRAPH-"):
+        digits = value[22:]
+        if not 4 <= len(digits) <= 6:
+            return -1
+        codepoint = 0
+        for digit in digits:
+            if "0" <= digit <= "9":
+                number = ord(digit) - ord("0")
+            elif "A" <= digit <= "F":
+                number = ord(digit) - ord("A") + 10
+            else:
+                return -1
+            codepoint = codepoint * 16 + number
+        if _unicode_is_cjk(codepoint) and _unicode_algorithmic_name(codepoint) == value:
+            return codepoint
+    elif value.startswith("HANGUL SYLLABLE "):
+        suffix = value[16:]
+        leading = -1
+        length = -1
+        for index in range(19):
+            part = _HANGUL_LEADING[index]
+            if len(part) > length and suffix.startswith(part):
+                leading = index
+                length = len(part)
+        suffix = suffix[length:]
+        vowel = -1
+        length = -1
+        for index in range(21):
+            part = _HANGUL_VOWEL[index]
+            if len(part) > length and suffix.startswith(part):
+                vowel = index
+                length = len(part)
+        if vowel < 0:
+            return -1
+        suffix = suffix[length:]
+        for index in range(28):
+            if suffix == _HANGUL_TRAILING[index]:
+                return 0xAC00 + (leading * 21 + vowel) * 28 + index
+    return -1
+
+
+def unicode_name_record_index(codepoint: int) -> int:
+    if 0xAC00 <= codepoint <= 0xD7A3 or _unicode_is_cjk(codepoint):
+        return UNICODE_NAME_COUNT + codepoint
+    low = 0
+    high = UNICODE_NAME_COUNT
+    while low < high:
+        middle = low + (high - low) // 2
+        if int(_unicode_name_record(middle) >> u64(32)) < codepoint:
+            low = middle + 1
+        else:
+            high = middle
+    if low == UNICODE_NAME_COUNT:
+        return -1
+    return low if int(_unicode_name_record(low) >> u64(32)) == codepoint else -1
+
+
+def unicode_name_compare(value: str, record_index: int) -> int:
+    record = _unicode_name_record(record_index)
+    offset = int((record >> u64(8)) & u64(0xFFFFFF))
+    length = int(record & u64(0xFF))
+    position = 0
+    for token in range(length):
+        if token:
+            if position == len(value):
+                return -1
+            difference = ord(value[position]) - 32
+            if difference:
+                return difference
+            position += 1
+        word = _unicode_name_word(int(_unicode_name_token(offset + token)))
+        start = int(word >> u32(8))
+        size = int(word & u32(0xFF))
+        for index in range(size):
+            if position == len(value):
+                return -1
+            difference = ord(value[position]) - int(_unicode_name_byte(start + index))
+            if difference:
+                return difference
+            position += 1
+    return len(value) - position
+
+
+def unicode_name_lookup_index(value: str) -> int:
+    codepoint = _unicode_algorithmic_lookup(value)
+    if codepoint >= 0:
+        return UNICODE_NAME_COUNT + codepoint
+    low = 0
+    high = UNICODE_NAME_COUNT
+    while low < high:
+        middle = low + (high - low) // 2
+        record_index = int(_unicode_name_order(middle))
+        if unicode_name_compare(value, record_index) > 0:
+            low = middle + 1
+        else:
+            high = middle
+    if low == UNICODE_NAME_COUNT:
+        return -1
+    record_index = int(_unicode_name_order(low))
+    return record_index if unicode_name_compare(value, record_index) == 0 else -1
+
+
+def unicode_name_value(record_index: int) -> str:
+    if record_index >= UNICODE_NAME_COUNT:
+        return _unicode_algorithmic_name(record_index - UNICODE_NAME_COUNT)
+    record = _unicode_name_record(record_index)
+    offset = int((record >> u64(8)) & u64(0xFFFFFF))
+    length = int(record & u64(0xFF))
+    value = ""
+    for token in range(length):
+        if token:
+            value += " "
+        word = _unicode_name_word(int(_unicode_name_token(offset + token)))
+        start = int(word >> u32(8))
+        size = int(word & u32(0xFF))
+        for index in range(size):
+            value += chr(int(_unicode_name_byte(start + index)))
+    return value
+
+
+def unicode_name_codepoint(record_index: int) -> int:
+    if record_index >= UNICODE_NAME_COUNT:
+        return record_index - UNICODE_NAME_COUNT
+    return int(_unicode_name_record(record_index) >> u64(32))
+
+
+def unicode_lookup_alias_compare(value: str, record_index: int) -> int:
+    record = _unicode_lookup_alias_record(record_index)
+    offset = int(record >> u64(40))
+    length = int((record >> u64(32)) & u64(0xFF))
+    shared = min(len(value), length)
+    for index in range(shared):
+        left = ord(value[index])
+        right = int(_unicode_lookup_alias_byte(offset + index))
+        if left != right:
+            return left - right
+    return len(value) - length
+
+
+def unicode_lookup_alias_index(value: str) -> int:
+    low = 0
+    high = UNICODE_ALIAS_COUNT
+    while low < high:
+        middle = low + (high - low) // 2
+        if unicode_lookup_alias_compare(value, middle) > 0:
+            low = middle + 1
+        else:
+            high = middle
+    if low == UNICODE_ALIAS_COUNT:
+        return -1
+    return low if unicode_lookup_alias_compare(value, low) == 0 else -1
+
+
+def unicode_lookup_alias_length(record_index: int) -> int:
+    return int(_unicode_lookup_alias_record(record_index) & u64(0xFF))
+
+
+def unicode_lookup_alias_codepoint(record_index: int, index: int) -> int:
+    record = _unicode_lookup_alias_record(record_index)
+    offset = int((record >> u64(8)) & u64(0xFFFFFF))
+    return int(_unicode_lookup_alias_codepoint(offset + index))

@@ -1,6 +1,6 @@
 # Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
 
-from internal.unicode.data import (
+from internal.unicode.generated.properties import (
     unicode_is_alpha,
     unicode_is_decimal,
     unicode_is_digit,
@@ -24,7 +24,7 @@ from internal.unicode.data import (
     unicode_casefold_mapping_record_length,
     unicode_casefold_mapping_record_codepoint,
 )
-from internal.unicode.codecs import (
+from internal.unicode.generated.single_byte_codecs import (
     _single_byte_cp1250_decode,
     _single_byte_cp1250_encode,
     _single_byte_cp1253_decode,
@@ -2361,7 +2361,7 @@ def _codec_encode_error_append(
         return
 
     if errors == _ERROR_NAMEREPLACE:
-        from internal.unicode.unicodedata_data import (
+        from internal.unicode.names import (
             unicode_name_record_index,
             unicode_name_value,
         )

@@ -1,0 +1,9 @@
+{
+  "unicode_version": "16.0.0",
+  "base_url": "https://www.unicode.org/Public/16.0.0/ucd/",
+  "files": {
+    "DerivedCoreProperties.txt": "39d35161f2954497f69e08bdb9e701493f476a3d30222de20028feda36c1dabd",
+    "NameAliases.txt": "9953f0fcebf5ea8091c5c581e4df0e43f20d2533c84ccca7987a9bb819a896a8",
+    "NamedSequences.txt": "4ff660cb922480cd5aab9a689b1a6905d0a54575baf9967d0f1e00ac866f04dd"
+  }
+}

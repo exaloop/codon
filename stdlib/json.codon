@@ -1,3 +1,5 @@
+# Copyright (C) 2022-2026 Exaloop Inc. <https://exaloop.io>
+
 """Native JSON parsing and encoding with a tagged `JSON` value.
 
 Provides `load`, `loads`, `dump`, `dumps`, `JSONDecoder`, `JSONEncoder`, and
