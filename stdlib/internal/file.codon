@@ -363,6 +363,8 @@ class _FileState:
     _last_text_read_bytes: int
     _bom_checked: bool
     _write_bom_done: bool
+    _write_through: bool
+    _read_ahead: bool
     _skip_initial_lf: bool
     _b2cratio: float
     _backend: int
@@ -394,6 +396,8 @@ class _FileState:
         self._last_text_read_bytes = 0
         self._bom_checked = True
         self._write_bom_done = True
+        self._write_through = False
+        self._read_ahead = True
         self._skip_initial_lf = False
         self._stdio_direction = _FILE_STDIO_NONE
         self._b2cratio = 1.0
@@ -432,6 +436,8 @@ class _FileState:
         self._last_text_read_bytes = 0
         self._bom_checked = not _file_encoding_has_bom(self._encoding_kind)
         self._write_bom_done = not _file_encoding_has_bom(self._write_encoding_kind)
+        self._write_through = False
+        self._read_ahead = True
         self._skip_initial_lf = False
         self._stdio_direction = _FILE_STDIO_NONE
         if self._encoding_kind == _ENCODING_UTF16 or self._encoding_kind == _ENCODING_UTF16_LE or self._encoding_kind == _ENCODING_UTF16_BE:
@@ -618,20 +624,22 @@ def _file_buffered_stdio_write(state: _FileState, data: Ptr[u8], length: int):
     if length <= 0:
         return
     _file_prepare_stdio_write(state)
-    if not state._write_buf:
-        state._write_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
 
     # Large writes bypass the staging buffer once any earlier data has been
     # committed. Small writes are coalesced so line-at-a-time text output does
     # not pay a libc call/lock for every Python-level write().
-    if length >= _FILE_READ_BUFFER_SIZE:
+    if state._write_through or length >= _FILE_READ_BUFFER_SIZE:
         _file_flush_stdio_write_buffer(state)
         written = int(_C.fwrite(data, 1, length, state._fp))
         if written != length or _C.ferror(state._fp):
             raise IOError("file I/O error: error in write")
         state._stdio_direction = _FILE_STDIO_WRITE
+        if state._write_through and _C.fflush(state._fp) != 0:
+            raise IOError("file I/O error: error in flush")
         return
 
+    if not state._write_buf:
+        state._write_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
     if state._write_length + length > _FILE_READ_BUFFER_SIZE:
         _file_flush_stdio_write_buffer(state)
     bytes.memcpy(state._write_buf + state._write_length, data, length)
@@ -653,11 +661,12 @@ def _file_raw_read(state: _FileState, output: Ptr[u8], length: int) -> int:
     return count
 
 def _file_fill_read_buffer(state: _FileState) -> int:
+    length = _FILE_READ_BUFFER_SIZE if state._read_ahead else 1
     if not state._read_buf:
-        state._read_buf = Ptr[u8](_FILE_READ_BUFFER_SIZE)
+        state._read_buf = Ptr[u8](length)
     state._read_offset = 0
     state._read_length = _file_raw_read(
-        state, state._read_buf, _FILE_READ_BUFFER_SIZE
+        state, state._read_buf, length
     )
     return state._read_length
 
@@ -1100,7 +1109,7 @@ def _file_decode_owned_text_chunk(
     return value
 
 def _file_text_chunk_target(state: _FileState, remaining: int) -> int:
-    if state._error_code != _ERROR_STRICT:
+    if not state._read_ahead or state._error_code != _ERROR_STRICT:
         width, _ = _file_encoded_newline_layout(state._encoding_kind)
         return min(remaining * width, _FILE_TEXT_LARGE_CHUNK_SIZE)
 
@@ -1275,12 +1284,64 @@ def _file_scan_line_buffer(
         return (i + 2, False)
     return (i + 1, i + 1 == end)
 
+def _file_readline_stream(state: _FileState, buffer: _FileBuffer) -> int:
+    length = 0
+    read_error = False
+    buffer.reserve(128)
+    if static.platform() == "win32":
+        from C import _lock_file(cobj)
+        _lock_file(state._fp)
+    else:
+        from C import flockfile(cobj)
+        flockfile(state._fp)
+    while True:
+        if static.platform() == "win32":
+            from C import _fgetc_nolock(cobj) -> i32
+            character = int(_fgetc_nolock(state._fp))
+        else:
+            from C import getc_unlocked(cobj) -> i32
+            character = int(getc_unlocked(state._fp))
+        if character < 0:
+            read_error = bool(_C.ferror(state._fp))
+            break
+        if state._skip_initial_lf:
+            state._skip_initial_lf = False
+            if character == 0x0A:
+                continue
+        buffer.reserve(length + 1)
+        buffer._ptr[length] = u8(character)
+        length += 1
+        if character == 0x0A:
+            break
+        if character == 0x0D:
+            state._skip_initial_lf = True
+            break
+    if static.platform() == "win32":
+        from C import _unlock_file(cobj)
+        _unlock_file(state._fp)
+    else:
+        from C import funlockfile(cobj)
+        funlockfile(state._fp)
+    if read_error:
+        raise IOError("file I/O error: error in read")
+    return length
+
+@inline
 def _file_readline_raw(
     state: _FileState,
     buffer: _FileBuffer,
     newline_flags: int,
     binary: bool,
 ) -> int:
+    if (
+        not state._read_ahead
+        and state._backend == _FILE_BACKEND_STDIO
+        and newline_flags == (_FILE_NEWLINE_UNIVERSAL | _FILE_NEWLINE_TRANSLATE)
+        and not binary
+        and state._read_offset == state._read_length
+    ):
+        return _file_readline_stream(state, buffer)
+
     length = 0
 
     if not binary and state._skip_initial_lf:
@@ -1309,6 +1370,10 @@ def _file_readline_raw(
         if line_end < 0:
             continue
         if not lookahead:
+            break
+
+        if not state._read_ahead and newline_flags & _FILE_NEWLINE_TRANSLATE:
+            state._skip_initial_lf = True
             break
 
         following = _file_read_byte(state)
@@ -1668,6 +1733,19 @@ class File[T]:
             value = _file_decode_owned_text_chunk(self._state, buffer, length)
             return prefix + value if len(prefix) > 0 else value
 
+        if (
+            sz == 1 and not self._state._read_ahead
+            and self._state._encoding_kind == _ENCODING_UTF8
+            and self._state._error_code == _ERROR_STRICT
+            and self._state._newline_flags == (_FILE_NEWLINE_UNIVERSAL | _FILE_NEWLINE_TRANSLATE)
+            and _file_text_pending_length(self._state) == 0
+            and self._state._read_offset == self._state._read_length
+        ):
+            return self._read_stream_character()
+
+        if sz >= 65536 and not self._state._read_ahead:
+            return self._read_stream_text(sz)
+
         if sz >= 65536:
             return self._read_large_text(sz)
 
@@ -1695,9 +1773,62 @@ class File[T]:
 
         return result
 
+    def _read_stream_character(self) -> str:
+        from C import fgetc(cobj) -> i32
+        from C import ungetc(i32, cobj) -> i32
+
+        state = self._state
+        while True:
+            character = int(fgetc(state._fp))
+            if character < 0:
+                self._errcheck("error in read")
+                state._last_text_read_bytes = 0
+                return ""
+            if character >= 0x80:
+                if ungetc(i32(character), state._fp) < 0:
+                    raise IOError("file I/O error: error in read")
+                return self._read_text_chunk(1)
+            if state._skip_initial_lf:
+                state._skip_initial_lf = False
+                if character == 0x0A:
+                    continue
+            state._last_text_read_bytes = 1
+            state._clear_last_text_crlf()
+            state._last_text_errors = None
+            state._b2cratio = 1.0
+            if character == 0x0D:
+                state._skip_initial_lf = True
+                character = 0x0A
+            return chr(character)
+
+    def _read_stream_text(self, sz: int) -> str:
+        pending_length = _file_text_pending_length(self._state)
+        if pending_length >= sz:
+            return _file_take_text_pending(self._state, sz)
+        pieces: List[str] = []
+        remaining = sz
+        if pending_length > 0:
+            pieces.append(_file_take_all_text_pending(self._state))
+            remaining -= pending_length
+        while remaining > 0:
+            value = self._read_text_chunk(_file_text_chunk_target(self._state, remaining))
+            if len(value) == 0:
+                if self._state._last_text_read_bytes > 0:
+                    continue
+                break
+            if len(value) > remaining:
+                _file_set_text_pending(self._state, value, remaining)
+                value = value[:remaining]
+            if not pieces and len(value) == sz:
+                return value
+            pieces.append(value)
+            remaining -= len(value)
+        return "".join(pieces)
+
     def _read_large_text(self, sz: int) -> str:
         if (
-            sz <= _FILE_READ_BUFFER_SIZE
+            self._state._read_ahead
+            and sz <= _FILE_READ_BUFFER_SIZE
             and _file_text_pending_length(self._state) == 0
             and self._state._backend == _FILE_BACKEND_STDIO
             and self._state._encoding_kind == _ENCODING_UTF8
@@ -1754,7 +1885,7 @@ class File[T]:
         )
         if total < length:
             remaining = length - total
-            if remaining <= _FILE_READ_BUFFER_SIZE // 2:
+            if self._state._read_ahead and remaining <= _FILE_READ_BUFFER_SIZE // 2:
                 if _file_fill_read_buffer(self._state) > 0:
                     total += _file_take_read_buffer(
                         self._state, output + total, remaining
