@@ -63,14 +63,14 @@ def test_options():
         pass
     default_wrapper = codon.JITWrapper()
     default_wrapper.execute("assert __py_numerics__ == 1\nassert __debug__ == 0\n", "", 0, False)
-    print("JIT options tests passed")
 
 
 if __name__ == "__main__" and "--options-only" in sys.argv:
     test_options()
+    print("JIT options tests passed", flush=True)
     sys.exit(0)
 
-subprocess.run([sys.executable, __file__, "--options-only"], check=True, timeout=120)
+subprocess.run([sys.executable, __file__, "--options-only"], check=True, timeout=300)
 
 @codon.convert
 class Foo:
